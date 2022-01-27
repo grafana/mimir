@@ -130,7 +130,7 @@ func (r *CortexClient) doRequest(path, method string, payload []byte) (*http.Res
 	log.WithFields(log.Fields{
 		"url":    req.URL.String(),
 		"method": req.Method,
-	}).Debugln("sending request to cortex api")
+	}).Debugln("sending request to mimir api")
 
 	resp, err := r.Client.Do(req)
 	if err != nil {
@@ -138,7 +138,7 @@ func (r *CortexClient) doRequest(path, method string, payload []byte) (*http.Res
 			"url":    req.URL.String(),
 			"method": req.Method,
 			"error":  err.Error(),
-		}).Errorln("error during request to cortex api")
+		}).Errorln("error during request to mimir api")
 		return nil, err
 	}
 

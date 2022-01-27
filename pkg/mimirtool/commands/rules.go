@@ -94,17 +94,17 @@ type RuleCommand struct {
 
 // Register rule related commands and flags with the kingpin application
 func (r *RuleCommand) Register(app *kingpin.Application, envVars EnvVarNames) {
-	rulesCmd := app.Command("rules", "View & edit rules stored in cortex.").PreAction(r.setup)
-	rulesCmd.Flag("user", fmt.Sprintf("API user to use when contacting cortex, alternatively set %s. If empty, %s will be used instead.", envVars.APIUser, envVars.TenantID)).Default("").Envar(envVars.APIUser).StringVar(&r.ClientConfig.User)
-	rulesCmd.Flag("key", "API key to use when contacting cortex, alternatively set "+envVars.APIKey+".").Default("").Envar(envVars.APIKey).StringVar(&r.ClientConfig.Key)
-	rulesCmd.Flag("backend", "Backend type to interact with: <cortex|loki>").Default("cortex").EnumVar(&r.Backend, backends...)
+	rulesCmd := app.Command("rules", "View & edit rules stored in mimir.").PreAction(r.setup)
+	rulesCmd.Flag("user", fmt.Sprintf("API user to use when contacting mimir, alternatively set %s. If empty, %s will be used instead.", envVars.APIUser, envVars.TenantID)).Default("").Envar(envVars.APIUser).StringVar(&r.ClientConfig.User)
+	rulesCmd.Flag("key", "API key to use when contacting mimir, alternatively set "+envVars.APIKey+".").Default("").Envar(envVars.APIKey).StringVar(&r.ClientConfig.Key)
+	rulesCmd.Flag("backend", "Backend type to interact with (deprecated)").Default(rules.MimirBackend).EnumVar(&r.Backend, backends...)
 
 	// Register rule commands
 	listCmd := rulesCmd.
-		Command("list", "List the rules currently in the cortex ruler.").
+		Command("list", "List the rules currently in the mimir ruler.").
 		Action(r.listRules)
 	printRulesCmd := rulesCmd.
-		Command("print", "Print the rules currently in the cortex ruler.").
+		Command("print", "Print the rules currently in the mimir ruler.").
 		Action(r.printRules)
 	getRuleGroupCmd := rulesCmd.
 		Command("get", "Retrieve a rulegroup from the ruler.").
@@ -113,13 +113,13 @@ func (r *RuleCommand) Register(app *kingpin.Application, envVars EnvVarNames) {
 		Command("delete", "Delete a rulegroup from the ruler.").
 		Action(r.deleteRuleGroup)
 	loadRulesCmd := rulesCmd.
-		Command("load", "load a set of rules to a designated cortex endpoint").
+		Command("load", "load a set of rules to a designated mimir endpoint").
 		Action(r.loadRules)
 	diffRulesCmd := rulesCmd.
-		Command("diff", "diff a set of rules to a designated cortex endpoint").
+		Command("diff", "diff a set of rules to a designated mimir endpoint").
 		Action(r.diffRules)
 	syncRulesCmd := rulesCmd.
-		Command("sync", "sync a set of rules to a designated cortex endpoint").
+		Command("sync", "sync a set of rules to a designated mimir endpoint").
 		Action(r.syncRules)
 	prepareCmd := rulesCmd.
 		Command("prepare", "modifies a set of rules by including an specific label in aggregations.").
@@ -133,32 +133,32 @@ func (r *RuleCommand) Register(app *kingpin.Application, envVars EnvVarNames) {
 
 	// Require Mimir cluster address and tentant ID on all these commands
 	for _, c := range []*kingpin.CmdClause{listCmd, printRulesCmd, getRuleGroupCmd, deleteRuleGroupCmd, loadRulesCmd, diffRulesCmd, syncRulesCmd} {
-		c.Flag("address", "Address of the cortex cluster, alternatively set "+envVars.Address+".").
+		c.Flag("address", "Address of the mimir cluster, alternatively set "+envVars.Address+".").
 			Envar(envVars.Address).
 			Required().
 			StringVar(&r.ClientConfig.Address)
 
-		c.Flag("id", "Cortex tenant id, alternatively set "+envVars.TenantID+".").
+		c.Flag("id", "Mimir tenant id, alternatively set "+envVars.TenantID+".").
 			Envar(envVars.TenantID).
 			Required().
 			StringVar(&r.ClientConfig.ID)
 
-		c.Flag("use-legacy-routes", "If set, API requests to cortex will use the legacy /api/prom/ routes, alternatively set "+envVars.UseLegacyRoutes+".").
+		c.Flag("use-legacy-routes", "If set, API requests to mimir will use the legacy /api/prom/ routes, alternatively set "+envVars.UseLegacyRoutes+".").
 			Default("false").
 			Envar(envVars.UseLegacyRoutes).
 			BoolVar(&r.ClientConfig.UseLegacyRoutes)
 
-		c.Flag("tls-ca-path", "TLS CA certificate to verify cortex API as part of mTLS, alternatively set "+envVars.TLSCAPath+".").
+		c.Flag("tls-ca-path", "TLS CA certificate to verify mimir API as part of mTLS, alternatively set "+envVars.TLSCAPath+".").
 			Default("").
 			Envar(envVars.TLSCAPath).
 			StringVar(&r.ClientConfig.TLS.CAPath)
 
-		c.Flag("tls-cert-path", "TLS client certificate to authenticate with cortex API as part of mTLS, alternatively set "+envVars.TLSCertPath+".").
+		c.Flag("tls-cert-path", "TLS client certificate to authenticate with mimir API as part of mTLS, alternatively set "+envVars.TLSCertPath+".").
 			Default("").
 			Envar(envVars.TLSCertPath).
 			StringVar(&r.ClientConfig.TLS.CertPath)
 
-		c.Flag("tls-key-path", "TLS client certificate private key to authenticate with cortex API as part of mTLS, alternatively set "+envVars.TLSKeyPath+".").
+		c.Flag("tls-key-path", "TLS client certificate private key to authenticate with mimir API as part of mTLS, alternatively set "+envVars.TLSKeyPath+".").
 			Default("").
 			Envar(envVars.TLSKeyPath).
 			StringVar(&r.ClientConfig.TLS.KeyPath)
@@ -332,7 +332,7 @@ func (r *RuleCommand) setupFiles() error {
 func (r *RuleCommand) listRules(k *kingpin.ParseContext) error {
 	rules, err := r.cli.ListRules(context.Background(), "")
 	if err != nil {
-		log.Fatalf("unable to read rules from cortex, %v", err)
+		log.Fatalf("unable to read rules from mimir, %v", err)
 
 	}
 
@@ -347,7 +347,7 @@ func (r *RuleCommand) printRules(k *kingpin.ParseContext) error {
 			log.Infof("no rule groups currently exist for this user")
 			return nil
 		}
-		log.Fatalf("unable to read rules from cortex, %v", err)
+		log.Fatalf("unable to read rules from mimir, %v", err)
 	}
 
 	p := printer.New(r.DisableColor)
@@ -361,7 +361,7 @@ func (r *RuleCommand) getRuleGroup(k *kingpin.ParseContext) error {
 			log.Infof("this rule group does not currently exist")
 			return nil
 		}
-		log.Fatalf("unable to read rules from cortex, %v", err)
+		log.Fatalf("unable to read rules from mimir, %v", err)
 	}
 
 	p := printer.New(r.DisableColor)
@@ -371,7 +371,7 @@ func (r *RuleCommand) getRuleGroup(k *kingpin.ParseContext) error {
 func (r *RuleCommand) deleteRuleGroup(k *kingpin.ParseContext) error {
 	err := r.cli.DeleteRuleGroup(context.Background(), r.Namespace, r.RuleGroup)
 	if err != nil && err != client.ErrResourceNotFound {
-		log.Fatalf("unable to delete rule group from cortex, %v", err)
+		log.Fatalf("unable to delete rule group from mimir, %v", err)
 	}
 	return nil
 }
@@ -388,7 +388,7 @@ func (r *RuleCommand) loadRules(k *kingpin.ParseContext) error {
 			fmt.Printf("group: '%v', ns: '%v'\n", group.Name, ns.Namespace)
 			curGroup, err := r.cli.GetRuleGroup(context.Background(), ns.Namespace, group.Name)
 			if err != nil && err != client.ErrResourceNotFound {
-				return errors.Wrap(err, "load operation unsuccessful, unable to contact cortex api")
+				return errors.Wrap(err, "load operation unsuccessful, unable to contact mimir api")
 			}
 			if curGroup != nil {
 				err = rules.CompareGroups(*curGroup, group)
@@ -449,7 +449,7 @@ func (r *RuleCommand) diffRules(k *kingpin.ParseContext) error {
 	// If we're unable to reach the Mimir API due to a bad URL, we'll assume no rules are
 	// part of the namespace and provide a diff of the whole ruleset.
 	if err != nil && err != client.ErrResourceNotFound {
-		return errors.Wrap(err, "diff operation unsuccessful, unable to contact cortex api")
+		return errors.Wrap(err, "diff operation unsuccessful, unable to contact mimir api")
 	}
 
 	changes := []rules.NamespaceChange{}
@@ -512,7 +512,7 @@ func (r *RuleCommand) syncRules(k *kingpin.ParseContext) error {
 	// If we're unable to reach the Mimir API due to a bad URL, we'll assume no rules are
 	// part of the namespace and provide a diff of the whole ruleset.
 	if err != nil && err != client.ErrResourceNotFound {
-		return errors.Wrap(err, "sync operation unsuccessful, unable to contact cortex api")
+		return errors.Wrap(err, "sync operation unsuccessful, unable to contact mimir api")
 	}
 
 	changes := []rules.NamespaceChange{}

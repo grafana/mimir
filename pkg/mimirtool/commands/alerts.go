@@ -64,22 +64,22 @@ type AlertCommand struct {
 
 // Register rule related commands and flags with the kingpin application
 func (a *AlertmanagerCommand) Register(app *kingpin.Application, envVars EnvVarNames) {
-	alertCmd := app.Command("alertmanager", "View & edit alertmanager configs stored in cortex.").PreAction(a.setup)
-	alertCmd.Flag("address", "Address of the cortex cluster, alternatively set "+envVars.Address+".").Envar(envVars.Address).Required().StringVar(&a.ClientConfig.Address)
-	alertCmd.Flag("id", "Cortex tenant id, alternatively set "+envVars.TenantID+".").Envar(envVars.TenantID).Required().StringVar(&a.ClientConfig.ID)
-	alertCmd.Flag("user", fmt.Sprintf("API user to use when contacting cortex, alternatively set %s. If empty, %s will be used instead.", envVars.APIUser, envVars.TenantID)).Default("").Envar(envVars.APIUser).StringVar(&a.ClientConfig.User)
-	alertCmd.Flag("key", "API key to use when contacting cortex, alternatively set "+envVars.APIKey+".").Default("").Envar(envVars.APIKey).StringVar(&a.ClientConfig.Key)
-	alertCmd.Flag("tls-ca-path", "TLS CA certificate to verify cortex API as part of mTLS, alternatively set "+envVars.TLSCAPath+".").Default("").Envar(envVars.TLSCAPath).StringVar(&a.ClientConfig.TLS.CAPath)
-	alertCmd.Flag("tls-cert-path", "TLS client certificate to authenticate with cortex API as part of mTLS, alternatively set "+envVars.TLSCertPath+".").Default("").Envar(envVars.TLSCertPath).StringVar(&a.ClientConfig.TLS.CertPath)
-	alertCmd.Flag("tls-key-path", "TLS client certificate private key to authenticate with cortex API as part of mTLS, alternatively set "+envVars.TLSKeyPath+".").Default("").Envar(envVars.TLSKeyPath).StringVar(&a.ClientConfig.TLS.KeyPath)
+	alertCmd := app.Command("alertmanager", "View & edit alertmanager configs stored in mimir.").PreAction(a.setup)
+	alertCmd.Flag("address", "Address of the mimir cluster, alternatively set "+envVars.Address+".").Envar(envVars.Address).Required().StringVar(&a.ClientConfig.Address)
+	alertCmd.Flag("id", "Mimir tenant id, alternatively set "+envVars.TenantID+".").Envar(envVars.TenantID).Required().StringVar(&a.ClientConfig.ID)
+	alertCmd.Flag("user", fmt.Sprintf("API user to use when contacting mimir, alternatively set %s. If empty, %s will be used instead.", envVars.APIUser, envVars.TenantID)).Default("").Envar(envVars.APIUser).StringVar(&a.ClientConfig.User)
+	alertCmd.Flag("key", "API key to use when contacting mimir, alternatively set "+envVars.APIKey+".").Default("").Envar(envVars.APIKey).StringVar(&a.ClientConfig.Key)
+	alertCmd.Flag("tls-ca-path", "TLS CA certificate to verify mimir API as part of mTLS, alternatively set "+envVars.TLSCAPath+".").Default("").Envar(envVars.TLSCAPath).StringVar(&a.ClientConfig.TLS.CAPath)
+	alertCmd.Flag("tls-cert-path", "TLS client certificate to authenticate with mimir API as part of mTLS, alternatively set "+envVars.TLSCertPath+".").Default("").Envar(envVars.TLSCertPath).StringVar(&a.ClientConfig.TLS.CertPath)
+	alertCmd.Flag("tls-key-path", "TLS client certificate private key to authenticate with mimir API as part of mTLS, alternatively set "+envVars.TLSKeyPath+".").Default("").Envar(envVars.TLSKeyPath).StringVar(&a.ClientConfig.TLS.KeyPath)
 
 	// Get Alertmanager Configs Command
-	getAlertsCmd := alertCmd.Command("get", "Get the alertmanager config currently in the cortex alertmanager.").Action(a.getConfig)
+	getAlertsCmd := alertCmd.Command("get", "Get the alertmanager config currently in the mimir alertmanager.").Action(a.getConfig)
 	getAlertsCmd.Flag("disable-color", "disable colored output").BoolVar(&a.DisableColor)
 
-	alertCmd.Command("delete", "Delete the alertmanager config currently in the cortex alertmanager.").Action(a.deleteConfig)
+	alertCmd.Command("delete", "Delete the alertmanager config currently in the mimir alertmanager.").Action(a.deleteConfig)
 
-	loadalertCmd := alertCmd.Command("load", "load a set of rules to a designated cortex endpoint").Action(a.loadConfig)
+	loadalertCmd := alertCmd.Command("load", "load a set of rules to a designated mimir endpoint").Action(a.loadConfig)
 	loadalertCmd.Arg("config", "alertmanager configuration to load").Required().StringVar(&a.AlertmanagerConfigFile)
 	loadalertCmd.Arg("template-files", "The template files to load").ExistingFilesVar(&a.TemplateFiles)
 }
@@ -143,12 +143,12 @@ func (a *AlertmanagerCommand) deleteConfig(k *kingpin.ParseContext) error {
 
 func (a *AlertCommand) Register(app *kingpin.Application, envVars EnvVarNames) {
 	alertCmd := app.Command("alerts", "View active alerts in alertmanager.").PreAction(a.setup)
-	alertCmd.Flag("address", "Address of the cortex cluster, alternatively set "+envVars.Address+".").Envar(envVars.Address).Required().StringVar(&a.ClientConfig.Address)
-	alertCmd.Flag("id", "Cortex tenant id, alternatively set "+envVars.TenantID+".").Envar(envVars.TenantID).Required().StringVar(&a.ClientConfig.ID)
-	alertCmd.Flag("user", fmt.Sprintf("API user to use when contacting cortex, alternatively set %s. If empty, %s will be used instead.", envVars.APIUser, envVars.TenantID)).Default("").Envar(envVars.APIUser).StringVar(&a.ClientConfig.User)
-	alertCmd.Flag("key", "API key to use when contacting cortex, alternatively set "+envVars.APIKey+".").Default("").Envar(envVars.APIKey).StringVar(&a.ClientConfig.Key)
+	alertCmd.Flag("address", "Address of the mimir cluster, alternatively set "+envVars.Address+".").Envar(envVars.Address).Required().StringVar(&a.ClientConfig.Address)
+	alertCmd.Flag("id", "Mimir tenant id, alternatively set "+envVars.TenantID+".").Envar(envVars.TenantID).Required().StringVar(&a.ClientConfig.ID)
+	alertCmd.Flag("user", fmt.Sprintf("API user to use when contacting mimir, alternatively set %s. If empty, %s will be used instead.", envVars.APIUser, envVars.TenantID)).Default("").Envar(envVars.APIUser).StringVar(&a.ClientConfig.User)
+	alertCmd.Flag("key", "API key to use when contacting mimir, alternatively set "+envVars.APIKey+".").Default("").Envar(envVars.APIKey).StringVar(&a.ClientConfig.Key)
 
-	verifyAlertsCmd := alertCmd.Command("verify", "Verifies alerts in an alertmanager cluster are deduplicated; useful for verifying correct configuration when transferring from Prometheus to Cortex alert evaluation.").Action(a.verifyConfig)
+	verifyAlertsCmd := alertCmd.Command("verify", "Verifies alerts in an alertmanager cluster are deduplicated; useful for verifying correct configuration when transferring from Prometheus to Mimir alert evaluation.").Action(a.verifyConfig)
 	verifyAlertsCmd.Flag("ignore-alerts", "A comma separated list of Alert names to ignore in deduplication checks.").StringVar(&a.IgnoreString)
 	verifyAlertsCmd.Flag("source-label", "Label to look for when deciding if two alerts are duplicates of each other from separate sources.").Default("prometheus").StringVar(&a.SourceLabel)
 	verifyAlertsCmd.Flag("grace-period", "Grace period, don't consider alert groups with the incorrect amount of alert replicas erroneous unless the alerts have existed for more than this amount of time, in minutes.").Default("2").IntVar(&a.GracePeriod)
