@@ -178,7 +178,7 @@ docker run --rm --detach --name=grafana --network=host grafana/grafana
 
 To add a data source, refer to [Add a data source](https://grafana.com/docs/grafana/latest/datasources/add-a-data-source/).
 
-## Success
+## Verify success
 
-You are now able to query metrics in [Grafana Explore](https://grafana.com/docs/grafana/latest/explore/)
-and create dashboard panels using the newly configured Grafana Mimir data source.
+When you have completed the tasks in this getting started guide, you can query metrics in [Grafana Explore](https://grafana.com/docs/grafana/latest/explore/)
+as well as create dashboard panels using the newly configured Grafana Mimir data source.
