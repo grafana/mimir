@@ -105,7 +105,7 @@ func main() {
 	flag.CommandLine.Init(flag.CommandLine.Name(), flag.ContinueOnError)
 
 	if err := flag.CommandLine.Parse(os.Args[1:]); err != nil {
-		fmt.Fprintln(flag.CommandLine.Output(), "Run with -help to get list of available parameters")
+		fmt.Fprintln(flag.CommandLine.Output(), "Run with -help to get a list of available parameters")
 		if !testMode {
 			os.Exit(2)
 		}

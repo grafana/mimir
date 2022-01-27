@@ -49,7 +49,7 @@ func TestFlagParsing(t *testing.T) {
 
 		"unknown flag": {
 			arguments:      []string{"-unknown.flag"},
-			stderrMessage:  "Run with -help to get list of available parameters",
+			stderrMessage:  "Run with -help to get a list of available parameters",
 			stdoutExcluded: "Usage of", // No usage description on unknown flag.
 			stderrExcluded: "Usage of",
 		},
