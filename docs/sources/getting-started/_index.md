@@ -44,9 +44,8 @@ chmod +x mimir
 To run Grafana Mimir in a single process and with local filesystem storage, write the following configuration YAML to a file called `dev.yaml`.
 
 ```yaml
-# Configuration for running Grafana Mimir in single process mode.
-# This should not be used in production.  It is only for getting started
-# and development.
+# Do not use this configuration in production.
+# Its purpose is for you to get started within a development environment.
 auth_enabled: false
 
 blocks_storage:
