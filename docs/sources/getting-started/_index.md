@@ -166,8 +166,8 @@ docker run --rm --detach --name=grafana --network=host grafana/grafana
 
 ### Add Grafana Mimir as a Prometheus data source
 
-1. Browse to the Grafana server at http://localhost:3000/datasources.
-1. Log in using the default username `admin` and password `admin`.
+1. In a browser, go to the Grafana server at http://localhost:3000/datasources.
+1. Sign in using the default username `admin` and password `admin`.
 1. Configure a new Prometheus data source to query the local Grafana Mimir server using the following settings:
 
 | Field | Value                            |
@@ -175,7 +175,7 @@ docker run --rm --detach --name=grafana --network=host grafana/grafana
 | Name  | Mimir                            |
 | URL   | http://localhost:9009/prometheus |
 
-For an illustrated guide to adding a data source, refer to [Add a data source](https://grafana.com/docs/grafana/latest/datasources/add-a-data-source/).
+To add a data source, refer to [Add a data source](https://grafana.com/docs/grafana/latest/datasources/add-a-data-source/).
 
 ## Success
 
