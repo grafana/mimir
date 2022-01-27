@@ -54,8 +54,8 @@ func (s *StoreGateway) UsersHandler(w http.ResponseWriter, req *http.Request) {
 	}
 
 	util.RenderHTTPResponse(w, struct {
-		Now   time.Time
-		Users []userData
+		Now   time.Time  `json:"now"`
+		Users []userData `json:"users,omitempty"`
 	}{
 		Now:   time.Now(),
 		Users: users,

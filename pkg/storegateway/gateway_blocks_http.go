@@ -127,18 +127,18 @@ func (s *StoreGateway) BlocksHandler(w http.ResponseWriter, req *http.Request) {
 	metas := listblocks.SortedBlocks(metasMap)
 
 	type blockData struct {
-		ULID            string
-		ULIDTime        string
-		SplitCount      uint32
-		MinTime         string
-		MaxTime         string
-		Duration        string
-		DeletedTime     string
-		CompactionLevel int
-		BlockSize       string
-		Labels          string
-		Sources         []string
-		Parents         []string
+		ULID            string   `json:"ulid,omitempty"`
+		ULIDTime        string   `json:"ulid_time,omitempty"`
+		SplitCount      uint32   `json:"split_count,omitempty"`
+		MinTime         string   `json:"min_time,omitempty"`
+		MaxTime         string   `json:"max_time,omitempty"`
+		Duration        string   `json:"duration,omitempty"`
+		DeletedTime     string   `json:"deleted_time,omitempty"`
+		CompactionLevel int      `json:"compaction_level,omitempty"`
+		BlockSize       string   `json:"block_size,omitempty"`
+		Labels          string   `json:"labels,omitempty"`
+		Sources         []string `json:"sources,omitempty"`
+		Parents         []string `json:"parents,omitempty"`
 	}
 	blocks := make([]blockData, 0, len(metas))
 
@@ -175,19 +175,19 @@ func (s *StoreGateway) BlocksHandler(w http.ResponseWriter, req *http.Request) {
 	}
 
 	util.RenderHTTPResponse(w, struct {
-		Now            time.Time
-		User           string
-		Blocks         []blockData
-		ShowDeleted    bool
-		ShowSplitCount bool
-		ShowSources    bool
-		ShowParents    bool
+		Now            time.Time   `json:"now"`
+		User           string      `json:"user,omitempty"`
+		Blocks         []blockData `json:"blocks,omitempty"`
+		ShowDeleted    bool        `json:"show_deleted,omitempty"`
+		ShowSplitCount bool        `json:"show_split_count,omitempty"`
+		ShowSources    bool        `json:"show_sources,omitempty"`
+		ShowParents    bool        `json:"show_parents,omitempty"`
 
-		ShowDeletedURI string
-		ShowSourcesURI string
-		ShowParentsURI string
+		ShowDeletedURI string `json:"-"`
+		ShowSourcesURI string `json:"-"`
+		ShowParentsURI string `json:"-"`
 
-		TSDBTenantIDExternalLabel string
+		TSDBTenantIDExternalLabel string `json:"tsdb_tenant_id_external_label,omitempty"`
 	}{
 		Now:    time.Now(),
 		User:   userID,
