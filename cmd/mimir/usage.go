@@ -58,7 +58,7 @@ func usage(cfg *mimir.Config, printAll bool) error {
 		var b strings.Builder
 		// Two spaces before -; see next two comments.
 		fmt.Fprintf(&b, "  -%s", fl.Name)
-		name, usage := flag.UnquoteUsage(fl)
+		name := getFlagName(fl)
 		if len(name) > 0 {
 			b.WriteString(" ")
 			b.WriteString(name)
@@ -69,7 +69,7 @@ func usage(cfg *mimir.Config, printAll bool) error {
 		if fieldCat == categoryExperimental {
 			b.WriteString("[experimental] ")
 		}
-		b.WriteString(strings.ReplaceAll(usage, "\n", "\n    \t"))
+		b.WriteString(strings.ReplaceAll(fl.Usage, "\n", "\n    \t"))
 
 		if !isZeroValue(fl, fl.DefValue) {
 			v := reflect.ValueOf(fl.Value)
@@ -145,4 +145,32 @@ func parseConfig(cfg interface{}, fields map[uintptr]reflect.StructField) error 
 	}
 
 	return nil
+}
+
+func getFlagName(fl *flag.Flag) string {
+	getter, ok := fl.Value.(flag.Getter)
+	if !ok {
+		return "value"
+	}
+
+	name := "value"
+
+	v := reflect.ValueOf(getter.Get())
+	t := v.Type()
+	switch t.Name() {
+	case "bool":
+		name = ""
+	case "Duration":
+		name = "duration"
+	case "float64":
+		name = "float"
+	case "int", "int64":
+		name = "int"
+	case "string":
+		name = "string"
+	case "uint", "uint64":
+		name = "uint"
+	}
+
+	return name
 }

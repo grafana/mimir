@@ -1477,8 +1477,8 @@ Usage of ./cmd/mimir/mimir:
     	file path to store temporary rule files for the prometheus rule managers (default "/rules")
   -ruler.search-pending-for duration
     	Time to spend searching for a pending ruler when shutting down. (default 5m0s)
-  -ruler.tenant-federation.enabled source_tenants
-    	Enable running rule groups against multiple tenants. The tenant IDs involved need to be in the rule group's source_tenants field. If this flag is set to `false` when there are already created federated rule groups, then these rules groups will be skipped during evaluations.
+  -ruler.tenant-federation.enabled
+    	Enable running rule groups against multiple tenants. The tenant IDs involved need to be in the rule group's `source_tenants` field. If this flag is set to `false` when there are already created federated rule groups, then these rules groups will be skipped during evaluations.
   -ruler.tenant-shard-size int
     	The tenant's shard size when sharding is used by ruler. Value of 0 disables shuffle sharding for the tenant, and tenant rules will be sharded across all ruler replicas.
   -runtime-config.file string
@@ -1637,8 +1637,8 @@ Usage of ./cmd/mimir/mimir:
     	Limit the query time range (end - start time). This limit is enforced in the query-frontend (on the received query), in the querier (on the query possibly split by the query-frontend) and ruler. 0 to disable.
   -target value
     	Comma-separated list of modules to load. The alias 'all' can be used in the list to load a number of core modules and will enable single-binary mode. Use '-modules' command line flag to get a list of available modules, and to see which modules are included in 'all'. (default all)
-  -tenant-federation.enabled |
-    	If enabled on all services, queries can be federated across multiple tenants. The tenant IDs involved need to be specified separated by a | character in the `X-Scope-OrgID` header (experimental).
+  -tenant-federation.enabled
+    	If enabled on all services, queries can be federated across multiple tenants. The tenant IDs involved need to be specified separated by a `|` character in the `X-Scope-OrgID` header (experimental).
   -validation.create-grace-period value
     	Duration which table will be created/deleted before/after it's needed; we won't accept sample from before this time. (default 10m)
   -validation.enforce-metadata-metric-name
