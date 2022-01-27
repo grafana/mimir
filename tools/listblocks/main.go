@@ -88,7 +88,7 @@ func main() {
 // nolint:errcheck
 //goland:noinspection GoUnhandledErrorResult
 func printMetas(metas map[ulid.ULID]*metadata.Meta, deletedTimes map[ulid.ULID]time.Time, cfg config) {
-	blocks := listblocks.SortedBlocks(metas)
+	blocks := listblocks.SortBlocks(metas)
 
 	tabber := tabwriter.NewWriter(os.Stdout, 1, 4, 3, ' ', 0)
 	defer tabber.Flush()

@@ -136,7 +136,7 @@ func fetchMetas(ctx context.Context, bkt objstore.BucketReader, metaFiles []stri
 	})
 }
 
-func SortedBlocks(metas map[ulid.ULID]*metadata.Meta) []*metadata.Meta {
+func SortBlocks(metas map[ulid.ULID]*metadata.Meta) []*metadata.Meta {
 	var blocks []*metadata.Meta
 
 	for _, b := range metas {

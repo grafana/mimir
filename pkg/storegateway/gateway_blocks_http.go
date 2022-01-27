@@ -132,7 +132,7 @@ func (s *StoreGateway) BlocksHandler(w http.ResponseWriter, req *http.Request) {
 		util.WriteTextResponse(w, fmt.Sprintf("Failed to read block metadata: %s", err))
 		return
 	}
-	metas := listblocks.SortedBlocks(metasMap)
+	metas := listblocks.SortBlocks(metasMap)
 
 	type formattedBlockData struct {
 		ULID            string
