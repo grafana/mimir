@@ -403,9 +403,9 @@ check-doc: doc
 .PHONY: reference-help
 reference-help: cmd/mimir/mimir
 	@(./cmd/mimir/mimir -h || true) > cmd/mimir/help.txt.tmpl
-	@sed -i s/$(HOSTNAME)/\{\{.Hostname\}\}/g cmd/mimir/help.txt.tmpl
+	@$(SED) -i s/$(HOSTNAME)/\{\{.Hostname\}\}/g cmd/mimir/help.txt.tmpl
 	@(./cmd/mimir/mimir -help-all || true) > cmd/mimir/help-all.txt.tmpl
-	@sed -i s/$(HOSTNAME)/\{\{.Hostname\}\}/g cmd/mimir/help-all.txt.tmpl
+	@$(SED) -i s/$(HOSTNAME)/\{\{.Hostname\}\}/g cmd/mimir/help-all.txt.tmpl
 
 clean-white-noise:
 	@find . -path ./.pkg -prune -o -path ./vendor -prune -o -path ./website -prune -or -type f -name "*.md" -print | \
