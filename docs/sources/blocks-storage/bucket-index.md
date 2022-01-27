@@ -34,7 +34,7 @@ The `bucket-index.json.gz` contains:
 
 The [compactor](./compactor.md) periodically scans the bucket and uploads an updated bucket index to the storage. The frequency at which the bucket index is updated can be configured via `-compactor.cleanup-interval`.
 
-Despite using the bucket index is optional, the index itself is built and updated by the compactor even if `-blocks-storage.bucket-store.bucket-index.enabled` has **not** been enabled. This is intentional, so that once a Cortex cluster operator decides to enable the bucket index in a live cluster, the bucket index for any tenant is already existing and query results consistency is guaranteed. The overhead introduced by keeping the bucket index updated is expected to be non significative.
+The use of the bucket index is optional, but the index is built and updated by the compactor even if `-blocks-storage.bucket-store.bucket-index.enabled=false`. This behavior ensures the bucket index for any tenant already exists and that query result consistency is guaranteed if a Cortex cluster operator decides to enable the bucket index in a live cluster. The overhead introduced by keeping the bucket index updated is not signifcant.
 
 ## How it's used by the querier
 
