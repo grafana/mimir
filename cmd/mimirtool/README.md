@@ -232,17 +232,21 @@ INFO[0001] 01ETT28D91Z9SVRYF3DY0KNV41  2020-12-30 14:00:00 +0000 UTC  2020-12-30
 ```
 
 ###### Examples for using local TSDB
+
 Analyzing contents using promtool
+
 ```bash
 promtool tsdb analyze ./local-tsdb
 ```
 
 Dump all values of the TSDB
+
 ```bash
 promtool tsdb dump ./local-tsdb
 ```
 
 Run a local prometheus
+
 ```bash
 prometheus --storage.tsdb.path ./local-tsdb --config.file=<(echo "")
 ```
