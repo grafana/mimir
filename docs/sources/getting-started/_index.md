@@ -17,9 +17,11 @@ The microservices mode allows you to independently scale different services and 
 These instructions focus on deploying Grafana Mimir as a single process.
 Refer to [Architecture]({{<relref "../architecture.md" >}}) for more information about the microservices.
 
-This guide assumes you have already installed a Prometheus server or the Grafana Agent.
-To install Prometheus, refer to [Prometheus Installation](https://prometheus.io/docs/prometheus/latest/installation/).
-To install the Grafana Agent, refer to the [latest release](https://github.com/grafana/agent/releases/latest).
+## Before you begin
+
+Verify that you have installed either a [Prometheus server](https://prometheus.io/docs/prometheus/latest/installation/)
+or the [Grafana Agent](https://github.com/grafana/agent/releases/latest).
+Verify that you have installed [Docker](https://docs.docker.com/engine/install/).
 
 ## Install Grafana Mimir
 
