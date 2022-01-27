@@ -6,6 +6,7 @@ cmd/thanosconvert/thanosconvert
 .uptodate
 .pkg
 .cache
+.swp
 docker-images/
 website/public
 website/resources
