@@ -21,7 +21,7 @@ const usersPageTemplate = `
 	<body>
 		<h1>Store-gateway: bucket users</h1>
 		<p>Current time: {{ .Now }}</p>
-		<table border="1" cellpadding="5">
+		<table border="1" cellpadding="5" style="border-collapse: collapse">
 			<thead>
 				<tr>
 					<th>User</th>
