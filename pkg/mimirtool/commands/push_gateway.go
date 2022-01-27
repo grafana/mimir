@@ -27,7 +27,7 @@ type PushGatewayConfig struct {
 }
 
 // Register configures log related flags
-func (l *PushGatewayConfig) Register(app *kingpin.Application) {
+func (l *PushGatewayConfig) Register(app *kingpin.Application, _ EnvVarNames) {
 	app.PreAction(l.setup)
 	app.Flag("push-gateway.endpoint", "url for the push-gateway to register metrics").URLVar(&l.Endpoint)
 	app.Flag("push-gateway.job", "job name to register metrics").StringVar(&l.JobName)

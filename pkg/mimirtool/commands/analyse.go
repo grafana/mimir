@@ -12,21 +12,21 @@ import (
 type AnalyseCommand struct {
 }
 
-func (cmd *AnalyseCommand) Register(app *kingpin.Application) {
+func (cmd *AnalyseCommand) Register(app *kingpin.Application, envVars EnvVarNames) {
 	analyseCmd := app.Command("analyse", "Run analysis against your Prometheus, Grafana and Cortex to see which metrics being used and exported.")
 
 	paCmd := &PrometheusAnalyseCommand{}
 	prometheusAnalyseCmd := analyseCmd.Command("prometheus", "Take the metrics being used in Grafana and get the cardinality from a Prometheus.").Action(paCmd.run)
-	prometheusAnalyseCmd.Flag("address", "Address of the Prometheus/Cortex instance, alternatively set $MIMIR_ADDRESS.").
-		Envar("MIMIR_ADDRESS").
+	prometheusAnalyseCmd.Flag("address", "Address of the Prometheus/Cortex instance, alternatively set "+envVars.Address+".").
+		Envar(envVars.Address).
 		Required().
 		StringVar(&paCmd.address)
-	prometheusAnalyseCmd.Flag("id", "Username to use when contacting Prometheus/Cortex, alternatively set $MIMIR_TENANT_ID.").
-		Envar("MIMIR_TENANT_ID").
+	prometheusAnalyseCmd.Flag("id", "Username to use when contacting Prometheus/Cortex, alternatively set "+envVars.TenantID+".").
+		Envar(envVars.TenantID).
 		Default("").
 		StringVar(&paCmd.username)
-	prometheusAnalyseCmd.Flag("key", "Password to use when contacting Prometheus/Cortex, alternatively set $MIMIR_API_KEY.").
-		Envar("MIMIR_API_KEY").
+	prometheusAnalyseCmd.Flag("key", "Password to use when contacting Prometheus/Cortex, alternatively set "+envVars.APIKey+".").
+		Envar(envVars.APIKey).
 		Default("").
 		StringVar(&paCmd.password)
 	prometheusAnalyseCmd.Flag("read-timeout", "timeout for read requests").
@@ -63,16 +63,16 @@ func (cmd *AnalyseCommand) Register(app *kingpin.Application) {
 	raCmd := &RulerAnalyseCommand{}
 	rulerAnalyseCmd := analyseCmd.Command("ruler", "Analyse and extract the metrics used in Cortex rules").
 		Action(raCmd.run)
-	rulerAnalyseCmd.Flag("address", "Address of the Prometheus/Cortex instance, alternatively set $MIMIR_ADDRESS.").
-		Envar("MIMIR_ADDRESS").
+	rulerAnalyseCmd.Flag("address", "Address of the Prometheus/Cortex instance, alternatively set "+envVars.Address+".").
+		Envar(envVars.Address).
 		Required().
 		StringVar(&raCmd.ClientConfig.Address)
-	rulerAnalyseCmd.Flag("id", "Username to use when contacting Prometheus/Cortex, alternatively set $MIMIR_TENANT_ID.").
-		Envar("MIMIR_TENANT_ID").
+	rulerAnalyseCmd.Flag("id", "Username to use when contacting Prometheus/Cortex, alternatively set "+envVars.TenantID+".").
+		Envar(envVars.TenantID).
 		Default("").
 		StringVar(&raCmd.ClientConfig.ID)
-	rulerAnalyseCmd.Flag("key", "Password to use when contacting Prometheus/Cortex, alternatively set $MIMIR_API_KEY.").
-		Envar("MIMIR_API_KEY").
+	rulerAnalyseCmd.Flag("key", "Password to use when contacting Prometheus/Cortex, alternatively set "+envVars.APIKey+".").
+		Envar(envVars.APIKey).
 		Default("").
 		StringVar(&raCmd.ClientConfig.Key)
 	rulerAnalyseCmd.Flag("output", "The path for the output file").

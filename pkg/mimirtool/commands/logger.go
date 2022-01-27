@@ -38,6 +38,6 @@ func (l *LoggerConfig) registerLogLevel(pc *kingpin.ParseContext) error {
 }
 
 // Register configures log related flags
-func (l *LoggerConfig) Register(app *kingpin.Application) {
+func (l *LoggerConfig) Register(app *kingpin.Application, _ EnvVarNames) {
 	app.Flag("log.level", "set level of the logger").Default("info").PreAction(l.registerLogLevel).StringVar(&l.Level)
 }

@@ -49,7 +49,7 @@ type RemoteReadCommand struct {
 	to       string
 }
 
-func (c *RemoteReadCommand) Register(app *kingpin.Application) {
+func (c *RemoteReadCommand) Register(app *kingpin.Application, envVars EnvVarNames) {
 	remoteReadCmd := app.Command("remote-read", "Inspect stored series in Cortex using the remote read API.")
 	exportCmd := remoteReadCmd.Command("export", "Export metrics remote read series into a local TSDB.").Action(c.export)
 	dumpCmd := remoteReadCmd.Command("dump", "Dump remote read series.").Action(c.dump)
@@ -57,19 +57,19 @@ func (c *RemoteReadCommand) Register(app *kingpin.Application) {
 
 	now := time.Now()
 	for _, cmd := range []*kingpin.CmdClause{exportCmd, dumpCmd, statsCmd} {
-		cmd.Flag("address", "Address of the cortex cluster, alternatively set $MIMIR_ADDRESS.").
-			Envar("MIMIR_ADDRESS").
+		cmd.Flag("address", "Address of the cortex cluster, alternatively set "+envVars.Address+".").
+			Envar(envVars.Address).
 			Required().
 			StringVar(&c.address)
 		cmd.Flag("remote-read-path", "Path of the remote read endpoint.").
 			Default("/prometheus/api/v1/read").
 			StringVar(&c.remoteReadPath)
-		cmd.Flag("id", "Cortex tenant id, alternatively set $MIMIR_TENANT_ID.").
-			Envar("MIMIR_TENANT_ID").
+		cmd.Flag("id", "Cortex tenant id, alternatively set "+envVars.TenantID+".").
+			Envar(envVars.TenantID).
 			Default("").
 			StringVar(&c.tenantID)
-		cmd.Flag("key", "Api key to use when contacting cortex, alternatively set $MIMIR_API_KEY.").
-			Envar("MIMIR_API_KEY").
+		cmd.Flag("key", "Api key to use when contacting cortex, alternatively set "+envVars.APIKey+".").
+			Envar(envVars.APIKey).
 			Default("").
 			StringVar(&c.apiKey)
 		cmd.Flag("read-timeout", "timeout for read requests").

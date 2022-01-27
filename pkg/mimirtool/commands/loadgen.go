@@ -72,7 +72,7 @@ type LoadgenCommand struct {
 	queryClient v1.API
 }
 
-func (c *LoadgenCommand) Register(app *kingpin.Application) {
+func (c *LoadgenCommand) Register(app *kingpin.Application, _ EnvVarNames) {
 	loadgenCommand := &LoadgenCommand{}
 	cmd := app.Command("loadgen", "Simple load generator for Cortex.").Action(loadgenCommand.run)
 	cmd.Flag("write-url", "").

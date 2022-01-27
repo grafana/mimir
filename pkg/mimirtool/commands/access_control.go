@@ -22,11 +22,11 @@ type AccessControlCommand struct {
 }
 
 // Register is used to register the command to a parent command.
-func (a *AccessControlCommand) Register(app *kingpin.Application) {
+func (a *AccessControlCommand) Register(app *kingpin.Application, envVars EnvVarNames) {
 	aclCmd := app.Command("acl", "Generate and view ACL options in GrafanaCloud.")
 
 	generateHeaderCmd := aclCmd.Command("generate-header", "Generate the header that needs to be passed to the datasource for setting ACLs.").Action(a.generateHeader)
-	generateHeaderCmd.Flag("id", "Cortex tenant ID, alternatively set MIMIR_TENANT_ID.").Envar("MIMIR_TENANT_ID").Required().StringVar(&a.InstanceID)
+	generateHeaderCmd.Flag("id", "Cortex tenant ID, alternatively set "+envVars.TenantID+".").Envar(envVars.TenantID).Required().StringVar(&a.InstanceID)
 	generateHeaderCmd.Flag("rule", "The access control rules (Prometheus selectors). Set it multiple times to set multiple rules.").Required().StringsVar(&a.ACLs)
 }
 

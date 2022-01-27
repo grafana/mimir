@@ -93,10 +93,10 @@ type RuleCommand struct {
 }
 
 // Register rule related commands and flags with the kingpin application
-func (r *RuleCommand) Register(app *kingpin.Application) {
+func (r *RuleCommand) Register(app *kingpin.Application, envVars EnvVarNames) {
 	rulesCmd := app.Command("rules", "View & edit rules stored in cortex.").PreAction(r.setup)
-	rulesCmd.Flag("user", "API user to use when contacting cortex, alternatively set MIMIR_API_USER. If empty, MIMIR_TENANT_ID will be used instead.").Default("").Envar("MIMIR_API_USER").StringVar(&r.ClientConfig.User)
-	rulesCmd.Flag("key", "API key to use when contacting cortex, alternatively set MIMIR_API_KEY.").Default("").Envar("MIMIR_API_KEY").StringVar(&r.ClientConfig.Key)
+	rulesCmd.Flag("user", fmt.Sprintf("API user to use when contacting cortex, alternatively set %s. If empty, %s will be used instead.", envVars.APIUser, envVars.TenantID)).Default("").Envar(envVars.APIUser).StringVar(&r.ClientConfig.User)
+	rulesCmd.Flag("key", "API key to use when contacting cortex, alternatively set "+envVars.APIKey+".").Default("").Envar(envVars.APIKey).StringVar(&r.ClientConfig.Key)
 	rulesCmd.Flag("backend", "Backend type to interact with: <cortex|loki>").Default("cortex").EnumVar(&r.Backend, backends...)
 
 	// Register rule commands
@@ -133,34 +133,34 @@ func (r *RuleCommand) Register(app *kingpin.Application) {
 
 	// Require Mimir cluster address and tentant ID on all these commands
 	for _, c := range []*kingpin.CmdClause{listCmd, printRulesCmd, getRuleGroupCmd, deleteRuleGroupCmd, loadRulesCmd, diffRulesCmd, syncRulesCmd} {
-		c.Flag("address", "Address of the cortex cluster, alternatively set MIMIR_ADDRESS.").
-			Envar("MIMIR_ADDRESS").
+		c.Flag("address", "Address of the cortex cluster, alternatively set "+envVars.Address+".").
+			Envar(envVars.Address).
 			Required().
 			StringVar(&r.ClientConfig.Address)
 
-		c.Flag("id", "Cortex tenant id, alternatively set MIMIR_TENANT_ID.").
-			Envar("MIMIR_TENANT_ID").
+		c.Flag("id", "Cortex tenant id, alternatively set "+envVars.TenantID+".").
+			Envar(envVars.TenantID).
 			Required().
 			StringVar(&r.ClientConfig.ID)
 
-		c.Flag("use-legacy-routes", "If set, API requests to cortex will use the legacy /api/prom/ routes, alternatively set CORTEX_USE_LEGACY_ROUTES.").
+		c.Flag("use-legacy-routes", "If set, API requests to cortex will use the legacy /api/prom/ routes, alternatively set "+envVars.UseLegacyRoutes+".").
 			Default("false").
-			Envar("CORTEX_USE_LEGACY_ROUTES").
+			Envar(envVars.UseLegacyRoutes).
 			BoolVar(&r.ClientConfig.UseLegacyRoutes)
 
-		c.Flag("tls-ca-path", "TLS CA certificate to verify cortex API as part of mTLS, alternatively set MIMIR_TLS_CA_PATH.").
+		c.Flag("tls-ca-path", "TLS CA certificate to verify cortex API as part of mTLS, alternatively set "+envVars.TLSCAPath+".").
 			Default("").
-			Envar("MIMIR_TLS_CA_PATH").
+			Envar(envVars.TLSCAPath).
 			StringVar(&r.ClientConfig.TLS.CAPath)
 
-		c.Flag("tls-cert-path", "TLS client certificate to authenticate with cortex API as part of mTLS, alternatively set MIMIR_TLS_CERT_PATH.").
+		c.Flag("tls-cert-path", "TLS client certificate to authenticate with cortex API as part of mTLS, alternatively set "+envVars.TLSCertPath+".").
 			Default("").
-			Envar("MIMIR_TLS_CERT_PATH").
+			Envar(envVars.TLSCertPath).
 			StringVar(&r.ClientConfig.TLS.CertPath)
 
-		c.Flag("tls-key-path", "TLS client certificate private key to authenticate with cortex API as part of mTLS, alternatively set MIMIR_TLS_KEY_PATH.").
+		c.Flag("tls-key-path", "TLS client certificate private key to authenticate with cortex API as part of mTLS, alternatively set "+envVars.TLSKeyPath+".").
 			Default("").
-			Envar("MIMIR_TLS_KEY_PATH").
+			Envar(envVars.TLSKeyPath).
 			StringVar(&r.ClientConfig.TLS.KeyPath)
 
 	}
