@@ -380,7 +380,7 @@ func TestQuerierWithBlocksStorageRunningInSingleBinaryMode(t *testing.T) {
 				"-store-gateway.sharding-ring.replication-factor": "1",
 				"-compactor.ring.store":                           "consul",
 				"-compactor.ring.consul.hostname":                 consul.NetworkHTTPEndpoint(),
-				"-compactor.cleanup-interval":                     "2s", // Run bucket index often.
+				"-compactor.cleanup-interval":                     "2s", // Update bucket index often.
 			})
 
 			// Start Mimir replicas.
