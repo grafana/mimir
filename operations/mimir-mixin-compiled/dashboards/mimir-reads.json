@@ -1203,7 +1203,7 @@
             "repeatIteration": null,
             "repeatRowId": null,
             "showTitle": true,
-            "title": "Cache - query results",
+            "title": "Cache – query results",
             "titleSize": "h6"
          },
          {
@@ -2169,7 +2169,7 @@
             "repeatIteration": null,
             "repeatRowId": null,
             "showTitle": true,
-            "title": "Store-gateway - key-value store for store-gateways ring",
+            "title": "Store-gateway – key-value store for store-gateways ring",
             "titleSize": "h6"
          },
          {

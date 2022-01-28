@@ -150,7 +150,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addRow(
-      $.row('Cache - query results')
+      $.row('Cache – query results')
       .addPanel(
         $.panel('Requests / sec') +
         $.queryPanel(
@@ -235,7 +235,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addRow(
-      $.kvStoreRow('Store-gateway - key-value store for store-gateways ring', 'store_gateway', 'store-gateway')
+      $.kvStoreRow('Store-gateway – key-value store for store-gateways ring', 'store_gateway', 'store-gateway')
     )
     .addRow(
       $.row('Memcached – block index cache (store-gateway accesses)')  // Resembles thanosMemcachedCache

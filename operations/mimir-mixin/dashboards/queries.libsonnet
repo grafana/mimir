@@ -59,7 +59,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.panelDescription(
           'Intervals per query',
           |||
-            The average number of splitted queries (partitioned by time) executed a single input query.
+            The average number of split queries (partitioned by time) executed a single input query.
           |||
         ),
       )
@@ -122,7 +122,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           'Sharded queries ratio',
           |||
             The % of queries that have been successfully rewritten and executed in a shardable way.
-            This panel takes in account only type of queries which are supported by query sharding (eg. range queries).
+            This panel only takes into account the type of queries that are supported by query sharding (eg. range queries).
           |||
         ),
       )
@@ -133,8 +133,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.panelDescription(
           'Number of sharded queries per query',
           |||
-            How many sharded queries have been executed for a single input query. It tracks only queries which have
-            been successfully rewritten in a shardable way.
+            The number of sharded queries that have been executed for a single input query. It only tracks queries that
+            have been successfully rewritten in a shardable way.
           |||
         ),
       )
