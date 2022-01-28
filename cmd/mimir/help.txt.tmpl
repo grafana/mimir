@@ -497,42 +497,12 @@ Usage of ./cmd/mimir/mimir:
     	True to enable TSDB WAL compression.
   -blocks-storage.tsdb.wal-segment-size-bytes int
     	TSDB WAL segments files max size (bytes). (default 134217728)
-  -compactor.block-sync-concurrency int
-    	Number of Go routines to use when downloading blocks for compaction and uploading resulting blocks. (default 8)
   -compactor.blocks-retention-period value
     	Delete blocks containing samples older than the specified retention period. 0 to disable.
-  -compactor.cleanup-concurrency int
-    	Max number of tenants for which blocks cleanup and maintenance should run concurrently. (default 20)
-  -compactor.cleanup-interval duration
-    	How frequently compactor should run blocks cleanup and maintenance, as well as update the bucket index. (default 15m0s)
-  -compactor.compaction-concurrency int
-    	Max number of concurrent compactions running. (default 1)
-  -compactor.compaction-interval duration
-    	The frequency at which the compaction runs (default 1h0m0s)
-  -compactor.compaction-jobs-order string
-    	The sorting to use when deciding which compaction jobs should run first for a given tenant. Supported values are: smallest-range-oldest-blocks-first, newest-blocks-first. (default "smallest-range-oldest-blocks-first")
-  -compactor.compaction-retries int
-    	How many times to retry a failed compaction within a single compaction run. (default 3)
   -compactor.compactor-tenant-shard-size int
     	Max number of compactors that can compact blocks for single tenant. 0 to disable the limit and use all compactors.
-  -compactor.consistency-delay duration
-    	Minimum age of fresh (non-compacted) blocks before they are being processed. Malformed blocks older than the maximum of consistency-delay and 48h0m0s will be removed.
   -compactor.data-dir string
     	Data directory in which to cache blocks and process compactions (default "./data")
-  -compactor.deletion-delay duration
-    	Time before a block marked for deletion is deleted from bucket. If not 0, blocks will be marked for deletion and compactor component will permanently delete blocks marked for deletion from the bucket. If 0, blocks will be deleted straight away. Note that deleting blocks immediately can cause query failures. (default 12h0m0s)
-  -compactor.disabled-tenants value
-    	Comma separated list of tenants that cannot be compacted by this compactor. If specified, and compactor would normally pick given tenant for compaction (via -compactor.enabled-tenants or sharding), it will be ignored instead.
-  -compactor.enabled-tenants value
-    	Comma separated list of tenants that can be compacted. If specified, only these tenants will be compacted by compactor, otherwise all tenants can be compacted. Subject to sharding.
-  -compactor.max-closing-blocks-concurrency int
-    	Max number of blocks that can be closed concurrently during split compaction. Note that closing of newly compacted block uses a lot of memory for writing index. (default 1)
-  -compactor.max-compaction-time duration
-    	Max time for starting compactions for a single tenant. After this time no new compactions for the tenant are started before next compaction cycle. This can help in multi-tenant environments to avoid single tenant using all compaction time, but also in single-tenant environments to force new discovery of blocks more often. 0 = disabled.
-  -compactor.max-opening-blocks-concurrency int
-    	Number of goroutines opening blocks before compaction. (default 1)
-  -compactor.meta-sync-concurrency int
-    	Number of Go routines to use when syncing block meta files from the long term storage. (default 20)
   -compactor.ring.consul.acl-token string
     	ACL Token used to interact with Consul.
   -compactor.ring.consul.client-timeout duration
@@ -603,10 +573,6 @@ Usage of ./cmd/mimir/mimir:
     	The number of shards to use when splitting blocks. 0 to disable splitting.
   -compactor.split-groups int
     	Number of groups that blocks for splitting should be grouped into. Each group of blocks is then split separately. Number of output split shards is controlled by -compactor.split-and-merge-shards. (default 1)
-  -compactor.symbols-flushers-concurrency int
-    	Number of symbols flushers used when doing split compaction. (default 1)
-  -compactor.tenant-cleanup-delay duration
-    	For tenants marked for deletion, this is time between deleting of last block, and doing final cleanup (marker files, debug files) of the tenant. (default 6h0m0s)
   -config.expand-env
     	Expands ${var} or $var in config according to the values of the environment variables.
   -config.file value

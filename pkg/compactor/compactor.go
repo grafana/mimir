@@ -81,32 +81,32 @@ type BlocksCompactorFactory func(
 // Config holds the MultitenantCompactor config.
 type Config struct {
 	BlockRanges           mimir_tsdb.DurationList `yaml:"block_ranges" category:"advanced"`
-	BlockSyncConcurrency  int                     `yaml:"block_sync_concurrency"`
-	MetaSyncConcurrency   int                     `yaml:"meta_sync_concurrency"`
-	ConsistencyDelay      time.Duration           `yaml:"consistency_delay"`
+	BlockSyncConcurrency  int                     `yaml:"block_sync_concurrency" category:"advanced"`
+	MetaSyncConcurrency   int                     `yaml:"meta_sync_concurrency" category:"advanced"`
+	ConsistencyDelay      time.Duration           `yaml:"consistency_delay" category:"advanced"`
 	DataDir               string                  `yaml:"data_dir"`
-	CompactionInterval    time.Duration           `yaml:"compaction_interval"`
-	CompactionRetries     int                     `yaml:"compaction_retries"`
-	CompactionConcurrency int                     `yaml:"compaction_concurrency"`
-	CleanupInterval       time.Duration           `yaml:"cleanup_interval"`
-	CleanupConcurrency    int                     `yaml:"cleanup_concurrency"`
-	DeletionDelay         time.Duration           `yaml:"deletion_delay"`
-	TenantCleanupDelay    time.Duration           `yaml:"tenant_cleanup_delay"`
-	MaxCompactionTime     time.Duration           `yaml:"max_compaction_time"`
+	CompactionInterval    time.Duration           `yaml:"compaction_interval" category:"advanced"`
+	CompactionRetries     int                     `yaml:"compaction_retries" category:"advanced"`
+	CompactionConcurrency int                     `yaml:"compaction_concurrency" category:"advanced"`
+	CleanupInterval       time.Duration           `yaml:"cleanup_interval" category:"advanced"`
+	CleanupConcurrency    int                     `yaml:"cleanup_concurrency" category:"advanced"`
+	DeletionDelay         time.Duration           `yaml:"deletion_delay" category:"advanced"`
+	TenantCleanupDelay    time.Duration           `yaml:"tenant_cleanup_delay" category:"advanced"`
+	MaxCompactionTime     time.Duration           `yaml:"max_compaction_time" category:"advanced"`
 
 	// Compactor concurrency options
-	MaxOpeningBlocksConcurrency int `yaml:"max_opening_blocks_concurrency"` // Number of goroutines opening blocks before compaction.
-	MaxClosingBlocksConcurrency int `yaml:"max_closing_blocks_concurrency"` // Max number of blocks that can be closed concurrently during split compaction. Note that closing of newly compacted block uses a lot of memory for writing index.
-	SymbolsFlushersConcurrency  int `yaml:"symbols_flushers_concurrency"`   // Number of symbols flushers used when doing split compaction.
+	MaxOpeningBlocksConcurrency int `yaml:"max_opening_blocks_concurrency" category:"advanced"` // Number of goroutines opening blocks before compaction.
+	MaxClosingBlocksConcurrency int `yaml:"max_closing_blocks_concurrency" category:"advanced"` // Max number of blocks that can be closed concurrently during split compaction. Note that closing of newly compacted block uses a lot of memory for writing index.
+	SymbolsFlushersConcurrency  int `yaml:"symbols_flushers_concurrency" category:"advanced"`   // Number of symbols flushers used when doing split compaction.
 
-	EnabledTenants  flagext.StringSliceCSV `yaml:"enabled_tenants"`
-	DisabledTenants flagext.StringSliceCSV `yaml:"disabled_tenants"`
+	EnabledTenants  flagext.StringSliceCSV `yaml:"enabled_tenants" category:"advanced"`
+	DisabledTenants flagext.StringSliceCSV `yaml:"disabled_tenants" category:"advanced"`
 
 	// Compactors sharding.
 	ShardingEnabled bool       `yaml:"sharding_enabled"`
 	ShardingRing    RingConfig `yaml:"sharding_ring"`
 
-	CompactionJobsOrder string `yaml:"compaction_jobs_order"`
+	CompactionJobsOrder string `yaml:"compaction_jobs_order" category:"advanced"`
 
 	// No need to add options to customize the retry backoff,
 	// given the defaults should be fine, but allow to override
