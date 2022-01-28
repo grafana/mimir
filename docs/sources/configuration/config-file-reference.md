@@ -3351,7 +3351,7 @@ sharding_ring:
 
   # Minimum time to wait for ring stability at startup. 0 to disable.
   # CLI flag: -compactor.ring.wait-stability-min-duration
-  [wait_stability_min_duration: <duration> | default = 1m]
+  [wait_stability_min_duration: <duration> | default = 0s]
 
   # Maximum time to wait for ring stability at startup. If the compactor ring
   # keeps changing after this period of time, the compactor will start anyway.
