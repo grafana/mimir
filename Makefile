@@ -477,14 +477,30 @@ dist: dist/$(UPTODATE)
 dist/$(UPTODATE):
 	rm -fr ./dist
 	mkdir -p ./dist
-	for os in linux darwin; do \
-		for arch in amd64 arm64; do \
+	# Build binaries for various architectures and operating systems. Only
+	# mimirtool supports Windows for now. Also darwin/386 is not a valid
+	# architecture.
+	for os in linux darwin windows; do \
+		for arch in 386 amd64 arm64; do \
+			suffix="" ; \
+			if [ "$$os" = "windows" ]; then \
+				suffix=".exe" ; \
+			fi; \
+			if [ "$$os" = "darwin" ] && [ "$$arch" = "386" ]; then \
+				continue; \
+			fi; \
+			echo "Building mimirtool for $$os/$$arch"; \
+			GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/mimirtool-$$os-$$arch$$suffix ./cmd/mimirtool; \
+			sha256sum ./dist/mimirtool-$$os-$$arch$$suffix | cut -d ' ' -f 1 > ./dist/mimirtool-$$os-$$arch$$suffix-sha-256; \
+			if [ "$$os" = "windows" ]; then \
+				continue; \
+			fi; \
 			echo "Building Mimir for $$os/$$arch"; \
-			GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/mimir-$$os-$$arch ./cmd/mimir; \
-			sha256sum ./dist/mimir-$$os-$$arch | cut -d ' ' -f 1 > ./dist/mimir-$$os-$$arch-sha-256; \
+			GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/mimir-$$os-$$arch$$suffix ./cmd/mimir; \
+			sha256sum ./dist/mimir-$$os-$$arch$$suffix | cut -d ' ' -f 1 > ./dist/mimir-$$os-$$arch$$suffix-sha-256; \
 			echo "Building query-tee for $$os/$$arch"; \
-			GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/query-tee-$$os-$$arch ./cmd/query-tee; \
-			sha256sum ./dist/query-tee-$$os-$$arch | cut -d ' ' -f 1 > ./dist/query-tee-$$os-$$arch-sha-256; \
+			GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/query-tee-$$os-$$arch$$suffix ./cmd/query-tee; \
+			sha256sum ./dist/query-tee-$$os-$$arch$$suffix | cut -d ' ' -f 1 > ./dist/query-tee-$$os-$$arch$$suffix-sha-256; \
 			done; \
 		done; \
 		touch $@
