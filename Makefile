@@ -467,16 +467,16 @@ dist/$(UPTODATE):
 	for os in linux darwin windows; do \
 		for arch in 386 amd64 arm64; do \
 			suffix="" ; \
-			if [ "$$os" == "windows" ]; then \
+			if [ "$$os" = "windows" ]; then \
 				suffix=".exe" ; \
 			fi; \
-			if [ "$$os" == "darwin" ] && [ "$$arch" == "386" ]; then \
+			if [ "$$os" = "darwin" ] && [ "$$arch" == "386" ]; then \
 				continue; \
 			fi; \
 			echo "Building mimirtool for $$os/$$arch"; \
 			GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/mimirtool-$$os-$$arch$$suffix ./cmd/mimirtool; \
 			sha256sum ./dist/mimirtool-$$os-$$arch$$suffix | cut -d ' ' -f 1 > ./dist/mimirtool-$$os-$$arch$$suffix-sha-256; \
-			if [ "$$os" == "windows" ]; then \
+			if [ "$$os" = "windows" ]; then \
 				continue; \
 			fi; \
 			echo "Building Mimir for $$os/$$arch"; \
