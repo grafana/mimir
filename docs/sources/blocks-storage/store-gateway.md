@@ -791,7 +791,7 @@ blocks_storage:
     # reduce memory utilisation at the cost of potentially higher ingest
     # latency.
     # CLI flag: -blocks-storage.tsdb.head-chunks-write-queue-size
-    [head_chunks_write_queue_size: <int> | default = 1000]
+    [head_chunks_write_queue_size: <int> | default = 1000000]
 
     # Enables TSDB isolation feature. Disabling may improve performance.
     # CLI flag: -blocks-storage.tsdb.isolation-enabled
