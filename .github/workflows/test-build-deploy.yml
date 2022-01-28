@@ -261,8 +261,13 @@ jobs:
           if [ -n "$GCR_REGISTRY_PASSWORD" ]; then
             printenv GCR_REGISTRY_PASSWORD | docker login -u "$GCR_REGISTRY_USER" --password-stdin us.gcr.io
           fi
+          if [ -n "$DOCKER_PASSWORD" ]; then
+            printenv DOCKER_PASSWORD | docker login -u "$DOCKER_USERNAME" --password-stdin
+          fi
           export IMAGE_TAG=$(make image-tag)
           ./push-images
         env:
           GCR_REGISTRY_USER: _json_key
           GCR_REGISTRY_PASSWORD: ${{ secrets.gcr_json_key }}
+          DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+          DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
