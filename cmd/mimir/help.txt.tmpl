@@ -917,10 +917,6 @@ Usage of ./cmd/mimir/mimir:
     	Additional active series metrics, matching the provided matchers. Matchers should be in form <name>:<matcher>, like 'foobar:{foo="bar"}'. Multiple matchers can be provided either providing the flag multiple times or providing multiple semicolon-separated values to a single flag.
   -ingester.active-series-metrics-enabled
     	Enable tracking of active series and export them as metrics. (default true)
-  -ingester.active-series-metrics-idle-timeout duration
-    	After what time a series is considered to be inactive. (default 10m0s)
-  -ingester.active-series-metrics-update-period duration
-    	How often to update active series metrics. (default 1m0s)
   -ingester.availability-zone string
     	The availability zone where this instance is running.
   -ingester.client.backoff-max-period duration
@@ -953,22 +949,10 @@ Usage of ./cmd/mimir/mimir:
     	Path to the key file for the client certificate. Also requires the client certificate to be configured.
   -ingester.client.tls-server-name string
     	Override the expected name on the server certificate.
-  -ingester.exemplars-update-period duration
-    	Period with which to update per-user max exemplars. (default 15s)
   -ingester.final-sleep duration
     	Duration to sleep for before exiting, to ensure metrics are scraped. (default 30s)
   -ingester.heartbeat-period duration
     	Period at which to heartbeat to consul. 0 = disabled. (default 5s)
-  -ingester.ignore-series-limit-for-metric-names string
-    	Comma-separated list of metric names, for which the -ingester.max-global-series-per-metric limit will be ignored. Does not affect the -ingester.max-global-series-per-user limit.
-  -ingester.instance-limits.max-inflight-push-requests int
-    	Max inflight push requests that this ingester can handle (across all tenants). Additional requests will be rejected. 0 = unlimited. (default 30000)
-  -ingester.instance-limits.max-ingestion-rate float
-    	Max ingestion rate (samples/sec) that ingester will accept. This limit is per-ingester, not per-tenant. Additional push requests will be rejected. Current ingestion rate is computed as exponentially weighted moving average, updated every second. This limit only works when using blocks engine. 0 = unlimited.
-  -ingester.instance-limits.max-series int
-    	Max series that this ingester can hold (across all tenants). Requests to create additional series will be rejected. This limit only works when using blocks engine. 0 = unlimited.
-  -ingester.instance-limits.max-tenants int
-    	Max users that this ingester can hold. Requests from additional users will be rejected. This limit only works when using blocks engine. 0 = unlimited.
   -ingester.join-after duration
     	Period to wait for a claim from another member; will join automatically after this.
   -ingester.lifecycler.ID string
@@ -991,16 +975,12 @@ Usage of ./cmd/mimir/mimir:
     	The maximum number of active series per user, across the cluster before replication. 0 to disable. (default 150000)
   -ingester.max-samples-per-query value
     	This option is no longer used, and will be removed.
-  -ingester.metadata-retain-period duration
-    	Period at which metadata we have not seen will remain in memory before being deleted. (default 10m0s)
   -ingester.min-ready-duration duration
     	Minimum duration to wait after the internal readiness checks have passed but before succeeding the readiness endpoint. This is used to slowdown deployment controllers (eg. Kubernetes) after an instance is ready and before they proceed with a rolling update, to give the rest of the cluster instances enough time to receive ring updates. (default 15s)
   -ingester.num-tokens int
     	Number of tokens for each ingester. (default 128)
   -ingester.observe-period duration
     	Observe tokens after generating to resolve collisions. Useful when using gossiping ring.
-  -ingester.rate-update-period duration
-    	Period with which to update the per-user ingestion rates. (default 15s)
   -ingester.readiness-check-ring-health
     	When enabled the readiness probe succeeds only after all instances are ACTIVE and healthy in the ring, otherwise only the instance itself is checked. This option should be disabled if in your cluster multiple instances can be rolled out simultaneously, otherwise rolling updates may be slowed down. (default true)
   -ingester.stream-chunks-when-using-blocks
