@@ -24,13 +24,13 @@ const blocksPageTemplate = `
 <html>
 	<head>
 		<meta charset="UTF-8">
-		<title>Store-gateway: bucket user blocks</title>
+		<title>Store-gateway: bucket tenant blocks</title>
 		</script>
 	</head>
 	<body>
-		<h1>Store-gateway: bucket user blocks</h1>
+		<h1>Store-gateway: bucket tenant blocks</h1>
 		<p>Current time: {{ .Now }}</p>
-		<p>Showing blocks for user: {{ .User }}</p>
+		<p>Showing blocks for tenant: {{ .Tenant }}</p>
 		<p>
 			{{ if not .ShowDeleted }}
 				<a href="{{ .ShowDeletedURI }}">Show Deleted</a>
@@ -103,9 +103,9 @@ var blocksTemplate = template.Must(template.New("webpage").Parse(blocksPageTempl
 
 func (s *StoreGateway) BlocksHandler(w http.ResponseWriter, req *http.Request) {
 	vars := mux.Vars(req)
-	userID := vars["user"]
-	if userID == "" {
-		util.WriteTextResponse(w, "User ID can't be empty")
+	tenantID := vars["tenant"]
+	if tenantID == "" {
+		util.WriteTextResponse(w, "Tenant ID can't be empty")
 		return
 	}
 
@@ -127,7 +127,7 @@ func (s *StoreGateway) BlocksHandler(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 
-	metasMap, deletedTimes, err := listblocks.LoadMetaFilesAndDeletionMarkers(req.Context(), s.stores.bucket, userID, showDeleted, time.Time{})
+	metasMap, deletedTimes, err := listblocks.LoadMetaFilesAndDeletionMarkers(req.Context(), s.stores.bucket, tenantID, showDeleted, time.Time{})
 	if err != nil {
 		util.WriteTextResponse(w, fmt.Sprintf("Failed to read block metadata: %s", err))
 		return
@@ -204,7 +204,7 @@ func (s *StoreGateway) BlocksHandler(w http.ResponseWriter, req *http.Request) {
 
 	util.RenderHTTPResponse(w, struct {
 		Now             time.Time            `json:"now"`
-		User            string               `json:"user,omitempty"`
+		Tenant          string               `json:"tenant,omitempty"`
 		RichMetas       []richMeta           `json:"metas"`
 		FormattedBlocks []formattedBlockData `json:"-"`
 		ShowDeleted     bool                 `json:"-"`
@@ -219,7 +219,7 @@ func (s *StoreGateway) BlocksHandler(w http.ResponseWriter, req *http.Request) {
 		TSDBTenantIDExternalLabel string `json:"-"`
 	}{
 		Now:             time.Now(),
-		User:            userID,
+		Tenant:          tenantID,
 		RichMetas:       richMetas,
 		FormattedBlocks: formattedBlocks,
 
