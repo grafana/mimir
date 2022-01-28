@@ -16,7 +16,7 @@
                "mimir"
             ],
             "targetBlank": false,
-            "title": "Mimir Dashboards",
+            "title": "Mimir dashboards",
             "type": "dashboards"
          }
       ],
@@ -735,7 +735,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Per pod p99 Latency",
+                  "title": "Per pod p99 latency",
                   "tooltip": {
                      "sort": 2
                   },
@@ -993,7 +993,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Per pod p99 Latency",
+                  "title": "Per pod p99 latency",
                   "tooltip": {
                      "sort": 2
                   },
@@ -1251,7 +1251,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Per pod p99 Latency",
+                  "title": "Per pod p99 latency",
                   "tooltip": {
                      "sort": 2
                   },
@@ -1479,7 +1479,7 @@
             "repeatIteration": null,
             "repeatRowId": null,
             "showTitle": true,
-            "title": "Distributor - Key-value store for high-availability (HA) deduplication",
+            "title": "Distributor - key-value store for high-availability (HA) deduplication",
             "titleSize": "h6"
          },
          {
@@ -1671,7 +1671,7 @@
             "repeatIteration": null,
             "repeatRowId": null,
             "showTitle": true,
-            "title": "Distributor - Key-value store for distributors ring",
+            "title": "Distributor - key-value store for distributors ring",
             "titleSize": "h6"
          },
          {
@@ -1863,7 +1863,7 @@
             "repeatIteration": null,
             "repeatRowId": null,
             "showTitle": true,
-            "title": "Ingester - Key-value store for the ingesters ring",
+            "title": "Ingester - key-value store for the ingesters ring",
             "titleSize": "h6"
          },
          {
@@ -2061,7 +2061,7 @@
             "repeatIteration": null,
             "repeatRowId": null,
             "showTitle": true,
-            "title": "Ingester - Shipper",
+            "title": "Ingester - shipper",
             "titleSize": "h6"
          },
          {
@@ -2259,7 +2259,7 @@
             "repeatIteration": null,
             "repeatRowId": null,
             "showTitle": true,
-            "title": "Ingester - TSDB Head",
+            "title": "Ingester - TSDB head",
             "titleSize": "h6"
          },
          {

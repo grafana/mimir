@@ -44,7 +44,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
               keepTime: true,
               tags: $._config.tags,
               targetBlank: false,
-              title: '%(product)s Dashboards' % $._config,
+              title: '%(product)s dashboards' % $._config,
               type: 'dashboards',
             },
           ],
@@ -224,10 +224,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
     { yaxes: $.yaxes('Bps') },
 
   containerNetworkReceiveBytesPanel(instanceName)::
-    $.containerNetworkPanel('Receive Bandwidth', 'container_network_receive_bytes_total', instanceName),
+    $.containerNetworkPanel('Receive bandwidth', 'container_network_receive_bytes_total', instanceName),
 
   containerNetworkTransmitBytesPanel(instanceName)::
-    $.containerNetworkPanel('Transmit Bandwidth', 'container_network_transmit_bytes_total', instanceName),
+    $.containerNetworkPanel('Transmit bandwidth', 'container_network_transmit_bytes_total', instanceName),
 
   containerDiskWritesPanel(title, containerName)::
     $.panel(title) +
@@ -301,7 +301,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     .addPanel($.containerNetworkReceiveBytesPanel($._config.instance_names[name]))
     .addPanel($.containerNetworkTransmitBytesPanel($._config.instance_names[name]))
     .addPanel(
-      $.panel('Inflight Requests (per pod)') +
+      $.panel('Inflight requests (per pod)') +
       $.queryPanel([
         'avg(cortex_inflight_requests{%s})' % $.jobMatcher($._config.job_names[name]),
         'max(cortex_inflight_requests{%s})' % $.jobMatcher($._config.job_names[name]),
@@ -309,7 +309,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       { fill: 0 }
     )
     .addPanel(
-      $.panel('TCP Connections (per pod)') +
+      $.panel('TCP connections (per pod)') +
       $.queryPanel([
         'avg(sum by(pod) (cortex_tcp_connections{%s}))' % $.jobMatcher($._config.job_names[name]),
         'max(sum by(pod) (cortex_tcp_connections{%s}))' % $.jobMatcher($._config.job_names[name]),
@@ -436,28 +436,28 @@ local utils = import 'mixin-utils/utils.libsonnet';
       { yaxes: $.yaxes('percentunit') },
     )
     .addPanel(
-      $.panel('Latency of Op: Attributes') +
+      $.panel('Latency of op: Attributes') +
       $.latencyPanel('thanos_objstore_bucket_operation_duration_seconds', '{%s,component="%s",operation="attributes"}' % [$.namespaceMatcher(), component]),
     )
     .addPanel(
-      $.panel('Latency of Op: Exists') +
+      $.panel('Latency of op: Exists') +
       $.latencyPanel('thanos_objstore_bucket_operation_duration_seconds', '{%s,component="%s",operation="exists"}' % [$.namespaceMatcher(), component]),
     ),
     $.row('')
     .addPanel(
-      $.panel('Latency of Op: Get') +
+      $.panel('Latency of op: Get') +
       $.latencyPanel('thanos_objstore_bucket_operation_duration_seconds', '{%s,component="%s",operation="get"}' % [$.namespaceMatcher(), component]),
     )
     .addPanel(
-      $.panel('Latency of Op: GetRange') +
+      $.panel('Latency of op: GetRange') +
       $.latencyPanel('thanos_objstore_bucket_operation_duration_seconds', '{%s,component="%s",operation="get_range"}' % [$.namespaceMatcher(), component]),
     )
     .addPanel(
-      $.panel('Latency of Op: Upload') +
+      $.panel('Latency of op: Upload') +
       $.latencyPanel('thanos_objstore_bucket_operation_duration_seconds', '{%s,component="%s",operation="upload"}' % [$.namespaceMatcher(), component]),
     )
     .addPanel(
-      $.panel('Latency of Op: Delete') +
+      $.panel('Latency of op: Delete') +
       $.latencyPanel('thanos_objstore_bucket_operation_duration_seconds', '{%s,component="%s",operation="delete"}' % [$.namespaceMatcher(), component]),
     ),
   ],

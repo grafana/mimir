@@ -10,11 +10,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
          showTitle: false,
        })
       .addPanel(
-        $.panel('Total Alerts') +
+        $.panel('Total alerts') +
         $.statPanel('sum(cluster_job_%s:cortex_alertmanager_alerts:sum{%s})' % [$._config.per_instance_label, $.jobMatcher('alertmanager')], format='short')
       )
       .addPanel(
-        $.panel('Total Silences') +
+        $.panel('Total silences') +
         $.statPanel('sum(cluster_job_%s:cortex_alertmanager_silences:sum{%s})' % [$._config.per_instance_label, $.jobMatcher('alertmanager')], format='short')
       )
       .addPanel(
@@ -23,7 +23,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addRow(
-      $.row('Alerts Received')
+      $.row('Alerts received')
       .addPanel(
         $.panel('APS') +
         $.queryPanel(
@@ -40,7 +40,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addRow(
-      $.row('Alert Notifications')
+      $.row('Alert notifications')
       .addPanel(
         $.panel('NPS') +
         $.queryPanel(
@@ -94,7 +94,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     .addRow(
       $.row('Replication')
       .addPanel(
-        $.panel('Per %s Tenants' % $._config.per_instance_label) +
+        $.panel('Per %s tenants' % $._config.per_instance_label) +
         $.queryPanel(
           'max by(%s) (cortex_alertmanager_tenants_owned{%s})' % [$._config.per_instance_label, $.jobMatcher('alertmanager')],
           '{{%s}}' % $._config.per_instance_label
@@ -102,7 +102,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.stack
       )
       .addPanel(
-        $.panel('Per %s Alerts' % $._config.per_instance_label) +
+        $.panel('Per %s alerts' % $._config.per_instance_label) +
         $.queryPanel(
           'sum by(%s) (cluster_job_%s:cortex_alertmanager_alerts:sum{%s})' % [$._config.per_instance_label, $._config.per_instance_label, $.jobMatcher('alertmanager')],
           '{{%s}}' % $._config.per_instance_label
@@ -110,7 +110,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.stack
       )
       .addPanel(
-        $.panel('Per %s Silences' % $._config.per_instance_label) +
+        $.panel('Per %s silences' % $._config.per_instance_label) +
         $.queryPanel(
           'sum by(%s) (cluster_job_%s:cortex_alertmanager_silences:sum{%s})' % [$._config.per_instance_label, $._config.per_instance_label, $.jobMatcher('alertmanager')],
           '{{%s}}' % $._config.per_instance_label
@@ -119,7 +119,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addRow(
-      $.row('Tenant Configuration Sync')
+      $.row('Tenant configuration sync')
       .addPanel(
         $.panel('Syncs/sec') +
         $.queryPanel(
@@ -135,14 +135,14 @@ local utils = import 'mixin-utils/utils.libsonnet';
         )
       )
       .addPanel(
-        $.panel('Syncs/sec (By Reason)') +
+        $.panel('Syncs/sec (by reason)') +
         $.queryPanel(
           'sum by(reason) (rate(cortex_alertmanager_sync_configs_total{%s}[$__rate_interval]))' % $.jobMatcher('alertmanager'),
           '{{reason}}'
         )
       )
       .addPanel(
-        $.panel('Ring Check Errors/sec') +
+        $.panel('Ring check errors/sec') +
         $.queryPanel(
           'sum (rate(cortex_alertmanager_ring_check_errors_total{%s}[$__rate_interval]))' % $.jobMatcher('alertmanager'),
           'errors'
@@ -150,7 +150,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addRow(
-      $.row('Sharding Initial State Sync')
+      $.row('Sharding initial state sync')
       .addPanel(
         $.panel('Initial syncs /sec') +
         $.queryPanel(
@@ -199,7 +199,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addRow(
-      $.row('Sharding Runtime State Sync')
+      $.row('Sharding runtime state sync')
       .addPanel(
         $.panel('Replicate state to other alertmanagers /sec') +
         $.queryPanel(

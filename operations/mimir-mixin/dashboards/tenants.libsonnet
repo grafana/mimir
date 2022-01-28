@@ -177,7 +177,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         ),
       )
       .addPanel(
-        local title = 'Distributor/Ingester discarded samples rate';
+        local title = 'Distributor/ingester discarded samples rate';
         $.panel(title) +
         $.queryPanel(
           [

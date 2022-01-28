@@ -16,7 +16,7 @@
                "mimir"
             ],
             "targetBlank": false,
-            "title": "Mimir Dashboards",
+            "title": "Mimir dashboards",
             "type": "dashboards"
          }
       ],
@@ -69,7 +69,7 @@
                   "thresholds": "70,80",
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Active Configurations",
+                  "title": "Active configurations",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -145,7 +145,7 @@
                   "thresholds": "70,80",
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Total Rules",
+                  "title": "Total rules",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -221,7 +221,7 @@
                   "thresholds": "70,80",
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Read from Ingesters - QPS",
+                  "title": "Read from ingesters - QPS",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -297,7 +297,7 @@
                   "thresholds": "70,80",
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Write to Ingesters - QPS",
+                  "title": "Write to ingesters - QPS",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -510,7 +510,7 @@
             "repeatIteration": null,
             "repeatRowId": null,
             "showTitle": true,
-            "title": "Rule Evaluations Global",
+            "title": "Rule evaluations global",
             "titleSize": "h6"
          },
          {
@@ -738,7 +738,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Per route p99 Latency",
+                  "title": "Per route p99 latency",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -968,7 +968,7 @@
             "repeatIteration": null,
             "repeatRowId": null,
             "showTitle": true,
-            "title": "Writes (Ingesters)",
+            "title": "Writes (ingesters)",
             "titleSize": "h6"
          },
          {
@@ -1160,7 +1160,7 @@
             "repeatIteration": null,
             "repeatRowId": null,
             "showTitle": true,
-            "title": "Reads (Ingesters)",
+            "title": "Reads (ingesters)",
             "titleSize": "h6"
          },
          {
@@ -1352,7 +1352,7 @@
             "repeatIteration": null,
             "repeatRowId": null,
             "showTitle": true,
-            "title": "Ruler - Key-value store for rulers ring",
+            "title": "Ruler - key-value store for rulers ring",
             "titleSize": "h6"
          },
          {
@@ -1421,7 +1421,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Number of store-gateways hit per Query",
+                  "title": "Number of store-gateways hit per query",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -1516,7 +1516,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Refetches of missing blocks per Query",
+                  "title": "Refetches of missing blocks per query",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -1631,7 +1631,7 @@
             "repeatIteration": null,
             "repeatRowId": null,
             "showTitle": true,
-            "title": "Ruler - Blocks storage",
+            "title": "Ruler - blocks storage",
             "titleSize": "h6"
          },
          {
@@ -1682,7 +1682,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Delivery Errors",
+                  "title": "Delivery errors",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -1759,7 +1759,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Queue Length",
+                  "title": "Queue length",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -1925,7 +1925,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Missed Iterations",
+                  "title": "Missed iterations",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -2117,7 +2117,7 @@
             "repeatIteration": null,
             "repeatRowId": null,
             "showTitle": true,
-            "title": "Group Evaluations",
+            "title": "Group evaluations",
             "titleSize": "h6"
          },
          {
@@ -2206,7 +2206,7 @@
             "repeatIteration": null,
             "repeatRowId": null,
             "showTitle": true,
-            "title": "Rule Evaluation per User",
+            "title": "Rule evaluation per user",
             "titleSize": "h6"
          },
          {
@@ -2429,7 +2429,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Latency of Op: Attributes",
+                  "title": "Latency of op: Attributes",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -2524,7 +2524,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Latency of Op: Exists",
+                  "title": "Latency of op: Exists",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -2562,7 +2562,7 @@
             "repeatIteration": null,
             "repeatRowId": null,
             "showTitle": true,
-            "title": "Ruler Configuration Object Store (Ruler accesses)",
+            "title": "Ruler configuration object store (ruler accesses)",
             "titleSize": "h6"
          },
          {
@@ -2631,7 +2631,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Latency of Op: Get",
+                  "title": "Latency of op: Get",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -2726,7 +2726,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Latency of Op: GetRange",
+                  "title": "Latency of op: GetRange",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -2821,7 +2821,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Latency of Op: Upload",
+                  "title": "Latency of op: Upload",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -2916,7 +2916,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Latency of Op: Delete",
+                  "title": "Latency of op: Delete",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,

@@ -16,7 +16,7 @@
                "mimir"
             ],
             "targetBlank": false,
-            "title": "Mimir Dashboards",
+            "title": "Mimir dashboards",
             "type": "dashboards"
          }
       ],
@@ -70,7 +70,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Receive Bandwidth",
+                  "title": "Receive bandwidth",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -147,7 +147,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Transmit Bandwidth",
+                  "title": "Transmit bandwidth",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -233,7 +233,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Inflight Requests (per pod)",
+                  "title": "Inflight requests (per pod)",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -328,7 +328,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "TCP Connections (per pod)",
+                  "title": "TCP connections (per pod)",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -417,7 +417,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Receive Bandwidth",
+                  "title": "Receive bandwidth",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -494,7 +494,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Transmit Bandwidth",
+                  "title": "Transmit bandwidth",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -580,7 +580,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Inflight Requests (per pod)",
+                  "title": "Inflight requests (per pod)",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -675,7 +675,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "TCP Connections (per pod)",
+                  "title": "TCP connections (per pod)",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -764,7 +764,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Receive Bandwidth",
+                  "title": "Receive bandwidth",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -841,7 +841,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Transmit Bandwidth",
+                  "title": "Transmit bandwidth",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -927,7 +927,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Inflight Requests (per pod)",
+                  "title": "Inflight requests (per pod)",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -1022,7 +1022,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "TCP Connections (per pod)",
+                  "title": "TCP connections (per pod)",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -1163,7 +1163,7 @@
          ]
       },
       "timezone": "utc",
-      "title": "Mimir / Writes Networking",
+      "title": "Mimir / Writes networking",
       "uid": "681cd62b680b7154811fe73af55dcfd4",
       "version": 0
    }

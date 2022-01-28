@@ -83,7 +83,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addRow(
-      $.row('Garbage Collector')
+      $.row('Garbage collector')
       .addPanel(
         $.panel('Blocks marked for deletion / sec') +
         $.queryPanel('sum(rate(cortex_compactor_blocks_marked_for_deletion_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.compactor), 'blocks') +
@@ -100,10 +100,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addRow(
-      $.row('Metadata Sync')
+      $.row('Metadata sync')
       .addPanel(
         $.successFailurePanel(
-          'Metadata Syncs / sec',
+          'Metadata syncs / sec',
           // The cortex_compactor_meta_syncs_total metric is incremented each time a per-tenant
           // metadata sync is triggered.
           'sum(rate(cortex_compactor_meta_syncs_total{%s}[$__rate_interval])) - sum(rate(cortex_compactor_meta_sync_failures_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.compactor), $.jobMatcher($._config.job_names.compactor)],
@@ -111,7 +111,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         ) + { yaxes: $.yaxes('ops') }
       )
       .addPanel(
-        $.panel('Metadata Sync Duration') +
+        $.panel('Metadata sync duration') +
         // This metric tracks the duration of a per-tenant metadata sync.
         $.latencyPanel('cortex_compactor_meta_sync_duration_seconds', '{%s}' % $.jobMatcher($._config.job_names.compactor)),
       )

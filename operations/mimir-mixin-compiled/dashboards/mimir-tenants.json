@@ -16,7 +16,7 @@
                "mimir"
             ],
             "targetBlank": false,
-            "title": "Mimir Dashboards",
+            "title": "Mimir dashboards",
             "type": "dashboards"
          }
       ],
@@ -631,7 +631,7 @@
                   "dashLength": 10,
                   "dashes": false,
                   "datasource": "$datasource",
-                  "description": "### Distributor/Ingester discarded samples rate\nThe rate of each samples' discarding reason.\n\n",
+                  "description": "### Distributor/ingester discarded samples rate\nThe rate of each samples' discarding reason.\n\n",
                   "fill": 1,
                   "id": 9,
                   "legend": {
@@ -679,7 +679,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Distributor/Ingester discarded samples rate",
+                  "title": "Distributor/ingester discarded samples rate",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,

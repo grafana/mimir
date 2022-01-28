@@ -16,7 +16,7 @@
                "mimir"
             ],
             "targetBlank": false,
-            "title": "Mimir Dashboards",
+            "title": "Mimir dashboards",
             "type": "dashboards"
          }
       ],
@@ -88,7 +88,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Queue Duration",
+                  "title": "Queue duration",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -260,7 +260,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Queue Length (per pod)",
+                  "title": "Queue length (per pod)",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -337,7 +337,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Queue Length (per user)",
+                  "title": "Queue length (per user)",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -375,7 +375,7 @@
             "repeatIteration": null,
             "repeatRowId": null,
             "showTitle": true,
-            "title": "Query Frontend",
+            "title": "Query-frontend",
             "titleSize": "h6"
          },
          {
@@ -444,7 +444,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Queue Duration",
+                  "title": "Queue duration",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -521,7 +521,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Queue Length (per pod)",
+                  "title": "Queue length (per pod)",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -598,7 +598,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Queue Length (per user)",
+                  "title": "Queue length (per user)",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -636,7 +636,7 @@
             "repeatIteration": null,
             "repeatRowId": null,
             "showTitle": true,
-            "title": "Query Scheduler",
+            "title": "Query-scheduler",
             "titleSize": "h6"
          },
          {
@@ -649,7 +649,7 @@
                   "dashLength": 10,
                   "dashes": false,
                   "datasource": "$datasource",
-                  "description": "### Intervals per Query\nThe average number of splitted queries (partitioned by time) executed a single input query.\n\n",
+                  "description": "### Intervals per query\nThe average number of splitted queries (partitioned by time) executed a single input query.\n\n",
                   "fill": 1,
                   "id": 8,
                   "legend": {
@@ -757,7 +757,7 @@
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
-                        "legendFormat": "Hit Rate",
+                        "legendFormat": "Hit rate",
                         "legendLink": null,
                         "step": 10
                      }
@@ -765,7 +765,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Results Cache Hit %",
+                  "title": "Results cache hit %",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -834,7 +834,7 @@
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
-                        "legendFormat": "Miss Rate",
+                        "legendFormat": "Miss rate",
                         "legendLink": null,
                         "step": 10
                      }
@@ -842,7 +842,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Results Cache misses",
+                  "title": "Results cache misses",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -880,7 +880,7 @@
             "repeatIteration": null,
             "repeatRowId": null,
             "showTitle": true,
-            "title": "Query Frontend - Query Splitting and Results Cache",
+            "title": "Query-frontend - query splitting and results cache",
             "titleSize": "h6"
          },
          {
@@ -893,7 +893,7 @@
                   "dashLength": 10,
                   "dashes": false,
                   "datasource": "$datasource",
-                  "description": "### Sharded Queries Ratio\nThe % of queries that have been successfully rewritten and executed in a shardable way.\nThis panel takes in account only type of queries which are supported by query sharding (eg. range queries).\n\n",
+                  "description": "### Sharded queries ratio\nThe % of queries that have been successfully rewritten and executed in a shardable way.\nThis panel takes in account only type of queries which are supported by query sharding (eg. range queries).\n\n",
                   "fill": 1,
                   "id": 11,
                   "legend": {
@@ -932,7 +932,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Sharded Queries Ratio",
+                  "title": "Sharded queries ratio",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -971,7 +971,7 @@
                   "dashLength": 10,
                   "dashes": false,
                   "datasource": "$datasource",
-                  "description": "### Number of Sharded Queries per Query\nHow many sharded queries have been executed for a single input query. It tracks only queries which have\nbeen successfully rewritten in a shardable way.\n\n",
+                  "description": "### Number of sharded queries per query\nHow many sharded queries have been executed for a single input query. It tracks only queries which have\nbeen successfully rewritten in a shardable way.\n\n",
                   "fill": 1,
                   "id": 12,
                   "legend": {
@@ -1028,7 +1028,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Number of Sharded Queries per Query",
+                  "title": "Number of sharded queries per query",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -1066,7 +1066,7 @@
             "repeatIteration": null,
             "repeatRowId": null,
             "showTitle": true,
-            "title": "Query Frontend - Query sharding",
+            "title": "Query-frontend - query sharding",
             "titleSize": "h6"
          },
          {
@@ -1221,7 +1221,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Series per Query",
+                  "title": "Series per query",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -1313,7 +1313,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Chunks per Query",
+                  "title": "Chunks per query",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -1405,7 +1405,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Samples per Query",
+                  "title": "Samples per query",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -1497,7 +1497,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Exemplars per Query",
+                  "title": "Exemplars per query",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -1604,7 +1604,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Number of store-gateways hit per Query",
+                  "title": "Number of store-gateways hit per query",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -1699,7 +1699,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Refetches of missing blocks per Query",
+                  "title": "Refetches of missing blocks per query",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,

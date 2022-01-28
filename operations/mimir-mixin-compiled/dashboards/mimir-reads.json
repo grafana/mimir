@@ -16,7 +16,7 @@
                "mimir"
             ],
             "targetBlank": false,
-            "title": "Mimir Dashboards",
+            "title": "Mimir dashboards",
             "type": "dashboards"
          }
       ],
@@ -430,7 +430,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Per pod p99 Latency",
+                  "title": "Per pod p99 latency",
                   "tooltip": {
                      "sort": 2
                   },
@@ -688,7 +688,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Per pod p99 Latency",
+                  "title": "Per pod p99 latency",
                   "tooltip": {
                      "sort": 2
                   },
@@ -724,7 +724,7 @@
             "repeatIteration": null,
             "repeatRowId": null,
             "showTitle": true,
-            "title": "Query Frontend",
+            "title": "Query-frontend",
             "titleSize": "h6"
          },
          {
@@ -927,7 +927,7 @@
             "repeatIteration": null,
             "repeatRowId": null,
             "showTitle": true,
-            "title": "Query Scheduler",
+            "title": "Query-scheduler",
             "titleSize": "h6"
          },
          {
@@ -1203,7 +1203,7 @@
             "repeatIteration": null,
             "repeatRowId": null,
             "showTitle": true,
-            "title": "Cache - Query Results",
+            "title": "Cache - query results",
             "titleSize": "h6"
          },
          {
@@ -1425,7 +1425,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Per pod p99 Latency",
+                  "title": "Per pod p99 latency",
                   "tooltip": {
                      "sort": 2
                   },
@@ -1683,7 +1683,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Per pod p99 Latency",
+                  "title": "Per pod p99 latency",
                   "tooltip": {
                      "sort": 2
                   },
@@ -1941,7 +1941,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Per pod p99 Latency",
+                  "title": "Per pod p99 latency",
                   "tooltip": {
                      "sort": 2
                   },
@@ -2169,7 +2169,7 @@
             "repeatIteration": null,
             "repeatRowId": null,
             "showTitle": true,
-            "title": "Store-gateway - Key-value store for store-gateways ring",
+            "title": "Store-gateway - key-value store for store-gateways ring",
             "titleSize": "h6"
          },
          {
@@ -2354,7 +2354,7 @@
                   "dashLength": 10,
                   "dashes": false,
                   "datasource": "$datasource",
-                  "description": "### Hit Ratio\nEven if you do not set up memcached for the blocks index cache, you will still see data in this panel because the store-gateway by default has an\nin-memory blocks index cache.\n\n",
+                  "description": "### Hit ratio\nEven if you do not set up memcached for the blocks index cache, you will still see data in this panel because the store-gateway by default has an\nin-memory blocks index cache.\n\n",
                   "fill": 1,
                   "id": 29,
                   "legend": {
@@ -2431,7 +2431,7 @@
             "repeatIteration": null,
             "repeatRowId": null,
             "showTitle": true,
-            "title": "Memcached – Block index cache (store-gateway accesses)",
+            "title": "Memcached – block index cache (store-gateway accesses)",
             "titleSize": "h6"
          },
          {
@@ -2692,7 +2692,7 @@
             "repeatIteration": null,
             "repeatRowId": null,
             "showTitle": true,
-            "title": "Memcached – Chunks cache (store-gateway accesses)",
+            "title": "Memcached – chunks cache (store-gateway accesses)",
             "titleSize": "h6"
          },
          {
@@ -2953,7 +2953,7 @@
             "repeatIteration": null,
             "repeatRowId": null,
             "showTitle": true,
-            "title": "Memcached – Metadata cache (store-gateway accesses)",
+            "title": "Memcached – metadata cache (store-gateway accesses)",
             "titleSize": "h6"
          },
          {
@@ -3214,7 +3214,7 @@
             "repeatIteration": null,
             "repeatRowId": null,
             "showTitle": true,
-            "title": "Memcached – Metadata cache (querier accesses)",
+            "title": "Memcached – metadata cache (querier accesses)",
             "titleSize": "h6"
          },
          {
@@ -3437,7 +3437,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Latency of Op: Attributes",
+                  "title": "Latency of op: Attributes",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -3532,7 +3532,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Latency of Op: Exists",
+                  "title": "Latency of op: Exists",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -3570,7 +3570,7 @@
             "repeatIteration": null,
             "repeatRowId": null,
             "showTitle": true,
-            "title": "Blocks Object Store (Store-gateway accesses)",
+            "title": "Blocks object store (store-gateway accesses)",
             "titleSize": "h6"
          },
          {
@@ -3639,7 +3639,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Latency of Op: Get",
+                  "title": "Latency of op: Get",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -3734,7 +3734,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Latency of Op: GetRange",
+                  "title": "Latency of op: GetRange",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -3829,7 +3829,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Latency of Op: Upload",
+                  "title": "Latency of op: Upload",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -3924,7 +3924,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Latency of Op: Delete",
+                  "title": "Latency of op: Delete",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -4185,7 +4185,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Latency of Op: Attributes",
+                  "title": "Latency of op: Attributes",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -4280,7 +4280,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Latency of Op: Exists",
+                  "title": "Latency of op: Exists",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -4318,7 +4318,7 @@
             "repeatIteration": null,
             "repeatRowId": null,
             "showTitle": true,
-            "title": "Blocks Object Store  (Querier accesses)",
+            "title": "Blocks object store (querier accesses)",
             "titleSize": "h6"
          },
          {
@@ -4387,7 +4387,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Latency of Op: Get",
+                  "title": "Latency of op: Get",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -4482,7 +4482,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Latency of Op: GetRange",
+                  "title": "Latency of op: GetRange",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -4577,7 +4577,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Latency of Op: Upload",
+                  "title": "Latency of op: Upload",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -4672,7 +4672,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Latency of Op: Delete",
+                  "title": "Latency of op: Delete",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,

@@ -16,7 +16,7 @@
                "mimir"
             ],
             "targetBlank": false,
-            "title": "Mimir Dashboards",
+            "title": "Mimir dashboards",
             "type": "dashboards"
          }
       ],
@@ -553,7 +553,7 @@
             "thresholds": [ ],
             "timeFrom": null,
             "timeShift": null,
-            "title": "Writes 99th Latency",
+            "title": "Writes 99th latency",
             "tooltip": {
                "shared": false,
                "sort": 0,
@@ -989,7 +989,7 @@
             "thresholds": [ ],
             "timeFrom": null,
             "timeShift": null,
-            "title": "Reads 99th Latency",
+            "title": "Reads 99th latency",
             "tooltip": {
                "shared": false,
                "sort": 0,
@@ -1183,7 +1183,7 @@
                   "refId": "A"
                }
             ],
-            "title": "Pods count per Version",
+            "title": "Pods count per version",
             "transformations": [
                {
                   "id": "labelsToFields",

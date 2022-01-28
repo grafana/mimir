@@ -16,7 +16,7 @@
                "mimir"
             ],
             "targetBlank": false,
-            "title": "Mimir Dashboards",
+            "title": "Mimir dashboards",
             "type": "dashboards"
          }
       ],
@@ -958,7 +958,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Disk Writes",
+                  "title": "Disk writes",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -1035,7 +1035,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Disk Reads",
+                  "title": "Disk reads",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -1112,7 +1112,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Disk Space Utilization",
+                  "title": "Disk space utilization",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -1253,7 +1253,7 @@
          ]
       },
       "timezone": "utc",
-      "title": "Mimir / Writes Resources",
+      "title": "Mimir / Writes resources",
       "uid": "c0464f0d8bd026f776c9006b0591bb0b",
       "version": 0
    }

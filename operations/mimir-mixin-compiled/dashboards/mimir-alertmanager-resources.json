@@ -16,7 +16,7 @@
                "mimir"
             ],
             "targetBlank": false,
-            "title": "Mimir Dashboards",
+            "title": "Mimir dashboards",
             "type": "dashboards"
          }
       ],
@@ -820,7 +820,7 @@
             "repeatIteration": null,
             "repeatRowId": null,
             "showTitle": true,
-            "title": "Instance Mapper",
+            "title": "Instance mapper",
             "titleSize": "h6"
          },
          {
@@ -871,7 +871,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Receive Bandwidth",
+                  "title": "Receive bandwidth",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -948,7 +948,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Transmit Bandwidth",
+                  "title": "Transmit bandwidth",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -1203,7 +1203,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Disk Space Utilization",
+                  "title": "Disk space utilization",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -1344,7 +1344,7 @@
          ]
       },
       "timezone": "utc",
-      "title": "Mimir / Alertmanager Resources",
+      "title": "Mimir / Alertmanager resources",
       "uid": "68b66aed90ccab448009089544a8d6c6",
       "version": 0
    }
