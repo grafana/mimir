@@ -16,7 +16,7 @@ import (
 	"github.com/grafana/mimir/pkg/mimirtool/version"
 )
 
-// Version is set via build flag -ldflags -X main.Version
+// these variables are set via build flag -ldflags -X main.<NAME>
 var (
 	Version  string
 	Branch   string
