@@ -47,8 +47,8 @@ var (
 // Config for a Handler.
 type HandlerConfig struct {
 	LogQueriesLongerThan time.Duration `yaml:"log_queries_longer_than"`
-	MaxBodySize          int64         `yaml:"max_body_size"`
-	QueryStatsEnabled    bool          `yaml:"query_stats_enabled"`
+	MaxBodySize          int64         `yaml:"max_body_size" category:"advanced"`
+	QueryStatsEnabled    bool          `yaml:"query_stats_enabled" category:"advanced"`
 }
 
 func (cfg *HandlerConfig) RegisterFlags(f *flag.FlagSet) {

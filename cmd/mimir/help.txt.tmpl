@@ -753,8 +753,6 @@ Usage of ./cmd/mimir/mimir:
     	Cache query results.
   -frontend.cache-unaligned-requests
     	Cache requests that are not step-aligned.
-  -frontend.downstream-url string
-    	URL of downstream Prometheus.
   -frontend.grpc-client-config.backoff-max-period duration
     	Maximum delay when backing off. (default 10s)
   -frontend.grpc-client-config.backoff-min-period duration
@@ -785,16 +783,8 @@ Usage of ./cmd/mimir/mimir:
     	Path to the key file for the client certificate. Also requires the client certificate to be configured.
   -frontend.grpc-client-config.tls-server-name string
     	Override the expected name on the server certificate.
-  -frontend.instance-addr string
-    	IP address to advertise to querier (via scheduler) (resolved via interfaces by default).
-  -frontend.instance-interface-names value
-    	Name of network interface to read address from. This address is sent to query-scheduler and querier, which uses it to send the query response back to query-frontend. (default [eth0 en0])
-  -frontend.instance-port int
-    	Port to advertise to querier (via scheduler) (defaults to server.grpc-listen-port).
   -frontend.log-queries-longer-than duration
     	Log queries that are slower than the specified duration. Set to 0 to disable. Set to < 0 to enable on all queries.
-  -frontend.max-body-size int
-    	Max body size for downstream prometheus. (default 10485760)
   -frontend.max-cache-freshness value
     	Most recent allowed cacheable result per-tenant, to prevent caching very recent results that might still be in flux. (default 1m)
   -frontend.max-queriers-per-tenant int
@@ -807,8 +797,6 @@ Usage of ./cmd/mimir/mimir:
     	The max number of sharded queries that can be run for a given received query. 0 to disable limit. (default 128)
   -frontend.query-sharding-total-shards int
     	The amount of shards to use when doing parallelisation via query sharding by tenant. 0 to disable query sharding for tenant. Query sharding implementation will adjust the number of query shards based on compactor shards. This allows querier to not search the blocks which cannot possibly have the series for given query shard. (default 16)
-  -frontend.query-stats-enabled
-    	False to disable query statistics tracking. When enabled, a message with some statistics is logged for every query. (default true)
   -frontend.results-cache.backend string
     	Backend for query-frontend results cache, if not empty. Supported values: [memcached].
   -frontend.results-cache.compression string
@@ -831,10 +819,6 @@ Usage of ./cmd/mimir/mimir:
     	The socket read/write timeout. (default 100ms)
   -frontend.scheduler-address string
     	DNS hostname used for finding query-schedulers.
-  -frontend.scheduler-dns-lookup-period duration
-    	How often to resolve the scheduler-address, in order to look for new query-scheduler instances. (default 10s)
-  -frontend.scheduler-worker-concurrency int
-    	Number of concurrent workers forwarding queries to single query-scheduler. (default 5)
   -frontend.split-queries-by-interval duration
     	Split queries by an interval and execute in parallel, 0 disables it. You should use an a multiple of 24 hours (same as the storage bucketing scheme), to avoid queriers downloading and processing the same chunks. This also determines how cache keys are chosen when result caching is enabled.
   -h
@@ -1019,8 +1003,6 @@ Usage of ./cmd/mimir/mimir:
     	Enables endpoints used for cardinality analysis.
   -querier.default-evaluation-interval duration
     	The default evaluation interval or step size for subqueries. This config option should be set on query-frontend too when query sharding is enabled. (default 1m0s)
-  -querier.dns-lookup-period duration
-    	How often to query DNS for query-frontend or query-scheduler address. (default 10s)
   -querier.frontend-address string
     	Address of query frontend service, in host:port format. If -querier.scheduler-address is set as well, querier will use scheduler instead. Only one of -querier.frontend-address or -querier.scheduler-address can be set. If neither is set, queries are only received via HTTP endpoint.
   -querier.frontend-client.backoff-max-period duration
@@ -1053,8 +1035,6 @@ Usage of ./cmd/mimir/mimir:
     	Path to the key file for the client certificate. Also requires the client certificate to be configured.
   -querier.frontend-client.tls-server-name string
     	Override the expected name on the server certificate.
-  -querier.id string
-    	Querier ID, sent to frontend service to identify requests from the same querier. Defaults to hostname.
   -querier.iterators
     	Use iterators to execute query, as opposed to fully materialising the series in memory.
   -querier.label-names-and-values-results-max-size-bytes int
@@ -1071,8 +1051,6 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of chunks that can be fetched in a single query from ingesters and long-term storage. This limit is enforced in the querier, ruler and store-gateway. 0 to disable. (default 2000000)
   -querier.max-fetched-series-per-query int
     	The maximum number of unique series for which a query can fetch samples from each ingesters and storage. This limit is enforced in the querier and ruler. 0 to disable
-  -querier.max-outstanding-requests-per-tenant int
-    	Maximum number of outstanding requests per tenant per frontend; requests beyond this error with HTTP 429. (default 100)
   -querier.max-query-into-future duration
     	Maximum duration into the future you can query. 0 to disable. (default 10m0s)
   -querier.max-query-lookback value
@@ -1111,10 +1089,6 @@ Usage of ./cmd/mimir/mimir:
     	The timeout for a query. This config option should be set on query-frontend too when query sharding is enabled. (default 2m0s)
   -querier.worker-match-max-concurrent
     	Force worker concurrency to match the -querier.max-concurrent option. Overrides querier.worker-parallelism.
-  -querier.worker-parallelism int
-    	Number of simultaneous queries to process per query-frontend or query-scheduler. (default 10)
-  -query-frontend.querier-forget-delay duration
-    	If a querier disconnects without sending notification about graceful shutdown, the query-frontend will keep the querier in the tenant's shard until the forget delay has passed. This feature is useful to reduce the blast radius when shuffle-sharding is enabled.
   -query-scheduler.grpc-client-config.backoff-max-period duration
     	Maximum delay when backing off. (default 10s)
   -query-scheduler.grpc-client-config.backoff-min-period duration

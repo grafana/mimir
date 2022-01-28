@@ -1000,6 +1000,16 @@ grpc_client_config:
 # CLI flag: -frontend.instance-interface-names
 [instance_interface_names: <list of string> | default = [eth0 en0]]
 
+# IP address to advertise to querier (via scheduler) (resolved via interfaces by
+# default).
+# CLI flag: -frontend.instance-addr
+[address: <string> | default = ""]
+
+# Port to advertise to querier (via scheduler) (defaults to
+# server.grpc-listen-port).
+# CLI flag: -frontend.instance-port
+[port: <int> | default = 0]
+
 # Split queries by an interval and execute in parallel, 0 disables it. You
 # should use an a multiple of 24 hours (same as the storage bucketing scheme),
 # to avoid queriers downloading and processing the same chunks. This also
