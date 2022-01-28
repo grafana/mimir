@@ -38,7 +38,7 @@ const (
 var (
 	supportedIndexCacheBackends = []string{IndexCacheBackendInMemory, IndexCacheBackendMemcached}
 
-	ErrUnsupportedIndexCacheBackend = errors.New("unsupported index cache backend")
+	errUnsupportedIndexCacheBackend = errors.New("unsupported index cache backend")
 )
 
 type IndexCacheConfig struct {
@@ -60,7 +60,7 @@ func (cfg *IndexCacheConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix str
 // Validate the config.
 func (cfg *IndexCacheConfig) Validate() error {
 	if !util.StringsContain(supportedIndexCacheBackends, cfg.Backend) {
-		return ErrUnsupportedIndexCacheBackend
+		return errUnsupportedIndexCacheBackend
 	}
 
 	if cfg.Backend == IndexCacheBackendMemcached {
@@ -88,7 +88,7 @@ func NewIndexCache(cfg IndexCacheConfig, logger log.Logger, registerer prometheu
 	case IndexCacheBackendMemcached:
 		return newMemcachedIndexCache(cfg.Memcached, logger, registerer)
 	default:
-		return nil, ErrUnsupportedIndexCacheBackend
+		return nil, errUnsupportedIndexCacheBackend
 	}
 }
 
