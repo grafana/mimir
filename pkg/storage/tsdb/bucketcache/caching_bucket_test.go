@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"regexp"
 	"sort"
 	"strings"
 	"testing"
@@ -614,3 +615,7 @@ func verifyObjectAttrs(t *testing.T, cb *CachingBucket, file string, expectedLen
 }
 
 func matchAll(string) bool { return true }
+
+var chunksMatcher = regexp.MustCompile(`^.*/chunks/\d+$`)
+
+func isTSDBChunkFile(name string) bool { return chunksMatcher.MatchString(name) }
