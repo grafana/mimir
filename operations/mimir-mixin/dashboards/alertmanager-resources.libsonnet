@@ -2,7 +2,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
 
 (import 'dashboard-utils.libsonnet') {
   'alertmanager-resources.json':
-    ($.dashboard('Alertmanager Resources') + { uid: '68b66aed90ccab448009089544a8d6c6' })
+    ($.dashboard('Alertmanager resources') + { uid: '68b66aed90ccab448009089544a8d6c6' })
     .addClusterSelectorTemplates(false)
     .addRow(
       $.row('Gateway')
@@ -29,7 +29,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addRow(
-      $.row('Instance Mapper')
+      $.row('Instance mapper')
       .addPanel(
         $.containerCPUUsagePanel('CPU', 'alertmanager-im'),
       )
@@ -61,7 +61,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     .addRow(
       $.row('')
       .addPanel(
-        $.containerDiskSpaceUtilization('Disk Space Utilization', 'alertmanager'),
+        $.containerDiskSpaceUtilization('Disk space utilization', 'alertmanager'),
       )
     ),
 }
