@@ -147,7 +147,6 @@ frontend:
 
 frontend_worker:
   frontend_address: "query-frontend:9007"
-  match_max_concurrent: true
 
   # By setting scheduler_address, querier worker would use scheduler instead of frontend.
   # scheduler_address: "query-scheduler:9012"
