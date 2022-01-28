@@ -128,7 +128,6 @@ var (
 	RulerFlags = func() map[string]string {
 		return map[string]string{
 			"-api.response-compression-enabled":   "true",
-			"-ruler.enable-sharding":              "false",
 			"-ruler.poll-interval":                "2s",
 			"-experimental.ruler.enable-api":      "true",
 			"-ruler-storage.backend":              "s3",
@@ -142,7 +141,6 @@ var (
 
 	RulerShardingFlags = func(consulAddress string) map[string]string {
 		return map[string]string{
-			"-ruler.enable-sharding":      "true",
 			"-ruler.ring.store":           "consul",
 			"-ruler.ring.consul.hostname": consulAddress,
 		}
