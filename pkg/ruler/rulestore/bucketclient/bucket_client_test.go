@@ -388,8 +388,8 @@ func TestListAllRuleGroupsWithNoNamespaceOrGroup(t *testing.T) {
 
 	out, err = s.ListRuleGroupsForUserAndNamespace(context.Background(), "user3", "")
 	require.NoError(t, err)
-	require.Equal(t, 1, len(out))           // one user
-	require.Equal(t, "group1", out[0].Name) // one group
+	require.Equal(t, 1, len(out))           // one group
+	require.Equal(t, "group1", out[0].Name) // also verify its name
 }
 
 type mockBucket struct {
