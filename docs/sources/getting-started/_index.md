@@ -1,211 +1,185 @@
 ---
-title: "Getting Started"
-linkTitle: "Getting Started"
+title: "Getting started with Grafana Mimir"
+linkTitle: "Getting started with Grafana Mimir"
 weight: 1
 no_section_index_title: true
-slug: "getting-started"
+slug: "getting-started-with-grafana-mimir"
 ---
 
-Mimir can be run as a single binary or as multiple independent microservices.
-The single-binary mode is easier to deploy and is aimed mainly at users wanting to try out Mimir or develop on it.
-The microservices mode is intended for production usage, as it allows you to independently scale different services and isolate failures.
+# Getting started with Grafana Mimir
 
-This document will focus on single-binary Mimir with the blocks storage.
-See [the architecture doc](../architecture.md) for more information about the microservices and [blocks operation](../blocks-storage/_index.md)
-for more information about the blocks storage.
+Grafana Mimir runs as either a single process or as multiple microservice processes.
+The single process mode is useful for users who want to try or develop on Grafana Mimir.
+The microservices mode allows you to independently scale different services and isolate failures.
 
-Separately from single-binary vs microservices decision, Mimir can be configured to use local storage or cloud storage (S3, GCS and Azure).
-Mimir can also make use of external Memcacheds and Redis for caching.
+These instructions focus on deploying Grafana Mimir as a single process.
+For more information about the microservices, refer to [Architecture]({{<relref "../architecture.md" >}}).
 
-## Single instance running in single-binary mode
+## Before you begin
 
-For simplicity and to get started, we'll run it as a [single process](../configuration/single-process-config-blocks.yaml) with no dependencies.
-You can reconfigure the config to use GCS, Azure storage or local storage as shown in the file's comments.
+Verify that you have installed either a [Prometheus server](https://prometheus.io/docs/prometheus/latest/installation/)
+or the [Grafana Agent](https://github.com/grafana/agent/releases/latest).
+Verify that you have installed [Docker](https://docs.docker.com/engine/install/).
 
-> **Note:** The `filesystem` backend only works for a single instance running in
-> single-binary mode. Highly available deployments (both single-binary and
-> microservices modes) must use an external object store.
+## Download Grafana Mimir
 
-```sh
-$ go build ./cmd/mimir
-$ ./mimir -config.file=./docs/sources/configuration/single-process-config-blocks.yaml
+- Using Docker:
+
+```bash
+docker pull "grafana/mimir:latest"
 ```
 
-Unless reconfigured this starts a single Mimir node storing blocks to S3 in bucket `mimir`.
-It is not intended for production use.
+- Using a local binary:
 
-Clone and build prometheus
-
-```sh
-$ git clone https://github.com/prometheus/prometheus
-$ cd prometheus
-$ go build ./cmd/prometheus
+```bash
+curl -LO https://github.com/grafana/mimir/releases/latest/download/mimir
+chmod +x mimir
 ```
 
-Add the following to your Prometheus config (documentation/examples/prometheus.yml in Prometheus repo):
+## Start Grafana Mimir
+
+To run Grafana Mimir in a single process and with local filesystem storage, write the following configuration YAML to a file called `dev.yaml`:
+
+```yaml
+# Do not use this configuration in production.
+# Its purpose is for you to get started within a development environment.
+auth_enabled: false
+
+blocks_storage:
+  backend: filesystem
+  bucket_store:
+    sync_dir: /tmp/mimir/tsdb-sync
+  filesystem:
+    dir: /tmp/mimir/data/tsdb
+  tsdb:
+    dir: /tmp/mimir/tsdb
+
+compactor:
+  data_dir: /tmp/mimir/compactor
+  sharding_ring:
+    kvstore:
+      store: memberlist
+
+distributor:
+  ring:
+    instance_addr: 127.0.0.1
+    kvstore:
+      store: memberlist
+
+ingester:
+  lifecycler:
+    address: 127.0.0.1
+    ring:
+      kvstore:
+        store: memberlist
+      replication_factor: 1
+
+ruler:
+  enable_api: true
+  enable_sharding: false
+
+ruler_storage:
+  backend: local
+  local:
+    directory: /tmp/mimir/rules
+
+server:
+  http_listen_port: 9009
+  log_level: error
+
+store_gateway:
+  sharding_ring:
+    replication_factor: 1
+```
+
+## Run Grafana Mimir
+
+In a terminal, run one of the following commands:
+
+- Using Docker:
+
+  ```bash
+  docker run --rm --name mimir --publish 9009:9009 --volume "$(pwd)"/dev.yaml:/etc/mimir/dev.yaml "grafana/mimir:${MIMIR_LATEST}" --config.file=/etc/mimir/dev.yaml
+  ```
+
+- Using a local binary:
+
+  ```bash
+  ./mimir --config.file=./dev.yaml
+  ```
+
+Grafana Mimir listens on port `9009`.
+
+## Configure Prometheus to write to Grafana Mimir
+
+Add the following YAML snippet to your Prometheus configuration file and restart the Prometheus server:
 
 ```yaml
 remote_write:
   - url: http://localhost:9009/api/v1/push
 ```
 
-And start Prometheus with that config file:
-
-```sh
-$ ./prometheus --config.file=./documentation/examples/prometheus.yml
-```
-
-Your Prometheus instance will now start pushing data to Mimir. To query that data, start a Grafana instance:
-
-```sh
-$ docker run --rm -d --name=grafana -p 3000:3000 grafana/grafana
-```
-
-In [the Grafana UI](http://localhost:3000) (username/password admin/admin), add a Prometheus datasource for Mimir (`http://host.docker.internal:9009/prometheus`).
-
-**To clean up:** press CTRL-C in both terminals (for Mimir and Prometheus).
-
-## Horizontally scale out
-
-Next we're going to show how you can run a scale out Mimir cluster using Docker. We'll need:
-
-- A built Mimir image.
-- A Docker network to put these containers on so they can resolve each other by name.
-- A single node Consul instance to coordinate the Mimir cluster.
-
-> **Note:** In order to horizontally scale mimir, you must use an external
-> object store. See the [blocks storage documentation]({{< relref "../blocks-storage/_index.md" >}})
-> for information on supported backends.
-
-```sh
-$ make ./cmd/mimir/.uptodate
-$ docker network create mimir
-$ docker run -d --name=consul --network=mimir -e CONSUL_BIND_INTERFACE=eth0 consul
-```
-
-Next we'll run a couple of Mimir instances pointed at that Consul. You'll note the Mimir configuration can be specified in either a config file or overridden on the command line. See [the arguments documentation](../configuration/arguments.md) for more information about Mimir configuration options.
-
-```sh
-$ docker run -d --name=mimir1 --network=mimir \
-    -v $(pwd)/docs/sources/configuration/single-process-config-blocks.yaml:/etc/single-process-config-blocks.yaml \
-    -p 9001:9009 \
-    us.gcr.io/kubernetes-dev/mimir \
-    -config.file=/etc/single-process-config-blocks.yaml \
-    -ring.store=consul \
-    -consul.hostname=consul:8500 \
-    -compactor.ring.store=consul \
-    -compactor.ring.consul.hostname=consul:8500
-
-$ docker run -d --name=mimir2 --network=mimir \
-    -v $(pwd)/docs/sources/configuration/single-process-config-blocks.yaml:/etc/single-process-config-blocks.yaml \
-    -p 9002:9009 \
-    us.gcr.io/kubernetes-dev/mimir \
-    -config.file=/etc/single-process-config-blocks.yaml \
-    -ring.store=consul \
-    -consul.hostname=consul:8500 \
-    -compactor.ring.store=consul \
-    -compactor.ring.consul.hostname=consul:8500
-```
-
-If you go to http://localhost:9001/ring (or http://localhost:9002/ring) you should see both Mimir nodes join the ring.
-
-To demonstrate the correct operation of Mimir clustering, we'll send samples
-to one of the instances and queries to another. In production, you'd want to
-load balance both pushes and queries evenly among all the nodes.
-
-Point Prometheus at the first:
+The configuration for a Prometheus server that scrapes itself and writes those metrics to Grafana Mimir looks similar to this:
 
 ```yaml
 remote_write:
-  - url: http://localhost:9001/api/v1/push
+  - url: http://localhost:9009/api/v1/push
+
+scrape_configs:
+  - job_name: prometheus
+    honor_labels: true
+    static_configs:
+      - targets: ["localhost:9090"]
 ```
 
-```sh
-$ ./prometheus --config.file=./documentation/examples/prometheus.yml
-```
+## Configure the Grafana Agent to write to Grafana Mimir
 
-And Grafana at the second:
-
-```sh
-$ docker run -d --name=grafana --network=mimir -p 3000:3000 grafana/grafana
-```
-
-In [the Grafana UI](http://localhost:3000) (username/password admin/admin), add a Prometheus datasource for Mimir (`http://mimir2:9009/prometheus`).
-
-**To clean up:** CTRL-C the Prometheus process and run:
-
-```
-$ docker rm -f mimir1 mimir2 consul grafana
-$ docker network remove mimir
-```
-
-## High availability with replication
-
-In this last demo we'll show how Mimir can replicate data among three nodes,
-and demonstrate Mimir can tolerate a node failure without affecting reads and writes.
-
-First, create a network and run a new Consul and Grafana:
-
-```sh
-$ docker network create mimir
-$ docker run -d --name=consul --network=mimir -e CONSUL_BIND_INTERFACE=eth0 consul
-$ docker run -d --name=grafana --network=mimir -p 3000:3000 grafana/grafana
-```
-
-Then, launch 3 Mimir nodes with replication factor 3:
-
-```sh
-$ docker run -d --name=mimir1 --network=mimir \
-    -v $(pwd)/docs/sources/configuration/single-process-config-blocks.yaml:/etc/single-process-config-blocks.yaml \
-    -p 9001:9009 \
-    us.gcr.io/kubernetes-dev/mimir \
-    -config.file=/etc/single-process-config-blocks.yaml \
-    -ring.store=consul \
-    -consul.hostname=consul:8500 \
-    -distributor.replication-factor=3
-$ docker run -d --name=mimir2 --network=mimir \
-    -v $(pwd)/docs/sources/configuration/single-process-config-blocks.yaml:/etc/single-process-config-blocks.yaml \
-    -p 9002:9009 \
-    us.gcr.io/kubernetes-dev/mimir \
-    -config.file=/etc/single-process-config-blocks.yaml \
-    -ring.store=consul \
-    -consul.hostname=consul:8500 \
-    -distributor.replication-factor=3
-$ docker run -d --name=mimir3 --network=mimir \
-    -v $(pwd)/docs/sources/configuration/single-process-config-blocks.yaml:/etc/single-process-config-blocks.yaml \
-    -p 9003:9009 \
-    us.gcr.io/kubernetes-dev/mimir \
-    -config.file=/etc/single-process-config-blocks.yaml \
-    -ring.store=consul \
-    -consul.hostname=consul:8500 \
-    -distributor.replication-factor=3
-```
-
-Configure Prometheus to send data to the first replica:
+Add the following YAML snippet to one of your Agent metrics configurations (`metrics.configs`) in your Agent configuration file and restart the Grafana Agent:
 
 ```yaml
 remote_write:
-  - url: http://localhost:9001/api/v1/push
+  - url: http://localhost:9009/api/v1/push
 ```
 
-```sh
-$ ./prometheus --config.file=./documentation/examples/prometheus.yml
+The configuration for an Agent that scrapes itself for metrics and writes those metrics to Grafana Mimir looks similar to this:
+
+```yaml
+server:
+  http_listen_port: 12345
+
+metrics:
+  configs:
+    - name: agent
+      scrape_configs:
+        - job_name: agent
+          static_configs:
+            - targets: ["127.0.0.1:12345"]
+      remote_write:
+        - url: http://localhost:9009/prometheus/api/v1/push
 ```
 
-In Grafana, add a datasource for the 3rd Mimir replica (`http://mimir3:9009/prometheus`)
-and verify the same data appears in both Prometheus and Mimir.
+## Query data in Grafana
 
-To show that Mimir can tolerate a node failure, hard kill one of the Mimir replicas:
+In a new terminal, run a local Grafana server using Docker:
 
+```bash
+docker run --rm --name=grafana --network=host grafana/grafana
 ```
-$ docker rm -f mimir2
-```
 
-You should see writes and queries continue to work without error.
+### Add Grafana Mimir as a Prometheus data source
 
-**To clean up:** CTRL-C the Prometheus process and run:
+1. In a browser, go to the Grafana server at [http://localhost:3000/datasources](http://localhost:3000/datasources).
+1. Sign in using the default username `admin` and password `admin`.
+1. Configure a new Prometheus data source to query the local Grafana Mimir server using the following settings:
 
-```
-$ docker rm -f mimir1 mimir2 mimir3 consul grafana
-$ docker network remove mimir
-```
+| Field | Value                                                                |
+| ----- | -------------------------------------------------------------------- |
+| Name  | Mimir                                                                |
+| URL   | [http://localhost:9009/prometheus](http://localhost:9009/prometheus) |
+
+To add a data source, refer to [Add a data source](https://grafana.com/docs/grafana/latest/datasources/add-a-data-source/).
+
+## Verify success
+
+When you have completed the tasks in this getting started guide, you can query metrics in [Grafana Explore](https://grafana.com/docs/grafana/latest/explore/)
+as well as create dashboard panels using the newly configured Grafana Mimir data source.
