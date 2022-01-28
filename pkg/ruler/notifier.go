@@ -123,7 +123,7 @@ func buildNotifierConfig(rulerConfig *Config) (*config.Config, error) {
 	}
 
 	apiVersion := config.AlertmanagerAPIVersionV1
-	if rulerConfig.AlertmanangerEnableV2API {
+	if rulerConfig.AlertmanagerEnableV2API {
 		apiVersion = config.AlertmanagerAPIVersionV2
 	}
 
