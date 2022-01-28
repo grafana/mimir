@@ -470,7 +470,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.tsdb.head-chunks-write-buffer-size-bytes int
     	The write buffer size used by the head chunks mapper. Lower values reduce memory utilisation on clusters with a large number of tenants at the cost of increased disk I/O operations. (default 4194304)
   -blocks-storage.tsdb.head-chunks-write-queue-size int
-    	The size of the write queue used by the head chunks mapper. Lower values reduce memory utilisation at the cost of potentially higher ingest latency. 0 disables the use of the chunk write queue.
+    	The size of the write queue used by the head chunks mapper. Lower values reduce memory utilisation at the cost of potentially higher ingest latency. (default 1000000)
   -blocks-storage.tsdb.head-compaction-concurrency int
     	Maximum number of tenants concurrently compacting TSDB head into a new block (default 5)
   -blocks-storage.tsdb.head-compaction-idle-timeout duration
