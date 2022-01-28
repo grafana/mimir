@@ -141,9 +141,7 @@
     },
 
     // PromQL query engine config (shared between all services running PromQL engine, like the ruler and querier).
-    queryEngineConfig: {
-      'querier.at-modifier-enabled': true,
-    },
+    queryEngineConfig: {},
 
     ringConfig: {
       'consul.hostname': 'consul.%s.svc.cluster.local:8500' % $._config.namespace,

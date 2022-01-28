@@ -837,7 +837,6 @@ spec:
         - -distributor.ingestion-tenant-shard-size=3
         - -distributor.replication-factor=3
         - -mem-ballast-size-bytes=268435456
-        - -querier.at-modifier-enabled=true
         - -querier.frontend-client.grpc-max-send-msg-size=104857600
         - -querier.max-concurrent=8
         - -querier.query-ingesters-within=13h
@@ -1082,7 +1081,6 @@ spec:
         - -distributor.ingestion-tenant-shard-size=3
         - -distributor.replication-factor=3
         - -experimental.ruler.enable-api=true
-        - -querier.at-modifier-enabled=true
         - -querier.query-ingesters-within=13h
         - -querier.query-label-names-with-matchers-enabled=true
         - -querier.query-store-after=12h
