@@ -27,13 +27,13 @@ import (
 type Config struct {
 	FrontendAddress  string        `yaml:"frontend_address"`
 	SchedulerAddress string        `yaml:"scheduler_address"`
-	DNSLookupPeriod  time.Duration `yaml:"dns_lookup_duration"`
+	DNSLookupPeriod  time.Duration `yaml:"dns_lookup_duration" category:"advanced"`
 
-	Parallelism           int  `yaml:"parallelism"`
+	Parallelism           int  `yaml:"parallelism" category:"advanced"`
 	MatchMaxConcurrency   bool `yaml:"match_max_concurrent"`
 	MaxConcurrentRequests int  `yaml:"-"` // Must be same as passed to PromQL Engine.
 
-	QuerierID string `yaml:"id"`
+	QuerierID string `yaml:"id" category:"advanced"`
 
 	GRPCClientConfig grpcclient.Config `yaml:"grpc_client_config"`
 }

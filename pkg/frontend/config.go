@@ -28,7 +28,7 @@ type CombinedFrontendConfig struct {
 
 	QueryMiddleware querymiddleware.Config `yaml:",inline"`
 
-	DownstreamURL string `yaml:"downstream_url"`
+	DownstreamURL string `yaml:"downstream_url" category:"advanced"`
 }
 
 func (cfg *CombinedFrontendConfig) RegisterFlags(f *flag.FlagSet) {
