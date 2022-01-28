@@ -23,4 +23,4 @@ are strong use-cases to change the default value.
 
 Parameters related to new and experimental features under testing. These parameters are provided
 for users who wish to become early adopters and for Mimir developers to gain confidence with new
-features. No parameter should remain experimental for longer than some period of time.
+features.
