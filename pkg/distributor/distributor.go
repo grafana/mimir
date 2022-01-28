@@ -125,11 +125,11 @@ type Config struct {
 
 	HATrackerConfig HATrackerConfig `yaml:"ha_tracker"`
 
-	MaxRecvMsgSize  int           `yaml:"max_recv_msg_size"`
-	RemoteTimeout   time.Duration `yaml:"remote_timeout"`
-	ExtraQueryDelay time.Duration `yaml:"extra_queue_delay"`
+	MaxRecvMsgSize  int           `yaml:"max_recv_msg_size" category:"advanced"`
+	RemoteTimeout   time.Duration `yaml:"remote_timeout" category:"advanced"`
+	ExtraQueryDelay time.Duration `yaml:"extra_queue_delay" category:"advanced"`
 
-	ExtendWrites bool `yaml:"extend_writes"`
+	ExtendWrites bool `yaml:"extend_writes" category:"advanced"`
 
 	// Distributors ring
 	DistributorRing RingConfig `yaml:"ring"`
@@ -149,8 +149,8 @@ type Config struct {
 }
 
 type InstanceLimits struct {
-	MaxIngestionRate        float64 `yaml:"max_ingestion_rate"`
-	MaxInflightPushRequests int     `yaml:"max_inflight_push_requests"`
+	MaxIngestionRate        float64 `yaml:"max_ingestion_rate" category:"advanced"`
+	MaxInflightPushRequests int     `yaml:"max_inflight_push_requests" category:"advanced"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet

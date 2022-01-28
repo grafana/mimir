@@ -627,16 +627,10 @@ Usage of ./cmd/mimir/mimir:
     	Fraction of goroutine blocking events that are reported in the blocking profile. 1 to include every blocking event in the profile, 0 to disable.
   -debug.mutex-profile-fraction int
     	Fraction of mutex contention events that are reported in the mutex profile. On average 1/rate events are reported. 0 to disable.
-  -distributor.client-cleanup-period duration
-    	How frequently to clean up clients for ingesters that have gone away. (default 15s)
   -distributor.drop-label value
     	This flag can be used to specify label names that to drop during sample ingestion within the distributor and can be repeated in order to drop multiple labels.
   -distributor.excluded-zones value
     	Comma-separated list of zones to exclude from the ring. Instances in excluded zones will be filtered out from the ring.
-  -distributor.extend-writes
-    	Try writing to an additional ingester in the presence of an ingester not in the ACTIVE state. It is useful to disable this along with -ingester.unregister-on-shutdown=false in order to not spread samples to extra ingesters during rolling restarts with consistent naming. (default true)
-  -distributor.extra-query-delay duration
-    	Time to wait before sending more than the minimum successful query requests.
   -distributor.ha-tracker.cluster string
     	Prometheus label to look for in samples to identify a Prometheus HA cluster. (default "cluster")
   -distributor.ha-tracker.consul.acl-token string
@@ -677,8 +671,6 @@ Usage of ./cmd/mimir/mimir:
     	Override the expected name on the server certificate.
   -distributor.ha-tracker.etcd.username string
     	Etcd username.
-  -distributor.ha-tracker.failover-timeout duration
-    	If we don't receive any samples from the accepted replica for a cluster in this amount of time we will failover to the next replica we receive a sample from. This value must be greater than the update timeout (default 30s)
   -distributor.ha-tracker.max-clusters int
     	Maximum number of clusters that HA tracker will keep track of for single user. 0 to disable the limit.
   -distributor.ha-tracker.multi.mirror-enabled
@@ -695,26 +687,12 @@ Usage of ./cmd/mimir/mimir:
     	Prometheus label to look for in samples to identify a Prometheus HA replica. (default "__replica__")
   -distributor.ha-tracker.store string
     	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "consul")
-  -distributor.ha-tracker.update-timeout duration
-    	Update the timestamp in the KV store for a given cluster/replica only after this amount of time has passed since the current stored timestamp. (default 15s)
-  -distributor.ha-tracker.update-timeout-jitter-max duration
-    	Maximum jitter applied to the update timeout, in order to spread the HA heartbeats over time. (default 5s)
-  -distributor.health-check-ingesters
-    	Run a health check on each ingester client during periodic cleanup. (default true)
   -distributor.ingestion-burst-size int
     	Per-user allowed ingestion burst size (in number of samples). (default 200000)
   -distributor.ingestion-rate-limit float
     	Per-user ingestion rate limit in samples per second. (default 10000)
   -distributor.ingestion-tenant-shard-size int
     	The tenant's shard size used by shuffle-sharding. Must be set both on ingesters and distributors. 0 disables shuffle sharding.
-  -distributor.instance-limits.max-inflight-push-requests int
-    	Max inflight push requests that this distributor can handle. This limit is per-distributor, not per-tenant. Additional requests will be rejected. 0 = unlimited.
-  -distributor.instance-limits.max-ingestion-rate float
-    	Max ingestion rate (samples/sec) that this distributor will accept. This limit is per-distributor, not per-tenant. Additional push requests will be rejected. Current ingestion rate is computed as exponentially weighted moving average, updated every second. 0 = unlimited.
-  -distributor.max-recv-msg-size int
-    	remote_write API max receive message size (bytes). (default 104857600)
-  -distributor.remote-timeout duration
-    	Timeout for downstream ingesters. (default 2s)
   -distributor.replication-factor int
     	The number of ingesters to write to and read from. (default 3)
   -distributor.ring.consul.acl-token string
