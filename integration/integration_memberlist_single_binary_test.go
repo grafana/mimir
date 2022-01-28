@@ -2,6 +2,7 @@
 // Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/integration/integration_memberlist_single_binary_test.go
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
+//go:build requires_docker
 // +build requires_docker
 
 package integration
@@ -91,29 +92,31 @@ func testSingleBinaryEnv(t *testing.T, tlsEnabled bool, flags map[string]string)
 	require.NoError(t, mimir2.WaitSumMetrics(e2e.Equals(3), "memberlist_client_cluster_members_count"))
 	require.NoError(t, mimir3.WaitSumMetrics(e2e.Equals(3), "memberlist_client_cluster_members_count"))
 
-	// All Mimir servers should have 512+1 tokens, altogether 3 instances * (512 ingester tokens + 1 distributor token).
-	require.NoError(t, mimir1.WaitSumMetrics(e2e.Equals(3*(512+1)), "cortex_ring_tokens_total"))
-	require.NoError(t, mimir2.WaitSumMetrics(e2e.Equals(3*(512+1)), "cortex_ring_tokens_total"))
-	require.NoError(t, mimir3.WaitSumMetrics(e2e.Equals(3*(512+1)), "cortex_ring_tokens_total"))
+	// Each Mimir instance will use (512 ingester tokens + 1 distributor token + 512 compactor tokens).
+	tokensPerInstance := float64(512 + 1 + 512)
+	// 3 = number of instances.
+	require.NoError(t, mimir1.WaitSumMetrics(e2e.Equals(3*tokensPerInstance), "cortex_ring_tokens_total"))
+	require.NoError(t, mimir2.WaitSumMetrics(e2e.Equals(3*tokensPerInstance), "cortex_ring_tokens_total"))
+	require.NoError(t, mimir3.WaitSumMetrics(e2e.Equals(3*tokensPerInstance), "cortex_ring_tokens_total"))
 
 	// All Mimir servers should initially have no tombstones; nobody has left yet.
 	require.NoError(t, mimir3.WaitSumMetrics(e2e.Equals(0), "memberlist_client_kv_store_value_tombstones"))
 	require.NoError(t, mimir3.WaitSumMetrics(e2e.Equals(0), "memberlist_client_kv_store_value_tombstones"))
 	require.NoError(t, mimir3.WaitSumMetrics(e2e.Equals(0), "memberlist_client_kv_store_value_tombstones"))
 
-	// Tombstones should increase by two for each server that leaves (once for distributor and once for ingester)
+	// Tombstones should increase by three for each server that leaves (once for distributor, ingester and compactor ring)
 	require.NoError(t, s.Stop(mimir1))
-	require.NoError(t, mimir2.WaitSumMetrics(e2e.Equals(2*(512+1)), "cortex_ring_tokens_total"))
+	require.NoError(t, mimir2.WaitSumMetrics(e2e.Equals(2*tokensPerInstance), "cortex_ring_tokens_total"))
 	require.NoError(t, mimir2.WaitSumMetrics(e2e.Equals(2), "memberlist_client_cluster_members_count"))
-	require.NoError(t, mimir3.WaitSumMetrics(e2e.Equals(2), "memberlist_client_kv_store_value_tombstones"))
-	require.NoError(t, mimir3.WaitSumMetrics(e2e.Equals(2*(512+1)), "cortex_ring_tokens_total"))
+	require.NoError(t, mimir3.WaitSumMetrics(e2e.Equals(3), "memberlist_client_kv_store_value_tombstones"))
+	require.NoError(t, mimir3.WaitSumMetrics(e2e.Equals(2*tokensPerInstance), "cortex_ring_tokens_total"))
 	require.NoError(t, mimir3.WaitSumMetrics(e2e.Equals(2), "memberlist_client_cluster_members_count"))
-	require.NoError(t, mimir3.WaitSumMetrics(e2e.Equals(2), "memberlist_client_kv_store_value_tombstones"))
+	require.NoError(t, mimir3.WaitSumMetrics(e2e.Equals(3), "memberlist_client_kv_store_value_tombstones"))
 
 	require.NoError(t, s.Stop(mimir2))
-	require.NoError(t, mimir3.WaitSumMetrics(e2e.Equals(1*(512+1)), "cortex_ring_tokens_total"))
+	require.NoError(t, mimir3.WaitSumMetrics(e2e.Equals(1*tokensPerInstance), "cortex_ring_tokens_total"))
 	require.NoError(t, mimir3.WaitSumMetrics(e2e.Equals(1), "memberlist_client_cluster_members_count"))
-	require.NoError(t, mimir3.WaitSumMetrics(e2e.Equals(4), "memberlist_client_kv_store_value_tombstones"))
+	require.NoError(t, mimir3.WaitSumMetrics(e2e.Equals(6), "memberlist_client_kv_store_value_tombstones"))
 
 	require.NoError(t, s.Stop(mimir3))
 }
@@ -192,8 +195,8 @@ func TestSingleBinaryWithMemberlistScaling(t *testing.T) {
 	// Sanity check the ring membership and give each instance time to see every other instance.
 
 	for _, c := range instances {
-		// we expect 2*maxMimir to account for both the ingester and distributor rings
-		require.NoError(t, c.WaitSumMetrics(e2e.Equals(float64(maxMimir*2)), "cortex_ring_members"))
+		// we expect 3*maxMimir to account for both the ingester, distributor and compactor rings
+		require.NoError(t, c.WaitSumMetrics(e2e.Equals(float64(maxMimir*3)), "cortex_ring_members"))
 		require.NoError(t, c.WaitSumMetrics(e2e.Equals(0), "memberlist_client_kv_store_value_tombstones"))
 	}
 
@@ -219,10 +222,10 @@ func TestSingleBinaryWithMemberlistScaling(t *testing.T) {
 	// The logging is mildly spammy, but it has proven extremely useful for debugging convergence cases.
 	// We don't use WaitSumMetrics [over all instances] here so we can log the per-instance metrics.
 
-	// These values are multiplied by two to account for the fact that both the
-	// ingester and distributor component make use of a ring
-	expectedRingMembers := float64(minMimir) * 2
-	expectedTombstones := float64(maxMimir-minMimir) * 2
+	// These values are multiplied by three to account for the fact that ingester
+	// distributor and compactor components use a ring.
+	expectedRingMembers := float64(minMimir) * 3
+	expectedTombstones := float64(maxMimir-minMimir) * 3
 
 	require.Eventually(t, func() bool {
 		ok := true
