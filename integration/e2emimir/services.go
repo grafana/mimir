@@ -285,7 +285,6 @@ func NewCompactorWithConfigFile(name, consulAddress, configFile string, flags ma
 			"-target":    "compactor",
 			"-log.level": "warn",
 			// Store-gateway ring backend.
-			"-compactor.sharding-enabled":     "true",
 			"-compactor.ring.store":           "consul",
 			"-compactor.ring.consul.hostname": consulAddress,
 			// Startup quickly.

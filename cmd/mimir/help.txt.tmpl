@@ -560,15 +560,13 @@ Usage of ./cmd/mimir/mimir:
   -compactor.ring.prefix string
     	The prefix for the keys in the store. Should end with a /. (default "collectors/")
   -compactor.ring.store string
-    	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "consul")
+    	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
   -compactor.ring.wait-active-instance-timeout duration
     	Timeout for waiting on compactor to become ACTIVE in the ring. (default 10m0s)
   -compactor.ring.wait-stability-max-duration duration
     	Maximum time to wait for ring stability at startup. If the compactor ring keeps changing after this period of time, the compactor will start anyway. (default 5m0s)
   -compactor.ring.wait-stability-min-duration duration
     	Minimum time to wait for ring stability at startup. 0 to disable. (default 1m0s)
-  -compactor.sharding-enabled
-    	Shard workload across multiple compactor instances. Sharding is required if you run multiple compactor instances, in order to coordinate compactions and avoid race conditions leading to the same tenant blocks simultaneously compacted by different instances.
   -compactor.split-and-merge-shards int
     	The number of shards to use when splitting blocks. 0 to disable splitting.
   -compactor.split-groups int

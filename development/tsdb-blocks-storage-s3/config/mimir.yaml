@@ -121,7 +121,6 @@ compactor:
   compaction_interval: 30s
   data_dir:            /tmp/mimir-compactor
   consistency_delay:   1m
-  sharding_enabled:    true
   cleanup_interval:    1m
   tenant_cleanup_delay: 1m
   sharding_ring:

@@ -103,8 +103,7 @@ type Config struct {
 	DisabledTenants flagext.StringSliceCSV `yaml:"disabled_tenants" category:"advanced"`
 
 	// Compactors sharding.
-	ShardingEnabled bool       `yaml:"sharding_enabled"`
-	ShardingRing    RingConfig `yaml:"sharding_ring"`
+	ShardingRing RingConfig `yaml:"sharding_ring"`
 
 	CompactionJobsOrder string `yaml:"compaction_jobs_order" category:"advanced"`
 
@@ -138,7 +137,6 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&cfg.CompactionConcurrency, "compactor.compaction-concurrency", 1, "Max number of concurrent compactions running.")
 	f.DurationVar(&cfg.CleanupInterval, "compactor.cleanup-interval", 15*time.Minute, "How frequently compactor should run blocks cleanup and maintenance, as well as update the bucket index.")
 	f.IntVar(&cfg.CleanupConcurrency, "compactor.cleanup-concurrency", 20, "Max number of tenants for which blocks cleanup and maintenance should run concurrently.")
-	f.BoolVar(&cfg.ShardingEnabled, "compactor.sharding-enabled", false, "Shard workload across multiple compactor instances. Sharding is required if you run multiple compactor instances, in order to coordinate compactions and avoid race conditions leading to the same tenant blocks simultaneously compacted by different instances.")
 	f.StringVar(&cfg.CompactionJobsOrder, "compactor.compaction-jobs-order", CompactionOrderOldestFirst, fmt.Sprintf("The sorting to use when deciding which compaction jobs should run first for a given tenant. Supported values are: %s.", strings.Join(CompactionOrders, ", ")))
 	f.DurationVar(&cfg.DeletionDelay, "compactor.deletion-delay", 12*time.Hour, "Time before a block marked for deletion is deleted from bucket. "+
 		"If not 0, blocks will be marked for deletion and compactor component will permanently delete blocks marked for deletion from the bucket. "+
@@ -387,70 +385,62 @@ func (c *MultitenantCompactor) starting(ctx context.Context) error {
 	c.bucketClient = bucketindex.BucketWithGlobalMarkers(c.bucketClient)
 
 	// Initialize the compactors ring if sharding is enabled.
-	if c.compactorCfg.ShardingEnabled {
-		lifecyclerCfg := c.compactorCfg.ShardingRing.ToLifecyclerConfig()
-		c.ringLifecycler, err = ring.NewLifecycler(lifecyclerCfg, ring.NewNoopFlushTransferer(), "compactor", CompactorRingKey, false, c.logger, prometheus.WrapRegistererWithPrefix("cortex_", c.registerer))
-		if err != nil {
-			return errors.Wrap(err, "unable to initialize compactor ring lifecycler")
+	lifecyclerCfg := c.compactorCfg.ShardingRing.ToLifecyclerConfig()
+	c.ringLifecycler, err = ring.NewLifecycler(lifecyclerCfg, ring.NewNoopFlushTransferer(), "compactor", CompactorRingKey, false, c.logger, prometheus.WrapRegistererWithPrefix("cortex_", c.registerer))
+	if err != nil {
+		return errors.Wrap(err, "unable to initialize compactor ring lifecycler")
+	}
+
+	c.ring, err = ring.New(lifecyclerCfg.RingConfig, "compactor", CompactorRingKey, c.logger, prometheus.WrapRegistererWithPrefix("cortex_", c.registerer))
+	if err != nil {
+		return errors.Wrap(err, "unable to initialize compactor ring")
+	}
+
+	c.ringSubservices, err = services.NewManager(c.ringLifecycler, c.ring)
+	if err == nil {
+		c.ringSubservicesWatcher = services.NewFailureWatcher()
+		c.ringSubservicesWatcher.WatchManager(c.ringSubservices)
+
+		err = services.StartManagerAndAwaitHealthy(ctx, c.ringSubservices)
+	}
+
+	if err != nil {
+		return errors.Wrap(err, "unable to start compactor ring dependencies")
+	}
+
+	// If sharding is enabled we should wait until this instance is
+	// ACTIVE within the ring. This MUST be done before starting the
+	// any other component depending on the users scanner, because the
+	// users scanner depends on the ring (to check whether an user belongs
+	// to this shard or not).
+	level.Info(c.logger).Log("msg", "waiting until compactor is ACTIVE in the ring")
+
+	ctxWithTimeout, cancel := context.WithTimeout(ctx, c.compactorCfg.ShardingRing.WaitActiveInstanceTimeout)
+	defer cancel()
+	if err := ring.WaitInstanceState(ctxWithTimeout, c.ring, c.ringLifecycler.ID, ring.ACTIVE); err != nil {
+		level.Error(c.logger).Log("msg", "compactor failed to become ACTIVE in the ring", "err", err)
+		return err
+	}
+	level.Info(c.logger).Log("msg", "compactor is ACTIVE in the ring")
+
+	// In the event of a cluster cold start or scale up of 2+ compactor instances at the same
+	// time, we may end up in a situation where each new compactor instance starts at a slightly
+	// different time and thus each one starts with a different state of the ring. It's better
+	// to just wait the ring stability for a short time.
+	if c.compactorCfg.ShardingRing.WaitStabilityMinDuration > 0 {
+		minWaiting := c.compactorCfg.ShardingRing.WaitStabilityMinDuration
+		maxWaiting := c.compactorCfg.ShardingRing.WaitStabilityMaxDuration
+
+		level.Info(c.logger).Log("msg", "waiting until compactor ring topology is stable", "min_waiting", minWaiting.String(), "max_waiting", maxWaiting.String())
+		if err := ring.WaitRingStability(ctx, c.ring, RingOp, minWaiting, maxWaiting); err != nil {
+			level.Warn(c.logger).Log("msg", "compactor ring topology is not stable after the max waiting time, proceeding anyway")
+		} else {
+			level.Info(c.logger).Log("msg", "compactor ring topology is stable")
 		}
-
-		c.ring, err = ring.New(lifecyclerCfg.RingConfig, "compactor", CompactorRingKey, c.logger, prometheus.WrapRegistererWithPrefix("cortex_", c.registerer))
-		if err != nil {
-			return errors.Wrap(err, "unable to initialize compactor ring")
-		}
-
-		c.ringSubservices, err = services.NewManager(c.ringLifecycler, c.ring)
-		if err == nil {
-			c.ringSubservicesWatcher = services.NewFailureWatcher()
-			c.ringSubservicesWatcher.WatchManager(c.ringSubservices)
-
-			err = services.StartManagerAndAwaitHealthy(ctx, c.ringSubservices)
-		}
-
-		if err != nil {
-			return errors.Wrap(err, "unable to start compactor ring dependencies")
-		}
-
-		// If sharding is enabled we should wait until this instance is
-		// ACTIVE within the ring. This MUST be done before starting the
-		// any other component depending on the users scanner, because the
-		// users scanner depends on the ring (to check whether an user belongs
-		// to this shard or not).
-		level.Info(c.logger).Log("msg", "waiting until compactor is ACTIVE in the ring")
-
-		ctxWithTimeout, cancel := context.WithTimeout(ctx, c.compactorCfg.ShardingRing.WaitActiveInstanceTimeout)
-		defer cancel()
-		if err := ring.WaitInstanceState(ctxWithTimeout, c.ring, c.ringLifecycler.ID, ring.ACTIVE); err != nil {
-			level.Error(c.logger).Log("msg", "compactor failed to become ACTIVE in the ring", "err", err)
-			return err
-		}
-		level.Info(c.logger).Log("msg", "compactor is ACTIVE in the ring")
-
-		// In the event of a cluster cold start or scale up of 2+ compactor instances at the same
-		// time, we may end up in a situation where each new compactor instance starts at a slightly
-		// different time and thus each one starts with a different state of the ring. It's better
-		// to just wait the ring stability for a short time.
-		if c.compactorCfg.ShardingRing.WaitStabilityMinDuration > 0 {
-			minWaiting := c.compactorCfg.ShardingRing.WaitStabilityMinDuration
-			maxWaiting := c.compactorCfg.ShardingRing.WaitStabilityMaxDuration
-
-			level.Info(c.logger).Log("msg", "waiting until compactor ring topology is stable", "min_waiting", minWaiting.String(), "max_waiting", maxWaiting.String())
-			if err := ring.WaitRingStability(ctx, c.ring, RingOp, minWaiting, maxWaiting); err != nil {
-				level.Warn(c.logger).Log("msg", "compactor ring topology is not stable after the max waiting time, proceeding anyway")
-			} else {
-				level.Info(c.logger).Log("msg", "compactor ring topology is stable")
-			}
-		}
-	} else {
-		level.Warn(c.logger).Log("msg", "Compactor sharding is disabled. Please don't run more than one compactor in this mode.")
 	}
 
 	allowedTenants := util.NewAllowedTenants(c.compactorCfg.EnabledTenants, c.compactorCfg.DisabledTenants)
-	if !c.compactorCfg.ShardingEnabled {
-		c.shardingStrategy = newNoShardingStrategy(allowedTenants)
-	} else {
-		c.shardingStrategy = newSplitAndMergeShardingStrategy(allowedTenants, c.ring, c.ringLifecycler, c.cfgProvider)
-	}
+	c.shardingStrategy = newSplitAndMergeShardingStrategy(allowedTenants, c.ring, c.ringLifecycler, c.cfgProvider)
 
 	// Create the blocks cleaner (service).
 	c.blocksCleaner = NewBlocksCleaner(BlocksCleanerConfig{
@@ -751,31 +741,6 @@ type shardingStrategy interface {
 	compactorOwnUser(userID string) (bool, error)
 	blocksCleanerOwnUser(userID string) (bool, error)
 	ownJob(job *Job) (bool, error)
-}
-
-// No sharding of users. Each compactor will process any user.
-type noShardingStrategy struct {
-	allowedTenants *util.AllowedTenants
-}
-
-func newNoShardingStrategy(allowedTenants *util.AllowedTenants) *noShardingStrategy {
-	return &noShardingStrategy{allowedTenants: allowedTenants}
-}
-
-func (n *noShardingStrategy) ownUser(userID string) bool {
-	return n.allowedTenants.IsAllowed(userID)
-}
-
-func (n *noShardingStrategy) blocksCleanerOwnUser(userID string) (bool, error) {
-	return n.ownUser(userID), nil
-}
-
-func (n *noShardingStrategy) compactorOwnUser(userID string) (bool, error) {
-	return n.ownUser(userID), nil
-}
-
-func (n *noShardingStrategy) ownJob(job *Job) (bool, error) {
-	return n.ownUser(job.UserID()), nil
 }
 
 // splitAndMergeShardingStrategy is used by split-and-merge compactor when configured with sharding.

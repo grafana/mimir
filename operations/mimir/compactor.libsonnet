@@ -53,8 +53,7 @@
       'compactor.max-closing-blocks-concurrency': '2',  // Closing of blocks means writing index, which uses extra memory, hence only 2.
       'compactor.symbols-flushers-concurrency': '4',
 
-      // Enable sharding.
-      'compactor.sharding-enabled': true,
+      // Configure sharding.
       'compactor.ring.store': 'consul',
       'compactor.ring.consul.hostname': 'consul.%s.svc.cluster.local:8500' % $._config.namespace,
       'compactor.ring.prefix': '',
