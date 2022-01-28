@@ -19,22 +19,15 @@ var (
 	errUnableToRetrieveLatestVersion = errors.New("unable to fetch the latest version from GitHub")
 )
 
-// Version defines the version for the binary, this is actually set by GoReleaser.
-var Version = "main"
-
-// Template controls how the version is displayed
-var Template = fmt.Sprintf("version %s\n", Version)
-
 // CheckLatest asks GitHub
-func CheckLatest() {
-	if Version != "main" {
+func CheckLatest(version string) {
+	if version != "" {
 		latest, err := getLatestFromGitHub()
 		if err != nil {
 			fmt.Println(err)
 			return
 		}
 
-		version := Version
 		if latest != "" && (strings.TrimPrefix(latest, "v") != strings.TrimPrefix(version, "v")) {
 			fmt.Printf("A newer version of mimirtool is available, please update to %s\n", latest)
 		} else {

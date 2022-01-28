@@ -15,6 +15,13 @@ import (
 	"github.com/grafana/mimir/pkg/mimirtool/version"
 )
 
+// Version is set via build flag -ldflags -X main.Version
+var (
+	Version  string
+	Branch   string
+	Revision string
+)
+
 var (
 	ruleCommand           commands.RuleCommand
 	alertCommand          commands.AlertCommand
@@ -44,9 +51,8 @@ func main() {
 	bucketValidateCommand.Register(app, envVars)
 
 	app.Command("version", "Get the version of the mimirtool CLI").Action(func(k *kingpin.ParseContext) error {
-		fmt.Print(version.Template)
-		version.CheckLatest()
-
+		fmt.Printf("version %s\n", Version)
+		version.CheckLatest(Version)
 		return nil
 	})
 
