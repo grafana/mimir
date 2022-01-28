@@ -18,10 +18,10 @@ var (
 // InstanceLimits describes limits used by ingester. Reaching any of these will result in Push method to return
 // (internal) error.
 type InstanceLimits struct {
-	MaxIngestionRate        float64 `yaml:"max_ingestion_rate"`
-	MaxInMemoryTenants      int64   `yaml:"max_tenants"`
-	MaxInMemorySeries       int64   `yaml:"max_series"`
-	MaxInflightPushRequests int64   `yaml:"max_inflight_push_requests"`
+	MaxIngestionRate        float64 `yaml:"max_ingestion_rate" category:"advanced"`
+	MaxInMemoryTenants      int64   `yaml:"max_tenants" category:"advanced"`
+	MaxInMemorySeries       int64   `yaml:"max_series" category:"advanced"`
+	MaxInflightPushRequests int64   `yaml:"max_inflight_push_requests" category:"advanced"`
 }
 
 // Sets default limit values for unmarshalling.

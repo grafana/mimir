@@ -117,16 +117,16 @@ type Config struct {
 	LifecyclerConfig ring.LifecyclerConfig `yaml:"lifecycler"`
 
 	// Config for metadata purging.
-	MetadataRetainPeriod time.Duration `yaml:"metadata_retain_period"`
+	MetadataRetainPeriod time.Duration `yaml:"metadata_retain_period" category:"advanced"`
 
-	RateUpdatePeriod time.Duration `yaml:"rate_update_period"`
+	RateUpdatePeriod time.Duration `yaml:"rate_update_period" category:"advanced"`
 
 	ActiveSeriesMetricsEnabled      bool                             `yaml:"active_series_metrics_enabled"`
-	ActiveSeriesMetricsUpdatePeriod time.Duration                    `yaml:"active_series_metrics_update_period"`
-	ActiveSeriesMetricsIdleTimeout  time.Duration                    `yaml:"active_series_metrics_idle_timeout"`
+	ActiveSeriesMetricsUpdatePeriod time.Duration                    `yaml:"active_series_metrics_update_period" category:"advanced"`
+	ActiveSeriesMetricsIdleTimeout  time.Duration                    `yaml:"active_series_metrics_idle_timeout" category:"advanced"`
 	ActiveSeriesCustomTrackers      ActiveSeriesCustomTrackersConfig `yaml:"active_series_custom_trackers" doc:"description=Additional custom trackers for active metrics. If there are active series matching a provided matcher (map value), the count will be exposed in the custom trackers metric labeled using the tracker name (map key). Zero valued counts are not exposed (and removed when they go back to zero)."`
 
-	ExemplarsUpdatePeriod time.Duration `yaml:"exemplars_update_period"`
+	ExemplarsUpdatePeriod time.Duration `yaml:"exemplars_update_period" category:"advanced"`
 
 	BlocksStorageConfig         mimir_tsdb.BlocksStorageConfig `yaml:"-"`
 	StreamChunksWhenUsingBlocks bool                           `yaml:"-"`
@@ -136,7 +136,7 @@ type Config struct {
 	DefaultLimits    InstanceLimits         `yaml:"instance_limits"`
 	InstanceLimitsFn func() *InstanceLimits `yaml:"-"`
 
-	IgnoreSeriesLimitForMetricNames string `yaml:"ignore_series_limit_for_metric_names"`
+	IgnoreSeriesLimitForMetricNames string `yaml:"ignore_series_limit_for_metric_names" category:"advanced"`
 
 	// For testing, you can override the address and ID of this ingester.
 	ingesterClientFactory func(addr string, cfg client.Config) (client.HealthAndIngesterClient, error)
