@@ -189,11 +189,6 @@ querier:
   # CLI flag: -querier.max-samples
   [max_samples: <int> | default = 50000000]
 
-  # Enable the @ modifier in PromQL. This config option should be set on
-  # query-frontend too when query sharding is enabled.
-  # CLI flag: -querier.at-modifier-enabled
-  [at_modifier_enabled: <boolean> | default = false]
-
   # The default evaluation interval or step size for subqueries. This config
   # option should be set on query-frontend too when query sharding is enabled.
   # CLI flag: -querier.default-evaluation-interval

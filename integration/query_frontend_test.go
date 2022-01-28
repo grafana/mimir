@@ -513,14 +513,6 @@ overrides:
 			expStatusCode: http.StatusBadRequest,
 			expBody:       `{"error": "negative offsets are not supported", "errorType":"bad_data", "status":"error"}`,
 		},
-		{
-			name: "error when at-modifier is unsupported",
-			query: func(c *e2emimir.Client) (*http.Response, []byte, error) {
-				return c.QueryRangeRaw(`http_requests_total @ start()`, now.Add(-time.Minute), now, time.Minute)
-			},
-			expStatusCode: http.StatusBadRequest,
-			expBody:       `{"error":"@ modifier is disabled, use -querier.at-modifier-enabled to enable it", "errorType":"bad_data", "status":"error"}`,
-		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			resp, body, err := tc.query(cQuerier)

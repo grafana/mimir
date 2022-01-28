@@ -835,7 +835,6 @@ spec:
         - -distributor.health-check-ingesters=true
         - -distributor.replication-factor=3
         - -mem-ballast-size-bytes=268435456
-        - -querier.at-modifier-enabled=true
         - -querier.frontend-client.grpc-max-send-msg-size=419430400
         - -querier.max-concurrent=16
         - -querier.query-ingesters-within=13h
@@ -931,7 +930,6 @@ spec:
         - -frontend.results-cache.memcached.timeout=500ms
         - -frontend.scheduler-address=query-scheduler-discovery.default.svc.cluster.local:9095
         - -frontend.split-queries-by-interval=24h
-        - -querier.at-modifier-enabled=true
         - -querier.max-query-parallelism=240
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc-max-recv-msg-size-bytes=419430400
@@ -1080,7 +1078,6 @@ spec:
         - -distributor.health-check-ingesters=true
         - -distributor.replication-factor=3
         - -experimental.ruler.enable-api=true
-        - -querier.at-modifier-enabled=true
         - -querier.query-ingesters-within=13h
         - -querier.query-label-names-with-matchers-enabled=true
         - -querier.query-store-after=12h

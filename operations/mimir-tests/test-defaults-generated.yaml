@@ -758,7 +758,6 @@ spec:
         - -distributor.health-check-ingesters=true
         - -distributor.replication-factor=3
         - -mem-ballast-size-bytes=268435456
-        - -querier.at-modifier-enabled=true
         - -querier.frontend-address=query-frontend-discovery.default.svc.cluster.local:9095
         - -querier.frontend-client.grpc-max-send-msg-size=104857600
         - -querier.max-concurrent=8

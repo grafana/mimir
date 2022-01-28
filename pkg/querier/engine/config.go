@@ -16,10 +16,9 @@ import (
 
 // Config holds the PromQL engine config exposed by Mimir.
 type Config struct {
-	MaxConcurrent     int           `yaml:"max_concurrent"`
-	Timeout           time.Duration `yaml:"timeout"`
-	MaxSamples        int           `yaml:"max_samples"`
-	AtModifierEnabled bool          `yaml:"at_modifier_enabled" category:"experimental"`
+	MaxConcurrent int           `yaml:"max_concurrent"`
+	Timeout       time.Duration `yaml:"timeout"`
+	MaxSamples    int           `yaml:"max_samples"`
 
 	// The default evaluation interval for the promql engine.
 	// Needs to be configured for subqueries to work as it is the default
@@ -43,7 +42,6 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&cfg.MaxConcurrent, "querier.max-concurrent", 20, sharedWithQueryFrontend("The maximum number of concurrent queries."))
 	f.DurationVar(&cfg.Timeout, "querier.timeout", 2*time.Minute, sharedWithQueryFrontend("The timeout for a query."))
 	f.IntVar(&cfg.MaxSamples, "querier.max-samples", 50e6, sharedWithQueryFrontend("Maximum number of samples a single query can load into memory."))
-	f.BoolVar(&cfg.AtModifierEnabled, "querier.at-modifier-enabled", false, sharedWithQueryFrontend("Enable the @ modifier in PromQL."))
 	f.DurationVar(&cfg.DefaultEvaluationInterval, "querier.default-evaluation-interval", time.Minute, sharedWithQueryFrontend("The default evaluation interval or step size for subqueries."))
 	f.DurationVar(&cfg.LookbackDelta, "querier.lookback-delta", 5*time.Minute, sharedWithQueryFrontend("Time since the last sample after which a time series is considered stale and ignored by expression evaluations."))
 }
@@ -57,7 +55,7 @@ func NewPromQLEngineOptions(cfg Config, activityTracker *activitytracker.Activit
 		MaxSamples:           cfg.MaxSamples,
 		Timeout:              cfg.Timeout,
 		LookbackDelta:        cfg.LookbackDelta,
-		EnableAtModifier:     cfg.AtModifierEnabled,
+		EnableAtModifier:     true,
 		EnableNegativeOffset: false, // If this can be enabled, please change the error mapping in errorTranslateQueryEngine.
 		NoStepSubqueryIntervalFn: func(int64) int64 {
 			return cfg.DefaultEvaluationInterval.Milliseconds()
