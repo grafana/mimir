@@ -18,8 +18,8 @@ of time, and should focus on user goals.
 
 ## Advanced
 
-Flags that we expect the majority of customers to leave defaulted, but we have evidence that there
-are strong use-cases to change the default value.
+Flags that we expect the majority of users to leave defaulted, but more experienced users
+can use them to fine tune the system.
 
 ## Experimental
 
