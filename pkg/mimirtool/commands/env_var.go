@@ -3,9 +3,9 @@
 package commands
 
 type EnvVarNames struct {
+	Address         string
 	APIKey          string
 	APIUser         string
-	Address         string
 	TLSCAPath       string
 	TLSCertPath     string
 	TLSKeyPath      string
@@ -30,9 +30,9 @@ func NewEnvVarsWithPrefix(prefix string) EnvVarNames {
 	}
 
 	return EnvVarNames{
+		Address:         prefix + address,
 		APIKey:          prefix + apiKey,
 		APIUser:         prefix + apiUser,
-		Address:         prefix + address,
 		TLSCAPath:       prefix + tlsCAPath,
 		TLSCertPath:     prefix + tlsCertPath,
 		TLSKeyPath:      prefix + tlsKeyPath,
