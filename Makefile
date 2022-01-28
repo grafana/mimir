@@ -470,7 +470,7 @@ dist/$(UPTODATE):
 			if [ "$$os" = "windows" ]; then \
 				suffix=".exe" ; \
 			fi; \
-			if [ "$$os" = "darwin" ] && [ "$$arch" == "386" ]; then \
+			if [ "$$os" = "darwin" ] && [ "$$arch" = "386" ]; then \
 				continue; \
 			fi; \
 			echo "Building mimirtool for $$os/$$arch"; \
