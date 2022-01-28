@@ -599,7 +599,8 @@ func TestRulerMetricsForInvalidQueries(t *testing.T) {
 	// the store-gateway ring if blocks sharding is enabled.
 	// The distributor should have 512 tokens for the ingester ring and 1 for the distributor ring
 	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512+1), "cortex_ring_tokens_total"))
-	require.NoError(t, ruler.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
+	// Ruler will see 512 tokens for the ingester, and 128 for the ruler.
+	require.NoError(t, ruler.WaitSumMetrics(e2e.Equals(512+128), "cortex_ring_tokens_total"))
 
 	c, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", ruler.HTTPEndpoint(), user)
 	require.NoError(t, err)
@@ -764,7 +765,8 @@ func TestRulerFederatedRules(t *testing.T) {
 	// Wait until both the distributor and ruler are ready
 	// The distributor should have 512 tokens for the ingester ring and 1 for the distributor rin
 	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512+1), "cortex_ring_tokens_total"))
-	require.NoError(t, ruler.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
+	// Ruler will see 512 tokens from ingester, and 128 tokens from itself.
+	require.NoError(t, ruler.WaitSumMetrics(e2e.Equals(512+128), "cortex_ring_tokens_total"))
 
 	// isolatedTestCase prefixes all the tenant IDs in the testCase with "run-<n>-"
 	// so we can ensure that the tenants in different test cases don't overlap
