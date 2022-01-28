@@ -57,19 +57,19 @@ func (c *RemoteReadCommand) Register(app *kingpin.Application) {
 
 	now := time.Now()
 	for _, cmd := range []*kingpin.CmdClause{exportCmd, dumpCmd, statsCmd} {
-		cmd.Flag("address", "Address of the cortex cluster, alternatively set $CORTEX_ADDRESS.").
-			Envar("CORTEX_ADDRESS").
+		cmd.Flag("address", "Address of the cortex cluster, alternatively set $MIMIR_ADDRESS.").
+			Envar("MIMIR_ADDRESS").
 			Required().
 			StringVar(&c.address)
 		cmd.Flag("remote-read-path", "Path of the remote read endpoint.").
 			Default("/prometheus/api/v1/read").
 			StringVar(&c.remoteReadPath)
-		cmd.Flag("id", "Cortex tenant id, alternatively set $CORTEX_TENANT_ID.").
-			Envar("CORTEX_TENANT_ID").
+		cmd.Flag("id", "Cortex tenant id, alternatively set $MIMIR_TENANT_ID.").
+			Envar("MIMIR_TENANT_ID").
 			Default("").
 			StringVar(&c.tenantID)
-		cmd.Flag("key", "Api key to use when contacting cortex, alternatively set $CORTEX_API_KEY.").
-			Envar("CORTEX_API_KEY").
+		cmd.Flag("key", "Api key to use when contacting cortex, alternatively set $MIMIR_API_KEY.").
+			Envar("MIMIR_API_KEY").
 			Default("").
 			StringVar(&c.apiKey)
 		cmd.Flag("read-timeout", "timeout for read requests").

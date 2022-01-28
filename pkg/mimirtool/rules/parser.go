@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	CortexBackend = "cortex"
+	MimirBackend = "mimir"
 )
 
 var (
@@ -31,7 +31,7 @@ func ParseFiles(backend string, files []string) (map[string]RuleNamespace, error
 	ruleSet := map[string]RuleNamespace{}
 	var parseFn func(f string) ([]RuleNamespace, []error)
 	switch backend {
-	case CortexBackend:
+	case MimirBackend:
 		parseFn = Parse
 	default:
 		return nil, errInvalidBackend

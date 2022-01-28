@@ -270,7 +270,7 @@ func TestLintExpressions(t *testing.T) {
 			},
 			}
 
-			backend := CortexBackend
+			backend := MimirBackend
 			c, m, err := r.LintExpressions(backend)
 			rexpr := r.Groups[0].Rules[0].Expr.Value
 

@@ -43,11 +43,11 @@ var (
 		Help:      "The timestamp of the last successful rule load.",
 	})
 
-	backends = []string{rules.CortexBackend}     // list of supported backend types
+	backends = []string{rules.MimirBackend}      // list of supported backend types
 	formats  = []string{"json", "yaml", "table"} // list of supported formats for the list command
 )
 
-// RuleCommand configures and executes rule related cortex operations
+// RuleCommand configures and executes rule related mimir operations
 type RuleCommand struct {
 	ClientConfig client.Config
 
@@ -95,8 +95,8 @@ type RuleCommand struct {
 // Register rule related commands and flags with the kingpin application
 func (r *RuleCommand) Register(app *kingpin.Application) {
 	rulesCmd := app.Command("rules", "View & edit rules stored in cortex.").PreAction(r.setup)
-	rulesCmd.Flag("user", "API user to use when contacting cortex, alternatively set CORTEX_API_USER. If empty, CORTEX_TENANT_ID will be used instead.").Default("").Envar("CORTEX_API_USER").StringVar(&r.ClientConfig.User)
-	rulesCmd.Flag("key", "API key to use when contacting cortex, alternatively set CORTEX_API_KEY.").Default("").Envar("CORTEX_API_KEY").StringVar(&r.ClientConfig.Key)
+	rulesCmd.Flag("user", "API user to use when contacting cortex, alternatively set MIMIR_API_USER. If empty, MIMIR_TENANT_ID will be used instead.").Default("").Envar("MIMIR_API_USER").StringVar(&r.ClientConfig.User)
+	rulesCmd.Flag("key", "API key to use when contacting cortex, alternatively set MIMIR_API_KEY.").Default("").Envar("MIMIR_API_KEY").StringVar(&r.ClientConfig.Key)
 	rulesCmd.Flag("backend", "Backend type to interact with: <cortex|loki>").Default("cortex").EnumVar(&r.Backend, backends...)
 
 	// Register rule commands
@@ -131,15 +131,15 @@ func (r *RuleCommand) Register(app *kingpin.Application) {
 		Command("check", "runs various best practice checks against rules.").
 		Action(r.checkRecordingRuleNames)
 
-	// Require Cortex cluster address and tentant ID on all these commands
+	// Require Mimir cluster address and tentant ID on all these commands
 	for _, c := range []*kingpin.CmdClause{listCmd, printRulesCmd, getRuleGroupCmd, deleteRuleGroupCmd, loadRulesCmd, diffRulesCmd, syncRulesCmd} {
-		c.Flag("address", "Address of the cortex cluster, alternatively set CORTEX_ADDRESS.").
-			Envar("CORTEX_ADDRESS").
+		c.Flag("address", "Address of the cortex cluster, alternatively set MIMIR_ADDRESS.").
+			Envar("MIMIR_ADDRESS").
 			Required().
 			StringVar(&r.ClientConfig.Address)
 
-		c.Flag("id", "Cortex tenant id, alternatively set CORTEX_TENANT_ID.").
-			Envar("CORTEX_TENANT_ID").
+		c.Flag("id", "Cortex tenant id, alternatively set MIMIR_TENANT_ID.").
+			Envar("MIMIR_TENANT_ID").
 			Required().
 			StringVar(&r.ClientConfig.ID)
 
@@ -148,19 +148,19 @@ func (r *RuleCommand) Register(app *kingpin.Application) {
 			Envar("CORTEX_USE_LEGACY_ROUTES").
 			BoolVar(&r.ClientConfig.UseLegacyRoutes)
 
-		c.Flag("tls-ca-path", "TLS CA certificate to verify cortex API as part of mTLS, alternatively set CORTEX_TLS_CA_PATH.").
+		c.Flag("tls-ca-path", "TLS CA certificate to verify cortex API as part of mTLS, alternatively set MIMIR_TLS_CA_PATH.").
 			Default("").
-			Envar("CORTEX_TLS_CA_CERT").
+			Envar("MIMIR_TLS_CA_PATH").
 			StringVar(&r.ClientConfig.TLS.CAPath)
 
-		c.Flag("tls-cert-path", "TLS client certificate to authenticate with cortex API as part of mTLS, alternatively set CORTEX_TLS_CERT_PATH.").
+		c.Flag("tls-cert-path", "TLS client certificate to authenticate with cortex API as part of mTLS, alternatively set MIMIR_TLS_CERT_PATH.").
 			Default("").
-			Envar("CORTEX_TLS_CLIENT_CERT").
+			Envar("MIMIR_TLS_CERT_PATH").
 			StringVar(&r.ClientConfig.TLS.CertPath)
 
-		c.Flag("tls-key-path", "TLS client certificate private key to authenticate with cortex API as part of mTLS, alternatively set CORTEX_TLS_KEY_PATH.").
+		c.Flag("tls-key-path", "TLS client certificate private key to authenticate with cortex API as part of mTLS, alternatively set MIMIR_TLS_KEY_PATH.").
 			Default("").
-			Envar("CORTEX_TLS_CLIENT_KEY").
+			Envar("MIMIR_TLS_KEY_PATH").
 			StringVar(&r.ClientConfig.TLS.KeyPath)
 
 	}
@@ -446,7 +446,7 @@ func (r *RuleCommand) diffRules(k *kingpin.ParseContext) error {
 
 	currentNamespaceMap, err := r.cli.ListRules(context.Background(), "")
 	//TODO: Skipping the 404s here might end up in an unsual scenario.
-	// If we're unable to reach the Cortex API due to a bad URL, we'll assume no rules are
+	// If we're unable to reach the Mimir API due to a bad URL, we'll assume no rules are
 	// part of the namespace and provide a diff of the whole ruleset.
 	if err != nil && err != client.ErrResourceNotFound {
 		return errors.Wrap(err, "diff operation unsuccessful, unable to contact cortex api")
@@ -509,7 +509,7 @@ func (r *RuleCommand) syncRules(k *kingpin.ParseContext) error {
 
 	currentNamespaceMap, err := r.cli.ListRules(context.Background(), "")
 	//TODO: Skipping the 404s here might end up in an unsual scenario.
-	// If we're unable to reach the Cortex API due to a bad URL, we'll assume no rules are
+	// If we're unable to reach the Mimir API due to a bad URL, we'll assume no rules are
 	// part of the namespace and provide a diff of the whole ruleset.
 	if err != nil && err != client.ErrResourceNotFound {
 		return errors.Wrap(err, "sync operation unsuccessful, unable to contact cortex api")

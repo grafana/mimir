@@ -34,7 +34,7 @@ func (r RuleNamespace) LintExpressions(backend string) (int, int, error) {
 	var queryLanguage string
 
 	switch backend {
-	case CortexBackend:
+	case MimirBackend:
 		queryLanguage = "PromQL"
 		parseFn = func(s string) (fmt.Stringer, error) {
 			return parser.ParseExpr(s)
