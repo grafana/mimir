@@ -843,7 +843,6 @@ spec:
         - -querier.query-store-for-labels-enabled=true
         - -querier.scheduler-address=query-scheduler-discovery.default.svc.cluster.local:9095
         - -querier.shuffle-sharding-ingesters-lookback-period=13h
-        - -querier.worker-match-max-concurrent=true
         - -ring.heartbeat-timeout=10m
         - -ring.prefix=
         - -runtime-config.file=/etc/mimir/overrides.yaml

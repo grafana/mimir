@@ -23,12 +23,6 @@ For similar reasons scaling down the query frontend may cause a querier to not u
 This will lower effective resource utilization.
 Also, because individual queriers will be doing less work, this may cause increased queueing in the query frontends.
 
-### Querier Max Concurrency
-
-To guarantee that querier doesn't receive more queries that it can handle at the same time, make sure to configure the querier to match its PromQL concurrency with number of connections.
-This can be done by using `-querier.worker-match-max-concurrent=true` option, or `match_max_concurrent: true` field in `frontend_worker` section of YAML config file.
-This allows the operator to freely scale the frontend or scheduler up and down without impacting the amount of work an individual querier is attempting to perform.
-
 ### Query Scheduler
 
 Query scheduler is a service that moves the in-memory queue from query frontend to a separate component.

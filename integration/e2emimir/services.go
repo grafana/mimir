@@ -109,7 +109,7 @@ func NewQuerierWithConfigFile(name, consulAddress, configFile string, flags map[
 		"-querier.frontend-client.backoff-min-period": "100ms",
 		"-querier.frontend-client.backoff-max-period": "100ms",
 		"-querier.frontend-client.backoff-retries":    "1",
-		"-querier.worker-parallelism":                 "1",
+		"-querier.max-concurrent":                     "1",
 		// Quickly detect query-frontend and query-scheduler when running it.
 		"-querier.dns-lookup-period": "1s",
 		// Store-gateway ring backend.
@@ -312,7 +312,7 @@ func NewSingleBinary(name string, flags map[string]string, image string, otherPo
 		"-querier.frontend-client.backoff-min-period": "100ms",
 		"-querier.frontend-client.backoff-max-period": "100ms",
 		"-querier.frontend-client.backoff-retries":    "1",
-		"-querier.worker-parallelism":                 "1",
+		"-querier.max-concurrent":                     "1",
 		// Distributor.
 		"-distributor.replication-factor": "1",
 		"-distributor.ring.store":         "memberlist",

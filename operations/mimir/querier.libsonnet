@@ -24,8 +24,6 @@
       // Limit query concurrency to prevent multi large queries causing an OOM.
       'querier.max-concurrent': $._config.querier.concurrency,
 
-      // Limit to N/2 worker threads per frontend, as we have two frontends.
-      'querier.worker-parallelism': $._config.querier.concurrency / $._config.queryFrontend.replicas,
       'querier.frontend-address': 'query-frontend-discovery.%(namespace)s.svc.cluster.local:9095' % $._config,
       'querier.frontend-client.grpc-max-send-msg-size': 100 << 20,
 

@@ -1189,10 +1189,6 @@ Usage of ./cmd/mimir/mimir:
     	Override the expected name on the server certificate.
   -querier.timeout duration
     	The timeout for a query. This config option should be set on query-frontend too when query sharding is enabled. (default 2m0s)
-  -querier.worker-match-max-concurrent
-    	Force worker concurrency to match the -querier.max-concurrent option. Overrides querier.worker-parallelism.
-  -querier.worker-parallelism int
-    	Number of simultaneous queries to process per query-frontend or query-scheduler. (default 10)
   -query-frontend.querier-forget-delay duration
     	If a querier disconnects without sending notification about graceful shutdown, the query-frontend will keep the querier in the tenant's shard until the forget delay has passed. This feature is useful to reduce the blast radius when shuffle-sharding is enabled.
   -query-scheduler.grpc-client-config.backoff-max-period duration

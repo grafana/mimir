@@ -1091,8 +1091,6 @@ Usage of ./cmd/mimir/mimir:
     	Override the expected name on the server certificate.
   -querier.timeout duration
     	The timeout for a query. This config option should be set on query-frontend too when query sharding is enabled. (default 2m0s)
-  -querier.worker-match-max-concurrent
-    	Force worker concurrency to match the -querier.max-concurrent option. Overrides querier.worker-parallelism.
   -query-scheduler.grpc-client-config.backoff-max-period duration
     	Maximum delay when backing off. (default 10s)
   -query-scheduler.grpc-client-config.backoff-min-period duration

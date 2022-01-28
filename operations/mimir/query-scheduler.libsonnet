@@ -45,8 +45,6 @@
 
   // Reconfigure querier and query-frontend to use scheduler.
   querier_args+:: if !$._config.query_scheduler_enabled then {} else {
-    'querier.worker-match-max-concurrent': 'true',
-    'querier.worker-parallelism': null,  // Disabled since we set worker-match-max-concurrent.
     'querier.frontend-address': null,
     'querier.scheduler-address': 'query-scheduler-discovery.%(namespace)s.svc.cluster.local:9095' % $._config,
   },
