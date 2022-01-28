@@ -313,6 +313,7 @@ web-deploy:
 doc: ## Generates the config file documentation.
 doc: clean-doc
 	go run ./tools/doc-generator ./docs/sources/configuration/config-file-reference.template > ./docs/sources/configuration/config-file-reference.md
+	go run ./tools/doc-generator ./docs/sources/configuration/config-param-lifecycle.template > ./docs/sources/configuration/config-param-lifecycle.md
 	go run ./tools/doc-generator ./docs/sources/architecture/compactor.template              > ./docs/sources/architecture/compactor.md
 	go run ./tools/doc-generator ./docs/sources/architecture/store-gateway.template          > ./docs/sources/architecture/store-gateway.md
 	go run ./tools/doc-generator ./docs/sources/architecture/querier.template                > ./docs/sources/architecture/querier.md
