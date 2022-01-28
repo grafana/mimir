@@ -136,7 +136,7 @@ func New(cfg Config, serverCfg server.Config, s *server.Server, logger log.Logge
 func (a *API) RegisterRoute(path string, handler http.Handler, auth, gzipEnabled bool, method string, methods ...string) {
 	methods = append([]string{method}, methods...)
 
-	level.Debug(a.logger).Log("msg", "api: registering route", "methods", strings.Join(methods, ","), "path", path, "auth", auth)
+	level.Debug(a.logger).Log("msg", "api: registering route", "methods", strings.Join(methods, ","), "path", path, "auth", auth, "gzip", gzipEnabled)
 
 	if auth {
 		handler = a.AuthMiddleware.Wrap(handler)
@@ -153,7 +153,7 @@ func (a *API) RegisterRoute(path string, handler http.Handler, auth, gzipEnabled
 }
 
 func (a *API) RegisterRoutesWithPrefix(prefix string, handler http.Handler, auth, gzipEnabled bool, methods ...string) {
-	level.Debug(a.logger).Log("msg", "api: registering route", "methods", strings.Join(methods, ","), "prefix", prefix, "auth", auth)
+	level.Debug(a.logger).Log("msg", "api: registering route", "methods", strings.Join(methods, ","), "prefix", prefix, "auth", auth, "gzip", gzipEnabled)
 	if auth {
 		handler = a.AuthMiddleware.Wrap(handler)
 	}
