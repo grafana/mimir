@@ -183,7 +183,7 @@ func (s *StoreGateway) BlocksHandler(w http.ResponseWriter, req *http.Request) {
 			MinTime:         util.TimeFromMillis(m.MinTime).UTC().Format(time.RFC3339),
 			MaxTime:         util.TimeFromMillis(m.MaxTime).UTC().Format(time.RFC3339),
 			Duration:        util.TimeFromMillis(m.MaxTime).Sub(util.TimeFromMillis(m.MinTime)).String(),
-			DeletedTime:     deletedTimes[m.ULID].UTC().Format(time.RFC3339),
+			DeletedTime:     formatTimeIfNotZero(deletedTimes[m.ULID].UTC(), time.RFC3339),
 			CompactionLevel: m.Compaction.Level,
 			BlockSize:       listblocks.GetFormattedBlockSize(m),
 			Labels:          lbls.WithoutLabels(tsdb.TenantIDExternalLabel).String(),
@@ -248,4 +248,12 @@ func uriWithTrueBoolParam(u url.URL, form url.Values, boolParam string) string {
 	u.RawQuery = q.Encode()
 
 	return u.RequestURI()
+}
+
+func formatTimeIfNotZero(t time.Time, format string) string {
+	if t.IsZero() {
+		return ""
+	}
+
+	return t.Format(format)
 }
