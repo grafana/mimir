@@ -182,12 +182,12 @@ TTY := --tty
 PROM_VERSION := github.com/prometheus/common/version
 
 GO_FLAGS := -ldflags "\
-		 -X $(PROM_VERSION).Branch=$(GIT_BRANCH) \
-		 -X $(PROM_VERSION).Revision=$(GIT_REVISION) \
-		 -X $(PROM_VERSION).Version=$(VERSION) \
-		 -X $(PROM_VERSION).BuildUser=$(BUILD_USER) \
-		 -X $(PROM_VERSION).BuildDate=$(BUILD_DATE) \
-		 -extldflags \"-static\" -s -w" -tags netgo
+		-X $(PROM_VERSION).Branch=$(GIT_BRANCH) \
+		-X $(PROM_VERSION).Revision=$(GIT_REVISION) \
+		-X $(PROM_VERSION).Version=$(VERSION) \
+		-X $(PROM_VERSION).BuildUser=$(BUILD_USER) \
+		-X $(PROM_VERSION).BuildDate=$(BUILD_DATE) \
+		-extldflags \"-static\" -s -w" -tags netgo
 
 ifeq ($(BUILD_IN_CONTAINER),true)
 
@@ -353,7 +353,7 @@ check-makefiles: format-makefiles
 .PHONY: format-makefiles
 format-makefiles: ## Format all Makefiles.
 format-makefiles: $(MAKEFILES)
-	sed -i -e 's/^\(\t*\)  /\1\t/g' -e 's/^\(\t*\) /\1/' -- $?
+	$(SED) -i -e 's/^\(\t*\)  /\1\t/g' -e 's/^\(\t*\) /\1/' -- $?
 
 clean:
 	$(SUDO) docker rmi $(IMAGE_NAMES) >/dev/null 2>&1 || true
