@@ -96,13 +96,13 @@ store_gateway:
 
 In a terminal, run one of the following commands:
 
-* Using Docker:
+- Using Docker:
 
   ```bash
   docker run --rm --name mimir --publish 9009:9009 --volume "$(pwd)"/dev.yaml:/etc/mimir/dev.yaml "grafana/mimir:${MIMIR_LATEST}" --config.file=/etc/mimir/dev.yaml
   ```
 
-* Using a local binary:
+- Using a local binary:
 
   ```bash
   ./mimir --config.file=./dev.yaml
