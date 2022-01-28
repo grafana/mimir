@@ -12,19 +12,17 @@ their maturity and intended use: _basic_, _advanced_, and _experimental_.
 
 ## Basic
 
-Flags that we expect the majority of customers to modify. For example, blobstore credentials or
-other dependency connection information. These flags will generally remain stable for long periods
+Parameters that we expect the majority of users to modify. For example, object store credentials or
+other dependency connection information. These parameters will generally remain stable for long periods
 of time, and should focus on user goals.
 
 ## Advanced
 
-Flags that we expect the majority of users to leave defaulted, but more experienced users
-can use them to fine tune the system.
+Parameters that we expect the majority of users to leave defaulted, but we have evidence that there
+are strong use-cases to change the default value.
 
 ## Experimental
 
-New flags that may be removed pending more confidence in their default values. For example, feature
-flags to enable a new component or tuning parameters we aren’t sure are necessary yet. These
-flags are provided for customers who wish to become early adopters and for Grafana Labs internal
-teams to gain confidence with new features. No flag should remain experimental for longer than
-some period of time.
+Parameters related to new and experimental features under testing. These parameters are provided
+for users who wish to become early adopters and for Mimir developers to gain confidence with new
+features. No parameter should remain experimental for longer than some period of time.
