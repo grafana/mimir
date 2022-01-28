@@ -65,6 +65,8 @@ For the sake of clarity, in this document we have grouped API endpoints by servi
 | [Tenant delete request](#tenant-delete-request)                                       | Purger                  | `POST /purger/delete_tenant`                                         |
 | [Tenant delete status](#tenant-delete-status)                                         | Purger                  | `GET /purger/delete_tenant_status`                                   |
 | [Store-gateway ring status](#store-gateway-ring-status)                               | Store-gateway           | `GET /store-gateway/ring`                                            |
+| [Store-gateway tenants](#store-gateway-tenants)                                       | Store-gateway           | `GET /store-gateway/tenants`                                         |
+| [Store-gateway tenant blocks](#store-gateway-tenant-blocks)                           | Store-gateway           | `GET /store-gateway/tenant/{tenant}/blocks`                          |
 | [Compactor ring status](#compactor-ring-status)                                       | Compactor               | `GET /compactor/ring`                                                |
 
 ### Path prefixes
@@ -946,6 +948,22 @@ GET /store-gateway/ring
 ```
 
 Displays a web page with the store-gateway hash ring status, including the state, healthy and last heartbeat time of each store-gateway.
+
+### Store-gateway tenants
+
+```
+GET /store-gateway/tenants
+```
+
+Displays a web page with the list of tenants with blocks in the storage configured for store-gateway.
+
+### Store-gateway tenant blocks
+
+```
+GET /store-gateway/tenant/{tenant}/blocks
+```
+
+Displays a web page listing the blocks for a given tenant.
 
 ## Compactor
 
