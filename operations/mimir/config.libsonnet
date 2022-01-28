@@ -408,9 +408,7 @@
         'blocks-storage.bucket-store.index-cache.memcached.addresses': 'dnssrvnoa+memcached-index-queries.%(namespace)s.svc.cluster.local:11211' % $._config,
         'blocks-storage.bucket-store.index-cache.memcached.timeout': '200ms',
         'blocks-storage.bucket-store.index-cache.memcached.max-item-size': $._config.memcached_index_queries_max_item_size_mb * 1024 * 1024,
-        'blocks-storage.bucket-store.index-cache.memcached.max-async-buffer-size': '25000',
         'blocks-storage.bucket-store.index-cache.memcached.max-async-concurrency': '50',
-        'blocks-storage.bucket-store.index-cache.memcached.max-get-multi-batch-size': '100',
       } else {}
     ) + (
       if $._config.memcached_chunks_enabled then {
@@ -418,9 +416,7 @@
         'blocks-storage.bucket-store.chunks-cache.memcached.addresses': 'dnssrvnoa+memcached.%(namespace)s.svc.cluster.local:11211' % $._config,
         'blocks-storage.bucket-store.chunks-cache.memcached.timeout': '200ms',
         'blocks-storage.bucket-store.chunks-cache.memcached.max-item-size': $._config.memcached_chunks_max_item_size_mb * 1024 * 1024,
-        'blocks-storage.bucket-store.chunks-cache.memcached.max-async-buffer-size': '25000',
         'blocks-storage.bucket-store.chunks-cache.memcached.max-async-concurrency': '50',
-        'blocks-storage.bucket-store.chunks-cache.memcached.max-get-multi-batch-size': '100',
       } else {}
     ),
 
@@ -429,9 +425,7 @@
     'blocks-storage.bucket-store.metadata-cache.memcached.addresses': 'dnssrvnoa+memcached-metadata.%(namespace)s.svc.cluster.local:11211' % $._config,
     'blocks-storage.bucket-store.metadata-cache.memcached.timeout': '200ms',
     'blocks-storage.bucket-store.metadata-cache.memcached.max-item-size': $._config.memcached_metadata_max_item_size_mb * 1024 * 1024,
-    'blocks-storage.bucket-store.metadata-cache.memcached.max-async-buffer-size': '25000',
     'blocks-storage.bucket-store.metadata-cache.memcached.max-async-concurrency': '50',
-    'blocks-storage.bucket-store.metadata-cache.memcached.max-get-multi-batch-size': '100',
   } else {},
 
   bucket_index_config:: if $._config.bucket_index_enabled then {
