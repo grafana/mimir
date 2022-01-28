@@ -21,15 +21,15 @@ Verify that you have installed either a [Prometheus server](https://prometheus.i
 or the [Grafana Agent](https://github.com/grafana/agent/releases/latest).
 Verify that you have installed [Docker](https://docs.docker.com/engine/install/).
 
-## Install Grafana Mimir
+## Download Grafana Mimir
 
-Pull the latest Grafana Mimir Docker image locally:
+- Using Docker:
 
 ```bash
 docker pull "grafana/mimir:latest"
 ```
 
-To install Grafana Mimir locally, download the latest release binary from GitHub and make it executable.
+- Using a local binary:
 
 ```bash
 curl -LO https://github.com/grafana/mimir/releases/latest/download/mimir
