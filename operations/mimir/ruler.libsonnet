@@ -22,7 +22,7 @@
       'api.response-compression-enabled': true,
 
       // Ring Configs
-      'ruler.enable-sharding': true,
+      'ruler.ring.store': 'consul',
       'ruler.ring.consul.hostname': 'consul.%s.svc.cluster.local:8500' % $._config.namespace,
 
       // Limits
