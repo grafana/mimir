@@ -75,7 +75,6 @@ blocks_storage:
 
 ruler:
   enable_api: true
-  enable_sharding: true
   ring:
     heartbeat_period:   5s
     heartbeat_timeout:  15s
@@ -144,6 +143,16 @@ store_gateway:
 
 frontend:
   query_stats_enabled: true
+  split_queries_by_interval: 24h
+  parallelize_shardable_queries: true
+  align_queries_with_step: true
+  cache_results: true
+
+  results_cache:
+    backend: "memcached"
+    memcached:
+      addresses: "dns+memcached:11211"
+    compression: snappy
 
 frontend_worker:
   frontend_address: "query-frontend:9007"
@@ -151,18 +160,6 @@ frontend_worker:
 
   # By setting scheduler_address, querier worker would use scheduler instead of frontend.
   # scheduler_address: "query-scheduler:9012"
-
-query_range:
-  split_queries_by_interval: 24h
-  parallelize_shardable_queries: true
-  align_queries_with_step: true
-  cache_results: true
-
-  results_cache:
-    backend:   "memcached"
-    memcached:
-      addresses: "dns+memcached:11211"
-    compression: snappy
 
 limits:
   # Limit max query time range to 31d

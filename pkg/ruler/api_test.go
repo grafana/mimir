@@ -156,8 +156,17 @@ func TestRuler(t *testing.T) {
 			cfg := defaultRulerConfig(t)
 			cfg.TenantFederation.Enabled = true
 
-			r := newTestRuler(t, cfg, newMockRuleStore(tc.mockRules))
+			rulerAddrMap := map[string]*Ruler{}
+
+			r := buildRuler(t, cfg, newMockRuleStore(tc.mockRules), rulerAddrMap)
+			require.NoError(t, services.StartAndAwaitRunning(context.Background(), r))
 			defer services.StopAndAwaitTerminated(context.Background(), r) //nolint:errcheck
+
+			// Make sure mock grpc client can find this instance, based on instance address registered in the ring.
+			rulerAddrMap[r.lifecycler.GetInstanceAddr()] = r
+
+			// Ensure all rules are loaded before usage
+			r.syncRules(context.Background(), rulerSyncReasonInitial)
 
 			a := NewAPI(r, r.store, log.NewNopLogger())
 
@@ -187,10 +196,17 @@ func TestRuler(t *testing.T) {
 func TestRuler_alerts(t *testing.T) {
 	cfg := defaultRulerConfig(t)
 
-	r := newTestRuler(t, cfg, newMockRuleStore(mockRules))
-	t.Cleanup(func() {
-		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), r))
-	})
+	rulerAddrMap := map[string]*Ruler{}
+
+	r := buildRuler(t, cfg, newMockRuleStore(mockRules), rulerAddrMap)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), r))
+	defer services.StopAndAwaitTerminated(context.Background(), r) //nolint:errcheck
+
+	// Make sure mock grpc client can find this instance, based on instance address registered in the ring.
+	rulerAddrMap[r.lifecycler.GetInstanceAddr()] = r
+
+	// Ensure all rules are loaded before usage
+	r.syncRules(context.Background(), rulerSyncReasonInitial)
 
 	a := NewAPI(r, r.store, log.NewNopLogger())
 
@@ -311,6 +327,45 @@ rules:
 
 func TestRuler_DeleteNamespace(t *testing.T) {
 	cfg := defaultRulerConfig(t)
+
+	// Keep this inside the test, not as global var, otherwise running tests with -count higher than 1 fails,
+	// as newMockRuleStore modifies the underlying map.
+	mockRulesNamespaces := map[string]rulespb.RuleGroupList{
+		"user1": {
+			&rulespb.RuleGroupDesc{
+				Name:      "group1",
+				Namespace: "namespace1",
+				User:      "user1",
+				Rules: []*rulespb.RuleDesc{
+					{
+						Record: "UP_RULE",
+						Expr:   "up",
+					},
+					{
+						Alert: "UP_ALERT",
+						Expr:  "up < 1",
+					},
+				},
+				Interval: interval,
+			},
+			&rulespb.RuleGroupDesc{
+				Name:      "fail",
+				Namespace: "namespace2",
+				User:      "user1",
+				Rules: []*rulespb.RuleDesc{
+					{
+						Record: "UP2_RULE",
+						Expr:   "up",
+					},
+					{
+						Alert: "UP2_ALERT",
+						Expr:  "up < 1",
+					},
+				},
+				Interval: interval,
+			},
+		},
+	}
 
 	r := newTestRuler(t, cfg, newMockRuleStore(mockRulesNamespaces))
 	defer services.StopAndAwaitTerminated(context.Background(), r) //nolint:errcheck

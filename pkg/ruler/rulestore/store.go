@@ -28,11 +28,6 @@ type RuleStore interface {
 	// ListAllUsers returns all users with rule groups configured.
 	ListAllUsers(ctx context.Context) ([]string, error)
 
-	// ListAllRuleGroups returns all rule groups for all users.
-	// It *MUST* populate fields User, Namespace, Name of all rule groups.
-	// It *MAY* populate the actual rules.
-	ListAllRuleGroups(ctx context.Context) (map[string]rulespb.RuleGroupList, error)
-
 	// ListRuleGroupsForUserAndNamespace returns all the active rule groups for a user from given namespace.
 	// It *MUST* populate fields User, Namespace, Name of all rule groups.
 	// It *MAY* populate the actual rules.
