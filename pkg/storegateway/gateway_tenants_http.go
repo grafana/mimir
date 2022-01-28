@@ -27,7 +27,7 @@ const tenantsPageTemplate = `
 					<th>Tenant</th>
 				</tr>
 			</thead>
-			<tbody>
+			<tbody style="font-family: monospace;">
 				{{ range .Tenants }}
 				<tr>
 					<td><a href="tenant/{{ . }}/blocks">{{ . }}</a></td>

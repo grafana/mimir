@@ -62,7 +62,7 @@ const blocksPageTemplate = `
 					{{ if .ShowParents }}<th>Parents</th>{{ end }}
 				</tr>
 			</thead>
-			<tbody>
+			<tbody style="font-family: monospace;">
 				{{ $page := . }}
 				{{ range .FormattedBlocks }}
 				<tr>
