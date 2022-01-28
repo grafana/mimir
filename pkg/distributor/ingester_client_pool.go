@@ -24,8 +24,8 @@ var clients = promauto.NewGauge(prometheus.GaugeOpts{
 
 // PoolConfig is config for creating a Pool.
 type PoolConfig struct {
-	ClientCleanupPeriod  time.Duration `yaml:"client_cleanup_period"`
-	HealthCheckIngesters bool          `yaml:"health_check_ingesters"`
+	ClientCleanupPeriod  time.Duration `yaml:"client_cleanup_period" category:"advanced"`
+	HealthCheckIngesters bool          `yaml:"health_check_ingesters" category:"advanced"`
 	RemoteTimeout        time.Duration `yaml:"-"`
 }
 
