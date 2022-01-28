@@ -18,7 +18,7 @@ import (
 	"github.com/thanos-io/thanos/pkg/model"
 
 	"github.com/grafana/mimir/pkg/cache"
-	storecache "github.com/grafana/mimir/pkg/storage/tsdb/cache"
+	"github.com/grafana/mimir/pkg/storegateway/indexcache"
 	"github.com/grafana/mimir/pkg/util"
 )
 
@@ -81,7 +81,7 @@ func (cfg *InMemoryIndexCacheConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, pr
 }
 
 // NewIndexCache creates a new index cache based on the input configuration.
-func NewIndexCache(cfg IndexCacheConfig, logger log.Logger, registerer prometheus.Registerer) (storecache.IndexCache, error) {
+func NewIndexCache(cfg IndexCacheConfig, logger log.Logger, registerer prometheus.Registerer) (indexcache.IndexCache, error) {
 	switch cfg.Backend {
 	case IndexCacheBackendInMemory:
 		return newInMemoryIndexCache(cfg.InMemory, logger, registerer)
@@ -92,7 +92,7 @@ func NewIndexCache(cfg IndexCacheConfig, logger log.Logger, registerer prometheu
 	}
 }
 
-func newInMemoryIndexCache(cfg InMemoryIndexCacheConfig, logger log.Logger, registerer prometheus.Registerer) (storecache.IndexCache, error) {
+func newInMemoryIndexCache(cfg InMemoryIndexCacheConfig, logger log.Logger, registerer prometheus.Registerer) (indexcache.IndexCache, error) {
 	maxCacheSize := model.Bytes(cfg.MaxSizeBytes)
 
 	// Calculate the max item size.
@@ -101,22 +101,22 @@ func newInMemoryIndexCache(cfg InMemoryIndexCacheConfig, logger log.Logger, regi
 		maxItemSize = maxCacheSize
 	}
 
-	return storecache.NewInMemoryIndexCacheWithConfig(logger, registerer, storecache.InMemoryIndexCacheConfig{
+	return indexcache.NewInMemoryIndexCacheWithConfig(logger, registerer, indexcache.InMemoryIndexCacheConfig{
 		MaxSize:     maxCacheSize,
 		MaxItemSize: maxItemSize,
 	})
 }
 
-func newMemcachedIndexCache(cfg cache.MemcachedConfig, logger log.Logger, registerer prometheus.Registerer) (storecache.IndexCache, error) {
+func newMemcachedIndexCache(cfg cache.MemcachedConfig, logger log.Logger, registerer prometheus.Registerer) (indexcache.IndexCache, error) {
 	client, err := cacheutil.NewMemcachedClientWithConfig(logger, "index-cache", cfg.ToMemcachedClientConfig(), registerer)
 	if err != nil {
 		return nil, errors.Wrap(err, "create index cache memcached client")
 	}
 
-	cache, err := storecache.NewMemcachedIndexCache(logger, client, registerer)
+	cache, err := indexcache.NewMemcachedIndexCache(logger, client, registerer)
 	if err != nil {
 		return nil, errors.Wrap(err, "create memcached-based index cache")
 	}
 
-	return storecache.NewTracingIndexCache(cache, logger), nil
+	return indexcache.NewTracingIndexCache(cache, logger), nil
 }

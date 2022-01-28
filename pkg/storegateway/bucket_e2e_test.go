@@ -28,7 +28,7 @@ import (
 	"google.golang.org/grpc/codes"
 
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
-	storecache "github.com/grafana/mimir/pkg/storage/tsdb/cache"
+	"github.com/grafana/mimir/pkg/storegateway/indexcache"
 
 	"github.com/thanos-io/thanos/pkg/block"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
@@ -50,7 +50,7 @@ var (
 )
 
 type swappableCache struct {
-	storecache.IndexCache
+	indexcache.IndexCache
 }
 
 type customLimiter struct {
@@ -67,7 +67,7 @@ func (c *customLimiter) Reserve(num uint64) error {
 	return nil
 }
 
-func (c *swappableCache) SwapWith(cache storecache.IndexCache) {
+func (c *swappableCache) SwapWith(cache indexcache.IndexCache) {
 	c.IndexCache = cache
 }
 
@@ -438,7 +438,7 @@ func TestBucketStore_e2e(t *testing.T) {
 		}
 
 		if ok := t.Run("with large, sufficient index cache", func(t *testing.T) {
-			indexCache, err := storecache.NewInMemoryIndexCacheWithConfig(s.logger, nil, storecache.InMemoryIndexCacheConfig{
+			indexCache, err := indexcache.NewInMemoryIndexCacheWithConfig(s.logger, nil, indexcache.InMemoryIndexCacheConfig{
 				MaxItemSize: 1e5,
 				MaxSize:     2e5,
 			})
@@ -450,7 +450,7 @@ func TestBucketStore_e2e(t *testing.T) {
 		}
 
 		t.Run("with small index cache", func(t *testing.T) {
-			indexCache2, err := storecache.NewInMemoryIndexCacheWithConfig(s.logger, nil, storecache.InMemoryIndexCacheConfig{
+			indexCache2, err := indexcache.NewInMemoryIndexCacheWithConfig(s.logger, nil, indexcache.InMemoryIndexCacheConfig{
 				MaxItemSize: 50,
 				MaxSize:     100,
 			})
@@ -485,7 +485,7 @@ func TestBucketStore_ManyParts_e2e(t *testing.T) {
 
 		s := prepareStoreWithTestBlocks(t, dir, bkt, true, NewChunksLimiterFactory(0), NewSeriesLimiterFactory(0), emptyRelabelConfig, allowAllFilterConf)
 
-		indexCache, err := storecache.NewInMemoryIndexCacheWithConfig(s.logger, nil, storecache.InMemoryIndexCacheConfig{
+		indexCache, err := indexcache.NewInMemoryIndexCacheWithConfig(s.logger, nil, indexcache.InMemoryIndexCacheConfig{
 			MaxItemSize: 1e5,
 			MaxSize:     2e5,
 		})

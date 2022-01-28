@@ -4,7 +4,7 @@
 // Provenance-includes-copyright: The Thanos Authors.
 
 //nolint:unparam
-package cache
+package bucketcache
 
 import (
 	"bytes"

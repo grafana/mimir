@@ -3,7 +3,7 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Thanos Authors.
 
-package cache
+package indexcache
 
 import (
 	"fmt"
@@ -11,11 +11,12 @@ import (
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
-	"go.uber.org/goleak"
+
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestMain(m *testing.M) {
-	goleak.VerifyTestMain(m)
+	test.VerifyNoLeakTestMain(m)
 }
 
 func TestCanonicalLabelMatchersKey(t *testing.T) {

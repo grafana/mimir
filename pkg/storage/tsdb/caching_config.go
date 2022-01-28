@@ -23,7 +23,7 @@ import (
 	"github.com/thanos-io/thanos/pkg/objstore"
 
 	"github.com/grafana/mimir/pkg/cache"
-	tsdb_cache "github.com/grafana/mimir/pkg/storage/tsdb/cache"
+	"github.com/grafana/mimir/pkg/storage/tsdb/bucketcache"
 )
 
 type ChunksCacheConfig struct {
@@ -91,7 +91,7 @@ func (cfg *MetadataCacheConfig) Validate() error {
 }
 
 func CreateCachingBucket(chunksConfig ChunksCacheConfig, metadataConfig MetadataCacheConfig, bkt objstore.Bucket, logger log.Logger, reg prometheus.Registerer) (objstore.Bucket, error) {
-	cfg := tsdb_cache.NewCachingBucketConfig()
+	cfg := bucketcache.NewCachingBucketConfig()
 	cachingConfigured := false
 
 	chunksCache, err := cache.CreateClient("chunks-cache", chunksConfig.BackendConfig, logger, reg)
@@ -113,7 +113,7 @@ func CreateCachingBucket(chunksConfig ChunksCacheConfig, metadataConfig Metadata
 		cfg.CacheAttributes("block-index", metadataCache, isBlockIndexFile, metadataConfig.BlockIndexAttributesTTL)
 		cfg.CacheGet("bucket-index", metadataCache, isBucketIndexFile, metadataConfig.BucketIndexMaxSize, metadataConfig.BucketIndexContentTTL /* do not cache exist / not exist: */, 0, 0)
 
-		codec := snappyIterCodec{tsdb_cache.JSONIterCodec{}}
+		codec := snappyIterCodec{bucketcache.JSONIterCodec{}}
 		cfg.CacheIter("tenants-iter", metadataCache, isTenantsDir, metadataConfig.TenantsListTTL, codec)
 		cfg.CacheIter("tenant-blocks-iter", metadataCache, isTenantBlocksDir, metadataConfig.TenantBlocksListTTL, codec)
 		cfg.CacheIter("chunks-iter", metadataCache, isChunksDir, metadataConfig.ChunksListTTL, codec)
@@ -145,7 +145,7 @@ func CreateCachingBucket(chunksConfig ChunksCacheConfig, metadataConfig Metadata
 		return bkt, nil
 	}
 
-	return tsdb_cache.NewCachingBucket(bkt, cfg, logger, reg)
+	return bucketcache.NewCachingBucket(bkt, cfg, logger, reg)
 }
 
 var chunksMatcher = regexp.MustCompile(`^.*/chunks/\d+$`)
@@ -186,7 +186,7 @@ func isChunksDir(name string) bool {
 }
 
 type snappyIterCodec struct {
-	tsdb_cache.IterCodec
+	bucketcache.IterCodec
 }
 
 func (i snappyIterCodec) Encode(files []string) ([]byte, error) {
