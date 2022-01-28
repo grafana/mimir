@@ -8,14 +8,12 @@ slug: "getting-started-with-grafana-mimir"
 
 # Getting started with Grafana Mimir
 
-## Overview
-
 Grafana Mimir runs as either a single process or as multiple microservice processes.
 The single process mode is useful for users who want to try or develop on Grafana Mimir.
 The microservices mode allows you to independently scale different services and isolate failures.
 
 These instructions focus on deploying Grafana Mimir as a single process.
-Refer to [Architecture]({{<relref "../architecture.md" >}}) for more information about the microservices.
+For more information about the microservices, refer to [Architecture]({{<relref "../architecture.md" >}}).
 
 ## Before you begin
 
@@ -28,8 +26,7 @@ Verify that you have installed [Docker](https://docs.docker.com/engine/install/)
 Pull the latest Grafana Mimir Docker image locally:
 
 ```bash
-export MIMIR_LATEST=$(curl -Ls -o /dev/null -w %{url_effective} https://github.com/grafana/mimir/releases | awk -F / '{ print $NF; }')
-docker pull "grafana/mimir:${MIMIR_LATEST}"
+docker pull "grafana/mimir:latest"
 ```
 
 To install Grafana Mimir locally, download the latest release binary from GitHub and make it executable.
@@ -41,7 +38,7 @@ chmod +x mimir
 
 ## Start Grafana Mimir
 
-To run Grafana Mimir in a single process and with local filesystem storage, write the following configuration YAML to a file called `dev.yaml`.
+To run Grafana Mimir in a single process and with local filesystem storage, write the following configuration YAML to a file called `dev.yaml`:
 
 ```yaml
 # Do not use this configuration in production.
@@ -95,19 +92,23 @@ store_gateway:
     replication_factor: 1
 ```
 
-Using Docker, run Grafana Mimir with:
+## Run Grafana Mimir
 
-```bash
-docker run --rm --name mimir --detach --publish 9009:9009 --volume "$(pwd)"/dev.yaml:/etc/mimir/dev.yaml "grafana/mimir:${MIMIR_LATEST}" --config.file=/etc/mimir/dev.yaml
-```
+In a terminal, run one of the following commands:
 
-Using a local binary, run Grafana Mimir with:
+* Using Docker:
 
-```bash
-./mimir --config.file=./dev.yaml &
-```
+  ```bash
+  docker run --rm --name mimir --publish 9009:9009 --volume "$(pwd)"/dev.yaml:/etc/mimir/dev.yaml "grafana/mimir:${MIMIR_LATEST}" --config.file=/etc/mimir/dev.yaml
+  ```
 
-Grafana Mimir starts in the background, listening on port 9009.
+* Using a local binary:
+
+  ```bash
+  ./mimir --config.file=./dev.yaml
+  ```
+
+Grafana Mimir listens on port `9009`.
 
 ## Configure Prometheus to write to Grafana Mimir
 
@@ -133,7 +134,7 @@ scrape_configs:
 
 ## Configure the Grafana Agent to write to Grafana Mimir
 
-Add the following YAML snippet to one of your Agent metrics configurations (`metrics.configs`) in your Agent configuration file and restart the Grafana Agent.
+Add the following YAML snippet to one of your Agent metrics configurations (`metrics.configs`) in your Agent configuration file and restart the Grafana Agent:
 
 ```yaml
 remote_write:
@@ -159,10 +160,10 @@ metrics:
 
 ## Query data in Grafana
 
-Run a local Grafana server using Docker:
+In a new terminal, run a local Grafana server using Docker:
 
 ```bash
-docker run --rm --detach --name=grafana --network=host grafana/grafana
+docker run --rm --name=grafana --network=host grafana/grafana
 ```
 
 ### Add Grafana Mimir as a Prometheus data source
