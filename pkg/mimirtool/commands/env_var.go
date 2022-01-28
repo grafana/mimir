@@ -25,8 +25,8 @@ func NewEnvVarsWithPrefix(prefix string) EnvVarNames {
 		useLegacyRoutes = "USE_LEGACY_ROUTES"
 	)
 
-	if len(prefix) < 1 || prefix[len(prefix)-1] != '_' {
-		prefix = "_" + prefix
+	if len(prefix) > 0 && prefix[len(prefix)-1] != '_' {
+		prefix = prefix + "_"
 	}
 
 	return EnvVarNames{
