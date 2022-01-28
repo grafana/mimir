@@ -1,11 +1,53 @@
 ---
-title: "Migrate the storage from Thanos and Prometheus"
-linkTitle: "Migrate the storage from Thanos and Prometheus"
-weight: 7
-slug: migrate-storage-from-thanos-and-prometheus
+title: "Migrate to Grafana Mimir from Thanos or Prometheus"
+weight: 2
 ---
 
-The Cortex blocks storage engine stores series in TSDB blocks uploaded in the storage bucket. This makes very easy to migrate the storage from Thanos and/or Prometheus to Cortex, when running the blocks storage.
+# Migrate to Grafana Mimir from Thanos or Prometheus
+
+## Overview
+
+Grafana Mimir stores series in TSDB blocks uploaded in an object storage bucket.
+These blocks are the same as those used by Prometheus and Thanos.
+Each project stores blocks in different places use different block metadata files.
+
+## Configure remote-write to Grafana Mimir
+
+
+## Upload historic blocks to the Grafana Mimir storage bucket
+
+Prometheus stores TSDB blocks in the path specified in the `--storage.tsdb.path` flag.
+
+Find all blocks directories in the TSDB _STORAGE TSDB PATH_:
+
+```bash
+find _STORAGE TSDB PATH_ -name chunks -exec dirname {} \;
+```
+
+Grafana Mimir supports multiple tenants and stores blocks with a tenant prefix.
+With multi-tenancy disabled, there is a single tenant called `fake`.
+
+Copy each directory output by the previous command to the Mimir object storage bucket with
+your tenant prefix.
+
+Copy to AWS S3 using the `aws` CLI tool:
+
+```bash
+aws s3 cp _DIRECTORY_ s3://_TENANT_/_DIRECTORY_
+```
+
+### S3
+
+### GCS
+
+
+## Migrate the block metadata
+
+> **Warning:** The `thanosconvert` tool modifies objects in the specified bucket.
+> Ensure you enable bucket versioning or have backups before running running the tool.
+
+
+
 
 ## Cortex blocks storage requirements
 
