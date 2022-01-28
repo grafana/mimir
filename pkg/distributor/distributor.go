@@ -149,8 +149,8 @@ type Config struct {
 }
 
 type InstanceLimits struct {
-	MaxIngestionRate        float64 `yaml:"max_ingestion_rate" category:"advanced"`
-	MaxInflightPushRequests int     `yaml:"max_inflight_push_requests" category:"advanced"`
+	MaxIngestionRate        float64 `yaml:"max_ingestion_rate"`
+	MaxInflightPushRequests int     `yaml:"max_inflight_push_requests"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
