@@ -76,8 +76,14 @@ func (cfg *Config) RegisterFlagsWithPrefix(flagsPrefix, defaultPrefix string, f 
 	if flagsPrefix == "" {
 		flagsPrefix = "ring."
 	}
+
+	// Allow clients to override default store by setting it before calling this method.
+	if cfg.Store == "" {
+		cfg.Store = "consul"
+	}
+
 	f.StringVar(&cfg.Prefix, flagsPrefix+"prefix", defaultPrefix, "The prefix for the keys in the store. Should end with a /.")
-	f.StringVar(&cfg.Store, flagsPrefix+"store", "consul", "Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi.")
+	f.StringVar(&cfg.Store, flagsPrefix+"store", cfg.Store, "Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi.")
 }
 
 // Client is a high-level client for key-value stores (such as Etcd and
