@@ -1481,7 +1481,7 @@ func prepareConfig(t *testing.T) Config {
 	// Set lower timeout for waiting on compactor to become ACTIVE in the ring for unit tests
 	compactorCfg.ShardingRing.WaitActiveInstanceTimeout = 5 * time.Second
 
-	// Inject default KV store. Must be overriden if "real" sharding is required.
+	// Inject default KV store. Must be overridden if "real" sharding is required.
 	inmem, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
 	t.Cleanup(func() { _ = closer.Close() })
 	compactorCfg.ShardingRing.KVStore.Mock = inmem
