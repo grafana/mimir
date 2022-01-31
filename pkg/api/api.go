@@ -49,8 +49,8 @@ type Config struct {
 	ResponseCompression           bool `yaml:"response_compression_enabled"`
 	SkipLabelNameValidationHeader bool `yaml:"skip_label_name_validation_header_enabled"`
 
-	AlertmanagerHTTPPrefix string `yaml:"alertmanager_http_prefix"`
-	PrometheusHTTPPrefix   string `yaml:"prometheus_http_prefix"`
+	AlertmanagerHTTPPrefix string `yaml:"alertmanager_http_prefix" category:"advanced"`
+	PrometheusHTTPPrefix   string `yaml:"prometheus_http_prefix" category:"advanced"`
 
 	// The following configs are injected by the upstream caller.
 	ServerPrefix       string               `yaml:"-"`
