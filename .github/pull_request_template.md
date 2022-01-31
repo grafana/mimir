@@ -8,8 +8,6 @@
 
 **Which issue(s) this PR fixes**:
 
-<!-- Please make sure you don't reference cortex issues here, as the references can be publicly seen under certain conditions -->
-
 Fixes #<issue number>
 
 **Checklist**
