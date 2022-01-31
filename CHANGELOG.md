@@ -222,6 +222,22 @@
 * [CHANGE] Changed the default value of `blocks-storage.bucket-store.ignore-deletion-marks-delay` from 6h to 1h. #892
 * [CHANGE] Querier/ruler/query-frontend: the experimental `-querier.at-modifier-enabled` CLI flag has been removed and the PromQL `@` modifier is always enabled. #941
 * [CHANGE] Ruler: `-ruler.alertmanager-use-v2` now defaults to `true`. #954
+* [CHANGE] Changed default settings for memcached clients: #959
+  * The default value for the following config options has changed from `10000` to `25000`:
+    * `-blocks-storage.bucket-store.chunks-cache.memcached.max-async-buffer-size`
+    * `-blocks-storage.bucket-store.index-cache.memcached.max-async-buffer-size`
+    * `-blocks-storage.bucket-store.metadata-cache.memcached.max-async-buffer-size`
+    * `-frontend.results-cache.memcached.max-async-buffer-size`
+  * The default value for the following config options has changed from `0` (unlimited) to `100`:
+    * `-blocks-storage.bucket-store.chunks-cache.memcached.max-get-multi-batch-size`
+    * `-blocks-storage.bucket-store.index-cache.memcached.max-get-multi-batch-size`
+    * `-blocks-storage.bucket-store.metadata-cache.memcached.max-get-multi-batch-size`
+    * `-frontend.results-cache.memcached.max-get-multi-batch-size`
+  * The default value for the following config options has changed from `16` to `100`:
+    * `-blocks-storage.bucket-store.chunks-cache.memcached.max-idle-connections`
+    * `-blocks-storage.bucket-store.index-cache.memcached.max-idle-connections`
+    * `-blocks-storage.bucket-store.metadata-cache.memcached.max-idle-connections`
+    * `-frontend.results-cache.memcached.max-idle-connections`
 * [FEATURE] Query Frontend: Add `cortex_query_fetched_chunks_total` per-user counter to expose the number of chunks fetched as part of queries. This metric can be enabled with the `-frontend.query-stats-enabled` flag (or its respective YAML config option `query_stats_enabled`). #31
 * [FEATURE] Query Frontend: Add experimental querysharding for the blocks storage (instant and range queries). You can now enable querysharding for blocks storage (`-store.engine=blocks`) by setting `-frontend.parallelize-shardable-queries` to `true`. The following additional config and exported metrics have been added. #79 #80 #100 #124 #140 #148 #150 #151 #153 #154 #155 #156 #157 #158 #159 #160 #163 #169 #172 #196 #205 #225 #226 #227 #228 #230 #235 #240 #239 #246 #244 #319 #330 #371 #385 #400 #458 #586 #630 #660 #707
   * New config options:

@@ -824,9 +824,7 @@ spec:
         - -blocks-storage.bucket-store.bucket-index.enabled=true
         - -blocks-storage.bucket-store.metadata-cache.backend=memcached
         - -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local:11211
-        - -blocks-storage.bucket-store.metadata-cache.memcached.max-async-buffer-size=25000
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-async-concurrency=50
-        - -blocks-storage.bucket-store.metadata-cache.memcached.max-get-multi-batch-size=100
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-item-size=1048576
         - -blocks-storage.bucket-store.metadata-cache.memcached.timeout=200ms
         - -blocks-storage.bucket-store.sync-dir=/data/tsdb
@@ -1067,9 +1065,7 @@ spec:
         - -blocks-storage.bucket-store.bucket-index.enabled=true
         - -blocks-storage.bucket-store.metadata-cache.backend=memcached
         - -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local:11211
-        - -blocks-storage.bucket-store.metadata-cache.memcached.max-async-buffer-size=25000
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-async-concurrency=50
-        - -blocks-storage.bucket-store.metadata-cache.memcached.max-get-multi-batch-size=100
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-item-size=1048576
         - -blocks-storage.bucket-store.metadata-cache.memcached.timeout=200ms
         - -blocks-storage.bucket-store.sync-dir=/data/tsdb
@@ -1656,9 +1652,7 @@ spec:
         - -blocks-storage.bucket-store.chunks-cache.attributes-in-memory-max-items=50000
         - -blocks-storage.bucket-store.chunks-cache.backend=memcached
         - -blocks-storage.bucket-store.chunks-cache.memcached.addresses=dnssrvnoa+memcached.default.svc.cluster.local:11211
-        - -blocks-storage.bucket-store.chunks-cache.memcached.max-async-buffer-size=25000
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-async-concurrency=50
-        - -blocks-storage.bucket-store.chunks-cache.memcached.max-get-multi-batch-size=100
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-get-multi-concurrency=100
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-idle-connections=100
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-item-size=1048576
@@ -1666,9 +1660,7 @@ spec:
         - -blocks-storage.bucket-store.ignore-blocks-within=10h
         - -blocks-storage.bucket-store.index-cache.backend=memcached
         - -blocks-storage.bucket-store.index-cache.memcached.addresses=dnssrvnoa+memcached-index-queries.default.svc.cluster.local:11211
-        - -blocks-storage.bucket-store.index-cache.memcached.max-async-buffer-size=25000
         - -blocks-storage.bucket-store.index-cache.memcached.max-async-concurrency=50
-        - -blocks-storage.bucket-store.index-cache.memcached.max-get-multi-batch-size=100
         - -blocks-storage.bucket-store.index-cache.memcached.max-get-multi-concurrency=100
         - -blocks-storage.bucket-store.index-cache.memcached.max-idle-connections=100
         - -blocks-storage.bucket-store.index-cache.memcached.max-item-size=5242880
@@ -1678,9 +1670,7 @@ spec:
         - -blocks-storage.bucket-store.max-chunk-pool-bytes=12884901888
         - -blocks-storage.bucket-store.metadata-cache.backend=memcached
         - -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local:11211
-        - -blocks-storage.bucket-store.metadata-cache.memcached.max-async-buffer-size=25000
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-async-concurrency=50
-        - -blocks-storage.bucket-store.metadata-cache.memcached.max-get-multi-batch-size=100
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-get-multi-concurrency=100
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-idle-connections=100
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-item-size=1048576
