@@ -40,6 +40,8 @@ chmod +x mimir
 
 To run Grafana Mimir in a single process and with local filesystem storage, write the following configuration YAML to a file called `dev.yaml`:
 
+<!-- prettier-ignore-start -->
+[embedmd]:# (../../configurations/dev.yaml)
 ```yaml
 # Do not use this configuration in production.
 # Its purpose is for you to get started within a development environment.
@@ -91,6 +93,7 @@ store_gateway:
   sharding_ring:
     replication_factor: 1
 ```
+<!-- prettier-ignore-end -->
 
 ## Run Grafana Mimir
 
