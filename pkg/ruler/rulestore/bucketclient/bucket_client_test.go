@@ -53,20 +53,6 @@ func TestListRules(t *testing.T) {
 	}
 
 	{
-		allGroupsMap, err := rs.ListAllRuleGroups(context.Background())
-		require.NoError(t, err)
-		require.Len(t, allGroupsMap, 2)
-		require.ElementsMatch(t, []*rulespb.RuleGroupDesc{
-			{User: "user1", Namespace: "hello", Name: "first testGroup"},
-			{User: "user1", Namespace: "hello", Name: "second testGroup"},
-			{User: "user1", Namespace: "world", Name: "another namespace testGroup"},
-		}, allGroupsMap["user1"])
-		require.ElementsMatch(t, []*rulespb.RuleGroupDesc{
-			{User: "user2", Namespace: "+-!@#$%. ", Name: "different user"},
-		}, allGroupsMap["user2"])
-	}
-
-	{
 		user1Groups, err := rs.ListRuleGroupsForUserAndNamespace(context.Background(), "user1", "")
 		require.NoError(t, err)
 		require.ElementsMatch(t, []*rulespb.RuleGroupDesc{
@@ -124,11 +110,15 @@ func TestLoadRules(t *testing.T) {
 		require.NoError(t, rs.SetRuleGroup(context.Background(), g.user, g.namespace, desc))
 	}
 
-	allGroupsMap, err := rs.ListAllRuleGroups(context.Background())
+	allGroupsMap := map[string]rulespb.RuleGroupList{}
+	for _, u := range []string{"user1", "user2", "user3"} {
+		rgl, err := rs.ListRuleGroupsForUserAndNamespace(context.Background(), u, "")
+		require.NoError(t, err)
+		allGroupsMap[u] = rgl
+	}
 
 	// Before load, rules are not loaded
 	{
-		require.NoError(t, err)
 		require.Len(t, allGroupsMap, 3)
 		require.ElementsMatch(t, []*rulespb.RuleGroupDesc{
 			{User: "user1", Namespace: "hello", Name: "first testGroup"},
@@ -140,7 +130,7 @@ func TestLoadRules(t *testing.T) {
 		}, allGroupsMap["user2"])
 	}
 
-	err = rs.LoadRuleGroups(context.Background(), allGroupsMap)
+	err := rs.LoadRuleGroups(context.Background(), allGroupsMap)
 	require.NoError(t, err)
 
 	// After load, rules are loaded.
@@ -388,12 +378,18 @@ func TestListAllRuleGroupsWithNoNamespaceOrGroup(t *testing.T) {
 	}
 
 	s := NewBucketRuleStore(obj, nil, log.NewNopLogger())
-	out, err := s.ListAllRuleGroups(context.Background())
+	out, err := s.ListRuleGroupsForUserAndNamespace(context.Background(), "user1", "")
 	require.NoError(t, err)
+	require.Equal(t, 0, len(out))
 
-	require.Equal(t, 1, len(out))                    // one user
-	require.Equal(t, 1, len(out["user3"]))           // one group
-	require.Equal(t, "group1", out["user3"][0].Name) // one group
+	out, err = s.ListRuleGroupsForUserAndNamespace(context.Background(), "user2", "")
+	require.NoError(t, err)
+	require.Equal(t, 0, len(out))
+
+	out, err = s.ListRuleGroupsForUserAndNamespace(context.Background(), "user3", "")
+	require.NoError(t, err)
+	require.Equal(t, 1, len(out))           // one group
+	require.Equal(t, "group1", out[0].Name) // also verify its name
 }
 
 type mockBucket struct {

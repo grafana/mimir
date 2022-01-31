@@ -85,7 +85,6 @@ store_gateway:
 
 ruler:
   enable_api: true
-  enable_sharding: true
   ring:
     num_tokens: 512
     kvstore:

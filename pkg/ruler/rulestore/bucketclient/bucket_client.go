@@ -104,35 +104,6 @@ func (b *BucketRuleStore) ListAllUsers(ctx context.Context) ([]string, error) {
 	return users, nil
 }
 
-// ListAllRuleGroups implements rules.RuleStore.
-func (b *BucketRuleStore) ListAllRuleGroups(ctx context.Context) (map[string]rulespb.RuleGroupList, error) {
-	out := map[string]rulespb.RuleGroupList{}
-
-	// List rule groups for all tenants.
-	err := b.bucket.Iter(ctx, "", func(key string) error {
-		userID, namespace, group, err := parseRuleGroupObjectKeyWithUser(key)
-		if err != nil {
-			level.Warn(b.logger).Log("msg", "invalid rule group object key found while listing rule groups", "key", key, "err", err)
-
-			// Do not fail just because of a spurious item in the bucket.
-			return nil
-		}
-
-		out[userID] = append(out[userID], &rulespb.RuleGroupDesc{
-			User:      userID,
-			Namespace: namespace,
-			Name:      group,
-		})
-		return nil
-	}, objstore.WithRecursiveIter)
-
-	if err != nil {
-		return nil, err
-	}
-
-	return out, nil
-}
-
 // ListRuleGroupsForUserAndNamespace implements rules.RuleStore.
 func (b *BucketRuleStore) ListRuleGroupsForUserAndNamespace(ctx context.Context, userID string, namespace string) (rulespb.RuleGroupList, error) {
 	userBucket := bucket.NewUserBucketClient(userID, b.bucket, b.cfgProvider)

@@ -80,7 +80,6 @@ compactor:
 
 ruler:
   enable_api: true
-  enable_sharding: false
 
 ruler_storage:
   backend: local

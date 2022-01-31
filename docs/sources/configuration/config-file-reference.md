@@ -1220,10 +1220,6 @@ alertmanager_client:
 # CLI flag: -ruler.resend-delay
 [resend_delay: <duration> | default = 1m]
 
-# Distribute rule evaluation using ring backend
-# CLI flag: -ruler.enable-sharding
-[enable_sharding: <boolean> | default = false]
-
 # Time to spend searching for a pending ruler when shutting down.
 # CLI flag: -ruler.search-pending-for
 [search_pending_for: <duration> | default = 5m]
@@ -1233,7 +1229,7 @@ ring:
     # Backend storage to use for the ring. Supported values are: consul, etcd,
     # inmemory, memberlist, multi.
     # CLI flag: -ruler.ring.store
-    [store: <string> | default = "consul"]
+    [store: <string> | default = "memberlist"]
 
     # The prefix for the keys in the store. Should end with a /.
     # CLI flag: -ruler.ring.prefix

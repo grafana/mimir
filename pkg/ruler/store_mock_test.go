@@ -22,45 +22,9 @@ type mockRuleStore struct {
 }
 
 var (
-	delim               = "/"
-	interval, _         = time.ParseDuration("1m")
-	mockRulesNamespaces = map[string]rulespb.RuleGroupList{
-		"user1": {
-			&rulespb.RuleGroupDesc{
-				Name:      "group1",
-				Namespace: "namespace1",
-				User:      "user1",
-				Rules: []*rulespb.RuleDesc{
-					{
-						Record: "UP_RULE",
-						Expr:   "up",
-					},
-					{
-						Alert: "UP_ALERT",
-						Expr:  "up < 1",
-					},
-				},
-				Interval: interval,
-			},
-			&rulespb.RuleGroupDesc{
-				Name:      "fail",
-				Namespace: "namespace2",
-				User:      "user1",
-				Rules: []*rulespb.RuleDesc{
-					{
-						Record: "UP2_RULE",
-						Expr:   "up",
-					},
-					{
-						Alert: "UP2_ALERT",
-						Expr:  "up < 1",
-					},
-				},
-				Interval: interval,
-			},
-		},
-	}
-	mockRules = map[string]rulespb.RuleGroupList{
+	delim       = "/"
+	interval, _ = time.ParseDuration("1m")
+	mockRules   = map[string]rulespb.RuleGroupList{
 		"user1": {
 			&rulespb.RuleGroupDesc{
 				Name:      "group1",
@@ -131,25 +95,6 @@ func (m *mockRuleStore) ListAllUsers(_ context.Context) ([]string, error) {
 	for u := range m.rules {
 		result = append(result, u)
 	}
-	return result, nil
-}
-
-func (m *mockRuleStore) ListAllRuleGroups(_ context.Context) (map[string]rulespb.RuleGroupList, error) {
-	m.mtx.Lock()
-	defer m.mtx.Unlock()
-
-	result := make(map[string]rulespb.RuleGroupList)
-	for k, v := range m.rules {
-		for _, r := range v {
-			result[k] = append(result[k], &rulespb.RuleGroupDesc{
-				Namespace: r.Namespace,
-				Name:      r.Name,
-				User:      k,
-				Interval:  r.Interval,
-			})
-		}
-	}
-
 	return result, nil
 }
 

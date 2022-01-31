@@ -1379,8 +1379,6 @@ Usage of ./cmd/mimir/mimir:
     	Override the expected name on the server certificate.
   -ruler.disabled-tenants value
     	Comma separated list of tenants whose rules this ruler cannot evaluate. If specified, a ruler that would normally pick the specified tenant(s) for processing will ignore them instead. Subject to sharding.
-  -ruler.enable-sharding
-    	Distribute rule evaluation using ring backend
   -ruler.enabled-tenants value
     	Comma separated list of tenants whose rules this ruler can evaluate. If specified, only these tenants will be handled by ruler, otherwise this ruler can process rules from all tenants. Subject to sharding.
   -ruler.evaluation-delay-duration value
@@ -1468,7 +1466,7 @@ Usage of ./cmd/mimir/mimir:
   -ruler.ring.prefix string
     	The prefix for the keys in the store. Should end with a /. (default "rulers/")
   -ruler.ring.store string
-    	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "consul")
+    	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
   -ruler.rule-path string
     	file path to store temporary rule files for the prometheus rule managers (default "/rules")
   -ruler.search-pending-for duration

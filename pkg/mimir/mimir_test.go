@@ -41,6 +41,7 @@ import (
 	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/frontend/v1/frontendv1pb"
 	"github.com/grafana/mimir/pkg/ingester"
+	"github.com/grafana/mimir/pkg/ruler"
 	"github.com/grafana/mimir/pkg/ruler/rulestore"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
 	"github.com/grafana/mimir/pkg/storage/bucket"
@@ -86,6 +87,14 @@ func TestMimir(t *testing.T) {
 						Backend: tsdb.IndexCacheBackendInMemory,
 					},
 				},
+			},
+		},
+		Ruler: ruler.Config{
+			Ring: ruler.RingConfig{
+				KVStore: kv.Config{
+					Store: "memberlist",
+				},
+				InstanceAddr: "test:8080",
 			},
 		},
 		RulerStorage: rulestore.Config{

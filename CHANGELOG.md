@@ -221,6 +221,7 @@
 * [CHANGE] Server: `-server.http-listen-port` (yaml: `server.http_listen_port`) now defaults to `8080` (previously `80`). #871
 * [CHANGE] Changed the default value of `blocks-storage.bucket-store.ignore-deletion-marks-delay` from 6h to 1h. #892
 * [CHANGE] Querier/ruler/query-frontend: the experimental `-querier.at-modifier-enabled` CLI flag has been removed and the PromQL `@` modifier is always enabled. #941
+* [CHANGE] Ruler: removed `-ruler.enable-sharding` option, and change default value of `-ruler.ring.store` to `memberlist`. #943
 * [CHANGE] Ruler: `-ruler.alertmanager-use-v2` now defaults to `true`. #954
 * [CHANGE] Compactor: Removed `-compactor.sharding-enabled` option. Sharding in compactor is now always enabled. Default value of `-compactor.ring.store` has changed from `consul` to `memberlist`. Default value of `-compactor.ring.wait-stability-min-duration` is now 0, which disables the feature. #956
 * [CHANGE] Changed default settings for memcached clients: #959
