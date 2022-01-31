@@ -57,7 +57,7 @@ type TCPTransportConfig struct {
 	MetricsRegisterer prometheus.Registerer `yaml:"-"`
 	MetricsNamespace  string                `yaml:"-"`
 
-	TLSEnabled bool               `yaml:"tls_enabled"`
+	TLSEnabled bool               `yaml:"tls_enabled" category:"advanced"`
 	TLS        dstls.ClientConfig `yaml:",inline"`
 }
 

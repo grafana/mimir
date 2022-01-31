@@ -27,7 +27,7 @@ type Config struct {
 	BackoffOnRatelimits bool           `yaml:"backoff_on_ratelimits"`
 	BackoffConfig       backoff.Config `yaml:"backoff_config"`
 
-	TLSEnabled bool             `yaml:"tls_enabled"`
+	TLSEnabled bool             `yaml:"tls_enabled" category:"advanced"`
 	TLS        tls.ClientConfig `yaml:",inline"`
 }
 
