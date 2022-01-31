@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -47,10 +46,6 @@ import (
 )
 
 const (
-	// If a config sets the webhook URL to this, it will be rewritten to
-	// a URL derived from Config.AutoWebhookRoot
-	autoWebhookURL = "http://internal.monitor"
-
 	// Reasons for (re)syncing alertmanager configurations from object storage.
 	reasonPeriodic   = "periodic"
 	reasonInitial    = "initial"
@@ -82,7 +77,6 @@ type MultitenantAlertmanagerConfig struct {
 	ShardingRing    RingConfig `yaml:"sharding_ring"`
 
 	FallbackConfigFile string `yaml:"fallback_config_file"`
-	AutoWebhookRoot    string `yaml:"auto_webhook_root"`
 
 	Cluster ClusterConfig `yaml:"cluster"`
 
@@ -119,7 +113,6 @@ func (cfg *MultitenantAlertmanagerConfig) RegisterFlags(f *flag.FlagSet) {
 	f.Var(&cfg.ExternalURL, "alertmanager.web.external-url", "The URL under which Alertmanager is externally reachable (for example, if Alertmanager is served via a reverse proxy). Used for generating relative and absolute links back to Alertmanager itself. If the URL has a path portion, it will be used to prefix all HTTP endpoints served by Alertmanager.")
 
 	f.StringVar(&cfg.FallbackConfigFile, "alertmanager.configs.fallback", "", "Filename of fallback config to use if none specified for instance.")
-	f.StringVar(&cfg.AutoWebhookRoot, "alertmanager.configs.auto-webhook-root", "", "Root of URL to generate if config is "+autoWebhookURL)
 	f.DurationVar(&cfg.PollInterval, "alertmanager.configs.poll-interval", 15*time.Second, "How frequently to poll Alertmanager configs.")
 
 	f.BoolVar(&cfg.EnableAPI, "experimental.alertmanager.enable-api", false, "Enable the experimental alertmanager config api.")
@@ -888,22 +881,6 @@ func (am *MultitenantAlertmanager) setConfig(cfg alertspb.AlertConfigDesc) error
 	// 3) finally, the cortex AM instance is restarted and the running version is no longer present
 	if userAmConfig == nil {
 		return fmt.Errorf("no usable Alertmanager configuration for %v", cfg.User)
-	}
-
-	// Transform webhook configs URLs to the per tenant monitor
-	if am.cfg.AutoWebhookRoot != "" {
-		for i, r := range userAmConfig.Receivers {
-			for j, w := range r.WebhookConfigs {
-				if w.URL.String() == autoWebhookURL {
-					u, err := url.Parse(am.cfg.AutoWebhookRoot + "/" + cfg.User + "/monitor")
-					if err != nil {
-						return err
-					}
-
-					userAmConfig.Receivers[i].WebhookConfigs[j].URL = &amconfig.URL{URL: u}
-				}
-			}
-		}
 	}
 
 	// If no Alertmanager instance exists for this user yet, start one.
