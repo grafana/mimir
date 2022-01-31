@@ -40,11 +40,11 @@ var (
 // Config to create a ConsulClient
 type Config struct {
 	Host              string        `yaml:"host"`
-	ACLToken          string        `yaml:"acl_token"`
-	HTTPClientTimeout time.Duration `yaml:"http_client_timeout"`
-	ConsistentReads   bool          `yaml:"consistent_reads"`
-	WatchKeyRateLimit float64       `yaml:"watch_rate_limit"` // Zero disables rate limit
-	WatchKeyBurstSize int           `yaml:"watch_burst_size"` // Burst when doing rate-limit, defaults to 1
+	ACLToken          string        `yaml:"acl_token" category:"advanced"`
+	HTTPClientTimeout time.Duration `yaml:"http_client_timeout" category:"advanced"`
+	ConsistentReads   bool          `yaml:"consistent_reads" category:"advanced"`
+	WatchKeyRateLimit float64       `yaml:"watch_rate_limit" category:"advanced"` // Zero disables rate limit
+	WatchKeyBurstSize int           `yaml:"watch_burst_size" category:"advanced"` // Burst when doing rate-limit, defaults to 1
 
 	// Used in tests only.
 	MaxCasRetries int           `yaml:"-"`

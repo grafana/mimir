@@ -22,12 +22,14 @@
       'api.response-compression-enabled': true,
 
       // Ring Configs
-      'ruler.enable-sharding': true,
+      'ruler.ring.store': 'consul',
       'ruler.ring.consul.hostname': 'consul.%s.svc.cluster.local:8500' % $._config.namespace,
 
       // Limits
       'server.grpc-max-send-msg-size-bytes': 10 * 1024 * 1024,
       'server.grpc-max-recv-msg-size-bytes': 10 * 1024 * 1024,
+
+      'server.http-listen-port': $._config.server_http_port,
 
       // Do not extend the replication set on unhealthy (or LEAVING) ingester when "unregister on shutdown"
       // is set to false.
@@ -53,9 +55,8 @@
       deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge(0) +
       deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(1) +
       deployment.mixin.spec.template.spec.withTerminationGracePeriodSeconds(600) +
-      (if $._config.cortex_ruler_allow_multiple_replicas_on_same_node then {} else $.util.antiAffinity) +
-      $.util.configVolumeMount($._config.overrides_configmap, '/etc/cortex') +
-      $.storage_config_mixin
+      (if $._config.ruler_allow_multiple_replicas_on_same_node then {} else $.util.antiAffinity) +
+      $.util.configVolumeMount($._config.overrides_configmap, $._config.overrides_configmap_mountpoint)
     else {},
 
   local service = $.core.v1.service,

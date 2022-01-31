@@ -11,7 +11,6 @@ import (
 	"io/ioutil"
 	"os"
 	"strconv"
-	"sync"
 	"testing"
 	"time"
 
@@ -20,7 +19,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/mock"
 
-	"github.com/grafana/mimir/pkg/chunk/purger"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/validation"
 
@@ -34,16 +32,11 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/user"
 
-	"github.com/grafana/mimir/pkg/chunk"
-	promchunk "github.com/grafana/mimir/pkg/chunk/encoding"
 	"github.com/grafana/mimir/pkg/ingester/client"
-	"github.com/grafana/mimir/pkg/prom1/storage/metric"
 	"github.com/grafana/mimir/pkg/util"
 )
 
 const (
-	userID          = "userID"
-	fp              = 1
 	chunkOffset     = 1 * time.Hour
 	chunkLength     = 3 * time.Hour
 	sampleRate      = 15 * time.Second
@@ -58,18 +51,13 @@ type query struct {
 	step     time.Duration
 }
 
-var (
-	encodings = []struct {
-		name string
-		e    promchunk.Encoding
-	}{
-		{"DoubleDelta", promchunk.DoubleDelta},
-		{"Varbit", promchunk.Varbit},
-		{"Bigchunk", promchunk.Bigchunk},
-		{"PrometheusXorChunk", promchunk.PrometheusXorChunk},
-	}
+func TestQuerier(t *testing.T) {
+	var cfg Config
+	flagext.DefaultValues(&cfg)
 
-	queries = []query{
+	const chunks = 24
+
+	queries := []query{
 		// Windowed rates with small step;  This will cause BufferedIterator to read
 		// all the samples.
 		{
@@ -128,13 +116,6 @@ var (
 			},
 		},
 	}
-)
-
-func TestQuerier(t *testing.T) {
-	var cfg Config
-	flagext.DefaultValues(&cfg)
-
-	const chunks = 24
 
 	// Generate TSDB head used to simulate querying the long-term storage.
 	db, through := mockTSDB(t, model.Time(0), int(chunks*samplesPerChunk), sampleRate, chunkOffset, int(samplesPerChunk))
@@ -153,7 +134,7 @@ func TestQuerier(t *testing.T) {
 				require.NoError(t, err)
 
 				queryables := []QueryableWithFilter{UseAlwaysQueryable(db)}
-				queryable, _, _ := New(cfg, overrides, distributor, queryables, purger.NewTombstonesLoader(nil, nil), nil, log.NewNopLogger())
+				queryable, _, _ := New(cfg, overrides, distributor, queryables, nil, log.NewNopLogger(), nil)
 				testRangeQuery(t, queryable, through, query)
 			})
 		}
@@ -228,7 +209,7 @@ func TestQuerier_QueryableReturnsChunksOutsideQueriedRange(t *testing.T) {
 		Timeout:    1 * time.Minute,
 	})
 
-	queryable, _, _ := New(cfg, overrides, distributor, nil, purger.NewTombstonesLoader(nil, nil), nil, logger)
+	queryable, _, _ := New(cfg, overrides, distributor, nil, nil, logger, nil)
 	query, err := engine.NewRangeQuery(queryable, `sum({__name__=~".+"})`, queryStart, queryEnd, queryStep)
 	require.NoError(t, err)
 
@@ -296,7 +277,7 @@ func mockTSDB(t *testing.T, mint model.Time, samples int, step, chunkOffset time
 	return queryable, ts
 }
 
-func TestNoHistoricalQueryToIngester(t *testing.T) {
+func TestQuerier_QueryIngestersWithinConfig(t *testing.T) {
 	testCases := []struct {
 		name                 string
 		mint, maxt           time.Time
@@ -355,13 +336,16 @@ func TestNoHistoricalQueryToIngester(t *testing.T) {
 	for _, c := range testCases {
 		cfg.QueryIngestersWithin = c.queryIngestersWithin
 		t.Run(c.name, func(t *testing.T) {
-			chunkStore, _ := makeMockChunkStore(t, 24, encodings[0].e)
 			distributor := &errDistributor{}
 
 			overrides, err := validation.NewOverrides(defaultLimitsConfig(), nil)
 			require.NoError(t, err)
 
-			queryable, _, _ := New(cfg, overrides, distributor, []QueryableWithFilter{UseAlwaysQueryable(NewChunkStoreQueryable(cfg, chunkStore))}, purger.NewTombstonesLoader(nil, nil), nil, log.NewNopLogger())
+			// We don't have to actually query the storage in this test, so we initialize the querier
+			// with no store queryable.
+			var storeQueryables []QueryableWithFilter
+
+			queryable, _, _ := New(cfg, overrides, distributor, storeQueryables, nil, log.NewNopLogger(), nil)
 			query, err := engine.NewRangeQuery(queryable, "dummy", c.mint, c.maxt, 1*time.Minute)
 			require.NoError(t, err)
 
@@ -438,7 +422,6 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryIntoFuture(t *testing.T) {
 		cfg.MaxQueryIntoFuture = c.maxQueryIntoFuture
 		t.Run(name, func(t *testing.T) {
 			// We don't need to query any data for this test, so an empty store is fine.
-			chunkStore := &emptyChunkStore{}
 			distributor := &mockDistributor{}
 			distributor.On("Query", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Matrix{}, nil)
 			distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(&client.QueryStreamResponse{}, nil)
@@ -446,8 +429,7 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryIntoFuture(t *testing.T) {
 			overrides, err := validation.NewOverrides(defaultLimitsConfig(), nil)
 			require.NoError(t, err)
 
-			queryables := []QueryableWithFilter{UseAlwaysQueryable(NewChunkStoreQueryable(cfg, chunkStore))}
-			queryable, _, _ := New(cfg, overrides, distributor, queryables, purger.NewTombstonesLoader(nil, nil), nil, log.NewNopLogger())
+			queryable, _, _ := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil)
 			query, err := engine.NewRangeQuery(queryable, "dummy", c.queryStartTime, c.queryEndTime, time.Minute)
 			require.NoError(t, err)
 
@@ -517,12 +499,9 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLength(t *testing.T) {
 			overrides, err := validation.NewOverrides(limits, nil)
 			require.NoError(t, err)
 
-			// We don't need to query any data for this test, so an empty store is fine.
-			chunkStore := &emptyChunkStore{}
+			// We don't need to query any data for this test, so an empty distributor is fine.
 			distributor := &emptyDistributor{}
-
-			queryables := []QueryableWithFilter{UseAlwaysQueryable(NewChunkStoreQueryable(cfg, chunkStore))}
-			queryable, _, _ := New(cfg, overrides, distributor, queryables, purger.NewTombstonesLoader(nil, nil), nil, log.NewNopLogger())
+			queryable, _, _ := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil)
 
 			// Create the PromQL engine to execute the query.
 			engine := promql.NewEngine(promql.EngineOpts{
@@ -638,16 +617,12 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 			overrides, err := validation.NewOverrides(limits, nil)
 			require.NoError(t, err)
 
-			// We don't need to query any data for this test, so an empty store is fine.
-			chunkStore := &emptyChunkStore{}
-			queryables := []QueryableWithFilter{UseAlwaysQueryable(NewChunkStoreQueryable(cfg, chunkStore))}
-
 			t.Run("query range", func(t *testing.T) {
 				distributor := &mockDistributor{}
 				distributor.On("Query", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Matrix{}, nil)
 				distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(&client.QueryStreamResponse{}, nil)
 
-				queryable, _, _ := New(cfg, overrides, distributor, queryables, purger.NewTombstonesLoader(nil, nil), nil, log.NewNopLogger())
+				queryable, _, _ := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil)
 				require.NoError(t, err)
 
 				query, err := engine.NewRangeQuery(queryable, testData.query, testData.queryStartTime, testData.queryEndTime, time.Minute)
@@ -673,9 +648,9 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 
 			t.Run("series", func(t *testing.T) {
 				distributor := &mockDistributor{}
-				distributor.On("MetricsForLabelMatchers", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]metric.Metric{}, nil)
+				distributor.On("MetricsForLabelMatchers", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]model.Metric{}, nil)
 
-				queryable, _, _ := New(cfg, overrides, distributor, queryables, purger.NewTombstonesLoader(nil, nil), nil, log.NewNopLogger())
+				queryable, _, _ := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil)
 				q, err := queryable.Querier(ctx, util.TimeToMillis(testData.queryStartTime), util.TimeToMillis(testData.queryEndTime))
 				require.NoError(t, err)
 
@@ -710,7 +685,7 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 				distributor := &mockDistributor{}
 				distributor.On("LabelNames", mock.Anything, mock.Anything, mock.Anything, matchers).Return([]string{}, nil)
 
-				queryable, _, _ := New(cfg, overrides, distributor, queryables, purger.NewTombstonesLoader(nil, nil), nil, log.NewNopLogger())
+				queryable, _, _ := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil)
 				q, err := queryable.Querier(ctx, util.TimeToMillis(testData.queryStartTime), util.TimeToMillis(testData.queryEndTime))
 				require.NoError(t, err)
 
@@ -736,7 +711,7 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 				distributor := &mockDistributor{}
 				distributor.On("LabelValuesForLabelName", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]string{}, nil)
 
-				queryable, _, _ := New(cfg, overrides, distributor, queryables, purger.NewTombstonesLoader(nil, nil), nil, log.NewNopLogger())
+				queryable, _, _ := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil)
 				q, err := queryable.Querier(ctx, util.TimeToMillis(testData.queryStartTime), util.TimeToMillis(testData.queryEndTime))
 				require.NoError(t, err)
 
@@ -801,14 +776,13 @@ func TestQuerier_MaxLabelsQueryRange(t *testing.T) {
 			require.NoError(t, err)
 
 			// We don't need to query any data for this test, so an empty store is fine.
-			chunkStore := &emptyChunkStore{}
-			queryables := []QueryableWithFilter{UseAlwaysQueryable(NewChunkStoreQueryable(cfg, chunkStore))}
+			var storeQueryable []QueryableWithFilter
 
 			t.Run("series", func(t *testing.T) {
 				distributor := &mockDistributor{}
-				distributor.On("MetricsForLabelMatchers", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]metric.Metric{}, nil)
+				distributor.On("MetricsForLabelMatchers", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]model.Metric{}, nil)
 
-				queryable, _, _ := New(cfg, overrides, distributor, queryables, purger.NewTombstonesLoader(nil, nil), nil, log.NewNopLogger())
+				queryable, _, _ := New(cfg, overrides, distributor, storeQueryable, nil, log.NewNopLogger(), nil)
 				q, err := queryable.Querier(ctx, util.TimeToMillis(testData.queryStartTime), util.TimeToMillis(testData.queryEndTime))
 				require.NoError(t, err)
 
@@ -893,7 +867,7 @@ func (m *errDistributor) LabelValuesForLabelName(context.Context, model.Time, mo
 func (m *errDistributor) LabelNames(context.Context, model.Time, model.Time, ...*labels.Matcher) ([]string, error) {
 	return nil, errDistributorError
 }
-func (m *errDistributor) MetricsForLabelMatchers(ctx context.Context, from, through model.Time, matchers ...*labels.Matcher) ([]metric.Metric, error) {
+func (m *errDistributor) MetricsForLabelMatchers(ctx context.Context, from, through model.Time, matchers ...*labels.Matcher) ([]model.Metric, error) {
 	return nil, errDistributorError
 }
 
@@ -903,24 +877,6 @@ func (m *errDistributor) MetricsMetadata(ctx context.Context) ([]scrape.MetricMe
 
 func (m *errDistributor) LabelValuesCardinality(ctx context.Context, labelNames []model.LabelName, matchers []*labels.Matcher) (uint64, *client.LabelValuesCardinalityResponse, error) {
 	return 0, nil, errDistributorError
-}
-
-type emptyChunkStore struct {
-	sync.Mutex
-	called bool
-}
-
-func (c *emptyChunkStore) Get(ctx context.Context, userID string, from, through model.Time, matchers ...*labels.Matcher) ([]chunk.Chunk, error) {
-	c.Lock()
-	defer c.Unlock()
-	c.called = true
-	return nil, nil
-}
-
-func (c *emptyChunkStore) IsCalled() bool {
-	c.Lock()
-	defer c.Unlock()
-	return c.called
 }
 
 type emptyDistributor struct{}
@@ -949,7 +905,7 @@ func (d *emptyDistributor) LabelNames(context.Context, model.Time, model.Time, .
 	return nil, nil
 }
 
-func (d *emptyDistributor) MetricsForLabelMatchers(ctx context.Context, from, through model.Time, matchers ...*labels.Matcher) ([]metric.Metric, error) {
+func (d *emptyDistributor) MetricsForLabelMatchers(ctx context.Context, from, through model.Time, matchers ...*labels.Matcher) ([]model.Metric, error) {
 	return nil, nil
 }
 
@@ -961,21 +917,21 @@ func (d *emptyDistributor) LabelValuesCardinality(ctx context.Context, labelName
 	return 0, nil, nil
 }
 
-func TestShortTermQueryToLTS(t *testing.T) {
+func TestQuerier_QueryStoreAfterConfig(t *testing.T) {
 	testCases := []struct {
 		name                 string
 		mint, maxt           time.Time
-		hitIngester          bool
-		hitLTS               bool
 		queryIngestersWithin time.Duration
 		queryStoreAfter      time.Duration
+		expectedHitIngester  bool
+		expectedHitStorage   bool
 	}{
 		{
 			name:                 "hit only ingester",
 			mint:                 time.Now().Add(-5 * time.Minute),
 			maxt:                 time.Now(),
-			hitIngester:          true,
-			hitLTS:               false,
+			expectedHitIngester:  true,
+			expectedHitStorage:   false,
 			queryIngestersWithin: 1 * time.Hour,
 			queryStoreAfter:      time.Hour,
 		},
@@ -983,8 +939,8 @@ func TestShortTermQueryToLTS(t *testing.T) {
 			name:                 "hit both",
 			mint:                 time.Now().Add(-5 * time.Hour),
 			maxt:                 time.Now(),
-			hitIngester:          true,
-			hitLTS:               true,
+			expectedHitIngester:  true,
+			expectedHitStorage:   true,
 			queryIngestersWithin: 1 * time.Hour,
 			queryStoreAfter:      time.Hour,
 		},
@@ -992,8 +948,8 @@ func TestShortTermQueryToLTS(t *testing.T) {
 			name:                 "hit only storage",
 			mint:                 time.Now().Add(-5 * time.Hour),
 			maxt:                 time.Now().Add(-2 * time.Hour),
-			hitIngester:          false,
-			hitLTS:               true,
+			expectedHitIngester:  false,
+			expectedHitStorage:   true,
 			queryIngestersWithin: 1 * time.Hour,
 			queryStoreAfter:      0,
 		},
@@ -1018,21 +974,26 @@ func TestShortTermQueryToLTS(t *testing.T) {
 		cfg.QueryIngestersWithin = c.queryIngestersWithin
 		cfg.QueryStoreAfter = c.queryStoreAfter
 		t.Run(c.name, func(t *testing.T) {
-			chunkStore := &emptyChunkStore{}
 			distributor := &errDistributor{}
 
 			overrides, err := validation.NewOverrides(defaultLimitsConfig(), nil)
 			require.NoError(t, err)
 
-			queryable, _, _ := New(cfg, overrides, distributor, []QueryableWithFilter{UseAlwaysQueryable(NewChunkStoreQueryable(cfg, chunkStore))}, purger.NewTombstonesLoader(nil, nil), nil, log.NewNopLogger())
-			query, err := engine.NewRangeQuery(queryable, "dummy", c.mint, c.maxt, 1*time.Minute)
+			// Mock the blocks storage to return an empty SeriesSet (we just need to check whether
+			// it was hit or not).
+			expectedMatchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "metric")}
+			querier := &mockBlocksStorageQuerier{}
+			querier.On("Select", true, mock.Anything, expectedMatchers).Return(storage.EmptySeriesSet())
+
+			queryable, _, _ := New(cfg, overrides, distributor, []QueryableWithFilter{UseAlwaysQueryable(newMockBlocksStorageQueryable(querier))}, nil, log.NewNopLogger(), nil)
+			query, err := engine.NewRangeQuery(queryable, "metric", c.mint, c.maxt, 1*time.Minute)
 			require.NoError(t, err)
 
 			ctx := user.InjectOrgID(context.Background(), "0")
 			r := query.Exec(ctx)
 			_, err = r.Matrix()
 
-			if c.hitIngester {
+			if c.expectedHitIngester {
 				// If the ingester was hit, the distributor always returns errDistributorError. Prometheus
 				// wrap any Select() error into "expanding series", so we do wrap it as well to have a match.
 				require.Error(t, err)
@@ -1044,7 +1005,12 @@ func TestShortTermQueryToLTS(t *testing.T) {
 
 			// Verify if the test did/did not hit the LTS
 			time.Sleep(30 * time.Millisecond) // NOTE: Since this is a lazy querier there is a race condition between the response and chunk store being called
-			require.Equal(t, c.hitLTS, chunkStore.IsCalled())
+
+			if c.expectedHitStorage {
+				querier.AssertCalled(t, "Select", true, mock.Anything, expectedMatchers)
+			} else {
+				querier.AssertNotCalled(t, "Select", mock.Anything, mock.Anything, mock.Anything)
+			}
 		})
 	}
 }
@@ -1151,4 +1117,42 @@ func mustParseTime(input string) time.Time {
 		panic(err)
 	}
 	return parsed
+}
+
+type mockBlocksStorageQueryable struct {
+	querier storage.Querier
+}
+
+func newMockBlocksStorageQueryable(querier storage.Querier) *mockBlocksStorageQueryable {
+	return &mockBlocksStorageQueryable{
+		querier: querier,
+	}
+}
+
+// Querier implements storage.Queryable.
+func (m *mockBlocksStorageQueryable) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
+	return m.querier, nil
+}
+
+type mockBlocksStorageQuerier struct {
+	mock.Mock
+}
+
+func (m *mockBlocksStorageQuerier) Select(sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+	args := m.Called(sortSeries, hints, matchers)
+	return args.Get(0).(storage.SeriesSet)
+}
+
+func (m *mockBlocksStorageQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
+	args := m.Called(name, matchers)
+	return args.Get(0).([]string), args.Get(1).(storage.Warnings), args.Error(2)
+}
+
+func (m *mockBlocksStorageQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
+	args := m.Called(matchers)
+	return args.Get(0).([]string), args.Get(1).(storage.Warnings), args.Error(2)
+}
+
+func (m *mockBlocksStorageQuerier) Close() error {
+	return nil
 }

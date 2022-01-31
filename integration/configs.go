@@ -15,8 +15,8 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/grafana/mimir/integration/e2e"
-	e2edb "github.com/grafana/mimir/integration/e2e/db"
+	"github.com/grafana/e2e"
+	e2edb "github.com/grafana/e2e/db"
 )
 
 const (
@@ -26,7 +26,6 @@ const (
 	rulestoreBucketName = "mimir-rules"
 	alertsBucketName    = "mimir-alerts"
 	mimirConfigFile     = "config.yaml"
-	blocksStorageEngine = "blocks"
 	clientCertFile      = "certs/client.crt"
 	clientKeyFile       = "certs/client.key"
 	caCertFile          = "certs/root.crt"
@@ -129,7 +128,6 @@ var (
 	RulerFlags = func() map[string]string {
 		return map[string]string{
 			"-api.response-compression-enabled":   "true",
-			"-ruler.enable-sharding":              "false",
 			"-ruler.poll-interval":                "2s",
 			"-experimental.ruler.enable-api":      "true",
 			"-ruler-storage.backend":              "s3",
@@ -143,7 +141,6 @@ var (
 
 	RulerShardingFlags = func(consulAddress string) map[string]string {
 		return map[string]string{
-			"-ruler.enable-sharding":      "true",
 			"-ruler.ring.store":           "consul",
 			"-ruler.ring.consul.hostname": consulAddress,
 		}
@@ -151,7 +148,6 @@ var (
 
 	BlocksStorageFlags = func() map[string]string {
 		return map[string]string{
-			"-store.engine":                                 blocksStorageEngine,
 			"-blocks-storage.backend":                       "s3",
 			"-blocks-storage.tsdb.block-ranges-period":      "1m",
 			"-blocks-storage.bucket-store.sync-interval":    "5s",
@@ -167,9 +163,6 @@ var (
 	}
 
 	BlocksStorageConfig = buildConfigFromTemplate(`
-storage:
-  engine: blocks
-
 blocks_storage:
   backend:             s3
 

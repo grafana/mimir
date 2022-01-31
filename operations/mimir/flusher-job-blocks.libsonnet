@@ -44,6 +44,6 @@
     job.mixin.spec.template.metadata.withLabels({ name: 'flusher' }) +
     job.mixin.spec.template.spec.securityContext.withRunAsUser(0) +
     job.mixin.spec.template.spec.withTerminationGracePeriodSeconds(300) +
-    $.util.configVolumeMount($._config.overrides_configmap, '/etc/cortex') +
+    $.util.configVolumeMount($._config.overrides_configmap, $._config.overrides_configmap_mountpoint) +
     $.util.podPriority('high'),
 }

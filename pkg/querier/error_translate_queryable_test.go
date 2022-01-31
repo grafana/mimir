@@ -27,7 +27,6 @@ import (
 	"github.com/weaveworks/common/httpgrpc"
 	"github.com/weaveworks/common/user"
 
-	"github.com/grafana/mimir/pkg/chunk"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -41,12 +40,6 @@ func TestApiStatusCodes(t *testing.T) {
 			err:            errors.New("some random error"),
 			expectedString: "some random error",
 			expectedCode:   500,
-		},
-
-		{
-			err:            chunk.QueryError("special handling"), // handled specially by chunk_store_queryable
-			expectedString: "special handling",
-			expectedCode:   422,
 		},
 
 		{

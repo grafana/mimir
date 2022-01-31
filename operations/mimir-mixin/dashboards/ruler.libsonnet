@@ -58,8 +58,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
     },
   },
 
-  'ruler.json':
-    ($.dashboard('Cortex / Ruler') + { uid: '44d12bcb1f95661c6ab6bc946dfc3473' })
+  'mimir-ruler.json':
+    ($.dashboard('Ruler') + { uid: '44d12bcb1f95661c6ab6bc946dfc3473' })
     .addClusterSelectorTemplates()
     .addRow(
       ($.row('Headlines') + {
@@ -67,24 +67,24 @@ local utils = import 'mixin-utils/utils.libsonnet';
          showTitle: false,
        })
       .addPanel(
-        $.panel('Active Configurations') +
+        $.panel('Active configurations') +
         $.statPanel('sum(cortex_ruler_managers_total{%s})' % $.jobMatcher('ruler'), format='short')
       )
       .addPanel(
-        $.panel('Total Rules') +
+        $.panel('Total rules') +
         $.statPanel('sum(cortex_prometheus_rule_group_rules{%s})' % $.jobMatcher('ruler'), format='short')
       )
       .addPanel(
-        $.panel('Read from Ingesters - QPS') +
+        $.panel('Read from ingesters - QPS') +
         $.statPanel('sum(rate(cortex_ingester_client_request_duration_seconds_count{%s, operation="/cortex.Ingester/QueryStream"}[5m]))' % $.jobMatcher('ruler'), format='reqps')
       )
       .addPanel(
-        $.panel('Write to Ingesters - QPS') +
+        $.panel('Write to ingesters - QPS') +
         $.statPanel('sum(rate(cortex_ingester_client_request_duration_seconds_count{%s, operation="/cortex.Ingester/Push"}[5m]))' % $.jobMatcher('ruler'), format='reqps')
       )
     )
     .addRow(
-      $.row('Rule Evaluations Global')
+      $.row('Rule evaluations global')
       .addPanel(
         $.panel('EPS') +
         $.queryPanel(
@@ -114,7 +114,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.gateway) + [utils.selector.re('route', ruler_config_api_routes_re)])
       )
       .addPanel(
-        $.panel('Per route p99 Latency') +
+        $.panel('Per route p99 latency') +
         $.queryPanel(
           'histogram_quantile(0.99, sum by (route, le) (cluster_job_route:cortex_request_duration_seconds_bucket:sum_rate{%s, route=~"%s"}))' % [$.jobMatcher($._config.job_names.gateway), ruler_config_api_routes_re],
           '{{ route }}'
@@ -123,7 +123,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addRow(
-      $.row('Writes (Ingesters)')
+      $.row('Writes (ingesters)')
       .addPanel(
         $.panel('QPS') +
         $.qpsPanel('cortex_ingester_client_request_duration_seconds_count{%s, operation="/cortex.Ingester/Push"}' % $.jobMatcher('ruler'))
@@ -134,7 +134,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addRow(
-      $.row('Reads (Ingesters)')
+      $.row('Reads (ingesters)')
       .addPanel(
         $.panel('QPS') +
         $.qpsPanel('cortex_ingester_client_request_duration_seconds_count{%s, operation="/cortex.Ingester/QueryStream"}' % $.jobMatcher('ruler'))
@@ -145,17 +145,17 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addRow(
-      $.kvStoreRow('Ruler - Key-value store for rulers ring', 'ruler', 'ruler')
+      $.kvStoreRow('Ruler - key-value store for rulers ring', 'ruler', 'ruler')
     )
     .addRow(
-      $.row('Ruler - Blocks storage')
+      $.row('Ruler - blocks storage')
       .addPanel(
-        $.panel('Number of store-gateways hit per Query') +
+        $.panel('Number of store-gateways hit per query') +
         $.latencyPanel('cortex_querier_storegateway_instances_hit_per_query', '{%s}' % $.jobMatcher($._config.job_names.ruler), multiplier=1) +
         { yaxes: $.yaxes('short') },
       )
       .addPanel(
-        $.panel('Refetches of missing blocks per Query') +
+        $.panel('Refetches of missing blocks per query') +
         $.latencyPanel('cortex_querier_storegateway_refetches_per_query', '{%s}' % $.jobMatcher($._config.job_names.ruler), multiplier=1) +
         { yaxes: $.yaxes('short') },
       )
@@ -168,11 +168,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
     .addRow(
       $.row('Notifications')
       .addPanel(
-        $.panel('Delivery Errors') +
+        $.panel('Delivery errors') +
         $.queryPanel($.rulerQueries.notifications.failure % [$.jobMatcher('ruler'), $.jobMatcher('ruler')], '{{ user }}')
       )
       .addPanel(
-        $.panel('Queue Length') +
+        $.panel('Queue length') +
         $.queryPanel($.rulerQueries.notifications.queue % [$.jobMatcher('ruler'), $.jobMatcher('ruler')], '{{ user }}')
       )
       .addPanel(
@@ -181,9 +181,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addRow(
-      ($.row('Group Evaluations') + { collapse: true })
+      ($.row('Group evaluations') + { collapse: true })
       .addPanel(
-        $.panel('Missed Iterations') +
+        $.panel('Missed iterations') +
         $.queryPanel($.rulerQueries.groupEvaluations.missedIterations % $.jobMatcher('ruler'), '{{ user }}'),
       )
       .addPanel(
@@ -201,7 +201,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addRow(
-      ($.row('Rule Evaluation per User') + { collapse: true })
+      ($.row('Rule evaluation per user') + { collapse: true })
       .addPanel(
         $.panel('Latency') +
         $.queryPanel(
@@ -211,6 +211,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addRows(
-      $.getObjectStoreRows('Ruler Configuration Object Store (Ruler accesses)', 'ruler-storage')
+      $.getObjectStoreRows('Ruler configuration object store (ruler accesses)', 'ruler-storage')
     ),
 }

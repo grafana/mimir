@@ -20,6 +20,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/e2e"
+	e2ecache "github.com/grafana/e2e/cache"
+	e2edb "github.com/grafana/e2e/db"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
@@ -27,9 +30,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/integration/ca"
-	"github.com/grafana/mimir/integration/e2e"
-	e2ecache "github.com/grafana/mimir/integration/e2e/cache"
-	e2edb "github.com/grafana/mimir/integration/e2e/db"
 	"github.com/grafana/mimir/integration/e2emimir"
 )
 
@@ -168,11 +168,12 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 	configFile, flags := cfg.setup(t, s)
 
 	flags = mergeFlags(flags, map[string]string{
-		"-querier.cache-results":             "true",
-		"-querier.split-queries-by-interval": "24h",
-		"-querier.query-ingesters-within":    "12h", // Required by the test on query /series out of ingesters time range
-		"-frontend.memcached.addresses":      "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
-		"-frontend.query-stats-enabled":      strconv.FormatBool(cfg.queryStatsEnabled),
+		"-frontend.cache-results":                     "true",
+		"-frontend.split-queries-by-interval":         "24h",
+		"-querier.query-ingesters-within":             "12h", // Required by the test on query /series out of ingesters time range
+		"-frontend.results-cache.backend":             "memcached",
+		"-frontend.results-cache.memcached.addresses": "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
+		"-frontend.query-stats-enabled":               strconv.FormatBool(cfg.queryStatsEnabled),
 	})
 
 	// Start the query-scheduler if enabled.
@@ -201,11 +202,12 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 	require.NoError(t, s.WaitReady(queryFrontend))
 
 	// Check if we're discovering memcache or not.
-	require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(1), "cortex_memcache_client_servers"))
-	require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Greater(0), "cortex_dns_lookups_total"))
+	require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(1), "thanos_memcached_dns_provider_results"))
+	require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Greater(0), "thanos_memcached_dns_lookups_total"))
 
 	// Wait until both the distributor and querier have updated the ring.
-	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
+	// The distributor should have 512 tokens for the ingester ring and 1 for the distributor ring
+	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512+1), "cortex_ring_tokens_total"))
 	require.NoError(t, querier.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
 
 	// Push a series for each user to Mimir.
@@ -341,13 +343,12 @@ overrides:
 `)))
 
 	flags = mergeFlags(flags, map[string]string{
-		"-querier.cache-results":             "true",
-		"-querier.split-queries-by-interval": "24h",
-		"-querier.max-samples":               "2", // Very low limit so that we can easily hit it.
+		"-frontend.split-queries-by-interval": "24h",
+		"-querier.max-samples":                "20", // Very low limit so that we can easily hit it, but high enough to test other features.
 
-		"-query-frontend.parallelize-shardable-queries": "true",                                               // Allow queries to be parallized (query-sharding)
-		"-frontend.query-sharding-total-shards":         "0",                                                  // Disable query-sharding by default
-		"-runtime-config.file":                          filepath.Join(e2e.ContainerSharedDir, runtimeConfig), // Read per tenant runtime config
+		"-frontend.parallelize-shardable-queries": "true",                                               // Allow queries to be parallized (query-sharding)
+		"-frontend.query-sharding-total-shards":   "0",                                                  // Disable query-sharding by default
+		"-runtime-config.file":                    filepath.Join(e2e.ContainerSharedDir, runtimeConfig), // Read per tenant runtime config
 	})
 	consul := e2edb.NewConsul()
 	require.NoError(t, s.StartAndWaitReady(consul))
@@ -366,7 +367,8 @@ overrides:
 	require.NoError(t, s.WaitReady(queryFrontend))
 
 	// Wait until both the distributor and querier have updated the ring.
-	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
+	// The distributor should have 512 tokens for the ingester ring and 1 for the distributor ring
+	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512+1), "cortex_ring_tokens_total"))
 	require.NoError(t, querier.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
 
 	now := time.Now()
@@ -377,8 +379,13 @@ overrides:
 	cWriteWithQuerySharding, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", "", "query-sharding")
 	require.NoError(t, err)
 
-	for i := 0; i < 10; i++ {
-		series, _ := generateSeries(fmt.Sprintf("series_%d", i), now)
+	for i := 0; i < 50; i++ {
+		series, _ := generateSeries(
+			"metric",
+			now,
+			prompb.Label{Name: "unique", Value: strconv.Itoa(i)},
+			prompb.Label{Name: "group_1", Value: strconv.Itoa(i % 2)},
+		)
 
 		res, err := cWrite.Push(series)
 		require.NoError(t, err)
@@ -477,10 +484,18 @@ overrides:
 		{
 			name: "max samples limit hit",
 			query: func(c *e2emimir.Client) (*http.Response, []byte, error) {
-				return c.QueryRangeRaw(`{__name__=~"series_.+"}`, now.Add(-time.Minute), now, time.Minute)
+				return c.QueryRangeRaw(`metric`, now.Add(-time.Minute), now, time.Minute)
 			},
 			expStatusCode: http.StatusUnprocessableEntity,
 			expBody:       `{"error":"query processing would load too many samples into memory in query execution", "errorType":"execution", "status":"error"}`,
+		},
+		{
+			name: "execution error",
+			query: func(c *e2emimir.Client) (*http.Response, []byte, error) {
+				return c.QueryRangeRaw(`sum by (group_1) (metric{unique=~"0|1|2|3"}) * on(group_1) group_right(unique) (sum by (group_1,unique) (metric{unique=~"0|1|2|3"}))`, now.Add(-time.Minute), now, time.Minute)
+			},
+			expStatusCode: http.StatusUnprocessableEntity,
+			expBody:       `{"error":"multiple matches for labels: grouping labels must ensure unique matches", "errorType":"execution", "status":"error"}`,
 		},
 		{
 			name: "range query with range vector",
@@ -496,15 +511,7 @@ overrides:
 				return c.QueryRangeRaw(`count_over_time(up[1m] offset -1m)`, now.Add(-time.Hour), now, time.Minute)
 			},
 			expStatusCode: http.StatusBadRequest,
-			expBody:       `{"error": "negative offset is disabled, use --enable-feature=promql-negative-offset to enable it", "errorType":"bad_data", "status":"error"}`,
-		},
-		{
-			name: "error when at-modifier is unsupported",
-			query: func(c *e2emimir.Client) (*http.Response, []byte, error) {
-				return c.QueryRangeRaw(`http_requests_total @ start()`, now.Add(-time.Minute), now, time.Minute)
-			},
-			expStatusCode: http.StatusBadRequest,
-			expBody:       `{"error":"@ modifier is disabled, use --enable-feature=promql-at-modifier to enable it", "errorType":"bad_data", "status":"error"}`,
+			expBody:       `{"error": "negative offsets are not supported", "errorType":"bad_data", "status":"error"}`,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

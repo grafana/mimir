@@ -13,15 +13,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/e2e"
+	e2ecache "github.com/grafana/e2e/cache"
+	e2edb "github.com/grafana/e2e/db"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/integration/e2e"
-	e2ecache "github.com/grafana/mimir/integration/e2e/cache"
-	e2edb "github.com/grafana/mimir/integration/e2e/db"
 	"github.com/grafana/mimir/integration/e2emimir"
 )
 
@@ -65,11 +65,12 @@ func runQuerierTenantFederationTest(t *testing.T, cfg querierTenantFederationCon
 	require.NoError(t, s.StartAndWaitReady(consul, memcached))
 
 	flags := mergeFlags(BlocksStorageFlags(), map[string]string{
-		"-querier.cache-results":             "true",
-		"-querier.split-queries-by-interval": "24h",
-		"-querier.query-ingesters-within":    "12h", // Required by the test on query /series out of ingesters time range
-		"-frontend.memcached.addresses":      "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
-		"-tenant-federation.enabled":         "true",
+		"-frontend.cache-results":                     "true",
+		"-frontend.split-queries-by-interval":         "24h",
+		"-querier.query-ingesters-within":             "12h", // Required by the test on query /series out of ingesters time range
+		"-frontend.results-cache.backend":             "memcached",
+		"-frontend.results-cache.memcached.addresses": "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
+		"-tenant-federation.enabled":                  "true",
 	})
 
 	// Start the query-scheduler if enabled.
@@ -114,7 +115,8 @@ func runQuerierTenantFederationTest(t *testing.T, cfg querierTenantFederationCon
 	}
 
 	// Wait until distributor and queriers have updated the ring.
-	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
+	// The distributor should have 512 tokens for the ingester ring and 1 for the distributor ring
+	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512+1), "cortex_ring_tokens_total"))
 	require.NoError(t, querier.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
 	if cfg.shuffleShardingEnabled {
 		require.NoError(t, querier2.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))

@@ -9,11 +9,12 @@ import (
 	"bytes"
 	"flag"
 	"io"
-	"io/ioutil"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
+	"text/template"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -28,15 +29,27 @@ func TestFlagParsing(t *testing.T) {
 		stdoutExcluded string // string that must NOT be included in stdout
 		stderrExcluded string // string that must NOT be included in stderr
 	}{
-		"help": {
+		"help-short": {
 			arguments:      []string{"-h"},
+			stdoutMessage:  "Usage of", // Usage must be on stdout, not stderr.
+			stderrExcluded: "Usage of",
+		},
+
+		"help": {
+			arguments:      []string{"-help"},
+			stdoutMessage:  "Usage of", // Usage must be on stdout, not stderr.
+			stderrExcluded: "Usage of",
+		},
+
+		"help-all": {
+			arguments:      []string{"-help-all"},
 			stdoutMessage:  "Usage of", // Usage must be on stdout, not stderr.
 			stderrExcluded: "Usage of",
 		},
 
 		"unknown flag": {
 			arguments:      []string{"-unknown.flag"},
-			stderrMessage:  "Run with -help to get list of available parameters",
+			stderrMessage:  "Run with -help to get a list of available parameters",
 			stdoutExcluded: "Usage of", // No usage description on unknown flag.
 			stderrExcluded: "Usage of",
 		},
@@ -99,6 +112,74 @@ func TestFlagParsing(t *testing.T) {
 	}
 }
 
+func TestHelp(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		arg      string
+		filename string
+	}{
+		{
+			name:     "basic",
+			arg:      "-h",
+			filename: "help.txt.tmpl",
+		},
+		{
+			name:     "all",
+			arg:      "-help-all",
+			filename: "help-all.txt.tmpl",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			oldArgs, oldStdout, oldStderr, oldTestMode, oldCmdLine := os.Args, os.Stdout, os.Stderr, testMode, flag.CommandLine
+			restored := false
+			restoreIfNeeded := func() {
+				if restored {
+					return
+				}
+
+				os.Stdout = oldStdout
+				os.Stderr = oldStderr
+				os.Args = oldArgs
+				testMode = oldTestMode
+				flag.CommandLine = oldCmdLine
+				restored = true
+			}
+			t.Cleanup(restoreIfNeeded)
+
+			testMode = true
+			co := captureOutput(t)
+
+			const cmd = "./cmd/mimir/mimir"
+			os.Args = []string{cmd, tc.arg}
+
+			// reset default flags
+			flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+
+			main()
+
+			stdout, stderr := co.Done()
+
+			// Restore stdout and stderr before reporting errors to make them visible.
+			restoreIfNeeded()
+
+			hostname, err := os.Hostname()
+			require.NoError(t, err)
+			c := struct {
+				Hostname string
+			}{
+				Hostname: hostname,
+			}
+
+			tmpl, err := template.ParseFiles(tc.filename)
+			require.NoError(t, err)
+			var b strings.Builder
+			require.NoError(t, tmpl.Execute(&b, c))
+			assert.Equalf(t, b.String(), string(stdout), "%s %s output changed; try `make reference-help`", cmd, tc.arg)
+			assert.Empty(t, stderr)
+		})
+	}
+}
+
 func testSingle(t *testing.T, arguments []string, yaml string, stdoutMessage, stderrMessage, stdoutExcluded, stderrExcluded []byte) {
 	t.Helper()
 	oldArgs, oldStdout, oldStderr, oldTestMode := os.Args, os.Stdout, os.Stderr, testMode
@@ -116,18 +197,12 @@ func testSingle(t *testing.T, arguments []string, yaml string, stdoutMessage, st
 	defer restoreIfNeeded()
 
 	if yaml != "" {
-		tempFile, err := ioutil.TempFile("", "test")
+		tempDir := t.TempDir()
+		fpath := filepath.Join(tempDir, "test")
+		err := os.WriteFile(fpath, []byte(yaml), 0600)
 		require.NoError(t, err)
 
-		defer func() {
-			require.NoError(t, tempFile.Close())
-			require.NoError(t, os.Remove(tempFile.Name()))
-		}()
-
-		_, err = tempFile.WriteString(yaml)
-		require.NoError(t, err)
-
-		arguments = append(arguments, "-"+configFileOption, tempFile.Name())
+		arguments = append(arguments, "-"+configFileOption, fpath)
 	}
 
 	arguments = append([]string{"./mimir"}, arguments...)

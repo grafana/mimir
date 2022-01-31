@@ -24,7 +24,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
-	"github.com/grafana/mimir/pkg/querier/series"
+	"github.com/grafana/mimir/pkg/storage/series"
 )
 
 func TestRemoteReadHandler(t *testing.T) {

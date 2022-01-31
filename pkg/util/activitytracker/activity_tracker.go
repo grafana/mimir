@@ -47,7 +47,7 @@ type Config struct {
 }
 
 func (c *Config) RegisterFlags(f *flag.FlagSet) {
-	f.StringVar(&c.Filepath, "activity-tracker.filepath", "", "File where ongoing activities are stored. If empty, activity tracking is disabled.")
+	f.StringVar(&c.Filepath, "activity-tracker.filepath", "/tmp/metrics-activity.log", "File where ongoing activities are stored. If empty, activity tracking is disabled.")
 	f.IntVar(&c.MaxEntries, "activity-tracker.max-entries", 1024, "Max number of concurrent activities that can be tracked. Used to size the file in advance. Additional activities are ignored.")
 }
 
@@ -57,7 +57,6 @@ func NewActivityTracker(cfg Config, reg prometheus.Registerer) (*ActivityTracker
 	}
 
 	filesize := cfg.MaxEntries * entrySize
-
 	file, fileAsBytes, err := getMappedFile(cfg.Filepath, filesize)
 	if err != nil {
 		return nil, err

@@ -77,7 +77,7 @@ func (a *PusherAppender) Commit() error {
 
 	// Since a.pusher is distributor, client.ReuseSlice will be called in a.pusher.Push.
 	// We shouldn't call client.ReuseSlice here.
-	_, err := a.pusher.Push(user.InjectOrgID(a.ctx, a.userID), mimirpb.ToWriteRequest(a.labels, a.samples, nil, mimirpb.RULE))
+	_, err := a.pusher.Push(user.InjectOrgID(a.ctx, a.userID), mimirpb.ToWriteRequest(a.labels, a.samples, nil, nil, mimirpb.RULE))
 
 	if err != nil {
 		// Don't report errors that ended with 4xx HTTP status code (series limits, duplicate samples, out of order, etc.)
@@ -209,25 +209,25 @@ func RecordAndReportRuleQueryMetrics(qf rules.QueryFunc, queryTime prometheus.Co
 	}
 }
 
-// This interface mimicks rules.Manager API. Interface is used to simplify tests.
+// RulesManager mimics rules.Manager API. Interface is used to simplify tests.
 type RulesManager interface {
-	// Starts rules manager. Blocks until Stop is called.
+	// Run starts the rules manager. Blocks until Stop is called.
 	Run()
 
-	// Stops rules manager. (Unblocks Run.)
+	// Stop rules manager. (Unblocks Run.)
 	Stop()
 
-	// Updates rules manager state.
+	// Update rules manager state.
 	Update(interval time.Duration, files []string, externalLabels labels.Labels, externalURL string) error
 
-	// Returns current rules groups.
+	// RuleGroups returns current rules groups.
 	RuleGroups() []*rules.Group
 }
 
 // ManagerFactory is a function that creates new RulesManager for given user and notifier.Manager.
 type ManagerFactory func(ctx context.Context, userID string, notifier *notifier.Manager, logger log.Logger, reg prometheus.Registerer) RulesManager
 
-func DefaultTenantManagerFactory(cfg Config, p Pusher, q storage.Queryable, engine *promql.Engine, overrides RulesLimits, reg prometheus.Registerer) ManagerFactory {
+func DefaultTenantManagerFactory(cfg Config, p Pusher, queryable, federatedQueryable storage.Queryable, engine *promql.Engine, overrides RulesLimits, reg prometheus.Registerer) ManagerFactory {
 	totalWrites := promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Name: "cortex_ruler_write_requests_total",
 		Help: "Number of write requests to ingesters.",
@@ -253,29 +253,40 @@ func DefaultTenantManagerFactory(cfg Config, p Pusher, q storage.Queryable, engi
 		}, []string{"user"})
 	}
 
-	// Wrap errors returned by Queryable to our wrapper, so that we can distinguish between those errors
-	// and errors returned by PromQL engine. Errors from Queryable can be either caused by user (limits) or internal errors.
-	// Errors from PromQL are always "user" errors.
-	q = querier.NewErrorTranslateQueryableWithFn(q, WrapQueryableErrors)
-
 	return func(ctx context.Context, userID string, notifier *notifier.Manager, logger log.Logger, reg prometheus.Registerer) RulesManager {
 		var queryTime prometheus.Counter = nil
 		if rulerQuerySeconds != nil {
 			queryTime = rulerQuerySeconds.WithLabelValues(userID)
 		}
 
+		wrapQueryable := func(q storage.Queryable) (queryFunc rules.QueryFunc) {
+			// Wrap errors returned by Queryable to our wrapper, so that we can distinguish between those errors
+			// and errors returned by PromQL engine. Errors from Queryable can be either caused by user (limits) or internal errors.
+			// Errors from PromQL are always "user" errors.
+			q = querier.NewErrorTranslateQueryableWithFn(q, WrapQueryableErrors)
+
+			queryFunc = EngineQueryFunc(engine, q, overrides, userID)
+			queryFunc = MetricsQueryFunc(queryFunc, totalQueries, failedQueries)
+			queryFunc = RecordAndReportRuleQueryMetrics(queryFunc, queryTime, logger)
+			return queryFunc
+		}
+
+		regularQueryFunc := wrapQueryable(queryable)
+		federatedQueryFunc := wrapQueryable(federatedQueryable)
+
 		return rules.NewManager(&rules.ManagerOptions{
-			Appendable:      NewPusherAppendable(p, userID, overrides, totalWrites, failedWrites),
-			Queryable:       q,
-			QueryFunc:       RecordAndReportRuleQueryMetrics(MetricsQueryFunc(EngineQueryFunc(engine, q, overrides, userID), totalQueries, failedQueries), queryTime, logger),
-			Context:         user.InjectOrgID(ctx, userID),
-			ExternalURL:     cfg.ExternalURL.URL,
-			NotifyFunc:      SendAlerts(notifier, cfg.ExternalURL.URL.String()),
-			Logger:          log.With(logger, "user", userID),
-			Registerer:      reg,
-			OutageTolerance: cfg.OutageTolerance,
-			ForGracePeriod:  cfg.ForGracePeriod,
-			ResendDelay:     cfg.ResendDelay,
+			Appendable:                 NewPusherAppendable(p, userID, overrides, totalWrites, failedWrites),
+			Queryable:                  queryable,
+			QueryFunc:                  TenantFederationQueryFunc(regularQueryFunc, federatedQueryFunc),
+			Context:                    user.InjectOrgID(ctx, userID),
+			GroupEvaluationContextFunc: FederatedGroupContextFunc,
+			ExternalURL:                cfg.ExternalURL.URL,
+			NotifyFunc:                 SendAlerts(notifier, cfg.ExternalURL.URL.String()),
+			Logger:                     log.With(logger, "user", userID),
+			Registerer:                 reg,
+			OutageTolerance:            cfg.OutageTolerance,
+			ForGracePeriod:             cfg.ForGracePeriod,
+			ResendDelay:                cfg.ResendDelay,
 		})
 	}
 }

@@ -1,4 +1,4 @@
-// Query-scheduler is optional service. When query-scheduler.libsonnet is added to Cortex, querier and frontend
+// Query-scheduler is optional service. When query-scheduler.libsonnet is added to Mimir, querier and frontend
 // are reconfigured to use query-scheduler service.
 {
   local container = $.core.v1.container,
@@ -9,7 +9,7 @@
     $._config.grpcConfig
     {
       target: 'query-scheduler',
-      'log.level': 'debug',
+      'server.http-listen-port': $._config.server_http_port,
       'query-scheduler.max-outstanding-requests-per-tenant': 100,
     },
 
@@ -24,7 +24,7 @@
 
   newQuerySchedulerDeployment(name, container)::
     deployment.new(name, 2, [container]) +
-    $.util.configVolumeMount('overrides', '/etc/cortex') +
+    $.util.configVolumeMount($._config.overrides_configmap, $._config.overrides_configmap_mountpoint) +
     $.util.antiAffinity +
     // Do not run more query-schedulers than expected.
     deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge(0) +
@@ -45,8 +45,6 @@
 
   // Reconfigure querier and query-frontend to use scheduler.
   querier_args+:: if !$._config.query_scheduler_enabled then {} else {
-    'querier.worker-match-max-concurrent': 'true',
-    'querier.worker-parallelism': null,  // Disabled since we set worker-match-max-concurrent.
     'querier.frontend-address': null,
     'querier.scheduler-address': 'query-scheduler-discovery.%(namespace)s.svc.cluster.local:9095' % $._config,
   },

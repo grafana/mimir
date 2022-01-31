@@ -1,10 +1,10 @@
-{
+(import 'alerts-utils.libsonnet') {
   groups+: [
     {
       name: 'alertmanager_alerts',
       rules: [
         {
-          alert: 'CortexAlertmanagerSyncConfigsFailing',
+          alert: $.alertName('AlertmanagerSyncConfigsFailing'),
           expr: |||
             rate(cortex_alertmanager_sync_configs_failed_total[5m]) > 0
           |||,
@@ -14,12 +14,12 @@
           },
           annotations: {
             message: |||
-              Cortex Alertmanager {{ $labels.job }}/{{ $labels.instance }} is failing to read tenant configurations from storage.
-            |||,
+              %(product)s Alertmanager {{ $labels.job }}/{{ $labels.instance }} is failing to read tenant configurations from storage.
+            ||| % $._config,
           },
         },
         {
-          alert: 'CortexAlertmanagerRingCheckFailing',
+          alert: $.alertName('AlertmanagerRingCheckFailing'),
           expr: |||
             rate(cortex_alertmanager_ring_check_errors_total[2m]) > 0
           |||,
@@ -29,12 +29,12 @@
           },
           annotations: {
             message: |||
-              Cortex Alertmanager {{ $labels.job }}/{{ $labels.instance }} is unable to check tenants ownership via the ring.
-            |||,
+              %(product)s Alertmanager {{ $labels.job }}/{{ $labels.instance }} is unable to check tenants ownership via the ring.
+            ||| % $._config,
           },
         },
         {
-          alert: 'CortexAlertmanagerPartialStateMergeFailing',
+          alert: $.alertName('AlertmanagerPartialStateMergeFailing'),
           expr: |||
             rate(cortex_alertmanager_partial_state_merges_failed_total[2m]) > 0
           |||,
@@ -44,12 +44,12 @@
           },
           annotations: {
             message: |||
-              Cortex Alertmanager {{ $labels.job }}/{{ $labels.instance }} is failing to merge partial state changes received from a replica.
-            |||,
+              %(product)s Alertmanager {{ $labels.job }}/{{ $labels.instance }} is failing to merge partial state changes received from a replica.
+            ||| % $._config,
           },
         },
         {
-          alert: 'CortexAlertmanagerReplicationFailing',
+          alert: $.alertName('AlertmanagerReplicationFailing'),
           expr: |||
             rate(cortex_alertmanager_state_replication_failed_total[2m]) > 0
           |||,
@@ -59,12 +59,12 @@
           },
           annotations: {
             message: |||
-              Cortex Alertmanager {{ $labels.job }}/{{ $labels.instance }} is failing to replicating partial state to its replicas.
-            |||,
+              %(product)s Alertmanager {{ $labels.job }}/{{ $labels.instance }} is failing to replicating partial state to its replicas.
+            ||| % $._config,
           },
         },
         {
-          alert: 'CortexAlertmanagerPersistStateFailing',
+          alert: $.alertName('AlertmanagerPersistStateFailing'),
           expr: |||
             rate(cortex_alertmanager_state_persist_failed_total[15m]) > 0
           |||,
@@ -74,12 +74,12 @@
           },
           annotations: {
             message: |||
-              Cortex Alertmanager {{ $labels.job }}/{{ $labels.instance }} is unable to persist full state snaphots to remote storage.
-            |||,
+              %(product)s Alertmanager {{ $labels.job }}/{{ $labels.instance }} is unable to persist full state snaphots to remote storage.
+            ||| % $._config,
           },
         },
         {
-          alert: 'CortexAlertmanagerInitialSyncFailed',
+          alert: $.alertName('AlertmanagerInitialSyncFailed'),
           expr: |||
             increase(cortex_alertmanager_state_initial_sync_completed_total{outcome="failed"}[1m]) > 0
           |||,
@@ -88,8 +88,8 @@
           },
           annotations: {
             message: |||
-              Cortex Alertmanager {{ $labels.job }}/{{ $labels.instance }} was unable to obtain some initial state when starting up.
-            |||,
+              %(product)s Alertmanager {{ $labels.job }}/{{ $labels.instance }} was unable to obtain some initial state when starting up.
+            ||| % $._config,
           },
         },
       ],

@@ -46,8 +46,8 @@ var (
 type HTTPConfig struct {
 	IdleConnTimeout       time.Duration `yaml:"idle_conn_timeout"`
 	ResponseHeaderTimeout time.Duration `yaml:"response_header_timeout"`
-	InsecureSkipVerify    bool          `yaml:"insecure_skip_verify"`
-	TLSHandshakeTimeout   time.Duration `yaml:"tls_handshake_timeout"`
+	InsecureSkipVerify    bool          `yaml:"insecure_skip_verify" category:"advanced"`
+	TLSHandshakeTimeout   time.Duration `yaml:"tls_handshake_timeout" category:"advanced"`
 	ExpectContinueTimeout time.Duration `yaml:"expect_continue_timeout"`
 	MaxIdleConns          int           `yaml:"max_idle_connections"`
 	MaxIdleConnsPerHost   int           `yaml:"max_idle_connections_per_host"`

@@ -4,9 +4,6 @@ set -o errexit
 set -o nounset
 set -o pipefail
 
-# Filter images to only push query-tee for now
-# TODO: Remove once mimir is becoming a public project
-IMAGES=$(make DOCKER_IMAGE_DIRS=./cmd/query-tee images)
 IMAGE_TAG=${IMAGE_TAG:-$(./tools/image-tag)}
 
 usage() {
@@ -26,12 +23,28 @@ done
 push_image() {
     local image="$1"
     echo "Pushing ${image}:${IMAGE_TAG}"
-    docker push ${image}:${IMAGE_TAG}
+    docker push "${image}:${IMAGE_TAG}"
+
+    # If image is the latest stable git tag, update the latest docker image tag
+    if [[ "$(git tag | grep -E '^v?[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1)" == "${IMAGE_TAG}" ]]; then
+      docker tag "${image}:${IMAGE_TAG}" "${image}:latest"
+      docker push "${image}:latest"
+    fi
 }
 
-for image in ${IMAGES}; do
-    if [[ "$image" == *"build"* ]]; then
-        continue
-    fi
+# Push images
+for image in $(make images ); do
+    image_name=$(basename "$image")
+    case "$image_name" in
+        mimir-build-image)
+            # skip mimir-build-image
+            continue
+            ;;
+        mimir|mimirtool)
+            old_image="$image"
+            image="docker.io/grafana/${image_name}"
+            docker tag "${old_image}:${IMAGE_TAG}" "${image}:${IMAGE_TAG}"
+            ;;
+    esac
     push_image "${image}"
 done

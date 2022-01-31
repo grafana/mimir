@@ -65,24 +65,16 @@ func TestConfig_Validate(t *testing.T) {
 			setup:    func(cfg *Config, limits *validation.Limits) {},
 			expected: nil,
 		},
-		"should fail if the sharding strategy is invalid": {
+		"should fail if shard size is negative": {
 			setup: func(cfg *Config, limits *validation.Limits) {
 				cfg.ShardingEnabled = true
-				cfg.ShardingStrategy = "xxx"
-			},
-			expected: errInvalidShardingStrategy,
-		},
-		"should fail if the sharding strategy is shuffle-sharding and shard size has not been set": {
-			setup: func(cfg *Config, limits *validation.Limits) {
-				cfg.ShardingEnabled = true
-				cfg.ShardingStrategy = util.ShardingStrategyShuffle
+				limits.StoreGatewayTenantShardSize = -3
 			},
 			expected: errInvalidTenantShardSize,
 		},
-		"should pass if the sharding strategy is shuffle-sharding and shard size has been set": {
+		"should pass if shard size has been set": {
 			setup: func(cfg *Config, limits *validation.Limits) {
 				cfg.ShardingEnabled = true
-				cfg.ShardingStrategy = util.ShardingStrategyShuffle
 				limits.StoreGatewayTenantShardSize = 3
 			},
 			expected: nil,
@@ -272,52 +264,48 @@ func TestStoreGateway_InitialSyncWithWaitRingTokensStability(t *testing.T) {
 	}
 
 	tests := map[string]struct {
-		shardingStrategy     string
-		tenantShardSize      int // Used only when the sharding strategy is shuffle-sharding.
+		tenantShardSize      int
 		replicationFactor    int
 		numGateways          int
 		expectedBlocksLoaded int
 	}{
-		"default sharding strategy, 1 gateway, RF = 1": {
-			shardingStrategy:     util.ShardingStrategyDefault,
+		"shard size 0, 1 gateway, RF = 1": {
+			tenantShardSize:      0,
 			replicationFactor:    1,
 			numGateways:          1,
 			expectedBlocksLoaded: numBlocks,
 		},
-		"default sharding strategy, 2 gateways, RF = 1": {
-			shardingStrategy:     util.ShardingStrategyDefault,
+		"shard size 0, 2 gateways, RF = 1": {
+			tenantShardSize:      0,
 			replicationFactor:    1,
 			numGateways:          2,
 			expectedBlocksLoaded: numBlocks, // blocks are sharded across gateways
 		},
-		"default sharding strategy, 3 gateways, RF = 2": {
-			shardingStrategy:     util.ShardingStrategyDefault,
+		"shard size 0, 3 gateways, RF = 2": {
+			tenantShardSize:      0,
 			replicationFactor:    2,
 			numGateways:          3,
 			expectedBlocksLoaded: 2 * numBlocks, // blocks are replicated 2 times
 		},
-		"default sharding strategy, 5 gateways, RF = 3": {
-			shardingStrategy:     util.ShardingStrategyDefault,
+		"shard size 0, 5 gateways, RF = 3": {
+			tenantShardSize:      0,
 			replicationFactor:    3,
 			numGateways:          5,
 			expectedBlocksLoaded: 3 * numBlocks, // blocks are replicated 3 times
 		},
-		"shuffle sharding strategy, 1 gateway, RF = 1, SS = 1": {
-			shardingStrategy:     util.ShardingStrategyShuffle,
+		"shard size 1, 1 gateway, RF = 1": {
 			tenantShardSize:      1,
 			replicationFactor:    1,
 			numGateways:          1,
 			expectedBlocksLoaded: numBlocks,
 		},
-		"shuffle sharding strategy, 5 gateways, RF = 2, SS = 3": {
-			shardingStrategy:     util.ShardingStrategyShuffle,
+		"shard size 3, 5 gateways, RF = 2": {
 			tenantShardSize:      3,
 			replicationFactor:    2,
 			numGateways:          5,
 			expectedBlocksLoaded: 2 * numBlocks, // blocks are replicated 2 times
 		},
-		"shuffle sharding strategy, 20 gateways, RF = 3, SS = 3": {
-			shardingStrategy:     util.ShardingStrategyShuffle,
+		"shard size 3, 20 gateways, RF = 3": {
 			tenantShardSize:      3,
 			replicationFactor:    3,
 			numGateways:          20,
@@ -365,7 +353,6 @@ func TestStoreGateway_InitialSyncWithWaitRingTokensStability(t *testing.T) {
 					gatewayCfg.ShardingRing.WaitStabilityMinDuration = 4 * time.Second
 					gatewayCfg.ShardingRing.WaitStabilityMaxDuration = 30 * time.Second
 					gatewayCfg.ShardingEnabled = true
-					gatewayCfg.ShardingStrategy = testData.shardingStrategy
 					limits.StoreGatewayTenantShardSize = testData.tenantShardSize
 
 					overrides, err := validation.NewOverrides(limits, nil)
@@ -397,7 +384,7 @@ func TestStoreGateway_InitialSyncWithWaitRingTokensStability(t *testing.T) {
 				assert.Equal(t, float64(testData.expectedBlocksLoaded), metrics.GetSumOfGauges("cortex_bucket_store_blocks_loaded"))
 				assert.Equal(t, float64(2*testData.numGateways), metrics.GetSumOfGauges("cortex_bucket_stores_tenants_discovered"))
 
-				if testData.shardingStrategy == util.ShardingStrategyShuffle {
+				if testData.tenantShardSize > 0 {
 					assert.Equal(t, float64(testData.tenantShardSize*numBlocks), metrics.GetSumOfGauges("cortex_blocks_meta_synced"))
 					assert.Equal(t, float64(testData.tenantShardSize*numUsers), metrics.GetSumOfGauges("cortex_bucket_stores_tenants_synced"))
 				} else {
@@ -418,7 +405,6 @@ func TestStoreGateway_BlocksSyncWithDefaultSharding_RingTopologyChangedAfterScal
 	const (
 		numUsers             = 2
 		numBlocks            = numUsers * 12
-		shardingStrategy     = util.ShardingStrategyDefault
 		replicationFactor    = 3
 		numInitialGateways   = 4
 		numScaleUpGateways   = 6
@@ -468,7 +454,6 @@ func TestStoreGateway_BlocksSyncWithDefaultSharding_RingTopologyChangedAfterScal
 		gatewayCfg.ShardingRing.WaitStabilityMinDuration = waitStabilityMin
 		gatewayCfg.ShardingRing.WaitStabilityMaxDuration = 30 * time.Second
 		gatewayCfg.ShardingEnabled = true
-		gatewayCfg.ShardingStrategy = shardingStrategy
 
 		overrides, err := validation.NewOverrides(limits, nil)
 		require.NoError(t, err)
@@ -1193,7 +1178,7 @@ func TestStoreGateway_SeriesQueryingShouldEnforceMaxChunksPerQueryLimit(t *testi
 		t.Run(testName, func(t *testing.T) {
 			// Customise the limits.
 			limits := defaultLimitsConfig()
-			limits.MaxChunksPerQueryFromStore = testData.limit
+			limits.MaxChunksPerQuery = testData.limit
 			overrides, err := validation.NewOverrides(limits, nil)
 			require.NoError(t, err)
 

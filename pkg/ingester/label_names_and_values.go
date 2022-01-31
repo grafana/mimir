@@ -3,12 +3,16 @@
 package ingester
 
 import (
+	"context"
+
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/index"
 
 	"github.com/grafana/mimir/pkg/ingester/client"
 )
+
+const checkContextErrorSeriesCount = 1000 // series count interval in which context cancellation must be checked.
 
 // labelNamesAndValues streams the messages with the labels and values of the labels matching the `matchers` param.
 // Messages are immediately sent as soon they reach message size threshold defined in `messageSizeThreshold` param.
@@ -131,7 +135,7 @@ func labelValuesCardinality(
 			// Get total series count applying label matchers.
 			lblValMatchers[len(lblValMatchers)-1] = labels.MustNewMatcher(labels.MatchEqual, lbName, lbValue)
 
-			seriesCount, err := countLabelValueSeries(idxReader, postingsForMatchersFn, lblValMatchers)
+			seriesCount, err := countLabelValueSeries(ctx, idxReader, postingsForMatchersFn, lblValMatchers)
 			if err != nil {
 				return err
 			}
@@ -158,6 +162,7 @@ func labelValuesCardinality(
 }
 
 func countLabelValueSeries(
+	ctx context.Context,
 	idxReader tsdb.IndexReader,
 	postingsForMatchersFn func(tsdb.IndexPostingsReader, ...*labels.Matcher) (index.Postings, error),
 	lblValMatchers []*labels.Matcher,
@@ -170,6 +175,11 @@ func countLabelValueSeries(
 	}
 	for p.Next() {
 		count++
+		if count%checkContextErrorSeriesCount == 0 {
+			if err := ctx.Err(); err != nil {
+				return 0, err
+			}
+		}
 	}
 	if p.Err() != nil {
 		return 0, p.Err()

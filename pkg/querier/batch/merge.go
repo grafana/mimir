@@ -9,7 +9,7 @@ import (
 	"container/heap"
 	"sort"
 
-	promchunk "github.com/grafana/mimir/pkg/chunk/encoding"
+	"github.com/grafana/mimir/pkg/storage/chunk"
 )
 
 type mergeIterator struct {
@@ -21,7 +21,7 @@ type mergeIterator struct {
 
 	// Buffers to merge in.
 	batchesBuf   batchStream
-	nextBatchBuf [1]promchunk.Batch
+	nextBatchBuf [1]chunk.Batch
 
 	currErr error
 }
@@ -133,7 +133,7 @@ func (c *mergeIterator) AtTime() int64 {
 	return c.batches[0].Timestamps[0]
 }
 
-func (c *mergeIterator) Batch() promchunk.Batch {
+func (c *mergeIterator) Batch() chunk.Batch {
 	return c.batches[0]
 }
 

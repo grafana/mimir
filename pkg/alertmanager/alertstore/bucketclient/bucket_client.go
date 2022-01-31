@@ -78,8 +78,8 @@ func (s *BucketAlertStore) GetAlertConfigs(ctx context.Context, userIDs []string
 		cfgs   = make(map[string]alertspb.AlertConfigDesc, len(userIDs))
 	)
 
-	err := concurrency.ForEach(ctx, concurrency.CreateJobsFromStrings(userIDs), fetchConcurrency, func(ctx context.Context, job interface{}) error {
-		userID := job.(string)
+	err := concurrency.ForEachJob(ctx, len(userIDs), fetchConcurrency, func(ctx context.Context, idx int) error {
+		userID := userIDs[idx]
 
 		cfg, err := s.getAlertConfig(ctx, userID)
 		if s.alertsBucket.IsObjNotFoundErr(err) {

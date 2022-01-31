@@ -1,7 +1,6 @@
 auth_enabled: false
 
 distributor:
-  shard_by_all_labels: true
   pool:
     health_check_ingesters: true
 
@@ -57,9 +56,6 @@ blocks_storage:
     project_name:      admin
     region_name:       RegionOne
     container_name:    mimir-tsdb
-
-storage:
-  engine: blocks
 
 ruler:
   enable_api: true

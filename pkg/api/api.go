@@ -11,21 +11,17 @@ import (
 	"net/http"
 	"path"
 	"strings"
-	"time"
 
 	"github.com/NYTimes/gziphandler"
 	"github.com/felixge/fgprof"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/grafana/dskit/ring"
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/weaveworks/common/middleware"
 	"github.com/weaveworks/common/server"
 
 	"github.com/grafana/mimir/pkg/alertmanager"
 	"github.com/grafana/mimir/pkg/alertmanager/alertmanagerpb"
-	"github.com/grafana/mimir/pkg/chunk/purger"
 	"github.com/grafana/mimir/pkg/compactor"
 	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/distributor/distributorpb"
@@ -35,6 +31,7 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/purger"
 	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/ruler"
 	"github.com/grafana/mimir/pkg/scheduler"
@@ -74,7 +71,8 @@ type Config struct {
 // RegisterFlags adds the flags required to config this to the given FlagSet.
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.ResponseCompression, "api.response-compression-enabled", false, "Use GZIP compression for API responses. Some endpoints serve large YAML or JSON blobs which can benefit from compression.")
-	f.BoolVar(&cfg.SkipLabelNameValidationHeader, "api.skip-label-name-validation-header-enabled", false, "Allows to skip label name validation via header on the http write path. Use with caution as it breaks PromQL. Allowing this for external clients allows any client to send invalid label names. After enabling it, requests with X-Mimir-SkipLabelNameValidation HTTP header set to true will not have label names validated.")
+	// TODO(56quarters): Mention the specific header "X-Mimir-SkipLabelNameValidation" after Mimir is public
+	f.BoolVar(&cfg.SkipLabelNameValidationHeader, "api.skip-label-name-validation-header-enabled", false, "Allows to skip label name validation via header on the http write path. Use with caution as it breaks PromQL. Allowing this for external clients allows any client to send invalid label names. After enabling it, requests with a specific HTTP header set to true will not have label names validated.")
 	cfg.RegisterFlagsWithPrefix("", f)
 }
 
@@ -270,22 +268,6 @@ func (a *API) RegisterIngester(i Ingester, pushConfig distributor.Config) {
 	a.RegisterRoute("/push", push.Handler(pushConfig.MaxRecvMsgSize, a.sourceIPs, a.cfg.SkipLabelNameValidationHeader, i.PushWithCleanup), true, "POST") // For testing and debugging.
 }
 
-// RegisterChunksPurger registers the endpoints associated with the Purger/DeleteStore. They do not exactly
-// match the Prometheus API but mirror it closely enough to justify their routing under the Prometheus
-// component/
-func (a *API) RegisterChunksPurger(store *purger.DeleteStore, deleteRequestCancelPeriod time.Duration) {
-	deleteRequestHandler := purger.NewDeleteRequestHandler(store, deleteRequestCancelPeriod, prometheus.DefaultRegisterer)
-
-	a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/admin/tsdb/delete_series"), http.HandlerFunc(deleteRequestHandler.AddDeleteRequestHandler), true, "PUT", "POST")
-	a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/admin/tsdb/delete_series"), http.HandlerFunc(deleteRequestHandler.GetAllDeleteRequestsHandler), true, "GET")
-	a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/admin/tsdb/cancel_delete_request"), http.HandlerFunc(deleteRequestHandler.CancelDeleteRequestHandler), true, "PUT", "POST")
-
-	// Legacy Routes
-	a.RegisterRoute(path.Join(a.cfg.LegacyHTTPPrefix, "/api/v1/admin/tsdb/delete_series"), http.HandlerFunc(deleteRequestHandler.AddDeleteRequestHandler), true, "PUT", "POST")
-	a.RegisterRoute(path.Join(a.cfg.LegacyHTTPPrefix, "/api/v1/admin/tsdb/delete_series"), http.HandlerFunc(deleteRequestHandler.GetAllDeleteRequestsHandler), true, "GET")
-	a.RegisterRoute(path.Join(a.cfg.LegacyHTTPPrefix, "/api/v1/admin/tsdb/cancel_delete_request"), http.HandlerFunc(deleteRequestHandler.CancelDeleteRequestHandler), true, "PUT", "POST")
-}
-
 func (a *API) RegisterTenantDeletion(api *purger.TenantDeletionAPI) {
 	a.RegisterRoute("/purger/delete_tenant", http.HandlerFunc(api.DeleteTenant), true, "POST")
 	a.RegisterRoute("/purger/delete_tenant_status", http.HandlerFunc(api.DeleteTenantStatus), true, "GET")
@@ -336,7 +318,7 @@ func (a *API) RegisterRulerAPI(r *ruler.API) {
 }
 
 // RegisterRing registers the ring UI page associated with the distributor for writes.
-func (a *API) RegisterRing(r *ring.Ring) {
+func (a *API) RegisterRing(r http.Handler) {
 	a.indexPage.AddLink(SectionAdminEndpoints, "/ingester/ring", "Ingester Ring Status")
 	a.RegisterRoute("/ingester/ring", r, false, "GET", "POST")
 
@@ -349,7 +331,10 @@ func (a *API) RegisterStoreGateway(s *storegateway.StoreGateway) {
 	storegatewaypb.RegisterStoreGatewayServer(a.server.GRPC, s)
 
 	a.indexPage.AddLink(SectionAdminEndpoints, "/store-gateway/ring", "Store Gateway Ring")
+	a.indexPage.AddLink(SectionAdminEndpoints, "/store-gateway/tenants", "Store Gateway Tenants & Blocks")
 	a.RegisterRoute("/store-gateway/ring", http.HandlerFunc(s.RingHandler), false, "GET", "POST")
+	a.RegisterRoute("/store-gateway/tenants", http.HandlerFunc(s.TenantsHandler), false, "GET")
+	a.RegisterRoute("/store-gateway/tenant/{tenant}/blocks", http.HandlerFunc(s.BlocksHandler), false, "GET")
 }
 
 // RegisterCompactor registers the ring UI page associated with the compactor.
@@ -371,10 +356,8 @@ func (a *API) RegisterQueryable(
 ) {
 	// these routes are always registered to the default server
 	a.RegisterRoute("/api/v1/user_stats", http.HandlerFunc(distributor.UserStatsHandler), true, "GET")
-	a.RegisterRoute("/api/v1/chunks", querier.ChunksHandler(queryable), true, "GET")
 
 	a.RegisterRoute(path.Join(a.cfg.LegacyHTTPPrefix, "/user_stats"), http.HandlerFunc(distributor.UserStatsHandler), true, "GET")
-	a.RegisterRoute(path.Join(a.cfg.LegacyHTTPPrefix, "/chunks"), querier.ChunksHandler(queryable), true, "GET")
 }
 
 // RegisterQueryAPI registers the Prometheus API routes with the provided handler.

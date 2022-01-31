@@ -11,10 +11,9 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 
-	"github.com/grafana/mimir/pkg/chunk"
-	prom_chunk "github.com/grafana/mimir/pkg/chunk/encoding"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/util"
 )
 
@@ -47,7 +46,7 @@ func SeriesChunksToMatrix(from, through model.Time, serieses []client.TimeSeries
 	result := model.Matrix{}
 	for _, series := range serieses {
 		metric := mimirpb.FromLabelAdaptersToMetric(series.Labels)
-		chunks, err := FromChunks("", mimirpb.FromLabelAdaptersToLabels(series.Labels), series.Chunks)
+		chunks, err := FromChunks(mimirpb.FromLabelAdaptersToLabels(series.Labels), series.Chunks)
 		if err != nil {
 			return nil, err
 		}
@@ -99,10 +98,10 @@ func TimeseriesToMatrix(from, through model.Time, series []mimirpb.TimeSeries) (
 }
 
 // FromChunks converts []client.Chunk to []chunk.Chunk.
-func FromChunks(userID string, metric labels.Labels, in []client.Chunk) ([]chunk.Chunk, error) {
+func FromChunks(metric labels.Labels, in []client.Chunk) ([]chunk.Chunk, error) {
 	out := make([]chunk.Chunk, 0, len(in))
 	for _, i := range in {
-		o, err := prom_chunk.NewForEncoding(prom_chunk.Encoding(byte(i.Encoding)))
+		o, err := chunk.NewForEncoding(chunk.Encoding(byte(i.Encoding)))
 		if err != nil {
 			return nil, err
 		}
@@ -114,7 +113,7 @@ func FromChunks(userID string, metric labels.Labels, in []client.Chunk) ([]chunk
 		firstTime, lastTime := model.Time(i.StartTimestampMs), model.Time(i.EndTimestampMs)
 		// As the lifetime of this chunk is scopes to this request, we don't need
 		// to supply a fingerprint.
-		out = append(out, chunk.NewChunk(userID, 0, metric, o, firstTime, lastTime))
+		out = append(out, chunk.NewChunk(metric, o, firstTime, lastTime))
 	}
 	return out, nil
 }
@@ -129,7 +128,7 @@ func ToChunks(in []chunk.Chunk) ([]client.Chunk, error) {
 			Encoding:         int32(i.Data.Encoding()),
 		}
 
-		buf := bytes.NewBuffer(make([]byte, 0, prom_chunk.ChunkLen))
+		buf := bytes.NewBuffer(make([]byte, 0, chunk.ChunkLen))
 		if err := i.Data.Marshal(buf); err != nil {
 			return nil, err
 		}

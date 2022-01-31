@@ -6,55 +6,54 @@ local utils = import 'mixin-utils/utils.libsonnet';
     max_samples_per_sec_per_ingester: 80e3,
     max_samples_per_sec_per_distributor: 240e3,
     limit_utilisation_target: 0.6,
-    cortex_overrides_metric: 'cortex_limits_overrides',
   } + $._config + $._group_config,
   prometheusRules+:: {
     groups+: [
       {
-        name: 'cortex_api_1',
+        name: 'mimir_api_1',
         rules:
           utils.histogramRules('cortex_request_duration_seconds', ['cluster', 'job']),
       },
       {
-        name: 'cortex_api_2',
+        name: 'mimir_api_2',
         rules:
           utils.histogramRules('cortex_request_duration_seconds', ['cluster', 'job', 'route']),
       },
       {
-        name: 'cortex_api_3',
+        name: 'mimir_api_3',
         rules:
           utils.histogramRules('cortex_request_duration_seconds', ['cluster', 'namespace', 'job', 'route']),
       },
       {
-        name: 'cortex_querier_api',
+        name: 'mimir_querier_api',
         rules:
           utils.histogramRules('cortex_querier_request_duration_seconds', ['cluster', 'job']) +
           utils.histogramRules('cortex_querier_request_duration_seconds', ['cluster', 'job', 'route']) +
           utils.histogramRules('cortex_querier_request_duration_seconds', ['cluster', 'namespace', 'job', 'route']),
       },
       {
-        name: 'cortex_cache',
+        name: 'mimir_cache',
         rules:
           utils.histogramRules('cortex_memcache_request_duration_seconds', ['cluster', 'job', 'method']) +
           utils.histogramRules('cortex_cache_request_duration_seconds', ['cluster', 'job']) +
           utils.histogramRules('cortex_cache_request_duration_seconds', ['cluster', 'job', 'method']),
       },
       {
-        name: 'cortex_storage',
+        name: 'mimir_storage',
         rules:
           utils.histogramRules('cortex_kv_request_duration_seconds', ['cluster', 'job']),
       },
       {
-        name: 'cortex_queries',
+        name: 'mimir_queries',
         rules:
           utils.histogramRules('cortex_query_frontend_retries', ['cluster', 'job']) +
           utils.histogramRules('cortex_query_frontend_queue_duration_seconds', ['cluster', 'job']) +
           utils.histogramRules('cortex_ingester_queried_series', ['cluster', 'job']) +
-          utils.histogramRules('cortex_ingester_queried_chunks', ['cluster', 'job']) +
-          utils.histogramRules('cortex_ingester_queried_samples', ['cluster', 'job']),
+          utils.histogramRules('cortex_ingester_queried_samples', ['cluster', 'job']) +
+          utils.histogramRules('cortex_ingester_queried_exemplars', ['cluster', 'job']),
       },
       {
-        name: 'cortex_received_samples',
+        name: 'mimir_received_samples',
         rules: [
           {
             record: '%(group_prefix_jobs)s:cortex_distributor_received_samples:rate5m' % _config,
@@ -65,7 +64,51 @@ local utils = import 'mixin-utils/utils.libsonnet';
         ],
       },
       {
-        name: 'cortex_scaling_rules',
+        name: 'mimir_exemplars_in',
+        rules: [
+          {
+            record: '%(group_prefix_jobs)s:cortex_distributor_exemplars_in:rate5m' % _config,
+            expr: |||
+              sum by (%(group_by_job)s) (rate(cortex_distributor_exemplars_in_total[5m]))
+            ||| % _config,
+          },
+        ],
+      },
+      {
+        name: 'mimir_received_exemplars',
+        rules: [
+          {
+            record: '%(group_prefix_jobs)s:cortex_distributor_received_exemplars:rate5m' % _config,
+            expr: |||
+              sum by (%(group_by_job)s) (rate(cortex_distributor_received_exemplars_total[5m]))
+            ||| % _config,
+          },
+        ],
+      },
+      {
+        name: 'mimir_exemplars_ingested',
+        rules: [
+          {
+            record: '%(group_prefix_jobs)s:cortex_ingester_ingested_exemplars:rate5m' % _config,
+            expr: |||
+              sum by (%(group_by_job)s) (rate(cortex_ingester_ingested_exemplars_total[5m]))
+            ||| % _config,
+          },
+        ],
+      },
+      {
+        name: 'mimir_exemplars_appended',
+        rules: [
+          {
+            record: '%(group_prefix_jobs)s:cortex_ingester_tsdb_exemplar_exemplars_appended:rate5m' % _config,
+            expr: |||
+              sum by (%(group_by_job)s) (rate(cortex_ingester_tsdb_exemplar_exemplars_appended_total[5m]))
+            ||| % _config,
+          },
+        ],
+      },
+      {
+        name: 'mimir_scaling_rules',
         rules: [
           {
             // Convenience rule to get the number of replicas for both a deployment and a statefulset.
@@ -114,7 +157,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
             },
             expr: |||
               ceil(
-                sum by (cluster, namespace) (%(cortex_overrides_metric)s{limit_name="ingestion_rate"})
+                sum by (cluster, namespace) (cortex_limits_overrides{limit_name="ingestion_rate"})
                 * %(limit_utilisation_target)s / %(max_samples_per_sec_per_distributor)s
               )
             ||| % _config,
@@ -166,7 +209,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
             },
             expr: |||
               ceil(
-                sum by (cluster, namespace) (%(cortex_overrides_metric)s{limit_name="max_global_series_per_user"})
+                sum by (cluster, namespace) (cortex_limits_overrides{limit_name="max_global_series_per_user"})
                 * 3 * %(limit_utilisation_target)s / %(max_series_per_ingester)s
               )
             ||| % _config,
@@ -181,7 +224,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
             },
             expr: |||
               ceil(
-                sum by (cluster, namespace) (%(cortex_overrides_metric)s{limit_name="ingestion_rate"})
+                sum by (cluster, namespace) (cortex_limits_overrides{limit_name="ingestion_rate"})
                 * %(limit_utilisation_target)s / %(max_samples_per_sec_per_ingester)s
               )
             ||| % _config,
@@ -366,7 +409,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         ],
       },
       {
-        name: 'cortex_alertmanager_rules',
+        name: 'mimir_alertmanager_rules',
         rules: [
           // Aggregations of per-user Alertmanager metrics used in dashboards.
           {

@@ -15,31 +15,28 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/e2e"
+	e2edb "github.com/grafana/e2e/db"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/integration/e2e"
-	e2edb "github.com/grafana/mimir/integration/e2e/db"
 	"github.com/grafana/mimir/integration/e2emimir"
 )
 
 func TestIngesterGlobalLimits(t *testing.T) {
 	tests := map[string]struct {
-		shardingStrategy         string
 		tenantShardSize          int
 		maxGlobalSeriesPerTenant int
 		maxGlobalSeriesPerMetric int
 	}{
-		"default sharding strategy": {
-			shardingStrategy:         "default",
-			tenantShardSize:          1, // Ignored by default strategy.
+		"shuffle sharding disabled": {
+			tenantShardSize:          0,
 			maxGlobalSeriesPerTenant: 1000,
 			maxGlobalSeriesPerMetric: 300,
 		},
-		"shuffle sharding strategy": {
-			shardingStrategy:         "shuffle-sharding",
+		"shuffle sharding enabled": {
 			tenantShardSize:          1,
 			maxGlobalSeriesPerTenant: 1000,
 			maxGlobalSeriesPerMetric: 300,
@@ -54,11 +51,7 @@ func TestIngesterGlobalLimits(t *testing.T) {
 
 			flags := BlocksStorageFlags()
 			flags["-distributor.replication-factor"] = "1"
-			flags["-distributor.shard-by-all-labels"] = "true"
-			flags["-distributor.sharding-strategy"] = testData.shardingStrategy
 			flags["-distributor.ingestion-tenant-shard-size"] = strconv.Itoa(testData.tenantShardSize)
-			flags["-ingester.max-series-per-user"] = "0"
-			flags["-ingester.max-series-per-metric"] = "0"
 			flags["-ingester.max-global-series-per-user"] = strconv.Itoa(testData.maxGlobalSeriesPerTenant)
 			flags["-ingester.max-global-series-per-metric"] = strconv.Itoa(testData.maxGlobalSeriesPerMetric)
 			flags["-ingester.heartbeat-period"] = "1s"
@@ -178,7 +171,7 @@ overrides:
 			require.NoError(t, writeFileToSharedDir(s, overridesFile, []byte{}))
 
 			// Start Cortex in single binary mode, reading the config from file.
-			require.NoError(t, copyFileToSharedDir(s, "docs/configuration/single-process-config-blocks.yaml", mimirConfigFile))
+			require.NoError(t, copyFileToSharedDir(s, "docs/sources/configuration/single-process-config-blocks.yaml", mimirConfigFile))
 
 			flags := map[string]string{
 				"-runtime-config.reload-period":  "100ms",

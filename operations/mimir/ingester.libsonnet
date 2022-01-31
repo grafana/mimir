@@ -15,16 +15,16 @@
     {
       target: 'ingester',
 
+      'server.http-listen-port': $._config.server_http_port,
+
       // Ring config.
       'ingester.num-tokens': 512,
       'ingester.join-after': '0s',
       'ingester.heartbeat-period': '15s',
       'ingester.unregister-on-shutdown': $._config.unregister_ingesters_on_shutdown,
 
-      'ingester.chunk-encoding': 3,
-
       // Limits config.
-      'runtime-config.file': '/etc/cortex/overrides.yaml',
+      'runtime-config.file': '%s/overrides.yaml' % $._config.overrides_configmap_mountpoint,
       'server.grpc-max-concurrent-streams': 10000,
       'server.grpc-max-send-msg-size-bytes': 10 * 1024 * 1024,
       'server.grpc-max-recv-msg-size-bytes': 10 * 1024 * 1024,
@@ -32,8 +32,14 @@
       // Blocks storage.
       'blocks-storage.tsdb.dir': '/data/tsdb',
       'blocks-storage.tsdb.block-ranges-period': '2h',
-      'blocks-storage.tsdb.retention-period': '96h',  // 4 days protection against blocks not being uploaded from ingesters.
+      'blocks-storage.tsdb.retention-period': '24h',  // 1 day protection against blocks not being uploaded from ingesters.
       'blocks-storage.tsdb.ship-interval': '1m',
+
+      // Close idle TSDBs.
+      'blocks-storage.tsdb.close-idle-tsdb-timeout': $._config.queryConfig['querier.query-ingesters-within'],
+
+      // Disable TSDB isolation.
+      'blocks-storage.tsdb.isolation-enabled': 'false',
 
       // Persist ring tokens so that when the ingester will be restarted
       // it will pick the same tokens
@@ -59,9 +65,9 @@
   // volume in order to be crash resilient.
   local ingester_data_pvc =
     pvc.new() +
-    pvc.mixin.spec.resources.withRequests({ storage: $._config.cortex_ingester_data_disk_size }) +
+    pvc.mixin.spec.resources.withRequests({ storage: $._config.ingester_data_disk_size }) +
     pvc.mixin.spec.withAccessModes(['ReadWriteOnce']) +
-    pvc.mixin.spec.withStorageClassName($._config.cortex_ingester_data_disk_class) +
+    pvc.mixin.spec.withStorageClassName($._config.ingester_data_disk_class) +
     pvc.mixin.metadata.withName('ingester-data'),
 
   newIngesterStatefulSet(name, container, with_anti_affinity=true)::
@@ -80,7 +86,7 @@
     // For this reason, we grant an high termination period (80 minutes).
     statefulSet.mixin.spec.template.spec.withTerminationGracePeriodSeconds(1200) +
     statefulSet.mixin.spec.updateStrategy.withType('RollingUpdate') +
-    $.util.configVolumeMount($._config.overrides_configmap, '/etc/cortex') +
+    $.util.configVolumeMount($._config.overrides_configmap, $._config.overrides_configmap_mountpoint) +
     $.util.podPriority('high') +
     // Parallelly scale up/down ingester instances instead of starting them
     // one by one. This does NOT affect rolling updates: they will continue to be

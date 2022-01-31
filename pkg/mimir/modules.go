@@ -32,23 +32,22 @@ import (
 	"github.com/grafana/mimir/pkg/alertmanager"
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
 	"github.com/grafana/mimir/pkg/api"
-	"github.com/grafana/mimir/pkg/chunk"
-	"github.com/grafana/mimir/pkg/chunk/purger"
-	"github.com/grafana/mimir/pkg/chunk/storage"
 	"github.com/grafana/mimir/pkg/compactor"
 	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/flusher"
 	"github.com/grafana/mimir/pkg/frontend"
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/frontend/transport"
 	"github.com/grafana/mimir/pkg/ingester"
+	"github.com/grafana/mimir/pkg/purger"
 	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/querier/engine"
-	"github.com/grafana/mimir/pkg/querier/queryrange"
 	"github.com/grafana/mimir/pkg/querier/tenantfederation"
 	querier_worker "github.com/grafana/mimir/pkg/querier/worker"
 	"github.com/grafana/mimir/pkg/ruler"
 	"github.com/grafana/mimir/pkg/scheduler"
 	"github.com/grafana/mimir/pkg/storegateway"
+	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -73,15 +72,12 @@ const (
 	StoreQueryable           string = "store-queryable"
 	QueryFrontend            string = "query-frontend"
 	QueryFrontendTripperware string = "query-frontend-tripperware"
-	Store                    string = "store"
-	DeleteRequestsStore      string = "delete-requests-store"
 	RulerStorage             string = "ruler-storage"
 	Ruler                    string = "ruler"
 	AlertManager             string = "alertmanager"
 	Compactor                string = "compactor"
 	StoreGateway             string = "store-gateway"
 	MemberlistKV             string = "memberlist-kv"
-	ChunksPurger             string = "chunks-purger"
 	TenantDeletion           string = "tenant-deletion"
 	Purger                   string = "purger"
 	QueryScheduler           string = "query-scheduler"
@@ -164,11 +160,20 @@ func (t *Mimir) initServer() (services.Service, error) {
 
 	servicesToWaitFor := func() []services.Service {
 		svs := []services.Service(nil)
+
+		serverDeps := t.ModuleManager.DependenciesForModule(Server)
+
 		for m, s := range t.ServiceMap {
-			// Server should not wait for itself.
-			if m != Server {
-				svs = append(svs, s)
+			// Server should not wait for itself or for any of its dependencies.
+			if m == Server {
+				continue
 			}
+
+			if util.StringsContain(serverDeps, m) {
+				continue
+			}
+
+			svs = append(svs, s)
 		}
 		return svs
 	}
@@ -184,9 +189,6 @@ func (t *Mimir) initRing() (serv services.Service, err error) {
 	if err != nil {
 		return nil, err
 	}
-
-	t.API.RegisterRing(t.Ring)
-
 	return t.Ring, nil
 }
 
@@ -265,7 +267,7 @@ func (t *Mimir) initQueryable() (serv services.Service, err error) {
 	querierRegisterer := prometheus.WrapRegistererWith(prometheus.Labels{"engine": "querier"}, prometheus.DefaultRegisterer)
 
 	// Create a querier queryable and PromQL engine
-	t.QuerierQueryable, t.ExemplarQueryable, t.QuerierEngine = querier.New(t.Cfg.Querier, t.Overrides, t.Distributor, t.StoreQueryables, t.TombstonesLoader, querierRegisterer, util_log.Logger)
+	t.QuerierQueryable, t.ExemplarQueryable, t.QuerierEngine = querier.New(t.Cfg.Querier, t.Overrides, t.Distributor, t.StoreQueryables, querierRegisterer, util_log.Logger, t.ActivityTracker)
 
 	// Register the default endpoints that are always enabled for the querier module
 	t.API.RegisterQueryable(t.QuerierQueryable, t.Distributor)
@@ -279,7 +281,7 @@ func (t *Mimir) initTenantFederation() (serv services.Service, err error) {
 		// Make sure the mergeQuerier is only used for request with more than a
 		// single tenant. This allows for a less impactful enabling of tenant
 		// federation.
-		byPassForSingleQuerier := true
+		const byPassForSingleQuerier = true
 		t.QuerierQueryable = querier.NewSampleAndChunkQueryable(tenantfederation.NewQueryable(t.QuerierQueryable, byPassForSingleQuerier, util_log.Logger))
 	}
 	return nil, nil
@@ -344,7 +346,6 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 		t.ExemplarQueryable,
 		t.QuerierEngine,
 		t.Distributor,
-		t.TombstonesLoader,
 		prometheus.DefaultRegisterer,
 		util_log.Logger,
 		t.Overrides,
@@ -393,31 +394,18 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 func (t *Mimir) initStoreQueryables() (services.Service, error) {
 	var servs []services.Service
 
-	//nolint:golint // I prefer this form over removing 'else', because it allows q to have smaller scope.
-	if q, err := initQueryableForEngine(t.Cfg.Storage.Engine, t.Cfg, t.Store, t.Overrides, prometheus.DefaultRegisterer); err != nil {
-		return nil, fmt.Errorf("failed to initialize querier for engine '%s': %v", t.Cfg.Storage.Engine, err)
-	} else {
-		t.StoreQueryables = append(t.StoreQueryables, querier.UseAlwaysQueryable(q))
-		if s, ok := q.(services.Service); ok {
-			servs = append(servs, s)
-		}
+	// When running in single binary, if the blocks sharding is disabled and no custom
+	// store-gateway address has been configured, we can set it to the running process.
+	if t.Cfg.isModuleEnabled(All) && !t.Cfg.StoreGateway.ShardingEnabled && t.Cfg.Querier.StoreGatewayAddresses == "" {
+		t.Cfg.Querier.StoreGatewayAddresses = fmt.Sprintf("127.0.0.1:%d", t.Cfg.Server.GRPCListenPort)
 	}
 
-	if t.Cfg.Querier.SecondStoreEngine != "" {
-		if t.Cfg.Querier.SecondStoreEngine == t.Cfg.Storage.Engine {
-			return nil, fmt.Errorf("second store engine used by querier '%s' must be different than primary engine '%s'", t.Cfg.Querier.SecondStoreEngine, t.Cfg.Storage.Engine)
-		}
-
-		sq, err := initQueryableForEngine(t.Cfg.Querier.SecondStoreEngine, t.Cfg, t.Store, t.Overrides, prometheus.DefaultRegisterer)
-		if err != nil {
-			return nil, fmt.Errorf("failed to initialize querier for engine '%s': %v", t.Cfg.Querier.SecondStoreEngine, err)
-		}
-
-		t.StoreQueryables = append(t.StoreQueryables, querier.UseBeforeTimestampQueryable(sq, time.Time(t.Cfg.Querier.UseSecondStoreBeforeTime)))
-
-		if s, ok := sq.(services.Service); ok {
-			servs = append(servs, s)
-		}
+	//nolint:golint // I prefer this form over removing 'else', because it allows q to have smaller scope.
+	if q, err := querier.NewBlocksStoreQueryableFromConfig(t.Cfg.Querier, t.Cfg.StoreGateway, t.Cfg.BlocksStorage, t.Overrides, util_log.Logger, prometheus.DefaultRegisterer); err != nil {
+		return nil, fmt.Errorf("failed to initialize querier: %v", err)
+	} else {
+		t.StoreQueryables = append(t.StoreQueryables, querier.UseAlwaysQueryable(q))
+		servs = append(servs, q)
 	}
 
 	// Return service, if any.
@@ -434,41 +422,13 @@ func (t *Mimir) initStoreQueryables() (services.Service, error) {
 	}
 }
 
-func initQueryableForEngine(engine string, cfg Config, chunkStore chunk.Store, limits *validation.Overrides, reg prometheus.Registerer) (prom_storage.Queryable, error) {
-	switch engine {
-	case storage.StorageEngineChunks:
-		if chunkStore == nil {
-			return nil, fmt.Errorf("chunk store not initialized")
-		}
-		return querier.NewChunkStoreQueryable(cfg.Querier, chunkStore), nil
-
-	case storage.StorageEngineBlocks:
-		// When running in single binary, if the blocks sharding is disabled and no custom
-		// store-gateway address has been configured, we can set it to the running process.
-		if cfg.isModuleEnabled(All) && !cfg.StoreGateway.ShardingEnabled && cfg.Querier.StoreGatewayAddresses == "" {
-			cfg.Querier.StoreGatewayAddresses = fmt.Sprintf("127.0.0.1:%d", cfg.Server.GRPCListenPort)
-		}
-
-		return querier.NewBlocksStoreQueryableFromConfig(cfg.Querier, cfg.StoreGateway, cfg.BlocksStorage, limits, util_log.Logger, reg)
-
-	default:
-		return nil, fmt.Errorf("unknown storage engine '%s'", engine)
-	}
-}
-
 func (t *Mimir) tsdbIngesterConfig() {
 	t.Cfg.Ingester.BlocksStorageConfig = t.Cfg.BlocksStorage
 }
 
 func (t *Mimir) initIngesterService() (serv services.Service, err error) {
-	if t.Cfg.Storage.Engine != storage.StorageEngineBlocks {
-		return nil, fmt.Errorf("ingesters do not support the '%s' store engine", t.Cfg.Storage.Engine)
-	}
-
 	t.Cfg.Ingester.LifecyclerConfig.RingConfig.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
 	t.Cfg.Ingester.LifecyclerConfig.ListenPort = t.Cfg.Server.GRPCListenPort
-	t.Cfg.Ingester.DistributorShardingStrategy = t.Cfg.Distributor.ShardingStrategy
-	t.Cfg.Ingester.DistributorShardByAllLabels = t.Cfg.Distributor.ShardByAllLabels
 	t.Cfg.Ingester.StreamTypeFn = ingesterChunkStreaming(t.RuntimeConfig)
 	t.Cfg.Ingester.InstanceLimitsFn = ingesterInstanceLimits(t.RuntimeConfig)
 	t.tsdbIngesterConfig()
@@ -483,7 +443,6 @@ func (t *Mimir) initIngesterService() (serv services.Service, err error) {
 
 func (t *Mimir) initIngester() (serv services.Service, err error) {
 	t.API.RegisterIngester(t.Ingester, t.Cfg.Distributor)
-
 	return nil, nil
 }
 
@@ -493,7 +452,6 @@ func (t *Mimir) initFlusher() (serv services.Service, err error) {
 	t.Flusher, err = flusher.New(
 		t.Cfg.Flusher,
 		t.Cfg.Ingester,
-		t.Store,
 		t.Overrides,
 		prometheus.DefaultRegisterer,
 		util_log.Logger,
@@ -505,79 +463,24 @@ func (t *Mimir) initFlusher() (serv services.Service, err error) {
 	return t.Flusher, nil
 }
 
-func (t *Mimir) initChunkStore() (serv services.Service, err error) {
-	if t.Cfg.Storage.Engine != storage.StorageEngineChunks && t.Cfg.Querier.SecondStoreEngine != storage.StorageEngineChunks {
-		return nil, nil
-	}
-	err = t.Cfg.Schema.Load()
-	if err != nil {
-		return
-	}
-
-	t.Store, err = storage.NewStore(t.Cfg.Storage, t.Cfg.ChunkStore, t.Cfg.Schema, t.Overrides, prometheus.DefaultRegisterer, t.TombstonesLoader, util_log.Logger)
-	if err != nil {
-		return
-	}
-
-	return services.NewIdleService(nil, func(_ error) error {
-		t.Store.Stop()
-		return nil
-	}), nil
-}
-
-func (t *Mimir) initDeleteRequestsStore() (serv services.Service, err error) {
-	if t.Cfg.Storage.Engine != storage.StorageEngineChunks || !t.Cfg.PurgerConfig.Enable {
-		// until we need to explicitly enable delete series support we need to do create TombstonesLoader without DeleteStore which acts as noop
-		t.TombstonesLoader = purger.NewTombstonesLoader(nil, nil)
-
-		return
-	}
-
-	var indexClient chunk.IndexClient
-	reg := prometheus.WrapRegistererWith(
-		prometheus.Labels{"component": DeleteRequestsStore}, prometheus.DefaultRegisterer)
-	indexClient, err = storage.NewIndexClient(t.Cfg.Storage.DeleteStoreConfig.Store, t.Cfg.Storage, t.Cfg.Schema, reg)
-	if err != nil {
-		return
-	}
-
-	t.DeletesStore, err = purger.NewDeleteStore(t.Cfg.Storage.DeleteStoreConfig, indexClient)
-	if err != nil {
-		return
-	}
-
-	t.TombstonesLoader = purger.NewTombstonesLoader(t.DeletesStore, prometheus.DefaultRegisterer)
-
-	return
-}
-
 // initQueryFrontendTripperware instantiates the tripperware used by the query frontend
 // to optimize Prometheus query requests.
 func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error) {
-	tripperware, cache, err := queryrange.NewTripperware(
-		t.Cfg.QueryRange,
+	tripperware, err := querymiddleware.NewTripperware(
+		t.Cfg.Frontend.QueryMiddleware,
 		util_log.Logger,
 		t.Overrides,
-		queryrange.PrometheusCodec,
-		queryrange.PrometheusResponseExtractor{},
-		t.Cfg.Storage.Engine,
-		engine.NewPromQLEngineOptions(t.Cfg.Querier.EngineConfig, util_log.Logger, prometheus.DefaultRegisterer),
+		querymiddleware.PrometheusCodec,
+		querymiddleware.PrometheusResponseExtractor{},
+		engine.NewPromQLEngineOptions(t.Cfg.Querier.EngineConfig, t.ActivityTracker, util_log.Logger, prometheus.DefaultRegisterer),
 		prometheus.DefaultRegisterer,
-		t.TombstonesLoader,
 	)
 	if err != nil {
 		return nil, err
 	}
 
 	t.QueryFrontendTripperware = tripperware
-
-	return services.NewIdleService(nil, func(_ error) error {
-		if cache != nil {
-			cache.Stop()
-			cache = nil
-		}
-		return nil
-	}), nil
+	return nil, nil
 }
 
 func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
@@ -628,10 +531,23 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 
 	t.Cfg.Ruler.Ring.ListenPort = t.Cfg.Server.GRPCListenPort
 	rulerRegisterer := prometheus.WrapRegistererWith(prometheus.Labels{"engine": "ruler"}, prometheus.DefaultRegisterer)
+	var queryable, federatedQueryable prom_storage.Queryable
 	// TODO: Consider wrapping logger to differentiate from querier module logger
-	queryable, _, engine := querier.New(t.Cfg.Querier, t.Overrides, t.Distributor, t.StoreQueryables, t.TombstonesLoader, rulerRegisterer, util_log.Logger)
+	queryable, _, eng := querier.New(t.Cfg.Querier, t.Overrides, t.Distributor, t.StoreQueryables, rulerRegisterer, util_log.Logger, t.ActivityTracker)
 
-	managerFactory := ruler.DefaultTenantManagerFactory(t.Cfg.Ruler, t.Distributor, queryable, engine, t.Overrides, prometheus.DefaultRegisterer)
+	if t.Cfg.Ruler.TenantFederation.Enabled {
+		if !t.Cfg.TenantFederation.Enabled {
+			return nil, errors.New("-ruler.tenant-federation.enabled=true requires -tenant-federation.enabled=true")
+		}
+		// Setting byPassForSingleQuerier=false forces `tenantfederation.NewQueryable` to add
+		// the `__tenant_id__` label on all metrics regardless if they're for a single tenant or multiple tenants.
+		// This makes this label more consistent and hopefully less confusing to users.
+		const byPassForSingleQuerier = false
+
+		federatedQueryable = tenantfederation.NewQueryable(queryable, byPassForSingleQuerier, util_log.Logger)
+	}
+
+	managerFactory := ruler.DefaultTenantManagerFactory(t.Cfg.Ruler, t.Distributor, queryable, federatedQueryable, eng, t.Overrides, prometheus.DefaultRegisterer)
 	manager, err := ruler.NewDefaultMultiTenantManager(t.Cfg.Ruler, managerFactory, prometheus.DefaultRegisterer, util_log.Logger)
 	if err != nil {
 		return nil, err
@@ -691,13 +607,6 @@ func (t *Mimir) initCompactor() (serv services.Service, err error) {
 }
 
 func (t *Mimir) initStoreGateway() (serv services.Service, err error) {
-	if t.Cfg.Storage.Engine != storage.StorageEngineBlocks {
-		if !t.Cfg.isModuleEnabled(All) {
-			return nil, fmt.Errorf("storage engine must be set to blocks to enable the store-gateway")
-		}
-		return nil, nil
-	}
-
 	t.Cfg.StoreGateway.ShardingRing.ListenPort = t.Cfg.Server.GRPCListenPort
 
 	t.StoreGateway, err = storegateway.NewStoreGateway(t.Cfg.StoreGateway, t.Cfg.BlocksStorage, t.Overrides, t.Cfg.Server.LogLevel, util_log.Logger, prometheus.DefaultRegisterer, t.ActivityTracker)
@@ -739,31 +648,7 @@ func (t *Mimir) initMemberlistKV() (services.Service, error) {
 	return t.MemberlistKV, nil
 }
 
-func (t *Mimir) initChunksPurger() (services.Service, error) {
-	if t.Cfg.Storage.Engine != storage.StorageEngineChunks || !t.Cfg.PurgerConfig.Enable {
-		return nil, nil
-	}
-
-	storageClient, err := storage.NewObjectClient(t.Cfg.PurgerConfig.ObjectStoreType, t.Cfg.Storage)
-	if err != nil {
-		return nil, err
-	}
-
-	t.Purger, err = purger.NewPurger(t.Cfg.PurgerConfig, t.DeletesStore, t.Store, storageClient, prometheus.DefaultRegisterer)
-	if err != nil {
-		return nil, err
-	}
-
-	t.API.RegisterChunksPurger(t.DeletesStore, t.Cfg.PurgerConfig.DeleteRequestCancelPeriod)
-
-	return t.Purger, nil
-}
-
 func (t *Mimir) initTenantDeletionAPI() (services.Service, error) {
-	if t.Cfg.Storage.Engine != storage.StorageEngineBlocks {
-		return nil, nil
-	}
-
 	// t.RulerStorage can be nil when running in single-binary mode, and rule storage is not configured.
 	tenantDeletionAPI, err := purger.NewTenantDeletionAPI(t.Cfg.BlocksStorage, t.Overrides, util_log.Logger, prometheus.DefaultRegisterer)
 	if err != nil {
@@ -799,8 +684,6 @@ func (t *Mimir) setupModuleManager() error {
 	mm.RegisterModule(OverridesExporter, t.initOverridesExporter)
 	mm.RegisterModule(Distributor, t.initDistributor)
 	mm.RegisterModule(DistributorService, t.initDistributorService, modules.UserInvisibleModule)
-	mm.RegisterModule(Store, t.initChunkStore, modules.UserInvisibleModule)
-	mm.RegisterModule(DeleteRequestsStore, t.initDeleteRequestsStore, modules.UserInvisibleModule)
 	mm.RegisterModule(Ingester, t.initIngester)
 	mm.RegisterModule(IngesterService, t.initIngesterService, modules.UserInvisibleModule)
 	mm.RegisterModule(Flusher, t.initFlusher)
@@ -814,7 +697,6 @@ func (t *Mimir) setupModuleManager() error {
 	mm.RegisterModule(AlertManager, t.initAlertManager)
 	mm.RegisterModule(Compactor, t.initCompactor)
 	mm.RegisterModule(StoreGateway, t.initStoreGateway)
-	mm.RegisterModule(ChunksPurger, t.initChunksPurger, modules.UserInvisibleModule)
 	mm.RegisterModule(TenantDeletion, t.initTenantDeletionAPI, modules.UserInvisibleModule)
 	mm.RegisterModule(Purger, nil)
 	mm.RegisterModule(QueryScheduler, t.initQueryScheduler)
@@ -832,26 +714,24 @@ func (t *Mimir) setupModuleManager() error {
 		OverridesExporter:        {Overrides},
 		Distributor:              {DistributorService, API},
 		DistributorService:       {Ring, Overrides},
-		Store:                    {Overrides, DeleteRequestsStore},
 		Ingester:                 {IngesterService, API},
 		IngesterService:          {Overrides, RuntimeConfig, MemberlistKV},
-		Flusher:                  {Store, API},
-		Queryable:                {Overrides, DistributorService, Store, Ring, API, StoreQueryable, MemberlistKV},
+		Flusher:                  {API},
+		Queryable:                {Overrides, DistributorService, Ring, API, StoreQueryable, MemberlistKV},
 		Querier:                  {TenantFederation},
-		StoreQueryable:           {Overrides, Store, MemberlistKV},
-		QueryFrontendTripperware: {API, Overrides, DeleteRequestsStore},
+		StoreQueryable:           {Overrides, MemberlistKV},
+		QueryFrontendTripperware: {API, Overrides},
 		QueryFrontend:            {QueryFrontendTripperware},
 		QueryScheduler:           {API, Overrides},
-		Ruler:                    {DistributorService, Store, StoreQueryable, RulerStorage},
+		Ruler:                    {DistributorService, StoreQueryable, RulerStorage},
 		RulerStorage:             {Overrides},
 		AlertManager:             {API, MemberlistKV, Overrides},
 		Compactor:                {API, MemberlistKV, Overrides},
 		StoreGateway:             {API, Overrides, MemberlistKV},
-		ChunksPurger:             {Store, DeleteRequestsStore, API},
-		TenantDeletion:           {Store, API, Overrides},
-		Purger:                   {ChunksPurger, TenantDeletion},
+		TenantDeletion:           {API, Overrides},
+		Purger:                   {TenantDeletion},
 		TenantFederation:         {Queryable},
-		All:                      {QueryFrontend, Querier, Ingester, Distributor, Purger, StoreGateway, Ruler},
+		All:                      {QueryFrontend, Querier, Ingester, Distributor, Purger, StoreGateway, Ruler, Compactor},
 	}
 	for mod, targets := range deps {
 		if err := mm.AddDependency(mod, targets...); err != nil {

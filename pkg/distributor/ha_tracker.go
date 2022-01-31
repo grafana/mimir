@@ -57,13 +57,13 @@ type HATrackerConfig struct {
 	// We should only update the timestamp if the difference
 	// between the stored timestamp and the time we received a sample at
 	// is more than this duration.
-	UpdateTimeout          time.Duration `yaml:"ha_tracker_update_timeout"`
-	UpdateTimeoutJitterMax time.Duration `yaml:"ha_tracker_update_timeout_jitter_max"`
+	UpdateTimeout          time.Duration `yaml:"ha_tracker_update_timeout" category:"advanced"`
+	UpdateTimeoutJitterMax time.Duration `yaml:"ha_tracker_update_timeout_jitter_max" category:"advanced"`
 	// We should only failover to accepting samples from a replica
 	// other than the replica written in the KVStore if the difference
 	// between the stored timestamp and the time we received a sample is
 	// more than this duration
-	FailoverTimeout time.Duration `yaml:"ha_tracker_failover_timeout"`
+	FailoverTimeout time.Duration `yaml:"ha_tracker_failover_timeout" category:"advanced"`
 
 	KVStore kv.Config `yaml:"kvstore" doc:"description=Backend storage to use for the ring. Please be aware that memberlist is not supported by the HA tracker since gossip propagation is too slow for HA purposes."`
 }

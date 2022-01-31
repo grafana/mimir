@@ -9,17 +9,24 @@ import (
 	"bytes"
 	"context"
 	"flag"
+	"fmt"
 	"io"
 	"net"
+	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
+	"github.com/grafana/dskit/test"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -27,23 +34,25 @@ import (
 	"go.uber.org/atomic"
 	"google.golang.org/grpc"
 
-	"github.com/grafana/mimir/pkg/chunk/storage"
+	"github.com/grafana/mimir/pkg/alertmanager"
+	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
+	"github.com/grafana/mimir/pkg/cache"
 	"github.com/grafana/mimir/pkg/compactor"
+	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/frontend/v1/frontendv1pb"
 	"github.com/grafana/mimir/pkg/ingester"
+	"github.com/grafana/mimir/pkg/ruler"
 	"github.com/grafana/mimir/pkg/ruler/rulestore"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
 	"github.com/grafana/mimir/pkg/storage/bucket/s3"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
+	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
 func TestMimir(t *testing.T) {
 	cfg := Config{
-		Storage: storage.Config{
-			Engine: storage.StorageEngineBlocks, // makes config easier
-		},
 		Ingester: ingester.Config{
 			BlocksStorageConfig: tsdb.BlocksStorageConfig{
 				Bucket: bucket.Config{
@@ -74,8 +83,18 @@ func TestMimir(t *testing.T) {
 				ChunkPoolMinBucketSizeBytes: tsdb.ChunkPoolDefaultMinBucketSize,
 				ChunkPoolMaxBucketSizeBytes: tsdb.ChunkPoolDefaultMaxBucketSize,
 				IndexCache: tsdb.IndexCacheConfig{
-					Backend: tsdb.IndexCacheBackendInMemory,
+					BackendConfig: cache.BackendConfig{
+						Backend: tsdb.IndexCacheBackendInMemory,
+					},
 				},
+			},
+		},
+		Ruler: ruler.Config{
+			Ring: ruler.RingConfig{
+				KVStore: kv.Config{
+					Store: "memberlist",
+				},
+				InstanceAddr: "test:8080",
 			},
 		},
 		RulerStorage: rulestore.Config{
@@ -87,8 +106,27 @@ func TestMimir(t *testing.T) {
 			},
 		},
 		Compactor: compactor.Config{CompactionJobsOrder: compactor.CompactionOrderOldestFirst},
+		Alertmanager: alertmanager.MultitenantAlertmanagerConfig{
+			DataDir: t.TempDir(),
+		},
+		AlertmanagerStorage: alertstore.Config{
+			Config: bucket.Config{
+				Backend: "filesystem",
+				Filesystem: filesystem.Config{
+					Directory: t.TempDir(),
+				},
+			},
+		},
+		Distributor: distributor.Config{
+			DistributorRing: distributor.RingConfig{
+				KVStore: kv.Config{
+					Store: "inmemory",
+				},
+				InstanceInterfaceNames: []string{"en0", "eth0", "lo0", "lo"},
+			},
+		},
 
-		Target: []string{All, Compactor},
+		Target: []string{All, AlertManager},
 	}
 
 	c, err := New(cfg)
@@ -108,9 +146,59 @@ func TestMimir(t *testing.T) {
 	require.NotNil(t, serviceMap[IngesterService])
 	require.NotNil(t, serviceMap[Ring])
 	require.NotNil(t, serviceMap[DistributorService])
-
-	// check that compactor is configured which is not part of Target=All
 	require.NotNil(t, serviceMap[Compactor])
+
+	// check that alertmanager is configured which is not part of Target=All
+	require.NotNil(t, serviceMap[AlertManager])
+}
+
+func TestMimirServerShutdownWithActivityTrackerEnabled(t *testing.T) {
+	prepareGlobalMetricsRegistry(t)
+
+	cfg := Config{}
+
+	// This sets default values from flags to the config.
+	flagext.RegisterFlagsWithLogger(log.NewNopLogger(), &cfg)
+
+	tmpDir := t.TempDir()
+	cfg.ActivityTracker.Filepath = filepath.Join(tmpDir, "activity.log") // Enable activity tracker
+
+	cfg.Target = []string{API}
+	cfg.Server = getServerConfig(t)
+	require.NoError(t, cfg.Server.LogFormat.Set("logfmt"))
+	require.NoError(t, cfg.Server.LogLevel.Set("debug"))
+
+	util_log.InitLogger(&cfg.Server)
+
+	c, err := New(cfg)
+	require.NoError(t, err)
+
+	errCh := make(chan error)
+	go func() {
+		errCh <- c.Run()
+	}()
+
+	test.Poll(t, 10*time.Second, true, func() interface{} {
+		r, err := http.Get(fmt.Sprintf("http://%s:%d/ready", cfg.Server.HTTPListenAddress, cfg.Server.HTTPListenPort))
+		if err != nil {
+			t.Log("Got error when checking /ready:", err)
+			return false
+		}
+		return r.StatusCode == 200
+	})
+
+	proc, err := os.FindProcess(os.Getpid())
+	require.NoError(t, err)
+
+	// Mimir reacts on SIGINT and does shutdown.
+	require.NoError(t, proc.Signal(syscall.SIGINT))
+
+	select {
+	case <-time.After(5 * time.Second):
+		require.Fail(t, "Mimir didn't stop in time")
+	case err := <-errCh:
+		require.NoError(t, err)
+	}
 }
 
 func TestConfigValidation(t *testing.T) {
@@ -257,6 +345,21 @@ func TestFlagDefaults(t *testing.T) {
 
 // Generates server config, with gRPC listening on random port.
 func getServerConfig(t *testing.T) server.Config {
+	grpcHost, grpcPortNum := getHostnameAndRandomPort(t)
+	httpHost, httpPortNum := getHostnameAndRandomPort(t)
+
+	return server.Config{
+		HTTPListenAddress: httpHost,
+		HTTPListenPort:    httpPortNum,
+
+		GRPCListenAddress: grpcHost,
+		GRPCListenPort:    grpcPortNum,
+
+		GPRCServerMaxRecvMsgSize: 1024,
+	}
+}
+
+func getHostnameAndRandomPort(t *testing.T) (string, int) {
 	listen, err := net.Listen("tcp", "localhost:0")
 	require.NoError(t, err)
 
@@ -266,13 +369,7 @@ func getServerConfig(t *testing.T) server.Config {
 
 	portNum, err := strconv.Atoi(port)
 	require.NoError(t, err)
-
-	return server.Config{
-		GRPCListenAddress: host,
-		GRPCListenPort:    portNum,
-
-		GPRCServerMaxRecvMsgSize: 1024,
-	}
+	return host, portNum
 }
 
 type mockGrpcServiceHandler struct {

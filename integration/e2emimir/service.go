@@ -5,7 +5,7 @@
 
 package e2emimir
 
-import "github.com/grafana/mimir/integration/e2e"
+import "github.com/grafana/e2e"
 
 // MimirService represents a Mimir service with at least an HTTP and GRPC port exposed.
 type MimirService struct {

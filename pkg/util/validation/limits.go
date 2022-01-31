@@ -8,7 +8,6 @@ package validation
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"flag"
 	"math"
 	"strings"
@@ -20,14 +19,6 @@ import (
 	"golang.org/x/time/rate"
 
 	util_log "github.com/grafana/mimir/pkg/util/log"
-)
-
-var errMaxGlobalSeriesPerUserValidation = errors.New("The ingester.max-global-series-per-user limit is unsupported if distributor.shard-by-all-labels is disabled")
-
-// Supported values for enum limits
-const (
-	LocalIngestionRateStrategy  = "local"
-	GlobalIngestionRateStrategy = "global"
 )
 
 // LimitError are errors that do not comply with the limits specified.
@@ -42,7 +33,6 @@ func (e LimitError) Error() string {
 type Limits struct {
 	// Distributor enforced limits.
 	IngestionRate             float64             `yaml:"ingestion_rate" json:"ingestion_rate"`
-	IngestionRateStrategy     string              `yaml:"ingestion_rate_strategy" json:"ingestion_rate_strategy"`
 	IngestionBurstSize        int                 `yaml:"ingestion_burst_size" json:"ingestion_burst_size"`
 	AcceptHASamples           bool                `yaml:"accept_ha_samples" json:"accept_ha_samples"`
 	HAClusterLabel            string              `yaml:"ha_cluster_label" json:"ha_cluster_label"`
@@ -53,8 +43,6 @@ type Limits struct {
 	MaxLabelValueLength       int                 `yaml:"max_label_value_length" json:"max_label_value_length"`
 	MaxLabelNamesPerSeries    int                 `yaml:"max_label_names_per_series" json:"max_label_names_per_series"`
 	MaxMetadataLength         int                 `yaml:"max_metadata_length" json:"max_metadata_length"`
-	RejectOldSamples          bool                `yaml:"reject_old_samples" json:"reject_old_samples"`
-	RejectOldSamplesMaxAge    model.Duration      `yaml:"reject_old_samples_max_age" json:"reject_old_samples_max_age"`
 	CreationGracePeriod       model.Duration      `yaml:"creation_grace_period" json:"creation_grace_period"`
 	EnforceMetadataMetricName bool                `yaml:"enforce_metadata_metric_name" json:"enforce_metadata_metric_name"`
 	IngestionTenantShardSize  int                 `yaml:"ingestion_tenant_shard_size" json:"ingestion_tenant_shard_size"`
@@ -62,22 +50,15 @@ type Limits struct {
 
 	// Ingester enforced limits.
 	// Series
-	MaxSeriesPerQuery        int `yaml:"max_series_per_query" json:"max_series_per_query"`
-	MaxLocalSeriesPerUser    int `yaml:"max_series_per_user" json:"max_series_per_user"`
-	MaxLocalSeriesPerMetric  int `yaml:"max_series_per_metric" json:"max_series_per_metric"`
 	MaxGlobalSeriesPerUser   int `yaml:"max_global_series_per_user" json:"max_global_series_per_user"`
 	MaxGlobalSeriesPerMetric int `yaml:"max_global_series_per_metric" json:"max_global_series_per_metric"`
-	MinChunkLength           int `yaml:"min_chunk_length" json:"min_chunk_length"`
 	// Metadata
-	MaxLocalMetricsWithMetadataPerUser  int `yaml:"max_metadata_per_user" json:"max_metadata_per_user"`
-	MaxLocalMetadataPerMetric           int `yaml:"max_metadata_per_metric" json:"max_metadata_per_metric"`
 	MaxGlobalMetricsWithMetadataPerUser int `yaml:"max_global_metadata_per_user" json:"max_global_metadata_per_user"`
 	MaxGlobalMetadataPerMetric          int `yaml:"max_global_metadata_per_metric" json:"max_global_metadata_per_metric"`
 	// Exemplars
 	MaxGlobalExemplarsPerUser int `yaml:"max_global_exemplars_per_user" json:"max_global_exemplars_per_user"`
 
 	// Querier enforced limits.
-	MaxChunksPerQueryFromStore     int            `yaml:"max_chunks_per_query" json:"max_chunks_per_query"` // TODO Remove in Cortex 1.12.
 	MaxChunksPerQuery              int            `yaml:"max_fetched_chunks_per_query" json:"max_fetched_chunks_per_query"`
 	MaxFetchedSeriesPerQuery       int            `yaml:"max_fetched_series_per_query" json:"max_fetched_series_per_query"`
 	MaxFetchedChunkBytesPerQuery   int            `yaml:"max_fetched_chunk_bytes_per_query" json:"max_fetched_chunk_bytes_per_query"`
@@ -85,7 +66,6 @@ type Limits struct {
 	MaxQueryLength                 model.Duration `yaml:"max_query_length" json:"max_query_length"`
 	MaxQueryParallelism            int            `yaml:"max_query_parallelism" json:"max_query_parallelism"`
 	MaxLabelsQueryLength           model.Duration `yaml:"max_labels_query_length" json:"max_labels_query_length"`
-	CardinalityLimit               int            `yaml:"cardinality_limit" json:"cardinality_limit"`
 	MaxCacheFreshness              model.Duration `yaml:"max_cache_freshness" json:"max_cache_freshness"`
 	MaxQueriersPerTenant           int            `yaml:"max_queriers_per_tenant" json:"max_queriers_per_tenant"`
 	QueryShardingTotalShards       int            `yaml:"query_sharding_total_shards" json:"query_sharding_total_shards"`
@@ -133,10 +113,9 @@ type Limits struct {
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
 func (l *Limits) RegisterFlags(f *flag.FlagSet) {
-	f.IntVar(&l.IngestionTenantShardSize, "distributor.ingestion-tenant-shard-size", 0, "The tenant's shard size when the shuffle-sharding strategy is used. Must be set both on ingesters and distributors. When this setting is specified in the per-tenant overrides, a value of 0 disables shuffle sharding for the tenant.")
-	f.Float64Var(&l.IngestionRate, "distributor.ingestion-rate-limit", 25000, "Per-user ingestion rate limit in samples per second.")
-	f.StringVar(&l.IngestionRateStrategy, "distributor.ingestion-rate-limit-strategy", "local", "Whether the ingestion rate limit should be applied individually to each distributor instance (local), or evenly shared across the cluster (global).")
-	f.IntVar(&l.IngestionBurstSize, "distributor.ingestion-burst-size", 50000, "Per-user allowed ingestion burst size (in number of samples).")
+	f.IntVar(&l.IngestionTenantShardSize, "distributor.ingestion-tenant-shard-size", 0, "The tenant's shard size used by shuffle-sharding. Must be set both on ingesters and distributors. 0 disables shuffle sharding.")
+	f.Float64Var(&l.IngestionRate, "distributor.ingestion-rate-limit", 10000, "Per-user ingestion rate limit in samples per second.")
+	f.IntVar(&l.IngestionBurstSize, "distributor.ingestion-burst-size", 200000, "Per-user allowed ingestion burst size (in number of samples).")
 	f.BoolVar(&l.AcceptHASamples, "distributor.ha-tracker.enable-for-all-users", false, "Flag to enable, for all users, handling of samples with external labels identifying replicas in an HA Prometheus setup.")
 	f.StringVar(&l.HAClusterLabel, "distributor.ha-tracker.cluster", "cluster", "Prometheus label to look for in samples to identify a Prometheus HA cluster.")
 	f.StringVar(&l.HAReplicaLabel, "distributor.ha-tracker.replica", "__replica__", "Prometheus label to look for in samples to identify a Prometheus HA replica.")
@@ -146,58 +125,47 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.MaxLabelValueLength, "validation.max-length-label-value", 2048, "Maximum length accepted for label value. This setting also applies to the metric name")
 	f.IntVar(&l.MaxLabelNamesPerSeries, "validation.max-label-names-per-series", 30, "Maximum number of label names per series.")
 	f.IntVar(&l.MaxMetadataLength, "validation.max-metadata-length", 1024, "Maximum length accepted for metric metadata. Metadata refers to Metric Name, HELP and UNIT.")
-	f.BoolVar(&l.RejectOldSamples, "validation.reject-old-samples", false, "Reject old samples.")
-	_ = l.RejectOldSamplesMaxAge.Set("14d")
-	f.Var(&l.RejectOldSamplesMaxAge, "validation.reject-old-samples.max-age", "Maximum accepted sample age before rejecting.")
 	_ = l.CreationGracePeriod.Set("10m")
 	f.Var(&l.CreationGracePeriod, "validation.create-grace-period", "Duration which table will be created/deleted before/after it's needed; we won't accept sample from before this time.")
 	f.BoolVar(&l.EnforceMetadataMetricName, "validation.enforce-metadata-metric-name", true, "Enforce every metadata has a metric name.")
 
-	f.IntVar(&l.MaxSeriesPerQuery, "ingester.max-series-per-query", 100000, "The maximum number of series for which a query can fetch samples from each ingester. This limit is enforced only in the ingesters (when querying samples not flushed to the storage yet) and it's a per-instance limit. This limit is ignored when using blocks storage. When running with blocks storage use -querier.max-fetched-series-per-query limit instead.")
 	//lint:ignore faillint Need to pass the global logger like this for warning on deprecated methods
 	flagext.DeprecatedFlag(f, "ingester.max-samples-per-query", "This option is no longer used, and will be removed.", util_log.Logger)
-	f.IntVar(&l.MaxLocalSeriesPerUser, "ingester.max-series-per-user", 5000000, "The maximum number of active series per user, per ingester. 0 to disable.")
-	f.IntVar(&l.MaxLocalSeriesPerMetric, "ingester.max-series-per-metric", 50000, "The maximum number of active series per metric name, per ingester. 0 to disable.")
-	f.IntVar(&l.MaxGlobalSeriesPerUser, "ingester.max-global-series-per-user", 0, "The maximum number of active series per user, across the cluster before replication. 0 to disable. Supported only if -distributor.shard-by-all-labels is true.")
-	f.IntVar(&l.MaxGlobalSeriesPerMetric, "ingester.max-global-series-per-metric", 0, "The maximum number of active series per metric name, across the cluster before replication. 0 to disable.")
-	f.IntVar(&l.MinChunkLength, "ingester.min-chunk-length", 0, "Minimum number of samples in an idle chunk to flush it to the store. Use with care, if chunks are less than this size they will be discarded. This option is ignored when using blocks storage. 0 to disable.")
+	f.IntVar(&l.MaxGlobalSeriesPerUser, "ingester.max-global-series-per-user", 150000, "The maximum number of active series per user, across the cluster before replication. 0 to disable.")
+	f.IntVar(&l.MaxGlobalSeriesPerMetric, "ingester.max-global-series-per-metric", 20000, "The maximum number of active series per metric name, across the cluster before replication. 0 to disable.")
 
-	f.IntVar(&l.MaxLocalMetricsWithMetadataPerUser, "ingester.max-metadata-per-user", 8000, "The maximum number of active metrics with metadata per user, per ingester. 0 to disable.")
-	f.IntVar(&l.MaxLocalMetadataPerMetric, "ingester.max-metadata-per-metric", 10, "The maximum number of metadata per metric, per ingester. 0 to disable.")
-	f.IntVar(&l.MaxGlobalMetricsWithMetadataPerUser, "ingester.max-global-metadata-per-user", 0, "The maximum number of active metrics with metadata per user, across the cluster. 0 to disable. Supported only if -distributor.shard-by-all-labels is true.")
+	f.IntVar(&l.MaxGlobalMetricsWithMetadataPerUser, "ingester.max-global-metadata-per-user", 0, "The maximum number of active metrics with metadata per user, across the cluster. 0 to disable.")
 	f.IntVar(&l.MaxGlobalMetadataPerMetric, "ingester.max-global-metadata-per-metric", 0, "The maximum number of metadata per metric, across the cluster. 0 to disable.")
 	f.IntVar(&l.MaxGlobalExemplarsPerUser, "ingester.max-global-exemplars-per-user", 0, "The maximum number of exemplars in memory, across the cluster. 0 to disable exemplars ingestion.")
 
-	f.IntVar(&l.MaxChunksPerQueryFromStore, "store.query-chunk-limit", 2e6, "Deprecated. Use -querier.max-fetched-chunks-per-query CLI flag and its respective YAML config option instead. Maximum number of chunks that can be fetched in a single query. This limit is enforced when fetching chunks from the long-term storage only. When using chunks storage, this limit is enforced in the querier and ruler, while when using blocks storage this limit is enforced in the querier, ruler and store-gateway. 0 to disable.")
-	f.IntVar(&l.MaxChunksPerQuery, "querier.max-fetched-chunks-per-query", 0, "Maximum number of chunks that can be fetched in a single query from ingesters and long-term storage. This limit is enforced in the querier, ruler and store-gateway. Takes precedence over the deprecated -store.query-chunk-limit. 0 to disable.")
-	f.IntVar(&l.MaxFetchedSeriesPerQuery, "querier.max-fetched-series-per-query", 0, "The maximum number of unique series for which a query can fetch samples from each ingesters and blocks storage. This limit is enforced in the querier only when running with blocks storage. 0 to disable")
-	f.IntVar(&l.MaxFetchedChunkBytesPerQuery, "querier.max-fetched-chunk-bytes-per-query", 0, "The maximum size of all chunks in bytes that a query can fetch from each ingester and storage. This limit is enforced in the querier and ruler only when running with blocks storage. 0 to disable.")
-	f.Var(&l.MaxQueryLength, "store.max-query-length", "Limit the query time range (end - start time). This limit is enforced in the query-frontend (on the received query), in the querier (on the query possibly split by the query-frontend) and in the chunks storage. 0 to disable.")
+	f.IntVar(&l.MaxChunksPerQuery, "querier.max-fetched-chunks-per-query", 2e6, "Maximum number of chunks that can be fetched in a single query from ingesters and long-term storage. This limit is enforced in the querier, ruler and store-gateway. 0 to disable.")
+	f.IntVar(&l.MaxFetchedSeriesPerQuery, "querier.max-fetched-series-per-query", 0, "The maximum number of unique series for which a query can fetch samples from each ingesters and storage. This limit is enforced in the querier and ruler. 0 to disable")
+	f.IntVar(&l.MaxFetchedChunkBytesPerQuery, "querier.max-fetched-chunk-bytes-per-query", 0, "The maximum size of all chunks in bytes that a query can fetch from each ingester and storage. This limit is enforced in the querier and ruler. 0 to disable.")
+	f.Var(&l.MaxQueryLength, "store.max-query-length", "Limit the query time range (end - start time). This limit is enforced in the query-frontend (on the received query), in the querier (on the query possibly split by the query-frontend) and ruler. 0 to disable.")
 	f.Var(&l.MaxQueryLookback, "querier.max-query-lookback", "Limit how long back data (series and metadata) can be queried, up until <lookback> duration ago. This limit is enforced in the query-frontend, querier and ruler. If the requested time range is outside the allowed range, the request will not fail but will be manipulated to only query data within the allowed time range. 0 to disable.")
 	f.IntVar(&l.MaxQueryParallelism, "querier.max-query-parallelism", 14, "Maximum number of split queries will be scheduled in parallel by the frontend.")
 	f.Var(&l.MaxLabelsQueryLength, "store.max-labels-query-length", "Limit the time range (end - start time) of series, label names and values queries. This limit is enforced in the querier. If the requested time range is outside the allowed range, the request will not fail but will be manipulated to only query data within the allowed time range. 0 to disable.")
 	f.IntVar(&l.LabelNamesAndValuesResultsMaxSizeBytes, "querier.label-names-and-values-results-max-size-bytes", 400*1024*1024, "Maximum size in bytes of distinct label names and values. When querier receives response from ingester, it merges the response with responses from other ingesters. This maximum size limit is applied to the merged(distinct) results. If the limit is reached, an error is returned.")
 	f.BoolVar(&l.CardinalityAnalysisEnabled, "querier.cardinality-analysis-enabled", false, "Enables endpoints used for cardinality analysis.")
 	f.IntVar(&l.LabelValuesMaxCardinalityLabelNamesPerRequest, "querier.label-values-max-cardinality-label-names-per-request", 100, "Maximum number of label names allowed to be queried in a single /api/v1/cardinality/label_values API call.")
-	f.IntVar(&l.CardinalityLimit, "store.cardinality-limit", 1e5, "Cardinality limit for index queries. This limit is ignored when using blocks storage. 0 to disable.")
 	_ = l.MaxCacheFreshness.Set("1m")
 	f.Var(&l.MaxCacheFreshness, "frontend.max-cache-freshness", "Most recent allowed cacheable result per-tenant, to prevent caching very recent results that might still be in flux.")
 	f.IntVar(&l.MaxQueriersPerTenant, "frontend.max-queriers-per-tenant", 0, "Maximum number of queriers that can handle requests for a single tenant. If set to 0 or value higher than number of available queriers, *all* queriers will handle requests for the tenant. Each frontend (or query-scheduler, if used) will select the same set of queriers for the same tenant (given that all queriers are connected to all frontends / query-schedulers). This option only works with queriers connecting to the query-frontend / query-scheduler, not when using downstream URL.")
-	f.IntVar(&l.QueryShardingTotalShards, "frontend.query-sharding-total-shards", 16, "The amount of shards to use when doing parallelisation via query sharding by tenant. 0 to disable query sharding for tenant. Query sharding implementation will adjust the number of query shards based on compactor shards used by split-and-merge compaction strategy. This allows querier to not search the blocks which cannot possibly have the series for given query shard.")
+	f.IntVar(&l.QueryShardingTotalShards, "frontend.query-sharding-total-shards", 16, "The amount of shards to use when doing parallelisation via query sharding by tenant. 0 to disable query sharding for tenant. Query sharding implementation will adjust the number of query shards based on compactor shards. This allows querier to not search the blocks which cannot possibly have the series for given query shard.")
 	f.IntVar(&l.QueryShardingMaxShardedQueries, "frontend.query-sharding-max-sharded-queries", 128, "The max number of sharded queries that can be run for a given received query. 0 to disable limit.")
 
 	f.Var(&l.RulerEvaluationDelay, "ruler.evaluation-delay-duration", "Duration to delay the evaluation of rules to ensure the underlying metrics have been pushed.")
-	f.IntVar(&l.RulerTenantShardSize, "ruler.tenant-shard-size", 0, "The tenant's shard size when the shuffle-sharding strategy is used by ruler. When this setting is specified in the per-tenant overrides, a value of 0 disables shuffle sharding for the tenant.")
-	f.IntVar(&l.RulerMaxRulesPerRuleGroup, "ruler.max-rules-per-rule-group", 0, "Maximum number of rules per rule group per-tenant. 0 to disable.")
-	f.IntVar(&l.RulerMaxRuleGroupsPerTenant, "ruler.max-rule-groups-per-tenant", 0, "Maximum number of rule groups per-tenant. 0 to disable.")
+	f.IntVar(&l.RulerTenantShardSize, "ruler.tenant-shard-size", 0, "The tenant's shard size when sharding is used by ruler. Value of 0 disables shuffle sharding for the tenant, and tenant rules will be sharded across all ruler replicas.")
+	f.IntVar(&l.RulerMaxRulesPerRuleGroup, "ruler.max-rules-per-rule-group", 20, "Maximum number of rules per rule group per-tenant. 0 to disable.")
+	f.IntVar(&l.RulerMaxRuleGroupsPerTenant, "ruler.max-rule-groups-per-tenant", 70, "Maximum number of rule groups per-tenant. 0 to disable.")
 
 	f.Var(&l.CompactorBlocksRetentionPeriod, "compactor.blocks-retention-period", "Delete blocks containing samples older than the specified retention period. 0 to disable.")
-	f.IntVar(&l.CompactorSplitAndMergeShards, "compactor.split-and-merge-shards", 0, "The number of shards to use when splitting blocks. This config option is used only when split-and-merge compaction strategy is in use. 0 to disable splitting but keep using the split-and-merge compaction strategy.")
-	f.IntVar(&l.CompactorSplitGroups, "compactor.split-groups", 4, "Number of groups that blocks for splitting should be grouped into. Each group of blocks is then split separately. Number of output split shards is controlled by -compactor.split-and-merge-shards. Only used when split-and-merge compaction strategy is in used.")
-	f.IntVar(&l.CompactorTenantShardSize, "compactor.compactor-tenant-shard-size", 1, "Max number of compactors that can compact blocks for single tenant. Only used when split-and-merge compaction strategy is in use. 0 to disable the limit and use all compactors.")
+	f.IntVar(&l.CompactorSplitAndMergeShards, "compactor.split-and-merge-shards", 0, "The number of shards to use when splitting blocks. 0 to disable splitting.")
+	f.IntVar(&l.CompactorSplitGroups, "compactor.split-groups", 1, "Number of groups that blocks for splitting should be grouped into. Each group of blocks is then split separately. Number of output split shards is controlled by -compactor.split-and-merge-shards.")
+	f.IntVar(&l.CompactorTenantShardSize, "compactor.compactor-tenant-shard-size", 0, "Max number of compactors that can compact blocks for single tenant. 0 to disable the limit and use all compactors.")
 
 	// Store-gateway.
-	f.IntVar(&l.StoreGatewayTenantShardSize, "store-gateway.tenant-shard-size", 0, "The tenant's shard size when the shuffle-sharding strategy is used. Must be set when the store-gateway sharding is enabled with the shuffle-sharding strategy. When this setting is specified in the per-tenant overrides, a value of 0 disables shuffle sharding for the tenant.")
+	f.IntVar(&l.StoreGatewayTenantShardSize, "store-gateway.tenant-shard-size", 0, "The tenant's shard size, used when store-gateway sharding is enabled. Value of 0 disables shuffle sharding for the tenant, that is all tenant blocks are sharded across all store-gateway replicas.")
 
 	// Alertmanager.
 	f.Var(&l.AlertmanagerReceiversBlockCIDRNetworks, "alertmanager.receivers-firewall-block-cidr-networks", "Comma-separated list of network CIDRs to block in Alertmanager receiver integrations.")
@@ -215,18 +183,6 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.AlertmanagerMaxDispatcherAggregationGroups, "alertmanager.max-dispatcher-aggregation-groups", 0, "Maximum number of aggregation groups in Alertmanager's dispatcher that a tenant can have. Each active aggregation group uses single goroutine. When the limit is reached, dispatcher will not dispatch alerts that belong to additional aggregation groups, but existing groups will keep working properly. 0 = no limit.")
 	f.IntVar(&l.AlertmanagerMaxAlertsCount, "alertmanager.max-alerts-count", 0, "Maximum number of alerts that a single user can have. Inserting more alerts will fail with a log message and metric increment. 0 = no limit.")
 	f.IntVar(&l.AlertmanagerMaxAlertsSizeBytes, "alertmanager.max-alerts-size-bytes", 0, "Maximum total size of alerts that a single user can have, alert size is the sum of the bytes of its labels, annotations and generatorURL. Inserting more alerts will fail with a log message and metric increment. 0 = no limit.")
-}
-
-// Validate the limits config and returns an error if the validation
-// doesn't pass
-func (l *Limits) Validate(shardByAllLabels bool) error {
-	// The ingester.max-global-series-per-user metric is not supported
-	// if shard-by-all-labels is disabled
-	if l.MaxGlobalSeriesPerUser > 0 && !shardByAllLabels {
-		return errMaxGlobalSeriesPerUserValidation
-	}
-
-	return nil
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -326,13 +282,6 @@ func (o *Overrides) LabelValuesMaxCardinalityLabelNamesPerRequest(userID string)
 	return o.getOverridesForUser(userID).LabelValuesMaxCardinalityLabelNamesPerRequest
 }
 
-// IngestionRateStrategy returns whether the ingestion rate limit should be individually applied
-// to each distributor instance (local) or evenly shared across the cluster (global).
-func (o *Overrides) IngestionRateStrategy() string {
-	// The ingestion rate strategy can't be overridden on a per-tenant basis
-	return o.defaultLimits.IngestionRateStrategy
-}
-
 // IngestionBurstSize returns the burst size for ingestion rate.
 func (o *Overrides) IngestionBurstSize(userID string) int {
 	return o.getOverridesForUser(userID).IngestionBurstSize
@@ -380,36 +329,10 @@ func (o *Overrides) MaxMetadataLength(userID string) int {
 	return o.getOverridesForUser(userID).MaxMetadataLength
 }
 
-// RejectOldSamples returns true when we should reject samples older than certain
-// age.
-func (o *Overrides) RejectOldSamples(userID string) bool {
-	return o.getOverridesForUser(userID).RejectOldSamples
-}
-
-// RejectOldSamplesMaxAge returns the age at which samples should be rejected.
-func (o *Overrides) RejectOldSamplesMaxAge(userID string) time.Duration {
-	return time.Duration(o.getOverridesForUser(userID).RejectOldSamplesMaxAge)
-}
-
 // CreationGracePeriod is misnamed, and actually returns how far into the future
 // we should accept samples.
 func (o *Overrides) CreationGracePeriod(userID string) time.Duration {
 	return time.Duration(o.getOverridesForUser(userID).CreationGracePeriod)
-}
-
-// MaxSeriesPerQuery returns the maximum number of series a query is allowed to hit.
-func (o *Overrides) MaxSeriesPerQuery(userID string) int {
-	return o.getOverridesForUser(userID).MaxSeriesPerQuery
-}
-
-// MaxLocalSeriesPerUser returns the maximum number of series a user is allowed to store in a single ingester.
-func (o *Overrides) MaxLocalSeriesPerUser(userID string) int {
-	return o.getOverridesForUser(userID).MaxLocalSeriesPerUser
-}
-
-// MaxLocalSeriesPerMetric returns the maximum number of series allowed per metric in a single ingester.
-func (o *Overrides) MaxLocalSeriesPerMetric(userID string) int {
-	return o.getOverridesForUser(userID).MaxLocalSeriesPerMetric
 }
 
 // MaxGlobalSeriesPerUser returns the maximum number of series a user is allowed to store across the cluster.
@@ -420,18 +343,6 @@ func (o *Overrides) MaxGlobalSeriesPerUser(userID string) int {
 // MaxGlobalSeriesPerMetric returns the maximum number of series allowed per metric across the cluster.
 func (o *Overrides) MaxGlobalSeriesPerMetric(userID string) int {
 	return o.getOverridesForUser(userID).MaxGlobalSeriesPerMetric
-}
-
-// MaxChunksPerQueryFromStore returns the maximum number of chunks allowed per query when fetching
-// chunks from the long-term storage.
-func (o *Overrides) MaxChunksPerQueryFromStore(userID string) int {
-	// If the new config option is set, then it should take precedence.
-	if value := o.getOverridesForUser(userID).MaxChunksPerQuery; value > 0 {
-		return value
-	}
-
-	// Fallback to the deprecated config option.
-	return o.getOverridesForUser(userID).MaxChunksPerQueryFromStore
 }
 
 func (o *Overrides) MaxChunksPerQuery(userID string) int {
@@ -499,26 +410,6 @@ func (o *Overrides) EnforceMetadataMetricName(userID string) bool {
 	return o.getOverridesForUser(userID).EnforceMetadataMetricName
 }
 
-// CardinalityLimit returns the maximum number of timeseries allowed in a query.
-func (o *Overrides) CardinalityLimit(userID string) int {
-	return o.getOverridesForUser(userID).CardinalityLimit
-}
-
-// MinChunkLength returns the minimum size of chunk that will be saved by ingesters
-func (o *Overrides) MinChunkLength(userID string) int {
-	return o.getOverridesForUser(userID).MinChunkLength
-}
-
-// MaxLocalMetricsWithMetadataPerUser returns the maximum number of metrics with metadata a user is allowed to store in a single ingester.
-func (o *Overrides) MaxLocalMetricsWithMetadataPerUser(userID string) int {
-	return o.getOverridesForUser(userID).MaxLocalMetricsWithMetadataPerUser
-}
-
-// MaxLocalMetadataPerMetric returns the maximum number of metadata allowed per metric in a single ingester.
-func (o *Overrides) MaxLocalMetadataPerMetric(userID string) int {
-	return o.getOverridesForUser(userID).MaxLocalMetadataPerMetric
-}
-
 // MaxGlobalMetricsWithMetadataPerUser returns the maximum number of metrics with metadata a user is allowed to store across the cluster.
 func (o *Overrides) MaxGlobalMetricsWithMetadataPerUser(userID string) int {
 	return o.getOverridesForUser(userID).MaxGlobalMetricsWithMetadataPerUser
@@ -539,8 +430,7 @@ func (o *Overrides) IngestionTenantShardSize(userID string) int {
 	return o.getOverridesForUser(userID).IngestionTenantShardSize
 }
 
-// CompactorTenantShardSize returns number of compactors that this user can use. Only used
-// for split-and-merge compaction strategy. 0 = all compactors.
+// CompactorTenantShardSize returns number of compactors that this user can use. 0 = all compactors.
 func (o *Overrides) CompactorTenantShardSize(userID string) int {
 	return o.getOverridesForUser(userID).CompactorTenantShardSize
 }

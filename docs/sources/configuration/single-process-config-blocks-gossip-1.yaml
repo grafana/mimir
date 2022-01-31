@@ -1,0 +1,99 @@
+
+# Configuration for running Mimir in single-process mode.
+# This should not be used in production.  It is only for getting started
+# and development.
+
+# Disable the requirement that every request to Mimir has a
+# X-Scope-OrgID header. `fake` will be substituted in instead.
+auth_enabled: false
+
+server:
+  http_listen_port: 9109
+  grpc_listen_port: 9195
+
+  # Configure the server to allow messages up to 100MB.
+  grpc_server_max_recv_msg_size: 104857600
+  grpc_server_max_send_msg_size: 104857600
+  grpc_server_max_concurrent_streams: 1000
+
+distributor:
+  ring:
+    kvstore:
+      store: memberlist
+  pool:
+    health_check_ingesters: true
+
+ingester_client:
+  grpc_client_config:
+    # Configure the client to allow messages up to 100MB.
+    max_recv_msg_size: 104857600
+    max_send_msg_size: 104857600
+    grpc_compression: gzip
+
+ingester:
+  lifecycler:
+    # The address to advertise for this ingester.  Will be autodiscovered by
+    # looking up address on eth0 or en0; can be specified if this fails.
+    address: 127.0.0.1
+    # Defaults to hostname, but we run both ingesters in this demonstration on the same machine.
+    id: "Ingester 1"
+
+    # We don't want to join immediately, but wait a bit to see other ingesters and their tokens first.
+    # It can take a while to have the full picture when using gossip
+    join_after: 10s
+
+    # To avoid generating same tokens by multiple ingesters, they can "observe" the ring for a while,
+    # after putting their own tokens into it. This is only useful when using gossip, since multiple
+    # ingesters joining at the same time can have conflicting tokens if they don't see each other yet.
+    observe_period: 10s
+    min_ready_duration: 0s
+    final_sleep: 5s
+    num_tokens: 512
+
+    # Use an in memory ring store, so we don't need to launch a Consul.
+    ring:
+      kvstore:
+        store: memberlist
+
+      replication_factor: 1
+
+memberlist:
+  bind_port: 7946
+  join_members:
+    - localhost:7947
+  abort_if_cluster_join_fails: false
+
+blocks_storage:
+  tsdb:
+    dir: /tmp/mimir/tsdb-ing1
+
+  bucket_store:
+    sync_dir: /tmp/mimir/tsdb-sync-querier1
+
+  # This is where Mimir uploads generated blocks. Queriers will fetch blocks from here as well.
+  # Mimir of course supports multiple options (S3, GCS, Azure), but for demonstration purposes
+  # we only use shared directory.
+  backend: filesystem # s3, gcs, azure, swift or filesystem are valid options
+  filesystem:
+    dir: /tmp/mimir/storage
+
+store_gateway:
+  sharding_enabled: true
+  sharding_ring:
+    kvstore:
+      store: memberlist
+
+ruler:
+  enable_api: true
+  ring:
+    num_tokens: 512
+    kvstore:
+      store: memberlist
+
+ruler_storage:
+  backend: local
+  local:
+    directory: /tmp/mimir/rules
+
+compactor:
+  data_dir: /tmp/mimir/compactor

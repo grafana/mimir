@@ -17,24 +17,6 @@ type ReadLifecycler interface {
 	HealthyInstancesCount() int
 }
 
-type localStrategy struct {
-	limits *validation.Overrides
-}
-
-func newLocalIngestionRateStrategy(limits *validation.Overrides) limiter.RateLimiterStrategy {
-	return &localStrategy{
-		limits: limits,
-	}
-}
-
-func (s *localStrategy) Limit(tenantID string) float64 {
-	return s.limits.IngestionRate(tenantID)
-}
-
-func (s *localStrategy) Burst(tenantID string) int {
-	return s.limits.IngestionBurstSize(tenantID)
-}
-
 type globalStrategy struct {
 	limits *validation.Overrides
 	ring   ReadLifecycler

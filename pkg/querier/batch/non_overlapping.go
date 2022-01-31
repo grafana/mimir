@@ -6,7 +6,7 @@
 package batch
 
 import (
-	promchunk "github.com/grafana/mimir/pkg/chunk/encoding"
+	"github.com/grafana/mimir/pkg/storage/chunk"
 )
 
 type nonOverlappingIterator struct {
@@ -61,7 +61,7 @@ func (it *nonOverlappingIterator) AtTime() int64 {
 	return it.iter.AtTime()
 }
 
-func (it *nonOverlappingIterator) Batch() promchunk.Batch {
+func (it *nonOverlappingIterator) Batch() chunk.Batch {
 	return it.iter.Batch()
 }
 

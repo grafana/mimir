@@ -37,9 +37,9 @@ import (
 	grpc_metadata "google.golang.org/grpc/metadata"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
-	"github.com/grafana/mimir/pkg/querier/series"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/bucket"
+	"github.com/grafana/mimir/pkg/storage/series"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
@@ -100,7 +100,7 @@ type BlocksStoreLimits interface {
 	bucket.TenantConfigProvider
 
 	MaxLabelsQueryLength(userID string) time.Duration
-	MaxChunksPerQueryFromStore(userID string) int
+	MaxChunksPerQuery(userID string) int
 	StoreGatewayTenantShardSize(userID string) int
 }
 
@@ -247,7 +247,7 @@ func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegatewa
 			return nil, errors.Wrap(err, "failed to create store-gateway ring client")
 		}
 
-		stores, err = newBlocksStoreReplicationSet(storesRing, gatewayCfg.ShardingStrategy, randomLoadBalancing, limits, querierCfg.StoreGatewayClient, logger, reg)
+		stores, err = newBlocksStoreReplicationSet(storesRing, randomLoadBalancing, limits, querierCfg.StoreGatewayClient, logger, reg)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to create store set")
 		}
@@ -452,7 +452,7 @@ func (q *blocksStoreQuerier) selectSorted(sp *storage.SelectHints, matchers ...*
 		resSeriesSets     = []storage.SeriesSet(nil)
 		resWarnings       = storage.Warnings(nil)
 
-		maxChunksLimit  = q.limits.MaxChunksPerQueryFromStore(q.userID)
+		maxChunksLimit  = q.limits.MaxChunksPerQuery(q.userID)
 		leftChunksLimit = maxChunksLimit
 
 		resultMtx sync.Mutex

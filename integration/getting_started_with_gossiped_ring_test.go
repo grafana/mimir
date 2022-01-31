@@ -12,13 +12,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/e2e"
+	e2edb "github.com/grafana/e2e/db"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/integration/e2e"
-	e2edb "github.com/grafana/mimir/integration/e2e/db"
 	"github.com/grafana/mimir/integration/e2emimir"
 )
 
@@ -32,8 +32,8 @@ func TestGettingStartedWithGossipedRing(t *testing.T) {
 	require.NoError(t, s.StartAndWaitReady(minio))
 
 	// Start Mimir components.
-	require.NoError(t, copyFileToSharedDir(s, "docs/configuration/single-process-config-blocks-gossip-1.yaml", "config1.yaml"))
-	require.NoError(t, copyFileToSharedDir(s, "docs/configuration/single-process-config-blocks-gossip-2.yaml", "config2.yaml"))
+	require.NoError(t, copyFileToSharedDir(s, "docs/sources/configuration/single-process-config-blocks-gossip-1.yaml", "config1.yaml"))
+	require.NoError(t, copyFileToSharedDir(s, "docs/sources/configuration/single-process-config-blocks-gossip-2.yaml", "config2.yaml"))
 
 	// We don't care for storage part too much here. Both Mimir instances will write new blocks to /tmp, but that's fine.
 	flags := map[string]string{

@@ -23,11 +23,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/user"
 
-	"github.com/grafana/mimir/pkg/chunk"
-	"github.com/grafana/mimir/pkg/chunk/encoding"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
-	"github.com/grafana/mimir/pkg/prom1/storage/metric"
+	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/chunkcompat"
 )
@@ -86,7 +84,7 @@ func TestDistributorQuerier_SelectShouldHonorQueryIngestersWithin(t *testing.T) 
 			distributor := &mockDistributor{}
 			distributor.On("Query", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Matrix{}, nil)
 			distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(&client.QueryStreamResponse{}, nil)
-			distributor.On("MetricsForLabelMatchers", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]metric.Metric{}, nil)
+			distributor.On("MetricsForLabelMatchers", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]model.Metric{}, nil)
 
 			ctx := user.InjectOrgID(context.Background(), "test")
 			queryable := newDistributorQueryable(distributor, nil, testData.queryIngestersWithin, true, log.NewNopLogger())
@@ -133,11 +131,15 @@ func TestIngesterStreaming(t *testing.T) {
 
 	// We need to make sure that there is at least one chunk present,
 	// else no series will be selected.
-	promChunk, err := encoding.NewForEncoding(encoding.Bigchunk)
+	promChunk, err := chunk.NewForEncoding(chunk.PrometheusXorChunk)
+	require.NoError(t, err)
+
+	// Ensure at least 1 sample is appended to the chunk otherwise it can't be marshalled.
+	_, err = promChunk.Add(model.SamplePair{Timestamp: mint, Value: 0})
 	require.NoError(t, err)
 
 	clientChunks, err := chunkcompat.ToChunks([]chunk.Chunk{
-		chunk.NewChunk("", 0, nil, promChunk, model.Earliest, model.Earliest),
+		chunk.NewChunk(nil, promChunk, model.Earliest, model.Earliest),
 	})
 	require.NoError(t, err)
 
@@ -281,10 +283,10 @@ func TestDistributorQuerier_LabelNames(t *testing.T) {
 		})
 
 		t.Run("queryLabelNamesWithMatchers=false", func(t *testing.T) {
-			metrics := []metric.Metric{
-				{Metric: model.Metric{"foo": "bar"}},
-				{Metric: model.Metric{"job": "baz"}},
-				{Metric: model.Metric{"job": "baz", "foo": "boom"}},
+			metrics := []model.Metric{
+				{"foo": "bar"},
+				{"job": "baz"},
+				{"job": "baz", "foo": "boom"},
 			}
 			d := &mockDistributor{}
 			d.On("MetricsForLabelMatchers", mock.Anything, model.Time(mint), model.Time(maxt), someMatchers).
@@ -310,11 +312,11 @@ func BenchmarkDistributorQueryable_Select(b *testing.B) {
 
 	// We need to make sure that there is at least one chunk present,
 	// else no series will be selected.
-	promChunk, err := encoding.NewForEncoding(encoding.Bigchunk)
+	promChunk, err := chunk.NewForEncoding(chunk.PrometheusXorChunk)
 	require.NoError(b, err)
 
 	clientChunks, err := chunkcompat.ToChunks([]chunk.Chunk{
-		chunk.NewChunk("", 0, nil, promChunk, model.Earliest, model.Earliest),
+		chunk.NewChunk(nil, promChunk, model.Earliest, model.Earliest),
 	})
 	require.NoError(b, err)
 
@@ -372,7 +374,7 @@ func verifySeries(t *testing.T, series storage.Series, l labels.Labels, samples 
 func convertToChunks(t *testing.T, samples []mimirpb.Sample) []client.Chunk {
 	// We need to make sure that there is at least one chunk present,
 	// else no series will be selected.
-	promChunk, err := encoding.NewForEncoding(encoding.Bigchunk)
+	promChunk, err := chunk.NewForEncoding(chunk.PrometheusXorChunk)
 	require.NoError(t, err)
 
 	for _, s := range samples {
@@ -382,7 +384,7 @@ func convertToChunks(t *testing.T, samples []mimirpb.Sample) []client.Chunk {
 	}
 
 	clientChunks, err := chunkcompat.ToChunks([]chunk.Chunk{
-		chunk.NewChunk("", 0, nil, promChunk, model.Time(samples[0].TimestampMs), model.Time(samples[len(samples)-1].TimestampMs)),
+		chunk.NewChunk(nil, promChunk, model.Time(samples[0].TimestampMs), model.Time(samples[len(samples)-1].TimestampMs)),
 	})
 	require.NoError(t, err)
 
@@ -409,9 +411,9 @@ func (m *mockDistributor) LabelNames(ctx context.Context, from, to model.Time, m
 	args := m.Called(ctx, from, to, matchers)
 	return args.Get(0).([]string), args.Error(1)
 }
-func (m *mockDistributor) MetricsForLabelMatchers(ctx context.Context, from, to model.Time, matchers ...*labels.Matcher) ([]metric.Metric, error) {
+func (m *mockDistributor) MetricsForLabelMatchers(ctx context.Context, from, to model.Time, matchers ...*labels.Matcher) ([]model.Metric, error) {
 	args := m.Called(ctx, from, to, matchers)
-	return args.Get(0).([]metric.Metric), args.Error(1)
+	return args.Get(0).([]model.Metric), args.Error(1)
 }
 
 func (m *mockDistributor) MetricsMetadata(ctx context.Context) ([]scrape.MetricMetadata, error) {

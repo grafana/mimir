@@ -26,7 +26,6 @@ import (
 	"gopkg.in/yaml.v2"
 
 	"github.com/grafana/mimir/pkg/mimir"
-	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
@@ -64,12 +63,13 @@ var testMode = false
 func main() {
 	var (
 		cfg                  mimir.Config
-		eventSampleRate      int
 		ballastBytes         int
 		mutexProfileFraction int
 		blockProfileRate     int
 		printVersion         bool
 		printModules         bool
+		printHelp            bool
+		printHelpAll         bool
 	)
 
 	configFile, expandENV := parseConfigFileParameter(os.Args[1:])
@@ -92,30 +92,37 @@ func main() {
 	flagext.IgnoredFlag(flag.CommandLine, configFileOption, "Configuration file to load.")
 	_ = flag.CommandLine.Bool(configExpandENV, false, "Expands ${var} or $var in config according to the values of the environment variables.")
 
-	flag.IntVar(&eventSampleRate, "event.sample-rate", 0, "How often to sample observability events (0 = never).")
 	flag.IntVar(&ballastBytes, "mem-ballast-size-bytes", 0, "Size of memory ballast to allocate.")
 	flag.IntVar(&mutexProfileFraction, "debug.mutex-profile-fraction", 0, "Fraction of mutex contention events that are reported in the mutex profile. On average 1/rate events are reported. 0 to disable.")
 	flag.IntVar(&blockProfileRate, "debug.block-profile-rate", 0, "Fraction of goroutine blocking events that are reported in the blocking profile. 1 to include every blocking event in the profile, 0 to disable.")
 	flag.BoolVar(&printVersion, "version", false, "Print application version and exit.")
 	flag.BoolVar(&printModules, "modules", false, "List available values that can be used as target.")
+	flag.BoolVar(&printHelp, "help", false, "Print basic help.")
+	flag.BoolVar(&printHelp, "h", false, "Print basic help.")
+	flag.BoolVar(&printHelpAll, "help-all", false, "Print help, also including advanced and experimental parameters.")
 
-	usage := flag.CommandLine.Usage
 	flag.CommandLine.Usage = func() { /* don't do anything by default, we will print usage ourselves, but only when requested. */ }
 	flag.CommandLine.Init(flag.CommandLine.Name(), flag.ContinueOnError)
 
-	err := flag.CommandLine.Parse(os.Args[1:])
-	if err == flag.ErrHelp {
-		// Print available parameters to stdout, so that users can grep/less it easily.
+	if err := flag.CommandLine.Parse(os.Args[1:]); err != nil {
+		fmt.Fprintln(flag.CommandLine.Output(), "Run with -help to get a list of available parameters")
+		if !testMode {
+			os.Exit(2)
+		}
+	}
+
+	if printHelp || printHelpAll {
+		// Print available parameters to stdout, so that users can grep/less them easily.
 		flag.CommandLine.SetOutput(os.Stdout)
-		usage()
+		if err := usage(&cfg, printHelpAll); err != nil {
+			fmt.Fprintf(os.Stderr, "error printing usage: %s\n", err)
+			os.Exit(1)
+		}
+
 		if !testMode {
 			os.Exit(2)
 		}
-	} else if err != nil {
-		fmt.Fprintln(flag.CommandLine.Output(), "Run with -help to get list of available parameters")
-		if !testMode {
-			os.Exit(2)
-		}
+		return
 	}
 
 	if printVersion {
@@ -125,8 +132,7 @@ func main() {
 
 	// Validate the config once both the config file has been loaded
 	// and CLI flags parsed.
-	err = cfg.Validate(util_log.Logger)
-	if err != nil {
+	if err := cfg.Validate(util_log.Logger); err != nil {
 		fmt.Fprintf(os.Stderr, "error validating config: %v\n", err)
 		if !testMode {
 			os.Exit(1)
@@ -151,8 +157,6 @@ func main() {
 
 	// Allocate a block of memory to alter GC behaviour. See https://github.com/golang/go/issues/23044
 	ballast := make([]byte, ballastBytes)
-
-	util.InitEvents(eventSampleRate)
 
 	// In testing mode skip JAEGER setup to avoid panic due to
 	// "duplicate metrics collector registration attempted"

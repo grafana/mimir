@@ -2,35 +2,54 @@
 // Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/integration/backward_compatibility_test.go
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
+//go:build requires_docker
 // +build requires_docker
 
 package integration
 
 import (
 	"fmt"
+	"os"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/grafana/e2e"
+	e2edb "github.com/grafana/e2e/db"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/integration/e2e"
-	e2edb "github.com/grafana/mimir/integration/e2e/db"
 	"github.com/grafana/mimir/integration/e2emimir"
 )
 
-var (
-	// If you change the image tag, remember to update it in the preloading done
-	// by GitHub Actions too (see .github/workflows/test-build-deploy.yml).
-	//nolint:unused
-	previousVersionImages = map[string]func(map[string]string) map[string]string{
-		"quay.io/cortexproject/cortex:v1.11.0": nil,
+// previousVersionImages returns a list of previous image version to test backwards
+// compatibility against. If MIMIR_PREVIOIS_IMAGES is set to a comma separted list of image versions,
+// then those will be used instead of the default versions. Note that the overriding of flags
+// is not currently possible when overriding the previous image versions via the environment variable.
+func previousVersionImages() map[string]func(map[string]string) map[string]string {
+	if os.Getenv("MIMIR_PREVIOUS_IMAGES") != "" {
+		overrideImageVersions := os.Getenv("MIMIR_PREVIOUS_IMAGES")
+		previousVersionImages := map[string]func(map[string]string) map[string]string{}
+
+		// Overriding of flags is not currently supported when overriding the list of images,
+		// so set all override functions to nil
+		for _, image := range strings.Split(overrideImageVersions, ",") {
+			previousVersionImages[image] = func(flags map[string]string) map[string]string {
+				flags["-store.engine"] = "blocks"
+				flags["-server.http-listen-port"] = "8080"
+				return flags
+			}
+		}
+
+		return previousVersionImages
 	}
-)
+
+	return DefaultPreviousVersionImages
+}
 
 func TestBackwardCompatibility(t *testing.T) {
-	for previousImage, flagsFn := range previousVersionImages {
+	for previousImage, flagsFn := range previousVersionImages() {
 		t.Run(fmt.Sprintf("Backward compatibility upgrading from %s", previousImage), func(t *testing.T) {
 			flags := BlocksStorageFlags()
 			if flagsFn != nil {
@@ -43,7 +62,7 @@ func TestBackwardCompatibility(t *testing.T) {
 }
 
 func TestNewDistributorsCanPushToOldIngestersWithReplication(t *testing.T) {
-	for previousImage, flagsFn := range previousVersionImages {
+	for previousImage, flagsFn := range previousVersionImages() {
 		t.Run(fmt.Sprintf("Backward compatibility upgrading from %s", previousImage), func(t *testing.T) {
 			flags := BlocksStorageFlags()
 			if flagsFn != nil {
@@ -85,7 +104,8 @@ func runBackwardCompatibilityTest(t *testing.T, previousImage string, flagsForOl
 	assert.NoError(t, s.StartAndWaitReady(distributor, ingester))
 
 	// Wait until the distributor has updated the ring.
-	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
+	// The distributor should have 512 tokens for the ingester ring and 1 for the distributor ring
+	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512+1), "cortex_ring_tokens_total"))
 
 	// Push some series to Mimir.
 	now := time.Now()
@@ -105,7 +125,8 @@ func runBackwardCompatibilityTest(t *testing.T, previousImage string, flagsForOl
 	require.NoError(t, s.StartAndWaitReady(ingester))
 
 	// Wait until the distributor has updated the ring.
-	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
+	// The distributor should have 512 tokens for the ingester ring and 1 for the distributor ring
+	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512+1), "cortex_ring_tokens_total"))
 
 	checkQueries(t,
 		consul,
@@ -142,7 +163,8 @@ func runNewDistributorsCanPushToOldIngestersWithReplication(t *testing.T, previo
 	require.NoError(t, s.StartAndWaitReady(distributor, ingester1, ingester2, ingester3))
 
 	// Wait until the distributor has updated the ring.
-	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(1536), "cortex_ring_tokens_total"))
+	// The distributor should have 512 tokens for each ingester and 1 for the distributor ring
+	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(3*512+1), "cortex_ring_tokens_total"))
 
 	// Push some series to Mimir.
 	now := time.Now()

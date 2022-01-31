@@ -237,7 +237,9 @@ func TestTSDBMetrics(t *testing.T) {
 
 			# HELP cortex_ingester_tsdb_exemplar_exemplars_appended_total Total number of TSDB exemplars appended.
 			# TYPE cortex_ingester_tsdb_exemplar_exemplars_appended_total counter
-			cortex_ingester_tsdb_exemplar_exemplars_appended_total 300
+			cortex_ingester_tsdb_exemplar_exemplars_appended_total{user="user1"} 100
+			cortex_ingester_tsdb_exemplar_exemplars_appended_total{user="user2"} 100
+			cortex_ingester_tsdb_exemplar_exemplars_appended_total{user="user3"} 100
 
 			# HELP cortex_ingester_tsdb_exemplar_exemplars_in_storage Number of TSDB exemplars currently in storage.
 			# TYPE cortex_ingester_tsdb_exemplar_exemplars_in_storage gauge
@@ -461,7 +463,8 @@ func TestTSDBMetricsWithRemoval(t *testing.T) {
 
 			# HELP cortex_ingester_tsdb_exemplar_exemplars_appended_total Total number of TSDB exemplars appended.
 			# TYPE cortex_ingester_tsdb_exemplar_exemplars_appended_total counter
-			cortex_ingester_tsdb_exemplar_exemplars_appended_total 300
+			cortex_ingester_tsdb_exemplar_exemplars_appended_total{user="user1"} 100
+			cortex_ingester_tsdb_exemplar_exemplars_appended_total{user="user2"} 100
 
 			# HELP cortex_ingester_tsdb_exemplar_exemplars_in_storage Number of TSDB exemplars currently in storage.
 			# TYPE cortex_ingester_tsdb_exemplar_exemplars_in_storage gauge

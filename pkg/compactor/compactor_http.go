@@ -42,11 +42,6 @@ func writeMessage(w http.ResponseWriter, message string) {
 }
 
 func (c *MultitenantCompactor) RingHandler(w http.ResponseWriter, req *http.Request) {
-	if !c.compactorCfg.ShardingEnabled {
-		writeMessage(w, "Compactor has no ring because sharding is disabled.")
-		return
-	}
-
 	if c.State() != services.Running {
 		// we cannot read the ring before MultitenantCompactor is in Running state,
 		// because that would lead to race condition.

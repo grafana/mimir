@@ -49,21 +49,15 @@ const (
 	// PartialUploadThresholdAge is a time after partial block is assumed aborted and ready to be cleaned.
 	// Keep it long as it is based on block creation time not upload start time.
 	PartialUploadThresholdAge = 2 * 24 * time.Hour
-
-	CompactionStrategyDefault    = "default"
-	CompactionStrategySplitMerge = "split-and-merge"
 )
 
 var (
 	errInvalidBlockRanges                 = "compactor block range periods should be divisible by the previous one, but %s is not divisible by %s"
 	errInvalidCompactionOrder             = fmt.Errorf("unsupported compaction order (supported values: %s)", strings.Join(CompactionOrders, ", "))
-	errUnsupportedCompactionOrder         = "the %s compaction strategy does not support %s order"
 	errInvalidMaxOpeningBlocksConcurrency = fmt.Errorf("invalid max-opening-blocks-concurrency value, must be positive")
 	errInvalidMaxClosingBlocksConcurrency = fmt.Errorf("invalid max-closing-blocks-concurrency value, must be positive")
 	errInvalidSymbolFlushersConcurrency   = fmt.Errorf("invalid symbols-flushers-concurrency value, must be positive")
 	RingOp                                = ring.NewOp([]ring.InstanceState{ring.ACTIVE}, nil)
-
-	compactionStrategies = []string{CompactionStrategyDefault, CompactionStrategySplitMerge}
 )
 
 // BlocksGrouperFactory builds and returns the grouper to use to compact a tenant's blocks.
@@ -86,35 +80,32 @@ type BlocksCompactorFactory func(
 
 // Config holds the MultitenantCompactor config.
 type Config struct {
-	BlockRanges           mimir_tsdb.DurationList `yaml:"block_ranges"`
-	BlockSyncConcurrency  int                     `yaml:"block_sync_concurrency"`
-	MetaSyncConcurrency   int                     `yaml:"meta_sync_concurrency"`
-	ConsistencyDelay      time.Duration           `yaml:"consistency_delay"`
+	BlockRanges           mimir_tsdb.DurationList `yaml:"block_ranges" category:"advanced"`
+	BlockSyncConcurrency  int                     `yaml:"block_sync_concurrency" category:"advanced"`
+	MetaSyncConcurrency   int                     `yaml:"meta_sync_concurrency" category:"advanced"`
+	ConsistencyDelay      time.Duration           `yaml:"consistency_delay" category:"advanced"`
 	DataDir               string                  `yaml:"data_dir"`
-	CompactionInterval    time.Duration           `yaml:"compaction_interval"`
-	CompactionRetries     int                     `yaml:"compaction_retries"`
-	CompactionConcurrency int                     `yaml:"compaction_concurrency"`
-	CleanupInterval       time.Duration           `yaml:"cleanup_interval"`
-	CleanupConcurrency    int                     `yaml:"cleanup_concurrency"`
-	DeletionDelay         time.Duration           `yaml:"deletion_delay"`
-	TenantCleanupDelay    time.Duration           `yaml:"tenant_cleanup_delay"`
-	MaxCompactionTime     time.Duration           `yaml:"max_compaction_time"`
+	CompactionInterval    time.Duration           `yaml:"compaction_interval" category:"advanced"`
+	CompactionRetries     int                     `yaml:"compaction_retries" category:"advanced"`
+	CompactionConcurrency int                     `yaml:"compaction_concurrency" category:"advanced"`
+	CleanupInterval       time.Duration           `yaml:"cleanup_interval" category:"advanced"`
+	CleanupConcurrency    int                     `yaml:"cleanup_concurrency" category:"advanced"`
+	DeletionDelay         time.Duration           `yaml:"deletion_delay" category:"advanced"`
+	TenantCleanupDelay    time.Duration           `yaml:"tenant_cleanup_delay" category:"advanced"`
+	MaxCompactionTime     time.Duration           `yaml:"max_compaction_time" category:"advanced"`
 
 	// Compactor concurrency options
-	MaxOpeningBlocksConcurrency int `yaml:"max_opening_blocks_concurrency"` // Number of goroutines opening blocks before compaction.
-	MaxClosingBlocksConcurrency int `yaml:"max_closing_blocks_concurrency"` // Max number of blocks that can be closed concurrently during split compaction. Note that closing of newly compacted block uses a lot of memory for writing index.
-	SymbolsFlushersConcurrency  int `yaml:"symbols_flushers_concurrency"`   // Number of symbols flushers used when doing split compaction.
+	MaxOpeningBlocksConcurrency int `yaml:"max_opening_blocks_concurrency" category:"advanced"` // Number of goroutines opening blocks before compaction.
+	MaxClosingBlocksConcurrency int `yaml:"max_closing_blocks_concurrency" category:"advanced"` // Max number of blocks that can be closed concurrently during split compaction. Note that closing of newly compacted block uses a lot of memory for writing index.
+	SymbolsFlushersConcurrency  int `yaml:"symbols_flushers_concurrency" category:"advanced"`   // Number of symbols flushers used when doing split compaction.
 
-	EnabledTenants  flagext.StringSliceCSV `yaml:"enabled_tenants"`
-	DisabledTenants flagext.StringSliceCSV `yaml:"disabled_tenants"`
+	EnabledTenants  flagext.StringSliceCSV `yaml:"enabled_tenants" category:"advanced"`
+	DisabledTenants flagext.StringSliceCSV `yaml:"disabled_tenants" category:"advanced"`
 
 	// Compactors sharding.
-	ShardingEnabled bool       `yaml:"sharding_enabled"`
-	ShardingRing    RingConfig `yaml:"sharding_ring"`
+	ShardingRing RingConfig `yaml:"sharding_ring"`
 
-	// Compaction strategy.
-	CompactionStrategy  string `yaml:"compaction_strategy"`
-	CompactionJobsOrder string `yaml:"compaction_jobs_order"`
+	CompactionJobsOrder string `yaml:"compaction_jobs_order" category:"advanced"`
 
 	// No need to add options to customize the retry backoff,
 	// given the defaults should be fine, but allow to override
@@ -146,9 +137,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&cfg.CompactionConcurrency, "compactor.compaction-concurrency", 1, "Max number of concurrent compactions running.")
 	f.DurationVar(&cfg.CleanupInterval, "compactor.cleanup-interval", 15*time.Minute, "How frequently compactor should run blocks cleanup and maintenance, as well as update the bucket index.")
 	f.IntVar(&cfg.CleanupConcurrency, "compactor.cleanup-concurrency", 20, "Max number of tenants for which blocks cleanup and maintenance should run concurrently.")
-	f.BoolVar(&cfg.ShardingEnabled, "compactor.sharding-enabled", false, "Shard tenants across multiple compactor instances. Sharding is required if you run multiple compactor instances, in order to coordinate compactions and avoid race conditions leading to the same tenant blocks simultaneously compacted by different instances.")
-	f.StringVar(&cfg.CompactionStrategy, "compactor.compaction-strategy", CompactionStrategyDefault, fmt.Sprintf("The compaction strategy to use. Supported values are: %s.", strings.Join(compactionStrategies, ", ")))
-	f.StringVar(&cfg.CompactionJobsOrder, "compactor.compaction-jobs-order", CompactionOrderOldestFirst, fmt.Sprintf("The sorting to use when deciding which compaction jobs should run first for a given tenant. Changing this setting is not supported by the default compaction strategy. Supported values are: %s.", strings.Join(CompactionOrders, ", ")))
+	f.StringVar(&cfg.CompactionJobsOrder, "compactor.compaction-jobs-order", CompactionOrderOldestFirst, fmt.Sprintf("The sorting to use when deciding which compaction jobs should run first for a given tenant. Supported values are: %s.", strings.Join(CompactionOrders, ", ")))
 	f.DurationVar(&cfg.DeletionDelay, "compactor.deletion-delay", 12*time.Hour, "Time before a block marked for deletion is deleted from bucket. "+
 		"If not 0, blocks will be marked for deletion and compactor component will permanently delete blocks marked for deletion from the bucket. "+
 		"If 0, blocks will be deleted straight away. Note that deleting blocks immediately can cause query failures.")
@@ -180,16 +169,8 @@ func (cfg *Config) Validate() error {
 		return errInvalidSymbolFlushersConcurrency
 	}
 
-	if !util.StringsContain(compactionStrategies, cfg.CompactionStrategy) {
-		return fmt.Errorf("unsupported compaction strategy (supported values: %s)", strings.Join(compactionStrategies, ", "))
-	}
-
 	if !util.StringsContain(CompactionOrders, cfg.CompactionJobsOrder) {
 		return errInvalidCompactionOrder
-	}
-
-	if cfg.CompactionStrategy == CompactionStrategyDefault && cfg.CompactionJobsOrder != CompactionOrderOldestFirst {
-		return fmt.Errorf(errUnsupportedCompactionOrder, cfg.CompactionStrategy, cfg.CompactionJobsOrder)
 	}
 
 	return nil
@@ -202,17 +183,14 @@ type ConfigProvider interface {
 	// CompactorBlocksRetentionPeriod returns the retention period for a given user.
 	CompactorBlocksRetentionPeriod(user string) time.Duration
 
-	// CompactorSplitAndMergeShards returns the number of shards to use when splitting blocks
-	// (used only when split-and-merge compaction strategy is enabled).
+	// CompactorSplitAndMergeShards returns the number of shards to use when splitting blocks.
 	CompactorSplitAndMergeShards(userID string) int
 
-	// CompactorSplitGroupsCount returns the number of groups that blocks used for splitting should
+	// CompactorSplitGroups returns the number of groups that blocks used for splitting should
 	// be grouped into. Different groups are then split by different jobs.
-	// Used only when split-and-merge compaction strategy is enabled.
 	CompactorSplitGroups(userID string) int
 
-	// CompactorTenantShardSize returns number of compactors that this user can use. Only used
-	// for split-and-merge compaction strategy. 0 = all compactors.
+	// CompactorTenantShardSize returns number of compactors that this user can use. 0 = all compactors.
 	CompactorTenantShardSize(userID string) int
 }
 
@@ -281,10 +259,8 @@ func NewMultitenantCompactor(compactorCfg Config, storageCfg mimir_tsdb.BlocksSt
 	// Configure the compactor and grouper factories.
 	if compactorCfg.BlocksGrouperFactory != nil && compactorCfg.BlocksCompactorFactory != nil {
 		// Nothing to do because it was already set by a downstream project.
-	} else if compactorCfg.CompactionStrategy == CompactionStrategySplitMerge {
-		configureSplitAndMergeCompactor(&compactorCfg)
 	} else {
-		configureDefaultCompactor(&compactorCfg)
+		configureSplitAndMergeCompactor(&compactorCfg)
 	}
 
 	blocksGrouperFactory := compactorCfg.BlocksGrouperFactory
@@ -409,81 +385,70 @@ func (c *MultitenantCompactor) starting(ctx context.Context) error {
 	c.bucketClient = bucketindex.BucketWithGlobalMarkers(c.bucketClient)
 
 	// Initialize the compactors ring if sharding is enabled.
-	if c.compactorCfg.ShardingEnabled {
-		lifecyclerCfg := c.compactorCfg.ShardingRing.ToLifecyclerConfig()
-		c.ringLifecycler, err = ring.NewLifecycler(lifecyclerCfg, ring.NewNoopFlushTransferer(), "compactor", CompactorRingKey, false, c.logger, prometheus.WrapRegistererWithPrefix("cortex_", c.registerer))
-		if err != nil {
-			return errors.Wrap(err, "unable to initialize compactor ring lifecycler")
-		}
+	lifecyclerCfg := c.compactorCfg.ShardingRing.ToLifecyclerConfig()
+	c.ringLifecycler, err = ring.NewLifecycler(lifecyclerCfg, ring.NewNoopFlushTransferer(), "compactor", CompactorRingKey, false, c.logger, prometheus.WrapRegistererWithPrefix("cortex_", c.registerer))
+	if err != nil {
+		return errors.Wrap(err, "unable to initialize compactor ring lifecycler")
+	}
 
-		c.ring, err = ring.New(lifecyclerCfg.RingConfig, "compactor", CompactorRingKey, c.logger, prometheus.WrapRegistererWithPrefix("cortex_", c.registerer))
-		if err != nil {
-			return errors.Wrap(err, "unable to initialize compactor ring")
-		}
+	c.ring, err = ring.New(lifecyclerCfg.RingConfig, "compactor", CompactorRingKey, c.logger, prometheus.WrapRegistererWithPrefix("cortex_", c.registerer))
+	if err != nil {
+		return errors.Wrap(err, "unable to initialize compactor ring")
+	}
 
-		c.ringSubservices, err = services.NewManager(c.ringLifecycler, c.ring)
-		if err == nil {
-			c.ringSubservicesWatcher = services.NewFailureWatcher()
-			c.ringSubservicesWatcher.WatchManager(c.ringSubservices)
+	c.ringSubservices, err = services.NewManager(c.ringLifecycler, c.ring)
+	if err == nil {
+		c.ringSubservicesWatcher = services.NewFailureWatcher()
+		c.ringSubservicesWatcher.WatchManager(c.ringSubservices)
 
-			err = services.StartManagerAndAwaitHealthy(ctx, c.ringSubservices)
-		}
+		err = services.StartManagerAndAwaitHealthy(ctx, c.ringSubservices)
+	}
 
-		if err != nil {
-			return errors.Wrap(err, "unable to start compactor ring dependencies")
-		}
+	if err != nil {
+		return errors.Wrap(err, "unable to start compactor ring dependencies")
+	}
 
-		// If sharding is enabled we should wait until this instance is
-		// ACTIVE within the ring. This MUST be done before starting the
-		// any other component depending on the users scanner, because the
-		// users scanner depends on the ring (to check whether an user belongs
-		// to this shard or not).
-		level.Info(c.logger).Log("msg", "waiting until compactor is ACTIVE in the ring")
+	// If sharding is enabled we should wait until this instance is
+	// ACTIVE within the ring. This MUST be done before starting the
+	// any other component depending on the users scanner, because the
+	// users scanner depends on the ring (to check whether an user belongs
+	// to this shard or not).
+	level.Info(c.logger).Log("msg", "waiting until compactor is ACTIVE in the ring")
 
-		ctxWithTimeout, cancel := context.WithTimeout(ctx, c.compactorCfg.ShardingRing.WaitActiveInstanceTimeout)
-		defer cancel()
-		if err := ring.WaitInstanceState(ctxWithTimeout, c.ring, c.ringLifecycler.ID, ring.ACTIVE); err != nil {
-			level.Error(c.logger).Log("msg", "compactor failed to become ACTIVE in the ring", "err", err)
-			return err
-		}
-		level.Info(c.logger).Log("msg", "compactor is ACTIVE in the ring")
+	ctxWithTimeout, cancel := context.WithTimeout(ctx, c.compactorCfg.ShardingRing.WaitActiveInstanceTimeout)
+	defer cancel()
+	if err := ring.WaitInstanceState(ctxWithTimeout, c.ring, c.ringLifecycler.ID, ring.ACTIVE); err != nil {
+		level.Error(c.logger).Log("msg", "compactor failed to become ACTIVE in the ring", "err", err)
+		return err
+	}
+	level.Info(c.logger).Log("msg", "compactor is ACTIVE in the ring")
 
-		// In the event of a cluster cold start or scale up of 2+ compactor instances at the same
-		// time, we may end up in a situation where each new compactor instance starts at a slightly
-		// different time and thus each one starts with a different state of the ring. It's better
-		// to just wait the ring stability for a short time.
-		if c.compactorCfg.ShardingRing.WaitStabilityMinDuration > 0 {
-			minWaiting := c.compactorCfg.ShardingRing.WaitStabilityMinDuration
-			maxWaiting := c.compactorCfg.ShardingRing.WaitStabilityMaxDuration
+	// In the event of a cluster cold start or scale up of 2+ compactor instances at the same
+	// time, we may end up in a situation where each new compactor instance starts at a slightly
+	// different time and thus each one starts with a different state of the ring. It's better
+	// to just wait the ring stability for a short time.
+	if c.compactorCfg.ShardingRing.WaitStabilityMinDuration > 0 {
+		minWaiting := c.compactorCfg.ShardingRing.WaitStabilityMinDuration
+		maxWaiting := c.compactorCfg.ShardingRing.WaitStabilityMaxDuration
 
-			level.Info(c.logger).Log("msg", "waiting until compactor ring topology is stable", "min_waiting", minWaiting.String(), "max_waiting", maxWaiting.String())
-			if err := ring.WaitRingStability(ctx, c.ring, RingOp, minWaiting, maxWaiting); err != nil {
-				level.Warn(c.logger).Log("msg", "compactor ring topology is not stable after the max waiting time, proceeding anyway")
-			} else {
-				level.Info(c.logger).Log("msg", "compactor ring topology is stable")
-			}
+		level.Info(c.logger).Log("msg", "waiting until compactor ring topology is stable", "min_waiting", minWaiting.String(), "max_waiting", maxWaiting.String())
+		if err := ring.WaitRingStability(ctx, c.ring, RingOp, minWaiting, maxWaiting); err != nil {
+			level.Warn(c.logger).Log("msg", "compactor ring topology is not stable after the max waiting time, proceeding anyway")
+		} else {
+			level.Info(c.logger).Log("msg", "compactor ring topology is stable")
 		}
 	}
 
 	allowedTenants := util.NewAllowedTenants(c.compactorCfg.EnabledTenants, c.compactorCfg.DisabledTenants)
-	switch {
-	case !c.compactorCfg.ShardingEnabled:
-		c.shardingStrategy = newNoShardingStrategy(allowedTenants)
-	case c.compactorCfg.CompactionStrategy == CompactionStrategyDefault:
-		c.shardingStrategy = newDefaultShardingStrategy(allowedTenants, c.ring, c.ringLifecycler)
-	case c.compactorCfg.CompactionStrategy == CompactionStrategySplitMerge:
-		c.shardingStrategy = newSplitAndMergeShardingStrategy(allowedTenants, c.ring, c.ringLifecycler, c.cfgProvider)
-	default:
-		// Should not happen, but just in case.
-		return errors.Errorf("invalid configuration: sharding is enabled, but using unknown compaction strategy: %s", c.compactorCfg.CompactionStrategy)
-	}
+	c.shardingStrategy = newSplitAndMergeShardingStrategy(allowedTenants, c.ring, c.ringLifecycler, c.cfgProvider)
 
 	// Create the blocks cleaner (service).
 	c.blocksCleaner = NewBlocksCleaner(BlocksCleanerConfig{
-		DeletionDelay:      c.compactorCfg.DeletionDelay,
-		CleanupInterval:    util.DurationWithJitter(c.compactorCfg.CleanupInterval, 0.1),
-		CleanupConcurrency: c.compactorCfg.CleanupConcurrency,
-		TenantCleanupDelay: c.compactorCfg.TenantCleanupDelay,
+		DeletionDelay:           c.compactorCfg.DeletionDelay,
+		CleanupInterval:         util.DurationWithJitter(c.compactorCfg.CleanupInterval, 0.1),
+		CleanupConcurrency:      c.compactorCfg.CleanupConcurrency,
+		TenantCleanupDelay:      c.compactorCfg.TenantCleanupDelay,
+		DeleteBlocksConcurrency: defaultDeleteBlocksConcurrency,
 	}, c.bucketClient, c.shardingStrategy.blocksCleanerOwnUser, c.cfgProvider, c.parentLogger, c.registerer)
 
 	// Start blocks cleaner asynchronously, don't wait until initial cleanup is finished.
@@ -778,68 +743,7 @@ type shardingStrategy interface {
 	ownJob(job *Job) (bool, error)
 }
 
-// No sharding of users. Each compactor will process any user.
-type noShardingStrategy struct {
-	allowedTenants *util.AllowedTenants
-}
-
-func newNoShardingStrategy(allowedTenants *util.AllowedTenants) *noShardingStrategy {
-	return &noShardingStrategy{allowedTenants: allowedTenants}
-}
-
-func (n *noShardingStrategy) ownUser(userID string) bool {
-	return n.allowedTenants.IsAllowed(userID)
-}
-
-func (n *noShardingStrategy) blocksCleanerOwnUser(userID string) (bool, error) {
-	return n.ownUser(userID), nil
-}
-
-func (n *noShardingStrategy) compactorOwnUser(userID string) (bool, error) {
-	return n.ownUser(userID), nil
-}
-
-func (n *noShardingStrategy) ownJob(job *Job) (bool, error) {
-	return n.ownUser(job.UserID()), nil
-}
-
-// defaultShardingStrategy is used with default compaction strategy. Only one compactor
-// can own the user. There is no shuffle sharding.
-type defaultShardingStrategy struct {
-	allowedTenants *util.AllowedTenants
-	ring           *ring.Ring
-	ringLifecycler *ring.Lifecycler
-}
-
-func newDefaultShardingStrategy(allowedTenants *util.AllowedTenants, ring *ring.Ring, ringLifecycler *ring.Lifecycler) *defaultShardingStrategy {
-	return &defaultShardingStrategy{
-		allowedTenants: allowedTenants,
-		ring:           ring,
-		ringLifecycler: ringLifecycler,
-	}
-}
-
-func (d *defaultShardingStrategy) ownUser(userID string) (bool, error) {
-	if !d.allowedTenants.IsAllowed(userID) {
-		return false, nil
-	}
-
-	return instanceOwnsTokenInRing(d.ring, d.ringLifecycler.Addr, userID)
-}
-
-func (d *defaultShardingStrategy) blocksCleanerOwnUser(userID string) (bool, error) {
-	return d.ownUser(userID)
-}
-
-func (d *defaultShardingStrategy) compactorOwnUser(userID string) (bool, error) {
-	return d.ownUser(userID)
-}
-
-func (d *defaultShardingStrategy) ownJob(job *Job) (bool, error) {
-	return d.ownUser(job.UserID())
-}
-
-// splitAndMergeShardingStrategy is used with split-and-merge compaction strategy.
+// splitAndMergeShardingStrategy is used by split-and-merge compactor when configured with sharding.
 // All compactors from user's shard own the user for compaction purposes, and plan jobs.
 // Each job is only owned and executed by single compactor.
 // Only one of compactors from user's shard will do cleanup.
@@ -870,7 +774,7 @@ func (s *splitAndMergeShardingStrategy) blocksCleanerOwnUser(userID string) (boo
 	return instanceOwnsTokenInRing(r, s.ringLifecycler.Addr, userID)
 }
 
-// When using split-and-merge compaction strategy, ALL compactors should plan jobs for all users.
+// ALL compactors should plan jobs for all users.
 func (s *splitAndMergeShardingStrategy) compactorOwnUser(userID string) (bool, error) {
 	if !s.allowedTenants.IsAllowed(userID) {
 		return false, nil

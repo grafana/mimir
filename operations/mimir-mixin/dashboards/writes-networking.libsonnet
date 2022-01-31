@@ -1,8 +1,8 @@
 local utils = import 'mixin-utils/utils.libsonnet';
 
 (import 'dashboard-utils.libsonnet') {
-  'cortex-writes-networking.json':
-    ($.dashboard('Cortex / Writes Networking') + { uid: '681cd62b680b7154811fe73af55dcfd4' })
+  'mimir-writes-networking.json':
+    ($.dashboard('Writes networking') + { uid: '681cd62b680b7154811fe73af55dcfd4' })
     .addClusterSelectorTemplates(false)
     .addRow($.jobNetworkingRow('Gateway', 'gateway'))
     .addRow($.jobNetworkingRow('Distributor', 'distributor'))

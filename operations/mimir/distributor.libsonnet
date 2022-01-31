@@ -10,10 +10,7 @@
     {
       target: 'distributor',
 
-      'validation.reject-old-samples': true,
-      'validation.reject-old-samples.max-age': '12h',
-      'runtime-config.file': '/etc/cortex/overrides.yaml',
-      'distributor.remote-timeout': '20s',
+      'runtime-config.file': '%s/overrides.yaml' % $._config.overrides_configmap_mountpoint,
 
       'distributor.ha-tracker.enable': true,
       'distributor.ha-tracker.enable-for-all-users': true,
@@ -26,6 +23,7 @@
       // around 1.25G, reducing the 99%ile.
       'mem-ballast-size-bytes': 1 << 30,  // 1GB
 
+      'server.http-listen-port': $._config.server_http_port,
       'server.grpc.keepalive.max-connection-age': '2m',
       'server.grpc.keepalive.max-connection-age-grace': '5m',
       'server.grpc.keepalive.max-connection-idle': '1m',
@@ -56,8 +54,8 @@
 
   distributor_deployment:
     deployment.new('distributor', 3, [$.distributor_container], $.distributor_deployment_labels) +
-    (if $._config.cortex_distributor_allow_multiple_replicas_on_same_node then {} else $.util.antiAffinity) +
-    $.util.configVolumeMount($._config.overrides_configmap, '/etc/cortex') +
+    (if $._config.distributor_allow_multiple_replicas_on_same_node then {} else $.util.antiAffinity) +
+    $.util.configVolumeMount($._config.overrides_configmap, $._config.overrides_configmap_mountpoint) +
     deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge(5) +
     deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(1),
 

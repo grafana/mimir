@@ -101,7 +101,7 @@ func newStoreGatewayClientPool(discovery client.PoolServiceDiscovery, clientConf
 }
 
 type ClientConfig struct {
-	TLSEnabled bool             `yaml:"tls_enabled"`
+	TLSEnabled bool             `yaml:"tls_enabled" category:"advanced"`
 	TLS        tls.ClientConfig `yaml:",inline"`
 }
 

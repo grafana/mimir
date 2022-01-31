@@ -14,15 +14,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/e2e"
+	e2ecache "github.com/grafana/e2e/cache"
+	e2edb "github.com/grafana/e2e/db"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/integration/e2e"
-	e2ecache "github.com/grafana/mimir/integration/e2e/cache"
-	e2edb "github.com/grafana/mimir/integration/e2e/db"
 	"github.com/grafana/mimir/integration/e2emimir"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/util"
@@ -30,42 +30,37 @@ import (
 
 func TestQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T) {
 	tests := map[string]struct {
-		blocksShardingStrategy string // Empty means sharding is disabled.
-		tenantShardSize        int
-		indexCacheBackend      string
-		bucketIndexEnabled     bool
-		queryShardingEnabled   bool
+		tenantShardSize      int
+		indexCacheBackend    string
+		bucketIndexEnabled   bool
+		queryShardingEnabled bool
 	}{
-		"blocks default sharding, inmemory index cache": {
-			blocksShardingStrategy: "default",
-			indexCacheBackend:      tsdb.IndexCacheBackendInMemory,
+		"shard size 0, inmemory index cache": {
+			tenantShardSize:   0,
+			indexCacheBackend: tsdb.IndexCacheBackendInMemory,
 		},
-		"blocks default sharding, memcached index cache": {
-			blocksShardingStrategy: "default",
-			indexCacheBackend:      tsdb.IndexCacheBackendMemcached,
+		"shard size 0, memcached index cache": {
+			tenantShardSize:   0,
+			indexCacheBackend: tsdb.IndexCacheBackendMemcached,
 		},
-		"blocks shuffle sharding, memcached index cache": {
-			blocksShardingStrategy: "shuffle-sharding",
-			tenantShardSize:        1,
-			indexCacheBackend:      tsdb.IndexCacheBackendMemcached,
+		"shard size 1, memcached index cache": {
+			tenantShardSize:   1,
+			indexCacheBackend: tsdb.IndexCacheBackendMemcached,
 		},
-		"blocks default sharding, inmemory index cache, bucket index enabled": {
-			blocksShardingStrategy: "default",
-			indexCacheBackend:      tsdb.IndexCacheBackendInMemory,
-			bucketIndexEnabled:     true,
+		"shard size 0, inmemory index cache, bucket index enabled": {
+			indexCacheBackend:  tsdb.IndexCacheBackendInMemory,
+			bucketIndexEnabled: true,
 		},
-		"blocks shuffle sharding, memcached index cache, bucket index enabled": {
-			blocksShardingStrategy: "shuffle-sharding",
-			tenantShardSize:        1,
-			indexCacheBackend:      tsdb.IndexCacheBackendMemcached,
-			bucketIndexEnabled:     true,
+		"shard size 1, memcached index cache, bucket index enabled": {
+			tenantShardSize:    1,
+			indexCacheBackend:  tsdb.IndexCacheBackendMemcached,
+			bucketIndexEnabled: true,
 		},
-		"blocks shuffle sharding, ingester gRPC streaming enabled, memcached index cache, bucket index enabled, query sharding enabled": {
-			blocksShardingStrategy: "shuffle-sharding",
-			tenantShardSize:        1,
-			indexCacheBackend:      tsdb.IndexCacheBackendMemcached,
-			bucketIndexEnabled:     true,
-			queryShardingEnabled:   true,
+		"shard size 1, ingester gRPC streaming enabled, memcached index cache, bucket index enabled, query sharding enabled": {
+			tenantShardSize:      1,
+			indexCacheBackend:    tsdb.IndexCacheBackendMemcached,
+			bucketIndexEnabled:   true,
+			queryShardingEnabled: true,
 		},
 	}
 
@@ -95,7 +90,8 @@ func TestQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T) {
 
 	// Wait until both the distributor and querier have updated the ring. The querier will also watch
 	// the store-gateway ring if blocks sharding is enabled.
-	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
+	// The distributor should have 512 tokens for the ingester ring and 1 for the distributor ring
+	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512+1), "cortex_ring_tokens_total"))
 
 	// Push some series to Mimir.
 	writeClient, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", "", "user-1")
@@ -153,12 +149,11 @@ func TestQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T) {
 				"-blocks-storage.bucket-store.sync-interval":                   "1s",
 				"-blocks-storage.bucket-store.index-cache.backend":             testCfg.indexCacheBackend,
 				"-blocks-storage.bucket-store.bucket-index.enabled":            strconv.FormatBool(testCfg.bucketIndexEnabled),
-				"-store-gateway.sharding-enabled":                              strconv.FormatBool(testCfg.blocksShardingStrategy != ""),
-				"-store-gateway.sharding-strategy":                             testCfg.blocksShardingStrategy,
+				"-store-gateway.sharding-enabled":                              strconv.FormatBool(true),
 				"-store-gateway.tenant-shard-size":                             fmt.Sprintf("%d", testCfg.tenantShardSize),
 				"-querier.query-store-for-labels-enabled":                      "true",
 				"-frontend.query-stats-enabled":                                "true",
-				"-query-frontend.parallelize-shardable-queries":                strconv.FormatBool(testCfg.queryShardingEnabled),
+				"-frontend.parallelize-shardable-queries":                      strconv.FormatBool(testCfg.queryShardingEnabled),
 			})
 
 			// Start store-gateways.
@@ -177,11 +172,6 @@ func TestQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T) {
 			flags["-querier.frontend-address"] = queryFrontend.NetworkGRPCEndpoint()
 
 			// Start the querier with configuring store-gateway addresses if sharding is disabled.
-			if testCfg.blocksShardingStrategy == "" {
-				flags = mergeFlags(flags, map[string]string{
-					"-querier.store-gateway-addresses": strings.Join([]string{storeGateway1.NetworkGRPCEndpoint(), storeGateway2.NetworkGRPCEndpoint()}, ","),
-				})
-			}
 			querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags, "")
 			t.Cleanup(func() { require.NoError(t, s.Stop(querier)) })
 			require.NoError(t, s.StartAndWaitReady(querier))
@@ -189,11 +179,7 @@ func TestQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T) {
 
 			// Wait until the querier has updated the ring. The querier will also watch
 			// the store-gateway ring if blocks sharding is enabled.
-			if testCfg.blocksShardingStrategy != "" {
-				require.NoError(t, querier.WaitSumMetrics(e2e.Equals(float64(512+(512*storeGateways.NumInstances()))), "cortex_ring_tokens_total"))
-			} else {
-				require.NoError(t, querier.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
-			}
+			require.NoError(t, querier.WaitSumMetrics(e2e.Equals(float64(512+(512*storeGateways.NumInstances()))), "cortex_ring_tokens_total"))
 
 			if !testCfg.bucketIndexEnabled {
 				// Wait until the querier has discovered the uploaded blocks.
@@ -203,15 +189,11 @@ func TestQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T) {
 			// Wait until the store-gateway has synched the new uploaded blocks. When sharding is enabled
 			// we don't known which store-gateway instance will synch the blocks, so we need to wait on
 			// metrics extracted from all instances.
-			if testCfg.blocksShardingStrategy != "" {
-				require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(2), "cortex_bucket_store_blocks_loaded"))
-			} else {
-				require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(float64(2*storeGateways.NumInstances())), "cortex_bucket_store_blocks_loaded"))
-			}
+			require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(2), "cortex_bucket_store_blocks_loaded"))
 
 			// Check how many tenants have been discovered and synced by store-gateways.
 			require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(float64(1*storeGateways.NumInstances())), "cortex_bucket_stores_tenants_discovered"))
-			if testCfg.blocksShardingStrategy == "shuffle-sharding" {
+			if testCfg.tenantShardSize > 0 {
 				require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(float64(1)), "cortex_bucket_stores_tenants_synced"))
 			} else {
 				require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(float64(1*storeGateways.NumInstances())), "cortex_bucket_stores_tenants_synced"))
@@ -388,12 +370,17 @@ func TestQuerierWithBlocksStorageRunningInSingleBinaryMode(t *testing.T) {
 				"-ring.store":      "consul",
 				"-consul.hostname": consul.NetworkHTTPEndpoint(),
 				// Distributor.
-				"-distributor.replication-factor": strconv.FormatInt(seriesReplicationFactor, 10),
+				"-distributor.replication-factor":   strconv.FormatInt(seriesReplicationFactor, 10),
+				"-distributor.ring.store":           "consul",
+				"-distributor.ring.consul.hostname": consul.NetworkHTTPEndpoint(),
 				// Store-gateway.
 				"-store-gateway.sharding-enabled":                 strconv.FormatBool(testCfg.blocksShardingEnabled),
 				"-store-gateway.sharding-ring.store":              "consul",
 				"-store-gateway.sharding-ring.consul.hostname":    consul.NetworkHTTPEndpoint(),
 				"-store-gateway.sharding-ring.replication-factor": "1",
+				"-compactor.ring.store":                           "consul",
+				"-compactor.ring.consul.hostname":                 consul.NetworkHTTPEndpoint(),
+				"-compactor.cleanup-interval":                     "2s", // Update bucket index often.
 			})
 
 			// Start Mimir replicas.
@@ -405,6 +392,8 @@ func TestQuerierWithBlocksStorageRunningInSingleBinaryMode(t *testing.T) {
 			// Wait until Mimir replicas have updated the ring state.
 			for _, replica := range cluster.Instances() {
 				numTokensPerInstance := 512 // Ingesters ring.
+				numTokensPerInstance++      // Distributors ring
+				numTokensPerInstance += 512 // Compactor ring.
 				if testCfg.blocksShardingEnabled {
 					numTokensPerInstance += 512 * 2 // Store-gateway ring (read both by the querier and store-gateway).
 				}
@@ -450,12 +439,7 @@ func TestQuerierWithBlocksStorageRunningInSingleBinaryMode(t *testing.T) {
 			require.NoError(t, cluster.WaitSumMetrics(e2e.Equals(float64(3*cluster.NumInstances())), "cortex_ingester_memory_series_created_total"))
 			require.NoError(t, cluster.WaitSumMetrics(e2e.Equals(float64(2*cluster.NumInstances())), "cortex_ingester_memory_series_removed_total"))
 
-			if testCfg.bucketIndexEnabled {
-				// Start the compactor to have the bucket index created before querying. We need to run the compactor
-				// as a separate service because it's currently not part of the single binary.
-				compactor := e2emimir.NewCompactor("compactor", consul.NetworkHTTPEndpoint(), flags, "")
-				require.NoError(t, s.StartAndWaitReady(compactor))
-			} else {
+			if !testCfg.bucketIndexEnabled {
 				// Wait until the querier has discovered the uploaded blocks (discovered both by the querier and store-gateway).
 				require.NoError(t, cluster.WaitSumMetricsWithOptions(e2e.Equals(float64(2*cluster.NumInstances()*2)), []string{"cortex_blocks_meta_synced"}, e2e.WithLabelMatchers(
 					labels.MustNewMatcher(labels.MatchEqual, "component", "querier"))))
@@ -769,7 +753,8 @@ func TestQuerierWithBlocksStorageOnMissingBlocksFromStorage(t *testing.T) {
 	require.NoError(t, s.StartAndWaitReady(distributor, ingester))
 
 	// Wait until the distributor has updated the ring.
-	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
+	// The distributor should have 512 tokens for the ingester ring and 1 for the distributor ring
+	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512+1), "cortex_ring_tokens_total"))
 
 	// Push some series to Mimir.
 	c, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", "", "user-1")
@@ -926,7 +911,8 @@ func TestHashCollisionHandling(t *testing.T) {
 	require.NoError(t, s.StartAndWaitReady(distributor, ingester))
 
 	// Wait until the distributor has updated the ring.
-	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
+	// The distributor should have 512 tokens for the ingester ring and 1 for the distributor ring
+	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512+1), "cortex_ring_tokens_total"))
 
 	// Push a series for each user to Mimir.
 	now := time.Now()

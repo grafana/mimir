@@ -106,6 +106,12 @@ func TestMultitenantAlertmanagerConfig_Validate(t *testing.T) {
 			setup:    func(t *testing.T, cfg *MultitenantAlertmanagerConfig, storageCfg *alertstore.Config) {},
 			expected: nil,
 		},
+		"should fail with empty external URL": {
+			setup: func(t *testing.T, cfg *MultitenantAlertmanagerConfig, storageCfg *alertstore.Config) {
+				require.NoError(t, cfg.ExternalURL.Set(""))
+			},
+			expected: errEmptyExternalURL,
+		},
 		"should fail if persistent interval is 0": {
 			setup: func(t *testing.T, cfg *MultitenantAlertmanagerConfig, storageCfg *alertstore.Config) {
 				cfg.Persister.Interval = 0
@@ -811,17 +817,6 @@ func createFile(t *testing.T, path string) string {
 	require.NoError(t, err)
 	require.NoError(t, f.Close())
 	return path
-}
-
-func TestMultitenantAlertmanager_NoExternalURL(t *testing.T) {
-	amConfig := mockAlertmanagerConfig(t)
-	amConfig.ExternalURL = flagext.URLValue{} // no external URL
-
-	// Create the Multitenant Alertmanager.
-	reg := prometheus.NewPedanticRegistry()
-	_, err := NewMultitenantAlertmanager(amConfig, nil, nil, log.NewNopLogger(), reg)
-
-	require.EqualError(t, err, "unable to create Alertmanager because the external URL has not been configured")
 }
 
 func TestMultitenantAlertmanager_ServeHTTP(t *testing.T) {

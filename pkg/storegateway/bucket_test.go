@@ -64,7 +64,7 @@ import (
 	"github.com/grafana/mimir/pkg/compactor"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
-	storecache "github.com/grafana/mimir/pkg/storage/tsdb/cache"
+	"github.com/grafana/mimir/pkg/storegateway/indexcache"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -1049,7 +1049,7 @@ type cacheNotExpectingToStoreLabelNames struct {
 	t *testing.T
 }
 
-func (c cacheNotExpectingToStoreLabelNames) StoreLabelNames(ctx context.Context, userID string, blockID ulid.ULID, matchersKey storecache.LabelMatchersKey, v []byte) {
+func (c cacheNotExpectingToStoreLabelNames) StoreLabelNames(ctx context.Context, userID string, blockID ulid.ULID, matchersKey indexcache.LabelMatchersKey, v []byte) {
 	c.t.Fatalf("StoreLabelNames should not be called")
 }
 
@@ -1150,7 +1150,7 @@ type cacheNotExpectingToStoreLabelValues struct {
 	t *testing.T
 }
 
-func (c cacheNotExpectingToStoreLabelValues) StoreLabelValues(ctx context.Context, userID string, blockID ulid.ULID, labelName string, matchersKey storecache.LabelMatchersKey, v []byte) {
+func (c cacheNotExpectingToStoreLabelValues) StoreLabelValues(ctx context.Context, userID string, blockID ulid.ULID, labelName string, matchersKey indexcache.LabelMatchersKey, v []byte) {
 	c.t.Fatalf("StoreLabelValues should not be called")
 }
 
@@ -1377,8 +1377,8 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 	})
 }
 
-func newInMemoryIndexCache(t *testing.T) storecache.IndexCache {
-	cache, err := storecache.NewInMemoryIndexCacheWithConfig(log.NewNopLogger(), nil, storecache.DefaultInMemoryIndexCacheConfig)
+func newInMemoryIndexCache(t *testing.T) indexcache.IndexCache {
+	cache, err := indexcache.NewInMemoryIndexCacheWithConfig(log.NewNopLogger(), nil, indexcache.DefaultInMemoryIndexCacheConfig)
 	require.NoError(t, err)
 	return cache
 }
@@ -1422,7 +1422,7 @@ func (w *contextNotifyingOnDoneWaiting) Done() <-chan struct{} {
 
 type corruptedExpandedPostingsCache struct{ noopCache }
 
-func (c corruptedExpandedPostingsCache) FetchExpandedPostings(ctx context.Context, userID string, blockID ulid.ULID, key storecache.LabelMatchersKey) ([]byte, bool) {
+func (c corruptedExpandedPostingsCache) FetchExpandedPostings(ctx context.Context, userID string, blockID ulid.ULID, key indexcache.LabelMatchersKey) ([]byte, bool) {
 	return []byte(codecHeaderSnappy + "corrupted"), true
 }
 
@@ -1441,7 +1441,7 @@ type cacheNotExpectingToStoreExpandedPostings struct {
 	t *testing.T
 }
 
-func (c cacheNotExpectingToStoreExpandedPostings) StoreExpandedPostings(ctx context.Context, userID string, blockID ulid.ULID, key storecache.LabelMatchersKey, v []byte) {
+func (c cacheNotExpectingToStoreExpandedPostings) StoreExpandedPostings(ctx context.Context, userID string, blockID ulid.ULID, key indexcache.LabelMatchersKey, v []byte) {
 	c.t.Fatalf("StoreExpandedPostings should not be called")
 }
 
@@ -1844,7 +1844,7 @@ func TestBucketSeries_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 	chunkPool, err := pool.NewBucketedBytes(chunkBytesPoolMinSize, chunkBytesPoolMaxSize, 2, 100e7)
 	assert.NoError(t, err)
 
-	indexCache, err := storecache.NewInMemoryIndexCacheWithConfig(logger, nil, storecache.InMemoryIndexCacheConfig{
+	indexCache, err := indexcache.NewInMemoryIndexCacheWithConfig(logger, nil, indexcache.InMemoryIndexCacheConfig{
 		MaxItemSize: 3000,
 		// This is the exact size of cache needed for our *single request*.
 		// This is limited in order to make sure we test evictions.
@@ -2088,7 +2088,7 @@ func TestSeries_ErrorUnmarshallingRequestHints(t *testing.T) {
 	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil, nil)
 	assert.NoError(t, err)
 
-	indexCache, err := storecache.NewInMemoryIndexCacheWithConfig(logger, nil, storecache.InMemoryIndexCacheConfig{})
+	indexCache, err := indexcache.NewInMemoryIndexCacheWithConfig(logger, nil, indexcache.InMemoryIndexCacheConfig{})
 	assert.NoError(t, err)
 
 	store, err := NewBucketStore(
@@ -2181,7 +2181,7 @@ func TestSeries_BlockWithMultipleChunks(t *testing.T) {
 	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil, nil)
 	assert.NoError(t, err)
 
-	indexCache, err := storecache.NewInMemoryIndexCacheWithConfig(logger, nil, storecache.InMemoryIndexCacheConfig{})
+	indexCache, err := indexcache.NewInMemoryIndexCacheWithConfig(logger, nil, indexcache.InMemoryIndexCacheConfig{})
 	assert.NoError(t, err)
 
 	store, err := NewBucketStore(
@@ -2367,7 +2367,7 @@ func setupStoreForHintsTest(t *testing.T) (test.TB, *BucketStore, []*storepb.Ser
 	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil, nil)
 	assert.NoError(tb, err)
 
-	indexCache, err := storecache.NewInMemoryIndexCacheWithConfig(logger, nil, storecache.InMemoryIndexCacheConfig{})
+	indexCache, err := indexcache.NewInMemoryIndexCacheWithConfig(logger, nil, indexcache.InMemoryIndexCacheConfig{})
 	assert.NoError(tb, err)
 
 	store, err := NewBucketStore(
@@ -2691,7 +2691,7 @@ func prepareBucket(b *testing.B, resolutionLevel compactor.ResolutionLevel) (*bu
 	// Create an index header reader.
 	indexHeaderReader, err := indexheader.NewBinaryReader(ctx, logger, bkt, tmpDir, blockMeta.ULID, mimir_tsdb.DefaultPostingOffsetInMemorySampling)
 	assert.NoError(b, err)
-	indexCache, err := storecache.NewInMemoryIndexCacheWithConfig(logger, nil, storecache.DefaultInMemoryIndexCacheConfig)
+	indexCache, err := indexcache.NewInMemoryIndexCacheWithConfig(logger, nil, indexcache.DefaultInMemoryIndexCacheConfig)
 	assert.NoError(b, err)
 
 	// Create a bucket block with only the dependencies we need for the benchmark.
@@ -2906,7 +2906,7 @@ type cacheNotExpectingToStoreSeries struct {
 	t *testing.T
 }
 
-func (c cacheNotExpectingToStoreSeries) StoreSeries(ctx context.Context, userID string, blockID ulid.ULID, matchersKey storecache.LabelMatchersKey, shard *sharding.ShardSelector, v []byte) {
+func (c cacheNotExpectingToStoreSeries) StoreSeries(ctx context.Context, userID string, blockID ulid.ULID, matchersKey indexcache.LabelMatchersKey, shard *sharding.ShardSelector, v []byte) {
 	c.t.Fatalf("StoreSeries should not be called")
 }
 

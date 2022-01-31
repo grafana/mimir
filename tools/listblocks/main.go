@@ -4,33 +4,25 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
 	"os"
 	"os/signal"
-	"path"
-	"sort"
-	"sync"
 	"syscall"
 	"text/tabwriter"
 	"time"
 
-	"github.com/dustin/go-humanize"
 	gokitlog "github.com/go-kit/log"
-	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/flagext"
 	"github.com/oklog/ulid"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/thanos-io/thanos/pkg/block"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
-	"github.com/thanos-io/thanos/pkg/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
-	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/listblocks"
 )
 
 type config struct {
@@ -85,7 +77,7 @@ func main() {
 		loadMetasMinTime = time.Time(cfg.minTime)
 	}
 
-	metas, deletedTimes, err := loadMetaFilesAndDeletionMarkers(ctx, bkt, cfg.userID, cfg.showDeleted, loadMetasMinTime)
+	metas, deletedTimes, err := listblocks.LoadMetaFilesAndDeletionMarkers(ctx, bkt, cfg.userID, cfg.showDeleted, loadMetasMinTime)
 	if err != nil {
 		log.Fatalln("failed to read block metadata:", err)
 	}
@@ -93,149 +85,10 @@ func main() {
 	printMetas(metas, deletedTimes, cfg)
 }
 
-func loadMetaFilesAndDeletionMarkers(ctx context.Context, bkt objstore.Bucket, user string, showDeleted bool, minTime time.Time) (map[ulid.ULID]*metadata.Meta, map[ulid.ULID]time.Time, error) {
-	deletedBlocks := map[ulid.ULID]bool{}
-	deletionMarkerFiles := []string(nil)
-
-	// Find blocks marked for deletion
-	err := bkt.Iter(ctx, path.Join(user, bucketindex.MarkersPathname), func(s string) error {
-		if id, ok := bucketindex.IsBlockDeletionMarkFilename(path.Base(s)); ok {
-			deletedBlocks[id] = true
-			deletionMarkerFiles = append(deletionMarkerFiles, s)
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, nil, err
-	}
-
-	metaPaths := []string(nil)
-	err = bkt.Iter(ctx, user, func(s string) error {
-		if id, ok := block.IsBlockDir(s); ok {
-			if !showDeleted && deletedBlocks[id] {
-				return nil
-			}
-
-			// Block's ULID is typically higher than min/max time of the block,
-			// unless somebody was ingesting data with timestamps in the future.
-			if !minTime.IsZero() && ulid.Time(id.Time()).Before(minTime) {
-				return nil
-			}
-
-			metaPaths = append(metaPaths, path.Join(s, "meta.json"))
-		}
-		return nil
-	})
-
-	if err != nil {
-		return nil, nil, err
-	}
-
-	var deletionTimes map[ulid.ULID]time.Time
-	if showDeleted {
-		deletionTimes, err = fetchDeletionTimes(ctx, bkt, deletionMarkerFiles)
-		if err != nil {
-			return nil, nil, err
-		}
-	}
-
-	metas, err := fetchMetas(ctx, bkt, metaPaths)
-	return metas, deletionTimes, err
-}
-
-const concurrencyLimit = 32
-
-func fetchDeletionTimes(ctx context.Context, bkt objstore.Bucket, deletionMarkers []string) (map[ulid.ULID]time.Time, error) {
-	mu := sync.Mutex{}
-	times := map[ulid.ULID]time.Time{}
-
-	return times, concurrency.ForEach(ctx, concurrency.CreateJobsFromStrings(deletionMarkers), concurrencyLimit, func(ctx context.Context, job interface{}) error {
-		r, err := bkt.Get(ctx, job.(string))
-		if err != nil {
-			if bkt.IsObjNotFoundErr(err) {
-				return nil
-			}
-
-			return err
-		}
-		defer r.Close()
-
-		dec := json.NewDecoder(r)
-
-		m := metadata.DeletionMark{}
-		if err := dec.Decode(&m); err != nil {
-			return err
-		}
-
-		mu.Lock()
-		times[m.ID] = time.Unix(m.DeletionTime, 0)
-		mu.Unlock()
-
-		return nil
-	})
-}
-
-func fetchMetas(ctx context.Context, bkt objstore.Bucket, metaFiles []string) (map[ulid.ULID]*metadata.Meta, error) {
-	mu := sync.Mutex{}
-	metas := map[ulid.ULID]*metadata.Meta{}
-
-	return metas, concurrency.ForEach(ctx, concurrency.CreateJobsFromStrings(metaFiles), concurrencyLimit, func(ctx context.Context, job interface{}) error {
-		r, err := bkt.Get(ctx, job.(string))
-		if err != nil {
-			if bkt.IsObjNotFoundErr(err) {
-				return nil
-			}
-
-			return err
-		}
-		defer r.Close()
-
-		m, err := metadata.Read(r)
-		if err != nil {
-			return err
-		}
-
-		mu.Lock()
-		metas[m.ULID] = m
-		mu.Unlock()
-
-		return nil
-	})
-}
-
 // nolint:errcheck
 //goland:noinspection GoUnhandledErrorResult
 func printMetas(metas map[ulid.ULID]*metadata.Meta, deletedTimes map[ulid.ULID]time.Time, cfg config) {
-	var blocks []*metadata.Meta
-
-	for _, b := range metas {
-		blocks = append(blocks, b)
-	}
-
-	sort.Slice(blocks, func(i, j int) bool {
-		// By min-time
-		if blocks[i].MinTime != blocks[j].MinTime {
-			return blocks[i].MinTime < blocks[j].MinTime
-		}
-
-		// Duration
-		duri := blocks[i].MaxTime - blocks[i].MinTime
-		durj := blocks[j].MaxTime - blocks[j].MinTime
-		if duri != durj {
-			return duri < durj
-		}
-
-		// Compactor shard
-		shardi := blocks[i].Thanos.Labels[tsdb.CompactorShardIDExternalLabel]
-		shardj := blocks[j].Thanos.Labels[tsdb.CompactorShardIDExternalLabel]
-
-		if shardi != "" && shardj != "" && shardi != shardj {
-			return shardi < shardj
-		}
-
-		// ULID time.
-		return blocks[i].ULID.Time() < blocks[j].ULID.Time()
-	})
+	blocks := listblocks.SortBlocks(metas)
 
 	tabber := tabwriter.NewWriter(os.Stdout, 1, 4, 3, ' ', 0)
 	defer tabber.Flush()
@@ -307,7 +160,7 @@ func printMetas(metas map[ulid.ULID]*metadata.Meta, deletedTimes map[ulid.ULID]t
 		}
 
 		if cfg.showBlockSize {
-			fmt.Fprintf(tabber, "%s\t", getFormattedBlockSize(b))
+			fmt.Fprintf(tabber, "%s\t", listblocks.GetFormattedBlockSize(b))
 		}
 
 		if cfg.showLabels {
@@ -334,17 +187,4 @@ func printMetas(metas map[ulid.ULID]*metadata.Meta, deletedTimes map[ulid.ULID]t
 
 		fmt.Fprintln(tabber)
 	}
-}
-
-func getFormattedBlockSize(b *metadata.Meta) string {
-	if len(b.Thanos.Files) == 0 {
-		return ""
-	}
-
-	size := uint64(0)
-	for _, f := range b.Thanos.Files {
-		size += uint64(f.SizeBytes)
-	}
-
-	return humanize.IBytes(size)
 }

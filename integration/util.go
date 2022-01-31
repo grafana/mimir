@@ -15,7 +15,7 @@ import (
 
 	"github.com/pkg/errors"
 
-	"github.com/grafana/mimir/integration/e2e"
+	"github.com/grafana/e2e"
 )
 
 var (

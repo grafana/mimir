@@ -1,3 +1,4 @@
+cmd/cortextool/cortextool
 cmd/test-exporter/test-exporter
 cmd/mimir/mimir
 cmd/query-tee/query-tee
@@ -5,6 +6,7 @@ cmd/thanosconvert/thanosconvert
 .uptodate
 .pkg
 .cache
+.swp
 docker-images/
 website/public
 website/resources

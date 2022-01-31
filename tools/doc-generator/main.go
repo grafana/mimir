@@ -21,19 +21,16 @@ import (
 
 	"github.com/grafana/mimir/pkg/alertmanager"
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
-	"github.com/grafana/mimir/pkg/chunk"
-	"github.com/grafana/mimir/pkg/chunk/cache"
-	"github.com/grafana/mimir/pkg/chunk/purger"
-	"github.com/grafana/mimir/pkg/chunk/storage"
+	"github.com/grafana/mimir/pkg/cache"
 	"github.com/grafana/mimir/pkg/compactor"
 	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/flusher"
 	"github.com/grafana/mimir/pkg/frontend"
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimir"
 	"github.com/grafana/mimir/pkg/querier"
-	"github.com/grafana/mimir/pkg/querier/queryrange"
 	querier_worker "github.com/grafana/mimir/pkg/querier/worker"
 	"github.com/grafana/mimir/pkg/ruler"
 	"github.com/grafana/mimir/pkg/ruler/rulestore"
@@ -80,7 +77,7 @@ var (
 		},
 		{
 			name:       "query_range_config",
-			structType: reflect.TypeOf(queryrange.Config{}),
+			structType: reflect.TypeOf(querymiddleware.Config{}),
 			desc:       "The query_range_config configures the query splitting and caching in the query-frontend.",
 		},
 		{
@@ -104,19 +101,9 @@ var (
 			desc:       "The alertmanager_storage_config configures the alertmanager storage backend.",
 		},
 		{
-			name:       "storage_config",
-			structType: reflect.TypeOf(storage.Config{}),
-			desc:       "The storage_config configures where the data is stored (chunks storage engine).",
-		},
-		{
 			name:       "flusher_config",
 			structType: reflect.TypeOf(flusher.Config{}),
 			desc:       "The flusher_config configures the WAL flusher target, used to manually run one-time flushes when scaling down ingesters.",
-		},
-		{
-			name:       "chunk_store_config",
-			structType: reflect.TypeOf(chunk.StoreConfig{}),
-			desc:       "The chunk_store_config configures how the data is stored (chunks storage engine).",
 		},
 		{
 			name:       "ingester_client_config",
@@ -149,26 +136,6 @@ var (
 			desc:       "The limits_config configures default and per-tenant limits imposed by services (ie. distributor, ingester, ...).",
 		},
 		{
-			name:       "redis_config",
-			structType: reflect.TypeOf(cache.RedisConfig{}),
-			desc:       "The redis_config configures the Redis backend cache.",
-		},
-		{
-			name:       "memcached_config",
-			structType: reflect.TypeOf(cache.MemcachedConfig{}),
-			desc:       "The memcached_config block configures how data is stored in Memcached (ie. expiration).",
-		},
-		{
-			name:       "memcached_client_config",
-			structType: reflect.TypeOf(cache.MemcachedClientConfig{}),
-			desc:       "The memcached_client_config configures the client used to connect to Memcached.",
-		},
-		{
-			name:       "fifo_cache_config",
-			structType: reflect.TypeOf(cache.FifoCacheConfig{}),
-			desc:       "The fifo_cache_config configures the local in-memory cache.",
-		},
-		{
 			name:       "blocks_storage_config",
 			structType: reflect.TypeOf(tsdb.BlocksStorageConfig{}),
 			desc:       "The blocks_storage_config configures the blocks storage.",
@@ -176,22 +143,22 @@ var (
 		{
 			name:       "compactor_config",
 			structType: reflect.TypeOf(compactor.Config{}),
-			desc:       "The compactor_config configures the compactor for the blocks storage.",
+			desc:       "The compactor_config configures the compactor service.",
 		},
 		{
 			name:       "store_gateway_config",
 			structType: reflect.TypeOf(storegateway.Config{}),
-			desc:       "The store_gateway_config configures the store-gateway service used by the blocks storage.",
-		},
-		{
-			name:       "purger_config",
-			structType: reflect.TypeOf(purger.Config{}),
-			desc:       "The purger_config configures the purger which takes care of delete requests.",
+			desc:       "The store_gateway_config configures the store-gateway service.",
 		},
 		{
 			name:       "s3_sse_config",
 			structType: reflect.TypeOf(s3.SSEConfig{}),
 			desc:       "The s3_sse_config configures the S3 server-side encryption.",
+		},
+		{
+			name:       "memcached_config",
+			structType: reflect.TypeOf(cache.MemcachedConfig{}),
+			desc:       "The memcached_config configures the Memcached-based caching backend.",
 		},
 	}
 )
@@ -312,9 +279,9 @@ func main() {
 
 	templatePath := flag.Arg(0)
 
-	// In order to match YAML config fields with CLI flags, we do map
+	// In order to match YAML config fields with CLI flags, we map
 	// the memory address of the CLI flag variables and match them with
-	// the config struct fields address.
+	// the config struct fields' addresses.
 	cfg := &mimir.Config{}
 	flags := parseFlags(cfg, util_log.Logger)
 

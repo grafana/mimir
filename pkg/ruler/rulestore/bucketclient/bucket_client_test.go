@@ -21,7 +21,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/thanos/pkg/objstore"
 
-	"github.com/grafana/mimir/pkg/chunk"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
 	"github.com/grafana/mimir/pkg/ruler/rulestore"
@@ -51,20 +50,6 @@ func TestListRules(t *testing.T) {
 		users, err := rs.ListAllUsers(context.Background())
 		require.NoError(t, err)
 		require.ElementsMatch(t, []string{"user1", "user2"}, users)
-	}
-
-	{
-		allGroupsMap, err := rs.ListAllRuleGroups(context.Background())
-		require.NoError(t, err)
-		require.Len(t, allGroupsMap, 2)
-		require.ElementsMatch(t, []*rulespb.RuleGroupDesc{
-			{User: "user1", Namespace: "hello", Name: "first testGroup"},
-			{User: "user1", Namespace: "hello", Name: "second testGroup"},
-			{User: "user1", Namespace: "world", Name: "another namespace testGroup"},
-		}, allGroupsMap["user1"])
-		require.ElementsMatch(t, []*rulespb.RuleGroupDesc{
-			{User: "user2", Namespace: "+-!@#$%. ", Name: "different user"},
-		}, allGroupsMap["user2"])
 	}
 
 	{
@@ -109,7 +94,6 @@ func TestListRules(t *testing.T) {
 
 func TestLoadRules(t *testing.T) {
 	rs := NewBucketRuleStore(objstore.NewInMemBucket(), nil, log.NewNopLogger())
-
 	groups := []testGroup{
 		{user: "user1", namespace: "hello", ruleGroup: rulefmt.RuleGroup{Name: "first testGroup", Interval: model.Duration(time.Minute), Rules: []rulefmt.RuleNode{{
 			For:    model.Duration(5 * time.Minute),
@@ -118,6 +102,7 @@ func TestLoadRules(t *testing.T) {
 		{user: "user1", namespace: "hello", ruleGroup: rulefmt.RuleGroup{Name: "second testGroup", Interval: model.Duration(2 * time.Minute)}},
 		{user: "user1", namespace: "world", ruleGroup: rulefmt.RuleGroup{Name: "another namespace testGroup", Interval: model.Duration(1 * time.Hour)}},
 		{user: "user2", namespace: "+-!@#$%. ", ruleGroup: rulefmt.RuleGroup{Name: "different user", Interval: model.Duration(5 * time.Minute)}},
+		{user: "user3", namespace: "hello", ruleGroup: rulefmt.RuleGroup{Name: "third user", SourceTenants: []string{"tenant-1"}}},
 	}
 
 	for _, g := range groups {
@@ -125,12 +110,16 @@ func TestLoadRules(t *testing.T) {
 		require.NoError(t, rs.SetRuleGroup(context.Background(), g.user, g.namespace, desc))
 	}
 
-	allGroupsMap, err := rs.ListAllRuleGroups(context.Background())
+	allGroupsMap := map[string]rulespb.RuleGroupList{}
+	for _, u := range []string{"user1", "user2", "user3"} {
+		rgl, err := rs.ListRuleGroupsForUserAndNamespace(context.Background(), u, "")
+		require.NoError(t, err)
+		allGroupsMap[u] = rgl
+	}
 
 	// Before load, rules are not loaded
 	{
-		require.NoError(t, err)
-		require.Len(t, allGroupsMap, 2)
+		require.Len(t, allGroupsMap, 3)
 		require.ElementsMatch(t, []*rulespb.RuleGroupDesc{
 			{User: "user1", Namespace: "hello", Name: "first testGroup"},
 			{User: "user1", Namespace: "hello", Name: "second testGroup"},
@@ -141,13 +130,13 @@ func TestLoadRules(t *testing.T) {
 		}, allGroupsMap["user2"])
 	}
 
-	err = rs.LoadRuleGroups(context.Background(), allGroupsMap)
+	err := rs.LoadRuleGroups(context.Background(), allGroupsMap)
 	require.NoError(t, err)
 
 	// After load, rules are loaded.
 	{
 		require.NoError(t, err)
-		require.Len(t, allGroupsMap, 2)
+		require.Len(t, allGroupsMap, 3)
 
 		require.ElementsMatch(t, []*rulespb.RuleGroupDesc{
 			{User: "user1", Namespace: "hello", Name: "first testGroup", Interval: time.Minute, Rules: []*rulespb.RuleDesc{
@@ -163,6 +152,10 @@ func TestLoadRules(t *testing.T) {
 		require.ElementsMatch(t, []*rulespb.RuleGroupDesc{
 			{User: "user2", Namespace: "+-!@#$%. ", Name: "different user", Interval: 5 * time.Minute},
 		}, allGroupsMap["user2"])
+
+		require.ElementsMatch(t, []*rulespb.RuleGroupDesc{
+			{User: "user3", Namespace: "hello", Name: "third user", SourceTenants: []string{"tenant-1"}},
+		}, allGroupsMap["user3"])
 	}
 
 	// Loading group with mismatched info fails.
@@ -237,10 +230,6 @@ func TestDelete(t *testing.T) {
 }
 
 func getSortedObjectKeys(bucketClient interface{}) []string {
-	if typed, ok := bucketClient.(*chunk.MockStorage); ok {
-		return typed.GetSortedObjectKeys()
-	}
-
 	if typed, ok := bucketClient.(*objstore.InMemBucket); ok {
 		var keys []string
 		for key := range typed.Objects() {
@@ -389,12 +378,18 @@ func TestListAllRuleGroupsWithNoNamespaceOrGroup(t *testing.T) {
 	}
 
 	s := NewBucketRuleStore(obj, nil, log.NewNopLogger())
-	out, err := s.ListAllRuleGroups(context.Background())
+	out, err := s.ListRuleGroupsForUserAndNamespace(context.Background(), "user1", "")
 	require.NoError(t, err)
+	require.Equal(t, 0, len(out))
 
-	require.Equal(t, 1, len(out))                    // one user
-	require.Equal(t, 1, len(out["user3"]))           // one group
-	require.Equal(t, "group1", out["user3"][0].Name) // one group
+	out, err = s.ListRuleGroupsForUserAndNamespace(context.Background(), "user2", "")
+	require.NoError(t, err)
+	require.Equal(t, 0, len(out))
+
+	out, err = s.ListRuleGroupsForUserAndNamespace(context.Background(), "user3", "")
+	require.NoError(t, err)
+	require.Equal(t, 1, len(out))           // one group
+	require.Equal(t, "group1", out[0].Name) // also verify its name
 }
 
 type mockBucket struct {

@@ -8,15 +8,15 @@ package batch
 import (
 	"github.com/prometheus/common/model"
 
-	promchunk "github.com/grafana/mimir/pkg/chunk/encoding"
+	"github.com/grafana/mimir/pkg/storage/chunk"
 )
 
 // chunkIterator implement batchIterator over a chunk.  Its is designed to be
 // reused by calling reset() with a fresh chunk.
 type chunkIterator struct {
 	chunk GenericChunk
-	it    promchunk.Iterator
-	batch promchunk.Batch
+	it    chunk.Iterator
+	batch chunk.Batch
 }
 
 func (i *chunkIterator) reset(chunk GenericChunk) {
@@ -66,7 +66,7 @@ func (i *chunkIterator) AtTime() int64 {
 	return i.batch.Timestamps[0]
 }
 
-func (i *chunkIterator) Batch() promchunk.Batch {
+func (i *chunkIterator) Batch() chunk.Batch {
 	return i.batch
 }
 

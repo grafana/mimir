@@ -1,3 +1,9 @@
+# Adapted from https://www.thapaliya.com/en/writings/well-documented-makefiles/
+.PHONY: help
+help: ## Display this help and any documented user-facing targets. Other undocumented targets may be present in the Makefile.
+help:
+	@awk 'BEGIN {FS = ": ##"; printf "Usage:\n  make <target>\n\nTargets:\n"} /^[a-zA-Z0-9_\.\-\/%]+: ##/ { printf "  %-45s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
+
 # Local settings (optional). See Makefile.local.example for an example.
 # WARNING: do not commit to a repository!
 -include Makefile.local
@@ -9,6 +15,8 @@
 VERSION=$(shell cat "./VERSION" 2> /dev/null)
 GOOS ?= $(shell go env GOOS)
 GOARCH ?= $(shell go env GOARCH)
+
+HOSTNAME := $(shell hostname)
 
 # Don't export GOOS and GOARCH as environment variables. They get exported when passed via CLI options,
 # but that breaks tools ran via "go run". We use GOOS/GOARCH explicitly in places where needed.
@@ -41,6 +49,7 @@ JSONNET_FMT := jsonnetfmt
 
 # path to the mimir-mixin
 MIXIN_PATH := operations/mimir-mixin
+MIXIN_OUT_PATH := operations/mimir-mixin-compiled
 
 # path to the mimir jsonnet manifests
 JSONNET_MANIFESTS_PATH := operations/mimir
@@ -107,6 +116,8 @@ push-multiarch-build-image:
 # 'make: Entering directory '/go/src/github.com/grafana/mimir' phase.
 DONT_FIND := -name vendor -prune -o -name .git -prune -o -name .cache -prune -o -name .pkg -prune -o -name packaging -prune -o
 
+MAKEFILES = $(shell find . $(DONT_FIND) \( -name 'Makefile' -o -name '*.mk' \) -print)
+
 # Get a list of directories containing Dockerfiles
 DOCKERFILES := $(shell find . $(DONT_FIND) -type f -name 'Dockerfile' -print)
 UPTODATE_FILES := $(patsubst %/Dockerfile,%/$(UPTODATE),$(DOCKERFILES))
@@ -135,20 +146,17 @@ $(foreach exe, $(EXES), $(eval $(call dep_exe, $(exe))))
 pkg/mimirpb/mimir.pb.go: pkg/mimirpb/mimir.proto
 pkg/ingester/client/ingester.pb.go: pkg/ingester/client/ingester.proto
 pkg/distributor/distributorpb/distributor.pb.go: pkg/distributor/distributorpb/distributor.proto
-pkg/ingester/wal.pb.go: pkg/ingester/wal.proto
 pkg/ring/ring.pb.go: pkg/ring/ring.proto
 pkg/frontend/v1/frontendv1pb/frontend.pb.go: pkg/frontend/v1/frontendv1pb/frontend.proto
 pkg/frontend/v2/frontendv2pb/frontend.pb.go: pkg/frontend/v2/frontendv2pb/frontend.proto
-pkg/querier/queryrange/model.pb.go: pkg/querier/queryrange/model.proto
+pkg/frontend/querymiddleware/model.pb.go: pkg/frontend/querymiddleware/model.proto
 pkg/querier/stats/stats.pb.go: pkg/querier/stats/stats.proto
-pkg/chunk/storage/caching_index_client.pb.go: pkg/chunk/storage/caching_index_client.proto
 pkg/distributor/ha_tracker.pb.go: pkg/distributor/ha_tracker.proto
 pkg/ruler/rulespb/rules.pb.go: pkg/ruler/rulespb/rules.proto
 pkg/ruler/ruler.pb.go: pkg/ruler/ruler.proto
 pkg/ring/kv/memberlist/kv.pb.go: pkg/ring/kv/memberlist/kv.proto
 pkg/scheduler/schedulerpb/scheduler.pb.go: pkg/scheduler/schedulerpb/scheduler.proto
 pkg/storegateway/storegatewaypb/gateway.pb.go: pkg/storegateway/storegatewaypb/gateway.proto
-pkg/chunk/grpc/grpc.pb.go: pkg/chunk/grpc/grpc.proto
 pkg/alertmanager/alertmanagerpb/alertmanager.pb.go: pkg/alertmanager/alertmanagerpb/alertmanager.proto
 pkg/alertmanager/alertspb/alerts.pb.go: pkg/alertmanager/alertspb/alerts.proto
 
@@ -203,8 +211,8 @@ protos: $(PROTO_GOS)
 lint-packaging-scripts: packaging/deb/control/postinst packaging/deb/control/prerm packaging/rpm/control/post packaging/rpm/control/preun
 	shellcheck $?
 
-lint: lint-packaging-scripts
-	misspell -error docs
+lint: lint-packaging-scripts check-makefiles
+	misspell -error docs/sources
 
 	# Configured via .golangci.yml.
 	golangci-lint run
@@ -234,7 +242,7 @@ lint: lint-packaging-scripts
 	faillint -paths "github.com/grafana/mimir/pkg/..." ./pkg/querier/engine/...
 
 	# Ensure all errors are report as APIError
-	faillint -paths "github.com/weaveworks/common/httpgrpc.{Errorf}=github.com/grafana/mimir/pkg/api/error.Newf" ./pkg/querier/queryrange/...
+	faillint -paths "github.com/weaveworks/common/httpgrpc.{Errorf}=github.com/grafana/mimir/pkg/api/error.Newf" ./pkg/frontend/querymiddleware/...
 
 	# Ensure the query path is supporting multiple tenants
 	faillint -paths "\
@@ -242,7 +250,7 @@ lint: lint-packaging-scripts
 		./pkg/scheduler/... \
 		./pkg/frontend/... \
 		./pkg/querier/tenantfederation/... \
-		./pkg/querier/queryrange/...
+		./pkg/frontend/querymiddleware/...
 
 	# Ensure packages that no longer use a global logger don't reintroduce it
 	faillint -paths "github.com/grafana/mimir/pkg/util/log.{Logger}" \
@@ -304,13 +312,13 @@ web-deploy:
 
 # Generates the config file documentation.
 doc: clean-doc
-	go run ./tools/doc-generator ./docs/configuration/config-file-reference.template > ./docs/configuration/config-file-reference.md
-	go run ./tools/doc-generator ./docs/blocks-storage/compactor.template            > ./docs/blocks-storage/compactor.md
-	go run ./tools/doc-generator ./docs/blocks-storage/store-gateway.template        > ./docs/blocks-storage/store-gateway.md
-	go run ./tools/doc-generator ./docs/blocks-storage/querier.template              > ./docs/blocks-storage/querier.md
-	go run ./tools/doc-generator ./docs/guides/encryption-at-rest.template           > ./docs/guides/encryption-at-rest.md
-	embedmd -w docs/operations/requests-mirroring-to-secondary-cluster.md
-	embedmd -w docs/guides/overrides-exporter.md
+	go run ./tools/doc-generator ./docs/sources/configuration/config-file-reference.template > ./docs/sources/configuration/config-file-reference.md
+	go run ./tools/doc-generator ./docs/sources/blocks-storage/compactor.template            > ./docs/sources/blocks-storage/compactor.md
+	go run ./tools/doc-generator ./docs/sources/blocks-storage/store-gateway.template        > ./docs/sources/blocks-storage/store-gateway.md
+	go run ./tools/doc-generator ./docs/sources/blocks-storage/querier.template              > ./docs/sources/blocks-storage/querier.md
+	go run ./tools/doc-generator ./docs/sources/guides/encryption-at-rest.template           > ./docs/sources/guides/encryption-at-rest.md
+	embedmd -w docs/sources/operations/requests-mirroring-to-secondary-cluster.md
+	embedmd -w docs/sources/guides/overrides-exporter.md
 	embedmd -w operations/mimir/README.md
 
 	# Make up markdown files prettier. When running with check-doc target, it will fail if this produces any change.
@@ -324,6 +332,15 @@ check-license: license
 	@git diff --exit-code || (echo "Please add the license header running 'make BUILD_IN_CONTAINER=false license'" && false)
 
 endif
+
+.PHONY: check-makefiles
+check-makefiles: format-makefiles
+	@git diff --exit-code -- $(MAKEFILES) || (echo "Please format Makefiles by running 'make format-makefiles'" && false)
+
+.PHONY: format-makefiles
+format-makefiles: ## Format all Makefiles.
+format-makefiles: $(MAKEFILES)
+	sed -i -e 's/^\(\t*\)  /\1\t/g' -e 's/^\(\t*\) /\1/' -- $?
 
 clean:
 	$(SUDO) docker rmi $(IMAGE_NAMES) >/dev/null 2>&1 || true
@@ -340,28 +357,55 @@ list-image-targets:
 save-images:
 	@mkdir -p docker-images
 	for image_name in $(IMAGE_NAMES); do \
-		if ! echo $$image_name | grep build; then \
+		if echo $$image_name | grep -q build; then \
+			continue; \
+		fi; \
+		if [ "$$(docker images -q $$image_name:$(IMAGE_TAG) 2> /dev/null)" = "" ]; then \
+			echo "Skipping $$image_name:$(IMAGE_TAG) because image does not exist"; \
+		else \
+			echo "Saving $$image_name:$(IMAGE_TAG)"; \
 			docker save $$image_name:$(IMAGE_TAG) -o docker-images/$$(echo $$image_name | tr "/" _):$(IMAGE_TAG); \
-		fi \
+		fi; \
 	done
 
 load-images:
 	for image_name in $(IMAGE_NAMES); do \
-		if ! echo $$image_name | grep build; then \
-			docker load -i docker-images/$$(echo $$image_name | tr "/" _):$(IMAGE_TAG); \
-		fi \
+		if echo $$image_name | grep -q build; then \
+			continue; \
+		fi; \
+		image_path=docker-images/$$(echo $$image_name | tr "/" _):$(IMAGE_TAG); \
+		if [ -e "$$image_path" ]; then \
+			echo "Loading $$image_path"; \
+			docker load -i "$$image_path"; \
+		else \
+			echo "Skipping $$image_path because image does not exist"; \
+		fi; \
 	done
 
 clean-doc:
 	rm -f \
-		./docs/configuration/config-file-reference.md \
-		./docs/blocks-storage/compactor.md \
-		./docs/blocks-storage/store-gateway.md \
-		./docs/blocks-storage/querier.md \
-		./docs/guides/encryption-at-rest.md
+		./docs/sources/configuration/config-file-reference.md \
+		./docs/sources/blocks-storage/compactor.md \
+		./docs/sources/blocks-storage/store-gateway.md \
+		./docs/sources/blocks-storage/querier.md \
+		./docs/sources/guides/encryption-at-rest.md
 
 check-doc: doc
-	@git diff --exit-code -- ./docs/configuration/config-file-reference.md ./docs/blocks-storage/*.md ./docs/configuration/*.md ./operations/mimir/*.md ./operations/mimir-mixin/docs/*.md
+	@git diff --exit-code -- \
+		./docs/sources/configuration/config-file-reference.md \
+		./docs/sources/blocks-storage/*.md \
+		./docs/sources/configuration/*.md \
+		./docs/sources/operations/*.md \
+		./operations/mimir/*.md \
+		./operations/mimir-mixin/docs/sources/*.md \
+	|| (echo "Please update generated documentation by running 'make doc'" && false)
+
+.PHONY: reference-help
+reference-help: cmd/mimir/mimir
+	@(./cmd/mimir/mimir -h || true) > cmd/mimir/help.txt.tmpl
+	@$(SED) -i s/$(HOSTNAME)/\{\{.Hostname\}\}/g cmd/mimir/help.txt.tmpl
+	@(./cmd/mimir/mimir -help-all || true) > cmd/mimir/help-all.txt.tmpl
+	@$(SED) -i s/$(HOSTNAME)/\{\{.Hostname\}\}/g cmd/mimir/help-all.txt.tmpl
 
 clean-white-noise:
 	@find . -path ./.pkg -prune -o -path ./vendor -prune -o -path ./website -prune -or -type f -name "*.md" -print | \
@@ -372,7 +416,7 @@ check-white-noise: clean-white-noise
 
 check-mixin: format-mixin check-mixin-jb check-mixin-mixtool check-mixin-playbook
 	@echo "Checking diff:"
-	@git diff --exit-code -- $(MIXIN_PATH) || (echo "Please format mixin by running 'make format-mixin'" && false)
+	@git diff --exit-code -- $(MIXIN_PATH) || (echo "Please build and format mixin by running 'make build-mixin format-mixin'" && false)
 
 	@cd $(MIXIN_PATH) && \
 	jb install && \
@@ -390,10 +434,10 @@ check-mixin-playbook: build-mixin
 	@$(MIXIN_PATH)/scripts/lint-playbooks.sh
 
 build-mixin: check-mixin-jb
-	@rm -rf $(MIXIN_PATH)/out && mkdir $(MIXIN_PATH)/out
-	@cd $(MIXIN_PATH) && \
-	mixtool generate all --output-alerts out/alerts.yaml --output-rules out/rules.yaml --directory out/dashboards mixin.libsonnet && \
-	zip -q -r mimir-mixin.zip out
+	@rm -rf $(MIXIN_OUT_PATH) && mkdir $(MIXIN_OUT_PATH)
+	@mixtool generate all --output-alerts $(MIXIN_OUT_PATH)/alerts.yaml --output-rules $(MIXIN_OUT_PATH)/rules.yaml --directory $(MIXIN_OUT_PATH)/dashboards ${MIXIN_PATH}/mixin.libsonnet
+	@cd $(MIXIN_OUT_PATH)/.. && zip -q -r mimir-mixin.zip $$(basename "$(MIXIN_OUT_PATH)")
+	@echo "The mixin has been compiled to $(MIXIN_OUT_PATH) and archived to $$(realpath --relative-to=$$(pwd) $(MIXIN_OUT_PATH)/../mimir-mixin.zip)"
 
 format-mixin:
 	@find $(MIXIN_PATH) -type f -name '*.libsonnet' -print -o -name '*.jsonnet' -print | xargs jsonnetfmt -i
@@ -433,17 +477,33 @@ dist: dist/$(UPTODATE)
 dist/$(UPTODATE):
 	rm -fr ./dist
 	mkdir -p ./dist
-	for os in linux darwin; do \
-      for arch in amd64 arm64; do \
-        echo "Building Mimir for $$os/$$arch"; \
-        GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/mimir-$$os-$$arch ./cmd/mimir; \
-        sha256sum ./dist/mimir-$$os-$$arch | cut -d ' ' -f 1 > ./dist/mimir-$$os-$$arch-sha-256; \
-        echo "Building query-tee for $$os/$$arch"; \
-        GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/query-tee-$$os-$$arch ./cmd/query-tee; \
-        sha256sum ./dist/query-tee-$$os-$$arch | cut -d ' ' -f 1 > ./dist/query-tee-$$os-$$arch-sha-256; \
-      done; \
-    done; \
-    touch $@
+	# Build binaries for various architectures and operating systems. Only
+	# mimirtool supports Windows for now. Also darwin/386 is not a valid
+	# architecture.
+	for os in linux darwin windows; do \
+		for arch in 386 amd64 arm64; do \
+			suffix="" ; \
+			if [ "$$os" = "windows" ]; then \
+				suffix=".exe" ; \
+			fi; \
+			if [ "$$os" = "darwin" ] && [ "$$arch" = "386" ]; then \
+				continue; \
+			fi; \
+			echo "Building mimirtool for $$os/$$arch"; \
+			GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/mimirtool-$$os-$$arch$$suffix ./cmd/mimirtool; \
+			sha256sum ./dist/mimirtool-$$os-$$arch$$suffix | cut -d ' ' -f 1 > ./dist/mimirtool-$$os-$$arch$$suffix-sha-256; \
+			if [ "$$os" = "windows" ]; then \
+				continue; \
+			fi; \
+			echo "Building Mimir for $$os/$$arch"; \
+			GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/mimir-$$os-$$arch$$suffix ./cmd/mimir; \
+			sha256sum ./dist/mimir-$$os-$$arch$$suffix | cut -d ' ' -f 1 > ./dist/mimir-$$os-$$arch$$suffix-sha-256; \
+			echo "Building query-tee for $$os/$$arch"; \
+			GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/query-tee-$$os-$$arch$$suffix ./cmd/query-tee; \
+			sha256sum ./dist/query-tee-$$os-$$arch$$suffix | cut -d ' ' -f 1 > ./dist/query-tee-$$os-$$arch$$suffix-sha-256; \
+			done; \
+		done; \
+		touch $@
 
 # Generate packages for a Mimir release.
 FPM_OPTS := fpm -s dir -v $(VERSION) -n mimir -f \
@@ -469,11 +529,11 @@ packages: dist/$(UPTODATE)-packages
 
 dist/$(UPTODATE)-packages: dist $(wildcard packaging/deb/**) $(wildcard packaging/rpm/**)
 	for arch in amd64 arm64; do \
-  		rpm_arch=x86_64; \
-  		deb_arch=x86_64; \
-  		if [ "$$arch" = "arm64" ]; then \
-		    rpm_arch=aarch64; \
-		    deb_arch=arm64; \
+		rpm_arch=x86_64; \
+		deb_arch=x86_64; \
+		if [ "$$arch" = "arm64" ]; then \
+			rpm_arch=aarch64; \
+			deb_arch=arm64; \
 		fi; \
 		$(FPM_OPTS) -t deb \
 			--architecture $$deb_arch \
@@ -481,7 +541,7 @@ dist/$(UPTODATE)-packages: dist $(wildcard packaging/deb/**) $(wildcard packagin
 			--before-remove packaging/deb/control/prerm \
 			--package dist/mimir-$(VERSION)_$$arch.deb \
 			dist/mimir-linux-$$arch=/usr/local/bin/mimir \
-			docs/chunks-storage/single-process-config.yaml=/etc/mimir/single-process-config.yaml \
+			docs/sources/chunks-storage/single-process-config.yaml=/etc/mimir/single-process-config.yaml \
 			packaging/deb/default/mimir=/etc/default/mimir \
 			packaging/deb/systemd/mimir.service=/etc/systemd/system/mimir.service; \
 		$(FPM_OPTS) -t rpm  \
@@ -490,14 +550,14 @@ dist/$(UPTODATE)-packages: dist $(wildcard packaging/deb/**) $(wildcard packagin
 			--before-remove packaging/rpm/control/preun \
 			--package dist/mimir-$(VERSION)_$$arch.rpm \
 			dist/mimir-linux-$$arch=/usr/local/bin/mimir \
-			docs/chunks-storage/single-process-config.yaml=/etc/mimir/single-process-config.yaml \
+			docs/sources/chunks-storage/single-process-config.yaml=/etc/mimir/single-process-config.yaml \
 			packaging/rpm/sysconfig/mimir=/etc/sysconfig/mimir \
 			packaging/rpm/systemd/mimir.service=/etc/systemd/system/mimir.service; \
 	done
 	for pkg in dist/*.deb dist/*.rpm; do \
-  		sha256sum $$pkg | cut -d ' ' -f 1 > $${pkg}-sha-256; \
-  	done; \
-  	touch $@
+		sha256sum $$pkg | cut -d ' ' -f 1 > $${pkg}-sha-256; \
+	done; \
+	touch $@
 
 endif
 
@@ -518,3 +578,6 @@ packaging/deb/debian-systemd/$(UPTODATE): packaging/deb/debian-systemd/Dockerfil
 .PHONY: test-packages
 test-packages: packages packaging/rpm/centos-systemd/$(UPTODATE) packaging/deb/debian-systemd/$(UPTODATE)
 	./tools/packaging/test-packages $(IMAGE_PREFIX) $(VERSION)
+
+include docs.mk
+docs: doc

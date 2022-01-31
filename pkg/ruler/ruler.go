@@ -45,11 +45,7 @@ import (
 )
 
 var (
-	supportedShardingStrategies = []string{util.ShardingStrategyDefault, util.ShardingStrategyShuffle}
-
-	// Validation errors.
-	errInvalidShardingStrategy = errors.New("invalid sharding strategy")
-	errInvalidTenantShardSize  = errors.New("invalid tenant shard size, the value must be greater than 0")
+	errInvalidTenantShardSize = errors.New("invalid tenant shard size, the value must be greater or equal to 0")
 )
 
 const (
@@ -94,7 +90,7 @@ type Config struct {
 	// How long to wait between refreshing the list of Alertmanager based on DNS service discovery.
 	AlertmanagerRefreshInterval time.Duration `yaml:"alertmanager_refresh_interval"`
 	// Enables the ruler notifier to use the Alertmananger V2 API.
-	AlertmanangerEnableV2API bool `yaml:"enable_alertmanager_v2"`
+	AlertmanagerEnableV2API bool `yaml:"enable_alertmanager_v2"`
 	// Capacity of the queue for notifications to be sent to the Alertmanager.
 	NotificationQueueCapacity int `yaml:"notification_queue_capacity"`
 	// HTTP timeout duration when sending notifications to the Alertmanager.
@@ -110,8 +106,6 @@ type Config struct {
 	ResendDelay time.Duration `yaml:"resend_delay"`
 
 	// Enable sharding rule groups.
-	EnableSharding   bool          `yaml:"enable_sharding"`
-	ShardingStrategy string        `yaml:"sharding_strategy"`
 	SearchPendingFor time.Duration `yaml:"search_pending_for"`
 	Ring             RingConfig    `yaml:"ring"`
 	FlushCheckPeriod time.Duration `yaml:"flush_period"`
@@ -124,15 +118,13 @@ type Config struct {
 	RingCheckPeriod time.Duration `yaml:"-"`
 
 	EnableQueryStats bool `yaml:"query_stats_enabled"`
+
+	TenantFederation TenantFederationConfig `yaml:"tenant_federation"`
 }
 
 // Validate config and returns error on failure
 func (cfg *Config) Validate(limits validation.Limits, log log.Logger) error {
-	if !util.StringsContain(supportedShardingStrategies, cfg.ShardingStrategy) {
-		return errInvalidShardingStrategy
-	}
-
-	if cfg.ShardingStrategy == util.ShardingStrategyShuffle && limits.RulerTenantShardSize <= 0 {
+	if limits.RulerTenantShardSize < 0 {
 		return errInvalidTenantShardSize
 	}
 
@@ -147,15 +139,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	cfg.ClientTLSConfig.RegisterFlagsWithPrefix("ruler.client", f)
 	cfg.Ring.RegisterFlags(f)
 	cfg.Notifier.RegisterFlags(f)
-
-	// Deprecated Flags that will be maintained to avoid user disruption
-
-	//lint:ignore faillint Need to pass the global logger like this for warning on deprecated methods
-	flagext.DeprecatedFlag(f, "ruler.client-timeout", "This flag has been renamed to ruler.configs.client-timeout", util_log.Logger)
-	//lint:ignore faillint Need to pass the global logger like this for warning on deprecated methods
-	flagext.DeprecatedFlag(f, "ruler.group-timeout", "This flag is no longer functional.", util_log.Logger)
-	//lint:ignore faillint Need to pass the global logger like this for warning on deprecated methods
-	flagext.DeprecatedFlag(f, "ruler.num-workers", "This flag is no longer functional. For increased concurrency horizontal sharding is recommended", util_log.Logger)
+	cfg.TenantFederation.RegisterFlags(f)
 
 	cfg.ExternalURL.URL, _ = url.Parse("") // Must be non-nil
 	f.Var(&cfg.ExternalURL, "ruler.external.url", "URL of alerts return path.")
@@ -165,13 +149,11 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&cfg.AlertmanagerURL, "ruler.alertmanager-url", "", "Comma-separated list of URL(s) of the Alertmanager(s) to send notifications to. Each Alertmanager URL is treated as a separate group in the configuration. Multiple Alertmanagers in HA per group can be supported by using DNS resolution via -ruler.alertmanager-discovery.")
 	f.BoolVar(&cfg.AlertmanagerDiscovery, "ruler.alertmanager-discovery", false, "Use DNS SRV records to discover Alertmanager hosts.")
 	f.DurationVar(&cfg.AlertmanagerRefreshInterval, "ruler.alertmanager-refresh-interval", 1*time.Minute, "How long to wait between refreshing DNS resolutions of Alertmanager hosts.")
-	f.BoolVar(&cfg.AlertmanangerEnableV2API, "ruler.alertmanager-use-v2", false, "If enabled requests to Alertmanager will utilize the V2 API.")
+	f.BoolVar(&cfg.AlertmanagerEnableV2API, "ruler.alertmanager-use-v2", true, "If enabled requests to Alertmanager will utilize the V2 API.")
 	f.IntVar(&cfg.NotificationQueueCapacity, "ruler.notification-queue-capacity", 10000, "Capacity of the queue for notifications to be sent to the Alertmanager.")
 	f.DurationVar(&cfg.NotificationTimeout, "ruler.notification-timeout", 10*time.Second, "HTTP timeout duration when sending notifications to the Alertmanager.")
 
 	f.DurationVar(&cfg.SearchPendingFor, "ruler.search-pending-for", 5*time.Minute, "Time to spend searching for a pending ruler when shutting down.")
-	f.BoolVar(&cfg.EnableSharding, "ruler.enable-sharding", false, "Distribute rule evaluation using ring backend")
-	f.StringVar(&cfg.ShardingStrategy, "ruler.sharding-strategy", util.ShardingStrategyDefault, fmt.Sprintf("The sharding strategy to use. Supported values are: %s.", strings.Join(supportedShardingStrategies, ", ")))
 	f.DurationVar(&cfg.FlushCheckPeriod, "ruler.flush-period", 1*time.Minute, "Period with which to attempt to flush rule groups.")
 	f.StringVar(&cfg.RulePath, "ruler.rule-path", "/rules", "file path to store temporary rule files for the prometheus rule managers")
 	f.BoolVar(&cfg.EnableAPI, "experimental.ruler.enable-api", false, "Enable the ruler api")
@@ -285,20 +267,18 @@ func newRuler(cfg Config, manager MultiTenantManager, reg prometheus.Registerer,
 		level.Info(ruler.logger).Log("msg", "ruler using disabled users", "disabled", strings.Join(cfg.DisabledTenants, ", "))
 	}
 
-	if cfg.EnableSharding {
-		ringStore, err := kv.NewClient(
-			cfg.Ring.KVStore,
-			ring.GetCodec(),
-			kv.RegistererWithKVName(prometheus.WrapRegistererWithPrefix("cortex_", reg), "ruler"),
-			logger,
-		)
-		if err != nil {
-			return nil, errors.Wrap(err, "create KV store client")
-		}
+	ringStore, err := kv.NewClient(
+		cfg.Ring.KVStore,
+		ring.GetCodec(),
+		kv.RegistererWithKVName(prometheus.WrapRegistererWithPrefix("cortex_", reg), "ruler"),
+		logger,
+	)
+	if err != nil {
+		return nil, errors.Wrap(err, "create KV store client")
+	}
 
-		if err = enableSharding(ruler, ringStore); err != nil {
-			return nil, errors.Wrap(err, "setup ruler sharding ring")
-		}
+	if err = enableSharding(ruler, ringStore); err != nil {
+		return nil, errors.Wrap(err, "setup ruler sharding ring")
 	}
 
 	ruler.Service = services.NewBasicService(ruler.starting, ruler.run, ruler.stopping)
@@ -332,20 +312,17 @@ func enableSharding(r *Ruler, ringStore kv.Client) error {
 }
 
 func (r *Ruler) starting(ctx context.Context) error {
-	// If sharding is enabled, start the used subservices.
-	if r.cfg.EnableSharding {
-		var err error
+	var err error
 
-		if r.subservices, err = services.NewManager(r.lifecycler, r.ring, r.clientsPool); err != nil {
-			return errors.Wrap(err, "unable to start ruler subservices")
-		}
+	if r.subservices, err = services.NewManager(r.lifecycler, r.ring, r.clientsPool); err != nil {
+		return errors.Wrap(err, "unable to start ruler subservices")
+	}
 
-		r.subservicesWatcher = services.NewFailureWatcher()
-		r.subservicesWatcher.WatchManager(r.subservices)
+	r.subservicesWatcher = services.NewFailureWatcher()
+	r.subservicesWatcher.WatchManager(r.subservices)
 
-		if err = services.StartManagerAndAwaitHealthy(ctx, r.subservices); err != nil {
-			return errors.Wrap(err, "unable to start ruler subservices")
-		}
+	if err = services.StartManagerAndAwaitHealthy(ctx, r.subservices); err != nil {
+		return errors.Wrap(err, "unable to start ruler subservices")
 	}
 
 	// TODO: ideally, ruler would wait until its queryable is finished starting.
@@ -423,23 +400,7 @@ func instanceOwnsRuleGroup(r ring.ReadRing, g *rulespb.RuleGroupDesc, instanceAd
 }
 
 func (r *Ruler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	if r.cfg.EnableSharding {
-		r.ring.ServeHTTP(w, req)
-	} else {
-		var unshardedPage = `
-			<!DOCTYPE html>
-			<html>
-				<head>
-					<meta charset="UTF-8">
-					<title>Ruler Status</title>
-				</head>
-				<body>
-					<h1>Ruler Status</h1>
-					<p>Ruler running with shards disabled</p>
-				</body>
-			</html>`
-		util.WriteHTMLResponse(w, unshardedPage)
-	}
+	r.ring.ServeHTTP(w, req)
 }
 
 func (r *Ruler) run(ctx context.Context) error {
@@ -448,15 +409,9 @@ func (r *Ruler) run(ctx context.Context) error {
 	tick := time.NewTicker(r.cfg.PollInterval)
 	defer tick.Stop()
 
-	var ringTickerChan <-chan time.Time
-	var ringLastState ring.ReplicationSet
-
-	if r.cfg.EnableSharding {
-		ringLastState, _ = r.ring.GetAllHealthy(RingOp)
-		ringTicker := time.NewTicker(util.DurationWithJitter(r.cfg.RingCheckPeriod, 0.2))
-		defer ringTicker.Stop()
-		ringTickerChan = ringTicker.C
-	}
+	ringLastState, _ := r.ring.GetAllHealthy(RingOp)
+	ringTicker := time.NewTicker(util.DurationWithJitter(r.cfg.RingCheckPeriod, 0.2))
+	defer ringTicker.Stop()
 
 	r.syncRules(ctx, rulerSyncReasonInitial)
 	for {
@@ -465,7 +420,7 @@ func (r *Ruler) run(ctx context.Context) error {
 			return nil
 		case <-tick.C:
 			r.syncRules(ctx, rulerSyncReasonPeriodic)
-		case <-ringTickerChan:
+		case <-ringTicker.C:
 			// We ignore the error because in case of error it will return an empty
 			// replication set which we use to compare with the previous state.
 			currRingState, _ := r.ring.GetAllHealthy(RingOp)
@@ -501,19 +456,7 @@ func (r *Ruler) syncRules(ctx context.Context, reason string) {
 }
 
 func (r *Ruler) listRules(ctx context.Context) (result map[string]rulespb.RuleGroupList, err error) {
-	switch {
-	case !r.cfg.EnableSharding:
-		result, err = r.listRulesNoSharding(ctx)
-
-	case r.cfg.ShardingStrategy == util.ShardingStrategyDefault:
-		result, err = r.listRulesShardingDefault(ctx)
-
-	case r.cfg.ShardingStrategy == util.ShardingStrategyShuffle:
-		result, err = r.listRulesShuffleSharding(ctx)
-
-	default:
-		return nil, errors.New("invalid sharding configuration")
-	}
+	result, err = r.listRulesSharded(ctx)
 
 	if err != nil {
 		return
@@ -528,27 +471,7 @@ func (r *Ruler) listRules(ctx context.Context) (result map[string]rulespb.RuleGr
 	return
 }
 
-func (r *Ruler) listRulesNoSharding(ctx context.Context) (map[string]rulespb.RuleGroupList, error) {
-	return r.store.ListAllRuleGroups(ctx)
-}
-
-func (r *Ruler) listRulesShardingDefault(ctx context.Context) (map[string]rulespb.RuleGroupList, error) {
-	configs, err := r.store.ListAllRuleGroups(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	filteredConfigs := make(map[string]rulespb.RuleGroupList)
-	for userID, groups := range configs {
-		filtered := filterRuleGroups(userID, groups, r.ring, r.lifecycler.GetInstanceAddr(), r.logger, r.ringCheckErrors)
-		if len(filtered) > 0 {
-			filteredConfigs[userID] = filtered
-		}
-	}
-	return filteredConfigs, nil
-}
-
-func (r *Ruler) listRulesShuffleSharding(ctx context.Context) (map[string]rulespb.RuleGroupList, error) {
+func (r *Ruler) listRulesSharded(ctx context.Context) (map[string]rulespb.RuleGroupList, error) {
 	users, err := r.store.ListAllUsers(ctx)
 	if err != nil {
 		return nil, errors.Wrap(err, "unable to list users of ruler")
@@ -642,19 +565,73 @@ func filterRuleGroups(userID string, ruleGroups []*rulespb.RuleGroupDesc, ring r
 	return result
 }
 
-// GetRules retrieves the running rules from this ruler and all running rulers in the ring if
-// sharding is enabled
+// GetRules retrieves the running rules from this ruler and all running rulers in the ring.
 func (r *Ruler) GetRules(ctx context.Context) ([]*GroupStateDesc, error) {
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("no user id found in context")
 	}
 
-	if r.cfg.EnableSharding {
-		return r.getShardedRules(ctx, userID)
+	ring := ring.ReadRing(r.ring)
+
+	if shardSize := r.limits.RulerTenantShardSize(userID); shardSize > 0 {
+		ring = r.ring.ShuffleShard(userID, shardSize)
 	}
 
-	return r.getLocalRules(userID)
+	rulers, err := ring.GetReplicationSetForOperation(RingOp)
+	if err != nil {
+		return nil, err
+	}
+
+	ctx, err = user.InjectIntoGRPCRequest(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("unable to inject user ID into grpc request, %v", err)
+	}
+
+	var (
+		mergedMx sync.Mutex
+		merged   []*GroupStateDesc
+	)
+
+	// Concurrently fetch rules from all rulers. Since rules are not replicated,
+	// we need all requests to succeed.
+	addrs := rulers.GetAddresses()
+	err = concurrency.ForEachJob(ctx, len(addrs), len(addrs), func(ctx context.Context, idx int) error {
+		addr := addrs[idx]
+
+		rulerClient, err := r.clientsPool.GetClientFor(addr)
+		if err != nil {
+			return errors.Wrapf(err, "unable to get client for ruler %s", addr)
+		}
+
+		newGrps, err := rulerClient.Rules(ctx, &RulesRequest{})
+		if err != nil {
+			return errors.Wrapf(err, "unable to retrieve rules from ruler %s", addr)
+		}
+
+		mergedMx.Lock()
+		merged = append(merged, newGrps.Groups...)
+		mergedMx.Unlock()
+
+		return nil
+	})
+
+	return merged, err
+}
+
+// Rules implements the rules service
+func (r *Ruler) Rules(ctx context.Context, in *RulesRequest) (*RulesResponse, error) {
+	userID, err := tenant.TenantID(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("no user id found in context")
+	}
+
+	groupDescs, err := r.getLocalRules(userID)
+	if err != nil {
+		return nil, err
+	}
+
+	return &RulesResponse{Groups: groupDescs}, nil
 }
 
 func (r *Ruler) getLocalRules(userID string) ([]*GroupStateDesc, error) {
@@ -674,10 +651,11 @@ func (r *Ruler) getLocalRules(userID string) ([]*GroupStateDesc, error) {
 
 		groupDesc := &GroupStateDesc{
 			Group: &rulespb.RuleGroupDesc{
-				Name:      group.Name(),
-				Namespace: string(decodedNamespace),
-				Interval:  interval,
-				User:      userID,
+				Name:          group.Name(),
+				Namespace:     decodedNamespace,
+				Interval:      interval,
+				User:          userID,
+				SourceTenants: group.SourceTenants(),
 			},
 
 			EvaluationTimestamp: group.GetLastEvaluation(),
@@ -742,69 +720,6 @@ func (r *Ruler) getLocalRules(userID string) ([]*GroupStateDesc, error) {
 		groupDescs = append(groupDescs, groupDesc)
 	}
 	return groupDescs, nil
-}
-
-func (r *Ruler) getShardedRules(ctx context.Context, userID string) ([]*GroupStateDesc, error) {
-	ring := ring.ReadRing(r.ring)
-
-	if shardSize := r.limits.RulerTenantShardSize(userID); shardSize > 0 && r.cfg.ShardingStrategy == util.ShardingStrategyShuffle {
-		ring = r.ring.ShuffleShard(userID, shardSize)
-	}
-
-	rulers, err := ring.GetReplicationSetForOperation(RingOp)
-	if err != nil {
-		return nil, err
-	}
-
-	ctx, err = user.InjectIntoGRPCRequest(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("unable to inject user ID into grpc request, %v", err)
-	}
-
-	var (
-		mergedMx sync.Mutex
-		merged   []*GroupStateDesc
-	)
-
-	// Concurrently fetch rules from all rulers. Since rules are not replicated,
-	// we need all requests to succeed.
-	jobs := concurrency.CreateJobsFromStrings(rulers.GetAddresses())
-	err = concurrency.ForEach(ctx, jobs, len(jobs), func(ctx context.Context, job interface{}) error {
-		addr := job.(string)
-
-		rulerClient, err := r.clientsPool.GetClientFor(addr)
-		if err != nil {
-			return errors.Wrapf(err, "unable to get client for ruler %s", addr)
-		}
-
-		newGrps, err := rulerClient.Rules(ctx, &RulesRequest{})
-		if err != nil {
-			return errors.Wrapf(err, "unable to retrieve rules from ruler %s", addr)
-		}
-
-		mergedMx.Lock()
-		merged = append(merged, newGrps.Groups...)
-		mergedMx.Unlock()
-
-		return nil
-	})
-
-	return merged, err
-}
-
-// Rules implements the rules service
-func (r *Ruler) Rules(ctx context.Context, in *RulesRequest) (*RulesResponse, error) {
-	userID, err := tenant.TenantID(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("no user id found in context")
-	}
-
-	groupDescs, err := r.getLocalRules(userID)
-	if err != nil {
-		return nil, err
-	}
-
-	return &RulesResponse{Groups: groupDescs}, nil
 }
 
 // AssertMaxRuleGroups limit has not been reached compared to the current

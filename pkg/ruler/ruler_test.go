@@ -123,7 +123,7 @@ func testSetup(t *testing.T) (*promql.Engine, storage.QueryableFunc, Pusher, log
 
 func newManager(t *testing.T, cfg Config) *DefaultMultiTenantManager {
 	engine, noopQueryable, pusher, logger, overrides := testSetup(t)
-	manager, err := NewDefaultMultiTenantManager(cfg, DefaultTenantManagerFactory(cfg, pusher, noopQueryable, engine, overrides, nil), prometheus.NewRegistry(), logger)
+	manager, err := NewDefaultMultiTenantManager(cfg, DefaultTenantManagerFactory(cfg, pusher, noopQueryable, noopQueryable, engine, overrides, nil), prometheus.NewRegistry(), logger)
 	require.NoError(t, err)
 
 	return manager
@@ -171,19 +171,11 @@ func buildRuler(t *testing.T, cfg Config, storage rulestore.RuleStore, rulerAddr
 	engine, noopQueryable, pusher, logger, overrides := testSetup(t)
 
 	reg := prometheus.NewRegistry()
-	managerFactory := DefaultTenantManagerFactory(cfg, pusher, noopQueryable, engine, overrides, reg)
+	managerFactory := DefaultTenantManagerFactory(cfg, pusher, noopQueryable, noopQueryable, engine, overrides, reg)
 	manager, err := NewDefaultMultiTenantManager(cfg, managerFactory, reg, log.NewNopLogger())
 	require.NoError(t, err)
 
-	ruler, err := newRuler(
-		cfg,
-		manager,
-		reg,
-		logger,
-		storage,
-		overrides,
-		newMockClientsPool(cfg, logger, reg, rulerAddrMap),
-	)
+	ruler, err := newRuler(cfg, manager, reg, logger, storage, overrides, newMockClientsPool(cfg, logger, reg, rulerAddrMap))
 	require.NoError(t, err)
 	return ruler
 }
@@ -243,34 +235,70 @@ func TestNotifierSendsUserIDHeader(t *testing.T) {
 }
 
 func TestRuler_Rules(t *testing.T) {
-	cfg := defaultRulerConfig(t)
+	testCases := map[string]struct {
+		mockRules map[string]rulespb.RuleGroupList
+		userID    string
+	}{
+		"rules - user1": {
+			userID:    "user1",
+			mockRules: mockRules,
+		},
+		"rules - user2": {
+			userID:    "user2",
+			mockRules: mockRules,
+		},
+		"federated rule group": {
+			userID: "user1",
+			mockRules: map[string]rulespb.RuleGroupList{
+				"user1": {
+					&rulespb.RuleGroupDesc{
+						Name:          "group1",
+						Namespace:     "namespace1",
+						User:          "user1",
+						SourceTenants: []string{"tenant-1"},
+						Rules: []*rulespb.RuleDesc{
+							{
+								Record: "UP_RULE",
+								Expr:   "up",
+							},
+							{
+								Alert: "UP_ALERT",
+								Expr:  "up < 1",
+							},
+						},
+						Interval: interval,
+					},
+				},
+			},
+		},
+	}
 
-	r := newTestRuler(t, cfg, newMockRuleStore(mockRules))
-	defer services.StopAndAwaitTerminated(context.Background(), r) //nolint:errcheck
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			cfg := defaultRulerConfig(t)
+			cfg.TenantFederation.Enabled = true
 
-	// test user1
-	ctx := user.InjectOrgID(context.Background(), "user1")
-	rls, err := r.Rules(ctx, &RulesRequest{})
-	require.NoError(t, err)
-	require.Len(t, rls.Groups, 1)
-	rg := rls.Groups[0]
-	expectedRg := mockRules["user1"][0]
-	compareRuleGroupDescToStateDesc(t, expectedRg, rg)
+			r := newTestRuler(t, cfg, newMockRuleStore(tc.mockRules))
+			defer services.StopAndAwaitTerminated(context.Background(), r) //nolint:errcheck
 
-	// test user2
-	ctx = user.InjectOrgID(context.Background(), "user2")
-	rls, err = r.Rules(ctx, &RulesRequest{})
-	require.NoError(t, err)
-	require.Len(t, rls.Groups, 1)
-	rg = rls.Groups[0]
-	expectedRg = mockRules["user2"][0]
-	compareRuleGroupDescToStateDesc(t, expectedRg, rg)
+			ctx := user.InjectOrgID(context.Background(), tc.userID)
+			rls, err := r.Rules(ctx, &RulesRequest{})
+			require.NoError(t, err)
+			require.Len(t, rls.Groups, len(mockRules[tc.userID]))
+
+			for i, rg := range rls.Groups {
+				expectedRg := tc.mockRules[tc.userID][i]
+				compareRuleGroupDescToStateDesc(t, expectedRg, rg)
+			}
+		})
+	}
 }
 
 func compareRuleGroupDescToStateDesc(t *testing.T, expected *rulespb.RuleGroupDesc, got *GroupStateDesc) {
 	require.Equal(t, got.Group.Name, expected.Name)
 	require.Equal(t, got.Group.Namespace, expected.Namespace)
 	require.Len(t, expected.Rules, len(got.ActiveRules))
+	require.ElementsMatch(t, expected.SourceTenants, got.Group.SourceTenants)
 	for i := range got.ActiveRules {
 		require.Equal(t, expected.Rules[i].Record, got.ActiveRules[i].Rule.Record)
 		require.Equal(t, expected.Rules[i].Alert, got.ActiveRules[i].Rule.Alert)
@@ -282,12 +310,10 @@ func TestGetRules(t *testing.T) {
 	type expectedRulesMap map[string]map[string]rulespb.RuleGroupList
 
 	type testCase struct {
-		sharding         bool
-		shardingStrategy string
 		shuffleShardSize int
 	}
 
-	expectedRules := expectedRulesMap{
+	expectedRulesByRuler := expectedRulesMap{
 		"ruler1": map[string]rulespb.RuleGroupList{
 			"user1": {
 				&rulespb.RuleGroupDesc{User: "user1", Namespace: "namespace", Name: "first", Interval: 10 * time.Second},
@@ -318,17 +344,11 @@ func TestGetRules(t *testing.T) {
 	}
 
 	testCases := map[string]testCase{
-		"No Sharding": {
-			sharding: false,
+		"Shuffle Shard Size 0": {
+			shuffleShardSize: 0,
 		},
-		"Default Sharding": {
-			sharding:         true,
-			shardingStrategy: util.ShardingStrategyDefault,
-		},
-		"Shuffle Sharding and ShardSize = 2": {
-			sharding:         true,
+		"Shuffle Shard Size 2": {
 			shuffleShardSize: 2,
-			shardingStrategy: util.ShardingStrategyShuffle,
 		},
 	}
 
@@ -344,9 +364,6 @@ func TestGetRules(t *testing.T) {
 
 			createRuler := func(id string) *Ruler {
 				cfg := defaultRulerConfig(t)
-
-				cfg.ShardingStrategy = tc.shardingStrategy
-				cfg.EnableSharding = tc.sharding
 
 				cfg.Ring = RingConfig{
 					InstanceID:   id,
@@ -366,7 +383,7 @@ func TestGetRules(t *testing.T) {
 				return r
 			}
 
-			for rID, r := range expectedRules {
+			for rID, r := range expectedRulesByRuler {
 				createRuler(rID)
 				for user, rules := range r {
 					allRulesByUser[user] = append(allRulesByUser[user], rules...)
@@ -375,21 +392,19 @@ func TestGetRules(t *testing.T) {
 				}
 			}
 
-			if tc.sharding {
-				err := kvStore.CAS(context.Background(), RulerRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
-					d, _ := in.(*ring.Desc)
-					if d == nil {
-						d = ring.NewDesc()
-					}
-					for rID, tokens := range allTokensByRuler {
-						d.AddIngester(rID, rulerAddrMap[rID].lifecycler.GetInstanceAddr(), "", tokens, ring.ACTIVE, time.Now())
-					}
-					return d, true, nil
-				})
-				require.NoError(t, err)
-				// Wait a bit to make sure ruler's ring is updated.
-				time.Sleep(100 * time.Millisecond)
-			}
+			err := kvStore.CAS(context.Background(), RulerRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
+				d, _ := in.(*ring.Desc)
+				if d == nil {
+					d = ring.NewDesc()
+				}
+				for rID, tokens := range allTokensByRuler {
+					d.AddIngester(rID, rulerAddrMap[rID].lifecycler.GetInstanceAddr(), "", tokens, ring.ACTIVE, time.Now())
+				}
+				return d, true, nil
+			})
+			require.NoError(t, err)
+			// Wait a bit to make sure ruler's ring is updated.
+			time.Sleep(100 * time.Millisecond)
 
 			forEachRuler := func(f func(rID string, r *Ruler)) {
 				for rID, r := range rulerAddrMap {
@@ -408,16 +423,14 @@ func TestGetRules(t *testing.T) {
 					rules, err := r.GetRules(ctx)
 					require.NoError(t, err)
 					require.Equal(t, len(allRulesByUser[u]), len(rules))
-					if tc.sharding {
-						mockPoolClient := r.clientsPool.(*mockRulerClientsPool)
 
-						if tc.shardingStrategy == util.ShardingStrategyShuffle {
-							require.Equal(t, int32(tc.shuffleShardSize), mockPoolClient.numberOfCalls.Load())
-						} else {
-							require.Equal(t, int32(len(rulerAddrMap)), mockPoolClient.numberOfCalls.Load())
-						}
-						mockPoolClient.numberOfCalls.Store(0)
+					mockPoolClient := r.clientsPool.(*mockRulerClientsPool)
+					if tc.shuffleShardSize > 0 {
+						require.Equal(t, int32(tc.shuffleShardSize), mockPoolClient.numberOfCalls.Load())
+					} else {
+						require.Equal(t, int32(len(rulerAddrMap)), mockPoolClient.numberOfCalls.Load())
 					}
+					mockPoolClient.numberOfCalls.Store(0)
 				})
 			}
 
@@ -433,13 +446,7 @@ func TestGetRules(t *testing.T) {
 				totalConfiguredRules += len(allRulesByRuler[rID])
 			})
 
-			if tc.sharding {
-				require.Equal(t, totalConfiguredRules, totalLoadedRules)
-			} else {
-				// Not sharding means that all rules will be loaded on all rulers
-				numberOfRulers := len(rulerAddrMap)
-				require.Equal(t, totalConfiguredRules*numberOfRulers, totalLoadedRules)
-			}
+			require.Equal(t, totalConfiguredRules, totalLoadedRules)
 		})
 	}
 }
@@ -473,8 +480,6 @@ func TestSharding(t *testing.T) {
 	type expectedRulesMap map[string]map[string]rulespb.RuleGroupList
 
 	type testCase struct {
-		sharding         bool
-		shardingStrategy string
 		shuffleShardSize int
 		setupRing        func(*ring.Desc)
 		enabledUsers     []string
@@ -501,40 +506,16 @@ func TestSharding(t *testing.T) {
 	)
 
 	testCases := map[string]testCase{
-		"no sharding": {
-			sharding:      false,
-			expectedRules: expectedRulesMap{ruler1: allRules},
-		},
-
-		"no sharding, single user allowed": {
-			sharding:     false,
-			enabledUsers: []string{user1},
-			expectedRules: expectedRulesMap{ruler1: map[string]rulespb.RuleGroupList{
-				user1: {user1Group1, user1Group2},
-			}},
-		},
-
-		"no sharding, single user disabled": {
-			sharding:      false,
-			disabledUsers: []string{user1},
-			expectedRules: expectedRulesMap{ruler1: map[string]rulespb.RuleGroupList{
-				user2: {user2Group1},
-				user3: {user3Group1},
-			}},
-		},
-
-		"default sharding, single ruler": {
-			sharding:         true,
-			shardingStrategy: util.ShardingStrategyDefault,
+		"single ruler, with ring setup": {
+			shuffleShardSize: 0,
 			setupRing: func(desc *ring.Desc) {
 				desc.AddIngester(ruler1, ruler1Addr, "", []uint32{0}, ring.ACTIVE, time.Now())
 			},
 			expectedRules: expectedRulesMap{ruler1: allRules},
 		},
 
-		"default sharding, single ruler, single enabled user": {
-			sharding:         true,
-			shardingStrategy: util.ShardingStrategyDefault,
+		"single ruler, with ring setup, single user enabled": {
+			shuffleShardSize: 0,
 			enabledUsers:     []string{user1},
 			setupRing: func(desc *ring.Desc) {
 				desc.AddIngester(ruler1, ruler1Addr, "", []uint32{0}, ring.ACTIVE, time.Now())
@@ -544,9 +525,8 @@ func TestSharding(t *testing.T) {
 			}},
 		},
 
-		"default sharding, single ruler, single disabled user": {
-			sharding:         true,
-			shardingStrategy: util.ShardingStrategyDefault,
+		"single ruler with ring setup, single user disabled": {
+			shuffleShardSize: 0,
 			disabledUsers:    []string{user1},
 			setupRing: func(desc *ring.Desc) {
 				desc.AddIngester(ruler1, ruler1Addr, "", []uint32{0}, ring.ACTIVE, time.Now())
@@ -557,9 +537,8 @@ func TestSharding(t *testing.T) {
 			}},
 		},
 
-		"default sharding, multiple ACTIVE rulers": {
-			sharding:         true,
-			shardingStrategy: util.ShardingStrategyDefault,
+		"shard size 0, multiple ACTIVE rulers": {
+			shuffleShardSize: 0,
 			setupRing: func(desc *ring.Desc) {
 				desc.AddIngester(ruler1, ruler1Addr, "", sortTokens([]uint32{user1Group1Token + 1, user2Group1Token + 1}), ring.ACTIVE, time.Now())
 				desc.AddIngester(ruler2, ruler2Addr, "", sortTokens([]uint32{user1Group2Token + 1, user3Group1Token + 1}), ring.ACTIVE, time.Now())
@@ -578,9 +557,8 @@ func TestSharding(t *testing.T) {
 			},
 		},
 
-		"default sharding, multiple ACTIVE rulers, single enabled user": {
-			sharding:         true,
-			shardingStrategy: util.ShardingStrategyDefault,
+		"shard size 0, multiple ACTIVE rulers, single enabled user": {
+			shuffleShardSize: 0,
 			enabledUsers:     []string{user1},
 			setupRing: func(desc *ring.Desc) {
 				desc.AddIngester(ruler1, ruler1Addr, "", sortTokens([]uint32{user1Group1Token + 1, user2Group1Token + 1}), ring.ACTIVE, time.Now())
@@ -598,9 +576,8 @@ func TestSharding(t *testing.T) {
 			},
 		},
 
-		"default sharding, multiple ACTIVE rulers, single disabled user": {
-			sharding:         true,
-			shardingStrategy: util.ShardingStrategyDefault,
+		"shard size 0, multiple ACTIVE rulers, single disabled user": {
+			shuffleShardSize: 0,
 			disabledUsers:    []string{user1},
 			setupRing: func(desc *ring.Desc) {
 				desc.AddIngester(ruler1, ruler1Addr, "", sortTokens([]uint32{user1Group1Token + 1, user2Group1Token + 1}), ring.ACTIVE, time.Now())
@@ -618,9 +595,8 @@ func TestSharding(t *testing.T) {
 			},
 		},
 
-		"default sharding, unhealthy ACTIVE ruler": {
-			sharding:         true,
-			shardingStrategy: util.ShardingStrategyDefault,
+		"shard size 0, unhealthy ACTIVE ruler": {
+			shuffleShardSize: 0,
 
 			setupRing: func(desc *ring.Desc) {
 				desc.AddIngester(ruler1, ruler1Addr, "", sortTokens([]uint32{user1Group1Token + 1, user2Group1Token + 1}), ring.ACTIVE, time.Now())
@@ -642,9 +618,8 @@ func TestSharding(t *testing.T) {
 			},
 		},
 
-		"default sharding, LEAVING ruler": {
-			sharding:         true,
-			shardingStrategy: util.ShardingStrategyDefault,
+		"shard size 0, LEAVING ruler": {
+			shuffleShardSize: 0,
 
 			setupRing: func(desc *ring.Desc) {
 				desc.AddIngester(ruler1, ruler1Addr, "", sortTokens([]uint32{user1Group1Token + 1, user2Group1Token + 1}), ring.LEAVING, time.Now())
@@ -658,9 +633,8 @@ func TestSharding(t *testing.T) {
 			},
 		},
 
-		"default sharding, JOINING ruler": {
-			sharding:         true,
-			shardingStrategy: util.ShardingStrategyDefault,
+		"shard size 0, JOINING ruler": {
+			shuffleShardSize: 0,
 
 			setupRing: func(desc *ring.Desc) {
 				desc.AddIngester(ruler1, ruler1Addr, "", sortTokens([]uint32{user1Group1Token + 1, user2Group1Token + 1}), ring.JOINING, time.Now())
@@ -674,9 +648,8 @@ func TestSharding(t *testing.T) {
 			},
 		},
 
-		"shuffle sharding, single ruler": {
-			sharding:         true,
-			shardingStrategy: util.ShardingStrategyShuffle,
+		"shard size 0, single ruler": {
+			shuffleShardSize: 0,
 
 			setupRing: func(desc *ring.Desc) {
 				desc.AddIngester(ruler1, ruler1Addr, "", sortTokens([]uint32{0}), ring.ACTIVE, time.Now())
@@ -687,9 +660,7 @@ func TestSharding(t *testing.T) {
 			},
 		},
 
-		"shuffle sharding, multiple rulers, shard size 1": {
-			sharding:         true,
-			shardingStrategy: util.ShardingStrategyShuffle,
+		"shard size 1, multiple rulers": {
 			shuffleShardSize: 1,
 
 			setupRing: func(desc *ring.Desc) {
@@ -704,9 +675,7 @@ func TestSharding(t *testing.T) {
 		},
 
 		// Same test as previous one, but with shard size=2. Second ruler gets all the rules.
-		"shuffle sharding, two rulers, shard size 2": {
-			sharding:         true,
-			shardingStrategy: util.ShardingStrategyShuffle,
+		"shard size 2, two rulers": {
 			shuffleShardSize: 2,
 
 			setupRing: func(desc *ring.Desc) {
@@ -721,9 +690,7 @@ func TestSharding(t *testing.T) {
 			},
 		},
 
-		"shuffle sharding, two rulers, shard size 1, distributed users": {
-			sharding:         true,
-			shardingStrategy: util.ShardingStrategyShuffle,
+		"shard size 1, two rulers, distributed users": {
 			shuffleShardSize: 1,
 
 			setupRing: func(desc *ring.Desc) {
@@ -741,9 +708,7 @@ func TestSharding(t *testing.T) {
 				},
 			},
 		},
-		"shuffle sharding, three rulers, shard size 2": {
-			sharding:         true,
-			shardingStrategy: util.ShardingStrategyShuffle,
+		"shard size 2, three rulers": {
 			shuffleShardSize: 2,
 
 			setupRing: func(desc *ring.Desc) {
@@ -765,9 +730,7 @@ func TestSharding(t *testing.T) {
 				},
 			},
 		},
-		"shuffle sharding, three rulers, shard size 2, ruler2 has no users": {
-			sharding:         true,
-			shardingStrategy: util.ShardingStrategyShuffle,
+		"shard size 2, three rulers, ruler2 has no users": {
 			shuffleShardSize: 2,
 
 			setupRing: func(desc *ring.Desc) {
@@ -788,9 +751,7 @@ func TestSharding(t *testing.T) {
 			},
 		},
 
-		"shuffle sharding, three rulers, shard size 2, single enabled user": {
-			sharding:         true,
-			shardingStrategy: util.ShardingStrategyShuffle,
+		"shard size 2, three rulers, single enabled user": {
 			shuffleShardSize: 2,
 			enabledUsers:     []string{user1},
 
@@ -811,9 +772,7 @@ func TestSharding(t *testing.T) {
 			},
 		},
 
-		"shuffle sharding, three rulers, shard size 2, single disabled user": {
-			sharding:         true,
-			shardingStrategy: util.ShardingStrategyShuffle,
+		"shard size 2, three rulers, single disabled user": {
 			shuffleShardSize: 2,
 			disabledUsers:    []string{user1},
 
@@ -841,8 +800,6 @@ func TestSharding(t *testing.T) {
 
 			setupRuler := func(id string, host string, port int, forceRing *ring.Ring) *Ruler {
 				cfg := Config{
-					EnableSharding:   tc.sharding,
-					ShardingStrategy: tc.shardingStrategy,
 					Ring: RingConfig{
 						InstanceID:   id,
 						InstanceAddr: host,
@@ -963,7 +920,8 @@ func TestDeleteTenantRuleGroups(t *testing.T) {
 
 	require.Equal(t, 3, len(obj.Objects()))
 
-	api, err := NewRuler(Config{}, nil, nil, log.NewNopLogger(), rs, nil)
+	cfg := defaultRulerConfig(t)
+	api, err := NewRuler(cfg, nil, nil, log.NewNopLogger(), rs, nil)
 	require.NoError(t, err)
 
 	{

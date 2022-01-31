@@ -36,21 +36,16 @@ import (
 	"github.com/grafana/mimir/pkg/alertmanager"
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
 	"github.com/grafana/mimir/pkg/api"
-	"github.com/grafana/mimir/pkg/chunk"
-	"github.com/grafana/mimir/pkg/chunk/encoding"
-	"github.com/grafana/mimir/pkg/chunk/purger"
-	"github.com/grafana/mimir/pkg/chunk/storage"
-	chunk_util "github.com/grafana/mimir/pkg/chunk/util"
 	"github.com/grafana/mimir/pkg/compactor"
 	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/flusher"
 	"github.com/grafana/mimir/pkg/frontend"
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	frontendv1 "github.com/grafana/mimir/pkg/frontend/v1"
 	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier"
-	"github.com/grafana/mimir/pkg/querier/queryrange"
 	"github.com/grafana/mimir/pkg/querier/tenantfederation"
 	querier_worker "github.com/grafana/mimir/pkg/querier/worker"
 	"github.com/grafana/mimir/pkg/ruler"
@@ -102,19 +97,13 @@ type Config struct {
 	IngesterClient   client.Config                   `yaml:"ingester_client"`
 	Ingester         ingester.Config                 `yaml:"ingester"`
 	Flusher          flusher.Config                  `yaml:"flusher"`
-	Storage          storage.Config                  `yaml:"storage"`
-	ChunkStore       chunk.StoreConfig               `yaml:"chunk_store"`
-	Schema           chunk.SchemaConfig              `yaml:"schema" doc:"hidden"` // Doc generation tool doesn't support it because part of the SchemaConfig doesn't support CLI flags (needs manual documentation)
 	LimitsConfig     validation.Limits               `yaml:"limits"`
 	Prealloc         mimirpb.PreallocConfig          `yaml:"prealloc" doc:"hidden"`
 	Worker           querier_worker.Config           `yaml:"frontend_worker"`
 	Frontend         frontend.CombinedFrontendConfig `yaml:"frontend"`
-	QueryRange       queryrange.Config               `yaml:"query_range"`
-	Encoding         encoding.Config                 `yaml:"-"` // No yaml for this, it only works with flags.
 	BlocksStorage    tsdb.BlocksStorageConfig        `yaml:"blocks_storage"`
 	Compactor        compactor.Config                `yaml:"compactor"`
 	StoreGateway     storegateway.Config             `yaml:"store_gateway"`
-	PurgerConfig     purger.Config                   `yaml:"purger"`
 	TenantFederation tenantfederation.Config         `yaml:"tenant_federation"`
 	ActivityTracker  activitytracker.Config          `yaml:"activity_tracker"`
 
@@ -150,19 +139,13 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.IngesterClient.RegisterFlags(f)
 	c.Ingester.RegisterFlags(f)
 	c.Flusher.RegisterFlags(f)
-	c.Storage.RegisterFlags(f)
-	c.ChunkStore.RegisterFlags(f)
-	c.Schema.RegisterFlags(f)
 	c.LimitsConfig.RegisterFlags(f)
 	c.Prealloc.RegisterFlags(f)
 	c.Worker.RegisterFlags(f)
 	c.Frontend.RegisterFlags(f)
-	c.QueryRange.RegisterFlags(f)
-	c.Encoding.RegisterFlags(f)
 	c.BlocksStorage.RegisterFlags(f)
 	c.Compactor.RegisterFlags(f)
 	c.StoreGateway.RegisterFlags(f)
-	c.PurgerConfig.RegisterFlags(f)
 	c.TenantFederation.RegisterFlags(f)
 
 	c.Ruler.RegisterFlags(f)
@@ -173,9 +156,6 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.MemberlistKV.RegisterFlags(f)
 	c.ActivityTracker.RegisterFlags(f)
 	c.QueryScheduler.RegisterFlags(f)
-
-	// These don't seem to have a home.
-	f.IntVar(&chunk_util.QueryParallelism, "querier.query-parallelism", 100, "Max subqueries run in parallel per higher-level query.")
 }
 
 // Validate the mimir config and return an error if the validation
@@ -189,18 +169,6 @@ func (c *Config) Validate(log log.Logger) error {
 		return errInvalidHTTPPrefix
 	}
 
-	if err := c.Schema.Validate(); err != nil {
-		return errors.Wrap(err, "invalid schema config")
-	}
-	if err := c.Encoding.Validate(); err != nil {
-		return errors.Wrap(err, "invalid encoding config")
-	}
-	if err := c.Storage.Validate(); err != nil {
-		return errors.Wrap(err, "invalid storage config")
-	}
-	if err := c.ChunkStore.Validate(log); err != nil {
-		return errors.Wrap(err, "invalid chunk store config")
-	}
 	if err := c.RulerStorage.Validate(); err != nil {
 		return errors.Wrap(err, "invalid rulestore config")
 	}
@@ -209,9 +177,6 @@ func (c *Config) Validate(log log.Logger) error {
 	}
 	if err := c.BlocksStorage.Validate(); err != nil {
 		return errors.Wrap(err, "invalid TSDB config")
-	}
-	if err := c.LimitsConfig.Validate(c.Distributor.ShardByAllLabels); err != nil {
-		return errors.Wrap(err, "invalid limits config")
 	}
 	if err := c.Distributor.Validate(c.LimitsConfig); err != nil {
 		return errors.Wrap(err, "invalid distributor config")
@@ -225,8 +190,8 @@ func (c *Config) Validate(log log.Logger) error {
 	if err := c.Worker.Validate(log); err != nil {
 		return errors.Wrap(err, "invalid frontend_worker config")
 	}
-	if err := c.QueryRange.Validate(); err != nil {
-		return errors.Wrap(err, "invalid query_range config")
+	if err := c.Frontend.QueryMiddleware.Validate(); err != nil {
+		return errors.Wrap(err, "invalid query-frontend middleware config")
 	}
 	if err := c.StoreGateway.Validate(c.LimitsConfig); err != nil {
 		return errors.Wrap(err, "invalid store-gateway config")
@@ -239,10 +204,6 @@ func (c *Config) Validate(log log.Logger) error {
 	}
 	if err := c.Alertmanager.Validate(c.AlertmanagerStorage); err != nil {
 		return errors.Wrap(err, "invalid alertmanager config")
-	}
-
-	if c.Storage.Engine == storage.StorageEngineBlocks && c.Querier.SecondStoreEngine != storage.StorageEngineChunks && len(c.Schema.Configs) > 0 {
-		level.Warn(log).Log("schema configuration is not used by the blocks storage engine, and will have no effect")
 	}
 
 	return nil
@@ -294,6 +255,9 @@ func (c *Config) registerServerFlagsWithChangedDefaultValues(fs *flag.FlagSet) {
 
 		case "server.grpc.keepalive.ping-without-stream-allowed":
 			_ = f.Value.Set("true")
+
+		case "server.http-listen-port":
+			_ = f.Value.Set("8080")
 		}
 
 		fs.Var(f.Value, f.Name, f.Usage)
@@ -316,16 +280,12 @@ type Mimir struct {
 	Distributor              *distributor.Distributor
 	Ingester                 *ingester.Ingester
 	Flusher                  *flusher.Flusher
-	Store                    chunk.Store
-	DeletesStore             *purger.DeleteStore
 	Frontend                 *frontendv1.Frontend
 	RuntimeConfig            *runtimeconfig.Manager
-	Purger                   *purger.Purger
-	TombstonesLoader         *purger.TombstonesLoader
 	QuerierQueryable         prom_storage.SampleAndChunkQueryable
 	ExemplarQueryable        prom_storage.ExemplarQueryable
 	QuerierEngine            *promql.Engine
-	QueryFrontendTripperware queryrange.Tripperware
+	QueryFrontendTripperware querymiddleware.Tripperware
 	Ruler                    *ruler.Ruler
 	RulerStorage             rulestore.RuleStore
 	Alertmanager             *alertmanager.MultitenantAlertmanager
@@ -334,8 +294,7 @@ type Mimir struct {
 	MemberlistKV             *memberlist.KVInitService
 	ActivityTracker          *activitytracker.ActivityTracker
 
-	// Queryables that the querier should use to query the long
-	// term storage. It depends on the storage engine used.
+	// Queryables that the querier should use to query the long term storage.
 	StoreQueryables []querier.QueryableWithFilter
 }
 
@@ -352,15 +311,16 @@ func New(cfg Config) (*Mimir, error) {
 	if cfg.TenantFederation.Enabled {
 		util_log.WarnExperimentalUse("tenant-federation")
 		tenant.WithDefaultResolver(tenant.NewMultiResolver())
+
+		if cfg.Ruler.TenantFederation.Enabled {
+			util_log.WarnExperimentalUse("ruler.tenant-federation")
+		}
 	}
 
-	// Don't check auth header on TransferChunks, as we weren't originally
-	// sending it and this could cause transfers to fail on update.
 	cfg.API.HTTPAuthMiddleware = fakeauth.SetupAuthMiddleware(&cfg.Server, cfg.AuthEnabled,
 		// Also don't check auth for these gRPC methods, since single call is used for multiple users (or no user like health check).
 		[]string{
 			"/grpc.health.v1.Health/Check",
-			"/cortex.Ingester/TransferChunks",
 			"/frontend.Frontend/Process",
 			"/frontend.Frontend/NotifyClientShutdown",
 			"/schedulerpb.SchedulerForFrontend/FrontendLoop",
@@ -410,6 +370,15 @@ func (t *Mimir) Run() error {
 	}
 
 	t.API.RegisterServiceMapHandler(http.HandlerFunc(t.servicesHandler))
+
+	// register ingester ring handlers, if they exists prefer the full ring
+	// implementation provided by module.Ring over the BasicLifecycler
+	// available in ingesters
+	if t.Ring != nil {
+		t.API.RegisterRing(t.Ring)
+	} else if t.Ingester != nil {
+		t.API.RegisterRing(t.Ingester.RingHandler())
+	}
 
 	// get all services, create service manager and tell it to start
 	servs := []services.Service(nil)

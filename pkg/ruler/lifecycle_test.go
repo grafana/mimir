@@ -11,13 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/grafana/dskit/kv"
-	"github.com/grafana/dskit/kv/consul"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -27,19 +24,15 @@ func TestRulerShutdown(t *testing.T) {
 
 	config := defaultRulerConfig(t)
 	r := buildRuler(t, config, newMockRuleStore(mockRules), nil)
-	r.cfg.EnableSharding = true
-	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
-	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
-	err := enableSharding(r, ringStore)
-	require.NoError(t, err)
+	kvStore := config.Ring.KVStore.Mock
 
 	require.NoError(t, services.StartAndAwaitRunning(ctx, r))
 	defer services.StopAndAwaitTerminated(ctx, r) //nolint:errcheck
 
 	// Wait until the tokens are registered in the ring
 	test.Poll(t, 100*time.Millisecond, config.Ring.NumTokens, func() interface{} {
-		return numTokens(ringStore, "localhost", RulerRingKey)
+		return numTokens(kvStore, "localhost", RulerRingKey)
 	})
 
 	require.Equal(t, ring.ACTIVE, r.lifecycler.GetState())
@@ -48,7 +41,7 @@ func TestRulerShutdown(t *testing.T) {
 
 	// Wait until the tokens are unregistered from the ring
 	test.Poll(t, 100*time.Millisecond, 0, func() interface{} {
-		return numTokens(ringStore, "localhost", RulerRingKey)
+		return numTokens(kvStore, "localhost", RulerRingKey)
 	})
 }
 
@@ -57,26 +50,22 @@ func TestRuler_RingLifecyclerShouldAutoForgetUnhealthyInstances(t *testing.T) {
 	const heartbeatTimeout = time.Minute
 
 	ctx := context.Background()
-	config := defaultRulerConfig(t)
-	r := buildRuler(t, config, newMockRuleStore(mockRules), nil)
-	r.cfg.EnableSharding = true
-	r.cfg.Ring.HeartbeatPeriod = 100 * time.Millisecond
-	r.cfg.Ring.HeartbeatTimeout = heartbeatTimeout
+	cfg := defaultRulerConfig(t)
+	cfg.Ring.HeartbeatPeriod = 100 * time.Millisecond
+	cfg.Ring.HeartbeatTimeout = heartbeatTimeout
 
-	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
-	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
-
-	err := enableSharding(r, ringStore)
-	require.NoError(t, err)
+	r := buildRuler(t, cfg, newMockRuleStore(mockRules), nil)
 
 	require.NoError(t, services.StartAndAwaitRunning(ctx, r))
 	defer services.StopAndAwaitTerminated(ctx, r) //nolint:errcheck
 
+	ringClient := cfg.Ring.KVStore.Mock
+
 	// Add an unhealthy instance to the ring.
-	require.NoError(t, ringStore.CAS(ctx, RulerRingKey, func(in interface{}) (interface{}, bool, error) {
+	require.NoError(t, ringClient.CAS(ctx, RulerRingKey, func(in interface{}) (interface{}, bool, error) {
 		ringDesc := ring.GetOrCreateRingDesc(in)
 
-		instance := ringDesc.AddIngester(unhealthyInstanceID, "1.1.1.1", "", generateSortedTokens(config.Ring.NumTokens), ring.ACTIVE, time.Now())
+		instance := ringDesc.AddIngester(unhealthyInstanceID, "1.1.1.1", "", generateSortedTokens(cfg.Ring.NumTokens), ring.ACTIVE, time.Now())
 		instance.Timestamp = time.Now().Add(-(ringAutoForgetUnhealthyPeriods + 1) * heartbeatTimeout).Unix()
 		ringDesc.Ingesters[unhealthyInstanceID] = instance
 
@@ -85,7 +74,7 @@ func TestRuler_RingLifecyclerShouldAutoForgetUnhealthyInstances(t *testing.T) {
 
 	// Ensure the unhealthy instance is removed from the ring.
 	test.Poll(t, time.Second*5, false, func() interface{} {
-		d, err := ringStore.Get(ctx, RulerRingKey)
+		d, err := ringClient.Get(ctx, RulerRingKey)
 		if err != nil {
 			return err
 		}

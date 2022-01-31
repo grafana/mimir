@@ -13,7 +13,6 @@ import (
 	math "math"
 	"net/http"
 	"sort"
-	"strings"
 	"sync"
 	"time"
 
@@ -40,21 +39,16 @@ import (
 
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
-	"github.com/grafana/mimir/pkg/prom1/storage/metric"
 	"github.com/grafana/mimir/pkg/tenant"
 	"github.com/grafana/mimir/pkg/util"
-	"github.com/grafana/mimir/pkg/util/extract"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 var (
-	supportedShardingStrategies = []string{util.ShardingStrategyDefault, util.ShardingStrategyShuffle}
-
 	// Validation errors.
-	errInvalidShardingStrategy = errors.New("invalid sharding strategy")
-	errInvalidTenantShardSize  = errors.New("invalid tenant shard size, the value must be greater than 0")
+	errInvalidTenantShardSize = errors.New("invalid tenant shard size, the value must be greater or equal to zero")
 
 	// Distributor instance limits errors.
 	errTooManyInflightPushRequests    = errors.New("too many inflight push requests in distributor")
@@ -131,13 +125,11 @@ type Config struct {
 
 	HATrackerConfig HATrackerConfig `yaml:"ha_tracker"`
 
-	MaxRecvMsgSize  int           `yaml:"max_recv_msg_size"`
-	RemoteTimeout   time.Duration `yaml:"remote_timeout"`
-	ExtraQueryDelay time.Duration `yaml:"extra_queue_delay"`
+	MaxRecvMsgSize  int           `yaml:"max_recv_msg_size" category:"advanced"`
+	RemoteTimeout   time.Duration `yaml:"remote_timeout" category:"advanced"`
+	ExtraQueryDelay time.Duration `yaml:"extra_queue_delay" category:"advanced"`
 
-	ShardingStrategy string `yaml:"sharding_strategy"`
-	ShardByAllLabels bool   `yaml:"shard_by_all_labels"`
-	ExtendWrites     bool   `yaml:"extend_writes"`
+	ExtendWrites bool `yaml:"extend_writes" category:"advanced"`
 
 	// Distributors ring
 	DistributorRing RingConfig `yaml:"ring"`
@@ -168,23 +160,17 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	cfg.DistributorRing.RegisterFlags(f)
 
 	f.IntVar(&cfg.MaxRecvMsgSize, "distributor.max-recv-msg-size", 100<<20, "remote_write API max receive message size (bytes).")
-	f.DurationVar(&cfg.RemoteTimeout, "distributor.remote-timeout", 2*time.Second, "Timeout for downstream ingesters.")
+	f.DurationVar(&cfg.RemoteTimeout, "distributor.remote-timeout", 20*time.Second, "Timeout for downstream ingesters.")
 	f.DurationVar(&cfg.ExtraQueryDelay, "distributor.extra-query-delay", 0, "Time to wait before sending more than the minimum successful query requests.")
-	f.BoolVar(&cfg.ShardByAllLabels, "distributor.shard-by-all-labels", false, "Distribute samples based on all labels, as opposed to solely by user and metric name.")
-	f.StringVar(&cfg.ShardingStrategy, "distributor.sharding-strategy", util.ShardingStrategyDefault, fmt.Sprintf("The sharding strategy to use. Supported values are: %s.", strings.Join(supportedShardingStrategies, ", ")))
 	f.BoolVar(&cfg.ExtendWrites, "distributor.extend-writes", true, "Try writing to an additional ingester in the presence of an ingester not in the ACTIVE state. It is useful to disable this along with -ingester.unregister-on-shutdown=false in order to not spread samples to extra ingesters during rolling restarts with consistent naming.")
 
 	f.Float64Var(&cfg.InstanceLimits.MaxIngestionRate, "distributor.instance-limits.max-ingestion-rate", 0, "Max ingestion rate (samples/sec) that this distributor will accept. This limit is per-distributor, not per-tenant. Additional push requests will be rejected. Current ingestion rate is computed as exponentially weighted moving average, updated every second. 0 = unlimited.")
-	f.IntVar(&cfg.InstanceLimits.MaxInflightPushRequests, "distributor.instance-limits.max-inflight-push-requests", 0, "Max inflight push requests that this distributor can handle. This limit is per-distributor, not per-tenant. Additional requests will be rejected. 0 = unlimited.")
+	f.IntVar(&cfg.InstanceLimits.MaxInflightPushRequests, "distributor.instance-limits.max-inflight-push-requests", 2000, "Max inflight push requests that this distributor can handle. This limit is per-distributor, not per-tenant. Additional requests will be rejected. 0 = unlimited.")
 }
 
 // Validate config and returns error on failure
 func (cfg *Config) Validate(limits validation.Limits) error {
-	if !util.StringsContain(supportedShardingStrategies, cfg.ShardingStrategy) {
-		return errInvalidShardingStrategy
-	}
-
-	if cfg.ShardingStrategy == util.ShardingStrategyShuffle && limits.IngestionTenantShardSize <= 0 {
+	if limits.IngestionTenantShardSize < 0 {
 		return errInvalidTenantShardSize
 	}
 
@@ -224,7 +210,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 
 	if !canJoinDistributorsRing {
 		ingestionRateStrategy = newInfiniteIngestionRateStrategy()
-	} else if limits.IngestionRateStrategy() == validation.GlobalIngestionRateStrategy {
+	} else {
 		distributorsLifeCycler, err = ring.NewLifecycler(cfg.DistributorRing.ToLifecyclerConfig(), nil, "distributor", DistributorRingKey, true, log, prometheus.WrapRegistererWithPrefix("cortex_", reg))
 		if err != nil {
 			return nil, err
@@ -237,8 +223,6 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		subservices = append(subservices, distributorsLifeCycler, distributorsRing)
 
 		ingestionRateStrategy = newGlobalIngestionRateStrategy(limits, distributorsLifeCycler)
-	} else {
-		ingestionRateStrategy = newLocalIngestionRateStrategy(limits)
 	}
 
 	d := &Distributor{
@@ -448,23 +432,11 @@ func (d *Distributor) stopping(_ error) error {
 }
 
 func (d *Distributor) tokenForLabels(userID string, labels []mimirpb.LabelAdapter) (uint32, error) {
-	if d.cfg.ShardByAllLabels {
-		return shardByAllLabels(userID, labels), nil
-	}
-
-	unsafeMetricName, err := extract.UnsafeMetricNameFromLabelAdapters(labels)
-	if err != nil {
-		return 0, err
-	}
-	return shardByMetricName(userID, unsafeMetricName), nil
+	return shardByAllLabels(userID, labels), nil
 }
 
 func (d *Distributor) tokenForMetadata(userID string, metricName string) uint32 {
-	if d.cfg.ShardByAllLabels {
-		return shardByMetricName(userID, metricName)
-	}
-
-	return shardByUser(userID)
+	return shardByMetricName(userID, metricName)
 }
 
 // shardByMetricName returns the token for the given metric. The provided metricName
@@ -792,12 +764,8 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 	// totalN included samples and metadata. Ingester follows this pattern when computing its ingestion rate.
 	d.ingestionRate.Add(int64(totalN))
 
-	subRing := d.ingestersRing
-
-	// Obtain a subring if required.
-	if d.cfg.ShardingStrategy == util.ShardingStrategyShuffle {
-		subRing = d.ingestersRing.ShuffleShard(userID, d.limits.IngestionTenantShardSize(userID))
-	}
+	// Get a subring if tenant has shuffle shard size configured.
+	subRing := d.ingestersRing.ShuffleShard(userID, d.limits.IngestionTenantShardSize(userID))
 
 	// Use a background context to make sure all ingesters get samples even if we return early
 	localCtx, cancel := context.WithTimeout(context.Background(), d.cfg.RemoteTimeout)
@@ -1246,7 +1214,7 @@ func (d *Distributor) LabelNames(ctx context.Context, from, to model.Time, match
 }
 
 // MetricsForLabelMatchers gets the metrics that match said matchers
-func (d *Distributor) MetricsForLabelMatchers(ctx context.Context, from, through model.Time, matchers ...*labels.Matcher) ([]metric.Metric, error) {
+func (d *Distributor) MetricsForLabelMatchers(ctx context.Context, from, through model.Time, matchers ...*labels.Matcher) ([]model.Metric, error) {
 	replicationSet, err := d.GetIngestersForMetadata(ctx)
 	if err != nil {
 		return nil, err
@@ -1272,11 +1240,9 @@ func (d *Distributor) MetricsForLabelMatchers(ctx context.Context, from, through
 		}
 	}
 
-	result := make([]metric.Metric, 0, len(metrics))
+	result := make([]model.Metric, 0, len(metrics))
 	for _, m := range metrics {
-		result = append(result, metric.Metric{
-			Metric: m,
-		})
+		result = append(result, m)
 	}
 	return result, nil
 }
@@ -1289,7 +1255,6 @@ func (d *Distributor) MetricsMetadata(ctx context.Context) ([]scrape.MetricMetad
 	}
 
 	req := &ingester_client.MetricsMetadataRequest{}
-	// TODO(gotjosh): We only need to look in all the ingesters if shardByAllLabels is enabled.
 	resps, err := d.ForReplicationSet(ctx, replicationSet, func(ctx context.Context, client ingester_client.IngesterClient) (interface{}, error) {
 		return client.MetricsMetadata(ctx, req)
 	})

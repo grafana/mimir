@@ -1,14 +1,13 @@
 local utils = import 'mixin-utils/utils.libsonnet';
 
 (import 'dashboard-utils.libsonnet') {
-
-  'cortex-queries.json':
-    ($.dashboard('Cortex / Queries') + { uid: 'd9931b1054053c8b972d320774bb8f1d' })
+  'mimir-queries.json':
+    ($.dashboard('Queries') + { uid: 'd9931b1054053c8b972d320774bb8f1d' })
     .addClusterSelectorTemplates()
     .addRow(
-      $.row('Query Frontend')
+      $.row('Query-frontend')
       .addPanel(
-        $.panel('Queue Duration') +
+        $.panel('Queue duration') +
         $.latencyPanel('cortex_query_frontend_queue_duration_seconds', '{%s}' % $.jobMatcher($._config.job_names.query_frontend)),
       )
       .addPanel(
@@ -17,14 +16,14 @@ local utils = import 'mixin-utils/utils.libsonnet';
         { yaxes: $.yaxes('short') },
       )
       .addPanel(
-        $.panel('Queue Length (per %s)' % $._config.per_instance_label) +
+        $.panel('Queue length (per %s)' % $._config.per_instance_label) +
         $.queryPanel(
           'sum by(%s) (cortex_query_frontend_queue_length{%s})' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.query_frontend)],
           '{{%s}}' % $._config.per_instance_label
         ),
       )
       .addPanel(
-        $.panel('Queue Length (per user)') +
+        $.panel('Queue length (per user)') +
         $.queryPanel(
           'sum by(user) (cortex_query_frontend_queue_length{%s}) > 0' % [$.jobMatcher($._config.job_names.query_frontend)],
           '{{user}}'
@@ -32,20 +31,20 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addRow(
-      $.row('Query Scheduler')
+      $.row('Query-scheduler')
       .addPanel(
-        $.panel('Queue Duration') +
+        $.panel('Queue duration') +
         $.latencyPanel('cortex_query_scheduler_queue_duration_seconds', '{%s}' % $.jobMatcher($._config.job_names.query_scheduler)),
       )
       .addPanel(
-        $.panel('Queue Length (per %s)' % $._config.per_instance_label) +
+        $.panel('Queue length (per %s)' % $._config.per_instance_label) +
         $.queryPanel(
           'sum by(%s) (cortex_query_scheduler_queue_length{%s})' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.query_scheduler)],
           '{{%s}}' % $._config.per_instance_label
         ),
       )
       .addPanel(
-        $.panel('Queue Length (per user)') +
+        $.panel('Queue length (per user)') +
         $.queryPanel(
           'sum by(user) (cortex_query_scheduler_queue_length{%s}) > 0' % [$.jobMatcher($._config.job_names.query_scheduler)],
           '{{user}}'
@@ -53,53 +52,89 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addRow(
-      $.row('Query Frontend - Query Splitting and Results Cache')
+      $.row('Query-frontend - query splitting and results cache')
       .addPanel(
         $.panel('Intervals per Query') +
         $.queryPanel('sum(rate(cortex_frontend_split_queries_total{%s}[1m])) / sum(rate(cortex_frontend_query_range_duration_seconds_count{%s, method="split_by_interval"}[1m]))' % [$.jobMatcher($._config.job_names.query_frontend), $.jobMatcher($._config.job_names.query_frontend)], 'splitting rate') +
         $.panelDescription(
-          'Intervals per Query',
+          'Intervals per query',
           |||
-            The average number of splitted queries (partitioned by time) executed a single input query.
+            The average number of split queries (partitioned by time) executed a single input query.
           |||
         ),
       )
       .addPanel(
-        $.panel('Results Cache Hit %') +
-        $.queryPanel('sum(rate(cortex_cache_hits{name=~"frontend.+", %s}[1m])) / sum(rate(cortex_cache_fetched_keys{name=~"frontend.+", %s}[1m]))' % [$.jobMatcher($._config.job_names.query_frontend), $.jobMatcher($._config.job_names.query_frontend)], 'Hit Rate') +
+        $.panel('Results cache hit %') +
+        $.queryPanel(
+          |||
+            # Query metrics before and after migration to new memcached backend.
+            sum (
+              rate(cortex_cache_hits{name=~"frontend.+", %(frontend)s}[1m])
+              or
+              rate(thanos_cache_memcached_hits_total{name="frontend-cache", %(frontend)s}[1m])
+            )
+            /
+            sum (
+              rate(cortex_cache_fetched_keys{name=~"frontend.+", %(frontend)s}[1m])
+              or
+              rate(thanos_cache_memcached_requests_total{name=~"frontend-cache", %(frontend)s}[1m])
+            )
+          ||| % {
+            frontend: $.jobMatcher($._config.job_names.query_frontend),
+          },
+          'Hit rate',
+        ) +
         { yaxes: $.yaxes({ format: 'percentunit', max: 1 }) },
       )
       .addPanel(
-        $.panel('Results Cache misses') +
-        $.queryPanel('sum(rate(cortex_cache_fetched_keys{name=~"frontend.+", %s}[1m])) - sum(rate(cortex_cache_hits{name=~"frontend.+", %s}[1m]))' % [$.jobMatcher($._config.job_names.query_frontend), $.jobMatcher($._config.job_names.query_frontend)], 'Miss Rate'),
+        $.panel('Results cache misses') +
+        $.queryPanel(
+          |||
+            # Query metrics before and after migration to new memcached backend.
+            sum (
+              rate(cortex_cache_fetched_keys{name=~"frontend.+", %(frontend)s}[1m])
+              or
+              rate(thanos_cache_memcached_requests_total{name="frontend-cache", %(frontend)s}[1m])
+            )
+            -
+            sum (
+              rate(cortex_cache_hits{name=~"frontend.+", %(frontend)s}[1m])
+              or
+              rate(thanos_cache_memcached_hits_total{name=~"frontend-cache", %(frontend)s}[1m])
+            )
+          ||| % {
+            frontend: $.jobMatcher($._config.job_names.query_frontend),
+          },
+          'Miss rate'
+        ),
       )
     )
     .addRow(
-      $.row('Query Frontend - Query sharding')
+      $.row('Query-frontend - query sharding')
       .addPanel(
-        $.panel('Sharded Queries Ratio') +
+        $.panel('Sharded queries ratio') +
         $.queryPanel(|||
           sum(rate(cortex_frontend_query_sharding_rewrites_succeeded_total{%s}[$__rate_interval])) /
           sum(rate(cortex_frontend_query_sharding_rewrites_attempted_total{%s}[$__rate_interval]))
         ||| % [$.jobMatcher($._config.job_names.query_frontend), $.jobMatcher($._config.job_names.query_frontend)], 'sharded queries ratio') +
         { yaxes: $.yaxes({ format: 'percentunit', max: 1 }) } +
         $.panelDescription(
-          'Sharded Queries Ratio',
+          'Sharded queries ratio',
           |||
             The % of queries that have been successfully rewritten and executed in a shardable way.
-            This panel takes in account only type of queries which are supported by query sharding (eg. range queries).
+            This panel only takes into account the type of queries that are supported by query sharding (eg. range queries).
           |||
         ),
       )
       .addPanel(
-        $.panel('Number of Sharded Queries per Query') +
+        $.panel('Number of sharded queries per query') +
         $.latencyPanel('cortex_frontend_sharded_queries_per_query', '{%s}' % $.jobMatcher($._config.job_names.query_frontend), multiplier=1) +
         { yaxes: $.yaxes('short') } +
         $.panelDescription(
-          'Number of Sharded Queries per Query',
+          'Number of sharded queries per query',
           |||
-            How many sharded queries have been executed for a single input query. It tracks only queries which have
-            been successfully rewritten in a shardable way.
+            The number of sharded queries that have been executed for a single input query. It only tracks queries that
+            have been successfully rewritten in a shardable way.
           |||
         ),
       )
@@ -112,42 +147,39 @@ local utils = import 'mixin-utils/utils.libsonnet';
         { yaxes: $.yaxes('ms') } +
         $.stack,
       )
-      .addPanel(
-        $.panel('Chunk cache misses') +
-        $.queryPanel('sum(rate(cortex_cache_fetched_keys{%s,name="chunksmemcache"}[1m])) - sum(rate(cortex_cache_hits{%s,name="chunksmemcache"}[1m]))' % [$.jobMatcher($._config.job_names.querier), $.jobMatcher($._config.job_names.querier)], 'Hit rate'),
-      )
-      .addPanel(
-        $.panel('Chunk cache corruptions') +
-        $.queryPanel('sum(rate(cortex_cache_corrupt_chunks_total{%s}[1m]))' % $.jobMatcher($._config.job_names.querier), 'Corrupt chunks'),
-      )
     )
     .addRow(
       $.row('Ingester')
       .addPanel(
-        $.panel('Series per Query') +
+        $.panel('Series per query') +
         utils.latencyRecordingRulePanel('cortex_ingester_queried_series', $.jobSelector($._config.job_names.ingester), multiplier=1) +
         { yaxes: $.yaxes('short') },
       )
       .addPanel(
-        $.panel('Chunks per Query') +
+        $.panel('Chunks per query') +
         utils.latencyRecordingRulePanel('cortex_ingester_queried_chunks', $.jobSelector($._config.job_names.ingester), multiplier=1) +
         { yaxes: $.yaxes('short') },
       )
       .addPanel(
-        $.panel('Samples per Query') +
+        $.panel('Samples per query') +
         utils.latencyRecordingRulePanel('cortex_ingester_queried_samples', $.jobSelector($._config.job_names.ingester), multiplier=1) +
+        { yaxes: $.yaxes('short') },
+      )
+      .addPanel(
+        $.panel('Exemplars per query') +
+        utils.latencyRecordingRulePanel('cortex_ingester_queried_exemplars', $.jobSelector($._config.job_names.ingester), multiplier=1) +
         { yaxes: $.yaxes('short') },
       )
     )
     .addRow(
       $.row('Querier')
       .addPanel(
-        $.panel('Number of store-gateways hit per Query') +
+        $.panel('Number of store-gateways hit per query') +
         $.latencyPanel('cortex_querier_storegateway_instances_hit_per_query', '{%s}' % $.jobMatcher($._config.job_names.querier), multiplier=1) +
         { yaxes: $.yaxes('short') },
       )
       .addPanel(
-        $.panel('Refetches of missing blocks per Query') +
+        $.panel('Refetches of missing blocks per query') +
         $.latencyPanel('cortex_querier_storegateway_refetches_per_query', '{%s}' % $.jobMatcher($._config.job_names.querier), multiplier=1) +
         { yaxes: $.yaxes('short') },
       )

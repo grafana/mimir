@@ -1,29 +1,31 @@
 {
-  grafanaDashboardFolder: 'Cortex',
+  grafanaDashboardFolder: 'Mimir',
   grafanaDashboardShards: 4,
 
   _config+:: {
-    // Tags for dashboards.
-    tags: ['cortex'],
+    // The product name used when building dashboards.
+    product: 'Mimir',
 
-    // If Cortex is deployed as a single binary, set to true to
+    // Tags for dashboards.
+    tags: ['mimir'],
+
+    // If Mimir is deployed as a single binary, set to true to
     // modify the job selectors in the dashboard queries.
     singleBinary: false,
 
     // These are used by the dashboards and allow for the simultaneous display of
-    // microservice and single binary cortex clusters.
+    // microservice and single binary Mimir clusters.
     job_names: {
-      ingester: '(ingester.*|cortex$)',  // Match also custom and per-zone ingester deployments.
-      distributor: '(distributor|cortex$)',
-      querier: '(querier.*|cortex$)',  // Match also custom querier deployments.
-      ruler: '(ruler|cortex$)',
-      query_frontend: '(query-frontend.*|cortex$)',  // Match also custom query-frontend deployments.
+      ingester: '(ingester.*|cortex|mimir)',  // Match also custom and per-zone ingester deployments.
+      distributor: '(distributor|cortex|mimir)',
+      querier: '(querier.*|cortex|mimir)',  // Match also custom querier deployments.
+      ruler: '(ruler|cortex|mimir)',
+      query_frontend: '(query-frontend.*|cortex|mimir)',  // Match also custom query-frontend deployments.
       query_scheduler: 'query-scheduler.*',  // Not part of single-binary. Match also custom query-scheduler deployments.
-      table_manager: '(table-manager|cortex$)',
-      ring_members: ['compactor', 'distributor', 'ingester.*', 'querier.*', 'ruler', 'store-gateway.*', 'cortex'],
-      store_gateway: '(store-gateway.*|cortex$)',  // Match also per-zone store-gateway deployments.
+      ring_members: ['compactor', 'distributor', 'ingester.*', 'querier.*', 'ruler', 'store-gateway.*', 'cortex', 'mimir'],
+      store_gateway: '(store-gateway.*|cortex|mimir)',  // Match also per-zone store-gateway deployments.
       gateway: '(gateway|cortex-gw|cortex-gw-internal)',
-      compactor: 'compactor.*',  // Match also custom compactor deployments.
+      compactor: 'compactor.*|cortex|mimir',  // Match also custom compactor deployments.
     },
 
     // Grouping labels, to uniquely identify and group by {jobs, clusters}
@@ -33,7 +35,7 @@
     cortex_p99_latency_threshold_seconds: 2.5,
 
     // Whether resources dashboards are enabled (based on cAdvisor metrics).
-    resources_dashboards_enabled: false,
+    resources_dashboards_enabled: true,
 
     // The label used to differentiate between different application instances (i.e. 'pod' in a kubernetes install).
     per_instance_label: 'pod',
@@ -59,6 +61,8 @@
     show_dashboard_descriptions: {
       writes: true,
       reads: true,
+      tenants: true,
+      top_tenants: true,
     },
 
     // The routes to exclude from alerts.

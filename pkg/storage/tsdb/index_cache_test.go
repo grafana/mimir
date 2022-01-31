@@ -10,6 +10,8 @@ import (
 
 	"github.com/grafana/dskit/flagext"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/grafana/mimir/pkg/cache"
 )
 
 func TestIndexCacheConfig_Validate(t *testing.T) {
@@ -26,21 +28,26 @@ func TestIndexCacheConfig_Validate(t *testing.T) {
 		},
 		"unsupported backend should fail": {
 			cfg: IndexCacheConfig{
-				Backend: "xxx",
+				BackendConfig: cache.BackendConfig{
+					Backend: "xxx",
+				},
 			},
 			expected: errUnsupportedIndexCacheBackend,
 		},
 		"no memcached addresses should fail": {
 			cfg: IndexCacheConfig{
-				Backend: "memcached",
+				BackendConfig: cache.BackendConfig{
+					Backend: IndexCacheBackendMemcached,
+				},
 			},
-			expected: errNoIndexCacheAddresses,
+			expected: cache.ErrNoMemcachedAddresses,
 		},
 		"one memcached address should pass": {
 			cfg: IndexCacheConfig{
-				Backend: "memcached",
-				Memcached: MemcachedClientConfig{
-					Addresses: "dns+localhost:11211",
+				BackendConfig: cache.BackendConfig{Backend: IndexCacheBackendMemcached,
+					Memcached: cache.MemcachedConfig{
+						Addresses: "dns+localhost:11211",
+					},
 				},
 			},
 		},

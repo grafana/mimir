@@ -25,16 +25,14 @@ import (
 	"github.com/thanos-io/thanos/pkg/strutil"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/grafana/mimir/pkg/chunk"
-	"github.com/grafana/mimir/pkg/chunk/purger"
 	"github.com/grafana/mimir/pkg/querier/batch"
-	"github.com/grafana/mimir/pkg/querier/chunkstore"
 	"github.com/grafana/mimir/pkg/querier/engine"
 	"github.com/grafana/mimir/pkg/querier/iterators"
-	"github.com/grafana/mimir/pkg/querier/lazyquery"
-	"github.com/grafana/mimir/pkg/querier/series"
+	"github.com/grafana/mimir/pkg/storage/chunk"
+	"github.com/grafana/mimir/pkg/storage/lazyquery"
 	"github.com/grafana/mimir/pkg/tenant"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/activitytracker"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -55,12 +53,8 @@ type Config struct {
 	QueryStoreAfter    time.Duration `yaml:"query_store_after"`
 	MaxQueryIntoFuture time.Duration `yaml:"max_query_into_future"`
 
-	// Blocks storage only.
 	StoreGatewayAddresses string       `yaml:"store_gateway_addresses"`
 	StoreGatewayClient    ClientConfig `yaml:"store_gateway_client"`
-
-	SecondStoreEngine        string       `yaml:"second_store_engine"`
-	UseSecondStoreBeforeTime flagext.Time `yaml:"use_second_store_before_time"`
 
 	ShuffleShardingIngestersLookbackPeriod time.Duration `yaml:"shuffle_sharding_ingesters_lookback_period"`
 
@@ -83,10 +77,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	flagext.DeprecatedFlag(f, "querier.query-store-for-labels-enabled", "This option is no longer used, and will be removed.", logger)
 	f.BoolVar(&cfg.QueryLabelNamesWithMatchers, "querier.query-label-names-with-matchers-enabled", false, "True to enable queriers to use an optimized implementation which passes down to ingesters the label matchers when running the label names API. Can be enabled once all ingesters run a version >= the one where this option has been introduced.")
 	f.DurationVar(&cfg.MaxQueryIntoFuture, "querier.max-query-into-future", 10*time.Minute, "Maximum duration into the future you can query. 0 to disable.")
-	f.DurationVar(&cfg.QueryStoreAfter, "querier.query-store-after", 0, "The time after which a metric should be queried from storage and not just ingesters. 0 means all queries are sent to store. When running the blocks storage, if this option is enabled, the time range of the query sent to the store will be manipulated to ensure the query end is not more recent than 'now - query-store-after'.")
-	f.StringVar(&cfg.StoreGatewayAddresses, "querier.store-gateway-addresses", "", "Comma separated list of store-gateway addresses in DNS Service Discovery format. This option should be set when using the blocks storage and the store-gateway sharding is disabled (when enabled, the store-gateway instances form a ring and addresses are picked from the ring).")
-	f.StringVar(&cfg.SecondStoreEngine, "querier.second-store-engine", "", "Second store engine to use for querying. Empty = disabled.")
-	f.Var(&cfg.UseSecondStoreBeforeTime, "querier.use-second-store-before-time", "If specified, second store is only used for queries before this timestamp. Default value 0 means secondary store is always queried.")
+	f.DurationVar(&cfg.QueryStoreAfter, "querier.query-store-after", 0, "The time after which a metric should be queried from storage and not just ingesters. 0 means all queries are sent to store. If this option is enabled, the time range of the query sent to the store-gateway will be manipulated to ensure the query end is not more recent than 'now - query-store-after'.")
+	f.StringVar(&cfg.StoreGatewayAddresses, "querier.store-gateway-addresses", "", "Comma separated list of store-gateway addresses in DNS Service Discovery format. This option should be set when the store-gateway sharding is disabled (when enabled, the store-gateway instances form a ring and addresses are picked from the ring).")
 	f.DurationVar(&cfg.ShuffleShardingIngestersLookbackPeriod, "querier.shuffle-sharding-ingesters-lookback-period", 0, "When distributor's sharding strategy is shuffle-sharding and this setting is > 0, queriers fetch in-memory series from the minimum set of required ingesters, selecting only ingesters which may have received series since 'now - lookback period'. The lookback period should be greater or equal than the configured 'query store after' and 'query ingesters within'. If this setting is 0, queriers always query all ingesters (ingesters shuffle sharding on read path is disabled).")
 
 	cfg.EngineConfig.RegisterFlags(f)
@@ -127,13 +119,8 @@ func getChunksIteratorFunction(cfg Config) chunkIteratorFunc {
 	return mergeChunks
 }
 
-// NewChunkStoreQueryable returns the storage.Queryable implementation against the chunks store.
-func NewChunkStoreQueryable(cfg Config, chunkStore chunkstore.ChunkStore) storage.Queryable {
-	return newChunkStoreQueryable(chunkStore, getChunksIteratorFunction(cfg))
-}
-
 // New builds a queryable and promql engine.
-func New(cfg Config, limits *validation.Overrides, distributor Distributor, stores []QueryableWithFilter, tombstonesLoader *purger.TombstonesLoader, reg prometheus.Registerer, logger log.Logger) (storage.SampleAndChunkQueryable, storage.ExemplarQueryable, *promql.Engine) {
+func New(cfg Config, limits *validation.Overrides, distributor Distributor, stores []QueryableWithFilter, reg prometheus.Registerer, logger log.Logger, tracker *activitytracker.ActivityTracker) (storage.SampleAndChunkQueryable, storage.ExemplarQueryable, *promql.Engine) {
 	iteratorFunc := getChunksIteratorFunction(cfg)
 
 	distributorQueryable := newDistributorQueryable(distributor, iteratorFunc, cfg.QueryIngestersWithin, cfg.QueryLabelNamesWithMatchers, logger)
@@ -145,7 +132,7 @@ func New(cfg Config, limits *validation.Overrides, distributor Distributor, stor
 			QueryStoreAfter:     cfg.QueryStoreAfter,
 		}
 	}
-	queryable := NewQueryable(distributorQueryable, ns, iteratorFunc, cfg, limits, tombstonesLoader, logger)
+	queryable := NewQueryable(distributorQueryable, ns, iteratorFunc, cfg, limits, logger)
 	exemplarQueryable := newDistributorExemplarQueryable(distributor, logger)
 
 	lazyQueryable := storage.QueryableFunc(func(ctx context.Context, mint int64, maxt int64) (storage.Querier, error) {
@@ -156,7 +143,7 @@ func New(cfg Config, limits *validation.Overrides, distributor Distributor, stor
 		return lazyquery.NewLazyQuerier(querier), nil
 	})
 
-	engine := promql.NewEngine(engine.NewPromQLEngineOptions(cfg.EngineConfig, logger, reg))
+	engine := promql.NewEngine(engine.NewPromQLEngineOptions(cfg.EngineConfig, tracker, logger, reg))
 	return NewSampleAndChunkQueryable(lazyQueryable), exemplarQueryable, engine
 }
 
@@ -184,7 +171,7 @@ type QueryableWithFilter interface {
 }
 
 // NewQueryable creates a new Queryable for mimir.
-func NewQueryable(distributor QueryableWithFilter, stores []QueryableWithFilter, chunkIterFn chunkIteratorFunc, cfg Config, limits *validation.Overrides, tombstonesLoader *purger.TombstonesLoader, logger log.Logger) storage.Queryable {
+func NewQueryable(distributor QueryableWithFilter, stores []QueryableWithFilter, chunkIterFn chunkIteratorFunc, cfg Config, limits *validation.Overrides, logger log.Logger) storage.Queryable {
 	return storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
 		now := time.Now()
 
@@ -207,7 +194,6 @@ func NewQueryable(distributor QueryableWithFilter, stores []QueryableWithFilter,
 			mint:               mint,
 			maxt:               maxt,
 			chunkIterFn:        chunkIterFn,
-			tombstonesLoader:   tombstonesLoader,
 			limits:             limits,
 			maxQueryIntoFuture: cfg.MaxQueryIntoFuture,
 			logger:             logger,
@@ -246,7 +232,6 @@ type querier struct {
 	ctx         context.Context
 	mint, maxt  int64
 
-	tombstonesLoader   *purger.TombstonesLoader
 	limits             *validation.Overrides
 	maxQueryIntoFuture time.Duration
 	logger             log.Logger
@@ -306,19 +291,8 @@ func (q querier) Select(_ bool, sp *storage.SelectHints, matchers ...*labels.Mat
 		return storage.ErrSeriesSet(limitErr)
 	}
 
-	tombstones, err := q.tombstonesLoader.GetPendingTombstonesForInterval(userID, startTime, endTime)
-	if err != nil {
-		return storage.ErrSeriesSet(err)
-	}
-
 	if len(q.queriers) == 1 {
-		seriesSet := q.queriers[0].Select(true, sp, matchers...)
-
-		if tombstones.Len() != 0 {
-			seriesSet = series.NewDeletedSeriesSet(seriesSet, tombstones, model.Interval{Start: startTime, End: endTime})
-		}
-
-		return seriesSet
+		return q.queriers[0].Select(true, sp, matchers...)
 	}
 
 	sets := make(chan storage.SeriesSet, len(q.queriers))
@@ -341,12 +315,7 @@ func (q querier) Select(_ bool, sp *storage.SelectHints, matchers ...*labels.Mat
 	// we have all the sets from different sources (chunk from store, chunks from ingesters,
 	// time series from store and time series from ingesters).
 	// mergeSeriesSets will return sorted set.
-	seriesSet := q.mergeSeriesSets(result)
-
-	if tombstones.Len() != 0 {
-		seriesSet = series.NewDeletedSeriesSet(seriesSet, tombstones, model.Interval{Start: startTime, End: endTime})
-	}
-	return seriesSet
+	return q.mergeSeriesSets(result)
 }
 
 // LabelsValue implements storage.Querier.

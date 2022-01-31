@@ -77,26 +77,6 @@ func (l *Client) ListAllUsers(ctx context.Context) ([]string, error) {
 	return result, nil
 }
 
-// ListAllRuleGroups implements rules.RuleStore. This method also loads the rules.
-func (l *Client) ListAllRuleGroups(ctx context.Context) (map[string]rulespb.RuleGroupList, error) {
-	users, err := l.ListAllUsers(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	lists := make(map[string]rulespb.RuleGroupList)
-	for _, user := range users {
-		list, err := l.loadAllRulesGroupsForUser(ctx, user)
-		if err != nil {
-			return nil, errors.Wrapf(err, "failed to list rule groups for user %s", user)
-		}
-
-		lists[user] = list
-	}
-
-	return lists, nil
-}
-
 // ListRuleGroupsForUserAndNamespace implements rules.RuleStore. This method also loads the rules.
 func (l *Client) ListRuleGroupsForUserAndNamespace(ctx context.Context, userID string, namespace string) (rulespb.RuleGroupList, error) {
 	if namespace != "" {

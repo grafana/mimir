@@ -1,0 +1,1758 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: default
+---
+apiVersion: policy/v1beta1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: ingester-pdb
+  name: ingester-pdb
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: ingester
+---
+apiVersion: policy/v1beta1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: store-gateway-pdb
+  name: store-gateway-pdb
+  namespace: default
+spec:
+  maxUnavailable: 2
+  selector:
+    matchLabels:
+      name: store-gateway
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: consul-sidekick
+  namespace: default
+---
+apiVersion: v1
+data:
+  consul-config.json: '{"leave_on_terminate": true, "raft_snapshot_threshold": 128,
+    "raft_trailing_logs": 10000, "telemetry": {"dogstatsd_addr": "127.0.0.1:9125"}}'
+  mapping: |
+    mappings:
+    - match: consul.*.runtime.*
+      name: consul_runtime
+      labels:
+        type: $2
+    - match: consul.runtime.total_gc_pause_ns
+      name: consul_runtime_total_gc_pause_ns
+      labels:
+        type: $2
+    - match: consul.consul.health.service.query-tag.*.*.*
+      name: consul_health_service_query_tag
+      labels:
+        query: $1.$2.$3
+    - match: consul.consul.health.service.query-tag.*.*.*.*
+      name: consul_health_service_query_tag
+      labels:
+        query: $1.$2.$3.$4
+    - match: consul.consul.health.service.query-tag.*.*.*.*.*
+      name: consul_health_service_query_tag
+      labels:
+        query: $1.$2.$3.$4.$5
+    - match: consul.consul.health.service.query-tag.*.*.*.*.*.*
+      name: consul_health_service_query_tag
+      labels:
+        query: $1.$2.$3.$4.$5.$6
+    - match: consul.consul.health.service.query-tag.*.*.*.*.*.*.*
+      name: consul_health_service_query_tag
+      labels:
+        query: $1.$2.$3.$4.$5.$6.$7
+    - match: consul.consul.health.service.query-tag.*.*.*.*.*.*.*.*
+      name: consul_health_service_query_tag
+      labels:
+        query: $1.$2.$3.$4.$5.$6.$7.$8
+    - match: consul.consul.health.service.query-tag.*.*.*.*.*.*.*.*.*
+      name: consul_health_service_query_tag
+      labels:
+        query: $1.$2.$3.$4.$5.$6.$7.$8.$9
+    - match: consul.consul.health.service.query-tag.*.*.*.*.*.*.*.*.*.*
+      name: consul_health_service_query_tag
+      labels:
+        query: $1.$2.$3.$4.$5.$6.$7.$8.$9.$10
+    - match: consul.consul.health.service.query-tag.*.*.*.*.*.*.*.*.*.*.*
+      name: consul_health_service_query_tag
+      labels:
+        query: $1.$2.$3.$4.$5.$6.$7.$8.$9.$10.$11
+    - match: consul.consul.health.service.query-tag.*.*.*.*.*.*.*.*.*.*.*.*
+      name: consul_health_service_query_tag
+      labels:
+        query: $1.$2.$3.$4.$5.$6.$7.$8.$9.$10.$11.$12
+    - match: consul.consul.catalog.deregister
+      name: consul_catalog_deregister
+      labels: {}
+    - match: consul.consul.dns.domain_query.*.*.*.*.*
+      name: consul_dns_domain_query
+      labels:
+        query: $1.$2.$3.$4.$5
+    - match: consul.consul.health.service.not-found.*
+      name: consul_health_service_not_found
+      labels:
+        query: $1
+    - match: consul.consul.health.service.query.*
+      name: consul_health_service_query
+      labels:
+        query: $1
+    - match: consul.*.memberlist.health.score
+      name: consul_memberlist_health_score
+      labels: {}
+    - match: consul.serf.queue.*
+      name: consul_serf_events
+      labels:
+        type: $1
+    - match: consul.serf.snapshot.appendLine
+      name: consul_serf_snapshot_appendLine
+      labels:
+        type: $1
+    - match: consul.serf.coordinate.adjustment-ms
+      name: consul_serf_coordinate_adjustment_ms
+      labels: {}
+    - match: consul.consul.rpc.query
+      name: consul_rpc_query
+      labels: {}
+    - match: consul.*.consul.session_ttl.active
+      name: consul_session_ttl_active
+      labels: {}
+    - match: consul.raft.rpc.*
+      name: consul_raft_rpc
+      labels:
+        type: $1
+    - match: consul.raft.rpc.appendEntries.storeLogs
+      name: consul_raft_rpc_appendEntries_storeLogs
+      labels:
+        type: $1
+    - match: consul.consul.fsm.persist
+      name: consul_fsm_persist
+      labels: {}
+    - match: consul.raft.fsm.apply
+      name: consul_raft_fsm_apply
+      labels: {}
+    - match: consul.raft.leader.lastContact
+      name: consul_raft_leader_lastcontact
+      labels: {}
+    - match: consul.raft.leader.dispatchLog
+      name: consul_raft_leader_dispatchLog
+      labels: {}
+    - match: consul.raft.commitTime
+      name: consul_raft_commitTime
+      labels: {}
+    - match: consul.raft.replication.appendEntries.logs.*.*.*.*
+      name: consul_raft_replication_appendEntries_logs
+      labels:
+        query: ${1}.${2}.${3}.${4}
+    - match: consul.raft.replication.appendEntries.rpc.*.*.*.*
+      name: consul_raft_replication_appendEntries_rpc
+      labels:
+        query: ${1}.${2}.${3}.${4}
+    - match: consul.raft.replication.heartbeat.*.*.*.*
+      name: consul_raft_replication_heartbeat
+      labels:
+        query: ${1}.${2}.${3}.${4}
+    - match: consul.consul.rpc.request
+      name: consul_rpc_requests
+      labels: {}
+    - match: consul.consul.rpc.accept_conn
+      name: consul_rpc_accept_conn
+      labels: {}
+    - match: consul.memberlist.udp.*
+      name: consul_memberlist_udp
+      labels:
+        type: $1
+    - match: consul.memberlist.tcp.*
+      name: consul_memberlist_tcp
+      labels:
+        type: $1
+    - match: consul.memberlist.gossip
+      name: consul_memberlist_gossip
+      labels: {}
+    - match: consul.memberlist.probeNode
+      name: consul_memberlist_probenode
+      labels: {}
+    - match: consul.memberlist.pushPullNode
+      name: consul_memberlist_pushpullnode
+      labels: {}
+    - match: consul.http.*
+      name: consul_http_request
+      labels:
+        method: $1
+        path: /
+    - match: consul.http.*.*
+      name: consul_http_request
+      labels:
+        method: $1
+        path: /$2
+    - match: consul.http.*.*.*
+      name: consul_http_request
+      labels:
+        method: $1
+        path: /$2/$3
+    - match: consul.http.*.*.*.*
+      name: consul_http_request
+      labels:
+        method: $1
+        path: /$2/$3/$4
+    - match: consul.http.*.*.*.*.*
+      name: consul_http_request
+      labels:
+        method: $1
+        path: /$2/$3/$4/$5
+    - match: consul.consul.leader.barrier
+      name: consul_leader_barrier
+      labels: {}
+    - match: consul.consul.leader.reconcileMember
+      name: consul_leader_reconcileMember
+      labels: {}
+    - match: consul.consul.leader.reconcile
+      name: consul_leader_reconcile
+      labels: {}
+    - match: consul.consul.fsm.coordinate.batch-update
+      name: consul_fsm_coordinate_batch_update
+      labels: {}
+    - match: consul.consul.fsm.autopilot
+      name: consul_fsm_autopilot
+      labels: {}
+    - match: consul.consul.fsm.kvs.cas
+      name: consul_fsm_kvs_cas
+      labels: {}
+    - match: consul.consul.fsm.register
+      name: consul_fsm_register
+      labels: {}
+    - match: consul.consul.fsm.deregister
+      name: consul_fsm_deregister
+      labels: {}
+    - match: consul.consul.fsm.tombstone.reap
+      name: consul_fsm_tombstone_reap
+      labels: {}
+    - match: consul.consul.catalog.register
+      name: consul_catalog_register
+      labels: {}
+    - match: consul.consul.catalog.deregister
+      name: consul_catalog_deregister
+      labels: {}
+    - match: consul.consul.leader.reapTombstones
+      name: consul_leader_reapTombstones
+      labels: {}
+kind: ConfigMap
+metadata:
+  name: consul
+  namespace: default
+---
+apiVersion: v1
+data:
+  overrides.yaml: |
+    ingester_stream_chunks_when_using_blocks: false
+    overrides: {}
+kind: ConfigMap
+metadata:
+  name: overrides
+  namespace: default
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: consul-sidekick
+  namespace: default
+rules:
+- apiGroups:
+  - ""
+  - extensions
+  - apps
+  resources:
+  - pods
+  - replicasets
+  verbs:
+  - get
+  - list
+  - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: consul-sidekick
+  namespace: default
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: consul-sidekick
+subjects:
+- kind: ServiceAccount
+  name: consul-sidekick
+  namespace: default
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: alertmanager
+  name: alertmanager
+  namespace: default
+spec:
+  clusterIP: None
+  ports:
+  - name: alertmanager-http-metrics
+    port: 8080
+    targetPort: 8080
+  - name: alertmanager-grpc
+    port: 9095
+    targetPort: 9095
+  selector:
+    name: alertmanager
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: consul
+  name: consul
+  namespace: default
+spec:
+  ports:
+  - name: consul-server
+    port: 8300
+    targetPort: 8300
+  - name: consul-serf
+    port: 8301
+    targetPort: 8301
+  - name: consul-client
+    port: 8400
+    targetPort: 8400
+  - name: consul-api
+    port: 8500
+    targetPort: 8500
+  - name: statsd-exporter-http-metrics
+    port: 8000
+    targetPort: 8000
+  - name: consul-exporter-http-metrics
+    port: 9107
+    targetPort: 9107
+  selector:
+    name: consul
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: distributor
+  name: distributor
+  namespace: default
+spec:
+  clusterIP: None
+  ports:
+  - name: distributor-http-metrics
+    port: 8080
+    targetPort: 8080
+  - name: distributor-grpc
+    port: 9095
+    targetPort: 9095
+  selector:
+    name: distributor
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: ingester
+  name: ingester
+  namespace: default
+spec:
+  ports:
+  - name: ingester-http-metrics
+    port: 8080
+    targetPort: 8080
+  - name: ingester-grpc
+    port: 9095
+    targetPort: 9095
+  selector:
+    name: ingester
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: memcached
+  name: memcached
+  namespace: default
+spec:
+  clusterIP: None
+  ports:
+  - name: memcached-client
+    port: 11211
+    targetPort: 11211
+  - name: exporter-http-metrics
+    port: 9150
+    targetPort: 9150
+  selector:
+    name: memcached
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: memcached-frontend
+  name: memcached-frontend
+  namespace: default
+spec:
+  clusterIP: None
+  ports:
+  - name: memcached-client
+    port: 11211
+    targetPort: 11211
+  - name: exporter-http-metrics
+    port: 9150
+    targetPort: 9150
+  selector:
+    name: memcached-frontend
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: memcached-index-queries
+  name: memcached-index-queries
+  namespace: default
+spec:
+  clusterIP: None
+  ports:
+  - name: memcached-client
+    port: 11211
+    targetPort: 11211
+  - name: exporter-http-metrics
+    port: 9150
+    targetPort: 9150
+  selector:
+    name: memcached-index-queries
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: memcached-metadata
+  name: memcached-metadata
+  namespace: default
+spec:
+  clusterIP: None
+  ports:
+  - name: memcached-client
+    port: 11211
+    targetPort: 11211
+  - name: exporter-http-metrics
+    port: 9150
+    targetPort: 9150
+  selector:
+    name: memcached-metadata
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: querier
+  name: querier
+  namespace: default
+spec:
+  ports:
+  - name: querier-http-metrics
+    port: 8080
+    targetPort: 8080
+  - name: querier-grpc
+    port: 9095
+    targetPort: 9095
+  selector:
+    name: querier
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: query-frontend
+  name: query-frontend
+  namespace: default
+spec:
+  ports:
+  - name: query-frontend-http-metrics
+    port: 8080
+    targetPort: 8080
+  - name: query-frontend-grpc
+    port: 9095
+    targetPort: 9095
+  selector:
+    name: query-frontend
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: query-frontend
+  name: query-frontend-discovery
+  namespace: default
+spec:
+  clusterIP: None
+  ports:
+  - name: query-frontend-http-metrics
+    port: 8080
+    targetPort: 8080
+  - name: query-frontend-grpc
+    port: 9095
+    targetPort: 9095
+  publishNotReadyAddresses: true
+  selector:
+    name: query-frontend
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: query-scheduler
+  name: query-scheduler
+  namespace: default
+spec:
+  ports:
+  - name: query-scheduler-http-metrics
+    port: 8080
+    targetPort: 8080
+  - name: query-scheduler-grpc
+    port: 9095
+    targetPort: 9095
+  selector:
+    name: query-scheduler
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: query-scheduler
+  name: query-scheduler-discovery
+  namespace: default
+spec:
+  clusterIP: None
+  ports:
+  - name: query-scheduler-http-metrics
+    port: 8080
+    targetPort: 8080
+  - name: query-scheduler-grpc
+    port: 9095
+    targetPort: 9095
+  publishNotReadyAddresses: true
+  selector:
+    name: query-scheduler
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: ruler
+  name: ruler
+  namespace: default
+spec:
+  ports:
+  - name: ruler-http-metrics
+    port: 8080
+    targetPort: 8080
+  - name: ruler-grpc
+    port: 9095
+    targetPort: 9095
+  selector:
+    name: ruler
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: store-gateway
+  name: store-gateway
+  namespace: default
+spec:
+  ports:
+  - name: store-gateway-http-metrics
+    port: 8080
+    targetPort: 8080
+  - name: store-gateway-grpc
+    port: 9095
+    targetPort: 9095
+  selector:
+    name: store-gateway
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: consul
+  namespace: default
+spec:
+  minReadySeconds: 10
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      name: consul
+  template:
+    metadata:
+      annotations:
+        consul-hash: e56ef6821a3557604caccaf6d5820239
+      labels:
+        name: consul
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                name: consul
+            topologyKey: kubernetes.io/hostname
+          - labelSelector:
+              matchLabels:
+                name: ingester
+            namespaces:
+            - default
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - args:
+        - agent
+        - -ui
+        - -server
+        - -client=0.0.0.0
+        - -config-file=/etc/config/consul-config.json
+        - -bootstrap-expect=1
+        - -ui-content-path=/default/consul/
+        env:
+        - name: CHECKPOINT_DISABLE
+          value: "1"
+        image: consul:1.5.3
+        imagePullPolicy: IfNotPresent
+        name: consul
+        ports:
+        - containerPort: 8300
+          name: server
+        - containerPort: 8301
+          name: serf
+        - containerPort: 8400
+          name: client
+        - containerPort: 8500
+          name: api
+        resources:
+          requests:
+            cpu: "4"
+            memory: 4Gi
+        volumeMounts:
+        - mountPath: /etc/config
+          name: consul
+        - mountPath: /consul/data/
+          name: data
+      - args:
+        - --namespace=$(POD_NAMESPACE)
+        - --pod-name=$(POD_NAME)
+        env:
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        image: weaveworks/consul-sidekick:master-f18ad13
+        imagePullPolicy: IfNotPresent
+        name: sidekick
+        volumeMounts:
+        - mountPath: /etc/config
+          name: consul
+        - mountPath: /consul/data/
+          name: data
+      - args:
+        - --web.listen-address=:8000
+        - --statsd.mapping-config=/etc/config/mapping
+        image: prom/statsd-exporter:v0.12.2
+        imagePullPolicy: IfNotPresent
+        name: statsd-exporter
+        ports:
+        - containerPort: 8000
+          name: http-metrics
+        volumeMounts:
+        - mountPath: /etc/config
+          name: consul
+        - mountPath: /consul/data/
+          name: data
+      - args:
+        - --consul.server=localhost:8500
+        - --web.listen-address=:9107
+        - --consul.timeout=1s
+        - --no-consul.health-summary
+        - --consul.allow_stale
+        image: prom/consul-exporter:v0.5.0
+        imagePullPolicy: IfNotPresent
+        name: consul-exporter
+        ports:
+        - containerPort: 9107
+          name: http-metrics
+        volumeMounts:
+        - mountPath: /etc/config
+          name: consul
+        - mountPath: /consul/data/
+          name: data
+      serviceAccount: consul-sidekick
+      volumes:
+      - configMap:
+          name: consul
+        name: consul
+      - emptyDir:
+          medium: Memory
+        name: data
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: distributor
+  namespace: default
+spec:
+  minReadySeconds: 10
+  replicas: 3
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      name: distributor
+  strategy:
+    rollingUpdate:
+      maxSurge: 5
+      maxUnavailable: 1
+  template:
+    metadata:
+      labels:
+        name: distributor
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                name: distributor
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - args:
+        - -consul.hostname=consul.default.svc.cluster.local:8500
+        - -distributor.extend-writes=true
+        - -distributor.ha-tracker.enable=true
+        - -distributor.ha-tracker.enable-for-all-users=true
+        - -distributor.ha-tracker.etcd.endpoints=etcd-client.default.svc.cluster.local.:2379
+        - -distributor.ha-tracker.prefix=prom_ha/
+        - -distributor.ha-tracker.store=etcd
+        - -distributor.health-check-ingesters=true
+        - -distributor.ingestion-burst-size=200000
+        - -distributor.ingestion-rate-limit=10000
+        - -distributor.replication-factor=3
+        - -distributor.ring.consul.hostname=consul.default.svc.cluster.local:8500
+        - -distributor.ring.prefix=
+        - -mem-ballast-size-bytes=1073741824
+        - -ring.heartbeat-timeout=10m
+        - -ring.prefix=
+        - -runtime-config.file=/etc/mimir/overrides.yaml
+        - -server.grpc.keepalive.max-connection-age=2m
+        - -server.grpc.keepalive.max-connection-age-grace=5m
+        - -server.grpc.keepalive.max-connection-idle=1m
+        - -server.grpc.keepalive.min-time-between-pings=10s
+        - -server.grpc.keepalive.ping-without-stream-allowed=true
+        - -server.http-listen-port=8080
+        - -target=distributor
+        image: cortexproject/cortex:v1.9.0
+        imagePullPolicy: IfNotPresent
+        name: distributor
+        ports:
+        - containerPort: 8080
+          name: http-metrics
+        - containerPort: 9095
+          name: grpc
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 15
+          timeoutSeconds: 1
+        resources:
+          limits:
+            memory: 4Gi
+          requests:
+            cpu: "2"
+            memory: 2Gi
+        volumeMounts:
+        - mountPath: /etc/mimir
+          name: overrides
+      volumes:
+      - configMap:
+          name: overrides
+        name: overrides
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: querier
+  namespace: default
+spec:
+  minReadySeconds: 10
+  replicas: 6
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      name: querier
+  strategy:
+    rollingUpdate:
+      maxSurge: 5
+      maxUnavailable: 1
+  template:
+    metadata:
+      labels:
+        name: querier
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                name: querier
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - args:
+        - -blocks-storage.backend=gcs
+        - -blocks-storage.bucket-store.bucket-index.enabled=true
+        - -blocks-storage.bucket-store.metadata-cache.backend=memcached
+        - -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local:11211
+        - -blocks-storage.bucket-store.metadata-cache.memcached.max-async-concurrency=50
+        - -blocks-storage.bucket-store.metadata-cache.memcached.max-item-size=1048576
+        - -blocks-storage.bucket-store.metadata-cache.memcached.timeout=200ms
+        - -blocks-storage.bucket-store.sync-dir=/data/tsdb
+        - -blocks-storage.bucket-store.sync-interval=15m
+        - -blocks-storage.gcs.bucket-name=blocks-bucket
+        - -consul.hostname=consul.default.svc.cluster.local:8500
+        - -distributor.health-check-ingesters=true
+        - -distributor.replication-factor=3
+        - -mem-ballast-size-bytes=268435456
+        - -querier.frontend-client.grpc-max-send-msg-size=104857600
+        - -querier.max-concurrent=8
+        - -querier.query-ingesters-within=13h
+        - -querier.query-label-names-with-matchers-enabled=true
+        - -querier.query-store-after=12h
+        - -querier.query-store-for-labels-enabled=true
+        - -querier.scheduler-address=query-scheduler-discovery.default.svc.cluster.local:9095
+        - -ring.heartbeat-timeout=10m
+        - -ring.prefix=
+        - -runtime-config.file=/etc/mimir/overrides.yaml
+        - -server.grpc.keepalive.min-time-between-pings=10s
+        - -server.grpc.keepalive.ping-without-stream-allowed=true
+        - -server.http-listen-port=8080
+        - -server.http-write-timeout=1m
+        - -store-gateway.sharding-enabled=true
+        - -store-gateway.sharding-ring.consul.hostname=consul.default.svc.cluster.local:8500
+        - -store-gateway.sharding-ring.prefix=
+        - -store-gateway.sharding-ring.replication-factor=3
+        - -store-gateway.sharding-ring.store=consul
+        - -store.max-query-length=768h
+        - -target=querier
+        env:
+        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
+          value: "1024"
+        image: cortexproject/cortex:v1.9.0
+        imagePullPolicy: IfNotPresent
+        name: querier
+        ports:
+        - containerPort: 8080
+          name: http-metrics
+        - containerPort: 9095
+          name: grpc
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 15
+          timeoutSeconds: 1
+        resources:
+          limits:
+            memory: 24Gi
+          requests:
+            cpu: "1"
+            memory: 12Gi
+        volumeMounts:
+        - mountPath: /etc/mimir
+          name: overrides
+      volumes:
+      - configMap:
+          name: overrides
+        name: overrides
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: query-frontend
+  namespace: default
+spec:
+  minReadySeconds: 10
+  replicas: 2
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      name: query-frontend
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
+  template:
+    metadata:
+      labels:
+        name: query-frontend
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                name: query-frontend
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - args:
+        - -api.response-compression-enabled=true
+        - -frontend.align-querier-with-step=false
+        - -frontend.cache-results=true
+        - -frontend.max-cache-freshness=10m
+        - -frontend.results-cache.backend=memcached
+        - -frontend.results-cache.memcached.addresses=dnssrvnoa+memcached-frontend.default.svc.cluster.local:11211
+        - -frontend.results-cache.memcached.timeout=500ms
+        - -frontend.scheduler-address=query-scheduler-discovery.default.svc.cluster.local:9095
+        - -frontend.split-queries-by-interval=24h
+        - -runtime-config.file=/etc/mimir/overrides.yaml
+        - -server.grpc-max-recv-msg-size-bytes=104857600
+        - -server.grpc.keepalive.min-time-between-pings=10s
+        - -server.grpc.keepalive.ping-without-stream-allowed=true
+        - -server.http-listen-port=8080
+        - -server.http-write-timeout=1m
+        - -store.max-query-length=12000h
+        - -target=query-frontend
+        image: cortexproject/cortex:v1.9.0
+        imagePullPolicy: IfNotPresent
+        name: query-frontend
+        ports:
+        - containerPort: 8080
+          name: http-metrics
+        - containerPort: 9095
+          name: grpc
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 15
+          timeoutSeconds: 1
+        resources:
+          limits:
+            memory: 1200Mi
+          requests:
+            cpu: "2"
+            memory: 600Mi
+        volumeMounts:
+        - mountPath: /etc/mimir
+          name: overrides
+      volumes:
+      - configMap:
+          name: overrides
+        name: overrides
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: query-scheduler
+  namespace: default
+spec:
+  minReadySeconds: 10
+  replicas: 2
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      name: query-scheduler
+  strategy:
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+  template:
+    metadata:
+      labels:
+        name: query-scheduler
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                name: query-scheduler
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - args:
+        - -query-scheduler.max-outstanding-requests-per-tenant=100
+        - -server.grpc.keepalive.min-time-between-pings=10s
+        - -server.grpc.keepalive.ping-without-stream-allowed=true
+        - -server.http-listen-port=8080
+        - -target=query-scheduler
+        image: cortexproject/cortex:v1.9.0
+        imagePullPolicy: IfNotPresent
+        name: query-scheduler
+        ports:
+        - containerPort: 8080
+          name: http-metrics
+        - containerPort: 9095
+          name: grpc
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 15
+          timeoutSeconds: 1
+        resources:
+          limits:
+            memory: 2Gi
+          requests:
+            cpu: "2"
+            memory: 1Gi
+        volumeMounts:
+        - mountPath: /etc/mimir
+          name: overrides
+      volumes:
+      - configMap:
+          name: overrides
+        name: overrides
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ruler
+  namespace: default
+spec:
+  minReadySeconds: 10
+  replicas: 2
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      name: ruler
+  strategy:
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+  template:
+    metadata:
+      labels:
+        name: ruler
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                name: ruler
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - args:
+        - -api.response-compression-enabled=true
+        - -blocks-storage.backend=gcs
+        - -blocks-storage.bucket-store.bucket-index.enabled=true
+        - -blocks-storage.bucket-store.metadata-cache.backend=memcached
+        - -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local:11211
+        - -blocks-storage.bucket-store.metadata-cache.memcached.max-async-concurrency=50
+        - -blocks-storage.bucket-store.metadata-cache.memcached.max-item-size=1048576
+        - -blocks-storage.bucket-store.metadata-cache.memcached.timeout=200ms
+        - -blocks-storage.bucket-store.sync-dir=/data/tsdb
+        - -blocks-storage.bucket-store.sync-interval=15m
+        - -blocks-storage.gcs.bucket-name=blocks-bucket
+        - -consul.hostname=consul.default.svc.cluster.local:8500
+        - -distributor.extend-writes=true
+        - -distributor.health-check-ingesters=true
+        - -distributor.replication-factor=3
+        - -experimental.ruler.enable-api=true
+        - -querier.query-ingesters-within=13h
+        - -querier.query-label-names-with-matchers-enabled=true
+        - -querier.query-store-after=12h
+        - -ring.heartbeat-timeout=10m
+        - -ring.prefix=
+        - -ruler-storage.backend=gcs
+        - -ruler-storage.gcs.bucket-name=rules-bucket
+        - -ruler.alertmanager-url=http://alertmanager.default.svc.cluster.local/alertmanager
+        - -ruler.max-rule-groups-per-tenant=35
+        - -ruler.max-rules-per-rule-group=20
+        - -ruler.ring.consul.hostname=consul.default.svc.cluster.local:8500
+        - -ruler.ring.store=consul
+        - -runtime-config.file=/etc/mimir/overrides.yaml
+        - -server.grpc-max-recv-msg-size-bytes=10485760
+        - -server.grpc-max-send-msg-size-bytes=10485760
+        - -server.grpc.keepalive.min-time-between-pings=10s
+        - -server.grpc.keepalive.ping-without-stream-allowed=true
+        - -server.http-listen-port=8080
+        - -store-gateway.sharding-enabled=true
+        - -store-gateway.sharding-ring.consul.hostname=consul.default.svc.cluster.local:8500
+        - -store-gateway.sharding-ring.prefix=
+        - -store-gateway.sharding-ring.replication-factor=3
+        - -store-gateway.sharding-ring.store=consul
+        - -store.max-query-length=768h
+        - -target=ruler
+        image: cortexproject/cortex:v1.9.0
+        imagePullPolicy: IfNotPresent
+        name: ruler
+        ports:
+        - containerPort: 8080
+          name: http-metrics
+        - containerPort: 9095
+          name: grpc
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 15
+          timeoutSeconds: 1
+        resources:
+          limits:
+            cpu: "16"
+            memory: 16Gi
+          requests:
+            cpu: "1"
+            memory: 6Gi
+        volumeMounts:
+        - mountPath: /etc/mimir
+          name: overrides
+      terminationGracePeriodSeconds: 600
+      volumes:
+      - configMap:
+          name: overrides
+        name: overrides
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  labels:
+    name: alertmanager
+  name: alertmanager
+  namespace: default
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      name: alertmanager
+  serviceName: alertmanager
+  template:
+    metadata:
+      labels:
+        name: alertmanager
+    spec:
+      containers:
+      - args:
+        - -alertmanager-storage.backend=gcs
+        - -alertmanager-storage.gcs.bucket-name=alerts-bucket
+        - -alertmanager.sharding-enabled=true
+        - -alertmanager.sharding-ring.consul.hostname=consul.default.svc.cluster.local:8500
+        - -alertmanager.sharding-ring.replication-factor=3
+        - -alertmanager.sharding-ring.store=consul
+        - -alertmanager.storage.path=/data
+        - -alertmanager.web.external-url=http://test/alertmanager
+        - -experimental.alertmanager.enable-api=true
+        - -runtime-config.file=/etc/mimir/overrides.yaml
+        - -server.grpc.keepalive.min-time-between-pings=10s
+        - -server.grpc.keepalive.ping-without-stream-allowed=true
+        - -server.http-listen-port=8080
+        - -target=alertmanager
+        env:
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        image: cortexproject/cortex:v1.9.0
+        imagePullPolicy: IfNotPresent
+        name: alertmanager
+        ports:
+        - containerPort: 8080
+          name: http-metrics
+        - containerPort: 9095
+          name: grpc
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 15
+          timeoutSeconds: 1
+        resources:
+          requests:
+            cpu: 100m
+            memory: 1Gi
+        volumeMounts:
+        - mountPath: /data
+          name: alertmanager-data
+        - mountPath: /etc/mimir
+          name: overrides
+      securityContext:
+        runAsUser: 0
+      terminationGracePeriodSeconds: 900
+      volumes:
+      - configMap:
+          name: overrides
+        name: overrides
+  updateStrategy:
+    type: RollingUpdate
+  volumeClaimTemplates:
+  - apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata:
+      name: alertmanager-data
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      resources:
+        requests:
+          storage: 100Gi
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  labels:
+    name: compactor
+  name: compactor
+  namespace: default
+spec:
+  podManagementPolicy: Parallel
+  replicas: 1
+  selector:
+    matchLabels:
+      name: compactor
+  serviceName: compactor
+  template:
+    metadata:
+      labels:
+        name: compactor
+    spec:
+      containers:
+      - args:
+        - -blocks-storage.backend=gcs
+        - -blocks-storage.gcs.bucket-name=blocks-bucket
+        - -compactor.block-ranges=2h,12h,24h
+        - -compactor.blocks-retention-period=0
+        - -compactor.cleanup-interval=15m
+        - -compactor.compaction-concurrency=1
+        - -compactor.compaction-interval=30m
+        - -compactor.compactor-tenant-shard-size=1
+        - -compactor.data-dir=/data
+        - -compactor.deletion-delay=2h
+        - -compactor.max-closing-blocks-concurrency=2
+        - -compactor.max-opening-blocks-concurrency=4
+        - -compactor.ring.consul.hostname=consul.default.svc.cluster.local:8500
+        - -compactor.ring.prefix=
+        - -compactor.ring.store=consul
+        - -compactor.ring.wait-stability-min-duration=1m
+        - -compactor.split-and-merge-shards=0
+        - -compactor.split-groups=1
+        - -compactor.symbols-flushers-concurrency=4
+        - -runtime-config.file=/etc/mimir/overrides.yaml
+        - -server.grpc.keepalive.min-time-between-pings=10s
+        - -server.grpc.keepalive.ping-without-stream-allowed=true
+        - -server.http-listen-port=8080
+        - -target=compactor
+        image: cortexproject/cortex:v1.9.0
+        imagePullPolicy: IfNotPresent
+        name: compactor
+        ports:
+        - containerPort: 8080
+          name: http-metrics
+        - containerPort: 9095
+          name: grpc
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 15
+          timeoutSeconds: 1
+        resources:
+          limits:
+            memory: 6Gi
+          requests:
+            cpu: 1
+            memory: 6Gi
+        volumeMounts:
+        - mountPath: /data
+          name: compactor-data
+        - mountPath: /etc/mimir
+          name: overrides
+      securityContext:
+        runAsUser: 0
+      terminationGracePeriodSeconds: 900
+      volumes:
+      - configMap:
+          name: overrides
+        name: overrides
+  updateStrategy:
+    type: RollingUpdate
+  volumeClaimTemplates:
+  - apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata:
+      name: compactor-data
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      resources:
+        requests:
+          storage: 250Gi
+      storageClassName: standard
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  labels:
+    name: ingester
+  name: ingester
+  namespace: default
+spec:
+  podManagementPolicy: Parallel
+  replicas: 3
+  selector:
+    matchLabels:
+      name: ingester
+  serviceName: ingester
+  template:
+    metadata:
+      labels:
+        name: ingester
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                name: ingester
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - args:
+        - -blocks-storage.backend=gcs
+        - -blocks-storage.gcs.bucket-name=blocks-bucket
+        - -blocks-storage.tsdb.block-ranges-period=2h
+        - -blocks-storage.tsdb.close-idle-tsdb-timeout=13h
+        - -blocks-storage.tsdb.dir=/data/tsdb
+        - -blocks-storage.tsdb.isolation-enabled=false
+        - -blocks-storage.tsdb.retention-period=24h
+        - -blocks-storage.tsdb.ship-interval=1m
+        - -consul.hostname=consul.default.svc.cluster.local:8500
+        - -distributor.health-check-ingesters=true
+        - -distributor.replication-factor=3
+        - -ingester.heartbeat-period=15s
+        - -ingester.join-after=0s
+        - -ingester.max-global-series-per-metric=20000
+        - -ingester.max-global-series-per-user=150000
+        - -ingester.num-tokens=512
+        - -ingester.tokens-file-path=/data/tokens
+        - -ingester.unregister-on-shutdown=true
+        - -ring.heartbeat-timeout=10m
+        - -ring.prefix=
+        - -runtime-config.file=/etc/mimir/overrides.yaml
+        - -server.grpc-max-concurrent-streams=10000
+        - -server.grpc-max-recv-msg-size-bytes=10485760
+        - -server.grpc-max-send-msg-size-bytes=10485760
+        - -server.grpc.keepalive.min-time-between-pings=10s
+        - -server.grpc.keepalive.ping-without-stream-allowed=true
+        - -server.http-listen-port=8080
+        - -target=ingester
+        image: cortexproject/cortex:v1.9.0
+        imagePullPolicy: IfNotPresent
+        name: ingester
+        ports:
+        - containerPort: 8080
+          name: http-metrics
+        - containerPort: 9095
+          name: grpc
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 15
+          timeoutSeconds: 1
+        resources:
+          limits:
+            memory: 25Gi
+          requests:
+            cpu: "4"
+            memory: 15Gi
+        volumeMounts:
+        - mountPath: /data
+          name: ingester-data
+        - mountPath: /etc/mimir
+          name: overrides
+      securityContext:
+        runAsUser: 0
+      terminationGracePeriodSeconds: 1200
+      volumes:
+      - configMap:
+          name: overrides
+        name: overrides
+  updateStrategy:
+    type: RollingUpdate
+  volumeClaimTemplates:
+  - apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata:
+      name: ingester-data
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      resources:
+        requests:
+          storage: 100Gi
+      storageClassName: fast
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: memcached
+  namespace: default
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      name: memcached
+  serviceName: memcached
+  template:
+    metadata:
+      labels:
+        name: memcached
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                name: memcached
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - args:
+        - -m 6144
+        - -I 1m
+        - -c 16384
+        - -v
+        image: memcached:1.6.9-alpine
+        imagePullPolicy: IfNotPresent
+        name: memcached
+        ports:
+        - containerPort: 11211
+          name: client
+        resources:
+          limits:
+            memory: 9Gi
+          requests:
+            cpu: 500m
+            memory: 6552Mi
+      - args:
+        - --memcached.address=localhost:11211
+        - --web.listen-address=0.0.0.0:9150
+        image: prom/memcached-exporter:v0.6.0
+        imagePullPolicy: IfNotPresent
+        name: exporter
+        ports:
+        - containerPort: 9150
+          name: http-metrics
+  updateStrategy:
+    type: RollingUpdate
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: memcached-frontend
+  namespace: default
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      name: memcached-frontend
+  serviceName: memcached-frontend
+  template:
+    metadata:
+      labels:
+        name: memcached-frontend
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                name: memcached-frontend
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - args:
+        - -m 1024
+        - -I 5m
+        - -c 1024
+        - -v
+        image: memcached:1.6.9-alpine
+        imagePullPolicy: IfNotPresent
+        name: memcached
+        ports:
+        - containerPort: 11211
+          name: client
+        resources:
+          limits:
+            memory: 1536Mi
+          requests:
+            cpu: 500m
+            memory: 1329Mi
+      - args:
+        - --memcached.address=localhost:11211
+        - --web.listen-address=0.0.0.0:9150
+        image: prom/memcached-exporter:v0.6.0
+        imagePullPolicy: IfNotPresent
+        name: exporter
+        ports:
+        - containerPort: 9150
+          name: http-metrics
+  updateStrategy:
+    type: RollingUpdate
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: memcached-index-queries
+  namespace: default
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      name: memcached-index-queries
+  serviceName: memcached-index-queries
+  template:
+    metadata:
+      labels:
+        name: memcached-index-queries
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                name: memcached-index-queries
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - args:
+        - -m 1024
+        - -I 5m
+        - -c 16384
+        - -v
+        image: memcached:1.6.9-alpine
+        imagePullPolicy: IfNotPresent
+        name: memcached
+        ports:
+        - containerPort: 11211
+          name: client
+        resources:
+          limits:
+            memory: 1536Mi
+          requests:
+            cpu: 500m
+            memory: 1329Mi
+      - args:
+        - --memcached.address=localhost:11211
+        - --web.listen-address=0.0.0.0:9150
+        image: prom/memcached-exporter:v0.6.0
+        imagePullPolicy: IfNotPresent
+        name: exporter
+        ports:
+        - containerPort: 9150
+          name: http-metrics
+  updateStrategy:
+    type: RollingUpdate
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: memcached-metadata
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: memcached-metadata
+  serviceName: memcached-metadata
+  template:
+    metadata:
+      labels:
+        name: memcached-metadata
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                name: memcached-metadata
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - args:
+        - -m 512
+        - -I 1m
+        - -c 16384
+        - -v
+        image: memcached:1.6.9-alpine
+        imagePullPolicy: IfNotPresent
+        name: memcached
+        ports:
+        - containerPort: 11211
+          name: client
+        resources:
+          limits:
+            memory: 768Mi
+          requests:
+            cpu: 500m
+            memory: 715Mi
+      - args:
+        - --memcached.address=localhost:11211
+        - --web.listen-address=0.0.0.0:9150
+        image: prom/memcached-exporter:v0.6.0
+        imagePullPolicy: IfNotPresent
+        name: exporter
+        ports:
+        - containerPort: 9150
+          name: http-metrics
+  updateStrategy:
+    type: RollingUpdate
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  labels:
+    name: store-gateway
+  name: store-gateway
+  namespace: default
+spec:
+  podManagementPolicy: Parallel
+  replicas: 3
+  selector:
+    matchLabels:
+      name: store-gateway
+  serviceName: store-gateway
+  template:
+    metadata:
+      labels:
+        name: store-gateway
+    spec:
+      containers:
+      - args:
+        - -blocks-storage.backend=gcs
+        - -blocks-storage.bucket-store.bucket-index.enabled=true
+        - -blocks-storage.bucket-store.chunks-cache.attributes-in-memory-max-items=50000
+        - -blocks-storage.bucket-store.chunks-cache.backend=memcached
+        - -blocks-storage.bucket-store.chunks-cache.memcached.addresses=dnssrvnoa+memcached.default.svc.cluster.local:11211
+        - -blocks-storage.bucket-store.chunks-cache.memcached.max-async-concurrency=50
+        - -blocks-storage.bucket-store.chunks-cache.memcached.max-get-multi-concurrency=100
+        - -blocks-storage.bucket-store.chunks-cache.memcached.max-idle-connections=100
+        - -blocks-storage.bucket-store.chunks-cache.memcached.max-item-size=1048576
+        - -blocks-storage.bucket-store.chunks-cache.memcached.timeout=200ms
+        - -blocks-storage.bucket-store.ignore-blocks-within=10h
+        - -blocks-storage.bucket-store.index-cache.backend=memcached
+        - -blocks-storage.bucket-store.index-cache.memcached.addresses=dnssrvnoa+memcached-index-queries.default.svc.cluster.local:11211
+        - -blocks-storage.bucket-store.index-cache.memcached.max-async-concurrency=50
+        - -blocks-storage.bucket-store.index-cache.memcached.max-get-multi-concurrency=100
+        - -blocks-storage.bucket-store.index-cache.memcached.max-idle-connections=100
+        - -blocks-storage.bucket-store.index-cache.memcached.max-item-size=5242880
+        - -blocks-storage.bucket-store.index-cache.memcached.timeout=200ms
+        - -blocks-storage.bucket-store.index-header-lazy-loading-enabled=true
+        - -blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout=60m
+        - -blocks-storage.bucket-store.max-chunk-pool-bytes=12884901888
+        - -blocks-storage.bucket-store.metadata-cache.backend=memcached
+        - -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local:11211
+        - -blocks-storage.bucket-store.metadata-cache.memcached.max-async-concurrency=50
+        - -blocks-storage.bucket-store.metadata-cache.memcached.max-get-multi-concurrency=100
+        - -blocks-storage.bucket-store.metadata-cache.memcached.max-idle-connections=100
+        - -blocks-storage.bucket-store.metadata-cache.memcached.max-item-size=1048576
+        - -blocks-storage.bucket-store.metadata-cache.memcached.timeout=200ms
+        - -blocks-storage.bucket-store.sync-dir=/data/tsdb
+        - -blocks-storage.bucket-store.sync-interval=15m
+        - -blocks-storage.gcs.bucket-name=blocks-bucket
+        - -runtime-config.file=/etc/mimir/overrides.yaml
+        - -server.grpc.keepalive.min-time-between-pings=10s
+        - -server.grpc.keepalive.ping-without-stream-allowed=true
+        - -server.http-listen-port=8080
+        - -store-gateway.sharding-enabled=true
+        - -store-gateway.sharding-ring.consul.hostname=consul.default.svc.cluster.local:8500
+        - -store-gateway.sharding-ring.prefix=
+        - -store-gateway.sharding-ring.replication-factor=3
+        - -store-gateway.sharding-ring.store=consul
+        - -store-gateway.sharding-ring.tokens-file-path=/data/tokens
+        - -target=store-gateway
+        image: cortexproject/cortex:v1.9.0
+        imagePullPolicy: IfNotPresent
+        name: store-gateway
+        ports:
+        - containerPort: 8080
+          name: http-metrics
+        - containerPort: 9095
+          name: grpc
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 15
+          timeoutSeconds: 1
+        resources:
+          limits:
+            memory: 18Gi
+          requests:
+            cpu: "1"
+            memory: 12Gi
+        volumeMounts:
+        - mountPath: /data
+          name: store-gateway-data
+        - mountPath: /etc/mimir
+          name: overrides
+      securityContext:
+        runAsUser: 0
+      terminationGracePeriodSeconds: 120
+      volumes:
+      - configMap:
+          name: overrides
+        name: overrides
+  updateStrategy:
+    type: RollingUpdate
+  volumeClaimTemplates:
+  - apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata:
+      name: store-gateway-data
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      resources:
+        requests:
+          storage: 50Gi
+      storageClassName: standard
+---
+apiVersion: etcd.database.coreos.com/v1beta2
+kind: EtcdCluster
+metadata:
+  annotations:
+    etcd.database.coreos.com/scope: clusterwide
+  name: etcd
+  namespace: default
+spec:
+  pod:
+    affinity:
+      podAntiAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchLabels:
+              etcd_cluster: etcd
+          topologyKey: kubernetes.io/hostname
+    annotations:
+      prometheus.io/port: "2379"
+      prometheus.io/scrape: "true"
+    etcdEnv:
+    - name: ETCD_AUTO_COMPACTION_RETENTION
+      value: 1h
+    labels:
+      name: etcd
+    resources:
+      limits:
+        memory: 512Mi
+      requests:
+        cpu: 500m
+        memory: 512Mi
+  size: 3
+  version: 3.3.13

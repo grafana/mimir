@@ -1,4 +1,4 @@
-local mimir = import 'mimir/cortex.libsonnet';
+local mimir = import 'mimir/mimir.libsonnet';
 
 mimir {
   _config+:: {
@@ -7,7 +7,7 @@ mimir {
 
     blocks_storage_backend: 'gcs',
     blocks_storage_bucket_name: 'blocks-bucket',
-    cortex_bucket_index_enabled: true,
+    bucket_index_enabled: true,
     query_scheduler_enabled: true,
 
     ruler_enabled: true,
@@ -21,6 +21,6 @@ mimir {
       sharding_enabled: true,
     },
 
-    cortex_query_sharding_enabled: true,
+    query_sharding_enabled: true,
   },
 }

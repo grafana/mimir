@@ -1,9 +1,8 @@
 local utils = import 'mixin-utils/utils.libsonnet';
 
 (import 'dashboard-utils.libsonnet') {
-
-  'cortex-config.json':
-    ($.dashboard('Cortex / Config') + { uid: '61bb048ced9817b2d3e07677fb1c6290' })
+  'mimir-config.json':
+    ($.dashboard('Config') + { uid: '61bb048ced9817b2d3e07677fb1c6290' })
     .addClusterSelectorTemplates()
     .addRow(
       $.row('Startup config file')

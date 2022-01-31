@@ -1,0 +1,30 @@
+name: publish_docs
+
+on:
+  push:
+    branches:
+    - main
+    paths:
+    - 'docs/sources/**'
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v1
+    - run: git clone --single-branch --no-tags --depth 1 -b master https://grafanabot:${{ secrets.GH_BOT_ACCESS_TOKEN }}@github.com/grafana/website-sync ./.github/actions/website-sync
+    - name: publish-to-git
+      uses: ./.github/actions/website-sync
+      id: publish
+      with:
+        repository: grafana/website
+        # Temporarily sync to the mimir branch until we are ready for launch.
+        branch: mimir
+        host: github.com
+        github_pat: '${{ secrets.GH_BOT_ACCESS_TOKEN }}'
+        source_folder: docs/sources
+        target_folder: content/docs/mimir/next
+    - shell: bash
+      run: |
+        test -n "${{ steps.publish.outputs.commit_hash }}"
+        test -n "${{ steps.publish.outputs.working_directory }}"

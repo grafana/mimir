@@ -1,0 +1,111 @@
+#!/usr/bin/env bash
+
+set -euf -o pipefail
+
+function show_help {
+  cat <<EOF
+Open a pull request that updates versioned Mimir documentation on the Grafana website.
+It is assumed that the documentation being released is the "latest" and the website
+will be updated to reflect that.
+
+Usage:
+  $0 <website repository directory> <tag>
+
+Examples:
+  $0 ~/ext/grafana/website v1.12.0
+EOF
+}
+
+if [[ $# -ne 2 ]]; then
+  show_help
+  exit 1
+fi
+
+# NO_DRY_RUN determines whether remote operations like `git push` are
+# performed.
+readonly NO_DRY_RUN="${NO_DRY_RUN:-0}"
+
+# wet_run will run a command iff NO_DRY_RUN has a truth-y value.
+# Otherwise it log that the command was not run.
+function wet_run {
+  case "${NO_DRY_RUN}" in
+    t | 1 | true) "$@" ;;
+    *) echo "Not running \"$*\" as the NO_DRY_RUN environment variable is not 'true'" ;;
+  esac
+}
+
+# WEBSITE_DIR is the path to the grafana/website repository.
+readonly WEBSITE_DIR="$1"
+# TAG is the git tag for the release.
+readonly TAG="$2"
+# VERSION is TAG without the leading 'v'.
+readonly VERSION="${TAG/v/}"
+
+# MIMIR_DIR is the path to the grafana/mimir repository.
+readonly MIMIR_DIR="${MIMIR_DIR:-$(git rev-parse --show-toplevel)}"
+# MIMIR_REMOTE is the name the configured remote in the
+# grafana/website repository.
+readonly MIMIR_REMOTE="${MIMIR_REMOTE:-origin}"
+
+# WEBSITE_BRANCH is the name of the release branch created in the
+# grafana/website repository.
+readonly WEBSITE_BRANCH="${WEBSITE_BRANCH:-mimir-release-${VERSION}}"
+# WEBSITE_REMOTE is the name the configured remote in the
+# grafana/website repository.
+readonly WEBSITE_REMOTE="${WEBSITE_REMOTE:-origin}"
+
+# ensure_cloned clones a repository $2 if it does not already exist
+# in directory $1.
+function ensure_cloned {
+  local dir="$1"
+  local repo="$2"
+  local remote="$3"
+  if [[ ! -d "${dir}" ]]; then
+    git clone "${repo}" "${dir}"
+    git fetch --tags "${remote}"
+  fi
+}
+
+ensure_cloned "${MIMIR_DIR}" git@github.com:grafana/mimir.git "${MIMIR_REMOTE}"
+ensure_cloned "${WEBSITE_DIR}" git@github.com:grafana/website.git "${WEBSITE_REMOTE}"
+
+MIMIR_PREV_HEAD="$(cd "${MIMIR_DIR}" && git rev-parse HEAD)"
+readonly MIMIR_PREV_HEAD
+
+WEBSITE_PREV_HEAD="$(cd "${MIMIR_DIR}" && git rev-parse HEAD)"
+readonly WEBSITE_PREV_HEAD
+
+# cleanup performs clean up after the script exits for any reason.
+function cleanup {
+  set +e
+  cd "${WEBSITE_DIR}" && git checkout "${WEBSITE_PREV_HEAD}"
+  cd "${MIMIR_DIR}" && git checkout "${MIMIR_PREV_HEAD}"
+  set -e
+}
+
+trap "cleanup" INT TERM EXIT
+
+cd "${MIMIR_DIR}"
+git checkout "${TAG}" || (echo "Release tag '${TAG}' does not exist locally. Refusing to continue." && exit 1)
+
+cd "${WEBSITE_DIR}"
+# Create a new branch for the changes.
+git checkout -B "${WEBSITE_BRANCH}" "${WEBSITE_REMOTE}"/master
+# Move unreleased documentation aside to allow the `docs-release.sh` script
+# to update aliases and perform any future changes that it does.
+mv content/docs/mimir/next content/docs/mimir/next.main
+# Consider the to-be-released documentation as the "next" documentation.
+cp -r "${MIMIR_DIR}/docs/sources" -T content/docs/mimir/next
+# Copy that "next" documentation to "latest" and update aliases.
+./scripts/docs-release.sh mimir latest next
+# Copy that "latest" documentation to a version directory and update aliases.
+./scripts/docs-release.sh mimir "${VERSION}" latest
+# Restore the "next" documentation.
+rm -r content/docs/mimir/next && mv content/docs/mimir/next.main content/docs/mimir/next
+# Update the documentation index frontmatter to use the release.
+sed -i -e "s/^version_latest: .*$/version_latest: ${VERSION}/" content/docs/mimir/_index.md
+
+# Add, commit, and optionally push all changes.
+git add -- content/docs/mimir
+git commit -m "Update Mimir documentation to reflect ${VERSION} release"
+wet_run git push "${WEBSITE_REMOTE}" HEAD:"${WEBSITE_BRANCH}"

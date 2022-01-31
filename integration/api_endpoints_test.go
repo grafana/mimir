@@ -12,11 +12,11 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/grafana/e2e"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/thanos/pkg/runutil"
 
-	"github.com/grafana/mimir/integration/e2e"
 	"github.com/grafana/mimir/integration/e2emimir"
 )
 
@@ -25,7 +25,7 @@ func newMimirSingleBinaryWithLocalFilesytemBucket(t *testing.T, name string, fla
 	require.NoError(t, err)
 
 	// Start Mimir in single binary mode, reading the config from file.
-	require.NoError(t, copyFileToSharedDir(s, "docs/configuration/single-process-config-blocks.yaml", mimirConfigFile))
+	require.NoError(t, copyFileToSharedDir(s, "docs/sources/configuration/single-process-config-blocks.yaml", mimirConfigFile))
 
 	if flags == nil {
 		flags = map[string]string{}

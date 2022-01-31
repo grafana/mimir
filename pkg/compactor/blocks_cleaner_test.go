@@ -30,6 +30,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	mimir_testutil "github.com/grafana/mimir/pkg/storage/tsdb/testutil"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 type testBlocksCleanerOptions struct {
@@ -95,10 +96,11 @@ func testBlocksCleanerWithOptions(t *testing.T, options testBlocksCleanerOptions
 	require.NoError(t, bucketClient.Upload(context.Background(), user4DebugMetaFile, strings.NewReader("some random content here")))
 
 	cfg := BlocksCleanerConfig{
-		DeletionDelay:      deletionDelay,
-		CleanupInterval:    time.Minute,
-		CleanupConcurrency: options.concurrency,
-		TenantCleanupDelay: options.tenantDeletionDelay,
+		DeletionDelay:           deletionDelay,
+		CleanupInterval:         time.Minute,
+		CleanupConcurrency:      options.concurrency,
+		TenantCleanupDelay:      options.tenantDeletionDelay,
+		DeleteBlocksConcurrency: 1,
 	}
 
 	reg := prometheus.NewPedanticRegistry()
@@ -230,9 +232,10 @@ func TestBlocksCleaner_ShouldContinueOnBlockDeletionFailure(t *testing.T) {
 	}
 
 	cfg := BlocksCleanerConfig{
-		DeletionDelay:      deletionDelay,
-		CleanupInterval:    time.Minute,
-		CleanupConcurrency: 1,
+		DeletionDelay:           deletionDelay,
+		CleanupInterval:         time.Minute,
+		CleanupConcurrency:      1,
+		DeleteBlocksConcurrency: 1,
 	}
 
 	logger := log.NewNopLogger()
@@ -289,9 +292,10 @@ func TestBlocksCleaner_ShouldRebuildBucketIndexOnCorruptedOne(t *testing.T) {
 	require.NoError(t, bucketClient.Upload(ctx, path.Join(userID, bucketindex.IndexCompressedFilename), strings.NewReader("invalid!}")))
 
 	cfg := BlocksCleanerConfig{
-		DeletionDelay:      deletionDelay,
-		CleanupInterval:    time.Minute,
-		CleanupConcurrency: 1,
+		DeletionDelay:           deletionDelay,
+		CleanupInterval:         time.Minute,
+		CleanupConcurrency:      1,
+		DeleteBlocksConcurrency: 1,
 	}
 
 	logger := log.NewNopLogger()
@@ -337,9 +341,10 @@ func TestBlocksCleaner_ShouldRemoveMetricsForTenantsNotBelongingAnymoreToTheShar
 	createTSDBBlock(t, bucketClient, "user-2", 30, 40, 2, nil)
 
 	cfg := BlocksCleanerConfig{
-		DeletionDelay:      time.Hour,
-		CleanupInterval:    time.Minute,
-		CleanupConcurrency: 1,
+		DeletionDelay:           time.Hour,
+		CleanupInterval:         time.Minute,
+		CleanupConcurrency:      1,
+		DeleteBlocksConcurrency: 1,
 	}
 
 	ctx := context.Background()
@@ -404,9 +409,10 @@ func TestBlocksCleaner_ShouldNotCleanupUserThatDoesntBelongToShardAnymore(t *tes
 	createTSDBBlock(t, bucketClient, "user-2", 20, 30, 2, nil)
 
 	cfg := BlocksCleanerConfig{
-		DeletionDelay:      time.Hour,
-		CleanupInterval:    time.Minute,
-		CleanupConcurrency: 1,
+		DeletionDelay:           time.Hour,
+		CleanupInterval:         time.Minute,
+		CleanupConcurrency:      1,
+		DeleteBlocksConcurrency: 1,
 	}
 
 	ctx := context.Background()
@@ -517,13 +523,14 @@ func TestBlocksCleaner_ShouldRemoveBlocksOutsideRetentionPeriod(t *testing.T) {
 	block4 := createTSDBBlock(t, bucketClient, "user-2", ts(-8), ts(-6), 2, nil)
 
 	cfg := BlocksCleanerConfig{
-		DeletionDelay:      time.Hour,
-		CleanupInterval:    time.Minute,
-		CleanupConcurrency: 1,
+		DeletionDelay:           time.Hour,
+		CleanupInterval:         time.Minute,
+		CleanupConcurrency:      1,
+		DeleteBlocksConcurrency: 1,
 	}
 
 	ctx := context.Background()
-	logger := log.NewNopLogger()
+	logger := test.NewTestingLogger(t)
 	reg := prometheus.NewPedanticRegistry()
 	cfgProvider := newMockConfigProvider()
 

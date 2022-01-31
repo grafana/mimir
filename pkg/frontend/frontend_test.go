@@ -94,8 +94,7 @@ func TestFrontend_RequestHostHeaderWhenDownstreamURLIsConfigured(t *testing.T) {
 		assert.NotEqual(t, downstreamReqHost, addr)
 	}
 
-	testFrontend(t, config, nil, test, false, nil)
-	testFrontend(t, config, nil, test, true, nil)
+	testFrontend(t, config, nil, test, nil)
 }
 
 func TestFrontend_LogsSlowQueriesFormValues(t *testing.T) {
@@ -157,7 +156,7 @@ func TestFrontend_LogsSlowQueriesFormValues(t *testing.T) {
 		assert.Contains(t, logs, "param_foo=bar")
 	}
 
-	testFrontend(t, config, nil, test, false, l)
+	testFrontend(t, config, nil, test, l)
 }
 
 func TestFrontend_ReturnsRequestBodyTooLargeError(t *testing.T) {
@@ -208,10 +207,10 @@ func TestFrontend_ReturnsRequestBodyTooLargeError(t *testing.T) {
 		assert.Equal(t, http.StatusRequestEntityTooLarge, resp.StatusCode, string(b))
 	}
 
-	testFrontend(t, config, nil, test, false, nil)
+	testFrontend(t, config, nil, test, nil)
 }
 
-func testFrontend(t *testing.T, config CombinedFrontendConfig, handler http.Handler, test func(addr string), matchMaxConcurrency bool, l log.Logger) {
+func testFrontend(t *testing.T, config CombinedFrontendConfig, handler http.Handler, test func(addr string), l log.Logger) {
 	logger := log.NewNopLogger()
 	if l != nil {
 		logger = l
@@ -219,8 +218,6 @@ func testFrontend(t *testing.T, config CombinedFrontendConfig, handler http.Hand
 
 	var workerConfig querier_worker.Config
 	flagext.DefaultValues(&workerConfig)
-	workerConfig.Parallelism = 1
-	workerConfig.MatchMaxConcurrency = matchMaxConcurrency
 	workerConfig.MaxConcurrentRequests = 1
 
 	// localhost:0 prevents firewall warnings on Mac OS X.

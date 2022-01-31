@@ -62,6 +62,7 @@ const (
 )
 
 var (
+	errEmptyExternalURL                    = errors.New("-alertmanager.web.external-url cannot be empty")
 	errInvalidExternalURL                  = errors.New("the configured external URL is invalid: should not end with /")
 	errShardingUnsupportedStorage          = errors.New("the configured alertmanager storage backend is not supported when sharding is enabled")
 	errZoneAwarenessEnabledWithoutZoneInfo = errors.New("the configured alertmanager has zone awareness enabled but zone is not set")
@@ -114,7 +115,8 @@ func (cfg *MultitenantAlertmanagerConfig) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.Retention, "alertmanager.storage.retention", 5*24*time.Hour, "How long to keep data for.")
 	f.Int64Var(&cfg.MaxRecvMsgSize, "alertmanager.max-recv-msg-size", 16<<20, "Maximum size (bytes) of an accepted HTTP request body.")
 
-	f.Var(&cfg.ExternalURL, "alertmanager.web.external-url", "The URL under which Alertmanager is externally reachable (for example, if Alertmanager is served via a reverse proxy). Used for generating relative and absolute links back to Alertmanager itself. If the URL has a path portion, it will be used to prefix all HTTP endpoints served by Alertmanager. If omitted, relevant URL components will be derived automatically.")
+	_ = cfg.ExternalURL.Set("http://localhost") // set the default
+	f.Var(&cfg.ExternalURL, "alertmanager.web.external-url", "The URL under which Alertmanager is externally reachable (for example, if Alertmanager is served via a reverse proxy). Used for generating relative and absolute links back to Alertmanager itself. If the URL has a path portion, it will be used to prefix all HTTP endpoints served by Alertmanager.")
 
 	f.StringVar(&cfg.FallbackConfigFile, "alertmanager.configs.fallback", "", "Filename of fallback config to use if none specified for instance.")
 	f.StringVar(&cfg.AutoWebhookRoot, "alertmanager.configs.auto-webhook-root", "", "Root of URL to generate if config is "+autoWebhookURL)
@@ -142,7 +144,11 @@ func (cfg *ClusterConfig) RegisterFlags(f *flag.FlagSet) {
 
 // Validate config and returns error on failure
 func (cfg *MultitenantAlertmanagerConfig) Validate(storageCfg alertstore.Config) error {
-	if cfg.ExternalURL.URL != nil && strings.HasSuffix(cfg.ExternalURL.Path, "/") {
+	if cfg.ExternalURL.String() == "" {
+		return errEmptyExternalURL
+	}
+
+	if strings.HasSuffix(cfg.ExternalURL.Path, "/") {
 		return errInvalidExternalURL
 	}
 
@@ -289,10 +295,6 @@ func NewMultitenantAlertmanager(cfg *MultitenantAlertmanagerConfig, store alerts
 	err := os.MkdirAll(cfg.DataDir, 0777)
 	if err != nil {
 		return nil, fmt.Errorf("unable to create Alertmanager data directory %q: %s", cfg.DataDir, err)
-	}
-
-	if cfg.ExternalURL.URL == nil {
-		return nil, fmt.Errorf("unable to create Alertmanager because the external URL has not been configured")
 	}
 
 	var fallbackConfig []byte
@@ -1141,9 +1143,8 @@ func (am *MultitenantAlertmanager) ReadFullStateForUser(ctx context.Context, use
 	)
 
 	// Note that the jobs swallow the errors - this is because we want to give each replica a chance to respond.
-	jobs := concurrency.CreateJobsFromStrings(addrs)
-	err = concurrency.ForEach(ctx, jobs, len(jobs), func(ctx context.Context, job interface{}) error {
-		addr := job.(string)
+	err = concurrency.ForEachJob(ctx, len(addrs), len(addrs), func(ctx context.Context, idx int) error {
+		addr := addrs[idx]
 		level.Debug(am.logger).Log("msg", "contacting replica for full state", "user", userID, "addr", addr)
 
 		c, err := am.alertmanagerClientsPool.GetClientFor(addr)
@@ -1180,7 +1181,7 @@ func (am *MultitenantAlertmanager) ReadFullStateForUser(ctx context.Context, use
 	}
 
 	// If all replicas do not know the user, propagate that outcome for the client to decide what to do.
-	if notFound == len(jobs) {
+	if notFound == len(addrs) {
 		return nil, errAllReplicasUserNotFound
 	}
 
@@ -1298,7 +1299,7 @@ func (am *MultitenantAlertmanager) getPerUserDirectories() map[string]string {
 	return result
 }
 
-// UpdateState implements the Alertmanager service.
+// ReadState implements the Alertmanager service.
 func (am *MultitenantAlertmanager) ReadState(ctx context.Context, req *alertmanagerpb.ReadStateRequest) (*alertmanagerpb.ReadStateResponse, error) {
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {

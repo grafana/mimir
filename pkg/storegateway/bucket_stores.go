@@ -37,7 +37,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
-	storecache "github.com/grafana/mimir/pkg/storage/tsdb/cache"
+	"github.com/grafana/mimir/pkg/storegateway/indexcache"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -55,7 +55,7 @@ type BucketStores struct {
 	shardingStrategy   ShardingStrategy
 
 	// Index cache shared across all tenants.
-	indexCache storecache.IndexCache
+	indexCache indexcache.IndexCache
 
 	// Series hash cache shared across all tenants.
 	seriesHashCache *hashcache.SeriesHashCache
@@ -622,7 +622,7 @@ func newChunksLimiterFactory(limits *validation.Overrides, userID string) Chunks
 		// Since limit overrides could be live reloaded, we have to get the current user's limit
 		// each time a new limiter is instantiated.
 		return &chunkLimiter{
-			limiter: NewLimiter(uint64(limits.MaxChunksPerQueryFromStore(userID)), failedCounter),
+			limiter: NewLimiter(uint64(limits.MaxChunksPerQuery(userID)), failedCounter),
 		}
 	}
 }

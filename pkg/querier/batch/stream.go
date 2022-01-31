@@ -6,13 +6,13 @@
 package batch
 
 import (
-	promchunk "github.com/grafana/mimir/pkg/chunk/encoding"
+	"github.com/grafana/mimir/pkg/storage/chunk"
 )
 
 // batchStream deals with iteratoring through multiple, non-overlapping batches,
 // and building new slices of non-overlapping batches.  Designed to be used
 // without allocations.
-type batchStream []promchunk.Batch
+type batchStream []chunk.Batch
 
 // reset, hasNext, next, atTime etc are all inlined in go1.11.
 
@@ -66,7 +66,7 @@ func mergeStreams(left, right batchStream, result batchStream, size int) batchSt
 			if resultLen > len(result) {
 				// It is possible that result can grow longer
 				// then the one provided.
-				result = append(result, promchunk.Batch{})
+				result = append(result, chunk.Batch{})
 			}
 			b = &result[resultLen-1]
 		}

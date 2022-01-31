@@ -6,22 +6,21 @@
     {
       target: 'query-frontend',
 
-      // Need log.level=debug so all queries are logged, needed for analyse.py.
-      'log.level': 'debug',
+      'server.http-listen-port': $._config.server_http_port,
 
-      // Increase HTTP server response write timeout, as we were seeing some
+      // Increase HTTP server response write timeout, as we were seeing some
       // queries that return a lot of data timeing out.
       'server.http-write-timeout': '1m',
 
       // Split long queries up into multiple day-long queries.
-      'querier.split-queries-by-interval': '24h',
+      'frontend.split-queries-by-interval': '24h',
 
       // Cache query results.
-      'querier.align-querier-with-step': false,
-      'querier.cache-results': true,
-      'frontend.memcached.hostname': 'memcached-frontend.%s.svc.cluster.local' % $._config.namespace,
-      'frontend.memcached.service': 'memcached-client',
-      'frontend.memcached.timeout': '500ms',
+      'frontend.align-querier-with-step': false,
+      'frontend.cache-results': true,
+      'frontend.results-cache.backend': 'memcached',
+      'frontend.results-cache.memcached.addresses': 'dnssrvnoa+memcached-frontend.%(namespace)s.svc.cluster.local:11211' % $._config,
+      'frontend.results-cache.memcached.timeout': '500ms',
 
       // So that exporters like cloudwatch can still send in data and be un-cached.
       'frontend.max-cache-freshness': '10m',
@@ -35,7 +34,7 @@
 
       // Limit queries to 500 days, allow this to be override per-user.
       'store.max-query-length': '12000h',  // 500 Days
-      'runtime-config.file': '/etc/cortex/overrides.yaml',
+      'runtime-config.file': '%s/overrides.yaml' % $._config.overrides_configmap_mountpoint,
     },
 
   query_frontend_container::
@@ -51,8 +50,8 @@
 
   newQueryFrontendDeployment(name, container)::
     deployment.new(name, $._config.queryFrontend.replicas, [container]) +
-    $.util.configVolumeMount($._config.overrides_configmap, '/etc/cortex') +
-    (if $._config.cortex_query_frontend_allow_multiple_replicas_on_same_node then {} else $.util.antiAffinity) +
+    $.util.configVolumeMount($._config.overrides_configmap, $._config.overrides_configmap_mountpoint) +
+    (if $._config.query_frontend_allow_multiple_replicas_on_same_node then {} else $.util.antiAffinity) +
     deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge(1) +
     deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(1),
 

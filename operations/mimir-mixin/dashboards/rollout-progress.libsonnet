@@ -6,11 +6,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
     gateway_job_matcher: $.jobMatcher($._config.job_names.gateway),
     gateway_write_routes_regex: 'api_(v1|prom)_push',
     gateway_read_routes_regex: '(prometheus|api_prom)_api_v1_.+',
-    all_services_regex: std.join('|', ['cortex-gw', 'distributor', 'ingester.*', 'query-frontend.*', 'query-scheduler.*', 'querier.*', 'compactor', 'store-gateway.*', 'ruler', 'alertmanager']),
+    all_services_regex: std.join('|', ['cortex-gw', 'distributor', 'ingester.*', 'query-frontend.*', 'query-scheduler.*', 'querier.*', 'compactor', 'store-gateway.*', 'ruler', 'alertmanager.*', 'overrides-exporter', 'cortex', 'mimir']),
   },
 
-  'cortex-rollout-progress.json':
-    ($.dashboard('Cortex / Rollout progress') + { uid: '7544a3a62b1be6ffd919fc990ab8ba8f' })
+  'mimir-rollout-progress.json':
+    ($.dashboard('Rollout progress') + { uid: '7544a3a62b1be6ffd919fc990ab8ba8f' })
     .addClusterSelectorTemplates(false) + {
       // This dashboard uses the new grid system in order to place panels (using gridPos).
       // Because of this we can't use the mixin's addRow() and addPanel().
@@ -125,7 +125,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           gridPos: { h: 4, w: 2, x: 14, y: 0 },
         },
 
-        $.panel('Writes 99th Latency') +
+        $.panel('Writes 99th latency') +
         $.newStatPanel(|||
           histogram_quantile(0.99, sum by (le) (cluster_job_route:cortex_request_duration_seconds_bucket:sum_rate{%(gateway_job_matcher)s, route=~"%(gateway_write_routes_regex)s"}))
         ||| % config, unit='s', thresholds=[
@@ -176,7 +176,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           gridPos: { h: 4, w: 2, x: 14, y: 4 },
         },
 
-        $.panel('Reads 99th Latency') +
+        $.panel('Reads 99th latency') +
         $.newStatPanel(|||
           histogram_quantile(0.99, sum by (le) (cluster_job_route:cortex_request_duration_seconds_bucket:sum_rate{%(gateway_job_matcher)s, route=~"%(gateway_read_routes_regex)s"}))
         ||| % config, unit='s', thresholds=[
@@ -225,7 +225,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         // Versions
         //
         {
-          title: 'Pods count per Version',
+          title: 'Pods count per version',
           type: 'table',
           datasource: '$datasource',
 

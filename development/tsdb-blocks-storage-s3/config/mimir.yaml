@@ -1,7 +1,6 @@
 auth_enabled: false
 
 distributor:
-  shard_by_all_labels: true
   pool:
     health_check_ingesters: true
 
@@ -76,7 +75,6 @@ blocks_storage:
 
 ruler:
   enable_api: true
-  enable_sharding: true
   ring:
     heartbeat_period:   5s
     heartbeat_timeout:  15s
@@ -118,14 +116,10 @@ alertmanager_storage:
     secret_access_key: supersecret
     insecure:          true
 
-storage:
-  engine: blocks
-
 compactor:
   compaction_interval: 30s
   data_dir:            /tmp/mimir-compactor
   consistency_delay:   1m
-  sharding_enabled:    true
   cleanup_interval:    1m
   tenant_cleanup_delay: 1m
   sharding_ring:
@@ -151,7 +145,6 @@ frontend:
 
 frontend_worker:
   frontend_address: "query-frontend:9007"
-  match_max_concurrent: true
 
   # By setting scheduler_address, querier worker would use scheduler instead of frontend.
   # scheduler_address: "query-scheduler:9012"
@@ -159,6 +152,21 @@ frontend_worker:
 query_range:
   split_queries_by_interval: 24h
   parallelize_shardable_queries: true
+  align_queries_with_step: true
+  cache_results: true
+
+  results_cache:
+    backend: "memcached"
+    memcached:
+      addresses: "dns+memcached:11211"
+    compression: snappy
+
+frontend_worker:
+  frontend_address: "query-frontend:9007"
+  match_max_concurrent: true
+
+  # By setting scheduler_address, querier worker would use scheduler instead of frontend.
+  # scheduler_address: "query-scheduler:9012"
 
 limits:
   # Limit max query time range to 31d

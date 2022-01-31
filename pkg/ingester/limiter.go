@@ -33,30 +33,24 @@ type RingCount interface {
 // Limiter implements primitives to get the maximum number of series
 // an ingester can handle for a specific tenant
 type Limiter struct {
-	limits                 *validation.Overrides
-	ring                   RingCount
-	replicationFactor      int
-	shuffleShardingEnabled bool
-	shardByAllLabels       bool
-	zoneAwarenessEnabled   bool
+	limits               *validation.Overrides
+	ring                 RingCount
+	replicationFactor    int
+	zoneAwarenessEnabled bool
 }
 
 // NewLimiter makes a new in-memory series limiter
 func NewLimiter(
 	limits *validation.Overrides,
 	ring RingCount,
-	shardingStrategy string,
-	shardByAllLabels bool,
 	replicationFactor int,
 	zoneAwarenessEnabled bool,
 ) *Limiter {
 	return &Limiter{
-		limits:                 limits,
-		ring:                   ring,
-		replicationFactor:      replicationFactor,
-		shuffleShardingEnabled: shardingStrategy == util.ShardingStrategyShuffle,
-		shardByAllLabels:       shardByAllLabels,
-		zoneAwarenessEnabled:   zoneAwarenessEnabled,
+		limits:               limits,
+		ring:                 ring,
+		replicationFactor:    replicationFactor,
+		zoneAwarenessEnabled: zoneAwarenessEnabled,
 	}
 }
 
@@ -100,11 +94,6 @@ func (l *Limiter) AssertMaxMetricsWithMetadataPerUser(userID string, metrics int
 	return errMaxMetadataPerUserLimitExceeded
 }
 
-// MaxSeriesPerQuery returns the maximum number of series a query is allowed to hit.
-func (l *Limiter) MaxSeriesPerQuery(userID string) int {
-	return l.limits.MaxSeriesPerQuery(userID)
-}
-
 // FormatError returns the input error enriched with the actual limits for the given user.
 // It acts as pass-through if the input error is unknown.
 func (l *Limiter) FormatError(userID string, err error) error {
@@ -124,116 +113,58 @@ func (l *Limiter) FormatError(userID string, err error) error {
 
 func (l *Limiter) formatMaxSeriesPerUserError(userID string) error {
 	actualLimit := l.maxSeriesPerUser(userID)
-	localLimit := l.limits.MaxLocalSeriesPerUser(userID)
 	globalLimit := l.limits.MaxGlobalSeriesPerUser(userID)
 
-	return fmt.Errorf("per-user series limit of %d exceeded, please contact administrator to raise it (local limit: %d global limit: %d actual local limit: %d)",
-		minNonZero(localLimit, globalLimit), localLimit, globalLimit, actualLimit)
+	return fmt.Errorf("per-user series limit of %d exceeded, please contact administrator to raise it (per-ingester local limit: %d)",
+		globalLimit, actualLimit)
 }
 
 func (l *Limiter) formatMaxSeriesPerMetricError(userID string) error {
 	actualLimit := l.maxSeriesPerMetric(userID)
-	localLimit := l.limits.MaxLocalSeriesPerMetric(userID)
 	globalLimit := l.limits.MaxGlobalSeriesPerMetric(userID)
 
-	return fmt.Errorf("per-metric series limit of %d exceeded, please contact administrator to raise it (local limit: %d global limit: %d actual local limit: %d)",
-		minNonZero(localLimit, globalLimit), localLimit, globalLimit, actualLimit)
+	return fmt.Errorf("per-metric series limit of %d exceeded, please contact administrator to raise it (per-ingester local limit: %d)",
+		globalLimit, actualLimit)
 }
 
 func (l *Limiter) formatMaxMetadataPerUserError(userID string) error {
 	actualLimit := l.maxMetadataPerUser(userID)
-	localLimit := l.limits.MaxLocalMetricsWithMetadataPerUser(userID)
 	globalLimit := l.limits.MaxGlobalMetricsWithMetadataPerUser(userID)
 
-	return fmt.Errorf("per-user metric metadata limit of %d exceeded, please contact administrator to raise it (local limit: %d global limit: %d actual local limit: %d)",
-		minNonZero(localLimit, globalLimit), localLimit, globalLimit, actualLimit)
+	return fmt.Errorf("per-user metric metadata limit of %d exceeded, please contact administrator to raise it (per-ingester local limit: %d)",
+		globalLimit, actualLimit)
 }
 
 func (l *Limiter) formatMaxMetadataPerMetricError(userID string) error {
 	actualLimit := l.maxMetadataPerMetric(userID)
-	localLimit := l.limits.MaxLocalMetadataPerMetric(userID)
 	globalLimit := l.limits.MaxGlobalMetadataPerMetric(userID)
 
-	return fmt.Errorf("per-metric metadata limit of %d exceeded, please contact administrator to raise it (local limit: %d global limit: %d actual local limit: %d)",
-		minNonZero(localLimit, globalLimit), localLimit, globalLimit, actualLimit)
+	return fmt.Errorf("per-metric metadata limit of %d exceeded, please contact administrator to raise it (per-ingester local limit: %d)",
+		globalLimit, actualLimit)
 }
 
 func (l *Limiter) maxSeriesPerMetric(userID string) int {
-	localLimit := l.limits.MaxLocalSeriesPerMetric(userID)
-	globalLimit := l.limits.MaxGlobalSeriesPerMetric(userID)
-
-	if globalLimit > 0 {
-		if l.shardByAllLabels {
-			// We can assume that series are evenly distributed across ingesters
-			// so we do convert the global limit into a local limit
-			localLimit = minNonZero(localLimit, l.convertGlobalToLocalLimit(userID, globalLimit))
-		} else {
-			// Given a metric is always pushed to the same set of ingesters (based on
-			// the replication factor), we can configure the per-ingester local limit
-			// equal to the global limit.
-			localLimit = minNonZero(localLimit, globalLimit)
-		}
-	}
-
-	// If both the local and global limits are disabled, we just
-	// use the largest int value
-	if localLimit == 0 {
-		localLimit = math.MaxInt32
-	}
-
-	return localLimit
+	return l.convertGlobalToLocalLimitOrUnlimited(userID, l.limits.MaxGlobalSeriesPerMetric)
 }
 
 func (l *Limiter) maxMetadataPerMetric(userID string) int {
-	localLimit := l.limits.MaxLocalMetadataPerMetric(userID)
-	globalLimit := l.limits.MaxGlobalMetadataPerMetric(userID)
-
-	if globalLimit > 0 {
-		if l.shardByAllLabels {
-			localLimit = minNonZero(localLimit, l.convertGlobalToLocalLimit(userID, globalLimit))
-		} else {
-			localLimit = minNonZero(localLimit, globalLimit)
-		}
-	}
-
-	if localLimit == 0 {
-		localLimit = math.MaxInt32
-	}
-
-	return localLimit
+	return l.convertGlobalToLocalLimitOrUnlimited(userID, l.limits.MaxGlobalMetadataPerMetric)
 }
 
 func (l *Limiter) maxSeriesPerUser(userID string) int {
-	return l.maxByLocalAndGlobal(
-		userID,
-		l.limits.MaxLocalSeriesPerUser,
-		l.limits.MaxGlobalSeriesPerUser,
-	)
+	return l.convertGlobalToLocalLimitOrUnlimited(userID, l.limits.MaxGlobalSeriesPerUser)
 }
 
 func (l *Limiter) maxMetadataPerUser(userID string) int {
-	return l.maxByLocalAndGlobal(
-		userID,
-		l.limits.MaxLocalMetricsWithMetadataPerUser,
-		l.limits.MaxGlobalMetricsWithMetadataPerUser,
-	)
+	return l.convertGlobalToLocalLimitOrUnlimited(userID, l.limits.MaxGlobalMetricsWithMetadataPerUser)
 }
 
-func (l *Limiter) maxByLocalAndGlobal(userID string, localLimitFn, globalLimitFn func(string) int) int {
-	localLimit := localLimitFn(userID)
+func (l *Limiter) convertGlobalToLocalLimitOrUnlimited(userID string, globalLimitFn func(string) int) int {
+	// We can assume that series/metadata are evenly distributed across ingesters
+	globalLimit := globalLimitFn(userID)
+	localLimit := l.convertGlobalToLocalLimit(userID, globalLimit)
 
-	// The global limit is supported only when shard-by-all-labels is enabled,
-	// otherwise we wouldn't get an even split of series/metadata across ingesters and
-	// can't take a "local decision" without any centralized coordination.
-	if l.shardByAllLabels {
-		// We can assume that series/metadata are evenly distributed across ingesters
-		// so we do convert the global limit into a local limit
-		globalLimit := globalLimitFn(userID)
-		localLimit = minNonZero(localLimit, l.convertGlobalToLocalLimit(userID, globalLimit))
-	}
-
-	// If both the local and global limits are disabled, we just
-	// use the largest int value
+	// If the limit is disabled
 	if localLimit == 0 {
 		localLimit = math.MaxInt32
 	}
@@ -270,10 +201,6 @@ func (l *Limiter) convertGlobalToLocalLimit(userID string, globalLimit int) int 
 }
 
 func (l *Limiter) getShardSize(userID string) int {
-	if !l.shuffleShardingEnabled {
-		return 0
-	}
-
 	return l.limits.IngestionTenantShardSize(userID)
 }
 
@@ -282,12 +209,4 @@ func (l *Limiter) getNumZones() int {
 		return util_math.Max(l.ring.ZonesCount(), 1)
 	}
 	return 1
-}
-
-func minNonZero(first, second int) int {
-	if first == 0 || (second != 0 && first > second) {
-		return second
-	}
-
-	return first
 }

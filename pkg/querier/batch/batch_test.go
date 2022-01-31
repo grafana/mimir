@@ -13,8 +13,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/chunk"
-	promchunk "github.com/grafana/mimir/pkg/chunk/encoding"
+	"github.com/grafana/mimir/pkg/storage/chunk"
 )
 
 func BenchmarkNewChunkMergeIterator_CreateAndIterate(b *testing.B) {
@@ -22,30 +21,22 @@ func BenchmarkNewChunkMergeIterator_CreateAndIterate(b *testing.B) {
 		numChunks          int
 		numSamplesPerChunk int
 		duplicationFactor  int
-		enc                promchunk.Encoding
 	}{
-		{numChunks: 1000, numSamplesPerChunk: 100, duplicationFactor: 1, enc: promchunk.Bigchunk},
-		{numChunks: 1000, numSamplesPerChunk: 100, duplicationFactor: 3, enc: promchunk.Bigchunk},
-		{numChunks: 1000, numSamplesPerChunk: 100, duplicationFactor: 1, enc: promchunk.Varbit},
-		{numChunks: 1000, numSamplesPerChunk: 100, duplicationFactor: 3, enc: promchunk.Varbit},
-		{numChunks: 1000, numSamplesPerChunk: 100, duplicationFactor: 1, enc: promchunk.DoubleDelta},
-		{numChunks: 1000, numSamplesPerChunk: 100, duplicationFactor: 3, enc: promchunk.DoubleDelta},
-		{numChunks: 1000, numSamplesPerChunk: 100, duplicationFactor: 1, enc: promchunk.PrometheusXorChunk},
-		{numChunks: 1000, numSamplesPerChunk: 100, duplicationFactor: 3, enc: promchunk.PrometheusXorChunk},
-		{numChunks: 100, numSamplesPerChunk: 100, duplicationFactor: 1, enc: promchunk.PrometheusXorChunk},
-		{numChunks: 100, numSamplesPerChunk: 100, duplicationFactor: 3, enc: promchunk.PrometheusXorChunk},
-		{numChunks: 1, numSamplesPerChunk: 100, duplicationFactor: 1, enc: promchunk.PrometheusXorChunk},
-		{numChunks: 1, numSamplesPerChunk: 100, duplicationFactor: 3, enc: promchunk.PrometheusXorChunk},
+		{numChunks: 1000, numSamplesPerChunk: 100, duplicationFactor: 1},
+		{numChunks: 1000, numSamplesPerChunk: 100, duplicationFactor: 3},
+		{numChunks: 100, numSamplesPerChunk: 100, duplicationFactor: 1},
+		{numChunks: 100, numSamplesPerChunk: 100, duplicationFactor: 3},
+		{numChunks: 1, numSamplesPerChunk: 100, duplicationFactor: 1},
+		{numChunks: 1, numSamplesPerChunk: 100, duplicationFactor: 3},
 	}
 
 	for _, scenario := range scenarios {
-		name := fmt.Sprintf("chunks: %d samples per chunk: %d duplication factor: %d encoding: %s",
+		name := fmt.Sprintf("chunks: %d samples per chunk: %d duplication factor: %d",
 			scenario.numChunks,
 			scenario.numSamplesPerChunk,
-			scenario.duplicationFactor,
-			scenario.enc.String())
+			scenario.duplicationFactor)
 
-		chunks := createChunks(b, scenario.numChunks, scenario.numSamplesPerChunk, scenario.duplicationFactor, scenario.enc)
+		chunks := createChunks(b, scenario.numChunks, scenario.numSamplesPerChunk, scenario.duplicationFactor, chunk.PrometheusXorChunk)
 
 		b.Run(name, func(b *testing.B) {
 			b.ReportAllocs()
@@ -66,8 +57,8 @@ func BenchmarkNewChunkMergeIterator_CreateAndIterate(b *testing.B) {
 }
 
 func TestSeekCorrectlyDealWithSinglePointChunks(t *testing.T) {
-	chunkOne := mkChunk(t, model.Time(1*step/time.Millisecond), 1, promchunk.PrometheusXorChunk)
-	chunkTwo := mkChunk(t, model.Time(10*step/time.Millisecond), 1, promchunk.PrometheusXorChunk)
+	chunkOne := mkChunk(t, model.Time(1*step/time.Millisecond), 1, chunk.PrometheusXorChunk)
+	chunkTwo := mkChunk(t, model.Time(10*step/time.Millisecond), 1, chunk.PrometheusXorChunk)
 	chunks := []chunk.Chunk{chunkOne, chunkTwo}
 
 	sut := NewChunkMergeIterator(chunks, 0, 0)
@@ -81,7 +72,7 @@ func TestSeekCorrectlyDealWithSinglePointChunks(t *testing.T) {
 	require.Equal(t, int64(1*time.Second/time.Millisecond), actual)
 }
 
-func createChunks(b *testing.B, numChunks, numSamplesPerChunk, duplicationFactor int, enc promchunk.Encoding) []chunk.Chunk {
+func createChunks(b *testing.B, numChunks, numSamplesPerChunk, duplicationFactor int, enc chunk.Encoding) []chunk.Chunk {
 	result := make([]chunk.Chunk, 0, numChunks)
 
 	for d := 0; d < duplicationFactor; d++ {

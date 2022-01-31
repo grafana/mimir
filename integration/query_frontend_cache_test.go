@@ -8,12 +8,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/e2e"
+	e2ecache "github.com/grafana/e2e/cache"
+	e2edb "github.com/grafana/e2e/db"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/integration/e2e"
-	e2ecache "github.com/grafana/mimir/integration/e2e/cache"
-	e2edb "github.com/grafana/mimir/integration/e2e/db"
 	"github.com/grafana/mimir/integration/e2emimir"
 )
 
@@ -33,19 +33,20 @@ func TestQueryFrontendUnalignedQuery(t *testing.T) {
 	require.NoError(t, s.StartAndWaitReady(minio))
 
 	flags = mergeFlags(flags, map[string]string{
-		"-querier.cache-results":             "true",
-		"-querier.split-queries-by-interval": "2m",
-		"-querier.query-ingesters-within":    "12h", // Required by the test on query /series out of ingesters time range
-		"-querier.align-querier-with-step":   "true",
-		"-frontend.max-cache-freshness":      "0", // Cache everything.
-		"-frontend.memcached.addresses":      "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
+		"-frontend.cache-results":                     "true",
+		"-frontend.split-queries-by-interval":         "2m",
+		"-querier.query-ingesters-within":             "12h", // Required by the test on query /series out of ingesters time range
+		"-frontend.align-querier-with-step":           "true",
+		"-frontend.max-cache-freshness":               "0", // Cache everything.
+		"-frontend.results-cache.backend":             "memcached",
+		"-frontend.results-cache.memcached.addresses": "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
 	})
 
 	// Start the query-frontend.
-	queryFrontendAligned := e2emimir.NewQueryFrontendWithConfigFile("query-frontend-aligned", configFile, mergeFlags(flags, map[string]string{"-querier.align-querier-with-step": "true"}), "")
+	queryFrontendAligned := e2emimir.NewQueryFrontendWithConfigFile("query-frontend-aligned", configFile, mergeFlags(flags, map[string]string{"-frontend.align-querier-with-step": "true"}), "")
 	require.NoError(t, s.Start(queryFrontendAligned))
 
-	queryFrontendUnaligned := e2emimir.NewQueryFrontendWithConfigFile("query-frontend-unaligned", configFile, mergeFlags(flags, map[string]string{"-querier.align-querier-with-step": "false"}), "")
+	queryFrontendUnaligned := e2emimir.NewQueryFrontendWithConfigFile("query-frontend-unaligned", configFile, mergeFlags(flags, map[string]string{"-frontend.align-querier-with-step": "false"}), "")
 	require.NoError(t, s.Start(queryFrontendUnaligned))
 
 	querierAligned := e2emimir.NewQuerierWithConfigFile("querier-aligned", consul.NetworkHTTPEndpoint(), configFile, mergeFlags(flags, map[string]string{"-querier.frontend-address": queryFrontendAligned.NetworkGRPCEndpoint()}), "")
@@ -59,11 +60,12 @@ func TestQueryFrontendUnalignedQuery(t *testing.T) {
 	require.NoError(t, s.WaitReady(queryFrontendAligned, queryFrontendUnaligned))
 
 	// Check if we're discovering memcache or not.
-	require.NoError(t, queryFrontendAligned.WaitSumMetrics(e2e.Equals(1), "cortex_memcache_client_servers"))
-	require.NoError(t, queryFrontendUnaligned.WaitSumMetrics(e2e.Equals(1), "cortex_memcache_client_servers"))
+	require.NoError(t, queryFrontendAligned.WaitSumMetrics(e2e.Equals(1), "thanos_memcached_dns_provider_results"))
+	require.NoError(t, queryFrontendUnaligned.WaitSumMetrics(e2e.Equals(1), "thanos_memcached_dns_provider_results"))
 
 	// Wait until the distributor and queriers have updated the ring.
-	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
+	// The distributor should have 512 tokens for the ingester ring and 1 for the distributor ring
+	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512+1), "cortex_ring_tokens_total"))
 	require.NoError(t, querierAligned.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
 	require.NoError(t, querierUnaligned.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
 

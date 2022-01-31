@@ -10,16 +10,15 @@ import (
 	"bytes"
 	"context"
 	"io"
-	"net/url"
 	"testing"
 
+	"github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/e2e"
+	e2edb "github.com/grafana/e2e/db"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/integration/e2e"
-	e2edb "github.com/grafana/mimir/integration/e2e/db"
-	s3 "github.com/grafana/mimir/pkg/chunk/aws"
-	mimir_s3 "github.com/grafana/mimir/pkg/storage/bucket/s3"
+	s3 "github.com/grafana/mimir/pkg/storage/bucket/s3"
 )
 
 func TestS3Client(t *testing.T) {
@@ -39,63 +38,27 @@ func TestS3Client(t *testing.T) {
 
 	tests := []struct {
 		name string
-		cfg  s3.S3Config
+		cfg  s3.Config
 	}{
 		{
 			name: "expanded-config",
-			cfg: s3.S3Config{
-				Endpoint:         minio.HTTPEndpoint(),
-				BucketNames:      bucketName,
-				S3ForcePathStyle: true,
-				Insecure:         true,
-				AccessKeyID:      e2edb.MinioAccessKey,
-				SecretAccessKey:  e2edb.MinioSecretKey,
-			},
-		},
-		{
-			name: "url-config",
-			cfg: s3.S3Config{
-				S3: flagext.URLValue{
-					URL: urlMustParse("http://" + e2edb.MinioAccessKey + ":" + e2edb.MinioSecretKey + "@" + minio.HTTPEndpoint()),
-				},
-				BucketNames:      bucketName,
-				S3ForcePathStyle: true,
-			},
-		},
-		{
-			name: "mixed-config",
-			cfg: s3.S3Config{
-				S3: flagext.URLValue{
-					URL: urlMustParse("http://" + minio.HTTPEndpoint()),
-				},
-				BucketNames:      bucketName,
-				S3ForcePathStyle: true,
-				AccessKeyID:      e2edb.MinioAccessKey,
-				SecretAccessKey:  e2edb.MinioSecretKey,
-			},
-		},
-		{
-			name: "config-with-deprecated-sse",
-			cfg: s3.S3Config{
-				Endpoint:         minio.HTTPEndpoint(),
-				BucketNames:      bucketName,
-				S3ForcePathStyle: true,
-				Insecure:         true,
-				AccessKeyID:      e2edb.MinioAccessKey,
-				SecretAccessKey:  e2edb.MinioSecretKey,
-				SSEEncryption:    true,
+			cfg: s3.Config{
+				Endpoint:        minio.HTTPEndpoint(),
+				BucketName:      bucketName,
+				Insecure:        true,
+				AccessKeyID:     e2edb.MinioAccessKey,
+				SecretAccessKey: flagext.Secret{Value: e2edb.MinioSecretKey},
 			},
 		},
 		{
 			name: "config-with-sse-s3",
-			cfg: s3.S3Config{
-				Endpoint:         minio.HTTPEndpoint(),
-				BucketNames:      bucketName,
-				S3ForcePathStyle: true,
-				Insecure:         true,
-				AccessKeyID:      e2edb.MinioAccessKey,
-				SecretAccessKey:  e2edb.MinioSecretKey,
-				SSEConfig: mimir_s3.SSEConfig{
+			cfg: s3.Config{
+				Endpoint:        minio.HTTPEndpoint(),
+				BucketName:      bucketName,
+				Insecure:        true,
+				AccessKeyID:     e2edb.MinioAccessKey,
+				SecretAccessKey: flagext.Secret{Value: e2edb.MinioSecretKey},
+				SSE: s3.SSEConfig{
 					Type: "SSE-S3",
 				},
 			},
@@ -104,7 +67,7 @@ func TestS3Client(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			client, err := s3.NewS3ObjectClient(tt.cfg)
+			client, err := s3.NewBucketClient(tt.cfg, "test", log.NewNopLogger())
 
 			require.NoError(t, err)
 
@@ -112,10 +75,10 @@ func TestS3Client(t *testing.T) {
 			objectKey := "key-" + tt.name
 			obj := []byte{0x01, 0x02, 0x03, 0x04}
 
-			err = client.PutObject(ctx, objectKey, bytes.NewReader(obj))
+			err = client.Upload(ctx, objectKey, bytes.NewReader(obj))
 			require.NoError(t, err)
 
-			readCloser, err := client.GetObject(ctx, objectKey)
+			readCloser, err := client.Get(ctx, objectKey)
 			require.NoError(t, err)
 
 			read := make([]byte, 4)
@@ -127,13 +90,4 @@ func TestS3Client(t *testing.T) {
 			require.Equal(t, obj, read)
 		})
 	}
-}
-
-func urlMustParse(parse string) *url.URL {
-	u, err := url.Parse(parse)
-	if err != nil {
-		panic(err)
-	}
-
-	return u
 }

@@ -17,13 +17,17 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/model/value"
+	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/httpgrpc"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/ruler/rulespb"
 )
 
 type fakePusher struct {
@@ -258,4 +262,117 @@ func TestRecordAndReportRuleQueryMetrics(t *testing.T) {
 	_, _ = qf(context.Background(), "test", time.Now())
 
 	require.GreaterOrEqual(t, testutil.ToFloat64(queryTime.WithLabelValues("userID")), float64(1))
+}
+
+// TestManagerFactory_CorrectQueryableUsed ensures that when evaluating a group with non-empty SourceTenants
+// the federated queryable is called. If SourceTenants are empty, then the regular queryable should be used.
+// This is to ensure that the `__tenant_id__` label is present for all rules evaluating within a federated rule group.
+func TestManagerFactory_CorrectQueryableUsed(t *testing.T) {
+	const userID = "tenant-1"
+
+	dummyRules := []*rulespb.RuleDesc{{
+		Expr:   "sum(up)",
+		Record: "sum:up",
+	}}
+
+	testCases := map[string]struct {
+		ruleGroup rulespb.RuleGroupDesc
+
+		federatedQueryableCalled bool
+		regularQueryableCalled   bool
+	}{
+		"regular rule group (without source tenants) uses regular querier": {
+			ruleGroup: rulespb.RuleGroupDesc{
+				Name:  "non-federated",
+				Rules: dummyRules,
+			},
+			regularQueryableCalled: true,
+		},
+		"federated rule group with single source tenant uses federated querier": {
+			ruleGroup: rulespb.RuleGroupDesc{
+				Name:          "federated-1",
+				SourceTenants: []string{"tenant-2"},
+				Rules:         dummyRules,
+			},
+			federatedQueryableCalled: true,
+		},
+		"federated rule group with multiple source tenants uses federated querier": {
+			ruleGroup: rulespb.RuleGroupDesc{
+				Name:          "federated-2",
+				SourceTenants: []string{"tenant-2", "tenant-3"},
+				Rules:         dummyRules,
+			},
+			federatedQueryableCalled: true,
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			// assumptions
+			require.True(t, tc.regularQueryableCalled != tc.federatedQueryableCalled, "choose only one of regularQueryableCalled or federatedQueryableCalled")
+			for _, r := range tc.ruleGroup.Rules {
+				const msg = "this test only works with recording rules: the regular queryable will be " +
+					"called an additional one time to restore the state of an alerting rule"
+				require.NotEmpty(t, r.Record, msg)
+				require.Empty(t, r.Alert, msg)
+			}
+
+			// setup
+			cfg := defaultRulerConfig(t)
+			engine, _, pusher, logger, overrides := testSetup(t)
+			notifierManager := notifier.NewManager(&notifier.Options{Do: func(_ context.Context, _ *http.Client, _ *http.Request) (*http.Response, error) { return nil, nil }}, logger)
+			ruleFiles := writeRuleGroupToFiles(t, cfg.RulePath, logger, userID, tc.ruleGroup)
+			regularQueryable, federatedQueryable := newMockQueryable(), newMockQueryable()
+
+			// create and use manager factory
+			managerFactory := DefaultTenantManagerFactory(cfg, pusher, regularQueryable, federatedQueryable, engine, overrides, nil)
+			manager := managerFactory(context.Background(), userID, notifierManager, logger, nil)
+
+			// load rules into manager and start
+			require.NoError(t, manager.Update(time.Millisecond, ruleFiles, nil, ""))
+			go manager.Run()
+
+			select {
+			case <-regularQueryable.called:
+				require.True(t, tc.regularQueryableCalled, "unexpected call to regular queryable")
+			case <-federatedQueryable.called:
+				require.True(t, tc.federatedQueryableCalled, "unexpected call to federated queryable")
+			case <-time.NewTimer(time.Second).C:
+				require.Fail(t, "neither of the queryables was called within the timeout")
+			}
+			manager.Stop()
+		})
+	}
+}
+
+func writeRuleGroupToFiles(t *testing.T, path string, logger log.Logger, userID string, ruleGroup rulespb.RuleGroupDesc) []string {
+	_, files, err := newMapper(path, logger).MapRules(userID, map[string][]rulefmt.RuleGroup{
+		"namespace": {rulespb.FromProto(&ruleGroup)},
+	})
+	require.NoError(t, err)
+	require.Len(t, files, 1, "writing a single namespace, expecting a single file")
+
+	return files
+}
+
+// mockQueryable closes called when it's Querier method gets called.
+// You can use newMockQueryable to instantiate one.
+type mockQueryable struct {
+	called chan struct{}
+}
+
+func newMockQueryable() *mockQueryable {
+	return &mockQueryable{
+		called: make(chan struct{}),
+	}
+}
+
+func (m *mockQueryable) Querier(_ context.Context, _, _ int64) (storage.Querier, error) {
+	select {
+	case <-m.called:
+		// already closed
+	default:
+		close(m.called)
+	}
+	return storage.NoopQuerier(), nil
 }
