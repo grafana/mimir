@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"html/template"
 	"net/http"
-	"net/url"
 	"strconv"
 	"time"
 
@@ -33,13 +32,13 @@ const blocksPageTemplate = `
 		<p>Showing blocks for tenant: {{ .Tenant }}</p>
 		<p>
 			{{ if not .ShowDeleted }}
-				<a href="{{ .ShowDeletedURI }}">Show Deleted</a>
+				<a href="?show_deleted=true">Show Deleted</a>
 			{{ end }}
 			{{ if not .ShowSources }}
-				<a href="{{ .ShowSourcesURI }}">Show Sources</a>
+				<a href="?show_sources=true">Show Sources</a>
 			{{ end }}
 			{{ if not .ShowParents }}
-				<a href="{{ .ShowParentsURI }}">Show Parents</a>
+				<a href="?show_parents=true">Show Parents</a>
 			{{ end }}
 		</p>
 		<p>
@@ -212,10 +211,6 @@ func (s *StoreGateway) BlocksHandler(w http.ResponseWriter, req *http.Request) {
 		ShowSources     bool                 `json:"-"`
 		ShowParents     bool                 `json:"-"`
 
-		ShowDeletedURI string `json:"-"`
-		ShowSourcesURI string `json:"-"`
-		ShowParentsURI string `json:"-"`
-
 		TSDBTenantIDExternalLabel string `json:"-"`
 	}{
 		Now:             time.Now(),
@@ -228,26 +223,8 @@ func (s *StoreGateway) BlocksHandler(w http.ResponseWriter, req *http.Request) {
 		ShowSources:    showSources,
 		ShowParents:    showParents,
 
-		ShowDeletedURI: uriWithTrueBoolParam(*req.URL, req.Form, "show_deleted"),
-		ShowSourcesURI: uriWithTrueBoolParam(*req.URL, req.Form, "show_sources"),
-		ShowParentsURI: uriWithTrueBoolParam(*req.URL, req.Form, "show_parents"),
-
 		TSDBTenantIDExternalLabel: tsdb.TenantIDExternalLabel,
 	}, blocksTemplate, req)
-}
-
-func uriWithTrueBoolParam(u url.URL, form url.Values, boolParam string) string {
-	q := u.Query()
-	for k, vs := range form {
-		for _, val := range vs {
-			// Yes, we set only the last value, but otherwise the logic just gets too complicated.
-			q.Set(k, val)
-		}
-	}
-	q.Set(boolParam, "true")
-	u.RawQuery = q.Encode()
-
-	return u.RequestURI()
 }
 
 func formatTimeIfNotZero(t time.Time, format string) string {
