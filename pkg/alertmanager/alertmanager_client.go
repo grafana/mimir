@@ -40,7 +40,7 @@ type Client interface {
 // ClientConfig is the configuration struct for the alertmanager client.
 type ClientConfig struct {
 	RemoteTimeout time.Duration    `yaml:"remote_timeout"`
-	TLSEnabled    bool             `yaml:"tls_enabled"`
+	TLSEnabled    bool             `yaml:"tls_enabled" category:"advanced"`
 	TLS           tls.ClientConfig `yaml:",inline"`
 }
 
