@@ -2042,16 +2042,6 @@ The `frontend_worker_config` configures the worker - running within the querier 
 # CLI flag: -querier.dns-lookup-period
 [dns_lookup_duration: <duration> | default = 10s]
 
-# Number of simultaneous queries to process per query-frontend or
-# query-scheduler.
-# CLI flag: -querier.worker-parallelism
-[parallelism: <int> | default = 10]
-
-# Force worker concurrency to match the -querier.max-concurrent option.
-# Overrides querier.worker-parallelism.
-# CLI flag: -querier.worker-match-max-concurrent
-[match_max_concurrent: <boolean> | default = false]
-
 # Querier ID, sent to frontend service to identify requests from the same
 # querier. Defaults to hostname.
 # CLI flag: -querier.id
