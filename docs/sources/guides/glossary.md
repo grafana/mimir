@@ -13,10 +13,6 @@ While when running Mimir with the [blocks storage](#blocks-storage) a single chu
 
 For more information, see the [Mimir blocks storage](../blocks-storage/_index.md) documentation.
 
-### Chunk
-
-A chunk is an object containing encoded timestamp-value pairs for one series.
-
 ### Churn
 
 Churn is the frequency at which series become idle.
