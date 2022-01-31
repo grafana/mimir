@@ -194,7 +194,7 @@ How to **investigate**:
     - The cortex-gw may need to be scaled up. Use the `Mimir / Scaling` dashboard to check for CPU usage vs requests.
     - There could be a problem with authentication (eg. slow to run auth layer)
   - **`query-frontend`**
-    - The query-frontend may beed to be scaled up. If the Mimir cluster is running with the query-scheduler, the query-frontend can be scaled up with no side effects, otherwise the maximum number of query-frontend replicas should be the configured `-querier.max-concurrent`.
+    - The query-frontend may need to be scaled up. If the Mimir cluster is running with the query-scheduler, the query-frontend can be scaled up with no side effects, otherwise the maximum number of query-frontend replicas should be the configured `-querier.max-concurrent`.
   - **`querier`**
     - Look at slow queries traces to find out where it's slow.
     - Typically, slowness either comes from running PromQL engine (`innerEval`) or fetching chunks from ingesters and/or store-gateways.
