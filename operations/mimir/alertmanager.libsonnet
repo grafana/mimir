@@ -122,12 +122,13 @@
 
   alertmanager_statefulset:
     if $._config.alertmanager_enabled then
-      statefulSet.new('alertmanager', $._config.alertmanager.replicas, [$.alertmanager_container], $.alertmanager_pvc, $.alertmanager_deployment_labels) +
+      statefulSet.new('alertmanager', $._config.alertmanager.replicas, [$.alertmanager_container], $.alertmanager_pvc) +
       statefulSet.mixin.spec.withServiceName('alertmanager') +
       statefulSet.mixin.metadata.withNamespace($._config.namespace) +
       statefulSet.mixin.metadata.withLabels({ name: 'alertmanager' }) +
       statefulSet.mixin.spec.template.spec.securityContext.withRunAsUser(0) +
       statefulSet.mixin.spec.updateStrategy.withType('RollingUpdate') +
+      statefulSet.mixin.spec.template.metadata.withLabelsMixin($.alertmanager_deployment_labels) +
       statefulSet.mixin.spec.template.spec.withTerminationGracePeriodSeconds(900) +
       $.util.configVolumeMount($._config.overrides_configmap, $._config.overrides_configmap_mountpoint) +
       statefulSet.mixin.spec.template.spec.withVolumesMixin(

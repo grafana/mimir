@@ -59,12 +59,13 @@
 
   ruler_deployment:
     if $._config.ruler_enabled then
-      deployment.new('ruler', 2, [$.ruler_container], $.ruler_deployment_labels) +
+      deployment.new('ruler', 2, [$.ruler_container]) +
       deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge(0) +
       deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(1) +
       deployment.mixin.spec.template.spec.withTerminationGracePeriodSeconds(600) +
       (if $._config.ruler_allow_multiple_replicas_on_same_node then {} else $.util.antiAffinity) +
-      $.util.configVolumeMount($._config.overrides_configmap, $._config.overrides_configmap_mountpoint)
+      $.util.configVolumeMount($._config.overrides_configmap, $._config.overrides_configmap_mountpoint) +
+      deployment.spec.template.metadata.withLabelsMixin($.ruler_deployment_labels)
     else {},
 
   local service = $.core.v1.service,

@@ -58,11 +58,12 @@
   },
 
   newQuerierDeployment(name, container)::
-    deployment.new(name, $._config.querier.replicas, [container], $.querier_deployment_labels) +
+    deployment.new(name, $._config.querier.replicas, [container]) +
     (if $._config.querier_allow_multiple_replicas_on_same_node then {} else $.util.antiAffinity) +
     $.util.configVolumeMount($._config.overrides_configmap, $._config.overrides_configmap_mountpoint) +
     deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge(5) +
-    deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(1),
+    deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(1) +
+    deployment.spec.template.metadata.withLabelsMixin($.querier_deployment_labels),
 
   querier_deployment:
     self.newQuerierDeployment('querier', $.querier_container),

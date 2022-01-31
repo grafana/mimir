@@ -78,10 +78,11 @@
       container + $.core.v1.container.withVolumeMountsMixin([
         volumeMount.new('ingester-data', '/data'),
       ]),
-    ], ingester_data_pvc, $.ingester_deployment_labels) +
+    ], ingester_data_pvc) +
     statefulSet.mixin.spec.withServiceName(name) +
     statefulSet.mixin.metadata.withNamespace($._config.namespace) +
     statefulSet.mixin.metadata.withLabels({ name: name }) +
+    statefulSet.mixin.spec.template.metadata.withLabelsMixin($.ingester_deployment_labels) +
     statefulSet.mixin.spec.template.spec.securityContext.withRunAsUser(0) +
     // When the ingester needs to flush blocks to the storage, it may take quite a lot of time.
     // For this reason, we grant an high termination period (80 minutes).

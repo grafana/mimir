@@ -27,7 +27,8 @@
   },
 
   query_tee_deployment: if !($._config.query_tee_enabled) then {} else
-    deployment.new('query-tee', 2, [$.query_tee_container], $.query_tee_deployment_labels),
+    deployment.new('query-tee', 2, [$.query_tee_container]) +
+    deployment.spec.template.metadata.withLabelsMixin($.query_tee_deployment_labels),
 
   query_tee_service: if !($._config.query_tee_enabled) then {} else
     service.new('query-tee', { name: 'query-tee' }, [

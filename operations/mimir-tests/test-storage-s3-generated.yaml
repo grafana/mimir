@@ -717,8 +717,6 @@ spec:
   revisionHistoryLimit: 10
   selector:
     matchLabels:
-      app.kubernetes.io/component: distributor
-      app.kubernetes.io/part-of: mimir
       name: distributor
   strategy:
     rollingUpdate:
@@ -803,8 +801,6 @@ spec:
   revisionHistoryLimit: 10
   selector:
     matchLabels:
-      app.kubernetes.io/component: querier
-      app.kubernetes.io/part-of: mimir
       name: querier
   strategy:
     rollingUpdate:
@@ -904,8 +900,6 @@ spec:
   revisionHistoryLimit: 10
   selector:
     matchLabels:
-      app.kubernetes.io/component: query-frontend
-      app.kubernetes.io/part-of: mimir
       name: query-frontend
   strategy:
     rollingUpdate:
@@ -983,8 +977,6 @@ spec:
   revisionHistoryLimit: 10
   selector:
     matchLabels:
-      app.kubernetes.io/component: query-scheduler
-      app.kubernetes.io/part-of: mimir
       name: query-scheduler
   strategy:
     rollingUpdate:
@@ -1050,8 +1042,6 @@ spec:
   revisionHistoryLimit: 10
   selector:
     matchLabels:
-      app.kubernetes.io/component: ruler
-      app.kubernetes.io/part-of: mimir
       name: ruler
   strategy:
     rollingUpdate:
@@ -1158,8 +1148,6 @@ spec:
   replicas: 3
   selector:
     matchLabels:
-      app.kubernetes.io/component: alertmanager
-      app.kubernetes.io/part-of: mimir
       name: alertmanager
   serviceName: alertmanager
   template:
@@ -1247,8 +1235,6 @@ spec:
   replicas: 1
   selector:
     matchLabels:
-      app.kubernetes.io/component: compactor
-      app.kubernetes.io/part-of: mimir
       name: compactor
   serviceName: compactor
   template:
@@ -1344,8 +1330,6 @@ spec:
   replicas: 3
   selector:
     matchLabels:
-      app.kubernetes.io/component: ingester
-      app.kubernetes.io/part-of: mimir
       name: ingester
   serviceName: ingester
   template:
@@ -1664,8 +1648,6 @@ spec:
   replicas: 3
   selector:
     matchLabels:
-      app.kubernetes.io/component: store-gateway
-      app.kubernetes.io/part-of: mimir
       name: store-gateway
   serviceName: store-gateway
   template:

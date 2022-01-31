@@ -81,10 +81,11 @@
   store_gateway_service_ignored_labels:: ['app.kubernetes.io/component', 'app.kubernetes.io/part-of'],
 
   newStoreGatewayStatefulSet(name, container)::
-    statefulSet.new(name, 3, [container], store_gateway_data_pvc, $.store_gateway_deployment_labels) +
+    statefulSet.new(name, 3, [container], store_gateway_data_pvc) +
     statefulSet.mixin.spec.withServiceName(name) +
     statefulSet.mixin.metadata.withNamespace($._config.namespace) +
     statefulSet.mixin.metadata.withLabels({ name: name }) +
+    statefulSet.mixin.spec.template.metadata.withLabelsMixin($.store_gateway_deployment_labels) +
     statefulSet.mixin.spec.template.spec.securityContext.withRunAsUser(0) +
     statefulSet.mixin.spec.updateStrategy.withType('RollingUpdate') +
     statefulSet.mixin.spec.template.spec.withTerminationGracePeriodSeconds(120) +

@@ -56,11 +56,12 @@
   query_frontend_service_ignored_labels:: ['app.kubernetes.io/component', 'app.kubernetes.io/part-of'],
 
   newQueryFrontendDeployment(name, container)::
-    deployment.new(name, $._config.queryFrontend.replicas, [container], $.query_frontend_deployment_labels) +
+    deployment.new(name, $._config.queryFrontend.replicas, [container]) +
     $.util.configVolumeMount($._config.overrides_configmap, $._config.overrides_configmap_mountpoint) +
     (if $._config.query_frontend_allow_multiple_replicas_on_same_node then {} else $.util.antiAffinity) +
     deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge(1) +
-    deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(1),
+    deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(1) +
+    deployment.spec.template.metadata.withLabelsMixin($.query_frontend_deployment_labels),
 
   query_frontend_deployment: self.newQueryFrontendDeployment('query-frontend', $.query_frontend_container),
 
