@@ -31,9 +31,12 @@ docker pull "grafana/mimir:latest"
 
 - Using a local binary:
 
+Download the appropriate release asset for your operating system and architecture and make it executable.
+For Linux with the AMD64 architecture:
+
 ```bash
-curl -LO https://github.com/grafana/mimir/releases/latest/download/mimir
-chmod +x mimir
+curl -LO https://github.com/grafana/mimir/releases/latest/download/mimir-linux-amd64
+chmod +x mimir-linux-amd64
 ```
 
 ## Start Grafana Mimir
