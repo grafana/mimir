@@ -10,7 +10,7 @@ service, including Prometheus and Thanos. Use this config file to get
 the benefits of query parallelisation and caching.
 
 <!-- prettier-ignore-start -->
-[embedmd]:# (./prometheus-frontend.yml)
+[embedmd]:# (../../configurations/prometheus-frontend.yml)
 ```yml
 # You can use the Cortex query frontend with any Prometheus-API compatible
 # service, including Prometheus and Thanos.  Use this config file to get

@@ -18,7 +18,7 @@ For example, requests mirroring can be used when you need to setup a testing Cor
 The following Envoy configuration shows an example with two Cortex clusters. Envoy will listen on port `9900` and will proxies all requests to `cortex-primary:8080`, mirroring it to `cortex-secondary:8080` too.
 
 <!-- prettier-ignore-start -->
-[embedmd]:# (./requests-mirroring-envoy.yaml)
+[embedmd]:# (../../configurations/requests-mirroring-envoy.yaml)
 ```yaml
 admin:
   # No access logs.
