@@ -676,7 +676,7 @@ lifecycler:
 
   # Duration to sleep for before exiting, to ensure metrics are scraped.
   # CLI flag: -ingester.final-sleep
-  [final_sleep: <duration> | default = 30s]
+  [final_sleep: <duration> | default = 0s]
 
   # File path where tokens are stored. If empty, tokens are not stored at
   # shutdown and restored at startup.

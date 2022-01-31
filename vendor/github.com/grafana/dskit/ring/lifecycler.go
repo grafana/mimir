@@ -27,12 +27,15 @@ type LifecyclerConfig struct {
 	RingConfig Config `yaml:"ring"`
 
 	// Config for the ingester lifecycle control
-	NumTokens                int           `yaml:"num_tokens"`
-	HeartbeatPeriod          time.Duration `yaml:"heartbeat_period"`
-	ObservePeriod            time.Duration `yaml:"observe_period"`
-	JoinAfter                time.Duration `yaml:"join_after"`
-	MinReadyDuration         time.Duration `yaml:"min_ready_duration"`
-	InfNames                 []string      `yaml:"interface_names"`
+	NumTokens        int           `yaml:"num_tokens"`
+	HeartbeatPeriod  time.Duration `yaml:"heartbeat_period"`
+	ObservePeriod    time.Duration `yaml:"observe_period"`
+	JoinAfter        time.Duration `yaml:"join_after"`
+	MinReadyDuration time.Duration `yaml:"min_ready_duration"`
+	InfNames         []string      `yaml:"interface_names"`
+
+	// FinalSleep's default value can be overridden by
+	// setting it before calling RegisterFlags or RegisterFlagsWithPrefix.
 	FinalSleep               time.Duration `yaml:"final_sleep"`
 	TokensFilePath           string        `yaml:"tokens_file_path"`
 	Zone                     string        `yaml:"availability_zone"`
@@ -48,12 +51,14 @@ type LifecyclerConfig struct {
 	ListenPort int `yaml:"-"`
 }
 
-// RegisterFlags adds the flags required to config this to the given FlagSet
+// RegisterFlags adds the flags required to config this to the given FlagSet.
+// The default values of some flags can be changed; see docs of LifecyclerConfig.
 func (cfg *LifecyclerConfig) RegisterFlags(f *flag.FlagSet) {
 	cfg.RegisterFlagsWithPrefix("", f)
 }
 
 // RegisterFlagsWithPrefix adds the flags required to config this to the given FlagSet.
+// The default values of some flags can be changed; see docs of LifecyclerConfig.
 func (cfg *LifecyclerConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	cfg.RingConfig.RegisterFlagsWithPrefix(prefix, f)
 
@@ -68,7 +73,7 @@ func (cfg *LifecyclerConfig) RegisterFlagsWithPrefix(prefix string, f *flag.Flag
 	f.DurationVar(&cfg.JoinAfter, prefix+"join-after", 0*time.Second, "Period to wait for a claim from another member; will join automatically after this.")
 	f.DurationVar(&cfg.ObservePeriod, prefix+"observe-period", 0*time.Second, "Observe tokens after generating to resolve collisions. Useful when using gossiping ring.")
 	f.DurationVar(&cfg.MinReadyDuration, prefix+"min-ready-duration", 15*time.Second, "Minimum duration to wait after the internal readiness checks have passed but before succeeding the readiness endpoint. This is used to slowdown deployment controllers (eg. Kubernetes) after an instance is ready and before they proceed with a rolling update, to give the rest of the cluster instances enough time to receive ring updates.")
-	f.DurationVar(&cfg.FinalSleep, prefix+"final-sleep", 30*time.Second, "Duration to sleep for before exiting, to ensure metrics are scraped.")
+	f.DurationVar(&cfg.FinalSleep, prefix+"final-sleep", cfg.FinalSleep, "Duration to sleep for before exiting, to ensure metrics are scraped.")
 	f.StringVar(&cfg.TokensFilePath, prefix+"tokens-file-path", "", "File path where tokens are stored. If empty, tokens are not stored at shutdown and restored at startup.")
 
 	hostname, err := os.Hostname()
