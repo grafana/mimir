@@ -508,7 +508,7 @@ ha_tracker:
 
 # Timeout for downstream ingesters.
 # CLI flag: -distributor.remote-timeout
-[remote_timeout: <duration> | default = 2s]
+[remote_timeout: <duration> | default = 20s]
 
 # Time to wait before sending more than the minimum successful query requests.
 # CLI flag: -distributor.extra-query-delay

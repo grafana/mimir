@@ -73,6 +73,7 @@ func NewDistributorWithConfigFile(name, consulAddress, configFile string, flags 
 				"-log.level":                      "warn",
 				"-auth.enabled":                   "true",
 				"-distributor.replication-factor": "1",
+				"-distributor.remote-timeout":     "2s", // Fail fast in integration tests.
 				// Configure the ingesters ring backend
 				"-ring.store":      "consul",
 				"-consul.hostname": consulAddress,
