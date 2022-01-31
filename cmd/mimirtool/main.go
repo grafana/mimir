@@ -30,16 +30,18 @@ var (
 
 func main() {
 	app := kingpin.New("mimirtool", "A command-line tool to manage mimir and GEM.")
-	logConfig.Register(app)
-	alertCommand.Register(app)
-	alertmanagerCommand.Register(app)
-	ruleCommand.Register(app)
-	pushGateway.Register(app)
-	loadgenCommand.Register(app)
-	remoteReadCommand.Register(app)
-	aclCommand.Register(app)
-	analyseCommand.Register(app)
-	bucketValidateCommand.Register(app)
+
+	envVars := commands.NewEnvVarsWithPrefix("MIMIR")
+	logConfig.Register(app, envVars)
+	alertCommand.Register(app, envVars)
+	alertmanagerCommand.Register(app, envVars)
+	ruleCommand.Register(app, envVars)
+	pushGateway.Register(app, envVars)
+	loadgenCommand.Register(app, envVars)
+	remoteReadCommand.Register(app, envVars)
+	aclCommand.Register(app, envVars)
+	analyseCommand.Register(app, envVars)
+	bucketValidateCommand.Register(app, envVars)
 
 	app.Command("version", "Get the version of the mimirtool CLI").Action(func(k *kingpin.ParseContext) error {
 		fmt.Print(version.Template)

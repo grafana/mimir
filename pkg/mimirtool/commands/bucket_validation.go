@@ -94,7 +94,7 @@ func (c *retryingBucketClient) Delete(ctx context.Context, name string) error {
 }
 
 // Register is used to register the command to a parent command.
-func (b *BucketValidationCommand) Register(app *kingpin.Application) {
+func (b *BucketValidationCommand) Register(app *kingpin.Application, _ EnvVarNames) {
 	bvCmd := app.Command("bucket-validation", "Validate that object store bucket works correctly.").Action(b.validate)
 
 	bvCmd.Flag("object-count", "Number of objects to create & delete").Default("2000").IntVar(&b.objectCount)
