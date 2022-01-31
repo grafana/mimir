@@ -5,6 +5,9 @@
     replication_factor: 3,
     external_url: error 'must define external url for cluster',
 
+    // kubernetes_part_of is used to set the app.kubernetes.io/part-of label on all pods in this mimir cluster
+    kubernetes_part_of: 'mimir',
+
     aws_region: error 'must specify AWS region',
 
     // If false, ingesters are not unregistered on shutdown and left in the ring with

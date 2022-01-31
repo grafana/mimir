@@ -2,14 +2,14 @@
 set -euo pipefail
 
 # Start from a clean setup.
-rm -rf jsonnet-tests && mkdir jsonnet-tests
+#rm -rf jsonnet-tests && mkdir jsonnet-tests
 cd jsonnet-tests
 
 # Initialise the Tanka.
-tk init --k8s=1.18
+#tk init --k8s=1.18
 
 # Install Mimir jsonnet from this branch.
-jb install ../operations/mimir
+#jb install ../operations/mimir
 
 # Copy tests to dedicated environments and build them.
 export PAGER=cat

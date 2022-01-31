@@ -50,7 +50,10 @@
 
   local deployment = $.apps.v1.deployment,
 
-  distributor_deployment_labels:: {},
+  distributor_deployment_labels:: {
+    'app.kubernetes.io/component': 'distributor',
+    'app.kubernetes.io/part-of': $._config.kubernetes_part_of,
+  },
 
   distributor_deployment:
     deployment.new('distributor', 3, [$.distributor_container], $.distributor_deployment_labels) +
@@ -61,7 +64,7 @@
 
   local service = $.core.v1.service,
 
-  distributor_service_ignored_labels:: [],
+  distributor_service_ignored_labels:: ['app.kubernetes.io/component', 'app.kubernetes.io/part-of'],
 
   distributor_service:
     $.util.serviceFor($.distributor_deployment, $.distributor_service_ignored_labels) +

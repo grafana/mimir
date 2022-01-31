@@ -20,8 +20,14 @@
     $.util.resourcesRequests('1', '512Mi') +
     $.jaeger_mixin,
 
+
+  query_tee_deployment_labels:: {
+    'app.kubernetes.io/component': 'query-tee',
+    'app.kubernetes.io/part-of': $._config.kubernetes_part_of,
+  },
+
   query_tee_deployment: if !($._config.query_tee_enabled) then {} else
-    deployment.new('query-tee', 2, [$.query_tee_container]),
+    deployment.new('query-tee', 2, [$.query_tee_container], $.query_tee_deployment_labels),
 
   query_tee_service: if !($._config.query_tee_enabled) then {} else
     service.new('query-tee', { name: 'query-tee' }, [

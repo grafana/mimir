@@ -29,6 +29,13 @@
     'runtime-config.file': '%s/overrides.yaml' % $._config.overrides_configmap_mountpoint,
   } + $._config.limitsConfig,
 
+  overries_exporter_deployment_labels:: {
+    'app.kubernetes.io/component': name,
+    'app.kubernetes.io/part-of': $._config.kubernetes_part_of,
+  },
+
+  overries_exporter_service_ignored_labels:: ['app.kubernetes.io/component', 'app.kubernetes.io/part-of'],
+
   local container = $.core.v1.container,
   overrides_exporter_container::
     container.new(name, $._images.overrides_exporter) +
@@ -42,10 +49,9 @@
 
   local deployment = $.apps.v1.deployment,
   overrides_exporter_deployment:
-    deployment.new(name, 1, [$.overrides_exporter_container], { name: name }) +
-    $.util.configVolumeMount($._config.overrides_configmap, $._config.overrides_configmap_mountpoint) +
-    deployment.mixin.metadata.withLabels({ name: name }),
+    deployment.new(name, 1, [$.overrides_exporter_container], $.overries_exporter_deployment_labels) +
+    $.util.configVolumeMount($._config.overrides_configmap, $._config.overrides_configmap_mountpoint),
 
   overrides_exporter_service:
-    $.util.serviceFor($.overrides_exporter_deployment),
+    $.util.serviceFor($.overrides_exporter_deployment, $.overries_exporter_service_ignored_labels),
 }

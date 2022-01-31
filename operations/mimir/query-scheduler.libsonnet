@@ -22,8 +22,15 @@
     $.util.resourcesRequests('2', '1Gi') +
     $.util.resourcesLimits(null, '2Gi'),
 
+  query_scheduler_deployment_labels:: {
+    'app.kubernetes.io/component': 'query-scheduler',
+    'app.kubernetes.io/part-of': $._config.kubernetes_part_of,
+  },
+
+  query_scheduler_service_ignored_labels:: ['app.kubernetes.io/component', 'app.kubernetes.io/part-of'],
+
   newQuerySchedulerDeployment(name, container)::
-    deployment.new(name, 2, [container]) +
+    deployment.new(name, 2, [container], $.query_scheduler_deployment_labels) +
     $.util.configVolumeMount($._config.overrides_configmap, $._config.overrides_configmap_mountpoint) +
     $.util.antiAffinity +
     // Do not run more query-schedulers than expected.
@@ -34,11 +41,11 @@
     self.newQuerySchedulerDeployment('query-scheduler', $.query_scheduler_container),
 
   query_scheduler_service: if !$._config.query_scheduler_enabled then {} else
-    $.util.serviceFor($.query_scheduler_deployment),
+    $.util.serviceFor($.query_scheduler_deployment, $.query_scheduler_service_ignored_labels),
 
   // Headless to make sure resolution gets IP address of target pods, and not service IP.
   query_scheduler_discovery_service: if !$._config.query_scheduler_enabled then {} else
-    $.util.serviceFor($.query_scheduler_deployment) +
+    $.util.serviceFor($.query_scheduler_deployment, $.query_scheduler_service_ignored_labels) +
     service.mixin.spec.withPublishNotReadyAddresses(true) +
     service.mixin.spec.withClusterIp('None') +
     service.mixin.metadata.withName('query-scheduler-discovery'),

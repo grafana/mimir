@@ -48,8 +48,15 @@
 
   local deployment = $.apps.v1.deployment,
 
+  query_frontend_deployment_labels:: {
+    'app.kubernetes.io/component': 'query-frontend',
+    'app.kubernetes.io/part-of': $._config.kubernetes_part_of,
+  },
+
+  query_frontend_service_ignored_labels:: ['app.kubernetes.io/component', 'app.kubernetes.io/part-of'],
+
   newQueryFrontendDeployment(name, container)::
-    deployment.new(name, $._config.queryFrontend.replicas, [container]) +
+    deployment.new(name, $._config.queryFrontend.replicas, [container], $.query_frontend_deployment_labels) +
     $.util.configVolumeMount($._config.overrides_configmap, $._config.overrides_configmap_mountpoint) +
     (if $._config.query_frontend_allow_multiple_replicas_on_same_node then {} else $.util.antiAffinity) +
     deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge(1) +
@@ -60,10 +67,10 @@
   local service = $.core.v1.service,
 
   query_frontend_service:
-    $.util.serviceFor($.query_frontend_deployment),
+    $.util.serviceFor($.query_frontend_deployment, $.query_frontend_service_ignored_labels),
 
   query_frontend_discovery_service:
-    $.util.serviceFor($.query_frontend_deployment) +
+    $.util.serviceFor($.query_frontend_deployment, $.query_frontend_service_ignored_labels) +
     // Make sure that query frontend worker, running in the querier, do resolve
     // each query-frontend pod IP and NOT the service IP. To make it, we do NOT
     // use the service cluster IP so that when the service DNS is resolved it

@@ -30,7 +30,7 @@
       },
       flags: [],
       service:
-        $.util.serviceFor($.alertmanager_statefulset) +
+        $.util.serviceFor($.alertmanager_statefulset, $.alertmanager_service_ignored_labels) +
         service.mixin.spec.withClusterIp('None'),
     },
     gossip_multi_replica: {
@@ -44,14 +44,14 @@
         '--alertmanager.cluster.peers=%s' % std.join(',', peers),
       ],
       service:
-        $.util.serviceFor($.alertmanager_statefulset) +
+        $.util.serviceFor($.alertmanager_statefulset, $.alertmanager_service_ignored_labels) +
         service.mixin.spec.withClusterIp('None'),
     },
     gossip_single_replica: {
       ports: [],
       args: {},
       flags: ['--alertmanager.cluster.listen-address=""'],
-      service: $.util.serviceFor($.alertmanager_statefulset),
+      service: $.util.serviceFor($.alertmanager_statefulset, $.alertmanager_service_ignored_labels),
     },
   }[haType],
   local hasFallbackConfig = std.length($._config.alertmanager.fallback_config) > 0,
@@ -112,14 +112,20 @@
       $.jaeger_mixin
     else {},
 
+  alertmanager_deployment_labels:: {
+    name: 'alertmanager',
+    'app.kubernetes.io/component': 'alertmanager',
+    'app.kubernetes.io/part-of': $._config.kubernetes_part_of,
+  },
+
+  alertmanager_service_ignored_labels:: ['app.kubernetes.io/component', 'app.kubernetes.io/part-of'],
+
   alertmanager_statefulset:
     if $._config.alertmanager_enabled then
-      statefulSet.new('alertmanager', $._config.alertmanager.replicas, [$.alertmanager_container], $.alertmanager_pvc) +
+      statefulSet.new('alertmanager', $._config.alertmanager.replicas, [$.alertmanager_container], $.alertmanager_pvc, $.alertmanager_deployment_labels) +
       statefulSet.mixin.spec.withServiceName('alertmanager') +
       statefulSet.mixin.metadata.withNamespace($._config.namespace) +
       statefulSet.mixin.metadata.withLabels({ name: 'alertmanager' }) +
-      statefulSet.mixin.spec.template.metadata.withLabels({ name: 'alertmanager' }) +
-      statefulSet.mixin.spec.selector.withMatchLabels({ name: 'alertmanager' }) +
       statefulSet.mixin.spec.template.spec.securityContext.withRunAsUser(0) +
       statefulSet.mixin.spec.updateStrategy.withType('RollingUpdate') +
       statefulSet.mixin.spec.template.spec.withTerminationGracePeriodSeconds(900) +

@@ -47,11 +47,19 @@
       $.jaeger_mixin
     else {},
 
+
+  ruler_deployment_labels:: {
+    'app.kubernetes.io/component': 'ruler',
+    'app.kubernetes.io/part-of': $._config.kubernetes_part_of,
+  },
+
+  ruler_service_ignored_labels:: ['app.kubernetes.io/component', 'app.kubernetes.io/part-of'],
+
   local deployment = $.apps.v1.deployment,
 
   ruler_deployment:
     if $._config.ruler_enabled then
-      deployment.new('ruler', 2, [$.ruler_container]) +
+      deployment.new('ruler', 2, [$.ruler_container], $.ruler_deployment_labels) +
       deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge(0) +
       deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(1) +
       deployment.mixin.spec.template.spec.withTerminationGracePeriodSeconds(600) +
@@ -63,6 +71,6 @@
 
   ruler_service:
     if $._config.ruler_enabled then
-      $.util.serviceFor($.ruler_deployment)
+      $.util.serviceFor($.ruler_deployment, $.ruler_service_ignored_labels)
     else {},
 }

@@ -105,13 +105,18 @@
     $.util.readinessProbe +
     $.jaeger_mixin,
 
+  compactor_deployment_labels:: {
+    'app.kubernetes.io/component': 'compactor',
+    'app.kubernetes.io/part-of': $._config.kubernetes_part_of,
+  },
+
+  compactor_service_ignored_labels:: ['app.kubernetes.io/component', 'app.kubernetes.io/part-of'],
+
   newCompactorStatefulSet(name, container)::
-    statefulSet.new(name, 1, [container], compactor_data_pvc) +
+    statefulSet.new(name, 1, [container], compactor_data_pvc, $.compactor_deployment_labels) +
     statefulSet.mixin.spec.withServiceName(name) +
     statefulSet.mixin.metadata.withNamespace($._config.namespace) +
     statefulSet.mixin.metadata.withLabels({ name: name }) +
-    statefulSet.mixin.spec.template.metadata.withLabels({ name: name }) +
-    statefulSet.mixin.spec.selector.withMatchLabels({ name: name }) +
     statefulSet.mixin.spec.template.spec.securityContext.withRunAsUser(0) +
     statefulSet.mixin.spec.updateStrategy.withType('RollingUpdate') +
     statefulSet.mixin.spec.template.spec.withTerminationGracePeriodSeconds(900) +

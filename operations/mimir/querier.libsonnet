@@ -52,7 +52,10 @@
 
   local deployment = $.apps.v1.deployment,
 
-  querier_deployment_labels: {},
+  querier_deployment_labels:: {
+    'app.kubernetes.io/component': 'querier',
+    'app.kubernetes.io/part-of': $._config.kubernetes_part_of,
+  },
 
   newQuerierDeployment(name, container)::
     deployment.new(name, $._config.querier.replicas, [container], $.querier_deployment_labels) +
@@ -66,7 +69,7 @@
 
   local service = $.core.v1.service,
 
-  querier_service_ignored_labels:: [],
+  querier_service_ignored_labels:: ['app.kubernetes.io/component', 'app.kubernetes.io/part-of'],
 
   querier_service:
     $.util.serviceFor($.querier_deployment, $.querier_service_ignored_labels),

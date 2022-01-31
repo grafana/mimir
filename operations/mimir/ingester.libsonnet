@@ -59,7 +59,10 @@
     $.util.readinessProbe +
     $.jaeger_mixin,
 
-  ingester_deployment_labels:: {},
+  ingester_deployment_labels:: {
+    'app.kubernetes.io/component': 'ingester',
+    'app.kubernetes.io/part-of': $._config.kubernetes_part_of,
+  },
 
   // The ingesters should persist TSDB blocks and WAL on a persistent
   // volume in order to be crash resilient.
@@ -75,12 +78,10 @@
       container + $.core.v1.container.withVolumeMountsMixin([
         volumeMount.new('ingester-data', '/data'),
       ]),
-    ], ingester_data_pvc) +
+    ], ingester_data_pvc, $.ingester_deployment_labels) +
     statefulSet.mixin.spec.withServiceName(name) +
     statefulSet.mixin.metadata.withNamespace($._config.namespace) +
     statefulSet.mixin.metadata.withLabels({ name: name }) +
-    statefulSet.mixin.spec.template.metadata.withLabels({ name: name } + $.ingester_deployment_labels) +
-    statefulSet.mixin.spec.selector.withMatchLabels({ name: name }) +
     statefulSet.mixin.spec.template.spec.securityContext.withRunAsUser(0) +
     // When the ingester needs to flush blocks to the storage, it may take quite a lot of time.
     // For this reason, we grant an high termination period (80 minutes).
@@ -97,7 +98,7 @@
 
   ingester_statefulset: self.newIngesterStatefulSet('ingester', $.ingester_container),
 
-  ingester_service_ignored_labels:: [],
+  ingester_service_ignored_labels:: ['app.kubernetes.io/component', 'app.kubernetes.io/part-of'],
 
   ingester_service:
     $.util.serviceFor($.ingester_statefulset, $.ingester_service_ignored_labels),

@@ -717,6 +717,8 @@ spec:
   revisionHistoryLimit: 10
   selector:
     matchLabels:
+      app.kubernetes.io/component: distributor
+      app.kubernetes.io/part-of: mimir
       name: distributor
   strategy:
     rollingUpdate:
@@ -725,6 +727,8 @@ spec:
   template:
     metadata:
       labels:
+        app.kubernetes.io/component: distributor
+        app.kubernetes.io/part-of: mimir
         name: distributor
     spec:
       affinity:
@@ -800,6 +804,8 @@ spec:
   revisionHistoryLimit: 10
   selector:
     matchLabels:
+      app.kubernetes.io/component: querier
+      app.kubernetes.io/part-of: mimir
       name: querier
   strategy:
     rollingUpdate:
@@ -808,6 +814,8 @@ spec:
   template:
     metadata:
       labels:
+        app.kubernetes.io/component: querier
+        app.kubernetes.io/part-of: mimir
         name: querier
     spec:
       affinity:
@@ -899,6 +907,8 @@ spec:
   revisionHistoryLimit: 10
   selector:
     matchLabels:
+      app.kubernetes.io/component: query-frontend
+      app.kubernetes.io/part-of: mimir
       name: query-frontend
   strategy:
     rollingUpdate:
@@ -907,6 +917,8 @@ spec:
   template:
     metadata:
       labels:
+        app.kubernetes.io/component: query-frontend
+        app.kubernetes.io/part-of: mimir
         name: query-frontend
     spec:
       affinity:
@@ -975,6 +987,8 @@ spec:
   revisionHistoryLimit: 10
   selector:
     matchLabels:
+      app.kubernetes.io/component: query-scheduler
+      app.kubernetes.io/part-of: mimir
       name: query-scheduler
   strategy:
     rollingUpdate:
@@ -983,6 +997,8 @@ spec:
   template:
     metadata:
       labels:
+        app.kubernetes.io/component: query-scheduler
+        app.kubernetes.io/part-of: mimir
         name: query-scheduler
     spec:
       affinity:
@@ -1039,6 +1055,8 @@ spec:
   revisionHistoryLimit: 10
   selector:
     matchLabels:
+      app.kubernetes.io/component: ruler
+      app.kubernetes.io/part-of: mimir
       name: ruler
   strategy:
     rollingUpdate:
@@ -1047,6 +1065,8 @@ spec:
   template:
     metadata:
       labels:
+        app.kubernetes.io/component: ruler
+        app.kubernetes.io/part-of: mimir
         name: ruler
     spec:
       affinity:
@@ -1144,11 +1164,15 @@ spec:
   replicas: 3
   selector:
     matchLabels:
+      app.kubernetes.io/component: alertmanager
+      app.kubernetes.io/part-of: mimir
       name: alertmanager
   serviceName: alertmanager
   template:
     metadata:
       labels:
+        app.kubernetes.io/component: alertmanager
+        app.kubernetes.io/part-of: mimir
         name: alertmanager
     spec:
       containers:
@@ -1228,11 +1252,15 @@ spec:
   replicas: 1
   selector:
     matchLabels:
+      app.kubernetes.io/component: compactor
+      app.kubernetes.io/part-of: mimir
       name: compactor
   serviceName: compactor
   template:
     metadata:
       labels:
+        app.kubernetes.io/component: compactor
+        app.kubernetes.io/part-of: mimir
         name: compactor
     spec:
       containers:
@@ -1320,11 +1348,15 @@ spec:
   replicas: 3
   selector:
     matchLabels:
+      app.kubernetes.io/component: ingester
+      app.kubernetes.io/part-of: mimir
       name: ingester
   serviceName: ingester
   template:
     metadata:
       labels:
+        app.kubernetes.io/component: ingester
+        app.kubernetes.io/part-of: mimir
         name: ingester
     spec:
       affinity:
@@ -1636,11 +1668,15 @@ spec:
   replicas: 3
   selector:
     matchLabels:
+      app.kubernetes.io/component: store-gateway
+      app.kubernetes.io/part-of: mimir
       name: store-gateway
   serviceName: store-gateway
   template:
     metadata:
       labels:
+        app.kubernetes.io/component: store-gateway
+        app.kubernetes.io/part-of: mimir
         name: store-gateway
     spec:
       containers:
