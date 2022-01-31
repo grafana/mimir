@@ -460,7 +460,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.tsdb.block-ranges-period value
     	TSDB blocks range period. (default 2h0m0s)
   -blocks-storage.tsdb.close-idle-tsdb-timeout duration
-    	If TSDB has not received any data for this duration, and all blocks from TSDB have been shipped, TSDB is closed and deleted from local disk. If set to positive value, this value should be equal or higher than -querier.query-ingesters-within flag to make sure that TSDB is not closed prematurely, which could cause partial query results. 0 or negative value disables closing of idle TSDB.
+    	If TSDB has not received any data for this duration, and all blocks from TSDB have been shipped, TSDB is closed and deleted from local disk. If set to positive value, this value should be equal or higher than -querier.query-ingesters-within flag to make sure that TSDB is not closed prematurely, which could cause partial query results. 0 or negative value disables closing of idle TSDB. (default 13h0m0s)
   -blocks-storage.tsdb.dir string
     	Local directory to store TSDBs in the ingesters. (default "tsdb")
   -blocks-storage.tsdb.flush-blocks-on-shutdown
@@ -1062,7 +1062,7 @@ Usage of ./cmd/mimir/mimir:
   -querier.max-samples int
     	Maximum number of samples a single query can load into memory. This config option should be set on query-frontend too when query sharding is enabled. (default 50000000)
   -querier.query-ingesters-within duration
-    	Maximum lookback beyond which queries are not sent to ingester. 0 means all queries are sent to ingester.
+    	Maximum lookback beyond which queries are not sent to ingester. 0 means all queries are sent to ingester. (default 13h0m0s)
   -querier.query-label-names-with-matchers-enabled
     	True to enable queriers to use an optimized implementation which passes down to ingesters the label matchers when running the label names API. Can be enabled once all ingesters run a version >= the one where this option has been introduced.
   -querier.query-store-after duration
@@ -1072,7 +1072,7 @@ Usage of ./cmd/mimir/mimir:
   -querier.scheduler-address string
     	Hostname (and port) of scheduler that querier will periodically resolve, connect to and receive queries from. Only one of -querier.frontend-address or -querier.scheduler-address can be set. If neither is set, queries are only received via HTTP endpoint.
   -querier.shuffle-sharding-ingesters-lookback-period duration
-    	When distributor's sharding strategy is shuffle-sharding and this setting is > 0, queriers fetch in-memory series from the minimum set of required ingesters, selecting only ingesters which may have received series since 'now - lookback period'. The lookback period should be greater or equal than the configured 'query store after' and 'query ingesters within'. If this setting is 0, queriers always query all ingesters (ingesters shuffle sharding on read path is disabled).
+    	When distributor's sharding strategy is shuffle-sharding and this setting is > 0, queriers fetch in-memory series from the minimum set of required ingesters, selecting only ingesters which may have received series since 'now - lookback period'. The lookback period should be greater or equal than the configured -querier.query-store-after and -querier.query-ingesters-within. If this setting is 0, queriers always query all ingesters (ingesters shuffle sharding on read path is disabled).
   -querier.store-gateway-addresses string
     	Comma separated list of store-gateway addresses in DNS Service Discovery format. This option should be set when the store-gateway sharding is disabled (when enabled, the store-gateway instances form a ring and addresses are picked from the ring).
   -querier.store-gateway-client.tls-ca-path string

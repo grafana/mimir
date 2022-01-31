@@ -243,6 +243,7 @@
 * [CHANGE] Querier: removed `-querier.worker-match-max-concurrent` and `-querier.worker-parallelism` CLI flags (and their respective YAML config options). Mimir now behaves like if `-querier.worker-match-max-concurrent` is always enabled and you should configure the max concurrency per querier process using `-querier.max-concurrent` instead. #958
 * [CHANGE] Distributor: change default value of `-distributor.instance-limits.max-inflight-push-requests` to `2000`. #964
 * [CHANGE] Distributor: change default value of `-distributor.remote-timeout` from `2s` to `20s`. #965
+* [CHANGE] Changed default value of `-querier.query-ingesters-within` and `-blocks-storage.tsdb.close-idle-tsdb-timeout` from `0` to `13h`. #966
 * [FEATURE] Query Frontend: Add `cortex_query_fetched_chunks_total` per-user counter to expose the number of chunks fetched as part of queries. This metric can be enabled with the `-frontend.query-stats-enabled` flag (or its respective YAML config option `query_stats_enabled`). #31
 * [FEATURE] Query Frontend: Add experimental querysharding for the blocks storage (instant and range queries). You can now enable querysharding for blocks storage (`-store.engine=blocks`) by setting `-frontend.parallelize-shardable-queries` to `true`. The following additional config and exported metrics have been added. #79 #80 #100 #124 #140 #148 #150 #151 #153 #154 #155 #156 #157 #158 #159 #160 #163 #169 #172 #196 #205 #225 #226 #227 #228 #230 #235 #240 #239 #246 #244 #319 #330 #371 #385 #400 #458 #586 #630 #660 #707
   * New config options:
