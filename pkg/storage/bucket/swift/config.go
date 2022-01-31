@@ -27,9 +27,9 @@ type Config struct {
 	ProjectDomainName string        `yaml:"project_domain_name"`
 	RegionName        string        `yaml:"region_name"`
 	ContainerName     string        `yaml:"container_name"`
-	MaxRetries        int           `yaml:"max_retries"`
-	ConnectTimeout    time.Duration `yaml:"connect_timeout"`
-	RequestTimeout    time.Duration `yaml:"request_timeout"`
+	MaxRetries        int           `yaml:"max_retries" category:"advanced"`
+	ConnectTimeout    time.Duration `yaml:"connect_timeout" category:"advanced"`
+	RequestTimeout    time.Duration `yaml:"request_timeout" category:"advanced"`
 }
 
 // RegisterFlags registers the flags for Swift storage

@@ -44,14 +44,14 @@ var (
 
 // HTTPConfig stores the http.Transport configuration for the s3 minio client.
 type HTTPConfig struct {
-	IdleConnTimeout       time.Duration `yaml:"idle_conn_timeout"`
-	ResponseHeaderTimeout time.Duration `yaml:"response_header_timeout"`
+	IdleConnTimeout       time.Duration `yaml:"idle_conn_timeout" category:"advanced"`
+	ResponseHeaderTimeout time.Duration `yaml:"response_header_timeout" category:"advanced"`
 	InsecureSkipVerify    bool          `yaml:"insecure_skip_verify" category:"advanced"`
 	TLSHandshakeTimeout   time.Duration `yaml:"tls_handshake_timeout" category:"advanced"`
-	ExpectContinueTimeout time.Duration `yaml:"expect_continue_timeout"`
-	MaxIdleConns          int           `yaml:"max_idle_connections"`
-	MaxIdleConnsPerHost   int           `yaml:"max_idle_connections_per_host"`
-	MaxConnsPerHost       int           `yaml:"max_connections_per_host"`
+	ExpectContinueTimeout time.Duration `yaml:"expect_continue_timeout" category:"advanced"`
+	MaxIdleConns          int           `yaml:"max_idle_connections" category:"advanced"`
+	MaxIdleConnsPerHost   int           `yaml:"max_idle_connections_per_host" category:"advanced"`
+	MaxConnsPerHost       int           `yaml:"max_connections_per_host" category:"advanced"`
 
 	// Allow upstream callers to inject a round tripper
 	Transport http.RoundTripper `yaml:"-"`
@@ -76,7 +76,7 @@ type Config struct {
 	BucketName       string         `yaml:"bucket_name"`
 	SecretAccessKey  flagext.Secret `yaml:"secret_access_key"`
 	AccessKeyID      string         `yaml:"access_key_id"`
-	Insecure         bool           `yaml:"insecure"`
+	Insecure         bool           `yaml:"insecure" category:"advanced"`
 	SignatureVersion string         `yaml:"signature_version"`
 
 	SSE  SSEConfig  `yaml:"sse"`
