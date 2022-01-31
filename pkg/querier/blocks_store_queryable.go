@@ -62,7 +62,6 @@ const (
 )
 
 var (
-	errNoStoreGatewayAddress  = errors.New("no store-gateway address configured")
 	errMaxChunksPerQueryLimit = "the query hit the max number of chunks limit while fetching chunks from store-gateways for %s (limit: %d)"
 )
 
