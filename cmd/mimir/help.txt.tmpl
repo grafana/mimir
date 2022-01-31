@@ -97,16 +97,6 @@ Usage of ./cmd/mimir/mimir:
     	OpenStack Swift username.
   -alertmanager.alertmanager-client.remote-timeout duration
     	Timeout for downstream alertmanagers. (default 2s)
-  -alertmanager.alertmanager-client.tls-ca-path string
-    	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
-  -alertmanager.alertmanager-client.tls-cert-path string
-    	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
-  -alertmanager.alertmanager-client.tls-insecure-skip-verify
-    	Skip validating server certificate.
-  -alertmanager.alertmanager-client.tls-key-path string
-    	Path to the key file for the client certificate. Also requires the client certificate to be configured.
-  -alertmanager.alertmanager-client.tls-server-name string
-    	Override the expected name on the server certificate.
   -alertmanager.cluster.advertise-address string
     	Explicit address or hostname to advertise in cluster.
   -alertmanager.cluster.gossip-interval duration
@@ -151,38 +141,12 @@ Usage of ./cmd/mimir/mimir:
     	True to block private and local addresses in Alertmanager receiver integrations. It blocks private addresses defined by  RFC 1918 (IPv4 addresses) and RFC 4193 (IPv6 addresses), as well as loopback, local unicast and local multicast addresses.
   -alertmanager.sharding-enabled
     	Shard tenants across multiple alertmanager instances.
-  -alertmanager.sharding-ring.consul.acl-token string
-    	ACL Token used to interact with Consul.
-  -alertmanager.sharding-ring.consul.client-timeout duration
-    	HTTP timeout when talking to Consul (default 20s)
-  -alertmanager.sharding-ring.consul.consistent-reads
-    	Enable consistent reads to Consul.
   -alertmanager.sharding-ring.consul.hostname string
     	Hostname and port of Consul. (default "localhost:8500")
-  -alertmanager.sharding-ring.consul.watch-burst-size int
-    	Burst size used in rate limit. Values less than 1 are treated as 1. (default 1)
-  -alertmanager.sharding-ring.consul.watch-rate-limit float
-    	Rate limit when watching key or prefix in Consul, in requests per second. 0 disables the rate limit. (default 1)
-  -alertmanager.sharding-ring.etcd.dial-timeout duration
-    	The dial timeout for the etcd connection. (default 10s)
   -alertmanager.sharding-ring.etcd.endpoints value
     	The etcd endpoints to connect to.
-  -alertmanager.sharding-ring.etcd.max-retries int
-    	The maximum number of retries to do for failed ops. (default 10)
   -alertmanager.sharding-ring.etcd.password string
     	Etcd password.
-  -alertmanager.sharding-ring.etcd.tls-ca-path string
-    	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
-  -alertmanager.sharding-ring.etcd.tls-cert-path string
-    	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
-  -alertmanager.sharding-ring.etcd.tls-enabled
-    	Enable TLS.
-  -alertmanager.sharding-ring.etcd.tls-insecure-skip-verify
-    	Skip validating server certificate.
-  -alertmanager.sharding-ring.etcd.tls-key-path string
-    	Path to the key file for the client certificate. Also requires the client certificate to be configured.
-  -alertmanager.sharding-ring.etcd.tls-server-name string
-    	Override the expected name on the server certificate.
   -alertmanager.sharding-ring.etcd.username string
     	Etcd username.
   -alertmanager.sharding-ring.heartbeat-period duration
@@ -199,16 +163,6 @@ Usage of ./cmd/mimir/mimir:
     	Name of network interface to read address from. (default [eth0 en0])
   -alertmanager.sharding-ring.instance-port int
     	Port to advertise in the ring (defaults to server.grpc-listen-port).
-  -alertmanager.sharding-ring.multi.mirror-enabled
-    	Mirror writes to secondary store.
-  -alertmanager.sharding-ring.multi.mirror-timeout duration
-    	Timeout for storing value to secondary store. (default 2s)
-  -alertmanager.sharding-ring.multi.primary string
-    	Primary backend storage used by multi-client.
-  -alertmanager.sharding-ring.multi.secondary string
-    	Secondary backend storage used by multi-client.
-  -alertmanager.sharding-ring.prefix string
-    	The prefix for the keys in the store. Should end with a /. (default "alertmanagers/")
   -alertmanager.sharding-ring.replication-factor int
     	The replication factor to use when sharding the alertmanager. (default 3)
   -alertmanager.sharding-ring.store string
@@ -493,38 +447,12 @@ Usage of ./cmd/mimir/mimir:
     	Max number of compactors that can compact blocks for single tenant. 0 to disable the limit and use all compactors.
   -compactor.data-dir string
     	Data directory in which to cache blocks and process compactions (default "./data")
-  -compactor.ring.consul.acl-token string
-    	ACL Token used to interact with Consul.
-  -compactor.ring.consul.client-timeout duration
-    	HTTP timeout when talking to Consul (default 20s)
-  -compactor.ring.consul.consistent-reads
-    	Enable consistent reads to Consul.
   -compactor.ring.consul.hostname string
     	Hostname and port of Consul. (default "localhost:8500")
-  -compactor.ring.consul.watch-burst-size int
-    	Burst size used in rate limit. Values less than 1 are treated as 1. (default 1)
-  -compactor.ring.consul.watch-rate-limit float
-    	Rate limit when watching key or prefix in Consul, in requests per second. 0 disables the rate limit. (default 1)
-  -compactor.ring.etcd.dial-timeout duration
-    	The dial timeout for the etcd connection. (default 10s)
   -compactor.ring.etcd.endpoints value
     	The etcd endpoints to connect to.
-  -compactor.ring.etcd.max-retries int
-    	The maximum number of retries to do for failed ops. (default 10)
   -compactor.ring.etcd.password string
     	Etcd password.
-  -compactor.ring.etcd.tls-ca-path string
-    	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
-  -compactor.ring.etcd.tls-cert-path string
-    	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
-  -compactor.ring.etcd.tls-enabled
-    	Enable TLS.
-  -compactor.ring.etcd.tls-insecure-skip-verify
-    	Skip validating server certificate.
-  -compactor.ring.etcd.tls-key-path string
-    	Path to the key file for the client certificate. Also requires the client certificate to be configured.
-  -compactor.ring.etcd.tls-server-name string
-    	Override the expected name on the server certificate.
   -compactor.ring.etcd.username string
     	Etcd username.
   -compactor.ring.heartbeat-period duration
@@ -539,16 +467,6 @@ Usage of ./cmd/mimir/mimir:
     	Name of network interface to read address from. (default [eth0 en0])
   -compactor.ring.instance-port int
     	Port to advertise in the ring (defaults to server.grpc-listen-port).
-  -compactor.ring.multi.mirror-enabled
-    	Mirror writes to secondary store.
-  -compactor.ring.multi.mirror-timeout duration
-    	Timeout for storing value to secondary store. (default 2s)
-  -compactor.ring.multi.primary string
-    	Primary backend storage used by multi-client.
-  -compactor.ring.multi.secondary string
-    	Secondary backend storage used by multi-client.
-  -compactor.ring.prefix string
-    	The prefix for the keys in the store. Should end with a /. (default "collectors/")
   -compactor.ring.store string
     	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
   -compactor.ring.wait-active-instance-timeout duration
@@ -565,18 +483,8 @@ Usage of ./cmd/mimir/mimir:
     	Expands ${var} or $var in config according to the values of the environment variables.
   -config.file value
     	Configuration file to load.
-  -consul.acl-token string
-    	ACL Token used to interact with Consul.
-  -consul.client-timeout duration
-    	HTTP timeout when talking to Consul (default 20s)
-  -consul.consistent-reads
-    	Enable consistent reads to Consul.
   -consul.hostname string
     	Hostname and port of Consul. (default "localhost:8500")
-  -consul.watch-burst-size int
-    	Burst size used in rate limit. Values less than 1 are treated as 1. (default 1)
-  -consul.watch-rate-limit float
-    	Rate limit when watching key or prefix in Consul, in requests per second. 0 disables the rate limit. (default 1)
   -debug.block-profile-rate int
     	Fraction of goroutine blocking events that are reported in the blocking profile. 1 to include every blocking event in the profile, 0 to disable.
   -debug.mutex-profile-fraction int
@@ -587,56 +495,20 @@ Usage of ./cmd/mimir/mimir:
     	Comma-separated list of zones to exclude from the ring. Instances in excluded zones will be filtered out from the ring.
   -distributor.ha-tracker.cluster string
     	Prometheus label to look for in samples to identify a Prometheus HA cluster. (default "cluster")
-  -distributor.ha-tracker.consul.acl-token string
-    	ACL Token used to interact with Consul.
-  -distributor.ha-tracker.consul.client-timeout duration
-    	HTTP timeout when talking to Consul (default 20s)
-  -distributor.ha-tracker.consul.consistent-reads
-    	Enable consistent reads to Consul.
   -distributor.ha-tracker.consul.hostname string
     	Hostname and port of Consul. (default "localhost:8500")
-  -distributor.ha-tracker.consul.watch-burst-size int
-    	Burst size used in rate limit. Values less than 1 are treated as 1. (default 1)
-  -distributor.ha-tracker.consul.watch-rate-limit float
-    	Rate limit when watching key or prefix in Consul, in requests per second. 0 disables the rate limit. (default 1)
   -distributor.ha-tracker.enable
     	Enable the distributors HA tracker so that it can accept samples from Prometheus HA replicas gracefully (requires labels).
   -distributor.ha-tracker.enable-for-all-users
     	Flag to enable, for all users, handling of samples with external labels identifying replicas in an HA Prometheus setup.
-  -distributor.ha-tracker.etcd.dial-timeout duration
-    	The dial timeout for the etcd connection. (default 10s)
   -distributor.ha-tracker.etcd.endpoints value
     	The etcd endpoints to connect to.
-  -distributor.ha-tracker.etcd.max-retries int
-    	The maximum number of retries to do for failed ops. (default 10)
   -distributor.ha-tracker.etcd.password string
     	Etcd password.
-  -distributor.ha-tracker.etcd.tls-ca-path string
-    	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
-  -distributor.ha-tracker.etcd.tls-cert-path string
-    	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
-  -distributor.ha-tracker.etcd.tls-enabled
-    	Enable TLS.
-  -distributor.ha-tracker.etcd.tls-insecure-skip-verify
-    	Skip validating server certificate.
-  -distributor.ha-tracker.etcd.tls-key-path string
-    	Path to the key file for the client certificate. Also requires the client certificate to be configured.
-  -distributor.ha-tracker.etcd.tls-server-name string
-    	Override the expected name on the server certificate.
   -distributor.ha-tracker.etcd.username string
     	Etcd username.
   -distributor.ha-tracker.max-clusters int
     	Maximum number of clusters that HA tracker will keep track of for single user. 0 to disable the limit.
-  -distributor.ha-tracker.multi.mirror-enabled
-    	Mirror writes to secondary store.
-  -distributor.ha-tracker.multi.mirror-timeout duration
-    	Timeout for storing value to secondary store. (default 2s)
-  -distributor.ha-tracker.multi.primary string
-    	Primary backend storage used by multi-client.
-  -distributor.ha-tracker.multi.secondary string
-    	Secondary backend storage used by multi-client.
-  -distributor.ha-tracker.prefix string
-    	The prefix for the keys in the store. Should end with a /. (default "ha-tracker/")
   -distributor.ha-tracker.replica string
     	Prometheus label to look for in samples to identify a Prometheus HA replica. (default "__replica__")
   -distributor.ha-tracker.store string
@@ -653,38 +525,12 @@ Usage of ./cmd/mimir/mimir:
     	Max ingestion rate (samples/sec) that this distributor will accept. This limit is per-distributor, not per-tenant. Additional push requests will be rejected. Current ingestion rate is computed as exponentially weighted moving average, updated every second. 0 = unlimited.
   -distributor.replication-factor int
     	The number of ingesters to write to and read from. (default 3)
-  -distributor.ring.consul.acl-token string
-    	ACL Token used to interact with Consul.
-  -distributor.ring.consul.client-timeout duration
-    	HTTP timeout when talking to Consul (default 20s)
-  -distributor.ring.consul.consistent-reads
-    	Enable consistent reads to Consul.
   -distributor.ring.consul.hostname string
     	Hostname and port of Consul. (default "localhost:8500")
-  -distributor.ring.consul.watch-burst-size int
-    	Burst size used in rate limit. Values less than 1 are treated as 1. (default 1)
-  -distributor.ring.consul.watch-rate-limit float
-    	Rate limit when watching key or prefix in Consul, in requests per second. 0 disables the rate limit. (default 1)
-  -distributor.ring.etcd.dial-timeout duration
-    	The dial timeout for the etcd connection. (default 10s)
   -distributor.ring.etcd.endpoints value
     	The etcd endpoints to connect to.
-  -distributor.ring.etcd.max-retries int
-    	The maximum number of retries to do for failed ops. (default 10)
   -distributor.ring.etcd.password string
     	Etcd password.
-  -distributor.ring.etcd.tls-ca-path string
-    	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
-  -distributor.ring.etcd.tls-cert-path string
-    	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
-  -distributor.ring.etcd.tls-enabled
-    	Enable TLS.
-  -distributor.ring.etcd.tls-insecure-skip-verify
-    	Skip validating server certificate.
-  -distributor.ring.etcd.tls-key-path string
-    	Path to the key file for the client certificate. Also requires the client certificate to be configured.
-  -distributor.ring.etcd.tls-server-name string
-    	Override the expected name on the server certificate.
   -distributor.ring.etcd.username string
     	Etcd username.
   -distributor.ring.heartbeat-period duration
@@ -699,40 +545,14 @@ Usage of ./cmd/mimir/mimir:
     	Name of network interface to read address from. (default [eth0 en0])
   -distributor.ring.instance-port int
     	Port to advertise in the ring (defaults to server.grpc-listen-port).
-  -distributor.ring.multi.mirror-enabled
-    	Mirror writes to secondary store.
-  -distributor.ring.multi.mirror-timeout duration
-    	Timeout for storing value to secondary store. (default 2s)
-  -distributor.ring.multi.primary string
-    	Primary backend storage used by multi-client.
-  -distributor.ring.multi.secondary string
-    	Secondary backend storage used by multi-client.
-  -distributor.ring.prefix string
-    	The prefix for the keys in the store. Should end with a /. (default "collectors/")
   -distributor.ring.store string
     	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "consul")
   -distributor.zone-awareness-enabled
     	True to enable the zone-awareness and replicate ingested samples across different availability zones.
-  -etcd.dial-timeout duration
-    	The dial timeout for the etcd connection. (default 10s)
   -etcd.endpoints value
     	The etcd endpoints to connect to.
-  -etcd.max-retries int
-    	The maximum number of retries to do for failed ops. (default 10)
   -etcd.password string
     	Etcd password.
-  -etcd.tls-ca-path string
-    	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
-  -etcd.tls-cert-path string
-    	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
-  -etcd.tls-enabled
-    	Enable TLS.
-  -etcd.tls-insecure-skip-verify
-    	Skip validating server certificate.
-  -etcd.tls-key-path string
-    	Path to the key file for the client certificate. Also requires the client certificate to be configured.
-  -etcd.tls-server-name string
-    	Override the expected name on the server certificate.
   -etcd.username string
     	Etcd username.
   -experimental.alertmanager.enable-api
@@ -763,18 +583,6 @@ Usage of ./cmd/mimir/mimir:
     	gRPC client max receive message size (bytes). (default 104857600)
   -frontend.grpc-client-config.grpc-max-send-msg-size int
     	gRPC client max send message size (bytes). (default 16777216)
-  -frontend.grpc-client-config.tls-ca-path string
-    	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
-  -frontend.grpc-client-config.tls-cert-path string
-    	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
-  -frontend.grpc-client-config.tls-enabled
-    	Enable TLS in the GRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.
-  -frontend.grpc-client-config.tls-insecure-skip-verify
-    	Skip validating server certificate.
-  -frontend.grpc-client-config.tls-key-path string
-    	Path to the key file for the client certificate. Also requires the client certificate to be configured.
-  -frontend.grpc-client-config.tls-server-name string
-    	Override the expected name on the server certificate.
   -frontend.log-queries-longer-than duration
     	Log queries that are slower than the specified duration. Set to 0 to disable. Set to < 0 to enable on all queries.
   -frontend.max-cache-freshness value
@@ -855,18 +663,6 @@ Usage of ./cmd/mimir/mimir:
     	gRPC client max receive message size (bytes). (default 104857600)
   -ingester.client.grpc-max-send-msg-size int
     	gRPC client max send message size (bytes). (default 16777216)
-  -ingester.client.tls-ca-path string
-    	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
-  -ingester.client.tls-cert-path string
-    	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
-  -ingester.client.tls-enabled
-    	Enable TLS in the GRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.
-  -ingester.client.tls-insecure-skip-verify
-    	Skip validating server certificate.
-  -ingester.client.tls-key-path string
-    	Path to the key file for the client certificate. Also requires the client certificate to be configured.
-  -ingester.client.tls-server-name string
-    	Override the expected name on the server certificate.
   -ingester.final-sleep duration
     	Duration to sleep for before exiting, to ensure metrics are scraped. (default 30s)
   -ingester.heartbeat-period duration
@@ -963,30 +759,10 @@ Usage of ./cmd/mimir/mimir:
     	Multiplication factor used when sending out messages (factor * log(N+1)). (default 4)
   -memberlist.stream-timeout duration
     	The timeout for establishing a connection with a remote node, and for read/write operations. (default 10s)
-  -memberlist.tls-ca-path string
-    	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
-  -memberlist.tls-cert-path string
-    	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
-  -memberlist.tls-enabled
-    	Enable TLS on the memberlist transport layer.
-  -memberlist.tls-insecure-skip-verify
-    	Skip validating server certificate.
-  -memberlist.tls-key-path string
-    	Path to the key file for the client certificate. Also requires the client certificate to be configured.
-  -memberlist.tls-server-name string
-    	Override the expected name on the server certificate.
   -memberlist.transport-debug
     	Log debug transport messages. Note: global log.level must be at debug level as well.
   -modules
     	List available values that can be used as target.
-  -multi.mirror-enabled
-    	Mirror writes to secondary store.
-  -multi.mirror-timeout duration
-    	Timeout for storing value to secondary store. (default 2s)
-  -multi.primary string
-    	Primary backend storage used by multi-client.
-  -multi.secondary string
-    	Secondary backend storage used by multi-client.
   -print.config
     	Print the config and exit.
   -querier.batch-iterators
@@ -1015,18 +791,6 @@ Usage of ./cmd/mimir/mimir:
     	gRPC client max receive message size (bytes). (default 104857600)
   -querier.frontend-client.grpc-max-send-msg-size int
     	gRPC client max send message size (bytes). (default 16777216)
-  -querier.frontend-client.tls-ca-path string
-    	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
-  -querier.frontend-client.tls-cert-path string
-    	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
-  -querier.frontend-client.tls-enabled
-    	Enable TLS in the GRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.
-  -querier.frontend-client.tls-insecure-skip-verify
-    	Skip validating server certificate.
-  -querier.frontend-client.tls-key-path string
-    	Path to the key file for the client certificate. Also requires the client certificate to be configured.
-  -querier.frontend-client.tls-server-name string
-    	Override the expected name on the server certificate.
   -querier.iterators
     	Use iterators to execute query, as opposed to fully materialising the series in memory.
   -querier.label-names-and-values-results-max-size-bytes int
@@ -1065,16 +829,6 @@ Usage of ./cmd/mimir/mimir:
     	When distributor's sharding strategy is shuffle-sharding and this setting is > 0, queriers fetch in-memory series from the minimum set of required ingesters, selecting only ingesters which may have received series since 'now - lookback period'. The lookback period should be greater or equal than the configured 'query store after' and 'query ingesters within'. If this setting is 0, queriers always query all ingesters (ingesters shuffle sharding on read path is disabled).
   -querier.store-gateway-addresses string
     	Comma separated list of store-gateway addresses in DNS Service Discovery format. This option should be set when the store-gateway sharding is disabled (when enabled, the store-gateway instances form a ring and addresses are picked from the ring).
-  -querier.store-gateway-client.tls-ca-path string
-    	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
-  -querier.store-gateway-client.tls-cert-path string
-    	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
-  -querier.store-gateway-client.tls-insecure-skip-verify
-    	Skip validating server certificate.
-  -querier.store-gateway-client.tls-key-path string
-    	Path to the key file for the client certificate. Also requires the client certificate to be configured.
-  -querier.store-gateway-client.tls-server-name string
-    	Override the expected name on the server certificate.
   -querier.timeout duration
     	The timeout for a query. This config option should be set on query-frontend too when query sharding is enabled. (default 2m0s)
   -query-scheduler.grpc-client-config.backoff-max-period duration
@@ -1095,26 +849,12 @@ Usage of ./cmd/mimir/mimir:
     	gRPC client max receive message size (bytes). (default 104857600)
   -query-scheduler.grpc-client-config.grpc-max-send-msg-size int
     	gRPC client max send message size (bytes). (default 16777216)
-  -query-scheduler.grpc-client-config.tls-ca-path string
-    	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
-  -query-scheduler.grpc-client-config.tls-cert-path string
-    	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
-  -query-scheduler.grpc-client-config.tls-enabled
-    	Enable TLS in the GRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.
-  -query-scheduler.grpc-client-config.tls-insecure-skip-verify
-    	Skip validating server certificate.
-  -query-scheduler.grpc-client-config.tls-key-path string
-    	Path to the key file for the client certificate. Also requires the client certificate to be configured.
-  -query-scheduler.grpc-client-config.tls-server-name string
-    	Override the expected name on the server certificate.
   -query-scheduler.max-outstanding-requests-per-tenant int
     	Maximum number of outstanding requests per tenant per query-scheduler. In-flight requests above this limit will fail with HTTP response status code 429. (default 100)
   -query-scheduler.querier-forget-delay duration
     	If a querier disconnects without sending notification about graceful shutdown, the query-scheduler will keep the querier in the tenant's shard until the forget delay has passed. This feature is useful to reduce the blast radius when shuffle-sharding is enabled.
   -ring.heartbeat-timeout duration
     	The heartbeat timeout after which ingesters are skipped for reads/writes. 0 = never (timeout disabled). (default 1m0s)
-  -ring.prefix string
-    	The prefix for the keys in the store. Should end with a /. (default "collectors/")
   -ring.store string
     	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "consul")
   -ruler-storage.azure.account-key value
@@ -1213,16 +953,6 @@ Usage of ./cmd/mimir/mimir:
     	HTTP Basic authentication password. It overrides the password set in the URL (if any).
   -ruler.alertmanager-client.basic-auth-username string
     	HTTP Basic authentication username. It overrides the username set in the URL (if any).
-  -ruler.alertmanager-client.tls-ca-path string
-    	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
-  -ruler.alertmanager-client.tls-cert-path string
-    	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
-  -ruler.alertmanager-client.tls-insecure-skip-verify
-    	Skip validating server certificate.
-  -ruler.alertmanager-client.tls-key-path string
-    	Path to the key file for the client certificate. Also requires the client certificate to be configured.
-  -ruler.alertmanager-client.tls-server-name string
-    	Override the expected name on the server certificate.
   -ruler.alertmanager-discovery
     	Use DNS SRV records to discover Alertmanager hosts.
   -ruler.alertmanager-refresh-interval duration
@@ -1249,18 +979,6 @@ Usage of ./cmd/mimir/mimir:
     	gRPC client max receive message size (bytes). (default 104857600)
   -ruler.client.grpc-max-send-msg-size int
     	gRPC client max send message size (bytes). (default 16777216)
-  -ruler.client.tls-ca-path string
-    	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
-  -ruler.client.tls-cert-path string
-    	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
-  -ruler.client.tls-enabled
-    	Enable TLS in the GRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.
-  -ruler.client.tls-insecure-skip-verify
-    	Skip validating server certificate.
-  -ruler.client.tls-key-path string
-    	Path to the key file for the client certificate. Also requires the client certificate to be configured.
-  -ruler.client.tls-server-name string
-    	Override the expected name on the server certificate.
   -ruler.disabled-tenants value
     	Comma separated list of tenants whose rules this ruler cannot evaluate. If specified, a ruler that would normally pick the specified tenant(s) for processing will ignore them instead. Subject to sharding.
   -ruler.enabled-tenants value
@@ -1291,38 +1009,12 @@ Usage of ./cmd/mimir/mimir:
     	Report the wall time for ruler queries to complete as a per user metric and as an info level log message.
   -ruler.resend-delay duration
     	Minimum amount of time to wait before resending an alert to Alertmanager. (default 1m0s)
-  -ruler.ring.consul.acl-token string
-    	ACL Token used to interact with Consul.
-  -ruler.ring.consul.client-timeout duration
-    	HTTP timeout when talking to Consul (default 20s)
-  -ruler.ring.consul.consistent-reads
-    	Enable consistent reads to Consul.
   -ruler.ring.consul.hostname string
     	Hostname and port of Consul. (default "localhost:8500")
-  -ruler.ring.consul.watch-burst-size int
-    	Burst size used in rate limit. Values less than 1 are treated as 1. (default 1)
-  -ruler.ring.consul.watch-rate-limit float
-    	Rate limit when watching key or prefix in Consul, in requests per second. 0 disables the rate limit. (default 1)
-  -ruler.ring.etcd.dial-timeout duration
-    	The dial timeout for the etcd connection. (default 10s)
   -ruler.ring.etcd.endpoints value
     	The etcd endpoints to connect to.
-  -ruler.ring.etcd.max-retries int
-    	The maximum number of retries to do for failed ops. (default 10)
   -ruler.ring.etcd.password string
     	Etcd password.
-  -ruler.ring.etcd.tls-ca-path string
-    	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
-  -ruler.ring.etcd.tls-cert-path string
-    	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
-  -ruler.ring.etcd.tls-enabled
-    	Enable TLS.
-  -ruler.ring.etcd.tls-insecure-skip-verify
-    	Skip validating server certificate.
-  -ruler.ring.etcd.tls-key-path string
-    	Path to the key file for the client certificate. Also requires the client certificate to be configured.
-  -ruler.ring.etcd.tls-server-name string
-    	Override the expected name on the server certificate.
   -ruler.ring.etcd.username string
     	Etcd username.
   -ruler.ring.heartbeat-period duration
@@ -1337,18 +1029,8 @@ Usage of ./cmd/mimir/mimir:
     	Name of network interface to read address from. (default [eth0 en0])
   -ruler.ring.instance-port int
     	Port to advertise in the ring (defaults to server.grpc-listen-port).
-  -ruler.ring.multi.mirror-enabled
-    	Mirror writes to secondary store.
-  -ruler.ring.multi.mirror-timeout duration
-    	Timeout for storing value to secondary store. (default 2s)
-  -ruler.ring.multi.primary string
-    	Primary backend storage used by multi-client.
-  -ruler.ring.multi.secondary string
-    	Secondary backend storage used by multi-client.
   -ruler.ring.num-tokens int
     	Number of tokens for each ruler. (default 128)
-  -ruler.ring.prefix string
-    	The prefix for the keys in the store. Should end with a /. (default "rulers/")
   -ruler.ring.store string
     	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
   -ruler.rule-path string
@@ -1435,38 +1117,12 @@ Usage of ./cmd/mimir/mimir:
     	Register the intrumentation handlers (/metrics etc). (default true)
   -store-gateway.sharding-enabled
     	Shard blocks across multiple store gateway instances. This option needs be set both on the store-gateway and querier when running in microservices mode.
-  -store-gateway.sharding-ring.consul.acl-token string
-    	ACL Token used to interact with Consul.
-  -store-gateway.sharding-ring.consul.client-timeout duration
-    	HTTP timeout when talking to Consul (default 20s)
-  -store-gateway.sharding-ring.consul.consistent-reads
-    	Enable consistent reads to Consul.
   -store-gateway.sharding-ring.consul.hostname string
     	Hostname and port of Consul. (default "localhost:8500")
-  -store-gateway.sharding-ring.consul.watch-burst-size int
-    	Burst size used in rate limit. Values less than 1 are treated as 1. (default 1)
-  -store-gateway.sharding-ring.consul.watch-rate-limit float
-    	Rate limit when watching key or prefix in Consul, in requests per second. 0 disables the rate limit. (default 1)
-  -store-gateway.sharding-ring.etcd.dial-timeout duration
-    	The dial timeout for the etcd connection. (default 10s)
   -store-gateway.sharding-ring.etcd.endpoints value
     	The etcd endpoints to connect to.
-  -store-gateway.sharding-ring.etcd.max-retries int
-    	The maximum number of retries to do for failed ops. (default 10)
   -store-gateway.sharding-ring.etcd.password string
     	Etcd password.
-  -store-gateway.sharding-ring.etcd.tls-ca-path string
-    	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
-  -store-gateway.sharding-ring.etcd.tls-cert-path string
-    	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
-  -store-gateway.sharding-ring.etcd.tls-enabled
-    	Enable TLS.
-  -store-gateway.sharding-ring.etcd.tls-insecure-skip-verify
-    	Skip validating server certificate.
-  -store-gateway.sharding-ring.etcd.tls-key-path string
-    	Path to the key file for the client certificate. Also requires the client certificate to be configured.
-  -store-gateway.sharding-ring.etcd.tls-server-name string
-    	Override the expected name on the server certificate.
   -store-gateway.sharding-ring.etcd.username string
     	Etcd username.
   -store-gateway.sharding-ring.heartbeat-period duration
@@ -1483,16 +1139,6 @@ Usage of ./cmd/mimir/mimir:
     	Name of network interface to read address from. (default [eth0 en0])
   -store-gateway.sharding-ring.instance-port int
     	Port to advertise in the ring (defaults to server.grpc-listen-port).
-  -store-gateway.sharding-ring.multi.mirror-enabled
-    	Mirror writes to secondary store.
-  -store-gateway.sharding-ring.multi.mirror-timeout duration
-    	Timeout for storing value to secondary store. (default 2s)
-  -store-gateway.sharding-ring.multi.primary string
-    	Primary backend storage used by multi-client.
-  -store-gateway.sharding-ring.multi.secondary string
-    	Secondary backend storage used by multi-client.
-  -store-gateway.sharding-ring.prefix string
-    	The prefix for the keys in the store. Should end with a /. (default "collectors/")
   -store-gateway.sharding-ring.replication-factor int
     	The replication factor to use when sharding blocks. This option needs be set both on the store-gateway and querier when running in microservices mode. (default 3)
   -store-gateway.sharding-ring.store string

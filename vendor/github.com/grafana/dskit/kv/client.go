@@ -53,7 +53,7 @@ type StoreConfig struct {
 // where store can be consul or inmemory.
 type Config struct {
 	Store       string `yaml:"store"`
-	Prefix      string `yaml:"prefix"`
+	Prefix      string `yaml:"prefix" category:"advanced"`
 	StoreConfig `yaml:",inline"`
 
 	Mock Client `yaml:"-"`
