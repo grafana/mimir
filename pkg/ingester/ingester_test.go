@@ -3172,6 +3172,7 @@ func TestIngester_closeAndDeleteUserTSDBIfIdle_shouldNotCloseTSDBIfShippingIsInP
 	cfg := defaultIngesterTestConfig(t)
 	cfg.LifecyclerConfig.JoinAfter = 0
 	cfg.BlocksStorageConfig.TSDB.ShipConcurrency = 2
+	cfg.BlocksStorageConfig.TSDB.CloseIdleTSDBTimeout = time.Nanosecond // We want it to be idle immediately.
 
 	// Create ingester
 	i, err := prepareIngesterWithBlocksStorage(t, cfg, nil)
