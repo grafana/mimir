@@ -50,7 +50,8 @@
   local deployment = $.apps.v1.deployment,
   overrides_exporter_deployment:
     deployment.new(name, 1, [$.overrides_exporter_container], $.overries_exporter_deployment_labels) +
-    $.util.configVolumeMount($._config.overrides_configmap, $._config.overrides_configmap_mountpoint),
+    $.util.configVolumeMount($._config.overrides_configmap, $._config.overrides_configmap_mountpoint) +
+    deployment.mixin.metadata.withLabels({ name: name }),
 
   overrides_exporter_service:
     $.util.serviceFor($.overrides_exporter_deployment, $.overries_exporter_service_ignored_labels),

@@ -736,6 +736,8 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
+  labels:
+    name: overrides-exporter
   name: overrides-exporter
   namespace: default
 spec:
