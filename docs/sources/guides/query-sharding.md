@@ -3,70 +3,95 @@ title: Query sharding
 weight: 1100
 ---
 
-**NOTE:** Query sharding is an experimental feature. As such, the configuration
-settings, command line flags, or specifics of the implementation are subject to
-change.
+# Query sharding
 
-## Overview
+<span style="background-color:#f3f973;">Query sharding is an experimental feature.</span>
 
-Since version 1.6, Grafana Enterprise Metrics (GEM) includes the ability to
-process range queries in parallel. This is achieved by breaking down the whole
-dataset into smaller pieces (which we'll refer to a "shards") and running a
-query for each piece in parallel. Those partial results are then in a second
-step aggregated to get the full query result.
+Mimir includes the ability to process range queries in parallel. This is
+achieved by breaking the dataset into smaller pieces. These smaller pieces are
+called shards. Each shard becomes its own query, and the shards run in
+parallel. The results from the shard queries are aggregated to become the full
+query result.
 
-## Configuration
+## Shardable query requirements
 
-For query sharding to be used, all of the following conditions need to be met:
+[//]: <> (The conditions were derived from https://github.com/grafana/mimir/blob/cad5243915a739e026ba3352ce9b7bdff3de97d6/pkg/frontend/querymiddleware/astmapper/parallel.go)
 
-- The query needs to be a range query and shardable (see [Limitations](#limitations)).
+These conditions must be met for the query to be shardable:
 
-- The flag `-query-frontend.parallelize-shardable-queries=true` needs to be
-  set.
+- The query is a range query.
+- All binary expressions contain a scalar value on one of the sides.
 
-- The shard count for that particular query needs to be an integer bigger than
-  `2`. The shard count for a particular query is determined in the following
-  order:
+[//]: <> (List of functions should be kept in sync with https://github.com/grafana/mimir/blob/cad5243915a739e026ba3352ce9b7bdff3de97d6/pkg/frontend/querymiddleware/astmapper/parallel.go#L24-L32)
 
-  - If the HTTP header `Sharding-Control` is set as part of the query request,
-    its value takes precedence.
+- The query does not invoke any of the query functions:
+  - `absent`
+  - `absent_over_time`
+  - `histogram_quantile`
+  - `sort_desc`
+  - `sort`
 
-  - Failing that, the tenant override value for the limit
-    `query_sharding_total_shards` is used.
+[//]: <> (List of functions should be kept in sync with https://github.com/grafana/mimir/blob/cad5243915a739e026ba3352ce9b7bdff3de97d6/pkg/frontend/querymiddleware/astmapper/parallel.go#L16-L22)
 
-  - Failing that, the value of the configuration flag
-    `-frontend.query-sharding-total-shards` is used.
+- The only aggregations used are:
 
-Query sharding is implemented in the `query-frontend` component. In case you
-are running a micro-services deployment, it is important that you specify
-querier specific flags for the `query-frontend` as well with the same value as
-specified on the queriers:
+  - `sum`
+  - `min`
+  - `max`
+  - `count`
+  - `avg`
 
-```
--querier.max-concurrent
--querier.timeout
--querier.max-samples
--querier.at-modifier-enabled
--querier.default-evaluation-interval
--querier.active-query-tracker-dir
--querier.lookback-delta
-```
+- The query does not contain nested aggregations.
 
-### Flow of a sharded query
+## Query-related configuration
 
-[//]: <> (TODO: I think it is important to explain how parallelism in the query path happens with time split, multiple legs per query and shard count)
+Configure these options for query sharding:
 
-[//]: <> (TODO: Line out how `-frontend.query-sharding-max-sharded-queries` related to all of this)
+- Set the command-line flag
+  `-query-frontend.parallelize-shardable-queries=true` or set the query
+  frontend configuration parameter `parallelize-shardable-queries` to true.
+
+- Set the shard count for each query to be an integer greater than two. The
+  shard count for a query is set by the first item set in this ordered list:
+
+  - The HTTP header `Sharding-Control` specified as part of the query request
+
+  - The tenant override value for the limit
+    `query_sharding_total_shards`
+
+  - The value of the command-line configuration flag
+    `-frontend.query-sharding-total-shards`
+
+- For a microservices deployment, set the query frontend configuration to the
+  same values as are in their equivalent querier configuration command-line
+  flags:
+
+  - -querier.max-concurrent
+  - -querier.timeout
+  - -querier.max-samples
+  - -querier.at-modifier-enabled
+  - -querier.default-evaluation-interval
+  - -querier.active-query-tracker-dir
+  - -querier.lookback-delta
+
+## Flow of a sharded query
 
 ![Flow of a query with query sharding](../../images/query-sharding.png)
 
+[//]: <> (TODO: Line out how `-frontend.query-sharding-max-sharded-queries` related to all of this)
+
+[//]: <> (TODO: Finish an overview, which shows how the query-frontend splits queries to explain)
+[Mermaid Graph]:https://mermaid.live/edit/#eyJjb2RlIjoiZmxvd2NoYXJ0IExSXG4gIHN1YmdyYXBoIFFGW1F1ZXJ5LUZyb250ZW5kXVxuICAgIGRpcmVjdGlvbiBMUlxuICAgIHN1YmdyYXBoIFRTXG4gICAgICAgIGRpcmVjdGlvbiBSTFxuICAgICAgICBUUzFbc3RhcnQ9dHMgZW5kIHQ9bl1cbiAgICAgICAgVFMyW3N0YXJ0PXRuIGVuZCB0PW4rMV1cbiAgICAgICAgVFNuWy4uLi5dXG4gICAgZW5kXG4gICAgc3ViZ3JhcGggUVNbU3BsaXR0aW5nIHF1ZXJpZXMgXFxuIGludG8gMyBxdWVyeSBzaGFyZHNdXG4gICAgICAgIGRpcmVjdGlvbiBSTFxuICAgICAgICBRUzFhWzEvM11cbiAgICAgICAgUVMxYlsyLzNdXG4gICAgICAgIFFTMWNbMy8zXVxuICAgICAgICBRUzJhWzEvM11cbiAgICAgICAgUVMyYlsyLzNdXG4gICAgICAgIFFTMmNbMy8zXVxuICAgICAgICBRU25hWzEvM11cbiAgICAgICAgUVNuYlsyLzNdXG4gICAgICAgIFFTbmNbMy8zXVxuICAgIGVuZFxuICBlbmRcbiAgVFMxIC0tPiBRUzFhXG4gIFRTMSAtLT4gUVMxYlxuICBUUzEgLS0-IFFTMWNcbiAgVFMyIC0tPiBRUzJhXG4gIFRTMiAtLT4gUVMyYlxuICBUUzIgLS0-IFFTMmNcbiAgVFNuIC0tPiBRU25hXG4gIFRTbiAtLT4gUVNuYlxuICBUU24gLS0-IFFTbmNcbiAgVVtVc2VyXSAtLT4gUUZcbiIsIm1lcm1haWQiOiJ7XG4gIFwidGhlbWVcIjogXCJkZWZhdWx0XCJcbn0iLCJ1cGRhdGVFZGl0b3IiOnRydWUsImF1dG9TeW5jIjp0cnVlLCJ1cGRhdGVEaWFncmFtIjp0cnVlfQ
+
+[//]: <> (TODO query_range.split_queries_by_interval: "24h")
+
 ## Operational considerations
 
-For every additional shard, the amount of queries the system needs to process
-increases, at the benefit of reduced query processing time. This will put
-additional load especially onto queriers and their underlying data stores
-(ingesters for recent data and store-gateway for historic data). Also the
-caching layer for chunks and indexes will experience increased load.
+Splitting a single query into sharded queries increases the quantity of queries
+that must be processed. Parallelization decreases the query processing time
+latency, but increases the load on querier components and their underlying data
+stores (ingesters for recent data and store-gateway for historic data). The
+caching layer for chunks and indexes will also experience an increased load.
 
 ## Verification
 
@@ -115,23 +140,3 @@ sum(rate(cortex_frontend_query_sharding_rewrites_attempted_total[$__rate_interva
 
 The histogram `cortex_frontend_sharded_queries_per_query` allows to understand
 how many sharded sub queries are generated per query.
-
-## Limitations
-
-[//]: <> (The conditions were derived from https://github.com/grafana/mimir/blob/cad5243915a739e026ba3352ce9b7bdff3de97d6/pkg/frontend/querymiddleware/astmapper/parallel.go)
-
-The implementation is only able to shard queries, which meet all of the
-following conditions:
-
-- All binary expressions contain a scalar value on one of the sides.
-
-[//]: <> (List of functions should be kept in sync with https://github.com/grafana/mimir/blob/cad5243915a739e026ba3352ce9b7bdff3de97d6/pkg/frontend/querymiddleware/astmapper/parallel.go#L24-L32)
-
-- There is no call to one of those functions: `absent`,`absent_over_time`,
-  `histogram_quantile`, `sort_desc`, `sort`.
-
-[//]: <> (List of functions should be kept in sync with https://github.com/grafana/mimir/blob/cad5243915a739e026ba3352ce9b7bdff3de97d6/pkg/frontend/querymiddleware/astmapper/parallel.go#L16-L22)
-
-- The only aggregations used are: `sum`, `min`, `max`, `count`, `avg`.
-
-- There are no nested aggregations.
