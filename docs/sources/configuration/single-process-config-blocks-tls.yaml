@@ -89,7 +89,6 @@ compactor:
       store: inmemory
 
 frontend_worker:
-  match_max_concurrent: true
   grpc_client_config:
     tls_cert_path: "client.crt"
     tls_key_path: "client.key"

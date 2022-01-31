@@ -66,8 +66,7 @@ func TestFrontend(t *testing.T) {
 		assert.Equal(t, "Hello World", string(body))
 	}
 
-	testFrontend(t, defaultFrontendConfig(), handler, test, false, nil, nil)
-	testFrontend(t, defaultFrontendConfig(), handler, test, true, nil, nil)
+	testFrontend(t, defaultFrontendConfig(), handler, test, nil, nil)
 }
 
 func TestFrontendPropagateTrace(t *testing.T) {
@@ -116,8 +115,7 @@ func TestFrontendPropagateTrace(t *testing.T) {
 		// Query should do one call.
 		assert.Equal(t, traceID, <-observedTraceID)
 	}
-	testFrontend(t, defaultFrontendConfig(), handler, test, false, nil, nil)
-	testFrontend(t, defaultFrontendConfig(), handler, test, true, nil, nil)
+	testFrontend(t, defaultFrontendConfig(), handler, test, nil, nil)
 }
 
 func TestFrontendCheckReady(t *testing.T) {
@@ -181,9 +179,7 @@ func TestFrontendCancel(t *testing.T) {
 		time.Sleep(100 * time.Millisecond)
 		assert.Equal(t, int32(1), tries.Load())
 	}
-	testFrontend(t, defaultFrontendConfig(), handler, test, false, nil, nil)
-	tries.Store(0)
-	testFrontend(t, defaultFrontendConfig(), handler, test, true, nil, nil)
+	testFrontend(t, defaultFrontendConfig(), handler, test, nil, nil)
 }
 
 func TestFrontendMetricsCleanup(t *testing.T) {
@@ -192,44 +188,42 @@ func TestFrontendMetricsCleanup(t *testing.T) {
 		require.NoError(t, err)
 	})
 
-	for _, matchMaxConcurrency := range []bool{false, true} {
-		reg := prometheus.NewPedanticRegistry()
+	reg := prometheus.NewPedanticRegistry()
 
-		test := func(addr string, fr *Frontend) {
-			req, err := http.NewRequest("GET", fmt.Sprintf("http://%s/", addr), nil)
-			require.NoError(t, err)
-			err = user.InjectOrgIDIntoHTTPRequest(user.InjectOrgID(context.Background(), "1"), req)
-			require.NoError(t, err)
+	test := func(addr string, fr *Frontend) {
+		req, err := http.NewRequest("GET", fmt.Sprintf("http://%s/", addr), nil)
+		require.NoError(t, err)
+		err = user.InjectOrgIDIntoHTTPRequest(user.InjectOrgID(context.Background(), "1"), req)
+		require.NoError(t, err)
 
-			resp, err := http.DefaultClient.Do(req)
-			require.NoError(t, err)
-			require.Equal(t, 200, resp.StatusCode)
-			defer resp.Body.Close()
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		require.Equal(t, 200, resp.StatusCode)
+		defer resp.Body.Close()
 
-			body, err := ioutil.ReadAll(resp.Body)
-			require.NoError(t, err)
+		body, err := ioutil.ReadAll(resp.Body)
+		require.NoError(t, err)
 
-			assert.Equal(t, "Hello World", string(body))
+		assert.Equal(t, "Hello World", string(body))
 
-			require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 				# HELP cortex_query_frontend_queue_length Number of queries in the queue.
 				# TYPE cortex_query_frontend_queue_length gauge
 				cortex_query_frontend_queue_length{user="1"} 0
 			`), "cortex_query_frontend_queue_length"))
 
-			fr.cleanupInactiveUserMetrics("1")
+		fr.cleanupInactiveUserMetrics("1")
 
-			require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 				# HELP cortex_query_frontend_queue_length Number of queries in the queue.
 				# TYPE cortex_query_frontend_queue_length gauge
 			`), "cortex_query_frontend_queue_length"))
-		}
-
-		testFrontend(t, defaultFrontendConfig(), handler, test, matchMaxConcurrency, nil, reg)
 	}
+
+	testFrontend(t, defaultFrontendConfig(), handler, test, nil, reg)
 }
 
-func testFrontend(t *testing.T, config Config, handler http.Handler, test func(addr string, frontend *Frontend), matchMaxConcurrency bool, l log.Logger, reg prometheus.Registerer) {
+func testFrontend(t *testing.T, config Config, handler http.Handler, test func(addr string, frontend *Frontend), l log.Logger, reg prometheus.Registerer) {
 	logger := log.NewNopLogger()
 	if l != nil {
 		logger = l
@@ -237,8 +231,6 @@ func testFrontend(t *testing.T, config Config, handler http.Handler, test func(a
 
 	var workerConfig querier_worker.Config
 	flagext.DefaultValues(&workerConfig)
-	workerConfig.Parallelism = 1
-	workerConfig.MatchMaxConcurrency = matchMaxConcurrency
 	workerConfig.MaxConcurrentRequests = 1
 
 	// localhost:0 prevents firewall warnings on Mac OS X.

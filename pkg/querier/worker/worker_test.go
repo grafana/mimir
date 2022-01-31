@@ -22,44 +22,26 @@ import (
 func TestResetConcurrency(t *testing.T) {
 	tests := []struct {
 		name                string
-		parallelism         int
 		maxConcurrent       int
 		numTargets          int
 		expectedConcurrency int
 	}{
 		{
-			name:                "Test create at least one processor per target",
-			parallelism:         0,
+			name:                "Test create at least one processor per target if max concurrent = 0",
 			maxConcurrent:       0,
 			numTargets:          2,
 			expectedConcurrency: 2,
 		},
 		{
-			name:                "Test parallelism per target",
-			parallelism:         4,
-			maxConcurrent:       0,
-			numTargets:          2,
-			expectedConcurrency: 8,
-		},
-		{
-			name:                "Test Total Parallelism with a remainder",
-			parallelism:         1,
+			name:                "Test max concurrent dividing with a remainder",
 			maxConcurrent:       7,
 			numTargets:          4,
 			expectedConcurrency: 7,
 		},
 		{
-			name:                "Test Total Parallelism dividing evenly",
-			parallelism:         1,
+			name:                "Test max concurrent dividing evenly",
 			maxConcurrent:       6,
 			numTargets:          2,
-			expectedConcurrency: 6,
-		},
-		{
-			name:                "Test Total Parallelism at least one worker per target",
-			parallelism:         1,
-			maxConcurrent:       3,
-			numTargets:          6,
 			expectedConcurrency: 6,
 		},
 	}
@@ -67,8 +49,6 @@ func TestResetConcurrency(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := Config{
-				Parallelism:           tt.parallelism,
-				MatchMaxConcurrency:   tt.maxConcurrent > 0,
 				MaxConcurrentRequests: tt.maxConcurrent,
 			}
 

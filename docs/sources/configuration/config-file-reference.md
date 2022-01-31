@@ -2038,16 +2038,6 @@ The `frontend_worker_config` configures the worker - running within the querier 
 # CLI flag: -querier.dns-lookup-period
 [dns_lookup_duration: <duration> | default = 10s]
 
-# Number of simultaneous queries to process per query-frontend or
-# query-scheduler.
-# CLI flag: -querier.worker-parallelism
-[parallelism: <int> | default = 10]
-
-# Force worker concurrency to match the -querier.max-concurrent option.
-# Overrides querier.worker-parallelism.
-# CLI flag: -querier.worker-match-max-concurrent
-[match_max_concurrent: <boolean> | default = false]
-
 # Querier ID, sent to frontend service to identify requests from the same
 # querier. Defaults to hostname.
 # CLI flag: -querier.id
@@ -3525,7 +3515,7 @@ The `memcached_config` configures the Memcached-based caching backend. The suppo
 
 # The maximum number of idle connections that will be maintained per address.
 # CLI flag: -<prefix>.memcached.max-idle-connections
-[max_idle_connections: <int> | default = 16]
+[max_idle_connections: <int> | default = 100]
 
 # The maximum number of concurrent asynchronous operations can occur.
 # CLI flag: -<prefix>.memcached.max-async-concurrency
@@ -3533,7 +3523,7 @@ The `memcached_config` configures the Memcached-based caching backend. The suppo
 
 # The maximum number of enqueued asynchronous operations allowed.
 # CLI flag: -<prefix>.memcached.max-async-buffer-size
-[max_async_buffer_size: <int> | default = 10000]
+[max_async_buffer_size: <int> | default = 25000]
 
 # The maximum number of concurrent connections running get operations. If set to
 # 0, concurrency is unlimited.
@@ -3545,7 +3535,7 @@ The `memcached_config` configures the Memcached-based caching backend. The suppo
 # fetched concurrently, honoring the max concurrency. If set to 0, the max batch
 # size is unlimited.
 # CLI flag: -<prefix>.memcached.max-get-multi-batch-size
-[max_get_multi_batch_size: <int> | default = 0]
+[max_get_multi_batch_size: <int> | default = 100]
 
 # The maximum size of an item stored in memcached. Bigger items are not stored.
 # If set to 0, no maximum size is enforced.
