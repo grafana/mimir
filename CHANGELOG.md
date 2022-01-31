@@ -2,7 +2,7 @@
 
 ## Mimir - main / unreleased
 
-* [CHANGE] Remove `-alertmanager.configs.auto-webhook-root`
+* [CHANGE] Remove `-alertmanager.configs.auto-webhook-root` #977
 * [CHANGE] Removed deprecated limits for rejecting old samples #799
   This removes the following flags:
   * `-validation.reject-old-samples`
