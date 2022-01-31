@@ -33,13 +33,13 @@ const blocksPageTemplate = `
 		<p>Showing blocks for tenant: {{ .Tenant }}</p>
 		<p>
 			{{ if not .ShowDeleted }}
-				<a href="{{ .ShowDeletedURI }}">Show Deleted</a>
+				<a href="{{ .ShowDeletedQuery }}">Show Deleted</a>
 			{{ end }}
 			{{ if not .ShowSources }}
-				<a href="{{ .ShowSourcesURI }}">Show Sources</a>
+				<a href="{{ .ShowSourcesQuery }}">Show Sources</a>
 			{{ end }}
 			{{ if not .ShowParents }}
-				<a href="{{ .ShowParentsURI }}">Show Parents</a>
+				<a href="{{ .ShowParentsQuery }}">Show Parents</a>
 			{{ end }}
 		</p>
 		<p>
@@ -212,9 +212,9 @@ func (s *StoreGateway) BlocksHandler(w http.ResponseWriter, req *http.Request) {
 		ShowSources     bool                 `json:"-"`
 		ShowParents     bool                 `json:"-"`
 
-		ShowDeletedURI string `json:"-"`
-		ShowSourcesURI string `json:"-"`
-		ShowParentsURI string `json:"-"`
+		ShowDeletedQuery string `json:"-"`
+		ShowSourcesQuery string `json:"-"`
+		ShowParentsQuery string `json:"-"`
 
 		TSDBTenantIDExternalLabel string `json:"-"`
 	}{
@@ -228,15 +228,15 @@ func (s *StoreGateway) BlocksHandler(w http.ResponseWriter, req *http.Request) {
 		ShowSources:    showSources,
 		ShowParents:    showParents,
 
-		ShowDeletedURI: uriWithTrueBoolParam(*req.URL, req.Form, "show_deleted"),
-		ShowSourcesURI: uriWithTrueBoolParam(*req.URL, req.Form, "show_sources"),
-		ShowParentsURI: uriWithTrueBoolParam(*req.URL, req.Form, "show_parents"),
+		ShowDeletedQuery: queryWithTrueBoolParam(*req.URL, req.Form, "show_deleted"),
+		ShowSourcesQuery: queryWithTrueBoolParam(*req.URL, req.Form, "show_sources"),
+		ShowParentsQuery: queryWithTrueBoolParam(*req.URL, req.Form, "show_parents"),
 
 		TSDBTenantIDExternalLabel: tsdb.TenantIDExternalLabel,
 	}, blocksTemplate, req)
 }
 
-func uriWithTrueBoolParam(u url.URL, form url.Values, boolParam string) string {
+func queryWithTrueBoolParam(u url.URL, form url.Values, boolParam string) string {
 	q := u.Query()
 	for k, vs := range form {
 		for _, val := range vs {
@@ -245,9 +245,7 @@ func uriWithTrueBoolParam(u url.URL, form url.Values, boolParam string) string {
 		}
 	}
 	q.Set(boolParam, "true")
-	u.RawQuery = q.Encode()
-
-	return u.RequestURI()
+	return "?" + q.Encode()
 }
 
 func formatTimeIfNotZero(t time.Time, format string) string {
