@@ -233,19 +233,12 @@ compactor:
   # CLI flag: -compactor.disabled-tenants
   [disabled_tenants: <string> | default = ""]
 
-  # Shard workload across multiple compactor instances. Sharding is required if
-  # you run multiple compactor instances, in order to coordinate compactions and
-  # avoid race conditions leading to the same tenant blocks simultaneously
-  # compacted by different instances.
-  # CLI flag: -compactor.sharding-enabled
-  [sharding_enabled: <boolean> | default = false]
-
   sharding_ring:
     kvstore:
       # Backend storage to use for the ring. Supported values are: consul, etcd,
       # inmemory, memberlist, multi.
       # CLI flag: -compactor.ring.store
-      [store: <string> | default = "consul"]
+      [store: <string> | default = "memberlist"]
 
       # The prefix for the keys in the store. Should end with a /.
       # CLI flag: -compactor.ring.prefix
@@ -287,7 +280,7 @@ compactor:
 
     # Minimum time to wait for ring stability at startup. 0 to disable.
     # CLI flag: -compactor.ring.wait-stability-min-duration
-    [wait_stability_min_duration: <duration> | default = 1m]
+    [wait_stability_min_duration: <duration> | default = 0s]
 
     # Maximum time to wait for ring stability at startup. If the compactor ring
     # keeps changing after this period of time, the compactor will start anyway.

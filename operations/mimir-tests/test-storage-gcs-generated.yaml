@@ -1243,7 +1243,7 @@ spec:
         - -compactor.ring.consul.hostname=consul.default.svc.cluster.local:8500
         - -compactor.ring.prefix=
         - -compactor.ring.store=consul
-        - -compactor.sharding-enabled=true
+        - -compactor.ring.wait-stability-min-duration=1m
         - -compactor.split-and-merge-shards=0
         - -compactor.split-groups=1
         - -compactor.symbols-flushers-concurrency=4

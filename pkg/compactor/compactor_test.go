@@ -155,7 +155,7 @@ func TestMultitenantCompactor_ShouldDoNothingOnNoUserBlocks(t *testing.T) {
 	// No user blocks stored in the bucket.
 	bucketClient := &bucket.ClientMock{}
 	bucketClient.MockIter("", []string{}, nil)
-	cfg := prepareConfig()
+	cfg := prepareConfig(t)
 	c, _, _, logs, registry := prepare(t, cfg, bucketClient)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
 
@@ -172,10 +172,11 @@ func TestMultitenantCompactor_ShouldDoNothingOnNoUserBlocks(t *testing.T) {
 	assert.Equal(t, prom_testutil.ToFloat64(c.compactionRunInterval), cfg.CompactionInterval.Seconds())
 
 	assert.Equal(t, []string{
-		`level=warn component=compactor msg="Compactor sharding is disabled. Please don't run more than one compactor in this mode."`,
+		`level=info component=compactor msg="waiting until compactor is ACTIVE in the ring"`,
+		`level=info component=compactor msg="compactor is ACTIVE in the ring"`,
 		`level=info component=compactor msg="discovering users from bucket"`,
 		`level=info component=compactor msg="discovered users from bucket" users=0`,
-	}, strings.Split(strings.TrimSpace(logs.String()), "\n"))
+	}, removeIgnoredLogs(strings.Split(strings.TrimSpace(logs.String()), "\n")))
 
 	assert.NoError(t, prom_testutil.GatherAndCompare(registry, strings.NewReader(`
 		# TYPE cortex_compactor_runs_started_total counter
@@ -298,7 +299,7 @@ func TestMultitenantCompactor_ShouldRetryCompactionOnFailureWhileDiscoveringUser
 	bucketClient := &bucket.ClientMock{}
 	bucketClient.MockIter("", nil, errors.New("failed to iterate the bucket"))
 
-	c, _, _, logs, registry := prepare(t, prepareConfig(), bucketClient)
+	c, _, _, logs, registry := prepare(t, prepareConfig(t), bucketClient)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
 
 	// Compactor doesn't wait for blocks cleaner to finish, but our test checks for cleaner metrics.
@@ -315,10 +316,11 @@ func TestMultitenantCompactor_ShouldRetryCompactionOnFailureWhileDiscoveringUser
 	bucketClient.AssertNumberOfCalls(t, "Iter", 1+3)
 
 	assert.Equal(t, []string{
-		`level=warn component=compactor msg="Compactor sharding is disabled. Please don't run more than one compactor in this mode."`,
+		`level=info component=compactor msg="waiting until compactor is ACTIVE in the ring"`,
+		`level=info component=compactor msg="compactor is ACTIVE in the ring"`,
 		`level=info component=compactor msg="discovering users from bucket"`,
 		`level=error component=compactor msg="failed to discover users from bucket" err="failed to iterate the bucket"`,
-	}, strings.Split(strings.TrimSpace(logs.String()), "\n"))
+	}, removeIgnoredLogs(strings.Split(strings.TrimSpace(logs.String()), "\n")))
 
 	assert.NoError(t, prom_testutil.GatherAndCompare(registry, strings.NewReader(`
 		# TYPE cortex_compactor_runs_started_total counter
@@ -452,7 +454,7 @@ func TestMultitenantCompactor_ShouldIncrementCompactionErrorIfFailedToCompactASi
 	bucketClient.MockGet(userID+"/bucket-index.json.gz", "", nil)
 	bucketClient.MockUpload(userID+"/bucket-index.json.gz", nil)
 
-	c, _, tsdbPlannerMock, _, registry := prepare(t, prepareConfig(), bucketClient)
+	c, _, tsdbPlannerMock, _, registry := prepare(t, prepareConfig(t), bucketClient)
 	tsdbPlannerMock.On("Plan", mock.Anything, mock.Anything).Return([]*metadata.Meta{}, errors.New("Failed to plan"))
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
 
@@ -512,7 +514,7 @@ func TestMultitenantCompactor_ShouldIterateOverUsersAndRunCompaction(t *testing.
 	bucketClient.MockUpload("user-1/bucket-index.json.gz", nil)
 	bucketClient.MockUpload("user-2/bucket-index.json.gz", nil)
 
-	c, _, tsdbPlanner, logs, registry := prepare(t, prepareConfig(), bucketClient)
+	c, _, tsdbPlanner, logs, registry := prepare(t, prepareConfig(t), bucketClient)
 
 	// Mock the planner as if there's no compaction to do,
 	// in order to simplify tests (all in all, we just want to
@@ -536,7 +538,8 @@ func TestMultitenantCompactor_ShouldIterateOverUsersAndRunCompaction(t *testing.
 	tsdbPlanner.AssertNumberOfCalls(t, "Plan", 2)
 
 	assert.ElementsMatch(t, []string{
-		`level=warn component=compactor msg="Compactor sharding is disabled. Please don't run more than one compactor in this mode."`,
+		`level=info component=compactor msg="waiting until compactor is ACTIVE in the ring"`,
+		`level=info component=compactor msg="compactor is ACTIVE in the ring"`,
 		`level=info component=compactor msg="discovering users from bucket"`,
 		`level=info component=compactor msg="discovered users from bucket" users=2`,
 		`level=info component=compactor msg="starting compaction of user blocks" user=user-1`,
@@ -647,7 +650,7 @@ func TestMultitenantCompactor_ShouldStopCompactingTenantOnReachingMaxCompactionT
 	bucketClient.MockIter("user-1/markers/", nil, nil)
 	bucketClient.MockUpload("user-1/bucket-index.json.gz", nil)
 
-	cfg := prepareConfig()
+	cfg := prepareConfig(t)
 	cfg.MaxCompactionTime = 500 * time.Millisecond // Enough time to start one compaction. We will make it last longer than this.
 	cfg.CompactionConcurrency = 1
 
@@ -673,7 +676,8 @@ func TestMultitenantCompactor_ShouldStopCompactingTenantOnReachingMaxCompactionT
 	tsdbPlanner.AssertNumberOfCalls(t, "Plan", 1)
 
 	assert.Equal(t, []string{
-		`level=warn component=compactor msg="Compactor sharding is disabled. Please don't run more than one compactor in this mode."`,
+		`level=info component=compactor msg="waiting until compactor is ACTIVE in the ring"`,
+		`level=info component=compactor msg="compactor is ACTIVE in the ring"`,
 		`level=info component=compactor msg="discovering users from bucket"`,
 		`level=info component=compactor msg="discovered users from bucket" users=1`,
 		`level=info component=compactor msg="starting compaction of user blocks" user=user-1`,
@@ -692,7 +696,7 @@ func TestMultitenantCompactor_ShouldStopCompactingTenantOnReachingMaxCompactionT
 func TestMultitenantCompactor_ShouldNotCompactBlocksMarkedForDeletion(t *testing.T) {
 	t.Parallel()
 
-	cfg := prepareConfig()
+	cfg := prepareConfig(t)
 	cfg.DeletionDelay = 10 * time.Minute // Delete block after 10 minutes
 
 	// Mock the bucket to contain two users, each one with one block.
@@ -746,7 +750,8 @@ func TestMultitenantCompactor_ShouldNotCompactBlocksMarkedForDeletion(t *testing
 	tsdbPlanner.AssertNumberOfCalls(t, "Plan", 0)
 
 	assert.ElementsMatch(t, []string{
-		`level=warn component=compactor msg="Compactor sharding is disabled. Please don't run more than one compactor in this mode."`,
+		`level=info component=compactor msg="waiting until compactor is ACTIVE in the ring"`,
+		`level=info component=compactor msg="compactor is ACTIVE in the ring"`,
 		`level=info component=compactor msg="discovering users from bucket"`,
 		`level=info component=compactor msg="discovered users from bucket" users=1`,
 		`level=info component=compactor msg="starting compaction of user blocks" user=user-1`,
@@ -807,7 +812,7 @@ func TestMultitenantCompactor_ShouldNotCompactBlocksMarkedForDeletion(t *testing
 func TestMultitenantCompactor_ShouldNotCompactBlocksMarkedForNoCompaction(t *testing.T) {
 	t.Parallel()
 
-	cfg := prepareConfig()
+	cfg := prepareConfig(t)
 	cfg.DeletionDelay = 10 * time.Minute // Delete block after 10 minutes
 
 	// Mock the bucket to contain one user with a block marked for no-compaction.
@@ -844,7 +849,8 @@ func TestMultitenantCompactor_ShouldNotCompactBlocksMarkedForNoCompaction(t *tes
 	tsdbPlanner.AssertNumberOfCalls(t, "Plan", 0)
 
 	assert.ElementsMatch(t, []string{
-		`level=warn component=compactor msg="Compactor sharding is disabled. Please don't run more than one compactor in this mode."`,
+		`level=info component=compactor msg="waiting until compactor is ACTIVE in the ring"`,
+		`level=info component=compactor msg="compactor is ACTIVE in the ring"`,
 		`level=info component=compactor msg="discovering users from bucket"`,
 		`level=info component=compactor msg="discovered users from bucket" users=1`,
 		`level=info component=compactor msg="starting compaction of user blocks" user=user-1`,
@@ -859,7 +865,7 @@ func TestMultitenantCompactor_ShouldNotCompactBlocksMarkedForNoCompaction(t *tes
 func TestMultitenantCompactor_ShouldNotCompactBlocksForUsersMarkedForDeletion(t *testing.T) {
 	t.Parallel()
 
-	cfg := prepareConfig()
+	cfg := prepareConfig(t)
 	cfg.DeletionDelay = 10 * time.Minute      // Delete block after 10 minutes
 	cfg.TenantCleanupDelay = 10 * time.Minute // To make sure it's not 0.
 
@@ -903,7 +909,8 @@ func TestMultitenantCompactor_ShouldNotCompactBlocksForUsersMarkedForDeletion(t 
 	tsdbPlanner.AssertNumberOfCalls(t, "Plan", 0)
 
 	assert.ElementsMatch(t, []string{
-		`level=warn component=compactor msg="Compactor sharding is disabled. Please don't run more than one compactor in this mode."`,
+		`level=info component=compactor msg="waiting until compactor is ACTIVE in the ring"`,
+		`level=info component=compactor msg="compactor is ACTIVE in the ring"`,
 		`level=info component=compactor msg="discovering users from bucket"`,
 		`level=info component=compactor msg="discovered users from bucket" users=1`,
 		`level=debug component=compactor msg="skipping user because it is marked for deletion" user=user-1`,
@@ -989,8 +996,7 @@ func TestMultitenantCompactor_ShouldCompactAllUsersOnShardingEnabledButOnlyOneIn
 	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
-	cfg := prepareConfig()
-	cfg.ShardingEnabled = true
+	cfg := prepareConfig(t)
 	cfg.ShardingRing.InstanceID = "compactor-1"
 	cfg.ShardingRing.InstanceAddr = "1.2.3.4"
 	cfg.ShardingRing.KVStore.Mock = ringStore
@@ -1119,8 +1125,7 @@ func TestMultitenantCompactor_ShouldCompactOnlyUsersOwnedByTheInstanceOnSharding
 	var logs []*concurrency.SyncBuffer
 
 	for i := 1; i <= 2; i++ {
-		cfg := prepareConfig()
-		cfg.ShardingEnabled = true
+		cfg := prepareConfig(t)
 		cfg.ShardingRing.InstanceID = fmt.Sprintf("compactor-%d", i)
 		cfg.ShardingRing.InstanceAddr = fmt.Sprintf("127.0.0.%d", i)
 		cfg.ShardingRing.WaitStabilityMinDuration = 3 * time.Second
@@ -1191,9 +1196,8 @@ func TestMultitenantCompactor_ShouldSkipCompactionForJobsNoMoreOwnedAfterPlannin
 	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
-	cfg := prepareConfig()
+	cfg := prepareConfig(t)
 	cfg.CompactionConcurrency = 1
-	cfg.ShardingEnabled = true
 	cfg.ShardingRing.InstanceID = "compactor-1"
 	cfg.ShardingRing.InstanceAddr = "1.2.3.4"
 	cfg.ShardingRing.KVStore.Mock = ringStore
@@ -1463,7 +1467,7 @@ func removeIgnoredLogs(input []string) []string {
 	return out
 }
 
-func prepareConfig() Config {
+func prepareConfig(t *testing.T) Config {
 	compactorCfg := Config{}
 	flagext.DefaultValues(&compactorCfg)
 
@@ -1476,6 +1480,12 @@ func prepareConfig() Config {
 
 	// Set lower timeout for waiting on compactor to become ACTIVE in the ring for unit tests
 	compactorCfg.ShardingRing.WaitActiveInstanceTimeout = 5 * time.Second
+
+	// Inject default KV store. Must be overridden if "real" sharding is required.
+	inmem, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
+	t.Cleanup(func() { _ = closer.Close() })
+	compactorCfg.ShardingRing.KVStore.Mock = inmem
+	compactorCfg.ShardingRing.InstanceAddr = "localhost"
 
 	return compactorCfg
 }
@@ -1670,10 +1680,9 @@ func TestMultitenantCompactor_DeleteLocalSyncFiles(t *testing.T) {
 	var compactors []*MultitenantCompactor
 
 	for i := 1; i <= 2; i++ {
-		cfg := prepareConfig()
+		cfg := prepareConfig(t)
 		cfg.CompactionInterval = 10 * time.Minute // We will only call compaction manually.
 
-		cfg.ShardingEnabled = true
 		cfg.ShardingRing.InstanceID = fmt.Sprintf("compactor-%d", i)
 		cfg.ShardingRing.InstanceAddr = fmt.Sprintf("127.0.0.%d", i)
 		cfg.ShardingRing.WaitStabilityMinDuration = 3 * time.Second
@@ -1747,8 +1756,7 @@ func TestMultitenantCompactor_ShouldFailCompactionOnTimeout(t *testing.T) {
 	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
-	cfg := prepareConfig()
-	cfg.ShardingEnabled = true
+	cfg := prepareConfig(t)
 	cfg.ShardingRing.InstanceID = "compactor-1"
 	cfg.ShardingRing.InstanceAddr = "1.2.3.4"
 	cfg.ShardingRing.KVStore.Mock = ringStore
@@ -1780,7 +1788,6 @@ const (
 func TestOwnUser(t *testing.T) {
 	type testCase struct {
 		compactors      int
-		sharding        bool
 		enabledUsers    []string
 		disabledUsers   []string
 		compactorShards map[string]int
@@ -1792,23 +1799,8 @@ func TestOwnUser(t *testing.T) {
 	const user2 = "another-user"
 
 	testCases := map[string]testCase{
-		"5 compactors, no sharding": {
-			compactors:      5,
-			sharding:        false,
-			compactorShards: map[string]int{user1: 2}, // Not used when sharding is disabled.
-
-			check: func(t *testing.T, comps []*MultitenantCompactor) {
-				require.Len(t, owningCompactors(t, comps, user1, ownUserReasonCompactor), 5)
-				require.Len(t, owningCompactors(t, comps, user1, ownUserReasonBlocksCleaner), 5)
-
-				require.Len(t, owningCompactors(t, comps, user2, ownUserReasonCompactor), 5)
-				require.Len(t, owningCompactors(t, comps, user2, ownUserReasonBlocksCleaner), 5)
-			},
-		},
-
 		"5 compactors, sharding enabled, no compactor shard size": {
 			compactors:      5,
-			sharding:        true,
 			compactorShards: nil, // no limits
 
 			check: func(t *testing.T, comps []*MultitenantCompactor) {
@@ -1822,7 +1814,6 @@ func TestOwnUser(t *testing.T) {
 
 		"10 compactors, sharding enabled, with non-zero shard sizes": {
 			compactors:      10,
-			sharding:        true,
 			compactorShards: map[string]int{user1: 2, user2: 3},
 
 			check: func(t *testing.T, comps []*MultitenantCompactor) {
@@ -1840,7 +1831,6 @@ func TestOwnUser(t *testing.T) {
 
 		"10 compactors, sharding enabled, with zero shard size": {
 			compactors:      10,
-			sharding:        true,
 			compactorShards: map[string]int{user2: 0},
 
 			check: func(t *testing.T, comps []*MultitenantCompactor) {
@@ -1862,13 +1852,12 @@ func TestOwnUser(t *testing.T) {
 			compactors := []*MultitenantCompactor(nil)
 
 			for i := 0; i < tc.compactors; i++ {
-				cfg := prepareConfig()
+				cfg := prepareConfig(t)
 				cfg.CompactionInterval = 10 * time.Minute // We will only call compaction manually.
 
 				cfg.EnabledTenants = tc.enabledUsers
 				cfg.DisabledTenants = tc.disabledUsers
 
-				cfg.ShardingEnabled = tc.sharding
 				cfg.ShardingRing.InstanceID = fmt.Sprintf("compactor-%d", i)
 				cfg.ShardingRing.InstanceAddr = fmt.Sprintf("127.0.0.%d", i)
 				// No need to wait. All compactors are started before we do any tests, and we wait for all of them
@@ -1889,10 +1878,6 @@ func TestOwnUser(t *testing.T) {
 
 			// Make sure all compactors see all other compactors in the ring before running tests.
 			test.Poll(t, 2*time.Second, true, func() interface{} {
-				if !tc.sharding {
-					return true
-				}
-
 				for _, c := range compactors {
 					rs, err := c.ring.GetAllHealthy(RingOp)
 					if err != nil {
@@ -1962,7 +1947,7 @@ func TestMultitenantCompactor_OutOfOrderCompaction(t *testing.T) {
 	bkt, err := filesystem.NewBucketClient(filesystem.Config{Directory: storageDir})
 	require.NoError(t, err)
 
-	cfg := prepareConfig()
+	cfg := prepareConfig(t)
 	c, _, tsdbPlanner, logs, registry := prepare(t, cfg, bkt)
 
 	tsdbPlanner.On("Plan", mock.Anything, mock.Anything).Return([]*metadata.Meta{meta1, meta2}, nil)

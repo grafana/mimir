@@ -53,11 +53,11 @@
       'compactor.max-closing-blocks-concurrency': '2',  // Closing of blocks means writing index, which uses extra memory, hence only 2.
       'compactor.symbols-flushers-concurrency': '4',
 
-      // Enable sharding.
-      'compactor.sharding-enabled': true,
+      // Configure sharding.
       'compactor.ring.store': 'consul',
       'compactor.ring.consul.hostname': 'consul.%s.svc.cluster.local:8500' % $._config.namespace,
       'compactor.ring.prefix': '',
+      'compactor.ring.wait-stability-min-duration': '1m',  // Wait until ring is stable before switching to ACTIVE.
 
       // Delete blocks sooner in order to keep the number of live blocks lower in the storage.
       'compactor.deletion-delay': formatDuration(

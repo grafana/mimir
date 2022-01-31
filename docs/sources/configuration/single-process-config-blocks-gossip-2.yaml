@@ -97,6 +97,3 @@ ruler_storage:
 
 compactor:
   data_dir: /tmp/mimir/compactor
-  sharding_ring:
-    kvstore:
-      store: memberlist

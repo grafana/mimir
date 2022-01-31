@@ -562,7 +562,7 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 			storageCfg.Bucket.Backend = bucket.Filesystem
 			storageCfg.Bucket.Filesystem.Directory = storageDir
 
-			compactorCfg := prepareConfig()
+			compactorCfg := prepareConfig(t)
 			compactorCfg.DataDir = workDir
 			compactorCfg.BlockRanges = compactionRanges
 

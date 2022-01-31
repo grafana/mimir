@@ -222,6 +222,7 @@
 * [CHANGE] Changed the default value of `blocks-storage.bucket-store.ignore-deletion-marks-delay` from 6h to 1h. #892
 * [CHANGE] Querier/ruler/query-frontend: the experimental `-querier.at-modifier-enabled` CLI flag has been removed and the PromQL `@` modifier is always enabled. #941
 * [CHANGE] Ruler: `-ruler.alertmanager-use-v2` now defaults to `true`. #954
+* [CHANGE] Compactor: Removed `-compactor.sharding-enabled` option. Sharding in compactor is now always enabled. Default value of `-compactor.ring.store` has changed from `consul` to `memberlist`. Default value of `-compactor.ring.wait-stability-min-duration` is now 0, which disables the feature. #956
 * [CHANGE] Changed default settings for memcached clients: #959
   * The default value for the following config options has changed from `10000` to `25000`:
     * `-blocks-storage.bucket-store.chunks-cache.memcached.max-async-buffer-size`

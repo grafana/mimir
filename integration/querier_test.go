@@ -378,6 +378,9 @@ func TestQuerierWithBlocksStorageRunningInSingleBinaryMode(t *testing.T) {
 				"-store-gateway.sharding-ring.store":              "consul",
 				"-store-gateway.sharding-ring.consul.hostname":    consul.NetworkHTTPEndpoint(),
 				"-store-gateway.sharding-ring.replication-factor": "1",
+				"-compactor.ring.store":                           "consul",
+				"-compactor.ring.consul.hostname":                 consul.NetworkHTTPEndpoint(),
+				"-compactor.cleanup-interval":                     "2s", // Update bucket index often.
 			})
 
 			// Start Mimir replicas.
@@ -390,6 +393,7 @@ func TestQuerierWithBlocksStorageRunningInSingleBinaryMode(t *testing.T) {
 			for _, replica := range cluster.Instances() {
 				numTokensPerInstance := 512 // Ingesters ring.
 				numTokensPerInstance++      // Distributors ring
+				numTokensPerInstance += 512 // Compactor ring.
 				if testCfg.blocksShardingEnabled {
 					numTokensPerInstance += 512 * 2 // Store-gateway ring (read both by the querier and store-gateway).
 				}
@@ -435,12 +439,7 @@ func TestQuerierWithBlocksStorageRunningInSingleBinaryMode(t *testing.T) {
 			require.NoError(t, cluster.WaitSumMetrics(e2e.Equals(float64(3*cluster.NumInstances())), "cortex_ingester_memory_series_created_total"))
 			require.NoError(t, cluster.WaitSumMetrics(e2e.Equals(float64(2*cluster.NumInstances())), "cortex_ingester_memory_series_removed_total"))
 
-			if testCfg.bucketIndexEnabled {
-				// Start the compactor to have the bucket index created before querying. We need to run the compactor
-				// as a separate service because it's currently not part of the single binary.
-				compactor := e2emimir.NewCompactor("compactor", consul.NetworkHTTPEndpoint(), flags, "")
-				require.NoError(t, s.StartAndWaitReady(compactor))
-			} else {
+			if !testCfg.bucketIndexEnabled {
 				// Wait until the querier has discovered the uploaded blocks (discovered both by the querier and store-gateway).
 				require.NoError(t, cluster.WaitSumMetricsWithOptions(e2e.Equals(float64(2*cluster.NumInstances()*2)), []string{"cortex_blocks_meta_synced"}, e2e.WithLabelMatchers(
 					labels.MustNewMatcher(labels.MatchEqual, "component", "querier"))))
