@@ -11,7 +11,6 @@
       target: 'distributor',
 
       'runtime-config.file': '%s/overrides.yaml' % $._config.overrides_configmap_mountpoint,
-      'distributor.remote-timeout': '20s',
 
       'distributor.ha-tracker.enable': true,
       'distributor.ha-tracker.enable-for-all-users': true,
