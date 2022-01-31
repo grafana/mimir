@@ -484,7 +484,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.tsdb.memory-snapshot-on-shutdown
     	True to enable snapshotting of in-memory TSDB data on disk when shutting down.
   -blocks-storage.tsdb.retention-period duration
-    	TSDB blocks retention in the ingester before a block is removed. This should be larger than the block_ranges_period and large enough to give store-gateways and queriers enough time to discover newly uploaded blocks. (default 6h0m0s)
+    	TSDB blocks retention in the ingester before a block is removed. This should be larger than the -blocks-storage.tsdb.block-ranges-period, -querier.query-store-after and large enough to give store-gateways and queriers enough time to discover newly uploaded blocks. (default 24h0m0s)
   -blocks-storage.tsdb.series-hash-cache-max-size-bytes uint
     	Max size - in bytes - of the in-memory series hash cache. The cache is shared across all tenants and it's used only when query sharding is enabled. (default 1073741824)
   -blocks-storage.tsdb.ship-concurrency int

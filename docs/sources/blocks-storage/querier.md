@@ -653,10 +653,11 @@ blocks_storage:
     [block_ranges_period: <list of duration> | default = 2h0m0s]
 
     # TSDB blocks retention in the ingester before a block is removed. This
-    # should be larger than the block_ranges_period and large enough to give
-    # store-gateways and queriers enough time to discover newly uploaded blocks.
+    # should be larger than the -blocks-storage.tsdb.block-ranges-period,
+    # -querier.query-store-after and large enough to give store-gateways and
+    # queriers enough time to discover newly uploaded blocks.
     # CLI flag: -blocks-storage.tsdb.retention-period
-    [retention_period: <duration> | default = 6h]
+    [retention_period: <duration> | default = 24h]
 
     # How frequently the TSDB blocks are scanned and new ones are shipped to the
     # storage. 0 means shipping is disabled.

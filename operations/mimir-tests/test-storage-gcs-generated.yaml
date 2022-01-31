@@ -1330,7 +1330,6 @@ spec:
         - -blocks-storage.tsdb.close-idle-tsdb-timeout=13h
         - -blocks-storage.tsdb.dir=/data/tsdb
         - -blocks-storage.tsdb.isolation-enabled=false
-        - -blocks-storage.tsdb.retention-period=24h
         - -blocks-storage.tsdb.ship-interval=1m
         - -consul.hostname=consul.default.svc.cluster.local:8500
         - -distributor.health-check-ingesters=true
