@@ -18,8 +18,7 @@ GOARCH ?= $(shell go env GOARCH)
 
 HOSTNAME := $(shell hostname)
 BUILD_USER := $(shell id -un)@$(HOSTNAME)
-# Date in ISO 8601
-BUILD_DATE := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
+BUILD_DATE := $(shell git log -1 --format=%cI)
 
 # Don't export GOOS and GOARCH as environment variables. They get exported when passed via CLI options,
 # but that breaks tools ran via "go run". We use GOOS/GOARCH explicitly in places where needed.
