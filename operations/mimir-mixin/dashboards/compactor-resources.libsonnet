@@ -5,7 +5,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     ($.dashboard('Compactor Resources') + { uid: 'df9added6f1f4332f95848cca48ebd99' })
     .addClusterSelectorTemplates()
     .addRow(
-      $.row('CPU and Memory')
+      $.row('CPU and memory')
       .addPanel(
         $.containerCPUUsagePanel('CPU', 'compactor'),
       )
@@ -28,13 +28,13 @@ local utils = import 'mixin-utils/utils.libsonnet';
     .addRow(
       $.row('Disk')
       .addPanel(
-        $.containerDiskWritesPanel('Disk Writes', 'compactor'),
+        $.containerDiskWritesPanel('Disk writes', 'compactor'),
       )
       .addPanel(
-        $.containerDiskReadsPanel('Disk Reads', 'compactor'),
+        $.containerDiskReadsPanel('Disk reads', 'compactor'),
       )
       .addPanel(
-        $.containerDiskSpaceUtilization('Disk Space Utilization', 'compactor'),
+        $.containerDiskSpaceUtilization('Disk space utilization', 'compactor'),
       )
     ) + {
       templating+: {

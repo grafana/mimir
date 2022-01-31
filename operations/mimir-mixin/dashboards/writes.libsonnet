@@ -118,7 +118,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.gateway) + [utils.selector.re('route', 'api_(v1|prom)_push')])
       )
       .addPanel(
-        $.panel('Per %s p99 Latency' % $._config.per_instance_label) +
+        $.panel('Per %s p99 latency' % $._config.per_instance_label) +
         $.hiddenLegendQueryPanel(
           'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route=~"api_(v1|prom)_push"}[$__rate_interval])))' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.gateway)], ''
         ) +
@@ -136,7 +136,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.distributor) + [utils.selector.re('route', '/distributor.Distributor/Push|/httpgrpc.*|api_(v1|prom)_push')])
       )
       .addPanel(
-        $.panel('Per %s p99 Latency' % $._config.per_instance_label) +
+        $.panel('Per %s p99 latency' % $._config.per_instance_label) +
         $.hiddenLegendQueryPanel(
           'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route=~"/distributor.Distributor/Push|/httpgrpc.*|api_(v1|prom)_push"}[$__rate_interval])))' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.distributor)], ''
         ) +
@@ -154,7 +154,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.ingester) + [utils.selector.eq('route', '/cortex.Ingester/Push')])
       )
       .addPanel(
-        $.panel('Per %s p99 Latency' % $._config.per_instance_label) +
+        $.panel('Per %s p99 latency' % $._config.per_instance_label) +
         $.hiddenLegendQueryPanel(
           'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route="/cortex.Ingester/Push"}[$__rate_interval])))' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.ingester)], ''
         ) +
@@ -162,16 +162,16 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addRow(
-      $.kvStoreRow('Distributor - Key-value store for high-availability (HA) deduplication', 'distributor', 'distributor-hatracker')
+      $.kvStoreRow('Distributor - key-value store for high-availability (HA) deduplication', 'distributor', 'distributor-hatracker')
     )
     .addRow(
-      $.kvStoreRow('Distributor - Key-value store for distributors ring', 'distributor', 'distributor-(lifecycler|ring)')
+      $.kvStoreRow('Distributor - key-value store for distributors ring', 'distributor', 'distributor-(lifecycler|ring)')
     )
     .addRow(
-      $.kvStoreRow('Ingester - Key-value store for the ingesters ring', 'ingester', 'ingester-.*')
+      $.kvStoreRow('Ingester - key-value store for the ingesters ring', 'ingester', 'ingester-.*')
     )
     .addRow(
-      $.row('Ingester - Shipper')
+      $.row('Ingester - shipper')
       .addPanel(
         $.successFailurePanel(
           'Uploaded blocks / sec',
@@ -199,7 +199,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addRow(
-      $.row('Ingester - TSDB Head')
+      $.row('Ingester - TSDB head')
       .addPanel(
         $.successFailurePanel(
           'Compactions / sec',

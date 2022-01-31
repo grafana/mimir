@@ -177,7 +177,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         ),
       )
       .addPanel(
-        local title = 'Distributor/Ingester discarded samples rate';
+        local title = 'Distributor and ingester discarded samples rate';
         $.panel(title) +
         $.queryPanel(
           [
@@ -194,7 +194,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.panelDescription(
           title,
           |||
-            The rate of each samples' discarding reason.
+            The rate of each sample's discarding reason.
           |||
         ),
       ),

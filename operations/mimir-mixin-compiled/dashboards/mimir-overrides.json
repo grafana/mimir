@@ -16,7 +16,7 @@
                "mimir"
             ],
             "targetBlank": false,
-            "title": "Mimir Dashboards",
+            "title": "Mimir dashboards",
             "type": "dashboards"
          }
       ],
@@ -98,7 +98,7 @@
                         "refId": "A"
                      }
                   ],
-                  "title": "Per-Tenant Overrides",
+                  "title": "Per-tenant overrides",
                   "transformations": [
                      {
                         "id": "labelsToFields",

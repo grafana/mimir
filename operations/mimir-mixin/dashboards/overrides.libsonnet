@@ -64,7 +64,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.row('')
       .addPanel(
         {
-          title: 'Per-Tenant Overrides',
+          title: 'Per-tenant overrides',
           type: 'table',
           datasource: '${datasource}',
           targets: [

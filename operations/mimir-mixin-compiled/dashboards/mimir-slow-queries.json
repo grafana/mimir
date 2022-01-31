@@ -16,7 +16,7 @@
                "mimir"
             ],
             "targetBlank": false,
-            "title": "Mimir Dashboards",
+            "title": "Mimir dashboards",
             "type": "dashboards"
          }
       ],
@@ -304,7 +304,7 @@
          ]
       },
       "timezone": "utc",
-      "title": "Mimir / Slow Queries",
+      "title": "Mimir / Slow queries",
       "uid": "e6f3091e29d2636e3b8393447e925668",
       "version": 0
    }

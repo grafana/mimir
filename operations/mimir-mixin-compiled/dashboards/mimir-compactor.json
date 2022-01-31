@@ -16,7 +16,7 @@
                "mimir"
             ],
             "targetBlank": false,
-            "title": "Mimir Dashboards",
+            "title": "Mimir dashboards",
             "type": "dashboards"
          }
       ],
@@ -740,7 +740,7 @@
             "repeatIteration": null,
             "repeatRowId": null,
             "showTitle": true,
-            "title": "Garbage Collector",
+            "title": "Garbage collector",
             "titleSize": "h6"
          },
          {
@@ -803,7 +803,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Metadata Syncs / sec",
+                  "title": "Metadata syncs / sec",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -898,7 +898,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Metadata Sync Duration",
+                  "title": "Metadata sync duration",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -936,7 +936,7 @@
             "repeatIteration": null,
             "repeatRowId": null,
             "showTitle": true,
-            "title": "Metadata Sync",
+            "title": "Metadata sync",
             "titleSize": "h6"
          },
          {
@@ -1159,7 +1159,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Latency of Op: Attributes",
+                  "title": "Latency of op: Attributes",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -1254,7 +1254,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Latency of Op: Exists",
+                  "title": "Latency of op: Exists",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -1361,7 +1361,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Latency of Op: Get",
+                  "title": "Latency of op: Get",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -1456,7 +1456,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Latency of Op: GetRange",
+                  "title": "Latency of op: GetRange",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -1551,7 +1551,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Latency of Op: Upload",
+                  "title": "Latency of op: Upload",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -1646,7 +1646,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Latency of Op: Delete",
+                  "title": "Latency of op: Delete",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,

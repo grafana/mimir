@@ -16,7 +16,7 @@
                "mimir"
             ],
             "targetBlank": false,
-            "title": "Mimir Dashboards",
+            "title": "Mimir dashboards",
             "type": "dashboards"
          }
       ],
@@ -553,7 +553,7 @@
             "repeatIteration": null,
             "repeatRowId": null,
             "showTitle": true,
-            "title": "Query Frontend",
+            "title": "Query-frontend",
             "titleSize": "h6"
          },
          {
@@ -820,7 +820,7 @@
             "repeatIteration": null,
             "repeatRowId": null,
             "showTitle": true,
-            "title": "Query Scheduler",
+            "title": "Query-scheduler",
             "titleSize": "h6"
          },
          {
@@ -2028,7 +2028,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Disk Writes",
+                  "title": "Disk writes",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -2105,7 +2105,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Disk Reads",
+                  "title": "Disk reads",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -2182,7 +2182,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Disk Space Utilization",
+                  "title": "Disk space utilization",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -2323,7 +2323,7 @@
          ]
       },
       "timezone": "utc",
-      "title": "Mimir / Reads Resources",
+      "title": "Mimir / Reads resources",
       "uid": "2fd2cda9eea8d8af9fbc0a5960425120",
       "version": 0
    }

@@ -2,7 +2,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
 
 (import 'dashboard-utils.libsonnet') {
   'mimir-reads-resources.json':
-    ($.dashboard('Reads Resources') + { uid: '2fd2cda9eea8d8af9fbc0a5960425120' })
+    ($.dashboard('Reads resources') + { uid: '2fd2cda9eea8d8af9fbc0a5960425120' })
     .addClusterSelectorTemplates(false)
     .addRow(
       $.row('Gateway')
@@ -17,7 +17,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addRow(
-      $.row('Query Frontend')
+      $.row('Query-frontend')
       .addPanel(
         $.containerCPUUsagePanel('CPU', 'query-frontend'),
       )
@@ -29,7 +29,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addRow(
-      $.row('Query Scheduler')
+      $.row('Query-scheduler')
       .addPanel(
         $.containerCPUUsagePanel('CPU', 'query-scheduler'),
       )
@@ -101,13 +101,13 @@ local utils = import 'mixin-utils/utils.libsonnet';
     .addRow(
       $.row('')
       .addPanel(
-        $.containerDiskWritesPanel('Disk Writes', 'store-gateway'),
+        $.containerDiskWritesPanel('Disk writes', 'store-gateway'),
       )
       .addPanel(
-        $.containerDiskReadsPanel('Disk Reads', 'store-gateway'),
+        $.containerDiskReadsPanel('Disk reads', 'store-gateway'),
       )
       .addPanel(
-        $.containerDiskSpaceUtilization('Disk Space Utilization', 'store-gateway'),
+        $.containerDiskSpaceUtilization('Disk space utilization', 'store-gateway'),
       )
     ) + {
       templating+: {

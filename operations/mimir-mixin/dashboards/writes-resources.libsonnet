@@ -2,7 +2,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
 
 (import 'dashboard-utils.libsonnet') {
   'mimir-writes-resources.json':
-    ($.dashboard('Writes Resources') + { uid: 'c0464f0d8bd026f776c9006b0591bb0b' })
+    ($.dashboard('Writes resources') + { uid: 'c0464f0d8bd026f776c9006b0591bb0b' })
     .addClusterSelectorTemplates(false)
     .addRow(
       $.row('Gateway')
@@ -56,13 +56,13 @@ local utils = import 'mixin-utils/utils.libsonnet';
     .addRow(
       $.row('')
       .addPanel(
-        $.containerDiskWritesPanel('Disk Writes', 'ingester')
+        $.containerDiskWritesPanel('Disk writes', 'ingester')
       )
       .addPanel(
-        $.containerDiskReadsPanel('Disk Reads', 'ingester')
+        $.containerDiskReadsPanel('Disk reads', 'ingester')
       )
       .addPanel(
-        $.containerDiskSpaceUtilization('Disk Space Utilization', 'ingester'),
+        $.containerDiskSpaceUtilization('Disk space utilization', 'ingester'),
       )
     )
     + {

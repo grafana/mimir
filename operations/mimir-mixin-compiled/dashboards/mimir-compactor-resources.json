@@ -16,7 +16,7 @@
                "mimir"
             ],
             "targetBlank": false,
-            "title": "Mimir Dashboards",
+            "title": "Mimir dashboards",
             "type": "dashboards"
          }
       ],
@@ -286,7 +286,7 @@
             "repeatIteration": null,
             "repeatRowId": null,
             "showTitle": true,
-            "title": "CPU and Memory",
+            "title": "CPU and memory",
             "titleSize": "h6"
          },
          {
@@ -337,7 +337,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Receive Bandwidth",
+                  "title": "Receive bandwidth",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -414,7 +414,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Transmit Bandwidth",
+                  "title": "Transmit bandwidth",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -503,7 +503,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Disk Writes",
+                  "title": "Disk writes",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -580,7 +580,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Disk Reads",
+                  "title": "Disk reads",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -657,7 +657,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Disk Space Utilization",
+                  "title": "Disk space utilization",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
