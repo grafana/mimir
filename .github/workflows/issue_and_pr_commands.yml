@@ -1,6 +1,8 @@
-name: Run commands when issues are labeled
+name: Run commands when issues or PRs are labeled
 on:
   issues:
+    types: [labeled]
+  pull_request:
     types: [labeled]
 jobs:
   main:
@@ -18,4 +20,4 @@ jobs:
         uses: ./actions/commands
         with:          
           token: ${{secrets.GH_BOT_ACCESS_TOKEN}}
-          configPath: issue_commands
+          configPath: issue_and_pr_commands
