@@ -76,6 +76,7 @@ type Distributor struct {
 	ingestersRing ring.ReadRing
 	ingesterPool  *ring_client.Pool
 	limits        *validation.Overrides
+	forwarding    *forwarding
 
 	// The global rate limiter requires a distributors ring to count
 	// the number of healthy instances
@@ -144,6 +145,9 @@ type Config struct {
 
 	// Limits for distributor
 	InstanceLimits InstanceLimits `yaml:"instance_limits"`
+
+	// Enables feature to forward certain metrics in remote_write requests to alternative API endpoints.
+	Forwarding bool `yaml:"forwarding" category:"experimental"`
 }
 
 type InstanceLimits struct {
@@ -359,6 +363,10 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 	}, func() float64 {
 		return d.ingestionRate.Rate()
 	})
+
+	if d.cfg.Forwarding {
+		d.forwarding = newForwarding(reg)
+	}
 
 	d.replicationFactor.Set(float64(ingestersRing.ReplicationFactor()))
 	d.activeUsers = util.NewActiveUsersCleanupWithDefaultValues(d.cleanupInactiveUser)
@@ -660,6 +668,14 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 		minExemplarTS = earliestSampleTimestampMs - 300000
 	}
 
+	var forwardingReq *forwardingRequest
+	if d.cfg.Forwarding {
+		forwardingRules := d.limits.ForwardingRules(userID)
+		if len(forwardingRules) > 0 {
+			forwardingReq = d.forwarding.newRequest(ctx, userID, forwardingRules)
+		}
+	}
+
 	// For each timeseries, compute a hash to distribute across ingesters;
 	// check each sample and discard if outside limits.
 	for _, ts := range req.Timeseries {
@@ -681,6 +697,13 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 
 		if len(ts.Labels) == 0 {
 			continue
+		}
+
+		if forwardingReq != nil {
+			sendToIngester := forwardingReq.add(ts)
+			if !sendToIngester {
+				continue
+			}
 		}
 
 		// We rely on sorted labels in different places:
@@ -721,6 +744,11 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 		validatedExemplars += len(ts.Exemplars)
 	}
 
+	var forwardingErr <-chan error
+	if forwardingReq != nil {
+		forwardingErr = forwardingReq.send(ctx)
+	}
+
 	for _, m := range req.Metadata {
 		err := validation.ValidateMetadata(d.limits, userID, m)
 		if err != nil {
@@ -739,7 +767,7 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 	d.receivedExemplars.WithLabelValues(userID).Add((float64(validatedExemplars)))
 	d.receivedMetadata.WithLabelValues(userID).Add(float64(len(validatedMetadata)))
 
-	if len(seriesKeys) == 0 && len(metadataKeys) == 0 {
+	if len(seriesKeys) == 0 && len(metadataKeys) == 0 && forwardingReq != nil {
 		return &mimirpb.WriteResponse{}, firstPartialErr
 	}
 
@@ -798,6 +826,14 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 	if err != nil {
 		return nil, err
 	}
+
+	if forwardingErr != nil {
+		err = <-forwardingErr
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	return &mimirpb.WriteResponse{}, firstPartialErr
 }
 

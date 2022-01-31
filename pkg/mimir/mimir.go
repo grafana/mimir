@@ -64,9 +64,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-var (
-	errInvalidBucketConfig = errors.New("invalid bucket config")
-)
+var errInvalidBucketConfig = errors.New("invalid bucket config")
 
 // The design pattern for Mimir is a series of config objects, which are
 // registered for command line flags, and then a series of components that
@@ -116,6 +114,7 @@ type Config struct {
 	RuntimeConfig       runtimeconfig.Config                       `yaml:"runtime_config"`
 	MemberlistKV        memberlist.KVConfig                        `yaml:"memberlist"`
 	QueryScheduler      scheduler.Config                           `yaml:"query_scheduler"`
+	ForwardingConfig    runtimeconfig.Config                       `yaml:"forwarding_config"`
 }
 
 // RegisterFlags registers flag.
@@ -353,6 +352,7 @@ type Mimir struct {
 	MemberlistKV             *memberlist.KVInitService
 	ActivityTracker          *activitytracker.ActivityTracker
 	BuildInfoHandler         http.Handler
+	ForwardingConfig         *runtimeconfig.Manager
 
 	// Queryables that the querier should use to query the long term storage.
 	StoreQueryables []querier.QueryableWithFilter
