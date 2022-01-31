@@ -114,7 +114,6 @@ func NewQuerierWithConfigFile(name, consulAddress, configFile string, flags map[
 		// Quickly detect query-frontend and query-scheduler when running it.
 		"-querier.dns-lookup-period": "1s",
 		// Store-gateway ring backend.
-		"-store-gateway.sharding-enabled":                 "true",
 		"-store-gateway.sharding-ring.store":              "consul",
 		"-store-gateway.sharding-ring.consul.hostname":    consulAddress,
 		"-store-gateway.sharding-ring.replication-factor": "1",
@@ -148,13 +147,9 @@ func NewStoreGatewayWithConfigFile(name, consulAddress, configFile string, flags
 		"-target":    "store-gateway",
 		"-log.level": "warn",
 		// Store-gateway ring backend.
-		"-store-gateway.sharding-enabled":                 "true",
 		"-store-gateway.sharding-ring.store":              "consul",
 		"-store-gateway.sharding-ring.consul.hostname":    consulAddress,
 		"-store-gateway.sharding-ring.replication-factor": "1",
-		// Startup quickly.
-		"-store-gateway.sharding-ring.wait-stability-min-duration": "0",
-		"-store-gateway.sharding-ring.wait-stability-max-duration": "0",
 	}
 
 	return NewMimirService(
@@ -321,9 +316,6 @@ func NewSingleBinary(name string, flags map[string]string, image string, otherPo
 		"-ingester.join-after":         "0s",
 		"-ingester.min-ready-duration": "0s",
 		"-ingester.num-tokens":         "512",
-		// Startup quickly.
-		"-store-gateway.sharding-ring.wait-stability-min-duration": "0",
-		"-store-gateway.sharding-ring.wait-stability-max-duration": "0",
 	}
 
 	return NewMimirService(

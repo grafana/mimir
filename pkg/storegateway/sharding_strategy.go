@@ -41,21 +41,6 @@ type ShardingLimits interface {
 	StoreGatewayTenantShardSize(userID string) int
 }
 
-// NoShardingStrategy is a no-op strategy. When this strategy is used, no tenant/block is filtered out.
-type NoShardingStrategy struct{}
-
-func NewNoShardingStrategy() *NoShardingStrategy {
-	return &NoShardingStrategy{}
-}
-
-func (s *NoShardingStrategy) FilterUsers(_ context.Context, userIDs []string) []string {
-	return userIDs
-}
-
-func (s *NoShardingStrategy) FilterBlocks(_ context.Context, _ string, _ map[ulid.ULID]*metadata.Meta, _ map[ulid.ULID]struct{}, _ *extprom.TxGaugeVec) error {
-	return nil
-}
-
 // ShuffleShardingStrategy is a shuffle sharding strategy, based on the hash ring formed by store-gateways,
 // where each tenant blocks are sharded across a subset of store-gateway instances.
 type ShuffleShardingStrategy struct {

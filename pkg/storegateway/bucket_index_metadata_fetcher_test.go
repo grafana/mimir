@@ -24,6 +24,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/thanos/pkg/block"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
+	"github.com/thanos-io/thanos/pkg/extprom"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
@@ -336,4 +337,19 @@ func TestBucketIndexMetadataFetcher_Fetch_ShouldResetGaugeMetrics(t *testing.T) 
 		blocks_meta_synced{state="min-time-excluded"} 0
 		blocks_meta_synced{state="too-fresh"} 0
 	`), "blocks_meta_synced"))
+}
+
+// noShardingStrategy is a no-op strategy. When this strategy is used, no tenant/block is filtered out.
+type noShardingStrategy struct{}
+
+func NewNoShardingStrategy() *noShardingStrategy {
+	return &noShardingStrategy{}
+}
+
+func (s *noShardingStrategy) FilterUsers(_ context.Context, userIDs []string) []string {
+	return userIDs
+}
+
+func (s *noShardingStrategy) FilterBlocks(_ context.Context, _ string, _ map[ulid.ULID]*metadata.Meta, _ map[ulid.ULID]struct{}, _ *extprom.TxGaugeVec) error {
+	return nil
 }

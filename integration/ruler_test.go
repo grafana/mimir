@@ -56,10 +56,7 @@ func TestRulerAPI(t *testing.T) {
 	rulerFlags := mergeFlags(
 		BlocksStorageFlags(),
 		RulerFlags(),
-		map[string]string{
-			// set store-gateway to an invalid address, as there is no store-gateway ring configured this flag is mandatory.
-			"-querier.store-gateway-addresses": "localhost:12345",
-		},
+		map[string]string{},
 	)
 
 	// Start Mimir components.
@@ -367,9 +364,6 @@ func TestRulerSharding(t *testing.T) {
 		RulerFlags(),
 		RulerShardingFlags(consul.NetworkHTTPEndpoint()),
 		map[string]string{
-			// Since we're not going to run any rule, we don't need the
-			// store-gateway to be configured to a valid address.
-			"-querier.store-gateway-addresses": "localhost:12345",
 			// Enable the bucket index so we can skip the initial bucket scan.
 			"-blocks-storage.bucket-store.bucket-index.enabled": "true",
 			// Disable rule group limit
@@ -440,9 +434,6 @@ func TestRulerAlertmanager(t *testing.T) {
 		BlocksStorageFlags(),
 		RulerFlags(),
 		map[string]string{
-			// set store-gateway to an invalid address, as there is no store-gateway ring configured this flag is mandatory.
-			"-querier.store-gateway-addresses": "localhost:12345",
-
 			// Connect the ruler to Alertmanagers
 			"-ruler.alertmanager-url": strings.Join([]string{am1URL, am2URL}, ","),
 		},
@@ -523,9 +514,6 @@ func TestRulerAlertmanagerTLS(t *testing.T) {
 		BlocksStorageFlags(),
 		RulerFlags(),
 		map[string]string{
-			// set store-gateway to an invalid address, as there is no store-gateway ring configured this flag is mandatory.
-			"-querier.store-gateway-addresses": "localhost:12345",
-
 			// Connect the ruler to the Alertmanager
 			"-ruler.alertmanager-url": "https://" + am1.HTTPEndpoint(),
 		},
@@ -564,9 +552,6 @@ func TestRulerMetricsForInvalidQueries(t *testing.T) {
 		BlocksStorageFlags(),
 		RulerFlags(),
 		map[string]string{
-			// Since we're not going to run any rule (our only rule is invalid), we don't need the
-			// store-gateway to be configured to a valid address.
-			"-querier.store-gateway-addresses": "localhost:12345",
 			// Enable the bucket index so we can skip the initial bucket scan.
 			"-blocks-storage.bucket-store.bucket-index.enabled": "true",
 			// Evaluate rules often, so that we don't need to wait for metrics to show up.
@@ -750,8 +735,6 @@ func TestRulerFederatedRules(t *testing.T) {
 			"-ruler.tenant-federation.enabled": "true",
 			"-tenant-federation.enabled":       "true",
 			"-distributor.replication-factor":  "1",
-			// Set store-gateway to an invalid address. As there is no store-gateway ring configured, this flag is mandatory.
-			"-querier.store-gateway-addresses": "localhost:12345",
 		},
 	)
 

@@ -54,20 +54,17 @@ var (
 
 // Config holds the store gateway config.
 type Config struct {
-	ShardingEnabled bool       `yaml:"sharding_enabled"`
-	ShardingRing    RingConfig `yaml:"sharding_ring" doc:"description=The hash ring configuration. This option is required only if blocks sharding is enabled."`
+	ShardingRing RingConfig `yaml:"sharding_ring" doc:"description=The hash ring configuration. This option is required only if blocks sharding is enabled."`
 }
 
 // RegisterFlags registers the Config flags.
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	cfg.ShardingRing.RegisterFlags(f)
-
-	f.BoolVar(&cfg.ShardingEnabled, "store-gateway.sharding-enabled", false, "Shard blocks across multiple store gateway instances."+sharedOptionWithQuerier)
 }
 
 // Validate the Config.
 func (cfg *Config) Validate(limits validation.Limits) error {
-	if cfg.ShardingEnabled && limits.StoreGatewayTenantShardSize < 0 {
+	if limits.StoreGatewayTenantShardSize < 0 {
 		return errInvalidTenantShardSize
 	}
 
@@ -105,16 +102,14 @@ func NewStoreGateway(gatewayCfg Config, storageCfg mimir_tsdb.BlocksStorageConfi
 		return nil, err
 	}
 
-	if gatewayCfg.ShardingEnabled {
-		ringStore, err = kv.NewClient(
-			gatewayCfg.ShardingRing.KVStore,
-			ring.GetCodec(),
-			kv.RegistererWithKVName(prometheus.WrapRegistererWithPrefix("cortex_", reg), "store-gateway"),
-			logger,
-		)
-		if err != nil {
-			return nil, errors.Wrap(err, "create KV store client")
-		}
+	ringStore, err = kv.NewClient(
+		gatewayCfg.ShardingRing.KVStore,
+		ring.GetCodec(),
+		kv.RegistererWithKVName(prometheus.WrapRegistererWithPrefix("cortex_", reg), "store-gateway"),
+		logger,
+	)
+	if err != nil {
+		return nil, errors.Wrap(err, "create KV store client")
 	}
 
 	return newStoreGateway(gatewayCfg, storageCfg, bucketClient, ringStore, limits, logLevel, logger, reg, tracker)
@@ -142,34 +137,30 @@ func newStoreGateway(gatewayCfg Config, storageCfg mimir_tsdb.BlocksStorageConfi
 	// Init sharding strategy.
 	var shardingStrategy ShardingStrategy
 
-	if gatewayCfg.ShardingEnabled {
-		lifecyclerCfg, err := gatewayCfg.ShardingRing.ToLifecyclerConfig(logger)
-		if err != nil {
-			return nil, errors.Wrap(err, "invalid ring lifecycler config")
-		}
-
-		// Define lifecycler delegates in reverse order (last to be called defined first because they're
-		// chained via "next delegate").
-		delegate := ring.BasicLifecyclerDelegate(g)
-		delegate = ring.NewLeaveOnStoppingDelegate(delegate, logger)
-		delegate = ring.NewTokensPersistencyDelegate(gatewayCfg.ShardingRing.TokensFilePath, ring.JOINING, delegate, logger)
-		delegate = ring.NewAutoForgetDelegate(ringAutoForgetUnhealthyPeriods*gatewayCfg.ShardingRing.HeartbeatTimeout, delegate, logger)
-
-		g.ringLifecycler, err = ring.NewBasicLifecycler(lifecyclerCfg, RingNameForServer, RingKey, ringStore, delegate, logger, prometheus.WrapRegistererWithPrefix("cortex_", reg))
-		if err != nil {
-			return nil, errors.Wrap(err, "create ring lifecycler")
-		}
-
-		ringCfg := gatewayCfg.ShardingRing.ToRingConfig()
-		g.ring, err = ring.NewWithStoreClientAndStrategy(ringCfg, RingNameForServer, RingKey, ringStore, ring.NewIgnoreUnhealthyInstancesReplicationStrategy(), prometheus.WrapRegistererWithPrefix("cortex_", reg), logger)
-		if err != nil {
-			return nil, errors.Wrap(err, "create ring client")
-		}
-
-		shardingStrategy = NewShuffleShardingStrategy(g.ring, lifecyclerCfg.ID, lifecyclerCfg.Addr, limits, logger)
-	} else {
-		shardingStrategy = NewNoShardingStrategy()
+	lifecyclerCfg, err := gatewayCfg.ShardingRing.ToLifecyclerConfig(logger)
+	if err != nil {
+		return nil, errors.Wrap(err, "invalid ring lifecycler config")
 	}
+
+	// Define lifecycler delegates in reverse order (last to be called defined first because they're
+	// chained via "next delegate").
+	delegate := ring.BasicLifecyclerDelegate(g)
+	delegate = ring.NewLeaveOnStoppingDelegate(delegate, logger)
+	delegate = ring.NewTokensPersistencyDelegate(gatewayCfg.ShardingRing.TokensFilePath, ring.JOINING, delegate, logger)
+	delegate = ring.NewAutoForgetDelegate(ringAutoForgetUnhealthyPeriods*gatewayCfg.ShardingRing.HeartbeatTimeout, delegate, logger)
+
+	g.ringLifecycler, err = ring.NewBasicLifecycler(lifecyclerCfg, RingNameForServer, RingKey, ringStore, delegate, logger, prometheus.WrapRegistererWithPrefix("cortex_", reg))
+	if err != nil {
+		return nil, errors.Wrap(err, "create ring lifecycler")
+	}
+
+	ringCfg := gatewayCfg.ShardingRing.ToRingConfig()
+	g.ring, err = ring.NewWithStoreClientAndStrategy(ringCfg, RingNameForServer, RingKey, ringStore, ring.NewIgnoreUnhealthyInstancesReplicationStrategy(), prometheus.WrapRegistererWithPrefix("cortex_", reg), logger)
+	if err != nil {
+		return nil, errors.Wrap(err, "create ring client")
+	}
+
+	shardingStrategy = NewShuffleShardingStrategy(g.ring, lifecyclerCfg.ID, lifecyclerCfg.Addr, limits, logger)
 
 	g.stores, err = NewBucketStores(storageCfg, shardingStrategy, bucketClient, limits, logLevel, logger, extprom.WrapRegistererWith(prometheus.Labels{"component": "store-gateway"}, reg))
 	if err != nil {
@@ -195,43 +186,41 @@ func (g *StoreGateway) starting(ctx context.Context) (err error) {
 		}
 	}()
 
-	if g.gatewayCfg.ShardingEnabled {
-		// First of all we register the instance in the ring and wait
-		// until the lifecycler successfully started.
-		if g.subservices, err = services.NewManager(g.ringLifecycler, g.ring); err != nil {
-			return errors.Wrap(err, "unable to start store-gateway dependencies")
-		}
+	// First of all we register the instance in the ring and wait
+	// until the lifecycler successfully started.
+	if g.subservices, err = services.NewManager(g.ringLifecycler, g.ring); err != nil {
+		return errors.Wrap(err, "unable to start store-gateway dependencies")
+	}
 
-		g.subservicesWatcher = services.NewFailureWatcher()
-		g.subservicesWatcher.WatchManager(g.subservices)
+	g.subservicesWatcher = services.NewFailureWatcher()
+	g.subservicesWatcher.WatchManager(g.subservices)
 
-		if err = services.StartManagerAndAwaitHealthy(ctx, g.subservices); err != nil {
-			return errors.Wrap(err, "unable to start store-gateway dependencies")
-		}
+	if err = services.StartManagerAndAwaitHealthy(ctx, g.subservices); err != nil {
+		return errors.Wrap(err, "unable to start store-gateway dependencies")
+	}
 
-		// Wait until the ring client detected this instance in the JOINING state to
-		// make sure that when we'll run the initial sync we already know  the tokens
-		// assigned to this instance.
-		level.Info(g.logger).Log("msg", "waiting until store-gateway is JOINING in the ring")
-		if err := ring.WaitInstanceState(ctx, g.ring, g.ringLifecycler.GetInstanceID(), ring.JOINING); err != nil {
-			return err
-		}
-		level.Info(g.logger).Log("msg", "store-gateway is JOINING in the ring")
+	// Wait until the ring client detected this instance in the JOINING state to
+	// make sure that when we'll run the initial sync we already know  the tokens
+	// assigned to this instance.
+	level.Info(g.logger).Log("msg", "waiting until store-gateway is JOINING in the ring")
+	if err := ring.WaitInstanceState(ctx, g.ring, g.ringLifecycler.GetInstanceID(), ring.JOINING); err != nil {
+		return err
+	}
+	level.Info(g.logger).Log("msg", "store-gateway is JOINING in the ring")
 
-		// In the event of a cluster cold start or scale up of 2+ store-gateway instances at the same
-		// time, we may end up in a situation where each new store-gateway instance starts at a slightly
-		// different time and thus each one starts with a different state of the ring. It's better
-		// to just wait the ring tokens stability for a short time.
-		if g.gatewayCfg.ShardingRing.WaitStabilityMinDuration > 0 {
-			minWaiting := g.gatewayCfg.ShardingRing.WaitStabilityMinDuration
-			maxWaiting := g.gatewayCfg.ShardingRing.WaitStabilityMaxDuration
+	// In the event of a cluster cold start or scale up of 2+ store-gateway instances at the same
+	// time, we may end up in a situation where each new store-gateway instance starts at a slightly
+	// different time and thus each one starts with a different state of the ring. It's better
+	// to just wait the ring tokens stability for a short time.
+	if g.gatewayCfg.ShardingRing.WaitStabilityMinDuration > 0 {
+		minWaiting := g.gatewayCfg.ShardingRing.WaitStabilityMinDuration
+		maxWaiting := g.gatewayCfg.ShardingRing.WaitStabilityMaxDuration
 
-			level.Info(g.logger).Log("msg", "waiting until store-gateway ring topology is stable", "min_waiting", minWaiting.String(), "max_waiting", maxWaiting.String())
-			if err := ring.WaitRingTokensStability(ctx, g.ring, BlocksOwnerSync, minWaiting, maxWaiting); err != nil {
-				level.Warn(g.logger).Log("msg", "store-gateway ring topology is not stable after the max waiting time, proceeding anyway")
-			} else {
-				level.Info(g.logger).Log("msg", "store-gateway ring topology is stable")
-			}
+		level.Info(g.logger).Log("msg", "waiting until store-gateway ring topology is stable", "min_waiting", minWaiting.String(), "max_waiting", maxWaiting.String())
+		if err := ring.WaitRingTokensStability(ctx, g.ring, BlocksOwnerSync, minWaiting, maxWaiting); err != nil {
+			level.Warn(g.logger).Log("msg", "store-gateway ring topology is not stable after the max waiting time, proceeding anyway")
+		} else {
+			level.Info(g.logger).Log("msg", "store-gateway ring topology is stable")
 		}
 	}
 
@@ -242,48 +231,40 @@ func (g *StoreGateway) starting(ctx context.Context) (err error) {
 		return errors.Wrap(err, "initial blocks synchronization")
 	}
 
-	if g.gatewayCfg.ShardingEnabled {
-		// Now that the initial sync is done, we should have loaded all blocks
-		// assigned to our shard, so we can switch to ACTIVE and start serving
-		// requests.
-		if err = g.ringLifecycler.ChangeState(ctx, ring.ACTIVE); err != nil {
-			return errors.Wrapf(err, "switch instance to %s in the ring", ring.ACTIVE)
-		}
-
-		// Wait until the ring client detected this instance in the ACTIVE state to
-		// make sure that when we'll run the loop it won't be detected as a ring
-		// topology change.
-		level.Info(g.logger).Log("msg", "waiting until store-gateway is ACTIVE in the ring")
-		if err := ring.WaitInstanceState(ctx, g.ring, g.ringLifecycler.GetInstanceID(), ring.ACTIVE); err != nil {
-			return err
-		}
-		level.Info(g.logger).Log("msg", "store-gateway is ACTIVE in the ring")
+	// Now that the initial sync is done, we should have loaded all blocks
+	// assigned to our shard, so we can switch to ACTIVE and start serving
+	// requests.
+	if err = g.ringLifecycler.ChangeState(ctx, ring.ACTIVE); err != nil {
+		return errors.Wrapf(err, "switch instance to %s in the ring", ring.ACTIVE)
 	}
+
+	// Wait until the ring client detected this instance in the ACTIVE state to
+	// make sure that when we'll run the loop it won't be detected as a ring
+	// topology change.
+	level.Info(g.logger).Log("msg", "waiting until store-gateway is ACTIVE in the ring")
+	if err := ring.WaitInstanceState(ctx, g.ring, g.ringLifecycler.GetInstanceID(), ring.ACTIVE); err != nil {
+		return err
+	}
+	level.Info(g.logger).Log("msg", "store-gateway is ACTIVE in the ring")
 
 	return nil
 }
 
 func (g *StoreGateway) running(ctx context.Context) error {
-	var ringTickerChan <-chan time.Time
-	var ringLastState ring.ReplicationSet
-
 	// Apply a jitter to the sync frequency in order to increase the probability
 	// of hitting the shared cache (if any).
 	syncTicker := time.NewTicker(util.DurationWithJitter(g.storageCfg.BucketStore.SyncInterval, 0.2))
 	defer syncTicker.Stop()
 
-	if g.gatewayCfg.ShardingEnabled {
-		ringLastState, _ = g.ring.GetAllHealthy(BlocksOwnerSync) // nolint:errcheck
-		ringTicker := time.NewTicker(util.DurationWithJitter(g.gatewayCfg.ShardingRing.RingCheckPeriod, 0.2))
-		defer ringTicker.Stop()
-		ringTickerChan = ringTicker.C
-	}
+	ringLastState, _ := g.ring.GetAllHealthy(BlocksOwnerSync) // nolint:errcheck
+	ringTicker := time.NewTicker(util.DurationWithJitter(g.gatewayCfg.ShardingRing.RingCheckPeriod, 0.2))
+	defer ringTicker.Stop()
 
 	for {
 		select {
 		case <-syncTicker.C:
 			g.syncStores(ctx, syncReasonPeriodic)
-		case <-ringTickerChan:
+		case <-ringTicker.C:
 			// We ignore the error because in case of error it will return an empty
 			// replication set which we use to compare with the previous state.
 			currRingState, _ := g.ring.GetAllHealthy(BlocksOwnerSync) // nolint:errcheck

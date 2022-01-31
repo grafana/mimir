@@ -28,6 +28,7 @@
       // Persist ring tokens so that when the store-gateway will be restarted
       // it will pick the same tokens
       'store-gateway.sharding-ring.tokens-file-path': '/data/tokens',
+      'store-gateway.sharding-ring.wait-stability-min-duration': '1m',
 
       // Block index-headers are pre-downloaded but lazy mmaped and loaded at query time.
       'blocks-storage.bucket-store.index-header-lazy-loading-enabled': 'true',

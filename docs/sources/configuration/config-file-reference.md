@@ -810,13 +810,6 @@ The `querier_config` configures the querier.
 # CLI flag: -querier.max-query-into-future
 [max_query_into_future: <duration> | default = 10m]
 
-# Comma separated list of store-gateway addresses in DNS Service Discovery
-# format. This option should be set when the store-gateway sharding is disabled
-# (when enabled, the store-gateway instances form a ring and addresses are
-# picked from the ring).
-# CLI flag: -querier.store-gateway-addresses
-[store_gateway_addresses: <string> | default = ""]
-
 store_gateway_client:
   # Enable TLS for gRPC client connecting to store-gateway.
   # CLI flag: -querier.store-gateway-client.tls-enabled
@@ -3364,11 +3357,6 @@ sharding_ring:
 The `store_gateway_config` configures the store-gateway service.
 
 ```yaml
-# Shard blocks across multiple store gateway instances. This option needs be set
-# both on the store-gateway and querier when running in microservices mode.
-# CLI flag: -store-gateway.sharding-enabled
-[sharding_enabled: <boolean> | default = false]
-
 # The hash ring configuration. This option is required only if blocks sharding
 # is enabled.
 sharding_ring:
@@ -3379,7 +3367,7 @@ sharding_ring:
     # Backend storage to use for the ring. Supported values are: consul, etcd,
     # inmemory, memberlist, multi.
     # CLI flag: -store-gateway.sharding-ring.store
-    [store: <string> | default = "consul"]
+    [store: <string> | default = "memberlist"]
 
     # The prefix for the keys in the store. Should end with a /.
     # CLI flag: -store-gateway.sharding-ring.prefix
@@ -3437,7 +3425,7 @@ sharding_ring:
 
   # Minimum time to wait for ring stability at startup. 0 to disable.
   # CLI flag: -store-gateway.sharding-ring.wait-stability-min-duration
-  [wait_stability_min_duration: <duration> | default = 1m]
+  [wait_stability_min_duration: <duration> | default = 0s]
 
   # Maximum time to wait for ring stability at startup. If the store-gateway
   # ring keeps changing after this period of time, the store-gateway will start

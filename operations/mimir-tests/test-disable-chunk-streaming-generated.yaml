@@ -847,7 +847,6 @@ spec:
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
         - -server.http-write-timeout=1m
-        - -store-gateway.sharding-enabled=true
         - -store-gateway.sharding-ring.consul.hostname=consul.default.svc.cluster.local:8500
         - -store-gateway.sharding-ring.prefix=
         - -store-gateway.sharding-ring.replication-factor=3
@@ -1087,7 +1086,6 @@ spec:
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
-        - -store-gateway.sharding-enabled=true
         - -store-gateway.sharding-ring.consul.hostname=consul.default.svc.cluster.local:8500
         - -store-gateway.sharding-ring.prefix=
         - -store-gateway.sharding-ring.replication-factor=3
@@ -1670,12 +1668,12 @@ spec:
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
-        - -store-gateway.sharding-enabled=true
         - -store-gateway.sharding-ring.consul.hostname=consul.default.svc.cluster.local:8500
         - -store-gateway.sharding-ring.prefix=
         - -store-gateway.sharding-ring.replication-factor=3
         - -store-gateway.sharding-ring.store=consul
         - -store-gateway.sharding-ring.tokens-file-path=/data/tokens
+        - -store-gateway.sharding-ring.wait-stability-min-duration=1m
         - -target=store-gateway
         image: cortexproject/cortex:v1.9.0
         imagePullPolicy: IfNotPresent

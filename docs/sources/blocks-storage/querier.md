@@ -129,13 +129,6 @@ querier:
   # CLI flag: -querier.max-query-into-future
   [max_query_into_future: <duration> | default = 10m]
 
-  # Comma separated list of store-gateway addresses in DNS Service Discovery
-  # format. This option should be set when the store-gateway sharding is
-  # disabled (when enabled, the store-gateway instances form a ring and
-  # addresses are picked from the ring).
-  # CLI flag: -querier.store-gateway-addresses
-  [store_gateway_addresses: <string> | default = ""]
-
   store_gateway_client:
     # Enable TLS for gRPC client connecting to store-gateway.
     # CLI flag: -querier.store-gateway-client.tls-enabled

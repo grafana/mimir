@@ -97,7 +97,6 @@ ruler_storage:
 
 alertmanager:
   enable_api: true
-  sharding_enabled: true
   sharding_ring:
     replication_factor: 3
     heartbeat_period: 5s
@@ -129,7 +128,6 @@ compactor:
         host: consul:8500
 
 store_gateway:
-  sharding_enabled: true
   sharding_ring:
     replication_factor: 1
     heartbeat_period:   5s

@@ -149,7 +149,6 @@ func TestQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T) {
 				"-blocks-storage.bucket-store.sync-interval":                   "1s",
 				"-blocks-storage.bucket-store.index-cache.backend":             testCfg.indexCacheBackend,
 				"-blocks-storage.bucket-store.bucket-index.enabled":            strconv.FormatBool(testCfg.bucketIndexEnabled),
-				"-store-gateway.sharding-enabled":                              strconv.FormatBool(true),
 				"-store-gateway.tenant-shard-size":                             fmt.Sprintf("%d", testCfg.tenantShardSize),
 				"-querier.query-store-for-labels-enabled":                      "true",
 				"-frontend.query-stats-enabled":                                "true",
@@ -310,29 +309,18 @@ func TestQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T) {
 
 func TestQuerierWithBlocksStorageRunningInSingleBinaryMode(t *testing.T) {
 	tests := map[string]struct {
-		blocksShardingEnabled bool
-		indexCacheBackend     string
-		bucketIndexEnabled    bool
+		indexCacheBackend  string
+		bucketIndexEnabled bool
 	}{
-		"blocks sharding enabled, inmemory index cache": {
-			blocksShardingEnabled: true,
-			indexCacheBackend:     tsdb.IndexCacheBackendInMemory,
+		"inmemory index cache": {
+			indexCacheBackend: tsdb.IndexCacheBackendInMemory,
 		},
-		"blocks sharding disabled, memcached index cache": {
-			blocksShardingEnabled: false,
-			// Memcached index cache is required to avoid flaky tests when the blocks sharding is disabled
-			// because two different requests may hit two different store-gateways, so if the cache is not
-			// shared there's no guarantee we'll have a cache hit.
+		"memcached index cache": {
 			indexCacheBackend: tsdb.IndexCacheBackendMemcached,
 		},
-		"blocks sharding enabled, memcached index cache": {
-			blocksShardingEnabled: true,
-			indexCacheBackend:     tsdb.IndexCacheBackendMemcached,
-		},
-		"blocks sharding enabled, memcached index cache, bucket index enabled": {
-			blocksShardingEnabled: true,
-			indexCacheBackend:     tsdb.IndexCacheBackendMemcached,
-			bucketIndexEnabled:    true,
+		"memcached index cache, bucket index enabled": {
+			indexCacheBackend:  tsdb.IndexCacheBackendMemcached,
+			bucketIndexEnabled: true,
 		},
 	}
 
@@ -374,7 +362,6 @@ func TestQuerierWithBlocksStorageRunningInSingleBinaryMode(t *testing.T) {
 				"-distributor.ring.store":           "consul",
 				"-distributor.ring.consul.hostname": consul.NetworkHTTPEndpoint(),
 				// Store-gateway.
-				"-store-gateway.sharding-enabled":                 strconv.FormatBool(testCfg.blocksShardingEnabled),
 				"-store-gateway.sharding-ring.store":              "consul",
 				"-store-gateway.sharding-ring.consul.hostname":    consul.NetworkHTTPEndpoint(),
 				"-store-gateway.sharding-ring.replication-factor": "1",
@@ -391,12 +378,10 @@ func TestQuerierWithBlocksStorageRunningInSingleBinaryMode(t *testing.T) {
 
 			// Wait until Mimir replicas have updated the ring state.
 			for _, replica := range cluster.Instances() {
-				numTokensPerInstance := 512 // Ingesters ring.
-				numTokensPerInstance++      // Distributors ring
-				numTokensPerInstance += 512 // Compactor ring.
-				if testCfg.blocksShardingEnabled {
-					numTokensPerInstance += 512 * 2 // Store-gateway ring (read both by the querier and store-gateway).
-				}
+				numTokensPerInstance := 512     // Ingesters ring.
+				numTokensPerInstance++          // Distributors ring
+				numTokensPerInstance += 512     // Compactor ring.
+				numTokensPerInstance += 512 * 2 // Store-gateway ring (read both by the querier and store-gateway).
 
 				require.NoError(t, replica.WaitSumMetrics(e2e.Equals(float64(numTokensPerInstance*cluster.NumInstances())), "cortex_ring_tokens_total"))
 			}
@@ -448,11 +433,7 @@ func TestQuerierWithBlocksStorageRunningInSingleBinaryMode(t *testing.T) {
 			// Wait until the store-gateway has synched the new uploaded blocks. The number of blocks loaded
 			// may be greater than expected if the compactor is running (there may have been compacted).
 			const shippedBlocks = 2
-			if testCfg.blocksShardingEnabled {
-				require.NoError(t, cluster.WaitSumMetrics(e2e.GreaterOrEqual(float64(shippedBlocks*seriesReplicationFactor)), "cortex_bucket_store_blocks_loaded"))
-			} else {
-				require.NoError(t, cluster.WaitSumMetrics(e2e.GreaterOrEqual(float64(shippedBlocks*seriesReplicationFactor*cluster.NumInstances())), "cortex_bucket_store_blocks_loaded"))
-			}
+			require.NoError(t, cluster.WaitSumMetrics(e2e.GreaterOrEqual(float64(shippedBlocks*seriesReplicationFactor)), "cortex_bucket_store_blocks_loaded"))
 
 			// Query back the series (1 only in the storage, 1 only in the ingesters, 1 on both).
 			result, err := c.Query("series_1", series1Timestamp)

@@ -230,33 +230,25 @@ func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegatewa
 		}, bucketClient, limits, logger, reg)
 	}
 
-	if gatewayCfg.ShardingEnabled {
-		storesRingCfg := gatewayCfg.ShardingRing.ToRingConfig()
-		storesRingBackend, err := kv.NewClient(
-			storesRingCfg.KVStore,
-			ring.GetCodec(),
-			kv.RegistererWithKVName(prometheus.WrapRegistererWithPrefix("cortex_", reg), "querier-store-gateway"),
-			logger,
-		)
-		if err != nil {
-			return nil, errors.Wrap(err, "failed to create store-gateway ring backend")
-		}
+	storesRingCfg := gatewayCfg.ShardingRing.ToRingConfig()
+	storesRingBackend, err := kv.NewClient(
+		storesRingCfg.KVStore,
+		ring.GetCodec(),
+		kv.RegistererWithKVName(prometheus.WrapRegistererWithPrefix("cortex_", reg), "querier-store-gateway"),
+		logger,
+	)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to create store-gateway ring backend")
+	}
 
-		storesRing, err := ring.NewWithStoreClientAndStrategy(storesRingCfg, storegateway.RingNameForClient, storegateway.RingKey, storesRingBackend, ring.NewIgnoreUnhealthyInstancesReplicationStrategy(), prometheus.WrapRegistererWithPrefix("cortex_", reg), logger)
-		if err != nil {
-			return nil, errors.Wrap(err, "failed to create store-gateway ring client")
-		}
+	storesRing, err := ring.NewWithStoreClientAndStrategy(storesRingCfg, storegateway.RingNameForClient, storegateway.RingKey, storesRingBackend, ring.NewIgnoreUnhealthyInstancesReplicationStrategy(), prometheus.WrapRegistererWithPrefix("cortex_", reg), logger)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to create store-gateway ring client")
+	}
 
-		stores, err = newBlocksStoreReplicationSet(storesRing, randomLoadBalancing, limits, querierCfg.StoreGatewayClient, logger, reg)
-		if err != nil {
-			return nil, errors.Wrap(err, "failed to create store set")
-		}
-	} else {
-		if len(querierCfg.GetStoreGatewayAddresses()) == 0 {
-			return nil, errNoStoreGatewayAddress
-		}
-
-		stores = newBlocksStoreBalancedSet(querierCfg.GetStoreGatewayAddresses(), querierCfg.StoreGatewayClient, logger, reg)
+	stores, err = newBlocksStoreReplicationSet(storesRing, randomLoadBalancing, limits, querierCfg.StoreGatewayClient, logger, reg)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to create store set")
 	}
 
 	consistency := NewBlocksConsistencyChecker(
