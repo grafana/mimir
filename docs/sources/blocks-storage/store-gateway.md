@@ -798,7 +798,7 @@ blocks_storage:
     # prematurely, which could cause partial query results. 0 or negative value
     # disables closing of idle TSDB.
     # CLI flag: -blocks-storage.tsdb.close-idle-tsdb-timeout
-    [close_idle_tsdb_timeout: <duration> | default = 0s]
+    [close_idle_tsdb_timeout: <duration> | default = 13h]
 
     # True to enable snapshotting of in-memory TSDB data on disk when shutting
     # down.

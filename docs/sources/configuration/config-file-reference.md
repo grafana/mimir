@@ -793,7 +793,7 @@ The `querier_config` configures the querier.
 # Maximum lookback beyond which queries are not sent to ingester. 0 means all
 # queries are sent to ingester.
 # CLI flag: -querier.query-ingesters-within
-[query_ingesters_within: <duration> | default = 0s]
+[query_ingesters_within: <duration> | default = 13h]
 
 # True to enable queriers to use an optimized implementation which passes down
 # to ingesters the label matchers when running the label names API. Can be
@@ -845,9 +845,9 @@ store_gateway_client:
 # 0, queriers fetch in-memory series from the minimum set of required ingesters,
 # selecting only ingesters which may have received series since 'now - lookback
 # period'. The lookback period should be greater or equal than the configured
-# 'query store after' and 'query ingesters within'. If this setting is 0,
-# queriers always query all ingesters (ingesters shuffle sharding on read path
-# is disabled).
+# -querier.query-store-after and -querier.query-ingesters-within. If this
+# setting is 0, queriers always query all ingesters (ingesters shuffle sharding
+# on read path is disabled).
 # CLI flag: -querier.shuffle-sharding-ingesters-lookback-period
 [shuffle_sharding_ingesters_lookback_period: <duration> | default = 0s]
 
@@ -3184,7 +3184,7 @@ tsdb:
   # prematurely, which could cause partial query results. 0 or negative value
   # disables closing of idle TSDB.
   # CLI flag: -blocks-storage.tsdb.close-idle-tsdb-timeout
-  [close_idle_tsdb_timeout: <duration> | default = 0s]
+  [close_idle_tsdb_timeout: <duration> | default = 13h]
 
   # True to enable snapshotting of in-memory TSDB data on disk when shutting
   # down.
