@@ -25,7 +25,11 @@ push_image() {
     echo "Pushing ${image}:${IMAGE_TAG}"
     docker push "${image}:${IMAGE_TAG}"
 
-    # TODO: Check if it is a tag `v[0-9].[0-9].[0-9]` and if it is the latest release push a latest tag
+    # If image is the latest stable git tag, update the latest docker image tag
+    if [[ "$(git tag | grep -E '^v?[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1)" == "${IMAGE_TAG}" ]]; then
+      docker tag "${image}:${IMAGE_TAG}" "${image}:latest"
+      docker push "${image}:latest"
+    fi
 }
 
 # Push images
