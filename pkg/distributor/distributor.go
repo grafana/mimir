@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	math "math"
+	"math/rand"
 	"net/http"
 	"sort"
 	"sync"
@@ -614,7 +615,9 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 	validatedExemplars := 0
 
 	if d.limits.AcceptHASamples(userID) && len(req.Timeseries) > 0 {
-		cluster, replica := findHALabels(d.limits.HAReplicaLabel(userID), d.limits.HAClusterLabel(userID), req.Timeseries[0].Labels)
+		replicaLabel := d.limits.HAReplicaLabel(userID)
+
+		cluster, replica := findHALabels(replicaLabel, d.limits.HAClusterLabel(userID), req.Timeseries[0].Labels)
 		// Make a copy of these, since they may be retained as labels on our metrics, e.g. dedupedSamples.
 		cluster, replica = copyString(cluster), copyString(replica)
 		if span != nil {
@@ -639,6 +642,11 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 		// If there wasn't an error but removeReplica is false that means we didn't find both HA labels.
 		if !removeReplica {
 			d.nonHASamples.WithLabelValues(userID).Add(float64(numSamples))
+
+			if rand.Float32() < 0.1 {
+				lbls := mimirpb.FromLabelAdaptersToLabels(req.Timeseries[0].Labels)
+				level.Warn(d.log).Log("msg", "keeping replica label", "replica_label", replicaLabel, "first_series", lbls.String())
+			}
 		}
 	}
 
