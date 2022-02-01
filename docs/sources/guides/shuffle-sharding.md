@@ -9,7 +9,7 @@ Grafana Mimir leverages sharding techniques to horizontally scale both single- a
 
 ## Background
 
-The sharding strategy employed by Mimir distributes the workload across a subset of the instances running a given service (eg. ingesters). For example, on the write path each tenant's series are sharded across a subset of the ingesters. The size of this subset (i.e. the number of instances) is configured using the "shard size" parameter. The default value for shard size is 0, which means that all available instances should be used for each tenant. This allows for a fair balance on the resources consumed by each instance (ie. CPU and memory) and to maximise these resources across the cluster.
+Grafana Mimir uses a sharding strategy that distributes the workload across a subset of the instances that run a given service, such as the ingesters. For example, on the write path, each tenant's series are sharded across a subset of the ingesters. The size of this subset, which is the number of instances, is configured using the `shard size` parameter, whose default value is `0`. This default value means that each tenant uses **all** available instances, in order to fairly balance resources, such as CPU and memory usage, to maximize the usage of these resources across the cluster.
 
 > **Note:** In a multi-tenant cluster this default (`0`) value introduces some downsides:
 
@@ -27,7 +27,7 @@ The idea is to assign each tenant a shard that is composed of a subset of the Gr
 - An outage on some Grafana Mimir cluster instances or nodes will only affect a subset of tenants.
 - A misbehaving tenant only affects its shard instances. Due to the low overlap of instances between different tenants, it’s statistically likely that any other tenant will run on different instances or that only a subset of instances will match the affected ones.
 
-Using shuffle sharding doesn’t require more resources, but instances might be periodically less evenly balanced.
+Using shuffle sharding doesn’t require more resources, but instances will not be evenly balanced.
 
 ### Low overlapping instances probability
 
@@ -104,7 +104,7 @@ If you’re running a Grafana Mimir cluster with shuffle sharding disabled, and 
 
 #### Limitation: decreasing the tenant shard size
 
-The current shuffle-sharding implementation in Mimir has a limitation which prevents to safely decrease the tenant shard size if the ingesters shuffle-sharding is enabled on the read path.
+The current shuffle-sharding implementation in Grafana Mimir has a limitation that prevents you from safely decreasing the tenant shard size if the ingesters’ shuffle-sharding is enabled on the read path.
 
 The problem is that if a tenant’s subring decreases in size, there is currently no way for the queriers and rulers to know how big the tenant subring was previously, and hence they will potentially miss an ingester with data for that tenant. In other words, the lookback mechanism to select the ingesters which may have received series since 'now - lookback period' doesn't work correctly if the tenant shard size is decreased.
 
