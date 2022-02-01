@@ -129,6 +129,8 @@ Usage of ./cmd/mimir/mimir:
     	Filename of fallback config to use if none specified for instance.
   -alertmanager.configs.poll-interval duration
     	How frequently to poll Alertmanager configs. (default 15s)
+  -alertmanager.enable-api
+    	Enable the alertmanager config api.
   -alertmanager.max-alerts-count int
     	Maximum number of alerts that a single user can have. Inserting more alerts will fail with a log message and metric increment. 0 = no limit.
   -alertmanager.max-alerts-size-bytes int
@@ -464,7 +466,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.tsdb.flush-blocks-on-shutdown
     	True to flush blocks to storage on shutdown. If false, incomplete blocks will be reused after restart.
   -blocks-storage.tsdb.head-chunks-end-time-variance float
-    	How much variance (as percentage between 0 and 1) should be applied to the chunk end time, to spread chunks writing across time. Doesn't apply to the last chunk of the chunk range. 0 means no variance.
+    	[experimental] How much variance (as percentage between 0 and 1) should be applied to the chunk end time, to spread chunks writing across time. Doesn't apply to the last chunk of the chunk range. 0 means no variance.
   -blocks-storage.tsdb.head-chunks-write-buffer-size-bytes int
     	The write buffer size used by the head chunks mapper. Lower values reduce memory utilisation on clusters with a large number of tenants at the cost of increased disk I/O operations. (default 4194304)
   -blocks-storage.tsdb.head-chunks-write-queue-size int
@@ -797,10 +799,6 @@ Usage of ./cmd/mimir/mimir:
     	Override the expected name on the server certificate.
   -etcd.username string
     	Etcd username.
-  -experimental.alertmanager.enable-api
-    	Enable the experimental alertmanager config api.
-  -experimental.ruler.enable-api
-    	Enable the ruler api
   -flusher.exit-after-flush
     	Stop after flush has finished. If false, process will keep running, doing nothing. (default true)
   -frontend.align-querier-with-step
@@ -952,7 +950,7 @@ Usage of ./cmd/mimir/mimir:
   -ingester.client.tls-server-name string
     	Override the expected name on the server certificate.
   -ingester.exemplars-update-period duration
-    	Period with which to update per-user max exemplars. (default 15s)
+    	[experimental] Period with which to update per-user max exemplars. (default 15s)
   -ingester.final-sleep duration
     	Duration to sleep for before exiting, to ensure metrics are scraped.
   -ingester.heartbeat-period duration
@@ -962,11 +960,11 @@ Usage of ./cmd/mimir/mimir:
   -ingester.instance-limits.max-inflight-push-requests int
     	Max inflight push requests that this ingester can handle (across all tenants). Additional requests will be rejected. 0 = unlimited. (default 30000)
   -ingester.instance-limits.max-ingestion-rate float
-    	Max ingestion rate (samples/sec) that ingester will accept. This limit is per-ingester, not per-tenant. Additional push requests will be rejected. Current ingestion rate is computed as exponentially weighted moving average, updated every second. This limit only works when using blocks engine. 0 = unlimited.
+    	Max ingestion rate (samples/sec) that ingester will accept. This limit is per-ingester, not per-tenant. Additional push requests will be rejected. Current ingestion rate is computed as exponentially weighted moving average, updated every second. 0 = unlimited.
   -ingester.instance-limits.max-series int
-    	Max series that this ingester can hold (across all tenants). Requests to create additional series will be rejected. This limit only works when using blocks engine. 0 = unlimited.
+    	Max series that this ingester can hold (across all tenants). Requests to create additional series will be rejected. 0 = unlimited.
   -ingester.instance-limits.max-tenants int
-    	Max users that this ingester can hold. Requests from additional users will be rejected. This limit only works when using blocks engine. 0 = unlimited.
+    	Max users (also referred to as 'tenants') that this ingester can hold. Requests from additional users will be rejected. 0 = unlimited.
   -ingester.join-after duration
     	Period to wait for a claim from another member; will join automatically after this.
   -ingester.lifecycler.ID string
@@ -978,7 +976,7 @@ Usage of ./cmd/mimir/mimir:
   -ingester.lifecycler.port int
     	port to advertise in consul (defaults to server.grpc-listen-port).
   -ingester.max-global-exemplars-per-user int
-    	The maximum number of exemplars in memory, across the cluster. 0 to disable exemplars ingestion.
+    	[experimental] The maximum number of exemplars in memory, across the cluster. 0 to disable exemplars ingestion.
   -ingester.max-global-metadata-per-metric int
     	The maximum number of metadata per metric, across the cluster. 0 to disable.
   -ingester.max-global-metadata-per-user int
@@ -1377,6 +1375,8 @@ Usage of ./cmd/mimir/mimir:
     	Override the expected name on the server certificate.
   -ruler.disabled-tenants value
     	Comma separated list of tenants whose rules this ruler cannot evaluate. If specified, a ruler that would normally pick the specified tenant(s) for processing will ignore them instead. Subject to sharding.
+  -ruler.enable-api
+    	Enable the ruler api
   -ruler.enabled-tenants value
     	Comma separated list of tenants whose rules this ruler can evaluate. If specified, only these tenants will be handled by ruler, otherwise this ruler can process rules from all tenants. Subject to sharding.
   -ruler.evaluation-delay-duration value
@@ -1630,7 +1630,7 @@ Usage of ./cmd/mimir/mimir:
   -target value
     	Comma-separated list of modules to load. The alias 'all' can be used in the list to load a number of core modules and will enable single-binary mode. Use '-modules' command line flag to get a list of available modules, and to see which modules are included in 'all'. (default all)
   -tenant-federation.enabled
-    	If enabled on all services, queries can be federated across multiple tenants. The tenant IDs involved need to be specified separated by a '|' character in the 'X-Scope-OrgID' header (experimental).
+    	[experimental] If enabled on all services, queries can be federated across multiple tenants. The tenant IDs involved need to be specified separated by a '|' character in the 'X-Scope-OrgID' header.
   -validation.create-grace-period value
     	Duration which table will be created/deleted before/after it's needed; we won't accept sample from before this time. (default 10m)
   -validation.enforce-metadata-metric-name

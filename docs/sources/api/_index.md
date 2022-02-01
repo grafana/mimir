@@ -548,7 +548,7 @@ Prometheus-compatible rules endpoint to list alerting and recording rules that a
 
 _For more information, please check out the Prometheus [rules](https://prometheus.io/docs/prometheus/latest/querying/api/#rules) documentation._
 
-_This experimental endpoint is disabled by default and can be enabled via the `-experimental.ruler.enable-api` CLI flag (or its respective YAML config option)._
+_This endpoint is disabled by default and can be enabled via the `-ruler.enable-api` CLI flag (or its respective YAML config option)._
 
 _Requires [authentication](#authentication)._
 
@@ -565,7 +565,7 @@ Prometheus-compatible rules endpoint to list of all active alerts.
 
 _For more information, please check out the Prometheus [alerts](https://prometheus.io/docs/prometheus/latest/querying/api/#alerts) documentation._
 
-_This experimental endpoint is disabled by default and can be enabled via the `-experimental.ruler.enable-api` CLI flag (or its respective YAML config option)._
+_This endpoint is disabled by default and can be enabled via the `-ruler.enable-api` CLI flag (or its respective YAML config option)._
 
 _Requires [authentication](#authentication)._
 
@@ -580,7 +580,7 @@ GET <legacy-http-prefix>/rules
 
 List all rules configured for the authenticated tenant. This endpoint returns a YAML dictionary with all the rule groups for each namespace and `200` status code on success.
 
-_This experimental endpoint is disabled by default and can be enabled via the `-experimental.ruler.enable-api` CLI flag (or its respective YAML config option)._
+_This endpoint is disabled by default and can be enabled via the `-ruler.enable-api` CLI flag (or its respective YAML config option)._
 
 _Requires [authentication](#authentication)._
 
@@ -645,7 +645,7 @@ GET <legacy-http-prefix>/rules/{namespace}
 
 Returns the rule groups defined for a given namespace.
 
-_This experimental endpoint is disabled by default and can be enabled via the `-experimental.ruler.enable-api` CLI flag (or its respective YAML config option)._
+_This endpoint is disabled by default and can be enabled via the `-ruler.enable-api` CLI flag (or its respective YAML config option)._
 
 _Requires [authentication](#authentication)._
 
@@ -679,7 +679,7 @@ GET <legacy-http-prefix>/rules/{namespace}/{groupName}
 
 Returns the rule group matching the request namespace and group name.
 
-_This experimental endpoint is disabled by default and can be enabled via the `-experimental.ruler.enable-api` CLI flag (or its respective YAML config option)._
+_This endpoint is disabled by default and can be enabled via the `-ruler.enable-api` CLI flag (or its respective YAML config option)._
 
 _Requires [authentication](#authentication)._
 
@@ -695,7 +695,7 @@ POST <legacy-http-prefix>/rules/{namespace}
 Creates or updates a rule group. This endpoint expects a request with `Content-Type: application/yaml` header and the
 rules **YAML** definition in the request body, and returns `202` on success.
 
-_This experimental endpoint is disabled by default and can be enabled via the `-experimental.ruler.enable-api` CLI flag (or its respective YAML config option)._
+_This endpoint is disabled by default and can be enabled via the `-ruler.enable-api` CLI flag (or its respective YAML config option)._
 
 _Requires [authentication](#authentication)._
 
@@ -764,7 +764,7 @@ DELETE <legacy-http-prefix>/rules/{namespace}/{groupName}
 
 Deletes a rule group by namespace and group name. This endpoints returns `202` on success.
 
-_This experimental endpoint is disabled by default and can be enabled via the `-experimental.ruler.enable-api` CLI flag (or its respective YAML config option)._
+_This endpoint is disabled by default and can be enabled via the `-ruler.enable-api` CLI flag (or its respective YAML config option)._
 
 _Requires [authentication](#authentication)._
 
@@ -779,7 +779,7 @@ DELETE <legacy-http-prefix>/rules/{namespace}
 
 Deletes all the rule groups in a namespace (including the namespace itself). This endpoint returns `202` on success.
 
-_This experimental endpoint is disabled by default and can be enabled via the `-experimental.ruler.enable-api` CLI flag (or its respective YAML config option)._
+_This endpoint is disabled by default and can be enabled via the `-ruler.enable-api` CLI flag (or its respective YAML config option)._
 
 _Requires [authentication](#authentication)._
 
@@ -791,7 +791,7 @@ POST /ruler/delete_tenant_config
 
 This deletes all rule groups for tenant, and returns `200` on success. Calling endpoint when no rule groups exist for user returns `200`. Authentication is only to identify the tenant.
 
-This is intended as internal API, and not to be exposed to users. This endpoint is enabled regardless of whether `-experimental.ruler.enable-api` is enabled or not.
+This is intended as internal API, and not to be exposed to users. This endpoint is enabled regardless of whether `-ruler.enable-api` is enabled or not.
 
 _Requires [authentication](#authentication)._
 
@@ -844,7 +844,7 @@ POST /multitenant_alertmanager/delete_tenant_config
 ```
 
 This endpoint deletes configuration for a tenant identified by `X-Scope-OrgID` header.
-It is internal, available even if Alertmanager API is not enabled by using `-experimental.alertmanager.enable-api`.
+It is internal, available even if Alertmanager API is not enabled by using `-alertmanager.enable-api`.
 The endpoint returns a status code of `200` if the user's configuration has been deleted, or it didn't exist in the first place.
 
 _Requires [authentication](#authentication)._
@@ -859,7 +859,7 @@ Get the current Alertmanager configuration for the authenticated tenant, reading
 
 This endpoint doesn't accept any URL query parameter and returns `200` on success.
 
-_This experimental endpoint is disabled by default and can be enabled via the `-experimental.alertmanager.enable-api` CLI flag (or its respective YAML config option)._
+_This endpoint is disabled by default and can be enabled via the `-alertmanager.enable-api` CLI flag (or its respective YAML config option)._
 
 _Requires [authentication](#authentication)._
 
@@ -873,7 +873,7 @@ Stores or updates the Alertmanager configuration for the authenticated tenant. T
 
 This endpoint expects the Alertmanager **YAML** configuration in the request body and returns `201` on success.
 
-_This experimental endpoint is disabled by default and can be enabled via the `-experimental.alertmanager.enable-api` CLI flag (or its respective YAML config option)._
+_This endpoint is disabled by default and can be enabled via the `-alertmanager.enable-api` CLI flag (or its respective YAML config option)._
 
 _Requires [authentication](#authentication)._
 
@@ -911,7 +911,7 @@ Deletes the Alertmanager configuration for the authenticated tenant.
 
 This endpoint doesn't accept any URL query parameter and returns `200` on success.
 
-_This experimental endpoint is disabled by default and can be enabled via the `-experimental.alertmanager.enable-api` CLI flag (or its respective YAML config option)._
+_This endpoint is disabled by default and can be enabled via the `-alertmanager.enable-api` CLI flag (or its respective YAML config option)._
 
 _Requires [authentication](#authentication)._
 

@@ -28,7 +28,7 @@ Mimir requires an object store for the block files, which can be:
 - [Amazon S3](https://aws.amazon.com/s3)
 - [Google Cloud Storage](https://cloud.google.com/storage/)
 - [Microsoft Azure Storage](https://azure.microsoft.com/en-us/services/storage/)
-- [OpenStack Swift](https://wiki.openstack.org/wiki/Swift) (experimental)
+- [OpenStack Swift](https://wiki.openstack.org/wiki/Swift)
 - [Local Filesystem](https://thanos.io/storage.md/#filesystem) (single node only)
 
 For more information, see [Blocks storage](./blocks-storage/_index.md).

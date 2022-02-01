@@ -129,7 +129,7 @@ var (
 		return map[string]string{
 			"-api.response-compression-enabled":   "true",
 			"-ruler.poll-interval":                "2s",
-			"-experimental.ruler.enable-api":      "true",
+			"-ruler.enable-api":                   "true",
 			"-ruler-storage.backend":              "s3",
 			"-ruler-storage.s3.access-key-id":     e2edb.MinioAccessKey,
 			"-ruler-storage.s3.secret-access-key": e2edb.MinioSecretKey,

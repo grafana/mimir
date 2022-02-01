@@ -113,6 +113,8 @@ Usage of ./cmd/mimir/mimir:
     	Filename of fallback config to use if none specified for instance.
   -alertmanager.configs.poll-interval duration
     	How frequently to poll Alertmanager configs. (default 15s)
+  -alertmanager.enable-api
+    	Enable the alertmanager config api.
   -alertmanager.max-alerts-count int
     	Maximum number of alerts that a single user can have. Inserting more alerts will fail with a log message and metric increment. 0 = no limit.
   -alertmanager.max-alerts-size-bytes int
@@ -205,10 +207,6 @@ Usage of ./cmd/mimir/mimir:
     	The maximum allowed age of a bucket index (last updated) before queries start failing because the bucket index is too old. The bucket index is periodically updated by the compactor, while this check is enforced in the querier (at query time). (default 1h0m0s)
   -blocks-storage.bucket-store.bucket-index.update-on-error-interval duration
     	How frequently a bucket index, which previously failed to load, should be tried to load again. This option is used only by querier. (default 1m0s)
-  -blocks-storage.bucket-store.chunk-pool-max-bucket-size-bytes int
-    	Size - in bytes - of the largest chunks pool bucket. (default 50000000)
-  -blocks-storage.bucket-store.chunk-pool-min-bucket-size-bytes int
-    	Size - in bytes - of the smallest chunks pool bucket. (default 16000)
   -blocks-storage.bucket-store.chunks-cache.attributes-in-memory-max-items int
     	Maximum number of object attribute items to keep in a first level in-memory LRU cache. Metadata will be stored and fetched in-memory before hitting the cache backend. 0 to disable the in-memory cache.
   -blocks-storage.bucket-store.chunks-cache.attributes-ttl duration
@@ -313,10 +311,6 @@ Usage of ./cmd/mimir/mimir:
     	How long to cache list of blocks for each tenant. (default 5m0s)
   -blocks-storage.bucket-store.metadata-cache.tenants-list-ttl duration
     	How long to cache list of tenants in the bucket. (default 15m0s)
-  -blocks-storage.bucket-store.partitioner-max-gap-bytes uint
-    	Max size - in bytes - of a gap for which the partitioner aggregates together two bucket GET object requests. (default 524288)
-  -blocks-storage.bucket-store.posting-offsets-in-mem-sampling int
-    	Controls what is the ratio of postings offsets that the store will hold in memory. (default 32)
   -blocks-storage.bucket-store.series-hash-cache-max-size-bytes uint
     	Max size - in bytes - of the in-memory series hash cache. The cache is shared across all tenants and it's used only when query sharding is enabled. (default 1073741824)
   -blocks-storage.bucket-store.sync-dir string
@@ -407,8 +401,6 @@ Usage of ./cmd/mimir/mimir:
     	Local directory to store TSDBs in the ingesters. (default "tsdb")
   -blocks-storage.tsdb.flush-blocks-on-shutdown
     	True to flush blocks to storage on shutdown. If false, incomplete blocks will be reused after restart.
-  -blocks-storage.tsdb.head-chunks-end-time-variance float
-    	How much variance (as percentage between 0 and 1) should be applied to the chunk end time, to spread chunks writing across time. Doesn't apply to the last chunk of the chunk range. 0 means no variance.
   -blocks-storage.tsdb.head-chunks-write-buffer-size-bytes int
     	The write buffer size used by the head chunks mapper. Lower values reduce memory utilisation on clusters with a large number of tenants at the cost of increased disk I/O operations. (default 4194304)
   -blocks-storage.tsdb.head-chunks-write-queue-size int
@@ -553,10 +545,6 @@ Usage of ./cmd/mimir/mimir:
     	Etcd password.
   -etcd.username string
     	Etcd username.
-  -experimental.alertmanager.enable-api
-    	Enable the experimental alertmanager config api.
-  -experimental.ruler.enable-api
-    	Enable the ruler api
   -frontend.align-querier-with-step
     	Mutate incoming queries to align their start and end with their step.
   -frontend.cache-results
@@ -675,8 +663,6 @@ Usage of ./cmd/mimir/mimir:
     	Name of network interface to read address from. (default [eth0 en0])
   -ingester.lifecycler.port int
     	port to advertise in consul (defaults to server.grpc-listen-port).
-  -ingester.max-global-exemplars-per-user int
-    	The maximum number of exemplars in memory, across the cluster. 0 to disable exemplars ingestion.
   -ingester.max-global-metadata-per-metric int
     	The maximum number of metadata per metric, across the cluster. 0 to disable.
   -ingester.max-global-metadata-per-user int
@@ -979,6 +965,8 @@ Usage of ./cmd/mimir/mimir:
     	gRPC client max send message size (bytes). (default 16777216)
   -ruler.disabled-tenants value
     	Comma separated list of tenants whose rules this ruler cannot evaluate. If specified, a ruler that would normally pick the specified tenant(s) for processing will ignore them instead. Subject to sharding.
+  -ruler.enable-api
+    	Enable the ruler api
   -ruler.enabled-tenants value
     	Comma separated list of tenants whose rules this ruler can evaluate. If specified, only these tenants will be handled by ruler, otherwise this ruler can process rules from all tenants. Subject to sharding.
   -ruler.evaluation-delay-duration value
@@ -1159,8 +1147,6 @@ Usage of ./cmd/mimir/mimir:
     	Limit the query time range (end - start time). This limit is enforced in the query-frontend (on the received query), in the querier (on the query possibly split by the query-frontend) and ruler. 0 to disable.
   -target value
     	Comma-separated list of modules to load. The alias 'all' can be used in the list to load a number of core modules and will enable single-binary mode. Use '-modules' command line flag to get a list of available modules, and to see which modules are included in 'all'. (default all)
-  -tenant-federation.enabled
-    	If enabled on all services, queries can be federated across multiple tenants. The tenant IDs involved need to be specified separated by a '|' character in the 'X-Scope-OrgID' header (experimental).
   -validation.create-grace-period value
     	Duration which table will be created/deleted before/after it's needed; we won't accept sample from before this time. (default 10m)
   -validation.enforce-metadata-metric-name

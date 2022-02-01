@@ -63,7 +63,7 @@ func (w *specWriter) writeConfigEntry(e *configEntry, indent int) {
 
 	if e.kind == "field" {
 		// Description
-		w.writeComment(e.fieldDesc, indent, 0)
+		w.writeComment(e.description(), indent, 0)
 		w.writeExample(e.fieldExample, indent)
 		w.writeFlag(e.fieldFlag, indent)
 
