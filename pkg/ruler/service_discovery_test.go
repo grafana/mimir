@@ -4,6 +4,7 @@ package ruler
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -133,19 +134,32 @@ func TestConfig_ConstructsLookupNamesCorrectly(t *testing.T) {
 			go discoverer.Run(context.Background(), groupsChan)
 			<-groupsChan // wait for at least one iteration
 
-			assert.Len(t, testResolver.calledWith, 1)
-			assert.Equal(t, tc.expectedAddress, testResolver.calledWith[0])
+			calledWith := testResolver.lastCallsArgs()
+			assert.Len(t, calledWith, 1)
+			assert.Equal(t, tc.expectedAddress, calledWith[0])
 		})
 	}
 }
 
 type spyResolver struct {
+	m sync.Mutex
+
 	calledWith []string
 }
 
 func (f *spyResolver) Resolve(_ context.Context, toResolve []string) error {
+	f.m.Lock()
+	defer f.m.Unlock()
+
 	f.calledWith = toResolve
 	return nil
 }
 
 func (f *spyResolver) Addresses() []string { return nil }
+
+func (f *spyResolver) lastCallsArgs() []string {
+	f.m.Lock()
+	defer f.m.Unlock()
+
+	return f.calledWith
+}
