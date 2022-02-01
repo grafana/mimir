@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/gogo/protobuf/proto"
+	golangproto "github.com/golang/protobuf/proto" // TODO: Why do we have two proto libs?
 	"github.com/golang/snappy"
 	alertConfig "github.com/prometheus/alertmanager/config"
 	"github.com/prometheus/alertmanager/types"
@@ -28,6 +29,10 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/prompb"
+	colmetricpb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
+	v11 "go.opentelemetry.io/proto/otlp/common/v1"
+	metricpb "go.opentelemetry.io/proto/otlp/metrics/v1"
+	metricsv1 "go.opentelemetry.io/proto/otlp/metrics/v1"
 	yaml "gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/ruler"
@@ -113,6 +118,75 @@ func (c *Client) Push(timeseries []prompb.TimeSeries) (*http.Response, error) {
 	req.Header.Add("Content-Encoding", "snappy")
 	req.Header.Set("Content-Type", "application/x-protobuf")
 	req.Header.Set("X-Prometheus-Remote-Write-Version", "0.1.0")
+	req.Header.Set("X-Scope-OrgID", c.orgID)
+
+	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
+	defer cancel()
+
+	// Execute HTTP request
+	res, err := c.httpClient.Do(req.WithContext(ctx))
+	if err != nil {
+		return nil, err
+	}
+
+	defer res.Body.Close()
+	return res, nil
+}
+
+// OTLPPush the input timeseries to the remote endpoint in OTLP format
+func (c *Client) OTLPPush(timeseries []prompb.TimeSeries) (*http.Response, error) {
+	// Create write request
+	otlpMetrics := &metricpb.ResourceMetrics{}
+	metrics := []*metricsv1.Metric{}
+	for _, ts := range timeseries {
+		name := ""
+		otlpLabels := make([]*v11.StringKeyValue, 0, len(ts.Labels))
+		for _, l := range ts.Labels {
+			if l.Name == "__name__" {
+				name = l.Value
+				continue
+			}
+
+			otlpLabels = append(otlpLabels, &v11.StringKeyValue{
+				Key:   l.Name,
+				Value: l.Value,
+			})
+		}
+
+		for _, sample := range ts.Samples {
+			metrics = append(metrics, &metricsv1.Metric{
+				Name: name,
+				Data: &metricsv1.Metric_DoubleGauge{
+					DoubleGauge: &metricsv1.DoubleGauge{
+						DataPoints: []*metricsv1.DoubleDataPoint{
+							{
+								Labels:       otlpLabels,
+								TimeUnixNano: uint64(sample.Timestamp) * 1000000,
+								Value:        sample.Value,
+							},
+						},
+					},
+				},
+			})
+		}
+	}
+
+	otlpMetrics.InstrumentationLibraryMetrics = []*metricsv1.InstrumentationLibraryMetrics{{Metrics: metrics}}
+	pbRequest := &colmetricpb.ExportMetricsServiceRequest{
+		ResourceMetrics: []*metricpb.ResourceMetrics{otlpMetrics},
+	}
+
+	data, err := golangproto.Marshal(pbRequest)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create HTTP request
+	req, err := http.NewRequest("POST", fmt.Sprintf("http://%s/api/v1/push/otlp/v1/metrics", c.distributorAddress), bytes.NewReader(data))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/x-protobuf")
 	req.Header.Set("X-Scope-OrgID", c.orgID)
 
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
