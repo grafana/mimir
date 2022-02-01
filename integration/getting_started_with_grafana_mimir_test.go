@@ -46,7 +46,7 @@ func TestGettingStartedWithGrafanaMimir(t *testing.T) {
 	require.Equal(t, model.ValVector, result.Type())
 	assert.Equal(t, expectedVector, result.(model.Vector))
 
-	// Work round Prometheus client lib not having a way to omit the start&end params
+	// Work around the Prometheus client lib not having a way to omit the start and end params.
 	minTime := time.Unix(math.MinInt64/1000+62135596801, 0).UTC()
 	maxTime := time.Unix(math.MaxInt64/1000-62135596801, 999999999).UTC()
 
