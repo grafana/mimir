@@ -89,9 +89,7 @@ const (
 	sampleOutOfBounds    = "sample-out-of-bounds"
 )
 
-var (
-	errExemplarRef = errors.New("exemplars not ingested because series not already present")
-)
+var errExemplarRef = errors.New("exemplars not ingested because series not already present")
 
 // Shipper interface is used to have an easy way to mock it in tests.
 type Shipper interface {
@@ -651,6 +649,9 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 		// To find out if any sample was added to this series, we keep old value.
 		oldSucceededSamplesCount := succeededSamplesCount
 
+		// Used to handle the special case of a timeseries without any samples.
+		noSamples := len(ts.Samples) == 0
+
 		for _, s := range ts.Samples {
 			var err error
 
@@ -714,9 +715,14 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 			return nil, wrapWithUser(err, userID)
 		}
 
-		if i.cfg.ActiveSeriesMetricsEnabled && succeededSamplesCount > oldSucceededSamplesCount {
+		if i.cfg.ActiveSeriesMetricsEnabled && (succeededSamplesCount > oldSucceededSamplesCount || noSamples) {
+			if noSamples {
+				// If request had no samples then we didn't copy the labels yet.
+				copiedLabels = mimirpb.FromLabelAdaptersToLabelsWithCopy(ts.Labels)
+			}
+
 			db.activeSeries.UpdateSeries(mimirpb.FromLabelAdaptersToLabels(ts.Labels), startAppend, func(l labels.Labels) labels.Labels {
-				// we must already have copied the labels if succeededSamplesCount has been incremented.
+				// If request had samples and succeededSamplesCount has been incremented then we have already copied the labels.
 				return copiedLabels
 			})
 		}
@@ -2198,6 +2204,7 @@ func (i *Ingester) pushMetadata(ctx context.Context, userID string, metadata []*
 
 	return ingestedMetadata
 }
+
 func (i *Ingester) appendMetadata(userID string, m *mimirpb.MetricMetadata) error {
 	userMetadata := i.getOrCreateUserMetadata(userID)
 
@@ -2240,6 +2247,7 @@ func (i *Ingester) deleteUserMetadata(userID string) {
 		um.purge(time.Time{})
 	}
 }
+
 func (i *Ingester) getUsersWithMetadata() []string {
 	i.usersMetadataMtx.RLock()
 	defer i.usersMetadataMtx.RUnlock()
