@@ -105,7 +105,7 @@ func buildNotifierConfig(rulerConfig *Config, resolver cacheutil.AddressProvider
 		apiVersion = config.AlertmanagerAPIVersionV2
 	}
 
-	srvDNSRegexp := regexp.MustCompile(`^_.+._.+`)
+	prometheusSRVSDRegexp := regexp.MustCompile(`^_.+._.+`)
 
 	for _, rawURL := range amURLs {
 		var thanosQType string
@@ -124,19 +124,19 @@ func buildNotifierConfig(rulerConfig *Config, resolver cacheutil.AddressProvider
 			return nil, fmt.Errorf("improperly formatted alertmanager URL (maybe the scheme is missing?) %q", rawURL)
 		}
 
-		// Given we only support SRV lookups as part of service discovery, we need to ensure
-		// hosts provided follow this specification: _service._proto.name
-		// e.g. _http._tcp.alertmanager.com
-		if rulerConfig.AlertmanagerDiscovery && !srvDNSRegexp.MatchString(url.Host) {
-			return nil, fmt.Errorf("when alertmanager-discovery is on, host name must be of the form _portname._tcp.service.fqdn (is %q)", url.Host)
-		}
+		isThanosSD := thanosQType != ""
+		isPromSD := prometheusSRVSDRegexp.MatchString(url.Host)
 
 		var cfg *config.AlertmanagerConfig
-		if thanosQType != "" {
+		switch {
+		case isThanosSD:
 			cfg = amConfigWithThanosSD(rulerConfig, resolver, thanosdns.QType(thanosQType), url, apiVersion)
-		} else {
+		case isPromSD:
 			cfg = amConfigWithPromSD(rulerConfig, url, apiVersion)
+		default:
+			cfg = amConfigWithStaticTarget(rulerConfig, url, apiVersion)
 		}
+
 		amConfigs = append(amConfigs, cfg)
 	}
 
@@ -167,25 +167,25 @@ func amConfigWithThanosSD(rulerConfig *Config, resolver cacheutil.AddressProvide
 }
 
 func amConfigWithPromSD(rulerConfig *Config, url *url.URL, apiVersion config.AlertmanagerAPIVersion) *config.AlertmanagerConfig {
-	var sdConfig discovery.Configs
-	if rulerConfig.AlertmanagerDiscovery {
-		sdConfig = discovery.Configs{
-			&dns.SDConfig{
-				Names:           []string{url.Host},
-				RefreshInterval: model.Duration(rulerConfig.AlertmanagerRefreshInterval),
-				Type:            "SRV",
-				Port:            0, // Ignored, because of SRV.
-			},
-		}
+	sdConfig := discovery.Configs{
+		&dns.SDConfig{
+			Names:           []string{url.Host},
+			RefreshInterval: model.Duration(rulerConfig.AlertmanagerRefreshInterval),
+			Type:            "SRV",
+			Port:            0, // Ignored, because of SRV.
+		},
+	}
 
-	} else {
-		sdConfig = discovery.Configs{
-			discovery.StaticConfig{
-				{
-					Targets: []model.LabelSet{{model.AddressLabel: model.LabelValue(url.Host)}},
-				},
+	return amConfigWithSD(rulerConfig, url, apiVersion, sdConfig)
+}
+
+func amConfigWithStaticTarget(rulerConfig *Config, url *url.URL, apiVersion config.AlertmanagerAPIVersion) *config.AlertmanagerConfig {
+	sdConfig := discovery.Configs{
+		discovery.StaticConfig{
+			{
+				Targets: []model.LabelSet{{model.AddressLabel: model.LabelValue(url.Host)}},
 			},
-		}
+		},
 	}
 
 	return amConfigWithSD(rulerConfig, url, apiVersion, sdConfig)

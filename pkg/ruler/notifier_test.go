@@ -7,7 +7,6 @@ package ruler
 
 import (
 	"errors"
-	"fmt"
 	"testing"
 	"time"
 
@@ -92,7 +91,24 @@ func TestBuildNotifierConfig(t *testing.T) {
 				AlertmanagerURL:       "http://_http.default.svc.cluster.local/alertmanager",
 				AlertmanagerDiscovery: true,
 			},
-			err: fmt.Errorf("when alertmanager-discovery is on, host name must be of the form _portname._tcp.service.fqdn (is \"_http.default.svc.cluster.local\")"),
+			ncfg: &config.Config{
+				AlertingConfig: config.AlertingConfig{
+					AlertmanagerConfigs: []*config.AlertmanagerConfig{
+						{
+							APIVersion: "v1",
+							Scheme:     "http",
+							PathPrefix: "/alertmanager",
+							ServiceDiscoveryConfigs: discovery.Configs{
+								discovery.StaticConfig{
+									{
+										Targets: []model.LabelSet{{"__address__": "_http.default.svc.cluster.local"}},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
 		},
 		{
 			name: "with multiple URLs and no service discovery",
