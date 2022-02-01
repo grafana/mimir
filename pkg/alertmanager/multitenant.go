@@ -66,20 +66,20 @@ var (
 // MultitenantAlertmanagerConfig is the configuration for a multitenant Alertmanager.
 type MultitenantAlertmanagerConfig struct {
 	DataDir        string           `yaml:"data_dir"`
-	Retention      time.Duration    `yaml:"retention"`
+	Retention      time.Duration    `yaml:"retention" category:"advanced"`
 	ExternalURL    flagext.URLValue `yaml:"external_url"`
-	PollInterval   time.Duration    `yaml:"poll_interval"`
-	MaxRecvMsgSize int64            `yaml:"max_recv_msg_size"`
+	PollInterval   time.Duration    `yaml:"poll_interval" category:"advanced"`
+	MaxRecvMsgSize int64            `yaml:"max_recv_msg_size" category:"advanced"`
 
 	// Enable sharding for the Alertmanager
-	ShardingEnabled bool       `yaml:"sharding_enabled"`
+	ShardingEnabled bool       `yaml:"sharding_enabled" category:"advanced"`
 	ShardingRing    RingConfig `yaml:"sharding_ring"`
 
 	FallbackConfigFile string `yaml:"fallback_config_file"`
 
 	Cluster ClusterConfig `yaml:"cluster"`
 
-	EnableAPI bool `yaml:"enable_api"`
+	EnableAPI bool `yaml:"enable_api" category:"advanced"`
 
 	// For distributor.
 	AlertmanagerClient ClientConfig `yaml:"alertmanager_client"`
@@ -89,12 +89,12 @@ type MultitenantAlertmanagerConfig struct {
 }
 
 type ClusterConfig struct {
-	ListenAddr       string                 `yaml:"listen_address"`
-	AdvertiseAddr    string                 `yaml:"advertise_address"`
-	Peers            flagext.StringSliceCSV `yaml:"peers"`
-	PeerTimeout      time.Duration          `yaml:"peer_timeout"`
-	GossipInterval   time.Duration          `yaml:"gossip_interval"`
-	PushPullInterval time.Duration          `yaml:"push_pull_interval"`
+	ListenAddr       string                 `yaml:"listen_address" category:"advanced"`
+	AdvertiseAddr    string                 `yaml:"advertise_address" category:"advanced"`
+	Peers            flagext.StringSliceCSV `yaml:"peers" category:"advanced"`
+	PeerTimeout      time.Duration          `yaml:"peer_timeout" category:"advanced"`
+	GossipInterval   time.Duration          `yaml:"gossip_interval" category:"advanced"`
+	PushPullInterval time.Duration          `yaml:"push_pull_interval" category:"advanced"`
 }
 
 const (

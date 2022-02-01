@@ -1538,7 +1538,7 @@ The `alertmanager_config` configures the alertmanager.
 # CLI flag: -alertmanager.storage.path
 [data_dir: <string> | default = "data/"]
 
-# How long to keep data for.
+# [advanced] How long to keep data for.
 # CLI flag: -alertmanager.storage.retention
 [retention: <duration> | default = 120h]
 
@@ -1549,15 +1549,15 @@ The `alertmanager_config` configures the alertmanager.
 # CLI flag: -alertmanager.web.external-url
 [external_url: <url> | default = http://localhost]
 
-# How frequently to poll Alertmanager configs.
+# [advanced] How frequently to poll Alertmanager configs.
 # CLI flag: -alertmanager.configs.poll-interval
 [poll_interval: <duration> | default = 15s]
 
-# Maximum size (bytes) of an accepted HTTP request body.
+# [advanced] Maximum size (bytes) of an accepted HTTP request body.
 # CLI flag: -alertmanager.max-recv-msg-size
 [max_recv_msg_size: <int> | default = 16777216]
 
-# Shard tenants across multiple alertmanager instances.
+# [advanced] Shard tenants across multiple alertmanager instances.
 # CLI flag: -alertmanager.sharding-enabled
 [sharding_enabled: <boolean> | default = false]
 
@@ -1598,29 +1598,38 @@ sharding_ring:
       # CLI flag: -alertmanager.sharding-ring.multi.mirror-timeout
       [mirror_timeout: <duration> | default = 2s]
 
-  # Period at which to heartbeat to the ring. 0 = disabled.
+  # [advanced] Period at which to heartbeat to the ring. 0 = disabled.
   # CLI flag: -alertmanager.sharding-ring.heartbeat-period
   [heartbeat_period: <duration> | default = 15s]
 
-  # The heartbeat timeout after which alertmanagers are considered unhealthy
-  # within the ring. 0 = never (timeout disabled).
+  # [advanced] The heartbeat timeout after which alertmanagers are considered
+  # unhealthy within the ring. 0 = never (timeout disabled).
   # CLI flag: -alertmanager.sharding-ring.heartbeat-timeout
   [heartbeat_timeout: <duration> | default = 1m]
 
-  # The replication factor to use when sharding the alertmanager.
+  # [advanced] The replication factor to use when sharding the alertmanager.
   # CLI flag: -alertmanager.sharding-ring.replication-factor
   [replication_factor: <int> | default = 3]
 
-  # True to enable zone-awareness and replicate alerts across different
-  # availability zones.
+  # [advanced] True to enable zone-awareness and replicate alerts across
+  # different availability zones.
   # CLI flag: -alertmanager.sharding-ring.zone-awareness-enabled
   [zone_awareness_enabled: <boolean> | default = false]
 
-  # Name of network interface to read address from.
+  # [advanced] Name of network interface to read address from.
   # CLI flag: -alertmanager.sharding-ring.instance-interface-names
   [instance_interface_names: <list of string> | default = [eth0 en0]]
 
-  # The availability zone where this instance is running. Required if
+  # [advanced] Port to advertise in the ring (defaults to
+  # server.grpc-listen-port).
+  # CLI flag: -alertmanager.sharding-ring.instance-port
+  [instance_port: <int> | default = 0]
+
+  # [advanced] IP address to advertise in the ring.
+  # CLI flag: -alertmanager.sharding-ring.instance-addr
+  [instance_addr: <string> | default = ""]
+
+  # [advanced] The availability zone where this instance is running. Required if
   # zone-awareness is enabled.
   # CLI flag: -alertmanager.sharding-ring.instance-availability-zone
   [instance_availability_zone: <string> | default = ""]
@@ -1630,41 +1639,41 @@ sharding_ring:
 [fallback_config_file: <string> | default = ""]
 
 cluster:
-  # Listen address and port for the cluster. Not specifying this flag disables
-  # high-availability mode.
+  # [advanced] Listen address and port for the cluster. Not specifying this flag
+  # disables high-availability mode.
   # CLI flag: -alertmanager.cluster.listen-address
   [listen_address: <string> | default = "0.0.0.0:9094"]
 
-  # Explicit address or hostname to advertise in cluster.
+  # [advanced] Explicit address or hostname to advertise in cluster.
   # CLI flag: -alertmanager.cluster.advertise-address
   [advertise_address: <string> | default = ""]
 
-  # Comma-separated list of initial peers.
+  # [advanced] Comma-separated list of initial peers.
   # CLI flag: -alertmanager.cluster.peers
   [peers: <string> | default = ""]
 
-  # Time to wait between peers to send notifications.
+  # [advanced] Time to wait between peers to send notifications.
   # CLI flag: -alertmanager.cluster.peer-timeout
   [peer_timeout: <duration> | default = 15s]
 
-  # The interval between sending gossip messages. By lowering this value (more
-  # frequent) gossip messages are propagated across cluster more quickly at the
-  # expense of increased bandwidth usage.
+  # [advanced] The interval between sending gossip messages. By lowering this
+  # value (more frequent) gossip messages are propagated across cluster more
+  # quickly at the expense of increased bandwidth usage.
   # CLI flag: -alertmanager.cluster.gossip-interval
   [gossip_interval: <duration> | default = 200ms]
 
-  # The interval between gossip state syncs. Setting this interval lower (more
-  # frequent) will increase convergence speeds across larger clusters at the
-  # expense of increased bandwidth usage.
+  # [advanced] The interval between gossip state syncs. Setting this interval
+  # lower (more frequent) will increase convergence speeds across larger
+  # clusters at the expense of increased bandwidth usage.
   # CLI flag: -alertmanager.cluster.push-pull-interval
   [push_pull_interval: <duration> | default = 1m]
 
-# Enable the alertmanager config api.
+# [advanced] Enable the alertmanager config api.
 # CLI flag: -alertmanager.enable-api
 [enable_api: <boolean> | default = false]
 
 alertmanager_client:
-  # Timeout for downstream alertmanagers.
+  # [advanced] Timeout for downstream alertmanagers.
   # CLI flag: -alertmanager.alertmanager-client.remote-timeout
   [remote_timeout: <duration> | default = 2s]
 
@@ -1697,11 +1706,12 @@ alertmanager_client:
   # CLI flag: -alertmanager.alertmanager-client.tls-insecure-skip-verify
   [tls_insecure_skip_verify: <boolean> | default = false]
 
-# The interval between persisting the current alertmanager state (notification
-# log and silences) to object storage. This is only used when sharding is
-# enabled. This state is read when all replicas for a shard can not be
-# contacted. In this scenario, having persisted the state more frequently will
-# result in potentially fewer lost silences, and fewer duplicate notifications.
+# [advanced] The interval between persisting the current alertmanager state
+# (notification log and silences) to object storage. This is only used when
+# sharding is enabled. This state is read when all replicas for a shard can not
+# be contacted. In this scenario, having persisted the state more frequently
+# will result in potentially fewer lost silences, and fewer duplicate
+# notifications.
 # CLI flag: -alertmanager.persist-interval
 [persist_interval: <duration> | default = 15m]
 ```
