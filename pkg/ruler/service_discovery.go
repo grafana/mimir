@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package thanossd
+package ruler
 
 import (
 	"context"
@@ -18,7 +18,7 @@ const (
 	mechanismName = "thanos_dns_sd"
 )
 
-type Config struct {
+type thanosServiceDiscovery struct {
 	Resolver cacheutil.AddressProvider
 
 	RefreshInterval time.Duration
@@ -26,15 +26,15 @@ type Config struct {
 	Host            string
 }
 
-func (Config) Name() string {
+func (thanosServiceDiscovery) Name() string {
 	return mechanismName
 }
 
-func (c Config) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
+func (c thanosServiceDiscovery) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
 	return refresh.NewDiscovery(opts.Logger, mechanismName, c.RefreshInterval, c.resolve), nil
 }
 
-func (c Config) resolve(ctx context.Context) ([]*targetgroup.Group, error) {
+func (c thanosServiceDiscovery) resolve(ctx context.Context) ([]*targetgroup.Group, error) {
 	if err := c.Resolver.Resolve(ctx, []string{string(c.QType) + "+" + c.Host}); err != nil {
 		return nil, err
 	}

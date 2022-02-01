@@ -26,7 +26,6 @@ import (
 	"github.com/thanos-io/thanos/pkg/cacheutil"
 	thanosdns "github.com/thanos-io/thanos/pkg/discovery/dns"
 
-	"github.com/grafana/mimir/pkg/ruler/thanossd"
 	"github.com/grafana/mimir/pkg/util"
 )
 
@@ -155,7 +154,7 @@ func buildNotifierConfig(rulerConfig *Config, resolver cacheutil.AddressProvider
 
 func amConfigWithThanosSD(rulerConfig *Config, resolver cacheutil.AddressProvider, qType thanosdns.QType, url *url.URL, apiVersion config.AlertmanagerAPIVersion) *config.AlertmanagerConfig {
 	sdConfig := discovery.Configs{
-		thanossd.Config{
+		thanosServiceDiscovery{
 			Resolver:        resolver,
 			RefreshInterval: rulerConfig.AlertmanagerRefreshInterval,
 			Host:            url.Host,

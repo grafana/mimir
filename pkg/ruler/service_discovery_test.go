@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package thanossd
+package ruler
 
 import (
 	"context"
@@ -64,7 +64,7 @@ func TestConfig_TranslatesToPrometheusTargetGroup(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			resolver := fakeResolver{addresses: tc.resolvedAddresses}
-			cfg := Config{
+			cfg := thanosServiceDiscovery{
 				RefreshInterval: time.Millisecond,
 				Resolver:        resolver,
 				QType:           thanosdns.A,
@@ -120,7 +120,7 @@ func TestConfig_ConstructsLookupNamesCorrectly(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			testResolver := &spyResolver{}
-			cfg := Config{
+			cfg := thanosServiceDiscovery{
 				RefreshInterval: time.Millisecond,
 				Resolver:        testResolver,
 				QType:           tc.qType,

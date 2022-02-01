@@ -18,7 +18,6 @@ import (
 	"github.com/stretchr/testify/require"
 	thanosdns "github.com/thanos-io/thanos/pkg/discovery/dns"
 
-	"github.com/grafana/mimir/pkg/ruler/thanossd"
 	"github.com/grafana/mimir/pkg/util"
 )
 
@@ -254,7 +253,7 @@ func TestBuildNotifierConfig(t *testing.T) {
 							Scheme:     "http",
 							PathPrefix: "/alertmanager",
 							ServiceDiscoveryConfigs: discovery.Configs{
-								thanossd.Config{
+								thanosServiceDiscovery{
 									Host:  "alertmanager.mimir.svc.cluster.local:8080",
 									QType: thanosdns.A,
 								},
@@ -265,7 +264,7 @@ func TestBuildNotifierConfig(t *testing.T) {
 							Scheme:     "https",
 							PathPrefix: "/am",
 							ServiceDiscoveryConfigs: discovery.Configs{
-								thanossd.Config{
+								thanosServiceDiscovery{
 									Host:  "_http._tcp.alertmanager2.mimir.svc.cluster.local",
 									QType: thanosdns.SRV,
 								},
