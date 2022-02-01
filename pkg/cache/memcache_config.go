@@ -22,12 +22,12 @@ var (
 type MemcachedConfig struct {
 	Addresses              string        `yaml:"addresses"`
 	Timeout                time.Duration `yaml:"timeout"`
-	MaxIdleConnections     int           `yaml:"max_idle_connections"`
-	MaxAsyncConcurrency    int           `yaml:"max_async_concurrency"`
-	MaxAsyncBufferSize     int           `yaml:"max_async_buffer_size"`
-	MaxGetMultiConcurrency int           `yaml:"max_get_multi_concurrency"`
-	MaxGetMultiBatchSize   int           `yaml:"max_get_multi_batch_size"`
-	MaxItemSize            int           `yaml:"max_item_size"`
+	MaxIdleConnections     int           `yaml:"max_idle_connections" category:"advanced"`
+	MaxAsyncConcurrency    int           `yaml:"max_async_concurrency" category:"advanced"`
+	MaxAsyncBufferSize     int           `yaml:"max_async_buffer_size" category:"advanced"`
+	MaxGetMultiConcurrency int           `yaml:"max_get_multi_concurrency" category:"advanced"`
+	MaxGetMultiBatchSize   int           `yaml:"max_get_multi_batch_size" category:"advanced"`
+	MaxItemSize            int           `yaml:"max_item_size" category:"advanced"`
 }
 
 func (cfg *MemcachedConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
