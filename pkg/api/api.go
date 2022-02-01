@@ -46,7 +46,6 @@ type DistributorPushWrapper func(next push.Func) push.Func
 type ConfigHandler func(actualCfg interface{}, defaultCfg interface{}) http.HandlerFunc
 
 type Config struct {
-	ResponseCompression           bool `yaml:"response_compression_enabled"`
 	SkipLabelNameValidationHeader bool `yaml:"skip_label_name_validation_header_enabled" category:"advanced"`
 
 	AlertmanagerHTTPPrefix string `yaml:"alertmanager_http_prefix" category:"advanced"`
@@ -255,19 +254,19 @@ func (a *API) RegisterIngester(i Ingester, pushConfig distributor.Config) {
 
 	a.indexPage.AddLink(SectionDangerous, "/ingester/flush", "Trigger a Flush of data from Ingester to storage")
 	a.indexPage.AddLink(SectionDangerous, "/ingester/shutdown", "Trigger Ingester Shutdown (Dangerous)")
-	a.RegisterRoute("/ingester/flush", http.HandlerFunc(i.FlushHandler), false, false, "GET", "POST")
-	a.RegisterRoute("/ingester/shutdown", http.HandlerFunc(i.ShutdownHandler), false, false, "GET", "POST")
+	a.RegisterRoute("/ingester/flush", http.HandlerFunc(i.FlushHandler), false, true, "GET", "POST")
+	a.RegisterRoute("/ingester/shutdown", http.HandlerFunc(i.ShutdownHandler), false, true, "GET", "POST")
 	a.RegisterRoute("/ingester/push", push.Handler(pushConfig.MaxRecvMsgSize, a.sourceIPs, a.cfg.SkipLabelNameValidationHeader, i.PushWithCleanup), true, false, "POST") // For testing and debugging.
 
 	// Legacy Routes
-	a.RegisterRoute("/flush", http.HandlerFunc(i.FlushHandler), false, false, "GET", "POST")
-	a.RegisterRoute("/shutdown", http.HandlerFunc(i.ShutdownHandler), false, false, "GET", "POST")
+	a.RegisterRoute("/flush", http.HandlerFunc(i.FlushHandler), false, true, "GET", "POST")
+	a.RegisterRoute("/shutdown", http.HandlerFunc(i.ShutdownHandler), false, true, "GET", "POST")
 	a.RegisterRoute("/push", push.Handler(pushConfig.MaxRecvMsgSize, a.sourceIPs, a.cfg.SkipLabelNameValidationHeader, i.PushWithCleanup), true, false, "POST") // For testing and debugging.
 }
 
 func (a *API) RegisterTenantDeletion(api *purger.TenantDeletionAPI) {
-	a.RegisterRoute("/purger/delete_tenant", http.HandlerFunc(api.DeleteTenant), true, false, "POST")
-	a.RegisterRoute("/purger/delete_tenant_status", http.HandlerFunc(api.DeleteTenantStatus), true, false, "GET")
+	a.RegisterRoute("/purger/delete_tenant", http.HandlerFunc(api.DeleteTenant), true, true, "POST")
+	a.RegisterRoute("/purger/delete_tenant_status", http.HandlerFunc(api.DeleteTenantStatus), true, true, "GET")
 }
 
 // RegisterRuler registers routes associated with the Ruler service.
