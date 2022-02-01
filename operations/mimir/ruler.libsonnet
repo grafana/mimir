@@ -19,7 +19,6 @@
       // Alertmanager configs
       'ruler.alertmanager-url': 'http://alertmanager.%s.svc.cluster.local/alertmanager' % $._config.namespace,
       'ruler.enable-api': true,
-      'api.response-compression-enabled': true,
 
       // Ring Configs
       'ruler.ring.store': 'consul',

@@ -131,8 +131,6 @@ Usage of ./cmd/mimir/mimir:
     	Base path for data storage. (default "data/")
   -alertmanager.web.external-url value
     	The URL under which Alertmanager is externally reachable (for example, if Alertmanager is served via a reverse proxy). Used for generating relative and absolute links back to Alertmanager itself. If the URL has a path portion, it will be used to prefix all HTTP endpoints served by Alertmanager. (default http://localhost)
-  -api.response-compression-enabled
-    	Use GZIP compression for API responses. Some endpoints serve large YAML or JSON blobs which can benefit from compression.
   -auth.enabled
     	Set to false to disable auth. (default true)
   -blocks-storage.azure.account-key value

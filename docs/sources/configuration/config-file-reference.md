@@ -69,11 +69,6 @@ Where default_value is the value to use if the environment variable is undefined
 [http_prefix: <string> | default = "/api/prom"]
 
 api:
-  # Use GZIP compression for API responses. Some endpoints serve large YAML or
-  # JSON blobs which can benefit from compression.
-  # CLI flag: -api.response-compression-enabled
-  [response_compression_enabled: <boolean> | default = false]
-
   # [advanced] Allows to skip label name validation via header on the http write
   # path. Use with caution as it breaks PromQL. Allowing this for external
   # clients allows any client to send invalid label names. After enabling it,

@@ -836,7 +836,6 @@ spec:
             topologyKey: kubernetes.io/hostname
       containers:
       - args:
-        - -api.response-compression-enabled=true
         - -frontend.align-querier-with-step=false
         - -frontend.cache-results=true
         - -frontend.max-cache-freshness=10m
