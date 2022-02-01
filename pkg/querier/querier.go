@@ -10,7 +10,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"strings"
 	"sync"
 	"time"
 
@@ -53,8 +52,7 @@ type Config struct {
 	QueryStoreAfter    time.Duration `yaml:"query_store_after"`
 	MaxQueryIntoFuture time.Duration `yaml:"max_query_into_future"`
 
-	StoreGatewayAddresses string       `yaml:"store_gateway_addresses"`
-	StoreGatewayClient    ClientConfig `yaml:"store_gateway_client"`
+	StoreGatewayClient ClientConfig `yaml:"store_gateway_client"`
 
 	ShuffleShardingIngestersLookbackPeriod time.Duration `yaml:"shuffle_sharding_ingesters_lookback_period"`
 
@@ -78,7 +76,6 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.BoolVar(&cfg.QueryLabelNamesWithMatchers, "querier.query-label-names-with-matchers-enabled", false, "True to enable queriers to use an optimized implementation which passes down to ingesters the label matchers when running the label names API. Can be enabled once all ingesters run a version >= the one where this option has been introduced.")
 	f.DurationVar(&cfg.MaxQueryIntoFuture, "querier.max-query-into-future", 10*time.Minute, "Maximum duration into the future you can query. 0 to disable.")
 	f.DurationVar(&cfg.QueryStoreAfter, "querier.query-store-after", 0, "The time after which a metric should be queried from storage and not just ingesters. 0 means all queries are sent to store. If this option is enabled, the time range of the query sent to the store-gateway will be manipulated to ensure the query end is not more recent than 'now - query-store-after'.")
-	f.StringVar(&cfg.StoreGatewayAddresses, "querier.store-gateway-addresses", "", "Comma separated list of store-gateway addresses in DNS Service Discovery format. This option should be set when the store-gateway sharding is disabled (when enabled, the store-gateway instances form a ring and addresses are picked from the ring).")
 	f.DurationVar(&cfg.ShuffleShardingIngestersLookbackPeriod, "querier.shuffle-sharding-ingesters-lookback-period", 0, "When distributor's sharding strategy is shuffle-sharding and this setting is > 0, queriers fetch in-memory series from the minimum set of required ingesters, selecting only ingesters which may have received series since 'now - lookback period'. The lookback period should be greater or equal than the configured 'query store after' and 'query ingesters within'. If this setting is 0, queriers always query all ingesters (ingesters shuffle sharding on read path is disabled).")
 
 	cfg.EngineConfig.RegisterFlags(f)
@@ -100,14 +97,6 @@ func (cfg *Config) Validate() error {
 	}
 
 	return nil
-}
-
-func (cfg *Config) GetStoreGatewayAddresses() []string {
-	if cfg.StoreGatewayAddresses == "" {
-		return nil
-	}
-
-	return strings.Split(cfg.StoreGatewayAddresses, ",")
 }
 
 func getChunksIteratorFunction(cfg Config) chunkIteratorFunc {

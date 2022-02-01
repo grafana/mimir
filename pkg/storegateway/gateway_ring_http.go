@@ -42,11 +42,6 @@ func writeMessage(w http.ResponseWriter, message string) {
 }
 
 func (c *StoreGateway) RingHandler(w http.ResponseWriter, req *http.Request) {
-	if !c.gatewayCfg.ShardingEnabled {
-		writeMessage(w, "Store gateway has no ring because sharding is disabled.")
-		return
-	}
-
 	if c.State() != services.Running {
 		// we cannot read the ring before the store gateway is in Running state,
 		// because that would lead to race condition.

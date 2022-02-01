@@ -24,7 +24,7 @@ import (
 )
 
 // previousVersionImages returns a list of previous image version to test backwards
-// compatibility against. If MIMIR_PREVIOIS_IMAGES is set to a comma separted list of image versions,
+// compatibility against. If MIMIR_PREVIOUS_IMAGES is set to a comma separted list of image versions,
 // then those will be used instead of the default versions. Note that the overriding of flags
 // is not currently possible when overriding the previous image versions via the environment variable.
 func previousVersionImages() map[string]func(map[string]string) map[string]string {
@@ -38,6 +38,7 @@ func previousVersionImages() map[string]func(map[string]string) map[string]strin
 			previousVersionImages[image] = func(flags map[string]string) map[string]string {
 				flags["-store.engine"] = "blocks"
 				flags["-server.http-listen-port"] = "8080"
+				flags["-store-gateway.sharding-enabled"] = "true"
 				return flags
 			}
 		}

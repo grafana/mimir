@@ -1167,8 +1167,6 @@ Usage of ./cmd/mimir/mimir:
     	Hostname (and port) of scheduler that querier will periodically resolve, connect to and receive queries from. Only one of -querier.frontend-address or -querier.scheduler-address can be set. If neither is set, queries are only received via HTTP endpoint.
   -querier.shuffle-sharding-ingesters-lookback-period duration
     	When distributor's sharding strategy is shuffle-sharding and this setting is > 0, queriers fetch in-memory series from the minimum set of required ingesters, selecting only ingesters which may have received series since 'now - lookback period'. The lookback period should be greater or equal than the configured 'query store after' and 'query ingesters within'. If this setting is 0, queriers always query all ingesters (ingesters shuffle sharding on read path is disabled).
-  -querier.store-gateway-addresses string
-    	Comma separated list of store-gateway addresses in DNS Service Discovery format. This option should be set when the store-gateway sharding is disabled (when enabled, the store-gateway instances form a ring and addresses are picked from the ring).
   -querier.store-gateway-client.tls-ca-path string
     	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
   -querier.store-gateway-client.tls-cert-path string
@@ -1547,8 +1545,6 @@ Usage of ./cmd/mimir/mimir:
     	Base path to serve all API routes from (e.g. /v1/)
   -server.register-instrumentation
     	Register the intrumentation handlers (/metrics etc). (default true)
-  -store-gateway.sharding-enabled
-    	Shard blocks across multiple store gateway instances. This option needs be set both on the store-gateway and querier when running in microservices mode.
   -store-gateway.sharding-ring.consul.acl-token string
     	ACL Token used to interact with Consul.
   -store-gateway.sharding-ring.consul.client-timeout duration
@@ -1610,7 +1606,7 @@ Usage of ./cmd/mimir/mimir:
   -store-gateway.sharding-ring.replication-factor int
     	The replication factor to use when sharding blocks. This option needs be set both on the store-gateway and querier when running in microservices mode. (default 3)
   -store-gateway.sharding-ring.store string
-    	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "consul")
+    	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
   -store-gateway.sharding-ring.tokens-file-path string
     	File path where tokens are stored. If empty, tokens are not stored at shutdown and restored at startup.
   -store-gateway.sharding-ring.unregister-on-shutdown
@@ -1618,7 +1614,7 @@ Usage of ./cmd/mimir/mimir:
   -store-gateway.sharding-ring.wait-stability-max-duration duration
     	Maximum time to wait for ring stability at startup. If the store-gateway ring keeps changing after this period of time, the store-gateway will start anyway. (default 5m0s)
   -store-gateway.sharding-ring.wait-stability-min-duration duration
-    	Minimum time to wait for ring stability at startup. 0 to disable. (default 1m0s)
+    	Minimum time to wait for ring stability at startup, if set to positive value.
   -store-gateway.sharding-ring.zone-awareness-enabled
     	True to enable zone-awareness and replicate blocks across different availability zones.
   -store-gateway.tenant-shard-size int

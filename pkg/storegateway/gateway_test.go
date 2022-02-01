@@ -67,14 +67,12 @@ func TestConfig_Validate(t *testing.T) {
 		},
 		"should fail if shard size is negative": {
 			setup: func(cfg *Config, limits *validation.Limits) {
-				cfg.ShardingEnabled = true
 				limits.StoreGatewayTenantShardSize = -3
 			},
 			expected: errInvalidTenantShardSize,
 		},
 		"should pass if shard size has been set": {
 			setup: func(cfg *Config, limits *validation.Limits) {
-				cfg.ShardingEnabled = true
 				limits.StoreGatewayTenantShardSize = 3
 			},
 			expected: nil,
@@ -130,7 +128,6 @@ func TestStoreGateway_InitialSyncWithDefaultShardingEnabled(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			ctx := context.Background()
 			gatewayCfg := mockGatewayConfig()
-			gatewayCfg.ShardingEnabled = true
 			storageCfg := mockStorageConfig(t)
 			ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
 			t.Cleanup(func() { assert.NoError(t, closer.Close()) })
@@ -177,35 +174,11 @@ func TestStoreGateway_InitialSyncWithDefaultShardingEnabled(t *testing.T) {
 	}
 }
 
-func TestStoreGateway_InitialSyncWithShardingDisabled(t *testing.T) {
-	test.VerifyNoLeak(t)
-
-	ctx := context.Background()
-	gatewayCfg := mockGatewayConfig()
-	gatewayCfg.ShardingEnabled = false
-	storageCfg := mockStorageConfig(t)
-	bucketClient := &bucket.ClientMock{}
-
-	g, err := newStoreGateway(gatewayCfg, storageCfg, bucketClient, nil, defaultLimitsOverrides(t), mockLoggingLevel(), log.NewNopLogger(), nil, nil)
-	require.NoError(t, err)
-	t.Cleanup(func() { assert.NoError(t, services.StopAndAwaitTerminated(ctx, g)) })
-
-	bucketClient.MockIter("", []string{"user-1", "user-2"}, nil)
-	bucketClient.MockIter("user-1/", []string{}, nil)
-	bucketClient.MockIter("user-2/", []string{}, nil)
-
-	require.NoError(t, services.StartAndAwaitRunning(ctx, g))
-	assert.NotNil(t, g.stores.getStore("user-1"))
-	assert.NotNil(t, g.stores.getStore("user-2"))
-	assert.Nil(t, g.stores.getStore("user-unknown"))
-}
-
 func TestStoreGateway_InitialSyncFailure(t *testing.T) {
 	test.VerifyNoLeak(t)
 
 	ctx := context.Background()
 	gatewayCfg := mockGatewayConfig()
-	gatewayCfg.ShardingEnabled = true
 	storageCfg := mockStorageConfig(t)
 	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
@@ -352,7 +325,6 @@ func TestStoreGateway_InitialSyncWithWaitRingTokensStability(t *testing.T) {
 					gatewayCfg.ShardingRing.RingCheckPeriod = time.Hour // Do not check the ring topology changes in this test. We want the initial sync only.
 					gatewayCfg.ShardingRing.WaitStabilityMinDuration = 4 * time.Second
 					gatewayCfg.ShardingRing.WaitStabilityMaxDuration = 30 * time.Second
-					gatewayCfg.ShardingEnabled = true
 					limits.StoreGatewayTenantShardSize = testData.tenantShardSize
 
 					overrides, err := validation.NewOverrides(limits, nil)
@@ -453,7 +425,6 @@ func TestStoreGateway_BlocksSyncWithDefaultSharding_RingTopologyChangedAfterScal
 		gatewayCfg.ShardingRing.RingCheckPeriod = 100 * time.Millisecond // Check it continuously. Topology will change on scale up.
 		gatewayCfg.ShardingRing.WaitStabilityMinDuration = waitStabilityMin
 		gatewayCfg.ShardingRing.WaitStabilityMaxDuration = 30 * time.Second
-		gatewayCfg.ShardingEnabled = true
 
 		overrides, err := validation.NewOverrides(limits, nil)
 		require.NoError(t, err)
@@ -600,7 +571,6 @@ func TestStoreGateway_ShouldSupportLoadRingTokensFromFile(t *testing.T) {
 
 			ctx := context.Background()
 			gatewayCfg := mockGatewayConfig()
-			gatewayCfg.ShardingEnabled = true
 			gatewayCfg.ShardingRing.TokensFilePath = tokensFile.Name()
 
 			storageCfg := mockStorageConfig(t)
@@ -726,7 +696,6 @@ func TestStoreGateway_SyncOnRingTopologyChanged(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			ctx := context.Background()
 			gatewayCfg := mockGatewayConfig()
-			gatewayCfg.ShardingEnabled = true
 			gatewayCfg.ShardingRing.RingCheckPeriod = 100 * time.Millisecond
 
 			storageCfg := mockStorageConfig(t)
@@ -790,7 +759,6 @@ func TestStoreGateway_RingLifecyclerShouldAutoForgetUnhealthyInstances(t *testin
 
 	ctx := context.Background()
 	gatewayCfg := mockGatewayConfig()
-	gatewayCfg.ShardingEnabled = true
 	gatewayCfg.ShardingRing.HeartbeatPeriod = 100 * time.Millisecond
 	gatewayCfg.ShardingRing.HeartbeatTimeout = heartbeatTimeout
 
@@ -885,11 +853,13 @@ func TestStoreGateway_SeriesQueryingShouldRemoveExternalLabels(t *testing.T) {
 		t.Run(fmt.Sprintf("bucket index enabled = %v", bucketIndexEnabled), func(t *testing.T) {
 			// Create a store-gateway used to query back the series from the blocks.
 			gatewayCfg := mockGatewayConfig()
-			gatewayCfg.ShardingEnabled = false
 			storageCfg := mockStorageConfig(t)
 			storageCfg.BucketStore.BucketIndex.Enabled = bucketIndexEnabled
 
-			g, err := newStoreGateway(gatewayCfg, storageCfg, bucketClient, nil, defaultLimitsOverrides(t), mockLoggingLevel(), logger, nil, nil)
+			ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
+			t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
+			g, err := newStoreGateway(gatewayCfg, storageCfg, bucketClient, ringStore, defaultLimitsOverrides(t), mockLoggingLevel(), logger, nil, nil)
 			require.NoError(t, err)
 			require.NoError(t, services.StartAndAwaitRunning(ctx, g))
 			t.Cleanup(func() { assert.NoError(t, services.StopAndAwaitTerminated(ctx, g)) })
@@ -990,11 +960,13 @@ func TestStoreGateway_Series_QuerySharding(t *testing.T) {
 
 	// Create a store-gateway.
 	gatewayCfg := mockGatewayConfig()
-	gatewayCfg.ShardingEnabled = false
 	storageCfg := mockStorageConfig(t)
 	storageCfg.BucketStore.BucketIndex.Enabled = true
 
-	g, err := newStoreGateway(gatewayCfg, storageCfg, bucketClient, nil, defaultLimitsOverrides(t), mockLoggingLevel(), log.NewNopLogger(), nil, nil)
+	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
+	g, err := newStoreGateway(gatewayCfg, storageCfg, bucketClient, ringStore, defaultLimitsOverrides(t), mockLoggingLevel(), log.NewNopLogger(), nil, nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, g))
 	t.Cleanup(func() { assert.NoError(t, services.StopAndAwaitTerminated(ctx, g)) })
@@ -1055,11 +1027,13 @@ func TestStoreGateway_Series_QueryShardingConcurrency(t *testing.T) {
 
 	// Create a store-gateway.
 	gatewayCfg := mockGatewayConfig()
-	gatewayCfg.ShardingEnabled = false
 	storageCfg := mockStorageConfig(t)
 	storageCfg.BucketStore.BucketIndex.Enabled = true
 
-	g, err := newStoreGateway(gatewayCfg, storageCfg, bucketClient, nil, defaultLimitsOverrides(t), mockLoggingLevel(), log.NewNopLogger(), nil, nil)
+	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
+	g, err := newStoreGateway(gatewayCfg, storageCfg, bucketClient, ringStore, defaultLimitsOverrides(t), mockLoggingLevel(), log.NewNopLogger(), nil, nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, g))
 	t.Cleanup(func() { assert.NoError(t, services.StopAndAwaitTerminated(ctx, g)) })
@@ -1184,10 +1158,12 @@ func TestStoreGateway_SeriesQueryingShouldEnforceMaxChunksPerQueryLimit(t *testi
 
 			// Create a store-gateway used to query back the series from the blocks.
 			gatewayCfg := mockGatewayConfig()
-			gatewayCfg.ShardingEnabled = false
 			storageCfg := mockStorageConfig(t)
 
-			g, err := newStoreGateway(gatewayCfg, storageCfg, bucketClient, nil, overrides, mockLoggingLevel(), logger, nil, nil)
+			ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
+			t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
+			g, err := newStoreGateway(gatewayCfg, storageCfg, bucketClient, ringStore, overrides, mockLoggingLevel(), logger, nil, nil)
 			require.NoError(t, err)
 			require.NoError(t, services.StartAndAwaitRunning(ctx, g))
 			t.Cleanup(func() { assert.NoError(t, services.StopAndAwaitTerminated(ctx, g)) })

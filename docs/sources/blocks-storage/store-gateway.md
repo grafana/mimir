@@ -178,14 +178,7 @@ The `store_gateway_config` configures the store-gateway service.
 
 ```yaml
 store_gateway:
-  # Shard blocks across multiple store gateway instances. This option needs be
-  # set both on the store-gateway and querier when running in microservices
-  # mode.
-  # CLI flag: -store-gateway.sharding-enabled
-  [sharding_enabled: <boolean> | default = false]
-
-  # The hash ring configuration. This option is required only if blocks sharding
-  # is enabled.
+  # The hash ring configuration.
   sharding_ring:
     # The key-value store used to share the hash ring across multiple instances.
     # This option needs be set both on the store-gateway and querier when
@@ -194,7 +187,7 @@ store_gateway:
       # Backend storage to use for the ring. Supported values are: consul, etcd,
       # inmemory, memberlist, multi.
       # CLI flag: -store-gateway.sharding-ring.store
-      [store: <string> | default = "consul"]
+      [store: <string> | default = "memberlist"]
 
       # [advanced] The prefix for the keys in the store. Should end with a /.
       # CLI flag: -store-gateway.sharding-ring.prefix
@@ -253,9 +246,10 @@ store_gateway:
     # CLI flag: -store-gateway.sharding-ring.zone-awareness-enabled
     [zone_awareness_enabled: <boolean> | default = false]
 
-    # Minimum time to wait for ring stability at startup. 0 to disable.
+    # Minimum time to wait for ring stability at startup, if set to positive
+    # value.
     # CLI flag: -store-gateway.sharding-ring.wait-stability-min-duration
-    [wait_stability_min_duration: <duration> | default = 1m]
+    [wait_stability_min_duration: <duration> | default = 0s]
 
     # Maximum time to wait for ring stability at startup. If the store-gateway
     # ring keeps changing after this period of time, the store-gateway will

@@ -90,7 +90,6 @@
     queryBlocksStorageConfig:: {
       'blocks-storage.bucket-store.sync-dir': '/data/tsdb',
 
-      'store-gateway.sharding-enabled': true,
       'store-gateway.sharding-ring.store': 'consul',
       'store-gateway.sharding-ring.consul.hostname': 'consul.%s.svc.cluster.local:8500' % $._config.namespace,
       'store-gateway.sharding-ring.prefix': '',

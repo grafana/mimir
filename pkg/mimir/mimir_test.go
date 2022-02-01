@@ -48,6 +48,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
 	"github.com/grafana/mimir/pkg/storage/bucket/s3"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
+	"github.com/grafana/mimir/pkg/storegateway"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
@@ -125,6 +126,11 @@ func TestMimir(t *testing.T) {
 				InstanceInterfaceNames: []string{"en0", "eth0", "lo0", "lo"},
 			},
 		},
+		StoreGateway: storegateway.Config{ShardingRing: storegateway.RingConfig{
+			KVStore:                kv.Config{Store: "memberlist"},
+			ReplicationFactor:      1,
+			InstanceInterfaceNames: []string{"en0", "eth0", "lo0", "lo"},
+		}},
 
 		Target: []string{All, AlertManager},
 	}

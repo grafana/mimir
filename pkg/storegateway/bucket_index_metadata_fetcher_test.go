@@ -24,6 +24,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/thanos/pkg/block"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
+	"github.com/thanos-io/thanos/pkg/extprom"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
@@ -62,7 +63,7 @@ func TestBucketIndexMetadataFetcher_Fetch(t *testing.T) {
 		newMinTimeMetaFilter(1 * time.Hour),
 	}
 
-	fetcher := NewBucketIndexMetadataFetcher(userID, bkt, NewNoShardingStrategy(), nil, logger, reg, filters, nil)
+	fetcher := NewBucketIndexMetadataFetcher(userID, bkt, newNoShardingStrategy(), nil, logger, reg, filters, nil)
 	metas, partials, err := fetcher.Fetch(ctx)
 	require.NoError(t, err)
 	assert.Equal(t, map[ulid.ULID]*metadata.Meta{
@@ -117,7 +118,7 @@ func TestBucketIndexMetadataFetcher_Fetch_NoBucketIndex(t *testing.T) {
 	logs := &concurrency.SyncBuffer{}
 	logger := log.NewLogfmtLogger(logs)
 
-	fetcher := NewBucketIndexMetadataFetcher(userID, bkt, NewNoShardingStrategy(), nil, logger, reg, nil, nil)
+	fetcher := NewBucketIndexMetadataFetcher(userID, bkt, newNoShardingStrategy(), nil, logger, reg, nil, nil)
 	metas, partials, err := fetcher.Fetch(ctx)
 	require.NoError(t, err)
 	assert.Empty(t, metas)
@@ -172,7 +173,7 @@ func TestBucketIndexMetadataFetcher_Fetch_CorruptedBucketIndex(t *testing.T) {
 	// Upload a corrupted bucket index.
 	require.NoError(t, bkt.Upload(ctx, path.Join(userID, bucketindex.IndexCompressedFilename), strings.NewReader("invalid}!")))
 
-	fetcher := NewBucketIndexMetadataFetcher(userID, bkt, NewNoShardingStrategy(), nil, logger, reg, nil, nil)
+	fetcher := NewBucketIndexMetadataFetcher(userID, bkt, newNoShardingStrategy(), nil, logger, reg, nil, nil)
 	metas, partials, err := fetcher.Fetch(ctx)
 	require.NoError(t, err)
 	assert.Empty(t, metas)
@@ -336,4 +337,19 @@ func TestBucketIndexMetadataFetcher_Fetch_ShouldResetGaugeMetrics(t *testing.T) 
 		blocks_meta_synced{state="min-time-excluded"} 0
 		blocks_meta_synced{state="too-fresh"} 0
 	`), "blocks_meta_synced"))
+}
+
+// noShardingStrategy is a no-op strategy. When this strategy is used, no tenant/block is filtered out.
+type noShardingStrategy struct{}
+
+func newNoShardingStrategy() *noShardingStrategy {
+	return &noShardingStrategy{}
+}
+
+func (s *noShardingStrategy) FilterUsers(_ context.Context, userIDs []string) []string {
+	return userIDs
+}
+
+func (s *noShardingStrategy) FilterBlocks(_ context.Context, _ string, _ map[ulid.ULID]*metadata.Meta, _ map[ulid.ULID]struct{}, _ *extprom.TxGaugeVec) error {
+	return nil
 }

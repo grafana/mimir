@@ -77,7 +77,6 @@ blocks_storage:
     dir: /tmp/mimir/storage
 
 store_gateway:
-  sharding_enabled: true
   sharding_ring:
     kvstore:
       store: memberlist

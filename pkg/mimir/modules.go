@@ -394,12 +394,6 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 func (t *Mimir) initStoreQueryables() (services.Service, error) {
 	var servs []services.Service
 
-	// When running in single binary, if the blocks sharding is disabled and no custom
-	// store-gateway address has been configured, we can set it to the running process.
-	if t.Cfg.isModuleEnabled(All) && !t.Cfg.StoreGateway.ShardingEnabled && t.Cfg.Querier.StoreGatewayAddresses == "" {
-		t.Cfg.Querier.StoreGatewayAddresses = fmt.Sprintf("127.0.0.1:%d", t.Cfg.Server.GRPCListenPort)
-	}
-
 	//nolint:golint // I prefer this form over removing 'else', because it allows q to have smaller scope.
 	if q, err := querier.NewBlocksStoreQueryableFromConfig(t.Cfg.Querier, t.Cfg.StoreGateway, t.Cfg.BlocksStorage, t.Overrides, util_log.Logger, prometheus.DefaultRegisterer); err != nil {
 		return nil, fmt.Errorf("failed to initialize querier: %v", err)
