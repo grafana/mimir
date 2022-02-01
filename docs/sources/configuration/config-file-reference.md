@@ -1630,10 +1630,6 @@ sharding_ring:
 # CLI flag: -alertmanager.configs.fallback
 [fallback_config_file: <string> | default = ""]
 
-# Root of URL to generate if config is http://internal.monitor
-# CLI flag: -alertmanager.configs.auto-webhook-root
-[auto_webhook_root: <string> | default = ""]
-
 cluster:
   # Listen address and port for the cluster. Not specifying this flag disables
   # high-availability mode.
