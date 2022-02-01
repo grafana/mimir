@@ -47,7 +47,7 @@ type ConfigHandler func(actualCfg interface{}, defaultCfg interface{}) http.Hand
 
 type Config struct {
 	ResponseCompression           bool `yaml:"response_compression_enabled"`
-	SkipLabelNameValidationHeader bool `yaml:"skip_label_name_validation_header_enabled"`
+	SkipLabelNameValidationHeader bool `yaml:"skip_label_name_validation_header_enabled" category:"advanced"`
 
 	AlertmanagerHTTPPrefix string `yaml:"alertmanager_http_prefix" category:"advanced"`
 	PrometheusHTTPPrefix   string `yaml:"prometheus_http_prefix" category:"advanced"`
