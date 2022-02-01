@@ -38,11 +38,13 @@ chmod +x mimir
 
 ## Start Grafana Mimir
 
-To run Grafana Mimir in a single process and with local filesystem storage, write the following configuration YAML to a file called `dev.yaml`:
+To run Grafana Mimir in a single process and with local filesystem storage, write the following configuration YAML to a file called `demo.yaml`:
 
+<!-- prettier-ignore-start -->
+[embedmd]:# (../../configurations/demo.yaml)
 ```yaml
 # Do not use this configuration in production.
-# Its purpose is for you to get started within a development environment.
+# It is for demonstration purposes only.
 auth_enabled: false
 
 blocks_storage:
@@ -76,7 +78,6 @@ ingester:
 
 ruler:
   enable_api: true
-  enable_sharding: false
 
 ruler_storage:
   backend: local
@@ -91,6 +92,7 @@ store_gateway:
   sharding_ring:
     replication_factor: 1
 ```
+<!-- prettier-ignore-end -->
 
 ## Run Grafana Mimir
 
@@ -99,13 +101,13 @@ In a terminal, run one of the following commands:
 - Using Docker:
 
   ```bash
-  docker run --rm --name mimir --publish 9009:9009 --volume "$(pwd)"/dev.yaml:/etc/mimir/dev.yaml "grafana/mimir:${MIMIR_LATEST}" --config.file=/etc/mimir/dev.yaml
+  docker run --rm --name mimir --publish 9009:9009 --volume "$(pwd)"/demo.yaml:/etc/mimir/demo.yaml "grafana/mimir:${MIMIR_LATEST}" --config.file=/etc/mimir/demo.yaml
   ```
 
 - Using a local binary:
 
   ```bash
-  ./mimir --config.file=./dev.yaml
+  ./mimir --config.file=./demo.yaml
   ```
 
 Grafana Mimir listens on port `9009`.

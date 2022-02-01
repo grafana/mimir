@@ -320,6 +320,7 @@ doc: clean-doc
 	embedmd -w docs/sources/configuration/prometheus-frontend.md
 	embedmd -w docs/sources/operations/requests-mirroring-to-secondary-cluster.md
 	embedmd -w docs/sources/guides/overrides-exporter.md
+	embedmd -w docs/sources/getting-started/_index.md
 	embedmd -w operations/mimir/README.md
 
 	# Make up markdown files prettier. When running with check-doc target, it will fail if this produces any change.
