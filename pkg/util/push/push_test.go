@@ -19,6 +19,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/middleware"
+	colmetricpb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
+	v11 "go.opentelemetry.io/proto/otlp/common/v1"
+	metricpb "go.opentelemetry.io/proto/otlp/metrics/v1"
+	metricsv1 "go.opentelemetry.io/proto/otlp/metrics/v1"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
@@ -31,7 +36,15 @@ func TestHandler_remoteWrite(t *testing.T) {
 	assert.Equal(t, 200, resp.Code)
 }
 
-func TestHandler_cortexWriteRequest(t *testing.T) {
+func TestHandler_otlpWrite(t *testing.T) {
+	req := createOTLPRequest(t, createOTLPProtobuf(t))
+	resp := httptest.NewRecorder()
+	handler := HandlerForOTLP(100000, nil, false, verifyWriteRequestHandler(t, mimirpb.API))
+	handler.ServeHTTP(resp, req)
+	assert.Equal(t, 200, resp.Code)
+}
+
+func TestHandler_mimirWriteRequest(t *testing.T) {
 	req := createRequest(t, createMimirWriteRequestProtobuf(t, false))
 	resp := httptest.NewRecorder()
 	sourceIPs, _ := middleware.NewSourceIPs("SomeField", "(.*)")
@@ -175,6 +188,70 @@ func createRequest(t testing.TB, protobuf []byte) *http.Request {
 	req.Header.Set("Content-Type", "application/x-protobuf")
 	req.Header.Set("X-Prometheus-Remote-Write-Version", "0.1.0")
 	return req
+}
+
+func createOTLPRequest(t testing.TB, protoMetrics *metricpb.ResourceMetrics) *http.Request {
+	t.Helper()
+
+	pbRequest := &colmetricpb.ExportMetricsServiceRequest{
+		ResourceMetrics: []*metricpb.ResourceMetrics{protoMetrics},
+	}
+
+	rawBytes, err := proto.Marshal(pbRequest)
+	require.NoError(t, err)
+
+	req, err := http.NewRequest("POST", "http://localhost/", bytes.NewReader(rawBytes))
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", "application/x-protobuf")
+	return req
+}
+
+func createOTLPProtobuf(t testing.TB) *metricpb.ResourceMetrics {
+	return otlpMetricsFromPRWBytes(t, createPrometheusRemoteWriteProtobuf(t))
+}
+
+func otlpMetricsFromPRWBytes(t testing.TB, input []byte) *metricpb.ResourceMetrics {
+	prwReq := &prompb.WriteRequest{}
+	require.NoError(t, proto.Unmarshal(input, prwReq))
+
+	output := &metricpb.ResourceMetrics{}
+	metrics := []*metricsv1.Metric{}
+	for _, ts := range prwReq.Timeseries {
+		name := ""
+		otlpLabels := make([]*v11.StringKeyValue, 0, len(ts.Labels))
+		for _, l := range ts.Labels {
+			if l.Name == "__name__" {
+				name = l.Value
+				continue
+			}
+
+			otlpLabels = append(otlpLabels, &v11.StringKeyValue{
+				Key:   l.Name,
+				Value: l.Value,
+			})
+		}
+
+		for _, sample := range ts.Samples {
+			metrics = append(metrics, &metricsv1.Metric{
+				Name: name,
+				Data: &metricsv1.Metric_DoubleGauge{
+					DoubleGauge: &metricsv1.DoubleGauge{
+						DataPoints: []*metricsv1.DoubleDataPoint{
+							{
+								Labels:       otlpLabels,
+								TimeUnixNano: uint64(sample.Timestamp) * 1000000,
+								Value:        sample.Value,
+							},
+						},
+					},
+				},
+			})
+		}
+	}
+
+	output.InstrumentationLibraryMetrics = []*metricsv1.InstrumentationLibraryMetrics{{Metrics: metrics}}
+
+	return output
 }
 
 func createPrometheusRemoteWriteProtobuf(t testing.TB) []byte {
