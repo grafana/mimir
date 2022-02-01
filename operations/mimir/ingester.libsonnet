@@ -32,7 +32,6 @@
       // Blocks storage.
       'blocks-storage.tsdb.dir': '/data/tsdb',
       'blocks-storage.tsdb.block-ranges-period': '2h',
-      'blocks-storage.tsdb.retention-period': '24h',  // 1 day protection against blocks not being uploaded from ingesters.
       'blocks-storage.tsdb.ship-interval': '1m',
 
       // Close idle TSDBs.

@@ -93,7 +93,7 @@ Queriers and store-gateways don't need a strongly consistent view over the bucke
 The maximum delay between a change into the bucket is picked up by queriers and store-gateways depends on the configuration and is the minimum time between:
 
 - New blocks uploaded by ingester:
-  `min(-querier.query-ingesters-within, -blocks-storage.tsdb.retention-period)` (default: 6h)
+  `min(-querier.query-ingesters-within, -blocks-storage.tsdb.retention-period)` (default: 13h)
 - New blocks uploaded/deleted by compactor:
   `-compactor.deletion-delay` (default: 12h)
 

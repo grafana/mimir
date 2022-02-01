@@ -109,7 +109,7 @@ querier:
   # Maximum lookback beyond which queries are not sent to ingester. 0 means all
   # queries are sent to ingester.
   # CLI flag: -querier.query-ingesters-within
-  [query_ingesters_within: <duration> | default = 0s]
+  [query_ingesters_within: <duration> | default = 13h]
 
   # True to enable queriers to use an optimized implementation which passes down
   # to ingesters the label matchers when running the label names API. Can be
@@ -162,9 +162,9 @@ querier:
   # > 0, queriers fetch in-memory series from the minimum set of required
   # ingesters, selecting only ingesters which may have received series since
   # 'now - lookback period'. The lookback period should be greater or equal than
-  # the configured 'query store after' and 'query ingesters within'. If this
-  # setting is 0, queriers always query all ingesters (ingesters shuffle
-  # sharding on read path is disabled).
+  # the configured -querier.query-store-after and
+  # -querier.query-ingesters-within. If this setting is 0, queriers always query
+  # all ingesters (ingesters shuffle sharding on read path is disabled).
   # CLI flag: -querier.shuffle-sharding-ingesters-lookback-period
   [shuffle_sharding_ingesters_lookback_period: <duration> | default = 0s]
 
@@ -653,10 +653,11 @@ blocks_storage:
     [block_ranges_period: <list of duration> | default = 2h0m0s]
 
     # TSDB blocks retention in the ingester before a block is removed. This
-    # should be larger than the block_ranges_period and large enough to give
-    # store-gateways and queriers enough time to discover newly uploaded blocks.
+    # should be larger than the -blocks-storage.tsdb.block-ranges-period,
+    # -querier.query-store-after and large enough to give store-gateways and
+    # queriers enough time to discover newly uploaded blocks.
     # CLI flag: -blocks-storage.tsdb.retention-period
-    [retention_period: <duration> | default = 6h]
+    [retention_period: <duration> | default = 24h]
 
     # How frequently the TSDB blocks are scanned and new ones are shipped to the
     # storage. 0 means shipping is disabled.
@@ -722,7 +723,7 @@ blocks_storage:
     # prematurely, which could cause partial query results. 0 or negative value
     # disables closing of idle TSDB.
     # CLI flag: -blocks-storage.tsdb.close-idle-tsdb-timeout
-    [close_idle_tsdb_timeout: <duration> | default = 0s]
+    [close_idle_tsdb_timeout: <duration> | default = 13h]
 
     # True to enable snapshotting of in-memory TSDB data on disk when shutting
     # down.

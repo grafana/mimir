@@ -153,6 +153,7 @@ func TestQuerier_QueryableReturnsChunksOutsideQueriedRange(t *testing.T) {
 
 	var cfg Config
 	flagext.DefaultValues(&cfg)
+	cfg.QueryIngestersWithin = 0 // Always query ingesters in this test.
 
 	// Mock distributor to return chunks containing samples outside the queried range.
 	distributor := &mockDistributor{}
@@ -611,6 +612,7 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 			var cfg Config
 			flagext.DefaultValues(&cfg)
 			cfg.QueryLabelNamesWithMatchers = true
+			cfg.QueryIngestersWithin = 0 // Always query ingesters in this test.
 
 			limits := defaultLimitsConfig()
 			limits.MaxQueryLookback = testData.maxQueryLookback
@@ -739,8 +741,7 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 // because the implementation of those makes it really hard to do in Querier.
 func TestQuerier_MaxLabelsQueryRange(t *testing.T) {
 	const (
-		engineLookbackDelta = 5 * time.Minute
-		thirtyDays          = 30 * 24 * time.Hour
+		thirtyDays = 30 * 24 * time.Hour
 	)
 
 	now := time.Now()
@@ -768,6 +769,7 @@ func TestQuerier_MaxLabelsQueryRange(t *testing.T) {
 			var cfg Config
 			flagext.DefaultValues(&cfg)
 			cfg.QueryLabelNamesWithMatchers = true
+			cfg.QueryIngestersWithin = 0 // Always query ingesters in this test.
 
 			limits := defaultLimitsConfig()
 			limits.MaxQueryLookback = model.Duration(thirtyDays * 2)
