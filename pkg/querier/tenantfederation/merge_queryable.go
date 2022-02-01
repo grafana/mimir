@@ -23,12 +23,6 @@ import (
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
-const (
-	defaultTenantLabel   = "__tenant_id__"
-	retainExistingPrefix = "original_"
-	maxConcurrency       = 16
-)
-
 // NewQueryable returns a queryable that iterates through all the tenant IDs
 // that are part of the request and aggregates the results from each tenant's
 // Querier by sending of subsequent requests.
@@ -337,47 +331,6 @@ func (m *mergeQuerier) Select(sortSeries bool, hints *storage.SelectHints, match
 	return storage.NewMergeSeriesSet(seriesSets, storage.ChainedSeriesMerge)
 }
 
-// filterValuesByMatchers applies matchers to inputed `idLabelName` and
-// `ids`. A set of matched IDs is returned and also all label matchers not
-// matching the `idLabelName`.
-// In case a label matcher is set on a label conflicting with `idLabelName`, we
-// need to rename this labelMatcher's name to its original name. This is used
-// to as part of Select in the mergeQueryable, to ensure only relevant queries
-// are considered and the forwarded matchers do not contain matchers on the
-// `idLabelName`.
-func filterValuesByMatchers(idLabelName string, ids []string, matchers ...*labels.Matcher) (matchedIDs map[string]struct{}, unrelatedMatchers []*labels.Matcher) {
-	// this contains the matchers which are not related to idLabelName
-	unrelatedMatchers = make([]*labels.Matcher, 0, len(matchers))
-
-	// build map of values to consider for the matchers
-	matchedIDs = sliceToSet(ids)
-
-	for _, m := range matchers {
-		switch m.Name {
-		// matcher has idLabelName to target a specific tenant(s)
-		case idLabelName:
-			for value := range matchedIDs {
-				if !m.Matches(value) {
-					delete(matchedIDs, value)
-				}
-			}
-
-		// check if has the retained label name
-		case retainExistingPrefix + idLabelName:
-			// rewrite label to the original name, by copying matcher and
-			// replacing the label name
-			rewrittenM := *m
-			rewrittenM.Name = idLabelName
-			unrelatedMatchers = append(unrelatedMatchers, &rewrittenM)
-
-		default:
-			unrelatedMatchers = append(unrelatedMatchers, m)
-		}
-	}
-
-	return matchedIDs, unrelatedMatchers
-}
-
 type addLabelsSeriesSet struct {
 	upstream   storage.SeriesSet
 	labels     labels.Labels
@@ -463,12 +416,4 @@ func setLabelsRetainExisting(src labels.Labels, additionalLabels ...labels.Label
 	}
 
 	return lb.Labels()
-}
-
-func sliceToSet(values []string) map[string]struct{} {
-	out := make(map[string]struct{}, len(values))
-	for _, v := range values {
-		out[v] = struct{}{}
-	}
-	return out
 }
