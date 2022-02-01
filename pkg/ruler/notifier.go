@@ -120,6 +120,10 @@ func buildNotifierConfig(rulerConfig *Config, resolver cacheutil.AddressProvider
 			continue
 		}
 
+		if url.Host == "" {
+			return nil, fmt.Errorf("improperly formatted alertmanager URL (maybe the scheme is missing?) %q", rawURL)
+		}
+
 		// Given we only support SRV lookups as part of service discovery, we need to ensure
 		// hosts provided follow this specification: _service._proto.name
 		// e.g. _http._tcp.alertmanager.com

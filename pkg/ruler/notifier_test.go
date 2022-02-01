@@ -6,6 +6,7 @@
 package ruler
 
 import (
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -91,7 +92,7 @@ func TestBuildNotifierConfig(t *testing.T) {
 				AlertmanagerURL:       "http://_http.default.svc.cluster.local/alertmanager",
 				AlertmanagerDiscovery: true,
 			},
-			err: fmt.Errorf("when alertmanager-discovery is on, host name must be of the form _portname._tcp.service.fqdn (is \"alertmanager.default.svc.cluster.local\")"),
+			err: fmt.Errorf("when alertmanager-discovery is on, host name must be of the form _portname._tcp.service.fqdn (is \"_http.default.svc.cluster.local\")"),
 		},
 		{
 			name: "with multiple URLs and no service discovery",
@@ -228,9 +229,9 @@ func TestBuildNotifierConfig(t *testing.T) {
 			},
 		},
 		{
-			name: "with multiple thanos DNS SD",
+			name: "with multiple thanos service discovery",
 			cfg: &Config{
-				AlertmanagerURL: "dns+http://alertmanager.mimir.svc.cluster.local:8080/alertmanager,dnssrv+https://_http._tcp.alertmanager2.mimir.svc.cluster.local/alertmanager",
+				AlertmanagerURL: "dns+http://alertmanager.mimir.svc.cluster.local:8080/alertmanager,dnssrv+https://_http._tcp.alertmanager2.mimir.svc.cluster.local/am",
 			},
 			ncfg: &config.Config{
 				AlertingConfig: config.AlertingConfig{
@@ -249,7 +250,7 @@ func TestBuildNotifierConfig(t *testing.T) {
 						{
 							APIVersion: "v1",
 							Scheme:     "https",
-							PathPrefix: "/alertmanager",
+							PathPrefix: "/am",
 							ServiceDiscoveryConfigs: discovery.Configs{
 								thanossd.Config{
 									Host:  "_http._tcp.alertmanager2.mimir.svc.cluster.local",
@@ -261,6 +262,13 @@ func TestBuildNotifierConfig(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "with thanos service discovery and missing scheme",
+			cfg: &Config{
+				AlertmanagerURL: "dns+alertmanager.mimir.svc.cluster.local:8080/alertmanager",
+			},
+			err: errors.New("improperly formatted alertmanager URL (maybe the scheme is missing?) \"alertmanager.mimir.svc.cluster.local:8080/alertmanager\""),
+		},
 	}
 
 	for _, tt := range tests {
@@ -270,7 +278,7 @@ func TestBuildNotifierConfig(t *testing.T) {
 				require.NoError(t, err)
 				require.Equal(t, tt.ncfg, ncfg)
 			} else {
-				require.Error(t, tt.err, err)
+				require.EqualError(t, err, tt.err.Error())
 			}
 		})
 	}
