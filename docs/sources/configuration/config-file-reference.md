@@ -1344,9 +1344,9 @@ s3:
   # CLI flag: -ruler-storage.s3.access-key-id
   [access_key_id: <string> | default = ""]
 
-  # If enabled, use http:// for the S3 endpoint instead of https://. This could
-  # be useful in local dev/test environments while using an S3-compatible
-  # backend storage, like Minio.
+  # [advanced] If enabled, use http:// for the S3 endpoint instead of https://.
+  # This could be useful in local dev/test environments while using an
+  # S3-compatible backend storage, like Minio.
   # CLI flag: -ruler-storage.s3.insecure
   [insecure: <boolean> | default = false]
 
@@ -1360,11 +1360,12 @@ s3:
   [sse: <s3_sse_config>]
 
   http:
-    # The time an idle connection will remain idle before closing.
+    # [advanced] The time an idle connection will remain idle before closing.
     # CLI flag: -ruler-storage.s3.http.idle-conn-timeout
     [idle_conn_timeout: <duration> | default = 1m30s]
 
-    # The amount of time the client will wait for a servers response headers.
+    # [advanced] The amount of time the client will wait for a servers response
+    # headers.
     # CLI flag: -ruler-storage.s3.http.response-header-timeout
     [response_header_timeout: <duration> | default = 2m]
 
@@ -1377,23 +1378,23 @@ s3:
     # CLI flag: -ruler-storage.s3.tls-handshake-timeout
     [tls_handshake_timeout: <duration> | default = 10s]
 
-    # The time to wait for a server's first response headers after fully writing
-    # the request headers if the request has an Expect header. 0 to send the
-    # request body immediately.
+    # [advanced] The time to wait for a server's first response headers after
+    # fully writing the request headers if the request has an Expect header. 0
+    # to send the request body immediately.
     # CLI flag: -ruler-storage.s3.expect-continue-timeout
     [expect_continue_timeout: <duration> | default = 1s]
 
-    # Maximum number of idle (keep-alive) connections across all hosts. 0 means
-    # no limit.
+    # [advanced] Maximum number of idle (keep-alive) connections across all
+    # hosts. 0 means no limit.
     # CLI flag: -ruler-storage.s3.max-idle-connections
     [max_idle_connections: <int> | default = 100]
 
-    # Maximum number of idle (keep-alive) connections to keep per-host. If 0, a
-    # built-in default value is used.
+    # [advanced] Maximum number of idle (keep-alive) connections to keep
+    # per-host. If 0, a built-in default value is used.
     # CLI flag: -ruler-storage.s3.max-idle-connections-per-host
     [max_idle_connections_per_host: <int> | default = 100]
 
-    # Maximum number of connections per host. 0 means no limit.
+    # [advanced] Maximum number of connections per host. 0 means no limit.
     # CLI flag: -ruler-storage.s3.max-connections-per-host
     [max_connections_per_host: <int> | default = 0]
 
@@ -1427,17 +1428,18 @@ azure:
   # CLI flag: -ruler-storage.azure.endpoint-suffix
   [endpoint_suffix: <string> | default = ""]
 
-  # Number of retries for recoverable errors
+  # [advanced] Number of retries for recoverable errors
   # CLI flag: -ruler-storage.azure.max-retries
   [max_retries: <int> | default = 20]
 
-  # If set, this URL is used instead of
+  # [advanced] If set, this URL is used instead of
   # https://<storage-account-name>.<endpoint-suffix> for obtaining
   # ServicePrincipalToken from MSI.
   # CLI flag: -ruler-storage.azure.msi-resource
   [msi_resource: <string> | default = ""]
 
-  # User assigned identity. If empty, then System assigned identity is used.
+  # [advanced] User assigned identity. If empty, then System assigned identity
+  # is used.
   # CLI flag: -ruler-storage.azure.user-assigned-id
   [user_assigned_id: <string> | default = ""]
 
@@ -1504,17 +1506,17 @@ swift:
   # CLI flag: -ruler-storage.swift.container-name
   [container_name: <string> | default = ""]
 
-  # Max retries on requests error.
+  # [advanced] Max retries on requests error.
   # CLI flag: -ruler-storage.swift.max-retries
   [max_retries: <int> | default = 3]
 
-  # Time after which a connection attempt is aborted.
+  # [advanced] Time after which a connection attempt is aborted.
   # CLI flag: -ruler-storage.swift.connect-timeout
   [connect_timeout: <duration> | default = 10s]
 
-  # Time after which an idle request is aborted. The timeout watchdog is reset
-  # each time some data is received, so the timeout triggers after X time no
-  # data is received on a request.
+  # [advanced] Time after which an idle request is aborted. The timeout watchdog
+  # is reset each time some data is received, so the timeout triggers after X
+  # time no data is received on a request.
   # CLI flag: -ruler-storage.swift.request-timeout
   [request_timeout: <duration> | default = 5s]
 
@@ -1740,9 +1742,9 @@ s3:
   # CLI flag: -alertmanager-storage.s3.access-key-id
   [access_key_id: <string> | default = ""]
 
-  # If enabled, use http:// for the S3 endpoint instead of https://. This could
-  # be useful in local dev/test environments while using an S3-compatible
-  # backend storage, like Minio.
+  # [advanced] If enabled, use http:// for the S3 endpoint instead of https://.
+  # This could be useful in local dev/test environments while using an
+  # S3-compatible backend storage, like Minio.
   # CLI flag: -alertmanager-storage.s3.insecure
   [insecure: <boolean> | default = false]
 
@@ -1756,11 +1758,12 @@ s3:
   [sse: <s3_sse_config>]
 
   http:
-    # The time an idle connection will remain idle before closing.
+    # [advanced] The time an idle connection will remain idle before closing.
     # CLI flag: -alertmanager-storage.s3.http.idle-conn-timeout
     [idle_conn_timeout: <duration> | default = 1m30s]
 
-    # The amount of time the client will wait for a servers response headers.
+    # [advanced] The amount of time the client will wait for a servers response
+    # headers.
     # CLI flag: -alertmanager-storage.s3.http.response-header-timeout
     [response_header_timeout: <duration> | default = 2m]
 
@@ -1773,23 +1776,23 @@ s3:
     # CLI flag: -alertmanager-storage.s3.tls-handshake-timeout
     [tls_handshake_timeout: <duration> | default = 10s]
 
-    # The time to wait for a server's first response headers after fully writing
-    # the request headers if the request has an Expect header. 0 to send the
-    # request body immediately.
+    # [advanced] The time to wait for a server's first response headers after
+    # fully writing the request headers if the request has an Expect header. 0
+    # to send the request body immediately.
     # CLI flag: -alertmanager-storage.s3.expect-continue-timeout
     [expect_continue_timeout: <duration> | default = 1s]
 
-    # Maximum number of idle (keep-alive) connections across all hosts. 0 means
-    # no limit.
+    # [advanced] Maximum number of idle (keep-alive) connections across all
+    # hosts. 0 means no limit.
     # CLI flag: -alertmanager-storage.s3.max-idle-connections
     [max_idle_connections: <int> | default = 100]
 
-    # Maximum number of idle (keep-alive) connections to keep per-host. If 0, a
-    # built-in default value is used.
+    # [advanced] Maximum number of idle (keep-alive) connections to keep
+    # per-host. If 0, a built-in default value is used.
     # CLI flag: -alertmanager-storage.s3.max-idle-connections-per-host
     [max_idle_connections_per_host: <int> | default = 100]
 
-    # Maximum number of connections per host. 0 means no limit.
+    # [advanced] Maximum number of connections per host. 0 means no limit.
     # CLI flag: -alertmanager-storage.s3.max-connections-per-host
     [max_connections_per_host: <int> | default = 0]
 
@@ -1823,17 +1826,18 @@ azure:
   # CLI flag: -alertmanager-storage.azure.endpoint-suffix
   [endpoint_suffix: <string> | default = ""]
 
-  # Number of retries for recoverable errors
+  # [advanced] Number of retries for recoverable errors
   # CLI flag: -alertmanager-storage.azure.max-retries
   [max_retries: <int> | default = 20]
 
-  # If set, this URL is used instead of
+  # [advanced] If set, this URL is used instead of
   # https://<storage-account-name>.<endpoint-suffix> for obtaining
   # ServicePrincipalToken from MSI.
   # CLI flag: -alertmanager-storage.azure.msi-resource
   [msi_resource: <string> | default = ""]
 
-  # User assigned identity. If empty, then System assigned identity is used.
+  # [advanced] User assigned identity. If empty, then System assigned identity
+  # is used.
   # CLI flag: -alertmanager-storage.azure.user-assigned-id
   [user_assigned_id: <string> | default = ""]
 
@@ -1900,17 +1904,17 @@ swift:
   # CLI flag: -alertmanager-storage.swift.container-name
   [container_name: <string> | default = ""]
 
-  # Max retries on requests error.
+  # [advanced] Max retries on requests error.
   # CLI flag: -alertmanager-storage.swift.max-retries
   [max_retries: <int> | default = 3]
 
-  # Time after which a connection attempt is aborted.
+  # [advanced] Time after which a connection attempt is aborted.
   # CLI flag: -alertmanager-storage.swift.connect-timeout
   [connect_timeout: <duration> | default = 10s]
 
-  # Time after which an idle request is aborted. The timeout watchdog is reset
-  # each time some data is received, so the timeout triggers after X time no
-  # data is received on a request.
+  # [advanced] Time after which an idle request is aborted. The timeout watchdog
+  # is reset each time some data is received, so the timeout triggers after X
+  # time no data is received on a request.
   # CLI flag: -alertmanager-storage.swift.request-timeout
   [request_timeout: <duration> | default = 5s]
 
@@ -2698,9 +2702,9 @@ s3:
   # CLI flag: -blocks-storage.s3.access-key-id
   [access_key_id: <string> | default = ""]
 
-  # If enabled, use http:// for the S3 endpoint instead of https://. This could
-  # be useful in local dev/test environments while using an S3-compatible
-  # backend storage, like Minio.
+  # [advanced] If enabled, use http:// for the S3 endpoint instead of https://.
+  # This could be useful in local dev/test environments while using an
+  # S3-compatible backend storage, like Minio.
   # CLI flag: -blocks-storage.s3.insecure
   [insecure: <boolean> | default = false]
 
@@ -2714,11 +2718,12 @@ s3:
   [sse: <s3_sse_config>]
 
   http:
-    # The time an idle connection will remain idle before closing.
+    # [advanced] The time an idle connection will remain idle before closing.
     # CLI flag: -blocks-storage.s3.http.idle-conn-timeout
     [idle_conn_timeout: <duration> | default = 1m30s]
 
-    # The amount of time the client will wait for a servers response headers.
+    # [advanced] The amount of time the client will wait for a servers response
+    # headers.
     # CLI flag: -blocks-storage.s3.http.response-header-timeout
     [response_header_timeout: <duration> | default = 2m]
 
@@ -2731,23 +2736,23 @@ s3:
     # CLI flag: -blocks-storage.s3.tls-handshake-timeout
     [tls_handshake_timeout: <duration> | default = 10s]
 
-    # The time to wait for a server's first response headers after fully writing
-    # the request headers if the request has an Expect header. 0 to send the
-    # request body immediately.
+    # [advanced] The time to wait for a server's first response headers after
+    # fully writing the request headers if the request has an Expect header. 0
+    # to send the request body immediately.
     # CLI flag: -blocks-storage.s3.expect-continue-timeout
     [expect_continue_timeout: <duration> | default = 1s]
 
-    # Maximum number of idle (keep-alive) connections across all hosts. 0 means
-    # no limit.
+    # [advanced] Maximum number of idle (keep-alive) connections across all
+    # hosts. 0 means no limit.
     # CLI flag: -blocks-storage.s3.max-idle-connections
     [max_idle_connections: <int> | default = 100]
 
-    # Maximum number of idle (keep-alive) connections to keep per-host. If 0, a
-    # built-in default value is used.
+    # [advanced] Maximum number of idle (keep-alive) connections to keep
+    # per-host. If 0, a built-in default value is used.
     # CLI flag: -blocks-storage.s3.max-idle-connections-per-host
     [max_idle_connections_per_host: <int> | default = 100]
 
-    # Maximum number of connections per host. 0 means no limit.
+    # [advanced] Maximum number of connections per host. 0 means no limit.
     # CLI flag: -blocks-storage.s3.max-connections-per-host
     [max_connections_per_host: <int> | default = 0]
 
@@ -2781,17 +2786,18 @@ azure:
   # CLI flag: -blocks-storage.azure.endpoint-suffix
   [endpoint_suffix: <string> | default = ""]
 
-  # Number of retries for recoverable errors
+  # [advanced] Number of retries for recoverable errors
   # CLI flag: -blocks-storage.azure.max-retries
   [max_retries: <int> | default = 20]
 
-  # If set, this URL is used instead of
+  # [advanced] If set, this URL is used instead of
   # https://<storage-account-name>.<endpoint-suffix> for obtaining
   # ServicePrincipalToken from MSI.
   # CLI flag: -blocks-storage.azure.msi-resource
   [msi_resource: <string> | default = ""]
 
-  # User assigned identity. If empty, then System assigned identity is used.
+  # [advanced] User assigned identity. If empty, then System assigned identity
+  # is used.
   # CLI flag: -blocks-storage.azure.user-assigned-id
   [user_assigned_id: <string> | default = ""]
 
@@ -2858,17 +2864,17 @@ swift:
   # CLI flag: -blocks-storage.swift.container-name
   [container_name: <string> | default = ""]
 
-  # Max retries on requests error.
+  # [advanced] Max retries on requests error.
   # CLI flag: -blocks-storage.swift.max-retries
   [max_retries: <int> | default = 3]
 
-  # Time after which a connection attempt is aborted.
+  # [advanced] Time after which a connection attempt is aborted.
   # CLI flag: -blocks-storage.swift.connect-timeout
   [connect_timeout: <duration> | default = 10s]
 
-  # Time after which an idle request is aborted. The timeout watchdog is reset
-  # each time some data is received, so the timeout triggers after X time no
-  # data is received on a request.
+  # [advanced] Time after which an idle request is aborted. The timeout watchdog
+  # is reset each time some data is received, so the timeout triggers after X
+  # time no data is received on a request.
   # CLI flag: -blocks-storage.swift.request-timeout
   [request_timeout: <duration> | default = 5s]
 
