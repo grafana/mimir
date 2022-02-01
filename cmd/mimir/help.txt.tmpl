@@ -11,12 +11,6 @@ Usage of ./cmd/mimir/mimir:
     	Azure storage container name
   -alertmanager-storage.azure.endpoint-suffix string
     	Azure storage endpoint suffix without schema. The account name will be prefixed to this value to create the FQDN. If set to empty string, default endpoint suffix is used.
-  -alertmanager-storage.azure.max-retries int
-    	Number of retries for recoverable errors (default 20)
-  -alertmanager-storage.azure.msi-resource string
-    	If set, this URL is used instead of https://<storage-account-name>.<endpoint-suffix> for obtaining ServicePrincipalToken from MSI.
-  -alertmanager-storage.azure.user-assigned-id string
-    	User assigned identity. If empty, then System assigned identity is used.
   -alertmanager-storage.backend string
     	Backend storage to use. Supported backends are: s3, gcs, azure, swift, filesystem, local. (default "filesystem")
   -alertmanager-storage.filesystem.dir string
@@ -33,26 +27,10 @@ Usage of ./cmd/mimir/mimir:
     	S3 bucket name
   -alertmanager-storage.s3.endpoint string
     	The S3 bucket endpoint. It could be an AWS S3 endpoint listed at https://docs.aws.amazon.com/general/latest/gr/s3.html or the address of an S3-compatible service in hostname:port format.
-  -alertmanager-storage.s3.expect-continue-timeout duration
-    	The time to wait for a server's first response headers after fully writing the request headers if the request has an Expect header. 0 to send the request body immediately. (default 1s)
-  -alertmanager-storage.s3.http.idle-conn-timeout duration
-    	The time an idle connection will remain idle before closing. (default 1m30s)
-  -alertmanager-storage.s3.http.response-header-timeout duration
-    	The amount of time the client will wait for a servers response headers. (default 2m0s)
-  -alertmanager-storage.s3.insecure
-    	If enabled, use http:// for the S3 endpoint instead of https://. This could be useful in local dev/test environments while using an S3-compatible backend storage, like Minio.
-  -alertmanager-storage.s3.max-connections-per-host int
-    	Maximum number of connections per host. 0 means no limit.
-  -alertmanager-storage.s3.max-idle-connections int
-    	Maximum number of idle (keep-alive) connections across all hosts. 0 means no limit. (default 100)
-  -alertmanager-storage.s3.max-idle-connections-per-host int
-    	Maximum number of idle (keep-alive) connections to keep per-host. If 0, a built-in default value is used. (default 100)
   -alertmanager-storage.s3.region string
     	S3 region. If unset, the client will issue a S3 GetBucketLocation API call to autodetect it.
   -alertmanager-storage.s3.secret-access-key value
     	S3 secret access key
-  -alertmanager-storage.s3.signature-version string
-    	The signature version to use for authenticating against S3. Supported values are: v4, v2. (default "v4")
   -alertmanager-storage.s3.sse.kms-encryption-context string
     	KMS Encryption Context used for object encryption. It expects JSON formatted string.
   -alertmanager-storage.s3.sse.kms-key-id string
@@ -63,16 +41,12 @@ Usage of ./cmd/mimir/mimir:
     	OpenStack Swift authentication URL
   -alertmanager-storage.swift.auth-version int
     	OpenStack Swift authentication API version. 0 to autodetect.
-  -alertmanager-storage.swift.connect-timeout duration
-    	Time after which a connection attempt is aborted. (default 10s)
   -alertmanager-storage.swift.container-name string
     	Name of the OpenStack Swift container to put chunks in.
   -alertmanager-storage.swift.domain-id string
     	OpenStack Swift user's domain ID.
   -alertmanager-storage.swift.domain-name string
     	OpenStack Swift user's domain name.
-  -alertmanager-storage.swift.max-retries int
-    	Max retries on requests error. (default 3)
   -alertmanager-storage.swift.password string
     	OpenStack Swift API key.
   -alertmanager-storage.swift.project-domain-id string
@@ -85,8 +59,6 @@ Usage of ./cmd/mimir/mimir:
     	OpenStack Swift project name (v2,v3 auth only).
   -alertmanager-storage.swift.region-name string
     	OpenStack Swift Region to use (v2,v3 auth only).
-  -alertmanager-storage.swift.request-timeout duration
-    	Time after which an idle request is aborted. The timeout watchdog is reset each time some data is received, so the timeout triggers after X time no data is received on a request. (default 5s)
   -alertmanager-storage.swift.user-domain-id string
     	OpenStack Swift user's domain ID.
   -alertmanager-storage.swift.user-domain-name string
@@ -141,12 +113,6 @@ Usage of ./cmd/mimir/mimir:
     	Azure storage container name
   -blocks-storage.azure.endpoint-suffix string
     	Azure storage endpoint suffix without schema. The account name will be prefixed to this value to create the FQDN. If set to empty string, default endpoint suffix is used.
-  -blocks-storage.azure.max-retries int
-    	Number of retries for recoverable errors (default 20)
-  -blocks-storage.azure.msi-resource string
-    	If set, this URL is used instead of https://<storage-account-name>.<endpoint-suffix> for obtaining ServicePrincipalToken from MSI.
-  -blocks-storage.azure.user-assigned-id string
-    	User assigned identity. If empty, then System assigned identity is used.
   -blocks-storage.backend string
     	Backend storage to use. Supported backends are: s3, gcs, azure, swift, filesystem. (default "filesystem")
   -blocks-storage.bucket-store.block-sync-concurrency int
@@ -283,26 +249,10 @@ Usage of ./cmd/mimir/mimir:
     	S3 bucket name
   -blocks-storage.s3.endpoint string
     	The S3 bucket endpoint. It could be an AWS S3 endpoint listed at https://docs.aws.amazon.com/general/latest/gr/s3.html or the address of an S3-compatible service in hostname:port format.
-  -blocks-storage.s3.expect-continue-timeout duration
-    	The time to wait for a server's first response headers after fully writing the request headers if the request has an Expect header. 0 to send the request body immediately. (default 1s)
-  -blocks-storage.s3.http.idle-conn-timeout duration
-    	The time an idle connection will remain idle before closing. (default 1m30s)
-  -blocks-storage.s3.http.response-header-timeout duration
-    	The amount of time the client will wait for a servers response headers. (default 2m0s)
-  -blocks-storage.s3.insecure
-    	If enabled, use http:// for the S3 endpoint instead of https://. This could be useful in local dev/test environments while using an S3-compatible backend storage, like Minio.
-  -blocks-storage.s3.max-connections-per-host int
-    	Maximum number of connections per host. 0 means no limit.
-  -blocks-storage.s3.max-idle-connections int
-    	Maximum number of idle (keep-alive) connections across all hosts. 0 means no limit. (default 100)
-  -blocks-storage.s3.max-idle-connections-per-host int
-    	Maximum number of idle (keep-alive) connections to keep per-host. If 0, a built-in default value is used. (default 100)
   -blocks-storage.s3.region string
     	S3 region. If unset, the client will issue a S3 GetBucketLocation API call to autodetect it.
   -blocks-storage.s3.secret-access-key value
     	S3 secret access key
-  -blocks-storage.s3.signature-version string
-    	The signature version to use for authenticating against S3. Supported values are: v4, v2. (default "v4")
   -blocks-storage.s3.sse.kms-encryption-context string
     	KMS Encryption Context used for object encryption. It expects JSON formatted string.
   -blocks-storage.s3.sse.kms-key-id string
@@ -313,16 +263,12 @@ Usage of ./cmd/mimir/mimir:
     	OpenStack Swift authentication URL
   -blocks-storage.swift.auth-version int
     	OpenStack Swift authentication API version. 0 to autodetect.
-  -blocks-storage.swift.connect-timeout duration
-    	Time after which a connection attempt is aborted. (default 10s)
   -blocks-storage.swift.container-name string
     	Name of the OpenStack Swift container to put chunks in.
   -blocks-storage.swift.domain-id string
     	OpenStack Swift user's domain ID.
   -blocks-storage.swift.domain-name string
     	OpenStack Swift user's domain name.
-  -blocks-storage.swift.max-retries int
-    	Max retries on requests error. (default 3)
   -blocks-storage.swift.password string
     	OpenStack Swift API key.
   -blocks-storage.swift.project-domain-id string
@@ -335,8 +281,6 @@ Usage of ./cmd/mimir/mimir:
     	OpenStack Swift project name (v2,v3 auth only).
   -blocks-storage.swift.region-name string
     	OpenStack Swift Region to use (v2,v3 auth only).
-  -blocks-storage.swift.request-timeout duration
-    	Time after which an idle request is aborted. The timeout watchdog is reset each time some data is received, so the timeout triggers after X time no data is received on a request. (default 5s)
   -blocks-storage.swift.user-domain-id string
     	OpenStack Swift user's domain ID.
   -blocks-storage.swift.user-domain-name string
@@ -795,12 +739,6 @@ Usage of ./cmd/mimir/mimir:
     	Azure storage container name
   -ruler-storage.azure.endpoint-suffix string
     	Azure storage endpoint suffix without schema. The account name will be prefixed to this value to create the FQDN. If set to empty string, default endpoint suffix is used.
-  -ruler-storage.azure.max-retries int
-    	Number of retries for recoverable errors (default 20)
-  -ruler-storage.azure.msi-resource string
-    	If set, this URL is used instead of https://<storage-account-name>.<endpoint-suffix> for obtaining ServicePrincipalToken from MSI.
-  -ruler-storage.azure.user-assigned-id string
-    	User assigned identity. If empty, then System assigned identity is used.
   -ruler-storage.backend string
     	Backend storage to use. Supported backends are: s3, gcs, azure, swift, filesystem, local. (default "filesystem")
   -ruler-storage.filesystem.dir string
@@ -817,26 +755,10 @@ Usage of ./cmd/mimir/mimir:
     	S3 bucket name
   -ruler-storage.s3.endpoint string
     	The S3 bucket endpoint. It could be an AWS S3 endpoint listed at https://docs.aws.amazon.com/general/latest/gr/s3.html or the address of an S3-compatible service in hostname:port format.
-  -ruler-storage.s3.expect-continue-timeout duration
-    	The time to wait for a server's first response headers after fully writing the request headers if the request has an Expect header. 0 to send the request body immediately. (default 1s)
-  -ruler-storage.s3.http.idle-conn-timeout duration
-    	The time an idle connection will remain idle before closing. (default 1m30s)
-  -ruler-storage.s3.http.response-header-timeout duration
-    	The amount of time the client will wait for a servers response headers. (default 2m0s)
-  -ruler-storage.s3.insecure
-    	If enabled, use http:// for the S3 endpoint instead of https://. This could be useful in local dev/test environments while using an S3-compatible backend storage, like Minio.
-  -ruler-storage.s3.max-connections-per-host int
-    	Maximum number of connections per host. 0 means no limit.
-  -ruler-storage.s3.max-idle-connections int
-    	Maximum number of idle (keep-alive) connections across all hosts. 0 means no limit. (default 100)
-  -ruler-storage.s3.max-idle-connections-per-host int
-    	Maximum number of idle (keep-alive) connections to keep per-host. If 0, a built-in default value is used. (default 100)
   -ruler-storage.s3.region string
     	S3 region. If unset, the client will issue a S3 GetBucketLocation API call to autodetect it.
   -ruler-storage.s3.secret-access-key value
     	S3 secret access key
-  -ruler-storage.s3.signature-version string
-    	The signature version to use for authenticating against S3. Supported values are: v4, v2. (default "v4")
   -ruler-storage.s3.sse.kms-encryption-context string
     	KMS Encryption Context used for object encryption. It expects JSON formatted string.
   -ruler-storage.s3.sse.kms-key-id string
@@ -847,16 +769,12 @@ Usage of ./cmd/mimir/mimir:
     	OpenStack Swift authentication URL
   -ruler-storage.swift.auth-version int
     	OpenStack Swift authentication API version. 0 to autodetect.
-  -ruler-storage.swift.connect-timeout duration
-    	Time after which a connection attempt is aborted. (default 10s)
   -ruler-storage.swift.container-name string
     	Name of the OpenStack Swift container to put chunks in.
   -ruler-storage.swift.domain-id string
     	OpenStack Swift user's domain ID.
   -ruler-storage.swift.domain-name string
     	OpenStack Swift user's domain name.
-  -ruler-storage.swift.max-retries int
-    	Max retries on requests error. (default 3)
   -ruler-storage.swift.password string
     	OpenStack Swift API key.
   -ruler-storage.swift.project-domain-id string
@@ -869,8 +787,6 @@ Usage of ./cmd/mimir/mimir:
     	OpenStack Swift project name (v2,v3 auth only).
   -ruler-storage.swift.region-name string
     	OpenStack Swift Region to use (v2,v3 auth only).
-  -ruler-storage.swift.request-timeout duration
-    	Time after which an idle request is aborted. The timeout watchdog is reset each time some data is received, so the timeout triggers after X time no data is received on a request. (default 5s)
   -ruler-storage.swift.user-domain-id string
     	OpenStack Swift user's domain ID.
   -ruler-storage.swift.user-domain-name string
