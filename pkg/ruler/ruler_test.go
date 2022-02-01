@@ -208,7 +208,6 @@ func TestNotifierSendsUserIDHeader(t *testing.T) {
 	// We create an empty rule store so that the ruler will not load any rule from it.
 	cfg := defaultRulerConfig(t)
 	cfg.AlertmanagerURL = ts.URL
-	cfg.AlertmanagerDiscovery = false
 
 	manager := newManager(t, cfg)
 	defer manager.Stop()

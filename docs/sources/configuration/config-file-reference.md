@@ -1147,10 +1147,6 @@ ruler_client:
 # CLI flag: -ruler.alertmanager-url
 [alertmanager_url: <string> | default = ""]
 
-# Use DNS SRV records to discover Alertmanager hosts.
-# CLI flag: -ruler.alertmanager-discovery
-[enable_alertmanager_discovery: <boolean> | default = false]
-
 # How long to wait between refreshing DNS resolutions of Alertmanager hosts.
 # CLI flag: -ruler.alertmanager-refresh-interval
 [alertmanager_refresh_interval: <duration> | default = 1m]

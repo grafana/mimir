@@ -62,7 +62,6 @@ func TestBuildNotifierConfig(t *testing.T) {
 			name: "with a single URL and service discovery",
 			cfg: &Config{
 				AlertmanagerURL:             "http://_http._tcp.alertmanager.default.svc.cluster.local/alertmanager",
-				AlertmanagerDiscovery:       true,
 				AlertmanagerRefreshInterval: time.Duration(60),
 			},
 			ncfg: &config.Config{
@@ -88,8 +87,7 @@ func TestBuildNotifierConfig(t *testing.T) {
 		{
 			name: "with service discovery and an invalid URL",
 			cfg: &Config{
-				AlertmanagerURL:       "http://_http.default.svc.cluster.local/alertmanager",
-				AlertmanagerDiscovery: true,
+				AlertmanagerURL: "http://_http.default.svc.cluster.local/alertmanager",
 			},
 			ncfg: &config.Config{
 				AlertingConfig: config.AlertingConfig{
@@ -148,7 +146,6 @@ func TestBuildNotifierConfig(t *testing.T) {
 			name: "with multiple URLs and service discovery",
 			cfg: &Config{
 				AlertmanagerURL:             "http://_http._tcp.alertmanager-0.default.svc.cluster.local/alertmanager,http://_http._tcp.alertmanager-1.default.svc.cluster.local/alertmanager",
-				AlertmanagerDiscovery:       true,
 				AlertmanagerRefreshInterval: time.Duration(60),
 			},
 			ncfg: &config.Config{
