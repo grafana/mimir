@@ -65,9 +65,9 @@ var (
 
 // MultitenantAlertmanagerConfig is the configuration for a multitenant Alertmanager.
 type MultitenantAlertmanagerConfig struct {
-	DataDir        string           `yaml:"data_dir" category:"advanced"`
+	DataDir        string           `yaml:"data_dir"`
 	Retention      time.Duration    `yaml:"retention" category:"advanced"`
-	ExternalURL    flagext.URLValue `yaml:"external_url" category:"advanced"`
+	ExternalURL    flagext.URLValue `yaml:"external_url"`
 	PollInterval   time.Duration    `yaml:"poll_interval" category:"advanced"`
 	MaxRecvMsgSize int64            `yaml:"max_recv_msg_size" category:"advanced"`
 

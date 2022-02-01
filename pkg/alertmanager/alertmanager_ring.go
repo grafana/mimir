@@ -55,10 +55,10 @@ type RingConfig struct {
 	ZoneAwarenessEnabled bool          `yaml:"zone_awareness_enabled" category:"advanced"`
 
 	// Instance details
-	InstanceID             string   `yaml:"instance_id" doc:"hidden" category:"advanced"`
+	InstanceID             string   `yaml:"instance_id" category:"advanced"`
 	InstanceInterfaceNames []string `yaml:"instance_interface_names" category:"advanced"`
-	InstancePort           int      `yaml:"instance_port" doc:"hidden" category:"advanced"`
-	InstanceAddr           string   `yaml:"instance_addr" doc:"hidden" category:"advanced"`
+	InstancePort           int      `yaml:"instance_port" category:"advanced"`
+	InstanceAddr           string   `yaml:"instance_addr" category:"advanced"`
 	InstanceZone           string   `yaml:"instance_availability_zone" category:"advanced"`
 
 	// Injected internally
