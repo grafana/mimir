@@ -325,6 +325,15 @@ func (r *Ruler) starting(ctx context.Context) error {
 		return errors.Wrap(err, "unable to start ruler subservices")
 	}
 
+	// Wait until the ring client detected this instance in the ACTIVE state to
+	// make sure that when we'll run the initial sync we already know  the tokens
+	// assigned to this instance.
+	level.Info(r.logger).Log("msg", "waiting until ruler is ACTIVE in the ring")
+	if err := ring.WaitInstanceState(ctx, r.ring, r.lifecycler.GetInstanceID(), ring.ACTIVE); err != nil {
+		return err
+	}
+	level.Info(r.logger).Log("msg", "ruler is ACTIVE in the ring")
+
 	// TODO: ideally, ruler would wait until its queryable is finished starting.
 	return nil
 }
