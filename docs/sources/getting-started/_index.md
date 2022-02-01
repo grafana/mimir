@@ -44,7 +44,7 @@ To run Grafana Mimir in a single process and with local filesystem storage, writ
 [embedmd]:# (../../configurations/demo.yaml)
 ```yaml
 # Do not use this configuration in production.
-# Its purpose is for you to get started within a development environment.
+# It is for demonstration purposes only.
 auth_enabled: false
 
 blocks_storage:
@@ -78,7 +78,6 @@ ingester:
 
 ruler:
   enable_api: true
-  enable_sharding: false
 
 ruler_storage:
   backend: local
