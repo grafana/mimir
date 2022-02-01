@@ -53,11 +53,7 @@ func TestRulerAPI(t *testing.T) {
 	require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 	// Configure the ruler.
-	rulerFlags := mergeFlags(
-		BlocksStorageFlags(),
-		RulerFlags(),
-		map[string]string{},
-	)
+	rulerFlags := mergeFlags(BlocksStorageFlags(), RulerFlags())
 
 	// Start Mimir components.
 	ruler := e2emimir.NewRuler("ruler", consul.NetworkHTTPEndpoint(), rulerFlags, "")
