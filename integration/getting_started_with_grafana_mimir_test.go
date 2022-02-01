@@ -24,9 +24,9 @@ func TestGettingStartedWithGrafanaMimir(t *testing.T) {
 	require.NoError(t, err)
 	defer s.Close()
 
-	require.NoError(t, copyFileToSharedDir(s, "docs/configurations/dev.yaml", "dev.yaml"))
+	require.NoError(t, copyFileToSharedDir(s, "docs/configurations/demo.yaml", "demo.yaml"))
 
-	mimir := e2emimir.NewSingleBinaryWithConfigFile("mimir", "dev.yaml", nil, "", 9009, 9095)
+	mimir := e2emimir.NewSingleBinaryWithConfigFile("mimir", "demo.yaml", nil, "", 9009, 9095)
 	require.NoError(t, s.StartAndWaitReady(mimir))
 
 	c, err := e2emimir.NewClient(mimir.HTTPEndpoint(), mimir.HTTPEndpoint(), "", "", "user-1")

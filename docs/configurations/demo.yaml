@@ -1,5 +1,5 @@
 # Do not use this configuration in production.
-# Its purpose is for you to get started within a development environment.
+# It is for demonstration purposes only.
 auth_enabled: false
 
 blocks_storage:
