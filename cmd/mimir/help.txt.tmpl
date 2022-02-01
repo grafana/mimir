@@ -95,26 +95,8 @@ Usage of ./cmd/mimir/mimir:
     	OpenStack Swift user ID.
   -alertmanager-storage.swift.username string
     	OpenStack Swift username.
-  -alertmanager.alertmanager-client.remote-timeout duration
-    	Timeout for downstream alertmanagers. (default 2s)
-  -alertmanager.cluster.advertise-address string
-    	Explicit address or hostname to advertise in cluster.
-  -alertmanager.cluster.gossip-interval duration
-    	The interval between sending gossip messages. By lowering this value (more frequent) gossip messages are propagated across cluster more quickly at the expense of increased bandwidth usage. (default 200ms)
-  -alertmanager.cluster.listen-address string
-    	Listen address and port for the cluster. Not specifying this flag disables high-availability mode. (default "0.0.0.0:9094")
-  -alertmanager.cluster.peer-timeout duration
-    	Time to wait between peers to send notifications. (default 15s)
-  -alertmanager.cluster.peers value
-    	Comma-separated list of initial peers.
-  -alertmanager.cluster.push-pull-interval duration
-    	The interval between gossip state syncs. Setting this interval lower (more frequent) will increase convergence speeds across larger clusters at the expense of increased bandwidth usage. (default 1m0s)
   -alertmanager.configs.fallback string
     	Filename of fallback config to use if none specified for instance.
-  -alertmanager.configs.poll-interval duration
-    	How frequently to poll Alertmanager configs. (default 15s)
-  -alertmanager.enable-api
-    	Enable the alertmanager config api.
   -alertmanager.max-alerts-count int
     	Maximum number of alerts that a single user can have. Inserting more alerts will fail with a log message and metric increment. 0 = no limit.
   -alertmanager.max-alerts-size-bytes int
@@ -145,6 +127,8 @@ Usage of ./cmd/mimir/mimir:
     	Etcd username.
   -alertmanager.sharding-ring.store string
     	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "consul")
+  -alertmanager.storage.path string
+    	Base path for data storage. (default "data/")
   -alertmanager.web.external-url value
     	The URL under which Alertmanager is externally reachable (for example, if Alertmanager is served via a reverse proxy). Used for generating relative and absolute links back to Alertmanager itself. If the URL has a path portion, it will be used to prefix all HTTP endpoints served by Alertmanager. (default http://localhost)
   -api.response-compression-enabled
