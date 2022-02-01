@@ -1,6 +1,7 @@
 ---
 title: "Migrate to Grafana Mimir from Thanos or Prometheus"
-weight: 2
+description: "Configuring remote-write and migrating historic TSDB blocks from Prometheus or Thanos."
+weight: 10
 ---
 
 # Migrate to Grafana Mimir from Thanos or Prometheus
@@ -13,15 +14,16 @@ Each project stores blocks in different places use different block metadata file
 
 ## Configure remote-write to Grafana Mimir
 
+TODO
 
 ## Upload historic blocks to the Grafana Mimir storage bucket
 
 Prometheus stores TSDB blocks in the path specified in the `--storage.tsdb.path` flag.
 
-Find all blocks directories in the TSDB _STORAGE TSDB PATH_:
+Find all blocks directories in the TSDB `<STORAGE TSDB PATH>`:
 
 ```bash
-find _STORAGE TSDB PATH_ -name chunks -exec dirname {} \;
+find <STORAGE TSDB PATH> -name chunks -exec dirname {} \;
 ```
 
 Grafana Mimir supports multiple tenants and stores blocks with a tenant prefix.
@@ -30,145 +32,76 @@ With multi-tenancy disabled, there is a single tenant called `fake`.
 Copy each directory output by the previous command to the Mimir object storage bucket with
 your tenant prefix.
 
-Copy to AWS S3 using the `aws` CLI tool:
+- For AWS S3 using the `aws` tool:
 
 ```bash
-aws s3 cp _DIRECTORY_ s3://_TENANT_/_DIRECTORY_
+aws s3 cp <DIRECTORY> s3://<TENANT>/<DIRECTORY>
 ```
 
-### S3
+- For Google Cloud Storage (GCS), using the the `gsutil` tool:
 
-### GCS
+```bash
+gsutil -m cp -r <DIRECTORY> gs://<TENANT>/<DIRECTORY>
+```
 
+## Migrate the block metadata using `thanosconvert`
 
-## Migrate the block metadata
+Every block has a `meta.json` metadata file used by Grafana Mimir, Prometheus, and Thanos to understand the block contents.
+Each project has its own metadata conventions.
+The `thanosconvert` tool migrates the metadata from project to another.
 
-> **Warning:** The `thanosconvert` tool modifies objects in the specified bucket.
+### Download `thanosconvert`
+
+- Using Docker:
+
+```bash
+docker pull grafana/thanosconvert:latest
+```
+
+- Using a release binary:
+
+Download the appropriate release asset for your operating system and architecture and make it executable. For Linux with the AMD64 architecture:
+
+```bash
+curl -LO https://github.com/grafana/mimir/releases/latest/download/thanosconvert-linux-amd64
+chmod +x mimir-linux-amd64
+```
+
+- Using Go:
+
+```bash
+go install github.com/grafana/mimir/cmd/thanosconvert@latest
+```
+
+### Run `thanosconvert`
+
+> **Warning:** The `thanosconvert` tool modifies objects in place.
 > Ensure you enable bucket versioning or have backups before running running the tool.
 
+To run `thanosconvert`, you need to provide it with the bucket configuration.
+The configuration format is the same as the [blocks storage bucket configuration]({{<relref "../configuration/config-file-reference.md#blocks_storage_config" >}}).
 
+1. Write the bucket configuration to a file `bucket.yaml`.
 
+1. Use one of the following steps to run `thanosconvert` in a dry-run mode that lists blocks for migration.
 
-## Cortex blocks storage requirements
+    - Using Docker:
 
-The Cortex blocks storage has few requirements that should be considered when migrating TSDB blocks from Thanos / Prometheus to Cortex:
+    ```bash
+    docker run grafana/thanosconvert -v "$(pwd)"/bucket.yaml:/bucket.yaml --config /bucket.yaml --dry-run
+    ```
 
-1. **The blocks in the bucket should be located at `bucket://<tenant-id>/`**<br />
-   Cortex isolates blocks on a per-tenant basis in the bucket and, for this reason, each tenant blocks should be uploaded to a different location in the bucket. The bucket prefix, where a specific tenant blocks should be uploaded, is `/<tenant-id>/`; if Cortex is running with auth disabled (no multi-tenancy) then the `<tenant-id>` to use is `fake`.
-2. **Remove Thanos external labels and inject `__org_id__` into each block's `meta.json`**<br />
-   Every block has a little metadata file named `meta.json`. Thanos stores external labels at `thanos` > `labels`, which should be all removed when migrating to Cortex, while the `"__org_id__": "<tenant-id>"` added.
+    - Using a local binary:
 
-## How to migrate the storage
+    ```bash
+    ./thanosconvert --config ./bucket.yaml --dry-run
+    ```
 
-### Upload TSDB blocks to Cortex bucket
+    - Using Go:
 
-TSDB blocks stored in Prometheus local disk or Thanos bucket should be copied/uploaded to the Cortex bucket at the location `bucket://<tenant-id>/` (when Cortex is running with auth disabled then `<tenant-id>` must be `fake`).
+    ```bash
+    "$(go env GOPATH)"/bin/thanosconvert --config ./bucket.yaml --dry-run
+    ```
 
-### Migrate block metadata (`meta.json`) to Cortex
-
-For each block copied/uploaded to the Cortex bucket, there are a few changes required to the `meta.json`.
-
-#### Automatically migrate metadata using the `thanosconvert` tool
-
-`thanosconvert` can iterate over a Cortex bucket and make sure that each `meta.json` has the correct `thanos` > `labels` layout.
-
-⚠ Warning ⚠ `thanosconvert` will modify files in the bucket you specify. It's recommended that you have backups or enable object versioning before running this tool.
-
-To run `thanosconvert`, you need to provide it with the bucket configuration in the same format as the [blocks storage bucket configuration](../configuration/config-file-reference.md#blocks_storage_config).
-
-```yaml
-# bucket-config.yaml
-backend: s3
-s3:
-  endpoint: s3.us-east-1.amazonaws.com
-  bucket_name: my-cortex-bucket
-```
-
-You can run thanosconvert directly using Go:
-
-```bash
-go install github.com/cortexproject/cortex/cmd/thanosconvert
-thanosconvert
-```
-
-Or use the provided docker image:
-
-```bash
-docker run quay.io/cortexproject/thanosconvert
-```
-
-You can run the tool in dry-run mode first to find out what which blocks it will migrate:
-
-```bash
-thanosconvert -config ./bucket-config.yaml -dry-run
-```
-
-Once you're happy with the results, you can run without dry run to migrate blocks:
-
-```bash
-thanosconvert -config ./bucket-config.yaml
-```
-
-You can cancel a conversion in progress (with Ctrl+C) and rerun `thanosconvert`. It won't change any blocks which have been written by Cortex or already converted from Thanos, so you can run `thanosconvert` multiple times.
-
-#### Migrate metadata manually
-
-If you need to migrate the block metadata manually, you need to:
-
-1. Download the `meta.json` to the local filesystem
-2. Decode the JSON
-3. Manipulate the data structure (_see below_)
-4. Re-encode the JSON
-5. Re-upload it to the bucket (overwriting the previous version of the `meta.json` file)
-
-The `meta.json` should be manipulated in order to ensure:
-
-- It contains the `thanos` root-level entry
-- The `thanos` > `labels` do not contain any Thanos-specific external label
-- The `thanos` > `labels` contain the Cortex-specific external label `"__org_id__": "<tenant-id>"`
-
-##### When migrating from Thanos
-
-When migrating from Thanos, the easiest approach would be keep the existing `thanos` root-level entry as is, except:
-
-1. Completely remove the content of `thanos` > `labels`
-2. Add `"__org_id__": "<tenant-id>"` to `thanos` > `labels`
-
-For example, when migrating a block from Thanos for the tenant `user-1`, the `thanos` root-level property within the `meta.json` file will look like:
-
-```json
-{
-  "thanos": {
-    "labels": {
-      "__org_id__": "user-1"
-    },
-    "downsample": {
-      "resolution": 0
-    },
-    "source": "compactor"
-  }
-}
-```
-
-##### When migrating from Prometheus
-
-When migrating from Prometheus, the `meta.json` file will not contain any `thanos` root-level entry and, for this reason, it would need to be generated:
-
-1. Create the `thanos` root-level entry (_see below_)
-2. Add `"__org_id__": "<tenant-id>"` to `thanos` > `labels`
-
-For example, when migrating a block from Prometheus for the tenant `user-1`, the `thanos` root-level property within the `meta.json` file should be as follow:
-
-```json
-{
-  "thanos": {
-    "labels": {
-      "__org_id__": "user-1"
-    },
-    "downsample": {
-      "resolution": 0
-    },
-    "source": "compactor"
-  }
-}
-```
+1. Remove the `--dry-run` flag to apply the migration.
+1. Verify the migration by re-running the tool with `--dry-run` and confirming that there is no output.
