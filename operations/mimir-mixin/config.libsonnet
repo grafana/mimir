@@ -15,6 +15,8 @@
 
     // These are used by the dashboards and allow for the simultaneous display of
     // microservice and single binary Mimir clusters.
+    // Whenever you do any change here, please reflect it in the doc at:
+    // docs/sources/operations/observability/requirements.md
     job_names: {
       ingester: '(ingester.*|cortex|mimir)',  // Match also custom and per-zone ingester deployments.
       distributor: '(distributor|cortex|mimir)',
