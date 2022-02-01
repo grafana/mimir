@@ -21,7 +21,6 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
-	"github.com/prometheus/prometheus/discovery/dns"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/thanos-io/thanos/pkg/cacheutil"
 	thanosdns "github.com/thanos-io/thanos/pkg/discovery/dns"
@@ -126,17 +125,17 @@ func buildNotifierConfig(rulerConfig *Config, resolver cacheutil.AddressProvider
 		isThanosSD := thanosQType != ""
 		isPromSD := prometheusSRVSDRegexp.MatchString(url.Host)
 
-		var cfg *config.AlertmanagerConfig
+		var sdConfig discovery.Config
 		switch {
 		case isThanosSD:
-			cfg = amConfigWithThanosSD(rulerConfig, resolver, thanosdns.QType(thanosQType), url, apiVersion)
+			sdConfig = thanosSD(rulerConfig, resolver, thanosdns.QType(thanosQType), url)
 		case isPromSD:
-			cfg = amConfigWithPromSD(rulerConfig, url, apiVersion)
+			sdConfig = promSD(rulerConfig, url)
 		default:
-			cfg = amConfigWithStaticTarget(rulerConfig, url, apiVersion)
+			sdConfig = staticTarget(url)
 		}
 
-		amConfigs = append(amConfigs, cfg)
+		amConfigs = append(amConfigs, amConfigWithSD(rulerConfig, url, apiVersion, sdConfig))
 	}
 
 	if len(amConfigs) == 0 {
@@ -152,51 +151,13 @@ func buildNotifierConfig(rulerConfig *Config, resolver cacheutil.AddressProvider
 	return promConfig, nil
 }
 
-func amConfigWithThanosSD(rulerConfig *Config, resolver cacheutil.AddressProvider, qType thanosdns.QType, url *url.URL, apiVersion config.AlertmanagerAPIVersion) *config.AlertmanagerConfig {
-	sdConfig := discovery.Configs{
-		thanosServiceDiscovery{
-			Resolver:        resolver,
-			RefreshInterval: rulerConfig.AlertmanagerRefreshInterval,
-			Host:            url.Host,
-			QType:           qType,
-		},
-	}
-
-	return amConfigWithSD(rulerConfig, url, apiVersion, sdConfig)
-}
-
-func amConfigWithPromSD(rulerConfig *Config, url *url.URL, apiVersion config.AlertmanagerAPIVersion) *config.AlertmanagerConfig {
-	sdConfig := discovery.Configs{
-		&dns.SDConfig{
-			Names:           []string{url.Host},
-			RefreshInterval: model.Duration(rulerConfig.AlertmanagerRefreshInterval),
-			Type:            "SRV",
-			Port:            0, // Ignored, because of SRV.
-		},
-	}
-
-	return amConfigWithSD(rulerConfig, url, apiVersion, sdConfig)
-}
-
-func amConfigWithStaticTarget(rulerConfig *Config, url *url.URL, apiVersion config.AlertmanagerAPIVersion) *config.AlertmanagerConfig {
-	sdConfig := discovery.Configs{
-		discovery.StaticConfig{
-			{
-				Targets: []model.LabelSet{{model.AddressLabel: model.LabelValue(url.Host)}},
-			},
-		},
-	}
-
-	return amConfigWithSD(rulerConfig, url, apiVersion, sdConfig)
-}
-
-func amConfigWithSD(rulerConfig *Config, url *url.URL, apiVersion config.AlertmanagerAPIVersion, sdConfig discovery.Configs) *config.AlertmanagerConfig {
+func amConfigWithSD(rulerConfig *Config, url *url.URL, apiVersion config.AlertmanagerAPIVersion, sdConfig discovery.Config) *config.AlertmanagerConfig {
 	amConfig := &config.AlertmanagerConfig{
 		APIVersion:              apiVersion,
 		Scheme:                  url.Scheme,
 		PathPrefix:              url.Path,
 		Timeout:                 model.Duration(rulerConfig.NotificationTimeout),
-		ServiceDiscoveryConfigs: sdConfig,
+		ServiceDiscoveryConfigs: discovery.Configs{sdConfig},
 		HTTPClientConfig: config_util.HTTPClientConfig{
 			TLSConfig: config_util.TLSConfig{
 				CAFile:             rulerConfig.Notifier.TLS.CAPath,

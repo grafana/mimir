@@ -4,14 +4,16 @@ package ruler
 
 import (
 	"context"
+	"net/url"
 	"time"
 
-	mmodel "github.com/prometheus/common/model"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/discovery"
+	"github.com/prometheus/prometheus/discovery/dns"
 	"github.com/prometheus/prometheus/discovery/refresh"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/thanos-io/thanos/pkg/cacheutil"
-	"github.com/thanos-io/thanos/pkg/discovery/dns"
+	thanosdns "github.com/thanos-io/thanos/pkg/discovery/dns"
 )
 
 const (
@@ -22,7 +24,7 @@ type thanosServiceDiscovery struct {
 	Resolver cacheutil.AddressProvider
 
 	RefreshInterval time.Duration
-	QType           dns.QType
+	QType           thanosdns.QType
 	Host            string
 }
 
@@ -40,10 +42,10 @@ func (c thanosServiceDiscovery) resolve(ctx context.Context) ([]*targetgroup.Gro
 	}
 
 	resolved := c.Resolver.Addresses()
-	targets := make([]mmodel.LabelSet, len(resolved))
+	targets := make([]model.LabelSet, len(resolved))
 	for i, r := range resolved {
-		targets[i] = mmodel.LabelSet{
-			mmodel.AddressLabel: mmodel.LabelValue(r),
+		targets[i] = model.LabelSet{
+			model.AddressLabel: model.LabelValue(r),
 		}
 	}
 
@@ -53,4 +55,30 @@ func (c thanosServiceDiscovery) resolve(ctx context.Context) ([]*targetgroup.Gro
 	}
 
 	return []*targetgroup.Group{tg}, nil
+}
+
+func thanosSD(rulerConfig *Config, resolver cacheutil.AddressProvider, qType thanosdns.QType, url *url.URL) discovery.Config {
+	return thanosServiceDiscovery{
+		Resolver:        resolver,
+		RefreshInterval: rulerConfig.AlertmanagerRefreshInterval,
+		Host:            url.Host,
+		QType:           qType,
+	}
+}
+
+func promSD(rulerConfig *Config, url *url.URL) discovery.Config {
+	return &dns.SDConfig{
+		Names:           []string{url.Host},
+		RefreshInterval: model.Duration(rulerConfig.AlertmanagerRefreshInterval),
+		Type:            "SRV",
+		Port:            0, // Ignored, because of SRV.
+	}
+}
+
+func staticTarget(url *url.URL) discovery.Config {
+	return discovery.StaticConfig{
+		{
+			Targets: []model.LabelSet{{model.AddressLabel: model.LabelValue(url.Host)}},
+		},
+	}
 }
