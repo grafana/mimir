@@ -31,8 +31,6 @@ Usage of ./cmd/mimir/mimir:
     	S3 region. If unset, the client will issue a S3 GetBucketLocation API call to autodetect it.
   -alertmanager-storage.s3.secret-access-key value
     	S3 secret access key
-  -alertmanager-storage.s3.signature-version string
-    	The signature version to use for authenticating against S3. Supported values are: v4, v2. (default "v4")
   -alertmanager-storage.s3.sse.kms-encryption-context string
     	KMS Encryption Context used for object encryption. It expects JSON formatted string.
   -alertmanager-storage.s3.sse.kms-key-id string
@@ -301,8 +299,6 @@ Usage of ./cmd/mimir/mimir:
     	S3 region. If unset, the client will issue a S3 GetBucketLocation API call to autodetect it.
   -blocks-storage.s3.secret-access-key value
     	S3 secret access key
-  -blocks-storage.s3.signature-version string
-    	The signature version to use for authenticating against S3. Supported values are: v4, v2. (default "v4")
   -blocks-storage.s3.sse.kms-encryption-context string
     	KMS Encryption Context used for object encryption. It expects JSON formatted string.
   -blocks-storage.s3.sse.kms-key-id string
@@ -809,8 +805,6 @@ Usage of ./cmd/mimir/mimir:
     	S3 region. If unset, the client will issue a S3 GetBucketLocation API call to autodetect it.
   -ruler-storage.s3.secret-access-key value
     	S3 secret access key
-  -ruler-storage.s3.signature-version string
-    	The signature version to use for authenticating against S3. Supported values are: v4, v2. (default "v4")
   -ruler-storage.s3.sse.kms-encryption-context string
     	KMS Encryption Context used for object encryption. It expects JSON formatted string.
   -ruler-storage.s3.sse.kms-key-id string

@@ -236,8 +236,8 @@ blocks_storage:
     # CLI flag: -blocks-storage.s3.insecure
     [insecure: <boolean> | default = false]
 
-    # The signature version to use for authenticating against S3. Supported
-    # values are: v4, v2.
+    # [advanced] The signature version to use for authenticating against S3.
+    # Supported values are: v4, v2.
     # CLI flag: -blocks-storage.s3.signature-version
     [signature_version: <string> | default = "v4"]
 

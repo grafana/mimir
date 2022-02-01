@@ -77,7 +77,7 @@ type Config struct {
 	SecretAccessKey  flagext.Secret `yaml:"secret_access_key"`
 	AccessKeyID      string         `yaml:"access_key_id"`
 	Insecure         bool           `yaml:"insecure" category:"advanced"`
-	SignatureVersion string         `yaml:"signature_version"`
+	SignatureVersion string         `yaml:"signature_version" category:"advanced"`
 
 	SSE  SSEConfig  `yaml:"sse"`
 	HTTP HTTPConfig `yaml:"http"`
