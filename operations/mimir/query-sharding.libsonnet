@@ -26,7 +26,12 @@
 
   // When sharding is enabled, scale the query-frontend to have at least 20% of the replicas of queriers.
   local ensure_replica_ratio_to_queriers = {
-    local min_replicas = std.max(std.floor(0.2 * $.querier_deployment.spec.replicas), 2),
+    // We check if replicas is set because it may be missing if queriers are autoscaling.
+    local min_replicas = if std.objectHas($.querier_deployment.spec, 'replicas') && $.querier_deployment.spec.replicas != null then
+      std.max(std.floor(0.2 * $.querier_deployment.spec.replicas), 2)
+    else
+      2,
+
     spec+: {
       replicas: std.max(super.replicas, min_replicas),
     },
