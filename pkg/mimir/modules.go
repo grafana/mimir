@@ -542,7 +542,8 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 	}
 
 	managerFactory := ruler.DefaultTenantManagerFactory(t.Cfg.Ruler, t.Distributor, queryable, federatedQueryable, eng, t.Overrides, prometheus.DefaultRegisterer)
-	manager, err := ruler.NewDefaultMultiTenantManager(t.Cfg.Ruler, managerFactory, prometheus.DefaultRegisterer, util_log.Logger)
+	dnsResolver := dns.NewProvider(util_log.Logger, rulerRegisterer, dns.GolangResolverType)
+	manager, err := ruler.NewDefaultMultiTenantManager(t.Cfg.Ruler, managerFactory, prometheus.DefaultRegisterer, util_log.Logger, dnsResolver)
 	if err != nil {
 		return nil, err
 	}

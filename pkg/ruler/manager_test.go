@@ -31,7 +31,7 @@ func TestSyncRuleGroups(t *testing.T) {
 		_ = os.RemoveAll(dir)
 	})
 
-	m, err := NewDefaultMultiTenantManager(Config{RulePath: dir}, factory, nil, log.NewNopLogger())
+	m, err := NewDefaultMultiTenantManager(Config{RulePath: dir}, factory, nil, log.NewNopLogger(), nil)
 	require.NoError(t, err)
 
 	const user = "testUser"

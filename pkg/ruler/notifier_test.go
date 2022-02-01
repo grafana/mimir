@@ -16,7 +16,9 @@ import (
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/dns"
 	"github.com/stretchr/testify/require"
+	thanosdns "github.com/thanos-io/thanos/pkg/discovery/dns"
 
+	"github.com/grafana/mimir/pkg/ruler/thanossd"
 	"github.com/grafana/mimir/pkg/util"
 )
 
@@ -225,11 +227,45 @@ func TestBuildNotifierConfig(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "with multiple thanos DNS SD",
+			cfg: &Config{
+				AlertmanagerURL: "dns+http://alertmanager.mimir.svc.cluster.local:8080/alertmanager,dnssrv+https://_http._tcp.alertmanager2.mimir.svc.cluster.local/alertmanager",
+			},
+			ncfg: &config.Config{
+				AlertingConfig: config.AlertingConfig{
+					AlertmanagerConfigs: []*config.AlertmanagerConfig{
+						{
+							APIVersion: "v1",
+							Scheme:     "http",
+							PathPrefix: "/alertmanager",
+							ServiceDiscoveryConfigs: discovery.Configs{
+								thanossd.Config{
+									Host:  "alertmanager.mimir.svc.cluster.local:8080",
+									QType: thanosdns.A,
+								},
+							},
+						},
+						{
+							APIVersion: "v1",
+							Scheme:     "https",
+							PathPrefix: "/alertmanager",
+							ServiceDiscoveryConfigs: discovery.Configs{
+								thanossd.Config{
+									Host:  "_http._tcp.alertmanager2.mimir.svc.cluster.local",
+									QType: thanosdns.SRV,
+								},
+							},
+						},
+					},
+				},
+			},
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ncfg, err := buildNotifierConfig(tt.cfg)
+			ncfg, err := buildNotifierConfig(tt.cfg, nil)
 			if tt.err == nil {
 				require.NoError(t, err)
 				require.Equal(t, tt.ncfg, ncfg)

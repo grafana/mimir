@@ -23,7 +23,10 @@ import (
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/dns"
 	"github.com/prometheus/prometheus/notifier"
+	"github.com/thanos-io/thanos/pkg/cacheutil"
+	thanosdns "github.com/thanos-io/thanos/pkg/discovery/dns"
 
+	"github.com/grafana/mimir/pkg/ruler/thanossd"
 	"github.com/grafana/mimir/pkg/util"
 )
 
@@ -93,13 +96,22 @@ func (rn *rulerNotifier) stop() {
 
 // Builds a Prometheus config.Config from a ruler.Config with just the required
 // options to configure notifications to Alertmanager.
-func buildNotifierConfig(rulerConfig *Config) (*config.Config, error) {
+func buildNotifierConfig(rulerConfig *Config, resolver cacheutil.AddressProvider) (*config.Config, error) {
 	amURLs := strings.Split(rulerConfig.AlertmanagerURL, ",")
-	validURLs := make([]*url.URL, 0, len(amURLs))
+	amConfigs := make([]*config.AlertmanagerConfig, 0, len(amURLs))
 
-	srvDNSregexp := regexp.MustCompile(`^_.+._.+`)
-	for _, h := range amURLs {
-		url, err := url.Parse(h)
+	apiVersion := config.AlertmanagerAPIVersionV1
+	if rulerConfig.AlertmanagerEnableV2API {
+		apiVersion = config.AlertmanagerAPIVersionV2
+	}
+
+	srvDNSRegexp := regexp.MustCompile(`^_.+._.+`)
+
+	for _, rawURL := range amURLs {
+		var thanosQType string
+		thanosQType, rawURL = thanosdns.GetQTypeName(rawURL)
+
+		url, err := url.Parse(rawURL)
 		if err != nil {
 			return nil, err
 		}
@@ -111,25 +123,21 @@ func buildNotifierConfig(rulerConfig *Config) (*config.Config, error) {
 		// Given we only support SRV lookups as part of service discovery, we need to ensure
 		// hosts provided follow this specification: _service._proto.name
 		// e.g. _http._tcp.alertmanager.com
-		if rulerConfig.AlertmanagerDiscovery && !srvDNSregexp.MatchString(url.Host) {
+		if rulerConfig.AlertmanagerDiscovery && !srvDNSRegexp.MatchString(url.Host) {
 			return nil, fmt.Errorf("when alertmanager-discovery is on, host name must be of the form _portname._tcp.service.fqdn (is %q)", url.Host)
 		}
 
-		validURLs = append(validURLs, url)
+		var cfg *config.AlertmanagerConfig
+		if thanosQType != "" {
+			cfg = amConfigWithThanosSD(rulerConfig, resolver, thanosdns.QType(thanosQType), url, apiVersion)
+		} else {
+			cfg = amConfigWithPromSD(rulerConfig, url, apiVersion)
+		}
+		amConfigs = append(amConfigs, cfg)
 	}
 
-	if len(validURLs) == 0 {
+	if len(amConfigs) == 0 {
 		return &config.Config{}, nil
-	}
-
-	apiVersion := config.AlertmanagerAPIVersionV1
-	if rulerConfig.AlertmanagerEnableV2API {
-		apiVersion = config.AlertmanagerAPIVersionV2
-	}
-
-	amConfigs := make([]*config.AlertmanagerConfig, 0, len(validURLs))
-	for _, url := range validURLs {
-		amConfigs = append(amConfigs, amConfigFromURL(rulerConfig, url, apiVersion))
 	}
 
 	promConfig := &config.Config{
@@ -141,7 +149,20 @@ func buildNotifierConfig(rulerConfig *Config) (*config.Config, error) {
 	return promConfig, nil
 }
 
-func amConfigFromURL(rulerConfig *Config, url *url.URL, apiVersion config.AlertmanagerAPIVersion) *config.AlertmanagerConfig {
+func amConfigWithThanosSD(rulerConfig *Config, resolver cacheutil.AddressProvider, qType thanosdns.QType, url *url.URL, apiVersion config.AlertmanagerAPIVersion) *config.AlertmanagerConfig {
+	sdConfig := discovery.Configs{
+		thanossd.Config{
+			Resolver:        resolver,
+			RefreshInterval: rulerConfig.AlertmanagerRefreshInterval,
+			Host:            url.Host,
+			QType:           qType,
+		},
+	}
+
+	return amConfigWithSD(rulerConfig, url, apiVersion, sdConfig)
+}
+
+func amConfigWithPromSD(rulerConfig *Config, url *url.URL, apiVersion config.AlertmanagerAPIVersion) *config.AlertmanagerConfig {
 	var sdConfig discovery.Configs
 	if rulerConfig.AlertmanagerDiscovery {
 		sdConfig = discovery.Configs{
@@ -163,6 +184,10 @@ func amConfigFromURL(rulerConfig *Config, url *url.URL, apiVersion config.Alertm
 		}
 	}
 
+	return amConfigWithSD(rulerConfig, url, apiVersion, sdConfig)
+}
+
+func amConfigWithSD(rulerConfig *Config, url *url.URL, apiVersion config.AlertmanagerAPIVersion, sdConfig discovery.Configs) *config.AlertmanagerConfig {
 	amConfig := &config.AlertmanagerConfig{
 		APIVersion:              apiVersion,
 		Scheme:                  url.Scheme,
