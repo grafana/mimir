@@ -3357,8 +3357,7 @@ sharding_ring:
 The `store_gateway_config` configures the store-gateway service.
 
 ```yaml
-# The hash ring configuration. This option is required only if blocks sharding
-# is enabled.
+# The hash ring configuration.
 sharding_ring:
   # The key-value store used to share the hash ring across multiple instances.
   # This option needs be set both on the store-gateway and querier when running
@@ -3423,7 +3422,8 @@ sharding_ring:
   # CLI flag: -store-gateway.sharding-ring.zone-awareness-enabled
   [zone_awareness_enabled: <boolean> | default = false]
 
-  # Minimum time to wait for ring stability at startup. 0 to disable.
+  # Minimum time to wait for ring stability at startup, if set to positive
+  # value.
   # CLI flag: -store-gateway.sharding-ring.wait-stability-min-duration
   [wait_stability_min_duration: <duration> | default = 0s]
 

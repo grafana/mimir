@@ -54,7 +54,7 @@ var (
 
 // Config holds the store gateway config.
 type Config struct {
-	ShardingRing RingConfig `yaml:"sharding_ring" doc:"description=The hash ring configuration. This option is required only if blocks sharding is enabled."`
+	ShardingRing RingConfig `yaml:"sharding_ring" doc:"description=The hash ring configuration."`
 }
 
 // RegisterFlags registers the Config flags.

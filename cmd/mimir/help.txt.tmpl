@@ -1146,7 +1146,7 @@ Usage of ./cmd/mimir/mimir:
   -store-gateway.sharding-ring.wait-stability-max-duration duration
     	Maximum time to wait for ring stability at startup. If the store-gateway ring keeps changing after this period of time, the store-gateway will start anyway. (default 5m0s)
   -store-gateway.sharding-ring.wait-stability-min-duration duration
-    	Minimum time to wait for ring stability at startup. 0 to disable.
+    	Minimum time to wait for ring stability at startup, if set to positive value.
   -store-gateway.sharding-ring.zone-awareness-enabled
     	True to enable zone-awareness and replicate blocks across different availability zones.
   -store-gateway.tenant-shard-size int
