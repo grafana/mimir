@@ -125,8 +125,6 @@ Usage of ./cmd/mimir/mimir:
     	Comma-separated list of initial peers.
   -alertmanager.cluster.push-pull-interval duration
     	The interval between gossip state syncs. Setting this interval lower (more frequent) will increase convergence speeds across larger clusters at the expense of increased bandwidth usage. (default 1m0s)
-  -alertmanager.configs.auto-webhook-root string
-    	Root of URL to generate if config is http://internal.monitor
   -alertmanager.configs.fallback string
     	Filename of fallback config to use if none specified for instance.
   -alertmanager.configs.poll-interval duration
@@ -956,7 +954,7 @@ Usage of ./cmd/mimir/mimir:
   -ingester.exemplars-update-period duration
     	Period with which to update per-user max exemplars. (default 15s)
   -ingester.final-sleep duration
-    	Duration to sleep for before exiting, to ensure metrics are scraped. (default 30s)
+    	Duration to sleep for before exiting, to ensure metrics are scraped.
   -ingester.heartbeat-period duration
     	Period at which to heartbeat to consul. 0 = disabled. (default 5s)
   -ingester.ignore-series-limit-for-metric-names string

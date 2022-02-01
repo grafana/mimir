@@ -676,7 +676,7 @@ lifecycler:
 
   # Duration to sleep for before exiting, to ensure metrics are scraped.
   # CLI flag: -ingester.final-sleep
-  [final_sleep: <duration> | default = 30s]
+  [final_sleep: <duration> | default = 0s]
 
   # File path where tokens are stored. If empty, tokens are not stored at
   # shutdown and restored at startup.
@@ -1622,10 +1622,6 @@ sharding_ring:
 # Filename of fallback config to use if none specified for instance.
 # CLI flag: -alertmanager.configs.fallback
 [fallback_config_file: <string> | default = ""]
-
-# Root of URL to generate if config is http://internal.monitor
-# CLI flag: -alertmanager.configs.auto-webhook-root
-[auto_webhook_root: <string> | default = ""]
 
 cluster:
   # Listen address and port for the cluster. Not specifying this flag disables
