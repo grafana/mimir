@@ -47,16 +47,9 @@
   querier_ports+:: [gossipPort],
   ingester_ports+:: [gossipPort],
 
-  local gossip_member_label = 'gossip_ring_member',
-
-  distributor_deployment_labels+:: { [gossip_member_label]: 'true' },
-  ingester_deployment_labels+:: { [gossip_member_label]: 'true' },
-  querier_deployment_labels+:: { [gossip_member_label]: 'true' },
-
-  // Don't use gossip ring member label in service definition.
-  distributor_service_ignored_labels+:: [gossip_member_label],
-  ingester_service_ignored_labels+:: [gossip_member_label],
-  querier_service_ignored_labels+:: [gossip_member_label],
+  distributor_deployment_labels+:: { [$._config.gossip_member_label]: 'true' },
+  ingester_deployment_labels+:: { [$._config.gossip_member_label]: 'true' },
+  querier_deployment_labels+:: { [$._config.gossip_member_label]: 'true' },
 
   // Headless service (= no assigned IP, DNS returns all targets instead) pointing to some
   // users of gossiped-ring. We use ingesters as seed nodes for joining gossip cluster.
@@ -76,7 +69,7 @@
     ];
     service.new(
       'gossip-ring',  // name
-      { [gossip_member_label]: 'true' },  // point to all gossip members
+      { [$._config.gossip_member_label]: 'true' },  // point to all gossip members
       ports,
     ) + service.mixin.spec.withClusterIp('None'),  // headless service
 }

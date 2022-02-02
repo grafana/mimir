@@ -30,7 +30,7 @@
       },
       flags: [],
       service:
-        $.util.serviceFor($.alertmanager_statefulset) +
+        $.util.serviceFor($.alertmanager_statefulset, $._config.service_ignored_labels) +
         service.mixin.spec.withClusterIp('None'),
     },
     gossip_multi_replica: {
@@ -44,14 +44,14 @@
         '--alertmanager.cluster.peers=%s' % std.join(',', peers),
       ],
       service:
-        $.util.serviceFor($.alertmanager_statefulset) +
+        $.util.serviceFor($.alertmanager_statefulset, $._config.service_ignored_labels) +
         service.mixin.spec.withClusterIp('None'),
     },
     gossip_single_replica: {
       ports: [],
       args: {},
       flags: ['--alertmanager.cluster.listen-address=""'],
-      service: $.util.serviceFor($.alertmanager_statefulset),
+      service: $.util.serviceFor($.alertmanager_statefulset, $._config.service_ignored_labels),
     },
   }[haType],
   local hasFallbackConfig = std.length($._config.alertmanager.fallback_config) > 0,

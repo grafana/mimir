@@ -372,6 +372,10 @@
     //      max_tenants: 0,  // Max number of tenants per ingester. 0 = no limit.
     //    },
     ingester_instance_limits: null,
+
+    gossip_member_label: 'gossip_ring_member',
+    // Labels that service selectors should not use
+    service_ignored_labels:: [self.gossip_member_label],
   },
 
   local configMap = $.core.v1.configMap,

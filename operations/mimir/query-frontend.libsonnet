@@ -56,10 +56,10 @@
   local service = $.core.v1.service,
 
   query_frontend_service:
-    $.util.serviceFor($.query_frontend_deployment),
+    $.util.serviceFor($.query_frontend_deployment, $._config.service_ignored_labels),
 
   query_frontend_discovery_service:
-    $.util.serviceFor($.query_frontend_deployment) +
+    $.util.serviceFor($.query_frontend_deployment, $._config.service_ignored_labels) +
     // Make sure that query frontend worker, running in the querier, do resolve
     // each query-frontend pod IP and NOT the service IP. To make it, we do NOT
     // use the service cluster IP so that when the service DNS is resolved it
