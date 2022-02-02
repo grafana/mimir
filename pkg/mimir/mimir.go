@@ -309,7 +309,6 @@ func New(cfg Config) (*Mimir, error) {
 
 	// Swap out the default resolver to support multiple tenant IDs separated by a '|'
 	if cfg.TenantFederation.Enabled {
-		util_log.WarnExperimentalUse("tenant-federation")
 		tenant.WithDefaultResolver(tenant.NewMultiResolver())
 
 		if cfg.Ruler.TenantFederation.Enabled {

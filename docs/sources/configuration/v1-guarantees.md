@@ -33,7 +33,6 @@ Grafana Mimir is an actively developed project and we want to encourage the intr
 
 Currently experimental features are:
 
-- Querier: tenant federation.
 - Ruler: tenant federation.
 - Distributor: metrics relabeling.
 - Purger: tenant deletion API.
