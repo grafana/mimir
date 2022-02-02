@@ -1,5 +1,5 @@
 Trafficdump tool can read packets from device or from captured tcpdump output, reassemble them into TCP streams
-and parse HTTP requests and responses. It then prints requests and responses as json (one request/response par per line)
+and parse HTTP requests and responses. It then prints requests and responses as json (one request/response per line)
 for further processing.
 
 It has some Mimir-specific and generic HTTP features:
