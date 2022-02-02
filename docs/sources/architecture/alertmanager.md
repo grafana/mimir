@@ -4,7 +4,7 @@ description: "Overview of the alertmanager microservice."
 weight: 80
 ---
 
-# Alertmanager
+# (Optional) Alertmanager
 
 The **alertmanager** is an **optional service** responsible for accepting alert notifications from the [ruler]({{<relref "./ruler.md">}}), deduplicating and grouping them, and routing them to the correct notification channel, such as email, PagerDuty or OpsGenie.
 

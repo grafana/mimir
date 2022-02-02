@@ -4,7 +4,7 @@ description: "Overview of the ruler microservice."
 weight: 90
 ---
 
-# Ruler
+# (Optional) Ruler
 
 The **ruler** is an **optional service** that executes PromQL queries for recording rules and alerts. The ruler requires a database to store the recording rules and alerts for each tenant.
 
