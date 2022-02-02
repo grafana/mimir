@@ -284,7 +284,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.bucket-store.chunks-cache.memcached.max-item-size int
     	The maximum size of an item stored in memcached. Bigger items are not stored. If set to 0, no maximum size is enforced. (default 1048576)
   -blocks-storage.bucket-store.chunks-cache.memcached.timeout duration
-    	The socket read/write timeout. (default 100ms)
+    	The socket read/write timeout. (default 200ms)
   -blocks-storage.bucket-store.chunks-cache.subrange-size int
     	Size of each subrange that bucket object is split into for better caching. (default 16000)
   -blocks-storage.bucket-store.chunks-cache.subrange-ttl duration
@@ -314,7 +314,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.bucket-store.index-cache.memcached.max-item-size int
     	The maximum size of an item stored in memcached. Bigger items are not stored. If set to 0, no maximum size is enforced. (default 1048576)
   -blocks-storage.bucket-store.index-cache.memcached.timeout duration
-    	The socket read/write timeout. (default 100ms)
+    	The socket read/write timeout. (default 200ms)
   -blocks-storage.bucket-store.index-header-lazy-loading-enabled
     	If enabled, store-gateway will lazy load an index-header only once required by a query. (default true)
   -blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout duration
@@ -350,7 +350,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.bucket-store.metadata-cache.memcached.max-item-size int
     	The maximum size of an item stored in memcached. Bigger items are not stored. If set to 0, no maximum size is enforced. (default 1048576)
   -blocks-storage.bucket-store.metadata-cache.memcached.timeout duration
-    	The socket read/write timeout. (default 100ms)
+    	The socket read/write timeout. (default 200ms)
   -blocks-storage.bucket-store.metadata-cache.metafile-attributes-ttl duration
     	How long to cache attributes of the block metafile. (default 168h0m0s)
   -blocks-storage.bucket-store.metadata-cache.metafile-content-ttl duration
@@ -880,7 +880,7 @@ Usage of ./cmd/mimir/mimir:
   -frontend.results-cache.memcached.max-item-size int
     	The maximum size of an item stored in memcached. Bigger items are not stored. If set to 0, no maximum size is enforced. (default 1048576)
   -frontend.results-cache.memcached.timeout duration
-    	The socket read/write timeout. (default 100ms)
+    	The socket read/write timeout. (default 200ms)
   -frontend.scheduler-address string
     	DNS hostname used for finding query-schedulers.
   -frontend.scheduler-dns-lookup-period duration

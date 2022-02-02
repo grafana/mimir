@@ -748,7 +748,6 @@ spec:
         - -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local:11211
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-async-concurrency=50
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-item-size=1048576
-        - -blocks-storage.bucket-store.metadata-cache.memcached.timeout=200ms
         - -blocks-storage.bucket-store.sync-dir=/data/tsdb
         - -blocks-storage.gcs.bucket-name=blocks-bucket
         - -consul.hostname=consul.default.svc.cluster.local:8500
@@ -1314,7 +1313,6 @@ spec:
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-get-multi-concurrency=100
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-idle-connections=100
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-item-size=1048576
-        - -blocks-storage.bucket-store.chunks-cache.memcached.timeout=200ms
         - -blocks-storage.bucket-store.ignore-blocks-within=10h
         - -blocks-storage.bucket-store.index-cache.backend=memcached
         - -blocks-storage.bucket-store.index-cache.memcached.addresses=dnssrvnoa+memcached-index-queries.default.svc.cluster.local:11211
@@ -1322,7 +1320,6 @@ spec:
         - -blocks-storage.bucket-store.index-cache.memcached.max-get-multi-concurrency=100
         - -blocks-storage.bucket-store.index-cache.memcached.max-idle-connections=100
         - -blocks-storage.bucket-store.index-cache.memcached.max-item-size=5242880
-        - -blocks-storage.bucket-store.index-cache.memcached.timeout=200ms
         - -blocks-storage.bucket-store.index-header-lazy-loading-enabled=true
         - -blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout=60m
         - -blocks-storage.bucket-store.max-chunk-pool-bytes=12884901888
@@ -1332,7 +1329,6 @@ spec:
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-get-multi-concurrency=100
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-idle-connections=100
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-item-size=1048576
-        - -blocks-storage.bucket-store.metadata-cache.memcached.timeout=200ms
         - -blocks-storage.bucket-store.sync-dir=/data/tsdb
         - -blocks-storage.gcs.bucket-name=blocks-bucket
         - -runtime-config.file=/etc/mimir/overrides.yaml

@@ -122,7 +122,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.bucket-store.chunks-cache.memcached.addresses string
     	Comma separated list of memcached addresses. Supported prefixes are: dns+ (looked up as an A/AAAA query), dnssrv+ (looked up as a SRV query, dnssrvnoa+ (looked up as a SRV query, with no A/AAAA lookup made after that).
   -blocks-storage.bucket-store.chunks-cache.memcached.timeout duration
-    	The socket read/write timeout. (default 100ms)
+    	The socket read/write timeout. (default 200ms)
   -blocks-storage.bucket-store.index-cache.backend string
     	The index cache backend type. Supported values: inmemory, memcached. (default "inmemory")
   -blocks-storage.bucket-store.index-cache.inmemory.max-size-bytes uint
@@ -130,13 +130,13 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.bucket-store.index-cache.memcached.addresses string
     	Comma separated list of memcached addresses. Supported prefixes are: dns+ (looked up as an A/AAAA query), dnssrv+ (looked up as a SRV query, dnssrvnoa+ (looked up as a SRV query, with no A/AAAA lookup made after that).
   -blocks-storage.bucket-store.index-cache.memcached.timeout duration
-    	The socket read/write timeout. (default 100ms)
+    	The socket read/write timeout. (default 200ms)
   -blocks-storage.bucket-store.metadata-cache.backend string
     	Backend for metadata cache, if not empty. Supported values: memcached.
   -blocks-storage.bucket-store.metadata-cache.memcached.addresses string
     	Comma separated list of memcached addresses. Supported prefixes are: dns+ (looked up as an A/AAAA query), dnssrv+ (looked up as a SRV query, dnssrvnoa+ (looked up as a SRV query, with no A/AAAA lookup made after that).
   -blocks-storage.bucket-store.metadata-cache.memcached.timeout duration
-    	The socket read/write timeout. (default 100ms)
+    	The socket read/write timeout. (default 200ms)
   -blocks-storage.bucket-store.sync-dir string
     	Directory to store synchronized TSDB index headers. (default "tsdb-sync")
   -blocks-storage.filesystem.dir string
@@ -354,7 +354,7 @@ Usage of ./cmd/mimir/mimir:
   -frontend.results-cache.memcached.addresses string
     	Comma separated list of memcached addresses. Supported prefixes are: dns+ (looked up as an A/AAAA query), dnssrv+ (looked up as a SRV query, dnssrvnoa+ (looked up as a SRV query, with no A/AAAA lookup made after that).
   -frontend.results-cache.memcached.timeout duration
-    	The socket read/write timeout. (default 100ms)
+    	The socket read/write timeout. (default 200ms)
   -frontend.scheduler-address string
     	DNS hostname used for finding query-schedulers.
   -frontend.split-queries-by-interval duration
