@@ -10,7 +10,7 @@
     $._config.ringConfig +
     $._config.storageConfig +
     $._config.blocksStorageConfig +
-    $._config.distributorConfig +  // This adds the distributor ring flags to the ingester.
+    $._config.ingesterRingClientConfig +
     $._config.ingesterLimitsConfig +
     {
       target: 'ingester',

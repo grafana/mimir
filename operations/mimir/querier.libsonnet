@@ -8,7 +8,7 @@
     $._config.blocksStorageConfig +
     $._config.queryConfig +
     $._config.queryEngineConfig +
-    $._config.distributorConfig +
+    $._config.ingesterRingClientConfig +
     $._config.queryBlocksStorageConfig +
     $.blocks_metadata_caching_config +
     $.bucket_index_config
