@@ -761,18 +761,26 @@ func TestQuerierWithBlocksStorageOnMissingBlocksFromStorage(t *testing.T) {
 	require.NoError(t, ingester.WaitSumMetrics(e2e.Equals(1), "cortex_ingester_memory_series_removed_total"))
 	require.NoError(t, ingester.WaitSumMetrics(e2e.Equals(1), "cortex_ingester_memory_series"))
 
-	// Start the querier and store-gateway, and configure them to not frequently sync blocks.
+	// Start the querier and store-gateway, and configure them to frequently sync blocks fast enough to trigger consistency check
+	// We will induce an error in the store gateway by deleting blocks and the querier ignores the direct error
+	// and relies on checking that all blocks were queried. However this consistency check will skip most recent
+	// blocks (less than 3*sync-interval age) as they could be unnoticed by the store-gateway and ingesters
+	// have them anyway. We turn down the sync-interval to speed up the test.
 	storeGateway := e2emimir.NewStoreGateway("store-gateway", consul.NetworkHTTPEndpoint(), mergeFlags(flags, map[string]string{
-		"-blocks-storage.bucket-store.sync-interval": "1m",
+		"-blocks-storage.bucket-store.sync-interval": "1s",
 	}), "")
 	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), mergeFlags(flags, map[string]string{
-		"-blocks-storage.bucket-store.sync-interval": "1m",
+		"-blocks-storage.bucket-store.sync-interval": "1s",
 	}), "")
 	require.NoError(t, s.StartAndWaitReady(querier, storeGateway))
 
-	// Wait until the querier and store-gateway have updated the ring.
+	// Wait until the querier and store-gateway have updated the ring
 	require.NoError(t, querier.WaitSumMetrics(e2e.Equals(512*2), "cortex_ring_tokens_total"))
 	require.NoError(t, storeGateway.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
+
+	// Wait until the blocks are old enough for consistency check
+	// 1 sync on startup, 3 to go over the consistency check limit explained above
+	require.NoError(t, querier.WaitSumMetrics(e2e.GreaterOrEqual(1+3), "cortex_blocks_meta_syncs_total"))
 
 	// Query back the series.
 	c, err = e2emimir.NewClient("", querier.HTTPEndpoint(), "", "", "user-1")
@@ -793,7 +801,7 @@ func TestQuerierWithBlocksStorageOnMissingBlocksFromStorage(t *testing.T) {
 	_, err = c.Query("series_1", series1Timestamp)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "500")
-	assert.Contains(t, err.(*promv1.Error).Detail, "The specified key does not exist")
+	assert.Contains(t, err.(*promv1.Error).Detail, "consistency check failed because some blocks were not queried")
 }
 
 func TestQueryLimitsWithBlocksStorageRunningInMicroServices(t *testing.T) {
