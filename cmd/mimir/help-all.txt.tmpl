@@ -1624,7 +1624,7 @@ Usage of ./cmd/mimir/mimir:
   -target value
     	Comma-separated list of modules to load. The alias 'all' can be used in the list to load a number of core modules and will enable single-binary mode. Use '-modules' command line flag to get a list of available modules, and to see which modules are included in 'all'. (default all)
   -tenant-federation.enabled
-    	[experimental] If enabled on all services, queries can be federated across multiple tenants. The tenant IDs involved need to be specified separated by a '|' character in the 'X-Scope-OrgID' header.
+    	If enabled on all services, queries can be federated across multiple tenants. The tenant IDs involved need to be specified separated by a '|' character in the 'X-Scope-OrgID' header.
   -validation.create-grace-period value
     	Duration which table will be created/deleted before/after it's needed; we won't accept sample from before this time. (default 10m)
   -validation.enforce-metadata-metric-name
