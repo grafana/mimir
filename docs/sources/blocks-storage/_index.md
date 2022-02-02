@@ -16,9 +16,3 @@ The supported backends for the blocks storage are:
 - [Local Filesystem](https://thanos.io/storage.md/#filesystem) (single node only)
 
 _Internally, some components are based on [Thanos](https://thanos.io), but no Thanos knowledge is required in order to run it._
-
-## Architecture
-
-- [Querier](./querier.md)
-- [Store-gateway](./store-gateway.md)
-- [Production tips](./production-tips.md)
