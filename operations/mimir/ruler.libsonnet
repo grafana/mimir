@@ -8,7 +8,7 @@
     $._config.blocksStorageConfig +
     $._config.queryConfig +
     $._config.queryEngineConfig +
-    $._config.distributorConfig +
+    $._config.ingesterRingClientConfig +
     $._config.rulerClientConfig +
     $._config.rulerLimitsConfig +
     $._config.queryBlocksStorageConfig +

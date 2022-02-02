@@ -5,7 +5,7 @@
   distributor_args::
     $._config.grpcConfig +
     $._config.ringConfig +
-    $._config.distributorConfig +
+    $._config.ingesterRingClientConfig +
     $._config.distributorLimitsConfig +
     {
       target: 'distributor',

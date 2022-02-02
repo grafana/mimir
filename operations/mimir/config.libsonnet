@@ -147,8 +147,9 @@
       'ring.prefix': '',
     },
 
-    // Some distributor config is shared with the querier.
-    distributorConfig: {
+    // The ingester ring client config that should be shared across all Mimir services
+    // watching the ingester ring.
+    ingesterRingClientConfig: {
       'distributor.replication-factor': $._config.replication_factor,
       'distributor.health-check-ingesters': true,
       'ring.heartbeat-timeout': '10m',
