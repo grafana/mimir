@@ -222,6 +222,7 @@ How to **investigate**:
   - The panels in the dashboard are vertically sorted by the network path (eg. on the write path: cortex-gw -> distributor -> ingester)
 - If the failing service is going OOM (`OOMKilled`): scale up or increase the memory
 - If the failing service is crashing / panicking: look for the stack trace in the logs and investigate from there
+  - If crashing service is query-frontend, querier or store-gateway, and you have "activity tracker" feature enabled, look for `found unfinished activities from previous run` message and subsequent `activity` messages in the log file to see which queries caused the crash.
 
 ### MimirIngesterUnhealthy
 
@@ -547,6 +548,7 @@ How to **investigate**:
 - Are queriers in a crash loop (eg. OOMKilled)?
   - `OOMKilled`: temporarily increase queriers memory request/limit
   - `panic`: look for the stack trace in the logs and investigate from there
+  - if queriers run with activity tracker enabled, they may log `unfinished activities` message on startup with queries that possibly caused the crash.
 - Is QPS increased?
   - Scale up queriers to satisfy the increased workload
 - Is query latency increased?
