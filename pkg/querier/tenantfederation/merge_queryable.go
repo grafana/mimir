@@ -399,21 +399,3 @@ func (a *addLabelsSeries) Labels() labels.Labels {
 func (a *addLabelsSeries) Iterator() chunkenc.Iterator {
 	return a.upstream.Iterator()
 }
-
-// this sets a label and preserves an existing value a new label prefixed with
-// original_. It doesn't do this recursively.
-func setLabelsRetainExisting(src labels.Labels, additionalLabels ...labels.Label) labels.Labels {
-	lb := labels.NewBuilder(src)
-
-	for _, additionalL := range additionalLabels {
-		if oldValue := src.Get(additionalL.Name); oldValue != "" {
-			lb.Set(
-				retainExistingPrefix+additionalL.Name,
-				oldValue,
-			)
-		}
-		lb.Set(additionalL.Name, additionalL.Value)
-	}
-
-	return lb.Labels()
-}

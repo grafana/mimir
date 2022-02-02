@@ -68,6 +68,24 @@ func filterValuesByMatchers(idLabelName string, ids []string, matchers ...*label
 	return matchedIDs, unrelatedMatchers
 }
 
+// this sets a label and preserves an existing value a new label prefixed with
+// original_. It doesn't do this recursively.
+func setLabelsRetainExisting(src labels.Labels, additionalLabels ...labels.Label) labels.Labels {
+	lb := labels.NewBuilder(src)
+
+	for _, additionalL := range additionalLabels {
+		if oldValue := src.Get(additionalL.Name); oldValue != "" {
+			lb.Set(
+				retainExistingPrefix+additionalL.Name,
+				oldValue,
+			)
+		}
+		lb.Set(additionalL.Name, additionalL.Value)
+	}
+
+	return lb.Labels()
+}
+
 func sliceToSet(values []string) map[string]struct{} {
 	out := make(map[string]struct{}, len(values))
 	for _, v := range values {
