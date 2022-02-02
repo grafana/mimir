@@ -277,15 +277,15 @@ format:
 	find . $(DONT_FIND) -name '*.pb.go' -prune -o -type f -name '*.go' -exec goimports -w -local github.com/grafana/mimir {} \;
 
 test:
-	go test -timeout 30m ./...
+	go test -timeout 30m $(go list ./...  | grep -v tools/trafficdump)
 
 test-with-race:
-	go test -tags netgo -timeout 30m -race -count 1 ./...
+	go test -tags netgo -timeout 30m -race -count 1 $(go list ./...  | grep -v tools/trafficdump)
 
 cover:
 	$(eval COVERDIR := $(shell mktemp -d coverage.XXXXXXXXXX))
 	$(eval COVERFILE := $(shell mktemp $(COVERDIR)/unit.XXXXXXXXXX))
-	go test -tags netgo -timeout 30m -race -count 1 -coverprofile=$(COVERFILE) ./...
+	go test -tags netgo -timeout 30m -race -count 1 -coverprofile=$(COVERFILE) $(go list ./...  | grep -v tools/trafficdump)
 	go tool cover -html=$(COVERFILE) -o cover.html
 	go tool cover -func=cover.html | tail -n1
 
