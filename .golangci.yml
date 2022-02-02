@@ -24,6 +24,3 @@ run:
   build-tags:
     - netgo
     - requires_docker
-
-  skip-dirs:
-    - tools/trafficdump
