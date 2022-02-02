@@ -655,8 +655,8 @@ blocks_storage:
     [ignore_deletion_mark_delay: <duration> | default = 1h]
 
     bucket_index:
-      # True to enable querier and store-gateway to discover blocks in the
-      # storage via bucket index instead of bucket scanning.
+      # If enabled, a querier/store-gateway can discover blocks by reading a
+      # bucket index instead of bucket scanning.
       # CLI flag: -blocks-storage.bucket-store.bucket-index.enabled
       [enabled: <boolean> | default = true]
 
