@@ -42,9 +42,6 @@ type parser struct {
 	ignorePathRegexpStr string
 	ignorePathRegexp    *regexp.Regexp
 
-	printSeries   bool
-	printMetadata bool
-
 	matchStatusCode int
 
 	metricSelector string
@@ -91,7 +88,7 @@ func (rp *parser) prepare() {
 	}
 }
 
-func (rp *parser) parseHttpRequest(req *http.Request, body []byte) *request {
+func (rp *parser) processHTTPRequest(req *http.Request, body []byte) *request {
 	if rp.ignorePathRegexp != nil && rp.ignorePathRegexp.MatchString(req.URL.Path) {
 		return &request{ignored: true}
 	}
@@ -112,7 +109,7 @@ func (rp *parser) parseHttpRequest(req *http.Request, body []byte) *request {
 		matchStatusCode: rp.matchStatusCode,
 
 		Method: req.Method,
-		Url: requestUrl{
+		URL: requestURL{
 			Path:  req.URL.Path,
 			Query: req.URL.Query(),
 		},
@@ -202,7 +199,7 @@ func matches(lbls labels.Labels, matchers []*labels.Matcher) bool {
 	return true
 }
 
-func (rp *parser) processHttpResponse(resp *http.Response, body []byte) *response {
+func (rp *parser) processHTTPResponse(resp *http.Response, body []byte) *response {
 	out := response{
 		Status:     resp.Status,
 		StatusCode: resp.StatusCode,
@@ -230,7 +227,7 @@ func (rp *parser) processHttpResponse(resp *http.Response, body []byte) *respons
 
 	ct, _, _ := mime.ParseMediaType(resp.Header.Get("Content-Type"))
 	if ct == "application/json" && rp.responseDecodeBody {
-		out.JsonBody = body
+		out.JSONBody = body
 	}
 
 	if ct == "text/plain" {

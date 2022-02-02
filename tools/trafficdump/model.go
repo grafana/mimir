@@ -36,7 +36,7 @@ type request struct {
 	Error string `json:"error,omitempty"`
 
 	Method  string      `json:"method"`
-	Url     requestUrl  `json:"url"`
+	URL     requestURL  `json:"url"`
 	Headers http.Header `json:"headers,omitempty"`
 	Tenant  string      `json:"tenant,omitempty"`
 
@@ -46,7 +46,7 @@ type request struct {
 	PushRequest *pushRequest `json:"push,omitempty"`
 }
 
-type requestUrl struct {
+type requestURL struct {
 	Path  string     `json:"path"`
 	Query url.Values `json:"query,omitempty"`
 }
@@ -125,11 +125,11 @@ type response struct {
 	Headers http.Header `json:"headers,omitempty"`
 
 	RawBody  string          `json:"raw_body,omitempty"`
-	JsonBody json.RawMessage `json:"json_body,omitempty"`
+	JSONBody json.RawMessage `json:"json_body,omitempty"`
 	TextBody string          `json:"text_body,omitempty"`
 }
 
-func writeJsonString(b *bytes.Buffer, s string) {
+func writeJSONString(b *bytes.Buffer, s string) {
 	out, err := json.Marshal(s)
 	if err != nil {
 		panic(err)
@@ -143,9 +143,9 @@ func writeLabels(b *bytes.Buffer, lbls labels.Labels) {
 		if i > 0 {
 			b.WriteByte(',')
 		}
-		writeJsonString(b, l.Name)
+		writeJSONString(b, l.Name)
 		b.WriteByte(':')
-		writeJsonString(b, l.Value)
+		writeJSONString(b, l.Value)
 	}
 	b.WriteByte('}')
 }
@@ -165,6 +165,6 @@ func (s sampleWithLabels) marshalToBuffer(b *bytes.Buffer) {
 
 	b.WriteString(strconv.FormatFloat(float64(s.ts)/float64(time.Second/time.Millisecond), 'f', -1, 64))
 	b.WriteString(",")
-	writeJsonString(b, strconv.FormatFloat(float64(s.val), 'f', -1, 64))
+	writeJSONString(b, strconv.FormatFloat(float64(s.val), 'f', -1, 64))
 	b.WriteString("]")
 }

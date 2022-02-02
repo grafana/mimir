@@ -50,7 +50,7 @@ func (rs *requestStream) parseRequests() {
 			if err != nil {
 				r = &request{Error: err.Error()}
 			} else {
-				r = rs.p.parseHttpRequest(req, body)
+				r = rs.p.processHTTPRequest(req, body)
 			}
 		}
 
@@ -96,7 +96,7 @@ func (rs *responseStream) parseResponses() {
 			if err != nil {
 				r = &response{Error: err.Error()}
 			} else {
-				r = rs.p.processHttpResponse(req, body)
+				r = rs.p.processHTTPResponse(req, body)
 			}
 		}
 
