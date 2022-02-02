@@ -1,9 +1,10 @@
 ---
-title: "Shuffle Sharding"
-linkTitle: "Shuffle Sharding"
-weight: 10
-slug: shuffle-sharding
+title: "Configure shuffle sharding"
+description: "How to configure shuffle sharding of tenants data."
+weight: 20
 ---
+
+# Configure shuffle sharding
 
 Grafana Mimir leverages sharding techniques to horizontally scale both single- and multi-tenant clusters beyond the capacity of a single node.
 
