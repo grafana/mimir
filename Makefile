@@ -310,12 +310,12 @@ web-build: web-pre
 web-deploy:
 	./tools/website/web-deploy.sh
 
-# Generates the config file documentation.
+doc: ## Generates the config file documentation.
 doc: clean-doc
 	go run ./tools/doc-generator ./docs/sources/configuration/config-file-reference.template > ./docs/sources/configuration/config-file-reference.md
-	go run ./tools/doc-generator ./docs/sources/blocks-storage/compactor.template            > ./docs/sources/blocks-storage/compactor.md
-	go run ./tools/doc-generator ./docs/sources/blocks-storage/store-gateway.template        > ./docs/sources/blocks-storage/store-gateway.md
-	go run ./tools/doc-generator ./docs/sources/blocks-storage/querier.template              > ./docs/sources/blocks-storage/querier.md
+	go run ./tools/doc-generator ./docs/sources/architecture/compactor.template              > ./docs/sources/architecture/compactor.md
+	go run ./tools/doc-generator ./docs/sources/architecture/store-gateway.template          > ./docs/sources/architecture/store-gateway.md
+	go run ./tools/doc-generator ./docs/sources/architecture/querier.template                > ./docs/sources/architecture/querier.md
 	go run ./tools/doc-generator ./docs/sources/operations/encrypt-data-at-rest.template     > ./docs/sources/operations/encrypt-data-at-rest.md
 	embedmd -w docs/sources/configuration/prometheus-frontend.md
 	embedmd -w docs/sources/requests-mirroring-to-secondary-cluster.md

@@ -1,8 +1,7 @@
 ---
 title: "Querier"
-linkTitle: "Querier"
-weight: 2
-slug: querier
+description: "Overview of the querier microservice."
+weight: 40
 ---
 
 {{ .GeneratedFileWarning }}
