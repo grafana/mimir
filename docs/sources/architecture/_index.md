@@ -24,6 +24,7 @@ A dedicate page describes each microservice in detail.
 `{{< section >}}`
 
 <!-- START from blocks-storage/_index.md -->
+
 ### The write path
 
 **Ingesters** receive incoming samples from the distributors. Each push request belongs to a tenant, and the ingester appends the received samples to the specific per-tenant TSDB stored on the local disk. The received samples are both kept in-memory and written to a write-ahead log (WAL) and used to recover the in-memory series in case the ingester abruptly terminates. The per-tenant TSDB is lazily created in each ingester as soon as the first samples are received for that tenant.
@@ -47,9 +48,11 @@ For each discovered block, queriers only download the block's `meta.json` file (
 Queriers use the blocks metadata to compute the list of blocks that need to be queried at query time and fetch matching series from the store-gateway instances holding the required blocks.
 
 For more information, please refer to the following dedicated sections:
+
 <!-- END from blocks-storage/_index.md -->
 
 <!-- START from architecture.md -->
+
 ## The role of Prometheus
 
 Prometheus instances scrape samples from various targets and then push them to Mimir (using Prometheus' [remote write API](https://prometheus.io/docs/prometheus/latest/storage/#remote-storage-integrations)). That remote write API emits batched [Snappy](https://google.github.io/snappy/)-compressed [Protocol Buffer](https://developers.google.com/protocol-buffers/) messages inside the body of an HTTP `PUT` request.
@@ -73,4 +76,5 @@ Mimir requires an object store for the block files, which can be:
 - [Local Filesystem](https://thanos.io/storage.md/#filesystem) (single node only)
 
 For more information, see [Blocks storage](./blocks-storage/_index.md).
+
 <!-- END from architecture.md -->
