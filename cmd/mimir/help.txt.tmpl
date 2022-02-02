@@ -115,128 +115,30 @@ Usage of ./cmd/mimir/mimir:
     	Azure storage endpoint suffix without schema. The account name will be prefixed to this value to create the FQDN. If set to empty string, default endpoint suffix is used.
   -blocks-storage.backend string
     	Backend storage to use. Supported backends are: s3, gcs, azure, swift, filesystem. (default "filesystem")
-  -blocks-storage.bucket-store.block-sync-concurrency int
-    	Maximum number of concurrent blocks synching per tenant. (default 20)
   -blocks-storage.bucket-store.bucket-index.enabled
     	True to enable querier and store-gateway to discover blocks in the storage via bucket index instead of bucket scanning.
-  -blocks-storage.bucket-store.bucket-index.idle-timeout duration
-    	How long a unused bucket index should be cached. Once this timeout expires, the unused bucket index is removed from the in-memory cache. This option is used only by querier. (default 1h0m0s)
-  -blocks-storage.bucket-store.bucket-index.max-stale-period duration
-    	The maximum allowed age of a bucket index (last updated) before queries start failing because the bucket index is too old. The bucket index is periodically updated by the compactor, while this check is enforced in the querier (at query time). (default 1h0m0s)
-  -blocks-storage.bucket-store.bucket-index.update-on-error-interval duration
-    	How frequently a bucket index, which previously failed to load, should be tried to load again. This option is used only by querier. (default 1m0s)
-  -blocks-storage.bucket-store.chunks-cache.attributes-in-memory-max-items int
-    	Maximum number of object attribute items to keep in a first level in-memory LRU cache. Metadata will be stored and fetched in-memory before hitting the cache backend. 0 to disable the in-memory cache.
-  -blocks-storage.bucket-store.chunks-cache.attributes-ttl duration
-    	TTL for caching object attributes for chunks. If the metadata cache is configured, attributes will be stored under this cache backend, otherwise attributes are stored in the chunks cache backend. (default 168h0m0s)
   -blocks-storage.bucket-store.chunks-cache.backend string
     	Backend for chunks cache, if not empty. Supported values: memcached.
-  -blocks-storage.bucket-store.chunks-cache.max-get-range-requests int
-    	Maximum number of sub-GetRange requests that a single GetRange request can be split into when fetching chunks. Zero or negative value = unlimited number of sub-requests. (default 3)
   -blocks-storage.bucket-store.chunks-cache.memcached.addresses string
     	Comma separated list of memcached addresses. Supported prefixes are: dns+ (looked up as an A/AAAA query), dnssrv+ (looked up as a SRV query, dnssrvnoa+ (looked up as a SRV query, with no A/AAAA lookup made after that).
-  -blocks-storage.bucket-store.chunks-cache.memcached.max-async-buffer-size int
-    	The maximum number of enqueued asynchronous operations allowed. (default 25000)
-  -blocks-storage.bucket-store.chunks-cache.memcached.max-async-concurrency int
-    	The maximum number of concurrent asynchronous operations can occur. (default 50)
-  -blocks-storage.bucket-store.chunks-cache.memcached.max-get-multi-batch-size int
-    	The maximum number of keys a single underlying get operation should run. If more keys are specified, internally keys are split into multiple batches and fetched concurrently, honoring the max concurrency. If set to 0, the max batch size is unlimited. (default 100)
-  -blocks-storage.bucket-store.chunks-cache.memcached.max-get-multi-concurrency int
-    	The maximum number of concurrent connections running get operations. If set to 0, concurrency is unlimited. (default 100)
-  -blocks-storage.bucket-store.chunks-cache.memcached.max-idle-connections int
-    	The maximum number of idle connections that will be maintained per address. (default 100)
-  -blocks-storage.bucket-store.chunks-cache.memcached.max-item-size int
-    	The maximum size of an item stored in memcached. Bigger items are not stored. If set to 0, no maximum size is enforced. (default 1048576)
   -blocks-storage.bucket-store.chunks-cache.memcached.timeout duration
     	The socket read/write timeout. (default 100ms)
-  -blocks-storage.bucket-store.chunks-cache.subrange-size int
-    	Size of each subrange that bucket object is split into for better caching. (default 16000)
-  -blocks-storage.bucket-store.chunks-cache.subrange-ttl duration
-    	TTL for caching individual chunks subranges. (default 24h0m0s)
-  -blocks-storage.bucket-store.consistency-delay duration
-    	Minimum age of a block before it's being read. Set it to safe value (e.g 30m) if your object storage is eventually consistent. GCS and S3 are (roughly) strongly consistent.
-  -blocks-storage.bucket-store.ignore-blocks-within duration
-    	Blocks with minimum time within this duration are ignored, and not loaded by store-gateway. Useful when used together with -querier.query-store-after to prevent loading young blocks, because there are usually many of them (depending on number of ingesters) and they are not yet compacted. Negative values or 0 disable the filter.
-  -blocks-storage.bucket-store.ignore-deletion-marks-delay duration
-    	Duration after which the blocks marked for deletion will be filtered out while fetching blocks. The idea of ignore-deletion-marks-delay is to ignore blocks that are marked for deletion with some delay. This ensures store can still serve blocks that are meant to be deleted but do not have a replacement yet. (default 1h0m0s)
   -blocks-storage.bucket-store.index-cache.backend string
     	The index cache backend type. Supported values: inmemory, memcached. (default "inmemory")
   -blocks-storage.bucket-store.index-cache.inmemory.max-size-bytes uint
     	Maximum size in bytes of in-memory index cache used to speed up blocks index lookups (shared between all tenants). (default 1073741824)
   -blocks-storage.bucket-store.index-cache.memcached.addresses string
     	Comma separated list of memcached addresses. Supported prefixes are: dns+ (looked up as an A/AAAA query), dnssrv+ (looked up as a SRV query, dnssrvnoa+ (looked up as a SRV query, with no A/AAAA lookup made after that).
-  -blocks-storage.bucket-store.index-cache.memcached.max-async-buffer-size int
-    	The maximum number of enqueued asynchronous operations allowed. (default 25000)
-  -blocks-storage.bucket-store.index-cache.memcached.max-async-concurrency int
-    	The maximum number of concurrent asynchronous operations can occur. (default 50)
-  -blocks-storage.bucket-store.index-cache.memcached.max-get-multi-batch-size int
-    	The maximum number of keys a single underlying get operation should run. If more keys are specified, internally keys are split into multiple batches and fetched concurrently, honoring the max concurrency. If set to 0, the max batch size is unlimited. (default 100)
-  -blocks-storage.bucket-store.index-cache.memcached.max-get-multi-concurrency int
-    	The maximum number of concurrent connections running get operations. If set to 0, concurrency is unlimited. (default 100)
-  -blocks-storage.bucket-store.index-cache.memcached.max-idle-connections int
-    	The maximum number of idle connections that will be maintained per address. (default 100)
-  -blocks-storage.bucket-store.index-cache.memcached.max-item-size int
-    	The maximum size of an item stored in memcached. Bigger items are not stored. If set to 0, no maximum size is enforced. (default 1048576)
   -blocks-storage.bucket-store.index-cache.memcached.timeout duration
     	The socket read/write timeout. (default 100ms)
-  -blocks-storage.bucket-store.index-header-lazy-loading-enabled
-    	If enabled, store-gateway will lazy load an index-header only once required by a query. (default true)
-  -blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout duration
-    	If index-header lazy loading is enabled and this setting is > 0, the store-gateway will offload unused index-headers after 'idle timeout' inactivity. (default 1h0m0s)
-  -blocks-storage.bucket-store.max-chunk-pool-bytes uint
-    	Max size - in bytes - of a chunks pool, used to reduce memory allocations. The pool is shared across all tenants. 0 to disable the limit. (default 2147483648)
-  -blocks-storage.bucket-store.max-concurrent int
-    	Max number of concurrent queries to execute against the long-term storage. The limit is shared across all tenants. (default 100)
-  -blocks-storage.bucket-store.meta-sync-concurrency int
-    	Number of Go routines to use when syncing block meta files from object storage per tenant. (default 20)
   -blocks-storage.bucket-store.metadata-cache.backend string
     	Backend for metadata cache, if not empty. Supported values: memcached.
-  -blocks-storage.bucket-store.metadata-cache.block-index-attributes-ttl duration
-    	How long to cache attributes of the block index. (default 168h0m0s)
-  -blocks-storage.bucket-store.metadata-cache.bucket-index-content-ttl duration
-    	How long to cache content of the bucket index. (default 5m0s)
-  -blocks-storage.bucket-store.metadata-cache.bucket-index-max-size-bytes int
-    	Maximum size of bucket index content to cache in bytes. Caching will be skipped if the content exceeds this size. This is useful to avoid network round trip for large content if the configured caching backend has an hard limit on cached items size (in this case, you should set this limit to the same limit in the caching backend). (default 1048576)
-  -blocks-storage.bucket-store.metadata-cache.chunks-list-ttl duration
-    	How long to cache list of chunks for a block. (default 24h0m0s)
   -blocks-storage.bucket-store.metadata-cache.memcached.addresses string
     	Comma separated list of memcached addresses. Supported prefixes are: dns+ (looked up as an A/AAAA query), dnssrv+ (looked up as a SRV query, dnssrvnoa+ (looked up as a SRV query, with no A/AAAA lookup made after that).
-  -blocks-storage.bucket-store.metadata-cache.memcached.max-async-buffer-size int
-    	The maximum number of enqueued asynchronous operations allowed. (default 25000)
-  -blocks-storage.bucket-store.metadata-cache.memcached.max-async-concurrency int
-    	The maximum number of concurrent asynchronous operations can occur. (default 50)
-  -blocks-storage.bucket-store.metadata-cache.memcached.max-get-multi-batch-size int
-    	The maximum number of keys a single underlying get operation should run. If more keys are specified, internally keys are split into multiple batches and fetched concurrently, honoring the max concurrency. If set to 0, the max batch size is unlimited. (default 100)
-  -blocks-storage.bucket-store.metadata-cache.memcached.max-get-multi-concurrency int
-    	The maximum number of concurrent connections running get operations. If set to 0, concurrency is unlimited. (default 100)
-  -blocks-storage.bucket-store.metadata-cache.memcached.max-idle-connections int
-    	The maximum number of idle connections that will be maintained per address. (default 100)
-  -blocks-storage.bucket-store.metadata-cache.memcached.max-item-size int
-    	The maximum size of an item stored in memcached. Bigger items are not stored. If set to 0, no maximum size is enforced. (default 1048576)
   -blocks-storage.bucket-store.metadata-cache.memcached.timeout duration
     	The socket read/write timeout. (default 100ms)
-  -blocks-storage.bucket-store.metadata-cache.metafile-attributes-ttl duration
-    	How long to cache attributes of the block metafile. (default 168h0m0s)
-  -blocks-storage.bucket-store.metadata-cache.metafile-content-ttl duration
-    	How long to cache content of the metafile. (default 24h0m0s)
-  -blocks-storage.bucket-store.metadata-cache.metafile-doesnt-exist-ttl duration
-    	How long to cache information that block metafile doesn't exist. Also used for user deletion mark file. (default 5m0s)
-  -blocks-storage.bucket-store.metadata-cache.metafile-exists-ttl duration
-    	How long to cache information that block metafile exists. Also used for user deletion mark file. (default 2h0m0s)
-  -blocks-storage.bucket-store.metadata-cache.metafile-max-size-bytes int
-    	Maximum size of metafile content to cache in bytes. Caching will be skipped if the content exceeds this size. This is useful to avoid network round trip for large content if the configured caching backend has an hard limit on cached items size (in this case, you should set this limit to the same limit in the caching backend). (default 1048576)
-  -blocks-storage.bucket-store.metadata-cache.tenant-blocks-list-ttl duration
-    	How long to cache list of blocks for each tenant. (default 5m0s)
-  -blocks-storage.bucket-store.metadata-cache.tenants-list-ttl duration
-    	How long to cache list of tenants in the bucket. (default 15m0s)
-  -blocks-storage.bucket-store.series-hash-cache-max-size-bytes uint
-    	Max size - in bytes - of the in-memory series hash cache. The cache is shared across all tenants and it's used only when query sharding is enabled. (default 1073741824)
   -blocks-storage.bucket-store.sync-dir string
     	Directory to store synchronized TSDB index headers. (default "tsdb-sync")
-  -blocks-storage.bucket-store.sync-interval duration
-    	How frequently to scan the bucket, or to refresh the bucket index (if enabled), in order to look for changes (new blocks shipped by ingesters and blocks deleted by retention or compaction). (default 15m0s)
-  -blocks-storage.bucket-store.tenant-sync-concurrency int
-    	Maximum number of concurrent tenants synching blocks. (default 10)
   -blocks-storage.filesystem.dir string
     	Local filesystem storage directory. (default "blocks")
   -blocks-storage.gcs.bucket-name string
@@ -289,44 +191,10 @@ Usage of ./cmd/mimir/mimir:
     	OpenStack Swift user ID.
   -blocks-storage.swift.username string
     	OpenStack Swift username.
-  -blocks-storage.tsdb.block-ranges-period value
-    	TSDB blocks range period. (default 2h0m0s)
-  -blocks-storage.tsdb.close-idle-tsdb-timeout duration
-    	If TSDB has not received any data for this duration, and all blocks from TSDB have been shipped, TSDB is closed and deleted from local disk. If set to positive value, this value should be equal or higher than -querier.query-ingesters-within flag to make sure that TSDB is not closed prematurely, which could cause partial query results. 0 or negative value disables closing of idle TSDB. (default 13h0m0s)
   -blocks-storage.tsdb.dir string
     	Local directory to store TSDBs in the ingesters. (default "tsdb")
-  -blocks-storage.tsdb.flush-blocks-on-shutdown
-    	True to flush blocks to storage on shutdown. If false, incomplete blocks will be reused after restart.
-  -blocks-storage.tsdb.head-chunks-write-buffer-size-bytes int
-    	The write buffer size used by the head chunks mapper. Lower values reduce memory utilisation on clusters with a large number of tenants at the cost of increased disk I/O operations. (default 4194304)
-  -blocks-storage.tsdb.head-chunks-write-queue-size int
-    	The size of the write queue used by the head chunks mapper. Lower values reduce memory utilisation at the cost of potentially higher ingest latency. (default 1000000)
-  -blocks-storage.tsdb.head-compaction-concurrency int
-    	Maximum number of tenants concurrently compacting TSDB head into a new block (default 5)
-  -blocks-storage.tsdb.head-compaction-idle-timeout duration
-    	If TSDB head is idle for this duration, it is compacted. Note that up to 25% jitter is added to the value to avoid ingesters compacting concurrently. 0 means disabled. (default 1h0m0s)
-  -blocks-storage.tsdb.head-compaction-interval duration
-    	How frequently ingesters try to compact TSDB head. Block is only created if data covers smallest block range. Must be greater than 0 and max 5 minutes. (default 1m0s)
-  -blocks-storage.tsdb.isolation-enabled
-    	Enables TSDB isolation feature. Disabling may improve performance. (default true)
-  -blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup int
-    	limit the number of concurrently opening TSDB's on startup (default 10)
-  -blocks-storage.tsdb.memory-snapshot-on-shutdown
-    	True to enable snapshotting of in-memory TSDB data on disk when shutting down.
   -blocks-storage.tsdb.retention-period duration
     	TSDB blocks retention in the ingester before a block is removed. This should be larger than the -blocks-storage.tsdb.block-ranges-period, -querier.query-store-after and large enough to give store-gateways and queriers enough time to discover newly uploaded blocks. (default 24h0m0s)
-  -blocks-storage.tsdb.series-hash-cache-max-size-bytes uint
-    	Max size - in bytes - of the in-memory series hash cache. The cache is shared across all tenants and it's used only when query sharding is enabled. (default 1073741824)
-  -blocks-storage.tsdb.ship-concurrency int
-    	Maximum number of tenants concurrently shipping blocks to the storage. (default 10)
-  -blocks-storage.tsdb.ship-interval duration
-    	How frequently the TSDB blocks are scanned and new ones are shipped to the storage. 0 means shipping is disabled. (default 1m0s)
-  -blocks-storage.tsdb.stripe-size int
-    	The number of shards of series to use in TSDB (must be a power of 2). Reducing this will decrease memory footprint, but can negatively impact performance. (default 16384)
-  -blocks-storage.tsdb.wal-compression-enabled
-    	True to enable TSDB WAL compression.
-  -blocks-storage.tsdb.wal-segment-size-bytes int
-    	TSDB WAL segments files max size (bytes). (default 134217728)
   -compactor.blocks-retention-period value
     	Delete blocks containing samples older than the specified retention period. 0 to disable.
   -compactor.compactor-tenant-shard-size int
@@ -485,18 +353,6 @@ Usage of ./cmd/mimir/mimir:
     	Enable cache compression, if not empty. Supported values are: snappy.
   -frontend.results-cache.memcached.addresses string
     	Comma separated list of memcached addresses. Supported prefixes are: dns+ (looked up as an A/AAAA query), dnssrv+ (looked up as a SRV query, dnssrvnoa+ (looked up as a SRV query, with no A/AAAA lookup made after that).
-  -frontend.results-cache.memcached.max-async-buffer-size int
-    	The maximum number of enqueued asynchronous operations allowed. (default 25000)
-  -frontend.results-cache.memcached.max-async-concurrency int
-    	The maximum number of concurrent asynchronous operations can occur. (default 50)
-  -frontend.results-cache.memcached.max-get-multi-batch-size int
-    	The maximum number of keys a single underlying get operation should run. If more keys are specified, internally keys are split into multiple batches and fetched concurrently, honoring the max concurrency. If set to 0, the max batch size is unlimited. (default 100)
-  -frontend.results-cache.memcached.max-get-multi-concurrency int
-    	The maximum number of concurrent connections running get operations. If set to 0, concurrency is unlimited. (default 100)
-  -frontend.results-cache.memcached.max-idle-connections int
-    	The maximum number of idle connections that will be maintained per address. (default 100)
-  -frontend.results-cache.memcached.max-item-size int
-    	The maximum size of an item stored in memcached. Bigger items are not stored. If set to 0, no maximum size is enforced. (default 1048576)
   -frontend.results-cache.memcached.timeout duration
     	The socket read/write timeout. (default 100ms)
   -frontend.scheduler-address string

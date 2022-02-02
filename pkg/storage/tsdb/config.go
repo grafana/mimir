@@ -141,29 +141,29 @@ func (cfg *BlocksStorageConfig) Validate() error {
 //nolint:golint
 type TSDBConfig struct {
 	Dir                       string        `yaml:"dir"`
-	BlockRanges               DurationList  `yaml:"block_ranges_period"`
+	BlockRanges               DurationList  `yaml:"block_ranges_period" category:"advanced"`
 	Retention                 time.Duration `yaml:"retention_period"`
-	ShipInterval              time.Duration `yaml:"ship_interval"`
-	ShipConcurrency           int           `yaml:"ship_concurrency"`
-	HeadCompactionInterval    time.Duration `yaml:"head_compaction_interval"`
-	HeadCompactionConcurrency int           `yaml:"head_compaction_concurrency"`
-	HeadCompactionIdleTimeout time.Duration `yaml:"head_compaction_idle_timeout"`
-	HeadChunksWriteBufferSize int           `yaml:"head_chunks_write_buffer_size_bytes"`
+	ShipInterval              time.Duration `yaml:"ship_interval" category:"advanced"`
+	ShipConcurrency           int           `yaml:"ship_concurrency" category:"advanced"`
+	HeadCompactionInterval    time.Duration `yaml:"head_compaction_interval" category:"advanced"`
+	HeadCompactionConcurrency int           `yaml:"head_compaction_concurrency" category:"advanced"`
+	HeadCompactionIdleTimeout time.Duration `yaml:"head_compaction_idle_timeout" category:"advanced"`
+	HeadChunksWriteBufferSize int           `yaml:"head_chunks_write_buffer_size_bytes" category:"advanced"`
 	HeadChunksEndTimeVariance float64       `yaml:"head_chunks_end_time_variance" category:"experimental"`
-	StripeSize                int           `yaml:"stripe_size"`
-	WALCompressionEnabled     bool          `yaml:"wal_compression_enabled"`
-	WALSegmentSizeBytes       int           `yaml:"wal_segment_size_bytes"`
-	FlushBlocksOnShutdown     bool          `yaml:"flush_blocks_on_shutdown"`
-	CloseIdleTSDBTimeout      time.Duration `yaml:"close_idle_tsdb_timeout"`
-	MemorySnapshotOnShutdown  bool          `yaml:"memory_snapshot_on_shutdown"`
-	HeadChunksWriteQueueSize  int           `yaml:"head_chunks_write_queue_size"`
-	IsolationEnabled          bool          `yaml:"isolation_enabled"`
+	StripeSize                int           `yaml:"stripe_size" category:"advanced"`
+	WALCompressionEnabled     bool          `yaml:"wal_compression_enabled" category:"advanced"`
+	WALSegmentSizeBytes       int           `yaml:"wal_segment_size_bytes" category:"advanced"`
+	FlushBlocksOnShutdown     bool          `yaml:"flush_blocks_on_shutdown" category:"advanced"`
+	CloseIdleTSDBTimeout      time.Duration `yaml:"close_idle_tsdb_timeout" category:"advanced"`
+	MemorySnapshotOnShutdown  bool          `yaml:"memory_snapshot_on_shutdown" category:"advanced"`
+	HeadChunksWriteQueueSize  int           `yaml:"head_chunks_write_queue_size" category:"advanced"`
+	IsolationEnabled          bool          `yaml:"isolation_enabled" category:"advanced"`
 
 	// Series hash cache.
-	SeriesHashCacheMaxBytes uint64 `yaml:"series_hash_cache_max_size_bytes"`
+	SeriesHashCacheMaxBytes uint64 `yaml:"series_hash_cache_max_size_bytes" category:"advanced"`
 
 	// MaxTSDBOpeningConcurrencyOnStartup limits the number of concurrently opening TSDB's during startup.
-	MaxTSDBOpeningConcurrencyOnStartup int `yaml:"max_tsdb_opening_concurrency_on_startup"`
+	MaxTSDBOpeningConcurrencyOnStartup int `yaml:"max_tsdb_opening_concurrency_on_startup" category:"advanced"`
 
 	// If true, user TSDBs are not closed on shutdown. Only for testing.
 	// If false (default), user TSDBs are closed to make sure all resources are released and closed properly.
@@ -252,30 +252,30 @@ func (cfg *TSDBConfig) IsBlocksShippingEnabled() bool {
 // BucketStoreConfig holds the config information for Bucket Stores used by the querier and store-gateway.
 type BucketStoreConfig struct {
 	SyncDir                  string              `yaml:"sync_dir"`
-	SyncInterval             time.Duration       `yaml:"sync_interval"`
-	MaxConcurrent            int                 `yaml:"max_concurrent"`
-	TenantSyncConcurrency    int                 `yaml:"tenant_sync_concurrency"`
-	BlockSyncConcurrency     int                 `yaml:"block_sync_concurrency"`
-	MetaSyncConcurrency      int                 `yaml:"meta_sync_concurrency"`
-	ConsistencyDelay         time.Duration       `yaml:"consistency_delay"`
+	SyncInterval             time.Duration       `yaml:"sync_interval" category:"advanced"`
+	MaxConcurrent            int                 `yaml:"max_concurrent" category:"advanced"`
+	TenantSyncConcurrency    int                 `yaml:"tenant_sync_concurrency" category:"advanced"`
+	BlockSyncConcurrency     int                 `yaml:"block_sync_concurrency" category:"advanced"`
+	MetaSyncConcurrency      int                 `yaml:"meta_sync_concurrency" category:"advanced"`
+	ConsistencyDelay         time.Duration       `yaml:"consistency_delay" category:"advanced"`
 	IndexCache               IndexCacheConfig    `yaml:"index_cache"`
 	ChunksCache              ChunksCacheConfig   `yaml:"chunks_cache"`
 	MetadataCache            MetadataCacheConfig `yaml:"metadata_cache"`
-	IgnoreDeletionMarksDelay time.Duration       `yaml:"ignore_deletion_mark_delay"`
+	IgnoreDeletionMarksDelay time.Duration       `yaml:"ignore_deletion_mark_delay" category:"advanced"`
 	BucketIndex              BucketIndexConfig   `yaml:"bucket_index"`
-	IgnoreBlocksWithin       time.Duration       `yaml:"ignore_blocks_within"`
+	IgnoreBlocksWithin       time.Duration       `yaml:"ignore_blocks_within" category:"advanced"`
 
 	// Chunk pool.
-	MaxChunkPoolBytes           uint64 `yaml:"max_chunk_pool_bytes"`
+	MaxChunkPoolBytes           uint64 `yaml:"max_chunk_pool_bytes" category:"advanced"`
 	ChunkPoolMinBucketSizeBytes int    `yaml:"chunk_pool_min_bucket_size_bytes" category:"advanced"`
 	ChunkPoolMaxBucketSizeBytes int    `yaml:"chunk_pool_max_bucket_size_bytes" category:"advanced"`
 
 	// Series hash cache.
-	SeriesHashCacheMaxBytes uint64 `yaml:"series_hash_cache_max_size_bytes"`
+	SeriesHashCacheMaxBytes uint64 `yaml:"series_hash_cache_max_size_bytes" category:"advanced"`
 
 	// Controls whether index-header lazy loading is enabled.
-	IndexHeaderLazyLoadingEnabled     bool          `yaml:"index_header_lazy_loading_enabled"`
-	IndexHeaderLazyLoadingIdleTimeout time.Duration `yaml:"index_header_lazy_loading_idle_timeout"`
+	IndexHeaderLazyLoadingEnabled     bool          `yaml:"index_header_lazy_loading_enabled" category:"advanced"`
+	IndexHeaderLazyLoadingIdleTimeout time.Duration `yaml:"index_header_lazy_loading_idle_timeout" category:"advanced"`
 
 	// Controls the partitioner, used to aggregate multiple GET object API requests.
 	PartitionerMaxGapBytes uint64 `yaml:"partitioner_max_gap_bytes" category:"advanced"`
@@ -334,9 +334,9 @@ func (cfg *BucketStoreConfig) Validate() error {
 
 type BucketIndexConfig struct {
 	Enabled               bool          `yaml:"enabled"`
-	UpdateOnErrorInterval time.Duration `yaml:"update_on_error_interval"`
-	IdleTimeout           time.Duration `yaml:"idle_timeout"`
-	MaxStalePeriod        time.Duration `yaml:"max_stale_period"`
+	UpdateOnErrorInterval time.Duration `yaml:"update_on_error_interval" category:"advanced"`
+	IdleTimeout           time.Duration `yaml:"idle_timeout" category:"advanced"`
+	MaxStalePeriod        time.Duration `yaml:"max_stale_period" category:"advanced"`
 }
 
 func (cfg *BucketIndexConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
