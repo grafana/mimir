@@ -1,0 +1,11 @@
+FROM golang:1.17.3-buster
+RUN apt-get update && apt-get install -y libpcap-dev
+
+VOLUME /mimir
+WORKDIR /mimir/tools/trafficdump
+
+ENV GOOS=linux
+ENV GOARCH=amd64
+
+CMD go build -v -o trafficdump.linux .
+
