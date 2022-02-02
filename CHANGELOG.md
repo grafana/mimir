@@ -243,10 +243,10 @@
     * `-blocks-storage.bucket-store.metadata-cache.memcached.max-idle-connections`
     * `-frontend.results-cache.memcached.max-idle-connections`
   * The default value for the following config options has changed from `100ms` to `200ms`:
-    * `blocks-storage.bucket-store.metadata-cache.memcached.timeout`
-    * `blocks-storage.bucket-store.index-cache.memcached.timeout`
-    * `blocks-storage.bucket-store.chunks-cache.memcached.timeout`
-    * `frontend.results-cache.memcached.timeout`
+    * `-blocks-storage.bucket-store.metadata-cache.memcached.timeout`
+    * `-blocks-storage.bucket-store.index-cache.memcached.timeout`
+    * `-blocks-storage.bucket-store.chunks-cache.memcached.timeout`
+    * `-frontend.results-cache.memcached.timeout`
 * [CHANGE] Querier: removed `-querier.worker-match-max-concurrent` and `-querier.worker-parallelism` CLI flags (and their respective YAML config options). Mimir now behaves like if `-querier.worker-match-max-concurrent` is always enabled and you should configure the max concurrency per querier process using `-querier.max-concurrent` instead. #958
 * [CHANGE] Distributor: change default value of `-distributor.instance-limits.max-inflight-push-requests` to `2000`. #964
 * [CHANGE] Distributor: change default value of `-distributor.remote-timeout` from `2s` to `20s`. #970
