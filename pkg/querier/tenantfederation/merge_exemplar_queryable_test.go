@@ -118,7 +118,7 @@ func TestMergeExemplarQueryable_ExemplarQuerier(t *testing.T) {
 		assert.Nil(t, q)
 	})
 
-	t.Run("bypass single querier", func(t *testing.T) {
+	t.Run("single tenant bypass single querier happy path", func(t *testing.T) {
 		ctx := user.InjectOrgID(context.Background(), "123")
 		querier := &mockExemplarQuerier{}
 		upstream := &mockExemplarQueryable{queriers: map[string]storage.ExemplarQuerier{"123": querier}}
@@ -129,9 +129,23 @@ func TestMergeExemplarQueryable_ExemplarQuerier(t *testing.T) {
 		assert.Same(t, q, querier)
 	})
 
-	t.Run("success", func(t *testing.T) {
-		ctx := user.InjectOrgID(context.Background(), "123|456")
+	t.Run("single tenant federated happy path", func(t *testing.T) {
+		ctx := user.InjectOrgID(context.Background(), "123")
+		querier := &mockExemplarQuerier{}
+		upstream := &mockExemplarQueryable{queriers: map[string]storage.ExemplarQuerier{"123": querier}}
+		federated := NewExemplarQueryable(upstream, false, test.NewTestingLogger(t))
 
+		q, err := federated.ExemplarQuerier(ctx)
+		require.NoError(t, err)
+		require.IsType(t, q, &mergeExemplarQuerier{})
+
+		mergeQ := q.(*mergeExemplarQuerier)
+		assert.Len(t, mergeQ.tenants, 1)
+		assert.Len(t, mergeQ.queriers, 1)
+	})
+
+	t.Run("multi tenant federated happy path", func(t *testing.T) {
+		ctx := user.InjectOrgID(context.Background(), "123|456")
 		querier1 := &mockExemplarQuerier{}
 		querier2 := &mockExemplarQuerier{}
 		upstream := &mockExemplarQueryable{queriers: map[string]storage.ExemplarQuerier{
@@ -141,12 +155,10 @@ func TestMergeExemplarQueryable_ExemplarQuerier(t *testing.T) {
 		federated := NewExemplarQueryable(upstream, false, test.NewTestingLogger(t))
 
 		q, err := federated.ExemplarQuerier(ctx)
-
 		require.NoError(t, err)
 		require.IsType(t, q, &mergeExemplarQuerier{})
 
 		mergeQ := q.(*mergeExemplarQuerier)
-
 		assert.Len(t, mergeQ.tenants, 2)
 		assert.Len(t, mergeQ.queriers, 2)
 	})
