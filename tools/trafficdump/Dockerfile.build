@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+
 FROM golang:1.17.3-buster
 RUN apt-get update && apt-get install -y libpcap-dev
 

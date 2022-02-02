@@ -1,4 +1,5 @@
 #!/bin/bash
+# SPDX-License-Identifier: AGPL-3.0-only
 
 # This script simplified building a Linux binary on non-linux systems.
 # If "go build ." works for you, you can ignore this.
