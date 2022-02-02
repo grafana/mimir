@@ -219,7 +219,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.panelDescription(
           title,
           |||
-            The minimum, maximum and current number of querier replicas.
+            The minimum, maximum, and current number of querier replicas.
           |||
         ),
       )
@@ -232,7 +232,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
             'kube_horizontalpodautoscaler_spec_target_metric{%s, horizontalpodautoscaler="%s"}' % [$.namespaceMatcher(), $._config.autoscaling.querier_hpa_name],
           ], [
             'Scaling metric',
-            'Targer per replica',
+            'Target per replica',
           ]
         ) +
         $.panelDescription(
@@ -242,7 +242,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
             The desired number of replicas is computed by HPA as: <scaling metric> / <target per replica>.
           |||
         ) +
-        $.panelAxisPlacement('Targer per replica', 'right'),
+        $.panelAxisPlacement('Target per replica', 'right'),
       )
       .addPanel(
         local title = 'Autoscaler failures rate';

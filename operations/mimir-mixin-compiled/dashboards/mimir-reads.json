@@ -1474,7 +1474,7 @@
                   "dashLength": 10,
                   "dashes": false,
                   "datasource": "$datasource",
-                  "description": "### Replicas\nThe minimum, maximum and current number of querier replicas.\n\n",
+                  "description": "### Replicas\nThe minimum, maximum, and current number of querier replicas.\n\n",
                   "fill": 1,
                   "id": 19,
                   "legend": {
@@ -1576,7 +1576,7 @@
                         {
                            "matcher": {
                               "id": "byName",
-                              "options": "Targer per replica"
+                              "options": "Target per replica"
                            },
                            "properties": [
                               {
@@ -1626,7 +1626,7 @@
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
-                        "legendFormat": "Targer per replica",
+                        "legendFormat": "Target per replica",
                         "legendLink": null,
                         "step": 10
                      }

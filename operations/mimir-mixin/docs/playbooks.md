@@ -834,7 +834,7 @@ How to **investigate**:
 
 ### MimirQuerierAutoscalerNotActive
 
-This alert fires when the Mimir querier HPA (Kubernetes Horizontal Pod Autoscaler) `ScalingActive` condition is `false`. When this happens, it's not able to calculate desired scales and generally indicates problems with fetching metrics.
+This alert fires when the Mimir querier HPA (Kubernetes Horizontal Pod Autoscaler) `ScalingActive` condition is `false`. When this happens, it's not able to calculate desired scale and generally indicates problems with fetching metrics.
 
 How it **works**:
 
