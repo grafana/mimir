@@ -3541,7 +3541,7 @@ The `memcached_config` configures the Memcached-based caching backend. The suppo
 
 # The socket read/write timeout.
 # CLI flag: -<prefix>.memcached.timeout
-[timeout: <duration> | default = 100ms]
+[timeout: <duration> | default = 200ms]
 
 # [advanced] The maximum number of idle connections that will be maintained per
 # address.
