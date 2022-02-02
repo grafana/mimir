@@ -18,10 +18,10 @@ import (
 // Build information. Populated at build-time.
 // Note: Removed BuildUser and BuildDate for reproducible builds
 var (
-	Version   string
-	Revision  string
-	Branch    string
-	GoVersion = runtime.Version()
+	Version   string = "unknown"
+	Revision  string = "unknown"
+	Branch    string = "unknown"
+	GoVersion        = runtime.Version()
 )
 
 // NewCollector returns a collector that exports metrics about current version

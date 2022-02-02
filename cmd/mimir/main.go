@@ -39,19 +39,8 @@ var configHash *prometheus.GaugeVec = prometheus.NewGaugeVec(
 )
 
 func init() {
-	version.Version = defaultUnknown(version.Version)
-	version.Branch = defaultUnknown(version.Branch)
-	version.Revision = defaultUnknown(version.Revision)
-
 	prometheus.MustRegister(version.NewCollector("cortex"))
 	prometheus.MustRegister(configHash)
-}
-
-func defaultUnknown(s string) string {
-	if s == "" {
-		return "unknown"
-	}
-	return s
 }
 
 const (
