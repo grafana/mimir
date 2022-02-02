@@ -21,12 +21,12 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/common/version"
 	"github.com/weaveworks/common/tracing"
 	"gopkg.in/yaml.v2"
 
 	"github.com/grafana/mimir/pkg/mimir"
 	util_log "github.com/grafana/mimir/pkg/util/log"
+	"github.com/grafana/mimir/pkg/util/version"
 )
 
 // configHash exposes information about the loaded config
@@ -42,8 +42,6 @@ func init() {
 	version.Version = defaultUnknown(version.Version)
 	version.Branch = defaultUnknown(version.Branch)
 	version.Revision = defaultUnknown(version.Revision)
-	version.BuildUser = defaultUnknown(version.BuildUser)
-	version.BuildDate = defaultUnknown(version.BuildDate)
 
 	prometheus.MustRegister(version.NewCollector("cortex"))
 	prometheus.MustRegister(configHash)
