@@ -1,6 +1,7 @@
 ---
 title: "About the architecture"
 description: "Overview of the architecture of Grafana Mimir."
+weight: 1000
 ---
 
 # About the architecture
