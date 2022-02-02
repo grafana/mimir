@@ -1,7 +1,7 @@
 (import 'alerts-utils.libsonnet') {
   groups+: [
     {
-      name: 'cortex_blocks_alerts',
+      name: 'mimir_blocks_alerts',
       rules: [
         {
           // Alert if the ingester has not shipped any block in the last 4h. It also checks cortex_ingester_ingested_samples_total

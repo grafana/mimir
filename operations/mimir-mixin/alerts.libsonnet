@@ -4,5 +4,6 @@
     (import 'alerts/alertmanager.libsonnet') +
     (import 'alerts/blocks.libsonnet') +
     (import 'alerts/compactor.libsonnet') +
+    (import 'alerts/autoscaling.libsonnet') +
     { _config:: $._config + $._group_config },
 }

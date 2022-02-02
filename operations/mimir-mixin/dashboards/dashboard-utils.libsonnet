@@ -561,6 +561,39 @@ local utils = import 'mixin-utils/utils.libsonnet';
       containerName,
     ],
 
+  filterKedaMetricByHPA(query, hpa_name)::
+    |||
+      %(query)s +
+      on(metric) group_left
+      label_replace(
+          kube_horizontalpodautoscaler_spec_target_metric{%(namespace)s, horizontalpodautoscaler="%(hpa_name)s"}
+          * 0, "metric", "$1", "metric_name", "(.+)"
+      )
+    ||| % {
+      query: query,
+      hpa_name: hpa_name,
+      namespace: $.namespaceMatcher(),
+    },
+
+  panelAxisPlacement(seriesName, placement):: {
+    fieldConfig+: {
+      overrides+: [
+        {
+          matcher: {
+            id: 'byName',
+            options: seriesName,
+          },
+          properties: [
+            {
+              id: 'custom.axisPlacement',
+              value: placement,
+            },
+          ],
+        },
+      ],
+    },
+  },
+
   panelDescription(title, description):: {
     description: |||
       ### %s

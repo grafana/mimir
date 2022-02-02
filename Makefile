@@ -437,7 +437,7 @@ check-mixin-playbook: build-mixin
 
 build-mixin: check-mixin-jb
 	@rm -rf $(MIXIN_OUT_PATH) && mkdir $(MIXIN_OUT_PATH)
-	@mixtool generate all --output-alerts $(MIXIN_OUT_PATH)/alerts.yaml --output-rules $(MIXIN_OUT_PATH)/rules.yaml --directory $(MIXIN_OUT_PATH)/dashboards ${MIXIN_PATH}/mixin.libsonnet
+	@mixtool generate all --output-alerts $(MIXIN_OUT_PATH)/alerts.yaml --output-rules $(MIXIN_OUT_PATH)/rules.yaml --directory $(MIXIN_OUT_PATH)/dashboards ${MIXIN_PATH}/mixin-compiled.libsonnet
 	@cd $(MIXIN_OUT_PATH)/.. && zip -q -r mimir-mixin.zip $$(basename "$(MIXIN_OUT_PATH)")
 	@echo "The mixin has been compiled to $(MIXIN_OUT_PATH) and archived to $$(realpath --relative-to=$$(pwd) $(MIXIN_OUT_PATH)/../mimir-mixin.zip)"
 

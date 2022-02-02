@@ -224,7 +224,7 @@
       ],
     },
     {
-      name: 'cortex_instance_limits_alerts',
+      name: 'mimir_instance_limits_alerts',
       rules: [
         {
           alert: $.alertName('IngesterReachingSeriesLimit'),
