@@ -76,19 +76,15 @@ func TestGlobalMarkersBucket_DeleteShouldDeleteGlobalMarkIfBlockMarkerDoesntExis
 			require.NoError(t, bkt.Upload(ctx, tc.globalMarker, strings.NewReader("{}")))
 
 			// Verify global exists.
-			ok, err := bkt.Exists(ctx, tc.globalMarker)
-			require.NoError(t, err)
-			require.True(t, ok)
+			verifyPathExists(t, bkt, tc.globalMarker, true)
 
 			// Delete block marker.
-			err = bkt.Delete(ctx, tc.blockMarker)
+			err := bkt.Delete(ctx, tc.blockMarker)
 			require.Error(t, err)
 			require.True(t, bkt.IsObjNotFoundErr(err))
 
 			// Ensure global one been actually deleted.
-			ok, err = bkt.Exists(ctx, tc.globalMarker)
-			require.NoError(t, err)
-			require.False(t, ok)
+			verifyPathExists(t, bkt, tc.globalMarker, false)
 		})
 	}
 }
@@ -114,9 +110,8 @@ func TestUploadToGlobalMarkerPath(t *testing.T) {
 
 			// Verify that uploading blocak mark file uploads it to the global markers location too.
 			require.NoError(t, bkt.Upload(context.Background(), tc.blockMarker, strings.NewReader("mark file")))
-			ok, err := bkt.Exists(context.Background(), tc.globalMarker)
-			require.NoError(t, err)
-			require.True(t, ok)
+
+			verifyPathExists(t, bkt, tc.globalMarker, true)
 		})
 	}
 }
