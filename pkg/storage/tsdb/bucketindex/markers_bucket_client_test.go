@@ -108,7 +108,7 @@ func TestUploadToGlobalMarkerPath(t *testing.T) {
 			bkt, _ := mimir_testutil.PrepareFilesystemBucket(t)
 			bkt = BucketWithGlobalMarkers(bkt)
 
-			// Verify that uploading blocak mark file uploads it to the global markers location too.
+			// Verify that uploading block mark file uploads it to the global markers location too.
 			require.NoError(t, bkt.Upload(context.Background(), tc.blockMarker, strings.NewReader("mark file")))
 
 			verifyPathExists(t, bkt, tc.globalMarker, true)
