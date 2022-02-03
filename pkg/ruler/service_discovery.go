@@ -17,10 +17,10 @@ import (
 )
 
 const (
-	mechanismName = "thanos_dns_sd"
+	mechanismName = "dns_sd"
 )
 
-type thanosServiceDiscovery struct {
+type dnsServiceDiscovery struct {
 	Resolver cacheutil.AddressProvider
 
 	RefreshInterval time.Duration
@@ -28,15 +28,15 @@ type thanosServiceDiscovery struct {
 	Host            string
 }
 
-func (thanosServiceDiscovery) Name() string {
+func (dnsServiceDiscovery) Name() string {
 	return mechanismName
 }
 
-func (c thanosServiceDiscovery) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
+func (c dnsServiceDiscovery) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
 	return refresh.NewDiscovery(opts.Logger, mechanismName, c.RefreshInterval, c.resolve), nil
 }
 
-func (c thanosServiceDiscovery) resolve(ctx context.Context) ([]*targetgroup.Group, error) {
+func (c dnsServiceDiscovery) resolve(ctx context.Context) ([]*targetgroup.Group, error) {
 	if err := c.Resolver.Resolve(ctx, []string{string(c.QType) + "+" + c.Host}); err != nil {
 		return nil, err
 	}
@@ -57,8 +57,8 @@ func (c thanosServiceDiscovery) resolve(ctx context.Context) ([]*targetgroup.Gro
 	return []*targetgroup.Group{tg}, nil
 }
 
-func thanosSD(rulerConfig *Config, resolver cacheutil.AddressProvider, qType thanosdns.QType, url *url.URL) discovery.Config {
-	return thanosServiceDiscovery{
+func dnsSD(rulerConfig *Config, resolver cacheutil.AddressProvider, qType thanosdns.QType, url *url.URL) discovery.Config {
+	return dnsServiceDiscovery{
 		Resolver:        resolver,
 		RefreshInterval: rulerConfig.AlertmanagerRefreshInterval,
 		Host:            url.Host,

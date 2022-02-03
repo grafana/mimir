@@ -68,7 +68,7 @@ func TestConfig_TranslatesToPrometheusTargetGroup(t *testing.T) {
 			resolver.expectAnyResolveCall()
 			resolver.returnAddresses(tc.resolvedAddresses)
 
-			cfg := thanosServiceDiscovery{
+			cfg := dnsServiceDiscovery{
 				RefreshInterval: time.Millisecond,
 				Resolver:        resolver,
 				QType:           dns.A,
@@ -123,7 +123,7 @@ func TestConfig_ConstructsLookupNamesCorrectly(t *testing.T) {
 			resolver.expectResolveCalledWith(tc.expectedAddress)
 			resolver.returnAddresses(nil)
 
-			cfg := thanosServiceDiscovery{
+			cfg := dnsServiceDiscovery{
 				RefreshInterval: time.Millisecond,
 				Resolver:        resolver,
 				QType:           tc.qType,

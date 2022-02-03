@@ -241,7 +241,7 @@ func TestBuildNotifierConfig(t *testing.T) {
 			},
 		},
 		{
-			name: "with multiple thanos service discovery",
+			name: "with multiple DNS service discovery",
 			cfg: &Config{
 				AlertmanagerURL: "dns+http://alertmanager.mimir.svc.cluster.local:8080/alertmanager,dnssrv+https://_http._tcp.alertmanager2.mimir.svc.cluster.local/am",
 			},
@@ -253,7 +253,7 @@ func TestBuildNotifierConfig(t *testing.T) {
 							Scheme:     "http",
 							PathPrefix: "/alertmanager",
 							ServiceDiscoveryConfigs: discovery.Configs{
-								thanosServiceDiscovery{
+								dnsServiceDiscovery{
 									Host:  "alertmanager.mimir.svc.cluster.local:8080",
 									QType: thanosdns.A,
 								},
@@ -264,7 +264,7 @@ func TestBuildNotifierConfig(t *testing.T) {
 							Scheme:     "https",
 							PathPrefix: "/am",
 							ServiceDiscoveryConfigs: discovery.Configs{
-								thanosServiceDiscovery{
+								dnsServiceDiscovery{
 									Host:  "_http._tcp.alertmanager2.mimir.svc.cluster.local",
 									QType: thanosdns.SRV,
 								},
@@ -275,7 +275,7 @@ func TestBuildNotifierConfig(t *testing.T) {
 			},
 		},
 		{
-			name: "with thanos service discovery and missing scheme",
+			name: "with DNS service discovery and missing scheme",
 			cfg: &Config{
 				AlertmanagerURL: "dns+alertmanager.mimir.svc.cluster.local:8080/alertmanager",
 			},

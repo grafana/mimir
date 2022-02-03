@@ -109,8 +109,8 @@ func buildNotifierConfig(rulerConfig *Config, resolver cacheutil.AddressProvider
 	}
 
 	for _, rawURL := range amURLs {
-		var thanosQType string
-		thanosQType, rawURL = dns.GetQTypeName(rawURL)
+		var qType string
+		qType, rawURL = dns.GetQTypeName(rawURL)
 
 		url, err := url.Parse(rawURL)
 		if err != nil {
@@ -125,13 +125,13 @@ func buildNotifierConfig(rulerConfig *Config, resolver cacheutil.AddressProvider
 			return nil, fmt.Errorf("improperly formatted alertmanager URL (maybe the scheme is missing?) %q", rawURL)
 		}
 
-		isThanosSD := thanosQType != ""
+		isDNSSD := qType != ""
 		isPromSD := srvHostRegexp.MatchString(url.Host)
 
 		var sdConfig discovery.Config
 		switch {
-		case isThanosSD:
-			sdConfig = thanosSD(rulerConfig, resolver, dns.QType(thanosQType), url)
+		case isDNSSD:
+			sdConfig = dnsSD(rulerConfig, resolver, dns.QType(qType), url)
 		case isPromSD:
 			sdConfig = promSD(rulerConfig, url)
 		default:
