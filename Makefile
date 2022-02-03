@@ -1,3 +1,5 @@
+SHELL = /usr/bin/env bash
+
 # Adapted from https://www.thapaliya.com/en/writings/well-documented-makefiles/
 .PHONY: help
 help: ## Display this help and any documented user-facing targets. Other undocumented targets may be present in the Makefile.
