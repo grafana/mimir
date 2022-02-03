@@ -74,8 +74,11 @@ func TestConfig_TranslatesToPrometheusTargetGroup(t *testing.T) {
 			discoverer, err := cfg.NewDiscoverer(discovery.DiscovererOptions{})
 			require.NoError(t, err)
 
+			ctx, cancel := context.WithCancel(context.Background())
+			t.Cleanup(cancel)
+
 			groupsChan := make(chan []*targetgroup.Group)
-			go discoverer.Run(context.Background(), groupsChan)
+			go discoverer.Run(ctx, groupsChan)
 			groups := <-groupsChan
 
 			assert.ElementsMatch(t, tc.expectedTargetGroups, groups)
@@ -99,7 +102,7 @@ func TestConfig_ConstructsLookupNamesCorrectly(t *testing.T) {
 		expectedAddress string
 	}{
 		{
-			name:            "dsn+",
+			name:            "dns+",
 			qType:           thanosdns.A,
 			host:            "localhost:123",
 			expectedAddress: "dns+localhost:123",
@@ -130,8 +133,11 @@ func TestConfig_ConstructsLookupNamesCorrectly(t *testing.T) {
 			discoverer, err := cfg.NewDiscoverer(discovery.DiscovererOptions{})
 			require.NoError(t, err)
 
+			ctx, cancel := context.WithCancel(context.Background())
+			t.Cleanup(cancel)
+
 			groupsChan := make(chan []*targetgroup.Group)
-			go discoverer.Run(context.Background(), groupsChan)
+			go discoverer.Run(ctx, groupsChan)
 			<-groupsChan // wait for at least one iteration
 
 			calledWith := testResolver.lastCallsArgs()
