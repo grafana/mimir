@@ -182,7 +182,7 @@ compactor:
 
   # [advanced] Max number of concurrent compactions running.
   # CLI flag: -compactor.compaction-concurrency
-  [compaction_concurrency: <int> | default = 1]
+  [compaction_concurrency: <int> | default = 4]
 
   # [advanced] How frequently compactor should run blocks cleanup and
   # maintenance, as well as update the bucket index.
