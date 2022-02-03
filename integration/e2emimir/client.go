@@ -158,6 +158,11 @@ func (c *Client) QueryRangeRaw(query string, start, end time.Time, step time.Dur
 	return c.DoGetBody(addr)
 }
 
+// QueryExemplars runs an exemplar query.
+func (c *Client) QueryExemplars(query string, start, end time.Time) ([]promv1.ExemplarQueryResult, error) {
+	return c.querierClient.QueryExemplars(context.Background(), query, start, end)
+}
+
 // QuerierAddress returns the address of the querier
 func (c *Client) QuerierAddress() string {
 	return c.querierAddress

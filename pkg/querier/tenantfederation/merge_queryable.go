@@ -23,16 +23,10 @@ import (
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
-const (
-	defaultTenantLabel   = "__tenant_id__"
-	retainExistingPrefix = "original_"
-	maxConcurrency       = 16
-)
-
 // NewQueryable returns a queryable that iterates through all the tenant IDs
 // that are part of the request and aggregates the results from each tenant's
 // Querier by sending of subsequent requests.
-// By setting byPassWithSingleQuerier to true the mergeQuerier gets by-passed
+// By setting bypassWithSingleQuerier to true the mergeQuerier gets bypassed
 // and results for request with a single querier will not contain the
 // "__tenant_id__" label. This allows a smoother transition, when enabling
 // tenant federation in a cluster.
@@ -76,7 +70,7 @@ type MergeQuerierCallback func(ctx context.Context, mint int64, maxt int64) (ids
 // NewMergeQueryable returns a queryable that merges results from multiple
 // underlying Queryables. The underlying queryables and its label values to be
 // considered are returned by a MergeQuerierCallback.
-// By setting byPassWithSingleQuerier to true the mergeQuerier gets by-passed
+// By setting bypassWithSingleQuerier to true the mergeQuerier gets bypassed
 // and results for request with a single querier will not contain the id label.
 // This allows a smoother transition, when enabling tenant federation in a
 // cluster.
@@ -90,14 +84,14 @@ func NewMergeQueryable(idLabelName string, callback MergeQuerierCallback, byPass
 		logger:                  logger,
 		idLabelName:             idLabelName,
 		callback:                callback,
-		byPassWithSingleQuerier: byPassWithSingleQuerier,
+		bypassWithSingleQuerier: byPassWithSingleQuerier,
 	}
 }
 
 type mergeQueryable struct {
 	logger                  log.Logger
 	idLabelName             string
-	byPassWithSingleQuerier bool
+	bypassWithSingleQuerier bool
 	callback                MergeQuerierCallback
 }
 
@@ -113,7 +107,7 @@ func (m *mergeQueryable) Querier(ctx context.Context, mint int64, maxt int64) (s
 	}
 
 	// by pass when only single querier is returned
-	if m.byPassWithSingleQuerier && len(queriers) == 1 {
+	if m.bypassWithSingleQuerier && len(queriers) == 1 {
 		return queriers[0], nil
 	}
 
@@ -146,8 +140,8 @@ type mergeQuerier struct {
 // For the label "original_" + `idLabelName it will return all the values
 // of the underlying queriers for `idLabelName`.
 func (m *mergeQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
-	log, _ := spanlogger.NewWithLogger(m.ctx, m.logger, "mergeQuerier.LabelValues")
-	defer log.Span.Finish()
+	spanlog, _ := spanlogger.NewWithLogger(m.ctx, m.logger, "mergeQuerier.LabelValues")
+	defer spanlog.Finish()
 
 	matchedTenants, filteredMatchers := filterValuesByMatchers(m.idLabelName, m.ids, matchers...)
 
@@ -176,8 +170,8 @@ func (m *mergeQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]
 // queriers. It also adds the `idLabelName` and if present in the original
 // results the original `idLabelName`.
 func (m *mergeQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
-	log, _ := spanlogger.NewWithLogger(m.ctx, m.logger, "mergeQuerier.LabelNames")
-	defer log.Span.Finish()
+	spanlog, _ := spanlogger.NewWithLogger(m.ctx, m.logger, "mergeQuerier.LabelNames")
+	defer spanlog.Finish()
 
 	matchedTenants, filteredMatchers := filterValuesByMatchers(m.idLabelName, m.ids, matchers...)
 
@@ -287,7 +281,6 @@ func (m *mergeQuerier) Close() error {
 }
 
 type selectJob struct {
-	pos     int
 	querier storage.Querier
 	id      string
 }
@@ -297,9 +290,11 @@ type selectJob struct {
 // matching. The forwarded labelSelector is not containing those that operate
 // on `idLabelName`.
 func (m *mergeQuerier) Select(sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
-	log, ctx := spanlogger.NewWithLogger(m.ctx, m.logger, "mergeQuerier.Select")
-	defer log.Span.Finish()
+	spanlog, ctx := spanlogger.NewWithLogger(m.ctx, m.logger, "mergeQuerier.Select")
+	defer spanlog.Finish()
+
 	matchedValues, filteredMatchers := filterValuesByMatchers(m.idLabelName, m.ids, matchers...)
+
 	var jobs = make([]*selectJob, len(matchedValues))
 	var seriesSets = make([]storage.SeriesSet, len(matchedValues))
 	var jobPos int
@@ -308,7 +303,6 @@ func (m *mergeQuerier) Select(sortSeries bool, hints *storage.SelectHints, match
 			continue
 		}
 		jobs[jobPos] = &selectJob{
-			pos:     jobPos,
 			querier: m.queriers[labelPos],
 			id:      m.ids[labelPos],
 		}
@@ -317,7 +311,7 @@ func (m *mergeQuerier) Select(sortSeries bool, hints *storage.SelectHints, match
 
 	run := func(ctx context.Context, idx int) error {
 		job := jobs[idx]
-		seriesSets[job.pos] = &addLabelsSeriesSet{
+		seriesSets[idx] = &addLabelsSeriesSet{
 			upstream: job.querier.Select(sortSeries, hints, filteredMatchers...),
 			labels: labels.Labels{
 				{
@@ -335,50 +329,6 @@ func (m *mergeQuerier) Select(sortSeries bool, hints *storage.SelectHints, match
 	}
 
 	return storage.NewMergeSeriesSet(seriesSets, storage.ChainedSeriesMerge)
-}
-
-// filterValuesByMatchers applies matchers to inputed `idLabelName` and
-// `ids`. A map of matched values is returned and also all label matchers not
-// matching the `idLabelName`.
-// In case a label matcher is set on a label conflicting with `idLabelName`, we
-// need to rename this labelMatcher's name to its original name. This is used
-// to as part of Select in the mergeQueryable, to ensure only relevant queries
-// are considered and the forwarded matchers do not contain matchers on the
-// `idLabelName`.
-func filterValuesByMatchers(idLabelName string, ids []string, matchers ...*labels.Matcher) (matchedIDs map[string]struct{}, unrelatedMatchers []*labels.Matcher) {
-	// this contains the matchers which are not related to idLabelName
-	unrelatedMatchers = make([]*labels.Matcher, 0, len(matchers))
-
-	// build map of values to consider for the matchers
-	matchedIDs = make(map[string]struct{}, len(ids))
-	for _, value := range ids {
-		matchedIDs[value] = struct{}{}
-	}
-
-	for _, m := range matchers {
-		switch m.Name {
-		// matcher has idLabelName to target a specific tenant(s)
-		case idLabelName:
-			for value := range matchedIDs {
-				if !m.Matches(value) {
-					delete(matchedIDs, value)
-				}
-			}
-
-		// check if has the retained label name
-		case retainExistingPrefix + idLabelName:
-			// rewrite label to the original name, by copying matcher and
-			// replacing the label name
-			rewrittenM := *m
-			rewrittenM.Name = idLabelName
-			unrelatedMatchers = append(unrelatedMatchers, &rewrittenM)
-
-		default:
-			unrelatedMatchers = append(unrelatedMatchers, m)
-		}
-	}
-
-	return matchedIDs, unrelatedMatchers
 }
 
 type addLabelsSeriesSet struct {
@@ -448,22 +398,4 @@ func (a *addLabelsSeries) Labels() labels.Labels {
 // Iterator returns a new, independent iterator of the data of the series.
 func (a *addLabelsSeries) Iterator() chunkenc.Iterator {
 	return a.upstream.Iterator()
-}
-
-// this sets a label and preserves an existing value a new label prefixed with
-// original_. It doesn't do this recursively.
-func setLabelsRetainExisting(src labels.Labels, additionalLabels ...labels.Label) labels.Labels {
-	lb := labels.NewBuilder(src)
-
-	for _, additionalL := range additionalLabels {
-		if oldValue := src.Get(additionalL.Name); oldValue != "" {
-			lb.Set(
-				retainExistingPrefix+additionalL.Name,
-				oldValue,
-			)
-		}
-		lb.Set(additionalL.Name, additionalL.Value)
-	}
-
-	return lb.Labels()
 }

@@ -71,6 +71,7 @@ func runQuerierTenantFederationTest(t *testing.T, cfg querierTenantFederationCon
 		"-frontend.results-cache.backend":             "memcached",
 		"-frontend.results-cache.memcached.addresses": "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
 		"-tenant-federation.enabled":                  "true",
+		"-ingester.max-global-exemplars-per-user":     "10000",
 	})
 
 	// Start the query-scheduler if enabled.
@@ -149,6 +150,11 @@ func runQuerierTenantFederationTest(t *testing.T, cfg querierTenantFederationCon
 
 	assert.Equal(t, mergeResults(tenantIDs, expectedVectors), result.(model.Vector))
 
+	// query exemplars for all tenants
+	exemplars, err := c.QueryExemplars("series_1", now.Add(-1*time.Hour), now.Add(1*time.Hour))
+	require.NoError(t, err)
+	assert.Len(t, exemplars, numUsers)
+
 	// ensure a push to multiple tenants is failing
 	series, _ := generateSeries("series_1", now)
 	res, err := c.Push(series)
@@ -156,7 +162,7 @@ func runQuerierTenantFederationTest(t *testing.T, cfg querierTenantFederationCon
 	require.Equal(t, 500, res.StatusCode)
 
 	// check metric label values for total queries in the query frontend
-	require.NoError(t, queryFrontend.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_query_frontend_queries_total"}, e2e.WithLabelMatchers(
+	require.NoError(t, queryFrontend.WaitSumMetricsWithOptions(e2e.Equals(2), []string{"cortex_query_frontend_queries_total"}, e2e.WithLabelMatchers(
 		labels.MustNewMatcher(labels.MatchEqual, "user", strings.Join(tenantIDs, "|")),
 		labels.MustNewMatcher(labels.MatchEqual, "op", "query"))))
 
