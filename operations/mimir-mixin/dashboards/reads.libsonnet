@@ -248,7 +248,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         local title = 'Autoscaler failures rate';
         $.panel(title) +
         $.queryPanel(
-          $.filterKedaMetricByHPA('sum(rate(keda_metrics_adapter_scaler_errors[$__rate_interval]))', $._config.autoscaling.querier_hpa_name),
+          $.filterKedaMetricByHPA('sum by(metric) (rate(keda_metrics_adapter_scaler_errors[$__rate_interval]))', $._config.autoscaling.querier_hpa_name),
           'Failures per second'
         ) +
         $.panelDescription(
