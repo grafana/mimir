@@ -14,7 +14,15 @@ It deduplicates and groups alert notifications, and routes them to the correct n
 ## Multi-tenancy
 
 Multi-tenancy in the Mimir Alertmanager uses the tenant ID header as with all other Mimir services.
-Each tenant has their own isoalted alert routing configuration and Alertmanager UI.
+Each tenant has their own isolated alert routing configuration and Alertmanager UI.
+
+### Alertmanager UI
+
+The Mimir Alertmanager exposes the same web UI as the Prometheus Alertmanager.
+Each tenant can access their own Alertmanager UI at the `/alertmanager` endpoint.
+For a complete reference of Alertmanager endpoints, refer to [HTTP API]({{<relref "../api/_index.md" >}}).
+
+Tenants only see alerts sent to their Alertmanager.
 
 ### Tenant configurations
 
@@ -45,7 +53,15 @@ mimirtool alertmanager delete \
   --id=<TENANT ID>
 ```
 
-Once the tenant has an uploaded Alertmanager configuration, they can access the Alertmanager UI at the URL `<ALERTMANAGER URL>/alertmanager`.
+Once the tenant has an uploaded Alertmanager configuration, they can access the Alertmanager UI at the `/alertmanager` endpoint.
+
+#### Fallback configuration
+
+When a tenant doesn't have their own configuration, the Mimir Alertmanager uses a fallback configuration if configured.
+By default, there is no fallback configuration set.
+Specify a fallback configuration using the `--alertmanager.configs.fallback` command-line flag.
+
+> **Warning**: Without a fallback configuration or a tenant specific configuration, the Alertmanager UI is inaccessible and ruler notifications for that tenant fail.
 
 ### Tenant limits
 
@@ -54,7 +70,17 @@ Each Mimir Alertmanager limit configuration parameter has an `alertmanager` pref
 
 ## Horizontal scalability
 
-To achieve horizontal scalability, the Mimir Alertmanager shards work on the tenant ID.
+<!-- TODO: document the KV store backend and link it in this section -->
+
+### Sharding
+
+To achieve horizontal scalability, the Mimir Alertmanager shards work by tenant using the tenant ID.
+To enable sharding, set `--alertmanager.sharding-enabled=true` and configure a KV store backend.
+Sharding also requires at least N Alertmanager replicas, where N is equal to the configured replication factor.
+The Alertmanager replicas use the hash ring stored in the KV store to discover their peers.
+
+### State
+
 Where the Prometheus Alertmanager persists state to a local disk, the Mimir Alertmanager persists state to object storage accessible to each replica.
 Replicas communicate state between each other to enforce rate limits and ensure the sending of alert notifications.
 This means that users can access the Alertmanager UI, and rulers can send alert notifications to any Alertmanager replica.
