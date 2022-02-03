@@ -254,7 +254,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.panelDescription(
           title,
           |||
-            The rate of failures in the Keda custom metrics API server. Whenever an error occurs, the Keda custom
+            The rate of failures in the KEDA custom metrics API server. Whenever an error occurs, the KEDA custom
             metrics server is unable to query the scaling metric from Prometheus so the autoscaler woudln't work properly.
           |||
         ),

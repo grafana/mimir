@@ -834,11 +834,11 @@ How to **investigate**:
 
 ### MimirQuerierAutoscalerNotActive
 
-This alert fires when the Mimir querier HPA (Kubernetes Horizontal Pod Autoscaler) `ScalingActive` condition is `false`. When this happens, it's not able to calculate desired scale and generally indicates problems with fetching metrics.
+This alert fires when the Mimir querier Kubernetes Horizontal Pod Autoscaler's (HPA) `ScalingActive` condition is `false`. When this happens, it's not able to calculate desired scale and generally indicates problems with fetching metrics.
 
 How it **works**:
 
-- HPA is configured to autoscale Mimir queriers based on custom metrics fetched from Prometheus via the Keda custom metrics API server
+- HPA is configured to autoscale Mimir queriers based on custom metrics fetched from Prometheus via the KEDA custom metrics API server
 - HPA periodically queries updated metrics and updates the number of desired replicas based on that
 - Please refer to the [HPA documentation](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/) for more information about it
 
@@ -848,8 +848,16 @@ How to **investigate**:
   ```
   kubectl describe hpa -n <namespace> keda-hpa-querier
   ```
-- Ensure Keda custom metrics API server is up and running
-- Check Keda custom metrics API server logs
+- Ensure KEDA custom metrics API server is up and running
+  ```
+  # Assuming KEDA is running in a dedicated namespace "keda":
+  kubectl get pods -n keda
+  ```
+- Check KEDA custom metrics API server logs
+  ```
+  # Assuming KEDA is running in a dedicated namespace "keda":
+  kubectl logs -n keda deployment/keda-operator-metrics-apiserver
+  ```
 
 ## Mimir routes by path
 
