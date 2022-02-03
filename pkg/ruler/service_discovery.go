@@ -14,7 +14,7 @@ import (
 	"github.com/prometheus/prometheus/discovery/refresh"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/thanos-io/thanos/pkg/cacheutil"
-	thanosdns "github.com/thanos-io/thanos/pkg/discovery/dns"
+	"github.com/thanos-io/thanos/pkg/discovery/dns"
 )
 
 const (
@@ -25,7 +25,7 @@ type dnsServiceDiscovery struct {
 	Resolver cacheutil.AddressProvider
 
 	RefreshInterval time.Duration
-	QType           thanosdns.QType
+	QType           dns.QType
 	Host            string
 }
 
@@ -58,7 +58,7 @@ func (c dnsServiceDiscovery) resolve(ctx context.Context) ([]*targetgroup.Group,
 	return []*targetgroup.Group{tg}, nil
 }
 
-func dnsSD(rulerConfig *Config, resolver cacheutil.AddressProvider, qType thanosdns.QType, url *url.URL) discovery.Config {
+func dnsSD(rulerConfig *Config, resolver cacheutil.AddressProvider, qType dns.QType, url *url.URL) discovery.Config {
 	return dnsServiceDiscovery{
 		Resolver:        resolver,
 		RefreshInterval: rulerConfig.AlertmanagerRefreshInterval,
@@ -75,12 +75,12 @@ func staticTarget(url *url.URL) discovery.Config {
 	}
 }
 
-func sanitizedAlertmanagerURL(amURL string) (isServiceDiscovery bool, qType thanosdns.QType, parsedURL *url.URL, err error) {
-	rawQType, rawURL := thanosdns.GetQTypeName(amURL)
-	qType = thanosdns.QType(rawQType)
+func sanitizedAlertmanagerURL(amURL string) (isServiceDiscovery bool, qType dns.QType, parsedURL *url.URL, err error) {
+	rawQType, rawURL := dns.GetQTypeName(amURL)
+	qType = dns.QType(rawQType)
 
 	switch qType {
-	case "", thanosdns.A, thanosdns.SRV, thanosdns.SRVNoA:
+	case "", dns.A, dns.SRV, dns.SRVNoA:
 	default:
 		err = errors.Errorf("invalid DNS service discovery prefix %q", qType)
 		return

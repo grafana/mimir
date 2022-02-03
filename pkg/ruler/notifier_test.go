@@ -15,7 +15,7 @@ import (
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/stretchr/testify/require"
-	thanosdns "github.com/thanos-io/thanos/pkg/discovery/dns"
+	"github.com/thanos-io/thanos/pkg/discovery/dns"
 
 	"github.com/grafana/mimir/pkg/util"
 )
@@ -186,7 +186,7 @@ func TestBuildNotifierConfig(t *testing.T) {
 							ServiceDiscoveryConfigs: discovery.Configs{
 								dnsServiceDiscovery{
 									Host:  "_http._tcp.alertmanager-0.default.svc.cluster.local",
-									QType: thanosdns.SRV,
+									QType: dns.SRV,
 								},
 							},
 						},
@@ -244,7 +244,7 @@ func TestBuildNotifierConfig(t *testing.T) {
 								dnsServiceDiscovery{
 									Host:            "alertmanager.mimir.svc.cluster.local:8080",
 									RefreshInterval: time.Second,
-									QType:           thanosdns.A,
+									QType:           dns.A,
 								},
 							},
 						},
@@ -256,7 +256,7 @@ func TestBuildNotifierConfig(t *testing.T) {
 								dnsServiceDiscovery{
 									Host:            "_http._tcp.alertmanager2.mimir.svc.cluster.local",
 									RefreshInterval: time.Second,
-									QType:           thanosdns.SRV,
+									QType:           dns.SRV,
 								},
 							},
 						},
