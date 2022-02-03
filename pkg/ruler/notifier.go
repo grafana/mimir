@@ -28,6 +28,11 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 )
 
+var (
+	// srvHostRegexp follows RFC2782 for SRV records
+	srvHostRegexp = regexp.MustCompile(`^_.+._.+`)
+)
+
 type NotifierConfig struct {
 	TLS       tls.ClientConfig `yaml:",inline"`
 	BasicAuth util.BasicAuth   `yaml:",inline"`
@@ -103,8 +108,6 @@ func buildNotifierConfig(rulerConfig *Config, resolver cacheutil.AddressProvider
 		apiVersion = config.AlertmanagerAPIVersionV2
 	}
 
-	prometheusSRVSDRegexp := regexp.MustCompile(`^_.+._.+`)
-
 	for _, rawURL := range amURLs {
 		var thanosQType string
 		thanosQType, rawURL = dns.GetQTypeName(rawURL)
@@ -123,7 +126,7 @@ func buildNotifierConfig(rulerConfig *Config, resolver cacheutil.AddressProvider
 		}
 
 		isThanosSD := thanosQType != ""
-		isPromSD := prometheusSRVSDRegexp.MatchString(url.Host)
+		isPromSD := srvHostRegexp.MatchString(url.Host)
 
 		var sdConfig discovery.Config
 		switch {
