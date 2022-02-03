@@ -49,6 +49,7 @@ func init() {
 	version.Version = Version
 	version.Branch = Branch
 	version.Revision = Revision
+	prometheus.MustRegister(version.NewCollector("mimir"))
 	prometheus.MustRegister(version.NewCollector("cortex"))
 	prometheus.MustRegister(configHash)
 }
