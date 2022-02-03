@@ -58,6 +58,8 @@ type pushRequest struct {
 	Metadata   []*mimirpb.MetricMetadata `json:"metadata,omitempty"`
 
 	Error string `json:"error,omitempty"`
+
+	cleanup func()
 }
 
 type timeseries struct {

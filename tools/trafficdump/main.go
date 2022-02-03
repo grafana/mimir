@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"sync"
@@ -30,10 +31,21 @@ func main() {
 
 	iface := flag.String("i", "eth0", "Interface to get packets from")
 	fname := flag.String("r", "", "Filename to read from, overrides -i")
-	snaplen := flag.Int("s", 262144, "SnapLen for pcap packet capture")
+	snaplen := flag.Int("s", 1600, "SnapLen for pcap packet capture")
 	filter := flag.String("f", "tcp and port 80", "BPF filter for pcap")
+	filterEndpointPort := flag.Int("p", 80, "Only process packets with one of the endpoint ports equal to this value. 0 to disable")
+	assemblersCount := flag.Uint("assembler.concurrency", 16, "How many TCP Assemblers to run concurrently")
+	assemblersMaxPagesPerConnection := flag.Int("assembler.max-pages-per-connection", 0, "Upper limit on the number of pages buffered for a single connection. If this limit is reached for a connection, the smallest sequence number will be flushed, along with any contiguous data. If <= 0, this is ignored.")
+	httpServer := flag.String("http-listen", ":18080", "Listen address for HTTP server (useful for profiling)")
 
 	flag.Parse()
+
+	if *httpServer != "" {
+		go func() {
+			log.Println("HTTP server running on", *httpServer)
+			log.Println(http.ListenAndServe(*httpServer, nil))
+		}()
+	}
 
 	var handle *pcap.Handle
 	var err error
@@ -67,11 +79,10 @@ func main() {
 
 	streamPool := tcpassembly.NewStreamPool(streamFactory)
 
-	const assemblerCount = 16
-
-	assemblers := make([]*tcpassembly.Assembler, assemblerCount)
-	for ix := 0; ix < assemblerCount; ix++ {
+	assemblers := make([]*tcpassembly.Assembler, *assemblersCount)
+	for ix := uint(0); ix < *assemblersCount; ix++ {
 		assemblers[ix] = tcpassembly.NewAssembler(streamPool)
+		assemblers[ix].AssemblerOptions.MaxBufferedPagesPerConnection = *assemblersMaxPagesPerConnection
 	}
 
 	log.Println("Reading packets")
@@ -84,20 +95,22 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT)
 	defer cancel()
 
-	packetsCount := 0
+	var packetsCount atomic.Int64
 
 	go func() {
 		for {
 			time.Sleep(1 * time.Second)
-			log.Println("Tracking", streamFactory.runningProcessors.Load(), "TCP connections")
+			log.Println("Processed", packetsCount.Load(), "packets, tracking", streamFactory.runningProcessors.Load(), "TCP connections")
 		}
 	}()
+
+	filterPort := layers.TCPPort(*filterEndpointPort)
 
 stop:
 	for {
 		select {
 		case packet := <-packets:
-			packetsCount++
+			packetsCount.Inc()
 			// A nil packet indicates the end of a pcap file.
 			if packet == nil {
 				break stop
@@ -109,16 +122,21 @@ stop:
 			}
 
 			tcp := packet.TransportLayer().(*layers.TCP)
+			if filterPort != 0 && tcp.SrcPort != filterPort && tcp.DstPort != filterPort {
+				// Ignored packet.
+				continue
+			}
+
 			netFlow := packet.NetworkLayer().NetworkFlow()
 			transportFlow := tcp.TransportFlow()
 
-			shard := (netFlow.FastHash() ^ transportFlow.FastHash()) % assemblerCount
+			shard := (netFlow.FastHash() ^ transportFlow.FastHash()) % uint64(*assemblersCount)
 			assemblers[shard].AssembleWithTimestamp(netFlow, tcp, packet.Metadata().Timestamp)
 
 		case <-ticker:
 			// Every minute, flush connections that haven't seen activity in the past 2 minutes.
 			flushed, closed := 0, 0
-			for i := 0; i < assemblerCount; i++ {
+			for i := uint(0); i < *assemblersCount; i++ {
 				f, c := assemblers[i].FlushOlderThan(time.Now().Add(time.Minute * -2))
 				flushed += f
 				closed += c
@@ -134,14 +152,14 @@ stop:
 	log.Println("Read", packetsCount, "packets, closing remaining connections")
 
 	closeCh := make(chan int)
-	for i := 0; i < assemblerCount; i++ {
+	for i := 0; uint(i) < *assemblersCount; i++ {
 		go func(ix int) {
 			closeCh <- assemblers[ix].FlushAll()
 		}(i)
 	}
 
 	closed := 0
-	for i := 0; i < assemblerCount; i++ {
+	for i := 0; uint(i) < *assemblersCount; i++ {
 		closed += <-closeCh
 	}
 	log.Println("Closed", closed, "connections")

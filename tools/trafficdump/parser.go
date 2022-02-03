@@ -15,6 +15,7 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"sync"
 
 	"github.com/prometheus/prometheus/model/labels"
 	promql_parser "github.com/prometheus/prometheus/promql/parser"
@@ -141,14 +142,35 @@ func (rp *parser) processHTTPRequest(req *http.Request, body []byte) *request {
 	return &r
 }
 
+// Wrap a slice in a struct so we can store a pointer in sync.Pool
+type bufHolder struct {
+	buf []byte
+}
+
+var bufferPool = sync.Pool{
+	New: func() interface{} { return &bufHolder{buf: make([]byte, 256*1024)} },
+}
+
 func (rp *parser) decodePushRequest(req *http.Request, body []byte, matchers []*labels.Matcher) (*pushRequest, bool) {
 	res := &pushRequest{Version: req.Header.Get("X-Prometheus-Remote-Write-Version")}
 
+	bufHolder := bufferPool.Get().(*bufHolder)
+
+	cleanup := func() {
+		bufferPool.Put(bufHolder)
+	}
+
 	var wr mimirpb.WriteRequest
-	_, err := util.ParseProtoReader(context.Background(), bytes.NewReader(body), int(req.ContentLength), 100<<20, nil, &wr, util.RawSnappy)
+	buf, err := util.ParseProtoReader(context.Background(), bytes.NewReader(body), int(req.ContentLength), 100<<20, bufHolder.buf, &wr, util.RawSnappy)
 	if err != nil {
+		cleanup()
 		res.Error = fmt.Errorf("failed to decode decodePush request: %s", err).Error()
 		return nil, true
+	}
+
+	// If decoding allocated a bigger buffer, put that one back in the pool.
+	if len(buf) > len(bufHolder.buf) {
+		bufHolder.buf = buf
 	}
 
 	// See if we find the matching series. If not, we ignore this request.
@@ -163,6 +185,7 @@ func (rp *parser) decodePushRequest(req *http.Request, body []byte, matchers []*
 		}
 
 		if !matched {
+			cleanup()
 			return nil, false
 		}
 	}
@@ -185,6 +208,7 @@ func (rp *parser) decodePushRequest(req *http.Request, body []byte, matchers []*
 
 	res.Metadata = wr.Metadata
 
+	res.cleanup = cleanup
 	return res, true
 }
 

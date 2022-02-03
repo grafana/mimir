@@ -6,6 +6,7 @@ import (
 	"bufio"
 	"io"
 	"io/ioutil"
+	"log"
 	"net/http"
 
 	"github.com/google/gopacket/tcpassembly/tcpreader"
@@ -28,7 +29,6 @@ func newRequestStream(r *tcpreader.ReaderStream, p *parser) *requestStream {
 	return rs
 }
 
-// Parses HTTP requests from tcpreader.ReaderStream (produced by tcpassembler).
 func (rs *requestStream) parseRequests() {
 	defer close(rs.out)
 
@@ -54,7 +54,13 @@ func (rs *requestStream) parseRequests() {
 			}
 		}
 
-		rs.out <- r
+		select {
+		case rs.out <- r:
+			continue
+		default:
+			log.Println("dropping request")
+
+		}
 	}
 }
 
@@ -65,7 +71,6 @@ type responseStream struct {
 	out chan *response
 }
 
-// Parses HTTP responses from tcpreader.ReaderStream (produced by tcpassembler).
 func newResponseStream(r *tcpreader.ReaderStream, p *parser) *responseStream {
 	rs := &responseStream{
 		r:   r,
@@ -100,6 +105,11 @@ func (rs *responseStream) parseResponses() {
 			}
 		}
 
-		rs.out <- r
+		select {
+		case rs.out <- r:
+			continue
+		default:
+			log.Println("dropping response")
+		}
 	}
 }

@@ -48,12 +48,16 @@ func (p *processor) run() {
 }
 
 func (p *processor) print(req *request, resp *response) {
+	if req != nil && req.PushRequest != nil && req.PushRequest.cleanup != nil {
+		defer req.PushRequest.cleanup()
+	}
+
 	// print the request/response pair.
 	if req != nil && req.ignored {
 		return
 	}
 
-	if req.matchStatusCode != 0 && resp != nil && req.matchStatusCode != resp.StatusCode {
+	if req != nil && req.matchStatusCode != 0 && resp != nil && req.matchStatusCode != resp.StatusCode {
 		return
 	}
 
