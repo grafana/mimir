@@ -540,9 +540,19 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 
 		federatedQueryable = tenantfederation.NewQueryable(queryable, byPassForSingleQuerier, util_log.Logger)
 	}
-
 	managerFactory := ruler.DefaultTenantManagerFactory(t.Cfg.Ruler, t.Distributor, queryable, federatedQueryable, eng, t.Overrides, prometheus.DefaultRegisterer)
-	dnsResolver := dns.NewProvider(util_log.Logger, rulerRegisterer, dns.GolangResolverType)
+
+	// We need to prefix and add a label to the metrics for the DNS resolver because, unlike other mimir components,
+	// it doesn't already have the `cortex_` prefix and the `component` label to the metrics it emits
+	dnsProviderReg := prometheus.WrapRegistererWithPrefix(
+		"cortex_",
+		prometheus.WrapRegistererWith(
+			prometheus.Labels{"component": "ruler"},
+			prometheus.DefaultRegisterer,
+		),
+	)
+
+	dnsResolver := dns.NewProvider(util_log.Logger, dnsProviderReg, dns.GolangResolverType)
 	manager, err := ruler.NewDefaultMultiTenantManager(t.Cfg.Ruler, managerFactory, prometheus.DefaultRegisterer, util_log.Logger, dnsResolver)
 	if err != nil {
 		return nil, err
