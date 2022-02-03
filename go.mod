@@ -54,6 +54,7 @@ require (
 )
 
 require (
+	github.com/Azure/azure-storage-blob-go v0.13.0
 	github.com/alecthomas/chroma v0.10.0
 	github.com/google/go-github/v32 v32.1.0
 	github.com/grafana-tools/sdk v0.0.0-20211220201350-966b3088eec9
@@ -65,7 +66,6 @@ require (
 	cloud.google.com/go v0.99.0 // indirect
 	cloud.google.com/go/storage v1.10.0 // indirect
 	github.com/Azure/azure-pipeline-go v0.2.3 // indirect
-	github.com/Azure/azure-storage-blob-go v0.13.0 // indirect
 	github.com/Azure/go-autorest v14.2.0+incompatible // indirect
 	github.com/Azure/go-autorest/autorest v0.11.23 // indirect
 	github.com/Azure/go-autorest/autorest/adal v0.9.18 // indirect
