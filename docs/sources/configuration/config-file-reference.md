@@ -1056,7 +1056,7 @@ results_cache:
 The `ruler_config` configures the ruler.
 
 ```yaml
-# URL of alerts return path.
+# [advanced] URL of alerts return path.
 # CLI flag: -ruler.external.url
 [external_url: <url> | default = ]
 
@@ -1128,11 +1128,11 @@ ruler_client:
   # CLI flag: -ruler.client.tls-insecure-skip-verify
   [tls_insecure_skip_verify: <boolean> | default = false]
 
-# How frequently to evaluate rules
+# [advanced] How frequently to evaluate rules
 # CLI flag: -ruler.evaluation-interval
 [evaluation_interval: <duration> | default = 1m]
 
-# How frequently to poll for rule changes
+# [advanced] How frequently to poll for rule changes
 # CLI flag: -ruler.poll-interval
 [poll_interval: <duration> | default = 1m]
 
@@ -1147,7 +1147,8 @@ ruler_client:
 # CLI flag: -ruler.alertmanager-url
 [alertmanager_url: <string> | default = ""]
 
-# How long to wait between refreshing DNS resolutions of Alertmanager hosts.
+# [advanced] How long to wait between refreshing DNS resolutions of Alertmanager
+# hosts.
 # CLI flag: -ruler.alertmanager-refresh-interval
 [alertmanager_refresh_interval: <duration> | default = 1m]
 
@@ -1155,11 +1156,13 @@ ruler_client:
 # CLI flag: -ruler.alertmanager-use-v2
 [enable_alertmanager_v2: <boolean> | default = true]
 
-# Capacity of the queue for notifications to be sent to the Alertmanager.
+# [advanced] Capacity of the queue for notifications to be sent to the
+# Alertmanager.
 # CLI flag: -ruler.notification-queue-capacity
 [notification_queue_capacity: <int> | default = 10000]
 
-# HTTP timeout duration when sending notifications to the Alertmanager.
+# [advanced] HTTP timeout duration when sending notifications to the
+# Alertmanager.
 # CLI flag: -ruler.notification-timeout
 [notification_timeout: <duration> | default = 10s]
 
@@ -1187,30 +1190,32 @@ alertmanager_client:
   # CLI flag: -ruler.alertmanager-client.tls-insecure-skip-verify
   [tls_insecure_skip_verify: <boolean> | default = false]
 
-  # HTTP Basic authentication username. It overrides the username set in the URL
-  # (if any).
+  # [advanced] HTTP Basic authentication username. It overrides the username set
+  # in the URL (if any).
   # CLI flag: -ruler.alertmanager-client.basic-auth-username
   [basic_auth_username: <string> | default = ""]
 
-  # HTTP Basic authentication password. It overrides the password set in the URL
-  # (if any).
+  # [advanced] HTTP Basic authentication password. It overrides the password set
+  # in the URL (if any).
   # CLI flag: -ruler.alertmanager-client.basic-auth-password
   [basic_auth_password: <string> | default = ""]
 
-# Max time to tolerate outage for restoring "for" state of alert.
+# [advanced] Max time to tolerate outage for restoring "for" state of alert.
 # CLI flag: -ruler.for-outage-tolerance
 [for_outage_tolerance: <duration> | default = 1h]
 
-# Minimum duration between alert and restored "for" state. This is maintained
-# only for alerts with configured "for" time greater than grace period.
+# [advanced] Minimum duration between alert and restored "for" state. This is
+# maintained only for alerts with configured "for" time greater than grace
+# period.
 # CLI flag: -ruler.for-grace-period
 [for_grace_period: <duration> | default = 10m]
 
-# Minimum amount of time to wait before resending an alert to Alertmanager.
+# [advanced] Minimum amount of time to wait before resending an alert to
+# Alertmanager.
 # CLI flag: -ruler.resend-delay
 [resend_delay: <duration> | default = 1m]
 
-# Time to spend searching for a pending ruler when shutting down.
+# [advanced] Time to spend searching for a pending ruler when shutting down.
 # CLI flag: -ruler.search-pending-for
 [search_pending_for: <duration> | default = 5m]
 
@@ -1267,7 +1272,7 @@ ring:
   # CLI flag: -ruler.ring.num-tokens
   [num_tokens: <int> | default = 128]
 
-# Period with which to attempt to flush rule groups.
+# [advanced] Period with which to attempt to flush rule groups.
 # CLI flag: -ruler.flush-period
 [flush_period: <duration> | default = 1m]
 
@@ -1275,20 +1280,20 @@ ring:
 # CLI flag: -ruler.enable-api
 [enable_api: <boolean> | default = false]
 
-# Comma separated list of tenants whose rules this ruler can evaluate. If
-# specified, only these tenants will be handled by ruler, otherwise this ruler
-# can process rules from all tenants. Subject to sharding.
+# [advanced] Comma separated list of tenants whose rules this ruler can
+# evaluate. If specified, only these tenants will be handled by ruler, otherwise
+# this ruler can process rules from all tenants. Subject to sharding.
 # CLI flag: -ruler.enabled-tenants
 [enabled_tenants: <string> | default = ""]
 
-# Comma separated list of tenants whose rules this ruler cannot evaluate. If
-# specified, a ruler that would normally pick the specified tenant(s) for
-# processing will ignore them instead. Subject to sharding.
+# [advanced] Comma separated list of tenants whose rules this ruler cannot
+# evaluate. If specified, a ruler that would normally pick the specified
+# tenant(s) for processing will ignore them instead. Subject to sharding.
 # CLI flag: -ruler.disabled-tenants
 [disabled_tenants: <string> | default = ""]
 
-# Report the wall time for ruler queries to complete as a per user metric and as
-# an info level log message.
+# [advanced] Report the wall time for ruler queries to complete as a per user
+# metric and as an info level log message.
 # CLI flag: -ruler.query-stats-enabled
 [query_stats_enabled: <boolean> | default = false]
 
