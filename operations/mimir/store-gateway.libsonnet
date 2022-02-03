@@ -94,7 +94,7 @@
   store_gateway_statefulset: self.newStoreGatewayStatefulSet('store-gateway', $.store_gateway_container),
 
   store_gateway_service:
-    $.util.serviceFor($.store_gateway_statefulset),
+    $.util.serviceFor($.store_gateway_statefulset, $._config.service_ignored_labels),
 
   store_gateway_pdb:
     podDisruptionBudget.new() +

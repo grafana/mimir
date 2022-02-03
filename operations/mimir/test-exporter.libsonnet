@@ -36,5 +36,5 @@
     if !($._config.test_exporter_enabled)
     then {}
     else
-      $.util.serviceFor($.test_exporter_deployment),
+      $.util.serviceFor($.test_exporter_deployment, $._config.service_ignored_labels),
 }

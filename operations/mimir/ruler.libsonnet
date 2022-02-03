@@ -62,6 +62,6 @@
 
   ruler_service:
     if $._config.ruler_enabled then
-      $.util.serviceFor($.ruler_deployment)
+      $.util.serviceFor($.ruler_deployment, $._config.service_ignored_labels)
     else {},
 }
