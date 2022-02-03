@@ -14,7 +14,6 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
-	"github.com/prometheus/prometheus/discovery/dns"
 	"github.com/stretchr/testify/require"
 	thanosdns "github.com/thanos-io/thanos/pkg/discovery/dns"
 
@@ -58,7 +57,32 @@ func TestBuildNotifierConfig(t *testing.T) {
 			},
 		},
 		{
-			name: "with a single URL and service discovery",
+			name: "with a single URL, v2 API, and no service discovery",
+			cfg: &Config{
+				AlertmanagerURL:         "http://alertmanager.default.svc.cluster.local/alertmanager",
+				AlertmanagerEnableV2API: true,
+			},
+			ncfg: &config.Config{
+				AlertingConfig: config.AlertingConfig{
+					AlertmanagerConfigs: []*config.AlertmanagerConfig{
+						{
+							APIVersion: "v2",
+							Scheme:     "http",
+							PathPrefix: "/alertmanager",
+							ServiceDiscoveryConfigs: discovery.Configs{
+								discovery.StaticConfig{
+									{
+										Targets: []model.LabelSet{{"__address__": "alertmanager.default.svc.cluster.local"}},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "with a SRV URL but no service discovery (missing dns+ prefix)",
 			cfg: &Config{
 				AlertmanagerURL:             "http://_http._tcp.alertmanager.default.svc.cluster.local/alertmanager",
 				AlertmanagerRefreshInterval: time.Duration(60),
@@ -71,34 +95,9 @@ func TestBuildNotifierConfig(t *testing.T) {
 							Scheme:     "http",
 							PathPrefix: "/alertmanager",
 							ServiceDiscoveryConfigs: discovery.Configs{
-								&dns.SDConfig{
-									Names:           []string{"_http._tcp.alertmanager.default.svc.cluster.local"},
-									RefreshInterval: 60,
-									Type:            "SRV",
-									Port:            0,
-								},
-							},
-						},
-					},
-				},
-			},
-		},
-		{
-			name: "with service discovery and an invalid URL",
-			cfg: &Config{
-				AlertmanagerURL: "http://_http.default.svc.cluster.local/alertmanager",
-			},
-			ncfg: &config.Config{
-				AlertingConfig: config.AlertingConfig{
-					AlertmanagerConfigs: []*config.AlertmanagerConfig{
-						{
-							APIVersion: "v1",
-							Scheme:     "http",
-							PathPrefix: "/alertmanager",
-							ServiceDiscoveryConfigs: discovery.Configs{
 								discovery.StaticConfig{
 									{
-										Targets: []model.LabelSet{{"__address__": "_http.default.svc.cluster.local"}},
+										Targets: []model.LabelSet{{"__address__": "_http._tcp.alertmanager.default.svc.cluster.local"}},
 									},
 								},
 							},
@@ -141,47 +140,9 @@ func TestBuildNotifierConfig(t *testing.T) {
 				},
 			},
 		},
+
 		{
-			name: "with multiple URLs and service discovery",
-			cfg: &Config{
-				AlertmanagerURL:             "http://_http._tcp.alertmanager-0.default.svc.cluster.local/alertmanager,http://_http._tcp.alertmanager-1.default.svc.cluster.local/alertmanager",
-				AlertmanagerRefreshInterval: time.Duration(60),
-			},
-			ncfg: &config.Config{
-				AlertingConfig: config.AlertingConfig{
-					AlertmanagerConfigs: []*config.AlertmanagerConfig{
-						{
-							APIVersion: "v1",
-							Scheme:     "http",
-							PathPrefix: "/alertmanager",
-							ServiceDiscoveryConfigs: discovery.Configs{
-								&dns.SDConfig{
-									Names:           []string{"_http._tcp.alertmanager-0.default.svc.cluster.local"},
-									RefreshInterval: 60,
-									Type:            "SRV",
-									Port:            0,
-								},
-							},
-						},
-						{
-							APIVersion: "v1",
-							Scheme:     "http",
-							PathPrefix: "/alertmanager",
-							ServiceDiscoveryConfigs: discovery.Configs{
-								&dns.SDConfig{
-									Names:           []string{"_http._tcp.alertmanager-1.default.svc.cluster.local"},
-									RefreshInterval: 60,
-									Type:            "SRV",
-									Port:            0,
-								},
-							},
-						},
-					},
-				},
-			},
-		},
-		{
-			name: "with Basic Authentication URL",
+			name: "with basic authentication URL and no service discovery",
 			cfg: &Config{
 				AlertmanagerURL: "http://marco:hunter2@alertmanager-0.default.svc.cluster.local/alertmanager",
 			},
@@ -208,7 +169,33 @@ func TestBuildNotifierConfig(t *testing.T) {
 			},
 		},
 		{
-			name: "with Basic Authentication URL and Explicit",
+			name: "with basic authentication URL and service discovery",
+			cfg: &Config{
+				AlertmanagerURL: "dnssrv+https://marco:hunter2@_http._tcp.alertmanager-0.default.svc.cluster.local/alertmanager",
+			},
+			ncfg: &config.Config{
+				AlertingConfig: config.AlertingConfig{
+					AlertmanagerConfigs: []*config.AlertmanagerConfig{
+						{
+							HTTPClientConfig: config_util.HTTPClientConfig{
+								BasicAuth: &config_util.BasicAuth{Username: "marco", Password: "hunter2"},
+							},
+							APIVersion: "v1",
+							Scheme:     "https",
+							PathPrefix: "/alertmanager",
+							ServiceDiscoveryConfigs: discovery.Configs{
+								dnsServiceDiscovery{
+									Host:  "_http._tcp.alertmanager-0.default.svc.cluster.local",
+									QType: thanosdns.SRV,
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "with basic authentication URL, no service discovery, and explicit config",
 			cfg: &Config{
 				AlertmanagerURL: "http://marco:hunter2@alertmanager-0.default.svc.cluster.local/alertmanager",
 				Notifier: NotifierConfig{
@@ -241,9 +228,10 @@ func TestBuildNotifierConfig(t *testing.T) {
 			},
 		},
 		{
-			name: "with multiple DNS service discovery",
+			name: "with multiple URLs and service discovery",
 			cfg: &Config{
-				AlertmanagerURL: "dns+http://alertmanager.mimir.svc.cluster.local:8080/alertmanager,dnssrv+https://_http._tcp.alertmanager2.mimir.svc.cluster.local/am",
+				AlertmanagerURL:             "dns+http://alertmanager.mimir.svc.cluster.local:8080/alertmanager,dnssrv+https://_http._tcp.alertmanager2.mimir.svc.cluster.local/am",
+				AlertmanagerRefreshInterval: time.Second,
 			},
 			ncfg: &config.Config{
 				AlertingConfig: config.AlertingConfig{
@@ -254,8 +242,9 @@ func TestBuildNotifierConfig(t *testing.T) {
 							PathPrefix: "/alertmanager",
 							ServiceDiscoveryConfigs: discovery.Configs{
 								dnsServiceDiscovery{
-									Host:  "alertmanager.mimir.svc.cluster.local:8080",
-									QType: thanosdns.A,
+									Host:            "alertmanager.mimir.svc.cluster.local:8080",
+									RefreshInterval: time.Second,
+									QType:           thanosdns.A,
 								},
 							},
 						},
@@ -265,8 +254,9 @@ func TestBuildNotifierConfig(t *testing.T) {
 							PathPrefix: "/am",
 							ServiceDiscoveryConfigs: discovery.Configs{
 								dnsServiceDiscovery{
-									Host:  "_http._tcp.alertmanager2.mimir.svc.cluster.local",
-									QType: thanosdns.SRV,
+									Host:            "_http._tcp.alertmanager2.mimir.svc.cluster.local",
+									RefreshInterval: time.Second,
+									QType:           thanosdns.SRV,
 								},
 							},
 						},
@@ -279,7 +269,14 @@ func TestBuildNotifierConfig(t *testing.T) {
 			cfg: &Config{
 				AlertmanagerURL: "dns+alertmanager.mimir.svc.cluster.local:8080/alertmanager",
 			},
-			err: errors.New("improperly formatted alertmanager URL (maybe the scheme is missing?) \"alertmanager.mimir.svc.cluster.local:8080/alertmanager\""),
+			err: errors.New("improperly formatted alertmanager URL \"alertmanager.mimir.svc.cluster.local:8080/alertmanager\" (maybe the scheme is missing?) see DNS Service Discovery format docs"),
+		},
+		{
+			name: "with only dns+ prefix",
+			cfg: &Config{
+				AlertmanagerURL: "dns+",
+			},
+			err: errors.New("improperly formatted alertmanager URL \"\" (maybe the scheme is missing?) see DNS Service Discovery format docs"),
 		},
 	}
 

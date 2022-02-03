@@ -9,7 +9,6 @@ import (
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/discovery"
-	"github.com/prometheus/prometheus/discovery/dns"
 	"github.com/prometheus/prometheus/discovery/refresh"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/thanos-io/thanos/pkg/cacheutil"
@@ -63,15 +62,6 @@ func dnsSD(rulerConfig *Config, resolver cacheutil.AddressProvider, qType thanos
 		RefreshInterval: rulerConfig.AlertmanagerRefreshInterval,
 		Host:            url.Host,
 		QType:           qType,
-	}
-}
-
-func promSD(rulerConfig *Config, url *url.URL) discovery.Config {
-	return &dns.SDConfig{
-		Names:           []string{url.Host},
-		RefreshInterval: model.Duration(rulerConfig.AlertmanagerRefreshInterval),
-		Type:            "SRV",
-		Port:            0, // Ignored, because of SRV.
 	}
 }
 

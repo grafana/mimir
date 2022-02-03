@@ -10,7 +10,6 @@ import (
 	"flag"
 	"fmt"
 	"net/url"
-	"regexp"
 	"strings"
 	"sync"
 
@@ -26,11 +25,6 @@ import (
 	"github.com/thanos-io/thanos/pkg/discovery/dns"
 
 	"github.com/grafana/mimir/pkg/util"
-)
-
-var (
-	// srvHostRegexp follows RFC2782 for SRV records
-	srvHostRegexp = regexp.MustCompile(`^_.+._.+`)
 )
 
 type NotifierConfig struct {
@@ -100,6 +94,11 @@ func (rn *rulerNotifier) stop() {
 // Builds a Prometheus config.Config from a ruler.Config with just the required
 // options to configure notifications to Alertmanager.
 func buildNotifierConfig(rulerConfig *Config, resolver cacheutil.AddressProvider) (*config.Config, error) {
+	if rulerConfig.AlertmanagerURL == "" {
+		// no AM URLs were provided, so we can just return a default config without errors
+		return &config.Config{}, nil
+	}
+
 	amURLs := strings.Split(rulerConfig.AlertmanagerURL, ",")
 	amConfigs := make([]*config.AlertmanagerConfig, 0, len(amURLs))
 
@@ -117,32 +116,18 @@ func buildNotifierConfig(rulerConfig *Config, resolver cacheutil.AddressProvider
 			return nil, err
 		}
 
-		if url.String() == "" {
-			continue
+		if url.String() == "" || url.Host == "" {
+			return nil, fmt.Errorf("improperly formatted alertmanager URL %q (maybe the scheme is missing?) see DNS Service Discovery format docs", rawURL)
 		}
-
-		if url.Host == "" {
-			return nil, fmt.Errorf("improperly formatted alertmanager URL (maybe the scheme is missing?) %q", rawURL)
-		}
-
-		isDNSSD := qType != ""
-		isPromSD := srvHostRegexp.MatchString(url.Host)
 
 		var sdConfig discovery.Config
-		switch {
-		case isDNSSD:
+		if qType != "" {
 			sdConfig = dnsSD(rulerConfig, resolver, dns.QType(qType), url)
-		case isPromSD:
-			sdConfig = promSD(rulerConfig, url)
-		default:
+		} else {
 			sdConfig = staticTarget(url)
 		}
 
 		amConfigs = append(amConfigs, amConfigWithSD(rulerConfig, url, apiVersion, sdConfig))
-	}
-
-	if len(amConfigs) == 0 {
-		return &config.Config{}, nil
 	}
 
 	promConfig := &config.Config{
