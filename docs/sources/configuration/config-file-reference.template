@@ -1,42 +1,55 @@
 ---
-title: "Configuration file"
-linkTitle: "Configuration file"
-weight: 1
-slug: configuration-file
+title: "Configuration reference"
+linkTitle: "Configuration reference"
+weight: 10
+slug: configuration-reference
 ---
+
+# Configuration reference
 
 {{ .GeneratedFileWarning }}
 
-Cortex can be configured using a YAML file - specified using the `-config.file` flag - or CLI flags. In case you combine both, CLI flags take precedence over the YAML config file.
+Mimir can be configured using a YAML file or with command-line flags
+representing configuration parameters.
+The YAML file is specified using the `-config.file` command-line option.
+If both command-line flags and and YAML configuration parameters
+are specified, the command-line flags take precedence over values in
+a YAML file.
 
-The current configuration of any Cortex component can be seen by visiting the `/config` HTTP path.
+The current configuration of any component can be seen by visiting
+the `/config` HTTP API endpoint.
 Passwords are filtered out of this endpoint.
 
-## Reference
+This section describes all configuration parameters.
+Parameters are 
+written in [YAML format](https://en.wikipedia.org/wiki/YAML).
+Brackets indicate that a parameter is optional.
 
-To specify which configuration file to load, pass the `-config.file` flag at the command line. The file is written in [YAML format](https://en.wikipedia.org/wiki/YAML), defined by the scheme below. Brackets indicate that a parameter is optional.
-
-### Generic placeholders
+## Generic placeholders
 
 - `<boolean>`: a boolean that can take the values `true` or `false`
 - `<int>`: any integer matching the regular expression `[1-9]+[0-9]*`
-- `<duration>`: a duration matching the regular expression `[0-9]+(ns|us|µs|ms|s|m|h|d|w|y)` where y = 365 days.
-- `<string>`: a regular string
-- `<url>`: an URL
+- `<duration>`: a duration matching the regular expression `[0-9]+(ns|us|µs|ms|s|m|h|d|w|y)` where y = 365 days
+- `<string>`: a string
+- `<url>`: a URL
 - `<prefix>`: a CLI flag prefix based on the context (look at the parent configuration block to see which CLI flags prefix should be used)
-- `<relabel_config>`: a [Prometheus relabeling configuration](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#relabel_config).
-- `<time>`: a timestamp, with available formats: `2006-01-20` (midnight, local timezone), `2006-01-20T15:04` (local timezone), and RFC 3339 formats: `2006-01-20T15:04:05Z` (UTC) or `2006-01-20T15:04:05+07:00` (explicit timezone)
+- `<relabel_config>`: a [Prometheus relabeling configuration](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#relabel_config)
+- `<time>`: a timestamp, with available formats:
+    - `2006-01-20` (midnight, local timezone)
+    - `2006-01-20T15:04` (local timezone) 
+    - RFC 3339 formats: `2006-01-20T15:04:05Z` (UTC) or `2006-01-20T15:04:05+07:00` (explicit timezone)
 
-### Use environment variables in the configuration
+## Use environment variables in the configuration
 
-You can use environment variable references in the config file to set values that need to be configurable during deployment by using the `-config.expand-env` flag.
-To do this, use:
+You can use environment variable references in the YAML configuration file
+to set values that need to be configurable during deployment.
+To do this, pass `-config.expand-env=true` on the command line and use:
 
 ```
 ${VAR}
 ```
 
-Where VAR is the name of the environment variable.
+where `VAR` is the name of the environment variable.
 
 Each variable reference is replaced at startup by the value of the environment variable.
 The replacement is case-sensitive and occurs before the YAML file is parsed.
@@ -48,8 +61,8 @@ To specify a default value, use:
 ${VAR:default_value}
 ```
 
-Where default_value is the value to use if the environment variable is undefined.
+where `default_value` is the value to use if the environment variable is undefined.
 
-### Supported contents and default values of the config file
+## Supported contents and default values of the configuration file
 
 {{ .ConfigFile }}
