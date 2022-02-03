@@ -7,7 +7,7 @@ slug: bucket-index
 
 The bucket index is a **per-tenant file containing the list of blocks and block deletion marks** in the storage. The bucket index itself is stored in the backend object storage, is periodically updated by the compactor, and used by queriers, store-gateways and rulers to discover blocks in the storage.
 
-The bucket index usage is **optional** and can be enabled via `-blocks-storage.bucket-store.bucket-index.enabled=true` (or its respective YAML config option).
+The bucket index is enabled by default, but it is **optional**. It can be disabled via `-blocks-storage.bucket-store.bucket-index.enabled=false` (or its respective YAML config option). Disabling the bucket index is not recommended.
 
 ## Benefits
 

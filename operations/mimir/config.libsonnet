@@ -430,8 +430,6 @@
   } else {},
 
   bucket_index_config:: if $._config.bucket_index_enabled then {
-    'blocks-storage.bucket-store.bucket-index.enabled': true,
-
     // Bucket index is updated by compactor on each cleanup cycle.
     'blocks-storage.bucket-store.sync-interval': $._config.compactor_cleanup_interval,
   } else {
