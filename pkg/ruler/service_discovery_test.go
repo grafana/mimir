@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	thanosdns "github.com/thanos-io/thanos/pkg/discovery/dns"
+	"github.com/thanos-io/thanos/pkg/discovery/dns"
 )
 
 func TestConfig_TranslatesToPrometheusTargetGroup(t *testing.T) {
@@ -71,7 +71,7 @@ func TestConfig_TranslatesToPrometheusTargetGroup(t *testing.T) {
 			cfg := thanosServiceDiscovery{
 				RefreshInterval: time.Millisecond,
 				Resolver:        resolver,
-				QType:           thanosdns.A,
+				QType:           dns.A,
 				Host:            sourceAddress,
 			}
 			discoverer, err := cfg.NewDiscoverer(discovery.DiscovererOptions{})
@@ -92,26 +92,26 @@ func TestConfig_TranslatesToPrometheusTargetGroup(t *testing.T) {
 func TestConfig_ConstructsLookupNamesCorrectly(t *testing.T) {
 	testCases := []struct {
 		name  string
-		qType thanosdns.QType
+		qType dns.QType
 		host  string
 
 		expectedAddress string
 	}{
 		{
 			name:            "dns+",
-			qType:           thanosdns.A,
+			qType:           dns.A,
 			host:            "localhost:123",
 			expectedAddress: "dns+localhost:123",
 		},
 		{
 			name:            "dnssrv+",
-			qType:           thanosdns.SRV,
+			qType:           dns.SRV,
 			host:            "localhost:123",
 			expectedAddress: "dnssrv+localhost:123",
 		},
 		{
 			name:            "dnssrvnoa+",
-			qType:           thanosdns.SRVNoA,
+			qType:           dns.SRVNoA,
 			host:            "localhost:123",
 			expectedAddress: "dnssrvnoa+localhost:123",
 		},

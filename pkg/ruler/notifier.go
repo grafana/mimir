@@ -23,7 +23,7 @@ import (
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/thanos-io/thanos/pkg/cacheutil"
-	thanosdns "github.com/thanos-io/thanos/pkg/discovery/dns"
+	"github.com/thanos-io/thanos/pkg/discovery/dns"
 
 	"github.com/grafana/mimir/pkg/util"
 )
@@ -107,7 +107,7 @@ func buildNotifierConfig(rulerConfig *Config, resolver cacheutil.AddressProvider
 
 	for _, rawURL := range amURLs {
 		var thanosQType string
-		thanosQType, rawURL = thanosdns.GetQTypeName(rawURL)
+		thanosQType, rawURL = dns.GetQTypeName(rawURL)
 
 		url, err := url.Parse(rawURL)
 		if err != nil {
@@ -128,7 +128,7 @@ func buildNotifierConfig(rulerConfig *Config, resolver cacheutil.AddressProvider
 		var sdConfig discovery.Config
 		switch {
 		case isThanosSD:
-			sdConfig = thanosSD(rulerConfig, resolver, thanosdns.QType(thanosQType), url)
+			sdConfig = thanosSD(rulerConfig, resolver, dns.QType(thanosQType), url)
 		case isPromSD:
 			sdConfig = promSD(rulerConfig, url)
 		default:
