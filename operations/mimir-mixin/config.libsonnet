@@ -67,6 +67,12 @@
       top_tenants: true,
     },
 
+    // Whether autoscaling panels and alerts should be enabled for specific Mimir services.
+    autoscaling: {
+      querier_enabled: false,
+      querier_hpa_name: 'keda-hpa-querier',
+    },
+
     // The routes to exclude from alerts.
     alert_excluded_routes: [],
   },

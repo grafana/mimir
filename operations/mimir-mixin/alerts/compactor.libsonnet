@@ -1,7 +1,7 @@
 (import 'alerts-utils.libsonnet') {
   groups+: [
     {
-      name: 'cortex_compactor_alerts',
+      name: 'mimir_compactor_alerts',
       rules: [
         {
           // Alert if the compactor has not successfully cleaned up blocks in the last 6h.

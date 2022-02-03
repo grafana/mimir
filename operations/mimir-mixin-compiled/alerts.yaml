@@ -122,7 +122,7 @@ groups:
     for: 5m
     labels:
       severity: critical
-- name: cortex_instance_limits_alerts
+- name: mimir_instance_limits_alerts
   rules:
   - alert: MimirIngesterReachingSeriesLimit
     annotations:
@@ -436,7 +436,7 @@ groups:
       increase(cortex_alertmanager_state_initial_sync_completed_total{outcome="failed"}[1m]) > 0
     labels:
       severity: critical
-- name: cortex_blocks_alerts
+- name: mimir_blocks_alerts
   rules:
   - alert: MimirIngesterHasNotShippedBlocks
     annotations:
@@ -580,7 +580,7 @@ groups:
     for: 6h
     labels:
       severity: warning
-- name: cortex_compactor_alerts
+- name: mimir_compactor_alerts
   rules:
   - alert: MimirCompactorHasNotSuccessfullyCleanedUpBlocks
     annotations:
@@ -639,5 +639,17 @@ groups:
     expr: |
       increase(cortex_compactor_blocks_marked_for_no_compaction_total{job=~".+/(compactor.*|cortex|mimir)", reason="block-index-out-of-order-chunk"}[5m]) > 0
     for: 1m
+    labels:
+      severity: warning
+- name: mimir_autoscaling_querier
+  rules:
+  - alert: MimirQuerierAutoscalerNotActive
+    annotations:
+      message: The Horizontal Pod Autoscaler (HPA) in {{ $labels.namespace }} is not active.
+    expr: |
+      kube_horizontalpodautoscaler_status_condition{horizontalpodautoscaler="keda-hpa-querier",condition="ScalingActive",status="false"}
+      * on(cluster, namespace) group_left max by(cluster, namespace) (cortex_build_info)
+      > 0
+    for: 15m
     labels:
       severity: warning

@@ -832,6 +832,33 @@ How to **investigate**:
     ```
     - In case you need to quickly reject write path traffic from a single tenant, you can override its `ingestion_rate` and `ingestion_rate_burst` setting lower values (so that some/most of their traffic will be rejected)
 
+### MimirQuerierAutoscalerNotActive
+
+This alert fires when the Mimir querier Kubernetes Horizontal Pod Autoscaler's (HPA) `ScalingActive` condition is `false`. When this happens, it's not able to calculate desired scale and generally indicates problems with fetching metrics.
+
+How it **works**:
+
+- HPA is configured to autoscale Mimir queriers based on custom metrics fetched from Prometheus via the KEDA custom metrics API server
+- HPA periodically queries updated metrics and updates the number of desired replicas based on that
+- Please refer to the [HPA documentation](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/) for more information about it
+
+How to **investigate**:
+
+- Check HPA conditions and events to get more details about the failure
+  ```
+  kubectl describe hpa -n <namespace> keda-hpa-querier
+  ```
+- Ensure KEDA custom metrics API server is up and running
+  ```
+  # Assuming KEDA is running in a dedicated namespace "keda":
+  kubectl get pods -n keda
+  ```
+- Check KEDA custom metrics API server logs
+  ```
+  # Assuming KEDA is running in a dedicated namespace "keda":
+  kubectl logs -n keda deployment/keda-operator-metrics-apiserver
+  ```
+
 ## Mimir routes by path
 
 **Write path**:
