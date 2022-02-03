@@ -3047,8 +3047,9 @@ bucket_store:
   [ignore_deletion_mark_delay: <duration> | default = 1h]
 
   bucket_index:
-    # If enabled, a querier/store-gateway can discover blocks by reading a
-    # bucket index instead of bucket scanning.
+    # If enabled, queriers and store-gateways discover blocks by reading a
+    # bucket index (created and updated by the compactor) instead of
+    # periodically scanning the bucket.
     # CLI flag: -blocks-storage.bucket-store.bucket-index.enabled
     [enabled: <boolean> | default = true]
 
