@@ -1,0 +1,2 @@
+limits:
+  max_global_exemplars_per_user: 100

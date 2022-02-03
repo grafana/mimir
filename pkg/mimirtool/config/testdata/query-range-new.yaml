@@ -1,0 +1,7 @@
+frontend:
+  results_cache:
+    memcached:
+      max_get_multi_batch_size: 2048
+      max_get_multi_concurrency: 10
+      max_idle_connections: 32
+      max_async_concurrency: 5

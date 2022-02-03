@@ -20,6 +20,10 @@ linters-settings:
 run:
   timeout: 5m
 
+  skip-dirs:
+    # This is generated code from old cortex
+    - pkg/mimirtool/config/internal
+
   # List of build tags, all linters use it.
   build-tags:
     - netgo
