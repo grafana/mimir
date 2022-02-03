@@ -1652,7 +1652,7 @@
                         "logBase": 1,
                         "max": null,
                         "min": null,
-                        "show": false
+                        "show": true
                      }
                   ]
                },
