@@ -1571,22 +1571,6 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "description": "### Scaling metric\nThis panel shows the result of the query used as scaling metric and target/threshold used.\nThe desired number of replicas is computed by HPA as: <scaling metric> / <target per replica>.\n\n",
-                  "fieldConfig": {
-                     "overrides": [
-                        {
-                           "matcher": {
-                              "id": "byName",
-                              "options": "Target per replica"
-                           },
-                           "properties": [
-                              {
-                                 "id": "custom.axisPlacement",
-                                 "value": "right"
-                              }
-                           ]
-                        }
-                     ]
-                  },
                   "fill": 1,
                   "id": 20,
                   "legend": {
@@ -1606,7 +1590,12 @@
                   "pointradius": 5,
                   "points": false,
                   "renderer": "flot",
-                  "seriesOverrides": [ ],
+                  "seriesOverrides": [
+                     {
+                        "alias": "Target per replica",
+                        "yaxis": 2
+                     }
+                  ],
                   "spaceLength": 10,
                   "span": 4,
                   "stack": false,
@@ -1700,7 +1689,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum(rate(keda_metrics_adapter_scaler_errors[$__rate_interval])) +\non(metric) group_left\nlabel_replace(\n    kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=\"keda-hpa-querier\"}\n    * 0, \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n)\n",
+                        "expr": "sum by(metric) (rate(keda_metrics_adapter_scaler_errors[$__rate_interval])) +\non(metric) group_left\nlabel_replace(\n    kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=\"keda-hpa-querier\"}\n    * 0, \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n)\n",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,

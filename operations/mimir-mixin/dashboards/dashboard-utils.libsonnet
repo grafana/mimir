@@ -575,24 +575,15 @@ local utils = import 'mixin-utils/utils.libsonnet';
       namespace: $.namespaceMatcher(),
     },
 
-  panelAxisPlacement(seriesName, placement):: {
-    fieldConfig+: {
-      overrides+: [
+  panelAxisPlacement(seriesName, placement)::
+    if placement != 'right' then {} else {
+      seriesOverrides: [
         {
-          matcher: {
-            id: 'byName',
-            options: seriesName,
-          },
-          properties: [
-            {
-              id: 'custom.axisPlacement',
-              value: placement,
-            },
-          ],
+          alias: seriesName,
+          yaxis: 2,
         },
       ],
     },
-  },
 
   panelDescription(title, description):: {
     description: |||
