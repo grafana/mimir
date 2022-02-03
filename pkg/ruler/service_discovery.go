@@ -4,9 +4,11 @@ package ruler
 
 import (
 	"context"
+	"fmt"
 	"net/url"
 	"time"
 
+	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/refresh"
@@ -71,4 +73,30 @@ func staticTarget(url *url.URL) discovery.Config {
 			Targets: []model.LabelSet{{model.AddressLabel: model.LabelValue(url.Host)}},
 		},
 	}
+}
+
+func sanitizedAlertmanagerURL(amURL string) (isServiceDiscovery bool, qType thanosdns.QType, parsedURL *url.URL, err error) {
+	rawQType, rawURL := thanosdns.GetQTypeName(amURL)
+	qType = thanosdns.QType(rawQType)
+
+	switch qType {
+	case "", thanosdns.A, thanosdns.SRV, thanosdns.SRVNoA:
+	default:
+		err = errors.Errorf("invalid DNS service discovery prefix %q", qType)
+		return
+	}
+
+	parsedURL, err = url.Parse(rawURL)
+	if err != nil {
+		return
+	}
+
+	if parsedURL.String() == "" || parsedURL.Host == "" {
+		err = fmt.Errorf("improperly formatted alertmanager URL %q (maybe the scheme is missing?); see DNS Service Discovery docs", rawURL)
+		return
+	}
+
+	isServiceDiscovery = qType != ""
+
+	return
 }

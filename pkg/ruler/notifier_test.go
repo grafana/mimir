@@ -269,14 +269,21 @@ func TestBuildNotifierConfig(t *testing.T) {
 			cfg: &Config{
 				AlertmanagerURL: "dns+alertmanager.mimir.svc.cluster.local:8080/alertmanager",
 			},
-			err: errors.New("improperly formatted alertmanager URL \"alertmanager.mimir.svc.cluster.local:8080/alertmanager\" (maybe the scheme is missing?) see DNS Service Discovery format docs"),
+			err: errors.New("improperly formatted alertmanager URL \"alertmanager.mimir.svc.cluster.local:8080/alertmanager\" (maybe the scheme is missing?); see DNS Service Discovery docs"),
 		},
 		{
 			name: "with only dns+ prefix",
 			cfg: &Config{
 				AlertmanagerURL: "dns+",
 			},
-			err: errors.New("improperly formatted alertmanager URL \"\" (maybe the scheme is missing?) see DNS Service Discovery format docs"),
+			err: errors.New("improperly formatted alertmanager URL \"\" (maybe the scheme is missing?); see DNS Service Discovery docs"),
+		},
+		{
+			name: "misspelled DNS SD format prefix (dnsserv+ vs dnssrv+)",
+			cfg: &Config{
+				AlertmanagerURL: "dnsserv+https://_http._tcp.alertmanager2.mimir.svc.cluster.local/am",
+			},
+			err: errors.New("invalid DNS service discovery prefix \"dnsserv\""),
 		},
 	}
 

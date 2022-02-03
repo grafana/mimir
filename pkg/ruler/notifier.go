@@ -8,7 +8,6 @@ package ruler
 import (
 	"context"
 	"flag"
-	"fmt"
 	"net/url"
 	"strings"
 	"sync"
@@ -22,7 +21,6 @@ import (
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/thanos-io/thanos/pkg/cacheutil"
-	"github.com/thanos-io/thanos/pkg/discovery/dns"
 
 	"github.com/grafana/mimir/pkg/util"
 )
@@ -108,21 +106,14 @@ func buildNotifierConfig(rulerConfig *Config, resolver cacheutil.AddressProvider
 	}
 
 	for _, rawURL := range amURLs {
-		var qType string
-		qType, rawURL = dns.GetQTypeName(rawURL)
-
-		url, err := url.Parse(rawURL)
+		isSD, qType, url, err := sanitizedAlertmanagerURL(rawURL)
 		if err != nil {
 			return nil, err
 		}
 
-		if url.String() == "" || url.Host == "" {
-			return nil, fmt.Errorf("improperly formatted alertmanager URL %q (maybe the scheme is missing?) see DNS Service Discovery format docs", rawURL)
-		}
-
 		var sdConfig discovery.Config
-		if qType != "" {
-			sdConfig = dnsSD(rulerConfig, resolver, dns.QType(qType), url)
+		if isSD {
+			sdConfig = dnsSD(rulerConfig, resolver, qType, url)
 		} else {
 			sdConfig = staticTarget(url)
 		}
