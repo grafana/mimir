@@ -1,9 +1,10 @@
 ---
-title: "Encryption at Rest"
-linkTitle: "Encryption at Rest"
-weight: 10
-slug: encryption-at-rest
+title: "Encrypt data at rest"
+description: "How to configure object storage encryption."
+weight: 40
 ---
+
+# Encrypt data at rest
 
 Cortex supports data encryption at rest for some storage backends.
 

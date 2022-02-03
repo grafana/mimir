@@ -1,9 +1,10 @@
 ---
-title: "Capacity Planning"
-linkTitle: "Capacity Planning"
-weight: 10
-slug: capacity-planning
+title: "Plan capacity"
+description: "How to plan the resources required for a Grafana Mimir deployment."
+weight: 50
 ---
+
+# Plan capacity
 
 You will want to estimate how many nodes are required, how many of
 each component to run, and how much storage space will be required.

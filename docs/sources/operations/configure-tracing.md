@@ -1,9 +1,10 @@
 ---
-title: "Tracing"
-linkTitle: "Tracing"
-weight: 10
-slug: tracing
+title: "Configure Grafana Mimir to send traces"
+description: "How to configure Grafana Mimir to send traces to Jaeger."
+weight: 30
 ---
+
+# Configure Grafana Mimir to send traces
 
 Cortex uses [Jaeger](https://www.jaegertracing.io/) to implement distributed
 tracing. We have found Jaeger invaluable for troubleshooting the behavior of

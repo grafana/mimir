@@ -1,9 +1,10 @@
 ---
-title: "Config for sending HA Pairs data to Cortex"
-linkTitle: "Config for sending HA Pairs data to Cortex"
+title: "Configure HA deduplication"
+description: "How to configure Grafana Mimir to handle HA Prometheus server deduplication."
 weight: 10
-slug: ha-pair-handling
 ---
+
+# Configure HA deduplication
 
 ## Context
 

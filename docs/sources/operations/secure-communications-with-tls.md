@@ -1,9 +1,10 @@
 ---
-title: "Securing communication between Cortex components with TLS"
-linkTitle: "Securing communication between Cortex components with TLS"
-weight: 10
-slug: tls
+title: "Secure communications with TLS"
+description: "How to configure TLS between Grafana mimir microservices."
+weight: 60
 ---
+
+# Secure communications with TLS
 
 Cortex is a distributed system with significant traffic between its services.
 To allow for secure communication, Cortex supports TLS between all its
