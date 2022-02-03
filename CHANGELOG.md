@@ -476,7 +476,6 @@
 * [CHANGE] Renamed recording rule groups (`cortex_` prefix changed to `mimir_`). #871
 * [CHANGE] Alerts name prefix has been changed from `Cortex` to `Mimir` (eg. alert `CortexIngesterUnhealthy` has been renamed to `MimirIngesterUnhealthy`). #879
 * [CHANGE] Enabled resources dashboards by default. Can be disabled setting `resources_dashboards_enabled` config field to `false`. #920
-* [CHANGE] Changed the default of `bucket_index_enabled` to `true`. #924
 * [FEATURE] Added `Cortex / Overrides` dashboard, displaying default limits and per-tenant overrides applied to Mimir. #673
 * [FEATURE] Added `Mimir / Tenants` and `Mimir / Top tenants` dashboards, displaying user-based metrics. #776
 * [FEATURE] Added querier autoscaling panels and alerts. #1006 #1016
@@ -631,6 +630,7 @@
 * [CHANGE] Configured store-gateway to not load blocks containing samples more recent than 10h (because such samples are queried from ingesters). #905
 * [CHANGE] Dynamically compute `-compactor.deletion-delay` based on other settings, in order to reduce the deletion delay as much as possible and lower the number of live blocks in the storage. #907
 * [CHANGE] The config field `distributorConfig` has been renamed to `ingesterRingClientConfig`. #997
+* [CHANGE] Changed the default of `bucket_index_enabled` to `true`. #924
 * [FEATURE] Added query sharding support. It can be enabled setting `cortex_query_sharding_enabled: true` in the `_config` object. #653
 * [FEATURE] Added shuffle-sharding support. It can be enabled and configured using the following config: #902
    ```
