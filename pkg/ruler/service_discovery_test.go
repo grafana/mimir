@@ -4,7 +4,6 @@ package ruler
 
 import (
 	"context"
-	"sync"
 	"testing"
 	"time"
 
@@ -12,6 +11,7 @@ import (
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	thanosdns "github.com/thanos-io/thanos/pkg/discovery/dns"
 )
@@ -64,7 +64,10 @@ func TestConfig_TranslatesToPrometheusTargetGroup(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			resolver := fakeResolver{addresses: tc.resolvedAddresses}
+			resolver := &mockResolver{}
+			resolver.expectAnyResolveCall()
+			resolver.returnAddresses(tc.resolvedAddresses)
+
 			cfg := thanosServiceDiscovery{
 				RefreshInterval: time.Millisecond,
 				Resolver:        resolver,
@@ -85,13 +88,6 @@ func TestConfig_TranslatesToPrometheusTargetGroup(t *testing.T) {
 		})
 	}
 }
-
-type fakeResolver struct {
-	addresses []string
-}
-
-func (f fakeResolver) Resolve(_ context.Context, _ []string) error { return nil }
-func (f fakeResolver) Addresses() []string                         { return f.addresses }
 
 func TestConfig_ConstructsLookupNamesCorrectly(t *testing.T) {
 	testCases := []struct {
@@ -123,10 +119,13 @@ func TestConfig_ConstructsLookupNamesCorrectly(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			testResolver := &spyResolver{}
+			resolver := &mockResolver{}
+			resolver.expectResolveCalledWith(tc.expectedAddress)
+			resolver.returnAddresses(nil)
+
 			cfg := thanosServiceDiscovery{
 				RefreshInterval: time.Millisecond,
-				Resolver:        testResolver,
+				Resolver:        resolver,
 				QType:           tc.qType,
 				Host:            tc.host,
 			}
@@ -139,33 +138,31 @@ func TestConfig_ConstructsLookupNamesCorrectly(t *testing.T) {
 			groupsChan := make(chan []*targetgroup.Group)
 			go discoverer.Run(ctx, groupsChan)
 			<-groupsChan // wait for at least one iteration
-
-			calledWith := testResolver.lastCallsArgs()
-			assert.Len(t, calledWith, 1)
-			assert.Equal(t, tc.expectedAddress, calledWith[0])
 		})
 	}
 }
 
-type spyResolver struct {
-	m sync.Mutex
-
-	calledWith []string
+type mockResolver struct {
+	mock.Mock
 }
 
-func (f *spyResolver) Resolve(_ context.Context, toResolve []string) error {
-	f.m.Lock()
-	defer f.m.Unlock()
-
-	f.calledWith = toResolve
-	return nil
+func (f *mockResolver) Resolve(ctx context.Context, toResolve []string) error {
+	ret := f.Called(ctx, toResolve)
+	return ret.Error(0)
 }
 
-func (f *spyResolver) Addresses() []string { return nil }
+func (f *mockResolver) Addresses() []string {
+	return f.Called().Get(0).([]string)
+}
 
-func (f *spyResolver) lastCallsArgs() []string {
-	f.m.Lock()
-	defer f.m.Unlock()
+func (f *mockResolver) expectResolveCalledWith(toResolve ...string) {
+	f.On("Resolve", mock.Anything, toResolve).Return(nil)
+}
 
-	return f.calledWith
+func (f *mockResolver) expectAnyResolveCall() {
+	f.On("Resolve", mock.Anything, mock.Anything).Return(nil)
+}
+
+func (f *mockResolver) returnAddresses(resolved []string) {
+	f.On("Addresses").Return(resolved)
 }
