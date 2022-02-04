@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: AGPL-3.0-only
-# Provenance-includes-location: https://github.com/cortexproject/cortex/tools/cleanup-white-noise.sh
+# Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/tools/cleanup-white-noise.sh
 # Provenance-includes-license: Apache-2.0
 # Provenance-includes-copyright: The Cortex Authors.
 
