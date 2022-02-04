@@ -1,3 +1,9 @@
+---
+title: "Query Step Alignment analysis"
+description: ""
+weight: 100
+---
+
 # Query Step Alignment analysis
 
 This tools allow to parse the query stats log messages of query-frontends to
