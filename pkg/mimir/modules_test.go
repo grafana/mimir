@@ -8,9 +8,11 @@ package mimir
 import (
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/gorilla/mux"
+	"github.com/grafana/dskit/flagext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/server"
@@ -156,5 +158,32 @@ func TestMimir_InitRulerStorage(t *testing.T) {
 				assert.Nil(t, mimir.RulerStorage)
 			}
 		})
+	}
+}
+
+func TestMimirKVSetup(t *testing.T) {
+	dir := t.TempDir()
+
+	for _, target := range []string{All} {
+		cfg := Config{}
+		flagext.DefaultValues(&cfg)
+		cfg.Target = []string{target}
+
+		// Must be set, otherwise MultiKV config provider will not be set.
+		cfg.RuntimeConfig.LoadPath = filepath.Join(dir, "config.yaml")
+
+		c, err := New(cfg)
+		require.NoError(t, err)
+
+		_, err = c.ModuleManager.InitModuleServices(cfg.Target...)
+		require.NoError(t, err)
+
+		// Verify that multikv config provider is set in all rings.
+		require.NotNil(t, c.Cfg.Distributor.DistributorRing.KVStore.Multi.ConfigProvider)
+		require.NotNil(t, c.Cfg.Ingester.LifecyclerConfig.RingConfig.KVStore.Multi)
+		require.NotNil(t, c.Cfg.StoreGateway.ShardingRing.KVStore.Multi.ConfigProvider)
+		require.NotNil(t, c.Cfg.Compactor.ShardingRing.KVStore.Multi.ConfigProvider)
+		require.NotNil(t, c.Cfg.Ruler.Ring.KVStore.Multi.ConfigProvider)
+		require.NotNil(t, c.Cfg.Alertmanager.ShardingRing.KVStore.Multi.ConfigProvider)
 	}
 }
