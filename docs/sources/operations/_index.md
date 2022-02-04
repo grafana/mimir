@@ -6,4 +6,4 @@ weight: 2000
 
 # Operating Grafana Mimir
 
-`{{< section >}}`
+{{< section >}}
