@@ -1,8 +1,8 @@
 ---
-title: "Configuration parameter lifecycle"
-linkTitle: "Configuration parameter lifecycle"
+title: "Configuration parameter categories"
+linkTitle: "Configuration parameter categories"
 weight: 1
-slug: config-param-lifecycle
+slug: config-param-categories
 ---
 
 In order to simplify Mimir configuration, parameters are bucketed into 3 categories according to
