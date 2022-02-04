@@ -105,6 +105,10 @@ To publish a stable release:
    1. Update the Cortex version in the following locations:
       - Kubernetes manifests located at `k8s/`
       - Documentation located at `docs/`
+1. Update dashboard screenshots
+  1. Run `make mixin-screenshots`
+  1. Review all updated screenshots and ensure no sensitive data is disclosed
+  1. Open a PR
 1. After merging your PR to release branch, `git tag` the new release (see [How to tag a release](#how-to-tag-a-release)) from release branch.
 1. Wait until CI pipeline succeeded (once a tag is created, the release process through GitHub actions will be triggered for this tag)
 1. Create a release in GitHub
