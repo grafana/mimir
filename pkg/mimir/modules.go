@@ -545,7 +545,7 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 	// We need to prefix and add a label to the metrics for the DNS resolver because, unlike other mimir components,
 	// it doesn't already have the `cortex_` prefix and the `component` label to the metrics it emits
 	dnsProviderReg := prometheus.WrapRegistererWithPrefix(
-		"cortex_ruler_",
+		"cortex_",
 		prometheus.WrapRegistererWith(
 			prometheus.Labels{"component": "ruler"},
 			prometheus.DefaultRegisterer,
@@ -634,7 +634,7 @@ func (t *Mimir) initMemberlistKV() (services.Service, error) {
 	dnsProviderReg := prometheus.WrapRegistererWithPrefix(
 		"cortex_",
 		prometheus.WrapRegistererWith(
-			prometheus.Labels{"name": "memberlist"},
+			prometheus.Labels{"component": "memberlist"},
 			reg,
 		),
 	)
