@@ -726,7 +726,7 @@ func (t *Mimir) setupModuleManager() error {
 		RulerStorage:             {Overrides},
 		AlertManager:             {API, MemberlistKV, Overrides},
 		Compactor:                {API, MemberlistKV, Overrides},
-		StoreGateway:             {API, MemberlistKV, Overrides},
+		StoreGateway:             {API, Overrides, MemberlistKV},
 		TenantDeletion:           {API, Overrides},
 		Purger:                   {TenantDeletion},
 		TenantFederation:         {Queryable},
