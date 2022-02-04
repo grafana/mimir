@@ -1,4 +1,10 @@
-# Mimir Tools
+---
+title: "About Mimirtool"
+description: ""
+weight: 100
+---
+
+# Mimirtool
 
 This tool is used to interact with user-facing Mimir APIs.
 
@@ -131,7 +137,7 @@ There are two flags of note for this command:
 At the end of the run, the command tells you whenever the operation was a success in the form of
 
 ```console
-INFO[0000] SUCESS: 194 rules found, 0 modified expressions
+INFO[0000] SUCCESS: 194 rules found, 0 modified expressions
 ```
 
 It is important to note that a modification can be a PromQL expression lint or a label add to your aggregation.
