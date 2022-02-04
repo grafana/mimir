@@ -2,7 +2,7 @@ SHELL = /usr/bin/env bash
 
 DOCS_IMAGE   = grafana/docs-base:latest
 DOCS_PROJECT = mimir
-DOCS_DIR     = docs/sources
+DOCS_DIR     = sources
 
 # This allows ports and base URL to be overridden, so services like ngrok.io can
 # be used to share a local running docs instances.
