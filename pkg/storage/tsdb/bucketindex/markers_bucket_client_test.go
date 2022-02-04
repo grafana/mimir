@@ -49,23 +49,149 @@ func TestGlobalMarkersBucket_Delete_ShouldSucceedIfDeletionMarkDoesNotExistInThe
 	}
 }
 
-func TestUploadToGlobalMarkerPath(t *testing.T) {
-	bkt, _ := mimir_testutil.PrepareFilesystemBucket(t)
-	bkt = BucketWithGlobalMarkers(bkt)
+func TestGlobalMarkersBucket_DeleteShouldDeleteGlobalMarkIfBlockMarkerDoesntExist(t *testing.T) {
+	ctx := context.Background()
 
 	blockID := ulid.MustNew(1, nil)
 
-	// Verify that uploading deletion mark file uploads it to the global markers location too.
-	require.NoError(t, bkt.Upload(context.Background(), path.Join(blockID.String(), metadata.DeletionMarkFilename), strings.NewReader("mark file")))
-	ok, err := bkt.Exists(context.Background(), BlockDeletionMarkFilepath(blockID))
-	require.NoError(t, err)
-	require.True(t, ok)
+	for name, tc := range map[string]struct {
+		blockMarker  string
+		globalMarker string
+	}{
+		"deletion mark": {
+			blockMarker:  path.Join(blockID.String(), metadata.DeletionMarkFilename),
+			globalMarker: BlockDeletionMarkFilepath(blockID),
+		},
+		"no compact": {
+			blockMarker:  path.Join(blockID.String(), metadata.NoCompactMarkFilename),
+			globalMarker: NoCompactMarkFilepath(blockID),
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			// Create a mocked block deletion mark in the global location.
+			bkt, _ := mimir_testutil.PrepareFilesystemBucket(t)
+			bkt = BucketWithGlobalMarkers(bkt)
 
-	// Verify the same for no-compact mark.
-	require.NoError(t, bkt.Upload(context.Background(), path.Join(blockID.String(), metadata.NoCompactMarkFilename), strings.NewReader("mark file")))
-	ok, err = bkt.Exists(context.Background(), NoCompactMarkFilepath(blockID))
+			// Upload global only
+			require.NoError(t, bkt.Upload(ctx, tc.globalMarker, strings.NewReader("{}")))
+
+			// Verify global exists.
+			verifyPathExists(t, bkt, tc.globalMarker, true)
+
+			// Delete block marker.
+			err := bkt.Delete(ctx, tc.blockMarker)
+			require.Error(t, err)
+			require.True(t, bkt.IsObjNotFoundErr(err))
+
+			// Ensure global one been actually deleted.
+			verifyPathExists(t, bkt, tc.globalMarker, false)
+		})
+	}
+}
+
+func TestUploadToGlobalMarkerPath(t *testing.T) {
+	blockID := ulid.MustNew(1, nil)
+	for name, tc := range map[string]struct {
+		blockMarker  string
+		globalMarker string
+	}{
+		"deletion mark": {
+			blockMarker:  path.Join(blockID.String(), metadata.DeletionMarkFilename),
+			globalMarker: BlockDeletionMarkFilepath(blockID),
+		},
+		"no compact": {
+			blockMarker:  path.Join(blockID.String(), metadata.NoCompactMarkFilename),
+			globalMarker: NoCompactMarkFilepath(blockID),
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			bkt, _ := mimir_testutil.PrepareFilesystemBucket(t)
+			bkt = BucketWithGlobalMarkers(bkt)
+
+			// Verify that uploading block mark file uploads it to the global markers location too.
+			require.NoError(t, bkt.Upload(context.Background(), tc.blockMarker, strings.NewReader("mark file")))
+
+			verifyPathExists(t, bkt, tc.globalMarker, true)
+		})
+	}
+}
+
+func TestGlobalMarkersBucket_ExistShouldReportTrueOnlyIfBothExist(t *testing.T) {
+	blockID := ulid.MustNew(1, nil)
+
+	for name, tc := range map[string]struct {
+		blockMarker  string
+		globalMarker string
+	}{
+		"deletion mark": {
+			blockMarker:  path.Join(blockID.String(), metadata.DeletionMarkFilename),
+			globalMarker: BlockDeletionMarkFilepath(blockID),
+		},
+		"no compact": {
+			blockMarker:  path.Join(blockID.String(), metadata.NoCompactMarkFilename),
+			globalMarker: NoCompactMarkFilepath(blockID),
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			bkt, _ := mimir_testutil.PrepareFilesystemBucket(t)
+			bkt = BucketWithGlobalMarkers(bkt)
+
+			// Upload to global marker only
+			require.NoError(t, bkt.Upload(context.Background(), tc.globalMarker, strings.NewReader("mark file")))
+
+			// Verify global exists, but block marker doesn't.
+			verifyPathExists(t, bkt, tc.globalMarker, true)
+			verifyPathExists(t, bkt, tc.blockMarker, false)
+
+			// Now upload to block marker (also overwrites global)
+			require.NoError(t, bkt.Upload(context.Background(), tc.blockMarker, strings.NewReader("mark file")))
+
+			// Verify global exists and block marker does too.
+			verifyPathExists(t, bkt, tc.globalMarker, true)
+			verifyPathExists(t, bkt, tc.blockMarker, true)
+
+			// Now delete global file, and only keep block.
+			require.NoError(t, bkt.Delete(context.Background(), tc.globalMarker))
+
+			// Verify global doesn't exist anymore. Block marker also returns false, even though it *does* exist.
+			verifyPathExists(t, bkt, tc.globalMarker, false)
+			verifyPathExists(t, bkt, tc.blockMarker, false)
+		})
+	}
+}
+
+func verifyPathExists(t *testing.T, bkt objstore.Bucket, name string, expected bool) {
+	t.Helper()
+
+	ok, err := bkt.Exists(context.Background(), name)
 	require.NoError(t, err)
-	require.True(t, ok)
+	require.Equal(t, expected, ok)
+}
+
+func TestGlobalMarkersBucket_getGlobalMarkPathFromBlockMark(t *testing.T) {
+	type testCase struct {
+		name     string
+		expected string
+	}
+
+	tests := []testCase{
+		{name: "", expected: ""},
+		{name: "01FV060K6XXCS8BCD2CH6C3GBR/index", expected: ""},
+	}
+
+	for _, marker := range []string{metadata.DeletionMarkFilename, metadata.NoCompactMarkFilename} {
+		tests = append(tests, testCase{name: marker, expected: ""})
+		tests = append(tests, testCase{name: "01FV060K6XXCS8BCD2CH6C3GBR/" + marker, expected: "markers/01FV060K6XXCS8BCD2CH6C3GBR-" + marker})
+		tests = append(tests, testCase{name: "/path/to/01FV060K6XXCS8BCD2CH6C3GBR/" + marker, expected: "/path/to/markers/01FV060K6XXCS8BCD2CH6C3GBR-" + marker})
+		tests = append(tests, testCase{name: "invalid-block-id/" + marker, expected: ""})
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			result := getGlobalMarkPathFromBlockMark(tc.name)
+			assert.Equal(t, tc.expected, result)
+		})
+	}
 }
 
 func TestGlobalMarkersBucket_isBlockDeletionMark(t *testing.T) {
@@ -96,11 +222,9 @@ func TestGlobalMarkersBucket_isBlockDeletionMark(t *testing.T) {
 		},
 	}
 
-	b := BucketWithGlobalMarkers(nil).(*globalMarkersBucket)
-
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			actualID, actualOk := b.isBlockDeletionMark(tc.name)
+			actualID, actualOk := isBlockDeletionMark(tc.name)
 			assert.Equal(t, tc.expectedOk, actualOk)
 			assert.Equal(t, tc.expectedID, actualID)
 		})
@@ -135,11 +259,9 @@ func TestGlobalMarkersBucket_isNoCompactMark(t *testing.T) {
 		},
 	}
 
-	b := BucketWithGlobalMarkers(nil).(*globalMarkersBucket)
-
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			actualID, actualOk := b.isNoCompactMark(tc.name)
+			actualID, actualOk := isNoCompactMark(tc.name)
 			assert.Equal(t, tc.expectedOk, actualOk)
 			assert.Equal(t, tc.expectedID, actualID)
 		})
