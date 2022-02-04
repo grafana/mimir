@@ -80,7 +80,6 @@ Configure these options for query sharding:
   - -querier.max-concurrent
   - -querier.timeout
   - -querier.max-samples
-  - -querier.at-modifier-enabled
   - -querier.default-evaluation-interval
   - -querier.active-query-tracker-dir
   - -querier.lookback-delta
