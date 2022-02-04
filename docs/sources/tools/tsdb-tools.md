@@ -6,7 +6,7 @@ weight: 100
 
 # TSDB Tools
 
-Mimir has multiple tools useful for inspecting or debugging TSDB blocks.
+Grafana Mimir has multiple tools useful for inspecting or debugging TSDB blocks.
 
 ## tsdb-index
 
@@ -132,7 +132,7 @@ Chunk #1, sample #2: ts: 1640168476784 (2021-12-22T10:21:16.784Z), val: 1
 
 ## tsdb-index-health
 
-`tsdb-index-health` inspects TSDB index of a block and generates summary report in JSON form about the health of the index. This is the same index health-check that is used by Mimir compactor before it compacts the block.
+`tsdb-index-health` inspects TSDB index of a block and generates summary report in JSON form about the health of the index. This is the same index health-check that is used by Grafana Mimir compactor before it compacts the block.
 
 ```
 $ tsdb-index-health ./01FTT67BBYH23T8870BBF77YZX
@@ -172,7 +172,7 @@ $ tsdb-index-health ./01FTT67BBYH23T8870BBF77YZX
 
 `tsdb-compact` compacts specified blocks together into one or more output blocks.
 It doesn't do any planning, and simply merges all specified blocks.
-If `-shard-count` option is used, multiple output blocks are produced, using the same sharding algorithm as Mimir split-and-merge compactor.
+If `-shard-count` option is used, multiple output blocks are produced, using the same sharding algorithm as split-and-merge compactor.
 
 Example:
 
