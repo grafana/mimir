@@ -5,43 +5,56 @@ weight: 1100
 
 # Query sharding
 
-<span style="background-color:#f3f973;">Query sharding is an experimental feature.</span>
-
-Mimir includes the ability to process range queries in parallel. This is
+Mimir includes the ability to process queries in parallel. This is
 achieved by breaking the dataset into smaller pieces. These smaller pieces are
-called shards. Each shard becomes its own query, and the shards run in
-parallel. The results from the shard queries are aggregated to become the full
-query result.
+called shards. Each shard then gets queried in a partial query, and those
+partial queries are distributed by the query-frontend to run on different
+queries in parallel. The results of those partial queries are aggregated by the
+query-frontend to return the full query result.
 
-## Shardable query requirements
+## Query sharding at glance
 
-[//]: <> (The conditions were derived from https://github.com/grafana/mimir/blob/cad5243915a739e026ba3352ce9b7bdff3de97d6/pkg/frontend/querymiddleware/astmapper/parallel.go)
+Not all queries are shardable. While the full query is not shardable, the inner
+parts of a query could still be shardable.
 
-These conditions must be met for the query to be shardable:
+In particular associative aggregations (like `sum`, `min`, `max`, `count`,
+`avg`) are shardable, while query functions (like`absent`, `absent_over_time`,
+`histogram_quantile`, `sort_desc`, `sort`) are not.
 
-- The query is a range query.
-- All binary expressions contain a scalar value on one of the sides.
+In the following examples we look at a concrete example with a shard count of
+3. All the partial queries that include a label selector `__query_shard__` are
+executed in parallel.
 
-[//]: <> (List of functions should be kept in sync with https://github.com/grafana/mimir/blob/cad5243915a739e026ba3352ce9b7bdff3de97d6/pkg/frontend/querymiddleware/astmapper/parallel.go#L24-L32)
+### Example 1: Full query is shardable
 
-- The query does not invoke any of the query functions:
-  - `absent`
-  - `absent_over_time`
-  - `histogram_quantile`
-  - `sort_desc`
-  - `sort`
+```promql
+sum(rate(metric[1m]))
+```
+Is executed as (assuming a shard count of 3):
 
-[//]: <> (List of functions should be kept in sync with https://github.com/grafana/mimir/blob/cad5243915a739e026ba3352ce9b7bdff3de97d6/pkg/frontend/querymiddleware/astmapper/parallel.go#L16-L22)
+```promql
+sum(
+  sum(rate(metric{__query_shard__="1_of_3"}[1m]))
+  sum(rate(metric{__query_shard__="2_of_3"}[1m]))
+  sum(rate(metric{__query_shard__="3_of_3"}[1m]))
+)
+```
 
-- The only aggregations used are:
+### Example 2: Inner part is shardable
 
-  - `sum`
-  - `min`
-  - `max`
-  - `count`
-  - `avg`
+```promql
+histogram_quantile(0.99, sum by(le) (rate(metric[1m])))
+```
 
-- The query does not contain nested aggregations.
+Is executed as (assuming a shard count of 3):
+
+```promql
+histogram_quantile(0.99, sum by(le) (
+  sum by(le) (rate(metric{__query_shard__="1_of_3"}[1m]))
+  sum by(le) (rate(metric{__query_shard__="2_of_3"}[1m]))
+  sum by(le) (rate(metric{__query_shard__="3_of_3"}[1m]))
+))
+```
 
 ## Query-related configuration
 
