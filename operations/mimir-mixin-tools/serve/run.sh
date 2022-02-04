@@ -36,6 +36,7 @@ if [ ! -e "${SCRIPT_DIR}/.config" ]; then
   echo "DATASOURCE_URL=\"<grafana-cloud-url ending with /api/prom>\""
   echo "DATASOURCE_USERNAME=\"<grafana-cloud-instance-id>\""
   echo "DATASOURCE_PASSWORD=\"<grafana-cloud-api-key>\""
+  echo "GRAFANA_PUBLISHED_PORT=\"<grafana-port-on-the-host>\""
   echo ""
   exit 1
 fi
@@ -54,7 +55,7 @@ cleanup
 trap cleanup EXIT
 
 # Run Grafana.
-echo "Starting Grafana container with name ${DOCKER_CONTAINER_NAME}"
+echo "Starting Grafana container with name ${DOCKER_CONTAINER_NAME} listening on host port ${GRAFANA_PUBLISHED_PORT}"
 docker run \
   $DOCKER_OPTS \
   --rm \
@@ -70,5 +71,5 @@ docker run \
   -v "${SCRIPT_DIR}/provisioning-dashboards.yaml:/etc/grafana/provisioning/dashboards/provisioning-dashboards.yaml" \
   -v "${SCRIPT_DIR}/provisioning-datasources.yaml:/etc/grafana/provisioning/datasources/provisioning-datasources.yaml" \
   --expose 3000 \
-  --publish 3000:3000 \
+  --publish "${GRAFANA_PUBLISHED_PORT}:3000" \
   grafana/grafana:latest
