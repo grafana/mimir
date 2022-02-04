@@ -33,7 +33,7 @@ func main() {
 	fname := flag.String("r", "", "Filename to read from, overrides -i")
 	snaplen := flag.Int("s", 1600, "SnapLen for pcap packet capture")
 	filter := flag.String("f", "tcp and port 80", "BPF filter for pcap")
-	filterEndpointPort := flag.Int("p", 80, "Only process packets with one of the endpoint ports equal to this value. 0 to disable")
+	filterEndpointPort := flag.Int("p", 80, "Only process packets with one of the endpoint ports equal to this value. This should match BPF filter (-f option), if used. 0 to disable.")
 	assemblersCount := flag.Uint("assembler.concurrency", 16, "How many TCP Assemblers to run concurrently")
 	assemblersMaxPagesPerConnection := flag.Int("assembler.max-pages-per-connection", 0, "Upper limit on the number of pages buffered for a single connection. If this limit is reached for a connection, the smallest sequence number will be flushed, along with any contiguous data. If <= 0, this is ignored.")
 	httpServer := flag.String("http-listen", ":18080", "Listen address for HTTP server (useful for profiling of this tool)")
