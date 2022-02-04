@@ -168,6 +168,32 @@ func verifyPathExists(t *testing.T, bkt objstore.Bucket, name string, expected b
 	require.Equal(t, expected, ok)
 }
 
+func TestGlobalMarkersBucket_getGlobalMarkPathFromBlockMark(t *testing.T) {
+	type testCase struct {
+		name     string
+		expected string
+	}
+
+	tests := []testCase{
+		{name: "", expected: ""},
+		{name: "01FV060K6XXCS8BCD2CH6C3GBR/index", expected: ""},
+	}
+
+	for _, marker := range []string{metadata.DeletionMarkFilename, metadata.NoCompactMarkFilename} {
+		tests = append(tests, testCase{name: marker, expected: ""})
+		tests = append(tests, testCase{name: "01FV060K6XXCS8BCD2CH6C3GBR/" + marker, expected: "markers/01FV060K6XXCS8BCD2CH6C3GBR-" + marker})
+		tests = append(tests, testCase{name: "/path/to/01FV060K6XXCS8BCD2CH6C3GBR/" + marker, expected: "/path/to/markers/01FV060K6XXCS8BCD2CH6C3GBR-" + marker})
+		tests = append(tests, testCase{name: "invalid-block-id/" + marker, expected: ""})
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			result := getGlobalMarkPathFromBlockMark(tc.name)
+			assert.Equal(t, tc.expected, result)
+		})
+	}
+}
+
 func TestGlobalMarkersBucket_isBlockDeletionMark(t *testing.T) {
 	block1 := ulid.MustNew(1, nil)
 
@@ -196,11 +222,9 @@ func TestGlobalMarkersBucket_isBlockDeletionMark(t *testing.T) {
 		},
 	}
 
-	b := BucketWithGlobalMarkers(nil).(*globalMarkersBucket)
-
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			actualID, actualOk := b.isBlockDeletionMark(tc.name)
+			actualID, actualOk := isBlockDeletionMark(tc.name)
 			assert.Equal(t, tc.expectedOk, actualOk)
 			assert.Equal(t, tc.expectedID, actualID)
 		})
@@ -235,11 +259,9 @@ func TestGlobalMarkersBucket_isNoCompactMark(t *testing.T) {
 		},
 	}
 
-	b := BucketWithGlobalMarkers(nil).(*globalMarkersBucket)
-
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			actualID, actualOk := b.isNoCompactMark(tc.name)
+			actualID, actualOk := isNoCompactMark(tc.name)
 			assert.Equal(t, tc.expectedOk, actualOk)
 			assert.Equal(t, tc.expectedID, actualID)
 		})

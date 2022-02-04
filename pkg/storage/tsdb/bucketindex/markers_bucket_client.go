@@ -35,12 +35,8 @@ func BucketWithGlobalMarkers(b objstore.Bucket) objstore.Bucket {
 
 // Upload implements objstore.Bucket.
 func (b *globalMarkersBucket) Upload(ctx context.Context, name string, r io.Reader) error {
-	globalMarkPath := ""
-	if blockID, ok := b.isBlockDeletionMark(name); ok {
-		globalMarkPath = path.Clean(path.Join(path.Dir(name), "../", BlockDeletionMarkFilepath(blockID)))
-	} else if blockID, ok := b.isNoCompactMark(name); ok {
-		globalMarkPath = path.Clean(path.Join(path.Dir(name), "../", NoCompactMarkFilepath(blockID)))
-	} else {
+	globalMarkPath := getGlobalMarkPathFromBlockMark(name)
+	if globalMarkPath == "" {
 		return b.parent.Upload(ctx, name, r)
 	}
 
@@ -68,12 +64,8 @@ func (b *globalMarkersBucket) Delete(ctx context.Context, name string) error {
 	}
 
 	// Delete the marker in the global markers location too.
-	globalMarkPath := ""
-	if blockID, ok := b.isBlockDeletionMark(name); ok {
-		globalMarkPath = path.Clean(path.Join(path.Dir(name), "../", BlockDeletionMarkFilepath(blockID)))
-	} else if blockID, ok := b.isNoCompactMark(name); ok {
-		globalMarkPath = path.Clean(path.Join(path.Dir(name), "../", NoCompactMarkFilepath(blockID)))
-	} else {
+	globalMarkPath := getGlobalMarkPathFromBlockMark(name)
+	if globalMarkPath == "" {
 		return err1
 	}
 
@@ -120,12 +112,8 @@ func (b *globalMarkersBucket) GetRange(ctx context.Context, name string, off, le
 
 // Exists implements objstore.Bucket.
 func (b *globalMarkersBucket) Exists(ctx context.Context, name string) (bool, error) {
-	globalMarkPath := ""
-	if blockID, ok := b.isBlockDeletionMark(name); ok {
-		globalMarkPath = path.Clean(path.Join(path.Dir(name), "../", BlockDeletionMarkFilepath(blockID)))
-	} else if blockID, ok := b.isNoCompactMark(name); ok {
-		globalMarkPath = path.Clean(path.Join(path.Dir(name), "../", NoCompactMarkFilepath(blockID)))
-	} else {
+	globalMarkPath := getGlobalMarkPathFromBlockMark(name)
+	if globalMarkPath == "" {
 		return b.parent.Exists(ctx, name)
 	}
 
@@ -169,7 +157,21 @@ func (b *globalMarkersBucket) ReaderWithExpectedErrs(fn objstore.IsOpFailureExpe
 	return b
 }
 
-func (b *globalMarkersBucket) isBlockDeletionMark(name string) (ulid.ULID, bool) {
+// getGlobalMarkPathFromBlockMark returns path to global mark, if name points to a block-local mark file. If name
+// doesn't point to a block-local mark file, returns empty string.
+func getGlobalMarkPathFromBlockMark(name string) string {
+	if blockID, ok := isBlockDeletionMark(name); ok {
+		return path.Clean(path.Join(path.Dir(name), "../", BlockDeletionMarkFilepath(blockID)))
+	}
+
+	if blockID, ok := isNoCompactMark(name); ok {
+		return path.Clean(path.Join(path.Dir(name), "../", NoCompactMarkFilepath(blockID)))
+	}
+
+	return ""
+}
+
+func isBlockDeletionMark(name string) (ulid.ULID, bool) {
 	if path.Base(name) != metadata.DeletionMarkFilename {
 		return ulid.ULID{}, false
 	}
@@ -179,7 +181,7 @@ func (b *globalMarkersBucket) isBlockDeletionMark(name string) (ulid.ULID, bool)
 	return block.IsBlockDir(path.Dir(name))
 }
 
-func (b *globalMarkersBucket) isNoCompactMark(name string) (ulid.ULID, bool) {
+func isNoCompactMark(name string) (ulid.ULID, bool) {
 	if path.Base(name) != metadata.NoCompactMarkFilename {
 		return ulid.ULID{}, false
 	}
