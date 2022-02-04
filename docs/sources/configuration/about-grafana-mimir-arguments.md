@@ -109,9 +109,6 @@ The ingester query API was improved over time, but defaults to the old behaviour
 
 ## Distributor
 
-- `-distributor.extra-query-delay`
-  This is used by a component with an embedded distributor (Querier and Ruler) to control how long to wait until sending more than the minimum amount of queries needed for a successful response.
-
 - `distributor.ha-tracker.enable-for-all-users`
   Flag to enable, for all users, handling of samples with external labels identifying replicas in an HA Prometheus setup. This defaults to false, and is technically defined in the Distributor limits.
 
