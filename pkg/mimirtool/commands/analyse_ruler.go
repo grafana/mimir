@@ -37,7 +37,7 @@ func (cmd *RulerAnalyseCommand) run(k *kingpin.ParseContext) error {
 	cmd.cli = cli
 	rules, err := cmd.cli.ListRules(context.Background(), "")
 	if err != nil {
-		log.Fatalf("unable to read rules from mimir, %v", err)
+		log.Fatalf("Unable to read rules from Grafana Mimir, %v", err)
 	}
 
 	for ns := range rules {

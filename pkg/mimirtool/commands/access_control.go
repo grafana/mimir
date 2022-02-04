@@ -26,7 +26,7 @@ func (a *AccessControlCommand) Register(app *kingpin.Application, envVars EnvVar
 	aclCmd := app.Command("acl", "Generate and view ACL options in GrafanaCloud.")
 
 	generateHeaderCmd := aclCmd.Command("generate-header", "Generate the header that needs to be passed to the datasource for setting ACLs.").Action(a.generateHeader)
-	generateHeaderCmd.Flag("id", "Mimir tenant ID, alternatively set "+envVars.TenantID+".").Envar(envVars.TenantID).Required().StringVar(&a.InstanceID)
+	generateHeaderCmd.Flag("id", "Grafana Mimir tenant ID, alternatively set "+envVars.TenantID+".").Envar(envVars.TenantID).Required().StringVar(&a.InstanceID)
 	generateHeaderCmd.Flag("rule", "The access control rules (Prometheus selectors). Set it multiple times to set multiple rules.").Required().StringsVar(&a.ACLs)
 }
 
