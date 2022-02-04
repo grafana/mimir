@@ -22,7 +22,7 @@ define docs_docker_run
 	@echo ""
 	@read -p "Press a key to continue"
 
-	@docker run --name $(DOCS_DOCKER_CONTAINER) $(DOCS_DOCKER_RUN_FLAGS) /bin/bash -c 'find content/docs/ -mindepth 1 -maxdepth 1 -type d -a ! -name "$(DOCS_PROJECT)" -exec rm -rf {} \; && exec $(1)'
+	@docker run --name $(DOCS_DOCKER_CONTAINER) $(DOCS_DOCKER_RUN_FLAGS) /bin/bash -c 'find content/docs/ -mindepth 1 -maxdepth 1 -type d -a ! -name "$(DOCS_PROJECT)" -exec rm -rf {} \; && touch content/docs/mimir/_index.md && exec $(1)'
 endef
 
 .PHONY: docs-docker-rm
