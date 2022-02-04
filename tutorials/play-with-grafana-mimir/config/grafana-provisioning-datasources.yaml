@@ -1,0 +1,11 @@
+apiVersion: 1
+
+datasources:
+  - name: Mimir
+    type: prometheus
+    access: proxy
+    orgId: 1
+    url: http://load-balancer:9009/api/prom
+    isDefault: true
+    version: 1
+    editable: true

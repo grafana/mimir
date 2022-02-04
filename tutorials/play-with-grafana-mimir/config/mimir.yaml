@@ -1,0 +1,51 @@
+# Do not use this configuration in production.
+# It is for demonstration purposes only.
+target: all,alertmanager,overrides-exporter
+auth_enabled: false
+
+blocks_storage:
+  backend: s3
+  s3:
+    endpoint: minio:9000
+    bucket_name: mimir-blocks
+    access_key_id: mimir
+    secret_access_key: supersecret
+    insecure: true
+  bucket_store:
+    sync_dir: /data/store-gateway
+  tsdb:
+    dir: /data/ingester
+
+memberlist:
+  join_members: [ mimir-1, mimir-2, mimir-3 ]
+
+compactor:
+  data_dir: /data/compactor
+
+ruler:
+  rule_path: /data/ruler
+  alertmanager_url: http://127.0.0.1:8080/alertmanager
+
+ruler_storage:
+  backend: s3
+  s3:
+    endpoint: minio:9000
+    bucket_name: mimir-rules
+    access_key_id: mimir
+    secret_access_key: supersecret
+    insecure: true
+
+frontend_worker:
+  frontend_address: 127.0.0.1:9095
+
+alertmanager:
+  data_dir: /data/alertmanager
+  fallback_config_file: /etc/alertmanager-fallback-config.yaml
+  external_url: http://localhost:9009/alertmanager
+  sharding_enabled: true
+  sharding_ring:
+    kvstore:
+      store: memberlist
+
+server:
+  log_level: warn
