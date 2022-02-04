@@ -21,7 +21,7 @@ Some microservices are stateful and rely on non-volatile storage to prevent data
 
 A dedicate page describes each microservice in detail.
 
-`{{< section >}}`
+{{< section >}}
 
 <!-- START from blocks-storage/_index.md -->
 
