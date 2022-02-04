@@ -254,7 +254,7 @@
 * [CHANGE] Ruler: `-ruler.alertmanager-discovery` flag has been removed. URLs following the prior SRV format, will be treated as a static target. To continue using service discovery for these URLs prepend `dnssrvnoa+` to them. #993
 * [CHANGE] Ruler: add support for [DNS service discovery format](./docs/sources/configuration/arguments.md#dns-service-discovery) for `-ruler.alertmanager-url`. #993
 * [CHANGE] Ruler: the following metrics for Alertmanager DNS service discovery are replaced: #993
-  * `prometheus_sd_dns_lookups_total` replaced by `cortex_dns_lookups_total{component="ruler"}` 
+  * `prometheus_sd_dns_lookups_total` replaced by `cortex_dns_lookups_total{component="ruler"}`
   * `prometheus_sd_dns_lookup_failures_total` replaced by `cortex_dns_failures_total{component="ruler"}`
 * [CHANGE] Memberlist: the `name` label on metrics `cortex_dns_failures_total` and `cortex_dns_lookups_total` was renamed to `component`. #993
 * [FEATURE] Query Frontend: Add `cortex_query_fetched_chunks_total` per-user counter to expose the number of chunks fetched as part of queries. This metric can be enabled with the `-frontend.query-stats-enabled` flag (or its respective YAML config option `query_stats_enabled`). #31
