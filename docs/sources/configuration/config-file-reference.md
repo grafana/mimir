@@ -1056,7 +1056,7 @@ results_cache:
 The `ruler_config` configures the ruler.
 
 ```yaml
-# [advanced] URL of alerts return path.
+# URL of alerts return path.
 # CLI flag: -ruler.external.url
 [external_url: <url> | default = ]
 
@@ -1190,13 +1190,13 @@ alertmanager_client:
   # CLI flag: -ruler.alertmanager-client.tls-insecure-skip-verify
   [tls_insecure_skip_verify: <boolean> | default = false]
 
-  # [advanced] HTTP Basic authentication username. It overrides the username set
-  # in the URL (if any).
+  # HTTP Basic authentication username. It overrides the username set in the URL
+  # (if any).
   # CLI flag: -ruler.alertmanager-client.basic-auth-username
   [basic_auth_username: <string> | default = ""]
 
-  # [advanced] HTTP Basic authentication password. It overrides the password set
-  # in the URL (if any).
+  # HTTP Basic authentication password. It overrides the password set in the URL
+  # (if any).
   # CLI flag: -ruler.alertmanager-client.basic-auth-password
   [basic_auth_password: <string> | default = ""]
 

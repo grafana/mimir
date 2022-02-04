@@ -73,7 +73,7 @@ const (
 // Config is the configuration for the recording rules server.
 type Config struct {
 	// This is used for template expansion in alerts; must be a valid URL.
-	ExternalURL flagext.URLValue `yaml:"external_url" category:"advanced"`
+	ExternalURL flagext.URLValue `yaml:"external_url"`
 	// GRPC Client configuration.
 	ClientTLSConfig grpcclient.Config `yaml:"ruler_client"`
 	// How frequently to evaluate rules by default.

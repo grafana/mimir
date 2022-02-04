@@ -651,6 +651,10 @@ Usage of ./cmd/mimir/mimir:
     	OpenStack Swift user ID.
   -ruler-storage.swift.username string
     	OpenStack Swift username.
+  -ruler.alertmanager-client.basic-auth-password string
+    	HTTP Basic authentication password. It overrides the password set in the URL (if any).
+  -ruler.alertmanager-client.basic-auth-username string
+    	HTTP Basic authentication username. It overrides the username set in the URL (if any).
   -ruler.alertmanager-url string
     	Comma-separated list of URL(s) of the Alertmanager(s) to send notifications to. Each URL is treated as a separate group. Multiple Alertmanagers in HA per group can be supported by using DNS service discovery format. Basic auth is supported as part of the URL.
   -ruler.alertmanager-use-v2

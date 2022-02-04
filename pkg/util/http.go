@@ -34,8 +34,8 @@ func IsRequestBodyTooLarge(err error) bool {
 
 // BasicAuth configures basic authentication for HTTP clients.
 type BasicAuth struct {
-	Username string `yaml:"basic_auth_username" category:"advanced"`
-	Password string `yaml:"basic_auth_password" category:"advanced"`
+	Username string `yaml:"basic_auth_username"`
+	Password string `yaml:"basic_auth_password"`
 }
 
 func (b *BasicAuth) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
