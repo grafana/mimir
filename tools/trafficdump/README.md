@@ -11,3 +11,6 @@ It has some Mimir-specific and generic HTTP features:
 - filter requests based on matching series in push requests
 
 Trafficdump can be used to inspect both remote-write requests and queries.
+
+Note that trafficdump currently cannot decode LINUX_SSL2 link type, which is used when doing `tcpdump -i any` on Linux.
+Capturing traffic with `tcpdump -i eth0` (and link type ETHERNET / EN10MB) works fine.
