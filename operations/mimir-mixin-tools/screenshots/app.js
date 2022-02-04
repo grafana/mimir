@@ -2,6 +2,8 @@ const fs = require('fs');
 const path = require('path');
 const querystring = require('querystring');
 const puppeteer = require('puppeteer');
+const util = require('util');
+const exec = util.promisify(require('child_process').exec);
 
 const defaultViewportWidth = 1400;
 const defaultViewportHeight = 2400;
@@ -88,9 +90,14 @@ async function takeScreenshot(browser, dashboard) {
     // Wait until network is idle.
     // (I haven't found a better way to wait until all panels are loaded).
     await page.waitForNetworkIdle({idleTime: 1000, timeout: 15000 });
-    await page.screenshot({path: "/output/" + dashboard.name + ".png"});
 
+    // Take screenshot.
+    const screenshotPath = "/output/" + dashboard.name + ".png";
+    await page.screenshot({path: screenshotPath});
     await page.close();
+
+    // Optimize the png (lossless)
+    await exec(`pngquant --force --ext '.png' --skip-if-larger --speed 1 --strip --quality 100 ${screenshotPath}`);
 }
 
 async function run() {

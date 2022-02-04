@@ -12,7 +12,8 @@ RUN apt-get update && apt-get install -y \
     libxdamage1 \
     libxrandr2 \
     libgbm-dev \
-    libasound2
+    libasound2 \
+    pngquant
 
 # Install sources and dependencies.
 RUN mkdir /app
