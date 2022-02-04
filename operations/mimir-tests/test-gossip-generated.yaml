@@ -775,6 +775,7 @@ spec:
         - -distributor.replication-factor=3
         - -distributor.ring.consul.hostname=consul.default.svc.cluster.local:8500
         - -distributor.ring.prefix=
+        - -distributor.ring.store=consul
         - -mem-ballast-size-bytes=1073741824
         - -memberlist.abort-if-join-fails=false
         - -memberlist.bind-port=7946

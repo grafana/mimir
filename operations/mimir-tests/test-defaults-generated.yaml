@@ -674,9 +674,11 @@ spec:
         - -distributor.replication-factor=3
         - -distributor.ring.consul.hostname=consul.default.svc.cluster.local:8500
         - -distributor.ring.prefix=
+        - -distributor.ring.store=consul
         - -mem-ballast-size-bytes=1073741824
         - -ring.heartbeat-timeout=10m
         - -ring.prefix=
+        - -ring.store=consul
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc.keepalive.max-connection-age=2m
         - -server.grpc.keepalive.max-connection-age-grace=5m
@@ -763,6 +765,7 @@ spec:
         - -querier.query-store-for-labels-enabled=true
         - -ring.heartbeat-timeout=10m
         - -ring.prefix=
+        - -ring.store=consul
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
@@ -1017,6 +1020,7 @@ spec:
         - -ingester.unregister-on-shutdown=true
         - -ring.heartbeat-timeout=10m
         - -ring.prefix=
+        - -ring.store=consul
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc-max-concurrent-streams=10000
         - -server.grpc-max-recv-msg-size-bytes=10485760
