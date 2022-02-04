@@ -2493,7 +2493,6 @@ func prepare(t *testing.T, cfg prepConfig) ([]*Distributor, []mockIngester, []*p
 		flagext.DefaultValues(&distributorCfg, &clientConfig)
 
 		distributorCfg.IngesterClientFactory = factory
-		distributorCfg.ExtraQueryDelay = 50 * time.Millisecond
 		distributorCfg.DistributorRing.HeartbeatPeriod = 100 * time.Millisecond
 		distributorCfg.DistributorRing.InstanceID = strconv.Itoa(i)
 		distributorCfg.DistributorRing.KVStore.Mock = kvStore
