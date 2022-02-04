@@ -67,8 +67,6 @@ Configure these options for query sharding:
 - Set the shard count for each query to be an integer greater than two. The
   shard count for a query is set by the first item set in this ordered list:
 
-  - The HTTP header `Sharding-Control` specified as part of the query request
-
   - The tenant override value for the limit
     `query_sharding_total_shards`
 
