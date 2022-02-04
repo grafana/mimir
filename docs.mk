@@ -1,3 +1,5 @@
+SHELL = /usr/bin/env bash
+
 DOCS_IMAGE   = grafana/docs-base:latest
 DOCS_PROJECT = mimir
 DOCS_DIR     = docs/sources
