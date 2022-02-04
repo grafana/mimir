@@ -528,7 +528,7 @@ ring:
     # Backend storage to use for the ring. Supported values are: consul, etcd,
     # inmemory, memberlist, multi.
     # CLI flag: -distributor.ring.store
-    [store: <string> | default = "consul"]
+    [store: <string> | default = "memberlist"]
 
     # [advanced] The prefix for the keys in the store. Should end with a /.
     # CLI flag: -distributor.ring.prefix
@@ -598,7 +598,7 @@ lifecycler:
       # Backend storage to use for the ring. Supported values are: consul, etcd,
       # inmemory, memberlist, multi.
       # CLI flag: -ring.store
-      [store: <string> | default = "consul"]
+      [store: <string> | default = "memberlist"]
 
       # [advanced] The prefix for the keys in the store. Should end with a /.
       # CLI flag: -ring.prefix

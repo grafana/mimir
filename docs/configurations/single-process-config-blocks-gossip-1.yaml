@@ -17,9 +17,6 @@ server:
   grpc_server_max_concurrent_streams: 1000
 
 distributor:
-  ring:
-    kvstore:
-      store: memberlist
   pool:
     health_check_ingesters: true
 
@@ -50,11 +47,7 @@ ingester:
     final_sleep: 5s
     num_tokens: 512
 
-    # Use an in memory ring store, so we don't need to launch a Consul.
     ring:
-      kvstore:
-        store: memberlist
-
       replication_factor: 1
 
 memberlist:
@@ -77,17 +70,8 @@ blocks_storage:
   filesystem:
     dir: /tmp/mimir/storage
 
-store_gateway:
-  sharding_ring:
-    kvstore:
-      store: memberlist
-
 ruler:
   enable_api: true
-  ring:
-    num_tokens: 512
-    kvstore:
-      store: memberlist
 
 ruler_storage:
   backend: local
