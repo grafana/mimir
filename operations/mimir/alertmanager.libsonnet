@@ -10,10 +10,8 @@
   // The Alertmanager has three operational modes.
   local haType = if $._config.alertmanager.sharding_enabled then
     'sharding'
-  else if $._config.alertmanager.replicas > 1 then
-    'gossip_multi_replica'
   else
-    'gossip_single_replica',
+    'gossip',
   // mode represents which operational mode the alertmanager runs in.
   // ports: array of container ports used for gossiping.
   // args: arguments that are eventually converted to flags on the container
@@ -33,7 +31,7 @@
         $.util.serviceFor($.alertmanager_statefulset, $._config.service_ignored_labels) +
         service.mixin.spec.withClusterIp('None'),
     },
-    gossip_multi_replica: {
+    gossip: {
       ports: [
         $.core.v1.containerPort.newUDP('gossip-udp', $._config.alertmanager.gossip_port),
         $.core.v1.containerPort.new('gossip-tcp', $._config.alertmanager.gossip_port),
@@ -46,12 +44,6 @@
       service:
         $.util.serviceFor($.alertmanager_statefulset, $._config.service_ignored_labels) +
         service.mixin.spec.withClusterIp('None'),
-    },
-    gossip_single_replica: {
-      ports: [],
-      args: {},
-      flags: ['--alertmanager.cluster.listen-address=""'],
-      service: $.util.serviceFor($.alertmanager_statefulset, $._config.service_ignored_labels),
     },
   }[haType],
   local hasFallbackConfig = std.length($._config.alertmanager.fallback_config) > 0,

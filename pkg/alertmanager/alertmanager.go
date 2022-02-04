@@ -184,10 +184,9 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 
 	am.registry = reg
 
-	// We currently have 3 operational modes:
+	// We currently have 2 operational modes:
 	// 1) Alertmanager clustering with upstream Gossip
 	// 2) Alertmanager sharding and ring-based replication
-	// 3) Alertmanager no replication
 	// These are covered in order.
 	if cfg.Peer != nil {
 		level.Debug(am.logger).Log("msg", "starting tenant alertmanager with gossip-based replication")
@@ -198,8 +197,8 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 		am.state = state
 		am.persister = newStatePersister(cfg.PersisterConfig, cfg.UserID, state, cfg.Store, am.logger, am.registry)
 	} else {
-		level.Debug(am.logger).Log("msg", "starting tenant alertmanager without replication")
-		am.state = &NilPeer{}
+		// This should never happen.
+		return nil, fmt.Errorf("peer must not be nil when sharding is disabled")
 	}
 
 	am.wg.Add(1)
@@ -547,22 +546,13 @@ func md5HashAsMetricValue(data []byte) float64 {
 	return float64(binary.LittleEndian.Uint64(bytes))
 }
 
-// NilPeer and NilChannel implements the Alertmanager clustering interface used by the API to expose cluster information.
+// NilPeer implements the Alertmanager cluster.ClusterPeer interface used by the API to expose cluster information.
 // In a multi-tenant environment, we choose not to expose these to tenants and thus are not implemented.
 type NilPeer struct{}
 
-func (p *NilPeer) Name() string                    { return "" }
-func (p *NilPeer) Status() string                  { return "ready" }
-func (p *NilPeer) Peers() []cluster.ClusterMember  { return nil }
-func (p *NilPeer) Position() int                   { return 0 }
-func (p *NilPeer) WaitReady(context.Context) error { return nil }
-func (p *NilPeer) AddState(string, cluster.State, prometheus.Registerer) cluster.ClusterChannel {
-	return &NilChannel{}
-}
-
-type NilChannel struct{}
-
-func (c *NilChannel) Broadcast([]byte) {}
+func (p *NilPeer) Name() string                   { return "" }
+func (p *NilPeer) Status() string                 { return "ready" }
+func (p *NilPeer) Peers() []cluster.ClusterMember { return nil }
 
 type firewallDialerConfigProvider struct {
 	userID string

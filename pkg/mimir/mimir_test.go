@@ -109,6 +109,9 @@ func TestMimir(t *testing.T) {
 		Compactor: compactor.Config{CompactionJobsOrder: compactor.CompactionOrderOldestFirst},
 		Alertmanager: alertmanager.MultitenantAlertmanagerConfig{
 			DataDir: t.TempDir(),
+			Cluster: alertmanager.ClusterConfig{
+				ListenAddr: "127.0.0.1:0",
+			},
 		},
 		AlertmanagerStorage: alertstore.Config{
 			Config: bucket.Config{

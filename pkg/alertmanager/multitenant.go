@@ -126,7 +126,7 @@ func (cfg *MultitenantAlertmanagerConfig) RegisterFlags(f *flag.FlagSet) {
 
 func (cfg *ClusterConfig) RegisterFlags(f *flag.FlagSet) {
 	prefix := "alertmanager.cluster."
-	f.StringVar(&cfg.ListenAddr, prefix+"listen-address", defaultClusterAddr, "Listen address and port for the cluster. Not specifying this flag disables high-availability mode.")
+	f.StringVar(&cfg.ListenAddr, prefix+"listen-address", defaultClusterAddr, "Listen address and port for the cluster.")
 	f.StringVar(&cfg.AdvertiseAddr, prefix+"advertise-address", "", "Explicit address or hostname to advertise in cluster.")
 	f.Var(&cfg.Peers, prefix+"peers", "Comma-separated list of initial peers.")
 	f.DurationVar(&cfg.PeerTimeout, prefix+"peer-timeout", defaultPeerTimeout, "Time to wait between peers to send notifications.")
@@ -303,7 +303,11 @@ func NewMultitenantAlertmanager(cfg *MultitenantAlertmanagerConfig, store alerts
 
 	var peer *cluster.Peer
 	// We need to take this case into account to support our legacy upstream clustering.
-	if cfg.Cluster.ListenAddr != "" && !cfg.ShardingEnabled {
+	if !cfg.ShardingEnabled {
+		if cfg.Cluster.ListenAddr == "" {
+			return nil, errors.New("listen address required when sharding is disabled")
+		}
+
 		peer, err = cluster.Create(
 			log.With(logger, "component", "cluster"),
 			registerer,
