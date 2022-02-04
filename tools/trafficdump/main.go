@@ -130,6 +130,8 @@ stop:
 			netFlow := packet.NetworkLayer().NetworkFlow()
 			transportFlow := tcp.TransportFlow()
 
+			// Use netFlow (IP address) and transportFlow (TCP ports) to find the shard.
+			// FastHash guarantees that flow and its reverse (src->dest, dest->src) have the same hash.
 			shard := (netFlow.FastHash() ^ transportFlow.FastHash()) % uint64(*assemblersCount)
 			assemblers[shard].AssembleWithTimestamp(netFlow, tcp, packet.Metadata().Timestamp)
 
