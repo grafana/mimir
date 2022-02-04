@@ -23,7 +23,7 @@ func (cmd *RuleFileAnalyseCommand) run(k *kingpin.ParseContext) error {
 	output := &analyse.MetricsInRuler{}
 	output.OverallMetrics = make(map[string]struct{})
 
-	nss, err := rules.ParseFiles("cortex", cmd.RuleFilesList)
+	nss, err := rules.ParseFiles(rules.MimirBackend, cmd.RuleFilesList)
 	if err != nil {
 		return errors.Wrap(err, "analyse operation unsuccessful, unable to parse rules files")
 	}
