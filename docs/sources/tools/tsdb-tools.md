@@ -54,7 +54,7 @@ chunk 29166492 min time: 1640171964600 max time: 1640171964600
 
 ## tsdb-print-chunk
 
-`tsdb-print-chunk` requires path to block and one or more chunk references, and it prints all samples (values and their timestamps) from given chunk. 
+`tsdb-print-chunk` requires path to block and one or more chunk references, and it prints all samples (values and their timestamps) from given chunk.
 
 Example:
 
