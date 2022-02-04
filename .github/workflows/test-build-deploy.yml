@@ -160,7 +160,7 @@ jobs:
       - name: Build Images
         # Build everything except mimir (run by build-mimir job) and build image (not managed by CI).
         run: |
-          make list-image-targets | grep -v -E '/mimir-build-image/|/cmd/mimir/|/mimir-mixin-screenshots/' | xargs -I {} make BUILD_IN_CONTAINER=false {}
+          make list-image-targets | grep -v -E '/mimir-build-image/|/cmd/mimir/|/mimir-mixin-tools/' | xargs -I {} make BUILD_IN_CONTAINER=false {}
       - name: Save Images
         run: |
           mkdir /tmp/images
