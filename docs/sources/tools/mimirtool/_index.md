@@ -1,4 +1,10 @@
-# Mimir Tools
+---
+title: "About Mimirtool"
+description: ""
+weight: 100
+---
+
+# Mimirtool
 
 This tool is used to interact with user-facing Mimir APIs.
 
