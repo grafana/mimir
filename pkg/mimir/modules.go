@@ -78,7 +78,6 @@ const (
 	Compactor                string = "compactor"
 	StoreGateway             string = "store-gateway"
 	MemberlistKV             string = "memberlist-kv"
-	MultiKV                  string = "multi-kv"
 	TenantDeletion           string = "tenant-deletion"
 	Purger                   string = "purger"
 	QueryScheduler           string = "query-scheduler"
@@ -239,6 +238,7 @@ func (t *Mimir) initOverridesExporter() (services.Service, error) {
 }
 
 func (t *Mimir) initDistributorService() (serv services.Service, err error) {
+	t.Cfg.Distributor.DistributorRing.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
 	t.Cfg.Distributor.DistributorRing.ListenPort = t.Cfg.Server.GRPCListenPort
 	t.Cfg.Distributor.ShuffleShardingLookbackPeriod = t.Cfg.Querier.ShuffleShardingIngestersLookbackPeriod
 
@@ -422,6 +422,7 @@ func (t *Mimir) tsdbIngesterConfig() {
 }
 
 func (t *Mimir) initIngesterService() (serv services.Service, err error) {
+	t.Cfg.Ingester.LifecyclerConfig.RingConfig.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
 	t.Cfg.Ingester.LifecyclerConfig.ListenPort = t.Cfg.Server.GRPCListenPort
 	t.Cfg.Ingester.StreamTypeFn = ingesterChunkStreaming(t.RuntimeConfig)
 	t.Cfg.Ingester.InstanceLimitsFn = ingesterInstanceLimits(t.RuntimeConfig)
@@ -523,6 +524,7 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 		return nil, nil
 	}
 
+	t.Cfg.Ruler.Ring.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
 	t.Cfg.Ruler.Ring.ListenPort = t.Cfg.Server.GRPCListenPort
 	rulerRegisterer := prometheus.WrapRegistererWith(prometheus.Labels{"engine": "ruler"}, prometheus.DefaultRegisterer)
 	var queryable, federatedQueryable prom_storage.Queryable
@@ -571,6 +573,7 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 }
 
 func (t *Mimir) initAlertManager() (serv services.Service, err error) {
+	t.Cfg.Alertmanager.ShardingRing.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
 	t.Cfg.Alertmanager.ShardingRing.ListenPort = t.Cfg.Server.GRPCListenPort
 
 	store, err := alertstore.NewAlertStore(context.Background(), t.Cfg.AlertmanagerStorage, t.Overrides, util_log.Logger, prometheus.DefaultRegisterer)
@@ -588,6 +591,7 @@ func (t *Mimir) initAlertManager() (serv services.Service, err error) {
 }
 
 func (t *Mimir) initCompactor() (serv services.Service, err error) {
+	t.Cfg.Compactor.ShardingRing.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
 	t.Cfg.Compactor.ShardingRing.ListenPort = t.Cfg.Server.GRPCListenPort
 
 	t.Compactor, err = compactor.NewMultitenantCompactor(t.Cfg.Compactor, t.Cfg.BlocksStorage, t.Overrides, util_log.Logger, prometheus.DefaultRegisterer)
@@ -601,6 +605,7 @@ func (t *Mimir) initCompactor() (serv services.Service, err error) {
 }
 
 func (t *Mimir) initStoreGateway() (serv services.Service, err error) {
+	t.Cfg.StoreGateway.ShardingRing.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
 	t.Cfg.StoreGateway.ShardingRing.ListenPort = t.Cfg.Server.GRPCListenPort
 
 	t.StoreGateway, err = storegateway.NewStoreGateway(t.Cfg.StoreGateway, t.Cfg.BlocksStorage, t.Overrides, t.Cfg.Server.LogLevel, util_log.Logger, prometheus.DefaultRegisterer, t.ActivityTracker)
@@ -663,18 +668,6 @@ func (t *Mimir) initQueryScheduler() (services.Service, error) {
 	return s, nil
 }
 
-func (t *Mimir) initMultiKV() (services.Service, error) {
-	// Warning: don't optimize calls to multiClientRuntimeConfigChannel, we need separate channel for each ring.
-	t.Cfg.Distributor.DistributorRing.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
-	t.Cfg.Ingester.LifecyclerConfig.RingConfig.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
-	t.Cfg.StoreGateway.ShardingRing.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
-	t.Cfg.Compactor.ShardingRing.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
-	t.Cfg.Ruler.Ring.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
-	t.Cfg.Alertmanager.ShardingRing.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
-
-	return nil, nil
-}
-
 func (t *Mimir) setupModuleManager() error {
 	mm := modules.NewManager(util_log.Logger)
 
@@ -685,7 +678,6 @@ func (t *Mimir) setupModuleManager() error {
 	mm.RegisterModule(API, t.initAPI, modules.UserInvisibleModule)
 	mm.RegisterModule(RuntimeConfig, t.initRuntimeConfig, modules.UserInvisibleModule)
 	mm.RegisterModule(MemberlistKV, t.initMemberlistKV, modules.UserInvisibleModule)
-	mm.RegisterModule(MultiKV, t.initMultiKV, modules.UserInvisibleModule)
 	mm.RegisterModule(Ring, t.initRing, modules.UserInvisibleModule)
 	mm.RegisterModule(Overrides, t.initOverrides, modules.UserInvisibleModule)
 	mm.RegisterModule(OverridesExporter, t.initOverridesExporter)
@@ -715,15 +707,14 @@ func (t *Mimir) setupModuleManager() error {
 		Server:                   {ActivityTracker},
 		API:                      {Server},
 		MemberlistKV:             {API},
-		MultiKV:                  {RuntimeConfig},
 		RuntimeConfig:            {API},
-		Ring:                     {API, RuntimeConfig, MemberlistKV, MultiKV},
+		Ring:                     {API, RuntimeConfig, MemberlistKV},
 		Overrides:                {RuntimeConfig},
 		OverridesExporter:        {Overrides},
 		Distributor:              {DistributorService, API},
 		DistributorService:       {Ring, Overrides},
 		Ingester:                 {IngesterService, API},
-		IngesterService:          {Overrides, RuntimeConfig, MemberlistKV, MultiKV},
+		IngesterService:          {Overrides, RuntimeConfig, MemberlistKV},
 		Flusher:                  {API},
 		Queryable:                {Overrides, DistributorService, Ring, API, StoreQueryable},
 		Querier:                  {TenantFederation},
@@ -733,9 +724,9 @@ func (t *Mimir) setupModuleManager() error {
 		QueryScheduler:           {API, Overrides},
 		Ruler:                    {DistributorService, StoreQueryable, RulerStorage},
 		RulerStorage:             {Overrides},
-		AlertManager:             {API, MemberlistKV, Overrides, MultiKV},
-		Compactor:                {API, MemberlistKV, Overrides, MultiKV},
-		StoreGateway:             {API, MemberlistKV, Overrides, MultiKV},
+		AlertManager:             {API, MemberlistKV, Overrides},
+		Compactor:                {API, MemberlistKV, Overrides},
+		StoreGateway:             {API, MemberlistKV, Overrides},
 		TenantDeletion:           {API, Overrides},
 		Purger:                   {TenantDeletion},
 		TenantFederation:         {Queryable},

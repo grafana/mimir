@@ -164,9 +164,28 @@ func TestMimir_InitRulerStorage(t *testing.T) {
 func TestMimirKVSetup(t *testing.T) {
 	dir := t.TempDir()
 
-	for _, target := range []string{All} {
+	for target, checkFn := range map[string]func(t *testing.T, c Config){
+		All: func(t *testing.T, c Config) {
+			require.NotNil(t, c.Distributor.DistributorRing.KVStore.Multi.ConfigProvider)
+			require.NotNil(t, c.Ingester.LifecyclerConfig.RingConfig.KVStore.Multi)
+			require.NotNil(t, c.StoreGateway.ShardingRing.KVStore.Multi.ConfigProvider)
+			require.NotNil(t, c.Compactor.ShardingRing.KVStore.Multi.ConfigProvider)
+		},
+
+		Ruler: func(t *testing.T, c Config) {
+			require.NotNil(t, c.Ruler.Ring.KVStore.Multi.ConfigProvider)
+		},
+
+		AlertManager: func(t *testing.T, c Config) {
+			require.NotNil(t, c.Alertmanager.ShardingRing.KVStore.Multi.ConfigProvider)
+		},
+	} {
+		prepareGlobalMetricsRegistry(t)
+
 		cfg := Config{}
 		flagext.DefaultValues(&cfg)
+		cfg.Server.HTTPListenPort = 0
+		cfg.Server.GRPCListenPort = 0
 		cfg.Target = []string{target}
 
 		// Must be set, otherwise MultiKV config provider will not be set.
@@ -177,13 +196,8 @@ func TestMimirKVSetup(t *testing.T) {
 
 		_, err = c.ModuleManager.InitModuleServices(cfg.Target...)
 		require.NoError(t, err)
+		defer c.Server.Stop()
 
-		// Verify that multikv config provider is set in all rings.
-		require.NotNil(t, c.Cfg.Distributor.DistributorRing.KVStore.Multi.ConfigProvider)
-		require.NotNil(t, c.Cfg.Ingester.LifecyclerConfig.RingConfig.KVStore.Multi)
-		require.NotNil(t, c.Cfg.StoreGateway.ShardingRing.KVStore.Multi.ConfigProvider)
-		require.NotNil(t, c.Cfg.Compactor.ShardingRing.KVStore.Multi.ConfigProvider)
-		require.NotNil(t, c.Cfg.Ruler.Ring.KVStore.Multi.ConfigProvider)
-		require.NotNil(t, c.Cfg.Alertmanager.ShardingRing.KVStore.Multi.ConfigProvider)
+		checkFn(t, c.Cfg)
 	}
 }
