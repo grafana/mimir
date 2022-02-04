@@ -131,7 +131,7 @@ func TestGettingStartedWithGossipedRing(t *testing.T) {
 
 	// Make sure that no DNS failures occurred.
 	// No actual DNS lookups are necessarily performed, so we can't really assert on that.
-	mlMatcher := labels.MustNewMatcher(labels.MatchEqual, "name", "memberlist")
+	mlMatcher := labels.MustNewMatcher(labels.MatchEqual, "component", "memberlist")
 	require.NoError(t, mimir1.WaitSumMetricsWithOptions(e2e.Equals(0), []string{"cortex_dns_failures_total"}, e2e.WithLabelMatchers(mlMatcher)))
 	require.NoError(t, mimir2.WaitSumMetricsWithOptions(e2e.Equals(0), []string{"cortex_dns_failures_total"}, e2e.WithLabelMatchers(mlMatcher)))
 }
