@@ -144,6 +144,7 @@
 
     ringConfig: {
       'consul.hostname': 'consul.%s.svc.cluster.local:8500' % $._config.namespace,
+      'ring.store': 'consul',
       'ring.prefix': '',
     },
 

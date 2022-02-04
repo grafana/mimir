@@ -29,6 +29,7 @@
       'server.grpc.keepalive.max-connection-idle': '1m',
 
       // The ingestion rate global limit requires the distributors to form a ring.
+      'distributor.ring.store': 'consul',
       'distributor.ring.consul.hostname': 'consul.%s.svc.cluster.local:8500' % $._config.namespace,
       'distributor.ring.prefix': '',
 
