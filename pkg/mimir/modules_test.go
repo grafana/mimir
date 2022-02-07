@@ -179,25 +179,36 @@ func TestMimirKVSetup(t *testing.T) {
 		AlertManager: func(t *testing.T, c Config) {
 			require.NotNil(t, c.Alertmanager.ShardingRing.KVStore.Multi.ConfigProvider)
 		},
+
+		Distributor: func(t *testing.T, c Config) {
+			require.NotNil(t, c.Ingester.LifecyclerConfig.RingConfig.KVStore.Multi.ConfigProvider)
+		},
+
+		Ingester: func(t *testing.T, c Config) {
+			require.NotNil(t, c.Ingester.LifecyclerConfig.RingConfig.KVStore.Multi.ConfigProvider)
+		},
 	} {
-		prepareGlobalMetricsRegistry(t)
+		t.Run(target, func(t *testing.T) {
+			prepareGlobalMetricsRegistry(t)
 
-		cfg := Config{}
-		flagext.DefaultValues(&cfg)
-		cfg.Server.HTTPListenPort = 0
-		cfg.Server.GRPCListenPort = 0
-		cfg.Target = []string{target}
+			cfg := Config{}
+			flagext.DefaultValues(&cfg)
+			// Set to 0 to find any free port.
+			cfg.Server.HTTPListenPort = 0
+			cfg.Server.GRPCListenPort = 0
+			cfg.Target = []string{target}
 
-		// Must be set, otherwise MultiKV config provider will not be set.
-		cfg.RuntimeConfig.LoadPath = filepath.Join(dir, "config.yaml")
+			// Must be set, otherwise MultiKV config provider will not be set.
+			cfg.RuntimeConfig.LoadPath = filepath.Join(dir, "config.yaml")
 
-		c, err := New(cfg)
-		require.NoError(t, err)
+			c, err := New(cfg)
+			require.NoError(t, err)
 
-		_, err = c.ModuleManager.InitModuleServices(cfg.Target...)
-		require.NoError(t, err)
-		defer c.Server.Stop()
+			_, err = c.ModuleManager.InitModuleServices(cfg.Target...)
+			require.NoError(t, err)
+			defer c.Server.Stop()
 
-		checkFn(t, c.Cfg)
+			checkFn(t, c.Cfg)
+		})
 	}
 }
