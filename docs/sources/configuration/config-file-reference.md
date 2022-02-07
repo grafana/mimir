@@ -1666,7 +1666,7 @@ cluster:
   # CLI flag: -alertmanager.cluster.push-pull-interval
   [push_pull_interval: <duration> | default = 1m]
 
-# [advanced] Enable the alertmanager config api.
+# [advanced] Enable the alertmanager config API.
 # CLI flag: -alertmanager.enable-api
 [enable_api: <boolean> | default = true]
 
