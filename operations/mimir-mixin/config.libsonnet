@@ -28,6 +28,7 @@
       store_gateway: '(store-gateway.*|cortex|mimir)',  // Match also per-zone store-gateway deployments.
       gateway: '(gateway|cortex-gw|cortex-gw-internal)',
       compactor: 'compactor.*|cortex|mimir',  // Match also custom compactor deployments.
+      alertmanager: 'alertmanager|cortex|mimir',
     },
 
     // Grouping labels, to uniquely identify and group by {jobs, clusters}

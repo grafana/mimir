@@ -11,15 +11,15 @@ local utils = import 'mixin-utils/utils.libsonnet';
        })
       .addPanel(
         $.panel('Total alerts') +
-        $.statPanel('sum(cluster_job_%s:cortex_alertmanager_alerts:sum{%s})' % [$._config.per_instance_label, $.jobMatcher('alertmanager')], format='short')
+        $.statPanel('sum(cluster_job_%s:cortex_alertmanager_alerts:sum{%s})' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.alertmanager)], format='short')
       )
       .addPanel(
         $.panel('Total silences') +
-        $.statPanel('sum(cluster_job_%s:cortex_alertmanager_silences:sum{%s})' % [$._config.per_instance_label, $.jobMatcher('alertmanager')], format='short')
+        $.statPanel('sum(cluster_job_%s:cortex_alertmanager_silences:sum{%s})' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.alertmanager)], format='short')
       )
       .addPanel(
         $.panel('Tenants') +
-        $.statPanel('max(cortex_alertmanager_tenants_discovered{%s})' % $.jobMatcher('alertmanager'), format='short')
+        $.statPanel('max(cortex_alertmanager_tenants_discovered{%s})' % $.jobMatcher($._config.job_names.alertmanager), format='short')
       )
     )
     .addRow(
@@ -32,8 +32,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
               sum(cluster_job:cortex_alertmanager_alerts_received_total:rate5m{%s})
               -
               sum(cluster_job:cortex_alertmanager_alerts_invalid_total:rate5m{%s})
-            ||| % [$.jobMatcher('alertmanager'), $.jobMatcher('alertmanager')],
-            'sum(cluster_job:cortex_alertmanager_alerts_invalid_total:rate5m{%s})' % $.jobMatcher('alertmanager'),
+            ||| % [$.jobMatcher($._config.job_names.alertmanager), $.jobMatcher($._config.job_names.alertmanager)],
+            'sum(cluster_job:cortex_alertmanager_alerts_invalid_total:rate5m{%s})' % $.jobMatcher($._config.job_names.alertmanager),
           ],
           ['success', 'failed']
         )
@@ -49,8 +49,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
               sum(cluster_job_integration:cortex_alertmanager_notifications_total:rate5m{%s})
               -
               sum(cluster_job_integration:cortex_alertmanager_notifications_failed_total:rate5m{%s})
-            ||| % [$.jobMatcher('alertmanager'), $.jobMatcher('alertmanager')],
-            'sum(cluster_job_integration:cortex_alertmanager_notifications_failed_total:rate5m{%s})' % $.jobMatcher('alertmanager'),
+            ||| % [$.jobMatcher($._config.job_names.alertmanager), $.jobMatcher($._config.job_names.alertmanager)],
+            'sum(cluster_job_integration:cortex_alertmanager_notifications_failed_total:rate5m{%s})' % $.jobMatcher($._config.job_names.alertmanager),
           ],
           ['success', 'failed']
         )
@@ -66,15 +66,15 @@ local utils = import 'mixin-utils/utils.libsonnet';
               sum(cluster_job_integration:cortex_alertmanager_notifications_failed_total:rate5m{%s}) by(integration)
               ) > 0
               or on () vector(0)
-            ||| % [$.jobMatcher('alertmanager'), $.jobMatcher('alertmanager')],
-            'sum(cluster_job_integration:cortex_alertmanager_notifications_failed_total:rate5m{%s}) by(integration)' % $.jobMatcher('alertmanager'),
+            ||| % [$.jobMatcher($._config.job_names.alertmanager), $.jobMatcher($._config.job_names.alertmanager)],
+            'sum(cluster_job_integration:cortex_alertmanager_notifications_failed_total:rate5m{%s}) by(integration)' % $.jobMatcher($._config.job_names.alertmanager),
           ],
           ['success - {{ integration }}', 'failed - {{ integration }}']
         )
       )
       .addPanel(
         $.panel('Latency') +
-        $.latencyPanel('cortex_alertmanager_notification_latency_seconds', '{%s}' % $.jobMatcher('alertmanager'))
+        $.latencyPanel('cortex_alertmanager_notification_latency_seconds', '{%s}' % $.jobMatcher($._config.job_names.alertmanager))
       )
     )
     .addRow(
@@ -96,7 +96,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       .addPanel(
         $.panel('Per %s tenants' % $._config.per_instance_label) +
         $.queryPanel(
-          'max by(%s) (cortex_alertmanager_tenants_owned{%s})' % [$._config.per_instance_label, $.jobMatcher('alertmanager')],
+          'max by(%s) (cortex_alertmanager_tenants_owned{%s})' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.alertmanager)],
           '{{%s}}' % $._config.per_instance_label
         ) +
         $.stack
@@ -104,7 +104,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       .addPanel(
         $.panel('Per %s alerts' % $._config.per_instance_label) +
         $.queryPanel(
-          'sum by(%s) (cluster_job_%s:cortex_alertmanager_alerts:sum{%s})' % [$._config.per_instance_label, $._config.per_instance_label, $.jobMatcher('alertmanager')],
+          'sum by(%s) (cluster_job_%s:cortex_alertmanager_alerts:sum{%s})' % [$._config.per_instance_label, $._config.per_instance_label, $.jobMatcher($._config.job_names.alertmanager)],
           '{{%s}}' % $._config.per_instance_label
         ) +
         $.stack
@@ -112,7 +112,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       .addPanel(
         $.panel('Per %s silences' % $._config.per_instance_label) +
         $.queryPanel(
-          'sum by(%s) (cluster_job_%s:cortex_alertmanager_silences:sum{%s})' % [$._config.per_instance_label, $._config.per_instance_label, $.jobMatcher('alertmanager')],
+          'sum by(%s) (cluster_job_%s:cortex_alertmanager_silences:sum{%s})' % [$._config.per_instance_label, $._config.per_instance_label, $.jobMatcher($._config.job_names.alertmanager)],
           '{{%s}}' % $._config.per_instance_label
         ) +
         $.stack
@@ -128,8 +128,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
               sum(rate(cortex_alertmanager_sync_configs_total{%s}[$__rate_interval]))
               -
               sum(rate(cortex_alertmanager_sync_configs_failed_total{%s}[$__rate_interval]))
-            ||| % [$.jobMatcher('alertmanager'), $.jobMatcher('alertmanager')],
-            'sum(rate(cortex_alertmanager_sync_configs_failed_total{%s}[$__rate_interval]))' % $.jobMatcher('alertmanager'),
+            ||| % [$.jobMatcher($._config.job_names.alertmanager), $.jobMatcher($._config.job_names.alertmanager)],
+            'sum(rate(cortex_alertmanager_sync_configs_failed_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.alertmanager),
           ],
           ['success', 'failed']
         )
@@ -137,14 +137,14 @@ local utils = import 'mixin-utils/utils.libsonnet';
       .addPanel(
         $.panel('Syncs/sec (by reason)') +
         $.queryPanel(
-          'sum by(reason) (rate(cortex_alertmanager_sync_configs_total{%s}[$__rate_interval]))' % $.jobMatcher('alertmanager'),
+          'sum by(reason) (rate(cortex_alertmanager_sync_configs_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.alertmanager),
           '{{reason}}'
         )
       )
       .addPanel(
         $.panel('Ring check errors/sec') +
         $.queryPanel(
-          'sum (rate(cortex_alertmanager_ring_check_errors_total{%s}[$__rate_interval]))' % $.jobMatcher('alertmanager'),
+          'sum (rate(cortex_alertmanager_ring_check_errors_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.alertmanager),
           'errors'
         )
       )
@@ -154,7 +154,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       .addPanel(
         $.panel('Initial syncs /sec') +
         $.queryPanel(
-          'sum by(outcome) (rate(cortex_alertmanager_state_initial_sync_completed_total{%s}[$__rate_interval]))' % $.jobMatcher('alertmanager'),
+          'sum by(outcome) (rate(cortex_alertmanager_state_initial_sync_completed_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.alertmanager),
           '{{outcome}}'
         ) + {
           targets: [
@@ -167,7 +167,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
       .addPanel(
         $.panel('Initial sync duration') +
-        $.latencyPanel('cortex_alertmanager_state_initial_sync_duration_seconds', '{%s}' % $.jobMatcher('alertmanager')) + {
+        $.latencyPanel('cortex_alertmanager_state_initial_sync_duration_seconds', '{%s}' % $.jobMatcher($._config.job_names.alertmanager)) + {
           targets: [
             target {
               interval: '1m',
@@ -184,8 +184,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
               sum(rate(cortex_alertmanager_state_fetch_replica_state_total{%s}[$__rate_interval]))
               -
               sum(rate(cortex_alertmanager_state_fetch_replica_state_failed_total{%s}[$__rate_interval]))
-            ||| % [$.jobMatcher('alertmanager'), $.jobMatcher('alertmanager')],
-            'sum(rate(cortex_alertmanager_state_fetch_replica_state_failed_total{%s}[$__rate_interval]))' % $.jobMatcher('alertmanager'),
+            ||| % [$.jobMatcher($._config.job_names.alertmanager), $.jobMatcher($._config.job_names.alertmanager)],
+            'sum(rate(cortex_alertmanager_state_fetch_replica_state_failed_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.alertmanager),
           ],
           ['success', 'failed']
         ) + {
@@ -208,8 +208,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
               sum(cluster_job:cortex_alertmanager_state_replication_total:rate5m{%s})
               -
               sum(cluster_job:cortex_alertmanager_state_replication_failed_total:rate5m{%s})
-            ||| % [$.jobMatcher('alertmanager'), $.jobMatcher('alertmanager')],
-            'sum(cluster_job:cortex_alertmanager_state_replication_failed_total:rate5m{%s})' % $.jobMatcher('alertmanager'),
+            ||| % [$.jobMatcher($._config.job_names.alertmanager), $.jobMatcher($._config.job_names.alertmanager)],
+            'sum(cluster_job:cortex_alertmanager_state_replication_failed_total:rate5m{%s})' % $.jobMatcher($._config.job_names.alertmanager),
           ],
           ['success', 'failed']
         )
@@ -222,8 +222,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
               sum(cluster_job:cortex_alertmanager_partial_state_merges_total:rate5m{%s})
               -
               sum(cluster_job:cortex_alertmanager_partial_state_merges_failed_total:rate5m{%s})
-            ||| % [$.jobMatcher('alertmanager'), $.jobMatcher('alertmanager')],
-            'sum(cluster_job:cortex_alertmanager_partial_state_merges_failed_total:rate5m{%s})' % $.jobMatcher('alertmanager'),
+            ||| % [$.jobMatcher($._config.job_names.alertmanager), $.jobMatcher($._config.job_names.alertmanager)],
+            'sum(cluster_job:cortex_alertmanager_partial_state_merges_failed_total:rate5m{%s})' % $.jobMatcher($._config.job_names.alertmanager),
           ],
           ['success', 'failed']
         )
@@ -236,8 +236,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
               sum(rate(cortex_alertmanager_state_persist_total{%s}[$__rate_interval]))
               -
               sum(rate(cortex_alertmanager_state_persist_failed_total{%s}[$__rate_interval]))
-            ||| % [$.jobMatcher('alertmanager'), $.jobMatcher('alertmanager')],
-            'sum(rate(cortex_alertmanager_state_persist_failed_total{%s}[$__rate_interval]))' % $.jobMatcher('alertmanager'),
+            ||| % [$.jobMatcher($._config.job_names.alertmanager), $.jobMatcher($._config.job_names.alertmanager)],
+            'sum(rate(cortex_alertmanager_state_persist_failed_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.alertmanager),
           ],
           ['success', 'failed']
         )
