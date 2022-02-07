@@ -79,9 +79,6 @@ ingester:
         store: memberlist
       replication_factor: 1
 
-ruler:
-  enable_api: true
-
 ruler_storage:
   backend: local
   local:

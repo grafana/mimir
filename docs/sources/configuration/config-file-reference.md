@@ -1277,9 +1277,9 @@ ring:
 # CLI flag: -ruler.flush-period
 [flush_period: <duration> | default = 1m]
 
-# Enable the ruler api
+# Enable the ruler config API.
 # CLI flag: -ruler.enable-api
-[enable_api: <boolean> | default = false]
+[enable_api: <boolean> | default = true]
 
 # [advanced] Comma separated list of tenants whose rules this ruler can
 # evaluate. If specified, only these tenants will be handled by ruler, otherwise
@@ -1666,9 +1666,9 @@ cluster:
   # CLI flag: -alertmanager.cluster.push-pull-interval
   [push_pull_interval: <duration> | default = 1m]
 
-# [advanced] Enable the alertmanager config api.
+# [advanced] Enable the alertmanager config API.
 # CLI flag: -alertmanager.enable-api
-[enable_api: <boolean> | default = false]
+[enable_api: <boolean> | default = true]
 
 alertmanager_client:
   # [advanced] Timeout for downstream alertmanagers.

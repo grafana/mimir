@@ -94,9 +94,6 @@ frontend_worker:
     tls_key_path: "client.key"
     tls_ca_path: "root.crt"
 
-ruler:
-  enable_api: true
-
 ruler_storage:
   backend: local
   local:
