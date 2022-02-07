@@ -1,5 +1,5 @@
 ---
-title: "Tenant Injector"
+title: "Tenant injector"
 description: ""
 weight: 100
 ---
