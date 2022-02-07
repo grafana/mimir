@@ -1544,7 +1544,9 @@ The `alertmanager_config` configures the alertmanager.
 # The URL under which Alertmanager is externally reachable (eg. could be
 # different than -http.alertmanager-http-prefix in case Alertmanager is served
 # via a reverse proxy). This setting is used both to configure the internal
-# requests router and to generate links in alert templates.
+# requests router and to generate links in alert templates. If the external URL
+# has a path portion, it will be used to prefix all HTTP endpoints served by
+# Alertmanager, both the UI and API.
 # CLI flag: -alertmanager.web.external-url
 [external_url: <url> | default = http://localhost:8080/alertmanager]
 
