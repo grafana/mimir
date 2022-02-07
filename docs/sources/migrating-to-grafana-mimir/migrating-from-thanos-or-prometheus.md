@@ -82,26 +82,25 @@ To run `thanosconvert`, you need to provide it with the bucket configuration.
 The configuration format is the same as the [blocks storage bucket configuration]({{<relref "../configuration/config-file-reference.md#blocks_storage_config" >}}).
 
 1. Write the bucket configuration to a file `bucket.yaml`.
-
 1. Use one of the following steps to run `thanosconvert` in a dry-run mode that lists blocks for migration.
 
-    - Using Docker:
+- Using Docker:
 
-    ```bash
-    docker run grafana/thanosconvert -v "$(pwd)"/bucket.yaml:/bucket.yaml --config /bucket.yaml --dry-run
-    ```
+```bash
+docker run grafana/thanosconvert -v "$(pwd)"/bucket.yaml:/bucket.yaml --config /bucket.yaml --dry-run
+```
 
-    - Using a local binary:
+- Using a local binary:
 
-    ```bash
-    ./thanosconvert --config ./bucket.yaml --dry-run
-    ```
+```bash
+./thanosconvert --config ./bucket.yaml --dry-run
+```
 
-    - Using Go:
+- Using Go:
 
-    ```bash
-    "$(go env GOPATH)"/bin/thanosconvert --config ./bucket.yaml --dry-run
-    ```
+```bash
+"$(go env GOPATH)"/bin/thanosconvert --config ./bucket.yaml --dry-run
+```
 
-1. Remove the `--dry-run` flag to apply the migration.
-1. Verify the migration by re-running the tool with `--dry-run` and confirming that there is no output.
+3. Remove the `--dry-run` flag to apply the migration.
+3. Verify the migration by re-running the tool with `--dry-run` and confirming that there is no output.
