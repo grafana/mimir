@@ -493,8 +493,12 @@ func (r *Ruler) loadRuleGroups(ctx context.Context, configs map[string]rulespb.R
 }
 
 func (r *Ruler) listRules(ctx context.Context) (result map[string]rulespb.RuleGroupList, err error) {
-	result, err = r.listRulesSharded(ctx)
+	start := time.Now()
+	defer func() {
+		r.metrics.listRules.Observe(time.Since(start).Seconds())
+	}()
 
+	result, err = r.listRulesSharded(ctx)
 	if err != nil {
 		return
 	}
@@ -509,11 +513,6 @@ func (r *Ruler) listRules(ctx context.Context) (result map[string]rulespb.RuleGr
 }
 
 func (r *Ruler) listRulesSharded(ctx context.Context) (map[string]rulespb.RuleGroupList, error) {
-	start := time.Now()
-	defer func() {
-		r.metrics.listRules.Observe(time.Since(start).Seconds())
-	}()
-
 	users, err := r.store.ListAllUsers(ctx)
 	if err != nil {
 		return nil, errors.Wrap(err, "unable to list users of ruler")
