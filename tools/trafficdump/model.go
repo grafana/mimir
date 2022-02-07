@@ -30,8 +30,7 @@ type endpoint struct {
 
 // Request described in JSON, for nice machine-readable output.
 type request struct {
-	ignored         bool
-	matchStatusCode int
+	ignored bool
 
 	Error string `json:"error,omitempty"`
 

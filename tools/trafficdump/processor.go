@@ -4,14 +4,27 @@ package main
 
 import (
 	"encoding/json"
+	"flag"
 	"log"
 	"os"
 
 	"github.com/google/gopacket"
 )
 
+type processorConfig struct {
+	matchStatusCode int
+	successOnly     bool
+}
+
+func (cfg *processorConfig) RegisterFlags(f *flag.FlagSet) {
+	f.IntVar(&cfg.matchStatusCode, "status-code", 0, "If not 0, only output requests that ended with this status code")
+	f.BoolVar(&cfg.successOnly, "success-only", true, "Only report requests and responses that were parsed successfully.")
+}
+
 // processor stores each unidirectional side of a bidirectional stream.
 type processor struct {
+	cfg *processorConfig
+
 	net, transport gopacket.Flow // from client to server
 
 	req  *requestStream  // stream from client to server
@@ -20,8 +33,9 @@ type processor struct {
 
 var enc = json.NewEncoder(os.Stdout)
 
-func newProcessor(net, transport gopacket.Flow) *processor {
+func newProcessor(cfg *processorConfig, net, transport gopacket.Flow) *processor {
 	return &processor{
+		cfg:       cfg,
 		net:       net,
 		transport: transport,
 	}
@@ -29,8 +43,6 @@ func newProcessor(net, transport gopacket.Flow) *processor {
 
 // Started when either requestStream or responseStream is found.
 func (p *processor) run() {
-	//log.Printf("start: processing requests for %s:%s -> %s:%s\n", p.net.Src().String(), p.transport.Src().String(), p.net.Dst().String(), p.transport.Dst().String())
-
 	// We rely on synchronization between requests and responses. Generally this is true, but if there are errors decoding
 	// requests or responses, they may desynchronize. Not sure if we can do anything about it.
 	for req := range p.req.out {
@@ -43,8 +55,6 @@ func (p *processor) run() {
 	for resp := range p.resp.out {
 		p.print(nil, resp)
 	}
-
-	//log.Printf("finish: processing requests for %s:%s -> %s%s\n", p.net.Src().String(), p.transport.Src().String(), p.net.Dst().String(), p.transport.Dst().String())
 }
 
 func (p *processor) print(req *request, resp *response) {
@@ -52,12 +62,15 @@ func (p *processor) print(req *request, resp *response) {
 		defer req.PushRequest.cleanup()
 	}
 
-	// print the request/response pair.
 	if req != nil && req.ignored {
 		return
 	}
 
-	if req != nil && req.matchStatusCode != 0 && resp != nil && req.matchStatusCode != resp.StatusCode {
+	if req != nil && p.cfg.matchStatusCode != 0 && resp != nil && p.cfg.matchStatusCode != resp.StatusCode {
+		return
+	}
+
+	if p.cfg.successOnly && (req.Error != "" || resp.Error != "") {
 		return
 	}
 

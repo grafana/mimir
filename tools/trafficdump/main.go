@@ -23,15 +23,11 @@ import (
 )
 
 func main() {
-	parser := &parser{
-		ignorePathRegexpStr: "^/$",
-	}
+	parser := &parser{}
 
 	parser.RegisterFlags(flag.CommandLine)
 
-	iface := flag.String("i", "eth0", "Interface to get packets from")
-	fname := flag.String("r", "", "Filename to read from, overrides -i")
-	snaplen := flag.Int("s", 1600, "SnapLen for pcap packet capture")
+	fname := flag.String("r", "", "Filename to read traffic dump from")
 	filter := flag.String("f", "tcp and port 80", "BPF filter for pcap")
 	filterEndpointPort := flag.Int("p", 80, "Only process packets with one of the endpoint ports equal to this value. This should match BPF filter (-f option), if used. 0 to disable.")
 	assemblersCount := flag.Uint("assembler.concurrency", 16, "How many TCP Assemblers to run concurrently")
@@ -55,8 +51,8 @@ func main() {
 		log.Printf("Reading from pcap dump %q", *fname)
 		handle, err = pcap.OpenOffline(*fname)
 	} else {
-		log.Printf("Starting capture on interface %q", *iface)
-		handle, err = pcap.OpenLive(*iface, int32(*snaplen), true, pcap.BlockForever)
+		log.Println("No dump file specified")
+		os.Exit(1)
 	}
 	if err != nil {
 		log.Fatal(err)
@@ -201,7 +197,7 @@ func (h *httpStreamFactory) New(net, transport gopacket.Flow) tcpassembly.Stream
 		// Assume that first stream is from client to server (ie. request stream).
 		// TODO: decide whether this is client->server or vice versa based on port, and perhaps configurable IP.
 
-		p = newProcessor(net, transport)
+		p = newProcessor(&h.parser.processorConfig, net, transport)
 		p.req = newRequestStream(&readerStream, h.parser)
 
 		h.processorMap[processorKey{net.Reverse(), transport.Reverse()}] = p

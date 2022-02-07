@@ -25,6 +25,8 @@ import (
 )
 
 type parser struct {
+	processorConfig processorConfig
+
 	requestHeaders bool
 	requestRawBody bool
 	decodePush     bool
@@ -43,17 +45,17 @@ type parser struct {
 	ignorePathRegexpStr string
 	ignorePathRegexp    *regexp.Regexp
 
-	matchStatusCode int
-
 	metricSelector string
 	matchers       []*labels.Matcher
 }
 
 func (rp *parser) RegisterFlags(f *flag.FlagSet) {
+	rp.processorConfig.RegisterFlags(f)
+
 	f.StringVar(&rp.pathRegexpStr, "path", "", "Output only requests matching this URL path (regex).")
+	f.StringVar(&rp.ignorePathRegexpStr, "ignore-path", "", "If not empty, and URL path matches this regex, request is ignored.")
 	f.StringVar(&rp.tenantRegexpStr, "tenant", "", "Output only requests for this tenant (regex).")
-	f.IntVar(&rp.matchStatusCode, "status-code", 0, "If not 0, only output requests that ended with this status code")
-	f.StringVar(&rp.metricSelector, "select", "", "It set, only output write requests that include series matching this selector. Used only when -request.decode-remote-write is enabled.")
+	f.StringVar(&rp.metricSelector, "select", "", "If set, only output write requests that include series matching this selector. Used only when -request.decode-remote-write is enabled.")
 
 	f.BoolVar(&rp.requestHeaders, "request.headers", false, "Include request headers in the output")
 	f.BoolVar(&rp.requestRawBody, "request.raw-body", false, "Include raw request body in the output")
@@ -107,8 +109,6 @@ func (rp *parser) processHTTPRequest(req *http.Request, body []byte) *request {
 	}
 
 	r := request{
-		matchStatusCode: rp.matchStatusCode,
-
 		Method: req.Method,
 		URL: requestURL{
 			Path:  req.URL.Path,

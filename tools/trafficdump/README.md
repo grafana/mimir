@@ -1,6 +1,8 @@
-Trafficdump tool can read packets from device or from captured tcpdump output, reassemble them into TCP streams
+Trafficdump tool can read packets from captured tcpdump output, reassemble them into TCP streams
 and parse HTTP requests and responses. It then prints requests and responses as json (one request/response per line)
-for further processing.
+for further processing. Trafficdump can only parse "raw" HTTP requests and responses, and not HTTP requests and responses
+wrapped in gRPC, as used by Mimir between some components. Best place to capture such traffic is on the entrypoint to Mimir
+(eg. authentication gateway/proxy).
 
 It has some Mimir-specific and generic HTTP features:
 
