@@ -239,6 +239,7 @@ func (t *Mimir) initOverridesExporter() (services.Service, error) {
 }
 
 func (t *Mimir) initDistributorService() (serv services.Service, err error) {
+	t.Cfg.Distributor.DistributorRing.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
 	t.Cfg.Distributor.DistributorRing.ListenPort = t.Cfg.Server.GRPCListenPort
 	t.Cfg.Distributor.ShuffleShardingLookbackPeriod = t.Cfg.Querier.ShuffleShardingIngestersLookbackPeriod
 
@@ -524,6 +525,7 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 		return nil, nil
 	}
 
+	t.Cfg.Ruler.Ring.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
 	t.Cfg.Ruler.Ring.ListenPort = t.Cfg.Server.GRPCListenPort
 	rulerRegisterer := prometheus.WrapRegistererWith(prometheus.Labels{"engine": "ruler"}, prometheus.DefaultRegisterer)
 	var queryable, federatedQueryable prom_storage.Queryable
@@ -583,6 +585,7 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 }
 
 func (t *Mimir) initAlertManager() (serv services.Service, err error) {
+	t.Cfg.Alertmanager.ShardingRing.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
 	t.Cfg.Alertmanager.ShardingRing.ListenPort = t.Cfg.Server.GRPCListenPort
 
 	store, err := alertstore.NewAlertStore(context.Background(), t.Cfg.AlertmanagerStorage, t.Overrides, util_log.Logger, prometheus.DefaultRegisterer)
@@ -600,6 +603,7 @@ func (t *Mimir) initAlertManager() (serv services.Service, err error) {
 }
 
 func (t *Mimir) initCompactor() (serv services.Service, err error) {
+	t.Cfg.Compactor.ShardingRing.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
 	t.Cfg.Compactor.ShardingRing.ListenPort = t.Cfg.Server.GRPCListenPort
 
 	t.Compactor, err = compactor.NewMultitenantCompactor(t.Cfg.Compactor, t.Cfg.BlocksStorage, t.Overrides, util_log.Logger, prometheus.DefaultRegisterer)
@@ -613,6 +617,7 @@ func (t *Mimir) initCompactor() (serv services.Service, err error) {
 }
 
 func (t *Mimir) initStoreGateway() (serv services.Service, err error) {
+	t.Cfg.StoreGateway.ShardingRing.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
 	t.Cfg.StoreGateway.ShardingRing.ListenPort = t.Cfg.Server.GRPCListenPort
 
 	t.StoreGateway, err = storegateway.NewStoreGateway(t.Cfg.StoreGateway, t.Cfg.BlocksStorage, t.Overrides, t.Cfg.Server.LogLevel, util_log.Logger, prometheus.DefaultRegisterer, t.ActivityTracker)
