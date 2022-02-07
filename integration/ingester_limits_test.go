@@ -139,7 +139,7 @@ func TestIngesterDynamicLimits(t *testing.T) {
 		overridesFile     = "overrides.yaml"
 		overridesTemplate = `
 overrides:
-  demo:
+  anonymous:
     max_global_series_per_user:    {{.MaxGlobalSeriesPerTenant}}
     max_global_series_per_metric:  {{.MaxGlobalSeriesPerMetric}}
     max_global_exemplars_per_user: {{.MaxGlobalExemplarsPerUser}}

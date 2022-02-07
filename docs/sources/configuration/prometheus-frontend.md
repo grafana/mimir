@@ -17,7 +17,7 @@ the benefits of query parallelisation and caching.
 # the benefits of query parallelisation and caching.
 
 # Disable the requirement that every request to Cortex has a
-# X-Scope-OrgID header. `demo` will be substituted in instead.
+# X-Scope-OrgID header. `anonymous` will be substituted in instead.
 auth_enabled: false
 
 # We only want to run the query-frontend module.

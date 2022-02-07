@@ -24,7 +24,7 @@ See the **Cortex-Tenant** section below for one way to solve this.
 
 To disable the multi-tenant functionality, you can pass the argument
 `-auth.enabled=false` to every Cortex component, which will set the OrgID
-to the string `demo` for every request.
+to the string `anonymous` for every request. (Configurable with `-auth.no-auth-tenant` option).
 
 Note that the tenant ID that is used to write the series to the datastore
 should be the same as the one you use to query the data. If they don't match

@@ -85,10 +85,11 @@ var (
 
 // Config is the root config for Mimir.
 type Config struct {
-	Target      flagext.StringSliceCSV `yaml:"target"`
-	AuthEnabled bool                   `yaml:"auth_enabled"`
-	PrintConfig bool                   `yaml:"-"`
-	HTTPPrefix  string                 `yaml:"http_prefix"`
+	Target       flagext.StringSliceCSV `yaml:"target"`
+	AuthEnabled  bool                   `yaml:"auth_enabled"`
+	NoAuthTenant string                 `yaml:"no_auth_tenant" category:"advanced"`
+	PrintConfig  bool                   `yaml:"-"`
+	HTTPPrefix   string                 `yaml:"http_prefix"`
 
 	API              api.Config                      `yaml:"api"`
 	Server           server.Config                   `yaml:"server"`
@@ -129,6 +130,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 		"Use '-modules' command line flag to get a list of available modules, and to see which modules are included in 'all'.")
 
 	f.BoolVar(&c.AuthEnabled, "auth.enabled", true, "Set to false to disable auth.")
+	f.StringVar(&c.NoAuthTenant, "auth.no-auth-tenant", "anonymous", "Tenant name to use when auth is disabled.")
 	f.BoolVar(&c.PrintConfig, "print.config", false, "Print the config and exit.")
 	f.StringVar(&c.HTTPPrefix, "http.prefix", "/api/prom", "HTTP path prefix for API.")
 
@@ -325,7 +327,7 @@ func New(cfg Config) (*Mimir, error) {
 			"/schedulerpb.SchedulerForFrontend/FrontendLoop",
 			"/schedulerpb.SchedulerForQuerier/QuerierLoop",
 			"/schedulerpb.SchedulerForQuerier/NotifyQuerierShutdown",
-		})
+		}, cfg.NoAuthTenant)
 
 	mimir := &Mimir{
 		Cfg: cfg,

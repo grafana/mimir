@@ -65,6 +65,10 @@ where `default_value` is the value to use if the environment variable is undefin
 # CLI flag: -auth.enabled
 [auth_enabled: <boolean> | default = true]
 
+# Tenant name to use when auth is disabled.
+# CLI flag: -auth.no-auth-tenant
+[no_auth_tenant: <string> | default = "anonymous"]
+
 # HTTP path prefix for API.
 # CLI flag: -http.prefix
 [http_prefix: <string> | default = "/api/prom"]
