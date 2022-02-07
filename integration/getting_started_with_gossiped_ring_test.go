@@ -67,12 +67,19 @@ func TestGettingStartedWithGossipedRing(t *testing.T) {
 	require.NoError(t, mimir1.WaitSumMetrics(e2e.Equals(2), "memberlist_client_cluster_members_count"))
 	require.NoError(t, mimir2.WaitSumMetrics(e2e.Equals(2), "memberlist_client_cluster_members_count"))
 
-	// Both Mimir servers should have 512 tokens for ingesters ring and 512 tokens for store-gateways ring.
-	for _, ringName := range []string{"ingester", "store-gateway", "ruler"} {
+	for _, ringName := range []string{"ingester", "store-gateway", "ruler", "compactor", "distributor"} {
 		ringMatcher := labels.MustNewMatcher(labels.MatchEqual, "name", ringName)
 
-		require.NoError(t, mimir1.WaitSumMetricsWithOptions(e2e.Equals(2*512), []string{"cortex_ring_tokens_total"}, e2e.WithLabelMatchers(ringMatcher)))
-		require.NoError(t, mimir2.WaitSumMetricsWithOptions(e2e.Equals(2*512), []string{"cortex_ring_tokens_total"}, e2e.WithLabelMatchers(ringMatcher)))
+		expectedTokens := 2 * 512 // Ingesters, store-gateways and compactors use 512 tokens by default.
+		if ringName == "ruler" {
+			expectedTokens = 2 * 128 // rulers use 128 tokens by default
+		}
+		if ringName == "distributor" {
+			expectedTokens = 2 * 1 // distributors use one token only
+		}
+
+		require.NoError(t, mimir1.WaitSumMetricsWithOptions(e2e.Equals(float64(expectedTokens)), []string{"cortex_ring_tokens_total"}, e2e.WithLabelMatchers(ringMatcher)), ringName)
+		require.NoError(t, mimir2.WaitSumMetricsWithOptions(e2e.Equals(float64(expectedTokens)), []string{"cortex_ring_tokens_total"}, e2e.WithLabelMatchers(ringMatcher)), ringName)
 	}
 
 	// We need two "ring members" visible from both Mimir instances for ingesters
