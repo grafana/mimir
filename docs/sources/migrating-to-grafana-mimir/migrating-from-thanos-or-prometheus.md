@@ -103,4 +103,4 @@ docker run grafana/thanosconvert -v "$(pwd)"/bucket.yaml:/bucket.yaml --config /
 ```
 
 3. Remove the `--dry-run` flag to apply the migration.
-3. Verify the migration by re-running the tool with `--dry-run` and confirming that there is no output.
+4. Verify the migration by re-running the tool with `--dry-run` and confirming that there is no output.
