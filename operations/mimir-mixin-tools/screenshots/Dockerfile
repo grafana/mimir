@@ -17,7 +17,7 @@ RUN apt-get update && apt-get install -y \
 
 # Install sources and dependencies.
 RUN mkdir /app
-COPY package*.json app.js /app
+COPY package*.json app.js /app/
 RUN cd /app && npm ci
 
 WORKDIR /app
