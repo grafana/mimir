@@ -70,9 +70,6 @@ blocks_storage:
   filesystem:
     dir: /tmp/mimir/storage
 
-ruler:
-  enable_api: true
-
 ruler_storage:
   backend: local
   local:

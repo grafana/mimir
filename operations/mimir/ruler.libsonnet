@@ -18,7 +18,6 @@
       target: 'ruler',
       // Alertmanager configs
       'ruler.alertmanager-url': 'http://alertmanager.%s.svc.cluster.local/alertmanager' % $._config.namespace,
-      'ruler.enable-api': true,
 
       // Ring Configs
       'ruler.ring.store': 'consul',

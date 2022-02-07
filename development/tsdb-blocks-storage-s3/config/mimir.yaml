@@ -71,7 +71,6 @@ blocks_storage:
     insecure:          true
 
 ruler:
-  enable_api: true
   ring:
     heartbeat_period:   5s
     heartbeat_timeout:  15s
@@ -93,7 +92,6 @@ ruler_storage:
     insecure:          true
 
 alertmanager:
-  enable_api: true
   sharding_enabled: true
   sharding_ring:
     replication_factor: 3

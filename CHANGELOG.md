@@ -253,7 +253,7 @@
 * [CHANGE] Distributor: change default value of `-distributor.remote-timeout` from `2s` to `20s`. #970
 * [CHANGE] Store-gateway: options `-store-gateway.sharding-enabled` and `-querier.store-gateway-addresses` were removed. Default value of `-store-gateway.sharding-ring.store` is now `memberlist` and default value for `-store-gateway.sharding-ring.wait-stability-min-duration` changed from `1m` to `0` (disabled). #976
 * [CHANGE] Ingester: change default value of `-ingester.final-sleep` from `30s` to `0s`. #981
-* [CHANGE] Ruler: `-experimental.ruler.enable-api` flag has been renamed to `-ruler.enable-api` and is now stable. #913
+* [CHANGE] Ruler: `-experimental.ruler.enable-api` flag has been renamed to `-ruler.enable-api` and is now stable. The default value has also changed from `false` to `true`, so both ruler and alertmanager API are enabled by default. #913 #1065
 * [CHANGE] Alertmanager: `-experimental.alertmanager.enable-api` flag has been renamed to `-alertmanager.enable-api` and is now stable. #913
 * [CHANGE] Ingester: changed default value of `-blocks-storage.tsdb.retention-period` from `6h` to `24h`. #966
 * [CHANGE] Changed default value of `-querier.query-ingesters-within` and `-blocks-storage.tsdb.close-idle-tsdb-timeout` from `0` to `13h`. #966

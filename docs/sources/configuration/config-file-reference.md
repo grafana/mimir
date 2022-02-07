@@ -1279,7 +1279,7 @@ ring:
 
 # Enable the ruler api
 # CLI flag: -ruler.enable-api
-[enable_api: <boolean> | default = false]
+[enable_api: <boolean> | default = true]
 
 # [advanced] Comma separated list of tenants whose rules this ruler can
 # evaluate. If specified, only these tenants will be handled by ruler, otherwise
@@ -1668,7 +1668,7 @@ cluster:
 
 # [advanced] Enable the alertmanager config api.
 # CLI flag: -alertmanager.enable-api
-[enable_api: <boolean> | default = false]
+[enable_api: <boolean> | default = true]
 
 alertmanager_client:
   # [advanced] Timeout for downstream alertmanagers.

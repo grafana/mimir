@@ -1076,7 +1076,6 @@ spec:
         - -ruler-storage.s3.endpoint=s3.dualstack.eu-west-1.amazonaws.com
         - -ruler-storage.s3.region=eu-west-1
         - -ruler.alertmanager-url=http://alertmanager.default.svc.cluster.local/alertmanager
-        - -ruler.enable-api=true
         - -ruler.max-rule-groups-per-tenant=35
         - -ruler.max-rules-per-rule-group=20
         - -ruler.ring.consul.hostname=consul.default.svc.cluster.local:8500
@@ -1146,7 +1145,6 @@ spec:
         - -alertmanager-storage.backend=s3
         - -alertmanager-storage.s3.bucket-name=alerts-bucket
         - -alertmanager-storage.s3.region=eu-west-1
-        - -alertmanager.enable-api=true
         - -alertmanager.sharding-enabled=true
         - -alertmanager.sharding-ring.consul.hostname=consul.default.svc.cluster.local:8500
         - -alertmanager.sharding-ring.replication-factor=3

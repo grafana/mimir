@@ -127,7 +127,6 @@ var (
 	RulerFlags = func() map[string]string {
 		return map[string]string{
 			"-ruler.poll-interval":                "2s",
-			"-ruler.enable-api":                   "true",
 			"-ruler-storage.backend":              "s3",
 			"-ruler-storage.s3.access-key-id":     e2edb.MinioAccessKey,
 			"-ruler-storage.s3.secret-access-key": e2edb.MinioSecretKey,

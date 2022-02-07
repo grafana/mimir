@@ -78,9 +78,6 @@ blocks_storage:
 compactor:
   data_dir: /tmp/mimir/compactor
 
-ruler:
-  enable_api: true
-
 ruler_storage:
   backend: local
   local:

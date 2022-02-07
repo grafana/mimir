@@ -58,7 +58,6 @@
     {
       target: 'alertmanager',
       'runtime-config.file': '%s/overrides.yaml' % $._config.overrides_configmap_mountpoint,
-      'alertmanager.enable-api': 'true',
       'alertmanager.storage.path': '/data',
       'alertmanager.web.external-url': '%s/alertmanager' % $._config.external_url,
       'server.http-listen-port': $._config.server_http_port,
