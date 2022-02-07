@@ -1638,8 +1638,7 @@ sharding_ring:
 [fallback_config_file: <string> | default = ""]
 
 cluster:
-  # [advanced] Listen address and port for the cluster. Not specifying this flag
-  # disables high-availability mode.
+  # [advanced] Listen address and port for the cluster.
   # CLI flag: -alertmanager.cluster.listen-address
   [listen_address: <string> | default = "0.0.0.0:9094"]
 

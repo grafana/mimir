@@ -6,6 +6,7 @@
 package alertmanager
 
 import (
+	"context"
 	"fmt"
 	"net/url"
 	"strings"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/test"
+	"github.com/prometheus/alertmanager/cluster/clusterpb"
 	"github.com/prometheus/alertmanager/config"
 	"github.com/prometheus/alertmanager/types"
 	"github.com/prometheus/client_golang/prometheus"
@@ -39,17 +41,33 @@ func TestDispatcherGroupLimits(t *testing.T) {
 	}
 }
 
+type stubReplicator struct{}
+
+func (*stubReplicator) ReplicateStateForUser(context.Context, string, *clusterpb.Part) error {
+	return nil
+}
+func (*stubReplicator) GetPositionForUser(userID string) int {
+	return 0
+}
+func (*stubReplicator) ReadFullStateForUser(context.Context, string) ([]*clusterpb.FullState, error) {
+	return nil, nil
+}
+
 func createAlertmanagerAndSendAlerts(t *testing.T, alertGroups, groupsLimit, expectedFailures int) {
 	user := "test"
 
 	reg := prometheus.NewPedanticRegistry()
 	am, err := New(&Config{
-		UserID:          user,
-		Logger:          log.NewNopLogger(),
-		Limits:          &mockAlertManagerLimits{maxDispatcherAggregationGroups: groupsLimit},
-		TenantDataDir:   t.TempDir(),
-		ExternalURL:     &url.URL{Path: "/am"},
-		ShardingEnabled: false,
+		UserID:            user,
+		Logger:            log.NewNopLogger(),
+		Limits:            &mockAlertManagerLimits{maxDispatcherAggregationGroups: groupsLimit},
+		TenantDataDir:     t.TempDir(),
+		ExternalURL:       &url.URL{Path: "/am"},
+		ShardingEnabled:   true,
+		Replicator:        &stubReplicator{},
+		ReplicationFactor: 1,
+		// We have to set this interval non-zero, though we don't need the persister to do anything.
+		PersisterConfig: PersisterConfig{Interval: time.Hour},
 	}, reg)
 	require.NoError(t, err)
 	defer am.StopAndWait()

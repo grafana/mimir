@@ -118,7 +118,7 @@ Usage of ./cmd/mimir/mimir:
   -alertmanager.cluster.gossip-interval duration
     	The interval between sending gossip messages. By lowering this value (more frequent) gossip messages are propagated across cluster more quickly at the expense of increased bandwidth usage. (default 200ms)
   -alertmanager.cluster.listen-address string
-    	Listen address and port for the cluster. Not specifying this flag disables high-availability mode. (default "0.0.0.0:9094")
+    	Listen address and port for the cluster. (default "0.0.0.0:9094")
   -alertmanager.cluster.peer-timeout duration
     	Time to wait between peers to send notifications. (default 15s)
   -alertmanager.cluster.peers value
