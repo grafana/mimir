@@ -535,6 +535,7 @@
 * [BUGFIX] Span the annotation.message in alerts as YAML multiline strings. [#412](https://github.com/grafana/cortex-jsonnet/pull/412)
 * [BUGFIX] Fixed "Instant queries / sec" in "Cortex / Reads" dashboard. #445
 * [BUGFIX] Fixed and added missing KV store panels in Writes, Reads, Ruler and Compactor dashboards. #448
+* [BUGFIX] Fixed Alertmanager dashboard when alertmanager is running as part of single binary. #1064
 
 ### Jsonnet (changes since `grafana/cortex-jsonnet` `1.9.0`)
 
