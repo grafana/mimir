@@ -142,18 +142,15 @@
     // PromQL query engine config (shared between all services running PromQL engine, like the ruler and querier).
     queryEngineConfig: {},
 
-    ringConfig: {
-      'consul.hostname': 'consul.%s.svc.cluster.local:8500' % $._config.namespace,
-      'ring.store': 'consul',
-      'ring.prefix': '',
-    },
-
     // The ingester ring client config that should be shared across all Mimir services
-    // watching the ingester ring.
+    // using or watching the ingester ring.
     ingesterRingClientConfig: {
+      'consul.hostname': 'consul.%s.svc.cluster.local:8500' % $._config.namespace,
       'distributor.replication-factor': $._config.replication_factor,
       'distributor.health-check-ingesters': true,
       'ring.heartbeat-timeout': '10m',
+      'ring.store': 'consul',
+      'ring.prefix': '',
     },
 
     ruler_enabled: false,
