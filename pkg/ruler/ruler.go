@@ -180,7 +180,7 @@ func newRulerMetrics(reg prometheus.Registerer) *rulerMetrics {
 	return &rulerMetrics{
 		listRules: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 			Name:    "cortex_ruler_list_rules_seconds",
-			Help:    "Time spent listing rules without sharding.",
+			Help:    "Time spent listing rules.",
 			Buckets: []float64{0.1, 0.5, 1, 2, 5, 10, 15, 30},
 		}),
 		loadRuleGroups: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
