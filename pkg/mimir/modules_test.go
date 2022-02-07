@@ -161,7 +161,7 @@ func TestMimir_InitRulerStorage(t *testing.T) {
 	}
 }
 
-func TestMimirKVSetup(t *testing.T) {
+func TestMultiKVSetup(t *testing.T) {
 	dir := t.TempDir()
 
 	for target, checkFn := range map[string]func(t *testing.T, c Config){
