@@ -111,7 +111,7 @@ func TestMimir(t *testing.T) {
 			DataDir: t.TempDir(),
 			ExternalURL: func() flagext.URLValue {
 				v := flagext.URLValue{}
-				v.Set("http://localhost/alertmanager")
+				require.NoError(t, v.Set("http://localhost/alertmanager"))
 				return v
 			}(),
 			Cluster: alertmanager.ClusterConfig{
