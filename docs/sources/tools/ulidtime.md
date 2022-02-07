@@ -1,4 +1,12 @@
-Ulidtime is tiny tool to parse ULID and print time embedded in it.
+---
+title: "ULID time"
+description: ""
+weight: 100
+---
+
+# ULID time
+
+`ulidtime` is a tiny tool to parse [ULID](https://github.com/ulid/spec) and print the time embedded in it.
 
 Example:
 

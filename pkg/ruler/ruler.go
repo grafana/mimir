@@ -77,47 +77,45 @@ type Config struct {
 	// GRPC Client configuration.
 	ClientTLSConfig grpcclient.Config `yaml:"ruler_client"`
 	// How frequently to evaluate rules by default.
-	EvaluationInterval time.Duration `yaml:"evaluation_interval"`
+	EvaluationInterval time.Duration `yaml:"evaluation_interval" category:"advanced"`
 	// How frequently to poll for updated rules.
-	PollInterval time.Duration `yaml:"poll_interval"`
+	PollInterval time.Duration `yaml:"poll_interval" category:"advanced"`
 	// Path to store rule files for prom manager.
 	RulePath string `yaml:"rule_path"`
 
 	// URL of the Alertmanager to send notifications to.
 	AlertmanagerURL string `yaml:"alertmanager_url"`
-	// Whether to use DNS SRV records to discover Alertmanager.
-	AlertmanagerDiscovery bool `yaml:"enable_alertmanager_discovery"`
 	// How long to wait between refreshing the list of Alertmanager based on DNS service discovery.
-	AlertmanagerRefreshInterval time.Duration `yaml:"alertmanager_refresh_interval"`
+	AlertmanagerRefreshInterval time.Duration `yaml:"alertmanager_refresh_interval" category:"advanced"`
 	// Enables the ruler notifier to use the Alertmananger V2 API.
 	AlertmanagerEnableV2API bool `yaml:"enable_alertmanager_v2"`
 	// Capacity of the queue for notifications to be sent to the Alertmanager.
-	NotificationQueueCapacity int `yaml:"notification_queue_capacity"`
+	NotificationQueueCapacity int `yaml:"notification_queue_capacity" category:"advanced"`
 	// HTTP timeout duration when sending notifications to the Alertmanager.
-	NotificationTimeout time.Duration `yaml:"notification_timeout"`
+	NotificationTimeout time.Duration `yaml:"notification_timeout" category:"advanced"`
 	// Client configs for interacting with the Alertmanager
 	Notifier NotifierConfig `yaml:"alertmanager_client"`
 
 	// Max time to tolerate outage for restoring "for" state of alert.
-	OutageTolerance time.Duration `yaml:"for_outage_tolerance"`
+	OutageTolerance time.Duration `yaml:"for_outage_tolerance" category:"advanced"`
 	// Minimum duration between alert and restored "for" state. This is maintained only for alerts with configured "for" time greater than grace period.
-	ForGracePeriod time.Duration `yaml:"for_grace_period"`
+	ForGracePeriod time.Duration `yaml:"for_grace_period" category:"advanced"`
 	// Minimum amount of time to wait before resending an alert to Alertmanager.
-	ResendDelay time.Duration `yaml:"resend_delay"`
+	ResendDelay time.Duration `yaml:"resend_delay" category:"advanced"`
 
 	// Enable sharding rule groups.
-	SearchPendingFor time.Duration `yaml:"search_pending_for"`
+	SearchPendingFor time.Duration `yaml:"search_pending_for" category:"advanced"`
 	Ring             RingConfig    `yaml:"ring"`
-	FlushCheckPeriod time.Duration `yaml:"flush_period"`
+	FlushCheckPeriod time.Duration `yaml:"flush_period" category:"advanced"`
 
 	EnableAPI bool `yaml:"enable_api"`
 
-	EnabledTenants  flagext.StringSliceCSV `yaml:"enabled_tenants"`
-	DisabledTenants flagext.StringSliceCSV `yaml:"disabled_tenants"`
+	EnabledTenants  flagext.StringSliceCSV `yaml:"enabled_tenants" category:"advanced"`
+	DisabledTenants flagext.StringSliceCSV `yaml:"disabled_tenants" category:"advanced"`
 
 	RingCheckPeriod time.Duration `yaml:"-"`
 
-	EnableQueryStats bool `yaml:"query_stats_enabled"`
+	EnableQueryStats bool `yaml:"query_stats_enabled" category:"advanced"`
 
 	TenantFederation TenantFederationConfig `yaml:"tenant_federation"`
 }
@@ -146,8 +144,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.EvaluationInterval, "ruler.evaluation-interval", 1*time.Minute, "How frequently to evaluate rules")
 	f.DurationVar(&cfg.PollInterval, "ruler.poll-interval", 1*time.Minute, "How frequently to poll for rule changes")
 
-	f.StringVar(&cfg.AlertmanagerURL, "ruler.alertmanager-url", "", "Comma-separated list of URL(s) of the Alertmanager(s) to send notifications to. Each Alertmanager URL is treated as a separate group in the configuration. Multiple Alertmanagers in HA per group can be supported by using DNS resolution via -ruler.alertmanager-discovery.")
-	f.BoolVar(&cfg.AlertmanagerDiscovery, "ruler.alertmanager-discovery", false, "Use DNS SRV records to discover Alertmanager hosts.")
+	f.StringVar(&cfg.AlertmanagerURL, "ruler.alertmanager-url", "", "Comma-separated list of URL(s) of the Alertmanager(s) to send notifications to. Each URL is treated as a separate group. Multiple Alertmanagers in HA per group can be supported by using DNS service discovery format. Basic auth is supported as part of the URL.")
 	f.DurationVar(&cfg.AlertmanagerRefreshInterval, "ruler.alertmanager-refresh-interval", 1*time.Minute, "How long to wait between refreshing DNS resolutions of Alertmanager hosts.")
 	f.BoolVar(&cfg.AlertmanagerEnableV2API, "ruler.alertmanager-use-v2", true, "If enabled requests to Alertmanager will utilize the V2 API.")
 	f.IntVar(&cfg.NotificationQueueCapacity, "ruler.notification-queue-capacity", 10000, "Capacity of the queue for notifications to be sent to the Alertmanager.")

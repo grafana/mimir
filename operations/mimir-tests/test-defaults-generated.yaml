@@ -751,6 +751,7 @@ spec:
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-async-concurrency=50
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-item-size=1048576
         - -blocks-storage.bucket-store.sync-dir=/data/tsdb
+        - -blocks-storage.bucket-store.sync-interval=15m
         - -blocks-storage.gcs.bucket-name=blocks-bucket
         - -consul.hostname=consul.default.svc.cluster.local:8500
         - -distributor.health-check-ingesters=true
@@ -1334,6 +1335,7 @@ spec:
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-idle-connections=100
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-item-size=1048576
         - -blocks-storage.bucket-store.sync-dir=/data/tsdb
+        - -blocks-storage.bucket-store.sync-interval=15m
         - -blocks-storage.gcs.bucket-name=blocks-bucket
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc.keepalive.min-time-between-pings=10s

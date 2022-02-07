@@ -21,6 +21,7 @@ import (
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/notifier"
 	promRules "github.com/prometheus/prometheus/rules"
+	"github.com/thanos-io/thanos/pkg/cacheutil"
 	"github.com/weaveworks/common/user"
 	"golang.org/x/net/context/ctxhttp"
 
@@ -52,8 +53,8 @@ type DefaultMultiTenantManager struct {
 	logger                        log.Logger
 }
 
-func NewDefaultMultiTenantManager(cfg Config, managerFactory ManagerFactory, reg prometheus.Registerer, logger log.Logger) (*DefaultMultiTenantManager, error) {
-	ncfg, err := buildNotifierConfig(&cfg)
+func NewDefaultMultiTenantManager(cfg Config, managerFactory ManagerFactory, reg prometheus.Registerer, logger log.Logger, dnsResolver cacheutil.AddressProvider) (*DefaultMultiTenantManager, error) {
+	ncfg, err := buildNotifierConfig(&cfg, dnsResolver)
 	if err != nil {
 		return nil, err
 	}
