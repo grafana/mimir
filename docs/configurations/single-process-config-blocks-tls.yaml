@@ -4,7 +4,7 @@
 # and development.
 
 # Disable the requirement that every request to Mimir has a
-# X-Scope-OrgID header. `fake` will be substituted in instead.
+# X-Scope-OrgID header. `demo` will be substituted in instead.
 auth_enabled: false
 
 server:

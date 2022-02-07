@@ -3,9 +3,9 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
 
-// Package fakeauth provides middlewares thats injects a fake userID, so the rest of the code
+// Package noauth provides middlewares thats injects a demo userID, so the rest of the code
 // can continue to be multitenant.
-package fakeauth
+package noauth
 
 import (
 	"context"
@@ -16,6 +16,8 @@ import (
 	"github.com/weaveworks/common/user"
 	"google.golang.org/grpc"
 )
+
+const noAuthTenant = "demo"
 
 // SetupAuthMiddleware for the given server config.
 func SetupAuthMiddleware(config *server.Config, enabled bool, noGRPCAuthOn []string) middleware.Interface {
@@ -45,28 +47,28 @@ func SetupAuthMiddleware(config *server.Config, enabled bool, noGRPCAuthOn []str
 	}
 
 	config.GRPCMiddleware = append(config.GRPCMiddleware,
-		fakeGRPCAuthUniaryMiddleware,
+		noAuthGRPCAuthUniaryMiddleware,
 	)
 	config.GRPCStreamMiddleware = append(config.GRPCStreamMiddleware,
-		fakeGRPCAuthStreamMiddleware,
+		noAuthGRPCAuthStreamMiddleware,
 	)
-	return fakeHTTPAuthMiddleware
+	return noAuthHTTPAuthMiddleware
 }
 
-var fakeHTTPAuthMiddleware = middleware.Func(func(next http.Handler) http.Handler {
+var noAuthHTTPAuthMiddleware = middleware.Func(func(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ctx := user.InjectOrgID(r.Context(), "fake")
+		ctx := user.InjectOrgID(r.Context(), noAuthTenant)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 })
 
-var fakeGRPCAuthUniaryMiddleware = func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-	ctx = user.InjectOrgID(ctx, "fake")
+var noAuthGRPCAuthUniaryMiddleware = func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+	ctx = user.InjectOrgID(ctx, noAuthTenant)
 	return handler(ctx, req)
 }
 
-var fakeGRPCAuthStreamMiddleware = func(srv interface{}, ss grpc.ServerStream, _ *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-	ctx := user.InjectOrgID(ss.Context(), "fake")
+var noAuthGRPCAuthStreamMiddleware = func(srv interface{}, ss grpc.ServerStream, _ *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+	ctx := user.InjectOrgID(ss.Context(), noAuthTenant)
 	return handler(srv, serverStream{
 		ctx:          ctx,
 		ServerStream: ss,

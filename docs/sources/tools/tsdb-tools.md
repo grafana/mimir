@@ -204,7 +204,7 @@ Postings offset table: 35630
 ```
 $ tsdb-symbols -shard-count=4 01FTT67BBYH23T8870BBF77YZX
 01FTT67BBYH23T8870BBF77YZX: mint=1640166758768 (2021-12-22T09:52:38Z), maxt=1640174400000 (2021-12-22T12:00:00Z), duration: 2h7m21.232s
-01FTT67BBYH23T8870BBF77YZX: {__org_id__="fake"}
+01FTT67BBYH23T8870BBF77YZX: {__org_id__="demo"}
 01FTT67BBYH23T8870BBF77YZX: index: symbol table size: 28817 bytes, symbols: 965
 01FTT67BBYH23T8870BBF77YZX: symbols iteration: total length of symbols: 27848 bytes, symbols: 965
 01FTT67BBYH23T8870BBF77YZX: index structure overhead: 969 bytes
