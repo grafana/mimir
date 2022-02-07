@@ -26,8 +26,9 @@
 
     // Use memberlist only. This works fine on already-migrated clusters.
     // To do a migration from Consul to memberlist, multi kv storage needs to be used (See below).
-    ingesterRingClientConfig+: setupGossipRing('') + memberlistConfig,
+    ingesterRingClientConfig+: setupGossipRing('') + memberlistConfig,  // ring.store, ring.consul.hostname.
 
+    // store-gateway.sharding-ring.store and store-gateway.sharding-ring.consul.hostname
     queryBlocksStorageConfig+:: setupGossipRing('store-gateway.sharding-') + memberlistConfig,
 
     // When doing migration via multi KV store, this section can be used
@@ -39,11 +40,11 @@
     },
   },
 
-  distributor_args+: setupGossipRing('distributor.') + memberlistConfig,
+  distributor_args+: setupGossipRing('distributor.') + memberlistConfig,  // distributor.ring.store, distributor.ring.consul.hostname
 
-  ruler_args+: setupGossipRing('ruler.') + memberlistConfig,
+  ruler_args+: setupGossipRing('ruler.') + memberlistConfig,  // ruler.ring.store, ruler.ring.consul.hostname
 
-  compactor_args+: setupGossipRing('compactor.') + memberlistConfig,
+  compactor_args+: setupGossipRing('compactor.') + memberlistConfig,  // compactor.ring.store, compactor.ring.consul.hostname
 
   ingester_args+: {
     // wait longer to see LEAVING ingester in the gossiped ring, to avoid
