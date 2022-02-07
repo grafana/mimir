@@ -166,6 +166,36 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	cfg.RingCheckPeriod = 5 * time.Second
 }
 
+type rulerMetrics struct {
+	listRules       prometheus.Histogram
+	loadRuleGroups  prometheus.Histogram
+	ringCheckErrors prometheus.Counter
+	rulerSync       *prometheus.CounterVec
+}
+
+func newRulerMetrics(reg prometheus.Registerer) *rulerMetrics {
+	return &rulerMetrics{
+		listRules: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+			Name:    "cortex_ruler_list_rules_seconds",
+			Help:    "Time spent listing rules.",
+			Buckets: []float64{0.1, 0.5, 1, 2, 5, 10, 15, 30},
+		}),
+		loadRuleGroups: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+			Name:    "cortex_ruler_load_rule_groups_seconds",
+			Help:    "Time spent loading all rules for the rule groups in this ruler.",
+			Buckets: []float64{0.1, 0.5, 1, 2, 5, 10, 15, 30},
+		}),
+		ringCheckErrors: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_ruler_ring_check_errors_total",
+			Help: "Number of errors that have occurred when checking the ring for ownership",
+		}),
+		rulerSync: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_ruler_sync_rules_total",
+			Help: "Total number of times the ruler sync operation triggered.",
+		}, []string{"reason"}),
+	}
+}
+
 // MultiTenantManager is the interface of interaction with a Manager that is tenant aware.
 type MultiTenantManager interface {
 	// SyncRuleGroups is used to sync the Manager with rules from the RuleStore.
@@ -215,14 +245,13 @@ type Ruler struct {
 	manager    MultiTenantManager
 	limits     RulesLimits
 
+	metrics *rulerMetrics
+
 	subservices        *services.Manager
 	subservicesWatcher *services.FailureWatcher
 
 	// Pool of clients used to connect to other ruler replicas.
 	clientsPool ClientsPool
-
-	ringCheckErrors prometheus.Counter
-	rulerSync       *prometheus.CounterVec
 
 	allowedTenants *util.AllowedTenants
 
@@ -245,16 +274,7 @@ func newRuler(cfg Config, manager MultiTenantManager, reg prometheus.Registerer,
 		limits:         limits,
 		clientsPool:    clientPool,
 		allowedTenants: util.NewAllowedTenants(cfg.EnabledTenants, cfg.DisabledTenants),
-
-		ringCheckErrors: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Name: "cortex_ruler_ring_check_errors_total",
-			Help: "Number of errors that have occurred when checking the ring for ownership",
-		}),
-
-		rulerSync: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-			Name: "cortex_ruler_sync_rules_total",
-			Help: "Total number of times the ruler sync operation triggered.",
-		}, []string{"reason"}),
+		metrics:        newRulerMetrics(reg),
 	}
 
 	if len(cfg.EnabledTenants) > 0 {
@@ -443,7 +463,7 @@ func (r *Ruler) run(ctx context.Context) error {
 
 func (r *Ruler) syncRules(ctx context.Context, reason string) {
 	level.Debug(r.logger).Log("msg", "syncing rules", "reason", reason)
-	r.rulerSync.WithLabelValues(reason).Inc()
+	r.metrics.rulerSync.WithLabelValues(reason).Inc()
 
 	configs, err := r.listRules(ctx)
 	if err != nil {
@@ -451,7 +471,7 @@ func (r *Ruler) syncRules(ctx context.Context, reason string) {
 		return
 	}
 
-	err = r.store.LoadRuleGroups(ctx, configs)
+	err = r.loadRuleGroups(ctx, configs)
 	if err != nil {
 		level.Error(r.logger).Log("msg", "unable to load rules owned by this ruler", "err", err)
 		return
@@ -461,9 +481,21 @@ func (r *Ruler) syncRules(ctx context.Context, reason string) {
 	r.manager.SyncRuleGroups(ctx, configs)
 }
 
-func (r *Ruler) listRules(ctx context.Context) (result map[string]rulespb.RuleGroupList, err error) {
-	result, err = r.listRulesSharded(ctx)
+func (r *Ruler) loadRuleGroups(ctx context.Context, configs map[string]rulespb.RuleGroupList) error {
+	start := time.Now()
+	defer func() {
+		r.metrics.loadRuleGroups.Observe(time.Since(start).Seconds())
+	}()
+	return r.store.LoadRuleGroups(ctx, configs)
+}
 
+func (r *Ruler) listRules(ctx context.Context) (result map[string]rulespb.RuleGroupList, err error) {
+	start := time.Now()
+	defer func() {
+		r.metrics.listRules.Observe(time.Since(start).Seconds())
+	}()
+
+	result, err = r.listRulesSharded(ctx)
 	if err != nil {
 		return
 	}
@@ -527,7 +559,7 @@ func (r *Ruler) listRulesSharded(ctx context.Context) (map[string]rulespb.RuleGr
 					return errors.Wrapf(err, "failed to fetch rule groups for user %s", userID)
 				}
 
-				filtered := filterRuleGroups(userID, groups, userRings[userID], r.lifecycler.GetInstanceAddr(), r.logger, r.ringCheckErrors)
+				filtered := filterRuleGroups(userID, groups, userRings[userID], r.lifecycler.GetInstanceAddr(), r.logger, r.metrics.ringCheckErrors)
 				if len(filtered) == 0 {
 					continue
 				}
