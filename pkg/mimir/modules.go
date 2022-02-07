@@ -580,6 +580,7 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 func (t *Mimir) initAlertManager() (serv services.Service, err error) {
 	t.Cfg.Alertmanager.ShardingRing.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
 	t.Cfg.Alertmanager.ShardingRing.ListenPort = t.Cfg.Server.GRPCListenPort
+	t.Cfg.Alertmanager.CheckExternalURL(t.Cfg.API.AlertmanagerHTTPPrefix, util_log.Logger)
 
 	store, err := alertstore.NewAlertStore(context.Background(), t.Cfg.AlertmanagerStorage, t.Overrides, util_log.Logger, prometheus.DefaultRegisterer)
 	if err != nil {

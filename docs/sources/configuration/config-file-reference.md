@@ -1541,12 +1541,12 @@ The `alertmanager_config` configures the alertmanager.
 # CLI flag: -alertmanager.storage.retention
 [retention: <duration> | default = 120h]
 
-# The URL under which Alertmanager is externally reachable (for example, if
-# Alertmanager is served via a reverse proxy). Used for generating relative and
-# absolute links back to Alertmanager itself. If the URL has a path portion, it
-# will be used to prefix all HTTP endpoints served by Alertmanager.
+# The URL under which Alertmanager is externally reachable (eg. could be
+# different than -http.alertmanager-http-prefix in case Alertmanager is served
+# via a reverse proxy). This setting is used both to configure the internal
+# requests router and to generate links in alert templates.
 # CLI flag: -alertmanager.web.external-url
-[external_url: <url> | default = http://localhost]
+[external_url: <url> | default = http://localhost:8080/alertmanager]
 
 # [advanced] How frequently to poll Alertmanager configs.
 # CLI flag: -alertmanager.configs.poll-interval

@@ -226,7 +226,7 @@ Usage of ./cmd/mimir/mimir:
   -alertmanager.storage.retention duration
     	How long to keep data for. (default 120h0m0s)
   -alertmanager.web.external-url value
-    	The URL under which Alertmanager is externally reachable (for example, if Alertmanager is served via a reverse proxy). Used for generating relative and absolute links back to Alertmanager itself. If the URL has a path portion, it will be used to prefix all HTTP endpoints served by Alertmanager. (default http://localhost)
+    	The URL under which Alertmanager is externally reachable (eg. could be different than -http.alertmanager-http-prefix in case Alertmanager is served via a reverse proxy). This setting is used both to configure the internal requests router and to generate links in alert templates. (default http://localhost:8080/alertmanager)
   -api.skip-label-name-validation-header-enabled
     	Allows to skip label name validation via header on the http write path. Use with caution as it breaks PromQL. Allowing this for external clients allows any client to send invalid label names. After enabling it, requests with a specific HTTP header set to true will not have label names validated.
   -auth.enabled
