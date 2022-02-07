@@ -1,7 +1,7 @@
 ---
 title: "(Optional) Alertmanager"
 description: "Overview of the alertmanager microservice."
-weight: 80
+weight: 20
 ---
 
 # (Optional) Alertmanager
