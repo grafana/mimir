@@ -1277,7 +1277,7 @@ ring:
 # CLI flag: -ruler.flush-period
 [flush_period: <duration> | default = 1m]
 
-# Enable the ruler api
+# Enable the ruler config API.
 # CLI flag: -ruler.enable-api
 [enable_api: <boolean> | default = true]
 
