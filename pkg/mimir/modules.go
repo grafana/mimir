@@ -223,13 +223,6 @@ func (t *Mimir) initOverrides() (serv services.Service, err error) {
 }
 
 func (t *Mimir) initOverridesExporter() (services.Service, error) {
-	if t.Cfg.isModuleEnabled(OverridesExporter) && t.TenantLimits == nil {
-		// This target isn't enabled by default ("all") and requires per-tenant limits to
-		// work. Fail if it can't be setup correctly since the user explicitly wanted this
-		// target to run.
-		return nil, errors.New("overrides-exporter has been enabled, but no runtime configuration file was configured")
-	}
-
 	exporter := validation.NewOverridesExporter(&t.Cfg.LimitsConfig, t.TenantLimits)
 	prometheus.MustRegister(exporter)
 
