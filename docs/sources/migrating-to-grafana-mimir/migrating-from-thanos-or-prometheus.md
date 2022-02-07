@@ -1,10 +1,10 @@
 ---
-title: "Migrate to Grafana Mimir from Thanos or Prometheus"
+title: "Migrating to Grafana Mimir from Thanos or Prometheus"
 description: "Configuring remote-write and migrating historic TSDB blocks from Prometheus or Thanos."
 weight: 10
 ---
 
-# Migrate to Grafana Mimir from Thanos or Prometheus
+# Migrating to Grafana Mimir from Thanos or Prometheus
 
 ## Overview
 
