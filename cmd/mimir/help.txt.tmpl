@@ -116,7 +116,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.backend string
     	Backend storage to use. Supported backends are: s3, gcs, azure, swift, filesystem. (default "filesystem")
   -blocks-storage.bucket-store.bucket-index.enabled
-    	True to enable querier and store-gateway to discover blocks in the storage via bucket index instead of bucket scanning.
+    	If enabled, queriers and store-gateways discover blocks by reading a bucket index (created and updated by the compactor) instead of periodically scanning the bucket. (default true)
   -blocks-storage.bucket-store.chunks-cache.backend string
     	Backend for chunks cache, if not empty. Supported values: memcached.
   -blocks-storage.bucket-store.chunks-cache.memcached.addresses string

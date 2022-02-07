@@ -250,7 +250,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.bucket-store.block-sync-concurrency int
     	Maximum number of concurrent blocks synching per tenant. (default 20)
   -blocks-storage.bucket-store.bucket-index.enabled
-    	True to enable querier and store-gateway to discover blocks in the storage via bucket index instead of bucket scanning.
+    	If enabled, queriers and store-gateways discover blocks by reading a bucket index (created and updated by the compactor) instead of periodically scanning the bucket. (default true)
   -blocks-storage.bucket-store.bucket-index.idle-timeout duration
     	How long a unused bucket index should be cached. Once this timeout expires, the unused bucket index is removed from the in-memory cache. This option is used only by querier. (default 1h0m0s)
   -blocks-storage.bucket-store.bucket-index.max-stale-period duration

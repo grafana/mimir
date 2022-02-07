@@ -573,10 +573,11 @@ blocks_storage:
     [ignore_deletion_mark_delay: <duration> | default = 1h]
 
     bucket_index:
-      # True to enable querier and store-gateway to discover blocks in the
-      # storage via bucket index instead of bucket scanning.
+      # If enabled, queriers and store-gateways discover blocks by reading a
+      # bucket index (created and updated by the compactor) instead of
+      # periodically scanning the bucket.
       # CLI flag: -blocks-storage.bucket-store.bucket-index.enabled
-      [enabled: <boolean> | default = false]
+      [enabled: <boolean> | default = true]
 
       # [advanced] How frequently a bucket index, which previously failed to
       # load, should be tried to load again. This option is used only by
