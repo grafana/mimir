@@ -1,0 +1,15 @@
+apiVersion: 1
+
+datasources:
+  - name: Mimir
+    type: prometheus
+    access: proxy
+    orgId: 1
+    url: $DATASOURCE_URL
+    basicAuth: true
+    basicAuthUser: $DATASOURCE_USERNAME
+    isDefault: true
+    secureJsonData:
+      basicAuthPassword: $DATASOURCE_PASSWORD
+    version: 1
+    editable: true
