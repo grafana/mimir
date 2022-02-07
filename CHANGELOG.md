@@ -256,7 +256,7 @@
 * [CHANGE] Alertmanager: `-experimental.alertmanager.enable-api` flag has been renamed to `-alertmanager.enable-api` and is now stable. #913
 * [CHANGE] Ingester: changed default value of `-blocks-storage.tsdb.retention-period` from `6h` to `24h`. #966
 * [CHANGE] Changed default value of `-querier.query-ingesters-within` and `-blocks-storage.tsdb.close-idle-tsdb-timeout` from `0` to `13h`. #966
-* [CHANGE] Changed default value of `-distributor.ring.store` (Distributor ring) and `-ring.store` (Ingester ring) to `memberlist`.
+* [CHANGE] Changed default value of `-distributor.ring.store` (Distributor ring) and `-ring.store` (Ingester ring) to `memberlist`. #1046
 * [CHANGE] Ruler: `-ruler.alertmanager-discovery` flag has been removed. URLs following the prior SRV format, will be treated as a static target. To continue using service discovery for these URLs prepend `dnssrvnoa+` to them. #993
 * [CHANGE] Ruler: add support for [DNS service discovery format](./docs/sources/configuration/arguments.md#dns-service-discovery) for `-ruler.alertmanager-url`. #993
 * [CHANGE] Ruler: the following metrics for Alertmanager DNS service discovery are replaced: #993
