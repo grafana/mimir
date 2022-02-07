@@ -424,6 +424,7 @@
 * [BUGFIX] Compactor: compactor should now be able to correctly mark blocks for deletion and no-compaction, if such marking was previously interrupted. #1015
 * [BUGFIX] Overrides-exporter: successfully startup even if runtime config is not set. #1056
 * [BUGFIX] Multi-KV: runtime config changes are now propagated to all rings, not just ingester ring. #1047
+* [BUGFIX] Ruler: do not log `unable to read rules directory` at startup if the directory hasn't been created yet. #1058
 
 ### Mixin (changes since `grafana/cortex-jsonnet` `1.9.0`)
 
