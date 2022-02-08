@@ -44,18 +44,18 @@ aws s3 cp <DIRECTORY> s3://<TENANT>/<DIRECTORY>
 gsutil -m cp -r <DIRECTORY> gs://<TENANT>/<DIRECTORY>
 ```
 
-## Migrate the block metadata using `thanosconvert`
+## Migrate the block metadata using `metaconvert`
 
 Every block has a `meta.json` metadata file used by Grafana Mimir, Prometheus, and Thanos to understand the block contents.
 Each project has its own metadata conventions.
-The `thanosconvert` tool migrates the metadata from project to another.
+The `metaconvert` tool migrates the metadata from project to another.
 
-### Download `thanosconvert`
+### Download `metaconvert`
 
 - Using Docker:
 
 ```bash
-docker pull grafana/thanosconvert:latest
+docker pull grafana/metaconvert:latest
 ```
 
 - Using a release binary:
@@ -63,43 +63,35 @@ docker pull grafana/thanosconvert:latest
 Download the appropriate release asset for your operating system and architecture and make it executable. For Linux with the AMD64 architecture:
 
 ```bash
-curl -LO https://github.com/grafana/mimir/releases/latest/download/thanosconvert-linux-amd64
-chmod +x mimir-linux-amd64
+curl -LO https://github.com/grafana/mimir/releases/latest/download/metaconvert-linux-amd64
+chmod +x metaconvert-linux-amd64
 ```
 
 - Using Go:
 
 ```bash
-go install github.com/grafana/mimir/cmd/thanosconvert@latest
+go install github.com/grafana/mimir/cmd/metaconvert@latest
 ```
 
-### Run `thanosconvert`
+### Run `metaconvert`
 
-> **Warning:** The `thanosconvert` tool modifies objects in place.
+> **Warning:** The `metaconvert` tool modifies objects in place.
 > Ensure you enable bucket versioning or have backups before running running the tool.
 
-To run `thanosconvert`, you need to provide it with the bucket configuration.
-The configuration format is the same as the [blocks storage bucket configuration]({{<relref "../configuration/config-file-reference.md#blocks_storage_config" >}}).
+To run `metaconvert`, you need to provide it with the bucket configuration. Use `metaconvert -h` to get list of available parameters.
 
-1. Write the bucket configuration to a file `bucket.yaml`.
-1. Use one of the following steps to run `thanosconvert` in a dry-run mode that lists blocks for migration.
+1. Use one of the following steps to run `metaconvert` in a dry-run mode that lists blocks for migration.
 
 - Using Docker:
 
 ```bash
-docker run grafana/thanosconvert -v "$(pwd)"/bucket.yaml:/bucket.yaml --config /bucket.yaml --dry-run
+docker run grafana/metaconvert -backend=gcs -gcs.bucket-name=bucket -tenant=anonymous -dry-run
 ```
 
 - Using a local binary:
 
 ```bash
-./thanosconvert --config ./bucket.yaml --dry-run
-```
-
-- Using Go:
-
-```bash
-"$(go env GOPATH)"/bin/thanosconvert --config ./bucket.yaml --dry-run
+./metaconvert -backend=filesystem -filesystem.dir=/bucket -tenant=anonymous -dry-run
 ```
 
 3. Remove the `--dry-run` flag to apply the migration.

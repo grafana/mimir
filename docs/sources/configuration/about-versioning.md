@@ -37,7 +37,6 @@ Currently experimental features are:
 - Ruler: tenant federation.
 - Distributor: metrics relabeling.
 - Purger: tenant deletion API.
-- `thanosconvert` tool for converting Thanos block metadata to Grafana Mimir metadata.
 - Exemplar storage
   - `-ingester.max-global-exemplars-per-user`
   - `-ingester.exemplars-update-period`

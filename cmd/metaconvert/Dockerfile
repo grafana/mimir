@@ -5,10 +5,10 @@
 
 FROM       alpine:3.13
 RUN        apk add --no-cache ca-certificates
-COPY       thanosconvert /
-ENTRYPOINT ["/thanosconvert"]
+COPY       metaconvert /
+ENTRYPOINT ["/metaconvert"]
 
 ARG revision
-LABEL org.opencontainers.image.title="thanosconvert" \
-      org.opencontainers.image.source="https://github.com/grafana/mimir/tree/main/tools/thanosconvert" \
+LABEL org.opencontainers.image.title="metaconvert" \
+      org.opencontainers.image.source="https://github.com/grafana/mimir/tree/main/cmd/metaconvert" \
       org.opencontainers.image.revision="${revision}"
