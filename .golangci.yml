@@ -24,3 +24,4 @@ run:
   build-tags:
     - netgo
     - requires_docker
+    - requires_libpcap
