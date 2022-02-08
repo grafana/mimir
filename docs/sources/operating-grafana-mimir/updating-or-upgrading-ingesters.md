@@ -1,8 +1,7 @@
 ---
-title: "Ingesters rolling updates"
-linkTitle: "Ingesters rolling updates"
+title: "Updating or upgrading ingesters"
+description: ""
 weight: 10
-slug: ingesters-rolling-updates
 ---
 
 Mimir [ingesters](architecture.md#ingester) are semi-stateful.
