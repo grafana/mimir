@@ -6,7 +6,7 @@
 FROM golang:1.17.3-buster
 ARG goproxyValue
 ENV GOPROXY=${goproxyValue}
-RUN apt-get update && apt-get install -y curl python-requests python-yaml file jq zip unzip protobuf-compiler libprotobuf-dev shellcheck && \
+RUN apt-get update && apt-get install -y curl python-requests python-yaml file jq zip unzip protobuf-compiler libprotobuf-dev shellcheck libpcap-dev && \
 	rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 RUN go install golang.org/x/tools/cmd/goimports@3fce476f0a782aeb5034d592c189e63be4ba6c9e
 RUN curl -sL https://deb.nodesource.com/setup_14.x | bash -
