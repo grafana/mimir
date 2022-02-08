@@ -1,9 +1,10 @@
 ---
-title: "v1.x Guarantees"
-linkTitle: "v1.x Guarantees"
-weight: 6
-slug: v1guarantees
+title: "About versioning"
+description: ""
+weight: 10
 ---
+
+# About versioning
 
 For the v1.0 release, we want to provide the following guarantees:
 
