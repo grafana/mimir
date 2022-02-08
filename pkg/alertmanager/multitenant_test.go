@@ -2109,7 +2109,6 @@ func (am *passthroughAlertmanagerClient) ReadState(ctx context.Context, in *aler
 
 func (am *passthroughAlertmanagerClient) HandleRequest(ctx context.Context, in *httpgrpc.HTTPRequest, opts ...grpc.CallOption) (*httpgrpc.HTTPResponse, error) {
 	return am.server.HandleRequest(ctx, in)
-	//return nil, fmt.Errorf("unexpected call to HandleRequest")
 }
 
 func (am *passthroughAlertmanagerClient) RemoteAddress() string {
