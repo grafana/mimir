@@ -24,6 +24,43 @@ const (
 	categoryExperimental
 )
 
+// Flags are primarily categorized via struct tags, but this can be impossible when third party libraries are involved
+// Only categorize flags here when you can't otherwise, since struct tags are less likely to become stale
+var categoryOverrides = map[string]category{
+	// server.Config in weaveworks/common/server
+	"server.graceful-shutdown-timeout":                  categoryAdvanced,
+	"server.grpc-conn-limit":                            categoryAdvanced,
+	"server.grpc-listen-network":                        categoryAdvanced,
+	"server.grpc-max-concurrent-streams":                categoryAdvanced,
+	"server.grpc-max-recv-msg-size-bytes":               categoryAdvanced,
+	"server.grpc-max-send-msg-size-bytes":               categoryAdvanced,
+	"server.grpc-tls-ca-path":                           categoryAdvanced,
+	"server.grpc-tls-cert-path":                         categoryAdvanced,
+	"server.grpc-tls-client-auth":                       categoryAdvanced,
+	"server.grpc-tls-key-path":                          categoryAdvanced,
+	"server.grpc.keepalive.max-connection-age":          categoryAdvanced,
+	"server.grpc.keepalive.max-connection-age-grace":    categoryAdvanced,
+	"server.grpc.keepalive.max-connection-idle":         categoryAdvanced,
+	"server.grpc.keepalive.min-time-between-pings":      categoryAdvanced,
+	"server.grpc.keepalive.ping-without-stream-allowed": categoryAdvanced,
+	"server.grpc.keepalive.time":                        categoryAdvanced,
+	"server.grpc.keepalive.timeout":                     categoryAdvanced,
+	"server.http-conn-limit":                            categoryAdvanced,
+	"server.http-idle-timeout":                          categoryAdvanced,
+	"server.http-listen-network":                        categoryAdvanced,
+	"server.http-read-timeout":                          categoryAdvanced,
+	"server.http-tls-ca-path":                           categoryAdvanced,
+	"server.http-tls-cert-path":                         categoryAdvanced,
+	"server.http-tls-client-auth":                       categoryAdvanced,
+	"server.http-tls-key-path":                          categoryAdvanced,
+	"server.http-write-timeout":                         categoryAdvanced,
+	"server.log-source-ips-enabled":                     categoryAdvanced,
+	"server.log-source-ips-header":                      categoryAdvanced,
+	"server.log-source-ips-regex":                       categoryAdvanced,
+	"server.path-prefix":                                categoryAdvanced,
+	"server.register-instrumentation":                   categoryAdvanced,
+}
+
 // usage prints command-line usage, the printAll argument controls whether also non-basic flags will be included.
 func usage(cfg *mimir.Config, printAll bool) error {
 	fields := map[uintptr]reflect.StructField{}
@@ -36,7 +73,10 @@ func usage(cfg *mimir.Config, printAll bool) error {
 	fs.VisitAll(func(fl *flag.Flag) {
 		v := reflect.ValueOf(fl.Value)
 		fieldCat := categoryBasic
-		if v.Kind() == reflect.Ptr {
+
+		if override, ok := categoryOverrides[fl.Name]; ok {
+			fieldCat = override
+		} else if v.Kind() == reflect.Ptr {
 			ptr := v.Pointer()
 			field, ok := fields[ptr]
 			if ok {
