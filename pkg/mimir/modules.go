@@ -431,7 +431,13 @@ func (t *Mimir) initIngesterService() (serv services.Service, err error) {
 }
 
 func (t *Mimir) initIngester() (serv services.Service, err error) {
-	t.API.RegisterIngester(t.Ingester, t.Cfg.Distributor)
+	var ing api.Ingester
+
+	ing = t.Ingester
+	if t.ActivityTracker != nil {
+		ing = ingester.NewIngesterActivityTracker(t.Ingester, t.ActivityTracker)
+	}
+	t.API.RegisterIngester(ing, t.Cfg.Distributor)
 	return nil, nil
 }
 

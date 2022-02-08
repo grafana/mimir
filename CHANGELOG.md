@@ -314,7 +314,7 @@
 * [FEATURE] Ruler: Added federated rule groups. #533
   * Added `-ruler.tenant-federation.enabled` config flag.
   * Added support for `source_tenants` field on rule groups.
-* [FEATURE] Mimir: Added "Activity tracker" feature which can log ongoing activities from previous Mimir run in case of the crash. It is enabled by default and controlled by the `-activity-tracker.filepath` flag. It can be disabled by setting this path to an empty string. Currently, the Store-gateway, Ruler, Querier, and Query-frontend components uses this feature. #631 #782 #822
+* [FEATURE] Mimir: Added "Activity tracker" feature which can log ongoing activities from previous Mimir run in case of the crash. It is enabled by default and controlled by the `-activity-tracker.filepath` flag. It can be disabled by setting this path to an empty string. Currently, the Store-gateway, Ruler, Querier, Query-frontend and Ingester components uses this feature to track queries. #631 #782 #822
 * [FEATURE] Mimir: Divide configuration parameters into categories "basic", "advanced", and "experimental". Only flags in the basic category are shown when invoking `-help`, whereas `-help-all` will include flags in all categories (basic, advanced, experimental). #840
 * [FEATURE] Store-gateway: Added `/store-gateway/tenants` and `/store-gateway/tenant/{tenant}/blocks` endpoints that provide functionality that was provided by `tools/listblocks`. #911
 * [FEATURE] The following features have been moved from experimental to stable: #913 #1002
