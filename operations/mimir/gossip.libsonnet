@@ -5,12 +5,12 @@
     'memberlist.join': 'gossip-ring.%s.svc.cluster.local:%d' % [$._config.namespace, gossipRingPort],
   },
 
-  local setupGossipRing(prefix='') = if $._config.multikv_migration_enabled then {
-    ['%sring.store' % prefix]: 'multi',
+  local setupGossipRing(storeOption, consulHostnameOption) = if $._config.multikv_migration_enabled then {
+    [storeOption]: 'multi',
     // don't remove consul.hostname, it may still be needed.
   } else {
-    ['%sring.store' % prefix]: 'memberlist',
-    ['%sconsul.hostname' % prefix]: null,
+    [storeOption]: 'memberlist',
+    [consulHostnameOption]: null,
   },
 
   _config+:: {
@@ -26,10 +26,9 @@
 
     // Use memberlist only. This works fine on already-migrated clusters.
     // To do a migration from Consul to memberlist, multi kv storage needs to be used (See below).
-    ingesterRingClientConfig+: setupGossipRing('') + memberlistConfig,  // ring.store, ring.consul.hostname.
+    ingesterRingClientConfig+: setupGossipRing('ring.store', 'consul.hostname') + memberlistConfig,
 
-    // store-gateway.sharding-ring.store and store-gateway.sharding-ring.consul.hostname
-    queryBlocksStorageConfig+:: setupGossipRing('store-gateway.sharding-') + memberlistConfig,
+    queryBlocksStorageConfig+:: setupGossipRing('store-gateway.sharding-ring.store', 'store-gateway.sharding-ring.consul.hostname') + memberlistConfig,
 
     // When doing migration via multi KV store, this section can be used
     // to configure runtime parameters of multi KV store
@@ -40,11 +39,11 @@
     },
   },
 
-  distributor_args+: setupGossipRing('distributor.') + memberlistConfig,  // distributor.ring.store, distributor.ring.consul.hostname
+  distributor_args+: setupGossipRing('distributor.ring.store', 'distributor.ring.consul.hostname') + memberlistConfig,
 
-  ruler_args+: setupGossipRing('ruler.') + memberlistConfig,  // ruler.ring.store, ruler.ring.consul.hostname
+  ruler_args+: setupGossipRing('ruler.ring.store', 'ruler.ring.consul.hostname') + memberlistConfig,
 
-  compactor_args+: setupGossipRing('compactor.') + memberlistConfig,  // compactor.ring.store, compactor.ring.consul.hostname
+  compactor_args+: setupGossipRing('compactor.ring.store', 'compactor.ring.consul.hostname') + memberlistConfig,
 
   ingester_args+: {
     // wait longer to see LEAVING ingester in the gossiped ring, to avoid
