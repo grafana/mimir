@@ -833,8 +833,6 @@ Usage of ./cmd/mimir/mimir:
     	Limit the query time range (end - start time). This limit is enforced in the query-frontend (on the received query), in the querier (on the query possibly split by the query-frontend) and ruler. 0 to disable.
   -target value
     	Comma-separated list of modules to load. The alias 'all' can be used in the list to load a number of core modules and will enable single-binary mode. Use '-modules' command line flag to get a list of available modules, and to see which modules are included in 'all'. (default all)
-  -tenant-federation.enabled
-    	If enabled on all services, queries can be federated across multiple tenants. The tenant IDs involved need to be specified separated by a '|' character in the 'X-Scope-OrgID' header.
   -validation.create-grace-period value
     	Duration which table will be created/deleted before/after it's needed; we won't accept sample from before this time. (default 10m)
   -validation.enforce-metadata-metric-name

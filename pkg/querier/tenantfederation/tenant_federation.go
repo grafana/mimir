@@ -19,7 +19,7 @@ const (
 
 type Config struct {
 	// Enabled switches on support for multi tenant query federation
-	Enabled bool `yaml:"enabled"`
+	Enabled bool `yaml:"enabled" category:"advanced"`
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
