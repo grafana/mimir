@@ -115,16 +115,15 @@ jobs:
         run: |
           mkdir -p /go/src/github.com/grafana/mimir
           ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
-      - name: Build Image
+      - name: Install ko
         run: |
-          make BUILD_IN_CONTAINER=false ./cmd/mimir/.uptodate
-      - name: Save Images
+          go install github.com/bwplotka/bingo@latest
+          bingo get ko
+          source .bingo/variables.env
+      - name: Build Images
         run: |
-          mkdir /tmp/images
-          ln -s /tmp/images ./docker-images
-          make BUILD_IN_CONTAINER=false save-images
-      - name: Create Docker Images Archive
-        run: tar -cvf mimir-images.tar /tmp/images
+          KO_DOCKER_REPO=us.gcr.io/kubernetes-dev $KO build --oci-layout-path mimir-images --platform=linux/amd64,linux/arm64 --push=false ./cmd/mimir
+          tar -cvf mimir-images.tar mimir-images
       - name: Upload Docker Images Artifact
         uses: actions/upload-artifact@v2
         with:
@@ -188,12 +187,11 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           name: Docker Images Mimir
-      - name: Extract Docker Image Archive
-        run: tar -xvf mimir-images.tar -C /
       - name: Load Docker Images
         run: |
-          ln -s /tmp/images ./docker-images
-          make BUILD_IN_CONTAINER=false load-images
+          tar -xvf mimir-images.tar
+          # TODO: Name mimir instead, when we feel safe about it
+          KO_DOCKER_REPO=us.gcr.io/kubernetes-dev $KO publish-layout mimir-ko mimir-images --local
       - name: Preload Images
         # We download docker images used by integration tests so that all images are available
         # locally and the download time doesn't account in the test execution time, which is subject
@@ -234,7 +232,7 @@ jobs:
           name: Docker Images Mimir
       - name: Extract Docker Images
         run: |
-          tar -xvf mimir-images.tar -C /
+          tar -xvf mimir-images.tar
           tar -xvf tools-images.tar -C /
       - name: Load Images
         run: |
@@ -246,6 +244,11 @@ jobs:
             printenv DOCKER_PASSWORD | docker login -u "$DOCKER_USERNAME" --password-stdin
           fi
           export IMAGE_TAG=$(make image-tag)
+          # TODO: Name mimir instead, when we feel safe about it
+          # TODO: Use docker.io/grafana for KO_DOCKER_REPO when we feel safe about it
+          # TODO: Also make sure to tag manifest list as latest if latest stable Git tag (see push-images)
+          # TODO: Use $IMAGE_TAG
+          KO_DOCKER_REPO=us.gcr.io/kubernetes-dev $KO publish-layout mimir-ko mimir-images
           ./push-images
         env:
           DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
