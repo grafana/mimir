@@ -13,30 +13,30 @@ import (
 	"github.com/grafana/mimir/pkg/util/activitytracker"
 )
 
-// IngesterActivityTracker is a wrapper around Ingester that adds queries to activity tracker.
-type IngesterActivityTracker struct {
+// ActivityTrackerWrapper is a wrapper around Ingester that adds queries to activity tracker.
+type ActivityTrackerWrapper struct {
 	ing     *Ingester
 	tracker *activitytracker.ActivityTracker
 }
 
-func NewIngesterActivityTracker(ing *Ingester, tracker *activitytracker.ActivityTracker) *IngesterActivityTracker {
-	return &IngesterActivityTracker{
+func NewIngesterActivityTracker(ing *Ingester, tracker *activitytracker.ActivityTracker) *ActivityTrackerWrapper {
+	return &ActivityTrackerWrapper{
 		ing:     ing,
 		tracker: tracker,
 	}
 }
 
-func (i *IngesterActivityTracker) Push(ctx context.Context, request *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error) {
+func (i *ActivityTrackerWrapper) Push(ctx context.Context, request *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error) {
 	// No tracking in Push
 	return i.ing.Push(ctx, request)
 }
 
-func (i *IngesterActivityTracker) PushWithCleanup(ctx context.Context, w *mimirpb.WriteRequest, c func()) (*mimirpb.WriteResponse, error) {
+func (i *ActivityTrackerWrapper) PushWithCleanup(ctx context.Context, w *mimirpb.WriteRequest, c func()) (*mimirpb.WriteResponse, error) {
 	// No tracking in PushWithCleanup
 	return i.ing.PushWithCleanup(ctx, w, c)
 }
 
-func (i *IngesterActivityTracker) QueryStream(request *client.QueryRequest, server client.Ingester_QueryStreamServer) error {
+func (i *ActivityTrackerWrapper) QueryStream(request *client.QueryRequest, server client.Ingester_QueryStreamServer) error {
 	ix := i.tracker.Insert(func() string {
 		return requestActivity(server.Context(), "Ingester/QueryStream", request)
 	})
@@ -45,7 +45,7 @@ func (i *IngesterActivityTracker) QueryStream(request *client.QueryRequest, serv
 	return i.ing.QueryStream(request, server)
 }
 
-func (i *IngesterActivityTracker) QueryExemplars(ctx context.Context, request *client.ExemplarQueryRequest) (*client.ExemplarQueryResponse, error) {
+func (i *ActivityTrackerWrapper) QueryExemplars(ctx context.Context, request *client.ExemplarQueryRequest) (*client.ExemplarQueryResponse, error) {
 	ix := i.tracker.Insert(func() string {
 		return requestActivity(ctx, "Ingester/QueryExemplars", request)
 	})
@@ -54,7 +54,7 @@ func (i *IngesterActivityTracker) QueryExemplars(ctx context.Context, request *c
 	return i.ing.QueryExemplars(ctx, request)
 }
 
-func (i *IngesterActivityTracker) LabelValues(ctx context.Context, request *client.LabelValuesRequest) (*client.LabelValuesResponse, error) {
+func (i *ActivityTrackerWrapper) LabelValues(ctx context.Context, request *client.LabelValuesRequest) (*client.LabelValuesResponse, error) {
 	ix := i.tracker.Insert(func() string {
 		return requestActivity(ctx, "Ingester/LabelValues", request)
 	})
@@ -63,7 +63,7 @@ func (i *IngesterActivityTracker) LabelValues(ctx context.Context, request *clie
 	return i.ing.LabelValues(ctx, request)
 }
 
-func (i *IngesterActivityTracker) LabelNames(ctx context.Context, request *client.LabelNamesRequest) (*client.LabelNamesResponse, error) {
+func (i *ActivityTrackerWrapper) LabelNames(ctx context.Context, request *client.LabelNamesRequest) (*client.LabelNamesResponse, error) {
 	ix := i.tracker.Insert(func() string {
 		return requestActivity(ctx, "Ingester/LabelNames", request)
 	})
@@ -72,7 +72,7 @@ func (i *IngesterActivityTracker) LabelNames(ctx context.Context, request *clien
 	return i.ing.LabelNames(ctx, request)
 }
 
-func (i *IngesterActivityTracker) UserStats(ctx context.Context, request *client.UserStatsRequest) (*client.UserStatsResponse, error) {
+func (i *ActivityTrackerWrapper) UserStats(ctx context.Context, request *client.UserStatsRequest) (*client.UserStatsResponse, error) {
 	ix := i.tracker.Insert(func() string {
 		return requestActivity(ctx, "Ingester/UserStats", request)
 	})
@@ -81,7 +81,7 @@ func (i *IngesterActivityTracker) UserStats(ctx context.Context, request *client
 	return i.ing.UserStats(ctx, request)
 }
 
-func (i *IngesterActivityTracker) AllUserStats(ctx context.Context, request *client.UserStatsRequest) (*client.UsersStatsResponse, error) {
+func (i *ActivityTrackerWrapper) AllUserStats(ctx context.Context, request *client.UserStatsRequest) (*client.UsersStatsResponse, error) {
 	ix := i.tracker.Insert(func() string {
 		return requestActivity(ctx, "Ingester/AllUserStats", request)
 	})
@@ -90,7 +90,7 @@ func (i *IngesterActivityTracker) AllUserStats(ctx context.Context, request *cli
 	return i.ing.AllUserStats(ctx, request)
 }
 
-func (i *IngesterActivityTracker) MetricsForLabelMatchers(ctx context.Context, request *client.MetricsForLabelMatchersRequest) (*client.MetricsForLabelMatchersResponse, error) {
+func (i *ActivityTrackerWrapper) MetricsForLabelMatchers(ctx context.Context, request *client.MetricsForLabelMatchersRequest) (*client.MetricsForLabelMatchersResponse, error) {
 	ix := i.tracker.Insert(func() string {
 		return requestActivity(ctx, "Ingester/MetricsForLabelMatchers", request)
 	})
@@ -99,7 +99,7 @@ func (i *IngesterActivityTracker) MetricsForLabelMatchers(ctx context.Context, r
 	return i.ing.MetricsForLabelMatchers(ctx, request)
 }
 
-func (i *IngesterActivityTracker) MetricsMetadata(ctx context.Context, request *client.MetricsMetadataRequest) (*client.MetricsMetadataResponse, error) {
+func (i *ActivityTrackerWrapper) MetricsMetadata(ctx context.Context, request *client.MetricsMetadataRequest) (*client.MetricsMetadataResponse, error) {
 	ix := i.tracker.Insert(func() string {
 		return requestActivity(ctx, "Ingester/MetricsMetadata", request)
 	})
@@ -108,7 +108,7 @@ func (i *IngesterActivityTracker) MetricsMetadata(ctx context.Context, request *
 	return i.ing.MetricsMetadata(ctx, request)
 }
 
-func (i *IngesterActivityTracker) LabelNamesAndValues(request *client.LabelNamesAndValuesRequest, server client.Ingester_LabelNamesAndValuesServer) error {
+func (i *ActivityTrackerWrapper) LabelNamesAndValues(request *client.LabelNamesAndValuesRequest, server client.Ingester_LabelNamesAndValuesServer) error {
 	ix := i.tracker.Insert(func() string {
 		return requestActivity(server.Context(), "Ingester/LabelNamesAndValues", request)
 	})
@@ -117,7 +117,7 @@ func (i *IngesterActivityTracker) LabelNamesAndValues(request *client.LabelNames
 	return i.ing.LabelNamesAndValues(request, server)
 }
 
-func (i *IngesterActivityTracker) LabelValuesCardinality(request *client.LabelValuesCardinalityRequest, server client.Ingester_LabelValuesCardinalityServer) error {
+func (i *ActivityTrackerWrapper) LabelValuesCardinality(request *client.LabelValuesCardinalityRequest, server client.Ingester_LabelValuesCardinalityServer) error {
 	ix := i.tracker.Insert(func() string {
 		return requestActivity(server.Context(), "Ingester/LabelValuesCardinality", request)
 	})
@@ -126,12 +126,12 @@ func (i *IngesterActivityTracker) LabelValuesCardinality(request *client.LabelVa
 	return i.ing.LabelValuesCardinality(request, server)
 }
 
-func (i *IngesterActivityTracker) FlushHandler(w http.ResponseWriter, r *http.Request) {
+func (i *ActivityTrackerWrapper) FlushHandler(w http.ResponseWriter, r *http.Request) {
 	// No tracking
 	i.ing.FlushHandler(w, r)
 }
 
-func (i *IngesterActivityTracker) ShutdownHandler(w http.ResponseWriter, r *http.Request) {
+func (i *ActivityTrackerWrapper) ShutdownHandler(w http.ResponseWriter, r *http.Request) {
 	// No tracking
 	i.ing.ShutdownHandler(w, r)
 }
