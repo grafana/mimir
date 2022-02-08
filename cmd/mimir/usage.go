@@ -10,56 +10,8 @@ import (
 	"strings"
 
 	"github.com/grafana/mimir/pkg/mimir"
+	"github.com/grafana/mimir/pkg/util/fieldcategory"
 )
-
-// category is an enumeration of flag categories.
-type category int
-
-const (
-	// categoryBasic is the basic flag category, and the default if none is defined.
-	categoryBasic category = iota
-	// categoryAdvanced is the advanced flag category.
-	categoryAdvanced
-	// categoryExperimental is the experimental flag category.
-	categoryExperimental
-)
-
-// Flags are primarily categorized via struct tags, but this can be impossible when third party libraries are involved
-// Only categorize flags here when you can't otherwise, since struct tags are less likely to become stale
-var categoryOverrides = map[string]category{
-	// server.Config in weaveworks/common/server
-	"server.graceful-shutdown-timeout":                  categoryAdvanced,
-	"server.grpc-conn-limit":                            categoryAdvanced,
-	"server.grpc-listen-network":                        categoryAdvanced,
-	"server.grpc-max-concurrent-streams":                categoryAdvanced,
-	"server.grpc-max-recv-msg-size-bytes":               categoryAdvanced,
-	"server.grpc-max-send-msg-size-bytes":               categoryAdvanced,
-	"server.grpc-tls-ca-path":                           categoryAdvanced,
-	"server.grpc-tls-cert-path":                         categoryAdvanced,
-	"server.grpc-tls-client-auth":                       categoryAdvanced,
-	"server.grpc-tls-key-path":                          categoryAdvanced,
-	"server.grpc.keepalive.max-connection-age":          categoryAdvanced,
-	"server.grpc.keepalive.max-connection-age-grace":    categoryAdvanced,
-	"server.grpc.keepalive.max-connection-idle":         categoryAdvanced,
-	"server.grpc.keepalive.min-time-between-pings":      categoryAdvanced,
-	"server.grpc.keepalive.ping-without-stream-allowed": categoryAdvanced,
-	"server.grpc.keepalive.time":                        categoryAdvanced,
-	"server.grpc.keepalive.timeout":                     categoryAdvanced,
-	"server.http-conn-limit":                            categoryAdvanced,
-	"server.http-idle-timeout":                          categoryAdvanced,
-	"server.http-listen-network":                        categoryAdvanced,
-	"server.http-read-timeout":                          categoryAdvanced,
-	"server.http-tls-ca-path":                           categoryAdvanced,
-	"server.http-tls-cert-path":                         categoryAdvanced,
-	"server.http-tls-client-auth":                       categoryAdvanced,
-	"server.http-tls-key-path":                          categoryAdvanced,
-	"server.http-write-timeout":                         categoryAdvanced,
-	"server.log-source-ips-enabled":                     categoryAdvanced,
-	"server.log-source-ips-header":                      categoryAdvanced,
-	"server.log-source-ips-regex":                       categoryAdvanced,
-	"server.path-prefix":                                categoryAdvanced,
-	"server.register-instrumentation":                   categoryAdvanced,
-}
 
 // usage prints command-line usage, the printAll argument controls whether also non-basic flags will be included.
 func usage(cfg *mimir.Config, printAll bool) error {
@@ -72,9 +24,9 @@ func usage(cfg *mimir.Config, printAll bool) error {
 	fmt.Fprintf(fs.Output(), "Usage of %s:\n", os.Args[0])
 	fs.VisitAll(func(fl *flag.Flag) {
 		v := reflect.ValueOf(fl.Value)
-		fieldCat := categoryBasic
+		fieldCat := fieldcategory.Basic
 
-		if override, ok := categoryOverrides[fl.Name]; ok {
+		if override, ok := fieldcategory.GetOverride(fl.Name); ok {
 			fieldCat = override
 		} else if v.Kind() == reflect.Ptr {
 			ptr := v.Pointer()
@@ -83,14 +35,14 @@ func usage(cfg *mimir.Config, printAll bool) error {
 				catStr := field.Tag.Get("category")
 				switch catStr {
 				case "advanced":
-					fieldCat = categoryAdvanced
+					fieldCat = fieldcategory.Advanced
 				case "experimental":
-					fieldCat = categoryExperimental
+					fieldCat = fieldcategory.Experimental
 				}
 			}
 		}
 
-		if fieldCat != categoryBasic && !printAll {
+		if fieldCat != fieldcategory.Basic && !printAll {
 			// Don't print help for this flag since we're supposed to print only basic flags
 			return
 		}
@@ -106,7 +58,7 @@ func usage(cfg *mimir.Config, printAll bool) error {
 		// Four spaces before the tab triggers good alignment
 		// for both 4- and 8-space tab stops.
 		b.WriteString("\n    \t")
-		if fieldCat == categoryExperimental {
+		if fieldCat == fieldcategory.Experimental {
 			b.WriteString("[experimental] ")
 		}
 		b.WriteString(strings.ReplaceAll(fl.Usage, "\n", "\n    \t"))
