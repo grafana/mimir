@@ -231,6 +231,8 @@ Usage of ./cmd/mimir/mimir:
     	Allows to skip label name validation via header on the http write path. Use with caution as it breaks PromQL. Allowing this for external clients allows any client to send invalid label names. After enabling it, requests with a specific HTTP header set to true will not have label names validated.
   -auth.enabled
     	Set to false to disable auth. (default true)
+  -auth.no-auth-tenant string
+    	Tenant ID to use when auth is disabled. (default "anonymous")
   -blocks-storage.azure.account-key value
     	Azure storage account key
   -blocks-storage.azure.account-name string

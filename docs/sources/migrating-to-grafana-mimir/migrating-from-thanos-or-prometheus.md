@@ -27,7 +27,7 @@ find <STORAGE TSDB PATH> -name chunks -exec dirname {} \;
 ```
 
 Grafana Mimir supports multiple tenants and stores blocks with a tenant prefix.
-With multi-tenancy disabled, there is a single tenant called `fake`.
+With multi-tenancy disabled, there is a single tenant called `anonymous`.
 
 Copy each directory output by the previous command to the Mimir object storage bucket with
 your tenant prefix.

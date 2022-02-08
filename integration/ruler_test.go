@@ -143,7 +143,7 @@ func TestRulerAPISingleBinary(t *testing.T) {
 	defer s.Close()
 
 	namespace := "ns"
-	user := "fake"
+	user := "anonymous"
 
 	// Start dependencies.
 	minio := e2edb.NewMinio(9000, bucketName)
@@ -206,7 +206,7 @@ func TestRulerEvaluationDelay(t *testing.T) {
 	defer s.Close()
 
 	namespace := "ns"
-	user := "fake"
+	user := "anonymous"
 
 	evaluationDelay := time.Minute * 5
 
