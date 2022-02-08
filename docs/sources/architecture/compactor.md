@@ -167,9 +167,10 @@ compactor:
   # CLI flag: -compactor.consistency-delay
   [consistency_delay: <duration> | default = 0s]
 
-  # Data directory in which to cache blocks and process compactions
+  # Directory to temporarily store blocks during compaction. This directory is
+  # not required to be persisted between restarts.
   # CLI flag: -compactor.data-dir
-  [data_dir: <string> | default = "./data"]
+  [data_dir: <string> | default = "./data-compactor/"]
 
   # (advanced) The frequency at which the compaction runs
   # CLI flag: -compactor.compaction-interval

@@ -818,7 +818,7 @@ func TestRulerFederatedRules(t *testing.T) {
 }
 
 func ruleGroupMatcher(user, namespace, groupName string) *labels.Matcher {
-	return labels.MustNewMatcher(labels.MatchEqual, "rule_group", fmt.Sprintf("/rules/%s/%s;%s", user, namespace, groupName))
+	return labels.MustNewMatcher(labels.MatchEqual, "rule_group", fmt.Sprintf("data-ruler/%s/%s;%s", user, namespace, groupName))
 }
 
 func ruleGroupWithRule(groupName string, ruleName string, expression string) rulefmt.RuleGroup {

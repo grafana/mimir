@@ -144,7 +144,7 @@ activity_tracker:
   # File where ongoing activities are stored. If empty, activity tracking is
   # disabled.
   # CLI flag: -activity-tracker.filepath
-  [filepath: <string> | default = "/tmp/metrics-activity.log"]
+  [filepath: <string> | default = "./metrics-activity.log"]
 
   # Max number of concurrent activities that can be tracked. Used to size the
   # file in advance. Additional activities are ignored.
@@ -1141,9 +1141,10 @@ ruler_client:
 # CLI flag: -ruler.poll-interval
 [poll_interval: <duration> | default = 1m]
 
-# file path to store temporary rule files for the prometheus rule managers
+# Directory to store temporary rule files loaded by the Prometheus rule
+# managers. This directory is not required to be persisted between restarts.
 # CLI flag: -ruler.rule-path
-[rule_path: <string> | default = "/rules"]
+[rule_path: <string> | default = "./data-ruler/"]
 
 # Comma-separated list of URL(s) of the Alertmanager(s) to send notifications
 # to. Each URL is treated as a separate group. Multiple Alertmanagers in HA per
@@ -1533,9 +1534,11 @@ local:
 The `alertmanager_config` configures the alertmanager.
 
 ```yaml
-# Base path for data storage.
+# Directory to store Alertmanager state and temporarily configuration files. The
+# content of this directory is not required to be persisted between restarts
+# unless Alertmanager replication has been disabled.
 # CLI flag: -alertmanager.storage.path
-[data_dir: <string> | default = "data/"]
+[data_dir: <string> | default = "./data-alertmanager/"]
 
 # (advanced) How long to keep data for.
 # CLI flag: -alertmanager.storage.retention
@@ -2894,9 +2897,11 @@ filesystem:
 # This configures how the querier and store-gateway discover and synchronize
 # blocks stored in the bucket.
 bucket_store:
-  # Directory to store synchronized TSDB index headers.
+  # Directory to store synchronized TSDB index headers. This directory is not
+  # required to be persisted between restarts, but it's highly recommended in
+  # order to improve the store-gateway startup time.
   # CLI flag: -blocks-storage.bucket-store.sync-dir
-  [sync_dir: <string> | default = "tsdb-sync"]
+  [sync_dir: <string> | default = "./tsdb-sync/"]
 
   # (advanced) How frequently to scan the bucket, or to refresh the bucket index
   # (if enabled), in order to look for changes (new blocks shipped by ingesters
@@ -3127,9 +3132,10 @@ bucket_store:
   [postings_offsets_in_mem_sampling: <int> | default = 32]
 
 tsdb:
-  # Local directory to store TSDBs in the ingesters.
+  # Directory to store TSDBs (including WAL) in the ingesters. This directory is
+  # required to be persisted between restarts.
   # CLI flag: -blocks-storage.tsdb.dir
-  [dir: <string> | default = "tsdb"]
+  [dir: <string> | default = "./tsdb/"]
 
   # (advanced) TSDB blocks range period.
   # CLI flag: -blocks-storage.tsdb.block-ranges-period
@@ -3261,9 +3267,10 @@ The `compactor_config` configures the compactor service.
 # CLI flag: -compactor.consistency-delay
 [consistency_delay: <duration> | default = 0s]
 
-# Data directory in which to cache blocks and process compactions
+# Directory to temporarily store blocks during compaction. This directory is not
+# required to be persisted between restarts.
 # CLI flag: -compactor.data-dir
-[data_dir: <string> | default = "./data"]
+[data_dir: <string> | default = "./data-compactor/"]
 
 # (advanced) The frequency at which the compaction runs
 # CLI flag: -compactor.compaction-interval
