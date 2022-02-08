@@ -314,12 +314,12 @@ web-deploy:
 
 doc: ## Generates the config file documentation.
 doc: clean-doc
-	go run ./tools/doc-generator ./docs/sources/configuration/config-file-reference.template > ./docs/sources/configuration/config-file-reference.md
+	go run ./tools/doc-generator ./docs/sources/configuration/reference-configuration-parameters.template > ./docs/sources/configuration/reference-configuration-parameters.md
 	go run ./tools/doc-generator ./docs/sources/architecture/compactor.template              > ./docs/sources/architecture/compactor.md
 	go run ./tools/doc-generator ./docs/sources/architecture/store-gateway.template          > ./docs/sources/architecture/store-gateway.md
 	go run ./tools/doc-generator ./docs/sources/architecture/querier.template                > ./docs/sources/architecture/querier.md
 	go run ./tools/doc-generator ./docs/sources/operating-grafana-mimir/encrypt-data-at-rest.template     > ./docs/sources/operating-grafana-mimir/encrypt-data-at-rest.md
-	embedmd -w docs/sources/configuration/prometheus-frontend.md
+	embedmd -w docs/sources/configuration/using-the-query-frontend-with-prometheus.md
 	embedmd -w docs/sources/requests-mirroring-to-secondary-cluster.md
 	embedmd -w docs/sources/guides/overrides-exporter.md
 	embedmd -w docs/sources/getting-started/_index.md

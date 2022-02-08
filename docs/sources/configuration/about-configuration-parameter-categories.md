@@ -1,9 +1,10 @@
 ---
-title: "Configuration parameter categories"
-linkTitle: "Configuration parameter categories"
-weight: 1
-slug: config-param-categories
+title: "About configuration parameter categories"
+description: ""
+weight: 10
 ---
+
+# About configuration parameter categories
 
 In order to simplify Mimir configuration, parameters are bucketed into 3 categories according to
 their maturity and intended use: _basic_, _advanced_, and _experimental_.

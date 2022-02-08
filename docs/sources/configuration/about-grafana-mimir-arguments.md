@@ -1,9 +1,10 @@
 ---
-title: "Mimir arguments"
-linkTitle: "Mimir arguments explained"
-weight: 2
-slug: arguments
+title: "About Grafana Mimir arguments"
+description: ""
+weight: 10
 ---
+
+# About Grafana Mimir arguments
 
 ## General notes
 

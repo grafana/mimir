@@ -1,9 +1,10 @@
 ---
-title: "Prometheus Frontend"
-linkTitle: "Prometheus Frontend"
-weight: 3
-slug: prometheus-frontend
+title: "Using the query-frontend with Prometheus"
+description: ""
+weight: 20
 ---
+
+# Using the query-frontend with Prometheus
 
 You can use the Cortex query frontend with any Prometheus-API compatible
 service, including Prometheus and Thanos. Use this config file to get
