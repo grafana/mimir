@@ -1,4 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+//
+// This tool uses requires_libpcap tag to avoid compilation problems on machines that
+// don't have libpcap installed (eg. when running "go test ./..." from Mimir root).
+//
+//go:build requires_libpcap
+// +build requires_libpcap
 
 package main
 

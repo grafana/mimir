@@ -1,3 +1,11 @@
+---
+title: "Tenant injector"
+description: ""
+weight: 100
+---
+
+# Trafficdump
+
 Trafficdump tool can read packets from captured tcpdump output, reassemble them into TCP streams
 and parse HTTP requests and responses. It then prints requests and responses as json (one request/response per line)
 for further processing. Trafficdump can only parse "raw" HTTP requests and responses, and not HTTP requests and responses
@@ -14,5 +22,5 @@ It has some Mimir-specific and generic HTTP features:
 
 Trafficdump can be used to inspect both remote-write requests and queries.
 
-Note that trafficdump currently cannot decode LINUX_SSL2 link type, which is used when doing `tcpdump -i any` on Linux.
+Note that trafficdump currently cannot decode `LINUX_SSL2` link type, which is used when doing `tcpdump -i any` on Linux.
 Capturing traffic with `tcpdump -i eth0` (and link type ETHERNET / EN10MB) works fine.
