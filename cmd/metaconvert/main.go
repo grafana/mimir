@@ -106,9 +106,9 @@ func convertTenantBlocks(ctx context.Context, userBucketClient objstore.Bucket, 
 
 		updated := false
 
-		metaOrgId := meta.Thanos.Labels[mimir_tsdb.TenantIDExternalLabel]
-		if metaOrgId != tenant {
-			level.Warn(logger).Log("msg", "updating tenant label", "block", blockID.String(), "old_value", metaOrgId, "new_value", tenant)
+		metaOrgID := meta.Thanos.Labels[mimir_tsdb.TenantIDExternalLabel]
+		if metaOrgID != tenant {
+			level.Warn(logger).Log("msg", "updating tenant label", "block", blockID.String(), "old_value", metaOrgID, "new_value", tenant)
 			updated = true
 			meta.Thanos.Labels[mimir_tsdb.TenantIDExternalLabel] = tenant
 		}
