@@ -65,7 +65,7 @@ where `default_value` is the value to use if the environment variable is undefin
 # CLI flag: -auth.enabled
 [auth_enabled: <boolean> | default = true]
 
-# [advanced] Tenant ID to use when auth is disabled.
+# (advanced) Tenant ID to use when auth is disabled.
 # CLI flag: -auth.no-auth-tenant
 [no_auth_tenant: <string> | default = "anonymous"]
 
