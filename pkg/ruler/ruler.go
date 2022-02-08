@@ -87,8 +87,6 @@ type Config struct {
 	AlertmanagerURL string `yaml:"alertmanager_url"`
 	// How long to wait between refreshing the list of Alertmanager based on DNS service discovery.
 	AlertmanagerRefreshInterval time.Duration `yaml:"alertmanager_refresh_interval" category:"advanced"`
-	// Enables the ruler notifier to use the Alertmananger V2 API.
-	AlertmanagerEnableV2API bool `yaml:"enable_alertmanager_v2"`
 	// Capacity of the queue for notifications to be sent to the Alertmanager.
 	NotificationQueueCapacity int `yaml:"notification_queue_capacity" category:"advanced"`
 	// HTTP timeout duration when sending notifications to the Alertmanager.
@@ -146,7 +144,6 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 
 	f.StringVar(&cfg.AlertmanagerURL, "ruler.alertmanager-url", "", "Comma-separated list of URL(s) of the Alertmanager(s) to send notifications to. Each URL is treated as a separate group. Multiple Alertmanagers in HA per group can be supported by using DNS service discovery format. Basic auth is supported as part of the URL.")
 	f.DurationVar(&cfg.AlertmanagerRefreshInterval, "ruler.alertmanager-refresh-interval", 1*time.Minute, "How long to wait between refreshing DNS resolutions of Alertmanager hosts.")
-	f.BoolVar(&cfg.AlertmanagerEnableV2API, "ruler.alertmanager-use-v2", true, "If enabled requests to Alertmanager will utilize the V2 API.")
 	f.IntVar(&cfg.NotificationQueueCapacity, "ruler.notification-queue-capacity", 10000, "Capacity of the queue for notifications to be sent to the Alertmanager.")
 	f.DurationVar(&cfg.NotificationTimeout, "ruler.notification-timeout", 10*time.Second, "HTTP timeout duration when sending notifications to the Alertmanager.")
 

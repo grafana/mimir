@@ -41,7 +41,7 @@ func TestBuildNotifierConfig(t *testing.T) {
 				AlertingConfig: config.AlertingConfig{
 					AlertmanagerConfigs: []*config.AlertmanagerConfig{
 						{
-							APIVersion: "v1",
+							APIVersion: "v2",
 							Scheme:     "http",
 							PathPrefix: "/alertmanager",
 							ServiceDiscoveryConfigs: discovery.Configs{
@@ -59,8 +59,7 @@ func TestBuildNotifierConfig(t *testing.T) {
 		{
 			name: "with a single URL, v2 API, and no service discovery",
 			cfg: &Config{
-				AlertmanagerURL:         "http://alertmanager.default.svc.cluster.local/alertmanager",
-				AlertmanagerEnableV2API: true,
+				AlertmanagerURL: "http://alertmanager.default.svc.cluster.local/alertmanager",
 			},
 			ncfg: &config.Config{
 				AlertingConfig: config.AlertingConfig{
@@ -91,7 +90,7 @@ func TestBuildNotifierConfig(t *testing.T) {
 				AlertingConfig: config.AlertingConfig{
 					AlertmanagerConfigs: []*config.AlertmanagerConfig{
 						{
-							APIVersion: "v1",
+							APIVersion: "v2",
 							Scheme:     "http",
 							PathPrefix: "/alertmanager",
 							ServiceDiscoveryConfigs: discovery.Configs{
@@ -115,7 +114,7 @@ func TestBuildNotifierConfig(t *testing.T) {
 				AlertingConfig: config.AlertingConfig{
 					AlertmanagerConfigs: []*config.AlertmanagerConfig{
 						{
-							APIVersion: "v1",
+							APIVersion: "v2",
 							Scheme:     "http",
 							PathPrefix: "/alertmanager",
 							ServiceDiscoveryConfigs: discovery.Configs{
@@ -126,7 +125,7 @@ func TestBuildNotifierConfig(t *testing.T) {
 							},
 						},
 						{
-							APIVersion: "v1",
+							APIVersion: "v2",
 							Scheme:     "http",
 							PathPrefix: "/alertmanager",
 							ServiceDiscoveryConfigs: discovery.Configs{
@@ -153,7 +152,7 @@ func TestBuildNotifierConfig(t *testing.T) {
 							HTTPClientConfig: config_util.HTTPClientConfig{
 								BasicAuth: &config_util.BasicAuth{Username: "marco", Password: "hunter2"},
 							},
-							APIVersion: "v1",
+							APIVersion: "v2",
 							Scheme:     "http",
 							PathPrefix: "/alertmanager",
 							ServiceDiscoveryConfigs: discovery.Configs{
@@ -180,7 +179,7 @@ func TestBuildNotifierConfig(t *testing.T) {
 							HTTPClientConfig: config_util.HTTPClientConfig{
 								BasicAuth: &config_util.BasicAuth{Username: "marco", Password: "hunter2"},
 							},
-							APIVersion: "v1",
+							APIVersion: "v2",
 							Scheme:     "https",
 							PathPrefix: "/alertmanager",
 							ServiceDiscoveryConfigs: discovery.Configs{
@@ -212,7 +211,7 @@ func TestBuildNotifierConfig(t *testing.T) {
 							HTTPClientConfig: config_util.HTTPClientConfig{
 								BasicAuth: &config_util.BasicAuth{Username: "jacob", Password: "test"},
 							},
-							APIVersion: "v1",
+							APIVersion: "v2",
 							Scheme:     "http",
 							PathPrefix: "/alertmanager",
 							ServiceDiscoveryConfigs: discovery.Configs{
@@ -237,7 +236,7 @@ func TestBuildNotifierConfig(t *testing.T) {
 				AlertingConfig: config.AlertingConfig{
 					AlertmanagerConfigs: []*config.AlertmanagerConfig{
 						{
-							APIVersion: "v1",
+							APIVersion: "v2",
 							Scheme:     "http",
 							PathPrefix: "/alertmanager",
 							ServiceDiscoveryConfigs: discovery.Configs{
@@ -249,7 +248,7 @@ func TestBuildNotifierConfig(t *testing.T) {
 							},
 						},
 						{
-							APIVersion: "v1",
+							APIVersion: "v2",
 							Scheme:     "https",
 							PathPrefix: "/am",
 							ServiceDiscoveryConfigs: discovery.Configs{
