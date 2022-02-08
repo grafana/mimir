@@ -1,6 +1,8 @@
+SHELL = /usr/bin/env bash
+
 DOCS_IMAGE   = grafana/docs-base:latest
 DOCS_PROJECT = mimir
-DOCS_DIR     = docs/sources
+DOCS_DIR     = sources
 
 # This allows ports and base URL to be overridden, so services like ngrok.io can
 # be used to share a local running docs instances.
@@ -20,7 +22,7 @@ define docs_docker_run
 	@echo ""
 	@read -p "Press a key to continue"
 
-	@docker run --name $(DOCS_DOCKER_CONTAINER) $(DOCS_DOCKER_RUN_FLAGS) /bin/bash -c 'find content/docs/ -mindepth 1 -maxdepth 1 -type d -a ! -name "$(DOCS_PROJECT)" -exec rm -rf {} \; && exec $(1)'
+	@docker run --name $(DOCS_DOCKER_CONTAINER) $(DOCS_DOCKER_RUN_FLAGS) /bin/bash -c 'find content/docs/ -mindepth 1 -maxdepth 1 -type d -a ! -name "$(DOCS_PROJECT)" -exec rm -rf {} \; && touch content/docs/mimir/_index.md && exec $(1)'
 endef
 
 .PHONY: docs-docker-rm
