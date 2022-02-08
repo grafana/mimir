@@ -91,6 +91,7 @@ itself, while the alerting rule will be notified to the Alertmanager.
 1. Configure `mimirtool`
    ```bash
    export MIMIR_ADDRESS="http://localhost:9009"
+   export MIMIR_TENANT_ID="anonymous"
    ```
 1. Load example rules to Grafana Mimir
    ```bash

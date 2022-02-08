@@ -11,16 +11,11 @@ blocks_storage:
     access_key_id: mimir
     secret_access_key: supersecret
     insecure: true
-  bucket_store:
-    sync_dir: /data/store-gateway
   tsdb:
     dir: /data/ingester
 
 memberlist:
   join_members: [ mimir-1, mimir-2, mimir-3 ]
-
-compactor:
-  data_dir: /data/compactor
 
 ruler:
   rule_path: /data/ruler
