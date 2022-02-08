@@ -108,8 +108,8 @@ func (cfg *MultitenantAlertmanagerConfig) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.Retention, "alertmanager.storage.retention", 5*24*time.Hour, "How long to keep data for.")
 	f.Int64Var(&cfg.MaxRecvMsgSize, "alertmanager.max-recv-msg-size", 16<<20, "Maximum size (bytes) of an accepted HTTP request body.")
 
-	_ = cfg.ExternalURL.Set("http://localhost") // set the default
-	f.Var(&cfg.ExternalURL, "alertmanager.web.external-url", "The URL under which Alertmanager is externally reachable (for example, if Alertmanager is served via a reverse proxy). Used for generating relative and absolute links back to Alertmanager itself. If the URL has a path portion, it will be used to prefix all HTTP endpoints served by Alertmanager.")
+	_ = cfg.ExternalURL.Set("http://localhost:8080/alertmanager") // set the default
+	f.Var(&cfg.ExternalURL, "alertmanager.web.external-url", "The URL under which Alertmanager is externally reachable (eg. could be different than -http.alertmanager-http-prefix in case Alertmanager is served via a reverse proxy). This setting is used both to configure the internal requests router and to generate links in alert templates. If the external URL has a path portion, it will be used to prefix all HTTP endpoints served by Alertmanager, both the UI and API.")
 
 	f.StringVar(&cfg.FallbackConfigFile, "alertmanager.configs.fallback", "", "Filename of fallback config to use if none specified for instance.")
 	f.DurationVar(&cfg.PollInterval, "alertmanager.configs.poll-interval", 15*time.Second, "How frequently to poll Alertmanager configs.")
@@ -158,6 +158,15 @@ func (cfg *MultitenantAlertmanagerConfig) Validate(storageCfg alertstore.Config)
 	}
 
 	return nil
+}
+
+func (cfg *MultitenantAlertmanagerConfig) CheckExternalURL(alertmanagerHTTPPrefix string, logger log.Logger) {
+	if cfg.ExternalURL.Path != alertmanagerHTTPPrefix {
+		level.Warn(logger).Log("msg", fmt.Sprintf(""+
+			"The configured Alertmanager HTTP prefix '%s' is different than the path specified in the external URL '%s': "+
+			"the Alertmanager UI and API may not work as expected unless you have a reverse proxy exposing the Alertmanager endpoints under '%s' prefix",
+			alertmanagerHTTPPrefix, cfg.ExternalURL.String(), alertmanagerHTTPPrefix))
+	}
 }
 
 type multitenantAlertmanagerMetrics struct {
