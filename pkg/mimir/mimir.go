@@ -130,7 +130,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 		"Use '-modules' command line flag to get a list of available modules, and to see which modules are included in 'all'.")
 
 	f.BoolVar(&c.AuthEnabled, "auth.enabled", true, "Set to false to disable auth.")
-	f.StringVar(&c.NoAuthTenant, "auth.no-auth-tenant", "anonymous", "Tenant name to use when auth is disabled.")
+	f.StringVar(&c.NoAuthTenant, "auth.no-auth-tenant", "anonymous", "Tenant ID to use when auth is disabled.")
 	f.BoolVar(&c.PrintConfig, "print.config", false, "Print the config and exit.")
 	f.StringVar(&c.HTTPPrefix, "http.prefix", "/api/prom", "HTTP path prefix for API.")
 
