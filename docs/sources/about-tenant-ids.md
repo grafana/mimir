@@ -1,18 +1,17 @@
 ---
-title: "Limitations"
-linkTitle: "Limitations"
-weight: 998
-slug: limitations
+title: "About tenant IDs"
+description: ""
+weight: 100
 ---
 
-## Tenant ID naming
+# About tenant IDs
 
-The tenant ID (also called "user ID" or "org ID") is the unique identifier of a tenant within a Cortex cluster. The tenant ID is an opaque information to Cortex, which doesn't make any assumption on its format/content, but its naming has two limitations:
+The tenant ID (also called "user ID" or "org ID") is the unique identifier of a tenant within a Grafana Mimir cluster. The tenant ID is an opaque information to Grafana Mimir, which doesn't make any assumption on its format/content, but its naming has two limitations:
 
 1. Supported characters
 2. Length
 
-### Supported characters
+## Supported characters
 
 The following character sets are generally **safe for use in the tenant ID**:
 
@@ -24,7 +23,7 @@ The following character sets are generally **safe for use in the tenant ID**:
   - Exclamation point (`!`)
   - Hyphen (`-`)
   - Underscore (`_`)
-  - Single Period (`.`), but the tenant IDs `.` and `..` is considered invalid
+  - Single Period (`.`), but the tenant IDs `.` and `..` are considered invalid
   - Asterisk (`*`)
   - Single quote (`'`)
   - Open parenthesis (`(`)
@@ -32,6 +31,6 @@ The following character sets are generally **safe for use in the tenant ID**:
 
 All other characters are not safe to use. In particular, slashes `/` and whitespaces (` `) are **not supported**.
 
-### Length
+## Length
 
 The tenant ID length should not exceed 150 bytes/characters.
