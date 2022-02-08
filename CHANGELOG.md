@@ -268,6 +268,7 @@
 * [CHANGE] Alertmanager: remove ability to run alertmanager with clustering disabled. The `-alertmanager.cluster.listen-address` must be provided if `-alertmanager.sharding-enabled=false`. #1044
 * [CHANGE] Alertmanager: default value of `-alertmanager.web.external-url` has changed from `http://localhost` to `http://localhost:8080/alertmanager`. #1067
 * [CHANGE] Default tenant ID used with disabled auth (`-auth.enabled=false`) has changed from `fake` to `anonymous`. This tenant ID can now be changed with `-auth.no-auth-tenant` option. #1063
+* [CHANGE] `thanosconvert` tool has been renamed to `metaconvert`. `-config.file` option has been removed, while it now requires `-tenant` option to work on single tenant only. It now also preserves labels recognized by Mimir. #1120
 * [CHANGE] The default values for the following local directories have changed: #1071
   * `-alertmanager.storage.path` default value changed to `./data-alertmanager/`
   * `-compactor.data-dir` default value changed to `./data-compactor/`
