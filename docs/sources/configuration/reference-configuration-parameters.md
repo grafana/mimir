@@ -261,7 +261,7 @@ query_scheduler:
     [tls_insecure_skip_verify: <boolean> | default = false]
 ```
 
-### `server_config`
+### server_config
 
 The `server_config` configures the HTTP and gRPC server of the launched service(s).
 
@@ -431,7 +431,7 @@ grpc_tls_config:
 [http_path_prefix: <string> | default = ""]
 ```
 
-### `distributor_config`
+### distributor_config
 
 The `distributor_config` configures the distributor.
 
@@ -592,7 +592,7 @@ instance_limits:
   [max_inflight_push_requests: <int> | default = 2000]
 ```
 
-### `ingester_config`
+### ingester_config
 
 The `ingester_config` configures the ingester.
 
@@ -777,7 +777,7 @@ instance_limits:
 [ignore_series_limit_for_metric_names: <string> | default = ""]
 ```
 
-### `querier_config`
+### querier_config
 
 The `querier_config` configures the querier.
 
@@ -880,7 +880,7 @@ store_gateway_client:
 [lookback_delta: <duration> | default = 5m]
 ```
 
-### `query_frontend_config`
+### query_frontend_config
 
 The `query_frontend_config` configures the query-frontend.
 
@@ -1056,7 +1056,7 @@ results_cache:
 [downstream_url: <string> | default = ""]
 ```
 
-### `ruler_config`
+### ruler_config
 
 The `ruler_config` configures the ruler.
 
@@ -1308,7 +1308,7 @@ tenant_federation:
   [enabled: <boolean> | default = false]
 ```
 
-### `ruler_storage_config`
+### ruler_storage_config
 
 The `ruler_storage_config` configures the ruler storage backend.
 
@@ -1529,7 +1529,7 @@ local:
   [directory: <string> | default = ""]
 ```
 
-### `alertmanager_config`
+### alertmanager_config
 
 The `alertmanager_config` configures the alertmanager.
 
@@ -1719,7 +1719,7 @@ alertmanager_client:
 [persist_interval: <duration> | default = 15m]
 ```
 
-### `alertmanager_storage_config`
+### alertmanager_storage_config
 
 The `alertmanager_storage_config` configures the alertmanager storage backend.
 
@@ -1940,7 +1940,7 @@ local:
   [path: <string> | default = ""]
 ```
 
-### `flusher_config`
+### flusher_config
 
 The `flusher_config` configures the WAL flusher target, used to manually run one-time flushes when scaling down ingesters.
 
@@ -1951,7 +1951,7 @@ The `flusher_config` configures the WAL flusher target, used to manually run one
 [exit_after_flush: <boolean> | default = true]
 ```
 
-### `ingester_client_config`
+### ingester_client_config
 
 The `ingester_client_config` configures how the distributors connect to the ingesters.
 
@@ -2025,7 +2025,7 @@ grpc_client_config:
   [tls_insecure_skip_verify: <boolean> | default = false]
 ```
 
-### `frontend_worker_config`
+### frontend_worker_config
 
 The `frontend_worker_config` configures the worker - running within the querier - picking up and executing queries enqueued by the query-frontend or query-scheduler.
 
@@ -2123,7 +2123,7 @@ grpc_client_config:
   [tls_insecure_skip_verify: <boolean> | default = false]
 ```
 
-### `etcd_config`
+### etcd_config
 
 The `etcd_config` configures the etcd client. The supported CLI flags `<prefix>` used to reference this config block are:
 
@@ -2186,7 +2186,7 @@ The `etcd_config` configures the etcd client. The supported CLI flags `<prefix>`
 [password: <string> | default = ""]
 ```
 
-### `consul_config`
+### consul_config
 
 The `consul_config` configures the consul client. The supported CLI flags `<prefix>` used to reference this config block are:
 
@@ -2227,7 +2227,7 @@ The `consul_config` configures the consul client. The supported CLI flags `<pref
 [watch_burst_size: <int> | default = 1]
 ```
 
-### `memberlist_config`
+### memberlist_config
 
 The `memberlist_config` configures the Gossip memberlist.
 
@@ -2373,7 +2373,7 @@ The `memberlist_config` configures the Gossip memberlist.
 [tls_insecure_skip_verify: <boolean> | default = false]
 ```
 
-### `limits_config`
+### limits_config
 
 The `limits_config` configures default and per-tenant limits imposed by services (ie. distributor, ingester, ...).
 
@@ -2679,7 +2679,7 @@ The `limits_config` configures default and per-tenant limits imposed by services
 [alertmanager_max_alerts_size_bytes: <int> | default = 0]
 ```
 
-### `blocks_storage_config`
+### blocks_storage_config
 
 The `blocks_storage_config` configures the blocks storage.
 
@@ -3242,7 +3242,7 @@ tsdb:
   [max_tsdb_opening_concurrency_on_startup: <int> | default = 10]
 ```
 
-### `compactor_config`
+### compactor_config
 
 The `compactor_config` configures the compactor service.
 
@@ -3412,7 +3412,7 @@ sharding_ring:
 [compaction_jobs_order: <string> | default = "smallest-range-oldest-blocks-first"]
 ```
 
-### `store_gateway_config`
+### store_gateway_config
 
 The `store_gateway_config` configures the store-gateway service.
 
@@ -3507,7 +3507,7 @@ sharding_ring:
   [unregister_on_shutdown: <boolean> | default = true]
 ```
 
-### `s3_sse_config`
+### s3_sse_config
 
 The `s3_sse_config` configures the S3 server-side encryption. The supported CLI flags `<prefix>` used to reference this config block are:
 
@@ -3532,7 +3532,7 @@ The `s3_sse_config` configures the S3 server-side encryption. The supported CLI 
 [kms_encryption_context: <string> | default = ""]
 ```
 
-### `memcached_config`
+### memcached_config
 
 The `memcached_config` configures the Memcached-based caching backend. The supported CLI flags `<prefix>` used to reference this config block are:
 

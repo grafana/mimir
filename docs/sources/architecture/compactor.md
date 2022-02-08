@@ -141,7 +141,7 @@ Alternatively, assuming the largest `-compactor.block-ranges` is `24h` (default)
 
 This section described the compactor configuration. For the general Cortex configuration and references to common config blocks, please refer to the [configuration documentation](../configuration/config-file-reference.md).
 
-### `compactor_config`
+### compactor_config
 
 The `compactor_config` configures the compactor service.
 

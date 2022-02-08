@@ -177,7 +177,7 @@ _The same memcached backend cluster should be shared between store-gateways and 
 
 This section described the store-gateway configuration. For the general Cortex configuration and references to common config blocks, please refer to the [configuration documentation](../configuration/config-file-reference.md).
 
-### `store_gateway_config`
+### store_gateway_config
 
 The `store_gateway_config` configures the store-gateway service.
 
@@ -276,7 +276,7 @@ store_gateway:
     [unregister_on_shutdown: <boolean> | default = true]
 ```
 
-### `blocks_storage_config`
+### blocks_storage_config
 
 The `blocks_storage_config` configures the blocks storage.
 
