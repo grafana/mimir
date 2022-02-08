@@ -1,8 +1,7 @@
 ---
 title: "Glossary"
-linkTitle: "Glossary"
+description: ""
 weight: 999
-slug: glossary
 ---
 
 ### Blocks storage
