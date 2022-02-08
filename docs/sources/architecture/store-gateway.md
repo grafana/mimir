@@ -495,9 +495,11 @@ blocks_storage:
   # This configures how the querier and store-gateway discover and synchronize
   # blocks stored in the bucket.
   bucket_store:
-    # Directory to store synchronized TSDB index headers.
+    # Directory to store synchronized TSDB index headers. This directory is not
+    # required to be persisted between restarts, but it's highly recommended in
+    # order to improve the store-gateway startup time.
     # CLI flag: -blocks-storage.bucket-store.sync-dir
-    [sync_dir: <string> | default = "tsdb-sync"]
+    [sync_dir: <string> | default = "./tsdb-sync/"]
 
     # (advanced) How frequently to scan the bucket, or to refresh the bucket
     # index (if enabled), in order to look for changes (new blocks shipped by
@@ -730,9 +732,10 @@ blocks_storage:
     [postings_offsets_in_mem_sampling: <int> | default = 32]
 
   tsdb:
-    # Local directory to store TSDBs in the ingesters.
+    # Directory to store TSDBs (including WAL) in the ingesters. This directory
+    # is required to be persisted between restarts.
     # CLI flag: -blocks-storage.tsdb.dir
-    [dir: <string> | default = "tsdb"]
+    [dir: <string> | default = "./tsdb/"]
 
     # (advanced) TSDB blocks range period.
     # CLI flag: -blocks-storage.tsdb.block-ranges-period
