@@ -15,6 +15,10 @@
     $.bucket_index_config
     {
       target: 'ruler',
+
+      // File path used to store temporary rule files loaded by the Prometheus rule managers.
+      'ruler.rule-path': '/rules',
+
       // Alertmanager configs
       'ruler.alertmanager-url': 'http://alertmanager.%s.svc.cluster.local/alertmanager' % $._config.namespace,
 

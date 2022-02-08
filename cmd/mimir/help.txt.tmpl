@@ -1,6 +1,6 @@
 Usage of ./cmd/mimir/mimir:
   -activity-tracker.filepath string
-    	File where ongoing activities are stored. If empty, activity tracking is disabled. (default "/tmp/metrics-activity.log")
+    	File where ongoing activities are stored. If empty, activity tracking is disabled. (default "./metrics-activity.log")
   -activity-tracker.max-entries int
     	Max number of concurrent activities that can be tracked. Used to size the file in advance. Additional activities are ignored. (default 1024)
   -alertmanager-storage.azure.account-key value
@@ -100,7 +100,7 @@ Usage of ./cmd/mimir/mimir:
   -alertmanager.sharding-ring.store string
     	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "consul")
   -alertmanager.storage.path string
-    	Base path for data storage. (default "data/")
+    	Directory to store Alertmanager state and temporarily configuration files. The content of this directory is not required to be persisted between restarts unless Alertmanager replication has been disabled. (default "./data-alertmanager/")
   -alertmanager.web.external-url value
     	The URL under which Alertmanager is externally reachable (eg. could be different than -http.alertmanager-http-prefix in case Alertmanager is served via a reverse proxy). This setting is used both to configure the internal requests router and to generate links in alert templates. If the external URL has a path portion, it will be used to prefix all HTTP endpoints served by Alertmanager, both the UI and API. (default http://localhost:8080/alertmanager)
   -auth.enabled
@@ -138,7 +138,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.bucket-store.metadata-cache.memcached.timeout duration
     	The socket read/write timeout. (default 200ms)
   -blocks-storage.bucket-store.sync-dir string
-    	Directory to store synchronized TSDB index headers. (default "tsdb-sync")
+    	Directory to store synchronized TSDB index headers. This directory is not required to be persisted between restarts, but it's highly recommended in order to improve the store-gateway startup time. (default "./tsdb-sync/")
   -blocks-storage.filesystem.dir string
     	Local filesystem storage directory. (default "blocks")
   -blocks-storage.gcs.bucket-name string
@@ -192,7 +192,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.swift.username string
     	OpenStack Swift username.
   -blocks-storage.tsdb.dir string
-    	Local directory to store TSDBs in the ingesters. (default "tsdb")
+    	Directory to store TSDBs (including WAL) in the ingesters. This directory is required to be persisted between restarts. (default "./tsdb/")
   -blocks-storage.tsdb.retention-period duration
     	TSDB blocks retention in the ingester before a block is removed. This should be larger than the -blocks-storage.tsdb.block-ranges-period, -querier.query-store-after and large enough to give store-gateways and queriers enough time to discover newly uploaded blocks. (default 24h0m0s)
   -compactor.blocks-retention-period value
@@ -200,7 +200,7 @@ Usage of ./cmd/mimir/mimir:
   -compactor.compactor-tenant-shard-size int
     	Max number of compactors that can compact blocks for single tenant. 0 to disable the limit and use all compactors.
   -compactor.data-dir string
-    	Data directory in which to cache blocks and process compactions (default "./data")
+    	Directory to temporarily store blocks during compaction. This directory is not required to be persisted between restarts. (default "./data-compactor/")
   -compactor.ring.consul.hostname string
     	Hostname and port of Consul. (default "localhost:8500")
   -compactor.ring.etcd.endpoints value
@@ -710,7 +710,7 @@ Usage of ./cmd/mimir/mimir:
   -ruler.ring.store string
     	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
   -ruler.rule-path string
-    	file path to store temporary rule files for the prometheus rule managers (default "/rules")
+    	Directory to store temporary rule files loaded by the Prometheus rule managers. This directory is not required to be persisted between restarts. (default "./data-ruler/")
   -ruler.tenant-federation.enabled
     	Enable running rule groups against multiple tenants. The tenant IDs involved need to be in the rule group's 'source_tenants' field. If this flag is set to 'false' when there are already created federated rule groups, then these rules groups will be skipped during evaluations.
   -ruler.tenant-shard-size int

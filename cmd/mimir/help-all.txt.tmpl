@@ -1,6 +1,6 @@
 Usage of ./cmd/mimir/mimir:
   -activity-tracker.filepath string
-    	File where ongoing activities are stored. If empty, activity tracking is disabled. (default "/tmp/metrics-activity.log")
+    	File where ongoing activities are stored. If empty, activity tracking is disabled. (default "./metrics-activity.log")
   -activity-tracker.max-entries int
     	Max number of concurrent activities that can be tracked. Used to size the file in advance. Additional activities are ignored. (default 1024)
   -alertmanager-storage.azure.account-key value
@@ -222,7 +222,7 @@ Usage of ./cmd/mimir/mimir:
   -alertmanager.sharding-ring.zone-awareness-enabled
     	True to enable zone-awareness and replicate alerts across different availability zones.
   -alertmanager.storage.path string
-    	Base path for data storage. (default "data/")
+    	Directory to store Alertmanager state and temporarily configuration files. The content of this directory is not required to be persisted between restarts unless Alertmanager replication has been disabled. (default "./data-alertmanager/")
   -alertmanager.storage.retention duration
     	How long to keep data for. (default 120h0m0s)
   -alertmanager.web.external-url value
@@ -374,7 +374,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.bucket-store.series-hash-cache-max-size-bytes uint
     	Max size - in bytes - of the in-memory series hash cache. The cache is shared across all tenants and it's used only when query sharding is enabled. (default 1073741824)
   -blocks-storage.bucket-store.sync-dir string
-    	Directory to store synchronized TSDB index headers. (default "tsdb-sync")
+    	Directory to store synchronized TSDB index headers. This directory is not required to be persisted between restarts, but it's highly recommended in order to improve the store-gateway startup time. (default "./tsdb-sync/")
   -blocks-storage.bucket-store.sync-interval duration
     	How frequently to scan the bucket, or to refresh the bucket index (if enabled), in order to look for changes (new blocks shipped by ingesters and blocks deleted by retention or compaction). (default 15m0s)
   -blocks-storage.bucket-store.tenant-sync-concurrency int
@@ -462,7 +462,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.tsdb.close-idle-tsdb-timeout duration
     	If TSDB has not received any data for this duration, and all blocks from TSDB have been shipped, TSDB is closed and deleted from local disk. If set to positive value, this value should be equal or higher than -querier.query-ingesters-within flag to make sure that TSDB is not closed prematurely, which could cause partial query results. 0 or negative value disables closing of idle TSDB. (default 13h0m0s)
   -blocks-storage.tsdb.dir string
-    	Local directory to store TSDBs in the ingesters. (default "tsdb")
+    	Directory to store TSDBs (including WAL) in the ingesters. This directory is required to be persisted between restarts. (default "./tsdb/")
   -blocks-storage.tsdb.flush-blocks-on-shutdown
     	True to flush blocks to storage on shutdown. If false, incomplete blocks will be reused after restart.
   -blocks-storage.tsdb.head-chunks-end-time-variance float
@@ -520,7 +520,7 @@ Usage of ./cmd/mimir/mimir:
   -compactor.consistency-delay duration
     	Minimum age of fresh (non-compacted) blocks before they are being processed. Malformed blocks older than the maximum of consistency-delay and 48h0m0s will be removed.
   -compactor.data-dir string
-    	Data directory in which to cache blocks and process compactions (default "./data")
+    	Directory to temporarily store blocks during compaction. This directory is not required to be persisted between restarts. (default "./data-compactor/")
   -compactor.deletion-delay duration
     	Time before a block marked for deletion is deleted from bucket. If not 0, blocks will be marked for deletion and compactor component will permanently delete blocks marked for deletion from the bucket. If 0, blocks will be deleted straight away. Note that deleting blocks immediately can cause query failures. (default 12h0m0s)
   -compactor.disabled-tenants value
@@ -1460,7 +1460,7 @@ Usage of ./cmd/mimir/mimir:
   -ruler.ring.store string
     	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
   -ruler.rule-path string
-    	file path to store temporary rule files for the prometheus rule managers (default "/rules")
+    	Directory to store temporary rule files loaded by the Prometheus rule managers. This directory is not required to be persisted between restarts. (default "./data-ruler/")
   -ruler.search-pending-for duration
     	Time to spend searching for a pending ruler when shutting down. (default 5m0s)
   -ruler.tenant-federation.enabled
