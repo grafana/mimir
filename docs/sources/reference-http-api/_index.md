@@ -1,10 +1,7 @@
 ---
-title: "HTTP API"
-linkTitle: "HTTP API"
-weight: 7
-slug: api
-menu:
-no_section_index_title: true
+title: "Reference: HTTP API"
+description: ""
+weight: 10000
 ---
 
 Cortex exposes an HTTP API for pushing and querying time series data, and operating the cluster itself.
