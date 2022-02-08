@@ -4,7 +4,6 @@
 
   distributor_args::
     $._config.grpcConfig +
-    $._config.ringConfig +
     $._config.ingesterRingClientConfig +
     $._config.distributorLimitsConfig +
     {

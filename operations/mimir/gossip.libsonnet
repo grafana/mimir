@@ -1,30 +1,50 @@
 {
+  local memberlistConfig = {
+    'memberlist.abort-if-join-fails': false,
+    'memberlist.bind-port': gossipRingPort,
+    'memberlist.join': 'gossip-ring.%s.svc.cluster.local:%d' % [$._config.namespace, gossipRingPort],
+  },
+
+  local setupGossipRing(prefix='') = if $._config.multikv_migration_enabled then {
+    ['%sring.store' % prefix]: 'multi',
+    // don't remove consul.hostname, it may still be needed.
+  } else {
+    ['%sring.store' % prefix]: 'memberlist',
+    ['%sconsul.hostname' % prefix]: null,
+  },
+
   _config+:: {
+    // Migrating from consul to memberlist is a multi-step process:
+    // 1) Enable multikv_migration_enabled, with primary=consul, secondary=memberlist, and multikv_mirror_enabled=false, restart components.
+    // 2) Set multikv_mirror_enabled=true. This doesn't require restart.
+    // 3) Swap multikv_primary and multikv_secondary, ie. multikv_primary=memberlist, multikv_secondary=consul. This doesn't require restart.
+    // 4) Set multikv_migration_enabled=false. This requires restart, but components will now use only memberlist.
+    multikv_migration_enabled: false,
+    multikv_primary: 'consul',
+    multikv_secondary: 'memberlist',
+    multikv_mirror_enabled: false,
+
     // Use memberlist only. This works fine on already-migrated clusters.
     // To do a migration from Consul to memberlist, multi kv storage needs to be used (See below).
-    ringConfig+: {
-      'ring.store': 'memberlist',
-      'memberlist.abort-if-join-fails': false,
-      'memberlist.bind-port': gossipRingPort,
-      'memberlist.join': 'gossip-ring.%s.svc.cluster.local:%d' % [$._config.namespace, gossipRingPort],
-    },
+    ingesterRingClientConfig+: setupGossipRing('') + memberlistConfig,  // ring.store, ring.consul.hostname.
 
-    // This can be used to enable multi KV store, with consul and memberlist.
-    ringConfigMulti: {
-      'ring.store': 'multi',
-      'multi.primary': 'consul',
-      'multi.secondary': 'memberlist',
-    },
+    // store-gateway.sharding-ring.store and store-gateway.sharding-ring.consul.hostname
+    queryBlocksStorageConfig+:: setupGossipRing('store-gateway.sharding-') + memberlistConfig,
 
     // When doing migration via multi KV store, this section can be used
     // to configure runtime parameters of multi KV store
-    /*
-        multi_kv_config: {
-          primary: 'memberlist',
-          // 'mirror-enabled': false, // renamed to 'mirror_enabled' on after r67
-        },
-     */
+    multi_kv_config: if !$._config.multikv_migration_enabled then {} else {
+      primary: $._config.multikv_primary,
+      secondary: $._config.multikv_secondary,
+      mirror_enabled: $._config.multikv_mirror_enabled,
+    },
   },
+
+  distributor_args+: setupGossipRing('distributor.') + memberlistConfig,  // distributor.ring.store, distributor.ring.consul.hostname
+
+  ruler_args+: setupGossipRing('ruler.') + memberlistConfig,  // ruler.ring.store, ruler.ring.consul.hostname
+
+  compactor_args+: setupGossipRing('compactor.') + memberlistConfig,  // compactor.ring.store, compactor.ring.consul.hostname
 
   ingester_args+: {
     // wait longer to see LEAVING ingester in the gossiped ring, to avoid

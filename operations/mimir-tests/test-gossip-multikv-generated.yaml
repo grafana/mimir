@@ -251,6 +251,10 @@ metadata:
 apiVersion: v1
 data:
   overrides.yaml: |
+    multi_kv_config:
+        mirror_enabled: false
+        primary: consul
+        secondary: memberlist
     overrides: {}
 kind: ConfigMap
 metadata:
@@ -762,6 +766,7 @@ spec:
             topologyKey: kubernetes.io/hostname
       containers:
       - args:
+        - -consul.hostname=consul.default.svc.cluster.local:8500
         - -distributor.extend-writes=true
         - -distributor.ha-tracker.enable=true
         - -distributor.ha-tracker.enable-for-all-users=true
@@ -774,14 +779,14 @@ spec:
         - -distributor.replication-factor=3
         - -distributor.ring.consul.hostname=consul.default.svc.cluster.local:8500
         - -distributor.ring.prefix=
-        - -distributor.ring.store=memberlist
+        - -distributor.ring.store=multi
         - -mem-ballast-size-bytes=1073741824
         - -memberlist.abort-if-join-fails=false
         - -memberlist.bind-port=7946
         - -memberlist.join=gossip-ring.default.svc.cluster.local:7946
         - -ring.heartbeat-timeout=10m
         - -ring.prefix=
-        - -ring.store=memberlist
+        - -ring.store=multi
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc.keepalive.max-connection-age=2m
         - -server.grpc.keepalive.max-connection-age-grace=5m
@@ -860,6 +865,7 @@ spec:
         - -blocks-storage.bucket-store.sync-dir=/data/tsdb
         - -blocks-storage.bucket-store.sync-interval=15m
         - -blocks-storage.gcs.bucket-name=blocks-bucket
+        - -consul.hostname=consul.default.svc.cluster.local:8500
         - -distributor.health-check-ingesters=true
         - -distributor.replication-factor=3
         - -mem-ballast-size-bytes=268435456
@@ -875,7 +881,7 @@ spec:
         - -querier.scheduler-address=query-scheduler-discovery.default.svc.cluster.local:9095
         - -ring.heartbeat-timeout=10m
         - -ring.prefix=
-        - -ring.store=memberlist
+        - -ring.store=multi
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
@@ -884,7 +890,7 @@ spec:
         - -store-gateway.sharding-ring.consul.hostname=consul.default.svc.cluster.local:8500
         - -store-gateway.sharding-ring.prefix=
         - -store-gateway.sharding-ring.replication-factor=3
-        - -store-gateway.sharding-ring.store=memberlist
+        - -store-gateway.sharding-ring.store=multi
         - -store.max-query-length=768h
         - -target=querier
         env:
@@ -1095,6 +1101,7 @@ spec:
         - -blocks-storage.bucket-store.sync-dir=/data/tsdb
         - -blocks-storage.bucket-store.sync-interval=15m
         - -blocks-storage.gcs.bucket-name=blocks-bucket
+        - -consul.hostname=consul.default.svc.cluster.local:8500
         - -distributor.extend-writes=true
         - -distributor.health-check-ingesters=true
         - -distributor.replication-factor=3
@@ -1106,14 +1113,15 @@ spec:
         - -querier.query-store-after=12h
         - -ring.heartbeat-timeout=10m
         - -ring.prefix=
-        - -ring.store=memberlist
+        - -ring.store=multi
         - -ruler-storage.backend=gcs
         - -ruler-storage.gcs.bucket-name=rules-bucket
         - -ruler.alertmanager-url=http://alertmanager.default.svc.cluster.local/alertmanager
+        - -ruler.enable-api=true
         - -ruler.max-rule-groups-per-tenant=35
         - -ruler.max-rules-per-rule-group=20
         - -ruler.ring.consul.hostname=consul.default.svc.cluster.local:8500
-        - -ruler.ring.store=memberlist
+        - -ruler.ring.store=multi
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc-max-recv-msg-size-bytes=10485760
         - -server.grpc-max-send-msg-size-bytes=10485760
@@ -1123,7 +1131,7 @@ spec:
         - -store-gateway.sharding-ring.consul.hostname=consul.default.svc.cluster.local:8500
         - -store-gateway.sharding-ring.prefix=
         - -store-gateway.sharding-ring.replication-factor=3
-        - -store-gateway.sharding-ring.store=memberlist
+        - -store-gateway.sharding-ring.store=multi
         - -store.max-query-length=768h
         - -target=ruler
         image: cortexproject/cortex:v1.9.0
@@ -1178,6 +1186,7 @@ spec:
       - args:
         - -alertmanager-storage.backend=gcs
         - -alertmanager-storage.gcs.bucket-name=alerts-bucket
+        - -alertmanager.enable-api=true
         - -alertmanager.sharding-enabled=true
         - -alertmanager.sharding-ring.consul.hostname=consul.default.svc.cluster.local:8500
         - -alertmanager.sharding-ring.replication-factor=3
@@ -1273,7 +1282,7 @@ spec:
         - -compactor.max-opening-blocks-concurrency=4
         - -compactor.ring.consul.hostname=consul.default.svc.cluster.local:8500
         - -compactor.ring.prefix=
-        - -compactor.ring.store=memberlist
+        - -compactor.ring.store=multi
         - -compactor.ring.wait-stability-min-duration=1m
         - -compactor.split-and-merge-shards=0
         - -compactor.split-groups=1
@@ -1369,6 +1378,7 @@ spec:
         - -blocks-storage.tsdb.dir=/data/tsdb
         - -blocks-storage.tsdb.isolation-enabled=false
         - -blocks-storage.tsdb.ship-interval=1m
+        - -consul.hostname=consul.default.svc.cluster.local:8500
         - -distributor.health-check-ingesters=true
         - -distributor.replication-factor=3
         - -ingester.heartbeat-period=5s
@@ -1383,7 +1393,7 @@ spec:
         - -memberlist.join=gossip-ring.default.svc.cluster.local:7946
         - -ring.heartbeat-timeout=10m
         - -ring.prefix=
-        - -ring.store=memberlist
+        - -ring.store=multi
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc-max-concurrent-streams=10000
         - -server.grpc-max-recv-msg-size-bytes=10485760
@@ -1711,7 +1721,7 @@ spec:
         - -store-gateway.sharding-ring.consul.hostname=consul.default.svc.cluster.local:8500
         - -store-gateway.sharding-ring.prefix=
         - -store-gateway.sharding-ring.replication-factor=3
-        - -store-gateway.sharding-ring.store=memberlist
+        - -store-gateway.sharding-ring.store=multi
         - -store-gateway.sharding-ring.tokens-file-path=/data/tokens
         - -store-gateway.sharding-ring.wait-stability-min-duration=1m
         - -target=store-gateway
