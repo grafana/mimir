@@ -100,11 +100,6 @@ func buildNotifierConfig(rulerConfig *Config, resolver cacheutil.AddressProvider
 	amURLs := strings.Split(rulerConfig.AlertmanagerURL, ",")
 	amConfigs := make([]*config.AlertmanagerConfig, 0, len(amURLs))
 
-	apiVersion := config.AlertmanagerAPIVersionV1
-	if rulerConfig.AlertmanagerEnableV2API {
-		apiVersion = config.AlertmanagerAPIVersionV2
-	}
-
 	for _, rawURL := range amURLs {
 		isSD, qType, url, err := sanitizedAlertmanagerURL(rawURL)
 		if err != nil {
@@ -118,7 +113,7 @@ func buildNotifierConfig(rulerConfig *Config, resolver cacheutil.AddressProvider
 			sdConfig = staticTarget(url)
 		}
 
-		amConfigs = append(amConfigs, amConfigWithSD(rulerConfig, url, apiVersion, sdConfig))
+		amConfigs = append(amConfigs, amConfigWithSD(rulerConfig, url, sdConfig))
 	}
 
 	promConfig := &config.Config{
@@ -130,9 +125,9 @@ func buildNotifierConfig(rulerConfig *Config, resolver cacheutil.AddressProvider
 	return promConfig, nil
 }
 
-func amConfigWithSD(rulerConfig *Config, url *url.URL, apiVersion config.AlertmanagerAPIVersion, sdConfig discovery.Config) *config.AlertmanagerConfig {
+func amConfigWithSD(rulerConfig *Config, url *url.URL, sdConfig discovery.Config) *config.AlertmanagerConfig {
 	amConfig := &config.AlertmanagerConfig{
-		APIVersion:              apiVersion,
+		APIVersion:              config.AlertmanagerAPIVersionV2,
 		Scheme:                  url.Scheme,
 		PathPrefix:              url.Path,
 		Timeout:                 model.Duration(rulerConfig.NotificationTimeout),
