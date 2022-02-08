@@ -1,13 +1,11 @@
 ---
-title: "Ingesters scaling up and down"
-linkTitle: "Ingesters scaling up and down"
+title: "Scaling ingesters up and down"
+description: ""
 weight: 10
-slug: ingesters-scaling-up-and-down
 ---
 
 This guide explains how to scale up and down ingesters.
-
-_If you're looking how to run ingesters rolling updates, please refer to the [dedicated guide](./ingesters-rolling-updates.md)._
+To understand how to perform rolling updates of ingesters, refer to [Updating or upgrading ingesters]({{<relref "./updating-or-upgrading-ingesters.md" >}}.
 
 ## Scaling up
 
@@ -17,13 +15,9 @@ Adding more ingesters to a Cortex cluster is considered a safe operation. When a
 
 A running ingester holds several hours of time series data in memory, before they're flushed to the long-term storage. When an ingester shuts down, because of a scale down operation, the in-memory data must not be discarded in order to avoid any data loss.
 
-The procedure to adopt when scaling down ingesters depends on your Cortex setup:
+## Blocks storage
 
-- [Blocks storage](#blocks-storage)
-
-### Blocks storage
-
-When Cortex is running the [blocks storage](../blocks-storage/_index.md), ingesters don't flush series to blocks at shutdown by default. However, Cortex ingesters expose an API endpoint [`/shutdown`](../api/_index.md#shutdown) that can be called to flush series to blocks and upload blocks to the long-term storage before the ingester terminates.
+Ingesters don't flush series to storage at shutdown by default. However, Grafana Mimir ingesters expose an API endpoint [`/shutdown`](../api/_index.md#shutdown) that can be called to flush series to blocks and upload blocks to the long-term storage before the ingester terminates.
 
 Even if ingester blocks are compacted and shipped to the storage at shutdown, it takes some time for queriers and store-gateways to discover the newly uploaded blocks. This is due to the fact that the blocks storage runs a periodic scanning of the storage bucket to discover blocks. If two or more ingesters are scaled down in a short period of time, queriers may miss some data at query time due to series that were stored in the terminated ingesters but their blocks haven't been discovered yet.
 
