@@ -12,7 +12,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"strings"
 	"testing"
 	"time"
 
@@ -38,18 +37,49 @@ const simpleAlertmanagerConfig = `route:
 receivers:
   - name: dummy`
 
+func uploadAlertmanagerConfig(minio *e2e.HTTPService, user, config string) error {
+	client, err := s3.NewBucketClient(s3.Config{
+		Endpoint:        minio.HTTPEndpoint(),
+		Insecure:        true,
+		BucketName:      alertsBucketName,
+		AccessKeyID:     e2edb.MinioAccessKey,
+		SecretAccessKey: flagext.Secret{Value: e2edb.MinioSecretKey},
+	}, "test", log.NewNopLogger())
+	if err != nil {
+		return err
+	}
+
+	desc := alertspb.AlertConfigDesc{
+		RawConfig: mimirAlertmanagerUserConfigYaml,
+		User:      user,
+		Templates: []*alertspb.TemplateDesc{},
+	}
+
+	d, err := desc.Marshal()
+	if err != nil {
+		return err
+	}
+
+	return client.Upload(context.Background(), fmt.Sprintf("/alerts/%s", user), bytes.NewReader(d))
+}
+
 func TestAlertmanager(t *testing.T) {
 	s, err := e2e.NewScenario(networkName)
 	require.NoError(t, err)
 	defer s.Close()
 
-	require.NoError(t, writeFileToSharedDir(s, "alertmanager_configs/user-1.yaml", []byte(mimirAlertmanagerUserConfigYaml)))
+	consul := e2edb.NewConsul()
+	minio := e2edb.NewMinio(9000, alertsBucketName)
+	require.NoError(t, s.StartAndWaitReady(consul, minio))
+
+	require.NoError(t, uploadAlertmanagerConfig(minio, "user-1", mimirAlertmanagerUserConfigYaml))
 
 	alertmanager := e2emimir.NewAlertmanager(
 		"alertmanager",
 		mergeFlags(
 			AlertmanagerFlags(),
-			AlertmanagerLocalFlags(),
+			AlertmanagerS3Flags(),
+			AlertmanagerShardingFlags(consul.NetworkHTTPEndpoint(), 1),
 		),
 		"",
 	)
@@ -99,10 +129,13 @@ func TestAlertmanagerStoreAPI(t *testing.T) {
 	require.NoError(t, err)
 	defer s.Close()
 
-	flags := mergeFlags(AlertmanagerFlags(), AlertmanagerS3Flags())
-
+	consul := e2edb.NewConsul()
 	minio := e2edb.NewMinio(9000, alertsBucketName)
-	require.NoError(t, s.StartAndWaitReady(minio))
+	require.NoError(t, s.StartAndWaitReady(consul, minio))
+
+	flags := mergeFlags(AlertmanagerFlags(),
+		AlertmanagerS3Flags(),
+		AlertmanagerShardingFlags(consul.NetworkHTTPEndpoint(), 1))
 
 	am := e2emimir.NewAlertmanager(
 		"alertmanager",
@@ -111,7 +144,6 @@ func TestAlertmanagerStoreAPI(t *testing.T) {
 	)
 
 	require.NoError(t, s.StartAndWaitReady(am))
-	require.NoError(t, am.WaitSumMetrics(e2e.Equals(1), "alertmanager_cluster_members"))
 
 	c, err := e2emimir.NewClient("", "", am.HTTPEndpoint(), "", "user-1")
 	require.NoError(t, err)
@@ -162,59 +194,6 @@ func TestAlertmanagerStoreAPI(t *testing.T) {
 	require.Error(t, err)
 	require.Nil(t, cfg)
 	require.EqualError(t, err, "not found")
-}
-
-func TestAlertmanagerClustering(t *testing.T) {
-	s, err := e2e.NewScenario(networkName)
-	require.NoError(t, err)
-	defer s.Close()
-
-	flags := mergeFlags(AlertmanagerFlags(), AlertmanagerS3Flags())
-
-	// Start dependencies.
-	minio := e2edb.NewMinio(9000, alertsBucketName)
-	require.NoError(t, s.StartAndWaitReady(minio))
-
-	client, err := s3.NewBucketClient(s3.Config{
-		Endpoint:        minio.HTTPEndpoint(),
-		BucketName:      alertsBucketName,
-		AccessKeyID:     e2edb.MinioAccessKey,
-		SecretAccessKey: flagext.Secret{Value: e2edb.MinioSecretKey},
-		Insecure:        true,
-	}, "test", log.NewNopLogger())
-	require.NoError(t, err)
-
-	// Create and upload an Alertmanager configuration.
-	user := "user-1"
-	desc := alertspb.AlertConfigDesc{RawConfig: simpleAlertmanagerConfig, User: user, Templates: []*alertspb.TemplateDesc{}}
-
-	d, err := desc.Marshal()
-	require.NoError(t, err)
-	err = client.Upload(context.Background(), fmt.Sprintf("/alerts/%s", user), bytes.NewReader(d))
-	require.NoError(t, err)
-
-	peers := strings.Join([]string{
-		e2e.NetworkContainerHostPort(networkName, "alertmanager-1", e2emimir.GossipPort),
-		e2e.NetworkContainerHostPort(networkName, "alertmanager-2", e2emimir.GossipPort),
-	}, ",")
-	flags = mergeFlags(flags, AlertmanagerClusterFlags(peers))
-
-	// Wait for the Alertmanagers to start.
-	alertmanager1 := e2emimir.NewAlertmanager("alertmanager-1", flags, "")
-	alertmanager2 := e2emimir.NewAlertmanager("alertmanager-2", flags, "")
-
-	alertmanagers := e2emimir.NewCompositeMimirService(alertmanager1, alertmanager2)
-
-	// Start Alertmanager instances.
-	for _, am := range alertmanagers.Instances() {
-		require.NoError(t, s.StartAndWaitReady(am))
-	}
-
-	for _, am := range alertmanagers.Instances() {
-		require.NoError(t, am.WaitSumMetrics(e2e.Equals(float64(0)), "alertmanager_cluster_health_score")) // Lower means healthier, 0 being totally healthy.
-		require.NoError(t, am.WaitSumMetrics(e2e.Equals(float64(0)), "alertmanager_cluster_failed_peers"))
-		require.NoError(t, am.WaitSumMetrics(e2e.Equals(float64(2)), "alertmanager_cluster_members"))
-	}
 }
 
 func TestAlertmanagerSharding(t *testing.T) {

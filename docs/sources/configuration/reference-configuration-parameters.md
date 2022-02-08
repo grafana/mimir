@@ -1587,10 +1587,6 @@ The `alertmanager_config` configures the alertmanager.
 # CLI flag: -alertmanager.max-recv-msg-size
 [max_recv_msg_size: <int> | default = 16777216]
 
-# (advanced) Shard tenants across multiple alertmanager instances.
-# CLI flag: -alertmanager.sharding-enabled
-[sharding_enabled: <boolean> | default = false]
-
 sharding_ring:
   # The key-value store used to share the hash ring across multiple instances.
   kvstore:
@@ -1669,33 +1665,9 @@ sharding_ring:
 [fallback_config_file: <string> | default = ""]
 
 cluster:
-  # (advanced) Listen address and port for the cluster.
-  # CLI flag: -alertmanager.cluster.listen-address
-  [listen_address: <string> | default = "0.0.0.0:9094"]
-
-  # (advanced) Explicit address or hostname to advertise in cluster.
-  # CLI flag: -alertmanager.cluster.advertise-address
-  [advertise_address: <string> | default = ""]
-
-  # (advanced) Comma-separated list of initial peers.
-  # CLI flag: -alertmanager.cluster.peers
-  [peers: <string> | default = ""]
-
   # (advanced) Time to wait between peers to send notifications.
   # CLI flag: -alertmanager.cluster.peer-timeout
   [peer_timeout: <duration> | default = 15s]
-
-  # (advanced) The interval between sending gossip messages. By lowering this
-  # value (more frequent) gossip messages are propagated across cluster more
-  # quickly at the expense of increased bandwidth usage.
-  # CLI flag: -alertmanager.cluster.gossip-interval
-  [gossip_interval: <duration> | default = 200ms]
-
-  # (advanced) The interval between gossip state syncs. Setting this interval
-  # lower (more frequent) will increase convergence speeds across larger
-  # clusters at the expense of increased bandwidth usage.
-  # CLI flag: -alertmanager.cluster.push-pull-interval
-  [push_pull_interval: <duration> | default = 1m]
 
 # (advanced) Enable the alertmanager config API.
 # CLI flag: -alertmanager.enable-api

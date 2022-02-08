@@ -1148,7 +1148,6 @@ spec:
         - -alertmanager-storage.azure.account-name=alerts-account-name
         - -alertmanager-storage.azure.container-name=alerts-bucket
         - -alertmanager-storage.backend=azure
-        - -alertmanager.sharding-enabled=true
         - -alertmanager.sharding-ring.consul.hostname=consul.default.svc.cluster.local:8500
         - -alertmanager.sharding-ring.replication-factor=3
         - -alertmanager.sharding-ring.store=consul

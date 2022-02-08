@@ -410,14 +410,14 @@ func TestRulerAlertmanager(t *testing.T) {
 
 	// Start dependencies.
 	consul := e2edb.NewConsul()
-	minio := e2edb.NewMinio(9000, bucketName, rulestoreBucketName)
+	minio := e2edb.NewMinio(9000, bucketName, rulestoreBucketName, alertsBucketName)
 	require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 	// Have at least one alertmanager configuration.
-	require.NoError(t, writeFileToSharedDir(s, "alertmanager_configs/user-1.yaml", []byte(mimirAlertmanagerUserConfigYaml)))
+	require.NoError(t, uploadAlertmanagerConfig(minio, "user-1", mimirAlertmanagerUserConfigYaml))
 
 	// Start Alertmanagers.
-	amFlags := mergeFlags(AlertmanagerFlags(), AlertmanagerLocalFlags())
+	amFlags := mergeFlags(AlertmanagerFlags(), AlertmanagerS3Flags(), AlertmanagerShardingFlags(consul.NetworkHTTPEndpoint(), 1))
 	am1 := e2emimir.NewAlertmanager("alertmanager1", amFlags, "")
 	am2 := e2emimir.NewAlertmanager("alertmanager2", amFlags, "")
 	require.NoError(t, s.StartAndWaitReady(am1, am2))
@@ -463,7 +463,7 @@ func TestRulerAlertmanagerTLS(t *testing.T) {
 
 	// Start dependencies.
 	consul := e2edb.NewConsul()
-	minio := e2edb.NewMinio(9000, bucketName, rulestoreBucketName)
+	minio := e2edb.NewMinio(9000, bucketName, rulestoreBucketName, alertsBucketName)
 	require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 	// set the ca
@@ -494,12 +494,13 @@ func TestRulerAlertmanagerTLS(t *testing.T) {
 	))
 
 	// Have at least one alertmanager configuration.
-	require.NoError(t, writeFileToSharedDir(s, "alertmanager_configs/user-1.yaml", []byte(mimirAlertmanagerUserConfigYaml)))
+	require.NoError(t, uploadAlertmanagerConfig(minio, "user-1", mimirAlertmanagerUserConfigYaml))
 
 	// Start Alertmanagers.
 	amFlags := mergeFlags(
 		AlertmanagerFlags(),
-		AlertmanagerLocalFlags(),
+		AlertmanagerS3Flags(),
+		AlertmanagerShardingFlags(consul.NetworkHTTPEndpoint(), 1),
 		getServerHTTPTLSFlags(),
 	)
 	am1 := e2emimir.NewAlertmanagerWithTLS("alertmanager1", amFlags, "")

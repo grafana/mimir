@@ -113,18 +113,8 @@ Usage of ./cmd/mimir/mimir:
     	Path to the key file for the client certificate. Also requires the client certificate to be configured.
   -alertmanager.alertmanager-client.tls-server-name string
     	Override the expected name on the server certificate.
-  -alertmanager.cluster.advertise-address string
-    	Explicit address or hostname to advertise in cluster.
-  -alertmanager.cluster.gossip-interval duration
-    	The interval between sending gossip messages. By lowering this value (more frequent) gossip messages are propagated across cluster more quickly at the expense of increased bandwidth usage. (default 200ms)
-  -alertmanager.cluster.listen-address string
-    	Listen address and port for the cluster. (default "0.0.0.0:9094")
   -alertmanager.cluster.peer-timeout duration
     	Time to wait between peers to send notifications. (default 15s)
-  -alertmanager.cluster.peers value
-    	Comma-separated list of initial peers.
-  -alertmanager.cluster.push-pull-interval duration
-    	The interval between gossip state syncs. Setting this interval lower (more frequent) will increase convergence speeds across larger clusters at the expense of increased bandwidth usage. (default 1m0s)
   -alertmanager.configs.fallback string
     	Filename of fallback config to use if none specified for instance.
   -alertmanager.configs.poll-interval duration
@@ -155,8 +145,6 @@ Usage of ./cmd/mimir/mimir:
     	Comma-separated list of network CIDRs to block in Alertmanager receiver integrations.
   -alertmanager.receivers-firewall-block-private-addresses
     	True to block private and local addresses in Alertmanager receiver integrations. It blocks private addresses defined by  RFC 1918 (IPv4 addresses) and RFC 4193 (IPv6 addresses), as well as loopback, local unicast and local multicast addresses.
-  -alertmanager.sharding-enabled
-    	Shard tenants across multiple alertmanager instances.
   -alertmanager.sharding-ring.consul.acl-token string
     	ACL Token used to interact with Consul.
   -alertmanager.sharding-ring.consul.client-timeout duration

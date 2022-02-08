@@ -94,7 +94,6 @@ func mockAlertmanagerConfig(t *testing.T) *MultitenantAlertmanagerConfig {
 	cfg.ShardingRing.InstanceAddr = "127.0.0.1"
 	cfg.PollInterval = time.Minute
 	cfg.ShardingRing.ReplicationFactor = 1
-	cfg.ShardingEnabled = true
 	cfg.Persister = PersisterConfig{Interval: time.Hour}
 
 	return cfg
@@ -107,7 +106,7 @@ func setupSingleMultitenantAlertmanager(t *testing.T, cfg *MultitenantAlertmanag
 		assert.NoError(t, closer.Close())
 	})
 
-	am, err := createMultitenantAlertmanager(cfg, nil, nil, store, ringStore, limits, logger, registerer)
+	am, err := createMultitenantAlertmanager(cfg, nil, store, ringStore, limits, logger, registerer)
 	require.NoError(t, err)
 
 	// The mock client pool allows the distributor to talk to the instance
@@ -166,23 +165,20 @@ func TestMultitenantAlertmanagerConfig_Validate(t *testing.T) {
 			},
 			expected: nil,
 		},
-		"should succeed if sharding enabled and new storage configuration given with bucket client": {
+		"should succeed if new storage configuration given with bucket client": {
 			setup: func(t *testing.T, cfg *MultitenantAlertmanagerConfig, storageCfg *alertstore.Config) {
-				cfg.ShardingEnabled = true
 				storageCfg.Backend = "s3"
 			},
 			expected: nil,
 		},
-		"should fail if sharding enabled and new storage store configuration given with local type": {
+		"should fail if new storage store configuration given with local type": {
 			setup: func(t *testing.T, cfg *MultitenantAlertmanagerConfig, storageCfg *alertstore.Config) {
-				cfg.ShardingEnabled = true
 				storageCfg.Backend = "local"
 			},
 			expected: errShardingUnsupportedStorage,
 		},
 		"should fail if zone aware is enabled but zone is not set": {
 			setup: func(t *testing.T, cfg *MultitenantAlertmanagerConfig, storageCfg *alertstore.Config) {
-				cfg.ShardingEnabled = true
 				cfg.ShardingRing.ZoneAwarenessEnabled = true
 			},
 			expected: errZoneAwarenessEnabledWithoutZoneInfo,
@@ -588,7 +584,7 @@ func TestMultitenantAlertmanager_migrateStateFilesToPerTenantDirectories(t *test
 
 	reg := prometheus.NewPedanticRegistry()
 	cfg := mockAlertmanagerConfig(t)
-	am, err := createMultitenantAlertmanager(cfg, nil, nil, store, nil, nil, log.NewNopLogger(), reg)
+	am, err := createMultitenantAlertmanager(cfg, nil, store, nil, nil, log.NewNopLogger(), reg)
 	require.NoError(t, err)
 
 	createFile(t, filepath.Join(cfg.DataDir, "nflog:"+user1))
@@ -686,11 +682,10 @@ func TestMultitenantAlertmanager_zoneAwareSharding(t *testing.T) {
 		cfg.ShardingRing.ReplicationFactor = 2
 		cfg.ShardingRing.InstanceID = instanceID
 		cfg.ShardingRing.InstanceAddr = fmt.Sprintf("127.0.0.1-%d", i)
-		cfg.ShardingEnabled = true
 		cfg.ShardingRing.ZoneAwarenessEnabled = true
 		cfg.ShardingRing.InstanceZone = zone
 
-		am, err := createMultitenantAlertmanager(cfg, nil, nil, alertStore, ringStore, nil, log.NewLogfmtLogger(os.Stdout), reg)
+		am, err := createMultitenantAlertmanager(cfg, nil, alertStore, ringStore, nil, log.NewLogfmtLogger(os.Stdout), reg)
 		require.NoError(t, err)
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, am))
@@ -758,12 +753,11 @@ func TestMultitenantAlertmanager_deleteUnusedRemoteUserState(t *testing.T) {
 		cfg.ShardingRing.ReplicationFactor = 1
 		cfg.ShardingRing.InstanceID = fmt.Sprintf("instance-%d", i)
 		cfg.ShardingRing.InstanceAddr = fmt.Sprintf("127.0.0.1-%d", i)
-		cfg.ShardingEnabled = true
 
 		// Increase state write interval so that state gets written sooner, making test faster.
 		cfg.Persister.Interval = 500 * time.Millisecond
 
-		am, err := createMultitenantAlertmanager(cfg, nil, nil, alertStore, ringStore, nil, log.NewLogfmtLogger(os.Stdout), reg)
+		am, err := createMultitenantAlertmanager(cfg, nil, alertStore, ringStore, nil, log.NewLogfmtLogger(os.Stdout), reg)
 		require.NoError(t, err)
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, am))
@@ -1079,7 +1073,7 @@ receivers:
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 }
 
-func TestMultitenantAlertmanager_InitialSyncWithSharding(t *testing.T) {
+func TestMultitenantAlertmanager_InitialSync(t *testing.T) {
 	tc := []struct {
 		name          string
 		existing      bool
@@ -1120,7 +1114,6 @@ func TestMultitenantAlertmanager_InitialSyncWithSharding(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
 			amConfig := mockAlertmanagerConfig(t)
-			amConfig.ShardingEnabled = true
 			ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
 			t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
@@ -1137,7 +1130,7 @@ func TestMultitenantAlertmanager_InitialSyncWithSharding(t *testing.T) {
 				}))
 			}
 
-			am, err := createMultitenantAlertmanager(amConfig, nil, nil, alertStore, ringStore, nil, log.NewNopLogger(), nil)
+			am, err := createMultitenantAlertmanager(amConfig, nil, alertStore, ringStore, nil, log.NewNopLogger(), nil)
 			require.NoError(t, err)
 			defer services.StopAndAwaitTerminated(ctx, am) //nolint:errcheck
 
@@ -1175,35 +1168,30 @@ func TestMultitenantAlertmanager_PerTenantSharding(t *testing.T) {
 		instances         int
 		configs           int
 		expectedTenants   int
-		withSharding      bool
 	}{
 		{
-			name:              "sharding enabled, 1 instance, RF = 1",
-			withSharding:      true,
+			name:              "1 instance, RF = 1",
 			instances:         1,
 			replicationFactor: 1,
 			configs:           10,
 			expectedTenants:   10, // same as no sharding and 1 instance
 		},
 		{
-			name:              "sharding enabled, 2 instances, RF = 1",
-			withSharding:      true,
+			name:              "2 instances, RF = 1",
 			instances:         2,
 			replicationFactor: 1,
 			configs:           10,
 			expectedTenants:   10, // configs * replication factor
 		},
 		{
-			name:              "sharding enabled, 3 instances, RF = 2",
-			withSharding:      true,
+			name:              "3 instances, RF = 2",
 			instances:         3,
 			replicationFactor: 2,
 			configs:           10,
 			expectedTenants:   20, // configs * replication factor
 		},
 		{
-			name:              "sharding enabled, 5 instances, RF = 3",
-			withSharding:      true,
+			name:              "5 instances, RF = 3",
 			instances:         5,
 			replicationFactor: 3,
 			configs:           10,
@@ -1246,12 +1234,8 @@ func TestMultitenantAlertmanager_PerTenantSharding(t *testing.T) {
 				amConfig.PollInterval = time.Hour
 				amConfig.ShardingRing.RingCheckPeriod = time.Hour
 
-				if tt.withSharding {
-					amConfig.ShardingEnabled = true
-				}
-
 				reg := prometheus.NewPedanticRegistry()
-				am, err := createMultitenantAlertmanager(amConfig, nil, nil, alertStore, ringStore, nil, log.NewNopLogger(), reg)
+				am, err := createMultitenantAlertmanager(amConfig, nil, alertStore, ringStore, nil, log.NewNopLogger(), reg)
 				require.NoError(t, err)
 				defer services.StopAndAwaitTerminated(ctx, am) //nolint:errcheck
 
@@ -1262,16 +1246,14 @@ func TestMultitenantAlertmanager_PerTenantSharding(t *testing.T) {
 				registries.AddUserRegistry(instanceID, reg)
 			}
 
-			// If we're testing sharding, we need make sure the ring is settled.
-			if tt.withSharding {
-				ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-				defer cancel()
+			// We need make sure the ring is settled.
+			ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			defer cancel()
 
-				// The alertmanager is ready to be tested once all instances are ACTIVE and the ring settles.
-				for _, am := range instances {
-					for _, id := range instanceIDs {
-						require.NoError(t, ring.WaitInstanceState(ctx, am.ring, id, ring.ACTIVE))
-					}
+			// The alertmanager is ready to be tested once all instances are ACTIVE and the ring settles.
+			for _, am := range instances {
+				for _, id := range instanceIDs {
+					require.NoError(t, ring.WaitInstanceState(ctx, am.ring, id, ring.ACTIVE))
 				}
 			}
 
@@ -1399,7 +1381,6 @@ func TestMultitenantAlertmanager_SyncOnRingTopologyChanges(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
 			amConfig := mockAlertmanagerConfig(t)
-			amConfig.ShardingEnabled = true
 			amConfig.ShardingRing.RingCheckPeriod = 100 * time.Millisecond
 			amConfig.PollInterval = time.Hour // Don't trigger the periodic check.
 
@@ -1409,7 +1390,7 @@ func TestMultitenantAlertmanager_SyncOnRingTopologyChanges(t *testing.T) {
 			alertStore := prepareInMemoryAlertStore()
 
 			reg := prometheus.NewPedanticRegistry()
-			am, err := createMultitenantAlertmanager(amConfig, nil, nil, alertStore, ringStore, nil, log.NewNopLogger(), reg)
+			am, err := createMultitenantAlertmanager(amConfig, nil, alertStore, ringStore, nil, log.NewNopLogger(), reg)
 			require.NoError(t, err)
 
 			require.NoError(t, ringStore.CAS(ctx, RingKey, func(in interface{}) (interface{}, bool, error) {
@@ -1452,7 +1433,6 @@ func TestMultitenantAlertmanager_RingLifecyclerShouldAutoForgetUnhealthyInstance
 	const heartbeatTimeout = time.Minute
 	ctx := context.Background()
 	amConfig := mockAlertmanagerConfig(t)
-	amConfig.ShardingEnabled = true
 	amConfig.ShardingRing.HeartbeatPeriod = 100 * time.Millisecond
 	amConfig.ShardingRing.HeartbeatTimeout = heartbeatTimeout
 
@@ -1461,7 +1441,7 @@ func TestMultitenantAlertmanager_RingLifecyclerShouldAutoForgetUnhealthyInstance
 
 	alertStore := prepareInMemoryAlertStore()
 
-	am, err := createMultitenantAlertmanager(amConfig, nil, nil, alertStore, ringStore, nil, log.NewNopLogger(), nil)
+	am, err := createMultitenantAlertmanager(amConfig, nil, alertStore, ringStore, nil, log.NewNopLogger(), nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, am))
 	defer services.StopAndAwaitTerminated(ctx, am) //nolint:errcheck
@@ -1486,10 +1466,9 @@ func TestMultitenantAlertmanager_RingLifecyclerShouldAutoForgetUnhealthyInstance
 	})
 }
 
-func TestMultitenantAlertmanager_InitialSyncFailureWithSharding(t *testing.T) {
+func TestMultitenantAlertmanager_InitialSyncFailure(t *testing.T) {
 	ctx := context.Background()
 	amConfig := mockAlertmanagerConfig(t)
-	amConfig.ShardingEnabled = true
 	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
@@ -1499,7 +1478,7 @@ func TestMultitenantAlertmanager_InitialSyncFailureWithSharding(t *testing.T) {
 	bkt.MockIter("alertmanager/", nil, nil)
 	store := bucketclient.NewBucketAlertStore(bkt, nil, log.NewNopLogger())
 
-	am, err := createMultitenantAlertmanager(amConfig, nil, nil, store, ringStore, nil, log.NewNopLogger(), nil)
+	am, err := createMultitenantAlertmanager(amConfig, nil, store, ringStore, nil, log.NewNopLogger(), nil)
 	require.NoError(t, err)
 	defer services.StopAndAwaitTerminated(ctx, am) //nolint:errcheck
 
@@ -1540,10 +1519,9 @@ func TestAlertmanager_ReplicasPosition(t *testing.T) {
 		// Do not check the ring topology changes or poll in an interval in this test (we explicitly sync alertmanagers).
 		amConfig.PollInterval = time.Hour
 		amConfig.ShardingRing.RingCheckPeriod = time.Hour
-		amConfig.ShardingEnabled = true
 
 		reg := prometheus.NewPedanticRegistry()
-		am, err := createMultitenantAlertmanager(amConfig, nil, nil, mockStore, ringStore, nil, log.NewNopLogger(), reg)
+		am, err := createMultitenantAlertmanager(amConfig, nil, mockStore, ringStore, nil, log.NewNopLogger(), reg)
 		require.NoError(t, err)
 		defer services.StopAndAwaitTerminated(ctx, am) //nolint:errcheck
 
@@ -1584,28 +1562,24 @@ func TestAlertmanager_ReplicasPosition(t *testing.T) {
 	require.ElementsMatch(t, []int{0, 1, 2}, positions)
 }
 
-func TestAlertmanager_StateReplicationWithSharding(t *testing.T) {
+func TestAlertmanager_StateReplication(t *testing.T) {
 	tc := []struct {
 		name              string
 		replicationFactor int
 		instances         int
-		withSharding      bool
 	}{
 		{
-			name:              "sharding enabled, RF = 1, 1 instance",
-			withSharding:      true,
+			name:              "RF = 1, 1 instance",
 			instances:         1,
 			replicationFactor: 1,
 		},
 		{
-			name:              "sharding enabled, RF = 2, 2 instances",
-			withSharding:      true,
+			name:              "RF = 2, 2 instances",
 			instances:         2,
 			replicationFactor: 2,
 		},
 		{
-			name:              "sharding enabled, RF = 3, 10 instance",
-			withSharding:      true,
+			name:              "RF = 3, 10 instance",
 			instances:         10,
 			replicationFactor: 3,
 		},
@@ -1652,19 +1626,13 @@ func TestAlertmanager_StateReplicationWithSharding(t *testing.T) {
 				amConfig.PollInterval = time.Hour
 				amConfig.ShardingRing.RingCheckPeriod = time.Hour
 
-				if tt.withSharding {
-					amConfig.ShardingEnabled = true
-				}
-
 				reg := prometheus.NewPedanticRegistry()
-				am, err := createMultitenantAlertmanager(amConfig, nil, nil, mockStore, ringStore, nil, log.NewNopLogger(), reg)
+				am, err := createMultitenantAlertmanager(amConfig, nil, mockStore, ringStore, nil, log.NewNopLogger(), reg)
 				require.NoError(t, err)
 				defer services.StopAndAwaitTerminated(ctx, am) //nolint:errcheck
 
-				if tt.withSharding {
-					clientPool.setServer(amConfig.ShardingRing.InstanceAddr+":0", am)
-					am.alertmanagerClientsPool = clientPool
-				}
+				clientPool.setServer(amConfig.ShardingRing.InstanceAddr+":0", am)
+				am.alertmanagerClientsPool = clientPool
 
 				require.NoError(t, services.StartAndAwaitRunning(ctx, am))
 
@@ -1673,16 +1641,14 @@ func TestAlertmanager_StateReplicationWithSharding(t *testing.T) {
 				registries.AddUserRegistry(instanceID, reg)
 			}
 
-			// If we're testing with sharding, we need make sure the ring is settled.
-			if tt.withSharding {
-				ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-				defer cancel()
+			// We need make sure the ring is settled.
+			ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			defer cancel()
 
-				// The alertmanager is ready to be tested once all instances are ACTIVE and the ring settles.
-				for _, am := range instances {
-					for _, id := range instanceIDs {
-						require.NoError(t, ring.WaitInstanceState(ctx, am.ring, id, ring.ACTIVE))
-					}
+			// The alertmanager is ready to be tested once all instances are ACTIVE and the ring settles.
+			for _, am := range instances {
+				for _, id := range instanceIDs {
+					require.NoError(t, ring.WaitInstanceState(ctx, am.ring, id, ring.ACTIVE))
 				}
 			}
 
@@ -1695,7 +1661,6 @@ func TestAlertmanager_StateReplicationWithSharding(t *testing.T) {
 				numInstances += len(am.alertmanagers)
 			}
 
-			// With sharding enabled, we propagate messages over gRPC instead of using a gossip over TCP.
 			// 1. First, get a random multitenant instance
 			//    We must pick an instance which actually has a user configured.
 			var multitenantAM *MultitenantAlertmanager
@@ -1750,16 +1715,6 @@ func TestAlertmanager_StateReplicationWithSharding(t *testing.T) {
 				require.Regexp(t, regexp.MustCompile(`{"silenceID":".+"}`), string(body))
 			}
 
-			// If sharding is not enabled, we never propagate any messages amongst replicas in this way, and we can stop here.
-			if !tt.withSharding {
-				metrics := registries.BuildMetricFamiliesPerUser()
-
-				assert.Equal(t, float64(1), metrics.GetSumOfGauges("cortex_alertmanager_silences"))
-				assert.Equal(t, float64(0), metrics.GetSumOfCounters("cortex_alertmanager_state_replication_total"))
-				assert.Equal(t, float64(0), metrics.GetSumOfCounters("cortex_alertmanager_state_replication_failed_total"))
-				return
-			}
-
 			var metrics util.MetricFamiliesPerUser
 
 			// 5. Then, make sure it is propagated successfully.
@@ -1795,7 +1750,7 @@ func TestAlertmanager_StateReplicationWithSharding(t *testing.T) {
 	}
 }
 
-func TestAlertmanager_StateReplicationWithSharding_InitialSyncFromPeers(t *testing.T) {
+func TestAlertmanager_StateReplication_InitialSyncFromPeers(t *testing.T) {
 	tc := []struct {
 		name              string
 		replicationFactor int
@@ -1850,10 +1805,8 @@ func TestAlertmanager_StateReplicationWithSharding_InitialSyncFromPeers(t *testi
 				amConfig.PollInterval = time.Hour
 				amConfig.ShardingRing.RingCheckPeriod = time.Hour
 
-				amConfig.ShardingEnabled = true
-
 				reg := prometheus.NewPedanticRegistry()
-				am, err := createMultitenantAlertmanager(amConfig, nil, nil, mockStore, ringStore, nil, log.NewNopLogger(), reg)
+				am, err := createMultitenantAlertmanager(amConfig, nil, mockStore, ringStore, nil, log.NewNopLogger(), reg)
 				require.NoError(t, err)
 
 				clientPool.setServer(amConfig.ShardingRing.InstanceAddr+":0", am)
