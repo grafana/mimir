@@ -69,8 +69,7 @@ To begin with, we recommend looking at the following dashboards:
 
 Some notes:
 - It may take few minutes after Grafana Mimir has been stated to have some meaningful metrics to display in the dashboards.
-- Since in this setup Grafana Mimir is running without any ingress gateway, query-scheduler or memcached, the related
-panels are all expected to be empty.
+- Since in this setup Grafana Mimir is running without any ingress gateway, query-scheduler or memcached, the related panels are all expected to be empty.
 
 To learn more about the Grafana configuration you can look at the [Mimir datasource](http://localhost:9000/datasources).
 
