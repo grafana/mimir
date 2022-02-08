@@ -1117,7 +1117,6 @@ spec:
         - -ruler-storage.backend=gcs
         - -ruler-storage.gcs.bucket-name=rules-bucket
         - -ruler.alertmanager-url=http://alertmanager.default.svc.cluster.local/alertmanager
-        - -ruler.enable-api=true
         - -ruler.max-rule-groups-per-tenant=35
         - -ruler.max-rules-per-rule-group=20
         - -ruler.ring.consul.hostname=consul.default.svc.cluster.local:8500
@@ -1186,7 +1185,6 @@ spec:
       - args:
         - -alertmanager-storage.backend=gcs
         - -alertmanager-storage.gcs.bucket-name=alerts-bucket
-        - -alertmanager.enable-api=true
         - -alertmanager.sharding-enabled=true
         - -alertmanager.sharding-ring.consul.hostname=consul.default.svc.cluster.local:8500
         - -alertmanager.sharding-ring.replication-factor=3
