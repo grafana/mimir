@@ -67,7 +67,7 @@ To start, we recommend looking at these dashboards:
 - [Queries](http://localhost:9000/d/d9931b1054053c8b972d320774bb8f1d/mimir-queries)
 - [Object store](http://localhost:9000/d/d5a3a4489d57c733b5677fb55370a723/mimir-object-store)
 
-Some notes:
+A couple of caveats:
 
 - It may take few minutes after Grafana Mimir has been stated to have some meaningful metrics to display in the dashboards.
 - Since in this setup Grafana Mimir is running without any ingress gateway, query-scheduler or memcached, the related panels are all expected to be empty.
