@@ -262,9 +262,9 @@ func TestGrpcAuthMiddleware(t *testing.T) {
 	prepareGlobalMetricsRegistry(t)
 
 	cfg := Config{
-		AuthEnabled: true, // We must enable this to enable Auth middleware for gRPC server.
-		Server:      getServerConfig(t),
-		Target:      []string{API}, // Something innocent that doesn't require much config.
+		MultitenancyEnabled: true, // We must enable this to enable Auth middleware for gRPC server.
+		Server:              getServerConfig(t),
+		Target:              []string{API}, // Something innocent that doesn't require much config.
 	}
 
 	msch := &mockGrpcServiceHandler{}

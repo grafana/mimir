@@ -71,7 +71,7 @@ func NewDistributorWithConfigFile(name, consulAddress, configFile string, flags 
 			e2e.MergeFlags(map[string]string{
 				"-target":                         "distributor",
 				"-log.level":                      "warn",
-				"-auth.enabled":                   "true",
+				"-auth.multitenancy-enabled":      "true",
 				"-distributor.replication-factor": "1",
 				"-distributor.remote-timeout":     "2s", // Fail fast in integration tests.
 				// Configure the ingesters ring backend
@@ -300,9 +300,9 @@ func NewSingleBinary(name string, flags map[string]string, image string, otherPo
 	binaryName := getBinaryNameForBackwardsCompatibility(image)
 
 	defaultFlags := map[string]string{
-		"-target":       "all",
-		"-log.level":    "warn",
-		"-auth.enabled": "true",
+		"-target":                    "all",
+		"-log.level":                 "warn",
+		"-auth.multitenancy-enabled": "true",
 		// Query-frontend worker.
 		"-querier.frontend-client.backoff-min-period": "100ms",
 		"-querier.frontend-client.backoff-max-period": "100ms",

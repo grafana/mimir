@@ -80,7 +80,7 @@ In this documentation you will find the usage of some placeholders for the path 
 
 When multi-tenancy is enabled, endpoints requiring authentication are expected to be called with the `X-Scope-OrgID` HTTP request header set to the tenant ID. Otherwise, when multi-tenancy is disabled, Cortex doesn't require any request to have the `X-Scope-OrgID` header.
 
-Multi-tenancy can be enabled/disabled via the CLI flag `-auth.enabled` or its respective YAML config option.
+Multi-tenancy can be enabled/disabled via the CLI flag `-auth.multitenancy-enabled` or its respective YAML config option.
 
 _For more information, please refer to the dedicated [Authentication and Authorisation](../guides/authentication-and-authorisation.md) guide._
 

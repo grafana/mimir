@@ -22,7 +22,7 @@ Bearer token, can be used to convey the tenant ID and/or credentials.
 See the **Grafana Mimir-Tenant** section below for one way to solve this.
 
 To disable the multi-tenant functionality, you can pass the argument
-`-auth.enabled=false` to every Grafana Mimir component, which will set the OrgID
+`-auth.multitenancy-enabled=false` to every Grafana Mimir component, which will set the OrgID
 to the string `anonymous` for every request (configurable with `-auth.no-auth-tenant` option).
 
 Note that the tenant ID that is used to write the series to the datastore
