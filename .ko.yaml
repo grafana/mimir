@@ -1,12 +1,12 @@
-build:
+builds:
   - id: mimir
     main: ./cmd/mimir
     env:
       - CGO_ENABLED=0
     ldflags:
-      - -X main.Branch={{Env.GIT_BRANCH}}
-      - -X main.Revision={{Env.GIT_REVISION}}
-      - -X main.Version={{Env.VERSION}}
+      - -X main.Branch={{.Env.GIT_BRANCH}}
+      - -X main.Revision={{.Env.GIT_REVISION}}
+      - -X main.Version={{.Env.VERSION}}
       - --extldflags "-static" 
       - -s
       - -w
