@@ -358,10 +358,6 @@ Valid per-tenant limits are (with their corresponding flags for default values):
 
   Requires `-distributor.replication-factor` and `-distributor.zone-awareness-enabled` set for the ingesters too.
 
-- `max_samples_per_query` / `-ingester.max-samples-per-query`
-
-  Limits on the number of timeseries and samples returns by a single ingester during a query.
-
 - `max_global_metadata_per_user` / `-ingester.max-global-metadata-per-user`
 - `max_global_metadata_per_metric` / `-ingester.max-global-metadata-per-metric`
 

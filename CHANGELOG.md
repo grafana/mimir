@@ -63,7 +63,7 @@
 * [CHANGE] Query-frontend: added `sharded` label to `cortex_query_seconds_total` metric. #235
 * [CHANGE] Query-frontend: changed the flag name for controlling query sharding total shards from `-querier.total-shards` to `-frontend.query-sharding-total-shards`. #230
 * [CHANGE] Querier/ruler: Option `-querier.ingester-streaming` has been removed. Querier/ruler now always use streaming method to query ingesters. #204
-* [CHANGE] Limits: Option `-ingester.max-samples-per-query` is now deprecated. YAML field `max_samples_per_query` is no longer supported. It required `-querier.ingester-streaming` option to be set to false, but since `-querier.ingester-streaming` is removed (always defaulting to true), the limit using it was removed as well. #204
+* [CHANGE] Limits: Option `-ingester.max-samples-per-query` and its YAML field `max_samples_per_query` have been removed. It required `-querier.ingester-streaming` option to be set to false, but since `-querier.ingester-streaming` is removed (always defaulting to true), the limit using it was removed as well. #204 #1132
 * [CHANGE] Compactor: removed the `cortex_compactor_group_vertical_compactions_total` metric. #278
 * [CHANGE] Limits: Set the default max number of inflight ingester push requests (`-ingester.instance-limits.max-inflight-push-requests`) to 30000 in order to prevent clusters from being overwhelmed by request volume or temporary slow-downs. #259
 * [CHANGE] Compactor no longer waits for initial blocks cleanup to finish before starting compactions. #282
@@ -146,7 +146,7 @@
 * [CHANGE] Store-gateway: index cache now includes tenant in cache keys, this invalidates previous cached entries. #607
 * [CHANGE] Removed the deprecated `-<prefix>.fifocache.size` flag. #618
 * [CHANGE] Ruler: removed the support for the deprecated storage configuration via `-ruler.storage.*` CLI flags (and their respective YAML config options). Use `-ruler-storage.*` instead. #628
-* [CHANGE] Querier: always fetch labels from store and respect start/end times in request; the option `-querier.query-store-for-labels-enabled` is now always on. #518
+* [CHANGE] Querier: always fetch labels from store and respect start/end times in request; the option `-querier.query-store-for-labels-enabled` has been removed and is now always on. #518 #1132
 * [CHANGE] Query Frontend: range query response now omits the `data` field when it's empty (error case) like Prometheus does, previously it was `"data":{"resultType":"","result":null}`. #629
 * [CHANGE] Query Frontend: instant queries now honor the `-frontend.max-retries-per-request` flag. #630
 * [CHANGE] Alertmanager: removed `-alertmanager.storage.*` configuration options, with the exception of the CLI flags `-alertmanager.storage.path` and `-alertmanager.storage.retention`. Use `-alertmanager-storage.*` instead. #632

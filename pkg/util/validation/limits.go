@@ -17,8 +17,6 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/relabel"
 	"golang.org/x/time/rate"
-
-	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
 // LimitError are errors that do not comply with the limits specified.
@@ -129,8 +127,6 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.Var(&l.CreationGracePeriod, "validation.create-grace-period", "Duration which table will be created/deleted before/after it's needed; we won't accept sample from before this time.")
 	f.BoolVar(&l.EnforceMetadataMetricName, "validation.enforce-metadata-metric-name", true, "Enforce every metadata has a metric name.")
 
-	//lint:ignore faillint Need to pass the global logger like this for warning on deprecated methods
-	flagext.DeprecatedFlag(f, "ingester.max-samples-per-query", "This option is no longer used, and will be removed.", util_log.Logger)
 	f.IntVar(&l.MaxGlobalSeriesPerUser, "ingester.max-global-series-per-user", 150000, "The maximum number of active series per user, across the cluster before replication. 0 to disable.")
 	f.IntVar(&l.MaxGlobalSeriesPerMetric, "ingester.max-global-series-per-metric", 20000, "The maximum number of active series per metric name, across the cluster before replication. 0 to disable.")
 

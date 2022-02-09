@@ -763,7 +763,6 @@ spec:
         - -querier.query-ingesters-within=13h
         - -querier.query-label-names-with-matchers-enabled=true
         - -querier.query-store-after=12h
-        - -querier.query-store-for-labels-enabled=true
         - -ring.heartbeat-timeout=10m
         - -ring.prefix=
         - -ring.store=consul
