@@ -28,7 +28,7 @@ In this tutorial, you'll:
    cd tutorials/play-with-grafana-mimir/
    ```
 
-**Note**: the instructions in this tutorial assume you remain in the `tutorials/play-with-grafana-mimir/` directory.
+**Note**: the instructions in this tutorial assume that your working directory is `tutorials/play-with-grafana-mimir/`.
 
 ## Start Grafana Mimir and dependencies
 
