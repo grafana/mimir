@@ -102,7 +102,7 @@ itself, while the alerting rule will be notified to the Alertmanager.
    mimirtool rules print
    ```
 1. Check the configured rules via [Grafana Alerting UI](http://localhost:9000/alerting/list)
-1. Query the resulting series from the recording rule via [Grafana Explore](http://localhost:9000/explore) (it may take up to 1 minute to show up after configuring it)
+1. Query the resulting series from the recording rule using [Grafana Explore](http://localhost:9000/explore), which may require up to one minute to display after configuration.
    ```
    count:up
    ```
