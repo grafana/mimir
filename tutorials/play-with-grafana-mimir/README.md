@@ -14,7 +14,7 @@ In this tutorial, you'll:
 - Git
 - Docker and Docker Compose
 - Latest `mimirtool` [release](https://github.com/grafana/mimir/releases/latest)
-- The ports `9000` and `9009` needs to be available on your host machine
+- Availability of both ports `9000` and `9009` on your host machine
 
 ## Download tutorial configuration
 
