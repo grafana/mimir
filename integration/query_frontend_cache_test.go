@@ -35,7 +35,7 @@ func TestQueryFrontendUnalignedQuery(t *testing.T) {
 	flags = mergeFlags(flags, map[string]string{
 		"-query-frontend.cache-results":                     "true",
 		"-query-frontend.split-queries-by-interval":         "2m",
-		"-querier.query-ingesters-within":             "12h", // Required by the test on query /series out of ingesters time range
+		"-querier.query-ingesters-within":                   "12h", // Required by the test on query /series out of ingesters time range
 		"-query-frontend.align-querier-with-step":           "true",
 		"-query-frontend.max-cache-freshness":               "0", // Cache everything.
 		"-query-frontend.results-cache.backend":             "memcached",

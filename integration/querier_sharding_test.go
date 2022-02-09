@@ -70,12 +70,12 @@ func runQuerierShardingTest(t *testing.T, cfg querierShardingTestConfig) {
 	require.NoError(t, s.StartAndWaitReady(consul, memcached))
 
 	flags := mergeFlags(BlocksStorageFlags(), map[string]string{
-		"-query-frontend.cache-results":                      "true",
-		"-querier.query-ingesters-within":              "12h", // Required by the test on query /series out of ingesters time range
-		"-query-frontend.results-cache.backend":              "memcached",
-		"-query-frontend.results-cache.memcached.addresses":  "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
-		"-query-frontend.results-cache.compression":          "snappy",
-		"-querier.max-outstanding-requests-per-tenant": strconv.Itoa(numQueries), // To avoid getting errors.
+		"-query-frontend.cache-results":                     "true",
+		"-querier.query-ingesters-within":                   "12h", // Required by the test on query /series out of ingesters time range
+		"-query-frontend.results-cache.backend":             "memcached",
+		"-query-frontend.results-cache.memcached.addresses": "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
+		"-query-frontend.results-cache.compression":         "snappy",
+		"-querier.max-outstanding-requests-per-tenant":      strconv.Itoa(numQueries), // To avoid getting errors.
 	})
 
 	minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
