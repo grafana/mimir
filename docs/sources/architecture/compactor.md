@@ -77,7 +77,7 @@ Whenever the pool of compactors increase or decrease (ie. following up a scale u
 
 The compactor sharding is based on the Mimir [hash ring](../architecture.md#the-hash-ring). At startup, a compactor generates random tokens and registers itself to the ring. While running, it periodically scans the storage bucket at every interval defined by `-compactor.compaction-interval` to discover the list of tenants in the storage and compacts blocks for each tenant whose hash matches the token ranges that are assigned to the instance itself within the ring.
 
-This feature can be enabled via `-compactor.sharding-enabled=true` and requires the backend [hash ring](../architecture.md#the-hash-ring) to be configured via `-compactor.ring.*` flags (or their respective YAML config options).
+This feature requires the backend [hash ring](../architecture.md#the-hash-ring) to be configured via `-compactor.ring.*` flags (or their respective YAML config options).
 
 ### Waiting for stable ring at startup
 

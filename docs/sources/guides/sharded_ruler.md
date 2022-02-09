@@ -11,21 +11,15 @@ One option to scale the ruler is by scaling it horizontally. However, with multi
 
 ## Config
 
-In order to enable sharding in the ruler the following flag needs to be set:
-
-```
-  -ruler.enable-sharding=true
-```
-
-In addition the ruler requires it's own ring to be configured, for instance:
+To make sharding of rule groups between rulers work, ruler requires the ring backend to be configured, for example:
 
 ```
   -ruler.ring.consul.hostname=consul.dev.svc.cluster.local:8500
 ```
 
-The only configuration that is required is to enable sharding and configure a key value store. From there the rulers will shard and handle the division of rules automatically.
+The only configuration that is required is to configure a key value store. From there the rulers will shard and handle the division of rules automatically.
 
-Unlike ingesters, rulers do not hand over responsibility: all rules are re-sharded randomly every time a ruler is added to or removed from the ring.
+All rules are re-sharded randomly every time a ruler is added to or removed from the ring.
 
 ## Ruler Storage
 
