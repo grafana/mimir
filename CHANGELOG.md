@@ -275,6 +275,7 @@
   * `-compactor.data-dir` default value changed to `./data-compactor/`
   * `-ruler.rule-path` default value changed to `./data-ruler/`
 * [CHANGE] Query-frontend: the default value of `-frontend.split-queries-by-interval` has changed from `0` to `24h`. #1131
+* [CHANGE] Remove the test-exporter tool. #1133
 * [FEATURE] Query Frontend: Add `cortex_query_fetched_chunks_total` per-user counter to expose the number of chunks fetched as part of queries. This metric can be enabled with the `-frontend.query-stats-enabled` flag (or its respective YAML config option `query_stats_enabled`). #31
 * [FEATURE] Query Frontend: Add experimental querysharding for the blocks storage (instant and range queries). You can now enable querysharding for blocks storage (`-store.engine=blocks`) by setting `-frontend.parallelize-shardable-queries` to `true`. The following additional config and exported metrics have been added. #79 #80 #100 #124 #140 #148 #150 #151 #153 #154 #155 #156 #157 #158 #159 #160 #163 #169 #172 #196 #205 #225 #226 #227 #228 #230 #235 #240 #239 #246 #244 #319 #330 #371 #385 #400 #458 #586 #630 #660 #707
   * New config options:
@@ -649,6 +650,7 @@
 * [CHANGE] The config field `distributorConfig` has been renamed to `ingesterRingClientConfig`. Config field `ringClient` has been removed in favor of `ingesterRingClientConfig`. #997 #1057
 * [CHANGE] Gossip.libsonnet has been fixed to modify all ring configurations, not only the ingester ring config. Furthermore it now supports migration via multi KV store. #1057 #1099
 * [CHANGE] Changed the default of `bucket_index_enabled` to `true`. #924
+* [CHANGE] Remove the support for the test-exporter. #1133
 * [FEATURE] Added query sharding support. It can be enabled setting `cortex_query_sharding_enabled: true` in the `_config` object. #653
 * [FEATURE] Added shuffle-sharding support. It can be enabled and configured using the following config: #902
    ```
