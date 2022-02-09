@@ -11,7 +11,7 @@ One option to scale the ruler is by scaling it horizontally. However, with multi
 
 ## Config
 
-To enable sharding of rule groups between rulers, they must be configured with the ring backend, for instance:
+To make sharding of rule groups between rulers work, ruler requires the ring backend to be configured, for example:
 
 ```
   -ruler.ring.consul.hostname=consul.dev.svc.cluster.local:8500
