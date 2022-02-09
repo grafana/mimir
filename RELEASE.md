@@ -94,7 +94,6 @@ To publish a release candidate:
 1. Create a pre-release in GitHub
    - Write the release notes (including a copy-paste of the changelog)
    - Build binaries with `make dist` and attach them to the release
-   - Build packages with `make packages`, test them with `make test-packages` and attach them to the release
 
 ### Publish a stable release
 
@@ -114,7 +113,6 @@ To publish a stable release:
 1. Create a release in GitHub
    - Write the release notes (including a copy-paste of the changelog)
    - Build binaries with `make dist` and attach them to the release
-   - Build packages with `make packages`, test them with `make test-packages` and attach them to the release
 1. Merge the release branch `release-x.y` to `master`
    - Create `merge-release-X.Y-to-master` branch **from `release-X.Y` branch** locally
    - Merge upstream `master` branch into your `merge-release-X.Y-to-master` and resolve conflicts
