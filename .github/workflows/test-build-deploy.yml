@@ -21,6 +21,9 @@ jobs:
     runs-on: ubuntu-20.04
     container:
       image: grafana/mimir-build-image:update-go-1.17.8-8a996bb57
+      credentials:
+        username: ${{ secrets.docker_username }}
+        password: ${{ secrets.docker_password }}
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v2
@@ -115,9 +118,6 @@ jobs:
         run: |
           mkdir -p /go/src/github.com/grafana/mimir
           ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
-      - name: Install ko
-        run: |
-          go install github.com/grafana/ko@main
       - name: Build Images
         run: |
           export GIT_REVISION=$(git rev-parse --short HEAD)
@@ -182,13 +182,14 @@ jobs:
         uses: actions/checkout@v2
       - name: Install Docker Client
         run: sudo ./.github/workflows/scripts/install-docker.sh
+      # TODO: Work into image
+      - name: Install ko
+        run: |
+          go install github.com/grafana/ko@main
       - name: Symlink Expected Path to Workspace
         run: |
           sudo mkdir -p /go/src/github.com/grafana/mimir
           sudo ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
-      - name: Install ko
-        run: |
-          go install github.com/grafana/ko@main
       - name: Download Docker Images Mimir Artifacts
         uses: actions/download-artifact@v2
         with:
@@ -236,9 +237,6 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           name: Docker Images Mimir
-      - name: Install ko
-        run: |
-          go install github.com/grafana/ko@main
       - name: Extract Docker Images
         run: |
           tar -xvf mimir-images.tar
