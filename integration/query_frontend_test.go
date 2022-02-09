@@ -172,7 +172,7 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 		"-querier.query-ingesters-within":             "12h", // Required by the test on query /series out of ingesters time range
 		"-frontend.results-cache.backend":             "memcached",
 		"-frontend.results-cache.memcached.addresses": "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
-		"-query-frontend.query-stats-enabled":               strconv.FormatBool(cfg.queryStatsEnabled),
+		"-query-frontend.query-stats-enabled":         strconv.FormatBool(cfg.queryStatsEnabled),
 	})
 
 	// Start the query-scheduler if enabled.

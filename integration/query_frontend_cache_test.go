@@ -37,7 +37,7 @@ func TestQueryFrontendUnalignedQuery(t *testing.T) {
 		"-frontend.split-queries-by-interval":         "2m",
 		"-querier.query-ingesters-within":             "12h", // Required by the test on query /series out of ingesters time range
 		"-frontend.align-querier-with-step":           "true",
-		"-query-frontend.max-cache-freshness":               "0", // Cache everything.
+		"-query-frontend.max-cache-freshness":         "0", // Cache everything.
 		"-frontend.results-cache.backend":             "memcached",
 		"-frontend.results-cache.memcached.addresses": "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
 	})
