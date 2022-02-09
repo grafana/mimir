@@ -13,7 +13,6 @@ In this tutorial, you'll:
 
 - Git
 - Docker and Docker Compose
-- Latest `mimirtool` [release](https://github.com/grafana/mimir/releases/latest)
 - Availability of both ports `9000` and `9009` on your host machine
 
 ## Download tutorial configuration
@@ -57,6 +56,8 @@ The following ports will be exposed on the host:
 - Grafana on [`http://localhost:9000`](http://localhost:9000)
 - Grafana Mimir on [`http://localhost:9009`](http://localhost:9009)
 
+To learn more about the Grafana Mimir configuration, you can review the configuration file `config/mimir.yaml`.
+
 ## Explore Grafana Mimir dashboards
 
 Open Grafana on your local host [`http://localhost:9000`](http://localhost:9000) and view dashboards showing the status
@@ -76,39 +77,76 @@ A couple of caveats:
 
 To learn more about the Grafana configuration, you can review the [Mimir datasource](http://localhost:9000/datasources).
 
-## Explore Grafana Mimir admin UI
+## Configure your first recording rule
 
-1. Open Grafana Mimir admin UI at [`http://localhost:9009`](http://localhost:9009).
-1. Open "[Ingester Ring Status](http://localhost:9009/ingester/ring)" to check the status of the hash ring used for series sharding and replication (you should see the three replicas correctly registered to the ring).
-1. Open "[Memberlist Status](http://localhost:9009/memberlist)" to check the status and health of the Gossip-based clustering.
+Recording rules allow you to precompute frequently needed or computationally expensive expressions and save their result
+as a new set of time series. In this section you're going to configure a recording rule in Grafana Mimir using tooling
+offered by Grafana.
 
-To learn more about the Grafana Mimir configuration, you can review the configuration file `config/mimir.yaml`.
+1. Open [Grafana Alerting](http://localhost:9000/alerting/list).
+1. Click to "New alert rule". Despite the name, this allows you to configure recording rules too.
+1. Configure the recording rule:
+  1. Type `count:up` in the "Rule name" field.
+  1. Choose `Cortex managed recording rule` in the "Rule type" field.
+  1. Choose `Mimir` in the "Select data source" field.
+  1. Type `example-namespace` in the "Namespace" field.
+  1. Type `example-group` in the "Group" field.
+  1. Type `count(up)` in the "Create a query to be recorded" field.
+  1. Click "Save and Exit" button.
 
-## Configure your first rules
+Your `count:up` recording rule is now creating in Grafana Mimir ruler and will be soon available for querying:
 
-The file `rules.yaml` contains an example of both a recording rule and an alerting rule we'll use to configure Grafana Mimir ruler.
-These rules will be evaluated by the Grafana Mimir ruler: the resulting series of recording rule will be ingested by Grafana Mimir
-itself, while the alerting rule will be notified to the Alertmanager.
-
-1. Configure `mimirtool` to connect to the local Grafana Mimir cluster with the correct tenant ID:
-   ```bash
-   export MIMIR_ADDRESS="http://localhost:9009"
-   export MIMIR_TENANT_ID="anonymous"
-   ```
-1. Load example rules to Grafana Mimir by using our command line to load the sample YAML file:
-   ```bash
-   mimirtool rules load rules.yaml
-   ```
-1. Check that the configured rules provided by `rules.yaml` are correct by running a print command using our command line and viewing the output on your screen:
-   ```bash
-   mimirtool rules print
-   ```
-1. Confirm the configured rules provided by `rules.yaml` are correct by viewing them in the [Grafana Alerting UI](http://localhost:9000/alerting/list)
-1. Query the resulting series from the recording rule using [Grafana Explore](http://localhost:9000/explore), which may require up to one minute to display after configuration.
+1. Open [Grafana Explore](http://localhost:9000/explore).
+1. Query the resulting series from the recording rule, which may require up to one minute to display after configuration:
    ```
    count:up
    ```
-1. Check the alerts are correctly firing using the [Alertmanager UI](http://localhost:9009/alertmanager), which may require up to one minute to display after configuration.
+1. Confirm the query returns a value of `3` which is the number of Mimir replicas currently running in your local setup.
+
+## Configure your first alert rule
+
+Alerting rules allow you to define alert conditions based on PromQL expressions and to send notifications about firing
+alerts to Grafana Mimir Alertmanager. In this section you're going to configure an alerting rule in Grafana Mimir using
+tooling offered by Grafana.
+
+1. Open [Grafana Alerting](http://localhost:9000/alerting/list).
+1. Click to "New alert rule".
+1. Configure the alert rule:
+  1. Type `MimirNotRunning` in the "Rule name" field.
+  1. Choose `Cortex managed alert rule` in the "Rule type" field.
+  1. Choose `Mimir` in the "Select data source" field.
+  1. Select `example-namespace` in the "Namespace" field.
+  1. Select `example-group` in the "Group" field.
+  1. Type `up == 0` in the "Create a query to be alerted on" field.
+  1. Click "Save and Exit" button.
+
+Your `MimirNotRunning` alert rule is now creating in Grafana Mimir ruler and it expected to fire when the number of
+Grafana Mimir replicas is less than three. You can check its status opening the [Grafana Alerting](http://localhost:9000/alerting/list)
+page and expanding the "example-namespace > example-group" row.
+
+To see the alert firing we can introduce an outage in the Grafana Mimir cluster:
+
+1. Abruptly terminate one of the three Grafana Mimir replicas:
+   ```bash
+   docker-compose kill mimir-3
+   ```
+2. Open [Grafana Alerting](http://localhost:9000/alerting/list) and check out the state of the alert `MimirNotRunning`,
+   which should switch to "Pending" state in about one minute and to "Firing" state after another minute.
+
+Grafana Mimir Alertmanager has not been configured yet to notify alerts through a notification channel. To configure the
+Alertmanager you can open the [Contact points](http://localhost:9000/alerting/notifications) page in Grafana and
+set your preferred notification channel. Note the email receiver doesn't work in this example because because there's no
+SMTP server running.
+
+Finally, to see the alert resolving we can recover from the outage restarting the Grafana Mimir replica that was
+abruptly terminated:
+
+1. Start the Grafana Mimir replicas:
+   ```bash
+   docker-compose start mimir-3
+   ```
+2. Open [Grafana Alerting](http://localhost:9000/alerting/list) and check out the state of the alert `MimirNotRunning`,
+   which should switch to "Normal" state in about one minute.
 
 ## Summary
 

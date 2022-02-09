@@ -9,3 +9,7 @@ datasources:
     isDefault: true
     version: 1
     editable: true
+    jsonData:
+      httpHeaderName1: 'X-Scope-OrgID'
+    secureJsonData:
+      httpHeaderValue1: 'demo'
