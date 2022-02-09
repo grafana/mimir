@@ -40,7 +40,7 @@ This command starts:
 
 - Grafana Mimir
   - Authentication and multi-tenancy disabled (tenant ID is `anonymous`)
-  - Highly-available configuration (3 replicas)
+  - Highly-available configuration (three replicas)
 - [Minio](https://min.io/)
   - S3-compatible persistent storage for blocks, rules and alerts
 - Prometheus
