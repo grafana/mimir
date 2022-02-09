@@ -129,12 +129,20 @@ func (i *ActivityTrackerWrapper) LabelValuesCardinality(request *client.LabelVal
 }
 
 func (i *ActivityTrackerWrapper) FlushHandler(w http.ResponseWriter, r *http.Request) {
-	// No tracking
+	ix := i.tracker.Insert(func() string {
+		return requestActivity(r.Context(), "Ingester/FlushHandler", nil)
+	})
+	defer i.tracker.Delete(ix)
+
 	i.ing.FlushHandler(w, r)
 }
 
 func (i *ActivityTrackerWrapper) ShutdownHandler(w http.ResponseWriter, r *http.Request) {
-	// No tracking
+	ix := i.tracker.Insert(func() string {
+		return requestActivity(r.Context(), "Ingester/ShutdownHandler", nil)
+	})
+	defer i.tracker.Delete(ix)
+
 	i.ing.ShutdownHandler(w, r)
 }
 
