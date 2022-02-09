@@ -21,7 +21,7 @@ The [blocks storage](../blocks-storage/_index.md) S3 server-side encryption can 
 
 ### s3_sse_config
 
-The `s3_sse_config` configures the S3 server-side encryption.
+The s3_sse_config configures the S3 server-side encryption.
 
 ```yaml
 sse:

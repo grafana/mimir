@@ -164,11 +164,11 @@ func (w *markdownWriter) writeConfigBlock(block *configBlock) {
 		desc := block.desc
 
 		// Wrap the config block name with backticks
-		if block.name != "" {
-			desc = regexp.MustCompile(regexp.QuoteMeta(block.name)).ReplaceAllStringFunc(desc, func(input string) string {
-				return "`" + input + "`"
-			})
-		}
+		//if block.name != "" {
+		//	desc = regexp.MustCompile(regexp.QuoteMeta(block.name)).ReplaceAllStringFunc(desc, func(input string) string {
+		//		return "`" + input + "`"
+		//	})
+		//}
 
 		// List of all prefixes used to reference this config block.
 		if len(block.flagsPrefixes) > 1 {

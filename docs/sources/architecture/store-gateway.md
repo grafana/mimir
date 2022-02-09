@@ -179,7 +179,7 @@ This section described the store-gateway configuration. For the general Cortex c
 
 ### store_gateway_config
 
-The `store_gateway_config` configures the store-gateway service.
+The store_gateway_config configures the store-gateway service.
 
 ```yaml
 store_gateway:
@@ -294,7 +294,7 @@ store_gateway:
 
 ### blocks_storage_config
 
-The `blocks_storage_config` configures the blocks storage.
+The blocks_storage_config configures the blocks storage.
 
 ```yaml
 blocks_storage:

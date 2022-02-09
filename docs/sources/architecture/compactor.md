@@ -143,7 +143,7 @@ This section described the compactor configuration. For the general Cortex confi
 
 ### compactor_config
 
-The `compactor_config` configures the compactor service.
+The compactor_config configures the compactor service.
 
 ```yaml
 compactor:

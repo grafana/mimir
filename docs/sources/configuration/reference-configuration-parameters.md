@@ -119,12 +119,12 @@ api:
   # CLI flag: -http.prometheus-http-prefix
   [prometheus_http_prefix: <string> | default = "/prometheus"]
 
-# The server_config configures the HTTP and gRPC server of the launched
+# The `server` block configures the HTTP and gRPC server of the launched
 # service(s).
-[server: <server_config>]
+[server: <server>]
 
-# The distributor_config configures the distributor.
-[distributor: <distributor_config>]
+# The `distributor` block configures the distributor.
+[distributor: <distributor>]
 
 # The querier_config configures the querier.
 [querier: <querier_config>]
@@ -289,9 +289,9 @@ query_scheduler:
     [tls_insecure_skip_verify: <boolean> | default = false]
 ```
 
-### server_config
+### server
 
-The `server_config` configures the HTTP and gRPC server of the launched service(s).
+The `server` block configures the HTTP and gRPC server of the launched service(s).
 
 ```yaml
 # (advanced) HTTP server listen network, default tcp
@@ -461,9 +461,9 @@ grpc_tls_config:
 [http_path_prefix: <string> | default = ""]
 ```
 
-### distributor_config
+### distributor
 
-The `distributor_config` configures the distributor.
+The `distributor` block configures the distributor.
 
 ```yaml
 pool:
@@ -633,7 +633,7 @@ instance_limits:
 
 ### ingester_config
 
-The `ingester_config` configures the ingester.
+The ingester_config configures the ingester.
 
 ```yaml
 ring:
@@ -844,7 +844,7 @@ instance_limits:
 
 ### querier_config
 
-The `querier_config` configures the querier.
+The querier_config configures the querier.
 
 ```yaml
 # (advanced) Use iterators to execute query, as opposed to fully materialising
@@ -942,7 +942,7 @@ store_gateway_client:
 
 ### query_frontend_config
 
-The `query_frontend_config` configures the query-frontend.
+The query_frontend_config configures the query-frontend.
 
 ```yaml
 # Log queries that are slower than the specified duration. Set to 0 to disable.
@@ -1116,7 +1116,7 @@ results_cache:
 
 ### ruler_config
 
-The `ruler_config` configures the ruler.
+The ruler_config configures the ruler.
 
 ```yaml
 # URL of alerts return path.
@@ -1382,7 +1382,7 @@ tenant_federation:
 
 ### ruler_storage_config
 
-The `ruler_storage_config` configures the ruler storage backend.
+The ruler_storage_config configures the ruler storage backend.
 
 ```yaml
 # Backend storage to use. Supported backends are: s3, gcs, azure, swift,
@@ -1603,7 +1603,7 @@ local:
 
 ### alertmanager_config
 
-The `alertmanager_config` configures the alertmanager.
+The alertmanager_config configures the alertmanager.
 
 ```yaml
 # Directory to store Alertmanager state and temporarily configuration files. The
@@ -1769,7 +1769,7 @@ alertmanager_client:
 
 ### alertmanager_storage_config
 
-The `alertmanager_storage_config` configures the alertmanager storage backend.
+The alertmanager_storage_config configures the alertmanager storage backend.
 
 ```yaml
 # Backend storage to use. Supported backends are: s3, gcs, azure, swift,
@@ -1990,7 +1990,7 @@ local:
 
 ### flusher_config
 
-The `flusher_config` configures the WAL flusher target, used to manually run one-time flushes when scaling down ingesters.
+The flusher_config configures the WAL flusher target, used to manually run one-time flushes when scaling down ingesters.
 
 ```yaml
 # (advanced) Stop after flush has finished. If false, process will keep running,
@@ -2001,7 +2001,7 @@ The `flusher_config` configures the WAL flusher target, used to manually run one
 
 ### ingester_client_config
 
-The `ingester_client_config` configures how the distributors connect to the ingesters.
+The ingester_client_config configures how the distributors connect to the ingesters.
 
 ```yaml
 grpc_client_config:
@@ -2075,7 +2075,7 @@ grpc_client_config:
 
 ### frontend_worker_config
 
-The `frontend_worker_config` configures the worker - running within the querier - picking up and executing queries enqueued by the query-frontend or query-scheduler.
+The frontend_worker_config configures the worker - running within the querier - picking up and executing queries enqueued by the query-frontend or query-scheduler.
 
 ```yaml
 # Address of query frontend service, in host:port format. If
@@ -2173,7 +2173,7 @@ grpc_client_config:
 
 ### etcd_config
 
-The `etcd_config` configures the etcd client. The supported CLI flags `<prefix>` used to reference this config block are:
+The etcd_config configures the etcd client. The supported CLI flags `<prefix>` used to reference this config block are:
 
 - `alertmanager.sharding-ring`
 - `compactor.ring`
@@ -2236,7 +2236,7 @@ The `etcd_config` configures the etcd client. The supported CLI flags `<prefix>`
 
 ### consul_config
 
-The `consul_config` configures the consul client. The supported CLI flags `<prefix>` used to reference this config block are:
+The consul_config configures the consul client. The supported CLI flags `<prefix>` used to reference this config block are:
 
 - `alertmanager.sharding-ring`
 - `compactor.ring`
@@ -2277,7 +2277,7 @@ The `consul_config` configures the consul client. The supported CLI flags `<pref
 
 ### memberlist_config
 
-The `memberlist_config` configures the Gossip memberlist.
+The memberlist_config configures the Gossip memberlist.
 
 ```yaml
 # (advanced) Name of the node in memberlist cluster. Defaults to hostname.
@@ -2425,7 +2425,7 @@ The `memberlist_config` configures the Gossip memberlist.
 
 ### limits_config
 
-The `limits_config` configures default and per-tenant limits imposed by services (ie. distributor, ingester, ...).
+The limits_config configures default and per-tenant limits imposed by services (ie. distributor, ingester, ...).
 
 ```yaml
 # Per-tenant ingestion rate limit in samples per second.
@@ -2731,7 +2731,7 @@ The `limits_config` configures default and per-tenant limits imposed by services
 
 ### blocks_storage_config
 
-The `blocks_storage_config` configures the blocks storage.
+The blocks_storage_config configures the blocks storage.
 
 ```yaml
 # Backend storage to use. Supported backends are: s3, gcs, azure, swift,
@@ -3295,7 +3295,7 @@ tsdb:
 
 ### compactor_config
 
-The `compactor_config` configures the compactor service.
+The compactor_config configures the compactor service.
 
 ```yaml
 # (advanced) List of compaction time ranges.
@@ -3480,7 +3480,7 @@ sharding_ring:
 
 ### store_gateway_config
 
-The `store_gateway_config` configures the store-gateway service.
+The store_gateway_config configures the store-gateway service.
 
 ```yaml
 # The hash ring configuration.
@@ -3592,7 +3592,7 @@ sharding_ring:
 
 ### s3_sse_config
 
-The `s3_sse_config` configures the S3 server-side encryption. The supported CLI flags `<prefix>` used to reference this config block are:
+The s3_sse_config configures the S3 server-side encryption. The supported CLI flags `<prefix>` used to reference this config block are:
 
 - `alertmanager-storage`
 - `blocks-storage`
@@ -3617,7 +3617,7 @@ The `s3_sse_config` configures the S3 server-side encryption. The supported CLI 
 
 ### memcached_config
 
-The `memcached_config` configures the Memcached-based caching backend. The supported CLI flags `<prefix>` used to reference this config block are:
+The memcached_config configures the Memcached-based caching backend. The supported CLI flags `<prefix>` used to reference this config block are:
 
 - `blocks-storage.bucket-store.chunks-cache`
 - `blocks-storage.bucket-store.index-cache`

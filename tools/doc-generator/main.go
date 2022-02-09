@@ -51,14 +51,14 @@ var (
 	// follow the markdown generation.
 	rootBlocks = []rootBlock{
 		{
-			name:       "server_config",
+			name:       "server",
 			structType: reflect.TypeOf(server.Config{}),
-			desc:       "The server_config configures the HTTP and gRPC server of the launched service(s).",
+			desc:       "The `server` block configures the HTTP and gRPC server of the launched service(s).",
 		},
 		{
-			name:       "distributor_config",
+			name:       "distributor",
 			structType: reflect.TypeOf(distributor.Config{}),
-			desc:       "The distributor_config configures the distributor.",
+			desc:       "The `distributor` block configures the distributor.",
 		},
 		{
 			name:       "ingester_config",

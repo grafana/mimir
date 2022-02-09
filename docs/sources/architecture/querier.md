@@ -91,7 +91,7 @@ This section described the querier configuration. For the general Cortex configu
 
 ### querier_config
 
-The `querier_config` configures the querier.
+The querier_config configures the querier.
 
 ```yaml
 querier:
@@ -191,7 +191,7 @@ querier:
 
 ### blocks_storage_config
 
-The `blocks_storage_config` configures the blocks storage.
+The blocks_storage_config configures the blocks storage.
 
 ```yaml
 blocks_storage:
