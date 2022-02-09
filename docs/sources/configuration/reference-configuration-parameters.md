@@ -1035,12 +1035,10 @@ grpc_client_config:
 # CLI flag: -frontend.instance-port
 [port: <int> | default = 0]
 
-# Split queries by an interval and execute in parallel, 0 disables it. You
-# should use an a multiple of 24 hours (same as the storage bucketing scheme),
-# to avoid queriers downloading and processing the same chunks. This also
-# determines how cache keys are chosen when result caching is enabled.
+# (advanced) Split queries by an interval and execute in parallel. You should
+# use a multiple of 24 hours to optimize querying blocks. 0 to disable it.
 # CLI flag: -frontend.split-queries-by-interval
-[split_queries_by_interval: <duration> | default = 0s]
+[split_queries_by_interval: <duration> | default = 24h]
 
 # Mutate incoming queries to align their start and end with their step.
 # CLI flag: -frontend.align-querier-with-step

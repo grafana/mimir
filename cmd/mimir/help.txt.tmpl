@@ -357,8 +357,6 @@ Usage of ./cmd/mimir/mimir:
     	The socket read/write timeout. (default 200ms)
   -frontend.scheduler-address string
     	DNS hostname used for finding query-schedulers.
-  -frontend.split-queries-by-interval duration
-    	Split queries by an interval and execute in parallel, 0 disables it. You should use an a multiple of 24 hours (same as the storage bucketing scheme), to avoid queriers downloading and processing the same chunks. This also determines how cache keys are chosen when result caching is enabled.
   -h
     	Print basic help.
   -help

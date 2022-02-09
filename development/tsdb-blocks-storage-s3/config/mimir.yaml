@@ -135,7 +135,6 @@ store_gateway:
 
 frontend:
   query_stats_enabled: true
-  split_queries_by_interval: 24h
   parallelize_shardable_queries: true
   align_queries_with_step: true
   cache_results: true
