@@ -47,7 +47,7 @@
 * [CHANGE] Prevent path traversal attack from users able to control the HTTP header `X-Scope-OrgID`. (CVE-2021-36157) #20
   * Users only have control of the HTTP header when Mimir is not frontend by an auth proxy validating the tenant IDs
 * [CHANGE] Some files and directories created by Mimir components on local disk now have stricter permissions, and are only readable by owner, but not group or others. #58
-* [CHANGE] Query-frontend: Enable query stats by default, they can still be disabled with `-frontend.query-stats-enabled=false`. #83
+* [CHANGE] Query-frontend: Enable query stats by default, they can still be disabled with `-query-frontend.query-stats-enabled=false`. #83
 * [CHANGE] Ingester: default `-ingester.min-ready-duration` reduced from 1m to 15s. #126
 * [CHANGE] Ingester: `-ingester.min-ready-duration` now start counting the delay after the ring's health checks have passed instead of when the ring client was started. #126
 * [CHANGE] Blocks storage: memcached client DNS resolution switched from golang built-in to [`miekg/dns`](https://github.com/miekg/dns). #142
@@ -61,13 +61,13 @@
 * [CHANGE] Alertmanager: Don't count user-not-found errors from replicas as failures in the `cortex_alertmanager_state_fetch_replica_state_failed_total` metric. #190
 * [CHANGE] Alertmanager: Use distributor for non-API routes when sharding is enabled. #213
 * [CHANGE] Query-frontend: added `sharded` label to `cortex_query_seconds_total` metric. #235
-* [CHANGE] Query-frontend: changed the flag name for controlling query sharding total shards from `-querier.total-shards` to `-frontend.query-sharding-total-shards`. #230
+* [CHANGE] Query-frontend: changed the flag name for controlling query sharding total shards from `-querier.total-shards` to `-query-frontend.query-sharding-total-shards`. #230
 * [CHANGE] Querier/ruler: Option `-querier.ingester-streaming` has been removed. Querier/ruler now always use streaming method to query ingesters. #204
 * [CHANGE] Limits: Option `-ingester.max-samples-per-query` is now deprecated. YAML field `max_samples_per_query` is no longer supported. It required `-querier.ingester-streaming` option to be set to false, but since `-querier.ingester-streaming` is removed (always defaulting to true), the limit using it was removed as well. #204
 * [CHANGE] Compactor: removed the `cortex_compactor_group_vertical_compactions_total` metric. #278
 * [CHANGE] Limits: Set the default max number of inflight ingester push requests (`-ingester.instance-limits.max-inflight-push-requests`) to 30000 in order to prevent clusters from being overwhelmed by request volume or temporary slow-downs. #259
 * [CHANGE] Compactor no longer waits for initial blocks cleanup to finish before starting compactions. #282
-* [CHANGE] Flag `-querier.parallelise-shardable-queries` has been renamed to `-frontend.parallelize-shardable-queries` #284
+* [CHANGE] Flag `-querier.parallelise-shardable-queries` has been renamed to `-query-frontend.parallelize-shardable-queries` #284
 * [CHANGE] Update Go version to 1.17.3. #480
 * [CHANGE] Compactor: removed overlapping sources detection. Overlapping sources may exist due to edge cases (timing issues) when horizontally sharding compactor, but are correctly handled by compactor. #494
 * [CHANGE] Rename metric `cortex_query_fetched_chunks_bytes_total` to `cortex_query_fetched_chunk_bytes_total` to be consistent with the limit name. #476
@@ -142,13 +142,13 @@
 * [CHANGE] Compactor: compactor now uses deletion marks from `<tenant>/markers` location in the bucket. Marker files are no longer fetched, only listed. #550
 * [CHANGE] Compactor: Default value of `-compactor.block-sync-concurrency` has changed from 20 to 8. This flag is now only used to control number of goroutines for downloading and uploading blocks during compaction. #552
 * [CHANGE] Memberlist: changed probe interval from `1s` to `5s` and probe timeout from `500ms` to `2s`. #563
-* [CHANGE] Query-frontend: removed the deprecated (and unused) `-frontend.cache-split-interval`. Use `-frontend.split-queries-by-interval` instead. #587
+* [CHANGE] Query-frontend: removed the deprecated (and unused) `-frontend.cache-split-interval`. Use `-query-frontend.split-queries-by-interval` instead. #587
 * [CHANGE] Store-gateway: index cache now includes tenant in cache keys, this invalidates previous cached entries. #607
 * [CHANGE] Removed the deprecated `-<prefix>.fifocache.size` flag. #618
 * [CHANGE] Ruler: removed the support for the deprecated storage configuration via `-ruler.storage.*` CLI flags (and their respective YAML config options). Use `-ruler-storage.*` instead. #628
 * [CHANGE] Querier: always fetch labels from store and respect start/end times in request; the option `-querier.query-store-for-labels-enabled` is now always on. #518
 * [CHANGE] Query Frontend: range query response now omits the `data` field when it's empty (error case) like Prometheus does, previously it was `"data":{"resultType":"","result":null}`. #629
-* [CHANGE] Query Frontend: instant queries now honor the `-frontend.max-retries-per-request` flag. #630
+* [CHANGE] Query Frontend: instant queries now honor the `-query-frontend.max-retries-per-request` flag. #630
 * [CHANGE] Alertmanager: removed `-alertmanager.storage.*` configuration options, with the exception of the CLI flags `-alertmanager.storage.path` and `-alertmanager.storage.retention`. Use `-alertmanager-storage.*` instead. #632
 * [CHANGE] Ingester: active series metrics `cortex_ingester_active_series` and `cortex_ingester_active_series_custom_tracker` are now removed when their value is zero. #672 #690
 * [CHANGE] Querier / ruler: removed the `-store.query-chunk-limit` flag (and its respective YAML config option `max_chunks_per_query`). `-querier.max-fetched-chunks-per-query` (and its respective YAML config option `max_fetched_chunks_per_query`) should be used instead. #705
@@ -176,18 +176,18 @@
     * `cortex_rediscache_request_duration_seconds`
 * [CHANGE] Query-frontend: migrated memcached backend client to the same one used in other components (memcached config and metrics are now consistent across all Mimir services). #821
   * The following CLI flags (and their respective YAML config options) have been added:
-    * `-frontend.results-cache.backend` (set it to `memcached` if `-frontend.cache-results=true`)
+    * `-query-frontend.results-cache.backend` (set it to `memcached` if `-query-frontend.cache-results=true`)
   * The following CLI flags (and their respective YAML config options) have been changed:
-    * `-frontend.memcached.hostname` and `-frontend.memcached.service`: use `-frontend.results-cache.memcached.addresses` instead
+    * `-frontend.memcached.hostname` and `-frontend.memcached.service`: use `-query-frontend.results-cache.memcached.addresses` instead
   * The following CLI flags (and their respective YAML config options) have been renamed:
-    * `-frontend.background.write-back-concurrency` renamed to `-frontend.results-cache.memcached.max-async-concurrency`
-    * `-frontend.background.write-back-buffer` renamed to `-frontend.results-cache.memcached.max-async-buffer-size`
-    * `-frontend.memcached.batchsize` renamed to `-frontend.results-cache.memcached.max-get-multi-batch-size`
-    * `-frontend.memcached.parallelism` renamed to `-frontend.results-cache.memcached.max-get-multi-concurrency`
-    * `-frontend.memcached.timeout` renamed to `-frontend.results-cache.memcached.timeout`
-    * `-frontend.memcached.max-item-size` renamed to `-frontend.results-cache.memcached.max-item-size`
-    * `-frontend.memcached.max-idle-conns` renamed to `-frontend.results-cache.memcached.max-idle-connections`
-    * `-frontend.compression` renamed to `-frontend.results-cache.compression`
+    * `-frontend.background.write-back-concurrency` renamed to `-query-frontend.results-cache.memcached.max-async-concurrency`
+    * `-frontend.background.write-back-buffer` renamed to `-query-frontend.results-cache.memcached.max-async-buffer-size`
+    * `-frontend.memcached.batchsize` renamed to `-query-frontend.results-cache.memcached.max-get-multi-batch-size`
+    * `-frontend.memcached.parallelism` renamed to `-query-frontend.results-cache.memcached.max-get-multi-concurrency`
+    * `-frontend.memcached.timeout` renamed to `-query-frontend.results-cache.memcached.timeout`
+    * `-frontend.memcached.max-item-size` renamed to `-query-frontend.results-cache.memcached.max-item-size`
+    * `-frontend.memcached.max-idle-conns` renamed to `-query-frontend.results-cache.memcached.max-idle-connections`
+    * `-frontend.compression` renamed to `-query-frontend.results-cache.compression`
   * The following CLI flags (and their respective YAML config options) have been removed:
     * `-frontend.memcached.circuit-breaker-consecutive-failures`: feature removed
     * `-frontend.memcached.circuit-breaker-timeout`: feature removed
@@ -209,12 +209,12 @@
   * The following metrics have been removed:
     * `cortex_cache_background_queue_length{name}`
 * [CHANGE] Frontend: merged `query_range` into `frontend` in the YAML config (keeping the same keys) and renamed flags: #825
-  * `-querier.max-retries-per-request` renamed to `-frontend.max-retries-per-request`
-  * `-querier.split-queries-by-interval` renamed to `-frontend.split-queries-by-interval`
-  * `-querier.align-querier-with-step` renamed to `-frontend.align-querier-with-step`
-  * `-querier.cache-results` renamed to `-frontend.cache-results`
-  * `-query-frontend.parallelize-shardable-queries` renamed to `-frontend.parallelize-shardable-queries`
-  * `-query-frontend.cache-unaligned-requests` renamed to `-frontend.cache-unaligned-requests`
+  * `-querier.max-retries-per-request` renamed to `-query-frontend.max-retries-per-request`
+  * `-querier.split-queries-by-interval` renamed to `-query-frontend.split-queries-by-interval`
+  * `-querier.align-querier-with-step` renamed to `-query-frontend.align-querier-with-step`
+  * `-querier.cache-results` renamed to `-query-frontend.cache-results`
+  * `-query-frontend.parallelize-shardable-queries` renamed to `-query-frontend.parallelize-shardable-queries`
+  * `-query-frontend.cache-unaligned-requests` renamed to `-query-frontend.cache-unaligned-requests`
 * [CHANGE] Ruler: set new default limits for rule groups: `ruler.max_rules_per_rule_group` to 20 (previously 0, disabled) and `ruler.max_rule_groups_per_tenant` to 70 (previously 0, disabled). #847
 * [CHANGE] Compactor is now included in `all` target (single-binary). #866
 * [CHANGE] Shuffle-sharding:
@@ -232,22 +232,22 @@
     * `-blocks-storage.bucket-store.chunks-cache.memcached.max-async-buffer-size`
     * `-blocks-storage.bucket-store.index-cache.memcached.max-async-buffer-size`
     * `-blocks-storage.bucket-store.metadata-cache.memcached.max-async-buffer-size`
-    * `-frontend.results-cache.memcached.max-async-buffer-size`
+    * `-query-frontend.results-cache.memcached.max-async-buffer-size`
   * The default value for the following config options has changed from `0` (unlimited) to `100`:
     * `-blocks-storage.bucket-store.chunks-cache.memcached.max-get-multi-batch-size`
     * `-blocks-storage.bucket-store.index-cache.memcached.max-get-multi-batch-size`
     * `-blocks-storage.bucket-store.metadata-cache.memcached.max-get-multi-batch-size`
-    * `-frontend.results-cache.memcached.max-get-multi-batch-size`
+    * `-query-frontend.results-cache.memcached.max-get-multi-batch-size`
   * The default value for the following config options has changed from `16` to `100`:
     * `-blocks-storage.bucket-store.chunks-cache.memcached.max-idle-connections`
     * `-blocks-storage.bucket-store.index-cache.memcached.max-idle-connections`
     * `-blocks-storage.bucket-store.metadata-cache.memcached.max-idle-connections`
-    * `-frontend.results-cache.memcached.max-idle-connections`
+    * `-query-frontend.results-cache.memcached.max-idle-connections`
   * The default value for the following config options has changed from `100ms` to `200ms`:
     * `-blocks-storage.bucket-store.metadata-cache.memcached.timeout`
     * `-blocks-storage.bucket-store.index-cache.memcached.timeout`
     * `-blocks-storage.bucket-store.chunks-cache.memcached.timeout`
-    * `-frontend.results-cache.memcached.timeout`
+    * `-query-frontend.results-cache.memcached.timeout`
 * [CHANGE] Querier: removed `-querier.worker-match-max-concurrent` and `-querier.worker-parallelism` CLI flags (and their respective YAML config options). Mimir now behaves like if `-querier.worker-match-max-concurrent` is always enabled and you should configure the max concurrency per querier process using `-querier.max-concurrent` instead. #958
 * [CHANGE] Distributor: change default value of `-distributor.instance-limits.max-inflight-push-requests` to `2000`. #964
 * [CHANGE] Distributor: change default value of `-distributor.remote-timeout` from `2s` to `20s`. #970
@@ -274,13 +274,13 @@
   * `-alertmanager.storage.path` default value changed to `./data-alertmanager/`
   * `-compactor.data-dir` default value changed to `./data-compactor/`
   * `-ruler.rule-path` default value changed to `./data-ruler/`
-* [CHANGE] Query-frontend: the default value of `-frontend.split-queries-by-interval` has changed from `0` to `24h`. #1131
+* [CHANGE] Query-frontend: the default value of `-query-frontend.split-queries-by-interval` has changed from `0` to `24h`. #1131
 * [CHANGE] Remove the test-exporter tool. #1133
-* [FEATURE] Query Frontend: Add `cortex_query_fetched_chunks_total` per-user counter to expose the number of chunks fetched as part of queries. This metric can be enabled with the `-frontend.query-stats-enabled` flag (or its respective YAML config option `query_stats_enabled`). #31
-* [FEATURE] Query Frontend: Add experimental querysharding for the blocks storage (instant and range queries). You can now enable querysharding for blocks storage (`-store.engine=blocks`) by setting `-frontend.parallelize-shardable-queries` to `true`. The following additional config and exported metrics have been added. #79 #80 #100 #124 #140 #148 #150 #151 #153 #154 #155 #156 #157 #158 #159 #160 #163 #169 #172 #196 #205 #225 #226 #227 #228 #230 #235 #240 #239 #246 #244 #319 #330 #371 #385 #400 #458 #586 #630 #660 #707
+* [FEATURE] Query Frontend: Add `cortex_query_fetched_chunks_total` per-user counter to expose the number of chunks fetched as part of queries. This metric can be enabled with the `-query-frontend.query-stats-enabled` flag (or its respective YAML config option `query_stats_enabled`). #31
+* [FEATURE] Query Frontend: Add experimental querysharding for the blocks storage (instant and range queries). You can now enable querysharding for blocks storage (`-store.engine=blocks`) by setting `-query-frontend.parallelize-shardable-queries` to `true`. The following additional config and exported metrics have been added. #79 #80 #100 #124 #140 #148 #150 #151 #153 #154 #155 #156 #157 #158 #159 #160 #163 #169 #172 #196 #205 #225 #226 #227 #228 #230 #235 #240 #239 #246 #244 #319 #330 #371 #385 #400 #458 #586 #630 #660 #707
   * New config options:
-    * `-frontend.query-sharding-total-shards`: The amount of shards to use when doing parallelisation via query sharding.
-    * `-frontend.query-sharding-max-sharded-queries`: The max number of sharded queries that can be run for a given received query. 0 to disable limit.
+    * `-query-frontend.query-sharding-total-shards`: The amount of shards to use when doing parallelisation via query sharding.
+    * `-query-frontend.query-sharding-max-sharded-queries`: The max number of sharded queries that can be run for a given received query. 0 to disable limit.
     * `-blocks-storage.bucket-store.series-hash-cache-max-size-bytes`: Max size - in bytes - of the in-memory series hash cache in the store-gateway.
     * `-blocks-storage.tsdb.series-hash-cache-max-size-bytes`: Max size - in bytes - of the in-memory series hash cache in the ingester.
   * New exported metrics:
@@ -311,7 +311,7 @@
 * [FEATURE] Querier: Added label names cardinality endpoint `<prefix>/api/v1/cardinality/label_names` that is disabled by default. Can be enabled/disabled via the CLI flag `-querier.cardinality-analysis-enabled` or its respective YAML config option. Configurable on a per-tenant basis. #301 #377 #474
 * [FEATURE] Distributor: Added `-api.skip-label-name-validation-header-enabled` option to allow skipping label name validation on the HTTP write path based on `X-Mimir-SkipLabelNameValidation` header being `true` or not. #390
 * [FEATURE] Querier: Added label values cardinality endpoint `<prefix>/api/v1/cardinality/label_values` that is disabled by default. Can be enabled/disabled via the CLI flag `-querier.cardinality-analysis-enabled` or its respective YAML config option. Configurable on a per-tenant basis. #332 #395 #474
-* [FEATURE] Query-Frontend: Added `-frontend.cache-unaligned-requests` option to cache responses for requests that do not have step-aligned start and end times. This can improve speed of repeated queries, but can also pollute cache with results that are never reused. #432
+* [FEATURE] Query-Frontend: Added `-query-frontend.cache-unaligned-requests` option to cache responses for requests that do not have step-aligned start and end times. This can improve speed of repeated queries, but can also pollute cache with results that are never reused. #432
 * [FEATURE] Querier: Added `-store.max-labels-query-length` to restrict the range of `/series`, label-names and label-values requests. #507
 * [FEATURE] Ingester: Added `-blocks-storage.tsdb.isolation-enabled` flag, which allows disabling TSDB isolation feature. This is enabled by default (per TSDB default), but disabling can improve performance of write requests. #512
 * [FEATURE] Compactor: Added `-compactor.max-compaction-time` to control how long can compaction for a single tenant take. If compactions for a tenant take longer, no new compactions are started in the same compaction cycle. Running compactions are not stopped however, and may take much longer. #523

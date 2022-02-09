@@ -916,13 +916,13 @@ spec:
             topologyKey: kubernetes.io/hostname
       containers:
       - args:
-        - -frontend.align-querier-with-step=false
-        - -frontend.cache-results=true
-        - -frontend.max-cache-freshness=10m
-        - -frontend.results-cache.backend=memcached
-        - -frontend.results-cache.memcached.addresses=dnssrvnoa+memcached-frontend.default.svc.cluster.local:11211
-        - -frontend.results-cache.memcached.timeout=500ms
-        - -frontend.scheduler-address=query-scheduler-discovery.default.svc.cluster.local:9095
+        - -query-frontend.align-querier-with-step=false
+        - -query-frontend.cache-results=true
+        - -query-frontend.max-cache-freshness=10m
+        - -query-frontend.results-cache.backend=memcached
+        - -query-frontend.results-cache.memcached.addresses=dnssrvnoa+memcached-frontend.default.svc.cluster.local:11211
+        - -query-frontend.results-cache.memcached.timeout=500ms
+        - -query-frontend.scheduler-address=query-scheduler-discovery.default.svc.cluster.local:9095
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc-max-recv-msg-size-bytes=104857600
         - -server.grpc.keepalive.min-time-between-pings=10s

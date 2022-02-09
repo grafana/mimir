@@ -65,10 +65,10 @@ func runQuerierTenantFederationTest(t *testing.T, cfg querierTenantFederationCon
 	require.NoError(t, s.StartAndWaitReady(consul, memcached))
 
 	flags := mergeFlags(BlocksStorageFlags(), map[string]string{
-		"-frontend.cache-results":                     "true",
+		"-query-frontend.cache-results":                     "true",
 		"-querier.query-ingesters-within":             "12h", // Required by the test on query /series out of ingesters time range
-		"-frontend.results-cache.backend":             "memcached",
-		"-frontend.results-cache.memcached.addresses": "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
+		"-query-frontend.results-cache.backend":             "memcached",
+		"-query-frontend.results-cache.memcached.addresses": "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
 		"-tenant-federation.enabled":                  "true",
 		"-ingester.max-global-exemplars-per-user":     "10000",
 	})
@@ -78,13 +78,13 @@ func runQuerierTenantFederationTest(t *testing.T, cfg querierTenantFederationCon
 	if cfg.querySchedulerEnabled {
 		queryScheduler = e2emimir.NewQueryScheduler("query-scheduler", flags, "")
 		require.NoError(t, s.StartAndWaitReady(queryScheduler))
-		flags["-frontend.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
+		flags["-query-frontend.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
 		flags["-querier.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
 	}
 
 	if cfg.shuffleShardingEnabled {
 		// Use only single querier for each user.
-		flags["-frontend.max-queriers-per-tenant"] = "1"
+		flags["-query-frontend.max-queriers-per-tenant"] = "1"
 	}
 
 	minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])

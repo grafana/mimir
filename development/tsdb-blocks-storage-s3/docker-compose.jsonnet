@@ -71,8 +71,8 @@ std.manifestYamlDoc({
         jaegerApp: 'query-frontend',
         extraArguments:
           '-store.max-query-length=8760h' +
-          // Use of scheduler is activated by `-frontend.scheduler-address` option.
-          (if $._config.use_query_scheduler then ' -frontend.scheduler-address=query-scheduler:9011' else ''),
+          // Use of scheduler is activated by `-query-frontend.scheduler-address` option.
+          (if $._config.use_query_scheduler then ' -query-frontend.scheduler-address=query-scheduler:9011' else ''),
       }),
     } + (
       if $._config.use_query_scheduler then {
