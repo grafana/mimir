@@ -195,7 +195,7 @@ GOVOLUMES=	-v $(shell pwd)/.cache:/go/cache:delegated,z \
 # Mount local ssh credentials to be able to clone private repos when doing `mod-check`
 SSHVOLUME=  -v ~/.ssh/:/root/.ssh:delegated,z
 
-exes $(EXES) protos $(PROTO_GOS) lint test test-with-race cover shell mod-check check-protos web-build web-pre web-deploy doc format: mimir-build-image/$(UPTODATE)
+exes $(EXES) protos $(PROTO_GOS) lint test test-with-race cover shell mod-check check-protos doc format: mimir-build-image/$(UPTODATE)
 	@mkdir -p $(shell pwd)/.pkg
 	@mkdir -p $(shell pwd)/.cache
 	@echo
@@ -305,16 +305,6 @@ mod-check:
 check-protos: clean-protos protos
 	@git diff --exit-code -- $(PROTO_GOS)
 
-web-pre:
-	cd website && git submodule update --init --recursive
-	./tools/website/web-pre.sh
-
-web-build: web-pre
-	cd website && HUGO_ENV=production hugo --config config.toml  --minify -v
-
-web-deploy:
-	./tools/website/web-deploy.sh
-
 doc: ## Generates the config file documentation.
 doc: clean-doc
 	go run ./tools/doc-generator ./docs/sources/configuration/reference-configuration-parameters.template > ./docs/sources/configuration/reference-configuration-parameters.md
@@ -415,7 +405,7 @@ reference-help: cmd/mimir/mimir
 	@$(SED) -i s/$(HOSTNAME)/\{\{.Hostname\}\}/g cmd/mimir/help-all.txt.tmpl
 
 clean-white-noise:
-	@find . -path ./.pkg -prune -o -path ./vendor -prune -o -path ./website -prune -or -type f -name "*.md" -print | \
+	@find . -path ./.pkg -prune -o -path ./vendor -prune -or -type f -name "*.md" -print | \
 	SED_BIN="$(SED)" xargs ./tools/cleanup-white-noise.sh
 
 check-white-noise: clean-white-noise
@@ -481,9 +471,6 @@ check-jsonnet-tests: build-jsonnet-tests
 
 check-tsdb-blocks-storage-s3-docker-compose-yaml:
 	cd development/tsdb-blocks-storage-s3 && make check
-
-web-serve:
-	cd website && hugo --config config.toml --minify -v server
 
 # Generate binaries for a Mimir release
 dist: dist/$(UPTODATE)
