@@ -1664,10 +1664,9 @@ sharding_ring:
 # CLI flag: -alertmanager.configs.fallback
 [fallback_config_file: <string> | default = ""]
 
-cluster:
-  # (advanced) Time to wait between peers to send notifications.
-  # CLI flag: -alertmanager.cluster.peer-timeout
-  [peer_timeout: <duration> | default = 15s]
+# (advanced) Time to wait between peers to send notifications.
+# CLI flag: -alertmanager.peer-timeout
+[peer_timeout: <duration> | default = 15s]
 
 # (advanced) Enable the alertmanager config API.
 # CLI flag: -alertmanager.enable-api

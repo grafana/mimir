@@ -75,7 +75,7 @@ type MultitenantAlertmanagerConfig struct {
 
 	FallbackConfigFile string `yaml:"fallback_config_file"`
 
-	Cluster ClusterConfig `yaml:"cluster"`
+	PeerTimeout time.Duration `yaml:"peer_timeout" category:"advanced"`
 
 	EnableAPI bool `yaml:"enable_api" category:"advanced"`
 
@@ -84,10 +84,6 @@ type MultitenantAlertmanagerConfig struct {
 
 	// For the state persister.
 	Persister PersisterConfig `yaml:",inline"`
-}
-
-type ClusterConfig struct {
-	PeerTimeout time.Duration `yaml:"peer_timeout" category:"advanced"`
 }
 
 const (
@@ -111,12 +107,8 @@ func (cfg *MultitenantAlertmanagerConfig) RegisterFlags(f *flag.FlagSet) {
 	cfg.AlertmanagerClient.RegisterFlagsWithPrefix("alertmanager.alertmanager-client", f)
 	cfg.Persister.RegisterFlagsWithPrefix("alertmanager", f)
 	cfg.ShardingRing.RegisterFlags(f)
-	cfg.Cluster.RegisterFlags(f)
-}
 
-func (cfg *ClusterConfig) RegisterFlags(f *flag.FlagSet) {
-	prefix := "alertmanager.cluster."
-	f.DurationVar(&cfg.PeerTimeout, prefix+"peer-timeout", defaultPeerTimeout, "Time to wait between peers to send notifications.")
+	f.DurationVar(&cfg.PeerTimeout, "alertmanager.peer-timeout", defaultPeerTimeout, "Time to wait between peers to send notifications.")
 }
 
 // Validate config and returns error on failure
@@ -853,7 +845,7 @@ func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *amco
 		UserID:            userID,
 		TenantDataDir:     tenantDir,
 		Logger:            am.logger,
-		PeerTimeout:       am.cfg.Cluster.PeerTimeout,
+		PeerTimeout:       am.cfg.PeerTimeout,
 		Retention:         am.cfg.Retention,
 		ExternalURL:       am.cfg.ExternalURL.URL,
 		Replicator:        am,

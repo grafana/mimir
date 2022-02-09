@@ -265,13 +265,16 @@
   * `prometheus_sd_dns_lookup_failures_total` replaced by `cortex_dns_failures_total{component="ruler"}`
 * [CHANGE] Memberlist: the `name` label on metrics `cortex_dns_failures_total`, `cortex_dns_lookups_total` and `cortex_dns_provider_results` was renamed to `component`. #993
 * [CHANGE] Changed the default value of `-blocks-storage.bucket-store.bucket-index.enabled` to `true`. The default configuration must now run the compactor in order to write the bucket index or else queries to long term storage will fail. #924
-* [CHANGE] Alertmanager: now always runs with sharding enabled; other modes of operation are removed. The following configuration is removed as a result: #1044 #1126
-  * `-alertmanager.sharding-enabled`
-  * `-alertmanager.cluster.advertise-address`
-  * `-alertmanager.cluster.gossip-interval`
-  * `-alertmanager.cluster.listen-address`
-  * `-alertmanager.cluster.peers`
-  * `-alertmanager.cluster.push-pull-interval`
+* [CHANGE] Alertmanager: now always runs with sharding enabled; other modes of operation are removed. #1044 #1126
+  * The following configuration options are removed:
+    * `-alertmanager.sharding-enabled`
+    * `-alertmanager.cluster.advertise-address`
+    * `-alertmanager.cluster.gossip-interval`
+    * `-alertmanager.cluster.listen-address`
+    * `-alertmanager.cluster.peers`
+    * `-alertmanager.cluster.push-pull-interval`
+  * The following configuration options are renamed:
+    * `-alertmanager.cluster.peer-timeout` to `-alertmanager.peer-timeout`
 * [CHANGE] Alertmanager: default value of `-alertmanager.web.external-url` has changed from `http://localhost` to `http://localhost:8080/alertmanager`. #1067
 * [CHANGE] Option `-auth.enabled` has been renamed to `-auth.multitenancy-enabled`. #1130
 * [CHANGE] Default tenant ID used with disabled auth (`-auth.multitenancy-enabled=false`) has changed from `fake` to `anonymous`. This tenant ID can now be changed with `-auth.no-auth-tenant` option. #1063
