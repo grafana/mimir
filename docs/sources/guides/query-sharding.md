@@ -110,6 +110,9 @@ latency, but increases the load on querier components and their underlying data
 stores (ingesters for recent data and store-gateway for historic data). The
 caching layer for chunks and indexes will also experience an increased load.
 
+This increased parallel processing also requires to multiply the previously set
+value of `-querier.max-query-parallelism` by `-frontend.query-sharding-total-shards`.
+
 ## Verification
 
 ### Query statistics
