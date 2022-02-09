@@ -36,7 +36,7 @@ Start running your local setup with the following Docker command:
 docker-compose up
 ```
 
-This will start:
+This command starts:
 
 - Grafana Mimir
   - Authentication and multi-tenancy disabled (tenant ID is `anonymous`)
