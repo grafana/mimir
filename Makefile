@@ -178,7 +178,13 @@ LATEST_BUILD_IMAGE_TAG ?= trafficdump-b1d000267
 # as it currently disallows TTY devices. This value needs to be overridden
 # in any custom cloudbuild.yaml files
 TTY := --tty
-GO_FLAGS := -ldflags "-X main.Branch=$(GIT_BRANCH) -X main.Revision=$(GIT_REVISION) -X main.Version=$(VERSION) -extldflags \"-static\" -s -w" -tags netgo
+MIMIR_VERSION := github.com/grafana/mimir/pkg/util/version
+
+GO_FLAGS := -ldflags "\
+		-X $(MIMIR_VERSION).Branch=$(GIT_BRANCH) \
+		-X $(MIMIR_VERSION).Revision=$(GIT_REVISION) \
+		-X $(MIMIR_VERSION).Version=$(VERSION) \
+		-extldflags \"-static\" -s -w" -tags netgo
 
 ifeq ($(BUILD_IN_CONTAINER),true)
 
@@ -344,7 +350,7 @@ check-makefiles: format-makefiles
 .PHONY: format-makefiles
 format-makefiles: ## Format all Makefiles.
 format-makefiles: $(MAKEFILES)
-	sed -i -e 's/^\(\t*\)  /\1\t/g' -e 's/^\(\t*\) /\1/' -- $?
+	$(SED) -i -e 's/^\(\t*\)  /\1\t/g' -e 's/^\(\t*\) /\1/' -- $?
 
 clean:
 	$(SUDO) docker rmi $(IMAGE_NAMES) >/dev/null 2>&1 || true

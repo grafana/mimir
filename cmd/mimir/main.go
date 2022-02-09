@@ -21,19 +21,12 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/common/version"
 	"github.com/weaveworks/common/tracing"
 	"gopkg.in/yaml.v2"
 
 	"github.com/grafana/mimir/pkg/mimir"
 	util_log "github.com/grafana/mimir/pkg/util/log"
-)
-
-// Version is set via build flag -ldflags -X main.Version
-var (
-	Version  string
-	Branch   string
-	Revision string
+	"github.com/grafana/mimir/pkg/util/version"
 )
 
 // configHash exposes information about the loaded config
@@ -46,9 +39,6 @@ var configHash *prometheus.GaugeVec = prometheus.NewGaugeVec(
 )
 
 func init() {
-	version.Version = Version
-	version.Branch = Branch
-	version.Revision = Revision
 	prometheus.MustRegister(version.NewCollector("mimir"))
 	prometheus.MustRegister(version.NewCollector("cortex"))
 	prometheus.MustRegister(configHash)
