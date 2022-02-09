@@ -88,8 +88,8 @@ where `default_value` is the value to use if the environment variable is undefin
 [target: <string> | default = "all"]
 
 # Set to false to disable auth.
-# CLI flag: -auth.enabled
-[auth_enabled: <boolean> | default = true]
+# CLI flag: -auth.multitenancy-enabled
+[multitenancy_enabled: <boolean> | default = true]
 
 # (advanced) Tenant ID to use when auth is disabled.
 # CLI flag: -auth.no-auth-tenant

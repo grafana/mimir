@@ -19,7 +19,7 @@ the benefits of query parallelisation and caching.
 
 # Disable the requirement that every request to Cortex has a
 # X-Scope-OrgID header. `anonymous` will be substituted in instead.
-auth_enabled: false
+multitenancy_enabled: false
 
 # We only want to run the query-frontend module.
 target: query-frontend

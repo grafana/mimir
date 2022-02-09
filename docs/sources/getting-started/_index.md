@@ -48,7 +48,7 @@ To run Grafana Mimir in a single process and with local filesystem storage, writ
 ```yaml
 # Do not use this configuration in production.
 # It is for demonstration purposes only.
-auth_enabled: false
+multitenancy_enabled: false
 
 blocks_storage:
   backend: filesystem
