@@ -120,7 +120,10 @@ jobs:
           go install github.com/grafana/ko@main
       - name: Build Images
         run: |
-          KO_DOCKER_REPO=us.gcr.io/kubernetes-dev ko build --oci-layout-path mimir-images --platform=linux/amd64,linux/arm64 --push=false ./cmd/mimir
+          export GIT_REVISION=$(git rev-parse --short HEAD)
+          export VERSION=$(cat "./VERSION" 2> /dev/null)
+          export GIT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+          KO_DOCKER_REPO=grafana ko build -B --image-label org.opencontainers.image.title=mimir,org.opencontainers.image.source=https://github.com/grafana/mimir/tree/main/cmd/mimir,org.opencontainers.image.revision=${GIT_REVISION} --oci-layout-path mimir-images --platform=linux/amd64,linux/arm64 --push=false ./cmd/mimir
           tar -cvf mimir-images.tar mimir-images
       - name: Upload Docker Images Artifact
         uses: actions/upload-artifact@v2
@@ -191,8 +194,8 @@ jobs:
       - name: Load Docker Images
         run: |
           tar -xvf mimir-images.tar
-          # TODO: Name mimir instead, when we feel safe about it
-          KO_DOCKER_REPO=us.gcr.io/kubernetes-dev ko publish-layout mimir-ko mimir-images --local
+          IMAGE_TAG=$(make image-tag)
+          KO_DOCKER_REPO=grafana ko publish-layout -B --tags ${IMAGE_TAG} --local mimir mimir-images
       - name: Preload Images
         # We download docker images used by integration tests so that all images are available
         # locally and the download time doesn't account in the test execution time, which is subject
@@ -247,12 +250,9 @@ jobs:
           if [ -n "$DOCKER_PASSWORD" ]; then
             printenv DOCKER_PASSWORD | docker login -u "$DOCKER_USERNAME" --password-stdin
           fi
-          export IMAGE_TAG=$(make image-tag)
           # TODO: Name mimir instead, when we feel safe about it
-          # TODO: Use docker.io/grafana for KO_DOCKER_REPO when we feel safe about it
-          # TODO: Also make sure to tag manifest list as latest if latest stable Git tag (see push-images)
-          # TODO: Use $IMAGE_TAG
-          KO_DOCKER_REPO=us.gcr.io/kubernetes-dev ko publish-layout mimir-ko mimir-images
+          export IMAGE_TAG=$(./tools/image-tag)
+          KO_DOCKER_REPO=grafana ko publish-layout --tags ${IMAGE_TAG} mimir-ko mimir-images
           ./push-images
         env:
           DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
