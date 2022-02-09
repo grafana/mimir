@@ -45,6 +45,7 @@ RUN GO111MODULE=on \
 	go install github.com/monitoring-mixins/mixtool/cmd/mixtool@bca3066 && \
 	go install github.com/mikefarah/yq/v4@v4.13.4 && \
 	go install github.com/google/go-jsonnet/cmd/jsonnetfmt@v0.17.0 && \
+    go install github.com/grafana/ko@9e154ba583c5cc56b3664857644b5de6f8e81865 && \
 	rm -rf /go/pkg /go/src /root/.cache
 
 ENV NODE_PATH=/usr/lib/node_modules
