@@ -40,8 +40,8 @@ docker-compose up
 This command starts:
 
 - Grafana Mimir
-  - Authentication and multi-tenancy disabled (tenant ID is `anonymous`)
   - Highly-available configuration (three replicas)
+  - Multi-tenancy enabled (tenant ID is `demo`)
 - [Minio](https://min.io/)
   - S3-compatible persistent storage for blocks, rules, and alerts
 - Prometheus
