@@ -106,7 +106,7 @@ itself, while the alerting rule will be notified to the Alertmanager.
    ```
    count:up
    ```
-1. Check firing alerts in the [Alertmanager UI](http://localhost:9009/alertmanager) (it may take up to 1 minute to show up after configuring it)
+1. Check the alerts are correctly set to fire using the [Alertmanager UI](http://localhost:9009/alertmanager), which may require up to one minute to display after configuration.
 
 ## Summary
 
