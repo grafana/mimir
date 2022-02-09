@@ -134,9 +134,9 @@ api:
 [store_gateway: <store_gateway_config>]
 
 tenant_federation:
-  # (advanced) If enabled on all services, queries can be federated across
-  # multiple tenants. The tenant IDs involved need to be specified separated by
-  # a '|' character in the 'X-Scope-OrgID' header.
+  # If enabled on all services, queries can be federated across multiple
+  # tenants. The tenant IDs involved need to be specified separated by a '|'
+  # character in the 'X-Scope-OrgID' header.
   # CLI flag: -tenant-federation.enabled
   [enabled: <boolean> | default = false]
 
