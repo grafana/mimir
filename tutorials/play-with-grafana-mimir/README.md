@@ -80,7 +80,7 @@ To learn more about the Grafana configuration, you can review the [Mimir datasou
 2. Open "[Ingester Ring Status](http://localhost:9009/ingester/ring)" to check the status of the hash ring used for series sharding and replication (you should see the three replicas correctly registered to the ring)
 3. Open "[Memberlist Status](http://localhost:9009/memberlist)" to check the status and healthy of the Gossip-based clustering
 
-To learn more about the Grafana Mimir configuration you can look at the content of `config/mimir.yaml`.
+To learn more about the Grafana Mimir configuration, you can review the configuration file `config/mimir.yaml`.
 
 ## Configure your first rules
 
