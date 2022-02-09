@@ -23,10 +23,12 @@ In this tutorial, you'll:
    git clone https://github.com/grafana/mimir.git
    cd mimir
    ```
-1. Move to the tutorial directory (the rest of the tutorial assumes you're always inside this directory)
+1. Navigate to the tutorial directory:
    ```bash
    cd tutorials/play-with-grafana-mimir/
    ```
+
+**Note**: the instructions in this tutorial assume you remain in the `tutorials/play-with-grafana-mimir/` directory.
 
 ## Start Grafana Mimir and dependencies
 
@@ -76,28 +78,28 @@ To learn more about the Grafana configuration, you can review the [Mimir datasou
 
 ## Explore Grafana Mimir admin UI
 
-1. Open Grafana Mimir admin UI at [`http://localhost:9009`](http://localhost:9009)
-2. Open "[Ingester Ring Status](http://localhost:9009/ingester/ring)" to check the status of the hash ring used for series sharding and replication (you should see the three replicas correctly registered to the ring)
-3. Open "[Memberlist Status](http://localhost:9009/memberlist)" to check the status and healthy of the Gossip-based clustering
+1. Open Grafana Mimir admin UI at [`http://localhost:9009`](http://localhost:9009).
+1. Open "[Ingester Ring Status](http://localhost:9009/ingester/ring)" to check the status of the hash ring used for series sharding and replication (you should see the three replicas correctly registered to the ring).
+1. Open "[Memberlist Status](http://localhost:9009/memberlist)" to check the status and health of the Gossip-based clustering.
 
 To learn more about the Grafana Mimir configuration, you can review the configuration file `config/mimir.yaml`.
 
 ## Configure your first rules
 
-The file `rules.yaml` contains an example of both a recording rule and an alerting rule we'll use to configure Grafana Mimir.
+The file `rules.yaml` contains an example of both a recording rule and an alerting rule we'll use to configure Grafana Mimir ruler.
 These rules will be evaluated by the Grafana Mimir ruler: the resulting series of recording rule will be ingested by Grafana Mimir
 itself, while the alerting rule will be notified to the Alertmanager.
 
-1. Configure `mimirtool`
+1. Configure `mimirtool` to connect to the local Grafana Mimir cluster with the correct tenant ID:
    ```bash
    export MIMIR_ADDRESS="http://localhost:9009"
    export MIMIR_TENANT_ID="anonymous"
    ```
-1. Load example rules to Grafana Mimir
+1. Load example rules to Grafana Mimir by using our command line to load the sample YAML file:
    ```bash
    mimirtool rules load rules.yaml
    ```
-1. Check the configured rules via `mimirtool`
+1. Check that the configured rules provided by `rules.yaml` are correct by running a print command using our command line and viewing the output on your screen:
    ```bash
    mimirtool rules print
    ```
@@ -106,11 +108,11 @@ itself, while the alerting rule will be notified to the Alertmanager.
    ```
    count:up
    ```
-1. Check the alerts are correctly set to fire using the [Alertmanager UI](http://localhost:9009/alertmanager), which may require up to one minute to display after configuration.
+1. Check the alerts are correctly firing using the [Alertmanager UI](http://localhost:9009/alertmanager), which may require up to one minute to display after configuration.
 
 ## Summary
 
-In this tutorial you started running Grafana Mimir locally in a high-available setup, including using a Prometheus instance to  remote write
+In this tutorial you started running Grafana Mimir locally in a high-available setup, including using a Prometheus instance to remote write
 some metrics to Grafana Mimir and query them using Grafana Mimir with Grafana. You also explored some of the dashboards provided
 by the Grafana Mimir team and learned how to configure rules.
 
