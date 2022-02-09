@@ -7,11 +7,11 @@ import "fmt"
 type Category int
 
 const (
-	// Basic is the basic flag category, and the default if none is defined.
+	// Basic is the basic field category, and the default if none is defined.
 	Basic Category = iota
-	// Advanced is the advanced flag category.
+	// Advanced is the advanced field category.
 	Advanced
-	// Experimental is the experimental flag category.
+	// Experimental is the experimental field category.
 	Experimental
 )
 
