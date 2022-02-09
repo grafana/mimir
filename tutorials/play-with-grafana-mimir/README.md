@@ -30,7 +30,7 @@ In this tutorial, you'll:
 
 ## Start Grafana Mimir and dependencies
 
-Start the local setup running the following command:
+Start running your local setup with the following Docker command:
 
 ```bash
 docker-compose up
