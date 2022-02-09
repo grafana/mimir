@@ -42,7 +42,7 @@ This command starts:
   - Authentication and multi-tenancy disabled (tenant ID is `anonymous`)
   - Highly-available configuration (three replicas)
 - [Minio](https://min.io/)
-  - S3-compatible persistent storage for blocks, rules and alerts
+  - S3-compatible persistent storage for blocks, rules, and alerts
 - Prometheus
   - Scrape Grafana Mimir metrics and write them back to Grafana Mimir itself (to have some ingested metrics)
 - Grafana
