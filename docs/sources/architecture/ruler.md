@@ -6,7 +6,7 @@ weight: 20
 
 # (Optional) Ruler
 
-The **ruler** is an **optional service** that executes PromQL queries for recording rules and alerts. The ruler requires a database to store the recording rules and alerts for each tenant.
+The **ruler** is an **optional service** that executes PromQL queries for recording rules and alerts. The ruler requires object storage to store the recording rules and alerts for each tenant.
 
 Ruler is **semi-stateful** and can be scaled horizontally.
 Running rules internally have state, as well as the ring the rulers initiate.
