@@ -114,7 +114,7 @@ In this tutorial you started running Grafana Mimir locally in a high-available s
 some metrics to Grafana Mimir and query them using Grafana Mimir with Grafana. You also explored some of the dashboards provided
 by the Grafana Mimir team and learned how to configure rules.
 
-Once done, you can release all Docker resources running:
+Once you've completed the tutorial, release all Docker resources by running this Docker command:
 
 ```bash
 docker-compose down
