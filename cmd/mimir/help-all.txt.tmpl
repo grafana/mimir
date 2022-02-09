@@ -230,7 +230,7 @@ Usage of ./cmd/mimir/mimir:
   -api.skip-label-name-validation-header-enabled
     	Allows to skip label name validation via header on the http write path. Use with caution as it breaks PromQL. Allowing this for external clients allows any client to send invalid label names. After enabling it, requests with a specific HTTP header set to true will not have label names validated.
   -auth.multitenancy-enabled
-    	When set to true, incoming HTTP requests must specify tenant in HTTP X-Scope-OrgId header. When set to false, tenant ID from -auth.no-auth-tenant is used instead. (default true)
+    	When set to true, incoming HTTP requests must specify tenant ID in HTTP X-Scope-OrgId header. When set to false, tenant ID from -auth.no-auth-tenant is used instead. (default true)
   -auth.no-auth-tenant string
     	Tenant ID to use when multitenancy is disabled. (default "anonymous")
   -blocks-storage.azure.account-key value

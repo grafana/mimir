@@ -87,11 +87,13 @@ where `default_value` is the value to use if the environment variable is undefin
 # CLI flag: -target
 [target: <string> | default = "all"]
 
-# Set to false to disable auth.
+# When set to true, incoming HTTP requests must specify tenant ID in HTTP
+# X-Scope-OrgId header. When set to false, tenant ID from -auth.no-auth-tenant
+# is used instead.
 # CLI flag: -auth.multitenancy-enabled
 [multitenancy_enabled: <boolean> | default = true]
 
-# (advanced) Tenant ID to use when auth is disabled.
+# (advanced) Tenant ID to use when multitenancy is disabled.
 # CLI flag: -auth.no-auth-tenant
 [no_auth_tenant: <string> | default = "anonymous"]
 
