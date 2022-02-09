@@ -123,6 +123,8 @@ jobs:
           export GIT_REVISION=$(git rev-parse --short HEAD)
           export VERSION=$(cat "./VERSION" 2> /dev/null)
           export GIT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+          # This configures ko's image creation timestamp
+          export SOURCE_DATE_EPOCH=$(date +%s)
           KO_DOCKER_REPO=grafana ko build -B --image-label org.opencontainers.image.title=mimir,org.opencontainers.image.source=https://github.com/grafana/mimir/tree/main/cmd/mimir,org.opencontainers.image.revision=${GIT_REVISION} --oci-layout-path mimir-images --platform=linux/amd64,linux/arm64 --push=false ./cmd/mimir
           tar -cvf mimir-images.tar mimir-images
       - name: Upload Docker Images Artifact
