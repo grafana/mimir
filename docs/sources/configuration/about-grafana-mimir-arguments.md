@@ -304,8 +304,6 @@ Example runtime configuration file:
 overrides:
   tenant1:
     ingestion_rate: 10000
-  tenant2:
-    max_samples_per_query: 1000000
 
 multi_kv_config:
   mirror_enabled: false
@@ -330,8 +328,6 @@ The `overrides` field is a map of tenant ID (same values as passed in the `X-Sco
 overrides:
   tenant1:
     ingestion_rate: 10000
-  tenant2:
-    max_samples_per_query: 1000000
 ```
 
 Valid per-tenant limits are (with their corresponding flags for default values):
