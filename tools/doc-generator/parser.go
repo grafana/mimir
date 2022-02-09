@@ -23,6 +23,7 @@ import (
 	"github.com/weaveworks/common/logging"
 
 	"github.com/grafana/mimir/pkg/ingester"
+	"github.com/grafana/mimir/pkg/util/fieldcategory"
 )
 
 var (
@@ -233,7 +234,7 @@ func parseConfig(block *configBlock, cfg interface{}, flags map[uintptr]*flag.Fl
 				fieldDesc:     getFieldDescription(field, ""),
 				fieldType:     fieldType,
 				fieldExample:  getFieldExample(fieldName, field.Type),
-				fieldCategory: getFieldCategory(field),
+				fieldCategory: getFieldCategory(field, ""),
 			})
 			continue
 		}
@@ -247,7 +248,7 @@ func parseConfig(block *configBlock, cfg interface{}, flags map[uintptr]*flag.Fl
 			fieldType:     fieldType,
 			fieldDefault:  fieldFlag.DefValue,
 			fieldExample:  getFieldExample(fieldName, field.Type),
-			fieldCategory: getFieldCategory(field),
+			fieldCategory: getFieldCategory(field, fieldFlag.Name),
 		})
 	}
 
@@ -386,7 +387,7 @@ func getCustomFieldEntry(field reflect.StructField, fieldValue reflect.Value, fl
 			fieldDesc:     fieldFlag.Usage,
 			fieldType:     "string",
 			fieldDefault:  fieldFlag.DefValue,
-			fieldCategory: getFieldCategory(field),
+			fieldCategory: getFieldCategory(field, fieldFlag.Name),
 		}, nil
 	}
 	if field.Type == reflect.TypeOf(flagext.URLValue{}) {
@@ -403,7 +404,7 @@ func getCustomFieldEntry(field reflect.StructField, fieldValue reflect.Value, fl
 			fieldDesc:     fieldFlag.Usage,
 			fieldType:     "url",
 			fieldDefault:  fieldFlag.DefValue,
-			fieldCategory: getFieldCategory(field),
+			fieldCategory: getFieldCategory(field, fieldFlag.Name),
 		}, nil
 	}
 	if field.Type == reflect.TypeOf(flagext.Secret{}) {
@@ -420,7 +421,7 @@ func getCustomFieldEntry(field reflect.StructField, fieldValue reflect.Value, fl
 			fieldDesc:     fieldFlag.Usage,
 			fieldType:     "string",
 			fieldDefault:  fieldFlag.DefValue,
-			fieldCategory: getFieldCategory(field),
+			fieldCategory: getFieldCategory(field, fieldFlag.Name),
 		}, nil
 	}
 	if field.Type == reflect.TypeOf(model.Duration(0)) {
@@ -437,7 +438,7 @@ func getCustomFieldEntry(field reflect.StructField, fieldValue reflect.Value, fl
 			fieldDesc:     fieldFlag.Usage,
 			fieldType:     "duration",
 			fieldDefault:  fieldFlag.DefValue,
-			fieldCategory: getFieldCategory(field),
+			fieldCategory: getFieldCategory(field, fieldFlag.Name),
 		}, nil
 	}
 	if field.Type == reflect.TypeOf(flagext.Time{}) {
@@ -454,16 +455,20 @@ func getCustomFieldEntry(field reflect.StructField, fieldValue reflect.Value, fl
 			fieldDesc:     fieldFlag.Usage,
 			fieldType:     "time",
 			fieldDefault:  fieldFlag.DefValue,
-			fieldCategory: getFieldCategory(field),
+			fieldCategory: getFieldCategory(field, fieldFlag.Name),
 		}, nil
 	}
 
 	return nil, nil
 }
 
-func getFieldCategory(field reflect.StructField) string {
+func getFieldCategory(field reflect.StructField, name string) string {
+	if category, ok := fieldcategory.GetOverride(name); ok {
+		return category.String()
+	}
 	return field.Tag.Get("category")
 }
+
 func isFieldHidden(f reflect.StructField) bool {
 	return getDocTagFlag(f, "hidden")
 }

@@ -294,7 +294,7 @@ query_scheduler:
 The `server_config` configures the HTTP and gRPC server of the launched service(s).
 
 ```yaml
-# HTTP server listen network, default tcp
+# (advanced) HTTP server listen network, default tcp
 # CLI flag: -server.http-listen-network
 [http_listen_network: <string> | default = "tcp"]
 
@@ -306,11 +306,11 @@ The `server_config` configures the HTTP and gRPC server of the launched service(
 # CLI flag: -server.http-listen-port
 [http_listen_port: <int> | default = 8080]
 
-# Maximum number of simultaneous http connections, <=0 to disable
+# (advanced) Maximum number of simultaneous http connections, <=0 to disable
 # CLI flag: -server.http-conn-limit
 [http_listen_conn_limit: <int> | default = 0]
 
-# gRPC server listen network
+# (advanced) gRPC server listen network
 # CLI flag: -server.grpc-listen-network
 [grpc_listen_network: <string> | default = "tcp"]
 
@@ -322,109 +322,111 @@ The `server_config` configures the HTTP and gRPC server of the launched service(
 # CLI flag: -server.grpc-listen-port
 [grpc_listen_port: <int> | default = 9095]
 
-# Maximum number of simultaneous grpc connections, <=0 to disable
+# (advanced) Maximum number of simultaneous grpc connections, <=0 to disable
 # CLI flag: -server.grpc-conn-limit
 [grpc_listen_conn_limit: <int> | default = 0]
 
 http_tls_config:
-  # HTTP server cert path.
+  # (advanced) HTTP server cert path.
   # CLI flag: -server.http-tls-cert-path
   [cert_file: <string> | default = ""]
 
-  # HTTP server key path.
+  # (advanced) HTTP server key path.
   # CLI flag: -server.http-tls-key-path
   [key_file: <string> | default = ""]
 
-  # HTTP TLS Client Auth type.
+  # (advanced) HTTP TLS Client Auth type.
   # CLI flag: -server.http-tls-client-auth
   [client_auth_type: <string> | default = ""]
 
-  # HTTP TLS Client CA path.
+  # (advanced) HTTP TLS Client CA path.
   # CLI flag: -server.http-tls-ca-path
   [client_ca_file: <string> | default = ""]
 
 grpc_tls_config:
-  # GRPC TLS server cert path.
+  # (advanced) GRPC TLS server cert path.
   # CLI flag: -server.grpc-tls-cert-path
   [cert_file: <string> | default = ""]
 
-  # GRPC TLS server key path.
+  # (advanced) GRPC TLS server key path.
   # CLI flag: -server.grpc-tls-key-path
   [key_file: <string> | default = ""]
 
-  # GRPC TLS Client Auth type.
+  # (advanced) GRPC TLS Client Auth type.
   # CLI flag: -server.grpc-tls-client-auth
   [client_auth_type: <string> | default = ""]
 
-  # GRPC TLS Client CA path.
+  # (advanced) GRPC TLS Client CA path.
   # CLI flag: -server.grpc-tls-ca-path
   [client_ca_file: <string> | default = ""]
 
-# Register the intrumentation handlers (/metrics etc).
+# (advanced) Register the intrumentation handlers (/metrics etc).
 # CLI flag: -server.register-instrumentation
 [register_instrumentation: <boolean> | default = true]
 
-# Timeout for graceful shutdowns
+# (advanced) Timeout for graceful shutdowns
 # CLI flag: -server.graceful-shutdown-timeout
 [graceful_shutdown_timeout: <duration> | default = 30s]
 
-# Read timeout for HTTP server
+# (advanced) Read timeout for HTTP server
 # CLI flag: -server.http-read-timeout
 [http_server_read_timeout: <duration> | default = 30s]
 
-# Write timeout for HTTP server
+# (advanced) Write timeout for HTTP server
 # CLI flag: -server.http-write-timeout
 [http_server_write_timeout: <duration> | default = 30s]
 
-# Idle timeout for HTTP server
+# (advanced) Idle timeout for HTTP server
 # CLI flag: -server.http-idle-timeout
 [http_server_idle_timeout: <duration> | default = 2m]
 
-# Limit on the size of a gRPC message this server can receive (bytes).
+# (advanced) Limit on the size of a gRPC message this server can receive
+# (bytes).
 # CLI flag: -server.grpc-max-recv-msg-size-bytes
 [grpc_server_max_recv_msg_size: <int> | default = 4194304]
 
-# Limit on the size of a gRPC message this server can send (bytes).
+# (advanced) Limit on the size of a gRPC message this server can send (bytes).
 # CLI flag: -server.grpc-max-send-msg-size-bytes
 [grpc_server_max_send_msg_size: <int> | default = 4194304]
 
-# Limit on the number of concurrent streams for gRPC calls (0 = unlimited)
+# (advanced) Limit on the number of concurrent streams for gRPC calls (0 =
+# unlimited)
 # CLI flag: -server.grpc-max-concurrent-streams
 [grpc_server_max_concurrent_streams: <int> | default = 100]
 
-# The duration after which an idle connection should be closed. Default:
-# infinity
+# (advanced) The duration after which an idle connection should be closed.
+# Default: infinity
 # CLI flag: -server.grpc.keepalive.max-connection-idle
 [grpc_server_max_connection_idle: <duration> | default = 2562047h47m16.854775807s]
 
-# The duration for the maximum amount of time a connection may exist before it
-# will be closed. Default: infinity
+# (advanced) The duration for the maximum amount of time a connection may exist
+# before it will be closed. Default: infinity
 # CLI flag: -server.grpc.keepalive.max-connection-age
 [grpc_server_max_connection_age: <duration> | default = 2562047h47m16.854775807s]
 
-# An additive period after max-connection-age after which the connection will be
-# forcibly closed. Default: infinity
+# (advanced) An additive period after max-connection-age after which the
+# connection will be forcibly closed. Default: infinity
 # CLI flag: -server.grpc.keepalive.max-connection-age-grace
 [grpc_server_max_connection_age_grace: <duration> | default = 2562047h47m16.854775807s]
 
-# Duration after which a keepalive probe is sent in case of no activity over the
-# connection., Default: 2h
+# (advanced) Duration after which a keepalive probe is sent in case of no
+# activity over the connection., Default: 2h
 # CLI flag: -server.grpc.keepalive.time
 [grpc_server_keepalive_time: <duration> | default = 2h]
 
-# After having pinged for keepalive check, the duration after which an idle
-# connection should be closed, Default: 20s
+# (advanced) After having pinged for keepalive check, the duration after which
+# an idle connection should be closed, Default: 20s
 # CLI flag: -server.grpc.keepalive.timeout
 [grpc_server_keepalive_timeout: <duration> | default = 20s]
 
-# Minimum amount of time a client should wait before sending a keepalive ping.
-# If client sends keepalive ping more often, server will send GOAWAY and close
-# the connection.
+# (advanced) Minimum amount of time a client should wait before sending a
+# keepalive ping. If client sends keepalive ping more often, server will send
+# GOAWAY and close the connection.
 # CLI flag: -server.grpc.keepalive.min-time-between-pings
 [grpc_server_min_time_between_pings: <duration> | default = 10s]
 
-# If true, server allows keepalive pings even when there are no active
-# streams(RPCs). If false, and client sends ping when there are no active
+# (advanced) If true, server allows keepalive pings even when there are no
+# active streams(RPCs). If false, and client sends ping when there are no active
 # streams, server will send GOAWAY and close the connection.
 # CLI flag: -server.grpc.keepalive.ping-without-stream-allowed
 [grpc_server_ping_without_stream_allowed: <boolean> | default = true]
@@ -438,23 +440,23 @@ grpc_tls_config:
 # CLI flag: -log.level
 [log_level: <string> | default = "info"]
 
-# Optionally log the source IPs.
+# (advanced) Optionally log the source IPs.
 # CLI flag: -server.log-source-ips-enabled
 [log_source_ips_enabled: <boolean> | default = false]
 
-# Header field storing the source IPs. Only used if
+# (advanced) Header field storing the source IPs. Only used if
 # server.log-source-ips-enabled is true. If not set the default Forwarded,
 # X-Real-IP and X-Forwarded-For headers are used
 # CLI flag: -server.log-source-ips-header
 [log_source_ips_header: <string> | default = ""]
 
-# Regex for matching the source IPs. Only used if server.log-source-ips-enabled
-# is true. If not set the default Forwarded, X-Real-IP and X-Forwarded-For
-# headers are used
+# (advanced) Regex for matching the source IPs. Only used if
+# server.log-source-ips-enabled is true. If not set the default Forwarded,
+# X-Real-IP and X-Forwarded-For headers are used
 # CLI flag: -server.log-source-ips-regex
 [log_source_ips_regex: <string> | default = ""]
 
-# Base path to serve all API routes from (e.g. /v1/)
+# (advanced) Base path to serve all API routes from (e.g. /v1/)
 # CLI flag: -server.path-prefix
 [http_path_prefix: <string> | default = ""]
 ```

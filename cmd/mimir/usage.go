@@ -10,18 +10,7 @@ import (
 	"strings"
 
 	"github.com/grafana/mimir/pkg/mimir"
-)
-
-// category is an enumeration of flag categories.
-type category int
-
-const (
-	// categoryBasic is the basic flag category, and the default if none is defined.
-	categoryBasic category = iota
-	// categoryAdvanced is the advanced flag category.
-	categoryAdvanced
-	// categoryExperimental is the experimental flag category.
-	categoryExperimental
+	"github.com/grafana/mimir/pkg/util/fieldcategory"
 )
 
 // usage prints command-line usage, the printAll argument controls whether also non-basic flags will be included.
@@ -35,22 +24,25 @@ func usage(cfg *mimir.Config, printAll bool) error {
 	fmt.Fprintf(fs.Output(), "Usage of %s:\n", os.Args[0])
 	fs.VisitAll(func(fl *flag.Flag) {
 		v := reflect.ValueOf(fl.Value)
-		fieldCat := categoryBasic
-		if v.Kind() == reflect.Ptr {
+		fieldCat := fieldcategory.Basic
+
+		if override, ok := fieldcategory.GetOverride(fl.Name); ok {
+			fieldCat = override
+		} else if v.Kind() == reflect.Ptr {
 			ptr := v.Pointer()
 			field, ok := fields[ptr]
 			if ok {
 				catStr := field.Tag.Get("category")
 				switch catStr {
 				case "advanced":
-					fieldCat = categoryAdvanced
+					fieldCat = fieldcategory.Advanced
 				case "experimental":
-					fieldCat = categoryExperimental
+					fieldCat = fieldcategory.Experimental
 				}
 			}
 		}
 
-		if fieldCat != categoryBasic && !printAll {
+		if fieldCat != fieldcategory.Basic && !printAll {
 			// Don't print help for this flag since we're supposed to print only basic flags
 			return
 		}
@@ -66,7 +58,7 @@ func usage(cfg *mimir.Config, printAll bool) error {
 		// Four spaces before the tab triggers good alignment
 		// for both 4- and 8-space tab stops.
 		b.WriteString("\n    \t")
-		if fieldCat == categoryExperimental {
+		if fieldCat == fieldcategory.Experimental {
 			b.WriteString("[experimental] ")
 		}
 		b.WriteString(strings.ReplaceAll(fl.Usage, "\n", "\n    \t"))
