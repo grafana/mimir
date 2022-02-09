@@ -1,3 +1,3 @@
 # Contributing to Cortex
 
-See [https://cortexmetrics.io/docs/contributing/](https://cortexmetrics.io/docs/contributing/).
+See [https://github.com/grafana/mimir/tree/main/docs/sources/contributing](https://github.com/grafana/mimir/tree/main/docs/sources/contributing).

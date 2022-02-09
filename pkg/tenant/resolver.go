@@ -108,7 +108,7 @@ type MultiResolver struct {
 // NewMultiResolver creates a tenant resolver, which allows request to have
 // multiple tenant ids submitted separated by a '|' character. This enforces
 // further limits on the character set allowed within tenants as detailed here:
-// https://cortexmetrics.io/docs/guides/limitations/#tenant-id-naming)
+// https://github.com/grafana/mimir/blob/main/docs/sources/guides/limitations.md)
 func NewMultiResolver() *MultiResolver {
 	return &MultiResolver{}
 }

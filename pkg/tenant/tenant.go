@@ -78,7 +78,7 @@ func JoinTenantIDs(tenantIDs []string) string {
 }
 
 // this checks if a rune is supported in tenant IDs (according to
-// https://cortexmetrics.io/docs/guides/limitations/#tenant-id-naming)
+// https://github.com/grafana/mimir/blob/main/docs/sources/guides/limitations.md)
 func isSupported(c rune) bool {
 	// characters
 	if ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z') {

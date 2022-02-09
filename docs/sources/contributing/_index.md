@@ -91,6 +91,6 @@ Please see the dedicated "[Design patterns and Code conventions](design-patterns
 
 ## Documentation
 
-The Cortex documentation is compiled into a website published at [cortexmetrics.io](https://cortexmetrics.io/). Please see "[How to run the website locally](./how-to-run-website-locally.md)" for instructions.
+The Cortex documentation is compiled into a website published at [grafana.com](https://grafana.com/). Please see "[How to run the website locally](./how-to-run-website-locally.md)" for instructions.
 
 Note: if you attempt to view pages on Github, it's likely that you might find broken links or pages. That is expected and should not be addressed unless it is causing issues with the site that occur as part of the build.
