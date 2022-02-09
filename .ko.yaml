@@ -1,3 +1,5 @@
+defaultBaseImage: grafana/alpine:3.15.0
+
 builds:
   - id: mimir
     main: ./cmd/mimir
