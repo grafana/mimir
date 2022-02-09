@@ -101,7 +101,7 @@ itself, while the alerting rule will be notified to the Alertmanager.
    ```bash
    mimirtool rules print
    ```
-1. Check the configured rules via [Grafana Alerting UI](http://localhost:9000/alerting/list)
+1. Confirm the configured rules provided by `rules.yaml` are correct by viewing them in the [Grafana Alerting UI](http://localhost:9000/alerting/list)
 1. Query the resulting series from the recording rule using [Grafana Explore](http://localhost:9000/explore), which may require up to one minute to display after configuration.
    ```
    count:up
