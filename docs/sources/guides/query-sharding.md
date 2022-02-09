@@ -21,8 +21,8 @@ In particular associative aggregations (like `sum`, `min`, `max`, `count`,
 `avg`) are shardable, while query functions (like`absent`, `absent_over_time`,
 `histogram_quantile`, `sort_desc`, `sort`) are not.
 
-In the following examples we look at a concrete example with a shard count of
-3. All the partial queries that include a label selector `__query_shard__` are
+In the following examples we look at a concrete example with a shard count of `3`.
+All the partial queries that include a label selector `__query_shard__` are
 executed in parallel.
 
 ### Example 1: Full query is shardable
@@ -30,6 +30,7 @@ executed in parallel.
 ```promql
 sum(rate(metric[1m]))
 ```
+
 Is executed as (assuming a shard count of 3):
 
 ```promql
@@ -84,12 +85,12 @@ frontends will start processing the aggregation of the partial queries. Hence
 it is important to replicate the querier specific parameters, which are set on
 the querier component:
 
-  - -querier.max-concurrent
-  - -querier.timeout
-  - -querier.max-samples
-  - -querier.default-evaluation-interval
-  - -querier.active-query-tracker-dir
-  - -querier.lookback-delta
+- -querier.max-concurrent
+- -querier.timeout
+- -querier.max-samples
+- -querier.default-evaluation-interval
+- -querier.active-query-tracker-dir
+- -querier.lookback-delta
 
 ## Flow of a sharded query
 
