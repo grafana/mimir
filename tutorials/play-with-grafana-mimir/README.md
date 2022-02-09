@@ -86,13 +86,13 @@ offered by Grafana.
 1. Open [Grafana Alerting](http://localhost:9000/alerting/list).
 1. Click to "New alert rule". Despite the name, this allows you to configure recording rules too.
 1. Configure the recording rule:
-  1. Type `count:up` in the "Rule name" field.
-  1. Choose `Cortex managed recording rule` in the "Rule type" field.
-  1. Choose `Mimir` in the "Select data source" field.
-  1. Type `example-namespace` in the "Namespace" field.
-  1. Type `example-group` in the "Group" field.
-  1. Type `count(up)` in the "Create a query to be recorded" field.
-  1. Click "Save and Exit" button.
+   1. Type `count:up` in the "Rule name" field.
+   1. Choose `Cortex managed recording rule` in the "Rule type" field.
+   1. Choose `Mimir` in the "Select data source" field.
+   1. Type `example-namespace` in the "Namespace" field.
+   1. Type `example-group` in the "Group" field.
+   1. Type `count(up)` in the "Create a query to be recorded" field.
+   1. Click "Save and Exit" button.
 
 Your `count:up` recording rule is now creating in Grafana Mimir ruler and will be soon available for querying:
 
@@ -112,13 +112,13 @@ tooling offered by Grafana.
 1. Open [Grafana Alerting](http://localhost:9000/alerting/list).
 1. Click to "New alert rule".
 1. Configure the alert rule:
-  1. Type `MimirNotRunning` in the "Rule name" field.
-  1. Choose `Cortex managed alert rule` in the "Rule type" field.
-  1. Choose `Mimir` in the "Select data source" field.
-  1. Select `example-namespace` in the "Namespace" field.
-  1. Select `example-group` in the "Group" field.
-  1. Type `up == 0` in the "Create a query to be alerted on" field.
-  1. Click "Save and Exit" button.
+   1. Type `MimirNotRunning` in the "Rule name" field.
+   1. Choose `Cortex managed alert rule` in the "Rule type" field.
+   1. Choose `Mimir` in the "Select data source" field.
+   1. Select `example-namespace` in the "Namespace" field.
+   1. Select `example-group` in the "Group" field.
+   1. Type `up == 0` in the "Create a query to be alerted on" field.
+   1. Click "Save and Exit" button.
 
 Your `MimirNotRunning` alert rule is now creating in Grafana Mimir ruler and it expected to fire when the number of
 Grafana Mimir replicas is less than three. You can check its status opening the [Grafana Alerting](http://localhost:9000/alerting/list)
