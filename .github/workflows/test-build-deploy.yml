@@ -251,8 +251,8 @@ jobs:
             printenv DOCKER_PASSWORD | docker login -u "$DOCKER_USERNAME" --password-stdin
           fi
           # TODO: Name mimir instead, when we feel safe about it
-          export IMAGE_TAG=$(./tools/image-tag)
-          KO_DOCKER_REPO=grafana ko publish-layout --tags ${IMAGE_TAG} mimir-ko mimir-images
+          IMAGE_TAG=$(./tools/image-tag)
+          KO_DOCKER_REPO=grafana ko publish-layout -B --tags ${IMAGE_TAG} mimir-ko mimir-images
           ./push-images
         env:
           DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
