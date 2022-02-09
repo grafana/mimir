@@ -841,10 +841,10 @@ spec:
       - args:
         - -frontend.align-querier-with-step=false
         - -frontend.cache-results=true
-        - -query-frontend.max-cache-freshness=10m
         - -frontend.results-cache.backend=memcached
         - -frontend.results-cache.memcached.addresses=dnssrvnoa+memcached-frontend.default.svc.cluster.local:11211
         - -frontend.results-cache.memcached.timeout=500ms
+        - -query-frontend.max-cache-freshness=10m
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc-max-recv-msg-size-bytes=104857600
         - -server.grpc.keepalive.min-time-between-pings=10s
