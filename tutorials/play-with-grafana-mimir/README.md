@@ -60,7 +60,7 @@ The following ports will be exposed on the host:
 Open Grafana on your local host [`http://localhost:9000`](http://localhost:9000) and view dashboards showing the status
 and health of your Grafana Mimir local cluster. Metrics are queried directly from Grafana Mimir.
 
-To begin with, we recommend looking at the following dashboards:
+To start, we recommend looking at these dashboards:
 
 - [Writes](http://localhost:9000/d/0156f6d15aa234d452a33a4f13c838e3/mimir-writes)
 - [Reads](http://localhost:9000/d/8d6ba60eccc4b6eedfa329b24b1bd339/mimir-reads)
