@@ -20,6 +20,5 @@
     overrides_exporter: self.mimir,
 
     query_tee: 'quay.io/cortexproject/query-tee:v1.9.0',
-    testExporter: 'cortexproject/test-exporter:v1.9.0',
   },
 }
