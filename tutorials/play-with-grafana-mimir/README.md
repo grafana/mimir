@@ -65,7 +65,7 @@ To start, we recommend looking at these dashboards:
 - [Writes](http://localhost:9000/d/0156f6d15aa234d452a33a4f13c838e3/mimir-writes)
 - [Reads](http://localhost:9000/d/8d6ba60eccc4b6eedfa329b24b1bd339/mimir-reads)
 - [Queries](http://localhost:9000/d/d9931b1054053c8b972d320774bb8f1d/mimir-queries)
-- [Object Store](http://localhost:9000/d/d5a3a4489d57c733b5677fb55370a723/mimir-object-store)
+- [Object store](http://localhost:9000/d/d5a3a4489d57c733b5677fb55370a723/mimir-object-store)
 
 Some notes:
 
