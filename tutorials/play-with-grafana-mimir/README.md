@@ -110,9 +110,9 @@ itself, while the alerting rule will be notified to the Alertmanager.
 
 ## Summary
 
-In this tutorial you locally run Grafana Mimir in a high-available setup, including a Prometheus instance remote writing
-some metrics to Grafana Mimir and querying them via Mimir with Grafana. You also explored some of the dashboards released
-by Grafana Mimir team and learned how to configure rules in Mimir.
+In this tutorial you started running Grafana Mimir locally in a high-available setup, including using a Prometheus instance to  remote write
+some metrics to Grafana Mimir and query them using Grafana Mimir with Grafana. You also explored some of the dashboards provided
+by the Grafana Mimir team and learned how to configure rules.
 
 Once done, you can release all Docker resources running:
 
