@@ -20,7 +20,7 @@
       'frontend.results-cache.memcached.timeout': '500ms',
 
       // So that exporters like cloudwatch can still send in data and be un-cached.
-      'frontend.max-cache-freshness': '10m',
+      'query-frontend.max-cache-freshness': '10m',
 
       // So it can receive big responses from the querier.
       'server.grpc-max-recv-msg-size-bytes': 100 << 20,

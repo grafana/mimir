@@ -315,29 +315,29 @@ Usage of ./cmd/mimir/mimir:
     	Cache query results.
   -frontend.cache-unaligned-requests
     	Cache requests that are not step-aligned.
-  -frontend.grpc-client-config.backoff-max-period duration
+  -query-frontend.grpc-client-config.backoff-max-period duration
     	Maximum delay when backing off. (default 10s)
-  -frontend.grpc-client-config.backoff-min-period duration
+  -query-frontend.grpc-client-config.backoff-min-period duration
     	Minimum delay when backing off. (default 100ms)
-  -frontend.grpc-client-config.backoff-on-ratelimits
+  -query-frontend.grpc-client-config.backoff-on-ratelimits
     	Enable backoff and retry when we hit ratelimits.
-  -frontend.grpc-client-config.backoff-retries int
+  -query-frontend.grpc-client-config.backoff-retries int
     	Number of times to backoff and retry before failing. (default 10)
-  -frontend.grpc-client-config.grpc-client-rate-limit float
+  -query-frontend.grpc-client-config.grpc-client-rate-limit float
     	Rate limit for gRPC client; 0 means disabled.
-  -frontend.grpc-client-config.grpc-client-rate-limit-burst int
+  -query-frontend.grpc-client-config.grpc-client-rate-limit-burst int
     	Rate limit burst for gRPC client.
-  -frontend.grpc-client-config.grpc-compression string
+  -query-frontend.grpc-client-config.grpc-compression string
     	Use compression when sending messages. Supported values are: 'gzip', 'snappy' and '' (disable compression)
-  -frontend.grpc-client-config.grpc-max-recv-msg-size int
+  -query-frontend.grpc-client-config.grpc-max-recv-msg-size int
     	gRPC client max receive message size (bytes). (default 104857600)
-  -frontend.grpc-client-config.grpc-max-send-msg-size int
+  -query-frontend.grpc-client-config.grpc-max-send-msg-size int
     	gRPC client max send message size (bytes). (default 16777216)
-  -frontend.log-queries-longer-than duration
+  -query-frontend.log-queries-longer-than duration
     	Log queries that are slower than the specified duration. Set to 0 to disable. Set to < 0 to enable on all queries.
-  -frontend.max-cache-freshness value
+  -query-frontend.max-cache-freshness value
     	Most recent allowed cacheable result per-tenant, to prevent caching very recent results that might still be in flux. (default 1m)
-  -frontend.max-queriers-per-tenant int
+  -query-frontend.max-queriers-per-tenant int
     	Maximum number of queriers that can handle requests for a single tenant. If set to 0 or value higher than number of available queriers, *all* queriers will handle requests for the tenant. Each frontend (or query-scheduler, if used) will select the same set of queriers for the same tenant (given that all queriers are connected to all frontends / query-schedulers). This option only works with queriers connecting to the query-frontend / query-scheduler, not when using downstream URL.
   -frontend.max-retries-per-request int
     	Maximum number of retries for a single request; beyond this, the downstream error is returned. (default 5)
@@ -355,7 +355,7 @@ Usage of ./cmd/mimir/mimir:
     	Comma separated list of memcached addresses. Supported prefixes are: dns+ (looked up as an A/AAAA query), dnssrv+ (looked up as a SRV query, dnssrvnoa+ (looked up as a SRV query, with no A/AAAA lookup made after that).
   -frontend.results-cache.memcached.timeout duration
     	The socket read/write timeout. (default 200ms)
-  -frontend.scheduler-address string
+  -query-frontend.scheduler-address string
     	DNS hostname used for finding query-schedulers.
   -h
     	Print basic help.

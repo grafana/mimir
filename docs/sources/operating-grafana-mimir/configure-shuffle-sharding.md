@@ -120,9 +120,9 @@ This is deemed an infrequent operation that we considered banning, but a workaro
 
 By default, all Grafana Mimir queriers can execute received queries for a given tenant.
 
-When shuffle sharding is **enabled** by setting `-frontend.max-queriers-per-tenant` (or its respective YAML config option) to a value higher than 0 and lower than the number of available queriers, only specified number of queriers will execute queries for single tenant.
+When shuffle sharding is **enabled** by setting `-query-frontend.max-queriers-per-tenant` (or its respective YAML config option) to a value higher than 0 and lower than the number of available queriers, only specified number of queriers will execute queries for single tenant.
 
-Note that this distribution happens in query-frontend, or query-scheduler if used. When using query-scheduler, `-frontend.max-queriers-per-tenant` option must be set for query-scheduler component. When not using query-frontend (with or without scheduler), this option is not available.
+Note that this distribution happens in query-frontend, or query-scheduler if used. When using query-scheduler, `-query-frontend.max-queriers-per-tenant` option must be set for query-scheduler component. When not using query-frontend (with or without scheduler), this option is not available.
 
 _The maximum number of queriers can be overridden on a per-tenant basis in the limits overrides configuration._
 

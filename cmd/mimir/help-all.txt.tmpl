@@ -807,51 +807,51 @@ Usage of ./cmd/mimir/mimir:
     	Cache query results.
   -frontend.cache-unaligned-requests
     	Cache requests that are not step-aligned.
-  -frontend.downstream-url string
+  -query-frontend.downstream-url string
     	URL of downstream Prometheus.
-  -frontend.grpc-client-config.backoff-max-period duration
+  -query-frontend.grpc-client-config.backoff-max-period duration
     	Maximum delay when backing off. (default 10s)
-  -frontend.grpc-client-config.backoff-min-period duration
+  -query-frontend.grpc-client-config.backoff-min-period duration
     	Minimum delay when backing off. (default 100ms)
-  -frontend.grpc-client-config.backoff-on-ratelimits
+  -query-frontend.grpc-client-config.backoff-on-ratelimits
     	Enable backoff and retry when we hit ratelimits.
-  -frontend.grpc-client-config.backoff-retries int
+  -query-frontend.grpc-client-config.backoff-retries int
     	Number of times to backoff and retry before failing. (default 10)
-  -frontend.grpc-client-config.grpc-client-rate-limit float
+  -query-frontend.grpc-client-config.grpc-client-rate-limit float
     	Rate limit for gRPC client; 0 means disabled.
-  -frontend.grpc-client-config.grpc-client-rate-limit-burst int
+  -query-frontend.grpc-client-config.grpc-client-rate-limit-burst int
     	Rate limit burst for gRPC client.
-  -frontend.grpc-client-config.grpc-compression string
+  -query-frontend.grpc-client-config.grpc-compression string
     	Use compression when sending messages. Supported values are: 'gzip', 'snappy' and '' (disable compression)
-  -frontend.grpc-client-config.grpc-max-recv-msg-size int
+  -query-frontend.grpc-client-config.grpc-max-recv-msg-size int
     	gRPC client max receive message size (bytes). (default 104857600)
-  -frontend.grpc-client-config.grpc-max-send-msg-size int
+  -query-frontend.grpc-client-config.grpc-max-send-msg-size int
     	gRPC client max send message size (bytes). (default 16777216)
-  -frontend.grpc-client-config.tls-ca-path string
+  -query-frontend.grpc-client-config.tls-ca-path string
     	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
-  -frontend.grpc-client-config.tls-cert-path string
+  -query-frontend.grpc-client-config.tls-cert-path string
     	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
-  -frontend.grpc-client-config.tls-enabled
+  -query-frontend.grpc-client-config.tls-enabled
     	Enable TLS in the GRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.
-  -frontend.grpc-client-config.tls-insecure-skip-verify
+  -query-frontend.grpc-client-config.tls-insecure-skip-verify
     	Skip validating server certificate.
-  -frontend.grpc-client-config.tls-key-path string
+  -query-frontend.grpc-client-config.tls-key-path string
     	Path to the key file for the client certificate. Also requires the client certificate to be configured.
-  -frontend.grpc-client-config.tls-server-name string
+  -query-frontend.grpc-client-config.tls-server-name string
     	Override the expected name on the server certificate.
   -frontend.instance-addr string
     	IP address to advertise to querier (via scheduler) (resolved via interfaces by default).
-  -frontend.instance-interface-names value
+  -query-frontend.instance-interface-names value
     	Name of network interface to read address from. This address is sent to query-scheduler and querier, which uses it to send the query response back to query-frontend. (default [eth0 en0])
   -frontend.instance-port int
     	Port to advertise to querier (via scheduler) (defaults to server.grpc-listen-port).
-  -frontend.log-queries-longer-than duration
+  -query-frontend.log-queries-longer-than duration
     	Log queries that are slower than the specified duration. Set to 0 to disable. Set to < 0 to enable on all queries.
-  -frontend.max-body-size int
+  -query-frontend.max-body-size int
     	Max body size for downstream prometheus. (default 10485760)
-  -frontend.max-cache-freshness value
+  -query-frontend.max-cache-freshness value
     	Most recent allowed cacheable result per-tenant, to prevent caching very recent results that might still be in flux. (default 1m)
-  -frontend.max-queriers-per-tenant int
+  -query-frontend.max-queriers-per-tenant int
     	Maximum number of queriers that can handle requests for a single tenant. If set to 0 or value higher than number of available queriers, *all* queriers will handle requests for the tenant. Each frontend (or query-scheduler, if used) will select the same set of queriers for the same tenant (given that all queriers are connected to all frontends / query-schedulers). This option only works with queriers connecting to the query-frontend / query-scheduler, not when using downstream URL.
   -frontend.max-retries-per-request int
     	Maximum number of retries for a single request; beyond this, the downstream error is returned. (default 5)
@@ -861,7 +861,7 @@ Usage of ./cmd/mimir/mimir:
     	The max number of sharded queries that can be run for a given received query. 0 to disable limit. (default 128)
   -frontend.query-sharding-total-shards int
     	The amount of shards to use when doing parallelisation via query sharding by tenant. 0 to disable query sharding for tenant. Query sharding implementation will adjust the number of query shards based on compactor shards. This allows querier to not search the blocks which cannot possibly have the series for given query shard. (default 16)
-  -frontend.query-stats-enabled
+  -query-frontend.query-stats-enabled
     	False to disable query statistics tracking. When enabled, a message with some statistics is logged for every query. (default true)
   -frontend.results-cache.backend string
     	Backend for query-frontend results cache, if not empty. Supported values: [memcached].
@@ -883,11 +883,11 @@ Usage of ./cmd/mimir/mimir:
     	The maximum size of an item stored in memcached. Bigger items are not stored. If set to 0, no maximum size is enforced. (default 1048576)
   -frontend.results-cache.memcached.timeout duration
     	The socket read/write timeout. (default 200ms)
-  -frontend.scheduler-address string
+  -query-frontend.scheduler-address string
     	DNS hostname used for finding query-schedulers.
-  -frontend.scheduler-dns-lookup-period duration
+  -query-frontend.scheduler-dns-lookup-period duration
     	How often to resolve the scheduler-address, in order to look for new query-scheduler instances. (default 10s)
-  -frontend.scheduler-worker-concurrency int
+  -query-frontend.scheduler-worker-concurrency int
     	Number of concurrent workers forwarding queries to single query-scheduler. (default 5)
   -frontend.split-queries-by-interval duration
     	Split queries by an interval and execute in parallel. You should use a multiple of 24 hours to optimize querying blocks. 0 to disable it. (default 24h0m0s)

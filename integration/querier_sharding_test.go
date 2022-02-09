@@ -83,7 +83,7 @@ func runQuerierShardingTest(t *testing.T, cfg querierShardingTestConfig) {
 
 	if cfg.shuffleShardingEnabled {
 		// Use only single querier for each user.
-		flags["-frontend.max-queriers-per-tenant"] = "1"
+		flags["-query-frontend.max-queriers-per-tenant"] = "1"
 	}
 
 	// Start the query-scheduler if enabled.
@@ -91,7 +91,7 @@ func runQuerierShardingTest(t *testing.T, cfg querierShardingTestConfig) {
 	if cfg.querySchedulerEnabled {
 		queryScheduler = e2emimir.NewQueryScheduler("query-scheduler", flags, "")
 		require.NoError(t, s.StartAndWaitReady(queryScheduler))
-		flags["-frontend.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
+		flags["-query-frontend.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
 		flags["-querier.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
 	}
 

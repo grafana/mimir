@@ -913,16 +913,16 @@ The `query_frontend_config` configures the query-frontend.
 ```yaml
 # Log queries that are slower than the specified duration. Set to 0 to disable.
 # Set to < 0 to enable on all queries.
-# CLI flag: -frontend.log-queries-longer-than
+# CLI flag: -query-frontend.log-queries-longer-than
 [log_queries_longer_than: <duration> | default = 0s]
 
 # (advanced) Max body size for downstream prometheus.
-# CLI flag: -frontend.max-body-size
+# CLI flag: -query-frontend.max-body-size
 [max_body_size: <int> | default = 10485760]
 
 # (advanced) False to disable query statistics tracking. When enabled, a message
 # with some statistics is logged for every query.
-# CLI flag: -frontend.query-stats-enabled
+# CLI flag: -query-frontend.query-stats-enabled
 [query_stats_enabled: <boolean> | default = true]
 
 # (advanced) Maximum number of outstanding requests per tenant per frontend;
@@ -938,91 +938,91 @@ The `query_frontend_config` configures the query-frontend.
 [querier_forget_delay: <duration> | default = 0s]
 
 # DNS hostname used for finding query-schedulers.
-# CLI flag: -frontend.scheduler-address
+# CLI flag: -query-frontend.scheduler-address
 [scheduler_address: <string> | default = ""]
 
 # (advanced) How often to resolve the scheduler-address, in order to look for
 # new query-scheduler instances.
-# CLI flag: -frontend.scheduler-dns-lookup-period
+# CLI flag: -query-frontend.scheduler-dns-lookup-period
 [scheduler_dns_lookup_period: <duration> | default = 10s]
 
 # (advanced) Number of concurrent workers forwarding queries to single
 # query-scheduler.
-# CLI flag: -frontend.scheduler-worker-concurrency
+# CLI flag: -query-frontend.scheduler-worker-concurrency
 [scheduler_worker_concurrency: <int> | default = 5]
 
 grpc_client_config:
   # gRPC client max receive message size (bytes).
-  # CLI flag: -frontend.grpc-client-config.grpc-max-recv-msg-size
+  # CLI flag: -query-frontend.grpc-client-config.grpc-max-recv-msg-size
   [max_recv_msg_size: <int> | default = 104857600]
 
   # gRPC client max send message size (bytes).
-  # CLI flag: -frontend.grpc-client-config.grpc-max-send-msg-size
+  # CLI flag: -query-frontend.grpc-client-config.grpc-max-send-msg-size
   [max_send_msg_size: <int> | default = 16777216]
 
   # Use compression when sending messages. Supported values are: 'gzip',
   # 'snappy' and '' (disable compression)
-  # CLI flag: -frontend.grpc-client-config.grpc-compression
+  # CLI flag: -query-frontend.grpc-client-config.grpc-compression
   [grpc_compression: <string> | default = ""]
 
   # Rate limit for gRPC client; 0 means disabled.
-  # CLI flag: -frontend.grpc-client-config.grpc-client-rate-limit
+  # CLI flag: -query-frontend.grpc-client-config.grpc-client-rate-limit
   [rate_limit: <float> | default = 0]
 
   # Rate limit burst for gRPC client.
-  # CLI flag: -frontend.grpc-client-config.grpc-client-rate-limit-burst
+  # CLI flag: -query-frontend.grpc-client-config.grpc-client-rate-limit-burst
   [rate_limit_burst: <int> | default = 0]
 
   # Enable backoff and retry when we hit ratelimits.
-  # CLI flag: -frontend.grpc-client-config.backoff-on-ratelimits
+  # CLI flag: -query-frontend.grpc-client-config.backoff-on-ratelimits
   [backoff_on_ratelimits: <boolean> | default = false]
 
   backoff_config:
     # Minimum delay when backing off.
-    # CLI flag: -frontend.grpc-client-config.backoff-min-period
+    # CLI flag: -query-frontend.grpc-client-config.backoff-min-period
     [min_period: <duration> | default = 100ms]
 
     # Maximum delay when backing off.
-    # CLI flag: -frontend.grpc-client-config.backoff-max-period
+    # CLI flag: -query-frontend.grpc-client-config.backoff-max-period
     [max_period: <duration> | default = 10s]
 
     # Number of times to backoff and retry before failing.
-    # CLI flag: -frontend.grpc-client-config.backoff-retries
+    # CLI flag: -query-frontend.grpc-client-config.backoff-retries
     [max_retries: <int> | default = 10]
 
   # (advanced) Enable TLS in the GRPC client. This flag needs to be enabled when
   # any other TLS flag is set. If set to false, insecure connection to gRPC
   # server will be used.
-  # CLI flag: -frontend.grpc-client-config.tls-enabled
+  # CLI flag: -query-frontend.grpc-client-config.tls-enabled
   [tls_enabled: <boolean> | default = false]
 
   # (advanced) Path to the client certificate file, which will be used for
   # authenticating with the server. Also requires the key path to be configured.
-  # CLI flag: -frontend.grpc-client-config.tls-cert-path
+  # CLI flag: -query-frontend.grpc-client-config.tls-cert-path
   [tls_cert_path: <string> | default = ""]
 
   # (advanced) Path to the key file for the client certificate. Also requires
   # the client certificate to be configured.
-  # CLI flag: -frontend.grpc-client-config.tls-key-path
+  # CLI flag: -query-frontend.grpc-client-config.tls-key-path
   [tls_key_path: <string> | default = ""]
 
   # (advanced) Path to the CA certificates file to validate server certificate
   # against. If not set, the host's root CA certificates are used.
-  # CLI flag: -frontend.grpc-client-config.tls-ca-path
+  # CLI flag: -query-frontend.grpc-client-config.tls-ca-path
   [tls_ca_path: <string> | default = ""]
 
   # (advanced) Override the expected name on the server certificate.
-  # CLI flag: -frontend.grpc-client-config.tls-server-name
+  # CLI flag: -query-frontend.grpc-client-config.tls-server-name
   [tls_server_name: <string> | default = ""]
 
   # (advanced) Skip validating server certificate.
-  # CLI flag: -frontend.grpc-client-config.tls-insecure-skip-verify
+  # CLI flag: -query-frontend.grpc-client-config.tls-insecure-skip-verify
   [tls_insecure_skip_verify: <boolean> | default = false]
 
 # (advanced) Name of network interface to read address from. This address is
 # sent to query-scheduler and querier, which uses it to send the query response
 # back to query-frontend.
-# CLI flag: -frontend.instance-interface-names
+# CLI flag: -query-frontend.instance-interface-names
 [instance_interface_names: <list of string> | default = [eth0 en0]]
 
 # (advanced) IP address to advertise to querier (via scheduler) (resolved via
@@ -1076,7 +1076,7 @@ results_cache:
 [cache_unaligned_requests: <boolean> | default = false]
 
 # (advanced) URL of downstream Prometheus.
-# CLI flag: -frontend.downstream-url
+# CLI flag: -query-frontend.downstream-url
 [downstream_url: <string> | default = ""]
 ```
 
@@ -2540,7 +2540,7 @@ The `limits_config` configures default and per-tenant limits imposed by services
 
 # Most recent allowed cacheable result per-tenant, to prevent caching very
 # recent results that might still be in flux.
-# CLI flag: -frontend.max-cache-freshness
+# CLI flag: -query-frontend.max-cache-freshness
 [max_cache_freshness: <duration> | default = 1m]
 
 # Maximum number of queriers that can handle requests for a single tenant. If
@@ -2550,7 +2550,7 @@ The `limits_config` configures default and per-tenant limits imposed by services
 # queriers are connected to all frontends / query-schedulers). This option only
 # works with queriers connecting to the query-frontend / query-scheduler, not
 # when using downstream URL.
-# CLI flag: -frontend.max-queriers-per-tenant
+# CLI flag: -query-frontend.max-queriers-per-tenant
 [max_queriers_per_tenant: <int> | default = 0]
 
 # The amount of shards to use when doing parallelisation via query sharding by

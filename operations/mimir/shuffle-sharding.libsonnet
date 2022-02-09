@@ -89,11 +89,11 @@
   },
 
   query_frontend_args+:: if !$._config.shuffle_sharding.querier_enabled then {} else {
-    'frontend.max-queriers-per-tenant': $._config.shuffle_sharding.querier_shard_size,
+    'query-frontend.max-queriers-per-tenant': $._config.shuffle_sharding.querier_shard_size,
   },
 
   query_scheduler_args+:: if !$._config.shuffle_sharding.querier_enabled then {} else {
-    'frontend.max-queriers-per-tenant': $._config.shuffle_sharding.querier_shard_size,
+    'query-frontend.max-queriers-per-tenant': $._config.shuffle_sharding.querier_shard_size,
   },
 
   querier_args+:: (

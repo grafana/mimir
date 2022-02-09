@@ -29,7 +29,7 @@ Query scheduler is a service that moves the in-memory queue from query frontend 
 This makes scaling query frontend easier, as it allows running multiple query frontends without increasing the number of queues.
 
 In order to use query scheduler, both query frontend and queriers must be configured with query scheduler address
-(using `-frontend.scheduler-address` and `-querier.scheduler-address` options respectively).
+(using `-query-frontend.scheduler-address` and `-querier.scheduler-address` options respectively).
 
 Note that querier will only fetch queries from query frontend or query scheduler, but not both.
 `-querier.frontend-address` and `-querier.scheduler-address` options are mutually exclusive, and at most one can be set.

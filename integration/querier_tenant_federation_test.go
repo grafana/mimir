@@ -78,13 +78,13 @@ func runQuerierTenantFederationTest(t *testing.T, cfg querierTenantFederationCon
 	if cfg.querySchedulerEnabled {
 		queryScheduler = e2emimir.NewQueryScheduler("query-scheduler", flags, "")
 		require.NoError(t, s.StartAndWaitReady(queryScheduler))
-		flags["-frontend.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
+		flags["-query-frontend.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
 		flags["-querier.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
 	}
 
 	if cfg.shuffleShardingEnabled {
 		// Use only single querier for each user.
-		flags["-frontend.max-queriers-per-tenant"] = "1"
+		flags["-query-frontend.max-queriers-per-tenant"] = "1"
 	}
 
 	minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
