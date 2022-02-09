@@ -19,7 +19,7 @@ The Cortex S3 client supports the following server-side encryption (SSE) modes:
 
 The [blocks storage](../blocks-storage/_index.md) S3 server-side encryption can be configured as follows.
 
-### `s3_sse_config`
+### s3_sse_config
 
 The `s3_sse_config` configures the S3 server-side encryption.
 

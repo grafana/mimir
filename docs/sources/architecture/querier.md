@@ -89,7 +89,7 @@ _The same memcached backend cluster should be shared between store-gateways and 
 
 This section described the querier configuration. For the general Cortex configuration and references to common config blocks, please refer to the [configuration documentation](../configuration/config-file-reference.md).
 
-### `querier_config`
+### querier_config
 
 The `querier_config` configures the querier.
 
@@ -194,7 +194,7 @@ querier:
   [lookback_delta: <duration> | default = 5m]
 ```
 
-### `blocks_storage_config`
+### blocks_storage_config
 
 The `blocks_storage_config` configures the blocks storage.
 
