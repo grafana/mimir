@@ -66,7 +66,6 @@ func runQuerierTenantFederationTest(t *testing.T, cfg querierTenantFederationCon
 
 	flags := mergeFlags(BlocksStorageFlags(), map[string]string{
 		"-frontend.cache-results":                     "true",
-		"-frontend.split-queries-by-interval":         "24h",
 		"-querier.query-ingesters-within":             "12h", // Required by the test on query /series out of ingesters time range
 		"-frontend.results-cache.backend":             "memcached",
 		"-frontend.results-cache.memcached.addresses": "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),

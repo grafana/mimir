@@ -955,7 +955,6 @@ spec:
         - -frontend.results-cache.memcached.addresses=dnssrvnoa+memcached-frontend.default.svc.cluster.local:11211
         - -frontend.results-cache.memcached.timeout=500ms
         - -frontend.scheduler-address=query-scheduler-discovery.default.svc.cluster.local:9095
-        - -frontend.split-queries-by-interval=24h
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc-max-recv-msg-size-bytes=104857600
         - -server.grpc.keepalive.min-time-between-pings=10s

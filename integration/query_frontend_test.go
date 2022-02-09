@@ -169,7 +169,6 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 
 	flags = mergeFlags(flags, map[string]string{
 		"-frontend.cache-results":                     "true",
-		"-frontend.split-queries-by-interval":         "24h",
 		"-querier.query-ingesters-within":             "12h", // Required by the test on query /series out of ingesters time range
 		"-frontend.results-cache.backend":             "memcached",
 		"-frontend.results-cache.memcached.addresses": "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
@@ -343,9 +342,7 @@ overrides:
 `)))
 
 	flags = mergeFlags(flags, map[string]string{
-		"-frontend.split-queries-by-interval": "24h",
-		"-querier.max-samples":                "20", // Very low limit so that we can easily hit it, but high enough to test other features.
-
+		"-querier.max-samples":                    "20",                                                 // Very low limit so that we can easily hit it, but high enough to test other features.
 		"-frontend.parallelize-shardable-queries": "true",                                               // Allow queries to be parallized (query-sharding)
 		"-frontend.query-sharding-total-shards":   "0",                                                  // Disable query-sharding by default
 		"-runtime-config.file":                    filepath.Join(e2e.ContainerSharedDir, runtimeConfig), // Read per tenant runtime config

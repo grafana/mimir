@@ -12,9 +12,6 @@
       // queries that return a lot of data timeing out.
       'server.http-write-timeout': '1m',
 
-      // Split long queries up into multiple day-long queries.
-      'frontend.split-queries-by-interval': '24h',
-
       // Cache query results.
       'frontend.align-querier-with-step': false,
       'frontend.cache-results': true,
