@@ -8,9 +8,9 @@ builds:
     env:
       - CGO_ENABLED=0
     ldflags:
-      - -X main.Branch={{.Env.GIT_BRANCH}}
-      - -X main.Revision={{.Env.GIT_REVISION}}
-      - -X main.Version={{.Env.VERSION}}
-      - --extldflags "-static" 
+      - -X github.com/grafana/mimir/pkg/util/version.Branch={{.Env.GIT_BRANCH}}
+      - -X github.com/grafana/mimir/pkg/util/version.Revision={{.Env.GIT_REVISION}}
+      - -X github.com/grafana/mimir/pkg/util/version.Version={{.Env.VERSION}}
+      - -extldflags "-static"
       - -s
       - -w
