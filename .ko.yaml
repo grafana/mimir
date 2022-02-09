@@ -1,3 +1,5 @@
+# ko's standard base image causes our integration tests to fail, due to lack of permission to read
+# TLS CA certificates installed in the filesystem it looks like.
 defaultBaseImage: grafana/alpine:3.15.0
 
 builds:
