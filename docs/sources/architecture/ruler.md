@@ -20,7 +20,9 @@ One option to scale the ruler is by scaling it horizontally. However, with multi
 
 ## Storage
 
-The ruler supports six kinds of storage (azure, gcs, s3, swift, local). Most kinds of storage work with the sharded ruler configuration in an obvious way. i.e. configure all rulers to use the same backend.
+The ruler supports several kinds of storage (azure, gcs, s3, swift, filesystem, local). Most kinds of storage work with the sharded ruler configuration in an obvious way. i.e. configure all rulers to use the same backend.
+
+> **Note:** The `filesystem` storage backend should only be used for testing purposes.
 
 The local implementation reads [Prometheus recording rules](https://prometheus.io/docs/prometheus/latest/configuration/recording_rules/) off of the local filesystem. This is a read only backend that does not support the creation and deletion of rules through [the API](../api/_index.md#ruler). Despite the fact that it reads the local filesystem this method can still be used in a sharded ruler configuration if the operator takes care to load the same rules to every ruler. For instance this could be accomplished by mounting a [Kubernetes ConfigMap](https://kubernetes.io/docs/concepts/configuration/configmap/) onto every ruler pod.
 
