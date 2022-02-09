@@ -3,7 +3,7 @@
         "go.formatTool": "goimports",
         "go.formatFlags": [
             "-local",
-            "github.com/cortexproject/cortex"
+            "github.com/grafana/mimir"
         ],
         "go.languageServerExperimentalFeatures": {
             "format": false
