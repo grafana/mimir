@@ -313,7 +313,7 @@ doc: clean-doc
 	go run ./tools/doc-generator ./docs/sources/architecture/querier.template                > ./docs/sources/architecture/querier.md
 	go run ./tools/doc-generator ./docs/sources/operating-grafana-mimir/encrypt-data-at-rest.template     > ./docs/sources/operating-grafana-mimir/encrypt-data-at-rest.md
 	embedmd -w docs/sources/configuration/using-the-query-frontend-with-prometheus.md
-	embedmd -w docs/sources/requests-mirroring-to-secondary-cluster.md
+	embedmd -w docs/sources/operating-grafana-mimir/mirror-requests-to-a-second-cluster.md
 	embedmd -w docs/sources/guides/overrides-exporter.md
 	embedmd -w docs/sources/getting-started/_index.md
 	embedmd -w operations/mimir/README.md
