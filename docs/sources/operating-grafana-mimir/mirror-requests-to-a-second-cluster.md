@@ -10,7 +10,7 @@ Requests mirroring can be used when you need to setup a testing Grafana Mimir cl
 
 ## Mirroring with Envoy proxy
 
-[Envoy proxy](https://www.envoyproxy.io/) can be used to mirror HTTP requests to a secondary upstream cluster. From a network path perspective, you should run Envoy in front of both clusters distributors, letting Envoy to proxy requests to the primary Grafana Mimir cluster and mirror them to a secondary cluster in background. The performances and availability of the secondary cluster have no impact on the requests to the primary one. The response to the client will always be the one from the primary one. In this sense, the requests from Envoy to the secondary cluster are "fire and forget".
+[Envoy proxy](https://www.envoyproxy.io/) can be used to mirror HTTP requests to a secondary upstream cluster. From a network path perspective, you should run Envoy in front of both clusters' distributors, letting Envoy to proxy requests to the primary Grafana Mimir cluster and mirror them to a secondary cluster in background. The performances and availability of the secondary cluster have no impact on the requests to the primary one. The response to the client will always be the one from the primary one. In this sense, the requests from Envoy to the secondary cluster are "fire and forget".
 
 ### Example Envoy config
 
@@ -27,14 +27,14 @@ admin:
 
 static_resources:
   listeners:
-    - name: cortex_listener
+    - name: mimir_listener
       address:
         socket_address: { address: 0.0.0.0, port_value: 9900 }
       filter_chains:
         - filters:
             - name: envoy.http_connection_manager
               config:
-                stat_prefix: cortex_ingress
+                stat_prefix: mimir_ingress
                 route_config:
                   name: all_routes
                   virtual_hosts:
@@ -43,7 +43,7 @@ static_resources:
                       routes:
                         - match: { prefix: "/" }
                           route:
-                            cluster: cortex_primary
+                            cluster: mimir_primary
 
                             # Specifies the upstream timeout. This spans between the point at which the entire downstream
                             # request has been processed and when the upstream response has been completely processed.
@@ -54,19 +54,19 @@ static_resources:
                             # client will always be the one from the primary one. The requests from Envoy to the secondary
                             # cluster are "fire and forget".
                             request_mirror_policies:
-                              - cluster: cortex_secondary
+                              - cluster: mimir_secondary
                 http_filters:
                   - name: envoy.router
   clusters:
-    - name: cortex_primary
+    - name: mimir_primary
       type: STRICT_DNS
       connect_timeout: 1s
-      hosts: [{ socket_address: { address: cortex-primary, port_value: 8080 }}]
+      hosts: [{ socket_address: { address: mimir-primary, port_value: 8080 }}]
       dns_refresh_rate: 5s
-    - name: cortex_secondary
+    - name: mimir_secondary
       type: STRICT_DNS
       connect_timeout: 1s
-      hosts: [{ socket_address: { address: cortex-secondary, port_value: 8080 }}]
+      hosts: [{ socket_address: { address: mimir-secondary, port_value: 8080 }}]
       dns_refresh_rate: 5s
 ```
 <!-- prettier-ignore-end -->
