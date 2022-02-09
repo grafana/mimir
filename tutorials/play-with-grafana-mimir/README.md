@@ -44,7 +44,7 @@ This command starts:
 - [Minio](https://min.io/)
   - S3-compatible persistent storage for blocks, rules, and alerts
 - Prometheus
-  - Scrape Grafana Mimir metrics and write them back to Grafana Mimir itself (to have some ingested metrics)
+  - Scrapes Grafana Mimir metrics, then writes them back to Grafana Mimir to ensure availability of ingested metrics
 - Grafana
   - Includes some Grafana Mimir dashboards preinstalled
 - Load balancer
