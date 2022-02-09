@@ -7,7 +7,6 @@
 
   ingester_args::
     $._config.grpcConfig +
-    $._config.ringConfig +
     $._config.storageConfig +
     $._config.blocksStorageConfig +
     $._config.ingesterRingClientConfig +
@@ -96,10 +95,8 @@
 
   ingester_statefulset: self.newIngesterStatefulSet('ingester', $.ingester_container),
 
-  ingester_service_ignored_labels:: [],
-
   ingester_service:
-    $.util.serviceFor($.ingester_statefulset, $.ingester_service_ignored_labels),
+    $.util.serviceFor($.ingester_statefulset, $._config.service_ignored_labels),
 
   newIngesterPdb(pdbName, ingesterName)::
     podDisruptionBudget.new() +

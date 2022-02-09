@@ -1,3 +1,5 @@
+SHELL = /usr/bin/env bash
+
 # Adapted from https://www.thapaliya.com/en/writings/well-documented-makefiles/
 .PHONY: help
 help: ## Display this help and any documented user-facing targets. Other undocumented targets may be present in the Makefile.
@@ -8,7 +10,7 @@ help:
 # WARNING: do not commit to a repository!
 -include Makefile.local
 
-.PHONY: all test test-with-race integration-tests cover clean images protos exes dist doc clean-doc check-doc push-multiarch-build-image license check-license format check-mixin check-mixin-jb check-mixin-mixtool checkin-mixin-playbook build-mixin format-mixin check-jsonnet-manifests format-jsonnet-manifests push-multiarch-mimir list-image-targets check-jsonnet-getting-started
+.PHONY: all test test-with-race integration-tests cover clean images protos exes dist doc clean-doc check-doc push-multiarch-build-image license check-license format check-mixin check-mixin-jb check-mixin-mixtool checkin-mixin-playbook build-mixin format-mixin check-jsonnet-manifests format-jsonnet-manifests push-multiarch-mimir list-image-targets check-jsonnet-getting-started mixin-screenshots
 .DEFAULT_GOAL := all
 
 # Version number
@@ -114,7 +116,7 @@ push-multiarch-build-image:
 
 # We don't want find to scan inside a bunch of directories, to accelerate the
 # 'make: Entering directory '/go/src/github.com/grafana/mimir' phase.
-DONT_FIND := -name vendor -prune -o -name .git -prune -o -name .cache -prune -o -name .pkg -prune -o -name packaging -prune -o
+DONT_FIND := -name vendor -prune -o -name .git -prune -o -name .cache -prune -o -name .pkg -prune -o -name packaging -prune -o -name mimir-mixin-tools -prune -o
 
 MAKEFILES = $(shell find . $(DONT_FIND) \( -name 'Makefile' -o -name '*.mk' \) -print)
 
@@ -170,7 +172,7 @@ mimir-build-image/$(UPTODATE): mimir-build-image/*
 # All the boiler plate for building golang follows:
 SUDO := $(shell docker info >/dev/null 2>&1 || echo "sudo -E")
 BUILD_IN_CONTAINER := true
-LATEST_BUILD_IMAGE_TAG ?= import-jsonnet-readme-2418fd778-WIP
+LATEST_BUILD_IMAGE_TAG ?= trafficdump-b1d000267
 
 # TTY is parameterized to allow Google Cloud Builder to run builds,
 # as it currently disallows TTY devices. This value needs to be overridden
@@ -316,15 +318,15 @@ web-build: web-pre
 web-deploy:
 	./tools/website/web-deploy.sh
 
-# Generates the config file documentation.
+doc: ## Generates the config file documentation.
 doc: clean-doc
-	go run ./tools/doc-generator ./docs/sources/configuration/config-file-reference.template > ./docs/sources/configuration/config-file-reference.md
-	go run ./tools/doc-generator ./docs/sources/blocks-storage/compactor.template            > ./docs/sources/blocks-storage/compactor.md
-	go run ./tools/doc-generator ./docs/sources/blocks-storage/store-gateway.template        > ./docs/sources/blocks-storage/store-gateway.md
-	go run ./tools/doc-generator ./docs/sources/blocks-storage/querier.template              > ./docs/sources/blocks-storage/querier.md
-	go run ./tools/doc-generator ./docs/sources/guides/encryption-at-rest.template           > ./docs/sources/guides/encryption-at-rest.md
-	embedmd -w docs/sources/configuration/prometheus-frontend.md
-	embedmd -w docs/sources/operations/requests-mirroring-to-secondary-cluster.md
+	go run ./tools/doc-generator ./docs/sources/configuration/reference-configuration-parameters.template > ./docs/sources/configuration/reference-configuration-parameters.md
+	go run ./tools/doc-generator ./docs/sources/architecture/compactor.template              > ./docs/sources/architecture/compactor.md
+	go run ./tools/doc-generator ./docs/sources/architecture/store-gateway.template          > ./docs/sources/architecture/store-gateway.md
+	go run ./tools/doc-generator ./docs/sources/architecture/querier.template                > ./docs/sources/architecture/querier.md
+	go run ./tools/doc-generator ./docs/sources/operating-grafana-mimir/encrypt-data-at-rest.template     > ./docs/sources/operating-grafana-mimir/encrypt-data-at-rest.md
+	embedmd -w docs/sources/configuration/using-the-query-frontend-with-prometheus.md
+	embedmd -w docs/sources/requests-mirroring-to-secondary-cluster.md
 	embedmd -w docs/sources/guides/overrides-exporter.md
 	embedmd -w docs/sources/getting-started/_index.md
 	embedmd -w operations/mimir/README.md
@@ -403,7 +405,7 @@ check-doc: doc
 		./docs/sources/configuration/config-file-reference.md \
 		./docs/sources/blocks-storage/*.md \
 		./docs/sources/configuration/*.md \
-		./docs/sources/operations/*.md \
+		./docs/sources/operating-grafana-mimir/*.md \
 		./operations/mimir/*.md \
 		./operations/mimir-mixin/docs/sources/*.md \
 	|| (echo "Please update generated documentation by running 'make doc'" && false)
@@ -443,12 +445,19 @@ check-mixin-playbook: build-mixin
 
 build-mixin: check-mixin-jb
 	@rm -rf $(MIXIN_OUT_PATH) && mkdir $(MIXIN_OUT_PATH)
-	@mixtool generate all --output-alerts $(MIXIN_OUT_PATH)/alerts.yaml --output-rules $(MIXIN_OUT_PATH)/rules.yaml --directory $(MIXIN_OUT_PATH)/dashboards ${MIXIN_PATH}/mixin.libsonnet
+	@mixtool generate all --output-alerts $(MIXIN_OUT_PATH)/alerts.yaml --output-rules $(MIXIN_OUT_PATH)/rules.yaml --directory $(MIXIN_OUT_PATH)/dashboards ${MIXIN_PATH}/mixin-compiled.libsonnet
 	@cd $(MIXIN_OUT_PATH)/.. && zip -q -r mimir-mixin.zip $$(basename "$(MIXIN_OUT_PATH)")
 	@echo "The mixin has been compiled to $(MIXIN_OUT_PATH) and archived to $$(realpath --relative-to=$$(pwd) $(MIXIN_OUT_PATH)/../mimir-mixin.zip)"
 
 format-mixin:
 	@find $(MIXIN_PATH) -type f -name '*.libsonnet' -print -o -name '*.jsonnet' -print | xargs jsonnetfmt -i
+
+mixin-serve: ## Runs Grafana (listening on port 3000) loading the mixin dashboards compiled at operations/mimir-mixin-compiled.
+	@./operations/mimir-mixin-tools/serve/run.sh
+
+mixin-screenshots: ## Generates mixin dashboards screenshots.
+	@rm -f docs/sources/images/dashboards/*.png
+	@./operations/mimir-mixin-tools/screenshots/run.sh
 
 check-jsonnet-manifests: format-jsonnet-manifests
 	@echo "Checking diff:"
@@ -587,5 +596,6 @@ packaging/deb/debian-systemd/$(UPTODATE): packaging/deb/debian-systemd/Dockerfil
 test-packages: packages packaging/rpm/centos-systemd/$(UPTODATE) packaging/deb/debian-systemd/$(UPTODATE)
 	./tools/packaging/test-packages $(IMAGE_PREFIX) $(VERSION)
 
-include docs.mk
+include docs/docs.mk
+DOCS_DIR = docs/sources
 docs: doc

@@ -77,47 +77,43 @@ type Config struct {
 	// GRPC Client configuration.
 	ClientTLSConfig grpcclient.Config `yaml:"ruler_client"`
 	// How frequently to evaluate rules by default.
-	EvaluationInterval time.Duration `yaml:"evaluation_interval"`
+	EvaluationInterval time.Duration `yaml:"evaluation_interval" category:"advanced"`
 	// How frequently to poll for updated rules.
-	PollInterval time.Duration `yaml:"poll_interval"`
+	PollInterval time.Duration `yaml:"poll_interval" category:"advanced"`
 	// Path to store rule files for prom manager.
 	RulePath string `yaml:"rule_path"`
 
 	// URL of the Alertmanager to send notifications to.
 	AlertmanagerURL string `yaml:"alertmanager_url"`
-	// Whether to use DNS SRV records to discover Alertmanager.
-	AlertmanagerDiscovery bool `yaml:"enable_alertmanager_discovery"`
 	// How long to wait between refreshing the list of Alertmanager based on DNS service discovery.
-	AlertmanagerRefreshInterval time.Duration `yaml:"alertmanager_refresh_interval"`
-	// Enables the ruler notifier to use the Alertmananger V2 API.
-	AlertmanagerEnableV2API bool `yaml:"enable_alertmanager_v2"`
+	AlertmanagerRefreshInterval time.Duration `yaml:"alertmanager_refresh_interval" category:"advanced"`
 	// Capacity of the queue for notifications to be sent to the Alertmanager.
-	NotificationQueueCapacity int `yaml:"notification_queue_capacity"`
+	NotificationQueueCapacity int `yaml:"notification_queue_capacity" category:"advanced"`
 	// HTTP timeout duration when sending notifications to the Alertmanager.
-	NotificationTimeout time.Duration `yaml:"notification_timeout"`
+	NotificationTimeout time.Duration `yaml:"notification_timeout" category:"advanced"`
 	// Client configs for interacting with the Alertmanager
 	Notifier NotifierConfig `yaml:"alertmanager_client"`
 
 	// Max time to tolerate outage for restoring "for" state of alert.
-	OutageTolerance time.Duration `yaml:"for_outage_tolerance"`
+	OutageTolerance time.Duration `yaml:"for_outage_tolerance" category:"advanced"`
 	// Minimum duration between alert and restored "for" state. This is maintained only for alerts with configured "for" time greater than grace period.
-	ForGracePeriod time.Duration `yaml:"for_grace_period"`
+	ForGracePeriod time.Duration `yaml:"for_grace_period" category:"advanced"`
 	// Minimum amount of time to wait before resending an alert to Alertmanager.
-	ResendDelay time.Duration `yaml:"resend_delay"`
+	ResendDelay time.Duration `yaml:"resend_delay" category:"advanced"`
 
 	// Enable sharding rule groups.
-	SearchPendingFor time.Duration `yaml:"search_pending_for"`
+	SearchPendingFor time.Duration `yaml:"search_pending_for" category:"advanced"`
 	Ring             RingConfig    `yaml:"ring"`
-	FlushCheckPeriod time.Duration `yaml:"flush_period"`
+	FlushCheckPeriod time.Duration `yaml:"flush_period" category:"advanced"`
 
 	EnableAPI bool `yaml:"enable_api"`
 
-	EnabledTenants  flagext.StringSliceCSV `yaml:"enabled_tenants"`
-	DisabledTenants flagext.StringSliceCSV `yaml:"disabled_tenants"`
+	EnabledTenants  flagext.StringSliceCSV `yaml:"enabled_tenants" category:"advanced"`
+	DisabledTenants flagext.StringSliceCSV `yaml:"disabled_tenants" category:"advanced"`
 
 	RingCheckPeriod time.Duration `yaml:"-"`
 
-	EnableQueryStats bool `yaml:"query_stats_enabled"`
+	EnableQueryStats bool `yaml:"query_stats_enabled" category:"advanced"`
 
 	TenantFederation TenantFederationConfig `yaml:"tenant_federation"`
 }
@@ -146,17 +142,15 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.EvaluationInterval, "ruler.evaluation-interval", 1*time.Minute, "How frequently to evaluate rules")
 	f.DurationVar(&cfg.PollInterval, "ruler.poll-interval", 1*time.Minute, "How frequently to poll for rule changes")
 
-	f.StringVar(&cfg.AlertmanagerURL, "ruler.alertmanager-url", "", "Comma-separated list of URL(s) of the Alertmanager(s) to send notifications to. Each Alertmanager URL is treated as a separate group in the configuration. Multiple Alertmanagers in HA per group can be supported by using DNS resolution via -ruler.alertmanager-discovery.")
-	f.BoolVar(&cfg.AlertmanagerDiscovery, "ruler.alertmanager-discovery", false, "Use DNS SRV records to discover Alertmanager hosts.")
+	f.StringVar(&cfg.AlertmanagerURL, "ruler.alertmanager-url", "", "Comma-separated list of URL(s) of the Alertmanager(s) to send notifications to. Each URL is treated as a separate group. Multiple Alertmanagers in HA per group can be supported by using DNS service discovery format. Basic auth is supported as part of the URL.")
 	f.DurationVar(&cfg.AlertmanagerRefreshInterval, "ruler.alertmanager-refresh-interval", 1*time.Minute, "How long to wait between refreshing DNS resolutions of Alertmanager hosts.")
-	f.BoolVar(&cfg.AlertmanagerEnableV2API, "ruler.alertmanager-use-v2", true, "If enabled requests to Alertmanager will utilize the V2 API.")
 	f.IntVar(&cfg.NotificationQueueCapacity, "ruler.notification-queue-capacity", 10000, "Capacity of the queue for notifications to be sent to the Alertmanager.")
 	f.DurationVar(&cfg.NotificationTimeout, "ruler.notification-timeout", 10*time.Second, "HTTP timeout duration when sending notifications to the Alertmanager.")
 
 	f.DurationVar(&cfg.SearchPendingFor, "ruler.search-pending-for", 5*time.Minute, "Time to spend searching for a pending ruler when shutting down.")
 	f.DurationVar(&cfg.FlushCheckPeriod, "ruler.flush-period", 1*time.Minute, "Period with which to attempt to flush rule groups.")
-	f.StringVar(&cfg.RulePath, "ruler.rule-path", "/rules", "file path to store temporary rule files for the prometheus rule managers")
-	f.BoolVar(&cfg.EnableAPI, "ruler.enable-api", false, "Enable the ruler api")
+	f.StringVar(&cfg.RulePath, "ruler.rule-path", "./data-ruler/", "Directory to store temporary rule files loaded by the Prometheus rule managers. This directory is not required to be persisted between restarts.")
+	f.BoolVar(&cfg.EnableAPI, "ruler.enable-api", true, "Enable the ruler config API.")
 	f.DurationVar(&cfg.OutageTolerance, "ruler.for-outage-tolerance", time.Hour, `Max time to tolerate outage for restoring "for" state of alert.`)
 	f.DurationVar(&cfg.ForGracePeriod, "ruler.for-grace-period", 10*time.Minute, `Minimum duration between alert and restored "for" state. This is maintained only for alerts with configured "for" time greater than grace period.`)
 	f.DurationVar(&cfg.ResendDelay, "ruler.resend-delay", time.Minute, `Minimum amount of time to wait before resending an alert to Alertmanager.`)
@@ -167,6 +161,36 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.EnableQueryStats, "ruler.query-stats-enabled", false, "Report the wall time for ruler queries to complete as a per user metric and as an info level log message.")
 
 	cfg.RingCheckPeriod = 5 * time.Second
+}
+
+type rulerMetrics struct {
+	listRules       prometheus.Histogram
+	loadRuleGroups  prometheus.Histogram
+	ringCheckErrors prometheus.Counter
+	rulerSync       *prometheus.CounterVec
+}
+
+func newRulerMetrics(reg prometheus.Registerer) *rulerMetrics {
+	return &rulerMetrics{
+		listRules: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+			Name:    "cortex_ruler_list_rules_seconds",
+			Help:    "Time spent listing rules.",
+			Buckets: []float64{0.1, 0.5, 1, 2, 5, 10, 15, 30},
+		}),
+		loadRuleGroups: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+			Name:    "cortex_ruler_load_rule_groups_seconds",
+			Help:    "Time spent loading all rules for the rule groups in this ruler.",
+			Buckets: []float64{0.1, 0.5, 1, 2, 5, 10, 15, 30},
+		}),
+		ringCheckErrors: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_ruler_ring_check_errors_total",
+			Help: "Number of errors that have occurred when checking the ring for ownership",
+		}),
+		rulerSync: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_ruler_sync_rules_total",
+			Help: "Total number of times the ruler sync operation triggered.",
+		}, []string{"reason"}),
+	}
 }
 
 // MultiTenantManager is the interface of interaction with a Manager that is tenant aware.
@@ -218,14 +242,13 @@ type Ruler struct {
 	manager    MultiTenantManager
 	limits     RulesLimits
 
+	metrics *rulerMetrics
+
 	subservices        *services.Manager
 	subservicesWatcher *services.FailureWatcher
 
 	// Pool of clients used to connect to other ruler replicas.
 	clientsPool ClientsPool
-
-	ringCheckErrors prometheus.Counter
-	rulerSync       *prometheus.CounterVec
 
 	allowedTenants *util.AllowedTenants
 
@@ -248,16 +271,7 @@ func newRuler(cfg Config, manager MultiTenantManager, reg prometheus.Registerer,
 		limits:         limits,
 		clientsPool:    clientPool,
 		allowedTenants: util.NewAllowedTenants(cfg.EnabledTenants, cfg.DisabledTenants),
-
-		ringCheckErrors: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Name: "cortex_ruler_ring_check_errors_total",
-			Help: "Number of errors that have occurred when checking the ring for ownership",
-		}),
-
-		rulerSync: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-			Name: "cortex_ruler_sync_rules_total",
-			Help: "Total number of times the ruler sync operation triggered.",
-		}, []string{"reason"}),
+		metrics:        newRulerMetrics(reg),
 	}
 
 	if len(cfg.EnabledTenants) > 0 {
@@ -446,7 +460,7 @@ func (r *Ruler) run(ctx context.Context) error {
 
 func (r *Ruler) syncRules(ctx context.Context, reason string) {
 	level.Debug(r.logger).Log("msg", "syncing rules", "reason", reason)
-	r.rulerSync.WithLabelValues(reason).Inc()
+	r.metrics.rulerSync.WithLabelValues(reason).Inc()
 
 	configs, err := r.listRules(ctx)
 	if err != nil {
@@ -454,7 +468,7 @@ func (r *Ruler) syncRules(ctx context.Context, reason string) {
 		return
 	}
 
-	err = r.store.LoadRuleGroups(ctx, configs)
+	err = r.loadRuleGroups(ctx, configs)
 	if err != nil {
 		level.Error(r.logger).Log("msg", "unable to load rules owned by this ruler", "err", err)
 		return
@@ -464,9 +478,21 @@ func (r *Ruler) syncRules(ctx context.Context, reason string) {
 	r.manager.SyncRuleGroups(ctx, configs)
 }
 
-func (r *Ruler) listRules(ctx context.Context) (result map[string]rulespb.RuleGroupList, err error) {
-	result, err = r.listRulesSharded(ctx)
+func (r *Ruler) loadRuleGroups(ctx context.Context, configs map[string]rulespb.RuleGroupList) error {
+	start := time.Now()
+	defer func() {
+		r.metrics.loadRuleGroups.Observe(time.Since(start).Seconds())
+	}()
+	return r.store.LoadRuleGroups(ctx, configs)
+}
 
+func (r *Ruler) listRules(ctx context.Context) (result map[string]rulespb.RuleGroupList, err error) {
+	start := time.Now()
+	defer func() {
+		r.metrics.listRules.Observe(time.Since(start).Seconds())
+	}()
+
+	result, err = r.listRulesSharded(ctx)
 	if err != nil {
 		return
 	}
@@ -530,7 +556,7 @@ func (r *Ruler) listRulesSharded(ctx context.Context) (map[string]rulespb.RuleGr
 					return errors.Wrapf(err, "failed to fetch rule groups for user %s", userID)
 				}
 
-				filtered := filterRuleGroups(userID, groups, userRings[userID], r.lifecycler.GetInstanceAddr(), r.logger, r.ringCheckErrors)
+				filtered := filterRuleGroups(userID, groups, userRings[userID], r.lifecycler.GetInstanceAddr(), r.logger, r.metrics.ringCheckErrors)
 				if len(filtered) == 0 {
 					continue
 				}

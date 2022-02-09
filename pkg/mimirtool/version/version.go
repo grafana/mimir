@@ -46,7 +46,7 @@ func CheckLatest() {
 func getLatestFromGitHub() (string, error) {
 	fmt.Print("checking latest version... ")
 	c := github.NewClient(nil)
-	repoRelease, resp, err := c.Repositories.GetLatestRelease(context.Background(), "grafana", "cortex-tools")
+	repoRelease, resp, err := c.Repositories.GetLatestRelease(context.Background(), "grafana", "mimir")
 	if err != nil {
 		log.WithFields(log.Fields{"err": err}).Debugln("error while retrieving the latest version")
 		return "", errUnableToRetrieveLatestVersion

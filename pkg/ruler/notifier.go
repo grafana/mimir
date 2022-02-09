@@ -8,9 +8,7 @@ package ruler
 import (
 	"context"
 	"flag"
-	"fmt"
 	"net/url"
-	"regexp"
 	"strings"
 	"sync"
 
@@ -21,8 +19,8 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
-	"github.com/prometheus/prometheus/discovery/dns"
 	"github.com/prometheus/prometheus/notifier"
+	"github.com/thanos-io/thanos/pkg/cacheutil"
 
 	"github.com/grafana/mimir/pkg/util"
 )
@@ -93,43 +91,29 @@ func (rn *rulerNotifier) stop() {
 
 // Builds a Prometheus config.Config from a ruler.Config with just the required
 // options to configure notifications to Alertmanager.
-func buildNotifierConfig(rulerConfig *Config) (*config.Config, error) {
-	amURLs := strings.Split(rulerConfig.AlertmanagerURL, ",")
-	validURLs := make([]*url.URL, 0, len(amURLs))
+func buildNotifierConfig(rulerConfig *Config, resolver cacheutil.AddressProvider) (*config.Config, error) {
+	if rulerConfig.AlertmanagerURL == "" {
+		// no AM URLs were provided, so we can just return a default config without errors
+		return &config.Config{}, nil
+	}
 
-	srvDNSregexp := regexp.MustCompile(`^_.+._.+`)
-	for _, h := range amURLs {
-		url, err := url.Parse(h)
+	amURLs := strings.Split(rulerConfig.AlertmanagerURL, ",")
+	amConfigs := make([]*config.AlertmanagerConfig, 0, len(amURLs))
+
+	for _, rawURL := range amURLs {
+		isSD, qType, url, err := sanitizedAlertmanagerURL(rawURL)
 		if err != nil {
 			return nil, err
 		}
 
-		if url.String() == "" {
-			continue
+		var sdConfig discovery.Config
+		if isSD {
+			sdConfig = dnsSD(rulerConfig, resolver, qType, url)
+		} else {
+			sdConfig = staticTarget(url)
 		}
 
-		// Given we only support SRV lookups as part of service discovery, we need to ensure
-		// hosts provided follow this specification: _service._proto.name
-		// e.g. _http._tcp.alertmanager.com
-		if rulerConfig.AlertmanagerDiscovery && !srvDNSregexp.MatchString(url.Host) {
-			return nil, fmt.Errorf("when alertmanager-discovery is on, host name must be of the form _portname._tcp.service.fqdn (is %q)", url.Host)
-		}
-
-		validURLs = append(validURLs, url)
-	}
-
-	if len(validURLs) == 0 {
-		return &config.Config{}, nil
-	}
-
-	apiVersion := config.AlertmanagerAPIVersionV1
-	if rulerConfig.AlertmanagerEnableV2API {
-		apiVersion = config.AlertmanagerAPIVersionV2
-	}
-
-	amConfigs := make([]*config.AlertmanagerConfig, 0, len(validURLs))
-	for _, url := range validURLs {
-		amConfigs = append(amConfigs, amConfigFromURL(rulerConfig, url, apiVersion))
+		amConfigs = append(amConfigs, amConfigWithSD(rulerConfig, url, sdConfig))
 	}
 
 	promConfig := &config.Config{
@@ -141,34 +125,13 @@ func buildNotifierConfig(rulerConfig *Config) (*config.Config, error) {
 	return promConfig, nil
 }
 
-func amConfigFromURL(rulerConfig *Config, url *url.URL, apiVersion config.AlertmanagerAPIVersion) *config.AlertmanagerConfig {
-	var sdConfig discovery.Configs
-	if rulerConfig.AlertmanagerDiscovery {
-		sdConfig = discovery.Configs{
-			&dns.SDConfig{
-				Names:           []string{url.Host},
-				RefreshInterval: model.Duration(rulerConfig.AlertmanagerRefreshInterval),
-				Type:            "SRV",
-				Port:            0, // Ignored, because of SRV.
-			},
-		}
-
-	} else {
-		sdConfig = discovery.Configs{
-			discovery.StaticConfig{
-				{
-					Targets: []model.LabelSet{{model.AddressLabel: model.LabelValue(url.Host)}},
-				},
-			},
-		}
-	}
-
+func amConfigWithSD(rulerConfig *Config, url *url.URL, sdConfig discovery.Config) *config.AlertmanagerConfig {
 	amConfig := &config.AlertmanagerConfig{
-		APIVersion:              apiVersion,
+		APIVersion:              config.AlertmanagerAPIVersionV2,
 		Scheme:                  url.Scheme,
 		PathPrefix:              url.Path,
 		Timeout:                 model.Duration(rulerConfig.NotificationTimeout),
-		ServiceDiscoveryConfigs: sdConfig,
+		ServiceDiscoveryConfigs: discovery.Configs{sdConfig},
 		HTTPClientConfig: config_util.HTTPClientConfig{
 			TLSConfig: config_util.TLSConfig{
 				CAFile:             rulerConfig.Notifier.TLS.CAPath,

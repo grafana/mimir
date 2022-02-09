@@ -223,13 +223,6 @@ func (t *Mimir) initOverrides() (serv services.Service, err error) {
 }
 
 func (t *Mimir) initOverridesExporter() (services.Service, error) {
-	if t.Cfg.isModuleEnabled(OverridesExporter) && t.TenantLimits == nil {
-		// This target isn't enabled by default ("all") and requires per-tenant limits to
-		// work. Fail if it can't be setup correctly since the user explicitly wanted this
-		// target to run.
-		return nil, errors.New("overrides-exporter has been enabled, but no runtime configuration file was configured")
-	}
-
 	exporter := validation.NewOverridesExporter(&t.Cfg.LimitsConfig, t.TenantLimits)
 	prometheus.MustRegister(exporter)
 
@@ -239,6 +232,7 @@ func (t *Mimir) initOverridesExporter() (services.Service, error) {
 }
 
 func (t *Mimir) initDistributorService() (serv services.Service, err error) {
+	t.Cfg.Distributor.DistributorRing.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
 	t.Cfg.Distributor.DistributorRing.ListenPort = t.Cfg.Server.GRPCListenPort
 	t.Cfg.Distributor.ShuffleShardingLookbackPeriod = t.Cfg.Querier.ShuffleShardingIngestersLookbackPeriod
 
@@ -281,8 +275,9 @@ func (t *Mimir) initTenantFederation() (serv services.Service, err error) {
 		// Make sure the mergeQuerier is only used for request with more than a
 		// single tenant. This allows for a less impactful enabling of tenant
 		// federation.
-		const byPassForSingleQuerier = true
-		t.QuerierQueryable = querier.NewSampleAndChunkQueryable(tenantfederation.NewQueryable(t.QuerierQueryable, byPassForSingleQuerier, util_log.Logger))
+		const bypassForSingleQuerier = true
+		t.QuerierQueryable = querier.NewSampleAndChunkQueryable(tenantfederation.NewQueryable(t.QuerierQueryable, bypassForSingleQuerier, util_log.Logger))
+		t.ExemplarQueryable = tenantfederation.NewExemplarQueryable(t.ExemplarQueryable, bypassForSingleQuerier, util_log.Logger)
 	}
 	return nil, nil
 }
@@ -523,6 +518,7 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 		return nil, nil
 	}
 
+	t.Cfg.Ruler.Ring.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
 	t.Cfg.Ruler.Ring.ListenPort = t.Cfg.Server.GRPCListenPort
 	rulerRegisterer := prometheus.WrapRegistererWith(prometheus.Labels{"engine": "ruler"}, prometheus.DefaultRegisterer)
 	var queryable, federatedQueryable prom_storage.Queryable
@@ -533,16 +529,27 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 		if !t.Cfg.TenantFederation.Enabled {
 			return nil, errors.New("-ruler.tenant-federation.enabled=true requires -tenant-federation.enabled=true")
 		}
-		// Setting byPassForSingleQuerier=false forces `tenantfederation.NewQueryable` to add
+		// Setting bypassForSingleQuerier=false forces `tenantfederation.NewQueryable` to add
 		// the `__tenant_id__` label on all metrics regardless if they're for a single tenant or multiple tenants.
 		// This makes this label more consistent and hopefully less confusing to users.
-		const byPassForSingleQuerier = false
+		const bypassForSingleQuerier = false
 
-		federatedQueryable = tenantfederation.NewQueryable(queryable, byPassForSingleQuerier, util_log.Logger)
+		federatedQueryable = tenantfederation.NewQueryable(queryable, bypassForSingleQuerier, util_log.Logger)
 	}
-
 	managerFactory := ruler.DefaultTenantManagerFactory(t.Cfg.Ruler, t.Distributor, queryable, federatedQueryable, eng, t.Overrides, prometheus.DefaultRegisterer)
-	manager, err := ruler.NewDefaultMultiTenantManager(t.Cfg.Ruler, managerFactory, prometheus.DefaultRegisterer, util_log.Logger)
+
+	// We need to prefix and add a label to the metrics for the DNS resolver because, unlike other mimir components,
+	// it doesn't already have the `cortex_` prefix and the `component` label to the metrics it emits
+	dnsProviderReg := prometheus.WrapRegistererWithPrefix(
+		"cortex_",
+		prometheus.WrapRegistererWith(
+			prometheus.Labels{"component": "ruler"},
+			prometheus.DefaultRegisterer,
+		),
+	)
+
+	dnsResolver := dns.NewProvider(util_log.Logger, dnsProviderReg, dns.GolangResolverType)
+	manager, err := ruler.NewDefaultMultiTenantManager(t.Cfg.Ruler, managerFactory, prometheus.DefaultRegisterer, util_log.Logger, dnsResolver)
 	if err != nil {
 		return nil, err
 	}
@@ -571,7 +578,9 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 }
 
 func (t *Mimir) initAlertManager() (serv services.Service, err error) {
+	t.Cfg.Alertmanager.ShardingRing.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
 	t.Cfg.Alertmanager.ShardingRing.ListenPort = t.Cfg.Server.GRPCListenPort
+	t.Cfg.Alertmanager.CheckExternalURL(t.Cfg.API.AlertmanagerHTTPPrefix, util_log.Logger)
 
 	store, err := alertstore.NewAlertStore(context.Background(), t.Cfg.AlertmanagerStorage, t.Overrides, util_log.Logger, prometheus.DefaultRegisterer)
 	if err != nil {
@@ -588,6 +597,7 @@ func (t *Mimir) initAlertManager() (serv services.Service, err error) {
 }
 
 func (t *Mimir) initCompactor() (serv services.Service, err error) {
+	t.Cfg.Compactor.ShardingRing.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
 	t.Cfg.Compactor.ShardingRing.ListenPort = t.Cfg.Server.GRPCListenPort
 
 	t.Compactor, err = compactor.NewMultitenantCompactor(t.Cfg.Compactor, t.Cfg.BlocksStorage, t.Overrides, util_log.Logger, prometheus.DefaultRegisterer)
@@ -601,6 +611,7 @@ func (t *Mimir) initCompactor() (serv services.Service, err error) {
 }
 
 func (t *Mimir) initStoreGateway() (serv services.Service, err error) {
+	t.Cfg.StoreGateway.ShardingRing.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
 	t.Cfg.StoreGateway.ShardingRing.ListenPort = t.Cfg.Server.GRPCListenPort
 
 	t.StoreGateway, err = storegateway.NewStoreGateway(t.Cfg.StoreGateway, t.Cfg.BlocksStorage, t.Overrides, t.Cfg.Server.LogLevel, util_log.Logger, prometheus.DefaultRegisterer, t.ActivityTracker)
@@ -623,7 +634,7 @@ func (t *Mimir) initMemberlistKV() (services.Service, error) {
 	dnsProviderReg := prometheus.WrapRegistererWithPrefix(
 		"cortex_",
 		prometheus.WrapRegistererWith(
-			prometheus.Labels{"name": "memberlist"},
+			prometheus.Labels{"component": "memberlist"},
 			reg,
 		),
 	)

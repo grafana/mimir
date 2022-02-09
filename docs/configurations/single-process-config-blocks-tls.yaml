@@ -4,7 +4,7 @@
 # and development.
 
 # Disable the requirement that every request to Mimir has a
-# X-Scope-OrgID header. `fake` will be substituted in instead.
+# X-Scope-OrgID header. `anonymous` will be substituted in instead.
 auth_enabled: false
 
 server:
@@ -93,9 +93,6 @@ frontend_worker:
     tls_cert_path: "client.crt"
     tls_key_path: "client.key"
     tls_ca_path: "root.crt"
-
-ruler:
-  enable_api: true
 
 ruler_storage:
   backend: local

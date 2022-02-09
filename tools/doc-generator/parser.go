@@ -78,7 +78,7 @@ func (e configEntry) description() string {
 		return e.fieldDesc
 	}
 
-	return fmt.Sprintf("[%s] %s", e.fieldCategory, e.fieldDesc)
+	return fmt.Sprintf("(%s) %s", e.fieldCategory, e.fieldDesc)
 }
 
 type rootBlock struct {

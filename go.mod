@@ -16,6 +16,7 @@ require (
 	github.com/gogo/status v1.1.0
 	github.com/golang/protobuf v1.5.2
 	github.com/golang/snappy v0.0.4
+	github.com/google/gopacket v1.1.19
 	github.com/gorilla/mux v1.8.0
 	github.com/grafana/dskit v0.0.0-20220131162925-09047fe4cc11
 	github.com/grafana/e2e v0.1.0

@@ -38,15 +38,16 @@ func TestGettingStartedWithGossipedRing(t *testing.T) {
 	// We don't care for storage part too much here. Both Mimir instances will write new blocks to /tmp, but that's fine.
 	flags := map[string]string{
 		// decrease timeouts to make test faster. should still be fine with two instances only
-		"-ingester.join-after":                       "0s", // join quickly
-		"-ingester.observe-period":                   "5s", // to avoid conflicts in tokens
-		"-blocks-storage.bucket-store.sync-interval": "1s", // sync continuously
-		"-blocks-storage.backend":                    "s3",
-		"-blocks-storage.s3.bucket-name":             bucketName,
-		"-blocks-storage.s3.access-key-id":           e2edb.MinioAccessKey,
-		"-blocks-storage.s3.secret-access-key":       e2edb.MinioSecretKey,
-		"-blocks-storage.s3.endpoint":                fmt.Sprintf("%s-minio-9000:9000", networkName),
-		"-blocks-storage.s3.insecure":                "true",
+		"-ingester.join-after":                              "0s", // join quickly
+		"-ingester.observe-period":                          "5s", // to avoid conflicts in tokens
+		"-blocks-storage.bucket-store.bucket-index.enabled": "false",
+		"-blocks-storage.bucket-store.sync-interval":        "1s", // sync continuously
+		"-blocks-storage.backend":                           "s3",
+		"-blocks-storage.s3.bucket-name":                    bucketName,
+		"-blocks-storage.s3.access-key-id":                  e2edb.MinioAccessKey,
+		"-blocks-storage.s3.secret-access-key":              e2edb.MinioSecretKey,
+		"-blocks-storage.s3.endpoint":                       fmt.Sprintf("%s-minio-9000:9000", networkName),
+		"-blocks-storage.s3.insecure":                       "true",
 	}
 
 	// This mimir will fail to join the cluster configured in yaml file. That's fine.
@@ -66,12 +67,19 @@ func TestGettingStartedWithGossipedRing(t *testing.T) {
 	require.NoError(t, mimir1.WaitSumMetrics(e2e.Equals(2), "memberlist_client_cluster_members_count"))
 	require.NoError(t, mimir2.WaitSumMetrics(e2e.Equals(2), "memberlist_client_cluster_members_count"))
 
-	// Both Mimir servers should have 512 tokens for ingesters ring and 512 tokens for store-gateways ring.
-	for _, ringName := range []string{"ingester", "store-gateway", "ruler"} {
+	for _, ringName := range []string{"ingester", "store-gateway", "ruler", "compactor", "distributor"} {
 		ringMatcher := labels.MustNewMatcher(labels.MatchEqual, "name", ringName)
 
-		require.NoError(t, mimir1.WaitSumMetricsWithOptions(e2e.Equals(2*512), []string{"cortex_ring_tokens_total"}, e2e.WithLabelMatchers(ringMatcher)))
-		require.NoError(t, mimir2.WaitSumMetricsWithOptions(e2e.Equals(2*512), []string{"cortex_ring_tokens_total"}, e2e.WithLabelMatchers(ringMatcher)))
+		expectedTokens := 2 * 512 // Ingesters, store-gateways and compactors use 512 tokens by default.
+		if ringName == "ruler" {
+			expectedTokens = 2 * 128 // rulers use 128 tokens by default
+		}
+		if ringName == "distributor" {
+			expectedTokens = 2 * 1 // distributors use one token only
+		}
+
+		require.NoError(t, mimir1.WaitSumMetricsWithOptions(e2e.Equals(float64(expectedTokens)), []string{"cortex_ring_tokens_total"}, e2e.WithLabelMatchers(ringMatcher)), ringName)
+		require.NoError(t, mimir2.WaitSumMetricsWithOptions(e2e.Equals(float64(expectedTokens)), []string{"cortex_ring_tokens_total"}, e2e.WithLabelMatchers(ringMatcher)), ringName)
 	}
 
 	// We need two "ring members" visible from both Mimir instances for ingesters
@@ -131,7 +139,7 @@ func TestGettingStartedWithGossipedRing(t *testing.T) {
 
 	// Make sure that no DNS failures occurred.
 	// No actual DNS lookups are necessarily performed, so we can't really assert on that.
-	mlMatcher := labels.MustNewMatcher(labels.MatchEqual, "name", "memberlist")
+	mlMatcher := labels.MustNewMatcher(labels.MatchEqual, "component", "memberlist")
 	require.NoError(t, mimir1.WaitSumMetricsWithOptions(e2e.Equals(0), []string{"cortex_dns_failures_total"}, e2e.WithLabelMatchers(mlMatcher)))
 	require.NoError(t, mimir2.WaitSumMetricsWithOptions(e2e.Equals(0), []string{"cortex_dns_failures_total"}, e2e.WithLabelMatchers(mlMatcher)))
 }

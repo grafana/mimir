@@ -56,7 +56,6 @@ blocks_storage:
     insecure:          true
 
 ruler:
-  enable_api: true
   poll_interval: 2s
   ring:
     kvstore:

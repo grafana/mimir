@@ -28,6 +28,7 @@
       store_gateway: '(store-gateway.*|cortex|mimir)',  // Match also per-zone store-gateway deployments.
       gateway: '(gateway|cortex-gw|cortex-gw-internal)',
       compactor: 'compactor.*|cortex|mimir',  // Match also custom compactor deployments.
+      alertmanager: 'alertmanager|cortex|mimir',
     },
 
     // Grouping labels, to uniquely identify and group by {jobs, clusters}
@@ -65,6 +66,12 @@
       reads: true,
       tenants: true,
       top_tenants: true,
+    },
+
+    // Whether autoscaling panels and alerts should be enabled for specific Mimir services.
+    autoscaling: {
+      querier_enabled: false,
+      querier_hpa_name: 'keda-hpa-querier',
     },
 
     // The routes to exclude from alerts.

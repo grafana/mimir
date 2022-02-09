@@ -198,6 +198,68 @@ local utils = import 'mixin-utils/utils.libsonnet';
         { yaxes: $.yaxes('s') }
       )
     )
+    .addRowIf(
+      $._config.autoscaling.querier_enabled,
+      $.row('Querier - autoscaling')
+      .addPanel(
+        local title = 'Replicas';
+        $.panel(title) +
+        $.queryPanel(
+          [
+            'kube_horizontalpodautoscaler_spec_min_replicas{%s, horizontalpodautoscaler="%s"}' % [$.namespaceMatcher(), $._config.autoscaling.querier_hpa_name],
+            'kube_horizontalpodautoscaler_spec_max_replicas{%s, horizontalpodautoscaler="%s"}' % [$.namespaceMatcher(), $._config.autoscaling.querier_hpa_name],
+            'kube_horizontalpodautoscaler_status_current_replicas{%s, horizontalpodautoscaler="%s"}' % [$.namespaceMatcher(), $._config.autoscaling.querier_hpa_name],
+          ],
+          [
+            'Min',
+            'Max',
+            'Current',
+          ],
+        ) +
+        $.panelDescription(
+          title,
+          |||
+            The minimum, maximum, and current number of querier replicas.
+          |||
+        ),
+      )
+      .addPanel(
+        local title = 'Scaling metric';
+        $.panel(title) +
+        $.queryPanel(
+          [
+            $.filterKedaMetricByHPA('keda_metrics_adapter_scaler_metrics_value', $._config.autoscaling.querier_hpa_name),
+            'kube_horizontalpodautoscaler_spec_target_metric{%s, horizontalpodautoscaler="%s"}' % [$.namespaceMatcher(), $._config.autoscaling.querier_hpa_name],
+          ], [
+            'Scaling metric',
+            'Target per replica',
+          ]
+        ) +
+        $.panelDescription(
+          title,
+          |||
+            This panel shows the result of the query used as scaling metric and target/threshold used.
+            The desired number of replicas is computed by HPA as: <scaling metric> / <target per replica>.
+          |||
+        ) +
+        $.panelAxisPlacement('Target per replica', 'right'),
+      )
+      .addPanel(
+        local title = 'Autoscaler failures rate';
+        $.panel(title) +
+        $.queryPanel(
+          $.filterKedaMetricByHPA('sum by(metric) (rate(keda_metrics_adapter_scaler_errors[$__rate_interval]))', $._config.autoscaling.querier_hpa_name),
+          'Failures per second'
+        ) +
+        $.panelDescription(
+          title,
+          |||
+            The rate of failures in the KEDA custom metrics API server. Whenever an error occurs, the KEDA custom
+            metrics server is unable to query the scaling metric from Prometheus so the autoscaler woudln't work properly.
+          |||
+        ),
+      )
+    )
     .addRow(
       $.row('Ingester')
       .addPanel(

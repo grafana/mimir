@@ -3,7 +3,6 @@
 
   ruler_args::
     $._config.grpcConfig +
-    $._config.ringConfig +
     $._config.storageConfig +
     $._config.blocksStorageConfig +
     $._config.queryConfig +
@@ -16,9 +15,12 @@
     $.bucket_index_config
     {
       target: 'ruler',
+
+      // File path used to store temporary rule files loaded by the Prometheus rule managers.
+      'ruler.rule-path': '/rules',
+
       // Alertmanager configs
       'ruler.alertmanager-url': 'http://alertmanager.%s.svc.cluster.local/alertmanager' % $._config.namespace,
-      'ruler.enable-api': true,
 
       // Ring Configs
       'ruler.ring.store': 'consul',
@@ -62,6 +64,6 @@
 
   ruler_service:
     if $._config.ruler_enabled then
-      $.util.serviceFor($.ruler_deployment)
+      $.util.serviceFor($.ruler_deployment, $._config.service_ignored_labels)
     else {},
 }

@@ -13,7 +13,7 @@ The single process mode is useful for users who want to try or develop on Grafan
 The microservices mode allows you to independently scale different services and isolate failures.
 
 These instructions focus on deploying Grafana Mimir as a single process.
-For more information about the microservices, refer to [Architecture]({{<relref "../architecture.md" >}}).
+For more information about the microservices, refer to [Architecture]({{<relref "../architecture/_index.md" >}}).
 
 ## Before you begin
 
@@ -78,9 +78,6 @@ ingester:
       kvstore:
         store: memberlist
       replication_factor: 1
-
-ruler:
-  enable_api: true
 
 ruler_storage:
   backend: local

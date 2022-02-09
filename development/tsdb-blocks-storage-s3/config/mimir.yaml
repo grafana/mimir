@@ -71,7 +71,6 @@ blocks_storage:
     insecure:          true
 
 ruler:
-  enable_api: true
   ring:
     heartbeat_period:   5s
     heartbeat_timeout:  15s
@@ -81,7 +80,6 @@ ruler:
         host: consul:8500
 
   alertmanager_url: http://alertmanager-1:8031/alertmanager,http://alertmanager-2:8032/alertmanager,http://alertmanager-3:8033/alertmanager
-  enable_alertmanager_v2: false
 
 ruler_storage:
   backend: s3
@@ -93,7 +91,6 @@ ruler_storage:
     insecure:          true
 
 alertmanager:
-  enable_api: true
   sharding_enabled: true
   sharding_ring:
     replication_factor: 3

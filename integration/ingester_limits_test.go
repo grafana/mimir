@@ -139,7 +139,7 @@ func TestIngesterDynamicLimits(t *testing.T) {
 		overridesFile     = "overrides.yaml"
 		overridesTemplate = `
 overrides:
-  fake:
+  anonymous:
     max_global_series_per_user:    {{.MaxGlobalSeriesPerTenant}}
     max_global_series_per_metric:  {{.MaxGlobalSeriesPerMetric}}
     max_global_exemplars_per_user: {{.MaxGlobalExemplarsPerUser}}
@@ -174,11 +174,12 @@ overrides:
 			require.NoError(t, copyFileToSharedDir(s, "docs/configurations/single-process-config-blocks.yaml", mimirConfigFile))
 
 			flags := map[string]string{
-				"-runtime-config.reload-period":  "100ms",
-				"-blocks-storage.backend":        "filesystem",
-				"-blocks-storage.filesystem.dir": "/tmp",
-				"-ruler-storage.local.directory": "/tmp", // Avoid warning "unable to list rules".
-				"-runtime-config.file":           filepath.Join(e2e.ContainerSharedDir, overridesFile),
+				"-runtime-config.reload-period":                     "100ms",
+				"-blocks-storage.backend":                           "filesystem",
+				"-blocks-storage.filesystem.dir":                    "/tmp",
+				"-blocks-storage.bucket-store.bucket-index.enabled": "false",
+				"-ruler-storage.local.directory":                    "/tmp", // Avoid warning "unable to list rules".
+				"-runtime-config.file":                              filepath.Join(e2e.ContainerSharedDir, overridesFile),
 			}
 			cortex1 := e2emimir.NewSingleBinaryWithConfigFile("cortex-1", mimirConfigFile, flags, "", 9009, 9095)
 			require.NoError(t, s.StartAndWaitReady(cortex1))

@@ -561,6 +561,36 @@ local utils = import 'mixin-utils/utils.libsonnet';
       containerName,
     ],
 
+  filterKedaMetricByHPA(query, hpa_name)::
+    |||
+      %(query)s +
+      on(metric) group_left
+      label_replace(
+          kube_horizontalpodautoscaler_spec_target_metric{%(namespace)s, horizontalpodautoscaler="%(hpa_name)s"}
+          * 0, "metric", "$1", "metric_name", "(.+)"
+      )
+    ||| % {
+      query: query,
+      hpa_name: hpa_name,
+      namespace: $.namespaceMatcher(),
+    },
+
+  // panelAxisPlacement allows to place a series on the right axis.
+  // This function supports the old Graph panel.
+  panelAxisPlacement(seriesName, placement)::
+    if placement != 'right' then {} else {
+      seriesOverrides+: [
+        {
+          alias: seriesName,
+          yaxis: 2,
+        },
+      ],
+      // Ensure all Y-axis are displayed (default is that right axis is hidden).
+      yaxes: std.map(function(entry) entry {
+        show: true,
+      }, super.yaxes),
+    },
+
   panelDescription(title, description):: {
     description: |||
       ### %s

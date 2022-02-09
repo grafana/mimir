@@ -143,7 +143,7 @@ func TestRulerAPISingleBinary(t *testing.T) {
 	defer s.Close()
 
 	namespace := "ns"
-	user := "fake"
+	user := "anonymous"
 
 	// Start dependencies.
 	minio := e2edb.NewMinio(9000, bucketName)
@@ -206,7 +206,7 @@ func TestRulerEvaluationDelay(t *testing.T) {
 	defer s.Close()
 
 	namespace := "ns"
-	user := "fake"
+	user := "anonymous"
 
 	evaluationDelay := time.Minute * 5
 
@@ -818,7 +818,7 @@ func TestRulerFederatedRules(t *testing.T) {
 }
 
 func ruleGroupMatcher(user, namespace, groupName string) *labels.Matcher {
-	return labels.MustNewMatcher(labels.MatchEqual, "rule_group", fmt.Sprintf("/rules/%s/%s;%s", user, namespace, groupName))
+	return labels.MustNewMatcher(labels.MatchEqual, "rule_group", fmt.Sprintf("data-ruler/%s/%s;%s", user, namespace, groupName))
 }
 
 func ruleGroupWithRule(groupName string, ruleName string, expression string) rulefmt.RuleGroup {

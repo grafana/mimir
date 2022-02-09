@@ -363,9 +363,8 @@ func NewAlertmanager(name string, flags map[string]string, image string) *MimirS
 		name,
 		image,
 		e2e.NewCommandWithoutEntrypoint(binaryName, buildArgsWithExtra(e2e.BuildArgs(e2e.MergeFlags(map[string]string{
-			"-target":                  "alertmanager",
-			"-log.level":               "warn",
-			"-alertmanager.enable-api": "true",
+			"-target":    "alertmanager",
+			"-log.level": "warn",
 		}, flags)))...),
 		e2e.NewHTTPReadinessProbe(httpPort, "/ready", 200, 299),
 		httpPort,
@@ -383,9 +382,8 @@ func NewAlertmanagerWithTLS(name string, flags map[string]string, image string) 
 		name,
 		image,
 		e2e.NewCommandWithoutEntrypoint(binaryName, buildArgsWithExtra(e2e.BuildArgs(e2e.MergeFlags(map[string]string{
-			"-target":                  "alertmanager",
-			"-log.level":               "warn",
-			"-alertmanager.enable-api": "true",
+			"-target":    "alertmanager",
+			"-log.level": "warn",
 		}, flags)))...),
 		e2e.NewTCPReadinessProbe(httpPort),
 		httpPort,

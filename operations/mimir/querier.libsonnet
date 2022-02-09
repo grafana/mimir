@@ -3,7 +3,6 @@
 
   querier_args::
     $._config.grpcConfig +
-    $._config.ringConfig +
     $._config.storageConfig +
     $._config.blocksStorageConfig +
     $._config.queryConfig +
@@ -66,8 +65,6 @@
 
   local service = $.core.v1.service,
 
-  querier_service_ignored_labels:: [],
-
   querier_service:
-    $.util.serviceFor($.querier_deployment, $.querier_service_ignored_labels),
+    $.util.serviceFor($.querier_deployment, $._config.service_ignored_labels),
 }

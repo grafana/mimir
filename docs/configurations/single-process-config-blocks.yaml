@@ -4,7 +4,7 @@
 # and development.
 
 # Disable the requirement that every request to Mimir has a
-# X-Scope-OrgID header. `fake` will be substituted in instead.
+# X-Scope-OrgID header. `anonymous` will be substituted in instead.
 auth_enabled: false
 
 server:
@@ -77,9 +77,6 @@ blocks_storage:
 
 compactor:
   data_dir: /tmp/mimir/compactor
-
-ruler:
-  enable_api: true
 
 ruler_storage:
   backend: local

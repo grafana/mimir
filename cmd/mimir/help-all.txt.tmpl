@@ -1,6 +1,6 @@
 Usage of ./cmd/mimir/mimir:
   -activity-tracker.filepath string
-    	File where ongoing activities are stored. If empty, activity tracking is disabled. (default "/tmp/metrics-activity.log")
+    	File where ongoing activities are stored. If empty, activity tracking is disabled. (default "./metrics-activity.log")
   -activity-tracker.max-entries int
     	Max number of concurrent activities that can be tracked. Used to size the file in advance. Additional activities are ignored. (default 1024)
   -alertmanager-storage.azure.account-key value
@@ -118,7 +118,7 @@ Usage of ./cmd/mimir/mimir:
   -alertmanager.cluster.gossip-interval duration
     	The interval between sending gossip messages. By lowering this value (more frequent) gossip messages are propagated across cluster more quickly at the expense of increased bandwidth usage. (default 200ms)
   -alertmanager.cluster.listen-address string
-    	Listen address and port for the cluster. Not specifying this flag disables high-availability mode. (default "0.0.0.0:9094")
+    	Listen address and port for the cluster. (default "0.0.0.0:9094")
   -alertmanager.cluster.peer-timeout duration
     	Time to wait between peers to send notifications. (default 15s)
   -alertmanager.cluster.peers value
@@ -130,7 +130,7 @@ Usage of ./cmd/mimir/mimir:
   -alertmanager.configs.poll-interval duration
     	How frequently to poll Alertmanager configs. (default 15s)
   -alertmanager.enable-api
-    	Enable the alertmanager config api.
+    	Enable the alertmanager config API. (default true)
   -alertmanager.max-alerts-count int
     	Maximum number of alerts that a single user can have. Inserting more alerts will fail with a log message and metric increment. 0 = no limit.
   -alertmanager.max-alerts-size-bytes int
@@ -222,15 +222,17 @@ Usage of ./cmd/mimir/mimir:
   -alertmanager.sharding-ring.zone-awareness-enabled
     	True to enable zone-awareness and replicate alerts across different availability zones.
   -alertmanager.storage.path string
-    	Base path for data storage. (default "data/")
+    	Directory to store Alertmanager state and temporarily configuration files. The content of this directory is not required to be persisted between restarts unless Alertmanager replication has been disabled. (default "./data-alertmanager/")
   -alertmanager.storage.retention duration
     	How long to keep data for. (default 120h0m0s)
   -alertmanager.web.external-url value
-    	The URL under which Alertmanager is externally reachable (for example, if Alertmanager is served via a reverse proxy). Used for generating relative and absolute links back to Alertmanager itself. If the URL has a path portion, it will be used to prefix all HTTP endpoints served by Alertmanager. (default http://localhost)
+    	The URL under which Alertmanager is externally reachable (eg. could be different than -http.alertmanager-http-prefix in case Alertmanager is served via a reverse proxy). This setting is used both to configure the internal requests router and to generate links in alert templates. If the external URL has a path portion, it will be used to prefix all HTTP endpoints served by Alertmanager, both the UI and API. (default http://localhost:8080/alertmanager)
   -api.skip-label-name-validation-header-enabled
     	Allows to skip label name validation via header on the http write path. Use with caution as it breaks PromQL. Allowing this for external clients allows any client to send invalid label names. After enabling it, requests with a specific HTTP header set to true will not have label names validated.
   -auth.enabled
     	Set to false to disable auth. (default true)
+  -auth.no-auth-tenant string
+    	Tenant ID to use when auth is disabled. (default "anonymous")
   -blocks-storage.azure.account-key value
     	Azure storage account key
   -blocks-storage.azure.account-name string
@@ -250,7 +252,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.bucket-store.block-sync-concurrency int
     	Maximum number of concurrent blocks synching per tenant. (default 20)
   -blocks-storage.bucket-store.bucket-index.enabled
-    	True to enable querier and store-gateway to discover blocks in the storage via bucket index instead of bucket scanning.
+    	If enabled, queriers and store-gateways discover blocks by reading a bucket index (created and updated by the compactor) instead of periodically scanning the bucket. (default true)
   -blocks-storage.bucket-store.bucket-index.idle-timeout duration
     	How long a unused bucket index should be cached. Once this timeout expires, the unused bucket index is removed from the in-memory cache. This option is used only by querier. (default 1h0m0s)
   -blocks-storage.bucket-store.bucket-index.max-stale-period duration
@@ -372,7 +374,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.bucket-store.series-hash-cache-max-size-bytes uint
     	Max size - in bytes - of the in-memory series hash cache. The cache is shared across all tenants and it's used only when query sharding is enabled. (default 1073741824)
   -blocks-storage.bucket-store.sync-dir string
-    	Directory to store synchronized TSDB index headers. (default "tsdb-sync")
+    	Directory to store synchronized TSDB index headers. This directory is not required to be persisted between restarts, but it's highly recommended in order to improve the store-gateway startup time. (default "./tsdb-sync/")
   -blocks-storage.bucket-store.sync-interval duration
     	How frequently to scan the bucket, or to refresh the bucket index (if enabled), in order to look for changes (new blocks shipped by ingesters and blocks deleted by retention or compaction). (default 15m0s)
   -blocks-storage.bucket-store.tenant-sync-concurrency int
@@ -460,7 +462,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.tsdb.close-idle-tsdb-timeout duration
     	If TSDB has not received any data for this duration, and all blocks from TSDB have been shipped, TSDB is closed and deleted from local disk. If set to positive value, this value should be equal or higher than -querier.query-ingesters-within flag to make sure that TSDB is not closed prematurely, which could cause partial query results. 0 or negative value disables closing of idle TSDB. (default 13h0m0s)
   -blocks-storage.tsdb.dir string
-    	Local directory to store TSDBs in the ingesters. (default "tsdb")
+    	Directory to store TSDBs (including WAL) in the ingesters. This directory is required to be persisted between restarts. (default "./tsdb/")
   -blocks-storage.tsdb.flush-blocks-on-shutdown
     	True to flush blocks to storage on shutdown. If false, incomplete blocks will be reused after restart.
   -blocks-storage.tsdb.head-chunks-end-time-variance float
@@ -518,7 +520,7 @@ Usage of ./cmd/mimir/mimir:
   -compactor.consistency-delay duration
     	Minimum age of fresh (non-compacted) blocks before they are being processed. Malformed blocks older than the maximum of consistency-delay and 48h0m0s will be removed.
   -compactor.data-dir string
-    	Data directory in which to cache blocks and process compactions (default "./data")
+    	Directory to temporarily store blocks during compaction. This directory is not required to be persisted between restarts. (default "./data-compactor/")
   -compactor.deletion-delay duration
     	Time before a block marked for deletion is deleted from bucket. If not 0, blocks will be marked for deletion and compactor component will permanently delete blocks marked for deletion from the bucket. If 0, blocks will be deleted straight away. Note that deleting blocks immediately can cause query failures. (default 12h0m0s)
   -compactor.disabled-tenants value
@@ -772,7 +774,7 @@ Usage of ./cmd/mimir/mimir:
   -distributor.ring.prefix string
     	The prefix for the keys in the store. Should end with a /. (default "collectors/")
   -distributor.ring.store string
-    	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "consul")
+    	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
   -distributor.zone-awareness-enabled
     	True to enable the zone-awareness and replicate ingested samples across different availability zones.
   -etcd.dial-timeout duration
@@ -1220,7 +1222,7 @@ Usage of ./cmd/mimir/mimir:
   -ring.prefix string
     	The prefix for the keys in the store. Should end with a /. (default "collectors/")
   -ring.store string
-    	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "consul")
+    	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
   -ruler-storage.azure.account-key value
     	Azure storage account key
   -ruler-storage.azure.account-name string
@@ -1331,14 +1333,10 @@ Usage of ./cmd/mimir/mimir:
     	Path to the key file for the client certificate. Also requires the client certificate to be configured.
   -ruler.alertmanager-client.tls-server-name string
     	Override the expected name on the server certificate.
-  -ruler.alertmanager-discovery
-    	Use DNS SRV records to discover Alertmanager hosts.
   -ruler.alertmanager-refresh-interval duration
     	How long to wait between refreshing DNS resolutions of Alertmanager hosts. (default 1m0s)
   -ruler.alertmanager-url string
-    	Comma-separated list of URL(s) of the Alertmanager(s) to send notifications to. Each Alertmanager URL is treated as a separate group in the configuration. Multiple Alertmanagers in HA per group can be supported by using DNS resolution via -ruler.alertmanager-discovery.
-  -ruler.alertmanager-use-v2
-    	If enabled requests to Alertmanager will utilize the V2 API. (default true)
+    	Comma-separated list of URL(s) of the Alertmanager(s) to send notifications to. Each URL is treated as a separate group. Multiple Alertmanagers in HA per group can be supported by using DNS service discovery format. Basic auth is supported as part of the URL.
   -ruler.client.backoff-max-period duration
     	Maximum delay when backing off. (default 10s)
   -ruler.client.backoff-min-period duration
@@ -1372,7 +1370,7 @@ Usage of ./cmd/mimir/mimir:
   -ruler.disabled-tenants value
     	Comma separated list of tenants whose rules this ruler cannot evaluate. If specified, a ruler that would normally pick the specified tenant(s) for processing will ignore them instead. Subject to sharding.
   -ruler.enable-api
-    	Enable the ruler api
+    	Enable the ruler config API. (default true)
   -ruler.enabled-tenants value
     	Comma separated list of tenants whose rules this ruler can evaluate. If specified, only these tenants will be handled by ruler, otherwise this ruler can process rules from all tenants. Subject to sharding.
   -ruler.evaluation-delay-duration value
@@ -1462,7 +1460,7 @@ Usage of ./cmd/mimir/mimir:
   -ruler.ring.store string
     	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
   -ruler.rule-path string
-    	file path to store temporary rule files for the prometheus rule managers (default "/rules")
+    	Directory to store temporary rule files loaded by the Prometheus rule managers. This directory is not required to be persisted between restarts. (default "./data-ruler/")
   -ruler.search-pending-for duration
     	Time to spend searching for a pending ruler when shutting down. (default 5m0s)
   -ruler.tenant-federation.enabled

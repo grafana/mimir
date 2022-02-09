@@ -4,7 +4,6 @@
 
   distributor_args::
     $._config.grpcConfig +
-    $._config.ringConfig +
     $._config.ingesterRingClientConfig +
     $._config.distributorLimitsConfig +
     {
@@ -29,6 +28,7 @@
       'server.grpc.keepalive.max-connection-idle': '1m',
 
       // The ingestion rate global limit requires the distributors to form a ring.
+      'distributor.ring.store': 'consul',
       'distributor.ring.consul.hostname': 'consul.%s.svc.cluster.local:8500' % $._config.namespace,
       'distributor.ring.prefix': '',
 
@@ -61,9 +61,7 @@
 
   local service = $.core.v1.service,
 
-  distributor_service_ignored_labels:: [],
-
   distributor_service:
-    $.util.serviceFor($.distributor_deployment, $.distributor_service_ignored_labels) +
+    $.util.serviceFor($.distributor_deployment, $._config.service_ignored_labels) +
     service.mixin.spec.withClusterIp('None'),
 }

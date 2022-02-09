@@ -39,6 +39,7 @@ var configHash *prometheus.GaugeVec = prometheus.NewGaugeVec(
 )
 
 func init() {
+	prometheus.MustRegister(version.NewCollector("mimir"))
 	prometheus.MustRegister(version.NewCollector("cortex"))
 	prometheus.MustRegister(configHash)
 }
