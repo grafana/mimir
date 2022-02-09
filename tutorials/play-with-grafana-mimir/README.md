@@ -48,7 +48,7 @@ This command starts:
 - Grafana
   - Includes some Grafana Mimir dashboards preinstalled
 - Load balancer
-  - A simple nginx-based load balancer used to expose Grafana Mimir endpoints on the host
+  - A simple NGINX-based load balancer that exposes Grafana Mimir endpoints on the host
 
 The following ports will be exposed on the host:
 
