@@ -56,26 +56,33 @@ histogram_quantile(0.99, sum by(le) (
 ))
 ```
 
-## Query-related configuration
+## Enable Query sharding
 
-Configure these options for query sharding:
+In order to enable query sharding you need to opt-in by setting
+`-query-frontend.parallelize-shardable-queries` to `true`.
 
-- Set the command-line flag
-  `-query-frontend.parallelize-shardable-queries=true` or set the query
-  frontend configuration parameter `parallelize-shardable-queries` to true.
+Each shardable portion of a query is split into
+`-frontend.query-sharding-total-shards` partial queries. If a query has multiple
+inner portions that can be sharded, each portion is sharded
+`-frontend.query-sharding-total-shards` times. In some cases, this could lead to
+an explosion of queries. For this reason, there is a parameter that allows to
+modify the default hard limit of 128 queries on the total number of partial
+queries a single input query can generate:
+`-frontend.query-sharding-max-sharded-queries`.
 
-- Set the shard count for each query to be an integer greater than two. The
-  shard count for a query is set by the first item set in this ordered list:
+When running a query over a large time range and
+`-frontend.split-queries-by-interval` is enabled, the
+`-frontend.query-sharding-max-sharded-queries` limit applies on the total
+number of queries which have been split by time (first) and by shards (second).
 
-  - The tenant override value for the limit
-    `query_sharding_total_shards`
+As an example, if `-frontend.query-sharding-max-sharded-queries=128` and
+`-frontend.split-queries-by-interval=24h`, and you run a query over 8 days, each
+daily query will have a max of 128 / 8 days = 16 partial queries per day.
 
-  - The value of the command-line configuration flag
-    `-frontend.query-sharding-total-shards`
-
-- For a microservices deployment, set the query frontend configuration to the
-  same values as are in their equivalent querier configuration command-line
-  flags:
+After enabling query sharding in a micro-services deployment, the query
+frontends will start processing the aggregation of the partial queries. Hence
+it is important to replicate the querier specific parameters, which are set on
+the querier component:
 
   - -querier.max-concurrent
   - -querier.timeout
