@@ -18,7 +18,7 @@ In this tutorial, you'll:
 
 ## Download tutorial configuration
 
-1. Clone the Grafana Mimir git repository
+1. Create a copy of the Grafana Mimir repository using the Git command line:
    ```bash
    git clone https://github.com/grafana/mimir.git
    cd mimir
