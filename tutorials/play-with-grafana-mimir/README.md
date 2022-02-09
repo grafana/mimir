@@ -72,7 +72,7 @@ A couple of caveats:
 - It typically takes a few minutes after Grafana Mimir starts to display meaningful metrics in the dashboards.
 - Because this tutorial runs Grafana Mimir without any ingress gateway, query-scheduler, or memcached, the related panels are expected to be empty.
 
-To learn more about the Grafana configuration you can look at the [Mimir datasource](http://localhost:9000/datasources).
+To learn more about the Grafana configuration, you can review the [Mimir datasource](http://localhost:9000/datasources).
 
 ## Explore Grafana Mimir admin UI
 
