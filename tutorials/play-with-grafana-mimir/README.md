@@ -84,7 +84,7 @@ To learn more about the Grafana Mimir configuration, you can review the configur
 
 ## Configure your first rules
 
-The file `rules.yaml` contains an example recording rule and alerting rule we're going to configure in Grafana Mimir.
+The file `rules.yaml` contains an example of both a recording rule and an alerting rule we'll use to configure Grafana Mimir.
 These rules will be evaluated by the Grafana Mimir ruler: the resulting series of recording rule will be ingested by Grafana Mimir
 itself, while the alerting rule will be notified to the Alertmanager.
 
