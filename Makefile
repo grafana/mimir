@@ -116,7 +116,7 @@ push-multiarch-build-image:
 
 # We don't want find to scan inside a bunch of directories, to accelerate the
 # 'make: Entering directory '/go/src/github.com/grafana/mimir' phase.
-DONT_FIND := -name vendor -prune -o -name .git -prune -o -name .cache -prune -o -name .pkg -prune -o -name packaging -prune -o -name mimir-mixin-tools -prune -o
+DONT_FIND := -name vendor -prune -o -name .git -prune -o -name .cache -prune -o -name .pkg -prune -o -name mimir-mixin-tools -prune -o
 
 MAKEFILES = $(shell find . $(DONT_FIND) \( -name 'Makefile' -o -name '*.mk' \) -print)
 
@@ -166,7 +166,7 @@ all: $(UPTODATE_FILES)
 test: protos
 test-with-race: protos
 mod-check: protos
-lint: lint-packaging-scripts protos
+lint: protos
 mimir-build-image/$(UPTODATE): mimir-build-image/*
 
 # All the boiler plate for building golang follows:
@@ -195,7 +195,7 @@ GOVOLUMES=	-v $(shell pwd)/.cache:/go/cache:delegated,z \
 # Mount local ssh credentials to be able to clone private repos when doing `mod-check`
 SSHVOLUME=  -v ~/.ssh/:/root/.ssh:delegated,z
 
-exes $(EXES) protos $(PROTO_GOS) lint lint-packaging-scripts test test-with-race cover shell mod-check check-protos web-build web-pre web-deploy doc format: mimir-build-image/$(UPTODATE)
+exes $(EXES) protos $(PROTO_GOS) lint test test-with-race cover shell mod-check check-protos web-build web-pre web-deploy doc format: mimir-build-image/$(UPTODATE)
 	@mkdir -p $(shell pwd)/.pkg
 	@mkdir -p $(shell pwd)/.cache
 	@echo
@@ -216,10 +216,7 @@ protos: $(PROTO_GOS)
 	@# to configure all such relative paths.
 	protoc -I $(GOPATH)/src:./vendor/github.com/thanos-io/thanos/pkg:./vendor/github.com/gogo/protobuf:./vendor:./$(@D) --gogoslick_out=plugins=grpc,Mgoogle/protobuf/any.proto=github.com/gogo/protobuf/types,:./$(@D) ./$(patsubst %.pb.go,%.proto,$@)
 
-lint-packaging-scripts: packaging/deb/control/postinst packaging/deb/control/prerm packaging/rpm/control/post packaging/rpm/control/preun
-	shellcheck $?
-
-lint: lint-packaging-scripts check-makefiles
+lint: check-makefiles
 	misspell -error docs/sources
 
 	# Configured via .golangci.yml.
@@ -336,7 +333,7 @@ doc: clean-doc
 
 # Add license header to files.
 license:
-	go run ./tools/add-license ./cmd ./integration ./pkg ./tools ./packaging ./development ./mimir-build-image
+	go run ./tools/add-license ./cmd ./integration ./pkg ./tools ./development ./mimir-build-image
 
 check-license: license
 	@git diff --exit-code || (echo "Please add the license header running 'make BUILD_IN_CONTAINER=false license'" && false)
@@ -522,79 +519,8 @@ dist/$(UPTODATE):
 		done; \
 		touch $@
 
-# Generate packages for a Mimir release.
-FPM_OPTS := fpm -s dir -v $(VERSION) -n mimir -f \
-	--license "Apache 2.0" \
-	--url "https://github.com/grafana/mimir"
-
-PACKAGE_IN_CONTAINER := true
-PACKAGE_IMAGE ?= $(IMAGE_PREFIX)fpm
-ifeq ($(PACKAGE_IN_CONTAINER), true)
-
-.PHONY: packages
-packages: dist packaging/fpm/$(UPTODATE)
-	@mkdir -p $(shell pwd)/.pkg
-	@mkdir -p $(shell pwd)/.cache
-	@echo ">>>> Entering build container: $@"
-	$(SUDO) time docker run --rm $(TTY) \
-		-v  $(shell pwd):/src/github.com/grafana/mimir:delegated,z \
-		-i $(PACKAGE_IMAGE) $@;
-
-else
-
-packages: dist/$(UPTODATE)-packages
-
-dist/$(UPTODATE)-packages: dist $(wildcard packaging/deb/**) $(wildcard packaging/rpm/**)
-	for arch in amd64 arm64; do \
-		rpm_arch=x86_64; \
-		deb_arch=x86_64; \
-		if [ "$$arch" = "arm64" ]; then \
-			rpm_arch=aarch64; \
-			deb_arch=arm64; \
-		fi; \
-		$(FPM_OPTS) -t deb \
-			--architecture $$deb_arch \
-			--after-install packaging/deb/control/postinst \
-			--before-remove packaging/deb/control/prerm \
-			--package dist/mimir-$(VERSION)_$$arch.deb \
-			dist/mimir-linux-$$arch=/usr/local/bin/mimir \
-			docs/sources/chunks-storage/single-process-config.yaml=/etc/mimir/single-process-config.yaml \
-			packaging/deb/default/mimir=/etc/default/mimir \
-			packaging/deb/systemd/mimir.service=/etc/systemd/system/mimir.service; \
-		$(FPM_OPTS) -t rpm  \
-			--architecture $$rpm_arch \
-			--after-install packaging/rpm/control/post \
-			--before-remove packaging/rpm/control/preun \
-			--package dist/mimir-$(VERSION)_$$arch.rpm \
-			dist/mimir-linux-$$arch=/usr/local/bin/mimir \
-			docs/sources/chunks-storage/single-process-config.yaml=/etc/mimir/single-process-config.yaml \
-			packaging/rpm/sysconfig/mimir=/etc/sysconfig/mimir \
-			packaging/rpm/systemd/mimir.service=/etc/systemd/system/mimir.service; \
-	done
-	for pkg in dist/*.deb dist/*.rpm; do \
-		sha256sum $$pkg | cut -d ' ' -f 1 > $${pkg}-sha-256; \
-	done; \
-	touch $@
-
-endif
-
 integration-tests: cmd/mimir/$(UPTODATE)
 	go test -tags=requires_docker ./integration/...
-
-# Build both arm64 and amd64 images, so that we can test deb/rpm packages for both architectures.
-packaging/rpm/centos-systemd/$(UPTODATE): packaging/rpm/centos-systemd/Dockerfile
-	$(SUDO) docker build --platform linux/amd64 --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) -t $(IMAGE_PREFIX)$(shell basename $(@D)):amd64 $(@D)/
-	$(SUDO) docker build --platform linux/arm64 --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) -t $(IMAGE_PREFIX)$(shell basename $(@D)):arm64 $(@D)/
-	touch $@
-
-packaging/deb/debian-systemd/$(UPTODATE): packaging/deb/debian-systemd/Dockerfile
-	$(SUDO) docker build --platform linux/amd64 --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) -t $(IMAGE_PREFIX)$(shell basename $(@D)):amd64 $(@D)/
-	$(SUDO) docker build --platform linux/arm64 --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) -t $(IMAGE_PREFIX)$(shell basename $(@D)):arm64 $(@D)/
-	touch $@
-
-.PHONY: test-packages
-test-packages: packages packaging/rpm/centos-systemd/$(UPTODATE) packaging/deb/debian-systemd/$(UPTODATE)
-	./tools/packaging/test-packages $(IMAGE_PREFIX) $(VERSION)
 
 include docs/docs.mk
 DOCS_DIR = docs/sources
