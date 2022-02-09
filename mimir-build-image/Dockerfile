@@ -9,6 +9,10 @@ ENV GOPROXY=${goproxyValue}
 RUN apt-get update && apt-get install -y curl python-requests python-yaml file jq zip unzip protobuf-compiler libprotobuf-dev shellcheck libpcap-dev && \
 	rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 RUN go install golang.org/x/tools/cmd/goimports@3fce476f0a782aeb5034d592c189e63be4ba6c9e
+RUN curl -sL https://deb.nodesource.com/setup_14.x | bash -
+RUN apt-get install -y nodejs && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
+RUN npm install -g prettier@2.3.2
 
 ENV SHFMT_VERSION=3.2.4
 RUN GOARCH=$(go env GOARCH) && \
@@ -43,6 +47,7 @@ RUN GO111MODULE=on \
 	go install github.com/google/go-jsonnet/cmd/jsonnetfmt@v0.17.0 && \
 	rm -rf /go/pkg /go/src /root/.cache
 
+ENV NODE_PATH=/usr/lib/node_modules
 COPY build.sh /
 ENV GOCACHE=/go/cache
 ENTRYPOINT ["/build.sh"]
