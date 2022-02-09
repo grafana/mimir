@@ -9,25 +9,12 @@ import (
 	"fmt"
 	"os"
 
-	promversion "github.com/prometheus/common/version"
 	"gopkg.in/alecthomas/kingpin.v2"
 
 	"github.com/grafana/mimir/pkg/mimirtool/commands"
 	"github.com/grafana/mimir/pkg/mimirtool/version"
+	mimirversion "github.com/grafana/mimir/pkg/util/version"
 )
-
-// these variables are set via build flag -ldflags -X main.<NAME>
-var (
-	Version  string
-	Branch   string
-	Revision string
-)
-
-func init() {
-	promversion.Version = Version
-	promversion.Branch = Branch
-	promversion.Revision = Revision
-}
 
 var (
 	ruleCommand           commands.RuleCommand
@@ -58,8 +45,8 @@ func main() {
 	bucketValidateCommand.Register(app, envVars)
 
 	app.Command("version", "Get the version of the mimirtool CLI").Action(func(k *kingpin.ParseContext) error {
-		fmt.Fprintln(os.Stdout, promversion.Print("Mimirtool"))
-		version.CheckLatest(Version)
+		fmt.Fprintln(os.Stdout, mimirversion.Print("Mimirtool"))
+		version.CheckLatest(mimirversion.Version)
 		return nil
 	})
 
