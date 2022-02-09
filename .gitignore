@@ -1,4 +1,5 @@
 cmd/cortextool/cortextool
+cmd/test-exporter/test-exporter
 cmd/mimir/mimir
 cmd/query-tee/query-tee
 cmd/metaconvert/metaconvert
@@ -19,6 +20,7 @@ jsonnet-tests/
 # Binaries built from ./cmd
 /mimir
 /query-tee
+/test-exporter
 
 # This is custom Makefile modification, if it exists.
 Makefile.local
