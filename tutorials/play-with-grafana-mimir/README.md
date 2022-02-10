@@ -84,7 +84,7 @@ as a new set of time series. In this section you're going to configure a recordi
 offered by Grafana.
 
 1. Open [Grafana Alerting](http://localhost:9000/alerting/list).
-1. Click to "New alert rule". Despite the name, this allows you to configure recording rules too.
+1. Click "New alert rule", which also allows you to configure recording rules.
 1. Configure the recording rule:
    1. Type `count:up` in the "Rule name" field.
    1. Choose `Cortex managed recording rule` in the "Rule type" field.
