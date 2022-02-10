@@ -82,7 +82,7 @@ When using a reverse proxy, ensure that you configure the HTTP path appropriatel
 
 ## Horizontal scalability
 
-<!-- TODO: document the KV store backend and link it in this section -->
+[//]: # TODO document the KV store backend and link it in this section
 
 ### Sharding
 
