@@ -24,11 +24,9 @@ Before deploying Grafana Mimir with a permanent storage backend, read:
 1. [Getting started with Grafana Mimir](docs/sources/getting-started/_index.md)
 1. [Configuring Grafana Mimir](docs/sources/configuration/_index.md)
 
-Before deploying, review the important [security advice](docs/sources/guides/security.md).
-
 ## Contributing
 
-To contribute to Grafana Mimir, see the [contributor guidelines](contributing/).
+To contribute to Grafana Mimir, see [Contributing to Grafana Mimir](./CONTRIBUTING.md).
 
 ## Hosted Grafana Mimir (Prometheus as a service)
 
@@ -36,4 +34,4 @@ Grafana Mimir is used in [Grafana Cloud](https://grafana.com/cloud), and is prim
 
 ### Grafana Cloud
 
-As the creators of [Grafana](https://grafana.com/oss/grafana/), [Loki](https://grafana.com/oss/loki/), and [Tempo](https://grafana.com/oss/tempo/), Grafana Labs can offer you the most wholistic Observability-as-a-Service stack out there.
+As the creators of [Grafana](https://grafana.com/oss/grafana/), [Loki](https://grafana.com/oss/loki/), and [Tempo](https://grafana.com/oss/tempo/), Grafana Labs offers you the most comprehensive Observability-as-a-Service stack available.
