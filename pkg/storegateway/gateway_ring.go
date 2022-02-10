@@ -75,8 +75,8 @@ type RingConfig struct {
 	// Instance details
 	InstanceID             string   `yaml:"instance_id" doc:"hidden" category:"advanced"`
 	InstanceInterfaceNames []string `yaml:"instance_interface_names"`
-	InstancePort           int      `yaml:"instance_port" doc:"hidden" category:"advanced"`
-	InstanceAddr           string   `yaml:"instance_addr" doc:"hidden" category:"advanced"`
+	InstancePort           int      `yaml:"instance_port" category:"advanced"`
+	InstanceAddr           string   `yaml:"instance_addr" category:"advanced"`
 	InstanceZone           string   `yaml:"instance_availability_zone"`
 
 	UnregisterOnShutdown bool `yaml:"unregister_on_shutdown"`

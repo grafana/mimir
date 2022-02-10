@@ -207,14 +207,8 @@ Usage of ./cmd/mimir/mimir:
     	Etcd password.
   -compactor.ring.etcd.username string
     	Etcd username.
-  -compactor.ring.instance-addr string
-    	IP address to advertise in the ring.
-  -compactor.ring.instance-id string
-    	Instance ID to register in the ring. (default "{{.Hostname}}")
   -compactor.ring.instance-interface-names value
     	Name of network interface to read address from. (default [eth0 en0])
-  -compactor.ring.instance-port int
-    	Port to advertise in the ring (defaults to server.grpc-listen-port).
   -compactor.ring.store string
     	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
   -compactor.split-and-merge-shards int
@@ -227,10 +221,6 @@ Usage of ./cmd/mimir/mimir:
     	Configuration file to load.
   -consul.hostname string
     	Hostname and port of Consul. (default "localhost:8500")
-  -debug.block-profile-rate int
-    	Fraction of goroutine blocking events that are reported in the blocking profile. 1 to include every blocking event in the profile, 0 to disable.
-  -debug.mutex-profile-fraction int
-    	Fraction of mutex contention events that are reported in the mutex profile. On average 1/rate events are reported. 0 to disable.
   -distributor.drop-label value
     	This flag can be used to specify label names that to drop during sample ingestion within the distributor and can be repeated in order to drop multiple labels.
   -distributor.excluded-zones value
@@ -339,8 +329,6 @@ Usage of ./cmd/mimir/mimir:
     	Output log messages in the given format. Valid formats: [logfmt, json] (default logfmt)
   -log.level value
     	Only log messages with the given severity or above. Valid levels: [debug, info, warn, error] (default info)
-  -mem-ballast-size-bytes int
-    	Size of memory ballast to allocate.
   -memberlist.abort-if-join-fails
     	If this node fails to join memberlist cluster, abort. (default true)
   -memberlist.advertise-addr string

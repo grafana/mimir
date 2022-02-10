@@ -304,6 +304,15 @@ compactor:
     # CLI flag: -compactor.ring.instance-interface-names
     [instance_interface_names: <list of string> | default = [eth0 en0]]
 
+    # (advanced) Port to advertise in the ring (defaults to
+    # server.grpc-listen-port).
+    # CLI flag: -compactor.ring.instance-port
+    [instance_port: <int> | default = 0]
+
+    # (advanced) IP address to advertise in the ring.
+    # CLI flag: -compactor.ring.instance-addr
+    [instance_addr: <string> | default = ""]
+
     # (advanced) Timeout for waiting on compactor to become ACTIVE in the ring.
     # CLI flag: -compactor.ring.wait-active-instance-timeout
     [wait_active_instance_timeout: <duration> | default = 10m]
