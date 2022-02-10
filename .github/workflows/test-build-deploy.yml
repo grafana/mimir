@@ -124,14 +124,17 @@ jobs:
           export VERSION=$(cat "./VERSION" 2> /dev/null)
           export GIT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
           # This configures ko's image creation timestamp
+          # TODO: Use commit timestamp
           export SOURCE_DATE_EPOCH=$(date +%s)
-          KO_DOCKER_REPO=grafana ko build -B --image-label org.opencontainers.image.title=mimir,org.opencontainers.image.source=https://github.com/grafana/mimir/tree/main/cmd/mimir,org.opencontainers.image.revision=${GIT_REVISION} --oci-layout-path mimir-images --platform=linux/amd64,linux/arm64 --push=false ./cmd/mimir
-          tar -cvf mimir-images.tar mimir-images
-      - name: Upload Docker Images Artifact
+          export KO_DOCKER_REPO=grafana
+          ko build -B --image-label org.opencontainers.image.title=mimir,org.opencontainers.image.source=https://github.com/grafana/mimir/tree/main/cmd/mimir,org.opencontainers.image.revision=${GIT_REVISION} --oci-layout-path mimir-oci-layout --platform=linux/amd64,linux/arm64 --push=false ./cmd/mimir
+      - name: Create Mimir OCI Layout Archive
+        run: tar -cvf mimir-oci-layout.tar mimir-oci-layout
+      - name: Upload Mimir OCI Layout
         uses: actions/upload-artifact@v2
         with:
-          name: Docker Images Mimir
-          path: ./mimir-images.tar
+          name: Mimir OCI layout
+          path: ./mimir-oci-layout.tar
 
   build-tools:
     runs-on: ubuntu-20.04
@@ -149,19 +152,24 @@ jobs:
       - name: Build Images
         # Build everything except mimir (run by build-mimir job) and build image (not managed by CI).
         run: |
-          make list-image-targets | grep -v -E '/mimir-build-image/|/cmd/mimir/|/mimir-mixin-tools/' | xargs -I {} make BUILD_IN_CONTAINER=false {}
-      - name: Save Images
-        run: |
-          mkdir /tmp/images
-          ln -s /tmp/images ./docker-images
-          make BUILD_IN_CONTAINER=false save-images
-      - name: Create Docker Images Archive
-        run: tar -cvf tools-images.tar /tmp/images
-      - name: Upload Docker Image Artifact
+          declare -a IMAGES=(mimirtool metaconvert query-tee)
+          export GIT_REVISION=$(git rev-parse --short HEAD)
+          export VERSION=$(cat "./VERSION" 2> /dev/null)
+          export GIT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+          # This configures ko's image creation timestamp
+          # TODO: Use commit timestamp
+          export SOURCE_DATE_EPOCH=$(date +%s)
+          export KO_DOCKER_REPO=us.gcr.io/kubernetes-dev
+	  for name in "${IMAGES[@]}"; do
+            ko build -B --image-label org.opencontainers.image.title=${name},org.opencontainers.image.source=https://github.com/grafana/mimir/tree/main/cmd/${name},org.opencontainers.image.revision=${GIT_REVISION} --oci-layout-path ${name}-oci-layout --platform=linux/amd64,linux/arm64 --push=false ./cmd/${name}
+          done
+      - name: Create Tool OCI Layouts Archive
+        run: tar -cvf tool-oci-layouts.tar *-oci-layout
+      - name: Upload Tool OCI Layouts
         uses: actions/upload-artifact@v2
         with:
-          name: Docker Images Tools
-          path: ./tools-images.tar
+          name: Tool OCI Layouts
+          path: ./tool-oci-layouts.tar
 
   integration:
     needs: build-mimir
@@ -190,15 +198,15 @@ jobs:
         run: |
           sudo mkdir -p /go/src/github.com/grafana/mimir
           sudo ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
-      - name: Download Docker Images Mimir Artifacts
+      - name: Download Mimir OCI Layout
         uses: actions/download-artifact@v2
         with:
-          name: Docker Images Mimir
+          name: Mimir OCI Layout
       - name: Load Docker Images
         run: |
-          tar -xvf mimir-images.tar
+          tar -xvf mimir-oci-layout.tar
           IMAGE_TAG=$(make image-tag)
-          KO_DOCKER_REPO=grafana ko publish-layout -B --tags ${IMAGE_TAG} --local mimir mimir-images
+          KO_DOCKER_REPO=grafana ko publish-layout -B --tags ${IMAGE_TAG} --local mimir mimir-oci-layout
       - name: Preload Images
         # We download docker images used by integration tests so that all images are available
         # locally and the download time doesn't account in the test execution time, which is subject
@@ -229,30 +237,24 @@ jobs:
         run: |
           mkdir -p /go/src/github.com/grafana/mimir
           ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
-      - name: Download Docker Tool Images Artifacts
+      - name: Download Tool OCI Layouts
         uses: actions/download-artifact@v2
         with:
-          name: Docker Images Tools
-      - name: Download Docker Mimir Image Artifacts
+          name: Tool OCI Layouts
+      - name: Download Mimir OCI Layout
         uses: actions/download-artifact@v2
         with:
-          name: Docker Images Mimir
-      - name: Extract Docker Images
+          name: Mimir OCI Layout
+      - name: Extract OCI Image Layouts
         run: |
-          tar -xvf mimir-images.tar
-          tar -xvf tools-images.tar -C /
-      - name: Load Images
-        run: |
-          ln -s /tmp/images ./docker-images
-          make BUILD_IN_CONTAINER=false load-images
+          tar -xvf mimir-oci-layout.tar
+          tar -xvf tool-oci-layouts.tar
       - name: Deploy
         run: |
           if [ -n "$DOCKER_PASSWORD" ]; then
             printenv DOCKER_PASSWORD | docker login -u "$DOCKER_USERNAME" --password-stdin
           fi
-          # TODO: Name mimir instead, when we feel safe about it
           IMAGE_TAG=$(./tools/image-tag)
-          KO_DOCKER_REPO=grafana ko publish-layout -B --tags ${IMAGE_TAG} mimir-ko mimir-images
           ./push-images
         env:
           DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}

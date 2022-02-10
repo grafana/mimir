@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-
 set -o errexit
 set -o nounset
 set -o pipefail
 
 IMAGE_TAG=${IMAGE_TAG:-$(./tools/image-tag)}
+declare -a IMAGES=(mimir mimirtool metaconvert query-tee)
 
 usage() {
     echo "$0"
@@ -20,28 +20,27 @@ while [ $# -gt 0 ]; do
     esac
 done
 
-push_image() {
-    local image="$1"
-    echo "Pushing ${image}:${IMAGE_TAG}"
-    docker push "${image}:${IMAGE_TAG}"
+# Push images
+for image in "${IMAGES[@]}"; do
+    KO_DOCKER_REPO=us.gcr.io/kubernetes-dev 
+    case "$image" in
+        mimir|mimirtool)
+            # TODO: Enable
+            # KO_DOCKER_REPO=docker.io/grafana
+            ;;
+    esac
+
+    IMAGE_TAGS=${IMAGE_TAG}
+    echo "Pushing ${KO_DOCKER_REPO}/${image}:${IMAGE_TAG}"
 
     # If image is the latest stable git tag, update the latest docker image tag.
     # Do not tag with latest any release candidate (tag ends with "-rc.*").
     if [[ "$(git tag | grep -E '^mimir-[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1)" == "mimir-${IMAGE_TAG}" ]]; then
-      docker tag "${image}:${IMAGE_TAG}" "${image}:latest"
-      docker push "${image}:latest"
+        echo "Pushing also ${KO_DOCKER_REPO}/${image}:latest"
+        IMAGE_TAGS="${IMAGE_TAG},latest"
     fi
-}
 
-# Push images
-for image in $(make images); do
-    image_name=$(basename "$image")
-    case "$image_name" in
-        mimir-build-image)
-            # skip mimir-build-image
-            continue
-            ;;
-    esac
-
-    push_image "${image}"
+    export KO_DOCKER_REPO
+    # TODO: Remove --local
+    ko publish-layout -B --tags ${IMAGE_TAGS} --local ${image} ${image}-oci-layout
 done
