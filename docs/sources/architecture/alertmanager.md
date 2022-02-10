@@ -61,11 +61,24 @@ Each Mimir Alertmanager limit configuration parameter has an `alertmanager` pref
 
 ## Alertmanager UI
 
-The Mimir Alertmanager exposes the same web UI as the Prometheus Alertmanager.
-Each tenant can access their own Alertmanager UI at the `/alertmanager` endpoint.
-For a complete reference of Alertmanager endpoints, refer to [HTTP API]({{<relref "../api/_index.md" >}}).
+The Mimir Alertmanager exposes the same web UI as the Prometheus Alertmanager at the `/alertmanager` endpoint.
 
+When running Grafana Mimir with multi-tenancy enabled, the Alertmanager requires that any HTTP request includes the tenant ID header.
 Tenants only see alerts sent to their Alertmanager.
+
+For a complete reference of the tenant ID header and Alertmanager endpoints, refer to [HTTP API]({{<relref "../api/_index.md" >}}).
+
+The HTTP path prefix for the UI and HTTP API is configurable:
+
+- `-http.alertmanager-http-prefix` configures the path prefix for Alertmanager endpoints.
+- `-alertmanager.web.external-url` configures the source URLs generated in Alertmanager alerts and where to fetch web assets from.
+
+### Using a reverse proxy
+
+When using a reverse proxy, ensure that you configure the HTTP path appropriately:
+
+- Set `-http.alertmanager-http-prefix` to match the proxy path in your reverse proxy configuration.
+- Set `-alertmanager.web.external-url` to the URL served by your reverse proxy.
 
 ## Horizontal scalability
 
