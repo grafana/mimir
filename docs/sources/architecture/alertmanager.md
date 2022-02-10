@@ -50,7 +50,7 @@ Once the tenant has an uploaded Alertmanager configuration, they can access the 
 
 When a tenant doesn't have their own configuration, the Mimir Alertmanager uses a fallback configuration if configured.
 By default, there is no fallback configuration set.
-Specify a fallback configuration using the `--alertmanager.configs.fallback` command-line flag.
+Specify a fallback configuration using the `-alertmanager.configs.fallback` command-line flag.
 
 > **Warning**: Without a fallback configuration or a tenant specific configuration, the Alertmanager UI is inaccessible and ruler notifications for that tenant fail.
 
@@ -87,7 +87,7 @@ When using a reverse proxy, ensure that you configure the HTTP path appropriatel
 ### Sharding
 
 To achieve horizontal scalability, the Mimir Alertmanager shards work by tenant using the tenant ID.
-To enable sharding, set `--alertmanager.sharding-enabled=true` and configure a KV store backend.
+To enable sharding, set `-alertmanager.sharding-enabled=true` and configure a KV store backend.
 Sharding also requires at least N Alertmanager replicas, where N is equal to the configured replication factor.
 The Alertmanager replicas use the hash ring stored in the KV store to discover their peers.
 
