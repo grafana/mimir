@@ -34,28 +34,7 @@ var (
     <html>
         <head><title>Alertmanager Status</title></head>
         <body>
-            <h1>Alertmanager Status</h1>
-            {{ if not .ClusterInfo }}
-                <p>Alertmanager gossip-based clustering is disabled.</p>
-            {{ else }}
-                <h2>Node</h2>
-                <dl>
-                    <dt>Name</dt><dd>{{.ClusterInfo.self.Name}}</dd>
-                    <dt>Addr</dt><dd>{{.ClusterInfo.self.Addr}}</dd>
-                    <dt>Port</dt><dd>{{.ClusterInfo.self.Port}}</dd>
-                </dl>
-                <h3>Members</h3>
-                {{ with .ClusterInfo.members }}
-                <table>
-                    <tr><th>Name</th><th>Addr</th></tr>
-                    {{ range . }}
-                    <tr><td>{{ .Name }}</td><td>{{ .Addr }}</td></tr>
-                    {{ end }}
-                </table>
-                {{ else }}
-                <p>No peers</p>
-                {{ end }}
-            {{ end }}
+            <h1>Alertmanager Status: {{ .State }}</h1>
         </body>
     </html>`))
 )
@@ -71,11 +50,6 @@ func writeRingStatusMessage(w http.ResponseWriter, message string) {
 }
 
 func (am *MultitenantAlertmanager) RingHandler(w http.ResponseWriter, req *http.Request) {
-	if !am.cfg.ShardingEnabled {
-		writeRingStatusMessage(w, "Alertmanager has no ring because sharding is disabled.")
-		return
-	}
-
 	if am.State() != services.Running {
 		// we cannot read the ring before the alertmanager is in Running state,
 		// because that would lead to race condition.
@@ -101,14 +75,10 @@ type StatusHandler struct {
 
 // ServeHTTP serves the status of the alertmanager.
 func (s StatusHandler) ServeHTTP(w http.ResponseWriter, _ *http.Request) {
-	var clusterInfo map[string]interface{}
-	if s.am.peer != nil {
-		clusterInfo = s.am.peer.Info()
-	}
 	err := statusTemplate.Execute(w, struct {
-		ClusterInfo map[string]interface{}
+		State string
 	}{
-		ClusterInfo: clusterInfo,
+		State: s.am.State().String(),
 	})
 	if err != nil {
 		level.Error(util_log.Logger).Log("msg", "unable to serve alertmanager status page", "err", err)

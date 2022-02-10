@@ -114,8 +114,10 @@ func TestMimir(t *testing.T) {
 				require.NoError(t, v.Set("http://localhost/alertmanager"))
 				return v
 			}(),
-			Cluster: alertmanager.ClusterConfig{
-				ListenAddr: "127.0.0.1:0",
+			ShardingRing: alertmanager.RingConfig{
+				KVStore:                kv.Config{Store: "memberlist"},
+				ReplicationFactor:      1,
+				InstanceInterfaceNames: []string{"en0", "eth0", "lo0", "lo"},
 			},
 		},
 		AlertmanagerStorage: alertstore.Config{

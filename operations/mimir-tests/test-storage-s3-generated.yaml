@@ -1144,7 +1144,6 @@ spec:
         - -alertmanager-storage.backend=s3
         - -alertmanager-storage.s3.bucket-name=alerts-bucket
         - -alertmanager-storage.s3.region=eu-west-1
-        - -alertmanager.sharding-enabled=true
         - -alertmanager.sharding-ring.consul.hostname=consul.default.svc.cluster.local:8500
         - -alertmanager.sharding-ring.replication-factor=3
         - -alertmanager.sharding-ring.store=consul

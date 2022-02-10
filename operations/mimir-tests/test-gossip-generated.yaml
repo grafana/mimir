@@ -1173,7 +1173,6 @@ spec:
       - args:
         - -alertmanager-storage.backend=gcs
         - -alertmanager-storage.gcs.bucket-name=alerts-bucket
-        - -alertmanager.sharding-enabled=true
         - -alertmanager.sharding-ring.consul.hostname=consul.default.svc.cluster.local:8500
         - -alertmanager.sharding-ring.replication-factor=3
         - -alertmanager.sharding-ring.store=consul
