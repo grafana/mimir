@@ -27,25 +27,25 @@ type LifecyclerConfig struct {
 	RingConfig Config `yaml:"ring"`
 
 	// Config for the ingester lifecycle control
-	NumTokens        int           `yaml:"num_tokens"`
-	HeartbeatPeriod  time.Duration `yaml:"heartbeat_period"`
-	ObservePeriod    time.Duration `yaml:"observe_period"`
-	JoinAfter        time.Duration `yaml:"join_after"`
-	MinReadyDuration time.Duration `yaml:"min_ready_duration"`
+	NumTokens        int           `yaml:"num_tokens" category:"advanced"`
+	HeartbeatPeriod  time.Duration `yaml:"heartbeat_period" category:"advanced"`
+	ObservePeriod    time.Duration `yaml:"observe_period" category:"advanced"`
+	JoinAfter        time.Duration `yaml:"join_after" category:"advanced"`
+	MinReadyDuration time.Duration `yaml:"min_ready_duration" category:"advanced"`
 	InfNames         []string      `yaml:"interface_names"`
 
 	// FinalSleep's default value can be overridden by
 	// setting it before calling RegisterFlags or RegisterFlagsWithPrefix.
-	FinalSleep               time.Duration `yaml:"final_sleep"`
+	FinalSleep               time.Duration `yaml:"final_sleep" category:"advanced"`
 	TokensFilePath           string        `yaml:"tokens_file_path"`
 	Zone                     string        `yaml:"availability_zone"`
-	UnregisterOnShutdown     bool          `yaml:"unregister_on_shutdown"`
-	ReadinessCheckRingHealth bool          `yaml:"readiness_check_ring_health"`
+	UnregisterOnShutdown     bool          `yaml:"unregister_on_shutdown" category:"advanced"`
+	ReadinessCheckRingHealth bool          `yaml:"readiness_check_ring_health" category:"advanced"`
 
 	// For testing, you can override the address and ID of this ingester
-	Addr string `yaml:"address" doc:"hidden"`
-	Port int    `doc:"hidden"`
-	ID   string `doc:"hidden"`
+	Addr string `yaml:"address" doc:"hidden" category:"advanced"`
+	Port int    `doc:"hidden" category:"advanced"`
+	ID   string `doc:"hidden" category:"advanced"`
 
 	// Injected internally
 	ListenPort int `yaml:"-"`

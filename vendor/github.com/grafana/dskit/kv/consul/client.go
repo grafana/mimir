@@ -234,7 +234,6 @@ func (c *Client) WatchKey(ctx context.Context, key string, f func(interface{}) b
 		}
 
 		kvp, meta, err := c.kv.Get(key, queryOptions.WithContext(ctx))
-
 		// Don't backoff if value is not found (kvp == nil). In that case, Consul still returns index value,
 		// and next call to Get will block as expected. We handle missing value below.
 		if err != nil {
@@ -396,4 +395,11 @@ func (c *Client) createRateLimiter() *rate.Limiter {
 		burst = 1
 	}
 	return rate.NewLimiter(rate.Limit(c.cfg.WatchKeyRateLimit), burst)
+}
+
+// WithCodec Clones and changes the codec of the consul client.
+func (c *Client) WithCodec(codec codec.Codec) *Client {
+	new := *c
+	new.codec = codec
+	return &new
 }

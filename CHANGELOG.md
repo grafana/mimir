@@ -276,6 +276,12 @@
   * `-ruler.rule-path` default value changed to `./data-ruler/`
 * [CHANGE] Query-frontend: the default value of `-frontend.split-queries-by-interval` has changed from `0` to `24h`. #1131
 * [CHANGE] Remove the test-exporter tool. #1133
+* [CHANGE] The default value for gRPC max send message size has been changed from 16MB to 100MB. This affects the following parameters: #1152
+  * `-frontend.grpc-client-config.grpc-max-send-msg-size`
+  * `-ingester.client.grpc-max-send-msg-size`
+  * `-querier.frontend-client.grpc-max-send-msg-size`
+  * `-query-scheduler.grpc-client-config.grpc-max-send-msg-size`
+  * `-ruler.client.grpc-max-send-msg-size`
 * [FEATURE] Query Frontend: Add `cortex_query_fetched_chunks_total` per-user counter to expose the number of chunks fetched as part of queries. This metric can be enabled with the `-frontend.query-stats-enabled` flag (or its respective YAML config option `query_stats_enabled`). #31
 * [FEATURE] Query Frontend: Add experimental querysharding for the blocks storage (instant and range queries). You can now enable querysharding for blocks storage (`-store.engine=blocks`) by setting `-frontend.parallelize-shardable-queries` to `true`. The following additional config and exported metrics have been added. #79 #80 #100 #124 #140 #148 #150 #151 #153 #154 #155 #156 #157 #158 #159 #160 #163 #169 #172 #196 #205 #225 #226 #227 #228 #230 #235 #240 #239 #246 #244 #319 #330 #371 #385 #400 #458 #586 #630 #660 #707
   * New config options:
