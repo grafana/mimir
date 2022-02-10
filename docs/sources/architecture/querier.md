@@ -738,7 +738,7 @@ blocks_storage:
     # CLI flag: -blocks-storage.tsdb.memory-snapshot-on-shutdown
     [memory_snapshot_on_shutdown: <boolean> | default = false]
 
-    # (advanced) The size of the write queue used by the head chunks mapper.
+    # (experimental) The size of the write queue used by the head chunks mapper.
     # Lower values reduce memory utilisation at the cost of potentially higher
     # ingest latency. Value of 0 switches chunks mapper to implementation
     # without a queue.
