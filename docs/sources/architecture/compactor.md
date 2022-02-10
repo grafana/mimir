@@ -280,21 +280,23 @@ compactor:
         # CLI flag: -compactor.ring.multi.mirror-timeout
         [mirror_timeout: <duration> | default = 2s]
 
-    # Period at which to heartbeat to the ring. 0 = disabled.
+    # (advanced) Period at which to heartbeat to the ring. 0 = disabled.
     # CLI flag: -compactor.ring.heartbeat-period
     [heartbeat_period: <duration> | default = 5s]
 
-    # The heartbeat timeout after which compactors are considered unhealthy
-    # within the ring. 0 = never (timeout disabled).
+    # (advanced) The heartbeat timeout after which compactors are considered
+    # unhealthy within the ring. 0 = never (timeout disabled).
     # CLI flag: -compactor.ring.heartbeat-timeout
     [heartbeat_timeout: <duration> | default = 1m]
 
-    # Minimum time to wait for ring stability at startup. 0 to disable.
+    # (advanced) Minimum time to wait for ring stability at startup. 0 to
+    # disable.
     # CLI flag: -compactor.ring.wait-stability-min-duration
     [wait_stability_min_duration: <duration> | default = 0s]
 
-    # Maximum time to wait for ring stability at startup. If the compactor ring
-    # keeps changing after this period of time, the compactor will start anyway.
+    # (advanced) Maximum time to wait for ring stability at startup. If the
+    # compactor ring keeps changing after this period of time, the compactor
+    # will start anyway.
     # CLI flag: -compactor.ring.wait-stability-max-duration
     [wait_stability_max_duration: <duration> | default = 5m]
 
@@ -302,7 +304,7 @@ compactor:
     # CLI flag: -compactor.ring.instance-interface-names
     [instance_interface_names: <list of string> | default = [eth0 en0]]
 
-    # Timeout for waiting on compactor to become ACTIVE in the ring.
+    # (advanced) Timeout for waiting on compactor to become ACTIVE in the ring.
     # CLI flag: -compactor.ring.wait-active-instance-timeout
     [wait_active_instance_timeout: <duration> | default = 10m]
 

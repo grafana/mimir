@@ -174,8 +174,8 @@ activity_tracker:
   # CLI flag: -activity-tracker.filepath
   [filepath: <string> | default = "./metrics-activity.log"]
 
-  # Max number of concurrent activities that can be tracked. Used to size the
-  # file in advance. Additional activities are ignored.
+  # (advanced) Max number of concurrent activities that can be tracked. Used to
+  # size the file in advance. Additional activities are ignored.
   # CLI flag: -activity-tracker.max-entries
   [max_entries: <int> | default = 1024]
 
@@ -210,10 +210,10 @@ query_scheduler:
   # CLI flag: -query-scheduler.max-outstanding-requests-per-tenant
   [max_outstanding_requests_per_tenant: <int> | default = 100]
 
-  # If a querier disconnects without sending notification about graceful
-  # shutdown, the query-scheduler will keep the querier in the tenant's shard
-  # until the forget delay has passed. This feature is useful to reduce the
-  # blast radius when shuffle-sharding is enabled.
+  # (advanced) If a querier disconnects without sending notification about
+  # graceful shutdown, the query-scheduler will keep the querier in the tenant's
+  # shard until the forget delay has passed. This feature is useful to reduce
+  # the blast radius when shuffle-sharding is enabled.
   # CLI flag: -query-scheduler.querier-forget-delay
   [querier_forget_delay: <duration> | default = 0s]
 
@@ -594,12 +594,12 @@ ring:
       # CLI flag: -distributor.ring.multi.mirror-timeout
       [mirror_timeout: <duration> | default = 2s]
 
-  # Period at which to heartbeat to the ring. 0 = disabled.
+  # (advanced) Period at which to heartbeat to the ring. 0 = disabled.
   # CLI flag: -distributor.ring.heartbeat-period
   [heartbeat_period: <duration> | default = 5s]
 
-  # The heartbeat timeout after which distributors are considered unhealthy
-  # within the ring. 0 = never (timeout disabled).
+  # (advanced) The heartbeat timeout after which distributors are considered
+  # unhealthy within the ring. 0 = never (timeout disabled).
   # CLI flag: -distributor.ring.heartbeat-timeout
   [heartbeat_timeout: <duration> | default = 1m]
 
@@ -748,7 +748,7 @@ lifecycler:
 # CLI flag: -ingester.rate-update-period
 [rate_update_period: <duration> | default = 15s]
 
-# Enable tracking of active series and export them as metrics.
+# (advanced) Enable tracking of active series and export them as metrics.
 # CLI flag: -ingester.active-series-metrics-enabled
 [active_series_metrics_enabled: <boolean> | default = true]
 
@@ -760,10 +760,10 @@ lifecycler:
 # CLI flag: -ingester.active-series-metrics-idle-timeout
 [active_series_metrics_idle_timeout: <duration> | default = 10m]
 
-# Additional custom trackers for active metrics. If there are active series
-# matching a provided matcher (map value), the count will be exposed in the
-# custom trackers metric labeled using the tracker name (map key). Zero valued
-# counts are not exposed (and removed when they go back to zero).
+# (advanced) Additional custom trackers for active metrics. If there are active
+# series matching a provided matcher (map value), the count will be exposed in
+# the custom trackers metric labeled using the tracker name (map key). Zero
+# valued counts are not exposed (and removed when they go back to zero).
 # Example:
 #   The following configuration will count the active series coming from dev and
 #   prod namespaces for each tenant and label them as {name="dev"} and
@@ -813,13 +813,14 @@ instance_limits:
 The `querier_config` configures the querier.
 
 ```yaml
-# Use iterators to execute query, as opposed to fully materialising the series
-# in memory.
+# (advanced) Use iterators to execute query, as opposed to fully materialising
+# the series in memory.
 # CLI flag: -querier.iterators
 [iterators: <boolean> | default = false]
 
-# Use batch iterators to execute query, as opposed to fully materialising the
-# series in memory.  Takes precedent over the -querier.iterators flag.
+# (advanced) Use batch iterators to execute query, as opposed to fully
+# materialising the series in memory.  Takes precedent over the
+# -querier.iterators flag.
 # CLI flag: -querier.batch-iterators
 [batch_iterators: <boolean> | default = true]
 
@@ -874,13 +875,13 @@ store_gateway_client:
   # CLI flag: -querier.store-gateway-client.tls-insecure-skip-verify
   [tls_insecure_skip_verify: <boolean> | default = false]
 
-# When distributor's sharding strategy is shuffle-sharding and this setting is >
-# 0, queriers fetch in-memory series from the minimum set of required ingesters,
-# selecting only ingesters which may have received series since 'now - lookback
-# period'. The lookback period should be greater or equal than the configured
-# -querier.query-store-after and -querier.query-ingesters-within. If this
-# setting is 0, queriers always query all ingesters (ingesters shuffle sharding
-# on read path is disabled).
+# (advanced) When distributor's sharding strategy is shuffle-sharding and this
+# setting is > 0, queriers fetch in-memory series from the minimum set of
+# required ingesters, selecting only ingesters which may have received series
+# since 'now - lookback period'. The lookback period should be greater or equal
+# than the configured -querier.query-store-after and
+# -querier.query-ingesters-within. If this setting is 0, queriers always query
+# all ingesters (ingesters shuffle sharding on read path is disabled).
 # CLI flag: -querier.shuffle-sharding-ingesters-lookback-period
 [shuffle_sharding_ingesters_lookback_period: <duration> | default = 0s]
 
@@ -899,14 +900,15 @@ store_gateway_client:
 # CLI flag: -querier.max-samples
 [max_samples: <int> | default = 50000000]
 
-# The default evaluation interval or step size for subqueries. This config
-# option should be set on query-frontend too when query sharding is enabled.
+# (advanced) The default evaluation interval or step size for subqueries. This
+# config option should be set on query-frontend too when query sharding is
+# enabled.
 # CLI flag: -querier.default-evaluation-interval
 [default_evaluation_interval: <duration> | default = 1m]
 
-# Time since the last sample after which a time series is considered stale and
-# ignored by expression evaluations. This config option should be set on
-# query-frontend too when query sharding is enabled.
+# (advanced) Time since the last sample after which a time series is considered
+# stale and ignored by expression evaluations. This config option should be set
+# on query-frontend too when query sharding is enabled.
 # CLI flag: -querier.lookback-delta
 [lookback_delta: <duration> | default = 5m]
 ```
@@ -1067,8 +1069,8 @@ results_cache:
 # CLI flag: -frontend.cache-results
 [cache_results: <boolean> | default = false]
 
-# Maximum number of retries for a single request; beyond this, the downstream
-# error is returned.
+# (advanced) Maximum number of retries for a single request; beyond this, the
+# downstream error is returned.
 # CLI flag: -frontend.max-retries-per-request
 [max_retries: <int> | default = 5]
 
@@ -1076,7 +1078,7 @@ results_cache:
 # CLI flag: -frontend.parallelize-shardable-queries
 [parallelize_shardable_queries: <boolean> | default = false]
 
-# Cache requests that are not step-aligned.
+# (advanced) Cache requests that are not step-aligned.
 # CLI flag: -frontend.cache-unaligned-requests
 [cache_unaligned_requests: <boolean> | default = false]
 
@@ -1286,12 +1288,12 @@ ring:
       # CLI flag: -ruler.ring.multi.mirror-timeout
       [mirror_timeout: <duration> | default = 2s]
 
-  # Period at which to heartbeat to the ring. 0 = disabled.
+  # (advanced) Period at which to heartbeat to the ring. 0 = disabled.
   # CLI flag: -ruler.ring.heartbeat-period
   [heartbeat_period: <duration> | default = 5s]
 
-  # The heartbeat timeout after which rulers are considered unhealthy within the
-  # ring. 0 = never (timeout disabled).
+  # (advanced) The heartbeat timeout after which rulers are considered unhealthy
+  # within the ring. 0 = never (timeout disabled).
   # CLI flag: -ruler.ring.heartbeat-timeout
   [heartbeat_timeout: <duration> | default = 1m]
 
@@ -1299,7 +1301,7 @@ ring:
   # CLI flag: -ruler.ring.instance-interface-names
   [instance_interface_names: <list of string> | default = [eth0 en0]]
 
-  # Number of tokens for each ruler.
+  # (advanced) Number of tokens for each ruler.
   # CLI flag: -ruler.ring.num-tokens
   [num_tokens: <int> | default = 128]
 
@@ -3410,21 +3412,22 @@ sharding_ring:
       # CLI flag: -compactor.ring.multi.mirror-timeout
       [mirror_timeout: <duration> | default = 2s]
 
-  # Period at which to heartbeat to the ring. 0 = disabled.
+  # (advanced) Period at which to heartbeat to the ring. 0 = disabled.
   # CLI flag: -compactor.ring.heartbeat-period
   [heartbeat_period: <duration> | default = 5s]
 
-  # The heartbeat timeout after which compactors are considered unhealthy within
-  # the ring. 0 = never (timeout disabled).
+  # (advanced) The heartbeat timeout after which compactors are considered
+  # unhealthy within the ring. 0 = never (timeout disabled).
   # CLI flag: -compactor.ring.heartbeat-timeout
   [heartbeat_timeout: <duration> | default = 1m]
 
-  # Minimum time to wait for ring stability at startup. 0 to disable.
+  # (advanced) Minimum time to wait for ring stability at startup. 0 to disable.
   # CLI flag: -compactor.ring.wait-stability-min-duration
   [wait_stability_min_duration: <duration> | default = 0s]
 
-  # Maximum time to wait for ring stability at startup. If the compactor ring
-  # keeps changing after this period of time, the compactor will start anyway.
+  # (advanced) Maximum time to wait for ring stability at startup. If the
+  # compactor ring keeps changing after this period of time, the compactor will
+  # start anyway.
   # CLI flag: -compactor.ring.wait-stability-max-duration
   [wait_stability_max_duration: <duration> | default = 5m]
 
@@ -3432,7 +3435,7 @@ sharding_ring:
   # CLI flag: -compactor.ring.instance-interface-names
   [instance_interface_names: <list of string> | default = [eth0 en0]]
 
-  # Timeout for waiting on compactor to become ACTIVE in the ring.
+  # (advanced) Timeout for waiting on compactor to become ACTIVE in the ring.
   # CLI flag: -compactor.ring.wait-active-instance-timeout
   [wait_active_instance_timeout: <duration> | default = 10m]
 
@@ -3488,18 +3491,20 @@ sharding_ring:
       # CLI flag: -store-gateway.sharding-ring.multi.mirror-timeout
       [mirror_timeout: <duration> | default = 2s]
 
-  # Period at which to heartbeat to the ring. 0 = disabled.
+  # (advanced) Period at which to heartbeat to the ring. 0 = disabled.
   # CLI flag: -store-gateway.sharding-ring.heartbeat-period
   [heartbeat_period: <duration> | default = 15s]
 
-  # The heartbeat timeout after which store gateways are considered unhealthy
-  # within the ring. 0 = never (timeout disabled). This option needs be set both
-  # on the store-gateway and querier when running in microservices mode.
+  # (advanced) The heartbeat timeout after which store gateways are considered
+  # unhealthy within the ring. 0 = never (timeout disabled). This option needs
+  # be set both on the store-gateway and querier when running in microservices
+  # mode.
   # CLI flag: -store-gateway.sharding-ring.heartbeat-timeout
   [heartbeat_timeout: <duration> | default = 1m]
 
-  # The replication factor to use when sharding blocks. This option needs be set
-  # both on the store-gateway and querier when running in microservices mode.
+  # (advanced) The replication factor to use when sharding blocks. This option
+  # needs be set both on the store-gateway and querier when running in
+  # microservices mode.
   # CLI flag: -store-gateway.sharding-ring.replication-factor
   [replication_factor: <int> | default = 3]
 
@@ -3513,14 +3518,14 @@ sharding_ring:
   # CLI flag: -store-gateway.sharding-ring.zone-awareness-enabled
   [zone_awareness_enabled: <boolean> | default = false]
 
-  # Minimum time to wait for ring stability at startup, if set to positive
-  # value.
+  # (advanced) Minimum time to wait for ring stability at startup, if set to
+  # positive value.
   # CLI flag: -store-gateway.sharding-ring.wait-stability-min-duration
   [wait_stability_min_duration: <duration> | default = 0s]
 
-  # Maximum time to wait for ring stability at startup. If the store-gateway
-  # ring keeps changing after this period of time, the store-gateway will start
-  # anyway.
+  # (advanced) Maximum time to wait for ring stability at startup. If the
+  # store-gateway ring keeps changing after this period of time, the
+  # store-gateway will start anyway.
   # CLI flag: -store-gateway.sharding-ring.wait-stability-max-duration
   [wait_stability_max_duration: <duration> | default = 5m]
 

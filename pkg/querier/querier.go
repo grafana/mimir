@@ -38,8 +38,8 @@ import (
 
 // Config contains the configuration require to create a querier
 type Config struct {
-	Iterators            bool          `yaml:"iterators"`
-	BatchIterators       bool          `yaml:"batch_iterators"`
+	Iterators            bool          `yaml:"iterators" category:"advanced"`
+	BatchIterators       bool          `yaml:"batch_iterators" category:"advanced"`
 	QueryIngestersWithin time.Duration `yaml:"query_ingesters_within"`
 
 	// QueryLabelNamesWithMatchers enables the usage of matchers in the LabelNames call.
@@ -53,7 +53,7 @@ type Config struct {
 
 	StoreGatewayClient ClientConfig `yaml:"store_gateway_client"`
 
-	ShuffleShardingIngestersLookbackPeriod time.Duration `yaml:"shuffle_sharding_ingesters_lookback_period"`
+	ShuffleShardingIngestersLookbackPeriod time.Duration `yaml:"shuffle_sharding_ingesters_lookback_period" category:"advanced"`
 
 	// PromQL engine config.
 	EngineConfig engine.Config `yaml:",inline"`

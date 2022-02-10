@@ -43,7 +43,7 @@ var emptyEntry = make([]byte, entrySize)
 
 type Config struct {
 	Filepath   string `yaml:"filepath"`
-	MaxEntries int    `yaml:"max_entries"`
+	MaxEntries int    `yaml:"max_entries" category:"advanced"`
 }
 
 func (c *Config) RegisterFlags(f *flag.FlagSet) {

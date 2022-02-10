@@ -95,13 +95,14 @@ The `querier_config` configures the querier.
 
 ```yaml
 querier:
-  # Use iterators to execute query, as opposed to fully materialising the series
-  # in memory.
+  # (advanced) Use iterators to execute query, as opposed to fully materialising
+  # the series in memory.
   # CLI flag: -querier.iterators
   [iterators: <boolean> | default = false]
 
-  # Use batch iterators to execute query, as opposed to fully materialising the
-  # series in memory.  Takes precedent over the -querier.iterators flag.
+  # (advanced) Use batch iterators to execute query, as opposed to fully
+  # materialising the series in memory.  Takes precedent over the
+  # -querier.iterators flag.
   # CLI flag: -querier.batch-iterators
   [batch_iterators: <boolean> | default = true]
 
@@ -157,11 +158,11 @@ querier:
     # CLI flag: -querier.store-gateway-client.tls-insecure-skip-verify
     [tls_insecure_skip_verify: <boolean> | default = false]
 
-  # When distributor's sharding strategy is shuffle-sharding and this setting is
-  # > 0, queriers fetch in-memory series from the minimum set of required
-  # ingesters, selecting only ingesters which may have received series since
-  # 'now - lookback period'. The lookback period should be greater or equal than
-  # the configured -querier.query-store-after and
+  # (advanced) When distributor's sharding strategy is shuffle-sharding and this
+  # setting is > 0, queriers fetch in-memory series from the minimum set of
+  # required ingesters, selecting only ingesters which may have received series
+  # since 'now - lookback period'. The lookback period should be greater or
+  # equal than the configured -querier.query-store-after and
   # -querier.query-ingesters-within. If this setting is 0, queriers always query
   # all ingesters (ingesters shuffle sharding on read path is disabled).
   # CLI flag: -querier.shuffle-sharding-ingesters-lookback-period
@@ -182,14 +183,15 @@ querier:
   # CLI flag: -querier.max-samples
   [max_samples: <int> | default = 50000000]
 
-  # The default evaluation interval or step size for subqueries. This config
-  # option should be set on query-frontend too when query sharding is enabled.
+  # (advanced) The default evaluation interval or step size for subqueries. This
+  # config option should be set on query-frontend too when query sharding is
+  # enabled.
   # CLI flag: -querier.default-evaluation-interval
   [default_evaluation_interval: <duration> | default = 1m]
 
-  # Time since the last sample after which a time series is considered stale and
-  # ignored by expression evaluations. This config option should be set on
-  # query-frontend too when query sharding is enabled.
+  # (advanced) Time since the last sample after which a time series is
+  # considered stale and ignored by expression evaluations. This config option
+  # should be set on query-frontend too when query sharding is enabled.
   # CLI flag: -querier.lookback-delta
   [lookback_delta: <duration> | default = 5m]
 ```

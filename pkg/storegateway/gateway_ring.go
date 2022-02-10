@@ -62,21 +62,21 @@ var (
 // to the user.
 type RingConfig struct {
 	KVStore              kv.Config     `yaml:"kvstore" doc:"description=The key-value store used to share the hash ring across multiple instances. This option needs be set both on the store-gateway and querier when running in microservices mode."`
-	HeartbeatPeriod      time.Duration `yaml:"heartbeat_period"`
-	HeartbeatTimeout     time.Duration `yaml:"heartbeat_timeout"`
-	ReplicationFactor    int           `yaml:"replication_factor"`
+	HeartbeatPeriod      time.Duration `yaml:"heartbeat_period" category:"advanced"`
+	HeartbeatTimeout     time.Duration `yaml:"heartbeat_timeout" category:"advanced"`
+	ReplicationFactor    int           `yaml:"replication_factor" category:"advanced"`
 	TokensFilePath       string        `yaml:"tokens_file_path"`
 	ZoneAwarenessEnabled bool          `yaml:"zone_awareness_enabled"`
 
 	// Wait ring stability.
-	WaitStabilityMinDuration time.Duration `yaml:"wait_stability_min_duration"`
-	WaitStabilityMaxDuration time.Duration `yaml:"wait_stability_max_duration"`
+	WaitStabilityMinDuration time.Duration `yaml:"wait_stability_min_duration" category:"advanced"`
+	WaitStabilityMaxDuration time.Duration `yaml:"wait_stability_max_duration" category:"advanced"`
 
 	// Instance details
-	InstanceID             string   `yaml:"instance_id" doc:"hidden"`
+	InstanceID             string   `yaml:"instance_id" doc:"hidden" category:"advanced"`
 	InstanceInterfaceNames []string `yaml:"instance_interface_names"`
-	InstancePort           int      `yaml:"instance_port" doc:"hidden"`
-	InstanceAddr           string   `yaml:"instance_addr" doc:"hidden"`
+	InstancePort           int      `yaml:"instance_port" doc:"hidden" category:"advanced"`
+	InstanceAddr           string   `yaml:"instance_addr" doc:"hidden" category:"advanced"`
 	InstanceZone           string   `yaml:"instance_availability_zone"`
 
 	UnregisterOnShutdown bool `yaml:"unregister_on_shutdown"`

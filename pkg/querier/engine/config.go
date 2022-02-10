@@ -23,11 +23,11 @@ type Config struct {
 	// The default evaluation interval for the promql engine.
 	// Needs to be configured for subqueries to work as it is the default
 	// step if not specified.
-	DefaultEvaluationInterval time.Duration `yaml:"default_evaluation_interval"`
+	DefaultEvaluationInterval time.Duration `yaml:"default_evaluation_interval" category:"advanced"`
 
 	// LookbackDelta determines the time since the last sample after which a time
 	// series is considered stale.
-	LookbackDelta time.Duration `yaml:"lookback_delta"`
+	LookbackDelta time.Duration `yaml:"lookback_delta" category:"advanced"`
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
