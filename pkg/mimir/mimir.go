@@ -44,7 +44,6 @@ import (
 	frontendv1 "github.com/grafana/mimir/pkg/frontend/v1"
 	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/ingester/client"
-	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/querier/tenantfederation"
 	querier_worker "github.com/grafana/mimir/pkg/querier/worker"
@@ -99,7 +98,6 @@ type Config struct {
 	Ingester         ingester.Config                 `yaml:"ingester"`
 	Flusher          flusher.Config                  `yaml:"flusher"`
 	LimitsConfig     validation.Limits               `yaml:"limits"`
-	Prealloc         mimirpb.PreallocConfig          `yaml:"prealloc" doc:"hidden"`
 	Worker           querier_worker.Config           `yaml:"frontend_worker"`
 	Frontend         frontend.CombinedFrontendConfig `yaml:"frontend"`
 	BlocksStorage    tsdb.BlocksStorageConfig        `yaml:"blocks_storage"`
@@ -142,7 +140,6 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.Ingester.RegisterFlags(f)
 	c.Flusher.RegisterFlags(f)
 	c.LimitsConfig.RegisterFlags(f)
-	c.Prealloc.RegisterFlags(f)
 	c.Worker.RegisterFlags(f)
 	c.Frontend.RegisterFlags(f)
 	c.BlocksStorage.RegisterFlags(f)
