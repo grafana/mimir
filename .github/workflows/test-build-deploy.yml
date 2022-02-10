@@ -123,17 +123,16 @@ jobs:
           export GIT_REVISION=$(git rev-parse --short HEAD)
           export VERSION=$(cat "./VERSION" 2> /dev/null)
           export GIT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
-          # This configures ko's image creation timestamp
-          # TODO: Use commit timestamp
-          export SOURCE_DATE_EPOCH=$(date +%s)
+          # This configures ko's image creation timestamp correspond to the commit timestamp
+          export SOURCE_DATE_EPOCH=$(git show -s --format=%ct)
           export KO_DOCKER_REPO=grafana
           ko build -B --image-label org.opencontainers.image.title=mimir,org.opencontainers.image.source=https://github.com/grafana/mimir/tree/main/cmd/mimir,org.opencontainers.image.revision=${GIT_REVISION} --oci-layout-path mimir-oci-layout --platform=linux/amd64,linux/arm64 --push=false ./cmd/mimir
-      - name: Create Mimir OCI Layout Archive
+      - name: Create Mimir OCI Image Layout Archive
         run: tar -cvf mimir-oci-layout.tar mimir-oci-layout
-      - name: Upload Mimir OCI Layout
+      - name: Upload Mimir OCI Image Layout
         uses: actions/upload-artifact@v2
         with:
-          name: Mimir OCI layout
+          name: Mimir OCI Image Layout
           path: ./mimir-oci-layout.tar
 
   build-tools:
@@ -152,23 +151,22 @@ jobs:
       - name: Build Images
         # Build everything except mimir (run by build-mimir job) and build image (not managed by CI).
         run: |
-          declare -a IMAGES=(mimirtool metaconvert query-tee)
+          IMAGES="mimirtool metaconvert query-tee"
           export GIT_REVISION=$(git rev-parse --short HEAD)
           export VERSION=$(cat "./VERSION" 2> /dev/null)
           export GIT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
-          # This configures ko's image creation timestamp
-          # TODO: Use commit timestamp
-          export SOURCE_DATE_EPOCH=$(date +%s)
+          # This configures ko's image creation timestamp correspond to the commit timestamp
+          export SOURCE_DATE_EPOCH=$(git show -s --format=%ct)
           export KO_DOCKER_REPO=us.gcr.io/kubernetes-dev
-	  for name in "${IMAGES[@]}"; do
+          for name in ${IMAGES}; do
             ko build -B --image-label org.opencontainers.image.title=${name},org.opencontainers.image.source=https://github.com/grafana/mimir/tree/main/cmd/${name},org.opencontainers.image.revision=${GIT_REVISION} --oci-layout-path ${name}-oci-layout --platform=linux/amd64,linux/arm64 --push=false ./cmd/${name}
           done
-      - name: Create Tool OCI Layouts Archive
+      - name: Create Tool OCI Image Layouts Archive
         run: tar -cvf tool-oci-layouts.tar *-oci-layout
-      - name: Upload Tool OCI Layouts
+      - name: Upload Tool OCI Image Layouts
         uses: actions/upload-artifact@v2
         with:
-          name: Tool OCI Layouts
+          name: Tool OCI Image Layouts
           path: ./tool-oci-layouts.tar
 
   integration:
@@ -190,7 +188,7 @@ jobs:
         uses: actions/checkout@v2
       - name: Install Docker Client
         run: sudo ./.github/workflows/scripts/install-docker.sh
-      # TODO: Work into image
+      # TODO: Work into image, since this job doesn't use the Mimir build image (that has ko installed)
       - name: Install ko
         run: |
           go install github.com/grafana/ko@main
@@ -198,10 +196,10 @@ jobs:
         run: |
           sudo mkdir -p /go/src/github.com/grafana/mimir
           sudo ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
-      - name: Download Mimir OCI Layout
+      - name: Download Mimir OCI Image Layout
         uses: actions/download-artifact@v2
         with:
-          name: Mimir OCI Layout
+          name: Mimir OCI Image Layout
       - name: Load Docker Images
         run: |
           tar -xvf mimir-oci-layout.tar
@@ -237,14 +235,14 @@ jobs:
         run: |
           mkdir -p /go/src/github.com/grafana/mimir
           ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
-      - name: Download Tool OCI Layouts
+      - name: Download Tool OCI Image Layouts
         uses: actions/download-artifact@v2
         with:
-          name: Tool OCI Layouts
-      - name: Download Mimir OCI Layout
+          name: Tool OCI Image Layouts
+      - name: Download Mimir OCI Image Layout
         uses: actions/download-artifact@v2
         with:
-          name: Mimir OCI Layout
+          name: Mimir OCI Image Layout
       - name: Extract OCI Image Layouts
         run: |
           tar -xvf mimir-oci-layout.tar
@@ -252,10 +250,10 @@ jobs:
       - name: Deploy
         run: |
           if [ -n "$DOCKER_PASSWORD" ]; then
-            printenv DOCKER_PASSWORD | docker login -u "$DOCKER_USERNAME" --password-stdin
+            printenv DOCKER_PASSWORD | ko login -u "$DOCKER_USERNAME" --password-stdin
           fi
-          IMAGE_TAG=$(./tools/image-tag)
-          ./push-images
+          export IMAGE_TAG=$(./tools/image-tag)
+          make ci-push-images
         env:
           DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
           DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}

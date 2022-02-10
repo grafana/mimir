@@ -4,7 +4,6 @@ set -o nounset
 set -o pipefail
 
 IMAGE_TAG=${IMAGE_TAG:-$(./tools/image-tag)}
-declare -a IMAGES=(mimir mimirtool metaconvert query-tee)
 
 usage() {
     echo "$0"
@@ -20,8 +19,13 @@ while [ $# -gt 0 ]; do
     esac
 done
 
+if [[ -z "${IMAGES}" ]]; then
+    echo '$IMAGES must be set'
+    exit 2
+fi
+
 # Push images
-for image in "${IMAGES[@]}"; do
+for image in ${IMAGES}; do
     KO_DOCKER_REPO=us.gcr.io/kubernetes-dev 
     case "$image" in
         mimir|mimirtool)

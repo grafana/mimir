@@ -31,6 +31,7 @@ BINARY_SUFFIX ?= ""
 # Boiler plate for building Docker containers.
 # All this must go at top of file I'm afraid.
 IMAGE_PREFIX ?= grafana/
+IMAGE_REGISTRY := $(patsubst %/,%,$(IMAGE_PREFIX))
 BUILD_IMAGE ?= $(IMAGE_PREFIX)mimir-build-image
 
 # For a tag push, $GITHUB_REF will look like refs/tags/<tag_name>.
@@ -80,7 +81,7 @@ SED ?= $(shell which gsed 2>/dev/null || which sed)
 # Dependencies (i.e. things that go in the image) still need to be explicitly
 # declared.
 #
-# When building for docker, always build for Linux. This doesn't set GOARCH, which
+# When building for Docker, always build for Linux. This doesn't set GOARCH, which
 # really depends on whether the image is going to be used locally (then GOARCH should be set based on
 # host architecture), or pushed remotely. Ideally one would use push-multiarch-* targets instead
 # in that case.
@@ -96,14 +97,17 @@ SED ?= $(shell which gsed 2>/dev/null || which sed)
 	@echo
 	@touch $@
 
-# This target compiles mimir for linux/amd64 and linux/arm64 and then builds and pushes a multiarch image to the target repository.
-# We don't separate building of single-platform and multiplatform images here (as we do for push-multiarch-build-image), as
-# Mimir's Dockerfile is not doing much, and is unlikely to fail.
+# This target builds a multi-arch (linux/amd64, linux/arm64) Mimir Docker image manifest list, and pushes it to the target repository.
 push-multiarch-mimir:
-	@echo
-	$(MAKE) GOOS=linux GOARCH=amd64 BINARY_SUFFIX=_linux_amd64 cmd/mimir/mimir
-	$(MAKE) GOOS=linux GOARCH=arm64 BINARY_SUFFIX=_linux_arm64 cmd/mimir/mimir
-	$(SUDO) docker buildx build -o type=registry --platform linux/amd64,linux/arm64 --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) --build-arg=USE_BINARY_SUFFIX=true -t $(IMAGE_PREFIX)mimir:$(IMAGE_TAG) cmd/mimir
+	@echo "Pushing $(IMAGE_REGISTRY)/mimir:$(IMAGE_TAG)"
+
+	KO_DOCKER_REPO=$(IMAGE_REGISTRY) GIT_BRANCH=$(GIT_BRANCH) GIT_REVISION=$(GIT_REVISION) VERSION=$(VERSION) \
+	ko build -B --image-label org.opencontainers.image.title=mimir,\
+	org.opencontainers.image.source=https://github.com/grafana/mimir/tree/main/cmd/mimir,\
+	org.opencontainers.image.revision=$(GIT_REVISION) \
+	--platform=linux/amd64,linux/arm64 --tags $(IMAGE_TAG) ./cmd/mimir
+
+IMAGE_NAMES := mimir mimirtool metaconvert query-tee
 
 # This target fetches current build image, and tags it with "latest" tag. It can be used instead of building the image locally.
 .PHONY: fetch-build-image
@@ -134,11 +138,12 @@ MAKE_FILES = $(shell find . $(DONT_FIND) \( -name 'Makefile' -o -name '*.mk' \) 
 
 # Get a list of directories containing Dockerfiles
 DOCKERFILES := $(shell find . $(DONT_FIND) -type f -name 'Dockerfile' -print)
-UPTODATE_FILES := $(patsubst %/Dockerfile,%/$(UPTODATE),$(DOCKERFILES))
+DOCKER_UPTODATE_FILES := $(patsubst %/Dockerfile,%/$(UPTODATE),$(DOCKERFILES))
 DOCKER_IMAGE_DIRS := $(patsubst %/Dockerfile,%,$(DOCKERFILES))
-IMAGE_NAMES := $(foreach dir,$(DOCKER_IMAGE_DIRS),$(patsubst %,$(IMAGE_PREFIX)%,$(shell basename $(dir))))
+# Names of images built with Docker
+DOCKER_IMAGE_NAMES := $(foreach dir,$(DOCKER_IMAGE_DIRS),$(patsubst %,$(IMAGE_PREFIX)%,$(shell basename $(dir))))
 images:
-	$(info $(IMAGE_NAMES))
+	$(info $(DOCKER_IMAGE_NAMES))
 	@echo > /dev/null
 
 # Generating proto code is automated.
@@ -149,6 +154,7 @@ PROTO_GOS := $(patsubst %.proto,%.pb.go,$(PROTO_DEFS))
 # for every directory with main.go in it.
 MAIN_GO := $(shell find . $(DONT_FIND) -type f -name 'main.go' -print)
 EXES := $(foreach exeDir,$(patsubst %/main.go, %, $(MAIN_GO)),$(exeDir)/$(notdir $(exeDir)))
+CMD_MAIN_GO := $(shell find ./cmd $(DONT_FIND) -type f -name 'main.go' -print)
 GO_FILES := $(shell find . $(DONT_FIND) -name cmd -prune -o -name '*.pb.go' -prune -o -type f -name '*.go' -print)
 define dep_exe
 $(1): $(dir $(1))/main.go $(GO_FILES) protos
@@ -174,7 +180,7 @@ pkg/storegateway/storegatewaypb/gateway.pb.go: pkg/storegateway/storegatewaypb/g
 pkg/alertmanager/alertmanagerpb/alertmanager.pb.go: pkg/alertmanager/alertmanagerpb/alertmanager.proto
 pkg/alertmanager/alertspb/alerts.pb.go: pkg/alertmanager/alertspb/alerts.proto
 
-all: $(UPTODATE_FILES)
+all: exes $(DOCKER_UPTODATE_FILES) load-docker-images
 test: protos
 test-with-race: protos
 mod-check: protos
@@ -390,8 +396,8 @@ format-makefiles: $(MAKE_FILES)
 	$(SED) -i -e 's/^\(\t*\)  /\1\t/g' -e 's/^\(\t*\) /\1/' -- $?
 
 clean:
-	$(SUDO) docker rmi $(IMAGE_NAMES) >/dev/null 2>&1 || true
-	rm -rf -- $(UPTODATE_FILES) $(EXES) .cache dist
+	$(SUDO) docker rmi $(DOCKER_IMAGE_NAMES) >/dev/null 2>&1 || true
+	rm -rf -- $(DOCKER_UPTODATE_FILES) $(EXES) .cache dist
 	go clean ./...
 
 clean-protos:
@@ -399,35 +405,23 @@ clean-protos:
 
 # List all images building make targets.
 list-image-targets:
-	@echo $(UPTODATE_FILES) | tr " " "\n"
+	@echo $(DOCKER_UPTODATE_FILES) | tr " " "\n"
 
-save-images:
-	@mkdir -p docker-images
-	for image_name in $(IMAGE_NAMES); do \
-		if echo $$image_name | grep -q build; then \
-			continue; \
-		fi; \
-		if [ "$$(docker images -q $$image_name:$(IMAGE_TAG) 2> /dev/null)" = "" ]; then \
-			echo "Skipping $$image_name:$(IMAGE_TAG) because image does not exist"; \
-		else \
-			echo "Saving $$image_name:$(IMAGE_TAG)"; \
-			docker save $$image_name:$(IMAGE_TAG) -o docker-images/$$(echo $$image_name | tr "/" _):$(IMAGE_TAG); \
-		fi; \
-	done
+LOAD_IMAGE_TARGETS := $(foreach exe, $(patsubst ./cmd/%/main.go,%,$(CMD_MAIN_GO)), load-$(exe)-image)
 
-load-images:
-	for image_name in $(IMAGE_NAMES); do \
-		if echo $$image_name | grep -q build; then \
-			continue; \
-		fi; \
-		image_path=docker-images/$$(echo $$image_name | tr "/" _):$(IMAGE_TAG); \
-		if [ -e "$$image_path" ]; then \
-			echo "Loading $$image_path"; \
-			docker load -i "$$image_path"; \
-		else \
-			echo "Skipping $$image_path because image does not exist"; \
-		fi; \
-	done
+.PHONY: $(LOAD_IMAGE_TARGETS)
+$(LOAD_IMAGE_TARGETS): CMD_NAME=$(patsubst load-%-image,%,$@)
+$(LOAD_IMAGE_TARGETS):
+	@echo Loading $(CMD_NAME) image
+	export KO_DOCKER_REPO=$(IMAGE_REGISTRY); \
+	export SOURCE_DATE_EPOCH=$$(git show -s --format=%ct); \
+	export VERSION=$(VERSION); \
+	export GIT_BRANCH=$(GIT_BRANCH); \
+	export GIT_REVISION=$(GIT_REVISION); \
+	ko build -B --image-label org.opencontainers.image.title=$(CMD_NAME),org.opencontainers.image.source=https://github.com/grafana/mimir/tree/main/cmd/$(CMD_NAME),org.opencontainers.image.revision=$(GIT_REVISION) --tags $(IMAGE_TAG) --push=false --local ./cmd/$(CMD_NAME)
+
+.PHONY: load-docker-images
+load-docker-images: $(LOAD_IMAGE_TARGETS)
 
 clean-doc:
 	rm -f $(DOC_TEMPLATES:.template=.md)
@@ -504,9 +498,13 @@ check-jsonnet-tests: build-jsonnet-tests
 check-tsdb-blocks-storage-s3-docker-compose-yaml:
 	cd development/tsdb-blocks-storage-s3 && make check
 
-integration-tests: cmd/mimir/$(UPTODATE)
+integration-tests: load-mimir-image
 	go test -tags=requires_docker ./integration/...
 
 include docs/docs.mk
 DOCS_DIR = docs/sources
 docs: doc
+
+.PHONY: ci-push-images
+ci-push-images:
+	IMAGE_TAG="$(IMAGE_TAG)" IMAGES="$(IMAGE_NAMES)" ./push-images
