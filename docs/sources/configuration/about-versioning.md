@@ -57,4 +57,6 @@ Currently experimental features are:
     - `-compactor.ring.heartbeat-period=0`
     - `-store-gateway.sharding-ring.heartbeat-period=0`
   - Exclude ingesters running in specific zones (`-distributor.excluded-zones`)
-- Ingester: Add variance to chunks end time to spread writing across time (`-blocks-storage.tsdb.head-chunks-end-time-variance`)
+- Ingester
+  - Add variance to chunks end time to spread writing across time (`-blocks-storage.tsdb.head-chunks-end-time-variance`)
+  - Using queue and asynchronous chunks disk mapper (`-blocks-storage.tsdb.head-chunks-write-queue-size`)

@@ -156,7 +156,7 @@ type TSDBConfig struct {
 	FlushBlocksOnShutdown     bool          `yaml:"flush_blocks_on_shutdown" category:"advanced"`
 	CloseIdleTSDBTimeout      time.Duration `yaml:"close_idle_tsdb_timeout" category:"advanced"`
 	MemorySnapshotOnShutdown  bool          `yaml:"memory_snapshot_on_shutdown" category:"advanced"`
-	HeadChunksWriteQueueSize  int           `yaml:"head_chunks_write_queue_size" category:"advanced"`
+	HeadChunksWriteQueueSize  int           `yaml:"head_chunks_write_queue_size" category:"experimental"`
 	IsolationEnabled          bool          `yaml:"isolation_enabled" category:"advanced"`
 
 	// Series hash cache.
@@ -197,7 +197,7 @@ func (cfg *TSDBConfig) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.FlushBlocksOnShutdown, "blocks-storage.tsdb.flush-blocks-on-shutdown", false, "True to flush blocks to storage on shutdown. If false, incomplete blocks will be reused after restart.")
 	f.DurationVar(&cfg.CloseIdleTSDBTimeout, "blocks-storage.tsdb.close-idle-tsdb-timeout", 13*time.Hour, "If TSDB has not received any data for this duration, and all blocks from TSDB have been shipped, TSDB is closed and deleted from local disk. If set to positive value, this value should be equal or higher than -querier.query-ingesters-within flag to make sure that TSDB is not closed prematurely, which could cause partial query results. 0 or negative value disables closing of idle TSDB.")
 	f.BoolVar(&cfg.MemorySnapshotOnShutdown, "blocks-storage.tsdb.memory-snapshot-on-shutdown", false, "True to enable snapshotting of in-memory TSDB data on disk when shutting down.")
-	f.IntVar(&cfg.HeadChunksWriteQueueSize, "blocks-storage.tsdb.head-chunks-write-queue-size", 1000000, "The size of the write queue used by the head chunks mapper. Lower values reduce memory utilisation at the cost of potentially higher ingest latency.")
+	f.IntVar(&cfg.HeadChunksWriteQueueSize, "blocks-storage.tsdb.head-chunks-write-queue-size", 0, "The size of the write queue used by the head chunks mapper. Lower values reduce memory utilisation at the cost of potentially higher ingest latency. Value of 0 switches chunks mapper to implementation without a queue.")
 	f.BoolVar(&cfg.IsolationEnabled, "blocks-storage.tsdb.isolation-enabled", true, "Enables TSDB isolation feature. Disabling may improve performance.")
 }
 
