@@ -826,7 +826,7 @@ Usage of ./cmd/mimir/mimir:
   -frontend.grpc-client-config.grpc-max-recv-msg-size int
     	gRPC client max receive message size (bytes). (default 104857600)
   -frontend.grpc-client-config.grpc-max-send-msg-size int
-    	gRPC client max send message size (bytes). (default 16777216)
+    	gRPC client max send message size (bytes). (default 104857600)
   -frontend.grpc-client-config.tls-ca-path string
     	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
   -frontend.grpc-client-config.tls-cert-path string
@@ -936,7 +936,7 @@ Usage of ./cmd/mimir/mimir:
   -ingester.client.grpc-max-recv-msg-size int
     	gRPC client max receive message size (bytes). (default 104857600)
   -ingester.client.grpc-max-send-msg-size int
-    	gRPC client max send message size (bytes). (default 16777216)
+    	gRPC client max send message size (bytes). (default 104857600)
   -ingester.client.tls-ca-path string
     	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
   -ingester.client.tls-cert-path string
@@ -1114,7 +1114,7 @@ Usage of ./cmd/mimir/mimir:
   -querier.frontend-client.grpc-max-recv-msg-size int
     	gRPC client max receive message size (bytes). (default 104857600)
   -querier.frontend-client.grpc-max-send-msg-size int
-    	gRPC client max send message size (bytes). (default 16777216)
+    	gRPC client max send message size (bytes). (default 104857600)
   -querier.frontend-client.tls-ca-path string
     	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
   -querier.frontend-client.tls-cert-path string
@@ -1200,7 +1200,7 @@ Usage of ./cmd/mimir/mimir:
   -query-scheduler.grpc-client-config.grpc-max-recv-msg-size int
     	gRPC client max receive message size (bytes). (default 104857600)
   -query-scheduler.grpc-client-config.grpc-max-send-msg-size int
-    	gRPC client max send message size (bytes). (default 16777216)
+    	gRPC client max send message size (bytes). (default 104857600)
   -query-scheduler.grpc-client-config.tls-ca-path string
     	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
   -query-scheduler.grpc-client-config.tls-cert-path string
@@ -1354,7 +1354,7 @@ Usage of ./cmd/mimir/mimir:
   -ruler.client.grpc-max-recv-msg-size int
     	gRPC client max receive message size (bytes). (default 104857600)
   -ruler.client.grpc-max-send-msg-size int
-    	gRPC client max send message size (bytes). (default 16777216)
+    	gRPC client max send message size (bytes). (default 104857600)
   -ruler.client.tls-ca-path string
     	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
   -ruler.client.tls-cert-path string

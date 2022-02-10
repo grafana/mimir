@@ -192,7 +192,7 @@ activity_tracker:
 [alertmanager_storage: <alertmanager_storage_config>]
 
 runtime_config:
-  # How often to check runtime config file.
+  # (advanced) How often to check runtime config file.
   # CLI flag: -runtime-config.reload-period
   [period: <duration> | default = 10s]
 
@@ -220,41 +220,41 @@ query_scheduler:
   # This configures the gRPC client used to report errors back to the
   # query-frontend.
   grpc_client_config:
-    # gRPC client max receive message size (bytes).
+    # (advanced) gRPC client max receive message size (bytes).
     # CLI flag: -query-scheduler.grpc-client-config.grpc-max-recv-msg-size
     [max_recv_msg_size: <int> | default = 104857600]
 
-    # gRPC client max send message size (bytes).
+    # (advanced) gRPC client max send message size (bytes).
     # CLI flag: -query-scheduler.grpc-client-config.grpc-max-send-msg-size
-    [max_send_msg_size: <int> | default = 16777216]
+    [max_send_msg_size: <int> | default = 104857600]
 
-    # Use compression when sending messages. Supported values are: 'gzip',
-    # 'snappy' and '' (disable compression)
+    # (advanced) Use compression when sending messages. Supported values are:
+    # 'gzip', 'snappy' and '' (disable compression)
     # CLI flag: -query-scheduler.grpc-client-config.grpc-compression
     [grpc_compression: <string> | default = ""]
 
-    # Rate limit for gRPC client; 0 means disabled.
+    # (advanced) Rate limit for gRPC client; 0 means disabled.
     # CLI flag: -query-scheduler.grpc-client-config.grpc-client-rate-limit
     [rate_limit: <float> | default = 0]
 
-    # Rate limit burst for gRPC client.
+    # (advanced) Rate limit burst for gRPC client.
     # CLI flag: -query-scheduler.grpc-client-config.grpc-client-rate-limit-burst
     [rate_limit_burst: <int> | default = 0]
 
-    # Enable backoff and retry when we hit ratelimits.
+    # (advanced) Enable backoff and retry when we hit ratelimits.
     # CLI flag: -query-scheduler.grpc-client-config.backoff-on-ratelimits
     [backoff_on_ratelimits: <boolean> | default = false]
 
     backoff_config:
-      # Minimum delay when backing off.
+      # (advanced) Minimum delay when backing off.
       # CLI flag: -query-scheduler.grpc-client-config.backoff-min-period
       [min_period: <duration> | default = 100ms]
 
-      # Maximum delay when backing off.
+      # (advanced) Maximum delay when backing off.
       # CLI flag: -query-scheduler.grpc-client-config.backoff-max-period
       [max_period: <duration> | default = 10s]
 
-      # Number of times to backoff and retry before failing.
+      # (advanced) Number of times to backoff and retry before failing.
       # CLI flag: -query-scheduler.grpc-client-config.backoff-retries
       [max_retries: <int> | default = 10]
 
@@ -681,29 +681,29 @@ lifecycler:
     # CLI flag: -distributor.excluded-zones
     [excluded_zones: <string> | default = ""]
 
-  # Number of tokens for each ingester.
+  # (advanced) Number of tokens for each ingester.
   # CLI flag: -ingester.num-tokens
   [num_tokens: <int> | default = 128]
 
-  # Period at which to heartbeat to consul. 0 = disabled.
+  # (advanced) Period at which to heartbeat to consul. 0 = disabled.
   # CLI flag: -ingester.heartbeat-period
   [heartbeat_period: <duration> | default = 5s]
 
-  # Observe tokens after generating to resolve collisions. Useful when using
-  # gossiping ring.
+  # (advanced) Observe tokens after generating to resolve collisions. Useful
+  # when using gossiping ring.
   # CLI flag: -ingester.observe-period
   [observe_period: <duration> | default = 0s]
 
-  # Period to wait for a claim from another member; will join automatically
-  # after this.
+  # (advanced) Period to wait for a claim from another member; will join
+  # automatically after this.
   # CLI flag: -ingester.join-after
   [join_after: <duration> | default = 0s]
 
-  # Minimum duration to wait after the internal readiness checks have passed but
-  # before succeeding the readiness endpoint. This is used to slowdown
-  # deployment controllers (eg. Kubernetes) after an instance is ready and
-  # before they proceed with a rolling update, to give the rest of the cluster
-  # instances enough time to receive ring updates.
+  # (advanced) Minimum duration to wait after the internal readiness checks have
+  # passed but before succeeding the readiness endpoint. This is used to
+  # slowdown deployment controllers (eg. Kubernetes) after an instance is ready
+  # and before they proceed with a rolling update, to give the rest of the
+  # cluster instances enough time to receive ring updates.
   # CLI flag: -ingester.min-ready-duration
   [min_ready_duration: <duration> | default = 15s]
 
@@ -711,7 +711,8 @@ lifecycler:
   # CLI flag: -ingester.lifecycler.interface
   [interface_names: <list of string> | default = [eth0 en0]]
 
-  # Duration to sleep for before exiting, to ensure metrics are scraped.
+  # (advanced) Duration to sleep for before exiting, to ensure metrics are
+  # scraped.
   # CLI flag: -ingester.final-sleep
   [final_sleep: <duration> | default = 0s]
 
@@ -724,17 +725,17 @@ lifecycler:
   # CLI flag: -ingester.availability-zone
   [availability_zone: <string> | default = ""]
 
-  # Unregister from the ring upon clean shutdown. It can be useful to disable
-  # for rolling restarts with consistent naming in conjunction with
+  # (advanced) Unregister from the ring upon clean shutdown. It can be useful to
+  # disable for rolling restarts with consistent naming in conjunction with
   # -distributor.extend-writes=false.
   # CLI flag: -ingester.unregister-on-shutdown
   [unregister_on_shutdown: <boolean> | default = true]
 
-  # When enabled the readiness probe succeeds only after all instances are
-  # ACTIVE and healthy in the ring, otherwise only the instance itself is
-  # checked. This option should be disabled if in your cluster multiple
-  # instances can be rolled out simultaneously, otherwise rolling updates may be
-  # slowed down.
+  # (advanced) When enabled the readiness probe succeeds only after all
+  # instances are ACTIVE and healthy in the ring, otherwise only the instance
+  # itself is checked. This option should be disabled if in your cluster
+  # multiple instances can be rolled out simultaneously, otherwise rolling
+  # updates may be slowed down.
   # CLI flag: -ingester.readiness-check-ring-health
   [readiness_check_ring_health: <boolean> | default = true]
 
@@ -956,41 +957,41 @@ The `query_frontend_config` configures the query-frontend.
 [scheduler_worker_concurrency: <int> | default = 5]
 
 grpc_client_config:
-  # gRPC client max receive message size (bytes).
+  # (advanced) gRPC client max receive message size (bytes).
   # CLI flag: -frontend.grpc-client-config.grpc-max-recv-msg-size
   [max_recv_msg_size: <int> | default = 104857600]
 
-  # gRPC client max send message size (bytes).
+  # (advanced) gRPC client max send message size (bytes).
   # CLI flag: -frontend.grpc-client-config.grpc-max-send-msg-size
-  [max_send_msg_size: <int> | default = 16777216]
+  [max_send_msg_size: <int> | default = 104857600]
 
-  # Use compression when sending messages. Supported values are: 'gzip',
-  # 'snappy' and '' (disable compression)
+  # (advanced) Use compression when sending messages. Supported values are:
+  # 'gzip', 'snappy' and '' (disable compression)
   # CLI flag: -frontend.grpc-client-config.grpc-compression
   [grpc_compression: <string> | default = ""]
 
-  # Rate limit for gRPC client; 0 means disabled.
+  # (advanced) Rate limit for gRPC client; 0 means disabled.
   # CLI flag: -frontend.grpc-client-config.grpc-client-rate-limit
   [rate_limit: <float> | default = 0]
 
-  # Rate limit burst for gRPC client.
+  # (advanced) Rate limit burst for gRPC client.
   # CLI flag: -frontend.grpc-client-config.grpc-client-rate-limit-burst
   [rate_limit_burst: <int> | default = 0]
 
-  # Enable backoff and retry when we hit ratelimits.
+  # (advanced) Enable backoff and retry when we hit ratelimits.
   # CLI flag: -frontend.grpc-client-config.backoff-on-ratelimits
   [backoff_on_ratelimits: <boolean> | default = false]
 
   backoff_config:
-    # Minimum delay when backing off.
+    # (advanced) Minimum delay when backing off.
     # CLI flag: -frontend.grpc-client-config.backoff-min-period
     [min_period: <duration> | default = 100ms]
 
-    # Maximum delay when backing off.
+    # (advanced) Maximum delay when backing off.
     # CLI flag: -frontend.grpc-client-config.backoff-max-period
     [max_period: <duration> | default = 10s]
 
-    # Number of times to backoff and retry before failing.
+    # (advanced) Number of times to backoff and retry before failing.
     # CLI flag: -frontend.grpc-client-config.backoff-retries
     [max_retries: <int> | default = 10]
 
@@ -1094,41 +1095,41 @@ The `ruler_config` configures the ruler.
 [external_url: <url> | default = ]
 
 ruler_client:
-  # gRPC client max receive message size (bytes).
+  # (advanced) gRPC client max receive message size (bytes).
   # CLI flag: -ruler.client.grpc-max-recv-msg-size
   [max_recv_msg_size: <int> | default = 104857600]
 
-  # gRPC client max send message size (bytes).
+  # (advanced) gRPC client max send message size (bytes).
   # CLI flag: -ruler.client.grpc-max-send-msg-size
-  [max_send_msg_size: <int> | default = 16777216]
+  [max_send_msg_size: <int> | default = 104857600]
 
-  # Use compression when sending messages. Supported values are: 'gzip',
-  # 'snappy' and '' (disable compression)
+  # (advanced) Use compression when sending messages. Supported values are:
+  # 'gzip', 'snappy' and '' (disable compression)
   # CLI flag: -ruler.client.grpc-compression
   [grpc_compression: <string> | default = ""]
 
-  # Rate limit for gRPC client; 0 means disabled.
+  # (advanced) Rate limit for gRPC client; 0 means disabled.
   # CLI flag: -ruler.client.grpc-client-rate-limit
   [rate_limit: <float> | default = 0]
 
-  # Rate limit burst for gRPC client.
+  # (advanced) Rate limit burst for gRPC client.
   # CLI flag: -ruler.client.grpc-client-rate-limit-burst
   [rate_limit_burst: <int> | default = 0]
 
-  # Enable backoff and retry when we hit ratelimits.
+  # (advanced) Enable backoff and retry when we hit ratelimits.
   # CLI flag: -ruler.client.backoff-on-ratelimits
   [backoff_on_ratelimits: <boolean> | default = false]
 
   backoff_config:
-    # Minimum delay when backing off.
+    # (advanced) Minimum delay when backing off.
     # CLI flag: -ruler.client.backoff-min-period
     [min_period: <duration> | default = 100ms]
 
-    # Maximum delay when backing off.
+    # (advanced) Maximum delay when backing off.
     # CLI flag: -ruler.client.backoff-max-period
     [max_period: <duration> | default = 10s]
 
-    # Number of times to backoff and retry before failing.
+    # (advanced) Number of times to backoff and retry before failing.
     # CLI flag: -ruler.client.backoff-retries
     [max_retries: <int> | default = 10]
 
@@ -1985,41 +1986,41 @@ The `ingester_client_config` configures how the distributors connect to the inge
 
 ```yaml
 grpc_client_config:
-  # gRPC client max receive message size (bytes).
+  # (advanced) gRPC client max receive message size (bytes).
   # CLI flag: -ingester.client.grpc-max-recv-msg-size
   [max_recv_msg_size: <int> | default = 104857600]
 
-  # gRPC client max send message size (bytes).
+  # (advanced) gRPC client max send message size (bytes).
   # CLI flag: -ingester.client.grpc-max-send-msg-size
-  [max_send_msg_size: <int> | default = 16777216]
+  [max_send_msg_size: <int> | default = 104857600]
 
-  # Use compression when sending messages. Supported values are: 'gzip',
-  # 'snappy' and '' (disable compression)
+  # (advanced) Use compression when sending messages. Supported values are:
+  # 'gzip', 'snappy' and '' (disable compression)
   # CLI flag: -ingester.client.grpc-compression
   [grpc_compression: <string> | default = ""]
 
-  # Rate limit for gRPC client; 0 means disabled.
+  # (advanced) Rate limit for gRPC client; 0 means disabled.
   # CLI flag: -ingester.client.grpc-client-rate-limit
   [rate_limit: <float> | default = 0]
 
-  # Rate limit burst for gRPC client.
+  # (advanced) Rate limit burst for gRPC client.
   # CLI flag: -ingester.client.grpc-client-rate-limit-burst
   [rate_limit_burst: <int> | default = 0]
 
-  # Enable backoff and retry when we hit ratelimits.
+  # (advanced) Enable backoff and retry when we hit ratelimits.
   # CLI flag: -ingester.client.backoff-on-ratelimits
   [backoff_on_ratelimits: <boolean> | default = false]
 
   backoff_config:
-    # Minimum delay when backing off.
+    # (advanced) Minimum delay when backing off.
     # CLI flag: -ingester.client.backoff-min-period
     [min_period: <duration> | default = 100ms]
 
-    # Maximum delay when backing off.
+    # (advanced) Maximum delay when backing off.
     # CLI flag: -ingester.client.backoff-max-period
     [max_period: <duration> | default = 10s]
 
-    # Number of times to backoff and retry before failing.
+    # (advanced) Number of times to backoff and retry before failing.
     # CLI flag: -ingester.client.backoff-retries
     [max_retries: <int> | default = 10]
 
@@ -2083,41 +2084,41 @@ The `frontend_worker_config` configures the worker - running within the querier 
 [id: <string> | default = ""]
 
 grpc_client_config:
-  # gRPC client max receive message size (bytes).
+  # (advanced) gRPC client max receive message size (bytes).
   # CLI flag: -querier.frontend-client.grpc-max-recv-msg-size
   [max_recv_msg_size: <int> | default = 104857600]
 
-  # gRPC client max send message size (bytes).
+  # (advanced) gRPC client max send message size (bytes).
   # CLI flag: -querier.frontend-client.grpc-max-send-msg-size
-  [max_send_msg_size: <int> | default = 16777216]
+  [max_send_msg_size: <int> | default = 104857600]
 
-  # Use compression when sending messages. Supported values are: 'gzip',
-  # 'snappy' and '' (disable compression)
+  # (advanced) Use compression when sending messages. Supported values are:
+  # 'gzip', 'snappy' and '' (disable compression)
   # CLI flag: -querier.frontend-client.grpc-compression
   [grpc_compression: <string> | default = ""]
 
-  # Rate limit for gRPC client; 0 means disabled.
+  # (advanced) Rate limit for gRPC client; 0 means disabled.
   # CLI flag: -querier.frontend-client.grpc-client-rate-limit
   [rate_limit: <float> | default = 0]
 
-  # Rate limit burst for gRPC client.
+  # (advanced) Rate limit burst for gRPC client.
   # CLI flag: -querier.frontend-client.grpc-client-rate-limit-burst
   [rate_limit_burst: <int> | default = 0]
 
-  # Enable backoff and retry when we hit ratelimits.
+  # (advanced) Enable backoff and retry when we hit ratelimits.
   # CLI flag: -querier.frontend-client.backoff-on-ratelimits
   [backoff_on_ratelimits: <boolean> | default = false]
 
   backoff_config:
-    # Minimum delay when backing off.
+    # (advanced) Minimum delay when backing off.
     # CLI flag: -querier.frontend-client.backoff-min-period
     [min_period: <duration> | default = 100ms]
 
-    # Maximum delay when backing off.
+    # (advanced) Maximum delay when backing off.
     # CLI flag: -querier.frontend-client.backoff-max-period
     [max_period: <duration> | default = 10s]
 
-    # Number of times to backoff and retry before failing.
+    # (advanced) Number of times to backoff and retry before failing.
     # CLI flag: -querier.frontend-client.backoff-retries
     [max_retries: <int> | default = 10]
 
@@ -2260,46 +2261,48 @@ The `consul_config` configures the consul client. The supported CLI flags `<pref
 The `memberlist_config` configures the Gossip memberlist.
 
 ```yaml
-# Name of the node in memberlist cluster. Defaults to hostname.
+# (advanced) Name of the node in memberlist cluster. Defaults to hostname.
 # CLI flag: -memberlist.nodename
 [node_name: <string> | default = ""]
 
-# Add random suffix to the node name.
+# (advanced) Add random suffix to the node name.
 # CLI flag: -memberlist.randomize-node-name
 [randomize_node_name: <boolean> | default = true]
 
-# The timeout for establishing a connection with a remote node, and for
-# read/write operations.
+# (advanced) The timeout for establishing a connection with a remote node, and
+# for read/write operations.
 # CLI flag: -memberlist.stream-timeout
 [stream_timeout: <duration> | default = 10s]
 
-# Multiplication factor used when sending out messages (factor * log(N+1)).
+# (advanced) Multiplication factor used when sending out messages (factor *
+# log(N+1)).
 # CLI flag: -memberlist.retransmit-factor
 [retransmit_factor: <int> | default = 4]
 
-# How often to use pull/push sync.
+# (advanced) How often to use pull/push sync.
 # CLI flag: -memberlist.pullpush-interval
 [pull_push_interval: <duration> | default = 30s]
 
-# How often to gossip.
+# (advanced) How often to gossip.
 # CLI flag: -memberlist.gossip-interval
 [gossip_interval: <duration> | default = 200ms]
 
-# How many nodes to gossip to.
+# (advanced) How many nodes to gossip to.
 # CLI flag: -memberlist.gossip-nodes
 [gossip_nodes: <int> | default = 3]
 
-# How long to keep gossiping to dead nodes, to give them chance to refute their
-# death.
+# (advanced) How long to keep gossiping to dead nodes, to give them chance to
+# refute their death.
 # CLI flag: -memberlist.gossip-to-dead-nodes-time
 [gossip_to_dead_nodes_time: <duration> | default = 30s]
 
-# How soon can dead node's name be reclaimed with new address. 0 to disable.
+# (advanced) How soon can dead node's name be reclaimed with new address. 0 to
+# disable.
 # CLI flag: -memberlist.dead-node-reclaim-time
 [dead_node_reclaim_time: <duration> | default = 0s]
 
-# Enable message compression. This can be used to reduce bandwidth usage at the
-# cost of slightly more CPU utilization.
+# (advanced) Enable message compression. This can be used to reduce bandwidth
+# usage at the cost of slightly more CPU utilization.
 # CLI flag: -memberlist.compression-enabled
 [compression_enabled: <boolean> | default = true]
 
@@ -2318,15 +2321,15 @@ The `memberlist_config` configures the Gossip memberlist.
 # CLI flag: -memberlist.join
 [join_members: <list of string> | default = []]
 
-# Min backoff duration to join other cluster members.
+# (advanced) Min backoff duration to join other cluster members.
 # CLI flag: -memberlist.min-join-backoff
 [min_join_backoff: <duration> | default = 1s]
 
-# Max backoff duration to join other cluster members.
+# (advanced) Max backoff duration to join other cluster members.
 # CLI flag: -memberlist.max-join-backoff
 [max_join_backoff: <duration> | default = 1m]
 
-# Max number of retries to join other cluster members.
+# (advanced) Max number of retries to join other cluster members.
 # CLI flag: -memberlist.max-join-retries
 [max_join_retries: <int> | default = 10]
 
@@ -2334,25 +2337,25 @@ The `memberlist_config` configures the Gossip memberlist.
 # CLI flag: -memberlist.abort-if-join-fails
 [abort_if_cluster_join_fails: <boolean> | default = true]
 
-# If not 0, how often to rejoin the cluster. Occasional rejoin can help to fix
-# the cluster split issue, and is harmless otherwise. For example when using
-# only few components as a seed nodes (via -memberlist.join), then it's
-# recommended to use rejoin. If -memberlist.join points to dynamic service that
-# resolves to all gossiping nodes (eg. Kubernetes headless service), then rejoin
-# is not needed.
+# (advanced) If not 0, how often to rejoin the cluster. Occasional rejoin can
+# help to fix the cluster split issue, and is harmless otherwise. For example
+# when using only few components as a seed nodes (via -memberlist.join), then
+# it's recommended to use rejoin. If -memberlist.join points to dynamic service
+# that resolves to all gossiping nodes (eg. Kubernetes headless service), then
+# rejoin is not needed.
 # CLI flag: -memberlist.rejoin-interval
 [rejoin_interval: <duration> | default = 0s]
 
-# How long to keep LEFT ingesters in the ring.
+# (advanced) How long to keep LEFT ingesters in the ring.
 # CLI flag: -memberlist.left-ingesters-timeout
 [left_ingesters_timeout: <duration> | default = 5m]
 
-# Timeout for leaving memberlist cluster.
+# (advanced) Timeout for leaving memberlist cluster.
 # CLI flag: -memberlist.leave-timeout
 [leave_timeout: <duration> | default = 5s]
 
-# How much space to use for keeping received and sent messages in memory for
-# troubleshooting (two buffers). 0 to disable.
+# (advanced) How much space to use for keeping received and sent messages in
+# memory for troubleshooting (two buffers). 0 to disable.
 # CLI flag: -memberlist.message-history-buffer-bytes
 [message_history_buffer_bytes: <int> | default = 0]
 
@@ -2365,11 +2368,11 @@ The `memberlist_config` configures the Gossip memberlist.
 # CLI flag: -memberlist.bind-port
 [bind_port: <int> | default = 7946]
 
-# Timeout used when connecting to other nodes to send packet.
+# (advanced) Timeout used when connecting to other nodes to send packet.
 # CLI flag: -memberlist.packet-dial-timeout
 [packet_dial_timeout: <duration> | default = 5s]
 
-# Timeout for writing 'packet' data.
+# (advanced) Timeout for writing 'packet' data.
 # CLI flag: -memberlist.packet-write-timeout
 [packet_write_timeout: <duration> | default = 5s]
 

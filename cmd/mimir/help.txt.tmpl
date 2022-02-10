@@ -315,24 +315,6 @@ Usage of ./cmd/mimir/mimir:
     	Cache query results.
   -frontend.cache-unaligned-requests
     	Cache requests that are not step-aligned.
-  -frontend.grpc-client-config.backoff-max-period duration
-    	Maximum delay when backing off. (default 10s)
-  -frontend.grpc-client-config.backoff-min-period duration
-    	Minimum delay when backing off. (default 100ms)
-  -frontend.grpc-client-config.backoff-on-ratelimits
-    	Enable backoff and retry when we hit ratelimits.
-  -frontend.grpc-client-config.backoff-retries int
-    	Number of times to backoff and retry before failing. (default 10)
-  -frontend.grpc-client-config.grpc-client-rate-limit float
-    	Rate limit for gRPC client; 0 means disabled.
-  -frontend.grpc-client-config.grpc-client-rate-limit-burst int
-    	Rate limit burst for gRPC client.
-  -frontend.grpc-client-config.grpc-compression string
-    	Use compression when sending messages. Supported values are: 'gzip', 'snappy' and '' (disable compression)
-  -frontend.grpc-client-config.grpc-max-recv-msg-size int
-    	gRPC client max receive message size (bytes). (default 104857600)
-  -frontend.grpc-client-config.grpc-max-send-msg-size int
-    	gRPC client max send message size (bytes). (default 16777216)
   -frontend.log-queries-longer-than duration
     	Log queries that are slower than the specified duration. Set to 0 to disable. Set to < 0 to enable on all queries.
   -frontend.max-cache-freshness value
@@ -377,38 +359,8 @@ Usage of ./cmd/mimir/mimir:
     	Enable tracking of active series and export them as metrics. (default true)
   -ingester.availability-zone string
     	The availability zone where this instance is running.
-  -ingester.client.backoff-max-period duration
-    	Maximum delay when backing off. (default 10s)
-  -ingester.client.backoff-min-period duration
-    	Minimum delay when backing off. (default 100ms)
-  -ingester.client.backoff-on-ratelimits
-    	Enable backoff and retry when we hit ratelimits.
-  -ingester.client.backoff-retries int
-    	Number of times to backoff and retry before failing. (default 10)
-  -ingester.client.grpc-client-rate-limit float
-    	Rate limit for gRPC client; 0 means disabled.
-  -ingester.client.grpc-client-rate-limit-burst int
-    	Rate limit burst for gRPC client.
-  -ingester.client.grpc-compression string
-    	Use compression when sending messages. Supported values are: 'gzip', 'snappy' and '' (disable compression)
-  -ingester.client.grpc-max-recv-msg-size int
-    	gRPC client max receive message size (bytes). (default 104857600)
-  -ingester.client.grpc-max-send-msg-size int
-    	gRPC client max send message size (bytes). (default 16777216)
-  -ingester.final-sleep duration
-    	Duration to sleep for before exiting, to ensure metrics are scraped.
-  -ingester.heartbeat-period duration
-    	Period at which to heartbeat to consul. 0 = disabled. (default 5s)
-  -ingester.join-after duration
-    	Period to wait for a claim from another member; will join automatically after this.
-  -ingester.lifecycler.ID string
-    	ID to register in the ring. (default "{{.Hostname}}")
-  -ingester.lifecycler.addr string
-    	IP address to advertise in the ring.
   -ingester.lifecycler.interface value
     	Name of network interface to read address from. (default [eth0 en0])
-  -ingester.lifecycler.port int
-    	port to advertise in consul (defaults to server.grpc-listen-port).
   -ingester.max-global-metadata-per-metric int
     	The maximum number of metadata per metric, across the cluster. 0 to disable.
   -ingester.max-global-metadata-per-user int
@@ -419,20 +371,10 @@ Usage of ./cmd/mimir/mimir:
     	The maximum number of active series per user, across the cluster before replication. 0 to disable. (default 150000)
   -ingester.max-samples-per-query value
     	This option is no longer used, and will be removed.
-  -ingester.min-ready-duration duration
-    	Minimum duration to wait after the internal readiness checks have passed but before succeeding the readiness endpoint. This is used to slowdown deployment controllers (eg. Kubernetes) after an instance is ready and before they proceed with a rolling update, to give the rest of the cluster instances enough time to receive ring updates. (default 15s)
-  -ingester.num-tokens int
-    	Number of tokens for each ingester. (default 128)
-  -ingester.observe-period duration
-    	Observe tokens after generating to resolve collisions. Useful when using gossiping ring.
-  -ingester.readiness-check-ring-health
-    	When enabled the readiness probe succeeds only after all instances are ACTIVE and healthy in the ring, otherwise only the instance itself is checked. This option should be disabled if in your cluster multiple instances can be rolled out simultaneously, otherwise rolling updates may be slowed down. (default true)
   -ingester.stream-chunks-when-using-blocks
     	Stream chunks from ingesters to queriers. (default true)
   -ingester.tokens-file-path string
     	File path where tokens are stored. If empty, tokens are not stored at shutdown and restored at startup.
-  -ingester.unregister-on-shutdown
-    	Unregister from the ring upon clean shutdown. It can be useful to disable for rolling restarts with consistent naming in conjunction with -distributor.extend-writes=false. (default true)
   -log.format value
     	Output log messages in the given format. Valid formats: [logfmt, json] (default logfmt)
   -log.level value
@@ -449,46 +391,8 @@ Usage of ./cmd/mimir/mimir:
     	IP address to listen on for gossip messages. Multiple addresses may be specified. Defaults to 0.0.0.0
   -memberlist.bind-port int
     	Port to listen on for gossip messages. (default 7946)
-  -memberlist.compression-enabled
-    	Enable message compression. This can be used to reduce bandwidth usage at the cost of slightly more CPU utilization. (default true)
-  -memberlist.dead-node-reclaim-time duration
-    	How soon can dead node's name be reclaimed with new address. 0 to disable.
-  -memberlist.gossip-interval duration
-    	How often to gossip. (default 200ms)
-  -memberlist.gossip-nodes int
-    	How many nodes to gossip to. (default 3)
-  -memberlist.gossip-to-dead-nodes-time duration
-    	How long to keep gossiping to dead nodes, to give them chance to refute their death. (default 30s)
   -memberlist.join value
     	Other cluster members to join. Can be specified multiple times. It can be an IP, hostname or an entry specified in the DNS Service Discovery format.
-  -memberlist.leave-timeout duration
-    	Timeout for leaving memberlist cluster. (default 5s)
-  -memberlist.left-ingesters-timeout duration
-    	How long to keep LEFT ingesters in the ring. (default 5m0s)
-  -memberlist.max-join-backoff duration
-    	Max backoff duration to join other cluster members. (default 1m0s)
-  -memberlist.max-join-retries int
-    	Max number of retries to join other cluster members. (default 10)
-  -memberlist.message-history-buffer-bytes int
-    	How much space to use for keeping received and sent messages in memory for troubleshooting (two buffers). 0 to disable.
-  -memberlist.min-join-backoff duration
-    	Min backoff duration to join other cluster members. (default 1s)
-  -memberlist.nodename string
-    	Name of the node in memberlist cluster. Defaults to hostname.
-  -memberlist.packet-dial-timeout duration
-    	Timeout used when connecting to other nodes to send packet. (default 5s)
-  -memberlist.packet-write-timeout duration
-    	Timeout for writing 'packet' data. (default 5s)
-  -memberlist.pullpush-interval duration
-    	How often to use pull/push sync. (default 30s)
-  -memberlist.randomize-node-name
-    	Add random suffix to the node name. (default true)
-  -memberlist.rejoin-interval duration
-    	If not 0, how often to rejoin the cluster. Occasional rejoin can help to fix the cluster split issue, and is harmless otherwise. For example when using only few components as a seed nodes (via -memberlist.join), then it's recommended to use rejoin. If -memberlist.join points to dynamic service that resolves to all gossiping nodes (eg. Kubernetes headless service), then rejoin is not needed.
-  -memberlist.retransmit-factor int
-    	Multiplication factor used when sending out messages (factor * log(N+1)). (default 4)
-  -memberlist.stream-timeout duration
-    	The timeout for establishing a connection with a remote node, and for read/write operations. (default 10s)
   -memberlist.transport-debug
     	Log debug transport messages. Note: global log.level must be at debug level as well.
   -modules
@@ -503,24 +407,6 @@ Usage of ./cmd/mimir/mimir:
     	The default evaluation interval or step size for subqueries. This config option should be set on query-frontend too when query sharding is enabled. (default 1m0s)
   -querier.frontend-address string
     	Address of query frontend service, in host:port format. If -querier.scheduler-address is set as well, querier will use scheduler instead. Only one of -querier.frontend-address or -querier.scheduler-address can be set. If neither is set, queries are only received via HTTP endpoint.
-  -querier.frontend-client.backoff-max-period duration
-    	Maximum delay when backing off. (default 10s)
-  -querier.frontend-client.backoff-min-period duration
-    	Minimum delay when backing off. (default 100ms)
-  -querier.frontend-client.backoff-on-ratelimits
-    	Enable backoff and retry when we hit ratelimits.
-  -querier.frontend-client.backoff-retries int
-    	Number of times to backoff and retry before failing. (default 10)
-  -querier.frontend-client.grpc-client-rate-limit float
-    	Rate limit for gRPC client; 0 means disabled.
-  -querier.frontend-client.grpc-client-rate-limit-burst int
-    	Rate limit burst for gRPC client.
-  -querier.frontend-client.grpc-compression string
-    	Use compression when sending messages. Supported values are: 'gzip', 'snappy' and '' (disable compression)
-  -querier.frontend-client.grpc-max-recv-msg-size int
-    	gRPC client max receive message size (bytes). (default 104857600)
-  -querier.frontend-client.grpc-max-send-msg-size int
-    	gRPC client max send message size (bytes). (default 16777216)
   -querier.iterators
     	Use iterators to execute query, as opposed to fully materialising the series in memory.
   -querier.label-names-and-values-results-max-size-bytes int
@@ -559,24 +445,6 @@ Usage of ./cmd/mimir/mimir:
     	When distributor's sharding strategy is shuffle-sharding and this setting is > 0, queriers fetch in-memory series from the minimum set of required ingesters, selecting only ingesters which may have received series since 'now - lookback period'. The lookback period should be greater or equal than the configured -querier.query-store-after and -querier.query-ingesters-within. If this setting is 0, queriers always query all ingesters (ingesters shuffle sharding on read path is disabled).
   -querier.timeout duration
     	The timeout for a query. This config option should be set on query-frontend too when query sharding is enabled. (default 2m0s)
-  -query-scheduler.grpc-client-config.backoff-max-period duration
-    	Maximum delay when backing off. (default 10s)
-  -query-scheduler.grpc-client-config.backoff-min-period duration
-    	Minimum delay when backing off. (default 100ms)
-  -query-scheduler.grpc-client-config.backoff-on-ratelimits
-    	Enable backoff and retry when we hit ratelimits.
-  -query-scheduler.grpc-client-config.backoff-retries int
-    	Number of times to backoff and retry before failing. (default 10)
-  -query-scheduler.grpc-client-config.grpc-client-rate-limit float
-    	Rate limit for gRPC client; 0 means disabled.
-  -query-scheduler.grpc-client-config.grpc-client-rate-limit-burst int
-    	Rate limit burst for gRPC client.
-  -query-scheduler.grpc-client-config.grpc-compression string
-    	Use compression when sending messages. Supported values are: 'gzip', 'snappy' and '' (disable compression)
-  -query-scheduler.grpc-client-config.grpc-max-recv-msg-size int
-    	gRPC client max receive message size (bytes). (default 104857600)
-  -query-scheduler.grpc-client-config.grpc-max-send-msg-size int
-    	gRPC client max send message size (bytes). (default 16777216)
   -query-scheduler.max-outstanding-requests-per-tenant int
     	Maximum number of outstanding requests per tenant per query-scheduler. In-flight requests above this limit will fail with HTTP response status code 429. (default 100)
   -query-scheduler.querier-forget-delay duration
@@ -655,24 +523,6 @@ Usage of ./cmd/mimir/mimir:
     	HTTP Basic authentication username. It overrides the username set in the URL (if any).
   -ruler.alertmanager-url string
     	Comma-separated list of URL(s) of the Alertmanager(s) to send notifications to. Each URL is treated as a separate group. Multiple Alertmanagers in HA per group can be supported by using DNS service discovery format. Basic auth is supported as part of the URL.
-  -ruler.client.backoff-max-period duration
-    	Maximum delay when backing off. (default 10s)
-  -ruler.client.backoff-min-period duration
-    	Minimum delay when backing off. (default 100ms)
-  -ruler.client.backoff-on-ratelimits
-    	Enable backoff and retry when we hit ratelimits.
-  -ruler.client.backoff-retries int
-    	Number of times to backoff and retry before failing. (default 10)
-  -ruler.client.grpc-client-rate-limit float
-    	Rate limit for gRPC client; 0 means disabled.
-  -ruler.client.grpc-client-rate-limit-burst int
-    	Rate limit burst for gRPC client.
-  -ruler.client.grpc-compression string
-    	Use compression when sending messages. Supported values are: 'gzip', 'snappy' and '' (disable compression)
-  -ruler.client.grpc-max-recv-msg-size int
-    	gRPC client max receive message size (bytes). (default 104857600)
-  -ruler.client.grpc-max-send-msg-size int
-    	gRPC client max send message size (bytes). (default 16777216)
   -ruler.enable-api
     	Enable the ruler config API. (default true)
   -ruler.evaluation-delay-duration value
@@ -715,8 +565,6 @@ Usage of ./cmd/mimir/mimir:
     	The tenant's shard size when sharding is used by ruler. Value of 0 disables shuffle sharding for the tenant, and tenant rules will be sharded across all ruler replicas.
   -runtime-config.file string
     	File with the configuration that can be updated in runtime.
-  -runtime-config.reload-period duration
-    	How often to check runtime config file. (default 10s)
   -server.grpc-listen-address string
     	gRPC server listen address.
   -server.grpc-listen-port int

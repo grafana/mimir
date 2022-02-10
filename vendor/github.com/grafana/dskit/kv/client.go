@@ -33,8 +33,10 @@ func (r *role) Labels() prometheus.Labels {
 // The NewInMemoryKVClient returned by NewClient() is a singleton, so
 // that distributors and ingesters started in the same process can
 // find themselves.
-var inmemoryStoreInit sync.Once
-var inmemoryStore Client
+var (
+	inmemoryStoreInit sync.Once
+	inmemoryStore     *consul.Client
+)
 
 // StoreConfig is a configuration used for building single store client, either
 // Consul, Etcd, Memberlist or MultiClient. It was extracted from Config to keep
@@ -146,7 +148,8 @@ func createClient(backend string, prefix string, cfg StoreConfig, codec codec.Co
 		inmemoryStoreInit.Do(func() {
 			inmemoryStore, _ = consul.NewInMemoryClient(codec, logger, reg)
 		})
-		client = inmemoryStore
+		// however we swap the codec so that we can encode different type of values.
+		client = inmemoryStore.WithCodec(codec)
 
 	case "memberlist":
 		kv, err := cfg.MemberlistKV()
