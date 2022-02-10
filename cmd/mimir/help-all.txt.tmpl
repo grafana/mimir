@@ -3,7 +3,7 @@ Usage of ./cmd/mimir/mimir:
     	File where ongoing activities are stored. If empty, activity tracking is disabled. (default "./metrics-activity.log")
   -activity-tracker.max-entries int
     	Max number of concurrent activities that can be tracked. Used to size the file in advance. Additional activities are ignored. (default 1024)
-  -alertmanager-storage.azure.account-key value
+  -alertmanager-storage.azure.account-key string
     	Azure storage account key
   -alertmanager-storage.azure.account-name string
     	Azure storage account name
@@ -23,7 +23,7 @@ Usage of ./cmd/mimir/mimir:
     	Local filesystem storage directory. (default "alertmanager")
   -alertmanager-storage.gcs.bucket-name string
     	GCS bucket name
-  -alertmanager-storage.gcs.service-account value
+  -alertmanager-storage.gcs.service-account string
     	JSON representing either a Google Developers Console client_credentials.json file or a Google Developers service account key file. If empty, fallback to Google default logic.
   -alertmanager-storage.local.path string
     	Path at which alertmanager configurations are stored.
@@ -51,7 +51,7 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of idle (keep-alive) connections to keep per-host. If 0, a built-in default value is used. (default 100)
   -alertmanager-storage.s3.region string
     	S3 region. If unset, the client will issue a S3 GetBucketLocation API call to autodetect it.
-  -alertmanager-storage.s3.secret-access-key value
+  -alertmanager-storage.s3.secret-access-key string
     	S3 secret access key
   -alertmanager-storage.s3.signature-version string
     	The signature version to use for authenticating against S3. Supported values are: v4, v2. (default "v4")
@@ -221,7 +221,7 @@ Usage of ./cmd/mimir/mimir:
     	When set to true, incoming HTTP requests must specify tenant ID in HTTP X-Scope-OrgId header. When set to false, tenant ID from -auth.no-auth-tenant is used instead. (default true)
   -auth.no-auth-tenant string
     	Tenant ID to use when multitenancy is disabled. (default "anonymous")
-  -blocks-storage.azure.account-key value
+  -blocks-storage.azure.account-key string
     	Azure storage account key
   -blocks-storage.azure.account-name string
     	Azure storage account name
@@ -371,7 +371,7 @@ Usage of ./cmd/mimir/mimir:
     	Local filesystem storage directory. (default "blocks")
   -blocks-storage.gcs.bucket-name string
     	GCS bucket name
-  -blocks-storage.gcs.service-account value
+  -blocks-storage.gcs.service-account string
     	JSON representing either a Google Developers Console client_credentials.json file or a Google Developers service account key file. If empty, fallback to Google default logic.
   -blocks-storage.s3.access-key-id string
     	S3 access key ID
@@ -397,7 +397,7 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of idle (keep-alive) connections to keep per-host. If 0, a built-in default value is used. (default 100)
   -blocks-storage.s3.region string
     	S3 region. If unset, the client will issue a S3 GetBucketLocation API call to autodetect it.
-  -blocks-storage.s3.secret-access-key value
+  -blocks-storage.s3.secret-access-key string
     	S3 secret access key
   -blocks-storage.s3.signature-version string
     	The signature version to use for authenticating against S3. Supported values are: v4, v2. (default "v4")
@@ -1201,7 +1201,7 @@ Usage of ./cmd/mimir/mimir:
     	The prefix for the keys in the store. Should end with a /. (default "collectors/")
   -ring.store string
     	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
-  -ruler-storage.azure.account-key value
+  -ruler-storage.azure.account-key string
     	Azure storage account key
   -ruler-storage.azure.account-name string
     	Azure storage account name
@@ -1221,7 +1221,7 @@ Usage of ./cmd/mimir/mimir:
     	Local filesystem storage directory. (default "ruler")
   -ruler-storage.gcs.bucket-name string
     	GCS bucket name
-  -ruler-storage.gcs.service-account value
+  -ruler-storage.gcs.service-account string
     	JSON representing either a Google Developers Console client_credentials.json file or a Google Developers service account key file. If empty, fallback to Google default logic.
   -ruler-storage.local.directory string
     	Directory to scan for rules
@@ -1249,7 +1249,7 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of idle (keep-alive) connections to keep per-host. If 0, a built-in default value is used. (default 100)
   -ruler-storage.s3.region string
     	S3 region. If unset, the client will issue a S3 GetBucketLocation API call to autodetect it.
-  -ruler-storage.s3.secret-access-key value
+  -ruler-storage.s3.secret-access-key string
     	S3 secret access key
   -ruler-storage.s3.signature-version string
     	The signature version to use for authenticating against S3. Supported values are: v4, v2. (default "v4")

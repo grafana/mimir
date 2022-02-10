@@ -158,7 +158,7 @@ func amConfigWithSD(rulerConfig *Config, url *url.URL, sdConfig discovery.Config
 	if rulerConfig.Notifier.BasicAuth.IsEnabled() {
 		amConfig.HTTPClientConfig.BasicAuth = &config_util.BasicAuth{
 			Username: rulerConfig.Notifier.BasicAuth.Username,
-			Password: config_util.Secret(rulerConfig.Notifier.BasicAuth.Password),
+			Password: config_util.Secret(rulerConfig.Notifier.BasicAuth.Password.String()),
 		}
 	}
 

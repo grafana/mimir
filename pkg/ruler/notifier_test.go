@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/dskit/flagext"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
@@ -200,7 +201,7 @@ func TestBuildNotifierConfig(t *testing.T) {
 				Notifier: NotifierConfig{
 					BasicAuth: util.BasicAuth{
 						Username: "jacob",
-						Password: "test",
+						Password: flagext.Secret{Value: "test"},
 					},
 				},
 			},

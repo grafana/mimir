@@ -22,7 +22,7 @@ func NewBucketClient(cfg Config, name string, logger log.Logger) (objstore.Bucke
 		UserDomainName:    cfg.UserDomainName,
 		UserDomainID:      cfg.UserDomainID,
 		UserId:            cfg.UserID,
-		Password:          cfg.Password,
+		Password:          cfg.Password.String(),
 		DomainId:          cfg.DomainID,
 		DomainName:        cfg.DomainName,
 		ProjectID:         cfg.ProjectID,
