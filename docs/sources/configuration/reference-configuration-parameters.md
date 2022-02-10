@@ -3246,8 +3246,8 @@ tsdb:
   # CLI flag: -blocks-storage.tsdb.close-idle-tsdb-timeout
   [close_idle_tsdb_timeout: <duration> | default = 13h]
 
-  # (advanced) True to enable snapshotting of in-memory TSDB data on disk when
-  # shutting down.
+  # (experimental) True to enable snapshotting of in-memory TSDB data on disk
+  # when shutting down.
   # CLI flag: -blocks-storage.tsdb.memory-snapshot-on-shutdown
   [memory_snapshot_on_shutdown: <boolean> | default = false]
 

@@ -482,7 +482,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup int
     	limit the number of concurrently opening TSDB's on startup (default 10)
   -blocks-storage.tsdb.memory-snapshot-on-shutdown
-    	True to enable snapshotting of in-memory TSDB data on disk when shutting down.
+    	[experimental] True to enable snapshotting of in-memory TSDB data on disk when shutting down.
   -blocks-storage.tsdb.retention-period duration
     	TSDB blocks retention in the ingester before a block is removed. This should be larger than the -blocks-storage.tsdb.block-ranges-period, -querier.query-store-after and large enough to give store-gateways and queriers enough time to discover newly uploaded blocks. (default 24h0m0s)
   -blocks-storage.tsdb.series-hash-cache-max-size-bytes uint

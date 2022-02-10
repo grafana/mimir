@@ -155,7 +155,7 @@ type TSDBConfig struct {
 	WALSegmentSizeBytes       int           `yaml:"wal_segment_size_bytes" category:"advanced"`
 	FlushBlocksOnShutdown     bool          `yaml:"flush_blocks_on_shutdown" category:"advanced"`
 	CloseIdleTSDBTimeout      time.Duration `yaml:"close_idle_tsdb_timeout" category:"advanced"`
-	MemorySnapshotOnShutdown  bool          `yaml:"memory_snapshot_on_shutdown" category:"advanced"`
+	MemorySnapshotOnShutdown  bool          `yaml:"memory_snapshot_on_shutdown" category:"experimental"`
 	HeadChunksWriteQueueSize  int           `yaml:"head_chunks_write_queue_size" category:"experimental"`
 	IsolationEnabled          bool          `yaml:"isolation_enabled" category:"advanced"`
 
