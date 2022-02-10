@@ -120,8 +120,8 @@ tooling offered by Grafana.
    1. Type `up == 0` in the "Create a query to be alerted on" field.
    1. Click "Save and Exit" button.
 
-Your `MimirNotRunning` alert rule is now creating in Grafana Mimir ruler and it expected to fire when the number of
-Grafana Mimir replicas is less than three. You can check its status opening the [Grafana Alerting](http://localhost:9000/alerting/list)
+Your `MimirNotRunning` alert rule is now creating in Grafana Mimir ruler and is expected to fire when the number of
+Grafana Mimir replicas is less than three. You can check its status by opening the [Grafana Alerting](http://localhost:9000/alerting/list)
 page and expanding the "example-namespace > example-group" row.
 
 To see the alert firing we can introduce an outage in the Grafana Mimir cluster:
