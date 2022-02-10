@@ -175,8 +175,5 @@ _The same memcached backend cluster should be shared between store-gateways and 
 
 ## Store-gateway configuration
 
-This section described the store-gateway configuration. For the general Cortex configuration and references to common config blocks, please refer to the [configuration documentation](../configuration/config-file-reference.md).
-
-{{ .StoreGatewayConfigBlock }}
-
-{{ .BlocksStorageConfigBlock }}
+Refer to the [store-gateway](../../configuration/reference-configuration-parameters/#store_gateway)
+block section for details of store-gateway-related configuration.
