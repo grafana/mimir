@@ -6,7 +6,6 @@
 package mimirpb
 
 import (
-	"flag"
 	"fmt"
 	"io"
 	"strings"
@@ -16,11 +15,14 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 )
 
-var (
+const (
 	expectedTimeseries         = 100
 	expectedLabels             = 20
 	expectedSamplesPerSeries   = 10
 	expectedExemplarsPerSeries = 1
+)
+
+var (
 
 	/*
 		We cannot pool these as pointer-to-slice because the place we use them is in WriteRequest which is generated from Protobuf
@@ -43,17 +45,6 @@ var (
 		},
 	}
 )
-
-// PreallocConfig configures how structures will be preallocated to optimise
-// proto unmarshalling.
-type PreallocConfig struct{}
-
-// RegisterFlags registers configuration settings.
-func (PreallocConfig) RegisterFlags(f *flag.FlagSet) {
-	f.IntVar(&expectedTimeseries, "ingester-client.expected-timeseries", expectedTimeseries, "Expected number of timeseries per request, used for preallocations.")
-	f.IntVar(&expectedLabels, "ingester-client.expected-labels", expectedLabels, "Expected number of labels per timeseries, used for preallocations.")
-	f.IntVar(&expectedSamplesPerSeries, "ingester-client.expected-samples-per-series", expectedSamplesPerSeries, "Expected number of samples per timeseries, used for preallocations.")
-}
 
 // PreallocWriteRequest is a WriteRequest which preallocs slices on Unmarshal.
 type PreallocWriteRequest struct {
