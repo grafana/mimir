@@ -1,8 +1,4 @@
----
-title: "Grafana Mimir"
-description: "Grafana Mimir"
-weight: 1
----
+# Grafana Mimir
 
 <p align="center"><img src="images/logo.png" alt="Grafana Mimir logo"></p>
 
