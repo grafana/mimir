@@ -38,12 +38,12 @@ func defaultIngesterTestConfig(t testing.TB) Config {
 	cfg := Config{}
 	flagext.DefaultValues(&cfg)
 	flagext.DefaultValues(&cfg.BlocksStorageConfig)
-	cfg.LifecyclerConfig.RingConfig.KVStore.Mock = consul
-	cfg.LifecyclerConfig.NumTokens = 1
-	cfg.LifecyclerConfig.ListenPort = 0
-	cfg.LifecyclerConfig.Addr = "localhost"
-	cfg.LifecyclerConfig.ID = "localhost"
-	cfg.LifecyclerConfig.FinalSleep = 0
+	cfg.IngesterRing.KVStore.Mock = consul
+	cfg.IngesterRing.NumTokens = 1
+	cfg.IngesterRing.ListenPort = 0
+	cfg.IngesterRing.InstanceAddr = "localhost"
+	cfg.IngesterRing.InstanceID = "localhost"
+	cfg.IngesterRing.FinalSleep = 0
 	cfg.ActiveSeriesMetricsEnabled = true
 
 	return cfg
@@ -65,7 +65,7 @@ func defaultLimitsTestConfig() validation.Limits {
 func TestIngesterRestart(t *testing.T) {
 	config := defaultIngesterTestConfig(t)
 	limits := defaultLimitsTestConfig()
-	config.LifecyclerConfig.UnregisterOnShutdown = false
+	config.IngesterRing.UnregisterOnShutdown = false
 
 	{
 		ing, err := prepareIngesterWithBlocksStorageAndLimits(t, config, limits, "", nil)
@@ -79,7 +79,7 @@ func TestIngesterRestart(t *testing.T) {
 	}
 
 	test.Poll(t, 100*time.Millisecond, 1, func() interface{} {
-		return numTokens(config.LifecyclerConfig.RingConfig.KVStore.Mock, "localhost", IngesterRingKey)
+		return numTokens(config.IngesterRing.KVStore.Mock, "localhost", IngesterRingKey)
 	})
 
 	{
@@ -96,7 +96,7 @@ func TestIngesterRestart(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 
 	test.Poll(t, 100*time.Millisecond, 1, func() interface{} {
-		return numTokens(config.LifecyclerConfig.RingConfig.KVStore.Mock, "localhost", IngesterRingKey)
+		return numTokens(config.IngesterRing.KVStore.Mock, "localhost", IngesterRingKey)
 	})
 }
 
@@ -105,7 +105,7 @@ func TestIngester_ShutdownHandler(t *testing.T) {
 		t.Run(fmt.Sprintf("unregister=%t", unregister), func(t *testing.T) {
 			config := defaultIngesterTestConfig(t)
 			limits := defaultLimitsTestConfig()
-			config.LifecyclerConfig.UnregisterOnShutdown = unregister
+			config.IngesterRing.UnregisterOnShutdown = unregister
 
 			ing, err := prepareIngesterWithBlocksStorageAndLimits(t, config, limits, "", nil)
 			require.NoError(t, err)
@@ -115,7 +115,7 @@ func TestIngester_ShutdownHandler(t *testing.T) {
 
 			// Make sure the ingester has been added to the ring.
 			test.Poll(t, 100*time.Millisecond, 1, func() interface{} {
-				return numTokens(config.LifecyclerConfig.RingConfig.KVStore.Mock, "localhost", IngesterRingKey)
+				return numTokens(config.IngesterRing.KVStore.Mock, "localhost", IngesterRingKey)
 			})
 
 			recorder := httptest.NewRecorder()
@@ -124,7 +124,7 @@ func TestIngester_ShutdownHandler(t *testing.T) {
 
 			// Make sure the ingester has been removed from the ring even when UnregisterFromRing is false.
 			test.Poll(t, 100*time.Millisecond, 0, func() interface{} {
-				return numTokens(config.LifecyclerConfig.RingConfig.KVStore.Mock, "localhost", IngesterRingKey)
+				return numTokens(config.IngesterRing.KVStore.Mock, "localhost", IngesterRingKey)
 			})
 		})
 	}

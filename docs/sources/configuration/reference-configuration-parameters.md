@@ -553,8 +553,8 @@ ha_tracker:
 
 # (advanced) Try writing to an additional ingester in the presence of an
 # ingester not in the ACTIVE state. It is useful to disable this along with
-# -ingester.unregister-on-shutdown=false in order to not spread samples to extra
-# ingesters during rolling restarts with consistent naming.
+# -ingester.ring.unregister-on-shutdown=false in order to not spread samples to
+# extra ingesters during rolling restarts with consistent naming.
 # CLI flag: -distributor.extend-writes
 [extend_writes: <boolean> | default = true]
 
@@ -607,16 +607,17 @@ ring:
   # CLI flag: -distributor.ring.instance-id
   [instance_id: <string> | default = "<hostname>"]
 
-  # Name of network interface to read address from.
+  # List of network interface names to look up when finding the instance IP
+  # address.
   # CLI flag: -distributor.ring.instance-interface-names
   [instance_interface_names: <list of string> | default = [eth0 en0]]
 
   # (advanced) Port to advertise in the ring (defaults to
-  # server.grpc-listen-port).
+  # -server.grpc-listen-port).
   # CLI flag: -distributor.ring.instance-port
   [instance_port: <int> | default = 0]
 
-  # (advanced) IP address to advertise in the ring.
+  # (advanced) IP address to advertise in the ring. Default is auto-detected.
   # CLI flag: -distributor.ring.instance-addr
   [instance_addr: <string> | default = ""]
 
@@ -640,76 +641,113 @@ instance_limits:
 The `ingester_config` configures the ingester.
 
 ```yaml
-lifecycler:
-  ring:
-    kvstore:
-      # Backend storage to use for the ring. Supported values are: consul, etcd,
-      # inmemory, memberlist, multi.
-      # CLI flag: -ring.store
-      [store: <string> | default = "memberlist"]
+ring:
+  # The key-value store used to share the hash ring across multiple instances.
+  # This option needs be set on ingesters, distributors, queriers and rulers
+  # when running in microservices mode.
+  kvstore:
+    # Backend storage to use for the ring. Supported values are: consul, etcd,
+    # inmemory, memberlist, multi.
+    # CLI flag: -ingester.ring.store
+    [store: <string> | default = "memberlist"]
 
-      # (advanced) The prefix for the keys in the store. Should end with a /.
-      # CLI flag: -ring.prefix
-      [prefix: <string> | default = "collectors/"]
+    # (advanced) The prefix for the keys in the store. Should end with a /.
+    # CLI flag: -ingester.ring.prefix
+    [prefix: <string> | default = "collectors/"]
 
-      # The consul_config configures the consul client.
-      [consul: <consul_config>]
+    # The consul_config configures the consul client.
+    # The CLI flags prefix for this block config is: ingester.ring
+    [consul: <consul_config>]
 
-      # The etcd_config configures the etcd client.
-      [etcd: <etcd_config>]
+    # The etcd_config configures the etcd client.
+    # The CLI flags prefix for this block config is: ingester.ring
+    [etcd: <etcd_config>]
 
-      multi:
-        # (advanced) Primary backend storage used by multi-client.
-        # CLI flag: -multi.primary
-        [primary: <string> | default = ""]
+    multi:
+      # (advanced) Primary backend storage used by multi-client.
+      # CLI flag: -ingester.ring.multi.primary
+      [primary: <string> | default = ""]
 
-        # (advanced) Secondary backend storage used by multi-client.
-        # CLI flag: -multi.secondary
-        [secondary: <string> | default = ""]
+      # (advanced) Secondary backend storage used by multi-client.
+      # CLI flag: -ingester.ring.multi.secondary
+      [secondary: <string> | default = ""]
 
-        # (advanced) Mirror writes to secondary store.
-        # CLI flag: -multi.mirror-enabled
-        [mirror_enabled: <boolean> | default = false]
+      # (advanced) Mirror writes to secondary store.
+      # CLI flag: -ingester.ring.multi.mirror-enabled
+      [mirror_enabled: <boolean> | default = false]
 
-        # (advanced) Timeout for storing value to secondary store.
-        # CLI flag: -multi.mirror-timeout
-        [mirror_timeout: <duration> | default = 2s]
+      # (advanced) Timeout for storing value to secondary store.
+      # CLI flag: -ingester.ring.multi.mirror-timeout
+      [mirror_timeout: <duration> | default = 2s]
 
-    # (advanced) The heartbeat timeout after which ingesters are skipped for
-    # reads/writes. 0 = never (timeout disabled).
-    # CLI flag: -ring.heartbeat-timeout
-    [heartbeat_timeout: <duration> | default = 1m]
+  # (advanced) Period at which to heartbeat to the ring. 0 = disabled.
+  # CLI flag: -ingester.ring.heartbeat-period
+  [heartbeat_period: <duration> | default = 5s]
 
-    # The number of ingesters to write to and read from.
-    # CLI flag: -distributor.replication-factor
-    [replication_factor: <int> | default = 3]
+  # (advanced) The heartbeat timeout after which ingesters are skipped for
+  # reads/writes. 0 = never (timeout disabled).
+  # CLI flag: -ingester.ring.heartbeat-timeout
+  [heartbeat_timeout: <duration> | default = 1m]
 
-    # True to enable the zone-awareness and replicate ingested samples across
-    # different availability zones.
-    # CLI flag: -distributor.zone-awareness-enabled
-    [zone_awareness_enabled: <boolean> | default = false]
+  # Number of ingesters that each time series is replicated to.
+  # CLI flag: -ingester.ring.replication-factor
+  [replication_factor: <int> | default = 3]
 
-    # (advanced) Comma-separated list of zones to exclude from the ring.
-    # Instances in excluded zones will be filtered out from the ring.
-    # CLI flag: -distributor.excluded-zones
-    [excluded_zones: <string> | default = ""]
+  # True to enable the zone-awareness and replicate ingested samples across
+  # different availability zones.
+  # CLI flag: -ingester.ring.zone-awareness-enabled
+  [zone_awareness_enabled: <boolean> | default = false]
+
+  # (advanced) Comma-separated list of zones to exclude from the ring. Instances
+  # in excluded zones will be filtered out from the ring.
+  # CLI flag: -ingester.ring.excluded-zones
+  [excluded_zones: <string> | default = ""]
+
+  # File path where tokens are stored. If empty, tokens are not stored at
+  # shutdown and restored at startup.
+  # CLI flag: -ingester.ring.tokens-file-path
+  [tokens_file_path: <string> | default = ""]
 
   # (advanced) Number of tokens for each ingester.
-  # CLI flag: -ingester.num-tokens
+  # CLI flag: -ingester.ring.num-tokens
   [num_tokens: <int> | default = 128]
 
-  # (advanced) Period at which to heartbeat to consul. 0 = disabled.
-  # CLI flag: -ingester.heartbeat-period
-  [heartbeat_period: <duration> | default = 5s]
+  # (advanced) Instance ID to register in the ring.
+  # CLI flag: -ingester.ring.instance-id
+  [instance_id: <string> | default = "<hostname>"]
+
+  # (advanced) List of network interface names to look up when finding the
+  # instance IP address.
+  # CLI flag: -ingester.ring.instance-interface-names
+  [instance_interface_names: <list of string> | default = [<private network interfaces>]]
+
+  # (advanced) Port to advertise in the ring (defaults to
+  # -server.grpc-listen-port).
+  # CLI flag: -ingester.ring.instance-port
+  [instance_port: <int> | default = 0]
+
+  # (advanced) IP address to advertise in the ring. Default is auto-detected.
+  # CLI flag: -ingester.ring.instance-addr
+  [instance_addr: <string> | default = ""]
+
+  # (advanced) The availability zone where this instance is running.
+  # CLI flag: -ingester.ring.instance-availability-zone
+  [instance_availability_zone: <string> | default = ""]
+
+  # (advanced) Unregister from the ring upon clean shutdown. It can be useful to
+  # disable for rolling restarts with consistent naming in conjunction with
+  # -distributor.extend-writes=false.
+  # CLI flag: -ingester.ring.unregister-on-shutdown
+  [unregister_on_shutdown: <boolean> | default = true]
 
   # (advanced) Observe tokens after generating to resolve collisions. Useful
   # when using gossiping ring.
-  # CLI flag: -ingester.observe-period
+  # CLI flag: -ingester.ring.observe-period
   [observe_period: <duration> | default = 0s]
 
   # (advanced) Period to wait for a claim from another member; will join
   # automatically after this.
-  # CLI flag: -ingester.join-after
+  # CLI flag: -ingester.ring.join-after
   [join_after: <duration> | default = 0s]
 
   # (advanced) Minimum duration to wait after the internal readiness checks have
@@ -717,53 +755,21 @@ lifecycler:
   # slowdown deployment controllers (eg. Kubernetes) after an instance is ready
   # and before they proceed with a rolling update, to give the rest of the
   # cluster instances enough time to receive ring updates.
-  # CLI flag: -ingester.min-ready-duration
+  # CLI flag: -ingester.ring.min-ready-duration
   [min_ready_duration: <duration> | default = 15s]
-
-  # Name of network interface to read address from.
-  # CLI flag: -ingester.lifecycler.interface
-  [interface_names: <list of string> | default = [<private network interfaces>]]
 
   # (advanced) Duration to sleep for before exiting, to ensure metrics are
   # scraped.
-  # CLI flag: -ingester.final-sleep
+  # CLI flag: -ingester.ring.final-sleep
   [final_sleep: <duration> | default = 0s]
-
-  # File path where tokens are stored. If empty, tokens are not stored at
-  # shutdown and restored at startup.
-  # CLI flag: -ingester.tokens-file-path
-  [tokens_file_path: <string> | default = ""]
-
-  # The availability zone where this instance is running.
-  # CLI flag: -ingester.availability-zone
-  [availability_zone: <string> | default = ""]
-
-  # (advanced) Unregister from the ring upon clean shutdown. It can be useful to
-  # disable for rolling restarts with consistent naming in conjunction with
-  # -distributor.extend-writes=false.
-  # CLI flag: -ingester.unregister-on-shutdown
-  [unregister_on_shutdown: <boolean> | default = true]
 
   # (advanced) When enabled the readiness probe succeeds only after all
   # instances are ACTIVE and healthy in the ring, otherwise only the instance
   # itself is checked. This option should be disabled if in your cluster
   # multiple instances can be rolled out simultaneously, otherwise rolling
   # updates may be slowed down.
-  # CLI flag: -ingester.readiness-check-ring-health
+  # CLI flag: -ingester.ring.readiness-check-ring-health
   [readiness_check_ring_health: <boolean> | default = true]
-
-  # (advanced) IP address to advertise in the ring.
-  # CLI flag: -ingester.lifecycler.addr
-  [address: <string> | default = ""]
-
-  # (advanced) port to advertise in consul (defaults to
-  # server.grpc-listen-port).
-  # CLI flag: -ingester.lifecycler.port
-  [port: <int> | default = 0]
-
-  # (advanced) ID to register in the ring.
-  # CLI flag: -ingester.lifecycler.ID
-  [id: <string> | default = "<hostname>"]
 
 # (advanced) Period at which metadata we have not seen will remain in memory
 # before being deleted.
@@ -1052,14 +1058,14 @@ grpc_client_config:
   # CLI flag: -query-frontend.grpc-client-config.tls-insecure-skip-verify
   [tls_insecure_skip_verify: <boolean> | default = false]
 
-# (advanced) Name of network interface to read address from. This address is
-# sent to query-scheduler and querier, which uses it to send the query response
-# back to query-frontend.
+# (advanced) List of network interface names to look up when finding the
+# instance IP address. This address is sent to query-scheduler and querier,
+# which uses it to send the query response back to query-frontend.
 # CLI flag: -query-frontend.instance-interface-names
 [instance_interface_names: <list of string> | default = [eth0 en0]]
 
-# (advanced) IP address to advertise to querier (via scheduler) (resolved via
-# interfaces by default).
+# (advanced) IP address to advertise to the querier (via scheduler) (default is
+# auto-detected from network interfaces).
 # CLI flag: -query-frontend.instance-addr
 [address: <string> | default = ""]
 
@@ -1327,16 +1333,17 @@ ring:
   # CLI flag: -ruler.ring.instance-id
   [instance_id: <string> | default = "<hostname>"]
 
-  # Name of network interface to read address from.
+  # List of network interface names to look up when finding the instance IP
+  # address.
   # CLI flag: -ruler.ring.instance-interface-names
   [instance_interface_names: <list of string> | default = [eth0 en0]]
 
   # (advanced) Port to advertise in the ring (defaults to
-  # server.grpc-listen-port).
+  # -server.grpc-listen-port).
   # CLI flag: -ruler.ring.instance-port
   [instance_port: <int> | default = 0]
 
-  # (advanced) IP address to advertise in the ring.
+  # (advanced) IP address to advertise in the ring. Default is auto-detected.
   # CLI flag: -ruler.ring.instance-addr
   [instance_addr: <string> | default = ""]
 
@@ -1690,16 +1697,17 @@ sharding_ring:
   # CLI flag: -alertmanager.sharding-ring.instance-id
   [instance_id: <string> | default = "<hostname>"]
 
-  # (advanced) Name of network interface to read address from.
+  # (advanced) List of network interface names to look up when finding the
+  # instance IP address.
   # CLI flag: -alertmanager.sharding-ring.instance-interface-names
   [instance_interface_names: <list of string> | default = [eth0 en0]]
 
   # (advanced) Port to advertise in the ring (defaults to
-  # server.grpc-listen-port).
+  # -server.grpc-listen-port).
   # CLI flag: -alertmanager.sharding-ring.instance-port
   [instance_port: <int> | default = 0]
 
-  # (advanced) IP address to advertise in the ring.
+  # (advanced) IP address to advertise in the ring. Default is auto-detected.
   # CLI flag: -alertmanager.sharding-ring.instance-addr
   [instance_addr: <string> | default = ""]
 
@@ -2172,11 +2180,11 @@ grpc_client_config:
 
 The `etcd_config` configures the etcd client. The supported CLI flags `<prefix>` used to reference this config block are:
 
-- _no prefix_
 - `alertmanager.sharding-ring`
 - `compactor.ring`
 - `distributor.ha-tracker`
 - `distributor.ring`
+- `ingester.ring`
 - `ruler.ring`
 - `store-gateway.sharding-ring`
 
@@ -2235,11 +2243,11 @@ The `etcd_config` configures the etcd client. The supported CLI flags `<prefix>`
 
 The `consul_config` configures the consul client. The supported CLI flags `<prefix>` used to reference this config block are:
 
-- _no prefix_
 - `alertmanager.sharding-ring`
 - `compactor.ring`
 - `distributor.ha-tracker`
 - `distributor.ring`
+- `ingester.ring`
 - `ruler.ring`
 - `store-gateway.sharding-ring`
 
@@ -3450,16 +3458,17 @@ sharding_ring:
   # CLI flag: -compactor.ring.instance-id
   [instance_id: <string> | default = "<hostname>"]
 
-  # Name of network interface to read address from.
+  # List of network interface names to look up when finding the instance IP
+  # address.
   # CLI flag: -compactor.ring.instance-interface-names
   [instance_interface_names: <list of string> | default = [eth0 en0]]
 
   # (advanced) Port to advertise in the ring (defaults to
-  # server.grpc-listen-port).
+  # -server.grpc-listen-port).
   # CLI flag: -compactor.ring.instance-port
   [instance_port: <int> | default = 0]
 
-  # (advanced) IP address to advertise in the ring.
+  # (advanced) IP address to advertise in the ring. Default is auto-detected.
   # CLI flag: -compactor.ring.instance-addr
   [instance_addr: <string> | default = ""]
 
@@ -3561,16 +3570,17 @@ sharding_ring:
   # CLI flag: -store-gateway.sharding-ring.instance-id
   [instance_id: <string> | default = "<hostname>"]
 
-  # Name of network interface to read address from.
+  # List of network interface names to look up when finding the instance IP
+  # address.
   # CLI flag: -store-gateway.sharding-ring.instance-interface-names
   [instance_interface_names: <list of string> | default = [eth0 en0]]
 
   # (advanced) Port to advertise in the ring (defaults to
-  # server.grpc-listen-port).
+  # -server.grpc-listen-port).
   # CLI flag: -store-gateway.sharding-ring.instance-port
   [instance_port: <int> | default = 0]
 
-  # (advanced) IP address to advertise in the ring.
+  # (advanced) IP address to advertise in the ring. Default is auto-detected.
   # CLI flag: -store-gateway.sharding-ring.instance-addr
   [instance_addr: <string> | default = ""]
 

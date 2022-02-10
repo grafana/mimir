@@ -65,14 +65,14 @@ func NewDistributorWithConfigFile(name, consulAddress, configFile string, flags 
 	binaryName := getBinaryNameForBackwardsCompatibility(image)
 
 	defaultFlags := map[string]string{
-		"-target":                         "distributor",
-		"-log.level":                      "warn",
-		"-auth.multitenancy-enabled":      "true",
-		"-distributor.replication-factor": "1",
-		"-distributor.remote-timeout":     "2s", // Fail fast in integration tests.
+		"-target":                           "distributor",
+		"-log.level":                        "warn",
+		"-auth.multitenancy-enabled":        "true",
+		"-ingester.ring.replication-factor": "1",
+		"-distributor.remote-timeout":       "2s", // Fail fast in integration tests.
 		// Configure the ingesters ring backend
-		"-ring.store":      "consul",
-		"-consul.hostname": consulAddress,
+		"-ingester.ring.store":           "consul",
+		"-ingester.ring.consul.hostname": consulAddress,
 		// Configure the distributor ring backend
 		"-distributor.ring.store": "memberlist",
 	}
@@ -104,12 +104,12 @@ func NewQuerierWithConfigFile(name, consulAddress, configFile string, flags map[
 	binaryName := getBinaryNameForBackwardsCompatibility(image)
 
 	defaultFlags := map[string]string{
-		"-target":                         "querier",
-		"-log.level":                      "warn",
-		"-distributor.replication-factor": "1",
+		"-target":                           "querier",
+		"-log.level":                        "warn",
+		"-ingester.ring.replication-factor": "1",
 		// Ingesters ring backend.
-		"-ring.store":      "consul",
-		"-consul.hostname": consulAddress,
+		"-ingester.ring.store":           "consul",
+		"-ingester.ring.consul.hostname": consulAddress,
 		// Query-frontend worker.
 		"-querier.frontend-client.backoff-min-period": "100ms",
 		"-querier.frontend-client.backoff-max-period": "100ms",
@@ -183,15 +183,13 @@ func NewIngesterWithConfigFile(name, consulAddress, configFile string, flags map
 	binaryName := getBinaryNameForBackwardsCompatibility(image)
 
 	defaultFlags := map[string]string{
-		"-target":                      "ingester",
-		"-log.level":                   "warn",
-		"-ingester.final-sleep":        "0s",
-		"-ingester.join-after":         "0s",
-		"-ingester.min-ready-duration": "0s",
-		"-ingester.num-tokens":         "512",
+		"-target":                           "ingester",
+		"-log.level":                        "warn",
+		"-ingester.ring.min-ready-duration": "0s",
+		"-ingester.ring.num-tokens":         "512",
 		// Configure the ingesters ring backend
-		"-ring.store":      "consul",
-		"-consul.hostname": consulAddress,
+		"-ingester.ring.store":           "consul",
+		"-ingester.ring.consul.hostname": consulAddress,
 	}
 
 	o := newOptions(options)
@@ -324,13 +322,11 @@ func NewSingleBinary(name string, flags map[string]string, image string, otherPo
 		"-querier.frontend-client.backoff-retries":    "1",
 		"-querier.max-concurrent":                     "1",
 		// Distributor.
-		"-distributor.replication-factor": "1",
-		"-distributor.ring.store":         "memberlist",
+		"-distributor.ring.store": "memberlist",
 		// Ingester.
-		"-ingester.final-sleep":        "0s",
-		"-ingester.join-after":         "0s",
-		"-ingester.min-ready-duration": "0s",
-		"-ingester.num-tokens":         "512",
+		"-ingester.ring.replication-factor": "1",
+		"-ingester.ring.min-ready-duration": "0s",
+		"-ingester.ring.num-tokens":         "512",
 	}
 
 	return NewMimirService(
@@ -416,8 +412,8 @@ func NewRuler(name string, consulAddress string, flags map[string]string, image 
 		"-target":    "ruler",
 		"-log.level": "warn",
 		// Configure the ingesters ring backend
-		"-ring.store":      "consul",
-		"-consul.hostname": consulAddress,
+		"-ingester.ring.store":           "consul",
+		"-ingester.ring.consul.hostname": consulAddress,
 	}
 
 	return NewMimirService(

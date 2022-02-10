@@ -30,7 +30,7 @@ ingester_client:
     grpc_compression: gzip
 
 ingester:
-  lifecycler:
+  ring:
     # The address to advertise for this ingester.  Will be autodiscovered by
     # looking up address on eth0 or en0; can be specified if this fails.
     # address: 127.0.0.1
@@ -42,10 +42,9 @@ ingester:
     num_tokens: 512
 
     # Use an in memory ring store, so we don't need to launch a Consul.
-    ring:
-      kvstore:
-        store: inmemory
-      replication_factor: 1
+    kvstore:
+      store: inmemory
+    replication_factor: 1
 
 blocks_storage:
   tsdb:

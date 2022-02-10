@@ -50,11 +50,11 @@ func TestIngesterGlobalLimits(t *testing.T) {
 			defer s.Close()
 
 			flags := BlocksStorageFlags()
-			flags["-distributor.replication-factor"] = "1"
+			flags["-ingester.ring.replication-factor"] = "1"
 			flags["-distributor.ingestion-tenant-shard-size"] = strconv.Itoa(testData.tenantShardSize)
 			flags["-ingester.max-global-series-per-user"] = strconv.Itoa(testData.maxGlobalSeriesPerTenant)
 			flags["-ingester.max-global-series-per-metric"] = strconv.Itoa(testData.maxGlobalSeriesPerMetric)
-			flags["-ingester.heartbeat-period"] = "1s"
+			flags["-ingester.ring.heartbeat-period"] = "1s"
 
 			// Start dependencies.
 			consul := e2edb.NewConsul()

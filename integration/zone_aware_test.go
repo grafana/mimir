@@ -31,8 +31,8 @@ func TestZoneAwareReplication(t *testing.T) {
 	defer s.Close()
 
 	flags := BlocksStorageFlags()
-	flags["-distributor.replication-factor"] = "3"
-	flags["-distributor.zone-awareness-enabled"] = "true"
+	flags["-ingester.ring.replication-factor"] = "3"
+	flags["-ingester.ring.zone-awareness-enabled"] = "true"
 
 	// Start dependencies.
 	consul := e2edb.NewConsul()
@@ -42,7 +42,7 @@ func TestZoneAwareReplication(t *testing.T) {
 	// Start Mimir components.
 	ingesterFlags := func(zone string) map[string]string {
 		return mergeFlags(flags, map[string]string{
-			"-ingester.availability-zone": zone,
+			"-ingester.ring.instance-availability-zone": zone,
 		})
 	}
 

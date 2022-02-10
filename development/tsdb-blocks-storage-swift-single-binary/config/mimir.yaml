@@ -12,18 +12,16 @@ ingester_client:
     grpc_compression: gzip
 
 ingester:
-  lifecycler:
+  ring:
     # We want to start immediately.
     join_after: 0
     final_sleep: 0s
     num_tokens: 512
-
-    ring:
-      kvstore:
-        store: consul
-        consul:
-          host: consul:8500
-      replication_factor: 1
+    kvstore:
+      store: consul
+      consul:
+        host: consul:8500
+    replication_factor: 1
 
 querier:
   query_ingesters_within: 3h

@@ -304,16 +304,17 @@ compactor:
     # CLI flag: -compactor.ring.instance-id
     [instance_id: <string> | default = "<hostname>"]
 
-    # Name of network interface to read address from.
+    # List of network interface names to look up when finding the instance IP
+    # address.
     # CLI flag: -compactor.ring.instance-interface-names
     [instance_interface_names: <list of string> | default = [eth0 en0]]
 
     # (advanced) Port to advertise in the ring (defaults to
-    # server.grpc-listen-port).
+    # -server.grpc-listen-port).
     # CLI flag: -compactor.ring.instance-port
     [instance_port: <int> | default = 0]
 
-    # (advanced) IP address to advertise in the ring.
+    # (advanced) IP address to advertise in the ring. Default is auto-detected.
     # CLI flag: -compactor.ring.instance-addr
     [instance_addr: <string> | default = ""]
 

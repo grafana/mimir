@@ -44,19 +44,19 @@ Currently experimental features are:
 - Hash ring
   - Disabling ring heartbeat timeouts
     - `-distributor.ring.heartbeat-timeout=0`
-    - `-ring.heartbeat-timeout=0`
+    - `-ingester.ring.heartbeat-timeout=0`
     - `-ruler.ring.heartbeat-timeout=0`
     - `-alertmanager.sharding-ring.heartbeat-timeout=0`
     - `-compactor.ring.heartbeat-timeout=0`
     - `-store-gateway.sharding-ring.heartbeat-timeout=0`
   - Disabling ring heartbeats
     - `-distributor.ring.heartbeat-period=0`
-    - `-ingester.heartbeat-period=0`
+    - `-ingester.ring.heartbeat-period=0`
     - `-ruler.ring.heartbeat-period=0`
     - `-alertmanager.sharding-ring.heartbeat-period=0`
     - `-compactor.ring.heartbeat-period=0`
     - `-store-gateway.sharding-ring.heartbeat-period=0`
-  - Exclude ingesters running in specific zones (`-distributor.excluded-zones`)
+  - Exclude ingesters running in specific zones (`-ingester.ring.excluded-zones`)
 - Ingester
   - Add variance to chunks end time to spread writing across time (`-blocks-storage.tsdb.head-chunks-end-time-variance`)
   - Using queue and asynchronous chunks disk mapper (`-blocks-storage.tsdb.head-chunks-write-queue-size`)
