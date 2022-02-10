@@ -150,7 +150,6 @@ func TestQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T) {
 				"-blocks-storage.bucket-store.index-cache.backend":             testCfg.indexCacheBackend,
 				"-blocks-storage.bucket-store.bucket-index.enabled":            strconv.FormatBool(testCfg.bucketIndexEnabled),
 				"-store-gateway.tenant-shard-size":                             fmt.Sprintf("%d", testCfg.tenantShardSize),
-				"-querier.query-store-for-labels-enabled":                      "true",
 				"-frontend.query-stats-enabled":                                "true",
 				"-frontend.parallelize-shardable-queries":                      strconv.FormatBool(testCfg.queryShardingEnabled),
 			})
@@ -353,7 +352,6 @@ func TestQuerierWithBlocksStorageRunningInSingleBinaryMode(t *testing.T) {
 				"-blocks-storage.bucket-store.index-cache.backend":             testCfg.indexCacheBackend,
 				"-blocks-storage.bucket-store.index-cache.memcached.addresses": "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
 				"-blocks-storage.bucket-store.bucket-index.enabled":            strconv.FormatBool(testCfg.bucketIndexEnabled),
-				"-querier.query-store-for-labels-enabled":                      "true",
 				// Ingester.
 				"-ring.store":      "consul",
 				"-consul.hostname": consul.NetworkHTTPEndpoint(),
@@ -818,7 +816,6 @@ func TestQueryLimitsWithBlocksStorageRunningInMicroServices(t *testing.T) {
 		"-blocks-storage.tsdb.ship-interval":         "1s",
 		"-blocks-storage.bucket-store.sync-interval": "1s",
 		"-blocks-storage.tsdb.retention-period":      ((blockRangePeriod * 2) - 1).String(),
-		"-querier.query-store-for-labels-enabled":    "true",
 		"-querier.max-fetched-series-per-query":      "3",
 	})
 

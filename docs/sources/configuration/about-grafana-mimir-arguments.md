@@ -304,8 +304,6 @@ Example runtime configuration file:
 overrides:
   tenant1:
     ingestion_rate: 10000
-  tenant2:
-    max_samples_per_query: 1000000
 
 multi_kv_config:
   mirror_enabled: false
@@ -330,8 +328,6 @@ The `overrides` field is a map of tenant ID (same values as passed in the `X-Sco
 overrides:
   tenant1:
     ingestion_rate: 10000
-  tenant2:
-    max_samples_per_query: 1000000
 ```
 
 Valid per-tenant limits are (with their corresponding flags for default values):
@@ -357,10 +353,6 @@ Valid per-tenant limits are (with their corresponding flags for default values):
   Enforced by the ingesters; limits the number of in-memory series a user (or a given metric) can have. A series is kept in memory if a sample has been written since the last TSDB head compaction (occurring every 2h) or in the last 1h (regardless when the last TSDB head compaction occurred). The limit is enforced across the cluster. Each ingester is configured with a local limit based on the replication factor and the current number of healthy ingesters. The local limit is updated whenever the number of ingesters change.
 
   Requires `-distributor.replication-factor` and `-distributor.zone-awareness-enabled` set for the ingesters too.
-
-- `max_samples_per_query` / `-ingester.max-samples-per-query`
-
-  Limits on the number of timeseries and samples returns by a single ingester during a query.
 
 - `max_global_metadata_per_user` / `-ingester.max-global-metadata-per-user`
 - `max_global_metadata_per_metric` / `-ingester.max-global-metadata-per-metric`

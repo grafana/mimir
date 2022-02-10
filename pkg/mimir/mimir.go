@@ -137,7 +137,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.API.RegisterFlags(f)
 	c.registerServerFlagsWithChangedDefaultValues(f)
 	c.Distributor.RegisterFlags(f)
-	c.Querier.RegisterFlags(f, logger)
+	c.Querier.RegisterFlags(f)
 	c.IngesterClient.RegisterFlags(f)
 	c.Ingester.RegisterFlags(f)
 	c.Flusher.RegisterFlags(f)

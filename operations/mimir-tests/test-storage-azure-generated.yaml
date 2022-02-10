@@ -839,7 +839,6 @@ spec:
         - -querier.query-ingesters-within=13h
         - -querier.query-label-names-with-matchers-enabled=true
         - -querier.query-store-after=12h
-        - -querier.query-store-for-labels-enabled=true
         - -querier.scheduler-address=query-scheduler-discovery.default.svc.cluster.local:9095
         - -ring.heartbeat-timeout=10m
         - -ring.prefix=
