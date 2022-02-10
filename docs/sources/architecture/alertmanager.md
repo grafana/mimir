@@ -10,19 +10,10 @@ The Mimir Alertmanager adds multi-tenancy support and horizontal scalability on 
 The Mimir Alertmanager is an **optional** service responsible for accepting alert notifications from the [Mimir ruler]({{<relref "./ruler.md">}}).
 It deduplicates and groups alert notifications, and routes them to the correct notification channel, such as email, PagerDuty, or OpsGenie.
 
-
 ## Multi-tenancy
 
 Multi-tenancy in the Mimir Alertmanager uses the tenant ID header as with all other Mimir services.
 Each tenant has their own isolated alert routing configuration and Alertmanager UI.
-
-### Alertmanager UI
-
-The Mimir Alertmanager exposes the same web UI as the Prometheus Alertmanager.
-Each tenant can access their own Alertmanager UI at the `/alertmanager` endpoint.
-For a complete reference of Alertmanager endpoints, refer to [HTTP API]({{<relref "../api/_index.md" >}}).
-
-Tenants only see alerts sent to their Alertmanager.
 
 ### Tenant configurations
 
@@ -67,6 +58,14 @@ Specify a fallback configuration using the `--alertmanager.configs.fallback` com
 
 The Mimir Alertmanager has a number of per-tenant limits that are part of the [`limits_config`]({{<relref "../configuration/config-file-reference.md#limits_config" >}}).
 Each Mimir Alertmanager limit configuration parameter has an `alertmanager` prefix.
+
+## Alertmanager UI
+
+The Mimir Alertmanager exposes the same web UI as the Prometheus Alertmanager.
+Each tenant can access their own Alertmanager UI at the `/alertmanager` endpoint.
+For a complete reference of Alertmanager endpoints, refer to [HTTP API]({{<relref "../api/_index.md" >}}).
+
+Tenants only see alerts sent to their Alertmanager.
 
 ## Horizontal scalability
 
