@@ -1,6 +1,6 @@
 # Play with Grafana Mimir
 
-Grafana Mimir is a distributed, horizontally scalable and highly available long term storage for [Prometheus](https://prometheus.io).
+Grafana Mimir is a distributed, horizontally scalable, and highly available long term storage for [Prometheus](https://prometheus.io).
 
 In this tutorial, you'll:
 
