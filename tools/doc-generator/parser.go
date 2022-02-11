@@ -246,7 +246,7 @@ func parseConfig(block *configBlock, cfg interface{}, flags map[uintptr]*flag.Fl
 			fieldFlag:     fieldFlag.Name,
 			fieldDesc:     getFieldDescription(field, fieldFlag.Usage),
 			fieldType:     fieldType,
-			fieldDefault:  fieldFlag.DefValue,
+			fieldDefault:  getFieldDefault(field, fieldFlag.DefValue),
 			fieldExample:  getFieldExample(fieldName, field.Type),
 			fieldCategory: getFieldCategory(field, fieldFlag.Name),
 		})
@@ -386,7 +386,7 @@ func getCustomFieldEntry(field reflect.StructField, fieldValue reflect.Value, fl
 			fieldFlag:     fieldFlag.Name,
 			fieldDesc:     fieldFlag.Usage,
 			fieldType:     "string",
-			fieldDefault:  fieldFlag.DefValue,
+			fieldDefault:  getFieldDefault(field, fieldFlag.DefValue),
 			fieldCategory: getFieldCategory(field, fieldFlag.Name),
 		}, nil
 	}
@@ -403,7 +403,7 @@ func getCustomFieldEntry(field reflect.StructField, fieldValue reflect.Value, fl
 			fieldFlag:     fieldFlag.Name,
 			fieldDesc:     fieldFlag.Usage,
 			fieldType:     "url",
-			fieldDefault:  fieldFlag.DefValue,
+			fieldDefault:  getFieldDefault(field, fieldFlag.DefValue),
 			fieldCategory: getFieldCategory(field, fieldFlag.Name),
 		}, nil
 	}
@@ -420,7 +420,7 @@ func getCustomFieldEntry(field reflect.StructField, fieldValue reflect.Value, fl
 			fieldFlag:     fieldFlag.Name,
 			fieldDesc:     fieldFlag.Usage,
 			fieldType:     "string",
-			fieldDefault:  fieldFlag.DefValue,
+			fieldDefault:  getFieldDefault(field, fieldFlag.DefValue),
 			fieldCategory: getFieldCategory(field, fieldFlag.Name),
 		}, nil
 	}
@@ -437,7 +437,7 @@ func getCustomFieldEntry(field reflect.StructField, fieldValue reflect.Value, fl
 			fieldFlag:     fieldFlag.Name,
 			fieldDesc:     fieldFlag.Usage,
 			fieldType:     "duration",
-			fieldDefault:  fieldFlag.DefValue,
+			fieldDefault:  getFieldDefault(field, fieldFlag.DefValue),
 			fieldCategory: getFieldCategory(field, fieldFlag.Name),
 		}, nil
 	}
@@ -454,7 +454,7 @@ func getCustomFieldEntry(field reflect.StructField, fieldValue reflect.Value, fl
 			fieldFlag:     fieldFlag.Name,
 			fieldDesc:     fieldFlag.Usage,
 			fieldType:     "time",
-			fieldDefault:  fieldFlag.DefValue,
+			fieldDefault:  getFieldDefault(field, fieldFlag.DefValue),
 			fieldCategory: getFieldCategory(field, fieldFlag.Name),
 		}, nil
 	}
@@ -467,6 +467,14 @@ func getFieldCategory(field reflect.StructField, name string) string {
 		return category.String()
 	}
 	return field.Tag.Get("category")
+}
+
+func getFieldDefault(field reflect.StructField, fallback string) string {
+	if v := getDocTagValue(field, "default"); v != "" {
+		return v
+	}
+
+	return fallback
 }
 
 func isFieldHidden(f reflect.StructField) bool {

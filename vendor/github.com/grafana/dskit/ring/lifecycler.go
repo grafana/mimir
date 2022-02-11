@@ -33,7 +33,7 @@ type LifecyclerConfig struct {
 	ObservePeriod    time.Duration `yaml:"observe_period" category:"advanced"`
 	JoinAfter        time.Duration `yaml:"join_after" category:"advanced"`
 	MinReadyDuration time.Duration `yaml:"min_ready_duration" category:"advanced"`
-	InfNames         []string      `yaml:"interface_names"`
+	InfNames         []string      `yaml:"interface_names" doc:"default=[<private network interfaces>]"`
 
 	// FinalSleep's default value can be overridden by
 	// setting it before calling RegisterFlags or RegisterFlagsWithPrefix.
@@ -44,9 +44,9 @@ type LifecyclerConfig struct {
 	ReadinessCheckRingHealth bool          `yaml:"readiness_check_ring_health" category:"advanced"`
 
 	// For testing, you can override the address and ID of this ingester
-	Addr string `yaml:"address" doc:"hidden" category:"advanced"`
-	Port int    `doc:"hidden" category:"advanced"`
-	ID   string `doc:"hidden" category:"advanced"`
+	Addr string `yaml:"address" category:"advanced"`
+	Port int    `category:"advanced"`
+	ID   string `doc:"default=<hostname>" category:"advanced"`
 
 	// Injected internally
 	ListenPort int `yaml:"-"`

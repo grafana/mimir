@@ -188,7 +188,7 @@ Usage of ./cmd/mimir/mimir:
   -alertmanager.sharding-ring.instance-availability-zone string
     	The availability zone where this instance is running. Required if zone-awareness is enabled.
   -alertmanager.sharding-ring.instance-id string
-    	Instance ID to register in the ring. (default "{{.Hostname}}")
+    	Instance ID to register in the ring. (default "<hostname>")
   -alertmanager.sharding-ring.instance-interface-names value
     	Name of network interface to read address from. (default [eth0 en0])
   -alertmanager.sharding-ring.instance-port int
@@ -564,7 +564,7 @@ Usage of ./cmd/mimir/mimir:
   -compactor.ring.instance-addr string
     	IP address to advertise in the ring.
   -compactor.ring.instance-id string
-    	Instance ID to register in the ring. (default "{{.Hostname}}")
+    	Instance ID to register in the ring. (default "<hostname>")
   -compactor.ring.instance-interface-names value
     	Name of network interface to read address from. (default [eth0 en0])
   -compactor.ring.instance-port int
@@ -746,7 +746,7 @@ Usage of ./cmd/mimir/mimir:
   -distributor.ring.instance-addr string
     	IP address to advertise in the ring.
   -distributor.ring.instance-id string
-    	Instance ID to register in the ring. (default "{{.Hostname}}")
+    	Instance ID to register in the ring. (default "<hostname>")
   -distributor.ring.instance-interface-names value
     	Name of network interface to read address from. (default [eth0 en0])
   -distributor.ring.instance-port int
@@ -950,11 +950,11 @@ Usage of ./cmd/mimir/mimir:
   -ingester.join-after duration
     	Period to wait for a claim from another member; will join automatically after this.
   -ingester.lifecycler.ID string
-    	ID to register in the ring. (default "{{.Hostname}}")
+    	ID to register in the ring. (default "<hostname>")
   -ingester.lifecycler.addr string
     	IP address to advertise in the ring.
   -ingester.lifecycler.interface value
-    	Name of network interface to read address from. (default [eth0 en0])
+    	Name of network interface to read address from. (default [<private network interfaces>])
   -ingester.lifecycler.port int
     	port to advertise in consul (defaults to server.grpc-listen-port).
   -ingester.max-global-exemplars-per-user int
@@ -1418,7 +1418,7 @@ Usage of ./cmd/mimir/mimir:
   -ruler.ring.instance-addr string
     	IP address to advertise in the ring.
   -ruler.ring.instance-id string
-    	Instance ID to register in the ring. (default "{{.Hostname}}")
+    	Instance ID to register in the ring. (default "<hostname>")
   -ruler.ring.instance-interface-names value
     	Name of network interface to read address from. (default [eth0 en0])
   -ruler.ring.instance-port int
@@ -1562,7 +1562,7 @@ Usage of ./cmd/mimir/mimir:
   -store-gateway.sharding-ring.instance-availability-zone string
     	The availability zone where this instance is running. Required if zone-awareness is enabled.
   -store-gateway.sharding-ring.instance-id string
-    	Instance ID to register in the ring. (default "{{.Hostname}}")
+    	Instance ID to register in the ring. (default "<hostname>")
   -store-gateway.sharding-ring.instance-interface-names value
     	Name of network interface to read address from. (default [eth0 en0])
   -store-gateway.sharding-ring.instance-port int
