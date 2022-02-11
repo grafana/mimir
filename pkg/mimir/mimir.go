@@ -212,6 +212,16 @@ func (c *Config) isModuleEnabled(m string) bool {
 	return util.StringsContain(c.Target, m)
 }
 
+func (c *Config) isAnyModuleEnabled(modules ...string) bool {
+	for _, m := range modules {
+		if c.isModuleEnabled(m) {
+			return true
+		}
+	}
+
+	return false
+}
+
 // validateYAMLEmptyNodes ensure that no empty node has been specified in the YAML config file.
 // When an empty node is defined in YAML, the YAML parser sets the whole struct to its zero value
 // and so we loose all default values. It's very difficult to detect this case for the user, so we
