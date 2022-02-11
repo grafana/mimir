@@ -262,7 +262,7 @@ func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus
 		forceCompactTrigger:   make(chan requestWithUsersAndCallback),
 		shipTrigger:           make(chan requestWithUsersAndCallback),
 		seriesHashCache:       hashcache.NewSeriesHashCache(cfg.BlocksStorageConfig.TSDB.SeriesHashCacheMaxBytes),
-		runtimeMatchersConfig: cfg.RuntimeMatchersConfigFn(),
+		runtimeMatchersConfig: defaultRuntimeMatchers,
 	}, nil
 }
 
@@ -472,10 +472,10 @@ func (i *Ingester) updateLoop(ctx context.Context) error {
 }
 
 func (i *Ingester) reloadConfig(now time.Time) {
-	newConfig := i.cfg.RuntimeMatchersConfigFn()
+	newConfig := i.getRuntimeMatchersConfig()
 	// it is crucial to only reload matchers which have been changed, as this function runs even if there is no change in config
 	// first check the generic matchers
-	if i.runtimeMatchersConfig.GenericMatchers.String() != newConfig.GenericMatchers.String() {
+	if i.runtimeMatchersConfig == nil || i.runtimeMatchersConfig.GenericMatchers.String() != newConfig.GenericMatchers.String() {
 		// need to replace everything
 		for _, userID := range i.getTSDBUsers() {
 			userDB := i.getTSDB(userID)
@@ -533,6 +533,19 @@ func createCustomTrackerConfig(runtimeConfig *RuntimeMatchersConfig, userID stri
 	asc := &ActiveSeriesCustomTrackersConfig{}
 	err := asc.Set(desiredConfig)
 	return *asc, err
+}
+
+func (i *Ingester) getRuntimeMatchersConfig() *RuntimeMatchersConfig {
+	if i.cfg.RuntimeMatchersConfigFn == nil {
+		return &RuntimeMatchersConfig{}
+	}
+
+	r := i.cfg.RuntimeMatchersConfigFn()
+	if r == nil {
+		return &RuntimeMatchersConfig{}
+	}
+
+	return r
 }
 
 func (i *Ingester) updateActiveSeries(now time.Time) {
@@ -1510,7 +1523,7 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 
 	blockRanges := i.cfg.BlocksStorageConfig.TSDB.BlockRanges.ToMilliseconds()
 	var activeSeriesMathers *ActiveSeriesMatchers
-	customTrackerConfig, err := createCustomTrackerConfig(i.cfg.RuntimeMatchersConfigFn(), userID)
+	customTrackerConfig, err := createCustomTrackerConfig(i.getRuntimeMatchersConfig(), userID)
 	if err != nil {
 		level.Error(i.logger).Log("msg", "failed to create custom tracker config, using empty one", "user", userID, "err", err)
 	}

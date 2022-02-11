@@ -5271,9 +5271,14 @@ func TestIngesterActiveSeries(t *testing.T) {
 			cfg := defaultIngesterTestConfig(t)
 			cfg.LifecyclerConfig.JoinAfter = 0
 			cfg.ActiveSeriesMetricsEnabled = !testData.disableActiveSeries
-			cfg.ActiveSeriesCustomTrackers = map[string]string{
-				"bool_is_true":  `{bool="true"}`,
-				"bool_is_false": `{bool="false"}`,
+			cfg.RuntimeMatchersConfigFn = func() *RuntimeMatchersConfig {
+				genericMatchers := map[string]string{
+					"bool_is_true":  `{bool="true"}`,
+					"bool_is_false": `{bool="false"}`,
+				}
+				return &RuntimeMatchersConfig{
+					GenericMatchers: (ActiveSeriesCustomTrackersConfig)(genericMatchers),
+				}
 			}
 
 			ing, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, defaultLimitsTestConfig(), "", registry)
