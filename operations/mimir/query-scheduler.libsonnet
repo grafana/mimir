@@ -50,6 +50,6 @@
   },
 
   query_frontend_args+:: if !$._config.query_scheduler_enabled then {} else {
-    'frontend.scheduler-address': 'query-scheduler-discovery.%(namespace)s.svc.cluster.local:9095' % $._config,
+    'query-frontend.scheduler-address': 'query-scheduler-discovery.%(namespace)s.svc.cluster.local:9095' % $._config,
   },
 }

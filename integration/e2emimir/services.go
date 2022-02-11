@@ -232,7 +232,7 @@ func NewQueryFrontendWithConfigFile(name, configFile string, flags map[string]st
 		"-target":    "query-frontend",
 		"-log.level": "warn",
 		// Quickly detect query-scheduler when running it.
-		"-frontend.scheduler-dns-lookup-period": "1s",
+		"-query-frontend.scheduler-dns-lookup-period": "1s",
 	}
 
 	o := newOptions(options)

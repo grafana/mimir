@@ -10,7 +10,7 @@ Query-scheduler is an **optional** service that moves the internal queue from th
 This enables independent scaling of query frontends and number of queues (query-scheduler).
 
 In order to use query-scheduler, both query frontend and queriers must be configured with the query-scheduler address
-(using `-frontend.scheduler-address` and `-querier.scheduler-address` options respectively).
+(using `-query-frontend.scheduler-address` and `-querier.scheduler-address` options respectively).
 
 Flow of the query in the system changes when using query-scheduler:
 

@@ -36,6 +36,7 @@ func previousVersionImages() map[string]e2emimir.FlagMapper {
 		for _, image := range strings.Split(overrideImageVersions, ",") {
 			previousVersionImages[image] = e2emimir.ChainFlagMappers(
 				cortexFlagMapper,
+				revertRenameFrontendToQueryFrontendFlagMapper,
 			)
 		}
 
