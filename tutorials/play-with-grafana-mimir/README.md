@@ -47,7 +47,8 @@ This command starts:
 - Prometheus
   - Scrapes Grafana Mimir metrics, then writes them back to Grafana Mimir to ensure availability of ingested metrics
 - Grafana
-  - Includes some Grafana Mimir dashboards preinstalled
+  - Includes a preinstalled datasource to query Grafana Mimir
+  - Includes preinstalled dashboards for monitoring Grafana Mimir
 - Load balancer
   - A simple NGINX-based load balancer that exposes Grafana Mimir endpoints on the host
 
