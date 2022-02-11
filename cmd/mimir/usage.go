@@ -141,32 +141,35 @@ func parseConfig(cfg interface{}, fields map[uintptr]reflect.StructField) error 
 
 func getFlagName(fl *flag.Flag) string {
 	if getter, ok := fl.Value.(flag.Getter); ok {
-		v := reflect.ValueOf(getter.Get())
-		t := v.Type()
-		switch t.Name() {
-		case "bool":
-			return ""
-		case "Duration":
-			return "duration"
-		case "float64":
-			return "float"
-		case "int", "int64":
-			return "int"
-		case "string":
-			return "string"
-		case "uint", "uint64":
-			return "uint"
-		case "Secret":
-			return "string"
-		default:
-			return "value"
+		if v := reflect.ValueOf(getter.Get()); v.IsValid() {
+			t := v.Type()
+			switch t.Name() {
+			case "bool":
+				return ""
+			case "Duration":
+				return "duration"
+			case "float64":
+				return "float"
+			case "int", "int64":
+				return "int"
+			case "string":
+				return "string"
+			case "uint", "uint64":
+				return "uint"
+			case "Secret":
+				return "string"
+			default:
+				return "value"
+			}
 		}
 	}
 
 	// Check custom types.
-	switch reflect.ValueOf(fl.Value).Type().String() {
-	case "*flagext.Secret":
-		return "string"
+	if v := reflect.ValueOf(fl.Value); v.IsValid() {
+		switch v.Type().String() {
+		case "*flagext.Secret":
+			return "string"
+		}
 	}
 
 	return "value"
