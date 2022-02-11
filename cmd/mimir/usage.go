@@ -177,15 +177,10 @@ func getFlagName(fl *flag.Flag) string {
 }
 
 func getFlagDefault(fl *flag.Flag, field reflect.StructField) string {
-	if docDefault := getDocTagValue(field, "default"); docDefault != "" {
+	if docDefault := parseDocTag(field)["default"]; docDefault != "" {
 		return docDefault
 	}
 	return fl.DefValue
-}
-
-func getDocTagValue(f reflect.StructField, name string) string {
-	cfg := parseDocTag(f)
-	return cfg[name]
 }
 
 func parseDocTag(f reflect.StructField) map[string]string {
