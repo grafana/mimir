@@ -22,8 +22,9 @@ const (
 
 // ActiveSeries is keeping track of recently active series for a single tenant.
 type ActiveSeries struct {
-	asm     *ActiveSeriesMatchers
-	stripes [numActiveSeriesStripes]activeSeriesStripe
+	asm        *ActiveSeriesMatchers
+	stripes    [numActiveSeriesStripes]activeSeriesStripe
+	lastUpdate time.Time
 }
 
 // activeSeriesStripe holds a subset of the series timestamps for a single tenant.
@@ -61,6 +62,20 @@ func NewActiveSeries(asm *ActiveSeriesMatchers) *ActiveSeries {
 	}
 
 	return c
+}
+
+func (c *ActiveSeries) ReloadSeriesMatchers(asm *ActiveSeriesMatchers) {
+	c.asm = asm
+	for i := 0; i < numActiveSeriesStripes; i++ {
+		c.stripes[i].mu.Lock()
+		defer c.stripes[i].mu.Unlock()
+	}
+
+	for i := 0; i < numActiveSeriesStripes; i++ {
+		c.stripes[i].asm = asm
+		c.stripes[i].activeMatching = makeIntSliceIfNotEmpty(len(asm.MatcherNames()))
+	}
+	c.lastUpdate = time.Now()
 }
 
 // Updates series timestamp to 'now'. Function is called to make a copy of labels if entry doesn't exist yet.
