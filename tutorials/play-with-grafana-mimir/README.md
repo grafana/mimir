@@ -88,17 +88,19 @@ offered by Grafana.
 1. Click "New alert rule", which also allows you to configure recording rules.
 1. Configure the recording rule:
    1. Type `count:up` in the "Rule name" field.
-   1. Choose `Cortex managed recording rule` in the "Rule type" field.
+   1. Choose `Cortex managed recording rule` in the "Rule type" field. Make sure to select "managed recording rule" and not
+      "managed alert rule."
    1. Choose `Mimir` in the "Select data source" field.
    1. Type `example-namespace` in the "Namespace" field.
    1. Type `example-group` in the "Group" field.
    1. Type `count(up)` in the "Create a query to be recorded" field.
    1. Click "Save and Exit" button.
 
-Your `count:up` recording rule counts the number of Mimir replicas that are `up`, meaning reachable to be scraped. The rule is now being created in Grafana Mimir ruler and will be soon available for querying:
+Your `count:up` recording rule counts the number of Mimir replicas that are `up`, meaning reachable to be scraped. The
+rule is now being created in Grafana Mimir ruler and will be soon available for querying:
 
-1. Open [Grafana Explore](http://localhost:9000/explore).
-1. Query the resulting series from the recording rule, which may require up to one minute to display after configuration:
+1. Open [Grafana Explore](http://localhost:9000/explore?orgId=1&left=%7B%22datasource%22:%22Mimir%22,%22queries%22:%5B%7B%22refId%22:%22A%22,%22instant%22:true,%22range%22:true,%22exemplar%22:true,%22expr%22:%22count:up%22%7D%5D,%22range%22:%7B%22from%22:%22now-1h%22,%22to%22:%22now%22%7D%7D)
+   and query the resulting series from the recording rule, which may require up to one minute to display after configuration:
    ```
    count:up
    ```
@@ -114,7 +116,8 @@ tooling offered by Grafana.
 1. Click to "New alert rule".
 1. Configure the alert rule:
    1. Type `MimirNotRunning` in the "Rule name" field.
-   1. Choose `Cortex managed alert rule` in the "Rule type" field.
+   1. Choose `Cortex managed alert rule` in the "Rule type" field. Make sure to select "managed alert rule" and not
+      "managed recording rule."
    1. Choose `Mimir` in the "Select data source" field.
    1. Select `example-namespace` in the "Namespace" field.
    1. Select `example-group` in the "Group" field.

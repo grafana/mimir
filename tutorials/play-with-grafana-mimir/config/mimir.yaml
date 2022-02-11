@@ -40,9 +40,6 @@ alertmanager:
   data_dir: /data/alertmanager
   fallback_config_file: /etc/alertmanager-fallback-config.yaml
   external_url: http://localhost:9009/alertmanager
-  sharding_ring:
-    kvstore:
-      store: memberlist
 
 alertmanager_storage:
   backend: s3
