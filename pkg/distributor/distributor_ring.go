@@ -28,7 +28,7 @@ type RingConfig struct {
 	HeartbeatTimeout time.Duration `yaml:"heartbeat_timeout" category:"advanced"`
 
 	// Instance details
-	InstanceID             string   `yaml:"instance_id" doc:"hidden" category:"advanced"`
+	InstanceID             string   `yaml:"instance_id" doc:"default=<hostname>" category:"advanced"`
 	InstanceInterfaceNames []string `yaml:"instance_interface_names"`
 	InstancePort           int      `yaml:"instance_port" category:"advanced"`
 	InstanceAddr           string   `yaml:"instance_addr" category:"advanced"`

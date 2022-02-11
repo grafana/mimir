@@ -223,8 +223,6 @@ Usage of ./cmd/mimir/mimir:
     	Hostname and port of Consul. (default "localhost:8500")
   -distributor.drop-label value
     	This flag can be used to specify label names that to drop during sample ingestion within the distributor and can be repeated in order to drop multiple labels.
-  -distributor.excluded-zones value
-    	Comma-separated list of zones to exclude from the ring. Instances in excluded zones will be filtered out from the ring.
   -distributor.ha-tracker.cluster string
     	Prometheus label to look for in samples to identify a Prometheus HA cluster. (default "cluster")
   -distributor.ha-tracker.consul.hostname string
@@ -314,7 +312,7 @@ Usage of ./cmd/mimir/mimir:
   -ingester.availability-zone string
     	The availability zone where this instance is running.
   -ingester.lifecycler.interface value
-    	Name of network interface to read address from. (default [eth0 en0])
+    	Name of network interface to read address from. (default [<private network interfaces>])
   -ingester.max-global-metadata-per-metric int
     	The maximum number of metadata per metric, across the cluster. 0 to disable.
   -ingester.max-global-metadata-per-user int
@@ -341,8 +339,6 @@ Usage of ./cmd/mimir/mimir:
     	Port to listen on for gossip messages. (default 7946)
   -memberlist.join value
     	Other cluster members to join. Can be specified multiple times. It can be an IP, hostname or an entry specified in the DNS Service Discovery format.
-  -memberlist.transport-debug
-    	Log debug transport messages. Note: global log.level must be at debug level as well.
   -modules
     	List available values that can be used as target.
   -print.config
@@ -383,8 +379,6 @@ Usage of ./cmd/mimir/mimir:
     	The timeout for a query. This config option should be set on query-frontend too when query sharding is enabled. (default 2m0s)
   -query-scheduler.max-outstanding-requests-per-tenant int
     	Maximum number of outstanding requests per tenant per query-scheduler. In-flight requests above this limit will fail with HTTP response status code 429. (default 100)
-  -ring.heartbeat-timeout duration
-    	The heartbeat timeout after which ingesters are skipped for reads/writes. 0 = never (timeout disabled). (default 1m0s)
   -ring.store string
     	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
   -ruler-storage.azure.account-key string

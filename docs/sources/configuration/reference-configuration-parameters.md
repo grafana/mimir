@@ -603,6 +603,10 @@ ring:
   # CLI flag: -distributor.ring.heartbeat-timeout
   [heartbeat_timeout: <duration> | default = 1m]
 
+  # (advanced) Instance ID to register in the ring.
+  # CLI flag: -distributor.ring.instance-id
+  [instance_id: <string> | default = "<hostname>"]
+
   # Name of network interface to read address from.
   # CLI flag: -distributor.ring.instance-interface-names
   [instance_interface_names: <list of string> | default = [eth0 en0]]
@@ -671,8 +675,8 @@ lifecycler:
         # CLI flag: -multi.mirror-timeout
         [mirror_timeout: <duration> | default = 2s]
 
-    # The heartbeat timeout after which ingesters are skipped for reads/writes.
-    # 0 = never (timeout disabled).
+    # (advanced) The heartbeat timeout after which ingesters are skipped for
+    # reads/writes. 0 = never (timeout disabled).
     # CLI flag: -ring.heartbeat-timeout
     [heartbeat_timeout: <duration> | default = 1m]
 
@@ -685,8 +689,8 @@ lifecycler:
     # CLI flag: -distributor.zone-awareness-enabled
     [zone_awareness_enabled: <boolean> | default = false]
 
-    # Comma-separated list of zones to exclude from the ring. Instances in
-    # excluded zones will be filtered out from the ring.
+    # (advanced) Comma-separated list of zones to exclude from the ring.
+    # Instances in excluded zones will be filtered out from the ring.
     # CLI flag: -distributor.excluded-zones
     [excluded_zones: <string> | default = ""]
 
@@ -718,7 +722,7 @@ lifecycler:
 
   # Name of network interface to read address from.
   # CLI flag: -ingester.lifecycler.interface
-  [interface_names: <list of string> | default = [eth0 en0]]
+  [interface_names: <list of string> | default = [<private network interfaces>]]
 
   # (advanced) Duration to sleep for before exiting, to ensure metrics are
   # scraped.
@@ -747,6 +751,19 @@ lifecycler:
   # updates may be slowed down.
   # CLI flag: -ingester.readiness-check-ring-health
   [readiness_check_ring_health: <boolean> | default = true]
+
+  # (advanced) IP address to advertise in the ring.
+  # CLI flag: -ingester.lifecycler.addr
+  [address: <string> | default = ""]
+
+  # (advanced) port to advertise in consul (defaults to
+  # server.grpc-listen-port).
+  # CLI flag: -ingester.lifecycler.port
+  [port: <int> | default = 0]
+
+  # (advanced) ID to register in the ring.
+  # CLI flag: -ingester.lifecycler.ID
+  [id: <string> | default = "<hostname>"]
 
 # (advanced) Period at which metadata we have not seen will remain in memory
 # before being deleted.
@@ -1306,6 +1323,10 @@ ring:
   # CLI flag: -ruler.ring.heartbeat-timeout
   [heartbeat_timeout: <duration> | default = 1m]
 
+  # (advanced) Instance ID to register in the ring.
+  # CLI flag: -ruler.ring.instance-id
+  [instance_id: <string> | default = "<hostname>"]
+
   # Name of network interface to read address from.
   # CLI flag: -ruler.ring.instance-interface-names
   [instance_interface_names: <list of string> | default = [eth0 en0]]
@@ -1664,6 +1685,10 @@ sharding_ring:
   # different availability zones.
   # CLI flag: -alertmanager.sharding-ring.zone-awareness-enabled
   [zone_awareness_enabled: <boolean> | default = false]
+
+  # (advanced) Instance ID to register in the ring.
+  # CLI flag: -alertmanager.sharding-ring.instance-id
+  [instance_id: <string> | default = "<hostname>"]
 
   # (advanced) Name of network interface to read address from.
   # CLI flag: -alertmanager.sharding-ring.instance-interface-names
@@ -3421,6 +3446,10 @@ sharding_ring:
   # CLI flag: -compactor.ring.wait-stability-max-duration
   [wait_stability_max_duration: <duration> | default = 5m]
 
+  # (advanced) Instance ID to register in the ring.
+  # CLI flag: -compactor.ring.instance-id
+  [instance_id: <string> | default = "<hostname>"]
+
   # Name of network interface to read address from.
   # CLI flag: -compactor.ring.instance-interface-names
   [instance_interface_names: <list of string> | default = [eth0 en0]]
@@ -3527,6 +3556,10 @@ sharding_ring:
   # store-gateway will start anyway.
   # CLI flag: -store-gateway.sharding-ring.wait-stability-max-duration
   [wait_stability_max_duration: <duration> | default = 5m]
+
+  # (advanced) Instance ID to register in the ring.
+  # CLI flag: -store-gateway.sharding-ring.instance-id
+  [instance_id: <string> | default = "<hostname>"]
 
   # Name of network interface to read address from.
   # CLI flag: -store-gateway.sharding-ring.instance-interface-names

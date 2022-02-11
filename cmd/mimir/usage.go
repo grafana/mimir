@@ -25,12 +25,13 @@ func usage(cfg *mimir.Config, printAll bool) error {
 	fs.VisitAll(func(fl *flag.Flag) {
 		v := reflect.ValueOf(fl.Value)
 		fieldCat := fieldcategory.Basic
+		var field reflect.StructField
 
 		if override, ok := fieldcategory.GetOverride(fl.Name); ok {
 			fieldCat = override
 		} else if v.Kind() == reflect.Ptr {
 			ptr := v.Pointer()
-			field, ok := fields[ptr]
+			field, ok = fields[ptr]
 			if ok {
 				catStr := field.Tag.Get("category")
 				switch catStr {
@@ -63,16 +64,16 @@ func usage(cfg *mimir.Config, printAll bool) error {
 		}
 		b.WriteString(strings.ReplaceAll(fl.Usage, "\n", "\n    \t"))
 
-		if !isZeroValue(fl, fl.DefValue) {
+		if defValue := getFlagDefault(fl, field); !isZeroValue(fl, defValue) {
 			v := reflect.ValueOf(fl.Value)
 			if v.Kind() == reflect.Ptr {
 				v = v.Elem()
 			}
 			if v.Kind() == reflect.String {
 				// put quotes on the value
-				fmt.Fprintf(&b, " (default %q)", fl.DefValue)
+				fmt.Fprintf(&b, " (default %q)", defValue)
 			} else {
-				fmt.Fprintf(&b, " (default %v)", fl.DefValue)
+				fmt.Fprintf(&b, " (default %v)", defValue)
 			}
 		}
 		fmt.Fprint(fs.Output(), b.String(), "\n")
@@ -173,4 +174,33 @@ func getFlagName(fl *flag.Flag) string {
 	}
 
 	return "value"
+}
+
+func getFlagDefault(fl *flag.Flag, field reflect.StructField) string {
+	if docDefault := parseDocTag(field)["default"]; docDefault != "" {
+		return docDefault
+	}
+	return fl.DefValue
+}
+
+func parseDocTag(f reflect.StructField) map[string]string {
+	cfg := map[string]string{}
+	tag := f.Tag.Get("doc")
+
+	if tag == "" {
+		return cfg
+	}
+
+	for _, entry := range strings.Split(tag, "|") {
+		parts := strings.SplitN(entry, "=", 2)
+
+		switch len(parts) {
+		case 1:
+			cfg[parts[0]] = ""
+		case 2:
+			cfg[parts[0]] = parts[1]
+		}
+	}
+
+	return cfg
 }

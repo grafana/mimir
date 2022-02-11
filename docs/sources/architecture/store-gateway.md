@@ -263,6 +263,10 @@ store_gateway:
     # CLI flag: -store-gateway.sharding-ring.wait-stability-max-duration
     [wait_stability_max_duration: <duration> | default = 5m]
 
+    # (advanced) Instance ID to register in the ring.
+    # CLI flag: -store-gateway.sharding-ring.instance-id
+    [instance_id: <string> | default = "<hostname>"]
+
     # Name of network interface to read address from.
     # CLI flag: -store-gateway.sharding-ring.instance-interface-names
     [instance_interface_names: <list of string> | default = [eth0 en0]]
