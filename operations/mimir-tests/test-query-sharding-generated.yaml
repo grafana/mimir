@@ -913,6 +913,7 @@ spec:
             topologyKey: kubernetes.io/hostname
       containers:
       - args:
+        - -querier.max-query-parallelism=240
         - -query-frontend.align-querier-with-step=false
         - -query-frontend.cache-results=true
         - -query-frontend.max-cache-freshness=10m
@@ -923,7 +924,6 @@ spec:
         - -query-frontend.results-cache.memcached.addresses=dnssrvnoa+memcached-frontend.default.svc.cluster.local:11211
         - -query-frontend.results-cache.memcached.timeout=500ms
         - -query-frontend.scheduler-address=query-scheduler-discovery.default.svc.cluster.local:9095
-        - -querier.max-query-parallelism=240
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc-max-recv-msg-size-bytes=419430400
         - -server.grpc.keepalive.min-time-between-pings=10s
