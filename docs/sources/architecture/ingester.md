@@ -6,11 +6,11 @@ weight: 10
 
 # Ingester
 
-The **ingester** service is responsible for writing incoming series to a [long-term storage backend](#storage) on the write path and returning in-memory series samples for queries on the read path.
+The **ingester** service is responsible for writing incoming series to [long-term storage]({{<relref "./_index.md#long-term-storage">}}) on the write path and returning in-memory series samples for queries on the read path.
 
-Incoming series are not immediately written to the storage but kept in memory and periodically flushed to the storage (2 hours by default). For this reason, the [queriers](#querier) may need to fetch samples both from ingesters and long-term storage while executing a query on the read path.
+Incoming series from [distributors]({{<relref "./distributor.md">}}) are not immediately written to the storage but kept in memory and periodically flushed to the storage (2 hours by default). For this reason, the [queriers]({{<relref "./querier.md">}}) may need to fetch samples both from ingesters and long-term storage while executing a query on the read path.
 
-Ingesters contain a **lifecycler** which manages the lifecycle of an ingester and stores the **ingester state** in the [hash ring](#the-hash-ring). Each ingester could be in one of the following states:
+Services calling the **ingesters** first read the **ingester states** from the [hash ring]({{<relref "./about-the-hash-ring.md">}}) to determine which ingester(s) to invoke. Each ingester could be in one of the following states:
 
 - **`PENDING`**<br />
   The ingester has just started. While in this state, the ingester receives neither write nor read requests.
@@ -23,11 +23,11 @@ Ingesters contain a **lifecycler** which manages the lifecycle of an ingester an
 - **`UNHEALTHY`**<br />
   The ingester has failed to heartbeat to the ring's KV Store. While in this state, distributors skip the ingester while building the replication set for incoming series and the ingester does not receive write or read requests.
 
-Ingesters are **semi-stateful**.
+The state of an ingester is managed by a built in **lifecycler**.
 
 ## Ingesters failure and data loss
 
-If an ingester process crashes or exits abruptly, all the in-memory series that have not yet been flushed to the long-term storage will be lost. There are two main ways to mitigate this failure mode:
+Ingesters are **semi-stateful**. If an ingester process crashes or exits abruptly, all the in-memory series that have not yet been flushed to the long-term storage will be lost. There are two main ways to mitigate this failure mode:
 
 1. Replication
 2. Write-ahead log (WAL)
@@ -37,6 +37,18 @@ If an ingester process crashes or exits abruptly, all the in-memory series that 
 The **write-ahead log** (WAL) is used to write to a persistent disk all incoming series samples until they're flushed to the long-term storage. In the event of an ingester failure, a subsequent process restart will replay the WAL and recover the in-memory series samples.
 
 Contrary to the sole replication and given the persistent disk data is not lost, in the event of the failure of multiple ingesters, each ingester will recover the in-memory series samples from WAL upon subsequent restart. Replication is still recommended in order to ensure no temporary failures on the read path in the event of a single ingester failure.
+
+## Zone aware replication
+
+**Zone aware replication** means that for a given time series the replicas are chosen from different zones. Zones are treated as simple labels by Mimir, however the microservice deployment can be set up to place different zones in different logical or physical locations for added redundancy.
+
+_For more information on how to set up multi-zone replication, please refer to [zone aware replication]({{<relref "../guides/zone-replication.md">}})._
+
+## Sharding strategies
+
+The default **sharding strategy** is to use shuffle sharding to reduce the affect that multiple tenants can have on each other.
+
+_For more information on shuffle sharding, please refer to [configure shuffle sharding]({{<relref "../operating-grafana-mimir/configure-shuffle-sharding.md">}})._
 
 ## Ingesters write de-amplification
 

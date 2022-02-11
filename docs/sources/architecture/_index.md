@@ -61,7 +61,7 @@ Mimir requires that each HTTP request bear a header specifying a tenant ID for t
 
 Incoming samples (writes from Prometheus) are handled by the [distributor](#distributor) while incoming reads (PromQL queries) are handled by the [querier](#querier) or optionally by the [query frontend](#query-frontend).
 
-## Storage
+## Long-term storage
 
 The Mimir storage format is based on [Prometheus TSDB](https://prometheus.io/docs/prometheus/latest/storage/): it stores each tenant's time series into their own TSDB which write their series to an on-disk block (defaults to 2h block range periods). Each block is composed oy a few files storing the blocks and the block index.
 
