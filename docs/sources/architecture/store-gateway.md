@@ -186,7 +186,7 @@ store_gateway:
   # The hash ring configuration.
   sharding_ring:
     # The key-value store used to share the hash ring across multiple instances.
-    # This option needs be set both on the store-gateway and querier when
+    # This option needs be set both on the store-gateway, querier and ruler when
     # running in microservices mode.
     kvstore:
       # Backend storage to use for the ring. Supported values are: consul, etcd,
@@ -231,13 +231,13 @@ store_gateway:
 
     # (advanced) The heartbeat timeout after which store gateways are considered
     # unhealthy within the ring. 0 = never (timeout disabled). This option needs
-    # be set both on the store-gateway and querier when running in microservices
-    # mode.
+    # be set both on the store-gateway, querier and ruler when running in
+    # microservices mode.
     # CLI flag: -store-gateway.sharding-ring.heartbeat-timeout
     [heartbeat_timeout: <duration> | default = 1m]
 
     # (advanced) The replication factor to use when sharding blocks. This option
-    # needs be set both on the store-gateway and querier when running in
+    # needs be set both on the store-gateway, querier and ruler when running in
     # microservices mode.
     # CLI flag: -store-gateway.sharding-ring.replication-factor
     [replication_factor: <int> | default = 3]
@@ -248,7 +248,8 @@ store_gateway:
     [tokens_file_path: <string> | default = ""]
 
     # True to enable zone-awareness and replicate blocks across different
-    # availability zones.
+    # availability zones. This option needs be set both on the store-gateway,
+    # querier and ruler when running in microservices mode.
     # CLI flag: -store-gateway.sharding-ring.zone-awareness-enabled
     [zone_awareness_enabled: <boolean> | default = false]
 
