@@ -487,6 +487,9 @@ func WithFlagMapper(mapFlags FlagMapper) Option {
 	}
 }
 
+// FlagMapper is the type of function that maps flags, just to reduce some verbosity.
+type FlagMapper func(flags map[string]string) map[string]string
+
 // NoopFlagMapper is a flag mapper that does not alter the provided flags.
 func NoopFlagMapper(flags map[string]string) map[string]string { return flags }
 
@@ -514,8 +517,15 @@ func RenameFlagMapper(fromTo map[string]string) FlagMapper {
 	}
 }
 
-// FlagMapper is the type of function that maps flags, just to reduce some verbosity.
-type FlagMapper func(flags map[string]string) map[string]string
+// SetFlagMapper builds a flag mapper that sets the provided flags.
+func SetFlagMapper(set map[string]string) FlagMapper {
+	return func(flags map[string]string) map[string]string {
+		for f, v := range set {
+			flags[f] = v
+		}
+		return flags
+	}
+}
 
 // copyFlags provides a copy of the flags map provided.
 func copyFlags(flags map[string]string) map[string]string {

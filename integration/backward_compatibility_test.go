@@ -28,19 +28,16 @@ import (
 // then those will be used instead of the default versions. Note that the overriding of flags
 // is not currently possible when overriding the previous image versions via the environment variable.
 func previousVersionImages() map[string]e2emimir.FlagMapper {
-	if os.Getenv("MIMIR_PREVIOUS_IMAGES") != "" {
-		overrideImageVersions := os.Getenv("MIMIR_PREVIOUS_IMAGES")
+	if overrideImageVersions := os.Getenv("MIMIR_PREVIOUS_IMAGES"); overrideImageVersions != "" {
 		previousVersionImages := map[string]e2emimir.FlagMapper{}
 
 		// Overriding of flags is not currently supported when overriding the list of images,
 		// so set all override functions to nil
 		for _, image := range strings.Split(overrideImageVersions, ",") {
-			previousVersionImages[image] = func(flags map[string]string) map[string]string {
-				flags["-store.engine"] = "blocks"
-				flags["-server.http-listen-port"] = "8080"
-				flags["-store-gateway.sharding-enabled"] = "true"
-				return flags
-			}
+			previousVersionImages[image] = e2emimir.ChainFlagMappers(
+				cortexFlagMapper,
+				revertRenameFrontendToQueryFrontendFlagMapper,
+			)
 		}
 
 		return previousVersionImages
