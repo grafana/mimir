@@ -87,7 +87,7 @@ type connectedFrontend struct {
 
 type Config struct {
 	MaxOutstandingPerTenant int               `yaml:"max_outstanding_requests_per_tenant"`
-	QuerierForgetDelay      time.Duration     `yaml:"querier_forget_delay"`
+	QuerierForgetDelay      time.Duration     `yaml:"querier_forget_delay" category:"advanced"`
 	GRPCClientConfig        grpcclient.Config `yaml:"grpc_client_config" doc:"description=This configures the gRPC client used to report errors back to the query-frontend."`
 }
 

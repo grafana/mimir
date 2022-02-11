@@ -24,14 +24,14 @@ import (
 // to the user.
 type RingConfig struct {
 	KVStore          kv.Config     `yaml:"kvstore"`
-	HeartbeatPeriod  time.Duration `yaml:"heartbeat_period"`
-	HeartbeatTimeout time.Duration `yaml:"heartbeat_timeout"`
+	HeartbeatPeriod  time.Duration `yaml:"heartbeat_period" category:"advanced"`
+	HeartbeatTimeout time.Duration `yaml:"heartbeat_timeout" category:"advanced"`
 
 	// Instance details
-	InstanceID             string   `yaml:"instance_id" doc:"hidden"`
+	InstanceID             string   `yaml:"instance_id" doc:"hidden" category:"advanced"`
 	InstanceInterfaceNames []string `yaml:"instance_interface_names"`
-	InstancePort           int      `yaml:"instance_port" doc:"hidden"`
-	InstanceAddr           string   `yaml:"instance_addr" doc:"hidden"`
+	InstancePort           int      `yaml:"instance_port" category:"advanced"`
+	InstanceAddr           string   `yaml:"instance_addr" category:"advanced"`
 
 	// Injected internally
 	ListenPort int `yaml:"-"`

@@ -24,23 +24,23 @@ import (
 // to the user.
 type RingConfig struct {
 	KVStore          kv.Config     `yaml:"kvstore"`
-	HeartbeatPeriod  time.Duration `yaml:"heartbeat_period"`
-	HeartbeatTimeout time.Duration `yaml:"heartbeat_timeout"`
+	HeartbeatPeriod  time.Duration `yaml:"heartbeat_period" category:"advanced"`
+	HeartbeatTimeout time.Duration `yaml:"heartbeat_timeout" category:"advanced"`
 
 	// Wait ring stability.
-	WaitStabilityMinDuration time.Duration `yaml:"wait_stability_min_duration"`
-	WaitStabilityMaxDuration time.Duration `yaml:"wait_stability_max_duration"`
+	WaitStabilityMinDuration time.Duration `yaml:"wait_stability_min_duration" category:"advanced"`
+	WaitStabilityMaxDuration time.Duration `yaml:"wait_stability_max_duration" category:"advanced"`
 
 	// Instance details
-	InstanceID             string   `yaml:"instance_id" doc:"hidden"`
+	InstanceID             string   `yaml:"instance_id" doc:"hidden" category:"advanced"`
 	InstanceInterfaceNames []string `yaml:"instance_interface_names"`
-	InstancePort           int      `yaml:"instance_port" doc:"hidden"`
-	InstanceAddr           string   `yaml:"instance_addr" doc:"hidden"`
+	InstancePort           int      `yaml:"instance_port" category:"advanced"`
+	InstanceAddr           string   `yaml:"instance_addr" category:"advanced"`
 
 	// Injected internally
 	ListenPort int `yaml:"-"`
 
-	WaitActiveInstanceTimeout time.Duration `yaml:"wait_active_instance_timeout"`
+	WaitActiveInstanceTimeout time.Duration `yaml:"wait_active_instance_timeout" category:"advanced"`
 
 	ObservePeriod time.Duration `yaml:"-"`
 }

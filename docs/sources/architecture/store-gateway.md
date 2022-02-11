@@ -225,19 +225,20 @@ store_gateway:
         # CLI flag: -store-gateway.sharding-ring.multi.mirror-timeout
         [mirror_timeout: <duration> | default = 2s]
 
-    # Period at which to heartbeat to the ring. 0 = disabled.
+    # (advanced) Period at which to heartbeat to the ring. 0 = disabled.
     # CLI flag: -store-gateway.sharding-ring.heartbeat-period
     [heartbeat_period: <duration> | default = 15s]
 
-    # The heartbeat timeout after which store gateways are considered unhealthy
-    # within the ring. 0 = never (timeout disabled). This option needs be set
-    # both on the store-gateway and querier when running in microservices mode.
+    # (advanced) The heartbeat timeout after which store gateways are considered
+    # unhealthy within the ring. 0 = never (timeout disabled). This option needs
+    # be set both on the store-gateway and querier when running in microservices
+    # mode.
     # CLI flag: -store-gateway.sharding-ring.heartbeat-timeout
     [heartbeat_timeout: <duration> | default = 1m]
 
-    # The replication factor to use when sharding blocks. This option needs be
-    # set both on the store-gateway and querier when running in microservices
-    # mode.
+    # (advanced) The replication factor to use when sharding blocks. This option
+    # needs be set both on the store-gateway and querier when running in
+    # microservices mode.
     # CLI flag: -store-gateway.sharding-ring.replication-factor
     [replication_factor: <int> | default = 3]
 
@@ -251,20 +252,29 @@ store_gateway:
     # CLI flag: -store-gateway.sharding-ring.zone-awareness-enabled
     [zone_awareness_enabled: <boolean> | default = false]
 
-    # Minimum time to wait for ring stability at startup, if set to positive
-    # value.
+    # (advanced) Minimum time to wait for ring stability at startup, if set to
+    # positive value.
     # CLI flag: -store-gateway.sharding-ring.wait-stability-min-duration
     [wait_stability_min_duration: <duration> | default = 0s]
 
-    # Maximum time to wait for ring stability at startup. If the store-gateway
-    # ring keeps changing after this period of time, the store-gateway will
-    # start anyway.
+    # (advanced) Maximum time to wait for ring stability at startup. If the
+    # store-gateway ring keeps changing after this period of time, the
+    # store-gateway will start anyway.
     # CLI flag: -store-gateway.sharding-ring.wait-stability-max-duration
     [wait_stability_max_duration: <duration> | default = 5m]
 
     # Name of network interface to read address from.
     # CLI flag: -store-gateway.sharding-ring.instance-interface-names
     [instance_interface_names: <list of string> | default = [eth0 en0]]
+
+    # (advanced) Port to advertise in the ring (defaults to
+    # server.grpc-listen-port).
+    # CLI flag: -store-gateway.sharding-ring.instance-port
+    [instance_port: <int> | default = 0]
+
+    # (advanced) IP address to advertise in the ring.
+    # CLI flag: -store-gateway.sharding-ring.instance-addr
+    [instance_addr: <string> | default = ""]
 
     # The availability zone where this instance is running. Required if
     # zone-awareness is enabled.

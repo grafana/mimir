@@ -37,9 +37,9 @@ type Config struct {
 	AlignQueriesWithStep   bool          `yaml:"align_queries_with_step"`
 	ResultsCacheConfig     `yaml:"results_cache"`
 	CacheResults           bool `yaml:"cache_results"`
-	MaxRetries             int  `yaml:"max_retries"`
+	MaxRetries             int  `yaml:"max_retries" category:"advanced"`
 	ShardedQueries         bool `yaml:"parallelize_shardable_queries"`
-	CacheUnalignedRequests bool `yaml:"cache_unaligned_requests"`
+	CacheUnalignedRequests bool `yaml:"cache_unaligned_requests" category:"advanced"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet.
