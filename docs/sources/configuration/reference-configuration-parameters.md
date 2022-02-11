@@ -2459,9 +2459,9 @@ The `limits_config` configures default and per-tenant limits imposed by services
 # CLI flag: -distributor.ha-tracker.max-clusters
 [ha_max_clusters: <int> | default = 0]
 
-# This flag can be used to specify label names that to drop during sample
-# ingestion within the distributor and can be repeated in order to drop multiple
-# labels.
+# (advanced) This flag can be used to specify label names that to drop during
+# sample ingestion within the distributor and can be repeated in order to drop
+# multiple labels.
 # CLI flag: -distributor.drop-label
 [drop_labels: <list of string> | default = []]
 
@@ -2483,12 +2483,12 @@ The `limits_config` configures default and per-tenant limits imposed by services
 # CLI flag: -validation.max-metadata-length
 [max_metadata_length: <int> | default = 1024]
 
-# Duration which table will be created/deleted before/after it's needed; we
-# won't accept sample from before this time.
+# (advanced) Duration which table will be created/deleted before/after it's
+# needed; we won't accept sample from before this time.
 # CLI flag: -validation.create-grace-period
 [creation_grace_period: <duration> | default = 10m]
 
-# Enforce every metadata has a metric name.
+# (advanced) Enforce every metadata has a metric name.
 # CLI flag: -validation.enforce-metadata-metric-name
 [enforce_metadata_metric_name: <boolean> | default = true]
 
@@ -2569,8 +2569,8 @@ The `limits_config` configures default and per-tenant limits imposed by services
 # CLI flag: -store.max-labels-query-length
 [max_labels_query_length: <duration> | default = 0s]
 
-# Most recent allowed cacheable result per-tenant, to prevent caching very
-# recent results that might still be in flux.
+# (advanced) Most recent allowed cacheable result per-tenant, to prevent caching
+# very recent results that might still be in flux.
 # CLI flag: -query-frontend.max-cache-freshness
 [max_cache_freshness: <duration> | default = 1m]
 

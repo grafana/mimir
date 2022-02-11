@@ -219,8 +219,6 @@ Usage of ./cmd/mimir/mimir:
     	Expands ${var} or $var in config according to the values of the environment variables.
   -config.file value
     	Configuration file to load.
-  -distributor.drop-label value
-    	This flag can be used to specify label names that to drop during sample ingestion within the distributor and can be repeated in order to drop multiple labels.
   -distributor.ha-tracker.cluster string
     	Prometheus label to look for in samples to identify a Prometheus HA cluster. (default "cluster")
   -distributor.ha-tracker.consul.hostname string
@@ -355,8 +353,6 @@ Usage of ./cmd/mimir/mimir:
     	Cache query results.
   -query-frontend.log-queries-longer-than duration
     	Log queries that are slower than the specified duration. Set to 0 to disable. Set to < 0 to enable on all queries.
-  -query-frontend.max-cache-freshness value
-    	Most recent allowed cacheable result per-tenant, to prevent caching very recent results that might still be in flux. (default 1m)
   -query-frontend.max-queriers-per-tenant int
     	Maximum number of queriers that can handle requests for a single tenant. If set to 0 or value higher than number of available queriers, *all* queriers will handle requests for the tenant. Each frontend (or query-scheduler, if used) will select the same set of queriers for the same tenant (given that all queriers are connected to all frontends / query-schedulers). This option only works with queriers connecting to the query-frontend / query-scheduler, not when using downstream URL.
   -query-frontend.parallelize-shardable-queries
@@ -515,10 +511,6 @@ Usage of ./cmd/mimir/mimir:
     	Comma-separated list of modules to load. The alias 'all' can be used in the list to load a number of core modules and will enable single-binary mode. Use '-modules' command line flag to get a list of available modules, and to see which modules are included in 'all'. (default all)
   -tenant-federation.enabled
     	If enabled on all services, queries can be federated across multiple tenants. The tenant IDs involved need to be specified separated by a '|' character in the 'X-Scope-OrgID' header.
-  -validation.create-grace-period value
-    	Duration which table will be created/deleted before/after it's needed; we won't accept sample from before this time. (default 10m)
-  -validation.enforce-metadata-metric-name
-    	Enforce every metadata has a metric name. (default true)
   -validation.max-label-names-per-series int
     	Maximum number of label names per series. (default 30)
   -validation.max-length-label-name int
