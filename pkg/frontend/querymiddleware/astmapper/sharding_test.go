@@ -7,12 +7,15 @@ package astmapper
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/go-kit/log"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/storage/sharding"
 )
 
 func TestShardSummer(t *testing.T) {
@@ -227,7 +230,7 @@ func TestShardSummer(t *testing.T) {
 		},
 		{
 			`avg without (foo) (rate(foo[1m]))`,
-			`sum without (foo) (` +
+			`(sum without (foo) (` +
 				concat(
 					`sum without  (foo) (rate(foo{__query_shard__="1_of_3"}[1m]))`,
 					`sum without  (foo) (rate(foo{__query_shard__="2_of_3"}[1m]))`,
@@ -237,12 +240,12 @@ func TestShardSummer(t *testing.T) {
 					`count without  (foo) (rate(foo{__query_shard__="1_of_3"}[1m]))`,
 					`count without  (foo) (rate(foo{__query_shard__="2_of_3"}[1m]))`,
 					`count without  (foo) (rate(foo{__query_shard__="3_of_3"}[1m]))`,
-				) + `)`,
+				) + `))`,
 			6,
 		},
 		{
 			`avg by (foo) (rate(foo[1m]))`,
-			`sum by (foo)(` +
+			`(sum by (foo)(` +
 				concat(
 					`sum by  (foo) (rate(foo{__query_shard__="1_of_3"}[1m]))`,
 					`sum by  (foo) (rate(foo{__query_shard__="2_of_3"}[1m]))`,
@@ -252,12 +255,12 @@ func TestShardSummer(t *testing.T) {
 					`count by  (foo) (rate(foo{__query_shard__="1_of_3"}[1m]))`,
 					`count by  (foo) (rate(foo{__query_shard__="2_of_3"}[1m]))`,
 					`count by  (foo) (rate(foo{__query_shard__="3_of_3"}[1m]))`,
-				) + `)`,
+				) + `))`,
 			6,
 		},
 		{
 			`avg(rate(foo[1m]))`,
-			`sum(` +
+			`(sum(` +
 				concat(
 					`sum(rate(foo{__query_shard__="1_of_3"}[1m]))`,
 					`sum(rate(foo{__query_shard__="2_of_3"}[1m]))`,
@@ -267,12 +270,12 @@ func TestShardSummer(t *testing.T) {
 					`count(rate(foo{__query_shard__="1_of_3"}[1m]))`,
 					`count(rate(foo{__query_shard__="2_of_3"}[1m]))`,
 					`count(rate(foo{__query_shard__="3_of_3"}[1m]))`,
-				) + `)`,
+				) + `))`,
 			6,
 		},
 		{
 			`topk(10,avg by (foo)(rate(foo[1m])))`,
-			`topk(10, sum by (foo)(` +
+			`topk(10, (sum by (foo)(` +
 				concat(
 					`sum by (foo) (rate(foo{__query_shard__="1_of_3"}[1m]))`,
 					`sum by (foo) (rate(foo{__query_shard__="2_of_3"}[1m]))`,
@@ -282,7 +285,7 @@ func TestShardSummer(t *testing.T) {
 					`count by (foo) (rate(foo{__query_shard__="1_of_3"}[1m]))`,
 					`count by (foo) (rate(foo{__query_shard__="2_of_3"}[1m]))`,
 					`count by (foo) (rate(foo{__query_shard__="3_of_3"}[1m]))`,
-				) + `))`,
+				) + `)))`,
 			6,
 		},
 		{
@@ -661,6 +664,16 @@ func TestShardSummer(t *testing.T) {
 			) + `))`,
 			6,
 		},
+		{
+			in: `foo * on(a, b) group_left(c) avg by(a, b, c) (bar)`,
+			out: concat(`foo`) + ` * on(a, b) group_left(c) ` +
+				`(` +
+				`sum by(a, b, c) (` + concatShards(3, `sum by(a, b, c) (bar{__query_shard__="x_of_y"})`) + `)` +
+				` / ` +
+				`sum by(a, b, c) (` + concatShards(3, `count by(a, b, c) (bar{__query_shard__="x_of_y"})`) + `)` +
+				`)`,
+			expectedShardedQueries: 6,
+		},
 	} {
 		tt := tt
 
@@ -679,6 +692,14 @@ func TestShardSummer(t *testing.T) {
 			assert.Equal(t, tt.expectedShardedQueries, stats.GetShardedQueries())
 		})
 	}
+}
+
+func concatShards(shards int, queryTemplate string) string {
+	queries := make([]string, shards)
+	for shard := range queries {
+		queries[shard] = strings.ReplaceAll(queryTemplate, "x_of_y", sharding.FormatShardIDLabelValue(uint64(shard), uint64(shards)))
+	}
+	return concat(queries...)
 }
 
 func concat(queries ...string) string {

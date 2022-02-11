@@ -308,10 +308,12 @@ func (summer *shardSummer) shardAvg(expr *parser.AggregateExpr, stats *MapperSta
 		return nil, err
 	}
 
-	return &parser.BinaryExpr{
-		Op:  parser.DIV,
-		LHS: sumExpr,
-		RHS: countExpr,
+	return &parser.ParenExpr{
+		Expr: &parser.BinaryExpr{
+			Op:  parser.DIV,
+			LHS: sumExpr,
+			RHS: countExpr,
+		},
 	}, nil
 }
 
