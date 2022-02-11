@@ -81,6 +81,7 @@ func (cfg *RingConfig) RegisterFlags(f *flag.FlagSet) {
 	rfprefix := "alertmanager.sharding-ring."
 
 	// Ring flags
+	cfg.KVStore.Store = "memberlist" // Override default value.
 	cfg.KVStore.RegisterFlagsWithPrefix(rfprefix, "alertmanagers/", f)
 	f.DurationVar(&cfg.HeartbeatPeriod, rfprefix+"heartbeat-period", 15*time.Second, "Period at which to heartbeat to the ring. 0 = disabled.")
 	f.DurationVar(&cfg.HeartbeatTimeout, rfprefix+"heartbeat-timeout", time.Minute, "The heartbeat timeout after which alertmanagers are considered unhealthy within the ring. 0 = never (timeout disabled).")

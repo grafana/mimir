@@ -96,7 +96,7 @@ Usage of ./cmd/mimir/mimir:
   -alertmanager.sharding-ring.etcd.username string
     	Etcd username.
   -alertmanager.sharding-ring.store string
-    	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "consul")
+    	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
   -alertmanager.storage.path string
     	Directory to store Alertmanager state and temporarily configuration files. The content of this directory is not required to be persisted between restarts unless Alertmanager replication has been disabled. (default "./data-alertmanager/")
   -alertmanager.web.external-url value
