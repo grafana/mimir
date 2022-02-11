@@ -62,7 +62,7 @@ To learn more about the Grafana Mimir configuration, you can review the configur
 ## Explore Grafana Mimir dashboards
 
 Open Grafana on your local host [`http://localhost:9000`](http://localhost:9000) and view dashboards showing the status
-and health of your Grafana Mimir local cluster. Metrics are queried directly from Grafana Mimir.
+and health of your Grafana Mimir cluster. The dashboards query Grafana Mimir for the metrics they display.
 
 To start, we recommend looking at these dashboards:
 
