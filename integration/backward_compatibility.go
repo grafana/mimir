@@ -9,6 +9,7 @@ import "github.com/grafana/mimir/integration/e2emimir"
 var DefaultPreviousVersionImages = map[string]e2emimir.FlagMapper{
 	"quay.io/cortexproject/cortex:v1.11.0": e2emimir.ChainFlagMappers(
 		cortexFlagMapper,
+		revertRenameFrontendToQueryFrontendFlagMapper,
 	),
 }
 
@@ -18,5 +19,12 @@ var (
 		"-store.engine":                   "blocks",
 		"-server.http-listen-port":        "8080",
 		"-store-gateway.sharding-enabled": "true",
+	})
+
+	// revertRenameFrontendToQueryFrontendFlagMapper reverts the `-frontend` to `-query-frontend` flag renaming that happened in:
+	// https://github.com/grafana/mimir/issues/859
+	revertRenameFrontendToQueryFrontendFlagMapper = e2emimir.RenameFlagMapper(map[string]string{
+		// Map new name to old name.
+		"-query-frontend.scheduler-dns-lookup-period": "-frontend.scheduler-dns-lookup-period",
 	})
 )
