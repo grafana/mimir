@@ -32,9 +32,6 @@ ruler_storage:
     secret_access_key: supersecret
     insecure: true
 
-frontend_worker:
-  frontend_address: 127.0.0.1:9095
-
 alertmanager:
   data_dir: /data/alertmanager
   fallback_config_file: /etc/alertmanager-fallback-config.yaml

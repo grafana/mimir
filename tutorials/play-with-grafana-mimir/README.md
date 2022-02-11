@@ -76,7 +76,7 @@ A couple of caveats:
 - It typically takes a few minutes after Grafana Mimir starts to display meaningful metrics in the dashboards.
 - Because this tutorial runs Grafana Mimir without any ingress gateway, query-scheduler, or memcached, the related panels are expected to be empty.
 
-The dashboards installed in the Grafana are taken from the Grafana Mimir mixin which packages up Grafana Labs' best practice dashboards, recording rules, and alerts for monitoring Grafana Mimir. To learn more about the mixin, check out <insert docs link>. To learn more about how Grafana is connecting to Grafana Mimir, review the [Mimir datasource](http://localhost:9000/datasources).
+The dashboards installed in the Grafana are taken from the Grafana Mimir mixin which packages up Grafana Labs' best practice dashboards, recording rules, and alerts for monitoring Grafana Mimir. To learn more about the mixin, check out the Grafana Mimir documentation. To learn more about how Grafana is connecting to Grafana Mimir, review the [Mimir datasource](http://localhost:9000/datasources).
 
 ## Configure your first recording rule
 
@@ -95,7 +95,7 @@ offered by Grafana.
    1. Type `count(up)` in the "Create a query to be recorded" field.
    1. Click "Save and Exit" button.
 
-Your `count:up` recording rule counts the number of Mimir replicas that are `up`, meaning reachable to be scraped. The rule is now creating in Grafana Mimir ruler and will be soon available for querying:
+Your `count:up` recording rule counts the number of Mimir replicas that are `up`, meaning reachable to be scraped. The rule is now being created in Grafana Mimir ruler and will be soon available for querying:
 
 1. Open [Grafana Explore](http://localhost:9000/explore).
 1. Query the resulting series from the recording rule, which may require up to one minute to display after configuration:
@@ -121,7 +121,7 @@ tooling offered by Grafana.
    1. Type `up == 0` in the "Create a query to be alerted on" field.
    1. Click "Save and Exit" button.
 
-Your `MimirNotRunning` alert rule is now creating in Grafana Mimir ruler and is expected to fire when the number of
+Your `MimirNotRunning` alert rule is now being created in Grafana Mimir ruler and is expected to fire when the number of
 Grafana Mimir replicas is less than three. You can check its status by opening the [Grafana Alerting](http://localhost:9000/alerting/list)
 page and expanding the "example-namespace > example-group" row.
 
