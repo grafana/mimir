@@ -38,10 +38,6 @@ const (
 	syncReasonPeriodic   = "periodic"
 	syncReasonRingChange = "ring-change"
 
-	// sharedOptionWithQuerier is a message appended to all config options that should be also
-	// set on the querier in order to work correct.
-	sharedOptionWithQuerier = " This option needs be set both on the store-gateway and querier when running in microservices mode."
-
 	// ringAutoForgetUnhealthyPeriods is how many consecutive timeout periods an unhealthy instance
 	// in the ring will be automatically removed.
 	ringAutoForgetUnhealthyPeriods = 10

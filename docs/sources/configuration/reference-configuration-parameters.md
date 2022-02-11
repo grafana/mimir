@@ -685,21 +685,28 @@ ring:
   [heartbeat_period: <duration> | default = 5s]
 
   # (advanced) The heartbeat timeout after which ingesters are skipped for
-  # reads/writes. 0 = never (timeout disabled).
+  # reads/writes. 0 = never (timeout disabled). This option needs be set on
+  # ingesters, distributors, queriers and rulers when running in microservices
+  # mode.
   # CLI flag: -ingester.ring.heartbeat-timeout
   [heartbeat_timeout: <duration> | default = 1m]
 
-  # Number of ingesters that each time series is replicated to.
+  # Number of ingesters that each time series is replicated to. This option
+  # needs be set on ingesters, distributors, queriers and rulers when running in
+  # microservices mode.
   # CLI flag: -ingester.ring.replication-factor
   [replication_factor: <int> | default = 3]
 
   # True to enable the zone-awareness and replicate ingested samples across
-  # different availability zones.
+  # different availability zones. This option needs be set on ingesters,
+  # distributors, queriers and rulers when running in microservices mode.
   # CLI flag: -ingester.ring.zone-awareness-enabled
   [zone_awareness_enabled: <boolean> | default = false]
 
   # (advanced) Comma-separated list of zones to exclude from the ring. Instances
-  # in excluded zones will be filtered out from the ring.
+  # in excluded zones will be filtered out from the ring. This option needs be
+  # set on ingesters, distributors, queriers and rulers when running in
+  # microservices mode.
   # CLI flag: -ingester.ring.excluded-zones
   [excluded_zones: <string> | default = ""]
 
@@ -3491,8 +3498,8 @@ The `store_gateway_config` configures the store-gateway service.
 # The hash ring configuration.
 sharding_ring:
   # The key-value store used to share the hash ring across multiple instances.
-  # This option needs be set both on the store-gateway and querier when running
-  # in microservices mode.
+  # This option needs be set both on the store-gateway, querier and ruler when
+  # running in microservices mode.
   kvstore:
     # Backend storage to use for the ring. Supported values are: consul, etcd,
     # inmemory, memberlist, multi.
@@ -3534,13 +3541,13 @@ sharding_ring:
 
   # (advanced) The heartbeat timeout after which store gateways are considered
   # unhealthy within the ring. 0 = never (timeout disabled). This option needs
-  # be set both on the store-gateway and querier when running in microservices
-  # mode.
+  # be set both on the store-gateway, querier and ruler when running in
+  # microservices mode.
   # CLI flag: -store-gateway.sharding-ring.heartbeat-timeout
   [heartbeat_timeout: <duration> | default = 1m]
 
   # (advanced) The replication factor to use when sharding blocks. This option
-  # needs be set both on the store-gateway and querier when running in
+  # needs be set both on the store-gateway, querier and ruler when running in
   # microservices mode.
   # CLI flag: -store-gateway.sharding-ring.replication-factor
   [replication_factor: <int> | default = 3]
@@ -3551,7 +3558,8 @@ sharding_ring:
   [tokens_file_path: <string> | default = ""]
 
   # True to enable zone-awareness and replicate blocks across different
-  # availability zones.
+  # availability zones. This option needs be set both on the store-gateway,
+  # querier and ruler when running in microservices mode.
   # CLI flag: -store-gateway.sharding-ring.zone-awareness-enabled
   [zone_awareness_enabled: <boolean> | default = false]
 

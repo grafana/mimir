@@ -15,6 +15,12 @@ import (
 	"github.com/grafana/dskit/ring"
 )
 
+const (
+	// sharedOptionWithRingClient is a message appended to all config options that should be also
+	// set on the components running the ingester ring client.
+	sharedOptionWithRingClient = " This option needs be set on ingesters, distributors, queriers and rulers when running in microservices mode."
+)
+
 type RingConfig struct {
 	KVStore              kv.Config              `yaml:"kvstore" doc:"description=The key-value store used to share the hash ring across multiple instances. This option needs be set on ingesters, distributors, queriers and rulers when running in microservices mode."`
 	HeartbeatPeriod      time.Duration          `yaml:"heartbeat_period" category:"advanced"`
@@ -62,10 +68,10 @@ func (cfg *RingConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.KVStore.RegisterFlagsWithPrefix(prefix, "collectors/", f)
 
 	f.DurationVar(&cfg.HeartbeatPeriod, prefix+"heartbeat-period", 5*time.Second, "Period at which to heartbeat to the ring. 0 = disabled.")
-	f.DurationVar(&cfg.HeartbeatTimeout, prefix+"heartbeat-timeout", time.Minute, "The heartbeat timeout after which ingesters are skipped for reads/writes. 0 = never (timeout disabled).")
-	f.IntVar(&cfg.ReplicationFactor, prefix+"replication-factor", 3, "Number of ingesters that each time series is replicated to.")
-	f.BoolVar(&cfg.ZoneAwarenessEnabled, prefix+"zone-awareness-enabled", false, "True to enable the zone-awareness and replicate ingested samples across different availability zones.")
-	f.Var(&cfg.ExcludedZones, prefix+"excluded-zones", "Comma-separated list of zones to exclude from the ring. Instances in excluded zones will be filtered out from the ring.")
+	f.DurationVar(&cfg.HeartbeatTimeout, prefix+"heartbeat-timeout", time.Minute, "The heartbeat timeout after which ingesters are skipped for reads/writes. 0 = never (timeout disabled)."+sharedOptionWithRingClient)
+	f.IntVar(&cfg.ReplicationFactor, prefix+"replication-factor", 3, "Number of ingesters that each time series is replicated to."+sharedOptionWithRingClient)
+	f.BoolVar(&cfg.ZoneAwarenessEnabled, prefix+"zone-awareness-enabled", false, "True to enable the zone-awareness and replicate ingested samples across different availability zones."+sharedOptionWithRingClient)
+	f.Var(&cfg.ExcludedZones, prefix+"excluded-zones", "Comma-separated list of zones to exclude from the ring. Instances in excluded zones will be filtered out from the ring."+sharedOptionWithRingClient)
 
 	f.StringVar(&cfg.TokensFilePath, prefix+"tokens-file-path", "", "File path where tokens are stored. If empty, tokens are not stored at shutdown and restored at startup.")
 	f.IntVar(&cfg.NumTokens, prefix+"num-tokens", 128, "Number of tokens for each ingester.")
@@ -88,9 +94,7 @@ func (cfg *RingConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.BoolVar(&cfg.ReadinessCheckRingHealth, prefix+"readiness-check-ring-health", true, "When enabled the readiness probe succeeds only after all instances are ACTIVE and healthy in the ring, otherwise only the instance itself is checked. This option should be disabled if in your cluster multiple instances can be rolled out simultaneously, otherwise rolling updates may be slowed down.")
 }
 
-// ToLifecyclerConfig returns a LifecyclerConfig based on the compactor
-// ring config.
-func (cfg *RingConfig) ToLifecyclerConfig() ring.LifecyclerConfig {
+func (cfg *RingConfig) ToRingConfig() ring.Config {
 	rc := ring.Config{}
 	flagext.DefaultValues(&rc)
 
@@ -102,11 +106,17 @@ func (cfg *RingConfig) ToLifecyclerConfig() ring.LifecyclerConfig {
 	rc.ExcludedZones = cfg.ExcludedZones
 	rc.SubringCacheDisabled = false // Enable subring caching.
 
+	return rc
+}
+
+// ToLifecyclerConfig returns a LifecyclerConfig based on the ingester
+// ring config.
+func (cfg *RingConfig) ToLifecyclerConfig() ring.LifecyclerConfig {
 	// Configure lifecycler
 	lc := ring.LifecyclerConfig{}
 	flagext.DefaultValues(&lc)
 
-	lc.RingConfig = rc
+	lc.RingConfig = cfg.ToRingConfig()
 	lc.NumTokens = cfg.NumTokens
 	lc.HeartbeatPeriod = cfg.HeartbeatPeriod
 	lc.ObservePeriod = cfg.ObservePeriod
