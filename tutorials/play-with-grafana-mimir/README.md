@@ -152,7 +152,7 @@ abruptly terminated:
 ## Summary
 
 In this tutorial you started Grafana Mimir locally in a high-available setup as well as a Prometheus instance that remote wrote
-some metrics to Grafana Mimir and query them using Grafana Mimir with Grafana. You also explored some of the dashboards provided
+some metrics to Grafana Mimir. You then queried those metrics stored in Mimir using Grafana, and visualized them in some Grafana dashboards.
 by the Grafana Mimir team and learned how to configure rules.
 
 Once you've completed the tutorial, release all Docker resources by running this Docker command:
