@@ -36,13 +36,13 @@ type Limits struct {
 	HAClusterLabel            string              `yaml:"ha_cluster_label" json:"ha_cluster_label"`
 	HAReplicaLabel            string              `yaml:"ha_replica_label" json:"ha_replica_label"`
 	HAMaxClusters             int                 `yaml:"ha_max_clusters" json:"ha_max_clusters"`
-	DropLabels                flagext.StringSlice `yaml:"drop_labels" json:"drop_labels"`
+	DropLabels                flagext.StringSlice `yaml:"drop_labels" json:"drop_labels" category:"advanced"`
 	MaxLabelNameLength        int                 `yaml:"max_label_name_length" json:"max_label_name_length"`
 	MaxLabelValueLength       int                 `yaml:"max_label_value_length" json:"max_label_value_length"`
 	MaxLabelNamesPerSeries    int                 `yaml:"max_label_names_per_series" json:"max_label_names_per_series"`
 	MaxMetadataLength         int                 `yaml:"max_metadata_length" json:"max_metadata_length"`
-	CreationGracePeriod       model.Duration      `yaml:"creation_grace_period" json:"creation_grace_period"`
-	EnforceMetadataMetricName bool                `yaml:"enforce_metadata_metric_name" json:"enforce_metadata_metric_name"`
+	CreationGracePeriod       model.Duration      `yaml:"creation_grace_period" json:"creation_grace_period" category:"advanced"`
+	EnforceMetadataMetricName bool                `yaml:"enforce_metadata_metric_name" json:"enforce_metadata_metric_name" category:"advanced"`
 	IngestionTenantShardSize  int                 `yaml:"ingestion_tenant_shard_size" json:"ingestion_tenant_shard_size"`
 	MetricRelabelConfigs      []*relabel.Config   `yaml:"metric_relabel_configs,omitempty" json:"metric_relabel_configs,omitempty" doc:"nocli|description=List of metric relabel configurations. Note that in most situations, it is more effective to use metrics relabeling directly in the Prometheus server, e.g. remote_write.write_relabel_configs." category:"experimental"`
 
@@ -64,7 +64,7 @@ type Limits struct {
 	MaxQueryLength                 model.Duration `yaml:"max_query_length" json:"max_query_length"`
 	MaxQueryParallelism            int            `yaml:"max_query_parallelism" json:"max_query_parallelism"`
 	MaxLabelsQueryLength           model.Duration `yaml:"max_labels_query_length" json:"max_labels_query_length"`
-	MaxCacheFreshness              model.Duration `yaml:"max_cache_freshness" json:"max_cache_freshness"`
+	MaxCacheFreshness              model.Duration `yaml:"max_cache_freshness" json:"max_cache_freshness" category:"advanced"`
 	MaxQueriersPerTenant           int            `yaml:"max_queriers_per_tenant" json:"max_queriers_per_tenant"`
 	QueryShardingTotalShards       int            `yaml:"query_sharding_total_shards" json:"query_sharding_total_shards"`
 	QueryShardingMaxShardedQueries int            `yaml:"query_sharding_max_sharded_queries" json:"query_sharding_max_sharded_queries"`
