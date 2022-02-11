@@ -2,13 +2,29 @@
 
 package integration
 
+import "github.com/grafana/mimir/integration/e2emimir"
+
 // DefaultPreviousVersionImages is used by `tools/pre-pull-images` so it needs
 // to be in a non `_test.go` file.
-var DefaultPreviousVersionImages = map[string]func(map[string]string) map[string]string{
-	"quay.io/cortexproject/cortex:v1.11.0": func(flags map[string]string) map[string]string {
-		flags["-store.engine"] = "blocks"
-		flags["-server.http-listen-port"] = "8080"
-		flags["-store-gateway.sharding-enabled"] = "true"
-		return flags
-	},
+var DefaultPreviousVersionImages = map[string]e2emimir.FlagMapper{
+	"quay.io/cortexproject/cortex:v1.11.0": e2emimir.ChainFlagMappers(
+		cortexFlagMapper,
+		revertRenameFrontendToQueryFrontendFlagMapper,
+	),
 }
+
+var (
+	// cortexFlagMapper sets flags that are needed for cortex.
+	cortexFlagMapper = e2emimir.SetFlagMapper(map[string]string{
+		"-store.engine":                   "blocks",
+		"-server.http-listen-port":        "8080",
+		"-store-gateway.sharding-enabled": "true",
+	})
+
+	// revertRenameFrontendToQueryFrontendFlagMapper reverts the `-frontend` to `-query-frontend` flag renaming that happened in:
+	// https://github.com/grafana/mimir/issues/859
+	revertRenameFrontendToQueryFrontendFlagMapper = e2emimir.RenameFlagMapper(map[string]string{
+		// Note that we're renaming flags back to their old version.
+		"-query-frontend.scheduler-dns-lookup-period": "-frontend.scheduler-dns-lookup-period",
+	})
+)

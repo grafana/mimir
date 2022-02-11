@@ -50,11 +50,11 @@ func buildArgsWithExtra(args []string) []string {
 	return args
 }
 
-func NewDistributor(name string, consulAddress string, flags map[string]string, image string) *MimirService {
-	return NewDistributorWithConfigFile(name, consulAddress, "", flags, image)
+func NewDistributor(name string, consulAddress string, flags map[string]string, image string, options ...Option) *MimirService {
+	return NewDistributorWithConfigFile(name, consulAddress, "", flags, image, options...)
 }
 
-func NewDistributorWithConfigFile(name, consulAddress, configFile string, flags map[string]string, image string) *MimirService {
+func NewDistributorWithConfigFile(name, consulAddress, configFile string, flags map[string]string, image string, options ...Option) *MimirService {
 	if configFile != "" {
 		flags["-config.file"] = filepath.Join(e2e.ContainerSharedDir, configFile)
 	}
@@ -64,32 +64,36 @@ func NewDistributorWithConfigFile(name, consulAddress, configFile string, flags 
 	}
 	binaryName := getBinaryNameForBackwardsCompatibility(image)
 
+	defaultFlags := map[string]string{
+		"-target":                         "distributor",
+		"-log.level":                      "warn",
+		"-auth.multitenancy-enabled":      "true",
+		"-distributor.replication-factor": "1",
+		"-distributor.remote-timeout":     "2s", // Fail fast in integration tests.
+		// Configure the ingesters ring backend
+		"-ring.store":      "consul",
+		"-consul.hostname": consulAddress,
+		// Configure the distributor ring backend
+		"-distributor.ring.store": "memberlist",
+	}
+
+	o := newOptions(options)
+	serviceFlags := o.MapFlags(e2e.MergeFlags(defaultFlags, flags))
+
 	return NewMimirService(
 		name,
 		image,
-		e2e.NewCommandWithoutEntrypoint(binaryName, buildArgsWithExtra(e2e.BuildArgs(
-			e2e.MergeFlags(map[string]string{
-				"-target":                         "distributor",
-				"-log.level":                      "warn",
-				"-auth.multitenancy-enabled":      "true",
-				"-distributor.replication-factor": "1",
-				"-distributor.remote-timeout":     "2s", // Fail fast in integration tests.
-				// Configure the ingesters ring backend
-				"-ring.store":      "consul",
-				"-consul.hostname": consulAddress,
-				// Configure the distributor ring backend
-				"-distributor.ring.store": "memberlist",
-			}, flags)))...),
+		e2e.NewCommandWithoutEntrypoint(binaryName, buildArgsWithExtra(e2e.BuildArgs(serviceFlags))...),
 		e2e.NewHTTPReadinessProbe(httpPort, "/ready", 200, 299),
 		httpPort,
 		grpcPort,
 	)
 }
-func NewQuerier(name string, consulAddress string, flags map[string]string, image string) *MimirService {
-	return NewQuerierWithConfigFile(name, consulAddress, "", flags, image)
+func NewQuerier(name string, consulAddress string, flags map[string]string, image string, options ...Option) *MimirService {
+	return NewQuerierWithConfigFile(name, consulAddress, "", flags, image, options...)
 }
 
-func NewQuerierWithConfigFile(name, consulAddress, configFile string, flags map[string]string, image string) *MimirService {
+func NewQuerierWithConfigFile(name, consulAddress, configFile string, flags map[string]string, image string, options ...Option) *MimirService {
 	if configFile != "" {
 		flags["-config.file"] = filepath.Join(e2e.ContainerSharedDir, configFile)
 	}
@@ -119,10 +123,13 @@ func NewQuerierWithConfigFile(name, consulAddress, configFile string, flags map[
 		"-store-gateway.sharding-ring.replication-factor": "1",
 	}
 
+	o := newOptions(options)
+	serviceFlags := o.MapFlags(e2e.MergeFlags(defaultFlags, flags))
+
 	return NewMimirService(
 		name,
 		image,
-		e2e.NewCommandWithoutEntrypoint(binaryName, buildArgsWithExtra(e2e.BuildArgs(e2e.MergeFlags(defaultFlags, flags)))...),
+		e2e.NewCommandWithoutEntrypoint(binaryName, buildArgsWithExtra(e2e.BuildArgs(serviceFlags))...),
 		e2e.NewHTTPReadinessProbe(httpPort, "/ready", 200, 299),
 		httpPort,
 		grpcPort,
@@ -162,11 +169,11 @@ func NewStoreGatewayWithConfigFile(name, consulAddress, configFile string, flags
 	)
 }
 
-func NewIngester(name string, consulAddress string, flags map[string]string, image string) *MimirService {
-	return NewIngesterWithConfigFile(name, consulAddress, "", flags, image)
+func NewIngester(name string, consulAddress string, flags map[string]string, image string, options ...Option) *MimirService {
+	return NewIngesterWithConfigFile(name, consulAddress, "", flags, image, options...)
 }
 
-func NewIngesterWithConfigFile(name, consulAddress, configFile string, flags map[string]string, image string) *MimirService {
+func NewIngesterWithConfigFile(name, consulAddress, configFile string, flags map[string]string, image string, options ...Option) *MimirService {
 	if configFile != "" {
 		flags["-config.file"] = filepath.Join(e2e.ContainerSharedDir, configFile)
 	}
@@ -175,20 +182,25 @@ func NewIngesterWithConfigFile(name, consulAddress, configFile string, flags map
 	}
 	binaryName := getBinaryNameForBackwardsCompatibility(image)
 
+	defaultFlags := map[string]string{
+		"-target":                      "ingester",
+		"-log.level":                   "warn",
+		"-ingester.final-sleep":        "0s",
+		"-ingester.join-after":         "0s",
+		"-ingester.min-ready-duration": "0s",
+		"-ingester.num-tokens":         "512",
+		// Configure the ingesters ring backend
+		"-ring.store":      "consul",
+		"-consul.hostname": consulAddress,
+	}
+
+	o := newOptions(options)
+	serviceFlags := o.MapFlags(e2e.MergeFlags(defaultFlags, flags))
+
 	return NewMimirService(
 		name,
 		image,
-		e2e.NewCommandWithoutEntrypoint(binaryName, buildArgsWithExtra(e2e.BuildArgs(e2e.MergeFlags(map[string]string{
-			"-target":                      "ingester",
-			"-log.level":                   "warn",
-			"-ingester.final-sleep":        "0s",
-			"-ingester.join-after":         "0s",
-			"-ingester.min-ready-duration": "0s",
-			"-ingester.num-tokens":         "512",
-			// Configure the ingesters ring backend
-			"-ring.store":      "consul",
-			"-consul.hostname": consulAddress,
-		}, flags)))...),
+		e2e.NewCommandWithoutEntrypoint(binaryName, buildArgsWithExtra(e2e.BuildArgs(serviceFlags))...),
 		e2e.NewHTTPReadinessProbe(httpPort, "/ready", 200, 299),
 		httpPort,
 		grpcPort,
@@ -202,11 +214,11 @@ func getBinaryNameForBackwardsCompatibility(image string) string {
 	return "mimir"
 }
 
-func NewQueryFrontend(name string, flags map[string]string, image string) *MimirService {
-	return NewQueryFrontendWithConfigFile(name, "", flags, image)
+func NewQueryFrontend(name string, flags map[string]string, image string, options ...Option) *MimirService {
+	return NewQueryFrontendWithConfigFile(name, "", flags, image, options...)
 }
 
-func NewQueryFrontendWithConfigFile(name, configFile string, flags map[string]string, image string) *MimirService {
+func NewQueryFrontendWithConfigFile(name, configFile string, flags map[string]string, image string, options ...Option) *MimirService {
 	if configFile != "" {
 		flags["-config.file"] = filepath.Join(e2e.ContainerSharedDir, configFile)
 	}
@@ -223,10 +235,13 @@ func NewQueryFrontendWithConfigFile(name, configFile string, flags map[string]st
 		"-query-frontend.scheduler-dns-lookup-period": "1s",
 	}
 
+	o := newOptions(options)
+	serviceFlags := o.MapFlags(e2e.MergeFlags(defaultFlags, flags))
+
 	return NewMimirService(
 		name,
 		image,
-		e2e.NewCommandWithoutEntrypoint(binaryName, buildArgsWithExtra(e2e.BuildArgs(e2e.MergeFlags(defaultFlags, flags)))...),
+		e2e.NewCommandWithoutEntrypoint(binaryName, buildArgsWithExtra(e2e.BuildArgs(serviceFlags))...),
 		e2e.NewHTTPReadinessProbe(httpPort, "/ready", 200, 299),
 		httpPort,
 		grpcPort,
@@ -442,4 +457,81 @@ func NewPurgerWithConfigFile(name, configFile string, flags map[string]string, i
 		httpPort,
 		grpcPort,
 	)
+}
+
+// Options holds a set of options for running services, they can be altered passing Option funcs.
+type Options struct {
+	MapFlags FlagMapper
+}
+
+// Option modifies options.
+type Option func(*Options)
+
+// newOptions creates an Options with default values and applies the options provided.
+func newOptions(options []Option) *Options {
+	o := &Options{
+		MapFlags: NoopFlagMapper,
+	}
+	for _, opt := range options {
+		opt(o)
+	}
+	return o
+}
+
+// WithFlagMapper creates an option that sets a FlagMapper.
+// Multiple flag mappers can be set, each one maps the output of the previous one.
+// Flag mappers added using this option act on a copy of the flags, so they don't alter the input.
+func WithFlagMapper(mapFlags FlagMapper) Option {
+	return func(options *Options) {
+		options.MapFlags = ChainFlagMappers(options.MapFlags, mapFlags)
+	}
+}
+
+// FlagMapper is the type of function that maps flags, just to reduce some verbosity.
+type FlagMapper func(flags map[string]string) map[string]string
+
+// NoopFlagMapper is a flag mapper that does not alter the provided flags.
+func NoopFlagMapper(flags map[string]string) map[string]string { return flags }
+
+// ChainFlagMappers chains multiple flag mappers, each flag mapper gets a copy of the flags so it can safely modify the values.
+// ChainFlagMappers(a, b)(flags) == b(copy(a(copy(flags)
+func ChainFlagMappers(mappers ...FlagMapper) FlagMapper {
+	return func(flags map[string]string) map[string]string {
+		for _, mapFlags := range mappers {
+			flags = mapFlags(copyFlags(flags))
+		}
+		return flags
+	}
+}
+
+// RenameFlagMapper builds a flag mapper that renames flags.
+func RenameFlagMapper(fromTo map[string]string) FlagMapper {
+	return func(flags map[string]string) map[string]string {
+		for name, renamed := range fromTo {
+			if v, ok := flags[name]; ok {
+				flags[renamed] = v
+				delete(flags, name)
+			}
+		}
+		return flags
+	}
+}
+
+// SetFlagMapper builds a flag mapper that sets the provided flags.
+func SetFlagMapper(set map[string]string) FlagMapper {
+	return func(flags map[string]string) map[string]string {
+		for f, v := range set {
+			flags[f] = v
+		}
+		return flags
+	}
+}
+
+// copyFlags provides a copy of the flags map provided.
+func copyFlags(flags map[string]string) map[string]string {
+	cp := make(map[string]string)
+	for f, v := range flags {
+		cp[f] = v
+	}
+	return cp
 }

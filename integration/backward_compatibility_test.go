@@ -27,20 +27,17 @@ import (
 // compatibility against. If MIMIR_PREVIOUS_IMAGES is set to a comma separted list of image versions,
 // then those will be used instead of the default versions. Note that the overriding of flags
 // is not currently possible when overriding the previous image versions via the environment variable.
-func previousVersionImages() map[string]func(map[string]string) map[string]string {
-	if os.Getenv("MIMIR_PREVIOUS_IMAGES") != "" {
-		overrideImageVersions := os.Getenv("MIMIR_PREVIOUS_IMAGES")
-		previousVersionImages := map[string]func(map[string]string) map[string]string{}
+func previousVersionImages() map[string]e2emimir.FlagMapper {
+	if overrideImageVersions := os.Getenv("MIMIR_PREVIOUS_IMAGES"); overrideImageVersions != "" {
+		previousVersionImages := map[string]e2emimir.FlagMapper{}
 
 		// Overriding of flags is not currently supported when overriding the list of images,
 		// so set all override functions to nil
 		for _, image := range strings.Split(overrideImageVersions, ",") {
-			previousVersionImages[image] = func(flags map[string]string) map[string]string {
-				flags["-store.engine"] = "blocks"
-				flags["-server.http-listen-port"] = "8080"
-				flags["-store-gateway.sharding-enabled"] = "true"
-				return flags
-			}
+			previousVersionImages[image] = e2emimir.ChainFlagMappers(
+				cortexFlagMapper,
+				revertRenameFrontendToQueryFrontendFlagMapper,
+			)
 		}
 
 		return previousVersionImages
@@ -50,32 +47,22 @@ func previousVersionImages() map[string]func(map[string]string) map[string]strin
 }
 
 func TestBackwardCompatibility(t *testing.T) {
-	for previousImage, flagsFn := range previousVersionImages() {
+	for previousImage, oldFlagsMapper := range previousVersionImages() {
 		t.Run(fmt.Sprintf("Backward compatibility upgrading from %s", previousImage), func(t *testing.T) {
-			flags := BlocksStorageFlags()
-			if flagsFn != nil {
-				flags = flagsFn(flags)
-			}
-
-			runBackwardCompatibilityTest(t, previousImage, flags)
+			runBackwardCompatibilityTest(t, previousImage, oldFlagsMapper)
 		})
 	}
 }
 
 func TestNewDistributorsCanPushToOldIngestersWithReplication(t *testing.T) {
-	for previousImage, flagsFn := range previousVersionImages() {
+	for previousImage, oldFlagsMapper := range previousVersionImages() {
 		t.Run(fmt.Sprintf("Backward compatibility upgrading from %s", previousImage), func(t *testing.T) {
-			flags := BlocksStorageFlags()
-			if flagsFn != nil {
-				flags = flagsFn(flags)
-			}
-
-			runNewDistributorsCanPushToOldIngestersWithReplication(t, previousImage, flags)
+			runNewDistributorsCanPushToOldIngestersWithReplication(t, previousImage, oldFlagsMapper)
 		})
 	}
 }
 
-func runBackwardCompatibilityTest(t *testing.T, previousImage string, flagsForOldImage map[string]string) {
+func runBackwardCompatibilityTest(t *testing.T, previousImage string, oldFlagsMapper e2emimir.FlagMapper) {
 	s, err := e2e.NewScenario(networkName)
 	require.NoError(t, err)
 	defer s.Close()
@@ -84,23 +71,18 @@ func runBackwardCompatibilityTest(t *testing.T, previousImage string, flagsForOl
 		"-blocks-storage.tsdb.dir": e2e.ContainerSharedDir + "/tsdb-shared",
 	}
 
-	flagsNew := mergeFlags(
+	flags := mergeFlags(
 		BlocksStorageFlags(),
-		flagTSDBPath,
-	)
-
-	flagsForOldImage = mergeFlags(
-		flagsForOldImage,
 		flagTSDBPath,
 	)
 
 	// Start dependencies.
 	consul := e2edb.NewConsul()
-	minio := e2edb.NewMinio(9000, flagsNew["-blocks-storage.s3.bucket-name"])
+	minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
 	require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 	// Start other Mimir components (ingester running on previous version).
-	ingester := e2emimir.NewIngester("ingester-old", consul.NetworkHTTPEndpoint(), flagsForOldImage, previousImage)
+	ingester := e2emimir.NewIngester("ingester-old", consul.NetworkHTTPEndpoint(), flags, previousImage, e2emimir.WithFlagMapper(oldFlagsMapper))
 	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), BlocksStorageFlags(), "")
 	assert.NoError(t, s.StartAndWaitReady(distributor, ingester))
 
@@ -122,7 +104,7 @@ func runBackwardCompatibilityTest(t *testing.T, previousImage string, flagsForOl
 	// Stop ingester on old version
 	require.NoError(t, s.Stop(ingester))
 
-	ingester = e2emimir.NewIngester("ingester-new", consul.NetworkHTTPEndpoint(), flagsNew, "")
+	ingester = e2emimir.NewIngester("ingester-new", consul.NetworkHTTPEndpoint(), flags, "")
 	require.NoError(t, s.StartAndWaitReady(ingester))
 
 	// Wait until the distributor has updated the ring.
@@ -133,8 +115,8 @@ func runBackwardCompatibilityTest(t *testing.T, previousImage string, flagsForOl
 		consul,
 		expectedVector,
 		previousImage,
-		flagsForOldImage,
-		BlocksStorageFlags(),
+		flags,
+		oldFlagsMapper,
 		now,
 		s,
 		1,
@@ -142,25 +124,25 @@ func runBackwardCompatibilityTest(t *testing.T, previousImage string, flagsForOl
 }
 
 // Check for issues like https://github.com/cortexproject/cortex/issues/2356
-func runNewDistributorsCanPushToOldIngestersWithReplication(t *testing.T, previousImage string, flagsForPreviousImage map[string]string) {
+func runNewDistributorsCanPushToOldIngestersWithReplication(t *testing.T, previousImage string, oldFlagsMapper e2emimir.FlagMapper) {
 	s, err := e2e.NewScenario(networkName)
 	require.NoError(t, err)
 	defer s.Close()
 
-	flagsForNewImage := mergeFlags(BlocksStorageFlags(), map[string]string{
+	flags := mergeFlags(BlocksStorageFlags(), map[string]string{
 		"-distributor.replication-factor": "3",
 	})
 
 	// Start dependencies.
 	consul := e2edb.NewConsul()
-	minio := e2edb.NewMinio(9000, flagsForNewImage["-blocks-storage.s3.bucket-name"])
+	minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
 	require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 	// Start other Mimir components (ingester running on previous version).
-	ingester1 := e2emimir.NewIngester("ingester-1", consul.NetworkHTTPEndpoint(), flagsForPreviousImage, previousImage)
-	ingester2 := e2emimir.NewIngester("ingester-2", consul.NetworkHTTPEndpoint(), flagsForPreviousImage, previousImage)
-	ingester3 := e2emimir.NewIngester("ingester-3", consul.NetworkHTTPEndpoint(), flagsForPreviousImage, previousImage)
-	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flagsForNewImage, "")
+	ingester1 := e2emimir.NewIngester("ingester-1", consul.NetworkHTTPEndpoint(), flags, previousImage, e2emimir.WithFlagMapper(oldFlagsMapper))
+	ingester2 := e2emimir.NewIngester("ingester-2", consul.NetworkHTTPEndpoint(), flags, previousImage, e2emimir.WithFlagMapper(oldFlagsMapper))
+	ingester3 := e2emimir.NewIngester("ingester-3", consul.NetworkHTTPEndpoint(), flags, previousImage, e2emimir.WithFlagMapper(oldFlagsMapper))
+	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags, "")
 	require.NoError(t, s.StartAndWaitReady(distributor, ingester1, ingester2, ingester3))
 
 	// Wait until the distributor has updated the ring.
@@ -181,8 +163,8 @@ func runNewDistributorsCanPushToOldIngestersWithReplication(t *testing.T, previo
 	checkQueries(t, consul,
 		expectedVector,
 		previousImage,
-		flagsForPreviousImage,
-		flagsForNewImage,
+		flags,
+		oldFlagsMapper,
 		now,
 		s,
 		3,
@@ -194,35 +176,42 @@ func checkQueries(
 	consul *e2e.HTTPService,
 	expectedVector model.Vector,
 	previousImage string,
-	flagsForOldImage, flagsForNewImage map[string]string,
+	flags map[string]string,
+	oldFlagsMapper e2emimir.FlagMapper,
 	now time.Time,
 	s *e2e.Scenario,
 	numIngesters int,
 ) {
 	cases := map[string]struct {
-		queryFrontendImage string
-		queryFrontendFlags map[string]string
-		querierImage       string
-		querierFlags       map[string]string
+		queryFrontendImage      string
+		queryFrontendFlags      map[string]string
+		queryFrontendFlagMapper e2emimir.FlagMapper
+		querierImage            string
+		querierFlags            map[string]string
+		querierFlagMapper       e2emimir.FlagMapper
 	}{
 		"old query-frontend, new querier": {
-			queryFrontendImage: previousImage,
-			queryFrontendFlags: flagsForOldImage,
-			querierImage:       "",
-			querierFlags:       flagsForNewImage,
+			queryFrontendImage:      previousImage,
+			queryFrontendFlags:      flags,
+			queryFrontendFlagMapper: oldFlagsMapper,
+			querierImage:            "",
+			querierFlags:            flags,
+			querierFlagMapper:       e2emimir.NoopFlagMapper,
 		},
 		"new query-frontend, old querier": {
-			queryFrontendImage: "",
-			queryFrontendFlags: flagsForNewImage,
-			querierImage:       previousImage,
-			querierFlags:       flagsForOldImage,
+			queryFrontendImage:      "",
+			queryFrontendFlags:      flags,
+			queryFrontendFlagMapper: e2emimir.NoopFlagMapper,
+			querierImage:            previousImage,
+			querierFlags:            flags,
+			querierFlagMapper:       oldFlagsMapper,
 		},
 	}
 
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
 			// Start query-frontend.
-			queryFrontend := e2emimir.NewQueryFrontend("query-frontend", c.queryFrontendFlags, c.queryFrontendImage)
+			queryFrontend := e2emimir.NewQueryFrontend("query-frontend", c.queryFrontendFlags, c.queryFrontendImage, e2emimir.WithFlagMapper(c.queryFrontendFlagMapper))
 			require.NoError(t, s.Start(queryFrontend))
 			defer func() {
 				require.NoError(t, s.Stop(queryFrontend))
@@ -231,7 +220,7 @@ func checkQueries(
 			// Start querier.
 			querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), e2e.MergeFlagsWithoutRemovingEmpty(c.querierFlags, map[string]string{
 				"-querier.frontend-address": queryFrontend.NetworkGRPCEndpoint(),
-			}), c.querierImage)
+			}), c.querierImage, e2emimir.WithFlagMapper(c.querierFlagMapper))
 
 			require.NoError(t, s.Start(querier))
 			defer func() {
