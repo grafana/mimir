@@ -95,7 +95,7 @@ offered by Grafana.
    1. Type `count(up)` in the "Create a query to be recorded" field.
    1. Click "Save and Exit" button.
 
-Your `count:up` recording rule is now creating in Grafana Mimir ruler and will be soon available for querying:
+Your `count:up` recording rule counts the number of Mimir replicas that are `up`, meaning reachable to be scraped. The rule is now creating in Grafana Mimir ruler and will be soon available for querying:
 
 1. Open [Grafana Explore](http://localhost:9000/explore).
 1. Query the resulting series from the recording rule, which may require up to one minute to display after configuration:
