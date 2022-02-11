@@ -671,8 +671,8 @@ lifecycler:
         # CLI flag: -multi.mirror-timeout
         [mirror_timeout: <duration> | default = 2s]
 
-    # The heartbeat timeout after which ingesters are skipped for reads/writes.
-    # 0 = never (timeout disabled).
+    # (advanced) The heartbeat timeout after which ingesters are skipped for
+    # reads/writes. 0 = never (timeout disabled).
     # CLI flag: -ring.heartbeat-timeout
     [heartbeat_timeout: <duration> | default = 1m]
 
@@ -685,8 +685,8 @@ lifecycler:
     # CLI flag: -distributor.zone-awareness-enabled
     [zone_awareness_enabled: <boolean> | default = false]
 
-    # Comma-separated list of zones to exclude from the ring. Instances in
-    # excluded zones will be filtered out from the ring.
+    # (advanced) Comma-separated list of zones to exclude from the ring.
+    # Instances in excluded zones will be filtered out from the ring.
     # CLI flag: -distributor.excluded-zones
     [excluded_zones: <string> | default = ""]
 

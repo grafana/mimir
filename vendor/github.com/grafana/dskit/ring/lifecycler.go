@@ -19,6 +19,7 @@ import (
 
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv"
+	"github.com/grafana/dskit/netutil"
 	"github.com/grafana/dskit/services"
 )
 
@@ -53,13 +54,13 @@ type LifecyclerConfig struct {
 
 // RegisterFlags adds the flags required to config this to the given FlagSet.
 // The default values of some flags can be changed; see docs of LifecyclerConfig.
-func (cfg *LifecyclerConfig) RegisterFlags(f *flag.FlagSet) {
-	cfg.RegisterFlagsWithPrefix("", f)
+func (cfg *LifecyclerConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
+	cfg.RegisterFlagsWithPrefix("", f, logger)
 }
 
 // RegisterFlagsWithPrefix adds the flags required to config this to the given FlagSet.
 // The default values of some flags can be changed; see docs of LifecyclerConfig.
-func (cfg *LifecyclerConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
+func (cfg *LifecyclerConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet, logger log.Logger) {
 	cfg.RingConfig.RegisterFlagsWithPrefix(prefix, f)
 
 	// In order to keep backwards compatibility all of these need to be prefixed
@@ -81,7 +82,7 @@ func (cfg *LifecyclerConfig) RegisterFlagsWithPrefix(prefix string, f *flag.Flag
 		panic(fmt.Errorf("failed to get hostname %s", err))
 	}
 
-	cfg.InfNames = []string{"eth0", "en0"}
+	cfg.InfNames = netutil.PrivateNetworkInterfacesWithFallback([]string{"eth0", "en0"}, logger)
 	f.Var((*flagext.StringSlice)(&cfg.InfNames), prefix+"lifecycler.interface", "Name of network interface to read address from.")
 	f.StringVar(&cfg.Addr, prefix+"lifecycler.addr", "", "IP address to advertise in the ring.")
 	f.IntVar(&cfg.Port, prefix+"lifecycler.port", 0, "port to advertise in consul (defaults to server.grpc-listen-port).")

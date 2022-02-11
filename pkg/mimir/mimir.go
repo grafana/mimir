@@ -137,7 +137,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.Distributor.RegisterFlags(f)
 	c.Querier.RegisterFlags(f)
 	c.IngesterClient.RegisterFlags(f)
-	c.Ingester.RegisterFlags(f)
+	c.Ingester.RegisterFlags(f, logger)
 	c.Flusher.RegisterFlags(f)
 	c.LimitsConfig.RegisterFlags(f)
 	c.Worker.RegisterFlags(f)

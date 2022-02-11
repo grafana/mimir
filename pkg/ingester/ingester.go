@@ -143,9 +143,9 @@ type Config struct {
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
-func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
+func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.LifecyclerConfig.RingConfig.KVStore.Store = "memberlist"
-	cfg.LifecyclerConfig.RegisterFlags(f)
+	cfg.LifecyclerConfig.RegisterFlags(f, logger)
 
 	f.DurationVar(&cfg.MetadataRetainPeriod, "ingester.metadata-retain-period", 10*time.Minute, "Period at which metadata we have not seen will remain in memory before being deleted.")
 
