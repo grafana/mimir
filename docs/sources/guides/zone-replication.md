@@ -24,9 +24,9 @@ The Cortex time-series replication is used to hold multiple (typically 3) replic
 
 **To enable** the zone-aware replication for the ingesters you should:
 
-1. Configure the availability zone for each ingester via the `-ingester.availability-zone` CLI flag (or its respective YAML config option)
+1. Configure the availability zone for each ingester via the `-ingester.ring.instance-availability-zone` CLI flag (or its respective YAML config option)
 2. Rollout ingesters to apply the configured zone
-3. Enable time-series zone-aware replication via the `-distributor.zone-awareness-enabled` CLI flag (or its respective YAML config option). Please be aware this configuration option should be set to distributors, queriers and rulers.
+3. Enable time-series zone-aware replication via the `-ingester.ring.zone-awareness-enabled` CLI flag (or its respective YAML config option). Please be aware this configuration option should be set to distributors, queriers and rulers.
 
 A metric is sharded across all ingesters and querier needs to fetch series from all ingesters. In the event of a large outage impacting ingesters in more than 1 zone, all queries will fail.
 

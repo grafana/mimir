@@ -145,12 +145,12 @@
     // The ingester ring client config that should be shared across all Mimir services
     // using or watching the ingester ring.
     ingesterRingClientConfig: {
-      'consul.hostname': 'consul.%s.svc.cluster.local:8500' % $._config.namespace,
-      'distributor.replication-factor': $._config.replication_factor,
+      'ingester.ring.consul.hostname': 'consul.%s.svc.cluster.local:8500' % $._config.namespace,
+      'ingester.ring.replication-factor': $._config.replication_factor,
       'distributor.health-check-ingesters': true,
-      'ring.heartbeat-timeout': '10m',
-      'ring.store': 'consul',
-      'ring.prefix': '',
+      'ingester.ring.heartbeat-timeout': '10m',
+      'ingester.ring.store': 'consul',
+      'ingester.ring.prefix': '',
     },
 
     ruler_enabled: false,

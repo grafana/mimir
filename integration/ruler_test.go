@@ -562,7 +562,7 @@ func TestRulerMetricsForInvalidQueries(t *testing.T) {
 			"-blocks-storage.tsdb.retention-period":      "2h",
 
 			// We run single ingester only, no replication.
-			"-distributor.replication-factor": "1",
+			"-ingester.ring.replication-factor": "1",
 
 			// Very low limit so that ruler hits it.
 			"-querier.max-fetched-chunks-per-query": "5",
@@ -729,9 +729,9 @@ func TestRulerFederatedRules(t *testing.T) {
 		BlocksStorageFlags(),
 		RulerFlags(),
 		map[string]string{
-			"-ruler.tenant-federation.enabled": "true",
-			"-tenant-federation.enabled":       "true",
-			"-distributor.replication-factor":  "1",
+			"-ruler.tenant-federation.enabled":  "true",
+			"-tenant-federation.enabled":        "true",
+			"-ingester.ring.replication-factor": "1",
 		},
 	)
 

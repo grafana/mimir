@@ -72,12 +72,11 @@ distributor:
       store: memberlist
 
 ingester:
-  lifecycler:
-    address: 127.0.0.1
-    ring:
-      kvstore:
-        store: memberlist
-      replication_factor: 1
+  ring:
+    instance_addr: 127.0.0.1
+    kvstore:
+      store: memberlist
+    replication_factor: 1
 
 ruler_storage:
   backend: local

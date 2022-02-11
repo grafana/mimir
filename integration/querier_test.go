@@ -353,10 +353,10 @@ func TestQuerierWithBlocksStorageRunningInSingleBinaryMode(t *testing.T) {
 				"-blocks-storage.bucket-store.index-cache.memcached.addresses": "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
 				"-blocks-storage.bucket-store.bucket-index.enabled":            strconv.FormatBool(testCfg.bucketIndexEnabled),
 				// Ingester.
-				"-ring.store":      "consul",
-				"-consul.hostname": consul.NetworkHTTPEndpoint(),
+				"-ingester.ring.store":           "consul",
+				"-ingester.ring.consul.hostname": consul.NetworkHTTPEndpoint(),
 				// Distributor.
-				"-distributor.replication-factor":   strconv.FormatInt(seriesReplicationFactor, 10),
+				"-ingester.ring.replication-factor": strconv.FormatInt(seriesReplicationFactor, 10),
 				"-distributor.ring.store":           "consul",
 				"-distributor.ring.consul.hostname": consul.NetworkHTTPEndpoint(),
 				// Store-gateway.

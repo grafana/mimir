@@ -10,6 +10,7 @@ var DefaultPreviousVersionImages = map[string]e2emimir.FlagMapper{
 	"quay.io/cortexproject/cortex:v1.11.0": e2emimir.ChainFlagMappers(
 		cortexFlagMapper,
 		revertRenameFrontendToQueryFrontendFlagMapper,
+		ingesterRingRename,
 	),
 }
 
@@ -26,5 +27,13 @@ var (
 	revertRenameFrontendToQueryFrontendFlagMapper = e2emimir.RenameFlagMapper(map[string]string{
 		// Map new name to old name.
 		"-query-frontend.scheduler-dns-lookup-period": "-frontend.scheduler-dns-lookup-period",
+	})
+
+	ingesterRingRename = e2emimir.RenameFlagMapper(map[string]string{
+		"-ingester.ring.store":              "-ring.store",
+		"-ingester.ring.consul.hostname":    "-consul.hostname",
+		"-ingester.ring.min-ready-duration": "-ingester.min-ready-duration",
+		"-ingester.ring.num-tokens":         "-ingester.num-tokens",
+		"-ingester.ring.replication-factor": "-distributor.replication-factor",
 	})
 )

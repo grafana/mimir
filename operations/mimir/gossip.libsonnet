@@ -26,7 +26,7 @@
 
     // Use memberlist only. This works fine on already-migrated clusters.
     // To do a migration from Consul to memberlist, multi kv storage needs to be used (See below).
-    ingesterRingClientConfig+: setupGossipRing('ring.store', 'consul.hostname') + memberlistConfig,
+    ingesterRingClientConfig+: setupGossipRing('ingester.ring.store', 'ingester.ring.consul.hostname') + memberlistConfig,
 
     queryBlocksStorageConfig+:: setupGossipRing('store-gateway.sharding-ring.store', 'store-gateway.sharding-ring.consul.hostname') + memberlistConfig,
 
@@ -48,13 +48,13 @@
   ingester_args+: {
     // wait longer to see LEAVING ingester in the gossiped ring, to avoid
     // auto-join without transfer from LEAVING ingester.
-    'ingester.join-after': '60s',
+    'ingester.ring.join-after': '60s',
 
     // Updating heartbeat is low-cost operation when using gossiped ring, we can
     // do it more often (gossiping will happen no matter what, we may as well send
     // recent timestamps).
     // It also helps other components to see more recent update in the ring.
-    'ingester.heartbeat-period': '5s',
+    'ingester.ring.heartbeat-period': '5s',
   },
 
   local gossipRingPort = 7946,

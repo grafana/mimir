@@ -28,12 +28,12 @@ ingester_client:
     grpc_compression: gzip
 
 ingester:
-  lifecycler:
+  ring:
     # The address to advertise for this ingester.  Will be autodiscovered by
     # looking up address on eth0 or en0; can be specified if this fails.
-    address: 127.0.0.1
+    instance_addr: 127.0.0.1
     # Defaults to hostname, but we run both ingesters in this demonstration on the same machine.
-    id: "Ingester 1"
+    instance_id: "Ingester 1"
 
     # We don't want to join immediately, but wait a bit to see other ingesters and their tokens first.
     # It can take a while to have the full picture when using gossip
@@ -46,9 +46,7 @@ ingester:
     min_ready_duration: 0s
     final_sleep: 5s
     num_tokens: 512
-
-    ring:
-      replication_factor: 1
+    replication_factor: 1
 
 memberlist:
   bind_port: 7946

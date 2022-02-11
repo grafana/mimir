@@ -167,7 +167,7 @@ func TestMultiKVSetup(t *testing.T) {
 	for target, checkFn := range map[string]func(t *testing.T, c Config){
 		All: func(t *testing.T, c Config) {
 			require.NotNil(t, c.Distributor.DistributorRing.KVStore.Multi.ConfigProvider)
-			require.NotNil(t, c.Ingester.LifecyclerConfig.RingConfig.KVStore.Multi)
+			require.NotNil(t, c.Ingester.IngesterRing.KVStore.Multi)
 			require.NotNil(t, c.StoreGateway.ShardingRing.KVStore.Multi.ConfigProvider)
 			require.NotNil(t, c.Compactor.ShardingRing.KVStore.Multi.ConfigProvider)
 		},
@@ -181,11 +181,11 @@ func TestMultiKVSetup(t *testing.T) {
 		},
 
 		Distributor: func(t *testing.T, c Config) {
-			require.NotNil(t, c.Ingester.LifecyclerConfig.RingConfig.KVStore.Multi.ConfigProvider)
+			require.NotNil(t, c.Ingester.IngesterRing.KVStore.Multi.ConfigProvider)
 		},
 
 		Ingester: func(t *testing.T, c Config) {
-			require.NotNil(t, c.Ingester.LifecyclerConfig.RingConfig.KVStore.Multi.ConfigProvider)
+			require.NotNil(t, c.Ingester.IngesterRing.KVStore.Multi.ConfigProvider)
 		},
 	} {
 		t.Run(target, func(t *testing.T) {

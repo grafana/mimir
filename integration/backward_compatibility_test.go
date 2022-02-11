@@ -31,12 +31,12 @@ func previousVersionImages() map[string]e2emimir.FlagMapper {
 	if overrideImageVersions := os.Getenv("MIMIR_PREVIOUS_IMAGES"); overrideImageVersions != "" {
 		previousVersionImages := map[string]e2emimir.FlagMapper{}
 
-		// Overriding of flags is not currently supported when overriding the list of images,
-		// so set all override functions to nil
+		// Overriding of flags is not currently supported when overriding the list of images.
 		for _, image := range strings.Split(overrideImageVersions, ",") {
 			previousVersionImages[image] = e2emimir.ChainFlagMappers(
 				cortexFlagMapper,
 				revertRenameFrontendToQueryFrontendFlagMapper,
+				ingesterRingRename,
 			)
 		}
 
@@ -130,7 +130,7 @@ func runNewDistributorsCanPushToOldIngestersWithReplication(t *testing.T, previo
 	defer s.Close()
 
 	flags := mergeFlags(BlocksStorageFlags(), map[string]string{
-		"-distributor.replication-factor": "3",
+		"-ingester.ring.replication-factor": "3",
 	})
 
 	// Start dependencies.

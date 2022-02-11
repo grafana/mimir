@@ -298,6 +298,38 @@
 * [CHANGE] Query Frontend: `-frontend.` flags were renamed to `-query-frontend.`: #1167
 * [FEATURE] Query Frontend: Add `cortex_query_fetched_chunks_total` per-user counter to expose the number of chunks fetched as part of queries. This metric can be enabled with the `-query-frontend.query-stats-enabled` flag (or its respective YAML config option `query_stats_enabled`). #31
 * [FEATURE] Query Frontend: Add experimental querysharding for the blocks storage (instant and range queries). You can now enable querysharding for blocks storage (`-store.engine=blocks`) by setting `-query-frontend.parallelize-shardable-queries` to `true`. The following additional config and exported metrics have been added. #79 #80 #100 #124 #140 #148 #150 #151 #153 #154 #155 #156 #157 #158 #159 #160 #163 #169 #172 #196 #205 #225 #226 #227 #228 #230 #235 #240 #239 #246 #244 #319 #330 #371 #385 #400 #458 #586 #630 #660 #707
+* [CHANGE] Ingester: following command line options related to ingester ring were renamed: #1155
+  * `-consul.*` changed to `-ingester.ring.consul.*`
+  * `-etcd.*` changed to `-ingester.ring.etcd.*`
+  * `-multi.*` changed to `-ingester.ring.multi.*`
+  * `-distributor.excluded-zones` changed to `-ingester.ring.excluded-zones`
+  * `-distributor.replication-factor` changed to `-ingester.ring.replication-factor`
+  * `-distributor.zone-awareness-enabled` changed to `-ingester.ring.zone-awareness-enabled`
+  * `-ingester.availability-zone` changed to `-ingester.ring.instance-availability-zone`
+  * `-ingester.final-sleep` changed to `-ingester.ring.final-sleep`
+  * `-ingester.heartbeat-period` changed to `-ingester.ring.heartbeat-period`
+  * `-ingester.join-after` changed to `-ingester.ring.join-after`
+  * `-ingester.lifecycler.ID` changed to `-ingester.ring.instance-id`
+  * `-ingester.lifecycler.addr` changed to `-ingester.ring.instance-addr`
+  * `-ingester.lifecycler.interface` changed to `-ingester.ring.instance-interface-names`
+  * `-ingester.lifecycler.port` changed to `-ingester.ring.instance-port`
+  * `-ingester.min-ready-duration` changed to `-ingester.ring.min-ready-duration`
+  * `-ingester.num-tokens` changed to `-ingester.ring.num-tokens`
+  * `-ingester.observe-period` changed to `-ingester.ring.observe-period`
+  * `-ingester.readiness-check-ring-health` changed to `-ingester.ring.readiness-check-ring-health`
+  * `-ingester.tokens-file-path` changed to `-ingester.ring.tokens-file-path`
+  * `-ingester.unregister-on-shutdown` changed to `-ingester.ring.unregister-on-shutdown`
+  * `-ring.heartbeat-timeout` changed to `-ingester.ring.heartbeat-timeout`
+  * `-ring.prefix` changed to `-ingester.ring.prefix`
+  * `-ring.store` changed to `-ingester.ring.store`
+* [CHANGE] Ingester: fields in YAML configuration for ingester ring have been changed: #1155
+  * `ingester.lifecycler` changed to `ingester.ring`
+  * Fields from `ingester.lifecycler.ring` moved to `ingester.ring`
+  * `ingester.lifecycler.address` changed to `ingester.ring.instance_addr`
+  * `ingester.lifecycler.id` changed to `ingester.ring.instance_id`
+  * `ingester.lifecycler.port` changed to `ingester.ring.instance_port`
+  * `ingester.lifecycler.availability_zone` changed to `ingester.ring.instance_availability_zone`
+  * `ingester.lifecycler.interface_names` changed to `ingester.ring.instance_interface_names`
   * New config options:
     * `-query-frontend.query-sharding-total-shards`: The amount of shards to use when doing parallelisation via query sharding.
     * `-query-frontend.query-sharding-max-sharded-queries`: The max number of sharded queries that can be run for a given received query. 0 to disable limit.

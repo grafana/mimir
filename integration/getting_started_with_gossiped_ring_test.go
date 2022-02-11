@@ -38,8 +38,7 @@ func TestGettingStartedWithGossipedRing(t *testing.T) {
 	// We don't care for storage part too much here. Both Mimir instances will write new blocks to /tmp, but that's fine.
 	flags := map[string]string{
 		// decrease timeouts to make test faster. should still be fine with two instances only
-		"-ingester.join-after":                              "0s", // join quickly
-		"-ingester.observe-period":                          "5s", // to avoid conflicts in tokens
+		"-ingester.ring.observe-period":                     "5s", // to avoid conflicts in tokens
 		"-blocks-storage.bucket-store.bucket-index.enabled": "false",
 		"-blocks-storage.bucket-store.sync-interval":        "1s", // sync continuously
 		"-blocks-storage.backend":                           "s3",
@@ -52,12 +51,12 @@ func TestGettingStartedWithGossipedRing(t *testing.T) {
 
 	// This mimir will fail to join the cluster configured in yaml file. That's fine.
 	mimir1 := e2emimir.NewSingleBinaryWithConfigFile("mimir-1", "config1.yaml", e2e.MergeFlags(flags, map[string]string{
-		"-ingester.lifecycler.addr": networkName + "-mimir-1", // Ingester's hostname in docker setup
+		"-ingester.ring.instance-addr": networkName + "-mimir-1", // Ingester's hostname in docker setup
 	}), "", 9109, 9195)
 
 	mimir2 := e2emimir.NewSingleBinaryWithConfigFile("mimir-2", "config2.yaml", e2e.MergeFlags(flags, map[string]string{
-		"-ingester.lifecycler.addr": networkName + "-mimir-2", // Ingester's hostname in docker setup
-		"-memberlist.join":          networkName + "-mimir-1:7946",
+		"-ingester.ring.instance-addr": networkName + "-mimir-2", // Ingester's hostname in docker setup
+		"-memberlist.join":             networkName + "-mimir-1:7946",
 	}), "", 9209, 9295)
 
 	require.NoError(t, s.StartAndWaitReady(mimir1))

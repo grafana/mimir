@@ -114,7 +114,7 @@ type requestWithUsersAndCallback struct {
 
 // Config for an Ingester.
 type Config struct {
-	LifecyclerConfig ring.LifecyclerConfig `yaml:"lifecycler"`
+	IngesterRing RingConfig `yaml:"ring"`
 
 	// Config for metadata purging.
 	MetadataRetainPeriod time.Duration `yaml:"metadata_retain_period" category:"advanced"`
@@ -144,8 +144,7 @@ type Config struct {
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
 func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
-	cfg.LifecyclerConfig.RingConfig.KVStore.Store = "memberlist"
-	cfg.LifecyclerConfig.RegisterFlags(f, logger)
+	cfg.IngesterRing.RegisterFlags(f, logger)
 
 	f.DurationVar(&cfg.MetadataRetainPeriod, "ingester.metadata-retain-period", 10*time.Minute, "Period at which metadata we have not seen will remain in memory before being deleted.")
 
@@ -301,7 +300,7 @@ func New(cfg Config, clientConfig client.Config, limits *validation.Overrides, r
 		}, i.getOldestUnshippedBlockMetric)
 	}
 
-	i.lifecycler, err = ring.NewLifecycler(cfg.LifecyclerConfig, i, "ingester", IngesterRingKey, cfg.BlocksStorageConfig.TSDB.FlushBlocksOnShutdown, logger, prometheus.WrapRegistererWithPrefix("cortex_", registerer))
+	i.lifecycler, err = ring.NewLifecycler(cfg.IngesterRing.ToLifecyclerConfig(), i, "ingester", IngesterRingKey, cfg.BlocksStorageConfig.TSDB.FlushBlocksOnShutdown, logger, prometheus.WrapRegistererWithPrefix("cortex_", registerer))
 	if err != nil {
 		return nil, err
 	}
@@ -312,8 +311,8 @@ func New(cfg Config, clientConfig client.Config, limits *validation.Overrides, r
 	i.limiter = NewLimiter(
 		limits,
 		i.lifecycler,
-		cfg.LifecyclerConfig.RingConfig.ReplicationFactor,
-		cfg.LifecyclerConfig.RingConfig.ZoneAwarenessEnabled)
+		cfg.IngesterRing.ReplicationFactor,
+		cfg.IngesterRing.ZoneAwarenessEnabled)
 
 	i.shipperIngesterID = i.lifecycler.ID
 

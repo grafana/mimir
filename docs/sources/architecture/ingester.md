@@ -15,7 +15,7 @@ Ingesters contain a **lifecycler** which manages the lifecycle of an ingester an
 - **`PENDING`**<br />
   The ingester has just started. While in this state, the ingester receives neither write nor read requests.
 - **`JOINING`**<br />
-  The ingester is starting up and joining the ring. While in this state the ingester receives neither write nor read requests. The ingester will load tokens from disk (if `-ingester.tokens-file-path` is configured) or generate a set of new random tokens. Finally, the ingester optionally observes the ring for token conflicts, and once resolved, will move to the `ACTIVE` state.
+  The ingester is starting up and joining the ring. While in this state the ingester receives neither write nor read requests. The ingester will load tokens from disk (if `-ingester.ring.tokens-file-path` is configured) or generate a set of new random tokens. Finally, the ingester optionally observes the ring for token conflicts, and once resolved, will move to the `ACTIVE` state.
 - **`ACTIVE`**<br />
   The ingester is up and running. While in this state the ingester can receive both write and read requests.
 - **`LEAVING`**<br />
