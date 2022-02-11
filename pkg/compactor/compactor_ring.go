@@ -10,9 +10,11 @@ import (
 	"os"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv"
+	"github.com/grafana/dskit/netutil"
 	"github.com/grafana/dskit/ring"
 
 	util_log "github.com/grafana/mimir/pkg/util/log"
@@ -46,7 +48,7 @@ type RingConfig struct {
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
-func (cfg *RingConfig) RegisterFlags(f *flag.FlagSet) {
+func (cfg *RingConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	hostname, err := os.Hostname()
 	if err != nil {
 		level.Error(util_log.Logger).Log("msg", "failed to get hostname", "err", err)
@@ -64,10 +66,10 @@ func (cfg *RingConfig) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.WaitStabilityMaxDuration, "compactor.ring.wait-stability-max-duration", 5*time.Minute, "Maximum time to wait for ring stability at startup. If the compactor ring keeps changing after this period of time, the compactor will start anyway.")
 
 	// Instance flags
-	cfg.InstanceInterfaceNames = []string{"eth0", "en0"}
-	f.Var((*flagext.StringSlice)(&cfg.InstanceInterfaceNames), "compactor.ring.instance-interface-names", "List of network interface names to look up when finding the instance IP address.")
-	f.StringVar(&cfg.InstanceAddr, "compactor.ring.instance-addr", "", "IP address to advertise in the ring. Default is auto-detected.")
-	f.IntVar(&cfg.InstancePort, "compactor.ring.instance-port", 0, "Port to advertise in the ring (defaults to -server.grpc-listen-port).")
+	cfg.InstanceInterfaceNames = netutil.PrivateNetworkInterfacesWithFallback([]string{"eth0", "en0"}, logger)
+	f.Var((*flagext.StringSlice)(&cfg.InstanceInterfaceNames), "compactor.ring.instance-interface-names", "Name of network interface to read address from.")
+	f.StringVar(&cfg.InstanceAddr, "compactor.ring.instance-addr", "", "IP address to advertise in the ring.")
+	f.IntVar(&cfg.InstancePort, "compactor.ring.instance-port", 0, "Port to advertise in the ring (defaults to server.grpc-listen-port).")
 	f.StringVar(&cfg.InstanceID, "compactor.ring.instance-id", hostname, "Instance ID to register in the ring.")
 
 	// Timeout durations

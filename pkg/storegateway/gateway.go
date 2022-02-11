@@ -58,8 +58,8 @@ type Config struct {
 }
 
 // RegisterFlags registers the Config flags.
-func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
-	cfg.ShardingRing.RegisterFlags(f)
+func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
+	cfg.ShardingRing.RegisterFlags(f, logger)
 }
 
 // Validate the Config.

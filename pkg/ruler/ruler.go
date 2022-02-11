@@ -131,9 +131,9 @@ func (cfg *Config) Validate(limits validation.Limits, log log.Logger) error {
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
-func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
+func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.ClientTLSConfig.RegisterFlagsWithPrefix("ruler.client", f)
-	cfg.Ring.RegisterFlags(f)
+	cfg.Ring.RegisterFlags(f, logger)
 	cfg.Notifier.RegisterFlags(f)
 	cfg.TenantFederation.RegisterFlags(f)
 
