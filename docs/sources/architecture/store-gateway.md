@@ -270,7 +270,7 @@ store_gateway:
     # List of network interface names to look up when finding the instance IP
     # address.
     # CLI flag: -store-gateway.sharding-ring.instance-interface-names
-    [instance_interface_names: <list of string> | default = [eth0 en0]]
+    [instance_interface_names: <list of string> | default = [<private network interfaces>]]
 
     # (advanced) Port to advertise in the ring (defaults to
     # -server.grpc-listen-port).

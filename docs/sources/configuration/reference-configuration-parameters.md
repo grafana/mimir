@@ -610,7 +610,7 @@ ring:
   # List of network interface names to look up when finding the instance IP
   # address.
   # CLI flag: -distributor.ring.instance-interface-names
-  [instance_interface_names: <list of string> | default = [eth0 en0]]
+  [instance_interface_names: <list of string> | default = [<private network interfaces>]]
 
   # (advanced) Port to advertise in the ring (defaults to
   # -server.grpc-listen-port).
@@ -1058,20 +1058,20 @@ grpc_client_config:
   # CLI flag: -query-frontend.grpc-client-config.tls-insecure-skip-verify
   [tls_insecure_skip_verify: <boolean> | default = false]
 
-# (advanced) List of network interface names to look up when finding the
-# instance IP address. This address is sent to query-scheduler and querier,
-# which uses it to send the query response back to query-frontend.
-# CLI flag: -query-frontend.instance-interface-names
-[instance_interface_names: <list of string> | default = [eth0 en0]]
+# (advanced) Name of network interface to read address from. This address is
+# sent to query-scheduler and querier, which uses it to send the query response
+# back to query-frontend.
+# CLI flag: -frontend.instance-interface-names
+[instance_interface_names: <list of string> | default = [<private network interfaces>]]
 
-# (advanced) IP address to advertise to the querier (via scheduler) (default is
-# auto-detected from network interfaces).
-# CLI flag: -query-frontend.instance-addr
+# (advanced) IP address to advertise to querier (via scheduler) (resolved via
+# interfaces by default).
+# CLI flag: -frontend.instance-addr
 [address: <string> | default = ""]
 
 # (advanced) Port to advertise to querier (via scheduler) (defaults to
 # server.grpc-listen-port).
-# CLI flag: -query-frontend.instance-port
+# CLI flag: -frontend.instance-port
 [port: <int> | default = 0]
 
 # (advanced) Split queries by an interval and execute in parallel. You should
@@ -1336,7 +1336,7 @@ ring:
   # List of network interface names to look up when finding the instance IP
   # address.
   # CLI flag: -ruler.ring.instance-interface-names
-  [instance_interface_names: <list of string> | default = [eth0 en0]]
+  [instance_interface_names: <list of string> | default = [<private network interfaces>]]
 
   # (advanced) Port to advertise in the ring (defaults to
   # -server.grpc-listen-port).
@@ -1697,17 +1697,16 @@ sharding_ring:
   # CLI flag: -alertmanager.sharding-ring.instance-id
   [instance_id: <string> | default = "<hostname>"]
 
-  # (advanced) List of network interface names to look up when finding the
-  # instance IP address.
+  # (advanced) Name of network interface to read address from.
   # CLI flag: -alertmanager.sharding-ring.instance-interface-names
-  [instance_interface_names: <list of string> | default = [eth0 en0]]
+  [instance_interface_names: <list of string> | default = [<private network interfaces>]]
 
   # (advanced) Port to advertise in the ring (defaults to
-  # -server.grpc-listen-port).
+  # server.grpc-listen-port).
   # CLI flag: -alertmanager.sharding-ring.instance-port
   [instance_port: <int> | default = 0]
 
-  # (advanced) IP address to advertise in the ring. Default is auto-detected.
+  # (advanced) IP address to advertise in the ring.
   # CLI flag: -alertmanager.sharding-ring.instance-addr
   [instance_addr: <string> | default = ""]
 
@@ -3458,17 +3457,16 @@ sharding_ring:
   # CLI flag: -compactor.ring.instance-id
   [instance_id: <string> | default = "<hostname>"]
 
-  # List of network interface names to look up when finding the instance IP
-  # address.
+  # Name of network interface to read address from.
   # CLI flag: -compactor.ring.instance-interface-names
-  [instance_interface_names: <list of string> | default = [eth0 en0]]
+  [instance_interface_names: <list of string> | default = [<private network interfaces>]]
 
   # (advanced) Port to advertise in the ring (defaults to
-  # -server.grpc-listen-port).
+  # server.grpc-listen-port).
   # CLI flag: -compactor.ring.instance-port
   [instance_port: <int> | default = 0]
 
-  # (advanced) IP address to advertise in the ring. Default is auto-detected.
+  # (advanced) IP address to advertise in the ring.
   # CLI flag: -compactor.ring.instance-addr
   [instance_addr: <string> | default = ""]
 
@@ -3573,7 +3571,7 @@ sharding_ring:
   # List of network interface names to look up when finding the instance IP
   # address.
   # CLI flag: -store-gateway.sharding-ring.instance-interface-names
-  [instance_interface_names: <list of string> | default = [eth0 en0]]
+  [instance_interface_names: <list of string> | default = [<private network interfaces>]]
 
   # (advanced) Port to advertise in the ring (defaults to
   # -server.grpc-listen-port).

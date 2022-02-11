@@ -57,7 +57,7 @@ type RingConfig struct {
 
 	// Instance details
 	InstanceID             string   `yaml:"instance_id" doc:"default=<hostname>" category:"advanced"`
-	InstanceInterfaceNames []string `yaml:"instance_interface_names" category:"advanced"`
+	InstanceInterfaceNames []string `yaml:"instance_interface_names" category:"advanced" doc:"default=[<private network interfaces>]"`
 	InstancePort           int      `yaml:"instance_port" category:"advanced"`
 	InstanceAddr           string   `yaml:"instance_addr" category:"advanced"`
 	InstanceZone           string   `yaml:"instance_availability_zone" category:"advanced"`

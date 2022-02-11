@@ -184,15 +184,15 @@ Usage of ./cmd/mimir/mimir:
   -alertmanager.sharding-ring.heartbeat-timeout duration
     	The heartbeat timeout after which alertmanagers are considered unhealthy within the ring. 0 = never (timeout disabled). (default 1m0s)
   -alertmanager.sharding-ring.instance-addr string
-    	IP address to advertise in the ring. Default is auto-detected.
+    	IP address to advertise in the ring.
   -alertmanager.sharding-ring.instance-availability-zone string
     	The availability zone where this instance is running. Required if zone-awareness is enabled.
   -alertmanager.sharding-ring.instance-id string
     	Instance ID to register in the ring. (default "<hostname>")
   -alertmanager.sharding-ring.instance-interface-names value
-    	List of network interface names to look up when finding the instance IP address. (default [eth0 en0])
+    	Name of network interface to read address from. (default [<private network interfaces>])
   -alertmanager.sharding-ring.instance-port int
-    	Port to advertise in the ring (defaults to -server.grpc-listen-port).
+    	Port to advertise in the ring (defaults to server.grpc-listen-port).
   -alertmanager.sharding-ring.multi.mirror-enabled
     	Mirror writes to secondary store.
   -alertmanager.sharding-ring.multi.mirror-timeout duration
@@ -562,13 +562,13 @@ Usage of ./cmd/mimir/mimir:
   -compactor.ring.heartbeat-timeout duration
     	The heartbeat timeout after which compactors are considered unhealthy within the ring. 0 = never (timeout disabled). (default 1m0s)
   -compactor.ring.instance-addr string
-    	IP address to advertise in the ring. Default is auto-detected.
+    	IP address to advertise in the ring.
   -compactor.ring.instance-id string
     	Instance ID to register in the ring. (default "<hostname>")
   -compactor.ring.instance-interface-names value
-    	List of network interface names to look up when finding the instance IP address. (default [eth0 en0])
+    	Name of network interface to read address from. (default [<private network interfaces>])
   -compactor.ring.instance-port int
-    	Port to advertise in the ring (defaults to -server.grpc-listen-port).
+    	Port to advertise in the ring (defaults to server.grpc-listen-port).
   -compactor.ring.multi.mirror-enabled
     	Mirror writes to secondary store.
   -compactor.ring.multi.mirror-timeout duration
@@ -732,7 +732,7 @@ Usage of ./cmd/mimir/mimir:
   -distributor.ring.instance-id string
     	Instance ID to register in the ring. (default "<hostname>")
   -distributor.ring.instance-interface-names value
-    	List of network interface names to look up when finding the instance IP address. (default [eth0 en0])
+    	List of network interface names to look up when finding the instance IP address. (default [<private network interfaces>])
   -distributor.ring.instance-port int
     	Port to advertise in the ring (defaults to -server.grpc-listen-port).
   -distributor.ring.multi.mirror-enabled
@@ -749,6 +749,12 @@ Usage of ./cmd/mimir/mimir:
     	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
   -flusher.exit-after-flush
     	Stop after flush has finished. If false, process will keep running, doing nothing. (default true)
+  -frontend.instance-addr string
+    	IP address to advertise to querier (via scheduler) (resolved via interfaces by default).
+  -frontend.instance-interface-names value
+    	Name of network interface to read address from. This address is sent to query-scheduler and querier, which uses it to send the query response back to query-frontend. (default [<private network interfaces>])
+  -frontend.instance-port int
+    	Port to advertise to querier (via scheduler) (defaults to server.grpc-listen-port).
   -h
     	Print basic help.
   -help
@@ -1113,12 +1119,6 @@ Usage of ./cmd/mimir/mimir:
     	Path to the key file for the client certificate. Also requires the client certificate to be configured.
   -query-frontend.grpc-client-config.tls-server-name string
     	Override the expected name on the server certificate.
-  -query-frontend.instance-addr string
-    	IP address to advertise to the querier (via scheduler) (default is auto-detected from network interfaces).
-  -query-frontend.instance-interface-names value
-    	List of network interface names to look up when finding the instance IP address. This address is sent to query-scheduler and querier, which uses it to send the query response back to query-frontend. (default [eth0 en0])
-  -query-frontend.instance-port int
-    	Port to advertise to querier (via scheduler) (defaults to server.grpc-listen-port).
   -query-frontend.log-queries-longer-than duration
     	Log queries that are slower than the specified duration. Set to 0 to disable. Set to < 0 to enable on all queries.
   -query-frontend.max-body-size int
@@ -1420,7 +1420,7 @@ Usage of ./cmd/mimir/mimir:
   -ruler.ring.instance-id string
     	Instance ID to register in the ring. (default "<hostname>")
   -ruler.ring.instance-interface-names value
-    	List of network interface names to look up when finding the instance IP address. (default [eth0 en0])
+    	List of network interface names to look up when finding the instance IP address. (default [<private network interfaces>])
   -ruler.ring.instance-port int
     	Port to advertise in the ring (defaults to -server.grpc-listen-port).
   -ruler.ring.multi.mirror-enabled
@@ -1564,7 +1564,7 @@ Usage of ./cmd/mimir/mimir:
   -store-gateway.sharding-ring.instance-id string
     	Instance ID to register in the ring. (default "<hostname>")
   -store-gateway.sharding-ring.instance-interface-names value
-    	List of network interface names to look up when finding the instance IP address. (default [eth0 en0])
+    	List of network interface names to look up when finding the instance IP address. (default [<private network interfaces>])
   -store-gateway.sharding-ring.instance-port int
     	Port to advertise in the ring (defaults to -server.grpc-listen-port).
   -store-gateway.sharding-ring.multi.mirror-enabled

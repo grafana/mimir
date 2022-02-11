@@ -208,7 +208,7 @@ Usage of ./cmd/mimir/mimir:
   -compactor.ring.etcd.username string
     	Etcd username.
   -compactor.ring.instance-interface-names value
-    	List of network interface names to look up when finding the instance IP address. (default [eth0 en0])
+    	Name of network interface to read address from. (default [<private network interfaces>])
   -compactor.ring.store string
     	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
   -compactor.split-and-merge-shards int
@@ -260,7 +260,7 @@ Usage of ./cmd/mimir/mimir:
   -distributor.ring.etcd.username string
     	Etcd username.
   -distributor.ring.instance-interface-names value
-    	List of network interface names to look up when finding the instance IP address. (default [eth0 en0])
+    	List of network interface names to look up when finding the instance IP address. (default [<private network interfaces>])
   -distributor.ring.store string
     	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
   -h
@@ -466,7 +466,7 @@ Usage of ./cmd/mimir/mimir:
   -ruler.ring.etcd.username string
     	Etcd username.
   -ruler.ring.instance-interface-names value
-    	List of network interface names to look up when finding the instance IP address. (default [eth0 en0])
+    	List of network interface names to look up when finding the instance IP address. (default [<private network interfaces>])
   -ruler.ring.store string
     	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
   -ruler.rule-path string
@@ -496,7 +496,7 @@ Usage of ./cmd/mimir/mimir:
   -store-gateway.sharding-ring.instance-availability-zone string
     	The availability zone where this instance is running. Required if zone-awareness is enabled.
   -store-gateway.sharding-ring.instance-interface-names value
-    	List of network interface names to look up when finding the instance IP address. (default [eth0 en0])
+    	List of network interface names to look up when finding the instance IP address. (default [<private network interfaces>])
   -store-gateway.sharding-ring.store string
     	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
   -store-gateway.sharding-ring.tokens-file-path string
