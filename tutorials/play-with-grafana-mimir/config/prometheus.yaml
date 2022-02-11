@@ -22,5 +22,7 @@ scrape_configs:
 
 remote_write:
   - url: http://load-balancer:9009/api/v1/push
+# Add X-Scope-OrgID header so that Mimir knows what tenant the remote write data should be sorted in. 
+# In this case, our tenant is "demo"
     headers:
       X-Scope-OrgID: demo
