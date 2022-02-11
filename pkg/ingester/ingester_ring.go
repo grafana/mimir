@@ -94,6 +94,8 @@ func (cfg *RingConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.BoolVar(&cfg.ReadinessCheckRingHealth, prefix+"readiness-check-ring-health", true, "When enabled the readiness probe succeeds only after all instances are ACTIVE and healthy in the ring, otherwise only the instance itself is checked. This option should be disabled if in your cluster multiple instances can be rolled out simultaneously, otherwise rolling updates may be slowed down.")
 }
 
+// ToRingConfig returns a ring.Config based on the ingester
+// ring config.
 func (cfg *RingConfig) ToRingConfig() ring.Config {
 	rc := ring.Config{}
 	flagext.DefaultValues(&rc)
@@ -109,7 +111,7 @@ func (cfg *RingConfig) ToRingConfig() ring.Config {
 	return rc
 }
 
-// ToLifecyclerConfig returns a LifecyclerConfig based on the ingester
+// ToLifecyclerConfig returns a ring.LifecyclerConfig based on the ingester
 // ring config.
 func (cfg *RingConfig) ToLifecyclerConfig() ring.LifecyclerConfig {
 	// Configure lifecycler
