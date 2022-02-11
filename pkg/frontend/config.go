@@ -31,10 +31,10 @@ type CombinedFrontendConfig struct {
 	DownstreamURL string `yaml:"downstream_url" category:"advanced"`
 }
 
-func (cfg *CombinedFrontendConfig) RegisterFlags(f *flag.FlagSet) {
+func (cfg *CombinedFrontendConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.Handler.RegisterFlags(f)
 	cfg.FrontendV1.RegisterFlags(f)
-	cfg.FrontendV2.RegisterFlags(f)
+	cfg.FrontendV2.RegisterFlags(f, logger)
 	cfg.QueryMiddleware.RegisterFlags(f)
 
 	f.StringVar(&cfg.DownstreamURL, "query-frontend.downstream-url", "", "URL of downstream Prometheus.")
