@@ -88,7 +88,7 @@ type Config struct {
 	MultitenancyEnabled bool                   `yaml:"multitenancy_enabled"`
 	NoAuthTenant        string                 `yaml:"no_auth_tenant" category:"advanced"`
 	PrintConfig         bool                   `yaml:"-"`
-	HTTPPrefix          string                 `yaml:"http_prefix"`
+	HTTPPrefix          string                 `yaml:"http_prefix" category:"advanced"`
 
 	API              api.Config                      `yaml:"api"`
 	Server           server.Config                   `yaml:"server"`
