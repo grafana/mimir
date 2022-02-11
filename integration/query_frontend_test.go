@@ -169,7 +169,7 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 
 	flags = mergeFlags(flags, map[string]string{
 		"-query-frontend.cache-results":                     "true",
-		"-querier.query-ingesters-within":             "12h", // Required by the test on query /series out of ingesters time range
+		"-querier.query-ingesters-within":                   "12h", // Required by the test on query /series out of ingesters time range
 		"-query-frontend.results-cache.backend":             "memcached",
 		"-query-frontend.results-cache.memcached.addresses": "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
 		"-query-frontend.query-stats-enabled":               strconv.FormatBool(cfg.queryStatsEnabled),
@@ -342,10 +342,10 @@ overrides:
 `)))
 
 	flags = mergeFlags(flags, map[string]string{
-		"-querier.max-samples":                    "20",                                                 // Very low limit so that we can easily hit it, but high enough to test other features.
+		"-querier.max-samples":                          "20",                                                 // Very low limit so that we can easily hit it, but high enough to test other features.
 		"-query-frontend.parallelize-shardable-queries": "true",                                               // Allow queries to be parallized (query-sharding)
 		"-query-frontend.query-sharding-total-shards":   "0",                                                  // Disable query-sharding by default
-		"-runtime-config.file":                    filepath.Join(e2e.ContainerSharedDir, runtimeConfig), // Read per tenant runtime config
+		"-runtime-config.file":                          filepath.Join(e2e.ContainerSharedDir, runtimeConfig), // Read per tenant runtime config
 	})
 	consul := e2edb.NewConsul()
 	require.NoError(t, s.StartAndWaitReady(consul))
