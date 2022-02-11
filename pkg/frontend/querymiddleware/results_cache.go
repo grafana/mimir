@@ -50,9 +50,9 @@ type ResultsCacheConfig struct {
 
 // RegisterFlags registers flags.
 func (cfg *ResultsCacheConfig) RegisterFlags(f *flag.FlagSet) {
-	f.StringVar(&cfg.Backend, "frontend.results-cache.backend", "", fmt.Sprintf("Backend for query-frontend results cache, if not empty. Supported values: %s.", supportedResultsCacheBackends))
-	cfg.Memcached.RegisterFlagsWithPrefix(f, "frontend.results-cache.memcached.")
-	cfg.Compression.RegisterFlagsWithPrefix(f, "frontend.results-cache.")
+	f.StringVar(&cfg.Backend, "query-frontend.results-cache.backend", "", fmt.Sprintf("Backend for query-frontend results cache, if not empty. Supported values: %s.", supportedResultsCacheBackends))
+	cfg.Memcached.RegisterFlagsWithPrefix(f, "query-frontend.results-cache.memcached.")
+	cfg.Compression.RegisterFlagsWithPrefix(f, "query-frontend.results-cache.")
 }
 
 func (cfg *ResultsCacheConfig) Validate() error {

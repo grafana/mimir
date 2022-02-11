@@ -277,31 +277,31 @@ Usage of ./cmd/mimir/mimir:
     	Etcd password.
   -etcd.username string
     	Etcd username.
-  -frontend.align-querier-with-step
+  -query-frontend.align-querier-with-step
     	Mutate incoming queries to align their start and end with their step.
-  -frontend.cache-results
+  -query-frontend.cache-results
     	Cache query results.
-  -frontend.log-queries-longer-than duration
+  -query-frontend.log-queries-longer-than duration
     	Log queries that are slower than the specified duration. Set to 0 to disable. Set to < 0 to enable on all queries.
-  -frontend.max-cache-freshness value
+  -query-frontend.max-cache-freshness value
     	Most recent allowed cacheable result per-tenant, to prevent caching very recent results that might still be in flux. (default 1m)
-  -frontend.max-queriers-per-tenant int
+  -query-frontend.max-queriers-per-tenant int
     	Maximum number of queriers that can handle requests for a single tenant. If set to 0 or value higher than number of available queriers, *all* queriers will handle requests for the tenant. Each frontend (or query-scheduler, if used) will select the same set of queriers for the same tenant (given that all queriers are connected to all frontends / query-schedulers). This option only works with queriers connecting to the query-frontend / query-scheduler, not when using downstream URL.
-  -frontend.parallelize-shardable-queries
+  -query-frontend.parallelize-shardable-queries
     	True to enable query sharding.
-  -frontend.query-sharding-max-sharded-queries int
+  -query-frontend.query-sharding-max-sharded-queries int
     	The max number of sharded queries that can be run for a given received query. 0 to disable limit. (default 128)
-  -frontend.query-sharding-total-shards int
+  -query-frontend.query-sharding-total-shards int
     	The amount of shards to use when doing parallelisation via query sharding by tenant. 0 to disable query sharding for tenant. Query sharding implementation will adjust the number of query shards based on compactor shards. This allows querier to not search the blocks which cannot possibly have the series for given query shard. (default 16)
-  -frontend.results-cache.backend string
+  -query-frontend.results-cache.backend string
     	Backend for query-frontend results cache, if not empty. Supported values: [memcached].
-  -frontend.results-cache.compression string
+  -query-frontend.results-cache.compression string
     	Enable cache compression, if not empty. Supported values are: snappy.
-  -frontend.results-cache.memcached.addresses string
+  -query-frontend.results-cache.memcached.addresses string
     	Comma separated list of memcached addresses. Supported prefixes are: dns+ (looked up as an A/AAAA query), dnssrv+ (looked up as a SRV query, dnssrvnoa+ (looked up as a SRV query, with no A/AAAA lookup made after that).
-  -frontend.results-cache.memcached.timeout duration
+  -query-frontend.results-cache.memcached.timeout duration
     	The socket read/write timeout. (default 200ms)
-  -frontend.scheduler-address string
+  -query-frontend.scheduler-address string
     	DNS hostname used for finding query-schedulers.
   -h
     	Print basic help.

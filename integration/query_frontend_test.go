@@ -168,11 +168,11 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 	configFile, flags := cfg.setup(t, s)
 
 	flags = mergeFlags(flags, map[string]string{
-		"-frontend.cache-results":                     "true",
+		"-query-frontend.cache-results":                     "true",
 		"-querier.query-ingesters-within":             "12h", // Required by the test on query /series out of ingesters time range
-		"-frontend.results-cache.backend":             "memcached",
-		"-frontend.results-cache.memcached.addresses": "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
-		"-frontend.query-stats-enabled":               strconv.FormatBool(cfg.queryStatsEnabled),
+		"-query-frontend.results-cache.backend":             "memcached",
+		"-query-frontend.results-cache.memcached.addresses": "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
+		"-query-frontend.query-stats-enabled":               strconv.FormatBool(cfg.queryStatsEnabled),
 	})
 
 	// Start the query-scheduler if enabled.
@@ -180,7 +180,7 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 	if cfg.querySchedulerEnabled {
 		queryScheduler = e2emimir.NewQueryScheduler("query-scheduler", flags, "")
 		require.NoError(t, s.StartAndWaitReady(queryScheduler))
-		flags["-frontend.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
+		flags["-query-frontend.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
 		flags["-querier.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
 	}
 
@@ -343,8 +343,8 @@ overrides:
 
 	flags = mergeFlags(flags, map[string]string{
 		"-querier.max-samples":                    "20",                                                 // Very low limit so that we can easily hit it, but high enough to test other features.
-		"-frontend.parallelize-shardable-queries": "true",                                               // Allow queries to be parallized (query-sharding)
-		"-frontend.query-sharding-total-shards":   "0",                                                  // Disable query-sharding by default
+		"-query-frontend.parallelize-shardable-queries": "true",                                               // Allow queries to be parallized (query-sharding)
+		"-query-frontend.query-sharding-total-shards":   "0",                                                  // Disable query-sharding by default
 		"-runtime-config.file":                    filepath.Join(e2e.ContainerSharedDir, runtimeConfig), // Read per tenant runtime config
 	})
 	consul := e2edb.NewConsul()

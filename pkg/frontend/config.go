@@ -37,7 +37,7 @@ func (cfg *CombinedFrontendConfig) RegisterFlags(f *flag.FlagSet) {
 	cfg.FrontendV2.RegisterFlags(f)
 	cfg.QueryMiddleware.RegisterFlags(f)
 
-	f.StringVar(&cfg.DownstreamURL, "frontend.downstream-url", "", "URL of downstream Prometheus.")
+	f.StringVar(&cfg.DownstreamURL, "query-frontend.downstream-url", "", "URL of downstream Prometheus.")
 }
 
 // InitFrontend initializes frontend (either V1 -- without scheduler, or V2 -- with scheduler) or no frontend at

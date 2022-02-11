@@ -60,7 +60,7 @@ The ingester query API was improved over time, but defaults to the old behaviour
 
 ## Query Frontend
 
-- `-frontend.parallelize-shardable-queries`
+- `-query-frontend.parallelize-shardable-queries`
 
   If set to true, will cause the query frontend to mutate incoming queries when possible by turning `sum` operations into sharded `sum` operations. An abridged example:
   `sum by (foo) (rate(bar{baz=”blip”}[1m]))` ->
@@ -83,7 +83,7 @@ The ingester query API was improved over time, but defaults to the old behaviour
 
   Instrumentation (traces) also scale with the number of sharded queries and it's suggested to account for increased throughput there as well (for instance via `JAEGER_REPORTER_MAX_QUEUE_SIZE`).
 
-- `-frontend.align-querier-with-step`
+- `-query-frontend.align-querier-with-step`
 
   If set to true, will cause the query frontend to mutate incoming queries and align their start and end parameters to the step parameter of the query. This improves the cacheability of the query results.
 
@@ -91,19 +91,19 @@ The ingester query API was improved over time, but defaults to the old behaviour
 
   If set to true, will cause the query frontend to split multi-day queries into multiple single-day queries and execute them in parallel.
 
-- `-frontend.cache-results`
+- `-query-frontend.cache-results`
 
   If set to true, will cause the querier to cache query results. The cache will be used to answer future, overlapping queries. The query frontend calculates extra queries required to fill gaps in the cache.
 
-- `-frontend.max-cache-freshness`
+- `-query-frontend.max-cache-freshness`
 
   When caching query results, it is desirable to prevent the caching of very recent results that might still be in flux. Use this parameter to configure the age of results that should be excluded.
 
-- `-frontend.results-cache.backend`
+- `-query-frontend.results-cache.backend`
 
-  Configures the caching backend used when query results caching is enabled (`-frontend.cache-results=true`).
+  Configures the caching backend used when query results caching is enabled (`-query-frontend.cache-results=true`).
 
-- `-frontend.results-cache.memcached.addresses`
+- `-query-frontend.results-cache.memcached.addresses`
 
   Comma-separated list of memcached addresses. Each address can be specified using the [DNS service discovery](#dns-service-discovery) syntax.
 
