@@ -8,21 +8,13 @@
 package integration
 
 import (
-	"bytes"
-	"context"
 	"fmt"
 	"os"
 	"strconv"
 	"strings"
 	"text/template"
 
-	"github.com/go-kit/log"
-	"github.com/grafana/dskit/flagext"
-	"github.com/grafana/e2e"
 	e2edb "github.com/grafana/e2e/db"
-
-	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
-	"github.com/grafana/mimir/pkg/storage/bucket/s3"
 )
 
 const (
@@ -193,32 +185,4 @@ func buildConfigFromTemplate(tmpl string, data interface{}) string {
 	}
 
 	return w.String()
-}
-
-// UploadAlertmanagerConfig uploads the provided config to the minio bucket for the specified user.
-// Uses default test minio credentials.
-func UploadAlertmanagerConfig(minio *e2e.HTTPService, user, config string) error {
-	client, err := s3.NewBucketClient(s3.Config{
-		Endpoint:        minio.HTTPEndpoint(),
-		Insecure:        true,
-		BucketName:      alertsBucketName,
-		AccessKeyID:     e2edb.MinioAccessKey,
-		SecretAccessKey: flagext.Secret{Value: e2edb.MinioSecretKey},
-	}, "test", log.NewNopLogger())
-	if err != nil {
-		return err
-	}
-
-	desc := alertspb.AlertConfigDesc{
-		RawConfig: config,
-		User:      user,
-		Templates: []*alertspb.TemplateDesc{},
-	}
-
-	d, err := desc.Marshal()
-	if err != nil {
-		return err
-	}
-
-	return client.Upload(context.Background(), fmt.Sprintf("/alerts/%s", user), bytes.NewReader(d))
 }
