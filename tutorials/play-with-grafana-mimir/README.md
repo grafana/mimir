@@ -40,7 +40,7 @@ docker-compose up
 This command starts:
 
 - Grafana Mimir
-  - Three replicas of single-process Mimir to provide high availability 
+  - Three replicas of single-process Mimir to provide high availability
   - Multi-tenancy enabled (tenant ID is `demo`)
 - [Minio](https://min.io/)
   - S3-compatible persistent storage for blocks, rules, and alerts
@@ -76,7 +76,7 @@ A couple of caveats:
 - It typically takes a few minutes after Grafana Mimir starts to display meaningful metrics in the dashboards.
 - Because this tutorial runs Grafana Mimir without any ingress gateway, query-scheduler, or memcached, the related panels are expected to be empty.
 
-The dashboards installed in the Grafana are taken from the Grafana Mimir mixin which packages up Grafana Labs' best practice dashboards, recording rules, and alerts for monitoring Grafana Mimir. To learn more about the mixin, check out the Grafana Mimir documentation. To learn more about how Grafana is connecting to Grafana Mimir, review the [Mimir datasource](http://localhost:9000/datasources).
+The dashboards installed in the Grafana are taken from the Grafana Mimir mixin which packages up Grafana Labs' best practice dashboards, recording rules, and alerts for monitoring Grafana Mimir. To learn more about the mixin, check out the Grafana Mimir mixin documentation. To learn more about how Grafana is connecting to Grafana Mimir, review the [Mimir datasource](http://localhost:9000/datasources).
 
 ## Configure your first recording rule
 
@@ -131,8 +131,10 @@ To see the alert firing we can introduce an outage in the Grafana Mimir cluster:
    ```bash
    docker-compose kill mimir-3
    ```
-2. Open [Grafana Alerting](http://localhost:9000/alerting/list) and check out the state of the alert `MimirNotRunning`,
-   which should switch to "Pending" state in about one minute and to "Firing" state after another minute.
+1. Open [Grafana Alerting](http://localhost:9000/alerting/list) and check out the state of the alert `MimirNotRunning`,
+   which should switch to "Pending" state in about one minute and to "Firing" state after another minute. Since we abruptly
+   terminated a Mimir replica, Grafana Alerting UI may temporarily show an error when querying rules: the error will
+   auto resolve shortly, as soon as Grafana Mimir internal health checking detects the terminated instance as unhealthy.
 
 Grafana Mimir Alertmanager has not been configured yet to notify alerts through a notification channel. To configure the
 Alertmanager you can open the [Contact points](http://localhost:9000/alerting/notifications) page in Grafana and
@@ -153,7 +155,7 @@ abruptly terminated:
 
 In this tutorial you started Grafana Mimir locally in a high-available setup as well as a Prometheus instance that remote wrote
 some metrics to Grafana Mimir. You then queried those metrics stored in Mimir using Grafana, and visualized them in some Grafana dashboards.
-Lastly, you configured a recording rule and an alert via the Grafana Alerting UI and verified that the alert fired as expected when the condition was met. 
+Lastly, you configured a recording rule and an alert via the Grafana Alerting UI and verified that the alert fired as expected when the condition was met.
 
 Once you've completed the tutorial, release all Docker resources by running this Docker command:
 
