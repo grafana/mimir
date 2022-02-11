@@ -40,7 +40,7 @@ docker-compose up
 This command starts:
 
 - Grafana Mimir
-  - Highly-available configuration (three replicas)
+  - Three replicas of single-process Mimir to provide high availability 
   - Multi-tenancy enabled (tenant ID is `demo`)
 - [Minio](https://min.io/)
   - S3-compatible persistent storage for blocks, rules, and alerts
