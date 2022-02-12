@@ -86,12 +86,9 @@ node_cpu_seconds_total{instance="10.0.0.2",mode="user"}
 
 ## Tenant
 
-A tenant (also called "user" or "org") is the owner of a set of series written to and queried from Mimir. Mimir multi-tenancy support allows you to isolate series belonging to different tenants. For example, if you have two tenants `team-A` and `team-B`, `team-A` series will be isolated from `team-B`, and each team will be able to query only their own series.
-
-For more information, please refer to:
-
-- [HTTP API authentication](../api/_index.md#authentication)
-- [About tenant IDs]({{<relref "./about-tenant-ids.md" >}})
+A tenant is the owner of a set of series written to and queried from Grafana Mimir.
+Grafana Mimir isolates series and alerts belonging to different tenants.
+To understand how Grafana Mimir authenticates tenants, refer to [About authentication and authorization]({{<relref "./about-authentication-and-authorization.md" >}}).
 
 ## Time series
 
