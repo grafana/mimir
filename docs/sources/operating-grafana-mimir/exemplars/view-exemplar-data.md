@@ -6,7 +6,8 @@ weight: 10
 
 # View exemplar data
 
-Explore visualizes exemplar traces as highlighted stars alongside metrics data. For more information, see [View exemplar data](https://grafana.com/docs/grafana/latest/basics/exemplars/view-exemplars/#in-explore) topic in Grafana OSS documentation.
+Grafana Explore visualizes exemplar traces as highlighted points alongside metrics data.
+For more information, see [View exemplar data](https://grafana.com/docs/grafana/latest/basics/exemplars/view-exemplars/#in-explore) topic in Grafana OSS documentation.
 
 See also:
 
