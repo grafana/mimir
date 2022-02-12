@@ -26,8 +26,6 @@ Grafana Mimir strives to be 100% API compatible with Prometheus (under `/prometh
 - Additional API around pushing metrics (under `/prometheus/api/push`).
 - Additional API endpoints for management of Grafana Mimir itself, such as the ring. These APIs are not part of the any compatibility guarantees.
 
-_For more information, please refer to the [limitations](../guides/limitations.md) doc._
-
 ## Experimental features
 
 Grafana Mimir is an actively developed project and we want to encourage the introduction of new features and capabilities. As such, not everything in each release of Grafana Mimir is considered "production-ready". Features not considered "production-ready" and the flags used to enable and/or configure these features will be marked "Experimental". There are no backwards compatibility guarantees on anything marked experimental. Configuration and flags are subject to change.
