@@ -11,12 +11,12 @@ Tenants can only query metrics and alerts written with their specific tenant ID.
 All Grafana Mimir components take the tenant ID from an HTTP header with the name `X-Scope-OrgID` on each request.
 Components trust the value of this header completely.
 
-In order to protect Grafana Mimir from accidental or malicious calls then you must add an additional layer of protection like an authenticating reverse proxy.
+In order to protect Grafana Mimir from accidental or malicious calls you must add an additional layer of protection like an authenticating reverse proxy.
 The reverse proxy authenticates requests and injects the appropriate tenant ID into the `X-Scope-OrgID` header.
 
 ## Configuring Prometheus remote write
 
-For a full reference to the Prometheus remote write configuration, refer to [remote write](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#remote_write).
+For a full reference of the Prometheus remote write configuration, refer to [remote write](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#remote_write).
 
 ## With an authenticating reverse proxy
 
