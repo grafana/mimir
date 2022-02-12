@@ -27,6 +27,10 @@ Typically, series become idle when a monitored target process or node gets termi
 
 Flushing is the operation run by ingesters to offload time series from memory and store them in the long-term storage.
 
+## Gossip
+
+Gossip is a protocol by which components share data to all members without the need for a central store.
+
 ## HA tracker
 
 The HA tracker is a feature of the Grafana Mimir distributor that deduplicates time series received from two or more Prometheus servers configured to scrape the same targets.
@@ -34,9 +38,14 @@ To configure HA tracking, refer to [Configure HA deduplication]({{<relref "./ope
 
 ## Hash ring
 
-The hash ring is a distributed data structure used by Mimir for sharding, replication and service discovery. The hash ring data structure gets shared across Mimir replicas via gossip or a key-value store.
+The hash ring is a distributed data structure used by Grafana Mimir for sharding, replication, and service discovery.
+Components use a [key-value store]({{<relref "#key-value-store" >}}) or [gossip]({{<relref "#gossip" >}}) to share the hash ring data structure.
+For more information, refer to the [About the hash ring]({{<relref "./architecture/about-the-hash-ring.md" >}}).
 
-For more information, please refer to the [Architecture](../architecture.md#the-hash-ring) documentation.
+## Key-value store
+
+A key-value store is a database that associates keys with values.
+To understand how Grafana Mimir uses key-value stores, refer to [About the key-value store]({{<relref "./architecture/about-the-key-value-store.md" >}}).
 
 ## Org
 
