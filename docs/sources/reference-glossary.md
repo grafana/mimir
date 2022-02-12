@@ -1,8 +1,10 @@
 ---
-title: "Glossary"
+title: "Reference: Glossary"
 description: ""
-weight: 999
+weight: 10000
 ---
+
+# Reference: Glossary
 
 ### Blocks storage
 
