@@ -48,5 +48,5 @@ After the `-runtime-config.reload-period` has elapsed, components reload the run
 
 See also:
 
-- [Before you begin]({{< relref "./prereq-exemplars.md" >}})
-- [View exemplar data]({{< relref "./view-exemplars.md" >}})
+- [Before you begin]({{< relref "./before-you-begin.md" >}})
+- [View exemplar data]({{< relref "./view-exemplar-data.md" >}})

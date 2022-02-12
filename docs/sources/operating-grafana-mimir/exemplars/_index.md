@@ -14,6 +14,6 @@ The [limits_config]({{< relref "../../configuration/reference-configuration-para
 
 See also:
 
-- [Before you begin]({{< relref "./prereq-exemplars.md" >}})
-- [Enable exemplars in Grafana Mimir]({{< relref "./enable-exemplars.md" >}})
-- [View exemplar data]({{< relref "./view-exemplars.md" >}})
+- [Before you begin]({{< relref "./before-you-begin.md" >}})
+- [Enable exemplars in Grafana Mimir]({{< relref "./enable-exemplars-in-grafana-mimir.md" >}})
+- [View exemplar data]({{< relref "./view-exemplar-data.md" >}})

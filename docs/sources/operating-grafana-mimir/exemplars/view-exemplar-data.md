@@ -10,5 +10,5 @@ Explore visualizes exemplar traces as highlighted stars alongside metrics data. 
 
 See also:
 
-- [Before you begin]({{< relref "./prereq-exemplars.md" >}})
-- [Enable exemplars in GEM]({{< relref "./enable-exemplars.md" >}})
+- [Before you begin]({{< relref "./before-you-begin.md" >}})
+- [Enable exemplars in GEM]({{< relref "./view-exemplar-data.md" >}})

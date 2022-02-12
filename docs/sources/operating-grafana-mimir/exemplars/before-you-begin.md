@@ -17,6 +17,6 @@ Follow the checklist to ensure that your application is generating metrics, trac
 
 See also:
 
-- [Enable exemplars in Grafana Mimir]({{< relref "./enable_exemplars.md" >}})
-- [View exemplar data]({{< relref "./view_exemplars.md" >}})
+- [Enable exemplars in Grafana Mimir]({{< relref "./enable-exemplars-in-grafana-mimir.md" >}})
+- [View exemplar data]({{< relref "./view-exemplar-data.md" >}})
 - [TNS demo](https://github.com/grafana/tns)
