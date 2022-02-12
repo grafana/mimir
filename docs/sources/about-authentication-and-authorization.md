@@ -1,45 +1,63 @@
 ---
 title: "About authentication and authorization"
 description: ""
-weight: 100
+weight: 10
 ---
 
-All Grafana Mimir components take the tenant ID from a header `X-Scope-OrgID`
-on each request. A tenant (also called "user" or "org") is the owner of
-a set of series written to and queried from Grafana Mimir. All Grafana Mimir components
-trust this value completely: if you need to protect your Grafana Mimir installation
-from accidental or malicious calls then you must add an additional layer
-of protection.
+# About authentication and authorization
 
-Typically this means you run Grafana Mimir behind a reverse proxy, and you must
-ensure that all callers, both machines sending data over the `remote_write`
-interface and humans sending queries from GUIs, supply credentials
-which identify them and confirm they are authorised.
+Grafana Mimir is a multi-tenant system where each tenant has their own isolated series and alerts.
+Tenants can only query metrics and alerts written with their specific tenant ID.
+All Grafana Mimir components take the tenant ID from an HTTP header with the name `X-Scope-OrgID` on each request.
+Components trust the value of this header completely.
 
-When configuring the `remote_write` API in Prometheus there is no way to
-add extra headers. The user and password fields of http Basic auth, or
-Bearer token, can be used to convey the tenant ID and/or credentials.
-See the **Grafana Mimir-Tenant** section below for one way to solve this.
+In order to protect Grafana Mimir from accidental or malicious calls you must add an additional layer of protection like an authenticating reverse proxy.
+The reverse proxy authenticates requests and injects the appropriate tenant ID into the `X-Scope-OrgID` header.
 
-To disable the multi-tenant functionality, you can pass the argument
-`-auth.multitenancy-enabled=false` to every Grafana Mimir component, which will set the OrgID
-to the string `anonymous` for every request (configurable with `-auth.no-auth-tenant` option).
+## Configuring Prometheus remote write
 
-Note that the tenant ID that is used to write the series to the datastore
-should be the same as the one you use to query the data. If they don't match
-you won't see any data. As of now, you can't see series from other tenants.
+For a full reference of the Prometheus remote write configuration, refer to [remote write](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#remote_write).
 
-For more information regarding the tenant ID limits, refer to: [Tenant ID limitations](./limitations.md#tenant-id-naming)
+## With an authenticating reverse proxy
 
-### Cortex-tenant
+To use bearer authentication with a token stored in a file, the remote write configuration block would include:
 
-One way to add `X-Scope-OrgID` to Prometheus requests is to use a [cortex-tenant](https://github.com/blind-oracle/cortex-tenant)
-proxy which is able to extract the tenant ID from Prometheus labels.
+```yaml
+authorization:
+  type: Bearer
+  credentials_file: <PATH TO BEARER TOKEN FILE>
+```
 
-It can be placed between Prometheus and Grafana Mimir and will search for a predefined
-label and use its value as `X-Scope-OrgID` header when proxying the timeseries to Grafana Mimir.
+To use basic authentication with a username and password stored in a file, the remote write configuration block would include:
 
-This can help to run Grafana Mimir in a trusted environment where you want to separate your metrics
-into distinct namespaces by some criteria (e.g. teams, applications, etc).
+```yaml
+basic_auth:
+  username: <AUTHENTICATION PROXY USERNAME>
+  password_file: <PATH TO AUTHENTICATION PROXY PASSWORD FILE>
+```
 
-Be advised that **cortex-tenant** is a third-party community project and it's not maintained by Grafana Mimir team.
+## Without an authenticating reverse proxy
+
+To configure the `X-Scope-OrgID` header directly, the remote write configuration block would include:
+
+```yaml
+headers:
+  "X-Scope-OrgID": <TENANT ID>
+```
+
+## Extracting tenant ID from Prometheus labels
+
+In trusted environments where you wish to split series on Prometheus labels, you can run [cortex-tenant](https://github.com/blind-oracle/cortex-tenant) between a Prometheus server and Grafana Mimir.
+
+> **Note:** cortex-tenant is a third-party community project and it's not maintained by the Grafana team.
+
+With specific configuration, cortex-tenant uses the values of specified labels as the `X-Scope-OrgID` header when proxying the timeseries to Grafana Mimir.
+To configure cortex-tenant, refer to its [configuration](https://github.com/blind-oracle/cortex-tenant#configuration).
+
+## Disabling multi-tenancy
+
+To disable the multi-tenant functionality, you can pass the argument `-auth.multitenancy-enabled=false` to every Grafana Mimir component.
+Each component internally sets the tenant ID to the string `anonymous` for every request.
+
+If you want to set an alternative tenant ID, use the `-auth.no-auth-tenant` flag.
+Not all tenant IDs are valid. To understand the restrictions on tenant IDs, refer to [About tenant IDs]({{<relref "./about-tenant-ids.md" >}}).
