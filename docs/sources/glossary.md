@@ -81,7 +81,7 @@ A tenant (also called "user" or "org") is the owner of a set of series written t
 For more information, please refer to:
 
 - [HTTP API authentication](../api/_index.md#authentication)
-- [Tenant ID limitations](./limitations.md#tenant-id-naming)
+- [About tenant IDs]({{<relref "./about-tenant-ids.md" >}})
 
 ### Time series
 
