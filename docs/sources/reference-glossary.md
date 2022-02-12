@@ -33,7 +33,8 @@ Gossip is a protocol by which components share data to all members without the n
 
 ## HA tracker
 
-The HA tracker is a feature of the Grafana Mimir distributor that deduplicates time series received from two or more Prometheus servers configured to scrape the same targets.
+The HA tracker is a feature of the Grafana Mimir distributor.
+It deduplicates time series received from two or more Prometheus servers that are configured to scrape the same targets.
 To configure HA tracking, refer to [Configure HA deduplication]({{<relref "./operating-grafana-mimir/configure-ha-deduplication.md" >}}).
 
 ## Hash ring
