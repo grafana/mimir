@@ -73,9 +73,9 @@ Given the series `node_cpu_seconds_total{instance="10.0.0.1",mode="system"}` its
 
 ## Series
 
-In the Prometheus ecosystem, a series (or time series) is a single stream of timestamped values belonging to the same metric, with the same set of label key-value pairs.
+A series is a single stream of [samples]({{<relref "#sample" >}}) belonging to the same metric, with the same set of label key-value pairs.
 
-For example, given a single metric `node_cpu_seconds_total` you may have multiple series, each one uniquely identified by the combination of metric name and unique label key-value pairs:
+Given a single metric `node_cpu_seconds_total` you may have multiple series, each one uniquely identified by the combination of metric name and unique label key-value pairs:
 
 ```
 node_cpu_seconds_total{instance="10.0.0.1",mode="system"}
