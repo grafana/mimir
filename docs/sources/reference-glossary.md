@@ -50,11 +50,11 @@ To understand how Grafana Mimir uses key-value stores, refer to [About the key-v
 
 ## Org
 
-_See [Tenant](#tenant)._
+Refer to [Tenant]({{<relref "#tenant" >}}).
 
 ## Ring
 
-_See [Hash ring](#hash-ring)._
+Refer to [Hash ring]({{<relref "#hash-ring" >}}).
 
 ## Sample
 
@@ -92,11 +92,11 @@ To understand how Grafana Mimir authenticates tenants, refer to [About authentic
 
 ## Time series
 
-_See [Series](#series)._
+Refer to [Series]({{<relref "#series" >}}).
 
 ## User
 
-_See [Tenant](#tenant)._
+Refer to [Tenant]({{<relref "#tenant" >}}).
 
 ## Write-ahead log (WAL)
 
