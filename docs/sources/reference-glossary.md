@@ -27,11 +27,10 @@ Typically, series become idle when a monitored target process or node gets termi
 
 Flushing is the operation run by ingesters to offload time series from memory and store them in the long-term storage.
 
-## HA Tracker
+## HA tracker
 
-The HA Tracker is a feature of Mimir distributor which is used to deduplicate received series coming from two (or more) Prometheus servers configured in HA pairs.
-
-For more information, please refer to the guide "[Config for sending HA Pairs data to Mimir](../guides/ha-pair-handling.md)".
+The HA tracker is a feature of the Grafana Mimir distributor that deduplicates time series received from two or more Prometheus servers configured to scrape the same targets.
+To configure HA tracking, refer to [Configure HA deduplication]({{<relref "./operating-grafana-mimir/configure-ha-deduplication.md" >}}).
 
 ## Hash ring
 
