@@ -60,7 +60,7 @@ _See [Hash ring](#hash-ring)._
 
 A sample is a single timestamped value in a time series.
 
-For example, given the series `node_cpu_seconds_total{instance="10.0.0.1",mode="system"}` its stream of values (samples) could be:
+Given the series `node_cpu_seconds_total{instance="10.0.0.1",mode="system"}` its stream of samples may look like:
 
 ```
 # Display format: <value> @<timestamp>
