@@ -43,9 +43,9 @@ type forwarding struct {
 func newForwarding(reg prometheus.Registerer) *forwarding {
 	return &forwarding{
 		pools: forwardingPools{
-			timeseries: sync.Pool{New: func() interface{} { return []mimirpb.PreallocTimeseries{} }},
-			protobuf:   sync.Pool{New: func() interface{} { return []byte{} }},
-			snappy:     sync.Pool{New: func() interface{} { return []byte{} }},
+			timeseries: sync.Pool{New: func() interface{} { return &[]mimirpb.PreallocTimeseries{} }},
+			protobuf:   sync.Pool{New: func() interface{} { return &[]byte{} }},
+			snappy:     sync.Pool{New: func() interface{} { return &[]byte{} }},
 		},
 
 		requestsTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
@@ -125,7 +125,7 @@ func (r *forwardingRequest) add(sample mimirpb.PreallocTimeseries) bool {
 
 	ts, ok := r.tsByEndpoint[rule.Endpoint]
 	if !ok {
-		ts = r.pools.timeseries.Get().([]mimirpb.PreallocTimeseries)[:0]
+		ts = (*r.pools.timeseries.Get().(*[]mimirpb.PreallocTimeseries))[:0]
 		r.metrics.requestsTotal.Inc()
 	}
 
@@ -201,18 +201,18 @@ func (r *forwardingRequest) send(ctx context.Context) <-chan error {
 // sendToEndpoint sends the given timeseries to the given endpoint.
 // All returned errors which are recoverable are of the type recoverableError.
 func (r *forwardingRequest) sendToEndpoint(ctx context.Context, endpoint string, ts []mimirpb.PreallocTimeseries) error {
-	protoBufBytes := r.pools.protobuf.Get().([]byte)[:0]
+	protoBufBytes := (*r.pools.protobuf.Get().(*[]byte))[:0]
 	protoBuf := proto.NewBuffer(protoBufBytes)
 	err := protoBuf.Marshal(&mimirpb.WriteRequest{Timeseries: ts})
 	if err != nil {
 		return err
 	}
 	protoBufBytes = protoBuf.Bytes()
-	defer r.pools.protobuf.Put(protoBufBytes)
+	defer r.pools.protobuf.Put(&protoBufBytes)
 
-	snappyBuf := r.pools.snappy.Get().([]byte)
+	snappyBuf := (*r.pools.snappy.Get().(*[]byte))
 	snappyBuf = snappy.Encode(snappyBuf[:cap(snappyBuf)], protoBufBytes)
-	defer r.pools.snappy.Put(snappyBuf)
+	defer r.pools.snappy.Put(&snappyBuf)
 
 	httpReq, err := http.NewRequest("POST", endpoint, bytes.NewReader(snappyBuf))
 	if err != nil {
@@ -261,6 +261,6 @@ func (r *forwardingRequest) sendToEndpoint(ctx context.Context, endpoint string,
 // cleanup must be called to return the used buffers to their pools after a request has completed.
 func (r *forwardingRequest) cleanup() {
 	for _, ts := range r.tsByEndpoint {
-		r.pools.timeseries.Put(ts)
+		r.pools.timeseries.Put(&ts)
 	}
 }
