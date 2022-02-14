@@ -671,6 +671,8 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 	var forwardingReq *forwardingRequest
 	if d.cfg.Forwarding {
 		forwardingRules := d.limits.ForwardingRules(userID)
+
+		// If this tenant has at least one forwarding rule setup we need to instantiate the forwarding request.
 		if len(forwardingRules) > 0 {
 			forwardingReq = d.forwarding.newRequest(ctx, userID, forwardingRules)
 		}
@@ -697,13 +699,6 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 
 		if len(ts.Labels) == 0 {
 			continue
-		}
-
-		if forwardingReq != nil {
-			sendToIngester := forwardingReq.add(ts)
-			if !sendToIngester {
-				continue
-			}
 		}
 
 		// We rely on sorted labels in different places:
@@ -738,15 +733,24 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 			continue
 		}
 
+		if forwardingReq != nil {
+			// If this tenant has any forwarding rules then we should add all samples to the forwarding request,
+			// such that don't match a forwarding rule will be discarded by the forwarding request.
+			sendToIngester := forwardingReq.add(ts)
+			if !sendToIngester {
+				continue
+			}
+		}
+
 		seriesKeys = append(seriesKeys, key)
 		validatedTimeseries = append(validatedTimeseries, ts)
 		validatedSamples += len(ts.Samples)
 		validatedExemplars += len(ts.Exemplars)
 	}
 
-	var forwardingErr <-chan error
+	var forwardingErrCh <-chan error
 	if forwardingReq != nil {
-		forwardingErr = forwardingReq.send(ctx)
+		forwardingErrCh = forwardingReq.send(ctx)
 	}
 
 	for _, m := range req.Metadata {
@@ -767,7 +771,7 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 	d.receivedExemplars.WithLabelValues(userID).Add((float64(validatedExemplars)))
 	d.receivedMetadata.WithLabelValues(userID).Add(float64(len(validatedMetadata)))
 
-	if len(seriesKeys) == 0 && len(metadataKeys) == 0 && forwardingReq != nil {
+	if len(seriesKeys) == 0 && len(metadataKeys) == 0 && forwardingReq == nil {
 		return &mimirpb.WriteResponse{}, firstPartialErr
 	}
 
@@ -823,18 +827,41 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 
 		return d.send(localCtx, ingester, timeseries, metadata, req.Source)
 	}, func() { cleanup(); cancel() })
-	if err != nil {
-		return nil, err
+
+	var forwardingErr error
+	if forwardingErrCh != nil {
+		// Blocks until the forwarding requests have completed and the final status has been pushed through this chan.
+		forwardingErr = <-forwardingErrCh
 	}
 
-	if forwardingErr != nil {
-		err = <-forwardingErr
-		if err != nil {
-			return nil, err
+	return &mimirpb.WriteResponse{}, prioritizeRecoverable(err, forwardingErr, firstPartialErr)
+}
+
+// prioritizeRecoverable checks whether in the given slice of errors there is a recoverable error, if yes then it will
+// return the first recoverable error, if not then it will return the first non-recoverable error, if there is no
+// error at all then it will return nil.
+func prioritizeRecoverable(errs ...error) error {
+	var firstErr error
+
+	for _, err := range errs {
+		if err == nil {
+			continue
+		}
+
+		resp, ok := httpgrpc.HTTPResponseFromError(err)
+		if !ok {
+			// Status code can't be extracted, sassume it is recoverable to fail gracefully.
+			return httpgrpc.Errorf(http.StatusInternalServerError, err.Error())
+		}
+		if resp.Code/100 == 5 || resp.Code == http.StatusTooManyRequests {
+			// Found a recoverable error, return it.
+			return err
+		} else if firstErr == nil {
+			firstErr = err
 		}
 	}
 
-	return &mimirpb.WriteResponse{}, firstPartialErr
+	return firstErr
 }
 
 func copyString(s string) string {

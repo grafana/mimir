@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"fmt"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -19,7 +18,10 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/weaveworks/common/httpgrpc"
 )
+
+var errBadEndpointConfiguration = errors.New("bad endpoint configuration")
 
 // forwardingPools is the collection of pools which the forwarding uses when building remote_write requests.
 // Even though protobuf and snappy are both pools of []byte we keep them separate because the slices
@@ -100,9 +102,10 @@ func newRequest(ctx context.Context, tenant string, rules validation.ForwardingR
 }
 
 // add adds a timeseries to the forwarding request.
-// It returns a bool which indicates whether this timeseries should be sent to the Ingester.
+// Samples which don't match any forwarding rule won't be added to the request.
+// It returns a bool which indicates whether this timeseries should be sent to the Ingesters.
 // A timeseries should be sent to the Ingester if any of the following conditions are true:
-// - It has a labelset without a metric name.
+// - It has a labelset without a metric name, hence it can't match a forwarding rule.
 // - There is no matching forwarding rule for the metric name of the timeseries.
 // - There is a forwarding rule which defines that this metric should be forwarded and also pushed to the Ingesters.
 func (r *forwardingRequest) add(sample mimirpb.PreallocTimeseries) bool {
@@ -136,7 +139,17 @@ type recoverableError struct {
 	error
 }
 
+// send sends the timeseries which have been added to this forwarding request to the according endpoints.
+// All errors returned via the returned error chan are http grpc errors.
 func (r *forwardingRequest) send(ctx context.Context) <-chan error {
+	errCh := make(chan error)
+
+	// Early return if there's no data to send.
+	if len(r.tsByEndpoint) == 0 {
+		close(errCh)
+		return errCh
+	}
+
 	var wg sync.WaitGroup
 	wg.Add(len(r.tsByEndpoint))
 
@@ -153,34 +166,40 @@ func (r *forwardingRequest) send(ctx context.Context) <-chan error {
 		}(endpoint, ts)
 	}
 
-	errCh := make(chan error)
 	go func() {
 		defer r.cleanup()
+		defer close(errCh)
+
 		wg.Wait()
 
 		var firstNonRecoverable error
+		// No need to get errorsMtx because we already waited for all routines which might modify it to end.
 		for endpoint, err := range errorsByEndpoint {
 			if err == nil {
 				continue
 			}
 
 			if errors.As(err, &recoverableError{}) {
-				// If there is at least one recoverable error we want to return a recoverable error.
-				errCh <- fmt.Errorf("endpoint %s returned %w", endpoint, err)
+				// If there is at least one recoverable error we want to return the recoverable error.
+				errCh <- httpgrpc.Errorf(http.StatusInternalServerError, "endpoint %s returned %w", endpoint, err)
 				return
 			}
 
 			if firstNonRecoverable == nil {
-				firstNonRecoverable = fmt.Errorf("endpoint %s returned %w", endpoint, err)
+				firstNonRecoverable = httpgrpc.Errorf(http.StatusBadRequest, "endpoint %s returned %w", endpoint, err)
 			}
 		}
 
-		errCh <- firstNonRecoverable
+		if firstNonRecoverable != nil {
+			errCh <- firstNonRecoverable
+		}
 	}()
 
 	return errCh
 }
 
+// sendToEndpoint sends the given timeseries to the given endpoint.
+// All returned errors which are recoverable are of the type recoverableError.
 func (r *forwardingRequest) sendToEndpoint(ctx context.Context, endpoint string, ts []mimirpb.PreallocTimeseries) error {
 	protoBufBytes := r.pools.protobuf.Get().([]byte)[:0]
 	protoBuf := proto.NewBuffer(protoBufBytes)
@@ -197,9 +216,11 @@ func (r *forwardingRequest) sendToEndpoint(ctx context.Context, endpoint string,
 
 	httpReq, err := http.NewRequest("POST", endpoint, bytes.NewReader(snappyBuf))
 	if err != nil {
-		// Errors from NewRequest are from unparsable URLs, so are not
-		// recoverable.
-		return err
+		// Errors from NewRequest are from unparsable URLs being configured.
+		// Usually configuration errors should lead to recoverable errors (5xx), but this is an exception because we
+		// don't want that a misconfigured forwarding rule can stop ingestion completely, so we don't signal to the
+		// client to retry by returning a recoverableError.
+		return errBadEndpointConfiguration
 	}
 
 	httpReq.Header.Add("Content-Encoding", "snappy")
