@@ -13,11 +13,12 @@ import (
 	"time"
 
 	"github.com/golang/snappy"
-	"github.com/grafana/mimir/pkg/mimirpb"
-	"github.com/grafana/mimir/pkg/util/validation"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 func TestForwardingSamplesSuccessfully(t *testing.T) {
