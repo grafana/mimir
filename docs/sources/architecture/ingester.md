@@ -8,7 +8,7 @@ weight: 10
 
 The **ingester** service is responsible for writing incoming series to [long-term storage]({{<relref "./_index.md#long-term-storage">}}) on the write path and returning in-memory series samples for queries on the read path.
 
-Incoming series from [distributors]({{<relref "./distributor.md">}}) are not immediately written to the storage but kept in memory and periodically flushed to the storage (2 hours by default). For this reason, the [queriers]({{<relref "./querier.md">}}) may need to fetch samples both from ingesters and long-term storage while executing a query on the read path.
+Incoming series from [distributors]({{<relref "./distributor.md">}}) are not immediately written to the long-term storage but kept in memory and periodically flushed to the long-term storage (2 hours by default). For this reason, the [queriers]({{<relref "./querier.md">}}) may need to fetch samples both from ingesters and long-term storage while executing a query on the read path.
 
 Services calling the **ingesters** first read the **ingester states** from the [hash ring]({{<relref "./about-the-hash-ring.md">}}) to determine which ingester(s) to invoke. Each ingester could be in one of the following states:
 
@@ -22,8 +22,6 @@ Services calling the **ingesters** first read the **ingester states** from the [
   The ingester is shutting down and leaving the ring. While in this state the ingester doesn't receive write requests, but could still receive read requests.
 - **`UNHEALTHY`**<br />
   The ingester has failed to heartbeat to the ring's KV Store. While in this state, distributors skip the ingester while building the replication set for incoming series and the ingester does not receive write or read requests.
-
-The state of an ingester is managed by a built in **lifecycler**.
 
 ## Ingesters failure and data loss
 
@@ -40,18 +38,20 @@ Contrary to the sole replication and given the persistent disk data is not lost,
 
 ## Zone aware replication
 
-**Zone aware replication** means that for a given time series the replicas are chosen from different zones. Zones are treated as simple labels by Mimir, however the microservice deployment can be set up to place different zones in different logical or physical locations for added redundancy.
+**Zone aware replication** ensures that the ingester replicas for a given time series are spread across different zones.
+Zones may represent logical or physical failure domains, for example different virtual machines, or different data centers.
+Spreading replicas across multiple zones prevents data loss when there is a zone wide outage.
 
-_For more information on how to set up multi-zone replication, please refer to [zone aware replication]({{<relref "../guides/zone-replication.md">}})._
+For more information on how to set up multi-zone replication, please refer to [zone aware replication]({{<relref "../guides/zone-replication.md">}}).
 
 ## Sharding strategies
 
-The default **sharding strategy** is to use shuffle sharding to reduce the affect that multiple tenants can have on each other.
+The default **sharding strategy** is to use shuffle sharding to reduce the effect that multiple tenants can have on each other.
 
-_For more information on shuffle sharding, please refer to [configure shuffle sharding]({{<relref "../operating-grafana-mimir/configure-shuffle-sharding.md">}})._
+For more information on shuffle sharding, please refer to [configure shuffle sharding]({{<relref "../operating-grafana-mimir/configure-shuffle-sharding.md">}}).
 
 ## Ingesters write de-amplification
 
-Ingesters store recently received samples in-memory in order to perform write de-amplification. If the ingesters would immediately write received samples to the long-term storage, the system would be difficult to scale due to the high pressure on the storage. For this reason, the ingesters batch and compress samples in-memory and periodically flush them out to the storage.
+Ingesters store recently received samples in-memory in order to perform write de-amplification. If the ingesters would immediately write received samples to the long-term storage, the system would be difficult to scale due to the high pressure on the long-term storage. For this reason, the ingesters batch and compress samples in-memory and periodically flush them out to the long-term storage.
 
 Write de-amplification is the main source of Mimir's low total cost of ownership (TCO).
