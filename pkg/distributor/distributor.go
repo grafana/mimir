@@ -834,7 +834,11 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 		forwardingErr = <-forwardingErrCh
 	}
 
-	return &mimirpb.WriteResponse{}, prioritizeRecoverable(err, forwardingErr, firstPartialErr)
+	err = prioritizeRecoverable(err, forwardingErr, firstPartialErr)
+	if err != nil {
+		return nil, err
+	}
+	return &mimirpb.WriteResponse{}, nil
 }
 
 // prioritizeRecoverable checks whether in the given slice of errors there is a recoverable error, if yes then it will
@@ -850,8 +854,8 @@ func prioritizeRecoverable(errs ...error) error {
 
 		resp, ok := httpgrpc.HTTPResponseFromError(err)
 		if !ok {
-			// Status code can't be extracted, sassume it is recoverable to fail gracefully.
-			return httpgrpc.Errorf(http.StatusInternalServerError, err.Error())
+			// Status code can't be extracted, assume it is recoverable to fail gracefully.
+			return err
 		}
 		if resp.Code/100 == 5 || resp.Code == http.StatusTooManyRequests {
 			// Found a recoverable error, return it.
