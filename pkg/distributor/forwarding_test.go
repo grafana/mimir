@@ -2,7 +2,6 @@ package distributor
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -16,6 +15,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
+	"github.com/weaveworks/common/httpgrpc"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -96,11 +96,11 @@ func TestForwardingSamplesSuccessfully(t *testing.T) {
 }
 
 func TestForwardingSamplesWithDifferentErrors(t *testing.T) {
-	type errorType uint8
+	type errorType uint16
 	const (
-		errNone = iota
-		errRecoverable
-		errNonRecoverable
+		errNone           errorType = 0
+		errNonRecoverable errorType = 400
+		errRecoverable    errorType = 500
 	)
 
 	type testcase struct {
@@ -160,14 +160,12 @@ func TestForwardingSamplesWithDifferentErrors(t *testing.T) {
 			switch tc.expectedError {
 			case errNone:
 				require.Nil(t, <-errCh)
-			case errRecoverable:
+			case errRecoverable, errNonRecoverable:
 				err := <-errCh
 				require.NotNil(t, err)
-				require.True(t, errors.As(err, &recoverableError{}))
-			case errNonRecoverable:
-				err := <-errCh
-				require.NotNil(t, err)
-				require.False(t, errors.As(err, &recoverableError{}))
+				resp, ok := httpgrpc.HTTPResponseFromError(err)
+				require.True(t, ok)
+				require.Equal(t, tc.expectedError, errorType(resp.Code))
 			}
 		})
 	}
