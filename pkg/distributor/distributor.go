@@ -854,7 +854,7 @@ func prioritizeRecoverable(errs ...error) error {
 
 		resp, ok := httpgrpc.HTTPResponseFromError(err)
 		if !ok {
-			// Status code can't be extracted, assume it is recoverable to fail gracefully.
+			// Not a gRPC HTTP error, assume it is recoverable to fail gracefully.
 			return err
 		}
 		if resp.Code/100 == 5 || resp.Code == http.StatusTooManyRequests {
