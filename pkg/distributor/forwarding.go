@@ -181,12 +181,12 @@ func (r *forwardingRequest) send(ctx context.Context) <-chan error {
 
 			if errors.As(err, &recoverableError{}) {
 				// If there is at least one recoverable error we want to return the recoverable error.
-				errCh <- httpgrpc.Errorf(http.StatusInternalServerError, "endpoint %s returned %w", endpoint, err)
+				errCh <- httpgrpc.Errorf(http.StatusInternalServerError, "endpoint %s returned %s", endpoint, err.Error())
 				return
 			}
 
 			if firstNonRecoverable == nil {
-				firstNonRecoverable = httpgrpc.Errorf(http.StatusBadRequest, "endpoint %s returned %w", endpoint, err)
+				firstNonRecoverable = httpgrpc.Errorf(http.StatusBadRequest, "endpoint %s returned %s", endpoint, err.Error())
 			}
 		}
 
