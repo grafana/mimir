@@ -472,12 +472,6 @@ func (i *Ingester) updateLoop(ctx context.Context) error {
 
 func (i *Ingester) reloadConfig(now time.Time) {
 	newConfig := i.getRuntimeMatchersConfig()
-	// if the config is empty, we are done
-	if newConfig == nil {
-		i.runtimeMatchersConfig = newConfig
-		return
-	}
-
 	defaultMatchersEquals := i.runtimeMatchersConfig.DefaultMatchers.String() == newConfig.DefaultMatchers.String()
 
 	// it is crucial to only reload matchers which have been changed, as this function runs even if there is no change in config
