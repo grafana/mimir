@@ -208,7 +208,7 @@ Usage of ./cmd/mimir/mimir:
   -compactor.ring.etcd.username string
     	Etcd username.
   -compactor.ring.instance-interface-names value
-    	Name of network interface to read address from. (default [<private network interfaces>])
+    	List of network interface names to look up when finding the instance IP address. (default [<private network interfaces>])
   -compactor.ring.store string
     	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
   -compactor.split-and-merge-shards int
