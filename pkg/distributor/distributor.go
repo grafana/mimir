@@ -37,6 +37,7 @@ import (
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/grafana/mimir/pkg/distributor/forwarding"
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/tenant"
@@ -76,7 +77,7 @@ type Distributor struct {
 	ingestersRing ring.ReadRing
 	ingesterPool  *ring_client.Pool
 	limits        *validation.Overrides
-	forwarding    *forwarding
+	forwarder     forwarding.Forwarder
 
 	// The global rate limiter requires a distributors ring to count
 	// the number of healthy instances
@@ -365,7 +366,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 	})
 
 	if d.cfg.Forwarding {
-		d.forwarding = newForwarding(reg)
+		d.forwarder = forwarding.NewForwarder(reg)
 	}
 
 	d.replicationFactor.Set(float64(ingestersRing.ReplicationFactor()))
@@ -668,13 +669,13 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 		minExemplarTS = earliestSampleTimestampMs - 300000
 	}
 
-	var forwardingReq *forwardingRequest
+	var forwardingReq forwarding.Request
 	if d.cfg.Forwarding {
 		forwardingRules := d.limits.ForwardingRules(userID)
 
 		// If this tenant has at least one forwarding rule setup we need to instantiate the forwarding request.
 		if len(forwardingRules) > 0 {
-			forwardingReq = d.forwarding.newRequest(ctx, userID, forwardingRules)
+			forwardingReq = d.forwarder.NewRequest(ctx, userID, forwardingRules)
 		}
 	}
 
@@ -718,6 +719,15 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 
 		d.labelsHistogram.Observe(float64(len(ts.Labels)))
 
+		if forwardingReq != nil {
+			// If this tenant has any forwarding rules then we should add all samples to the forwarding request,
+			// those that don't match a forwarding rule will be discarded by the forwarding request.
+			sendToIngester := forwardingReq.Add(ts)
+			if !sendToIngester {
+				continue
+			}
+		}
+
 		skipLabelNameValidation := d.cfg.SkipLabelNameValidation || req.GetSkipLabelNameValidation()
 		// Note that validateSeries may drop some data in ts.
 		validationErr := d.validateSeries(now, ts, userID, skipLabelNameValidation, minExemplarTS)
@@ -733,15 +743,6 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 			continue
 		}
 
-		if forwardingReq != nil {
-			// If this tenant has any forwarding rules then we should add all samples to the forwarding request,
-			// such that don't match a forwarding rule will be discarded by the forwarding request.
-			sendToIngester := forwardingReq.add(ts)
-			if !sendToIngester {
-				continue
-			}
-		}
-
 		seriesKeys = append(seriesKeys, key)
 		validatedTimeseries = append(validatedTimeseries, ts)
 		validatedSamples += len(ts.Samples)
@@ -750,7 +751,7 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 
 	var forwardingErrCh <-chan error
 	if forwardingReq != nil {
-		forwardingErrCh = forwardingReq.send(ctx)
+		forwardingErrCh = forwardingReq.Send(ctx)
 	}
 
 	for _, m := range req.Metadata {
@@ -771,7 +772,15 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 	d.receivedExemplars.WithLabelValues(userID).Add((float64(validatedExemplars)))
 	d.receivedMetadata.WithLabelValues(userID).Add(float64(len(validatedMetadata)))
 
-	if len(seriesKeys) == 0 && len(metadataKeys) == 0 && forwardingReq == nil {
+	if len(seriesKeys) == 0 && len(metadataKeys) == 0 {
+		if forwardingErrCh != nil {
+			// Blocks until the forwarding requests have completed and the final status has been pushed through this chan.
+			err = prioritizeRecoverable(err, <-forwardingErrCh, firstPartialErr)
+			if err != nil {
+				return nil, err
+			}
+		}
+
 		return &mimirpb.WriteResponse{}, firstPartialErr
 	}
 

@@ -1,4 +1,4 @@
-package distributor
+package forwarding
 
 import (
 	"bufio"
@@ -24,26 +24,36 @@ import (
 
 var errBadEndpointConfiguration = errors.New("bad endpoint configuration")
 
-// forwardingPools is the collection of pools which the forwarding uses when building remote_write requests.
+type Forwarder interface {
+	NewRequest(ctx context.Context, tenant string, rules validation.ForwardingRules) Request
+}
+
+type Request interface {
+	Add(sample mimirpb.PreallocTimeseries) bool
+	Send(ctx context.Context) <-chan error
+}
+
+// pools is the collection of pools which the forwarding uses when building remote_write requests.
 // Even though protobuf and snappy are both pools of []byte we keep them separate because the slices
 // which they contain are likely to have very different sizes.
-type forwardingPools struct {
+type pools struct {
 	timeseries sync.Pool
 	protobuf   sync.Pool
 	snappy     sync.Pool
 }
 
-type forwarding struct {
-	pools forwardingPools
+type forwarder struct {
+	pools  pools
+	client http.Client
 
 	requestsTotal           *prometheus.CounterVec
 	requestLatencyHistogram *prometheus.HistogramVec
 	samplesTotal            *prometheus.CounterVec
 }
 
-func newForwarding(reg prometheus.Registerer) *forwarding {
-	return &forwarding{
-		pools: forwardingPools{
+func NewForwarder(reg prometheus.Registerer) Forwarder {
+	return &forwarder{
+		pools: pools{
 			timeseries: sync.Pool{New: func() interface{} { return &[]mimirpb.PreallocTimeseries{} }},
 			protobuf:   sync.Pool{New: func() interface{} { return &[]byte{} }},
 			snappy:     sync.Pool{New: func() interface{} { return &[]byte{} }},
@@ -68,48 +78,45 @@ func newForwarding(reg prometheus.Registerer) *forwarding {
 	}
 }
 
-type requestMetrics struct {
-	requestsTotal    prometheus.Counter
-	samplesTotal     prometheus.Counter
-	latencyHistogram prometheus.Observer
-}
-
-func (r *forwarding) newRequest(ctx context.Context, tenant string, rules validation.ForwardingRules) *forwardingRequest {
-	requestMetrics := requestMetrics{
-		requestsTotal:    r.requestsTotal.WithLabelValues(tenant),
-		samplesTotal:     r.samplesTotal.WithLabelValues(tenant),
-		latencyHistogram: r.requestLatencyHistogram.WithLabelValues(tenant),
-	}
-	return newRequest(ctx, tenant, rules, &r.pools, requestMetrics)
-}
-
-type forwardingRequest struct {
-	ctx          context.Context
-	client       http.Client
-	rules        validation.ForwardingRules
-	tsByEndpoint map[string][]mimirpb.PreallocTimeseries
-	pools        *forwardingPools
-	metrics      requestMetrics
-}
-
-func newRequest(ctx context.Context, tenant string, rules validation.ForwardingRules, pools *forwardingPools, metrics requestMetrics) *forwardingRequest {
-	return &forwardingRequest{
+func (r *forwarder) NewRequest(ctx context.Context, tenant string, rules validation.ForwardingRules) Request {
+	return &request{
 		ctx:          ctx,
+		client:       &r.client, // http client should be re-used so open connections get re-used.
 		rules:        rules,
 		tsByEndpoint: make(map[string][]mimirpb.PreallocTimeseries),
-		pools:        pools,
-		metrics:      metrics,
+		pools:        &r.pools,
+
+		requests: r.requestsTotal.WithLabelValues(tenant),
+		samples:  r.samplesTotal.WithLabelValues(tenant),
+		latency:  r.requestLatencyHistogram.WithLabelValues(tenant),
 	}
 }
 
-// add adds a timeseries to the forwarding request.
+type request struct {
+	ctx          context.Context
+	client       *http.Client
+	pools        *pools
+	tsByEndpoint map[string][]mimirpb.PreallocTimeseries
+
+	// The rules which define:
+	// - which metrics get forwarded
+	// - where the metrics get forwarded to
+	// - whether the forwarded metrics should also be ingested (sent to ingesters)
+	rules validation.ForwardingRules
+
+	requests prometheus.Counter
+	samples  prometheus.Counter
+	latency  prometheus.Observer
+}
+
+// Add adds a timeseries to the forwarding request.
 // Samples which don't match any forwarding rule won't be added to the request.
 // It returns a bool which indicates whether this timeseries should be sent to the Ingesters.
 // A timeseries should be sent to the Ingester if any of the following conditions are true:
 // - It has a labelset without a metric name, hence it can't match a forwarding rule.
 // - There is no matching forwarding rule for the metric name of the timeseries.
 // - There is a forwarding rule which defines that this metric should be forwarded and also pushed to the Ingesters.
-func (r *forwardingRequest) add(sample mimirpb.PreallocTimeseries) bool {
+func (r *request) Add(sample mimirpb.PreallocTimeseries) bool {
 	metric, err := extract.UnsafeMetricNameFromLabelAdapters(sample.Labels)
 	if err != nil {
 		// The only possible error is due to no metric name being defined, in which case we won't forward the sample
@@ -122,28 +129,30 @@ func (r *forwardingRequest) add(sample mimirpb.PreallocTimeseries) bool {
 		// There is no forwarding rule for this metric, send it to the Ingesters.
 		return true
 	}
-	r.metrics.samplesTotal.Add(float64(len(sample.Samples)))
+	r.samples.Add(float64(len(sample.Samples)))
 
 	ts, ok := r.tsByEndpoint[rule.Endpoint]
 	if !ok {
-		ts = (*r.pools.timeseries.Get().(*[]mimirpb.PreallocTimeseries))[:0]
-		r.metrics.requestsTotal.Inc()
+		tsFromPool := r.pools.timeseries.Get().(*[]mimirpb.PreallocTimeseries)
+		tsDeref := *tsFromPool
+		ts = tsDeref
+		r.requests.Inc()
 	}
 
 	ts = append(ts, sample)
 	r.tsByEndpoint[rule.Endpoint] = ts
 
-	return rule.IngesterPush
+	return rule.Ingest
 }
 
 type recoverableError struct {
 	error
 }
 
-// send sends the timeseries which have been added to this forwarding request to the according endpoints.
+// Send sends the timeseries which have been added to this forwarding request to the according endpoints.
 // All errors returned via the returned error chan are http grpc errors.
-// send should only be called once, after it has been called this forwardingRequest must not be used anymore.
-func (r *forwardingRequest) send(ctx context.Context) <-chan error {
+// Send should only be called once, after it has been called this forwardingRequest must not be used anymore.
+func (r *request) Send(ctx context.Context) <-chan error {
 	errCh := make(chan error)
 
 	// Early return if there's no data to send.
@@ -202,7 +211,7 @@ func (r *forwardingRequest) send(ctx context.Context) <-chan error {
 
 // sendToEndpoint sends the given timeseries to the given endpoint.
 // All returned errors which are recoverable are of the type recoverableError.
-func (r *forwardingRequest) sendToEndpoint(ctx context.Context, endpoint string, ts []mimirpb.PreallocTimeseries) error {
+func (r *request) sendToEndpoint(ctx context.Context, endpoint string, ts []mimirpb.PreallocTimeseries) error {
 	protoBufBytes := (*r.pools.protobuf.Get().(*[]byte))[:0]
 	protoBuf := proto.NewBuffer(protoBufBytes)
 	err := protoBuf.Marshal(&mimirpb.WriteRequest{Timeseries: ts})
@@ -232,7 +241,7 @@ func (r *forwardingRequest) sendToEndpoint(ctx context.Context, endpoint string,
 
 	beforeTs := time.Now()
 	httpResp, err := r.client.Do(httpReq.WithContext(ctx))
-	r.metrics.latencyHistogram.Observe(time.Since(beforeTs).Seconds())
+	r.latency.Observe(time.Since(beforeTs).Seconds())
 	if err != nil {
 		// Errors from Client.Do are from (for example) network errors, so are recoverable.
 		return recoverableError{err}
@@ -261,8 +270,10 @@ func (r *forwardingRequest) sendToEndpoint(ctx context.Context, endpoint string,
 }
 
 // cleanup must be called to return the used buffers to their pools after a request has completed.
-func (r *forwardingRequest) cleanup() {
+func (r *request) cleanup() {
 	for _, ts := range r.tsByEndpoint {
+		ts = ts[:0]
 		r.pools.timeseries.Put(&ts)
 	}
+	r.tsByEndpoint = nil
 }

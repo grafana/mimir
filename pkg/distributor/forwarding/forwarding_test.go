@@ -1,4 +1,4 @@
-package distributor
+package forwarding
 
 import (
 	"context"
@@ -32,29 +32,28 @@ func TestForwardingSamplesSuccessfully(t *testing.T) {
 	defer close2()
 
 	reg := prometheus.NewPedanticRegistry()
-	forwarding := newForwarding(reg)
+	forwarder := NewForwarder(reg)
 
 	rules := validation.ForwardingRules{
-		"metric1": validation.ForwardingRule{Endpoint: url1, IngesterPush: false},
-		"metric2": validation.ForwardingRule{Endpoint: url2, IngesterPush: true},
+		"metric1": validation.ForwardingRule{Endpoint: url1, Ingest: false},
+		"metric2": validation.ForwardingRule{Endpoint: url2, Ingest: true},
 	}
 
-	forwardingReq := forwarding.newRequest(context.Background(), tenant, rules)
-	defer forwardingReq.cleanup()
+	forwardingReq := forwarder.NewRequest(context.Background(), tenant, rules)
 
-	ingesterPush := forwardingReq.add(newSample(t, now, 1, "__name__", "metric1", "some_label", "foo"))
+	ingesterPush := forwardingReq.Add(newSample(t, now, 1, "__name__", "metric1", "some_label", "foo"))
 	require.False(t, ingesterPush)
 
-	ingesterPush = forwardingReq.add(newSample(t, now, 2, "__name__", "metric1", "some_label", "bar"))
+	ingesterPush = forwardingReq.Add(newSample(t, now, 2, "__name__", "metric1", "some_label", "bar"))
 	require.False(t, ingesterPush)
 
-	ingesterPush = forwardingReq.add(newSample(t, now, 3, "__name__", "metric2", "some_label", "foo"))
+	ingesterPush = forwardingReq.Add(newSample(t, now, 3, "__name__", "metric2", "some_label", "foo"))
 	require.True(t, ingesterPush)
 
-	ingesterPush = forwardingReq.add(newSample(t, now, 4, "__name__", "metric2", "some_label", "bar"))
+	ingesterPush = forwardingReq.Add(newSample(t, now, 4, "__name__", "metric2", "some_label", "bar"))
 	require.True(t, ingesterPush)
 
-	errCh := forwardingReq.send(context.Background())
+	errCh := forwardingReq.Send(context.Background())
 	require.NoError(t, <-errCh)
 
 	for _, req := range append(*reqs1, *reqs2...) {
@@ -130,7 +129,7 @@ func TestForwardingSamplesWithDifferentErrors(t *testing.T) {
 	}
 
 	const tenant = "tenant"
-	forwarding := newForwarding(nil)
+	forwarder := NewForwarder(nil)
 	for _, tc := range tcs {
 		t.Run(tc.name, func(t *testing.T) {
 			urls := make([]string, len(tc.remoteStatusCodes))
@@ -149,13 +148,13 @@ func TestForwardingSamplesWithDifferentErrors(t *testing.T) {
 			}
 
 			now := time.Now().UnixMilli()
-			forwardingReq := forwarding.newRequest(context.Background(), tenant, rules)
+			forwardingReq := forwarder.NewRequest(context.Background(), tenant, rules)
 
 			for _, metric := range metrics {
-				forwardingReq.add(newSample(t, now, 1, "__name__", metric))
+				forwardingReq.Add(newSample(t, now, 1, "__name__", metric))
 			}
 
-			errCh := forwardingReq.send(context.Background())
+			errCh := forwardingReq.Send(context.Background())
 			switch tc.expectedError {
 			case errNone:
 				require.Nil(t, <-errCh)
@@ -251,7 +250,6 @@ func BenchmarkRemoteWriteForwarding(b *testing.B) {
 	const samplesPerReq = 1000
 	now := time.Now().UnixMilli()
 	ctx := context.Background()
-	noopClient := http.Client{Transport: &noopRoundTripper{}}
 
 	samples := make([]mimirpb.PreallocTimeseries, samplesPerReq)
 	rules := make(validation.ForwardingRules)
@@ -261,23 +259,23 @@ func BenchmarkRemoteWriteForwarding(b *testing.B) {
 		rules[metric] = validation.ForwardingRule{Endpoint: "http://localhost/"}
 	}
 
-	forwarding := newForwarding(nil)
+	forwarder := NewForwarder(nil).(*forwarder)
+
+	// No-op client, we don't want the benchmark to be skewed by TCP performance
+	forwarder.client = http.Client{Transport: &noopRoundTripper{}}
 
 	b.ResetTimer()
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		req := forwarding.newRequest(ctx, tenant, rules)
-		req.client = noopClient
+		req := forwarder.NewRequest(ctx, tenant, rules)
 
 		for _, sample := range samples {
-			req.add(sample)
+			req.Add(sample)
 		}
 
-		errCh := req.send(ctx)
+		errCh := req.Send(ctx)
 		require.Nil(b, <-errCh)
-
-		req.cleanup()
 	}
 }
 
