@@ -1,6 +1,23 @@
 local utils = import 'mixin-utils/utils.libsonnet';
 
 (import 'dashboard-utils.libsonnet') {
+  local in_memory_series_per_user_query(at='') = |||
+    sum by (user) (
+      (
+          sum by (user, %(group_by_cluster)s) (cortex_ingester_memory_series_created_total{%(ingester)s} %(at)s)
+          -
+          sum by (user, %(group_by_cluster)s) (cortex_ingester_memory_series_removed_total{%(ingester)s} %(at)s)
+      )
+      / on(%(group_by_cluster)s) group_left
+      max by (%(group_by_cluster)s) (cortex_distributor_replication_factor{%(distributor)s} %(at)s)
+    )
+  ||| % {
+    at: at,
+    ingester: $.jobMatcher($._config.job_names.ingester),
+    distributor: $.jobMatcher($._config.job_names.distributor),
+    group_by_cluster: $._config.group_by_cluster,
+  },
+
   'mimir-top-tenants.json':
     ($.dashboard('Top tenants') + { uid: 'bc6e12d4fe540e4a1785b9d3ca0ffdd9' })
     .addClusterSelectorTemplates()
@@ -52,25 +69,29 @@ local utils = import 'mixin-utils/utils.libsonnet';
         { sort: { col: 2, desc: true } } +
         $.tablePanel(
           [
-            |||
-              topk($limit,
-                sum by (user) (
-                  (
-                      sum by (user, %(group_by_cluster)s) (cortex_ingester_memory_series_created_total{%(ingester)s})
-                      -
-                      sum by (user, %(group_by_cluster)s) (cortex_ingester_memory_series_removed_total{%(ingester)s})
-                  )
-                  / on(%(group_by_cluster)s) group_left
-                  max by (%(group_by_cluster)s) (cortex_distributor_replication_factor{%(distributor)s})
-                )
-              )
-            ||| % {
-              ingester: $.jobMatcher($._config.job_names.ingester),
-              distributor: $.jobMatcher($._config.job_names.distributor),
-              group_by_cluster: $._config.group_by_cluster,
-            },
+            'topk($limit, %(in_memory_series_per_user)s)' % { in_memory_series_per_user: in_memory_series_per_user_query() },
           ],
           { 'Value #A': { alias: 'series' } }
+        )
+      ),
+    )
+
+    .addRow(
+      ($.row('By in-memory series growth') + { collapse: true })
+      .addPanel(
+        local title = 'Top $limit users by in-memory series (series created - series removed) that grew the most between query range start and query range end';
+        $.panel(title) +
+        $.queryPanel(
+          |||
+            %(in_memory_series_per_user)s
+            and
+            topk($limit, %(in_memory_series_per_user_at_end)s - %(in_memory_series_per_user_at_start)s)
+          ||| % {
+            in_memory_series_per_user: in_memory_series_per_user_query(),
+            in_memory_series_per_user_at_end: in_memory_series_per_user_query(at='@ end()'),
+            in_memory_series_per_user_at_start: in_memory_series_per_user_query(at='@ start()'),
+          },
+          '{{ user }}',
         )
       ),
     )
