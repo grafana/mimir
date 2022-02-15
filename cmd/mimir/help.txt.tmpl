@@ -327,8 +327,6 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of chunks that can be fetched in a single query from ingesters and long-term storage. This limit is enforced in the querier, ruler and store-gateway. 0 to disable. (default 2000000)
   -querier.max-fetched-series-per-query int
     	The maximum number of unique series for which a query can fetch samples from each ingesters and storage. This limit is enforced in the querier and ruler. 0 to disable
-  -querier.max-query-into-future duration
-    	Maximum duration into the future you can query. 0 to disable. (default 10m0s)
   -querier.max-query-lookback value
     	Limit how long back data (series and metadata) can be queried, up until <lookback> duration ago. This limit is enforced in the query-frontend, querier and ruler. If the requested time range is outside the allowed range, the request will not fail but will be manipulated to only query data within the allowed time range. 0 to disable.
   -querier.max-query-parallelism int
@@ -353,8 +351,6 @@ Usage of ./cmd/mimir/mimir:
     	Log queries that are slower than the specified duration. Set to 0 to disable. Set to < 0 to enable on all queries.
   -query-frontend.max-queriers-per-tenant int
     	Maximum number of queriers that can handle requests for a single tenant. If set to 0 or value higher than number of available queriers, *all* queriers will handle requests for the tenant. Each frontend (or query-scheduler, if used) will select the same set of queriers for the same tenant (given that all queriers are connected to all frontends / query-schedulers). This option only works with queriers connecting to the query-frontend / query-scheduler, not when using downstream URL.
-  -query-frontend.parallelize-shardable-queries
-    	True to enable query sharding.
   -query-frontend.query-sharding-max-sharded-queries int
     	The max number of sharded queries that can be run for a given received query. 0 to disable limit. (default 128)
   -query-frontend.query-sharding-total-shards int
