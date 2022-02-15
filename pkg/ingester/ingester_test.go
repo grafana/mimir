@@ -5120,8 +5120,12 @@ func benchmarkData(nSeries int) (allLabels []labels.Labels, allSamples []mimirpb
 }
 
 func TestIngesterActiveSeries(t *testing.T) {
-	metricLabelsBoolTrue := labels.FromStrings(labels.MetricName, "test", "bool", "true")
-	metricLabelsBoolFalse := labels.FromStrings(labels.MetricName, "test", "bool", "false")
+	labelsToPush := []labels.Labels{
+		labels.FromStrings(labels.MetricName, "test_metric", "bool", "false", "team", "a"),
+		labels.FromStrings(labels.MetricName, "test_metric", "bool", "false", "team", "b"),
+		labels.FromStrings(labels.MetricName, "test_metric", "bool", "true", "team", "a"),
+		labels.FromStrings(labels.MetricName, "test_metric", "bool", "true", "team", "b"),
+	}
 
 	req := func(lbls labels.Labels, t time.Time) *mimirpb.WriteRequest {
 		return mimirpb.ToWriteRequest(
@@ -5137,7 +5141,8 @@ func TestIngesterActiveSeries(t *testing.T) {
 		"cortex_ingester_active_series",
 		"cortex_ingester_active_series_custom_tracker",
 	}
-	userID := "test"
+	userID := "test_user"
+	userID2 := "other_test_user"
 
 	tests := map[string]struct {
 		test                func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer)
@@ -5149,12 +5154,16 @@ func TestIngesterActiveSeries(t *testing.T) {
 			test: func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer) {
 				now := time.Now()
 
-				for _, req := range []*mimirpb.WriteRequest{
-					req(metricLabelsBoolTrue, now.Add(-2*time.Minute)),
-					req(metricLabelsBoolTrue, now.Add(-1*time.Minute)),
-				} {
+				for i, label := range labelsToPush {
 					ctx := user.InjectOrgID(context.Background(), userID)
-					_, err := ingester.Push(ctx, req)
+					offset := time.Duration(len(labelsToPush) - i)
+					_, err := ingester.Push(ctx, req(label, time.Now().Add(offset)))
+					require.NoError(t, err)
+				}
+				for i, label := range labelsToPush {
+					ctx := user.InjectOrgID(context.Background(), userID2)
+					offset := time.Duration(len(labelsToPush) - i)
+					_, err := ingester.Push(ctx, req(label, time.Now().Add(offset)))
 					require.NoError(t, err)
 				}
 
@@ -5164,10 +5173,14 @@ func TestIngesterActiveSeries(t *testing.T) {
 				expectedMetrics := `
 					# HELP cortex_ingester_active_series Number of currently active series per user.
 					# TYPE cortex_ingester_active_series gauge
-					cortex_ingester_active_series{user="test"} 1
+					cortex_ingester_active_series{user="other_test_user"} 4
+                    cortex_ingester_active_series{user="test_user"} 4
 					# HELP cortex_ingester_active_series_custom_tracker Number of currently active series matching a pre-configured label matchers per user.
 					# TYPE cortex_ingester_active_series_custom_tracker gauge
-					cortex_ingester_active_series_custom_tracker{name="bool_is_true",user="test"} 1
+					cortex_ingester_active_series_custom_tracker{name="team_a",user="test_user"} 2
+					cortex_ingester_active_series_custom_tracker{name="team_b",user="test_user"} 2
+					cortex_ingester_active_series_custom_tracker{name="bool_is_true",user="other_test_user"} 2
+					cortex_ingester_active_series_custom_tracker{name="bool_is_false",user="other_test_user"} 2
 				`
 
 				// Check tracked Prometheus metrics
@@ -5178,13 +5191,16 @@ func TestIngesterActiveSeries(t *testing.T) {
 			test: func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer) {
 				firstPushTime := time.Now()
 
-				// We're pushing samples at firstPushTime - 1m, but they're accounted as pushed at firstPushTime
-				for _, req := range []*mimirpb.WriteRequest{
-					req(metricLabelsBoolTrue, firstPushTime.Add(-time.Minute)),
-					req(metricLabelsBoolFalse, firstPushTime.Add(-time.Minute)),
-				} {
+				for i, label := range labelsToPush {
 					ctx := user.InjectOrgID(context.Background(), userID)
-					_, err := ingester.Push(ctx, req)
+					offset := time.Duration(len(labelsToPush) - i)
+					_, err := ingester.Push(ctx, req(label, time.Now().Add(offset)))
+					require.NoError(t, err)
+				}
+				for i, label := range labelsToPush {
+					ctx := user.InjectOrgID(context.Background(), userID2)
+					offset := time.Duration(len(labelsToPush) - i)
+					_, err := ingester.Push(ctx, req(label, time.Now().Add(offset)))
 					require.NoError(t, err)
 				}
 
@@ -5194,11 +5210,14 @@ func TestIngesterActiveSeries(t *testing.T) {
 				expectedMetrics := `
 					# HELP cortex_ingester_active_series Number of currently active series per user.
 					# TYPE cortex_ingester_active_series gauge
-					cortex_ingester_active_series{user="test"} 2
+					cortex_ingester_active_series{user="other_test_user"} 4
+					cortex_ingester_active_series{user="test_user"} 4
 					# HELP cortex_ingester_active_series_custom_tracker Number of currently active series matching a pre-configured label matchers per user.
 					# TYPE cortex_ingester_active_series_custom_tracker gauge
-					cortex_ingester_active_series_custom_tracker{name="bool_is_false",user="test"} 1
-					cortex_ingester_active_series_custom_tracker{name="bool_is_true",user="test"} 1
+					cortex_ingester_active_series_custom_tracker{name="team_a",user="test_user"} 2
+					cortex_ingester_active_series_custom_tracker{name="team_b",user="test_user"} 2
+					cortex_ingester_active_series_custom_tracker{name="bool_is_true",user="other_test_user"} 2
+					cortex_ingester_active_series_custom_tracker{name="bool_is_false",user="other_test_user"} 2
 				`
 
 				// Check tracked Prometheus metrics
@@ -5212,9 +5231,12 @@ func TestIngesterActiveSeries(t *testing.T) {
 				// Sleep another millisecond to make sure that secondPushTime is strictly less than the append time of the second push.
 				time.Sleep(time.Millisecond)
 
-				ctx := user.InjectOrgID(context.Background(), userID)
-				_, err := ingester.Push(ctx, req(metricLabelsBoolTrue, secondPushTime))
-				require.NoError(t, err)
+				for i, label := range labelsToPush {
+					ctx := user.InjectOrgID(context.Background(), userID)
+					offset := time.Duration(len(labelsToPush) - i)
+					_, err := ingester.Push(ctx, req(label, time.Now().Add(offset)))
+					require.NoError(t, err)
+				}
 
 				// Update active series for metrics check in the future.
 				// We update them in the exact moment in time where append time of the first push is already considered idle,
@@ -5224,10 +5246,11 @@ func TestIngesterActiveSeries(t *testing.T) {
 				expectedMetrics = `
 					# HELP cortex_ingester_active_series Number of currently active series per user.
 					# TYPE cortex_ingester_active_series gauge
-					cortex_ingester_active_series{user="test"} 1
+					cortex_ingester_active_series{user="test_user"} 4
 					# HELP cortex_ingester_active_series_custom_tracker Number of currently active series matching a pre-configured label matchers per user.
 					# TYPE cortex_ingester_active_series_custom_tracker gauge
-					cortex_ingester_active_series_custom_tracker{name="bool_is_true",user="test"} 1
+					cortex_ingester_active_series_custom_tracker{name="team_a",user="test_user"} 2
+					cortex_ingester_active_series_custom_tracker{name="team_b",user="test_user"} 2
 				`
 
 				// Check tracked Prometheus metrics
@@ -5243,12 +5266,16 @@ func TestIngesterActiveSeries(t *testing.T) {
 			test: func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer) {
 				now := time.Now()
 
-				for _, req := range []*mimirpb.WriteRequest{
-					req(metricLabelsBoolTrue, now.Add(-2*time.Minute)),
-					req(metricLabelsBoolTrue, now.Add(-1*time.Minute)),
-				} {
+				for i, label := range labelsToPush {
 					ctx := user.InjectOrgID(context.Background(), userID)
-					_, err := ingester.Push(ctx, req)
+					offset := time.Duration(len(labelsToPush) - i)
+					_, err := ingester.Push(ctx, req(label, time.Now().Add(offset)))
+					require.NoError(t, err)
+				}
+				for i, label := range labelsToPush {
+					ctx := user.InjectOrgID(context.Background(), userID2)
+					offset := time.Duration(len(labelsToPush) - i)
+					_, err := ingester.Push(ctx, req(label, time.Now().Add(offset)))
 					require.NoError(t, err)
 				}
 
@@ -5276,8 +5303,15 @@ func TestIngesterActiveSeries(t *testing.T) {
 					"bool_is_true":  `{bool="true"}`,
 					"bool_is_false": `{bool="false"}`,
 				}
+				teamMatchers := map[string]ActiveSeriesCustomTrackersConfig{
+					"test_user": map[string]string{
+						"team_a": `{team="a"}`,
+						"team_b": `{team="b"}`,
+					},
+				}
 				return &RuntimeMatchersConfig{
-					DefaultMatchers: (ActiveSeriesCustomTrackersConfig)(defaultMatchers),
+					DefaultMatchers:        (ActiveSeriesCustomTrackersConfig)(defaultMatchers),
+					TenantSpecificMatchers: teamMatchers,
 				}
 			}
 
