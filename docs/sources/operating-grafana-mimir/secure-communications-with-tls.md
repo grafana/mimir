@@ -1,18 +1,18 @@
 ---
 title: "Secure communications with TLS"
-description: "How to configure TLS between Grafana mimir microservices."
+description: "How to configure TLS between Grafana Mimir microservices."
 weight: 60
 ---
 
 # Secure communications with TLS
 
-Cortex is a distributed system with significant traffic between its services.
-To allow for secure communication, Cortex supports TLS between all its
+Grafana Mimir is a distributed system with significant traffic between its services.
+To allow for secure communication, Mimir supports TLS between all its
 components. This guide describes the process of setting up TLS.
 
 ### Generation of certs to configure TLS
 
-The first step to securing inter-service communication in Cortex with TLS is
+The first step to securing inter-service communication in Mimir with TLS is
 generating certificates. A Certifying Authority (CA) will be used for this
 purpose which should be private to the organization, as any certificates signed
 by this CA will have permissions to communicate with the cluster.
@@ -47,7 +47,7 @@ generated as `root.crt`.
 
 ### Load certs into the HTTP/GRPC server/client
 
-Every HTTP/GRPC link between Cortex components supports TLS configuration
+Every HTTP/GRPC link between Mimir components supports TLS configuration
 through the following config parameters:
 
 #### Server flags
@@ -108,4 +108,4 @@ Similarly, for the GRPC Ingester Client:
     -ingester.client.tls-ca-path=/path/to/root.crt
 ```
 
-TLS can be configured in a similar fashion for other HTTP/GRPC clients in Cortex.
+TLS can be configured in a similar fashion for other HTTP/GRPC clients in Mimir.
