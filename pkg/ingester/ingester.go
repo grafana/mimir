@@ -16,7 +16,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"sync"
 	"time"
@@ -473,34 +472,40 @@ func (i *Ingester) updateLoop(ctx context.Context) error {
 
 func (i *Ingester) reloadConfig(now time.Time) {
 	newConfig := i.getRuntimeMatchersConfig()
+	// if the config is empty, we are done
+	if newConfig == nil {
+		i.runtimeMatchersConfig = newConfig
+		return
+	}
+
+	defaultMatchersEquals := i.runtimeMatchersConfig.DefaultMatchers.String() == newConfig.DefaultMatchers.String()
+
 	// it is crucial to only reload matchers which have been changed, as this function runs even if there is no change in config
-	// first check the generic matchers
-	if i.runtimeMatchersConfig == nil || i.runtimeMatchersConfig.GenericMatchers.String() != newConfig.GenericMatchers.String() {
-		// need to replace everything
-		for _, userID := range i.getTSDBUsers() {
-			userDB := i.getTSDB(userID)
-			if userDB == nil {
-				continue
-			}
-			err := i.ReplaceMatchers(newConfig, userID, userDB)
-			if err != nil {
-				level.Error(i.logger).Log("msg", "failed to apply runtime matchers", "user", userID, "err", err)
-			}
+	for _, userID := range i.getTSDBUsers() {
+		userDB := i.getTSDB(userID)
+		if userDB == nil {
+			continue
 		}
-	} else {
-		// for each users check if the config has changed
-		for _, userID := range i.getTSDBUsers() {
-			userDB := i.getTSDB(userID)
-			if userDB == nil {
-				continue
-			}
-			oldValue, oldOk := i.runtimeMatchersConfig.TenantSpecificMatchers[userID]
-			newValue, newOk := newConfig.TenantSpecificMatchers[userID]
-			if oldOk != newOk || !reflect.DeepEqual(oldValue, newValue) {
-				err := i.ReplaceMatchers(newConfig, userID, userDB)
-				if err != nil {
-					level.Error(i.logger).Log("msg", "failed to apply runtime matchers", "user", userID, "err", err)
-				}
+		oldValue, oldOk := i.runtimeMatchersConfig.TenantSpecificMatchers[userID]
+		newValue, newOk := newConfig.TenantSpecificMatchers[userID]
+		var replaceValue ActiveSeriesCustomTrackersConfig = nil
+		if !newOk && !oldOk && !defaultMatchersEquals {
+			// default changed and no overwrite
+			replaceValue = newConfig.DefaultMatchers
+		} else if newOk && !oldOk {
+			// tenant specific added
+			replaceValue = newValue
+		} else if !newOk && oldOk {
+			// tenant specific removed
+			replaceValue = newConfig.DefaultMatchers
+		} else if oldValue.String() != newValue.String() {
+			// tenant specific changed
+			replaceValue = newValue
+		}
+		if replaceValue != nil {
+			err := i.ReplaceMatchers(replaceValue, userDB)
+			if err != nil {
+				level.Error(i.logger).Log("msg", "failed to update config", "user", userID, "err", err)
 			}
 		}
 	}
@@ -508,31 +513,14 @@ func (i *Ingester) reloadConfig(now time.Time) {
 	i.runtimeMatchersConfig = newConfig
 }
 
-func (i *Ingester) ReplaceMatchers(newConfig *RuntimeMatchersConfig, userID string, userDB *userTSDB) error {
-	newTrackerConfig, err := createCustomTrackerConfig(newConfig, userID)
-	if err != nil {
-		return err
-	}
-	newMatcher, err := NewActiveSeriesMatchers(newTrackerConfig)
+func (i *Ingester) ReplaceMatchers(config ActiveSeriesCustomTrackersConfig, userDB *userTSDB) error {
+	newMatcher, err := NewActiveSeriesMatchers(config)
 	if err != nil {
 		return err
 	}
 	i.metrics.deletePerUserCustomTrackerMetrics(userDB.userID, userDB.activeSeries.asm.names)
 	userDB.activeSeries.ReloadSeriesMatchers(newMatcher)
 	return nil
-}
-
-func createCustomTrackerConfig(runtimeConfig *RuntimeMatchersConfig, userID string) (ActiveSeriesCustomTrackersConfig, error) {
-	userPart := ""
-	if val, ok := runtimeConfig.TenantSpecificMatchers[userID]; ok {
-		userPart = val.String()
-	} else if defaultVal, ok := runtimeConfig.TenantSpecificMatchers["default"]; ok {
-		userPart = defaultVal.String()
-	}
-	desiredConfig := runtimeConfig.GenericMatchers.String() + ";" + userPart
-	asc := &ActiveSeriesCustomTrackersConfig{}
-	err := asc.Set(desiredConfig)
-	return *asc, err
 }
 
 func (i *Ingester) getRuntimeMatchersConfig() *RuntimeMatchersConfig {
@@ -1523,11 +1511,15 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 
 	blockRanges := i.cfg.BlocksStorageConfig.TSDB.BlockRanges.ToMilliseconds()
 	var activeSeriesMathers *ActiveSeriesMatchers
-	customTrackerConfig, err := createCustomTrackerConfig(i.getRuntimeMatchersConfig(), userID)
-	if err != nil {
-		level.Error(i.logger).Log("msg", "failed to create custom tracker config, using empty one", "user", userID, "err", err)
+	cfg := i.cfg.RuntimeMatchersConfigFn()
+	val, ok := cfg.TenantSpecificMatchers[userID]
+	var config ActiveSeriesCustomTrackersConfig = nil
+	if ok {
+		config = val
+	} else {
+		config = cfg.DefaultMatchers
 	}
-	activeSeriesMathers, err = NewActiveSeriesMatchers(customTrackerConfig)
+	activeSeriesMathers, err := NewActiveSeriesMatchers(config)
 	if err != nil {
 		level.Error(i.logger).Log("msg", "failed to apply runtime matchers", "user", userID, "err", err)
 		activeSeriesMathers = &ActiveSeriesMatchers{}

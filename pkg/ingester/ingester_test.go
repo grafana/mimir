@@ -5277,7 +5277,7 @@ func TestIngesterActiveSeries(t *testing.T) {
 					"bool_is_false": `{bool="false"}`,
 				}
 				return &RuntimeMatchersConfig{
-					GenericMatchers: (ActiveSeriesCustomTrackersConfig)(genericMatchers),
+					DefaultMatchers: (ActiveSeriesCustomTrackersConfig)(genericMatchers),
 				}
 			}
 

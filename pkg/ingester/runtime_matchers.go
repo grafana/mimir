@@ -4,7 +4,7 @@ package ingester
 
 // RuntimeMatchers holds the definition of custom tracking rules
 type RuntimeMatchersConfig struct {
-	GenericMatchers        ActiveSeriesCustomTrackersConfig            `yaml:"generic_matchers"`
+	DefaultMatchers        ActiveSeriesCustomTrackersConfig            `yaml:"default_matchers"`
 	TenantSpecificMatchers map[string]ActiveSeriesCustomTrackersConfig `yaml:"tenant_machers"`
 }
 
