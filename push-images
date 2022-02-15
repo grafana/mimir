@@ -29,8 +29,7 @@ for image in ${IMAGES}; do
     KO_DOCKER_REPO=us.gcr.io/kubernetes-dev 
     case "$image" in
         mimir|mimirtool)
-            # TODO: Enable
-            # KO_DOCKER_REPO=docker.io/grafana
+            KO_DOCKER_REPO=docker.io/grafana
             ;;
     esac
 

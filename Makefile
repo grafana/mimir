@@ -30,6 +30,7 @@ BINARY_SUFFIX ?= ""
 
 # Boiler plate for building Docker containers.
 # All this must go at top of file I'm afraid.
+# Whenever this variable changes, also update ./push-images
 IMAGE_PREFIX ?= grafana/
 IMAGE_REGISTRY := $(patsubst %/,%,$(IMAGE_PREFIX))
 BUILD_IMAGE ?= $(IMAGE_PREFIX)mimir-build-image
