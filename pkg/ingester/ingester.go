@@ -1511,15 +1511,15 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 
 	blockRanges := i.cfg.BlocksStorageConfig.TSDB.BlockRanges.ToMilliseconds()
 	var activeSeriesMathers *ActiveSeriesMatchers
-	cfg := i.cfg.RuntimeMatchersConfigFn()
-	val, ok := cfg.TenantSpecificMatchers[userID]
-	var config ActiveSeriesCustomTrackersConfig = nil
+	matchersCfg := i.getRuntimeMatchersConfig()
+	val, ok := matchersCfg.TenantSpecificMatchers[userID]
+	var matchers ActiveSeriesCustomTrackersConfig = nil
 	if ok {
-		config = val
+		matchers = val
 	} else {
-		config = cfg.DefaultMatchers
+		matchers = matchersCfg.DefaultMatchers
 	}
-	activeSeriesMathers, err := NewActiveSeriesMatchers(config)
+	activeSeriesMathers, err := NewActiveSeriesMatchers(matchers)
 	if err != nil {
 		level.Error(i.logger).Log("msg", "failed to apply runtime matchers", "user", userID, "err", err)
 		activeSeriesMathers = &ActiveSeriesMatchers{}

@@ -5272,12 +5272,12 @@ func TestIngesterActiveSeries(t *testing.T) {
 			cfg.LifecyclerConfig.JoinAfter = 0
 			cfg.ActiveSeriesMetricsEnabled = !testData.disableActiveSeries
 			cfg.RuntimeMatchersConfigFn = func() *RuntimeMatchersConfig {
-				genericMatchers := map[string]string{
+				defaultMatchers := map[string]string{
 					"bool_is_true":  `{bool="true"}`,
 					"bool_is_false": `{bool="false"}`,
 				}
 				return &RuntimeMatchersConfig{
-					DefaultMatchers: (ActiveSeriesCustomTrackersConfig)(genericMatchers),
+					DefaultMatchers: (ActiveSeriesCustomTrackersConfig)(defaultMatchers),
 				}
 			}
 
