@@ -96,13 +96,6 @@ the querier component:
 
 ![Flow of a query with query sharding](../../images/query-sharding.png)
 
-[//]: <> (TODO: Line out how `-frontend.query-sharding-max-sharded-queries` related to all of this)
-
-[//]: <> (TODO: Finish an overview, which shows how the query-frontend splits queries to explain)
-[Mermaid Graph]:https://mermaid.live/edit/#eyJjb2RlIjoiZmxvd2NoYXJ0IExSXG4gIHN1YmdyYXBoIFFGW1F1ZXJ5LUZyb250ZW5kXVxuICAgIGRpcmVjdGlvbiBMUlxuICAgIHN1YmdyYXBoIFRTXG4gICAgICAgIGRpcmVjdGlvbiBSTFxuICAgICAgICBUUzFbc3RhcnQ9dHMgZW5kIHQ9bl1cbiAgICAgICAgVFMyW3N0YXJ0PXRuIGVuZCB0PW4rMV1cbiAgICAgICAgVFNuWy4uLi5dXG4gICAgZW5kXG4gICAgc3ViZ3JhcGggUVNbU3BsaXR0aW5nIHF1ZXJpZXMgXFxuIGludG8gMyBxdWVyeSBzaGFyZHNdXG4gICAgICAgIGRpcmVjdGlvbiBSTFxuICAgICAgICBRUzFhWzEvM11cbiAgICAgICAgUVMxYlsyLzNdXG4gICAgICAgIFFTMWNbMy8zXVxuICAgICAgICBRUzJhWzEvM11cbiAgICAgICAgUVMyYlsyLzNdXG4gICAgICAgIFFTMmNbMy8zXVxuICAgICAgICBRU25hWzEvM11cbiAgICAgICAgUVNuYlsyLzNdXG4gICAgICAgIFFTbmNbMy8zXVxuICAgIGVuZFxuICBlbmRcbiAgVFMxIC0tPiBRUzFhXG4gIFRTMSAtLT4gUVMxYlxuICBUUzEgLS0-IFFTMWNcbiAgVFMyIC0tPiBRUzJhXG4gIFRTMiAtLT4gUVMyYlxuICBUUzIgLS0-IFFTMmNcbiAgVFNuIC0tPiBRU25hXG4gIFRTbiAtLT4gUVNuYlxuICBUU24gLS0-IFFTbmNcbiAgVVtVc2VyXSAtLT4gUUZcbiIsIm1lcm1haWQiOiJ7XG4gIFwidGhlbWVcIjogXCJkZWZhdWx0XCJcbn0iLCJ1cGRhdGVFZGl0b3IiOnRydWUsImF1dG9TeW5jIjp0cnVlLCJ1cGRhdGVEaWFncmFtIjp0cnVlfQ
-
-[//]: <> (TODO query_range.split_queries_by_interval: "24h")
-
 ## Operational considerations
 
 Splitting a single query into sharded queries increases the quantity of queries
