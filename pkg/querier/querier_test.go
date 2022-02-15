@@ -611,7 +611,6 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 
 			var cfg Config
 			flagext.DefaultValues(&cfg)
-			cfg.QueryLabelNamesWithMatchers = true
 			cfg.QueryIngestersWithin = 0 // Always query ingesters in this test.
 
 			limits := defaultLimitsConfig()
@@ -768,7 +767,6 @@ func TestQuerier_MaxLabelsQueryRange(t *testing.T) {
 
 			var cfg Config
 			flagext.DefaultValues(&cfg)
-			cfg.QueryLabelNamesWithMatchers = true
 			cfg.QueryIngestersWithin = 0 // Always query ingesters in this test.
 
 			limits := defaultLimitsConfig()

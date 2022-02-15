@@ -868,13 +868,6 @@ The `querier_config` configures the querier.
 # CLI flag: -querier.query-ingesters-within
 [query_ingesters_within: <duration> | default = 13h]
 
-# True to enable queriers to use an optimized implementation which passes down
-# to ingesters the label matchers when running the label names API. Can be
-# enabled once all ingesters run a version >= the one where this option has been
-# introduced.
-# CLI flag: -querier.query-label-names-with-matchers-enabled
-[query_label_names_with_matchers_enabled: <boolean> | default = false]
-
 # The time after which a metric should be queried from storage and not just
 # ingesters. 0 means all queries are sent to store. If this option is enabled,
 # the time range of the query sent to the store-gateway will be manipulated to

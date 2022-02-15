@@ -357,6 +357,7 @@
   * Sharding can be dynamically controlled per tenant using the limit `query_sharding_total_shards`. (0 to disable)
   * Added `sharded_queries` count to the "query stats" log.
   * The number of shards is adjusted to be compatible with number of compactor shards that are used by a split-and-merge compactor. The querier can use this to avoid querying blocks that cannot have series in a given query shard.
+* [CHANGE] Querier: Remove configuration parameter `querier.query_label_names_with_matchers_enabled`, hardcode this parameter as true. #1186
 * [FEATURE] PromQL: added `present_over_time` support. #139
 * [FEATURE] Ingester: can expose metrics on active series matching custom trackers configured via `-ingester.active-series-custom-trackers` (or its respective YAML config option). When configured, active series for custom trackers are exposed by the `cortex_ingester_active_series_custom_tracker` metric. #42 #672
 * [FEATURE] Ingester: Enable snapshotting of in-memory TSDB on disk during shutdown via `-blocks-storage.tsdb.memory-snapshot-on-shutdown` (experimental). #249

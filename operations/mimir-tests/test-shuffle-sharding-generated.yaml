@@ -840,7 +840,6 @@ spec:
         - -querier.frontend-client.grpc-max-send-msg-size=104857600
         - -querier.max-concurrent=8
         - -querier.query-ingesters-within=13h
-        - -querier.query-label-names-with-matchers-enabled=true
         - -querier.query-store-after=12h
         - -querier.scheduler-address=query-scheduler-discovery.default.svc.cluster.local:9095
         - -querier.shuffle-sharding-ingesters-lookback-period=13h
@@ -1072,7 +1071,6 @@ spec:
         - -ingester.ring.replication-factor=3
         - -ingester.ring.store=consul
         - -querier.query-ingesters-within=13h
-        - -querier.query-label-names-with-matchers-enabled=true
         - -querier.query-store-after=12h
         - -querier.shuffle-sharding-ingesters-lookback-period=13h
         - -ruler-storage.backend=gcs
