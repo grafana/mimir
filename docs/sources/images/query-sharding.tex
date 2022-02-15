@@ -43,10 +43,10 @@
     \node (shardingLeg2M)   [shard, below of=shardingLeg2]  {\sfrac{2}{3}};
     \node (shardingLeg2L)   [shard, left of=shardingLeg2M]  {\sfrac{1}{3}};
     \node (shardingLeg2R)   [shard, right of=shardingLeg2M] {\sfrac{3}{3}};
-    \node (legStory)        [story, below of=timesplitStory, yshift=-0.3cm]{Query is splitted into different legs};
+    \node (legStory)        [story, below of=timesplitStory, yshift=-0.3cm]{Query is split into different legs};
     \node (shardingStory)   [story, below of=legStory]      {Each leg generates a query for each shard \texttt{total\_shards=3}};
     \node (process)         [elemx,below of=timesplitdots,yshift=-3cm] {Process queries};
-    \node (aggregate)       [elemx,below of=process] {Aggregate result};
+    \node (aggregate)       [elemx,below of=process] {Aggregate results};
 
     % Gray box around query process
     \begin{pgfonlayer}{background}

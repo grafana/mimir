@@ -106,9 +106,9 @@ the querier component:
 ## Operational considerations
 
 Splitting a single query into sharded queries increases the quantity of queries
-that must be processed. Parallelization decreases the query processing time
-latency, but increases the load on querier components and their underlying data
-stores (ingesters for recent data and store-gateway for historic data). The
+that must be processed. Parallelization decreases the query processing time,
+but increases the load on querier components and their underlying data stores
+(ingesters for recent data and store-gateway for historic data). The
 caching layer for chunks and indexes will also experience an increased load.
 
 This increased parallel processing also requires to multiply the previously set
@@ -140,7 +140,7 @@ sharded_queries=16 query="sum(rate(prometheus_engine_queries[5m]))"
 ```
 
 When `sharded_queries` is a multiple of the configured shard count, query
-sharding is operational and the query has only a multiple legs (assuming time
+sharding is operational and the query has multiple legs (assuming time
 splitting is disabled). The following log line shows a query with two legs and
 with a configured shard count of `16`:
 
@@ -152,7 +152,7 @@ The query-frontend also exposes metrics, which can be useful to understand the
 query workload's parallelism as a whole.
 
 To get the ratio of queries which are shardable:
-queries the following PromQL query can be used. A value of 1.0 would mean all queries are shardable wh:
+The following PromQL query can be used. A value of 1.0 would mean all queries are shardable wh:
 
 ```promql
 sum(rate(cortex_frontend_query_sharding_rewrites_succeeded_total[$__rate_interval])) /
