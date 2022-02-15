@@ -45,6 +45,5 @@ for image in ${IMAGES}; do
     fi
 
     export KO_DOCKER_REPO
-    # TODO: Remove --local
-    ko publish-layout -B --tags ${IMAGE_TAGS} --local ${image} ${image}-oci-layout
+    ko publish-layout -B --tags ${IMAGE_TAGS} ${image} ${image}-oci-layout
 done
