@@ -545,7 +545,7 @@ func (i *Ingester) updateActiveSeries(now time.Time) {
 		} else {
 			i.metrics.activeSeriesPerUser.DeleteLabelValues(userID)
 		}
-		if userDB.activeSeries.lastUpdate.IsZero() || userDB.activeSeries.lastUpdate.After(now.Add(i.cfg.ActiveSeriesMetricsIdleTimeout)) {
+		if userDB.activeSeries.lastUpdate.Before(purgeTime) {
 			// Do not publish metrics until the new matcher setup had time to catch up
 			// LastUpdate is Zero when it never get updated
 			for idx, name := range userDB.activeSeries.asm.names {
@@ -1504,7 +1504,6 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 	userLogger := util_log.WithUserID(userID, i.logger)
 
 	blockRanges := i.cfg.BlocksStorageConfig.TSDB.BlockRanges.ToMilliseconds()
-	var activeSeriesMathers *ActiveSeriesMatchers
 	matchersCfg := i.getRuntimeMatchersConfig()
 	val, ok := matchersCfg.TenantSpecificMatchers[userID]
 	var matchers ActiveSeriesCustomTrackersConfig = nil
@@ -1513,15 +1512,15 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 	} else {
 		matchers = matchersCfg.DefaultMatchers
 	}
-	activeSeriesMathers, err := NewActiveSeriesMatchers(matchers)
+	activeSeriesMatchers, err := NewActiveSeriesMatchers(matchers)
 	if err != nil {
 		level.Error(i.logger).Log("msg", "failed to apply runtime matchers", "user", userID, "err", err)
-		activeSeriesMathers = &ActiveSeriesMatchers{}
+		activeSeriesMatchers = &ActiveSeriesMatchers{}
 	}
 
 	userDB := &userTSDB{
 		userID:              userID,
-		activeSeries:        NewActiveSeries(activeSeriesMathers),
+		activeSeries:        NewActiveSeries(activeSeriesMatchers),
 		seriesInMetric:      newMetricCounter(i.limiter, i.cfg.getIgnoreSeriesLimitForMetricNamesMap()),
 		ingestedAPISamples:  util_math.NewEWMARate(0.2, i.cfg.RateUpdatePeriod),
 		ingestedRuleSamples: util_math.NewEWMARate(0.2, i.cfg.RateUpdatePeriod),
