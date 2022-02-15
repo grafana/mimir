@@ -63,6 +63,7 @@ func (c *ActiveSeriesCustomTrackersConfig) ExampleDoc() (comment string, yaml in
 
 func NewActiveSeriesMatchers(matchers ActiveSeriesCustomTrackersConfig) (*ActiveSeriesMatchers, error) {
 	asm := &ActiveSeriesMatchers{}
+	asm.config = &matchers
 	for name, matcher := range matchers {
 		sm, err := amlabels.ParseMatchers(matcher)
 		if err != nil {
@@ -83,6 +84,7 @@ func NewActiveSeriesMatchers(matchers ActiveSeriesCustomTrackersConfig) (*Active
 }
 
 type ActiveSeriesMatchers struct {
+	config   *ActiveSeriesCustomTrackersConfig
 	names    []string
 	matchers []labelsMatchers
 }

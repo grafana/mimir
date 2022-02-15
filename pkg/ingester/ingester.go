@@ -234,9 +234,6 @@ type Ingester struct {
 	// Rate of pushed samples. Used to limit global samples push rate.
 	ingestionRate        *util_math.EwmaRate
 	inflightPushRequests atomic.Int64
-
-	// Last seen activeSeriesConfiguration. Needed for diff based updating.
-	runtimeMatchersConfig *RuntimeMatchersConfig
 }
 
 func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
@@ -254,14 +251,13 @@ func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus
 		limits: limits,
 		logger: logger,
 
-		tsdbs:                 make(map[string]*userTSDB),
-		usersMetadata:         make(map[string]*userMetricsMetadata),
-		bucket:                bucketClient,
-		tsdbMetrics:           newTSDBMetrics(registerer),
-		forceCompactTrigger:   make(chan requestWithUsersAndCallback),
-		shipTrigger:           make(chan requestWithUsersAndCallback),
-		seriesHashCache:       hashcache.NewSeriesHashCache(cfg.BlocksStorageConfig.TSDB.SeriesHashCacheMaxBytes),
-		runtimeMatchersConfig: &RuntimeMatchersConfig{},
+		tsdbs:               make(map[string]*userTSDB),
+		usersMetadata:       make(map[string]*userMetricsMetadata),
+		bucket:              bucketClient,
+		tsdbMetrics:         newTSDBMetrics(registerer),
+		forceCompactTrigger: make(chan requestWithUsersAndCallback),
+		shipTrigger:         make(chan requestWithUsersAndCallback),
+		seriesHashCache:     hashcache.NewSeriesHashCache(cfg.BlocksStorageConfig.TSDB.SeriesHashCacheMaxBytes),
 	}, nil
 }
 
@@ -471,40 +467,28 @@ func (i *Ingester) updateLoop(ctx context.Context) error {
 }
 
 func (i *Ingester) reloadConfig(now time.Time) {
-	newConfig := i.getRuntimeMatchersConfig()
-	defaultMatchersEquals := i.runtimeMatchersConfig.DefaultMatchers.String() == newConfig.DefaultMatchers.String()
-
-	// it is crucial to only reload matchers which have been changed, as this function runs even if there is no change in config
+	currentConfig := i.getRuntimeMatchersConfig()
 	for _, userID := range i.getTSDBUsers() {
 		userDB := i.getTSDB(userID)
 		if userDB == nil {
 			continue
 		}
-		oldValue, oldOk := i.runtimeMatchersConfig.TenantSpecificMatchers[userID]
-		newValue, newOk := newConfig.TenantSpecificMatchers[userID]
-		var replaceValue ActiveSeriesCustomTrackersConfig = nil
-		if !newOk && !oldOk && !defaultMatchersEquals {
-			// default changed and no overwrite
-			replaceValue = newConfig.DefaultMatchers
-		} else if newOk && !oldOk {
-			// tenant specific added
-			replaceValue = newValue
-		} else if !newOk && oldOk {
-			// tenant specific removed
-			replaceValue = newConfig.DefaultMatchers
-		} else if oldValue.String() != newValue.String() {
-			// tenant specific changed
-			replaceValue = newValue
-		}
-		if replaceValue != nil {
-			err := i.ReplaceMatchers(replaceValue, userDB)
+		newMatchers := getActiveSeriesConfig(userID, *currentConfig)
+		if newMatchers.String() != userDB.activeSeries.asm.config.String() {
+			err := i.ReplaceMatchers(newMatchers, userDB)
 			if err != nil {
 				level.Error(i.logger).Log("msg", "failed to update config", "user", userID, "err", err)
 			}
 		}
 	}
+}
 
-	i.runtimeMatchersConfig = newConfig
+func getActiveSeriesConfig(userID string, config RuntimeMatchersConfig) ActiveSeriesCustomTrackersConfig {
+	val, ok := config.TenantSpecificMatchers[userID]
+	if !ok {
+		return config.DefaultMatchers
+	}
+	return val
 }
 
 func (i *Ingester) ReplaceMatchers(config ActiveSeriesCustomTrackersConfig, userDB *userTSDB) error {
@@ -1504,15 +1488,8 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 	userLogger := util_log.WithUserID(userID, i.logger)
 
 	blockRanges := i.cfg.BlocksStorageConfig.TSDB.BlockRanges.ToMilliseconds()
-	matchersCfg := i.getRuntimeMatchersConfig()
-	val, ok := matchersCfg.TenantSpecificMatchers[userID]
-	var matchers ActiveSeriesCustomTrackersConfig = nil
-	if ok {
-		matchers = val
-	} else {
-		matchers = matchersCfg.DefaultMatchers
-	}
-	activeSeriesMatchers, err := NewActiveSeriesMatchers(matchers)
+	matchersConfig := getActiveSeriesConfig(userID, *i.getRuntimeMatchersConfig())
+	activeSeriesMatchers, err := NewActiveSeriesMatchers(matchersConfig)
 	if err != nil {
 		level.Error(i.logger).Log("msg", "failed to apply runtime matchers", "user", userID, "err", err)
 		activeSeriesMatchers = &ActiveSeriesMatchers{}
