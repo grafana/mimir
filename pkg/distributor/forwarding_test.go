@@ -150,7 +150,6 @@ func TestForwardingSamplesWithDifferentErrors(t *testing.T) {
 
 			now := time.Now().UnixMilli()
 			forwardingReq := forwarding.newRequest(context.Background(), tenant, rules)
-			defer forwardingReq.cleanup()
 
 			for _, metric := range metrics {
 				forwardingReq.add(newSample(t, now, 1, "__name__", metric))

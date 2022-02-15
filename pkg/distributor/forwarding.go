@@ -142,6 +142,7 @@ type recoverableError struct {
 
 // send sends the timeseries which have been added to this forwarding request to the according endpoints.
 // All errors returned via the returned error chan are http grpc errors.
+// send should only be called once, after it has been called this forwardingRequest must not be used anymore.
 func (r *forwardingRequest) send(ctx context.Context) <-chan error {
 	errCh := make(chan error)
 
