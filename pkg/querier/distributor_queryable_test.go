@@ -87,7 +87,7 @@ func TestDistributorQuerier_SelectShouldHonorQueryIngestersWithin(t *testing.T) 
 			distributor.On("MetricsForLabelMatchers", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]model.Metric{}, nil)
 
 			ctx := user.InjectOrgID(context.Background(), "test")
-			queryable := newDistributorQueryable(distributor, nil, testData.queryIngestersWithin, true, log.NewNopLogger())
+			queryable := newDistributorQueryable(distributor, nil, testData.queryIngestersWithin, log.NewNopLogger())
 			querier, err := queryable.Querier(ctx, testData.queryMinT, testData.queryMaxT)
 			require.NoError(t, err)
 
@@ -112,7 +112,7 @@ func TestDistributorQuerier_SelectShouldHonorQueryIngestersWithin(t *testing.T) 
 
 func TestDistributorQueryableFilter(t *testing.T) {
 	d := &mockDistributor{}
-	dq := newDistributorQueryable(d, nil, 1*time.Hour, true, log.NewNopLogger())
+	dq := newDistributorQueryable(d, nil, 1*time.Hour, log.NewNopLogger())
 
 	now := time.Now()
 
@@ -164,7 +164,7 @@ func TestIngesterStreaming(t *testing.T) {
 		nil)
 
 	ctx := user.InjectOrgID(context.Background(), "0")
-	queryable := newDistributorQueryable(d, mergeChunks, 0, true, log.NewNopLogger())
+	queryable := newDistributorQueryable(d, mergeChunks, 0, log.NewNopLogger())
 	querier, err := queryable.Querier(ctx, mint, maxt)
 	require.NoError(t, err)
 
@@ -240,7 +240,7 @@ func TestIngesterStreamingMixedResults(t *testing.T) {
 		nil)
 
 	ctx := user.InjectOrgID(context.Background(), "0")
-	queryable := newDistributorQueryable(d, mergeChunks, 0, true, log.NewNopLogger())
+	queryable := newDistributorQueryable(d, mergeChunks, 0, log.NewNopLogger())
 	querier, err := queryable.Querier(ctx, mint, maxt)
 	require.NoError(t, err)
 
@@ -272,27 +272,7 @@ func TestDistributorQuerier_LabelNames(t *testing.T) {
 			d.On("LabelNames", mock.Anything, model.Time(mint), model.Time(maxt), someMatchers).
 				Return(labelNames, nil)
 
-			queryable := newDistributorQueryable(d, nil, 0, true, log.NewNopLogger())
-			querier, err := queryable.Querier(context.Background(), mint, maxt)
-			require.NoError(t, err)
-
-			names, warnings, err := querier.LabelNames(someMatchers...)
-			require.NoError(t, err)
-			assert.Empty(t, warnings)
-			assert.Equal(t, labelNames, names)
-		})
-
-		t.Run("queryLabelNamesWithMatchers=false", func(t *testing.T) {
-			metrics := []model.Metric{
-				{"foo": "bar"},
-				{"job": "baz"},
-				{"job": "baz", "foo": "boom"},
-			}
-			d := &mockDistributor{}
-			d.On("MetricsForLabelMatchers", mock.Anything, model.Time(mint), model.Time(maxt), someMatchers).
-				Return(metrics, nil)
-
-			queryable := newDistributorQueryable(d, nil, 0, false, log.NewNopLogger())
+			queryable := newDistributorQueryable(d, nil, 0, log.NewNopLogger())
 			querier, err := queryable.Querier(context.Background(), mint, maxt)
 			require.NoError(t, err)
 
@@ -342,7 +322,7 @@ func BenchmarkDistributorQueryable_Select(b *testing.B) {
 	d.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(response, nil)
 
 	ctx := user.InjectOrgID(context.Background(), "0")
-	queryable := newDistributorQueryable(d, mergeChunks, 0, true, log.NewNopLogger())
+	queryable := newDistributorQueryable(d, mergeChunks, 0, log.NewNopLogger())
 	querier, err := queryable.Querier(ctx, math.MinInt64, math.MaxInt64)
 	require.NoError(b, err)
 

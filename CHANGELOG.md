@@ -397,7 +397,7 @@
   * S3 Server Side Encryption (SSE) using KMS
   * TLS configuration for gRPC, HTTP and etcd clients
   * Zone-aware replication
-  * `/labels` API using matchers (`-querier.query-label-names-with-matchers-enabled`)
+  * `/labels` API using matchers
   * The following querier limits:
     * `-querier.max-fetched-chunks-per-query`
     * `-querier.max-fetched-chunk-bytes-per-query`
@@ -417,7 +417,7 @@
   * `max_fetched_chunk_bytes_per_query`
   * `ruler_max_rules_per_rule_group`
   * `ruler_max_rule_groups_per_tenant`
-* [ENHANCEMENT] Querier now can use the `LabelNames` call with matchers, if matchers are provided in the `/labels` API call, instead of using the more expensive `MetricsForLabelMatchers` call as before. This can be enabled by enabling the `-querier.query-label-names-with-matchers-enabled` flag once the ingesters are updated to this version. In the future this is expected to become the default behavior. #3
+* [ENHANCEMENT] Querier now can use the `LabelNames` call with matchers, if matchers are provided in the `/labels` API call, instead of using the more expensive `MetricsForLabelMatchers` call as before. #3 #1186
 * [ENHANCEMENT] Ingester: added option `-ingester.readiness-check-ring-health` to disable the ring health check in the readiness endpoint. When disabled, the health checks are run against only the ingester itself instead of all ingesters in the ring. #48 #126
 * [ENHANCEMENT] Added option `-distributor.excluded-zones` to exclude ingesters running in specific zones both on write and read path. #51
 * [ENHANCEMENT] Store-gateway: added `cortex_bucket_store_sent_chunk_size_bytes` metric, tracking the size of chunks sent from store-gateway to querier. #123
