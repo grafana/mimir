@@ -235,7 +235,7 @@ type Ingester struct {
 	ingestionRate        *util_math.EwmaRate
 	inflightPushRequests atomic.Int64
 
-	// Last seen activeSeriesConfiguration. Need for diff based updating
+	// Last seen activeSeriesConfiguration. Needed for diff based updating.
 	runtimeMatchersConfig *RuntimeMatchersConfig
 }
 
@@ -261,7 +261,7 @@ func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus
 		forceCompactTrigger:   make(chan requestWithUsersAndCallback),
 		shipTrigger:           make(chan requestWithUsersAndCallback),
 		seriesHashCache:       hashcache.NewSeriesHashCache(cfg.BlocksStorageConfig.TSDB.SeriesHashCacheMaxBytes),
-		runtimeMatchersConfig: defaultRuntimeMatchers,
+		runtimeMatchersConfig: &RuntimeMatchersConfig{},
 	}, nil
 }
 
