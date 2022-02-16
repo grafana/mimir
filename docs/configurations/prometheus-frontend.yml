@@ -9,9 +9,6 @@ multitenancy_enabled: false
 # We only want to run the query-frontend module.
 target: query-frontend
 
-# We don't want the usual /api/prom prefix.
-http_prefix:
-
 server:
   http_listen_port: 9091
 

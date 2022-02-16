@@ -74,7 +74,7 @@ func mockAlertmanagerConfig(t *testing.T) *MultitenantAlertmanagerConfig {
 	t.Helper()
 
 	externalURL := flagext.URLValue{}
-	err := externalURL.Set("http://localhost/api/prom")
+	err := externalURL.Set("http://localhost/alertmanager")
 	require.NoError(t, err)
 
 	tempDir, err := ioutil.TempDir(os.TempDir(), "alertmanager")

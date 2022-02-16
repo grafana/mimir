@@ -5,7 +5,7 @@ datasources:
     type: prometheus
     access: proxy
     orgId: 1
-    url: http://load-balancer:9009/api/prom
+    url: http://load-balancer:9009/prometheus
     version: 1
     editable: true
     jsonData:
