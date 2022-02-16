@@ -391,7 +391,7 @@ clean-doc:
 	rm -f $(DOC_TEMPLATES:.template=.md)
 
 check-doc: doc
-	@git diff --exit-code -- $(DOC_TEMPLATES:.template=.md) $(DOC_EMBED) \
+	@find . -name "*.md" | xargs git diff --exit-code -- \
 	|| (echo "Please update generated documentation by running 'make doc' and committing the changes" && false)
 
 .PHONY: reference-help
