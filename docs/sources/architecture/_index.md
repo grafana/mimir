@@ -65,7 +65,7 @@ Incoming samples (writes from Prometheus) are handled by the [distributor](#dist
 
 The Grafana Mimir storage format is based on [Prometheus TSDB storage](https://prometheus.io/docs/prometheus/latest/storage/): it stores each tenant's time series into their own TSDB which persists series to an on-disk block.
 By default, each block has a two hour range.
-Each on-disk block directory contains an index file, a file containing metadata, and a tombstones file in addition to the time series chunks.
+Each on-disk block directory contains an index file, a file containing metadata and the time series chunks.
 
 The TSDB block files contain samples for multiple series. The series inside the blocks are then indexed by a per-block index, which indexes metric names and labels to time series in the block files.
 
