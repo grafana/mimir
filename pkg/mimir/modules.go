@@ -57,6 +57,7 @@ import (
 const (
 	ActivityTracker          string = "activity-tracker"
 	API                      string = "api"
+	SanityCheck              string = "sanity-check"
 	Ring                     string = "ring"
 	RuntimeConfig            string = "runtime-config"
 	Overrides                string = "overrides"
@@ -146,6 +147,12 @@ func (t *Mimir) initActivityTracker() (services.Service, error) {
 		}
 		return nil
 	}), nil
+}
+
+func (t *Mimir) initSanityCheck() (services.Service, error) {
+	return services.NewIdleService(func(ctx context.Context) error {
+		return runSanityCheck(ctx, t.Cfg, util_log.Logger)
+	}, nil), nil
 }
 
 func (t *Mimir) initServer() (services.Service, error) {
@@ -687,6 +694,7 @@ func (t *Mimir) setupModuleManager() error {
 	// RegisterModule(name string, initFn func()(services.Service, error))
 	mm.RegisterModule(Server, t.initServer, modules.UserInvisibleModule)
 	mm.RegisterModule(ActivityTracker, t.initActivityTracker, modules.UserInvisibleModule)
+	mm.RegisterModule(SanityCheck, t.initSanityCheck, modules.UserInvisibleModule)
 	mm.RegisterModule(API, t.initAPI, modules.UserInvisibleModule)
 	mm.RegisterModule(RuntimeConfig, t.initRuntimeConfig, modules.UserInvisibleModule)
 	mm.RegisterModule(MemberlistKV, t.initMemberlistKV, modules.UserInvisibleModule)
@@ -716,7 +724,7 @@ func (t *Mimir) setupModuleManager() error {
 
 	// Add dependencies
 	deps := map[string][]string{
-		Server:                   {ActivityTracker},
+		Server:                   {ActivityTracker, SanityCheck},
 		API:                      {Server},
 		MemberlistKV:             {API},
 		RuntimeConfig:            {API},

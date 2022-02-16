@@ -351,7 +351,7 @@ func TestRulerSharding(t *testing.T) {
 
 	// Start dependencies.
 	consul := e2edb.NewConsul()
-	minio := e2edb.NewMinio(9000, rulestoreBucketName)
+	minio := e2edb.NewMinio(9000, rulestoreBucketName, bucketName)
 	require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 	// Configure the ruler.
