@@ -120,7 +120,7 @@ Usage of ./cmd/mimir/mimir:
   -alertmanager.enable-api
     	Enable the alertmanager config API. (default true)
   -alertmanager.max-alerts-count int
-    	Maximum number of alerts that a single user can have. Inserting more alerts will fail with a log message and metric increment. 0 = no limit.
+    	Maximum number of alerts that a single tenant can have. Inserting more alerts will fail with a log message and metric increment. 0 = no limit.
   -alertmanager.max-alerts-size-bytes int
     	Maximum total size of alerts that a single user can have, alert size is the sum of the bytes of its labels, annotations and generatorURL. Inserting more alerts will fail with a log message and metric increment. 0 = no limit.
   -alertmanager.max-config-size-bytes int
@@ -134,7 +134,7 @@ Usage of ./cmd/mimir/mimir:
   -alertmanager.max-templates-count int
     	Maximum number of templates in tenant's Alertmanager configuration uploaded via Alertmanager API. 0 = no limit.
   -alertmanager.notification-rate-limit float
-    	Per-user rate limit for sending notifications from Alertmanager in notifications/sec. 0 = rate limit disabled. Negative value = no notifications are allowed.
+    	Per-tenant rate limit for sending notifications from Alertmanager in notifications/sec. 0 = rate limit disabled. Negative value = no notifications are allowed.
   -alertmanager.notification-rate-limit-per-integration value
     	Per-integration notification rate limits. Value is a map, where each key is integration name and value is a rate-limit (float). On command line, this map is given in JSON format. Rate limit has the same meaning as -alertmanager.notification-rate-limit, but only applies for specific integration. Allowed integration names: webhook, email, pagerduty, opsgenie, wechat, slack, victorops, pushover, sns. (default {})
   -alertmanager.peer-timeout duration
@@ -346,9 +346,9 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.bucket-store.metadata-cache.metafile-content-ttl duration
     	How long to cache content of the metafile. (default 24h0m0s)
   -blocks-storage.bucket-store.metadata-cache.metafile-doesnt-exist-ttl duration
-    	How long to cache information that block metafile doesn't exist. Also used for user deletion mark file. (default 5m0s)
+    	How long to cache information that block metafile doesn't exist. Also used for tenant deletion mark file. (default 5m0s)
   -blocks-storage.bucket-store.metadata-cache.metafile-exists-ttl duration
-    	How long to cache information that block metafile exists. Also used for user deletion mark file. (default 2h0m0s)
+    	How long to cache information that block metafile exists. Also used for tenant deletion mark file. (default 2h0m0s)
   -blocks-storage.bucket-store.metadata-cache.metafile-max-size-bytes int
     	Maximum size of metafile content to cache in bytes. Caching will be skipped if the content exceeds this size. This is useful to avoid network round trip for large content if the configured caching backend has an hard limit on cached items size (in this case, you should set this limit to the same limit in the caching backend). (default 1048576)
   -blocks-storage.bucket-store.metadata-cache.tenant-blocks-list-ttl duration
@@ -628,7 +628,7 @@ Usage of ./cmd/mimir/mimir:
   -distributor.ha-tracker.enable
     	Enable the distributors HA tracker so that it can accept samples from Prometheus HA replicas gracefully (requires labels).
   -distributor.ha-tracker.enable-for-all-users
-    	Flag to enable, for all users, handling of samples with external labels identifying replicas in an HA Prometheus setup.
+    	Flag to enable, for all tenants, handling of samples with external labels identifying replicas in an HA Prometheus setup.
   -distributor.ha-tracker.etcd.dial-timeout duration
     	The dial timeout for the etcd connection. (default 10s)
   -distributor.ha-tracker.etcd.endpoints value
@@ -654,7 +654,7 @@ Usage of ./cmd/mimir/mimir:
   -distributor.ha-tracker.failover-timeout duration
     	If we don't receive any samples from the accepted replica for a cluster in this amount of time we will failover to the next replica we receive a sample from. This value must be greater than the update timeout (default 30s)
   -distributor.ha-tracker.max-clusters int
-    	Maximum number of clusters that HA tracker will keep track of for single user. 0 to disable the limit.
+    	Maximum number of clusters that HA tracker will keep track of for a single tenant. 0 to disable the limit.
   -distributor.ha-tracker.multi.mirror-enabled
     	Mirror writes to secondary store.
   -distributor.ha-tracker.multi.mirror-timeout duration
@@ -676,9 +676,9 @@ Usage of ./cmd/mimir/mimir:
   -distributor.health-check-ingesters
     	Run a health check on each ingester client during periodic cleanup. (default true)
   -distributor.ingestion-burst-size int
-    	Per-user allowed ingestion burst size (in number of samples). (default 200000)
+    	Per-tenant allowed ingestion burst size (in number of samples). (default 200000)
   -distributor.ingestion-rate-limit float
-    	Per-user ingestion rate limit in samples per second. (default 10000)
+    	Per-tenant ingestion rate limit in samples per second. (default 10000)
   -distributor.ingestion-tenant-shard-size int
     	The tenant's shard size used by shuffle-sharding. Must be set both on ingesters and distributors. 0 disables shuffle sharding.
   -distributor.instance-limits.max-inflight-push-requests int
@@ -810,21 +810,21 @@ Usage of ./cmd/mimir/mimir:
   -ingester.instance-limits.max-series int
     	Max series that this ingester can hold (across all tenants). Requests to create additional series will be rejected. 0 = unlimited.
   -ingester.instance-limits.max-tenants int
-    	Max users (also referred to as 'tenants') that this ingester can hold. Requests from additional users will be rejected. 0 = unlimited.
+    	Max tenants that this ingester can hold. Requests from additional tenants will be rejected. 0 = unlimited.
   -ingester.max-global-exemplars-per-user int
     	[experimental] The maximum number of exemplars in memory, across the cluster. 0 to disable exemplars ingestion.
   -ingester.max-global-metadata-per-metric int
     	The maximum number of metadata per metric, across the cluster. 0 to disable.
   -ingester.max-global-metadata-per-user int
-    	The maximum number of active metrics with metadata per user, across the cluster. 0 to disable.
+    	The maximum number of active metrics with metadata per tenant, across the cluster. 0 to disable.
   -ingester.max-global-series-per-metric int
     	The maximum number of active series per metric name, across the cluster before replication. 0 to disable. (default 20000)
   -ingester.max-global-series-per-user int
-    	The maximum number of active series per user, across the cluster before replication. 0 to disable. (default 150000)
+    	The maximum number of active series per tenant, across the cluster before replication. 0 to disable. (default 150000)
   -ingester.metadata-retain-period duration
     	Period at which metadata we have not seen will remain in memory before being deleted. (default 10m0s)
   -ingester.rate-update-period duration
-    	Period with which to update the per-user ingestion rates. (default 15s)
+    	Period with which to update the per-tenant ingestion rates. (default 15s)
   -ingester.ring.consul.acl-token string
     	ACL Token used to interact with Consul.
   -ingester.ring.consul.client-timeout duration
@@ -1372,7 +1372,7 @@ Usage of ./cmd/mimir/mimir:
   -ruler.poll-interval duration
     	How frequently to poll for rule changes (default 1m0s)
   -ruler.query-stats-enabled
-    	Report the wall time for ruler queries to complete as a per user metric and as an info level log message.
+    	Report the wall time for ruler queries to complete as a per-tenant metric and as an info level log message.
   -ruler.resend-delay duration
     	Minimum amount of time to wait before resending an alert to Alertmanager. (default 1m0s)
   -ruler.ring.consul.acl-token string

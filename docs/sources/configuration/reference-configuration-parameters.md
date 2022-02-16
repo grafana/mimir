@@ -783,7 +783,7 @@ ring:
 # CLI flag: -ingester.metadata-retain-period
 [metadata_retain_period: <duration> | default = 10m]
 
-# (advanced) Period with which to update the per-user ingestion rates.
+# (advanced) Period with which to update the per-tenant ingestion rates.
 # CLI flag: -ingester.rate-update-period
 [rate_update_period: <duration> | default = 15s]
 
@@ -825,8 +825,8 @@ instance_limits:
   # CLI flag: -ingester.instance-limits.max-ingestion-rate
   [max_ingestion_rate: <float> | default = 0]
 
-  # (advanced) Max users (also referred to as 'tenants') that this ingester can
-  # hold. Requests from additional users will be rejected. 0 = unlimited.
+  # (advanced) Max tenants that this ingester can hold. Requests from additional
+  # tenants will be rejected. 0 = unlimited.
   # CLI flag: -ingester.instance-limits.max-tenants
   [max_tenants: <int> | default = 0]
 
@@ -1371,7 +1371,7 @@ ring:
 # CLI flag: -ruler.disabled-tenants
 [disabled_tenants: <string> | default = ""]
 
-# (advanced) Report the wall time for ruler queries to complete as a per user
+# (advanced) Report the wall time for ruler queries to complete as a per-tenant
 # metric and as an info level log message.
 # CLI flag: -ruler.query-stats-enabled
 [query_stats_enabled: <boolean> | default = false]
@@ -2433,15 +2433,15 @@ The `memberlist_config` configures the Gossip memberlist.
 The `limits_config` configures default and per-tenant limits imposed by services (ie. distributor, ingester, ...).
 
 ```yaml
-# Per-user ingestion rate limit in samples per second.
+# Per-tenant ingestion rate limit in samples per second.
 # CLI flag: -distributor.ingestion-rate-limit
 [ingestion_rate: <float> | default = 10000]
 
-# Per-user allowed ingestion burst size (in number of samples).
+# Per-tenant allowed ingestion burst size (in number of samples).
 # CLI flag: -distributor.ingestion-burst-size
 [ingestion_burst_size: <int> | default = 200000]
 
-# Flag to enable, for all users, handling of samples with external labels
+# Flag to enable, for all tenants, handling of samples with external labels
 # identifying replicas in an HA Prometheus setup.
 # CLI flag: -distributor.ha-tracker.enable-for-all-users
 [accept_ha_samples: <boolean> | default = false]
@@ -2454,8 +2454,8 @@ The `limits_config` configures default and per-tenant limits imposed by services
 # CLI flag: -distributor.ha-tracker.replica
 [ha_replica_label: <string> | default = "__replica__"]
 
-# Maximum number of clusters that HA tracker will keep track of for single user.
-# 0 to disable the limit.
+# Maximum number of clusters that HA tracker will keep track of for a single
+# tenant. 0 to disable the limit.
 # CLI flag: -distributor.ha-tracker.max-clusters
 [ha_max_clusters: <int> | default = 0]
 
@@ -2502,7 +2502,7 @@ The `limits_config` configures default and per-tenant limits imposed by services
 # Prometheus server, e.g. remote_write.write_relabel_configs.
 [metric_relabel_configs: <relabel_config...> | default = ]
 
-# The maximum number of active series per user, across the cluster before
+# The maximum number of active series per tenant, across the cluster before
 # replication. 0 to disable.
 # CLI flag: -ingester.max-global-series-per-user
 [max_global_series_per_user: <int> | default = 150000]
@@ -2512,7 +2512,7 @@ The `limits_config` configures default and per-tenant limits imposed by services
 # CLI flag: -ingester.max-global-series-per-metric
 [max_global_series_per_metric: <int> | default = 20000]
 
-# The maximum number of active metrics with metadata per user, across the
+# The maximum number of active metrics with metadata per tenant, across the
 # cluster. 0 to disable.
 # CLI flag: -ingester.max-global-metadata-per-user
 [max_global_metadata_per_user: <int> | default = 0]
@@ -2684,7 +2684,7 @@ The `limits_config` configures default and per-tenant limits imposed by services
 # CLI flag: -alertmanager.receivers-firewall-block-private-addresses
 [alertmanager_receivers_firewall_block_private_addresses: <boolean> | default = false]
 
-# Per-user rate limit for sending notifications from Alertmanager in
+# Per-tenant rate limit for sending notifications from Alertmanager in
 # notifications/sec. 0 = rate limit disabled. Negative value = no notifications
 # are allowed.
 # CLI flag: -alertmanager.notification-rate-limit
@@ -2722,7 +2722,7 @@ The `limits_config` configures default and per-tenant limits imposed by services
 # CLI flag: -alertmanager.max-dispatcher-aggregation-groups
 [alertmanager_max_dispatcher_aggregation_groups: <int> | default = 0]
 
-# Maximum number of alerts that a single user can have. Inserting more alerts
+# Maximum number of alerts that a single tenant can have. Inserting more alerts
 # will fail with a log message and metric increment. 0 = no limit.
 # CLI flag: -alertmanager.max-alerts-count
 [alertmanager_max_alerts_count: <int> | default = 0]
@@ -3064,12 +3064,12 @@ bucket_store:
     [chunks_list_ttl: <duration> | default = 24h]
 
     # (advanced) How long to cache information that block metafile exists. Also
-    # used for user deletion mark file.
+    # used for tenant deletion mark file.
     # CLI flag: -blocks-storage.bucket-store.metadata-cache.metafile-exists-ttl
     [metafile_exists_ttl: <duration> | default = 2h]
 
     # (advanced) How long to cache information that block metafile doesn't
-    # exist. Also used for user deletion mark file.
+    # exist. Also used for tenant deletion mark file.
     # CLI flag: -blocks-storage.bucket-store.metadata-cache.metafile-doesnt-exist-ttl
     [metafile_doesnt_exist_ttl: <duration> | default = 5m]
 
