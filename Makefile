@@ -419,7 +419,7 @@ $(LOAD_IMAGE_TARGETS):
 	export VERSION=$(VERSION); \
 	export GIT_BRANCH=$(GIT_BRANCH); \
 	export GIT_REVISION=$(GIT_REVISION); \
-	ko build -B --image-label org.opencontainers.image.title=$(CMD_NAME),org.opencontainers.image.source=https://github.com/grafana/mimir/tree/main/cmd/$(CMD_NAME),org.opencontainers.image.revision=$(GIT_REVISION) --tags $(IMAGE_TAG) --push=false --local ./cmd/$(CMD_NAME)
+	ko build -B --image-label org.opencontainers.image.title=$(CMD_NAME),org.opencontainers.image.source=https://github.com/grafana/mimir/tree/main/cmd/$(CMD_NAME),org.opencontainers.image.revision=$(GIT_REVISION) --tags $(IMAGE_TAG),latest --push=false --local ./cmd/$(CMD_NAME)
 
 .PHONY: load-docker-images
 load-docker-images: $(LOAD_IMAGE_TARGETS)
