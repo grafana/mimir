@@ -866,7 +866,6 @@ How to **investigate**:
 - `/distributor.Distributor/Push`
 - `/cortex.Ingester/Push`
 - `api_v1_push`
-- `api_prom_push`
 - `api_v1_push_influx_write`
 
 **Read path**:
@@ -875,14 +874,22 @@ How to **investigate**:
 - `/cortex.Ingester/QueryStream`
 - `/cortex.Ingester/QueryExemplars`
 - `/gatewaypb.StoreGateway/Series`
-- `api_prom_label`
+- `api_prom_api_v1_label_name_values`
+- `api_prom_api_v1_labels`
+- `api_prom_api_v1_metadata`
+- `api_prom_api_v1_query`
 - `api_prom_api_v1_query_exemplars`
+- `api_prom_api_v1_query_range`
+- `api_prom_api_v1_rules`
+- `api_prom_api_v1_series`
 
 **Ruler / rules path**:
 
 - `api_v1_rules`
 - `api_v1_rules_namespace`
-- `api_prom_rules_namespace`
+- `prometheus_api_v1_rules`
+- `prometheus_rules_namespace`
+- `prometheus_rules`
 
 ## Mimir blocks storage - What to do when things to wrong
 

@@ -1,7 +1,7 @@
 local utils = import 'mixin-utils/utils.libsonnet';
 
 (import 'dashboard-utils.libsonnet') {
-  local ruler_config_api_routes_re = 'api_prom_rules.*|api_prom_api_v1_(rules|alerts)',
+  local ruler_config_api_routes_re = '(prometheus|api_prom)_(rules.*|api_v1_(rules|alerts))',
 
   rulerQueries+:: {
     ruleEvaluations: {
