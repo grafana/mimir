@@ -469,8 +469,6 @@
 * [ENHANCEMENT] Querier: retry store-gateway in case of unexpected failure, instead of failing the query. #1003
 * [ENHANCEMENT] Added a new metric `mimir_build_info` to coincide with `cortex_build_info`. #1022
 * [ENHANCEMENT] Mimir runs a sanity check of storage config at startup and will fail to start if the sanity check doesn't pass. This is done to find potential config issues before starting up. #1180
-* [ENHANCEMENT] Distributor: reject exemplars with all-blank labels. #873
-* [ENHANCEMENT] Distributor: reject exemplars with blank label names or values. #873
 * [ENHANCEMENT] Distributor: reject exemplars with blank label names or values. The `cortex_discarded_exemplars_total` metric will use the `exemplar_labels_blank` reason in this case. #873
 * [BUGFIX] Frontend: Fixes @ modifier functions (start/end) when splitting queries by time. #206
 * [BUGFIX] Fixes a panic in the query-tee when comparing result. #207
