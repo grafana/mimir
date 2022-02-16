@@ -81,9 +81,10 @@ where `default_value` is the value to use if the environment variable is undefin
 
 ```yaml
 # Comma-separated list of components to include in the instantiated process. The
-# default value 'all' includes all components of a Mimir instance in
-# single-binary mode. Use the '-modules' command line flag to get a list of
-# available components, and to see which components are included with 'all'.
+# default value 'all' includes all components that are required to form a
+# functional Grafana Mimir instance in single-binary mode. Use the '-modules'
+# command line flag to get a list of available components, and to see which
+# components are included with 'all'.
 # CLI flag: -target
 [target: <string> | default = "all"]
 
