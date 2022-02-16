@@ -250,22 +250,6 @@ func isConsistent(uq *queues) error {
 	return nil
 }
 
-// getUsersByQuerier returns the list of users handled by the provided querierID.
-func getUsersByQuerier(queues *queues, querierID string) []string {
-	var userIDs []string
-	for userID, q := range queues.userQueues {
-		if q.queriers == nil {
-			// If it's nil then all queriers can handle this user.
-			userIDs = append(userIDs, userID)
-			continue
-		}
-		if _, ok := q.queriers[querierID]; ok {
-			userIDs = append(userIDs, userID)
-		}
-	}
-	return userIDs
-}
-
 func TestShuffleQueriers(t *testing.T) {
 	allQueriers := []string{"a", "b", "c", "d", "e"}
 
