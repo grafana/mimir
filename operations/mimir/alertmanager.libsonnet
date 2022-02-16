@@ -57,7 +57,8 @@
           [volumeMount.new('alertmanager-fallback-config', '/configs')]
         else []
       ) +
-      $.util.resourcesRequests('100m', '1Gi') +
+      $.util.resourcesRequests('2', '10Gi') +
+      $.util.resourcesLimits(null, '15Gi') +
       $.util.readinessProbe +
       $.jaeger_mixin
     else {},

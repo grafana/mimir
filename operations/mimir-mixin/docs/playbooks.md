@@ -61,7 +61,7 @@ How to **fix**:
 2. **Check if shuffle-sharding shard size is correct**<br />
 
 - When shuffle-sharding is enabled, we target up to 100K series / tenant / ingester assuming tenants on average use 50% of their max series limit.
-- Run the following **instant query** to find tenants that may cause higher pressure on some ingesters:
+- Run the following **instant query** to find tenants that might cause higher pressure on some ingesters:
 
   ```
   (
@@ -650,7 +650,7 @@ This alert fires when ingester memory utilization is getting too close to the li
 How it **works**:
 
 - Mimir ingesters are stateful services
-- Having 2+ ingesters `OOMKilled` may cause a cluster outage
+- Having 2+ ingesters `OOMKilled` might cause a cluster outage
 - Ingester memory baseline usage is primarily influenced by memory allocated by the process (mostly Go heap) and mmap-ed files (used by TSDB)
 - Ingester memory short spikes are primarily influenced by queries and TSDB head compaction into new blocks (occurring every 2h)
 - A pod gets `OOMKilled` once its working set memory reaches the configured limit, so it's important to prevent ingesters' memory utilization (working set memory) from getting close to the limit (we need to keep at least 30% room for spikes due to queries)
@@ -802,6 +802,21 @@ When an alertmanager cannot read the state for a tenant from storage it gets log
 
 - The state could not be merged because it might be invalid and could not be decoded. This could indicate data corruption and therefore a bug in the reading or writing of the state, and would need further investigation.
 - The state could not be read from storage. This could be due to a networking issue such as a timeout or an authentication and authorization issue with the remote object store.
+
+### MimirAlertmanagerAllocatingTooMuchMemory
+
+This alert fires when alertmanager memory utilization is getting too close to the limit.
+
+How it **works**:
+
+- Mimir alertmanager is an stateful service
+- Having 2+ alertmanagers `OOMKilled` might cause service interruption as it needs quorum for API responses. Notification (from alertmanager to third-party) can succeed without quorum.
+- Alertmanager memory baseline usage is primarily influenced by memory allocated by the process (mostly Go heap) for alerts and silences.
+- A pod gets `OOMKilled` once its working set memory reaches the configured limit, so it's important to prevent alertmanager's memory utilization (working set memory) from going over to the limit. The memory usage is typically sustained and does not suffer from spikes, hence thresholds are set very close to the limit.
+
+How to **fix**:
+
+- Scale up alertmanager replicas; you can use e.g. the `Mimir / Scaling` dashboard for reference, in order to determine the needed amount of alertmanagers.
 
 ### MimirRolloutStuck
 

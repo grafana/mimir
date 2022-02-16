@@ -12,8 +12,9 @@
 
 ### Jsonnet
 
-* [CHANGE] Disabled `-ingester.readiness-check-ring-health`. #1352
-* [FEATURE] Added multi-zone ingesters and store-gateways support. #1352
+* [CHANGE] Removed `$.distributor_deployment_labels`, `$.ingester_deployment_labels` and `$.querier_deployment_labels` fields, that were used by gossip.libsonnet to inject additional label. Now the label is injected directly into pods of statefulsets and deployments.
+* [CHANGE] Modify the Alertmanager CPU request to `2` and the memory request to `10Gi`. Also sets a memory limit to 50% over its request at `15Gi`. #1206
+* [ENHANCEMENT] Introduced a new alert for the Alertmanager: `MimirAlertmanagerAllocatingTooMuchMemory`. It has two severities based on the memory usage against limits, a `warning` level at 80% and a `critical` level at 90%. #1206
 
 ### Mimirtool
 

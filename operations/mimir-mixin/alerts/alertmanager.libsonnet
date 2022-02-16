@@ -92,6 +92,44 @@
             ||| % $._config,
           },
         },
+        {
+          alert: $.alertName('AlertmanagerAllocatingTooMuchMemory'),
+          expr: |||
+            (
+              container_memory_working_set_bytes{container="alertmanager"}
+                /
+              max(container_spec_memory_limit_bytes{container="alertmanager"})
+            ) > 0.80
+          |||,
+          'for': '15m',
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: |||
+              Alertmanager {{ $labels.pod }} in %(alert_aggregation_variables)s is using too much memory.
+            ||| % $._config,
+          },
+        },
+        {
+          alert: $.alertName('AlertmanagerAllocatingTooMuchMemory'),
+          expr: |||
+            (
+              container_memory_working_set_bytes{container="alertmanager"}
+                /
+              max(container_spec_memory_limit_bytes{container="alertmanager"})
+            ) > 0.90
+          |||,
+          'for': '15m',
+          labels: {
+            severity: 'critical',
+          },
+          annotations: {
+            message: |||
+              Alertmanager {{ $labels.pod }} in %(alert_aggregation_variables)s is using too much memory.
+            ||| % $._config,
+          },
+        },
       ],
     },
   ],
