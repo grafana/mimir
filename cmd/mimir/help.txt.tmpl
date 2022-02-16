@@ -371,6 +371,8 @@ Usage of ./cmd/mimir/mimir:
     	Expected number of samples per timeseries, used for preallocations. (default 10)
   -ingester-client.expected-timeseries int
     	Expected number of timeseries per request, used for preallocations. (default 100)
+  -ingester.active-series-custom-trackers value
+    	Additional active series metrics, matching the provided matchers. Matchers should be in form <name>:<matcher>, like 'foobar:{foo="bar"}'. Multiple matchers can be provided either providing the flag multiple times or providing multiple semicolon-separated values to a single flag.
   -ingester.active-series-metrics-enabled
     	Enable tracking of active series and export them as metrics. (default true)
   -ingester.availability-zone string

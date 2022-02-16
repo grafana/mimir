@@ -121,10 +121,11 @@ type Config struct {
 
 	RateUpdatePeriod time.Duration `yaml:"rate_update_period" category:"advanced"`
 
-	ActiveSeriesMetricsEnabled      bool                          `yaml:"active_series_metrics_enabled"`
-	ActiveSeriesMetricsUpdatePeriod time.Duration                 `yaml:"active_series_metrics_update_period" category:"advanced"`
-	ActiveSeriesMetricsIdleTimeout  time.Duration                 `yaml:"active_series_metrics_idle_timeout" category:"advanced"`
-	RuntimeMatchersConfigFn         func() *RuntimeMatchersConfig `yaml:"-"`
+	ActiveSeriesMetricsEnabled      bool                             `yaml:"active_series_metrics_enabled"`
+	ActiveSeriesMetricsUpdatePeriod time.Duration                    `yaml:"active_series_metrics_update_period" category:"advanced"`
+	ActiveSeriesMetricsIdleTimeout  time.Duration                    `yaml:"active_series_metrics_idle_timeout" category:"advanced"`
+	ActiveSeriesCustomTrackers      ActiveSeriesCustomTrackersConfig `yaml:"active_series_custom_trackers" doc:"description=Additional custom trackers for active metrics. If there are active series matching a provided matcher (map value), the count will be exposed in the custom trackers metric labeled using the tracker name (map key). Zero valued counts are not exposed (and removed when they go back to zero)."`
+	RuntimeMatchersConfigFn         func() *RuntimeMatchersConfig    `yaml:"-"`
 
 	ExemplarsUpdatePeriod time.Duration `yaml:"exemplars_update_period" category:"experimental"`
 
@@ -153,6 +154,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.ActiveSeriesMetricsEnabled, "ingester.active-series-metrics-enabled", true, "Enable tracking of active series and export them as metrics.")
 	f.DurationVar(&cfg.ActiveSeriesMetricsUpdatePeriod, "ingester.active-series-metrics-update-period", 1*time.Minute, "How often to update active series metrics.")
 	f.DurationVar(&cfg.ActiveSeriesMetricsIdleTimeout, "ingester.active-series-metrics-idle-timeout", 10*time.Minute, "After what time a series is considered to be inactive.")
+	f.Var(&cfg.ActiveSeriesCustomTrackers, "ingester.active-series-custom-trackers", "Additional active series metrics, matching the provided matchers. Matchers should be in form <name>:<matcher>, like 'foobar:{foo=\"bar\"}'. Multiple matchers can be provided either providing the flag multiple times or providing multiple semicolon-separated values to a single flag.")
 
 	f.BoolVar(&cfg.StreamChunksWhenUsingBlocks, "ingester.stream-chunks-when-using-blocks", true, "Stream chunks from ingesters to queriers.")
 	f.DurationVar(&cfg.ExemplarsUpdatePeriod, "ingester.exemplars-update-period", 15*time.Second, "Period with which to update per-user max exemplars.")
@@ -198,7 +200,7 @@ type Ingester struct {
 	logger  log.Logger
 
 	// Now it is used to track default matcher
-	activeSeriesMatchers *ActiveSeriesMatchers
+	activeSeriesMatcher *ActiveSeriesMatchers
 
 	lifecycler         *ring.Lifecycler
 	limits             *validation.Overrides
@@ -250,18 +252,18 @@ func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus
 	}
 
 	return &Ingester{
-		cfg:    cfg,
-		limits: limits,
-		logger: logger,
+		cfg:                 cfg,
+		limits:              limits,
+		logger:              logger,
+		activeSeriesMatcher: &ActiveSeriesMatchers{},
 
-		tsdbs:                make(map[string]*userTSDB),
-		usersMetadata:        make(map[string]*userMetricsMetadata),
-		bucket:               bucketClient,
-		tsdbMetrics:          newTSDBMetrics(registerer),
-		forceCompactTrigger:  make(chan requestWithUsersAndCallback),
-		shipTrigger:          make(chan requestWithUsersAndCallback),
-		seriesHashCache:      hashcache.NewSeriesHashCache(cfg.BlocksStorageConfig.TSDB.SeriesHashCacheMaxBytes),
-		activeSeriesMatchers: &getRuntimeMatchersConfig(cfg.RuntimeMatchersConfigFn).DefaultMatchers,
+		tsdbs:               make(map[string]*userTSDB),
+		usersMetadata:       make(map[string]*userMetricsMetadata),
+		bucket:              bucketClient,
+		tsdbMetrics:         newTSDBMetrics(registerer),
+		forceCompactTrigger: make(chan requestWithUsersAndCallback),
+		shipTrigger:         make(chan requestWithUsersAndCallback),
+		seriesHashCache:     hashcache.NewSeriesHashCache(cfg.BlocksStorageConfig.TSDB.SeriesHashCacheMaxBytes),
 	}, nil
 }
 
@@ -280,6 +282,12 @@ func New(cfg Config, clientConfig client.Config, limits *validation.Overrides, r
 	i.clientConfig = clientConfig
 	i.ingestionRate = util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval)
 	i.metrics = newIngesterMetrics(registerer, cfg.ActiveSeriesMetricsEnabled, i.getInstanceLimits, i.ingestionRate, &i.inflightPushRequests)
+
+	asm, err := NewActiveSeriesMatchers(cfg.ActiveSeriesCustomTrackers)
+	if err != nil {
+		return nil, err
+	}
+	i.activeSeriesMatcher = asm
 
 	// Replace specific metrics which we can't directly track but we need to read
 	// them from the underlying system (ie. TSDB).
@@ -472,10 +480,6 @@ func (i *Ingester) updateLoop(ctx context.Context) error {
 
 func (i *Ingester) reloadConfig(now time.Time) {
 	currentConfig := getRuntimeMatchersConfig(i.cfg.RuntimeMatchersConfigFn)
-	if !currentConfig.DefaultMatchers.Equals(i.activeSeriesMatchers) {
-		// only replace default matcher object if changed to avoid memory leak
-		i.activeSeriesMatchers = &currentConfig.DefaultMatchers
-	}
 	for _, userID := range i.getTSDBUsers() {
 		userDB := i.getTSDB(userID)
 		if userDB == nil {
@@ -492,9 +496,16 @@ func (i *Ingester) reloadConfig(now time.Time) {
 }
 
 func (i *Ingester) getActiveSeriesMatchers(userID string, config *RuntimeMatchersConfig) *ActiveSeriesMatchers {
+	if config == nil {
+		return i.activeSeriesMatcher
+	}
 	val, ok := config.TenantSpecificMatchers[userID]
 	if !ok {
-		return i.activeSeriesMatchers
+		if !i.activeSeriesMatcher.Equals(&config.DefaultMatchers) {
+			// this avoids referencing multiple instances of deserialized DefaultMatchers
+			i.activeSeriesMatcher = &config.DefaultMatchers
+		}
+		return i.activeSeriesMatcher
 	}
 	return &val
 }
@@ -507,12 +518,12 @@ func (i *Ingester) ReplaceMatchers(asm *ActiveSeriesMatchers, userDB *userTSDB) 
 
 func getRuntimeMatchersConfig(runtimeMatchersConfigFn func() *RuntimeMatchersConfig) *RuntimeMatchersConfig {
 	if runtimeMatchersConfigFn == nil {
-		return &RuntimeMatchersConfig{}
+		return nil
 	}
 
 	r := runtimeMatchersConfigFn()
 	if r == nil {
-		return &RuntimeMatchersConfig{}
+		return nil
 	}
 
 	return r
