@@ -610,7 +610,7 @@ ring:
   # List of network interface names to look up when finding the instance IP
   # address.
   # CLI flag: -distributor.ring.instance-interface-names
-  [instance_interface_names: <list of string> | default = [eth0 en0]]
+  [instance_interface_names: <list of string> | default = [<private network interfaces>]]
 
   # (advanced) Port to advertise in the ring (defaults to
   # -server.grpc-listen-port).
@@ -1062,7 +1062,7 @@ grpc_client_config:
 # instance IP address. This address is sent to query-scheduler and querier,
 # which uses it to send the query response back to query-frontend.
 # CLI flag: -query-frontend.instance-interface-names
-[instance_interface_names: <list of string> | default = [eth0 en0]]
+[instance_interface_names: <list of string> | default = [<private network interfaces>]]
 
 # (advanced) IP address to advertise to the querier (via scheduler) (default is
 # auto-detected from network interfaces).
@@ -1336,7 +1336,7 @@ ring:
   # List of network interface names to look up when finding the instance IP
   # address.
   # CLI flag: -ruler.ring.instance-interface-names
-  [instance_interface_names: <list of string> | default = [eth0 en0]]
+  [instance_interface_names: <list of string> | default = [<private network interfaces>]]
 
   # (advanced) Port to advertise in the ring (defaults to
   # -server.grpc-listen-port).
@@ -1700,7 +1700,7 @@ sharding_ring:
   # (advanced) List of network interface names to look up when finding the
   # instance IP address.
   # CLI flag: -alertmanager.sharding-ring.instance-interface-names
-  [instance_interface_names: <list of string> | default = [eth0 en0]]
+  [instance_interface_names: <list of string> | default = [<private network interfaces>]]
 
   # (advanced) Port to advertise in the ring (defaults to
   # -server.grpc-listen-port).
@@ -3461,7 +3461,7 @@ sharding_ring:
   # List of network interface names to look up when finding the instance IP
   # address.
   # CLI flag: -compactor.ring.instance-interface-names
-  [instance_interface_names: <list of string> | default = [eth0 en0]]
+  [instance_interface_names: <list of string> | default = [<private network interfaces>]]
 
   # (advanced) Port to advertise in the ring (defaults to
   # -server.grpc-listen-port).
@@ -3574,7 +3574,7 @@ sharding_ring:
   # List of network interface names to look up when finding the instance IP
   # address.
   # CLI flag: -store-gateway.sharding-ring.instance-interface-names
-  [instance_interface_names: <list of string> | default = [eth0 en0]]
+  [instance_interface_names: <list of string> | default = [<private network interfaces>]]
 
   # (advanced) Port to advertise in the ring (defaults to
   # -server.grpc-listen-port).

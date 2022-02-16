@@ -15,6 +15,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv"
+	"github.com/grafana/dskit/netutil"
 	"github.com/grafana/dskit/ring"
 
 	util_log "github.com/grafana/mimir/pkg/util/log"
@@ -56,7 +57,7 @@ type RingConfig struct {
 
 	// Instance details
 	InstanceID             string   `yaml:"instance_id" doc:"default=<hostname>" category:"advanced"`
-	InstanceInterfaceNames []string `yaml:"instance_interface_names" category:"advanced"`
+	InstanceInterfaceNames []string `yaml:"instance_interface_names" category:"advanced" doc:"default=[<private network interfaces>]"`
 	InstancePort           int      `yaml:"instance_port" category:"advanced"`
 	InstanceAddr           string   `yaml:"instance_addr" category:"advanced"`
 	InstanceZone           string   `yaml:"instance_availability_zone" category:"advanced"`
@@ -70,7 +71,7 @@ type RingConfig struct {
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
-func (cfg *RingConfig) RegisterFlags(f *flag.FlagSet) {
+func (cfg *RingConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	hostname, err := os.Hostname()
 	if err != nil {
 		level.Error(util_log.Logger).Log("msg", "failed to get hostname", "err", err)
@@ -89,7 +90,7 @@ func (cfg *RingConfig) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.ZoneAwarenessEnabled, rfprefix+"zone-awareness-enabled", false, "True to enable zone-awareness and replicate alerts across different availability zones.")
 
 	// Instance flags
-	cfg.InstanceInterfaceNames = []string{"eth0", "en0"}
+	cfg.InstanceInterfaceNames = netutil.PrivateNetworkInterfacesWithFallback([]string{"eth0", "en0"}, logger)
 	f.Var((*flagext.StringSlice)(&cfg.InstanceInterfaceNames), rfprefix+"instance-interface-names", "List of network interface names to look up when finding the instance IP address.")
 	f.StringVar(&cfg.InstanceAddr, rfprefix+"instance-addr", "", "IP address to advertise in the ring. Default is auto-detected.")
 	f.IntVar(&cfg.InstancePort, rfprefix+"instance-port", 0, "Port to advertise in the ring (defaults to -server.grpc-listen-port).")

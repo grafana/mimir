@@ -119,8 +119,8 @@ type Config struct {
 }
 
 // RegisterFlags registers the MultitenantCompactor flags.
-func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
-	cfg.ShardingRing.RegisterFlags(f)
+func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
+	cfg.ShardingRing.RegisterFlags(f, logger)
 
 	cfg.BlockRanges = mimir_tsdb.DurationList{2 * time.Hour, 12 * time.Hour, 24 * time.Hour}
 	cfg.retryMinBackoff = 10 * time.Second

@@ -190,7 +190,7 @@ Usage of ./cmd/mimir/mimir:
   -alertmanager.sharding-ring.instance-id string
     	Instance ID to register in the ring. (default "<hostname>")
   -alertmanager.sharding-ring.instance-interface-names value
-    	List of network interface names to look up when finding the instance IP address. (default [eth0 en0])
+    	List of network interface names to look up when finding the instance IP address. (default [<private network interfaces>])
   -alertmanager.sharding-ring.instance-port int
     	Port to advertise in the ring (defaults to -server.grpc-listen-port).
   -alertmanager.sharding-ring.multi.mirror-enabled
@@ -566,7 +566,7 @@ Usage of ./cmd/mimir/mimir:
   -compactor.ring.instance-id string
     	Instance ID to register in the ring. (default "<hostname>")
   -compactor.ring.instance-interface-names value
-    	List of network interface names to look up when finding the instance IP address. (default [eth0 en0])
+    	List of network interface names to look up when finding the instance IP address. (default [<private network interfaces>])
   -compactor.ring.instance-port int
     	Port to advertise in the ring (defaults to -server.grpc-listen-port).
   -compactor.ring.multi.mirror-enabled
@@ -732,7 +732,7 @@ Usage of ./cmd/mimir/mimir:
   -distributor.ring.instance-id string
     	Instance ID to register in the ring. (default "<hostname>")
   -distributor.ring.instance-interface-names value
-    	List of network interface names to look up when finding the instance IP address. (default [eth0 en0])
+    	List of network interface names to look up when finding the instance IP address. (default [<private network interfaces>])
   -distributor.ring.instance-port int
     	Port to advertise in the ring (defaults to -server.grpc-listen-port).
   -distributor.ring.multi.mirror-enabled
@@ -1114,7 +1114,7 @@ Usage of ./cmd/mimir/mimir:
   -query-frontend.instance-addr string
     	IP address to advertise to the querier (via scheduler) (default is auto-detected from network interfaces).
   -query-frontend.instance-interface-names value
-    	List of network interface names to look up when finding the instance IP address. This address is sent to query-scheduler and querier, which uses it to send the query response back to query-frontend. (default [eth0 en0])
+    	List of network interface names to look up when finding the instance IP address. This address is sent to query-scheduler and querier, which uses it to send the query response back to query-frontend. (default [<private network interfaces>])
   -query-frontend.instance-port int
     	Port to advertise to querier (via scheduler) (defaults to server.grpc-listen-port).
   -query-frontend.log-queries-longer-than duration
@@ -1418,7 +1418,7 @@ Usage of ./cmd/mimir/mimir:
   -ruler.ring.instance-id string
     	Instance ID to register in the ring. (default "<hostname>")
   -ruler.ring.instance-interface-names value
-    	List of network interface names to look up when finding the instance IP address. (default [eth0 en0])
+    	List of network interface names to look up when finding the instance IP address. (default [<private network interfaces>])
   -ruler.ring.instance-port int
     	Port to advertise in the ring (defaults to -server.grpc-listen-port).
   -ruler.ring.multi.mirror-enabled
@@ -1562,7 +1562,7 @@ Usage of ./cmd/mimir/mimir:
   -store-gateway.sharding-ring.instance-id string
     	Instance ID to register in the ring. (default "<hostname>")
   -store-gateway.sharding-ring.instance-interface-names value
-    	List of network interface names to look up when finding the instance IP address. (default [eth0 en0])
+    	List of network interface names to look up when finding the instance IP address. (default [<private network interfaces>])
   -store-gateway.sharding-ring.instance-port int
     	Port to advertise in the ring (defaults to -server.grpc-listen-port).
   -store-gateway.sharding-ring.multi.mirror-enabled

@@ -75,7 +75,7 @@ compaction_retries: 123
 func TestConfig_ShouldSupportCliFlags(t *testing.T) {
 	fs := flag.NewFlagSet("", flag.PanicOnError)
 	cfg := Config{}
-	cfg.RegisterFlags(fs)
+	cfg.RegisterFlags(fs, log.NewNopLogger())
 	require.NoError(t, fs.Parse([]string{
 		"-compactor.block-ranges=2h,48h",
 		"-compactor.consistency-delay=1h",

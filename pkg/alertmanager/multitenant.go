@@ -91,7 +91,7 @@ const (
 )
 
 // RegisterFlags adds the flags required to config this to the given FlagSet.
-func (cfg *MultitenantAlertmanagerConfig) RegisterFlags(f *flag.FlagSet) {
+func (cfg *MultitenantAlertmanagerConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.StringVar(&cfg.DataDir, "alertmanager.storage.path", "./data-alertmanager/", "Directory to store Alertmanager state and temporarily configuration files. The content of this directory is not required to be persisted between restarts unless Alertmanager replication has been disabled.")
 	f.DurationVar(&cfg.Retention, "alertmanager.storage.retention", 5*24*time.Hour, "How long to keep data for.")
 	f.Int64Var(&cfg.MaxRecvMsgSize, "alertmanager.max-recv-msg-size", 16<<20, "Maximum size (bytes) of an accepted HTTP request body.")
@@ -106,7 +106,7 @@ func (cfg *MultitenantAlertmanagerConfig) RegisterFlags(f *flag.FlagSet) {
 
 	cfg.AlertmanagerClient.RegisterFlagsWithPrefix("alertmanager.alertmanager-client", f)
 	cfg.Persister.RegisterFlagsWithPrefix("alertmanager", f)
-	cfg.ShardingRing.RegisterFlags(f)
+	cfg.ShardingRing.RegisterFlags(f, logger)
 
 	f.DurationVar(&cfg.PeerTimeout, "alertmanager.peer-timeout", defaultPeerTimeout, "Time to wait between peers to send notifications.")
 }
