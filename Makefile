@@ -61,6 +61,13 @@ DOC_TEMPLATES := docs/sources/configuration/reference-configuration-parameters.t
 	docs/sources/architecture/querier.template \
 	docs/sources/operating-grafana-mimir/encrypt-data-at-rest.template
 
+# Documents to run through embedding
+DOC_EMBED := docs/sources/configuration/using-the-query-frontend-with-prometheus.md \
+	docs/sources/operating-grafana-mimir/mirror-requests-to-a-second-cluster.md \
+	docs/sources/guides/overrides-exporter.md \
+	docs/sources/getting-started/_index.md \
+	operations/mimir/README.md
+
 .PHONY: image-tag
 image-tag:
 	@echo $(IMAGE_TAG)
@@ -313,14 +320,12 @@ check-protos: clean-protos protos
 %.md : %.template
 	go run ./tools/doc-generator $< > $@
 
-doc: ## Generates the config file documentation.
-doc: clean-doc $(DOC_TEMPLATES:.template=.md)
-	embedmd -w docs/sources/configuration/using-the-query-frontend-with-prometheus.md
-	embedmd -w docs/sources/operating-grafana-mimir/mirror-requests-to-a-second-cluster.md
-	embedmd -w docs/sources/guides/overrides-exporter.md
-	embedmd -w docs/sources/getting-started/_index.md
-	embedmd -w operations/mimir/README.md
+.PHONY: %.md.embedmd
+%.md.embedmd : %.md
+	embedmd -w $<
 
+doc: ## Generates the config file documentation.
+doc: clean-doc $(DOC_TEMPLATES:.template=.md) $(DOC_EMBED:.md=.md.embedmd)
 	# Make up markdown files prettier. When running with check-doc target, it will fail if this produces any change.
 	prettier --write "**/*.md"
 
@@ -386,14 +391,7 @@ clean-doc:
 	rm -f $(DOC_TEMPLATES:.template=.md)
 
 check-doc: doc
-	@git diff --exit-code -- \
-		./docs/sources/configuration/*.md \
-		./docs/sources/architecture/*.md \
-		./docs/sources/blocks-storage/*.md \
-		./docs/sources/configuration/*.md \
-		./docs/sources/operating-grafana-mimir/*.md \
-		./operations/mimir/*.md \
-		./operations/mimir-mixin/docs/sources/*.md \
+	@git diff --exit-code -- $(DOC_TEMPLATES:.template=.md) $(DOC_EMBED) \
 	|| (echo "Please update generated documentation by running 'make doc' and committing the changes" && false)
 
 .PHONY: reference-help
