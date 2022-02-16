@@ -40,7 +40,7 @@ Contrary to the sole replication and given the persistent disk data is not lost,
 
 **Zone aware replication** ensures that the ingester replicas for a given time series are spread across different zones.
 Zones may represent logical or physical failure domains, for example different data centers.
-Spreading replicas across multiple zones prevents data loss when there is a zone wide outage.
+Spreading replicas across multiple zones prevents data loss and service interruptions when there is a zone wide outage.
 
 For more information on how to set up multi-zone replication, please refer to [zone aware replication]({{<relref "../guides/zone-replication.md">}}).
 
