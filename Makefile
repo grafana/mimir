@@ -394,7 +394,7 @@ check-doc: doc
 		./docs/sources/operating-grafana-mimir/*.md \
 		./operations/mimir/*.md \
 		./operations/mimir-mixin/docs/sources/*.md \
-	|| (echo "Please check in your changes and update generated documentation by running 'make doc'" && false)
+	|| (echo "Please update generated documentation by running 'make doc' and committing the changes" && false)
 
 .PHONY: reference-help
 reference-help: cmd/mimir/mimir
