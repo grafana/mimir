@@ -6,8 +6,7 @@ weight: 100
 
 # Tenant injector
 
-Tenant injector is an HTTP proxy that injects `X-Scope-OrgId` header with value specified by `-tenant-id` option
-to incoming HTTP requests, and forwards such modified requests to specified `-remote-address`.
+Tenant injector is a standalone HTTP proxy that injects the `X-Scope-OrgID` header with value specified by `-tenant-id` flag to incoming HTTP requests, and forwards such modified requests to the URL specified by `-remote-address`.
 
 This can be used to query data for a specific tenant during development or troubleshooting.
 
