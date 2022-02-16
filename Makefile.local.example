@@ -1,6 +1,6 @@
 # Example of extending Makefile with Makefile.local.
 
-BUILD_IMAGE ?= us.gcr.io/kubernetes-dev/mimir-build-image
+BUILD_IMAGE ?= grafana/mimir-build-image
 IMAGE_PREFIX ?= custom-prefix/
 
 mimir-push: cmd/mimir/.uptodate

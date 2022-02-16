@@ -30,7 +30,7 @@ BINARY_SUFFIX ?= ""
 
 # Boiler plate for building Docker containers.
 # All this must go at top of file I'm afraid.
-IMAGE_PREFIX ?= us.gcr.io/kubernetes-dev/
+IMAGE_PREFIX ?= grafana/
 BUILD_IMAGE ?= $(IMAGE_PREFIX)mimir-build-image
 
 # For a tag push GITHUB_REF will look like refs/tags/<tag_name>,
@@ -63,7 +63,7 @@ image-tag:
 SED ?= $(shell which gsed 2>/dev/null || which sed)
 
 # Building Docker images is now automated. The convention is every directory
-# with a Dockerfile in it builds an image called us.gcr.io/kubernetes-dev/<directory>.
+# with a Dockerfile in it builds an image called grafana/<directory>.
 # Dependencies (i.e. things that go in the image) still need to be explicitly
 # declared.
 #
@@ -170,7 +170,7 @@ mimir-build-image/$(UPTODATE): mimir-build-image/*
 # All the boiler plate for building golang follows:
 SUDO := $(shell docker info >/dev/null 2>&1 || echo "sudo -E")
 BUILD_IN_CONTAINER := true
-LATEST_BUILD_IMAGE_TAG ?= remove-website-c9babc116
+LATEST_BUILD_IMAGE_TAG ?= chore-publish-images-to-dockerhub-771364985
 
 # TTY is parameterized to allow Google Cloud Builder to run builds,
 # as it currently disallows TTY devices. This value needs to be overridden

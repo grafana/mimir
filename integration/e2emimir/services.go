@@ -22,12 +22,12 @@ const (
 // GetDefaultImage returns the Docker image to use to run Mimir.
 func GetDefaultImage() string {
 	// Get the mimir image from the MIMIR_IMAGE env variable,
-	// falling back to  "us.gcr.io/kubernetes-dev/mimir:latest"
+	// falling back to grafana/mimir:latest"
 	if os.Getenv("MIMIR_IMAGE") != "" {
 		return os.Getenv("MIMIR_IMAGE")
 	}
 
-	return "us.gcr.io/kubernetes-dev/mimir:latest"
+	return "grafana/mimir:latest"
 }
 
 // GetExtraArgs returns the extra args to pass to the Docker command used to run Mimir.

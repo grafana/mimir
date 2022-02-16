@@ -15,7 +15,7 @@ When integration tests run in CI, we build the Mimir docker image based on the P
 make ./cmd/mimir/.uptodate
 ```
 
-This will locally build the `us.gcr.io/kubernetes-dev/mimir:latest` image used by integration tests. Whenever the Mimir code changes (`cmd/`, `pkg/` or vendors) you should rebuild the Mimir image, while it's **not** necessary to rebuild it while developing integration tests.
+This will locally build the `grafana/mimir:latest` image used by integration tests. Whenever the Mimir code changes (`cmd/`, `pkg/` or vendors) you should rebuild the Mimir image, while it's **not** necessary to rebuild it while developing integration tests.
 
 Once the Docker image is built, you can run integration tests:
 
@@ -32,7 +32,7 @@ go test -v -tags=requires_docker ./integration -run "^TestChunksStorageAllIndexB
 ### Supported environment variables
 
 - **`MIMIR_IMAGE`**<br />
-  Docker image used to run Mimir in integration tests (defaults to `us.gcr.io/kubernetes-dev/mimir:latest`)
+  Docker image used to run Mimir in integration tests (defaults to `grafana/mimir:latest`)
 - **`MIMIR_CHECKOUT_DIR`**<br />
   The absolute path of the Mimir repository local checkout (defaults to `$GOPATH/src/github.com/grafana/mimir`)
 - **`E2E_TEMP_DIR`**<br />
