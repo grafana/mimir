@@ -364,6 +364,7 @@
     | `/ring`         | `/ingester/ring`      |
     | `/shutdown`     | `/ingester/shutdown`  |
     | `/flush`        | `/ingester/flush`     |
+    | `/push`         | `/ingester/push`      |
 
   * Ruler endpoints
 
