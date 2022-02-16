@@ -11,21 +11,18 @@ While exemplars can be enabled for all tenants at once or for only specific tena
 
 ## Enable exemplars globally
 
-1. Ensure Grafana Mimir uses a runtime configuration file using the flag `-runtime-config.file`.
-   For more information about supported runtime configuration, refer to [Runtime configuration file]({{<relref "../../configuration/about-grafana-mimir-arguments.md#runtime-configuration-file" >}})
-1. In the runtime configuration file, set the `ingester_limits.max_global_exemplars_per_user` value.
+1. In the Grafana Mimir configuration file, set the `limits.max_global_exemplars_per_user` value.
    Start with a relatively low number (10,000) and adjust it if needed.
 
-A partial runtime configuration file with `max_global_exemplars_per_user` set globally would look as follows:
+A partial Grafana Mimir configuration file with `max_global_exemplars_per_user` set globally would look as follows:
 
 ```yaml
-ingester_limits:
+limits:
   max_global_exemplars_per_user: 10000
 ```
 
-3. Save and deploy the runtime configuration file.
-
-After the `-runtime-config.reload-period` has elapsed, components reload the runtime configuration file and use the updated configuration.
+3. Save and deploy the configuration file.
+4. Perform a rolling update of Grafana Mimir components.
 
 ## Enable exemplars for a specific tenant
 
