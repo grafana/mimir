@@ -474,7 +474,7 @@ func (i *Ingester) reloadConfig(now time.Time) {
 			continue
 		}
 		newMatchers := getActiveSeriesMatchers(userID, *currentConfig)
-		if newMatchers != userDB.activeSeries.asm {
+		if !newMatchers.Equals(userDB.activeSeries.asm) {
 			err := i.ReplaceMatchers(newMatchers, userDB)
 			if err != nil {
 				level.Error(i.logger).Log("msg", "failed to update config", "user", userID, "err", err)

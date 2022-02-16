@@ -87,6 +87,40 @@ type ActiveSeriesMatchers struct {
 	matchers []labelsMatchers
 }
 
+func (asm *ActiveSeriesMatchers) Equals(other *ActiveSeriesMatchers) bool {
+	if asm == nil && other != nil {
+		return false
+	}
+	if asm != nil && other == nil {
+		return false
+	}
+	if len(asm.names) != len(other.names) {
+		return false
+	}
+	if len(asm.matchers) != len(other.matchers) {
+		return false
+	}
+
+	for i, _ := range asm.names {
+		if asm.names[i] != other.names[i] {
+			return false
+		}
+	}
+
+	for i, _ := range asm.matchers {
+		if len(asm.matchers[i]) != len(other.matchers[i]) {
+			return false
+		}
+		for j, _ := range asm.matchers[i] {
+			if asm.matchers[i][j].String() != other.matchers[i][j].String() {
+				return false
+			}
+		}
+	}
+
+	return true
+}
+
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
 func (asm *ActiveSeriesMatchers) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	m := ActiveSeriesCustomTrackersConfig{}

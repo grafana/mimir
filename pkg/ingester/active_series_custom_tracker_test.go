@@ -191,6 +191,25 @@ func TestActiveSeriesMatcher_MalformedMatcher(t *testing.T) {
 	}
 }
 
+func TestActiveSeriesMatcher_Equality(t *testing.T) {
+	matcher1 := `foo:{foo="bar"};baz:{baz="bar"}`
+	matcher2 := `baz:{baz="bar"};foo:{foo="bar"}`
+	t.Run("Equality", func(t *testing.T) {
+		config1 := ActiveSeriesCustomTrackersConfig{}
+		err := config1.Set(matcher1)
+		assert.NoError(t, err)
+		config2 := ActiveSeriesCustomTrackersConfig{}
+		err = config2.Set(matcher2)
+		assert.NoError(t, err)
+
+		asm1, err := NewActiveSeriesMatchers(config1)
+		assert.NoError(t, err)
+		asm2, err := NewActiveSeriesMatchers(config2)
+		assert.NoError(t, err)
+		assert.True(t, asm1.Equals(asm2), "matcher configs should be equal")
+	})
+}
+
 func TestAmlabelMatchersToProm_HappyCase(t *testing.T) {
 	amMatcher, err := amlabels.NewMatcher(amlabels.MatchRegexp, "foo", "bar.*")
 	require.NoError(t, err)
