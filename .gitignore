@@ -16,6 +16,7 @@ jsonnet-tests/
 
 # Binaries built from ./cmd
 /mimir
+/mimirtool
 /query-tee
 /test-exporter
 

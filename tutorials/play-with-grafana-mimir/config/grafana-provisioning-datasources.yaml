@@ -1,0 +1,17 @@
+apiVersion: 1
+
+datasources:
+  - name: Mimir
+    type: prometheus
+    access: proxy
+    orgId: 1
+    url: http://load-balancer:9009/api/prom
+    version: 1
+    editable: true
+    jsonData:
+      httpHeaderName1: 'X-Scope-OrgID'
+    secureJsonData:
+      httpHeaderValue1: 'demo'
+    # Since there's only 1 datasource configured it will be the default anyway,
+    # but setting this to false hides the datasource named "default".
+    isDefault: false
