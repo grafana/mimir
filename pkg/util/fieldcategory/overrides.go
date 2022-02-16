@@ -73,3 +73,9 @@ func GetOverride(fieldName string) (category Category, ok bool) {
 	category, ok = overrides[fieldName]
 	return
 }
+
+func VisitAll(f func(s string)) {
+	for override := range overrides {
+		f(override)
+	}
+}

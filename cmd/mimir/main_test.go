@@ -6,10 +6,10 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"flag"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,6 +18,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/util/fieldcategory"
 )
 
 func TestFlagParsing(t *testing.T) {
@@ -162,7 +164,7 @@ func TestHelp(t *testing.T) {
 			// Restore stdout and stderr before reporting errors to make them visible.
 			restoreIfNeeded()
 
-			expected, err := ioutil.ReadFile(tc.filename)
+			expected, err := os.ReadFile(tc.filename)
 			require.NoError(t, err)
 			assert.Equalf(t, string(expected), string(stdout), "%s %s output changed; try `make reference-help`", cmd, tc.arg)
 			assert.Empty(t, stderr)
@@ -342,4 +344,39 @@ func TestParseConfigFileParameter(t *testing.T) {
 			assert.Equal(t, test.expandENV, expandENV)
 		})
 	}
+}
+
+func TestFieldCategoryOverridesNotStale(t *testing.T) {
+	overrides := make(map[string]struct{})
+	fieldcategory.VisitAll(func(s string) {
+		overrides[s] = struct{}{}
+	})
+
+	options := readAllOptions(t)
+	for _, option := range options {
+		delete(overrides, option)
+	}
+
+	require.Empty(t, overrides, "There are category overrides for configuration options that no longer exist")
+}
+
+func readAllOptions(t *testing.T) []string {
+	helpAllText, err := os.ReadFile("help-all.txt.tmpl")
+	require.NoError(t, err)
+
+	scanner := bufio.NewScanner(bytes.NewReader(helpAllText))
+	options := make([]string, 0, 10)
+
+	for lineNumber := 0; scanner.Scan(); lineNumber++ {
+		if lineNumber%2 == 0 {
+			continue
+		}
+
+		line := scanner.Text()
+		option := strings.SplitN(strings.TrimLeft(line, " -"), " ", 2)[0]
+		options = append(options, option)
+	}
+
+	require.NotEmpty(t, options)
+	return options
 }
