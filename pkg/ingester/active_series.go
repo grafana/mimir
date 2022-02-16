@@ -57,7 +57,7 @@ func NewActiveSeries(asm *ActiveSeriesMatchers) *ActiveSeries {
 		c.stripes[i] = activeSeriesStripe{
 			asm:            asm,
 			refs:           map[uint64][]activeSeriesEntry{},
-			activeMatching: makeIntSliceIfNotEmpty(len(asm.MatcherNames())),
+			activeMatching: makeIntSliceIfNotEmpty(len(asm.MatcherNames()), nil),
 		}
 	}
 
@@ -73,7 +73,7 @@ func (c *ActiveSeries) ReloadSeriesMatchers(asm *ActiveSeriesMatchers) {
 
 	for i := 0; i < numActiveSeriesStripes; i++ {
 		c.stripes[i].asm = asm
-		c.stripes[i].activeMatching = makeIntSliceIfNotEmpty(len(asm.MatcherNames()))
+		c.stripes[i].activeMatching = makeIntSliceIfNotEmpty(len(asm.MatcherNames()), c.stripes[i].activeMatching)
 	}
 	c.lastUpdate = time.Now()
 }
@@ -120,7 +120,7 @@ func (c *ActiveSeries) clear() {
 // custom trackers provided (in the same order as custom trackers are defined)
 func (c *ActiveSeries) Active() (int, []int) {
 	total := 0
-	totalMatching := makeIntSliceIfNotEmpty(len(c.asm.MatcherNames()))
+	totalMatching := makeIntSliceIfNotEmpty(len(c.asm.MatcherNames()), nil)
 	for s := 0; s < numActiveSeriesStripes; s++ {
 		total += c.stripes[s].getTotalAndUpdateMatching(totalMatching)
 	}
@@ -236,7 +236,7 @@ func (s *activeSeriesStripe) purge(keepUntil time.Time) {
 	defer s.mu.Unlock()
 
 	active := 0
-	activeMatching := makeIntSliceIfNotEmpty(len(s.activeMatching))
+	activeMatching := makeIntSliceIfNotEmpty(len(s.activeMatching), s.activeMatching)
 
 	oldest := int64(math.MaxInt64)
 	for fp, entries := range s.refs {
@@ -302,9 +302,17 @@ func (s *activeSeriesStripe) purge(keepUntil time.Time) {
 	s.activeMatching = activeMatching
 }
 
-func makeIntSliceIfNotEmpty(l int) []int {
-	if l == 0 {
-		return nil
+func makeIntSliceIfNotEmpty(l int, prev []int) []int {
+	if cap(prev) < l {
+		if l == 0 {
+			return nil
+		}
+		return make([]int, l, l*2)
 	}
-	return make([]int, l)
+
+	p := prev
+	for i := 0; i < l; i++ {
+		p[i] = 0
+	}
+	return (prev)[:l]
 }
