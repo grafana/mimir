@@ -163,8 +163,7 @@ func (w *markdownWriter) writeConfigBlock(block *configBlock) {
 	if block.desc != "" {
 		desc := block.desc
 
-		// REPLACEMENT CODE BLOCK
-		// Wrap the config block name with backticks
+		// Wrap first instance of the config block name with backticks
 		if block.name != "" {
 			var matches int
 			nameRegexp := regexp.MustCompile(regexp.QuoteMeta(block.name))
@@ -176,13 +175,6 @@ func (w *markdownWriter) writeConfigBlock(block *configBlock) {
 				return input
 			})
 		}
-
-		// Wrap the config block name with backticks
-		//if block.name != "" {
-		//	desc = regexp.MustCompile(regexp.QuoteMeta(block.name)).ReplaceAllStringFunc(desc, func(input string) string {
-		//		return "`" + input + "`"
-		//	})
-		//}
 
 		// List of all prefixes used to reference this config block.
 		if len(block.flagsPrefixes) > 1 {

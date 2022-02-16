@@ -56,9 +56,6 @@ JSONNET_MANIFESTS_PATH := operations/mimir
 
 # Doc templates in use
 DOC_TEMPLATES := docs/sources/configuration/reference-configuration-parameters.template \
-	docs/sources/architecture/compactor.template \
-	docs/sources/architecture/store-gateway.template \
-	docs/sources/architecture/querier.template \
 	docs/sources/operating-grafana-mimir/encrypt-data-at-rest.template
 
 # Documents to run through embedding
