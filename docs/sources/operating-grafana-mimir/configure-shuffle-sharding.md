@@ -128,9 +128,9 @@ _The maximum number of queriers can be overridden on a per-tenant basis in the l
 
 #### The impact of "query of death"
 
-In the event a tenant is repeatedly sending a "query of death" which leads the querier to crash or getting killed because of out-of-memory, the crashed querier will get disconnected from the query-frontend or query-scheduler and a new querier will be immediately assigned to the tenant's shard. This practically invalidates the assumption that shuffle-sharding can be used to contain the blast radius in case of a query of death.
+In the event a tenant is repeatedly sending a "query of death" which causes a querier to crash, the crashed querier will get disconnected from the query-frontend or query-scheduler and a new querier will be immediately assigned to the tenant's shard. This practically invalidates the assumption that shuffle-sharding can be used to contain the blast radius of queries of death.
 
-To mitigate it, Grafana Mimir allows you to configure a delay between when a querier disconnects because of a crash and when the crashed querier is actually removed from the tenant’s shard (and another healthy querier is added as a replacement). A delay of 1 minute might be a reasonable trade-off:
+To mitigate this, there are experimental configuration options that allow you to configure a delay between when a querier disconnects because of a crash and when the crashed querier is actually removed from the tenant’s shard (and another healthy querier is added as a replacement). A delay of 1 minute might be a reasonable trade-off:
 
 - Query-frontend: `-query-frontend.querier-forget-delay=1m`
 - Query-scheduler: `-query-scheduler.querier-forget-delay=1m`
