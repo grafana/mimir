@@ -88,6 +88,9 @@ type ActiveSeriesMatchers struct {
 }
 
 func (asm *ActiveSeriesMatchers) Equals(other *ActiveSeriesMatchers) bool {
+	if asm == other {
+		return true
+	}
 	if asm == nil && other != nil {
 		return false
 	}
