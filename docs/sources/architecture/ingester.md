@@ -6,11 +6,11 @@ weight: 10
 
 # Ingester
 
-The **ingester** service is responsible for writing incoming series to a [long-term storage backend](#storage) on the write path and returning in-memory series samples for queries on the read path.
+The **ingester** service is responsible for writing incoming series to [long-term storage]({{<relref "./_index.md#long-term-storage">}}) on the write path and returning series samples for queries on the read path.
 
-Incoming series are not immediately written to the storage but kept in memory and periodically flushed to the storage (2 hours by default). For this reason, the [queriers](#querier) may need to fetch samples both from ingesters and long-term storage while executing a query on the read path.
+Incoming series from [distributors]({{<relref "./distributor.md">}}) are not immediately written to the long-term storage but kept in-memory or offloaded to disk. Eventually all series are written to disk and are periodically uploaded to the long-term storage (every 2 hours by default). For this reason, the [queriers]({{<relref "./querier.md">}}) may need to fetch samples both from ingesters and long-term storage while executing a query on the read path.
 
-Ingesters contain a **lifecycler** which manages the lifecycle of an ingester and stores the **ingester state** in the [hash ring](#the-hash-ring). Each ingester could be in one of the following states:
+Services calling the **ingesters** first read the **ingester states** from the [hash ring]({{<relref "./about-the-hash-ring.md">}}) to determine which ingester(s) are available. Each ingester could be in one of the following states:
 
 - **`PENDING`**<br />
   The ingester has just started. While in this state, the ingester receives neither write nor read requests.
@@ -23,23 +23,35 @@ Ingesters contain a **lifecycler** which manages the lifecycle of an ingester an
 - **`UNHEALTHY`**<br />
   The ingester has failed to heartbeat to the ring's KV Store. While in this state, distributors skip the ingester while building the replication set for incoming series and the ingester does not receive write or read requests.
 
-Ingesters are **semi-stateful**.
+## Ingesters write de-amplification
+
+Ingesters store recently received samples in-memory in order to perform write de-amplification. If the ingesters would immediately write received samples to the long-term storage, the system would be difficult to scale due to the high pressure on the long-term storage. For this reason, the ingesters batch and compress samples in-memory and periodically upload them to the long-term storage.
+
+Write de-amplification is the main source of Mimir's low total cost of ownership (TCO).
 
 ## Ingesters failure and data loss
 
-If an ingester process crashes or exits abruptly, all the in-memory series that have not yet been flushed to the long-term storage will be lost. There are two main ways to mitigate this failure mode:
+Ingesters are **stateful**. If an ingester process crashes or exits abruptly, all the in-memory series that have not yet been uploaded to the long-term storage could be lost. There are two main ways to mitigate this failure mode:
 
 1. Replication
 2. Write-ahead log (WAL)
 
-**Replication** is used to hold multiple (typically 3) replicas of each time series in the ingesters. If the Mimir cluster loses an ingester, the in-memory series held by the lost ingester are replicated to at least one other ingester. In the event of a single ingester failure, no time series samples will be lost, while in the event that multiple ingesters fail, time series may potentially be lost if the failure affects all the ingesters holding the replicas of a specific time series.
+**Replication** is used to hold multiple (3 by default) replicas of each time series in the ingesters. Writes to the Mimir cluster are successful if a quorum of ingesters received the data (minimum 2 in case of replication factor 3). If the Mimir cluster loses an ingester, the in-memory series held by the lost ingester are replicated to at least one other ingester. In the event of a single ingester failure, no time series samples will be lost, while in the event that multiple ingesters fail, time series may potentially be lost if the failure affects all the ingesters holding the replicas of a specific time series.
 
-The **write-ahead log** (WAL) is used to write to a persistent disk all incoming series samples until they're flushed to the long-term storage. In the event of an ingester failure, a subsequent process restart will replay the WAL and recover the in-memory series samples.
+The **write-ahead log** (WAL) is used to write to a persistent disk all incoming series samples until they're uploaded to the long-term storage. In the event of an ingester failure, a subsequent process restart will replay the WAL and recover the in-memory series samples.
 
-Contrary to the sole replication and given the persistent disk data is not lost, in the event of the failure of multiple ingesters, each ingester will recover the in-memory series samples from WAL upon subsequent restart. Replication is still recommended in order to ensure no temporary failures on the read path in the event of a single ingester failure.
+Contrary to the sole replication and given the persistent disk data is not lost, in the event of the failure of multiple ingesters, each ingester will recover the in-memory series samples from WAL upon subsequent restart. Replication is still recommended in order to gracefully handle a single ingester failure.
 
-## Ingesters write de-amplification
+## Zone aware replication
 
-Ingesters store recently received samples in-memory in order to perform write de-amplification. If the ingesters would immediately write received samples to the long-term storage, the system would be difficult to scale due to the high pressure on the storage. For this reason, the ingesters batch and compress samples in-memory and periodically flush them out to the storage.
+**Zone aware replication** ensures that the ingester replicas for a given time series are spread across different zones.
+Zones may represent logical or physical failure domains, for example different data centers.
+Spreading replicas across multiple zones prevents data loss and service interruptions when there is a zone wide outage.
 
-Write de-amplification is the main source of Mimir's low total cost of ownership (TCO).
+To set up multi-zone replication, refer to [zone aware replication]({{<relref "../guides/zone-replication.md">}}).
+
+## Shuffle sharding
+
+**Shuffle sharding** (off by default) can be used to reduce the effect that multiple tenants can have on each other.
+
+For more information on shuffle sharding, refer to [configure shuffle sharding]({{<relref "../operating-grafana-mimir/configure-shuffle-sharding.md">}}).
