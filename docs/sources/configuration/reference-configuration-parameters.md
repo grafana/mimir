@@ -546,11 +546,6 @@ ha_tracker:
 # CLI flag: -distributor.remote-timeout
 [remote_timeout: <duration> | default = 20s]
 
-# (advanced) Time to wait before sending more than the minimum successful query
-# requests.
-# CLI flag: -distributor.extra-query-delay
-[extra_queue_delay: <duration> | default = 0s]
-
 # (advanced) Try writing to an additional ingester in the presence of an
 # ingester not in the ACTIVE state. It is useful to disable this along with
 # -ingester.ring.unregister-on-shutdown=false in order to not spread samples to

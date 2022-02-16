@@ -1011,14 +1011,14 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxChunkBytesPerQueryLimitIs
 	flagext.DefaultValues(limits)
 
 	// Prepare distributors.
-	// Use replication factor of 2 to always read all the chunks from both ingesters,
-	// this guarantees us to always read the same chunks and have a stable test.
+	// Use replication factor of 1 so that we always wait the response from all ingesters.
+	// This guarantees us to always read the same chunks and have a stable test.
 	ds, _, _ := prepare(t, prepConfig{
-		numIngesters:      2,
-		happyIngesters:    2,
+		numIngesters:      3,
+		happyIngesters:    3,
 		numDistributors:   1,
 		limits:            limits,
-		replicationFactor: 2,
+		replicationFactor: 1,
 	})
 
 	allSeriesMatchers := []*labels.Matcher{
@@ -2493,7 +2493,6 @@ func prepare(t *testing.T, cfg prepConfig) ([]*Distributor, []mockIngester, []*p
 		flagext.DefaultValues(&distributorCfg, &clientConfig)
 
 		distributorCfg.IngesterClientFactory = factory
-		distributorCfg.ExtraQueryDelay = 50 * time.Millisecond
 		distributorCfg.DistributorRing.HeartbeatPeriod = 100 * time.Millisecond
 		distributorCfg.DistributorRing.InstanceID = strconv.Itoa(i)
 		distributorCfg.DistributorRing.KVStore.Mock = kvStore
