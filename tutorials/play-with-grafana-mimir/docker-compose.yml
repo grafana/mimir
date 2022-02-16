@@ -65,8 +65,7 @@ services:
 
   mimir-1:
     image: grafana/mimir:latest
-    entrypoint: ""
-    command: ["/bin/sh", "-c", "sleep 3 && /bin/mimir -config.file=/etc/mimir.yaml"]
+    command: ["-config.file=/etc/mimir.yaml"]
     hostname: mimir-1
     depends_on:
       - minio
@@ -77,8 +76,7 @@ services:
 
   mimir-2:
     image: grafana/mimir:latest
-    entrypoint: ""
-    command: ["/bin/sh", "-c", "sleep 3 && /bin/mimir -config.file=/etc/mimir.yaml"]
+    command: ["-config.file=/etc/mimir.yaml"]
     hostname: mimir-2
     depends_on:
       - minio
@@ -89,8 +87,7 @@ services:
 
   mimir-3:
     image: grafana/mimir:latest
-    entrypoint: ""
-    command: ["/bin/sh", "-c", "sleep 3 && /bin/mimir -config.file=/etc/mimir.yaml"]
+    command: ["-config.file=/etc/mimir.yaml"]
     hostname: mimir-3
     depends_on:
       - minio

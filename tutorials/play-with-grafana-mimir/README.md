@@ -141,7 +141,7 @@ To see the alert firing we can introduce an outage in the Grafana Mimir cluster:
 
 Grafana Mimir Alertmanager has not been configured yet to notify alerts through a notification channel. To configure the
 Alertmanager you can open the [Contact points](http://localhost:9000/alerting/notifications) page in Grafana and
-set your preferred notification channel. Note the email receiver doesn't work in this example because because there's no
+set your preferred notification channel. Note the email receiver doesn't work in this example because there's no
 SMTP server running.
 
 Before adding back our terminated Mimir replica to resolve the alert, go into the Grafana Explore page and query your `sum:up`
