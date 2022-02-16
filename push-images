@@ -33,18 +33,14 @@ push_image() {
 }
 
 # Push images
-for image in $(make images ); do
+for image in $(make images); do
     image_name=$(basename "$image")
     case "$image_name" in
         mimir-build-image)
             # skip mimir-build-image
             continue
             ;;
-        mimir|mimirtool)
-            old_image="$image"
-            image="docker.io/grafana/${image_name}"
-            docker tag "${old_image}:${IMAGE_TAG}" "${image}:${IMAGE_TAG}"
-            ;;
     esac
+
     push_image "${image}"
 done

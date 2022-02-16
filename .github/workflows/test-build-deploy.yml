@@ -19,10 +19,10 @@ jobs:
   lint:
     runs-on: ubuntu-20.04
     container:
-      image: us.gcr.io/kubernetes-dev/mimir-build-image:remove-website-c9babc116
+      image: grafana/mimir-build-image:chore-publish-images-to-dockerhub-771364985
       credentials:
-        username: _json_key
-        password: ${{ secrets.gcr_json_key }}
+        username: ${{ secrets.docker_username }}
+        password: ${{ secrets.docker_password }}
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v2
@@ -55,10 +55,10 @@ jobs:
   lint-jsonnet:
     runs-on: ubuntu-20.04
     container:
-      image: us.gcr.io/kubernetes-dev/mimir-build-image:remove-website-c9babc116
+      image: grafana/mimir-build-image:chore-publish-images-to-dockerhub-771364985
       credentials:
-        username: _json_key
-        password: ${{ secrets.gcr_json_key }}
+        username: ${{ secrets.docker_username }}
+        password: ${{ secrets.docker_password }}
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v2
@@ -85,10 +85,10 @@ jobs:
   test:
     runs-on: ubuntu-20.04
     container:
-      image: us.gcr.io/kubernetes-dev/mimir-build-image:remove-website-c9babc116
+      image: grafana/mimir-build-image:chore-publish-images-to-dockerhub-771364985
       credentials:
-        username: _json_key
-        password: ${{ secrets.gcr_json_key }}
+        username: ${{ secrets.docker_username }}
+        password: ${{ secrets.docker_password }}
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v2
@@ -112,10 +112,10 @@ jobs:
   build-mimir:
     runs-on: ubuntu-20.04
     container:
-      image: us.gcr.io/kubernetes-dev/mimir-build-image:remove-website-c9babc116
+      image: grafana/mimir-build-image:chore-publish-images-to-dockerhub-771364985
       credentials:
-        username: _json_key
-        password: ${{ secrets.gcr_json_key }}
+        username: ${{ secrets.docker_username }}
+        password: ${{ secrets.docker_password }}
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v2
@@ -144,10 +144,10 @@ jobs:
   build-tools:
     runs-on: ubuntu-20.04
     container:
-      image: us.gcr.io/kubernetes-dev/mimir-build-image:remove-website-c9babc116
+      image: grafana/mimir-build-image:chore-publish-images-to-dockerhub-771364985
       credentials:
-        username: _json_key
-        password: ${{ secrets.gcr_json_key }}
+        username: ${{ secrets.docker_username }}
+        password: ${{ secrets.docker_password }}
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v2
@@ -215,7 +215,7 @@ jobs:
       - name: Integration Tests
         run: |
           export IMAGE_TAG=$(make image-tag)
-          export MIMIR_IMAGE="us.gcr.io/kubernetes-dev/mimir:$IMAGE_TAG"
+          export MIMIR_IMAGE="grafana/mimir:$IMAGE_TAG"
           export MIMIR_CHECKOUT_DIR="/go/src/github.com/grafana/mimir"
           echo "Running integration tests with image: $MIMIR_IMAGE"
           echo "Running integration tests (group ${{ matrix.test_group_id }} of ${{ matrix.test_group_total }}) with Go version: $(go version)"
@@ -227,10 +227,10 @@ jobs:
     if: (startsWith(github.ref, 'refs/tags/') || startsWith(github.ref, 'refs/heads/r') ) && github.event_name == 'push' && github.repository == 'grafana/mimir'
     runs-on: ubuntu-20.04
     container:
-      image: us.gcr.io/kubernetes-dev/mimir-build-image:remove-website-c9babc116
+      image: grafana/mimir-build-image:chore-publish-images-to-dockerhub-771364985
       credentials:
-        username: _json_key
-        password: ${{ secrets.gcr_json_key }}
+        username: ${{ secrets.docker_username }}
+        password: ${{ secrets.docker_password }}
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v2
@@ -258,16 +258,11 @@ jobs:
           make BUILD_IN_CONTAINER=false load-images
       - name: Deploy
         run: |
-          if [ -n "$GCR_REGISTRY_PASSWORD" ]; then
-            printenv GCR_REGISTRY_PASSWORD | docker login -u "$GCR_REGISTRY_USER" --password-stdin us.gcr.io
-          fi
           if [ -n "$DOCKER_PASSWORD" ]; then
             printenv DOCKER_PASSWORD | docker login -u "$DOCKER_USERNAME" --password-stdin
           fi
           export IMAGE_TAG=$(make image-tag)
           ./push-images
         env:
-          GCR_REGISTRY_USER: _json_key
-          GCR_REGISTRY_PASSWORD: ${{ secrets.gcr_json_key }}
           DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
           DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
