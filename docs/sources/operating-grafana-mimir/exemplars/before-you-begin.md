@@ -15,7 +15,7 @@ Follow the checklist to ensure that your application is generating metrics, trac
   - For counters, use the `AddWithExemplar` method to emit the trace ID along with a counter increment.
 - Verify that metrics are being generated with exemplars by running the following command in a shell: `curl -H "Accept: application/openmetrics-text" http://<your application>/metrics | grep -i "traceid"`.
 - Configure your Prometheus server or Grafana Agent to store and send exemplars.
-  - To configure a Grafana Agent to send exemplars:
+  - To configure Grafana Agent to send exemplars:
     1. Confirm that the Agent is scraping exemplars by verifying that the `prometheus_remote_storage_exemplars_total` metric is a non-zero value.
     1. Add the option `send_exemplars: true` under the `remote_write` configuration block in the Grafana Agent configuration file.
   - To configure a Prometheus server to send exemplars:
