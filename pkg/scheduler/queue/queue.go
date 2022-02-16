@@ -16,11 +16,6 @@ import (
 	"go.uber.org/atomic"
 )
 
-const (
-	// How frequently to check for disconnected queriers that should be forgotten.
-	forgetCheckPeriod = 5 * time.Second
-)
-
 var (
 	ErrTooManyRequests = errors.New("too many outstanding requests")
 	ErrStopped         = errors.New("queue is stopped")
@@ -65,16 +60,16 @@ type RequestQueue struct {
 	discardedRequests *prometheus.CounterVec // Per user.
 }
 
-func NewRequestQueue(maxOutstandingPerTenant int, forgetDelay time.Duration, queueLength *prometheus.GaugeVec, discardedRequests *prometheus.CounterVec) *RequestQueue {
+func NewRequestQueue(maxOutstandingPerTenant int, queueLength *prometheus.GaugeVec, discardedRequests *prometheus.CounterVec) *RequestQueue {
 	q := &RequestQueue{
-		queues:                  newUserQueues(maxOutstandingPerTenant, forgetDelay),
+		queues:                  newUserQueues(maxOutstandingPerTenant),
 		connectedQuerierWorkers: atomic.NewInt32(0),
 		queueLength:             queueLength,
 		discardedRequests:       discardedRequests,
 	}
 
 	q.cond = contextCond{Cond: sync.NewCond(&q.mtx)}
-	q.Service = services.NewTimerService(forgetCheckPeriod, nil, q.forgetDisconnectedQueriers, q.stopping).WithName("request queue")
+	q.Service = services.NewIdleService(nil, q.stopping).WithName("request queue")
 
 	return q
 }
@@ -164,19 +159,6 @@ FindQueue:
 	// and wait for more requests.
 	querierWait = true
 	goto FindQueue
-}
-
-func (q *RequestQueue) forgetDisconnectedQueriers(_ context.Context) error {
-	q.mtx.Lock()
-	defer q.mtx.Unlock()
-
-	if q.queues.forgetDisconnectedQueriers(time.Now()) > 0 {
-		// We need to notify goroutines cause having removed some queriers
-		// may have caused a resharding.
-		q.cond.Broadcast()
-	}
-
-	return nil
 }
 
 func (q *RequestQueue) stopping(_ error) error {

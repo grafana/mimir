@@ -17,12 +17,6 @@ import (
 type querier struct {
 	// Number of active connections.
 	connections int
-
-	// True if the querier notified it's gracefully shutting down.
-	shuttingDown bool
-
-	// When the last connection has been unregistered.
-	disconnectedAt time.Time
 }
 
 // This struct holds user queues for pending requests. It also keeps track of connected queriers,
@@ -36,10 +30,6 @@ type queues struct {
 	users []string
 
 	maxUserQueueSize int
-
-	// How long to wait before removing a querier which has got disconnected
-	// but hasn't notified about a graceful shutdown.
-	forgetDelay time.Duration
 
 	// Tracks queriers registered to the queue.
 	queriers map[string]*querier
@@ -64,12 +54,11 @@ type userQueue struct {
 	index int
 }
 
-func newUserQueues(maxUserQueueSize int, forgetDelay time.Duration) *queues {
+func newUserQueues(maxUserQueueSize int) *queues {
 	return &queues{
 		userQueues:       map[string]*userQueue{},
 		users:            nil,
 		maxUserQueueSize: maxUserQueueSize,
-		forgetDelay:      forgetDelay,
 		queriers:         map[string]*querier{},
 		sortedQueriers:   nil,
 	}
@@ -180,11 +169,6 @@ func (q *queues) addQuerierConnection(querierID string) {
 	info := q.queriers[querierID]
 	if info != nil {
 		info.connections++
-
-		// Reset in case the querier re-connected while it was in the forget waiting period.
-		info.shuttingDown = false
-		info.disconnectedAt = time.Time{}
-
 		return
 	}
 
@@ -208,17 +192,7 @@ func (q *queues) removeQuerierConnection(querierID string, now time.Time) {
 		return
 	}
 
-	// There no more active connections. If the forget delay is configured then
-	// we can remove it only if querier has announced a graceful shutdown.
-	if info.shuttingDown || q.forgetDelay == 0 {
-		q.removeQuerier(querierID)
-		return
-	}
-
-	// No graceful shutdown has been notified yet, so we should track the current time
-	// so that we'll remove the querier as soon as we receive the graceful shutdown
-	// notification (if any) or once the threshold expires.
-	info.disconnectedAt = now
+	q.removeQuerier(querierID)
 }
 
 func (q *queues) removeQuerier(querierID string) {
@@ -247,32 +221,6 @@ func (q *queues) notifyQuerierShutdown(querierID string) {
 		q.removeQuerier(querierID)
 		return
 	}
-
-	// Otherwise we should annotate we received a graceful shutdown notification
-	// and the querier will be removed once all connections are unregistered.
-	info.shuttingDown = true
-}
-
-// forgetDisconnectedQueriers removes all disconnected queriers that have gone since at least
-// the forget delay. Returns the number of forgotten queriers.
-func (q *queues) forgetDisconnectedQueriers(now time.Time) int {
-	// Nothing to do if the forget delay is disabled.
-	if q.forgetDelay == 0 {
-		return 0
-	}
-
-	// Remove all queriers with no connections that have gone since at least the forget delay.
-	threshold := now.Add(-q.forgetDelay)
-	forgotten := 0
-
-	for querierID := range q.queriers {
-		if info := q.queriers[querierID]; info.connections == 0 && info.disconnectedAt.Before(threshold) {
-			q.removeQuerier(querierID)
-			forgotten++
-		}
-	}
-
-	return forgotten
 }
 
 func (q *queues) recomputeUserQueriers() {
