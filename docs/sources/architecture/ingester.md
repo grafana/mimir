@@ -10,7 +10,7 @@ The **ingester** service is responsible for writing incoming series to [long-ter
 
 Incoming series from [distributors]({{<relref "./distributor.md">}}) are not immediately written to the long-term storage but kept in memory and periodically flushed to the long-term storage (2 hours by default). For this reason, the [queriers]({{<relref "./querier.md">}}) may need to fetch samples both from ingesters and long-term storage while executing a query on the read path.
 
-Services calling the **ingesters** first read the **ingester states** from the [hash ring]({{<relref "./about-the-hash-ring.md">}}) to determine which ingester(s) to invoke. Each ingester could be in one of the following states:
+Services calling the **ingesters** first read the **ingester states** from the [hash ring]({{<relref "./about-the-hash-ring.md">}}) to determine which ingester(s) are available. Each ingester could be in one of the following states:
 
 - **`PENDING`**<br />
   The ingester has just started. While in this state, the ingester receives neither write nor read requests.
