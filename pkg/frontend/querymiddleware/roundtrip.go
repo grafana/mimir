@@ -38,7 +38,7 @@ type Config struct {
 	ResultsCacheConfig     `yaml:"results_cache"`
 	CacheResults           bool `yaml:"cache_results"`
 	MaxRetries             int  `yaml:"max_retries" category:"advanced"`
-	ShardedQueries         bool `yaml:"parallelize_shardable_queries" category:"experimental"`
+	ShardedQueries         bool `yaml:"parallelize_shardable_queries"`
 	CacheUnalignedRequests bool `yaml:"cache_unaligned_requests" category:"advanced"`
 }
 
