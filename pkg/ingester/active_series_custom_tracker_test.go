@@ -193,7 +193,7 @@ func TestActiveSeriesMatcher_MalformedMatcher(t *testing.T) {
 
 func TestActiveSeriesMatcher_Equality(t *testing.T) {
 	matcher1 := `foo:{foo="bar"};baz:{baz="bar"}`
-	matcher2 := `baz:{baz="bar"};foo:{foo="bar"}`
+	matcher2 := `foo:{foo="bar"};baz:{baz="bar"}`
 	t.Run("Equality", func(t *testing.T) {
 		config1 := ActiveSeriesCustomTrackersConfig{}
 		err := config1.Set(matcher1)

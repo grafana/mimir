@@ -64,6 +64,7 @@ func (c *ActiveSeriesCustomTrackersConfig) ExampleDoc() (comment string, yaml in
 func NewActiveSeriesMatchers(matchers ActiveSeriesCustomTrackersConfig) (*ActiveSeriesMatchers, error) {
 	asm := &ActiveSeriesMatchers{}
 	for name, matcher := range matchers {
+		asm.config += name + matcher
 		sm, err := amlabels.ParseMatchers(matcher)
 		if err != nil {
 			return nil, fmt.Errorf("can't build active series matcher %s: %w", name, err)
@@ -83,45 +84,13 @@ func NewActiveSeriesMatchers(matchers ActiveSeriesCustomTrackersConfig) (*Active
 }
 
 type ActiveSeriesMatchers struct {
+	config   string
 	names    []string
 	matchers []labelsMatchers
 }
 
 func (asm *ActiveSeriesMatchers) Equals(other *ActiveSeriesMatchers) bool {
-	if asm == other {
-		return true
-	}
-	if asm == nil && other != nil {
-		return false
-	}
-	if asm != nil && other == nil {
-		return false
-	}
-	if len(asm.names) != len(other.names) {
-		return false
-	}
-	if len(asm.matchers) != len(other.matchers) {
-		return false
-	}
-
-	for i, _ := range asm.names {
-		if asm.names[i] != other.names[i] {
-			return false
-		}
-	}
-
-	for i, _ := range asm.matchers {
-		if len(asm.matchers[i]) != len(other.matchers[i]) {
-			return false
-		}
-		for j, _ := range asm.matchers[i] {
-			if asm.matchers[i][j].String() != other.matchers[i][j].String() {
-				return false
-			}
-		}
-	}
-
-	return true
+	return asm.config == other.config
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
