@@ -5144,13 +5144,32 @@ func TestIngesterActiveSeries(t *testing.T) {
 	userID := "test_user"
 	userID2 := "other_test_user"
 
+	defaultRuntimeMatcherConfigFn := func() *RuntimeMatchersConfig {
+		defaultMatchers, _ := NewActiveSeriesMatchers(map[string]string{
+			"bool_is_true":  `{bool="true"}`,
+			"bool_is_false": `{bool="false"}`,
+		})
+		teamMatchers, _ := NewActiveSeriesMatchers(map[string]string{
+			"team_a": `{team="a"}`,
+			"team_b": `{team="b"}`,
+		})
+		return &RuntimeMatchersConfig{
+			DefaultMatchers: *defaultMatchers,
+			TenantSpecificMatchers: map[string]ActiveSeriesMatchers{
+				"test_user": *teamMatchers,
+			},
+		}
+	}
+
 	tests := map[string]struct {
-		test                func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer)
-		reqs                []*mimirpb.WriteRequest
-		expectedMetrics     string
-		disableActiveSeries bool
+		test                    func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer)
+		reqs                    []*mimirpb.WriteRequest
+		expectedMetrics         string
+		disableActiveSeries     bool
+		RuntimeMatchersConfigFn func() *RuntimeMatchersConfig
 	}{
 		"successful push, should count active series": {
+			RuntimeMatchersConfigFn: defaultRuntimeMatcherConfigFn,
 			test: func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer) {
 				now := time.Now()
 
@@ -5188,6 +5207,7 @@ func TestIngesterActiveSeries(t *testing.T) {
 			},
 		},
 		"should track custom matchers, removing when zero": {
+			RuntimeMatchersConfigFn: defaultRuntimeMatcherConfigFn,
 			test: func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer) {
 				firstPushTime := time.Now()
 
@@ -5262,7 +5282,8 @@ func TestIngesterActiveSeries(t *testing.T) {
 			},
 		},
 		"successful push, active series disabled": {
-			disableActiveSeries: true,
+			RuntimeMatchersConfigFn: defaultRuntimeMatcherConfigFn,
+			disableActiveSeries:     true,
 			test: func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer) {
 				now := time.Now()
 
@@ -5288,6 +5309,72 @@ func TestIngesterActiveSeries(t *testing.T) {
 				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
 			},
 		},
+		"should not fail with empty runtime config": {
+			RuntimeMatchersConfigFn: func() *RuntimeMatchersConfig {
+				return nil
+			},
+			test: func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer) {
+				now := time.Now()
+
+				for i, label := range labelsToPush {
+					ctx := user.InjectOrgID(context.Background(), userID)
+					offset := time.Duration(len(labelsToPush) - i)
+					_, err := ingester.Push(ctx, req(label, time.Now().Add(offset)))
+					require.NoError(t, err)
+				}
+				for i, label := range labelsToPush {
+					ctx := user.InjectOrgID(context.Background(), userID2)
+					offset := time.Duration(len(labelsToPush) - i)
+					_, err := ingester.Push(ctx, req(label, time.Now().Add(offset)))
+					require.NoError(t, err)
+				}
+
+				// Update active series for metrics check.
+				ingester.updateActiveSeries(now)
+
+				expectedMetrics := `
+					# HELP cortex_ingester_active_series Number of currently active series per user.
+					# TYPE cortex_ingester_active_series gauge
+					cortex_ingester_active_series{user="other_test_user"} 4
+                    cortex_ingester_active_series{user="test_user"} 4
+				`
+
+				// Check tracked Prometheus metrics
+				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
+			},
+		},
+		"should not fail with nil matchers config function": {
+			RuntimeMatchersConfigFn: nil,
+			test: func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer) {
+				now := time.Now()
+
+				for i, label := range labelsToPush {
+					ctx := user.InjectOrgID(context.Background(), userID)
+					offset := time.Duration(len(labelsToPush) - i)
+					_, err := ingester.Push(ctx, req(label, time.Now().Add(offset)))
+					require.NoError(t, err)
+				}
+				for i, label := range labelsToPush {
+					ctx := user.InjectOrgID(context.Background(), userID2)
+					offset := time.Duration(len(labelsToPush) - i)
+					_, err := ingester.Push(ctx, req(label, time.Now().Add(offset)))
+					require.NoError(t, err)
+				}
+
+				// Update active series for metrics check.
+				ingester.updateActiveSeries(now)
+
+				expectedMetrics := `
+					# HELP cortex_ingester_active_series Number of currently active series per user.
+					# TYPE cortex_ingester_active_series gauge
+					cortex_ingester_active_series{user="other_test_user"} 4
+					cortex_ingester_active_series{user="test_user"} 4
+				`
+
+				// Check tracked Prometheus metrics
+				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
+			},
+		},
 	}
 
 	for testName, testData := range tests {
@@ -5298,22 +5385,7 @@ func TestIngesterActiveSeries(t *testing.T) {
 			cfg := defaultIngesterTestConfig(t)
 			cfg.LifecyclerConfig.JoinAfter = 0
 			cfg.ActiveSeriesMetricsEnabled = !testData.disableActiveSeries
-			cfg.RuntimeMatchersConfigFn = func() *RuntimeMatchersConfig {
-				defaultMatchers := map[string]string{
-					"bool_is_true":  `{bool="true"}`,
-					"bool_is_false": `{bool="false"}`,
-				}
-				teamMatchers := map[string]ActiveSeriesCustomTrackersConfig{
-					"test_user": map[string]string{
-						"team_a": `{team="a"}`,
-						"team_b": `{team="b"}`,
-					},
-				}
-				return &RuntimeMatchersConfig{
-					DefaultMatchers:        (ActiveSeriesCustomTrackersConfig)(defaultMatchers),
-					TenantSpecificMatchers: teamMatchers,
-				}
-			}
+			cfg.RuntimeMatchersConfigFn = testData.RuntimeMatchersConfigFn
 
 			ing, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, defaultLimitsTestConfig(), "", registry)
 			require.NoError(t, err)

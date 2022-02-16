@@ -63,7 +63,6 @@ func (c *ActiveSeriesCustomTrackersConfig) ExampleDoc() (comment string, yaml in
 
 func NewActiveSeriesMatchers(matchers ActiveSeriesCustomTrackersConfig) (*ActiveSeriesMatchers, error) {
 	asm := &ActiveSeriesMatchers{}
-	asm.config = &matchers
 	for name, matcher := range matchers {
 		sm, err := amlabels.ParseMatchers(matcher)
 		if err != nil {
@@ -84,9 +83,24 @@ func NewActiveSeriesMatchers(matchers ActiveSeriesCustomTrackersConfig) (*Active
 }
 
 type ActiveSeriesMatchers struct {
-	config   *ActiveSeriesCustomTrackersConfig
 	names    []string
 	matchers []labelsMatchers
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (asm *ActiveSeriesMatchers) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	m := ActiveSeriesCustomTrackersConfig{}
+	err := unmarshal(&m)
+	if err != nil {
+		return err
+	}
+	var newMatchers *ActiveSeriesMatchers
+	newMatchers, err = NewActiveSeriesMatchers(m)
+	if err != nil {
+		return err
+	}
+	*asm = *newMatchers
+	return nil
 }
 
 func (asm *ActiveSeriesMatchers) MatcherNames() []string {

@@ -473,8 +473,8 @@ func (i *Ingester) reloadConfig(now time.Time) {
 		if userDB == nil {
 			continue
 		}
-		newMatchers := getActiveSeriesConfig(userID, *currentConfig)
-		if newMatchers.String() != userDB.activeSeries.asm.config.String() {
+		newMatchers := getActiveSeriesMatchers(userID, *currentConfig)
+		if newMatchers != userDB.activeSeries.asm {
 			err := i.ReplaceMatchers(newMatchers, userDB)
 			if err != nil {
 				level.Error(i.logger).Log("msg", "failed to update config", "user", userID, "err", err)
@@ -483,21 +483,17 @@ func (i *Ingester) reloadConfig(now time.Time) {
 	}
 }
 
-func getActiveSeriesConfig(userID string, config RuntimeMatchersConfig) ActiveSeriesCustomTrackersConfig {
+func getActiveSeriesMatchers(userID string, config RuntimeMatchersConfig) *ActiveSeriesMatchers {
 	val, ok := config.TenantSpecificMatchers[userID]
 	if !ok {
-		return config.DefaultMatchers
+		return &config.DefaultMatchers
 	}
-	return val
+	return &val
 }
 
-func (i *Ingester) ReplaceMatchers(config ActiveSeriesCustomTrackersConfig, userDB *userTSDB) error {
-	newMatcher, err := NewActiveSeriesMatchers(config)
-	if err != nil {
-		return err
-	}
+func (i *Ingester) ReplaceMatchers(asm *ActiveSeriesMatchers, userDB *userTSDB) error {
 	i.metrics.deletePerUserCustomTrackerMetrics(userDB.userID, userDB.activeSeries.asm.names)
-	userDB.activeSeries.ReloadSeriesMatchers(newMatcher)
+	userDB.activeSeries.ReloadSeriesMatchers(asm)
 	return nil
 }
 
@@ -1488,16 +1484,11 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 	userLogger := util_log.WithUserID(userID, i.logger)
 
 	blockRanges := i.cfg.BlocksStorageConfig.TSDB.BlockRanges.ToMilliseconds()
-	matchersConfig := getActiveSeriesConfig(userID, *i.getRuntimeMatchersConfig())
-	activeSeriesMatchers, err := NewActiveSeriesMatchers(matchersConfig)
-	if err != nil {
-		level.Error(i.logger).Log("msg", "failed to apply runtime matchers", "user", userID, "err", err)
-		activeSeriesMatchers = &ActiveSeriesMatchers{}
-	}
+	newMatchers := getActiveSeriesMatchers(userID, *i.getRuntimeMatchersConfig())
 
 	userDB := &userTSDB{
 		userID:              userID,
-		activeSeries:        NewActiveSeries(activeSeriesMatchers),
+		activeSeries:        NewActiveSeries(newMatchers),
 		seriesInMetric:      newMetricCounter(i.limiter, i.cfg.getIgnoreSeriesLimitForMetricNamesMap()),
 		ingestedAPISamples:  util_math.NewEWMARate(0.2, i.cfg.RateUpdatePeriod),
 		ingestedRuleSamples: util_math.NewEWMARate(0.2, i.cfg.RateUpdatePeriod),

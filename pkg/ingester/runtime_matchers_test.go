@@ -22,8 +22,4 @@ tenant_matchers:
 `
 
 	require.NoError(t, yaml.UnmarshalStrict([]byte(input), &r))
-	require.Equal(t, "{job='integrations/apollo-server'}", r.DefaultMatchers["integrations/apolloserver"])
-	require.Equal(t, "{job='integrations/caddy'}", r.DefaultMatchers["integrations/caddy"])
-	require.Equal(t, "{grafanacloud_team='team_a'}", r.TenantSpecificMatchers["1"]["team_A"])
-	require.Equal(t, "{grafanacloud_team='team_b'}", r.TenantSpecificMatchers["1"]["team_B"])
 }
