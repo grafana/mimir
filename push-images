@@ -4,6 +4,7 @@ set -o nounset
 set -o pipefail
 
 IMAGE_TAG=${IMAGE_TAG:-$(./tools/image-tag)}
+KO_DOCKER_REPO=grafana
 
 usage() {
     echo "$0"
@@ -26,13 +27,6 @@ fi
 
 # Push images
 for image in ${IMAGES}; do
-    KO_DOCKER_REPO=us.gcr.io/kubernetes-dev 
-    case "$image" in
-        mimir|mimirtool)
-            KO_DOCKER_REPO=docker.io/grafana
-            ;;
-    esac
-
     IMAGE_TAGS=${IMAGE_TAG}
     echo "Pushing ${KO_DOCKER_REPO}/${image}:${IMAGE_TAG}"
 

@@ -20,7 +20,7 @@ jobs:
   lint:
     runs-on: ubuntu-20.04
     container:
-      image: grafana/mimir-build-image:update-go-1.17.8-8a996bb57
+      image: grafana/mimir-build-image:chore-build-multiplatform-images-75dbba45b
       credentials:
         username: ${{ secrets.docker_username }}
         password: ${{ secrets.docker_password }}
@@ -53,7 +53,7 @@ jobs:
   lint-jsonnet:
     runs-on: ubuntu-20.04
     container:
-      image: grafana/mimir-build-image:update-go-1.17.8-8a996bb57
+      image: grafana/mimir-build-image:chore-build-multiplatform-images-75dbba45b
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v2
@@ -82,7 +82,7 @@ jobs:
         test_group_id:    [0, 1, 2, 3]
         test_group_total: [4]
     container:
-      image: grafana/mimir-build-image:update-go-1.17.8-8a996bb57
+      image: grafana/mimir-build-image:chore-build-multiplatform-images-75dbba45b
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v2
@@ -108,7 +108,7 @@ jobs:
   build-mimir:
     runs-on: ubuntu-20.04
     container:
-      image: grafana/mimir-build-image:update-go-1.17.8-8a996bb57
+      image: grafana/mimir-build-image:chore-build-multiplatform-images-75dbba45b
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v2
@@ -138,7 +138,7 @@ jobs:
   build-tools:
     runs-on: ubuntu-20.04
     container:
-      image: grafana/mimir-build-image:update-go-1.17.8-8a996bb57
+      image: grafana/mimir-build-image:chore-build-multiplatform-images-75dbba45b
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v2
@@ -157,7 +157,7 @@ jobs:
           export GIT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
           # This configures ko's image creation timestamp correspond to the commit timestamp
           export SOURCE_DATE_EPOCH=$(git show -s --format=%ct)
-          export KO_DOCKER_REPO=us.gcr.io/kubernetes-dev
+          export KO_DOCKER_REPO=grafana
           for name in ${IMAGES}; do
             ko build -B --image-label org.opencontainers.image.title=${name},org.opencontainers.image.source=https://github.com/grafana/mimir/tree/main/cmd/${name},org.opencontainers.image.revision=${GIT_REVISION} --oci-layout-path ${name}-oci-layout --platform=linux/amd64,linux/arm64 --push=false ./cmd/${name}
           done
@@ -225,7 +225,7 @@ jobs:
     if: (startsWith(github.ref, 'refs/tags/') || startsWith(github.ref, 'refs/heads/r') ) && github.event_name == 'push' && github.repository == 'grafana/mimir'
     runs-on: ubuntu-20.04
     container:
-      image: grafana/mimir-build-image:update-go-1.17.8-8a996bb57
+      image: grafana/mimir-build-image:chore-build-multiplatform-images-75dbba45b
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v2
