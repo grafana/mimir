@@ -505,6 +505,8 @@ _Requires [authentication](#authentication)._
 
 ```
 GET /api/v1/rules
+
+GET <prometheus-http-prefix>/rules
 ```
 
 List all rules configured for the authenticated tenant. This endpoint returns a YAML dictionary with all the rule groups for each namespace and `200` status code on success.
@@ -567,6 +569,8 @@ _Requires [authentication](#authentication)._
 
 ```
 GET /api/v1/rules/{namespace}
+
+GET <prometheus-http-prefix>/rules/{namespace}
 ```
 
 Returns the rule groups defined for a given namespace.
@@ -598,6 +602,8 @@ rules:
 
 ```
 GET /api/v1/rules/{namespace}/{groupName}
+
+GET <prometheus-http-prefix>/rules/{namespace}/{groupName}
 ```
 
 Returns the rule group matching the request namespace and group name.
@@ -610,6 +616,8 @@ _Requires [authentication](#authentication)._
 
 ```
 POST /api/v1/rules/{namespace}
+
+POST <prometheus-http-prefix>/rules/{namespace}
 ```
 
 Creates or updates a rule group. This endpoint expects a request with `Content-Type: application/yaml` header and the
@@ -677,6 +685,8 @@ rules:
 
 ```
 DELETE /api/v1/rules/{namespace}/{groupName}
+
+DELETE <prometheus-http-prefix>/rules/{namespace}/{groupName}
 ```
 
 Deletes a rule group by namespace and group name. This endpoints returns `202` on success.
@@ -689,6 +699,8 @@ _Requires [authentication](#authentication)._
 
 ```
 DELETE /api/v1/rules/{namespace}
+
+DELETE <prometheus-http-prefix>/rules/{namespace}
 ```
 
 Deletes all the rule groups in a namespace (including the namespace itself). This endpoint returns `202` on success.
