@@ -126,15 +126,6 @@ Note that this distribution happens in query-frontend, or query-scheduler if use
 
 _The maximum number of queriers can be overridden on a per-tenant basis in the limits overrides configuration._
 
-#### The impact of "query of death"
-
-In the event a tenant is repeatedly sending a "query of death" which leads the querier to crash or getting killed because of out-of-memory, the crashed querier will get disconnected from the query-frontend or query-scheduler and a new querier will be immediately assigned to the tenant's shard. This practically invalidates the assumption that shuffle-sharding can be used to contain the blast radius in case of a query of death.
-
-To mitigate it, Grafana Mimir allows you to configure a delay between when a querier disconnects because of a crash and when the crashed querier is actually removed from the tenant’s shard (and another healthy querier is added as a replacement). A delay of 1 minute might be a reasonable trade-off:
-
-- Query-frontend: `-query-frontend.querier-forget-delay=1m`
-- Query-scheduler: `-query-scheduler.querier-forget-delay=1m`
-
 ### Store-gateway shuffle sharding
 
 The Mimir store-gateway -- used by the [blocks storage](../blocks-storage/_index.md) -- spreads each tenant's blocks across `-store-gateway.tenant-shard-size` running store-gateway instances. If this flag is 0, it means all store-gateway instances. This flag needs to be set to **store-gateway**, **querier** and **ruler**.
