@@ -487,10 +487,7 @@ func (i *Ingester) reloadConfig(now time.Time) {
 		}
 		newMatchers := i.getActiveSeriesMatchers(userID, currentConfig)
 		if !newMatchers.Equals(userDB.activeSeries.asm) {
-			err := i.ReplaceMatchers(newMatchers, userDB)
-			if err != nil {
-				level.Error(i.logger).Log("msg", "failed to update config", "user", userID, "err", err)
-			}
+			i.ReplaceMatchers(newMatchers, userDB)
 		}
 	}
 }
@@ -510,10 +507,9 @@ func (i *Ingester) getActiveSeriesMatchers(userID string, config *RuntimeMatcher
 	return &val
 }
 
-func (i *Ingester) ReplaceMatchers(asm *ActiveSeriesMatchers, userDB *userTSDB) error {
+func (i *Ingester) ReplaceMatchers(asm *ActiveSeriesMatchers, userDB *userTSDB) {
 	i.metrics.deletePerUserCustomTrackerMetrics(userDB.userID, userDB.activeSeries.asm.names)
 	userDB.activeSeries.ReloadSeriesMatchers(asm)
-	return nil
 }
 
 func getRuntimeMatchersConfig(runtimeMatchersConfigFn func() *RuntimeMatchersConfig) *RuntimeMatchersConfig {
@@ -521,12 +517,7 @@ func getRuntimeMatchersConfig(runtimeMatchersConfigFn func() *RuntimeMatchersCon
 		return nil
 	}
 
-	r := runtimeMatchersConfigFn()
-	if r == nil {
-		return nil
-	}
-
-	return r
+	return runtimeMatchersConfigFn()
 }
 
 func (i *Ingester) updateActiveSeries(now time.Time) {
