@@ -197,6 +197,9 @@ type Ingester struct {
 	metrics *ingesterMetrics
 	logger  log.Logger
 
+	// Now it is used to track default matcher
+	activeSeriesMatchers *ActiveSeriesMatchers
+
 	lifecycler         *ring.Lifecycler
 	limits             *validation.Overrides
 	limiter            *Limiter
@@ -251,13 +254,14 @@ func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus
 		limits: limits,
 		logger: logger,
 
-		tsdbs:               make(map[string]*userTSDB),
-		usersMetadata:       make(map[string]*userMetricsMetadata),
-		bucket:              bucketClient,
-		tsdbMetrics:         newTSDBMetrics(registerer),
-		forceCompactTrigger: make(chan requestWithUsersAndCallback),
-		shipTrigger:         make(chan requestWithUsersAndCallback),
-		seriesHashCache:     hashcache.NewSeriesHashCache(cfg.BlocksStorageConfig.TSDB.SeriesHashCacheMaxBytes),
+		tsdbs:                make(map[string]*userTSDB),
+		usersMetadata:        make(map[string]*userMetricsMetadata),
+		bucket:               bucketClient,
+		tsdbMetrics:          newTSDBMetrics(registerer),
+		forceCompactTrigger:  make(chan requestWithUsersAndCallback),
+		shipTrigger:          make(chan requestWithUsersAndCallback),
+		seriesHashCache:      hashcache.NewSeriesHashCache(cfg.BlocksStorageConfig.TSDB.SeriesHashCacheMaxBytes),
+		activeSeriesMatchers: &getRuntimeMatchersConfig(cfg.RuntimeMatchersConfigFn).DefaultMatchers,
 	}, nil
 }
 
@@ -467,13 +471,17 @@ func (i *Ingester) updateLoop(ctx context.Context) error {
 }
 
 func (i *Ingester) reloadConfig(now time.Time) {
-	currentConfig := i.getRuntimeMatchersConfig()
+	currentConfig := getRuntimeMatchersConfig(i.cfg.RuntimeMatchersConfigFn)
+	if !currentConfig.DefaultMatchers.Equals(i.activeSeriesMatchers) {
+		// only replace default matcher object if changed to avoid memory leak
+		i.activeSeriesMatchers = &currentConfig.DefaultMatchers
+	}
 	for _, userID := range i.getTSDBUsers() {
 		userDB := i.getTSDB(userID)
 		if userDB == nil {
 			continue
 		}
-		newMatchers := getActiveSeriesMatchers(userID, *currentConfig)
+		newMatchers := i.getActiveSeriesMatchers(userID, currentConfig)
 		if !newMatchers.Equals(userDB.activeSeries.asm) {
 			err := i.ReplaceMatchers(newMatchers, userDB)
 			if err != nil {
@@ -483,10 +491,10 @@ func (i *Ingester) reloadConfig(now time.Time) {
 	}
 }
 
-func getActiveSeriesMatchers(userID string, config RuntimeMatchersConfig) *ActiveSeriesMatchers {
+func (i *Ingester) getActiveSeriesMatchers(userID string, config *RuntimeMatchersConfig) *ActiveSeriesMatchers {
 	val, ok := config.TenantSpecificMatchers[userID]
 	if !ok {
-		return &config.DefaultMatchers
+		return i.activeSeriesMatchers
 	}
 	return &val
 }
@@ -497,12 +505,12 @@ func (i *Ingester) ReplaceMatchers(asm *ActiveSeriesMatchers, userDB *userTSDB) 
 	return nil
 }
 
-func (i *Ingester) getRuntimeMatchersConfig() *RuntimeMatchersConfig {
-	if i.cfg.RuntimeMatchersConfigFn == nil {
+func getRuntimeMatchersConfig(runtimeMatchersConfigFn func() *RuntimeMatchersConfig) *RuntimeMatchersConfig {
+	if runtimeMatchersConfigFn == nil {
 		return &RuntimeMatchersConfig{}
 	}
 
-	r := i.cfg.RuntimeMatchersConfigFn()
+	r := runtimeMatchersConfigFn()
 	if r == nil {
 		return &RuntimeMatchersConfig{}
 	}
@@ -1484,7 +1492,7 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 	userLogger := util_log.WithUserID(userID, i.logger)
 
 	blockRanges := i.cfg.BlocksStorageConfig.TSDB.BlockRanges.ToMilliseconds()
-	newMatchers := getActiveSeriesMatchers(userID, *i.getRuntimeMatchersConfig())
+	newMatchers := i.getActiveSeriesMatchers(userID, getRuntimeMatchersConfig(i.cfg.RuntimeMatchersConfigFn))
 
 	userDB := &userTSDB{
 		userID:              userID,
