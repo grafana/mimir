@@ -87,22 +87,22 @@ offered by Grafana.
 1. Open [Grafana Alerting](http://localhost:9000/alerting/list).
 1. Click "New alert rule", which also allows you to configure recording rules.
 1. Configure the recording rule:
-   1. Type `count:up` in the "Rule name" field.
+   1. Type `sum:up` in the "Rule name" field.
    1. Choose `Cortex managed recording rule` in the "Rule type" field. Make sure to select "managed recording rule" and not
       "managed alert rule."
    1. Choose `Mimir` in the "Select data source" field.
    1. Type `example-namespace` in the "Namespace" field.
    1. Type `example-group` in the "Group" field.
-   1. Type `count(up)` in the "Create a query to be recorded" field.
-   1. Click "Save and Exit" button.
+   1. Type `sum(up)` in the "Create a query to be recorded" field.
+   1. From the upper-right corner, click the **Save and Exit** button.
 
-Your `count:up` recording rule counts the number of Mimir replicas that are `up`, meaning reachable to be scraped. The
+Your `sum:up` recording rule will show the number of Mimir replicas that are `up`, meaning reachable to be scraped. The
 rule is now being created in Grafana Mimir ruler and will be soon available for querying:
 
-1. Open [Grafana Explore](http://localhost:9000/explore?orgId=1&left=%7B%22datasource%22:%22Mimir%22,%22queries%22:%5B%7B%22refId%22:%22A%22,%22instant%22:true,%22range%22:true,%22exemplar%22:true,%22expr%22:%22count:up%22%7D%5D,%22range%22:%7B%22from%22:%22now-1h%22,%22to%22:%22now%22%7D%7D)
+1. Open [Grafana Explore](http://localhost:9000/explore?orgId=1&left=%7B%22datasource%22:%22Mimir%22,%22queries%22:%5B%7B%22refId%22:%22A%22,%22instant%22:true,%22range%22:true,%22exemplar%22:true,%22expr%22:%22sum:up%22%7D%5D,%22range%22:%7B%22from%22:%22now-1h%22,%22to%22:%22now%22%7D%7D)
    and query the resulting series from the recording rule, which may require up to one minute to display after configuration:
    ```
-   count:up
+   sum:up
    ```
 1. Confirm the query returns a value of `3` which is the number of Mimir replicas currently running in your local setup.
 
@@ -122,11 +122,11 @@ tooling offered by Grafana.
    1. Select `example-namespace` in the "Namespace" field.
    1. Select `example-group` in the "Group" field.
    1. Type `up == 0` in the "Create a query to be alerted on" field.
-   1. Click "Save and Exit" button.
+   1. From the upper-right corner, click the **Save and Exit** button.
 
 Your `MimirNotRunning` alert rule is now being created in Grafana Mimir ruler and is expected to fire when the number of
 Grafana Mimir replicas is less than three. You can check its status by opening the [Grafana Alerting](http://localhost:9000/alerting/list)
-page and expanding the "example-namespace > example-group" row.
+page and expanding the "example-namespace > example-group" row. The status should be "Normal" since all three replicas are currently running.
 
 To see the alert firing we can introduce an outage in the Grafana Mimir cluster:
 
@@ -135,17 +135,21 @@ To see the alert firing we can introduce an outage in the Grafana Mimir cluster:
    docker-compose kill mimir-3
    ```
 1. Open [Grafana Alerting](http://localhost:9000/alerting/list) and check out the state of the alert `MimirNotRunning`,
-   which should switch to "Pending" state in about one minute and to "Firing" state after another minute. Since we abruptly
+   which should switch to "Pending" state in about one minute and to "Firing" state after another minute. _Note: since we abruptly
    terminated a Mimir replica, Grafana Alerting UI may temporarily show an error when querying rules: the error will
-   auto resolve shortly, as soon as Grafana Mimir internal health checking detects the terminated instance as unhealthy.
+   auto resolve shortly, as soon as Grafana Mimir internal health checking detects the terminated instance as unhealthy._
 
 Grafana Mimir Alertmanager has not been configured yet to notify alerts through a notification channel. To configure the
 Alertmanager you can open the [Contact points](http://localhost:9000/alerting/notifications) page in Grafana and
 set your preferred notification channel. Note the email receiver doesn't work in this example because because there's no
 SMTP server running.
 
-Finally, to see the alert resolving we can recover from the outage restarting the Grafana Mimir replica that was
-abruptly terminated:
+Before adding back our terminated Mimir replica to resolve the alert, go into the Grafana Explore page and query your `sum:up`
+recording rule. You should see that value of `sum:up` should have dropped to `2`, now that one replica is down. You'll also notice
+that querying for this rule and all other metrics continues to work even though one replica is down. This demonstrates that highly
+available Grafana Mimir setups like the three replica deployment in this demo are resilient to outages of individual nodes.
+
+To resolve the alert and recover from the outage, restart the Grafana Mimir replica that was abruptly terminated:
 
 1. Start the Grafana Mimir replicas:
    ```bash
