@@ -25,7 +25,7 @@ Services calling the **ingesters** first read the **ingester states** from the [
 
 ## Ingesters failure and data loss
 
-Ingesters are **semi-stateful**. If an ingester process crashes or exits abruptly, all the in-memory series that have not yet been flushed to the long-term storage will be lost. There are two main ways to mitigate this failure mode:
+Ingesters are **stateful**. If an ingester process crashes or exits abruptly, all the in-memory series that have not yet been flushed to the long-term storage will be lost. There are two main ways to mitigate this failure mode:
 
 1. Replication
 2. Write-ahead log (WAL)
