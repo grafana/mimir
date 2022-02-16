@@ -467,7 +467,6 @@
 * [ENHANCEMENT] Query-scheduler: exported summary `cortex_query_scheduler_inflight_requests` tracking total number of inflight requests (both enqueued and processing) in percentile buckets. #675
 * [ENHANCEMENT] Ingester: Expose ingester ring page on ingesters. #654
 * [ENHANCEMENT] Querier: retry store-gateway in case of unexpected failure, instead of failing the query. #1003
-<<<<<<< HEAD
 * [ENHANCEMENT] Added a new metric `mimir_build_info` to coincide with `cortex_build_info`. #1022
 * [ENHANCEMENT] Mimir runs a sanity check of storage config at startup and will fail to start if the sanity check doesn't pass. This is done to find potential config issues before starting up. #1180
 * [ENHANCEMENT] Distributor: reject exemplars with all-blank labels. #873
