@@ -54,20 +54,6 @@ MIXIN_OUT_PATH := operations/mimir-mixin-compiled
 # path to the mimir jsonnet manifests
 JSONNET_MANIFESTS_PATH := operations/mimir
 
-# Doc templates in use
-DOC_TEMPLATES := docs/sources/configuration/reference-configuration-parameters.template \
-	docs/sources/architecture/compactor.template \
-	docs/sources/architecture/store-gateway.template \
-	docs/sources/architecture/querier.template \
-	docs/sources/operating-grafana-mimir/encrypt-data-at-rest.template
-
-# Documents to run through embedding
-DOC_EMBED := docs/sources/configuration/using-the-query-frontend-with-prometheus.md \
-	docs/sources/operating-grafana-mimir/mirror-requests-to-a-second-cluster.md \
-	docs/sources/guides/overrides-exporter.md \
-	docs/sources/getting-started/_index.md \
-	operations/mimir/README.md
-
 .PHONY: image-tag
 image-tag:
 	@echo $(IMAGE_TAG)
@@ -317,15 +303,19 @@ mod-check:
 check-protos: clean-protos protos
 	@git diff --exit-code -- $(PROTO_GOS)
 
-%.md : %.template
-	go run ./tools/doc-generator $< > $@
-
-.PHONY: %.md.embedmd
-%.md.embedmd : %.md
-	embedmd -w $<
-
 doc: ## Generates the config file documentation.
-doc: clean-doc $(DOC_TEMPLATES:.template=.md) $(DOC_EMBED:.md=.md.embedmd)
+doc: clean-doc
+	go run ./tools/doc-generator ./docs/sources/configuration/reference-configuration-parameters.template > ./docs/sources/configuration/reference-configuration-parameters.md
+	go run ./tools/doc-generator ./docs/sources/architecture/compactor.template              > ./docs/sources/architecture/compactor.md
+	go run ./tools/doc-generator ./docs/sources/architecture/store-gateway.template          > ./docs/sources/architecture/store-gateway.md
+	go run ./tools/doc-generator ./docs/sources/architecture/querier.template                > ./docs/sources/architecture/querier.md
+	go run ./tools/doc-generator ./docs/sources/operating-grafana-mimir/encrypt-data-at-rest.template     > ./docs/sources/operating-grafana-mimir/encrypt-data-at-rest.md
+	embedmd -w docs/sources/configuration/using-the-query-frontend-with-prometheus.md
+	embedmd -w docs/sources/operating-grafana-mimir/mirror-requests-to-a-second-cluster.md
+	embedmd -w docs/sources/guides/overrides-exporter.md
+	embedmd -w docs/sources/getting-started/_index.md
+	embedmd -w operations/mimir/README.md
+
 	# Make up markdown files prettier. When running with check-doc target, it will fail if this produces any change.
 	prettier --write "**/*.md"
 
@@ -388,11 +378,22 @@ load-images:
 	done
 
 clean-doc:
-	rm -f $(DOC_TEMPLATES:.template=.md)
+	rm -f \
+		./docs/sources/configuration/config-file-reference.md \
+		./docs/sources/blocks-storage/compactor.md \
+		./docs/sources/blocks-storage/store-gateway.md \
+		./docs/sources/blocks-storage/querier.md \
+		./docs/sources/guides/encryption-at-rest.md
 
 check-doc: doc
-	@find . -name "*.md" | xargs git diff --exit-code -- \
-	|| (echo "Please update generated documentation by running 'make doc' and committing the changes" && false)
+	@git diff --exit-code -- \
+		./docs/sources/configuration/config-file-reference.md \
+		./docs/sources/blocks-storage/*.md \
+		./docs/sources/configuration/*.md \
+		./docs/sources/operating-grafana-mimir/*.md \
+		./operations/mimir/*.md \
+		./operations/mimir-mixin/docs/sources/*.md \
+	|| (echo "Please update generated documentation by running 'make doc'" && false)
 
 .PHONY: reference-help
 reference-help: cmd/mimir/mimir
