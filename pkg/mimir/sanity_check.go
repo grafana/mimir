@@ -4,6 +4,7 @@ package mimir
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/go-kit/log"
@@ -16,6 +17,7 @@ import (
 	alertstorelocal "github.com/grafana/mimir/pkg/alertmanager/alertstore/local"
 	rulestorelocal "github.com/grafana/mimir/pkg/ruler/rulestore/local"
 	"github.com/grafana/mimir/pkg/storage/bucket"
+	fsutil "github.com/grafana/mimir/pkg/util/fs"
 )
 
 var (
@@ -23,6 +25,13 @@ var (
 )
 
 func runSanityCheck(ctx context.Context, cfg Config, logger log.Logger) error {
+
+	level.Info(logger).Log("msg", "Checking directory read/write access")
+	if err := checkDirectoriesReadWriteAccess(cfg); err != nil {
+		level.Error(logger).Log("msg", "Unable to access directory", "err", err)
+		return err
+	}
+
 	level.Info(logger).Log("msg", "Checking object storage config")
 	if err := checkObjectStoresConfigWithRetries(ctx, cfg, logger); err != nil {
 		level.Error(logger).Log("msg", "Unable to successfully connect to configured object storage", "err", err)
@@ -30,6 +39,26 @@ func runSanityCheck(ctx context.Context, cfg Config, logger log.Logger) error {
 	}
 	level.Info(logger).Log("msg", "Object storage config successfully checked")
 
+	return nil
+}
+
+func checkDirectoriesReadWriteAccess(cfg Config) error {
+	errs := multierror.New()
+
+	if cfg.isAnyModuleEnabled(All, Ingester) {
+		errs.Add(errors.Wrap(checkDirReadWriteAccess(cfg.Ingester.BlocksStorageConfig.TSDB.Dir), "ingester"))
+	}
+	if cfg.isAnyModuleEnabled(All, Compactor) {
+		errs.Add(errors.Wrap(checkDirReadWriteAccess(cfg.Compactor.DataDir), "compactor"))
+	}
+
+	return errs.Err()
+}
+
+func checkDirReadWriteAccess(dir string) error {
+	if err := fsutil.IsDirReadWritable(dir); err != nil {
+		return fmt.Errorf("failed to access directory %s: %s", dir, err)
+	}
 	return nil
 }
 

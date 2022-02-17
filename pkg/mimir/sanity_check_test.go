@@ -4,6 +4,7 @@ package mimir
 
 import (
 	"context"
+	"os"
 	"testing"
 
 	"github.com/go-kit/log"
@@ -151,4 +152,48 @@ func TestCheckObjectStoresConfig(t *testing.T) {
 		})
 	}
 
+}
+
+func TestCheckDirectoryReadWriteAccess(t *testing.T) {
+	const testIngesterDir = "test-ingester-data"
+
+	tests := map[string]struct {
+		perm     os.FileMode
+		expected string
+	}{
+		"should fail on ingester tsdb directory w/o write access": {
+			perm:     0o555,
+			expected: "unable to access directory",
+		},
+		"should pass on ingester tsdb directory w/ write access": {
+			perm:     0o755,
+			expected: "",
+		},
+	}
+	for testName, testData := range tests {
+		// Change scope since we're running each test in parallel.
+		td := testData
+
+		t.Run(testName, func(t *testing.T) {
+			cfg := Config{}
+			flagext.DefaultValues(&cfg)
+
+			require.NoError(t, cfg.Target.Set("ingester"))
+
+			cfg.Ingester.BlocksStorageConfig.TSDB.Dir = testIngesterDir
+			t.Cleanup(func() {
+				_ = os.RemoveAll(cfg.Ingester.BlocksStorageConfig.TSDB.Dir)
+			})
+
+			_ = os.Mkdir(testIngesterDir, os.ModeDir|td.perm)
+
+			actual := checkDirectoriesReadWriteAccess(cfg)
+			if td.expected == "" {
+				require.NoError(t, actual)
+			} else {
+				require.Error(t, actual)
+				require.Contains(t, actual.Error(), td.expected)
+			}
+		})
+	}
 }
