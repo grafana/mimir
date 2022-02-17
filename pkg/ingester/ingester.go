@@ -199,7 +199,6 @@ type Ingester struct {
 	metrics *ingesterMetrics
 	logger  log.Logger
 
-	// Now it is used to track default matcher
 	activeSeriesMatcher *ActiveSeriesMatchers
 
 	lifecycler         *ring.Lifecycler
