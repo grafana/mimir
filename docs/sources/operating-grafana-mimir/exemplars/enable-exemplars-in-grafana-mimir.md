@@ -21,8 +21,8 @@ limits:
   max_global_exemplars_per_user: 10000
 ```
 
-3. Save and deploy the configuration file.
-4. Perform a rolling update of Grafana Mimir components.
+1. Save and deploy the configuration file.
+1. Perform a rolling update of Grafana Mimir components.
 
 ## Enable exemplars for a specific tenant
 
@@ -39,7 +39,7 @@ overrides:
     max_global_exemplars_per_user: 10000
 ```
 
-3. Save and deploy the runtime configuration file.
+1. Save and deploy the runtime configuration file.
 
 After the `-runtime-config.reload-period` has elapsed, components reload the runtime configuration file and use the updated configuration.
 
