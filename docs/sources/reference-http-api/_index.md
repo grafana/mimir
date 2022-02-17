@@ -23,6 +23,7 @@ For the sake of clarity, in this document we have grouped API endpoints by servi
 | [Metrics](#metrics)                                                                   | _All services_          | `GET /metrics`                                                       |
 | [Pprof](#pprof)                                                                       | _All services_          | `GET /debug/pprof`                                                   |
 | [Fgprof](#fgprof)                                                                     | _All services_          | `GET /debug/fgprof`                                                  |
+| [Build information](#build-information)                                               | _All services_          | `GET /api/v1/status/buildinfo`                                       |
 | [Remote write](#remote-write)                                                         | Distributor             | `POST /api/v1/push`                                                  |
 | [Tenants stats](#tenants-stats)                                                       | Distributor             | `GET /distributor/all_user_stats`                                    |
 | [HA tracker status](#ha-tracker-status)                                               | Distributor             | `GET /distributor/ha_tracker`                                        |
@@ -39,6 +40,7 @@ For the sake of clarity, in this document we have grouped API endpoints by servi
 | [Remote read](#remote-read)                                                           | Querier, Query-frontend | `POST <prometheus-http-prefix>/api/v1/read`                          |
 | [Label names cardinality](#label-names-cardinality)                                   | Querier, Query-frontend | `GET, POST <prometheus-http-prefix>/api/v1/cardinality/label_names`  |
 | [Label values cardinality](#label-values-cardinality)                                 | Querier, Query-frontend | `GET, POST <prometheus-http-prefix>/api/v1/cardinality/label_values` |
+| [Build information](#build-information)                                               | Querier, Query-frontend | `GET <prometheus-http-prefix>/api/v1/status/buildinfo`               |
 | [Get tenant ingestion stats](#get-tenant-ingestion-stats)                             | Querier                 | `GET /api/v1/user_stats`                                             |
 | [Ruler ring status](#ruler-ring-status)                                               | Ruler                   | `GET /ruler/ring`                                                    |
 | [Ruler rules ](#ruler-rule-groups)                                                    | Ruler                   | `GET /ruler/rule_groups`                                             |
@@ -54,7 +56,8 @@ For the sake of clarity, in this document we have grouped API endpoints by servi
 | [Alertmanager status](#alertmanager-status)                                           | Alertmanager            | `GET /multitenant_alertmanager/status`                               |
 | [Alertmanager configs](#alertmanager-configs)                                         | Alertmanager            | `GET /multitenant_alertmanager/configs`                              |
 | [Alertmanager ring status](#alertmanager-ring-status)                                 | Alertmanager            | `GET /multitenant_alertmanager/ring`                                 |
-| [Alertmanager UI](#alertmanager-ui)                                                   | Alertmanager            | `GET /<alertmanager-http-prefix>`                                    |
+| [Alertmanager UI](#alertmanager-ui)                                                   | Alertmanager            | `GET <alertmanager-http-prefix>`                                     |
+| [Build Information](#build-information)                                               | Alertmanager            | `GET <alertmanager-http-prefix>/api/v1/status/buildinfo`             |
 | [Alertmanager Delete Tenant Configuration](#alertmanager-delete-tenant-configuration) | Alertmanager            | `POST /multitenant_alertmanager/delete_tenant_config`                |
 | [Get Alertmanager configuration](#get-alertmanager-configuration)                     | Alertmanager            | `GET /api/v1/alerts`                                                 |
 | [Set Alertmanager configuration](#set-alertmanager-configuration)                     | Alertmanager            | `POST /api/v1/alerts`                                                |
@@ -181,6 +184,16 @@ GET /debug/fgprof
 Returns the sampling Go profiling data which allows you to analyze On-CPU as well as Off-CPU (e.g. I/O) time together.
 
 _For more information, please check out the official documentation of [fgprof](https://github.com/felixge/fgprof)._
+
+### Build information
+
+```
+GET /api/v1/status/buildinfo
+GET <prometheus-http-prefix>/api/v1/status/buildinfo
+GET <alertmanager-http-prefix>/api/v1/status/buildinfo
+```
+
+Returns build information and information about enabled features (in JSON format). The format returned is not identical, but similar to the [Prometheus Build Information endpoint](https://prometheus.io/docs/prometheus/latest/querying/api/#build-information).
 
 ## Distributor
 

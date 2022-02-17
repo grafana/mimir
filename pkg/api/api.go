@@ -168,7 +168,7 @@ func (a *API) RegisterRoutesWithPrefix(prefix string, handler http.Handler, auth
 
 // RegisterAlertmanager registers endpoints associated with the alertmanager. It will only
 // serve endpoints using the legacy http-prefix if it is not run as a single binary.
-func (a *API) RegisterAlertmanager(am *alertmanager.MultitenantAlertmanager, apiEnabled bool) {
+func (a *API) RegisterAlertmanager(am *alertmanager.MultitenantAlertmanager, apiEnabled bool, buildInfoHandler http.Handler) {
 	alertmanagerpb.RegisterAlertmanagerServer(a.server.GRPC, am)
 
 	a.indexPage.AddLink(SectionAdminEndpoints, "/multitenant_alertmanager/status", "Alertmanager Status")
@@ -178,6 +178,7 @@ func (a *API) RegisterAlertmanager(am *alertmanager.MultitenantAlertmanager, api
 	a.RegisterRoute("/multitenant_alertmanager/configs", http.HandlerFunc(am.ListAllConfigs), false, true, "GET")
 	a.RegisterRoute("/multitenant_alertmanager/ring", http.HandlerFunc(am.RingHandler), false, true, "GET", "POST")
 	a.RegisterRoute("/multitenant_alertmanager/delete_tenant_config", http.HandlerFunc(am.DeleteUserConfig), true, true, "POST")
+	a.RegisterRoute(path.Join(a.cfg.AlertmanagerHTTPPrefix, "/api/v1/status/buildinfo"), buildInfoHandler, true, true, "GET")
 
 	// UI components lead to a large number of routes to support, utilize a path prefix instead
 	a.RegisterRoutesWithPrefix(a.cfg.AlertmanagerHTTPPrefix, am, true, true)
@@ -192,13 +193,14 @@ func (a *API) RegisterAlertmanager(am *alertmanager.MultitenantAlertmanager, api
 }
 
 // RegisterAPI registers the standard endpoints associated with a running Mimir.
-func (a *API) RegisterAPI(httpPathPrefix string, actualCfg interface{}, defaultCfg interface{}) {
+func (a *API) RegisterAPI(httpPathPrefix string, actualCfg interface{}, defaultCfg interface{}, buildInfoHandler http.Handler) {
 	a.indexPage.AddLink(SectionAdminEndpoints, "/config", "Current Config (including the default values)")
 	a.indexPage.AddLink(SectionAdminEndpoints, "/config?mode=diff", "Current Config (show only values that differ from the defaults)")
 
 	a.RegisterRoute("/config", a.cfg.configHandler(actualCfg, defaultCfg), false, true, "GET")
 	a.RegisterRoute("/", indexHandler(httpPathPrefix, a.indexPage), false, true, "GET")
 	a.RegisterRoute("/debug/fgprof", fgprof.Handler(), false, true, "GET")
+	a.RegisterRoute("/api/v1/status/buildinfo", buildInfoHandler, false, true, "GET")
 }
 
 // RegisterRuntimeConfig registers the endpoints associates with the runtime configuration
@@ -337,6 +339,7 @@ func (a *API) RegisterQueryAPI(handler http.Handler) {
 	a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/labels"), handler, true, true, "GET", "POST")
 	a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/label/{name}/values"), handler, true, true, "GET")
 	a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/series"), handler, true, true, "GET", "POST", "DELETE")
+	a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/status/buildinfo"), handler, true, true, "GET")
 	a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/metadata"), handler, true, true, "GET")
 	a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/cardinality/label_names"), handler, true, true, "GET", "POST")
 	a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/cardinality/label_values"), handler, true, true, "GET", "POST")

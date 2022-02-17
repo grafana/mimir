@@ -168,6 +168,7 @@ func NewQuerierHandler(
 	reg prometheus.Registerer,
 	logger log.Logger,
 	limits *validation.Overrides,
+	buildInfoHandler http.Handler,
 ) http.Handler {
 	// Prometheus histograms for requests to the querier.
 	querierRequestDuration := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
@@ -253,6 +254,7 @@ func NewQuerierHandler(
 	router.Path(path.Join(prefix, "/api/v1/labels")).Methods("GET", "POST").Handler(promRouter)
 	router.Path(path.Join(prefix, "/api/v1/label/{name}/values")).Methods("GET").Handler(promRouter)
 	router.Path(path.Join(prefix, "/api/v1/series")).Methods("GET", "POST", "DELETE").Handler(promRouter)
+	router.Path(path.Join(prefix, "/api/v1/status/buildinfo")).Methods("GET").Handler(buildInfoHandler)
 	router.Path(path.Join(prefix, "/api/v1/metadata")).Methods("GET").Handler(promRouter)
 	router.Path(path.Join(prefix, "/api/v1/cardinality/label_names")).Methods("GET", "POST").Handler(querier.LabelNamesCardinalityHandler(distributor, limits))
 	router.Path(path.Join(prefix, "/api/v1/cardinality/label_values")).Methods("GET", "POST").Handler(querier.LabelValuesCardinalityHandler(distributor, limits))

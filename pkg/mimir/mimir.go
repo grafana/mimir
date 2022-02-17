@@ -83,6 +83,7 @@ type Config struct {
 	MultitenancyEnabled bool                   `yaml:"multitenancy_enabled"`
 	NoAuthTenant        string                 `yaml:"no_auth_tenant" category:"advanced"`
 	PrintConfig         bool                   `yaml:"-"`
+	ApplicationName     string                 `yaml:"-"`
 
 	API              api.Config                      `yaml:"api"`
 	Server           server.Config                   `yaml:"server"`
@@ -111,6 +112,7 @@ type Config struct {
 
 // RegisterFlags registers flag.
 func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
+	c.ApplicationName = "Grafana Mimir"
 	c.Server.MetricsNamespace = "cortex"
 	c.Server.ExcludeRequestInLog = true
 
