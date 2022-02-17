@@ -64,7 +64,6 @@ func (c *ActiveSeriesCustomTrackersConfig) ExampleDoc() (comment string, yaml in
 func NewActiveSeriesMatchers(matchers ActiveSeriesCustomTrackersConfig) (*ActiveSeriesMatchers, error) {
 	asm := &ActiveSeriesMatchers{}
 	for name, matcher := range matchers {
-		asm.config += name + matcher
 		sm, err := amlabels.ParseMatchers(matcher)
 		if err != nil {
 			return nil, fmt.Errorf("can't build active series matcher %s: %w", name, err)
@@ -80,6 +79,13 @@ func NewActiveSeriesMatchers(matchers ActiveSeriesCustomTrackersConfig) (*Active
 	// Sort the result to make it deterministic for tests.
 	// Order doesn't matter for the functionality as long as the order remains consistent during the execution of the program.
 	sort.Sort(asm)
+	// The concatenation should happen after ordering, to ensure equality is not dependent on map traversal.
+	for i, name := range asm.names {
+		asm.config += name
+		for _, labelMatcher := range asm.matchers[i] {
+			asm.config += labelMatcher.String()
+		}
+	}
 	return asm, nil
 }
 
