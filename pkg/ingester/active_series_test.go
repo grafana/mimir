@@ -194,6 +194,32 @@ func TestActiveSeries_PurgeOpt(t *testing.T) {
 	assert.Equal(t, 1, allActive)
 }
 
+func TestActiveSeries_ReloadSeriesMatchers(t *testing.T) {
+	ls1 := []labels.Label{{Name: "a", Value: "1"}}
+	ls2 := []labels.Label{{Name: "a", Value: "2"}}
+
+	asm, err := NewActiveSeriesMatchers(ActiveSeriesCustomTrackersConfig{"foo": `{a=~.*}`})
+	assert.NoError(t, err)
+
+	c := NewActiveSeries(asm)
+	allActive, activeMatching := c.Active()
+	assert.Equal(t, 0, allActive)
+	assert.Equal(t, []int{0}, activeMatching)
+
+	c.UpdateSeries(ls1, time.Now(), copyFn)
+	allActive, activeMatching = c.Active()
+	assert.Equal(t, 1, allActive)
+	assert.Equal(t, []int{1}, activeMatching)
+
+	reloadTime := time.Now()
+	c.ReloadSeriesMatchers(asm)
+	c.UpdateSeries(ls2, time.Now(), copyFn)
+	allActive, activeMatching = c.Active()
+	assert.Equal(t, 2, allActive, "reloading should not affect general counter")
+	assert.Equal(t, []int{1}, activeMatching, "reloading should clear out matcher counters")
+	assert.True(t, c.lastUpdate.After(reloadTime))
+}
+
 var activeSeriesTestGoroutines = []int{50, 100, 500}
 
 func BenchmarkActiveSeriesTest_single_series(b *testing.B) {
