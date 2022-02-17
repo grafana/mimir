@@ -9,7 +9,7 @@ weight: 10000
 ## Blocks storage
 
 Blocks storage is the Mimir storage engine based on the Prometheus TSDB.
-Grafana Mimir stores blocks in object stores such as AWS S3, Google Cloud Storage (GCS), or Azure blob storage.
+Grafana Mimir stores blocks in object stores such as AWS S3, Google Cloud Storage (GCS), Azure blob storage, or OpenStack Object Storage (Swift).
 For the full list of supported backends and more information, refer to [Blocks storage]({{<relref "./blocks-storage/_index.md" >}})
 
 ## Chunk
