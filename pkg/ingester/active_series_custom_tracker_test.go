@@ -8,6 +8,7 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 
 	amlabels "github.com/prometheus/alertmanager/pkg/labels"
 	"github.com/prometheus/prometheus/model/labels"
@@ -192,21 +193,80 @@ func TestActiveSeriesMatcher_MalformedMatcher(t *testing.T) {
 }
 
 func TestActiveSeriesMatcher_Equality(t *testing.T) {
-	matcher1 := `foo:{foo="bar"};baz:{baz="bar"}`
-	matcher2 := `baz:{baz="bar"};foo:{foo="bar"}`
-	t.Run("Equality", func(t *testing.T) {
-		config1 := ActiveSeriesCustomTrackersConfig{}
-		err := config1.Set(matcher1)
-		assert.NoError(t, err)
-		config2 := ActiveSeriesCustomTrackersConfig{}
-		err = config2.Set(matcher2)
-		assert.NoError(t, err)
+	matcherSets := [][]string{
+		{
+			`foo:{foo="bar"};baz:{baz="bar"}`,
+			`baz:{baz="bar"};foo:{foo="bar"}`,
+			`  foo:{foo="bar"};baz:{baz="bar"} `,
+		},
+		{
+			`test:{test="true"}`,
+		},
+		{
+			`foo:{foo="bar"};baz:{baz="bar"};extra:{extra="extra"}`,
+		},
+	}
 
-		asm1, err := NewActiveSeriesMatchers(config1)
-		assert.NoError(t, err)
-		asm2, err := NewActiveSeriesMatchers(config2)
-		assert.NoError(t, err)
-		assert.True(t, asm1.Equals(asm2), "matcher configs should be equal")
+	for _, matcherSet := range matcherSets {
+		t.Run("EqualityBetweenSet", func(t *testing.T) {
+			var activeSeriesMatchers []*ActiveSeriesMatchers
+			for _, matcherConfig := range matcherSet {
+				config := ActiveSeriesCustomTrackersConfig{}
+				err := config.Set(matcherConfig)
+				assert.NoError(t, err)
+				asm, err := NewActiveSeriesMatchers(config)
+				assert.NoError(t, err)
+				activeSeriesMatchers = append(activeSeriesMatchers, asm)
+			}
+			for i := 0; i < len(activeSeriesMatchers); i++ {
+				for j := i + 1; j < len(activeSeriesMatchers); j++ {
+					assert.True(t, activeSeriesMatchers[i].Equals(activeSeriesMatchers[j]), "matcher configs should be equal")
+				}
+			}
+		})
+	}
+
+	t.Run("NotEqualsAcrossSets", func(t *testing.T) {
+		var activeSeriesMatchers []*ActiveSeriesMatchers
+		for _, matcherConfigs := range matcherSets {
+			exampleConfig := matcherConfigs[0]
+			config := ActiveSeriesCustomTrackersConfig{}
+			err := config.Set(exampleConfig)
+			assert.NoError(t, err)
+			asm, err := NewActiveSeriesMatchers(config)
+			assert.NoError(t, err)
+			activeSeriesMatchers = append(activeSeriesMatchers, asm)
+		}
+
+		for i := 0; i < len(activeSeriesMatchers); i++ {
+			for j := i + 1; j < len(activeSeriesMatchers); j++ {
+				assert.False(t, activeSeriesMatchers[i].Equals(activeSeriesMatchers[j]), "matcher configs should NOT be equal")
+			}
+		}
+	})
+
+}
+
+func TestActiveSeriesMatcher_Deserialization(t *testing.T) {
+	correct_input := `
+        baz: "{baz='bar'}"
+        foo: "{foo='bar'}"
+    `
+	malformed_input :=
+		`
+        baz: "123"
+        foo: "{foo='bar'}"
+    `
+	t.Run("ShouldDeserializeCorrectInput", func(t *testing.T) {
+		asm := ActiveSeriesMatchers{}
+		err := yaml.Unmarshal([]byte(correct_input), &asm)
+		assert.NoError(t, err, "failed do deserialize ActiveSeriesMatchers")
+	})
+
+	t.Run("ShouldErrorOnMalformedInput", func(t *testing.T) {
+		asm := ActiveSeriesMatchers{}
+		err := yaml.Unmarshal([]byte(malformed_input), &asm)
+		assert.Error(t, err, "should not deserialize malformed input")
 	})
 }
 
