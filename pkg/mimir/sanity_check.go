@@ -55,8 +55,10 @@ func checkDirectoriesReadWriteAccess(cfg Config) error {
 	return errs.Err()
 }
 
+var isDirReadWritableFn = fsutil.IsDirReadWritable // Used for testing.
+
 func checkDirReadWriteAccess(dir string) error {
-	if err := fsutil.IsDirReadWritable(dir); err != nil {
+	if err := isDirReadWritableFn(dir); err != nil {
 		return fmt.Errorf("failed to access directory %s: %s", dir, err)
 	}
 	return nil

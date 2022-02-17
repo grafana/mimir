@@ -4,7 +4,7 @@ package mimir
 
 import (
 	"context"
-	"os"
+	"errors"
 	"testing"
 
 	"github.com/go-kit/log"
@@ -158,22 +158,23 @@ func TestCheckDirectoryReadWriteAccess(t *testing.T) {
 	const testIngesterDir = "test-ingester-data"
 
 	tests := map[string]struct {
-		perm     os.FileMode
-		expected string
+		isDirRwFn func(string) error
+		expected  string
 	}{
-		"should fail on ingester tsdb directory w/o write access": {
-			perm:     0o555,
-			expected: "unable to access directory",
+		"should fail on ingester tsdb directory without write access": {
+			isDirRwFn: func(dir string) error {
+				return errors.New("read-only")
+			},
+			expected: "failed to access directory",
 		},
-		"should pass on ingester tsdb directory w/ write access": {
-			perm:     0o755,
+		"should pass on ingester tsdb directory with read-write access": {
+			isDirRwFn: func(s string) error {
+				return nil
+			},
 			expected: "",
 		},
 	}
 	for testName, testData := range tests {
-		// Change scope since we're running each test in parallel.
-		td := testData
-
 		t.Run(testName, func(t *testing.T) {
 			cfg := Config{}
 			flagext.DefaultValues(&cfg)
@@ -181,18 +182,15 @@ func TestCheckDirectoryReadWriteAccess(t *testing.T) {
 			require.NoError(t, cfg.Target.Set("ingester"))
 
 			cfg.Ingester.BlocksStorageConfig.TSDB.Dir = testIngesterDir
-			t.Cleanup(func() {
-				_ = os.RemoveAll(cfg.Ingester.BlocksStorageConfig.TSDB.Dir)
-			})
 
-			_ = os.Mkdir(testIngesterDir, os.ModeDir|td.perm)
+			isDirReadWritableFn = testData.isDirRwFn
 
 			actual := checkDirectoriesReadWriteAccess(cfg)
-			if td.expected == "" {
+			if testData.expected == "" {
 				require.NoError(t, actual)
 			} else {
 				require.Error(t, actual)
-				require.Contains(t, actual.Error(), td.expected)
+				require.Contains(t, actual.Error(), testData.expected)
 			}
 		})
 	}
