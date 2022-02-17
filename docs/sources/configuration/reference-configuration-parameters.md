@@ -210,7 +210,7 @@ query_scheduler:
   # CLI flag: -query-scheduler.max-outstanding-requests-per-tenant
   [max_outstanding_requests_per_tenant: <int> | default = 100]
 
-  # (advanced) If a querier disconnects without sending notification about
+  # (experimental) If a querier disconnects without sending notification about
   # graceful shutdown, the query-scheduler will keep the querier in the tenant's
   # shard until the forget delay has passed. This feature is useful to reduce
   # the blast radius when shuffle-sharding is enabled.
@@ -966,7 +966,7 @@ The `frontend` block configures the query-frontend.
 # CLI flag: -querier.max-outstanding-requests-per-tenant
 [max_outstanding_per_tenant: <int> | default = 100]
 
-# (advanced) If a querier disconnects without sending notification about
+# (experimental) If a querier disconnects without sending notification about
 # graceful shutdown, the query-frontend will keep the querier in the tenant's
 # shard until the forget delay has passed. This feature is useful to reduce the
 # blast radius when shuffle-sharding is enabled.
