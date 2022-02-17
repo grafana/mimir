@@ -61,5 +61,5 @@ Currently experimental features are:
   - Snapshotting of in-memory TSDB data on disk when shutting down (`-blocks-storage.tsdb.memory-snapshot-on-shutdown`)
 - Query-frontend
   - `-query-frontend.querier-forget-delay`
-- Query Scheduler
+- Query-scheduler
   - `-query-scheduler.querier-forget-delay`
