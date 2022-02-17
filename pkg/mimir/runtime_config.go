@@ -147,17 +147,19 @@ func ingesterInstanceLimits(manager *runtimeconfig.Manager) func() *ingester.Ins
 	}
 }
 
-func runtimeMatchersConfig(manager *runtimeconfig.Manager) func() *ingester.RuntimeMatchersConfig {
+func runtimeMatchersConfig(manager *runtimeconfig.Manager) *RuntimeMatchersConfigProvider {
 	if manager == nil {
 		return nil
 	}
 
-	return func() *ingester.RuntimeMatchersConfig {
-		val := manager.GetConfig()
-		if cfg, ok := val.(*runtimeConfigValues); ok && cfg != nil {
-			return cfg.RuntimeMatchersConfig
-		}
-		return nil
+	return &RuntimeMatchersConfigProvider{
+		Getter: func() *ingester.RuntimeMatchersConfig {
+			val := manager.GetConfig()
+			if cfg, ok := val.(*runtimeConfigValues); ok && cfg != nil {
+				return cfg.RuntimeMatchersConfig
+			}
+			return nil
+		},
 	}
 }
 

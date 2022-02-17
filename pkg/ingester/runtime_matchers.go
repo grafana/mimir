@@ -8,8 +8,13 @@ type RuntimeMatchersConfig struct {
 	TenantSpecificMatchers map[string]ActiveSeriesMatchers `yaml:"tenant_matchers"`
 }
 
-// UnmarshalYAML implements the yaml.Unmarshaler interface. If give
-func (l *RuntimeMatchersConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	type plain RuntimeMatchersConfig // type indirection to make sure we don't go into recursive loop
-	return unmarshal((*plain)(l))
+type RuntimeMatchersConfigProvider struct {
+	Getter func() *RuntimeMatchersConfig
+}
+
+func (p *RuntimeMatchersConfigProvider) Get() *RuntimeMatchersConfig {
+	if p == nil || p.Getter == nil {
+		return nil
+	}
+	return p.Getter()
 }

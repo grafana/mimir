@@ -310,9 +310,9 @@ func makeIntSliceIfNotEmpty(l int, prev []int) []int {
 		return make([]int, l, l*2)
 	}
 
-	p := prev
+	p := prev[:l]
 	for i := 0; i < l; i++ {
 		p[i] = 0
 	}
-	return (prev)[:l]
+	return p
 }

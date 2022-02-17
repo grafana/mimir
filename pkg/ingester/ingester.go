@@ -125,7 +125,7 @@ type Config struct {
 	ActiveSeriesMetricsUpdatePeriod time.Duration                    `yaml:"active_series_metrics_update_period" category:"advanced"`
 	ActiveSeriesMetricsIdleTimeout  time.Duration                    `yaml:"active_series_metrics_idle_timeout" category:"advanced"`
 	ActiveSeriesCustomTrackers      ActiveSeriesCustomTrackersConfig `yaml:"active_series_custom_trackers" doc:"description=Additional custom trackers for active metrics. If there are active series matching a provided matcher (map value), the count will be exposed in the custom trackers metric labeled using the tracker name (map key). Zero valued counts are not exposed (and removed when they go back to zero)."`
-	RuntimeMatchersConfigFn         func() *RuntimeMatchersConfig    `yaml:"-"`
+	RuntimeMatchersConfigProvider   *RuntimeMatchersConfigProvider   `yaml:"-"`
 
 	ExemplarsUpdatePeriod time.Duration `yaml:"exemplars_update_period" category:"experimental"`
 
@@ -479,7 +479,7 @@ func (i *Ingester) updateLoop(ctx context.Context) error {
 }
 
 func (i *Ingester) reloadConfig(now time.Time) {
-	currentConfig := getRuntimeMatchersConfig(i.cfg.RuntimeMatchersConfigFn)
+	currentConfig := i.cfg.RuntimeMatchersConfigProvider.Get()
 	for _, userID := range i.getTSDBUsers() {
 		userDB := i.getTSDB(userID)
 		if userDB == nil {
@@ -510,14 +510,6 @@ func (i *Ingester) getActiveSeriesMatchers(userID string, config *RuntimeMatcher
 func (i *Ingester) ReplaceMatchers(asm *ActiveSeriesMatchers, userDB *userTSDB) {
 	i.metrics.deletePerUserCustomTrackerMetrics(userDB.userID, userDB.activeSeries.asm.names)
 	userDB.activeSeries.ReloadSeriesMatchers(asm)
-}
-
-func getRuntimeMatchersConfig(runtimeMatchersConfigFn func() *RuntimeMatchersConfig) *RuntimeMatchersConfig {
-	if runtimeMatchersConfigFn == nil {
-		return nil
-	}
-
-	return runtimeMatchersConfigFn()
 }
 
 func (i *Ingester) updateActiveSeries(now time.Time) {
@@ -1494,7 +1486,7 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 	userLogger := util_log.WithUserID(userID, i.logger)
 
 	blockRanges := i.cfg.BlocksStorageConfig.TSDB.BlockRanges.ToMilliseconds()
-	newMatchers := i.getActiveSeriesMatchers(userID, getRuntimeMatchersConfig(i.cfg.RuntimeMatchersConfigFn))
+	newMatchers := i.getActiveSeriesMatchers(userID, i.cfg.RuntimeMatchersConfigProvider.Get())
 
 	userDB := &userTSDB{
 		userID:              userID,

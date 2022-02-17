@@ -79,13 +79,15 @@ func NewActiveSeriesMatchers(matchers ActiveSeriesCustomTrackersConfig) (*Active
 	// Sort the result to make it deterministic for tests.
 	// Order doesn't matter for the functionality as long as the order remains consistent during the execution of the program.
 	sort.Sort(asm)
+	var sb strings.Builder
 	// The concatenation should happen after ordering, to ensure equality is not dependent on map traversal.
 	for i, name := range asm.names {
-		asm.config += name
+		sb.WriteString(name)
 		for _, labelMatcher := range asm.matchers[i] {
-			asm.config += labelMatcher.String()
+			sb.WriteString(labelMatcher.String())
 		}
 	}
+	asm.config = sb.String()
 	return asm, nil
 }
 
