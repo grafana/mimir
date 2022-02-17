@@ -25,8 +25,7 @@ Typically, series become idle when a monitored target process or node gets termi
 
 ## Flushing
 
-Flushing is the operation run by ingesters to offload time series from memory and store them as blocks on disk.
-Blocks are later shipped to the long-term storage.
+Flushing is the operation run by ingesters to offload time series from memory and store them in the long-term storage.
 
 ## Gossip
 
