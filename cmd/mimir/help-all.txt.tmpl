@@ -990,7 +990,7 @@ Usage of ./cmd/mimir/mimir:
   -querier.dns-lookup-period duration
     	How often to query DNS for query-frontend or query-scheduler address. (default 10s)
   -querier.frontend-address string
-    	Address of query frontend service, in host:port format. If -querier.scheduler-address is set as well, querier will use scheduler instead. Only one of -querier.frontend-address or -querier.scheduler-address can be set. If neither is set, queries are only received via HTTP endpoint.
+    	Address of the query-frontend component, in host:port format. If -querier.scheduler-address is set as well, the querier will use scheduler instead. Only one of -querier.frontend-address or -querier.scheduler-address can be set. If neither is set, queries are only received via HTTP endpoint.
   -querier.frontend-client.backoff-max-period duration
     	Maximum delay when backing off. (default 10s)
   -querier.frontend-client.backoff-min-period duration
@@ -1022,7 +1022,7 @@ Usage of ./cmd/mimir/mimir:
   -querier.frontend-client.tls-server-name string
     	Override the expected name on the server certificate.
   -querier.id string
-    	Querier ID, sent to frontend service to identify requests from the same querier. Defaults to hostname.
+    	Querier ID, sent to the query-frontend to identify requests from the same querier. Defaults to hostname.
   -querier.iterators
     	Use iterators to execute query, as opposed to fully materialising the series in memory.
   -querier.label-names-and-values-results-max-size-bytes int
@@ -1594,7 +1594,7 @@ Usage of ./cmd/mimir/mimir:
   -store.max-query-length value
     	Limit the query time range (end - start time). This limit is enforced in the query-frontend (on the received query), in the querier (on the query possibly split by the query-frontend) and ruler. 0 to disable.
   -target value
-    	Comma-separated list of modules to load. The alias 'all' can be used in the list to load a number of core modules and will enable single-binary mode. Use '-modules' command line flag to get a list of available modules, and to see which modules are included in 'all'. (default all)
+    	Comma-separated list of components to include in the instantiated process. The default value 'all' includes all components that are required to form a functional Grafana Mimir instance in single-binary mode. Use the '-modules' command line flag to get a list of available components, and to see which components are included with 'all'. (default all)
   -tenant-federation.enabled
     	If enabled on all services, queries can be federated across multiple tenants. The tenant IDs involved need to be specified separated by a '|' character in the 'X-Scope-OrgID' header.
   -validation.create-grace-period value

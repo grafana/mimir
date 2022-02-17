@@ -123,9 +123,9 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	// Set the default module list to 'all'
 	c.Target = []string{All}
 
-	f.Var(&c.Target, "target", "Comma-separated list of modules to load. "+
-		"The alias 'all' can be used in the list to load a number of core modules and will enable single-binary mode. "+
-		"Use '-modules' command line flag to get a list of available modules, and to see which modules are included in 'all'.")
+	f.Var(&c.Target, "target", "Comma-separated list of components to include in the instantiated process. "+
+		"The default value 'all' includes all components that are required to form a functional Grafana Mimir instance in single-binary mode. "+
+		"Use the '-modules' command line flag to get a list of available components, and to see which components are included with 'all'.")
 
 	f.BoolVar(&c.MultitenancyEnabled, "auth.multitenancy-enabled", true, "When set to true, incoming HTTP requests must specify tenant ID in HTTP X-Scope-OrgId header. When set to false, tenant ID from -auth.no-auth-tenant is used instead.")
 	f.StringVar(&c.NoAuthTenant, "auth.no-auth-tenant", "anonymous", "Tenant ID to use when multitenancy is disabled.")

@@ -80,10 +80,11 @@ where `default_value` is the value to use if the environment variable is undefin
 ## Configuration parameters
 
 ```yaml
-# Comma-separated list of modules to load. The alias 'all' can be used in the
-# list to load a number of core modules and will enable single-binary mode. Use
-# '-modules' command line flag to get a list of available modules, and to see
-# which modules are included in 'all'.
+# Comma-separated list of components to include in the instantiated process. The
+# default value 'all' includes all components that are required to form a
+# functional Grafana Mimir instance in single-binary mode. Use the '-modules'
+# command line flag to get a list of available components, and to see which
+# components are included with 'all'.
 # CLI flag: -target
 [target: <string> | default = "all"]
 
@@ -2083,10 +2084,10 @@ grpc_client_config:
 The `frontend_worker` block configures the worker running within the querier, picking up and executing queries enqueued by the query-frontend or the query-scheduler.
 
 ```yaml
-# Address of query frontend service, in host:port format. If
-# -querier.scheduler-address is set as well, querier will use scheduler instead.
-# Only one of -querier.frontend-address or -querier.scheduler-address can be
-# set. If neither is set, queries are only received via HTTP endpoint.
+# Address of the query-frontend component, in host:port format. If
+# -querier.scheduler-address is set as well, the querier will use scheduler
+# instead. Only one of -querier.frontend-address or -querier.scheduler-address
+# can be set. If neither is set, queries are only received via HTTP endpoint.
 # CLI flag: -querier.frontend-address
 [frontend_address: <string> | default = ""]
 
@@ -2102,8 +2103,8 @@ The `frontend_worker` block configures the worker running within the querier, pi
 # CLI flag: -querier.dns-lookup-period
 [dns_lookup_duration: <duration> | default = 10s]
 
-# (advanced) Querier ID, sent to frontend service to identify requests from the
-# same querier. Defaults to hostname.
+# (advanced) Querier ID, sent to the query-frontend to identify requests from
+# the same querier. Defaults to hostname.
 # CLI flag: -querier.id
 [id: <string> | default = ""]
 
