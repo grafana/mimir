@@ -26,7 +26,6 @@ import (
 	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/flusher"
 	"github.com/grafana/mimir/pkg/frontend"
-	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimir"
@@ -51,114 +50,109 @@ var (
 	// follow the markdown generation.
 	rootBlocks = []rootBlock{
 		{
-			name:       "server_config",
+			name:       "server",
 			structType: reflect.TypeOf(server.Config{}),
-			desc:       "The server_config configures the HTTP and gRPC server of the launched service(s).",
+			desc:       "The server block configures the HTTP and gRPC server of the launched service(s).",
 		},
 		{
-			name:       "distributor_config",
+			name:       "distributor",
 			structType: reflect.TypeOf(distributor.Config{}),
-			desc:       "The distributor_config configures the distributor.",
+			desc:       "The distributor block configures the distributor.",
 		},
 		{
-			name:       "ingester_config",
+			name:       "ingester",
 			structType: reflect.TypeOf(ingester.Config{}),
-			desc:       "The ingester_config configures the ingester.",
+			desc:       "The ingester block configures the ingester.",
 		},
 		{
-			name:       "querier_config",
+			name:       "querier",
 			structType: reflect.TypeOf(querier.Config{}),
-			desc:       "The querier_config configures the querier.",
+			desc:       "The querier block configures the querier.",
 		},
 		{
-			name:       "query_frontend_config",
+			name:       "frontend",
 			structType: reflect.TypeOf(frontend.CombinedFrontendConfig{}),
-			desc:       "The query_frontend_config configures the query-frontend.",
+			desc:       "The frontend block configures the query-frontend.",
 		},
 		{
-			name:       "query_range_config",
-			structType: reflect.TypeOf(querymiddleware.Config{}),
-			desc:       "The query_range_config configures the query splitting and caching in the query-frontend.",
-		},
-		{
-			name:       "ruler_config",
+			name:       "ruler",
 			structType: reflect.TypeOf(ruler.Config{}),
-			desc:       "The ruler_config configures the ruler.",
+			desc:       "The ruler block configures the ruler.",
 		},
 		{
-			name:       "ruler_storage_config",
+			name:       "ruler_storage",
 			structType: reflect.TypeOf(rulestore.Config{}),
-			desc:       "The ruler_storage_config configures the ruler storage backend.",
+			desc:       "The ruler_storage block configures the ruler storage backend.",
 		},
 		{
-			name:       "alertmanager_config",
+			name:       "alertmanager",
 			structType: reflect.TypeOf(alertmanager.MultitenantAlertmanagerConfig{}),
-			desc:       "The alertmanager_config configures the alertmanager.",
+			desc:       "The alertmanager block configures the alertmanager.",
 		},
 		{
-			name:       "alertmanager_storage_config",
+			name:       "alertmanager_storage",
 			structType: reflect.TypeOf(alertstore.Config{}),
-			desc:       "The alertmanager_storage_config configures the alertmanager storage backend.",
+			desc:       "The alertmanager_storage block configures the alertmanager storage backend.",
 		},
 		{
-			name:       "flusher_config",
+			name:       "flusher",
 			structType: reflect.TypeOf(flusher.Config{}),
-			desc:       "The flusher_config configures the WAL flusher target, used to manually run one-time flushes when scaling down ingesters.",
+			desc:       "The flusher block configures the WAL flusher target, used to manually run one-time flushes when scaling down ingesters.",
 		},
 		{
-			name:       "ingester_client_config",
+			name:       "ingester_client",
 			structType: reflect.TypeOf(client.Config{}),
-			desc:       "The ingester_client_config configures how the distributors connect to the ingesters.",
+			desc:       "The ingester_client block configures how the distributors connect to the ingesters.",
 		},
 		{
-			name:       "frontend_worker_config",
+			name:       "frontend_worker",
 			structType: reflect.TypeOf(querier_worker.Config{}),
-			desc:       "The frontend_worker_config configures the worker - running within the querier - picking up and executing queries enqueued by the query-frontend or query-scheduler.",
+			desc:       "The frontend_worker block configures the worker running within the querier, picking up and executing queries enqueued by the query-frontend or the query-scheduler.",
 		},
 		{
-			name:       "etcd_config",
+			name:       "etcd",
 			structType: reflect.TypeOf(etcd.Config{}),
-			desc:       "The etcd_config configures the etcd client.",
+			desc:       "The etcd block configures the etcd client.",
 		},
 		{
-			name:       "consul_config",
+			name:       "consul",
 			structType: reflect.TypeOf(consul.Config{}),
-			desc:       "The consul_config configures the consul client.",
+			desc:       "The consul block configures the consul client.",
 		},
 		{
-			name:       "memberlist_config",
+			name:       "memberlist",
 			structType: reflect.TypeOf(memberlist.KVConfig{}),
-			desc:       "The memberlist_config configures the Gossip memberlist.",
+			desc:       "The memberlist block configures the Gossip memberlist.",
 		},
 		{
-			name:       "limits_config",
+			name:       "limits",
 			structType: reflect.TypeOf(validation.Limits{}),
-			desc:       "The limits_config configures default and per-tenant limits imposed by services (ie. distributor, ingester, ...).",
+			desc:       "The limits block configures default and per-tenant limits imposed by components.",
 		},
 		{
-			name:       "blocks_storage_config",
+			name:       "blocks_storage",
 			structType: reflect.TypeOf(tsdb.BlocksStorageConfig{}),
-			desc:       "The blocks_storage_config configures the blocks storage.",
+			desc:       "The blocks_storage block configures the blocks storage.",
 		},
 		{
-			name:       "compactor_config",
+			name:       "compactor",
 			structType: reflect.TypeOf(compactor.Config{}),
-			desc:       "The compactor_config configures the compactor service.",
+			desc:       "The compactor block configures the compactor component.",
 		},
 		{
-			name:       "store_gateway_config",
+			name:       "store_gateway",
 			structType: reflect.TypeOf(storegateway.Config{}),
-			desc:       "The store_gateway_config configures the store-gateway service.",
+			desc:       "The store_gateway block configures the store-gateway component.",
 		},
 		{
-			name:       "s3_sse_config",
+			name:       "sse",
 			structType: reflect.TypeOf(s3.SSEConfig{}),
-			desc:       "The s3_sse_config configures the S3 server-side encryption.",
+			desc:       "The sse block configures the S3 server-side encryption.",
 		},
 		{
-			name:       "memcached_config",
+			name:       "memcached",
 			structType: reflect.TypeOf(cache.MemcachedConfig{}),
-			desc:       "The memcached_config configures the Memcached-based caching backend.",
+			desc:       "The memcached block configures the Memcached-based caching backend.",
 		},
 	}
 )
