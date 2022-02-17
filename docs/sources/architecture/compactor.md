@@ -49,9 +49,9 @@ By design, the `split-and-merge` compactor overcomes TSDB index limitations and 
 
 This compaction strategy is a two stage process: split and merge.
 
-For the configured first level of compaction, for example `2h`, the compactor divides all source blocks into _N_ (`-compactor.split-groups`) groups. For each group, the compactor compacts together the blocks, but instead of producing single result block, it outputs _M_ (`-compactor.split-and-merge-shards`) blocks, which are called _split_ blocks. Each split block contains only a subset of the series belonging to given shard out of _M_ shards. At the end of the split stage, the compactor produces _N \* M_ blocks with a reference to their shard in the block’s `meta.json` file.
+For the configured first level of compaction, for example `2h`, the compactor divides all source blocks into _N_ (`-compactor.split-groups`) groups. For each group, the compactor compacts together the blocks, but instead of producing single result block, it outputs _M_ (`-compactor.split-and-merge-shards`) blocks, which are called _split_ blocks. Each split block contains only a subset of the series belonging to given shard out of _M_ shards. At the end of the split stage, the compactor produces _N * M_ blocks with a reference to their shard in the block’s `meta.json` file.
 
-Given the split blocks, the compactor then runs the **merge** stage for each shard, which compacts together all _N_ split blocks of a given shard. Once this stage is completed, the number of blocks will be reduced from _N \* M_ to _M_. Given a compaction time range, we'll have a compacted block for each of _M_ shards.
+Given the split blocks, the compactor then runs the **merge** stage for each shard, which compacts together all _N_ split blocks of a given shard. Once this stage is completed, the number of blocks will be reduced from _N * M_ to _M_. Given a compaction time range, we'll have a compacted block for each of _M_ shards.
 
 The merge stage is then run for subsequent compaction time ranges (eg. 12h, 24h), compacting together blocks belonging to the same shard (_not shown in the picture below_).
 
