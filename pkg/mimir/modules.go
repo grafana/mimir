@@ -579,13 +579,11 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 		return
 	}
 
-	// Expose HTTP/GRPC endpoints for the Ruler service
+	// Expose HTTP/GRPC admin endpoints for the Ruler service
 	t.API.RegisterRuler(t.Ruler)
 
-	// If the API is enabled, register the Ruler API
-	if t.Cfg.Ruler.EnableAPI {
-		t.API.RegisterRulerAPI(ruler.NewAPI(t.Ruler, t.RulerStorage, util_log.Logger))
-	}
+	// Expose HTTP configuration and prometheus-compatible Ruler APIs
+	t.API.RegisterRulerAPI(ruler.NewAPI(t.Ruler, t.RulerStorage, util_log.Logger), t.Cfg.Ruler.EnableAPI)
 
 	return t.Ruler, nil
 }
