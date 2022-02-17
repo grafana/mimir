@@ -227,11 +227,83 @@ func TestConfigValidation(t *testing.T) {
 			},
 			expectedError: nil,
 		},
+		{
+			name: "should fail if bucket name and region is shared between alertmanager and block storage on S3",
+			getTestConfig: func() *Config {
+				configuration := newDefaultConfig()
+				_ = configuration.Target.Set("all,alertmanager")
+
+				configuration.BlocksStorage.Bucket.Backend = bucket.S3
+				configuration.BlocksStorage.Bucket.S3.BucketName = "b1"
+				configuration.BlocksStorage.Bucket.S3.Region = "r1"
+
+				configuration.AlertmanagerStorage.Backend = bucket.S3
+				configuration.AlertmanagerStorage.Config.S3.BucketName = "b1"
+				configuration.AlertmanagerStorage.Config.S3.Region = "r1"
+
+				return configuration
+			},
+			expectedError: errInvalidBucketConfig,
+		},
+		{
+			name: "should fail if bucket name and region is shared between ruler and block storage on S3",
+			getTestConfig: func() *Config {
+				configuration := newDefaultConfig()
+				_ = configuration.Target.Set("all,ruler")
+
+				configuration.BlocksStorage.Bucket.Backend = bucket.S3
+				configuration.BlocksStorage.Bucket.S3.BucketName = "b1"
+				configuration.BlocksStorage.Bucket.S3.Region = "r1"
+
+				configuration.RulerStorage.Backend = bucket.S3
+				configuration.RulerStorage.Config.S3.BucketName = "b1"
+				configuration.RulerStorage.Config.S3.Region = "r1"
+
+				return configuration
+			},
+			expectedError: errInvalidBucketConfig,
+		},
+		{
+			name: "should pass if only bucket name is shared between alertmanager and block storage on S3",
+			getTestConfig: func() *Config {
+				configuration := newDefaultConfig()
+				_ = configuration.Target.Set("all,alertmanager")
+
+				configuration.BlocksStorage.Bucket.Backend = bucket.S3
+				configuration.BlocksStorage.Bucket.S3.BucketName = "b1"
+				configuration.BlocksStorage.Bucket.S3.Region = "r1"
+
+				configuration.AlertmanagerStorage.Backend = bucket.S3
+				configuration.AlertmanagerStorage.Config.S3.BucketName = "b1"
+				configuration.AlertmanagerStorage.Config.S3.Region = "r2"
+
+				return configuration
+			},
+			expectedError: nil,
+		},
+		{
+			name: "should pass if only bucket name is shared between ruler and block storage on S3",
+			getTestConfig: func() *Config {
+				configuration := newDefaultConfig()
+				_ = configuration.Target.Set("all,ruler")
+
+				configuration.BlocksStorage.Bucket.Backend = bucket.S3
+				configuration.BlocksStorage.Bucket.S3.BucketName = "b1"
+				configuration.BlocksStorage.Bucket.S3.Region = "r1"
+
+				configuration.RulerStorage.Backend = bucket.S3
+				configuration.RulerStorage.Config.S3.BucketName = "b1"
+				configuration.RulerStorage.Config.S3.Region = "r2"
+
+				return configuration
+			},
+			expectedError: nil,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			err := tc.getTestConfig().Validate(nil)
 			if tc.expectedError != nil {
-				require.Equal(t, tc.expectedError, err)
+				require.ErrorIs(t, err, tc.expectedError)
 			} else {
 				require.NoError(t, err)
 			}
