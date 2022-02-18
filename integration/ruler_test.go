@@ -830,14 +830,19 @@ func TestRulerEnableAPIs(t *testing.T) {
 			apiEnabled: false,
 
 			expectedRegisteredEndpoints: [][2]string{
-				{http.MethodGet, "/api/prom/api/v1/alerts"},
-				{http.MethodGet, "/api/prom/api/v1/rules"},
+				{http.MethodGet, "/prometheus/api/v1/alerts"},
+				{http.MethodGet, "/prometheus/api/v1/rules"},
 			},
 			expectedMissingEndpoints: [][2]string{
 				{http.MethodGet, "/api/v1/rules"},
 				{http.MethodGet, "/api/v1/rules/my_namespace"},
 				{http.MethodGet, "/api/v1/rules/my_namespace/my_group"},
 				{http.MethodPost, "/api/v1/rules/my_namespace"},
+
+				{http.MethodGet, "/prometheus/rules"},
+				{http.MethodGet, "/prometheus/rules/my_namespace"},
+				{http.MethodGet, "/prometheus/rules/my_namespace/my_group"},
+				{http.MethodPost, "/prometheus/rules/my_namespace"},
 			},
 		},
 		{
@@ -846,11 +851,16 @@ func TestRulerEnableAPIs(t *testing.T) {
 
 			expectedRegisteredEndpoints: [][2]string{
 				// not going to test GET /api/v1/rules/my_namespace/my_group because it requires creating a rule group
-				{http.MethodGet, "/api/prom/api/v1/alerts"},
-				{http.MethodGet, "/api/prom/api/v1/rules"},
+				{http.MethodGet, "/prometheus/api/v1/alerts"},
+				{http.MethodGet, "/prometheus/api/v1/rules"},
+
 				{http.MethodGet, "/api/v1/rules"},
 				{http.MethodGet, "/api/v1/rules/my_namespace"},
 				{http.MethodPost, "/api/v1/rules/my_namespace"},
+
+				{http.MethodGet, "/prometheus/rules"},
+				{http.MethodGet, "/prometheus/rules/my_namespace"},
+				{http.MethodPost, "/prometheus/rules/my_namespace"},
 			},
 		},
 	}
