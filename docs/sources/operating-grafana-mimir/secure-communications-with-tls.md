@@ -77,12 +77,12 @@ through the following config parameters:
     # Path to the Client CA Cert for the gRPC Server
     -server.grpc-tls-ca-path=/path/to/root.crt
 ```
-Both of the client authorization flags, `-server.http-tls-client-auth` and `-server.grpc-tls-client-auth`, are shown with the strictest option, "RequiredAndVerifyClientCert". However the flags support other values as well:
-- NoClientCert
-- RequestClientCert
-- RequireClientCert
-- VerifyClientCertIfGiven
-- RequireAndVerifyClientCert
+Both of the client authorization flags, `-server.http-tls-client-auth` and `-server.grpc-tls-client-auth`, are shown with the strictest option, `RequiredAndVerifyClientCert`. However the flags support all the values defined in the [crypto/tls](https://pkg.go.dev/crypto/tls#ClientAuthType) standard library. For all values except `NoClientCert`, the policy defines that the server should request a client certificate during the handshake. The values differ in whether the client should send certificates and if they should be verified by the server. The following are the available options:
+- `NoClientCert`: No client certificate should be requested.
+- `RequestClientCert`: A client certificate should be requested but the client is not required to send one.
+- `RequireClientCert`: The client is required to send at least one certificate, but it's not required to be a valid certificate.
+- `VerifyClientCertIfGiven`: The client is not required to send a certificate, but if it does, it has to be a valid certificate.
+- `RequireAndVerifyClientCert`: The client must send at least one valid certificate.
 
 #### Client flags
 
@@ -116,14 +116,14 @@ Similarly, for the gRPC Ingester Client:
 
 TLS keys, certificates, and certificate authorities can be configured in a similar fashion for other gRPC clients in Grafana Mimir.
 
-To enable TLS for a given component, use the client flag that is suffixed with `*.tls-enabled=true`, (e.g. `-querier.fontend-client.tls-enabled=true`). The following Grafana Mimir components support TLS for inter-communication, shown with their corresponding configuration flag prefixes:
+To enable TLS for a given component, use the client flag that is suffixed with `*.tls-enabled=true`, (e.g. `-querier.frontend-client.tls-enabled=true`). The following Grafana Mimir components support TLS for inter-communication, shown with their corresponding configuration flag prefixes:
 - Query scheduler gRPC client used to connect to query-frontend (`-query-scheduler.grpc-client-config.*`)
 - Querier gRPC client used to connect to store-gateway (`-querier.store-gateway-client.*`)
 - Query-frontend gRPC client used to connect to query-scheduler (`-query-frontend.grpc-client-config.*`)
+- Querier gRPC client to connect to query-frontend and query-scheduler (`-querier.frontend-client.*`)
 - Ruler gRPC client used to connect to other ruler instances (`-ruler.client.*`)
 - Alertmanager gRPC client used to connect to other Alertmanager instances (`-alertmanager.alertmanager-client.*`)
 - gRPC client used by distributor, querier and ruler to connect to ingesters (`-ingester.client.*`)
-- Querier gRPC client to connect to query-frontend and query-scheduler (`-querier.frontend-client.*`)
 - Etcd client used by all Mimir components to connect to etcd, required only if you're running the hash ring or HA tracker on etcd backend (`-<prefix>.etcd.*`)
 - Memberlist client used by all Mimir components to gossip the hash ring, required only if you're running the hash ring on memberlist (`-memberlist.`)
 
@@ -132,4 +132,3 @@ Each of these components supports the following TLS configuration options, shown
 - `*.tls-enabled=<boolean>`: Enable TLS in the client.
 - `*.tls-server-name=<string>`: Override the expected name on the server certificate.
 - `*.tls-insecure-skip-verify=<boolean>`: Skip validating server certificate.
-
