@@ -332,34 +332,34 @@
 * [CHANGE] Distributor: removed the `-distributor.extra-query-delay` flag (and its respective YAML config option). #1048
 * [CHANGE] Query-frontend / Query-scheduler: classified the `-query-frontend.querier-forget-delay` and `-query-scheduler.querier-forget-delay` flags (and their respective YAML config options) as experimental. #1208
 * [CHANGE] Remove `-http.prefix` flag (and `http_prefix` config file option). #763
-* [CHANGE] Remove legacy endpoints. Please use their non-legacy equivalents. #763
-  * Query Endpoints
+* [CHANGE] Remove legacy endpoints. Please use their alternatives. #763
+  * Query endpoints
 
-    | Legacy endpoint                             | Non-legacy equivalent                         |
-    | ------------------------------------------- | --------------------------------------------- |
-    | `/api/prom/api/v1/query`                    | `/prometheus/api/v1/query`                    |
-    | `/api/prom/api/v1/query_range`              | `/prometheus/api/v1/query_range`              |
-    | `/api/prom/api/v1/query_exemplars`          | `/prometheus/api/v1/query_exemplars`          |
-    | `/api/prom/api/v1/series`                   | `/prometheus/api/v1/series`                   |
-    | `/api/prom/api/v1/labels`                   | `/prometheus/api/v1/labels`                   |
-    | `/api/prom/api/v1/label/{name}/values`      | `/prometheus/api/v1/label/{name}/values`      |
-    | `/api/prom/api/v1/metadata`                 | `/prometheus/api/v1/metadata`                 |
-    | `/api/prom/api/v1/read`                     | `/prometheus/api/v1/read`                     |
-    | `/api/prom/api/v1/cardinality/label_names`  | `/prometheus/api/v1/cardinality/label_names`  |
-    | `/api/prom/api/v1/cardinality/label_values` | `/prometheus/api/v1/cardinality/label_values` |
-    | `/api/prom/user_stats`                      | `/api/v1/user_stats`                          |
+    | Legacy                                                  | Alternative                                                 |
+    | ------------------------------------------------------- | ----------------------------------------------------------- |
+    | `/<legacy-http-prefix>/api/v1/query`                    | `/<prometheus-http-prefix>/api/v1/query`                    |
+    | `/<legacy-http-prefix>/api/v1/query_range`              | `/<prometheus-http-prefix>/api/v1/query_range`              |
+    | `/<legacy-http-prefix>/api/v1/query_exemplars`          | `/<prometheus-http-prefix>/api/v1/query_exemplars`          |
+    | `/<legacy-http-prefix>/api/v1/series`                   | `/<prometheus-http-prefix>/api/v1/series`                   |
+    | `/<legacy-http-prefix>/api/v1/labels`                   | `/<prometheus-http-prefix>/api/v1/labels`                   |
+    | `/<legacy-http-prefix>/api/v1/label/{name}/values`      | `/<prometheus-http-prefix>/api/v1/label/{name}/values`      |
+    | `/<legacy-http-prefix>/api/v1/metadata`                 | `/<prometheus-http-prefix>/api/v1/metadata`                 |
+    | `/<legacy-http-prefix>/api/v1/read`                     | `/<prometheus-http-prefix>/api/v1/read`                     |
+    | `/<legacy-http-prefix>/api/v1/cardinality/label_names`  | `/<prometheus-http-prefix>/api/v1/cardinality/label_names`  |
+    | `/<legacy-http-prefix>/api/v1/cardinality/label_values` | `/<prometheus-http-prefix>/api/v1/cardinality/label_values` |
+    | `/api/prom/user_stats`                                  | `/api/v1/user_stats`                                        |
 
   * Distributor endpoints
 
-    | Legacy endpoint   | Non-legacy equivalent         |
-    | ----------------- | ----------------------------- |
-    | `/api/prom/push`  | `/api/v1/push`                |
-    | `/all_user_stats` | `/distributor/all_user_stats` |
-    | `/ha-tracker`     | `/distributor/ha_tracker`     |
+    | Legacy endpoint               | Alternative                   |
+    | ----------------------------- | ----------------------------- |
+    | `/<legacy-http-prefix>/push`  | `/api/v1/push`                |
+    | `/all_user_stats`             | `/distributor/all_user_stats` |
+    | `/ha-tracker`                 | `/distributor/ha_tracker`     |
 
   * Ingester endpoints
 
-    | Legacy endpoint | Non-legacy equivalent |
+    | Legacy          | Alternative           |
     | --------------- | --------------------- |
     | `/ring`         | `/ingester/ring`      |
     | `/shutdown`     | `/ingester/shutdown`  |
@@ -368,25 +368,30 @@
 
   * Ruler endpoints
 
-    | Legacy endpoint                           | Non-legacy equivalent                   |
-    | ----------------------------------------- | --------------------------------------- |
-    | `/api/prom/api/v1/rules`                  | `/prometheus/api/v1/rules`              |
-    | `/api/prom/api/v1/alerts`                 | `/prometheus/api/v1/alerts`             |
-    | `/api/prom/rules`                         | `/api/v1/rules`                         |
-    | `/api/prom/rules/{namespace}`             | `/api/v1/rules/{namespace}`             |
-    | `/api/prom/rules/{namespace}/{groupName}` | `/api/v1/rules/{namespace}/{groupName}` |
-    | `/api/prom/rules/{namespace}`             | `/api/v1/rules/{namespace}`             |
-    | `/api/prom/rules/{namespace}/{groupName}` | `/api/v1/rules/{namespace}/{groupName}` |
-    | `/api/prom/rules/{namespace}`             | `/api/v1/rules/{namespace}`             |
-    | `/ruler_ring`                             | `/ruler/ring`                           |
+    | Legacy                                                | Alternative                                 |
+    | ----------------------------------------------------- | ------------------------------------------- |
+    | `/<legacy-http-prefix>/api/v1/rules`                  | `/<prometheus-http-prefix>/api/v1/rules`    |
+    | `/<legacy-http-prefix>/api/v1/alerts`                 | `/<prometheus-http-prefix>/api/v1/alerts`   |
+    | `/<legacy-http-prefix>/rules`                         | `/api/v1/rules`[^1]                         |
+    | `/<legacy-http-prefix>/rules/{namespace}`             | `/api/v1/rules/{namespace}`[^1]             |
+    | `/<legacy-http-prefix>/rules/{namespace}/{groupName}` | `/api/v1/rules/{namespace}/{groupName}`[^1] |
+    | `/<legacy-http-prefix>/rules/{namespace}`             | `/api/v1/rules/{namespace}`[^1]             |
+    | `/<legacy-http-prefix>/rules/{namespace}/{groupName}` | `/api/v1/rules/{namespace}/{groupName}`[^1] |
+    | `/<legacy-http-prefix>/rules/{namespace}`             | `/api/v1/rules/{namespace}`[^1]             |
+    | `/ruler_ring`                                         | `/ruler/ring`                               |
+
+    [^1]: The non-legacy `/api/v1/rules/**` endpoints are being deprecated with Mimir 2.0.0 and will be removed
+    in Mimir 2.2.0. After upgrading to 2.0.0 we recommend switching to the equivalent
+    `/<prometheus-http-prefix>/rules/v1/**` endpoints that Mimir 2.0.0 introduces.
 
   * Alertmanager endpoints
 
-    | Legacy endpoint | Non-legacy equivalent              |
-    | --------------- | ---------------------------------- |
-    | `/api/prom`     | `/alertmanager`                    |
-    | `/status`       | `/multitenant_alertmanager/status` |
+    | Legacy                      | Alternative                        |
+    | --------------------------- | ---------------------------------- |
+    | `/<legacy-http-prefix>`     | `/alertmanager`                    |
+    | `/status`                   | `/multitenant_alertmanager/status` |
 
+* [CHANGE] Ruler: deprecate `/api/v1/rules/**` configuration API endpoints in favour of `/<prometheus-http-prefix>/v1/rules/**`. Endpoints will be removed in Mimir 2.2.0. Main configuration API endpoints are now `/<prometheus-http-prefix>/config/api/v1/rules/**` introduced in Mimir 2.0.0. #1222
 * [FEATURE] The endpoints `/api/v1/status/buildinfo`, `<prometheus-http-prefix>/api/v1/status/buildinfo`, and `<alertmanager-http-prefix>/api/v1/status/buildinfo` have been added to display build information and enabled features. #1219 #1240
 * [FEATURE] Query Frontend: Add `cortex_query_fetched_chunks_total` per-user counter to expose the number of chunks fetched as part of queries. This metric can be enabled with the `-query-frontend.query-stats-enabled` flag (or its respective YAML config option `query_stats_enabled`). #31
 * [FEATURE] Query Frontend: Add experimental querysharding for the blocks storage (instant and range queries). You can now enable querysharding for blocks storage (`-store.engine=blocks`) by setting `-query-frontend.parallelize-shardable-queries` to `true`. The following additional config and exported metrics have been added. #79 #80 #100 #124 #140 #148 #150 #151 #153 #154 #155 #156 #157 #158 #159 #160 #163 #169 #172 #196 #205 #225 #226 #227 #228 #230 #235 #240 #239 #246 #244 #319 #330 #371 #385 #400 #458 #586 #630 #660 #707

@@ -46,12 +46,12 @@ For the sake of clarity, in this document we have grouped API endpoints by servi
 | [Ruler rules ](#ruler-rule-groups)                                                    | Ruler                   | `GET /ruler/rule_groups`                                             |
 | [List rules](#list-rules)                                                             | Ruler                   | `GET <prometheus-http-prefix>/api/v1/rules`                          |
 | [List alerts](#list-alerts)                                                           | Ruler                   | `GET <prometheus-http-prefix>/api/v1/alerts`                         |
-| [List rule groups](#list-rule-groups)                                                 | Ruler                   | `GET /api/v1/rules`                                                  |
-| [Get rule groups by namespace](#get-rule-groups-by-namespace)                         | Ruler                   | `GET /api/v1/rules/{namespace}`                                      |
-| [Get rule group](#get-rule-group)                                                     | Ruler                   | `GET /api/v1/rules/{namespace}/{groupName}`                          |
-| [Set rule group](#set-rule-group)                                                     | Ruler                   | `POST /api/v1/rules/{namespace}`                                     |
-| [Delete rule group](#delete-rule-group)                                               | Ruler                   | `DELETE /api/v1/rules/{namespace}/{groupName}`                       |
-| [Delete namespace](#delete-namespace)                                                 | Ruler                   | `DELETE /api/v1/rules/{namespace}`                                   |
+| [List rule groups](#list-rule-groups)                                                 | Ruler                   | `GET /prometheus/v1/rules`                                           |
+| [Get rule groups by namespace](#get-rule-groups-by-namespace)                         | Ruler                   | `GET /prometheus/v1/rules/{namespace}`                               |
+| [Get rule group](#get-rule-group)                                                     | Ruler                   | `GET /prometheus/v1/rules/{namespace}/{groupName}`                   |
+| [Set rule group](#set-rule-group)                                                     | Ruler                   | `POST /prometheus/v1/rules/{namespace}`                              |
+| [Delete rule group](#delete-rule-group)                                               | Ruler                   | `DELETE /prometheus/v1/rules/{namespace}/{groupName}`                |
+| [Delete namespace](#delete-namespace)                                                 | Ruler                   | `DELETE /prometheus/v1/rules/{namespace}`                            |
 | [Delete tenant configuration](#delete-tenant-configuration)                           | Ruler                   | `POST /ruler/delete_tenant_config`                                   |
 | [Alertmanager status](#alertmanager-status)                                           | Alertmanager            | `GET /multitenant_alertmanager/status`                               |
 | [Alertmanager configs](#alertmanager-configs)                                         | Alertmanager            | `GET /multitenant_alertmanager/configs`                              |
@@ -517,9 +517,10 @@ _Requires [authentication](#authentication)._
 ### List rule groups
 
 ```
-GET /api/v1/rules
+GET <prometheus-http-prefix>/v1/rules
 
-GET <prometheus-http-prefix>/rules
+# Deprecated; will be removed in Mimir v2.2.0
+GET /api/v1/rules
 ```
 
 List all rules configured for the authenticated tenant. This endpoint returns a YAML dictionary with all the rule groups for each namespace and `200` status code on success.
@@ -581,9 +582,10 @@ _Requires [authentication](#authentication)._
 ### Get rule groups by namespace
 
 ```
-GET /api/v1/rules/{namespace}
+GET <prometheus-http-prefix>/v1/rules/{namespace}
 
-GET <prometheus-http-prefix>/rules/{namespace}
+# Deprecated; will be removed in Mimir v2.2.0
+GET /api/v1/rules/{namespace}
 ```
 
 Returns the rule groups defined for a given namespace.
@@ -614,9 +616,10 @@ rules:
 ### Get rule group
 
 ```
-GET /api/v1/rules/{namespace}/{groupName}
+GET <prometheus-http-prefix>/v1/rules/{namespace}/{groupName}
 
-GET <prometheus-http-prefix>/rules/{namespace}/{groupName}
+# Deprecated; will be removed in Mimir v2.2.0
+GET /api/v1/rules/{namespace}/{groupName}
 ```
 
 Returns the rule group matching the request namespace and group name.
@@ -628,9 +631,10 @@ _Requires [authentication](#authentication)._
 ### Set rule group
 
 ```
-POST /api/v1/rules/{namespace}
+POST <prometheus-http-prefix>/v1/rules/{namespace}
 
-POST <prometheus-http-prefix>/rules/{namespace}
+# Deprecated; will be removed in Mimir v2.2.0
+POST /api/v1/rules/{namespace}
 ```
 
 Creates or updates a rule group. This endpoint expects a request with `Content-Type: application/yaml` header and the
@@ -697,9 +701,10 @@ rules:
 ### Delete rule group
 
 ```
-DELETE /api/v1/rules/{namespace}/{groupName}
+DELETE <prometheus-http-prefix>/v1/rules/{namespace}/{groupName}
 
-DELETE <prometheus-http-prefix>/rules/{namespace}/{groupName}
+# Deprecated; will be removed in Mimir v2.2.0
+DELETE /api/v1/rules/{namespace}/{groupName}
 ```
 
 Deletes a rule group by namespace and group name. This endpoints returns `202` on success.
@@ -711,9 +716,10 @@ _Requires [authentication](#authentication)._
 ### Delete namespace
 
 ```
-DELETE /api/v1/rules/{namespace}
+DELETE <prometheus-http-prefix>/v1/rules/{namespace}
 
-DELETE <prometheus-http-prefix>/rules/{namespace}
+# Deprecated; will be removed in Mimir v2.2.0
+DELETE /api/v1/rules/{namespace}
 ```
 
 Deletes all the rule groups in a namespace (including the namespace itself). This endpoint returns `202` on success.
