@@ -14,7 +14,7 @@ This configuration loads at startup and cannot be modified at runtime. However, 
 
 To see the current configuration state of any component, use the [`/config`](../../reference-http-api/#configuration) HTTP API endpoint.
 
-# Operational considerations
+## Operational considerations
 
 It is best to specify your configuration via the configuration file rather than CLI flags.
 
