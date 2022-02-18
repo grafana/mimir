@@ -164,7 +164,7 @@ func TestCheckDirectoryReadWriteAccess(t *testing.T) {
 	}{
 		"should fail on ingester tsdb directory without write access": {
 			dirName:  ingesterTSDBPath,
-			dirPerm:  0111,
+			dirPerm:  0,
 			expected: "failed to access directory",
 		},
 		"should pass on ingester tsdb directory with read-write access": {
