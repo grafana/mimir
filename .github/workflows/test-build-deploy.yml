@@ -98,7 +98,8 @@ jobs:
           ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
       # Note that we're running the 'test-with-race' target here which runs unit tests with the go data race detector
       - name: Run Tests
-        run: make BUILD_IN_CONTAINER=false test-with-race
+        run: id
+        # make BUILD_IN_CONTAINER=false test-with-race
 
   test-docs:
     runs-on: ubuntu-latest
