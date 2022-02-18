@@ -5144,39 +5144,41 @@ func TestIngesterActiveSeries(t *testing.T) {
 	userID := "test_user"
 	userID2 := "other_test_user"
 
-	defaultRuntimeMatcherConfigFn := &RuntimeMatchersConfigProvider{
-		func() *RuntimeMatchersConfig {
-			defaultMatchers, _ := NewActiveSeriesMatchers(map[string]string{
+	defaultRuntimeMatcherConfigFn := &ActiveSeriesCustomTrackersOverridesProvider{
+		func() *ActiveSeriesCustomTrackersOverrides {
+			defaultMatchers, err := NewActiveSeriesMatchers(map[string]string{
 				"bool_is_true":  `{bool="true"}`,
 				"bool_is_false": `{bool="false"}`,
 			})
-			teamMatchers, _ := NewActiveSeriesMatchers(map[string]string{
+			assert.NoError(t, err)
+			teamMatchers, err := NewActiveSeriesMatchers(map[string]string{
 				"team_a": `{team="a"}`,
 				"team_b": `{team="b"}`,
 			})
-			return &RuntimeMatchersConfig{
-				DefaultMatchers: *defaultMatchers,
-				TenantSpecificMatchers: map[string]ActiveSeriesMatchers{
-					"test_user": *teamMatchers,
+			assert.NoError(t, err)
+			return &ActiveSeriesCustomTrackersOverrides{
+				Default: defaultMatchers,
+				TenantSpecific: map[string]*ActiveSeriesMatchers{
+					"test_user": teamMatchers,
 				},
 			}
 		},
 	}
-	activeSeriesDefaultConfig := map[string]string{
+	activeSeriesDefaultConfig, err := NewActiveSeriesMatchers(map[string]string{
 		"bool_is_true_flagbased":  `{bool="true"}`,
 		"bool_is_false_flagbased": `{bool="false"}`,
-	}
-
+	})
+	assert.NoError(t, err)
 	tests := map[string]struct {
 		test                          func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer)
 		reqs                          []*mimirpb.WriteRequest
 		expectedMetrics               string
 		disableActiveSeries           bool
-		runtimeMatchersConfigProvider *RuntimeMatchersConfigProvider
-		activeSeriesConfig            ActiveSeriesCustomTrackersConfig
+		activeSeriesOverridesProvider *ActiveSeriesCustomTrackersOverridesProvider
+		activeSeriesConfig            ActiveSeriesMatchers
 	}{
 		"successful push, should count active series": {
-			runtimeMatchersConfigProvider: defaultRuntimeMatcherConfigFn,
+			activeSeriesOverridesProvider: defaultRuntimeMatcherConfigFn,
 			test: func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer) {
 				now := time.Now()
 
@@ -5214,7 +5216,7 @@ func TestIngesterActiveSeries(t *testing.T) {
 			},
 		},
 		"should track custom matchers, removing when zero": {
-			runtimeMatchersConfigProvider: defaultRuntimeMatcherConfigFn,
+			activeSeriesOverridesProvider: defaultRuntimeMatcherConfigFn,
 			test: func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer) {
 				firstPushTime := time.Now()
 
@@ -5289,7 +5291,7 @@ func TestIngesterActiveSeries(t *testing.T) {
 			},
 		},
 		"successful push, active series disabled": {
-			runtimeMatchersConfigProvider: defaultRuntimeMatcherConfigFn,
+			activeSeriesOverridesProvider: defaultRuntimeMatcherConfigFn,
 			disableActiveSeries:           true,
 			test: func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer) {
 				now := time.Now()
@@ -5317,8 +5319,8 @@ func TestIngesterActiveSeries(t *testing.T) {
 			},
 		},
 		"should not fail with empty runtime config": {
-			runtimeMatchersConfigProvider: &RuntimeMatchersConfigProvider{
-				func() *RuntimeMatchersConfig {
+			activeSeriesOverridesProvider: &ActiveSeriesCustomTrackersOverridesProvider{
+				func() *ActiveSeriesCustomTrackersOverrides {
 					return nil
 				},
 			},
@@ -5353,7 +5355,7 @@ func TestIngesterActiveSeries(t *testing.T) {
 			},
 		},
 		"should not fail with nil matchers config function": {
-			runtimeMatchersConfigProvider: nil,
+			activeSeriesOverridesProvider: nil,
 			test: func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer) {
 				now := time.Now()
 
@@ -5385,8 +5387,8 @@ func TestIngesterActiveSeries(t *testing.T) {
 			},
 		},
 		"should use flag based custom tracker if no runtime config specified": {
-			runtimeMatchersConfigProvider: nil,
-			activeSeriesConfig:            activeSeriesDefaultConfig,
+			activeSeriesOverridesProvider: nil,
+			activeSeriesConfig:            *activeSeriesDefaultConfig,
 			test: func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer) {
 				now := time.Now()
 
@@ -5424,8 +5426,8 @@ func TestIngesterActiveSeries(t *testing.T) {
 			},
 		},
 		"should use runtime matcher config if both specified": {
-			runtimeMatchersConfigProvider: defaultRuntimeMatcherConfigFn,
-			activeSeriesConfig:            activeSeriesDefaultConfig,
+			activeSeriesOverridesProvider: defaultRuntimeMatcherConfigFn,
+			activeSeriesConfig:            *activeSeriesDefaultConfig,
 			test: func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer) {
 				now := time.Now()
 
@@ -5472,7 +5474,7 @@ func TestIngesterActiveSeries(t *testing.T) {
 			cfg := defaultIngesterTestConfig(t)
 			cfg.LifecyclerConfig.JoinAfter = 0
 			cfg.ActiveSeriesMetricsEnabled = !testData.disableActiveSeries
-			cfg.RuntimeMatchersConfigProvider = testData.runtimeMatchersConfigProvider
+			cfg.RuntimeMatchersConfigProvider = testData.activeSeriesOverridesProvider
 			cfg.ActiveSeriesCustomTrackers = testData.activeSeriesConfig
 
 			ing, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, defaultLimitsTestConfig(), "", registry)

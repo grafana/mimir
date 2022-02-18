@@ -11,28 +11,30 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 )
 
-// ActiveSeriesCustomTrackersConfig configures the additional custom trackers for active series in the ingester.
-type ActiveSeriesCustomTrackersConfig map[string]string
-
-func (c *ActiveSeriesCustomTrackersConfig) String() string {
-	if *c == nil {
+func (asm *ActiveSeriesMatchers) String() string {
+	if asm == nil {
 		return ""
 	}
 
-	strs := make([]string, 0, len(*c))
-	for name, matcher := range *c {
-		strs = append(strs, fmt.Sprintf("%s:%s", name, matcher))
+	var sb strings.Builder
+	for i, name := range asm.names {
+		sb.WriteString(name)
+		for _, labelMatcher := range asm.matchers[i] {
+			sb.WriteString(labelMatcher.String())
+		}
 	}
-	return strings.Join(strs, ";")
+	return sb.String()
 }
 
-func (c *ActiveSeriesCustomTrackersConfig) Set(s string) error {
+func (asm *ActiveSeriesMatchers) Set(s string) error {
 	if strings.TrimSpace(s) == "" {
 		return nil
 	}
-	if *c == nil {
-		*c = map[string]string{}
+	if len(asm.names) != 0 {
+		return fmt.Errorf("can't provide active series custom trackers flag multple times")
 	}
+
+	c := map[string]string{}
 
 	pairs := strings.Split(s, ";")
 	for i, p := range pairs {
@@ -44,26 +46,33 @@ func (c *ActiveSeriesCustomTrackersConfig) Set(s string) error {
 		if len(name) == 0 || len(matcher) == 0 {
 			return fmt.Errorf("semicolon-separated values should be <name>:<matcher>, but one of the sides was empty in the value %d: %q", i, p)
 		}
-		if _, ok := (*c)[name]; ok {
+		if _, ok := c[name]; ok {
 			return fmt.Errorf("matcher %q for active series custom trackers is provided twice", name)
 		}
-		(*c)[name] = matcher
+		c[name] = matcher
 	}
+
+	a, err := NewActiveSeriesMatchers(c)
+	if err != nil {
+		return err
+	}
+	*asm = *a
+
 	return nil
 }
 
-func (c *ActiveSeriesCustomTrackersConfig) ExampleDoc() (comment string, yaml interface{}) {
+func (c *ActiveSeriesMatchers) ExampleDoc() (comment string, yaml interface{}) {
 	return `The following configuration will count the active series coming from dev and prod namespaces for each tenant` +
 			` and label them as {name="dev"} and {name="prod"} in the cortex_ingester_active_series_custom_tracker metric.`,
-		ActiveSeriesCustomTrackersConfig{
+		map[string]string{
 			"dev":  `{namespace=~"dev-.*"}`,
 			"prod": `{namespace=~"prod-.*"}`,
 		}
 }
 
-func NewActiveSeriesMatchers(matchers ActiveSeriesCustomTrackersConfig) (*ActiveSeriesMatchers, error) {
+func NewActiveSeriesMatchers(matchersConfig map[string]string) (*ActiveSeriesMatchers, error) {
 	asm := &ActiveSeriesMatchers{}
-	for name, matcher := range matchers {
+	for name, matcher := range matchersConfig {
 		sm, err := amlabels.ParseMatchers(matcher)
 		if err != nil {
 			return nil, fmt.Errorf("can't build active series matcher %s: %w", name, err)
@@ -79,15 +88,9 @@ func NewActiveSeriesMatchers(matchers ActiveSeriesCustomTrackersConfig) (*Active
 	// Sort the result to make it deterministic for tests.
 	// Order doesn't matter for the functionality as long as the order remains consistent during the execution of the program.
 	sort.Sort(asm)
-	var sb strings.Builder
 	// The concatenation should happen after ordering, to ensure equality is not dependent on map traversal.
-	for i, name := range asm.names {
-		sb.WriteString(name)
-		for _, labelMatcher := range asm.matchers[i] {
-			sb.WriteString(labelMatcher.String())
-		}
-	}
-	asm.config = sb.String()
+	asm.config = asm.String()
+
 	return asm, nil
 }
 
@@ -98,12 +101,16 @@ type ActiveSeriesMatchers struct {
 }
 
 func (asm *ActiveSeriesMatchers) Equals(other *ActiveSeriesMatchers) bool {
+	if asm == nil || other == nil {
+		return asm == other
+	}
 	return asm.config == other.config
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
+// ActiveSeriesMatchers are marshaled in yaml as a map, with matcher names as keys and strings as matchers definitions.
 func (asm *ActiveSeriesMatchers) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	m := ActiveSeriesCustomTrackersConfig{}
+	m := map[string]string{}
 	err := unmarshal(&m)
 	if err != nil {
 		return err

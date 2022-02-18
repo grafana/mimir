@@ -10,12 +10,12 @@ import (
 )
 
 func TestRuntimeMatchersUnmarshal(t *testing.T) {
-	r := RuntimeMatchersConfig{}
+	r := ActiveSeriesCustomTrackersOverrides{}
 	input := `
-default_matchers:
+default:
   integrations/apolloserver: "{job='integrations/apollo-server'}"
   integrations/caddy: "{job='integrations/caddy'}"
-tenant_matchers:
+tenant_specific:
   1:
     team_A: "{grafanacloud_team='team_a'}"
     team_B: "{grafanacloud_team='team_b'}"
