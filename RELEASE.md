@@ -8,7 +8,7 @@ The release shepherd is responsible for an entire minor release series, meaning 
 
 - We aim to keep the main branch in a working state at all times. In principle, it should be possible to cut a release from main at any time. In practice, things might not work out as nicely. A few days before the pre-release is scheduled, the shepherd should check the state of main. Following their best judgement, the shepherd should try to expedite bug fixes that are still in progress but should make it into the release. On the other hand, the shepherd may hold back merging last-minute invasive and risky changes that are better suited for the next minor release.
 - On the date listed in the table above, the release shepherd cuts the first pre-release (using the suffix `-rc.0`) and creates a new branch called `release-<major>.<minor>` starting at the commit tagged for the pre-release. In general, a pre-release is considered a release candidate (that's what `rc` stands for) and should therefore not contain any known bugs that are planned to be fixed in the final release.
-- With the pre-release, the release shepherd is responsible for coordinating or running the release candidate in any end user production environment for 3 days. This is typically done at Grafana Labs.
+- With the pre-release, the release shepherd is responsible for coordinating or running the release candidate in any end user production environment for at least 1 week. This is typically done at Grafana Labs.
 - If regressions or critical bugs are detected, they need to get fixed before cutting a new pre-release (called `-rc.1`, `-rc.2`, etc.).
 
 See the next section for details on cutting an individual release.
@@ -21,7 +21,7 @@ We use [Semantic Versioning](https://semver.org/).
 
 We maintain a separate branch for each minor release, named `release-<major>.<minor>`, e.g. `release-1.1`, `release-2.0`.
 
-The usual flow is to merge new features and changes into the main branch and to merge bug fixes into the latest release branch. Bug fixes are then merged into main from the latest release branch. The main branch should always contain all commits from the latest release branch. As long as main hasn't deviated from the release branch, new commits can also go to main, followed by merging main back into the release branch.
+The usual flow is to merge new features and changes into the main branch and to merge bug fixes into the latest release branch. Bug fixes are then merged into main from the latest release branch. The main branch should always contain all commits from the latest release branch. As long as main hasn't deviated significantly from the release branch, new commits can also go to main, followed by cherry picking them back into the release branch.
 
 If a bug fix got accidentally merged into main after non-bug-fix changes in main, the bug-fix commits have to be cherry-picked into the release branch, which then have to be merged back into main. Try to avoid that situation.
 
@@ -33,7 +33,7 @@ This helps ongoing PRs to get their changes in the right place, and to consider 
 
 1. Make a PR to update `CHANGELOG.md` on main
    - Add a new section for the new release so that `## main / unreleased` is blank and at the top.
-   - The new section should say `## x.y.0 in progress`.
+   - The new section should say `## x.y.0-rc.0`.
 1. Get this PR reviewed and merged.
 1. Comment on open PRs with a CHANGELOG entry to rebase on `main` and move the CHANGELOG entry to the top under `## main / unreleased`
 
