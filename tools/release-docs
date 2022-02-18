@@ -13,7 +13,7 @@ Usage:
   $0 <website repository directory> <tag>
 
 Examples:
-  $0 ~/ext/grafana/website v1.12.0
+  $0 ~/ext/grafana/website mimir-2.0.0
 EOF
 }
 
