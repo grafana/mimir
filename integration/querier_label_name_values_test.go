@@ -111,16 +111,16 @@ func TestQuerierLabelNamesAndValues(t *testing.T) {
 			require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 			// Start the query-frontend.
-			queryFrontend := e2emimir.NewQueryFrontend("query-frontend", flags, "")
+			queryFrontend := e2emimir.NewQueryFrontend("query-frontend", flags)
 			require.NoError(t, s.Start(queryFrontend))
 			flags["-querier.frontend-address"] = queryFrontend.NetworkGRPCEndpoint()
 
 			// Start all other Mimir services.
-			distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags, "")
-			ingester1 := e2emimir.NewIngester("ingester-1", consul.NetworkHTTPEndpoint(), flags, "")
-			ingester2 := e2emimir.NewIngester("ingester-2", consul.NetworkHTTPEndpoint(), flags, "")
-			ingester3 := e2emimir.NewIngester("ingester-3", consul.NetworkHTTPEndpoint(), flags, "")
-			querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags, "")
+			distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags)
+			ingester1 := e2emimir.NewIngester("ingester-1", consul.NetworkHTTPEndpoint(), flags)
+			ingester2 := e2emimir.NewIngester("ingester-2", consul.NetworkHTTPEndpoint(), flags)
+			ingester3 := e2emimir.NewIngester("ingester-3", consul.NetworkHTTPEndpoint(), flags)
+			querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags)
 
 			require.NoError(t, s.StartAndWaitReady(distributor, ingester1, ingester2, ingester3, querier))
 			require.NoError(t, s.WaitReady(queryFrontend))
@@ -332,16 +332,16 @@ func TestQuerierLabelValuesCardinality(t *testing.T) {
 			require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 			// Start the query-frontend.
-			queryFrontend := e2emimir.NewQueryFrontend("query-frontend", flags, "")
+			queryFrontend := e2emimir.NewQueryFrontend("query-frontend", flags)
 			require.NoError(t, s.Start(queryFrontend))
 			flags["-querier.frontend-address"] = queryFrontend.NetworkGRPCEndpoint()
 
 			// Start all other Mimir services.
-			distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags, "")
-			ingester1 := e2emimir.NewIngester("ingester-1", consul.NetworkHTTPEndpoint(), flags, "")
-			ingester2 := e2emimir.NewIngester("ingester-2", consul.NetworkHTTPEndpoint(), flags, "")
-			ingester3 := e2emimir.NewIngester("ingester-3", consul.NetworkHTTPEndpoint(), flags, "")
-			querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags, "")
+			distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags)
+			ingester1 := e2emimir.NewIngester("ingester-1", consul.NetworkHTTPEndpoint(), flags)
+			ingester2 := e2emimir.NewIngester("ingester-2", consul.NetworkHTTPEndpoint(), flags)
+			ingester3 := e2emimir.NewIngester("ingester-3", consul.NetworkHTTPEndpoint(), flags)
+			querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags)
 
 			require.NoError(t, s.StartAndWaitReady(distributor, ingester1, ingester2, ingester3, querier))
 			require.NoError(t, s.WaitReady(queryFrontend))

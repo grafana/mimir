@@ -178,14 +178,14 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 	// Start the query-scheduler if enabled.
 	var queryScheduler *e2emimir.MimirService
 	if cfg.querySchedulerEnabled {
-		queryScheduler = e2emimir.NewQueryScheduler("query-scheduler", flags, "")
+		queryScheduler = e2emimir.NewQueryScheduler("query-scheduler", flags)
 		require.NoError(t, s.StartAndWaitReady(queryScheduler))
 		flags["-query-frontend.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
 		flags["-querier.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
 	}
 
 	// Start the query-frontend.
-	queryFrontend := e2emimir.NewQueryFrontendWithConfigFile("query-frontend", configFile, flags, "")
+	queryFrontend := e2emimir.NewQueryFrontend("query-frontend", flags, e2emimir.WithConfigFile(configFile))
 	require.NoError(t, s.Start(queryFrontend))
 
 	if !cfg.querySchedulerEnabled {
@@ -193,9 +193,9 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 	}
 
 	// Start all other services.
-	ingester := e2emimir.NewIngesterWithConfigFile("ingester", consul.NetworkHTTPEndpoint(), configFile, flags, "")
-	distributor := e2emimir.NewDistributorWithConfigFile("distributor", consul.NetworkHTTPEndpoint(), configFile, flags, "")
-	querier := e2emimir.NewQuerierWithConfigFile("querier", consul.NetworkHTTPEndpoint(), configFile, flags, "")
+	ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags, e2emimir.WithConfigFile(configFile))
+	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags, e2emimir.WithConfigFile(configFile))
+	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags, e2emimir.WithConfigFile(configFile))
 
 	require.NoError(t, s.StartAndWaitReady(querier, ingester, distributor))
 	require.NoError(t, s.WaitReady(queryFrontend))
@@ -350,15 +350,15 @@ overrides:
 	consul := e2edb.NewConsul()
 	require.NoError(t, s.StartAndWaitReady(consul))
 
-	queryFrontend := e2emimir.NewQueryFrontendWithConfigFile("query-frontend", configFile, flags, "")
+	queryFrontend := e2emimir.NewQueryFrontend("query-frontend", flags, e2emimir.WithConfigFile(configFile))
 	require.NoError(t, s.Start(queryFrontend))
 
 	flags["-querier.frontend-address"] = queryFrontend.NetworkGRPCEndpoint()
 
 	// Start all other services.
-	distributor := e2emimir.NewDistributorWithConfigFile("distributor", consul.NetworkHTTPEndpoint(), configFile, flags, "")
-	ingester := e2emimir.NewIngesterWithConfigFile("ingester", consul.NetworkHTTPEndpoint(), configFile, flags, "")
-	querier := e2emimir.NewQuerierWithConfigFile("querier", consul.NetworkHTTPEndpoint(), configFile, flags, "")
+	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags, e2emimir.WithConfigFile(configFile))
+	ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags, e2emimir.WithConfigFile(configFile))
+	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags, e2emimir.WithConfigFile(configFile))
 
 	require.NoError(t, s.StartAndWaitReady(distributor, querier, ingester))
 	require.NoError(t, s.WaitReady(queryFrontend))

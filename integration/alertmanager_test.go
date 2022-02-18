@@ -83,7 +83,6 @@ func TestAlertmanager(t *testing.T) {
 			AlertmanagerS3Flags(),
 			AlertmanagerShardingFlags(consul.NetworkHTTPEndpoint(), 1),
 		),
-		"",
 	)
 	require.NoError(t, s.StartAndWaitReady(alertmanager))
 	require.NoError(t, alertmanager.WaitSumMetrics(e2e.Equals(1), "cortex_alertmanager_config_last_reload_successful"))
@@ -142,7 +141,6 @@ func TestAlertmanagerStoreAPI(t *testing.T) {
 	am := e2emimir.NewAlertmanager(
 		"alertmanager",
 		flags,
-		"",
 	)
 
 	require.NoError(t, s.StartAndWaitReady(am))
@@ -247,9 +245,9 @@ func TestAlertmanagerSharding(t *testing.T) {
 			flags = mergeFlags(flags, AlertmanagerShardingFlags(consul.NetworkHTTPEndpoint(), testCfg.replicationFactor))
 
 			// Wait for the Alertmanagers to start.
-			alertmanager1 := e2emimir.NewAlertmanager("alertmanager-1", flags, "")
-			alertmanager2 := e2emimir.NewAlertmanager("alertmanager-2", flags, "")
-			alertmanager3 := e2emimir.NewAlertmanager("alertmanager-3", flags, "")
+			alertmanager1 := e2emimir.NewAlertmanager("alertmanager-1", flags)
+			alertmanager2 := e2emimir.NewAlertmanager("alertmanager-2", flags)
+			alertmanager3 := e2emimir.NewAlertmanager("alertmanager-3", flags)
 
 			alertmanagers := e2emimir.NewCompositeMimirService(alertmanager1, alertmanager2, alertmanager3)
 
@@ -648,7 +646,7 @@ func TestAlertmanagerShardingScaling(t *testing.T) {
 			// Helper to start an instance.
 			startInstance := func() *e2emimir.MimirService {
 				i := len(instances) + 1
-				am := e2emimir.NewAlertmanager(fmt.Sprintf("alertmanager-%d", i), flags, "")
+				am := e2emimir.NewAlertmanager(fmt.Sprintf("alertmanager-%d", i), flags)
 				require.NoError(t, s.StartAndWaitReady(am))
 				instances = append(instances, am)
 				return am

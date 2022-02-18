@@ -50,14 +50,14 @@ func TestGettingStartedWithGossipedRing(t *testing.T) {
 	}
 
 	// This mimir will fail to join the cluster configured in yaml file. That's fine.
-	mimir1 := e2emimir.NewSingleBinaryWithConfigFile("mimir-1", "config1.yaml", e2e.MergeFlags(flags, map[string]string{
+	mimir1 := e2emimir.NewSingleBinary("mimir-1", e2e.MergeFlags(flags, map[string]string{
 		"-ingester.ring.instance-addr": networkName + "-mimir-1", // Ingester's hostname in docker setup
-	}), "", 9109, 9195)
+	}), e2emimir.WithPorts(9109, 9095), e2emimir.WithConfigFile("config1.yaml"))
 
-	mimir2 := e2emimir.NewSingleBinaryWithConfigFile("mimir-2", "config2.yaml", e2e.MergeFlags(flags, map[string]string{
+	mimir2 := e2emimir.NewSingleBinary("mimir-2", e2e.MergeFlags(flags, map[string]string{
 		"-ingester.ring.instance-addr": networkName + "-mimir-2", // Ingester's hostname in docker setup
 		"-memberlist.join":             networkName + "-mimir-1:7946",
-	}), "", 9209, 9295)
+	}), e2emimir.WithPorts(9209, 9095), e2emimir.WithConfigFile("config2.yaml"))
 
 	require.NoError(t, s.StartAndWaitReady(mimir1))
 	require.NoError(t, s.StartAndWaitReady(mimir2))

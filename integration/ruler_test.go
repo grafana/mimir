@@ -56,7 +56,7 @@ func TestRulerAPI(t *testing.T) {
 	rulerFlags := mergeFlags(BlocksStorageFlags(), RulerFlags())
 
 	// Start Mimir components.
-	ruler := e2emimir.NewRuler("ruler", consul.NetworkHTTPEndpoint(), rulerFlags, "")
+	ruler := e2emimir.NewRuler("ruler", consul.NetworkHTTPEndpoint(), rulerFlags)
 	require.NoError(t, s.StartAndWaitReady(ruler))
 
 	// Create a client with the ruler address configured
@@ -161,7 +161,7 @@ func TestRulerAPISingleBinary(t *testing.T) {
 	// Start Mimir components.
 	require.NoError(t, copyFileToSharedDir(s, "docs/configurations/single-process-config-blocks.yaml", mimirConfigFile))
 	require.NoError(t, writeFileToSharedDir(s, filepath.Join("ruler_configs", user, namespace), []byte(mimirRulerUserConfigYaml)))
-	mimir := e2emimir.NewSingleBinaryWithConfigFile("mimir", mimirConfigFile, flags, "", 9009, 9095)
+	mimir := e2emimir.NewSingleBinary("mimir", flags, e2emimir.WithConfigFile(mimirConfigFile), e2emimir.WithPorts(9009, 9095))
 	require.NoError(t, s.StartAndWaitReady(mimir))
 
 	// Create a client with the ruler address configured
@@ -193,7 +193,7 @@ func TestRulerAPISingleBinary(t *testing.T) {
 	require.NoError(t, mimir.Stop())
 
 	// Restart Mimir with identical configs
-	mimirRestarted := e2emimir.NewSingleBinaryWithConfigFile("mimir-restarted", mimirConfigFile, flags, "", 9009, 9095)
+	mimirRestarted := e2emimir.NewSingleBinary("mimir-restarted", flags, e2emimir.WithConfigFile(mimirConfigFile), e2emimir.WithPorts(9009, 9095))
 	require.NoError(t, s.StartAndWaitReady(mimirRestarted))
 
 	// Wait until the user manager is created
@@ -227,7 +227,7 @@ func TestRulerEvaluationDelay(t *testing.T) {
 	// Start Mimir components.
 	require.NoError(t, copyFileToSharedDir(s, "docs/configurations/single-process-config-blocks.yaml", mimirConfigFile))
 	require.NoError(t, writeFileToSharedDir(s, filepath.Join("ruler_configs", user, namespace), []byte(mimirRulerEvalStaleNanConfigYaml)))
-	mimir := e2emimir.NewSingleBinaryWithConfigFile("mimir", mimirConfigFile, flags, "", 9009, 9095)
+	mimir := e2emimir.NewSingleBinary("mimir", flags, e2emimir.WithConfigFile(mimirConfigFile), e2emimir.WithPorts(9009, 9095))
 	require.NoError(t, s.StartAndWaitReady(mimir))
 
 	// Create a client with the ruler address configured
@@ -368,8 +368,8 @@ func TestRulerSharding(t *testing.T) {
 	)
 
 	// Start rulers.
-	ruler1 := e2emimir.NewRuler("ruler-1", consul.NetworkHTTPEndpoint(), rulerFlags, "")
-	ruler2 := e2emimir.NewRuler("ruler-2", consul.NetworkHTTPEndpoint(), rulerFlags, "")
+	ruler1 := e2emimir.NewRuler("ruler-1", consul.NetworkHTTPEndpoint(), rulerFlags)
+	ruler2 := e2emimir.NewRuler("ruler-2", consul.NetworkHTTPEndpoint(), rulerFlags)
 	rulers := e2emimir.NewCompositeMimirService(ruler1, ruler2)
 	require.NoError(t, s.StartAndWaitReady(ruler1, ruler2))
 
@@ -418,8 +418,8 @@ func TestRulerAlertmanager(t *testing.T) {
 
 	// Start Alertmanagers.
 	amFlags := mergeFlags(AlertmanagerFlags(), AlertmanagerS3Flags(), AlertmanagerShardingFlags(consul.NetworkHTTPEndpoint(), 1))
-	am1 := e2emimir.NewAlertmanager("alertmanager1", amFlags, "")
-	am2 := e2emimir.NewAlertmanager("alertmanager2", amFlags, "")
+	am1 := e2emimir.NewAlertmanager("alertmanager1", amFlags)
+	am2 := e2emimir.NewAlertmanager("alertmanager2", amFlags)
 	require.NoError(t, s.StartAndWaitReady(am1, am2))
 
 	am1URL := "http://" + am1.HTTPEndpoint()
@@ -436,7 +436,7 @@ func TestRulerAlertmanager(t *testing.T) {
 	)
 
 	// Start Ruler.
-	ruler := e2emimir.NewRuler("ruler", consul.NetworkHTTPEndpoint(), rulerFlags, "")
+	ruler := e2emimir.NewRuler("ruler", consul.NetworkHTTPEndpoint(), rulerFlags)
 	require.NoError(t, s.StartAndWaitReady(ruler))
 
 	// Create a client with the ruler address configured
@@ -503,7 +503,7 @@ func TestRulerAlertmanagerTLS(t *testing.T) {
 		AlertmanagerShardingFlags(consul.NetworkHTTPEndpoint(), 1),
 		getServerHTTPTLSFlags(),
 	)
-	am1 := e2emimir.NewAlertmanagerWithTLS("alertmanager1", amFlags, "")
+	am1 := e2emimir.NewAlertmanagerWithTLS("alertmanager1", amFlags)
 	require.NoError(t, s.StartAndWaitReady(am1))
 
 	// Configure the ruler.
@@ -517,7 +517,7 @@ func TestRulerAlertmanagerTLS(t *testing.T) {
 	)
 
 	// Start Ruler.
-	ruler := e2emimir.NewRuler("ruler", consul.NetworkHTTPEndpoint(), rulerFlags, "")
+	ruler := e2emimir.NewRuler("ruler", consul.NetworkHTTPEndpoint(), rulerFlags)
 	require.NoError(t, s.StartAndWaitReady(ruler))
 
 	// Create a client with the ruler address configured
@@ -572,9 +572,9 @@ func TestRulerMetricsForInvalidQueries(t *testing.T) {
 	const namespace = "test"
 	const user = "user"
 
-	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags, "")
-	ruler := e2emimir.NewRuler("ruler", consul.NetworkHTTPEndpoint(), flags, "")
-	ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags, "")
+	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags)
+	ruler := e2emimir.NewRuler("ruler", consul.NetworkHTTPEndpoint(), flags)
+	ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags)
 	require.NoError(t, s.StartAndWaitReady(distributor, ingester, ruler))
 
 	// Wait until both the distributor and ruler have updated the ring. The querier will also watch
@@ -736,10 +736,10 @@ func TestRulerFederatedRules(t *testing.T) {
 	)
 
 	// Start up services
-	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags, "")
-	ruler := e2emimir.NewRuler("ruler", consul.NetworkHTTPEndpoint(), flags, "")
-	ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags, "")
-	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags, "")
+	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags)
+	ruler := e2emimir.NewRuler("ruler", consul.NetworkHTTPEndpoint(), flags)
+	ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags)
+	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags)
 	require.NoError(t, s.StartAndWaitReady(distributor, ingester, ruler, querier))
 
 	// Wait until both the distributor and ruler are ready
@@ -882,7 +882,7 @@ func TestRulerEnableAPIs(t *testing.T) {
 			})
 
 			// Start Mimir components.
-			ruler := e2emimir.NewRuler("ruler", consul.NetworkHTTPEndpoint(), rulerFlags, "")
+			ruler := e2emimir.NewRuler("ruler", consul.NetworkHTTPEndpoint(), rulerFlags)
 			require.NoError(t, s.StartAndWaitReady(ruler))
 
 			runTest := func(name, method, path string, shouldBeFound bool) {

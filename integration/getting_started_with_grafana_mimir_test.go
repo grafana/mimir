@@ -29,7 +29,7 @@ func TestGettingStartedWithGrafanaMimir(t *testing.T) {
 
 	require.NoError(t, copyFileToSharedDir(s, "docs/configurations/demo.yaml", "demo.yaml"))
 
-	mimir := e2emimir.NewSingleBinaryWithConfigFile("mimir", "demo.yaml", nil, "", 9009, 9095)
+	mimir := e2emimir.NewSingleBinary("mimir", nil, e2emimir.WithPorts(9009, 9095), e2emimir.WithConfigFile("demo.yaml"))
 	require.NoError(t, s.StartAndWaitReady(mimir))
 
 	runTestPushSeriesAndQueryBack(t, mimir)
@@ -68,9 +68,9 @@ func TestPlayWithGrafanaMimirTutorial(t *testing.T) {
 	}
 
 	// Start Mimir (3 replicas).
-	mimir1 := e2emimir.NewSingleBinaryWithConfigFile("mimir-1", "mimir.yaml", flags, "", 8080, 9095)
-	mimir2 := e2emimir.NewSingleBinaryWithConfigFile("mimir-2", "mimir.yaml", flags, "", 8080, 9095)
-	mimir3 := e2emimir.NewSingleBinaryWithConfigFile("mimir-3", "mimir.yaml", flags, "", 8080, 9095)
+	mimir1 := e2emimir.NewSingleBinary("mimir-1", flags, e2emimir.WithConfigFile("mimir.yaml"))
+	mimir2 := e2emimir.NewSingleBinary("mimir-2", flags, e2emimir.WithConfigFile("mimir.yaml"))
+	mimir3 := e2emimir.NewSingleBinary("mimir-3", flags, e2emimir.WithConfigFile("mimir.yaml"))
 	require.NoError(t, s.StartAndWaitReady(mimir1, mimir2, mimir3))
 
 	// We need that all Mimir instances see each other in the ingesters ring.

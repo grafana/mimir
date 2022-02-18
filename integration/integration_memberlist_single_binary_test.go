@@ -141,13 +141,13 @@ func newSingleBinary(name string, servername string, join string, testFlags map[
 	serv := e2emimir.NewSingleBinary(
 		name,
 		mergeFlags(
+			DefaultSingleBinaryFlags(),
 			BlocksStorageFlags(),
 			flags,
 			testFlags,
 			getTLSFlagsWithPrefix("memberlist", servername, servername == ""),
 		),
-		"",
-		8000,
+		e2emimir.WithOtherPorts(8000),
 	)
 
 	backOff := backoff.Config{
