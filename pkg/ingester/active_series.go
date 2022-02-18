@@ -64,6 +64,10 @@ func NewActiveSeries(asm *ActiveSeriesMatchers) *ActiveSeries {
 	return c
 }
 
+func (c *ActiveSeries) CurrentMatchers() *ActiveSeriesMatchers {
+	return c.asm
+}
+
 func (c *ActiveSeries) ReloadSeriesMatchers(asm *ActiveSeriesMatchers) {
 	c.asm = asm
 	for i := 0; i < numActiveSeriesStripes; i++ {

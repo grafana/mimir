@@ -121,11 +121,11 @@ type Config struct {
 
 	RateUpdatePeriod time.Duration `yaml:"rate_update_period" category:"advanced"`
 
-	ActiveSeriesMetricsEnabled      bool                             `yaml:"active_series_metrics_enabled"`
-	ActiveSeriesMetricsUpdatePeriod time.Duration                    `yaml:"active_series_metrics_update_period" category:"advanced"`
-	ActiveSeriesMetricsIdleTimeout  time.Duration                    `yaml:"active_series_metrics_idle_timeout" category:"advanced"`
-	ActiveSeriesCustomTrackers      ActiveSeriesCustomTrackersConfig `yaml:"active_series_custom_trackers" doc:"description=Additional custom trackers for active metrics. If there are active series matching a provided matcher (map value), the count will be exposed in the custom trackers metric labeled using the tracker name (map key). Zero valued counts are not exposed (and removed when they go back to zero)."`
-	RuntimeMatchersConfigProvider   *RuntimeMatchersConfigProvider   `yaml:"-"`
+	ActiveSeriesMetricsEnabled      bool                                         `yaml:"active_series_metrics_enabled"`
+	ActiveSeriesMetricsUpdatePeriod time.Duration                                `yaml:"active_series_metrics_update_period" category:"advanced"`
+	ActiveSeriesMetricsIdleTimeout  time.Duration                                `yaml:"active_series_metrics_idle_timeout" category:"advanced"`
+	ActiveSeriesCustomTrackers      ActiveSeriesMatchers                         `yaml:"active_series_custom_trackers" doc:"description=Additional custom trackers for active metrics. If there are active series matching a provided matcher (map value), the count will be exposed in the custom trackers metric labeled using the tracker name (map key). Zero valued counts are not exposed (and removed when they go back to zero)."`
+	RuntimeMatchersConfigProvider   *ActiveSeriesCustomTrackersOverridesProvider `yaml:"-"`
 
 	ExemplarsUpdatePeriod time.Duration `yaml:"exemplars_update_period" category:"experimental"`
 
@@ -199,8 +199,6 @@ type Ingester struct {
 	metrics *ingesterMetrics
 	logger  log.Logger
 
-	activeSeriesMatcher *ActiveSeriesMatchers
-
 	lifecycler         *ring.Lifecycler
 	limits             *validation.Overrides
 	limiter            *Limiter
@@ -251,10 +249,9 @@ func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus
 	}
 
 	return &Ingester{
-		cfg:                 cfg,
-		limits:              limits,
-		logger:              logger,
-		activeSeriesMatcher: &ActiveSeriesMatchers{},
+		cfg:    cfg,
+		limits: limits,
+		logger: logger,
 
 		tsdbs:               make(map[string]*userTSDB),
 		usersMetadata:       make(map[string]*userMetricsMetadata),
@@ -281,12 +278,6 @@ func New(cfg Config, clientConfig client.Config, limits *validation.Overrides, r
 	i.clientConfig = clientConfig
 	i.ingestionRate = util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval)
 	i.metrics = newIngesterMetrics(registerer, cfg.ActiveSeriesMetricsEnabled, i.getInstanceLimits, i.ingestionRate, &i.inflightPushRequests)
-
-	asm, err := NewActiveSeriesMatchers(cfg.ActiveSeriesCustomTrackers)
-	if err != nil {
-		return nil, err
-	}
-	i.activeSeriesMatcher = asm
 
 	// Replace specific metrics which we can't directly track but we need to read
 	// them from the underlying system (ie. TSDB).
@@ -466,7 +457,6 @@ func (i *Ingester) updateLoop(ctx context.Context) error {
 			i.applyExemplarsSettings()
 
 		case <-activeSeriesTickerChan:
-			i.reloadConfig(time.Now())
 			i.updateActiveSeries(time.Now())
 
 		case <-ctx.Done():
@@ -477,37 +467,15 @@ func (i *Ingester) updateLoop(ctx context.Context) error {
 	}
 }
 
-func (i *Ingester) reloadConfig(now time.Time) {
-	currentConfig := i.cfg.RuntimeMatchersConfigProvider.Get()
-	for _, userID := range i.getTSDBUsers() {
-		userDB := i.getTSDB(userID)
-		if userDB == nil {
-			continue
-		}
-		newMatchers := i.getActiveSeriesMatchers(userID, currentConfig)
-		if !newMatchers.Equals(userDB.activeSeries.asm) {
-			i.replaceMatchers(newMatchers, userDB)
-		}
+func (i *Ingester) getActiveSeriesMatchers(userID string) *ActiveSeriesMatchers {
+	if cfg := i.cfg.RuntimeMatchersConfigProvider.Get(); cfg != nil {
+		return cfg.MatchersForUser(userID)
 	}
-}
-
-func (i *Ingester) getActiveSeriesMatchers(userID string, config *RuntimeMatchersConfig) *ActiveSeriesMatchers {
-	if config == nil {
-		return i.activeSeriesMatcher
-	}
-	val, ok := config.TenantSpecificMatchers[userID]
-	if !ok {
-		if !i.activeSeriesMatcher.Equals(&config.DefaultMatchers) {
-			// this avoids referencing multiple instances of deserialized DefaultMatchers
-			i.activeSeriesMatcher = &config.DefaultMatchers
-		}
-		return i.activeSeriesMatcher
-	}
-	return &val
+	return &i.cfg.ActiveSeriesCustomTrackers
 }
 
 func (i *Ingester) replaceMatchers(asm *ActiveSeriesMatchers, userDB *userTSDB) {
-	i.metrics.deletePerUserCustomTrackerMetrics(userDB.userID, userDB.activeSeries.asm.names)
+	i.metrics.deletePerUserCustomTrackerMetrics(userDB.userID, userDB.activeSeries.CurrentMatchers().MatcherNames())
 	userDB.activeSeries.ReloadSeriesMatchers(asm)
 }
 
@@ -517,6 +485,11 @@ func (i *Ingester) updateActiveSeries(now time.Time) {
 		userDB := i.getTSDB(userID)
 		if userDB == nil {
 			continue
+		}
+
+		newMatchers := i.getActiveSeriesMatchers(userID)
+		if !newMatchers.Equals(userDB.activeSeries.CurrentMatchers()) {
+			i.replaceMatchers(newMatchers, userDB)
 		}
 
 		userDB.activeSeries.Purge(purgeTime)
@@ -1485,7 +1458,7 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 	userLogger := util_log.WithUserID(userID, i.logger)
 
 	blockRanges := i.cfg.BlocksStorageConfig.TSDB.BlockRanges.ToMilliseconds()
-	newMatchers := i.getActiveSeriesMatchers(userID, i.cfg.RuntimeMatchersConfigProvider.Get())
+	newMatchers := i.getActiveSeriesMatchers(userID)
 
 	userDB := &userTSDB{
 		userID:              userID,

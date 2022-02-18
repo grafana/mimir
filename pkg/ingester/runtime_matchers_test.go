@@ -10,7 +10,7 @@ import (
 )
 
 func TestRuntimeMatchersUnmarshal(t *testing.T) {
-	r := RuntimeMatchersConfig{}
+	r := ActiveSeriesCustomTrackersOverrides{}
 	input := `
 default_matchers:
   integrations/apolloserver: "{job='integrations/apollo-server'}"

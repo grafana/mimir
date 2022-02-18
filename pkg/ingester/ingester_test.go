@@ -5144,8 +5144,8 @@ func TestIngesterActiveSeries(t *testing.T) {
 	userID := "test_user"
 	userID2 := "other_test_user"
 
-	defaultRuntimeMatcherConfigFn := &RuntimeMatchersConfigProvider{
-		func() *RuntimeMatchersConfig {
+	defaultRuntimeMatcherConfigFn := &ActiveSeriesCustomTrackersOverridesProvider{
+		func() *ActiveSeriesCustomTrackersOverrides {
 			defaultMatchers, _ := NewActiveSeriesMatchers(map[string]string{
 				"bool_is_true":  `{bool="true"}`,
 				"bool_is_false": `{bool="false"}`,
@@ -5154,9 +5154,9 @@ func TestIngesterActiveSeries(t *testing.T) {
 				"team_a": `{team="a"}`,
 				"team_b": `{team="b"}`,
 			})
-			return &RuntimeMatchersConfig{
-				DefaultMatchers: *defaultMatchers,
-				TenantSpecificMatchers: map[string]ActiveSeriesMatchers{
+			return &ActiveSeriesCustomTrackersOverrides{
+				Default: *defaultMatchers,
+				Overrides: map[string]ActiveSeriesMatchers{
 					"test_user": *teamMatchers,
 				},
 			}
@@ -5172,7 +5172,7 @@ func TestIngesterActiveSeries(t *testing.T) {
 		reqs                          []*mimirpb.WriteRequest
 		expectedMetrics               string
 		disableActiveSeries           bool
-		runtimeMatchersConfigProvider *RuntimeMatchersConfigProvider
+		runtimeMatchersConfigProvider *ActiveSeriesCustomTrackersOverridesProvider
 		activeSeriesConfig            ActiveSeriesCustomTrackersConfig
 	}{
 		"successful push, should count active series": {
@@ -5317,8 +5317,8 @@ func TestIngesterActiveSeries(t *testing.T) {
 			},
 		},
 		"should not fail with empty runtime config": {
-			runtimeMatchersConfigProvider: &RuntimeMatchersConfigProvider{
-				func() *RuntimeMatchersConfig {
+			runtimeMatchersConfigProvider: &ActiveSeriesCustomTrackersOverridesProvider{
+				func() *ActiveSeriesCustomTrackersOverrides {
 					return nil
 				},
 			},

@@ -11,29 +11,27 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 )
 
-// ActiveSeriesCustomTrackersConfig configures the additional custom trackers for active series in the ingester.
-type ActiveSeriesCustomTrackersConfig map[string]string
-
-func (c *ActiveSeriesCustomTrackersConfig) String() string {
-	if *c == nil {
+func (asm *ActiveSeriesMatchers) String() string {
+	if asm == nil {
 		return ""
 	}
 
-	strs := make([]string, 0, len(*c))
-	for name, matcher := range *c {
-		strs = append(strs, fmt.Sprintf("%s:%s", name, matcher))
+	strs := make([]string, 0, len(asm.names))
+	for i, name := range asm.names {
+		strs = append(strs, fmt.Sprintf("%s:%s", name, asm.matchers[i]))
 	}
 	return strings.Join(strs, ";")
 }
 
-func (c *ActiveSeriesCustomTrackersConfig) Set(s string) error {
+func (asm *ActiveSeriesMatchers) Set(s string) error {
 	if strings.TrimSpace(s) == "" {
 		return nil
 	}
-	if *c == nil {
-		*c = map[string]string{}
+	if asm != nil {
+		return fmt.Errorf("can't provide active series custom trackers flag multple times")
 	}
 
+	c := map[string]string{}
 	pairs := strings.Split(s, ";")
 	for i, p := range pairs {
 		split := strings.SplitN(p, ":", 2)
@@ -44,24 +42,25 @@ func (c *ActiveSeriesCustomTrackersConfig) Set(s string) error {
 		if len(name) == 0 || len(matcher) == 0 {
 			return fmt.Errorf("semicolon-separated values should be <name>:<matcher>, but one of the sides was empty in the value %d: %q", i, p)
 		}
-		if _, ok := (*c)[name]; ok {
+		if _, ok := c[name]; ok {
 			return fmt.Errorf("matcher %q for active series custom trackers is provided twice", name)
 		}
-		(*c)[name] = matcher
+		c[name] = matcher
 	}
+
 	return nil
 }
 
-func (c *ActiveSeriesCustomTrackersConfig) ExampleDoc() (comment string, yaml interface{}) {
+func (*ActiveSeriesMatchers) ExampleDoc() (comment string, yaml interface{}) {
 	return `The following configuration will count the active series coming from dev and prod namespaces for each tenant` +
 			` and label them as {name="dev"} and {name="prod"} in the cortex_ingester_active_series_custom_tracker metric.`,
-		ActiveSeriesCustomTrackersConfig{
+		map[string]string{
 			"dev":  `{namespace=~"dev-.*"}`,
 			"prod": `{namespace=~"prod-.*"}`,
 		}
 }
 
-func NewActiveSeriesMatchers(matchers ActiveSeriesCustomTrackersConfig) (*ActiveSeriesMatchers, error) {
+func NewActiveSeriesMatchers(matchers map[string]string) (*ActiveSeriesMatchers, error) {
 	asm := &ActiveSeriesMatchers{}
 	for name, matcher := range matchers {
 		sm, err := amlabels.ParseMatchers(matcher)
@@ -102,14 +101,14 @@ func (asm *ActiveSeriesMatchers) Equals(other *ActiveSeriesMatchers) bool {
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
+// ActiveSeriesMatchers are marshaled in yaml as a map, with matcher names as keys and strings as matchers definitions.
 func (asm *ActiveSeriesMatchers) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	m := ActiveSeriesCustomTrackersConfig{}
+	m := map[string]string{}
 	err := unmarshal(&m)
 	if err != nil {
 		return err
 	}
-	var newMatchers *ActiveSeriesMatchers
-	newMatchers, err = NewActiveSeriesMatchers(m)
+	newMatchers, err := NewActiveSeriesMatchers(m)
 	if err != nil {
 		return err
 	}

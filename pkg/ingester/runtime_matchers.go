@@ -2,17 +2,24 @@
 
 package ingester
 
-// RuntimeMatchers holds the definition of custom tracking rules
-type RuntimeMatchersConfig struct {
-	DefaultMatchers        ActiveSeriesMatchers            `yaml:"default_matchers"`
-	TenantSpecificMatchers map[string]ActiveSeriesMatchers `yaml:"tenant_matchers"`
+// ActiveSeriesCustomTrackersOverrides holds the definition of custom tracking rules.
+type ActiveSeriesCustomTrackersOverrides struct {
+	Default   *ActiveSeriesMatchers            `yaml:"default"`
+	Overrides map[string]*ActiveSeriesMatchers `yaml:"overrides"`
 }
 
-type RuntimeMatchersConfigProvider struct {
-	Getter func() *RuntimeMatchersConfig
+func (asmo *ActiveSeriesCustomTrackersOverrides) MatchersForUser(userID string) *ActiveSeriesMatchers {
+	if overrides, ok := asmo.Overrides[userID]; ok {
+		return overrides
+	}
+	return asmo.Default
 }
 
-func (p *RuntimeMatchersConfigProvider) Get() *RuntimeMatchersConfig {
+type ActiveSeriesCustomTrackersOverridesProvider struct {
+	Getter func() *ActiveSeriesCustomTrackersOverrides
+}
+
+func (p *ActiveSeriesCustomTrackersOverridesProvider) Get() *ActiveSeriesCustomTrackersOverrides {
 	if p == nil || p.Getter == nil {
 		return nil
 	}
