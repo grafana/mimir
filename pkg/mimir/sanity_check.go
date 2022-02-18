@@ -4,6 +4,8 @@ package mimir
 
 import (
 	"context"
+	"fmt"
+	"path/filepath"
 	"time"
 
 	"github.com/go-kit/log"
@@ -16,13 +18,25 @@ import (
 	alertstorelocal "github.com/grafana/mimir/pkg/alertmanager/alertstore/local"
 	rulestorelocal "github.com/grafana/mimir/pkg/ruler/rulestore/local"
 	"github.com/grafana/mimir/pkg/storage/bucket"
+	"github.com/grafana/mimir/pkg/util/fs"
 )
 
 var (
 	errObjectStorage = "unable to successfully send a request to object storage"
 )
 
+type dirExistsFunc func(string) (bool, error)
+type isDirReadWritableFunc func(dir string) error
+
 func runSanityCheck(ctx context.Context, cfg Config, logger log.Logger) error {
+
+	level.Info(logger).Log("msg", "Checking directories read/write access")
+	if err := checkDirectoriesReadWriteAccess(cfg, fs.DirExists, fs.IsDirReadWritable); err != nil {
+		level.Error(logger).Log("msg", "Unable to access directory", "err", err)
+		return err
+	}
+	level.Info(logger).Log("msg", "Directories read/write access successfully checked")
+
 	level.Info(logger).Log("msg", "Checking object storage config")
 	if err := checkObjectStoresConfigWithRetries(ctx, cfg, logger); err != nil {
 		level.Error(logger).Log("msg", "Unable to successfully connect to configured object storage", "err", err)
@@ -30,6 +44,56 @@ func runSanityCheck(ctx context.Context, cfg Config, logger log.Logger) error {
 	}
 	level.Info(logger).Log("msg", "Object storage config successfully checked")
 
+	return nil
+}
+
+func checkDirectoriesReadWriteAccess(
+	cfg Config,
+	dirExistFn dirExistsFunc,
+	isDirReadWritableFn isDirReadWritableFunc,
+) error {
+	errs := multierror.New()
+
+	if cfg.isAnyModuleEnabled(All, Ingester) {
+		errs.Add(errors.Wrap(checkDirReadWriteAccess(cfg.Ingester.BlocksStorageConfig.TSDB.Dir, dirExistFn, isDirReadWritableFn), "ingester"))
+	}
+	if cfg.isAnyModuleEnabled(All, StoreGateway) {
+		errs.Add(errors.Wrap(checkDirReadWriteAccess(cfg.BlocksStorage.BucketStore.SyncDir, dirExistFn, isDirReadWritableFn), "store-gateway"))
+	}
+	if cfg.isAnyModuleEnabled(All, Compactor) {
+		errs.Add(errors.Wrap(checkDirReadWriteAccess(cfg.Compactor.DataDir, dirExistFn, isDirReadWritableFn), "compactor"))
+	}
+	if cfg.isAnyModuleEnabled(All, Ruler) {
+		errs.Add(errors.Wrap(checkDirReadWriteAccess(cfg.Ruler.RulePath, dirExistFn, isDirReadWritableFn), "ruler"))
+	}
+	if cfg.isAnyModuleEnabled(AlertManager) {
+		errs.Add(errors.Wrap(checkDirReadWriteAccess(cfg.Alertmanager.DataDir, dirExistFn, isDirReadWritableFn), "alertmanager"))
+	}
+
+	return errs.Err()
+}
+
+func checkDirReadWriteAccess(dir string, dirExistFn dirExistsFunc, isDirReadWritableFn isDirReadWritableFunc) error {
+	d := dir
+	for {
+		exists, err := dirExistFn(d)
+		if err != nil {
+			return err
+		}
+		if exists {
+			break
+		}
+
+		dNext := filepath.Dir(d)
+		if d == dNext {
+			break // Root path reached.
+		}
+		d = dNext
+	}
+
+	if err := isDirReadWritableFn(d); err != nil {
+		return fmt.Errorf("failed to access directory %s: %w", dir, err)
+	}
 	return nil
 }
 
