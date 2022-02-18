@@ -48,6 +48,10 @@ For more information, refer to the [About the hash ring]({{<relref "./architectu
 A key-value store is a database that associates keys with values.
 To understand how Grafana Mimir uses key-value stores, refer to [About the key-value store]({{<relref "./architecture/about-the-key-value-store.md" >}}).
 
+## Memberlist
+
+Memberlist manages cluster membership and member failure detection using [gossip]({{<relref "#gossip" >}}).
+
 ## Org
 
 Refer to [Tenant]({{<relref "#tenant" >}}).
