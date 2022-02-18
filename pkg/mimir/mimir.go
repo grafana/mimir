@@ -20,6 +20,7 @@ import (
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/kv/memberlist"
 	"github.com/grafana/dskit/modules"
+	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/runtimeconfig"
 	"github.com/grafana/dskit/services"
@@ -34,6 +35,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/alertmanager"
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
+	alertstorelocal "github.com/grafana/mimir/pkg/alertmanager/alertstore/local"
 	"github.com/grafana/mimir/pkg/api"
 	"github.com/grafana/mimir/pkg/compactor"
 	"github.com/grafana/mimir/pkg/distributor"
@@ -48,7 +50,9 @@ import (
 	querier_worker "github.com/grafana/mimir/pkg/querier/worker"
 	"github.com/grafana/mimir/pkg/ruler"
 	"github.com/grafana/mimir/pkg/ruler/rulestore"
+	rulestorelocal "github.com/grafana/mimir/pkg/ruler/rulestore/local"
 	"github.com/grafana/mimir/pkg/scheduler"
+	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/tenant"
@@ -58,6 +62,10 @@ import (
 	"github.com/grafana/mimir/pkg/util/noauth"
 	"github.com/grafana/mimir/pkg/util/process"
 	"github.com/grafana/mimir/pkg/util/validation"
+)
+
+var (
+	errInvalidBucketConfig = errors.New("invalid bucket config")
 )
 
 // The design pattern for Mimir is a series of config objects, which are
@@ -157,6 +165,9 @@ func (c *Config) Validate(log log.Logger) error {
 		return err
 	}
 
+	if err := c.validateBucketConfigs(); err != nil {
+		return fmt.Errorf("%w: %s", errInvalidBucketConfig, err)
+	}
 	if err := c.RulerStorage.Validate(); err != nil {
 		return errors.Wrap(err, "invalid rulestore config")
 	}
@@ -193,7 +204,6 @@ func (c *Config) Validate(log log.Logger) error {
 	if err := c.Alertmanager.Validate(c.AlertmanagerStorage); err != nil {
 		return errors.Wrap(err, "invalid alertmanager config")
 	}
-
 	return nil
 }
 
@@ -235,6 +245,55 @@ func (c *Config) validateYAMLEmptyNodes() error {
 		}
 	}
 
+	return nil
+}
+
+func (c *Config) validateBucketConfigs() error {
+	errs := multierror.New()
+
+	// Validate alertmanager bucket config.
+	if c.isAnyModuleEnabled(AlertManager) && c.AlertmanagerStorage.Backend != alertstorelocal.Name {
+		errs.Add(errors.Wrap(validateBucketConfig(c.AlertmanagerStorage.Config, c.BlocksStorage.Bucket), "alertmanager storage"))
+	}
+
+	// Validate ruler bucket config.
+	if c.isAnyModuleEnabled(All, Ruler) && c.RulerStorage.Backend != rulestorelocal.Name {
+		errs.Add(errors.Wrap(validateBucketConfig(c.RulerStorage.Config, c.BlocksStorage.Bucket), "ruler storage"))
+	}
+
+	return errs.Err()
+}
+
+func validateBucketConfig(cfg bucket.Config, blockStorageBucketCfg bucket.Config) error {
+	if cfg.Backend != blockStorageBucketCfg.Backend {
+		return nil
+	}
+
+	switch cfg.Backend {
+	case bucket.S3:
+		if cfg.S3.BucketName == blockStorageBucketCfg.S3.BucketName {
+			return errors.New("S3 bucket name cannot be the same as the one used in blocks storage config")
+		}
+
+	case bucket.GCS:
+		if cfg.GCS.BucketName == blockStorageBucketCfg.GCS.BucketName {
+			return errors.New("GCS bucket name cannot be the same as the one used in blocks storage config")
+		}
+
+	case bucket.Azure:
+		if cfg.Azure.ContainerName == blockStorageBucketCfg.Azure.ContainerName && cfg.Azure.StorageAccountName == blockStorageBucketCfg.Azure.StorageAccountName {
+			return errors.New("Azure container and account names cannot be the same as the ones used in blocks storage config")
+		}
+
+	// To keep it simple here we only check that container and project names are not the same.
+	// We could also verify both configuration endpoints to determine uniqueness,
+	// however different auth URLs do not imply different clusters, since a single cluster
+	// may have several configured endpoints.
+	case bucket.Swift:
+		if cfg.Swift.ContainerName == blockStorageBucketCfg.Swift.ContainerName && cfg.Swift.ProjectName == blockStorageBucketCfg.Swift.ProjectName {
+			return errors.New("Swift container and project names cannot be the same as the ones used in blocks storage config")
+		}
+	}
 	return nil
 }
 

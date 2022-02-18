@@ -526,6 +526,7 @@
 * [ENHANCEMENT] Querier: retry store-gateway in case of unexpected failure, instead of failing the query. #1003
 * [ENHANCEMENT] Added a new metric `mimir_build_info` to coincide with `cortex_build_info`. #1022
 * [ENHANCEMENT] Mimir runs a sanity check of storage config at startup and will fail to start if the sanity check doesn't pass. This is done to find potential config issues before starting up. #1180
+* [ENHANCEMENT] Validate alertmanager and ruler storage configurations to ensure they don't use same bucket name and region values as those configured for the blocks storage. #1214
 * [ENHANCEMENT] Distributor: reject exemplars with blank label names or values. The `cortex_discarded_exemplars_total` metric will use the `exemplar_labels_blank` reason in this case. #873
 * [ENHANCEMENT] Ruler: expose configuration API endpoints under `<prometheus_http_prefix>`. #763
 * [BUGFIX] Frontend: Fixes @ modifier functions (start/end) when splitting queries by time. #206

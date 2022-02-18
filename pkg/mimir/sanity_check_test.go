@@ -77,13 +77,20 @@ func TestCheckObjectStoresConfig(t *testing.T) {
 			setup: func(cfg *Config) {
 				require.NoError(t, cfg.Target.Set("all,alertmanager"))
 
-				for _, bucketCfg := range []*bucket.Config{&cfg.BlocksStorage.Bucket, &cfg.AlertmanagerStorage.Config, &cfg.RulerStorage.Config} {
+				for i, bucketCfg := range []*bucket.Config{&cfg.BlocksStorage.Bucket, &cfg.AlertmanagerStorage.Config, &cfg.RulerStorage.Config} {
 					bucketCfg.Backend = bucket.S3
 					bucketCfg.S3.Region = "us-east-1"
 					bucketCfg.S3.Endpoint = "s3.dualstack.us-east-1.amazonaws.com"
 					bucketCfg.S3.BucketName = "invalid"
 					bucketCfg.S3.AccessKeyID = "xxx"
 					bucketCfg.S3.SecretAccessKey = flagext.Secret{Value: "yyy"}
+
+					// Set a different bucket name for blocks storage to avoid config validation error.
+					if i == 0 {
+						bucketCfg.S3.BucketName = "invalid"
+					} else {
+						bucketCfg.S3.BucketName = "invalid-1"
+					}
 				}
 			},
 			expected: errObjectStorage,
@@ -92,9 +99,15 @@ func TestCheckObjectStoresConfig(t *testing.T) {
 			setup: func(cfg *Config) {
 				require.NoError(t, cfg.Target.Set("all,alertmanager"))
 
-				for _, bucketCfg := range []*bucket.Config{&cfg.BlocksStorage.Bucket, &cfg.AlertmanagerStorage.Config, &cfg.RulerStorage.Config} {
+				for i, bucketCfg := range []*bucket.Config{&cfg.BlocksStorage.Bucket, &cfg.AlertmanagerStorage.Config, &cfg.RulerStorage.Config} {
 					bucketCfg.Backend = bucket.GCS
-					bucketCfg.GCS.BucketName = "invalid"
+
+					// Set a different bucket name for blocks storage to avoid config validation error.
+					if i == 0 {
+						bucketCfg.GCS.BucketName = "invalid"
+					} else {
+						bucketCfg.GCS.BucketName = "invalid-1"
+					}
 				}
 			},
 			expected: errObjectStorage,
@@ -103,11 +116,18 @@ func TestCheckObjectStoresConfig(t *testing.T) {
 			setup: func(cfg *Config) {
 				require.NoError(t, cfg.Target.Set("all,alertmanager"))
 
-				for _, bucketCfg := range []*bucket.Config{&cfg.BlocksStorage.Bucket, &cfg.AlertmanagerStorage.Config, &cfg.RulerStorage.Config} {
+				for i, bucketCfg := range []*bucket.Config{&cfg.BlocksStorage.Bucket, &cfg.AlertmanagerStorage.Config, &cfg.RulerStorage.Config} {
 					bucketCfg.Backend = bucket.Azure
 					bucketCfg.Azure.ContainerName = "invalid"
 					bucketCfg.Azure.StorageAccountName = "xxx"
 					bucketCfg.Azure.StorageAccountKey = flagext.Secret{Value: "eHh4"}
+
+					// Set a different container name for blocks storage to avoid config validation error.
+					if i == 0 {
+						bucketCfg.Azure.ContainerName = "invalid"
+					} else {
+						bucketCfg.Azure.ContainerName = "invalid-1"
+					}
 				}
 			},
 			expected: errObjectStorage,
@@ -116,9 +136,16 @@ func TestCheckObjectStoresConfig(t *testing.T) {
 			setup: func(cfg *Config) {
 				require.NoError(t, cfg.Target.Set("all,alertmanager"))
 
-				for _, bucketCfg := range []*bucket.Config{&cfg.BlocksStorage.Bucket, &cfg.AlertmanagerStorage.Config, &cfg.RulerStorage.Config} {
+				for i, bucketCfg := range []*bucket.Config{&cfg.BlocksStorage.Bucket, &cfg.AlertmanagerStorage.Config, &cfg.RulerStorage.Config} {
 					bucketCfg.Backend = bucket.Swift
 					bucketCfg.Swift.AuthURL = "http://127.0.0.1/"
+
+					// Set a different project name for blocks storage to avoid config validation error.
+					if i == 0 {
+						bucketCfg.Swift.ProjectName = "invalid"
+					} else {
+						bucketCfg.Swift.ProjectName = "invalid-1"
+					}
 				}
 			},
 			expected: errObjectStorage,

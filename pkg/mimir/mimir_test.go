@@ -227,11 +227,100 @@ func TestConfigValidation(t *testing.T) {
 			},
 			expectedError: nil,
 		},
+		{
+			name: "S3: should fail if bucket name is shared between alertmanager and blocks storage",
+			getTestConfig: func() *Config {
+				cfg := newDefaultConfig()
+				_ = cfg.Target.Set("all,alertmanager")
+
+				for _, bucketCfg := range []*bucket.Config{&cfg.BlocksStorage.Bucket, &cfg.AlertmanagerStorage.Config} {
+					bucketCfg.Backend = bucket.S3
+					bucketCfg.S3.BucketName = "b1"
+					bucketCfg.S3.Region = "r1"
+				}
+				return cfg
+			},
+			expectedError: errInvalidBucketConfig,
+		},
+		{
+			name: "GCS: should fail if bucket name is shared between alertmanager and blocks storage",
+			getTestConfig: func() *Config {
+				cfg := newDefaultConfig()
+				_ = cfg.Target.Set("all,alertmanager")
+
+				for _, bucketCfg := range []*bucket.Config{&cfg.BlocksStorage.Bucket, &cfg.AlertmanagerStorage.Config} {
+					bucketCfg.Backend = bucket.GCS
+					bucketCfg.GCS.BucketName = "b1"
+				}
+				return cfg
+			},
+			expectedError: errInvalidBucketConfig,
+		},
+		{
+			name: "Azure: should fail if container and account names are shared between alertmanager and blocks storage",
+			getTestConfig: func() *Config {
+				cfg := newDefaultConfig()
+				_ = cfg.Target.Set("all,alertmanager")
+
+				for _, bucketCfg := range []*bucket.Config{&cfg.BlocksStorage.Bucket, &cfg.AlertmanagerStorage.Config} {
+					bucketCfg.Backend = bucket.Azure
+					bucketCfg.Azure.ContainerName = "c1"
+					bucketCfg.Azure.StorageAccountName = "sa1"
+				}
+				return cfg
+			},
+			expectedError: errInvalidBucketConfig,
+		},
+		{
+			name: "Azure: should pass if only container name is shared between alertmanager and blocks storage",
+			getTestConfig: func() *Config {
+				cfg := newDefaultConfig()
+				_ = cfg.Target.Set("all,alertmanager")
+
+				for i, bucketCfg := range []*bucket.Config{&cfg.BlocksStorage.Bucket, &cfg.AlertmanagerStorage.Config} {
+					bucketCfg.Backend = bucket.Azure
+					bucketCfg.Azure.ContainerName = "c1"
+					bucketCfg.Azure.StorageAccountName = fmt.Sprintf("sa%d", i)
+				}
+				return cfg
+			},
+			expectedError: nil,
+		},
+		{
+			name: "Swift: should fail if container and project names are shared between alertmanager and blocks storage",
+			getTestConfig: func() *Config {
+				cfg := newDefaultConfig()
+				_ = cfg.Target.Set("all,alertmanager")
+
+				for _, bucketCfg := range []*bucket.Config{&cfg.BlocksStorage.Bucket, &cfg.AlertmanagerStorage.Config} {
+					bucketCfg.Backend = bucket.Swift
+					bucketCfg.Swift.ContainerName = "c1"
+					bucketCfg.Swift.ProjectName = "p1"
+				}
+				return cfg
+			},
+			expectedError: errInvalidBucketConfig,
+		},
+		{
+			name: "Swift: should pass if only container name is shared between alertmanager and blocks storage",
+			getTestConfig: func() *Config {
+				cfg := newDefaultConfig()
+				_ = cfg.Target.Set("all,alertmanager")
+
+				for i, bucketCfg := range []*bucket.Config{&cfg.BlocksStorage.Bucket, &cfg.AlertmanagerStorage.Config} {
+					bucketCfg.Backend = bucket.Swift
+					bucketCfg.Swift.ContainerName = "c1"
+					bucketCfg.Swift.ProjectName = fmt.Sprintf("p%d", i)
+				}
+				return cfg
+			},
+			expectedError: nil,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			err := tc.getTestConfig().Validate(nil)
 			if tc.expectedError != nil {
-				require.Equal(t, tc.expectedError, err)
+				require.ErrorIs(t, err, tc.expectedError)
 			} else {
 				require.NoError(t, err)
 			}
