@@ -43,7 +43,7 @@ func TestPlayWithGrafanaMimirTutorial(t *testing.T) {
 	require.NoError(t, copyFileToSharedDir(s, "tutorials/play-with-grafana-mimir/config/mimir.yaml", "mimir.yaml"))
 
 	// Start dependencies.
-	minio := e2edb.NewMinio(9000, blocksBucketName)
+	minio := e2edb.NewMinio(9000, blocksBucketName, rulestoreBucketName, alertsBucketName)
 	require.NoError(t, s.StartAndWaitReady(minio))
 
 	flags := map[string]string{
@@ -55,12 +55,12 @@ func TestPlayWithGrafanaMimirTutorial(t *testing.T) {
 		"-blocks-storage.s3.insecure":                "true",
 		"-ruler-storage.s3.access-key-id":            e2edb.MinioAccessKey,
 		"-ruler-storage.s3.secret-access-key":        e2edb.MinioSecretKey,
-		"-ruler-storage.s3.bucket-name":              blocksBucketName,
+		"-ruler-storage.s3.bucket-name":              rulestoreBucketName,
 		"-ruler-storage.s3.endpoint":                 fmt.Sprintf("%s-minio-9000:9000", networkName),
 		"-ruler-storage.s3.insecure":                 "true",
 		"-alertmanager-storage.s3.access-key-id":     e2edb.MinioAccessKey,
 		"-alertmanager-storage.s3.secret-access-key": e2edb.MinioSecretKey,
-		"-alertmanager-storage.s3.bucket-name":       blocksBucketName,
+		"-alertmanager-storage.s3.bucket-name":       alertsBucketName,
 		"-alertmanager-storage.s3.endpoint":          fmt.Sprintf("%s-minio-9000:9000", networkName),
 		"-alertmanager-storage.s3.insecure":          "true",
 		// Override the list of members to join, setting the hostname we expect within the Docker network created by integration tests.
