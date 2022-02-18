@@ -11,6 +11,7 @@ var DefaultPreviousVersionImages = map[string]e2emimir.FlagMapper{
 		cortexFlagMapper,
 		revertRenameFrontendToQueryFrontendFlagMapper,
 		ingesterRingRename,
+		ingesterRingNewFeatures,
 	),
 }
 
@@ -35,5 +36,9 @@ var (
 		"-ingester.ring.min-ready-duration": "-ingester.min-ready-duration",
 		"-ingester.ring.num-tokens":         "-ingester.num-tokens",
 		"-ingester.ring.replication-factor": "-distributor.replication-factor",
+	})
+
+	ingesterRingNewFeatures = e2emimir.RemoveFlagMapper([]string{
+		"-ingester.ring.readiness-check-ring-health",
 	})
 )

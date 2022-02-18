@@ -521,6 +521,16 @@ func RenameFlagMapper(fromTo map[string]string) FlagMapper {
 	}
 }
 
+// RemoveFlagMapper builds a flag mapper that remove flags.
+func RemoveFlagMapper(toRemove []string) FlagMapper {
+	return func(flags map[string]string) map[string]string {
+		for _, name := range toRemove {
+			delete(flags, name)
+		}
+		return flags
+	}
+}
+
 // SetFlagMapper builds a flag mapper that sets the provided flags.
 func SetFlagMapper(set map[string]string) FlagMapper {
 	return func(flags map[string]string) map[string]string {
