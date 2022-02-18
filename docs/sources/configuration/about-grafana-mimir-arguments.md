@@ -1,7 +1,7 @@
 ---
 title: "About Grafana Mimir arguments"
 description: ""
-weight: 15
+weight: 10
 ---
 
 # About Grafana Mimir arguments
