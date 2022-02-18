@@ -23,8 +23,6 @@ We maintain a separate branch for each minor release, named `release-<major>.<mi
 
 The usual flow is to merge new features and changes into the main branch and to merge bug fixes into the latest release branch. Bug fixes are then merged into main from the latest release branch. The main branch should always contain all commits from the latest release branch. As long as main hasn't deviated significantly from the release branch, new commits can also go to main, followed by cherry picking them back into the release branch.
 
-If a bug fix got accidentally merged into main after non-bug-fix changes in main, the bug-fix commits have to be cherry-picked into the release branch, which then have to be merged back into main. Try to avoid that situation.
-
 Maintaining the release branches for older minor releases happens on a best effort basis.
 
 ### Show that a release is in progress
