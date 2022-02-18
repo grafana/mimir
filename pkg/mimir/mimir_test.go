@@ -228,74 +228,90 @@ func TestConfigValidation(t *testing.T) {
 			expectedError: nil,
 		},
 		{
-			name: "should fail if bucket name and region is shared between alertmanager and block storage on S3",
+			name: "S3: should fail if bucket name and region is shared between alertmanager and blocks storage",
 			getTestConfig: func() *Config {
-				configuration := newDefaultConfig()
-				_ = configuration.Target.Set("all,alertmanager")
+				cfg := newDefaultConfig()
+				_ = cfg.Target.Set("all,alertmanager")
 
-				configuration.BlocksStorage.Bucket.Backend = bucket.S3
-				configuration.BlocksStorage.Bucket.S3.BucketName = "b1"
-				configuration.BlocksStorage.Bucket.S3.Region = "r1"
-
-				configuration.AlertmanagerStorage.Backend = bucket.S3
-				configuration.AlertmanagerStorage.Config.S3.BucketName = "b1"
-				configuration.AlertmanagerStorage.Config.S3.Region = "r1"
-
-				return configuration
+				for _, bucketCfg := range []*bucket.Config{&cfg.BlocksStorage.Bucket, &cfg.AlertmanagerStorage.Config} {
+					bucketCfg.Backend = bucket.S3
+					bucketCfg.S3.BucketName = "b1"
+					bucketCfg.S3.Region = "r1"
+				}
+				return cfg
 			},
 			expectedError: errInvalidBucketConfig,
 		},
 		{
-			name: "should fail if bucket name and region is shared between ruler and block storage on S3",
+			name: "S3: should pass if only bucket name is shared between alertmanager and blocks storage",
 			getTestConfig: func() *Config {
-				configuration := newDefaultConfig()
-				_ = configuration.Target.Set("all,ruler")
+				cfg := newDefaultConfig()
+				_ = cfg.Target.Set("all,alertmanager")
 
-				configuration.BlocksStorage.Bucket.Backend = bucket.S3
-				configuration.BlocksStorage.Bucket.S3.BucketName = "b1"
-				configuration.BlocksStorage.Bucket.S3.Region = "r1"
-
-				configuration.RulerStorage.Backend = bucket.S3
-				configuration.RulerStorage.Config.S3.BucketName = "b1"
-				configuration.RulerStorage.Config.S3.Region = "r1"
-
-				return configuration
-			},
-			expectedError: errInvalidBucketConfig,
-		},
-		{
-			name: "should pass if only bucket name is shared between alertmanager and block storage on S3",
-			getTestConfig: func() *Config {
-				configuration := newDefaultConfig()
-				_ = configuration.Target.Set("all,alertmanager")
-
-				configuration.BlocksStorage.Bucket.Backend = bucket.S3
-				configuration.BlocksStorage.Bucket.S3.BucketName = "b1"
-				configuration.BlocksStorage.Bucket.S3.Region = "r1"
-
-				configuration.AlertmanagerStorage.Backend = bucket.S3
-				configuration.AlertmanagerStorage.Config.S3.BucketName = "b1"
-				configuration.AlertmanagerStorage.Config.S3.Region = "r2"
-
-				return configuration
+				for i, bucketCfg := range []*bucket.Config{&cfg.BlocksStorage.Bucket, &cfg.AlertmanagerStorage.Config} {
+					bucketCfg.Backend = bucket.S3
+					bucketCfg.S3.BucketName = "b1"
+					bucketCfg.S3.Region = fmt.Sprintf("r%d", i)
+				}
+				return cfg
 			},
 			expectedError: nil,
 		},
 		{
-			name: "should pass if only bucket name is shared between ruler and block storage on S3",
+			name: "GCS: should fail if bucket name is shared between alertmanager and blocks storage",
 			getTestConfig: func() *Config {
-				configuration := newDefaultConfig()
-				_ = configuration.Target.Set("all,ruler")
+				cfg := newDefaultConfig()
+				_ = cfg.Target.Set("all,alertmanager")
 
-				configuration.BlocksStorage.Bucket.Backend = bucket.S3
-				configuration.BlocksStorage.Bucket.S3.BucketName = "b1"
-				configuration.BlocksStorage.Bucket.S3.Region = "r1"
+				for _, bucketCfg := range []*bucket.Config{&cfg.BlocksStorage.Bucket, &cfg.AlertmanagerStorage.Config} {
+					bucketCfg.Backend = bucket.GCS
+					bucketCfg.GCS.BucketName = "b1"
+				}
+				return cfg
+			},
+			expectedError: errInvalidBucketConfig,
+		},
+		{
+			name: "Azure: should fail if container name is shared between alertmanager and blocks storage",
+			getTestConfig: func() *Config {
+				cfg := newDefaultConfig()
+				_ = cfg.Target.Set("all,alertmanager")
 
-				configuration.RulerStorage.Backend = bucket.S3
-				configuration.RulerStorage.Config.S3.BucketName = "b1"
-				configuration.RulerStorage.Config.S3.Region = "r2"
+				for _, bucketCfg := range []*bucket.Config{&cfg.BlocksStorage.Bucket, &cfg.AlertmanagerStorage.Config} {
+					bucketCfg.Backend = bucket.Azure
+					bucketCfg.Azure.ContainerName = "c1"
+				}
+				return cfg
+			},
+			expectedError: errInvalidBucketConfig,
+		},
+		{
+			name: "Swift: should fail if container and region names are shared between alertmanager and blocks storage",
+			getTestConfig: func() *Config {
+				cfg := newDefaultConfig()
+				_ = cfg.Target.Set("all,alertmanager")
 
-				return configuration
+				for _, bucketCfg := range []*bucket.Config{&cfg.BlocksStorage.Bucket, &cfg.AlertmanagerStorage.Config} {
+					bucketCfg.Backend = bucket.Swift
+					bucketCfg.Swift.ContainerName = "c1"
+					bucketCfg.Swift.RegionName = "r1"
+				}
+				return cfg
+			},
+			expectedError: errInvalidBucketConfig,
+		},
+		{
+			name: "Swift: should pass if only container name is shared between alertmanager and blocks storage",
+			getTestConfig: func() *Config {
+				cfg := newDefaultConfig()
+				_ = cfg.Target.Set("all,alertmanager")
+
+				for i, bucketCfg := range []*bucket.Config{&cfg.BlocksStorage.Bucket, &cfg.AlertmanagerStorage.Config} {
+					bucketCfg.Backend = bucket.Swift
+					bucketCfg.Swift.ContainerName = "c1"
+					bucketCfg.Swift.RegionName = fmt.Sprintf("r%d", i)
+				}
+				return cfg
 			},
 			expectedError: nil,
 		},

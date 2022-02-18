@@ -265,11 +265,29 @@ func (c *Config) validateBucketConfigs() error {
 }
 
 func validateBucketConfig(cfg bucket.Config, blockStorageBucketCfg bucket.Config) error {
-	if cfg.Backend != bucket.S3 || (cfg.Backend != blockStorageBucketCfg.Backend) {
+	if cfg.Backend != blockStorageBucketCfg.Backend {
 		return nil
 	}
-	if cfg.S3.BucketName == blockStorageBucketCfg.S3.BucketName && cfg.S3.Region == blockStorageBucketCfg.S3.Region {
-		return errors.New("bucket name and region cannot be the same as the ones used in block storage config")
+	switch cfg.Backend {
+	case bucket.S3:
+		if cfg.S3.BucketName == blockStorageBucketCfg.S3.BucketName && cfg.S3.Region == blockStorageBucketCfg.S3.Region {
+			return errors.New("S3 bucket name and region cannot be the same as the ones used in blocks storage config")
+		}
+
+	case bucket.GCS:
+		if cfg.GCS.BucketName == blockStorageBucketCfg.GCS.BucketName {
+			return errors.New("GCS bucket name cannot be the same as the one used in blocks storage config")
+		}
+
+	case bucket.Azure:
+		if cfg.Azure.ContainerName == blockStorageBucketCfg.Azure.ContainerName {
+			return errors.New("Azure bucket container name cannot be the same as the one used in blocks storage config")
+		}
+
+	case bucket.Swift:
+		if cfg.Swift.ContainerName == blockStorageBucketCfg.Swift.ContainerName && cfg.Swift.RegionName == blockStorageBucketCfg.Swift.RegionName {
+			return errors.New("Swift bucket container and region names cannot be the same as the ones used in blocks storage config")
+		}
 	}
 	return nil
 }
