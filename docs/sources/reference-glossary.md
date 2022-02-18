@@ -29,7 +29,7 @@ Flushing is the operation run by ingesters to offload time series from memory an
 
 ## Gossip
 
-Gossip is a protocol by which components coordinate with the need for a centralized [key-value store]({{<relref "#key-value-store" >}}).
+Gossip is a protocol by which components coordinate without the need for a centralized [key-value store]({{<relref "#key-value-store" >}}).
 
 ## HA tracker
 
