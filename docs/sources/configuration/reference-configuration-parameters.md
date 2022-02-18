@@ -2562,7 +2562,7 @@ The `limits` block configures default and per-tenant limits imposed by component
 # Maximum number of split (by time) or partial (by shard) queries that will be
 # scheduled in parallel by the query-frontend for a single input query. This
 # limit is introduced to have a fairer query scheduling and avoid a single query
-# over a large time range could saturate all available queriers.
+# over a large time range saturating all available queriers.
 # CLI flag: -querier.max-query-parallelism
 [max_query_parallelism: <int> | default = 14]
 
