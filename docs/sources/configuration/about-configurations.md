@@ -27,7 +27,7 @@ There is no harm in passing a configuration that is specific to one component, s
 
 If needed, advanced users can use CLI flags to override specific values on a particular Grafana Mimir component or replica. This can be helpful if you want to change a parameter that is specific to a certain component, without having to do a full restart of all other components. The most common case for CLI flags is to use the `-target` flag to run Grafana Mimir as microservices. All Grafana Mimir components share one configuration file, but are made to behave as a particular component by setting different `-target` command-line values, for example `-target=ingester` or `-target=querier`.
 
-# Configuration file
+## Configuration file
 
 To specify which configuration file to load, use the `-config.file` command-line option.
 
