@@ -6,13 +6,13 @@ weight: 10
 
 # About configurations
 
-Grafana Mimir is configured via command-line-interface (CLI) flags or a configuration file. Every parameter that can be set in the configuration file can also be set via a corresponding command-line flag. If you specify both command-line flags and YAML configuration parameters, the command-line flags take precedence over values in a YAML file.
+Grafana Mimir is configured via command-line flags or a configuration file. Every parameter that can be set in the configuration file can also be set via a corresponding command-line flag. If you specify both command-line flags and YAML configuration parameters, the command-line flags take precedence over values in a YAML file.
 
 To view the most common flags needed to get started with Grafana Mimir, run `mimir -help`. To view all available command line flags, run `mimir -help-all`.
 
 This configuration loads at startup and cannot be modified at runtime. However, Grafana Mimir does have a second configuration file, known as the runtime configuration, that is dynamically reloaded. For more information, see Runtime configuration.
 
-To see the current configuration state of any component, use the [`/config`](../../reference-http-api/#configuration) HTTP API endpoint.
+To see the current configuration state of any component, use the [`/config`](../../reference-http-api/#configuration) or [`/runtime_config`](../../reference-http-api/#configuration) HTTP API endpoint.
 
 ## Operational considerations
 
