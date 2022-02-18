@@ -4,7 +4,7 @@ package mimir
 
 import (
 	"context"
-	"os"
+	"errors"
 	"testing"
 
 	"github.com/go-kit/log"
@@ -155,24 +155,41 @@ func TestCheckObjectStoresConfig(t *testing.T) {
 }
 
 func TestCheckDirectoryReadWriteAccess(t *testing.T) {
-	const ingesterTSDBPath = "data"
+	const ingesterTSDBPath = "/path/to/tsdb"
 
 	tests := map[string]struct {
-		dirName  string
-		dirPerm  int
-		expected string
+		dirExistsFn       dirExistsFunc
+		isDirReadWritable isDirReadWritableFunc
+		expected          string
 	}{
 		"should fail on ingester tsdb directory without write access": {
-			dirName:  ingesterTSDBPath,
-			dirPerm:  0,
+			dirExistsFn: func(dir string) (bool, error) {
+				return true, nil
+			},
+			isDirReadWritable: func(dir string) error {
+				return errors.New("read only")
+			},
 			expected: "failed to access directory",
 		},
 		"should pass on ingester tsdb directory with read-write access": {
-			dirName:  ingesterTSDBPath,
-			dirPerm:  0777,
+			dirExistsFn: func(dir string) (bool, error) {
+				return true, nil
+			},
+			isDirReadWritable: func(dir string) error {
+				return nil
+			},
 			expected: "",
 		},
 		"should pass on ingester if tsdb directory doesn't exist but parent folder has read-write access": {
+			dirExistsFn: func(dir string) (bool, error) {
+				return dir == "/path/to", nil
+			},
+			isDirReadWritable: func(dir string) error {
+				if dir == "/path/to" {
+					return nil
+				}
+				return errors.New("read only")
+			},
 			expected: "",
 		},
 	}
@@ -185,14 +202,7 @@ func TestCheckDirectoryReadWriteAccess(t *testing.T) {
 
 			cfg.Ingester.BlocksStorageConfig.TSDB.Dir = ingesterTSDBPath
 
-			if len(testData.dirName) > 0 {
-				_ = os.MkdirAll(testData.dirName, os.FileMode(testData.dirPerm))
-				t.Cleanup(func() {
-					_ = os.RemoveAll(testData.dirName)
-				})
-			}
-
-			actual := checkDirectoriesReadWriteAccess(cfg)
+			actual := checkDirectoriesReadWriteAccess(cfg, testData.dirExistsFn, testData.isDirReadWritable)
 			if testData.expected == "" {
 				require.NoError(t, actual)
 			} else {
