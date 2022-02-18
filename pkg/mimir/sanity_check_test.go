@@ -84,7 +84,7 @@ func TestCheckObjectStoresConfig(t *testing.T) {
 					bucketCfg.S3.AccessKeyID = "xxx"
 					bucketCfg.S3.SecretAccessKey = flagext.Secret{Value: "yyy"}
 
-					// Set a different region for block storage to avoid config validation error.
+					// Set a different region for blocks storage to avoid config validation error.
 					if i == 0 {
 						bucketCfg.S3.Region = "us-west-0"
 					} else {
