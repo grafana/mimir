@@ -486,7 +486,7 @@ func (i *Ingester) reloadConfig(now time.Time) {
 		}
 		newMatchers := i.getActiveSeriesMatchers(userID, currentConfig)
 		if !newMatchers.Equals(userDB.activeSeries.asm) {
-			i.ReplaceMatchers(newMatchers, userDB)
+			i.replaceMatchers(newMatchers, userDB)
 		}
 	}
 }
@@ -506,7 +506,7 @@ func (i *Ingester) getActiveSeriesMatchers(userID string, config *RuntimeMatcher
 	return &val
 }
 
-func (i *Ingester) ReplaceMatchers(asm *ActiveSeriesMatchers, userDB *userTSDB) {
+func (i *Ingester) replaceMatchers(asm *ActiveSeriesMatchers, userDB *userTSDB) {
 	i.metrics.deletePerUserCustomTrackerMetrics(userDB.userID, userDB.activeSeries.asm.names)
 	userDB.activeSeries.ReloadSeriesMatchers(asm)
 }
