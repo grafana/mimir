@@ -20,7 +20,7 @@ A chunk is an object containing encoded timestamp-value pairs for one series.
 
 Churn is the frequency at which series become idle.
 
-A series become idle once it's no longer exported by the monitored targets.
+A series becomes idle once it's no longer exported by the monitored targets.
 Typically, series become idle when a monitored target process or node gets terminated.
 
 ## Flushing
