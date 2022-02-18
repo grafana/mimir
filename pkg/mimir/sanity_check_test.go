@@ -155,21 +155,40 @@ func TestCheckObjectStoresConfig(t *testing.T) {
 }
 
 func TestCheckDirectoryReadWriteAccess(t *testing.T) {
-	const testIngesterDir = "test-ingester-data"
+	const ingesterTSDBPath = "/ingester/data"
 
 	tests := map[string]struct {
-		isDirRwFn func(string) error
-		expected  string
+		dirExistsFn func(string) (bool, error)
+		isDirRwFn   func(string) error
+		expected    string
 	}{
 		"should fail on ingester tsdb directory without write access": {
+			dirExistsFn: func(dir string) (bool, error) {
+				return dir == ingesterTSDBPath, nil
+			},
 			isDirRwFn: func(dir string) error {
 				return errors.New("read-only")
 			},
 			expected: "failed to access directory",
 		},
 		"should pass on ingester tsdb directory with read-write access": {
-			isDirRwFn: func(s string) error {
+			dirExistsFn: func(dir string) (bool, error) {
+				return dir == ingesterTSDBPath, nil
+			},
+			isDirRwFn: func(dir string) error {
 				return nil
+			},
+			expected: "",
+		},
+		"should pass on ingester if tsdb directory doesn't exist but parent folder has read-write access": {
+			dirExistsFn: func(dir string) (bool, error) {
+				return dir == "/ingester", nil
+			},
+			isDirRwFn: func(dir string) error {
+				if dir == "/ingester" {
+					return nil
+				}
+				return errors.New("read-only")
 			},
 			expected: "",
 		},
@@ -181,8 +200,9 @@ func TestCheckDirectoryReadWriteAccess(t *testing.T) {
 
 			require.NoError(t, cfg.Target.Set("ingester"))
 
-			cfg.Ingester.BlocksStorageConfig.TSDB.Dir = testIngesterDir
+			cfg.Ingester.BlocksStorageConfig.TSDB.Dir = ingesterTSDBPath
 
+			dirExistsFn = testData.dirExistsFn
 			isDirReadWritableFn = testData.isDirRwFn
 
 			actual := checkDirectoriesReadWriteAccess(cfg)

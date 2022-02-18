@@ -5,6 +5,7 @@ package mimir
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"time"
 
 	"github.com/go-kit/log"
@@ -26,11 +27,12 @@ var (
 
 func runSanityCheck(ctx context.Context, cfg Config, logger log.Logger) error {
 
-	level.Info(logger).Log("msg", "Checking directory read/write access")
+	level.Info(logger).Log("msg", "Checking directories read/write access")
 	if err := checkDirectoriesReadWriteAccess(cfg); err != nil {
 		level.Error(logger).Log("msg", "Unable to access directory", "err", err)
 		return err
 	}
+	level.Info(logger).Log("msg", "Directories read/write access successfully checked")
 
 	level.Info(logger).Log("msg", "Checking object storage config")
 	if err := checkObjectStoresConfigWithRetries(ctx, cfg, logger); err != nil {
@@ -48,18 +50,48 @@ func checkDirectoriesReadWriteAccess(cfg Config) error {
 	if cfg.isAnyModuleEnabled(All, Ingester) {
 		errs.Add(errors.Wrap(checkDirReadWriteAccess(cfg.Ingester.BlocksStorageConfig.TSDB.Dir), "ingester"))
 	}
+	if cfg.isAnyModuleEnabled(All, StoreGateway) {
+		errs.Add(errors.Wrap(checkDirReadWriteAccess(cfg.BlocksStorage.BucketStore.SyncDir), "store-gateway"))
+	}
 	if cfg.isAnyModuleEnabled(All, Compactor) {
 		errs.Add(errors.Wrap(checkDirReadWriteAccess(cfg.Compactor.DataDir), "compactor"))
+	}
+	if cfg.isAnyModuleEnabled(All, Ruler) {
+		errs.Add(errors.Wrap(checkDirReadWriteAccess(cfg.Ruler.RulePath), "ruler"))
+	}
+	if cfg.isAnyModuleEnabled(AlertManager) {
+		errs.Add(errors.Wrap(checkDirReadWriteAccess(cfg.Alertmanager.DataDir), "alertmanager"))
 	}
 
 	return errs.Err()
 }
 
-var isDirReadWritableFn = fsutil.IsDirReadWritable // Used for testing.
+// Used for testing.
+var (
+	dirExistsFn         = fsutil.DirExists
+	isDirReadWritableFn = fsutil.IsDirReadWritable
+)
 
 func checkDirReadWriteAccess(dir string) error {
-	if err := isDirReadWritableFn(dir); err != nil {
-		return fmt.Errorf("failed to access directory %s: %s", dir, err)
+	d := dir
+	for {
+		exists, err := dirExistsFn(d)
+		if err != nil {
+			return err
+		}
+		if exists {
+			break
+		}
+		d = filepath.Dir(d)
+
+		// Stop checking dir existence when root path reached.
+		if d == "/" || d == "." {
+			break
+		}
+	}
+
+	if err := isDirReadWritableFn(d); err != nil {
+		return fmt.Errorf("failed to access directory %s: %w", dir, err)
 	}
 	return nil
 }
