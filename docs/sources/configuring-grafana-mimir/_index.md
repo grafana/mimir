@@ -4,4 +4,4 @@ description: ""
 weight: 10000
 ---
 
-<{{ section }}>
+<{{< section >}}>
