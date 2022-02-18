@@ -28,7 +28,7 @@ func TestGettingStartedWithGossipedRing(t *testing.T) {
 	defer s.Close()
 
 	// Start dependencies.
-	minio := e2edb.NewMinio(9000, bucketName)
+	minio := e2edb.NewMinio(9000, blocksBucketName)
 	require.NoError(t, s.StartAndWaitReady(minio))
 
 	// Start Mimir components.
@@ -42,7 +42,7 @@ func TestGettingStartedWithGossipedRing(t *testing.T) {
 		"-blocks-storage.bucket-store.bucket-index.enabled": "false",
 		"-blocks-storage.bucket-store.sync-interval":        "1s", // sync continuously
 		"-blocks-storage.backend":                           "s3",
-		"-blocks-storage.s3.bucket-name":                    bucketName,
+		"-blocks-storage.s3.bucket-name":                    blocksBucketName,
 		"-blocks-storage.s3.access-key-id":                  e2edb.MinioAccessKey,
 		"-blocks-storage.s3.secret-access-key":              e2edb.MinioSecretKey,
 		"-blocks-storage.s3.endpoint":                       fmt.Sprintf("%s-minio-9000:9000", networkName),

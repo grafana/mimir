@@ -49,7 +49,7 @@ func TestRulerAPI(t *testing.T) {
 
 	// Start dependencies.
 	consul := e2edb.NewConsul()
-	minio := e2edb.NewMinio(9000, bucketName, rulestoreBucketName)
+	minio := e2edb.NewMinio(9000, blocksBucketName, rulestoreBucketName)
 	require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 	// Configure the ruler.
@@ -146,7 +146,7 @@ func TestRulerAPISingleBinary(t *testing.T) {
 	user := "anonymous"
 
 	// Start dependencies.
-	minio := e2edb.NewMinio(9000, bucketName)
+	minio := e2edb.NewMinio(9000, blocksBucketName)
 	require.NoError(t, s.StartAndWaitReady(minio))
 
 	flags := mergeFlags(
@@ -211,7 +211,7 @@ func TestRulerEvaluationDelay(t *testing.T) {
 	evaluationDelay := time.Minute * 5
 
 	// Start dependencies.
-	minio := e2edb.NewMinio(9000, bucketName)
+	minio := e2edb.NewMinio(9000, blocksBucketName)
 	require.NoError(t, s.StartAndWaitReady(minio))
 
 	flags := mergeFlags(
@@ -351,7 +351,7 @@ func TestRulerSharding(t *testing.T) {
 
 	// Start dependencies.
 	consul := e2edb.NewConsul()
-	minio := e2edb.NewMinio(9000, rulestoreBucketName, bucketName)
+	minio := e2edb.NewMinio(9000, rulestoreBucketName, blocksBucketName)
 	require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 	// Configure the ruler.
@@ -410,7 +410,7 @@ func TestRulerAlertmanager(t *testing.T) {
 
 	// Start dependencies.
 	consul := e2edb.NewConsul()
-	minio := e2edb.NewMinio(9000, bucketName, rulestoreBucketName, alertsBucketName)
+	minio := e2edb.NewMinio(9000, blocksBucketName, rulestoreBucketName, alertsBucketName)
 	require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 	// Have at least one alertmanager configuration.
@@ -463,7 +463,7 @@ func TestRulerAlertmanagerTLS(t *testing.T) {
 
 	// Start dependencies.
 	consul := e2edb.NewConsul()
-	minio := e2edb.NewMinio(9000, bucketName, rulestoreBucketName, alertsBucketName)
+	minio := e2edb.NewMinio(9000, blocksBucketName, rulestoreBucketName, alertsBucketName)
 	require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 	// set the ca
@@ -541,7 +541,7 @@ func TestRulerMetricsForInvalidQueries(t *testing.T) {
 
 	// Start dependencies.
 	consul := e2edb.NewConsul()
-	minio := e2edb.NewMinio(9000, bucketName, rulestoreBucketName)
+	minio := e2edb.NewMinio(9000, blocksBucketName, rulestoreBucketName)
 	require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 	// Configure the ruler.
@@ -722,7 +722,7 @@ func TestRulerFederatedRules(t *testing.T) {
 
 	// Start dependencies.
 	consul := e2edb.NewConsul()
-	minio := e2edb.NewMinio(9000, bucketName, rulestoreBucketName)
+	minio := e2edb.NewMinio(9000, blocksBucketName, rulestoreBucketName)
 	require.NoError(t, s.StartAndWaitReady(minio, consul))
 
 	flags := mergeFlags(
@@ -873,7 +873,7 @@ func TestRulerEnableAPIs(t *testing.T) {
 
 			// Start dependencies.
 			consul := e2edb.NewConsul()
-			minio := e2edb.NewMinio(9000, bucketName, rulestoreBucketName)
+			minio := e2edb.NewMinio(9000, blocksBucketName, rulestoreBucketName)
 			require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 			// Configure the ruler.

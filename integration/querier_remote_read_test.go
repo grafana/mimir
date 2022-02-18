@@ -36,7 +36,7 @@ func TestQuerierRemoteRead(t *testing.T) {
 	flags := mergeFlags(BlocksStorageFlags(), map[string]string{})
 
 	// Start dependencies.
-	minio := e2edb.NewMinio(9000, bucketName)
+	minio := e2edb.NewMinio(9000, blocksBucketName)
 
 	consul := e2edb.NewConsul()
 	require.NoError(t, s.StartAndWaitReady(minio, consul))
