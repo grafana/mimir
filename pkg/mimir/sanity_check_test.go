@@ -5,6 +5,7 @@ package mimir
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/go-kit/log"
@@ -155,23 +156,46 @@ func TestCheckObjectStoresConfig(t *testing.T) {
 }
 
 func TestCheckDirectoryReadWriteAccess(t *testing.T) {
-	const ingesterTSDBPath = "/path/to/tsdb"
+	const configuredPath = "/path/to/dir"
+
+	configs := map[string]func(t *testing.T, cfg *Config){
+		"ingester": func(t *testing.T, cfg *Config) {
+			require.NoError(t, cfg.Target.Set("ingester"))
+			cfg.Ingester.BlocksStorageConfig.TSDB.Dir = configuredPath
+		},
+		"store-gateway": func(t *testing.T, cfg *Config) {
+			require.NoError(t, cfg.Target.Set("store-gateway"))
+			cfg.BlocksStorage.BucketStore.SyncDir = configuredPath
+		},
+		"compactor": func(t *testing.T, cfg *Config) {
+			require.NoError(t, cfg.Target.Set("compactor"))
+			cfg.Compactor.DataDir = configuredPath
+		},
+		"ruler": func(t *testing.T, cfg *Config) {
+			require.NoError(t, cfg.Target.Set("ruler"))
+			cfg.Ruler.RulePath = configuredPath
+		},
+		"alertmanager": func(t *testing.T, cfg *Config) {
+			require.NoError(t, cfg.Target.Set("alertmanager"))
+			cfg.Alertmanager.DataDir = configuredPath
+		},
+	}
 
 	tests := map[string]struct {
 		dirExistsFn       dirExistsFunc
 		isDirReadWritable isDirReadWritableFunc
 		expected          string
 	}{
-		"should fail on ingester tsdb directory without write access": {
+		"should fail on directory without write access": {
 			dirExistsFn: func(dir string) (bool, error) {
 				return true, nil
 			},
 			isDirReadWritable: func(dir string) error {
 				return errors.New("read only")
 			},
-			expected: "failed to access directory",
+			expected: fmt.Sprintf("failed to access directory %s: read only", configuredPath),
 		},
-		"should pass on ingester tsdb directory with read-write access": {
+		"should pass on directory with read-write access": {
 			dirExistsFn: func(dir string) (bool, error) {
 				return true, nil
 			},
@@ -180,34 +204,48 @@ func TestCheckDirectoryReadWriteAccess(t *testing.T) {
 			},
 			expected: "",
 		},
-		"should pass on ingester if tsdb directory doesn't exist but parent folder has read-write access": {
+		"should pass if directory doesn't exist but parent existing folder has read-write access": {
 			dirExistsFn: func(dir string) (bool, error) {
-				return dir == "/path/to", nil
+				return dir == "/", nil
 			},
 			isDirReadWritable: func(dir string) error {
-				if dir == "/path/to" {
+				if dir == "/" {
 					return nil
 				}
-				return errors.New("read only")
+				return errors.New("not exists")
 			},
 			expected: "",
 		},
+		"should fail if directory doesn't exist and parent existing folder has no read-write access": {
+			dirExistsFn: func(dir string) (bool, error) {
+				return dir == "/", nil
+			},
+			isDirReadWritable: func(dir string) error {
+				if dir == "/" {
+					return errors.New("read only")
+				}
+				return errors.New("not exists")
+			},
+			expected: fmt.Sprintf("failed to access directory %s: read only", configuredPath),
+		},
 	}
-	for testName, testData := range tests {
-		t.Run(testName, func(t *testing.T) {
-			cfg := Config{}
-			flagext.DefaultValues(&cfg)
 
-			require.NoError(t, cfg.Target.Set("ingester"))
+	for configName, configSetup := range configs {
+		t.Run(configName, func(t *testing.T) {
+			for testName, testData := range tests {
+				t.Run(testName, func(t *testing.T) {
+					cfg := Config{}
+					flagext.DefaultValues(&cfg)
+					configSetup(t, &cfg)
 
-			cfg.Ingester.BlocksStorageConfig.TSDB.Dir = ingesterTSDBPath
-
-			actual := checkDirectoriesReadWriteAccess(cfg, testData.dirExistsFn, testData.isDirReadWritable)
-			if testData.expected == "" {
-				require.NoError(t, actual)
-			} else {
-				require.Error(t, actual)
-				require.Contains(t, actual.Error(), testData.expected)
+					actual := checkDirectoriesReadWriteAccess(cfg, testData.dirExistsFn, testData.isDirReadWritable)
+					if testData.expected == "" {
+						require.NoError(t, actual)
+					} else {
+						require.Error(t, actual)
+						require.Contains(t, actual.Error(), testData.expected)
+					}
+				})
 			}
 		})
 	}
