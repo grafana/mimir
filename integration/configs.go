@@ -157,7 +157,7 @@ blocks_storage:
       enabled: false 
 
   s3:
-    bucket_name:       mimir
+    bucket_name:       mimir-blocks
     access_key_id:     {{.MinioAccessKey}}
     secret_access_key: {{.MinioSecretKey}}
     endpoint:          {{.MinioEndpoint}}
