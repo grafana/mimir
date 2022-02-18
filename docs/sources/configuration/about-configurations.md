@@ -12,7 +12,7 @@ To view the most common flags needed to get started with Grafana Mimir, run `mim
 
 This configuration loads at startup and cannot be modified at runtime. However, Grafana Mimir does have a second configuration file, known as the runtime configuration, that is dynamically reloaded. For more information, see Runtime configuration.
 
-To see the current configuration state of any component, use the [`/config`](../../reference-http-api/#endpoints) HTTP API endpoint.
+To see the current configuration state of any component, use the [`/config`](../../reference-http-api/#configuration) HTTP API endpoint.
 
 # Operational considerations
 
