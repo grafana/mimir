@@ -6,31 +6,23 @@ weight: 10
 
 # About configurations
 
-Grafana Mimir is configured via command-line flags or a configuration file. Every parameter that can be set in the configuration file can also be set via a corresponding command-line flag. If you specify both command-line flags and YAML configuration parameters, the command-line flags take precedence over values in a YAML file.
+You can configure Grafana Mimir via a ([YAML](https://en.wikipedia.org/wiki/YAML)-based) configuration file or CLI (command-line-interface) flags. It is best to specify your configuration via the configuration file rather than CLI flags. Every parameter that is set in the configuration file can also be set via a corresponding CLI flag. If you specify both CLI flags and configuration parameters, CLI flags take precedence over corresponding values in a configuration file. You can specify the configuration file by using the `-config.file` CLI flag.
 
-To view the most common flags that you need to get started with Grafana Mimir, run `mimir -help`. To view all available command line flags, run `mimir -help-all`.
+To see the most common CLI flags that you need to get started with Grafana Mimir, run the `mimir -help` command. To see all of the available CLI flags, run the `mimir -help-all` command.
 
 A given configuration loads at startup and cannot be modified at runtime. However, Grafana Mimir does have a second configuration file, known as the _runtime configuration_, that is dynamically reloaded. For more information, see [Configuration parameters]({{< relref "./reference-configuration-parameters/#configuration-parameters-1" >}}).
 
-To see the current configuration state of any component, use the 
-[`/config`]({{< relref "./../reference-http-api/#configuration" >}}) or 
-[`/runtime_config`]({{< relref "./../reference-http-api/#runtime-configuration" >}}) HTTP API endpoint.
+To see the current configuration state of any component, use the [`/config`]({{< relref "./../reference-http-api/#configuration" >}}) or [`/runtime_config`]({{< relref "./../reference-http-api/#runtime-configuration" >}}) HTTP API endpoint.
 
 ## Operational considerations
 
-It is best to specify your configuration via the configuration file rather than CLI flags.
-
 Use a single configuration file, and either pass it to all replicas of Grafana Mimir (when running multiple single-process Mimir replicas) or to all components of Grafana Mimir (when running Grafana Mimir as microservices). When running Grafana Mimir on Kubernetes, you can achieve this by storing the configuration file in a [ConfigMap](https://kubernetes.io/docs/concepts/configuration/configmap/) and mounting it in each Grafana Mimir container.
 
-This recommendation helps to avoid a common misconfiguration pitfall: while certain configuration parameters might look like they’re only needed by one type of component, they might in fact be used by multiple components. For example, the `-ingester.ring.replication-factor` flag is not only required by ingesters, but also by distributors, queriers, and rulers.
+This recommendation helps to avoid a common misconfiguration pitfall: while certain configuration parameters might look like they’re only needed by one type of component, they might in fact be used by multiple components. For example, the `-ingester.ring.replication-factor` CLI flag is not only required by ingesters, but also by distributors, queriers, and rulers.
 
-By using a single configuration file, you ensure that each component gets all the configuration it needs without needing to track which parameter belongs to which component.
-There is no harm in passing a configuration that is specific to one component, such as an ingester, to another component, such as a querier. It is simply ignored.
+By using a single configuration file, you ensure that each component gets all of the configuration that it needs without needing to track which parameter belongs to which component.
+There is no harm in passing a configuration that is specific to one component (such as an ingester) to another component (such as a querier). In such case, the configuration is simply ignored.
 
-If needed, advanced users can use CLI flags to override specific values on a particular Grafana Mimir component or replica. This can be helpful if you want to change a parameter that is specific to a certain component, without having to do a full restart of all other components. The most common case for CLI flags is to use the `-target` flag to run Grafana Mimir as microservices. All Grafana Mimir components share one configuration file, but are made to behave as a particular component by setting different `-target` command-line values, for example `-target=ingester` or `-target=querier`.
+If you need to, you can use advanced CLI flags to override specific values on a particular Grafana Mimir component or replica. This can be helpful if you want to change a parameter that is specific to a certain component, without having to do a full restart of all other components.
 
-## Configuration file
-
-To specify which configuration file to load, use the `-config.file` command-line option.
-
-The configuration file is written in [YAML](https://en.wikipedia.org/wiki/YAML) and follows the structure defined below. Parameters shown in brackets are optional.
+The most common use case for CLI flags is to use the `-target` flag to run Grafana Mimir as microservices. By setting the `-target` CLI flag, all Grafana Mimir components share the same configuration file, but you can make them behave as a given component by specifying a `-target` command-line value, such as `-target=ingester` or `-target=querier`.
