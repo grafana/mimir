@@ -72,7 +72,6 @@ In this documentation you will find the usage of some placeholders for the path 
 
 | Prefix                       | Default         | CLI Flag                         | YAML Config                      |
 | ---------------------------- | --------------- | -------------------------------- | -------------------------------- |
-| `<legacy-http-prefix>`       | `/api/prom`     | `-http.prefix`                   | `http_prefix`                    |
 | `<prometheus-http-prefix>`   | `/prometheus`   | `-http.prometheus-http-prefix`   | `api > prometheus_http_prefix`   |
 | `<alertmanager-http-prefix>` | `/alertmanager` | `-http.alertmanager-http-prefix` | `api > alertmanager_http_prefix` |
 
@@ -189,9 +188,6 @@ _For more information, please check out the official documentation of [fgprof](h
 
 ```
 POST /api/v1/push
-
-# Legacy
-POST <legacy-http-prefix>/push
 ```
 
 Entrypoint for the [Prometheus remote write](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#remote_write).
@@ -216,9 +212,6 @@ Displays a web page with the distributor hash ring status, including the state, 
 
 ```
 GET /distributor/all_user_stats
-
-# Legacy
-GET /all_user_stats
 ```
 
 Displays a web page with per-tenant statistics updated in realtime, including the total number of active series across all ingesters and the current ingestion rate (samples / sec).
@@ -227,9 +220,6 @@ Displays a web page with per-tenant statistics updated in realtime, including th
 
 ```
 GET /distributor/ha_tracker
-
-# Legacy
-GET /ha-tracker
 ```
 
 Displays a web page with the current status of the HA tracker, including the elected replica for each Prometheus HA cluster.
@@ -240,9 +230,6 @@ Displays a web page with the current status of the HA tracker, including the ele
 
 ```
 GET,POST /ingester/flush
-
-# Legacy
-GET,POST /flush
 ```
 
 Triggers a flush of the in-memory time series data (chunks or blocks) to the long-term storage. This endpoint triggers the flush also when `-ingester.flush-on-shutdown-with-wal-enabled` or `-blocks-storage.tsdb.flush-blocks-on-shutdown` are disabled.
@@ -255,9 +242,6 @@ Flush endpoint also accepts `wait=true` parameter, which makes the call synchron
 
 ```
 GET,POST /ingester/shutdown
-
-# Legacy
-GET,POST /shutdown
 ```
 
 Flushes in-memory time series data from ingester to the long-term storage, and shuts down the ingester service. Notice that the other Cortex services are still running, and the operator (or any automation) is expected to terminate the process with a `SIGINT` / `SIGTERM` signal after the shutdown endpoint returns. In the meantime, `/ready` will not return 200. This endpoint will unregister the ingester from the ring even if `-ingester.ring.unregister-on-shutdown` is disabled.
@@ -268,9 +252,6 @@ _This API endpoint is usually used by scale down automations._
 
 ```
 GET /ingester/ring
-
-# Legacy
-GET /ring
 ```
 
 Displays a web page with the ingesters hash ring status, including the state, healthy and last heartbeat time of each ingester.
@@ -283,9 +264,6 @@ The following endpoints are exposed both by the querier and query-frontend.
 
 ```
 GET,POST <prometheus-http-prefix>/api/v1/query
-
-# Legacy
-GET,POST <legacy-http-prefix>/api/v1/query
 ```
 
 Prometheus-compatible instant query endpoint.
@@ -298,9 +276,6 @@ _Requires [authentication](#authentication)._
 
 ```
 GET,POST <prometheus-http-prefix>/api/v1/query_range
-
-# Legacy
-GET,POST <legacy-http-prefix>/api/v1/query_range
 ```
 
 Prometheus-compatible range query endpoint. When the request is sent through the query-frontend, the query will be accelerated by query-frontend (results caching and execution parallelisation).
@@ -313,9 +288,6 @@ _Requires [authentication](#authentication)._
 
 ```
 GET,POST <prometheus-http-prefix>/api/v1/query_exemplars
-
-# Legacy
-GET,POST <legacy-http-prefix>/api/v1/query_exemplars
 ```
 
 Prometheus-compatible exemplar query endpoint.
@@ -328,9 +300,6 @@ _Requires [authentication](#authentication)._
 
 ```
 GET,POST <prometheus-http-prefix>/api/v1/series
-
-# Legacy
-GET,POST <legacy-http-prefix>/api/v1/series
 ```
 
 _For more information, please check out the Prometheus [series endpoint](https://prometheus.io/docs/prometheus/latest/querying/api/#finding-series-by-label-matchers) documentation._
@@ -341,9 +310,6 @@ _Requires [authentication](#authentication)._
 
 ```
 GET,POST <prometheus-http-prefix>/api/v1/labels
-
-# Legacy
-GET,POST <legacy-http-prefix>/api/v1/labels
 ```
 
 _For more information, please check out the Prometheus [get label names](https://prometheus.io/docs/prometheus/latest/querying/api/#getting-label-names) documentation._
@@ -354,9 +320,6 @@ _Requires [authentication](#authentication)._
 
 ```
 GET <prometheus-http-prefix>/api/v1/label/{name}/values
-
-# Legacy
-GET <legacy-http-prefix>/api/v1/label/{name}/values
 ```
 
 _For more information, please check out the Prometheus [get label values](https://prometheus.io/docs/prometheus/latest/querying/api/#querying-label-values) documentation._
@@ -367,9 +330,6 @@ _Requires [authentication](#authentication)._
 
 ```
 GET <prometheus-http-prefix>/api/v1/metadata
-
-# Legacy
-GET <legacy-http-prefix>/api/v1/metadata
 ```
 
 Prometheus-compatible metric metadata endpoint.
@@ -382,9 +342,6 @@ _Requires [authentication](#authentication)._
 
 ```
 POST <prometheus-http-prefix>/api/v1/read
-
-# Legacy
-POST <legacy-http-prefix>/api/v1/read
 ```
 
 Prometheus-compatible [remote read](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#remote_read) endpoint.
@@ -397,9 +354,6 @@ _Requires [authentication](#authentication)._
 
 ```
 GET,POST <prometheus-http-prefix>/api/v1/cardinality/label_names
-
-# Legacy
-GET,POST <legacy-http-prefix>/api/v1/cardinality/label_names
 ```
 
 Returns realtime label names cardinality across all ingesters, for the authenticated tenant, in `JSON` format.
@@ -440,9 +394,6 @@ _Requires [authentication](#authentication)._
 
 ```
 GET,POST <prometheus-http-prefix>/api/v1/cardinality/label_values
-
-# Legacy
-GET,POST <legacy-http-prefix>/api/v1/cardinality/label_values
 ```
 
 Returns realtime label values cardinality associated to request param `label_names[]` across all ingesters, for the authenticated tenant, in `JSON` format.
@@ -500,9 +451,6 @@ _Requires [authentication](#authentication)._
 
 ```
 GET /api/v1/user_stats
-
-# Legacy
-GET <legacy-http-prefix>/user_stats
 ```
 
 Returns realtime ingestion rate, for the authenticated tenant, in `JSON` format.
@@ -517,9 +465,6 @@ The ruler API endpoints require to configure a backend object storage to store t
 
 ```
 GET /ruler/ring
-
-# Legacy
-GET /ruler_ring
 ```
 
 Displays a web page with the ruler hash ring status, including the state, healthy and last heartbeat time of each ruler.
@@ -536,9 +481,6 @@ List all tenant rules. This endpoint is not part of ruler-API and is always avai
 
 ```
 GET <prometheus-http-prefix>/api/v1/rules
-
-# Legacy
-GET <legacy-http-prefix>/api/v1/rules
 ```
 
 Prometheus-compatible rules endpoint to list alerting and recording rules that are currently loaded.
@@ -551,9 +493,6 @@ _Requires [authentication](#authentication)._
 
 ```
 GET <prometheus-http-prefix>/api/v1/alerts
-
-# Legacy
-GET <legacy-http-prefix>/api/v1/alerts
 ```
 
 Prometheus-compatible rules endpoint to list of all active alerts.
@@ -567,8 +506,7 @@ _Requires [authentication](#authentication)._
 ```
 GET /api/v1/rules
 
-# Legacy
-GET <legacy-http-prefix>/rules
+GET <prometheus-http-prefix>/rules
 ```
 
 List all rules configured for the authenticated tenant. This endpoint returns a YAML dictionary with all the rule groups for each namespace and `200` status code on success.
@@ -632,8 +570,7 @@ _Requires [authentication](#authentication)._
 ```
 GET /api/v1/rules/{namespace}
 
-# Legacy
-GET <legacy-http-prefix>/rules/{namespace}
+GET <prometheus-http-prefix>/rules/{namespace}
 ```
 
 Returns the rule groups defined for a given namespace.
@@ -666,8 +603,7 @@ rules:
 ```
 GET /api/v1/rules/{namespace}/{groupName}
 
-# Legacy
-GET <legacy-http-prefix>/rules/{namespace}/{groupName}
+GET <prometheus-http-prefix>/rules/{namespace}/{groupName}
 ```
 
 Returns the rule group matching the request namespace and group name.
@@ -681,8 +617,7 @@ _Requires [authentication](#authentication)._
 ```
 POST /api/v1/rules/{namespace}
 
-# Legacy
-POST <legacy-http-prefix>/rules/{namespace}
+POST <prometheus-http-prefix>/rules/{namespace}
 ```
 
 Creates or updates a rule group. This endpoint expects a request with `Content-Type: application/yaml` header and the
@@ -751,8 +686,7 @@ rules:
 ```
 DELETE /api/v1/rules/{namespace}/{groupName}
 
-# Legacy
-DELETE <legacy-http-prefix>/rules/{namespace}/{groupName}
+DELETE <prometheus-http-prefix>/rules/{namespace}/{groupName}
 ```
 
 Deletes a rule group by namespace and group name. This endpoints returns `202` on success.
@@ -766,8 +700,7 @@ _Requires [authentication](#authentication)._
 ```
 DELETE /api/v1/rules/{namespace}
 
-# Legacy
-DELETE <legacy-http-prefix>/rules/{namespace}
+DELETE <prometheus-http-prefix>/rules/{namespace}
 ```
 
 Deletes all the rule groups in a namespace (including the namespace itself). This endpoint returns `202` on success.
@@ -794,9 +727,6 @@ _Requires [authentication](#authentication)._
 
 ```
 GET /multitenant_alertmanager/status
-
-# Legacy (microservices mode only)
-GET /status
 ```
 
 Displays a web page with the current status of the Alertmanager, including the Alertmanager cluster members.
@@ -821,9 +751,6 @@ Displays a web page with the Alertmanager hash ring status, including the state,
 
 ```
 GET /<alertmanager-http-prefix>
-
-# Legacy (microservices mode only)
-GET /<legacy-http-prefix>
 ```
 
 Displays the Alertmanager UI.

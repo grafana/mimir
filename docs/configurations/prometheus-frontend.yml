@@ -1,16 +1,17 @@
-# You can use the Cortex query frontend with any Prometheus-API compatible
+# You can use the Mimir query frontend with any Prometheus-API compatible
 # service, including Prometheus and Thanos.  Use this config file to get
 # the benefits of query parallelisation and caching.
 
-# Disable the requirement that every request to Cortex has a
+# Disable the requirement that every request to Mimir has a
 # X-Scope-OrgID header. `anonymous` will be substituted in instead.
 multitenancy_enabled: false
 
 # We only want to run the query-frontend module.
 target: query-frontend
 
-# We don't want the usual /api/prom prefix.
-http_prefix:
+# We don't want the default /api/prom or /prometheus prefixes on endpoints.
+api:
+  prometheus_http_prefix: ''
 
 server:
   http_listen_port: 9091

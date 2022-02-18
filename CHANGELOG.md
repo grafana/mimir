@@ -331,6 +331,62 @@
   * `ingester.lifecycler.interface_names` changed to `ingester.ring.instance_interface_names`
 * [CHANGE] Distributor: removed the `-distributor.extra-query-delay` flag (and its respective YAML config option). #1048
 * [CHANGE] Query-frontend / Query-scheduler: classified the `-query-frontend.querier-forget-delay` and `-query-scheduler.querier-forget-delay` flags (and their respective YAML config options) as experimental. #1208
+* [CHANGE] Remove `-http.prefix` flag (and `http_prefix` config file option). #763
+* [CHANGE] Remove legacy endpoints. Please use their non-legacy equivalents. #763
+  * Query Endpoints
+
+    | Legacy endpoint                             | Non-legacy equivalent                         |
+    | ------------------------------------------- | --------------------------------------------- |
+    | `/api/prom/api/v1/query`                    | `/prometheus/api/v1/query`                    |
+    | `/api/prom/api/v1/query_range`              | `/prometheus/api/v1/query_range`              |
+    | `/api/prom/api/v1/query_exemplars`          | `/prometheus/api/v1/query_exemplars`          |
+    | `/api/prom/api/v1/series`                   | `/prometheus/api/v1/series`                   |
+    | `/api/prom/api/v1/labels`                   | `/prometheus/api/v1/labels`                   |
+    | `/api/prom/api/v1/label/{name}/values`      | `/prometheus/api/v1/label/{name}/values`      |
+    | `/api/prom/api/v1/metadata`                 | `/prometheus/api/v1/metadata`                 |
+    | `/api/prom/api/v1/read`                     | `/prometheus/api/v1/read`                     |
+    | `/api/prom/api/v1/cardinality/label_names`  | `/prometheus/api/v1/cardinality/label_names`  |
+    | `/api/prom/api/v1/cardinality/label_values` | `/prometheus/api/v1/cardinality/label_values` |
+    | `/api/prom/user_stats`                      | `/api/v1/user_stats`                          |
+
+  * Distributor endpoints
+
+    | Legacy endpoint   | Non-legacy equivalent         |
+    | ----------------- | ----------------------------- |
+    | `/api/prom/push`  | `/api/v1/push`                |
+    | `/all_user_stats` | `/distributor/all_user_stats` |
+    | `/ha-tracker`     | `/distributor/ha_tracker`     |
+
+  * Ingester endpoints
+
+    | Legacy endpoint | Non-legacy equivalent |
+    | --------------- | --------------------- |
+    | `/ring`         | `/ingester/ring`      |
+    | `/shutdown`     | `/ingester/shutdown`  |
+    | `/flush`        | `/ingester/flush`     |
+    | `/push`         | `/ingester/push`      |
+
+  * Ruler endpoints
+
+    | Legacy endpoint                           | Non-legacy equivalent                   |
+    | ----------------------------------------- | --------------------------------------- |
+    | `/api/prom/api/v1/rules`                  | `/prometheus/api/v1/rules`              |
+    | `/api/prom/api/v1/alerts`                 | `/prometheus/api/v1/alerts`             |
+    | `/api/prom/rules`                         | `/api/v1/rules`                         |
+    | `/api/prom/rules/{namespace}`             | `/api/v1/rules/{namespace}`             |
+    | `/api/prom/rules/{namespace}/{groupName}` | `/api/v1/rules/{namespace}/{groupName}` |
+    | `/api/prom/rules/{namespace}`             | `/api/v1/rules/{namespace}`             |
+    | `/api/prom/rules/{namespace}/{groupName}` | `/api/v1/rules/{namespace}/{groupName}` |
+    | `/api/prom/rules/{namespace}`             | `/api/v1/rules/{namespace}`             |
+    | `/ruler_ring`                             | `/ruler/ring`                           |
+
+  * Alertmanager endpoints
+
+    | Legacy endpoint | Non-legacy equivalent              |
+    | --------------- | ---------------------------------- |
+    | `/api/prom`     | `/alertmanager`                    |
+    | `/status`       | `/multitenant_alertmanager/status` |
+
 * [FEATURE] Query Frontend: Add `cortex_query_fetched_chunks_total` per-user counter to expose the number of chunks fetched as part of queries. This metric can be enabled with the `-query-frontend.query-stats-enabled` flag (or its respective YAML config option `query_stats_enabled`). #31
 * [FEATURE] Query Frontend: Add experimental querysharding for the blocks storage (instant and range queries). You can now enable querysharding for blocks storage (`-store.engine=blocks`) by setting `-query-frontend.parallelize-shardable-queries` to `true`. The following additional config and exported metrics have been added. #79 #80 #100 #124 #140 #148 #150 #151 #153 #154 #155 #156 #157 #158 #159 #160 #163 #169 #172 #196 #205 #225 #226 #227 #228 #230 #235 #240 #239 #246 #244 #319 #330 #371 #385 #400 #458 #586 #630 #660 #707
   * New config options:
@@ -471,6 +527,7 @@
 * [ENHANCEMENT] Added a new metric `mimir_build_info` to coincide with `cortex_build_info`. #1022
 * [ENHANCEMENT] Mimir runs a sanity check of storage config at startup and will fail to start if the sanity check doesn't pass. This is done to find potential config issues before starting up. #1180
 * [ENHANCEMENT] Distributor: reject exemplars with blank label names or values. The `cortex_discarded_exemplars_total` metric will use the `exemplar_labels_blank` reason in this case. #873
+* [ENHANCEMENT] Ruler: expose configuration API endpoints under `<prometheus_http_prefix>`. #763
 * [BUGFIX] Frontend: Fixes @ modifier functions (start/end) when splitting queries by time. #206
 * [BUGFIX] Fixes a panic in the query-tee when comparing result. #207
 * [BUGFIX] Upgrade Prometheus. TSDB now waits for pending readers before truncating Head block, fixing the `chunk not found` error and preventing wrong query results. #16

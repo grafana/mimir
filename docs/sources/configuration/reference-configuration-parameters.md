@@ -98,10 +98,6 @@ where `default_value` is the value to use if the environment variable is undefin
 # CLI flag: -auth.no-auth-tenant
 [no_auth_tenant: <string> | default = "anonymous"]
 
-# (advanced) HTTP path prefix for API.
-# CLI flag: -http.prefix
-[http_prefix: <string> | default = "/api/prom"]
-
 api:
   # (advanced) Allows to skip label name validation via header on the http write
   # path. Use with caution as it breaks PromQL. Allowing this for external

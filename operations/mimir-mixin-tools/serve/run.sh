@@ -33,7 +33,7 @@ fi
 if [ ! -e "${SCRIPT_DIR}/.config" ]; then
   echo "This tool expects a local config file stored at ${SCRIPT_DIR}/.config and containing the following content:"
   echo ""
-  echo "DATASOURCE_URL=\"<grafana-cloud-url ending with /api/prom>\""
+  echo "DATASOURCE_URL=\"<grafana-cloud-url ending with /prometheus>\""
   echo "DATASOURCE_USERNAME=\"<grafana-cloud-instance-id>\""
   echo "DATASOURCE_PASSWORD=\"<grafana-cloud-api-key>\""
   echo "GRAFANA_PUBLISHED_PORT=\"<grafana-port-on-the-host>\""

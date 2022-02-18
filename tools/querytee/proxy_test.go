@@ -80,12 +80,12 @@ func Test_Proxy_RequestsForwarding(t *testing.T) {
 		"two backends with the same path prefix": {
 			backends: []mockedBackend{
 				{
-					pathPrefix: "/api/prom",
-					handler:    mockQueryResponse("/api/prom/api/v1/query", 200, querySingleMetric1),
+					pathPrefix: "/prometheus",
+					handler:    mockQueryResponse("/prometheus/api/v1/query", 200, querySingleMetric1),
 				},
 				{
-					pathPrefix: "/api/prom",
-					handler:    mockQueryResponse("/api/prom/api/v1/query", 200, querySingleMetric2),
+					pathPrefix: "/prometheus",
+					handler:    mockQueryResponse("/prometheus/api/v1/query", 200, querySingleMetric2),
 				},
 			},
 			preferredBackendIdx: 0,

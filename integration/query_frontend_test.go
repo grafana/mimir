@@ -452,7 +452,7 @@ overrides:
 			name: "wrong duration specified in step",
 			query: func(c *e2emimir.Client) (*http.Response, []byte, error) {
 				return c.DoGetBody(fmt.Sprintf(
-					"http://%s/api/prom/api/v1/query_range?query=%s&start=%s&end=%s&step=%s",
+					"http://%s/prometheus/api/v1/query_range?query=%s&start=%s&end=%s&step=%s",
 					c.QuerierAddress(),
 					url.QueryEscape("unknown"),
 					e2emimir.FormatTime(now.Add(-time.Hour)),
@@ -467,7 +467,7 @@ overrides:
 			name: "wrong timestamp in start",
 			query: func(c *e2emimir.Client) (*http.Response, []byte, error) {
 				return c.DoGetBody(fmt.Sprintf(
-					"http://%s/api/prom/api/v1/query_range?query=%s&start=%s&end=%s&step=%s",
+					"http://%s/prometheus/api/v1/query_range?query=%s&start=%s&end=%s&step=%s",
 					c.QuerierAddress(),
 					url.QueryEscape("unknown"),
 					"depths-of-time",

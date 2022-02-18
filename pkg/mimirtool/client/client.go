@@ -105,7 +105,7 @@ func (r *CortexClient) Query(ctx context.Context, query string) (*http.Response,
 	query = fmt.Sprintf("query=%s&time=%d", query, time.Now().Unix())
 	escapedQuery := url.PathEscape(query)
 
-	res, err := r.doRequest("/api/prom/api/v1/query?"+escapedQuery, "GET", nil)
+	res, err := r.doRequest("/prometheus/api/v1/query?"+escapedQuery, "GET", nil)
 	if err != nil {
 		return nil, err
 	}
