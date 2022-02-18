@@ -11,14 +11,14 @@ weight: 10
 You can configure Grafana Mimir by using a YAML file or via command-line flags
 that represent configuration parameters.
 To specify the YAML file, use the `-config.file` command-line option.
-If you specify both the command-line flags and YAML configuration parameters, 
+If you specify both the command-line flags and YAML configuration parameters,
 the command-line flags take precedence over values in a YAML file.
 
 To see the current configuration of any component,
 go to the `/config` HTTP API endpoint.
 Passwords are filtered out of this endpoint.
 
-Parameters are 
+Parameters are
 written in [YAML format](https://en.wikipedia.org/wiki/YAML), and
 brackets indicate that a parameter is optional.
 
@@ -32,9 +32,9 @@ brackets indicate that a parameter is optional.
 - `<prefix>`: a CLI flag prefix based on the context (look at the parent configuration block to see which CLI flags prefix should be used)
 - `<relabel_config>`: a [Prometheus relabeling configuration](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#relabel_config)
 - `<time>`: a timestamp, with available formats:
-    - `2006-01-20` (midnight, local timezone)
-    - `2006-01-20T15:04` (local timezone) 
-    - RFC 3339 formats: `2006-01-20T15:04:05Z` (UTC) or `2006-01-20T15:04:05+07:00` (explicit timezone)
+  - `2006-01-20` (midnight, local timezone)
+  - `2006-01-20T15:04` (local timezone)
+  - RFC 3339 formats: `2006-01-20T15:04:05Z` (UTC) or `2006-01-20T15:04:05+07:00` (explicit timezone)
 
 ## Parameter categories
 
@@ -42,25 +42,25 @@ In order to simplify Mimir configuration, we categorize parameters by
 maturity level and intended use:
 
 - **Basic** parameters are ones that we expect the majority of users to modify.
-Examples of basic parameters are object store credentials and
-other dependency connection information.
-These parameters will generally remain stable for long periods of time,
-and they focus on user goals.
-In this reference, any parameters that are not marked as `(advanced)` or
-`(experimental)` are in the basic category.
+  Examples of basic parameters are object store credentials and
+  other dependency connection information.
+  These parameters will generally remain stable for long periods of time,
+  and they focus on user goals.
+  In this reference, any parameters that are not marked as `(advanced)` or
+  `(experimental)` are in the basic category.
 
 - **Advanced** parameters are ones that few users will change
-from their default values. 
-There are strong use cases for altered values.
-In this reference, advanced-category parameters include `(advanced)` at
-the beginning of their description.
+  from their default values.
+  There are strong use cases for altered values.
+  In this reference, advanced-category parameters include `(advanced)` at
+  the beginning of their description.
 
 - **Experimental** parameters are for new and experimental features.
-These parameters permit
-early adopters and Mimir developers to gain confidence with new
-features.
-In this reference, experimental-category parameters include `(experimental)` at
-the beginning of their description.
+  These parameters permit
+  early adopters and Mimir developers to gain confidence with new
+  features.
+  In this reference, experimental-category parameters include `(experimental)` at
+  the beginning of their description.
 
 ## Use environment variables in the configuration
 
@@ -80,10 +80,11 @@ where `default_value` is the value to use if the environment variable is undefin
 ## Configuration parameters
 
 ```yaml
-# Comma-separated list of modules to load. The alias 'all' can be used in the
-# list to load a number of core modules and will enable single-binary mode. Use
-# '-modules' command line flag to get a list of available modules, and to see
-# which modules are included in 'all'.
+# Comma-separated list of components to include in the instantiated process. The
+# default value 'all' includes all components that are required to form a
+# functional Grafana Mimir instance in single-binary mode. Use the '-modules'
+# command line flag to get a list of available components, and to see which
+# components are included with 'all'.
 # CLI flag: -target
 [target: <string> | default = "all"]
 
@@ -119,47 +120,47 @@ api:
   # CLI flag: -http.prometheus-http-prefix
   [prometheus_http_prefix: <string> | default = "/prometheus"]
 
-# The server_config configures the HTTP and gRPC server of the launched
+# The server block configures the HTTP and gRPC server of the launched
 # service(s).
-[server: <server_config>]
+[server: <server>]
 
-# The distributor_config configures the distributor.
-[distributor: <distributor_config>]
+# The distributor block configures the distributor.
+[distributor: <distributor>]
 
-# The querier_config configures the querier.
-[querier: <querier_config>]
+# The querier block configures the querier.
+[querier: <querier>]
 
-# The ingester_client_config configures how the distributors connect to the
+# The ingester_client block configures how the distributors connect to the
 # ingesters.
-[ingester_client: <ingester_client_config>]
+[ingester_client: <ingester_client>]
 
-# The ingester_config configures the ingester.
-[ingester: <ingester_config>]
+# The ingester block configures the ingester.
+[ingester: <ingester>]
 
-# The flusher_config configures the WAL flusher target, used to manually run
+# The flusher block configures the WAL flusher target, used to manually run
 # one-time flushes when scaling down ingesters.
-[flusher: <flusher_config>]
+[flusher: <flusher>]
 
-# The limits_config configures default and per-tenant limits imposed by services
-# (ie. distributor, ingester, ...).
-[limits: <limits_config>]
+# The limits block configures default and per-tenant limits imposed by
+# components.
+[limits: <limits>]
 
-# The frontend_worker_config configures the worker - running within the querier
-# - picking up and executing queries enqueued by the query-frontend or
+# The frontend_worker block configures the worker running within the querier,
+# picking up and executing queries enqueued by the query-frontend or the
 # query-scheduler.
-[frontend_worker: <frontend_worker_config>]
+[frontend_worker: <frontend_worker>]
 
-# The query_frontend_config configures the query-frontend.
-[frontend: <query_frontend_config>]
+# The frontend block configures the query-frontend.
+[frontend: <frontend>]
 
-# The blocks_storage_config configures the blocks storage.
-[blocks_storage: <blocks_storage_config>]
+# The blocks_storage block configures the blocks storage.
+[blocks_storage: <blocks_storage>]
 
-# The compactor_config configures the compactor service.
-[compactor: <compactor_config>]
+# The compactor block configures the compactor component.
+[compactor: <compactor>]
 
-# The store_gateway_config configures the store-gateway service.
-[store_gateway: <store_gateway_config>]
+# The store_gateway block configures the store-gateway component.
+[store_gateway: <store_gateway>]
 
 tenant_federation:
   # If enabled on all services, queries can be federated across multiple
@@ -179,17 +180,17 @@ activity_tracker:
   # CLI flag: -activity-tracker.max-entries
   [max_entries: <int> | default = 1024]
 
-# The ruler_config configures the ruler.
-[ruler: <ruler_config>]
+# The ruler block configures the ruler.
+[ruler: <ruler>]
 
-# The ruler_storage_config configures the ruler storage backend.
-[ruler_storage: <ruler_storage_config>]
+# The ruler_storage block configures the ruler storage backend.
+[ruler_storage: <ruler_storage>]
 
-# The alertmanager_config configures the alertmanager.
-[alertmanager: <alertmanager_config>]
+# The alertmanager block configures the alertmanager.
+[alertmanager: <alertmanager>]
 
-# The alertmanager_storage_config configures the alertmanager storage backend.
-[alertmanager_storage: <alertmanager_storage_config>]
+# The alertmanager_storage block configures the alertmanager storage backend.
+[alertmanager_storage: <alertmanager_storage>]
 
 runtime_config:
   # (advanced) How often to check runtime config file.
@@ -200,8 +201,8 @@ runtime_config:
   # CLI flag: -runtime-config.file
   [file: <string> | default = ""]
 
-# The memberlist_config configures the Gossip memberlist.
-[memberlist: <memberlist_config>]
+# The memberlist block configures the Gossip memberlist.
+[memberlist: <memberlist>]
 
 query_scheduler:
   # Maximum number of outstanding requests per tenant per query-scheduler.
@@ -210,7 +211,7 @@ query_scheduler:
   # CLI flag: -query-scheduler.max-outstanding-requests-per-tenant
   [max_outstanding_requests_per_tenant: <int> | default = 100]
 
-  # (advanced) If a querier disconnects without sending notification about
+  # (experimental) If a querier disconnects without sending notification about
   # graceful shutdown, the query-scheduler will keep the querier in the tenant's
   # shard until the forget delay has passed. This feature is useful to reduce
   # the blast radius when shuffle-sharding is enabled.
@@ -289,9 +290,9 @@ query_scheduler:
     [tls_insecure_skip_verify: <boolean> | default = false]
 ```
 
-### server_config
+### server
 
-The `server_config` configures the HTTP and gRPC server of the launched service(s).
+The `server` block configures the HTTP and gRPC server of the launched service(s).
 
 ```yaml
 # (advanced) HTTP server listen network, default tcp
@@ -461,9 +462,9 @@ grpc_tls_config:
 [http_path_prefix: <string> | default = ""]
 ```
 
-### distributor_config
+### distributor
 
-The `distributor_config` configures the distributor.
+The `distributor` block configures the distributor.
 
 ```yaml
 pool:
@@ -513,13 +514,15 @@ ha_tracker:
     # CLI flag: -distributor.ha-tracker.prefix
     [prefix: <string> | default = "ha-tracker/"]
 
-    # The consul_config configures the consul client.
-    # The CLI flags prefix for this block config is: distributor.ha-tracker
-    [consul: <consul_config>]
+    # The consul block configures the consul client.
+    # The CLI flags prefix for this block configuration is:
+    # distributor.ha-tracker
+    [consul: <consul>]
 
-    # The etcd_config configures the etcd client.
-    # The CLI flags prefix for this block config is: distributor.ha-tracker
-    [etcd: <etcd_config>]
+    # The etcd block configures the etcd client.
+    # The CLI flags prefix for this block configuration is:
+    # distributor.ha-tracker
+    [etcd: <etcd>]
 
     multi:
       # (advanced) Primary backend storage used by multi-client.
@@ -546,11 +549,6 @@ ha_tracker:
 # CLI flag: -distributor.remote-timeout
 [remote_timeout: <duration> | default = 20s]
 
-# (advanced) Time to wait before sending more than the minimum successful query
-# requests.
-# CLI flag: -distributor.extra-query-delay
-[extra_queue_delay: <duration> | default = 0s]
-
 # (advanced) Try writing to an additional ingester in the presence of an
 # ingester not in the ACTIVE state. It is useful to disable this along with
 # -ingester.ring.unregister-on-shutdown=false in order to not spread samples to
@@ -569,13 +567,13 @@ ring:
     # CLI flag: -distributor.ring.prefix
     [prefix: <string> | default = "collectors/"]
 
-    # The consul_config configures the consul client.
-    # The CLI flags prefix for this block config is: distributor.ring
-    [consul: <consul_config>]
+    # The consul block configures the consul client.
+    # The CLI flags prefix for this block configuration is: distributor.ring
+    [consul: <consul>]
 
-    # The etcd_config configures the etcd client.
-    # The CLI flags prefix for this block config is: distributor.ring
-    [etcd: <etcd_config>]
+    # The etcd block configures the etcd client.
+    # The CLI flags prefix for this block configuration is: distributor.ring
+    [etcd: <etcd>]
 
     multi:
       # (advanced) Primary backend storage used by multi-client.
@@ -610,7 +608,7 @@ ring:
   # List of network interface names to look up when finding the instance IP
   # address.
   # CLI flag: -distributor.ring.instance-interface-names
-  [instance_interface_names: <list of string> | default = [eth0 en0]]
+  [instance_interface_names: <list of string> | default = [<private network interfaces>]]
 
   # (advanced) Port to advertise in the ring (defaults to
   # -server.grpc-listen-port).
@@ -636,9 +634,9 @@ instance_limits:
   [max_inflight_push_requests: <int> | default = 2000]
 ```
 
-### ingester_config
+### ingester
 
-The `ingester_config` configures the ingester.
+The `ingester` block configures the ingester.
 
 ```yaml
 ring:
@@ -655,13 +653,13 @@ ring:
     # CLI flag: -ingester.ring.prefix
     [prefix: <string> | default = "collectors/"]
 
-    # The consul_config configures the consul client.
-    # The CLI flags prefix for this block config is: ingester.ring
-    [consul: <consul_config>]
+    # The consul block configures the consul client.
+    # The CLI flags prefix for this block configuration is: ingester.ring
+    [consul: <consul>]
 
-    # The etcd_config configures the etcd client.
-    # The CLI flags prefix for this block config is: ingester.ring
-    [etcd: <etcd_config>]
+    # The etcd block configures the etcd client.
+    # The CLI flags prefix for this block configuration is: ingester.ring
+    [etcd: <etcd>]
 
     multi:
       # (advanced) Primary backend storage used by multi-client.
@@ -783,7 +781,7 @@ ring:
 # CLI flag: -ingester.metadata-retain-period
 [metadata_retain_period: <duration> | default = 10m]
 
-# (advanced) Period with which to update the per-user ingestion rates.
+# (advanced) Period with which to update the per-tenant ingestion rates.
 # CLI flag: -ingester.rate-update-period
 [rate_update_period: <duration> | default = 15s]
 
@@ -825,8 +823,8 @@ instance_limits:
   # CLI flag: -ingester.instance-limits.max-ingestion-rate
   [max_ingestion_rate: <float> | default = 0]
 
-  # (advanced) Max users (also referred to as 'tenants') that this ingester can
-  # hold. Requests from additional users will be rejected. 0 = unlimited.
+  # (advanced) Max tenants that this ingester can hold. Requests from additional
+  # tenants will be rejected. 0 = unlimited.
   # CLI flag: -ingester.instance-limits.max-tenants
   [max_tenants: <int> | default = 0]
 
@@ -847,9 +845,9 @@ instance_limits:
 [ignore_series_limit_for_metric_names: <string> | default = ""]
 ```
 
-### querier_config
+### querier
 
-The `querier_config` configures the querier.
+The `querier` block configures the querier.
 
 ```yaml
 # (advanced) Use iterators to execute query, as opposed to fully materialising
@@ -945,9 +943,9 @@ store_gateway_client:
 [lookback_delta: <duration> | default = 5m]
 ```
 
-### query_frontend_config
+### frontend
 
-The `query_frontend_config` configures the query-frontend.
+The `frontend` block configures the query-frontend.
 
 ```yaml
 # Log queries that are slower than the specified duration. Set to 0 to disable.
@@ -969,7 +967,7 @@ The `query_frontend_config` configures the query-frontend.
 # CLI flag: -querier.max-outstanding-requests-per-tenant
 [max_outstanding_per_tenant: <int> | default = 100]
 
-# (advanced) If a querier disconnects without sending notification about
+# (experimental) If a querier disconnects without sending notification about
 # graceful shutdown, the query-frontend will keep the querier in the tenant's
 # shard until the forget delay has passed. This feature is useful to reduce the
 # blast radius when shuffle-sharding is enabled.
@@ -1062,7 +1060,7 @@ grpc_client_config:
 # instance IP address. This address is sent to query-scheduler and querier,
 # which uses it to send the query response back to query-frontend.
 # CLI flag: -query-frontend.instance-interface-names
-[instance_interface_names: <list of string> | default = [eth0 en0]]
+[instance_interface_names: <list of string> | default = [<private network interfaces>]]
 
 # (advanced) IP address to advertise to the querier (via scheduler) (default is
 # auto-detected from network interfaces).
@@ -1089,9 +1087,10 @@ results_cache:
   # CLI flag: -query-frontend.results-cache.backend
   [backend: <string> | default = ""]
 
-  # The memcached_config configures the Memcached-based caching backend.
-  # The CLI flags prefix for this block config is: query-frontend.results-cache
-  [memcached: <memcached_config>]
+  # The memcached block configures the Memcached-based caching backend.
+  # The CLI flags prefix for this block configuration is:
+  # query-frontend.results-cache
+  [memcached: <memcached>]
 
   # Enable cache compression, if not empty. Supported values are: snappy.
   # CLI flag: -query-frontend.results-cache.compression
@@ -1106,7 +1105,7 @@ results_cache:
 # CLI flag: -query-frontend.max-retries-per-request
 [max_retries: <int> | default = 5]
 
-# (experimental) True to enable query sharding.
+# True to enable query sharding.
 # CLI flag: -query-frontend.parallelize-shardable-queries
 [parallelize_shardable_queries: <boolean> | default = false]
 
@@ -1119,9 +1118,9 @@ results_cache:
 [downstream_url: <string> | default = ""]
 ```
 
-### ruler_config
+### ruler
 
-The `ruler_config` configures the ruler.
+The `ruler` block configures the ruler.
 
 ```yaml
 # URL of alerts return path.
@@ -1295,13 +1294,13 @@ ring:
     # CLI flag: -ruler.ring.prefix
     [prefix: <string> | default = "rulers/"]
 
-    # The consul_config configures the consul client.
-    # The CLI flags prefix for this block config is: ruler.ring
-    [consul: <consul_config>]
+    # The consul block configures the consul client.
+    # The CLI flags prefix for this block configuration is: ruler.ring
+    [consul: <consul>]
 
-    # The etcd_config configures the etcd client.
-    # The CLI flags prefix for this block config is: ruler.ring
-    [etcd: <etcd_config>]
+    # The etcd block configures the etcd client.
+    # The CLI flags prefix for this block configuration is: ruler.ring
+    [etcd: <etcd>]
 
     multi:
       # (advanced) Primary backend storage used by multi-client.
@@ -1336,7 +1335,7 @@ ring:
   # List of network interface names to look up when finding the instance IP
   # address.
   # CLI flag: -ruler.ring.instance-interface-names
-  [instance_interface_names: <list of string> | default = [eth0 en0]]
+  [instance_interface_names: <list of string> | default = [<private network interfaces>]]
 
   # (advanced) Port to advertise in the ring (defaults to
   # -server.grpc-listen-port).
@@ -1371,7 +1370,7 @@ ring:
 # CLI flag: -ruler.disabled-tenants
 [disabled_tenants: <string> | default = ""]
 
-# (advanced) Report the wall time for ruler queries to complete as a per user
+# (advanced) Report the wall time for ruler queries to complete as a per-tenant
 # metric and as an info level log message.
 # CLI flag: -ruler.query-stats-enabled
 [query_stats_enabled: <boolean> | default = false]
@@ -1385,9 +1384,9 @@ tenant_federation:
   [enabled: <boolean> | default = false]
 ```
 
-### ruler_storage_config
+### ruler_storage
 
-The `ruler_storage_config` configures the ruler storage backend.
+The `ruler_storage` block configures the ruler storage backend.
 
 ```yaml
 # Backend storage to use. Supported backends are: s3, gcs, azure, swift,
@@ -1430,9 +1429,9 @@ s3:
   # CLI flag: -ruler-storage.s3.signature-version
   [signature_version: <string> | default = "v4"]
 
-  # The s3_sse_config configures the S3 server-side encryption.
-  # The CLI flags prefix for this block config is: ruler-storage
-  [sse: <s3_sse_config>]
+  # The sse block configures the S3 server-side encryption.
+  # The CLI flags prefix for this block configuration is: ruler-storage
+  [sse: <sse>]
 
   http:
     # (advanced) The time an idle connection will remain idle before closing.
@@ -1606,9 +1605,9 @@ local:
   [directory: <string> | default = ""]
 ```
 
-### alertmanager_config
+### alertmanager
 
-The `alertmanager_config` configures the alertmanager.
+The `alertmanager` block configures the alertmanager.
 
 ```yaml
 # Directory to store Alertmanager state and temporarily configuration files. The
@@ -1650,13 +1649,15 @@ sharding_ring:
     # CLI flag: -alertmanager.sharding-ring.prefix
     [prefix: <string> | default = "alertmanagers/"]
 
-    # The consul_config configures the consul client.
-    # The CLI flags prefix for this block config is: alertmanager.sharding-ring
-    [consul: <consul_config>]
+    # The consul block configures the consul client.
+    # The CLI flags prefix for this block configuration is:
+    # alertmanager.sharding-ring
+    [consul: <consul>]
 
-    # The etcd_config configures the etcd client.
-    # The CLI flags prefix for this block config is: alertmanager.sharding-ring
-    [etcd: <etcd_config>]
+    # The etcd block configures the etcd client.
+    # The CLI flags prefix for this block configuration is:
+    # alertmanager.sharding-ring
+    [etcd: <etcd>]
 
     multi:
       # (advanced) Primary backend storage used by multi-client.
@@ -1700,7 +1701,7 @@ sharding_ring:
   # (advanced) List of network interface names to look up when finding the
   # instance IP address.
   # CLI flag: -alertmanager.sharding-ring.instance-interface-names
-  [instance_interface_names: <list of string> | default = [eth0 en0]]
+  [instance_interface_names: <list of string> | default = [<private network interfaces>]]
 
   # (advanced) Port to advertise in the ring (defaults to
   # -server.grpc-listen-port).
@@ -1772,9 +1773,9 @@ alertmanager_client:
 [persist_interval: <duration> | default = 15m]
 ```
 
-### alertmanager_storage_config
+### alertmanager_storage
 
-The `alertmanager_storage_config` configures the alertmanager storage backend.
+The `alertmanager_storage` block configures the alertmanager storage backend.
 
 ```yaml
 # Backend storage to use. Supported backends are: s3, gcs, azure, swift,
@@ -1817,9 +1818,9 @@ s3:
   # CLI flag: -alertmanager-storage.s3.signature-version
   [signature_version: <string> | default = "v4"]
 
-  # The s3_sse_config configures the S3 server-side encryption.
-  # The CLI flags prefix for this block config is: alertmanager-storage
-  [sse: <s3_sse_config>]
+  # The sse block configures the S3 server-side encryption.
+  # The CLI flags prefix for this block configuration is: alertmanager-storage
+  [sse: <sse>]
 
   http:
     # (advanced) The time an idle connection will remain idle before closing.
@@ -1993,9 +1994,9 @@ local:
   [path: <string> | default = ""]
 ```
 
-### flusher_config
+### flusher
 
-The `flusher_config` configures the WAL flusher target, used to manually run one-time flushes when scaling down ingesters.
+The `flusher` block configures the WAL flusher target, used to manually run one-time flushes when scaling down ingesters.
 
 ```yaml
 # (advanced) Stop after flush has finished. If false, process will keep running,
@@ -2004,9 +2005,9 @@ The `flusher_config` configures the WAL flusher target, used to manually run one
 [exit_after_flush: <boolean> | default = true]
 ```
 
-### ingester_client_config
+### ingester_client
 
-The `ingester_client_config` configures how the distributors connect to the ingesters.
+The `ingester_client` block configures how the distributors connect to the ingesters.
 
 ```yaml
 grpc_client_config:
@@ -2078,15 +2079,15 @@ grpc_client_config:
   [tls_insecure_skip_verify: <boolean> | default = false]
 ```
 
-### frontend_worker_config
+### frontend_worker
 
-The `frontend_worker_config` configures the worker - running within the querier - picking up and executing queries enqueued by the query-frontend or query-scheduler.
+The `frontend_worker` block configures the worker running within the querier, picking up and executing queries enqueued by the query-frontend or the query-scheduler.
 
 ```yaml
-# Address of query frontend service, in host:port format. If
-# -querier.scheduler-address is set as well, querier will use scheduler instead.
-# Only one of -querier.frontend-address or -querier.scheduler-address can be
-# set. If neither is set, queries are only received via HTTP endpoint.
+# Address of the query-frontend component, in host:port format. If
+# -querier.scheduler-address is set as well, the querier will use scheduler
+# instead. Only one of -querier.frontend-address or -querier.scheduler-address
+# can be set. If neither is set, queries are only received via HTTP endpoint.
 # CLI flag: -querier.frontend-address
 [frontend_address: <string> | default = ""]
 
@@ -2102,8 +2103,8 @@ The `frontend_worker_config` configures the worker - running within the querier 
 # CLI flag: -querier.dns-lookup-period
 [dns_lookup_duration: <duration> | default = 10s]
 
-# (advanced) Querier ID, sent to frontend service to identify requests from the
-# same querier. Defaults to hostname.
+# (advanced) Querier ID, sent to the query-frontend to identify requests from
+# the same querier. Defaults to hostname.
 # CLI flag: -querier.id
 [id: <string> | default = ""]
 
@@ -2176,9 +2177,9 @@ grpc_client_config:
   [tls_insecure_skip_verify: <boolean> | default = false]
 ```
 
-### etcd_config
+### etcd
 
-The `etcd_config` configures the etcd client. The supported CLI flags `<prefix>` used to reference this config block are:
+The `etcd` block configures the etcd client. The supported CLI flags `<prefix>` used to reference this configuration block are:
 
 - `alertmanager.sharding-ring`
 - `compactor.ring`
@@ -2239,9 +2240,9 @@ The `etcd_config` configures the etcd client. The supported CLI flags `<prefix>`
 [password: <string> | default = ""]
 ```
 
-### consul_config
+### consul
 
-The `consul_config` configures the consul client. The supported CLI flags `<prefix>` used to reference this config block are:
+The `consul` block configures the consul client. The supported CLI flags `<prefix>` used to reference this configuration block are:
 
 - `alertmanager.sharding-ring`
 - `compactor.ring`
@@ -2280,9 +2281,9 @@ The `consul_config` configures the consul client. The supported CLI flags `<pref
 [watch_burst_size: <int> | default = 1]
 ```
 
-### memberlist_config
+### memberlist
 
-The `memberlist_config` configures the Gossip memberlist.
+The `memberlist` block configures the Gossip memberlist.
 
 ```yaml
 # (advanced) Name of the node in memberlist cluster. Defaults to hostname.
@@ -2428,20 +2429,20 @@ The `memberlist_config` configures the Gossip memberlist.
 [tls_insecure_skip_verify: <boolean> | default = false]
 ```
 
-### limits_config
+### limits
 
-The `limits_config` configures default and per-tenant limits imposed by services (ie. distributor, ingester, ...).
+The `limits` block configures default and per-tenant limits imposed by components.
 
 ```yaml
-# Per-user ingestion rate limit in samples per second.
+# Per-tenant ingestion rate limit in samples per second.
 # CLI flag: -distributor.ingestion-rate-limit
 [ingestion_rate: <float> | default = 10000]
 
-# Per-user allowed ingestion burst size (in number of samples).
+# Per-tenant allowed ingestion burst size (in number of samples).
 # CLI flag: -distributor.ingestion-burst-size
 [ingestion_burst_size: <int> | default = 200000]
 
-# Flag to enable, for all users, handling of samples with external labels
+# Flag to enable, for all tenants, handling of samples with external labels
 # identifying replicas in an HA Prometheus setup.
 # CLI flag: -distributor.ha-tracker.enable-for-all-users
 [accept_ha_samples: <boolean> | default = false]
@@ -2454,8 +2455,8 @@ The `limits_config` configures default and per-tenant limits imposed by services
 # CLI flag: -distributor.ha-tracker.replica
 [ha_replica_label: <string> | default = "__replica__"]
 
-# Maximum number of clusters that HA tracker will keep track of for single user.
-# 0 to disable the limit.
+# Maximum number of clusters that HA tracker will keep track of for a single
+# tenant. 0 to disable the limit.
 # CLI flag: -distributor.ha-tracker.max-clusters
 [ha_max_clusters: <int> | default = 0]
 
@@ -2502,7 +2503,7 @@ The `limits_config` configures default and per-tenant limits imposed by services
 # Prometheus server, e.g. remote_write.write_relabel_configs.
 [metric_relabel_configs: <relabel_config...> | default = ]
 
-# The maximum number of active series per user, across the cluster before
+# The maximum number of active series per tenant, across the cluster before
 # replication. 0 to disable.
 # CLI flag: -ingester.max-global-series-per-user
 [max_global_series_per_user: <int> | default = 150000]
@@ -2512,7 +2513,7 @@ The `limits_config` configures default and per-tenant limits imposed by services
 # CLI flag: -ingester.max-global-series-per-metric
 [max_global_series_per_metric: <int> | default = 20000]
 
-# The maximum number of active metrics with metadata per user, across the
+# The maximum number of active metrics with metadata per tenant, across the
 # cluster. 0 to disable.
 # CLI flag: -ingester.max-global-metadata-per-user
 [max_global_metadata_per_user: <int> | default = 0]
@@ -2684,7 +2685,7 @@ The `limits_config` configures default and per-tenant limits imposed by services
 # CLI flag: -alertmanager.receivers-firewall-block-private-addresses
 [alertmanager_receivers_firewall_block_private_addresses: <boolean> | default = false]
 
-# Per-user rate limit for sending notifications from Alertmanager in
+# Per-tenant rate limit for sending notifications from Alertmanager in
 # notifications/sec. 0 = rate limit disabled. Negative value = no notifications
 # are allowed.
 # CLI flag: -alertmanager.notification-rate-limit
@@ -2722,7 +2723,7 @@ The `limits_config` configures default and per-tenant limits imposed by services
 # CLI flag: -alertmanager.max-dispatcher-aggregation-groups
 [alertmanager_max_dispatcher_aggregation_groups: <int> | default = 0]
 
-# Maximum number of alerts that a single user can have. Inserting more alerts
+# Maximum number of alerts that a single tenant can have. Inserting more alerts
 # will fail with a log message and metric increment. 0 = no limit.
 # CLI flag: -alertmanager.max-alerts-count
 [alertmanager_max_alerts_count: <int> | default = 0]
@@ -2734,9 +2735,9 @@ The `limits_config` configures default and per-tenant limits imposed by services
 [alertmanager_max_alerts_size_bytes: <int> | default = 0]
 ```
 
-### blocks_storage_config
+### blocks_storage
 
-The `blocks_storage_config` configures the blocks storage.
+The `blocks_storage` block configures the blocks storage.
 
 ```yaml
 # Backend storage to use. Supported backends are: s3, gcs, azure, swift,
@@ -2779,9 +2780,9 @@ s3:
   # CLI flag: -blocks-storage.s3.signature-version
   [signature_version: <string> | default = "v4"]
 
-  # The s3_sse_config configures the S3 server-side encryption.
-  # The CLI flags prefix for this block config is: blocks-storage
-  [sse: <s3_sse_config>]
+  # The sse block configures the S3 server-side encryption.
+  # The CLI flags prefix for this block configuration is: blocks-storage
+  [sse: <sse>]
 
   http:
     # (advanced) The time an idle connection will remain idle before closing.
@@ -2993,10 +2994,10 @@ bucket_store:
     # CLI flag: -blocks-storage.bucket-store.index-cache.backend
     [backend: <string> | default = "inmemory"]
 
-    # The memcached_config configures the Memcached-based caching backend.
-    # The CLI flags prefix for this block config is:
+    # The memcached block configures the Memcached-based caching backend.
+    # The CLI flags prefix for this block configuration is:
     # blocks-storage.bucket-store.index-cache
-    [memcached: <memcached_config>]
+    [memcached: <memcached>]
 
     inmemory:
       # Maximum size in bytes of in-memory index cache used to speed up blocks
@@ -3009,10 +3010,10 @@ bucket_store:
     # CLI flag: -blocks-storage.bucket-store.chunks-cache.backend
     [backend: <string> | default = ""]
 
-    # The memcached_config configures the Memcached-based caching backend.
-    # The CLI flags prefix for this block config is:
+    # The memcached block configures the Memcached-based caching backend.
+    # The CLI flags prefix for this block configuration is:
     # blocks-storage.bucket-store.chunks-cache
-    [memcached: <memcached_config>]
+    [memcached: <memcached>]
 
     # (advanced) Size of each subrange that bucket object is split into for
     # better caching.
@@ -3046,10 +3047,10 @@ bucket_store:
     # CLI flag: -blocks-storage.bucket-store.metadata-cache.backend
     [backend: <string> | default = ""]
 
-    # The memcached_config configures the Memcached-based caching backend.
-    # The CLI flags prefix for this block config is:
+    # The memcached block configures the Memcached-based caching backend.
+    # The CLI flags prefix for this block configuration is:
     # blocks-storage.bucket-store.metadata-cache
-    [memcached: <memcached_config>]
+    [memcached: <memcached>]
 
     # (advanced) How long to cache list of tenants in the bucket.
     # CLI flag: -blocks-storage.bucket-store.metadata-cache.tenants-list-ttl
@@ -3064,12 +3065,12 @@ bucket_store:
     [chunks_list_ttl: <duration> | default = 24h]
 
     # (advanced) How long to cache information that block metafile exists. Also
-    # used for user deletion mark file.
+    # used for tenant deletion mark file.
     # CLI flag: -blocks-storage.bucket-store.metadata-cache.metafile-exists-ttl
     [metafile_exists_ttl: <duration> | default = 2h]
 
     # (advanced) How long to cache information that block metafile doesn't
-    # exist. Also used for user deletion mark file.
+    # exist. Also used for tenant deletion mark file.
     # CLI flag: -blocks-storage.bucket-store.metadata-cache.metafile-doesnt-exist-ttl
     [metafile_doesnt_exist_ttl: <duration> | default = 5m]
 
@@ -3298,9 +3299,9 @@ tsdb:
   [max_tsdb_opening_concurrency_on_startup: <int> | default = 10]
 ```
 
-### compactor_config
+### compactor
 
-The `compactor_config` configures the compactor service.
+The `compactor` block configures the compactor component.
 
 ```yaml
 # (advanced) List of compaction time ranges.
@@ -3410,13 +3411,13 @@ sharding_ring:
     # CLI flag: -compactor.ring.prefix
     [prefix: <string> | default = "collectors/"]
 
-    # The consul_config configures the consul client.
-    # The CLI flags prefix for this block config is: compactor.ring
-    [consul: <consul_config>]
+    # The consul block configures the consul client.
+    # The CLI flags prefix for this block configuration is: compactor.ring
+    [consul: <consul>]
 
-    # The etcd_config configures the etcd client.
-    # The CLI flags prefix for this block config is: compactor.ring
-    [etcd: <etcd_config>]
+    # The etcd block configures the etcd client.
+    # The CLI flags prefix for this block configuration is: compactor.ring
+    [etcd: <etcd>]
 
     multi:
       # (advanced) Primary backend storage used by multi-client.
@@ -3461,7 +3462,7 @@ sharding_ring:
   # List of network interface names to look up when finding the instance IP
   # address.
   # CLI flag: -compactor.ring.instance-interface-names
-  [instance_interface_names: <list of string> | default = [eth0 en0]]
+  [instance_interface_names: <list of string> | default = [<private network interfaces>]]
 
   # (advanced) Port to advertise in the ring (defaults to
   # -server.grpc-listen-port).
@@ -3483,9 +3484,9 @@ sharding_ring:
 [compaction_jobs_order: <string> | default = "smallest-range-oldest-blocks-first"]
 ```
 
-### store_gateway_config
+### store_gateway
 
-The `store_gateway_config` configures the store-gateway service.
+The `store_gateway` block configures the store-gateway component.
 
 ```yaml
 # The hash ring configuration.
@@ -3503,13 +3504,15 @@ sharding_ring:
     # CLI flag: -store-gateway.sharding-ring.prefix
     [prefix: <string> | default = "collectors/"]
 
-    # The consul_config configures the consul client.
-    # The CLI flags prefix for this block config is: store-gateway.sharding-ring
-    [consul: <consul_config>]
+    # The consul block configures the consul client.
+    # The CLI flags prefix for this block configuration is:
+    # store-gateway.sharding-ring
+    [consul: <consul>]
 
-    # The etcd_config configures the etcd client.
-    # The CLI flags prefix for this block config is: store-gateway.sharding-ring
-    [etcd: <etcd_config>]
+    # The etcd block configures the etcd client.
+    # The CLI flags prefix for this block configuration is:
+    # store-gateway.sharding-ring
+    [etcd: <etcd>]
 
     multi:
       # (advanced) Primary backend storage used by multi-client.
@@ -3574,7 +3577,7 @@ sharding_ring:
   # List of network interface names to look up when finding the instance IP
   # address.
   # CLI flag: -store-gateway.sharding-ring.instance-interface-names
-  [instance_interface_names: <list of string> | default = [eth0 en0]]
+  [instance_interface_names: <list of string> | default = [<private network interfaces>]]
 
   # (advanced) Port to advertise in the ring (defaults to
   # -server.grpc-listen-port).
@@ -3595,9 +3598,9 @@ sharding_ring:
   [unregister_on_shutdown: <boolean> | default = true]
 ```
 
-### s3_sse_config
+### sse
 
-The `s3_sse_config` configures the S3 server-side encryption. The supported CLI flags `<prefix>` used to reference this config block are:
+The `sse` block configures the S3 server-side encryption. The supported CLI flags `<prefix>` used to reference this configuration block are:
 
 - `alertmanager-storage`
 - `blocks-storage`
@@ -3620,9 +3623,9 @@ The `s3_sse_config` configures the S3 server-side encryption. The supported CLI 
 [kms_encryption_context: <string> | default = ""]
 ```
 
-### memcached_config
+### memcached
 
-The `memcached_config` configures the Memcached-based caching backend. The supported CLI flags `<prefix>` used to reference this config block are:
+The `memcached` block configures the Memcached-based caching backend. The supported CLI flags `<prefix>` used to reference this configuration block are:
 
 - `blocks-storage.bucket-store.chunks-cache`
 - `blocks-storage.bucket-store.index-cache`
