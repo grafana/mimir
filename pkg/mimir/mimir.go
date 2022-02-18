@@ -271,8 +271,8 @@ func validateBucketConfig(cfg bucket.Config, blockStorageBucketCfg bucket.Config
 
 	switch cfg.Backend {
 	case bucket.S3:
-		if cfg.S3.BucketName == blockStorageBucketCfg.S3.BucketName && cfg.S3.Region == blockStorageBucketCfg.S3.Region {
-			return errors.New("S3 bucket and region names cannot be the same as the ones used in blocks storage config")
+		if cfg.S3.BucketName == blockStorageBucketCfg.S3.BucketName {
+			return errors.New("S3 bucket name cannot be the same as the one used in blocks storage config")
 		}
 
 	case bucket.GCS:
@@ -281,13 +281,17 @@ func validateBucketConfig(cfg bucket.Config, blockStorageBucketCfg bucket.Config
 		}
 
 	case bucket.Azure:
-		if cfg.Azure.ContainerName == blockStorageBucketCfg.Azure.ContainerName {
-			return errors.New("Azure container name cannot be the same as the one used in blocks storage config")
+		if cfg.Azure.ContainerName == blockStorageBucketCfg.Azure.ContainerName && cfg.Azure.StorageAccountName == blockStorageBucketCfg.Azure.StorageAccountName {
+			return errors.New("Azure container and account names cannot be the same as the ones used in blocks storage config")
 		}
 
+	// To keep it simple here we only check that container and project names are not the same.
+	// We could also verify both configuration endpoints to determine uniqueness,
+	// however different auth URLs do not imply different clusters, since a single cluster
+	// may have several configured endpoints.
 	case bucket.Swift:
-		if cfg.Swift.ContainerName == blockStorageBucketCfg.Swift.ContainerName && cfg.Swift.RegionName == blockStorageBucketCfg.Swift.RegionName {
-			return errors.New("Swift container and region names cannot be the same as the ones used in blocks storage config")
+		if cfg.Swift.ContainerName == blockStorageBucketCfg.Swift.ContainerName && cfg.Swift.ProjectName == blockStorageBucketCfg.Swift.ProjectName {
+			return errors.New("Swift container and project names cannot be the same as the ones used in blocks storage config")
 		}
 	}
 	return nil
