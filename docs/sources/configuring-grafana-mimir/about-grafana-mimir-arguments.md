@@ -290,20 +290,20 @@ It also talks to a KVStore and has it's own copies of the same flags used by the
   Update the timestamp in the KV store for a given cluster/replica only after this amount of time has passed since the current stored timestamp. (default 15s)
 
 <!--
-Runtime configuration file 
-Purpose
-Mimir supports the use of a runtime configuration file, which is simply a file that is periodically reloaded while Mimir is running. 
-Its purpose is to allow users to change a subset of Mimir’s configuration without having to perform a restart.
-Enabling the runtime configuration
-We strongly recommend the use of a runtime configuration file to help you manage Mimir. 
-To enable the use of the runtime configuration file, you must specify a path to the file at startup time using the -runtime-config.file=<filepathfilename> flag or in your YAML configuration file under the `runtime_config` section. 
-By default, Mimir will reload the contents of this file every 10 seconds, but this value can be configured using the -runtime-config.reload-period=<duration> flag or by specifying a `period` value in your YAML configuration file. 
-When running Mimir on Kubernetes, store the runtime configuration file in a ConfigMap and mount it in each container. 
-Contents of the runtime configuration file
-The runtime configuration file allows you to dynamically modify only a subset of the configuration that is set at startup. The subset of configuration exposed is the configuration that is most valuable for an operator of Mimir to be able to adjust on the fly. 
+## Enable the runtime configuration
+
+It is best to use of a runtime configuration file to help you manage Grafana Mimir. To do so, specify a path to the file upon startup by using the `-runtime-config.file=<filepath>` CLI flag or from within your YAML configuration file in the `runtime_config` section.
+
+By default, Mimir reloads the contents of this file every 10 seconds, but you can configure this value by using the `-runtime-config.reload-period=<duration>` CLI flag or by specifying the `period` value in your YAML configuration file.
+
+When running Mimir on Kubernetes, store the runtime configuration file in a [ConfigMap](https://kubernetes.io/docs/concepts/configuration/configmap/) and mount it in each container.
+
+## Contents of the runtime configuration file
+
+The runtime configuration file allows you to dynamically modify only a subset of the configuration that is set at startup. The subset of configuration exposed is the configuration that is most valuable for an operator of Mimir to be able to adjust on the fly.
 Using the runtime configuration file to set per-tenant limits
-The primary use-case for the runtime configuration file is to allow you to set and adjust limits for each tenant in Mimir. This lets you set limits that are appropriate for each tenant based on their ingest and query needs. 
-The values defined in the limits section of your YAML config define the default set of limits that get applied to tenants. So if `ingestion_rate` is set to 25,000 in your YAML config, any tenant in your cluster sending more than 25,000 samples per second (SPS) will get rate limited. 
+The primary use-case for the runtime configuration file is to allow you to set and adjust limits for each tenant in Mimir. This lets you set limits that are appropriate for each tenant based on their ingest and query needs.
+The values defined in the limits section of your YAML config define the default set of limits that get applied to tenants. So if `ingestion_rate` is set to 25,000 in your YAML config, any tenant in your cluster sending more than 25,000 samples per second (SPS) will get rate limited.
 The runtime config file can be used to override this behavior. Say you have a tenant, tenant1, who wants to send twice as many data points as the current limit, and another, tenant2, who wants to send three times as many data points. By modifying the contents of your runtime configuration file to the following:
 overrides:
   tenant1:
@@ -313,22 +313,22 @@ overrides:
 
 Mimir will now allow tenant1 to send 50,000 SPS, tenant2 to send 75,000 SPS, and still maintain a 25,000 SPS rate limit on all other tenants.
 
-All limits in the limits_config can be overridden on a per-tenant basis in the runtime configuration file. You can override different limits for each tenant, and any tenants or limits not overridden in the runtime config inherit the limit values specified in the limits_config. 
+All limits in the limits_config can be overridden on a per-tenant basis in the runtime configuration file. You can override different limits for each tenant, and any tenants or limits not overridden in the runtime config inherit the limit values specified in the limits_config.
 [Advanced] Using the runtime configuration file to configure a multi-kv-store
-The runtime configuration file can also be used to override certain options when using a “multi” key-value store (kvstore) setup. The purpose of the multi kv-store setup is to allow Mimir operators to migrate from one kvstore to another with no downtime (e.g., switch from etcd to consul). For more about how to do this, please see <some page>. 
+The runtime configuration file can also be used to override certain options when using a “multi” key-value store (kvstore) setup. The purpose of the multi kv-store setup is to allow Mimir operators to migrate from one kvstore to another with no downtime (e.g., switch from etcd to consul). For more about how to do this, please see <some page>.
 
-The runtime configuration allows you to dynamically change the kvstore’s  `mirror_enabled` and `primary` values. A sample snippet of the runtime configuration to do this is provided below: 
+The runtime configuration allows you to dynamically change the kvstore’s  `mirror_enabled` and `primary` values. A sample snippet of the runtime configuration to do this is provided below:
 
 multi_kv_config:
   mirror_enabled: false
   primary: memberlist
 
-[Advanced] Using the runtime configuration file to configure ingester limits 
-The runtime configuration file can also be used to dynamically adjust ingester instance limits. While per-tenant limits are limits applied to each tenant, per-ingester-instance limits are limits applied to each ingester process. 
+[Advanced] Using the runtime configuration file to configure ingester limits
+The runtime configuration file can also be used to dynamically adjust ingester instance limits. While per-tenant limits are limits applied to each tenant, per-ingester-instance limits are limits applied to each ingester process.
 
-These limits are set at startup in the ingester_config section of the YAML config (or by corresponding CLI flag). 
+These limits are set at startup in the ingester_config section of the YAML config (or by corresponding CLI flag).
 
-The runtime configuration allows you to override these initial values, which is useful for advanced operators who need to dynamically change them in response to changes in ingest or query load. 
+The runtime configuration allows you to override these initial values, which is useful for advanced operators who need to dynamically change them in response to changes in ingest or query load.
 
 Everything under the ` instance_limits` section of the `ingester` config can be overridden via runtime configuration. A sample snippet of runtime configuration to change the ingester limits is provided below:
 
@@ -338,14 +338,14 @@ ingester_limits:
   max_tenants: 1000
   max_inflight_push_requests: 30000
 [Advanced] Using the runtime configuration file to configure ingester streaming
-Users can set the value of ingester_stream_chunks_when_using_blocks in their runtime configuration. This parameter controls whether ingesters transfer encoded chunks to queriers at query time (when set to “true”) or transfer decoded series (when set to “false”). 
+Users can set the value of ingester_stream_chunks_when_using_blocks in their runtime configuration. This parameter controls whether ingesters transfer encoded chunks to queriers at query time (when set to “true”) or transfer decoded series (when set to “false”).
 
 We strongly recommend against using the runtime configuration to set this value. It already defaults to true, and should be left as ‘true’ other than for rare corner cases where users have observed slowdowns in Mimir rules evaluation. A sample snippet of the runtime configuration to override the default and set this to false would look like this:
 
 ingester_stream_chunks_when_using_blocks: false
 
 Sample runtime configuration file
-A runtime configuration file that sets some per-tenant overrides, multi_kv_config, and ingester_limits would look like this: 
+A runtime configuration file that sets some per-tenant overrides, multi_kv_config, and ingester_limits would look like this:
 
 overrides:
   tenant1:
@@ -365,14 +365,18 @@ ingester_limits:
   max_ingestion_rate: 42000
   max_inflight_push_requests: 10000
 
-Any values not overridden default to the value in the YAML configuration or CLI flags specified at startup. 
+Any values not overridden default to the value in the YAML configuration or CLI flags specified at startup.
 Operating
 Use Mimir’s /runtime_config endpoint to see the current value of the runtime configuration, including the overrides. In case you want to get only the non-default values of the configuration you can run /runtime_config?mode=diff.
 -->
 
 ## Runtime configuration file
 
-Mimir has a concept of "runtime config" file, which is simply a file that is reloaded while Mimir is running. It is used by some Mimir components to allow operator to change some aspects of Mimir configuration without restarting it. File is specified by using `-runtime-config.file=<filename>` flag and reload period (which defaults to 10 seconds) can be changed by `-runtime-config.reload-period=<duration>` flag. Previously this mechanism was only used by limits overrides, and flags were called `-limits.per-user-override-config=<filename>` and `-limits.per-user-override-period=10s` respectively. These are still used, if `-runtime-config.file=<filename>` is not specified.
+You can use a runtime configuration file to run Grafana Mimir. This file is periodically reloaded while Mimir is running, which allows you to change a subset of Grafana Mimir’s configuration without having to restart Grafana Mimir.
+
+
+OLD:
+File is specified by using `-runtime-config.file=<filename>` flag and reload period (which defaults to 10 seconds) can be changed by `-runtime-config.reload-period=<duration>` flag. Previously this mechanism was only used by limits overrides, and flags were called `-limits.per-user-override-config=<filename>` and `-limits.per-user-override-period=10s` respectively. These are still used, if `-runtime-config.file=<filename>` is not specified.
 
 At the moment runtime configuration may contain per-user limits, multi KV store, and ingester instance limits.
 
