@@ -493,6 +493,7 @@
 * [BUGFIX] Overrides-exporter: successfully startup even if runtime config is not set. #1056
 * [BUGFIX] Multi-KV: runtime config changes are now propagated to all rings, not just ingester ring. #1047
 * [BUGFIX] Ruler: do not log `unable to read rules directory` at startup if the directory hasn't been created yet. #1058
+* [BUGFIX] Ruler: enable Prometheus-compatible endpoints regardless of `-ruler.enable-api`. The flag now only controls the configuration API. This is what the config flag description stated, but not what was happening. #1216
 
 ### Mixin (changes since `grafana/cortex-jsonnet` `1.9.0`)
 

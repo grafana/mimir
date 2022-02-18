@@ -545,8 +545,6 @@ Prometheus-compatible rules endpoint to list alerting and recording rules that a
 
 _For more information, please check out the Prometheus [rules](https://prometheus.io/docs/prometheus/latest/querying/api/#rules) documentation._
 
-_This endpoint can be disabled via the `-ruler.enable-api` CLI flag (or its respective YAML config option)._
-
 _Requires [authentication](#authentication)._
 
 ### List alerts
@@ -561,8 +559,6 @@ GET <legacy-http-prefix>/api/v1/alerts
 Prometheus-compatible rules endpoint to list of all active alerts.
 
 _For more information, please check out the Prometheus [alerts](https://prometheus.io/docs/prometheus/latest/querying/api/#alerts) documentation._
-
-_This endpoint can be disabled via the `-ruler.enable-api` CLI flag (or its respective YAML config option)._
 
 _Requires [authentication](#authentication)._
 

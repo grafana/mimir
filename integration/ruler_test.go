@@ -818,6 +818,104 @@ func TestRulerFederatedRules(t *testing.T) {
 	}
 }
 
+func TestRulerEnableAPIs(t *testing.T) {
+	testCases := []struct {
+		name                        string
+		apiEnabled                  bool
+		expectedRegisteredEndpoints [][2]string
+		expectedMissingEndpoints    [][2]string
+	}{
+		{
+			name:       "API is disabled",
+			apiEnabled: false,
+
+			expectedRegisteredEndpoints: [][2]string{
+				{http.MethodGet, "/api/prom/api/v1/alerts"},
+				{http.MethodGet, "/api/prom/api/v1/rules"},
+			},
+			expectedMissingEndpoints: [][2]string{
+				{http.MethodGet, "/api/v1/rules"},
+				{http.MethodGet, "/api/v1/rules/my_namespace"},
+				{http.MethodGet, "/api/v1/rules/my_namespace/my_group"},
+				{http.MethodPost, "/api/v1/rules/my_namespace"},
+			},
+		},
+		{
+			name:       "API is enabled",
+			apiEnabled: true,
+
+			expectedRegisteredEndpoints: [][2]string{
+				// not going to test GET /api/v1/rules/my_namespace/my_group because it requires creating a rule group
+				{http.MethodGet, "/api/prom/api/v1/alerts"},
+				{http.MethodGet, "/api/prom/api/v1/rules"},
+				{http.MethodGet, "/api/v1/rules"},
+				{http.MethodGet, "/api/v1/rules/my_namespace"},
+				{http.MethodPost, "/api/v1/rules/my_namespace"},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			s, err := e2e.NewScenario(networkName)
+			require.NoError(t, err)
+			defer s.Close()
+
+			// Start dependencies.
+			consul := e2edb.NewConsul()
+			minio := e2edb.NewMinio(9000, bucketName, rulestoreBucketName)
+			require.NoError(t, s.StartAndWaitReady(consul, minio))
+
+			// Configure the ruler.
+			rulerFlags := mergeFlags(BlocksStorageFlags(), RulerFlags(), map[string]string{
+				"-ruler.enable-api": fmt.Sprintf("%t", tc.apiEnabled),
+			})
+
+			// Start Mimir components.
+			ruler := e2emimir.NewRuler("ruler", consul.NetworkHTTPEndpoint(), rulerFlags, "")
+			require.NoError(t, s.StartAndWaitReady(ruler))
+
+			runTest := func(name, method, path string, shouldBeFound bool) {
+				t.Run(name, func(t *testing.T) {
+					client, err := e2emimir.NewClient("", "", "", "", "fake")
+					require.NoError(t, err)
+
+					url := "http://" + ruler.HTTPEndpoint() + path
+
+					var resp *http.Response
+					switch method {
+					case http.MethodGet:
+						resp, err = client.DoGet(url)
+					case http.MethodPost:
+						resp, err = client.DoPost(url, nil)
+					default:
+						require.Contains(t, []string{http.MethodGet, http.MethodPost}, method, "test only supports POST and GET")
+					}
+
+					assert.NoError(t, err)
+					if shouldBeFound {
+						assert.NotEqual(t, resp.StatusCode, http.StatusNotFound)
+					} else {
+						assert.Equal(t, resp.StatusCode, http.StatusNotFound)
+					}
+				})
+			}
+
+			for _, ep := range tc.expectedRegisteredEndpoints {
+				method, path := ep[0], ep[1]
+				name := "!=404_" + method + "_" + path
+				runTest(name, method, path, true)
+			}
+
+			for _, ep := range tc.expectedMissingEndpoints {
+				method, path := ep[0], ep[1]
+				name := "==404_" + method + "_" + path
+				runTest(name, method, path, false)
+			}
+		})
+	}
+}
+
 func ruleGroupMatcher(user, namespace, groupName string) *labels.Matcher {
 	return labels.MustNewMatcher(labels.MatchEqual, "rule_group", fmt.Sprintf("data-ruler/%s/%s;%s", user, namespace, groupName))
 }
