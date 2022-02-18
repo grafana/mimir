@@ -34,7 +34,7 @@ func TestS3Client(t *testing.T) {
 	kes, err := e2edb.NewKES(7373, kesDNSName, serverKeyFile, serverCertFile, clientKeyFile, clientCertFile, caCertFile, s.SharedDir())
 	require.NoError(t, err)
 	require.NoError(t, s.StartAndWaitReady(kes))
-	minio := e2edb.NewMinioWithKES(9000, "https://"+kesDNSName+":7373", clientKeyFile, clientCertFile, caCertFile, bucketName)
+	minio := e2edb.NewMinioWithKES(9000, "https://"+kesDNSName+":7373", clientKeyFile, clientCertFile, caCertFile, blocksBucketName)
 	require.NoError(t, s.StartAndWaitReady(minio))
 
 	tests := []struct {
@@ -45,7 +45,7 @@ func TestS3Client(t *testing.T) {
 			name: "expanded-config",
 			cfg: s3.Config{
 				Endpoint:        minio.HTTPEndpoint(),
-				BucketName:      bucketName,
+				BucketName:      blocksBucketName,
 				Insecure:        true,
 				AccessKeyID:     e2edb.MinioAccessKey,
 				SecretAccessKey: flagext.Secret{Value: e2edb.MinioSecretKey},
@@ -55,7 +55,7 @@ func TestS3Client(t *testing.T) {
 			name: "config-with-sse-s3",
 			cfg: s3.Config{
 				Endpoint:        minio.HTTPEndpoint(),
-				BucketName:      bucketName,
+				BucketName:      blocksBucketName,
 				Insecure:        true,
 				AccessKeyID:     e2edb.MinioAccessKey,
 				SecretAccessKey: flagext.Secret{Value: e2edb.MinioSecretKey},

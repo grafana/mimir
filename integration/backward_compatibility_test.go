@@ -37,6 +37,7 @@ func previousVersionImages() map[string]e2emimir.FlagMapper {
 				cortexFlagMapper,
 				revertRenameFrontendToQueryFrontendFlagMapper,
 				ingesterRingRename,
+				ingesterRingNewFeatures,
 			)
 		}
 

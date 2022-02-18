@@ -20,7 +20,7 @@ import (
 const (
 	userID              = "e2e-user"
 	defaultNetworkName  = "e2e-mimir-test"
-	bucketName          = "mimir"
+	blocksBucketName    = "mimir-blocks"
 	rulestoreBucketName = "mimir-rules"
 	alertsBucketName    = "mimir-alerts"
 	mimirConfigFile     = "config.yaml"
@@ -136,7 +136,7 @@ var (
 			"-blocks-storage.tsdb.head-compaction-interval":     "1s",
 			"-blocks-storage.s3.access-key-id":                  e2edb.MinioAccessKey,
 			"-blocks-storage.s3.secret-access-key":              e2edb.MinioSecretKey,
-			"-blocks-storage.s3.bucket-name":                    bucketName,
+			"-blocks-storage.s3.bucket-name":                    blocksBucketName,
 			"-blocks-storage.s3.endpoint":                       fmt.Sprintf("%s-minio-9000:9000", networkName),
 			"-blocks-storage.s3.insecure":                       "true",
 		}
@@ -157,7 +157,7 @@ blocks_storage:
       enabled: false 
 
   s3:
-    bucket_name:       mimir
+    bucket_name:       mimir-blocks
     access_key_id:     {{.MinioAccessKey}}
     secret_access_key: {{.MinioSecretKey}}
     endpoint:          {{.MinioEndpoint}}

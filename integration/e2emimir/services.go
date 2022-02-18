@@ -183,13 +183,15 @@ func NewIngesterWithConfigFile(name, consulAddress, configFile string, flags map
 	binaryName := getBinaryNameForBackwardsCompatibility(image)
 
 	defaultFlags := map[string]string{
-		"-target":                           "ingester",
-		"-log.level":                        "warn",
-		"-ingester.ring.min-ready-duration": "0s",
-		"-ingester.ring.num-tokens":         "512",
+		"-target":                   "ingester",
+		"-log.level":                "warn",
+		"-ingester.ring.num-tokens": "512",
 		// Configure the ingesters ring backend
 		"-ingester.ring.store":           "consul",
 		"-ingester.ring.consul.hostname": consulAddress,
+		// Speed up the startup.
+		"-ingester.ring.min-ready-duration":          "0s",
+		"-ingester.ring.readiness-check-ring-health": "false",
 	}
 
 	o := newOptions(options)
@@ -325,8 +327,10 @@ func NewSingleBinary(name string, flags map[string]string, image string, otherPo
 		"-distributor.ring.store": "memberlist",
 		// Ingester.
 		"-ingester.ring.replication-factor": "1",
-		"-ingester.ring.min-ready-duration": "0s",
 		"-ingester.ring.num-tokens":         "512",
+		// Speed up the startup.
+		"-ingester.ring.min-ready-duration":          "0s",
+		"-ingester.ring.readiness-check-ring-health": "false",
 	}
 
 	return NewMimirService(
@@ -347,10 +351,14 @@ func NewSingleBinaryWithConfigFile(name string, configFile string, flags map[str
 	binaryName := getBinaryNameForBackwardsCompatibility(image)
 
 	defaultFlags := map[string]string{
-		// Do not pass any extra default flags because the config should be drive by the config file.
+		// Do not pass any extra default flags (except few used to speed up the test)
+		// because the config should be drive by the config file.
 		"-target":      "all",
 		"-log.level":   "warn",
 		"-config.file": filepath.Join(e2e.ContainerSharedDir, configFile),
+		// Speed up the startup.
+		"-ingester.ring.min-ready-duration":          "0s",
+		"-ingester.ring.readiness-check-ring-health": "false",
 	}
 
 	return NewMimirService(
@@ -508,6 +516,16 @@ func RenameFlagMapper(fromTo map[string]string) FlagMapper {
 				flags[renamed] = v
 				delete(flags, name)
 			}
+		}
+		return flags
+	}
+}
+
+// RemoveFlagMapper builds a flag mapper that remove flags.
+func RemoveFlagMapper(toRemove []string) FlagMapper {
+	return func(flags map[string]string) map[string]string {
+		for _, name := range toRemove {
+			delete(flags, name)
 		}
 		return flags
 	}

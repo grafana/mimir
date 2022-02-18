@@ -48,7 +48,7 @@ func testSingleBinaryEnv(t *testing.T, tlsEnabled bool, flags map[string]string)
 	defer s.Close()
 
 	// Start dependencies.
-	minio := e2edb.NewMinio(9000, bucketName)
+	minio := e2edb.NewMinio(9000, blocksBucketName)
 	require.NoError(t, s.StartAndWaitReady(minio))
 
 	var mimir1, mimir2, mimir3 *e2emimir.MimirService
@@ -166,7 +166,7 @@ func TestSingleBinaryWithMemberlistScaling(t *testing.T) {
 	defer s.Close()
 
 	// Start dependencies.
-	minio := e2edb.NewMinio(9000, bucketName)
+	minio := e2edb.NewMinio(9000, blocksBucketName)
 	require.NoError(t, s.StartAndWaitReady(minio))
 
 	// Scale up instances. These numbers seem enough to reliably reproduce some unwanted
