@@ -14,9 +14,17 @@ Follow the checklist to ensure that your application is generating metrics, trac
   - For histograms, use the `ObserveWithExemplar` method to emit the trace ID along with a value for the histogram. These functions are from the Go library but you can find similar functions in the other libraries.
   - For counters, use the `AddWithExemplar` method to emit the trace ID along with a counter increment.
 - Verify that metrics are being generated with exemplars by running the following command in a shell: `curl -H "Accept: application/openmetrics-text" http://<your application>/metrics | grep -i "traceid"`.
+- Configure your Prometheus server or Grafana Agent to store and send exemplars.
+  - To configure Grafana Agent to send exemplars:
+    1. Confirm that the Agent is scraping exemplars by verifying that the `prometheus_remote_storage_exemplars_total` metric is a non-zero value.
+    1. Add the option `send_exemplars: true` under the `remote_write` configuration block in the Grafana Agent configuration file.
+  - To configure a Prometheus server to send exemplars:
+    1. Run Prometheus with the `--enable-feature=exemplar-storage` flag.
+    1. Confirm that Prometheus is scraping exemplars by verifying that the `prometheus_remote_storage_exemplars_total` metric is a non-zero value.
+    1. Add the option `send_exemplars: true` under the `remote_write` configuration block in the Prometheus configuration file.
 
 See also:
 
-- [Enable exemplars in Grafana Mimir]({{< relref "./enable_exemplars.md" >}})
-- [View exemplar data]({{< relref "./view_exemplars.md" >}})
+- [Enable exemplars in Grafana Mimir]({{< relref "./enable-exemplars-in-grafana-mimir.md" >}})
+- [View exemplar data]({{< relref "./view-exemplar-data.md" >}})
 - [TNS demo](https://github.com/grafana/tns)
