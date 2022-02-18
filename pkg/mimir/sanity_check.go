@@ -66,31 +66,25 @@ func checkDirectoriesReadWriteAccess(cfg Config) error {
 	return errs.Err()
 }
 
-// Used for testing.
-var (
-	dirExistsFn         = fsutil.DirExists
-	isDirReadWritableFn = fsutil.IsDirReadWritable
-)
-
 func checkDirReadWriteAccess(dir string) error {
 	d := dir
 	for {
-		exists, err := dirExistsFn(d)
+		exists, err := fsutil.DirExists(d)
 		if err != nil {
 			return err
 		}
 		if exists {
 			break
 		}
-		d = filepath.Dir(d)
 
-		// Stop checking dir existence when root path reached.
-		if d == "/" || d == "." {
-			break
+		dNext := filepath.Dir(d)
+		if d == dNext {
+			break // Root path reached.
 		}
+		d = dNext
 	}
 
-	if err := isDirReadWritableFn(d); err != nil {
+	if err := fsutil.IsDirReadWritable(d); err != nil {
 		return fmt.Errorf("failed to access directory %s: %w", dir, err)
 	}
 	return nil

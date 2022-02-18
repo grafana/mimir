@@ -3,24 +3,19 @@
 package fs
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 )
 
 // DirExists tells whether dir exists.
 func DirExists(dir string) (bool, error) {
-	inf, err := os.Stat(dir)
-	if err == nil {
-		if inf.IsDir() {
-			return true, nil
+	if _, err := os.Stat(dir); err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
 		}
-		return false, fmt.Errorf("%s is not a directory", dir)
+		return false, err
 	}
-	if os.IsNotExist(err) {
-		return false, nil
-	}
-	return false, err
+	return true, nil
 }
 
 // IsDirReadWritable checks if the dir is writable and readable by the process.

@@ -4,7 +4,7 @@ package mimir
 
 import (
 	"context"
-	"errors"
+	"os"
 	"testing"
 
 	"github.com/go-kit/log"
@@ -155,41 +155,24 @@ func TestCheckObjectStoresConfig(t *testing.T) {
 }
 
 func TestCheckDirectoryReadWriteAccess(t *testing.T) {
-	const ingesterTSDBPath = "/ingester/data"
+	const ingesterTSDBPath = "data"
 
 	tests := map[string]struct {
-		dirExistsFn func(string) (bool, error)
-		isDirRwFn   func(string) error
-		expected    string
+		dirName  string
+		dirPerm  int
+		expected string
 	}{
 		"should fail on ingester tsdb directory without write access": {
-			dirExistsFn: func(dir string) (bool, error) {
-				return dir == ingesterTSDBPath, nil
-			},
-			isDirRwFn: func(dir string) error {
-				return errors.New("read-only")
-			},
+			dirName:  ingesterTSDBPath,
+			dirPerm:  0111,
 			expected: "failed to access directory",
 		},
 		"should pass on ingester tsdb directory with read-write access": {
-			dirExistsFn: func(dir string) (bool, error) {
-				return dir == ingesterTSDBPath, nil
-			},
-			isDirRwFn: func(dir string) error {
-				return nil
-			},
+			dirName:  ingesterTSDBPath,
+			dirPerm:  0777,
 			expected: "",
 		},
 		"should pass on ingester if tsdb directory doesn't exist but parent folder has read-write access": {
-			dirExistsFn: func(dir string) (bool, error) {
-				return dir == "/ingester", nil
-			},
-			isDirRwFn: func(dir string) error {
-				if dir == "/ingester" {
-					return nil
-				}
-				return errors.New("read-only")
-			},
 			expected: "",
 		},
 	}
@@ -202,8 +185,12 @@ func TestCheckDirectoryReadWriteAccess(t *testing.T) {
 
 			cfg.Ingester.BlocksStorageConfig.TSDB.Dir = ingesterTSDBPath
 
-			dirExistsFn = testData.dirExistsFn
-			isDirReadWritableFn = testData.isDirRwFn
+			if len(testData.dirName) > 0 {
+				_ = os.MkdirAll(testData.dirName, os.FileMode(testData.dirPerm))
+				t.Cleanup(func() {
+					_ = os.RemoveAll(testData.dirName)
+				})
+			}
 
 			actual := checkDirectoriesReadWriteAccess(cfg)
 			if testData.expected == "" {
