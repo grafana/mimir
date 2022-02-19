@@ -45,7 +45,7 @@ func TestGettingStartedSingleProcessConfigWithBlocksStorage(t *testing.T) {
 		"-blocks-storage.s3.insecure":          "true",
 	}
 
-	mimir := e2emimir.NewSingleBinaryWithConfigFile("mimir-1", mimirConfigFile, flags, "", 9009, 9095)
+	mimir := e2emimir.NewSingleBinary("mimir-1", flags, e2emimir.WithPorts(9009, 9095), e2emimir.WithConfigFile(mimirConfigFile))
 	require.NoError(t, s.StartAndWaitReady(mimir))
 
 	c, err := e2emimir.NewClient(mimir.HTTPEndpoint(), mimir.HTTPEndpoint(), "", "", "user-1")

@@ -83,8 +83,8 @@ func runBackwardCompatibilityTest(t *testing.T, previousImage string, oldFlagsMa
 	require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 	// Start other Mimir components (ingester running on previous version).
-	ingester := e2emimir.NewIngester("ingester-old", consul.NetworkHTTPEndpoint(), flags, previousImage, e2emimir.WithFlagMapper(oldFlagsMapper))
-	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), BlocksStorageFlags(), "")
+	ingester := e2emimir.NewIngester("ingester-old", consul.NetworkHTTPEndpoint(), flags, e2emimir.WithImage(previousImage), e2emimir.WithFlagMapper(oldFlagsMapper))
+	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), BlocksStorageFlags())
 	assert.NoError(t, s.StartAndWaitReady(distributor, ingester))
 
 	// Wait until the distributor has updated the ring.
@@ -105,7 +105,7 @@ func runBackwardCompatibilityTest(t *testing.T, previousImage string, oldFlagsMa
 	// Stop ingester on old version
 	require.NoError(t, s.Stop(ingester))
 
-	ingester = e2emimir.NewIngester("ingester-new", consul.NetworkHTTPEndpoint(), flags, "")
+	ingester = e2emimir.NewIngester("ingester-new", consul.NetworkHTTPEndpoint(), flags)
 	require.NoError(t, s.StartAndWaitReady(ingester))
 
 	// Wait until the distributor has updated the ring.
@@ -140,10 +140,10 @@ func runNewDistributorsCanPushToOldIngestersWithReplication(t *testing.T, previo
 	require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 	// Start other Mimir components (ingester running on previous version).
-	ingester1 := e2emimir.NewIngester("ingester-1", consul.NetworkHTTPEndpoint(), flags, previousImage, e2emimir.WithFlagMapper(oldFlagsMapper))
-	ingester2 := e2emimir.NewIngester("ingester-2", consul.NetworkHTTPEndpoint(), flags, previousImage, e2emimir.WithFlagMapper(oldFlagsMapper))
-	ingester3 := e2emimir.NewIngester("ingester-3", consul.NetworkHTTPEndpoint(), flags, previousImage, e2emimir.WithFlagMapper(oldFlagsMapper))
-	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags, "")
+	ingester1 := e2emimir.NewIngester("ingester-1", consul.NetworkHTTPEndpoint(), flags, e2emimir.WithImage(previousImage), e2emimir.WithFlagMapper(oldFlagsMapper))
+	ingester2 := e2emimir.NewIngester("ingester-2", consul.NetworkHTTPEndpoint(), flags, e2emimir.WithImage(previousImage), e2emimir.WithFlagMapper(oldFlagsMapper))
+	ingester3 := e2emimir.NewIngester("ingester-3", consul.NetworkHTTPEndpoint(), flags, e2emimir.WithImage(previousImage), e2emimir.WithFlagMapper(oldFlagsMapper))
+	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags)
 	require.NoError(t, s.StartAndWaitReady(distributor, ingester1, ingester2, ingester3))
 
 	// Wait until the distributor has updated the ring.
@@ -184,44 +184,36 @@ func checkQueries(
 	numIngesters int,
 ) {
 	cases := map[string]struct {
-		queryFrontendImage      string
-		queryFrontendFlags      map[string]string
-		queryFrontendFlagMapper e2emimir.FlagMapper
-		querierImage            string
-		querierFlags            map[string]string
-		querierFlagMapper       e2emimir.FlagMapper
+		queryFrontendOptions []e2emimir.Option
+		querierOptions       []e2emimir.Option
 	}{
 		"old query-frontend, new querier": {
-			queryFrontendImage:      previousImage,
-			queryFrontendFlags:      flags,
-			queryFrontendFlagMapper: oldFlagsMapper,
-			querierImage:            "",
-			querierFlags:            flags,
-			querierFlagMapper:       e2emimir.NoopFlagMapper,
+			queryFrontendOptions: []e2emimir.Option{
+				e2emimir.WithImage(previousImage),
+				e2emimir.WithFlagMapper(oldFlagsMapper),
+			},
 		},
 		"new query-frontend, old querier": {
-			queryFrontendImage:      "",
-			queryFrontendFlags:      flags,
-			queryFrontendFlagMapper: e2emimir.NoopFlagMapper,
-			querierImage:            previousImage,
-			querierFlags:            flags,
-			querierFlagMapper:       oldFlagsMapper,
+			querierOptions: []e2emimir.Option{
+				e2emimir.WithImage(previousImage),
+				e2emimir.WithFlagMapper(oldFlagsMapper),
+			},
 		},
 	}
 
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
 			// Start query-frontend.
-			queryFrontend := e2emimir.NewQueryFrontend("query-frontend", c.queryFrontendFlags, c.queryFrontendImage, e2emimir.WithFlagMapper(c.queryFrontendFlagMapper))
+			queryFrontend := e2emimir.NewQueryFrontend("query-frontend", flags, c.queryFrontendOptions...)
 			require.NoError(t, s.Start(queryFrontend))
 			defer func() {
 				require.NoError(t, s.Stop(queryFrontend))
 			}()
 
 			// Start querier.
-			querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), e2e.MergeFlagsWithoutRemovingEmpty(c.querierFlags, map[string]string{
+			querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), e2e.MergeFlagsWithoutRemovingEmpty(flags, map[string]string{
 				"-querier.frontend-address": queryFrontend.NetworkGRPCEndpoint(),
-			}), c.querierImage, e2emimir.WithFlagMapper(c.querierFlagMapper))
+			}), c.querierOptions...)
 
 			require.NoError(t, s.Start(querier))
 			defer func() {

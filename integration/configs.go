@@ -142,6 +142,22 @@ var (
 		}
 	}
 
+	DefaultSingleBinaryFlags = func() map[string]string {
+		return map[string]string{
+			"-auth.multitenancy-enabled": "true",
+			// Query-frontend worker.
+			"-querier.frontend-client.backoff-min-period": "100ms",
+			"-querier.frontend-client.backoff-max-period": "100ms",
+			"-querier.frontend-client.backoff-retries":    "1",
+			"-querier.max-concurrent":                     "1",
+			// Distributor.
+			"-distributor.ring.store": "memberlist",
+			// Ingester.
+			"-ingester.ring.replication-factor": "1",
+			"-ingester.ring.num-tokens":         "512",
+		}
+	}
+
 	BlocksStorageConfig = buildConfigFromTemplate(`
 blocks_storage:
   backend:             s3

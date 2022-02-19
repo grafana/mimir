@@ -62,10 +62,10 @@ func TestIngesterGlobalLimits(t *testing.T) {
 			require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 			// Start Mimir components.
-			distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags, "")
-			ingester1 := e2emimir.NewIngester("ingester-1", consul.NetworkHTTPEndpoint(), flags, "")
-			ingester2 := e2emimir.NewIngester("ingester-2", consul.NetworkHTTPEndpoint(), flags, "")
-			ingester3 := e2emimir.NewIngester("ingester-3", consul.NetworkHTTPEndpoint(), flags, "")
+			distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags)
+			ingester1 := e2emimir.NewIngester("ingester-1", consul.NetworkHTTPEndpoint(), flags)
+			ingester2 := e2emimir.NewIngester("ingester-2", consul.NetworkHTTPEndpoint(), flags)
+			ingester3 := e2emimir.NewIngester("ingester-3", consul.NetworkHTTPEndpoint(), flags)
 			require.NoError(t, s.StartAndWaitReady(distributor, ingester1, ingester2, ingester3))
 
 			// Wait until distributor has updated the ring.
@@ -181,7 +181,7 @@ overrides:
 				"-ruler-storage.local.directory":                    "/tmp", // Avoid warning "unable to list rules".
 				"-runtime-config.file":                              filepath.Join(e2e.ContainerSharedDir, overridesFile),
 			}
-			cortex1 := e2emimir.NewSingleBinaryWithConfigFile("cortex-1", mimirConfigFile, flags, "", 9009, 9095)
+			cortex1 := e2emimir.NewSingleBinary("cortex-1", flags, e2emimir.WithConfigFile(mimirConfigFile), e2emimir.WithPorts(9009, 9095))
 			require.NoError(t, s.StartAndWaitReady(cortex1))
 
 			// Populate the overrides we want, then wait long enough for it to be read.
