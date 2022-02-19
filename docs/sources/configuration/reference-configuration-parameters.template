@@ -29,6 +29,7 @@ brackets indicate that a parameter is optional.
 - `<duration>`: a duration matching the regular expression `[0-9]+(ns|us|µs|ms|s|m|h|d|w|y)` where y = 365 days
 - `<string>`: a string
 - `<url>`: a URL
+- `<filepath>`: a string containing an absolute or relative path and filename to a file on disk
 - `<prefix>`: a CLI flag prefix based on the context (look at the parent configuration block to see which CLI flags prefix should be used)
 - `<relabel_config>`: a [Prometheus relabeling configuration](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#relabel_config)
 - `<time>`: a timestamp, with available formats:
