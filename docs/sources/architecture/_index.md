@@ -12,27 +12,29 @@ The system has multiple horizontally scalable microservices that run separately 
 [//]: # (TODO Diagram source at https://docs.google.com/presentation/d/1bHp8_zcoWCYoNU2AhO2lSagQyuIrghkCncViSqn14cU/edit)
 ![Architecture of Grafana Mimir](../images/architecture.png)
 
-## Microservices
+This page describes, at a high level, the microservices that comprise the [write path]({{<relref "#write-path" >}})
+and the [read path]({{<relref "#read-path" >}}).
 
-Most microservices are stateless and don't require any data persisted between process restarts.
-
-Some microservices are stateful and rely on non-volatile storage to prevent data loss between process restarts.
-
-A dedicate page describes each microservice in detail.
+A dedicated page describes each microservice in more detail:
 
 {{< section >}}
 
-### The write path
+### Write path
 
-**Ingesters** receive incoming samples from the distributors.
-Each push request belongs to a tenant, and the ingester appends the received samples to the specific per-tenant TSDB stored on the local disk.
-The received samples are both kept in-memory and written to a write-ahead log (WAL) and used to recover the in-memory series in case the ingester abruptly terminates.
-The per-tenant TSDB is lazily created in each ingester as soon as the first samples are received for that tenant.
+The write path receives samples for time series and persists them to long-term storage.
+
+Distributors handle the incoming samples and writes them to a number of ingesters, determined by the `-ingester.ring.replication-factor`.
+
+Each write request belongs to a tenant, and the ingester appends the received samples to the specific per-tenant TSDB stored on the local disk.
+The received samples are both kept in-memory and written to a write-ahead log (WAL).
+If an ingester abruptly terminates, the WAL replay recovers the in-memory series not yet written to disk.
+When a tenant first writes samples, ingesters create that tenant's on disk TSDB.
 
 The in-memory samples are periodically flushed to disk - and the WAL truncated - when a new TSDB block is created, which by default occurs every 2 hours.
-Each newly created block is then uploaded to the long-term storage and kept in the ingester until the configured `-blocks-storage.tsdb.retention-period` expires, in order to give [queriers](./querier.md) and [store-gateways](./store-gateway.md) enough time to discover the new block on the storage and download its index-header.
+Each newly created block is then uploaded to the long-term storage and kept in the ingester until the configured `-blocks-storage.tsdb.retention-period` expires.
+This gives [queriers](./querier.md) and [store-gateways](./store-gateway.md) enough time to discover the new block on the storage and download its index-header.
 
-In order to effectively use the **WAL** and being able to recover the in-memory series upon ingester abruptly termination, the WAL needs to be stored to a persistent disk which can survive in the event of an ingester failure (ie. AWS EBS volume or GCP persistent disk when running in the cloud).
+In order to effectively use the WAL and being able to recover the in-memory series upon ingester abruptly termination, the WAL needs to be stored to a persistent disk which can survive in the event of an ingester failure (ie. AWS EBS volume or GCP persistent disk when running in the cloud).
 For example, if you're running the Mimir cluster in Kubernetes, you may use a StatefulSet with a persistent volume claim for the ingesters.
 The location on the filesystem where the WAL is stored is the same where local TSDB blocks (compacted from head) are stored and cannot be decoupled.
 See also the [timeline of block uploads](production-tips/#how-to-estimate--querierquery-store-after) and [disk space estimate](production-tips/#ingester-disk-space).
@@ -45,7 +47,9 @@ After blocks compaction, the storage utilization is significantly reduced.
 
 For more information, see [Compactor](./compactor.md) and [Production tips](./production-tips.md).
 
-### The read path
+## Read path
+
+The query path receives and executes PromQL queries against all the time series that have been written to Grafana Mimir.
 
 [Queriers](./querier.md) and [store-gateways](./store-gateway.md) periodically iterate over the storage bucket to discover blocks recently uploaded by ingesters.
 
@@ -53,17 +57,10 @@ For each discovered block, queriers only download the block's `meta.json` file (
 
 Queriers use the blocks metadata to compute the list of blocks that need to be queried at query time and fetch matching series from the store-gateway instances holding the required blocks.
 
-For more information, please refer to the following dedicated sections:
-
-## The role of Prometheus
+## The role of Prometheus and Grafana Agent
 
 Prometheus instances scrape samples from various targets and then push them to Mimir (using Prometheus' [remote write API](https://prometheus.io/docs/prometheus/latest/storage/#remote-storage-integrations)).
 That remote write API emits batched [Snappy](https://google.github.io/snappy/)-compressed [Protocol Buffer](https://developers.google.com/protocol-buffers/) messages inside the body of an HTTP `PUT` request.
-
-Mimir requires that each HTTP request bear a header specifying a tenant ID for the request.
-Request authentication and authorization are handled by an external reverse proxy.
-
-Incoming samples (writes from Prometheus) are handled by the [distributor](#distributor) while incoming reads (PromQL queries) are handled by the [querier](#querier) or optionally by the [query frontend](#query-frontend).
 
 ## Long-term storage
 
