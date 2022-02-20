@@ -89,10 +89,19 @@ When using a reverse proxy, ensure that you configure the HTTP path appropriatel
 To achieve horizontal scalability, the Mimir Alertmanager shards alerts by tenant.
 To enable sharding, set `-alertmanager.sharding-enabled=true` and configure a KV store backend.
 Sharding also requires that the number of Alertmanager replicas is greater-than or equal-to the replication factor configured by the `-alertmanager.sharding-ring.replication-factor` flag.
-The Alertmanager replicas use the hash ring stored in the KV store to discover their peers.
+
+The Mimir Alertmanager replicas use the hash ring stored in the KV store to discover their peers.
+This means that any Mimir Alertmanager replica can respond to any API or UI request for any tenant.
+If the Mimir Alertmanager replica receiving the HTTP request doesn't own the tenant to which the request belongs to, the request is internally routed to the appropriate replica.
+This mechanism is fully transparent to the final user.
 
 ### State
 
-Where the Prometheus Alertmanager persists state to a local disk, the Mimir Alertmanager persists state to object storage accessible to each replica.
-Replicas communicate state between each other to enforce rate limits and ensure the sending of alert notifications.
-This means that users can access the Alertmanager UI, and rulers can send alert notifications to any Alertmanager replica.
+The Mimir Alertmanager stores the alerts state on local disk at the location configured with `-alertmanager.storage.path`.
+
+> **Warning:**
+When running the Mimir Alertmanager without replication, ensure persistence of the `-alertmanager.storage.path` directory to avoid losing alert state.
+
+The Mimir Alertmanager also periodically stores the alerts state in the storage backend configured with `-alertmanager-storage.backend`.
+Whenever an Alertmanager starts up it tries to load the alerts state for any given tenant from other Alertmanager replicas, falling back to the state periodically stored in the storage backend.
+This fallback mechanism recovers previous state in the event of a cluster wide outage.
