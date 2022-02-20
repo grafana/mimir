@@ -10,6 +10,7 @@ import (
 	"flag"
 	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/go-kit/log/level"
@@ -51,6 +52,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/activitytracker"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/validation"
+	"github.com/grafana/mimir/pkg/util/version"
 )
 
 // The various modules that make up Mimir.
@@ -102,7 +104,7 @@ func (t *Mimir) initAPI() (services.Service, error) {
 	}
 
 	t.API = a
-	t.API.RegisterAPI(t.Cfg.Server.PathPrefix, t.Cfg, newDefaultConfig())
+	t.API.RegisterAPI(t.Cfg.Server.PathPrefix, t.Cfg, newDefaultConfig(), t.buildInfoHandler())
 
 	return nil, nil
 }
@@ -350,6 +352,7 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 		prometheus.DefaultRegisterer,
 		util_log.Logger,
 		t.Overrides,
+		t.buildInfoHandler(),
 	)
 
 	// If the querier is running standalone without the query-frontend or query-scheduler, we must register it's internal
@@ -602,7 +605,7 @@ func (t *Mimir) initAlertManager() (serv services.Service, err error) {
 		return
 	}
 
-	t.API.RegisterAlertmanager(t.Alertmanager, t.Cfg.Alertmanager.EnableAPI)
+	t.API.RegisterAlertmanager(t.Alertmanager, t.Cfg.Alertmanager.EnableAPI, t.buildInfoHandler())
 	return t.Alertmanager, nil
 }
 
@@ -682,6 +685,16 @@ func (t *Mimir) initQueryScheduler() (services.Service, error) {
 
 	t.API.RegisterQueryScheduler(s)
 	return s, nil
+}
+
+func (t *Mimir) buildInfoHandler() http.Handler {
+	return version.BuildInfoHandler(
+		t.Cfg.ApplicationName,
+		version.BuildInfoFeatures{
+			AlertmanagerConfigAPI: strconv.FormatBool(t.Cfg.Alertmanager.EnableAPI),
+			QuerySharding:         strconv.FormatBool(t.Cfg.Frontend.QueryMiddleware.ShardedQueries),
+			RulerConfigAPI:        strconv.FormatBool(t.Cfg.Ruler.EnableAPI),
+		})
 }
 
 func (t *Mimir) setupModuleManager() error {
