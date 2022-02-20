@@ -140,9 +140,9 @@ func (s *activeSeriesStripe) findEntryForSeries(fingerprint uint64, series label
 	defer s.mu.RUnlock()
 
 	// Check if already exists within the entries.
-	for ix, entry := range s.refs[fingerprint] {
+	for _, entry := range s.refs[fingerprint] {
 		if labels.Equal(entry.lbs, series) {
-			return s.refs[fingerprint][ix].nanos
+			return entry.nanos
 		}
 	}
 
@@ -154,9 +154,10 @@ func (s *activeSeriesStripe) findOrCreateEntryForSeries(fingerprint uint64, seri
 	defer s.mu.Unlock()
 
 	// Check if already exists within the entries.
-	for ix, entry := range s.refs[fingerprint] {
+	// This repeats findEntryForSeries(), but under write lock.
+	for _, entry := range s.refs[fingerprint] {
 		if labels.Equal(entry.lbs, series) {
-			return s.refs[fingerprint][ix].nanos, false
+			return entry.nanos, false
 		}
 	}
 
