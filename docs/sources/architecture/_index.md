@@ -9,8 +9,7 @@ weight: 1000
 Grafana Mimir has a service-based architecture.
 The system has multiple horizontally scalable microservices that run separately and in parallel.
 
-<!-- Diagram source at https://docs.google.com/presentation/d/1bHp8_zcoWCYoNU2AhO2lSagQyuIrghkCncViSqn14cU/edit -->
-
+[//]: # (TODO Diagram source at https://docs.google.com/presentation/d/1bHp8_zcoWCYoNU2AhO2lSagQyuIrghkCncViSqn14cU/edit)
 ![Architecture of Grafana Mimir](../images/architecture.png)
 
 ## Microservices
