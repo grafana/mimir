@@ -352,6 +352,7 @@ type Mimir struct {
 	StoreGateway             *storegateway.StoreGateway
 	MemberlistKV             *memberlist.KVInitService
 	ActivityTracker          *activitytracker.ActivityTracker
+	BuildInfoHandler         http.Handler
 
 	// Queryables that the querier should use to query the long term storage.
 	StoreQueryables []querier.QueryableWithFilter
