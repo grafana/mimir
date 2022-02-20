@@ -24,15 +24,24 @@ A dedicate page describes each microservice in detail.
 
 ### The write path
 
-**Ingesters** receive incoming samples from the distributors. Each push request belongs to a tenant, and the ingester appends the received samples to the specific per-tenant TSDB stored on the local disk. The received samples are both kept in-memory and written to a write-ahead log (WAL) and used to recover the in-memory series in case the ingester abruptly terminates. The per-tenant TSDB is lazily created in each ingester as soon as the first samples are received for that tenant.
+**Ingesters** receive incoming samples from the distributors.
+Each push request belongs to a tenant, and the ingester appends the received samples to the specific per-tenant TSDB stored on the local disk.
+The received samples are both kept in-memory and written to a write-ahead log (WAL) and used to recover the in-memory series in case the ingester abruptly terminates.
+The per-tenant TSDB is lazily created in each ingester as soon as the first samples are received for that tenant.
 
-The in-memory samples are periodically flushed to disk - and the WAL truncated - when a new TSDB block is created, which by default occurs every 2 hours. Each newly created block is then uploaded to the long-term storage and kept in the ingester until the configured `-blocks-storage.tsdb.retention-period` expires, in order to give [queriers](./querier.md) and [store-gateways](./store-gateway.md) enough time to discover the new block on the storage and download its index-header.
+The in-memory samples are periodically flushed to disk - and the WAL truncated - when a new TSDB block is created, which by default occurs every 2 hours.
+Each newly created block is then uploaded to the long-term storage and kept in the ingester until the configured `-blocks-storage.tsdb.retention-period` expires, in order to give [queriers](./querier.md) and [store-gateways](./store-gateway.md) enough time to discover the new block on the storage and download its index-header.
 
-In order to effectively use the **WAL** and being able to recover the in-memory series upon ingester abruptly termination, the WAL needs to be stored to a persistent disk which can survive in the event of an ingester failure (ie. AWS EBS volume or GCP persistent disk when running in the cloud). For example, if you're running the Mimir cluster in Kubernetes, you may use a StatefulSet with a persistent volume claim for the ingesters. The location on the filesystem where the WAL is stored is the same where local TSDB blocks (compacted from head) are stored and cannot be decoupled. See also the [timeline of block uploads](production-tips/#how-to-estimate--querierquery-store-after) and [disk space estimate](production-tips/#ingester-disk-space).
+In order to effectively use the **WAL** and being able to recover the in-memory series upon ingester abruptly termination, the WAL needs to be stored to a persistent disk which can survive in the event of an ingester failure (ie. AWS EBS volume or GCP persistent disk when running in the cloud).
+For example, if you're running the Mimir cluster in Kubernetes, you may use a StatefulSet with a persistent volume claim for the ingesters.
+The location on the filesystem where the WAL is stored is the same where local TSDB blocks (compacted from head) are stored and cannot be decoupled.
+See also the [timeline of block uploads](production-tips/#how-to-estimate--querierquery-store-after) and [disk space estimate](production-tips/#ingester-disk-space).
 
 #### Distributor series sharding and replication
 
-Due to the replication factor N (typically 3), each time series is stored by N ingesters, and each ingester writes its own block to the long-term storage. [Compactor](./compactor.md) merges blocks from multiple ingesters into a single block, and removes duplicate samples. After blocks compaction, the storage utilization is significantly reduced.
+Due to the replication factor N (typically 3), each time series is stored by N ingesters, and each ingester writes its own block to the long-term storage.
+[Compactor](./compactor.md) merges blocks from multiple ingesters into a single block, and removes duplicate samples.
+After blocks compaction, the storage utilization is significantly reduced.
 
 For more information, see [Compactor](./compactor.md) and [Production tips](./production-tips.md).
 
@@ -48,9 +57,11 @@ For more information, please refer to the following dedicated sections:
 
 ## The role of Prometheus
 
-Prometheus instances scrape samples from various targets and then push them to Mimir (using Prometheus' [remote write API](https://prometheus.io/docs/prometheus/latest/storage/#remote-storage-integrations)). That remote write API emits batched [Snappy](https://google.github.io/snappy/)-compressed [Protocol Buffer](https://developers.google.com/protocol-buffers/) messages inside the body of an HTTP `PUT` request.
+Prometheus instances scrape samples from various targets and then push them to Mimir (using Prometheus' [remote write API](https://prometheus.io/docs/prometheus/latest/storage/#remote-storage-integrations)).
+That remote write API emits batched [Snappy](https://google.github.io/snappy/)-compressed [Protocol Buffer](https://developers.google.com/protocol-buffers/) messages inside the body of an HTTP `PUT` request.
 
-Mimir requires that each HTTP request bear a header specifying a tenant ID for the request. Request authentication and authorization are handled by an external reverse proxy.
+Mimir requires that each HTTP request bear a header specifying a tenant ID for the request.
+Request authentication and authorization are handled by an external reverse proxy.
 
 Incoming samples (writes from Prometheus) are handled by the [distributor](#distributor) while incoming reads (PromQL queries) are handled by the [querier](#querier) or optionally by the [query frontend](#query-frontend).
 
@@ -60,7 +71,8 @@ The Grafana Mimir storage format is based on [Prometheus TSDB storage](https://p
 By default, each block has a two hour range.
 Each on-disk block directory contains an index file, a file containing metadata and the time series chunks.
 
-The TSDB block files contain samples for multiple series. The series inside the blocks are then indexed by a per-block index, which indexes metric names and labels to time series in the block files.
+The TSDB block files contain samples for multiple series.
+The series inside the blocks are then indexed by a per-block index, which indexes metric names and labels to time series in the block files.
 
 Mimir requires an object store for the block files, which can be:
 
