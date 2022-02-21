@@ -334,7 +334,7 @@
 * [CHANGE] Remove `-http.prefix` flag (and `http_prefix` config file option). #763
 * [CHANGE] Remove legacy endpoints. Please use their alternatives listed below. As part of the removal process we are
   introducing two new sets of endpoints for the ruler configuraiton API: `<prometheus-http-prefix>/rules` and
-  `<prometheus-http-prefix>/config/v1/rules/**`. We are also deprecating `<prometheus-http-prefix>/rules` and `/api/v1/rules`; 
+  `<prometheus-http-prefix>/config/v1/rules/**`. We are also deprecating `<prometheus-http-prefix>/rules` and `/api/v1/rules`;
   and will remove them in Mimir 2.2.0. #763 #1222
   * Query endpoints
 
