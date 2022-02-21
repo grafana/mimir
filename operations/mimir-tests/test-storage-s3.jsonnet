@@ -18,8 +18,5 @@ mimir {
     alertmanager_enabled: true,
     alertmanager_client_type: 's3',
     alertmanager_s3_bucket_name: 'alerts-bucket',
-    alertmanager+: {
-      sharding_enabled: true,
-    },
   },
 }
