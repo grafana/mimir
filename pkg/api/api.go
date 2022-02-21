@@ -11,11 +11,13 @@ import (
 	"net/http"
 	"path"
 	"strings"
+	"time"
 
 	"github.com/NYTimes/gziphandler"
 	"github.com/felixge/fgprof"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/gorilla/mux"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/weaveworks/common/middleware"
 	"github.com/weaveworks/common/server"
@@ -38,6 +40,7 @@ import (
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
 	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
+	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/push"
 )
 
@@ -129,41 +132,55 @@ func New(cfg Config, serverCfg server.Config, s *server.Server, logger log.Logge
 	return api, nil
 }
 
+// RegisterDeprecatedRoute behaves in a similar way to RegisterRoute. RegisterDeprecatedRoute also logs warnings on
+// invocations of the deprecated endpoints.
+func (a *API) RegisterDeprecatedRoute(path string, handler http.Handler, auth, gzipEnabled bool, method string, methods ...string) {
+	methods = append([]string{method}, methods...)
+	handler = a.deprecatedHandler(handler)
+	level.Debug(a.logger).Log("msg", "api: registering deprecated route", "methods", strings.Join(methods, ","), "path", path, "auth", auth, "gzip", gzipEnabled)
+	a.newRoute(path, handler, false, auth, gzipEnabled, methods...)
+}
+
+func (a *API) deprecatedHandler(next http.Handler) http.Handler {
+	l := util_log.NewRateLimitedLogger(time.Minute, a.logger, time.Now)
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		level.Warn(l).Log("msg", "api: received a request on a deprecated endpoint", "path", r.URL.Path, "method", r.Method)
+		next.ServeHTTP(w, r)
+	})
+}
+
 // RegisterRoute registers a single route enforcing HTTP methods. A single
 // route is expected to be specific about which HTTP methods are supported.
 func (a *API) RegisterRoute(path string, handler http.Handler, auth, gzipEnabled bool, method string, methods ...string) {
 	methods = append([]string{method}, methods...)
-
 	level.Debug(a.logger).Log("msg", "api: registering route", "methods", strings.Join(methods, ","), "path", path, "auth", auth, "gzip", gzipEnabled)
-
-	if auth {
-		handler = a.AuthMiddleware.Wrap(handler)
-	}
-	if gzipEnabled {
-		handler = gziphandler.GzipHandler(handler)
-	}
-
-	if len(methods) == 0 {
-		a.server.HTTP.Path(path).Handler(handler)
-		return
-	}
-	a.server.HTTP.Path(path).Methods(methods...).Handler(handler)
+	a.newRoute(path, handler, false, auth, gzipEnabled, methods...)
 }
 
 func (a *API) RegisterRoutesWithPrefix(prefix string, handler http.Handler, auth, gzipEnabled bool, methods ...string) {
 	level.Debug(a.logger).Log("msg", "api: registering route", "methods", strings.Join(methods, ","), "prefix", prefix, "auth", auth, "gzip", gzipEnabled)
+	a.newRoute(prefix, handler, true, auth, gzipEnabled, methods...)
+}
+
+func (a *API) newRoute(path string, handler http.Handler, isPrefix, auth, gzip bool, methods ...string) (route *mux.Route) {
 	if auth {
 		handler = a.AuthMiddleware.Wrap(handler)
 	}
-	if gzipEnabled {
+	if gzip {
 		handler = gziphandler.GzipHandler(handler)
 	}
-
-	if len(methods) == 0 {
-		a.server.HTTP.PathPrefix(prefix).Handler(handler)
-		return
+	if isPrefix {
+		route = a.server.HTTP.PathPrefix(path)
+	} else {
+		route = a.server.HTTP.Path(path)
 	}
-	a.server.HTTP.PathPrefix(prefix).Methods(methods...).Handler(handler)
+	if len(methods) > 0 {
+		route = route.Methods(methods...)
+	}
+	route = route.Handler(handler)
+
+	return route
 }
 
 // RegisterAlertmanager registers endpoints associated with the alertmanager. It will only
@@ -275,20 +292,30 @@ func (a *API) RegisterRulerAPI(r *ruler.API, configAPIEnabled bool) {
 
 	if configAPIEnabled {
 		// Ruler API Routes
-		a.RegisterRoute("/api/v1/rules", http.HandlerFunc(r.ListRules), true, true, "GET")
-		a.RegisterRoute("/api/v1/rules/{namespace}", http.HandlerFunc(r.ListRules), true, true, "GET")
-		a.RegisterRoute("/api/v1/rules/{namespace}/{groupName}", http.HandlerFunc(r.GetRuleGroup), true, true, "GET")
-		a.RegisterRoute("/api/v1/rules/{namespace}", http.HandlerFunc(r.CreateRuleGroup), true, true, "POST")
-		a.RegisterRoute("/api/v1/rules/{namespace}/{groupName}", http.HandlerFunc(r.DeleteRuleGroup), true, true, "DELETE")
-		a.RegisterRoute("/api/v1/rules/{namespace}", http.HandlerFunc(r.DeleteNamespace), true, true, "DELETE")
+		// TODO remove the /api/v1/rules/** endpoints in Mimir 2.2.0 as agreed in https://github.com/grafana/mimir/pull/763#discussion_r808270581
+		a.RegisterDeprecatedRoute("/api/v1/rules", http.HandlerFunc(r.ListRules), true, true, "GET")
+		a.RegisterDeprecatedRoute("/api/v1/rules/{namespace}", http.HandlerFunc(r.ListRules), true, true, "GET")
+		a.RegisterDeprecatedRoute("/api/v1/rules/{namespace}/{groupName}", http.HandlerFunc(r.GetRuleGroup), true, true, "GET")
+		a.RegisterDeprecatedRoute("/api/v1/rules/{namespace}", http.HandlerFunc(r.CreateRuleGroup), true, true, "POST")
+		a.RegisterDeprecatedRoute("/api/v1/rules/{namespace}/{groupName}", http.HandlerFunc(r.DeleteRuleGroup), true, true, "DELETE")
+		a.RegisterDeprecatedRoute("/api/v1/rules/{namespace}", http.HandlerFunc(r.DeleteNamespace), true, true, "DELETE")
 
-		// Configuration endpoints with Prometheus prefix, so we keep prometheus-compatible EPs and config EPs under the same prefix
-		a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/rules"), http.HandlerFunc(r.ListRules), true, true, "GET")
-		a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/rules/{namespace}"), http.HandlerFunc(r.ListRules), true, true, "GET")
-		a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/rules/{namespace}/{groupName}"), http.HandlerFunc(r.GetRuleGroup), true, true, "GET")
-		a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/rules/{namespace}"), http.HandlerFunc(r.CreateRuleGroup), true, true, "POST")
-		a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/rules/{namespace}/{groupName}"), http.HandlerFunc(r.DeleteRuleGroup), true, true, "DELETE")
-		a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/rules/{namespace}"), http.HandlerFunc(r.DeleteNamespace), true, true, "DELETE")
+		// Configuration endpoints with Prometheus prefix, so we keep Prometheus-compatible EPs and config EPs under the same prefix.
+		// TODO remove the <prometheus-http-prefix>/config/v1/rules/** endpoints in Mimir 2.2.0 as agreed in https://github.com/grafana/mimir/pull/1222#issuecomment-1046759965
+		a.RegisterDeprecatedRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/rules"), http.HandlerFunc(r.ListRules), true, true, "GET")
+		a.RegisterDeprecatedRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/rules/{namespace}"), http.HandlerFunc(r.ListRules), true, true, "GET")
+		a.RegisterDeprecatedRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/rules/{namespace}/{groupName}"), http.HandlerFunc(r.GetRuleGroup), true, true, "GET")
+		a.RegisterDeprecatedRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/rules/{namespace}"), http.HandlerFunc(r.CreateRuleGroup), true, true, "POST")
+		a.RegisterDeprecatedRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/rules/{namespace}/{groupName}"), http.HandlerFunc(r.DeleteRuleGroup), true, true, "DELETE")
+		a.RegisterDeprecatedRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/rules/{namespace}"), http.HandlerFunc(r.DeleteNamespace), true, true, "DELETE")
+
+		// Long-term maintained configuration API routes
+		a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/config/v1/rules"), http.HandlerFunc(r.ListRules), true, true, "GET")
+		a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/config/v1/rules/{namespace}"), http.HandlerFunc(r.ListRules), true, true, "GET")
+		a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/config/v1/rules/{namespace}/{groupName}"), http.HandlerFunc(r.GetRuleGroup), true, true, "GET")
+		a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/config/v1/rules/{namespace}"), http.HandlerFunc(r.CreateRuleGroup), true, true, "POST")
+		a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/config/v1/rules/{namespace}/{groupName}"), http.HandlerFunc(r.DeleteRuleGroup), true, true, "DELETE")
+		a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/config/v1/rules/{namespace}"), http.HandlerFunc(r.DeleteNamespace), true, true, "DELETE")
 	}
 }
 

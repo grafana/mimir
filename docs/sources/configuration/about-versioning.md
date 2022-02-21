@@ -63,3 +63,11 @@ Currently experimental features are:
   - `-query-frontend.querier-forget-delay`
 - Query-scheduler
   - `-query-scheduler.querier-forget-delay`
+
+## Deprecated features
+
+Currently deprecated features are:
+
+- Ruler:
+  - `/api/v1/rules/**` configuration endpoints. These will be removed in version 2.2.0. Use their `<prometheus-http-prefix>/config/v1/rules/**` equivalents instead.
+  - `<prometheus-http-prefix>/rules/**` configuration endpoints. These will be removed in version 2.2.0. Use their `<prometheus-http-prefix>/config/v1/rules/**` equivalents instead.
