@@ -217,7 +217,7 @@ func TestActiveSeries_ReloadSeriesMatchers(t *testing.T) {
 	allActive, activeMatching = c.Active()
 	assert.Equal(t, 2, allActive, "reloading should not affect general counter")
 	assert.Equal(t, []int{1}, activeMatching, "reloading should clear out matcher counters")
-	assert.True(t, c.lastUpdate.After(reloadTime))
+	assert.True(t, c.lastUpdate.Equal(reloadTime))
 }
 
 var activeSeriesTestGoroutines = []int{50, 100, 500}

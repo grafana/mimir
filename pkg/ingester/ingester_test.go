@@ -5724,7 +5724,7 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 
 			// Create a mocked ingester
 			cfg := defaultIngesterTestConfig(t)
-			cfg.LifecyclerConfig.JoinAfter = 0
+			cfg.IngesterRing.JoinAfter = 0
 			cfg.ActiveSeriesMetricsEnabled = true
 			cfg.ActiveSeriesCustomTrackersOverrides = testData.activeSeriesOverridesProvider
 			cfg.ActiveSeriesCustomTrackers = testData.activeSeriesConfig
