@@ -2,6 +2,9 @@
 
 ## Mimir - main / unreleased
 
+
+## 2.0.0-rc.0
+
 * [CHANGE] Add two new metrics `cortex_ruler_list_rules_seconds` and `cortex_ruler_load_rule_groups_seconds` to the ruler. #906
 * [CHANGE] Remove `-alertmanager.configs.auto-webhook-root` #977
 * [CHANGE] Removed deprecated limits for rejecting old samples #799
