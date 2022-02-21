@@ -27,7 +27,7 @@ Typically, series become idle when a monitored target process or node gets termi
 
 Grafana Mimir comprises several components.
 Each component provides a specific function to the system.
-For component specific documentation, refer to one of the following:
+For component specific documentation, refer to one of the following topics:
 
 - [Compactor]({{<relref "./architecture/compactor.md" >}})
 - [Distributor]({{<relref "./architecture/distributor.md" >}})
