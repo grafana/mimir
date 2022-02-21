@@ -35,7 +35,7 @@ type runtimeConfigValues struct {
 
 	IngesterLimits *ingester.InstanceLimits `yaml:"ingester_limits"`
 
-	RuntimeMatchersConfig *ingester.ActiveSeriesCustomTrackersOverrides `yaml:"runtime_matchers"`
+	ActiveSeriesCustomTrackersOverrides *ingester.ActiveSeriesCustomTrackersOverrides `yaml:"active_series_custom_trackers_overrides"`
 }
 
 // runtimeConfigTenantLimits provides per-tenant limit overrides based on a runtimeconfig.Manager
@@ -147,7 +147,7 @@ func ingesterInstanceLimits(manager *runtimeconfig.Manager) func() *ingester.Ins
 	}
 }
 
-func runtimeMatchersConfig(manager *runtimeconfig.Manager) *ingester.ActiveSeriesCustomTrackersOverridesProvider {
+func runtimeActiveSeriesCustomTrackersOverrides(manager *runtimeconfig.Manager) *ingester.ActiveSeriesCustomTrackersOverridesProvider {
 	if manager == nil {
 		return nil
 	}
@@ -156,7 +156,7 @@ func runtimeMatchersConfig(manager *runtimeconfig.Manager) *ingester.ActiveSerie
 		Getter: func() *ingester.ActiveSeriesCustomTrackersOverrides {
 			val := manager.GetConfig()
 			if cfg, ok := val.(*runtimeConfigValues); ok && cfg != nil {
-				return cfg.RuntimeMatchersConfig
+				return cfg.ActiveSeriesCustomTrackersOverrides
 			}
 			return nil
 		},

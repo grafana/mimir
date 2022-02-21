@@ -9,7 +9,7 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
-func TestRuntimeMatchersUnmarshal(t *testing.T) {
+func TestRuntimeOverridesUnmarshal(t *testing.T) {
 	r := ActiveSeriesCustomTrackersOverrides{}
 	input := `
 default:

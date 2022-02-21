@@ -5474,7 +5474,7 @@ func TestIngesterActiveSeries(t *testing.T) {
 			cfg := defaultIngesterTestConfig(t)
 			cfg.LifecyclerConfig.JoinAfter = 0
 			cfg.ActiveSeriesMetricsEnabled = !testData.disableActiveSeries
-			cfg.RuntimeMatchersConfigProvider = testData.activeSeriesOverridesProvider
+			cfg.ActiveSeriesCustomTrackersOverrides = testData.activeSeriesOverridesProvider
 			cfg.ActiveSeriesCustomTrackers = testData.activeSeriesConfig
 
 			ing, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, defaultLimitsTestConfig(), "", registry)
@@ -5557,7 +5557,6 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 
 				for _, label := range labelsToPush {
 					ctx := user.InjectOrgID(context.Background(), userID)
-					//offset := time.Duration(len(labelsToPush) - i)
 					_, err := ingester.Push(ctx, req(label, time.Now()))
 					require.NoError(t, err)
 				}
@@ -5577,8 +5576,8 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 				// Check tracked Prometheus metrics
 				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
 
-				// "Remove" runtime configs
-				ingester.cfg.RuntimeMatchersConfigProvider = defaultCustomTrackersOverridesProvider
+				// Add new runtime configs
+				ingester.cfg.ActiveSeriesCustomTrackersOverrides = defaultCustomTrackersOverridesProvider
 				ingester.updateActiveSeries(firstPushTime)
 				expectedMetrics = `
 					# HELP cortex_ingester_active_series Number of currently active series per user.
@@ -5586,15 +5585,15 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 					cortex_ingester_active_series{user="test_user"} 4
 				`
 				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
-				// After the MetricsTimeout is over the default configuration should be used to expose metrics
-				time.Sleep(time.Millisecond)
+
 				secondPushtime := time.Now()
+				// Sleep here to ensure that the second batch of push happens after purgeTime to have entries for custom trackers
+				time.Sleep(time.Millisecond)
 				for _, label := range labelsToPush {
 					ctx := user.InjectOrgID(context.Background(), userID)
 					_, err := ingester.Push(ctx, req(label, time.Now()))
 					require.NoError(t, err)
 				}
-				time.Sleep(time.Millisecond)
 				ingester.updateActiveSeries(secondPushtime.Add(ingester.cfg.ActiveSeriesMetricsIdleTimeout))
 				expectedMetrics = `
 					# HELP cortex_ingester_active_series Number of currently active series per user.
@@ -5606,7 +5605,6 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
             	    cortex_ingester_active_series_custom_tracker{name="team_b",user="test_user"} 2
 				`
 				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
-				time.Sleep(time.Millisecond)
 			},
 		},
 		"runtime overwrite to flag based config": {
@@ -5637,8 +5635,8 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 				// Check tracked Prometheus metrics
 				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
 
-				// "Remove" runtime configs
-				ingester.cfg.RuntimeMatchersConfigProvider = nil
+				// Remove runtime configs
+				ingester.cfg.ActiveSeriesCustomTrackersOverrides = nil
 				ingester.updateActiveSeries(firstPushTime)
 				expectedMetrics = `
 					# HELP cortex_ingester_active_series Number of currently active series per user.
@@ -5646,15 +5644,15 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 					cortex_ingester_active_series{user="test_user"} 4
 				`
 				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
-				// After the MetricsTimeout is over the default configuration should be used to expose metrics
-				time.Sleep(time.Millisecond)
+
 				secondPushtime := time.Now()
+				// Sleep here to ensure that the second batch of push happens after purgeTime to have entries for custom trackers
+				time.Sleep(time.Millisecond)
 				for _, label := range labelsToPush {
 					ctx := user.InjectOrgID(context.Background(), userID)
 					_, err := ingester.Push(ctx, req(label, time.Now()))
 					require.NoError(t, err)
 				}
-				time.Sleep(time.Millisecond)
 				ingester.updateActiveSeries(secondPushtime.Add(ingester.cfg.ActiveSeriesMetricsIdleTimeout))
 				expectedMetrics = `
 					# HELP cortex_ingester_active_series Number of currently active series per user.
@@ -5666,7 +5664,6 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 					cortex_ingester_active_series_custom_tracker{name="bool_is_false_flagbased",user="test_user"} 2
 				`
 				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
-				time.Sleep(time.Millisecond)
 			},
 		},
 	}
@@ -5679,7 +5676,7 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 			cfg := defaultIngesterTestConfig(t)
 			cfg.LifecyclerConfig.JoinAfter = 0
 			cfg.ActiveSeriesMetricsEnabled = true
-			cfg.RuntimeMatchersConfigProvider = testData.activeSeriesOverridesProvider
+			cfg.ActiveSeriesCustomTrackersOverrides = testData.activeSeriesOverridesProvider
 			cfg.ActiveSeriesCustomTrackers = testData.activeSeriesConfig
 
 			ing, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, defaultLimitsTestConfig(), "", registry)
