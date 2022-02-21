@@ -6,9 +6,6 @@ weight: 10
 
 # About Grafana Mimir arguments
 
-Grafana Mimir has evolved over several years, and the command-line options sometimes reflect this heritage. In some cases, an option’s default value is not the recommended value, and in some cases a name does not reflect its true meaning. As we clean this up, we are taking care to avoid breaking existing installations. In the meantime, we regret the inconvenience.
-
-## Duration arguments
 
 You can specify a duration argument with a unit, such as `5s` or `3h`. The valid time units are `ms`, `s`, `m`, or `h`.
 
