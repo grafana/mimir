@@ -389,7 +389,7 @@ multi_kv_config:
 
 
 
-OLD: 
+OLD:
 At the moment runtime configuration may contain per-user limits, multi KV store, and ingester instance limits.
 
 Example runtime configuration file:
