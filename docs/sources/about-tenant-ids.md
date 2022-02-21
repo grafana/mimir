@@ -6,12 +6,12 @@ weight: 10
 
 # About tenant IDs
 
-The tenant ID is the unique identifier of a tenant within a Grafana Mimir cluster.
+Within a Grafana Mimir cluster, the tenant ID is the unique identifier of a tenant.
 For information about how Grafana Mimir components use tenant IDs, refer to [About authentication and authorization]({{<relref "./about-authentication-and-authorization.md" >}}).
 
 ## Restrictions
 
-Tenant IDs must be less-than or equal-to 150 bytes/characters in length and must comprise only supported characters:
+Tenant IDs must be less-than or equal-to 150 bytes or characters in length and must comprise only supported characters:
 
 - Alphanumeric characters
   - `0-9`
@@ -21,12 +21,12 @@ Tenant IDs must be less-than or equal-to 150 bytes/characters in length and must
   - Exclamation point (`!`)
   - Hyphen (`-`)
   - Underscore (`_`)
-  - Single Period (`.`)
+  - Single period (`.`)
   - Asterisk (`*`)
   - Single quote (`'`)
   - Open parenthesis (`(`)
   - Close parenthesis (`)`)
 
-> **Note:** For security reasons, `.` and `..` aren't valid tenant IDs.
+> **Note:** For security reasons, `.` and `..` are not valid tenant IDs.
 
-All other characters, including slashes and whitespace, aren't supported.
+All other characters, including slashes and whitespace, are not supported.
