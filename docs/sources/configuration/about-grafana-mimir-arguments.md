@@ -269,7 +269,7 @@ HA tracking has two of its own flags:
 - `distributor.ha-tracker.replica`
   Prometheus label to look for in samples to identify a Prometheus HA replica. (default "`__replica__`")
 
-You likly already have a `cluster` label, or something similar. If you do not, add one along with `__replica__` via external labels your Prometheus configuration. If you stick to these default values, your Prometheus configuration could look like as follows, where `POD_NAME` is an environment variable which you must set:
+You likely already have a `cluster` label, or something similar. If you do not, add one along with `__replica__` via external labels your Prometheus configuration. If you stick to these default values, your Prometheus configuration could look like as follows, where `POD_NAME` is an environment variable which you must set:
 
 ```yaml
 global:
