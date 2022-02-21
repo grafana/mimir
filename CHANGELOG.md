@@ -332,7 +332,10 @@
 * [CHANGE] Distributor: removed the `-distributor.extra-query-delay` flag (and its respective YAML config option). #1048
 * [CHANGE] Query-frontend / Query-scheduler: classified the `-query-frontend.querier-forget-delay` and `-query-scheduler.querier-forget-delay` flags (and their respective YAML config options) as experimental. #1208
 * [CHANGE] Remove `-http.prefix` flag (and `http_prefix` config file option). #763
-* [CHANGE] Remove legacy endpoints. Please use their alternatives. #763 #1222
+* [CHANGE] Remove legacy endpoints. Please use their alternatives listed below. As part of the removal process we are
+  introducing two new sets of endpoints for the ruler configuraiton API: `<prometheus-http-prefix>/rules` and
+  `<prometheus-http-prefix>/config/v1/rules/**`. We are also deprecating `<prometheus-http-prefix>/rules` and `/api/v1/rules`; 
+  and will remove them in Mimir 2.2.0. #763 #1222
   * Query endpoints
 
     | Legacy                                                  | Alternative                                                |
@@ -535,9 +538,6 @@
 * [ENHANCEMENT] Mimir runs a sanity check of storage config at startup and will fail to start if the sanity check doesn't pass. This is done to find potential config issues before starting up. #1180
 * [ENHANCEMENT] Validate alertmanager and ruler storage configurations to ensure they don't use same bucket name and region values as those configured for the blocks storage. #1214
 * [ENHANCEMENT] Distributor: reject exemplars with blank label names or values. The `cortex_discarded_exemplars_total` metric will use the `exemplar_labels_blank` reason in this case. #873
-* [ENHANCEMENT] Ruler: expose new configuration API endpoints under:
-  * `<prometheus-http-prefix>` as a temporary set of endpoints so both configuration and prometheus-compatible rules APIs exist under the same prefix. #763 #1222
-  * `<prometheus-http-prefix>/config/v1` as a long-term maintained set of endpoints. #1222
 * [BUGFIX] Frontend: Fixes @ modifier functions (start/end) when splitting queries by time. #206
 * [BUGFIX] Fixes a panic in the query-tee when comparing result. #207
 * [BUGFIX] Upgrade Prometheus. TSDB now waits for pending readers before truncating Head block, fixing the `chunk not found` error and preventing wrong query results. #16
