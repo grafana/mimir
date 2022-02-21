@@ -9,12 +9,12 @@ import (
 	"bytes"
 	"flag"
 	"io"
+	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
-	"text/template"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -162,19 +162,9 @@ func TestHelp(t *testing.T) {
 			// Restore stdout and stderr before reporting errors to make them visible.
 			restoreIfNeeded()
 
-			hostname, err := os.Hostname()
+			expected, err := ioutil.ReadFile(tc.filename)
 			require.NoError(t, err)
-			c := struct {
-				Hostname string
-			}{
-				Hostname: hostname,
-			}
-
-			tmpl, err := template.ParseFiles(tc.filename)
-			require.NoError(t, err)
-			var b strings.Builder
-			require.NoError(t, tmpl.Execute(&b, c))
-			assert.Equalf(t, b.String(), string(stdout), "%s %s output changed; try `make reference-help`", cmd, tc.arg)
+			assert.Equalf(t, string(expected), string(stdout), "%s %s output changed; try `make reference-help`", cmd, tc.arg)
 			assert.Empty(t, stderr)
 		})
 	}

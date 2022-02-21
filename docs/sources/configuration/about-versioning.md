@@ -26,8 +26,6 @@ Grafana Mimir strives to be 100% API compatible with Prometheus (under `/prometh
 - Additional API around pushing metrics (under `/prometheus/api/push`).
 - Additional API endpoints for management of Grafana Mimir itself, such as the ring. These APIs are not part of the any compatibility guarantees.
 
-_For more information, please refer to the [limitations](../guides/limitations.md) doc._
-
 ## Experimental features
 
 Grafana Mimir is an actively developed project and we want to encourage the introduction of new features and capabilities. As such, not everything in each release of Grafana Mimir is considered "production-ready". Features not considered "production-ready" and the flags used to enable and/or configure these features will be marked "Experimental". There are no backwards compatibility guarantees on anything marked experimental. Configuration and flags are subject to change.
@@ -44,17 +42,32 @@ Currently experimental features are:
 - Hash ring
   - Disabling ring heartbeat timeouts
     - `-distributor.ring.heartbeat-timeout=0`
-    - `-ring.heartbeat-timeout=0`
+    - `-ingester.ring.heartbeat-timeout=0`
     - `-ruler.ring.heartbeat-timeout=0`
     - `-alertmanager.sharding-ring.heartbeat-timeout=0`
     - `-compactor.ring.heartbeat-timeout=0`
     - `-store-gateway.sharding-ring.heartbeat-timeout=0`
   - Disabling ring heartbeats
     - `-distributor.ring.heartbeat-period=0`
-    - `-ingester.heartbeat-period=0`
+    - `-ingester.ring.heartbeat-period=0`
     - `-ruler.ring.heartbeat-period=0`
     - `-alertmanager.sharding-ring.heartbeat-period=0`
     - `-compactor.ring.heartbeat-period=0`
     - `-store-gateway.sharding-ring.heartbeat-period=0`
-  - Exclude ingesters running in specific zones (`-distributor.excluded-zones`)
-- Ingester: Add variance to chunks end time to spread writing across time (`-blocks-storage.tsdb.head-chunks-end-time-variance`)
+  - Exclude ingesters running in specific zones (`-ingester.ring.excluded-zones`)
+- Ingester
+  - Add variance to chunks end time to spread writing across time (`-blocks-storage.tsdb.head-chunks-end-time-variance`)
+  - Using queue and asynchronous chunks disk mapper (`-blocks-storage.tsdb.head-chunks-write-queue-size`)
+  - Snapshotting of in-memory TSDB data on disk when shutting down (`-blocks-storage.tsdb.memory-snapshot-on-shutdown`)
+- Query-frontend
+  - `-query-frontend.querier-forget-delay`
+- Query-scheduler
+  - `-query-scheduler.querier-forget-delay`
+
+## Deprecated features
+
+Currently deprecated features are:
+
+- Ruler:
+  - `/api/v1/rules/**` configuration endpoints. These will be removed in version 2.2.0. Use their `<prometheus-http-prefix>/config/v1/rules/**` equivalents instead.
+  - `<prometheus-http-prefix>/rules/**` configuration endpoints. These will be removed in version 2.2.0. Use their `<prometheus-http-prefix>/config/v1/rules/**` equivalents instead.

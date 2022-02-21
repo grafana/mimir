@@ -7,7 +7,6 @@ package querier
 
 import (
 	"context"
-	"sort"
 	"time"
 
 	"github.com/go-kit/log"
@@ -39,13 +38,12 @@ type Distributor interface {
 	LabelValuesCardinality(ctx context.Context, labelNames []model.LabelName, matchers []*labels.Matcher) (uint64, *client.LabelValuesCardinalityResponse, error)
 }
 
-func newDistributorQueryable(distributor Distributor, iteratorFn chunkIteratorFunc, queryIngestersWithin time.Duration, queryLabelNamesWithMatchers bool, logger log.Logger) QueryableWithFilter {
+func newDistributorQueryable(distributor Distributor, iteratorFn chunkIteratorFunc, queryIngestersWithin time.Duration, logger log.Logger) QueryableWithFilter {
 	return distributorQueryable{
-		logger:                      logger,
-		distributor:                 distributor,
-		iteratorFn:                  iteratorFn,
-		queryIngestersWithin:        queryIngestersWithin,
-		queryLabelNamesWithMatchers: queryLabelNamesWithMatchers,
+		logger:               logger,
+		distributor:          distributor,
+		iteratorFn:           iteratorFn,
+		queryIngestersWithin: queryIngestersWithin,
 	}
 }
 
@@ -54,8 +52,6 @@ type distributorQueryable struct {
 	distributor          Distributor
 	iteratorFn           chunkIteratorFunc
 	queryIngestersWithin time.Duration
-
-	queryLabelNamesWithMatchers bool
 }
 
 func (d distributorQueryable) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
@@ -67,8 +63,6 @@ func (d distributorQueryable) Querier(ctx context.Context, mint, maxt int64) (st
 		maxt:                 maxt,
 		chunkIterFn:          d.iteratorFn,
 		queryIngestersWithin: d.queryIngestersWithin,
-
-		queryLabelNamesWithMatchers: d.queryLabelNamesWithMatchers,
 	}, nil
 }
 
@@ -84,8 +78,6 @@ type distributorQuerier struct {
 	mint, maxt           int64
 	chunkIterFn          chunkIteratorFunc
 	queryIngestersWithin time.Duration
-
-	queryLabelNamesWithMatchers bool
 }
 
 // Select implements storage.Querier interface.
@@ -190,39 +182,8 @@ func (q *distributorQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, 
 		return nil, nil, nil
 	}
 
-	if len(matchers) > 0 && !q.queryLabelNamesWithMatchers {
-		return q.legacyLabelNamesWithMatchersThroughMetricsCall(ctx, matchers...)
-	}
-
 	ln, err := q.distributor.LabelNames(ctx, minT, model.Time(q.maxt), matchers...)
 	return ln, nil, err
-}
-
-// legacyLabelNamesWithMatchersThroughMetricsCall performs the LabelNames call in _the old way_, by calling ingester's MetricsForLabelMatchers method
-// this is used when the LabelNames with matchers feature is first deployed, and some ingesters may have not been updated yet, so they could be ignoring
-// the matchers, leading to wrong results.
-func (q *distributorQuerier) legacyLabelNamesWithMatchersThroughMetricsCall(ctx context.Context, matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
-	log, ctx := spanlogger.NewWithLogger(ctx, q.logger, "distributorQuerier.legacyLabelNamesWithMatchersThroughMetricsCall")
-	defer log.Span.Finish()
-	ms, err := q.distributor.MetricsForLabelMatchers(ctx, model.Time(q.mint), model.Time(q.maxt), matchers...)
-	if err != nil {
-		return nil, nil, err
-	}
-	namesMap := make(map[string]struct{})
-
-	for _, m := range ms {
-		for name := range m {
-			namesMap[string(name)] = struct{}{}
-		}
-	}
-
-	names := make([]string, 0, len(namesMap))
-	for name := range namesMap {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-
-	return names, nil, nil
 }
 
 func (q *distributorQuerier) Close() error {

@@ -28,7 +28,7 @@ func TestGettingStartedWithGossipedRing(t *testing.T) {
 	defer s.Close()
 
 	// Start dependencies.
-	minio := e2edb.NewMinio(9000, bucketName)
+	minio := e2edb.NewMinio(9000, blocksBucketName)
 	require.NoError(t, s.StartAndWaitReady(minio))
 
 	// Start Mimir components.
@@ -38,12 +38,11 @@ func TestGettingStartedWithGossipedRing(t *testing.T) {
 	// We don't care for storage part too much here. Both Mimir instances will write new blocks to /tmp, but that's fine.
 	flags := map[string]string{
 		// decrease timeouts to make test faster. should still be fine with two instances only
-		"-ingester.join-after":                              "0s", // join quickly
-		"-ingester.observe-period":                          "5s", // to avoid conflicts in tokens
+		"-ingester.ring.observe-period":                     "5s", // to avoid conflicts in tokens
 		"-blocks-storage.bucket-store.bucket-index.enabled": "false",
 		"-blocks-storage.bucket-store.sync-interval":        "1s", // sync continuously
 		"-blocks-storage.backend":                           "s3",
-		"-blocks-storage.s3.bucket-name":                    bucketName,
+		"-blocks-storage.s3.bucket-name":                    blocksBucketName,
 		"-blocks-storage.s3.access-key-id":                  e2edb.MinioAccessKey,
 		"-blocks-storage.s3.secret-access-key":              e2edb.MinioSecretKey,
 		"-blocks-storage.s3.endpoint":                       fmt.Sprintf("%s-minio-9000:9000", networkName),
@@ -51,14 +50,14 @@ func TestGettingStartedWithGossipedRing(t *testing.T) {
 	}
 
 	// This mimir will fail to join the cluster configured in yaml file. That's fine.
-	mimir1 := e2emimir.NewSingleBinaryWithConfigFile("mimir-1", "config1.yaml", e2e.MergeFlags(flags, map[string]string{
-		"-ingester.lifecycler.addr": networkName + "-mimir-1", // Ingester's hostname in docker setup
-	}), "", 9109, 9195)
+	mimir1 := e2emimir.NewSingleBinary("mimir-1", e2e.MergeFlags(flags, map[string]string{
+		"-ingester.ring.instance-addr": networkName + "-mimir-1", // Ingester's hostname in docker setup
+	}), e2emimir.WithPorts(9109, 9095), e2emimir.WithConfigFile("config1.yaml"))
 
-	mimir2 := e2emimir.NewSingleBinaryWithConfigFile("mimir-2", "config2.yaml", e2e.MergeFlags(flags, map[string]string{
-		"-ingester.lifecycler.addr": networkName + "-mimir-2", // Ingester's hostname in docker setup
-		"-memberlist.join":          networkName + "-mimir-1:7946",
-	}), "", 9209, 9295)
+	mimir2 := e2emimir.NewSingleBinary("mimir-2", e2e.MergeFlags(flags, map[string]string{
+		"-ingester.ring.instance-addr": networkName + "-mimir-2", // Ingester's hostname in docker setup
+		"-memberlist.join":             networkName + "-mimir-1:7946",
+	}), e2emimir.WithPorts(9209, 9095), e2emimir.WithConfigFile("config2.yaml"))
 
 	require.NoError(t, s.StartAndWaitReady(mimir1))
 	require.NoError(t, s.StartAndWaitReady(mimir2))
@@ -126,7 +125,7 @@ func TestGettingStartedWithGossipedRing(t *testing.T) {
 
 	// Flush blocks from ingesters to the store.
 	for _, instance := range []*e2emimir.MimirService{mimir1, mimir2} {
-		res, err = e2e.DoGet("http://" + instance.HTTPEndpoint() + "/flush")
+		res, err = e2e.DoGet("http://" + instance.HTTPEndpoint() + "/ingester/flush")
 		require.NoError(t, err)
 		require.Equal(t, 204, res.StatusCode)
 	}

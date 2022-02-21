@@ -36,14 +36,14 @@ func TestQuerierRemoteRead(t *testing.T) {
 	flags := mergeFlags(BlocksStorageFlags(), map[string]string{})
 
 	// Start dependencies.
-	minio := e2edb.NewMinio(9000, bucketName)
+	minio := e2edb.NewMinio(9000, blocksBucketName)
 
 	consul := e2edb.NewConsul()
 	require.NoError(t, s.StartAndWaitReady(minio, consul))
 
 	// Start Mimir components for the write path.
-	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags, "")
-	ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags, "")
+	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags)
+	ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags)
 	require.NoError(t, s.StartAndWaitReady(distributor, ingester))
 
 	// Wait until the distributor has updated the ring.
@@ -61,7 +61,7 @@ func TestQuerierRemoteRead(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 200, res.StatusCode)
 
-	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), BlocksStorageFlags(), "")
+	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), BlocksStorageFlags())
 	require.NoError(t, s.StartAndWaitReady(querier))
 
 	// Wait until the querier has updated the ring.

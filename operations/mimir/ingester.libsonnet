@@ -17,10 +17,9 @@
       'server.http-listen-port': $._config.server_http_port,
 
       // Ring config.
-      'ingester.num-tokens': 512,
-      'ingester.join-after': '0s',
-      'ingester.heartbeat-period': '15s',
-      'ingester.unregister-on-shutdown': $._config.unregister_ingesters_on_shutdown,
+      'ingester.ring.num-tokens': 512,
+      'ingester.ring.heartbeat-period': '15s',
+      'ingester.ring.unregister-on-shutdown': $._config.unregister_ingesters_on_shutdown,
 
       // Limits config.
       'runtime-config.file': '%s/overrides.yaml' % $._config.overrides_configmap_mountpoint,
@@ -41,7 +40,7 @@
 
       // Persist ring tokens so that when the ingester will be restarted
       // it will pick the same tokens
-      'ingester.tokens-file-path': '/data/tokens',
+      'ingester.ring.tokens-file-path': '/data/tokens',
     },
 
   ingester_ports:: $.util.defaultPorts,

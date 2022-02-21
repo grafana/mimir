@@ -35,7 +35,6 @@ overrides:
     ingestion_rate: 350000
     max_global_series_per_metric: 300000
     max_global_series_per_user: 300000
-    max_samples_per_query: 100000
 ```
 <!-- prettier-ignore-end -->
 
@@ -57,7 +56,6 @@ cortex_overrides{limit_name="max_global_series_per_metric",user="user1"} 300000
 cortex_overrides{limit_name="max_global_series_per_user",user="user1"} 300000
 cortex_overrides{limit_name="max_local_series_per_metric",user="user1"} 0
 cortex_overrides{limit_name="max_local_series_per_user",user="user1"} 0
-cortex_overrides{limit_name="max_samples_per_query",user="user1"} 100000
 ```
 
 With these metrics, you can set up alerts to know when tenants are close to hitting their limits

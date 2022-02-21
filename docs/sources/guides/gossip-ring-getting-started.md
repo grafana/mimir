@@ -92,10 +92,10 @@ is annotated diff:
 ...
 
  ingester:
-   lifecycler:
+   ring:
      # Defaults to hostname, but we run both ingesters in this demonstration on the same machine.
--    id: "Ingester 1"
-+    id: "Ingester 3"
+-    instance_id: "Ingester 1"
++    instance_id: "Ingester 3"
 
 ...
 

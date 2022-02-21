@@ -8,28 +8,30 @@ package swift
 import (
 	"flag"
 	"time"
+
+	"github.com/grafana/dskit/flagext"
 )
 
 // Config holds the config options for Swift backend
 type Config struct {
-	AuthVersion       int           `yaml:"auth_version"`
-	AuthURL           string        `yaml:"auth_url"`
-	Username          string        `yaml:"username"`
-	UserDomainName    string        `yaml:"user_domain_name"`
-	UserDomainID      string        `yaml:"user_domain_id"`
-	UserID            string        `yaml:"user_id"`
-	Password          string        `yaml:"password"`
-	DomainID          string        `yaml:"domain_id"`
-	DomainName        string        `yaml:"domain_name"`
-	ProjectID         string        `yaml:"project_id"`
-	ProjectName       string        `yaml:"project_name"`
-	ProjectDomainID   string        `yaml:"project_domain_id"`
-	ProjectDomainName string        `yaml:"project_domain_name"`
-	RegionName        string        `yaml:"region_name"`
-	ContainerName     string        `yaml:"container_name"`
-	MaxRetries        int           `yaml:"max_retries" category:"advanced"`
-	ConnectTimeout    time.Duration `yaml:"connect_timeout" category:"advanced"`
-	RequestTimeout    time.Duration `yaml:"request_timeout" category:"advanced"`
+	AuthVersion       int            `yaml:"auth_version"`
+	AuthURL           string         `yaml:"auth_url"`
+	Username          string         `yaml:"username"`
+	UserDomainName    string         `yaml:"user_domain_name"`
+	UserDomainID      string         `yaml:"user_domain_id"`
+	UserID            string         `yaml:"user_id"`
+	Password          flagext.Secret `yaml:"password"`
+	DomainID          string         `yaml:"domain_id"`
+	DomainName        string         `yaml:"domain_name"`
+	ProjectID         string         `yaml:"project_id"`
+	ProjectName       string         `yaml:"project_name"`
+	ProjectDomainID   string         `yaml:"project_domain_id"`
+	ProjectDomainName string         `yaml:"project_domain_name"`
+	RegionName        string         `yaml:"region_name"`
+	ContainerName     string         `yaml:"container_name"`
+	MaxRetries        int            `yaml:"max_retries" category:"advanced"`
+	ConnectTimeout    time.Duration  `yaml:"connect_timeout" category:"advanced"`
+	RequestTimeout    time.Duration  `yaml:"request_timeout" category:"advanced"`
 }
 
 // RegisterFlags registers the flags for Swift storage
@@ -45,7 +47,7 @@ func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.StringVar(&cfg.UserDomainName, prefix+"swift.user-domain-name", "", "OpenStack Swift user's domain name.")
 	f.StringVar(&cfg.UserDomainID, prefix+"swift.user-domain-id", "", "OpenStack Swift user's domain ID.")
 	f.StringVar(&cfg.UserID, prefix+"swift.user-id", "", "OpenStack Swift user ID.")
-	f.StringVar(&cfg.Password, prefix+"swift.password", "", "OpenStack Swift API key.")
+	f.Var(&cfg.Password, prefix+"swift.password", "OpenStack Swift API key.")
 	f.StringVar(&cfg.DomainID, prefix+"swift.domain-id", "", "OpenStack Swift user's domain ID.")
 	f.StringVar(&cfg.DomainName, prefix+"swift.domain-name", "", "OpenStack Swift user's domain name.")
 	f.StringVar(&cfg.ProjectID, prefix+"swift.project-id", "", "OpenStack Swift project ID (v2,v3 auth only).")

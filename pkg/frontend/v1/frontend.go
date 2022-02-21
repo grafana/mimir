@@ -37,7 +37,7 @@ var (
 // Config for a Frontend.
 type Config struct {
 	MaxOutstandingPerTenant int           `yaml:"max_outstanding_per_tenant" category:"advanced"`
-	QuerierForgetDelay      time.Duration `yaml:"querier_forget_delay" category:"advanced"`
+	QuerierForgetDelay      time.Duration `yaml:"querier_forget_delay" category:"experimental"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet.

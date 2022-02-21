@@ -45,7 +45,7 @@ func TestIndexPageContent(t *testing.T) {
 	c := newIndexPageContent()
 	c.AddLink(SectionAdminEndpoints, "/ingester/ring", "Ingester Ring")
 	c.AddLink(SectionAdminEndpoints, "/store-gateway/ring", "Store Gateway Ring")
-	c.AddLink(SectionDangerous, "/shutdown", "Shutdown")
+	c.AddLink(SectionDangerous, "/ingester/shutdown", "Shutdown")
 
 	h := indexHandler("", c)
 
@@ -58,7 +58,7 @@ func TestIndexPageContent(t *testing.T) {
 	require.True(t, strings.Contains(resp.Body.String(), SectionAdminEndpoints))
 	require.True(t, strings.Contains(resp.Body.String(), SectionDangerous))
 	require.True(t, strings.Contains(resp.Body.String(), "Store Gateway Ring"))
-	require.True(t, strings.Contains(resp.Body.String(), "/shutdown"))
+	require.True(t, strings.Contains(resp.Body.String(), "/ingester/shutdown"))
 	require.False(t, strings.Contains(resp.Body.String(), "/compactor/ring"))
 }
 

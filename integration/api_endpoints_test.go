@@ -41,7 +41,7 @@ func newMimirSingleBinaryWithLocalFilesytemBucket(t *testing.T, name string, fla
 	setFlagIfNotExistingAlready("-blocks-storage.backend", "filesystem")
 	setFlagIfNotExistingAlready("-blocks-storage.filesystem.dir", "./bucket")
 
-	mimir := e2emimir.NewSingleBinaryWithConfigFile(name, mimirConfigFile, flags, "", 9009, 9095)
+	mimir := e2emimir.NewSingleBinary(name, flags, e2emimir.WithPorts(9009, 9095), e2emimir.WithConfigFile(mimirConfigFile))
 
 	return s, mimir
 }
@@ -81,6 +81,6 @@ func TestConfigAPIEndpoint(t *testing.T) {
 	// Start again Mimir in single binary with the exported config
 	// and ensure it starts (pass the readiness probe).
 	require.NoError(t, writeFileToSharedDir(s, mimirConfigFile, body))
-	mimir2 := e2emimir.NewSingleBinaryWithConfigFile("mimir-2", mimirConfigFile, nil, "", 9009, 9095)
+	mimir2 := e2emimir.NewSingleBinary("mimir-2", nil, e2emimir.WithPorts(9009, 9095), e2emimir.WithConfigFile(mimirConfigFile))
 	require.NoError(t, s.StartAndWaitReady(mimir2))
 }

@@ -255,7 +255,7 @@ prometheus --storage.tsdb.path ./local-tsdb --config.file=<(echo "")
 
 #### Overrides Exporter
 
-The Overrides Exporter allows to continuously export [per tenant configuration overrides][runtime-config] as metrics. Optionally it can also export a presets file (cf. example [override config file] and [presets file]).
+The Overrides Exporter allows to continuously export per tenant configuration overrides as metrics. Optionally it can also export a presets file (cf. example [override config file] and [presets file]).
 
 ```bash
 mimirtool overrides-exporter --overrides-file overrides.yaml --presets-file presets.yaml
@@ -263,7 +263,6 @@ mimirtool overrides-exporter --overrides-file overrides.yaml --presets-file pres
 
 [override config file]: ./pkg/commands/testdata/overrides.yaml
 [presets file]: ./pkg/commands/testdata/presets.yaml
-[runtime-config]: https://cortexmetrics.io/docs/configuration/arguments/#runtime-configuration-file
 
 #### Generate ACL Headers
 

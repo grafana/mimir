@@ -13,7 +13,6 @@ import (
 	"net/http"
 	"os"
 	"reflect"
-	"strings"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -21,6 +20,7 @@ import (
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/kv/memberlist"
 	"github.com/grafana/dskit/modules"
+	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/runtimeconfig"
 	"github.com/grafana/dskit/services"
@@ -35,6 +35,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/alertmanager"
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
+	alertstorelocal "github.com/grafana/mimir/pkg/alertmanager/alertstore/local"
 	"github.com/grafana/mimir/pkg/api"
 	"github.com/grafana/mimir/pkg/compactor"
 	"github.com/grafana/mimir/pkg/distributor"
@@ -44,13 +45,14 @@ import (
 	frontendv1 "github.com/grafana/mimir/pkg/frontend/v1"
 	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/ingester/client"
-	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/querier/tenantfederation"
 	querier_worker "github.com/grafana/mimir/pkg/querier/worker"
 	"github.com/grafana/mimir/pkg/ruler"
 	"github.com/grafana/mimir/pkg/ruler/rulestore"
+	rulestorelocal "github.com/grafana/mimir/pkg/ruler/rulestore/local"
 	"github.com/grafana/mimir/pkg/scheduler"
+	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/tenant"
@@ -63,7 +65,7 @@ import (
 )
 
 var (
-	errInvalidHTTPPrefix = errors.New("HTTP prefix should be empty or start with /")
+	errInvalidBucketConfig = errors.New("invalid bucket config")
 )
 
 // The design pattern for Mimir is a series of config objects, which are
@@ -85,11 +87,11 @@ var (
 
 // Config is the root config for Mimir.
 type Config struct {
-	Target       flagext.StringSliceCSV `yaml:"target"`
-	AuthEnabled  bool                   `yaml:"auth_enabled"`
-	NoAuthTenant string                 `yaml:"no_auth_tenant" category:"advanced"`
-	PrintConfig  bool                   `yaml:"-"`
-	HTTPPrefix   string                 `yaml:"http_prefix"`
+	Target              flagext.StringSliceCSV `yaml:"target"`
+	MultitenancyEnabled bool                   `yaml:"multitenancy_enabled"`
+	NoAuthTenant        string                 `yaml:"no_auth_tenant" category:"advanced"`
+	PrintConfig         bool                   `yaml:"-"`
+	ApplicationName     string                 `yaml:"-"`
 
 	API              api.Config                      `yaml:"api"`
 	Server           server.Config                   `yaml:"server"`
@@ -99,7 +101,6 @@ type Config struct {
 	Ingester         ingester.Config                 `yaml:"ingester"`
 	Flusher          flusher.Config                  `yaml:"flusher"`
 	LimitsConfig     validation.Limits               `yaml:"limits"`
-	Prealloc         mimirpb.PreallocConfig          `yaml:"prealloc" doc:"hidden"`
 	Worker           querier_worker.Config           `yaml:"frontend_worker"`
 	Frontend         frontend.CombinedFrontendConfig `yaml:"frontend"`
 	BlocksStorage    tsdb.BlocksStorageConfig        `yaml:"blocks_storage"`
@@ -119,40 +120,39 @@ type Config struct {
 
 // RegisterFlags registers flag.
 func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
+	c.ApplicationName = "Grafana Mimir"
 	c.Server.MetricsNamespace = "cortex"
 	c.Server.ExcludeRequestInLog = true
 
 	// Set the default module list to 'all'
 	c.Target = []string{All}
 
-	f.Var(&c.Target, "target", "Comma-separated list of modules to load. "+
-		"The alias 'all' can be used in the list to load a number of core modules and will enable single-binary mode. "+
-		"Use '-modules' command line flag to get a list of available modules, and to see which modules are included in 'all'.")
+	f.Var(&c.Target, "target", "Comma-separated list of components to include in the instantiated process. "+
+		"The default value 'all' includes all components that are required to form a functional Grafana Mimir instance in single-binary mode. "+
+		"Use the '-modules' command line flag to get a list of available components, and to see which components are included with 'all'.")
 
-	f.BoolVar(&c.AuthEnabled, "auth.enabled", true, "Set to false to disable auth.")
-	f.StringVar(&c.NoAuthTenant, "auth.no-auth-tenant", "anonymous", "Tenant ID to use when auth is disabled.")
+	f.BoolVar(&c.MultitenancyEnabled, "auth.multitenancy-enabled", true, "When set to true, incoming HTTP requests must specify tenant ID in HTTP X-Scope-OrgId header. When set to false, tenant ID from -auth.no-auth-tenant is used instead.")
+	f.StringVar(&c.NoAuthTenant, "auth.no-auth-tenant", "anonymous", "Tenant ID to use when multitenancy is disabled.")
 	f.BoolVar(&c.PrintConfig, "print.config", false, "Print the config and exit.")
-	f.StringVar(&c.HTTPPrefix, "http.prefix", "/api/prom", "HTTP path prefix for API.")
 
 	c.API.RegisterFlags(f)
 	c.registerServerFlagsWithChangedDefaultValues(f)
-	c.Distributor.RegisterFlags(f)
-	c.Querier.RegisterFlags(f, logger)
+	c.Distributor.RegisterFlags(f, logger)
+	c.Querier.RegisterFlags(f)
 	c.IngesterClient.RegisterFlags(f)
-	c.Ingester.RegisterFlags(f)
+	c.Ingester.RegisterFlags(f, logger)
 	c.Flusher.RegisterFlags(f)
 	c.LimitsConfig.RegisterFlags(f)
-	c.Prealloc.RegisterFlags(f)
 	c.Worker.RegisterFlags(f)
-	c.Frontend.RegisterFlags(f)
+	c.Frontend.RegisterFlags(f, logger)
 	c.BlocksStorage.RegisterFlags(f)
-	c.Compactor.RegisterFlags(f)
-	c.StoreGateway.RegisterFlags(f)
+	c.Compactor.RegisterFlags(f, logger)
+	c.StoreGateway.RegisterFlags(f, logger)
 	c.TenantFederation.RegisterFlags(f)
 
-	c.Ruler.RegisterFlags(f)
+	c.Ruler.RegisterFlags(f, logger)
 	c.RulerStorage.RegisterFlags(f)
-	c.Alertmanager.RegisterFlags(f)
+	c.Alertmanager.RegisterFlags(f, logger)
 	c.AlertmanagerStorage.RegisterFlags(f)
 	c.RuntimeConfig.RegisterFlags(f)
 	c.MemberlistKV.RegisterFlags(f)
@@ -167,10 +167,9 @@ func (c *Config) Validate(log log.Logger) error {
 		return err
 	}
 
-	if c.HTTPPrefix != "" && !strings.HasPrefix(c.HTTPPrefix, "/") {
-		return errInvalidHTTPPrefix
+	if err := c.validateBucketConfigs(); err != nil {
+		return fmt.Errorf("%w: %s", errInvalidBucketConfig, err)
 	}
-
 	if err := c.RulerStorage.Validate(); err != nil {
 		return errors.Wrap(err, "invalid rulestore config")
 	}
@@ -207,12 +206,21 @@ func (c *Config) Validate(log log.Logger) error {
 	if err := c.Alertmanager.Validate(c.AlertmanagerStorage); err != nil {
 		return errors.Wrap(err, "invalid alertmanager config")
 	}
-
 	return nil
 }
 
 func (c *Config) isModuleEnabled(m string) bool {
 	return util.StringsContain(c.Target, m)
+}
+
+func (c *Config) isAnyModuleEnabled(modules ...string) bool {
+	for _, m := range modules {
+		if c.isModuleEnabled(m) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // validateYAMLEmptyNodes ensure that no empty node has been specified in the YAML config file.
@@ -239,6 +247,55 @@ func (c *Config) validateYAMLEmptyNodes() error {
 		}
 	}
 
+	return nil
+}
+
+func (c *Config) validateBucketConfigs() error {
+	errs := multierror.New()
+
+	// Validate alertmanager bucket config.
+	if c.isAnyModuleEnabled(AlertManager) && c.AlertmanagerStorage.Backend != alertstorelocal.Name {
+		errs.Add(errors.Wrap(validateBucketConfig(c.AlertmanagerStorage.Config, c.BlocksStorage.Bucket), "alertmanager storage"))
+	}
+
+	// Validate ruler bucket config.
+	if c.isAnyModuleEnabled(All, Ruler) && c.RulerStorage.Backend != rulestorelocal.Name {
+		errs.Add(errors.Wrap(validateBucketConfig(c.RulerStorage.Config, c.BlocksStorage.Bucket), "ruler storage"))
+	}
+
+	return errs.Err()
+}
+
+func validateBucketConfig(cfg bucket.Config, blockStorageBucketCfg bucket.Config) error {
+	if cfg.Backend != blockStorageBucketCfg.Backend {
+		return nil
+	}
+
+	switch cfg.Backend {
+	case bucket.S3:
+		if cfg.S3.BucketName == blockStorageBucketCfg.S3.BucketName {
+			return errors.New("S3 bucket name cannot be the same as the one used in blocks storage config")
+		}
+
+	case bucket.GCS:
+		if cfg.GCS.BucketName == blockStorageBucketCfg.GCS.BucketName {
+			return errors.New("GCS bucket name cannot be the same as the one used in blocks storage config")
+		}
+
+	case bucket.Azure:
+		if cfg.Azure.ContainerName == blockStorageBucketCfg.Azure.ContainerName && cfg.Azure.StorageAccountName == blockStorageBucketCfg.Azure.StorageAccountName {
+			return errors.New("Azure container and account names cannot be the same as the ones used in blocks storage config")
+		}
+
+	// To keep it simple here we only check that container and project names are not the same.
+	// We could also verify both configuration endpoints to determine uniqueness,
+	// however different auth URLs do not imply different clusters, since a single cluster
+	// may have several configured endpoints.
+	case bucket.Swift:
+		if cfg.Swift.ContainerName == blockStorageBucketCfg.Swift.ContainerName && cfg.Swift.ProjectName == blockStorageBucketCfg.Swift.ProjectName {
+			return errors.New("Swift container and project names cannot be the same as the ones used in blocks storage config")
+		}
+	}
 	return nil
 }
 
@@ -295,6 +352,7 @@ type Mimir struct {
 	StoreGateway             *storegateway.StoreGateway
 	MemberlistKV             *memberlist.KVInitService
 	ActivityTracker          *activitytracker.ActivityTracker
+	BuildInfoHandler         http.Handler
 
 	// Queryables that the querier should use to query the long term storage.
 	StoreQueryables []querier.QueryableWithFilter
@@ -318,7 +376,7 @@ func New(cfg Config) (*Mimir, error) {
 		}
 	}
 
-	cfg.API.HTTPAuthMiddleware = noauth.SetupAuthMiddleware(&cfg.Server, cfg.AuthEnabled,
+	cfg.API.HTTPAuthMiddleware = noauth.SetupAuthMiddleware(&cfg.Server, cfg.MultitenancyEnabled,
 		// Also don't check auth for these gRPC methods, since single call is used for multiple users (or no user like health check).
 		[]string{
 			"/grpc.health.v1.Health/Check",

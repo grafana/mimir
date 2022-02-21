@@ -246,6 +246,15 @@ func TestQueryShardingCorrectness(t *testing.T) {
 				avg(rate(metric_counter[1m]))`,
 			expectedShardedQueries: 3, // avg() is parallelized as sum()/count().
 		},
+		"sum by(unique) on (unique) group_left (group_1) * avg by (unique, group_1)": {
+			// ensure that avg transformation into sum/count does not break label matching in previous binop.
+			query: `
+				metric_counter
+				*
+				on (unique) group_left (group_1) 
+				avg by (unique, group_1) (metric_counter)`,
+			expectedShardedQueries: 2,
+		},
 		"sum by (rate()) / 2 ^ 2": {
 			query: `
 			sum by (group_1) (rate(metric_counter[1m])) / 2 ^ 2`,

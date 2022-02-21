@@ -18,7 +18,7 @@ require (
 	github.com/golang/snappy v0.0.4
 	github.com/google/gopacket v1.1.19
 	github.com/gorilla/mux v1.8.0
-	github.com/grafana/dskit v0.0.0-20220131162925-09047fe4cc11
+	github.com/grafana/dskit v0.0.0-20220211095946-19921f863583
 	github.com/grafana/e2e v0.1.0
 	github.com/hashicorp/golang-lru v0.5.4
 	github.com/json-iterator/go v1.1.12
@@ -203,7 +203,7 @@ replace git.apache.org/thrift.git => github.com/apache/thrift v0.0.0-20180902110
 replace github.com/bradfitz/gomemcache => github.com/themihai/gomemcache v0.0.0-20180902122335-24332e2d58ab
 
 // Using a fork of Prometheus while we work on querysharding to avoid a dependency on the upstream.
-replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20220124124958-644605deb599
+replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20220210151959-f8e3195f7500
 
 // Pin hashicorp depencencies since the Prometheus fork, go mod tries to update them.
 replace github.com/hashicorp/go-immutable-radix => github.com/hashicorp/go-immutable-radix v1.2.0

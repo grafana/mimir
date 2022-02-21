@@ -70,12 +70,12 @@ func runQuerierShardingTest(t *testing.T, cfg querierShardingTestConfig) {
 	require.NoError(t, s.StartAndWaitReady(consul, memcached))
 
 	flags := mergeFlags(BlocksStorageFlags(), map[string]string{
-		"-frontend.cache-results":                      "true",
-		"-querier.query-ingesters-within":              "12h", // Required by the test on query /series out of ingesters time range
-		"-frontend.results-cache.backend":              "memcached",
-		"-frontend.results-cache.memcached.addresses":  "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
-		"-frontend.results-cache.compression":          "snappy",
-		"-querier.max-outstanding-requests-per-tenant": strconv.Itoa(numQueries), // To avoid getting errors.
+		"-query-frontend.cache-results":                     "true",
+		"-querier.query-ingesters-within":                   "12h", // Required by the test on query /series out of ingesters time range
+		"-query-frontend.results-cache.backend":             "memcached",
+		"-query-frontend.results-cache.memcached.addresses": "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
+		"-query-frontend.results-cache.compression":         "snappy",
+		"-querier.max-outstanding-requests-per-tenant":      strconv.Itoa(numQueries), // To avoid getting errors.
 	})
 
 	minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
@@ -83,20 +83,20 @@ func runQuerierShardingTest(t *testing.T, cfg querierShardingTestConfig) {
 
 	if cfg.shuffleShardingEnabled {
 		// Use only single querier for each user.
-		flags["-frontend.max-queriers-per-tenant"] = "1"
+		flags["-query-frontend.max-queriers-per-tenant"] = "1"
 	}
 
 	// Start the query-scheduler if enabled.
 	var queryScheduler *e2emimir.MimirService
 	if cfg.querySchedulerEnabled {
-		queryScheduler = e2emimir.NewQueryScheduler("query-scheduler", flags, "")
+		queryScheduler = e2emimir.NewQueryScheduler("query-scheduler", flags)
 		require.NoError(t, s.StartAndWaitReady(queryScheduler))
-		flags["-frontend.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
+		flags["-query-frontend.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
 		flags["-querier.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
 	}
 
 	// Start the query-frontend.
-	queryFrontend := e2emimir.NewQueryFrontend("query-frontend", flags, "")
+	queryFrontend := e2emimir.NewQueryFrontend("query-frontend", flags)
 	require.NoError(t, s.Start(queryFrontend))
 
 	if !cfg.querySchedulerEnabled {
@@ -104,10 +104,10 @@ func runQuerierShardingTest(t *testing.T, cfg querierShardingTestConfig) {
 	}
 
 	// Start all other services.
-	ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags, "")
-	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags, "")
-	querier1 := e2emimir.NewQuerier("querier-1", consul.NetworkHTTPEndpoint(), flags, "")
-	querier2 := e2emimir.NewQuerier("querier-2", consul.NetworkHTTPEndpoint(), flags, "")
+	ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags)
+	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags)
+	querier1 := e2emimir.NewQuerier("querier-1", consul.NetworkHTTPEndpoint(), flags)
+	querier2 := e2emimir.NewQuerier("querier-2", consul.NetworkHTTPEndpoint(), flags)
 
 	require.NoError(t, s.StartAndWaitReady(querier1, querier2, ingester, distributor))
 	require.NoError(t, s.WaitReady(queryFrontend))

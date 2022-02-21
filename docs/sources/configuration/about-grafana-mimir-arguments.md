@@ -60,7 +60,7 @@ The ingester query API was improved over time, but defaults to the old behaviour
 
 ## Query Frontend
 
-- `-frontend.parallelize-shardable-queries`
+- `-query-frontend.parallelize-shardable-queries`
 
   If set to true, will cause the query frontend to mutate incoming queries when possible by turning `sum` operations into sharded `sum` operations. An abridged example:
   `sum by (foo) (rate(bar{baz=”blip”}[1m]))` ->
@@ -83,7 +83,7 @@ The ingester query API was improved over time, but defaults to the old behaviour
 
   Instrumentation (traces) also scale with the number of sharded queries and it's suggested to account for increased throughput there as well (for instance via `JAEGER_REPORTER_MAX_QUEUE_SIZE`).
 
-- `-frontend.align-querier-with-step`
+- `-query-frontend.align-querier-with-step`
 
   If set to true, will cause the query frontend to mutate incoming queries and align their start and end parameters to the step parameter of the query. This improves the cacheability of the query results.
 
@@ -91,26 +91,23 @@ The ingester query API was improved over time, but defaults to the old behaviour
 
   If set to true, will cause the query frontend to split multi-day queries into multiple single-day queries and execute them in parallel.
 
-- `-frontend.cache-results`
+- `-query-frontend.cache-results`
 
   If set to true, will cause the querier to cache query results. The cache will be used to answer future, overlapping queries. The query frontend calculates extra queries required to fill gaps in the cache.
 
-- `-frontend.max-cache-freshness`
+- `-query-frontend.max-cache-freshness`
 
   When caching query results, it is desirable to prevent the caching of very recent results that might still be in flux. Use this parameter to configure the age of results that should be excluded.
 
-- `-frontend.results-cache.backend`
+- `-query-frontend.results-cache.backend`
 
-  Configures the caching backend used when query results caching is enabled (`-frontend.cache-results=true`).
+  Configures the caching backend used when query results caching is enabled (`-query-frontend.cache-results=true`).
 
-- `-frontend.results-cache.memcached.addresses`
+- `-query-frontend.results-cache.memcached.addresses`
 
   Comma-separated list of memcached addresses. Each address can be specified using the [DNS service discovery](#dns-service-discovery) syntax.
 
 ## Distributor
-
-- `-distributor.extra-query-delay`
-  This is used by a component with an embedded distributor (Querier and Ruler) to control how long to wait until sending more than the minimum amount of queries needed for a successful response.
 
 - `distributor.ha-tracker.enable-for-all-users`
   Flag to enable, for all users, handling of samples with external labels identifying replicas in an HA Prometheus setup. This defaults to false, and is technically defined in the Distributor limits.
@@ -304,8 +301,6 @@ Example runtime configuration file:
 overrides:
   tenant1:
     ingestion_rate: 10000
-  tenant2:
-    max_samples_per_query: 1000000
 
 multi_kv_config:
   mirror_enabled: false
@@ -330,8 +325,6 @@ The `overrides` field is a map of tenant ID (same values as passed in the `X-Sco
 overrides:
   tenant1:
     ingestion_rate: 10000
-  tenant2:
-    max_samples_per_query: 1000000
 ```
 
 Valid per-tenant limits are (with their corresponding flags for default values):
@@ -356,18 +349,14 @@ Valid per-tenant limits are (with their corresponding flags for default values):
 
   Enforced by the ingesters; limits the number of in-memory series a user (or a given metric) can have. A series is kept in memory if a sample has been written since the last TSDB head compaction (occurring every 2h) or in the last 1h (regardless when the last TSDB head compaction occurred). The limit is enforced across the cluster. Each ingester is configured with a local limit based on the replication factor and the current number of healthy ingesters. The local limit is updated whenever the number of ingesters change.
 
-  Requires `-distributor.replication-factor` and `-distributor.zone-awareness-enabled` set for the ingesters too.
-
-- `max_samples_per_query` / `-ingester.max-samples-per-query`
-
-  Limits on the number of timeseries and samples returns by a single ingester during a query.
+  Requires `-ingester.ring.replication-factor` and `-ingester.ring.zone-awareness-enabled` set for the ingesters too.
 
 - `max_global_metadata_per_user` / `-ingester.max-global-metadata-per-user`
 - `max_global_metadata_per_metric` / `-ingester.max-global-metadata-per-metric`
 
   Enforced by the ingesters; limits the number of active metadata a user (or a given metric) can have. The limit is enforced across the cluster. Each ingester is configured with a local limit based on the replication factor and the current number of healthy ingesters. The local limit is updated whenever the number of ingesters change.
 
-  Requires `-distributor.replication-factor` and `-distributor.zone-awareness-enabled` set for the ingesters too.
+  Requires `-ingester.ring.replication-factor` and `-ingester.ring.zone-awareness-enabled` set for the ingesters too.
 
 - `max_fetched_series_per_query` / `querier.max-fetched-series-per-query`
   This limit is enforced in the queriers on unique series fetched from ingesters and store-gateways (long-term storage).

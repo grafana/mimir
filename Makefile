@@ -18,8 +18,6 @@ VERSION=$(shell cat "./VERSION" 2> /dev/null)
 GOOS ?= $(shell go env GOOS)
 GOARCH ?= $(shell go env GOARCH)
 
-HOSTNAME := $(shell hostname)
-
 # Don't export GOOS and GOARCH as environment variables. They get exported when passed via CLI options,
 # but that breaks tools ran via "go run". We use GOOS/GOARCH explicitly in places where needed.
 unexport GOOS
@@ -32,7 +30,7 @@ BINARY_SUFFIX ?= ""
 
 # Boiler plate for building Docker containers.
 # All this must go at top of file I'm afraid.
-IMAGE_PREFIX ?= us.gcr.io/kubernetes-dev/
+IMAGE_PREFIX ?= grafana/
 BUILD_IMAGE ?= $(IMAGE_PREFIX)mimir-build-image
 
 # For a tag push GITHUB_REF will look like refs/tags/<tag_name>,
@@ -56,6 +54,17 @@ MIXIN_OUT_PATH := operations/mimir-mixin-compiled
 # path to the mimir jsonnet manifests
 JSONNET_MANIFESTS_PATH := operations/mimir
 
+# Doc templates in use
+DOC_TEMPLATES := docs/sources/configuration/reference-configuration-parameters.template \
+	docs/sources/operating-grafana-mimir/encrypt-data-at-rest.template
+
+# Documents to run through embedding
+DOC_EMBED := docs/sources/configuration/using-the-query-frontend-with-prometheus.md \
+	docs/sources/operating-grafana-mimir/mirror-requests-to-a-second-cluster.md \
+	docs/sources/guides/overrides-exporter.md \
+	docs/sources/getting-started/_index.md \
+	operations/mimir/README.md
+
 .PHONY: image-tag
 image-tag:
 	@echo $(IMAGE_TAG)
@@ -65,7 +74,7 @@ image-tag:
 SED ?= $(shell which gsed 2>/dev/null || which sed)
 
 # Building Docker images is now automated. The convention is every directory
-# with a Dockerfile in it builds an image called us.gcr.io/kubernetes-dev/<directory>.
+# with a Dockerfile in it builds an image called grafana/<directory>.
 # Dependencies (i.e. things that go in the image) still need to be explicitly
 # declared.
 #
@@ -116,7 +125,7 @@ push-multiarch-build-image:
 
 # We don't want find to scan inside a bunch of directories, to accelerate the
 # 'make: Entering directory '/go/src/github.com/grafana/mimir' phase.
-DONT_FIND := -name vendor -prune -o -name .git -prune -o -name .cache -prune -o -name .pkg -prune -o -name packaging -prune -o -name mimir-mixin-tools -prune -o
+DONT_FIND := -name vendor -prune -o -name .git -prune -o -name .cache -prune -o -name .pkg -prune -o -name mimir-mixin-tools -prune -o -name trafficdump -prune -o
 
 MAKEFILES = $(shell find . $(DONT_FIND) \( -name 'Makefile' -o -name '*.mk' \) -print)
 
@@ -133,10 +142,10 @@ images:
 PROTO_DEFS := $(shell find . $(DONT_FIND) -type f -name '*.proto' -print)
 PROTO_GOS := $(patsubst %.proto,%.pb.go,$(PROTO_DEFS))
 
-# Building binaries is now automated.  The convention is to build a binary
-# for every directory with main.go in it, in the ./cmd directory.
+# Building binaries is now automated. The convention is to build a binary
+# for every directory with main.go in it.
 MAIN_GO := $(shell find . $(DONT_FIND) -type f -name 'main.go' -print)
-EXES := $(foreach exe, $(patsubst ./cmd/%/main.go, %, $(MAIN_GO)), ./cmd/$(exe)/$(exe))
+EXES := $(foreach exeDir,$(patsubst %/main.go, %, $(MAIN_GO)),$(exeDir)/$(notdir $(exeDir)))
 GO_FILES := $(shell find . $(DONT_FIND) -name cmd -prune -o -name '*.pb.go' -prune -o -type f -name '*.go' -print)
 define dep_exe
 $(1): $(dir $(1))/main.go $(GO_FILES) protos
@@ -166,13 +175,13 @@ all: $(UPTODATE_FILES)
 test: protos
 test-with-race: protos
 mod-check: protos
-lint: lint-packaging-scripts protos
+lint: protos
 mimir-build-image/$(UPTODATE): mimir-build-image/*
 
 # All the boiler plate for building golang follows:
 SUDO := $(shell docker info >/dev/null 2>&1 || echo "sudo -E")
 BUILD_IN_CONTAINER := true
-LATEST_BUILD_IMAGE_TAG ?= trafficdump-b1d000267
+LATEST_BUILD_IMAGE_TAG ?= chore-publish-images-to-dockerhub-771364985
 
 # TTY is parameterized to allow Google Cloud Builder to run builds,
 # as it currently disallows TTY devices. This value needs to be overridden
@@ -195,7 +204,7 @@ GOVOLUMES=	-v $(shell pwd)/.cache:/go/cache:delegated,z \
 # Mount local ssh credentials to be able to clone private repos when doing `mod-check`
 SSHVOLUME=  -v ~/.ssh/:/root/.ssh:delegated,z
 
-exes $(EXES) protos $(PROTO_GOS) lint lint-packaging-scripts test test-with-race cover shell mod-check check-protos web-build web-pre web-deploy doc format: mimir-build-image/$(UPTODATE)
+exes $(EXES) protos $(PROTO_GOS) lint test test-with-race cover shell mod-check check-protos doc format: mimir-build-image/$(UPTODATE)
 	@mkdir -p $(shell pwd)/.pkg
 	@mkdir -p $(shell pwd)/.cache
 	@echo
@@ -216,10 +225,7 @@ protos: $(PROTO_GOS)
 	@# to configure all such relative paths.
 	protoc -I $(GOPATH)/src:./vendor/github.com/thanos-io/thanos/pkg:./vendor/github.com/gogo/protobuf:./vendor:./$(@D) --gogoslick_out=plugins=grpc,Mgoogle/protobuf/any.proto=github.com/gogo/protobuf/types,:./$(@D) ./$(patsubst %.pb.go,%.proto,$@)
 
-lint-packaging-scripts: packaging/deb/control/postinst packaging/deb/control/prerm packaging/rpm/control/post packaging/rpm/control/preun
-	shellcheck $?
-
-lint: lint-packaging-scripts check-makefiles
+lint: check-makefiles
 	misspell -error docs/sources
 
 	# Configured via .golangci.yml.
@@ -308,35 +314,21 @@ mod-check:
 check-protos: clean-protos protos
 	@git diff --exit-code -- $(PROTO_GOS)
 
-web-pre:
-	cd website && git submodule update --init --recursive
-	./tools/website/web-pre.sh
+%.md : %.template
+	go run ./tools/doc-generator $< > $@
 
-web-build: web-pre
-	cd website && HUGO_ENV=production hugo --config config.toml  --minify -v
-
-web-deploy:
-	./tools/website/web-deploy.sh
+.PHONY: %.md.embedmd
+%.md.embedmd : %.md
+	embedmd -w $<
 
 doc: ## Generates the config file documentation.
-doc: clean-doc
-	go run ./tools/doc-generator ./docs/sources/configuration/reference-configuration-parameters.template > ./docs/sources/configuration/reference-configuration-parameters.md
-	go run ./tools/doc-generator ./docs/sources/architecture/compactor.template              > ./docs/sources/architecture/compactor.md
-	go run ./tools/doc-generator ./docs/sources/architecture/store-gateway.template          > ./docs/sources/architecture/store-gateway.md
-	go run ./tools/doc-generator ./docs/sources/architecture/querier.template                > ./docs/sources/architecture/querier.md
-	go run ./tools/doc-generator ./docs/sources/operating-grafana-mimir/encrypt-data-at-rest.template     > ./docs/sources/operating-grafana-mimir/encrypt-data-at-rest.md
-	embedmd -w docs/sources/configuration/using-the-query-frontend-with-prometheus.md
-	embedmd -w docs/sources/requests-mirroring-to-secondary-cluster.md
-	embedmd -w docs/sources/guides/overrides-exporter.md
-	embedmd -w docs/sources/getting-started/_index.md
-	embedmd -w operations/mimir/README.md
-
+doc: clean-doc $(DOC_TEMPLATES:.template=.md) $(DOC_EMBED:.md=.md.embedmd)
 	# Make up markdown files prettier. When running with check-doc target, it will fail if this produces any change.
 	prettier --write "**/*.md"
 
 # Add license header to files.
 license:
-	go run ./tools/add-license ./cmd ./integration ./pkg ./tools ./packaging ./development ./mimir-build-image
+	go run ./tools/add-license ./cmd ./integration ./pkg ./tools ./development ./mimir-build-image
 
 check-license: license
 	@git diff --exit-code || (echo "Please add the license header running 'make BUILD_IN_CONTAINER=false license'" && false)
@@ -393,32 +385,19 @@ load-images:
 	done
 
 clean-doc:
-	rm -f \
-		./docs/sources/configuration/config-file-reference.md \
-		./docs/sources/blocks-storage/compactor.md \
-		./docs/sources/blocks-storage/store-gateway.md \
-		./docs/sources/blocks-storage/querier.md \
-		./docs/sources/guides/encryption-at-rest.md
+	rm -f $(DOC_TEMPLATES:.template=.md)
 
 check-doc: doc
-	@git diff --exit-code -- \
-		./docs/sources/configuration/config-file-reference.md \
-		./docs/sources/blocks-storage/*.md \
-		./docs/sources/configuration/*.md \
-		./docs/sources/operating-grafana-mimir/*.md \
-		./operations/mimir/*.md \
-		./operations/mimir-mixin/docs/sources/*.md \
-	|| (echo "Please update generated documentation by running 'make doc'" && false)
+	@find . -name "*.md" | xargs git diff --exit-code -- \
+	|| (echo "Please update generated documentation by running 'make doc' and committing the changes" && false)
 
 .PHONY: reference-help
 reference-help: cmd/mimir/mimir
 	@(./cmd/mimir/mimir -h || true) > cmd/mimir/help.txt.tmpl
-	@$(SED) -i s/$(HOSTNAME)/\{\{.Hostname\}\}/g cmd/mimir/help.txt.tmpl
 	@(./cmd/mimir/mimir -help-all || true) > cmd/mimir/help-all.txt.tmpl
-	@$(SED) -i s/$(HOSTNAME)/\{\{.Hostname\}\}/g cmd/mimir/help-all.txt.tmpl
 
 clean-white-noise:
-	@find . -path ./.pkg -prune -o -path ./vendor -prune -o -path ./website -prune -or -type f -name "*.md" -print | \
+	@find . -path ./.pkg -prune -o -path ./vendor -prune -or -type f -name "*.md" -print | \
 	SED_BIN="$(SED)" xargs ./tools/cleanup-white-noise.sh
 
 check-white-noise: clean-white-noise
@@ -485,9 +464,6 @@ check-jsonnet-tests: build-jsonnet-tests
 check-tsdb-blocks-storage-s3-docker-compose-yaml:
 	cd development/tsdb-blocks-storage-s3 && make check
 
-web-serve:
-	cd website && hugo --config config.toml --minify -v server
-
 # Generate binaries for a Mimir release
 dist: dist/$(UPTODATE)
 
@@ -522,79 +498,8 @@ dist/$(UPTODATE):
 		done; \
 		touch $@
 
-# Generate packages for a Mimir release.
-FPM_OPTS := fpm -s dir -v $(VERSION) -n mimir -f \
-	--license "Apache 2.0" \
-	--url "https://github.com/grafana/mimir"
-
-PACKAGE_IN_CONTAINER := true
-PACKAGE_IMAGE ?= $(IMAGE_PREFIX)fpm
-ifeq ($(PACKAGE_IN_CONTAINER), true)
-
-.PHONY: packages
-packages: dist packaging/fpm/$(UPTODATE)
-	@mkdir -p $(shell pwd)/.pkg
-	@mkdir -p $(shell pwd)/.cache
-	@echo ">>>> Entering build container: $@"
-	$(SUDO) time docker run --rm $(TTY) \
-		-v  $(shell pwd):/src/github.com/grafana/mimir:delegated,z \
-		-i $(PACKAGE_IMAGE) $@;
-
-else
-
-packages: dist/$(UPTODATE)-packages
-
-dist/$(UPTODATE)-packages: dist $(wildcard packaging/deb/**) $(wildcard packaging/rpm/**)
-	for arch in amd64 arm64; do \
-		rpm_arch=x86_64; \
-		deb_arch=x86_64; \
-		if [ "$$arch" = "arm64" ]; then \
-			rpm_arch=aarch64; \
-			deb_arch=arm64; \
-		fi; \
-		$(FPM_OPTS) -t deb \
-			--architecture $$deb_arch \
-			--after-install packaging/deb/control/postinst \
-			--before-remove packaging/deb/control/prerm \
-			--package dist/mimir-$(VERSION)_$$arch.deb \
-			dist/mimir-linux-$$arch=/usr/local/bin/mimir \
-			docs/sources/chunks-storage/single-process-config.yaml=/etc/mimir/single-process-config.yaml \
-			packaging/deb/default/mimir=/etc/default/mimir \
-			packaging/deb/systemd/mimir.service=/etc/systemd/system/mimir.service; \
-		$(FPM_OPTS) -t rpm  \
-			--architecture $$rpm_arch \
-			--after-install packaging/rpm/control/post \
-			--before-remove packaging/rpm/control/preun \
-			--package dist/mimir-$(VERSION)_$$arch.rpm \
-			dist/mimir-linux-$$arch=/usr/local/bin/mimir \
-			docs/sources/chunks-storage/single-process-config.yaml=/etc/mimir/single-process-config.yaml \
-			packaging/rpm/sysconfig/mimir=/etc/sysconfig/mimir \
-			packaging/rpm/systemd/mimir.service=/etc/systemd/system/mimir.service; \
-	done
-	for pkg in dist/*.deb dist/*.rpm; do \
-		sha256sum $$pkg | cut -d ' ' -f 1 > $${pkg}-sha-256; \
-	done; \
-	touch $@
-
-endif
-
 integration-tests: cmd/mimir/$(UPTODATE)
 	go test -tags=requires_docker ./integration/...
-
-# Build both arm64 and amd64 images, so that we can test deb/rpm packages for both architectures.
-packaging/rpm/centos-systemd/$(UPTODATE): packaging/rpm/centos-systemd/Dockerfile
-	$(SUDO) docker build --platform linux/amd64 --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) -t $(IMAGE_PREFIX)$(shell basename $(@D)):amd64 $(@D)/
-	$(SUDO) docker build --platform linux/arm64 --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) -t $(IMAGE_PREFIX)$(shell basename $(@D)):arm64 $(@D)/
-	touch $@
-
-packaging/deb/debian-systemd/$(UPTODATE): packaging/deb/debian-systemd/Dockerfile
-	$(SUDO) docker build --platform linux/amd64 --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) -t $(IMAGE_PREFIX)$(shell basename $(@D)):amd64 $(@D)/
-	$(SUDO) docker build --platform linux/arm64 --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) -t $(IMAGE_PREFIX)$(shell basename $(@D)):arm64 $(@D)/
-	touch $@
-
-.PHONY: test-packages
-test-packages: packages packaging/rpm/centos-systemd/$(UPTODATE) packaging/deb/debian-systemd/$(UPTODATE)
-	./tools/packaging/test-packages $(IMAGE_PREFIX) $(VERSION)
 
 include docs/docs.mk
 DOCS_DIR = docs/sources

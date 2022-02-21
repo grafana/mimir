@@ -114,7 +114,7 @@ type requestWithUsersAndCallback struct {
 
 // Config for an Ingester.
 type Config struct {
-	LifecyclerConfig ring.LifecyclerConfig `yaml:"lifecycler"`
+	IngesterRing RingConfig `yaml:"ring"`
 
 	// Config for metadata purging.
 	MetadataRetainPeriod time.Duration `yaml:"metadata_retain_period" category:"advanced"`
@@ -124,13 +124,13 @@ type Config struct {
 	ActiveSeriesMetricsEnabled          bool                                         `yaml:"active_series_metrics_enabled"`
 	ActiveSeriesMetricsUpdatePeriod     time.Duration                                `yaml:"active_series_metrics_update_period" category:"advanced"`
 	ActiveSeriesMetricsIdleTimeout      time.Duration                                `yaml:"active_series_metrics_idle_timeout" category:"advanced"`
-	ActiveSeriesCustomTrackers          ActiveSeriesMatchers                         `yaml:"active_series_custom_trackers" doc:"description=Additional custom trackers for active metrics. If there are active series matching a provided matcher (map value), the count will be exposed in the custom trackers metric labeled using the tracker name (map key). Zero valued counts are not exposed (and removed when they go back to zero)."`
+	ActiveSeriesCustomTrackers          ActiveSeriesMatchers                         `yaml:"active_series_custom_trackers" doc:"description=Additional custom trackers for active metrics. If there are active series matching a provided matcher (map value), the count will be exposed in the custom trackers metric labeled using the tracker name (map key). Zero valued counts are not exposed (and removed when they go back to zero)." category:"advanced"`
 	ActiveSeriesCustomTrackersOverrides *ActiveSeriesCustomTrackersOverridesProvider `yaml:"-"`
 
 	ExemplarsUpdatePeriod time.Duration `yaml:"exemplars_update_period" category:"experimental"`
 
 	BlocksStorageConfig         mimir_tsdb.BlocksStorageConfig `yaml:"-"`
-	StreamChunksWhenUsingBlocks bool                           `yaml:"-"`
+	StreamChunksWhenUsingBlocks bool                           `yaml:"-" category:"advanced"`
 	// Runtime-override for type of streaming query to use (chunks or samples).
 	StreamTypeFn func() QueryStreamType `yaml:"-"`
 
@@ -144,13 +144,12 @@ type Config struct {
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
-func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
-	cfg.LifecyclerConfig.RingConfig.KVStore.Store = "memberlist"
-	cfg.LifecyclerConfig.RegisterFlags(f)
+func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
+	cfg.IngesterRing.RegisterFlags(f, logger)
 
 	f.DurationVar(&cfg.MetadataRetainPeriod, "ingester.metadata-retain-period", 10*time.Minute, "Period at which metadata we have not seen will remain in memory before being deleted.")
 
-	f.DurationVar(&cfg.RateUpdatePeriod, "ingester.rate-update-period", 15*time.Second, "Period with which to update the per-user ingestion rates.")
+	f.DurationVar(&cfg.RateUpdatePeriod, "ingester.rate-update-period", 15*time.Second, "Period with which to update the per-tenant ingestion rates.")
 	f.BoolVar(&cfg.ActiveSeriesMetricsEnabled, "ingester.active-series-metrics-enabled", true, "Enable tracking of active series and export them as metrics.")
 	f.DurationVar(&cfg.ActiveSeriesMetricsUpdatePeriod, "ingester.active-series-metrics-update-period", 1*time.Minute, "How often to update active series metrics.")
 	f.DurationVar(&cfg.ActiveSeriesMetricsIdleTimeout, "ingester.active-series-metrics-idle-timeout", 10*time.Minute, "After what time a series is considered to be inactive.")
@@ -160,7 +159,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.ExemplarsUpdatePeriod, "ingester.exemplars-update-period", 15*time.Second, "Period with which to update per-user max exemplars.")
 
 	f.Float64Var(&cfg.DefaultLimits.MaxIngestionRate, "ingester.instance-limits.max-ingestion-rate", 0, "Max ingestion rate (samples/sec) that ingester will accept. This limit is per-ingester, not per-tenant. Additional push requests will be rejected. Current ingestion rate is computed as exponentially weighted moving average, updated every second. 0 = unlimited.")
-	f.Int64Var(&cfg.DefaultLimits.MaxInMemoryTenants, "ingester.instance-limits.max-tenants", 0, "Max users (also referred to as 'tenants') that this ingester can hold. Requests from additional users will be rejected. 0 = unlimited.")
+	f.Int64Var(&cfg.DefaultLimits.MaxInMemoryTenants, "ingester.instance-limits.max-tenants", 0, "Max tenants that this ingester can hold. Requests from additional tenants will be rejected. 0 = unlimited.")
 	f.Int64Var(&cfg.DefaultLimits.MaxInMemorySeries, "ingester.instance-limits.max-series", 0, "Max series that this ingester can hold (across all tenants). Requests to create additional series will be rejected. 0 = unlimited.")
 	f.Int64Var(&cfg.DefaultLimits.MaxInflightPushRequests, "ingester.instance-limits.max-inflight-push-requests", 30000, "Max inflight push requests that this ingester can handle (across all tenants). Additional requests will be rejected. 0 = unlimited.")
 
@@ -295,7 +294,7 @@ func New(cfg Config, clientConfig client.Config, limits *validation.Overrides, r
 		}, i.getOldestUnshippedBlockMetric)
 	}
 
-	i.lifecycler, err = ring.NewLifecycler(cfg.LifecyclerConfig, i, "ingester", IngesterRingKey, cfg.BlocksStorageConfig.TSDB.FlushBlocksOnShutdown, logger, prometheus.WrapRegistererWithPrefix("cortex_", registerer))
+	i.lifecycler, err = ring.NewLifecycler(cfg.IngesterRing.ToLifecyclerConfig(), i, "ingester", IngesterRingKey, cfg.BlocksStorageConfig.TSDB.FlushBlocksOnShutdown, logger, prometheus.WrapRegistererWithPrefix("cortex_", registerer))
 	if err != nil {
 		return nil, err
 	}
@@ -306,8 +305,8 @@ func New(cfg Config, clientConfig client.Config, limits *validation.Overrides, r
 	i.limiter = NewLimiter(
 		limits,
 		i.lifecycler,
-		cfg.LifecyclerConfig.RingConfig.ReplicationFactor,
-		cfg.LifecyclerConfig.RingConfig.ZoneAwarenessEnabled)
+		cfg.IngesterRing.ReplicationFactor,
+		cfg.IngesterRing.ZoneAwarenessEnabled)
 
 	i.shipperIngesterID = i.lifecycler.ID
 

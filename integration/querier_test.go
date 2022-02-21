@@ -84,8 +84,8 @@ func TestQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T) {
 	require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 	// Start Mimir components in common with all test cases.
-	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), commonFlags, "")
-	ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), commonFlags, "")
+	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), commonFlags)
+	ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), commonFlags)
 	require.NoError(t, s.StartAndWaitReady(distributor, ingester))
 
 	// Wait until both the distributor and querier have updated the ring. The querier will also watch
@@ -133,7 +133,7 @@ func TestQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T) {
 
 	// Start the compactor to have the bucket index created before querying.
 	// This is only required for tests using the bucket index, but doesn't hurt doing it for all of them.
-	compactor := e2emimir.NewCompactor("compactor", consul.NetworkHTTPEndpoint(), commonFlags, "")
+	compactor := e2emimir.NewCompactor("compactor", consul.NetworkHTTPEndpoint(), commonFlags)
 	require.NoError(t, s.StartAndWaitReady(compactor))
 
 	for testName, testCfg := range tests {
@@ -150,20 +150,19 @@ func TestQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T) {
 				"-blocks-storage.bucket-store.index-cache.backend":             testCfg.indexCacheBackend,
 				"-blocks-storage.bucket-store.bucket-index.enabled":            strconv.FormatBool(testCfg.bucketIndexEnabled),
 				"-store-gateway.tenant-shard-size":                             fmt.Sprintf("%d", testCfg.tenantShardSize),
-				"-querier.query-store-for-labels-enabled":                      "true",
-				"-frontend.query-stats-enabled":                                "true",
-				"-frontend.parallelize-shardable-queries":                      strconv.FormatBool(testCfg.queryShardingEnabled),
+				"-query-frontend.query-stats-enabled":                          "true",
+				"-query-frontend.parallelize-shardable-queries":                strconv.FormatBool(testCfg.queryShardingEnabled),
 			})
 
 			// Start store-gateways.
-			storeGateway1 := e2emimir.NewStoreGateway("store-gateway-1", consul.NetworkHTTPEndpoint(), flags, "")
-			storeGateway2 := e2emimir.NewStoreGateway("store-gateway-2", consul.NetworkHTTPEndpoint(), flags, "")
+			storeGateway1 := e2emimir.NewStoreGateway("store-gateway-1", consul.NetworkHTTPEndpoint(), flags)
+			storeGateway2 := e2emimir.NewStoreGateway("store-gateway-2", consul.NetworkHTTPEndpoint(), flags)
 			storeGateways := e2emimir.NewCompositeMimirService(storeGateway1, storeGateway2)
 			t.Cleanup(func() { require.NoError(t, s.Stop(storeGateway1, storeGateway2)) })
 			require.NoError(t, s.StartAndWaitReady(storeGateway1, storeGateway2))
 
 			// Start the query-frontend but do not check for readiness yet.
-			queryFrontend := e2emimir.NewQueryFrontend("query-frontend", flags, "")
+			queryFrontend := e2emimir.NewQueryFrontend("query-frontend", flags)
 			t.Cleanup(func() { require.NoError(t, s.Stop(queryFrontend)) })
 			require.NoError(t, s.Start(queryFrontend))
 
@@ -171,7 +170,7 @@ func TestQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T) {
 			flags["-querier.frontend-address"] = queryFrontend.NetworkGRPCEndpoint()
 
 			// Start the querier with configuring store-gateway addresses if sharding is disabled.
-			querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags, "")
+			querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags)
 			t.Cleanup(func() { require.NoError(t, s.Stop(querier)) })
 			require.NoError(t, s.StartAndWaitReady(querier))
 			require.NoError(t, s.WaitReady(queryFrontend))
@@ -334,7 +333,7 @@ func TestQuerierWithBlocksStorageRunningInSingleBinaryMode(t *testing.T) {
 
 			// Start dependencies.
 			consul := e2edb.NewConsul()
-			minio := e2edb.NewMinio(9000, bucketName)
+			minio := e2edb.NewMinio(9000, blocksBucketName)
 			memcached := e2ecache.NewMemcached()
 			require.NoError(t, s.StartAndWaitReady(consul, minio, memcached))
 
@@ -353,12 +352,11 @@ func TestQuerierWithBlocksStorageRunningInSingleBinaryMode(t *testing.T) {
 				"-blocks-storage.bucket-store.index-cache.backend":             testCfg.indexCacheBackend,
 				"-blocks-storage.bucket-store.index-cache.memcached.addresses": "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
 				"-blocks-storage.bucket-store.bucket-index.enabled":            strconv.FormatBool(testCfg.bucketIndexEnabled),
-				"-querier.query-store-for-labels-enabled":                      "true",
 				// Ingester.
-				"-ring.store":      "consul",
-				"-consul.hostname": consul.NetworkHTTPEndpoint(),
+				"-ingester.ring.store":           "consul",
+				"-ingester.ring.consul.hostname": consul.NetworkHTTPEndpoint(),
 				// Distributor.
-				"-distributor.replication-factor":   strconv.FormatInt(seriesReplicationFactor, 10),
+				"-ingester.ring.replication-factor": strconv.FormatInt(seriesReplicationFactor, 10),
 				"-distributor.ring.store":           "consul",
 				"-distributor.ring.consul.hostname": consul.NetworkHTTPEndpoint(),
 				// Store-gateway.
@@ -371,8 +369,8 @@ func TestQuerierWithBlocksStorageRunningInSingleBinaryMode(t *testing.T) {
 			})
 
 			// Start Mimir replicas.
-			mimir1 := e2emimir.NewSingleBinary("mimir-1", flags, "")
-			mimir2 := e2emimir.NewSingleBinary("mimir-2", flags, "")
+			mimir1 := e2emimir.NewSingleBinary("mimir-1", e2e.MergeFlags(DefaultSingleBinaryFlags(), flags))
+			mimir2 := e2emimir.NewSingleBinary("mimir-2", e2e.MergeFlags(DefaultSingleBinaryFlags(), flags))
 			cluster := e2emimir.NewCompositeMimirService(mimir1, mimir2)
 			require.NoError(t, s.StartAndWaitReady(mimir1, mimir2))
 
@@ -729,8 +727,8 @@ func TestQuerierWithBlocksStorageOnMissingBlocksFromStorage(t *testing.T) {
 	require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 	// Start Mimir components for the write path.
-	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags, "")
-	ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags, "")
+	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags)
+	ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags)
 	require.NoError(t, s.StartAndWaitReady(distributor, ingester))
 
 	// Wait until the distributor has updated the ring.
@@ -768,10 +766,10 @@ func TestQuerierWithBlocksStorageOnMissingBlocksFromStorage(t *testing.T) {
 	// have them anyway. We turn down the sync-interval to speed up the test.
 	storeGateway := e2emimir.NewStoreGateway("store-gateway", consul.NetworkHTTPEndpoint(), mergeFlags(flags, map[string]string{
 		"-blocks-storage.bucket-store.sync-interval": "1s",
-	}), "")
+	}))
 	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), mergeFlags(flags, map[string]string{
 		"-blocks-storage.bucket-store.sync-interval": "1s",
-	}), "")
+	}))
 	require.NoError(t, s.StartAndWaitReady(querier, storeGateway))
 
 	// Wait until the querier and store-gateway have updated the ring
@@ -818,7 +816,6 @@ func TestQueryLimitsWithBlocksStorageRunningInMicroServices(t *testing.T) {
 		"-blocks-storage.tsdb.ship-interval":         "1s",
 		"-blocks-storage.bucket-store.sync-interval": "1s",
 		"-blocks-storage.tsdb.retention-period":      ((blockRangePeriod * 2) - 1).String(),
-		"-querier.query-store-for-labels-enabled":    "true",
 		"-querier.max-fetched-series-per-query":      "3",
 	})
 
@@ -832,12 +829,12 @@ func TestQueryLimitsWithBlocksStorageRunningInMicroServices(t *testing.T) {
 	flags["-blocks-storage.bucket-store.index-cache.memcached.addresses"] = "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort)
 
 	// Start Mimir components.
-	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags, "")
-	ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags, "")
-	storeGateway := e2emimir.NewStoreGateway("store-gateway", consul.NetworkHTTPEndpoint(), flags, "")
+	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags)
+	ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags)
+	storeGateway := e2emimir.NewStoreGateway("store-gateway", consul.NetworkHTTPEndpoint(), flags)
 	require.NoError(t, s.StartAndWaitReady(distributor, ingester, storeGateway))
 
-	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags, "")
+	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags)
 	require.NoError(t, s.StartAndWaitReady(querier))
 
 	c, err := e2emimir.NewClient(distributor.HTTPEndpoint(), querier.HTTPEndpoint(), "", "", "user-1")
@@ -885,14 +882,14 @@ func TestHashCollisionHandling(t *testing.T) {
 	flags := BlocksStorageFlags()
 
 	// Start dependencies.
-	minio := e2edb.NewMinio(9000, bucketName)
+	minio := e2edb.NewMinio(9000, blocksBucketName)
 
 	consul := e2edb.NewConsul()
 	require.NoError(t, s.StartAndWaitReady(minio, consul))
 
 	// Start Mimir components for the write path.
-	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags, "")
-	ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags, "")
+	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags)
+	ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags)
 	require.NoError(t, s.StartAndWaitReady(distributor, ingester))
 
 	// Wait until the distributor has updated the ring.
@@ -945,7 +942,7 @@ func TestHashCollisionHandling(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 200, res.StatusCode)
 
-	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags, "")
+	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags)
 	require.NoError(t, s.StartAndWaitReady(querier))
 
 	// Wait until the querier has updated the ring.

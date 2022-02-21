@@ -21,7 +21,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/flagext"
-	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
 	"github.com/prometheus/alertmanager/api"
 	"github.com/prometheus/alertmanager/cluster"
@@ -71,7 +70,6 @@ const (
 type Config struct {
 	UserID      string
 	Logger      log.Logger
-	Peer        *cluster.Peer
 	PeerTimeout time.Duration
 	Retention   time.Duration
 	ExternalURL *url.URL
@@ -92,7 +90,7 @@ type Alertmanager struct {
 	cfg             *Config
 	api             *api.API
 	logger          log.Logger
-	state           State
+	state           *state
 	persister       *statePersister
 	nflog           *nflog.Log
 	silences        *silence.Silences
@@ -183,23 +181,8 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 	}
 
 	am.registry = reg
-
-	// We currently have 2 operational modes:
-	// 1) Alertmanager clustering with upstream Gossip
-	// 2) Alertmanager sharding and ring-based replication
-	// These are covered in order.
-	if cfg.Peer != nil {
-		level.Debug(am.logger).Log("msg", "starting tenant alertmanager with gossip-based replication")
-		am.state = cfg.Peer
-	} else if cfg.ShardingEnabled {
-		level.Debug(am.logger).Log("msg", "starting tenant alertmanager with ring-based replication")
-		state := newReplicatedStates(cfg.UserID, cfg.ReplicationFactor, cfg.Replicator, cfg.Store, am.logger, am.registry)
-		am.state = state
-		am.persister = newStatePersister(cfg.PersisterConfig, cfg.UserID, state, cfg.Store, am.logger, am.registry)
-	} else {
-		// This should never happen.
-		return nil, fmt.Errorf("peer must not be nil when sharding is disabled")
-	}
+	am.state = newReplicatedStates(cfg.UserID, cfg.ReplicationFactor, cfg.Replicator, cfg.Store, am.logger, am.registry)
+	am.persister = newStatePersister(cfg.PersisterConfig, cfg.UserID, am.state, cfg.Store, am.logger, am.registry)
 
 	am.wg.Add(1)
 	var err error
@@ -234,16 +217,12 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 	am.silences.SetBroadcast(c.Broadcast)
 
 	// State replication needs to be started after the state keys are defined.
-	if service, ok := am.state.(services.Service); ok {
-		if err := service.StartAsync(context.Background()); err != nil {
-			return nil, errors.Wrap(err, "failed to start ring-based replication service")
-		}
+	if err := am.state.StartAsync(context.Background()); err != nil {
+		return nil, errors.Wrap(err, "failed to start ring-based replication service")
 	}
 
-	if am.persister != nil {
-		if err := am.persister.StartAsync(context.Background()); err != nil {
-			return nil, errors.Wrap(err, "failed to start state persister service")
-		}
+	if err := am.persister.StartAsync(context.Background()); err != nil {
+		return nil, errors.Wrap(err, "failed to start state persister service")
 	}
 
 	am.pipelineBuilder = notify.NewPipelineBuilder(am.registry)
@@ -303,10 +282,8 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 }
 
 func (am *Alertmanager) WaitInitialStateSync(ctx context.Context) error {
-	if service, ok := am.state.(services.Service); ok {
-		if err := service.AwaitRunning(ctx); err != nil {
-			return errors.Wrap(err, "failed to wait for ring-based replication service")
-		}
+	if err := am.state.AwaitRunning(ctx); err != nil {
+		return errors.Wrap(err, "failed to wait for ring-based replication service")
 	}
 	return nil
 }
@@ -422,13 +399,8 @@ func (am *Alertmanager) Stop() {
 		am.dispatcher.Stop()
 	}
 
-	if am.persister != nil {
-		am.persister.StopAsync()
-	}
-
-	if service, ok := am.state.(services.Service); ok {
-		service.StopAsync()
-	}
+	am.persister.StopAsync()
+	am.state.StopAsync()
 
 	am.alerts.Close()
 	close(am.stop)
@@ -437,33 +409,23 @@ func (am *Alertmanager) Stop() {
 func (am *Alertmanager) StopAndWait() {
 	am.Stop()
 
-	if am.persister != nil {
-		if err := am.persister.AwaitTerminated(context.Background()); err != nil {
-			level.Warn(am.logger).Log("msg", "error while stopping state persister service", "err", err)
-		}
+	if err := am.persister.AwaitTerminated(context.Background()); err != nil {
+		level.Warn(am.logger).Log("msg", "error while stopping state persister service", "err", err)
 	}
 
-	if service, ok := am.state.(services.Service); ok {
-		if err := service.AwaitTerminated(context.Background()); err != nil {
-			level.Warn(am.logger).Log("msg", "error while stopping ring-based replication service", "err", err)
-		}
+	if err := am.state.AwaitTerminated(context.Background()); err != nil {
+		level.Warn(am.logger).Log("msg", "error while stopping ring-based replication service", "err", err)
 	}
 
 	am.wg.Wait()
 }
 
 func (am *Alertmanager) mergePartialExternalState(part *clusterpb.Part) error {
-	if state, ok := am.state.(*state); ok {
-		return state.MergePartialState(part)
-	}
-	return errors.New("ring-based sharding not enabled")
+	return am.state.MergePartialState(part)
 }
 
 func (am *Alertmanager) getFullState() (*clusterpb.FullState, error) {
-	if state, ok := am.state.(*state); ok {
-		return state.GetFullState()
-	}
-	return nil, errors.New("ring-based sharding not enabled")
+	return am.state.GetFullState()
 }
 
 // buildIntegrationsMap builds a map of name to the list of integration notifiers off of a

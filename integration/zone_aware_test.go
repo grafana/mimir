@@ -31,8 +31,8 @@ func TestZoneAwareReplication(t *testing.T) {
 	defer s.Close()
 
 	flags := BlocksStorageFlags()
-	flags["-distributor.replication-factor"] = "3"
-	flags["-distributor.zone-awareness-enabled"] = "true"
+	flags["-ingester.ring.replication-factor"] = "3"
+	flags["-ingester.ring.zone-awareness-enabled"] = "true"
 
 	// Start dependencies.
 	consul := e2edb.NewConsul()
@@ -42,20 +42,20 @@ func TestZoneAwareReplication(t *testing.T) {
 	// Start Mimir components.
 	ingesterFlags := func(zone string) map[string]string {
 		return mergeFlags(flags, map[string]string{
-			"-ingester.availability-zone": zone,
+			"-ingester.ring.instance-availability-zone": zone,
 		})
 	}
 
-	ingester1 := e2emimir.NewIngesterWithConfigFile("ingester-1", consul.NetworkHTTPEndpoint(), "", ingesterFlags("zone-a"), "")
-	ingester2 := e2emimir.NewIngesterWithConfigFile("ingester-2", consul.NetworkHTTPEndpoint(), "", ingesterFlags("zone-a"), "")
-	ingester3 := e2emimir.NewIngesterWithConfigFile("ingester-3", consul.NetworkHTTPEndpoint(), "", ingesterFlags("zone-b"), "")
-	ingester4 := e2emimir.NewIngesterWithConfigFile("ingester-4", consul.NetworkHTTPEndpoint(), "", ingesterFlags("zone-b"), "")
-	ingester5 := e2emimir.NewIngesterWithConfigFile("ingester-5", consul.NetworkHTTPEndpoint(), "", ingesterFlags("zone-c"), "")
-	ingester6 := e2emimir.NewIngesterWithConfigFile("ingester-6", consul.NetworkHTTPEndpoint(), "", ingesterFlags("zone-c"), "")
+	ingester1 := e2emimir.NewIngester("ingester-1", consul.NetworkHTTPEndpoint(), ingesterFlags("zone-a"))
+	ingester2 := e2emimir.NewIngester("ingester-2", consul.NetworkHTTPEndpoint(), ingesterFlags("zone-a"))
+	ingester3 := e2emimir.NewIngester("ingester-3", consul.NetworkHTTPEndpoint(), ingesterFlags("zone-b"))
+	ingester4 := e2emimir.NewIngester("ingester-4", consul.NetworkHTTPEndpoint(), ingesterFlags("zone-b"))
+	ingester5 := e2emimir.NewIngester("ingester-5", consul.NetworkHTTPEndpoint(), ingesterFlags("zone-c"))
+	ingester6 := e2emimir.NewIngester("ingester-6", consul.NetworkHTTPEndpoint(), ingesterFlags("zone-c"))
 	require.NoError(t, s.StartAndWaitReady(ingester1, ingester2, ingester3, ingester4, ingester5, ingester6))
 
-	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags, "")
-	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags, "")
+	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags)
+	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags)
 	require.NoError(t, s.StartAndWaitReady(distributor, querier))
 
 	// Wait until distributor and querier have updated the ring.

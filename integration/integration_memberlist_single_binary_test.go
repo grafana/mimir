@@ -48,7 +48,7 @@ func testSingleBinaryEnv(t *testing.T, tlsEnabled bool, flags map[string]string)
 	defer s.Close()
 
 	// Start dependencies.
-	minio := e2edb.NewMinio(9000, bucketName)
+	minio := e2edb.NewMinio(9000, blocksBucketName)
 	require.NoError(t, s.StartAndWaitReady(minio))
 
 	var mimir1, mimir2, mimir3 *e2emimir.MimirService
@@ -124,32 +124,30 @@ func testSingleBinaryEnv(t *testing.T, tlsEnabled bool, flags map[string]string)
 
 func newSingleBinary(name string, servername string, join string, testFlags map[string]string) *e2emimir.MimirService {
 	flags := map[string]string{
-		"-ingester.final-sleep":              "0s",
-		"-ingester.join-after":               "0s", // join quickly
-		"-ingester.min-ready-duration":       "0s",
-		"-ingester.num-tokens":               "512",
-		"-ring.store":                        "memberlist",
+		"-ingester.ring.min-ready-duration":  "0s",
+		"-ingester.ring.num-tokens":          "512",
+		"-ingester.ring.store":               "memberlist",
 		"-memberlist.bind-port":              "8000",
 		"-memberlist.left-ingesters-timeout": "600s", // effectively disable
 	}
 
 	if join != "" {
 		flags["-memberlist.join"] = join
-		flags["-ingester.observe-period"] = "5s" // Observe ring tokens to avoid conflicts.
+		flags["-ingester.ring.observe-period"] = "5s" // Observe ring tokens to avoid conflicts.
 	} else {
-		flags["-ingester.observe-period"] = "0s" // No need to observe tokens because we're going to be the first instance.
+		flags["-ingester.ring.observe-period"] = "0s" // No need to observe tokens because we're going to be the first instance.
 	}
 
 	serv := e2emimir.NewSingleBinary(
 		name,
 		mergeFlags(
+			DefaultSingleBinaryFlags(),
 			BlocksStorageFlags(),
 			flags,
 			testFlags,
 			getTLSFlagsWithPrefix("memberlist", servername, servername == ""),
 		),
-		"",
-		8000,
+		e2emimir.WithOtherPorts(8000),
 	)
 
 	backOff := backoff.Config{
@@ -168,7 +166,7 @@ func TestSingleBinaryWithMemberlistScaling(t *testing.T) {
 	defer s.Close()
 
 	// Start dependencies.
-	minio := e2edb.NewMinio(9000, bucketName)
+	minio := e2edb.NewMinio(9000, blocksBucketName)
 	require.NoError(t, s.StartAndWaitReady(minio))
 
 	// Scale up instances. These numbers seem enough to reliably reproduce some unwanted

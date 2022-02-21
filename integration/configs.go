@@ -10,19 +10,17 @@ package integration
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"text/template"
 
-	"github.com/grafana/e2e"
 	e2edb "github.com/grafana/e2e/db"
 )
 
 const (
 	userID              = "e2e-user"
 	defaultNetworkName  = "e2e-mimir-test"
-	bucketName          = "mimir"
+	blocksBucketName    = "mimir-blocks"
 	rulestoreBucketName = "mimir-rules"
 	alertsBucketName    = "mimir-alerts"
 	mimirConfigFile     = "config.yaml"
@@ -79,21 +77,12 @@ var (
 	AlertmanagerFlags = func() map[string]string {
 		return map[string]string{
 			"-alertmanager.configs.poll-interval": "1s",
-			"-alertmanager.web.external-url":      "http://localhost/api/prom",
-		}
-	}
-
-	AlertmanagerClusterFlags = func(peers string) map[string]string {
-		return map[string]string{
-			"-alertmanager.cluster.listen-address": "0.0.0.0:9094", // This is the default, but let's be explicit.
-			"-alertmanager.cluster.peers":          peers,
-			"-alertmanager.cluster.peer-timeout":   "2s",
+			"-alertmanager.web.external-url":      "http://localhost/alertmanager",
 		}
 	}
 
 	AlertmanagerShardingFlags = func(consulAddress string, replicationFactor int) map[string]string {
 		return map[string]string{
-			"-alertmanager.sharding-enabled":                 "true",
 			"-alertmanager.sharding-ring.store":              "consul",
 			"-alertmanager.sharding-ring.consul.hostname":    consulAddress,
 			"-alertmanager.sharding-ring.replication-factor": strconv.Itoa(replicationFactor),
@@ -103,13 +92,6 @@ var (
 	AlertmanagerPersisterFlags = func(interval string) map[string]string {
 		return map[string]string{
 			"-alertmanager.persist-interval": interval,
-		}
-	}
-
-	AlertmanagerLocalFlags = func() map[string]string {
-		return map[string]string{
-			"-alertmanager-storage.backend":    "local",
-			"-alertmanager-storage.local.path": filepath.Join(e2e.ContainerSharedDir, "alertmanager_configs"),
 		}
 	}
 
@@ -154,9 +136,25 @@ var (
 			"-blocks-storage.tsdb.head-compaction-interval":     "1s",
 			"-blocks-storage.s3.access-key-id":                  e2edb.MinioAccessKey,
 			"-blocks-storage.s3.secret-access-key":              e2edb.MinioSecretKey,
-			"-blocks-storage.s3.bucket-name":                    bucketName,
+			"-blocks-storage.s3.bucket-name":                    blocksBucketName,
 			"-blocks-storage.s3.endpoint":                       fmt.Sprintf("%s-minio-9000:9000", networkName),
 			"-blocks-storage.s3.insecure":                       "true",
+		}
+	}
+
+	DefaultSingleBinaryFlags = func() map[string]string {
+		return map[string]string{
+			"-auth.multitenancy-enabled": "true",
+			// Query-frontend worker.
+			"-querier.frontend-client.backoff-min-period": "100ms",
+			"-querier.frontend-client.backoff-max-period": "100ms",
+			"-querier.frontend-client.backoff-retries":    "1",
+			"-querier.max-concurrent":                     "1",
+			// Distributor.
+			"-distributor.ring.store": "memberlist",
+			// Ingester.
+			"-ingester.ring.replication-factor": "1",
+			"-ingester.ring.num-tokens":         "512",
 		}
 	}
 
@@ -175,7 +173,7 @@ blocks_storage:
       enabled: false 
 
   s3:
-    bucket_name:       mimir
+    bucket_name:       mimir-blocks
     access_key_id:     {{.MinioAccessKey}}
     secret_access_key: {{.MinioSecretKey}}
     endpoint:          {{.MinioEndpoint}}

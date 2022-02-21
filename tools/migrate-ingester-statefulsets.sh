@@ -34,19 +34,19 @@ while [[ $INSTANCES_TO_DOWNSCALE -gt 0 ]]; do
   kubectl rollout status statefulset "$UPSCALE_STATEFULSET" --namespace="$NAMESPACE" --timeout=30m
   UPSCALE_REPLICA_SIZE=$((UPSCALE_REPLICA_SIZE + 1))
 
-  # Call /shutdown on the pod manually, so that it has enough time to flush chunks. By doing standard termination, pod may not have enough time.
+  # Call /ingester/shutdown on the pod manually, so that it has enough time to flush chunks. By doing standard termination, pod may not have enough time.
   # Wget is special BusyBox version. -T allows it to wait for 30m for shutdown to complete.
   POD_TO_SHUTDOWN=$DOWNSCALE_STATEFULSET-$((DOWNSCALE_REPLICA_SIZE - 1))
 
   echo "$(date): Triggering flush on $POD_TO_SHUTDOWN"
 
   # wget (BusyBox version) will fail, but we don't care ... important thing is that it has triggered shutdown.
-  # -T causes wget to wait only 5 seconds, otherwise /shutdown takes a long time.
-  # Preferably we would wait for /shutdown to return, but unfortunately that doesn't work (even with big timeout), wget complains with weird error.
-  kubectl exec "$POD_TO_SHUTDOWN" --namespace="$NAMESPACE" -- wget -T 5 http://localhost:8080/shutdown >/dev/null 2>/dev/null || true
+  # -T causes wget to wait only 5 seconds, otherwise /ingester/shutdown takes a long time.
+  # Preferably we would wait for /ingester/shutdown to return, but unfortunately that doesn't work (even with big timeout), wget complains with weird error.
+  kubectl exec "$POD_TO_SHUTDOWN" --namespace="$NAMESPACE" -- wget -T 5 http://localhost:8080/ingester/shutdown >/dev/null 2>/dev/null || true
 
-  # While request to /shutdown completes only after flushing has finished, it unfortunately returns 204 status code,
-  # which confuses wget. That is the reason why instead of waiting for /shutdown to complete, this script waits for
+  # While request to /ingester/shutdown completes only after flushing has finished, it unfortunately returns 204 status code,
+  # which confuses wget. That is the reason why instead of waiting for /ingester/shutdown to complete, this script waits for
   # specific log messages to appear in the log file that signal start/end of data flushing.
   if kubectl logs -f "$POD_TO_SHUTDOWN" --namespace="$NAMESPACE" | grep -E -q "starting to flush all the chunks|starting to flush and ship TSDB blocks"; then
     echo "$(date): Flushing started"

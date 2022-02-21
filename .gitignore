@@ -1,4 +1,4 @@
-cmd/cortextool/cortextool
+cmd/mimirtool/mimirtool
 cmd/test-exporter/test-exporter
 cmd/mimir/mimir
 cmd/query-tee/query-tee
@@ -8,9 +8,6 @@ cmd/metaconvert/metaconvert
 .cache
 .swp
 docker-images/
-website/public
-website/resources
-website/content/en/docs
 e2e_integration_test*
 active-query-tracker
 dist/
@@ -19,6 +16,7 @@ jsonnet-tests/
 
 # Binaries built from ./cmd
 /mimir
+/mimirtool
 /query-tee
 /test-exporter
 

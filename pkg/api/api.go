@@ -11,11 +11,13 @@ import (
 	"net/http"
 	"path"
 	"strings"
+	"time"
 
 	"github.com/NYTimes/gziphandler"
 	"github.com/felixge/fgprof"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/gorilla/mux"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/weaveworks/common/middleware"
 	"github.com/weaveworks/common/server"
@@ -38,6 +40,7 @@ import (
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
 	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
+	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/push"
 )
 
@@ -53,7 +56,6 @@ type Config struct {
 
 	// The following configs are injected by the upstream caller.
 	ServerPrefix       string               `yaml:"-"`
-	LegacyHTTPPrefix   string               `yaml:"-"`
 	HTTPAuthMiddleware middleware.Interface `yaml:"-"`
 
 	// This allows downstream projects to wrap the distributor push function
@@ -130,46 +132,60 @@ func New(cfg Config, serverCfg server.Config, s *server.Server, logger log.Logge
 	return api, nil
 }
 
+// RegisterDeprecatedRoute behaves in a similar way to RegisterRoute. RegisterDeprecatedRoute also logs warnings on
+// invocations of the deprecated endpoints.
+func (a *API) RegisterDeprecatedRoute(path string, handler http.Handler, auth, gzipEnabled bool, method string, methods ...string) {
+	methods = append([]string{method}, methods...)
+	handler = a.deprecatedHandler(handler)
+	level.Debug(a.logger).Log("msg", "api: registering deprecated route", "methods", strings.Join(methods, ","), "path", path, "auth", auth, "gzip", gzipEnabled)
+	a.newRoute(path, handler, false, auth, gzipEnabled, methods...)
+}
+
+func (a *API) deprecatedHandler(next http.Handler) http.Handler {
+	l := util_log.NewRateLimitedLogger(time.Minute, a.logger, time.Now)
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		level.Warn(l).Log("msg", "api: received a request on a deprecated endpoint", "path", r.URL.Path, "method", r.Method)
+		next.ServeHTTP(w, r)
+	})
+}
+
 // RegisterRoute registers a single route enforcing HTTP methods. A single
 // route is expected to be specific about which HTTP methods are supported.
 func (a *API) RegisterRoute(path string, handler http.Handler, auth, gzipEnabled bool, method string, methods ...string) {
 	methods = append([]string{method}, methods...)
-
 	level.Debug(a.logger).Log("msg", "api: registering route", "methods", strings.Join(methods, ","), "path", path, "auth", auth, "gzip", gzipEnabled)
-
-	if auth {
-		handler = a.AuthMiddleware.Wrap(handler)
-	}
-	if gzipEnabled {
-		handler = gziphandler.GzipHandler(handler)
-	}
-
-	if len(methods) == 0 {
-		a.server.HTTP.Path(path).Handler(handler)
-		return
-	}
-	a.server.HTTP.Path(path).Methods(methods...).Handler(handler)
+	a.newRoute(path, handler, false, auth, gzipEnabled, methods...)
 }
 
 func (a *API) RegisterRoutesWithPrefix(prefix string, handler http.Handler, auth, gzipEnabled bool, methods ...string) {
 	level.Debug(a.logger).Log("msg", "api: registering route", "methods", strings.Join(methods, ","), "prefix", prefix, "auth", auth, "gzip", gzipEnabled)
+	a.newRoute(prefix, handler, true, auth, gzipEnabled, methods...)
+}
+
+func (a *API) newRoute(path string, handler http.Handler, isPrefix, auth, gzip bool, methods ...string) (route *mux.Route) {
 	if auth {
 		handler = a.AuthMiddleware.Wrap(handler)
 	}
-	if gzipEnabled {
+	if gzip {
 		handler = gziphandler.GzipHandler(handler)
 	}
-
-	if len(methods) == 0 {
-		a.server.HTTP.PathPrefix(prefix).Handler(handler)
-		return
+	if isPrefix {
+		route = a.server.HTTP.PathPrefix(path)
+	} else {
+		route = a.server.HTTP.Path(path)
 	}
-	a.server.HTTP.PathPrefix(prefix).Methods(methods...).Handler(handler)
+	if len(methods) > 0 {
+		route = route.Methods(methods...)
+	}
+	route = route.Handler(handler)
+
+	return route
 }
 
 // RegisterAlertmanager registers endpoints associated with the alertmanager. It will only
 // serve endpoints using the legacy http-prefix if it is not run as a single binary.
-func (a *API) RegisterAlertmanager(am *alertmanager.MultitenantAlertmanager, target, apiEnabled bool) {
+func (a *API) RegisterAlertmanager(am *alertmanager.MultitenantAlertmanager, apiEnabled bool, buildInfoHandler http.Handler) {
 	alertmanagerpb.RegisterAlertmanagerServer(a.server.GRPC, am)
 
 	a.indexPage.AddLink(SectionAdminEndpoints, "/multitenant_alertmanager/status", "Alertmanager Status")
@@ -179,6 +195,7 @@ func (a *API) RegisterAlertmanager(am *alertmanager.MultitenantAlertmanager, tar
 	a.RegisterRoute("/multitenant_alertmanager/configs", http.HandlerFunc(am.ListAllConfigs), false, true, "GET")
 	a.RegisterRoute("/multitenant_alertmanager/ring", http.HandlerFunc(am.RingHandler), false, true, "GET", "POST")
 	a.RegisterRoute("/multitenant_alertmanager/delete_tenant_config", http.HandlerFunc(am.DeleteUserConfig), true, true, "POST")
+	a.RegisterRoute(path.Join(a.cfg.AlertmanagerHTTPPrefix, "/api/v1/status/buildinfo"), buildInfoHandler, false, true, "GET")
 
 	// UI components lead to a large number of routes to support, utilize a path prefix instead
 	a.RegisterRoutesWithPrefix(a.cfg.AlertmanagerHTTPPrefix, am, true, true)
@@ -190,25 +207,17 @@ func (a *API) RegisterAlertmanager(am *alertmanager.MultitenantAlertmanager, tar
 		a.RegisterRoute("/api/v1/alerts", http.HandlerFunc(am.SetUserConfig), true, true, "POST")
 		a.RegisterRoute("/api/v1/alerts", http.HandlerFunc(am.DeleteUserConfig), true, true, "DELETE")
 	}
-
-	// If the target is Alertmanager, enable the legacy behaviour. Otherwise only enable
-	// the component routed API.
-	if target {
-		a.RegisterRoute("/status", am.GetStatusHandler(), false, true, "GET")
-		// WARNING: If LegacyHTTPPrefix is an empty string, any other paths added after this point will be
-		// silently ignored by the HTTP service. Therefore, this must be the last route to be configured.
-		a.RegisterRoutesWithPrefix(a.cfg.LegacyHTTPPrefix, am, true, true)
-	}
 }
 
 // RegisterAPI registers the standard endpoints associated with a running Mimir.
-func (a *API) RegisterAPI(httpPathPrefix string, actualCfg interface{}, defaultCfg interface{}) {
+func (a *API) RegisterAPI(httpPathPrefix string, actualCfg interface{}, defaultCfg interface{}, buildInfoHandler http.Handler) {
 	a.indexPage.AddLink(SectionAdminEndpoints, "/config", "Current Config (including the default values)")
 	a.indexPage.AddLink(SectionAdminEndpoints, "/config?mode=diff", "Current Config (show only values that differ from the defaults)")
 
 	a.RegisterRoute("/config", a.cfg.configHandler(actualCfg, defaultCfg), false, true, "GET")
 	a.RegisterRoute("/", indexHandler(httpPathPrefix, a.indexPage), false, true, "GET")
 	a.RegisterRoute("/debug/fgprof", fgprof.Handler(), false, true, "GET")
+	a.RegisterRoute("/api/v1/status/buildinfo", buildInfoHandler, false, true, "GET")
 }
 
 // RegisterRuntimeConfig registers the endpoints associates with the runtime configuration
@@ -232,11 +241,6 @@ func (a *API) RegisterDistributor(d *distributor.Distributor, pushConfig distrib
 	a.RegisterRoute("/distributor/ring", d, false, true, "GET", "POST")
 	a.RegisterRoute("/distributor/all_user_stats", http.HandlerFunc(d.AllUserStatsHandler), false, true, "GET")
 	a.RegisterRoute("/distributor/ha_tracker", d.HATracker, false, true, "GET")
-
-	// Legacy Routes
-	a.RegisterRoute(path.Join(a.cfg.LegacyHTTPPrefix, "/push"), push.Handler(pushConfig.MaxRecvMsgSize, a.sourceIPs, a.cfg.SkipLabelNameValidationHeader, a.cfg.wrapDistributorPush(d)), true, false, "POST")
-	a.RegisterRoute("/all_user_stats", http.HandlerFunc(d.AllUserStatsHandler), false, true, "GET")
-	a.RegisterRoute("/ha-tracker", d.HATracker, false, true, "GET")
 }
 
 // Ingester is defined as an interface to allow for alternative implementations
@@ -257,11 +261,6 @@ func (a *API) RegisterIngester(i Ingester, pushConfig distributor.Config) {
 	a.RegisterRoute("/ingester/flush", http.HandlerFunc(i.FlushHandler), false, true, "GET", "POST")
 	a.RegisterRoute("/ingester/shutdown", http.HandlerFunc(i.ShutdownHandler), false, true, "GET", "POST")
 	a.RegisterRoute("/ingester/push", push.Handler(pushConfig.MaxRecvMsgSize, a.sourceIPs, a.cfg.SkipLabelNameValidationHeader, i.PushWithCleanup), true, false, "POST") // For testing and debugging.
-
-	// Legacy Routes
-	a.RegisterRoute("/flush", http.HandlerFunc(i.FlushHandler), false, true, "GET", "POST")
-	a.RegisterRoute("/shutdown", http.HandlerFunc(i.ShutdownHandler), false, true, "GET", "POST")
-	a.RegisterRoute("/push", push.Handler(pushConfig.MaxRecvMsgSize, a.sourceIPs, a.cfg.SkipLabelNameValidationHeader, i.PushWithCleanup), true, false, "POST") // For testing and debugging.
 }
 
 func (a *API) RegisterTenantDeletion(api *purger.TenantDeletionAPI) {
@@ -277,9 +276,6 @@ func (a *API) RegisterRuler(r *ruler.Ruler) {
 	// Administrative API, uses authentication to inform which user's configuration to delete.
 	a.RegisterRoute("/ruler/delete_tenant_config", http.HandlerFunc(r.DeleteTenantConfiguration), true, true, "POST")
 
-	// Legacy Ring Route
-	a.RegisterRoute("/ruler_ring", r, false, true, "GET", "POST")
-
 	// List all user rule groups
 	a.RegisterRoute("/ruler/rule_groups", http.HandlerFunc(r.ListAllRules), false, true, "GET")
 
@@ -287,39 +283,46 @@ func (a *API) RegisterRuler(r *ruler.Ruler) {
 }
 
 // RegisterRulerAPI registers routes associated with the Ruler API
-func (a *API) RegisterRulerAPI(r *ruler.API) {
+func (a *API) RegisterRulerAPI(r *ruler.API, configAPIEnabled bool) {
 	// Prometheus Rule API Routes
+	// We want to always enable these. They are read-only. Also if using local storage as rule storage,
+	// you would like the API to be disabled and still be able to understand in what state rule evaluations are.
 	a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/rules"), http.HandlerFunc(r.PrometheusRules), true, true, "GET")
 	a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/alerts"), http.HandlerFunc(r.PrometheusAlerts), true, true, "GET")
 
-	// Ruler API Routes
-	a.RegisterRoute("/api/v1/rules", http.HandlerFunc(r.ListRules), true, true, "GET")
-	a.RegisterRoute("/api/v1/rules/{namespace}", http.HandlerFunc(r.ListRules), true, true, "GET")
-	a.RegisterRoute("/api/v1/rules/{namespace}/{groupName}", http.HandlerFunc(r.GetRuleGroup), true, true, "GET")
-	a.RegisterRoute("/api/v1/rules/{namespace}", http.HandlerFunc(r.CreateRuleGroup), true, true, "POST")
-	a.RegisterRoute("/api/v1/rules/{namespace}/{groupName}", http.HandlerFunc(r.DeleteRuleGroup), true, true, "DELETE")
-	a.RegisterRoute("/api/v1/rules/{namespace}", http.HandlerFunc(r.DeleteNamespace), true, true, "DELETE")
+	if configAPIEnabled {
+		// Ruler API Routes
+		// TODO remove the /api/v1/rules/** endpoints in Mimir 2.2.0 as agreed in https://github.com/grafana/mimir/pull/763#discussion_r808270581
+		a.RegisterDeprecatedRoute("/api/v1/rules", http.HandlerFunc(r.ListRules), true, true, "GET")
+		a.RegisterDeprecatedRoute("/api/v1/rules/{namespace}", http.HandlerFunc(r.ListRules), true, true, "GET")
+		a.RegisterDeprecatedRoute("/api/v1/rules/{namespace}/{groupName}", http.HandlerFunc(r.GetRuleGroup), true, true, "GET")
+		a.RegisterDeprecatedRoute("/api/v1/rules/{namespace}", http.HandlerFunc(r.CreateRuleGroup), true, true, "POST")
+		a.RegisterDeprecatedRoute("/api/v1/rules/{namespace}/{groupName}", http.HandlerFunc(r.DeleteRuleGroup), true, true, "DELETE")
+		a.RegisterDeprecatedRoute("/api/v1/rules/{namespace}", http.HandlerFunc(r.DeleteNamespace), true, true, "DELETE")
 
-	// Legacy Prometheus Rule API Routes
-	a.RegisterRoute(path.Join(a.cfg.LegacyHTTPPrefix, "/api/v1/rules"), http.HandlerFunc(r.PrometheusRules), true, true, "GET")
-	a.RegisterRoute(path.Join(a.cfg.LegacyHTTPPrefix, "/api/v1/alerts"), http.HandlerFunc(r.PrometheusAlerts), true, true, "GET")
+		// Configuration endpoints with Prometheus prefix, so we keep Prometheus-compatible EPs and config EPs under the same prefix.
+		// TODO remove the <prometheus-http-prefix>/config/v1/rules/** endpoints in Mimir 2.2.0 as agreed in https://github.com/grafana/mimir/pull/1222#issuecomment-1046759965
+		a.RegisterDeprecatedRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/rules"), http.HandlerFunc(r.ListRules), true, true, "GET")
+		a.RegisterDeprecatedRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/rules/{namespace}"), http.HandlerFunc(r.ListRules), true, true, "GET")
+		a.RegisterDeprecatedRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/rules/{namespace}/{groupName}"), http.HandlerFunc(r.GetRuleGroup), true, true, "GET")
+		a.RegisterDeprecatedRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/rules/{namespace}"), http.HandlerFunc(r.CreateRuleGroup), true, true, "POST")
+		a.RegisterDeprecatedRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/rules/{namespace}/{groupName}"), http.HandlerFunc(r.DeleteRuleGroup), true, true, "DELETE")
+		a.RegisterDeprecatedRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/rules/{namespace}"), http.HandlerFunc(r.DeleteNamespace), true, true, "DELETE")
 
-	// Legacy Ruler API Routes
-	a.RegisterRoute(path.Join(a.cfg.LegacyHTTPPrefix, "/rules"), http.HandlerFunc(r.ListRules), true, true, "GET")
-	a.RegisterRoute(path.Join(a.cfg.LegacyHTTPPrefix, "/rules/{namespace}"), http.HandlerFunc(r.ListRules), true, true, "GET")
-	a.RegisterRoute(path.Join(a.cfg.LegacyHTTPPrefix, "/rules/{namespace}/{groupName}"), http.HandlerFunc(r.GetRuleGroup), true, true, "GET")
-	a.RegisterRoute(path.Join(a.cfg.LegacyHTTPPrefix, "/rules/{namespace}"), http.HandlerFunc(r.CreateRuleGroup), true, true, "POST")
-	a.RegisterRoute(path.Join(a.cfg.LegacyHTTPPrefix, "/rules/{namespace}/{groupName}"), http.HandlerFunc(r.DeleteRuleGroup), true, true, "DELETE")
-	a.RegisterRoute(path.Join(a.cfg.LegacyHTTPPrefix, "/rules/{namespace}"), http.HandlerFunc(r.DeleteNamespace), true, true, "DELETE")
+		// Long-term maintained configuration API routes
+		a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/config/v1/rules"), http.HandlerFunc(r.ListRules), true, true, "GET")
+		a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/config/v1/rules/{namespace}"), http.HandlerFunc(r.ListRules), true, true, "GET")
+		a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/config/v1/rules/{namespace}/{groupName}"), http.HandlerFunc(r.GetRuleGroup), true, true, "GET")
+		a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/config/v1/rules/{namespace}"), http.HandlerFunc(r.CreateRuleGroup), true, true, "POST")
+		a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/config/v1/rules/{namespace}/{groupName}"), http.HandlerFunc(r.DeleteRuleGroup), true, true, "DELETE")
+		a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/config/v1/rules/{namespace}"), http.HandlerFunc(r.DeleteNamespace), true, true, "DELETE")
+	}
 }
 
 // RegisterRing registers the ring UI page associated with the distributor for writes.
 func (a *API) RegisterRing(r http.Handler) {
 	a.indexPage.AddLink(SectionAdminEndpoints, "/ingester/ring", "Ingester Ring Status")
 	a.RegisterRoute("/ingester/ring", r, false, true, "GET", "POST")
-
-	// Legacy Route
-	a.RegisterRoute("/ring", r, false, true, "GET", "POST")
 }
 
 // RegisterStoreGateway registers the ring UI page associated with the store-gateway.
@@ -352,12 +355,10 @@ func (a *API) RegisterQueryable(
 ) {
 	// these routes are always registered to the default server
 	a.RegisterRoute("/api/v1/user_stats", http.HandlerFunc(distributor.UserStatsHandler), true, true, "GET")
-
-	a.RegisterRoute(path.Join(a.cfg.LegacyHTTPPrefix, "/user_stats"), http.HandlerFunc(distributor.UserStatsHandler), true, true, "GET")
 }
 
 // RegisterQueryAPI registers the Prometheus API routes with the provided handler.
-func (a *API) RegisterQueryAPI(handler http.Handler) {
+func (a *API) RegisterQueryAPI(handler http.Handler, buildInfoHandler http.Handler) {
 	a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/read"), handler, true, true, "POST")
 	a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/query"), handler, true, true, "GET", "POST")
 	a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/query_range"), handler, true, true, "GET", "POST")
@@ -365,27 +366,17 @@ func (a *API) RegisterQueryAPI(handler http.Handler) {
 	a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/labels"), handler, true, true, "GET", "POST")
 	a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/label/{name}/values"), handler, true, true, "GET")
 	a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/series"), handler, true, true, "GET", "POST", "DELETE")
+	a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/status/buildinfo"), buildInfoHandler, false, true, "GET")
 	a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/metadata"), handler, true, true, "GET")
 	a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/cardinality/label_names"), handler, true, true, "GET", "POST")
 	a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/cardinality/label_values"), handler, true, true, "GET", "POST")
-	// Register Legacy Routers
-	a.RegisterRoute(path.Join(a.cfg.LegacyHTTPPrefix, "/api/v1/read"), handler, true, true, "POST")
-	a.RegisterRoute(path.Join(a.cfg.LegacyHTTPPrefix, "/api/v1/query"), handler, true, true, "GET", "POST")
-	a.RegisterRoute(path.Join(a.cfg.LegacyHTTPPrefix, "/api/v1/query_range"), handler, true, true, "GET", "POST")
-	a.RegisterRoute(path.Join(a.cfg.LegacyHTTPPrefix, "/api/v1/query_exemplars"), handler, true, true, "GET", "POST")
-	a.RegisterRoute(path.Join(a.cfg.LegacyHTTPPrefix, "/api/v1/labels"), handler, true, true, "GET", "POST")
-	a.RegisterRoute(path.Join(a.cfg.LegacyHTTPPrefix, "/api/v1/label/{name}/values"), handler, true, true, "GET")
-	a.RegisterRoute(path.Join(a.cfg.LegacyHTTPPrefix, "/api/v1/series"), handler, true, true, "GET", "POST", "DELETE")
-	a.RegisterRoute(path.Join(a.cfg.LegacyHTTPPrefix, "/api/v1/metadata"), handler, true, true, "GET")
-	a.RegisterRoute(path.Join(a.cfg.LegacyHTTPPrefix, "/api/v1/cardinality/label_names"), handler, true, true, "GET", "POST")
-	a.RegisterRoute(path.Join(a.cfg.LegacyHTTPPrefix, "/api/v1/cardinality/label_values"), handler, true, true, "GET", "POST")
 }
 
 // RegisterQueryFrontend registers the Prometheus routes supported by the
 // Mimir querier service. Currently this can not be registered simultaneously
 // with the Querier.
-func (a *API) RegisterQueryFrontendHandler(h http.Handler) {
-	a.RegisterQueryAPI(h)
+func (a *API) RegisterQueryFrontendHandler(h http.Handler, buildInfoHandler http.Handler) {
+	a.RegisterQueryAPI(h, buildInfoHandler)
 }
 
 func (a *API) RegisterQueryFrontend1(f *frontendv1.Frontend) {

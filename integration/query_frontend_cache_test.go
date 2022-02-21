@@ -33,28 +33,28 @@ func TestQueryFrontendUnalignedQuery(t *testing.T) {
 	require.NoError(t, s.StartAndWaitReady(minio))
 
 	flags = mergeFlags(flags, map[string]string{
-		"-frontend.cache-results":                     "true",
-		"-frontend.split-queries-by-interval":         "2m",
-		"-querier.query-ingesters-within":             "12h", // Required by the test on query /series out of ingesters time range
-		"-frontend.align-querier-with-step":           "true",
-		"-frontend.max-cache-freshness":               "0", // Cache everything.
-		"-frontend.results-cache.backend":             "memcached",
-		"-frontend.results-cache.memcached.addresses": "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
+		"-query-frontend.cache-results":                     "true",
+		"-query-frontend.split-queries-by-interval":         "2m",
+		"-querier.query-ingesters-within":                   "12h", // Required by the test on query /series out of ingesters time range
+		"-query-frontend.align-querier-with-step":           "true",
+		"-query-frontend.max-cache-freshness":               "0", // Cache everything.
+		"-query-frontend.results-cache.backend":             "memcached",
+		"-query-frontend.results-cache.memcached.addresses": "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
 	})
 
 	// Start the query-frontend.
-	queryFrontendAligned := e2emimir.NewQueryFrontendWithConfigFile("query-frontend-aligned", configFile, mergeFlags(flags, map[string]string{"-frontend.align-querier-with-step": "true"}), "")
+	queryFrontendAligned := e2emimir.NewQueryFrontend("query-frontend-aligned", mergeFlags(flags, map[string]string{"-query-frontend.align-querier-with-step": "true"}), e2emimir.WithConfigFile(configFile))
 	require.NoError(t, s.Start(queryFrontendAligned))
 
-	queryFrontendUnaligned := e2emimir.NewQueryFrontendWithConfigFile("query-frontend-unaligned", configFile, mergeFlags(flags, map[string]string{"-frontend.align-querier-with-step": "false"}), "")
+	queryFrontendUnaligned := e2emimir.NewQueryFrontend("query-frontend-unaligned", mergeFlags(flags, map[string]string{"-query-frontend.align-querier-with-step": "false"}), e2emimir.WithConfigFile(configFile))
 	require.NoError(t, s.Start(queryFrontendUnaligned))
 
-	querierAligned := e2emimir.NewQuerierWithConfigFile("querier-aligned", consul.NetworkHTTPEndpoint(), configFile, mergeFlags(flags, map[string]string{"-querier.frontend-address": queryFrontendAligned.NetworkGRPCEndpoint()}), "")
-	querierUnaligned := e2emimir.NewQuerierWithConfigFile("querier-unaligned", consul.NetworkHTTPEndpoint(), configFile, mergeFlags(flags, map[string]string{"-querier.frontend-address": queryFrontendUnaligned.NetworkGRPCEndpoint()}), "")
+	querierAligned := e2emimir.NewQuerier("querier-aligned", consul.NetworkHTTPEndpoint(), mergeFlags(flags, map[string]string{"-querier.frontend-address": queryFrontendAligned.NetworkGRPCEndpoint()}), e2emimir.WithConfigFile(configFile))
+	querierUnaligned := e2emimir.NewQuerier("querier-unaligned", consul.NetworkHTTPEndpoint(), mergeFlags(flags, map[string]string{"-querier.frontend-address": queryFrontendUnaligned.NetworkGRPCEndpoint()}), e2emimir.WithConfigFile(configFile))
 
 	// Start all other services.
-	ingester := e2emimir.NewIngesterWithConfigFile("ingester", consul.NetworkHTTPEndpoint(), configFile, flags, "")
-	distributor := e2emimir.NewDistributorWithConfigFile("distributor", consul.NetworkHTTPEndpoint(), configFile, flags, "")
+	ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags, e2emimir.WithConfigFile(configFile))
+	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags, e2emimir.WithConfigFile(configFile))
 
 	require.NoError(t, s.StartAndWaitReady(querierAligned, querierUnaligned, ingester, distributor))
 	require.NoError(t, s.WaitReady(queryFrontendAligned, queryFrontendUnaligned))

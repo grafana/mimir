@@ -24,7 +24,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv"
-	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
 	"github.com/prometheus/client_golang/prometheus"
@@ -63,14 +62,12 @@ func TestMimir(t *testing.T) {
 					},
 				},
 			},
-			LifecyclerConfig: ring.LifecyclerConfig{
-				RingConfig: ring.Config{
-					KVStore: kv.Config{
-						Store: "inmemory",
-					},
-					ReplicationFactor: 3,
+			IngesterRing: ingester.RingConfig{
+				KVStore: kv.Config{
+					Store: "inmemory",
 				},
-				InfNames: []string{"en0", "eth0", "lo0", "lo"},
+				ReplicationFactor:      3,
+				InstanceInterfaceNames: []string{"en0", "eth0", "lo0", "lo"},
 			},
 		},
 		BlocksStorage: tsdb.BlocksStorageConfig{
@@ -114,8 +111,10 @@ func TestMimir(t *testing.T) {
 				require.NoError(t, v.Set("http://localhost/alertmanager"))
 				return v
 			}(),
-			Cluster: alertmanager.ClusterConfig{
-				ListenAddr: "127.0.0.1:0",
+			ShardingRing: alertmanager.RingConfig{
+				KVStore:                kv.Config{Store: "memberlist"},
+				ReplicationFactor:      1,
+				InstanceInterfaceNames: []string{"en0", "eth0", "lo0", "lo"},
 			},
 		},
 		AlertmanagerStorage: alertstore.Config{
@@ -229,28 +228,99 @@ func TestConfigValidation(t *testing.T) {
 			expectedError: nil,
 		},
 		{
-			name: "should pass validation if the http prefix starts with /",
+			name: "S3: should fail if bucket name is shared between alertmanager and blocks storage",
 			getTestConfig: func() *Config {
-				configuration := newDefaultConfig()
-				configuration.HTTPPrefix = "/test"
-				return configuration
+				cfg := newDefaultConfig()
+				_ = cfg.Target.Set("all,alertmanager")
+
+				for _, bucketCfg := range []*bucket.Config{&cfg.BlocksStorage.Bucket, &cfg.AlertmanagerStorage.Config} {
+					bucketCfg.Backend = bucket.S3
+					bucketCfg.S3.BucketName = "b1"
+					bucketCfg.S3.Region = "r1"
+				}
+				return cfg
+			},
+			expectedError: errInvalidBucketConfig,
+		},
+		{
+			name: "GCS: should fail if bucket name is shared between alertmanager and blocks storage",
+			getTestConfig: func() *Config {
+				cfg := newDefaultConfig()
+				_ = cfg.Target.Set("all,alertmanager")
+
+				for _, bucketCfg := range []*bucket.Config{&cfg.BlocksStorage.Bucket, &cfg.AlertmanagerStorage.Config} {
+					bucketCfg.Backend = bucket.GCS
+					bucketCfg.GCS.BucketName = "b1"
+				}
+				return cfg
+			},
+			expectedError: errInvalidBucketConfig,
+		},
+		{
+			name: "Azure: should fail if container and account names are shared between alertmanager and blocks storage",
+			getTestConfig: func() *Config {
+				cfg := newDefaultConfig()
+				_ = cfg.Target.Set("all,alertmanager")
+
+				for _, bucketCfg := range []*bucket.Config{&cfg.BlocksStorage.Bucket, &cfg.AlertmanagerStorage.Config} {
+					bucketCfg.Backend = bucket.Azure
+					bucketCfg.Azure.ContainerName = "c1"
+					bucketCfg.Azure.StorageAccountName = "sa1"
+				}
+				return cfg
+			},
+			expectedError: errInvalidBucketConfig,
+		},
+		{
+			name: "Azure: should pass if only container name is shared between alertmanager and blocks storage",
+			getTestConfig: func() *Config {
+				cfg := newDefaultConfig()
+				_ = cfg.Target.Set("all,alertmanager")
+
+				for i, bucketCfg := range []*bucket.Config{&cfg.BlocksStorage.Bucket, &cfg.AlertmanagerStorage.Config} {
+					bucketCfg.Backend = bucket.Azure
+					bucketCfg.Azure.ContainerName = "c1"
+					bucketCfg.Azure.StorageAccountName = fmt.Sprintf("sa%d", i)
+				}
+				return cfg
 			},
 			expectedError: nil,
 		},
 		{
-			name: "should fail validation for invalid prefix",
+			name: "Swift: should fail if container and project names are shared between alertmanager and blocks storage",
 			getTestConfig: func() *Config {
-				configuration := newDefaultConfig()
-				configuration.HTTPPrefix = "test"
-				return configuration
+				cfg := newDefaultConfig()
+				_ = cfg.Target.Set("all,alertmanager")
+
+				for _, bucketCfg := range []*bucket.Config{&cfg.BlocksStorage.Bucket, &cfg.AlertmanagerStorage.Config} {
+					bucketCfg.Backend = bucket.Swift
+					bucketCfg.Swift.ContainerName = "c1"
+					bucketCfg.Swift.ProjectName = "p1"
+				}
+				return cfg
 			},
-			expectedError: errInvalidHTTPPrefix,
+			expectedError: errInvalidBucketConfig,
+		},
+		{
+			name: "Swift: should pass if only container name is shared between alertmanager and blocks storage",
+			getTestConfig: func() *Config {
+				cfg := newDefaultConfig()
+				_ = cfg.Target.Set("all,alertmanager")
+
+				for i, bucketCfg := range []*bucket.Config{&cfg.BlocksStorage.Bucket, &cfg.AlertmanagerStorage.Config} {
+					bucketCfg.Backend = bucket.Swift
+					bucketCfg.Swift.ContainerName = "c1"
+					bucketCfg.Swift.ProjectName = fmt.Sprintf("p%d", i)
+				}
+				return cfg
+			},
+			expectedError: nil,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			err := tc.getTestConfig().Validate(nil)
 			if tc.expectedError != nil {
-				require.Equal(t, tc.expectedError, err)
+				require.ErrorIs(t, err, tc.expectedError)
 			} else {
 				require.NoError(t, err)
 			}
@@ -262,9 +332,9 @@ func TestGrpcAuthMiddleware(t *testing.T) {
 	prepareGlobalMetricsRegistry(t)
 
 	cfg := Config{
-		AuthEnabled: true, // We must enable this to enable Auth middleware for gRPC server.
-		Server:      getServerConfig(t),
-		Target:      []string{API}, // Something innocent that doesn't require much config.
+		MultitenancyEnabled: true, // We must enable this to enable Auth middleware for gRPC server.
+		Server:              getServerConfig(t),
+		Target:              []string{API}, // Something innocent that doesn't require much config.
 	}
 
 	msch := &mockGrpcServiceHandler{}

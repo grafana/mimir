@@ -10,7 +10,7 @@
     // If false, ingesters are not unregistered on shutdown and left in the ring with
     // the LEAVING state. Setting to false prevents series resharding during ingesters rollouts,
     // but requires to:
-    // 1. Either manually forget ingesters on scale down or invoke the /shutdown endpoint
+    // 1. Either manually forget ingesters on scale down or invoke the /ingester/shutdown endpoint
     // 2. Ensure ingester ID is preserved during rollouts
     unregister_ingesters_on_shutdown: true,
 
@@ -134,9 +134,6 @@
 
       // No need to look at store for data younger than 12h, as ingesters have all of it.
       'querier.query-store-after': '12h',
-
-      // Enable the support for label matchers when queriying label names.
-      'querier.query-label-names-with-matchers-enabled': true,
     },
 
     // PromQL query engine config (shared between all services running PromQL engine, like the ruler and querier).
@@ -145,12 +142,12 @@
     // The ingester ring client config that should be shared across all Mimir services
     // using or watching the ingester ring.
     ingesterRingClientConfig: {
-      'consul.hostname': 'consul.%s.svc.cluster.local:8500' % $._config.namespace,
-      'distributor.replication-factor': $._config.replication_factor,
+      'ingester.ring.consul.hostname': 'consul.%s.svc.cluster.local:8500' % $._config.namespace,
+      'ingester.ring.replication-factor': $._config.replication_factor,
       'distributor.health-check-ingesters': true,
-      'ring.heartbeat-timeout': '10m',
-      'ring.store': 'consul',
-      'ring.prefix': '',
+      'ingester.ring.heartbeat-timeout': '10m',
+      'ingester.ring.store': 'consul',
+      'ingester.ring.prefix': '',
     },
 
     ruler_enabled: false,

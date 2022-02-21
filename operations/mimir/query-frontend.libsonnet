@@ -13,14 +13,14 @@
       'server.http-write-timeout': '1m',
 
       // Cache query results.
-      'frontend.align-querier-with-step': false,
-      'frontend.cache-results': true,
-      'frontend.results-cache.backend': 'memcached',
-      'frontend.results-cache.memcached.addresses': 'dnssrvnoa+memcached-frontend.%(namespace)s.svc.cluster.local:11211' % $._config,
-      'frontend.results-cache.memcached.timeout': '500ms',
+      'query-frontend.align-querier-with-step': false,
+      'query-frontend.cache-results': true,
+      'query-frontend.results-cache.backend': 'memcached',
+      'query-frontend.results-cache.memcached.addresses': 'dnssrvnoa+memcached-frontend.%(namespace)s.svc.cluster.local:11211' % $._config,
+      'query-frontend.results-cache.memcached.timeout': '500ms',
 
       // So that exporters like cloudwatch can still send in data and be un-cached.
-      'frontend.max-cache-freshness': '10m',
+      'query-frontend.max-cache-freshness': '10m',
 
       // So it can receive big responses from the querier.
       'server.grpc-max-recv-msg-size-bytes': 100 << 20,

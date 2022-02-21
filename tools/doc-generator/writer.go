@@ -44,7 +44,7 @@ func (w *specWriter) writeConfigEntry(e *configEntry, indent int) {
 			// Description
 			w.writeComment(e.blockDesc, indent, 0)
 			if e.block.flagsPrefix != "" {
-				w.writeComment(fmt.Sprintf("The CLI flags prefix for this block config is: %s", e.block.flagsPrefix), indent, 0)
+				w.writeComment(fmt.Sprintf("The CLI flags prefix for this block configuration is: %s", e.block.flagsPrefix), indent, 0)
 			}
 
 			// Block reference without entries, because it's a root block
@@ -163,10 +163,16 @@ func (w *markdownWriter) writeConfigBlock(block *configBlock) {
 	if block.desc != "" {
 		desc := block.desc
 
-		// Wrap the config block name with backticks
+		// Wrap first instance of the config block name with backticks
 		if block.name != "" {
-			desc = regexp.MustCompile(regexp.QuoteMeta(block.name)).ReplaceAllStringFunc(desc, func(input string) string {
-				return "`" + input + "`"
+			var matches int
+			nameRegexp := regexp.MustCompile(regexp.QuoteMeta(block.name))
+			desc = nameRegexp.ReplaceAllStringFunc(desc, func(input string) string {
+				if matches == 0 {
+					matches++
+					return "`" + input + "`"
+				}
+				return input
 			})
 		}
 
@@ -175,7 +181,7 @@ func (w *markdownWriter) writeConfigBlock(block *configBlock) {
 			sortedPrefixes := sort.StringSlice(block.flagsPrefixes)
 			sortedPrefixes.Sort()
 
-			desc += " The supported CLI flags `<prefix>` used to reference this config block are:\n\n"
+			desc += " The supported CLI flags `<prefix>` used to reference this configuration block are:\n\n"
 
 			for _, prefix := range sortedPrefixes {
 				if prefix == "" {

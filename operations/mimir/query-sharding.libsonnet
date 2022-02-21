@@ -41,14 +41,14 @@
   query_frontend_args+:: if !$._config.query_sharding_enabled then {} else
     // When sharding is enabled, query-frontend runs PromQL engine internally.
     $._config.queryEngineConfig {
-      'frontend.parallelize-shardable-queries': true,
+      'query-frontend.parallelize-shardable-queries': true,
       // disable query sharding by default for all tenants
-      'frontend.query-sharding-total-shards': 0,
+      'query-frontend.query-sharding-total-shards': 0,
       // Adjust max query parallelism to 16x sharding, without sharding we can run a full 15d queries in parallel.
       // 15d * 16 shards = 240 subqueries.
       'querier.max-query-parallelism': 240,
 
-      'frontend.query-sharding-max-sharded-queries': 128,
+      'query-frontend.query-sharding-max-sharded-queries': 128,
 
       'server.grpc-max-recv-msg-size-bytes': super['server.grpc-max-recv-msg-size-bytes'] * $._config.query_sharding_msg_size_factor,
     },

@@ -71,8 +71,8 @@ std.manifestYamlDoc({
         jaegerApp: 'query-frontend',
         extraArguments:
           '-store.max-query-length=8760h' +
-          // Use of scheduler is activated by `-frontend.scheduler-address` option.
-          (if $._config.use_query_scheduler then ' -frontend.scheduler-address=query-scheduler:9011' else ''),
+          // Use of scheduler is activated by `-query-frontend.scheduler-address` option.
+          (if $._config.use_query_scheduler then ' -query-frontend.scheduler-address=query-scheduler:9011' else ''),
       }),
     } + (
       if $._config.use_query_scheduler then {
@@ -170,7 +170,7 @@ std.manifestYamlDoc({
       (if $._config.debug then 'exec ./dlv exec ./mimir --listen=:%(debugPort)d --headless=true --api-version=2 --accept-multiclient --continue -- ' % options
        else 'exec ./mimir ') +
       ('-config.file=./config/mimir.yaml -target=%(target)s -server.http-listen-port=%(httpPort)d -server.grpc-listen-port=%(grpcPort)d -activity-tracker.filepath=/activity/%(target)s-%(httpPort)d %(extraArguments)s' % options) +
-      (if $._config.use_memberlist_for_ring then ' -memberlist.nodename=%(memberlistNodeName)s -memberlist.bind-port=%(memberlistBindPort)d -ring.store=memberlist -distributor.ring.store=memberlist -compactor.ring.store=memberlist -store-gateway.sharding-ring.store=memberlist -ruler.ring.store=memberlist' % options else ''),
+      (if $._config.use_memberlist_for_ring then ' -memberlist.nodename=%(memberlistNodeName)s -memberlist.bind-port=%(memberlistBindPort)d -ingester.ring.store=memberlist -distributor.ring.store=memberlist -compactor.ring.store=memberlist -store-gateway.sharding-ring.store=memberlist -ruler.ring.store=memberlist' % options else ''),
     ],
     environment: [
       '%s=%s' % [key, options.env[key]]

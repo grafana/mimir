@@ -736,7 +736,6 @@ spec:
             topologyKey: kubernetes.io/hostname
       containers:
       - args:
-        - -consul.hostname=consul.default.svc.cluster.local:8500
         - -distributor.extend-writes=true
         - -distributor.ha-tracker.enable=true
         - -distributor.ha-tracker.enable-for-all-users=true
@@ -746,14 +745,15 @@ spec:
         - -distributor.health-check-ingesters=true
         - -distributor.ingestion-burst-size=200000
         - -distributor.ingestion-rate-limit=10000
-        - -distributor.replication-factor=3
         - -distributor.ring.consul.hostname=consul.default.svc.cluster.local:8500
         - -distributor.ring.prefix=
         - -distributor.ring.store=consul
+        - -ingester.ring.consul.hostname=consul.default.svc.cluster.local:8500
+        - -ingester.ring.heartbeat-timeout=10m
+        - -ingester.ring.prefix=
+        - -ingester.ring.replication-factor=3
+        - -ingester.ring.store=consul
         - -mem-ballast-size-bytes=1073741824
-        - -ring.heartbeat-timeout=10m
-        - -ring.prefix=
-        - -ring.store=consul
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc.keepalive.max-connection-age=2m
         - -server.grpc.keepalive.max-connection-age-grace=5m
@@ -762,7 +762,7 @@ spec:
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
         - -target=distributor
-        image: cortexproject/cortex:v1.9.0
+        image: grafana/mimir:mimir-2.0.0
         imagePullPolicy: IfNotPresent
         name: distributor
         ports:
@@ -828,20 +828,18 @@ spec:
         - -blocks-storage.bucket-store.sync-dir=/data/tsdb
         - -blocks-storage.bucket-store.sync-interval=15m
         - -blocks-storage.gcs.bucket-name=blocks-bucket
-        - -consul.hostname=consul.default.svc.cluster.local:8500
         - -distributor.health-check-ingesters=true
-        - -distributor.replication-factor=3
+        - -ingester.ring.consul.hostname=consul.default.svc.cluster.local:8500
+        - -ingester.ring.heartbeat-timeout=10m
+        - -ingester.ring.prefix=
+        - -ingester.ring.replication-factor=3
+        - -ingester.ring.store=consul
         - -mem-ballast-size-bytes=268435456
         - -querier.frontend-client.grpc-max-send-msg-size=104857600
         - -querier.max-concurrent=8
         - -querier.query-ingesters-within=13h
-        - -querier.query-label-names-with-matchers-enabled=true
         - -querier.query-store-after=12h
-        - -querier.query-store-for-labels-enabled=true
         - -querier.scheduler-address=query-scheduler-discovery.default.svc.cluster.local:9095
-        - -ring.heartbeat-timeout=10m
-        - -ring.prefix=
-        - -ring.store=consul
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
@@ -856,7 +854,7 @@ spec:
         env:
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1024"
-        image: cortexproject/cortex:v1.9.0
+        image: grafana/mimir:mimir-2.0.0
         imagePullPolicy: IfNotPresent
         name: querier
         ports:
@@ -914,13 +912,13 @@ spec:
             topologyKey: kubernetes.io/hostname
       containers:
       - args:
-        - -frontend.align-querier-with-step=false
-        - -frontend.cache-results=true
-        - -frontend.max-cache-freshness=10m
-        - -frontend.results-cache.backend=memcached
-        - -frontend.results-cache.memcached.addresses=dnssrvnoa+memcached-frontend.default.svc.cluster.local:11211
-        - -frontend.results-cache.memcached.timeout=500ms
-        - -frontend.scheduler-address=query-scheduler-discovery.default.svc.cluster.local:9095
+        - -query-frontend.align-querier-with-step=false
+        - -query-frontend.cache-results=true
+        - -query-frontend.max-cache-freshness=10m
+        - -query-frontend.results-cache.backend=memcached
+        - -query-frontend.results-cache.memcached.addresses=dnssrvnoa+memcached-frontend.default.svc.cluster.local:11211
+        - -query-frontend.results-cache.memcached.timeout=500ms
+        - -query-frontend.scheduler-address=query-scheduler-discovery.default.svc.cluster.local:9095
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc-max-recv-msg-size-bytes=104857600
         - -server.grpc.keepalive.min-time-between-pings=10s
@@ -929,7 +927,7 @@ spec:
         - -server.http-write-timeout=1m
         - -store.max-query-length=12000h
         - -target=query-frontend
-        image: cortexproject/cortex:v1.9.0
+        image: grafana/mimir:mimir-2.0.0
         imagePullPolicy: IfNotPresent
         name: query-frontend
         ports:
@@ -992,7 +990,7 @@ spec:
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
         - -target=query-scheduler
-        image: cortexproject/cortex:v1.9.0
+        image: grafana/mimir:mimir-2.0.0
         imagePullPolicy: IfNotPresent
         name: query-scheduler
         ports:
@@ -1058,16 +1056,15 @@ spec:
         - -blocks-storage.bucket-store.sync-dir=/data/tsdb
         - -blocks-storage.bucket-store.sync-interval=15m
         - -blocks-storage.gcs.bucket-name=blocks-bucket
-        - -consul.hostname=consul.default.svc.cluster.local:8500
         - -distributor.extend-writes=true
         - -distributor.health-check-ingesters=true
-        - -distributor.replication-factor=3
+        - -ingester.ring.consul.hostname=consul.default.svc.cluster.local:8500
+        - -ingester.ring.heartbeat-timeout=10m
+        - -ingester.ring.prefix=
+        - -ingester.ring.replication-factor=3
+        - -ingester.ring.store=consul
         - -querier.query-ingesters-within=13h
-        - -querier.query-label-names-with-matchers-enabled=true
         - -querier.query-store-after=12h
-        - -ring.heartbeat-timeout=10m
-        - -ring.prefix=
-        - -ring.store=consul
         - -ruler-storage.backend=gcs
         - -ruler-storage.gcs.bucket-name=rules-bucket
         - -ruler.alertmanager-url=http://alertmanager.default.svc.cluster.local/alertmanager
@@ -1088,7 +1085,7 @@ spec:
         - -store-gateway.sharding-ring.store=consul
         - -store.max-query-length=768h
         - -target=ruler
-        image: cortexproject/cortex:v1.9.0
+        image: grafana/mimir:mimir-2.0.0
         imagePullPolicy: IfNotPresent
         name: ruler
         ports:
@@ -1140,7 +1137,6 @@ spec:
       - args:
         - -alertmanager-storage.backend=gcs
         - -alertmanager-storage.gcs.bucket-name=alerts-bucket
-        - -alertmanager.sharding-enabled=true
         - -alertmanager.sharding-ring.consul.hostname=consul.default.svc.cluster.local:8500
         - -alertmanager.sharding-ring.replication-factor=3
         - -alertmanager.sharding-ring.store=consul
@@ -1156,7 +1152,7 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: status.podIP
-        image: cortexproject/cortex:v1.9.0
+        image: grafana/mimir:mimir-2.0.0
         imagePullPolicy: IfNotPresent
         name: alertmanager
         ports:
@@ -1245,7 +1241,7 @@ spec:
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
         - -target=compactor
-        image: cortexproject/cortex:v1.9.0
+        image: grafana/mimir:mimir-2.0.0
         imagePullPolicy: IfNotPresent
         name: compactor
         ports:
@@ -1327,19 +1323,18 @@ spec:
         - -blocks-storage.tsdb.dir=/data/tsdb
         - -blocks-storage.tsdb.isolation-enabled=false
         - -blocks-storage.tsdb.ship-interval=1m
-        - -consul.hostname=consul.default.svc.cluster.local:8500
         - -distributor.health-check-ingesters=true
-        - -distributor.replication-factor=3
-        - -ingester.heartbeat-period=15s
-        - -ingester.join-after=0s
         - -ingester.max-global-series-per-metric=20000
         - -ingester.max-global-series-per-user=150000
-        - -ingester.num-tokens=512
-        - -ingester.tokens-file-path=/data/tokens
-        - -ingester.unregister-on-shutdown=true
-        - -ring.heartbeat-timeout=10m
-        - -ring.prefix=
-        - -ring.store=consul
+        - -ingester.ring.consul.hostname=consul.default.svc.cluster.local:8500
+        - -ingester.ring.heartbeat-period=15s
+        - -ingester.ring.heartbeat-timeout=10m
+        - -ingester.ring.num-tokens=512
+        - -ingester.ring.prefix=
+        - -ingester.ring.replication-factor=3
+        - -ingester.ring.store=consul
+        - -ingester.ring.tokens-file-path=/data/tokens
+        - -ingester.ring.unregister-on-shutdown=true
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc-max-concurrent-streams=10000
         - -server.grpc-max-recv-msg-size-bytes=10485760
@@ -1348,7 +1343,7 @@ spec:
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
         - -target=ingester
-        image: cortexproject/cortex:v1.9.0
+        image: grafana/mimir:mimir-2.0.0
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -1666,7 +1661,7 @@ spec:
         - -store-gateway.sharding-ring.tokens-file-path=/data/tokens
         - -store-gateway.sharding-ring.wait-stability-min-duration=1m
         - -target=store-gateway
-        image: cortexproject/cortex:v1.9.0
+        image: grafana/mimir:mimir-2.0.0
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:
