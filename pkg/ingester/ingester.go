@@ -470,10 +470,14 @@ func (i *Ingester) updateLoop(ctx context.Context) error {
 }
 
 func (i *Ingester) getActiveSeriesMatchers(userID string) *ActiveSeriesMatchers {
+	var matchers *ActiveSeriesMatchers
 	if cfg := i.cfg.ActiveSeriesCustomTrackersOverrides.Get(); cfg != nil {
-		return cfg.MatchersForUser(userID)
+		matchers = cfg.MatchersForUser(userID)
 	}
-	return &i.cfg.ActiveSeriesCustomTrackers
+	if matchers == nil {
+		matchers = &i.cfg.ActiveSeriesCustomTrackers
+	}
+	return matchers
 }
 
 func (i *Ingester) replaceMatchers(asm *ActiveSeriesMatchers, userDB *userTSDB, now time.Time) {
