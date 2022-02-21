@@ -212,7 +212,7 @@ func TestActiveSeries_ReloadSeriesMatchers(t *testing.T) {
 	assert.Equal(t, []int{1}, activeMatching)
 
 	reloadTime := time.Now()
-	c.ReloadSeriesMatchers(asm)
+	c.ReloadSeriesMatchers(asm, reloadTime)
 	c.UpdateSeries(ls2, time.Now(), copyFn)
 	allActive, activeMatching = c.Active()
 	assert.Equal(t, 2, allActive, "reloading should not affect general counter")

@@ -68,7 +68,7 @@ func (c *ActiveSeries) CurrentMatchers() *ActiveSeriesMatchers {
 	return c.asm
 }
 
-func (c *ActiveSeries) ReloadSeriesMatchers(asm *ActiveSeriesMatchers) {
+func (c *ActiveSeries) ReloadSeriesMatchers(asm *ActiveSeriesMatchers, reloadTime time.Time) {
 	c.asm = asm
 	for i := 0; i < numActiveSeriesStripes; i++ {
 		c.stripes[i].mu.Lock()
@@ -79,7 +79,7 @@ func (c *ActiveSeries) ReloadSeriesMatchers(asm *ActiveSeriesMatchers) {
 		c.stripes[i].asm = asm
 		c.stripes[i].activeMatching = makeIntSliceIfNotEmpty(len(asm.MatcherNames()), c.stripes[i].activeMatching)
 	}
-	c.lastUpdate = time.Now()
+	c.lastUpdate = reloadTime
 }
 
 // Updates series timestamp to 'now'. Function is called to make a copy of labels if entry doesn't exist yet.

@@ -476,9 +476,9 @@ func (i *Ingester) getActiveSeriesMatchers(userID string) *ActiveSeriesMatchers 
 	return &i.cfg.ActiveSeriesCustomTrackers
 }
 
-func (i *Ingester) replaceMatchers(asm *ActiveSeriesMatchers, userDB *userTSDB) {
+func (i *Ingester) replaceMatchers(asm *ActiveSeriesMatchers, userDB *userTSDB, now time.Time) {
 	i.metrics.deletePerUserCustomTrackerMetrics(userDB.userID, userDB.activeSeries.CurrentMatchers().names)
-	userDB.activeSeries.ReloadSeriesMatchers(asm)
+	userDB.activeSeries.ReloadSeriesMatchers(asm, now)
 }
 
 func (i *Ingester) updateActiveSeries(now time.Time) {
@@ -491,7 +491,7 @@ func (i *Ingester) updateActiveSeries(now time.Time) {
 
 		newMatchers := i.getActiveSeriesMatchers(userID)
 		if !newMatchers.Equals(userDB.activeSeries.CurrentMatchers()) {
-			i.replaceMatchers(newMatchers, userDB)
+			i.replaceMatchers(newMatchers, userDB, now)
 		}
 
 		userDB.activeSeries.Purge(purgeTime)
@@ -502,8 +502,8 @@ func (i *Ingester) updateActiveSeries(now time.Time) {
 			i.metrics.activeSeriesPerUser.DeleteLabelValues(userID)
 		}
 		if userDB.activeSeries.lastUpdate.Before(purgeTime) {
-			// Do not publish metrics until the new matcher setup had time to catch up
-			// LastUpdate is Zero when it never get updated
+			// Do not publish metrics until the new matcher setup had time to catch up.
+			// LastUpdate is Zero when it never get updated.
 			for idx, name := range userDB.activeSeries.asm.names {
 				// We only set the metrics for matchers that actually exist, to avoid increasing cardinality with zero valued metrics.
 				if activeMatching[idx] > 0 {

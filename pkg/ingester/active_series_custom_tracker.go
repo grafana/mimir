@@ -89,13 +89,13 @@ func NewActiveSeriesMatchers(matchersConfig map[string]string) (*ActiveSeriesMat
 	// Order doesn't matter for the functionality as long as the order remains consistent during the execution of the program.
 	sort.Sort(asm)
 	// The concatenation should happen after ordering, to ensure equality is not dependent on map traversal.
-	asm.config = asm.String()
+	asm.key = asm.String()
 
 	return asm, nil
 }
 
 type ActiveSeriesMatchers struct {
-	config   string
+	key      string
 	names    []string
 	matchers []labelsMatchers
 }
@@ -104,7 +104,7 @@ func (asm *ActiveSeriesMatchers) Equals(other *ActiveSeriesMatchers) bool {
 	if asm == nil || other == nil {
 		return asm == other
 	}
-	return asm.config == other.config
+	return asm.key == other.key
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
