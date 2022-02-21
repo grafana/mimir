@@ -7,7 +7,9 @@ package ingester
 
 import (
 	"context"
+	"encoding/json"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -249,9 +251,30 @@ func (u *userTSDB) blocksToDelete(blocks []*tsdb.Block) map[ulid.ULID]struct{} {
 	return result
 }
 
+// readMetadataFile tries to read the metadata file from <dir>/thanos.shipper.json.
+func readMetadataFile(dir string) (*shipper.Meta, error) {
+	fpath := filepath.Join(dir, filepath.Clean(shipper.MetaFilename))
+	b, err := os.ReadFile(fpath)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to read %q", fpath)
+	}
+
+	var m shipper.Meta
+	if err := json.Unmarshal(b, &m); err != nil {
+		return nil, errors.Wrapf(err, "failed to parse %q as JSON: %q", fpath, string(b))
+	}
+	if m.Version != shipper.MetaVersion1 {
+		return nil, errors.Errorf("unexpected metadata file version %d", m.Version)
+	}
+
+	return &m, nil
+}
+
 // updateCachedShipperBlocks reads the shipper meta file and updates the cached shipped blocks.
 func (u *userTSDB) updateCachedShippedBlocks() error {
-	shipperMeta, err := shipper.ReadMetaFile(u.db.Dir())
+	// TODO: Switch back to shipper.ReadMetaFile once PR to upstream our error wrapping
+	// improvement is merged
+	shipperMeta, err := readMetadataFile(u.db.Dir())
 	if os.IsNotExist(err) {
 		// If the meta file doesn't exist it means the shipper hasn't run yet.
 		shipperMeta = &shipper.Meta{}
