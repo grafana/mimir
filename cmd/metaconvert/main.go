@@ -47,7 +47,7 @@ func main() {
 	flag.BoolVar(&cfg.DryRun, "dry-run", false, "Don't make changes; only report what needs to be done")
 	flag.StringVar(&cfg.Tenant, "tenant", "", "Tenant to process")
 	flag.Usage = func() {
-		fmt.Fprintln(flag.CommandLine.Output(), os.Args[0], "%s is a tool to update meta.json files to conform to Mimir requirements.")
+		fmt.Fprintln(flag.CommandLine.Output(), os.Args[0], "is a tool to update meta.json files to conform to Mimir requirements.")
 		fmt.Fprintln(flag.CommandLine.Output(), "Flags:")
 		flag.PrintDefaults()
 	}
