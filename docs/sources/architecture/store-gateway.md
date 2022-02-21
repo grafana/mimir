@@ -6,40 +6,38 @@ weight: 10
 
 # Store-gateway
 
-The store-gateway is responsible to query blocks and is used by the [querier](./querier.md) at query time. The store-gateway is required when running the blocks storage.
+The store-gateway is responsible to query blocks from [long-term storage]({{<relref "./_index.md#long-term-storage">}}) and is used by the [querier]({{<relref "./querier.md">}}) on the read path at query time.
 
-The store-gateway is the Cortex service responsible to query series from blocks. The store-gateway is required when running the Cortex blocks storage.
-
-The store-gateway is **semi-stateful**.
+The store-gateway is **stateless**, however when sharding is enabled and instances fail, the remaining instaces may take time to take over processing of queries.
 
 ## How it works
 
-The store-gateway needs to have an almost up-to-date view over the storage bucket, in order to discover blocks belonging to their shard. The store-gateway can keep the bucket view updated in to two different ways:
+The store-gateway needs to have an almost up-to-date view over the long-term storage bucket, in order to discover blocks belonging to their shard. The store-gateway can keep the bucket view updated in to two different ways:
 
 1. Periodically scanning the bucket (default)
-2. Periodically downloading the [bucket index](./bucket-index.md)
+2. Periodically downloading the [bucket index]({{<relref "../blocks-storage/bucket-index.md">}})
 
 ### Bucket index disabled (default)
 
-At startup **store-gateways** iterate over the entire storage bucket to discover blocks for all tenants and download the `meta.json` and index-header for each block. During this initial bucket synchronization phase, the store-gateway `/ready` readiness probe endpoint will fail.
+At startup **store-gateways** iterate over the entire long-term storage bucket to discover blocks for all tenants and download the `meta.json` and index-header for each block. During this initial bucket synchronization phase, the store-gateway `/ready` readiness probe endpoint will fail.
 
-While running, store-gateways periodically rescan the storage bucket to discover new blocks (uploaded by the ingesters and [compactor](./compactor.md)) and blocks marked for deletion or fully deleted since the last scan (as a result of compaction). The frequency at which this occurs is configured via `-blocks-storage.bucket-store.sync-interval`.
+While running, store-gateways periodically re-scan the long-term storage bucket to discover new blocks (uploaded by the [ingesters]({{<relref "./ingester.md">}}) and [compactor]({{<relref "./compactor.md">}})) and blocks marked for deletion or fully deleted since the last scan (as a result of compaction). The frequency at which this occurs is configured via `-blocks-storage.bucket-store.sync-interval`.
 
-The blocks chunks and the entire index are never fully downloaded by the store-gateway. The index-header is stored to the local disk, in order to avoid to re-download it on subsequent restarts of a store-gateway. For this reason, it's recommended - but not required - to run the store-gateway with a persistent disk. For example, if you're running the Cortex cluster in Kubernetes, you may use a StatefulSet with a persistent volume claim for the store-gateways.
+The blocks chunks and the entire index are never fully downloaded by the store-gateway. The index-header is stored to the local disk, in order to avoid to re-download it on subsequent restarts of a store-gateway. For this reason, it's recommended - but not required - to run the store-gateway with a persistent disk. For example, if you're running the Grafana Mimir cluster in Kubernetes, you may use a StatefulSet with a persistent volume claim for the store-gateways.
 
-_For more information about the index-header, please refer to [Binary index-header documentation](./binary-index-header.md)._
+For more information about the index-header, please refer to [Binary index-header documentation]({{<relref "../blocks-storage/binary-index-header.md">}}).
 
 ### Bucket index enabled
 
-When bucket index is enabled, the overall workflow is the same but, instead of iterating over the bucket objects, the store-gateway fetch the [bucket index](./bucket-index.md) for each tenant belonging to their shard in order to discover each tenant's blocks and block deletion marks.
+When bucket index is enabled, the overall workflow is the same but, instead of iterating over the bucket objects, the store-gateway fetch the [bucket index]({{<relref "../blocks-storage/bucket-index.md">}}) for each tenant belonging to their shard in order to discover each tenant's blocks and block deletion marks.
 
-_For more information about the bucket index, please refer to [bucket index documentation](./bucket-index.md)._
+For more information about the bucket index, please refer to [bucket index documentation]({{<relref "../blocks-storage/bucket-index.md">}}).
 
 ## Blocks sharding and replication
 
-The store-gateway optionally supports blocks sharding. Sharding can be used to horizontally scale blocks in a large cluster without hitting any vertical scalability limit.
+The store-gateway optionally supports blocks sharding. Sharding can be used to horizontally scale query processing in a large cluster without hitting any vertical scalability limit.
 
-When sharding is enabled, store-gateway instances builds an [hash ring](../architecture.md#the-hash-ring) and blocks get sharded and replicated across the pool of store-gateway instances registered within the ring.
+When sharding is enabled, store-gateway instances builds an [hash ring]({{<relref "../architecture/about-the-hash-ring">}}) and blocks gets sharded and replicated across the pool of store-gateway instances registered within the ring.
 
 Store-gateways continuously monitor the ring state and whenever the ring topology changes (e.g. a new instance has been added/removed or gets healthy/unhealthy) each store-gateway instance resync the blocks assigned to its shard, based on the block ID hash matching the token ranges assigned to the instance itself within the ring.
 
@@ -47,21 +45,21 @@ For each block belonging to a store-gateway shard, the store-gateway loads its `
 
 Blocks are replicated across multiple store-gateway instances based on a replication factor configured via `-store-gateway.sharding-ring.replication-factor`. The blocks replication is used to protect from query failures caused by some blocks not loaded by any store-gateway instance at a given time like, for example, in the event of a store-gateway failure or while restarting a store-gateway instance (e.g. during a rolling update).
 
-This feature requires the backend [hash ring](../architecture.md#the-hash-ring) to be configured via `-store-gateway.sharding-ring.*` flags (or their respective YAML config options).
+This feature requires the backend [hash ring]({{<relref "../architecture/about-the-hash-ring">}}) to be configured via `-store-gateway.sharding-ring.*` flags (or their respective YAML config flags).
 
 ### Sharding strategies
 
 The store-gateway uses shuffle-sharding to spread the blocks of each tenant across a subset of store-gateway instances. The number of store-gateway instances loading blocks of a single tenant is limited and the blast radius of any issue that could be introduced by the tenant's workload is limited to its shard instances.
 
-The default number of store-gateway instances per tenant is configured using the `-store-gateway.tenant-shard-size` flag (or their respective YAML config options). The shard size can then be overridden on a per-tenant basis setting the `store_gateway_tenant_shard_size` in the limits overrides.
+The default number of store-gateway instances per tenant is configured using the `-store-gateway.tenant-shard-size` flag (or their respective YAML config flags). The shard size can then be overridden on a per-tenant basis setting the `store_gateway_tenant_shard_size` in the limits overrides.
 
 Default value for `-store-gateway.tenant-shard-size` is 0, which means that tenant's blocks are sharded across all store-gateway instances.
 
-_Please check out the [shuffle sharding documentation](../guides/shuffle-sharding.md) for more information about how it works._
+For more information on shuffle sharding, refer to [configure shuffle sharding]({{<relref "../operating-grafana-mimir/configure-shuffle-sharding.md">}}).
 
 ### Auto-forget
 
-When a store-gateway instance cleanly shutdowns, it automatically unregisters itself from the ring. However, in the event of a crash or node failure, the instance will not be unregistered from the ring, potentially leaving a spurious entry in the ring forever.
+When a store-gateway instance cleanly shuts down, it automatically unregisters itself from the ring. However, in the event of a crash or node failure, the instance will not be unregistered from the ring, potentially leaving a spurious entry in the ring forever.
 
 To protect from this, when an healthy store-gateway instance finds another instance in the ring which is unhealthy for more than 10 times the configured `-store-gateway.sharding-ring.heartbeat-timeout`, the healthy instance forcibly removes the unhealthy one from the ring.
 
@@ -69,33 +67,33 @@ This feature is called **auto-forget** and is built into the store-gateway.
 
 ### Zone-awareness
 
-The store-gateway replication optionally supports [zone-awareness](../guides/zone-replication.md). When zone-aware replication is enabled and the blocks replication factor is > 1, each block is guaranteed to be replicated across store-gateway instances running in different availability zones.
+The store-gateway replication optionally supports [zone-awareness]({{<relref "../guides/zone-replication.md">}}). When zone-aware replication is enabled and the blocks replication factor is > 1, each block is guaranteed to be replicated across store-gateway instances running in different availability zones.
 
 **To enable** the zone-aware replication for the store-gateways you should:
 
-1. Configure the availability zone for each store-gateway via the `-store-gateway.sharding-ring.instance-availability-zone` CLI flag (or its respective YAML config option)
-2. Enable blocks zone-aware replication via the `-store-gateway.sharding-ring.zone-awareness-enabled` CLI flag (or its respective YAML config option). Please be aware this configuration option should be set to store-gateways, queriers and rulers.
+1. Configure the availability zone for each store-gateway via the `-store-gateway.sharding-ring.instance-availability-zone` CLI flag (or its respective YAML config flag)
+2. Enable blocks zone-aware replication via the `-store-gateway.sharding-ring.zone-awareness-enabled` CLI flag (or its respective YAML config flag). Please be aware this configuration flag should be set on store-gateways, queriers and rulers.
 3. Rollout store-gateways, queriers and rulers to apply the new configuration
 
 ### Waiting for stable ring at startup
 
 In the event of a cluster cold start or scale up of 2+ store-gateway instances at the same time we may end up in a situation where each new store-gateway instance starts at a slightly different time and thus each one runs the initial blocks sync based on a different state of the ring. For example, in case of a cold start, the first store-gateway joining the ring may load all blocks since the sharding logic runs based on the current state of the ring, which is 1 single store-gateway.
 
-To reduce the likelihood this could happen, the store-gateway waits for a stable ring at startup. A ring is considered stable if no instance is added/removed to the ring for at least `-store-gateway.sharding-ring.wait-stability-min-duration`. If the ring keep getting changed after `-store-gateway.sharding-ring.wait-stability-max-duration`, the store-gateway will stop waiting for a stable ring and will proceed starting up normally.
+To reduce the likelihood this could happen, the store-gateway waits for a stable ring at startup. A ring is considered stable if no instance is added/removed to the ring for at least `-store-gateway.sharding-ring.wait-stability-min-duration`. If the ring keeps getting changed after `-store-gateway.sharding-ring.wait-stability-max-duration`, the store-gateway will stop waiting for a stable ring and will proceed starting up normally.
 
 To disable this waiting logic, you can start the store-gateway with `-store-gateway.sharding-ring.wait-stability-min-duration=0`.
 
 ## Blocks index-header
 
-The [index-header](./binary-index-header.md) is a subset of the block index which the store-gateway downloads from the object storage and keeps on the local disk in order to speed up queries.
+The [index-header]({{<relref "../blocks-storage/binary-index-header.md">}}) is a subset of the block index which the store-gateway downloads from long-term storage and keeps on the local disk in order to speed up queries.
 
-At startup, the store-gateway downloads the index-header of each block belonging to its shard. A store-gateway is not ready until this initial index-header download is completed. Moreover, while running, the store-gateway periodically looks for newly uploaded blocks in the storage and downloads the index-header for the blocks belonging to its shard.
+At startup, the store-gateway downloads the index-header of each block belonging to its shard. A store-gateway is not ready until this initial index-header download is completed. Moreover, while running, the store-gateway periodically looks for newly uploaded blocks in the long-term storage and downloads the index-header for the blocks belonging to its shard.
 
 ### Index-header lazy loading
 
 By default, each index-header is memory mapped by the store-gateway right after downloading it. In a cluster with a large number of blocks, each store-gateway may have a large amount of memory mapped index-headers, regardless how frequently they're used at query time.
 
-Cortex supports a configuration option `-blocks-storage.bucket-store.index-header-lazy-loading-enabled=true` to enable index-header lazy loading. When enabled, index-headers will be memory mapped only once required by a query and will be automatically released after `-blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout` time of inactivity.
+Mimir supports a configuration flag `-blocks-storage.bucket-store.index-header-lazy-loading-enabled=true` to enable index-header lazy loading. When enabled, index-headers will be memory mapped only once required by a query and will be automatically released after `-blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout` time of inactivity.
 
 ## Caching
 
@@ -105,7 +103,7 @@ The store-gateway supports the following caches:
 - [Chunks cache](#chunks-cache)
 - [Metadata cache](#metadata-cache)
 
-Caching is optional, but **highly recommended** in a production environment. Please also check out the [production tips](./production-tips.md#caching) for more information about configuring the cache.
+Caching is optional, but **highly recommended** in a production environment. Please also check out the [production tips]({{<relref "../blocks-storage/production-tips.md#caching">}}) for more information about configuring the cache.
 
 ### Index cache
 
@@ -123,7 +121,7 @@ The `inmemory` index cache is **enabled by default** and its max size can be con
 
 #### Memcached index cache
 
-The `memcached` index cache allows to use [Memcached](https://memcached.org/) as cache backend. This cache backend is configured using `-blocks-storage.bucket-store.index-cache.backend=memcached` and requires the Memcached server(s) addresses via `-blocks-storage.bucket-store.index-cache.memcached.addresses` (or config file). The addresses are resolved using the [DNS service provider](../configuration/arguments.md#dns-service-discovery).
+The `memcached` index cache allows to use [Memcached](https://memcached.org/) as cache backend. This cache backend is configured using `-blocks-storage.bucket-store.index-cache.backend=memcached` and requires the Memcached server(s) addresses via `-blocks-storage.bucket-store.index-cache.memcached.addresses` (or config file). The addresses are resolved using the [DNS service discovery]({{<relref "../configuration/about-grafana-mimir-arguments.md#dns-service-discovery">}}).
 
 The trade-off of using the Memcached index cache is:
 
@@ -136,19 +134,19 @@ For example, if you're running Memcached in Kubernetes, you may:
 
 1. Deploy your Memcached cluster using a [StatefulSet](https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/)
 2. Create an [headless service](https://kubernetes.io/docs/concepts/services-networking/service/#headless-services) for Memcached StatefulSet
-3. Configure the Cortex's Memcached client address using the `dnssrvnoa+` [service discovery](../configuration/arguments.md#dns-service-discovery)
+3. Configure the Mimir's Memcached client address using the `dnssrvnoa+` [service discovery]({{<relref "../configuration/about-grafana-mimir-arguments.md#dns-service-discovery">}})
 
 ### Chunks cache
 
-Store-gateway can also use a cache for storing chunks fetched from the storage. Chunks contain actual samples, and can be reused if user query hits the same series for the same time range.
+Store-gateway can also use a cache for storing chunks fetched from the long-term storage. Chunks contain actual samples, and can be reused if user query hits the same series for the same time range.
 
 To enable chunks cache, please set `-blocks-storage.bucket-store.chunks-cache.backend`. Chunks can currently only be stored into Memcached cache. Memcached client can be configured via flags with `-blocks-storage.bucket-store.chunks-cache.memcached.*` prefix.
 
-There are additional low-level options for configuring chunks cache. Please refer to other flags with `-blocks-storage.bucket-store.chunks-cache.*` prefix.
+There are additional low-level flags for configuring chunks cache. Please refer to other flags with `-blocks-storage.bucket-store.chunks-cache.*` prefix.
 
 ### Metadata cache
 
-Store-gateway and [querier](./querier.md) can use memcached for caching bucket metadata:
+Store-gateway and [querier]({{<relref "./querier.md">}}) can use memcached for caching bucket metadata:
 
 - List of tenants
 - List of blocks per tenant
@@ -156,11 +154,11 @@ Store-gateway and [querier](./querier.md) can use memcached for caching bucket m
 - Block's `deletion-mark.json` existence and content
 - Tenant's `bucket-index.json.gz` content
 
-Using the metadata cache can significantly reduce the number of API calls to object storage and protects from linearly scale the number of these API calls with the number of querier and store-gateway instances (because the bucket is periodically scanned and synched by each querier and store-gateway).
+Using the metadata cache can significantly reduce the number of API calls to long-term storage and protects from linearly scale the number of these API calls with the number of querier and store-gateway instances (because the bucket is periodically scanned and synched by each querier and store-gateway).
 
 To enable metadata cache, please set `-blocks-storage.bucket-store.metadata-cache.backend`. Only `memcached` backend is supported currently. Memcached client has additional configuration available via flags with `-blocks-storage.bucket-store.metadata-cache.memcached.*` prefix.
 
-Additional options for configuring metadata cache have `-blocks-storage.bucket-store.metadata-cache.*` prefix. By configuring TTL to zero or negative value, caching of given item type is disabled.
+Additional flags for configuring metadata cache have `-blocks-storage.bucket-store.metadata-cache.*` prefix. By configuring TTL to zero or negative value, caching of given item type is disabled.
 
 _The same memcached backend cluster should be shared between store-gateways and queriers._
 
@@ -171,5 +169,5 @@ _The same memcached backend cluster should be shared between store-gateways and 
 
 ## Store-gateway configuration
 
-Refer to the [store-gateway](../../configuration/reference-configuration-parameters/#store_gateway)
+Refer to the [store-gateway]({{<relref "../configuration/reference-configuration-parameters.md#store_gateway">}})
 block section for details of store-gateway-related configuration.
