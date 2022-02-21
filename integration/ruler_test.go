@@ -839,10 +839,15 @@ func TestRulerEnableAPIs(t *testing.T) {
 				{http.MethodGet, "/api/v1/rules/my_namespace/my_group"},
 				{http.MethodPost, "/api/v1/rules/my_namespace"},
 
-				{http.MethodGet, "/prometheus/v1/rules"},
-				{http.MethodGet, "/prometheus/v1/rules/my_namespace"},
-				{http.MethodGet, "/prometheus/v1/rules/my_namespace/my_group"},
-				{http.MethodPost, "/prometheus/v1/rules/my_namespace"},
+				{http.MethodGet, "/prometheus/rules"},
+				{http.MethodGet, "/prometheus/rules/my_namespace"},
+				{http.MethodGet, "/prometheus/rules/my_namespace/my_group"},
+				{http.MethodPost, "/prometheus/rules/my_namespace"},
+
+				{http.MethodGet, "/prometheus/config/v1/rules"},
+				{http.MethodGet, "/prometheus/config/v1/rules/my_namespace"},
+				{http.MethodGet, "/prometheus/config/v1/rules/my_namespace/my_group"},
+				{http.MethodPost, "/prometheus/config/v1/rules/my_namespace"},
 			},
 		},
 		{
@@ -858,9 +863,13 @@ func TestRulerEnableAPIs(t *testing.T) {
 				{http.MethodGet, "/api/v1/rules/my_namespace"},
 				{http.MethodPost, "/api/v1/rules/my_namespace"},
 
-				{http.MethodGet, "/prometheus/v1/rules"},
-				{http.MethodGet, "/prometheus/v1/rules/my_namespace"},
-				{http.MethodPost, "/prometheus/v1/rules/my_namespace"},
+				{http.MethodGet, "/prometheus/rules"},
+				{http.MethodGet, "/prometheus/rules/my_namespace"},
+				{http.MethodPost, "/prometheus/rules/my_namespace"},
+
+				{http.MethodGet, "/prometheus/config/v1/rules"},
+				{http.MethodGet, "/prometheus/config/v1/rules/my_namespace"},
+				{http.MethodPost, "/prometheus/config/v1/rules/my_namespace"},
 			},
 		},
 	}
