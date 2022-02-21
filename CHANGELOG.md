@@ -368,19 +368,19 @@
 
   * Ruler endpoints
 
-    | Legacy                                                | Alternative                                 |
-    | ----------------------------------------------------- | ------------------------------------------- |
-    | `/<legacy-http-prefix>/api/v1/rules`                  | `/<prometheus-http-prefix>/api/v1/rules`    |
-    | `/<legacy-http-prefix>/api/v1/alerts`                 | `/<prometheus-http-prefix>/api/v1/alerts`   |
-    | `/<legacy-http-prefix>/rules`                         | `/api/v1/rules`[^1]                         |
-    | `/<legacy-http-prefix>/rules/{namespace}`             | `/api/v1/rules/{namespace}`[^1]             |
-    | `/<legacy-http-prefix>/rules/{namespace}/{groupName}` | `/api/v1/rules/{namespace}/{groupName}`[^1] |
-    | `/<legacy-http-prefix>/rules/{namespace}`             | `/api/v1/rules/{namespace}`[^1]             |
-    | `/<legacy-http-prefix>/rules/{namespace}/{groupName}` | `/api/v1/rules/{namespace}/{groupName}`[^1] |
-    | `/<legacy-http-prefix>/rules/{namespace}`             | `/api/v1/rules/{namespace}`[^1]             |
-    | `/ruler_ring`                                         | `/ruler/ring`                               |
+    | Legacy                                                | Alternative                                         |
+    | ----------------------------------------------------- | --------------------------------------------------- |
+    | `/<legacy-http-prefix>/api/v1/rules`                  | `/<prometheus-http-prefix>/api/v1/rules`            |
+    | `/<legacy-http-prefix>/api/v1/alerts`                 | `/<prometheus-http-prefix>/api/v1/alerts`           |
+    | `/<legacy-http-prefix>/rules`                         | `/api/v1/rules` (see below)                         |
+    | `/<legacy-http-prefix>/rules/{namespace}`             | `/api/v1/rules/{namespace}` (see below)             |
+    | `/<legacy-http-prefix>/rules/{namespace}/{groupName}` | `/api/v1/rules/{namespace}/{groupName}` (see below) |
+    | `/<legacy-http-prefix>/rules/{namespace}`             | `/api/v1/rules/{namespace}` (see below)             |
+    | `/<legacy-http-prefix>/rules/{namespace}/{groupName}` | `/api/v1/rules/{namespace}/{groupName}` (see below) |
+    | `/<legacy-http-prefix>/rules/{namespace}`             | `/api/v1/rules/{namespace}` (see below)             |
+    | `/ruler_ring`                                         | `/ruler/ring`                                       |
 
-    [^1]: The `/api/v1/rules/**` endpoints are being deprecated with Mimir 2.0.0 and will be removed
+    > __Note:__ The `/api/v1/rules/**` endpoints are being deprecated with Mimir 2.0.0 and will be removed
     in Mimir 2.2.0. After upgrading to 2.0.0 we recommend switching uses to the equivalent
     `/<prometheus-http-prefix>/config/v1/**` endpoints that Mimir 2.0.0 introduces. You can also upgrade to 2.0.0 and
     then migrate endopoint usages to `/<prometheus-http-prefix>/config/v1/**` if it is acceptable to have a window of
