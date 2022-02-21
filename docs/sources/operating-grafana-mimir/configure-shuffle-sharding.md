@@ -26,7 +26,7 @@ Shuffle sharding is a technique that isolates different tenant's workloads and g
 The idea is to assign each tenant a shard that is composed of a subset of the Grafana Mimir instances, which minimizes the number of overlapping instances between two different tenants. Shuffle sharding has the following benefits:
 
 - An outage on some Grafana Mimir cluster instances or nodes will only affect a subset of tenants.
-- A misbehaving tenant only affects its shard instances. Due to the low overlap of instances between different tenants, it’s statistically likely that any other tenant will run on different instances or that only a subset of instances will match the affected ones.
+- A misbehaving tenant only affects its shard instances. Assuming each tenant shard is relatively small compared to the total number of instances in the cluster, it’s statistically likely that any other tenant will run on different instances or that only a subset of instances will match the affected ones.
 
 Using shuffle sharding doesn’t require more resources, but instances will not be evenly balanced.
 
@@ -94,7 +94,7 @@ Assuming shuffle sharding has been enabled for the write path, to enable shuffle
 
 - `-distributor.ingestion-tenant-shard-size=<size>`
 - `-querier.shuffle-sharding-ingesters-lookback-period=<period>`<br />
-  Queriers and rulers fetch in-memory series from the minimum set of required ingesters, selecting only ingesters which may have received series since 'now - lookback period'. The configured lookback `<period>` should be greater or equal than `-querier.query-store-after` and `-querier.query-ingesters-within` if set, and greater than the estimated minimum time it takes for the oldest samples stored in a block uploaded by ingester to be discovered and available for querying (3h with the default configuration).
+  Queriers and rulers fetch in-memory series from the minimum set of required ingesters, selecting only ingesters which may have received series since 'now - lookback period'. The configured lookback `<period>` should be greater or equal than `-querier.query-store-after` and `-querier.query-ingesters-within` if set, and greater than the estimated minimum time it takes for the oldest samples stored in a block uploaded by ingester to be discovered and available for querying. When running Grafana Mimir with the default configuration, the estimated minimum time it takes for the oldest sample in a uploaded block to be available for querying is 3h.
 
 In case ingesters shuffle sharding is enabled only for the write path, queriers and rulers on the read path will always query all ingesters instead of querying the subset of ingesters belonging to the tenant's shard. Keeping ingesters shuffle sharding enabled only on write path does not lead to incorrect query results, but may increase query latency.
 
@@ -110,7 +110,7 @@ If you’re running a Grafana Mimir cluster with shuffle sharding disabled, and 
 
 The current shuffle sharding implementation in Grafana Mimir has a limitation that prevents you from safely decreasing the tenant shard size if the ingesters’ shuffle sharding is enabled on the read path.
 
-The problem is that if a tenant’s subring decreases in size, there is currently no way for the queriers and rulers to know how big the tenant subring was previously, and hence they will potentially miss an ingester with data for that tenant. In other words, the lookback mechanism, used to select the ingesters which may have received series since 'now - lookback period', doesn't work correctly if the tenant shard size is decreased.
+The problem is that if a tenant’s shard decreases in size, there is currently no way for the queriers and rulers to know how big the tenant shard was previously, and hence they will potentially miss an ingester with data for that tenant. In other words, the lookback mechanism, used to select the ingesters which may have received series since 'now - lookback period', doesn't work correctly if the tenant shard size is decreased.
 
 This is not supported because deemed to be an infrequent operation, but a workaround still exists:
 
@@ -168,6 +168,6 @@ _The compactor shard size can be overridden on a per-tenant basis setting `compa
 
 ### Does shuffle sharding add additional overhead to the KV store?
 
-No, shuffle sharding subrings are computed client-side and are not stored in the ring. KV store sizing still depends primarily on the number of replicas (of any component that uses the ring, e.g. ingesters) and tokens per replica.
+No, shards are computed client-side and are not stored in the ring. KV store sizing still depends primarily on the number of replicas (of any component that uses the ring, e.g. ingesters) and tokens per replica.
 
-However, each tenant's subring is cached in memory on the client-side which may slightly increase the memory footprint of certain components (mostly the distributor).
+However, each tenant's shard is cached in memory on the client-side in some components which may slightly increase their memory footprint (mostly the distributor).
