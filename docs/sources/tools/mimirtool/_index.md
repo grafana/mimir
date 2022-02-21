@@ -576,6 +576,24 @@ mimirtool analyse prometheus --address=<url> --id=<tenant_id>
 }
 ```
 
+### Bucket validation
+
+Validate that object store bucket works correctly.
+
+```bash
+mimirtool bucket-validation
+```
+
+| Env Variable | Flag                   | Description                                                       |
+|--------------|------------------------|-------------------------------------------------------------------|
+| -            | `--object-count`       | Number of objects to create & delete. 2000 by default             | 
+| -            | `--report-every`       | Every X operations a progress report gets printed. 100 by default | 
+| -            | `--test-runs`          | Number of times we want to run the whole test. 1 by default       | 
+| -            | `--prefix`             | Path prefix to use for test objects in object store.              | 
+| -            | `--retries-on-error`   | Number of times we want to retry if object store returns error.   | 
+| -            | `--bucket-config`      | The CLI args to configure a storage bucket.                       | 
+| -            | `--bucket-config-help` | Help text explaining how to use the -bucket-config parameter.     | 
+
 ## License
 
 Licensed AGPLv3, see [LICENSE](../../LICENSE).
