@@ -532,7 +532,7 @@ _This endpoint can be disabled via the `-ruler.enable-api` CLI flag (or its resp
 
 _Requires [authentication](#authentication)._
 
-__Example response__
+**Example response**
 
 ```yaml
 ---
@@ -600,7 +600,7 @@ _This endpoint can be disabled via the `-ruler.enable-api` CLI flag (or its resp
 
 _Requires [authentication](#authentication)._
 
-__Example response__
+**Example response**
 
 ```yaml
 name: <string>
@@ -685,7 +685,7 @@ into `tenant-a`'s storage (e.g. as metric `sum:metric_b`). Now part of `tenant-b
 aggregated). Have this in mind when configuring the access control layer in front of mimir and when enabling federated
 rules via `-ruler.tenant-federation.enabled`.
 
-__Example request__
+**Example request**
 
 Request headers:
 
