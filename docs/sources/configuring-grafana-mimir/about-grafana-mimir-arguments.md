@@ -258,7 +258,7 @@ multi_kv_config:
   primary: memberlist
 ```
 
-Note that runtime configuration values take precedence over command line options.
+> **Note:** Runtime configuration values take precedence over command line options.
 
 ### HA tracker
 
@@ -269,7 +269,7 @@ HA tracking has two of its own flags:
 - `distributor.ha-tracker.replica`
   Prometheus label to look for in samples to identify a Prometheus HA replica. (default "`__replica__`")
 
-It's reasonable to assume people probably already have a `cluster` label, or something similar. If not, they should add one along with `__replica__` via external labels in their Prometheus config. If you stick to these default values your Prometheus config could look like this (`POD_NAME` is an environment variable which must be set by you):
+You likly already have a `cluster` label, or something similar. If you do not, add one along with `__replica__` via external labels your Prometheus configuration. If you stick to these default values, your Prometheus configuration could look like as follows, where `POD_NAME` is an environment variable which you must set:
 
 ```yaml
 global:
@@ -278,9 +278,7 @@ global:
     __replica__: $POD_NAME
 ```
 
-HA Tracking looks for the two labels (which can be overwritten per user)
-
-It also talks to a KVStore and has it's own copies of the same flags used by the Distributor to connect to for the ring.
+HA tracking looks for the two labels that can be overwritten per user. It also talks to a KVStore and has its own copies of the same flags used by the distributor to connect to, for the ring:
 
 - `distributor.ha-tracker.failover-timeout`
   If we don't receive any samples from the accepted replica for a cluster in this amount of time we will failover to the next replica we receive a sample from. This value must be greater than the update timeout (default 30s)
@@ -292,21 +290,25 @@ It also talks to a KVStore and has it's own copies of the same flags used by the
 <!--
 ## (Advanced) Using the runtime configuration file to configure ingester limits
 
-The runtime configuration file can also be used to dynamically adjust ingester instance limits. While per-tenant limits are limits applied to each tenant, per-ingester-instance limits are limits applied to each ingester process.
+You can use the runtime configuration file to dynamically adjust ingester instance limits. Per-tenant limits apply to each tenant, and per-ingester-instance limits apply to each ingester process.
 
-These limits are set at startup in the ingester_config section of the YAML config (or by corresponding CLI flag).
+These limits are set at startup in the `ingester_config` section of the YAML configuration (or via the corresponding CLI flag).
 
-The runtime configuration allows you to override these initial values, which is useful for advanced operators who need to dynamically change them in response to changes in ingest or query load.
+The runtime configuration allows you to override these initial values, which is useful in advanced operations that  need to dynamically change in response to changes in ingest or query load.
 
-Everything under the ` instance_limits` section of the `ingester` config can be overridden via runtime configuration. A sample snippet of runtime configuration to change the ingester limits is provided below:
+You can override everything under the `instance_limits` section of the `ingester` configuration via runtime configuration. The following sample runtime configuration snippet changes the ingester limits:
 
+```yaml
 ingester_limits:
   max_ingestion_rate: 20000
   max_series: 1500000
   max_tenants: 1000
   max_inflight_push_requests: 30000
-[Advanced] Using the runtime configuration file to configure ingester streaming
-Users can set the value of ingester_stream_chunks_when_using_blocks in their runtime configuration. This parameter controls whether ingesters transfer encoded chunks to queriers at query time (when set to “true”) or transfer decoded series (when set to “false”).
+```
+
+## (Advanced) Using the runtime configuration file to configure ingester streaming
+
+You can set the value of `ingester_stream_chunks_when_using_blocks` in their runtime configuration. This parameter controls whether ingesters transfer encoded chunks to queriers at query time (if set to `true`) or transfer decoded series (when set to `false`).
 
 We strongly recommend against using the runtime configuration to set this value. It already defaults to true, and should be left as ‘true’ other than for rare corner cases where users have observed slowdowns in Mimir rules evaluation. A sample snippet of the runtime configuration to override the default and set this to false would look like this:
 
@@ -333,9 +335,10 @@ ingester_limits:
   max_ingestion_rate: 42000
   max_inflight_push_requests: 10000
 
-Any values not overridden default to the value in the YAML configuration or CLI flags specified at startup.
-Operating
-Use Mimir’s /runtime_config endpoint to see the current value of the runtime configuration, including the overrides. In case you want to get only the non-default values of the configuration you can run /runtime_config?mode=diff.
+Any values that are not overridden, default to the value in the YAML configuration or CLI flags that you specify at startup.
+
+## Operating
+To see the current value of the runtime configuration and any overrides, use Grafana Mimir’s `/runtime_config` endpoint. To get only the non-default values of the configuration, run `/runtime_config?mode=diff`.
 -->
 
 ## Runtime configuration file
@@ -409,7 +412,7 @@ When running Mimir on Kubernetes, store this file in a config map and mount it i
 
 The `/runtime_config` endpoint returns the whole runtime configuration, including the overrides. In case you want to get only the non-default values of the configuration you can pass the `mode` parameter with the `diff` value.
 
-## Ingester, distributor, and querier limits.
+## Ingester, distributor, and querier limits
 
 Mimir implements various limits on the requests it can process, in order to prevent a single tenant overwhelming the cluster. There are various default global limits which apply to all tenants which can be set on the command line. These limits can also be overridden on a per-tenant basis by using `overrides` field of runtime configuration file.
 
