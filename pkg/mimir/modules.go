@@ -103,8 +103,16 @@ func (t *Mimir) initAPI() (services.Service, error) {
 		return nil, err
 	}
 
+	t.BuildInfoHandler = version.BuildInfoHandler(
+		t.Cfg.ApplicationName,
+		version.BuildInfoFeatures{
+			AlertmanagerConfigAPI: strconv.FormatBool(t.Cfg.Alertmanager.EnableAPI),
+			QuerySharding:         strconv.FormatBool(t.Cfg.Frontend.QueryMiddleware.ShardedQueries),
+			RulerConfigAPI:        strconv.FormatBool(t.Cfg.Ruler.EnableAPI),
+		})
+
 	t.API = a
-	t.API.RegisterAPI(t.Cfg.Server.PathPrefix, t.Cfg, newDefaultConfig(), t.buildInfoHandler())
+	t.API.RegisterAPI(t.Cfg.Server.PathPrefix, t.Cfg, newDefaultConfig(), t.BuildInfoHandler)
 
 	return nil, nil
 }
@@ -352,7 +360,6 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 		prometheus.DefaultRegisterer,
 		util_log.Logger,
 		t.Overrides,
-		t.buildInfoHandler(),
 	)
 
 	// If the querier is running standalone without the query-frontend or query-scheduler, we must register it's internal
@@ -360,7 +367,7 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 	// to ensure requests it processes use the default middleware instrumentation.
 	if !t.Cfg.isModuleEnabled(QueryFrontend) && !t.Cfg.isModuleEnabled(QueryScheduler) && !t.Cfg.isModuleEnabled(All) {
 		// First, register the internal querier handler with the external HTTP server
-		t.API.RegisterQueryAPI(internalQuerierRouter)
+		t.API.RegisterQueryAPI(internalQuerierRouter, t.BuildInfoHandler)
 
 		// Second, set the http.Handler that the frontend worker will use to process requests to point to
 		// the external HTTP server. This will allow the querier to consolidate query metrics both external
@@ -497,7 +504,7 @@ func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 	roundTripper = t.QueryFrontendTripperware(roundTripper)
 
 	handler := transport.NewHandler(t.Cfg.Frontend.Handler, roundTripper, util_log.Logger, prometheus.DefaultRegisterer)
-	t.API.RegisterQueryFrontendHandler(handler)
+	t.API.RegisterQueryFrontendHandler(handler, t.BuildInfoHandler)
 
 	if frontendV1 != nil {
 		t.API.RegisterQueryFrontend1(frontendV1)
@@ -605,7 +612,7 @@ func (t *Mimir) initAlertManager() (serv services.Service, err error) {
 		return
 	}
 
-	t.API.RegisterAlertmanager(t.Alertmanager, t.Cfg.Alertmanager.EnableAPI, t.buildInfoHandler())
+	t.API.RegisterAlertmanager(t.Alertmanager, t.Cfg.Alertmanager.EnableAPI, t.BuildInfoHandler)
 	return t.Alertmanager, nil
 }
 
@@ -685,16 +692,6 @@ func (t *Mimir) initQueryScheduler() (services.Service, error) {
 
 	t.API.RegisterQueryScheduler(s)
 	return s, nil
-}
-
-func (t *Mimir) buildInfoHandler() http.Handler {
-	return version.BuildInfoHandler(
-		t.Cfg.ApplicationName,
-		version.BuildInfoFeatures{
-			AlertmanagerConfigAPI: strconv.FormatBool(t.Cfg.Alertmanager.EnableAPI),
-			QuerySharding:         strconv.FormatBool(t.Cfg.Frontend.QueryMiddleware.ShardedQueries),
-			RulerConfigAPI:        strconv.FormatBool(t.Cfg.Ruler.EnableAPI),
-		})
 }
 
 func (t *Mimir) setupModuleManager() error {
