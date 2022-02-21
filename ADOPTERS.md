@@ -1,3 +1,3 @@
-If you're using Mimir, feel free to add yourself/your organization.
+If you’re using Grafana Mimir, feel free to add yourself or your organization.
 
 - [Grafana Labs](https://grafana.com)
