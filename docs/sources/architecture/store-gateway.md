@@ -56,7 +56,7 @@ This feature requires the backend [hash ring]({{< relref "../architecture/about-
 
 The store-gateway uses shuffle-sharding to spread the blocks of each tenant across a subset of store-gateway instances. The number of store-gateway instances loading blocks of a single tenant is limited and the blast radius of any issue that could be introduced by the tenant's workload is limited to its shard instances.
 
-The default number of store-gateway instances per tenant is configured using the `-store-gateway.tenant-shard-size` flag (or their respective YAML config flags). The shard size can then be overridden on a per-tenant basis setting the `store_gateway_tenant_shard_size` in the limits overrides.
+The default number of store-gateway instances per tenant is configured using the `-store-gateway.tenant-shard-size` flag (or their respective YAML configuration parameters). The shard size can then be overridden on a per-tenant basis setting the `store_gateway_tenant_shard_size` in the limits overrides.
 
 Default value for `-store-gateway.tenant-shard-size` is 0, which means that tenant's blocks are sharded across all store-gateway instances.
 
