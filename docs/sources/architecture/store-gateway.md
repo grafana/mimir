@@ -127,7 +127,7 @@ The `inmemory` index cache is **enabled by default** and its max size can be con
 
 #### Memcached index cache
 
-The `memcached` index cache allows to use [Memcached](https://memcached.org/) as cache backend. This cache backend is configured using `-blocks-storage.bucket-store.index-cache.backend=memcached` and requires the Memcached server(s) addresses via `-blocks-storage.bucket-store.index-cache.memcached.addresses` (or config file). The addresses are resolved using the [DNS service discovery]({{< relref "../configuration/about-grafana-mimir-arguments.md#dns-service-discovery" >}}).
+The `memcached` index cache uses [Memcached](https://memcached.org/) as cache backend. This cache backend is configured using `-blocks-storage.bucket-store.index-cache.backend=memcached` and requires setting the addresses of the Memcached servers with the `-blocks-storage.bucket-store.index-cache.memcached.addresses` flag . The addresses are resolved using [DNS service discovery]({{< relref "../configuration/about-grafana-mimir-arguments.md#dns-service-discovery" >}}).
 
 The trade-off of using the Memcached index cache is:
 
