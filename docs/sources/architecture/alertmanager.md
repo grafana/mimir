@@ -92,8 +92,7 @@ When using a reverse proxy, ensure that you configure the HTTP path appropriatel
 ### Sharding
 
 To achieve horizontal scalability, the Mimir Alertmanager shards alerts by tenant.
-To enable sharding, set `-alertmanager.sharding-enabled=true` and configure a KV store backend.
-Sharding also requires that the number of Alertmanager replicas is greater-than or equal-to the replication factor configured by the `-alertmanager.sharding-ring.replication-factor` flag.
+Sharding requires that the number of Alertmanager replicas is greater-than or equal-to the replication factor configured by the `-alertmanager.sharding-ring.replication-factor` flag.
 
 The Mimir Alertmanager replicas use the hash ring stored in the KV store to discover their peers.
 This means that any Mimir Alertmanager replica can respond to any API or UI request for any tenant.
