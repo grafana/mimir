@@ -119,6 +119,8 @@ mimirtool rules get <namespace> <rule_group_name>
 
 #### Delete
 
+Deletes a rule group.
+
 ```bash
 mimirtool rules delete <namespace> <rule_group_name>
 ```
@@ -144,7 +146,6 @@ namespace: my_namespace
 groups:
   - name: example
     interval: 5m
-    source_tenants: [team-engineering, team-finance]
     rules:
       - record: job:http_inprogress_requests:sum
         expr: sum by (job) (http_inprogress_requests)
@@ -192,7 +193,6 @@ namespace: my_namespace
 groups:
   - name: example
     interval: 5m
-    source_tenants: [team-engineering, team-finance]
     rules:
       - record: job:http_inprogress_requests:sum
         expr: sum by (job) (http_inprogress_requests)
@@ -209,10 +209,6 @@ groups:
       - record: job:http_inprogress_requests:sum
         # note the added cluster label
         expr: sum by(job, cluster) (http_inprogress_requests)
-    # the source tenants were reformatted as part of linting
-    source_tenants:
-      - team-engineering
-      - team-finance
 ```
 
 At the end of the run, the command outputs whether the operation was a success:
@@ -243,7 +239,6 @@ namespace: my_namespace
 groups:
   - name: example
     interval: 5m
-    source_tenants: [team-engineering, team-finance]
     rules:
       - record: job_http_inprogress_requests_sum
         expr: sum by (job) (http_inprogress_requests)
