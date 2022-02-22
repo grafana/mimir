@@ -838,6 +838,24 @@ _Changes since `grafana/cortex-jsonnet` `1.9.0`._
 * [BUGFIX] Pass `-ruler-storage.s3.endpoint` to ruler when using S3. [#421](https://github.com/grafana/cortex-jsonnet/pull/421)
 * [BUGFIX] Remove service selector on label `gossip_ring_member` from other services than `gossip-ring`. [#1008](https://github.com/grafana/mimir/pull/1008)
 
+### Mimirtool
+
+_Changes since cortextool `0.10.7`._
+
+* [CHANGE] The following environment variables have been renamed: #883
+  * `CORTEX_ADDRESS` to `MIMIR_ADDRESS`
+  * `CORTEX_API_USER` to `MIMIR_API_USER`
+  * `CORTEX_API_KEY` to `MIMIR_API_KEY`
+  * `CORTEX_TENANT_ID` to `MIMIR_TENANT_ID`
+  * `CORTEX_TLS_CA_PATH` to `MIMIR_TLS_CA_PATH`
+  * `CORTEX_TLS_CERT_PATH` to `MIMIR_TLS_CERT_PATH`
+  * `CORTEX_TLS_KEY_PATH` to `MIMIR_TLS_KEY_PATH`
+* [CHANGE] Change `cortex` backend to `mimir`. #883
+* [CHANGE] Do not publish `mimirtool` binary for 386 windows architecture. #1263
+* [FEATURE] Support Arm64 on Darwin for all binaries (benchtool etc). https://github.com/grafana/cortex-tools/pull/215
+* [ENHANCEMENT] Correctly support federated rules. #823
+* [BUGFIX] Fix `cortextool rules` legends displaying wrong symbols for updates and deletions. https://github.com/grafana/cortex-tools/pull/226
+
 ### Query-tee
 
 _Changes since Cortex `1.10.0`._
