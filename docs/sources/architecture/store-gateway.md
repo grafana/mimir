@@ -76,7 +76,7 @@ The store-gateway replication optionally supports [zone-awareness]({{< relref ".
 
 **To enable** the zone-aware replication for the store-gateways you should:
 
-1. Configure the availability zone for each store-gateway via the `-store-gateway.sharding-ring.instance-availability-zone` CLI flag (or its respective YAML config flag)
+1. Configure the availability zone for each store-gateway via the `-store-gateway.sharding-ring.instance-availability-zone` CLI flag (or its respective YAML configuration parameter)
 2. Enable blocks zone-aware replication via the `-store-gateway.sharding-ring.zone-awareness-enabled` CLI flag (or its respective YAML config flag). Please be aware this configuration flag should be set on store-gateways, queriers and rulers.
 3. Rollout store-gateways, queriers and rulers to apply the new configuration
 
