@@ -8,7 +8,7 @@ weight: 100
 
 Mimirtool is designed to interact with:
 
-- user-facing APIs provided by Grafana Mimir
+- user-facing APIs provided by Grafana Mimir.
 - backend storage components containing Grafana Mimir data.
 
 ## Installation
@@ -89,8 +89,8 @@ mimirtool alerts verify
 
 The following commands:
 
-- load and show Prometheus rule files
-- interact with individual rule groups in the Mimir ruler
+- load and show Prometheus rule files.
+- interact with individual rule groups in the Mimir ruler.
 - manipulate local rule files.
 
 #### List
@@ -166,24 +166,18 @@ The format of the file is the same as in [rules load](#load).
 
 This command prepares a rules file for upload to Grafana Mimir. It lints all your PromQL expressions and adds an
 specific label to your PromQL query aggregations in the file. This command does not interact with your Grafana Mimir
-cluster.
+cluster. The format of the file is the same as in [rules load](#load).
 
 ```bash
 mimirtool rules prepare <file_path>...
 ```
 
-The format of the file is the same as in [rules load](#load).
+##### Configuration
 
-There are two flags of note for this command:
-
-- `-i` allows you to edit in place; otherwise, a new file with a `.result` extension is created with the results
-- `-l` allows you specify the label to add to aggregations, it is `cluster` by default.
-
-At the end of the run, the command outputs whether the operation was a success:
-
-```console
-INFO[0000] SUCCESS: 194 rules found, 0 modified expressions
-```
+| Env Variable | Flag                      | Description                                                                                 |
+|--------------|---------------------------|---------------------------------------------------------------------------------------------|
+| -            | `-i`, `--in-place`        | Edit the file in place. If unset, a new file with `.result` extension contains the results. |
+| -            | `-l`, `--label="cluster"` | Specify the label for aggregations. `cluster` by default.                                   |
 
 ##### Example
 
@@ -219,6 +213,12 @@ groups:
     source_tenants:
       - team-engineering
       - team-finance
+```
+
+At the end of the run, the command outputs whether the operation was a success:
+
+```console
+INFO[0000] SUCCESS: 194 rules found, 0 modified expressions
 ```
 
 #### Check
@@ -401,11 +401,11 @@ mimirtool analyse grafana --address=<url>
 
 ##### Configuration
 
-| Env Variables     | Flag        | Description                                                                                                                                                    |
+| Env Variable      | Flag        | Description                                                                                                                                                    |
 |-------------------|-------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `GRAFANA_ADDRESS` | `--address` | Address of the Grafana instance.                                                                                                                               |
 | `GRAFANA_API_KEY` | `--key`     | The API Key for the Grafana instance. Create a key following the instructions at [Authentication API](https://grafana.com/docs/grafana/latest/http_api/auth/). |
-| -                 | `--output`  | The output file path. `metrics-in-grafana.json` by default.                                                                                                      |
+| -                 | `--output`  | The output file path. `metrics-in-grafana.json` by default.                                                                                                    |
 
 ##### Example output file
 
@@ -448,7 +448,7 @@ mimirtool analyse ruler --address=<url> --id=<tenant_id>
 
 ##### Configuration
 
-| Env Variables     | Flag        | Description                                                                           |
+| Env Variable      | Flag        | Description                                                                           |
 |-------------------|-------------|---------------------------------------------------------------------------------------|
 | `MIMIR_ADDRESS`   | `--address` | Address of the Prometheus instance.                                                   |
 | `MIMIR_TENANT_ID` | `--user`    | Sets the basic auth username. If you're using Grafana Cloud this is your instance ID. |
@@ -490,7 +490,7 @@ mimirtool analyse dashboard <file>...
 
 ##### Configuration
 
-| Env Variables | Flag       | Description                                                 |
+| Env Variable | Flag       | Description                                                 |
 |---------------|------------|-------------------------------------------------------------|
 | -             | `--output` | The output file path. `prometheus-metrics.json` by default. |
 
@@ -505,7 +505,7 @@ mimirtool analyse rule-file <file>
 
 ##### Configuration
 
-| Env Variables | Flag       | Description                                                 |
+| Env Variable | Flag       | Description                                                 |
 |---------------|------------|-------------------------------------------------------------|
 | -             | `--output` | The output file path. `prometheus-metrics.json` by default. |
 
@@ -526,7 +526,7 @@ mimirtool analyse prometheus --address=<url> --id=<tenant_id>
 
 ##### Configuration
 
-| Env Variables     | Flag                     | Description                                                                                                     |
+| Env Variable      | Flag                     | Description                                                                                                     |
 |-------------------|--------------------------|-----------------------------------------------------------------------------------------------------------------|
 | `MIMIR_ADDRESS`   | `--address`              | Address of the Prometheus instance.                                                                             |
 | `MIMIR_TENANT_ID` | `--user`                 | Sets the basic auth username. If you're using Grafana Cloud this is your instance ID.                           |
