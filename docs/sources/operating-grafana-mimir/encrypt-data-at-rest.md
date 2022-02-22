@@ -74,13 +74,14 @@ The following settings can be overridden for each tenant:
 1. Ensure Grafana Mimir uses a runtime configuration file by verifying that the flag `-runtime-config.file` is set to a non-null value.
    For more information about supported runtime configuration, refer to [Runtime configuration file]({{<relref "../configuration/about-grafana-mimir-arguments.md#runtime-configuration-file" >}})
 1. In the runtime configuration file, set the `overrides.<TENANT>` SSE settings.
-1. A partial runtime configuration file that has SSE with Amazon S3-managed keys set for a tenant called "tenant-a" would look as follows:
 
-```yaml
-overrides:
-  "tenant-a":
-    s3_sse_type: "SSE-S3"
-```
+   A partial runtime configuration file that has AWS S3 SSE with Amazon S3-managed keys set for a tenant called "tenant-a" would look as follows:
+
+   ```yaml
+   overrides:
+     "tenant-a":
+       s3_sse_type: "SSE-S3"
+   ```
 
 1. Save and deploy the runtime configuration file.
 1. After the `-runtime-config.reload-period` has elapsed, components reload the runtime configuration file and use the updated configuration.
