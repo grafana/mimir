@@ -81,6 +81,7 @@ func NewActiveSeriesMatchers(matchersConfig ActiveSeriesCustomTrackersConfig) (*
 	// Order doesn't matter for the functionality as long as the order remains consistent during the execution of the program.
 	sort.Sort(asm)
 	// The concatenation should happen after ordering, to ensure equality is not dependent on map traversal.
+	// The string representation is saved to ensure quick equaility checks.
 	asm.key = asm.String()
 
 	return asm, nil
@@ -115,15 +116,15 @@ func (asm *ActiveSeriesMatchers) Equals(other *ActiveSeriesMatchers) bool {
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
-// ActiveSeriesMatchers are marshaled in yaml as a map, with matcher names as keys and strings as matchers definitions.
+// ActiveSeriesMatchers are marshaled in yaml as a ActiveSeriesCustomTrackersConfig, with matcher names as keys and strings as matchers definitions.
 func (asm *ActiveSeriesMatchers) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	m := map[string]string{}
-	err := unmarshal(&m)
+	c := ActiveSeriesCustomTrackersConfig{}
+	err := unmarshal(&c)
 	if err != nil {
 		return err
 	}
 	var newMatchers *ActiveSeriesMatchers
-	newMatchers, err = NewActiveSeriesMatchers(m)
+	newMatchers, err = NewActiveSeriesMatchers(c)
 	if err != nil {
 		return err
 	}
