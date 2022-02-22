@@ -199,7 +199,7 @@ func TestActiveSeries_ReloadSeriesMatchers(t *testing.T) {
 	ls2 := []labels.Label{{Name: "a", Value: "2"}}
 
 	asm, err := NewActiveSeriesMatchers(map[string]string{"foo": `{a=~.*}`})
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	c := NewActiveSeries(asm)
 	allActive, activeMatching := c.Active()

@@ -63,14 +63,14 @@ func TestMatchersForUser(t *testing.T) {
 			"bar": `{baz="bar"}`,
 		})
 
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	tenantSpecificMatchers, err := NewActiveSeriesMatchers(
 		map[string]string{
 			"team_a": `{team="team_a"}`,
 			"team_b": `{team="team_b"}`,
 		},
 	)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	activeSeriesCustomTrackersOverrides := &ActiveSeriesCustomTrackersOverrides{
 		Default: defaultMatchers,
 		TenantSpecific: map[string]*ActiveSeriesMatchers{

@@ -5150,12 +5150,12 @@ func TestIngesterActiveSeries(t *testing.T) {
 				"bool_is_true":  `{bool="true"}`,
 				"bool_is_false": `{bool="false"}`,
 			})
-			assert.NoError(t, err)
+			require.NoError(t, err)
 			teamMatchers, err := NewActiveSeriesMatchers(map[string]string{
 				"team_a": `{team="a"}`,
 				"team_b": `{team="b"}`,
 			})
-			assert.NoError(t, err)
+			require.NoError(t, err)
 			return &ActiveSeriesCustomTrackersOverrides{
 				Default: defaultMatchers,
 				TenantSpecific: map[string]*ActiveSeriesMatchers{
@@ -5168,7 +5168,7 @@ func TestIngesterActiveSeries(t *testing.T) {
 		"bool_is_true_flagbased":  `{bool="true"}`,
 		"bool_is_false_flagbased": `{bool="false"}`,
 	})
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	tests := map[string]struct {
 		test                          func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer)
 		reqs                          []*mimirpb.WriteRequest
@@ -5471,7 +5471,7 @@ func TestIngesterActiveSeries(t *testing.T) {
 						"team_a": `{team="a"}`,
 						"team_b": `{team="b"}`,
 					})
-					assert.NoError(t, err)
+					require.NoError(t, err)
 					return &ActiveSeriesCustomTrackersOverrides{TenantSpecific: map[string]*ActiveSeriesMatchers{
 						"test_user": teamMatchers,
 					}}
@@ -5572,12 +5572,12 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 				"bool_is_true":  `{bool="true"}`,
 				"bool_is_false": `{bool="false"}`,
 			})
-			assert.NoError(t, err)
+			require.NoError(t, err)
 			teamMatchers, err := NewActiveSeriesMatchers(map[string]string{
 				"team_a": `{team="a"}`,
 				"team_b": `{team="b"}`,
 			})
-			assert.NoError(t, err)
+			require.NoError(t, err)
 			return &ActiveSeriesCustomTrackersOverrides{
 				Default: defaultMatchers,
 				TenantSpecific: map[string]*ActiveSeriesMatchers{
@@ -5590,7 +5590,7 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 		"bool_is_true_flagbased":  `{bool="true"}`,
 		"bool_is_false_flagbased": `{bool="false"}`,
 	})
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	tests := map[string]struct {
 		test                          func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer)

@@ -18,7 +18,7 @@ import (
 func TestActiveSeriesCustomTrackersConfigs(t *testing.T) {
 	safeActiveSeriesMatchers := func(input map[string]string) *ActiveSeriesMatchers {
 		res, err := NewActiveSeriesMatchers(input)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		return res
 	}
 	for _, tc := range []struct {
@@ -218,7 +218,7 @@ func TestActiveSeriesMatcher_Equality(t *testing.T) {
 			for _, matcherConfig := range matcherSet {
 				asm := &ActiveSeriesMatchers{}
 				err := asm.Set(matcherConfig)
-				assert.NoError(t, err)
+				require.NoError(t, err)
 				activeSeriesMatchers = append(activeSeriesMatchers, asm)
 			}
 			for i := 0; i < len(activeSeriesMatchers); i++ {
@@ -235,7 +235,7 @@ func TestActiveSeriesMatcher_Equality(t *testing.T) {
 			exampleConfig := matcherConfigs[0]
 			asm := &ActiveSeriesMatchers{}
 			err := asm.Set(exampleConfig)
-			assert.NoError(t, err)
+			require.NoError(t, err)
 			activeSeriesMatchers = append(activeSeriesMatchers, asm)
 		}
 
