@@ -17,15 +17,16 @@ Grafana Mimir requires no additional configuration to use GCS with SSE.
 
 ## AWS S3
 
-To configure SSE with AWS S3 requires configuration in Grafana Mimir S3 client.
-Grafana Mimir supports the following AWS SSE modes:
+To configure SSE with AWS S3 requires configuration in the Grafana Mimir S3 client.
+The S3 client is only used when the storage backend is `s3`.
+Grafana Mimir supports the following AWS S3 SSE modes:
 
 - [Server-Side Encryption with Amazon S3-Managed Keys (SSE-S3)](https://docs.aws.amazon.com/AmazonS3/latest/dev/UsingServerSideEncryption.html)
 - [Server-Side Encryption with KMS keys Stored in AWS Key Management Service (SSE-KMS)](https://docs.aws.amazon.com/AmazonS3/latest/dev/UsingKMSEncryption.html)
 
-You can configure AWS SSE globally or for specific tenants.
+You can configure AWS S3 SSE globally or for specific tenants.
 
-### Configure AWS SSE globally
+### Configure AWS S3 SSE globally
 
 The S3 client used by Grafana Mimir as a storage backend in multiple configuration sections:
 
@@ -33,9 +34,9 @@ The S3 client used by Grafana Mimir as a storage backend in multiple configurati
 - [blocks_storage]({{<relref "../configuration/reference-configuration-parameters.md#blocks_storage" >}})
 - [ruler_storage]({{<relref "../configuration/reference-configuration-parameters.md#ruler_storage" >}})
 
-To see all SSE configuration parameters, refer to [sse]({{<relref "../configuration/reference-configuration-parameters.md#sse" >}}).
+To see all AWS S3 SSE configuration parameters, refer to [sse]({{<relref "../configuration/reference-configuration-parameters.md#sse" >}}).
 
-A snippet of a Grafana Mimir configuration file that has SSE with an Amazon S3-managed key configured would look as follows:
+A snippet of a Grafana Mimir configuration file that has AWS S3 SSE with an Amazon S3-managed key configured would look as follows:
 
 ```yaml
 alertmanager_storage:
@@ -55,7 +56,7 @@ ruler_storage:
       type: "SSE-S3"
 ```
 
-### Configure SSE for a specific tenant
+### Configure AWS S3 SSE for a specific tenant
 
 The following settings can be overridden for each tenant:
 
