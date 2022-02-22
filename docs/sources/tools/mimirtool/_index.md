@@ -489,8 +489,8 @@ mimirtool analyse dashboard <file>...
 ##### Configuration
 
 | Env Variable | Flag       | Description                                                 |
-| ------------- | ---------- | ----------------------------------------------------------- |
-| -             | `--output` | The output file path. `prometheus-metrics.json` by default. |
+| ------------ | ---------- | ----------------------------------------------------------- |
+| -            | `--output` | The output file path. `prometheus-metrics.json` by default. |
 
 #### Rule file
 
@@ -504,8 +504,8 @@ mimirtool analyse rule-file <file>
 ##### Configuration
 
 | Env Variable | Flag       | Description                                                 |
-| ------------- | ---------- | ----------------------------------------------------------- |
-| -             | `--output` | The output file path. `prometheus-metrics.json` by default. |
+| ------------ | ---------- | ----------------------------------------------------------- |
+| -            | `--output` | The output file path. `prometheus-metrics.json` by default. |
 
 #### Prometheus
 
