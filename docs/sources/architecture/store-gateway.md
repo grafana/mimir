@@ -161,7 +161,7 @@ Store-gateway and [querier]({{< relref "./querier.md" >}}) can use memcached for
 - Block's `deletion-mark.json` existence and content
 - Tenant's `bucket-index.json.gz` content
 
-Using the metadata cache can significantly reduce the number of API calls to long-term storage and protects from linearly scale the number of these API calls with the number of querier and store-gateway instances (because the bucket is periodically scanned and synched by each querier and store-gateway).
+Using the metadata cache can significantly reduce the number of API calls to long-term storage and stops the number of these API calls scaling linearly with the number of querier and store-gateway replicas which periodically scan and sync this metadata.
 
 To enable metadata cache, please set `-blocks-storage.bucket-store.metadata-cache.backend`. Only `memcached` backend is supported currently. Memcached client has additional configuration available via flags with `-blocks-storage.bucket-store.metadata-cache.memcached.*` prefix.
 
