@@ -83,7 +83,7 @@ _The shard size can be overridden on a per-tenant basis by setting `ingestion_te
 
 #### Ingesters write path
 
-To enable shuffle sharding for ingesters on the write path you need to configure the following CLI flags (or their respective YAML config options) to distributor, ingester and ruler:
+To enable shuffle sharding for ingesters on the write path you need to configure the following CLI flags (or their respective YAML config options) on the distributor, ingester and ruler:
 
 - `-distributor.ingestion-tenant-shard-size=<size>`<br />
   `<size>` set to the number of ingesters each tenant series should be sharded to. If `<size>` is zero or greater than the number of available ingesters in the Grafana Mimir cluster, the tenant series are sharded across all ingesters.
