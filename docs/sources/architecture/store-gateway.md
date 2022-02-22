@@ -12,18 +12,18 @@ The store-gateway is **stateful**.
 
 ## How it works
 
-The store-gateway needs to have an almost up-to-date view over the long-term storage bucket, in order to discover blocks belonging to their shard. The store-gateway can keep the bucket view updated in to two different ways:
+The store-gateway needs to have an almost up-to-date view over the long-term storage, in order to discover blocks belonging to their shard. The store-gateway can keep the bucket view updated in to two different ways:
 
 1. Periodically downloading the [bucket index]({{< relref "../blocks-storage/bucket-index.md" >}}) (default)
 2. Periodically scanning the bucket
 
 ### Bucket index enabled (default)
 
-At startup **store-gateways** fetch the [bucket index]({{< relref "../blocks-storage/bucket-index.md" >}}) from long-term storage bucket for each tenant belonging to their shard in order to discover each tenant's blocks  from relevant `meta.json` files and block deletion marks. During this initial bucket synchronization phase, the store-gateway `/ready` readiness probe endpoint will fail.
+At startup **store-gateways** fetch the [bucket index]({{< relref "../blocks-storage/bucket-index.md" >}}) from long-term storage for each tenant belonging to their shard in order to discover each tenant's blocks  from relevant `meta.json` files and block deletion marks. During this initial bucket synchronization phase, the store-gateway `/ready` readiness probe endpoint will fail.
 
 For more information about the bucket index, please refer to [bucket index documentation]({{< relref "../blocks-storage/bucket-index.md" >}}).
 
-Store-gateways periodically scan the long-term storage bucket to discover new or deleted blocks.
+Store-gateways periodically scan the long-term storage to discover new or deleted blocks.
 New blocks can be uploaded by [ingesters]({{< relref "./ingester.md" >}}) or by the [compactor]({{< relref "./compactor.md" >}}).
 The compactor additionally may have deleted blocks or marked others for deletion since the last scan.
 The frequency at which this occurs is configured with the `-blocks-storage.bucket-store.sync-interval` flag.
@@ -34,9 +34,12 @@ For more information about the index-header, please refer to [Binary index-heade
 
 ### Bucket index disabled
 
-At startup **store-gateways** iterate over the entire long-term storage bucket to discover blocks for all tenants and download the `meta.json` and index-header for each block. During this initial bucket synchronization phase, the store-gateway `/ready` readiness probe endpoint will fail.
+At startup **store-gateways** iterate over the entire long-term storage to discover blocks to download the `meta.json` and index-header for each block, skipping blocks that don't belong to users in their shard. During this initial bucket synchronization phase, the store-gateway `/ready` readiness probe endpoint will fail.
 
-While running, store-gateways periodically re-scan the long-term storage bucket to discover new blocks (uploaded by the [ingesters]({{< relref "./ingester.md" >}}) and [compactor]({{< relref "./compactor.md" >}})) and blocks marked for deletion or fully deleted since the last scan (as a result of compaction). The frequency at which this occurs is configured via `-blocks-storage.bucket-store.sync-interval`.
+Store-gateways periodically scan the long-term storage to discover new or deleted blocks.
+New blocks can be uploaded by [ingesters]({{< relref "./ingester.md" >}}) or by the [compactor]({{< relref "./compactor.md" >}}).
+The compactor additionally may have deleted blocks or marked others for deletion since the last scan.
+The frequency at which this occurs is configured with the `-blocks-storage.bucket-store.sync-interval` flag.
 
 ## Blocks sharding and replication
 
@@ -46,11 +49,11 @@ Store-gateway instances build a [hash ring]({{< relref "../architecture/about-th
 
 Store-gateways continuously monitor the ring state and whenever the ring topology changes (e.g. a new instance has been added/removed or gets healthy/unhealthy) each store-gateway instance resync the blocks assigned to its shard, based on the block ID hash matching the token ranges assigned to the instance itself within the ring.
 
-For each block belonging to a store-gateway shard, the store-gateway loads its index-header. Once a block is loaded on the store-gateway, it's ready to be queried by queriers. When the querier queries blocks through a store-gateway, the response will contain the list of actually queried block IDs. If a querier tries to query a block which has not been loaded by a store-gateway, the querier will retry on a different store-gateway up to -store-gateway.sharding-ring.replication-factor (defaults to 3). The query will fail if the block can't be successfully queried from any replica.
+For each block belonging to a store-gateway shard, the store-gateway loads its index-header. Once a block is loaded on the store-gateway, it's ready to be queried by queriers. When the querier queries blocks through a store-gateway, the response will contain the list of actually queried block IDs. If a querier tries to query a block which has not been loaded by a store-gateway, the querier will retry on a different store-gateway up to -store-gateway.sharding-ring.replication-factor (defaults to 3) times or maximum 3 times, whichever is lower. The query will fail if the block can't be successfully queried from any replica.
 
 Blocks are replicated across multiple store-gateway instances based on a replication factor configured via `-store-gateway.sharding-ring.replication-factor`. The blocks replication is used to protect from query failures caused by some blocks not loaded by any store-gateway instance at a given time like, for example, in the event of a store-gateway failure or while restarting a store-gateway instance (e.g. during a rolling update).
 
-This feature requires the backend [hash ring]({{< relref "../architecture/about-the-hash-ring" >}}) to be configured via `-store-gateway.sharding-ring.*` flags (or their respective YAML config flags).
+_The [hash ring]({{< relref "../architecture/about-the-hash-ring" >}}) must be configured via `-store-gateway.sharding-ring.*` flags (or their respective YAML configuration parameters)._
 
 ### Sharding strategy
 
@@ -120,7 +123,7 @@ The store-gateway can use a cache to speed up lookups of series and labels from 
 
 #### In-memory index cache
 
-The `inmemory` index cache is **enabled by default** and its max size can be configured through the flag `-blocks-storage.bucket-store.index-cache.inmemory.max-size-bytes` (or config file). The trade-off of using the in-memory index cache is:
+The `inmemory` index cache is **enabled by default** and its max size can be configured through the flag `-blocks-storage.bucket-store.index-cache.inmemory.max-size-bytes` (or its respective YAML configuration parameter). The trade-off of using the in-memory index cache is:
 
 - Pros: zero latency
 - Cons: increased store-gateway memory usage, not shared across multiple store-gateway replicas (when sharding is disabled or replication factor > 1)
