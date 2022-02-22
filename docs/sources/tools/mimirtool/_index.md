@@ -61,7 +61,7 @@ mimirtool alertmanager load ./example_alertmanager_config.yaml
 ```yaml
 route:
   receiver: "example_receiver"
-  group_by: [ "example_groupby" ]
+  group_by: ["example_groupby"]
 receivers:
   - name: "example_receiver"
 ```
@@ -144,7 +144,7 @@ namespace: my_namespace
 groups:
   - name: example
     interval: 5m
-    source_tenants: [ team-engineering, team-finance ]
+    source_tenants: [team-engineering, team-finance]
     rules:
       - record: job:http_inprogress_requests:sum
         expr: sum by (job) (http_inprogress_requests)
@@ -192,7 +192,7 @@ namespace: my_namespace
 groups:
   - name: example
     interval: 5m
-    source_tenants: [ team-engineering, team-finance ]
+    source_tenants: [team-engineering, team-finance]
     rules:
       - record: job:http_inprogress_requests:sum
         expr: sum by (job) (http_inprogress_requests)
@@ -243,7 +243,7 @@ namespace: my_namespace
 groups:
   - name: example
     interval: 5m
-    source_tenants: [ team-engineering, team-finance ]
+    source_tenants: [team-engineering, team-finance]
     rules:
       - record: job_http_inprogress_requests_sum
         expr: sum by (job) (http_inprogress_requests)
@@ -428,9 +428,7 @@ mimirtool analyse grafana --address=<url>
         "workqueue_depth",
         "workqueue_queue_duration_seconds_bucket"
       ],
-      "parse_errors": [
-        "unsupported panel type: \"news\""
-      ]
+      "parse_errors": ["unsupported panel type: \"news\""]
     }
   ]
 }
