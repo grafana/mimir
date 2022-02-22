@@ -81,7 +81,7 @@ func TestMatchersForUser(t *testing.T) {
 		userID   string
 		expected *ActiveSeriesMatchers
 	}{
-		"User with no override should return deafult": {
+		"User with no override should return default": {
 			userID:   "5",
 			expected: defaultMatchers,
 		},
