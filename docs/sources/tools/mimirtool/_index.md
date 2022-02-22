@@ -6,10 +6,10 @@ weight: 100
 
 # Mimirtool
 
-Mimirtool is designed to
+Mimirtool is designed to interact with:
 
-* interact with the various user-facing APIs provided by Mimir and
-* interact with various backend storage components containing Mimir data.
+- user-facing APIs provided by Grafana Mimir
+- backend storage components containing Grafana Mimir data.
 
 ## Installation
 
@@ -17,21 +17,21 @@ Refer to the [latest release](https://github.com/grafana/mimir/releases) for ins
 
 ## Configuration options
 
-In order to interact with your Mimir, Grafana Enterprise Metrics, Prometheus, or Grafana instance, you need to set some
-configuration options. These can be set via environemnt variables or CLI flags.
+In order to interact with your Grafana Mimir, Grafana Enterprise Metrics, Prometheus, or Grafana instance, you need to
+set some configuration options. These can be set via environment variables or CLI flags.
 
 | Env Variable      | Flag        | Description                                                                                                                                                        |
 |-------------------|-------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `MIMIR_ADDRESS`   | `--address` | Address of the API of the desired Mimir cluster.                                                                                                                   |
+| `MIMIR_ADDRESS`   | `--address` | Address of the API of the desired Grafana Mimir cluster.                                                                                                           |
 | `MIMIR_API_USER`  | `--user`    | Sets the basic auth username. If empty and `MIMIR_API_KEY` is set, `MIMIR_TENANT_ID` will be used instead. If you're using Grafana Cloud this is your instance ID. |
 | `MIMIR_API_KEY`   | `--key`     | Sets the basic auth password. If you're using Grafana Cloud, this is your API key.                                                                                 |
-| `MIMIR_TENANT_ID` | `--id`      | The tenant ID of the Mimir instance to interact with.                                                                                                              |
+| `MIMIR_TENANT_ID` | `--id`      | The tenant ID of the Grafana Mimir instance to interact with.                                                                                                      |
 
 ## Commands
 
 ### Alertmanager
 
-The following commands interact Mimir alertmanager configuration and alert template files.
+The following commands interact Grafana Mimir alertmanager configuration and alert template files.
 
 #### Get configuration
 
@@ -89,13 +89,13 @@ mimirtool alerts verify
 
 The following commands:
 
-* load and show prometheus rule files,
-* interact with individual rule groups in the Mimir ruler, and
-* manipulate local rule files.
+- load and show Prometheus rule files
+- interact with individual rule groups in the Mimir ruler
+- manipulate local rule files.
 
 #### List
 
-Retrieves the names of all rule groups in the Mimir instance and prints them to the terminal.
+Retrieves the names of all rule groups in the Grafana Mimir instance and prints them to the terminal.
 
 ```bash
 mimirtool rules list
@@ -103,7 +103,7 @@ mimirtool rules list
 
 #### Print
 
-Retrieves all rule groups in the Mimir instance and print them to the terminal.
+Retrieves all rule groups in the Grafana Mimir instance and print them to the terminal.
 
 ```bash
 mimirtool rules print
@@ -125,7 +125,7 @@ mimirtool rules delete <namespace> <rule_group_name>
 
 #### Load
 
-Loads each rule group from the files into Mimir. It overwrites all existing rule groups with the same name.
+Loads each rule group from the files into Grafana Mimir. It overwrites all existing rule groups with the same name.
 
 ```bash
 mimirtool rules load <file_path>...
@@ -154,7 +154,7 @@ groups:
 
 This command's aim is not to verify correctness but just YAML and PromQL expression formatting within the rule file.
 This command always edits in place, you can use the dry run flag (`-n`) if you'd like to perform a trial run that does
-not make any changes. This command does not interact with your Mimir cluster.
+not make any changes. This command does not interact with your Grafana Mimir cluster.
 
 ```bash
 mimirtool rules lint <file_path>...
@@ -164,8 +164,9 @@ The format of the file is the same as in [rules load](#load).
 
 #### Prepare
 
-This command prepares a rules file for upload to Mimir. It lints all your PromQL expressions and adds an specific label
-to your PromQL query aggregations in the file. This command does not interact with your Mimir cluster.
+This command prepares a rules file for upload to Grafana Mimir. It lints all your PromQL expressions and adds an
+specific label to your PromQL query aggregations in the file. This command does not interact with your Grafana Mimir
+cluster.
 
 ```bash
 mimirtool rules prepare <file_path>...
@@ -223,7 +224,7 @@ groups:
 #### Check
 
 This command checks rules against the recommended [best practices](https://prometheus.io/docs/practices/rules/) for
-rules. This command does not interact with your Mimir cluster.
+rules. This command does not interact with your Grafana Mimir cluster.
 
 ```bash
 mimirtool rules check <file_path>...
@@ -256,7 +257,7 @@ The format of the file is the same as in [rules load](#load).
 
 #### Diff
 
-This command compares rules against the rules in your Mimir cluster.
+This command compares rules against the rules in your Grafana Mimir cluster.
 
 ```bash
 mimirtool rules diff <file_path>...
@@ -266,7 +267,8 @@ The format of the file is the same as in [rules load](#load).
 
 #### Sync
 
-This command compares rules against the rules in your Mimir cluster. It applies any differences to your Mimir cluster.
+This command compares rules against the rules in your Grafana Mimir cluster. It applies any differences to your Grafana
+Mimir cluster.
 
 ```bash
 mimirtool rules sync <file_path>...
@@ -276,8 +278,8 @@ The format of the file is the same as in [rules load](#load).
 
 ### Remote read
 
-Mimir exposes a [remote read API] which allows access to the stored series. The `remote-read` subcommand of `mimirtool`
-allows to interact with its API, to find out which series are stored.
+Grafana Mimir exposes a [remote read API] which allows access to the stored series. The `remote-read` subcommand
+of `mimirtool` allows you to interact with its API, to find out which series are stored.
 
 [remote read api]: https://prometheus.io/docs/prometheus/latest/storage/#remote-storage-integrations
 
@@ -384,7 +386,7 @@ X-Prom-Label-Policy: 1234:%7Bnamespace=%22A%22%7D
 
 ### Analyse
 
-Run analysis against your Grafana or Hosted Grafana instance to see which metrics being used and exported. Can also
+Run analysis against your Grafana or Hosted Grafana instance to see which metrics are being used and exported. Can also
 extract metrics from dashboard JSON and rules YAML files.
 
 #### Grafana
@@ -436,9 +438,9 @@ mimirtool analyse grafana --address=<url>
 
 #### Ruler
 
-This command will run against your Mimir, Grafana Enterprise Metrics, or Grafana Cloud Prometheus instance. It will
-fetch its rule groups and extract the Prometheus metrics used in the rule queries. The output is a JSON file. You can
-use this file with `analyse prometheus --ruler-metrics-file`.
+This command will run against your Grafana Mimir, Grafana Enterprise Metrics, or Grafana Cloud Prometheus instance. It
+will fetch its rule groups and extract the Prometheus metrics used in the rule queries. The output is a JSON file. You
+can use this file with `analyse prometheus --ruler-metrics-file`.
 
 ```bash
 mimirtool analyse ruler --address=<url> --id=<tenant_id>
@@ -509,10 +511,11 @@ mimirtool analyse rule-file <file>
 
 #### Prometheus
 
-This command will run against your Mimir, Grafana Metrics Enterprise, Prometheus, or Cloud Prometheus instance. It will
-use the output from a previous run of `analyse grafana`, `analyze dashboard`, `analyse ruler` or `analyse rule-file` to
-show how many series in the Prometheus instance are actually being used in dashboards and/or rules. Also, it will show
-which metrics exist in Grafana Cloud that are **not** in dashboards or rules. The output is a JSON file.
+This command will run against your Grafana Mimir, Grafana Metrics Enterprise, Prometheus, or Cloud Prometheus instance.
+It will use the output from a previous run of `analyse grafana`, `analyse dashboard`, `analyse ruler`
+or `analyse rule-file` to show how many series in the Prometheus instance are actually being used in dashboards and/or
+rules. Also, it will show which metrics exist in Grafana Cloud that are **not** in dashboards or rules. The output is a
+JSON file.
 
 > **Note:** The command will make a request for every active series in the Prometheus instance.
 > This may take some time for Prometheis with a lot of active series.
@@ -586,13 +589,13 @@ mimirtool bucket-validation
 
 | Env Variable | Flag                   | Description                                                       |
 |--------------|------------------------|-------------------------------------------------------------------|
-| -            | `--object-count`       | Number of objects to create & delete. 2000 by default             | 
-| -            | `--report-every`       | Every X operations a progress report gets printed. 100 by default | 
-| -            | `--test-runs`          | Number of times we want to run the whole test. 1 by default       | 
-| -            | `--prefix`             | Path prefix to use for test objects in object store.              | 
-| -            | `--retries-on-error`   | Number of times we want to retry if object store returns error.   | 
-| -            | `--bucket-config`      | The CLI args to configure a storage bucket.                       | 
-| -            | `--bucket-config-help` | Help text explaining how to use the -bucket-config parameter.     | 
+| -            | `--object-count`       | Number of objects to create & delete. 2000 by default             |
+| -            | `--report-every`       | Every X operations a progress report gets printed. 100 by default |
+| -            | `--test-runs`          | Number of times we want to run the whole test. 1 by default       |
+| -            | `--prefix`             | Path prefix to use for test objects in object store.              |
+| -            | `--retries-on-error`   | Number of times we want to retry if object store returns error.   |
+| -            | `--bucket-config`      | The CLI args to configure a storage bucket.                       |
+| -            | `--bucket-config-help` | Help text explaining how to use the -bucket-config parameter.     |
 
 ## License
 
