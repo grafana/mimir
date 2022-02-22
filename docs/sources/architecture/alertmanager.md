@@ -60,7 +60,7 @@ Specify a fallback configuration using the `-alertmanager.configs.fallback` comm
 
 ### Tenant limits
 
-The Mimir Alertmanager has a number of per-tenant limits that are part of the [`limits_config`]({{<relref "../configuration/config-file-reference.md#limits_config" >}}).
+The Mimir Alertmanager has a number of per-tenant limits documented in [`limits`]({{<relref "../configuration/reference-configuration-parameters.md#limits" >}}).
 Each Mimir Alertmanager limit configuration parameter has an `alertmanager` prefix.
 
 ## Alertmanager UI
