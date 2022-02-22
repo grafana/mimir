@@ -123,7 +123,7 @@ Decreasing the tenant shard size is not supported because deemed to be an infreq
 
 By default, all Grafana Mimir queriers can execute queries for any tenant.
 
-When shuffle sharding is enabled by setting `-query-frontend.max-queriers-per-tenant` (or its respective YAML config option) to a value higher than `0` and lower than the number of available queriers, only specified number of queriers will be eligible to execute queries for a given tenant.
+When shuffle sharding is enabled by setting `-query-frontend.max-queriers-per-tenant` (or its respective YAML config option) to a value higher than `0` and lower than the number of available queriers, only the specified number of queriers will be eligible to execute queries for a given tenant.
 
 Note that this distribution happens in query-frontend, or query-scheduler if used. When using query-scheduler, `-query-frontend.max-queriers-per-tenant` option must be set for query-scheduler component. When not using query-frontend (with or without query-scheduler), this option is not available.
 
