@@ -6,7 +6,7 @@
 
 #### What this PR does
 
-#### Which issue(s) this PR fixes
+#### Which issue(s) this PR fixes or relates to
 
 <!-- Please make sure you don't reference cortex issues here, as the references can be publicly seen under certain conditions -->
 
