@@ -57,8 +57,6 @@ cortex_limits_overrides{limit_name="ingestion_burst_size",user="user1"} 350000
 cortex_limits_overrides{limit_name="ingestion_rate",user="user1"} 350000
 cortex_limits_overrides{limit_name="max_global_series_per_metric",user="user1"} 300000
 cortex_limits_overrides{limit_name="max_global_series_per_user",user="user1"} 300000
-cortex_limits_overrides{limit_name="max_local_series_per_metric",user="user1"} 0
-cortex_limits_overrides{limit_name="max_local_series_per_user",user="user1"} 0
 ```
 
 With these metrics, you can set up alerts to know when tenants are close to hitting their limits
