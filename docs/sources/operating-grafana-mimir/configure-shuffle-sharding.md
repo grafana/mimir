@@ -90,7 +90,7 @@ To enable shuffle sharding for ingesters on the write path you need to configure
 
 #### Ingesters read path
 
-Assuming shuffle sharding has been enabled for the write path, to enable shuffle sharding for ingesters on the read path too you need to configure the following CLI flags (or their respective YAML config options) to querier and ruler:
+Assuming shuffle sharding has been enabled for the write path, to enable shuffle sharding for ingesters on the read path too you need to configure the following CLI flags (or their respective YAML config options) on the querier and ruler:
 
 - `-distributor.ingestion-tenant-shard-size=<size>`
 - `-querier.shuffle-sharding-ingesters-lookback-period=<period>`<br />
