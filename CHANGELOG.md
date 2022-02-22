@@ -42,7 +42,6 @@ _Changes since Cortex 1.10.0._
   * `-ingester.max-global-series-per-metric` from `0` to `20000`
   * `-distributor.ingestion-rate-limit` from `25000` to `10000`
   * `-distributor.ingestion-burst-size` from `50000` to `200000`
-* [CHANGE] Changed `-ingester.stream-chunks-when-using-blocks` default value from `false` to `true`. #717
 * [CHANGE] Removed limit `enforce_metric_name`, now behave as if set to `true` always. #686
 * [CHANGE] Ruler: endpoints for listing configured rules now return HTTP status code 200 and an empty map when there are no rules instead of an HTTP 404 and plain text error message. The following endpoints are affected: #456
   * `<prometheus-http-prefix>/config/v1/rules`
@@ -57,14 +56,9 @@ _Changes since Cortex 1.10.0._
 * [CHANGE] Removed `configdb` support from Ruler and Alertmanager backend storages. #15 #38 #819
 * [CHANGE] Some files and directories created by Mimir components on local disk now have stricter permissions, and are only readable by owner, but not group or others. #58
 * [CHANGE] Query-frontend: Enable query stats by default, they can still be disabled with `-query-frontend.query-stats-enabled=false`. #83
-* [CHANGE] Ingester: default `-ingester.ring.min-ready-duration` reduced from 1m to 15s. #126
-* [CHANGE] Ingester: `-ingester.ring.min-ready-duration` now start counting the delay after the ring's health checks have passed instead of when the ring client was started. #126
 * [CHANGE] Blocks storage: memcached client DNS resolution switched from golang built-in to [`miekg/dns`](https://github.com/miekg/dns). #142
 * [CHANGE] Query-frontend: the `cortex_frontend_mapped_asts_total` metric has been renamed to `cortex_frontend_query_sharding_rewrites_attempted_total`. #150
 * [CHANGE] Renamed metric `cortex_overrides` to `cortex_limits_overrides`. #173 #407
-* [CHANGE] Allow experimental ingester max-exemplars setting to be changed dynamically #144
-  * CLI flag `-blocks-storage.tsdb.max-exemplars` is renamed to `-ingester.max-global-exemplars-per-user`.
-  * YAML `max_exemplars` is moved from `tsdb` to `overrides` and renamed to `max_global_exemplars_per_user`.
 * [CHANGE] The metric `cortex_deprecated_flags_inuse_total` has been renamed to `deprecated_flags_inuse_total` as part of using grafana/dskit functionality. #185
 * [CHANGE] API: The `-api.response-compression-enabled` flag has been removed, and GZIP response compression is always enabled except on `/api/v1/push` and `/push` endpoints. #880
 * [CHANGE] Alertmanager: Don't count user-not-found errors from replicas as failures in the `cortex_alertmanager_state_fetch_replica_state_failed_total` metric. #190
@@ -159,7 +153,6 @@ _Changes since Cortex 1.10.0._
 * [CHANGE] Query-frontend: range query response now omits the `data` field when it's empty (error case) like Prometheus does, previously it was `"data":{"resultType":"","result":null}`. #629
 * [CHANGE] Query-frontend: instant queries now honor the `-query-frontend.max-retries-per-request` flag. #630
 * [CHANGE] Alertmanager: removed `-alertmanager.storage.*` configuration options, with the exception of the CLI flags `-alertmanager.storage.path` and `-alertmanager.storage.retention`. Use `-alertmanager-storage.*` instead. #632
-* [CHANGE] Ingester: active series metrics `cortex_ingester_active_series` and `cortex_ingester_active_series_custom_tracker` are now removed when their value is zero. #672 #690
 * [CHANGE] Querier / ruler: removed the `-store.query-chunk-limit` flag (and its respective YAML config option `max_chunks_per_query`). `-querier.max-fetched-chunks-per-query` (and its respective YAML config option `max_fetched_chunks_per_query`) should be used instead. #705
 * [CHANGE] Querier/Ruler: `-querier.active-query-tracker-dir` option has been removed. Active query tracking is now done via Activity tracker configured by `-activity-tracker.filepath` and enabled by default. Limit for max number of concurrent queries (`-querier.max-concurrent`) is now respected even if activity tracking is not enabled. #661 #822
 * [CHANGE] Enable index header lazy loading by default. #693
@@ -264,8 +257,7 @@ _Changes since Cortex 1.10.0._
 * [CHANGE] Ingester: change default value of `-ingester.ring.final-sleep` from `30s` to `0s`. #981
 * [CHANGE] Ruler: `-experimental.ruler.enable-api` flag has been renamed to `-ruler.enable-api` and is now stable. The default value has also changed from `false` to `true`, so both ruler and alertmanager API are enabled by default. #913 #1065
 * [CHANGE] Alertmanager: `-experimental.alertmanager.enable-api` flag has been renamed to `-alertmanager.enable-api` and is now stable. #913
-* [CHANGE] Ingester: changed default value of `-blocks-storage.tsdb.retention-period` from `6h` to `24h`. #966
-* [CHANGE] Querier/ingester: changed default value of `-querier.query-ingesters-within` and `-blocks-storage.tsdb.close-idle-tsdb-timeout` from `0` to `13h`. #967
+* [CHANGE] Querier: changed default value of `-querier.query-ingesters-within` from `0` to `13h`. #967
 * [CHANGE] Changed default value of `-distributor.ring.store` (Distributor ring) and `-ring.store` (Ingester ring) to `memberlist`. #1046
 * [CHANGE] Ruler: add support for [DNS service discovery format](./docs/sources/configuration/arguments.md#dns-service-discovery) for `-ruler.alertmanager-url`. `-ruler.alertmanager-discovery` flag has been removed. URLs following the prior SRV format, will be treated as a static target. To continue using service discovery for these URLs prepend `dnssrvnoa+` to them. #993
   * The following metrics for Alertmanager DNS service discovery are replaced:
@@ -296,44 +288,8 @@ _Changes since Cortex 1.10.0._
   * `-querier.frontend-client.grpc-max-send-msg-size`
   * `-query-scheduler.grpc-client-config.grpc-max-send-msg-size`
   * `-ruler.client.grpc-max-send-msg-size`
-* [CHANGE] The following ingester low level settings have been removed: #1153
-  * `-ingester-client.expected-labels`
-  * `-ingester-client.expected-samples-per-series`
-  * `-ingester-client.expected-timeseries`
 * [CHANGE] Query-frontend: `-frontend.` flags were renamed to `-query-frontend.`: #1167
 * [CHANGE] Alertmanager: the default value of `-alertmanager.sharding-ring.store` is now `memberlist`. #1171
-* [CHANGE] Ingester: following command line options related to ingester ring were renamed: #1155
-  * `-consul.*` changed to `-ingester.ring.consul.*`
-  * `-etcd.*` changed to `-ingester.ring.etcd.*`
-  * `-multi.*` changed to `-ingester.ring.multi.*`
-  * `-distributor.excluded-zones` changed to `-ingester.ring.excluded-zones`
-  * `-distributor.replication-factor` changed to `-ingester.ring.replication-factor`
-  * `-distributor.zone-awareness-enabled` changed to `-ingester.ring.zone-awareness-enabled`
-  * `-ingester.availability-zone` changed to `-ingester.ring.instance-availability-zone`
-  * `-ingester.final-sleep` changed to `-ingester.ring.final-sleep`
-  * `-ingester.heartbeat-period` changed to `-ingester.ring.heartbeat-period`
-  * `-ingester.join-after` changed to `-ingester.ring.join-after`
-  * `-ingester.lifecycler.ID` changed to `-ingester.ring.instance-id`
-  * `-ingester.lifecycler.addr` changed to `-ingester.ring.instance-addr`
-  * `-ingester.lifecycler.interface` changed to `-ingester.ring.instance-interface-names`
-  * `-ingester.lifecycler.port` changed to `-ingester.ring.instance-port`
-  * `-ingester.min-ready-duration` changed to `-ingester.ring.min-ready-duration`
-  * `-ingester.num-tokens` changed to `-ingester.ring.num-tokens`
-  * `-ingester.observe-period` changed to `-ingester.ring.observe-period`
-  * `-ingester.readiness-check-ring-health` changed to `-ingester.ring.readiness-check-ring-health`
-  * `-ingester.tokens-file-path` changed to `-ingester.ring.tokens-file-path`
-  * `-ingester.unregister-on-shutdown` changed to `-ingester.ring.unregister-on-shutdown`
-  * `-ring.heartbeat-timeout` changed to `-ingester.ring.heartbeat-timeout`
-  * `-ring.prefix` changed to `-ingester.ring.prefix`
-  * `-ring.store` changed to `-ingester.ring.store`
-* [CHANGE] Ingester: fields in YAML configuration for ingester ring have been changed: #1155
-  * `ingester.lifecycler` changed to `ingester.ring`
-  * Fields from `ingester.lifecycler.ring` moved to `ingester.ring`
-  * `ingester.lifecycler.address` changed to `ingester.ring.instance_addr`
-  * `ingester.lifecycler.id` changed to `ingester.ring.instance_id`
-  * `ingester.lifecycler.port` changed to `ingester.ring.instance_port`
-  * `ingester.lifecycler.availability_zone` changed to `ingester.ring.instance_availability_zone`
-  * `ingester.lifecycler.interface_names` changed to `ingester.ring.instance_interface_names`
 * [CHANGE] Distributor: removed the `-distributor.extra-query-delay` flag (and its respective YAML config option). #1048
 * [CHANGE] Query-frontend / Query-scheduler: classified the `-query-frontend.querier-forget-delay` and `-query-scheduler.querier-forget-delay` flags (and their respective YAML config options) as experimental. #1208
 * [CHANGE] Remove `-http.prefix` flag (and `http_prefix` config file option). #763
@@ -400,6 +356,51 @@ _Changes since Cortex 1.10.0._
     | `/status`                   | `/multitenant_alertmanager/status` |
 
 * [CHANGE] Ruler: deprecate `/api/v1/rules/**` and `<prometheus-http-prefix/rules/**` configuration API endpoints in favour of `/<prometheus-http-prefix>/config/v1/rules/**`. Deprecated endpoints will be removed in Mimir 2.2.0. Main configuration API endpoints are now `/<prometheus-http-prefix>/config/api/v1/rules/**` introduced in Mimir 2.0.0. #1222
+* [CHANGE] Ingester: changed `-ingester.stream-chunks-when-using-blocks` default value from `false` to `true`. #717
+* [CHANGE] Ingester: default `-ingester.ring.min-ready-duration` reduced from 1m to 15s. #126
+* [CHANGE] Ingester: `-ingester.ring.min-ready-duration` now start counting the delay after the ring's health checks have passed instead of when the ring client was started. #126
+* [CHANGE] Ingester: allow experimental ingester max-exemplars setting to be changed dynamically #144
+  * CLI flag `-blocks-storage.tsdb.max-exemplars` is renamed to `-ingester.max-global-exemplars-per-user`.
+  * YAML `max_exemplars` is moved from `tsdb` to `overrides` and renamed to `max_global_exemplars_per_user`.
+* [CHANGE] Ingester: active series metrics `cortex_ingester_active_series` and `cortex_ingester_active_series_custom_tracker` are now removed when their value is zero. #672 #690
+* [CHANGE] Ingester: changed default value of `-blocks-storage.tsdb.retention-period` from `6h` to `24h`. #966
+* [CHANGE] Ingester: changed default value of `-blocks-storage.tsdb.close-idle-tsdb-timeout` from `0` to `13h`. #967
+* [CHANGE] Ingester: the following low level settings have been removed: #1153
+  * `-ingester-client.expected-labels`
+  * `-ingester-client.expected-samples-per-series`
+  * `-ingester-client.expected-timeseries`
+* [CHANGE] Ingester: following command line options related to ingester ring were renamed: #1155
+  * `-consul.*` changed to `-ingester.ring.consul.*`
+  * `-etcd.*` changed to `-ingester.ring.etcd.*`
+  * `-multi.*` changed to `-ingester.ring.multi.*`
+  * `-distributor.excluded-zones` changed to `-ingester.ring.excluded-zones`
+  * `-distributor.replication-factor` changed to `-ingester.ring.replication-factor`
+  * `-distributor.zone-awareness-enabled` changed to `-ingester.ring.zone-awareness-enabled`
+  * `-ingester.availability-zone` changed to `-ingester.ring.instance-availability-zone`
+  * `-ingester.final-sleep` changed to `-ingester.ring.final-sleep`
+  * `-ingester.heartbeat-period` changed to `-ingester.ring.heartbeat-period`
+  * `-ingester.join-after` changed to `-ingester.ring.join-after`
+  * `-ingester.lifecycler.ID` changed to `-ingester.ring.instance-id`
+  * `-ingester.lifecycler.addr` changed to `-ingester.ring.instance-addr`
+  * `-ingester.lifecycler.interface` changed to `-ingester.ring.instance-interface-names`
+  * `-ingester.lifecycler.port` changed to `-ingester.ring.instance-port`
+  * `-ingester.min-ready-duration` changed to `-ingester.ring.min-ready-duration`
+  * `-ingester.num-tokens` changed to `-ingester.ring.num-tokens`
+  * `-ingester.observe-period` changed to `-ingester.ring.observe-period`
+  * `-ingester.readiness-check-ring-health` changed to `-ingester.ring.readiness-check-ring-health`
+  * `-ingester.tokens-file-path` changed to `-ingester.ring.tokens-file-path`
+  * `-ingester.unregister-on-shutdown` changed to `-ingester.ring.unregister-on-shutdown`
+  * `-ring.heartbeat-timeout` changed to `-ingester.ring.heartbeat-timeout`
+  * `-ring.prefix` changed to `-ingester.ring.prefix`
+  * `-ring.store` changed to `-ingester.ring.store`
+* [CHANGE] Ingester: fields in YAML configuration for ingester ring have been changed: #1155
+  * `ingester.lifecycler` changed to `ingester.ring`
+  * Fields from `ingester.lifecycler.ring` moved to `ingester.ring`
+  * `ingester.lifecycler.address` changed to `ingester.ring.instance_addr`
+  * `ingester.lifecycler.id` changed to `ingester.ring.instance_id`
+  * `ingester.lifecycler.port` changed to `ingester.ring.instance_port`
+  * `ingester.lifecycler.availability_zone` changed to `ingester.ring.instance_availability_zone`
+  * `ingester.lifecycler.interface_names` changed to `ingester.ring.instance_interface_names`
 * [FEATURE] Ruler: Add new `-ruler.query-stats-enabled` which when enabled will report the `cortex_ruler_query_seconds_total` as a per-user metric that tracks the sum of the wall time of executing queries in the ruler in seconds. [#4317](https://github.com/cortexproject/cortex/pull/4317)
 * [FEATURE] Query-frontend: Add `cortex_query_fetched_series_total` and `cortex_query_fetched_chunks_bytes_total` per-user counters to expose the number of series and bytes fetched as part of queries. These metrics can be enabled with the `-frontend.query-stats-enabled` flag (or its respective YAML config option `query_stats_enabled`). [#4343](https://github.com/cortexproject/cortex/pull/4343)
 * [FEATURE] The endpoints `/api/v1/status/buildinfo`, `<prometheus-http-prefix>/api/v1/status/buildinfo`, and `<alertmanager-http-prefix>/api/v1/status/buildinfo` have been added to display build information and enabled features. #1219 #1240
@@ -432,20 +433,15 @@ _Changes since Cortex 1.10.0._
   * Added `sharded_queries` count to the "query stats" log.
   * The number of shards is adjusted to be compatible with number of compactor shards that are used by a split-and-merge compactor. The querier can use this to avoid querying blocks that cannot have series in a given query shard.
 * [FEATURE] PromQL: added `present_over_time` support. #139
-* [FEATURE] Ingester: can expose metrics on active series matching custom trackers configured via `-ingester.active-series-custom-trackers` (or its respective YAML config option). When configured, active series for custom trackers are exposed by the `cortex_ingester_active_series_custom_tracker` metric. #42 #672
-* [FEATURE] Ingester: Enable snapshotting of in-memory TSDB on disk during shutdown via `-blocks-storage.tsdb.memory-snapshot-on-shutdown` (experimental). #249
 * [FEATURE] Compactor: compactor now uses new algorithm that we call "split-and-merge". Previous compaction strategy was removed. With the `split-and-merge` compactor source blocks for a given tenant are grouped into `-compactor.split-groups` number of groups. Each group of blocks is then compacted separately, and is split into `-compactor.split-and-merge-shards` shards (configurable on a per-tenant basis). Compaction of each tenant shards can be horizontally scaled. Number of compactors that work on jobs for single tenant can be limited by using `-compactor.compactor-tenant-shard-size` parameter, or per-tenant `compactor_tenant_shard_size` override.  #275 #281 #282 #283 #288 #290 #303 #307 #317 #323 #324 #328 #353 #368 #479 #820
 * [FEATURE] Querier: Added label names cardinality endpoint `<prefix>/api/v1/cardinality/label_names` that is disabled by default. Can be enabled/disabled via the CLI flag `-querier.cardinality-analysis-enabled` or its respective YAML config option. Configurable on a per-tenant basis. #301 #377 #474
 * [FEATURE] Distributor: Added `-api.skip-label-name-validation-header-enabled` option to allow skipping label name validation on the HTTP write path based on `X-Mimir-SkipLabelNameValidation` header being `true` or not. #390
 * [FEATURE] Querier: Added label values cardinality endpoint `<prefix>/api/v1/cardinality/label_values` that is disabled by default. Can be enabled/disabled via the CLI flag `-querier.cardinality-analysis-enabled` or its respective YAML config option, and configurable on a per-tenant basis. The maximum number of label names allowed to be queried in a single API call can be controlled via `-querier.label-values-max-cardinality-label-names-per-request`. #332 #395 #474
 * [FEATURE] Query-Frontend: Added `-query-frontend.cache-unaligned-requests` option to cache responses for requests that do not have step-aligned start and end times. This can improve speed of repeated queries, but can also pollute cache with results that are never reused. #432
 * [FEATURE] Querier: Added `-store.max-labels-query-length` to restrict the range of `/series`, label-names and label-values requests. #507
-* [FEATURE] Ingester: Added `-blocks-storage.tsdb.isolation-enabled` flag, which allows disabling TSDB isolation feature. This is enabled by default (per TSDB default), but disabling can improve performance of write requests. #512
 * [FEATURE] Compactor: Added `-compactor.max-compaction-time` to control how long can compaction for a single tenant take. If compactions for a tenant take longer, no new compactions are started in the same compaction cycle. Running compactions are not stopped however, and may take much longer. #523
 * [FEATURE] Compactor: When compactor finds blocks with out-of-order chunks, it will mark them for no-compaction. Blocks marked for no-compaction are ignored in future compactions too. Added metric `cortex_compactor_blocks_marked_for_no_compaction_total` to track number of blocks marked for no-compaction. Added `CortexCompactorSkippedBlocksWithOutOfOrderChunks` alert based on new metric. Markers are only checked from `<tenant>/markers` location, but uploaded to the block directory too. #520 #535 #550
 * [FEATURE] Compactor: multiple blocks are now downloaded and uploaded at once, which can shorten compaction process. #552
-* [FEATURE] Ingester: Added `-blocks-storage.tsdb.head-chunks-write-queue-size` flag, which allows setting the size of the queue used by the TSDB before m-mapping chunks (experimental). #591
-  * Added `cortex_ingester_tsdb_mmap_chunk_write_queue_operations_total` metric to track different operations of this queue.
 * [FEATURE] Ruler: Added federated rule groups. #533
   * Added `-ruler.tenant-federation.enabled` config flag.
   * Added support for `source_tenants` field on rule groups.
@@ -483,6 +479,11 @@ _Changes since Cortex 1.10.0._
     * Templates count in user config (`-alertmanager.max-templates-count`)
     * Max template size (`-alertmanager.max-template-size-bytes`)
 * [FEATURE] Querier: Added support for tenant federation to exemplar endpoints. #927
+* [FEATURE] Ingester: can expose metrics on active series matching custom trackers configured via `-ingester.active-series-custom-trackers` (or its respective YAML config option). When configured, active series for custom trackers are exposed by the `cortex_ingester_active_series_custom_tracker` metric. #42 #672
+* [FEATURE] Ingester: Enable snapshotting of in-memory TSDB on disk during shutdown via `-blocks-storage.tsdb.memory-snapshot-on-shutdown` (experimental). #249
+* [FEATURE] Ingester: Added `-blocks-storage.tsdb.isolation-enabled` flag, which allows disabling TSDB isolation feature. This is enabled by default (per TSDB default), but disabling can improve performance of write requests. #512
+* [FEATURE] Ingester: Added `-blocks-storage.tsdb.head-chunks-write-queue-size` flag, which allows setting the size of the queue used by the TSDB before m-mapping chunks (experimental). #591
+  * Added `cortex_ingester_tsdb_mmap_chunk_write_queue_operations_total` metric to track different operations of this queue.
 * [ENHANCEMENT] Add timeout for waiting on compactor to become ACTIVE in the ring. [#4262](https://github.com/cortexproject/cortex/pull/4262)
 * [ENHANCEMENT] Reduce memory used by streaming queries, particularly in ruler. [#4341](https://github.com/cortexproject/cortex/pull/4341)
 * [ENHANCEMENT] Ring: allow experimental configuration of disabling of heartbeat timeouts by setting the relevant configuration value to zero. Applies to the following: [#4342](https://github.com/cortexproject/cortex/pull/4342)
@@ -509,7 +510,6 @@ _Changes since Cortex 1.10.0._
   * `ruler_max_rules_per_rule_group`
   * `ruler_max_rule_groups_per_tenant`
 * [ENHANCEMENT] Querier: can use the `LabelNames` call with matchers, if matchers are provided in the `/labels` API call, instead of using the more expensive `MetricsForLabelMatchers` call as before. #3 #1186
-* [ENHANCEMENT] Ingester: added option `-ingester.readiness-check-ring-health` to disable the ring health check in the readiness endpoint. When disabled, the health checks are run against only the ingester itself instead of all ingesters in the ring. #48 #126
 * [ENHANCEMENT] Distributor: added option `-distributor.excluded-zones` to exclude ingesters running in specific zones both on write and read path. #51
 * [ENHANCEMENT] Store-gateway: added `cortex_bucket_store_sent_chunk_size_bytes` metric, tracking the size of chunks sent from store-gateway to querier. #123
 * [ENHANCEMENT] Store-gateway: reduced CPU and memory utilization due to exported metrics aggregation for instances with a large number of tenants. #123 #142
@@ -532,8 +532,6 @@ _Changes since Cortex 1.10.0._
   * `cortex_cache_memory_hits_total`
   * `cortex_cache_memory_items_count`
 * [ENHANCEMENT] Store-gateway: log index cache requests to tracing spans. #419
-* [ENHANCEMENT] Ingester: reduce CPU and memory utilization if remote write requests contains a large amount of "out of bounds" samples. #413
-* [ENHANCEMENT] Ingester: reduce CPU and memory utilization when querying chunks from ingesters. #430
 * [ENHANCEMENT] Querier: when fetching data for specific query-shard, we can ignore some blocks based on compactor-shard ID, since sharding of series by query sharding and compactor is the same. Added metrics: #438 #450
   * `cortex_querier_blocks_found_total`
   * `cortex_querier_blocks_queried_total`
@@ -555,27 +553,25 @@ _Changes since Cortex 1.10.0._
 * [ENHANCEMENT] Store-gateway: Added `-store-gateway.sharding-ring.unregister-on-shutdown` option that allows store-gateway to stay in the ring even after shutdown. Defaults to `true`, which is the same as current behaviour. #610 #614
 * [ENHANCEMENT] Store-gateway: wait for ring tokens stability instead of ring stability to speed up startup and tests. #620
 * [ENHANCEMENT] Query-scheduler: exported summary `cortex_query_scheduler_inflight_requests` tracking total number of inflight requests (both enqueued and processing) in percentile buckets. #675
-* [ENHANCEMENT] Ingester: Expose ingester ring page on ingesters. #654
 * [ENHANCEMENT] Querier: retry store-gateway in case of unexpected failure, instead of failing the query. #1003
 * [ENHANCEMENT] Added a new metric `mimir_build_info` to coincide with `cortex_build_info`. The metric `cortex_build_info` has not been removed. #1022
 * [ENHANCEMENT] Mimir runs a sanity check of storage config at startup and will fail to start if the sanity check doesn't pass. This is done to find potential config issues before starting up. #1180
 * [ENHANCEMENT] Validate alertmanager and ruler storage configurations to ensure they don't use same bucket name and region values as those configured for the blocks storage. #1214
 * [ENHANCEMENT] Distributor: reject exemplars with blank label names or values. The `cortex_discarded_exemplars_total` metric will use the `exemplar_labels_blank` reason in this case. #873
 * [ENHANCEMENT] Ruler: wait for ruler ring client to self-detect during startup. #990
+* [ENHANCEMENT] Ingester: added option `-ingester.readiness-check-ring-health` to disable the ring health check in the readiness endpoint. When disabled, the health checks are run against only the ingester itself instead of all ingesters in the ring. #48 #126
+* [ENHANCEMENT] Ingester: reduce CPU and memory utilization if remote write requests contains a large amount of "out of bounds" samples. #413
+* [ENHANCEMENT] Ingester: reduce CPU and memory utilization when querying chunks from ingesters. #430
+* [ENHANCEMENT] Ingester: Expose ingester ring page on ingesters. #654
 * [BUGFIX] HA Tracker: when cleaning up obsolete elected replicas from KV store, tracker didn't update number of cluster per user correctly. [#4336](https://github.com/cortexproject/cortex/pull/4336)
 * [BUGFIX] Ruler: fixed counting of PromQL evaluation errors as user-errors when updating `cortex_ruler_queries_failed_total`. [#4335](https://github.com/cortexproject/cortex/pull/4335)
-* [BUGFIX] Ingester: fixed ingester stuck on start up (LEAVING ring state) when `-ingester.ring.heartbeat-period=0` and `-ingester.unregister-on-shutdown=false`. [#4366](https://github.com/cortexproject/cortex/pull/4366)
-* [BUGFIX] Ingester: prevent any reads or writes while the ingester is stopping. This will prevent accessing TSDB blocks once they have been already closed. [#4304](https://github.com/cortexproject/cortex/pull/4304)
 * [BUGFIX] AlertManager: remove stale template files. #4495
 * [BUGFIX] Frontend: Fixes @ modifier functions (start/end) when splitting queries by time. #206
-* [BUGFIX] Ingester: TSDB now waits for pending readers before truncating Head block, fixing the `chunk not found` error and preventing wrong query results. #16
 * [BUGFIX] Compactor: fixed panic while collecting Prometheus metrics. #28
-* [BUGFIX] Ingester: don't create TSDB or appender if no samples are sent by a tenant. #162
 * [BUGFIX] Alertmanager: don't replace user configurations with blank fallback configurations (when enabled), particularly during scaling up/down instances when sharding is enabled. #224
 * [BUGFIX] Query-frontend: Ensure query_range requests handled by the query-frontend return JSON formatted errors. #360 #499
 * [BUGFIX] Query-frontend: don't reuse cached results for queries that are not step-aligned. #424
 * [BUGFIX] Querier: fixed `/api/v1/user_stats` endpoint. When zone-aware replication is enabled, `MaxUnavailableZones` param is used instead of `MaxErrors`, so setting `MaxErrors = 0` doesn't make the Querier wait for all Ingesters responses. #474
-* [BUGFIX] Ingester: fix out-of-order chunks in TSDB head in-memory series after WAL replay in case some samples were appended to TSDB WAL before series. #530
 * [BUGFIX] Memberlist: fixed corrupted packets when sending compound messages with more than 255 messages or messages bigger than 64KB. #551
 * [BUGFIX] Distributor: fix bug in query-exemplar where some results would get dropped. #583
 * [BUGFIX] Azure storage: only create HTTP client once, to reduce memory utilization. #605
@@ -588,6 +584,11 @@ _Changes since Cortex 1.10.0._
 * [BUGFIX] Multi-KV: runtime config changes are now propagated to all rings, not just ingester ring. #1047
 * [BUGFIX] Ruler: do not log `unable to read rules directory` at startup if the directory hasn't been created yet. #1058
 * [BUGFIX] Ruler: enable Prometheus-compatible endpoints regardless of `-ruler.enable-api`. The flag now only controls the configuration API. This is what the config flag description stated, but not what was happening. #1216
+* [BUGFIX] Ingester: fixed ingester stuck on start up (LEAVING ring state) when `-ingester.ring.heartbeat-period=0` and `-ingester.unregister-on-shutdown=false`. [#4366](https://github.com/cortexproject/cortex/pull/4366)
+* [BUGFIX] Ingester: prevent any reads or writes while the ingester is stopping. This will prevent accessing TSDB blocks once they have been already closed. [#4304](https://github.com/cortexproject/cortex/pull/4304)
+* [BUGFIX] Ingester: TSDB now waits for pending readers before truncating Head block, fixing the `chunk not found` error and preventing wrong query results. #16
+* [BUGFIX] Ingester: don't create TSDB or appender if no samples are sent by a tenant. #162
+* [BUGFIX] Ingester: fix out-of-order chunks in TSDB head in-memory series after WAL replay in case some samples were appended to TSDB WAL before series. #530
 
 ### Mixin
 
