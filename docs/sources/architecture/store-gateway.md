@@ -28,7 +28,7 @@ New blocks can be uploaded by [ingesters]({{< relref "./ingester.md" >}}) or by 
 The compactor additionally may have deleted blocks or marked others for deletion since the last scan.
 The frequency at which this occurs is configured with the `-blocks-storage.bucket-store.sync-interval` flag.
 
-The blocks chunks and the entire index are never fully downloaded by the store-gateway. The index-header is stored to the local disk, in order to avoid to re-download it on subsequent restarts of a store-gateway. For this reason, it's recommended - but not required - to run the store-gateway with a persistent disk. For example, if you're running the Grafana Mimir cluster in Kubernetes, you may use a StatefulSet with a persistent volume claim for the store-gateways.
+The blocks chunks and the entire index are never fully downloaded by the store-gateway. The index-header is stored to the local disk, in order to avoid having to re-download it on subsequent restarts of a store-gateway. For this reason, it's recommended - but not required - to run the store-gateway with a persistent disk. For example, if you're running the Grafana Mimir cluster in Kubernetes, you may use a StatefulSet with a PersistentVolumeClaim for the store-gateways.
 
 For more information about the index-header, please refer to [Binary index-header documentation]({{< relref "../blocks-storage/binary-index-header.md" >}}).
 
