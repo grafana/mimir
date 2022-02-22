@@ -29,6 +29,7 @@ brackets indicate that a parameter is optional.
 - `<duration>`: a duration matching the regular expression `[0-9]+(ns|us|µs|ms|s|m|h|d|w|y)` where y = 365 days
 - `<string>`: a string
 - `<url>`: a URL
+- `<filepath>`: a string containing an absolute or relative path and filename to a file on disk
 - `<prefix>`: a CLI flag prefix based on the context (look at the parent configuration block to see which CLI flags prefix should be used)
 - `<relabel_config>`: a [Prometheus relabeling configuration](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#relabel_config)
 - `<time>`: a timestamp, with available formats:
@@ -97,10 +98,6 @@ where `default_value` is the value to use if the environment variable is undefin
 # (advanced) Tenant ID to use when multitenancy is disabled.
 # CLI flag: -auth.no-auth-tenant
 [no_auth_tenant: <string> | default = "anonymous"]
-
-# (advanced) HTTP path prefix for API.
-# CLI flag: -http.prefix
-[http_prefix: <string> | default = "/api/prom"]
 
 api:
   # (advanced) Allows to skip label name validation via header on the http write
@@ -2559,7 +2556,10 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -store.max-query-length
 [max_query_length: <duration> | default = 0s]
 
-# Maximum number of split queries will be scheduled in parallel by the frontend.
+# Maximum number of split (by time) or partial (by shard) queries that will be
+# scheduled in parallel by the query-frontend for a single input query. This
+# limit is introduced to have a fairer query scheduling and avoid a single query
+# over a large time range saturating all available queriers.
 # CLI flag: -querier.max-query-parallelism
 [max_query_parallelism: <int> | default = 14]
 
