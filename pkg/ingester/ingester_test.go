@@ -5214,6 +5214,48 @@ func TestIngesterActiveSeries(t *testing.T) {
 				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
 			},
 		},
+		"should cleanup metrics when tsdb closed": {
+			activeSeriesOverridesProvider: defaultCustomTrackersOverridesProvider,
+			test: func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer) {
+				now := time.Now()
+
+				for i, label := range labelsToPush {
+					ctx := user.InjectOrgID(context.Background(), userID)
+					offset := time.Duration(len(labelsToPush) - i)
+					_, err := ingester.Push(ctx, req(label, time.Now().Add(offset)))
+					require.NoError(t, err)
+				}
+				for i, label := range labelsToPush {
+					ctx := user.InjectOrgID(context.Background(), userID2)
+					offset := time.Duration(len(labelsToPush) - i)
+					_, err := ingester.Push(ctx, req(label, time.Now().Add(offset)))
+					require.NoError(t, err)
+				}
+
+				// Update active series for metrics check.
+				ingester.updateActiveSeries(now)
+
+				expectedMetrics := `
+					# HELP cortex_ingester_active_series Number of currently active series per user.
+					# TYPE cortex_ingester_active_series gauge
+					cortex_ingester_active_series{user="other_test_user"} 4
+                    cortex_ingester_active_series{user="test_user"} 4
+					# HELP cortex_ingester_active_series_custom_tracker Number of currently active series matching a pre-configured label matchers per user.
+					# TYPE cortex_ingester_active_series_custom_tracker gauge
+					cortex_ingester_active_series_custom_tracker{name="team_a",user="test_user"} 2
+					cortex_ingester_active_series_custom_tracker{name="team_b",user="test_user"} 2
+					cortex_ingester_active_series_custom_tracker{name="bool_is_true",user="other_test_user"} 2
+					cortex_ingester_active_series_custom_tracker{name="bool_is_false",user="other_test_user"} 2
+				`
+
+				// Check tracked Prometheus metrics
+				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
+				// close tsdbs and check for cleanup
+				ingester.closeAllTSDB()
+				expectedMetrics = ""
+				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
+			},
+		},
 		"should track custom matchers, removing when zero": {
 			activeSeriesOverridesProvider: defaultCustomTrackersOverridesProvider,
 			test: func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer) {
