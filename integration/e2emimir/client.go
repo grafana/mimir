@@ -20,7 +20,6 @@ import (
 	"time"
 
 	"github.com/gogo/protobuf/proto"
-	golangproto "github.com/golang/protobuf/proto" // TODO: Why do we have two proto libs?
 	"github.com/golang/snappy"
 	alertConfig "github.com/prometheus/alertmanager/config"
 	"github.com/prometheus/alertmanager/types"
@@ -33,6 +32,7 @@ import (
 	v11 "go.opentelemetry.io/proto/otlp/common/v1"
 	metricpb "go.opentelemetry.io/proto/otlp/metrics/v1"
 	metricsv1 "go.opentelemetry.io/proto/otlp/metrics/v1"
+	golangproto "google.golang.org/protobuf/proto" // OTLP protos are not compatible with gogo
 	yaml "gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/ruler"

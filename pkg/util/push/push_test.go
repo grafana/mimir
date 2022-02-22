@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/stretchr/testify/assert"
@@ -23,7 +24,7 @@ import (
 	v11 "go.opentelemetry.io/proto/otlp/common/v1"
 	metricpb "go.opentelemetry.io/proto/otlp/metrics/v1"
 	metricsv1 "go.opentelemetry.io/proto/otlp/metrics/v1"
-	"google.golang.org/protobuf/proto"
+	golangproto "google.golang.org/protobuf/proto"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
@@ -197,7 +198,7 @@ func createOTLPRequest(t testing.TB, protoMetrics *metricpb.ResourceMetrics) *ht
 		ResourceMetrics: []*metricpb.ResourceMetrics{protoMetrics},
 	}
 
-	rawBytes, err := proto.Marshal(pbRequest)
+	rawBytes, err := golangproto.Marshal(pbRequest)
 	require.NoError(t, err)
 
 	req, err := http.NewRequest("POST", "http://localhost/", bytes.NewReader(rawBytes))

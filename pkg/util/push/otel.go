@@ -4,10 +4,11 @@ package push
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"net/http"
 
+	kitlog "github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator/prometheusremotewrite"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/weaveworks/common/middleware"
@@ -15,11 +16,17 @@ import (
 	"go.opentelemetry.io/collector/model/pdata"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/tenant"
+	"github.com/grafana/mimir/pkg/util/log"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 const (
 	pbContentType   = "application/x-protobuf"
 	jsonContentType = "application/json"
+
+	otelParseError = "otlp_parse_error"
+	maxErrMsgLen   = 1024
 )
 
 func HandlerForOTLP(
@@ -30,6 +37,9 @@ func HandlerForOTLP(
 ) http.Handler {
 	return handler(maxRecvMsgSize, sourceIPs, allowSkipLabelNameValidation, push, func(ctx context.Context, r *http.Request, maxSize int, dst []byte, req *mimirpb.PreallocWriteRequest) ([]byte, error) {
 		var decoderFunc func(buf []byte) (otlpgrpc.MetricsRequest, error)
+
+		logger := log.WithContext(ctx, log.Logger)
+
 		contentType := r.Header.Get("Content-Type")
 		switch contentType {
 		case pbContentType:
@@ -42,6 +52,7 @@ func HandlerForOTLP(
 		reader := io.LimitReader(r.Body, int64(maxRecvMsgSize)+1)
 		body, err := io.ReadAll(reader)
 		if err != nil {
+			r.Body.Close()
 			return body, err
 		}
 		if err = r.Body.Close(); err != nil {
@@ -53,7 +64,7 @@ func HandlerForOTLP(
 			return body, err
 		}
 
-		metrics, err := otelMetricsToTimeseries(ctx, otlpReq.Metrics())
+		metrics, err := otelMetricsToTimeseries(ctx, logger, otlpReq.Metrics())
 		if err != nil {
 			return body, err
 		}
@@ -63,16 +74,24 @@ func HandlerForOTLP(
 	})
 }
 
-func otelMetricsToTimeseries(ctx context.Context, md pdata.Metrics) ([]mimirpb.PreallocTimeseries, error) {
-	tsMap, _, errs := prometheusremotewrite.MetricsToPRW("", nil, md)
+func otelMetricsToTimeseries(ctx context.Context, logger kitlog.Logger, md pdata.Metrics) ([]mimirpb.PreallocTimeseries, error) {
+	tsMap, dropped, errs := prometheusremotewrite.MetricsToPRW("", nil, md)
 	if errs != nil {
-		// TODO: Handle parse errors.
-		// Also, the ignored returned argument is the number of samples that were dropped. We should
-		// record them somehow.
-		fmt.Println(errs)
+		userID, err := tenant.TenantID(ctx)
+		if err != nil {
+			return nil, err
+		}
+		validation.DiscardedSamples.WithLabelValues(otelParseError, userID).Add(float64(dropped))
+
+		parseErrs := errs.Error()
+		if len(parseErrs) > maxErrMsgLen {
+			parseErrs = parseErrs[:maxErrMsgLen]
+		}
+
+		level.Warn(logger).Log("msg", "OTLP parse error", "err", parseErrs)
 	}
 
-	mimirTs := make([]mimirpb.PreallocTimeseries, 0, len(tsMap))
+	mimirTs := mimirpb.PreallocTimeseriesSliceFromPool()
 	for _, promTs := range tsMap {
 		mimirTs = append(mimirTs, promToMimirTimeseries(promTs))
 	}
@@ -114,11 +133,10 @@ func promToMimirTimeseries(promTs *prompb.TimeSeries) mimirpb.PreallocTimeseries
 		})
 	}
 
-	return mimirpb.PreallocTimeseries{
-		TimeSeries: &mimirpb.TimeSeries{
-			Labels:    labels,
-			Samples:   samples,
-			Exemplars: exemplars,
-		},
-	}
+	ts := mimirpb.TimeseriesFromPool()
+	ts.Labels = labels
+	ts.Samples = samples
+	ts.Exemplars = exemplars
+
+	return mimirpb.PreallocTimeseries{TimeSeries: ts}
 }
