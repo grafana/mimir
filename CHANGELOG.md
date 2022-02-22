@@ -12,7 +12,6 @@ _Changes since Cortex 1.10.0._
 * [CHANGE] Memberlist: the `memberlist_kv_store_value_bytes` metric has been removed due to values no longer being stored in-memory as encoded bytes. [#4345](https://github.com/cortexproject/cortex/pull/4345)
 * [CHANGE] Memberlist: forward only changes, not entire original message. [#4419](https://github.com/cortexproject/cortex/pull/4419)
 * [CHANGE] Memberlist: don't accept old tombstones as incoming change, and don't forward such messages to other gossip members. [#4420](https://github.com/cortexproject/cortex/pull/4420)
-* [CHANGE] Removed `-alertmanager.configs.auto-webhook-root` #977
 * [CHANGE] Removed deprecated limits for rejecting old samples #799
   This removes the following flags:
   * `-validation.reject-old-samples`
@@ -42,14 +41,11 @@ _Changes since Cortex 1.10.0._
 * [CHANGE] Removed limit `enforce_metric_name`, now behave as if set to `true` always. #686
 * [CHANGE] Renamed metric `cortex_experimental_features_in_use_total` as `cortex_experimental_features_used_total` and added `feature` label. #32 #658
 * [CHANGE] Removed `log_messages_total` metric. #32
-* [CHANGE] Alertmanager: removed `configdb` support from Alertmanager backend storages. #15 #38 #819
 * [CHANGE] Some files and directories created by Mimir components on local disk now have stricter permissions, and are only readable by owner, but not group or others. #58
 * [CHANGE] Blocks storage: memcached client DNS resolution switched from golang built-in to [`miekg/dns`](https://github.com/miekg/dns). #142
 * [CHANGE] Renamed metric `cortex_overrides` to `cortex_limits_overrides`. #173 #407
 * [CHANGE] The metric `cortex_deprecated_flags_inuse_total` has been renamed to `deprecated_flags_inuse_total` as part of using grafana/dskit functionality. #185
 * [CHANGE] API: The `-api.response-compression-enabled` flag has been removed, and GZIP response compression is always enabled except on `/api/v1/push` and `/push` endpoints. #880
-* [CHANGE] Alertmanager: Don't count user-not-found errors from replicas as failures in the `cortex_alertmanager_state_fetch_replica_state_failed_total` metric. #190
-* [CHANGE] Alertmanager: Use distributor for non-API routes. #213
 * [CHANGE] Limits: Option `-ingester.max-samples-per-query` and its YAML field `max_samples_per_query` have been removed. It required `-querier.ingester-streaming` option to be set to false, but since `-querier.ingester-streaming` is removed (always defaulting to true), the limit using it was removed as well. #204 #1132
 * [CHANGE] Limits: Set the default max number of inflight ingester push requests (`-ingester.instance-limits.max-inflight-push-requests`) to 30000 in order to prevent clusters from being overwhelmed by request volume or temporary slow-downs. #259
 * [CHANGE] Update Go version to 1.17.3. #480
@@ -124,11 +120,9 @@ _Changes since Cortex 1.10.0._
     * `prometheus_local_storage_memory_chunkdescs`
 * [CHANGE] Memberlist: changed probe interval from `1s` to `5s` and probe timeout from `500ms` to `2s`. #563
 * [CHANGE] Removed the deprecated `-<prefix>.fifocache.size` flag. #618
-* [CHANGE] Alertmanager: removed `-alertmanager.storage.*` configuration options, with the exception of the CLI flags `-alertmanager.storage.path` and `-alertmanager.storage.retention`. Use `-alertmanager-storage.*` instead. #632
 * [CHANGE] Enable index header lazy loading by default. #693
   * `-blocks-storage.bucket-store.index-header-lazy-loading-enabled` default from `false` to `true`
   * `-blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout` default from `20m` to `1h`
-* [CHANGE] Alertmanager: set default value for `-alertmanager.web.external-url=http://localhost:8080/alertmanager` to match the default configuration. #808 #1067
 * [CHANGE] Shuffle-sharding:
   * `-distributor.sharding-strategy` option has been removed, and shuffle sharding is enabled by default. Default shard size is set to 0, which disables shuffle sharding for the tenant (all ingesters will receive tenants's samples). #888
   * `-ruler.sharding-strategy` option has been removed from ruler. Ruler now uses shuffle-sharding by default, but respects `ruler_tenant_shard_size`, which defaults to 0 (ie. use all rulers for tenant). #889
@@ -157,20 +151,9 @@ _Changes since Cortex 1.10.0._
     * `-blocks-storage.bucket-store.chunks-cache.memcached.timeout`
     * `-query-frontend.results-cache.memcached.timeout`
 * [CHANGE] Ingester: change default value of `-ingester.ring.final-sleep` from `30s` to `0s`. #981
-* [CHANGE] Alertmanager: `-experimental.alertmanager.enable-api` flag has been renamed to `-alertmanager.enable-api` and is now stable. #913
 * [CHANGE] Changed default value of `-distributor.ring.store` (Distributor ring) and `-ring.store` (Ingester ring) to `memberlist`. #1046
 * [CHANGE] Memberlist: the `name` label on metrics `cortex_dns_failures_total`, `cortex_dns_lookups_total` and `cortex_dns_provider_results` was renamed to `component`. #993
 * [CHANGE] Changed the default value of `-blocks-storage.bucket-store.bucket-index.enabled` to `true`. The default configuration must now run the compactor in order to write the bucket index or else queries to long term storage will fail. #924
-* [CHANGE] Alertmanager: now always runs with sharding enabled; other modes of operation are removed. #1044 #1126
-  * The following configuration options are removed:
-    * `-alertmanager.sharding-enabled`
-    * `-alertmanager.cluster.advertise-address`
-    * `-alertmanager.cluster.gossip-interval`
-    * `-alertmanager.cluster.listen-address`
-    * `-alertmanager.cluster.peers`
-    * `-alertmanager.cluster.push-pull-interval`
-  * The following configuration options are renamed:
-    * `-alertmanager.cluster.peer-timeout` to `-alertmanager.peer-timeout`
 * [CHANGE] Option `-auth.enabled` has been renamed to `-auth.multitenancy-enabled`. #1130
 * [CHANGE] Default tenant ID used with disabled auth (`-auth.multitenancy-enabled=false`) has changed from `fake` to `anonymous`. This tenant ID can now be changed with `-auth.no-auth-tenant` option. #1063
 * [CHANGE] The default values for the following local directories have changed: #1072
@@ -183,7 +166,6 @@ _Changes since Cortex 1.10.0._
   * `-querier.frontend-client.grpc-max-send-msg-size`
   * `-query-scheduler.grpc-client-config.grpc-max-send-msg-size`
   * `-ruler.client.grpc-max-send-msg-size`
-* [CHANGE] Alertmanager: the default value of `-alertmanager.sharding-ring.store` is now `memberlist`. #1171
 * [CHANGE] Remove `-http.prefix` flag (and `http_prefix` config file option). #763
 * [CHANGE] Remove legacy endpoints. Please use their alternatives listed below. As part of the removal process we are
   introducing two new sets of endpoints for the ruler configuraiton API: `<prometheus-http-prefix>/rules` and
@@ -402,6 +384,24 @@ _Changes since Cortex 1.10.0._
 * [CHANGE] Compactor: Default value of `-compactor.block-sync-concurrency` has changed from 20 to 8. This flag is now only used to control number of goroutines for downloading and uploading blocks during compaction. #552
 * [CHANGE] Compactor is now included in `all` target (single-binary). #866
 * [CHANGE] Compactor: Removed `-compactor.sharding-enabled` option. Sharding in compactor is now always enabled. Default value of `-compactor.ring.store` has changed from `consul` to `memberlist`. Default value of `-compactor.ring.wait-stability-min-duration` is now 0, which disables the feature. #956
+* [CHANGE] Alertmanager: removed `-alertmanager.configs.auto-webhook-root` #977
+* [CHANGE] Alertmanager: removed `configdb` support from Alertmanager backend storages. #15 #38 #819
+* [CHANGE] Alertmanager: Don't count user-not-found errors from replicas as failures in the `cortex_alertmanager_state_fetch_replica_state_failed_total` metric. #190
+* [CHANGE] Alertmanager: Use distributor for non-API routes. #213
+* [CHANGE] Alertmanager: removed `-alertmanager.storage.*` configuration options, with the exception of the CLI flags `-alertmanager.storage.path` and `-alertmanager.storage.retention`. Use `-alertmanager-storage.*` instead. #632
+* [CHANGE] Alertmanager: set default value for `-alertmanager.web.external-url=http://localhost:8080/alertmanager` to match the default configuration. #808 #1067
+* [CHANGE] Alertmanager: `-experimental.alertmanager.enable-api` flag has been renamed to `-alertmanager.enable-api` and is now stable. #913
+* [CHANGE] Alertmanager: now always runs with sharding enabled; other modes of operation are removed. #1044 #1126
+  * The following configuration options are removed:
+    * `-alertmanager.sharding-enabled`
+    * `-alertmanager.cluster.advertise-address`
+    * `-alertmanager.cluster.gossip-interval`
+    * `-alertmanager.cluster.listen-address`
+    * `-alertmanager.cluster.peers`
+    * `-alertmanager.cluster.push-pull-interval`
+  * The following configuration options are renamed:
+    * `-alertmanager.cluster.peer-timeout` to `-alertmanager.peer-timeout`
+* [CHANGE] Alertmanager: the default value of `-alertmanager.sharding-ring.store` is now `memberlist`. #1171
 * [FEATURE] The endpoints `/api/v1/status/buildinfo`, `<prometheus-http-prefix>/api/v1/status/buildinfo`, and `<alertmanager-http-prefix>/api/v1/status/buildinfo` have been added to display build information and enabled features. #1219 #1240
 * [FEATURE] PromQL: added `present_over_time` support. #139
 * [FEATURE] Mimir: Added "Activity tracker" feature which can log ongoing activities from previous Mimir run in case of a crash. It is enabled by default and controlled by the `-activity-tracker.filepath` flag. It can be disabled by setting this path to an empty string. Currently, the Store-gateway, Ruler, Querier, Query-frontend and Ingester components use this feature to track queries. #631 #782 #822 #1121
@@ -565,8 +565,6 @@ _Changes since Cortex 1.10.0._
 * [ENHANCEMENT] Compactor: expose low-level concurrency options for compactor: `-compactor.max-opening-blocks-concurrency`, `-compactor.max-closing-blocks-concurrency`, `-compactor.symbols-flushers-concurrency`. #569 #701
 * [ENHANCEMENT] Compactor: expand compactor logs to include total compaction job time, total time for uploads and block counts. #549
 * [BUGFIX] HA Tracker: when cleaning up obsolete elected replicas from KV store, tracker didn't update number of cluster per user correctly. [#4336](https://github.com/cortexproject/cortex/pull/4336)
-* [BUGFIX] AlertManager: remove stale template files. #4495
-* [BUGFIX] Alertmanager: don't replace user configurations with blank fallback configurations (when enabled), particularly during scaling up/down instances when sharding is enabled. #224
 * [BUGFIX] Memberlist: fixed corrupted packets when sending compound messages with more than 255 messages or messages bigger than 64KB. #551
 * [BUGFIX] Azure storage: only create HTTP client once, to reduce memory utilization. #605
 * [BUGFIX] Overrides-exporter: successfully startup even if runtime config is not set. #1056
@@ -590,6 +588,8 @@ _Changes since Cortex 1.10.0._
 * [BUGFIX] Ruler: enable Prometheus-compatible endpoints regardless of `-ruler.enable-api`. The flag now only controls the configuration API. This is what the config flag description stated, but not what was happening. #1216
 * [BUGFIX] Compactor: fixed panic while collecting Prometheus metrics. #28
 * [BUGFIX] Compactor: compactor should now be able to correctly mark blocks for deletion and no-compaction, if such marking was previously interrupted. #1015
+* [BUGFIX] Alertmanager: remove stale template files. #4495
+* [BUGFIX] Alertmanager: don't replace user configurations with blank fallback configurations (when enabled), particularly during scaling up/down instances when sharding is enabled. #224
 
 ### Mixin
 
