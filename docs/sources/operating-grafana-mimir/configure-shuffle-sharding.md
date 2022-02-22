@@ -156,7 +156,7 @@ _Please check out the [store-gateway documentation](../architecture/store-gatewa
 
 By default, tenant rule groups are sharded across all Grafana Mimir rulers.
 
-When ruler shuffle sharding is enabled by setting `-ruler.tenant-shard-size` (or its respective YAML config option) to a value higher than `0` and lower than the number of available rulers, only specified number of rulers will be eligible to evaluate rule groups for a given tenant.
+When ruler shuffle sharding is enabled by setting `-ruler.tenant-shard-size` (or its respective YAML config option) to a value higher than `0` and lower than the number of available rulers, only the specified number of rulers will be eligible to evaluate rule groups for a given tenant.
 
 _The ruler shard size can be overridden on a per-tenant basis setting `ruler_tenant_shard_size` in the overrides section of the runtime configuration._
 
