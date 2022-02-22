@@ -166,7 +166,7 @@ By default, tenant blocks can be compacted by any Grafana Mimir compactor.
 
 When compactor shuffle sharding is enabled by setting `-compactor.compactor-tenant-shard-size` (or its respective YAML config option) to a value higher than `0` and lower than the number of available compactors, only the specified number of compactors will be eligible to compact blocks for a given tenant.
 
-_The compactor shard size can be overridden on a per-tenant basis setting `compactor_tenant_shard_size` in the overrides section of the runtime configuration._
+_The compactor shard size can be overridden on a per-tenant basis setting by `compactor_tenant_shard_size` in the overrides section of the runtime configuration._
 
 ## FAQ
 
