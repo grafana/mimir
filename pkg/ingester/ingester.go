@@ -124,7 +124,8 @@ type Config struct {
 	ActiveSeriesMetricsEnabled          bool                                         `yaml:"active_series_metrics_enabled" category:"advanced"`
 	ActiveSeriesMetricsUpdatePeriod     time.Duration                                `yaml:"active_series_metrics_update_period" category:"advanced"`
 	ActiveSeriesMetricsIdleTimeout      time.Duration                                `yaml:"active_series_metrics_idle_timeout" category:"advanced"`
-	ActiveSeriesCustomTrackers          ActiveSeriesMatchers                         `yaml:"active_series_custom_trackers" doc:"description=Additional custom trackers for active metrics. If there are active series matching a provided matcher (map value), the count will be exposed in the custom trackers metric labeled using the tracker name (map key). Zero valued counts are not exposed (and removed when they go back to zero)." category:"advanced"`
+	ActiveSeriesCustomTrackers          ActiveSeriesMatchers                         `yaml:"-"`
+	ActiveSeriesCustomTrackersConfig    ActiveSeriesCustomTrackersConfig             `yaml:"active_series_custom_trackers" doc:"description=Additional custom trackers for active metrics. If there are active series matching a provided matcher (map value), the count will be exposed in the custom trackers metric labeled using the tracker name (map key). Zero valued counts are not exposed (and removed when they go back to zero)." category:"advanced"`
 	ActiveSeriesCustomTrackersOverrides *ActiveSeriesCustomTrackersOverridesProvider `yaml:"-"`
 
 	ExemplarsUpdatePeriod time.Duration `yaml:"exemplars_update_period" category:"experimental"`
@@ -153,7 +154,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.BoolVar(&cfg.ActiveSeriesMetricsEnabled, "ingester.active-series-metrics-enabled", true, "Enable tracking of active series and export them as metrics.")
 	f.DurationVar(&cfg.ActiveSeriesMetricsUpdatePeriod, "ingester.active-series-metrics-update-period", 1*time.Minute, "How often to update active series metrics.")
 	f.DurationVar(&cfg.ActiveSeriesMetricsIdleTimeout, "ingester.active-series-metrics-idle-timeout", 10*time.Minute, "After what time a series is considered to be inactive.")
-	f.Var(&cfg.ActiveSeriesCustomTrackers, "ingester.active-series-custom-trackers", "Additional active series metrics, matching the provided matchers. Matchers should be in form <name>:<matcher>, like 'foobar:{foo=\"bar\"}'. Multiple matchers can be by providing multiple semicolon-separated values to a single flag.")
+	f.Var(&cfg.ActiveSeriesCustomTrackersConfig, "ingester.active-series-custom-trackers", "Additional active series metrics, matching the provided matchers. Matchers should be in form <name>:<matcher>, like 'foobar:{foo=\"bar\"}'. Multiple matchers can be by providing multiple semicolon-separated values to a single flag.")
 
 	f.BoolVar(&cfg.StreamChunksWhenUsingBlocks, "ingester.stream-chunks-when-using-blocks", true, "Stream chunks from ingesters to queriers.")
 	f.DurationVar(&cfg.ExemplarsUpdatePeriod, "ingester.exemplars-update-period", 15*time.Second, "Period with which to update per-user max exemplars.")
@@ -235,6 +236,7 @@ type Ingester struct {
 	// Rate of pushed samples. Used to limit global samples push rate.
 	ingestionRate        *util_math.EwmaRate
 	inflightPushRequests atomic.Int64
+	activeSeriesMatchers ActiveSeriesMatchers
 }
 
 func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
@@ -247,18 +249,24 @@ func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus
 		return nil, errors.Wrap(err, "failed to create the bucket client")
 	}
 
+	asm, err := NewActiveSeriesMatchers(cfg.ActiveSeriesCustomTrackersConfig)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to parse active series matchers config")
+	}
+
 	return &Ingester{
 		cfg:    cfg,
 		limits: limits,
 		logger: logger,
 
-		tsdbs:               make(map[string]*userTSDB),
-		usersMetadata:       make(map[string]*userMetricsMetadata),
-		bucket:              bucketClient,
-		tsdbMetrics:         newTSDBMetrics(registerer),
-		forceCompactTrigger: make(chan requestWithUsersAndCallback),
-		shipTrigger:         make(chan requestWithUsersAndCallback),
-		seriesHashCache:     hashcache.NewSeriesHashCache(cfg.BlocksStorageConfig.TSDB.SeriesHashCacheMaxBytes),
+		tsdbs:                make(map[string]*userTSDB),
+		usersMetadata:        make(map[string]*userMetricsMetadata),
+		bucket:               bucketClient,
+		tsdbMetrics:          newTSDBMetrics(registerer),
+		forceCompactTrigger:  make(chan requestWithUsersAndCallback),
+		shipTrigger:          make(chan requestWithUsersAndCallback),
+		seriesHashCache:      hashcache.NewSeriesHashCache(cfg.BlocksStorageConfig.TSDB.SeriesHashCacheMaxBytes),
+		activeSeriesMatchers: *asm,
 	}, nil
 }
 
@@ -472,7 +480,7 @@ func (i *Ingester) getActiveSeriesMatchers(userID string) *ActiveSeriesMatchers 
 		matchers = cfg.MatchersForUser(userID)
 	}
 	if matchers == nil {
-		matchers = &i.cfg.ActiveSeriesCustomTrackers
+		matchers = &i.activeSeriesMatchers
 	}
 	return matchers
 }

@@ -11,30 +11,27 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 )
 
-func (asm *ActiveSeriesMatchers) String() string {
-	if asm == nil {
+type ActiveSeriesCustomTrackersConfig map[string]string
+
+func (c *ActiveSeriesCustomTrackersConfig) String() string {
+	if *c == nil {
 		return ""
 	}
 
-	var sb strings.Builder
-	for i, name := range asm.names {
-		sb.WriteString(name)
-		for _, labelMatcher := range asm.matchers[i] {
-			sb.WriteString(labelMatcher.String())
-		}
+	strs := make([]string, 0, len(*c))
+	for name, matcher := range *c {
+		strs = append(strs, fmt.Sprintf("%s:%s", name, matcher))
 	}
-	return sb.String()
+	return strings.Join(strs, ";")
 }
 
-func (asm *ActiveSeriesMatchers) Set(s string) error {
+func (c *ActiveSeriesCustomTrackersConfig) Set(s string) error {
 	if strings.TrimSpace(s) == "" {
 		return nil
 	}
-	if len(asm.names) != 0 {
-		return fmt.Errorf("can't provide active series custom trackers flag multple times")
+	if *c == nil {
+		*c = map[string]string{}
 	}
-
-	c := map[string]string{}
 
 	pairs := strings.Split(s, ";")
 	for i, p := range pairs {
@@ -46,31 +43,26 @@ func (asm *ActiveSeriesMatchers) Set(s string) error {
 		if len(name) == 0 || len(matcher) == 0 {
 			return fmt.Errorf("semicolon-separated values should be <name>:<matcher>, but one of the sides was empty in the value %d: %q", i, p)
 		}
-		if _, ok := c[name]; ok {
+		if _, ok := (*c)[name]; ok {
 			return fmt.Errorf("matcher %q for active series custom trackers is provided twice", name)
 		}
-		c[name] = matcher
+		(*c)[name] = matcher
 	}
 
-	a, err := NewActiveSeriesMatchers(c)
-	if err != nil {
-		return err
-	}
-	*asm = *a
-
-	return nil
+	_, err := NewActiveSeriesMatchers(*c)
+	return err
 }
 
-func (asm *ActiveSeriesMatchers) ExampleDoc() (comment string, yaml interface{}) {
+func (c *ActiveSeriesCustomTrackersConfig) ExampleDoc() (comment string, yaml interface{}) {
 	return `The following configuration will count the active series coming from dev and prod namespaces for each tenant` +
 			` and label them as {name="dev"} and {name="prod"} in the cortex_ingester_active_series_custom_tracker metric.`,
-		map[string]string{
+		ActiveSeriesCustomTrackersConfig{
 			"dev":  `{namespace=~"dev-.*"}`,
 			"prod": `{namespace=~"prod-.*"}`,
 		}
 }
 
-func NewActiveSeriesMatchers(matchersConfig map[string]string) (*ActiveSeriesMatchers, error) {
+func NewActiveSeriesMatchers(matchersConfig ActiveSeriesCustomTrackersConfig) (*ActiveSeriesMatchers, error) {
 	asm := &ActiveSeriesMatchers{}
 	for name, matcher := range matchersConfig {
 		sm, err := amlabels.ParseMatchers(matcher)
@@ -92,6 +84,21 @@ func NewActiveSeriesMatchers(matchersConfig map[string]string) (*ActiveSeriesMat
 	asm.key = asm.String()
 
 	return asm, nil
+}
+
+func (asm *ActiveSeriesMatchers) String() string {
+	if asm == nil {
+		return ""
+	}
+
+	var sb strings.Builder
+	for i, name := range asm.names {
+		sb.WriteString(name)
+		for _, labelMatcher := range asm.matchers[i] {
+			sb.WriteString(labelMatcher.String())
+		}
+	}
+	return sb.String()
 }
 
 type ActiveSeriesMatchers struct {

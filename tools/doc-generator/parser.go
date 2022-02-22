@@ -22,6 +22,7 @@ import (
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/weaveworks/common/logging"
 
+	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/util/fieldcategory"
 )
 
@@ -291,6 +292,8 @@ func getFieldType(t reflect.Type) (string, error) {
 		return "string", nil
 	case reflect.TypeOf([]*relabel.Config{}).String():
 		return "relabel_config...", nil
+	case reflect.TypeOf(ingester.ActiveSeriesCustomTrackersConfig{}).String():
+		return "map of tracker name (string) to matcher (string)", nil
 	}
 
 	// Fallback to auto-detection of built-in data types

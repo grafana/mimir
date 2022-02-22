@@ -16,21 +16,16 @@ import (
 )
 
 func TestActiveSeriesCustomTrackersConfigs(t *testing.T) {
-	safeActiveSeriesMatchers := func(input map[string]string) *ActiveSeriesMatchers {
-		res, err := NewActiveSeriesMatchers(input)
-		require.NoError(t, err)
-		return res
-	}
 	for _, tc := range []struct {
 		name     string
 		flags    []string
-		expected *ActiveSeriesMatchers
+		expected ActiveSeriesCustomTrackersConfig
 		error    error
 	}{
 		{
 			name:     "empty flag value produces empty config",
 			flags:    []string{`-ingester.active-series-custom-trackers=`},
-			expected: &ActiveSeriesMatchers{},
+			expected: nil,
 		},
 		{
 			name:  "empty matcher fails",
@@ -60,22 +55,22 @@ func TestActiveSeriesCustomTrackersConfigs(t *testing.T) {
 		{
 			name:     "one matcher",
 			flags:    []string{`-ingester.active-series-custom-trackers=foo:{foo="bar"}`},
-			expected: safeActiveSeriesMatchers(map[string]string{`foo`: `{foo="bar"}`}),
+			expected: ActiveSeriesCustomTrackersConfig{`foo`: `{foo="bar"}`},
 		},
 		{
 			name: "whitespaces are trimmed from name and matcher",
 			flags: []string{`-ingester.active-series-custom-trackers= foo :	{foo="bar"}` + "\n "},
-			expected: safeActiveSeriesMatchers(map[string]string{`foo`: `{foo="bar"}`}),
+			expected: ActiveSeriesCustomTrackersConfig{`foo`: `{foo="bar"}`},
 		},
 		{
 			name:     "two matchers in one flag value",
 			flags:    []string{`-ingester.active-series-custom-trackers=foo:{foo="bar"};baz:{baz="bar"}`},
-			expected: safeActiveSeriesMatchers(map[string]string{`foo`: `{foo="bar"}`, `baz`: `{baz="bar"}`}),
+			expected: ActiveSeriesCustomTrackersConfig{`foo`: `{foo="bar"}`, `baz`: `{baz="bar"}`},
 		},
 		{
-			name:  "two matchers in two flag values",
-			flags: []string{`-ingester.active-series-custom-trackers=foo:{foo="bar"}`, `-ingester.active-series-custom-trackers=baz:{baz="bar"}`},
-			error: errors.New("invalid value \"baz:{baz=\\\"bar\\\"}\" for flag -ingester.active-series-custom-trackers: can't provide active series custom trackers flag multple times"),
+			name:     "two matchers in two flag values",
+			flags:    []string{`-ingester.active-series-custom-trackers=foo:{foo="bar"}`, `-ingester.active-series-custom-trackers=baz:{baz="bar"}`},
+			expected: ActiveSeriesCustomTrackersConfig{`foo`: `{foo="bar"}`, `baz`: `{baz="bar"}`},
 		},
 		{
 			name:  "two matchers with same name in same flag",
@@ -85,20 +80,20 @@ func TestActiveSeriesCustomTrackersConfigs(t *testing.T) {
 		{
 			name:  "two matchers with same name in separate flags",
 			flags: []string{`-ingester.active-series-custom-trackers=foo:{foo="bar"}`, `-ingester.active-series-custom-trackers=foo:{boo="bam"}`},
-			error: errors.New("invalid value \"foo:{boo=\\\"bam\\\"}\" for flag -ingester.active-series-custom-trackers: can't provide active series custom trackers flag multple times"),
+			error: errors.New(`invalid value "foo:{boo=\"bam\"}" for flag -ingester.active-series-custom-trackers: matcher "foo" for active series custom trackers is provided twice`),
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			flagSet := flag.NewFlagSet("test", flag.ContinueOnError)
 
-			var config ActiveSeriesMatchers
+			var config ActiveSeriesCustomTrackersConfig
 			flagSet.Var(&config, "ingester.active-series-custom-trackers", "...usage docs...")
 			err := flagSet.Parse(tc.flags)
 
 			if tc.error != nil {
 				assert.EqualError(t, err, tc.error.Error())
 			} else {
-				assert.True(t, tc.expected.Equals(&config))
+				assert.Equal(t, tc.expected, config)
 			}
 		})
 	}
@@ -216,8 +211,10 @@ func TestActiveSeriesMatcher_Equality(t *testing.T) {
 		t.Run("EqualityBetweenSet", func(t *testing.T) {
 			var activeSeriesMatchers []*ActiveSeriesMatchers
 			for _, matcherConfig := range matcherSet {
-				asm := &ActiveSeriesMatchers{}
-				err := asm.Set(matcherConfig)
+				config := ActiveSeriesCustomTrackersConfig{}
+				err := config.Set(matcherConfig)
+				require.NoError(t, err)
+				asm, err := NewActiveSeriesMatchers(config)
 				require.NoError(t, err)
 				activeSeriesMatchers = append(activeSeriesMatchers, asm)
 			}
@@ -233,8 +230,10 @@ func TestActiveSeriesMatcher_Equality(t *testing.T) {
 		var activeSeriesMatchers []*ActiveSeriesMatchers
 		for _, matcherConfigs := range matcherSets {
 			exampleConfig := matcherConfigs[0]
-			asm := &ActiveSeriesMatchers{}
-			err := asm.Set(exampleConfig)
+			config := ActiveSeriesCustomTrackersConfig{}
+			err := config.Set(exampleConfig)
+			require.NoError(t, err)
+			asm, err := NewActiveSeriesMatchers(config)
 			require.NoError(t, err)
 			activeSeriesMatchers = append(activeSeriesMatchers, asm)
 		}

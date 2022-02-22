@@ -5164,18 +5164,17 @@ func TestIngesterActiveSeries(t *testing.T) {
 			}
 		},
 	}
-	activeSeriesDefaultConfig, err := NewActiveSeriesMatchers(map[string]string{
+	activeSeriesDefaultConfig := ActiveSeriesCustomTrackersConfig{
 		"bool_is_true_flagbased":  `{bool="true"}`,
 		"bool_is_false_flagbased": `{bool="false"}`,
-	})
-	require.NoError(t, err)
+	}
 	tests := map[string]struct {
 		test                          func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer)
 		reqs                          []*mimirpb.WriteRequest
 		expectedMetrics               string
 		disableActiveSeries           bool
 		activeSeriesOverridesProvider *ActiveSeriesCustomTrackersOverridesProvider
-		activeSeriesConfig            ActiveSeriesMatchers
+		activeSeriesConfig            ActiveSeriesCustomTrackersConfig
 	}{
 		"successful push, should count active series": {
 			activeSeriesOverridesProvider: defaultCustomTrackersOverridesProvider,
@@ -5388,7 +5387,7 @@ func TestIngesterActiveSeries(t *testing.T) {
 		},
 		"should use flag based custom tracker if no runtime config specified": {
 			activeSeriesOverridesProvider: nil,
-			activeSeriesConfig:            *activeSeriesDefaultConfig,
+			activeSeriesConfig:            activeSeriesDefaultConfig,
 			test: func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer) {
 				now := time.Now()
 
@@ -5427,7 +5426,7 @@ func TestIngesterActiveSeries(t *testing.T) {
 		},
 		"should use runtime matcher config if both specified": {
 			activeSeriesOverridesProvider: defaultCustomTrackersOverridesProvider,
-			activeSeriesConfig:            *activeSeriesDefaultConfig,
+			activeSeriesConfig:            activeSeriesDefaultConfig,
 			test: func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer) {
 				now := time.Now()
 
@@ -5477,7 +5476,7 @@ func TestIngesterActiveSeries(t *testing.T) {
 					}}
 				},
 			},
-			activeSeriesConfig: *activeSeriesDefaultConfig,
+			activeSeriesConfig: activeSeriesDefaultConfig,
 			test: func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer) {
 				now := time.Now()
 
@@ -5525,7 +5524,7 @@ func TestIngesterActiveSeries(t *testing.T) {
 			cfg.IngesterRing.JoinAfter = 0
 			cfg.ActiveSeriesMetricsEnabled = !testData.disableActiveSeries
 			cfg.ActiveSeriesCustomTrackersOverrides = testData.activeSeriesOverridesProvider
-			cfg.ActiveSeriesCustomTrackers = testData.activeSeriesConfig
+			cfg.ActiveSeriesCustomTrackersConfig = testData.activeSeriesConfig
 
 			ing, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, defaultLimitsTestConfig(), "", registry)
 			require.NoError(t, err)
@@ -5586,22 +5585,21 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 			}
 		},
 	}
-	activeSeriesDefaultConfig, err := NewActiveSeriesMatchers(map[string]string{
+	activeSeriesDefaultConfig := ActiveSeriesCustomTrackersConfig{
 		"bool_is_true_flagbased":  `{bool="true"}`,
 		"bool_is_false_flagbased": `{bool="false"}`,
-	})
-	require.NoError(t, err)
+	}
 
 	tests := map[string]struct {
 		test                          func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer)
 		reqs                          []*mimirpb.WriteRequest
 		expectedMetrics               string
 		activeSeriesOverridesProvider *ActiveSeriesCustomTrackersOverridesProvider
-		activeSeriesConfig            ActiveSeriesMatchers
+		activeSeriesConfig            ActiveSeriesCustomTrackersConfig
 	}{
 		"overwrite flag based config with runtime overwrite": {
 			activeSeriesOverridesProvider: nil,
-			activeSeriesConfig:            *activeSeriesDefaultConfig,
+			activeSeriesConfig:            activeSeriesDefaultConfig,
 			test: func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer) {
 				firstPushTime := time.Now()
 
@@ -5659,7 +5657,7 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 		},
 		"remove runtime overwrite and revert to flag based config": {
 			activeSeriesOverridesProvider: defaultCustomTrackersOverridesProvider,
-			activeSeriesConfig:            *activeSeriesDefaultConfig,
+			activeSeriesConfig:            activeSeriesDefaultConfig,
 			test: func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer) {
 				firstPushTime := time.Now()
 
@@ -5727,7 +5725,7 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 			cfg.IngesterRing.JoinAfter = 0
 			cfg.ActiveSeriesMetricsEnabled = true
 			cfg.ActiveSeriesCustomTrackersOverrides = testData.activeSeriesOverridesProvider
-			cfg.ActiveSeriesCustomTrackers = testData.activeSeriesConfig
+			cfg.ActiveSeriesCustomTrackersConfig = testData.activeSeriesConfig
 
 			ing, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, defaultLimitsTestConfig(), "", registry)
 			require.NoError(t, err)
