@@ -23,7 +23,10 @@ At startup **store-gateways** fetch the [bucket index]({{< relref "../blocks-sto
 
 For more information about the bucket index, please refer to [bucket index documentation]({{< relref "../blocks-storage/bucket-index.md" >}}).
 
-While running, store-gateways periodically re-scan the long-term storage bucket to discover new blocks (uploaded by the [ingesters]({{< relref "./ingester.md" >}}) and [compactor]({{< relref "./compactor.md" >}})) and blocks marked for deletion or fully deleted since the last scan (as a result of compaction). The frequency at which this occurs is configured via `-blocks-storage.bucket-store.sync-interval`.
+Store-gateways periodically scan the long-term storage bucket to discover new or deleted blocks.
+New blocks can be uploaded by [ingesters]({{< relref "./ingester.md" >}}) or by the [compactor]({{< relref "./compactor.md" >}}).
+The compactor additionally may have deleted blocks or marked others for deletion since the last scan.
+The frequency at which this occurs is configured with the `-blocks-storage.bucket-store.sync-interval` flag.
 
 The blocks chunks and the entire index are never fully downloaded by the store-gateway. The index-header is stored to the local disk, in order to avoid to re-download it on subsequent restarts of a store-gateway. For this reason, it's recommended - but not required - to run the store-gateway with a persistent disk. For example, if you're running the Grafana Mimir cluster in Kubernetes, you may use a StatefulSet with a persistent volume claim for the store-gateways.
 
