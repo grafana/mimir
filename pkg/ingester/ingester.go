@@ -124,7 +124,6 @@ type Config struct {
 	ActiveSeriesMetricsEnabled          bool                                         `yaml:"active_series_metrics_enabled" category:"advanced"`
 	ActiveSeriesMetricsUpdatePeriod     time.Duration                                `yaml:"active_series_metrics_update_period" category:"advanced"`
 	ActiveSeriesMetricsIdleTimeout      time.Duration                                `yaml:"active_series_metrics_idle_timeout" category:"advanced"`
-	ActiveSeriesCustomTrackers          ActiveSeriesMatchers                         `yaml:"-"`
 	ActiveSeriesCustomTrackersConfig    ActiveSeriesCustomTrackersConfig             `yaml:"active_series_custom_trackers" doc:"description=Additional custom trackers for active metrics. If there are active series matching a provided matcher (map value), the count will be exposed in the custom trackers metric labeled using the tracker name (map key). Zero valued counts are not exposed (and removed when they go back to zero)." category:"advanced"`
 	ActiveSeriesCustomTrackersOverrides *ActiveSeriesCustomTrackersOverridesProvider `yaml:"-"`
 
@@ -199,6 +198,8 @@ type Ingester struct {
 	metrics *ingesterMetrics
 	logger  log.Logger
 
+	activeSeriesMatcher ActiveSeriesMatchers
+
 	lifecycler         *ring.Lifecycler
 	limits             *validation.Overrides
 	limiter            *Limiter
@@ -236,7 +237,6 @@ type Ingester struct {
 	// Rate of pushed samples. Used to limit global samples push rate.
 	ingestionRate        *util_math.EwmaRate
 	inflightPushRequests atomic.Int64
-	activeSeriesMatchers ActiveSeriesMatchers
 }
 
 func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
@@ -255,18 +255,18 @@ func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus
 	}
 
 	return &Ingester{
-		cfg:    cfg,
-		limits: limits,
-		logger: logger,
+		cfg:                 cfg,
+		limits:              limits,
+		logger:              logger,
+		activeSeriesMatcher: *asm,
 
-		tsdbs:                make(map[string]*userTSDB),
-		usersMetadata:        make(map[string]*userMetricsMetadata),
-		bucket:               bucketClient,
-		tsdbMetrics:          newTSDBMetrics(registerer),
-		forceCompactTrigger:  make(chan requestWithUsersAndCallback),
-		shipTrigger:          make(chan requestWithUsersAndCallback),
-		seriesHashCache:      hashcache.NewSeriesHashCache(cfg.BlocksStorageConfig.TSDB.SeriesHashCacheMaxBytes),
-		activeSeriesMatchers: *asm,
+		tsdbs:               make(map[string]*userTSDB),
+		usersMetadata:       make(map[string]*userMetricsMetadata),
+		bucket:              bucketClient,
+		tsdbMetrics:         newTSDBMetrics(registerer),
+		forceCompactTrigger: make(chan requestWithUsersAndCallback),
+		shipTrigger:         make(chan requestWithUsersAndCallback),
+		seriesHashCache:     hashcache.NewSeriesHashCache(cfg.BlocksStorageConfig.TSDB.SeriesHashCacheMaxBytes),
 	}, nil
 }
 
@@ -480,7 +480,7 @@ func (i *Ingester) getActiveSeriesMatchers(userID string) *ActiveSeriesMatchers 
 		matchers = cfg.MatchersForUser(userID)
 	}
 	if matchers == nil {
-		matchers = &i.activeSeriesMatchers
+		matchers = &i.activeSeriesMatcher
 	}
 	return matchers
 }

@@ -58,14 +58,14 @@ func TestActiveSeriesCustomTrackersOverridesProvider(t *testing.T) {
 
 func TestMatchersForUser(t *testing.T) {
 	defaultMatchers, err := NewActiveSeriesMatchers(
-		map[string]string{
+		ActiveSeriesCustomTrackersConfig{
 			"foo": `{foo="bar"}`,
 			"bar": `{baz="bar"}`,
 		})
 
 	require.NoError(t, err)
 	tenantSpecificMatchers, err := NewActiveSeriesMatchers(
-		map[string]string{
+		ActiveSeriesCustomTrackersConfig{
 			"team_a": `{team="team_a"}`,
 			"team_b": `{team="team_b"}`,
 		},
