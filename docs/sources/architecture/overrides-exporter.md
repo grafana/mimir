@@ -39,7 +39,7 @@ overrides:
 Run the overrides-exporter by providing the `-target`, and `-runtime-config.file` flags:
 
 ```
-mimir -target=overrides-exporter -runtime-config.file=runtime.yaml -server.http-listen-port=8080
+mimir -target=overrides-exporter -runtime-config.file=runtime.yaml
 ```
 
 After the overrides-exporter starts, you can to use `curl` to inspect the tenant overrides:
