@@ -28,7 +28,7 @@ You can configure AWS S3 SSE globally or for specific tenants.
 
 ### Configure AWS S3 SSE globally
 
-The S3 client used by Grafana Mimir as a storage backend in multiple configuration sections:
+To configure AWS S3 SSE globally requires setting SSE for each of the following storage backends:
 
 - [alertmanager_storage]({{<relref "../configuration/reference-configuration-parameters.md#alertmanager_storage" >}})
 - [blocks_storage]({{<relref "../configuration/reference-configuration-parameters.md#blocks_storage" >}})
