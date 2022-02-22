@@ -267,6 +267,10 @@ Usage of ./cmd/mimir/mimir:
     	Print basic help.
   -help-all
     	Print help, also including advanced and experimental parameters.
+  -ingester.active-series-custom-trackers value
+    	Additional active series metrics, matching the provided matchers. Matchers should be in form <name>:<matcher>, like 'foobar:{foo="bar"}'. Multiple matchers can be by providing multiple semicolon-separated values to a single flag.
+  -ingester.active-series-metrics-enabled
+    	Enable tracking of active series and export them as metrics. (default true)
   -ingester.max-global-metadata-per-metric int
     	The maximum number of metadata per metric, across the cluster. 0 to disable.
   -ingester.max-global-metadata-per-user int

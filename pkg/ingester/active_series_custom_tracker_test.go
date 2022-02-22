@@ -249,24 +249,24 @@ func TestActiveSeriesMatcher_Equality(t *testing.T) {
 }
 
 func TestActiveSeriesMatcher_Deserialization(t *testing.T) {
-	correct_input := `
+	correctInput := `
         baz: "{baz='bar'}"
         foo: "{foo='bar'}"
     `
-	malformed_input :=
+	malformedInput :=
 		`
         baz: "123"
         foo: "{foo='bar'}"
     `
 	t.Run("ShouldDeserializeCorrectInput", func(t *testing.T) {
 		asm := ActiveSeriesMatchers{}
-		err := yaml.Unmarshal([]byte(correct_input), &asm)
+		err := yaml.Unmarshal([]byte(correctInput), &asm)
 		assert.NoError(t, err, "failed do deserialize ActiveSeriesMatchers")
 	})
 
 	t.Run("ShouldErrorOnMalformedInput", func(t *testing.T) {
 		asm := ActiveSeriesMatchers{}
-		err := yaml.Unmarshal([]byte(malformed_input), &asm)
+		err := yaml.Unmarshal([]byte(malformedInput), &asm)
 		assert.Error(t, err, "should not deserialize malformed input")
 	})
 }

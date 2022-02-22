@@ -61,7 +61,7 @@ func (asm *ActiveSeriesMatchers) Set(s string) error {
 	return nil
 }
 
-func (c *ActiveSeriesMatchers) ExampleDoc() (comment string, yaml interface{}) {
+func (asm *ActiveSeriesMatchers) ExampleDoc() (comment string, yaml interface{}) {
 	return `The following configuration will count the active series coming from dev and prod namespaces for each tenant` +
 			` and label them as {name="dev"} and {name="prod"} in the cortex_ingester_active_series_custom_tracker metric.`,
 		map[string]string{
