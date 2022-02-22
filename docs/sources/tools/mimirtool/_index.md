@@ -21,7 +21,7 @@ In order to interact with your Grafana Mimir, Grafana Enterprise Metrics, Promet
 set some configuration options. These can be set via environment variables or CLI flags.
 
 | Env Variable      | Flag        | Description                                                                                                                                                        |
-|-------------------|-------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| ----------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `MIMIR_ADDRESS`   | `--address` | Address of the API of the desired Grafana Mimir cluster.                                                                                                           |
 | `MIMIR_API_USER`  | `--user`    | Sets the basic auth username. If empty and `MIMIR_API_KEY` is set, `MIMIR_TENANT_ID` will be used instead. If you're using Grafana Cloud this is your instance ID. |
 | `MIMIR_API_KEY`   | `--key`     | Sets the basic auth password. If you're using Grafana Cloud, this is your API key.                                                                                 |
@@ -175,7 +175,7 @@ mimirtool rules prepare <file_path>...
 ##### Configuration
 
 | Env Variable | Flag                      | Description                                                                                 |
-|--------------|---------------------------|---------------------------------------------------------------------------------------------|
+| ------------ | ------------------------- | ------------------------------------------------------------------------------------------- |
 | -            | `-i`, `--in-place`        | Edit the file in place. If unset, a new file with `.result` extension contains the results. |
 | -            | `-l`, `--label="cluster"` | Specify the label for aggregations. `cluster` by default.                                   |
 
@@ -402,7 +402,7 @@ mimirtool analyse grafana --address=<url>
 ##### Configuration
 
 | Env Variable      | Flag        | Description                                                                                                                                                    |
-|-------------------|-------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| ----------------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `GRAFANA_ADDRESS` | `--address` | Address of the Grafana instance.                                                                                                                               |
 | `GRAFANA_API_KEY` | `--key`     | The API Key for the Grafana instance. Create a key following the instructions at [Authentication API](https://grafana.com/docs/grafana/latest/http_api/auth/). |
 | -                 | `--output`  | The output file path. `metrics-in-grafana.json` by default.                                                                                                    |
@@ -449,7 +449,7 @@ mimirtool analyse ruler --address=<url> --id=<tenant_id>
 ##### Configuration
 
 | Env Variable      | Flag        | Description                                                                           |
-|-------------------|-------------|---------------------------------------------------------------------------------------|
+| ----------------- | ----------- | ------------------------------------------------------------------------------------- |
 | `MIMIR_ADDRESS`   | `--address` | Address of the Prometheus instance.                                                   |
 | `MIMIR_TENANT_ID` | `--user`    | Sets the basic auth username. If you're using Grafana Cloud this is your instance ID. |
 | `MIMIR_API_KEY`   | `--key`     | Sets the basic auth password. If you're using Grafana Cloud, this is your API key.    |
@@ -491,7 +491,7 @@ mimirtool analyse dashboard <file>...
 ##### Configuration
 
 | Env Variable | Flag       | Description                                                 |
-|---------------|------------|-------------------------------------------------------------|
+| ------------- | ---------- | ----------------------------------------------------------- |
 | -             | `--output` | The output file path. `prometheus-metrics.json` by default. |
 
 #### Rule file
@@ -506,7 +506,7 @@ mimirtool analyse rule-file <file>
 ##### Configuration
 
 | Env Variable | Flag       | Description                                                 |
-|---------------|------------|-------------------------------------------------------------|
+| ------------- | ---------- | ----------------------------------------------------------- |
 | -             | `--output` | The output file path. `prometheus-metrics.json` by default. |
 
 #### Prometheus
@@ -527,7 +527,7 @@ mimirtool analyse prometheus --address=<url> --id=<tenant_id>
 ##### Configuration
 
 | Env Variable      | Flag                     | Description                                                                                                     |
-|-------------------|--------------------------|-----------------------------------------------------------------------------------------------------------------|
+| ----------------- | ------------------------ | --------------------------------------------------------------------------------------------------------------- |
 | `MIMIR_ADDRESS`   | `--address`              | Address of the Prometheus instance.                                                                             |
 | `MIMIR_TENANT_ID` | `--user`                 | Sets the basic auth username. If you're using Grafana Cloud this is your instance ID.                           |
 | `MIMIR_API_KEY`   | `--key`                  | Sets the basic auth password. If you're using Grafana Cloud, this is your API key.                              |
@@ -588,7 +588,7 @@ mimirtool bucket-validation
 ```
 
 | Env Variable | Flag                   | Description                                                       |
-|--------------|------------------------|-------------------------------------------------------------------|
+| ------------ | ---------------------- | ----------------------------------------------------------------- |
 | -            | `--object-count`       | Number of objects to create & delete. 2000 by default             |
 | -            | `--report-every`       | Every X operations a progress report gets printed. 100 by default |
 | -            | `--test-runs`          | Number of times we want to run the whole test. 1 by default       |
