@@ -21,8 +21,8 @@ Each tenant has their Alertmanager configuration that defines notifications rece
 The Mimir Alertmanager uses the same configuration file as the Prometheus Alertmanager.
 
 > **Note:**
-The Mimir Alertmanager exposes the configuration API under the path set by the `-server.path-prefix` flag and not the path set by the `-http.alertmanager-http-prefix` flag.
-With the default configuration of `-server.path-prefix`, the Alertmanager URL used as the `mimirtool` `--address` flag has no path portion.
+> The Mimir Alertmanager exposes the configuration API under the path set by the `-server.path-prefix` flag and not the path set by the `-http.alertmanager-http-prefix` flag.
+> With the default configuration of `-server.path-prefix`, the Alertmanager URL used as the `mimirtool` `--address` flag has no path portion.
 
 To upload a tenant's Alertmanager configuration using `mimirtool`:
 
@@ -76,7 +76,7 @@ The HTTP path prefix for the UI and HTTP API is configurable:
 
 - `-http.alertmanager-http-prefix` configures the path prefix for Alertmanager endpoints.
 - `-alertmanager.web.external-url` configures the source URLs generated in Alertmanager alerts and where to fetch web assets from.
-The path prefix set in `-alertmanager.web.external-url` should match the one set in `-http.alertmanager-http-prefix` (`/alertmanager` by default), ` otherwise HTTP requests routing may not work as expected.
+  The path prefix set in `-alertmanager.web.external-url` should match the one set in `-http.alertmanager-http-prefix` (`/alertmanager` by default), ` otherwise HTTP requests routing may not work as expected.
 
 ### Using a reverse proxy
 
@@ -87,7 +87,7 @@ When using a reverse proxy, ensure that you configure the HTTP path appropriatel
 
 ## Horizontal scalability
 
-[//]: # (TODO document the KV store backend and link it in this section)
+[//]: # "TODO document the KV store backend and link it in this section"
 
 ### Sharding
 
@@ -104,7 +104,7 @@ This mechanism is fully transparent to the final user.
 The Mimir Alertmanager stores the alerts state on local disk at the location configured with `-alertmanager.storage.path`.
 
 > **Warning:**
-When running the Mimir Alertmanager without replication, ensure persistence of the `-alertmanager.storage.path` directory to avoid losing alert state.
+> When running the Mimir Alertmanager without replication, ensure persistence of the `-alertmanager.storage.path` directory to avoid losing alert state.
 
 The Mimir Alertmanager also periodically stores the alerts state in the storage backend configured with `-alertmanager-storage.backend`.
 Whenever an Alertmanager starts up it tries to load the alerts state for any given tenant from other Alertmanager replicas, falling back to the state periodically stored in the storage backend.
