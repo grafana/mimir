@@ -77,7 +77,9 @@ through the following config parameters:
     # Path to the Client CA Cert for the gRPC Server
     -server.grpc-tls-ca-path=/path/to/root.crt
 ```
+
 Both of the client authorization flags, `-server.http-tls-client-auth` and `-server.grpc-tls-client-auth`, are shown with the strictest option, `RequiredAndVerifyClientCert`. However the flags support all the values defined in the [crypto/tls](https://pkg.go.dev/crypto/tls#ClientAuthType) standard library. For all values except `NoClientCert`, the policy defines that the server should request a client certificate during the handshake. The values differ in whether the client should send certificates and if they should be verified by the server. The following are the available options:
+
 - `NoClientCert`: No client certificate should be requested.
 - `RequestClientCert`: A client certificate should be requested but the client is not required to send one.
 - `RequireClientCert`: The client is required to send at least one certificate, but it's not required to be a valid certificate.
@@ -117,6 +119,7 @@ Similarly, for the gRPC Ingester Client:
 TLS keys, certificates, and certificate authorities can be configured in a similar fashion for other gRPC clients in Grafana Mimir.
 
 To enable TLS for a given component, use the client flag that is suffixed with `*.tls-enabled=true`, (e.g. `-querier.frontend-client.tls-enabled=true`). The following Grafana Mimir components support TLS for inter-communication, shown with their corresponding configuration flag prefixes:
+
 - Query scheduler gRPC client used to connect to query-frontend (`-query-scheduler.grpc-client-config.*`)
 - Querier gRPC client used to connect to store-gateway (`-querier.store-gateway-client.*`)
 - Query-frontend gRPC client used to connect to query-scheduler (`-query-frontend.grpc-client-config.*`)
