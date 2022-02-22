@@ -76,6 +76,7 @@ The HTTP path prefix for the UI and HTTP API is configurable:
 
 - `-http.alertmanager-http-prefix` configures the path prefix for Alertmanager endpoints.
 - `-alertmanager.web.external-url` configures the source URLs generated in Alertmanager alerts and where to fetch web assets from.
+The path prefix set in `-alertmanager.web.external-url` should match the one set in `-http.alertmanager-http-prefix` (`/alertmanager` by default), ` otherwise HTTP requests routing may not work as expected.
 
 ### Using a reverse proxy
 
