@@ -71,6 +71,8 @@ The following settings can be overridden for each tenant:
   If unset and the key ID override is set, the encryption context will not be provided to S3.
   Ignored if the SSE type override is not set or the type is not `SSE-KMS`.
 
+To configure AWS S3 SSE for a specific tenant:
+
 1. Ensure Grafana Mimir uses a runtime configuration file by verifying that the flag `-runtime-config.file` is set to a non-null value.
    For more information about supported runtime configuration, refer to [Runtime configuration file]({{<relref "../configuration/about-grafana-mimir-arguments.md#runtime-configuration-file" >}})
 1. In the runtime configuration file, set the `overrides.<TENANT>` SSE settings.
