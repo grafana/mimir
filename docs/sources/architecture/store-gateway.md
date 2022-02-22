@@ -6,7 +6,7 @@ weight: 10
 
 # Store-gateway
 
-The store-gateway is responsible for querying blocks from [long-term storage]({{< relref "./_index.md#long-term-storage" >}}) and is used by the [querier]({{< relref "./querier.md" >}}) on the read path at query time.
+The store-gateway is responsible for querying blocks from [long-term storage]({{< relref "./_index.md#long-term-storage" >}}) and is used by the [querier]({{< relref "./querier.md" >}}) and optionally by the [ruler]({{< relref "./ruler.md">}}) on the read path at query time.
 
 The store-gateway is **stateful**.
 
@@ -144,7 +144,7 @@ For example, if you're running Memcached in Kubernetes, you may:
 
 ### Chunks cache
 
-Store-gateway can also use a cache for storing chunks fetched from the long-term storage. Chunks contain actual samples, and can be reused if user query hits the same series for the same time range.
+The store-gateway can also use a cache for storing [chunks]({{< relref "../reference-glossary.md#chunk" >}}) fetched from the long-term storage. Chunks contain actual samples, and can be reused if user query hits the same series for the same time range.
 
 To enable chunks cache, please set `-blocks-storage.bucket-store.chunks-cache.backend`. Chunks can currently only be stored into Memcached cache. Memcached client can be configured via flags with `-blocks-storage.bucket-store.chunks-cache.memcached.*` prefix.
 
