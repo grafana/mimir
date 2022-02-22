@@ -8,7 +8,7 @@ weight: 20
 
 Grafana Mimir supports applying overrides on a per-tenant basis.
 A number of overrides configure limits that prevent a single tenant from using too many resources.
-The overrides-exporter component exposes limits as Prometheus metrics so that operators can understand close tenants are to their limits.
+The overrides-exporter component exposes limits as Prometheus metrics so that operators can understand how close tenants are to their limits.
 
 For more information about configuring overrides, refer to [Runtime configuration file]({{<relref "../configuration/about-grafana-mimir-arguments.md#runtime-configuration-file" >}}).
 
@@ -39,26 +39,24 @@ overrides:
 Run the overrides-exporter by providing the `-target`, and `-runtime-config.file` flags:
 
 ```
-mimir -target=overrides-exporter -runtime-config.file=runtime.yaml -server.http-listen-port=8080
+mimir -target=overrides-exporter -runtime-config.file=runtime.yaml
 ```
 
 After the overrides-exporter starts, you can to use `curl` to inspect the tenant overrides:
 
 ```bash
-curl -s http://localhost:8080/metrics | grep cortex_overrides
+curl -s http://localhost:8080/metrics | grep cortex_limits_overrides
 ```
 
 The output metrics look similar to the following:
 
 ```console
-# HELP cortex_overrides Resource limit overrides applied to tenants
-# TYPE cortex_overrides gauge
-cortex_overrides{limit_name="ingestion_burst_size",user="user1"} 350000
-cortex_overrides{limit_name="ingestion_rate",user="user1"} 350000
-cortex_overrides{limit_name="max_global_series_per_metric",user="user1"} 300000
-cortex_overrides{limit_name="max_global_series_per_user",user="user1"} 300000
-cortex_overrides{limit_name="max_local_series_per_metric",user="user1"} 0
-cortex_overrides{limit_name="max_local_series_per_user",user="user1"} 0
+# HELP cortex_limits_overrides Resource limit overrides applied to tenants
+# TYPE cortex_limits_overrides gauge
+cortex_limits_overrides{limit_name="ingestion_burst_size",user="user1"} 350000
+cortex_limits_overrides{limit_name="ingestion_rate",user="user1"} 350000
+cortex_limits_overrides{limit_name="max_global_series_per_metric",user="user1"} 300000
+cortex_limits_overrides{limit_name="max_global_series_per_user",user="user1"} 300000
 ```
 
 With these metrics, you can set up alerts to know when tenants are close to hitting their limits
