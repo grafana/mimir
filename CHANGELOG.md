@@ -9,22 +9,6 @@
 
 _Changes since Cortex 1.10.0._
 
-* [CHANGE] Changed default storage backends from `s3` to `filesystem` #833
-  This effects the following flags:
-  * `-blocks-storage.backend` now defaults to `filesystem`
-  * `-blocks-storage.filesystem.dir` now defaults to `blocks`
-  * `-alertmanager-storage.backend` now defaults to `filesystem`
-  * `-alertmanager-storage.filesystem.dir` now defaults to `alertmanager`
-  * `-ruler-storage.backend` now defaults to `filesystem`
-  * `-ruler-storage.filesystem.dir` now defaults to `ruler`
-* [CHANGE] Renamed metric `cortex_experimental_features_in_use_total` as `cortex_experimental_features_used_total` and added `feature` label. #32 #658
-* [CHANGE] Removed `log_messages_total` metric. #32
-* [CHANGE] Some files and directories created by Mimir components on local disk now have stricter permissions, and are only readable by owner, but not group or others. #58
-* [CHANGE] Blocks storage: memcached client DNS resolution switched from golang built-in to [`miekg/dns`](https://github.com/miekg/dns). #142
-* [CHANGE] The metric `cortex_deprecated_flags_inuse_total` has been renamed to `deprecated_flags_inuse_total` as part of using grafana/dskit functionality. #185
-* [CHANGE] API: The `-api.response-compression-enabled` flag has been removed, and GZIP response compression is always enabled except on `/api/v1/push` and `/push` endpoints. #880
-* [CHANGE] Update Go version to 1.17.3. #480
-* [CHANGE] The `status_code` label on gRPC client metrics has changed from '200' and '500' to '2xx', '5xx', '4xx', 'cancel' or 'error'. #537
 * [CHANGE] Remove chunks storage engine. #86 #119 #510 #545 #743 #744 #748 #753 #755 #757 #758 #759 #760 #762 #764 #789 #812 #813
   * The following CLI flags (and their respective YAML config options) have been removed:
     * `-store.engine`
@@ -92,6 +76,22 @@ _Changes since Cortex 1.10.0._
     * `prometheus_local_storage_chunk_ops_total`
     * `prometheus_local_storage_chunkdesc_ops_total`
     * `prometheus_local_storage_memory_chunkdescs`
+* [CHANGE] Changed default storage backends from `s3` to `filesystem` #833
+  This effects the following flags:
+  * `-blocks-storage.backend` now defaults to `filesystem`
+  * `-blocks-storage.filesystem.dir` now defaults to `blocks`
+  * `-alertmanager-storage.backend` now defaults to `filesystem`
+  * `-alertmanager-storage.filesystem.dir` now defaults to `alertmanager`
+  * `-ruler-storage.backend` now defaults to `filesystem`
+  * `-ruler-storage.filesystem.dir` now defaults to `ruler`
+* [CHANGE] Renamed metric `cortex_experimental_features_in_use_total` as `cortex_experimental_features_used_total` and added `feature` label. #32 #658
+* [CHANGE] Removed `log_messages_total` metric. #32
+* [CHANGE] Some files and directories created by Mimir components on local disk now have stricter permissions, and are only readable by owner, but not group or others. #58
+* [CHANGE] Memcached client DNS resolution switched from golang built-in to [`miekg/dns`](https://github.com/miekg/dns). #142
+* [CHANGE] The metric `cortex_deprecated_flags_inuse_total` has been renamed to `deprecated_flags_inuse_total` as part of using grafana/dskit functionality. #185
+* [CHANGE] API: The `-api.response-compression-enabled` flag has been removed, and GZIP response compression is always enabled except on `/api/v1/push` and `/push` endpoints. #880
+* [CHANGE] Update Go version to 1.17.3. #480
+* [CHANGE] The `status_code` label on gRPC client metrics has changed from '200' and '500' to '2xx', '5xx', '4xx', 'cancel' or 'error'. #537
 * [CHANGE] Removed the deprecated `-<prefix>.fifocache.size` flag. #618
 * [CHANGE] Enable index header lazy loading by default. #693
   * `-blocks-storage.bucket-store.index-header-lazy-loading-enabled` default from `false` to `true`
@@ -402,10 +402,6 @@ _Changes since Cortex 1.10.0._
 * [CHANGE] Limits: Option `-ingester.max-samples-per-query` and its YAML field `max_samples_per_query` have been removed. It required `-querier.ingester-streaming` option to be set to false, but since `-querier.ingester-streaming` is removed (always defaulting to true), the limit using it was removed as well. #204 #1132
 * [CHANGE] Limits: Set the default max number of inflight ingester push requests (`-ingester.instance-limits.max-inflight-push-requests`) to 30000 in order to prevent clusters from being overwhelmed by request volume or temporary slow-downs. #259
 * [CHANGE] Overrides exporter: renamed metric `cortex_overrides` to `cortex_limits_overrides`. #173 #407
-* [FEATURE] The endpoints `/api/v1/status/buildinfo`, `<prometheus-http-prefix>/api/v1/status/buildinfo`, and `<alertmanager-http-prefix>/api/v1/status/buildinfo` have been added to display build information and enabled features. #1219 #1240
-* [FEATURE] PromQL: added `present_over_time` support. #139
-* [FEATURE] Mimir: Added "Activity tracker" feature which can log ongoing activities from previous Mimir run in case of a crash. It is enabled by default and controlled by the `-activity-tracker.filepath` flag. It can be disabled by setting this path to an empty string. Currently, the Store-gateway, Ruler, Querier, Query-frontend and Ingester components use this feature to track queries. #631 #782 #822 #1121
-* [FEATURE] Mimir: Divide configuration parameters into categories "basic", "advanced", and "experimental". Only flags in the basic category are shown when invoking `-help`, whereas `-help-all` will include flags in all categories (basic, advanced, experimental). #840
 * [FEATURE] The following features have been moved from experimental to stable: #913 #1002
   * Alertmanager config API
   * Alertmanager receiver firewall
@@ -436,6 +432,10 @@ _Changes since Cortex 1.10.0._
     * User config size (`-alertmanager.max-config-size-bytes`)
     * Templates count in user config (`-alertmanager.max-templates-count`)
     * Max template size (`-alertmanager.max-template-size-bytes`)
+* [FEATURE] The endpoints `/api/v1/status/buildinfo`, `<prometheus-http-prefix>/api/v1/status/buildinfo`, and `<alertmanager-http-prefix>/api/v1/status/buildinfo` have been added to display build information and enabled features. #1219 #1240
+* [FEATURE] PromQL: added `present_over_time` support. #139
+* [FEATURE] Mimir: Added "Activity tracker" feature which can log ongoing activities from previous Mimir run in case of a crash. It is enabled by default and controlled by the `-activity-tracker.filepath` flag. It can be disabled by setting this path to an empty string. Currently, the Store-gateway, Ruler, Querier, Query-frontend and Ingester components use this feature to track queries. #631 #782 #822 #1121
+* [FEATURE] Mimir: Divide configuration parameters into categories "basic", "advanced", and "experimental". Only flags in the basic category are shown when invoking `-help`, whereas `-help-all` will include flags in all categories (basic, advanced, experimental). #840
 * [FEATURE] Querier: Added support for tenant federation to exemplar endpoints. #927
 * [FEATURE] Ingester: can expose metrics on active series matching custom trackers configured via `-ingester.active-series-custom-trackers` (or its respective YAML config option). When configured, active series for custom trackers are exposed by the `cortex_ingester_active_series_custom_tracker` metric. #42 #672
 * [FEATURE] Ingester: Enable snapshotting of in-memory TSDB on disk during shutdown via `-blocks-storage.tsdb.memory-snapshot-on-shutdown` (experimental). #249
