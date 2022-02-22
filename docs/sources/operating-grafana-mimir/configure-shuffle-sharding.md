@@ -133,9 +133,13 @@ _The maximum number of queriers can be overridden on a per-tenant basis setting 
 
 #### The impact of "query of death"
 
-In the event a tenant is repeatedly sending a "query of death" which causes a querier to crash, the crashed querier will get disconnected from the query-frontend or query-scheduler and a new querier will be immediately assigned to the tenant's shard. This practically invalidates the assumption that shuffle-sharding can be used to contain the blast radius of queries of death.
+In the event a tenant is sending a "query of death" which causes a querier to crash, the crashed querier will get disconnected from the query-frontend or query-scheduler and another already running querier will be immediately assigned to the tenant's shard.
 
-To mitigate this, there are experimental configuration options that allow you to configure a delay between when a querier disconnects because of a crash and when the crashed querier is actually removed from the tenant’s shard (and another healthy querier is added as a replacement). A delay of 1 minute might be a reasonable trade-off:
+If the tenant repeatedly sends this query, the new querier assigned to the tenant's shard will crash as well, and yet another querier will be assigned to the shard. This cascading failure could potentially lead to crash all running queriers one by one, practically invalidating the assumption that shuffle sharding can be used to contain the blast radius of queries of death.
+
+To mitigate this, there are experimental configuration options that allow you to configure a delay between when a querier disconnects because of a crash and when the crashed querier is actually replaced by another healthy querier. When this delay is configured, a tenant repeatedly sending a "query of death" will run with reduced querier capacity after a querier has crashed and could end up having no available queriers at all, but it will reduce the likelihood the crash will impact other tenants too.
+
+A delay of 1 minute might be a reasonable trade-off:
 
 - Query-frontend: `-query-frontend.querier-forget-delay=1m`
 - Query-scheduler: `-query-scheduler.querier-forget-delay=1m`
