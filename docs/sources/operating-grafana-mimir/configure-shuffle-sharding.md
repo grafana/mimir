@@ -100,7 +100,7 @@ In case ingesters shuffle sharding is enabled only for the write path, queriers 
 
 #### Rollout strategy
 
-If you’re running a Grafana Mimir cluster with shuffle sharding disabled, and you want to enable it for ingesters, use the following rollout strategy to avoid missing querying any time series in the ingesters:
+If you’re running a Grafana Mimir cluster with shuffle sharding disabled, and you want to enable it for the ingesters, use the following rollout strategy to avoid missing querying any time series in the ingesters:
 
 1. Enable ingesters shuffle sharding on the **write path**
 2. **Wait** at least `-querier.shuffle-sharding-ingesters-lookback-period` time
