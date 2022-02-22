@@ -24,7 +24,7 @@ authorization:
   credentials_file: <PATH TO BEARER TOKEN FILE>
 ```
 
-To use basic authentication with a username and password stored in a file, the remote write configuration block  includes the following parameters:
+To use basic authentication with a username and password stored in a file, the remote write configuration block includes the following parameters:
 
 ```yaml
 basic_auth:
