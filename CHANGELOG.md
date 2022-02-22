@@ -9,9 +9,6 @@
 
 _Changes since Cortex 1.10.0._
 
-* [CHANGE] Memberlist: the `memberlist_kv_store_value_bytes` metric has been removed due to values no longer being stored in-memory as encoded bytes. [#4345](https://github.com/cortexproject/cortex/pull/4345)
-* [CHANGE] Memberlist: forward only changes, not entire original message. [#4419](https://github.com/cortexproject/cortex/pull/4419)
-* [CHANGE] Memberlist: don't accept old tombstones as incoming change, and don't forward such messages to other gossip members. [#4420](https://github.com/cortexproject/cortex/pull/4420)
 * [CHANGE] Removed deprecated limits for rejecting old samples #799
   This removes the following flags:
   * `-validation.reject-old-samples`
@@ -118,7 +115,6 @@ _Changes since Cortex 1.10.0._
     * `prometheus_local_storage_chunk_ops_total`
     * `prometheus_local_storage_chunkdesc_ops_total`
     * `prometheus_local_storage_memory_chunkdescs`
-* [CHANGE] Memberlist: changed probe interval from `1s` to `5s` and probe timeout from `500ms` to `2s`. #563
 * [CHANGE] Removed the deprecated `-<prefix>.fifocache.size` flag. #618
 * [CHANGE] Enable index header lazy loading by default. #693
   * `-blocks-storage.bucket-store.index-header-lazy-loading-enabled` default from `false` to `true`
@@ -151,8 +147,6 @@ _Changes since Cortex 1.10.0._
     * `-blocks-storage.bucket-store.chunks-cache.memcached.timeout`
     * `-query-frontend.results-cache.memcached.timeout`
 * [CHANGE] Ingester: change default value of `-ingester.ring.final-sleep` from `30s` to `0s`. #981
-* [CHANGE] Changed default value of `-distributor.ring.store` (Distributor ring) and `-ring.store` (Ingester ring) to `memberlist`. #1046
-* [CHANGE] Memberlist: the `name` label on metrics `cortex_dns_failures_total`, `cortex_dns_lookups_total` and `cortex_dns_provider_results` was renamed to `component`. #993
 * [CHANGE] Changed the default value of `-blocks-storage.bucket-store.bucket-index.enabled` to `true`. The default configuration must now run the compactor in order to write the bucket index or else queries to long term storage will fail. #924
 * [CHANGE] Option `-auth.enabled` has been renamed to `-auth.multitenancy-enabled`. #1130
 * [CHANGE] Default tenant ID used with disabled auth (`-auth.multitenancy-enabled=false`) has changed from `fake` to `anonymous`. This tenant ID can now be changed with `-auth.no-auth-tenant` option. #1063
@@ -402,6 +396,12 @@ _Changes since Cortex 1.10.0._
   * The following configuration options are renamed:
     * `-alertmanager.cluster.peer-timeout` to `-alertmanager.peer-timeout`
 * [CHANGE] Alertmanager: the default value of `-alertmanager.sharding-ring.store` is now `memberlist`. #1171
+* [CHANGE] Ring: changed default value of `-distributor.ring.store` (Distributor ring) and `-ring.store` (Ingester ring) to `memberlist`. #1046
+* [CHANGE] Memberlist: the `memberlist_kv_store_value_bytes` metric has been removed due to values no longer being stored in-memory as encoded bytes. [#4345](https://github.com/cortexproject/cortex/pull/4345)
+* [CHANGE] Memberlist: forward only changes, not entire original message. [#4419](https://github.com/cortexproject/cortex/pull/4419)
+* [CHANGE] Memberlist: don't accept old tombstones as incoming change, and don't forward such messages to other gossip members. [#4420](https://github.com/cortexproject/cortex/pull/4420)
+* [CHANGE] Memberlist: changed probe interval from `1s` to `5s` and probe timeout from `500ms` to `2s`. #563
+* [CHANGE] Memberlist: the `name` label on metrics `cortex_dns_failures_total`, `cortex_dns_lookups_total` and `cortex_dns_provider_results` was renamed to `component`. #993
 * [FEATURE] The endpoints `/api/v1/status/buildinfo`, `<prometheus-http-prefix>/api/v1/status/buildinfo`, and `<alertmanager-http-prefix>/api/v1/status/buildinfo` have been added to display build information and enabled features. #1219 #1240
 * [FEATURE] PromQL: added `present_over_time` support. #139
 * [FEATURE] Mimir: Added "Activity tracker" feature which can log ongoing activities from previous Mimir run in case of a crash. It is enabled by default and controlled by the `-activity-tracker.filepath` flag. It can be disabled by setting this path to an empty string. Currently, the Store-gateway, Ruler, Querier, Query-frontend and Ingester components use this feature to track queries. #631 #782 #822 #1121
@@ -485,22 +485,6 @@ _Changes since Cortex 1.10.0._
 * [FEATURE] Compactor: Added `-compactor.max-compaction-time` to control how long can compaction for a single tenant take. If compactions for a tenant take longer, no new compactions are started in the same compaction cycle. Running compactions are not stopped however, and may take much longer. #523
 * [FEATURE] Compactor: When compactor finds blocks with out-of-order chunks, it will mark them for no-compaction. Blocks marked for no-compaction are ignored in future compactions too. Added metric `cortex_compactor_blocks_marked_for_no_compaction_total` to track number of blocks marked for no-compaction. Added `CortexCompactorSkippedBlocksWithOutOfOrderChunks` alert based on new metric. Markers are only checked from `<tenant>/markers` location, but uploaded to the block directory too. #520 #535 #550
 * [FEATURE] Compactor: multiple blocks are now downloaded and uploaded at once, which can shorten compaction process. #552
-* [ENHANCEMENT] Ring: allow experimental configuration of disabling of heartbeat timeouts by setting the relevant configuration value to zero. Applies to the following: [#4342](https://github.com/cortexproject/cortex/pull/4342)
-  * `-distributor.ring.heartbeat-timeout`
-  * `-ingester.ring.heartbeat-timeout`
-  * `-ruler.ring.heartbeat-timeout`
-  * `-alertmanager.sharding-ring.heartbeat-timeout`
-  * `-compactor.ring.heartbeat-timeout`
-  * `-store-gateway.sharding-ring.heartbeat-timeout`
-* [ENHANCEMENT] Ring: allow heartbeats to be explicitly disabled by setting the interval to zero. This is considered experimental. This applies to the following configuration options: [#4344](https://github.com/cortexproject/cortex/pull/4344)
-  * `-distributor.ring.heartbeat-period`
-  * `-ingester.ring.heartbeat-period`
-  * `-ruler.ring.heartbeat-period`
-  * `-alertmanager.sharding-ring.heartbeat-period`
-  * `-compactor.ring.heartbeat-period`
-  * `-store-gateway.sharding-ring.heartbeat-period`
-* [ENHANCEMENT] Memberlist: optimized receive path for processing ring state updates, to help reduce CPU utilization in large clusters. [#4345](https://github.com/cortexproject/cortex/pull/4345)
-* [ENHANCEMENT] Memberlist: expose configuration of memberlist packet compression via `-memberlist.compression-enabled`. [#4346](https://github.com/cortexproject/cortex/pull/4346)
 * [ENHANCEMENT] Overrides exporter: include additional limits in the per-tenant override exporter. The following limits have been added to the `cortex_limit_overrides` metric: #21
   * `max_fetched_series_per_query`
   * `max_fetched_chunk_bytes_per_query`
@@ -509,10 +493,8 @@ _Changes since Cortex 1.10.0._
 * [ENHANCEMENT] Overrides exporter: add a metrics `cortex_limits_defaults` to expose the default values of limits. #173
 * [ENHANCEMENT] Exemplars are now emitted for all gRPC calls and many operations tracked by histograms. #180
 * [ENHANCEMENT] New options `-server.http-listen-network` and `-server.grpc-listen-network` allow binding as 'tcp4' or 'tcp6'. #180
-* [ENHANCEMENT] Memberlist: Add `-memberlist.advertise-addr` and `-memberlist.advertise-port` options for setting the address to advertise to other members of the cluster to enable NAT traversal. #260
 * [ENHANCEMENT] Query federation: improve performance in MergeQueryable by memoizing labels. #312
 * [ENHANCEMENT] Overrides Exporter: Add `max_fetched_chunks_per_query` and `max_global_exemplars_per_user` limits to the default and per-tenant limits exported as metrics. #471 #515
-* [ENHANCEMENT] Memberlist: reduce CPU utilization for rings with a large number of members. #537 #563 #634
 * [ENHANCEMENT] Add histogram metrics `cortex_distributor_sample_delay_seconds` and `cortex_ingester_tsdb_sample_out_of_order_delta_seconds` #488
 * [ENHANCEMENT] Check internal directory access before starting up. #1217
 * [ENHANCEMENT] Azure client: expose option to configure MSI URL and user-assigned identity. #584
@@ -564,11 +546,27 @@ _Changes since Cortex 1.10.0._
 * [ENHANCEMENT] Compactor: delete blocks marked for deletion faster. #490
 * [ENHANCEMENT] Compactor: expose low-level concurrency options for compactor: `-compactor.max-opening-blocks-concurrency`, `-compactor.max-closing-blocks-concurrency`, `-compactor.symbols-flushers-concurrency`. #569 #701
 * [ENHANCEMENT] Compactor: expand compactor logs to include total compaction job time, total time for uploads and block counts. #549
+* [ENHANCEMENT] Ring: allow experimental configuration of disabling of heartbeat timeouts by setting the relevant configuration value to zero. Applies to the following: [#4342](https://github.com/cortexproject/cortex/pull/4342)
+  * `-distributor.ring.heartbeat-timeout`
+  * `-ingester.ring.heartbeat-timeout`
+  * `-ruler.ring.heartbeat-timeout`
+  * `-alertmanager.sharding-ring.heartbeat-timeout`
+  * `-compactor.ring.heartbeat-timeout`
+  * `-store-gateway.sharding-ring.heartbeat-timeout`
+* [ENHANCEMENT] Ring: allow heartbeats to be explicitly disabled by setting the interval to zero. This is considered experimental. This applies to the following configuration options: [#4344](https://github.com/cortexproject/cortex/pull/4344)
+  * `-distributor.ring.heartbeat-period`
+  * `-ingester.ring.heartbeat-period`
+  * `-ruler.ring.heartbeat-period`
+  * `-alertmanager.sharding-ring.heartbeat-period`
+  * `-compactor.ring.heartbeat-period`
+  * `-store-gateway.sharding-ring.heartbeat-period`
+* [ENHANCEMENT] Memberlist: optimized receive path for processing ring state updates, to help reduce CPU utilization in large clusters. [#4345](https://github.com/cortexproject/cortex/pull/4345)
+* [ENHANCEMENT] Memberlist: expose configuration of memberlist packet compression via `-memberlist.compression-enabled`. [#4346](https://github.com/cortexproject/cortex/pull/4346)
+* [ENHANCEMENT] Memberlist: Add `-memberlist.advertise-addr` and `-memberlist.advertise-port` options for setting the address to advertise to other members of the cluster to enable NAT traversal. #260
+* [ENHANCEMENT] Memberlist: reduce CPU utilization for rings with a large number of members. #537 #563 #634
 * [BUGFIX] HA Tracker: when cleaning up obsolete elected replicas from KV store, tracker didn't update number of cluster per user correctly. [#4336](https://github.com/cortexproject/cortex/pull/4336)
-* [BUGFIX] Memberlist: fixed corrupted packets when sending compound messages with more than 255 messages or messages bigger than 64KB. #551
 * [BUGFIX] Azure storage: only create HTTP client once, to reduce memory utilization. #605
 * [BUGFIX] Overrides-exporter: successfully startup even if runtime config is not set. #1056
-* [BUGFIX] Multi-KV: runtime config changes are now propagated to all rings, not just ingester ring. #1047
 * [BUGFIX] Ingester: fixed ingester stuck on start up (LEAVING ring state) when `-ingester.ring.heartbeat-period=0` and `-ingester.unregister-on-shutdown=false`. [#4366](https://github.com/cortexproject/cortex/pull/4366)
 * [BUGFIX] Ingester: prevent any reads or writes while the ingester is stopping. This will prevent accessing TSDB blocks once they have been already closed. [#4304](https://github.com/cortexproject/cortex/pull/4304)
 * [BUGFIX] Ingester: TSDB now waits for pending readers before truncating Head block, fixing the `chunk not found` error and preventing wrong query results. #16
@@ -590,6 +588,8 @@ _Changes since Cortex 1.10.0._
 * [BUGFIX] Compactor: compactor should now be able to correctly mark blocks for deletion and no-compaction, if such marking was previously interrupted. #1015
 * [BUGFIX] Alertmanager: remove stale template files. #4495
 * [BUGFIX] Alertmanager: don't replace user configurations with blank fallback configurations (when enabled), particularly during scaling up/down instances when sharding is enabled. #224
+* [BUGFIX] Ring: multi KV runtime config changes are now propagated to all rings, not just ingester ring. #1047
+* [BUGFIX] Memberlist: fixed corrupted packets when sending compound messages with more than 255 messages or messages bigger than 64KB. #551
 
 ### Mixin
 
