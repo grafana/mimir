@@ -162,7 +162,7 @@ _The ruler shard size can be overridden on a per-tenant basis by setting `ruler_
 
 ### Compactor shuffle sharding
 
-By default, a tenant blocks can be compacted by any Grafana Mimir compactor.
+By default, tenant blocks can be compacted by any Grafana Mimir compactor.
 
 When compactor shuffle sharding is enabled by setting `-compactor.compactor-tenant-shard-size` (or its respective YAML config option) to a value higher than `0` and lower than the number of available compactors, only specified number of compactors will be eligible to compact blocks for a given tenant.
 
