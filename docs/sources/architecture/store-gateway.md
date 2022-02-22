@@ -8,18 +8,20 @@ weight: 10
 
 The store-gateway is responsible to query blocks from [long-term storage]({{< relref "./_index.md#long-term-storage" >}}) and is used by the [querier]({{< relref "./querier.md" >}}) on the read path at query time.
 
-The store-gateway is **stateless**, however when sharding is enabled and instances fail, the remaining instaces may take time to take over processing of queries.
+The store-gateway is **stateful**.
 
 ## How it works
 
 The store-gateway needs to have an almost up-to-date view over the long-term storage bucket, in order to discover blocks belonging to their shard. The store-gateway can keep the bucket view updated in to two different ways:
 
-1. Periodically scanning the bucket (default)
-2. Periodically downloading the [bucket index]({{< relref "../blocks-storage/bucket-index.md" >}})
+1. Periodically downloading the [bucket index]({{< relref "../blocks-storage/bucket-index.md" >}}) (default)
+2. Periodically scanning the bucket
 
-### Bucket index disabled (default)
+### Bucket index enabled (default)
 
-At startup **store-gateways** iterate over the entire long-term storage bucket to discover blocks for all tenants and download the `meta.json` and index-header for each block. During this initial bucket synchronization phase, the store-gateway `/ready` readiness probe endpoint will fail.
+At startup **store-gateways** fetch the [bucket index]({{< relref "../blocks-storage/bucket-index.md" >}}) from long-term storage bucket for each tenant belonging to their shard in order to discover each tenant's blocks  from relevant `meta.json` files and block deletion marks. During this initial bucket synchronization phase, the store-gateway `/ready` readiness probe endpoint will fail.
+
+For more information about the bucket index, please refer to [bucket index documentation]({{< relref "../blocks-storage/bucket-index.md" >}}).
 
 While running, store-gateways periodically re-scan the long-term storage bucket to discover new blocks (uploaded by the [ingesters]({{< relref "./ingester.md" >}}) and [compactor]({{< relref "./compactor.md" >}})) and blocks marked for deletion or fully deleted since the last scan (as a result of compaction). The frequency at which this occurs is configured via `-blocks-storage.bucket-store.sync-interval`.
 
@@ -27,27 +29,27 @@ The blocks chunks and the entire index are never fully downloaded by the store-g
 
 For more information about the index-header, please refer to [Binary index-header documentation]({{< relref "../blocks-storage/binary-index-header.md" >}}).
 
-### Bucket index enabled
+### Bucket index disabled
 
-When bucket index is enabled, the overall workflow is the same but, instead of iterating over the bucket objects, the store-gateway fetch the [bucket index]({{< relref "../blocks-storage/bucket-index.md" >}}) for each tenant belonging to their shard in order to discover each tenant's blocks and block deletion marks.
+At startup **store-gateways** iterate over the entire long-term storage bucket to discover blocks for all tenants and download the `meta.json` and index-header for each block. During this initial bucket synchronization phase, the store-gateway `/ready` readiness probe endpoint will fail.
 
-For more information about the bucket index, please refer to [bucket index documentation]({{< relref "../blocks-storage/bucket-index.md" >}}).
+While running, store-gateways periodically re-scan the long-term storage bucket to discover new blocks (uploaded by the [ingesters]({{< relref "./ingester.md" >}}) and [compactor]({{< relref "./compactor.md" >}})) and blocks marked for deletion or fully deleted since the last scan (as a result of compaction). The frequency at which this occurs is configured via `-blocks-storage.bucket-store.sync-interval`.
 
 ## Blocks sharding and replication
 
-The store-gateway optionally supports blocks sharding. Sharding can be used to horizontally scale query processing in a large cluster without hitting any vertical scalability limit.
+The store-gateway employs blocks sharding. Sharding is used to horizontally scale query processing in a large cluster without hitting any vertical scalability limit.
 
-When sharding is enabled, store-gateway instances builds an [hash ring]({{< relref "../architecture/about-the-hash-ring" >}}) and blocks gets sharded and replicated across the pool of store-gateway instances registered within the ring.
+Store-gateway instances build a [hash ring]({{< relref "../architecture/about-the-hash-ring" >}}) and blocks gets sharded and replicated across the pool of store-gateway instances registered within the ring.
 
 Store-gateways continuously monitor the ring state and whenever the ring topology changes (e.g. a new instance has been added/removed or gets healthy/unhealthy) each store-gateway instance resync the blocks assigned to its shard, based on the block ID hash matching the token ranges assigned to the instance itself within the ring.
 
-For each block belonging to a store-gateway shard, the store-gateway loads its `meta.json`, the `deletion-mark.json` and the index-header. Once a block is loaded on the store-gateway, it's ready to be queried by queriers. When the querier queries blocks through a store-gateway, the response will contain the list of actually queried block IDs. If a querier tries to query a block which has not been loaded by a store-gateway, the querier will either retry on a different store-gateway (if blocks replication is enabled) or fail the query.
+For each block belonging to a store-gateway shard, the store-gateway loads its index-header. Once a block is loaded on the store-gateway, it's ready to be queried by queriers. When the querier queries blocks through a store-gateway, the response will contain the list of actually queried block IDs. If a querier tries to query a block which has not been loaded by a store-gateway, the querier will retry on a different store-gateway up to -store-gateway.sharding-ring.replication-factor (defaults to 3). The query will fail if the block can't be successfully queried from any replica.
 
 Blocks are replicated across multiple store-gateway instances based on a replication factor configured via `-store-gateway.sharding-ring.replication-factor`. The blocks replication is used to protect from query failures caused by some blocks not loaded by any store-gateway instance at a given time like, for example, in the event of a store-gateway failure or while restarting a store-gateway instance (e.g. during a rolling update).
 
 This feature requires the backend [hash ring]({{< relref "../architecture/about-the-hash-ring" >}}) to be configured via `-store-gateway.sharding-ring.*` flags (or their respective YAML config flags).
 
-### Sharding strategies
+### Sharding strategy
 
 The store-gateway uses shuffle-sharding to spread the blocks of each tenant across a subset of store-gateway instances. The number of store-gateway instances loading blocks of a single tenant is limited and the blast radius of any issue that could be introduced by the tenant's workload is limited to its shard instances.
 
@@ -79,9 +81,9 @@ The store-gateway replication optionally supports [zone-awareness]({{< relref ".
 
 In the event of a cluster cold start or scale up of 2+ store-gateway instances at the same time we may end up in a situation where each new store-gateway instance starts at a slightly different time and thus each one runs the initial blocks sync based on a different state of the ring. For example, in case of a cold start, the first store-gateway joining the ring may load all blocks since the sharding logic runs based on the current state of the ring, which is 1 single store-gateway.
 
-To reduce the likelihood this could happen, the store-gateway waits for a stable ring at startup. A ring is considered stable if no instance is added/removed to the ring for at least `-store-gateway.sharding-ring.wait-stability-min-duration`. If the ring keeps getting changed after `-store-gateway.sharding-ring.wait-stability-max-duration`, the store-gateway will stop waiting for a stable ring and will proceed starting up normally.
+To reduce the likelihood this could happen, the store-gateway can optionally wait for a stable ring at startup. A ring is considered stable if no instance is added/removed to the ring for at least `-store-gateway.sharding-ring.wait-stability-min-duration`. If the ring keeps getting changed after `-store-gateway.sharding-ring.wait-stability-max-duration`, the store-gateway will stop waiting for a stable ring and will proceed starting up normally.
 
-To disable this waiting logic, you can start the store-gateway with `-store-gateway.sharding-ring.wait-stability-min-duration=0`.
+To enable this waiting logic, you can start the store-gateway with `-store-gateway.sharding-ring.wait-stability-min-duration=1m`, which is the recommended value for production systems.
 
 ## Blocks index-header
 
@@ -91,9 +93,10 @@ At startup, the store-gateway downloads the index-header of each block belonging
 
 ### Index-header lazy loading
 
-By default, each index-header is memory mapped by the store-gateway right after downloading it. In a cluster with a large number of blocks, each store-gateway may have a large amount of memory mapped index-headers, regardless how frequently they're used at query time.
+By default, index-headers are downloaded to disk, but not kept in memory by the store-gateway. Index-headers will be memory mapped only once required by a query and will be automatically released after `-blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout` time of inactivity.
 
-Mimir supports a configuration flag `-blocks-storage.bucket-store.index-header-lazy-loading-enabled=true` to enable index-header lazy loading. When enabled, index-headers will be memory mapped only once required by a query and will be automatically released after `-blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout` time of inactivity.
+Mimir supports a configuration flag `-blocks-storage.bucket-store.index-header-lazy-loading-enabled=false` to disable index-header lazy loading. When disabled, index-headers are all kept in
+memory, which provides faster access, however in a cluster with a large number of blocks, each store-gateway may have a large amount of memory mapped index-headers, regardless how frequently they are used at query time.
 
 ## Caching
 
@@ -107,7 +110,7 @@ Caching is optional, but **highly recommended** in a production environment. Ple
 
 ### Index cache
 
-The store-gateway can use a cache to speed up lookups of postings and series from TSDB blocks indexes. Two backends are supported:
+The store-gateway can use a cache to speed up lookups of series and labels from TSDB blocks indexes. Two backends are supported:
 
 - `inmemory`
 - `memcached`
@@ -150,7 +153,8 @@ Store-gateway and [querier]({{< relref "./querier.md" >}}) can use memcached for
 
 - List of tenants
 - List of blocks per tenant
-- Block's `meta.json` content
+- List of block content per tenant
+- Block's `meta.json` existence and content
 - Block's `deletion-mark.json` existence and content
 - Tenant's `bucket-index.json.gz` content
 
