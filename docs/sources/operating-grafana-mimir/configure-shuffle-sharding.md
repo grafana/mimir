@@ -58,8 +58,6 @@ Grafana Mimir supports shuffle sharding in the following services:
 
 When running Grafana Mimir with the default configuration, shuffle sharding is disabled and you need to explicitly enable it by increasing the shard size either globally or for a given tenant.
 
-Shuffle sharding can be configured independently for each component. For example, if you enable ingesters shuffle sharding for a tenant, you can decide to keep shuffle sharding disabled in other components for the same tenant or to enable it with a different shard size.
-
 Note: If the shard size value is higher than the number of available instances, for example where `-distributor.ingestion-tenant-shard-size` is higher than the number of ingesters, then shuffle sharding is disabled and all instances are used again.
 
 ### Guaranteed properties
