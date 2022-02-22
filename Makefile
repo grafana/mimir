@@ -38,8 +38,11 @@ BUILD_IMAGE ?= $(IMAGE_PREFIX)mimir-build-image
 # the tag we are at as the image tag.
 ifneq (,$(findstring refs/tags/, $(GITHUB_REF)))
 	GIT_TAG := $(shell git tag --points-at HEAD)
+	# If the git tag starts with "mimir-" (eg. "mimir-2.0.0") we strip
+	# the "mimir-" prefix in order to keep only the version.
+	IMAGE_TAG_FROM_GIT_TAG := $(patsubst mimir-%,%,$(GIT_TAG))
 endif
-IMAGE_TAG ?= $(if $(GIT_TAG),$(GIT_TAG),$(shell ./tools/image-tag))
+IMAGE_TAG ?= $(if $(IMAGE_TAG_FROM_GIT_TAG),$(IMAGE_TAG_FROM_GIT_TAG),$(shell ./tools/image-tag))
 GIT_REVISION := $(shell git rev-parse --short HEAD)
 GIT_BRANCH := $(shell git rev-parse --abbrev-ref HEAD)
 UPTODATE := .uptodate
@@ -464,23 +467,16 @@ check-jsonnet-tests: build-jsonnet-tests
 check-tsdb-blocks-storage-s3-docker-compose-yaml:
 	cd development/tsdb-blocks-storage-s3 && make check
 
-# Generate binaries for a Mimir release
-dist: dist/$(UPTODATE)
-
-dist/$(UPTODATE):
+dist: ## Generates binaries for a Mimir release.
 	rm -fr ./dist
 	mkdir -p ./dist
 	# Build binaries for various architectures and operating systems. Only
-	# mimirtool supports Windows for now. Also darwin/386 is not a valid
-	# architecture.
+	# mimirtool supports Windows for now.
 	for os in linux darwin windows; do \
-		for arch in 386 amd64 arm64; do \
+		for arch in amd64 arm64; do \
 			suffix="" ; \
 			if [ "$$os" = "windows" ]; then \
 				suffix=".exe" ; \
-			fi; \
-			if [ "$$os" = "darwin" ] && [ "$$arch" = "386" ]; then \
-				continue; \
 			fi; \
 			echo "Building mimirtool for $$os/$$arch"; \
 			GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/mimirtool-$$os-$$arch$$suffix ./cmd/mimirtool; \
@@ -494,6 +490,9 @@ dist/$(UPTODATE):
 			echo "Building query-tee for $$os/$$arch"; \
 			GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/query-tee-$$os-$$arch$$suffix ./cmd/query-tee; \
 			sha256sum ./dist/query-tee-$$os-$$arch$$suffix | cut -d ' ' -f 1 > ./dist/query-tee-$$os-$$arch$$suffix-sha-256; \
+			echo "Building metaconvert for $$os/$$arch"; \
+			GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/metaconvert-$$os-$$arch$$suffix ./cmd/metaconvert; \
+			sha256sum ./dist/metaconvert-$$os-$$arch$$suffix | cut -d ' ' -f 1 > ./dist/metaconvert-$$os-$$arch$$suffix-sha-256; \
 			done; \
 		done; \
 		touch $@
