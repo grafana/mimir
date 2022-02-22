@@ -146,7 +146,7 @@ A delay of 1 minute might be a reasonable trade-off:
 
 By default, a tenant's blocks are spread across all Grafana Mimir store-gateways.
 
-When store-gateway shuffle sharding is enabled by setting `-store-gateway.tenant-shard-size` (or its respective YAML config option) to a value higher than `0` and lower than the number of available store-gateways, only specified number of store-gateways will be eligible to load and query blocks for a given tenant. This flag needs to be set to store-gateway, querier and ruler.
+When store-gateway shuffle sharding is enabled by setting `-store-gateway.tenant-shard-size` (or its respective YAML config option) to a value higher than `0` and lower than the number of available store-gateways, only the specified number of store-gateways will be eligible to load and query blocks for a given tenant. This flag needs to be set on the store-gateway, querier and ruler.
 
 _The store-gateway shard size can be overridden on a per-tenant basis setting `store_gateway_tenant_shard_size` in the overrides section of the runtime configuration._
 
