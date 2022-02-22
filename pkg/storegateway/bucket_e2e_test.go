@@ -166,7 +166,7 @@ func prepareStoreWithTestBlocksForSeries(t testing.TB, dir string, bkt objstore.
 	metaFetcher, err := block.NewMetaFetcher(s.logger, 20, objstore.WithNoopInstr(bkt), dir, nil, []block.MetadataFilter{
 		block.NewTimePartitionMetaFilter(filterConf.MinTime, filterConf.MaxTime),
 		block.NewLabelShardedMetaFilter(relabelConfig),
-	}, nil)
+	})
 	assert.NoError(t, err)
 
 	store, err := NewBucketStore(

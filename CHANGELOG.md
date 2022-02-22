@@ -2,6 +2,7 @@
 
 ## Grafana Mimir - main / unreleased
 
+* [CHANGE] Compactor: No longer upload debug meta files to object storage. #1257
 * [BUGFIX] Query-frontend: fixed bad querier status code mapping with query-sharding enabled. #1227
 
 ### Mixin
