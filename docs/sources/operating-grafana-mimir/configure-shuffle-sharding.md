@@ -112,7 +112,7 @@ The current shuffle sharding implementation in Grafana Mimir has a limitation th
 
 The problem is that if a tenant’s shard decreases in size, there is currently no way for the queriers and rulers to know how big the tenant shard was previously, and hence they will potentially miss an ingester with data for that tenant. In other words, the lookback mechanism, used to select the ingesters which may have received series since 'now - lookback period', doesn't work correctly if the tenant shard size is decreased.
 
-Decreasing the tenant shard size is not supported because deemed to be an infrequent operation, but a workaround still exists:
+> **Note:** Decreasing the tenant shard size is not supported because it is something that you would rarely need to do, but a workaround still exists:
 
 1. Disable shuffle sharding on the read path.
 2. Decrease the configured tenant shard size.
