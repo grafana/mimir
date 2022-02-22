@@ -38,8 +38,11 @@ BUILD_IMAGE ?= $(IMAGE_PREFIX)mimir-build-image
 # the tag we are at as the image tag.
 ifneq (,$(findstring refs/tags/, $(GITHUB_REF)))
 	GIT_TAG := $(shell git tag --points-at HEAD)
+	# If the git tag starts with "mimir-" (eg. "mimir-2.0.0") we strip
+	# the "mimir-" prefix in order to keep only the version.
+	IMAGE_TAG_FROM_GIT_TAG := $(patsubst mimir-%,%,$(GIT_TAG))
 endif
-IMAGE_TAG ?= $(if $(GIT_TAG),$(GIT_TAG),$(shell ./tools/image-tag))
+IMAGE_TAG ?= $(if $(IMAGE_TAG_FROM_GIT_TAG),$(IMAGE_TAG_FROM_GIT_TAG),$(shell ./tools/image-tag))
 GIT_REVISION := $(shell git rev-parse --short HEAD)
 GIT_BRANCH := $(shell git rev-parse --abbrev-ref HEAD)
 UPTODATE := .uptodate
