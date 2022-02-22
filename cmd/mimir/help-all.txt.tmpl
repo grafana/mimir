@@ -758,7 +758,7 @@ Usage of ./cmd/mimir/mimir:
   -http.prometheus-http-prefix string
     	HTTP URL path under which the Prometheus api will be served. (default "/prometheus")
   -ingester.active-series-custom-trackers value
-    	Additional active series metrics, matching the provided matchers. Matchers should be in form <name>:<matcher>, like 'foobar:{foo="bar"}'. Multiple matchers can be provided either providing the flag multiple times or by providing multiple semicolon-separated values to a single flag.
+    	Additional active series metrics, matching the provided matchers. Matchers should be in form <name>:<matcher>, like 'foobar:{foo="bar"}'. Multiple matchers can be provided either providing the flag multiple times or providing multiple semicolon-separated values to a single flag.
   -ingester.active-series-metrics-enabled
     	Enable tracking of active series and export them as metrics. (default true)
   -ingester.active-series-metrics-idle-timeout duration
