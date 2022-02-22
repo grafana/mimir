@@ -152,7 +152,7 @@ groups:
 
 #### Lint
 
-This command's aim is not to verify correctness but just YAML and PromQL expression formatting within the rule file.
+This command's aim is not to verify query correctness but just YAML and PromQL expression formatting within the rule file.
 This command always edits in place, you can use the dry run flag (`-n`) if you'd like to perform a trial run that does
 not make any changes. This command does not interact with your Grafana Mimir cluster.
 
@@ -218,7 +218,7 @@ groups:
 At the end of the run, the command outputs whether the operation was a success:
 
 ```console
-INFO[0000] SUCCESS: 194 rules found, 0 modified expressions
+INFO[0000] SUCCESS: 1 rules found, 0 modified expressions
 ```
 
 #### Check
@@ -323,7 +323,7 @@ The output is the following:
 #### Export series into local TSDB
 
 The `remote-read export` command exports all series and samples matching the selector into a local TSDB. This TSDB can
-then be further analysed with local tooling like `prometheus` and `promtool`.
+then be further analysed with local tooling like `prometheus` and [`promtool`](https://github.com/prometheus/prometheus/tree/main/cmd/promtool).
 
 ```bash
 # Use Remote Read API to download all metrics with label job=name into local tsdb
@@ -365,7 +365,7 @@ prometheus --storage.tsdb.path ./local-tsdb --config.file=<(echo "")
 
 ### Generate ACL Headers
 
-This lets you generate the header which can then be used to enforce access control rules in GEM or Grafana Cloud.
+This lets you generate the header which can then be used to enforce access control rules in GEM or Grafana Cloud only. Grafana Mimir doesn't support ACL.
 
 ```bash
 mimirtool acl generate-header --id=<tenant_id> --rule=<promql_selector>
