@@ -79,7 +79,7 @@ By default, the Grafana Mimir distributor spreads the received series across all
 
 When shuffle sharding is enabled for the ingesters, the distributor and ruler on the write path spread each tenant series across `-distributor.ingestion-tenant-shard-size` number of ingesters, while on the read path the querier and ruler queries only the subset of ingesters holding the series for a given tenant.
 
-_The shard size can be overridden on a per-tenant basis setting `ingestion_tenant_shard_size` in the overrides section of the runtime configuration._
+_The shard size can be overridden on a per-tenant basis by setting `ingestion_tenant_shard_size` in the overrides section of the runtime configuration._
 
 #### Ingesters write path
 
