@@ -37,7 +37,7 @@ BUILD_IMAGE ?= $(IMAGE_PREFIX)mimir-build-image
 # If finding refs/tags/ does not equal emptystring then use
 # the tag we are at as the image tag.
 ifneq (,$(findstring refs/tags/, $(GITHUB_REF)))
-	GIT_TAG := $(shell git tag --points-at HEAD)
+	GIT_TAG := "$(shell git tag --points-at HEAD)"
 	# If the git tag starts with "mimir-" (eg. "mimir-2.0.0") we strip
 	# the "mimir-" prefix in order to keep only the version.
 	IMAGE_TAG_FROM_GIT_TAG := $(patsubst "mimir-%",%,$(GIT_TAG))
