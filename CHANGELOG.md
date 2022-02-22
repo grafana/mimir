@@ -9,10 +9,6 @@
 
 _Changes since Cortex 1.10.0._
 
-* [CHANGE] Removed deprecated limits for rejecting old samples #799
-  This removes the following flags:
-  * `-validation.reject-old-samples`
-  * `-validation.reject-old-samples.max-age`
 * [CHANGE] Changed default storage backends from `s3` to `filesystem` #833
   This effects the following flags:
   * `-blocks-storage.backend` now defaults to `filesystem`
@@ -21,32 +17,13 @@ _Changes since Cortex 1.10.0._
   * `-alertmanager-storage.filesystem.dir` now defaults to `alertmanager`
   * `-ruler-storage.backend` now defaults to `filesystem`
   * `-ruler-storage.filesystem.dir` now defaults to `ruler`
-* [CHANGE] Removed local limit-related flags in favor of global limits. #725
-  The distributor ring is now required, and can be configured via the `distributor.ring.*` flags.
-  This removes the following flags:
-  * `-distributor.ingestion-rate-strategy` -> will now always use the "global" strategy
-  * `-ingester.max-series-per-user` -> set `-ingester.max-global-series-per-user` to `N` times the existing value of `-ingester.max-series-per-user` instead
-  * `-ingester.max-series-per-metric` -> set `-ingester.max-global-series-per-metric`  to `N` times the existing value of `-ingester.max-series-per-metric` instead
-  * `-ingester.max-metadata-per-user` -> set `-ingester.max-global-metadata-per-user` to `N` times the existing value of `-ingester.max-metadata-per-user` instead
-  * `-ingester.max-metadata-per-metric` -> set `-ingester.max-global-metadata-per-metric` to `N` times the existing value of `-ingester.max-metadata-per-metric` instead
-  * In the above notes, `N` refers to the number of ingester replicas
-  Additionally, default values for the following flags have changed:
-  * `-ingester.max-global-series-per-user` from `0` to `150000`
-  * `-ingester.max-global-series-per-metric` from `0` to `20000`
-  * `-distributor.ingestion-rate-limit` from `25000` to `10000`
-  * `-distributor.ingestion-burst-size` from `50000` to `200000`
-* [CHANGE] Removed limit `enforce_metric_name`, now behave as if set to `true` always. #686
 * [CHANGE] Renamed metric `cortex_experimental_features_in_use_total` as `cortex_experimental_features_used_total` and added `feature` label. #32 #658
 * [CHANGE] Removed `log_messages_total` metric. #32
 * [CHANGE] Some files and directories created by Mimir components on local disk now have stricter permissions, and are only readable by owner, but not group or others. #58
 * [CHANGE] Blocks storage: memcached client DNS resolution switched from golang built-in to [`miekg/dns`](https://github.com/miekg/dns). #142
-* [CHANGE] Renamed metric `cortex_overrides` to `cortex_limits_overrides`. #173 #407
 * [CHANGE] The metric `cortex_deprecated_flags_inuse_total` has been renamed to `deprecated_flags_inuse_total` as part of using grafana/dskit functionality. #185
 * [CHANGE] API: The `-api.response-compression-enabled` flag has been removed, and GZIP response compression is always enabled except on `/api/v1/push` and `/push` endpoints. #880
-* [CHANGE] Limits: Option `-ingester.max-samples-per-query` and its YAML field `max_samples_per_query` have been removed. It required `-querier.ingester-streaming` option to be set to false, but since `-querier.ingester-streaming` is removed (always defaulting to true), the limit using it was removed as well. #204 #1132
-* [CHANGE] Limits: Set the default max number of inflight ingester push requests (`-ingester.instance-limits.max-inflight-push-requests`) to 30000 in order to prevent clusters from being overwhelmed by request volume or temporary slow-downs. #259
 * [CHANGE] Update Go version to 1.17.3. #480
-* [CHANGE] Rename metric `cortex_query_fetched_chunks_bytes_total` to `cortex_query_fetched_chunk_bytes_total` to be consistent with the limit name. #476
 * [CHANGE] The `status_code` label on gRPC client metrics has changed from '200' and '500' to '2xx', '5xx', '4xx', 'cancel' or 'error'. #537
 * [CHANGE] Remove chunks storage engine. #86 #119 #510 #545 #743 #744 #748 #753 #755 #757 #758 #759 #760 #762 #764 #789 #812 #813
   * The following CLI flags (and their respective YAML config options) have been removed:
@@ -146,7 +123,6 @@ _Changes since Cortex 1.10.0._
     * `-blocks-storage.bucket-store.index-cache.memcached.timeout`
     * `-blocks-storage.bucket-store.chunks-cache.memcached.timeout`
     * `-query-frontend.results-cache.memcached.timeout`
-* [CHANGE] Ingester: change default value of `-ingester.ring.final-sleep` from `30s` to `0s`. #981
 * [CHANGE] Changed the default value of `-blocks-storage.bucket-store.bucket-index.enabled` to `true`. The default configuration must now run the compactor in order to write the bucket index or else queries to long term storage will fail. #924
 * [CHANGE] Option `-auth.enabled` has been renamed to `-auth.multitenancy-enabled`. #1130
 * [CHANGE] Default tenant ID used with disabled auth (`-auth.multitenancy-enabled=false`) has changed from `fake` to `anonymous`. This tenant ID can now be changed with `-auth.no-auth-tenant` option. #1063
@@ -232,6 +208,7 @@ _Changes since Cortex 1.10.0._
 * [CHANGE] Ingester: active series metrics `cortex_ingester_active_series` and `cortex_ingester_active_series_custom_tracker` are now removed when their value is zero. #672 #690
 * [CHANGE] Ingester: changed default value of `-blocks-storage.tsdb.retention-period` from `6h` to `24h`. #966
 * [CHANGE] Ingester: changed default value of `-blocks-storage.tsdb.close-idle-tsdb-timeout` from `0` to `13h`. #967
+* [CHANGE] Ingester: changed default value of `-ingester.ring.final-sleep` from `30s` to `0s`. #981
 * [CHANGE] Ingester: the following low level settings have been removed: #1153
   * `-ingester-client.expected-labels`
   * `-ingester-client.expected-samples-per-series`
@@ -347,6 +324,7 @@ _Changes since Cortex 1.10.0._
 * [CHANGE] Querier/ruler/query-frontend: the experimental `-querier.at-modifier-enabled` CLI flag has been removed and the PromQL `@` modifier is always enabled. #941
 * [CHANGE] Querier: removed `-querier.worker-match-max-concurrent` and `-querier.worker-parallelism` CLI flags (and their respective YAML config options). Mimir now behaves like if `-querier.worker-match-max-concurrent` is always enabled and you should configure the max concurrency per querier process using `-querier.max-concurrent` instead. #958
 * [CHANGE] Querier: changed default value of `-querier.query-ingesters-within` from `0` to `13h`. #967
+* [CHANGE] Querier: rename metric `cortex_query_fetched_chunks_bytes_total` to `cortex_query_fetched_chunk_bytes_total` to be consistent with the limit name. #476
 * [CHANGE] Ruler: add two new metrics `cortex_ruler_list_rules_seconds` and `cortex_ruler_load_rule_groups_seconds` to the ruler. #906
 * [CHANGE] Ruler: endpoints for listing configured rules now return HTTP status code 200 and an empty map when there are no rules instead of an HTTP 404 and plain text error message. The following endpoints are affected: #456
   * `<prometheus-http-prefix>/config/v1/rules`
@@ -402,6 +380,28 @@ _Changes since Cortex 1.10.0._
 * [CHANGE] Memberlist: don't accept old tombstones as incoming change, and don't forward such messages to other gossip members. [#4420](https://github.com/cortexproject/cortex/pull/4420)
 * [CHANGE] Memberlist: changed probe interval from `1s` to `5s` and probe timeout from `500ms` to `2s`. #563
 * [CHANGE] Memberlist: the `name` label on metrics `cortex_dns_failures_total`, `cortex_dns_lookups_total` and `cortex_dns_provider_results` was renamed to `component`. #993
+* [CHANGE] Limits: removed deprecated limits for rejecting old samples #799
+  This removes the following flags:
+  * `-validation.reject-old-samples`
+  * `-validation.reject-old-samples.max-age`
+* [CHANGE] Limits: removed local limit-related flags in favor of global limits. #725
+  The distributor ring is now required, and can be configured via the `distributor.ring.*` flags.
+  This removes the following flags:
+  * `-distributor.ingestion-rate-strategy` -> will now always use the "global" strategy
+  * `-ingester.max-series-per-user` -> set `-ingester.max-global-series-per-user` to `N` times the existing value of `-ingester.max-series-per-user` instead
+  * `-ingester.max-series-per-metric` -> set `-ingester.max-global-series-per-metric`  to `N` times the existing value of `-ingester.max-series-per-metric` instead
+  * `-ingester.max-metadata-per-user` -> set `-ingester.max-global-metadata-per-user` to `N` times the existing value of `-ingester.max-metadata-per-user` instead
+  * `-ingester.max-metadata-per-metric` -> set `-ingester.max-global-metadata-per-metric` to `N` times the existing value of `-ingester.max-metadata-per-metric` instead
+  * In the above notes, `N` refers to the number of ingester replicas
+  Additionally, default values for the following flags have changed:
+  * `-ingester.max-global-series-per-user` from `0` to `150000`
+  * `-ingester.max-global-series-per-metric` from `0` to `20000`
+  * `-distributor.ingestion-rate-limit` from `25000` to `10000`
+  * `-distributor.ingestion-burst-size` from `50000` to `200000`
+* [CHANGE] Limits: removed limit `enforce_metric_name`, now behave as if set to `true` always. #686
+* [CHANGE] Limits: Option `-ingester.max-samples-per-query` and its YAML field `max_samples_per_query` have been removed. It required `-querier.ingester-streaming` option to be set to false, but since `-querier.ingester-streaming` is removed (always defaulting to true), the limit using it was removed as well. #204 #1132
+* [CHANGE] Limits: Set the default max number of inflight ingester push requests (`-ingester.instance-limits.max-inflight-push-requests`) to 30000 in order to prevent clusters from being overwhelmed by request volume or temporary slow-downs. #259
+* [CHANGE] Overrides exporter: renamed metric `cortex_overrides` to `cortex_limits_overrides`. #173 #407
 * [FEATURE] The endpoints `/api/v1/status/buildinfo`, `<prometheus-http-prefix>/api/v1/status/buildinfo`, and `<alertmanager-http-prefix>/api/v1/status/buildinfo` have been added to display build information and enabled features. #1219 #1240
 * [FEATURE] PromQL: added `present_over_time` support. #139
 * [FEATURE] Mimir: Added "Activity tracker" feature which can log ongoing activities from previous Mimir run in case of a crash. It is enabled by default and controlled by the `-activity-tracker.filepath` flag. It can be disabled by setting this path to an empty string. Currently, the Store-gateway, Ruler, Querier, Query-frontend and Ingester components use this feature to track queries. #631 #782 #822 #1121
@@ -485,16 +485,9 @@ _Changes since Cortex 1.10.0._
 * [FEATURE] Compactor: Added `-compactor.max-compaction-time` to control how long can compaction for a single tenant take. If compactions for a tenant take longer, no new compactions are started in the same compaction cycle. Running compactions are not stopped however, and may take much longer. #523
 * [FEATURE] Compactor: When compactor finds blocks with out-of-order chunks, it will mark them for no-compaction. Blocks marked for no-compaction are ignored in future compactions too. Added metric `cortex_compactor_blocks_marked_for_no_compaction_total` to track number of blocks marked for no-compaction. Added `CortexCompactorSkippedBlocksWithOutOfOrderChunks` alert based on new metric. Markers are only checked from `<tenant>/markers` location, but uploaded to the block directory too. #520 #535 #550
 * [FEATURE] Compactor: multiple blocks are now downloaded and uploaded at once, which can shorten compaction process. #552
-* [ENHANCEMENT] Overrides exporter: include additional limits in the per-tenant override exporter. The following limits have been added to the `cortex_limit_overrides` metric: #21
-  * `max_fetched_series_per_query`
-  * `max_fetched_chunk_bytes_per_query`
-  * `ruler_max_rules_per_rule_group`
-  * `ruler_max_rule_groups_per_tenant`
-* [ENHANCEMENT] Overrides exporter: add a metrics `cortex_limits_defaults` to expose the default values of limits. #173
 * [ENHANCEMENT] Exemplars are now emitted for all gRPC calls and many operations tracked by histograms. #180
 * [ENHANCEMENT] New options `-server.http-listen-network` and `-server.grpc-listen-network` allow binding as 'tcp4' or 'tcp6'. #180
 * [ENHANCEMENT] Query federation: improve performance in MergeQueryable by memoizing labels. #312
-* [ENHANCEMENT] Overrides Exporter: Add `max_fetched_chunks_per_query` and `max_global_exemplars_per_user` limits to the default and per-tenant limits exported as metrics. #471 #515
 * [ENHANCEMENT] Add histogram metrics `cortex_distributor_sample_delay_seconds` and `cortex_ingester_tsdb_sample_out_of_order_delta_seconds` #488
 * [ENHANCEMENT] Check internal directory access before starting up. #1217
 * [ENHANCEMENT] Azure client: expose option to configure MSI URL and user-assigned identity. #584
@@ -564,14 +557,20 @@ _Changes since Cortex 1.10.0._
 * [ENHANCEMENT] Memberlist: expose configuration of memberlist packet compression via `-memberlist.compression-enabled`. [#4346](https://github.com/cortexproject/cortex/pull/4346)
 * [ENHANCEMENT] Memberlist: Add `-memberlist.advertise-addr` and `-memberlist.advertise-port` options for setting the address to advertise to other members of the cluster to enable NAT traversal. #260
 * [ENHANCEMENT] Memberlist: reduce CPU utilization for rings with a large number of members. #537 #563 #634
-* [BUGFIX] HA Tracker: when cleaning up obsolete elected replicas from KV store, tracker didn't update number of cluster per user correctly. [#4336](https://github.com/cortexproject/cortex/pull/4336)
+* [ENHANCEMENT] Overrides exporter: include additional limits in the per-tenant override exporter. The following limits have been added to the `cortex_limit_overrides` metric: #21
+  * `max_fetched_series_per_query`
+  * `max_fetched_chunk_bytes_per_query`
+  * `ruler_max_rules_per_rule_group`
+  * `ruler_max_rule_groups_per_tenant`
+* [ENHANCEMENT] Overrides exporter: add a metrics `cortex_limits_defaults` to expose the default values of limits. #173
+* [ENHANCEMENT] Overrides exporter: Add `max_fetched_chunks_per_query` and `max_global_exemplars_per_user` limits to the default and per-tenant limits exported as metrics. #471 #515
 * [BUGFIX] Azure storage: only create HTTP client once, to reduce memory utilization. #605
-* [BUGFIX] Overrides-exporter: successfully startup even if runtime config is not set. #1056
 * [BUGFIX] Ingester: fixed ingester stuck on start up (LEAVING ring state) when `-ingester.ring.heartbeat-period=0` and `-ingester.unregister-on-shutdown=false`. [#4366](https://github.com/cortexproject/cortex/pull/4366)
 * [BUGFIX] Ingester: prevent any reads or writes while the ingester is stopping. This will prevent accessing TSDB blocks once they have been already closed. [#4304](https://github.com/cortexproject/cortex/pull/4304)
 * [BUGFIX] Ingester: TSDB now waits for pending readers before truncating Head block, fixing the `chunk not found` error and preventing wrong query results. #16
 * [BUGFIX] Ingester: don't create TSDB or appender if no samples are sent by a tenant. #162
 * [BUGFIX] Ingester: fix out-of-order chunks in TSDB head in-memory series after WAL replay in case some samples were appended to TSDB WAL before series. #530
+* [BUGFIX] Distributor: when cleaning up obsolete elected replicas from KV store, HA tracker didn't update number of cluster per user correctly. [#4336](https://github.com/cortexproject/cortex/pull/4336)
 * [BUGFIX] Distributor: fix bug in query-exemplar where some results would get dropped. #583
 * [BUGFIX] Query-frontend: Fixes @ modifier functions (start/end) when splitting queries by time. #206
 * [BUGFIX] Query-frontend: Ensure query_range requests handled by the query-frontend return JSON formatted errors. #360 #499
@@ -590,6 +589,7 @@ _Changes since Cortex 1.10.0._
 * [BUGFIX] Alertmanager: don't replace user configurations with blank fallback configurations (when enabled), particularly during scaling up/down instances when sharding is enabled. #224
 * [BUGFIX] Ring: multi KV runtime config changes are now propagated to all rings, not just ingester ring. #1047
 * [BUGFIX] Memberlist: fixed corrupted packets when sending compound messages with more than 255 messages or messages bigger than 64KB. #551
+* [BUGFIX] Overrides exporter: successfully startup even if runtime config is not set. #1056
 
 ### Mixin
 
