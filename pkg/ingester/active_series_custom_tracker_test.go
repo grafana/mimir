@@ -98,9 +98,18 @@ func TestActiveSeriesCustomTrackersConfigs(t *testing.T) {
 
 			if tc.error != nil {
 				assert.EqualError(t, err, tc.error.Error())
-			} else {
-				assert.Equal(t, tc.expected, &config)
+				return
 			}
+
+			require.Equal(t, tc.expected, &config)
+
+			// Check that ActiveSeriesCustomTrackersConfig.String() value is a valid flag value.
+			flagSetAgain := flag.NewFlagSet("test-string", flag.ContinueOnError)
+			var configAgain ActiveSeriesCustomTrackersConfig
+			flagSetAgain.Var(&configAgain, "ingester.active-series-custom-trackers", "...usage docs...")
+			require.NoError(t, flagSetAgain.Parse([]string{"-ingester.active-series-custom-trackers=" + config.String()}))
+
+			require.Equal(t, tc.expected, &configAgain)
 		})
 	}
 }

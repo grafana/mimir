@@ -14,6 +14,7 @@ import (
 // ActiveSeriesCustomTrackersConfig configures active series custom trackers.
 // It can be set using a flag, or parsed from yaml.
 type ActiveSeriesCustomTrackersConfig struct {
+	source map[string]string
 	config map[string]labelsMatchers
 	string string
 }
@@ -28,34 +29,44 @@ func (c *ActiveSeriesCustomTrackersConfig) ExampleDoc() (comment string, yaml in
 		}
 }
 
+// String is a canonical representation of the config, it is compatible with flag definition.
+// String is also needed to implement flag.Value.
 func (c *ActiveSeriesCustomTrackersConfig) String() string {
 	return c.string
 }
 
-func activeSeriesCustomTrackersConfigString(cfg map[string]labelsMatchers) string {
+func activeSeriesCustomTrackersConfigString(cfg map[string]string) string {
 	if len(cfg) == 0 {
 		return ""
 	}
 
-	keys := make([]string, len(cfg))
+	keys := make([]string, 0, len(cfg))
 	for name := range cfg {
 		keys = append(keys, name)
 	}
+
 	// The map is traversed in an ordered fashion to make String representation stable and comparable.
 	sort.Strings(keys)
 
 	var sb strings.Builder
-	for _, name := range keys {
-		sb.WriteString(name)
-		for _, labelMatcher := range cfg[name] {
-			sb.WriteString(labelMatcher.String())
+	for i, name := range keys {
+		if i > 0 {
+			sb.WriteByte(';')
 		}
+		sb.WriteString(name)
+		sb.WriteByte(':')
+		sb.WriteString(cfg[name])
 	}
 
 	return sb.String()
 }
 
+// Set implements flag.Value, and is used to set the config value from a flag value provided as string.
 func (c *ActiveSeriesCustomTrackersConfig) Set(s string) error {
+	if strings.TrimSpace(s) == "" {
+		return nil
+	}
+
 	f, err := activeSeriesCustomTrackerFlagValueToMap(s)
 	if err != nil {
 		return err
@@ -79,10 +90,11 @@ func (c *ActiveSeriesCustomTrackersConfig) Set(s string) error {
 			return fmt.Errorf("matcher %q for active series custom trackers is provided more than once", name)
 		}
 		c.config[name] = nc.config[name]
+		c.source[name] = f[name]
 	}
 
 	// Recalculate the string after merging.
-	c.string = activeSeriesCustomTrackersConfigString(c.config)
+	c.string = activeSeriesCustomTrackersConfigString(c.source)
 	return nil
 }
 
@@ -119,6 +131,7 @@ func (c *ActiveSeriesCustomTrackersConfig) UnmarshalYAML(unmarshal func(interfac
 }
 
 func newActiveSeriesCustomTrackersConfig(m map[string]string) (c ActiveSeriesCustomTrackersConfig, err error) {
+	c.source = m
 	c.config = map[string]labelsMatchers{}
 	for name, matcher := range m {
 		sm, err := amlabels.ParseMatchers(matcher)
@@ -131,7 +144,7 @@ func newActiveSeriesCustomTrackersConfig(m map[string]string) (c ActiveSeriesCus
 		}
 		c.config[name] = matchers
 	}
-	c.string = activeSeriesCustomTrackersConfigString(c.config)
+	c.string = activeSeriesCustomTrackersConfigString(c.source)
 	return c, nil
 }
 
