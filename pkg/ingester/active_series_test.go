@@ -6,7 +6,6 @@
 package ingester
 
 import (
-	"bytes"
 	"fmt"
 	"math"
 	"strconv"
@@ -236,25 +235,52 @@ func benchmarkActiveSeriesConcurrencySingleSeries(b *testing.B, goroutines int) 
 }
 
 func BenchmarkActiveSeries_UpdateSeries(b *testing.B) {
-	c := NewActiveSeries(&ActiveSeriesMatchers{})
+	for _, tt := range []struct {
+		nRounds int // Number of times we update the same series
+		nSeries int // Number of series we create
+	}{
+		{
+			nRounds: 1,
+			nSeries: 100000,
+		},
+		{
+			nRounds: 1,
+			nSeries: 1000000,
+		},
+		{
+			nRounds: 10,
+			nSeries: 100000,
+		},
+		{
+			nRounds: 10,
+			nSeries: 1000000,
+		},
+	} {
+		b.Run(fmt.Sprintf("rounds=%d series=%d", tt.nRounds, tt.nSeries), func(b *testing.B) {
+			// Prepare series
+			series := make([]labels.Labels, tt.nSeries)
+			for s := 0; s < tt.nSeries; s++ {
+				lbls := make(labels.Labels, 10)
+				for i := 0; i < len(lbls); i++ {
+					// Label ~20B name, ~40B value.
+					lbls[i] = labels.Label{Name: fmt.Sprintf("abcdefghijabcdefghi%d", i), Value: fmt.Sprintf("abcdefghijabcdefghijabcdefghijabcd%d", s)}
+				}
+				series[s] = lbls
+			}
 
-	// Prepare series
-	nameBuf := bytes.Buffer{}
-	for i := 0; i < 50; i++ {
-		nameBuf.WriteString("abcdefghijklmnopqrstuvzyx")
-	}
-	name := nameBuf.String()
+			now := time.Now().UnixNano()
 
-	series := make([]labels.Labels, b.N)
-	for s := 0; s < b.N; s++ {
-		series[s] = labels.Labels{{Name: name, Value: name + strconv.Itoa(s)}}
-	}
-
-	now := time.Now().UnixNano()
-
-	b.ResetTimer()
-	for ix := 0; ix < b.N; ix++ {
-		c.UpdateSeries(series[ix], time.Unix(0, now+int64(ix)), copyFn)
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				c := NewActiveSeries(&ActiveSeriesMatchers{})
+				for round := 0; round <= tt.nRounds; round++ {
+					for ix := 0; ix < tt.nSeries; ix++ {
+						c.UpdateSeries(series[ix], time.Unix(0, now), copyFn)
+						now++
+					}
+				}
+			}
+		})
 	}
 }
 
