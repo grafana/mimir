@@ -3,10 +3,8 @@
 package ingester
 
 import (
-	"flag"
 	"testing"
 
-	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 
@@ -19,99 +17,6 @@ func mustNewActiveSeriesCustomTrackersConfig(t *testing.T, source map[string]str
 	m, err := newActiveSeriesCustomTrackersConfig(source)
 	require.NoError(t, err)
 	return &m
-}
-
-func TestActiveSeriesCustomTrackersConfigs(t *testing.T) {
-	for _, tc := range []struct {
-		name     string
-		flags    []string
-		expected *ActiveSeriesCustomTrackersConfig
-		error    error
-	}{
-		{
-			name:     "empty flag value produces empty config",
-			flags:    []string{`-ingester.active-series-custom-trackers=`},
-			expected: &ActiveSeriesCustomTrackersConfig{},
-		},
-		{
-			name:  "empty matcher fails",
-			flags: []string{`-ingester.active-series-custom-trackers=foo:`},
-			error: errors.New(`invalid value "foo:" for flag -ingester.active-series-custom-trackers: semicolon-separated values should be <name>:<matcher>, but one of the sides was empty in the value 0: "foo:"`),
-		},
-		{
-			name:  "empty whitespace-only matcher fails",
-			flags: []string{`-ingester.active-series-custom-trackers=foo: `},
-			error: errors.New(`invalid value "foo: " for flag -ingester.active-series-custom-trackers: semicolon-separated values should be <name>:<matcher>, but one of the sides was empty in the value 0: "foo: "`),
-		},
-		{
-			name:  "second empty whitespace-only matcher fails",
-			flags: []string{`-ingester.active-series-custom-trackers=foo: ;bar:{}`},
-			error: errors.New(`invalid value "foo: ;bar:{}" for flag -ingester.active-series-custom-trackers: semicolon-separated values should be <name>:<matcher>, but one of the sides was empty in the value 0: "foo: "`),
-		},
-		{
-			name:  "empty name fails",
-			flags: []string{`-ingester.active-series-custom-trackers=:{}`},
-			error: errors.New(`invalid value ":{}" for flag -ingester.active-series-custom-trackers: semicolon-separated values should be <name>:<matcher>, but one of the sides was empty in the value 0: ":{}"`),
-		},
-		{
-			name:  "empty whitespace-only name fails",
-			flags: []string{`-ingester.active-series-custom-trackers= :{}`},
-			error: errors.New(`invalid value " :{}" for flag -ingester.active-series-custom-trackers: semicolon-separated values should be <name>:<matcher>, but one of the sides was empty in the value 0: " :{}"`),
-		},
-		{
-			name:     "one matcher",
-			flags:    []string{`-ingester.active-series-custom-trackers=foo:{foo="bar"}`},
-			expected: mustNewActiveSeriesCustomTrackersConfig(t, map[string]string{`foo`: `{foo="bar"}`}),
-		},
-		{
-			name: "whitespaces are trimmed from name and matcher",
-			flags: []string{`-ingester.active-series-custom-trackers= foo :	{foo="bar"}` + "\n "},
-			expected: mustNewActiveSeriesCustomTrackersConfig(t, map[string]string{`foo`: `{foo="bar"}`}),
-		},
-		{
-			name:     "two matchers in one flag value",
-			flags:    []string{`-ingester.active-series-custom-trackers=foo:{foo="bar"};baz:{baz="bar"}`},
-			expected: mustNewActiveSeriesCustomTrackersConfig(t, map[string]string{`foo`: `{foo="bar"}`, `baz`: `{baz="bar"}`}),
-		},
-		{
-			name:     "two matchers in two flag values",
-			flags:    []string{`-ingester.active-series-custom-trackers=foo:{foo="bar"}`, `-ingester.active-series-custom-trackers=baz:{baz="bar"}`},
-			expected: mustNewActiveSeriesCustomTrackersConfig(t, map[string]string{`foo`: `{foo="bar"}`, `baz`: `{baz="bar"}`}),
-		},
-		{
-			name:  "two matchers with same name in same flag",
-			flags: []string{`-ingester.active-series-custom-trackers=foo:{foo="bar"};foo:{boo="bam"}`},
-			error: errors.New(`invalid value "foo:{foo=\"bar\"};foo:{boo=\"bam\"}" for flag -ingester.active-series-custom-trackers: matcher "foo" for active series custom trackers is provided twice`),
-		},
-		{
-			name:  "two matchers with same name in separate flags",
-			flags: []string{`-ingester.active-series-custom-trackers=foo:{foo="bar"}`, `-ingester.active-series-custom-trackers=foo:{boo="bam"}`},
-			error: errors.New(`invalid value "foo:{boo=\"bam\"}" for flag -ingester.active-series-custom-trackers: matcher "foo" for active series custom trackers is provided more than once`),
-		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			flagSet := flag.NewFlagSet("test", flag.ContinueOnError)
-
-			var config ActiveSeriesCustomTrackersConfig
-			flagSet.Var(&config, "ingester.active-series-custom-trackers", "...usage docs...")
-			err := flagSet.Parse(tc.flags)
-
-			if tc.error != nil {
-				assert.EqualError(t, err, tc.error.Error())
-				return
-			}
-
-			require.Equal(t, tc.expected, &config)
-
-			// Check that ActiveSeriesCustomTrackersConfig.String() value is a valid flag value.
-			flagSetAgain := flag.NewFlagSet("test-string", flag.ContinueOnError)
-			var configAgain ActiveSeriesCustomTrackersConfig
-			flagSetAgain.Var(&configAgain, "ingester.active-series-custom-trackers", "...usage docs...")
-			require.NoError(t, flagSetAgain.Parse([]string{"-ingester.active-series-custom-trackers=" + config.String()}))
-
-			require.Equal(t, tc.expected, &configAgain)
-		})
-	}
 }
 
 func TestActiveSeriesMatcher_MatchesSeries(t *testing.T) {
