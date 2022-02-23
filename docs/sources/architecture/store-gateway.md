@@ -19,7 +19,7 @@ The store-gateway needs to have an almost up-to-date view over the bucket in lon
 
 ### Bucket index enabled (default)
 
-At startup **store-gateways** fetch the [bucket index]({{< relref "../blocks-storage/bucket-index.md" >}}) from long-term storage for each tenant belonging to their [shard](#blocks-sharding-and-replication) in order to discover each tenant's blocks from relevant `meta.json` metadata files and block deletion marks. During this initial bucket synchronization phase, the store-gateway `/ready` readiness probe endpoint will fail.
+At startup **store-gateways** fetch the [bucket index]({{< relref "../blocks-storage/bucket-index.md" >}}) from long-term storage for each tenant belonging to their [shard](#blocks-sharding-and-replication) in order to discover each tenant's blocks and block deletion marks. During this initial bucket synchronization phase, the store-gateway `/ready` readiness probe endpoint will fail.
 
 For more information about the bucket index, please refer to [bucket index documentation]({{< relref "../blocks-storage/bucket-index.md" >}}).
 
