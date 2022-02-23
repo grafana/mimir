@@ -396,7 +396,7 @@ func (a *API) RegisterQueryScheduler(f *scheduler.Scheduler) {
 // TODO: Refactor this code to be accomplished using the services.ServiceManager
 // or a future module manager #2291
 func (a *API) RegisterServiceMapHandler(handler http.Handler) {
-	a.indexPage.AddLink(SectionAdminEndpoints, "/services", "Service Status")
+	a.indexPage.AddLink(SectionAdminEndpoints, "/services", "Service's status")
 	a.RegisterRoute("/services", handler, false, true, "GET")
 }
 
