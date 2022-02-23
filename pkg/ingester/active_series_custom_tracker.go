@@ -21,6 +21,7 @@ func (c *ActiveSeriesCustomTrackersConfig) String() string {
 	for name := range *c {
 		keys = append(keys, name)
 	}
+	// The map is traversed in an ordered fashion to make String representaton stable and comparable.
 	sort.Strings(keys)
 
 	var sb strings.Builder

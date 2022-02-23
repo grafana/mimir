@@ -264,6 +264,12 @@ func TestActiveSeriesCustomTrackersConfigs_Deserialization(t *testing.T) {
 		config := ActiveSeriesCustomTrackersConfig{}
 		err := yaml.Unmarshal([]byte(correctInput), &config)
 		assert.NoError(t, err, "failed do deserialize ActiveSeriesMatchers")
+		expectedConfig, err := NewActiveSeriesCustomTrackersConfig(map[string]string{
+			"baz": "{baz='bar'}",
+			"foo": "{foo='bar'}",
+		})
+		require.NoError(t, err)
+		assert.Equal(t, expectedConfig.String(), config.String())
 	})
 
 	t.Run("ShouldErrorOnMalformedInput", func(t *testing.T) {
