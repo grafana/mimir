@@ -50,8 +50,9 @@ func TestActiveSeries_UpdateSeries_WithMatchers(t *testing.T) {
 	ls2 := []labels.Label{{Name: "a", Value: "2"}}
 	ls3 := []labels.Label{{Name: "a", Value: "3"}}
 
-	asm, err := NewActiveSeriesMatchers(ActiveSeriesCustomTrackersConfig{"foo": `{a=~"2|3"}`})
+	config, err := NewActiveSeriesCustomTrackersConfig(map[string]string{"foo": `{a=~"2|3"}`})
 	require.NoError(t, err)
+	asm := NewActiveSeriesMatchers(config)
 
 	c := NewActiveSeries(asm)
 	allActive, activeMatching := c.Active()
@@ -133,8 +134,9 @@ func TestActiveSeries_Purge_WithMatchers(t *testing.T) {
 		{{Name: "_", Value: "KiqbryhzUpn"}, {Name: "__name__", Value: "logs"}},
 	}
 
-	asm, err := NewActiveSeriesMatchers(ActiveSeriesCustomTrackersConfig{"foo": `{_=~"y.*"}`})
+	config, err := NewActiveSeriesCustomTrackersConfig(map[string]string{"foo": `{_=~"y.*"}`})
 	require.NoError(t, err)
+	asm := NewActiveSeriesMatchers(config)
 
 	// Run the same test for increasing TTL values
 	for ttl := 1; ttl <= len(series); ttl++ {
@@ -198,8 +200,9 @@ func TestActiveSeries_ReloadSeriesMatchers(t *testing.T) {
 	ls1 := []labels.Label{{Name: "a", Value: "1"}}
 	ls2 := []labels.Label{{Name: "a", Value: "2"}}
 
-	asm, err := NewActiveSeriesMatchers(ActiveSeriesCustomTrackersConfig{"foo": `{a=~.*}`})
+	config, err := NewActiveSeriesCustomTrackersConfig(map[string]string{"foo": `{a=~.*}`})
 	require.NoError(t, err)
+	asm := NewActiveSeriesMatchers(config)
 
 	c := NewActiveSeries(asm)
 	allActive, activeMatching := c.Active()

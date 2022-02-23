@@ -15,17 +15,23 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func safeLabelMatchers(t *testing.T, source map[string]string) *ActiveSeriesCustomTrackersConfig {
+	m, err := NewActiveSeriesCustomTrackersConfig(source)
+	require.NoError(t, err)
+	return m
+}
+
 func TestActiveSeriesCustomTrackersConfigs(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
 		flags    []string
-		expected ActiveSeriesCustomTrackersConfig
+		expected string
 		error    error
 	}{
 		{
 			name:     "empty flag value produces empty config",
 			flags:    []string{`-ingester.active-series-custom-trackers=`},
-			expected: nil,
+			expected: "",
 		},
 		{
 			name:  "empty matcher fails",
@@ -55,22 +61,22 @@ func TestActiveSeriesCustomTrackersConfigs(t *testing.T) {
 		{
 			name:     "one matcher",
 			flags:    []string{`-ingester.active-series-custom-trackers=foo:{foo="bar"}`},
-			expected: ActiveSeriesCustomTrackersConfig{`foo`: `{foo="bar"}`},
+			expected: safeLabelMatchers(t, map[string]string{`foo`: `{foo="bar"}`}).String(),
 		},
 		{
 			name: "whitespaces are trimmed from name and matcher",
 			flags: []string{`-ingester.active-series-custom-trackers= foo :	{foo="bar"}` + "\n "},
-			expected: ActiveSeriesCustomTrackersConfig{`foo`: `{foo="bar"}`},
+			expected: safeLabelMatchers(t, map[string]string{`foo`: `{foo="bar"}`}).String(),
 		},
 		{
 			name:     "two matchers in one flag value",
 			flags:    []string{`-ingester.active-series-custom-trackers=foo:{foo="bar"};baz:{baz="bar"}`},
-			expected: ActiveSeriesCustomTrackersConfig{`foo`: `{foo="bar"}`, `baz`: `{baz="bar"}`},
+			expected: safeLabelMatchers(t, map[string]string{`foo`: `{foo="bar"}`, `baz`: `{baz="bar"}`}).String(),
 		},
 		{
 			name:     "two matchers in two flag values",
 			flags:    []string{`-ingester.active-series-custom-trackers=foo:{foo="bar"}`, `-ingester.active-series-custom-trackers=baz:{baz="bar"}`},
-			expected: ActiveSeriesCustomTrackersConfig{`foo`: `{foo="bar"}`, `baz`: `{baz="bar"}`},
+			expected: safeLabelMatchers(t, map[string]string{`foo`: `{foo="bar"}`, `baz`: `{baz="bar"}`}).String(),
 		},
 		{
 			name:  "two matchers with same name in same flag",
@@ -93,22 +99,21 @@ func TestActiveSeriesCustomTrackersConfigs(t *testing.T) {
 			if tc.error != nil {
 				assert.EqualError(t, err, tc.error.Error())
 			} else {
-				assert.Equal(t, tc.expected, config)
+				assert.Equal(t, tc.expected, config.String())
 			}
 		})
 	}
 }
 
 func TestActiveSeriesMatcher_MatchesSeries(t *testing.T) {
-	config := map[string]string{
+	config := safeLabelMatchers(t, map[string]string{
 		"bar_starts_with_1":             `{bar=~"1.*"}`,
 		"does_not_have_foo_label":       `{foo=""}`,
 		"has_foo_and_bar_starts_with_1": `{foo!="", bar=~"1.*"}`,
 		"has_foo_label":                 `{foo!=""}`,
-	}
+	})
 
-	asm, err := NewActiveSeriesMatchers(config)
-	require.NoError(t, err)
+	asm := NewActiveSeriesMatchers(config)
 
 	for _, tc := range []struct {
 		series   labels.Labels
@@ -176,7 +181,7 @@ func TestActiveSeriesMatcher_MatchesSeries(t *testing.T) {
 	}
 }
 
-func TestActiveSeriesMatcher_MalformedMatcher(t *testing.T) {
+func TestActiveSeriesCustomTrackersConfigs_MalformedMatcher(t *testing.T) {
 	for _, matcher := range []string{
 		`{foo}`,
 		`{foo=~"}`,
@@ -186,7 +191,7 @@ func TestActiveSeriesMatcher_MalformedMatcher(t *testing.T) {
 				"malformed": matcher,
 			}
 
-			_, err := NewActiveSeriesMatchers(config)
+			_, err := NewActiveSeriesCustomTrackersConfig(config)
 			assert.Error(t, err)
 		})
 	}
@@ -211,11 +216,10 @@ func TestActiveSeriesMatcher_Equality(t *testing.T) {
 		t.Run("EqualityBetweenSet", func(t *testing.T) {
 			var activeSeriesMatchers []*ActiveSeriesMatchers
 			for _, matcherConfig := range matcherSet {
-				config := ActiveSeriesCustomTrackersConfig{}
+				config := &ActiveSeriesCustomTrackersConfig{}
 				err := config.Set(matcherConfig)
 				require.NoError(t, err)
-				asm, err := NewActiveSeriesMatchers(config)
-				require.NoError(t, err)
+				asm := NewActiveSeriesMatchers(config)
 				activeSeriesMatchers = append(activeSeriesMatchers, asm)
 			}
 			for i := 0; i < len(activeSeriesMatchers); i++ {
@@ -230,11 +234,10 @@ func TestActiveSeriesMatcher_Equality(t *testing.T) {
 		var activeSeriesMatchers []*ActiveSeriesMatchers
 		for _, matcherConfigs := range matcherSets {
 			exampleConfig := matcherConfigs[0]
-			config := ActiveSeriesCustomTrackersConfig{}
+			config := &ActiveSeriesCustomTrackersConfig{}
 			err := config.Set(exampleConfig)
 			require.NoError(t, err)
-			asm, err := NewActiveSeriesMatchers(config)
-			require.NoError(t, err)
+			asm := NewActiveSeriesMatchers(config)
 			activeSeriesMatchers = append(activeSeriesMatchers, asm)
 		}
 
@@ -247,7 +250,7 @@ func TestActiveSeriesMatcher_Equality(t *testing.T) {
 
 }
 
-func TestActiveSeriesMatcher_Deserialization(t *testing.T) {
+func TestActiveSeriesCustomTrackersConfigs_Deserialization(t *testing.T) {
 	correctInput := `
         baz: "{baz='bar'}"
         foo: "{foo='bar'}"
@@ -258,14 +261,14 @@ func TestActiveSeriesMatcher_Deserialization(t *testing.T) {
         foo: "{foo='bar'}"
     `
 	t.Run("ShouldDeserializeCorrectInput", func(t *testing.T) {
-		asm := ActiveSeriesMatchers{}
-		err := yaml.Unmarshal([]byte(correctInput), &asm)
+		config := ActiveSeriesCustomTrackersConfig{}
+		err := yaml.Unmarshal([]byte(correctInput), &config)
 		assert.NoError(t, err, "failed do deserialize ActiveSeriesMatchers")
 	})
 
 	t.Run("ShouldErrorOnMalformedInput", func(t *testing.T) {
-		asm := ActiveSeriesMatchers{}
-		err := yaml.Unmarshal([]byte(malformedInput), &asm)
+		config := ActiveSeriesCustomTrackersConfig{}
+		err := yaml.Unmarshal([]byte(malformedInput), &config)
 		assert.Error(t, err, "should not deserialize malformed input")
 	})
 }

@@ -5146,28 +5146,33 @@ func TestIngesterActiveSeries(t *testing.T) {
 
 	defaultCustomTrackersOverridesProvider := &ActiveSeriesCustomTrackersOverridesProvider{
 		func() *ActiveSeriesCustomTrackersOverrides {
-			defaultMatchers, err := NewActiveSeriesMatchers(map[string]string{
+			defaultConfig, err := NewActiveSeriesCustomTrackersConfig(map[string]string{
 				"bool_is_true":  `{bool="true"}`,
 				"bool_is_false": `{bool="false"}`,
 			})
 			require.NoError(t, err)
-			teamMatchers, err := NewActiveSeriesMatchers(map[string]string{
+
+			tenantConfig, err := NewActiveSeriesCustomTrackersConfig(map[string]string{
 				"team_a": `{team="a"}`,
 				"team_b": `{team="b"}`,
 			})
 			require.NoError(t, err)
+
 			return &ActiveSeriesCustomTrackersOverrides{
-				Default: defaultMatchers,
-				TenantSpecific: map[string]*ActiveSeriesMatchers{
-					"test_user": teamMatchers,
+				Default: defaultConfig,
+				TenantSpecific: map[string]*ActiveSeriesCustomTrackersConfig{
+					"test_user": tenantConfig,
 				},
 			}
 		},
 	}
-	activeSeriesDefaultConfig := ActiveSeriesCustomTrackersConfig{
-		"bool_is_true_flagbased":  `{bool="true"}`,
-		"bool_is_false_flagbased": `{bool="false"}`,
-	}
+
+	activeSeriesDefaultConfig, err := NewActiveSeriesCustomTrackersConfig(
+		map[string]string{
+			"bool_is_true_flagbased":  `{bool="true"}`,
+			"bool_is_false_flagbased": `{bool="false"}`,
+		})
+	require.NoError(t, err)
 	tests := map[string]struct {
 		test                          func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer)
 		reqs                          []*mimirpb.WriteRequest
@@ -5429,7 +5434,7 @@ func TestIngesterActiveSeries(t *testing.T) {
 		},
 		"should use flag based custom tracker if no runtime config specified": {
 			activeSeriesOverridesProvider: nil,
-			activeSeriesConfig:            activeSeriesDefaultConfig,
+			activeSeriesConfig:            *activeSeriesDefaultConfig,
 			test: func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer) {
 				now := time.Now()
 
@@ -5468,7 +5473,7 @@ func TestIngesterActiveSeries(t *testing.T) {
 		},
 		"should use runtime matcher config if both specified": {
 			activeSeriesOverridesProvider: defaultCustomTrackersOverridesProvider,
-			activeSeriesConfig:            activeSeriesDefaultConfig,
+			activeSeriesConfig:            *activeSeriesDefaultConfig,
 			test: func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer) {
 				now := time.Now()
 
@@ -5508,17 +5513,17 @@ func TestIngesterActiveSeries(t *testing.T) {
 		"should revert to flag based default if only tenant-specific overwrite is present": {
 			activeSeriesOverridesProvider: &ActiveSeriesCustomTrackersOverridesProvider{
 				func() *ActiveSeriesCustomTrackersOverrides {
-					teamMatchers, err := NewActiveSeriesMatchers(map[string]string{
+					tenantConfig, err := NewActiveSeriesCustomTrackersConfig(map[string]string{
 						"team_a": `{team="a"}`,
 						"team_b": `{team="b"}`,
 					})
 					require.NoError(t, err)
-					return &ActiveSeriesCustomTrackersOverrides{TenantSpecific: map[string]*ActiveSeriesMatchers{
-						"test_user": teamMatchers,
+					return &ActiveSeriesCustomTrackersOverrides{TenantSpecific: map[string]*ActiveSeriesCustomTrackersConfig{
+						"test_user": tenantConfig,
 					}}
 				},
 			},
-			activeSeriesConfig: activeSeriesDefaultConfig,
+			activeSeriesConfig: *activeSeriesDefaultConfig,
 			test: func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer) {
 				now := time.Now()
 
@@ -5609,28 +5614,33 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 
 	defaultCustomTrackersOverridesProvider := &ActiveSeriesCustomTrackersOverridesProvider{
 		func() *ActiveSeriesCustomTrackersOverrides {
-			defaultMatchers, err := NewActiveSeriesMatchers(map[string]string{
+			defaultConfig, err := NewActiveSeriesCustomTrackersConfig(map[string]string{
 				"bool_is_true":  `{bool="true"}`,
 				"bool_is_false": `{bool="false"}`,
 			})
 			require.NoError(t, err)
-			teamMatchers, err := NewActiveSeriesMatchers(map[string]string{
+
+			tenantConfig, err := NewActiveSeriesCustomTrackersConfig(map[string]string{
 				"team_a": `{team="a"}`,
 				"team_b": `{team="b"}`,
 			})
 			require.NoError(t, err)
+
 			return &ActiveSeriesCustomTrackersOverrides{
-				Default: defaultMatchers,
-				TenantSpecific: map[string]*ActiveSeriesMatchers{
-					"test_user": teamMatchers,
+				Default: defaultConfig,
+				TenantSpecific: map[string]*ActiveSeriesCustomTrackersConfig{
+					"test_user": tenantConfig,
 				},
 			}
 		},
 	}
-	activeSeriesDefaultConfig := ActiveSeriesCustomTrackersConfig{
-		"bool_is_true_flagbased":  `{bool="true"}`,
-		"bool_is_false_flagbased": `{bool="false"}`,
-	}
+
+	activeSeriesDefaultConfig, err := NewActiveSeriesCustomTrackersConfig(
+		map[string]string{
+			"bool_is_true_flagbased":  `{bool="true"}`,
+			"bool_is_false_flagbased": `{bool="false"}`,
+		})
+	require.NoError(t, err)
 
 	tests := map[string]struct {
 		test                          func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer)
@@ -5641,7 +5651,7 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 	}{
 		"overwrite flag based config with runtime overwrite": {
 			activeSeriesOverridesProvider: nil,
-			activeSeriesConfig:            activeSeriesDefaultConfig,
+			activeSeriesConfig:            *activeSeriesDefaultConfig,
 			test: func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer) {
 				firstPushTime := time.Now()
 
@@ -5699,7 +5709,7 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 		},
 		"remove runtime overwrite and revert to flag based config": {
 			activeSeriesOverridesProvider: defaultCustomTrackersOverridesProvider,
-			activeSeriesConfig:            activeSeriesDefaultConfig,
+			activeSeriesConfig:            *activeSeriesDefaultConfig,
 			test: func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer) {
 				firstPushTime := time.Now()
 

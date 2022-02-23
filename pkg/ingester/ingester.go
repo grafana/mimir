@@ -249,7 +249,7 @@ func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus
 		return nil, errors.Wrap(err, "failed to create the bucket client")
 	}
 
-	asm, err := NewActiveSeriesMatchers(cfg.ActiveSeriesCustomTrackersConfig)
+	asm := NewActiveSeriesMatchers(&cfg.ActiveSeriesCustomTrackersConfig)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to parse active series matchers config")
 	}

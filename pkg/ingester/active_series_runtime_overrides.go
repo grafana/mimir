@@ -4,15 +4,18 @@ package ingester
 
 // ActiveSeriesCustomTrackersOverrides holds the definition of custom tracking rules.
 type ActiveSeriesCustomTrackersOverrides struct {
-	Default        *ActiveSeriesMatchers            `yaml:"default"`
-	TenantSpecific map[string]*ActiveSeriesMatchers `yaml:"tenant_specific"`
+	Default        *ActiveSeriesCustomTrackersConfig            `yaml:"default"`
+	TenantSpecific map[string]*ActiveSeriesCustomTrackersConfig `yaml:"tenant_specific"`
 }
 
 func (asmo *ActiveSeriesCustomTrackersOverrides) MatchersForUser(userID string) *ActiveSeriesMatchers {
 	if tenantspecific, ok := asmo.TenantSpecific[userID]; ok {
-		return tenantspecific
+		return NewActiveSeriesMatchers(tenantspecific)
 	}
-	return asmo.Default
+	if asmo.Default == nil {
+		return nil
+	}
+	return NewActiveSeriesMatchers(asmo.Default)
 }
 
 type ActiveSeriesCustomTrackersOverridesProvider struct {

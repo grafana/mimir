@@ -311,6 +311,7 @@ func makeIntSliceIfNotEmpty(l int, prev []int) []int {
 		if l == 0 {
 			return nil
 		}
+		// The allocation is bigger than the required capacity to save time in cases when the number of matchers are just slightly increasing.
 		return make([]int, l, l*2)
 	}
 

@@ -57,23 +57,23 @@ func TestActiveSeriesCustomTrackersOverridesProvider(t *testing.T) {
 }
 
 func TestMatchersForUser(t *testing.T) {
-	defaultMatchers, err := NewActiveSeriesMatchers(
-		ActiveSeriesCustomTrackersConfig{
-			"foo": `{foo="bar"}`,
-			"bar": `{baz="bar"}`,
-		})
+	safeLabelMatchers := func(source map[string]string) *ActiveSeriesCustomTrackersConfig {
+		m, err := NewActiveSeriesCustomTrackersConfig(source)
+		require.NoError(t, err)
+		return m
+	}
+	defaultMatchers := safeLabelMatchers(map[string]string{
+		"foo": `{foo="bar"}`,
+		"bar": `{baz="bar"}`,
+	})
 
-	require.NoError(t, err)
-	tenantSpecificMatchers, err := NewActiveSeriesMatchers(
-		ActiveSeriesCustomTrackersConfig{
-			"team_a": `{team="team_a"}`,
-			"team_b": `{team="team_b"}`,
-		},
-	)
-	require.NoError(t, err)
+	tenantSpecificMatchers := safeLabelMatchers(map[string]string{
+		"team_a": `{team="team_a"}`,
+		"team_b": `{team="team_b"}`,
+	})
 	activeSeriesCustomTrackersOverrides := &ActiveSeriesCustomTrackersOverrides{
 		Default: defaultMatchers,
-		TenantSpecific: map[string]*ActiveSeriesMatchers{
+		TenantSpecific: map[string]*ActiveSeriesCustomTrackersConfig{
 			"1": tenantSpecificMatchers,
 		},
 	}
@@ -83,11 +83,11 @@ func TestMatchersForUser(t *testing.T) {
 	}{
 		"User with no override should return default": {
 			userID:   "5",
-			expected: defaultMatchers,
+			expected: NewActiveSeriesMatchers(defaultMatchers),
 		},
 		"User with override should return override": {
 			userID:   "1",
-			expected: tenantSpecificMatchers,
+			expected: NewActiveSeriesMatchers(tenantSpecificMatchers),
 		},
 	}
 	for name, testData := range tests {
