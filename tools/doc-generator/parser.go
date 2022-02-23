@@ -165,8 +165,8 @@ func parseConfig(block *configBlock, cfg interface{}, flags map[uintptr]*flag.Fl
 			continue
 		}
 
-		// Recursively re-iterate if it's a struct
-		if field.Type.Kind() == reflect.Struct {
+		// Recursively re-iterate if it's a struct and
+		if _, custom := getCustomFieldType(field.Type); field.Type.Kind() == reflect.Struct && !custom {
 			// Check whether the sub-block is a root config block
 			rootName, rootDesc, isRoot := isRootBlock(field.Type)
 
@@ -280,20 +280,8 @@ func getFieldName(field reflect.StructField) string {
 }
 
 func getFieldType(t reflect.Type) (string, error) {
-	// Handle custom data types used in the config
-	switch t.String() {
-	case reflect.TypeOf(&url.URL{}).String():
-		return "url", nil
-	case reflect.TypeOf(time.Duration(0)).String():
-		return "duration", nil
-	case reflect.TypeOf(flagext.StringSliceCSV{}).String():
-		return "string", nil
-	case reflect.TypeOf(flagext.CIDRSliceCSV{}).String():
-		return "string", nil
-	case reflect.TypeOf([]*relabel.Config{}).String():
-		return "relabel_config...", nil
-	case reflect.TypeOf(ingester.ActiveSeriesCustomTrackersConfigValue{}).String():
-		return "map of tracker name (string) to matcher (string)", nil
+	if custom, ok := getCustomFieldType(t); ok {
+		return custom, nil
 	}
 
 	// Fallback to auto-detection of built-in data types
@@ -344,6 +332,26 @@ func getFieldType(t reflect.Type) (string, error) {
 
 	default:
 		return "", fmt.Errorf("unsupported data type %s", t.Kind())
+	}
+}
+
+func getCustomFieldType(t reflect.Type) (string, bool) {
+	// Handle custom data types used in the config
+	switch t.String() {
+	case reflect.TypeOf(&url.URL{}).String():
+		return "url", true
+	case reflect.TypeOf(time.Duration(0)).String():
+		return "duration", true
+	case reflect.TypeOf(flagext.StringSliceCSV{}).String():
+		return "string", true
+	case reflect.TypeOf(flagext.CIDRSliceCSV{}).String():
+		return "string", true
+	case reflect.TypeOf([]*relabel.Config{}).String():
+		return "relabel_config...", true
+	case reflect.TypeOf(ingester.ActiveSeriesCustomTrackersConfig{}).String():
+		return "map of tracker name (string) to matcher (string)", true
+	default:
+		return "", false
 	}
 }
 

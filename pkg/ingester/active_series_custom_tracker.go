@@ -11,11 +11,21 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 )
 
-type ActiveSeriesCustomTrackersConfigValue map[string]labelsMatchers
-
+// ActiveSeriesCustomTrackersConfig configures active series custom trackers.
+// It can be set using a flag, or parsed from yaml.
 type ActiveSeriesCustomTrackersConfig struct {
-	config ActiveSeriesCustomTrackersConfigValue `yaml:"active_series_custom_trackers"`
+	config map[string]labelsMatchers
 	key    string
+}
+
+// ExampleDoc provides an example doc for this config, especially valuable since it's custom-unmarshaled.
+func (c *ActiveSeriesCustomTrackersConfig) ExampleDoc() (comment string, yaml interface{}) {
+	return `The following configuration will count the active series coming from dev and prod namespaces for each tenant` +
+			` and label them as {name="dev"} and {name="prod"} in the cortex_ingester_active_series_custom_tracker metric.`,
+		map[string]string{
+			"dev":  `{namespace=~"dev-.*"}`,
+			"prod": `{namespace=~"prod-.*"}`,
+		}
 }
 
 func (c *ActiveSeriesCustomTrackersConfig) String() string {
@@ -112,15 +122,6 @@ func NewActiveSeriesCustomTrackersConfig(m map[string]string) (*ActiveSeriesCust
 	}
 	c.key = c.String()
 	return &c, nil
-}
-
-func (c *ActiveSeriesCustomTrackersConfigValue) ExampleDoc() (comment string, yaml interface{}) {
-	return `The following configuration will count the active series coming from dev and prod namespaces for each tenant` +
-			` and label them as {name="dev"} and {name="prod"} in the cortex_ingester_active_series_custom_tracker metric.`,
-		map[string]string{
-			"dev":  `{namespace=~"dev-.*"}`,
-			"prod": `{namespace=~"prod-.*"}`,
-		}
 }
 
 func NewActiveSeriesMatchers(matchersConfig *ActiveSeriesCustomTrackersConfig) *ActiveSeriesMatchers {

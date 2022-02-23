@@ -794,24 +794,19 @@ ring:
 # CLI flag: -ingester.active-series-metrics-idle-timeout
 [active_series_metrics_idle_timeout: <duration> | default = 10m]
 
-# Additional custom trackers for active metrics. If there are active series
-# matching a provided matcher (map value), the count will be exposed in the
-# custom trackers metric labeled using the tracker name (map key). Zero valued
-# counts are not exposed (and removed when they go back to zero).
-active_series_custom_trackers:
-  # Additional active series metrics, matching the provided matchers. Matchers
-  # should be in form <name>:<matcher>, like 'foobar:{foo="bar"}'. Multiple
-  # matchers can be provided either providing the flag multiple times or
-  # providing multiple semicolon-separated values to a single flag.
-  # Example:
-  #   The following configuration will count the active series coming from dev
-  #   and prod namespaces for each tenant and label them as {name="dev"} and
-  #   {name="prod"} in the cortex_ingester_active_series_custom_tracker metric.
-  #   active_series_custom_trackers:
-  #       dev: '{namespace=~"dev-.*"}'
-  #       prod: '{namespace=~"prod-.*"}'
-  # CLI flag: -ingester.active-series-custom-trackers
-  [active_series_custom_trackers: <map of tracker name (string) to matcher (string)> | default = ]
+# (advanced) Additional custom trackers for active metrics. If there are active
+# series matching a provided matcher (map value), the count will be exposed in
+# the custom trackers metric labeled using the tracker name (map key). Zero
+# valued counts are not exposed (and removed when they go back to zero).
+# Example:
+#   The following configuration will count the active series coming from dev and
+#   prod namespaces for each tenant and label them as {name="dev"} and
+#   {name="prod"} in the cortex_ingester_active_series_custom_tracker metric.
+#   active_series_custom_trackers:
+#       dev: '{namespace=~"dev-.*"}'
+#       prod: '{namespace=~"prod-.*"}'
+# CLI flag: -ingester.active-series-custom-trackers
+[active_series_custom_trackers: <map of tracker name (string) to matcher (string)> | default = ]
 
 # (experimental) Period with which to update per-user max exemplars.
 # CLI flag: -ingester.exemplars-update-period
