@@ -11,14 +11,19 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 )
 
-type ActiveSeriesCustomTrackersConfig map[string]labelsMatchers
+type ActiveSeriesCustomTrackersConfigValue map[string]labelsMatchers
+
+type ActiveSeriesCustomTrackersConfig struct {
+	config ActiveSeriesCustomTrackersConfigValue `yaml:"active_series_custom_trackers"`
+	key    string
+}
 
 func (c *ActiveSeriesCustomTrackersConfig) String() string {
-	if *c == nil {
+	if (*c).config == nil {
 		return ""
 	}
-	keys := make([]string, len(*c))
-	for name := range *c {
+	keys := make([]string, len((*c).config))
+	for name := range (*c).config {
 		keys = append(keys, name)
 	}
 	// The map is traversed in an ordered fashion to make String representaton stable and comparable.
@@ -27,7 +32,7 @@ func (c *ActiveSeriesCustomTrackersConfig) String() string {
 	var sb strings.Builder
 	for _, name := range keys {
 		sb.WriteString(name)
-		for _, labelMatcher := range (*c)[name] {
+		for _, labelMatcher := range ((*c).config)[name] {
 			sb.WriteString(labelMatcher.String())
 		}
 	}
@@ -38,8 +43,9 @@ func (c *ActiveSeriesCustomTrackersConfig) Set(s string) error {
 	if strings.TrimSpace(s) == "" {
 		return nil
 	}
-	if *c == nil {
+	if (*c).config == nil {
 		*c = ActiveSeriesCustomTrackersConfig{}
+		(*c).config = map[string]labelsMatchers{}
 	}
 
 	source := map[string]string{}
@@ -62,13 +68,14 @@ func (c *ActiveSeriesCustomTrackersConfig) Set(s string) error {
 	if err != nil {
 		return err
 	}
-	for name, matchers := range *config {
+	for name, matchers := range (*config).config {
 		// This check is when the value comes from multiple flags
-		if _, ok := (*c)[name]; ok {
+		if _, ok := (*c).config[name]; ok {
 			return fmt.Errorf("matcher %q for active series custom trackers is provided twice", name)
 		}
-		(*c)[name] = matchers
+		(*c).config[name] = matchers
 	}
+	(*c).key = (*c).String()
 
 	return nil
 }
@@ -91,6 +98,7 @@ func (c *ActiveSeriesCustomTrackersConfig) UnmarshalYAML(unmarshal func(interfac
 
 func NewActiveSeriesCustomTrackersConfig(m map[string]string) (*ActiveSeriesCustomTrackersConfig, error) {
 	c := ActiveSeriesCustomTrackersConfig{}
+	c.config = map[string]labelsMatchers{}
 	for name, matcher := range m {
 		sm, err := amlabels.ParseMatchers(matcher)
 		if err != nil {
@@ -100,12 +108,13 @@ func NewActiveSeriesCustomTrackersConfig(m map[string]string) (*ActiveSeriesCust
 		for i, m := range sm {
 			matchers[i] = amlabelMatcherToProm(m)
 		}
-		c[name] = matchers
+		c.config[name] = matchers
 	}
+	c.key = c.String()
 	return &c, nil
 }
 
-func (c *ActiveSeriesCustomTrackersConfig) ExampleDoc() (comment string, yaml interface{}) {
+func (c *ActiveSeriesCustomTrackersConfigValue) ExampleDoc() (comment string, yaml interface{}) {
 	return `The following configuration will count the active series coming from dev and prod namespaces for each tenant` +
 			` and label them as {name="dev"} and {name="prod"} in the cortex_ingester_active_series_custom_tracker metric.`,
 		map[string]string{
@@ -116,24 +125,17 @@ func (c *ActiveSeriesCustomTrackersConfig) ExampleDoc() (comment string, yaml in
 
 func NewActiveSeriesMatchers(matchersConfig *ActiveSeriesCustomTrackersConfig) *ActiveSeriesMatchers {
 	asm := &ActiveSeriesMatchers{}
-	for name, matchers := range *matchersConfig {
+	for name, matchers := range (*matchersConfig).config {
 		asm.matchers = append(asm.matchers, matchers)
 		asm.names = append(asm.names, name)
 	}
 	// Sort the result to make it deterministic for tests.
 	// Order doesn't matter for the functionality as long as the order remains consistent during the execution of the program.
 	sort.Sort(asm)
-
-	// ActiveSeriesCustomTrackersConfig String is ordering keys to be useful for comparison.
-	asm.key = matchersConfig.String()
+	// ActiveSeriesCustomTrackersConfig.key is suitable for fast equality checks.
+	asm.key = matchersConfig.key
 
 	return asm
-}
-
-type ActiveSeriesMatchers struct {
-	key      string
-	names    []string
-	matchers []labelsMatchers
 }
 
 func (asm *ActiveSeriesMatchers) Equals(other *ActiveSeriesMatchers) bool {
@@ -141,6 +143,12 @@ func (asm *ActiveSeriesMatchers) Equals(other *ActiveSeriesMatchers) bool {
 		return asm == other
 	}
 	return asm.key == other.key
+}
+
+type ActiveSeriesMatchers struct {
+	key      string
+	names    []string
+	matchers []labelsMatchers
 }
 
 func (asm *ActiveSeriesMatchers) MatcherNames() []string {

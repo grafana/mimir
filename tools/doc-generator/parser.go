@@ -292,7 +292,7 @@ func getFieldType(t reflect.Type) (string, error) {
 		return "string", nil
 	case reflect.TypeOf([]*relabel.Config{}).String():
 		return "relabel_config...", nil
-	case reflect.TypeOf(ingester.ActiveSeriesCustomTrackersConfig{}).String():
+	case reflect.TypeOf(ingester.ActiveSeriesCustomTrackersConfigValue{}).String():
 		return "map of tracker name (string) to matcher (string)", nil
 	}
 
