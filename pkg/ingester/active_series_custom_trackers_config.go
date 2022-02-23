@@ -153,11 +153,14 @@ type ActiveSeriesCustomTrackersOverrides struct {
 	TenantSpecific map[string]*ActiveSeriesCustomTrackersConfig `yaml:"tenant_specific"`
 }
 
-func (asmo *ActiveSeriesCustomTrackersOverrides) MatchersConfigForUser(userID string) *ActiveSeriesCustomTrackersConfig {
+func (asmo *ActiveSeriesCustomTrackersOverrides) MatchersForUser(userID string) *ActiveSeriesMatchers {
 	if tenantspecific, ok := asmo.TenantSpecific[userID]; ok {
-		return tenantspecific
+		return NewActiveSeriesMatchers(tenantspecific)
 	}
-	return asmo.Default
+	if asmo.Default == nil {
+		return nil
+	}
+	return NewActiveSeriesMatchers(asmo.Default)
 }
 
 type ActiveSeriesCustomTrackersOverridesProvider struct {

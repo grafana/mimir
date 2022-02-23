@@ -474,13 +474,13 @@ func (i *Ingester) updateLoop(ctx context.Context) error {
 	}
 }
 
-func (i *Ingester) getActiveSeriesMatchersConfig(userID string) *ActiveSeriesCustomTrackersConfig {
-	var matchers *ActiveSeriesCustomTrackersConfig
+func (i *Ingester) getActiveSeriesMatchers(userID string) *ActiveSeriesMatchers {
+	var matchers *ActiveSeriesMatchers
 	if cfg := i.cfg.ActiveSeriesCustomTrackersOverrides.Get(); cfg != nil {
-		matchers = cfg.MatchersConfigForUser(userID)
+		matchers = cfg.MatchersForUser(userID)
 	}
 	if matchers == nil {
-		matchers = i.activeSeriesMatcher.cfg
+		matchers = &i.activeSeriesMatcher
 	}
 	return matchers
 }
@@ -498,9 +498,9 @@ func (i *Ingester) updateActiveSeries(now time.Time) {
 			continue
 		}
 
-		newMatchersConfig := i.getActiveSeriesMatchersConfig(userID)
-		if newMatchersConfig.String() != userDB.activeSeries.asm.cfg.String() {
-			i.replaceMatchers(NewActiveSeriesMatchers(newMatchersConfig), userDB, now)
+		newMatchers := i.getActiveSeriesMatchers(userID)
+		if !newMatchers.Equals(userDB.activeSeries.CurrentMatchers()) {
+			i.replaceMatchers(newMatchers, userDB, now)
 		}
 
 		userDB.activeSeries.Purge(purgeTime)
@@ -1469,11 +1469,11 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 	userLogger := util_log.WithUserID(userID, i.logger)
 
 	blockRanges := i.cfg.BlocksStorageConfig.TSDB.BlockRanges.ToMilliseconds()
-	newMatchersConfig := i.getActiveSeriesMatchersConfig(userID)
+	newMatchers := i.getActiveSeriesMatchers(userID)
 
 	userDB := &userTSDB{
 		userID:              userID,
-		activeSeries:        NewActiveSeries(NewActiveSeriesMatchers(newMatchersConfig)),
+		activeSeries:        NewActiveSeries(newMatchers),
 		seriesInMetric:      newMetricCounter(i.limiter, i.cfg.getIgnoreSeriesLimitForMetricNamesMap()),
 		ingestedAPISamples:  util_math.NewEWMARate(0.2, i.cfg.RateUpdatePeriod),
 		ingestedRuleSamples: util_math.NewEWMARate(0.2, i.cfg.RateUpdatePeriod),
