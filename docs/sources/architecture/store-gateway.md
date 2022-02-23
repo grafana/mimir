@@ -34,7 +34,7 @@ For more information about the index-header, please refer to [Binary index-heade
 
 ### Bucket index disabled
 
-At startup **store-gateways** iterate over the entire long-term storage to discover blocks to download the `meta.json` and index-header for each block, skipping blocks that don't belong to users in their shard. During this initial bucket synchronization phase, the store-gateway `/ready` readiness probe endpoint will fail.
+At startup **store-gateways** iterate over the entire long-term storage to discover blocks to download the `meta.json` metadata file and index-header for each block, skipping blocks that don't belong to users in their shard. During this initial bucket synchronization phase, the store-gateway `/ready` readiness probe endpoint will fail.
 
 Store-gateways periodically scan the long-term storage to discover new or deleted blocks.
 New blocks can be uploaded by [ingesters]({{< relref "./ingester.md" >}}) or by the [compactor]({{< relref "./compactor.md" >}}).
