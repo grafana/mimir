@@ -13,6 +13,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirtool/commands"
 	"github.com/grafana/mimir/pkg/mimirtool/version"
+	mimirversion "github.com/grafana/mimir/pkg/util/version"
 )
 
 var (
@@ -44,9 +45,8 @@ func main() {
 	bucketValidateCommand.Register(app, envVars)
 
 	app.Command("version", "Get the version of the mimirtool CLI").Action(func(k *kingpin.ParseContext) error {
-		fmt.Print(version.Template)
-		version.CheckLatest()
-
+		fmt.Fprintln(os.Stdout, mimirversion.Print("Mimirtool"))
+		version.CheckLatest(mimirversion.Version)
 		return nil
 	})
 
