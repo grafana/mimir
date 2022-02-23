@@ -36,7 +36,7 @@ Configuring AWS S3 SSE globally requires setting SSE for each of the following s
 
 To see all AWS S3 SSE configuration parameters, refer to [sse]({{<relref "../configuration/reference-configuration-parameters.md#sse" >}}).
 
-A snippet of a Grafana Mimir configuration file that has AWS S3 SSE with an Amazon S3-managed key configured would look as follows:
+A snippet of a Grafana Mimir configuration file that has AWS S3 SSE with an Amazon S3-managed key configured looks as follows:
 
 ```yaml
 alertmanager_storage:
@@ -77,7 +77,7 @@ To configure AWS S3 SSE for a specific tenant:
    For more information about supported runtime configuration, refer to [Runtime configuration file]({{<relref "../configuration/about-grafana-mimir-arguments.md#runtime-configuration-file" >}})
 1. In the runtime configuration file, set the `overrides.<TENANT>` SSE settings.
 
-   A partial runtime configuration file that has AWS S3 SSE with Amazon S3-managed keys set for a tenant called "tenant-a" would look as follows:
+   A partial runtime configuration file that has AWS S3 SSE with Amazon S3-managed keys set for a tenant called "tenant-a" looks as follows:
 
    ```yaml
    overrides:
