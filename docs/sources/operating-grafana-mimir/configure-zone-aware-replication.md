@@ -23,8 +23,8 @@ With zone-aware replication enabled, Grafana Mimir guarantees data replication t
 Grafana Mimir supports zone-aware replication for each of:
 
 - [Alertmanager alerts](#configuring-alertmanager-alerts-replication)
-- [ingester time series](#configuring-ingester-time-series-replication)
-- [store-gateway blocks](#configuring-store-gateway-blocks-replication)
+- [Ingester time series](#configuring-ingester-time-series-replication)
+- [Store-gateway blocks](#configuring-store-gateway-blocks-replication)
 
 ## Configuring Alertmanager alerts replication
 
