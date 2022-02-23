@@ -167,6 +167,8 @@ $(dir $(1))$(UPTODATE): $(1)
 endef
 $(foreach exe, $(EXES), $(eval $(call dep_exe, $(exe))))
 
+tools/validate-tsdb-index/validate-tsdb-index: tools/tsdb-index-health/tsdb-index-health
+
 # Manually declared dependencies And what goes into each exe
 pkg/mimirpb/mimir.pb.go: pkg/mimirpb/mimir.proto
 pkg/ingester/client/ingester.pb.go: pkg/ingester/client/ingester.proto
