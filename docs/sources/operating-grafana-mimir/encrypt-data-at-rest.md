@@ -1,10 +1,10 @@
 ---
-title: "Encrypt data at rest"
+title: "Encrypting data at rest"
 description: "How to configure object storage encryption."
 weight: 10
 ---
 
-# Encrypt data at rest
+# Encrypting data at rest
 
 Grafana Mimir supports encrypting data at rest in object storage using server-side encryption (SSE).
 Configuration of SSE depends on your storage backend.
@@ -17,7 +17,7 @@ Grafana Mimir requires no additional configuration to use GCS with SSE.
 
 ## AWS S3
 
-To configure SSE with AWS S3 requires configuration in the Grafana Mimir S3 client.
+Configuring SSE with AWS S3 requires configuration in the Grafana Mimir S3 client.
 The S3 client is only used when the storage backend is `s3`.
 Grafana Mimir supports the following AWS S3 SSE modes:
 
@@ -26,9 +26,9 @@ Grafana Mimir supports the following AWS S3 SSE modes:
 
 You can configure AWS S3 SSE globally or for specific tenants.
 
-### Configure AWS S3 SSE globally
+### Configuring AWS S3 SSE globally
 
-To configure AWS S3 SSE globally requires setting SSE for each of the following storage backends:
+Configuring AWS S3 SSE globally requires setting SSE for each of the following storage backends:
 
 - [alertmanager_storage]({{<relref "../configuration/reference-configuration-parameters.md#alertmanager_storage" >}})
 - [blocks_storage]({{<relref "../configuration/reference-configuration-parameters.md#blocks_storage" >}})
@@ -56,7 +56,7 @@ ruler_storage:
       type: "SSE-S3"
 ```
 
-### Configure AWS S3 SSE for a specific tenant
+### Configuring AWS S3 SSE for a specific tenant
 
 The following settings can be overridden for each tenant:
 
