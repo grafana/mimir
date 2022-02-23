@@ -136,7 +136,7 @@ func newActiveSeriesCustomTrackersConfig(m map[string]string) (c ActiveSeriesCus
 }
 
 func NewActiveSeriesMatchers(matchersConfig *ActiveSeriesCustomTrackersConfig) *ActiveSeriesMatchers {
-	asm := &ActiveSeriesMatchers{}
+	asm := &ActiveSeriesMatchers{cfg: matchersConfig}
 	for name, matchers := range (*matchersConfig).config {
 		asm.matchers = append(asm.matchers, matchers)
 		asm.names = append(asm.names, name)
@@ -144,9 +144,6 @@ func NewActiveSeriesMatchers(matchersConfig *ActiveSeriesCustomTrackersConfig) *
 	// Sort the result to make it deterministic for tests.
 	// Order doesn't matter for the functionality as long as the order remains consistent during the execution of the program.
 	sort.Sort(asm)
-	// ActiveSeriesCustomTrackersConfig.key is suitable for fast equality checks.
-	asm.key = matchersConfig.string
-
 	return asm
 }
 
@@ -154,11 +151,11 @@ func (asm *ActiveSeriesMatchers) Equals(other *ActiveSeriesMatchers) bool {
 	if asm == nil || other == nil {
 		return asm == other
 	}
-	return asm.key == other.key
+	return asm.cfg.String() == other.cfg.String()
 }
 
 type ActiveSeriesMatchers struct {
-	key      string
+	cfg      *ActiveSeriesCustomTrackersConfig
 	names    []string
 	matchers []labelsMatchers
 }
