@@ -23,7 +23,7 @@ At startup **store-gateways** fetch the [bucket index]({{< relref "../blocks-sto
 
 For more information about the bucket index, please refer to [bucket index documentation]({{< relref "../blocks-storage/bucket-index.md" >}}).
 
-Store-gateways periodically scan the long-term storage to discover new or deleted blocks.
+Store-gateways periodically re-download the bucket index to get an updated view over the long-term storage and discover new or deleted blocks.
 New blocks can be uploaded by [ingesters]({{< relref "./ingester.md" >}}) or by the [compactor]({{< relref "./compactor.md" >}}).
 The compactor additionally may have deleted blocks or marked others for deletion since the last scan.
 The frequency at which this occurs is configured with the `-blocks-storage.bucket-store.sync-interval` flag.
