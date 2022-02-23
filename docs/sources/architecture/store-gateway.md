@@ -35,12 +35,7 @@ For more information about the index-header, please refer to [Binary index-heade
 
 ### Bucket index disabled
 
-At startup **store-gateways** iterate over the entire long-term storage to discover blocks to download the `meta.json` metadata file and index-header for each block, skipping blocks that don't belong to users in their shard. During this initial bucket synchronization phase, the store-gateway `/ready` readiness probe endpoint will fail.
-
-Store-gateways periodically scan the long-term storage to discover new or deleted blocks.
-New blocks can be uploaded by [ingesters]({{< relref "./ingester.md" >}}) or by the [compactor]({{< relref "./compactor.md" >}}).
-The compactor additionally may have deleted blocks or marked others for deletion since the last scan.
-The frequency at which this occurs is configured with the `-blocks-storage.bucket-store.sync-interval` flag.
+When bucket index is disabled, the overall workflow is the same, except that the discovery of blocks at startup and during the periodic checks mean iterating over the entire long-term storage to download `meta.json` metadata files while filtering out blocks that don't belong to tenants in their shard.
 
 ## Blocks sharding and replication
 
