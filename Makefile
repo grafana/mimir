@@ -196,6 +196,8 @@ $(dir $(1))$(UPTODATE): $(1)
 endef
 $(foreach exe, $(EXES), $(eval $(call dep_exe, $(exe))))
 
+tools/validate-tsdb-index/validate-tsdb-index: tools/tsdb-index-health/tsdb-index-health
+
 define dep_exe_race
 $(1): $(dir $(1))/main.go $(GO_FILES) protos
 $(dir $(1))$(UPTODATE_RACE): $(1)

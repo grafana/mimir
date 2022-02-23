@@ -15,7 +15,7 @@ import (
 func main() {
 	flag.Parse()
 	if flag.NArg() == 0 {
-		fmt.Fprintf(os.Stderr, "Usage: check-out-of-order <dir>")
+		fmt.Fprintf(os.Stderr, "Usage: check-out-of-order <dir>\n")
 		os.Exit(1)
 	}
 
