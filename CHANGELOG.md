@@ -2,6 +2,7 @@
 
 ## Grafana Mimir - main / unreleased
 
+* [BUGFIX] Query-frontend: fixed bad querier status code mapping with query-sharding enabled. #1227
 
 ## 2.0.0-rc.0
 
