@@ -8,7 +8,7 @@ weight: 10
 
 The querier component handles queries using the [PromQL](https://prometheus.io/docs/prometheus/latest/querying/basics/) query language to fetch time series and labels on the read path.
 
-The querier uses the [store-gateway]({{< relref "./store-gateway.md" >}}) service to query the [long-term storage]({{<relref "./_index.md#long-term-storage">}}) and the [ingester]({{< relref "./ingester.md">}}) service to query data under way on the write path.
+The querier uses the [store-gateway]({{< relref "./store-gateway.md" >}}) service to query the [long-term storage]({{< relref "./_index.md#long-term-storage" >}}) and the [ingester]({{< relref "./ingester.md" >}}) service to query data under way on the write path.
 
 The querier is **stateless**.
 
@@ -64,11 +64,11 @@ The querier supports the following caches:
 
 - [Metadata cache](#metadata-cache)
 
-Caching is optional, but **highly recommended** in a production environment. Please also check out the [production tips]({{< relref "../operating-grafana-mimir/blocks-storage/production-tips.md#caching">}}) for more information about configuring the cache.
+Caching is optional, but **highly recommended** in a production environment. Please also check out the [production tips]({{< relref "../operating-grafana-mimir/blocks-storage/production-tips.md#caching" >}}) for more information about configuring the cache.
 
 ### Metadata cache
 
-[Store-gateway]({{< relref "./store-gateway.md">}}) and querier can use memcached for caching bucket metadata:
+[Store-gateway]({{< relref "./store-gateway.md" >}}) and querier can use memcached for caching bucket metadata:
 
 - List of tenants
 - List of blocks per tenant
@@ -87,4 +87,4 @@ _The same memcached backend cluster should be shared between store-gateways and 
 
 ## Querier configuration
 
-Refer to the [querier]({{< relref "../configuration/reference-configuration-parameters.md#querier">}}) block section for details of querier-related configuration.
+Refer to the [querier]({{< relref "../configuration/reference-configuration-parameters.md#querier" >}}) block section for details of querier-related configuration.
