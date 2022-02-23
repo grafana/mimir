@@ -703,6 +703,7 @@ _Changes since `grafana/cortex-jsonnet` `1.9.0`._
 * [BUGFIX] Fixed "Instant queries / sec" in "Cortex / Reads" dashboard. #445
 * [BUGFIX] Fixed and added missing KV store panels in Writes, Reads, Ruler and Compactor dashboards. #448
 * [BUGFIX] Fixed Alertmanager dashboard when alertmanager is running as part of single binary. #1064
+* [BUGFIX] Fixed Ruler dashboard when ruler is running as part of single binary. #1260
 
 ### Jsonnet
 
