@@ -29,9 +29,10 @@ static_resources:
                             timeout: 15s
 
                             # Specifies the cluster that requests will be mirrored to. The performances and availability of
-                            # the secondary cluster have no impact on the requests to the primary one. The response to the
-                            # client will always be the one from the primary one. The requests from Envoy to the secondary
-                            # cluster are "fire and forget".
+                            # the secondary cluster have no impact on the requests to the primary one. The performance
+                            # and availability of the secondary cluster have no impact on the requests to the primary
+                            # one. The response to the client will always be the one from the primary one. In this sense,
+                            # the requests from Envoy to the secondary cluster are "fire and forget".
                             request_mirror_policies:
                               - cluster: mimir_secondary
                 http_filters:
