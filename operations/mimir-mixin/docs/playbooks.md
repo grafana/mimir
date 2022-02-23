@@ -621,13 +621,13 @@ How to **fix**:
 
 ### MimirAllocatingTooMuchMemory
 
-This alert fires when an ingester memory utilization is getting closer to the limit.
+This alert fires when ingester memory utilization is getting too close to the limit.
 
 How it **works**:
 
-- Mimir ingesters are a stateful service
+- Mimir ingesters are stateful services
 - Having 2+ ingesters `OOMKilled` may cause a cluster outage
-- Ingester memory baseline usage is primarily influenced by memory allocated by the process (mostly go heap) and mmap-ed files (used by TSDB)
+- Ingester memory baseline usage is primarily influenced by memory allocated by the process (mostly Go heap) and mmap-ed files (used by TSDB)
 - Ingester memory short spikes are primarily influenced by queries and TSDB head compaction into new blocks (occurring every 2h)
 - A pod gets `OOMKilled` once its working set memory reaches the configured limit, so it's important to prevent ingesters' memory utilization (working set memory) from getting close to the limit (we need to keep at least 30% room for spikes due to queries)
 
@@ -640,7 +640,7 @@ How to **fix**:
     ```
   - Restarting an ingester typically reduces the memory allocated by mmap-ed files. After the restart, ingester may allocate this memory again over time, but it may give more time while working on a longer term solution
 - Check the `Mimir / Writes Resources` dashboard to see if the number of series per ingester is above the target (1.5M). If so:
-  - Scale up ingesters
+  - Scale up ingesters; you can use e.g. the `Mimir / Mimir Scaling` dashboard for reference, in order to determine the needed amount of ingesters (also keep in mind that each ingester should handle ~1.5 million series, and the series will be duplicated across three instances)
   - Memory is expected to be reclaimed at the next TSDB head compaction (occurring every 2h)
 
 ### MimirGossipMembersMismatch
