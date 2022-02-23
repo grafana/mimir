@@ -57,26 +57,22 @@ func TestActiveSeriesCustomTrackersOverridesProvider(t *testing.T) {
 }
 
 func TestMatchersForUser(t *testing.T) {
-	safeLabelMatchers := func(source map[string]string) *ActiveSeriesCustomTrackersConfig {
-		m, err := NewActiveSeriesCustomTrackersConfig(source)
-		require.NoError(t, err)
-		return m
-	}
-	defaultMatchers := safeLabelMatchers(map[string]string{
+	defaultMatchers := mustNewActiveSeriesCustomTrackersConfig(t, map[string]string{
 		"foo": `{foo="bar"}`,
 		"bar": `{baz="bar"}`,
 	})
-
-	tenantSpecificMatchers := safeLabelMatchers(map[string]string{
+	tenantSpecificMatchers := mustNewActiveSeriesCustomTrackersConfig(t, map[string]string{
 		"team_a": `{team="team_a"}`,
 		"team_b": `{team="team_b"}`,
 	})
+
 	activeSeriesCustomTrackersOverrides := &ActiveSeriesCustomTrackersOverrides{
 		Default: defaultMatchers,
 		TenantSpecific: map[string]*ActiveSeriesCustomTrackersConfig{
 			"1": tenantSpecificMatchers,
 		},
 	}
+
 	tests := map[string]struct {
 		userID   string
 		expected *ActiveSeriesMatchers

@@ -15,7 +15,7 @@ import (
 // It can be set using a flag, or parsed from yaml.
 type ActiveSeriesCustomTrackersConfig struct {
 	config map[string]labelsMatchers
-	key    string
+	string string
 }
 
 // ExampleDoc provides an example doc for this config, especially valuable since it's custom-unmarshaled.
@@ -29,65 +29,81 @@ func (c *ActiveSeriesCustomTrackersConfig) ExampleDoc() (comment string, yaml in
 }
 
 func (c *ActiveSeriesCustomTrackersConfig) String() string {
-	if (*c).config == nil {
+	return c.string
+}
+
+func activeSeriesCustomTrackersConfigString(cfg map[string]labelsMatchers) string {
+	if len(cfg) == 0 {
 		return ""
 	}
-	keys := make([]string, len((*c).config))
-	for name := range (*c).config {
+
+	keys := make([]string, len(cfg))
+	for name := range cfg {
 		keys = append(keys, name)
 	}
-	// The map is traversed in an ordered fashion to make String representaton stable and comparable.
+	// The map is traversed in an ordered fashion to make String representation stable and comparable.
 	sort.Strings(keys)
 
 	var sb strings.Builder
 	for _, name := range keys {
 		sb.WriteString(name)
-		for _, labelMatcher := range ((*c).config)[name] {
+		for _, labelMatcher := range cfg[name] {
 			sb.WriteString(labelMatcher.String())
 		}
 	}
+
 	return sb.String()
 }
 
 func (c *ActiveSeriesCustomTrackersConfig) Set(s string) error {
-	if strings.TrimSpace(s) == "" {
-		return nil
-	}
-	if (*c).config == nil {
-		*c = ActiveSeriesCustomTrackersConfig{}
-		(*c).config = map[string]labelsMatchers{}
+	f, err := activeSeriesCustomTrackerFlagValueToMap(s)
+	if err != nil {
+		return err
 	}
 
+	nc, err := newActiveSeriesCustomTrackersConfig(f)
+	if err != nil {
+		return err
+	}
+
+	if len(c.config) == 0 {
+		// First flag, just set whatever we parsed.
+		// This includes an updated string.
+		*c = nc
+		return nil
+	}
+
+	// Not the first flag, merge checking for duplications.
+	for name := range nc.config {
+		if _, ok := c.config[name]; ok {
+			return fmt.Errorf("matcher %q for active series custom trackers is provided more than once", name)
+		}
+		c.config[name] = nc.config[name]
+	}
+
+	// Recalculate the string after merging.
+	c.string = activeSeriesCustomTrackersConfigString(c.config)
+	return nil
+}
+
+func activeSeriesCustomTrackerFlagValueToMap(s string) (map[string]string, error) {
 	source := map[string]string{}
 	pairs := strings.Split(s, ";")
 	for i, p := range pairs {
 		split := strings.SplitN(p, ":", 2)
 		if len(split) != 2 {
-			return fmt.Errorf("value should be <name>:<matcher>[;<name>:<matcher>]*, but colon was not found in the value %d: %q", i, p)
+			return nil, fmt.Errorf("value should be <name>:<matcher>[;<name>:<matcher>]*, but colon was not found in the value %d: %q", i, p)
 		}
 		name, matcher := strings.TrimSpace(split[0]), strings.TrimSpace(split[1])
 		if len(name) == 0 || len(matcher) == 0 {
-			return fmt.Errorf("semicolon-separated values should be <name>:<matcher>, but one of the sides was empty in the value %d: %q", i, p)
+			return nil, fmt.Errorf("semicolon-separated values should be <name>:<matcher>, but one of the sides was empty in the value %d: %q", i, p)
 		}
 		if _, ok := source[name]; ok {
-			return fmt.Errorf("matcher %q for active series custom trackers is provided twice", name)
+			return nil, fmt.Errorf("matcher %q for active series custom trackers is provided twice", name)
 		}
 		source[name] = matcher
 	}
-	config, err := NewActiveSeriesCustomTrackersConfig(source)
-	if err != nil {
-		return err
-	}
-	for name, matchers := range (*config).config {
-		// This check is when the value comes from multiple flags
-		if _, ok := (*c).config[name]; ok {
-			return fmt.Errorf("matcher %q for active series custom trackers is provided twice", name)
-		}
-		(*c).config[name] = matchers
-	}
-	(*c).key = (*c).String()
-
-	return nil
+	return source, nil
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -98,21 +114,16 @@ func (c *ActiveSeriesCustomTrackersConfig) UnmarshalYAML(unmarshal func(interfac
 	if err != nil {
 		return err
 	}
-	config, err := NewActiveSeriesCustomTrackersConfig(stringMap)
-	if err != nil {
-		return err
-	}
-	*c = *config
-	return nil
+	*c, err = newActiveSeriesCustomTrackersConfig(stringMap)
+	return err
 }
 
-func NewActiveSeriesCustomTrackersConfig(m map[string]string) (*ActiveSeriesCustomTrackersConfig, error) {
-	c := ActiveSeriesCustomTrackersConfig{}
+func newActiveSeriesCustomTrackersConfig(m map[string]string) (c ActiveSeriesCustomTrackersConfig, err error) {
 	c.config = map[string]labelsMatchers{}
 	for name, matcher := range m {
 		sm, err := amlabels.ParseMatchers(matcher)
 		if err != nil {
-			return nil, fmt.Errorf("can't build active series matcher %s: %w", name, err)
+			return c, fmt.Errorf("can't build active series matcher %s: %w", name, err)
 		}
 		matchers := make(labelsMatchers, len(sm))
 		for i, m := range sm {
@@ -120,8 +131,8 @@ func NewActiveSeriesCustomTrackersConfig(m map[string]string) (*ActiveSeriesCust
 		}
 		c.config[name] = matchers
 	}
-	c.key = c.String()
-	return &c, nil
+	c.string = activeSeriesCustomTrackersConfigString(c.config)
+	return c, nil
 }
 
 func NewActiveSeriesMatchers(matchersConfig *ActiveSeriesCustomTrackersConfig) *ActiveSeriesMatchers {
@@ -134,7 +145,7 @@ func NewActiveSeriesMatchers(matchersConfig *ActiveSeriesCustomTrackersConfig) *
 	// Order doesn't matter for the functionality as long as the order remains consistent during the execution of the program.
 	sort.Sort(asm)
 	// ActiveSeriesCustomTrackersConfig.key is suitable for fast equality checks.
-	asm.key = matchersConfig.key
+	asm.key = matchersConfig.string
 
 	return asm
 }

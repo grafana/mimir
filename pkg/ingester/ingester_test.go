@@ -5146,33 +5146,25 @@ func TestIngesterActiveSeries(t *testing.T) {
 
 	defaultCustomTrackersOverridesProvider := &ActiveSeriesCustomTrackersOverridesProvider{
 		func() *ActiveSeriesCustomTrackersOverrides {
-			defaultConfig, err := NewActiveSeriesCustomTrackersConfig(map[string]string{
-				"bool_is_true":  `{bool="true"}`,
-				"bool_is_false": `{bool="false"}`,
-			})
-			require.NoError(t, err)
-
-			tenantConfig, err := NewActiveSeriesCustomTrackersConfig(map[string]string{
-				"team_a": `{team="a"}`,
-				"team_b": `{team="b"}`,
-			})
-			require.NoError(t, err)
-
 			return &ActiveSeriesCustomTrackersOverrides{
-				Default: defaultConfig,
+				Default: mustNewActiveSeriesCustomTrackersConfig(t, map[string]string{
+					"bool_is_true":  `{bool="true"}`,
+					"bool_is_false": `{bool="false"}`,
+				}),
 				TenantSpecific: map[string]*ActiveSeriesCustomTrackersConfig{
-					"test_user": tenantConfig,
+					"test_user": mustNewActiveSeriesCustomTrackersConfig(t, map[string]string{
+						"team_a": `{team="a"}`,
+						"team_b": `{team="b"}`,
+					}),
 				},
 			}
 		},
 	}
 
-	activeSeriesDefaultConfig, err := NewActiveSeriesCustomTrackersConfig(
-		map[string]string{
-			"bool_is_true_flagbased":  `{bool="true"}`,
-			"bool_is_false_flagbased": `{bool="false"}`,
-		})
-	require.NoError(t, err)
+	activeSeriesDefaultConfig := mustNewActiveSeriesCustomTrackersConfig(t, map[string]string{
+		"bool_is_true_flagbased":  `{bool="true"}`,
+		"bool_is_false_flagbased": `{bool="false"}`,
+	})
 	tests := map[string]struct {
 		test                          func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer)
 		reqs                          []*mimirpb.WriteRequest
@@ -5513,13 +5505,11 @@ func TestIngesterActiveSeries(t *testing.T) {
 		"should revert to flag based default if only tenant-specific overwrite is present": {
 			activeSeriesOverridesProvider: &ActiveSeriesCustomTrackersOverridesProvider{
 				func() *ActiveSeriesCustomTrackersOverrides {
-					tenantConfig, err := NewActiveSeriesCustomTrackersConfig(map[string]string{
-						"team_a": `{team="a"}`,
-						"team_b": `{team="b"}`,
-					})
-					require.NoError(t, err)
 					return &ActiveSeriesCustomTrackersOverrides{TenantSpecific: map[string]*ActiveSeriesCustomTrackersConfig{
-						"test_user": tenantConfig,
+						"test_user": mustNewActiveSeriesCustomTrackersConfig(t, map[string]string{
+							"team_a": `{team="a"}`,
+							"team_b": `{team="b"}`,
+						}),
 					}}
 				},
 			},
@@ -5614,33 +5604,25 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 
 	defaultCustomTrackersOverridesProvider := &ActiveSeriesCustomTrackersOverridesProvider{
 		func() *ActiveSeriesCustomTrackersOverrides {
-			defaultConfig, err := NewActiveSeriesCustomTrackersConfig(map[string]string{
-				"bool_is_true":  `{bool="true"}`,
-				"bool_is_false": `{bool="false"}`,
-			})
-			require.NoError(t, err)
-
-			tenantConfig, err := NewActiveSeriesCustomTrackersConfig(map[string]string{
-				"team_a": `{team="a"}`,
-				"team_b": `{team="b"}`,
-			})
-			require.NoError(t, err)
-
 			return &ActiveSeriesCustomTrackersOverrides{
-				Default: defaultConfig,
+				Default: mustNewActiveSeriesCustomTrackersConfig(t, map[string]string{
+					"bool_is_true":  `{bool="true"}`,
+					"bool_is_false": `{bool="false"}`,
+				}),
 				TenantSpecific: map[string]*ActiveSeriesCustomTrackersConfig{
-					"test_user": tenantConfig,
+					"test_user": mustNewActiveSeriesCustomTrackersConfig(t, map[string]string{
+						"team_a": `{team="a"}`,
+						"team_b": `{team="b"}`,
+					}),
 				},
 			}
 		},
 	}
 
-	activeSeriesDefaultConfig, err := NewActiveSeriesCustomTrackersConfig(
-		map[string]string{
-			"bool_is_true_flagbased":  `{bool="true"}`,
-			"bool_is_false_flagbased": `{bool="false"}`,
-		})
-	require.NoError(t, err)
+	activeSeriesDefaultConfig := mustNewActiveSeriesCustomTrackersConfig(t, map[string]string{
+		"bool_is_true_flagbased":  `{bool="true"}`,
+		"bool_is_false_flagbased": `{bool="false"}`,
+	})
 
 	tests := map[string]struct {
 		test                          func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer)
