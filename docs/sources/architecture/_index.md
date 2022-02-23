@@ -49,7 +49,7 @@ For more information, see [Compactor](./compactor.md) and [Production tips](./pr
 
 ## Read path
 
-The query path receives and executes PromQL queries against all the time series that have been written to Grafana Mimir.
+The read path receives and executes PromQL queries against all the time series that have been written to Grafana Mimir.
 
 [Queriers](./querier.md) and [store-gateways](./store-gateway.md) periodically iterate over the storage bucket to discover blocks recently uploaded by ingesters.
 
