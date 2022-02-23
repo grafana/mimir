@@ -24,7 +24,15 @@ The blocks compaction has two main benefits:
 1. Vertically compact blocks uploaded by all ingesters for the same time range
 2. Horizontally compact blocks with small time ranges into a single larger block
 
+## Scale compactor vertically
 The **vertical compaction** merges all the blocks of a tenant uploaded by ingesters for the same time range (2 hours ranges by default) into a single block, while **de-duplicating samples** that are originally written to N blocks as a result of replication. This step reduces number of blocks for single 2 hours time range from #(number of ingesters) to 1 per tenant.
+
+### Before you begin
+- 
+
+**To scale the compactor vertically**
+
+1. 
 
 The **horizontal compaction** triggers after the vertical compaction and compacts several blocks with adjacent 2-hour range periods into a single larger block. Even though the total size of block chunks doesn't change after this compaction, it may still significantly reduce the size of the index and the index-header kept in memory by store-gateways.
 
