@@ -10,8 +10,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cespare/xxhash/v2"
-	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"go.uber.org/atomic"
 )
@@ -65,25 +63,10 @@ func NewActiveSeries(asm *ActiveSeriesMatchers) *ActiveSeries {
 
 // Updates series timestamp to 'now'. Function is called to make a copy of labels if entry doesn't exist yet.
 func (c *ActiveSeries) UpdateSeries(series labels.Labels, now time.Time, labelsCopy func(labels.Labels) labels.Labels) {
-	fp := fingerprint(series)
+	fp := series.Hash()
 	stripeID := fp % numActiveSeriesStripes
 
 	c.stripes[stripeID].updateSeriesTimestamp(now, series, fp, labelsCopy)
-}
-
-var sep = []byte{model.SeparatorByte}
-
-func fingerprint(series labels.Labels) uint64 {
-	sum := xxhash.New()
-
-	for _, label := range series {
-		_, _ = sum.WriteString(label.Name)
-		_, _ = sum.Write(sep)
-		_, _ = sum.WriteString(label.Value)
-		_, _ = sum.Write(sep)
-	}
-
-	return sum.Sum64()
 }
 
 // Purge removes expired entries from the cache. This function should be called
@@ -157,9 +140,9 @@ func (s *activeSeriesStripe) findEntryForSeries(fingerprint uint64, series label
 	defer s.mu.RUnlock()
 
 	// Check if already exists within the entries.
-	for ix, entry := range s.refs[fingerprint] {
+	for _, entry := range s.refs[fingerprint] {
 		if labels.Equal(entry.lbs, series) {
-			return s.refs[fingerprint][ix].nanos
+			return entry.nanos
 		}
 	}
 
@@ -171,9 +154,10 @@ func (s *activeSeriesStripe) findOrCreateEntryForSeries(fingerprint uint64, seri
 	defer s.mu.Unlock()
 
 	// Check if already exists within the entries.
-	for ix, entry := range s.refs[fingerprint] {
+	// This repeats findEntryForSeries(), but under write lock.
+	for _, entry := range s.refs[fingerprint] {
 		if labels.Equal(entry.lbs, series) {
-			return s.refs[fingerprint][ix].nanos, false
+			return entry.nanos, false
 		}
 	}
 
