@@ -12,9 +12,9 @@ Grafana Mimir stores series in TSDB blocks uploaded in an object storage bucket.
 These blocks are the same as those used by Prometheus and Thanos.
 Each project stores blocks in different places use different block metadata files.
 
-## Configuring remote-write to Grafana Mimir
+## Configuring remote write to Grafana Mimir
 
-TODO
+For configuration of remote write to Grafana Mimir, refer to [Configuring Prometheus remote write]({{<relref "../about-authentication-and-authorization.md#configuring-prometheus-remote-write" >}}).
 
 ## Uploading historic blocks to the Grafana Mimir storage bucket
 
