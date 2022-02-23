@@ -82,17 +82,17 @@ To run `metaconvert`, you need to provide it with the bucket configuration. Use 
 
 1. Use one of the following steps to run `metaconvert` in a dry-run mode that lists blocks for migration.
 
-- Using Docker:
+   - Using Docker:
 
-```bash
-docker run grafana/metaconvert -backend=gcs -gcs.bucket-name=bucket -tenant=anonymous -dry-run
-```
+   ```bash
+   docker run grafana/metaconvert -backend=gcs -gcs.bucket-name=bucket -tenant=anonymous -dry-run
+   ```
 
-- Using a local binary:
+   - Using a local binary:
 
-```bash
-./metaconvert -backend=filesystem -filesystem.dir=/bucket -tenant=anonymous -dry-run
-```
+   ```bash
+   ./metaconvert -backend=filesystem -filesystem.dir=/bucket -tenant=anonymous -dry-run
+   ```
 
-3. Remove the `--dry-run` flag to apply the migration.
-4. Verify the migration by re-running the tool with `--dry-run` and confirming that there is no output.
+1. Remove the `--dry-run` flag to apply the migration.
+1. Verify the migration by re-running the tool with `--dry-run` and confirming that there is no output.
