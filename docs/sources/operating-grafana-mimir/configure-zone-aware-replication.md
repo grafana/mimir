@@ -20,6 +20,10 @@ If an outage affects a whole zone containing multiple replicas at the same time,
 
 With zone-aware replication enabled, Grafana Mimir guarantees data replication to replicas across different zones.
 
+> **Warning:**
+> Ensure that deployment tooling for rolling updates is also zone-aware.
+> Rolling updates should only update replicas in a single zone at any one time.
+
 Grafana Mimir supports zone-aware replication for each of:
 
 - [Alertmanager alerts](#configuring-alertmanager-alerts-replication)
