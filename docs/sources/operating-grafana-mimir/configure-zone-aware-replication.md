@@ -1,54 +1,73 @@
 ---
-title: "Configuring zone aware replication"
+title: "Configuring zone-aware replication"
 description: ""
 weight: 40
 ---
 
-# Configuring zone aware replication
+# Configuring zone-aware replication
 
-Grafana Mimir supports data replication for different services. By default, data is transparently replicated across the whole pool of service instances, regardless of whether these instances are all running within the same availability zone (or data center, or rack) or in different ones.
+Zone-aware replication is the replication of data across failure domains to avoid data loss in a domain outage.
+Grafana Mimir calls failure domains **zones**.
+Types of zones include:
 
-It is completely possible that all the replicas for the given data are held within the same availability zone, even if the Grafana Mimir cluster spans multiple zones. Storing multiple replicas for a given data within the same availability zone poses a risk for data loss if there is an outage affecting various nodes within a zone or a full zone outage.
+- Availability zones
+- Data centers
+- Racks
 
-For this reason, Grafana Mimir optionally supports zone-aware replication. When zone-aware replication is **enabled**, replicas for the given data are guaranteed to span across different availability zones. This requires Grafana Mimir cluster to run at least in a number of zones equal to the configured replication factor.
+Without zone-aware replication enabled, Grafana Mimir replicates data randomly across all component replicas, regardless of whether these replicas are all running within the same zone.
+Even with the Grafana Mimir cluster deployed across multiple zones, the replicas for any given data may reside in the same zone.
+If an outage affects a whole zone containing multiple replicas at the same time, data loss may occur.
 
-Reads from a zone-aware replication enabled Grafana Mimir Cluster can withstand zone failures as long as there are no more than `floor(replication factor / 2)` zones with failing instances.
+With zone-aware replication enabled, Grafana Mimir guarantees data replication to replicas across different zones.
 
-The Grafana Mimir services supporting **zone-aware replication** are:
+> **Warning:**
+> Ensure that deployment tooling for rolling updates is also zone-aware.
+> Rolling updates should only update replicas in a single zone at any one time.
 
-- **[Distributors and Ingesters](#distributors-and-ingesters-time-series-replication)**
-- **[Store-gateways](#store-gateways-blocks-replication)** ([blocks storage](../blocks-storage/_index.md) only)
+Grafana Mimir supports zone-aware replication for each of:
 
-## Distributors / Ingesters: time-series replication
+- [Alertmanager alerts](#configuring-alertmanager-alerts-replication)
+- [Ingester time series](#configuring-ingester-time-series-replication)
+- [Store-gateway blocks](#configuring-store-gateway-blocks-replication)
 
-The Grafana Mimir time-series replication is used to hold multiple (typically 3) replicas of each time series in the **ingesters**.
+## Configuring Alertmanager alerts replication
 
-**To enable** the zone-aware replication for the ingesters you should:
+Zone-aware replication in the Alertmanager ensures that Grafana Mimir replicates alerts across `-alertmanager.sharding-ring.replication-factor` Alertmanager replicas, one in each zone.
 
-1. Configure the availability zone for each ingester via the `-ingester.ring.instance-availability-zone` CLI flag (or its respective YAML config option)
-2. Rollout ingesters to apply the configured zone
-3. Enable time-series zone-aware replication via the `-ingester.ring.zone-awareness-enabled` CLI flag (or its respective YAML config option). Please be aware this configuration option should be set to distributors, queriers and rulers.
+To enable zone-aware replication for alerts:
 
-A metric is sharded across all ingesters and querier needs to fetch series from all ingesters. In the event of a large outage impacting ingesters in more than 1 zone, all queries will fail.
+1. Set the zone for each Alertmanager replica via the `-alertmanager.sharding-ring.instance-availability-zone` CLI flag or its respective YAML configuration parameter.
+2. Rollout Alertmanagers so that each Alertmanager replica is running with a configured zone.
+3. Set the `-alertmanager.sharding-ring.zone-awareness-enabled=true` CLI flag or its respective YAML configuration parameter for Alertmanagers.
 
-## Store-gateways: blocks replication
+## Configuring ingester time series replication
 
-The Grafana Mimir [store-gateway](../blocks-storage/store-gateway.md) (used only when Grafana Mimir is running with the [blocks storage](../blocks-storage/_index.md)) supports blocks sharding, used to horizontally scale blocks in a large cluster without hitting any vertical scalability limit.
+Zone-aware replication in the ingester ensures that Grafana Mimir replicates each time series to `-ingester.ring.replication-factor` ingester replicas, one in each zone.
 
-To enable the zone-aware replication for the store-gateways, please refer to the [store-gateway](../blocks-storage/store-gateway.md#zone-awareness) documentation.
+To enable zone-aware replication for time series:
+
+1. Set the zone for each ingester replica via the `-ingester.ring.instance-availability-zone` CLI flag or its respective YAML configuration parameter.
+2. Rollout ingesters so that each ingester replica is running with a configured zone.
+3. Set the `-ingester.ring.zone-awareness-enabled=true` CLI flag or its respective YAML configuration parameter for distributors, ingesters, and queriers.
+
+## Configure store-gateway blocks replication
+
+To enable the zone-aware replication for the store-gateways, refer to [Zone awareness]({{<relref "./store-gateway.md#zone-awareness" >}}) in the store-gateway component documentation.
 
 ## Minimum number of zones
 
-For Grafana Mimir to function correctly, there must be at least the same number of availability zones as the replication factor. For example, if the replication factor is configured to 3 (default for time-series replication), the Grafana Mimir cluster should be spread at least over 3 availability zones.
+To guarantee zone-aware replication, deploy Grafana Mimir across a number of zones equal-to or greater-than the configured replication factor.
+With a replication factor of 3, which is the default for time series replication, deploy the Grafana Mimir cluster across at least 3 zones.
+Deploying to more zones than the configured replication factor is safe.
+Deploying to fewer zones than the configured replication factor causes missed writes to replicas or for the writes to fail completely.
 
-It is safe to have more zones than the replication factor, but it cannot be less. Having fewer availability zones than replication factor causes a replica write to be missed, and in some cases, the write fails if the availability zones count is too low.
+Reads can withstand zone failures as long as there are no more than `floor(replication factor / 2)` zones with failing replicas.
 
-## Impact on unbalanced zones
+## Unbalanced zones
 
-**Grafana Mimir requires that each zone runs the same number of instances** of a given service for which the zone-aware replication is enabled. This guarantees a fair split of the workload across zones.
+To ensure fair balancing of the workload across zones, run the same number of replicas of each component in each zone.
+With unbalanced replica counts, zones with fewer replicas have higher resource utilization than those with more replicas.
 
-On the contrary, if zones are unbalanced, the zones with a lower number of instances would have an higher pressure on resources utilization (eg. CPU and memory) compared to zones with an higher number of instances.
+## Costs
 
-## Impact on costs
-
-Depending on the underlying infrastructure being used, deploying Grafana Mimir across multiple availability zones may cause an increase in running costs as most cloud providers charge for inter availability zone networking. The most significant change would be for a Grafana Mimir cluster currently running in a single zone.
+Most cloud providers charge for inter availability zone networking and deploying Grafana Mimir with zone-aware replication across multiple cloud provider availability zones may incur additional networking costs.
