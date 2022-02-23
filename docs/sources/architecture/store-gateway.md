@@ -25,7 +25,8 @@ For more information about the bucket index, please refer to [bucket index docum
 
 Store-gateways periodically re-download the bucket index to get an updated view over the long-term storage and discover new or deleted blocks.
 New blocks can be uploaded by [ingesters]({{< relref "./ingester.md" >}}) or by the [compactor]({{< relref "./compactor.md" >}}).
-The compactor additionally may have deleted blocks or marked others for deletion since the last scan.
+The compactor additionally may have deleted blocks or marked others for deletion since the last check.
+For new blocks the store-gateway downloads their index header, while for deleted blocks the index header is offloaded.
 The frequency at which this occurs is configured with the `-blocks-storage.bucket-store.sync-interval` flag.
 
 The blocks chunks and the entire index are never fully downloaded by the store-gateway. The index-header is stored to the local disk, in order to avoid having to re-download it on subsequent restarts of a store-gateway. For this reason, it's recommended - but not required - to run the store-gateway with a persistent disk. For example, if you're running the Grafana Mimir cluster in Kubernetes, you may use a StatefulSet with a PersistentVolumeClaim for the store-gateways.
@@ -43,7 +44,7 @@ The frequency at which this occurs is configured with the `-blocks-storage.bucke
 
 ## Blocks sharding and replication
 
-The store-gateway employs blocks sharding. Sharding is used to horizontally scale query processing in a large cluster without hitting any vertical scalability limit.
+The store-gateway employs blocks sharding. Sharding is used to horizontally scale blocks in a large cluster without hitting any vertical scalability limit.
 
 Blocks are replicated across multiple store-gateway instances based on a replication factor configured via `-store-gateway.sharding-ring.replication-factor`. The blocks replication is used to protect from query failures caused by some blocks not loaded by any store-gateway instance at a given time like, for example, in the event of a store-gateway failure or while restarting a store-gateway instance (e.g. during a rolling update).
 
@@ -101,8 +102,8 @@ At startup, the store-gateway downloads the index-header of each block belonging
 
 By default, index-headers are downloaded to disk, but not kept in memory by the store-gateway. Index-headers will be memory mapped only once required by a query and will be automatically released after `-blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout` time of inactivity.
 
-Mimir supports a configuration flag `-blocks-storage.bucket-store.index-header-lazy-loading-enabled=false` to disable index-header lazy loading. When disabled, index-headers are all kept in
-memory, which provides faster access, however in a cluster with a large number of blocks, each store-gateway may have a large amount of memory mapped index-headers, regardless how frequently they are used at query time.
+Mimir supports a configuration flag `-blocks-storage.bucket-store.index-header-lazy-loading-enabled=false` to disable index-header lazy loading.
+When disabled, index-headers are all memory mapped, which provides faster access, however in a cluster with a large number of blocks, each store-gateway may have a large amount of memory mapped index-headers, regardless how frequently they are used at query time.
 
 ## Caching
 
