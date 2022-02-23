@@ -124,9 +124,10 @@ func TestResponseRoundtrip(t *testing.T) {
 	}
 
 	for _, tc := range []struct {
-		name     string
-		resp     prometheusAPIResponse
-		expected *PrometheusResponse
+		name        string
+		resp        prometheusAPIResponse
+		expected    *PrometheusResponse
+		expectedErr error
 	}{
 		{
 			name: "successful string response",
@@ -247,12 +248,7 @@ func TestResponseRoundtrip(t *testing.T) {
 				ErrorType: "expected",
 				Error:     "failed",
 			},
-			expected: &PrometheusResponse{
-				Status:    statusError,
-				ErrorType: "expected",
-				Error:     "failed",
-				Headers:   expectedRespHeaders,
-			},
+			expectedErr: apierror.New(apierror.Type("expected"), "failed"),
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -265,6 +261,11 @@ func TestResponseRoundtrip(t *testing.T) {
 				ContentLength: int64(len(body)),
 			}
 			decoded, err := PrometheusCodec.DecodeResponse(context.Background(), httpResponse, nil, log.NewNopLogger())
+			if tc.expectedErr != nil {
+				assert.Equal(t, tc.expectedErr, err)
+				return
+			}
+
 			require.NoError(t, err)
 			assert.Equal(t, tc.expected, decoded)
 

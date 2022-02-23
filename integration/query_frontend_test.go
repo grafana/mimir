@@ -345,6 +345,7 @@ overrides:
 		"-querier.max-samples":                          "20",                                                 // Very low limit so that we can easily hit it, but high enough to test other features.
 		"-query-frontend.parallelize-shardable-queries": "true",                                               // Allow queries to be parallized (query-sharding)
 		"-query-frontend.query-sharding-total-shards":   "0",                                                  // Disable query-sharding by default
+		"-store.max-query-length":                       "30d",                                                // To test too long query error (31d)
 		"-runtime-config.file":                          filepath.Join(e2e.ContainerSharedDir, runtimeConfig), // Read per tenant runtime config
 	})
 	consul := e2edb.NewConsul()
@@ -485,6 +486,14 @@ overrides:
 			},
 			expStatusCode: http.StatusUnprocessableEntity,
 			expBody:       `{"error":"query processing would load too many samples into memory in query execution", "errorType":"execution", "status":"error"}`,
+		},
+		{
+			name: "query time range exceeds the limit",
+			query: func(c *e2emimir.Client) (*http.Response, []byte, error) {
+				return c.QueryRangeRaw(`sum_over_time(metric[31d:1s])`, now.Add(-time.Minute), now, time.Minute)
+			},
+			expStatusCode: http.StatusUnprocessableEntity,
+			expBody:       `{"error":"expanding series: the query time range exceeds the limit (query length: 744h6m0s, limit: 720h0m0s)", "errorType":"execution", "status":"error"}`,
 		},
 		{
 			name: "execution error",

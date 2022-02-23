@@ -12,8 +12,6 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/prometheus/prometheus/promql"
-
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -38,7 +36,7 @@ func TestShardedQuerier_Select(t *testing.T) {
 			),
 			fn: func(t *testing.T, q *shardedQuerier) {
 				set := q.Select(false, nil)
-				require.Equal(t, set.Err(), promql.ErrStorage{Err: errNoEmbeddedQueries})
+				require.Equal(t, set.Err(), errNoEmbeddedQueries)
 			},
 		},
 		{

@@ -12,6 +12,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/gogo/status"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -185,23 +186,24 @@ func mapEngineError(err error) error {
 		return nil
 	}
 
+	// If already comes mapped to an apierror, just return that (we received an error from upstream).
+	if apierror.IsAPIError(err) {
+		return err
+	}
+
+	// Extract the root cause of the error wrapped by errors.Wrap().
+	cause := errors.Cause(err)
+
+	// If upstream request failed as 5xx, it would be wrapped as httpgrpc error, which is a status error.
+	// If that is the case, it's an internal error.
+	// We need to check this on the cause, because status.FromError() makes an interface implementation assert instead of using errors.As().
+	if _, ok := status.FromError(cause); ok {
+		return apierror.New(apierror.TypeInternal, cause.Error())
+	}
+
 	// By default, all errors returned by engine.Eval() are execution errors,
 	// This is the same as Prometheus API does: http://github.com/prometheus/prometheus/blob/076109fa1910ad2198bf2c447a174fee31114982/web/api/v1/api.go#L550-L550
 	errorType := apierror.TypeExec
-	// However, some of our errors may come from the shardedQueryable,
-	// those are internal unless explicitly signalled to be something else.
-	if storageErr := (promql.ErrStorage{}); errors.As(err, &storageErr) {
-		errorType = apierror.TypeInternal
-		// Unwrap the underlying error, so we can get its cause and see if it was a timeout, etc.
-		err = storageErr.Err
-	}
-
-	// This is the common part:
-	// - The error could be wrapped by the PromQL engine and be a timeout, canceled, etc.
-	// - Or the error could come from the storage and also be a timeout, canceled, etc.
-	// We get the error's cause in order to correctly parse the error in parent callers
-	// (eg. gRPC response status code extraction).
-	cause := errors.Cause(err)
 	switch cause.(type) {
 	case promql.ErrQueryCanceled:
 		errorType = apierror.TypeCanceled
