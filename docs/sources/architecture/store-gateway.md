@@ -6,7 +6,7 @@ weight: 10
 
 # Store-gateway
 
-The store-gateway is responsible for querying blocks from [long-term storage]({{< relref "./_index.md#long-term-storage" >}}) and is used by the [querier]({{< relref "./querier.md" >}}) and optionally by the [ruler]({{< relref "./ruler.md">}}) on the read path at query time.
+The store-gateway is responsible for querying blocks from [long-term storage]({{< relref "./_index.md#long-term-storage" >}}) and is used by the [querier]({{< relref "./querier.md" >}}) and by the [ruler]({{< relref "./ruler.md">}}) on the read path at query time.
 
 The store-gateway is **stateful**.
 
