@@ -14,7 +14,7 @@ Types of zones include:
 - Data centers
 - Racks
 
-Without zone-aware replication enabled, Grafana Mimir replicates data indiscriminately across all component replicas, regardless of whether these replicas are all running within the same zone.
+Without zone-aware replication enabled, Grafana Mimir replicates data randomly across all component replicas, regardless of whether these replicas are all running within the same zone.
 Even with the Grafana Mimir cluster deployed across multiple zones, the replicas for any given data may reside in the same zone.
 If an outage affects a whole zone containing multiple replicas at the same time, data loss may occur.
 
