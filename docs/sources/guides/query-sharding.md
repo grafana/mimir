@@ -18,7 +18,7 @@ Not all queries are shardable. While the full query is not shardable, the inner
 parts of a query could still be shardable.
 
 In particular associative aggregations (like `sum`, `min`, `max`, `count`,
-`avg`) are shardable, while query functions (like `absent`, `absent_over_time`,
+`avg`) are shardable, while some query functions (like `absent`, `absent_over_time`,
 `histogram_quantile`, `sort_desc`, `sort`) are not.
 
 In the following examples we look at a concrete example with a shard count of
@@ -71,22 +71,26 @@ sum(rate(failed[1m])) / sum(rate(total[1m]))
 Is executed as (assuming a shard count of 3):
 
 ```promql
-concat((
-  sum (rate(failed{__query_shard__="1_of_3"}[1m]))
-  sum (rate(failed{__query_shard__="2_of_3"}[1m]))
-  sum (rate(failed{__query_shard__="3_of_3"}[1m]))
-))
+sum(
+  concat(
+    sum (rate(failed{__query_shard__="1_of_3"}[1m]))
+    sum (rate(failed{__query_shard__="2_of_3"}[1m]))
+    sum (rate(failed{__query_shard__="3_of_3"}[1m]))
+  )
+)
 /
-concat((
-  sum (rate(total{__query_shard__="1_of_3"}[1m]))
-  sum (rate(total{__query_shard__="2_of_3"}[1m]))
-  sum (rate(total{__query_shard__="3_of_3"}[1m]))
-))
+sum(
+  concat(
+    sum (rate(total{__query_shard__="1_of_3"}[1m]))
+    sum (rate(total{__query_shard__="2_of_3"}[1m]))
+    sum (rate(total{__query_shard__="3_of_3"}[1m]))
+  )
+)
 ```
 
 ![Flow of a query with two shardable portions](../../images/query-sharding.png)
 
-## Enable Query sharding
+## How to enable query sharding
 
 In order to enable query sharding you need to opt-in by setting
 `-query-frontend.parallelize-shardable-queries` to `true`.
