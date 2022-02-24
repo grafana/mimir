@@ -15,13 +15,14 @@ The distributor is **stateless**.
 ## Validation
 
 The distributor validates received data before writing it to ingesters.
-Given a single request can contain both valid and invalid data, invalid metrics, samples, metadata and exemplars are skipped, while valid data is written to ingesters.
-If the request contains any invalid data, distributor will return a 400 HTTP status code and the response body will include details about the first invalid data found.
-The details about the invalid data is typically logged by Prometheus or Grafana Agent.
+Given a single request can contain both valid and invalid data, invalid metrics, samples, metadata and exemplars are skipped, while valid data is passed on to ingesters.
+If the request contains any invalid data, distributor will return a 400 HTTP status code and the response body will include details.
+These details about the first invalid data are typically logged by the sender, for example Prometheus or Grafana Agent.
+The valid data in the request is passed on to ingesters, while only invalid data is skipped.
 
 The distributor validation includes the following checks:
 
-- The metric metadata and labels are formally correct.
+- The metric metadata and labels conform to the [Prometheus exposition format](https://prometheus.io/docs/concepts/data_model/).
 - The metric metadata (name, help and unit) is not longer than `-validation.max-metadata-length`.
 - The number of labels of each metric is not higher than `-validation.max-label-names-per-series`.
 - Each metric label name is not longer than `-validation.max-length-label-name`.
@@ -34,11 +35,12 @@ _The limits can be overridden on a per-tenant basis in the overrides section of 
 
 ## Rate limiting
 
-The distributor includes a built-in rate limiter, used to limit the rate of samples ingested per second from each tenant.
+The distributor includes a built-in rate limiter, which will drop whole requests and send back an HTTP 429 error if the rate goes over a maximum number of samples per second.
+The rate limit applies on a per-tenant basis.
 
 The configured limit is the tenant's max ingestion rate across the whole Grafana Mimir cluster.
 Internally, the limit is implemented configuring a per-distributor local rate limiter set as `ingestion rate limit / N`, where `N` is the number of healthy distributor replicas, and it's automatically adjusted if the number of replicas change.
-For this reason, the ingestion rate limit requires that write requests are evenly distributed across the pool of distributors; if you use a load balancer in front of the distributors you should be already covered, while if you have a custom setup (ie. an authentication gateway in front) make sure traffic is evenly balanced across distributors.
+For this reason, the ingestion rate limit requires that write requests are [evenly distributed across the pool of distributors](#load-balancing-across-distributors).
 
 The rate limit can be configured via the following flags:
 
@@ -47,11 +49,15 @@ The rate limit can be configured via the following flags:
 
 _The rate limiting can be overridden on a per-tenant basis by setting `ingestion_rate` and `ingestion_burst_size` in the overrides section of the runtime configuration._
 
+_Prometheus remote write doesn't retry requests on 429 HTTP response status code by default. This behaviour can be modified setting `retry_on_http_429: true` in the Prometheus [`remote_write` config](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#remote_write)._
+
 ## High Availability Tracker
 
-The distributor includes a High Availability (HA) Tracker.
+Remote write senders, such as Prometheus, may be configured in pairs, so that metrics are still scraped and written to Grafana Mimir when one of them is shut down for maintenance or unavailable due to a failure.
+We refer to this configuration has high-availability (HA) pairs.
 
-When enabled, the distributor deduplicates incoming series from Prometheus servers configured in a high-availability (HA) setup.
+The distributor includes a High Availability (HA) Tracker.
+When enabled, the distributor deduplicates incoming series from Prometheus HA pairs.
 This allows you to have multiple HA replicas of the same Prometheus servers, writing the same series to Mimir and then deduplicate these series in the Mimir distributor.
 
 For further information on how it works and how to configure it, see the [configure HA deduplication]({{<relref "../operating-grafana.mimir/configure-ha-deduplication.md">}}) guide.
@@ -84,7 +90,11 @@ To ensure consistent query results, Mimir uses [Dynamo-style](https://www.allthi
 
 ## Load balancing across distributors
 
-We recommend randomly load balancing write requests across distributor instances. For example, if you're running Grafana Mimir in a Kubernetes cluster, you could define a Kubernetes [Service](https://kubernetes.io/docs/concepts/services-networking/service/) as ingress for the distributors.
+We recommend randomly load balancing write requests across distributor instances.
+
+If you're running Grafana Mimir in a Kubernetes cluster, you could define a Kubernetes [Service](https://kubernetes.io/docs/concepts/services-networking/service/) as ingress for the distributors.
+Be aware that a Kubernetes Service balances TCP connections, and not the HTTP requests within a single TCP connection when HTTP keep-alive is enabled.
+Since a Prometheus server establishes a TCP connection for each remote write shard, you should consider increasing `min_shards` in the Prometheus [remote write config](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#remote_write) if distributors traffic is not evenly balanced.
 
 ## Configuration
 
