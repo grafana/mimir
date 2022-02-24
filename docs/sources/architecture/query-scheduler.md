@@ -26,7 +26,7 @@ The query-scheduler **stateless**.
 
 ## Benefits
 
-The query-scheduler enables infinitely scaling of query-frontends.
+The query-scheduler enables scaling of query-frontends.
 
 ### Why query-frontend scalability is limited
 
@@ -36,7 +36,13 @@ The query-frontend keeps a queue of queries to execute. A querier internally run
 
 The connection from a querier worker to a query-frontend is persistent: once established, multiple queries are delivered through the connection, one at a time. The querier workers select the query-frontend replicas to connect to in a round robin fashion, in order to keep a balanced number of total workers connected to each query-frontend.
 
-In the case you're running more query-frontend replicas than the number of workers per querier, the number of workers connected to each query-frontend could be unbalanced. This may cause a suboptimal utilization of querier resources, leading to poor query performances when running Grafana Mimir at scale.
+In the case you're running more query-frontend replicas than the number of workers per querier, the querier increases the number of internal workers to match the query-frontend replicas, to ensure all query-frontends have some workers connected.
+
+However, the PromQL engine running in the querier is also configured with a max concurrency equal to `-querier.max-concurrent`.
+In the event the number of querier workers is higher than the PromQL engine max concurrency, a worker may pull a query from the query-frontend but could not be able to execute it immediately because the max concurrency has already been reached.
+The queries exceeding the configured max concurrency will queue up in the querier itself until other queries will be completed.
+
+This may cause a suboptimal utilization of querier resources, leading to poor query performances when running Grafana Mimir at scale.
 
 ### How query-scheduler solves query-frontend scalability limits
 
