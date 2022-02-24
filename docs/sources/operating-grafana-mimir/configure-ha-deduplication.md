@@ -29,6 +29,8 @@ Incoming samples are considered duplicated (and thus dropped) if received by any
 
 In the event the HA tracker is enabled but incoming samples contain only one or none of the cluster and replica labels, these samples will be accepted by default and never deduplicated.
 
+> Note: for performance reasons, the HA tracker only checks the cluster and replica label of the first series in the request to decide whether all series in the request should be deduplicated. This assumes that all series inside the request have the same cluster and replica labels, which is typically true when Prometheus is configured with external labels. We recommend you to ensure this requirement is honored if you're having a non standard Prometheus setup (eg. you're using Prometheus federation or have a metrics proxy in between).
+
 ## Configuration
 
 ### How to configure Prometheus
