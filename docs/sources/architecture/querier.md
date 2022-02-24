@@ -73,7 +73,6 @@ Caching is optional, but **highly recommended** in a production environment. Ple
 
 - List of tenants
 - List of blocks per tenant
-- List of block content per tenant
 - Block's `meta.json` existence and content
 - Block's `deletion-mark.json` existence and content
 - Tenant's `bucket-index.json.gz` content

@@ -155,7 +155,7 @@ Store-gateway and [querier]({{< relref "./querier.md" >}}) can use memcached for
 
 - List of tenants
 - List of blocks per tenant
-- List of block content per tenant
+- List of chunks in blocks per tenant
 - Block's `meta.json` existence and content
 - Block's `deletion-mark.json` existence and content
 - Tenant's `bucket-index.json.gz` content
