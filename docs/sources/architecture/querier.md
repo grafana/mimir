@@ -8,7 +8,7 @@ weight: 10
 
 The querier component handles queries using the [Prometheus Query Language](https://prometheus.io/docs/prometheus/latest/querying/basics/) to fetch time series and labels on the read path.
 
-The querier uses the [store-gateway]({{< relref "./store-gateway.md" >}}) service to query the [long-term storage]({{< relref "./_index.md#long-term-storage" >}}) and the [ingester]({{< relref "./ingester.md" >}}) service to query data under way on the write path.
+The querier uses the [store-gateway]({{< relref "./store-gateway.md" >}}) component to query the [long-term storage]({{< relref "./_index.md#long-term-storage" >}}) and the [ingester]({{< relref "./ingester.md" >}}) component to query recently written data.
 
 The querier is **stateless**.
 
