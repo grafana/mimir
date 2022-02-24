@@ -2081,17 +2081,15 @@ grpc_client_config:
 The `frontend_worker` block configures the worker running within the querier, picking up and executing queries enqueued by the query-frontend or the query-scheduler.
 
 ```yaml
-# Address of the query-frontend component, in host:port format. If
-# -querier.scheduler-address is set as well, the querier will use scheduler
-# instead. Only one of -querier.frontend-address or -querier.scheduler-address
-# can be set. If neither is set, queries are only received via HTTP endpoint.
+# Address of the query-frontend component, in host:port format. Only one of
+# -querier.frontend-address or -querier.scheduler-address can be set. If neither
+# is set, queries are only received via HTTP endpoint.
 # CLI flag: -querier.frontend-address
 [frontend_address: <string> | default = ""]
 
-# Hostname (and port) of scheduler that querier will periodically resolve,
-# connect to and receive queries from. Only one of -querier.frontend-address or
-# -querier.scheduler-address can be set. If neither is set, queries are only
-# received via HTTP endpoint.
+# Address of the query-scheduler component, in host:port format. Only one of
+# -querier.frontend-address or -querier.scheduler-address can be set. If neither
+# is set, queries are only received via HTTP endpoint.
 # CLI flag: -querier.scheduler-address
 [scheduler_address: <string> | default = ""]
 
