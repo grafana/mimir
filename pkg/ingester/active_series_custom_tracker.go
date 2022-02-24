@@ -21,13 +21,6 @@ func NewActiveSeriesMatchers(matchersConfig *ActiveSeriesCustomTrackersConfig) *
 	return asm
 }
 
-func (asm *ActiveSeriesMatchers) Equals(other *ActiveSeriesMatchers) bool {
-	if asm == nil || other == nil {
-		return asm == other
-	}
-	return asm.cfg.String() == other.cfg.String()
-}
-
 type ActiveSeriesMatchers struct {
 	cfg      *ActiveSeriesCustomTrackersConfig
 	names    []string

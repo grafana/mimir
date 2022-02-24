@@ -109,59 +109,6 @@ func TestActiveSeriesCustomTrackersConfigs_MalformedMatcher(t *testing.T) {
 	}
 }
 
-func TestActiveSeriesMatcher_Equality(t *testing.T) {
-	matcherSets := [][]string{
-		{
-			`foo:{foo="bar"};baz:{baz="bar"}`,
-			`baz:{baz="bar"};foo:{foo="bar"}`,
-			`  foo:{foo="bar"};baz:{baz="bar"} `,
-		},
-		{
-			`test:{test="true"}`,
-		},
-		{
-			`foo:{foo="bar"};baz:{baz="bar"};extra:{extra="extra"}`,
-		},
-	}
-
-	for _, matcherSet := range matcherSets {
-		t.Run("EqualityBetweenSet", func(t *testing.T) {
-			var activeSeriesMatchers []*ActiveSeriesMatchers
-			for _, matcherConfig := range matcherSet {
-				config := &ActiveSeriesCustomTrackersConfig{}
-				err := config.Set(matcherConfig)
-				require.NoError(t, err)
-				asm := NewActiveSeriesMatchers(config)
-				activeSeriesMatchers = append(activeSeriesMatchers, asm)
-			}
-			for i := 0; i < len(activeSeriesMatchers); i++ {
-				for j := i + 1; j < len(activeSeriesMatchers); j++ {
-					assert.True(t, activeSeriesMatchers[i].Equals(activeSeriesMatchers[j]), "matcher configs should be equal")
-				}
-			}
-		})
-	}
-
-	t.Run("NotEqualsAcrossSets", func(t *testing.T) {
-		var activeSeriesMatchers []*ActiveSeriesMatchers
-		for _, matcherConfigs := range matcherSets {
-			exampleConfig := matcherConfigs[0]
-			config := &ActiveSeriesCustomTrackersConfig{}
-			err := config.Set(exampleConfig)
-			require.NoError(t, err)
-			asm := NewActiveSeriesMatchers(config)
-			activeSeriesMatchers = append(activeSeriesMatchers, asm)
-		}
-
-		for i := 0; i < len(activeSeriesMatchers); i++ {
-			for j := i + 1; j < len(activeSeriesMatchers); j++ {
-				assert.False(t, activeSeriesMatchers[i].Equals(activeSeriesMatchers[j]), "matcher configs should NOT be equal")
-			}
-		}
-	})
-
-}
-
 func TestActiveSeriesCustomTrackersConfigs_Deserialization(t *testing.T) {
 	correctInput := `
         baz: "{baz='bar'}"

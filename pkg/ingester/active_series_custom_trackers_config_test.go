@@ -170,21 +170,72 @@ func TestMatchersForUser(t *testing.T) {
 
 	tests := map[string]struct {
 		userID   string
-		expected *ActiveSeriesMatchers
+		expected *ActiveSeriesCustomTrackersConfig
 	}{
 		"User with no override should return default": {
 			userID:   "5",
-			expected: NewActiveSeriesMatchers(defaultMatchers),
+			expected: defaultMatchers,
 		},
 		"User with override should return override": {
 			userID:   "1",
-			expected: NewActiveSeriesMatchers(tenantSpecificMatchers),
+			expected: tenantSpecificMatchers,
 		},
 	}
 	for name, testData := range tests {
 		t.Run(name, func(t *testing.T) {
-			matchersForUser := activeSeriesCustomTrackersOverrides.MatchersForUser(testData.userID)
-			assert.True(t, testData.expected.Equals(matchersForUser))
+			matchersConfigForUser := activeSeriesCustomTrackersOverrides.MatchersConfigForUser(testData.userID)
+			assert.True(t, testData.expected.String() == matchersConfigForUser.String())
 		})
 	}
+}
+
+func TestActiveSeriesCustomTrackerConfig_Equality(t *testing.T) {
+	matcherSets := [][]string{
+		{
+			`foo:{foo="bar"};baz:{baz="bar"}`,
+			`baz:{baz="bar"};foo:{foo="bar"}`,
+			`  foo:{foo="bar"};baz:{baz="bar"} `,
+		},
+		{
+			`test:{test="true"}`,
+		},
+		{
+			`foo:{foo="bar"};baz:{baz="bar"};extra:{extra="extra"}`,
+		},
+	}
+
+	for _, matcherSet := range matcherSets {
+		t.Run("EqualityBetweenSet", func(t *testing.T) {
+			var activeSeriesCustomTrackersConfigs []*ActiveSeriesCustomTrackersConfig
+			for _, matcherConfig := range matcherSet {
+				config := &ActiveSeriesCustomTrackersConfig{}
+				err := config.Set(matcherConfig)
+				require.NoError(t, err)
+				activeSeriesCustomTrackersConfigs = append(activeSeriesCustomTrackersConfigs, config)
+			}
+			for i := 0; i < len(activeSeriesCustomTrackersConfigs); i++ {
+				for j := i + 1; j < len(activeSeriesCustomTrackersConfigs); j++ {
+					assert.Equal(t, activeSeriesCustomTrackersConfigs[i].String(), activeSeriesCustomTrackersConfigs[j].String(), "matcher configs should be equal")
+				}
+			}
+		})
+	}
+
+	t.Run("NotEqualsAcrossSets", func(t *testing.T) {
+		var activeSeriesMatchers []*ActiveSeriesCustomTrackersConfig
+		for _, matcherConfigs := range matcherSets {
+			exampleConfig := matcherConfigs[0]
+			config := &ActiveSeriesCustomTrackersConfig{}
+			err := config.Set(exampleConfig)
+			require.NoError(t, err)
+			activeSeriesMatchers = append(activeSeriesMatchers, config)
+		}
+
+		for i := 0; i < len(activeSeriesMatchers); i++ {
+			for j := i + 1; j < len(activeSeriesMatchers); j++ {
+				assert.NotEqual(t, activeSeriesMatchers[i].String(), activeSeriesMatchers[j].String(), "matcher configs should NOT be equal")
+			}
+		}
+	})
+
 }

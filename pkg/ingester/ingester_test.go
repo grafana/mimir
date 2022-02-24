@@ -5392,8 +5392,9 @@ func TestIngesterActiveSeries(t *testing.T) {
 				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
 			},
 		},
-		"should not fail with nil provider": {
+		"should not fail with nil provider and default config": {
 			activeSeriesOverridesProvider: nil,
+			activeSeriesConfig:            ActiveSeriesCustomTrackersConfig{},
 			test: func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer) {
 				now := time.Now()
 
