@@ -1,0 +1,12 @@
+apiVersion: policy/v1beta1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "mimir.fullname" . }}-ingester-pdb
+  labels:
+    name: ingester-pdb
+  {{- include "mimir.labels" . | nindent 4 }}
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: ingester

@@ -1,0 +1,12 @@
+apiVersion: policy/v1beta1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "mimir.fullname" . }}-store-gateway-pdb
+  labels:
+    name: store-gateway-pdb
+  {{- include "mimir.labels" . | nindent 4 }}
+spec:
+  maxUnavailable: 2
+  selector:
+    matchLabels:
+      name: store-gateway

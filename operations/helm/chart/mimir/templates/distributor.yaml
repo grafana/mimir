@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "mimir.fullname" . }}-distributor
+  labels:
+    name: distributor
+  {{- include "mimir.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.distributor.type }}
+  selector:
+    name: distributor
+  {{- include "mimir.selectorLabels" . | nindent 4 }}
+  ports:
+	{{- .Values.distributor.ports | toYaml | nindent 2 -}}

@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "dependencies": [
+    {
+      "source": {
+        "git": {
+          "remote": "https://github.com/jsonnet-libs/k8s-libsonnet.git",
+          "subdir": "1.21"
+        }
+      },
+      "version": "main"
+    },
+    {
+      "source": {
+        "local": {
+          "directory": "../mimir"
+        }
+      },
+      "version": ""
+    }
+  ],
+  "legacyImports": true
+}

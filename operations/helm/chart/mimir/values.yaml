@@ -1,0 +1,371 @@
+consul:
+  consul:
+    image:
+      repository: consul
+      tag: 1.5.3
+    resources:
+      requests:
+        cpu: "4"
+        memory: 4Gi
+  consulConfigJson: '{"leave_on_terminate": true, "raft_snapshot_threshold": 128,
+    "raft_trailing_logs": 10000, "telemetry": {"dogstatsd_addr": "127.0.0.1:9125"}}'
+  consulExporter:
+    image:
+      repository: prom/consul-exporter
+      tag: v0.5.0
+  mapping: |
+    mappings:
+    - match: consul.*.runtime.*
+      name: consul_runtime
+      labels:
+        type: $2
+    - match: consul.runtime.total_gc_pause_ns
+      name: consul_runtime_total_gc_pause_ns
+      labels:
+        type: $2
+    - match: consul.consul.health.service.query-tag.*.*.*
+      name: consul_health_service_query_tag
+      labels:
+        query: $1.$2.$3
+    - match: consul.consul.health.service.query-tag.*.*.*.*
+      name: consul_health_service_query_tag
+      labels:
+        query: $1.$2.$3.$4
+    - match: consul.consul.health.service.query-tag.*.*.*.*.*
+      name: consul_health_service_query_tag
+      labels:
+        query: $1.$2.$3.$4.$5
+    - match: consul.consul.health.service.query-tag.*.*.*.*.*.*
+      name: consul_health_service_query_tag
+      labels:
+        query: $1.$2.$3.$4.$5.$6
+    - match: consul.consul.health.service.query-tag.*.*.*.*.*.*.*
+      name: consul_health_service_query_tag
+      labels:
+        query: $1.$2.$3.$4.$5.$6.$7
+    - match: consul.consul.health.service.query-tag.*.*.*.*.*.*.*.*
+      name: consul_health_service_query_tag
+      labels:
+        query: $1.$2.$3.$4.$5.$6.$7.$8
+    - match: consul.consul.health.service.query-tag.*.*.*.*.*.*.*.*.*
+      name: consul_health_service_query_tag
+      labels:
+        query: $1.$2.$3.$4.$5.$6.$7.$8.$9
+    - match: consul.consul.health.service.query-tag.*.*.*.*.*.*.*.*.*.*
+      name: consul_health_service_query_tag
+      labels:
+        query: $1.$2.$3.$4.$5.$6.$7.$8.$9.$10
+    - match: consul.consul.health.service.query-tag.*.*.*.*.*.*.*.*.*.*.*
+      name: consul_health_service_query_tag
+      labels:
+        query: $1.$2.$3.$4.$5.$6.$7.$8.$9.$10.$11
+    - match: consul.consul.health.service.query-tag.*.*.*.*.*.*.*.*.*.*.*.*
+      name: consul_health_service_query_tag
+      labels:
+        query: $1.$2.$3.$4.$5.$6.$7.$8.$9.$10.$11.$12
+    - match: consul.consul.catalog.deregister
+      name: consul_catalog_deregister
+      labels: {}
+    - match: consul.consul.dns.domain_query.*.*.*.*.*
+      name: consul_dns_domain_query
+      labels:
+        query: $1.$2.$3.$4.$5
+    - match: consul.consul.health.service.not-found.*
+      name: consul_health_service_not_found
+      labels:
+        query: $1
+    - match: consul.consul.health.service.query.*
+      name: consul_health_service_query
+      labels:
+        query: $1
+    - match: consul.*.memberlist.health.score
+      name: consul_memberlist_health_score
+      labels: {}
+    - match: consul.serf.queue.*
+      name: consul_serf_events
+      labels:
+        type: $1
+    - match: consul.serf.snapshot.appendLine
+      name: consul_serf_snapshot_appendLine
+      labels:
+        type: $1
+    - match: consul.serf.coordinate.adjustment-ms
+      name: consul_serf_coordinate_adjustment_ms
+      labels: {}
+    - match: consul.consul.rpc.query
+      name: consul_rpc_query
+      labels: {}
+    - match: consul.*.consul.session_ttl.active
+      name: consul_session_ttl_active
+      labels: {}
+    - match: consul.raft.rpc.*
+      name: consul_raft_rpc
+      labels:
+        type: $1
+    - match: consul.raft.rpc.appendEntries.storeLogs
+      name: consul_raft_rpc_appendEntries_storeLogs
+      labels:
+        type: $1
+    - match: consul.consul.fsm.persist
+      name: consul_fsm_persist
+      labels: {}
+    - match: consul.raft.fsm.apply
+      name: consul_raft_fsm_apply
+      labels: {}
+    - match: consul.raft.leader.lastContact
+      name: consul_raft_leader_lastcontact
+      labels: {}
+    - match: consul.raft.leader.dispatchLog
+      name: consul_raft_leader_dispatchLog
+      labels: {}
+    - match: consul.raft.commitTime
+      name: consul_raft_commitTime
+      labels: {}
+    - match: consul.raft.replication.appendEntries.logs.*.*.*.*
+      name: consul_raft_replication_appendEntries_logs
+      labels:
+        query: ${1}.${2}.${3}.${4}
+    - match: consul.raft.replication.appendEntries.rpc.*.*.*.*
+      name: consul_raft_replication_appendEntries_rpc
+      labels:
+        query: ${1}.${2}.${3}.${4}
+    - match: consul.raft.replication.heartbeat.*.*.*.*
+      name: consul_raft_replication_heartbeat
+      labels:
+        query: ${1}.${2}.${3}.${4}
+    - match: consul.consul.rpc.request
+      name: consul_rpc_requests
+      labels: {}
+    - match: consul.consul.rpc.accept_conn
+      name: consul_rpc_accept_conn
+      labels: {}
+    - match: consul.memberlist.udp.*
+      name: consul_memberlist_udp
+      labels:
+        type: $1
+    - match: consul.memberlist.tcp.*
+      name: consul_memberlist_tcp
+      labels:
+        type: $1
+    - match: consul.memberlist.gossip
+      name: consul_memberlist_gossip
+      labels: {}
+    - match: consul.memberlist.probeNode
+      name: consul_memberlist_probenode
+      labels: {}
+    - match: consul.memberlist.pushPullNode
+      name: consul_memberlist_pushpullnode
+      labels: {}
+    - match: consul.http.*
+      name: consul_http_request
+      labels:
+        method: $1
+        path: /
+    - match: consul.http.*.*
+      name: consul_http_request
+      labels:
+        method: $1
+        path: /$2
+    - match: consul.http.*.*.*
+      name: consul_http_request
+      labels:
+        method: $1
+        path: /$2/$3
+    - match: consul.http.*.*.*.*
+      name: consul_http_request
+      labels:
+        method: $1
+        path: /$2/$3/$4
+    - match: consul.http.*.*.*.*.*
+      name: consul_http_request
+      labels:
+        method: $1
+        path: /$2/$3/$4/$5
+    - match: consul.consul.leader.barrier
+      name: consul_leader_barrier
+      labels: {}
+    - match: consul.consul.leader.reconcileMember
+      name: consul_leader_reconcileMember
+      labels: {}
+    - match: consul.consul.leader.reconcile
+      name: consul_leader_reconcile
+      labels: {}
+    - match: consul.consul.fsm.coordinate.batch-update
+      name: consul_fsm_coordinate_batch_update
+      labels: {}
+    - match: consul.consul.fsm.autopilot
+      name: consul_fsm_autopilot
+      labels: {}
+    - match: consul.consul.fsm.kvs.cas
+      name: consul_fsm_kvs_cas
+      labels: {}
+    - match: consul.consul.fsm.register
+      name: consul_fsm_register
+      labels: {}
+    - match: consul.consul.fsm.deregister
+      name: consul_fsm_deregister
+      labels: {}
+    - match: consul.consul.fsm.tombstone.reap
+      name: consul_fsm_tombstone_reap
+      labels: {}
+    - match: consul.consul.catalog.register
+      name: consul_catalog_register
+      labels: {}
+    - match: consul.consul.catalog.deregister
+      name: consul_catalog_deregister
+      labels: {}
+    - match: consul.consul.leader.reapTombstones
+      name: consul_leader_reapTombstones
+      labels: {}
+  ports:
+  - name: consul-server
+    port: 8300
+    targetPort: 8300
+  - name: consul-serf
+    port: 8301
+    targetPort: 8301
+  - name: consul-client
+    port: 8400
+    targetPort: 8400
+  - name: consul-api
+    port: 8500
+    targetPort: 8500
+  - name: statsd-exporter-http-metrics
+    port: 8000
+    targetPort: 8000
+  - name: consul-exporter-http-metrics
+    port: 9107
+    targetPort: 9107
+  replicas: 1
+  sidekick:
+    image:
+      repository: weaveworks/consul-sidekick
+      tag: master-f18ad13
+  statsdExporter:
+    image:
+      repository: prom/statsd-exporter
+      tag: v0.12.2
+  type: ClusterIP
+distributor:
+  distributor:
+    image:
+      repository: grafana/mimir
+      tag: mimir-2.0.0
+    resources:
+      limits:
+        memory: 4Gi
+      requests:
+        cpu: "2"
+        memory: 2Gi
+  ports:
+  - name: distributor-http-metrics
+    port: 8080
+    targetPort: 8080
+  - name: distributor-grpc
+    port: 9095
+    targetPort: 9095
+  replicas: 3
+  type: ClusterIP
+ingester:
+  ports:
+  - name: ingester-http-metrics
+    port: 8080
+    targetPort: 8080
+  - name: ingester-grpc
+    port: 9095
+    targetPort: 9095
+  type: ClusterIP
+memcached:
+  ports:
+  - name: memcached-client
+    port: 11211
+    targetPort: 11211
+  - name: exporter-http-metrics
+    port: 9150
+    targetPort: 9150
+  type: ClusterIP
+memcachedFrontend:
+  ports:
+  - name: memcached-client
+    port: 11211
+    targetPort: 11211
+  - name: exporter-http-metrics
+    port: 9150
+    targetPort: 9150
+  type: ClusterIP
+memcachedIndexQueries:
+  ports:
+  - name: memcached-client
+    port: 11211
+    targetPort: 11211
+  - name: exporter-http-metrics
+    port: 9150
+    targetPort: 9150
+  type: ClusterIP
+memcachedMetadata:
+  ports:
+  - name: memcached-client
+    port: 11211
+    targetPort: 11211
+  - name: exporter-http-metrics
+    port: 9150
+    targetPort: 9150
+  type: ClusterIP
+querier:
+  ports:
+  - name: querier-http-metrics
+    port: 8080
+    targetPort: 8080
+  - name: querier-grpc
+    port: 9095
+    targetPort: 9095
+  querier:
+    image:
+      repository: grafana/mimir
+      tag: mimir-2.0.0
+    resources:
+      limits:
+        memory: 24Gi
+      requests:
+        cpu: "1"
+        memory: 12Gi
+  replicas: 6
+  type: ClusterIP
+queryFrontend:
+  ports:
+  - name: query-frontend-http-metrics
+    port: 8080
+    targetPort: 8080
+  - name: query-frontend-grpc
+    port: 9095
+    targetPort: 9095
+  queryFrontend:
+    image:
+      repository: grafana/mimir
+      tag: mimir-2.0.0
+    resources:
+      limits:
+        memory: 1200Mi
+      requests:
+        cpu: "2"
+        memory: 600Mi
+  replicas: 2
+  type: ClusterIP
+queryFrontendDiscovery:
+  ports:
+  - name: query-frontend-http-metrics
+    port: 8080
+    targetPort: 8080
+  - name: query-frontend-grpc
+    port: 9095
+    targetPort: 9095
+  type: ClusterIP
+storeGateway:
+  ports:
+  - name: store-gateway-http-metrics
+    port: 8080
+    targetPort: 8080
+  - name: store-gateway-grpc
+    port: 9095
+    targetPort: 9095
+  type: ClusterIP

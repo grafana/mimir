@@ -1,0 +1,24 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "mimir.fullname" . }}-consul
+  labels:
+  {{- include "mimir.labels" . | nindent 4 }}
+data:
+  consul-config.json: {{ .Values.consul.consulConfigJson | quote }}
+  mapping: {{ .Values.consul.mapping | quote }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "mimir.fullname" . }}-consul
+  labels:
+    name: consul
+  {{- include "mimir.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.consul.type }}
+  selector:
+    name: consul
+  {{- include "mimir.selectorLabels" . | nindent 4 }}
+  ports:
+	{{- .Values.consul.ports | toYaml | nindent 2 -}}

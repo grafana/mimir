@@ -1,0 +1,68 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "mimir.fullname" . }}-memcached-metadata
+  labels:
+    name: memcached-metadata
+  {{- include "mimir.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.memcachedMetadata.type }}
+  selector:
+    name: memcached-metadata
+  {{- include "mimir.selectorLabels" . | nindent 4 }}
+  ports:
+	{{- .Values.memcachedMetadata.ports | toYaml | nindent 2 -}}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "mimir.fullname" . }}-memcached-metadata
+  labels:
+  {{- include "mimir.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: memcached-metadata
+  serviceName: memcached-metadata
+  template:
+    metadata:
+      labels:
+        name: memcached-metadata
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                name: memcached-metadata
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - args:
+        - -m 512
+        - -I 1m
+        - -c 16384
+        - -v
+        image: memcached:1.6.9-alpine
+        imagePullPolicy: IfNotPresent
+        name: memcached
+        ports:
+        - containerPort: 11211
+          name: client
+        resources:
+          limits:
+            memory: 768Mi
+          requests:
+            cpu: 500m
+            memory: 715Mi
+      - args:
+        - --memcached.address=localhost:11211
+        - --web.listen-address=0.0.0.0:9150
+        image: prom/memcached-exporter:v0.6.0
+        imagePullPolicy: IfNotPresent
+        name: exporter
+        ports:
+        - containerPort: 9150
+          name: http-metrics
+  updateStrategy:
+    type: RollingUpdate
