@@ -25,7 +25,7 @@ The [distributor]({{<relref "../architecture/distributor.md">}}) includes a High
 The HA Tracker deduplicates incoming samples based on a cluster and replica label expected on each incoming series.
 The cluster label uniquely identifies the cluster of redundant Prometheus servers for a given tenant.
 The replica label uniquely identifies the replica within the Prometheus cluster.
-Incoming samples are considered duplicated (and thus dropped) if received by any replica which is not the currently elected as leader within a cluster.
+Incoming samples are considered duplicated (and thus dropped) if received from any replica which is not the currently elected as leader within a cluster.
 
 In the event the HA tracker is enabled but incoming samples contain only one or none of the cluster and replica labels, these samples will be accepted by default and never deduplicated.
 
