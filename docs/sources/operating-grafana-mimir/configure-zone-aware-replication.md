@@ -52,7 +52,7 @@ To enable zone-aware replication for time series:
 
 ## Configure store-gateway blocks replication
 
-To enable the zone-aware replication for the store-gateways, refer to [Zone awareness]({{<relref "./store-gateway.md#zone-awareness" >}}) in the store-gateway component documentation.
+To enable the zone-aware replication for the store-gateways, refer to [Zone awareness]({{<relref "../architecture/store-gateway.md#zone-awareness" >}}) in the store-gateway component documentation.
 
 ## Minimum number of zones
 

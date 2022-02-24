@@ -12,7 +12,7 @@ DOCS_BASE_URL    ?= "localhost:$(DOCS_HOST_PORT)"
 
 DOCS_VERSION = next
 
-DOCS_DOCKER_RUN_FLAGS = -ti -v $(CURDIR)/$(DOCS_DIR):/hugo/content/docs/$(DOCS_PROJECT)/$(DOCS_VERSION):ro,z -p $(DOCS_HOST_PORT):$(DOCS_LISTEN_PORT) --rm $(DOCS_IMAGE)
+DOCS_DOCKER_RUN_FLAGS = -ti -v $(CURDIR)/$(DOCS_DIR):/hugo/content/docs/$(DOCS_PROJECT)/$(DOCS_VERSION):ro,z -e HUGO_REFLINKSERRORLEVEL=ERROR -p $(DOCS_HOST_PORT):$(DOCS_LISTEN_PORT) --rm $(DOCS_IMAGE)
 DOCS_DOCKER_CONTAINER = $(DOCS_PROJECT)-docs
 
 # This wrapper will serve documentation on a local webserver.

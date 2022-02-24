@@ -14,14 +14,14 @@ The store-gateway is **stateful**.
 
 The store-gateway needs to have an almost up-to-date view over the bucket in long-term storage, in order to find the right blocks to lookup at query time. The store-gateway can keep the bucket view updated in two different ways:
 
-1. Periodically downloading the [bucket index]({{< relref "../blocks-storage/bucket-index.md" >}}) (default)
+1. Periodically downloading the [bucket index]({{< relref "../operating-grafana-mimir/blocks-storage/bucket-index.md" >}}) (default)
 2. Periodically scanning the bucket
 
 ### Bucket index enabled (default)
 
-At startup **store-gateways** fetch the [bucket index]({{< relref "../blocks-storage/bucket-index.md" >}}) from long-term storage for each tenant belonging to their [shard](#blocks-sharding-and-replication) in order to discover each tenant's blocks and block deletion marks. For each discovered block the [index header](#blocks-index-header) is downloaded. During this initial bucket synchronization phase, the store-gateway `/ready` readiness probe endpoint will fail.
+At startup **store-gateways** fetch the [bucket index]({{< relref "../operating-grafana-mimir/blocks-storage/bucket-index.md" >}}) from long-term storage for each tenant belonging to their [shard](#blocks-sharding-and-replication) in order to discover each tenant's blocks and block deletion marks. For each discovered block the [index header](#blocks-index-header) is downloaded. During this initial bucket synchronization phase, the store-gateway `/ready` readiness probe endpoint will fail.
 
-For more information about the bucket index, please refer to [bucket index documentation]({{< relref "../blocks-storage/bucket-index.md" >}}).
+For more information about the bucket index, please refer to [bucket index documentation]({{< relref "../operating-grafana-mimir/blocks-storage/bucket-index.md" >}}).
 
 Store-gateways periodically re-download the bucket index to get an updated view over the long-term storage and discover new or deleted blocks.
 New blocks can be uploaded by [ingesters]({{< relref "./ingester.md" >}}) or by the [compactor]({{< relref "./compactor.md" >}}).
@@ -31,7 +31,7 @@ The frequency at which this occurs is configured with the `-blocks-storage.bucke
 
 The blocks chunks and the entire index are never fully downloaded by the store-gateway. The index-header is stored to the local disk, in order to avoid having to re-download it on subsequent restarts of a store-gateway. For this reason, it's recommended - but not required - to run the store-gateway with a persistent disk. For example, if you're running the Grafana Mimir cluster in Kubernetes, you may use a StatefulSet with a PersistentVolumeClaim for the store-gateways.
 
-For more information about the index-header, please refer to [Binary index-header documentation]({{< relref "../blocks-storage/binary-index-header.md" >}}).
+For more information about the index-header, please refer to [Binary index-header documentation]({{< relref "../operating-grafana-mimir/blocks-storage/binary-index-header.md" >}}).
 
 ### Bucket index disabled
 
@@ -71,7 +71,7 @@ This feature is called **auto-forget** and is built into the store-gateway.
 
 ### Zone-awareness
 
-The store-gateway replication optionally supports [zone-awareness]({{< relref "../guides/zone-replication.md" >}}). When zone-aware replication is enabled and the blocks replication factor is > 1, each block is guaranteed to be replicated across store-gateway instances running in different availability zones.
+The store-gateway replication optionally supports [zone-awareness]({{< relref "../operating-grafana-mimir/configure-zone-aware-replication.md" >}}). When zone-aware replication is enabled and the blocks replication factor is > 1, each block is guaranteed to be replicated across store-gateway instances running in different availability zones.
 
 **To enable** the zone-aware replication for the store-gateways you should:
 
@@ -89,7 +89,7 @@ To enable this waiting logic, you can start the store-gateway with `-store-gatew
 
 ## Blocks index-header
 
-The [index-header]({{< relref "../blocks-storage/binary-index-header.md" >}}) is a subset of the block index which the store-gateway downloads from long-term storage and keeps on the local disk in order to speed up queries.
+The [index-header]({{< relref "../operating-grafana-mimir/blocks-storage/binary-index-header.md" >}}) is a subset of the block index which the store-gateway downloads from long-term storage and keeps on the local disk in order to speed up queries.
 
 At startup, the store-gateway downloads the index-header of each block belonging to its shard. A store-gateway is not ready until this initial index-header download is completed. Moreover, while running, the store-gateway periodically looks for newly uploaded blocks in the long-term storage and downloads the index-header for the blocks belonging to its shard.
 
@@ -108,7 +108,7 @@ The store-gateway supports the following caches:
 - [Chunks cache](#chunks-cache)
 - [Metadata cache](#metadata-cache)
 
-Caching is optional, but **highly recommended** in a production environment. Please also check out the [production tips]({{< relref "../blocks-storage/production-tips.md#caching" >}}) for more information about configuring the cache.
+Caching is optional, but **highly recommended** in a production environment. Please also check out the [production tips]({{< relref "../operating-grafana-mimir/blocks-storage/production-tips.md#caching" >}}) for more information about configuring the cache.
 
 ### Index cache
 
