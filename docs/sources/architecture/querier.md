@@ -14,7 +14,7 @@ The querier is **stateless**.
 
 ## How it works
 
-The querier needs to have an almost up-to-date view over the bucket in long-term storage, in order to find the right blocks to lookup at query time. The querier can keep the bucket view updated in to two different ways:
+The querier needs to have an almost up-to-date view over the bucket in long-term storage, in order to find the right blocks to lookup at query time. The querier can keep the bucket view updated in two different ways:
 
 1. Periodically downloading the [bucket index]({{< relref "../blocks-storage/bucket-index.md" >}}) (default)
 2. Periodically scanning the bucket
