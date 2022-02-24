@@ -29,17 +29,17 @@
 \begin{document}
 \begin{tikzpicture}[node distance=1.5cm]
     % Specification of nodes (position, etc.)
-    \node (user)            [userQuery]                                   {query =  sum(rate(failed[5m])) / sum(rate(total[5m])) \\ start = today - 7d \\ end = today};
+    \node (user)            [userQuery]                                   {query =  sum(rate(failed[1m])) / sum(rate(total[1m])) \\ start = today - 7d \\ end = today};
     \node (userStory)       [storyShift, left of=user] {User queries over 7 days};
     \node (timesplitdots)   [below of=user, yshift = -1cm, transparent]   {\dots};
     \node (timesplit1)      [startend, left of=timesplitdots]             {start = today - 7d \\ end = today - 6d};
     \node (timesplitn)      [startend, right of=timesplitdots]            {start = today - 1d \\ end = today};
     \node (timesplitStory)  [storyShift, left of=timesplitdots] {Queries are split into 24 hour pieces \texttt{split\_by\_interval=24h}};
-    \node (shardingLeg1)    [query, below of=timesplit1, yshift=2.2cm]  {sum(rate(failed[5m]))};
+    \node (shardingLeg1)    [query, below of=timesplit1, yshift=2.2cm]  {sum(rate(failed[1m]))};
     \node (shardingLeg1M)   [shard, below of=shardingLeg1]  {\sfrac{2}{3}};
     \node (shardingLeg1L)   [shard, left of=shardingLeg1M]  {\sfrac{1}{3}};
     \node (shardingLeg1R)   [shard, right of=shardingLeg1M] {\sfrac{3}{3}};
-    \node (shardingLeg2)    [query, right of=shardingLeg1]  {sum(rate(total[5m]))};
+    \node (shardingLeg2)    [query, right of=shardingLeg1]  {sum(rate(total[1m]))};
     \node (shardingLeg2M)   [shard, below of=shardingLeg2]  {\sfrac{2}{3}};
     \node (shardingLeg2L)   [shard, left of=shardingLeg2M]  {\sfrac{1}{3}};
     \node (shardingLeg2R)   [shard, right of=shardingLeg2M] {\sfrac{3}{3}};

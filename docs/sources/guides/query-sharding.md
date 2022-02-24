@@ -21,9 +21,11 @@ In particular associative aggregations (like `sum`, `min`, `max`, `count`,
 `avg`) are shardable, while query functions (like `absent`, `absent_over_time`,
 `histogram_quantile`, `sort_desc`, `sort`) are not.
 
-In the following examples we look at a concrete example with a shard count of `3`.
-All the partial queries that include a label selector `__query_shard__` are
-executed in parallel.
+In the following examples we look at a concrete example with a shard count of
+`3`.  All the partial queries that include a label selector `__query_shard__`
+are executed in parallel. The `concat()` annotation is used to show when partial
+query results are concatenated/merged by the query-frontend.
+
 
 ### Example 1: Full query is shardable
 
@@ -53,11 +55,37 @@ Is executed as (assuming a shard count of 3):
 
 ```promql
 histogram_quantile(0.99, sum by(le) (
-  sum by(le) (rate(metric{__query_shard__="1_of_3"}[1m]))
-  sum by(le) (rate(metric{__query_shard__="2_of_3"}[1m]))
-  sum by(le) (rate(metric{__query_shard__="3_of_3"}[1m]))
+  concat(
+    sum by(le) (rate(metric{__query_shard__="1_of_3"}[1m]))
+    sum by(le) (rate(metric{__query_shard__="2_of_3"}[1m]))
+    sum by(le) (rate(metric{__query_shard__="3_of_3"}[1m]))
+  )
 ))
 ```
+
+### Example 3: Query with two shardable portions
+
+```promql
+sum(rate(failed[1m])) / sum(rate(total[1m]))
+```
+
+Is executed as (assuming a shard count of 3):
+
+```promql
+concat((
+  sum (rate(failed{__query_shard__="1_of_3"}[1m]))
+  sum (rate(failed{__query_shard__="2_of_3"}[1m]))
+  sum (rate(failed{__query_shard__="3_of_3"}[1m]))
+))
+/
+concat((
+  sum (rate(total{__query_shard__="1_of_3"}[1m]))
+  sum (rate(total{__query_shard__="2_of_3"}[1m]))
+  sum (rate(total{__query_shard__="3_of_3"}[1m]))
+))
+```
+
+![Flow of a query with two shardable portions](../../images/query-sharding.png)
 
 ## Enable Query sharding
 
@@ -84,17 +112,14 @@ daily query will have a max of 128 / 8 days = 16 partial queries per day.
 
 After enabling query sharding in a microservices deployment, the query
 frontends will start processing the aggregation of the partial queries. Hence
-it is important to configure some PromQL engine specific parameters on the query-frontend too:
+it is important to configure some PromQL engine specific parameters on the
+query-frontend too:
 
 - `-querier.max-concurrent`
 - `-querier.timeout`
 - `-querier.max-samples`
 - `-querier.default-evaluation-interval`
 - `-querier.lookback-delta`
-
-## Flow of a sharded query
-
-![Flow of a query with query sharding](../../images/query-sharding.png)
 
 ## Operational considerations
 
@@ -104,8 +129,10 @@ but increases the load on querier components and their underlying data stores
 (ingesters for recent data and store-gateway for historic data). The
 caching layer for chunks and indexes will also experience an increased load.
 
-We also recommend to increase the maximum number of queries scheduled in parallel by the query-frontend,  multiplying the previously set
-value of `-querier.max-query-parallelism` by `-query-frontend.query-sharding-total-shards`.
+We also recommend to increase the maximum number of queries scheduled in
+parallel by the query-frontend,  multiplying the previously set value of
+`-querier.max-query-parallelism` by
+`-query-frontend.query-sharding-total-shards`.
 
 ## Verification
 
@@ -125,8 +152,8 @@ sharded_queries=0  param_query="absent(up{job=\"my-service\"})"
 
 When `sharded_queries` matches the configured shard count, query sharding is
 operational and the query has only a single leg (assuming time splitting is
-disabled or the query doesn't span across multiple days). The following log line represents that case with a shard count of
-`16`:
+disabled or the query doesn't span across multiple days). The following log
+line represents that case with a shard count of `16`:
 
 ```
 sharded_queries=16 query="sum(rate(prometheus_engine_queries[5m]))"
@@ -134,8 +161,9 @@ sharded_queries=16 query="sum(rate(prometheus_engine_queries[5m]))"
 
 When `sharded_queries` is a multiple of the configured shard count, query
 sharding is operational and the query has multiple legs (assuming time
-splitting is disabled or the query doesn't span across multiple days). The following log line shows a query with two legs and
-with a configured shard count of `16`:
+splitting is disabled or the query doesn't span across multiple days). The
+following log line shows a query with two legs and with a configured shard
+count of `16`:
 
 ```
 sharded_queries=32 query="sum(rate(prometheus_engine_queries{engine=\"ruler\"}[5m]))/sum(rate(prometheus_engine_queries[5m]))"
