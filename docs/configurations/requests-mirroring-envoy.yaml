@@ -28,8 +28,7 @@ static_resources:
                             # request has been processed and when the upstream response has been completely processed.
                             timeout: 15s
 
-                            # Specifies the cluster that requests will be mirrored to. The performances and availability of
-                            # the secondary cluster have no impact on the requests to the primary one. The performance
+                            # Specifies the cluster that requests will be mirrored to. The performance
                             # and availability of the secondary cluster have no impact on the requests to the primary
                             # one. The response to the client will always be the one from the primary one. In this sense,
                             # the requests from Envoy to the secondary cluster are "fire and forget".
