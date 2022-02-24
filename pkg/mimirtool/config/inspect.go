@@ -3,6 +3,7 @@
 package config
 
 import (
+	"bytes"
 	"encoding/json"
 	"flag"
 	"reflect"
@@ -41,10 +42,8 @@ type InspectedEntry struct {
 	FieldCategory string      `json:"fieldCategory"`
 }
 
-// TODO dimitarvdimitrov the json library still unmarshals an array of strings into an []interface{}
-// 		and because of this the defaults' diffs contain more things. Refactor to do something like
-//		https://eagain.net/articles/go-dynamic-json/
 func (i *InspectedEntry) UnmarshalJSON(b []byte) error {
+	// use a type alias that doesn't have any methods, so we force json to unmarshal everything else as it normally would
 	type plain InspectedEntry
 	err := json.Unmarshal(b, (*plain)(i))
 	if err != nil {
@@ -55,17 +54,26 @@ func (i *InspectedEntry) UnmarshalJSON(b []byte) error {
 		return nil
 	}
 
-	actualType := reflect.ValueOf(i.FieldValue)
-	if !actualType.IsValid() {
-		return nil
-	}
+	return i.unmarshalJSONValue(b)
+}
 
-	correctType := parse.ReflectType(i.FieldType)
-	if actualType.CanConvert(correctType) {
-		i.FieldValue = actualType.Convert(correctType).Interface()
-	}
+// unmarshalJSONValue extracts the "fieldValue" JSON field from b and unmarshals it into a typed
+// value according to i.FieldType and parse.ReflectType.
+//
+// For example, it takes `{ "fieldValue": 123 }` and sets i.FieldValue to int(123). The default json.Unmarshal
+// behaviour would be to unmarshal it into float64(123).
+func (i *InspectedEntry) unmarshalJSONValue(b []byte) error {
+	jsonValue := &struct {
+		Raw json.RawMessage `json:"fieldValue"`
+	}{}
 
-	return nil
+	err := json.Unmarshal(b, jsonValue)
+	if err != nil {
+		return err
+	}
+	jsonDecoder := json.NewDecoder(bytes.NewBuffer(jsonValue.Raw))
+	i.FieldValue, err = decodeValue(i.FieldType, jsonDecoder)
+	return err
 }
 
 func (i *InspectedEntry) MarshalYAML() (interface{}, error) {

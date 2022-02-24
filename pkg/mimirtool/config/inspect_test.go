@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/dskit/flagext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
@@ -239,11 +240,61 @@ func TestInspectConfig_HasDefaultValues(t *testing.T) {
 }
 
 func TestInspectConfig_LoadingAConfigHasCorrectTypes(t *testing.T) {
-	// TODO dimitarvdimitrov - see todo on InspectedEntry.UnmarshalJSON
-	d := defaultCortexParams()
-	val, err := d.GetValue("distributor.max_recv_msg_size")
-	assert.NoError(t, err)
-	assert.IsType(t, int(0), val)
+	testCases := []struct {
+		name         string
+		path         string
+		expectedType interface{}
+	}{
+		{
+			name:         "int",
+			path:         "distributor.max_recv_msg_size",
+			expectedType: int(0),
+		},
+		{
+			name:         "[]string",
+			path:         "distributor.ha_tracker.kvstore.etcd.endpoints",
+			expectedType: []string{},
+		},
+		{
+			name:         "duration",
+			path:         "server.graceful_shutdown_timeout",
+			expectedType: time.Duration(0),
+		},
+		{
+			name:         "bool",
+			path:         "distributor.ha_tracker.kvstore.etcd.tls_enabled",
+			expectedType: false,
+		},
+		{
+			name:         "float",
+			path:         "distributor.ha_tracker.kvstore.consul.watch_rate_limit",
+			expectedType: float64(0),
+		},
+		{
+			name:         "string",
+			path:         "distributor.ha_tracker.kvstore.etcd.tls_cert_path",
+			expectedType: "",
+		},
+		{
+			name:         "time",
+			path:         "querier.use_second_store_before_time",
+			expectedType: flagext.Time{},
+		},
+		{
+			name:         "url",
+			path:         "ruler.external_url",
+			expectedType: flagext.URLValue{},
+		},
+	}
+
+	params := defaultCortexParams()
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			val, err := params.GetValue(tc.path)
+			assert.NoError(t, err)
+			assert.IsType(t, tc.expectedType, val)
+		})
+	}
 }
 
 func listAllFields(inspectedConfig *InspectedEntry) []string {
