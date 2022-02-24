@@ -12,7 +12,7 @@ The store-gateway is **stateful**.
 
 ## How it works
 
-The store-gateway needs to have an almost up-to-date view over the bucket in long-term storage, in order to find the right blocks to lookup at query time. The store-gateway can keep the bucket view updated in to two different ways:
+The store-gateway needs to have an almost up-to-date view over the bucket in long-term storage, in order to find the right blocks to lookup at query time. The store-gateway can keep the bucket view updated in two different ways:
 
 1. Periodically downloading the [bucket index]({{< relref "../blocks-storage/bucket-index.md" >}}) (default)
 2. Periodically scanning the bucket
@@ -155,7 +155,7 @@ Store-gateway and [querier]({{< relref "./querier.md" >}}) can use memcached for
 
 - List of tenants
 - List of blocks per tenant
-- List of block content per tenant
+- List of chunks in blocks per tenant
 - Block's `meta.json` existence and content
 - Block's `deletion-mark.json` existence and content
 - Tenant's `bucket-index.json.gz` content
