@@ -32,7 +32,7 @@ Given the bucket index removes the need to scan the bucket, it brings few benefi
 
 ### Bucket index disabled
 
-When [bucket index]({{< relref "../blocks-storage/bucket-index.md" >}}) is disabled, **queriers** iterate over the entire storage bucket to discover all tenants blocks and download the `meta.json` for each block. During this initial bucket scanning phase, a querier is not ready to handle incoming queries yet and its `/ready` readiness probe endpoint will fail.
+When [bucket index]({{< relref "../blocks-storage/bucket-index.md" >}}) is disabled, **queriers** iterate over the entire storage bucket to discover blocks for all tenants, and download the `meta.json` for each block. During this initial bucket scanning phase, a querier is not ready to handle incoming queries yet and its `/ready` readiness probe endpoint will fail.
 
 While running, queriers periodically iterate over the storage bucket to discover new tenants and recently uploaded blocks.
 
