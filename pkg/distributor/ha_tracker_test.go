@@ -116,6 +116,16 @@ func TestHATrackerConfig_Validate(t *testing.T) {
 			}(),
 			expectedErr: nil,
 		},
+		"should fail if KV backend is set to memberlist": {
+			cfg: func() HATrackerConfig {
+				cfg := HATrackerConfig{}
+				flagext.DefaultValues(&cfg)
+				cfg.KVStore.Store = "memberlist"
+
+				return cfg
+			}(),
+			expectedErr: errMemberlistUnsupported,
+		},
 	}
 
 	for testName, testData := range tests {

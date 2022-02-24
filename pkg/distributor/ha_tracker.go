@@ -32,6 +32,7 @@ import (
 var (
 	errNegativeUpdateTimeoutJitterMax = errors.New("HA tracker max update timeout jitter shouldn't be negative")
 	errInvalidFailoverTimeout         = "HA Tracker failover timeout (%v) must be at least 1s greater than update timeout - max jitter (%v)"
+	errMemberlistUnsupported          = errors.New("memberlist is not supported by the HA tracker since gossip propagation is too slow for HA purposes")
 )
 
 type haTrackerLimits interface {
@@ -91,6 +92,10 @@ func (cfg *HATrackerConfig) Validate() error {
 	minFailureTimeout := cfg.UpdateTimeout + cfg.UpdateTimeoutJitterMax + time.Second
 	if cfg.FailoverTimeout < minFailureTimeout {
 		return fmt.Errorf(errInvalidFailoverTimeout, cfg.FailoverTimeout, minFailureTimeout)
+	}
+
+	if cfg.KVStore.Store == "memberlist" {
+		return errMemberlistUnsupported
 	}
 
 	return nil
