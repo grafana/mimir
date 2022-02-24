@@ -2479,8 +2479,9 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -validation.max-metadata-length
 [max_metadata_length: <int> | default = 1024]
 
-# (advanced) Duration which table will be created/deleted before/after it's
-# needed; we won't accept sample from before this time.
+# (advanced) Controls how far into the future incoming samples are accepted
+# compared to the wall clock. Any sample with timestamp `t` will be rejected if
+# `t > (now + validation.create-grace-period)`.
 # CLI flag: -validation.create-grace-period
 [creation_grace_period: <duration> | default = 10m]
 

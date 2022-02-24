@@ -1596,7 +1596,7 @@ Usage of ./cmd/mimir/mimir:
   -tenant-federation.enabled
     	If enabled on all services, queries can be federated across multiple tenants. The tenant IDs involved need to be specified separated by a '|' character in the 'X-Scope-OrgID' header.
   -validation.create-grace-period value
-    	Duration which table will be created/deleted before/after it's needed; we won't accept sample from before this time. (default 10m)
+    	Controls how far into the future incoming samples are accepted compared to the wall clock. Any sample with timestamp `t` will be rejected if `t > (now + validation.create-grace-period)`. (default 10m)
   -validation.enforce-metadata-metric-name
     	Enforce every metadata has a metric name. (default true)
   -validation.max-label-names-per-series int
