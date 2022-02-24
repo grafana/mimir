@@ -41,10 +41,12 @@ static_resources:
     - name: mimir_primary
       type: STRICT_DNS
       connect_timeout: 1s
+      # Replace mimir-primary with the address and port the distributor of your primary mimir cluster
       hosts: [{ socket_address: { address: mimir-primary, port_value: 8080 }}]
       dns_refresh_rate: 5s
     - name: mimir_secondary
       type: STRICT_DNS
       connect_timeout: 1s
+      # Replace mimir-secondary with the address and port the distributor of your secondary mimir cluster
       hosts: [{ socket_address: { address: mimir-secondary, port_value: 8080 }}]
       dns_refresh_rate: 5s
