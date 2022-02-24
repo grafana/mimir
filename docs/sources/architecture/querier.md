@@ -19,7 +19,7 @@ The querier needs to have an almost up-to-date view over the bucket in long-term
 1. Periodically downloading the [bucket index]({{< relref "../blocks-storage/bucket-index.md" >}}) (default)
 2. Periodically scanning the bucket
 
-Queriers do **not** download any content from blocks except metadata including the minimum and maximum timestamp of samples within the block.
+Queriers do not need any content from blocks except their metadata including the minimum and maximum timestamp of samples within the block.
 
 ### Bucket index enabled (default)
 
