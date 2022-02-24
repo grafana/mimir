@@ -22,10 +22,9 @@ In particular associative aggregations (like `sum`, `min`, `max`, `count`,
 `histogram_quantile`, `sort_desc`, `sort`) are not.
 
 In the following examples we look at a concrete example with a shard count of
-`3`.  All the partial queries that include a label selector `__query_shard__`
+`3`. All the partial queries that include a label selector `__query_shard__`
 are executed in parallel. The `concat()` annotation is used to show when partial
 query results are concatenated/merged by the query-frontend.
-
 
 ### Example 1: Full query is shardable
 
@@ -130,7 +129,7 @@ but increases the load on querier components and their underlying data stores
 caching layer for chunks and indexes will also experience an increased load.
 
 We also recommend to increase the maximum number of queries scheduled in
-parallel by the query-frontend,  multiplying the previously set value of
+parallel by the query-frontend, multiplying the previously set value of
 `-querier.max-query-parallelism` by
 `-query-frontend.query-sharding-total-shards`.
 
