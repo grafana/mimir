@@ -6,11 +6,9 @@ weight: 10
 
 # Distributor
 
-The **distributor** component is responsible for receiving incoming series from Prometheus, validate them and shard and replicate them across multiple [ingesters]({{<relref "./ingester.md">}}).
-
-The distributor is the ingress component on the write path.
+The **distributor** component is responsible for receiving incoming series from Prometheus.
 Incoming data is validated for correctness and to ensure that it is within the configured limits for the given tenant.
-Valid data is then split into batches and sent to multiple ingesters in parallel, sharding series among ingesters and replicating each series by the configured replication factor (three by default).
+Valid data is then split into batches and sent to multiple [ingesters]({{<relref "./ingester.md">}}) in parallel, sharding series among ingesters and replicating each series by the configured replication factor (three by default).
 
 The distributor is **stateless**.
 
