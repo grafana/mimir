@@ -6,7 +6,7 @@ weight: 10
 
 # Querier
 
-The querier component handles queries using the [PromQL](https://prometheus.io/docs/prometheus/latest/querying/basics/) query language to fetch time series and labels on the read path.
+The querier component handles queries using the [Prometheus Query Language](https://prometheus.io/docs/prometheus/latest/querying/basics/) to fetch time series and labels on the read path.
 
 The querier uses the [store-gateway]({{< relref "./store-gateway.md" >}}) service to query the [long-term storage]({{< relref "./_index.md#long-term-storage" >}}) and the [ingester]({{< relref "./ingester.md" >}}) service to query data under way on the write path.
 
