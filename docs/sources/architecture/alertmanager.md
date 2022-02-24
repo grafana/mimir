@@ -70,7 +70,7 @@ The Mimir Alertmanager exposes the same web UI as the Prometheus Alertmanager at
 When running Grafana Mimir with multi-tenancy enabled, the Alertmanager requires that any HTTP request includes the tenant ID header.
 Tenants only see alerts sent to their Alertmanager.
 
-For a complete reference of the tenant ID header and Alertmanager endpoints, refer to [HTTP API]({{<relref "../api/_index.md" >}}).
+For a complete reference of the tenant ID header and Alertmanager endpoints, refer to [HTTP API]({{<relref "../reference-http-api/_index.md" >}}).
 
 The HTTP path prefix for the UI and HTTP API is configurable:
 
