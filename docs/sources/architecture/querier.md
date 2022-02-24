@@ -25,10 +25,7 @@ Queriers do **not** download any content from blocks except metadata including t
 
 At startup, queriers lazily download the bucket index upon the first query received for a given tenant, cache it in memory and periodically keep it up to date. The bucket index contains the list of blocks and block deletion marks of a tenant, which is later used during the query execution to find the set of blocks that need to be queried for the given query.
 
-Given the bucket index removes the need to scan the bucket, it brings few benefits:
-
-1. The querier is expected to be ready shortly after startup.
-2. Lower volume of API calls to object storage.
+Running with the bucket index enabled reduces querier startup time and reduces the volume of API calls to object storage.
 
 ### Bucket index disabled
 
@@ -50,13 +47,19 @@ Given a query, the querier analyzes the `start` and `end` time range to compute 
 The request sent to each store-gateway contains the list of block IDs that are expected to be queried, and the response sent back by the store-gateway to the querier contains the list of block IDs that were actually queried. This list may be a subset of the requested blocks, for example due to recent blocks resharding event (ie. last few seconds).
 The querier runs a consistency check on responses received from the store-gateways to ensure all expected blocks have been queried; if not, the querier retries fetching samples from missing blocks from different store-gateways up to `-store-gateway.sharding-ring.replication-factor` (defaults to 3) times or maximum 3 times, whichever is lower. If the consistency check fails after all retries, the query execution fails as well. This way the correctness of query result is guaranteed.
 
-If the query time range covers a period within `-querier.query-ingesters-within` duration, the querier also sends the request to all ingesters, in order to fetch samples that have not been uploaded to the long-term storage yet.
+If the query time range covers a period within `-querier.query-ingesters-within` duration, the querier also sends the request to all ingesters by default, in order to fetch samples that have not been uploaded to the long-term storage yet.
+In production environments it is recommended that the flag `-querier.shuffle-sharding-ingesters-lookback-period` duration is set to a high enough value in order to only select ingesters that received data during this period.
+For more information on shuffle sharding, refer to [configure shuffle sharding]({{< relref "../operating-grafana-mimir/configure-shuffle-sharding.md#ingesters-read-path" >}}).
 
-Once all samples have been fetched from both store-gateways and ingesters, the querier proceeds with running the PromQL engine to evaluate the query and send back the result to the client.
+Once all samples have been fetched from both store-gateways and ingesters, the querier proceeds with running the PromQL engine to execute the query and send back the result to the client.
 
 ### How queriers connect to store-gateway
 
 Queriers discover the address of store-gateways by accessing the store-gateways hash ring and thus queriers must be configured with the same `-store-gateway.sharding-ring.*` flags (or their respective YAML configuration parameters) that store-gateways have been configured.
+
+### How queriers connect to ingester
+
+Queriers discover the address of ingesters by accessing the distributor hash ring and thus queriers must be configured with the same `-ingester.ring.*` flags (or their respective YAML configuration parameters) that ingesters have been configured.
 
 ## Caching
 
