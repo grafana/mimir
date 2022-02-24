@@ -16,7 +16,7 @@ The querier is **stateless**.
 
 The querier needs to have an almost up-to-date view over the bucket in long-term storage, in order to find the right blocks to lookup at query time. The querier can keep the bucket view updated in two different ways:
 
-1. Periodically downloading the [bucket index]({{< relref "../blocks-storage/bucket-index.md" >}}) (default)
+1. Periodically downloading the [bucket index]({{< relref "../operating-grafana-mimir/blocks-storage/bucket-index.md" >}}) (default)
 2. Periodically scanning the bucket
 
 Queriers do not need any content from blocks except their metadata including the minimum and maximum timestamp of samples within the block.
@@ -29,7 +29,7 @@ Running with the bucket index enabled reduces querier startup time and reduces t
 
 ### Bucket index disabled
 
-When [bucket index]({{< relref "../blocks-storage/bucket-index.md" >}}) is disabled, **queriers** iterate over the entire storage bucket to discover blocks for all tenants, and download the `meta.json` for each block. During this initial bucket scanning phase, a querier is not ready to handle incoming queries yet and its `/ready` readiness probe endpoint will fail.
+When [bucket index]({{< relref "../operating-grafana-mimir/blocks-storage/bucket-index.md" >}}) is disabled, **queriers** iterate over the entire storage bucket to discover blocks for all tenants, and download the `meta.json` for each block. During this initial bucket scanning phase, a querier is not ready to handle incoming queries yet and its `/ready` readiness probe endpoint will fail.
 
 While running, queriers periodically iterate over the storage bucket to discover new tenants and recently uploaded blocks.
 
