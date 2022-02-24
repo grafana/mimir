@@ -5147,12 +5147,12 @@ func TestIngesterActiveSeries(t *testing.T) {
 	defaultCustomTrackersOverridesProvider := &ActiveSeriesCustomTrackersOverridesProvider{
 		func() *ActiveSeriesCustomTrackersOverrides {
 			return &ActiveSeriesCustomTrackersOverrides{
-				Default: mustNewActiveSeriesCustomTrackersConfig(t, map[string]string{
+				Default: mustNewActiveSeriesCustomTrackersConfigFromMap(t, map[string]string{
 					"bool_is_true":  `{bool="true"}`,
 					"bool_is_false": `{bool="false"}`,
 				}),
 				TenantSpecific: map[string]*ActiveSeriesCustomTrackersConfig{
-					"test_user": mustNewActiveSeriesCustomTrackersConfig(t, map[string]string{
+					"test_user": mustNewActiveSeriesCustomTrackersConfigFromMap(t, map[string]string{
 						"team_a": `{team="a"}`,
 						"team_b": `{team="b"}`,
 					}),
@@ -5161,7 +5161,7 @@ func TestIngesterActiveSeries(t *testing.T) {
 		},
 	}
 
-	activeSeriesDefaultConfig := mustNewActiveSeriesCustomTrackersConfig(t, map[string]string{
+	activeSeriesDefaultConfig := mustNewActiveSeriesCustomTrackersConfigFromMap(t, map[string]string{
 		"bool_is_true_flagbased":  `{bool="true"}`,
 		"bool_is_false_flagbased": `{bool="false"}`,
 	})
@@ -5507,7 +5507,7 @@ func TestIngesterActiveSeries(t *testing.T) {
 			activeSeriesOverridesProvider: &ActiveSeriesCustomTrackersOverridesProvider{
 				func() *ActiveSeriesCustomTrackersOverrides {
 					return &ActiveSeriesCustomTrackersOverrides{TenantSpecific: map[string]*ActiveSeriesCustomTrackersConfig{
-						"test_user": mustNewActiveSeriesCustomTrackersConfig(t, map[string]string{
+						"test_user": mustNewActiveSeriesCustomTrackersConfigFromMap(t, map[string]string{
 							"team_a": `{team="a"}`,
 							"team_b": `{team="b"}`,
 						}),
@@ -5606,12 +5606,12 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 	defaultCustomTrackersOverridesProvider := &ActiveSeriesCustomTrackersOverridesProvider{
 		func() *ActiveSeriesCustomTrackersOverrides {
 			return &ActiveSeriesCustomTrackersOverrides{
-				Default: mustNewActiveSeriesCustomTrackersConfig(t, map[string]string{
+				Default: mustNewActiveSeriesCustomTrackersConfigFromMap(t, map[string]string{
 					"bool_is_true":  `{bool="true"}`,
 					"bool_is_false": `{bool="false"}`,
 				}),
 				TenantSpecific: map[string]*ActiveSeriesCustomTrackersConfig{
-					"test_user": mustNewActiveSeriesCustomTrackersConfig(t, map[string]string{
+					"test_user": mustNewActiveSeriesCustomTrackersConfigFromMap(t, map[string]string{
 						"team_a": `{team="a"}`,
 						"team_b": `{team="b"}`,
 					}),
@@ -5620,7 +5620,7 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 		},
 	}
 
-	activeSeriesDefaultConfig := mustNewActiveSeriesCustomTrackersConfig(t, map[string]string{
+	activeSeriesDefaultConfig := mustNewActiveSeriesCustomTrackersConfigFromMap(t, map[string]string{
 		"bool_is_true_flagbased":  `{bool="true"}`,
 		"bool_is_false_flagbased": `{bool="false"}`,
 	})

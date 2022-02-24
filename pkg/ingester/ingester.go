@@ -250,9 +250,6 @@ func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus
 	}
 
 	asm := NewActiveSeriesMatchers(&cfg.ActiveSeriesCustomTrackersConfig)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to parse active series matchers config")
-	}
 
 	return &Ingester{
 		cfg:                 cfg,

@@ -6,21 +6,14 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v3"
 
 	amlabels "github.com/prometheus/alertmanager/pkg/labels"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
 )
 
-func mustNewActiveSeriesCustomTrackersConfig(t *testing.T, source map[string]string) *ActiveSeriesCustomTrackersConfig {
-	m, err := newActiveSeriesCustomTrackersConfig(source)
-	require.NoError(t, err)
-	return &m
-}
-
 func TestActiveSeriesMatcher_MatchesSeries(t *testing.T) {
-	asm := NewActiveSeriesMatchers(mustNewActiveSeriesCustomTrackersConfig(t, map[string]string{
+	asm := NewActiveSeriesMatchers(mustNewActiveSeriesCustomTrackersConfigFromMap(t, map[string]string{
 		"bar_starts_with_1":             `{bar=~"1.*"}`,
 		"does_not_have_foo_label":       `{foo=""}`,
 		"has_foo_and_bar_starts_with_1": `{foo!="", bar=~"1.*"}`,
@@ -107,35 +100,6 @@ func TestActiveSeriesCustomTrackersConfigs_MalformedMatcher(t *testing.T) {
 			assert.Error(t, err)
 		})
 	}
-}
-
-func TestActiveSeriesCustomTrackersConfigs_Deserialization(t *testing.T) {
-	correctInput := `
-        baz: "{baz='bar'}"
-        foo: "{foo='bar'}"
-    `
-	malformedInput :=
-		`
-        baz: "123"
-        foo: "{foo='bar'}"
-    `
-	t.Run("ShouldDeserializeCorrectInput", func(t *testing.T) {
-		config := ActiveSeriesCustomTrackersConfig{}
-		err := yaml.Unmarshal([]byte(correctInput), &config)
-		assert.NoError(t, err, "failed do deserialize ActiveSeriesMatchers")
-		expectedConfig, err := newActiveSeriesCustomTrackersConfig(map[string]string{
-			"baz": "{baz='bar'}",
-			"foo": "{foo='bar'}",
-		})
-		require.NoError(t, err)
-		assert.Equal(t, expectedConfig.String(), config.String())
-	})
-
-	t.Run("ShouldErrorOnMalformedInput", func(t *testing.T) {
-		config := ActiveSeriesCustomTrackersConfig{}
-		err := yaml.Unmarshal([]byte(malformedInput), &config)
-		assert.Error(t, err, "should not deserialize malformed input")
-	})
 }
 
 func TestAmlabelMatchersToProm_HappyCase(t *testing.T) {

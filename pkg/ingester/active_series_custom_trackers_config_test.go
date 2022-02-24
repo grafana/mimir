@@ -12,6 +12,26 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
+func mustNewActiveSeriesCustomTrackersConfigFromMap(t *testing.T, source map[string]string) *ActiveSeriesCustomTrackersConfig {
+	m, err := newActiveSeriesCustomTrackersConfig(source)
+	require.NoError(t, err)
+	return &m
+}
+
+func mustNewActiveSeriesCustomTrackersConfigFromString(t *testing.T, source string) *ActiveSeriesCustomTrackersConfig {
+	m := ActiveSeriesCustomTrackersConfig{}
+	err := m.Set(source)
+	require.NoError(t, err)
+	return &m
+}
+
+func mustNewActiveSeriesCustomTrackersConfigDeserializedFromYaml(t *testing.T, yamlString string) *ActiveSeriesCustomTrackersConfig {
+	m := ActiveSeriesCustomTrackersConfig{}
+	err := yaml.Unmarshal([]byte(yamlString), &m)
+	require.NoError(t, err)
+	return &m
+}
+
 func TestActiveSeriesCustomTrackersConfigs(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
@@ -52,22 +72,22 @@ func TestActiveSeriesCustomTrackersConfigs(t *testing.T) {
 		{
 			name:     "one matcher",
 			flags:    []string{`-ingester.active-series-custom-trackers=foo:{foo="bar"}`},
-			expected: mustNewActiveSeriesCustomTrackersConfig(t, map[string]string{`foo`: `{foo="bar"}`}),
+			expected: mustNewActiveSeriesCustomTrackersConfigFromMap(t, map[string]string{`foo`: `{foo="bar"}`}),
 		},
 		{
 			name: "whitespaces are trimmed from name and matcher",
 			flags: []string{`-ingester.active-series-custom-trackers= foo :	{foo="bar"}` + "\n "},
-			expected: mustNewActiveSeriesCustomTrackersConfig(t, map[string]string{`foo`: `{foo="bar"}`}),
+			expected: mustNewActiveSeriesCustomTrackersConfigFromMap(t, map[string]string{`foo`: `{foo="bar"}`}),
 		},
 		{
 			name:     "two matchers in one flag value",
 			flags:    []string{`-ingester.active-series-custom-trackers=foo:{foo="bar"};baz:{baz="bar"}`},
-			expected: mustNewActiveSeriesCustomTrackersConfig(t, map[string]string{`foo`: `{foo="bar"}`, `baz`: `{baz="bar"}`}),
+			expected: mustNewActiveSeriesCustomTrackersConfigFromMap(t, map[string]string{`foo`: `{foo="bar"}`, `baz`: `{baz="bar"}`}),
 		},
 		{
 			name:     "two matchers in two flag values",
 			flags:    []string{`-ingester.active-series-custom-trackers=foo:{foo="bar"}`, `-ingester.active-series-custom-trackers=baz:{baz="bar"}`},
-			expected: mustNewActiveSeriesCustomTrackersConfig(t, map[string]string{`foo`: `{foo="bar"}`, `baz`: `{baz="bar"}`}),
+			expected: mustNewActiveSeriesCustomTrackersConfigFromMap(t, map[string]string{`foo`: `{foo="bar"}`, `baz`: `{baz="bar"}`}),
 		},
 		{
 			name:  "two matchers with same name in same flag",
@@ -106,6 +126,18 @@ func TestActiveSeriesCustomTrackersConfigs(t *testing.T) {
 }
 
 func TestRuntimeOverridesUnmarshal(t *testing.T) {
+	expectedDefaultConfig := mustNewActiveSeriesCustomTrackersConfigFromMap(
+		t, map[string]string{
+			"integrations/apolloserver": "{job='integrations/apollo-server'}",
+			"integrations/caddy":        "{job='integrations/caddy'}",
+		},
+	)
+	expectedTenantConfig := mustNewActiveSeriesCustomTrackersConfigFromMap(
+		t, map[string]string{
+			"team_A": "{grafanacloud_team='team_a'}",
+			"team_B": "{grafanacloud_team='team_b'}",
+		},
+	)
 	r := ActiveSeriesCustomTrackersOverrides{}
 	input := `
 default:
@@ -118,6 +150,9 @@ tenant_specific:
 `
 
 	require.NoError(t, yaml.UnmarshalStrict([]byte(input), &r))
+	require.Equal(t, expectedDefaultConfig.String(), r.Default.String())
+	require.Equal(t, expectedTenantConfig.String(), r.TenantSpecific["1"].String())
+
 }
 
 func TestActiveSeriesCustomTrackersOverridesProvider(t *testing.T) {
@@ -152,11 +187,11 @@ func TestActiveSeriesCustomTrackersOverridesProvider(t *testing.T) {
 }
 
 func TestMatchersForUser(t *testing.T) {
-	defaultMatchers := mustNewActiveSeriesCustomTrackersConfig(t, map[string]string{
+	defaultMatchers := mustNewActiveSeriesCustomTrackersConfigFromMap(t, map[string]string{
 		"foo": `{foo="bar"}`,
 		"bar": `{baz="bar"}`,
 	})
-	tenantSpecificMatchers := mustNewActiveSeriesCustomTrackersConfig(t, map[string]string{
+	tenantSpecificMatchers := mustNewActiveSeriesCustomTrackersConfigFromMap(t, map[string]string{
 		"team_a": `{team="team_a"}`,
 		"team_b": `{team="team_b"}`,
 	})
@@ -190,32 +225,37 @@ func TestMatchersForUser(t *testing.T) {
 }
 
 func TestActiveSeriesCustomTrackerConfig_Equality(t *testing.T) {
-	matcherSets := [][]string{
+	configSets := [][]ActiveSeriesCustomTrackersConfig{
 		{
-			`foo:{foo="bar"};baz:{baz="bar"}`,
-			`baz:{baz="bar"};foo:{foo="bar"}`,
-			`  foo:{foo="bar"};baz:{baz="bar"} `,
+			*mustNewActiveSeriesCustomTrackersConfigFromString(t, `foo:{foo='bar'};baz:{baz='bar'}`),
+			*mustNewActiveSeriesCustomTrackersConfigFromMap(t, map[string]string{
+				"baz": `{baz='bar'}`,
+				"foo": `{foo='bar'}`,
+			}),
+			*mustNewActiveSeriesCustomTrackersConfigDeserializedFromYaml(t,
+				`
+                baz: "{baz='bar'}"
+                foo: "{foo='bar'}"`),
 		},
 		{
-			`test:{test="true"}`,
+			*mustNewActiveSeriesCustomTrackersConfigFromString(t, `test:{test='true'}`),
+			*mustNewActiveSeriesCustomTrackersConfigFromMap(t, map[string]string{"test": `{test='true'}`}),
+			*mustNewActiveSeriesCustomTrackersConfigDeserializedFromYaml(t, `test: "{test='true'}"`),
 		},
 		{
-			`foo:{foo="bar"};baz:{baz="bar"};extra:{extra="extra"}`,
+			*mustNewActiveSeriesCustomTrackersConfigDeserializedFromYaml(t,
+				`
+        baz: "{baz='bar'}"
+        foo: "{foo='bar'}"
+        extra: "{extra='extra'}"`),
 		},
 	}
 
-	for _, matcherSet := range matcherSets {
+	for _, configSet := range configSets {
 		t.Run("EqualityBetweenSet", func(t *testing.T) {
-			var activeSeriesCustomTrackersConfigs []*ActiveSeriesCustomTrackersConfig
-			for _, matcherConfig := range matcherSet {
-				config := &ActiveSeriesCustomTrackersConfig{}
-				err := config.Set(matcherConfig)
-				require.NoError(t, err)
-				activeSeriesCustomTrackersConfigs = append(activeSeriesCustomTrackersConfigs, config)
-			}
-			for i := 0; i < len(activeSeriesCustomTrackersConfigs); i++ {
-				for j := i + 1; j < len(activeSeriesCustomTrackersConfigs); j++ {
-					assert.Equal(t, activeSeriesCustomTrackersConfigs[i].String(), activeSeriesCustomTrackersConfigs[j].String(), "matcher configs should be equal")
+			for i := 0; i < len(configSet); i++ {
+				for j := i + 1; j < len(configSet); j++ {
+					assert.Equal(t, configSet[i].String(), configSet[j].String(), "matcher configs should be equal")
 				}
 			}
 		})
@@ -223,12 +263,8 @@ func TestActiveSeriesCustomTrackerConfig_Equality(t *testing.T) {
 
 	t.Run("NotEqualsAcrossSets", func(t *testing.T) {
 		var activeSeriesMatchers []*ActiveSeriesCustomTrackersConfig
-		for _, matcherConfigs := range matcherSets {
-			exampleConfig := matcherConfigs[0]
-			config := &ActiveSeriesCustomTrackersConfig{}
-			err := config.Set(exampleConfig)
-			require.NoError(t, err)
-			activeSeriesMatchers = append(activeSeriesMatchers, config)
+		for _, matcherConfigs := range configSets {
+			activeSeriesMatchers = append(activeSeriesMatchers, &matcherConfigs[0])
 		}
 
 		for i := 0; i < len(activeSeriesMatchers); i++ {
@@ -238,4 +274,33 @@ func TestActiveSeriesCustomTrackerConfig_Equality(t *testing.T) {
 		}
 	})
 
+}
+
+func TestActiveSeriesCustomTrackersConfigs_Deserialization(t *testing.T) {
+	correctInput := `
+        baz: "{baz='bar'}"
+        foo: "{foo='bar'}"
+    `
+	malformedInput :=
+		`
+        baz: "123"
+        foo: "{foo='bar'}"
+    `
+	t.Run("ShouldDeserializeCorrectInput", func(t *testing.T) {
+		config := ActiveSeriesCustomTrackersConfig{}
+		err := yaml.Unmarshal([]byte(correctInput), &config)
+		assert.NoError(t, err, "failed do deserialize ActiveSeriesMatchers")
+		expectedConfig, err := newActiveSeriesCustomTrackersConfig(map[string]string{
+			"baz": "{baz='bar'}",
+			"foo": "{foo='bar'}",
+		})
+		require.NoError(t, err)
+		assert.Equal(t, expectedConfig.String(), config.String())
+	})
+
+	t.Run("ShouldErrorOnMalformedInput", func(t *testing.T) {
+		config := ActiveSeriesCustomTrackersConfig{}
+		err := yaml.Unmarshal([]byte(malformedInput), &config)
+		assert.Error(t, err, "should not deserialize malformed input")
+	})
 }
