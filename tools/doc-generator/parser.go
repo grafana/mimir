@@ -165,7 +165,7 @@ func parseConfig(block *configBlock, cfg interface{}, flags map[uintptr]*flag.Fl
 			continue
 		}
 
-		// Recursively re-iterate if it's a struct and
+		// Recursively re-iterate if it's a struct and it's not a custom type.
 		if _, custom := getCustomFieldType(field.Type); field.Type.Kind() == reflect.Struct && !custom {
 			// Check whether the sub-block is a root config block
 			rootName, rootDesc, isRoot := isRootBlock(field.Type)
