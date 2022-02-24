@@ -51,6 +51,8 @@ To use query-scheduler, both query-frontends and queriers must be configured to 
 - Query-frontend: `-query-frontend.scheduler-address`
 - Querier: `-querier.scheduler-address`
 
+> Note: the querier pulls queries only from query-frontend or query-scheduler, but not both. `-querier.frontend-address` and `-querier.scheduler-address` options are mutually exclusive, and only one of the two can be set.
+
 ## Operational considerations
 
 We recommend to run two query-scheduler replicas for high-availability.

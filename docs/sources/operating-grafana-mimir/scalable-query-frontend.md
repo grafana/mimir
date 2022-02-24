@@ -25,6 +25,7 @@ Also, because individual queriers will be doing less work, this may cause increa
 
 ### Query Scheduler
 
+<!-- This content has been moved to docs/sources/architecture/query-scheduler.md
 Query scheduler is a service that moves the in-memory queue from query frontend to a separate component.
 This makes scaling query frontend easier, as it allows running multiple query frontends without increasing the number of queues.
 
@@ -39,6 +40,7 @@ Running only one query scheduler poses a risk of increased query latency when si
 Running two query-schedulers should be enough even for large Cortex clusters with an high QPS.
 
 When using single-binary mode, Cortex defaults to run **without** query scheduler.
+-->
 
 ### DNS Configuration / Readiness
 
