@@ -78,7 +78,7 @@ Alternatively, you can enable the HA Tracker only on a per-tenant basis, keeping
 The HA Tracker requires a key-value (KV) store to coordinate which replica is currently elected.
 The supported KV stores for the HA tracker are `consul` and `etcd`.
 
-> Note: `memberlist` is not supported. Memberlist-based KV stores propagate updates using the gossip protocol, which is slow for HA purposes and the result is that different distributors may see a different Prometheus server elected as leaders at the same time.
+> Note: `memberlist` is not supported. Memberlist-based KV stores propagate updates using the gossip protocol, which is too slow for HA tracker. The result would be that different distributors may see a different Prometheus server elected as leaders at the same time.
 
 The following CLI flags (and their respective YAML config options) are available to configure the HA tracker KV store:
 
