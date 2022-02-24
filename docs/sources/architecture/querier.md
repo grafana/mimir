@@ -78,7 +78,7 @@ Caching is optional, but **highly recommended** in a production environment. Ple
 - Block's `deletion-mark.json` existence and content
 - Tenant's `bucket-index.json.gz` content
 
-Using the metadata cache can significantly reduce the number of API calls to long-term storage and stops the number of these API calls scaling linearly with the number of querier and store-gateway replicas which periodically scan and sync this metadata.
+Using the metadata cache can significantly reduce the number of API calls to long-term storage and stops the number of these API calls scaling linearly with the number of querier and store-gateway replicas.
 
 To enable metadata cache, please set `-blocks-storage.bucket-store.metadata-cache.backend`. Only `memcached` backend is supported currently. Memcached client has additional configuration available via flags with `-blocks-storage.bucket-store.metadata-cache.memcached.*` prefix.
 
