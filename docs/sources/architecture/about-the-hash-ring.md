@@ -37,7 +37,7 @@ To better understand how it works, take four ingesters and a tokens space betwee
 - Ingester #4 is registered in the ring with the token `9`
 
 Grafana Mimir receives an incoming sample for the series `{__name__="cpu_seconds_total",instance="1.1.1.1"}`.
-It hashes the series labels: the result of the hashing function is the token `3`.
+It hashes the series’ labels, and the result of the hashing function is the token `3`.
 
 To find which ingester owns the token `3`, Grafana Mimir looks up the token `3` in the ring and finds the ingester registered with the smallest token higher than `3`.
 The ingester #2, registered with the token `4`, is the authoritative owner of the series `{__name__="cpu_seconds_total",instance="1.1.1.1"}`.
