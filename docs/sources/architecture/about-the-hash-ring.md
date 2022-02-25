@@ -76,7 +76,7 @@ Each of the following components builds an independent hash ring:
 ## Which Grafana Mimir features are built on top of the hash ring
 
 Grafana Mimir primarily uses the hash ring for sharding and replication.
-A part from this, other features are built on top of the hash ring:
+Features that are built using the hash ring:
 
 - **Service discovery**: instances can discover each other looking up who is registered in the ring.
 - **Heartbeating**: instances periodically send an heartbeat to the ring to signal they're up and running. An instance is considered unhealthy if misses the heartbeat for some period of time.
