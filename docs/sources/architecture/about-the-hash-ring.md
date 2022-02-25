@@ -62,8 +62,8 @@ On average, the number of tokens that need to move to a different instance is on
 
 ## Which Grafana Mimir components use the hash ring
 
-There are multiple Grafana Mimir components that need an hash ring.
-Each of these components builds an independent hash ring:
+There are several Grafana Mimir components that need a hash ring.
+Each of the following components builds an independent hash ring:
 
 - [Ingesters]({{<relref "./ingester.md">}}): used to shard and replicate series.
 - [Distributors]({{<relref "./distributor.md">}}): used to enforce rate limits.
