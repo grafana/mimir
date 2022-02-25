@@ -12,11 +12,9 @@ The query-frontend internally performs some query adjustments and holds queries 
 
 Query-frontends are **stateless**. However, due to how the internal queue works, it's recommended to run multiple query-frontend replicas to reap the benefit of fair scheduling. Two replicas should suffice in most cases.
 
-
 ![Query-frontend architecture](../../images/query-frontend-architecture.png)
 
 [//]: # "Diagram source at https://docs.google.com/presentation/d/1bHp8_zcoWCYoNU2AhO2lSagQyuIrghkCncViSqn14cU/edit"
-
 
 Flow of the query in the system when using query-frontend:
 
