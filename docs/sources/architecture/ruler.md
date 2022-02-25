@@ -32,7 +32,7 @@ For more information about DNS service discovery, refer to [Supported discovery 
 
 The ruler supports multi-tenancy and horizontal scalability.
 To achieve horizontal scalability, the ruler shards the execution of rules by rule groups.
-The ruler replicas use the [hash ring]({{<relref "./about-the-hash-ring.md" >}}) stored in the [KV store]({{<relref "./about-the-key-value-store.md" >}}) to divide up the work of executing rules.
+The ruler replicas form their own [hash ring]({{<relref "./about-the-hash-ring.md" >}}) stored in the [KV store]({{<relref "./about-the-key-value-store.md" >}}) to divide up the work of executing rules.
 
 ## HTTP configuration API
 
