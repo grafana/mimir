@@ -10,9 +10,10 @@ Hash rings are a distributed [consistent hashing scheme](https://en.wikipedia.or
 
 ## How the hash ring works in Grafana Mimir
 
-Grafana Mimir uses a hashing function that returns 32-bit unsigned integers.
-The result of the hashing function is called a _token_ and it's a value between `0` and `(2^32)-1` inclusive.
-The token is used to lookup which Grafana Mimir instance is the authoritative owner of the hashed data.
+Grafana Mimir uses the `fnv32a` hash function, which returns 32-bit unsigned integers so its value can be between `0` and `(2^32)-1`, inclusive.
+This value is called _token_ and used as the ID of the data.
+The token determines the location on the hash ring deterministically.
+This allows independent determination of what instance of Grafana Mimir is the authoritative owner of any specific data.
 
 For example, series are sharded across [ingesters]({{<relref "./ingester.md">}}).
 The token of a given series is computed by hashing all of the series’ labels and the tenant ID: the result of which is an unsigned 32-bit integer within the space of the tokens.
