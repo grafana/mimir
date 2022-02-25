@@ -29,7 +29,7 @@ Data is replicated to the next instances found while walking the ring.
 
 ### A practical example
 
-To better understand how it works, let's make an example with four ingesters and a tokens space between `0` and `9`:
+To better understand how it works, take four ingesters and a tokens space between `0` and `9` as an example:
 
 - Ingester #1 is registered in the ring with the token `2`
 - Ingester #2 is registered in the ring with the token `4`
