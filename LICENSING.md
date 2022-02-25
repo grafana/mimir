@@ -4,15 +4,9 @@ License names used in this document are as per [SPDX License List](https://spdx.
 
 The default license for this project is [AGPL-3.0-only](LICENSE).
 
-## Apache-2.0
+## Vendored code
 
-The following folders and their subfolders are licensed under Apache-2.0:
-
-```
-<none as of today>
-```
-
-The following directories and their subdirectories are under the original upstream licenses:
+The following directories and their subdirectories are under the original upstream licenses, all of them ship the entire license text they are under.
 
 ```
 vendor/
