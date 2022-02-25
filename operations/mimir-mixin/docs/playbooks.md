@@ -483,14 +483,17 @@ This alert fires when Mimir finds partial blocks for a given tenant. A partial b
 
 How to **investigate**:
 
-- Look for the block ID in the logs. Example Loki query:
-  ```
-  {cluster="<cluster>",namespace="<namespace>",container="compactor"} |= "skipped partial block"
-  ```
-- Find out which Mimir component operated on the block at last (eg. uploaded by ingester/compactor, or deleted by compactor)
-- Investigate if was a partial upload or partial delete
-- Safely manually delete the block from the bucket if was a partial delete or an upload failed by a compactor
-- Further investigate if was an upload failed by an ingester but not later retried (ingesters are expected to retry uploads until succeed)
+1. Look for partial blocks in the logs. Example Loki query: `{cluster="<cluster>",namespace="<namespace>",container="compactor"} |= "skipped partial block"`
+1. Pick a block and note its ID (`block` field in log entry) and tenant ID (`org_id` in log entry)
+1. Find the bucket used by the Mimir cell, by consulting the field `blocks_storage_bucket_name` in the cell's main.jsonnet file in deployment_tools
+1. Find out which Mimir component operated on the block last (e.g. uploaded by ingester/compactor, or deleted by compactor)
+   1. Determine when the partial block was created: `gsutil ls -l gs://${BUCKET}/${TENANT_ID}/${BLOCK_ID}`
+   1. Search in the logs around that time to find the log entry from when the compactor created the block ("compacted blocks" for log message)
+   1. From the compactor log entry you found, pick the job ID from the `groupKey` field, f.ex. `0@9748515562602778029-merge--1645711200000-1645718400000`
+   1. Then search the logs for the job ID and look for an entry with the message "compaction job finished" and `false` for the `success` field, this will show that the compactor failed uploading the block
+1. Investigate if it was a partial upload or partial delete
+1. If it was a partial delete or an upload failed by a compactor you can safely delete the block from the bucket manually: `gsutil rm -r gs://${BUCKET}/${TENANT_ID}/${BLOCK_ID}`
+1. If it was a failed upload by an ingester, but not later retried (ingesters are expected to retry uploads until succeed), further investigate
 
 ### MimirQueriesIncorrect
 
