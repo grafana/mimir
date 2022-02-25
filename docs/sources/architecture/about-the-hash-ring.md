@@ -14,9 +14,9 @@ Grafana Mimir uses a hashing function that returns 32-bit unsigned integers.
 The result of the hashing function is called _token_ and it's a value between `0` and `(2^32)-1` (included).
 The token is used to lookup which Grafana Mimir instance is the authoritative owner of the hashed data.
 
-For example, series are sharded among [ingesters]({{<relref "./ingester.md">}}).
-The token of a given series is computed hashing all the series labels: the result is an unsigned 32-bit integer within the tokens space.
-The ingester owning that series is the instance owning the tokens range including the series's token.
+For example, series are sharded across [ingesters]({{<relref "./ingester.md">}}).
+The token of a given series is computed by hashing all of the series’ labels: the result of which is an unsigned 32-bit integer within the space of the tokens.
+The ingester that owns that series is the instance that owns the range of the tokens, including the series' token.
 
 To divide the tokens space between the available instances in the cluster, all the running instances of a given Grafana Mimir component (eg. ingesters) join an hash ring.
 The hash ring is a data structure used to split the tokens space into multiple ranges, and assign each range to a given Grafana Mimir instance.
