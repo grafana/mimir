@@ -87,7 +87,7 @@ func (c *ActiveSeries) UpdateSeries(series labels.Labels, now time.Time, labelsC
 	fp := fingerprint(series)
 	stripeID := fp % numActiveSeriesStripes
 
-	c.stripes[stripeID].updateSeriesTimestamp(now, series, fp, labelsCopy)
+	c.stripes[stripeID].updateSeriesTimestamp(now, series, fp, labelsCopy, c.lastUpdate)
 }
 
 var sep = []byte{model.SeparatorByte}
@@ -145,7 +145,7 @@ func (s *activeSeriesStripe) getTotalAndUpdateMatching(matching []int) int {
 	return s.active
 }
 
-func (s *activeSeriesStripe) updateSeriesTimestamp(now time.Time, series labels.Labels, fingerprint uint64, labelsCopy func(labels.Labels) labels.Labels) {
+func (s *activeSeriesStripe) updateSeriesTimestamp(now time.Time, series labels.Labels, fingerprint uint64, labelsCopy func(labels.Labels) labels.Labels, reloadTime time.Time) {
 	nowNanos := now.UnixNano()
 
 	e := s.findEntryForSeries(fingerprint, series)
@@ -157,6 +157,10 @@ func (s *activeSeriesStripe) updateSeriesTimestamp(now time.Time, series labels.
 	if !entryTimeSet {
 		if prev := e.Load(); nowNanos > prev {
 			entryTimeSet = e.CAS(prev, nowNanos)
+			r := reloadTime.UnixNano()
+			if prev <= r {
+				s.replaceMatchers(fingerprint, series, nowNanos, labelsCopy)
+			}
 		}
 	}
 
@@ -214,6 +218,20 @@ func (s *activeSeriesStripe) findOrCreateEntryForSeries(fingerprint uint64, seri
 	s.refs[fingerprint] = append(s.refs[fingerprint], e)
 
 	return e.nanos, true
+}
+
+func (s *activeSeriesStripe) replaceMatchers(fingerprint uint64, series labels.Labels, nowNanos int64, labelsCopy func(labels.Labels) labels.Labels) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for ix, entry := range s.refs[fingerprint] {
+		if labels.Equal(entry.lbs, series) {
+			s.refs[fingerprint][ix].matches = s.asm.Matches(series)
+			// There is a ref, the series is still active, no need to increase s.active.
+			// s.activeMatching is not exposed until ActiveSeriesMetricsIdleTimeout passes since reload, it will be recounted at purge time.
+			// If ActiveSeriesMetricsIdleTimeout passes between two samples, the series is not active, if less, the purge time recalculation will consider the newer sample.
+			break
+		}
+	}
 }
 
 //nolint // Linter reports that this method is unused, but it is.

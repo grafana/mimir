@@ -5749,6 +5749,83 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
 			},
 		},
+		"changing runtime overwrite should result in new metrics": {
+			activeSeriesOverridesProvider: defaultCustomTrackersOverridesProvider,
+			activeSeriesConfig:            *activeSeriesDefaultConfig,
+			test: func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer) {
+				firstPushTime := time.Now()
+
+				for _, label := range labelsToPush {
+					ctx := user.InjectOrgID(context.Background(), userID)
+					_, err := ingester.Push(ctx, req(label, firstPushTime))
+					require.NoError(t, err)
+				}
+
+				// Update active series for metrics check.
+				ingester.updateActiveSeries(firstPushTime)
+
+				expectedMetrics := `
+					# HELP cortex_ingester_active_series Number of currently active series per user.
+					# TYPE cortex_ingester_active_series gauge
+					cortex_ingester_active_series{user="test_user"} 4
+					# HELP cortex_ingester_active_series_custom_tracker Number of currently active series matching a pre-configured label matchers per user.
+					# TYPE cortex_ingester_active_series_custom_tracker gauge
+					cortex_ingester_active_series_custom_tracker{name="team_a",user="test_user"} 2
+					cortex_ingester_active_series_custom_tracker{name="team_b",user="test_user"} 2
+				`
+				// Check tracked Prometheus metrics
+				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
+
+				// Change runtime configs
+				ingester.cfg.ActiveSeriesCustomTrackersOverrides = &ActiveSeriesCustomTrackersOverridesProvider{
+					func() *ActiveSeriesCustomTrackersOverrides {
+						return &ActiveSeriesCustomTrackersOverrides{
+							TenantSpecific: map[string]*ActiveSeriesCustomTrackersConfig{
+								"test_user": mustNewActiveSeriesCustomTrackersConfigFromMap(t, map[string]string{
+									"team_a": `{team="a"}`,
+									"team_b": `{team="b"}`,
+									"team_c": `{team="b"}`,
+									"team_d": `{team="b"}`,
+								}),
+							},
+						}
+					},
+				}
+				// This will update the runtime config.
+				configReloadTime := time.Now()
+				ingester.updateActiveSeries(configReloadTime)
+				expectedMetrics = `
+					# HELP cortex_ingester_active_series Number of currently active series per user.
+					# TYPE cortex_ingester_active_series gauge
+					cortex_ingester_active_series{user="test_user"} 4
+				`
+				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
+
+				// Sleep to emphasize that secondPushTime must be > configReloadTime not to be purged.
+				time.Sleep(time.Millisecond)
+				secondPushtime := time.Now()
+				for _, label := range labelsToPush {
+					ctx := user.InjectOrgID(context.Background(), userID)
+					_, err := ingester.Push(ctx, req(label, secondPushtime))
+					require.NoError(t, err)
+				}
+				// Adding a nanosecond to make updateTime.Before(purgeTime) true
+				updateTime := configReloadTime.Add(ingester.cfg.ActiveSeriesMetricsIdleTimeout + time.Nanosecond)
+				ingester.updateActiveSeries(updateTime)
+				expectedMetrics = `
+					# HELP cortex_ingester_active_series Number of currently active series per user.
+					# TYPE cortex_ingester_active_series gauge
+					cortex_ingester_active_series{user="test_user"} 4
+					# HELP cortex_ingester_active_series_custom_tracker Number of currently active series matching a pre-configured label matchers per user.
+					# TYPE cortex_ingester_active_series_custom_tracker gauge
+					cortex_ingester_active_series_custom_tracker{name="team_a",user="test_user"} 2
+					cortex_ingester_active_series_custom_tracker{name="team_b",user="test_user"} 2
+					cortex_ingester_active_series_custom_tracker{name="team_c",user="test_user"} 2
+					cortex_ingester_active_series_custom_tracker{name="team_d",user="test_user"} 2
+				`
+				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
+			},
+		},
 	}
 
 	for testName, testData := range tests {

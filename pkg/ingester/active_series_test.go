@@ -195,6 +195,8 @@ func TestActiveSeries_PurgeOpt(t *testing.T) {
 func TestActiveSeries_ReloadSeriesMatchers(t *testing.T) {
 	ls1 := []labels.Label{{Name: "a", Value: "1"}}
 	ls2 := []labels.Label{{Name: "a", Value: "2"}}
+	ls3 := []labels.Label{{Name: "a", Value: "3"}}
+	ls4 := []labels.Label{{Name: "a", Value: "4"}}
 
 	asm := NewActiveSeriesMatchers(mustNewActiveSeriesCustomTrackersConfigFromMap(t, map[string]string{"foo": `{a=~.*}`}))
 
@@ -215,6 +217,26 @@ func TestActiveSeries_ReloadSeriesMatchers(t *testing.T) {
 	assert.Equal(t, 2, allActive, "reloading should not affect general counter")
 	assert.Equal(t, []int{1}, activeMatching, "reloading should clear out matcher counters")
 	assert.True(t, c.lastUpdate.Equal(reloadTime))
+
+	asmWithLessMatchers := NewActiveSeriesMatchers(mustNewActiveSeriesCustomTrackersConfigFromMap(t, map[string]string{}))
+	reloadTime = time.Now()
+	c.ReloadSeriesMatchers(asmWithLessMatchers, reloadTime)
+	c.UpdateSeries(ls3, time.Now(), copyFn)
+	allActive, activeMatching = c.Active()
+	assert.Equal(t, 3, allActive, "reloading should not affect general counter")
+	assert.Equal(t, []int(nil), activeMatching, "reloading should clear out and resize matcher counters")
+
+	asmWithMoreMatchers := NewActiveSeriesMatchers(mustNewActiveSeriesCustomTrackersConfigFromMap(t, map[string]string{
+		"a": `{a="3"}`,
+		"b": `{a="4"}`,
+	}))
+	reloadTime = time.Now()
+	c.ReloadSeriesMatchers(asmWithMoreMatchers, reloadTime)
+	c.UpdateSeries(ls4, time.Now(), copyFn)
+	allActive, activeMatching = c.Active()
+	assert.Equal(t, 4, allActive, "reloading should not affect general counter")
+	assert.Equal(t, []int{0, 1}, activeMatching, "reloading should clear out and resize matcher counters")
+
 }
 
 var activeSeriesTestGoroutines = []int{50, 100, 500}
