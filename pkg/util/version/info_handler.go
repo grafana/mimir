@@ -26,6 +26,7 @@ type BuildInfoFeatures struct {
 	RulerConfigAPI        string `json:"ruler_config_api,omitempty"`
 	AlertmanagerConfigAPI string `json:"alertmanager_config_api,omitempty"`
 	QuerySharding         string `json:"query_sharding,omitempty"`
+	FederatedRules        string `json:"federated_rules,omitempty"`
 }
 
 func BuildInfoHandler(application string, features interface{}) http.Handler {
