@@ -65,12 +65,12 @@ On average, the number of tokens that need to move to a different instance is on
 There are several Grafana Mimir components that need a hash ring.
 Each of the following components builds an independent hash ring:
 
-- [Ingesters]({{<relref "./ingester.md">}}): used to shard and replicate series.
-- [Distributors]({{<relref "./distributor.md">}}): used to enforce rate limits.
-- [Compactors]({{<relref "./compactor.md">}}): used to shard compaction workload.
-- [Store-gateways]({{<relref "./store-gateway.md">}}): used to shard blocks to query from long-term storage.
-- [(Optional) Rulers]({{<relref "./ruler.md">}}): used to shard rule groups to evaluate.
-- [(Optional) Alertmanagers]({{<relref "./alertmanager.md">}}): used to shard tenants.
+- [Ingesters]({{<relref "./ingester.md">}}) shard and replicate series.
+- [Distributors]({{<relref "./distributor.md">}}) enforce rate limits.
+- [Compactors]({{<relref "./compactor.md">}}) shard compaction workload.
+- [Store-gateways]({{<relref "./store-gateway.md">}}) shard blocks to query from long-term storage.
+- [(Optional) Rulers]({{<relref "./ruler.md">}}) shard rule groups to evaluate.
+- [(Optional) Alertmanagers]({{<relref "./alertmanager.md">}}) shard tenants.
 
 ## Which Grafana Mimir features are built on top of the hash ring
 
