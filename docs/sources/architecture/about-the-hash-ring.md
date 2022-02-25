@@ -21,8 +21,8 @@ The ingester owning that series is the instance owning the tokens range includin
 To divide the tokens space between the available instances in the cluster, all the running instances of a given Grafana Mimir component (eg. ingesters) join an hash ring.
 The hash ring is a data structure used to split the tokens space into multiple ranges, and assign each range to a given Grafana Mimir instance.
 
-At startup, a Grafana Mimir instance generates random tokens and registers them into the ring.
-A token is owned by the instance which registered the smallest token higher than the one we're looking up.
+Upon startup, a Grafana Mimir instance generates random tokens, and it registers them into the ring.
+A token is owned by the instance that registered the smallest token that is larger than the one being looked up.
 
 Finally, to replicate the data across multiple instances, Grafana Mimir finds the replicas starting from the authoritative owner of the data and walking the ring clockwise.
 Data is replicated to the next instances found walking the ring.
