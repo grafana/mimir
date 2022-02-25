@@ -108,7 +108,7 @@ func pruneDefaults(fullParams, oldDefaults, newDefaults *InspectedEntry) {
 		oldDefault, err := oldDefaults.GetValue(path)
 		if err != nil {
 			// We don't expect new fields exist in the old struct.
-			if err != ErrParameterNotFound {
+			if errors.Is(err, ErrParameterNotFound) {
 				return err
 			}
 			oldDefault = nil

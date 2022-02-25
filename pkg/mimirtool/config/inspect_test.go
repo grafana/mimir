@@ -68,14 +68,14 @@ func TestInspectedEntry_SetThenGet(t *testing.T) {
 
 			err = inspectedConfig.SetValue(tc.path, tc.expectedValue)
 			if tc.expectedErr != nil {
-				assert.EqualError(t, err, tc.expectedErr.Error())
+				assert.ErrorIs(t, err, tc.expectedErr)
 			} else {
 				assert.NoError(t, err)
 			}
 
 			actualValue, err := inspectedConfig.GetValue(tc.path)
 			if tc.expectedErr != nil {
-				assert.EqualError(t, err, tc.expectedErr.Error())
+				assert.ErrorIs(t, err, tc.expectedErr)
 			} else {
 				assert.Equal(t, tc.expectedValue, actualValue)
 				assert.NoError(t, err)
@@ -193,7 +193,7 @@ func TestInspectedEntry_Delete(t *testing.T) {
 			actualErr := inspected.Delete(tc.pathToDelete)
 
 			if tc.expectedErr != nil {
-				assert.EqualError(t, actualErr, tc.expectedErr.Error())
+				assert.ErrorIs(t, actualErr, tc.expectedErr)
 			} else {
 				assert.ElementsMatch(t, tc.expectedParams, listAllFields(inspected))
 				assert.NoError(t, actualErr)

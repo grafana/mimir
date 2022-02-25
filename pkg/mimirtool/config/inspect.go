@@ -135,10 +135,10 @@ func decodeValue(fieldType string, decoder interface{ Decode(interface{}) error 
 func (i InspectedEntry) GetValue(path string) (interface{}, error) {
 	entry, err := i.find(path)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, path)
 	}
 	if entry.Kind != parse.KindField {
-		return nil, ErrParameterNotFound
+		return nil, errors.Wrap(ErrParameterNotFound, path)
 	}
 	return entry.FieldValue, nil
 }
@@ -189,6 +189,10 @@ func (i *InspectedEntry) SetValue(path string, val interface{}) error {
 // any parent blocks that, because of this delete, now contain no entries.
 // If an error is returned, it's errors.Cause will be ErrParameterNotFound.
 func (i *InspectedEntry) Delete(path string) error {
+	return errors.Wrap(i.delete(path), path)
+}
+
+func (i *InspectedEntry) delete(path string) error {
 	var (
 		nextSegment, restOfPath = cutFirstPathSegment(path)
 		next                    *InspectedEntry
@@ -209,8 +213,8 @@ func (i *InspectedEntry) Delete(path string) error {
 	if restOfPath == "" {
 		i.BlockEntries = append(i.BlockEntries[:nextIndex], i.BlockEntries[nextIndex+1:]...)
 	} else {
-		err := next.Delete(restOfPath)
-		if err = errors.Cause(err); err != nil {
+		err := next.delete(restOfPath)
+		if err != nil {
 			return err
 		}
 
