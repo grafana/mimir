@@ -287,7 +287,7 @@ func TestInspectConfig_LoadingAConfigHasCorrectTypes(t *testing.T) {
 		},
 	}
 
-	params := defaultCortexParams()
+	params := DefaultCortexConfig()
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			val, err := params.GetValue(tc.path)

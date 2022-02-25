@@ -27,12 +27,12 @@ func (c *ConfigCommand) Register(app *kingpin.Application, _ EnvVarNames) {
 		Arg("config-file", "The YAML config file to convert.").Required().ExistingFileVar(&c.configFile)
 }
 
-func (c *ConfigCommand) convertConfig(ctx *kingpin.ParseContext) error {
+func (c *ConfigCommand) convertConfig(_ *kingpin.ParseContext) error {
 	original, err := os.ReadFile(c.configFile)
 	if err != nil {
 		return errors.Wrap(err, "could not read config-file")
 	}
-	converted, err := config.DefaultConverter.Convert(original)
+	converted, err := config.Convert(original, config.CortexToMimirMapper, config.DefaultCortexConfig, config.DefaultMimirConfig)
 	if err != nil {
 		return errors.Wrap(err, "could not convert configuration")
 	}

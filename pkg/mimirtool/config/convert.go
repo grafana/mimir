@@ -16,32 +16,33 @@ import (
 	"github.com/grafana/mimir/pkg/mimir"
 )
 
-// DefaultConverter converts from cortex-1.11.0 to mimir-2.0.0
-var DefaultConverter = Converter{
-	CortexToCortex: MultiMapper{
-		MapperFunc(func(source, target *InspectedEntry) error {
-			amDiscovery, err := source.GetValue("ruler.enable_alertmanager_discovery")
-			if err != nil {
-				return errors.Wrap(err, "could not convert ruler.enable_alertmanager_discovery")
-			}
-			if amDiscovery == nil || !amDiscovery.(bool) {
-				return nil
-			}
+// CortexToMimirMapper maps from cortex-1.11.0 to mimir-2.0.0 configurations
+var CortexToMimirMapper = MultiMapper{
+	// first try to naively map keys from old config to same keys from new config
+	BestEffortDirectMapper{},
+	// next map
+	MapperFunc(func(source, target *InspectedEntry) error {
+		amDiscovery, err := source.GetValue("ruler.enable_alertmanager_discovery")
+		if err != nil {
+			return errors.Wrap(err, "could not convert ruler.enable_alertmanager_discovery")
+		}
+		if amDiscovery == nil || !amDiscovery.(bool) {
+			return nil
+		}
 
-			amURL, err := source.GetValue("ruler.alertmanager_url")
-			if err != nil {
-				return errors.Wrap(err, "could not get ruler.alertmanager_url")
-			}
+		amURL, err := source.GetValue("ruler.alertmanager_url")
+		if err != nil {
+			return errors.Wrap(err, "could not get ruler.alertmanager_url")
+		}
 
-			amURLs := strings.Split(amURL.(string), ",")
-			for i := range amURLs {
-				amURLs[i] = "dnssrvnoa+" + amURLs[i]
-			}
-			return target.SetValue("ruler.alertmanager_url", strings.Join(amURLs, ","))
-		}),
-	},
-	BaseCortexToMimir: BestEffortDirectMapper{},
-	CortexToMimir: PathMapper{
+		amURLs := strings.Split(amURL.(string), ",")
+		for i := range amURLs {
+			amURLs[i] = "dnssrvnoa+" + amURLs[i]
+		}
+		return target.SetValue("ruler.alertmanager_url", strings.Join(amURLs, ","))
+	}),
+	// last apply any special treatment to other parameters
+	PathMapper{
 		PathMappings: map[string]Mapping{
 			"blocks_storage.tsdb.max_exemplars":                               RenameMapping("limits.max_global_exemplars_per_user"),
 			"query_range.results_cache.cache.background.writeback_goroutines": RenameMapping("frontend.results_cache.memcached.max_async_concurrency"),
@@ -51,68 +52,45 @@ var DefaultConverter = Converter{
 			"query_range.results_cache.cache.memcached_client.max_idle_conns": RenameMapping("frontend.results_cache.memcached.max_idle_connections"),
 		},
 	},
-	MimirToMimir: NoopMapper{},
 }
 
-// TODO refactor this to have only a slice of converters not separate fields
-// Converter converts YAML config from Cortex v1.11.0 to Mimir v2.0.0
-type Converter struct {
-	CortexToCortex    Mapper
-	BaseCortexToMimir Mapper
-	CortexToMimir     Mapper
-	MimirToMimir      Mapper
-}
+type InspectedEntryFactory func() *InspectedEntry
 
-func (c Converter) Convert(contents []byte) ([]byte, error) {
-	cortexCfg, mimirParams := defaultCortexParams(), defaultMimirParams()
+// Convert converts the passed YAML contents in the source schema to a YAML config in the target schema.
+// It prunes the default values in the resulting config. sourceFactory and targetFactory are assumed to return
+// InspectedEntries where the FieldValue is the default value of the configuration parameter.
+// Convert uses sourceFactory and targetFactory to also prune the default values from the resulting config.
+// Convert returns the marshalled YAML config in the target schema.
+func Convert(contents []byte, m Mapper, sourceFactory, targetFactory InspectedEntryFactory) ([]byte, error) {
+	source, target := sourceFactory(), targetFactory()
 
-	err := yaml.Unmarshal(contents, &cortexCfg)
+	err := yaml.Unmarshal(contents, &source)
 	if err != nil {
 		return nil, errors.Wrap(err, "could not unmarshal old Cortex configuration file")
 	}
 
-	err = c.CortexToCortex.DoMap(cortexCfg, cortexCfg)
+	err = m.DoMap(source, target)
 	if err != nil {
 		return nil, err
 	}
 
-	err = c.BaseCortexToMimir.DoMap(cortexCfg, mimirParams)
+	sourceDefaults, targetDefaults, err := prepareDefaults(m, sourceFactory, targetFactory)
 	if err != nil {
 		return nil, err
 	}
 
-	err = c.CortexToMimir.DoMap(cortexCfg, mimirParams)
-	if err != nil {
-		return nil, err
-	}
+	pruneDefaults(target, sourceDefaults, targetDefaults)
 
-	err = c.MimirToMimir.DoMap(mimirParams, mimirParams)
-	if err != nil {
-		return nil, err
-	}
-
-	cortexDefaults, mimirDefaults, err := c.prepareDefaults()
-	if err != nil {
-		return nil, err
-	}
-
-	pruneDefaults(mimirParams, cortexDefaults, mimirDefaults)
-
-	return yaml.Marshal(mimirParams)
+	return yaml.Marshal(target)
 }
 
-// prepareDefaults maps cortex defaults to mimir defaults the same way regular cortex config is mapped to mimir config.
-// This enables lookups of cortex default values using their mimir equivalents.
-func (c Converter) prepareDefaults() (cortexDefaults, mimirDefaults *InspectedEntry, err error) {
-	oldCortexDefaults := defaultCortexParams()
-	mimirDefaults, mappedCortexDefaults := defaultMimirParams(), defaultMimirParams()
+// prepareDefaults maps source defaults to target defaults the same way regular source config is mapped to target config.
+// This enables lookups of cortex default values using their mimir paths.
+func prepareDefaults(m Mapper, sourceFactory, targetFactory InspectedEntryFactory) (cortexDefaults, mimirDefaults *InspectedEntry, err error) {
+	oldCortexDefaults, mappedCortexDefaults := sourceFactory(), targetFactory()
 
-	err = c.BaseCortexToMimir.DoMap(oldCortexDefaults, mappedCortexDefaults)
-	if err != nil {
-		return
-	}
-	err = c.CortexToMimir.DoMap(oldCortexDefaults, mappedCortexDefaults)
-	return mappedCortexDefaults, mimirDefaults, err
+	err = m.DoMap(oldCortexDefaults, mappedCortexDefaults)
+	return mappedCortexDefaults, DefaultMimirConfig(), err
 }
 
 // TODO dimitarvdimitrov convert this to a Mapper, ideally splitting default pruning from "default changed" warnings
@@ -160,7 +138,7 @@ func pruneDefaults(fullParams, oldDefaults, newDefaults *InspectedEntry) {
 	}
 }
 
-func defaultMimirParams() *InspectedEntry {
+func DefaultMimirConfig() *InspectedEntry {
 	cfg, err := DefaultValueInspector.InspectConfig(&mimir.Config{})
 	if err != nil {
 		panic(err)
@@ -171,7 +149,7 @@ func defaultMimirParams() *InspectedEntry {
 //go:embed descriptors/cortex-v1.11.0.json
 var oldCortexConfig []byte
 
-func defaultCortexParams() *InspectedEntry {
+func DefaultCortexConfig() *InspectedEntry {
 	cfg := &InspectedEntry{}
 	err := json.Unmarshal(oldCortexConfig, cfg)
 	if err != nil {

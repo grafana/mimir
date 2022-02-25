@@ -42,7 +42,7 @@ func TestConvert(t *testing.T) {
 			inBytes, err := ioutil.ReadFile(tc.inFile)
 			require.NoError(t, err)
 
-			outBytes, err := DefaultConverter.Convert(inBytes)
+			outBytes, err := Convert(inBytes, CortexToMimirMapper, DefaultCortexConfig, DefaultMimirConfig)
 			assert.NoError(t, err)
 
 			expectedOut, err := ioutil.ReadFile(tc.outFile)
