@@ -66,8 +66,8 @@ Each of these components builds an independent hash ring:
 
 - [Ingesters]({{<relref "./ingester.md">}}): used to shard and replicate series.
 - [Distributors]({{<relref "./distributor.md">}}): used to enforce rate limits.
-- [Compactors]({{<relref "./compator.md">}}): used to shard compaction workload.
-- [Store-gateways]({{<relref "./store-gateways.md">}}): used to shard blocks to query from long-term storage.
+- [Compactors]({{<relref "./compactor.md">}}): used to shard compaction workload.
+- [Store-gateways]({{<relref "./store-gateway.md">}}): used to shard blocks to query from long-term storage.
 - [(Optional) Rulers]({{<relref "./ruler.md">}}): used to shard rule groups to evaluate.
 - [(Optional) Alertmanagers]({{<relref "./alertmanager.md">}}): used to shard tenants.
 
