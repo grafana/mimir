@@ -52,10 +52,15 @@ func TestActiveSeries_UpdateSeries_WithMatchers(t *testing.T) {
 
 	asm := NewActiveSeriesMatchers(mustNewActiveSeriesCustomTrackersConfigFromMap(t, map[string]string{"foo": `{a=~"2|3"}`}))
 
-	c := NewActiveSeries(asm)
+	currentNow := time.Date(2020, 1, 2, 3, 4, 5, 0, time.UTC)
+	now := func() time.Time { return currentNow }
+
+	c := NewActiveSeries(asm, now)
 	allActive, activeMatching := c.Active()
 	assert.Equal(t, 0, allActive)
 	assert.Equal(t, []int{0}, activeMatching)
+
+	currentNow = currentNow.Add(time.Second)
 
 	c.UpdateSeries(ls1, time.Now(), copyFn)
 	allActive, activeMatching = c.Active()

@@ -22,9 +22,12 @@ const (
 
 // ActiveSeries is keeping track of recently active series for a single tenant.
 type ActiveSeries struct {
+	stripes [numActiveSeriesStripes]activeSeriesStripe
+
 	asm        *ActiveSeriesMatchers
-	stripes    [numActiveSeriesStripes]activeSeriesStripe
-	lastUpdate time.Time
+	lastUpdate *atomic.Int64
+
+	now func() time.Time
 }
 
 // activeSeriesStripe holds a subset of the series timestamps for a single tenant.
@@ -49,8 +52,8 @@ type activeSeriesEntry struct {
 	matches []bool        // Which matchers of ActiveSeriesMatchers does this series match
 }
 
-func NewActiveSeries(asm *ActiveSeriesMatchers) *ActiveSeries {
-	c := &ActiveSeries{asm: asm}
+func NewActiveSeries(asm *ActiveSeriesMatchers, now func() time.Time) *ActiveSeries {
+	c := &ActiveSeries{asm: asm, now: now}
 
 	// Stripes are pre-allocated so that we only read on them and no lock is required.
 	for i := 0; i < numActiveSeriesStripes; i++ {
@@ -68,8 +71,7 @@ func (c *ActiveSeries) CurrentMatchers() *ActiveSeriesMatchers {
 	return c.asm
 }
 
-func (c *ActiveSeries) ReloadSeriesMatchers(asm *ActiveSeriesMatchers, reloadTime time.Time) {
-	c.asm = asm
+func (c *ActiveSeries) ReloadSeriesMatchers(asm *ActiveSeriesMatchers) {
 	for i := 0; i < numActiveSeriesStripes; i++ {
 		c.stripes[i].mu.Lock()
 		defer c.stripes[i].mu.Unlock()
@@ -79,7 +81,9 @@ func (c *ActiveSeries) ReloadSeriesMatchers(asm *ActiveSeriesMatchers, reloadTim
 		c.stripes[i].asm = asm
 		c.stripes[i].activeMatching = makeIntSliceIfNotEmpty(len(asm.MatcherNames()), c.stripes[i].activeMatching)
 	}
-	c.lastUpdate = reloadTime
+
+	c.asm = asm
+	c.lastUpdate.Store(c.now().UnixNano())
 }
 
 // Updates series timestamp to 'now'. Function is called to make a copy of labels if entry doesn't exist yet.
@@ -122,24 +126,31 @@ func (c *ActiveSeries) clear() {
 
 // Active returns the total number of active series, as well as a slice of active series matching each one of the
 // custom trackers provided (in the same order as custom trackers are defined)
-func (c *ActiveSeries) Active() (int, []int) {
+// Active cannot be called concurrently with ReloadSeriesMatchers.
+func (c *ActiveSeries) Active(purgeTime time.Time) (int, []int) {
+	c.Purge(purgeTime)
+
 	total := 0
+
 	totalMatching := makeIntSliceIfNotEmpty(len(c.asm.MatcherNames()), nil)
 	for s := 0; s < numActiveSeriesStripes; s++ {
-		total += c.stripes[s].getTotalAndUpdateMatching(totalMatching)
+		total += c.stripes[s].getTotalAndUpdateMatching(totalMatching, c.lastUpdate.Before(purgeTime))
 	}
+
 	return total, totalMatching
 }
 
 // getTotalAndUpdateMatching will return the total active series in the stripe and also update the slice provided
 // with each matcher's total.
-func (s *activeSeriesStripe) getTotalAndUpdateMatching(matching []int) int {
+func (s *activeSeriesStripe) getTotalAndUpdateMatching(matching []int, updateMatching bool) int {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	// len(matching) == len(s.activeMatching) by design, and it could be nil
-	for i, a := range s.activeMatching {
-		matching[i] += a
+	if updateMatching {
+		// len(matching) == len(s.activeMatching) by design, and it could be nil
+		for i, a := range s.activeMatching {
+			matching[i] += a
+		}
 	}
 
 	return s.active
