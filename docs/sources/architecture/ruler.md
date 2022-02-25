@@ -34,6 +34,8 @@ The ruler supports multi-tenancy and horizontal scalability.
 To achieve horizontal scalability, the ruler shards the execution of rules by rule groups.
 Ruler replicas form their own [hash ring]({{< relref "./about-the-hash-ring.md" >}}) stored in the [KV store]({{< relref "./about-the-key-value-store.md" >}}) to divide the work of the executing rules.
 
+To configure the rulers' hash ring, refer to [configuring hash rings]({{< relref "../operating-grafana-mimir/configure-hash-ring.md">}}).
+
 ## HTTP configuration API
 
 The ruler HTTP configuration API enables tenants to create, update, and delete rule groups.

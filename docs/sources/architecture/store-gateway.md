@@ -49,7 +49,7 @@ Store-gateways continuously monitor the ring state and whenever the ring topolog
 
 For each block belonging to a store-gateway shard, the store-gateway loads its index-header. Once a block is loaded on the store-gateway, it's ready to be queried by queriers. When the querier queries blocks through a store-gateway, the response will contain the list of actually queried block IDs. If a querier tries to query a block which has not been loaded by a store-gateway, the querier will retry on a different store-gateway up to `-store-gateway.sharding-ring.replication-factor` (defaults to 3) times or maximum 3 times, whichever is lower. The query will fail if the block can't be successfully queried from any replica.
 
-_The [hash ring]({{< relref "../architecture/about-the-hash-ring" >}}) must be configured via `-store-gateway.sharding-ring.*` flags (or their respective YAML configuration parameters)._
+To configure the store-gateways' hash ring, refer to [configuring hash rings]({{< relref "../operating-grafana-mimir/configure-hash-ring.md">}}).
 
 ### Sharding strategy
 

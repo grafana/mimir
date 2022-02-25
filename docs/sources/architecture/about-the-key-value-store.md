@@ -6,7 +6,7 @@ weight: 10
 
 # About the key-value store
 
-A key-value (KV) store is a database that store data indexed by key.
+A key-value (KV) store is a database that stores data indexed by key.
 Grafana Mimir requires a key-value store for the following features:
 
 - [Hash ring]({{< relref "./about-the-hash-ring.md" >}})
@@ -22,23 +22,23 @@ Grafana Mimir supports the following key-value (KV) store backends:
 
 ### Gossip-based memberlist protocol (default)
 
-By default, Grafana Mimir instances use a gossip-based protocol to join a memberlist cluster.
-The data is shared between the instances using peer-to-peer communication, and no external dependency is required.
+By default, Grafana Mimir instances use a Gossip-based protocol to join a memberlist cluster.
+The data is shared between the instances using peer-to-peer communication and no external dependency is required.
 
-We recommend that you use memberlist when you run Grafana Mimir.
+We recommend that you use memberlist to run Grafana Mimir.
 
-To configure memberlist, refer to [memberlist]({{< relref "../configuration/reference-configuration-parameters.md#memberlist">}}).
+To configure memberlist, refer to [configuring hash rings]({{< relref "../operating-grafana-mimir/configure-hash-ring.md">}}).
 
 ### Consul
 
 Grafana Mimir supports [Consul](https://www.consul.io) as a backend KV store.
-If you decide to use Consul, you must install it. The Grafana Mimir installation does not include Consul.
+If you want to use Consul, you must install it. The Grafana Mimir installation does not include Consul.
 
-To configure Consul, refer to [consul]({{< relref "../configuration/reference-configuration-parameters.md#consul">}}).
+To configure Consul, refer to [configuring hash rings]({{< relref "../operating-grafana-mimir/configure-hash-ring.md">}}).
 
 ### Etcd
 
 Grafana Mimir supports [etcd](https://etcd.io) as a backend KV store.
-If you choose to use etcd, you must install it. The Grafana Mimir installation does not include etcd.
+If you want to use etcd, you must install it. The Grafana Mimir installation does not include etcd.
 
-To configure etcd, refer to [etcd]({{< relref "../configuration/reference-configuration-parameters.md#etcd">}}).
+To configure etcd, refer to [configuring hash rings]({{< relref "../operating-grafana-mimir/configure-hash-ring.md">}}).
