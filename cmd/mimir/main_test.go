@@ -6,7 +6,6 @@
 package main
 
 import (
-	"bufio"
 	"bytes"
 	"flag"
 	"io"
@@ -16,9 +15,11 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/go-kit/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/mimir"
 	"github.com/grafana/mimir/pkg/util/fieldcategory"
 )
 
@@ -275,7 +276,7 @@ func (co *capturedOutput) Done() (stdout []byte, stderr []byte) {
 	return co.stdoutBuf.Bytes(), co.stderrBuf.Bytes()
 }
 
-func TestExpandEnv(t *testing.T) {
+func TestExpandEnvironmentVariables(t *testing.T) {
 	var tests = []struct {
 		in  string
 		out string
@@ -301,7 +302,7 @@ func TestExpandEnv(t *testing.T) {
 		test := test
 		t.Run(test.in, func(t *testing.T) {
 			_ = os.Setenv("y", "y")
-			output := expandEnv([]byte(test.in))
+			output := expandEnvironmentVariables([]byte(test.in))
 			assert.Equal(t, test.out, string(output), "Input: %s", test.in)
 		})
 	}
@@ -311,7 +312,7 @@ func TestParseConfigFileParameter(t *testing.T) {
 	var tests = []struct {
 		args       string
 		configFile string
-		expandENV  bool
+		expandEnv  bool
 	}{
 		{"", "", false},
 		{"--foo", "", false},
@@ -339,44 +340,35 @@ func TestParseConfigFileParameter(t *testing.T) {
 		test := test
 		t.Run(test.args, func(t *testing.T) {
 			args := strings.Split(test.args, " ")
-			configFile, expandENV := parseConfigFileParameter(args)
+			var (
+				configFile string
+				expandEnv  bool
+			)
+			parseConfigFileParameter(&configFile, &expandEnv, args)
 			assert.Equal(t, test.configFile, configFile)
-			assert.Equal(t, test.expandENV, expandENV)
+			assert.Equal(t, test.expandEnv, expandEnv)
 		})
 	}
 }
 
 func TestFieldCategoryOverridesNotStale(t *testing.T) {
 	overrides := make(map[string]struct{})
-	fieldcategory.VisitAll(func(s string) {
+	fieldcategory.VisitOverrides(func(s string) {
 		overrides[s] = struct{}{}
 	})
 
-	options := readAllOptions(t)
-	for _, option := range options {
-		delete(overrides, option)
-	}
+	fs := flag.NewFlagSet("test", flag.PanicOnError)
+
+	var (
+		cfg mimir.Config
+		mf  mainFlags
+	)
+	cfg.RegisterFlags(fs, log.NewNopLogger())
+	mf.registerFlags(fs)
+
+	fs.VisitAll(func(fl *flag.Flag) {
+		delete(overrides, fl.Name)
+	})
 
 	require.Empty(t, overrides, "There are category overrides for configuration options that no longer exist")
-}
-
-func readAllOptions(t *testing.T) []string {
-	helpAllText, err := os.ReadFile("help-all.txt.tmpl")
-	require.NoError(t, err)
-
-	scanner := bufio.NewScanner(bytes.NewReader(helpAllText))
-	options := make([]string, 0, 10)
-
-	for lineNumber := 0; scanner.Scan(); lineNumber++ {
-		if lineNumber%2 == 0 {
-			continue
-		}
-
-		line := scanner.Text()
-		option := strings.SplitN(strings.TrimLeft(line, " -"), " ", 2)[0]
-		options = append(options, option)
-	}
-
-	require.NotEmpty(t, options)
-	return options
 }
