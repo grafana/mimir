@@ -18,8 +18,8 @@ For example, series are sharded across [ingesters]({{<relref "./ingester.md">}})
 The token of a given series is computed by hashing all of the series’ labels: the result of which is an unsigned 32-bit integer within the space of the tokens.
 The ingester that owns that series is the instance that owns the range of the tokens, including the series' token.
 
-To divide the tokens space between the available instances in the cluster, all the running instances of a given Grafana Mimir component (eg. ingesters) join an hash ring.
-The hash ring is a data structure used to split the tokens space into multiple ranges, and assign each range to a given Grafana Mimir instance.
+To divide up the tokens’ space across the available instances within the cluster, all of the running instances of a given Grafana Mimir component, such as the ingesters, join a hash ring.
+The hash ring is a data structure that splits the space of the tokens into multiple ranges, and assigns each range to a given Grafana Mimir ring member.
 
 Upon startup, a Grafana Mimir instance generates random tokens, and it registers them into the ring.
 A token is owned by the instance that registered the smallest token that is larger than the one being looked up.
