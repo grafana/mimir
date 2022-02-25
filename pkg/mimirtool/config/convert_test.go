@@ -4,6 +4,7 @@ package config
 
 import (
 	"io/ioutil"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -12,13 +13,19 @@ import (
 
 func TestConvert(t *testing.T) {
 	testCases := []struct {
-		name            string
-		inFile, outFile string
+		name                      string
+		inFile, outFile           string
+		inFlagsFile, outFlagsFile string
 	}{
 		{
 			name:    "shouldn't need any conversion",
 			inFile:  "testdata/noop-old.yaml",
 			outFile: "testdata/noop-new.yaml",
+		},
+		{
+			name:         "shouldn't need any conversion with flags",
+			inFlagsFile:  "testdata/noop-flags-old.flags.txt",
+			outFlagsFile: "testdata/noop-flags-new.flags.txt",
 		},
 		{
 			name:    "exemplars limit rename",
@@ -35,20 +42,51 @@ func TestConvert(t *testing.T) {
 			inFile:  "testdata/query-range-old.yaml",
 			outFile: "testdata/query-range-new.yaml",
 		},
+		{
+			name:         "with non-primitive flags",
+			inFlagsFile:  "testdata/value-flags-old.flags.txt",
+			outFlagsFile: "testdata/value-flags-new.flags.txt",
+		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			inBytes, err := ioutil.ReadFile(tc.inFile)
-			require.NoError(t, err)
+			inBytes := loadFile(t, tc.inFile)
+			inFlags := loadTestFlags(t, tc.inFlagsFile)
 
-			outBytes, err := Convert(inBytes, CortexToMimirMapper, DefaultCortexConfig, DefaultMimirConfig)
+			actualOut, actualOutFlags, err := Convert(inBytes, inFlags, CortexToMimirMapper, DefaultCortexConfig, DefaultMimirConfig)
 			assert.NoError(t, err)
 
-			expectedOut, err := ioutil.ReadFile(tc.outFile)
-			require.NoError(t, err)
+			expectedOut := loadFile(t, tc.outFile)
+			expectedOutFlags := loadTestFlags(t, tc.outFlagsFile)
 
-			assert.YAMLEq(t, string(expectedOut), string(outBytes))
+			assert.ElementsMatch(t, expectedOutFlags, actualOutFlags)
+			if expectedOut == nil {
+				expectedOut = []byte("{}")
+			}
+			assert.YAMLEq(t, string(expectedOut), string(actualOut))
 		})
 	}
+}
+
+func loadFile(t testing.TB, fileName string) []byte {
+	t.Helper()
+
+	if fileName == "" {
+		return nil
+	}
+	bytes, err := ioutil.ReadFile(fileName)
+	require.NoError(t, err)
+	return bytes
+}
+
+func loadTestFlags(t testing.TB, fileName string) []string {
+	t.Helper()
+
+	if fileName == "" {
+		return nil
+	}
+	flagBytes, err := ioutil.ReadFile(fileName)
+	require.NoError(t, err)
+	return strings.Split(string(flagBytes), "\n")
 }
