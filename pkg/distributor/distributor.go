@@ -719,7 +719,7 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 
 		d.labelsHistogram.Observe(float64(len(ts.Labels)))
 
-		if forwardingReq != nil {
+		if d.cfg.Forwarding && forwardingReq != nil {
 			// If this tenant has any forwarding rules then we should add all samples to the forwarding request,
 			// those that don't match a forwarding rule will be discarded by the forwarding request.
 			sendToIngester := forwardingReq.Add(ts)
@@ -750,7 +750,7 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 	}
 
 	var forwardingErrCh <-chan error
-	if forwardingReq != nil {
+	if d.cfg.Forwarding && forwardingReq != nil {
 		forwardingErrCh = forwardingReq.Send(ctx)
 	}
 
@@ -773,7 +773,7 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 	d.receivedMetadata.WithLabelValues(userID).Add(float64(len(validatedMetadata)))
 
 	if len(seriesKeys) == 0 && len(metadataKeys) == 0 {
-		if forwardingErrCh != nil {
+		if d.cfg.Forwarding && forwardingErrCh != nil {
 			// Blocks until the forwarding requests have completed and the final status has been pushed through this chan.
 			err = prioritizeRecoverable(err, <-forwardingErrCh, firstPartialErr)
 			if err != nil {

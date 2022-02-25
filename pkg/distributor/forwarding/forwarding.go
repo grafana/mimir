@@ -83,7 +83,7 @@ func (r *forwarder) NewRequest(ctx context.Context, tenant string, rules validat
 		ctx:          ctx,
 		client:       &r.client, // http client should be re-used so open connections get re-used.
 		rules:        rules,
-		tsByEndpoint: make(map[string][]mimirpb.PreallocTimeseries),
+		tsByEndpoint: make(map[string]*[]mimirpb.PreallocTimeseries),
 		pools:        &r.pools,
 
 		requests: r.requestsTotal.WithLabelValues(tenant),
@@ -93,10 +93,12 @@ func (r *forwarder) NewRequest(ctx context.Context, tenant string, rules validat
 }
 
 type request struct {
-	ctx          context.Context
-	client       *http.Client
-	pools        *pools
-	tsByEndpoint map[string][]mimirpb.PreallocTimeseries
+	ctx    context.Context
+	client *http.Client
+	pools  *pools
+
+	tsByEndpointMtx sync.Mutex
+	tsByEndpoint    map[string]*[]mimirpb.PreallocTimeseries
 
 	// The rules which define:
 	// - which metrics get forwarded
@@ -131,15 +133,16 @@ func (r *request) Add(sample mimirpb.PreallocTimeseries) bool {
 	}
 	r.samples.Add(float64(len(sample.Samples)))
 
+	r.tsByEndpointMtx.Lock()
+	defer r.tsByEndpointMtx.Unlock()
+
 	ts, ok := r.tsByEndpoint[rule.Endpoint]
 	if !ok {
-		tsFromPool := r.pools.timeseries.Get().(*[]mimirpb.PreallocTimeseries)
-		tsDeref := *tsFromPool
-		ts = tsDeref
+		ts = r.pools.timeseries.Get().(*[]mimirpb.PreallocTimeseries)
 		r.requests.Inc()
 	}
 
-	ts = append(ts, sample)
+	*ts = append(*ts, sample)
 	r.tsByEndpoint[rule.Endpoint] = ts
 
 	return rule.Ingest
@@ -174,7 +177,7 @@ func (r *request) Send(ctx context.Context) <-chan error {
 			errorsMtx.Lock()
 			defer errorsMtx.Unlock()
 			errorsByEndpoint[endpoint] = r.sendToEndpoint(ctx, endpoint, ts)
-		}(endpoint, ts)
+		}(endpoint, *ts)
 	}
 
 	go func() {
@@ -271,9 +274,13 @@ func (r *request) sendToEndpoint(ctx context.Context, endpoint string, ts []mimi
 
 // cleanup must be called to return the used buffers to their pools after a request has completed.
 func (r *request) cleanup() {
+	r.tsByEndpointMtx.Lock()
+	defer r.tsByEndpointMtx.Unlock()
+
 	for _, ts := range r.tsByEndpoint {
-		ts = ts[:0]
-		r.pools.timeseries.Put(&ts)
+		*ts = (*ts)[:0]
+		r.pools.timeseries.Put(ts)
 	}
+
 	r.tsByEndpoint = nil
 }
