@@ -41,7 +41,7 @@ For a full list of endpoints and example requests, refer to [ruler]({{<relref ".
 
 ## State
 
-The ruler stores ruler state in the storage backend configured with `-ruler-storage.backend`.
+The ruler stores configured rules in the storage backend configured with `-ruler-storage.backend`.
 Supported backends include:
 
 - [Amazon S3](https://aws.amazon.com/s3): `-ruler-storage.backend=s3`
