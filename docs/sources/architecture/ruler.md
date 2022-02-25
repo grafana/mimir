@@ -6,7 +6,7 @@ weight: 20
 
 # (Optional) Ruler
 
-The ruler is an optional component that executes PromQL expressions defined in recording and alerting rules.
+The ruler is an optional component that evaluates PromQL expressions defined in recording and alerting rules.
 Each tenant has their own set of recording and alerting rules.
 Each tenant can group recording and alerting rules into namespaces.
 
