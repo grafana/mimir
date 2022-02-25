@@ -91,8 +91,8 @@ How to **fix**:
 
 - Check the current shard size of each tenant in the output and, if they're not already sharded across all ingesters, you may consider to double their shard size
 - Be warned that the when increasing the shard size for a tenant, the number of in-memory series will temporarily increase. Make sure to monitor:
-  - The per-ingester number of series, to make sure that any are not close to reaching the limit. You may need to temporarily raise the ingester `max_series`.
-  - The per-tenant number of series. Due to reshuffling, series will be counted multiple times (in the new and old ingesters), and therefore a tenant may risk having samples rejected because they hit the `per_user` series limit. You may need to temporarily raise the limit.
+  - The per-ingester number of series, to make sure that any are not close to reaching the limit. You might need to temporarily raise the ingester `max_series`.
+  - The per-tenant number of series. Due to reshuffling, series will be counted multiple times (in the new and old ingesters), and therefore a tenant may risk having samples rejected because they hit the `per_user` series limit. You might need to temporarily raise the limit.
 - The in-memory series in the ingesters will be effectively reduced at the TSDB head compaction happening at least 1h after you increased the shard size for the affected tenants
 
 3. **Scale up ingesters**<br />
