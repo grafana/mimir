@@ -492,8 +492,8 @@ How to **investigate**:
    1. From the compactor log entry you found, pick the job ID from the `groupKey` field, f.ex. `0@9748515562602778029-merge--1645711200000-1645718400000`
    1. Then search the logs for the job ID and look for an entry with the message "compaction job finished" and `false` for the `success` field, this will show that the compactor failed uploading the block
 1. Investigate if it was a partial upload or partial delete
-1. Safely manually delete the block from the bucket if was a partial delete or an upload failed by a compactor: `gsutil rm -r gs://${BUCKET}/${TENANT_ID}/${BLOCK_ID}`
-1. Further investigate if was an upload failed by an ingester but not later retried (ingesters are expected to retry uploads until succeed)
+1. If it was a partial delete or an upload failed by a compactor you can safely delete the block from the bucket manually: `gsutil rm -r gs://${BUCKET}/${TENANT_ID}/${BLOCK_ID}`
+1. If it was a failed upload by an ingester, but not later retried (ingesters are expected to retry uploads until succeed), further investigate
 
 ### MimirQueriesIncorrect
 
