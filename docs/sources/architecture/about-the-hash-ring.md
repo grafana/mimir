@@ -73,7 +73,7 @@ Each of the following components builds an independent hash ring:
 - [(Optional) Rulers]({{<relref "./ruler.md">}}) shard rule groups to evaluate.
 - [(Optional) Alertmanagers]({{<relref "./alertmanager.md">}}) shard tenants.
 
-## Which Grafana Mimir features are built on top of the hash ring
+## Features that are built using the hash ring
 
 Grafana Mimir primarily uses the hash ring for sharding and replication.
 Features that are built using the hash ring:
