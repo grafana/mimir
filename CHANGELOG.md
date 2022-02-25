@@ -8,7 +8,7 @@
 
 ### Jsonnet
 
-* [CHANGE] Removed `$.distributor_deployment_labels`, `$.ingester_deployment_labels` and `$,querier_deployment_labels` fields, that were used by gossip.libsonnet to inject additional label. Now the label is injected directly into pods of statefulsets and deployments.
+* [CHANGE] Removed `$.distributor_deployment_labels`, `$.ingester_deployment_labels` and `$.querier_deployment_labels` fields, that were used by gossip.libsonnet to inject additional label. Now the label is injected directly into pods of statefulsets and deployments.
 
 ## 2.0.0-rc.0
 
