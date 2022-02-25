@@ -10,10 +10,27 @@ The ruler is an optional component that executes PromQL expressions defined in r
 Each tenant has their own set of recording and alerting rules.
 Each tenant can group recording and alerting rules into namespaces.
 
-The ruler supports multi-tenancy and horizontal scalability.
+## Recording rules
+
+The ruler evaluates the expressions in recording rules at regular intervals and writes the result back to ingesters.
+The ruler has a built-in querier to evaluate the PromQL expressions and a built-in distributor so that it can write directly to ingesters.
+Configuration of the built-in querier and distributor uses their respective configuration parameters.
+For querier configuration parameters, refer to [querier]({{<relref "../configuration/reference-configuration-parameters.md#querier" >}}).
+For distributor configuration parameters, refer to [distributor]({{<relref "../configuration/reference-configuration-parameters.md#distributor" >}}).
+
+## Alerting rules
+
+The ruler evaluates the expressions in alerting rules at regular intervals and if the result includes any series, the alert becomes active.
+If an alerting rule has a defined `for` duration, it enters the "PENDING" state.
+Once the alert has been active for the entire `for` duration, it enters the "FIRING" state.
+The ruler notifies Alertmanagers of any "FIRING" alerts.
+Configure the addresses of Alertmanagers with the `-ruler.alertmanager-url` flag.
+The `-ruler.alertmanager-url` flag supports the DNS service discovery format.
+For more information about DNS service discovery, refer to [Supported discovery modes]({{<relref "../configuration/about-grafana-mimir-arguments.md#supported-discovery-modes" >}}).
 
 ## Sharding
 
+The ruler supports multi-tenancy and horizontal scalability.
 To achieve horizontal scalability, the ruler shards the execution of rules by rule groups.
 The ruler replicas use the [hash ring]({{<relref "./about-the-hash-ring.md" >}}) stored in the [KV store]({{<relref "./about-the-key-value-store.md" >}}) to divide up the work of executing rules.
 
