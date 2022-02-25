@@ -602,7 +602,7 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 				fetcherDir,
 				reg,
 				[]block.MetadataFilter{NewExcludeMarkedForDeletionFilter(userBucket)},
-				nil)
+			)
 			require.NoError(t, err)
 			metas, partials, err := fetcher.Fetch(ctx)
 			require.NoError(t, err)

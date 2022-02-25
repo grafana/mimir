@@ -151,7 +151,7 @@ func TestNoCompactionMarkFilter(t *testing.T) {
 			}
 
 			f := NewNoCompactionMarkFilter(objstore.WithNoopInstr(bkt), false)
-			require.NoError(t, f.Filter(ctx, metas, synced))
+			require.NoError(t, f.Filter(ctx, metas, synced, nil))
 
 			require.Contains(t, metas, block1)
 			require.Contains(t, metas, block2)
@@ -173,7 +173,7 @@ func TestNoCompactionMarkFilter(t *testing.T) {
 			}
 
 			f := NewNoCompactionMarkFilter(objstore.WithNoopInstr(bkt), true)
-			require.NoError(t, f.Filter(ctx, metas, synced))
+			require.NoError(t, f.Filter(ctx, metas, synced, nil))
 
 			require.Contains(t, metas, block1)
 			require.NotContains(t, metas, block2) // block2 was removed from metas.
@@ -200,7 +200,7 @@ func TestNoCompactionMarkFilter(t *testing.T) {
 			cancel()
 
 			f := NewNoCompactionMarkFilter(objstore.WithNoopInstr(bkt), true)
-			require.Error(t, f.Filter(canceledCtx, metas, synced))
+			require.Error(t, f.Filter(canceledCtx, metas, synced, nil))
 
 			require.Contains(t, metas, block1)
 			require.Contains(t, metas, block2)
@@ -218,7 +218,7 @@ func TestNoCompactionMarkFilter(t *testing.T) {
 			}
 
 			f := NewNoCompactionMarkFilter(objstore.WithNoopInstr(bkt), true)
-			err := f.Filter(ctx, metas, synced)
+			err := f.Filter(ctx, metas, synced, nil)
 			require.NoError(t, err)
 			require.Empty(t, metas)
 
