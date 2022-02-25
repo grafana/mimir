@@ -114,7 +114,6 @@ type Config struct {
 	RuntimeConfig       runtimeconfig.Config                       `yaml:"runtime_config"`
 	MemberlistKV        memberlist.KVConfig                        `yaml:"memberlist"`
 	QueryScheduler      scheduler.Config                           `yaml:"query_scheduler"`
-	ForwardingConfig    runtimeconfig.Config                       `yaml:"forwarding_config"`
 }
 
 // RegisterFlags registers flag.
@@ -352,7 +351,6 @@ type Mimir struct {
 	MemberlistKV             *memberlist.KVInitService
 	ActivityTracker          *activitytracker.ActivityTracker
 	BuildInfoHandler         http.Handler
-	ForwardingConfig         *runtimeconfig.Manager
 
 	// Queryables that the querier should use to query the long term storage.
 	StoreQueryables []querier.QueryableWithFilter
