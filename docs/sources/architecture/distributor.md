@@ -61,7 +61,7 @@ To configure a different backend, such as Consul or etcd, the following CLI flag
 
 ## High-availability tracker
 
-Remote write senders, such as Prometheus, can be configured in pairs, which means that metrics continue to be  scraped and written to Grafana Mimir even when one of the remote write senders is down for maintenance or is unavailable due to a failure.
+Remote write senders, such as Prometheus, can be configured in pairs, which means that metrics continue to be scraped and written to Grafana Mimir even when one of the remote write senders is down for maintenance or is unavailable due to a failure.
 We refer to this configuration as high-availability (HA) pairs.
 
 The distributor includes an HA Tracker.
