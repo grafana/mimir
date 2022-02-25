@@ -90,6 +90,9 @@ How to **fix**:
   ```
 
 - Check the current shard size of each tenant in the output and, if they're not already sharded across all ingesters, you may consider to double their shard size
+- Be warned that the when increasing the shard size for a tenant, the number of in-memory series will temporarily increase. Make sure to monitor:
+  - The per-ingester number of series, to make sure that any are not close to reaching the limit. You might need to temporarily raise the ingester `max_series`.
+  - The per-tenant number of series. Due to reshuffling, series will be counted multiple times (in the new and old ingesters), and therefore a tenant may risk having samples rejected because they hit the `per_user` series limit. You might need to temporarily raise the limit.
 - The in-memory series in the ingesters will be effectively reduced at the TSDB head compaction happening at least 1h after you increased the shard size for the affected tenants
 
 3. **Scale up ingesters**<br />
@@ -169,6 +172,10 @@ How to **investigate**:
   - The panels in the dashboard are vertically sorted by the network path (eg. cortex-gw -> distributor -> ingester)
 - Deduce where in the stack the latency is being introduced
   - **`cortex-gw`**
+    - Latency may be caused by the time taken for the gateway to receive the entire request from the client. There are a multitude of reasons this can occur, so communication with the user may be necessary. For example:
+      - Network issues such as packet loss between the client and gateway.
+      - Poor performance of intermediate network hops such as load balancers or HTTP proxies.
+      - Client process having insufficient CPU resources.
     - The cortex-gw may need to be scaled up. Use the `Mimir / Scaling` dashboard to check for CPU usage vs requests.
     - There could be a problem with authentication (eg. slow to run auth layer)
   - **`distributor`**
@@ -364,6 +371,12 @@ How to **investigate**:
 This alert fires when a Mimir ingester finds a corrupted TSDB WAL (stored on disk) while replaying it at ingester startup or when creation of a checkpoint comes across a WAL corruption.
 
 If this alert fires during an **ingester startup**, the WAL should have been auto-repaired, but manual investigation is required. The WAL repair mechanism cause data loss because all WAL records after the corrupted segment are discarded and so their samples lost while replaying the WAL. If this issue happen only on 1 ingester then Mimir doesn't suffer any data loss because of the replication factor, while if it happens on multiple ingesters then some data loss is possible.
+
+WAL corruption can occur after pods are rescheduled following a fault with the underlying node, causing the node to be marked `NotReady` (e.g. an unplanned power outage, storage and/or network fault). Check for recent events related to the ingester pod in question:
+
+```
+kubectl get events --field-selector involvedObject.name=ingester-X
+```
 
 If this alert fires during a **checkpoint creation**, you should have also been paged with `MimirIngesterTSDBCheckpointCreationFailed`, and you can follow the steps under that alert.
 
