@@ -61,7 +61,7 @@ The hash ring guarantees the consistent hashing property.
 When an instance is added or removed from the ring, the number of tokens which moves from an instance to another one is reduced to the minimum.
 On average, the number of tokens that need to move to a different instance is only `n/m`, where `n` is the total number of tokens (32-bit unsigned integer) and `m` is the number of instances that are registered in the ring.
 
-## Which Grafana Mimir components use the hash ring
+## Components that use the hash ring
 
 There are several Grafana Mimir components that need a hash ring.
 Each of the following components builds an independent hash ring:
