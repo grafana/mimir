@@ -18,7 +18,20 @@ This means if `T1.a` goes down for a few minutes Grafana Mimir's HA sample handl
 
 Now we do the same leader election process `T2`.
 
-## Config
+## Distributor High Availability (HA) Tracker
+
+The [distributor]({{<relref "../architecture/distributor.md">}}) includes a High Availability (HA) Tracker.
+
+The HA Tracker deduplicates incoming samples based on a cluster and replica label expected on each incoming series.
+The cluster label uniquely identifies the cluster of redundant Prometheus servers for a given tenant.
+The replica label uniquely identifies the replica within the Prometheus cluster.
+Incoming samples are considered duplicated (and thus dropped) if received from any replica which is not the currently elected as leader within a cluster.
+
+In the event the HA tracker is enabled but incoming samples contain only one or none of the cluster and replica labels, these samples will be accepted by default and never deduplicated.
+
+> Note: for performance reasons, the HA tracker only checks the cluster and replica label of the first series in the request to decide whether all series in the request should be deduplicated. This assumes that all series inside the request have the same cluster and replica labels, which is typically true when Prometheus is configured with external labels. We recommend you to ensure this requirement is honored if you're having a non standard Prometheus setup (eg. you're using Prometheus federation or have a metrics proxy in between).
+
+## Configuration
 
 ### How to configure Prometheus
 
@@ -48,11 +61,46 @@ The replica label should be set so that the value for each Prometheus is unique 
 
 ### How to configure Grafana Mimir
 
-The minimal configuration requires:
+The minimal configuration requires to:
 
-- Enabling the HA tracker via `-distributor.ha-tracker.enable=true` CLI flag (or its YAML config option)
-- Configuring the KV store for the HA Tracker. Only `consul` and `etcd` are currently supported. The `multi` KV store backend should be used only for live migrations between two different KV store backends.
-- Enable the HA tracker for all tenants via `-distributor.ha-tracker.enable-for-all-users=true` (or its YAML config option). Alternatively, to enable the HA Tracker only on a per-tenant basis, you can keep the default `-distributor.ha-tracker.enable-for-all-users=false` and override it on a per-tenant basis using `accept_ha_samples` in the overrides section of the runtime configuration.
+- Enable the HA tracker.
+- Configure the HA tracker KV store.
+- Configure expected label names for cluster and replica.
+
+#### Enable the HA tracker
+
+To enable the HA tracker feature you need to set the `-distributor.ha-tracker.enable=true` CLI flag (or its YAML config option) in the distributor.
+
+The next step is to decide whether you want to enable it for all tenants or just a subset of them.
+To enable it for all tenants you need to set `-distributor.ha-tracker.enable-for-all-users=true`.
+Alternatively, you can enable the HA Tracker only on a per-tenant basis, keeping the default `-distributor.ha-tracker.enable-for-all-users=false` and overriding it on a per-tenant basis setting `accept_ha_samples` in the overrides section of the runtime configuration.
+
+#### Configure the HA tracker KV store
+
+The HA Tracker requires a key-value (KV) store to coordinate which replica is currently elected.
+The supported KV stores for the HA tracker are `consul` and `etcd`.
+
+> Note: `memberlist` is not supported. Memberlist-based KV stores propagate updates using the gossip protocol, which is too slow for HA tracker. The result would be that different distributors may see a different Prometheus server elected as leaders at the same time.
+
+The following CLI flags (and their respective YAML config options) are available to configure the HA tracker KV store:
+
+- `-distributor.ha-tracker.store`: The backend storage to use (eg. `consul` or `etcd`).
+- `-distributor.ha-tracker.consul.*`: The Consul client configuration (should be used only if `consul` is the configured backend storage).
+- `-distributor.ha-tracker.etcd.*`: The etcd client configuration (should be used only if `etcd` is the configured backend storage).
+
+#### Configure expected label names for cluster and replica
+
+The HA tracker deduplicates incoming series that have cluster and replica labels.
+The name of these labels can be configured both globally and on a per-tenant basis.
+
+Configure the default cluster and replica label names using the following CLI flags (or their respective YAML config options):
+
+- `-distributor.ha-tracker.cluster`: name of the label whose value uniquely identifies a Prometheus HA cluster (defaults to `cluster`).
+- `-distributor.ha-tracker.replica`: name of the label whose value uniquely identifies a Prometheus replica within the HA cluster (defaults to `__replica__`).
+
+_The HA label names can be overridden on a per-tenant basis by setting `ha_cluster_label` and `ha_replica_label` in the overrides section of the runtime configuration._
+
+#### Example configuration
 
 The following configuration snippet shows an example to enable the HA tracker for all tentants via YAML config file:
 
