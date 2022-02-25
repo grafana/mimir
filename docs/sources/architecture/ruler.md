@@ -67,5 +67,5 @@ With local storage defined as follows:
 -ruler-storage.local.directory=/tmp/rules
 ```
 
-The ruler would looks for tenant rules in the `/tmp/rules/<TENANT ID>` directory.
+The ruler looks for tenant rules in the `/tmp/rules/<TENANT ID>` directory.
 The ruler expects rule files to be in the [Prometheus format](https://prometheus.io/docs/prometheus/latest/configuration/recording_rules/#recording-rules).
