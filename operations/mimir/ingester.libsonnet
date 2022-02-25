@@ -56,8 +56,6 @@
     $.util.readinessProbe +
     $.jaeger_mixin,
 
-  ingester_deployment_labels:: {},
-
   // The ingesters should persist TSDB blocks and WAL on a persistent
   // volume in order to be crash resilient.
   local ingester_data_pvc =
@@ -76,7 +74,7 @@
     statefulSet.mixin.spec.withServiceName(name) +
     statefulSet.mixin.metadata.withNamespace($._config.namespace) +
     statefulSet.mixin.metadata.withLabels({ name: name }) +
-    statefulSet.mixin.spec.template.metadata.withLabels({ name: name } + $.ingester_deployment_labels) +
+    statefulSet.mixin.spec.template.metadata.withLabels({ name: name }) +
     statefulSet.mixin.spec.selector.withMatchLabels({ name: name }) +
     statefulSet.mixin.spec.template.spec.securityContext.withRunAsUser(0) +
     // When the ingester needs to flush blocks to the storage, it may take quite a lot of time.
