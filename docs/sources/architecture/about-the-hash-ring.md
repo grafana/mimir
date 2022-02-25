@@ -10,6 +10,9 @@ Hash rings are a distributed [consistent hashing scheme](https://en.wikipedia.or
 
 ## How the hash ring works in Grafana Mimir
 
+The hash ring in Grafana Mimir is used to share work across several replicas of a component in a consistent way, so that any other component can decide which address to talk to.
+The workload or data to share is hashed first and the result of the hashing is used to find which ring member owns it.
+
 Grafana Mimir uses the `fnv32a` hash function, which returns 32-bit unsigned integers so its value can be between `0` and `(2^32)-1`, inclusive.
 This value is called _token_ and used as the ID of the data.
 The token determines the location on the hash ring deterministically.
