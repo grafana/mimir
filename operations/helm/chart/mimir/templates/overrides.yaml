@@ -6,4 +6,4 @@ metadata:
   {{- include "mimir.labels" . | nindent 4 }}
 data:
   overrides.yaml: |
-    overrides: {}
+    overrides: {{ .Values.overrides.overridesYaml.overrides }}

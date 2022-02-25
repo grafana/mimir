@@ -6,9 +6,10 @@ local mimir = import 'mimir/mimir.libsonnet';
   metadata: { name: '.' },
   data: mimir {
     _config+:: {
-      namespace: '{{ .Release.Namespace }}',
+      namespace: 'default',
       blocks_storage_backend: 'gcs',
       blocks_storage_bucket_name: 'example-bucket',
     },
+
   },
 }

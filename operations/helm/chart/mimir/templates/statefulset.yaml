@@ -1,0 +1,340 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "mimir.fullname" . }}-compactor
+  labels:
+    name: compactor
+  {{- include "mimir.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.compactor.replicas }}
+  selector:
+    matchLabels:
+      name: compactor
+    {{- include "mimir.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        name: compactor
+      {{- include "mimir.selectorLabels" . | nindent 8 }}
+    spec:
+      containers:
+      - args: {{- toYaml .Values.compactor.compactor.args | nindent 10 }}
+        image: {{ .Values.compactor.compactor.image.repository }}:{{ .Values.compactor.compactor.image.tag
+          | default .Chart.AppVersion }}
+        imagePullPolicy: IfNotPresent
+        name: compactor
+        ports:
+        - containerPort: 8080
+          name: http-metrics
+        - containerPort: 9095
+          name: grpc
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 15
+          timeoutSeconds: 1
+        resources: {{- toYaml .Values.compactor.compactor.resources | nindent 10 }}
+        volumeMounts:
+        - mountPath: /data
+          name: compactor-data
+        - mountPath: /etc/mimir
+          name: overrides
+      securityContext:
+        runAsUser: 0
+      terminationGracePeriodSeconds: 900
+      volumes:
+      - configMap:
+          name: {{ include "mimir.fullname" . }}-overrides
+        name: overrides
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "mimir.fullname" . }}-ingester
+  labels:
+    name: ingester
+  {{- include "mimir.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.ingester.replicas }}
+  selector:
+    matchLabels:
+      name: ingester
+    {{- include "mimir.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        name: ingester
+      {{- include "mimir.selectorLabels" . | nindent 8 }}
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                name: ingester
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - args: {{- toYaml .Values.ingester.ingester.args | nindent 10 }}
+        image: {{ .Values.ingester.ingester.image.repository }}:{{ .Values.ingester.ingester.image.tag
+          | default .Chart.AppVersion }}
+        imagePullPolicy: IfNotPresent
+        name: ingester
+        ports:
+        - containerPort: 8080
+          name: http-metrics
+        - containerPort: 9095
+          name: grpc
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 15
+          timeoutSeconds: 1
+        resources: {{- toYaml .Values.ingester.ingester.resources | nindent 10 }}
+        volumeMounts:
+        - mountPath: /data
+          name: ingester-data
+        - mountPath: /etc/mimir
+          name: overrides
+      securityContext:
+        runAsUser: 0
+      terminationGracePeriodSeconds: 1200
+      volumes:
+      - configMap:
+          name: {{ include "mimir.fullname" . }}-overrides
+        name: overrides
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "mimir.fullname" . }}-memcached
+  labels:
+  {{- include "mimir.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.memcached.replicas }}
+  selector:
+    matchLabels:
+      name: memcached
+    {{- include "mimir.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        name: memcached
+      {{- include "mimir.selectorLabels" . | nindent 8 }}
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                name: memcached
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - args: {{- toYaml .Values.memcached.memcached.args | nindent 10 }}
+        image: {{ .Values.memcached.memcached.image.repository }}:{{ .Values.memcached.memcached.image.tag
+          | default .Chart.AppVersion }}
+        imagePullPolicy: IfNotPresent
+        name: memcached
+        ports:
+        - containerPort: 11211
+          name: client
+        resources: {{- toYaml .Values.memcached.memcached.resources | nindent 10 }}
+      - args: {{- toYaml .Values.memcached.exporter.args | nindent 10 }}
+        image: {{ .Values.memcached.exporter.image.repository }}:{{ .Values.memcached.exporter.image.tag
+          | default .Chart.AppVersion }}
+        imagePullPolicy: IfNotPresent
+        name: exporter
+        ports:
+        - containerPort: 9150
+          name: http-metrics
+        resources: {}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "mimir.fullname" . }}-memcached-frontend
+  labels:
+  {{- include "mimir.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.memcachedFrontend.replicas }}
+  selector:
+    matchLabels:
+      name: memcached-frontend
+    {{- include "mimir.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        name: memcached-frontend
+      {{- include "mimir.selectorLabels" . | nindent 8 }}
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                name: memcached-frontend
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - args: {{- toYaml .Values.memcachedFrontend.memcached.args | nindent 10 }}
+        image: {{ .Values.memcachedFrontend.memcached.image.repository }}:{{ .Values.memcachedFrontend.memcached.image.tag
+          | default .Chart.AppVersion }}
+        imagePullPolicy: IfNotPresent
+        name: memcached
+        ports:
+        - containerPort: 11211
+          name: client
+        resources: {{- toYaml .Values.memcachedFrontend.memcached.resources | nindent 10
+          }}
+      - args: {{- toYaml .Values.memcachedFrontend.exporter.args | nindent 10 }}
+        image: {{ .Values.memcachedFrontend.exporter.image.repository }}:{{ .Values.memcachedFrontend.exporter.image.tag
+          | default .Chart.AppVersion }}
+        imagePullPolicy: IfNotPresent
+        name: exporter
+        ports:
+        - containerPort: 9150
+          name: http-metrics
+        resources: {}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "mimir.fullname" . }}-memcached-index-queries
+  labels:
+  {{- include "mimir.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.memcachedIndexQueries.replicas }}
+  selector:
+    matchLabels:
+      name: memcached-index-queries
+    {{- include "mimir.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        name: memcached-index-queries
+      {{- include "mimir.selectorLabels" . | nindent 8 }}
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                name: memcached-index-queries
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - args: {{- toYaml .Values.memcachedIndexQueries.memcached.args | nindent 10 }}
+        image: {{ .Values.memcachedIndexQueries.memcached.image.repository }}:{{ .Values.memcachedIndexQueries.memcached.image.tag
+          | default .Chart.AppVersion }}
+        imagePullPolicy: IfNotPresent
+        name: memcached
+        ports:
+        - containerPort: 11211
+          name: client
+        resources: {{- toYaml .Values.memcachedIndexQueries.memcached.resources | nindent
+          10 }}
+      - args: {{- toYaml .Values.memcachedIndexQueries.exporter.args | nindent 10 }}
+        image: {{ .Values.memcachedIndexQueries.exporter.image.repository }}:{{ .Values.memcachedIndexQueries.exporter.image.tag
+          | default .Chart.AppVersion }}
+        imagePullPolicy: IfNotPresent
+        name: exporter
+        ports:
+        - containerPort: 9150
+          name: http-metrics
+        resources: {}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "mimir.fullname" . }}-memcached-metadata
+  labels:
+  {{- include "mimir.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.memcachedMetadata.replicas }}
+  selector:
+    matchLabels:
+      name: memcached-metadata
+    {{- include "mimir.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        name: memcached-metadata
+      {{- include "mimir.selectorLabels" . | nindent 8 }}
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                name: memcached-metadata
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - args: {{- toYaml .Values.memcachedMetadata.memcached.args | nindent 10 }}
+        image: {{ .Values.memcachedMetadata.memcached.image.repository }}:{{ .Values.memcachedMetadata.memcached.image.tag
+          | default .Chart.AppVersion }}
+        imagePullPolicy: IfNotPresent
+        name: memcached
+        ports:
+        - containerPort: 11211
+          name: client
+        resources: {{- toYaml .Values.memcachedMetadata.memcached.resources | nindent 10
+          }}
+      - args: {{- toYaml .Values.memcachedMetadata.exporter.args | nindent 10 }}
+        image: {{ .Values.memcachedMetadata.exporter.image.repository }}:{{ .Values.memcachedMetadata.exporter.image.tag
+          | default .Chart.AppVersion }}
+        imagePullPolicy: IfNotPresent
+        name: exporter
+        ports:
+        - containerPort: 9150
+          name: http-metrics
+        resources: {}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "mimir.fullname" . }}-store-gateway
+  labels:
+    name: store-gateway
+  {{- include "mimir.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.storeGateway.replicas }}
+  selector:
+    matchLabels:
+      name: store-gateway
+    {{- include "mimir.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        name: store-gateway
+      {{- include "mimir.selectorLabels" . | nindent 8 }}
+    spec:
+      containers:
+      - args: {{- toYaml .Values.storeGateway.storeGateway.args | nindent 10 }}
+        image: {{ .Values.storeGateway.storeGateway.image.repository }}:{{ .Values.storeGateway.storeGateway.image.tag
+          | default .Chart.AppVersion }}
+        imagePullPolicy: IfNotPresent
+        name: store-gateway
+        ports:
+        - containerPort: 8080
+          name: http-metrics
+        - containerPort: 9095
+          name: grpc
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 15
+          timeoutSeconds: 1
+        resources: {{- toYaml .Values.storeGateway.storeGateway.resources | nindent 10
+          }}
+        volumeMounts:
+        - mountPath: /data
+          name: store-gateway-data
+        - mountPath: /etc/mimir
+          name: overrides
+      securityContext:
+        runAsUser: 0
+      terminationGracePeriodSeconds: 120
+      volumes:
+      - configMap:
+          name: {{ include "mimir.fullname" . }}-overrides
+        name: overrides
