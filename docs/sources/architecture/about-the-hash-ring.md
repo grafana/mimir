@@ -6,7 +6,7 @@ weight: 10
 
 # About the hash ring
 
-The hash ring is a distributed hashing scheme used by Grafana Mimir for sharding and replication.
+Hash rings are a distributed [consistent hashing scheme](https://en.wikipedia.org/wiki/Consistent_hashing) and are widely used by Grafana Mimir for sharding and replication.
 
 ## How the hash ring works in Grafana Mimir
 
