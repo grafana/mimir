@@ -372,7 +372,7 @@ This alert fires when a Mimir ingester finds a corrupted TSDB WAL (stored on dis
 
 If this alert fires during an **ingester startup**, the WAL should have been auto-repaired, but manual investigation is required. The WAL repair mechanism causes data loss because all WAL records after the corrupted segment are discarded, and so their samples are lost while replaying the WAL. If this happens only on 1 ingester then Mimir doesn't suffer any data loss because of the replication factor, but if it happens on multiple ingesters some data loss is possible.
 
-To investigate how the ingester dealt with the WAL corruption, it's recommended you search the logs, e.g. with the following Loki query:
+To investigate how the ingester dealt with the WAL corruption, it's recommended you search the logs, e.g. with the following Grafana Loki query:
 
 ```
 {cluster="<cluster>",namespace="<namespace>", pod="<pod>"} |= "corrupt"
