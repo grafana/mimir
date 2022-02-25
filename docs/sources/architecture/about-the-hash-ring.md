@@ -23,7 +23,7 @@ The hash ring is a data structure that splits the space of the tokens into multi
 
 Upon startup, a Grafana Mimir instance generates random tokens, and it registers them into the ring.
 A token is owned by the instance that registered the smallest token that is larger than the one being looked up.
-That is, the owner can be found by increasing the token value until a registered token is found, of course wrapping around to zero at 2^32-1.
+That is, the owner can be found by increasing the token value until a registered token is found, of course wrapping around to zero at `(2^32)-1`.
 
 To replicate the data across multiple instances, Grafana Mimir finds the replicas by starting from the authoritative owner of the data and walking the ring clockwise.
 Data is replicated to the next instances found while walking the ring.
