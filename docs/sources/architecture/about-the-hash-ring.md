@@ -10,7 +10,7 @@ The hash ring is a distributed hashing scheme used by Grafana Mimir for sharding
 
 ## How the hash ring works in Grafana Mimir
 
-Grafana Mimir uses an hashing function which returns 32-bit unsigned integers.
+Grafana Mimir uses a hashing function that returns 32-bit unsigned integers.
 The result of the hashing function is called _token_ and it's a value between `0` and `(2^32)-1` (included).
 The token is used to lookup which Grafana Mimir instance is the authoritative owner of the hashed data.
 
