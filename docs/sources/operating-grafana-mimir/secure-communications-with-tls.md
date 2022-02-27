@@ -45,7 +45,7 @@ Every gRPC link between Grafana Mimir components supports TLS configuration as s
 
 #### Server flags
 
-Server flag settings determine if a server requires a client to provide a valid certificate back to the server. 
+Server flag settings determine if a server requires a client to provide a valid certificate back to the server.
 The flags support all the values defined in the [crypto/tls](https://pkg.go.dev/crypto/tls#ClientAuthType) standard library.
 
 For all values except `NoClientCert`, the policy defines that the server requests a client certificate during the handshake. The values determine whether the client must send certificates and if the server must verify them.
