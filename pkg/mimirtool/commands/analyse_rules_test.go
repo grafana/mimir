@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/mimirtool/analyse"
+	"github.com/grafana/mimir/pkg/mimirtool/analyze"
 	"github.com/grafana/mimir/pkg/mimirtool/rules"
 )
 
@@ -50,7 +50,7 @@ var allMetricsInRuleTest = []string{
 }
 
 func TestParseMetricsInRuleFile(t *testing.T) {
-	output := &analyse.MetricsInRuler{}
+	output := &analyze.MetricsInRuler{}
 	output.OverallMetrics = make(map[string]struct{})
 
 	nss, err := rules.ParseFiles("mimir", []string{"testdata/prometheus_rules.yaml"})
@@ -58,7 +58,7 @@ func TestParseMetricsInRuleFile(t *testing.T) {
 
 	for _, ns := range nss {
 		for _, group := range ns.Groups {
-			err := analyse.ParseMetricsInRuleGroup(output, group, ns.Namespace)
+			err := analyze.ParseMetricsInRuleGroup(output, group, ns.Namespace)
 			require.NoError(t, err)
 		}
 	}

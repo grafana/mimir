@@ -25,7 +25,7 @@ var (
 	loadgenCommand        commands.LoadgenCommand
 	remoteReadCommand     commands.RemoteReadCommand
 	aclCommand            commands.AccessControlCommand
-	analyseCommand        commands.AnalyseCommand
+	analyzeCommand        commands.AnalyzeCommand
 	bucketValidateCommand commands.BucketValidationCommand
 )
 
@@ -41,7 +41,7 @@ func main() {
 	loadgenCommand.Register(app, envVars)
 	remoteReadCommand.Register(app, envVars)
 	aclCommand.Register(app, envVars)
-	analyseCommand.Register(app, envVars)
+	analyzeCommand.Register(app, envVars)
 	bucketValidateCommand.Register(app, envVars)
 
 	app.Command("version", "Get the version of the mimirtool CLI").Action(func(k *kingpin.ParseContext) error {
