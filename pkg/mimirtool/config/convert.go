@@ -65,14 +65,14 @@ type InspectedEntryFactory func() *InspectedEntry
 func Convert(contents []byte, flags []string, m Mapper, sourceFactory, targetFactory InspectedEntryFactory) ([]byte, []string, error) {
 	source, target := sourceFactory(), targetFactory()
 
-	err := addFlags(source, flags)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	err = yaml.Unmarshal(contents, &source)
+	err := yaml.Unmarshal(contents, &source)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "could not unmarshal old Cortex configuration file")
+	}
+
+	err = addFlags(source, flags)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	err = m.DoMap(source, target)

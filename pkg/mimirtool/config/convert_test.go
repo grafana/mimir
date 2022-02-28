@@ -52,6 +52,12 @@ func TestConvert(t *testing.T) {
 			inFlagsFile:  "testdata/renamed-flags-old.flags.txt",
 			outFlagsFile: "testdata/renamed-flags-new.flags.txt",
 		},
+		{
+			name:         "config flags have precedence",
+			inFile:       "testdata/noop-old.yaml",
+			inFlagsFile:  "testdata/flags-precedence-old.flags.txt",
+			outFlagsFile: "testdata/flags-precedence-new.flags.txt",
+		},
 	}
 
 	for _, tc := range testCases {
