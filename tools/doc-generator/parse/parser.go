@@ -3,7 +3,7 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
 
-package main
+package parse
 
 import (
 	"flag"
@@ -38,57 +38,64 @@ type ExamplerConfig interface {
 	ExampleDoc() (comment string, yaml interface{})
 }
 
-type fieldExample struct {
-	comment string
-	yaml    interface{}
+type FieldExample struct {
+	Comment string
+	Yaml    interface{}
 }
 
-type configBlock struct {
-	name          string
-	desc          string
-	entries       []*configEntry
-	flagsPrefix   string
-	flagsPrefixes []string
+type ConfigBlock struct {
+	Name          string
+	Desc          string
+	Entries       []*ConfigEntry
+	FlagsPrefix   string
+	FlagsPrefixes []string
 }
 
-func (b *configBlock) Add(entry *configEntry) {
-	b.entries = append(b.entries, entry)
+func (b *ConfigBlock) Add(entry *ConfigEntry) {
+	b.Entries = append(b.Entries, entry)
 }
 
-type configEntry struct {
-	kind     string
-	name     string
-	required bool
+type EntryKind string
 
-	// In case the kind is "block"
-	block     *configBlock
-	blockDesc string
-	root      bool
+const (
+	KindBlock EntryKind = "block"
+	KindField EntryKind = "field"
+)
 
-	// In case the kind is "field"
-	fieldFlag     string
-	fieldDesc     string
-	fieldType     string
-	fieldDefault  string
-	fieldExample  *fieldExample
-	fieldCategory string
+type ConfigEntry struct {
+	Kind     EntryKind
+	Name     string
+	Required bool
+
+	// In case the Kind is KindBlock
+	Block     *ConfigBlock
+	BlockDesc string
+	Root      bool
+
+	// In case the Kind is KindField
+	FieldFlag     string
+	FieldDesc     string
+	FieldType     string
+	FieldDefault  string
+	FieldExample  *FieldExample
+	FieldCategory string
 }
 
-func (e configEntry) description() string {
-	if e.fieldCategory == "" || e.fieldCategory == "basic" {
-		return e.fieldDesc
+func (e ConfigEntry) Description() string {
+	if e.FieldCategory == "" || e.FieldCategory == "basic" {
+		return e.FieldDesc
 	}
 
-	return fmt.Sprintf("(%s) %s", e.fieldCategory, e.fieldDesc)
+	return fmt.Sprintf("(%s) %s", e.FieldCategory, e.FieldDesc)
 }
 
-type rootBlock struct {
-	name       string
-	desc       string
-	structType reflect.Type
+type RootBlock struct {
+	Name       string
+	Desc       string
+	StructType reflect.Type
 }
 
-func parseFlags(cfg flagext.RegistererWithLogger, logger log.Logger) map[uintptr]*flag.Flag {
+func Flags(cfg flagext.RegistererWithLogger, logger log.Logger) map[uintptr]*flag.Flag {
 	fs := flag.NewFlagSet("", flag.PanicOnError)
 	cfg.RegisterFlags(fs, logger)
 
@@ -106,12 +113,14 @@ func parseFlags(cfg flagext.RegistererWithLogger, logger log.Logger) map[uintptr
 	return flags
 }
 
-func parseConfig(block *configBlock, cfg interface{}, flags map[uintptr]*flag.Flag) ([]*configBlock, error) {
-	blocks := []*configBlock{}
+// Config returns a slice of ConfigBlocks. The first ConfigBlock is a resursively expanded cfg.
+// The remaining entries in the slice are all (root or not) ConfigBlocks.
+func Config(block *ConfigBlock, cfg interface{}, flags map[uintptr]*flag.Flag) ([]*ConfigBlock, error) {
+	blocks := []*ConfigBlock{}
 
 	// If the input block is nil it means we're generating the doc for the top-level block
 	if block == nil {
-		block = &configBlock{}
+		block = &ConfigBlock{}
 		blocks = append(blocks, block)
 	}
 
@@ -172,7 +181,7 @@ func parseConfig(block *configBlock, cfg interface{}, flags map[uintptr]*flag.Fl
 
 			// Since we're going to recursively iterate, we need to create a new sub
 			// block and pass it to the doc generation function.
-			var subBlock *configBlock
+			var subBlock *ConfigBlock
 
 			if !isFieldInline(field) {
 				var blockName string
@@ -186,18 +195,18 @@ func parseConfig(block *configBlock, cfg interface{}, flags map[uintptr]*flag.Fl
 					blockDesc = getFieldDescription(field, "")
 				}
 
-				subBlock = &configBlock{
-					name: blockName,
-					desc: blockDesc,
+				subBlock = &ConfigBlock{
+					Name: blockName,
+					Desc: blockDesc,
 				}
 
-				block.Add(&configEntry{
-					kind:      "block",
-					name:      fieldName,
-					required:  isFieldRequired(field),
-					block:     subBlock,
-					blockDesc: blockDesc,
-					root:      isRoot,
+				block.Add(&ConfigEntry{
+					Kind:      KindBlock,
+					Name:      fieldName,
+					Required:  isFieldRequired(field),
+					Block:     subBlock,
+					BlockDesc: blockDesc,
+					Root:      isRoot,
 				})
 
 				if isRoot {
@@ -208,7 +217,7 @@ func parseConfig(block *configBlock, cfg interface{}, flags map[uintptr]*flag.Fl
 			}
 
 			// Recursively generate the doc for the sub-block
-			otherBlocks, err := parseConfig(subBlock, fieldValue.Addr().Interface(), flags)
+			otherBlocks, err := Config(subBlock, fieldValue.Addr().Interface(), flags)
 			if err != nil {
 				return nil, err
 			}
@@ -227,28 +236,28 @@ func parseConfig(block *configBlock, cfg interface{}, flags map[uintptr]*flag.Fl
 			return nil, errors.Wrapf(err, "config=%s.%s", t.PkgPath(), t.Name())
 		}
 		if fieldFlag == nil {
-			block.Add(&configEntry{
-				kind:          "field",
-				name:          fieldName,
-				required:      isFieldRequired(field),
-				fieldDesc:     getFieldDescription(field, ""),
-				fieldType:     fieldType,
-				fieldExample:  getFieldExample(fieldName, field.Type),
-				fieldCategory: getFieldCategory(field, ""),
+			block.Add(&ConfigEntry{
+				Kind:          KindField,
+				Name:          fieldName,
+				Required:      isFieldRequired(field),
+				FieldDesc:     getFieldDescription(field, ""),
+				FieldType:     fieldType,
+				FieldExample:  getFieldExample(fieldName, field.Type),
+				FieldCategory: getFieldCategory(field, ""),
 			})
 			continue
 		}
 
-		block.Add(&configEntry{
-			kind:          "field",
-			name:          fieldName,
-			required:      isFieldRequired(field),
-			fieldFlag:     fieldFlag.Name,
-			fieldDesc:     getFieldDescription(field, fieldFlag.Usage),
-			fieldType:     fieldType,
-			fieldDefault:  getFieldDefault(field, fieldFlag.DefValue),
-			fieldExample:  getFieldExample(fieldName, field.Type),
-			fieldCategory: getFieldCategory(field, fieldFlag.Name),
+		block.Add(&ConfigEntry{
+			Kind:          KindField,
+			Name:          fieldName,
+			Required:      isFieldRequired(field),
+			FieldFlag:     fieldFlag.Name,
+			FieldDesc:     getFieldDescription(field, fieldFlag.Usage),
+			FieldType:     fieldType,
+			FieldDefault:  getFieldDefault(field, fieldFlag.DefValue),
+			FieldExample:  getFieldExample(fieldName, field.Type),
+			FieldCategory: getFieldCategory(field, fieldFlag.Name),
 		})
 	}
 
@@ -347,6 +356,39 @@ func getFieldType(t reflect.Type) (string, error) {
 	}
 }
 
+func ReflectType(typ string) reflect.Type {
+	switch typ {
+	case "string":
+		return reflect.TypeOf("")
+	case "url":
+		return reflect.TypeOf(flagext.URLValue{})
+	case "duration":
+		return reflect.TypeOf(time.Duration(0))
+	case "time":
+		return reflect.TypeOf(flagext.Time{})
+	case "boolean":
+		return reflect.TypeOf(false)
+	case "int":
+		return reflect.TypeOf(0)
+	case "float":
+		return reflect.TypeOf(0.0)
+	case "list of string":
+		return reflect.TypeOf([]string{})
+	case "map of string to string":
+		fallthrough
+	case "map of tracker name (string) to matcher (string)":
+		return reflect.TypeOf(map[string]string{})
+	case "relabel_config...":
+		return reflect.TypeOf([]*relabel.Config{})
+	case "map of string to float64":
+		return reflect.TypeOf(map[string]float64{})
+	case "list of duration":
+		return reflect.TypeOf([]time.Duration{})
+	default:
+		panic("unknown field type " + typ)
+	}
+}
+
 func getFieldFlag(field reflect.StructField, fieldValue reflect.Value, flags map[uintptr]*flag.Flag) (*flag.Flag, error) {
 	if isAbsentInCLI(field) {
 		return nil, nil
@@ -354,40 +396,40 @@ func getFieldFlag(field reflect.StructField, fieldValue reflect.Value, flags map
 	fieldPtr := fieldValue.Addr().Pointer()
 	fieldFlag, ok := flags[fieldPtr]
 	if !ok {
-		return nil, fmt.Errorf("unable to find CLI flag for '%s' config entry", field.Name)
+		return nil, nil
 	}
 
 	return fieldFlag, nil
 }
 
-func getFieldExample(fieldKey string, fieldType reflect.Type) *fieldExample {
+func getFieldExample(fieldKey string, fieldType reflect.Type) *FieldExample {
 	ex, ok := reflect.New(fieldType).Interface().(ExamplerConfig)
 	if !ok {
 		return nil
 	}
 	comment, yml := ex.ExampleDoc()
-	return &fieldExample{
-		comment: comment,
-		yaml:    map[string]interface{}{fieldKey: yml},
+	return &FieldExample{
+		Comment: comment,
+		Yaml:    map[string]interface{}{fieldKey: yml},
 	}
 }
 
-func getCustomFieldEntry(field reflect.StructField, fieldValue reflect.Value, flags map[uintptr]*flag.Flag) (*configEntry, error) {
+func getCustomFieldEntry(field reflect.StructField, fieldValue reflect.Value, flags map[uintptr]*flag.Flag) (*ConfigEntry, error) {
 	if field.Type == reflect.TypeOf(logging.Level{}) || field.Type == reflect.TypeOf(logging.Format{}) {
 		fieldFlag, err := getFieldFlag(field, fieldValue, flags)
 		if err != nil {
 			return nil, err
 		}
 
-		return &configEntry{
-			kind:          "field",
-			name:          getFieldName(field),
-			required:      isFieldRequired(field),
-			fieldFlag:     fieldFlag.Name,
-			fieldDesc:     fieldFlag.Usage,
-			fieldType:     "string",
-			fieldDefault:  getFieldDefault(field, fieldFlag.DefValue),
-			fieldCategory: getFieldCategory(field, fieldFlag.Name),
+		return &ConfigEntry{
+			Kind:          KindField,
+			Name:          getFieldName(field),
+			Required:      isFieldRequired(field),
+			FieldFlag:     fieldFlag.Name,
+			FieldDesc:     fieldFlag.Usage,
+			FieldType:     "string",
+			FieldDefault:  getFieldDefault(field, fieldFlag.DefValue),
+			FieldCategory: getFieldCategory(field, fieldFlag.Name),
 		}, nil
 	}
 	if field.Type == reflect.TypeOf(flagext.URLValue{}) {
@@ -396,15 +438,15 @@ func getCustomFieldEntry(field reflect.StructField, fieldValue reflect.Value, fl
 			return nil, err
 		}
 
-		return &configEntry{
-			kind:          "field",
-			name:          getFieldName(field),
-			required:      isFieldRequired(field),
-			fieldFlag:     fieldFlag.Name,
-			fieldDesc:     fieldFlag.Usage,
-			fieldType:     "url",
-			fieldDefault:  getFieldDefault(field, fieldFlag.DefValue),
-			fieldCategory: getFieldCategory(field, fieldFlag.Name),
+		return &ConfigEntry{
+			Kind:          KindField,
+			Name:          getFieldName(field),
+			Required:      isFieldRequired(field),
+			FieldFlag:     fieldFlag.Name,
+			FieldDesc:     fieldFlag.Usage,
+			FieldType:     "url",
+			FieldDefault:  getFieldDefault(field, fieldFlag.DefValue),
+			FieldCategory: getFieldCategory(field, fieldFlag.Name),
 		}, nil
 	}
 	if field.Type == reflect.TypeOf(flagext.Secret{}) {
@@ -413,15 +455,15 @@ func getCustomFieldEntry(field reflect.StructField, fieldValue reflect.Value, fl
 			return nil, err
 		}
 
-		return &configEntry{
-			kind:          "field",
-			name:          getFieldName(field),
-			required:      isFieldRequired(field),
-			fieldFlag:     fieldFlag.Name,
-			fieldDesc:     fieldFlag.Usage,
-			fieldType:     "string",
-			fieldDefault:  getFieldDefault(field, fieldFlag.DefValue),
-			fieldCategory: getFieldCategory(field, fieldFlag.Name),
+		return &ConfigEntry{
+			Kind:          KindField,
+			Name:          getFieldName(field),
+			Required:      isFieldRequired(field),
+			FieldFlag:     fieldFlag.Name,
+			FieldDesc:     fieldFlag.Usage,
+			FieldType:     "string",
+			FieldDefault:  getFieldDefault(field, fieldFlag.DefValue),
+			FieldCategory: getFieldCategory(field, fieldFlag.Name),
 		}, nil
 	}
 	if field.Type == reflect.TypeOf(model.Duration(0)) {
@@ -430,15 +472,15 @@ func getCustomFieldEntry(field reflect.StructField, fieldValue reflect.Value, fl
 			return nil, err
 		}
 
-		return &configEntry{
-			kind:          "field",
-			name:          getFieldName(field),
-			required:      isFieldRequired(field),
-			fieldFlag:     fieldFlag.Name,
-			fieldDesc:     fieldFlag.Usage,
-			fieldType:     "duration",
-			fieldDefault:  getFieldDefault(field, fieldFlag.DefValue),
-			fieldCategory: getFieldCategory(field, fieldFlag.Name),
+		return &ConfigEntry{
+			Kind:          KindField,
+			Name:          getFieldName(field),
+			Required:      isFieldRequired(field),
+			FieldFlag:     fieldFlag.Name,
+			FieldDesc:     fieldFlag.Usage,
+			FieldType:     "duration",
+			FieldDefault:  getFieldDefault(field, fieldFlag.DefValue),
+			FieldCategory: getFieldCategory(field, fieldFlag.Name),
 		}, nil
 	}
 	if field.Type == reflect.TypeOf(flagext.Time{}) {
@@ -447,15 +489,15 @@ func getCustomFieldEntry(field reflect.StructField, fieldValue reflect.Value, fl
 			return nil, err
 		}
 
-		return &configEntry{
-			kind:          "field",
-			name:          getFieldName(field),
-			required:      isFieldRequired(field),
-			fieldFlag:     fieldFlag.Name,
-			fieldDesc:     fieldFlag.Usage,
-			fieldType:     "time",
-			fieldDefault:  getFieldDefault(field, fieldFlag.DefValue),
-			fieldCategory: getFieldCategory(field, fieldFlag.Name),
+		return &ConfigEntry{
+			Kind:          KindField,
+			Name:          getFieldName(field),
+			Required:      isFieldRequired(field),
+			FieldFlag:     fieldFlag.Name,
+			FieldDesc:     fieldFlag.Usage,
+			FieldType:     "time",
+			FieldDefault:  getFieldDefault(field, fieldFlag.DefValue),
+			FieldCategory: getFieldCategory(field, fieldFlag.Name),
 		}, nil
 	}
 
@@ -502,9 +544,9 @@ func getFieldDescription(f reflect.StructField, fallback string) string {
 }
 
 func isRootBlock(t reflect.Type) (string, string, bool) {
-	for _, rootBlock := range rootBlocks {
-		if t == rootBlock.structType {
-			return rootBlock.name, rootBlock.desc, true
+	for _, rootBlock := range RootBlocks {
+		if t == rootBlock.StructType {
+			return rootBlock.Name, rootBlock.Desc, true
 		}
 	}
 

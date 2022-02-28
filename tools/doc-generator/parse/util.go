@@ -3,14 +3,14 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
 
-package main
+package parse
 
 import (
 	"math"
 	"strings"
 )
 
-func findFlagsPrefix(flags []string) []string {
+func FindFlagsPrefix(flags []string) []string {
 	if len(flags) == 0 {
 		return flags
 	}
