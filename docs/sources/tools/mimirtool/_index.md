@@ -318,7 +318,7 @@ The output is the following:
 #### Export series into local TSDB
 
 The `remote-read export` command exports all series and samples matching the selector into a local TSDB. This TSDB can
-then be further analysed with local tooling like `prometheus` and [`promtool`](https://github.com/prometheus/prometheus/tree/main/cmd/promtool).
+then be further analyzed with local tooling like `prometheus` and [`promtool`](https://github.com/prometheus/prometheus/tree/main/cmd/promtool).
 
 ```bash
 # Use Remote Read API to download all metrics with label job=name into local tsdb
@@ -379,7 +379,7 @@ The header to set:
 X-Prom-Label-Policy: 1234:%7Bnamespace=%22A%22%7D
 ```
 
-### Analyse
+### Analyze
 
 Run analysis against your Grafana or Hosted Grafana instance to see which metrics are being used and exported. Can also
 extract metrics from dashboard JSON and rules YAML files.
@@ -388,10 +388,10 @@ extract metrics from dashboard JSON and rules YAML files.
 
 This command will run against your Grafana instance and will download its dashboards and then extract the Prometheus
 metrics used in its queries. The output is a JSON file. You can use this file
-with `analyse prometheus --grafana-metrics-file`.
+with `analyze prometheus --grafana-metrics-file`.
 
 ```bash
-mimirtool analyse grafana --address=<url>
+mimirtool analyze grafana --address=<url>
 ```
 
 ##### Configuration
@@ -433,10 +433,10 @@ mimirtool analyse grafana --address=<url>
 
 This command will run against your Grafana Mimir, Grafana Enterprise Metrics, or Grafana Cloud Prometheus instance. It
 will fetch its rule groups and extract the Prometheus metrics used in the rule queries. The output is a JSON file. You
-can use this file with `analyse prometheus --ruler-metrics-file`.
+can use this file with `analyze prometheus --ruler-metrics-file`.
 
 ```bash
-mimirtool analyse ruler --address=<url> --id=<tenant_id>
+mimirtool analyze ruler --address=<url> --id=<tenant_id>
 ```
 
 ##### Configuration
@@ -475,10 +475,10 @@ mimirtool analyse ruler --address=<url> --id=<tenant_id>
 #### Dashboard
 
 This command accepts Grafana dashboard JSON files as input and extracts Prometheus metrics used in the queries. The
-output is a JSON file. You can use this file with `analyse prometheus --grafana-metrics-file`.
+output is a JSON file. You can use this file with `analyze prometheus --grafana-metrics-file`.
 
 ```bash
-mimirtool analyse dashboard <file>...
+mimirtool analyze dashboard <file>...
 ```
 
 ##### Configuration
@@ -490,10 +490,10 @@ mimirtool analyse dashboard <file>...
 #### Rule file
 
 This command accepts Prometheus rule YAML files as input and extracts Prometheus metrics used in the queries. The output
-is a JSON file. You can use this file with `analyse prometheus --ruler-metrics-file`.
+is a JSON file. You can use this file with `analyze prometheus --ruler-metrics-file`.
 
 ```bash
-mimirtool analyse rule-file <file>
+mimirtool analyze rule-file <file>
 ```
 
 ##### Configuration
@@ -505,8 +505,8 @@ mimirtool analyse rule-file <file>
 #### Prometheus
 
 This command will run against your Grafana Mimir, Grafana Metrics Enterprise, Prometheus, or Cloud Prometheus instance.
-It will use the output from a previous run of `analyse grafana`, `analyse dashboard`, `analyse ruler`
-or `analyse rule-file` to show how many series in the Prometheus instance are actually being used in dashboards and/or
+It will use the output from a previous run of `analyze grafana`, `analyze dashboard`, `analyze ruler`
+or `analyze rule-file` to show how many series in the Prometheus instance are actually being used in dashboards and/or
 rules. Also, it will show which metrics exist in Grafana Cloud that are **not** in dashboards or rules. The output is a
 JSON file.
 
@@ -514,7 +514,7 @@ JSON file.
 > This may take some time for Prometheis with a lot of active series.
 
 ```bash
-mimirtool analyse prometheus --address=<url> --id=<tenant_id>
+mimirtool analyze prometheus --address=<url> --id=<tenant_id>
 ```
 
 ##### Configuration
@@ -524,8 +524,8 @@ mimirtool analyse prometheus --address=<url> --id=<tenant_id>
 | `MIMIR_ADDRESS`   | `--address`              | Address of the Prometheus instance.                                                                             |
 | `MIMIR_TENANT_ID` | `--user`                 | Sets the basic auth username. If you're using Grafana Cloud this is your instance ID.                           |
 | `MIMIR_API_KEY`   | `--key`                  | Sets the basic auth password. If you're using Grafana Cloud, this is your API key.                              |
-| -                 | `--grafana-metrics-file` | `mimirtool analyse grafana` or `mimirtool analyse dashboard` output file. `metrics-in-grafana.json` by default. |
-| -                 | `--ruler-metrics-file`   | `mimirtool analyse ruler` or `mimirtool analyse rule-file` output file. `metrics-in-ruler.json` by default.     |
+| -                 | `--grafana-metrics-file` | `mimirtool analyze grafana` or `mimirtool analyze dashboard` output file. `metrics-in-grafana.json` by default. |
+| -                 | `--ruler-metrics-file`   | `mimirtool analyze ruler` or `mimirtool analyze rule-file` output file. `metrics-in-ruler.json` by default.     |
 | -                 | `--output`               | The output file path. `prometheus-metrics.json` by default.                                                     |
 
 ##### Example output

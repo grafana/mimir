@@ -2,6 +2,12 @@
 
 ## Grafana Mimir - main / unreleased
 
+* [CHANGE] Compactor: No longer upload debug meta files to object storage. #1257
+
+### Mimirtool
+
+* [CHANGE] `analyse` command has been renamed to `analyze`. #1318
+
 ### Mixin
 
 ### Jsonnet
