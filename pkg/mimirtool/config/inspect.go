@@ -53,11 +53,12 @@ func (i *InspectedEntry) String() string {
 
 // Set implements flag.Value
 func (i *InspectedEntry) Set(s string) (err error) {
-	// If we are using the InspectedEntry as the flag.Value implementation, then this must be a primitive value.
-	// If it's a primitive value, then decoding it as YAML should be sufficiently reliable.
 	if val, ok := i.FieldValue.(flag.Value); ok {
+		// If the value already know how to be set, then use that
 		return val.Set(s)
 	}
+	// Otherwise, it should be a primitive go type (int, string, float64).
+	// Decoding it as YAML should be sufficiently reliable.
 	jsonDecoder := yaml.NewDecoder(bytes.NewBuffer([]byte(s)))
 	i.FieldValue, err = decodeValue(i.FieldType, jsonDecoder)
 	return
