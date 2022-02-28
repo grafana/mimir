@@ -38,7 +38,8 @@ func (m PathMapper) DoMap(source, target *InspectedEntry) error {
 	for path, mapping := range m.PathMappings {
 		oldVal, err := source.GetValue(path)
 		if err != nil {
-			return err
+			errs.Add(err)
+			continue
 		}
 		errs.Add(target.SetValue(mapping(path, oldVal)))
 	}
@@ -47,7 +48,7 @@ func (m PathMapper) DoMap(source, target *InspectedEntry) error {
 
 type NoopMapper struct{}
 
-func (NoopMapper) DoMap(source, target *InspectedEntry) error {
+func (NoopMapper) DoMap(_, _ *InspectedEntry) error {
 	return nil
 }
 

@@ -47,18 +47,23 @@ func TestConvert(t *testing.T) {
 			inFlagsFile:  "testdata/value-flags-old.flags.txt",
 			outFlagsFile: "testdata/value-flags-new.flags.txt",
 		},
+		{
+			name:         "with renamed flags",
+			inFlagsFile:  "testdata/renamed-flags-old.flags.txt",
+			outFlagsFile: "testdata/renamed-flags-new.flags.txt",
+		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			inBytes := loadFile(t, tc.inFile)
-			inFlags := loadTestFlags(t, tc.inFlagsFile)
+			inFlags := loadFlags(t, tc.inFlagsFile)
 
 			actualOut, actualOutFlags, err := Convert(inBytes, inFlags, CortexToMimirMapper, DefaultCortexConfig, DefaultMimirConfig)
 			assert.NoError(t, err)
 
 			expectedOut := loadFile(t, tc.outFile)
-			expectedOutFlags := loadTestFlags(t, tc.outFlagsFile)
+			expectedOutFlags := loadFlags(t, tc.outFlagsFile)
 
 			assert.ElementsMatch(t, expectedOutFlags, actualOutFlags)
 			if expectedOut == nil {
@@ -80,7 +85,7 @@ func loadFile(t testing.TB, fileName string) []byte {
 	return bytes
 }
 
-func loadTestFlags(t testing.TB, fileName string) []string {
+func loadFlags(t testing.TB, fileName string) []string {
 	t.Helper()
 
 	if fileName == "" {
