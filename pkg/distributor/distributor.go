@@ -42,6 +42,7 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/tenant"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -775,7 +776,7 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 	if len(seriesKeys) == 0 && len(metadataKeys) == 0 {
 		if d.cfg.Forwarding && forwardingErrCh != nil {
 			// Blocks until the forwarding requests have completed and the final status has been pushed through this chan.
-			err = prioritizeRecoverable(err, <-forwardingErrCh, firstPartialErr)
+			err = httpgrpcutil.PrioritizeRecoverableErr(err, <-forwardingErrCh, firstPartialErr)
 			if err != nil {
 				return nil, err
 			}
@@ -844,40 +845,13 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 			forwardingErr = <-forwardingErrCh
 		}
 
-		err = prioritizeRecoverable(err, forwardingErr, firstPartialErr)
+		err = httpgrpcutil.PrioritizeRecoverableErr(err, forwardingErr, firstPartialErr)
 	}
 
 	if err != nil {
 		return nil, err
 	}
 	return &mimirpb.WriteResponse{}, firstPartialErr
-}
-
-// prioritizeRecoverable checks whether in the given slice of errors there is a recoverable error, if yes then it will
-// return the first recoverable error, if not then it will return the first non-recoverable error, if there is no
-// error at all then it will return nil.
-func prioritizeRecoverable(errs ...error) error {
-	var firstErr error
-
-	for _, err := range errs {
-		if err == nil {
-			continue
-		}
-
-		resp, ok := httpgrpc.HTTPResponseFromError(err)
-		if !ok {
-			// Not a gRPC HTTP error, assume it is recoverable to fail gracefully.
-			return err
-		}
-		if resp.Code/100 == 5 || resp.Code == http.StatusTooManyRequests {
-			// Found a recoverable error, return it.
-			return err
-		} else if firstErr == nil {
-			firstErr = err
-		}
-	}
-
-	return firstErr
 }
 
 func copyString(s string) string {
