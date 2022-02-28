@@ -88,7 +88,7 @@ Features that are built using the hash ring:
 
 ## How the hash ring is shared between Grafana Mimir instances
 
-The hash ring data structure needs to be shared between Grafana Mimir instances.
+Hash ring data structures need to be shared between Grafana Mimir instances.
 To propagate changes to the hash ring, Grafana Mimir uses a key-value store.
 The key-value store is required and can be configured independently for the hash rings of different components.
 
