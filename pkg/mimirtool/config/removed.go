@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 package config
 
 // YAML Paths for config options removed since Cortex 1.11.0.
