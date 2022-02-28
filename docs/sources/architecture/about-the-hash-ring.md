@@ -59,7 +59,7 @@ In the example that follows, the series are replicated to the instances of `Inge
 
 ### Consistent hashing
 
-The hash ring guarantees the consistent hashing property.
+The hash ring guarantees the property known as consistent hashing.
 
 When an instance is added or removed from the ring, consistent hashing minimizes the number of tokens moved from one instances to another.
 On average, the number of tokens that need to move to a different instance is only `n/m`, where `n` is the total number of tokens (32-bit unsigned integer) and `m` is the number of instances that are registered in the ring.
