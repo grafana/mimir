@@ -6,7 +6,7 @@ weight: 10
 
 # Encrypting data at rest
 
-Grafana Mimir supports server-side encryption (SSE) to encrypt data at rest in object storage.
+Grafana Mimir supports encrypting data at rest in object storage using server-side encryption (SSE).
 Configuration of SSE depends on your storage backend.
 
 ## Google Cloud Storage
