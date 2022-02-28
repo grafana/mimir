@@ -868,7 +868,6 @@ _Changes since cortextool `0.10.7`._
 * [CHANGE] Change `cortex` backend to `mimir`. #883
 * [CHANGE] Do not publish `mimirtool` binary for 386 windows architecture. #1263
 * [FEATURE] Support Arm64 on Darwin for all binaries (benchtool etc). https://github.com/grafana/cortex-tools/pull/215
-* [FEATURE] Mimirtool: Add basis for converting cortex YAML config to Grafana Mimir YAML config. #1051
 * [ENHANCEMENT] Correctly support federated rules. #823
 * [BUGFIX] Fix `cortextool rules` legends displaying wrong symbols for updates and deletions. https://github.com/grafana/cortex-tools/pull/226
 
