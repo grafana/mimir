@@ -222,8 +222,6 @@ replace github.com/hashicorp/go-immutable-radix => github.com/hashicorp/go-immut
 
 replace github.com/hashicorp/go-hclog => github.com/hashicorp/go-hclog v0.12.2
 
-replace github.com/thanos-io/thanos v0.24.0 => github.com/thanos-io/thanos v0.19.1-0.20211229180107-bf14049d5745
-
 // Replace memberlist with our fork which includes some fixes that haven't been
 // merged upstream yet.
 replace github.com/hashicorp/memberlist v0.2.4 => github.com/grafana/memberlist v0.2.5-0.20211201083710-c7bc8e9df94b
