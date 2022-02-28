@@ -62,7 +62,7 @@ To configure a different backend, such as Consul or etcd, the following CLI flag
 - `-distributor.ring.consul.*`: The Consul client configuration. Only use this if you have defined `consul` as your backend storage.
 - `-distributor.ring.etcd.*`: The etcd client configuration. Only use this if you have defined `etcd` as your backend storage.
 
-## High Availability Tracker
+## High-availability tracker
 
 Remote write senders, such as Prometheus, may be configured in pairs, so that metrics are still scraped and written to Grafana Mimir when one of them is shut down for maintenance or unavailable due to a failure.
 We refer to this configuration has high-availability (HA) pairs.
