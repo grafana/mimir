@@ -374,6 +374,7 @@ var removedConfigPaths = []string{
 	"storage.index_queries_cache_config.redis.tls_insecure_skip_verify",                           // -store.index-cache-read.redis.tls-insecure-skip-verify
 
 	// All `-grpc-store.*` flags
+	"storage.grpc_store.server_address", // -grpc-store.server-address
 }
 
 // CLI options removed since Cortex 1.11.0. These flags only existed as CLI Flags, and were not included in YAML Config.
