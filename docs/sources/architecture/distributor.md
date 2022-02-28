@@ -56,7 +56,7 @@ _Prometheus remote write doesn't retry requests on 429 HTTP response status code
 The distributors form a [hash ring]({{<relref "./about-the-hash-ring.md">}}) (called the distributors’ ring) to discover each other and enforce limits correctly.
 
 The default configuration uses `memberlist` as the backend for the distributors’ ring.
-In case you want to configure a different backend (eg. `consul` or `etcd`), the following CLI flags (and their respective YAML config options) are available to configure the distributors ring KV store:
+To configure a different backend, such as Consul or etcd, the following CLI flags (and their respective YAML configuration options) configure the key-value store of the distributors’ ring:
 
 - `-distributor.ring.store`: The backend storage to use.
 - `-distributor.ring.consul.*`: The Consul client configuration (should be used only if `consul` is the configured backend storage).
