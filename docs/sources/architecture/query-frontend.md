@@ -45,20 +45,15 @@ The query-frontend supports caching query results and reuses them on subsequent 
 
 ## Scaling
 
-Historically scaling the Cortex query-frontend has posed some challenges. These challenges are outlined below.
-The [query-scheduler]({{< relref "query-scheduler.md" >}}) can be employed to overcome them.
+Historically scaling the Cortex query-frontend has posed some challenges. These challenges are outlined below. The [query-scheduler]({{< relref "query-scheduler.md" >}}) can be employed to overcome them.
 
-### Scaling out
+### Challenges
 
 Each querier adds a `-querier.max-concurrent` number of concurrent workers. Each worker is capable of executing a query and is connected to a single query-frontend instance. The total query concurrency of the Grafana Mimir cluster is equal to `number_of_queriers * querier.max-concurrent`. There is an exception when the number of query-frontends you are running (referred to as `number_of_frontends` later) is larger than `querier.max-concurrent`. In this case a querier creates `number_of_frontends` workers so that each query-frontend is guaranteed have at least one querier worker attached it.
 
 Inside the querier the concurrency of the PromQL engine evaluating queries is also limited by `querier.max-concurrent`. This means that in case `number_of_frontends` is larger than `querier.max-concurrent`, there will be queuing before the PromQL engine. Therefore, scaling out the query-frontend beyond `querier.max-concurrent` impacts the amount of work each individual querier is attempting to do at any given time. This may cause a querier to attempt more work than they are capable of due to restrictions such as memory and CPU limits.
 
 Additionally, maintaining a high number of query-frontends increases the number of queues. Adding more query-frontends favors high volume tenants by giving them more slots to be picked up by the next available querier worker. Fewer query-frontends allows for an even playing field regardless of the number of active queries per tenant.
-
-### Scaling in
-
-For similar reasons scaling in the query-frontend may cause a querier to underutilize its allocated memory and CPU effectively. This will lower effective resource utilization leading to poor query performances when running Grafana Mimir at scale. Also, because individual queriers will be doing less work, there may be increased queueing in the query-frontends if the request rate remains constant.
 
 ## DNS Configuration / Readiness
 
