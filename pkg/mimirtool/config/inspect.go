@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"flag"
+	"fmt"
 	"reflect"
 	"strings"
 
@@ -40,6 +41,40 @@ type InspectedEntry struct {
 	FieldFlag     string      `json:"fieldFlag,omitempty"`
 	FieldType     string      `json:"fieldType,omitempty"`
 	FieldCategory string      `json:"fieldCategory,omitempty"`
+}
+
+// String implements flag.Value
+func (i *InspectedEntry) String() string {
+	if val, ok := i.FieldValue.(flag.Value); ok {
+		return val.String()
+	}
+	return fmt.Sprintf("%v", i.FieldValue)
+}
+
+// Set implements flag.Value
+func (i *InspectedEntry) Set(s string) (err error) {
+	if val, ok := i.FieldValue.(flag.Value); ok {
+		// If the value already know how to be set, then use that
+		return val.Set(s)
+	}
+	// Otherwise, it should be a primitive go type (int, string, float64).
+	// Decoding it as YAML should be sufficiently reliable.
+	jsonDecoder := yaml.NewDecoder(bytes.NewBuffer([]byte(s)))
+	i.FieldValue, err = decodeValue(i.FieldType, jsonDecoder)
+	return
+}
+
+func (i *InspectedEntry) RegisterFlags(fs *flag.FlagSet, logger log.Logger) {
+	if i.Kind == parse.KindBlock {
+		for _, e := range i.BlockEntries {
+			e.RegisterFlags(fs, logger)
+		}
+		return
+	}
+	if i.FieldFlag == "" {
+		return
+	}
+	fs.Var(i, i.FieldFlag, i.Desc)
 }
 
 func (i *InspectedEntry) UnmarshalJSON(b []byte) error {
@@ -256,9 +291,18 @@ func (i InspectedEntry) walk(path string, errs *multierror.MultiError, f func(pa
 	}
 }
 
+// GetFlag returns the CLI flag name of the parameter.
+func (i InspectedEntry) GetFlag(path string) (string, error) {
+	child, err := i.find(path)
+	if err != nil {
+		return "", errors.Wrap(err, path)
+	}
+	return child.FieldFlag, nil
+}
+
 var (
 	// ZeroValueInspector inspects passed configuration structs and returns nested InspectedEntries
-	// where the InsepctedEntry.FieldValue is the go zero-value for the type of the field.
+	// where the InspectedEntry.FieldValue is the go zero-value for the type of the field.
 	ZeroValueInspector = Inspector{
 		getValueFn: func(entry *parse.ConfigEntry) interface{} {
 			return reflect.Zero(parse.ReflectType(entry.FieldType)).Interface()
@@ -266,7 +310,7 @@ var (
 	}
 
 	// DefaultValueInspector inspects passed configuration structs and returns nested InspectedEntries
-	// where the InsepctedEntry.FieldValue is the default value for the that particular field. This is determined
+	// where the InspectedEntry.FieldValue is the default value for the that particular field. This is determined
 	// by the default value that the registered CLI flags take.
 	DefaultValueInspector = Inspector{
 		getValueFn: func(entry *parse.ConfigEntry) interface{} {

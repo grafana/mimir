@@ -365,7 +365,7 @@ func ReflectType(typ string) reflect.Type {
 	case "duration":
 		return reflect.TypeOf(time.Duration(0))
 	case "time":
-		return reflect.TypeOf(flagext.Time{})
+		return reflect.TypeOf(&flagext.Time{})
 	case "boolean":
 		return reflect.TypeOf(false)
 	case "int":
