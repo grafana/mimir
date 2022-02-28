@@ -309,7 +309,7 @@
           "name": "grpc_server_max_connection_idle",
           "required": false,
           "desc": "The duration after which an idle connection should be closed. Default: infinity",
-          "fieldValue": 9223372036854776000,
+          "fieldValue": 9223372036854775807,
           "fieldFlag": "server.grpc.keepalive.max-connection-idle",
           "fieldType": "duration"
         },
@@ -318,7 +318,7 @@
           "name": "grpc_server_max_connection_age",
           "required": false,
           "desc": "The duration for the maximum amount of time a connection may exist before it will be closed. Default: infinity",
-          "fieldValue": 9223372036854776000,
+          "fieldValue": 9223372036854775807,
           "fieldFlag": "server.grpc.keepalive.max-connection-age",
           "fieldType": "duration"
         },
@@ -327,7 +327,7 @@
           "name": "grpc_server_max_connection_age_grace",
           "required": false,
           "desc": "An additive period after max-connection-age after which the connection will be forcibly closed. Default: infinity",
-          "fieldValue": 9223372036854776000,
+          "fieldValue": 9223372036854775807,
           "fieldFlag": "server.grpc.keepalive.max-connection-age-grace",
           "fieldType": "duration"
         },
@@ -4785,6 +4785,7 @@
           "name": "metric_relabel_configs",
           "required": false,
           "desc": "List of metric relabel configurations. Note that in most situations, it is more effective to use metrics relabeling directly in the Prometheus server, e.g. remote_write.write_relabel_configs.",
+          "fieldValue": null,
           "fieldType": "relabel_config..."
         },
         {
