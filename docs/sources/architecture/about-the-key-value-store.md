@@ -41,7 +41,7 @@ block section of the configuration.
 ### Etcd
 
 Grafana Mimir supports [etcd](https://etcd.io) as a backend KV store.
-When choosing this option, etcd needs to be installed alongside Grafana Mimir.
+If you choose to use etcd, you need to install it alongside Grafana Mimir.
 
 Refer to the [etcd](../configuration/reference-configuration-parameters.md#etcd)
 block section of the configuration for details on how to configure it.
