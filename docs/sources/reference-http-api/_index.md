@@ -752,7 +752,7 @@ _Requires [authentication](#authentication)._
 POST /ruler/delete_tenant_config
 ```
 
-This deletes all rule groups for tenant, and returns `200` on success. Calling endpoint when no rule groups exist for user returns `200`. Authentication is only to identify the tenant.
+This deletes all rule groups for a tenant, and returns `200` on success. Calling this endpoint when no rule groups exist for a tenant returns `200`. Authentication is only to identify the tenant.
 
 This is intended as internal API, and not to be exposed to users. This endpoint is enabled regardless of whether `-ruler.enable-api` is enabled or not.
 
