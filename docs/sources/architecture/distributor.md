@@ -59,8 +59,8 @@ The default configuration uses `memberlist` as the backend for the distributorsâ
 To configure a different backend, such as Consul or etcd, the following CLI flags (and their respective YAML configuration options) configure the key-value store of the distributorsâ€™ ring:
 
 - `-distributor.ring.store`: The backend storage to use.
-- `-distributor.ring.consul.*`: The Consul client configuration (should be used only if `consul` is the configured backend storage).
-- `-distributor.ring.etcd.*`: The etcd client configuration (should be used only if `etcd` is the configured backend storage).
+- `-distributor.ring.consul.*`: The Consul client configuration. Only use this if you have defined `consul` as your backend storage.
+- `-distributor.ring.etcd.*`: The etcd client configuration. Only use this if you have defined `etcd` as your backend storage.
 
 ## High Availability Tracker
 
