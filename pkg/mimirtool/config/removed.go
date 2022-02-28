@@ -1,6 +1,7 @@
 package config
 
 // YAML Paths for config options removed since Cortex 1.11.0.
+//nolint:golint // not used right now, but will be soon.
 var removedConfigPaths = []string{
 	"flusher.concurrent_flushes",                            // -flusher.concurrent-flushes
 	"flusher.flush_op_timeout",                              // -flusher.flush-op-timeout
@@ -378,6 +379,7 @@ var removedConfigPaths = []string{
 }
 
 // CLI options removed since Cortex 1.11.0. These flags only existed as CLI Flags, and were not included in YAML Config.
+//nolint:golint // not used right now, but will be soon.
 var removedCLIOptions = []string{
 	"schema-config-file",
 	"ingester.chunk-encoding",
