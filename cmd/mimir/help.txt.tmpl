@@ -70,7 +70,7 @@ Usage of ./cmd/mimir/mimir:
   -alertmanager.max-alerts-count int
     	Maximum number of alerts that a single tenant can have. Inserting more alerts will fail with a log message and metric increment. 0 = no limit.
   -alertmanager.max-alerts-size-bytes int
-    	Maximum total size of alerts that a single user can have, alert size is the sum of the bytes of its labels, annotations and generatorURL. Inserting more alerts will fail with a log message and metric increment. 0 = no limit.
+    	Maximum total size of alerts that a single tenant can have, alert size is the sum of the bytes of its labels, annotations and generatorURL. Inserting more alerts will fail with a log message and metric increment. 0 = no limit.
   -alertmanager.max-config-size-bytes int
     	Maximum size of configuration file for Alertmanager that tenant can upload via Alertmanager API. 0 = no limit.
   -alertmanager.max-dispatcher-aggregation-groups int

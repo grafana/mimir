@@ -254,7 +254,7 @@ Note that runtime configuration values take precedence over command line options
 
 Mimir has a concept of "runtime config" file, which is simply a file that is reloaded while Mimir is running. It is used by some Mimir components to allow operator to change some aspects of Mimir configuration without restarting it. File is specified by using `-runtime-config.file=<filename>` flag and reload period (which defaults to 10 seconds) can be changed by `-runtime-config.reload-period=<duration>` flag. Previously this mechanism was only used by limits overrides, and flags were called `-limits.per-user-override-config=<filename>` and `-limits.per-user-override-period=10s` respectively. These are still used, if `-runtime-config.file=<filename>` is not specified.
 
-At the moment runtime configuration may contain per-user limits, multi KV store, and ingester instance limits.
+At the moment runtime configuration may contain per-tenant limits, multi KV store, and ingester instance limits.
 
 Example runtime configuration file:
 
@@ -293,14 +293,14 @@ Valid per-tenant limits are (with their corresponding flags for default values):
 - `max_global_series_per_user` / `-ingester.max-global-series-per-user`
 - `max_global_series_per_metric` / `-ingester.max-global-series-per-metric`
 
-  Enforced by the ingesters; limits the number of in-memory series a user (or a given metric) can have. A series is kept in memory if a sample has been written since the last TSDB head compaction (occurring every 2h) or in the last 1h (regardless when the last TSDB head compaction occurred). The limit is enforced across the cluster. Each ingester is configured with a local limit based on the replication factor and the current number of healthy ingesters. The local limit is updated whenever the number of ingesters change.
+  Enforced by the ingesters; limits the number of in-memory series a tenant (or a given metric) can have. A series is kept in memory if a sample has been written since the last TSDB head compaction (occurring every 2h) or in the last 1h (regardless when the last TSDB head compaction occurred). The limit is enforced across the cluster. Each ingester is configured with a local limit based on the replication factor and the current number of healthy ingesters. The local limit is updated whenever the number of ingesters change.
 
   Requires `-ingester.ring.replication-factor` and `-ingester.ring.zone-awareness-enabled` set for the ingesters too.
 
 - `max_global_metadata_per_user` / `-ingester.max-global-metadata-per-user`
 - `max_global_metadata_per_metric` / `-ingester.max-global-metadata-per-metric`
 
-  Enforced by the ingesters; limits the number of active metadata a user (or a given metric) can have. The limit is enforced across the cluster. Each ingester is configured with a local limit based on the replication factor and the current number of healthy ingesters. The local limit is updated whenever the number of ingesters change.
+  Enforced by the ingesters; limits the number of active metadata a tenant (or a given metric) can have. The limit is enforced across the cluster. Each ingester is configured with a local limit based on the replication factor and the current number of healthy ingesters. The local limit is updated whenever the number of ingesters change.
 
   Requires `-ingester.ring.replication-factor` and `-ingester.ring.zone-awareness-enabled` set for the ingesters too.
 
@@ -309,7 +309,7 @@ Valid per-tenant limits are (with their corresponding flags for default values):
 
 ## Ingester instance limits
 
-Mimir ingesters support limits that are applied per-instance, meaning they apply to each ingester process. These can be used to ensure individual ingesters are not overwhelmed regardless of any per-user limits. These limits can be set under the `ingester.instance_limits` block in the global configuration file, with command line flags, or under the `ingester_limits` field in the runtime configuration file.
+Mimir ingesters support limits that are applied per-instance, meaning they apply to each ingester process. These can be used to ensure individual ingesters are not overwhelmed regardless of any per-tenant limits. These limits can be set under the `ingester.instance_limits` block in the global configuration file, with command line flags, or under the `ingester_limits` field in the runtime configuration file.
 
 An example as part of the runtime configuration file:
 

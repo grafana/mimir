@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/mimirtool/analyse"
+	"github.com/grafana/mimir/pkg/mimirtool/analyze"
 )
 
 var dashboardMetrics = []string{
@@ -31,7 +31,7 @@ var dashboardMetrics = []string{
 
 func TestParseMetricsInBoard(t *testing.T) {
 	var board sdk.Board
-	output := &analyse.MetricsInGrafana{}
+	output := &analyze.MetricsInGrafana{}
 	output.OverallMetrics = make(map[string]struct{})
 
 	buf, err := loadFile("testdata/apiserver.json")
@@ -40,13 +40,13 @@ func TestParseMetricsInBoard(t *testing.T) {
 	err = json.Unmarshal(buf, &board)
 	require.NoError(t, err)
 
-	analyse.ParseMetricsInBoard(output, board)
+	analyze.ParseMetricsInBoard(output, board)
 	assert.Equal(t, dashboardMetrics, output.Dashboards[0].Metrics)
 }
 
 func TestParseMetricsInBoardWithTimeseriesPanel(t *testing.T) {
 	var board sdk.Board
-	output := &analyse.MetricsInGrafana{}
+	output := &analyze.MetricsInGrafana{}
 	output.OverallMetrics = make(map[string]struct{})
 
 	buf, err := loadFile("testdata/timeseries.json")
@@ -55,6 +55,6 @@ func TestParseMetricsInBoardWithTimeseriesPanel(t *testing.T) {
 	err = json.Unmarshal(buf, &board)
 	require.NoError(t, err)
 
-	analyse.ParseMetricsInBoard(output, board)
+	analyze.ParseMetricsInBoard(output, board)
 	assert.Equal(t, []string{"my_lovely_metric"}, output.Dashboards[0].Metrics)
 }

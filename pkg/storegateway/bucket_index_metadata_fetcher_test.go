@@ -63,7 +63,7 @@ func TestBucketIndexMetadataFetcher_Fetch(t *testing.T) {
 		newMinTimeMetaFilter(1 * time.Hour),
 	}
 
-	fetcher := NewBucketIndexMetadataFetcher(userID, bkt, newNoShardingStrategy(), nil, logger, reg, filters, nil)
+	fetcher := NewBucketIndexMetadataFetcher(userID, bkt, newNoShardingStrategy(), nil, logger, reg, filters)
 	metas, partials, err := fetcher.Fetch(ctx)
 	require.NoError(t, err)
 	assert.Equal(t, map[ulid.ULID]*metadata.Meta{
@@ -118,7 +118,7 @@ func TestBucketIndexMetadataFetcher_Fetch_NoBucketIndex(t *testing.T) {
 	logs := &concurrency.SyncBuffer{}
 	logger := log.NewLogfmtLogger(logs)
 
-	fetcher := NewBucketIndexMetadataFetcher(userID, bkt, newNoShardingStrategy(), nil, logger, reg, nil, nil)
+	fetcher := NewBucketIndexMetadataFetcher(userID, bkt, newNoShardingStrategy(), nil, logger, reg, nil)
 	metas, partials, err := fetcher.Fetch(ctx)
 	require.NoError(t, err)
 	assert.Empty(t, metas)
@@ -173,7 +173,7 @@ func TestBucketIndexMetadataFetcher_Fetch_CorruptedBucketIndex(t *testing.T) {
 	// Upload a corrupted bucket index.
 	require.NoError(t, bkt.Upload(ctx, path.Join(userID, bucketindex.IndexCompressedFilename), strings.NewReader("invalid}!")))
 
-	fetcher := NewBucketIndexMetadataFetcher(userID, bkt, newNoShardingStrategy(), nil, logger, reg, nil, nil)
+	fetcher := NewBucketIndexMetadataFetcher(userID, bkt, newNoShardingStrategy(), nil, logger, reg, nil)
 	metas, partials, err := fetcher.Fetch(ctx)
 	require.NoError(t, err)
 	assert.Empty(t, metas)
@@ -230,7 +230,7 @@ func TestBucketIndexMetadataFetcher_Fetch_ShouldResetGaugeMetrics(t *testing.T) 
 	// Corrupted bucket index.
 	require.NoError(t, bkt.Upload(ctx, path.Join(userID, bucketindex.IndexCompressedFilename), strings.NewReader("invalid}!")))
 
-	fetcher := NewBucketIndexMetadataFetcher(userID, bkt, strategy, nil, logger, reg, nil, nil)
+	fetcher := NewBucketIndexMetadataFetcher(userID, bkt, strategy, nil, logger, reg, nil)
 	metas, _, err := fetcher.Fetch(ctx)
 	require.NoError(t, err)
 	assert.Len(t, metas, 0)

@@ -2,9 +2,15 @@
 
 ## Grafana Mimir - main / unreleased
 
+* [CHANGE] Compactor: No longer upload debug meta files to object storage. #1257
+
 ### Mixin
 
 ### Jsonnet
+
+### Mimirtool
+
+* [CHANGE] `analyse` command has been renamed to `analyze`. #1318
 
 ## 2.0.0-rc.1
 
@@ -707,7 +713,10 @@ _Changes since `grafana/cortex-jsonnet` `1.9.0`._
 * [BUGFIX] Fixed and added missing KV store panels in Writes, Reads, Ruler and Compactor dashboards. #448
 * [BUGFIX] Fixed Alertmanager dashboard when alertmanager is running as part of single binary. #1064
 * [BUGFIX] Fixed Ruler dashboard when ruler is running as part of single binary. #1260
+<<<<<<< HEAD
 * [BUGFIX] Query-frontend: fixed bad querier status code mapping with query-sharding enabled. #1227
+=======
+>>>>>>> main
 
 ### Jsonnet
 

@@ -13,16 +13,16 @@ import (
 	"github.com/grafana-tools/sdk"
 	"gopkg.in/alecthomas/kingpin.v2"
 
-	"github.com/grafana/mimir/pkg/mimirtool/analyse"
+	"github.com/grafana/mimir/pkg/mimirtool/analyze"
 )
 
-type DashboardAnalyseCommand struct {
+type DashboardAnalyzeCommand struct {
 	DashFilesList []string
 	outputFile    string
 }
 
-func (cmd *DashboardAnalyseCommand) run(k *kingpin.ParseContext) error {
-	output := &analyse.MetricsInGrafana{}
+func (cmd *DashboardAnalyzeCommand) run(k *kingpin.ParseContext) error {
+	output := &analyze.MetricsInGrafana{}
 	output.OverallMetrics = make(map[string]struct{})
 
 	for _, file := range cmd.DashFilesList {
@@ -35,7 +35,7 @@ func (cmd *DashboardAnalyseCommand) run(k *kingpin.ParseContext) error {
 			fmt.Fprintf(os.Stderr, "%s for %s\n", err, file)
 			continue
 		}
-		analyse.ParseMetricsInBoard(output, board)
+		analyze.ParseMetricsInBoard(output, board)
 	}
 
 	err := writeOut(output, cmd.outputFile)

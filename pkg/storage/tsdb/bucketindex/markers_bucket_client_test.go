@@ -80,8 +80,7 @@ func TestGlobalMarkersBucket_DeleteShouldDeleteGlobalMarkIfBlockMarkerDoesntExis
 
 			// Delete block marker.
 			err := bkt.Delete(ctx, tc.blockMarker)
-			require.Error(t, err)
-			require.True(t, bkt.IsObjNotFoundErr(err))
+			require.NoError(t, err)
 
 			// Ensure global one been actually deleted.
 			verifyPathExists(t, bkt, tc.globalMarker, false)
