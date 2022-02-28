@@ -24,6 +24,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/util/fieldcategory"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 var (
@@ -384,6 +385,8 @@ func ReflectType(typ string) reflect.Type {
 		return reflect.TypeOf(map[string]float64{})
 	case "list of duration":
 		return reflect.TypeOf([]time.Duration{})
+	case "map of string to validation.ForwardingRule":
+		return reflect.TypeOf(map[string]validation.ForwardingRule{})
 	default:
 		panic("unknown field type " + typ)
 	}
