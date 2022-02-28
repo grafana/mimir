@@ -808,7 +808,7 @@ ring:
 # CLI flag: -ingester.active-series-custom-trackers
 [active_series_custom_trackers: <map of tracker name (string) to matcher (string)> | default = ]
 
-# (experimental) Period with which to update per-user max exemplars.
+# (experimental) Period with which to update per-tenant max exemplar limit.
 # CLI flag: -ingester.exemplars-update-period
 [exemplars_update_period: <duration> | default = 15s]
 
@@ -2727,7 +2727,7 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -alertmanager.max-alerts-count
 [alertmanager_max_alerts_count: <int> | default = 0]
 
-# Maximum total size of alerts that a single user can have, alert size is the
+# Maximum total size of alerts that a single tenant can have, alert size is the
 # sum of the bytes of its labels, annotations and generatorURL. Inserting more
 # alerts will fail with a log message and metric increment. 0 = no limit.
 # CLI flag: -alertmanager.max-alerts-size-bytes
