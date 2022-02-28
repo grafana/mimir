@@ -1,11 +1,12 @@
 ---
-title: "Running Cortex on Kubernetes"
-linkTitle: "Running Cortex on Kubernetes"
-weight: 3
-slug: running-cortex-on-kubernetes
+title: "Running Grafana Mimir on Kubernetes"
+description: ""
+weight: 40
 ---
 
-Because Cortex is designed to run multiple instances of each component
+# Running Grafana Mimir on Kubernetes
+
+Because Grafana Mimir is designed to run multiple instances of each component
 (ingester, querier, etc.), you probably want to automate the placement
 and shepherding of these instances. Most users choose Kubernetes to do
 this, but this is not mandatory.
@@ -27,13 +28,13 @@ For example an ingester might request:
 ```
 
 The specific values here should be adjusted based on your own
-experiences running Cortex - they are very dependent on rate of data
+experiences running Grafana Mimir - they are very dependent on rate of data
 arriving and other factors such as series churn.
 
 ### Take extra care with ingesters
 
 Ingesters hold hours of timeseries data in memory; you can configure
-Cortex to replicate the data but you should take steps to avoid losing
+Grafana Mimir to replicate the data but you should take steps to avoid losing
 all replicas at once:
 
 - Don't run multiple ingesters on the same node.

@@ -602,6 +602,9 @@ spec:
   - name: store-gateway-grpc
     port: 9095
     targetPort: 9095
+  - name: store-gateway-gossip-ring
+    port: 7946
+    targetPort: 7946
   selector:
     name: store-gateway
 ---
@@ -741,7 +744,6 @@ spec:
   revisionHistoryLimit: 10
   selector:
     matchLabels:
-      gossip_ring_member: "true"
       name: distributor
   strategy:
     rollingUpdate:
@@ -830,7 +832,6 @@ spec:
   revisionHistoryLimit: 10
   selector:
     matchLabels:
-      gossip_ring_member: "true"
       name: querier
   strategy:
     rollingUpdate:
@@ -1071,6 +1072,7 @@ spec:
   template:
     metadata:
       labels:
+        gossip_ring_member: "true"
         name: ruler
     spec:
       affinity:
@@ -1247,6 +1249,7 @@ spec:
   template:
     metadata:
       labels:
+        gossip_ring_member: "true"
         name: compactor
     spec:
       containers:
@@ -1285,6 +1288,8 @@ spec:
           name: http-metrics
         - containerPort: 9095
           name: grpc
+        - containerPort: 7946
+          name: gossip-ring
         readinessProbe:
           httpGet:
             path: /ready
@@ -1363,9 +1368,8 @@ spec:
         - -distributor.health-check-ingesters=true
         - -ingester.max-global-series-per-metric=20000
         - -ingester.max-global-series-per-user=150000
-        - -ingester.ring.heartbeat-period=5s
+        - -ingester.ring.heartbeat-period=15s
         - -ingester.ring.heartbeat-timeout=10m
-        - -ingester.ring.join-after=60s
         - -ingester.ring.num-tokens=512
         - -ingester.ring.prefix=
         - -ingester.ring.replication-factor=3
@@ -1661,6 +1665,7 @@ spec:
   template:
     metadata:
       labels:
+        gossip_ring_member: "true"
         name: store-gateway
     spec:
       containers:
@@ -1713,6 +1718,8 @@ spec:
           name: http-metrics
         - containerPort: 9095
           name: grpc
+        - containerPort: 7946
+          name: gossip-ring
         readinessProbe:
           httpGet:
             path: /ready

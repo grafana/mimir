@@ -617,16 +617,16 @@ ring:
   [instance_addr: <string> | default = ""]
 
 instance_limits:
-  # Max ingestion rate (samples/sec) that this distributor will accept. This
-  # limit is per-distributor, not per-tenant. Additional push requests will be
-  # rejected. Current ingestion rate is computed as exponentially weighted
-  # moving average, updated every second. 0 = unlimited.
+  # (advanced) Max ingestion rate (samples/sec) that this distributor will
+  # accept. This limit is per-distributor, not per-tenant. Additional push
+  # requests will be rejected. Current ingestion rate is computed as
+  # exponentially weighted moving average, updated every second. 0 = unlimited.
   # CLI flag: -distributor.instance-limits.max-ingestion-rate
   [max_ingestion_rate: <float> | default = 0]
 
-  # Max inflight push requests that this distributor can handle. This limit is
-  # per-distributor, not per-tenant. Additional requests will be rejected. 0 =
-  # unlimited.
+  # (advanced) Max inflight push requests that this distributor can handle. This
+  # limit is per-distributor, not per-tenant. Additional requests will be
+  # rejected. 0 = unlimited.
   # CLI flag: -distributor.instance-limits.max-inflight-push-requests
   [max_inflight_push_requests: <int> | default = 2000]
 ```
@@ -2081,17 +2081,15 @@ grpc_client_config:
 The `frontend_worker` block configures the worker running within the querier, picking up and executing queries enqueued by the query-frontend or the query-scheduler.
 
 ```yaml
-# Address of the query-frontend component, in host:port format. If
-# -querier.scheduler-address is set as well, the querier will use scheduler
-# instead. Only one of -querier.frontend-address or -querier.scheduler-address
-# can be set. If neither is set, queries are only received via HTTP endpoint.
+# Address of the query-frontend component, in host:port format. Only one of
+# -querier.frontend-address or -querier.scheduler-address can be set. If neither
+# is set, queries are only received via HTTP endpoint.
 # CLI flag: -querier.frontend-address
 [frontend_address: <string> | default = ""]
 
-# Hostname (and port) of scheduler that querier will periodically resolve,
-# connect to and receive queries from. Only one of -querier.frontend-address or
-# -querier.scheduler-address can be set. If neither is set, queries are only
-# received via HTTP endpoint.
+# Address of the query-scheduler component, in host:port format. Only one of
+# -querier.frontend-address or -querier.scheduler-address can be set. If neither
+# is set, queries are only received via HTTP endpoint.
 # CLI flag: -querier.scheduler-address
 [scheduler_address: <string> | default = ""]
 
@@ -2481,8 +2479,9 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -validation.max-metadata-length
 [max_metadata_length: <int> | default = 1024]
 
-# (advanced) Duration which table will be created/deleted before/after it's
-# needed; we won't accept sample from before this time.
+# (advanced) Controls how far into the future incoming samples are accepted
+# compared to the wall clock. Any sample with timestamp `t` will be rejected if
+# `t > (now + validation.create-grace-period)`.
 # CLI flag: -validation.create-grace-period
 [creation_grace_period: <duration> | default = 10m]
 

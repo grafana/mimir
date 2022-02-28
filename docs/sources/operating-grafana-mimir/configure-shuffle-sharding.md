@@ -1,6 +1,6 @@
 ---
 title: "Configure shuffle sharding"
-description: "How to configure shuffle sharding of tenants data."
+description: "How to configure shuffle sharding."
 weight: 20
 ---
 
@@ -10,23 +10,23 @@ Grafana Mimir leverages sharding techniques to horizontally scale both single- a
 
 ## Background
 
-Grafana Mimir uses a sharding strategy that distributes the workload across a subset of the instances that run a given service, such as the ingesters. For example, on the write path, each tenant's series are sharded across a subset of the ingesters. The size of this subset, which is the number of instances, is configured using the `shard size` parameter, whose default value is `0`. This default value means that each tenant uses **all** available instances, in order to fairly balance resources, such as CPU and memory usage, to maximize the usage of these resources across the cluster.
+Grafana Mimir uses a sharding strategy that distributes the workload across a subset of the instances that run a given component. For example, on the write path, each tenant's series are sharded across a subset of the ingesters. The size of this subset, which is the number of instances, is configured using the "shard size" parameter, whose default value is `0`. This default value means that each tenant uses all available instances, in order to fairly balance resources, such as CPU and memory usage, and to maximize the usage of these resources across the cluster.
 
-> **Note:** In a multi-tenant cluster this default (`0`) value introduces some downsides:
+Note: In a multi-tenant cluster this default (`0`) value introduces some downsides:
 
-- An outage affects all tenants
+- An outage affects all tenants.
 - A misbehaving tenant, which for example causes an out-of-memory error, could negatively affect all other tenants.
 
-Configuring a shard size value higher than zero enables **shuffle sharding**. The goal of **shuffle sharding** is to reduce the blast radius of an outage and better isolate tenants.
+Configuring a shard size value higher than zero enables shuffle sharding. The goal of shuffle sharding is to reduce the blast radius of an outage and better isolate tenants.
 
 ## What is shuffle sharding
 
-Shuffle sharding is a technique that isolates different tenant's workloads and gives each tenant a single-tenant experience even if they're running in a shared cluster. For details, see how AWS answers the question [What is shuffle sharding?](https://aws.amazon.com/builders-library/workload-isolation-using-shuffle-sharding/) and a reference implementation within the [Route53 Infima library](https://github.com/awslabs/route53-infima/blob/master/src/main/java/com/amazonaws/services/route53/infima/SimpleSignatureShuffleSharder.java).
+Shuffle sharding is a technique that isolates different tenant's workloads and gives each tenant a single-tenant experience even if they're running in a shared cluster. For details, see how AWS answers the question [What is shuffle sharding?](https://aws.amazon.com/builders-library/workload-isolation-using-shuffle-sharding/).
 
-The idea is to assign each tenant a shard that is composed of a subset of the Grafana Mimir service instances, which minimizes the number of overlapping instances between two different tenants. Shuffle sharding has the following benefits:
+The idea is to assign each tenant a shard that is composed of a subset of the Grafana Mimir instances, which minimizes the number of overlapping instances between two different tenants. Shuffle sharding has the following benefits:
 
 - An outage on some Grafana Mimir cluster instances or nodes will only affect a subset of tenants.
-- A misbehaving tenant only affects its shard instances. Due to the low overlap of instances between different tenants, it’s statistically likely that any other tenant will run on different instances or that only a subset of instances will match the affected ones.
+- A misbehaving tenant only affects its shard instances. Assuming each tenant shard is relatively small compared to the total number of instances in the cluster, it’s statistically likely that any other tenant will run on different instances or that only a subset of instances will match the affected ones.
 
 Using shuffle sharding doesn’t require more resources, but instances will not be evenly balanced.
 
@@ -54,10 +54,11 @@ Grafana Mimir supports shuffle sharding in the following services:
 - [Query-frontend / Query-scheduler](#query-frontend-and-query-scheduler-shuffle-sharding)
 - [Store-gateway](#store-gateway-shuffle-sharding)
 - [Ruler](#ruler-shuffle-sharding)
+- [Compactor](#compactor-shuffle-sharding)
 
-If the default value of the shard size is `0`, shuffle sharding is disabled and you need to explicitly enable by increasing the shard size either globally or for a given tenant.
+When running Grafana Mimir with the default configuration, shuffle sharding is disabled and you need to explicitly enable it by increasing the shard size either globally or for a given tenant.
 
-> **Note:** If the shard-size value is higher than the number of available instances, for example where `-distributor.ingestion-tenant-shard-size` is higher than the number of ingesters, then shuffle-sharding is disabled and all instances are used again.
+> **Note:** If the shard size value is equal to or higher than the number of available instances, for example where `-distributor.ingestion-tenant-shard-size` is higher than the number of ingesters, then shuffle sharding is disabled and all instances are used again.
 
 ### Guaranteed properties
 
@@ -66,96 +67,111 @@ The Grafana Mimir shuffle sharding implementation provides the following benefit
 - **Stability**<br />
   Given a consistent state of the hash ring, the shuffle sharding algorithm always selects the same instances for a given tenant, even across different machines.
 - **Consistency**<br />
-  Adding or removing 1 instance from the hash ring leads to only 1 instance changed at most, in each tenant's shard.
+  Adding or removing one instance from the hash ring leads to only one instance changed at most, in each tenant's shard.
 - **Shuffling**<br />
   Probabilistically and for a large enough cluster, it ensures that every tenant gets a different set of instances, with a reduced number of overlapping instances between two tenants to improve failure isolation.
 - **Zone-awareness**<br />
-  When [zone-aware replication](./zone-replication.md) is enabled, the subset of instances selected for each tenant contains a balanced number of instances for each availability zone.
+  When [zone-aware replication](../guides/zone-replication.md) is enabled, the subset of instances selected for each tenant contains a balanced number of instances for each availability zone.
 
 ### Ingesters shuffle sharding
 
 By default, the Grafana Mimir distributor spreads the received series across all running ingesters.
 
-When shuffle sharding is **enabled** for the ingesters, the distributor and ruler on the **write path** spread each tenant series across `-distributor.ingestion-tenant-shard-size` number of ingesters, while on the **read path** the querier and ruler queries only the subset of ingesters holding the series for a given tenant.
+When shuffle sharding is enabled for the ingesters, the distributor and ruler on the write path spread each tenant series across `-distributor.ingestion-tenant-shard-size` number of ingesters, while on the read path the querier and ruler queries only the subset of ingesters holding the series for a given tenant.
 
-_The shard size can be overridden on a per-tenant basis in the limits overrides configuration._
+_The shard size can be overridden on a per-tenant basis by setting `ingestion_tenant_shard_size` in the overrides section of the runtime configuration._
 
 #### Ingesters write path
 
-To enable shuffle-sharding for ingesters on the write path you need to configure the following CLI flags (or their respective YAML config options) to **distributor**, **ingester** and **ruler**:
+To enable shuffle sharding for ingesters on the write path you need to configure the following CLI flags (or their respective YAML config options) on the distributor, ingester and ruler:
 
 - `-distributor.ingestion-tenant-shard-size=<size>`<br />
   `<size>` set to the number of ingesters each tenant series should be sharded to. If `<size>` is zero or greater than the number of available ingesters in the Grafana Mimir cluster, the tenant series are sharded across all ingesters.
 
 #### Ingesters read path
 
-Assuming shuffle-sharding has been enabled for the write path, to enable shuffle-sharding for ingesters on the read path too you need to configure the following CLI flags (or their respective YAML config options) to **querier** and **ruler**:
+Assuming shuffle sharding has been enabled for the write path, to enable shuffle sharding for ingesters on the read path too you need to configure the following CLI flags (or their respective YAML config options) on the querier and ruler:
 
 - `-distributor.ingestion-tenant-shard-size=<size>`
 - `-querier.shuffle-sharding-ingesters-lookback-period=<period>`<br />
-  Queriers and rulers fetch in-memory series from the minimum set of required ingesters, selecting only ingesters which may have received series since 'now - lookback period'. The configured lookback `<period>` should be greater or equal than `-querier.query-store-after` and `-querier.query-ingesters-within` if set, and greater than the estimated minimum time it takes for the oldest samples stored in a block uploaded by ingester to be discovered and available for querying (3h with the default configuration).
+  Queriers and rulers fetch in-memory series from the minimum set of required ingesters, selecting only ingesters which may have received series since 'now - lookback period'. The configured lookback `<period>` should be greater or equal than `-querier.query-store-after` and `-querier.query-ingesters-within` if set, and greater than the estimated minimum time it takes for the oldest samples stored in a block uploaded by ingester to be discovered and available for querying. When running Grafana Mimir with the default configuration, the estimated minimum time it takes for the oldest sample in a uploaded block to be available for querying is 3h.
+
+In case ingesters shuffle sharding is enabled only for the write path, queriers and rulers on the read path will always query all ingesters instead of querying the subset of ingesters belonging to the tenant's shard. Keeping ingesters shuffle sharding enabled only on write path does not lead to incorrect query results, but may increase query latency.
 
 #### Rollout strategy
 
-If you’re running a Grafana Mimir cluster with shuffle sharding disabled, and you want to enable it for ingesters, use the following rollout strategy to avoid missing querying any time-series in the ingesters memory:
+If you’re running a Grafana Mimir cluster with shuffle sharding disabled, and you want to enable it for the ingesters, use the following rollout strategy to avoid missing querying any time series in the ingesters:
 
-1. Enable ingesters shuffle-sharding on the **write path**
+1. Enable ingesters shuffle sharding on the **write path**
 2. **Wait** at least `-querier.shuffle-sharding-ingesters-lookback-period` time
 3. Enable ingesters shuffle-sharding on the **read path**
 
 #### Limitation: decreasing the tenant shard size
 
-The current shuffle-sharding implementation in Grafana Mimir has a limitation that prevents you from safely decreasing the tenant shard size if the ingesters’ shuffle-sharding is enabled on the read path.
+The current shuffle sharding implementation in Grafana Mimir has a limitation that prevents you from safely decreasing the tenant shard size if the ingesters’ shuffle sharding is enabled on the read path.
 
-The problem is that if a tenant’s subring decreases in size, there is currently no way for the queriers and rulers to know how big the tenant subring was previously, and hence they will potentially miss an ingester with data for that tenant. In other words, the lookback mechanism to select the ingesters which may have received series since 'now - lookback period' doesn't work correctly if the tenant shard size is decreased.
+The problem is that if a tenant’s shard decreases in size, there is currently no way for the queriers and rulers to know how big the tenant shard was previously, and hence they will potentially miss an ingester with data for that tenant. In other words, the lookback mechanism, used to select the ingesters which may have received series since 'now - lookback period', doesn't work correctly if the tenant shard size is decreased.
 
-This is deemed an infrequent operation that we considered banning, but a workaround still exists:
+> **Note:** Decreasing the tenant shard size is not supported because it is something that you would rarely need to do, but a workaround still exists:
 
-1. **Disable** shuffle-sharding on the read path
-2. **Decrease** the configured tenant shard size
-3. **Wait** at least `-querier.shuffle-sharding-ingesters-lookback-period` time
-4. **Re-enable** shuffle-sharding on the read path
+1. Disable shuffle sharding on the read path.
+2. Decrease the configured tenant shard size.
+3. Wait at least `-querier.shuffle-sharding-ingesters-lookback-period` time.
+4. Re-enable shuffle sharding on the read path.
 
-### Query-frontend and Query-scheduler shuffle sharding
+### Query-frontend and query-scheduler shuffle sharding
 
-By default, all Grafana Mimir queriers can execute received queries for a given tenant.
+By default, all Grafana Mimir queriers can execute queries for any tenant.
 
-When shuffle sharding is **enabled** by setting `-query-frontend.max-queriers-per-tenant` (or its respective YAML config option) to a value higher than 0 and lower than the number of available queriers, only specified number of queriers will execute queries for single tenant.
+When shuffle sharding is enabled by setting `-query-frontend.max-queriers-per-tenant` (or its respective YAML config option) to a value higher than `0` and lower than the number of available queriers, only the specified number of queriers will be eligible to execute queries for a given tenant.
 
-Note that this distribution happens in query-frontend, or query-scheduler if used. When using query-scheduler, `-query-frontend.max-queriers-per-tenant` option must be set for query-scheduler component. When not using query-frontend (with or without scheduler), this option is not available.
+Note that this distribution happens in query-frontend, or query-scheduler if used. When using query-scheduler, `-query-frontend.max-queriers-per-tenant` option must be set for query-scheduler component. When not using query-frontend (with or without query-scheduler), this option is not available.
 
-_The maximum number of queriers can be overridden on a per-tenant basis in the limits overrides configuration._
+_The maximum number of queriers can be overridden on a per-tenant basis setting `max_queriers_per_tenant` in the overrides section of the runtime configuration._
 
 #### The impact of "query of death"
 
-In the event a tenant is repeatedly sending a "query of death" which causes a querier to crash, the crashed querier will get disconnected from the query-frontend or query-scheduler and a new querier will be immediately assigned to the tenant's shard. This practically invalidates the assumption that shuffle-sharding can be used to contain the blast radius of queries of death.
+In the event a tenant is sending a "query of death" which causes a querier to crash, the crashed querier will get disconnected from the query-frontend or query-scheduler and another already running querier will be immediately assigned to the tenant's shard.
 
-To mitigate this, there are experimental configuration options that allow you to configure a delay between when a querier disconnects because of a crash and when the crashed querier is actually removed from the tenant’s shard (and another healthy querier is added as a replacement). A delay of 1 minute might be a reasonable trade-off:
+If the tenant repeatedly sends this query, the new querier assigned to the tenant's shard will crash as well, and yet another querier will be assigned to the shard. This cascading failure could potentially lead to crash all running queriers one by one, practically invalidating the assumption that shuffle sharding can be used to contain the blast radius of queries of death.
+
+To mitigate this, there are experimental configuration options that allow you to configure a delay between when a querier disconnects because of a crash and when the crashed querier is actually replaced by another healthy querier. When this delay is configured, a tenant repeatedly sending a "query of death" will run with reduced querier capacity after a querier has crashed and could end up having no available queriers at all, but it will reduce the likelihood the crash will impact other tenants too.
+
+A delay of 1 minute might be a reasonable trade-off:
 
 - Query-frontend: `-query-frontend.querier-forget-delay=1m`
 - Query-scheduler: `-query-scheduler.querier-forget-delay=1m`
 
 ### Store-gateway shuffle sharding
 
-The Mimir store-gateway -- used by the [blocks storage](../blocks-storage/_index.md) -- spreads each tenant's blocks across `-store-gateway.tenant-shard-size` running store-gateway instances. If this flag is 0, it means all store-gateway instances. This flag needs to be set to **store-gateway**, **querier** and **ruler**.
+By default, a tenant's blocks are spread across all Grafana Mimir store-gateways.
 
-_The shard size can be overridden on a per-tenant basis setting `store_gateway_tenant_shard_size` in the limits overrides configuration._
+When store-gateway shuffle sharding is enabled by setting `-store-gateway.tenant-shard-size` (or its respective YAML config option) to a value higher than `0` and lower than the number of available store-gateways, only the specified number of store-gateways will be eligible to load and query blocks for a given tenant. This flag needs to be set on the store-gateway, querier and ruler.
 
-_Please check out the [store-gateway documentation](../blocks-storage/store-gateway.md) for more information about how it works._
+_The store-gateway shard size can be overridden on a per-tenant basis by setting `store_gateway_tenant_shard_size` in the overrides section of the runtime configuration._
+
+_Please check out the [store-gateway documentation](../architecture/store-gateway.md) for more information about how it works._
 
 ### Ruler shuffle sharding
 
-Mimir ruler can run in two modes:
+By default, tenant rule groups are sharded across all Grafana Mimir rulers.
 
-1. **No sharding at all.** This is the most basic mode of the ruler. It is activated by using `-ruler.enable-sharding=false` (default) and works correctly only if single ruler is running. In this mode the Ruler loads all rules for all tenants.
-2. **Sharding**, activated by using `-ruler.enable-sharding=true`. In this mode rulers register themselves into the ring. Each ruler will then select and evaluate only those rules that it "owns". Rule groups for each tenant can only be evaluated on limited number of rulers (`-ruler.tenant-shard-size`, can also be set per tenant as `ruler_tenant_shard_size` in overrides). If shard size for tenant is set to 0, then tenant's rules are sharded across all ruler replicas.
+When ruler shuffle sharding is enabled by setting `-ruler.tenant-shard-size` (or its respective YAML config option) to a value higher than `0` and lower than the number of available rulers, only the specified number of rulers will be eligible to evaluate rule groups for a given tenant.
 
-Note that when using sharding strategy, each rule group is evaluated by single ruler only, there is no replication.
+_The ruler shard size can be overridden on a per-tenant basis by setting `ruler_tenant_shard_size` in the overrides section of the runtime configuration._
+
+### Compactor shuffle sharding
+
+By default, tenant blocks can be compacted by any Grafana Mimir compactor.
+
+When compactor shuffle sharding is enabled by setting `-compactor.compactor-tenant-shard-size` (or its respective YAML config option) to a value higher than `0` and lower than the number of available compactors, only the specified number of compactors will be eligible to compact blocks for a given tenant.
+
+_The compactor shard size can be overridden on a per-tenant basis setting by `compactor_tenant_shard_size` in the overrides section of the runtime configuration._
 
 ## FAQ
 
 ### Does shuffle sharding add additional overhead to the KV store?
 
-No, shuffle sharding subrings are computed client-side and are not stored in the ring. KV store sizing still depends primarily on the number of replicas (of any component that uses the ring, e.g. ingesters) and tokens per replica.
+No, shards are computed client-side and are not stored in the ring. KV store sizing still depends primarily on the number of replicas (of any component that uses the ring, e.g. ingesters) and tokens per replica.
 
-However, each tenant's subring is cached in memory on the client-side which may slightly increase the memory footprint of certain components (mostly the distributor).
+However, each tenant's shard is cached in memory on the client-side in some components which may slightly increase their memory footprint (mostly the distributor).

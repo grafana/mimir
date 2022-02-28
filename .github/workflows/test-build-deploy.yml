@@ -108,7 +108,7 @@ jobs:
         uses: actions/checkout@v1
       - name: Build Website
         run: |
-          docker run -v ${PWD}/docs/sources:/hugo/content/docs/mimir/latest --rm grafana/docs-base:latest /bin/bash -c 'mkdir -p content/docs/grafana/latest/ && touch content/docs/grafana/latest/menu.yaml && make prod'
+          docker run -v ${PWD}/docs/sources:/hugo/content/docs/mimir/latest -e HUGO_REFLINKSERRORLEVEL=ERROR --rm grafana/docs-base:latest /bin/bash -c 'mkdir -p content/docs/grafana/latest/ && touch content/docs/grafana/latest/menu.yaml && make prod'
 
   build-mimir:
     runs-on: ubuntu-20.04

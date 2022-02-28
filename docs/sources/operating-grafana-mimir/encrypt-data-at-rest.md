@@ -1,44 +1,93 @@
 ---
-title: "Encrypt data at rest"
+title: "Encrypting data at rest"
 description: "How to configure object storage encryption."
-weight: 40
+weight: 10
 ---
 
-# Encrypt data at rest
+# Encrypting data at rest
 
-Cortex supports data encryption at rest for some storage backends.
+Grafana Mimir supports encrypting data at rest in object storage using server-side encryption (SSE).
+Configuration of SSE depends on your storage backend.
 
-## S3
+## Google Cloud Storage (GCS)
 
-The Cortex S3 client supports the following server-side encryption (SSE) modes:
+Google Cloud Storage (GCS) always encrypts the data before writing it to disk.
+For more details of GCS encryption at rest, refer to [Data encryption options](https://cloud.google.com/storage/docs/encryption/).
+Grafana Mimir requires no additional configuration to use GCS with SSE.
 
-- [SSE-S3](https://docs.aws.amazon.com/AmazonS3/latest/dev/UsingServerSideEncryption.html)
-- [SSE-KMS](https://docs.aws.amazon.com/AmazonS3/latest/dev/UsingKMSEncryption.html)
+## AWS S3
 
-### Blocks storage
+Configuring SSE with AWS S3 requires configuration in the Grafana Mimir S3 client.
+The S3 client is only used when the storage backend is `s3`.
+Grafana Mimir supports the following AWS S3 SSE modes:
 
-The [blocks storage](../blocks-storage/_index.md) S3 server-side encryption can be configured as follows.
+- [Server-Side Encryption with Amazon S3-Managed Keys (SSE-S3)](https://docs.aws.amazon.com/AmazonS3/latest/dev/UsingServerSideEncryption.html)
+- [Server-Side Encryption with KMS keys Stored in AWS Key Management Service (SSE-KMS)](https://docs.aws.amazon.com/AmazonS3/latest/dev/UsingKMSEncryption.html)
 
-### Ruler
+You can configure AWS S3 SSE globally or for specific tenants.
 
-The ruler S3 server-side encryption can be configured similarly to the blocks storage. The per-tenant overrides are supported when using the storage backend configurable the `-ruler-storage.` flag prefix (or their respective YAML config options).
+### Configuring AWS S3 SSE globally
 
-### Alertmanager
+Configuring AWS S3 SSE globally requires setting SSE for each of the following storage backends:
 
-The alertmanager S3 server-side encryption can be configured similarly to the blocks storage. The per-tenant overrides are supported when using the storage backend configurable the `-alertmanager-storage.` flag prefix (or their respective YAML config options).
+- [alertmanager_storage]({{<relref "../configuration/reference-configuration-parameters.md#alertmanager_storage" >}})
+- [blocks_storage]({{<relref "../configuration/reference-configuration-parameters.md#blocks_storage" >}})
+- [ruler_storage]({{<relref "../configuration/reference-configuration-parameters.md#ruler_storage" >}})
 
-### Per-tenant config overrides
+To see all AWS S3 SSE configuration parameters, refer to [sse]({{<relref "../configuration/reference-configuration-parameters.md#sse" >}}).
 
-The S3 client used by the blocks storage, ruler and alertmanager supports S3 SSE config overrides on a per-tenant basis, using the [runtime configuration file](../configuration/arguments.md#runtime-configuration-file).
-The following settings can ben overridden for each tenant:
+A snippet of a Grafana Mimir configuration file that has AWS S3 SSE with an Amazon S3-managed key configured looks as follows:
+
+```yaml
+alertmanager_storage:
+  backend: "s3"
+  s3:
+    sse:
+      type: "SSE-S3"
+blocks_storage:
+  backend: "s3"
+  s3:
+    sse:
+      type: "SSE-S3"
+ruler_storage:
+  backend: "s3"
+  s3:
+    sse:
+      type: "SSE-S3"
+```
+
+### Configuring AWS S3 SSE for a specific tenant
+
+The following settings can be overridden for each tenant:
 
 - **`s3_sse_type`**<br />
-  S3 server-side encryption type. It must be set to enable the SSE config override for a given tenant.
+  S3 server-side encryption type.
+  It must be set to enable the SSE config override for a given tenant.
 - **`s3_sse_kms_key_id`**<br />
-  S3 server-side encryption KMS Key ID. Ignored if the SSE type override is not set or the type is not `SSE-KMS`.
+  S3 server-side encryption KMS Key ID.
+  Ignored if the SSE type override is not set or the type is not `SSE-KMS`.
 - **`s3_sse_kms_encryption_context`**<br />
-  S3 server-side encryption KMS encryption context. If unset and the key ID override is set, the encryption context will not be provided to S3. Ignored if the SSE type override is not set or the type is not `SSE-KMS`.
+  S3 server-side encryption KMS encryption context.
+  If unset and the key ID override is set, the encryption context will not be provided to S3.
+  Ignored if the SSE type override is not set or the type is not `SSE-KMS`.
+
+To configure AWS S3 SSE for a specific tenant:
+
+1. Ensure Grafana Mimir uses a runtime configuration file by verifying that the flag `-runtime-config.file` is set to a non-null value.
+   For more information about supported runtime configuration, refer to [Runtime configuration file]({{<relref "../configuration/about-grafana-mimir-arguments.md#runtime-configuration-file" >}})
+1. In the runtime configuration file, set the `overrides.<TENANT>` SSE settings.
+
+   A partial runtime configuration file that has AWS S3 SSE with Amazon S3-managed keys set for a tenant called "tenant-a" looks as follows:
+
+   ```yaml
+   overrides:
+     "tenant-a":
+       s3_sse_type: "SSE-S3"
+   ```
+
+1. Save and deploy the runtime configuration file.
+1. After the `-runtime-config.reload-period` has elapsed, components reload the runtime configuration file and use the updated configuration.
 
 ## Other storages
 
-Other storage backends may support encryption at rest configuring it directly at the storage level.
+Other storage backends may support encryption at rest configured at the storage level.
