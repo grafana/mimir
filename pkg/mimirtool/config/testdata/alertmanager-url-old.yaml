@@ -1,0 +1,3 @@
+ruler:
+  alertmanager_url: 'http://_http._tcp.alertmanager/am,http://_http._tcp.alertmanager2/alertmanager'
+  enable_alertmanager_discovery: true

@@ -3,7 +3,7 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
 
-package main
+package parse
 
 import (
 	"testing"
@@ -47,6 +47,6 @@ func Test_findFlagsPrefix(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		assert.Equal(t, test.expected, findFlagsPrefix(test.input))
+		assert.Equal(t, test.expected, FindFlagsPrefix(test.input))
 	}
 }

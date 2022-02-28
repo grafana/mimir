@@ -1,0 +1,11 @@
+query_range:
+  results_cache:
+    cache:
+      background:
+        writeback_goroutines: 5
+      memcached:
+        expiration: 10s
+        batch_size: 2048
+        parallelism: 10
+      memcached_client:
+        max_idle_conns: 32
