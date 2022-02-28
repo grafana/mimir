@@ -1164,6 +1164,5 @@ sigs.k8s.io/yaml
 # github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20220210151959-f8e3195f7500
 # github.com/hashicorp/go-immutable-radix => github.com/hashicorp/go-immutable-radix v1.2.0
 # github.com/hashicorp/go-hclog => github.com/hashicorp/go-hclog v0.12.2
-# github.com/thanos-io/thanos v0.24.0 => github.com/thanos-io/thanos v0.19.1-0.20211229180107-bf14049d5745
 # github.com/hashicorp/memberlist v0.2.4 => github.com/grafana/memberlist v0.2.5-0.20211201083710-c7bc8e9df94b
 # github.com/vimeo/galaxycache => github.com/thanos-community/galaxycache v0.0.0-20211122094458-3a32041a1f1e
