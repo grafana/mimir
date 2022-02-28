@@ -11,7 +11,7 @@ Configuration of SSE depends on your storage backend.
 
 ## Google Cloud Storage
 
-Google Cloud Storage (GCS) encrypts data before writing it to disk.
+Google Cloud Storage (GCS) encrypts data before writing it to disk. SSE is enabled by default and you cannot turn it off.
 For more information about GCS encryption at rest, refer to [Data encryption options](https://cloud.google.com/storage/docs/encryption/).
 Grafana Mimir requires no additional configuration to use GCS with SSE.
 
