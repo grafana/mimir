@@ -12,9 +12,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/mitchellh/go-wordwrap"
 	"gopkg.in/yaml.v3"
-
-	wordwrap "github.com/mitchellh/go-wordwrap"
 
 	"github.com/grafana/mimir/tools/doc-generator/parse"
 )

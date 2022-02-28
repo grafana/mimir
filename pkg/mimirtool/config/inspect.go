@@ -31,15 +31,15 @@ type InspectedEntry struct {
 	Desc     string          `json:"desc"`
 
 	// In case the Kind is "block"
-	BlockEntries       []*InspectedEntry `json:"blockEntries"`
-	BlockFlagsPrefix   string            `json:"blockFlagsPrefix"`
-	BlockFlagsPrefixes []string          `json:"blockFlagsPrefixes"`
+	BlockEntries       []*InspectedEntry `json:"blockEntries,omitempty"`
+	BlockFlagsPrefix   string            `json:"blockFlagsPrefix,omitempty"`
+	BlockFlagsPrefixes []string          `json:"blockFlagsPrefixes,omitempty"`
 
 	// In case the Kind is "field"
-	FieldValue    interface{} `json:"fieldValue"`
-	FieldFlag     string      `json:"fieldFlag"`
-	FieldType     string      `json:"fieldType"`
-	FieldCategory string      `json:"fieldCategory"`
+	FieldValue    interface{} `json:"fieldValue,omitempty"`
+	FieldFlag     string      `json:"fieldFlag,omitempty"`
+	FieldType     string      `json:"fieldType,omitempty"`
+	FieldCategory string      `json:"fieldCategory,omitempty"`
 }
 
 func (i *InspectedEntry) UnmarshalJSON(b []byte) error {
