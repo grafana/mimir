@@ -15,18 +15,18 @@ import (
 	log "github.com/sirupsen/logrus"
 	"gopkg.in/alecthomas/kingpin.v2"
 
-	"github.com/grafana/mimir/pkg/mimirtool/analyse"
+	"github.com/grafana/mimir/pkg/mimirtool/analyze"
 	"github.com/grafana/mimir/pkg/mimirtool/client"
 )
 
-type RulerAnalyseCommand struct {
+type RulerAnalyzeCommand struct {
 	ClientConfig client.Config
 	cli          *client.CortexClient
 	outputFile   string
 }
 
-func (cmd *RulerAnalyseCommand) run(k *kingpin.ParseContext) error {
-	output := &analyse.MetricsInRuler{}
+func (cmd *RulerAnalyzeCommand) run(k *kingpin.ParseContext) error {
+	output := &analyze.MetricsInRuler{}
 	output.OverallMetrics = make(map[string]struct{})
 
 	cli, err := client.New(cmd.ClientConfig)
@@ -42,7 +42,7 @@ func (cmd *RulerAnalyseCommand) run(k *kingpin.ParseContext) error {
 
 	for ns := range rules {
 		for _, rg := range rules[ns] {
-			err := analyse.ParseMetricsInRuleGroup(output, rg, ns)
+			err := analyze.ParseMetricsInRuleGroup(output, rg, ns)
 			if err != nil {
 				log.Fatalf("metrics parse error %v", err)
 			}
@@ -57,7 +57,7 @@ func (cmd *RulerAnalyseCommand) run(k *kingpin.ParseContext) error {
 	return nil
 }
 
-func writeOutRuleMetrics(mir *analyse.MetricsInRuler, outputFile string) error {
+func writeOutRuleMetrics(mir *analyze.MetricsInRuler, outputFile string) error {
 	var metricsUsed []string
 	for metric := range mir.OverallMetrics {
 		metricsUsed = append(metricsUsed, metric)
