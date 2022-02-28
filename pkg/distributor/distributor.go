@@ -837,17 +837,20 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 		return d.send(localCtx, ingester, timeseries, metadata, req.Source)
 	}, func() { cleanup(); cancel() })
 
-	var forwardingErr error
-	if forwardingErrCh != nil {
-		// Blocks until the forwarding requests have completed and the final status has been pushed through this chan.
-		forwardingErr = <-forwardingErrCh
+	if d.cfg.Forwarding {
+		var forwardingErr error
+		if forwardingErrCh != nil {
+			// Blocks until the forwarding requests have completed and the final status has been pushed through this chan.
+			forwardingErr = <-forwardingErrCh
+		}
+
+		err = prioritizeRecoverable(err, forwardingErr, firstPartialErr)
 	}
 
-	err = prioritizeRecoverable(err, forwardingErr, firstPartialErr)
 	if err != nil {
 		return nil, err
 	}
-	return &mimirpb.WriteResponse{}, nil
+	return &mimirpb.WriteResponse{}, firstPartialErr
 }
 
 // prioritizeRecoverable checks whether in the given slice of errors there is a recoverable error, if yes then it will
