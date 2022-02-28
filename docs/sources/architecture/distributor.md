@@ -51,7 +51,18 @@ _The rate limiting can be overridden on a per-tenant basis by setting `ingestion
 
 _Prometheus remote write doesn't retry requests on 429 HTTP response status code by default. This behaviour can be modified setting `retry_on_http_429: true` in the Prometheus [`remote_write` config](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#remote_write)._
 
-## High Availability Tracker
+### Configuration
+
+The distributors form a [hash ring]({{<relref "./about-the-hash-ring.md">}}) (called the distributors’ ring) to discover each other and enforce limits correctly.
+
+The default configuration uses `memberlist` as the backend for the distributors’ ring.
+To configure a different backend, such as Consul or etcd, the following CLI flags (and their respective YAML configuration options) configure the key-value store of the distributors’ ring:
+
+- `-distributor.ring.store`: The backend storage to use.
+- `-distributor.ring.consul.*`: The Consul client configuration. Only use this if you have defined `consul` as your backend storage.
+- `-distributor.ring.etcd.*`: The etcd client configuration. Only use this if you have defined `etcd` as your backend storage.
+
+## High-availability tracker
 
 Remote write senders, such as Prometheus, may be configured in pairs, so that metrics are still scraped and written to Grafana Mimir when one of them is shut down for maintenance or unavailable due to a failure.
 We refer to this configuration has high-availability (HA) pairs.
@@ -62,31 +73,19 @@ This allows you to have multiple HA replicas of the same Prometheus servers, wri
 
 For further information on how it works and how to configure it, see the [configure HA deduplication]({{<relref "../operating-grafana-mimir/configure-ha-deduplication.md">}}) guide.
 
-## Hashing
+## Sharding and replication
 
-Distributors use consistent hashing, in conjunction with a configurable replication factor, to determine which ingesters should receive a given series.
+The distributor shards and replicates incoming series among ingesters.
+The number of ingester replicas each series is written to can be configured via `-ingester.ring.replication-factor` (three by default).
 
-The hash is calculated using the metric name, labels and tenant ID.
+Sharding and replication is built on top of ingesters hash ring.
+For each incoming series, the distributor computes an hash using the metric name, labels and tenant ID.
+The resulting hashing value, called _token_, is looked up in the hash ring to find out to which ingesters it should be written to.
 
-### The ingesters hash ring
+Grafana Mimir uses [Dynamo-style](https://www.allthingsdistributed.com/files/amazon-dynamo-sosp2007.pdf) quorum consistency on reads and writes.
+The distributor will wait for a positive response from at least one half plus one of the ingesters before successfully responding to the Prometheus write request.
 
-A hash ring (stored in a key-value store) is used to achieve consistent hashing for the series sharding and replication across the ingesters. All [ingesters]({{<relref "./ingester.md">}}) register themselves into the hash ring with a set of tokens they own; each token is a random unsigned 32-bit integer. Each incoming series is [hashed](#hashing) in the distributor and then pushed to the ingester which owns the token range for the series hash number plus N-1 subsequent ingesters in the ring, where N is the replication factor.
-
-To do the hash lookup, distributors find the smallest appropriate token whose value is larger than the [hash of the series](#hashing). When the replication factor is larger than 1, the subsequent tokens (clockwise in the ring) that belong to different ingesters will also be included in the result.
-
-The effect of this hash set up is that each token that an ingester owns is responsible for a range of hashes. If there are three tokens with values 0, 25, and 50, then a hash of 3 would be given to the ingester that owns the token 25; the ingester owning token 25 is responsible for the hash range of 1-25.
-
-The supported KV stores for the hash ring are:
-
-- [Consul](https://www.consul.io)
-- [Etcd](https://etcd.io)
-- Gossip [memberlist](https://github.com/hashicorp/memberlist)
-
-#### Quorum consistency
-
-Since all distributors share access to the same hash ring, write requests can be sent to any distributor and you can setup a stateless load balancer in front of it.
-
-To ensure consistent query results, Mimir uses [Dynamo-style](https://www.allthingsdistributed.com/files/amazon-dynamo-sosp2007.pdf) quorum consistency on reads and writes. This means that the distributor will wait for a positive response of at least one half plus one of the ingesters to send the sample to before successfully responding to the Prometheus write request.
+For more information, see [hash ring]({{<relref "./about-the-hash-ring.md">}}).
 
 ## Load balancing across distributors
 
@@ -95,14 +94,3 @@ We recommend randomly load balancing write requests across distributor instances
 If you're running Grafana Mimir in a Kubernetes cluster, you could define a Kubernetes [Service](https://kubernetes.io/docs/concepts/services-networking/service/) as ingress for the distributors.
 Be aware that a Kubernetes Service balances TCP connections, and not the HTTP requests within a single TCP connection when HTTP keep-alive is enabled.
 Since a Prometheus server establishes a TCP connection for each remote write shard, you should consider increasing `min_shards` in the Prometheus [remote write config](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#remote_write) if distributors traffic is not evenly balanced.
-
-## Configuration
-
-The distributors need to form an hash ring (called the distributors ring) in order to discover each other and enforce limits correctly.
-
-The default configuration uses `memberlist` as backend for the distributors ring.
-In case you want to configure a different backend (eg. `consul` or `etcd`), the following CLI flags (and their respective YAML config options) are available to configure the distributors ring KV store:
-
-- `-distributor.ring.store`: The backend storage to use.
-- `-distributor.ring.consul.*`: The Consul client configuration (should be used only if `consul` is the configured backend storage).
-- `-distributor.ring.etcd.*`: The etcd client configuration (should be used only if `etcd` is the configured backend storage).
