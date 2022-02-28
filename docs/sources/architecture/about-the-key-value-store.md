@@ -35,8 +35,8 @@ block section of the configuration.
 Grafana Mimir supports [Consul](https://www.consul.io) as a backend KV store.
 If you decided to use Consul, you need to install it alongside Grafana Mimir.
 
-Refer to the [consul](../configuration/reference-configuration-parameters.md#consul)
-block section of the configuration for details on how to configure it.
+To configure Consul, refer to the [consul]({{< relref "../configuration/reference-configuration-parameters.md#consul">}})
+block section of the configuration.
 
 ### Etcd
 
