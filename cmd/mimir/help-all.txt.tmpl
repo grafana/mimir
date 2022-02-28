@@ -122,7 +122,7 @@ Usage of ./cmd/mimir/mimir:
   -alertmanager.max-alerts-count int
     	Maximum number of alerts that a single tenant can have. Inserting more alerts will fail with a log message and metric increment. 0 = no limit.
   -alertmanager.max-alerts-size-bytes int
-    	Maximum total size of alerts that a single user can have, alert size is the sum of the bytes of its labels, annotations and generatorURL. Inserting more alerts will fail with a log message and metric increment. 0 = no limit.
+    	Maximum total size of alerts that a single tenant can have, alert size is the sum of the bytes of its labels, annotations and generatorURL. Inserting more alerts will fail with a log message and metric increment. 0 = no limit.
   -alertmanager.max-config-size-bytes int
     	Maximum size of configuration file for Alertmanager that tenant can upload via Alertmanager API. 0 = no limit.
   -alertmanager.max-dispatcher-aggregation-groups int
@@ -796,7 +796,7 @@ Usage of ./cmd/mimir/mimir:
   -ingester.client.tls-server-name string
     	Override the expected name on the server certificate.
   -ingester.exemplars-update-period duration
-    	[experimental] Period with which to update per-user max exemplars. (default 15s)
+    	[experimental] Period with which to update per-tenant max exemplar limit. (default 15s)
   -ingester.ignore-series-limit-for-metric-names string
     	Comma-separated list of metric names, for which the -ingester.max-global-series-per-metric limit will be ignored. Does not affect the -ingester.max-global-series-per-user limit.
   -ingester.instance-limits.max-inflight-push-requests int
