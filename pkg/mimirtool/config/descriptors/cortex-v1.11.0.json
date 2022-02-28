@@ -4785,7 +4785,6 @@
           "name": "metric_relabel_configs",
           "required": false,
           "desc": "List of metric relabel configurations. Note that in most situations, it is more effective to use metrics relabeling directly in the Prometheus server, e.g. remote_write.write_relabel_configs.",
-          "fieldValue": null,
           "fieldType": "relabel_config..."
         },
         {

@@ -71,7 +71,13 @@ func (i *InspectedEntry) unmarshalJSONValue(b []byte) error {
 	if err != nil {
 		return err
 	}
+
 	jsonDecoder := json.NewDecoder(bytes.NewBuffer(jsonValue.Raw))
+	if jsonValue.Raw == nil {
+		i.FieldValue = nil
+		return nil
+	}
+
 	i.FieldValue, err = decodeValue(i.FieldType, jsonDecoder)
 	return err
 }
