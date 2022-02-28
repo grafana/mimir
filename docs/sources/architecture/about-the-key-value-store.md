@@ -14,7 +14,7 @@ Grafana Mimir requires a key-value store for two features:
 
 ## Supported key-value store backends
 
-Grafana Mimir supports the following KV store backends:
+Grafana Mimir supports the following key-value (KV) store backends:
 
 - Gossip-based [memberlist](https://github.com/hashicorp/memberlist) protocol (default)
 - [Consul](https://www.consul.io)
