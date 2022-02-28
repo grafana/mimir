@@ -278,7 +278,7 @@ func TestInspectConfig_LoadingAConfigHasCorrectTypes(t *testing.T) {
 		{
 			name:         "time",
 			path:         "querier.use_second_store_before_time",
-			expectedType: flagext.Time{},
+			expectedType: &flagext.Time{},
 		},
 		{
 			name:         "url",
