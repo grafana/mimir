@@ -161,7 +161,9 @@ func mapOldFlagsToNewPaths(flags []string, m Mapper, sourceFactory, targetFactor
 	}
 	flagIsSet := make(map[string]bool, len(flags))
 	for _, f := range flags {
-		flagName := strings.TrimPrefix(f, "-")
+		flagName := f
+		flagName = strings.TrimPrefix(flagName, "-")
+		flagName = strings.TrimPrefix(flagName, "-") // trim the prefix twice in case the flag was passed as --flag instead of -flag
 		flagName = strings.SplitN(flagName, "=", 2)[0]
 		flagName = strings.SplitN(flagName, " ", 2)[0]
 		flagIsSet[flagName] = true
