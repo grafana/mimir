@@ -143,7 +143,7 @@ For example, if you're running Memcached in Kubernetes, you may:
 
 ### Chunks cache
 
-The store-gateway can also use a cache for storing [chunks]({{< relref "../reference-glossary.md#chunk" >}}) fetched from the long-term storage. Chunks contain actual samples, and can be reused if user query hits the same series for the same time range.
+The store-gateway can also use a cache for storing [chunks]({{< relref "../reference-glossary.md#chunk" >}}) fetched from the long-term storage. Chunks contain actual samples, and can be reused if a query hits the same series for the same time range.
 
 To enable chunks cache, please set `-blocks-storage.bucket-store.chunks-cache.backend`. Chunks can currently only be stored into Memcached cache. Memcached client can be configured via flags with `-blocks-storage.bucket-store.chunks-cache.memcached.*` prefix.
 
