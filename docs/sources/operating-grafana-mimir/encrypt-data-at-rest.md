@@ -36,7 +36,7 @@ Configuring AWS S3 SSE globally requires setting SSE for each of the following s
 
 For more information about AWS S3 SSE configuration parameters, refer to [sse]({{< relref "../configuration/reference-configuration-parameters.md#sse" >}}).
 
-The following code sample shows a snippet of a Grafana Mimir configuration file that contains AWS S3 SSE with an Amazon S3-managed key configured.
+The following code sample shows a snippet of a Grafana Mimir configuration file with every backend storage configured to use AWS S3 SSE with and Amazon S3-managed key.
 
 ```yaml
 alertmanager_storage:
@@ -90,4 +90,4 @@ You can use the following settings to override AWS S3 SSE for each tenant:
 
 ## Other storage
 
-Other storage backends might support encryption at rest when configured at the storage level.
+Other storage backends might support encryption at rest if it is configured at the storage level.
