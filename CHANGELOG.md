@@ -2,15 +2,11 @@
 
 ## Grafana Mimir - main / unreleased
 
-* [BUGFIX] Query-frontend: fixed bad querier status code mapping with query-sharding enabled. #1227
-
 ### Mixin
 
 ### Jsonnet
 
-* [CHANGE] Removed `$.distributor_deployment_labels`, `$.ingester_deployment_labels` and `$.querier_deployment_labels` fields, that were used by gossip.libsonnet to inject additional label. Now the label is injected directly into pods of statefulsets and deployments.
-
-## 2.0.0-rc.0
+## 2.0.0-rc.1
 
 ### Grafana Mimir
 
@@ -711,6 +707,7 @@ _Changes since `grafana/cortex-jsonnet` `1.9.0`._
 * [BUGFIX] Fixed and added missing KV store panels in Writes, Reads, Ruler and Compactor dashboards. #448
 * [BUGFIX] Fixed Alertmanager dashboard when alertmanager is running as part of single binary. #1064
 * [BUGFIX] Fixed Ruler dashboard when ruler is running as part of single binary. #1260
+* [BUGFIX] Query-frontend: fixed bad querier status code mapping with query-sharding enabled. #1227
 
 ### Jsonnet
 
@@ -817,6 +814,7 @@ _Changes since `grafana/cortex-jsonnet` `1.9.0`._
 * [CHANGE] Gossip.libsonnet has been fixed to modify all ring configurations, not only the ingester ring config. Furthermore it now supports migration via multi KV store. #1057 #1099
 * [CHANGE] Changed the default of `bucket_index_enabled` to `true`. #924
 * [CHANGE] Remove the support for the test-exporter. #1133
+* [CHANGE] Removed `$.distributor_deployment_labels`, `$.ingester_deployment_labels` and `$.querier_deployment_labels` fields, that were used by gossip.libsonnet to inject additional label. Now the label is injected directly into pods of statefulsets and deployments. #1297
 * [FEATURE] Added query sharding support. It can be enabled setting `cortex_query_sharding_enabled: true` in the `_config` object. #653
 * [FEATURE] Added shuffle-sharding support. It can be enabled and configured using the following config: #902
    ```
