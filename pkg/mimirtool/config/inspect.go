@@ -64,6 +64,11 @@ func (i *InspectedEntry) Set(s string) (err error) {
 	return
 }
 
+// IsBoolFlag is used by flag package to support to setting bool flags without using value.
+func (i *InspectedEntry) IsBoolFlag() bool {
+	return i.FieldType == "boolean"
+}
+
 func (i *InspectedEntry) RegisterFlags(fs *flag.FlagSet, logger log.Logger) {
 	if i.Kind == parse.KindBlock {
 		for _, e := range i.BlockEntries {
@@ -226,8 +231,8 @@ func (i *InspectedEntry) SetValue(path string, val interface{}) error {
 	return nil
 }
 
-// Delete deletes a leaf parameter from the InspectedEntry. Delete also recursively deletes
-// any parent blocks that, because of this delete, now contain no entries.
+// Delete deletes a leaf parameter or entire subtree from the InspectedEntry.
+// Delete also recursively deletes any parent blocks that, because of this delete, now contain no entries.
 // If an error is returned, it's errors.Cause will be ErrParameterNotFound.
 func (i *InspectedEntry) Delete(path string) error {
 	return errors.Wrap(i.delete(path), path)

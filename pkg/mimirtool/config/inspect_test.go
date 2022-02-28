@@ -183,6 +183,18 @@ func TestInspectedEntry_Delete(t *testing.T) {
 			pathToDelete:   "api.version",
 			expectedParams: []string{},
 		},
+		{
+			name: "deletes subtree",
+			params: &struct {
+				API struct {
+					Version string `yaml:"version"`
+				} `yaml:"api"`
+				Version string `yaml:"version"`
+			}{},
+
+			pathToDelete:   "api",
+			expectedParams: []string{"version"},
+		},
 	}
 
 	for _, tc := range testCases {
