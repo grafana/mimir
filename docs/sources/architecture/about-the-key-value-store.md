@@ -12,7 +12,7 @@ Grafana Mimir requires a key-value store for two features:
 - [Hash ring]({{<relref "./about-the-hash-ring.md">}})
 - [(Optional) Distributor high-availability tracker]({{<relref "../operating-grafana-mimir/configure-ha-deduplication.md">}})
 
-## Supported KV store backends
+## Supported key-value store backends
 
 Grafana Mimir supports the following KV store backends:
 
