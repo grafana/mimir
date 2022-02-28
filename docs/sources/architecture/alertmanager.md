@@ -86,13 +86,9 @@ When using a reverse proxy, ensure that you configure the HTTP path appropriatel
 - Set `-http.alertmanager-http-prefix` to match the proxy path in your reverse proxy configuration.
 - Set `-alertmanager.web.external-url` to the URL served by your reverse proxy.
 
-## Horizontal scalability
+## Sharding and replication
 
-[//]: # "TODO document the KV store backend and link it in this section"
-
-### Sharding
-
-To achieve horizontal scalability, the Mimir Alertmanager shards alerts by tenant.
+The alertmanager shards and replicates alerts by tenant.
 Sharding requires that the number of Alertmanager replicas is greater-than or equal-to the replication factor configured by the `-alertmanager.sharding-ring.replication-factor` flag.
 
 The Mimir Alertmanager replicas use the [hash ring]({{<relref "./about-the-hash-ring.md">}}) stored in the KV store to discover their peers.
