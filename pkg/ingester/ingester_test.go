@@ -5801,16 +5801,13 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 				`
 				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
 
-				// Sleep to emphasize that secondPushTime must be > configReloadTime not to be purged.
-				time.Sleep(time.Millisecond)
 				secondPushtime := time.Now()
 				for _, label := range labelsToPush {
 					ctx := user.InjectOrgID(context.Background(), userID)
 					_, err := ingester.Push(ctx, req(label, secondPushtime))
 					require.NoError(t, err)
 				}
-				// Adding a nanosecond to make updateTime.Before(purgeTime) true
-				updateTime := configReloadTime.Add(ingester.cfg.ActiveSeriesMetricsIdleTimeout + time.Nanosecond)
+				updateTime := secondPushtime.Add(ingester.cfg.ActiveSeriesMetricsIdleTimeout)
 				ingester.updateActiveSeries(updateTime)
 				expectedMetrics = `
 					# HELP cortex_ingester_active_series Number of currently active series per user.

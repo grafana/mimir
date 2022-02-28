@@ -482,13 +482,12 @@ func (i *Ingester) getActiveSeriesMatchersConfig(userID string) *ActiveSeriesCus
 	return matchers
 }
 
-func (i *Ingester) replaceMatchers(asm *ActiveSeriesMatchers, userDB *userTSDB, now time.Time) {
-	i.metrics.deletePerUserCustomTrackerMetrics(userDB.userID, userDB.activeSeries.CurrentMatchers().names)
-	userDB.activeSeries.ReloadSeriesMatchers(asm, now)
+func (i *Ingester) replaceMatchers(asm *ActiveSeriesMatchers, userDB *userTSDB) {
+	i.metrics.deletePerUserCustomTrackerMetrics(userDB.userID, userDB.activeSeries.CurrentMatcherNames())
+	userDB.activeSeries.ReloadSeriesMatchers(asm)
 }
 
 func (i *Ingester) updateActiveSeries(now time.Time) {
-	purgeTime := now.Add(-i.cfg.ActiveSeriesMetricsIdleTimeout)
 	for _, userID := range i.getTSDBUsers() {
 		userDB := i.getTSDB(userID)
 		if userDB == nil {
@@ -497,20 +496,18 @@ func (i *Ingester) updateActiveSeries(now time.Time) {
 
 		newMatchersConfig := i.getActiveSeriesMatchersConfig(userID)
 		if newMatchersConfig.String() != userDB.activeSeries.asm.cfg.String() {
-			i.replaceMatchers(NewActiveSeriesMatchers(newMatchersConfig), userDB, now)
+			i.replaceMatchers(NewActiveSeriesMatchers(newMatchersConfig), userDB)
 		}
+		if userDB.activeSeries.lastAsmUpdate.Load() < now.Add(-i.cfg.ActiveSeriesMetricsIdleTimeout).UnixNano() {
+			// We are not exposing metrics until enough time passed for stable metrics.
+			allActive, activeMatching := userDB.activeSeries.Active(now)
+			if allActive > 0 {
+				i.metrics.activeSeriesPerUser.WithLabelValues(userID).Set(float64(allActive))
+			} else {
+				i.metrics.activeSeriesPerUser.DeleteLabelValues(userID)
+			}
 
-		userDB.activeSeries.Purge(purgeTime)
-		allActive, activeMatching := userDB.activeSeries.Active()
-		if allActive > 0 {
-			i.metrics.activeSeriesPerUser.WithLabelValues(userID).Set(float64(allActive))
-		} else {
-			i.metrics.activeSeriesPerUser.DeleteLabelValues(userID)
-		}
-		if userDB.activeSeries.lastUpdate.Before(purgeTime) {
-			// Do not publish metrics until the new matcher setup had time to catch up.
-			// LastUpdate is Zero when it never get updated.
-			for idx, name := range userDB.activeSeries.asm.names {
+			for idx, name := range userDB.activeSeries.CurrentMatcherNames() {
 				// We only set the metrics for matchers that actually exist, to avoid increasing cardinality with zero valued metrics.
 				if activeMatching[idx] > 0 {
 					i.metrics.activeSeriesCustomTrackersPerUser.WithLabelValues(userID, name).Set(float64(activeMatching[idx]))
@@ -519,7 +516,6 @@ func (i *Ingester) updateActiveSeries(now time.Time) {
 				}
 			}
 		}
-
 	}
 }
 
@@ -1470,7 +1466,7 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 
 	userDB := &userTSDB{
 		userID:              userID,
-		activeSeries:        NewActiveSeries(NewActiveSeriesMatchers(matchersConfig)),
+		activeSeries:        NewActiveSeries(NewActiveSeriesMatchers(matchersConfig), i.cfg.ActiveSeriesMetricsIdleTimeout),
 		seriesInMetric:      newMetricCounter(i.limiter, i.cfg.getIgnoreSeriesLimitForMetricNamesMap()),
 		ingestedAPISamples:  util_math.NewEWMARate(0.2, i.cfg.RateUpdatePeriod),
 		ingestedRuleSamples: util_math.NewEWMARate(0.2, i.cfg.RateUpdatePeriod),
@@ -1593,7 +1589,7 @@ func (i *Ingester) closeAllTSDB() {
 
 			i.metrics.memUsers.Dec()
 			i.metrics.activeSeriesPerUser.DeleteLabelValues(userID)
-			i.metrics.deletePerUserCustomTrackerMetrics(userID, db.activeSeries.asm.names)
+			i.metrics.deletePerUserCustomTrackerMetrics(userID, db.activeSeries.CurrentMatcherNames())
 		}(userDB)
 	}
 
@@ -1990,7 +1986,7 @@ func (i *Ingester) closeAndDeleteUserTSDBIfIdle(userID string) tsdbCloseCheckRes
 
 	i.deleteUserMetadata(userID)
 	i.metrics.deletePerUserMetrics(userID)
-	i.metrics.deletePerUserCustomTrackerMetrics(userID, userDB.activeSeries.asm.names)
+	i.metrics.deletePerUserCustomTrackerMetrics(userID, userDB.activeSeries.CurrentMatcherNames())
 
 	validation.DeletePerUserValidationMetrics(userID, i.logger)
 

@@ -22,9 +22,12 @@ const (
 
 // ActiveSeries is keeping track of recently active series for a single tenant.
 type ActiveSeries struct {
-	asm        *ActiveSeriesMatchers
-	stripes    [numActiveSeriesStripes]activeSeriesStripe
-	lastUpdate time.Time
+	stripes       [numActiveSeriesStripes]activeSeriesStripe
+	asm           *ActiveSeriesMatchers
+	lastAsmUpdate *atomic.Int64
+	// The duration after series become inactive.
+	timeout time.Duration
+	mu      sync.RWMutex
 }
 
 // activeSeriesStripe holds a subset of the series timestamps for a single tenant.
@@ -49,37 +52,36 @@ type activeSeriesEntry struct {
 	matches []bool        // Which matchers of ActiveSeriesMatchers does this series match
 }
 
-func NewActiveSeries(asm *ActiveSeriesMatchers) *ActiveSeries {
-	c := &ActiveSeries{asm: asm}
+func NewActiveSeries(asm *ActiveSeriesMatchers, idleTimeout time.Duration) *ActiveSeries {
+	c := &ActiveSeries{asm: asm, timeout: idleTimeout, lastAsmUpdate: atomic.NewInt64(0)}
 
 	// Stripes are pre-allocated so that we only read on them and no lock is required.
 	for i := 0; i < numActiveSeriesStripes; i++ {
 		c.stripes[i] = activeSeriesStripe{
 			asm:            asm,
 			refs:           map[uint64][]activeSeriesEntry{},
-			activeMatching: makeIntSliceIfNotEmpty(len(asm.MatcherNames()), nil),
+			activeMatching: resizeAndClear(len(asm.MatcherNames()), nil),
 		}
 	}
 
 	return c
 }
 
-func (c *ActiveSeries) CurrentMatchers() *ActiveSeriesMatchers {
-	return c.asm
+func (c *ActiveSeries) CurrentMatcherNames() []string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.asm.MatcherNames()
 }
 
-func (c *ActiveSeries) ReloadSeriesMatchers(asm *ActiveSeriesMatchers, reloadTime time.Time) {
-	c.asm = asm
-	for i := 0; i < numActiveSeriesStripes; i++ {
-		c.stripes[i].mu.Lock()
-		defer c.stripes[i].mu.Unlock()
-	}
+func (c *ActiveSeries) ReloadSeriesMatchers(asm *ActiveSeriesMatchers) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 
 	for i := 0; i < numActiveSeriesStripes; i++ {
-		c.stripes[i].asm = asm
-		c.stripes[i].activeMatching = makeIntSliceIfNotEmpty(len(asm.MatcherNames()), c.stripes[i].activeMatching)
+		c.stripes[i].reinitialize(asm)
 	}
-	c.lastUpdate = reloadTime
+	c.asm = asm
+	c.lastAsmUpdate.Store(time.Now().UnixNano())
 }
 
 // Updates series timestamp to 'now'. Function is called to make a copy of labels if entry doesn't exist yet.
@@ -87,7 +89,7 @@ func (c *ActiveSeries) UpdateSeries(series labels.Labels, now time.Time, labelsC
 	fp := fingerprint(series)
 	stripeID := fp % numActiveSeriesStripes
 
-	c.stripes[stripeID].updateSeriesTimestamp(now, series, fp, labelsCopy, c.lastUpdate)
+	c.stripes[stripeID].updateSeriesTimestamp(now, series, fp, labelsCopy)
 }
 
 var sep = []byte{model.SeparatorByte}
@@ -105,9 +107,8 @@ func fingerprint(series labels.Labels) uint64 {
 	return sum.Sum64()
 }
 
-// Purge removes expired entries from the cache. This function should be called
-// periodically to avoid memory leaks.
-func (c *ActiveSeries) Purge(keepUntil time.Time) {
+// Purge removes expired entries from the cache. This function is called by Active.
+func (c *ActiveSeries) purge(keepUntil time.Time) {
 	for s := 0; s < numActiveSeriesStripes; s++ {
 		c.stripes[s].purge(keepUntil)
 	}
@@ -122,9 +123,14 @@ func (c *ActiveSeries) clear() {
 
 // Active returns the total number of active series, as well as a slice of active series matching each one of the
 // custom trackers provided (in the same order as custom trackers are defined)
-func (c *ActiveSeries) Active() (int, []int) {
+// This should be called periodically to avoid memory leaks.
+// Active cannot be called concurrently with ReloadSeriesMatchers.
+func (c *ActiveSeries) Active(now time.Time) (int, []int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.purge(now.Add(-c.timeout))
 	total := 0
-	totalMatching := makeIntSliceIfNotEmpty(len(c.asm.MatcherNames()), nil)
+	totalMatching := resizeAndClear(len(c.asm.MatcherNames()), nil)
 	for s := 0; s < numActiveSeriesStripes; s++ {
 		total += c.stripes[s].getTotalAndUpdateMatching(totalMatching)
 	}
@@ -145,7 +151,7 @@ func (s *activeSeriesStripe) getTotalAndUpdateMatching(matching []int) int {
 	return s.active
 }
 
-func (s *activeSeriesStripe) updateSeriesTimestamp(now time.Time, series labels.Labels, fingerprint uint64, labelsCopy func(labels.Labels) labels.Labels, reloadTime time.Time) {
+func (s *activeSeriesStripe) updateSeriesTimestamp(now time.Time, series labels.Labels, fingerprint uint64, labelsCopy func(labels.Labels) labels.Labels) {
 	nowNanos := now.UnixNano()
 
 	e := s.findEntryForSeries(fingerprint, series)
@@ -157,10 +163,6 @@ func (s *activeSeriesStripe) updateSeriesTimestamp(now time.Time, series labels.
 	if !entryTimeSet {
 		if prev := e.Load(); nowNanos > prev {
 			entryTimeSet = e.CAS(prev, nowNanos)
-			r := reloadTime.UnixNano()
-			if prev <= r {
-				s.replaceMatchers(fingerprint, series, nowNanos, labelsCopy)
-			}
 		}
 	}
 
@@ -220,20 +222,6 @@ func (s *activeSeriesStripe) findOrCreateEntryForSeries(fingerprint uint64, seri
 	return e.nanos, true
 }
 
-func (s *activeSeriesStripe) replaceMatchers(fingerprint uint64, series labels.Labels, nowNanos int64, labelsCopy func(labels.Labels) labels.Labels) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for ix, entry := range s.refs[fingerprint] {
-		if labels.Equal(entry.lbs, series) {
-			s.refs[fingerprint][ix].matches = s.asm.Matches(series)
-			// There is a ref, the series is still active, no need to increase s.active.
-			// s.activeMatching is not exposed until ActiveSeriesMetricsIdleTimeout passes since reload, it will be recounted at purge time.
-			// If ActiveSeriesMetricsIdleTimeout passes between two samples, the series is not active, if less, the purge time recalculation will consider the newer sample.
-			break
-		}
-	}
-}
-
 //nolint // Linter reports that this method is unused, but it is.
 func (s *activeSeriesStripe) clear() {
 	s.mu.Lock()
@@ -247,6 +235,18 @@ func (s *activeSeriesStripe) clear() {
 	}
 }
 
+// Reinitalize is more than clear that it assigns new matchers and corresponding size activeMatching slices.
+func (s *activeSeriesStripe) reinitialize(asm *ActiveSeriesMatchers) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.oldestEntryTs.Store(0)
+	s.refs = map[uint64][]activeSeriesEntry{}
+	s.active = 0
+	s.asm = asm
+	s.activeMatching = resizeAndClear(len(asm.MatcherNames()), s.activeMatching)
+}
+
 func (s *activeSeriesStripe) purge(keepUntil time.Time) {
 	keepUntilNanos := keepUntil.UnixNano()
 	if oldest := s.oldestEntryTs.Load(); oldest > 0 && keepUntilNanos <= oldest {
@@ -258,7 +258,7 @@ func (s *activeSeriesStripe) purge(keepUntil time.Time) {
 	defer s.mu.Unlock()
 
 	active := 0
-	activeMatching := makeIntSliceIfNotEmpty(len(s.activeMatching), s.activeMatching)
+	activeMatching := resizeAndClear(len(s.activeMatching), s.activeMatching)
 
 	oldest := int64(math.MaxInt64)
 	for fp, entries := range s.refs {
@@ -324,12 +324,13 @@ func (s *activeSeriesStripe) purge(keepUntil time.Time) {
 	s.activeMatching = activeMatching
 }
 
-func makeIntSliceIfNotEmpty(l int, prev []int) []int {
+func resizeAndClear(l int, prev []int) []int {
 	if cap(prev) < l {
 		if l == 0 {
 			return nil
 		}
 		// The allocation is bigger than the required capacity to save time in cases when the number of matchers are just slightly increasing.
+		// In cases where the default matchers are slightly changed in size it could save from lot of reallocations, while having low memory impact.
 		return make([]int, l, l*2)
 	}
 
