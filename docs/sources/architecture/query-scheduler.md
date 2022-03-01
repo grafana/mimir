@@ -26,7 +26,7 @@ The query-scheduler **stateless**.
 
 ## Benefits
 
-The query-scheduler enables scaling of query-frontends. The query-frontend comes with some challenges when it comes to scaling it. You can read more about them in [Query-frontend]({{<relref "./query-frontend.md#scaling">}}).  
+The query-scheduler enables scaling of query-frontends. The query-frontend comes with some challenges when it comes to scaling it. You can read more about them in [Query-frontend]({{<relref "./query-frontend.md#scaling">}}).
 
 ### How query-scheduler solves query-frontend scalability limits
 
