@@ -53,7 +53,7 @@ If the expected blocks have not been queried, the querier retries fetching sampl
 The number of times a querier attempts to fetch missing blocks is specified in `-store-gateway.sharding-ring.replication-factor`.
 If the consistency check fails after all retry attempts, the query execution fails. Querier retry attempts ensure the correctness of query results.
 
-If the query time range includes a period as specified in `-querier.query-ingesters-within` duration, by default, the querier also sends the request to all ingesters. The request to the ingesters fetches samples that have not yet been uploaded to the long-term storage.
+If the query time range overlaps with the `-querier.query-ingesters-within` duration, by default, the querier also sends the request to all ingesters. The request to the ingesters fetches samples that have not yet been uploaded to the long-term storage.
 
 After all samples have been fetched from both the store-gateways and the ingesters, the querier runs the PromQL engine to execute the query and sends back the result to the client.
 
