@@ -8,12 +8,12 @@ weight: 10
 
 The compactor is responsible for merging and deduplicating smaller blocks into larger ones, in order to reduce the number of blocks stored in long-term (object) storage for a given tenant and allowing for them to be queried more efficiently. It also keeps the [bucket index]({{< relref "../operating-grafana-mimir/blocks-storage/bucket-index.md" >}}) updated and, for this reason, it's a required component.
 
-The [alertmanager](./alertmanager.md) and [ruler](./ruler.md) components can also use object storage to store their configurations and rules uploaded by users. In that case a separate bucket should be created to store alertmanager configurations and rules: using the same bucket between ruler/alertmanager and blocks will cause issues with the compactor.
+The [alertmanager]({{< relref "./alertmanager.md" >}}) and [ruler]({{< relref "./ruler.md" >}}) components can also use object storage to store their configurations and rules uploaded by users. In that case a separate bucket should be created to store alertmanager configurations and rules: using the same bucket between ruler/alertmanager and blocks will cause issues with the compactor.
 
 The **compactor** is a component responsible for:
 
 - Compacting multiple blocks of a given tenant into a single optimized larger block. This helps reducing storage costs (deduplication, index size reduction), and increasing query speed (querying fewer blocks is faster).
-- Keeping the per-tenant bucket index updated. The [bucket index]({{< relref "../operating-grafana-mimir/blocks-storage/bucket-index.md" >}}) is used by [queriers](./querier.md), [store-gateways](./store-gateway.md), and rulers to discover new blocks in the storage.
+- Keeping the per-tenant bucket index updated. The [bucket index]({{< relref "../operating-grafana-mimir/blocks-storage/bucket-index.md" >}}) is used by [queriers]({{< relref "./querier.md" >}}), [store-gateways]({{< relref "./store-gateway.md" >}}), and rulers to discover new blocks in the storage.
 - Deleting blocks which are no longer within retention period.
 
 The compactor is **stateless**.
@@ -72,9 +72,9 @@ The compactor shards compaction jobs, either from a single tenant or multiple te
 
 Whenever the pool of compactors grows or shrinks (ie. following up a scale up/down), tenants / jobs are resharded across the available compactor instances without any manual intervention.
 
-The compactor sharding is based on the Mimir [hash ring](../architecture.md#the-hash-ring). At startup, a compactor generates random tokens and registers itself to the ring. While running, it periodically scans the storage bucket at every interval defined by `-compactor.compaction-interval`, to discover the list of tenants in storage and compact blocks for each tenant which hash matches the token ranges assigned to the instance itself within the ring.
+The compactor sharding is based on the Mimir [hash ring]({{< relref "./about-the-hash-ring.md" >}}). At startup, a compactor generates random tokens and registers itself to the ring. While running, it periodically scans the storage bucket at every interval defined by `-compactor.compaction-interval`, to discover the list of tenants in storage and compact blocks for each tenant which hash matches the token ranges assigned to the instance itself within the ring.
 
-This feature requires the backend [hash ring](../architecture.md#the-hash-ring) to be configured via `-compactor.ring.*` flags (or their respective YAML config options).
+This feature requires the backend [hash ring]({{< relref "./about-the-hash-ring.md" >}}) to be configured via `-compactor.ring.*` flags (or their respective YAML config options).
 
 ### Waiting for stable ring at startup
 
