@@ -49,7 +49,7 @@ The request sent to each store-gateway contains the list of block IDs that are e
 This list of block IDs might be a subset of the requested blocks, for example, when a recent blocks resharding event occurs within the last few seconds.
 
 The querier runs a consistency check on responses received from the store-gateways to ensure all expected blocks have been queried.
-If the expected blocks have not been queried, the querier retries fetching samples from the missing blocks from other store-gateways up to a maximum of three attempts, which is the default.
+If the expected blocks have not been queried, the querier retries fetching samples from the missing blocks from other store-gateways up to a maximum of three attempts.
 The number of times a querier attempts to fetch missing blocks is specified in `-store-gateway.sharding-ring.replication-factor`.
 If the consistency check fails after all retry attempts, the query execution fails. Querier retry attempts ensure the correctness of query results.
 
