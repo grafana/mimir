@@ -15,10 +15,11 @@ The following are the main/default maintainers:
 Some parts of the codebase have other maintainers, the package paths also include all sub-packages:
 
 - `docs`:
+  - Jack Baldry - [@jdbaldry](https://github.com/jdbaldry) ([Grafana Labs](https://grafana.com/))
   - Ursula Kallio — [@osg-grafana](https://github.com/osg-grafana) ([Grafana Labs](https://grafana.com/))
-- `pkg/ruler`:
-  - Josh Abreu Mesa — [@gotjosh](https://github.com/gotjosh) ([Grafana Labs](https://grafana.com/))
 - `pkg/alertmanager`:
   - Josh Abreu Mesa — [@gotjosh](https://github.com/gotjosh) ([Grafana Labs](https://grafana.com/))
 - `pkg/frontend`:
   - Cyril Tovena — [@cyriltovena](https://github.com/cyriltovena) ([Grafana Labs](https://grafana.com/)) # limited to reviews
+- `pkg/ruler`:
+  - Josh Abreu Mesa — [@gotjosh](https://github.com/gotjosh) ([Grafana Labs](https://grafana.com/))
