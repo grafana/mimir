@@ -95,4 +95,4 @@ _The same memcached backend cluster should be shared between store-gateways and 
 
 ## Querier configuration
 
-For details about querier configuration, refer to the [querier]({{< relref "../configuration/reference-configuration-parameters.md#querier" >}}).
+For details about querier configuration, refer to [querier]({{< relref "../configuration/reference-configuration-parameters.md#querier" >}}).
