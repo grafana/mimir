@@ -426,7 +426,7 @@ func (c *MultitenantCompactor) starting(ctx context.Context) error {
 	// In the event of a cluster cold start or scale up of 2+ compactor instances at the same
 	// time, we may end up in a situation where each new compactor instance starts at a slightly
 	// different time and thus each one starts with a different state of the ring. It's better
-	// to just wait the ring stability for a short time.
+	// to just wait a short time for ring stability.
 	if c.compactorCfg.ShardingRing.WaitStabilityMinDuration > 0 {
 		minWaiting := c.compactorCfg.ShardingRing.WaitStabilityMinDuration
 		maxWaiting := c.compactorCfg.ShardingRing.WaitStabilityMaxDuration
