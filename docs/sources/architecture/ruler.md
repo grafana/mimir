@@ -12,7 +12,7 @@ Each tenant has a set of recording and alerting rules and can group those rules 
 ## Recording rules
 
 The ruler evaluates the expressions in recording rules at regular intervals and writes the result back to the ingesters.
-The ruler has a built-in querier that evaluates the PromQL expressions and a built-in distributor so that it can write directly to the ingesters.
+The ruler has a built-in querier that evaluates the PromQL expressions and a built-in distributor, so that it can write directly to the ingesters.
 Configuration of the built-in querier and distributor uses their respective configuration parameters.
 For querier configuration parameters, refer to [querier]({{< relref "../configuration/reference-configuration-parameters.md#querier" >}}).
 For distributor configuration parameters, refer to [distributor]({{< relref "../configuration/reference-configuration-parameters.md#distributor" >}}).
