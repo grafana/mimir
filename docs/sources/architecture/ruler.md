@@ -52,7 +52,6 @@ The ruler supports the following backends:
 
 The `local` storage backend reads [Prometheus recording rules](https://prometheus.io/docs/prometheus/latest/configuration/recording_rules/) from the local filesystem.
 
-> **Note:**
 > Local storage is a read-only backend that does not support the creation and deletion of rules through the [Configuration API]({{< relref "#http-configuration-api" >}}).
 
 When all rulers have the same rule files, local storage supports ruler sharding.
