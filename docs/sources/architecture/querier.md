@@ -85,7 +85,7 @@ Caching is optional, but highly recommended in a production environment. For mor
 
 Using the metadata cache reduces the number of API calls to long-term storage and eliminates the number of API calls that scale linearly as the number of querier and store-gateway replicas increases.
 
-To enable metadata cache, set `-blocks-storage.bucket-store.metadata-cache.backend`.
+To enable the metadata cache, set `-blocks-storage.bucket-store.metadata-cache.backend`.
 
 > **Note**: Currently, only `memcached` backend is supported. The Memcached client includes additional configuration available via flags that begin with the prefix `-blocks-storage.bucket-store.metadata-cache.memcached.*`.
 
