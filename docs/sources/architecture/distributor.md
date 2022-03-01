@@ -6,7 +6,7 @@ weight: 10
 
 # Distributor
 
-The distributor is a stateless component that receives time-series data from Prometheus.
+The distributor is a stateless component that receives time-series data from Prometheus or the Grafana agent.
 The distributor validates the data for correctness to ensure that it is within the configured limits for a given tenant.
 The distributor then divides the data into batches and sends it to multiple [ingesters]({{< relref "./ingester.md" >}}) in parallel, shards the series among ingesters, and replicates each series by the configured replication factor. By default, the configured replication factor is three.
 
@@ -50,7 +50,7 @@ _By default, Prometheus remote write doesn't retry requests on 429 HTTP response
 
 ### Configuration
 
-The distributors form a [hash ring]({{<relref "./about-the-hash-ring.md">}}) (called the distributors’ ring) to discover each other and enforce limits correctly.
+The distributors form a [hash ring]({{< relref "./about-the-hash-ring.md" >}}) (called the distributors’ ring) to discover each other and enforce limits correctly.
 
 The default configuration uses `memberlist` as the backend for the distributors’ ring.
 To configure a different backend, such as Consul or etcd, the following CLI flags (and their respective YAML configuration options) configure the key-value store of the distributors’ ring:
@@ -81,7 +81,7 @@ For each incoming series, the distributor computes a hash using the metric name,
 The computed hash is called a _token_.
 The distributor looks up the token in the hash ring to determine which ingesters to write a series to.
 
-For more information, see [hash ring]({{<relref "./about-the-hash-ring.md">}}).
+For more information, see [hash ring]({{< relref "./about-the-hash-ring.md" >}}).
 
 #### Quorum consistency
 
