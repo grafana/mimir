@@ -10,14 +10,14 @@ Grafana Mimir is a distributed system with significant traffic between its compo
 To allow for secure communication, Grafana Mimir supports TLS between its
 components. This topic describes the process you use to set up TLS.
 
-### Generation of certs to configure TLS
+### Generation of certificates to configure TLS
 
 To establish secure inter-component communication in Grafana Mimir with TLS, you must generate certificates using a certificate authority (CA).
 The CA should be private to the organization because certificates signed by the CA will have permissions to communicate with the cluster.
 
 > **Note**: The generated certficates are valid for 100,000 days. You can change the duration by adjusting the `-days` option in the command. We recommended that you replace the certificates every two years.
 
-The following script generates self-signed certs for the cluster.
+The following script generates self-signed certificates for the cluster.
 The script generates keys `client.key`, `server.key` and certificates `client.crt`, `server.crt` for both the client and server.
 The script generates the CA cert as `root.crt`.
 
@@ -88,34 +88,6 @@ In the following example, both of the client authorization flags, `-server.http-
 
 #### Client flags
 
-Client flags are specific to each component.
-
-gRPC client flags in the querier:
-
-```
-    # Path to the TLS Cert for the gRPC Client
-    -querier.frontend-client.tls-cert-path=/path/to/client.crt
-
-    # Path to the TLS Key for the gRPC Client
-    -querier.frontend-client.tls-key-path=/path/to/client.key
-
-    # Path to the TLS CA for the gRPC Client
-    -querier.frontend-client.tls-ca-path=/path/to/root.crt
-```
-
-gRPC ingester client flags:
-
-```
-    # Path to the TLS Cert for the gRPC Client
-    -ingester.client.tls-cert-path=/path/to/client.crt
-
-    # Path to the TLS Key for the gRPC Client
-    -ingester.client.tls-key-path=/path/to/client.key
-
-    # Path to the TLS CA for the gRPC Client
-    -ingester.client.tls-ca-path=/path/to/root.crt
-```
-
 You can configure TLS keys, certificates, and CAs in a similar fashion for other gRPC clients in Grafana Mimir.
 
 To enable TLS for a component, use the client flag that contains the suffix `*.tls-enabled=true`, for example, `-querier.frontend-client.tls-enabled=true`.
@@ -129,7 +101,7 @@ The following Grafana Mimir components support TLS for inter-communication, whic
 - Ruler gRPC client used to connect to other ruler instances: `-ruler.client.*`
 - Alertmanager gRPC client used to connect to other Alertmanager instances: `-alertmanager.alertmanager-client.*`
 - gRPC client used by distributors, queriers, and rulers to connect to ingesters: `-ingester.client.*`
-- Etcd client used by all Mimir components to connect to etcd, which is required only if you're running the hash ring or HA tracker on the etcd backend: `-<prefix>.etcd.*`
+- etcd client used by all Mimir components to connect to etcd, which is required only if you're running the hash ring or HA tracker on the etcd backend: `-<prefix>.etcd.*`
 - Memberlist client used by all Mimir components to gossip the hash ring, which is required only if you're running the hash ring on memberlist: `-memberlist.`
 
 Each of the components listed above support the following TLS configuration options, which are shown with their corresponding flag suffixes:
@@ -137,3 +109,16 @@ Each of the components listed above support the following TLS configuration opti
 - `*.tls-enabled=<boolean>`: Enable TLS in the client.
 - `*.tls-server-name=<string>`: Override the expected name on the server certificate.
 - `*.tls-insecure-skip-verify=<boolean>`: Skip validating the server certificate.
+
+The following example shows how to configure the gRPC client flags in the querier:
+
+```
+    # Path to the TLS Cert for the gRPC Client
+    -querier.frontend-client.tls-cert-path=/path/to/client.crt
+
+    # Path to the TLS Key for the gRPC Client
+    -querier.frontend-client.tls-key-path=/path/to/client.key
+
+    # Path to the TLS CA for the gRPC Client
+    -querier.frontend-client.tls-ca-path=/path/to/root.crt
+```
