@@ -9,14 +9,14 @@ weight: 10
 You can have more than one Prometheus instance that scrapes the same metrics for redundancy. Grafana Mimir already performs replication for redundancy,
 so you do not need to ingest the same data twice. In Grafana Mimir, you can deduplicate the data that you receive from HA pairs of Prometheus instances.
 
-Assume that there are two teams, each running their own Prometheus instance, which monitors different services: Prometheus `T1` and Prometheus `T2`.
-If the teams are running HA pairs, the individual Prometheus instances would be `T1.a` and `T1.b`, and `T2.a` and `T2.b`.
+Assume that there are two teams, each running their own Prometheus instance, which monitors different services: Prometheus `team-1` and Prometheus `team-2`.
+If the teams are running HA pairs, the individual Prometheus instances would be `team-1.a` and `team-1.b`, and `team-2.a` and `team-2.b`.
 
-Grafana Mimir only ingests from either `T1.a` or `T1.b`, and only from `T2.a` or `T2.b`. It does this by electing a leader replica for each 
-cluster of Prometheus. For example, in the case of `T1`, the leader replica would be `T1.a`. As long as `T1.a` is the leader, the samples
-that `T1.b` receives are dropped. And if Grafana Mimir does not see any new samples from `T1.a` for a short period of time (30 seconds by default), it switches the leader to `T1.b`.
+Grafana Mimir only ingests from either `team-1.a` or `team-1.b`, and only from `team-2.a` or `team-2.b`. It does this by electing a leader replica for each 
+cluster of Prometheus. For example, in the case of `team-1`, the leader replica would be `team-1.a`. As long as `team-1.a` is the leader, the samples
+that `team-1.b` receives are dropped. And if Grafana Mimir does not see any new samples from `team-1.a` for a short period of time (30 seconds by default), it switches the leader to `team-1.b`.
 
-If `T1.a` goes down for a few minutes, Grafana Mimir’s HA sample handling will have switched and elected `T1.b` as the leader. The failure 
+If `team-1.a` goes down for a few minutes, Grafana Mimir’s HA sample handling will have switched and elected `team-1.b` as the leader. The failure 
 timeout ensures that too much data is not dropped before failover to the other replica. 
 
 > **Note:** In a scenario where the default scrape period is 15 seconds, and the timeouts in Grafana Mimir are set to the default values, 
@@ -24,7 +24,7 @@ timeout ensures that too much data is not dropped before failover to the other r
 > at least four times that of the scrape period to account for any of these failover scenarios. 
 > For example with the default scrape period of 15 seconds, calculate rates longer than at least 1-minute intervals.
 
-Repeat the leader-election process for `T2`.
+Repeat the leader-election process for `team-2`.
 
 ## Distributor high-availability (HA) tracker
 
@@ -45,7 +45,7 @@ This section includes information about how to configure Prometheus within Grafa
 
 ### How to configure Prometheus within Grafana Mimir
 
-To configure Prometheus within Grafana Mimir, set two identifiers for each Prometheus server: one for the cluster, for example, `T1` or `T2`, and one to identify the replica in the cluster, for example `a` or `b`. 
+To configure Prometheus within Grafana Mimir, set two identifiers for each Prometheus server: one for the cluster, for example, `team-1` or `team-2`, and one to identify the replica in the cluster, for example `a` or `b`. 
 It’s easiest to set [external labels](https://prometheus.io/docs/prometheus/latest/configuration/configuration/). The default labels are `cluster` and `__replica__`, for example:
 
 ```
