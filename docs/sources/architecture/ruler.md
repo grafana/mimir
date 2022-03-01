@@ -41,7 +41,7 @@ For a complete list of endpoints and example requests, refer to [ruler]({{< relr
 
 ## State
 
-The uses the backend configured via `-ruler-storage.backend`.
+The ruler uses the backend configured via `-ruler-storage.backend`.
 The ruler supports the following backends:
 
 - [Amazon S3](https://aws.amazon.com/s3): `-ruler-storage.backend=s3`
