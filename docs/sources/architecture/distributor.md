@@ -7,7 +7,7 @@ weight: 10
 # Distributor
 
 The distributor is a stateless component that receives time-series data from Prometheus.
-The distributor validates the data for correctness to ensure that it is within the configured limits for the given tenant.
+The distributor validates the data for correctness to ensure that it is within the configured limits for a given tenant.
 The distributor then divides the data into batches and sends it to multiple [ingesters]({{< relref "./ingester.md" >}}) in parallel, shards the series among ingesters, and replicates each series by the configured replication factor. By default, the configured replication factor is three.
 
 ## Validation
