@@ -43,9 +43,9 @@ In the event the HA tracker is enabled but incoming samples contain only one or 
 
 This section includes information about how to configure Prometheus and how to configure Grafana Mimir.
 
-### How to configure Prometheus within Grafana Mimir
+### How to configure Prometheus
 
-To configure Prometheus within Grafana Mimir, set two identifiers for each Prometheus server: one for the cluster, for example, `team-1` or `team-2`, and one to identify the replica in the cluster, for example `a` or `b`. 
+To configure Prometheus, set two identifiers for each Prometheus server: one for the cluster, for example, `team-1` or `team-2`, and one to identify the replica in the cluster, for example `a` or `b`. 
 It’s easiest to set [external labels](https://prometheus.io/docs/prometheus/latest/configuration/configuration/). The default labels are `cluster` and `__replica__`, for example:
 
 ```
