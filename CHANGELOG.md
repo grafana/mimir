@@ -6,6 +6,8 @@
 
 ### Mixin
 
+* [FEATURE] Mimir / Top tenants dashboard now has tenants ranked by rule group size and evaluation time. #1338
+
 ### Jsonnet
 
 ### Mimirtool
