@@ -20,7 +20,7 @@ Flow of the query in the system when using query-frontend (_without_ query-sched
 
 1. Query is received by query-frontend. The query-frontend can optionally split or shard it into multiple queries or serve it from the cache.
 2. Query frontend stores the query/ies into an in-memory queue, where it waits for some querier to pick it up.
-3. Querier picks up the query and executes it. If the query was split, multiple querier can pick up the work.
+3. Querier picks up the query and executes it. If the query was split or sharded, multiple queriers can pick up the work.
 4. Querier(s) send back result to query-frontend, which then aggregate results and forwards it to the client.
 
 ## Functions
