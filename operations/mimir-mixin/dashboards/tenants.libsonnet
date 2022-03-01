@@ -368,10 +368,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
       ($.row('Top rules') + { collapse: true })
       .addPanel(
         $.panel('Top $limit biggest groups') +
-        { sort: { col: 3, desc: true } } +
+        { sort: { col: 2, desc: true } } +
         $.tablePanel(
           [
-            'topk($limit, sum by (user, rule_group) (cortex_prometheus_rule_group_rules{%(job)s, user=~"$user"}))'
+            'topk($limit, sum by (rule_group) (cortex_prometheus_rule_group_rules{%(job)s, user=~"$user"}))'
             % { job: $.jobMatcher($._config.job_names.ruler) },
           ],
           { 'Value #A': { alias: 'rules' } }
@@ -379,10 +379,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
       .addPanel(
         $.panel('Top $limit slowest groups (last evaluation)') +
-        { sort: { col: 3, desc: true } } +
+        { sort: { col: 2, desc: true } } +
         $.tablePanel(
           [
-            'topk($limit, sum by (user, rule_group) (cortex_prometheus_rule_group_last_duration_seconds{%(job)s}))'
+            'topk($limit, sum by (rule_group) (cortex_prometheus_rule_group_last_duration_seconds{%(job)s, user=~"$user"}))'
             % { job: $.jobMatcher($._config.job_names.ruler) },
           ],
           { 'Value #A': { alias: 'seconds' } }
