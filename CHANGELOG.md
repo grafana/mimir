@@ -4,13 +4,15 @@
 
 * [CHANGE] Compactor: No longer upload debug meta files to object storage. #1257
 
+### Mixin
+
+* [FEATURE] Mimir / Top tenants dashboard now has tenants ranked by rule group size and evaluation time. #1338
+
+### Jsonnet
+
 ### Mimirtool
 
 * [CHANGE] `analyse` command has been renamed to `analyze`. #1318
-
-### Mixin
-
-### Jsonnet
 
 ## 2.0.0-rc.1
 
