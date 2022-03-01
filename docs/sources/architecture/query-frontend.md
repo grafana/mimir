@@ -43,6 +43,10 @@ The query-frontend supports caching query results and reuses them on subsequent 
 
 [^1]: While this increases the performance of Grafana Mimir, it violates the [PromQL conformance](https://prometheus.io/blog/2021/05/03/introducing-prometheus-conformance-program/) of Grafana Mimir. If PromQL conformance is not a priority, step alignment can be enabled by setting the `-query-frontend.align-querier-with-step=true`.
 
+### Query sharding
+
+The query-frontend also provides [query sharding]({{< relref "../guides/query-sharding.md" >}}).
+
 ## Why query-frontend scalability is limited
 
 When the query-scheduler is not used, the query-frontend scalability is limited by the configured number of workers per querier.
