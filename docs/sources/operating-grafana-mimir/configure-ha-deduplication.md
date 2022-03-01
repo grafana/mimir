@@ -20,11 +20,10 @@ If `team-1.a` goes down for a few minutes, Grafana Mimir’s HA sample handling 
 timeout ensures that too much data is not dropped before failover to the other replica. 
 
 > **Note:** In a scenario where the default scrape period is 15 seconds, and the timeouts in Grafana Mimir are set to the default values, 
-> when a leader-election failover occurs, you'll likely only lose a single scrape of data. For any rate query, make the rate window 
+> when a leader-election failover occurs, you'll likely only lose a single scrape of data. For any query using the `rate()` function, make the rate time interval 
 > at least four times that of the scrape period to account for any of these failover scenarios. 
-> For example with the default scrape period of 15 seconds, calculate rates longer than at least 1-minute intervals.
+> For example with the default scrape period of 15 seconds, use a rate time-interval at least 1-minute long.
 
-Repeat the leader-election process for `team-2`.
 
 ## Distributor high-availability (HA) tracker
 
@@ -41,11 +40,11 @@ In the event the HA tracker is enabled but incoming samples contain only one or 
 
 ## Configuration
 
-This section includes information about how to configure Prometheus within Grafana Mimir and how to configure Grafana Mimir.
+This section includes information about how to configure Prometheus and how to configure Grafana Mimir.
 
-### How to configure Prometheus within Grafana Mimir
+### How to configure Prometheus
 
-To configure Prometheus within Grafana Mimir, set two identifiers for each Prometheus server: one for the cluster, for example, `team-1` or `team-2`, and one to identify the replica in the cluster, for example `a` or `b`. 
+To configure Prometheus, set two identifiers for each Prometheus server: one for the cluster, for example, `team-1` or `team-2`, and one to identify the replica in the cluster, for example `a` or `b`. 
 It’s easiest to set [external labels](https://prometheus.io/docs/prometheus/latest/configuration/configuration/). The default labels are `cluster` and `__replica__`, for example:
 
 ```
