@@ -189,6 +189,15 @@ func (i InspectedEntry) GetValue(path string) (interface{}, error) {
 	return entry.FieldValue, nil
 }
 
+// MustGetValue does the same as GetValue, but panics if there's an error.
+func (i InspectedEntry) MustGetValue(path string) interface{} {
+	val, err := i.GetValue(path)
+	if err != nil {
+		panic(err)
+	}
+	return val
+}
+
 func (i *InspectedEntry) find(path string) (*InspectedEntry, error) {
 	if path == "" {
 		return i, nil
@@ -224,7 +233,7 @@ func cutFirstPathSegment(path string) (string, string) {
 func (i *InspectedEntry) SetValue(path string, val interface{}) error {
 	entry, err := i.find(path)
 	if err != nil {
-		return err
+		return errors.Wrap(ErrParameterNotFound, path)
 	}
 
 	entry.FieldValue = val

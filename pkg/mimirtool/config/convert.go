@@ -22,27 +22,12 @@ import (
 var CortexToMimirMapper = MultiMapper{
 	// first try to naively map keys from old config to same keys from new config
 	BestEffortDirectMapper{},
-	// next map
-	MapperFunc(func(source, target *InspectedEntry) error {
-		amDiscovery, err := source.GetValue("ruler.enable_alertmanager_discovery")
-		if err != nil {
-			return errors.Wrap(err, "could not convert ruler.enable_alertmanager_discovery")
-		}
-		if amDiscovery == nil || !amDiscovery.(bool) {
-			return nil
-		}
-
-		amURL, err := source.GetValue("ruler.alertmanager_url")
-		if err != nil {
-			return errors.Wrap(err, "could not get ruler.alertmanager_url")
-		}
-
-		amURLs := strings.Split(amURL.(string), ",")
-		for i := range amURLs {
-			amURLs[i] = "dnssrvnoa+" + amURLs[i]
-		}
-		return target.SetValue("ruler.alertmanager_url", strings.Join(amURLs, ","))
-	}),
+	// next map alertmanager URL in the ruler config
+	MapperFunc(alertmanagerURLMapperFunc),
+	// Removed `-alertmanager.storage.*` configuration options, use `-alertmanager-storage.*` instead. -alertmanager.storage.* should take precedence
+	alertmanagerStorageMapperFunc(DefaultCortexConfig()),
+	// Removed the support for `-ruler.storage.*`, use `-ruler-storage.*` instead. -ruler.storage.* should take precedence
+	rulerStorageMapperFunc(DefaultCortexConfig()),
 	// last apply any special treatment to other parameters
 	PathMapper{
 		PathMappings: map[string]Mapping{
@@ -60,70 +45,6 @@ var CortexToMimirMapper = MultiMapper{
 			"alertmanager.cluster.peer_timeout": RenameMapping("alertmanager.peer_timeout"),
 			"alertmanager.enable_api":           RenameMapping("alertmanager.enable_api"), // added because CLI flag was renamed
 			"ruler.enable_api":                  RenameMapping("ruler.enable_api"),        // added because CLI flag was renamed
-
-			// Removed `-alertmanager.storage.*` configuration options, use `-alertmanager-storage.*` instead.
-			"alertmanager.storage.azure.account_key":                      RenameMapping("alertmanager_storage.azure.account_key"),
-			"alertmanager.storage.azure.account_name":                     RenameMapping("alertmanager_storage.azure.account_name"),
-			"alertmanager.storage.azure.container_name":                   RenameMapping("alertmanager_storage.azure.container_name"),
-			"alertmanager.storage.azure.max_retries":                      RenameMapping("alertmanager_storage.azure.max_retries"),
-			"alertmanager.storage.gcs.bucket_name":                        RenameMapping("alertmanager_storage.gcs.bucket_name"),
-			"alertmanager.storage.local.path":                             RenameMapping("alertmanager_storage.local.path"),
-			"alertmanager.storage.s3.access_key_id":                       RenameMapping("alertmanager_storage.s3.access_key_id"),
-			"alertmanager.storage.s3.bucketnames":                         RenameMapping("alertmanager_storage.s3.bucket_name"), // if it is comma-delimited, then it's invalid
-			"alertmanager.storage.s3.endpoint":                            RenameMapping("alertmanager_storage.s3.endpoint"),    // if it is already set by the previous mapping, then err
-			"alertmanager.storage.s3.http_config.idle_conn_timeout":       RenameMapping("alertmanager_storage.s3.http.idle_conn_timeout"),
-			"alertmanager.storage.s3.http_config.insecure_skip_verify":    RenameMapping("alertmanager_storage.s3.http.insecure_skip_verify"),
-			"alertmanager.storage.s3.http_config.response_header_timeout": RenameMapping("alertmanager_storage.s3.http.response_header_timeout"),
-			"alertmanager.storage.s3.insecure":                            RenameMapping("alertmanager_storage.s3.insecure"),
-			"alertmanager.storage.s3.region":                              RenameMapping("alertmanager_storage.s3.region"),
-			"alertmanager.storage.s3.s3":                                  RenameMapping("alertmanager_storage.s3.endpoint"), // if it contains "inmemory://" this should be invalid, also how do we know if the URL contains "escaped Key and Secret encoded"?
-			"alertmanager.storage.s3.secret_access_key":                   RenameMapping("alertmanager_storage.s3.secret_access_key"),
-			"alertmanager.storage.s3.signature_version":                   RenameMapping("alertmanager_storage.s3.signature_version"),
-			"alertmanager.storage.s3.sse.kms_encryption_context":          RenameMapping("alertmanager_storage.s3.sse.kms_encryption_context"),
-			"alertmanager.storage.s3.sse.kms_key_id":                      RenameMapping("alertmanager_storage.s3.sse.kms_key_id"),
-			"alertmanager.storage.s3.sse.type":                            RenameMapping("alertmanager_storage.s3.sse.type"), // should not override if is already set
-			"alertmanager.storage.type":                                   RenameMapping("alertmanager_storage.backend"),
-
-			// Removed the support for `-ruler.storage.*`, use `-ruler-storage.*` instead.
-			"ruler.storage.azure.account_key":                      RenameMapping("ruler_storage.azure.account_key"),
-			"ruler.storage.azure.account_name":                     RenameMapping("ruler_storage.azure.account_name"),
-			"ruler.storage.azure.container_name":                   RenameMapping("ruler_storage.azure.container_name"),
-			"ruler.storage.azure.max_retries":                      RenameMapping("ruler_storage.azure.max_retries"),
-			"ruler.storage.gcs.bucket_name":                        RenameMapping("ruler_storage.gcs.bucket_name"),
-			"ruler.storage.local.directory":                        RenameMapping("ruler_storage.local.path"),
-			"ruler.storage.s3.access_key_id":                       RenameMapping("ruler_storage.s3.access_key_id"),
-			"ruler.storage.s3.bucketnames":                         RenameMapping("ruler_storage.s3.bucket_name"), // if it is comma-delimited, then it's invalid
-			"ruler.storage.s3.endpoint":                            RenameMapping("ruler_storage.s3.endpoint"),    // if it is already set by the previous mapping, then err
-			"ruler.storage.s3.http_config.idle_conn_timeout":       RenameMapping("ruler_storage.s3.http.idle_conn_timeout"),
-			"ruler.storage.s3.http_config.insecure_skip_verify":    RenameMapping("ruler_storage.s3.http.insecure_skip_verify"),
-			"ruler.storage.s3.http_config.response_header_timeout": RenameMapping("ruler_storage.s3.http.response_header_timeout"),
-			"ruler.storage.s3.insecure":                            RenameMapping("ruler_storage.s3.insecure"),
-			"ruler.storage.s3.region":                              RenameMapping("ruler_storage.s3.region"),
-			"ruler.storage.s3.s3":                                  RenameMapping("ruler_storage.s3.endpoint"), // if it contains "inmemory://" this should be invalid, also how do we know if the URL contains "escaped Key and Secret encoded"?
-			"ruler.storage.s3.secret_access_key":                   RenameMapping("ruler_storage.s3.secret_access_key"),
-			"ruler.storage.s3.signature_version":                   RenameMapping("ruler_storage.s3.signature_version"),
-			"ruler.storage.s3.sse.kms_encryption_context":          RenameMapping("ruler_storage.s3.sse.kms_encryption_context"),
-			"ruler.storage.s3.sse.kms_key_id":                      RenameMapping("ruler_storage.s3.sse.kms_key_id"),
-			"ruler.storage.s3.sse.type":                            RenameMapping("ruler_storage.s3.sse.type"), // should not override if is already set
-			"ruler.storage.swift.auth_url":                         RenameMapping("ruler_storage.swift.auth_url"),
-			"ruler.storage.swift.auth_version":                     RenameMapping("ruler_storage.swift.auth_version"),
-			"ruler.storage.swift.connect_timeout":                  RenameMapping("ruler_storage.swift.connect_timeout"),
-			"ruler.storage.swift.container_name":                   RenameMapping("ruler_storage.swift.container_name"),
-			"ruler.storage.swift.domain_id":                        RenameMapping("ruler_storage.swift.domain_id"),
-			"ruler.storage.swift.domain_name":                      RenameMapping("ruler_storage.swift.domain_name"),
-			"ruler.storage.swift.max_retries":                      RenameMapping("ruler_storage.swift.max_retries"),
-			"ruler.storage.swift.password":                         RenameMapping("ruler_storage.swift.password"),
-			"ruler.storage.swift.project_domain_id":                RenameMapping("ruler_storage.swift.project_domain_id"),
-			"ruler.storage.swift.project_domain_name":              RenameMapping("ruler_storage.swift.project_domain_name"),
-			"ruler.storage.swift.project_id":                       RenameMapping("ruler_storage.swift.project_id"),
-			"ruler.storage.swift.project_name":                     RenameMapping("ruler_storage.swift.project_name"),
-			"ruler.storage.swift.region_name":                      RenameMapping("ruler_storage.swift.region_name"),
-			"ruler.storage.swift.request_timeout":                  RenameMapping("ruler_storage.swift.request_timeout"),
-			"ruler.storage.swift.user_domain_id":                   RenameMapping("ruler_storage.swift.user_domain_id"),
-			"ruler.storage.swift.user_domain_name":                 RenameMapping("ruler_storage.swift.user_domain_name"),
-			"ruler.storage.swift.user_id":                          RenameMapping("ruler_storage.swift.user_id"),
-			"ruler.storage.swift.username":                         RenameMapping("ruler_storage.swift.username"),
-			"ruler.storage.type":                                   RenameMapping("ruler_storage.backend"),
 
 			"limits.max_chunks_per_query":      RenameMapping("limits.max_fetched_chunks_per_query"),
 			"querier.active_query_tracker_dir": RenameMapping("activity_tracker.filepath"),
@@ -227,17 +148,17 @@ func Convert(contents []byte, flags []string, m Mapper, sourceFactory, targetFac
 
 	err = addFlags(source, flags)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, errors.Wrap(err, "could not parse provided flags")
 	}
 
 	err = m.DoMap(source, target)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, errors.Wrap(err, "could not map old config to new config")
 	}
 
 	sourceDefaults, targetDefaults, err := prepareDefaults(m, sourceFactory, targetFactory)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, errors.Wrap(err, "could not prune defaults in new config")
 	}
 
 	pruneDefaults(target, sourceDefaults, targetDefaults)
@@ -262,7 +183,7 @@ func Convert(contents []byte, flags []string, m Mapper, sourceFactory, targetFac
 		_, _ = fmt.Fprintf(os.Stderr, "flag -%s is no longer supported", f)
 	}
 
-	return yamlBytes, newFlags, err
+	return yamlBytes, newFlags, nil
 }
 
 func convertFlags(flags []string, m Mapper, target *InspectedEntry, sourceFactory, targetFactory InspectedEntryFactory) ([]string, error) {
@@ -413,10 +334,7 @@ func pruneDefaults(fullParams, oldDefaults, newDefaults *InspectedEntry) {
 	var pathsToDelete []string
 
 	err := fullParams.Walk(func(path string, value interface{}) error {
-		newDefault, err := newDefaults.GetValue(path)
-		if err != nil {
-			return errors.Wrap(err, "expecting value "+path+" to have a default")
-		}
+		newDefault := newDefaults.MustGetValue(path)
 
 		oldDefault, err := oldDefaults.GetValue(path)
 		if err != nil {

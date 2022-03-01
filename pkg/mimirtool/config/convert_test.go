@@ -58,6 +58,26 @@ func TestConvert(t *testing.T) {
 			inFlagsFile:  "testdata/flags-precedence-old.flags.txt",
 			outFlagsFile: "testdata/flags-precedence-new.flags.txt",
 		},
+		{
+			name:    "ruler.storage maps to ruler_storage",
+			inFile:  "testdata/ruler.storage-old.yaml",
+			outFile: "testdata/ruler_storage-new.yaml",
+		},
+		{
+			name:    "ruler.storage maps to ruler.storage",
+			inFile:  "testdata/ruler_storage-old.yaml",
+			outFile: "testdata/ruler_storage-new.yaml",
+		},
+		{
+			name:    "ruler_storage has precedence over ruler.storage",
+			inFile:  "testdata/ruler_storage-precedence-old.yaml",
+			outFile: "testdata/ruler_storage-new.yaml",
+		},
+		{
+			name:    "alertmanager.storage has precedence over alertmanager_storage",
+			inFile:  "testdata/am-storage-precedence-old.yaml",
+			outFile: "testdata/am-storage-precedence-new.yaml",
+		},
 	}
 
 	for _, tc := range testCases {
