@@ -4,12 +4,12 @@ description: ""
 weight: 10000
 ---
 
-Cortex exposes an HTTP API for pushing and querying time series data, and operating the cluster itself.
+Grafana Mimir exposes an HTTP API that you can use to push and query time series data, and operate the cluster.
 
-For the sake of clarity, in this document we have grouped API endpoints by service, but keep in mind that they're exposed both when running Cortex in microservices and singly-binary mode:
+This document groups API endpoints by service. Note that the API endpoints are exposed when you run Grafana Mimir in microservices mode and single-binary mode:
 
-- **Microservices**: each service exposes its own endpoints
-- **Single-binary**: the Cortex process exposes all API endpoints for the services running internally
+- **Microservices**: Each service exposes its own endpoints.
+- **Single-binary**: The Grafana Mimir process exposes all API endpoints for the services that run internally.
 
 ## Endpoints
 
@@ -71,20 +71,22 @@ For the sake of clarity, in this document we have grouped API endpoints by servi
 
 ### Path prefixes
 
-In this documentation you will find the usage of some placeholders for the path prefixes, whenever the prefix is configurable. The following table shows the supported prefixes.
+The following table provides usage of placeholder path prefixes, for prefixes that are configurable.
 
-| Prefix                       | Default         | CLI Flag                         | YAML Config                      |
+| Prefix                       | Default         | CLI flag                         | YAML configuration               |
 | ---------------------------- | --------------- | -------------------------------- | -------------------------------- |
 | `<prometheus-http-prefix>`   | `/prometheus`   | `-http.prometheus-http-prefix`   | `api > prometheus_http_prefix`   |
 | `<alertmanager-http-prefix>` | `/alertmanager` | `-http.alertmanager-http-prefix` | `api > alertmanager_http_prefix` |
 
 ### Authentication
 
-When multi-tenancy is enabled, endpoints requiring authentication are expected to be called with the `X-Scope-OrgID` HTTP request header set to the tenant ID. Otherwise, when multi-tenancy is disabled, Cortex doesn't require any request to have the `X-Scope-OrgID` header.
+If you enable multi-tenancy, endpoints that require authentication must be called with the `X-Scope-OrgID` HTTP request header specified to the tenant ID.
 
-Multi-tenancy can be enabled/disabled via the CLI flag `-auth.multitenancy-enabled` or its respective YAML config option.
+If you disable multi-tenancy, Grafana Mimir doesn't require any request to include the `X-Scope-OrgID` header.
 
-_For more information, please refer to the dedicated [Authentication and Authorisation](../guides/authentication-and-authorisation.md) guide._
+Multi-tenancy can be enabled and disabled via the `-auth.multitenancy-enabled` flag `-auth.multitenancy-enabled` or its respective YAML configuration option.
+
+_For more information about authentication and authorization, refer to [Authentication and Authorisation](../guides/authentication-and-authorisation.md)._
 
 ## All services
 
@@ -96,7 +98,7 @@ The following API endpoints are exposed by all services.
 GET /
 ```
 
-Displays an index page with links to other web pages exposed by Cortex.
+This endpoint displays an index page with links to other web pages exposed by Grafana Mimir.
 
 ### Configuration
 
@@ -104,7 +106,9 @@ Displays an index page with links to other web pages exposed by Cortex.
 GET /config
 ```
 
-Displays the configuration currently applied to Cortex (in YAML format), including default values and settings via CLI flags. Sensitive data is masked. Please be aware that the exported configuration **doesn't include the per-tenant overrides**.
+This endpoint displays the configuration currently applied to Grafana Mimir including default values and settings via CLI flags. This endpoint provides the configuration in YAML format and masks sensitive data.
+
+> **Note**: The exported configuration doesn't include the per-tenant overrides.
 
 #### Different modes
 
@@ -112,13 +116,13 @@ Displays the configuration currently applied to Cortex (in YAML format), includi
 GET /config?mode=diff
 ```
 
-Displays the configuration currently applied to Cortex (in YAML format) as before, but containing only the values that differ from the default values.
+This endpoint displays the differences between the Grafana Mimir default configuration and the current configuration.
 
 ```
 GET /config?mode=defaults
 ```
 
-Displays the configuration using only the default values.
+This endpoint displays the default configuration values.
 
 ### Runtime Configuration
 
@@ -126,7 +130,8 @@ Displays the configuration using only the default values.
 GET /runtime_config
 ```
 
-Displays the runtime configuration currently applied to Cortex (in YAML format), including default values. Please be aware that the endpoint will be only available if Cortex is configured with the `-runtime-config.file` option.
+This endpoint displays the runtime configuration currently applied to Grafana Mimir, in YAML format, including default values.
+The endpoint is only available if Grafana Mimir is configured with the `-runtime-config.file` option.
 
 #### Different modes
 
@@ -134,7 +139,7 @@ Displays the runtime configuration currently applied to Cortex (in YAML format),
 GET /runtime_config?mode=diff
 ```
 
-Displays the runtime configuration currently applied to Cortex (in YAML format) as before, but containing only the values that differ from the default values.
+This endpoint displays the differences between the Grafana Mimir default runtime configuration and the current runtime configuration.
 
 ### Services status
 
@@ -142,7 +147,7 @@ Displays the runtime configuration currently applied to Cortex (in YAML format) 
 GET /services
 ```
 
-Displays a web page with the status of internal Cortex services.
+This endpoint displays a web page with the status of internal Grafana Mimir services.
 
 ### Readiness probe
 
@@ -150,7 +155,7 @@ Displays a web page with the status of internal Cortex services.
 GET /ready
 ```
 
-Returns 200 when Cortex is ready to serve traffic.
+This endoint returns 200 when Grafana Mimir is ready to serve traffic.
 
 ### Metrics
 
@@ -158,7 +163,7 @@ Returns 200 when Cortex is ready to serve traffic.
 GET /metrics
 ```
 
-Returns the metrics for the running Cortex service in the Prometheus exposition format.
+This endpoint returns the metrics for the running Grafana Mimir service in the Prometheus exposition format.
 
 ### Pprof
 
@@ -171,9 +176,9 @@ GET /debug/pprof/goroutine
 GET /debug/pprof/mutex
 ```
 
-Returns the runtime profiling data in the format expected by the pprof visualization tool. There are many things which can be profiled using this including heap, trace, goroutine, etc.
+This endpoint returns runtime profiling data in the format expected by the pprof visualization tool. There are many things that can be profiled using this endpoint, including heap, trace, goroutine, and so on.
 
-_For more information, please check out the official documentation of [pprof](https://golang.org/pkg/net/http/pprof/)._
+_For more information about pprof, refer to [pprof](https://golang.org/pkg/net/http/pprof/)._
 
 ### Fgprof
 
@@ -181,9 +186,9 @@ _For more information, please check out the official documentation of [pprof](ht
 GET /debug/fgprof
 ```
 
-Returns the sampling Go profiling data which allows you to analyze On-CPU as well as Off-CPU (e.g. I/O) time together.
+This endpoint returns the sampling Go profiling data that you can use to analyze On-CPU and Off-CPU (for example, I/O) time.
 
-_For more information, please check out the official documentation of [fgprof](https://github.com/felixge/fgprof)._
+_For more information about fgprof, refer to [fgprof](https://github.com/felixge/fgprof)._
 
 ### Build information
 
@@ -193,9 +198,11 @@ GET <prometheus-http-prefix>/api/v1/status/buildinfo
 GET <alertmanager-http-prefix>/api/v1/status/buildinfo
 ```
 
-Returns build information and information about enabled features (in JSON format). The format returned is not identical, but similar to the [Prometheus Build Information endpoint](https://prometheus.io/docs/prometheus/latest/querying/api/#build-information).
+This endpoint returns in JSON format information about a build and enabled features. The format returned is not identical, but is similar to the [Prometheus Build Information endpoint](https://prometheus.io/docs/prometheus/latest/querying/api/#build-information).
 
 ## Distributor
+
+The following endpoints relate to the distributor.
 
 ### Remote write
 
@@ -205,11 +212,18 @@ POST /api/v1/push
 
 Entrypoint for the [Prometheus remote write](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#remote_write).
 
-This API endpoint accepts an HTTP POST request with a body containing a request encoded with [Protocol Buffers](https://developers.google.com/protocol-buffers) and compressed with [Snappy](https://github.com/google/snappy). The definition of the protobuf message can be found in [`cortex.proto`](https://github.com/cortexproject/cortex/blob/master/pkg/cortexpb/cortex.proto#L12). The HTTP request should contain the header `X-Prometheus-Remote-Write-Version` set to `0.1.0`.
+This endpoint accepts an HTTP POST request with a body that contains a request encoded with [Protocol Buffers](https://developers.google.com/protocol-buffers) and compressed with [Snappy](https://github.com/google/snappy).
+You can find the definition of the protobuf message in [`cortex.proto`](https://github.com/cortexproject/cortex/blob/master/pkg/cortexpb/cortex.proto#L12).
+The HTTP request must contain the header `X-Prometheus-Remote-Write-Version` set to `0.1.0`.
 
-Also it is possible to skip the label name validation when sending series by doing two things: Enable API's flag `-api.skip-label-name-validation-header-enabled=true` and request must be sent with the header `X-Mimir-SkipLabelNameValidation: true`. This feature is useful to support the writes of downstream clients that have specific requirements.
+You can perform the following actions to skip the label name validation:
 
-_For more information, please check out Prometheus [Remote storage integrations](https://prometheus.io/docs/prometheus/latest/storage/#remote-storage-integrations)._
+- Enable API's flag `-api.skip-label-name-validation-header-enabled=true`
+- Ensure that the request is sent with the header `X-Mimir-SkipLabelNameValidation: true`
+
+This feature supports the writes of downstream clients that have specific requirements.
+
+_For more information, refer to Prometheus [Remote storage integrations](https://prometheus.io/docs/prometheus/latest/storage/#remote-storage-integrations)._
 
 _Requires [authentication](#authentication)._
 
@@ -219,7 +233,7 @@ _Requires [authentication](#authentication)._
 GET /distributor/ring
 ```
 
-Displays a web page with the distributor hash ring status, including the state, healthy and last heartbeat time of each distributor.
+This endpoint displays a web page with the distributor hash ring status, including the state, and the healthy and last heartbeat time of each distributor.
 
 ### Tenants stats
 
@@ -227,7 +241,7 @@ Displays a web page with the distributor hash ring status, including the state, 
 GET /distributor/all_user_stats
 ```
 
-Displays a web page with per-tenant statistics updated in realtime, including the total number of active series across all ingesters and the current ingestion rate (samples / sec).
+This endpoint displays a web page that shows per-tenant statistics updated in real time, including the total number of active series across all ingesters and the current ingestion rate displayed in samples per second.
 
 ### HA tracker status
 
@@ -235,9 +249,11 @@ Displays a web page with per-tenant statistics updated in realtime, including th
 GET /distributor/ha_tracker
 ```
 
-Displays a web page with the current status of the HA tracker, including the elected replica for each Prometheus HA cluster.
+This endpoint displays a web page with the current status of the HA tracker, including the elected replica for each Prometheus HA cluster.
 
 ## Ingester
+
+The following endpoints relate to the ingester.
 
 ### Flush chunks / blocks
 
@@ -245,11 +261,16 @@ Displays a web page with the current status of the HA tracker, including the ele
 GET,POST /ingester/flush
 ```
 
-Triggers a flush of the in-memory time series data (chunks or blocks) to the long-term storage. This endpoint triggers the flush also when `-ingester.flush-on-shutdown-with-wal-enabled` or `-blocks-storage.tsdb.flush-blocks-on-shutdown` are disabled.
+This endpoint triggers a flush of the in-memory chucks or blocks time series data to the long-term storage.
+This endpoint also triggers the flush when you disable `-ingester.flush-on-shutdown-with-wal-enabled` or `-blocks-storage.tsdb.flush-blocks-on-shutdown`.
 
-This endpoint accepts `tenant` parameter to specify tenant whose blocks are compacted and shipped. This parameter may be specified multiple times to select more tenants. If no tenant is specified, all tenants are flushed.
+This endpoint accepts a `tenant` parameter to specify the tenant whose blocks are compacted and shipped.
+This parameter might be specified multiple times to select more tenants.
+If no tenant is specified, all tenants are flushed.
 
-Flush endpoint also accepts `wait=true` parameter, which makes the call synchronous – it will only return after flushing has finished. Note that returned status code does not reflect the result of flush operation.
+The flush endpoint also accepts a `wait=true` parameter, which makes the call synchronous, and only returns a status code after flushing completes.
+
+> **Note**: The returned status code does not reflect the result of flush operation.
 
 ### Shutdown
 
@@ -257,7 +278,10 @@ Flush endpoint also accepts `wait=true` parameter, which makes the call synchron
 GET,POST /ingester/shutdown
 ```
 
-Flushes in-memory time series data from ingester to the long-term storage, and shuts down the ingester service. Notice that the other Cortex services are still running, and the operator (or any automation) is expected to terminate the process with a `SIGINT` / `SIGTERM` signal after the shutdown endpoint returns. In the meantime, `/ready` will not return 200. This endpoint will unregister the ingester from the ring even if `-ingester.ring.unregister-on-shutdown` is disabled.
+This endpoint flushes in-memory time series data from ingesters to the long-term storage, and then shuts down the ingester service.
+Other Grafana Mimir services remain running. After the shutdown endpoint returns, the operator or any automation that's used terminates the process with a `SIGINT` / `SIGTERM` signal.
+During this time, `/ready` does not return 200.
+This endpoint unregisters the ingester from the ring even if you disable `-ingester.ring.unregister-on-shutdown`.
 
 _This API endpoint is usually used by scale down automations._
 
@@ -267,7 +291,7 @@ _This API endpoint is usually used by scale down automations._
 GET /ingester/ring
 ```
 
-Displays a web page with the ingesters hash ring status, including the state, healthy and last heartbeat time of each ingester.
+This endpoint displays a web page with the ingesters hash ring status, including the state, and Thihealthy and last heartbeat time of each ingester.
 
 ## Querier / Query-frontend
 
@@ -279,9 +303,9 @@ The following endpoints are exposed both by the querier and query-frontend.
 GET,POST <prometheus-http-prefix>/api/v1/query
 ```
 
-Prometheus-compatible instant query endpoint.
+This endpoint is compatible with the Prometheus instant query endpoint.
 
-_For more information, please check out the Prometheus [instant query](https://prometheus.io/docs/prometheus/latest/querying/api/#instant-queries) documentation._
+_For more information about Prometheus instant queries, refer to [instant query](https://prometheus.io/docs/prometheus/latest/querying/api/#instant-queries)._
 
 _Requires [authentication](#authentication)._
 
@@ -291,9 +315,9 @@ _Requires [authentication](#authentication)._
 GET,POST <prometheus-http-prefix>/api/v1/query_range
 ```
 
-Prometheus-compatible range query endpoint. When the request is sent through the query-frontend, the query will be accelerated by query-frontend (results caching and execution parallelisation).
+This endpoint is compatible with the Prometheus range query endpoint. When the system sends a request through the query-frontend, the query-frontend uses caching and execution parallelization to accelerate the query.
 
-_For more information, please check out the Prometheus [range query](https://prometheus.io/docs/prometheus/latest/querying/api/#range-queries) documentation._
+_For more information about Prometheus range queries, refer to [range query](https://prometheus.io/docs/prometheus/latest/querying/api/#range-queries)._
 
 _Requires [authentication](#authentication)._
 
@@ -303,9 +327,9 @@ _Requires [authentication](#authentication)._
 GET,POST <prometheus-http-prefix>/api/v1/query_exemplars
 ```
 
-Prometheus-compatible exemplar query endpoint.
+This endpoint is compatible with the Prometheus exemplar query endpoint.
 
-_For more information, please check out the Prometheus [exemplar query](https://prometheus.io/docs/prometheus/latest/querying/api/#querying-exemplars) documentation._
+_For more information about Prometheus exemplar queries, refer to [exemplar query](https://prometheus.io/docs/prometheus/latest/querying/api/#querying-exemplars)._
 
 _Requires [authentication](#authentication)._
 
