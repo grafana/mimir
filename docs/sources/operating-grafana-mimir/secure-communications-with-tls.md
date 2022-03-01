@@ -122,7 +122,7 @@ To enable TLS for a component, use the client flag that contains the suffix `*.t
 
 The following Grafana Mimir components support TLS for inter-communication, which are shown with their corresponding configuration flag prefixes:
 
-- Query scheduler gRPC client used to connect to query-frontend: `-query-scheduler.grpc-client-config.*`
+- Query scheduler gRPC client used to connect to query-frontends: `-query-scheduler.grpc-client-config.*`
 - Querier gRPC client used to connect to store-gateways: `-querier.store-gateway-client.*`
 - Query-frontend gRPC client used to connect to query-schedulers: `-query-frontend.grpc-client-config.*`
 - Querier gRPC client used to connect to query-frontends and query-schedulers: `-querier.frontend-client.*`
