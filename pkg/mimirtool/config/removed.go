@@ -378,13 +378,15 @@ var removedConfigPaths = []string{
 	// All `-grpc-store.*` flags
 	"storage.grpc_store.server_address", // -grpc-store.server-address
 
+	// Alertmanager legacy sharding removed
+	"alertmanager.cluster.advertise_address",  // -alertmanager.cluster.advertise-address
+	"alertmanager.cluster.gossip_interval",    // -alertmanager.cluster.gossip-interval
+	"alertmanager.cluster.listen_address",     // -alertmanager.cluster.listen-address
+	"alertmanager.cluster.peers",              // -alertmanager.cluster.peers
+	"alertmanager.cluster.push_pull_interval", // -alertmanager.cluster.push-pull-interval
+	"alertmanager.sharding_enabled",           // -alertmanager.sharding-enabled
+
 	// alertmanager.storage removal
-	"alertmanager.cluster.advertise_address",          // -alertmanager.cluster.advertise-address
-	"alertmanager.cluster.gossip_interval",            // -alertmanager.cluster.gossip-interval
-	"alertmanager.cluster.listen_address",             // -alertmanager.cluster.listen-address
-	"alertmanager.cluster.peers",                      // -alertmanager.cluster.peers
-	"alertmanager.cluster.push_pull_interval",         // -alertmanager.cluster.push-pull-interval
-	"alertmanager.sharding_enabled",                   // -alertmanager.sharding-enabled
 	"alertmanager.storage.azure.download_buffer_size", // -alertmanager.storage.azure.download-buffer-size
 	"alertmanager.storage.azure.environment",          // -alertmanager.storage.azure.environment
 	"alertmanager.storage.azure.max_retry_delay",      // -alertmanager.storage.azure.max-retry-delay
@@ -472,9 +474,12 @@ var removedConfigPaths = []string{
 	"distributor.extra_queue_delay",          // -distributor.extra-query-delay
 	"distributor.shard_by_all_labels",        // -distributor.shard-by-all-labels
 	"distributor.sharding_strategy",          // -distributor.sharding-strategy
+	"frontend_worker.match_max_concurrent",   // -querier.worker-match-max-concurrent
 	"frontend_worker.parallelism",            // -querier.worker-parallelism
 	"http_prefix",                            // -http.prefix
+	"limits.enforce_metric_name",             // -validation.enforce-metric-name
 	"limits.ingestion_rate_strategy",         // -distributor.ingestion-rate-limit-strategy
+	"limits.max_samples_per_query",           // -ingester.max-samples-per-query
 	"limits.reject_old_samples",              // -validation.reject-old-samples
 	"limits.reject_old_samples_max_age",      // -validation.reject-old-samples.max-age
 	"querier.at_modifier_enabled",            // -querier.at-modifier-enabled
@@ -497,4 +502,7 @@ var removedCLIOptions = []string{
 	"ingester.lifecycler.id",
 	"ingester.lifecycler.port",
 	"frontend.cache-split-interval",
+	"ingester-client.expected-samples-per-series",
+	"ingester-client.expected-labels",
+	"ingester-client.expected-timeseries",
 }

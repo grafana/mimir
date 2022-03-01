@@ -90,8 +90,6 @@ var CortexToMimirMapper = MultiMapper{
 			"ingester.lifecycler.min_ready_duration":                         RenameMapping("ingester.ring.min_ready_duration"),
 			"ingester.lifecycler.num_tokens":                                 RenameMapping("ingester.ring.num_tokens"),
 			"ingester.lifecycler.observe_period":                             RenameMapping("ingester.ring.observe_period"),
-			"ingester.lifecycler.readiness_check_ring_health":                RenameMapping("ingester.ring.readiness_check_ring_health"),
-			"ingester.lifecycler.ring.excluded_zones":                        RenameMapping("ingester.ring.excluded_zones"),
 			"ingester.lifecycler.ring.heartbeat_timeout":                     RenameMapping("ingester.ring.heartbeat_timeout"),
 			"ingester.lifecycler.ring.kvstore.consul.acl_token":              RenameMapping("ingester.ring.kvstore.consul.acl_token"),
 			"ingester.lifecycler.ring.kvstore.consul.consistent_reads":       RenameMapping("ingester.ring.kvstore.consul.consistent_reads"),
@@ -117,7 +115,6 @@ var CortexToMimirMapper = MultiMapper{
 			"ingester.lifecycler.ring.kvstore.prefix":                        RenameMapping("ingester.ring.kvstore.prefix"),
 			"ingester.lifecycler.ring.kvstore.store":                         RenameMapping("ingester.ring.kvstore.store"),
 			"ingester.lifecycler.ring.replication_factor":                    RenameMapping("ingester.ring.replication_factor"),
-			"ingester.lifecycler.ring.zone_awareness_enabled":                RenameMapping("ingester.ring.zone_awareness_enabled"),
 			"ingester.lifecycler.tokens_file_path":                           RenameMapping("ingester.ring.tokens_file_path"),
 			"ingester.lifecycler.unregister_on_shutdown":                     RenameMapping("ingester.ring.unregister_on_shutdown"),
 
