@@ -6,7 +6,7 @@ weight: 10
 
 # Querier
 
-A querier is a stateless component that uses the [Prometheus Query Language](https://prometheus.io/docs/prometheus/latest/querying/basics/) to execute queries and fetch time series and labels on the read path.
+The querier is a stateless component that uses evaluates [Prometheus Query Language](https://prometheus.io/docs/prometheus/latest/querying/basics/) by fetching time series and labels on the read path.
 
 The querier uses the [store-gateway]({{< relref "./store-gateway.md" >}}) component to query the [long-term storage]({{< relref "./_index.md#long-term-storage" >}}) and the [ingester]({{< relref "./ingester.md" >}}) component to query recently written data.
 
