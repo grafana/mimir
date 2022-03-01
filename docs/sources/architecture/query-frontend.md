@@ -21,7 +21,7 @@ Flow of the query in the system when using query-frontend (_without_ query-sched
 1. Query is received by query-frontend. The query-frontend can optionally split or shard it into multiple queries or serve it from the cache.
 2. Query frontend stores the query/ies into an in-memory queue, where it waits for some querier to pick it up.
 3. Querier picks up the query and executes it. If the query was split, multiple querier can pick up the work.
-4. Querier(s) send back result to query-frontend, which then forwards it to the client.
+4. Querier(s) send back result to query-frontend, which then aggregate results and forwards it to the client.
 
 ## Functions
 
@@ -43,11 +43,7 @@ The query-frontend supports caching query results and reuses them on subsequent 
 
 [^1]: While this increases the performance of Grafana Mimir, it violates the [PromQL conformance](https://prometheus.io/blog/2021/05/03/introducing-prometheus-conformance-program/) of Grafana Mimir. If PromQL conformance is not a priority, step alignment can be enabled by setting the `-query-frontend.align-querier-with-step=true`.
 
-## Scaling
-
-Scaling the query-frontend poses some challenges. These challenges are outlined below. Deploy the [query-scheduler]({{< relref "query-scheduler.md" >}}) to overcome them.
-
-### Challenges
+## Why query-frontend scalability is limited
 
 When the query-scheduler is not used, the query-frontend scalability is limited by the configured number of workers per querier.
 
@@ -65,6 +61,6 @@ This may cause a suboptimal utilization of querier resources, leading to poor qu
 
 ## DNS Configuration / Readiness
 
-When a query-frontend is first started it does not immediately have queriers attached to it. The [`/ready` endpoint]({{< relref "../reference-http-api/#readiness-probe" >}}) returns HTTP 200 status code only when the query-frontend has at least one querier attached and is ready to serve queries. Make sure to configure this endpoint as a healthcheck in your load balancer; otherwise, a query-frontend scale out event might result in failed queries or high latency until queriers attach.
+When a query-frontend is first started it does not immediately have queriers attached to it. The [`/ready` endpoint]({{< relref "../reference-http-api/#readiness-probe" >}}) returns HTTP 200 status code only when the query-frontend has at least one querier attached and is ready to serve queries. Make sure to configure this endpoint as a healthcheck in your load balancer; otherwise, a query-frontend scale out event might result in failed queries or high latency until queriers connect to the query-frontend.
 
-When using query-frontend with query-scheduler, `/ready` will report HTTP 200 status code only after the query-frontend discovers some query-schedulers via DNS resolution.
+When using query-frontend with query-scheduler, `/ready` will report HTTP 200 status code only after the query-frontend connects to at least a query-scheduler.
