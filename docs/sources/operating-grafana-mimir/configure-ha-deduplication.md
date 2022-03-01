@@ -4,25 +4,33 @@ description: "How to configure Grafana Mimir to handle HA Prometheus server dedu
 weight: 10
 ---
 
-# Configure HA deduplication
+# Configure high-availability deduplication
 
-## Context
+You can have more than one Prometheus instance that scrapes the same metrics for redundancy. Grafana Mimir already performs replication for redundancy,
+so you do not need to ingest the same data twice. In Grafana Mimir, you can deduplicate the data that you receive from HA pairs of Prometheus instances.
 
-You can have more than a single Prometheus scraping the same metrics for redundancy. Grafana Mimir already does replication for redundancy and it doesn't make sense to ingest the same data twice. So in Grafana Mimir, we made sure we can dedupe the data we receive from HA Pairs of Prometheus. We do this via the following:
+Assume that there are two teams, each running their own Prometheus instance, which monitors different services: Prometheus `T1` and Prometheus `T2`.
+If the teams are running HA pairs, the individual Prometheus instances would be `T1.a` and `T1.b`, and `T2.a` and `T2.b`.
 
-Assume that there are two teams, each running their own Prometheus, monitoring different services. Let's call the Prometheis `T1` and `T2`. Now, if the teams are running HA pairs, let's call the individual Prometheis, `T1.a`, `T1.b` and `T2.a` and `T2.b`.
+Grafana Mimir only ingests from either `T1.a` or `T1.b`, and only from `T2.a` or `T2.b`. It does this by electing a leader replica for each 
+cluster of Prometheus. For example, in the case of `T1`, the leader replica would be `T1.a`. As long as `T1.a` is the leader, the samples
+that `T1.b` receives are dropped. And if Grafana Mimir does not see any new samples from `T1.a` for a short period of time (30 seconds by default), it switches the leader to `T1.b`.
 
-Grafana Mimir only ingests from one of `T1.a` and `T1.b`, and only from one of `T2.a` and `T2.b`. It does this by electing a leader replica for each cluster of Prometheus. For example, in the case of `T1`, let it be `T1.a`. As long as `T1.a` is the leader, we drop the samples received from `T1.b`. And if Grafana Mimir sees no new samples from `T1.a` for a short period (30s by default), it'll switch the leader to be `T1.b`.
+If `T1.a` goes down for a few minutes, Grafana Mimir’s HA sample handling will have switched and elected `T1.b` as the leader. The failure 
+timeout ensures that too much data is not dropped before failover to the other replica. 
 
-This means if `T1.a` goes down for a few minutes Grafana Mimir's HA sample handling will have switched and elected `T1.b` as the leader. The failure timeout ensures we don't drop too much data before failover to the other replica. Note that with the default scrape period of 15s, and the default timeouts in Grafana Mimir, in most cases you'll only lose a single scrape of data in the case of a leader election failover. For any rate queries the rate window should be at least 4x the scrape period to account for any of these failover scenarios, for example with the default scrape period of 15s you should calculate rates over at least 1m periods.
+> **Note:** In a scenario where the default scrape period is 15 seconds, and the timeouts in Grafana Mimir are set to the default values, 
+> when a leader-election failover occurs, you'll likely only lose a single scrape of data. For any rate query, make the rate window 
+> at least four times that of the scrape period to account for any of these failover scenarios. 
+> For example with the default scrape period of 15 seconds, calculate rates longer than at least 1-minute intervals.
 
-Now we do the same leader election process `T2`.
+Repeat the leader-election process for `T2`.
 
-## Distributor High Availability (HA) Tracker
+## Distributor high-availability (HA) tracker
 
-The [distributor]({{<relref "../architecture/distributor.md">}}) includes a High Availability (HA) Tracker.
+The [distributor]({{<relref "../architecture/distributor.md">}}) includes a high-availability (HA) tracker.
 
-The HA Tracker deduplicates incoming samples based on a cluster and replica label expected on each incoming series.
+The HA tracker deduplicates incoming samples based on a cluster and replica label expected on each incoming series.
 The cluster label uniquely identifies the cluster of redundant Prometheus servers for a given tenant.
 The replica label uniquely identifies the replica within the Prometheus cluster.
 Incoming samples are considered duplicated (and thus dropped) if received from any replica which is not the currently elected as leader within a cluster.
