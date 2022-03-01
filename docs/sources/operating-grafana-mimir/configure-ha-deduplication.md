@@ -41,9 +41,12 @@ In the event the HA tracker is enabled but incoming samples contain only one or 
 
 ## Configuration
 
-### How to configure Prometheus
+This section includes information about how to configure Prometheus within Grafana Mimir and how to configure Grafana Mimir.
 
-For Grafana Mimir to achieve this, set two identifiers for each Prometheus server: one for the cluster (`T1` or `T2`, for example), and one to identify the replica in the cluster (`a` or `b`, for example). The easiest way to do this is to set [external labels](https://prometheus.io/docs/prometheus/latest/configuration/configuration/). The default labels are `cluster` and `__replica__`. For example:
+### How to configure Prometheus within Grafana Mimir
+
+To configure Prometheus within Grafana Mimir, set two identifiers for each Prometheus server: one for the cluster, for example, `T1` or `T2`, and one to identify the replica in the cluster, for example `a` or `b`. 
+It’s easiest to set [external labels](https://prometheus.io/docs/prometheus/latest/configuration/configuration/). The default labels are `cluster` and `__replica__`, for example:
 
 ```
 global:
@@ -61,11 +64,11 @@ global:
     __replica__: replica2
 ```
 
-Note: These are external labels and have nothing to do with `remote_write` config.
+> **Note:** The preceding labels are external labels and have nothing to do with `remote_write` configuration.
 
-These two label names are configurable on a per-tenant basis within Grafana Mimir. For example, if the label name of one cluster is used by some workloads, set the label name of another cluster to be something else that uniquely identifies the second cluster. Some examples might include, `team`, `cluster`, or `prometheus`.
+These two label names are configurable on a per-tenant basis within Grafana Mimir. For example, if the label name of one cluster is used by some workloads, set the label name of another cluster to be something else that uniquely identifies the second cluster. Some examples include, `team`, `cluster`, or `prometheus`.
 
-The replica label should be set so that the value for each Prometheus is unique in that cluster. Note: Grafana Mimir drops this label when ingesting data, but preserves the cluster label. This way, your timeseries won't change when replicas change.
+The replica label should be set so that the value for each Prometheus cluster is unique in that cluster. Note: Grafana Mimir drops this label when ingesting data, but preserves the cluster label. This way, your timeseries won't change when replicas change.
 
 ### How to configure Grafana Mimir
 
@@ -88,13 +91,13 @@ Alternatively, you can enable the HA Tracker only on a per-tenant basis, keeping
 The HA Tracker requires a key-value (KV) store to coordinate which replica is currently elected.
 The supported KV stores for the HA tracker are `consul` and `etcd`.
 
-> Note: `memberlist` is not supported. Memberlist-based KV stores propagate updates using the gossip protocol, which is too slow for HA tracker. The result would be that different distributors may see a different Prometheus server elected as leaders at the same time.
+> **Note:** `memberlist` is not supported. Memberlist-based KV stores propagate updates using the gossip protocol, which is too slow for HA tracker. The result would be that different distributors may see a different Prometheus server elected as leaders at the same time.
 
 The following CLI flags (and their respective YAML config options) are available to configure the HA tracker KV store:
 
-- `-distributor.ha-tracker.store`: The backend storage to use (eg. `consul` or `etcd`).
-- `-distributor.ha-tracker.consul.*`: The Consul client configuration (should be used only if `consul` is the configured backend storage).
-- `-distributor.ha-tracker.etcd.*`: The etcd client configuration (should be used only if `etcd` is the configured backend storage).
+- `-distributor.ha-tracker.store`: The backend storage to use, which is either `consul` or `etcd`.
+- `-distributor.ha-tracker.consul.*`: The Consul client configuration. Only use this if you have defined `consul` as your backend storage.
+- `-distributor.ha-tracker.etcd.*`: The etcd client configuration. Only use this if you have defined `etcd` as your backend storage.
 
 #### Configure expected label names for cluster and replica
 
@@ -106,11 +109,11 @@ Configure the default cluster and replica label names using the following CLI fl
 - `-distributor.ha-tracker.cluster`: name of the label whose value uniquely identifies a Prometheus HA cluster (defaults to `cluster`).
 - `-distributor.ha-tracker.replica`: name of the label whose value uniquely identifies a Prometheus replica within the HA cluster (defaults to `__replica__`).
 
-_The HA label names can be overridden on a per-tenant basis by setting `ha_cluster_label` and `ha_replica_label` in the overrides section of the runtime configuration._
+> **Note:** The HA label names can be overridden on a per-tenant basis by setting `ha_cluster_label` and `ha_replica_label` in the overrides section of the runtime configuration.
 
 #### Example configuration
 
-The following configuration snippet shows an example to enable the HA tracker for all tentants via YAML config file:
+The following configuration example snippet enables the HA tracker for all tentants via a YAML configuration file:
 
 ```yaml
 limits:
@@ -123,4 +126,4 @@ distributor:
       [consul | etcd: <config>]
 ```
 
-For further configuration file documentation, see the [distributor section](../configuration/config-file-reference.md#distributor). The HA Tracker flags are all prefixed with `-distributor.ha-tracker.*`.
+For more information, see [distributor](../configuration/config-file-reference.md#distributor). The HA tracker flags are prefixed with `-distributor.ha-tracker.*`.
