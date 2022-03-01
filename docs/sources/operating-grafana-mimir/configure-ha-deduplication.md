@@ -12,18 +12,17 @@ so you do not need to ingest the same data twice. In Grafana Mimir, you can dedu
 Assume that there are two teams, each running their own Prometheus instance, which monitors different services: Prometheus `team-1` and Prometheus `team-2`.
 If the teams are running HA pairs, the individual Prometheus instances would be `team-1.a` and `team-1.b`, and `team-2.a` and `team-2.b`.
 
-Grafana Mimir only ingests from either `team-1.a` or `team-1.b`, and only from `team-2.a` or `team-2.b`. It does this by electing a leader replica for each 
+Grafana Mimir only ingests from either `team-1.a` or `team-1.b`, and only from `team-2.a` or `team-2.b`. It does this by electing a leader replica for each
 cluster of Prometheus. For example, in the case of `team-1`, the leader replica would be `team-1.a`. As long as `team-1.a` is the leader, the samples
 that `team-1.b` receives are dropped. And if Grafana Mimir does not see any new samples from `team-1.a` for a short period of time (30 seconds by default), it switches the leader to `team-1.b`.
 
-If `team-1.a` goes down for a few minutes, Grafana Mimir’s HA sample handling will have switched and elected `team-1.b` as the leader. The failure 
-timeout ensures that too much data is not dropped before failover to the other replica. 
+If `team-1.a` goes down for a few minutes, Grafana Mimir’s HA sample handling will have switched and elected `team-1.b` as the leader. The failure
+timeout ensures that too much data is not dropped before failover to the other replica.
 
-> **Note:** In a scenario where the default scrape period is 15 seconds, and the timeouts in Grafana Mimir are set to the default values, 
-> when a leader-election failover occurs, you'll likely only lose a single scrape of data. For any query using the `rate()` function, make the rate time interval 
-> at least four times that of the scrape period to account for any of these failover scenarios. 
+> **Note:** In a scenario where the default scrape period is 15 seconds, and the timeouts in Grafana Mimir are set to the default values,
+> when a leader-election failover occurs, you'll likely only lose a single scrape of data. For any query using the `rate()` function, make the rate time interval
+> at least four times that of the scrape period to account for any of these failover scenarios.
 > For example with the default scrape period of 15 seconds, use a rate time-interval at least 1-minute long.
-
 
 ## Distributor high-availability (HA) tracker
 
@@ -44,7 +43,7 @@ This section includes information about how to configure Prometheus and how to c
 
 ### How to configure Prometheus
 
-To configure Prometheus, set two identifiers for each Prometheus server: one for the cluster, for example, `team-1` or `team-2`, and one to identify the replica in the cluster, for example `a` or `b`. 
+To configure Prometheus, set two identifiers for each Prometheus server: one for the cluster, for example, `team-1` or `team-2`, and one to identify the replica in the cluster, for example `a` or `b`.
 It’s easiest to set [external labels](https://prometheus.io/docs/prometheus/latest/configuration/configuration/). The default labels are `cluster` and `__replica__`, for example:
 
 ```
@@ -65,8 +64,8 @@ global:
 
 > **Note:** The preceding labels are external labels and have nothing to do with `remote_write` configuration.
 
-These two label names are configurable on a per-tenant basis within Grafana Mimir. For example, if the label name of one cluster is used by 
-some workloads, set the label name of another cluster to be something else that uniquely identifies the second cluster. Some examples 
+These two label names are configurable on a per-tenant basis within Grafana Mimir. For example, if the label name of one cluster is used by
+some workloads, set the label name of another cluster to be something else that uniquely identifies the second cluster. Some examples
 include, `team`, `cluster`, or `prometheus`.
 
 Set the replica label so that the value for each Prometheus cluster is unique in that cluster.
@@ -90,6 +89,7 @@ To enable it for all tenants, set `-distributor.ha-tracker.enable-for-all-users=
 Alternatively, you can enable the HA tracker only on a per-tenant basis, keeping the default `-distributor.ha-tracker.enable-for-all-users=false` and overriding it on a per-tenant basis setting `accept_ha_samples` in the overrides section of the runtime configuration.
 
 #### Configure the HA tracker KV store
+
 e
 The HA tracker requires a key-value (KV) store to coordinate which replica is currently elected.
 The supported KV stores for the HA tracker are `consul` and `etcd`.
