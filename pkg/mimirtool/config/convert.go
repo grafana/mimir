@@ -15,6 +15,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/mimir"
+	"github.com/grafana/mimir/tools/doc-generator/parse"
 )
 
 // CortexToMimirMapper maps from cortex-1.11.0 to mimir-2.0.0 configurations
@@ -63,9 +64,14 @@ type InspectedEntryFactory func() *InspectedEntry
 // Convert uses sourceFactory and targetFactory to also prune the default values from the resulting config.
 // Convert returns the marshalled YAML config in the target schema.
 func Convert(contents []byte, flags []string, m Mapper, sourceFactory, targetFactory InspectedEntryFactory) ([]byte, []string, error) {
+	removedFieldPaths, removedFlags, err := reportDeletedFlags(contents, flags, sourceFactory)
+	if err != nil {
+		return nil, nil, err
+	}
+
 	source, target := sourceFactory(), targetFactory()
 
-	err := yaml.Unmarshal(contents, &source)
+	err = yaml.Unmarshal(contents, &source)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "could not unmarshal old Cortex configuration file")
 	}
@@ -98,6 +104,13 @@ func Convert(contents []byte, flags []string, m Mapper, sourceFactory, targetFac
 	yamlBytes, err := yaml.Marshal(target)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "could not marshal converted config to YAML")
+	}
+
+	for _, f := range removedFieldPaths {
+		_, _ = fmt.Fprintln(os.Stderr, "field", f, "is no longer supported")
+	}
+	for _, f := range removedFlags {
+		_, _ = fmt.Fprintf(os.Stderr, "flag -%s is no longer supported", f)
 	}
 
 	return yamlBytes, newFlags, err
@@ -159,15 +172,7 @@ func mapOldFlagsToNewPaths(flags []string, m Mapper, sourceFactory, targetFactor
 	if err != nil {
 		return nil, err
 	}
-	flagIsSet := make(map[string]bool, len(flags))
-	for _, f := range flags {
-		flagName := f
-		flagName = strings.TrimPrefix(flagName, "-")
-		flagName = strings.TrimPrefix(flagName, "-") // trim the prefix twice in case the flag was passed as --flag instead of -flag
-		flagName = strings.SplitN(flagName, "=", 2)[0]
-		flagName = strings.SplitN(flagName, " ", 2)[0]
-		flagIsSet[flagName] = true
-	}
+	flagIsSet := parseFlagNames(flags)
 
 	var parametersWithoutProvidedFlags []string
 	err = source.Walk(func(path string, value interface{}) error {
@@ -228,6 +233,21 @@ func mapOldFlagsToNewPaths(flags []string, m Mapper, sourceFactory, targetFactor
 	return remainingFlags, nil
 }
 
+// returns map where keys are flag names found in flags, and value is "true".
+func parseFlagNames(flags []string) map[string]bool {
+	names := map[string]bool{}
+	for _, f := range flags {
+		name := f
+		name = strings.TrimPrefix(name, "-")
+		name = strings.TrimPrefix(name, "-") // trim the prefix twice in case the flag was passed as --flag instead of -flag
+		name = strings.SplitN(name, "=", 2)[0]
+		name = strings.SplitN(name, " ", 2)[0]
+		names[name] = true
+	}
+
+	return names
+}
+
 // prepareDefaults maps source defaults to target defaults the same way regular source config is mapped to target config.
 // This enables lookups of cortex default values using their mimir paths.
 func prepareDefaults(m Mapper, sourceFactory, targetFactory InspectedEntryFactory) (cortexDefaults, mimirDefaults *InspectedEntry, err error) {
@@ -282,6 +302,67 @@ func pruneDefaults(fullParams, oldDefaults, newDefaults *InspectedEntry) {
 	}
 }
 
+func reportDeletedFlags(contents []byte, flags []string, sourceFactory InspectedEntryFactory) (removedFieldPaths, removedFlags []string, _ error) {
+	cortexConfigWithNoValues := func() (*InspectedEntry, error) {
+		s := sourceFactory()
+
+		return s, s.Walk(func(path string, value interface{}) error {
+			return s.SetValue(path, nil)
+		})
+	}
+
+	// Find YAML options that user is using, but are no longer supported.
+	{
+		s, err := cortexConfigWithNoValues()
+		if err != nil {
+			return nil, nil, err
+		}
+
+		if err := yaml.Unmarshal(contents, &s); err != nil {
+			return nil, nil, errors.Wrap(err, "could not unmarshal Cortex configuration file")
+		}
+
+		for _, path := range removedConfigPaths {
+			val, _ := s.GetValue(path)
+			if val != nil {
+				removedFieldPaths = append(removedFieldPaths, path)
+			}
+		}
+	}
+
+	// Find CLI flags that user is using, but are no longer supported.
+	{
+		s, err := cortexConfigWithNoValues()
+		if err != nil {
+			return nil, nil, err
+		}
+
+		if err := addFlags(s, flags); err != nil {
+			return nil, nil, err
+		}
+
+		for _, path := range removedConfigPaths {
+			val, _ := s.GetValue(path)
+			if val != nil {
+				fl, _ := s.GetFlag(path)
+				if fl != "" {
+					removedFlags = append(removedFlags, fl)
+				}
+			}
+		}
+	}
+
+	// Report any provided CLI flags that cannot be found in YAML, and that are not supported anymore.
+	providedFlags := parseFlagNames(flags)
+	for _, f := range removedCLIOptions {
+		if providedFlags[f] {
+			removedFlags = append(removedFlags, f)
+		}
+	}
+
+	return
+}
+
 func DefaultMimirConfig() *InspectedEntry {
 	cfg, err := DefaultValueInspector.InspectConfig(&mimir.Config{})
 	if err != nil {
@@ -293,11 +374,28 @@ func DefaultMimirConfig() *InspectedEntry {
 //go:embed descriptors/cortex-v1.11.0.json
 var oldCortexConfig []byte
 
+//go:embed descriptors/cortex-v1.11.0-flags-only.json
+var oldCortexConfigFlagsOnly []byte
+
+const notInYaml = "not-in-yaml"
+
 func DefaultCortexConfig() *InspectedEntry {
 	cfg := &InspectedEntry{}
-	err := json.Unmarshal(oldCortexConfig, cfg)
-	if err != nil {
+	if err := json.Unmarshal(oldCortexConfig, cfg); err != nil {
 		panic(err)
 	}
+
+	cfgFlagsOnly := &InspectedEntry{}
+	if err := json.Unmarshal(oldCortexConfigFlagsOnly, cfgFlagsOnly); err != nil {
+		panic(err)
+	}
+
+	cfg.BlockEntries = append(cfg.BlockEntries, &InspectedEntry{
+		Kind:         parse.KindBlock,
+		Name:         notInYaml,
+		Required:     false,
+		Desc:         "Flags not available in YAML file.",
+		BlockEntries: cfgFlagsOnly.BlockEntries,
+	})
 	return cfg
 }

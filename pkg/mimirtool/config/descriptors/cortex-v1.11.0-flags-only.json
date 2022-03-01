@@ -1,0 +1,35 @@
+{
+  "kind": "block",
+  "name": "",
+  "required": false,
+  "desc": "",
+  "blockEntries": [
+    {
+      "kind": "field",
+      "name": "schema-config-file",
+      "required": false,
+      "desc": "The path to the schema config file. The schema config is used only when running Cortex with the chunks storage.",
+      "fieldValue": "",
+      "fieldFlag": "schema-config-file",
+      "fieldType": "string"
+    },
+    {
+      "kind": "field",
+      "name": "ingester-chunk-encoding",
+      "required": false,
+      "desc": "Encoding version to use for chunks.",
+      "fieldValue": "",
+      "fieldFlag": "ingester.chunk-encoding",
+      "fieldType": "string"
+    },
+    {
+      "kind": "field",
+      "name": "querier-query-parallelism",
+      "required": false,
+      "desc": "Max subqueries run in parallel per higher-level query.",
+      "fieldValue": 100,
+      "fieldFlag": "querier.query-parallelism",
+      "fieldType": "int"
+    }
+  ]
+}
