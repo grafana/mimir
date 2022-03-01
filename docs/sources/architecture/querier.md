@@ -87,7 +87,7 @@ Using the metadata cache reduces the number of API calls to long-term storage an
 
 To enable the metadata cache, set `-blocks-storage.bucket-store.metadata-cache.backend`.
 
-> **Note**: Currently, only `memcached` backend is supported. The Memcached client includes additional configuration available via flags that begin with the prefix `-blocks-storage.bucket-store.metadata-cache.memcached.*`.
+> **Note**: Currently, only the `memcached` backend is supported. The Memcached client includes additional configuration available via flags that begin with the prefix `-blocks-storage.bucket-store.metadata-cache.memcached.*`.
 
 Additional flags for configuring the metadata cache begin with the prefix `-blocks-storage.bucket-store.metadata-cache.*`. By configuring the TTL to zero or a negative value, caching of given item type is disabled.
 
