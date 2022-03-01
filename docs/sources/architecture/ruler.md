@@ -1,10 +1,10 @@
 ---
-title: "Ruler"
+title: "(Optional) Ruler"
 description: ""
 weight: 20
 ---
 
-# Ruler
+# (Optional) Ruler
 
 The ruler is an optional component that evaluates PromQL expressions defined in recording and alerting rules.
 Each tenant has a set of recording and alerting rules and can group those rules into namespaces.
@@ -14,6 +14,7 @@ Each tenant has a set of recording and alerting rules and can group those rules 
 The ruler evaluates the expressions in the recording rules at regular intervals and writes the results back to the ingesters.
 The ruler has a built-in querier that evaluates the PromQL expressions and a built-in distributor, so that it can write directly to the ingesters.
 Configuration of the built-in querier and distributor uses their respective configuration parameters:
+
 - [Querier]({{< relref "../configuration/reference-configuration-parameters.md#querier" >}})
 - [Distributor]({{< relref "../configuration/reference-configuration-parameters.md#distributor" >}})
 
@@ -23,6 +24,7 @@ The ruler evaluates the expressions in alerting rules at regular intervals and i
 If an alerting rule has a defined `for` duration, it enters the **PENDING** (`pending`) state.
 After the alert has been active for the entire `for` duration, it enters the **FIRING** (`firing`) state.
 The ruler then notifies Alertmanagers of any **FIRING** (`firing`) alerts.
+
 Configure the addresses of Alertmanagers with the `-ruler.alertmanager-url` flag, which supports the DNS service discovery format.
 For more information about DNS service discovery, refer to [Supported discovery modes]({{< relref "../configuration/about-grafana-mimir-arguments.md#supported-discovery-modes" >}}).
 
