@@ -75,8 +75,8 @@ func TestActiveSeriesCustomTrackersConfigs(t *testing.T) {
 			expected: mustNewActiveSeriesCustomTrackersConfigFromMap(t, map[string]string{`foo`: `{foo="bar"}`}),
 		},
 		{
-			name: "whitespaces are trimmed from name and matcher",
-			flags: []string{`-ingester.active-series-custom-trackers= foo :	{foo="bar"}` + "\n "},
+			name:     "whitespaces are trimmed from name and matcher",
+			flags:    []string{`-ingester.active-series-custom-trackers= foo :	{foo="bar"}` + "\n "},
 			expected: mustNewActiveSeriesCustomTrackersConfigFromMap(t, map[string]string{`foo`: `{foo="bar"}`}),
 		},
 		{
@@ -121,105 +121,6 @@ func TestActiveSeriesCustomTrackersConfigs(t *testing.T) {
 			require.NoError(t, flagSetAgain.Parse([]string{"-ingester.active-series-custom-trackers=" + config.String()}))
 
 			require.Equal(t, tc.expected, &configAgain)
-		})
-	}
-}
-
-func TestRuntimeOverridesUnmarshal(t *testing.T) {
-	expectedDefaultConfig := mustNewActiveSeriesCustomTrackersConfigFromMap(
-		t, map[string]string{
-			"integrations/apolloserver": "{job='integrations/apollo-server'}",
-			"integrations/caddy":        "{job='integrations/caddy'}",
-		},
-	)
-	expectedTenantConfig := mustNewActiveSeriesCustomTrackersConfigFromMap(
-		t, map[string]string{
-			"team_A": "{grafanacloud_team='team_a'}",
-			"team_B": "{grafanacloud_team='team_b'}",
-		},
-	)
-	r := ActiveSeriesCustomTrackersOverrides{}
-	input := `
-default:
-  integrations/apolloserver: "{job='integrations/apollo-server'}"
-  integrations/caddy: "{job='integrations/caddy'}"
-tenant_specific:
-  1:
-    team_A: "{grafanacloud_team='team_a'}"
-    team_B: "{grafanacloud_team='team_b'}"
-`
-
-	require.NoError(t, yaml.UnmarshalStrict([]byte(input), &r))
-	require.Equal(t, expectedDefaultConfig.String(), r.Default.String())
-	require.Equal(t, expectedTenantConfig.String(), r.TenantSpecific["1"].String())
-
-}
-
-func TestActiveSeriesCustomTrackersOverridesProvider(t *testing.T) {
-	overridesReference := &ActiveSeriesCustomTrackersOverrides{}
-	tests := map[string]struct {
-		provider *ActiveSeriesCustomTrackersOverridesProvider
-		expected *ActiveSeriesCustomTrackersOverrides
-	}{
-		"nil provider returns nil": {
-			provider: nil,
-			expected: nil,
-		},
-		"nil getter returns nil": {
-			provider: &ActiveSeriesCustomTrackersOverridesProvider{},
-			expected: nil,
-		},
-		"getter is called": {
-			provider: &ActiveSeriesCustomTrackersOverridesProvider{
-				Getter: func() *ActiveSeriesCustomTrackersOverrides {
-					return overridesReference
-				},
-			},
-			expected: overridesReference,
-		},
-	}
-
-	for name, testData := range tests {
-		t.Run(name, func(t *testing.T) {
-			assert.Equal(t, testData.expected, testData.provider.Get())
-		})
-	}
-}
-
-func TestMatchersForUser(t *testing.T) {
-	defaultMatchers := mustNewActiveSeriesCustomTrackersConfigFromMap(t, map[string]string{
-		"foo": `{foo="bar"}`,
-		"bar": `{baz="bar"}`,
-	})
-	tenantSpecificMatchers := mustNewActiveSeriesCustomTrackersConfigFromMap(t, map[string]string{
-		"team_a": `{team="team_a"}`,
-		"team_b": `{team="team_b"}`,
-	})
-
-	activeSeriesCustomTrackersOverrides := &ActiveSeriesCustomTrackersOverrides{
-		Default: defaultMatchers,
-		TenantSpecific: map[string]*ActiveSeriesCustomTrackersConfig{
-			"1": tenantSpecificMatchers,
-		},
-	}
-
-	tests := map[string]struct {
-		userID   string
-		expected *ActiveSeriesCustomTrackersConfig
-	}{
-		"User with no override should return default": {
-			userID:   "5",
-			expected: defaultMatchers,
-		},
-		"User with override should return override": {
-			userID:   "1",
-			expected: tenantSpecificMatchers,
-		},
-	}
-	for name, testData := range tests {
-		t.Run(name, func(t *testing.T) {
-			matchersConfigForUser := activeSeriesCustomTrackersOverrides.MatchersConfigForUser(testData.userID)
-			assert.True(t, testData.expected.String() == matchersConfigForUser.String())
 		})
 	}
 }

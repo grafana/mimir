@@ -2851,6 +2851,14 @@ func prepareIngesterWithBlocksStorage(t testing.TB, ingesterCfg Config, register
 }
 
 func prepareIngesterWithBlocksStorageAndLimits(t testing.TB, ingesterCfg Config, limits validation.Limits, dataDir string, registerer prometheus.Registerer) (*Ingester, error) {
+	overrides, err := validation.NewOverrides(limits, nil)
+	if err != nil {
+		return nil, err
+	}
+	return prepareIngesterWithBlockStorageAndOverrides(t, ingesterCfg, overrides, dataDir, registerer)
+}
+
+func prepareIngesterWithBlockStorageAndOverrides(t testing.TB, ingesterCfg Config, overrides *validation.Overrides, dataDir string, registerer prometheus.Registerer) (*Ingester, error) {
 	// Create a data dir if none has been provided.
 	if dataDir == "" {
 		var err error
@@ -2873,11 +2881,6 @@ func prepareIngesterWithBlocksStorageAndLimits(t testing.TB, ingesterCfg Config,
 	})
 
 	clientCfg := defaultClientTestConfig()
-
-	overrides, err := validation.NewOverrides(limits, nil)
-	if err != nil {
-		return nil, err
-	}
 
 	ingesterCfg.BlocksStorageConfig.TSDB.Dir = dataDir
 	ingesterCfg.BlocksStorageConfig.Bucket.Backend = "filesystem"
@@ -5126,6 +5129,19 @@ func benchmarkData(nSeries int) (allLabels []labels.Labels, allSamples []mimirpb
 	return
 }
 
+type TenantLimitsMock struct {
+	mock.Mock
+	validation.TenantLimits
+}
+
+func (t *TenantLimitsMock) ByUserID(userID string) *validation.Limits {
+	returnArgs := t.Called(userID)
+	if returnArgs.Get(0) == nil {
+		return nil
+	}
+	return returnArgs.Get(0).(*validation.Limits)
+}
+
 func TestIngesterActiveSeries(t *testing.T) {
 	labelsToPush := []labels.Labels{
 		labels.FromStrings(labels.MetricName, "test_metric", "bool", "false", "team", "a"),
@@ -5151,52 +5167,44 @@ func TestIngesterActiveSeries(t *testing.T) {
 	userID := "test_user"
 	userID2 := "other_test_user"
 
-	defaultCustomTrackersOverridesProvider := &activeseries.ActiveSeriesCustomTrackersOverridesProvider{
-		func() *activeseries.ActiveSeriesCustomTrackersOverrides {
-			return &activeseries.ActiveSeriesCustomTrackersOverrides{
-				Default: mustNewActiveSeriesCustomTrackersConfigFromMap(t, map[string]string{
-					"bool_is_true":  `{bool="true"}`,
-					"bool_is_false": `{bool="false"}`,
-				}),
-				TenantSpecific: map[string]*activeseries.ActiveSeriesCustomTrackersConfig{
-					"test_user": mustNewActiveSeriesCustomTrackersConfigFromMap(t, map[string]string{
-						"team_a": `{team="a"}`,
-						"team_b": `{team="b"}`,
-					}),
-				},
-			}
-		},
+	defaultActiveSeriesCustomTrackersFn := func() *activeseries.ActiveSeriesCustomTrackersConfig {
+		return mustNewActiveSeriesCustomTrackersConfigFromMap(t, map[string]string{
+			"bool_is_true":  `{bool="true"}`,
+			"bool_is_false": `{bool="false"}`,
+		})
 	}
 
 	activeSeriesDefaultConfig := mustNewActiveSeriesCustomTrackersConfigFromMap(t, map[string]string{
 		"bool_is_true_flagbased":  `{bool="true"}`,
 		"bool_is_false_flagbased": `{bool="false"}`,
 	})
+
+	activeSeriesTenantConfig := mustNewActiveSeriesCustomTrackersConfigFromMap(t, map[string]string{
+		"team_a": `{team="a"}`,
+		"team_b": `{team="b"}`,
+	})
+
+	activeSeriesTenantOverride := new(TenantLimitsMock)
+	activeSeriesTenantOverride.On("ByUserID", userID).Return(&validation.Limits{ActiveSeriesCustomTrackersConfig: activeSeriesTenantConfig})
+	activeSeriesTenantOverride.On("ByUserID", userID2).Return(nil)
+
 	tests := map[string]struct {
-		test                          func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer)
-		reqs                          []*mimirpb.WriteRequest
-		expectedMetrics               string
-		disableActiveSeries           bool
-		activeSeriesOverridesProvider *activeseries.ActiveSeriesCustomTrackersOverridesProvider
-		activeSeriesConfig            activeseries.ActiveSeriesCustomTrackersConfig
+		test                              func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer)
+		reqs                              []*mimirpb.WriteRequest
+		expectedMetrics                   string
+		disableActiveSeries               bool
+		defaultActiveSeriesCustomTrackers func() *activeseries.ActiveSeriesCustomTrackersConfig
+		activeSeriesConfig                activeseries.ActiveSeriesCustomTrackersConfig
+		tenantLimits                      *TenantLimitsMock
 	}{
 		"successful push, should count active series": {
-			activeSeriesOverridesProvider: defaultCustomTrackersOverridesProvider,
+			defaultActiveSeriesCustomTrackers: defaultActiveSeriesCustomTrackersFn,
+			tenantLimits:                      activeSeriesTenantOverride,
 			test: func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer) {
 				now := time.Now()
 
-				for i, label := range labelsToPush {
-					ctx := user.InjectOrgID(context.Background(), userID)
-					offset := time.Duration(len(labelsToPush) - i)
-					_, err := ingester.Push(ctx, req(label, time.Now().Add(offset)))
-					require.NoError(t, err)
-				}
-				for i, label := range labelsToPush {
-					ctx := user.InjectOrgID(context.Background(), userID2)
-					offset := time.Duration(len(labelsToPush) - i)
-					_, err := ingester.Push(ctx, req(label, time.Now().Add(offset)))
-					require.NoError(t, err)
-				}
+				pushWithUser(t, ingester, labelsToPush, userID, req)
+				pushWithUser(t, ingester, labelsToPush, userID2, req)
 
 				// Update active series for metrics check.
 				ingester.updateActiveSeries(now)
@@ -5219,22 +5227,13 @@ func TestIngesterActiveSeries(t *testing.T) {
 			},
 		},
 		"should cleanup metrics when tsdb closed": {
-			activeSeriesOverridesProvider: defaultCustomTrackersOverridesProvider,
+			defaultActiveSeriesCustomTrackers: defaultActiveSeriesCustomTrackersFn,
+			tenantLimits:                      activeSeriesTenantOverride,
 			test: func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer) {
 				now := time.Now()
 
-				for i, label := range labelsToPush {
-					ctx := user.InjectOrgID(context.Background(), userID)
-					offset := time.Duration(len(labelsToPush) - i)
-					_, err := ingester.Push(ctx, req(label, time.Now().Add(offset)))
-					require.NoError(t, err)
-				}
-				for i, label := range labelsToPush {
-					ctx := user.InjectOrgID(context.Background(), userID2)
-					offset := time.Duration(len(labelsToPush) - i)
-					_, err := ingester.Push(ctx, req(label, time.Now().Add(offset)))
-					require.NoError(t, err)
-				}
+				pushWithUser(t, ingester, labelsToPush, userID, req)
+				pushWithUser(t, ingester, labelsToPush, userID2, req)
 
 				// Update active series for metrics check.
 				ingester.updateActiveSeries(now)
@@ -5261,22 +5260,13 @@ func TestIngesterActiveSeries(t *testing.T) {
 			},
 		},
 		"should track custom matchers, removing when zero": {
-			activeSeriesOverridesProvider: defaultCustomTrackersOverridesProvider,
+			defaultActiveSeriesCustomTrackers: defaultActiveSeriesCustomTrackersFn,
+			tenantLimits:                      activeSeriesTenantOverride,
 			test: func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer) {
 				firstPushTime := time.Now()
 
-				for i, label := range labelsToPush {
-					ctx := user.InjectOrgID(context.Background(), userID)
-					offset := time.Duration(len(labelsToPush) - i)
-					_, err := ingester.Push(ctx, req(label, time.Now().Add(offset)))
-					require.NoError(t, err)
-				}
-				for i, label := range labelsToPush {
-					ctx := user.InjectOrgID(context.Background(), userID2)
-					offset := time.Duration(len(labelsToPush) - i)
-					_, err := ingester.Push(ctx, req(label, time.Now().Add(offset)))
-					require.NoError(t, err)
-				}
+				pushWithUser(t, ingester, labelsToPush, userID, req)
+				pushWithUser(t, ingester, labelsToPush, userID2, req)
 
 				// Update active series for metrics check.
 				ingester.updateActiveSeries(firstPushTime)
@@ -5305,12 +5295,7 @@ func TestIngesterActiveSeries(t *testing.T) {
 				// Sleep another millisecond to make sure that secondPushTime is strictly less than the append time of the second push.
 				time.Sleep(time.Millisecond)
 
-				for i, label := range labelsToPush {
-					ctx := user.InjectOrgID(context.Background(), userID)
-					offset := time.Duration(len(labelsToPush) - i)
-					_, err := ingester.Push(ctx, req(label, time.Now().Add(offset)))
-					require.NoError(t, err)
-				}
+				pushWithUser(t, ingester, labelsToPush, userID, req)
 
 				// Update active series for metrics check in the future.
 				// We update them in the exact moment in time where append time of the first push is already considered idle,
@@ -5336,23 +5321,13 @@ func TestIngesterActiveSeries(t *testing.T) {
 			},
 		},
 		"successful push, active series disabled": {
-			activeSeriesOverridesProvider: defaultCustomTrackersOverridesProvider,
-			disableActiveSeries:           true,
+			defaultActiveSeriesCustomTrackers: defaultActiveSeriesCustomTrackersFn,
+			disableActiveSeries:               true,
 			test: func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer) {
 				now := time.Now()
 
-				for i, label := range labelsToPush {
-					ctx := user.InjectOrgID(context.Background(), userID)
-					offset := time.Duration(len(labelsToPush) - i)
-					_, err := ingester.Push(ctx, req(label, time.Now().Add(offset)))
-					require.NoError(t, err)
-				}
-				for i, label := range labelsToPush {
-					ctx := user.InjectOrgID(context.Background(), userID2)
-					offset := time.Duration(len(labelsToPush) - i)
-					_, err := ingester.Push(ctx, req(label, time.Now().Add(offset)))
-					require.NoError(t, err)
-				}
+				pushWithUser(t, ingester, labelsToPush, userID, req)
+				pushWithUser(t, ingester, labelsToPush, userID2, req)
 
 				// Update active series for metrics check.
 				ingester.updateActiveSeries(now)
@@ -5364,26 +5339,12 @@ func TestIngesterActiveSeries(t *testing.T) {
 			},
 		},
 		"should not fail with empty runtime config": {
-			activeSeriesOverridesProvider: &activeseries.ActiveSeriesCustomTrackersOverridesProvider{
-				func() *activeseries.ActiveSeriesCustomTrackersOverrides {
-					return nil
-				},
-			},
+			defaultActiveSeriesCustomTrackers: func() *activeseries.ActiveSeriesCustomTrackersConfig { return nil },
 			test: func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer) {
 				now := time.Now()
 
-				for i, label := range labelsToPush {
-					ctx := user.InjectOrgID(context.Background(), userID)
-					offset := time.Duration(len(labelsToPush) - i)
-					_, err := ingester.Push(ctx, req(label, time.Now().Add(offset)))
-					require.NoError(t, err)
-				}
-				for i, label := range labelsToPush {
-					ctx := user.InjectOrgID(context.Background(), userID2)
-					offset := time.Duration(len(labelsToPush) - i)
-					_, err := ingester.Push(ctx, req(label, time.Now().Add(offset)))
-					require.NoError(t, err)
-				}
+				pushWithUser(t, ingester, labelsToPush, userID, req)
+				pushWithUser(t, ingester, labelsToPush, userID2, req)
 
 				// Update active series for metrics check.
 				ingester.updateActiveSeries(now)
@@ -5400,23 +5361,13 @@ func TestIngesterActiveSeries(t *testing.T) {
 			},
 		},
 		"should not fail with nil provider and default config": {
-			activeSeriesOverridesProvider: nil,
-			activeSeriesConfig:            activeseries.ActiveSeriesCustomTrackersConfig{},
+			defaultActiveSeriesCustomTrackers: nil,
+			activeSeriesConfig:                activeseries.ActiveSeriesCustomTrackersConfig{},
 			test: func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer) {
 				now := time.Now()
 
-				for i, label := range labelsToPush {
-					ctx := user.InjectOrgID(context.Background(), userID)
-					offset := time.Duration(len(labelsToPush) - i)
-					_, err := ingester.Push(ctx, req(label, time.Now().Add(offset)))
-					require.NoError(t, err)
-				}
-				for i, label := range labelsToPush {
-					ctx := user.InjectOrgID(context.Background(), userID2)
-					offset := time.Duration(len(labelsToPush) - i)
-					_, err := ingester.Push(ctx, req(label, time.Now().Add(offset)))
-					require.NoError(t, err)
-				}
+				pushWithUser(t, ingester, labelsToPush, userID, req)
+				pushWithUser(t, ingester, labelsToPush, userID2, req)
 
 				// Update active series for metrics check.
 				ingester.updateActiveSeries(now)
@@ -5433,23 +5384,13 @@ func TestIngesterActiveSeries(t *testing.T) {
 			},
 		},
 		"should use flag based custom tracker if no runtime config specified": {
-			activeSeriesOverridesProvider: nil,
-			activeSeriesConfig:            *activeSeriesDefaultConfig,
+			defaultActiveSeriesCustomTrackers: nil,
+			activeSeriesConfig:                *activeSeriesDefaultConfig,
 			test: func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer) {
 				now := time.Now()
 
-				for i, label := range labelsToPush {
-					ctx := user.InjectOrgID(context.Background(), userID)
-					offset := time.Duration(len(labelsToPush) - i)
-					_, err := ingester.Push(ctx, req(label, time.Now().Add(offset)))
-					require.NoError(t, err)
-				}
-				for i, label := range labelsToPush {
-					ctx := user.InjectOrgID(context.Background(), userID2)
-					offset := time.Duration(len(labelsToPush) - i)
-					_, err := ingester.Push(ctx, req(label, time.Now().Add(offset)))
-					require.NoError(t, err)
-				}
+				pushWithUser(t, ingester, labelsToPush, userID, req)
+				pushWithUser(t, ingester, labelsToPush, userID2, req)
 
 				// Update active series for metrics check.
 				ingester.updateActiveSeries(now)
@@ -5472,23 +5413,14 @@ func TestIngesterActiveSeries(t *testing.T) {
 			},
 		},
 		"should use runtime matcher config if both specified": {
-			activeSeriesOverridesProvider: defaultCustomTrackersOverridesProvider,
-			activeSeriesConfig:            *activeSeriesDefaultConfig,
+			tenantLimits:                      activeSeriesTenantOverride,
+			defaultActiveSeriesCustomTrackers: defaultActiveSeriesCustomTrackersFn,
+			activeSeriesConfig:                *activeSeriesDefaultConfig,
 			test: func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer) {
 				now := time.Now()
 
-				for i, label := range labelsToPush {
-					ctx := user.InjectOrgID(context.Background(), userID)
-					offset := time.Duration(len(labelsToPush) - i)
-					_, err := ingester.Push(ctx, req(label, time.Now().Add(offset)))
-					require.NoError(t, err)
-				}
-				for i, label := range labelsToPush {
-					ctx := user.InjectOrgID(context.Background(), userID2)
-					offset := time.Duration(len(labelsToPush) - i)
-					_, err := ingester.Push(ctx, req(label, time.Now().Add(offset)))
-					require.NoError(t, err)
-				}
+				pushWithUser(t, ingester, labelsToPush, userID, req)
+				pushWithUser(t, ingester, labelsToPush, userID2, req)
 
 				// Update active series for metrics check.
 				ingester.updateActiveSeries(now)
@@ -5510,54 +5442,6 @@ func TestIngesterActiveSeries(t *testing.T) {
 				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
 			},
 		},
-		"should revert to flag based default if only tenant-specific overwrite is present": {
-			activeSeriesOverridesProvider: &activeseries.ActiveSeriesCustomTrackersOverridesProvider{
-				func() *activeseries.ActiveSeriesCustomTrackersOverrides {
-					return &activeseries.ActiveSeriesCustomTrackersOverrides{TenantSpecific: map[string]*activeseries.ActiveSeriesCustomTrackersConfig{
-						"test_user": mustNewActiveSeriesCustomTrackersConfigFromMap(t, map[string]string{
-							"team_a": `{team="a"}`,
-							"team_b": `{team="b"}`,
-						}),
-					}}
-				},
-			},
-			activeSeriesConfig: *activeSeriesDefaultConfig,
-			test: func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer) {
-				now := time.Now()
-
-				for i, label := range labelsToPush {
-					ctx := user.InjectOrgID(context.Background(), userID)
-					offset := time.Duration(len(labelsToPush) - i)
-					_, err := ingester.Push(ctx, req(label, time.Now().Add(offset)))
-					require.NoError(t, err)
-				}
-				for i, label := range labelsToPush {
-					ctx := user.InjectOrgID(context.Background(), userID2)
-					offset := time.Duration(len(labelsToPush) - i)
-					_, err := ingester.Push(ctx, req(label, time.Now().Add(offset)))
-					require.NoError(t, err)
-				}
-
-				// Update active series for metrics check.
-				ingester.updateActiveSeries(now)
-
-				expectedMetrics := `
-					# HELP cortex_ingester_active_series Number of currently active series per user.
-					# TYPE cortex_ingester_active_series gauge
-					cortex_ingester_active_series{user="other_test_user"} 4
-					cortex_ingester_active_series{user="test_user"} 4
-					# HELP cortex_ingester_active_series_custom_tracker Number of currently active series matching a pre-configured label matchers per user.
-					# TYPE cortex_ingester_active_series_custom_tracker gauge
-					cortex_ingester_active_series_custom_tracker{name="bool_is_false_flagbased",user="other_test_user"} 2
-					cortex_ingester_active_series_custom_tracker{name="bool_is_true_flagbased",user="other_test_user"} 2
-					cortex_ingester_active_series_custom_tracker{name="team_a",user="test_user"} 2
-					cortex_ingester_active_series_custom_tracker{name="team_b",user="test_user"} 2
-				`
-
-				// Check tracked Prometheus metrics
-				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
-			},
-		},
 	}
 
 	for testName, testData := range tests {
@@ -5568,10 +5452,21 @@ func TestIngesterActiveSeries(t *testing.T) {
 			cfg := defaultIngesterTestConfig(t)
 			cfg.IngesterRing.JoinAfter = 0
 			cfg.ActiveSeriesMetricsEnabled = !testData.disableActiveSeries
-			cfg.ActiveSeriesCustomTrackersOverrides = testData.activeSeriesOverridesProvider
+			cfg.ActiveSeriesCustomTrackersOverridesFn = testData.defaultActiveSeriesCustomTrackers
 			cfg.ActiveSeriesCustomTrackersConfig = testData.activeSeriesConfig
+			limits := defaultLimitsTestConfig()
+			var overrides *validation.Overrides
+			var err error
+			// Without this, TenantLimitsMock(nil) != nil when using getOverridesForUser in limits.go
+			if testData.tenantLimits != nil {
+				overrides, err = validation.NewOverrides(limits, testData.tenantLimits)
+				require.NoError(t, err)
+			} else {
+				overrides, err = validation.NewOverrides(limits, nil)
+				require.NoError(t, err)
+			}
 
-			ing, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, defaultLimitsTestConfig(), "", registry)
+			ing, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, overrides, "", registry)
 			require.NoError(t, err)
 			require.NoError(t, services.StartAndAwaitRunning(context.Background(), ing))
 			defer services.StopAndAwaitTerminated(context.Background(), ing) //nolint:errcheck
@@ -5609,22 +5504,13 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 		"cortex_ingester_active_series_custom_tracker",
 	}
 	userID := "test_user"
+	userID2 := "other_test_user"
 
-	defaultCustomTrackersOverridesProvider := &activeseries.ActiveSeriesCustomTrackersOverridesProvider{
-		func() *activeseries.ActiveSeriesCustomTrackersOverrides {
-			return &activeseries.ActiveSeriesCustomTrackersOverrides{
-				Default: mustNewActiveSeriesCustomTrackersConfigFromMap(t, map[string]string{
-					"bool_is_true":  `{bool="true"}`,
-					"bool_is_false": `{bool="false"}`,
-				}),
-				TenantSpecific: map[string]*activeseries.ActiveSeriesCustomTrackersConfig{
-					"test_user": mustNewActiveSeriesCustomTrackersConfigFromMap(t, map[string]string{
-						"team_a": `{team="a"}`,
-						"team_b": `{team="b"}`,
-					}),
-				},
-			}
-		},
+	defaultActiveSeriesCustomTrackersFn := func() *activeseries.ActiveSeriesCustomTrackersConfig {
+		return mustNewActiveSeriesCustomTrackersConfigFromMap(t, map[string]string{
+			"bool_is_true":  `{bool="true"}`,
+			"bool_is_false": `{bool="false"}`,
+		})
 	}
 
 	activeSeriesDefaultConfig := mustNewActiveSeriesCustomTrackersConfigFromMap(t, map[string]string{
@@ -5632,24 +5518,32 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 		"bool_is_false_flagbased": `{bool="false"}`,
 	})
 
+	activeSeriesTenantConfig := mustNewActiveSeriesCustomTrackersConfigFromMap(t, map[string]string{
+		"team_a": `{team="a"}`,
+		"team_b": `{team="b"}`,
+	})
+
+	defaultActiveSeriesTenantOverride := new(TenantLimitsMock)
+	defaultActiveSeriesTenantOverride.On("ByUserID", userID2).Return(nil)
+	defaultActiveSeriesTenantOverride.On("ByUserID", userID).Return(&validation.Limits{ActiveSeriesCustomTrackersConfig: activeSeriesTenantConfig})
+
 	tests := map[string]struct {
-		test                          func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer)
-		reqs                          []*mimirpb.WriteRequest
-		expectedMetrics               string
-		activeSeriesOverridesProvider *activeseries.ActiveSeriesCustomTrackersOverridesProvider
-		activeSeriesConfig            activeseries.ActiveSeriesCustomTrackersConfig
+		test                              func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer)
+		reqs                              []*mimirpb.WriteRequest
+		expectedMetrics                   string
+		defaultActiveSeriesCustomTrackers func() *activeseries.ActiveSeriesCustomTrackersConfig
+		activeSeriesConfig                activeseries.ActiveSeriesCustomTrackersConfig
+		tenantLimits                      *TenantLimitsMock
 	}{
 		"overwrite flag based config with runtime overwrite": {
-			activeSeriesOverridesProvider: nil,
-			activeSeriesConfig:            *activeSeriesDefaultConfig,
+			defaultActiveSeriesCustomTrackers: nil,
+			tenantLimits:                      nil,
+			activeSeriesConfig:                *activeSeriesDefaultConfig,
 			test: func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer) {
 				firstPushTime := time.Now()
 
-				for _, label := range labelsToPush {
-					ctx := user.InjectOrgID(context.Background(), userID)
-					_, err := ingester.Push(ctx, req(label, time.Now()))
-					require.NoError(t, err)
-				}
+				pushWithUser(t, ingester, labelsToPush, userID, req)
+				pushWithUser(t, ingester, labelsToPush, userID2, req)
 
 				// Update active series for metrics check.
 				ingester.updateActiveSeries(firstPushTime)
@@ -5657,9 +5551,12 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 				expectedMetrics := `
 					# HELP cortex_ingester_active_series Number of currently active series per user.
 					# TYPE cortex_ingester_active_series gauge
+					cortex_ingester_active_series{user="other_test_user"} 4
 					cortex_ingester_active_series{user="test_user"} 4
 					# HELP cortex_ingester_active_series_custom_tracker Number of currently active series matching a pre-configured label matchers per user.
 					# TYPE cortex_ingester_active_series_custom_tracker gauge
+					cortex_ingester_active_series_custom_tracker{name="bool_is_false_flagbased",user="other_test_user"} 2
+					cortex_ingester_active_series_custom_tracker{name="bool_is_true_flagbased",user="other_test_user"} 2
 					cortex_ingester_active_series_custom_tracker{name="bool_is_false_flagbased",user="test_user"} 2
 					cortex_ingester_active_series_custom_tracker{name="bool_is_true_flagbased",user="test_user"} 2
 				`
@@ -5667,11 +5564,18 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
 
 				// Add new runtime configs
-				ingester.cfg.ActiveSeriesCustomTrackersOverrides = defaultCustomTrackersOverridesProvider
+				ingester.cfg.ActiveSeriesCustomTrackersOverridesFn = defaultActiveSeriesCustomTrackersFn
+				activeSeriesTenantOverride := new(TenantLimitsMock)
+				activeSeriesTenantOverride.On("ByUserID", userID2).Return(nil)
+				activeSeriesTenantOverride.On("ByUserID", userID).Return(&validation.Limits{ActiveSeriesCustomTrackersConfig: activeSeriesTenantConfig})
+				override, err := validation.NewOverrides(defaultLimitsTestConfig(), activeSeriesTenantOverride)
+				require.NoError(t, err)
+				ingester.limits = override
 				ingester.updateActiveSeries(firstPushTime)
 				expectedMetrics = `
 					# HELP cortex_ingester_active_series Number of currently active series per user.
 					# TYPE cortex_ingester_active_series gauge
+					cortex_ingester_active_series{user="other_test_user"} 4
 					cortex_ingester_active_series{user="test_user"} 4
 				`
 				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
@@ -5679,18 +5583,18 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 				secondPushtime := time.Now()
 				// Sleep here to ensure that the second batch of push happens after purgeTime to have entries for custom trackers
 				time.Sleep(time.Millisecond)
-				for _, label := range labelsToPush {
-					ctx := user.InjectOrgID(context.Background(), userID)
-					_, err := ingester.Push(ctx, req(label, time.Now()))
-					require.NoError(t, err)
-				}
+				pushWithUser(t, ingester, labelsToPush, userID, req)
+				pushWithUser(t, ingester, labelsToPush, userID2, req)
 				ingester.updateActiveSeries(secondPushtime.Add(ingester.cfg.ActiveSeriesMetricsIdleTimeout))
 				expectedMetrics = `
 					# HELP cortex_ingester_active_series Number of currently active series per user.
 					# TYPE cortex_ingester_active_series gauge
+					cortex_ingester_active_series{user="other_test_user"} 4
 					cortex_ingester_active_series{user="test_user"} 4
 					# HELP cortex_ingester_active_series_custom_tracker Number of currently active series matching a pre-configured label matchers per user.
 					# TYPE cortex_ingester_active_series_custom_tracker gauge
+					cortex_ingester_active_series_custom_tracker{name="bool_is_true",user="other_test_user"} 2
+            	    cortex_ingester_active_series_custom_tracker{name="bool_is_false",user="other_test_user"} 2
 					cortex_ingester_active_series_custom_tracker{name="team_a",user="test_user"} 2
             	    cortex_ingester_active_series_custom_tracker{name="team_b",user="test_user"} 2
 				`
@@ -5698,17 +5602,14 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 			},
 		},
 		"remove runtime overwrite and revert to flag based config": {
-			activeSeriesOverridesProvider: defaultCustomTrackersOverridesProvider,
-			activeSeriesConfig:            *activeSeriesDefaultConfig,
+			defaultActiveSeriesCustomTrackers: defaultActiveSeriesCustomTrackersFn,
+			activeSeriesConfig:                *activeSeriesDefaultConfig,
+			tenantLimits:                      defaultActiveSeriesTenantOverride,
 			test: func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer) {
 				firstPushTime := time.Now()
 
-				for _, label := range labelsToPush {
-					ctx := user.InjectOrgID(context.Background(), userID)
-					//offset := time.Duration(len(labelsToPush) - i)
-					_, err := ingester.Push(ctx, req(label, time.Now()))
-					require.NoError(t, err)
-				}
+				pushWithUser(t, ingester, labelsToPush, userID, req)
+				pushWithUser(t, ingester, labelsToPush, userID2, req)
 
 				// Update active series for metrics check.
 				ingester.updateActiveSeries(firstPushTime)
@@ -5716,21 +5617,28 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 				expectedMetrics := `
 					# HELP cortex_ingester_active_series Number of currently active series per user.
 					# TYPE cortex_ingester_active_series gauge
+					cortex_ingester_active_series{user="other_test_user"} 4
 					cortex_ingester_active_series{user="test_user"} 4
 					# HELP cortex_ingester_active_series_custom_tracker Number of currently active series matching a pre-configured label matchers per user.
 					# TYPE cortex_ingester_active_series_custom_tracker gauge
+					cortex_ingester_active_series_custom_tracker{name="bool_is_true",user="other_test_user"} 2
+            	    cortex_ingester_active_series_custom_tracker{name="bool_is_false",user="other_test_user"} 2
 					cortex_ingester_active_series_custom_tracker{name="team_a",user="test_user"} 2
-					cortex_ingester_active_series_custom_tracker{name="team_b",user="test_user"} 2
+            	    cortex_ingester_active_series_custom_tracker{name="team_b",user="test_user"} 2
 				`
 				// Check tracked Prometheus metrics
 				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
 
 				// Remove runtime configs
-				ingester.cfg.ActiveSeriesCustomTrackersOverrides = nil
+				ingester.cfg.ActiveSeriesCustomTrackersOverridesFn = nil
+				var err error
+				ingester.limits, err = validation.NewOverrides(defaultLimitsTestConfig(), nil)
+				require.NoError(t, err)
 				ingester.updateActiveSeries(firstPushTime)
 				expectedMetrics = `
 					# HELP cortex_ingester_active_series Number of currently active series per user.
 					# TYPE cortex_ingester_active_series gauge
+					cortex_ingester_active_series{user="other_test_user"} 4
 					cortex_ingester_active_series{user="test_user"} 4
 				`
 				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
@@ -5738,35 +5646,31 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 				secondPushtime := time.Now()
 				// Sleep here to ensure that the second batch of push happens after purgeTime to have entries for custom trackers
 				time.Sleep(time.Millisecond)
-				for _, label := range labelsToPush {
-					ctx := user.InjectOrgID(context.Background(), userID)
-					_, err := ingester.Push(ctx, req(label, time.Now()))
-					require.NoError(t, err)
-				}
+				pushWithUser(t, ingester, labelsToPush, userID, req)
+				pushWithUser(t, ingester, labelsToPush, userID2, req)
 				ingester.updateActiveSeries(secondPushtime.Add(ingester.cfg.ActiveSeriesMetricsIdleTimeout))
 				expectedMetrics = `
 					# HELP cortex_ingester_active_series Number of currently active series per user.
 					# TYPE cortex_ingester_active_series gauge
+					cortex_ingester_active_series{user="other_test_user"} 4
 					cortex_ingester_active_series{user="test_user"} 4
 					# HELP cortex_ingester_active_series_custom_tracker Number of currently active series matching a pre-configured label matchers per user.
 					# TYPE cortex_ingester_active_series_custom_tracker gauge
-					cortex_ingester_active_series_custom_tracker{name="bool_is_true_flagbased",user="test_user"} 2
+					cortex_ingester_active_series_custom_tracker{name="bool_is_false_flagbased",user="other_test_user"} 2
+					cortex_ingester_active_series_custom_tracker{name="bool_is_true_flagbased",user="other_test_user"} 2
 					cortex_ingester_active_series_custom_tracker{name="bool_is_false_flagbased",user="test_user"} 2
+					cortex_ingester_active_series_custom_tracker{name="bool_is_true_flagbased",user="test_user"} 2
 				`
 				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
 			},
 		},
 		"changing runtime overwrite should result in new metrics": {
-			activeSeriesOverridesProvider: defaultCustomTrackersOverridesProvider,
-			activeSeriesConfig:            *activeSeriesDefaultConfig,
+			defaultActiveSeriesCustomTrackers: defaultActiveSeriesCustomTrackersFn,
+			activeSeriesConfig:                *activeSeriesDefaultConfig,
 			test: func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer) {
 				firstPushTime := time.Now()
 
-				for _, label := range labelsToPush {
-					ctx := user.InjectOrgID(context.Background(), userID)
-					_, err := ingester.Push(ctx, req(label, firstPushTime))
-					require.NoError(t, err)
-				}
+				pushWithUser(t, ingester, labelsToPush, userID, req)
 
 				// Update active series for metrics check.
 				ingester.updateActiveSeries(firstPushTime)
@@ -5777,27 +5681,23 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 					cortex_ingester_active_series{user="test_user"} 4
 					# HELP cortex_ingester_active_series_custom_tracker Number of currently active series matching a pre-configured label matchers per user.
 					# TYPE cortex_ingester_active_series_custom_tracker gauge
-					cortex_ingester_active_series_custom_tracker{name="team_a",user="test_user"} 2
-					cortex_ingester_active_series_custom_tracker{name="team_b",user="test_user"} 2
+					cortex_ingester_active_series_custom_tracker{name="bool_is_false",user="test_user"} 2
+					cortex_ingester_active_series_custom_tracker{name="bool_is_true",user="test_user"} 2
 				`
 				// Check tracked Prometheus metrics
 				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
 
 				// Change runtime configs
-				ingester.cfg.ActiveSeriesCustomTrackersOverrides = &activeseries.ActiveSeriesCustomTrackersOverridesProvider{
-					func() *activeseries.ActiveSeriesCustomTrackersOverrides {
-						return &activeseries.ActiveSeriesCustomTrackersOverrides{
-							TenantSpecific: map[string]*activeseries.ActiveSeriesCustomTrackersConfig{
-								"test_user": mustNewActiveSeriesCustomTrackersConfigFromMap(t, map[string]string{
-									"team_a": `{team="a"}`,
-									"team_b": `{team="b"}`,
-									"team_c": `{team="b"}`,
-									"team_d": `{team="b"}`,
-								}),
-							},
-						}
-					},
-				}
+				activeSeriesTenantOverride := new(TenantLimitsMock)
+				activeSeriesTenantOverride.On("ByUserID", userID).Return(&validation.Limits{ActiveSeriesCustomTrackersConfig: mustNewActiveSeriesCustomTrackersConfigFromMap(t, map[string]string{
+					"team_a": `{team="a"}`,
+					"team_b": `{team="b"}`,
+					"team_c": `{team="b"}`,
+					"team_d": `{team="b"}`,
+				})})
+				override, err := validation.NewOverrides(defaultLimitsTestConfig(), activeSeriesTenantOverride)
+				require.NoError(t, err)
+				ingester.limits = override
 				// This will update the runtime config.
 				configReloadTime := time.Now()
 				ingester.updateActiveSeries(configReloadTime)
@@ -5840,11 +5740,22 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 			cfg := defaultIngesterTestConfig(t)
 			cfg.IngesterRing.JoinAfter = 0
 			cfg.ActiveSeriesMetricsEnabled = true
-			cfg.ActiveSeriesCustomTrackersOverrides = testData.activeSeriesOverridesProvider
+			cfg.ActiveSeriesCustomTrackersOverridesFn = testData.defaultActiveSeriesCustomTrackers
 			cfg.ActiveSeriesCustomTrackersConfig = testData.activeSeriesConfig
 
-			ing, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, defaultLimitsTestConfig(), "", registry)
-			require.NoError(t, err)
+			limits := defaultLimitsTestConfig()
+			var overrides *validation.Overrides
+			var err error
+			// Without this, TenantLimitsMock(nil) != nil when using getOverridesForUser in limits.go
+			if testData.tenantLimits != nil {
+				overrides, err = validation.NewOverrides(limits, testData.tenantLimits)
+				require.NoError(t, err)
+			} else {
+				overrides, err = validation.NewOverrides(limits, nil)
+				require.NoError(t, err)
+			}
+
+			ing, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, overrides, "", registry)
 			require.NoError(t, services.StartAndAwaitRunning(context.Background(), ing))
 			defer services.StopAndAwaitTerminated(context.Background(), ing) //nolint:errcheck
 
@@ -5855,6 +5766,14 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 
 			testData.test(t, ing, registry)
 		})
+	}
+}
+
+func pushWithUser(t *testing.T, ingester *Ingester, labelsToPush []labels.Labels, userID string, req func(lbls labels.Labels, t time.Time) *mimirpb.WriteRequest) {
+	for _, label := range labelsToPush {
+		ctx := user.InjectOrgID(context.Background(), userID)
+		_, err := ingester.Push(ctx, req(label, time.Now()))
+		require.NoError(t, err)
 	}
 }
 

@@ -146,27 +146,3 @@ func NewActiveSeriesCustomTrackersConfig(m map[string]string) (c ActiveSeriesCus
 	c.string = activeSeriesCustomTrackersConfigString(c.source)
 	return c, nil
 }
-
-// ActiveSeriesCustomTrackersOverrides holds the definition of custom tracking rules.
-type ActiveSeriesCustomTrackersOverrides struct {
-	Default        *ActiveSeriesCustomTrackersConfig            `yaml:"default"`
-	TenantSpecific map[string]*ActiveSeriesCustomTrackersConfig `yaml:"tenant_specific"`
-}
-
-func (asmo *ActiveSeriesCustomTrackersOverrides) MatchersConfigForUser(userID string) *ActiveSeriesCustomTrackersConfig {
-	if tenantspecific, ok := asmo.TenantSpecific[userID]; ok {
-		return tenantspecific
-	}
-	return asmo.Default
-}
-
-type ActiveSeriesCustomTrackersOverridesProvider struct {
-	Getter func() *ActiveSeriesCustomTrackersOverrides
-}
-
-func (p *ActiveSeriesCustomTrackersOverridesProvider) Get() *ActiveSeriesCustomTrackersOverrides {
-	if p == nil || p.Getter == nil {
-		return nil
-	}
-	return p.Getter()
-}

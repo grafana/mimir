@@ -122,11 +122,11 @@ type Config struct {
 
 	RateUpdatePeriod time.Duration `yaml:"rate_update_period" category:"advanced"`
 
-	ActiveSeriesMetricsEnabled          bool                                                      `yaml:"active_series_metrics_enabled" category:"advanced"`
-	ActiveSeriesMetricsUpdatePeriod     time.Duration                                             `yaml:"active_series_metrics_update_period" category:"advanced"`
-	ActiveSeriesMetricsIdleTimeout      time.Duration                                             `yaml:"active_series_metrics_idle_timeout" category:"advanced"`
-	ActiveSeriesCustomTrackersConfig    activeseries.ActiveSeriesCustomTrackersConfig             `yaml:"active_series_custom_trackers" doc:"description=Additional custom trackers for active metrics. If there are active series matching a provided matcher (map value), the count will be exposed in the custom trackers metric labeled using the tracker name (map key). Zero valued counts are not exposed (and removed when they go back to zero)." category:"advanced"`
-	ActiveSeriesCustomTrackersOverrides *activeseries.ActiveSeriesCustomTrackersOverridesProvider `yaml:"-"`
+	ActiveSeriesMetricsEnabled            bool                                                  `yaml:"active_series_metrics_enabled" category:"advanced"`
+	ActiveSeriesMetricsUpdatePeriod       time.Duration                                         `yaml:"active_series_metrics_update_period" category:"advanced"`
+	ActiveSeriesMetricsIdleTimeout        time.Duration                                         `yaml:"active_series_metrics_idle_timeout" category:"advanced"`
+	ActiveSeriesCustomTrackersConfig      activeseries.ActiveSeriesCustomTrackersConfig         `yaml:"active_series_custom_trackers" doc:"description=Additional custom trackers for active metrics. If there are active series matching a provided matcher (map value), the count will be exposed in the custom trackers metric labeled using the tracker name (map key). Zero valued counts are not exposed (and removed when they go back to zero)." category:"advanced"`
+	ActiveSeriesCustomTrackersOverridesFn func() *activeseries.ActiveSeriesCustomTrackersConfig `yaml:"-"`
 
 	ExemplarsUpdatePeriod time.Duration `yaml:"exemplars_update_period" category:"experimental"`
 
@@ -473,14 +473,16 @@ func (i *Ingester) updateLoop(ctx context.Context) error {
 }
 
 func (i *Ingester) getActiveSeriesMatchersConfig(userID string) *activeseries.ActiveSeriesCustomTrackersConfig {
-	var matchers *activeseries.ActiveSeriesCustomTrackersConfig
-	if cfg := i.cfg.ActiveSeriesCustomTrackersOverrides.Get(); cfg != nil {
-		matchers = cfg.MatchersConfigForUser(userID)
+	matchersConfig := i.limits.ActiveSeriesCustomTrackersConfig(userID)
+	if matchersConfig == nil {
+		if i.cfg.ActiveSeriesCustomTrackersOverridesFn != nil {
+			matchersConfig = i.cfg.ActiveSeriesCustomTrackersOverridesFn()
+		}
 	}
-	if matchers == nil {
-		matchers = i.activeSeriesMatcher.Config()
+	if matchersConfig == nil {
+		matchersConfig = i.activeSeriesMatcher.Config()
 	}
-	return matchers
+	return matchersConfig
 }
 
 func (i *Ingester) replaceMatchers(asm *activeseries.ActiveSeriesMatchers, userDB *userTSDB) {
