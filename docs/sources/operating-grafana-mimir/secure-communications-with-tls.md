@@ -18,7 +18,7 @@ The CA should be private to the organization because certificates signed by the 
 > **Note**: The generated certficates are valid for 100,000 days. You can change the duration by adjusting the `-days` option in the command. We recommended that you replace the certificates every two years.
 
 The following script generates self-signed certs for the cluster.
-The script generates keys `client.key, server.key` and certs `client.crt, server.crt` for both the client and server.
+The script generates keys `client.key`, `server.key` and certificates `client.crt`, `server.crt` for both the client and server.
 The script generates the CA cert as `root.crt`.
 
 ```
