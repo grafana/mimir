@@ -80,6 +80,65 @@ func TestConvert(t *testing.T) {
 	}
 }
 
+func TestReportDeletedFlags(t *testing.T) {
+	testCases := map[string]struct {
+		cortexConfigFile string
+		flags            []string
+
+		expectedRemovedPaths []string
+		expectedRemovedFlags []string
+	}{
+		"no unsupported options": {
+			cortexConfigFile: "testdata/noop-old.yaml",
+			flags:            []string{"-target=10", "-auth.enabled"},
+
+			expectedRemovedPaths: nil,
+			expectedRemovedFlags: nil,
+		},
+		"unsupported config option": {
+			cortexConfigFile: "testdata/unsupported-config.yaml",
+			flags:            []string{"-target=10", "-auth.enabled"},
+
+			expectedRemovedPaths: []string{"storage.engine"},
+			expectedRemovedFlags: nil,
+		},
+		"unsupported CLI flag": {
+			cortexConfigFile: "testdata/noop-old.yaml",
+			flags:            []string{"-store.engine=chunks"},
+
+			expectedRemovedFlags: []string{"store.engine"},
+			expectedRemovedPaths: nil,
+		},
+		"unsupported config options and flags": {
+			cortexConfigFile: "testdata/unsupported-config.yaml",
+			flags:            []string{"-store.engine=chunks"},
+
+			expectedRemovedPaths: []string{"storage.engine"},
+			expectedRemovedFlags: []string{"store.engine"},
+		},
+		"flags without YAML equivalents": {
+			cortexConfigFile: "testdata/noop-old.yaml",
+			flags:            []string{"-schema-config-file=test.yaml"},
+
+			expectedRemovedPaths: nil,
+			expectedRemovedFlags: []string{"schema-config-file"},
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			inBytes := loadFile(t, tc.cortexConfigFile)
+
+			removedFieldPaths, removedFlags, err := reportDeletedFlags(inBytes, tc.flags, DefaultCortexConfig)
+			require.NoError(t, err)
+
+			assert.ElementsMatch(t, tc.expectedRemovedPaths, removedFieldPaths, "YAML paths")
+			assert.ElementsMatch(t, tc.expectedRemovedFlags, removedFlags, "CLI flags")
+		})
+	}
+
+}
+
 func loadFile(t testing.TB, fileName string) []byte {
 	t.Helper()
 
