@@ -80,7 +80,7 @@ This feature requires the backend [hash ring](../architecture.md#the-hash-ring) 
 
 In the event of a cluster cold start or a scale up of 2+ compactor instances at the same time, we may end up in a situation where each new compactor instance starts at a slightly different time and thus each one runs the first compaction based on a different state of the ring. This is not a critical condition, but may be inefficient, because multiple compactor replicas may start compacting the same tenant nearly at the same time.
 
-To reduce the likelihood of this happening, the compactor can wait for a stable ring at startup. A ring is considered stable if no instance is added/removed to the ring for at least `-compactor.ring.wait-stability-min-duration`. If the ring keeps changing after `-compactor.ring.wait-stability-max-duration`, the compactor will wait for the ring to stabilize, before proceeding to start up normally.
+To reduce the likelihood of this happening, the compactor can wait for a stable ring at startup. A ring is considered stable if no instance is added/removed to the ring for at least `-compactor.ring.wait-stability-min-duration`. The maximum time the compactor will wait is controlled by the flag `-compactor.ring.wait-stability-max-duration` (or respective YAML option). Once the compactor has finished waiting (either because the ring stabilized or the maximum wait time was reached), it will proceed to start up normally.
 
 The default value for `-compactor.ring.wait-stability-min-duration` is zero, meaning that waiting for ring stability is disabled unless you provide a higher value (f.ex. `-compactor.ring.wait-stability-min-duration=1m`).
 
