@@ -24,7 +24,6 @@ timeout ensures that too much data is not dropped before failover to the other r
 > at least four times that of the scrape period to account for any of these failover scenarios. 
 > For example with the default scrape period of 15 seconds, use a rate time-interval at least 1-minute long.
 
-Repeat the leader-election process for `team-2`.
 
 ## Distributor high-availability (HA) tracker
 
