@@ -20,7 +20,7 @@ Configuration of the built-in querier and distributor uses their respective conf
 ## Alerting rules
 
 The ruler evaluates the expressions in alerting rules at regular intervals and if the result includes any series, the alert becomes active.
-If an alerting rule has a defined `for` duration, it enters the "PENDING" state.
+If an alerting rule has a defined `for` duration, it enters the **PENDING** (`pending`) state.
 After the alert has been active for the entire `for` duration, it enters the "FIRING" state.
 The ruler then notifies Alertmanagers of any "FIRING" alerts.
 Configure the addresses of Alertmanagers with the `-ruler.alertmanager-url` flag, which supports the DNS service discovery format.
