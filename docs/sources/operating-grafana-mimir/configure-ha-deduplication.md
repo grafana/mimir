@@ -41,7 +41,7 @@ In the event the HA tracker is enabled but incoming samples contain only one or 
 
 ## Configuration
 
-This section includes information about how to configure Prometheus within Grafana Mimir and how to configure Grafana Mimir.
+This section includes information about how to configure Prometheus and how to configure Grafana Mimir.
 
 ### How to configure Prometheus within Grafana Mimir
 
