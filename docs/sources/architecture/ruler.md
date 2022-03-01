@@ -22,7 +22,7 @@ Configuration of the built-in querier and distributor uses their respective conf
 The ruler evaluates the expressions in alerting rules at regular intervals and if the result includes any series, the alert becomes active.
 If an alerting rule has a defined `for` duration, it enters the **PENDING** (`pending`) state.
 After the alert has been active for the entire `for` duration, it enters the **FIRING** (`firing`) state.
-The ruler then notifies Alertmanagers of any "FIRING" alerts.
+The ruler then notifies Alertmanagers of any **FIRING** (`firing`) alerts.
 Configure the addresses of Alertmanagers with the `-ruler.alertmanager-url` flag, which supports the DNS service discovery format.
 For more information about DNS service discovery, refer to [Supported discovery modes]({{< relref "../configuration/about-grafana-mimir-arguments.md#supported-discovery-modes" >}}).
 
