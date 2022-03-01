@@ -91,7 +91,7 @@ To enable it for all tenants, set `-distributor.ha-tracker.enable-for-all-users=
 Alternatively, you can enable the HA tracker only on a per-tenant basis, keeping the default `-distributor.ha-tracker.enable-for-all-users=false` and overriding it on a per-tenant basis setting `accept_ha_samples` in the overrides section of the runtime configuration.
 
 #### Configure the HA tracker KV store
-
+e
 The HA tracker requires a key-value (KV) store to coordinate which replica is currently elected.
 The supported KV stores for the HA tracker are `consul` and `etcd`.
 
