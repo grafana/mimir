@@ -20,7 +20,7 @@ If `team-1.a` goes down for a few minutes, Grafana Mimir’s HA sample handling 
 timeout ensures that too much data is not dropped before failover to the other replica. 
 
 > **Note:** In a scenario where the default scrape period is 15 seconds, and the timeouts in Grafana Mimir are set to the default values, 
-> when a leader-election failover occurs, you'll likely only lose a single scrape of data. For any rate query, make the rate window 
+> when a leader-election failover occurs, you'll likely only lose a single scrape of data. For any query using the `rate()` function, make the rate time interval 
 > at least four times that of the scrape period to account for any of these failover scenarios. 
 > For example with the default scrape period of 15 seconds, calculate rates longer than at least 1-minute intervals.
 
