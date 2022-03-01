@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package ingester
+package activeseries
 
 import (
 	"flag"
@@ -13,7 +13,7 @@ import (
 )
 
 func mustNewActiveSeriesCustomTrackersConfigFromMap(t *testing.T, source map[string]string) *ActiveSeriesCustomTrackersConfig {
-	m, err := newActiveSeriesCustomTrackersConfig(source)
+	m, err := NewActiveSeriesCustomTrackersConfig(source)
 	require.NoError(t, err)
 	return &m
 }
@@ -290,7 +290,7 @@ func TestActiveSeriesCustomTrackersConfigs_Deserialization(t *testing.T) {
 		config := ActiveSeriesCustomTrackersConfig{}
 		err := yaml.Unmarshal([]byte(correctInput), &config)
 		assert.NoError(t, err, "failed do deserialize ActiveSeriesMatchers")
-		expectedConfig, err := newActiveSeriesCustomTrackersConfig(map[string]string{
+		expectedConfig, err := NewActiveSeriesCustomTrackersConfig(map[string]string{
 			"baz": "{baz='bar'}",
 			"foo": "{foo='bar'}",
 		})

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package ingester
+package activeseries
 
 import (
 	"fmt"
@@ -71,7 +71,7 @@ func (c *ActiveSeriesCustomTrackersConfig) Set(s string) error {
 		return err
 	}
 
-	nc, err := newActiveSeriesCustomTrackersConfig(f)
+	nc, err := NewActiveSeriesCustomTrackersConfig(f)
 	if err != nil {
 		return err
 	}
@@ -125,11 +125,11 @@ func (c *ActiveSeriesCustomTrackersConfig) UnmarshalYAML(unmarshal func(interfac
 	if err != nil {
 		return err
 	}
-	*c, err = newActiveSeriesCustomTrackersConfig(stringMap)
+	*c, err = NewActiveSeriesCustomTrackersConfig(stringMap)
 	return err
 }
 
-func newActiveSeriesCustomTrackersConfig(m map[string]string) (c ActiveSeriesCustomTrackersConfig, err error) {
+func NewActiveSeriesCustomTrackersConfig(m map[string]string) (c ActiveSeriesCustomTrackersConfig, err error) {
 	c.source = m
 	c.config = map[string]labelsMatchers{}
 	for name, matcher := range m {

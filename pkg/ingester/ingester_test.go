@@ -12,6 +12,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"io"
 	"io/ioutil"
 	"math"
@@ -62,6 +63,12 @@ import (
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
+
+func mustNewActiveSeriesCustomTrackersConfigFromMap(t *testing.T, source map[string]string) *activeseries.ActiveSeriesCustomTrackersConfig {
+	m, err := activeseries.NewActiveSeriesCustomTrackersConfig(source)
+	require.NoError(t, err)
+	return &m
+}
 
 func TestIngester_Push(t *testing.T) {
 	metricLabelAdapters := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
@@ -5144,14 +5151,14 @@ func TestIngesterActiveSeries(t *testing.T) {
 	userID := "test_user"
 	userID2 := "other_test_user"
 
-	defaultCustomTrackersOverridesProvider := &ActiveSeriesCustomTrackersOverridesProvider{
-		func() *ActiveSeriesCustomTrackersOverrides {
-			return &ActiveSeriesCustomTrackersOverrides{
+	defaultCustomTrackersOverridesProvider := &activeseries.ActiveSeriesCustomTrackersOverridesProvider{
+		func() *activeseries.ActiveSeriesCustomTrackersOverrides {
+			return &activeseries.ActiveSeriesCustomTrackersOverrides{
 				Default: mustNewActiveSeriesCustomTrackersConfigFromMap(t, map[string]string{
 					"bool_is_true":  `{bool="true"}`,
 					"bool_is_false": `{bool="false"}`,
 				}),
-				TenantSpecific: map[string]*ActiveSeriesCustomTrackersConfig{
+				TenantSpecific: map[string]*activeseries.ActiveSeriesCustomTrackersConfig{
 					"test_user": mustNewActiveSeriesCustomTrackersConfigFromMap(t, map[string]string{
 						"team_a": `{team="a"}`,
 						"team_b": `{team="b"}`,
@@ -5170,8 +5177,8 @@ func TestIngesterActiveSeries(t *testing.T) {
 		reqs                          []*mimirpb.WriteRequest
 		expectedMetrics               string
 		disableActiveSeries           bool
-		activeSeriesOverridesProvider *ActiveSeriesCustomTrackersOverridesProvider
-		activeSeriesConfig            ActiveSeriesCustomTrackersConfig
+		activeSeriesOverridesProvider *activeseries.ActiveSeriesCustomTrackersOverridesProvider
+		activeSeriesConfig            activeseries.ActiveSeriesCustomTrackersConfig
 	}{
 		"successful push, should count active series": {
 			activeSeriesOverridesProvider: defaultCustomTrackersOverridesProvider,
@@ -5357,8 +5364,8 @@ func TestIngesterActiveSeries(t *testing.T) {
 			},
 		},
 		"should not fail with empty runtime config": {
-			activeSeriesOverridesProvider: &ActiveSeriesCustomTrackersOverridesProvider{
-				func() *ActiveSeriesCustomTrackersOverrides {
+			activeSeriesOverridesProvider: &activeseries.ActiveSeriesCustomTrackersOverridesProvider{
+				func() *activeseries.ActiveSeriesCustomTrackersOverrides {
 					return nil
 				},
 			},
@@ -5394,7 +5401,7 @@ func TestIngesterActiveSeries(t *testing.T) {
 		},
 		"should not fail with nil provider and default config": {
 			activeSeriesOverridesProvider: nil,
-			activeSeriesConfig:            ActiveSeriesCustomTrackersConfig{},
+			activeSeriesConfig:            activeseries.ActiveSeriesCustomTrackersConfig{},
 			test: func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer) {
 				now := time.Now()
 
@@ -5504,9 +5511,9 @@ func TestIngesterActiveSeries(t *testing.T) {
 			},
 		},
 		"should revert to flag based default if only tenant-specific overwrite is present": {
-			activeSeriesOverridesProvider: &ActiveSeriesCustomTrackersOverridesProvider{
-				func() *ActiveSeriesCustomTrackersOverrides {
-					return &ActiveSeriesCustomTrackersOverrides{TenantSpecific: map[string]*ActiveSeriesCustomTrackersConfig{
+			activeSeriesOverridesProvider: &activeseries.ActiveSeriesCustomTrackersOverridesProvider{
+				func() *activeseries.ActiveSeriesCustomTrackersOverrides {
+					return &activeseries.ActiveSeriesCustomTrackersOverrides{TenantSpecific: map[string]*activeseries.ActiveSeriesCustomTrackersConfig{
 						"test_user": mustNewActiveSeriesCustomTrackersConfigFromMap(t, map[string]string{
 							"team_a": `{team="a"}`,
 							"team_b": `{team="b"}`,
@@ -5603,14 +5610,14 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 	}
 	userID := "test_user"
 
-	defaultCustomTrackersOverridesProvider := &ActiveSeriesCustomTrackersOverridesProvider{
-		func() *ActiveSeriesCustomTrackersOverrides {
-			return &ActiveSeriesCustomTrackersOverrides{
+	defaultCustomTrackersOverridesProvider := &activeseries.ActiveSeriesCustomTrackersOverridesProvider{
+		func() *activeseries.ActiveSeriesCustomTrackersOverrides {
+			return &activeseries.ActiveSeriesCustomTrackersOverrides{
 				Default: mustNewActiveSeriesCustomTrackersConfigFromMap(t, map[string]string{
 					"bool_is_true":  `{bool="true"}`,
 					"bool_is_false": `{bool="false"}`,
 				}),
-				TenantSpecific: map[string]*ActiveSeriesCustomTrackersConfig{
+				TenantSpecific: map[string]*activeseries.ActiveSeriesCustomTrackersConfig{
 					"test_user": mustNewActiveSeriesCustomTrackersConfigFromMap(t, map[string]string{
 						"team_a": `{team="a"}`,
 						"team_b": `{team="b"}`,
@@ -5629,8 +5636,8 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 		test                          func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer)
 		reqs                          []*mimirpb.WriteRequest
 		expectedMetrics               string
-		activeSeriesOverridesProvider *ActiveSeriesCustomTrackersOverridesProvider
-		activeSeriesConfig            ActiveSeriesCustomTrackersConfig
+		activeSeriesOverridesProvider *activeseries.ActiveSeriesCustomTrackersOverridesProvider
+		activeSeriesConfig            activeseries.ActiveSeriesCustomTrackersConfig
 	}{
 		"overwrite flag based config with runtime overwrite": {
 			activeSeriesOverridesProvider: nil,
@@ -5777,10 +5784,10 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
 
 				// Change runtime configs
-				ingester.cfg.ActiveSeriesCustomTrackersOverrides = &ActiveSeriesCustomTrackersOverridesProvider{
-					func() *ActiveSeriesCustomTrackersOverrides {
-						return &ActiveSeriesCustomTrackersOverrides{
-							TenantSpecific: map[string]*ActiveSeriesCustomTrackersConfig{
+				ingester.cfg.ActiveSeriesCustomTrackersOverrides = &activeseries.ActiveSeriesCustomTrackersOverridesProvider{
+					func() *activeseries.ActiveSeriesCustomTrackersOverrides {
+						return &activeseries.ActiveSeriesCustomTrackersOverrides{
+							TenantSpecific: map[string]*activeseries.ActiveSeriesCustomTrackersConfig{
 								"test_user": mustNewActiveSeriesCustomTrackersConfigFromMap(t, map[string]string{
 									"team_a": `{team="a"}`,
 									"team_b": `{team="b"}`,

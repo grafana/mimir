@@ -3,7 +3,7 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
 
-package ingester
+package activeseries
 
 import (
 	"math"
@@ -82,6 +82,16 @@ func (c *ActiveSeries) ReloadSeriesMatchers(asm *ActiveSeriesMatchers) {
 	}
 	c.asm = asm
 	c.lastAsmUpdate.Store(time.Now().UnixNano())
+}
+
+func (c *ActiveSeries) LastAsmUpdate() int64 {
+	return c.lastAsmUpdate.Load()
+}
+
+func (c *ActiveSeries) CurrentConfig() *ActiveSeriesCustomTrackersConfig {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.asm.Config()
 }
 
 // Updates series timestamp to 'now'. Function is called to make a copy of labels if entry doesn't exist yet.

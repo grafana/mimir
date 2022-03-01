@@ -7,6 +7,7 @@ package ingester
 
 import (
 	"context"
+	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"os"
 	"sync"
 	"time"
@@ -57,7 +58,7 @@ func (r tsdbCloseCheckResult) shouldClose() bool {
 type userTSDB struct {
 	db             *tsdb.DB
 	userID         string
-	activeSeries   *ActiveSeries
+	activeSeries   *activeseries.ActiveSeries
 	seriesInMetric *metricCounter
 	limiter        *Limiter
 

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package ingester
+package activeseries
 
 import (
 	"sort"
@@ -29,6 +29,10 @@ type ActiveSeriesMatchers struct {
 
 func (asm *ActiveSeriesMatchers) MatcherNames() []string {
 	return asm.names
+}
+
+func (asm *ActiveSeriesMatchers) Config() *ActiveSeriesCustomTrackersConfig {
+	return asm.cfg
 }
 
 func (asm *ActiveSeriesMatchers) Matches(series labels.Labels) []bool {

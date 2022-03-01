@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package ingester
+package activeseries
 
 import (
 	"testing"
@@ -96,7 +96,7 @@ func TestActiveSeriesCustomTrackersConfigs_MalformedMatcher(t *testing.T) {
 				"malformed": matcher,
 			}
 
-			_, err := newActiveSeriesCustomTrackersConfig(config)
+			_, err := NewActiveSeriesCustomTrackersConfig(config)
 			assert.Error(t, err)
 		})
 	}

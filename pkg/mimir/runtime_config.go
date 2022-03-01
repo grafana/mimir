@@ -7,6 +7,7 @@ package mimir
 
 import (
 	"errors"
+	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"io"
 	"net/http"
 
@@ -35,7 +36,7 @@ type runtimeConfigValues struct {
 
 	IngesterLimits *ingester.InstanceLimits `yaml:"ingester_limits"`
 
-	ActiveSeriesCustomTrackersOverrides *ingester.ActiveSeriesCustomTrackersOverrides `yaml:"active_series_custom_trackers_overrides"`
+	ActiveSeriesCustomTrackersOverrides *activeseries.ActiveSeriesCustomTrackersOverrides `yaml:"active_series_custom_trackers_overrides"`
 }
 
 // runtimeConfigTenantLimits provides per-tenant limit overrides based on a runtimeconfig.Manager
@@ -147,13 +148,13 @@ func ingesterInstanceLimits(manager *runtimeconfig.Manager) func() *ingester.Ins
 	}
 }
 
-func runtimeActiveSeriesCustomTrackersOverrides(manager *runtimeconfig.Manager) *ingester.ActiveSeriesCustomTrackersOverridesProvider {
+func runtimeActiveSeriesCustomTrackersOverrides(manager *runtimeconfig.Manager) *activeseries.ActiveSeriesCustomTrackersOverridesProvider {
 	if manager == nil {
 		return nil
 	}
 
-	return &ingester.ActiveSeriesCustomTrackersOverridesProvider{
-		Getter: func() *ingester.ActiveSeriesCustomTrackersOverrides {
+	return &activeseries.ActiveSeriesCustomTrackersOverridesProvider{
+		Getter: func() *activeseries.ActiveSeriesCustomTrackersOverrides {
 			val := manager.GetConfig()
 			if cfg, ok := val.(*runtimeConfigValues); ok && cfg != nil {
 				return cfg.ActiveSeriesCustomTrackersOverrides

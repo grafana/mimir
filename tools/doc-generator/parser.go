@@ -8,6 +8,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"net/url"
 	"reflect"
 	"regexp"
@@ -22,7 +23,6 @@ import (
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/weaveworks/common/logging"
 
-	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/util/fieldcategory"
 )
 
@@ -348,7 +348,7 @@ func getCustomFieldType(t reflect.Type) (string, bool) {
 		return "string", true
 	case reflect.TypeOf([]*relabel.Config{}).String():
 		return "relabel_config...", true
-	case reflect.TypeOf(ingester.ActiveSeriesCustomTrackersConfig{}).String():
+	case reflect.TypeOf(activeseries.ActiveSeriesCustomTrackersConfig{}).String():
 		return "map of tracker name (string) to matcher (string)", true
 	default:
 		return "", false
