@@ -28,14 +28,15 @@ The distributor validation includes the following checks:
 - Each exemplar has a timestamp and at least one non-empty label name and value pair.
 - Each exemplar has no more than 128 labels.
 
-> **Note:** For each tenant, you can override the validation checks by modifying the overrides section of the runtime configuration.
+> **Note:** For each tenant, you can override the validation checks by modifying the [overrides section]({{< relref "../configuration/about-grafana-mimir-arguments.md" >}}) of the runtime configuration.
 
 ## Rate limiting
 
 The distributor includes a built-in rate limiter that it applies to each tenant.
 The rate limit is the maximum ingestion rate for each tenant across the Grafana Mimir cluster.
 If the rate exceeds the maximum number of samples per second, the distributor drops the request and returns an HTTP 429 response code.
-The local rate limiter for each distributor uses `ingestion rate limit / N`, where `N` is the number of healthy distributor replicas.
+
+Internally, the local rate limiter for each distributor uses `ingestion rate limit / N`, where `N` is the number of healthy distributor replicas.
 The distributor automatically adjusts the ingester rate limit if the number of replicas change.
 Because the rate limit is implemented using a per-distributor local rate limiter, the ingestion rate limit requires that write requests are [evenly distributed across the pool of distributors]({{< relref "#load-balancing-across-distributors" >}}).
 
@@ -96,7 +97,7 @@ We recommend randomly load balancing write requests across distributor instances
 If you're running Grafana Mimir in a Kubernetes cluster, you can define a Kubernetes [Service](https://kubernetes.io/docs/concepts/services-networking/service/) as ingress for the distributors.
 
 > **Note:** A Kubernetes Service balances TCP connections across Kubernetes endpoints and does not balance HTTP requests within a single TCP connection.
-> If you enable HTTP persistent connections (HTTP keep-alive), Prometheus re-uses the same TCP connection for each remote-write HTTP request of a remote-write shard.
+> If you enable HTTP persistent connections (HTTP keep-alive), because Prometheus uses HTTP keep-alive, it re-uses the same TCP connection for each remote-write HTTP request of a remote-write shard.
 > This can cause distributors to receive an uneven distribution of remote-write HTTP requests.
 > To improve the balancing of requests between distributors, consider increasing `min_shards` in the Prometheus [remote write config](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#remote_write).
 
