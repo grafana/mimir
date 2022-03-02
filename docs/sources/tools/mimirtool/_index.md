@@ -6,18 +6,18 @@ weight: 100
 
 # Mimirtool
 
-Mimirtool is a command-line tool that operators and tenants can use to execute a number of common commands in Grafana Mimir and Grafana Cloud Metrics.
+Mimirtool is a command-line tool that operators and tenants can use to execute a number of common tasks that involve Grafana Mimir or Grafana Cloud Metrics.
 
 - The `alertmanager` command enables you to create, update, and delete tenant configurations in Grafana Mimir Alertmanager or Grafana Cloud Metrics.
 
   For more information about the `alertmanager` command, refer to [Alertmanager]({{< relref "#alertmanager" >}}).
 
-- The `rules` command enables you work validate and lint Prometheus rule files and convert them for use in Grafana Mimir.
+- The `rules` command enables you to validate and lint Prometheus rule files and convert them for use in Grafana Mimir.
   You can also create, update, and delete rulegroups in Grafana Mimir or Grafana Cloud Metrics.
 
   For more information about the `rules` command, refer to [Rules]({{< relref "#rules" >}}).
 
-- The `remote-read` subcommand enables you fetch statistics and series from [remote-read](https://prometheus.io/docs/prometheus/latest/storage/#remote-storage-integrations) APIs.
+- The `remote-read` subcommand enables you to fetch statistics and series from [remote-read](https://prometheus.io/docs/prometheus/latest/storage/#remote-storage-integrations) APIs.
   You can write series from a remote-read API to a local TSDB file that you load into Prometheus.
 
   For more information about the remote-read command, refer to [Remote-read]({{< relref "#remote-read" >}}).
