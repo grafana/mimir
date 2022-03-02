@@ -3,6 +3,7 @@
 ## Grafana Mimir - main / unreleased
 
 * [CHANGE] Compactor: No longer upload debug meta files to object storage. #1257
+* [ENHANCEMENT] Upgrade Go to 1.17.7. #1347
 
 ### Mixin
 
