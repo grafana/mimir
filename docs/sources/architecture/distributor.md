@@ -12,7 +12,7 @@ The distributor then divides the data into batches and sends it to multiple [ing
 
 ## Validation
 
-The distributor validates the data that it receives before writing the data to the ingesters.
+The distributor validates data that it receives before writing the data to the ingesters.
 Because a single request can contain valid and invalid metrics, samples, metadata, and exemplars, the distributor only passes valid data to the ingesters. The distributor does not include invalid data in its requests to the ingesters.
 If the request contains invalid data, the distributor returns a 400 HTTP status code and the details appear in the response body.
 The details about the first invalid data are typically logged by the sender, be it Prometheus or Grafana Agent.
