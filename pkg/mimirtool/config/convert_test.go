@@ -103,6 +103,11 @@ func TestConvert(t *testing.T) {
 			inFile:  "testdata/frontend.memcached.addresses-existing-old.yaml",
 			outFile: "testdata/frontend.memcached.addresses-existing-new.yaml",
 		},
+		{
+			name:         "not-in-yaml flags don't show in output YAML",
+			inFlagsFile:  "testdata/not-in-yaml-old.flags.txt",
+			outFlagsFile: "testdata/not-in-yaml-new.flags.txt",
+		},
 	}
 
 	for _, tc := range testCases {

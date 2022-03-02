@@ -67,15 +67,15 @@ func Convert(contents []byte, flags []string, m Mapper, sourceFactory, targetFac
 		return nil, nil, ConversionNotices{}, errors.Wrap(err, "could not prune defaults in new config")
 	}
 
-	pruneDefaults(target, sourceDefaults, targetDefaults, notices)
-
 	var newFlags []string
 	if len(flags) > 0 {
 		newFlags, err = convertFlags(flags, m, target, sourceFactory, targetFactory)
 		if err != nil {
-			_, _ = fmt.Fprintln(os.Stderr, "could not convert passed CLI args: "+err.Error())
+			return nil, nil, ConversionNotices{}, errors.Wrap(err, "could not convert passed CLI args")
 		}
 	}
+
+	pruneDefaults(target, sourceDefaults, targetDefaults, notices)
 
 	yamlBytes, err := yaml.Marshal(target)
 	if err != nil {
