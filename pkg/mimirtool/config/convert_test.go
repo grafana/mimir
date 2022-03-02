@@ -78,6 +78,21 @@ func TestConvert(t *testing.T) {
 			inFile:  "testdata/am-storage-precedence-old.yaml",
 			outFile: "testdata/am-storage-precedence-new.yaml",
 		},
+		{
+			name:    "ruler S3 SSE conversion work",
+			inFile:  "testdata/ruler_storage-s3-sse-old.yaml",
+			outFile: "testdata/ruler_storage-s3-sse-new.yaml",
+		},
+		{
+			name:    "alertmanager S3 SSE conversion work",
+			inFile:  "testdata/am_storage-s3-sse-old.yaml",
+			outFile: "testdata/am_storage-s3-sse-new.yaml",
+		},
+		{
+			name:    "S3 SSE conversion doesn't overwrite existing values",
+			inFile:  "testdata/am_storage-s3-sse-repeated-old.yaml",
+			outFile: "testdata/am_storage-s3-sse-repeated-new.yaml",
+		},
 	}
 
 	for _, tc := range testCases {

@@ -28,7 +28,9 @@ var CortexToMimirMapper = MultiMapper{
 	alertmanagerStorageMapperFunc(DefaultCortexConfig()),
 	// Removed the support for `-ruler.storage.*`, use `-ruler-storage.*` instead. -ruler.storage.* should take precedence
 	rulerStorageMapperFunc(DefaultCortexConfig()),
-	// last apply any special treatment to other parameters
+	// Replace (ruler|alertmanager).storage.s3.sse_encryption=true with (alertmanager|ruler)_storage.s3.sse.type="SSE-S3"
+	mapS3SSE("alertmanager"), mapS3SSE("ruler"),
+	// apply any special treatment to other parameters
 	PathMapper{
 		PathMappings: map[string]Mapping{
 			"blocks_storage.tsdb.max_exemplars": RenameMapping("limits.max_global_exemplars_per_user"),

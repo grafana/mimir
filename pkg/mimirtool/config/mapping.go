@@ -8,6 +8,8 @@ import (
 
 	"github.com/grafana/dskit/multierror"
 	"github.com/pkg/errors"
+
+	"github.com/grafana/mimir/pkg/storage/bucket/s3"
 )
 
 type Mapper interface {
@@ -226,4 +228,26 @@ func mapDotStorage(pathRenames map[string]string, source, target, sourceDefaults
 	}
 
 	return mapper.DoMap(source, target)
+}
+
+// mapS3SSE maps (alertmanager|ruler).storage.s3.sse_encryption to (alertmanager|ruler)_storage.s3.sse.type.
+// prefix should be either "alertmanager" or "ruler". If <prefix>.storage.s3.sse_encryption was true,
+// it is replaced by alertmanager_storage.s3.sse.type="SSE-S3"
+func mapS3SSE(prefix string) MapperFunc {
+	return func(source, target *InspectedEntry) error {
+		var (
+			sseEncryptionPath = prefix + ".storage.s3.sse_encryption"
+			sseTypePath       = prefix + "_storage.s3.sse.type"
+		)
+
+		sseWasEnabledVal, err := source.GetValue(sseEncryptionPath)
+		if err != nil {
+			return err
+		}
+		if sseWasEnabledVal.(bool) && target.MustGetValue(sseTypePath) == "" {
+			return target.SetValue(sseTypePath, s3.SSES3)
+		}
+
+		return nil
+	}
 }
