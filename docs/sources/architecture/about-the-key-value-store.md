@@ -25,7 +25,7 @@ Grafana Mimir supports the following key-value (KV) store backends:
 By default, Grafana Mimir instances use a gossip-based protocol to join a memberlist cluster.
 The data is shared between the instances using peer-to-peer communication, and no external dependency is required.
 
-We recommend that you use the gossip-based memberlist protocol when you run Grafana Mimir.
+We recommend that you use memberlist when you run Grafana Mimir.
 
 To configure memberlist, refer to [memberlist]({{< relref "../configuration/reference-configuration-parameters.md#memberlist">}}).
 
