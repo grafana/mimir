@@ -116,19 +116,19 @@ func (r *RuleCommand) Register(app *kingpin.Application, envVars EnvVarNames) {
 		Command("load", "Load a set of rules to a designated Grafana Mimir endpoint.").
 		Action(r.loadRules)
 	diffRulesCmd := rulesCmd.
-		Command("diff", "diff a set of rules to a designated Grafana Mimir endpoint.").
+		Command("diff", "Diff a set of rules to a designated Grafana Mimir endpoint.").
 		Action(r.diffRules)
 	syncRulesCmd := rulesCmd.
-		Command("sync", "sync a set of rules to a designated Grafana Mimir endpoint.").
+		Command("sync", "Sync a set of rules to a designated Grafana Mimir endpoint.").
 		Action(r.syncRules)
 	prepareCmd := rulesCmd.
-		Command("prepare", "modifies a set of rules by including an specific label in aggregations.").
+		Command("prepare", "Modify a set of rules by including an specific label in aggregations.").
 		Action(r.prepare)
 	lintCmd := rulesCmd.
-		Command("lint", "formats a set of rule files. It reorders keys alphabetically, uses 4 spaces as indentantion, and formats PromQL expressions to a single line.").
+		Command("lint", "Format a set of rule files. Keys are sorted alphabetically, with 4 spaces as indentantion, and PromQL expressions are formatted to a single line.").
 		Action(r.lint)
 	checkCmd := rulesCmd.
-		Command("check", "runs various best practice checks against rules.").
+		Command("check", "Run various best practice checks against rules.").
 		Action(r.checkRecordingRuleNames)
 
 	// Require Mimir cluster address and tentant ID on all these commands

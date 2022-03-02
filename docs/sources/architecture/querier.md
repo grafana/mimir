@@ -6,33 +6,32 @@ weight: 10
 
 # Querier
 
-The querier component handles queries using the [PromQL](https://prometheus.io/docs/prometheus/latest/querying/basics/) query language. The querier service is used both by the chunks and blocks storage, and the [general architecture documentation](../architecture.md#querier) applies to the blocks storage too, except for the differences described in this document.
+The querier component handles queries using the [Prometheus Query Language](https://prometheus.io/docs/prometheus/latest/querying/basics/) to fetch time series and labels on the read path.
+
+The querier uses the [store-gateway]({{< relref "./store-gateway.md" >}}) component to query the [long-term storage]({{< relref "./_index.md#long-term-storage" >}}) and the [ingester]({{< relref "./ingester.md" >}}) component to query recently written data.
 
 The querier is **stateless**.
 
 ## How it works
 
-The querier needs to have an almost up-to-date view over the entire storage bucket, in order to find the right blocks to lookup at query time. The querier can keep the bucket view updated in to two different ways:
+The querier needs to have an almost up-to-date view over the bucket in long-term storage, in order to find the right blocks to lookup at query time. The querier can keep the bucket view updated in two different ways:
 
-1. Periodically scanning the bucket (default)
-2. Periodically downloading the [bucket index](./bucket-index.md)
+1. Periodically downloading the [bucket index]({{< relref "../operating-grafana-mimir/blocks-storage/bucket-index.md" >}}) (default)
+2. Periodically scanning the bucket
 
-### Bucket index disabled (default)
+Queriers do not need any content from blocks except their metadata including the minimum and maximum timestamp of samples within the block.
 
-At startup, **queriers** iterate over the entire storage bucket to discover all tenants blocks and download the `meta.json` for each block. During this initial bucket scanning phase, a querier is not ready to handle incoming queries yet and its `/ready` readiness probe endpoint will fail.
+### Bucket index enabled (default)
 
-While running, queriers periodically iterate over the storage bucket to discover new tenants and recently uploaded blocks. Queriers do **not** download any content from blocks except a small `meta.json` file containing the block's metadata (including the minimum and maximum timestamp of samples within the block).
+At startup, queriers lazily download the bucket index upon the first query received for a given tenant, cache it in memory and periodically keep it up to date. The bucket index contains the list of blocks and block deletion marks of a tenant, which is later used during the query execution to find the set of blocks that need to be queried for the given query.
 
-Queriers use the metadata to compute the list of blocks that need to be queried at query time and fetch matching series from the [store-gateway](./store-gateway.md) instances holding the required blocks.
+Running with the bucket index enabled reduces querier startup time and reduces the volume of API calls to object storage.
 
-### Bucket index enabled
+### Bucket index disabled
 
-When [bucket index](./bucket-index.md) is enabled, queriers lazily download the bucket index upon the first query received for a given tenant, cache it in memory and periodically keep it update. The bucket index contains the list of blocks and block deletion marks of a tenant, which is later used during the query execution to find the set of blocks that need to be queried for the given query.
+When [bucket index]({{< relref "../operating-grafana-mimir/blocks-storage/bucket-index.md" >}}) is disabled, **queriers** iterate over the entire storage bucket to discover blocks for all tenants, and download the `meta.json` for each block. During this initial bucket scanning phase, a querier is not ready to handle incoming queries yet and its `/ready` readiness probe endpoint will fail.
 
-Given the bucket index removes the need to scan the bucket, it brings few benefits:
-
-1. The querier is expected to be ready shortly after startup.
-2. Lower volume of API calls to object storage.
+While running, queriers periodically iterate over the storage bucket to discover new tenants and recently uploaded blocks.
 
 ### Anatomy of a query request
 
@@ -45,19 +44,20 @@ When a querier receives a query range request, it contains the following paramet
 
 Given a query, the querier analyzes the `start` and `end` time range to compute a list of all known blocks containing at least 1 sample within this time range. Given the list of blocks, the querier then computes a list of store-gateway instances holding these blocks and sends a request to each matching store-gateway instance asking to fetch all the samples for the series matching the `query` within the `start` and `end` time range.
 
-The request sent to each store-gateway contains the list of block IDs that are expected to be queried, and the response sent back by the store-gateway to the querier contains the list of block IDs that were actually queried. This list may be a subset of the requested blocks, for example due to recent blocks resharding event (ie. last few seconds). The querier runs a consistency check on responses received from the store-gateways to ensure all expected blocks have been queried; if not, the querier retries to fetch samples from missing blocks from different store-gateways (if the `-store-gateway.sharding-ring.replication-factor` is greater than `1`) and if the consistency check fails after all retries, the query execution fails as well (correctness is always guaranteed).
+The request sent to each store-gateway contains the list of block IDs that are expected to be queried, and the response sent back by the store-gateway to the querier contains the list of block IDs that were actually queried. This list may be a subset of the requested blocks, for example due to recent blocks resharding event (ie. last few seconds).
+The querier runs a consistency check on responses received from the store-gateways to ensure all expected blocks have been queried; if not, the querier retries fetching samples from missing blocks from different store-gateways up to `-store-gateway.sharding-ring.replication-factor` (defaults to 3) times or maximum 3 times, whichever is lower. If the consistency check fails after all retries, the query execution fails as well. This way the correctness of query result is guaranteed.
 
-If the query time range covers a period within `-querier.query-ingesters-within` duration, the querier also sends the request to all ingesters, in order to fetch samples that have not been uploaded to the long-term storage yet.
+If the query time range covers a period within `-querier.query-ingesters-within` duration, the querier also sends the request to all ingesters by default, in order to fetch samples that have not been uploaded to the long-term storage yet.
 
 Once all samples have been fetched from both store-gateways and ingesters, the querier proceeds with running the PromQL engine to execute the query and send back the result to the client.
 
 ### How queriers connect to store-gateway
 
-Queriers need to discover store-gateways in order to connect to them at query time. The service discovery mechanism used depends whether blocks sharding is enabled in the store-gateways.
+Queriers discover the address of store-gateways by accessing the store-gateways hash ring and thus queriers must be configured with the same `-store-gateway.sharding-ring.*` flags (or their respective YAML configuration parameters) that store-gateways have been configured.
 
-When blocks sharding is **enabled**, queriers need to access to the store-gateways hash ring and thus queriers need to be configured with the same `-store-gateway.sharding-ring.*` flags (or their respective YAML config options) store-gateways have been configured.
+### How queriers connect to ingester
 
-When blocks sharding is **disabled**, queriers need the `-querier.store-gateway-addresses` CLI flag (or its respective YAML config option) being set to a comma separated list of store-gateway addresses in [DNS Service Discovery format]((../configuration/arguments.md#dns-service-discovery). Queriers will evenly balance the requests to query blocks across the resolved addresses.
+Queriers discover the address of ingesters by accessing the ingester hash ring and thus queriers must be configured with the same `-ingester.ring.*` flags (or their respective YAML configuration parameters) that ingesters have been configured.
 
 ## Caching
 
@@ -65,27 +65,26 @@ The querier supports the following caches:
 
 - [Metadata cache](#metadata-cache)
 
-Caching is optional, but **highly recommended** in a production environment. Please also check out the [production tips](./production-tips.md#caching) for more information about configuring the cache.
+Caching is optional, but **highly recommended** in a production environment. Please also check out the [production tips]({{< relref "../operating-grafana-mimir/blocks-storage/production-tips.md#caching" >}}) for more information about configuring the cache.
 
 ### Metadata cache
 
-[Store-gateway](./store-gateway.md) and querier can use memcached for caching bucket metadata:
+[Store-gateway]({{< relref "./store-gateway.md" >}}) and querier can use memcached for caching bucket metadata:
 
 - List of tenants
 - List of blocks per tenant
-- Block's `meta.json` content
+- Block's `meta.json` existence and content
 - Block's `deletion-mark.json` existence and content
 - Tenant's `bucket-index.json.gz` content
 
-Using the metadata cache can significantly reduce the number of API calls to object storage and protects from linearly scale the number of these API calls with the number of querier and store-gateway instances (because the bucket is periodically scanned and synched by each querier and store-gateway).
+Using the metadata cache can significantly reduce the number of API calls to long-term storage and stops the number of these API calls scaling linearly with the number of querier and store-gateway replicas.
 
 To enable metadata cache, please set `-blocks-storage.bucket-store.metadata-cache.backend`. Only `memcached` backend is supported currently. Memcached client has additional configuration available via flags with `-blocks-storage.bucket-store.metadata-cache.memcached.*` prefix.
 
-Additional options for configuring metadata cache have `-blocks-storage.bucket-store.metadata-cache.*` prefix. By configuring TTL to zero or negative value, caching of given item type is disabled.
+Additional flags for configuring metadata cache have `-blocks-storage.bucket-store.metadata-cache.*` prefix. By configuring TTL to zero or negative value, caching of given item type is disabled.
 
 _The same memcached backend cluster should be shared between store-gateways and queriers._
 
 ## Querier configuration
 
-Refer to the [querier](../../configuration/reference-configuration-parameters/#querier)
-block section for details of querier-related configuration.
+Refer to the [querier]({{< relref "../configuration/reference-configuration-parameters.md#querier" >}}) block section for details of querier-related configuration.

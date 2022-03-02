@@ -150,5 +150,36 @@ local utils = import 'mixin-utils/utils.libsonnet';
           { 'Value #A': { alias: 'exemplars/s' } }
         )
       ),
+    )
+
+
+    .addRow(
+      ($.row('By rule group size') + { collapse: true })
+      .addPanel(
+        $.panel('Top $limit biggest groups') +
+        { sort: { col: 3, desc: true } } +
+        $.tablePanel(
+          [
+            'topk($limit, sum by (rule_group, user) (cortex_prometheus_rule_group_rules{%(job)s}))'
+            % { job: $.jobMatcher($._config.job_names.ruler) },
+          ],
+          { 'Value #A': { alias: 'rules' } }
+        )
+      ),
+    )
+
+    .addRow(
+      ($.row('By rule group evaluation time') + { collapse: true })
+      .addPanel(
+        $.panel('Top $limit slowest groups (last evaluation)') +
+        { sort: { col: 3, desc: true } } +
+        $.tablePanel(
+          [
+            'topk($limit, sum by (rule_group, user) (cortex_prometheus_rule_group_last_duration_seconds{%(job)s}))'
+            % { job: $.jobMatcher($._config.job_names.ruler) },
+          ],
+          { 'Value #A': { alias: 'seconds' } }
+        )
+      )
     ),
 }

@@ -10,7 +10,7 @@ weight: 10000
 
 Blocks storage is the Mimir storage engine based on the Prometheus TSDB.
 Grafana Mimir stores blocks in object stores such as AWS S3, Google Cloud Storage (GCS), Azure blob storage, or OpenStack Object Storage (Swift).
-For the full list of supported backends and more information, refer to [Blocks storage]({{<relref "./blocks-storage/_index.md" >}})
+For the full list of supported backends and more information, refer to [Blocks storage]({{<relref "./operating-grafana-mimir/blocks-storage/_index.md" >}})
 
 ## Chunk
 
@@ -22,6 +22,21 @@ Churn is the frequency at which series become idle.
 
 A series becomes idle once it's no longer exported by the monitored targets.
 Typically, series become idle when a monitored target process or node gets terminated.
+
+## Component
+
+Grafana Mimir comprises several components.
+Each component provides a specific function to the system.
+For component specific documentation, refer to one of the following topics:
+
+- [Compactor]({{<relref "./architecture/compactor.md" >}})
+- [Distributor]({{<relref "./architecture/distributor.md" >}})
+- [Ingester]({{<relref "./architecture/ingester.md" >}})
+- [Query-frontend]({{<relref "./architecture/query-frontend.md" >}})
+- [Query-scheduler]({{<relref "./architecture/query-scheduler.md" >}})
+- [Store-gateway]({{<relref "./architecture/store-gateway.md" >}})
+- [Optional: Alertmanager]({{<relref "./architecture/alertmanager.md" >}})
+- [Optional: Ruler]({{<relref "./architecture/ruler.md" >}})
 
 ## Flushing
 

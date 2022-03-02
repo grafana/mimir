@@ -109,30 +109,23 @@ The ingester query API was improved over time, but defaults to the old behaviour
 
 ## Distributor
 
-- `distributor.ha-tracker.enable-for-all-users`
-  Flag to enable, for all users, handling of samples with external labels identifying replicas in an HA Prometheus setup. This defaults to false, and is technically defined in the Distributor limits.
-
-- `distributor.ha-tracker.enable`
-  Enable the distributors HA tracker so that it can accept samples from Prometheus HA replicas gracefully (requires labels). Global (for distributors), this ensures that the necessary internal data structures for the HA handling are created. The option `enable-for-all-users` is still needed to enable ingestion of HA samples for all users.
-
 - `distributor.drop-label`
   This flag can be used to specify label names that to drop during sample ingestion within the distributor and can be repeated in order to drop multiple labels.
 
-### Ring/HA Tracker Store
+### Ring
 
-The KVStore client is used by both the Ring and HA Tracker (HA Tracker doesn't support memberlist as KV store).
+The KVStore client is used by the Ring.
 
-- `{ring,distributor.ha-tracker}.prefix`
+- `ring.prefix`
   The prefix for the keys in the store. Should end with a /. For example with a prefix of foo/, the key bar would be stored under foo/bar.
-- `{ring,distributor.ha-tracker}.store`
-  Backend storage to use for the HA Tracker (consul, etcd, inmemory, multi).
+- `ring.store`
+  Backend storage to use for the ring.
 - `{ring,distributor.ring}.store`
   Backend storage to use for the Ring (consul, etcd, inmemory, memberlist, multi).
 
 #### Consul
 
-By default these flags are used to configure Consul used for the ring. To configure Consul for the HA tracker,
-prefix these flags with `distributor.ha-tracker.`
+By default these flags are used to configure Consul used for the ring.
 
 - `consul.hostname`
   Hostname and port of Consul.
@@ -145,8 +138,7 @@ prefix these flags with `distributor.ha-tracker.`
 
 #### etcd
 
-By default these flags are used to configure etcd used for the ring. To configure etcd for the HA tracker,
-prefix these flags with `distributor.ha-tracker.`
+By default these flags are used to configure etcd used for the ring.
 
 - `etcd.endpoints`
   The etcd endpoints to connect to.
@@ -166,8 +158,6 @@ prefix these flags with `distributor.ha-tracker.`
   Skip validating server certificate.
 
 #### memberlist
-
-Warning: memberlist KV works only for the [hash ring](../architecture.md#the-hash-ring), not for the HA Tracker, because propagation of changes is too slow for HA Tracker purposes.
 
 When using memberlist-based KV store, each node maintains its own copy of the hash ring.
 Updates generated locally, and received from other nodes are merged together to form the current state of the ring on the node.
@@ -260,40 +250,11 @@ multi_kv_config:
 
 Note that runtime configuration values take precedence over command line options.
 
-### HA Tracker
-
-HA tracking has two of its own flags:
-
-- `distributor.ha-tracker.cluster`
-  Prometheus label to look for in samples to identify a Prometheus HA cluster. (default "cluster")
-- `distributor.ha-tracker.replica`
-  Prometheus label to look for in samples to identify a Prometheus HA replica. (default "`__replica__`")
-
-It's reasonable to assume people probably already have a `cluster` label, or something similar. If not, they should add one along with `__replica__` via external labels in their Prometheus config. If you stick to these default values your Prometheus config could look like this (`POD_NAME` is an environment variable which must be set by you):
-
-```yaml
-global:
-  external_labels:
-    cluster: clustername
-    __replica__: $POD_NAME
-```
-
-HA Tracking looks for the two labels (which can be overwritten per user)
-
-It also talks to a KVStore and has it's own copies of the same flags used by the Distributor to connect to for the ring.
-
-- `distributor.ha-tracker.failover-timeout`
-  If we don't receive any samples from the accepted replica for a cluster in this amount of time we will failover to the next replica we receive a sample from. This value must be greater than the update timeout (default 30s)
-- `distributor.ha-tracker.store`
-  Backend storage to use for the ring (consul, etcd, inmemory, multi). Inmemory only works if there is a single distributor and ingester running in the same process (for testing purposes). (default "consul")
-- `distributor.ha-tracker.update-timeout`
-  Update the timestamp in the KV store for a given cluster/replica only after this amount of time has passed since the current stored timestamp. (default 15s)
-
 ## Runtime configuration file
 
 Mimir has a concept of "runtime config" file, which is simply a file that is reloaded while Mimir is running. It is used by some Mimir components to allow operator to change some aspects of Mimir configuration without restarting it. File is specified by using `-runtime-config.file=<filename>` flag and reload period (which defaults to 10 seconds) can be changed by `-runtime-config.reload-period=<duration>` flag. Previously this mechanism was only used by limits overrides, and flags were called `-limits.per-user-override-config=<filename>` and `-limits.per-user-override-period=10s` respectively. These are still used, if `-runtime-config.file=<filename>` is not specified.
 
-At the moment runtime configuration may contain per-user limits, multi KV store, and ingester instance limits.
+At the moment runtime configuration may contain per-tenant limits, multi KV store, and ingester instance limits.
 
 Example runtime configuration file:
 
@@ -329,32 +290,17 @@ overrides:
 
 Valid per-tenant limits are (with their corresponding flags for default values):
 
-- `ingestion_rate` / `-distributor.ingestion-rate-limit`
-- `ingestion_burst_size` / `-distributor.ingestion-burst-size`
-
-  The per-tenant rate limit (and burst size), in samples per second.
-
-  The limit is enforced globally, configuring a per-distributor local rate limiter as `ingestion_rate / N`, where N is the number of distributor replicas (it's automatically adjusted if the number of replicas change). The `ingestion_burst_size` refers to the per-distributor local rate limiter and should be set at least to the maximum number of samples expected in a single push request. For this reason, the ingestion rate limit requires that push requests are evenly distributed across the pool of distributors; if you use a load balancer in front of the distributors you should be already covered, while if you have a custom setup (ie. an authentication gateway in front) make sure traffic is evenly balanced across distributors.
-
-  The ingestion rate limit requires the distributors to form their own ring, which is used to keep track of the current number of healthy distributor replicas. The ring is configured by `distributor: { ring: {}}` / `-distributor.ring.*`.
-
-- `max_label_name_length` / `-validation.max-length-label-name`
-- `max_label_value_length` / `-validation.max-length-label-value`
-- `max_label_names_per_series` / `-validation.max-label-names-per-series`
-
-  Also enforced by the distributor, limits on the on length of labels and their values, and the total number of labels allowed per series.
-
 - `max_global_series_per_user` / `-ingester.max-global-series-per-user`
 - `max_global_series_per_metric` / `-ingester.max-global-series-per-metric`
 
-  Enforced by the ingesters; limits the number of in-memory series a user (or a given metric) can have. A series is kept in memory if a sample has been written since the last TSDB head compaction (occurring every 2h) or in the last 1h (regardless when the last TSDB head compaction occurred). The limit is enforced across the cluster. Each ingester is configured with a local limit based on the replication factor and the current number of healthy ingesters. The local limit is updated whenever the number of ingesters change.
+  Enforced by the ingesters; limits the number of in-memory series a tenant (or a given metric) can have. A series is kept in memory if a sample has been written since the last TSDB head compaction (occurring every 2h) or in the last 1h (regardless when the last TSDB head compaction occurred). The limit is enforced across the cluster. Each ingester is configured with a local limit based on the replication factor and the current number of healthy ingesters. The local limit is updated whenever the number of ingesters change.
 
   Requires `-ingester.ring.replication-factor` and `-ingester.ring.zone-awareness-enabled` set for the ingesters too.
 
 - `max_global_metadata_per_user` / `-ingester.max-global-metadata-per-user`
 - `max_global_metadata_per_metric` / `-ingester.max-global-metadata-per-metric`
 
-  Enforced by the ingesters; limits the number of active metadata a user (or a given metric) can have. The limit is enforced across the cluster. Each ingester is configured with a local limit based on the replication factor and the current number of healthy ingesters. The local limit is updated whenever the number of ingesters change.
+  Enforced by the ingesters; limits the number of active metadata a tenant (or a given metric) can have. The limit is enforced across the cluster. Each ingester is configured with a local limit based on the replication factor and the current number of healthy ingesters. The local limit is updated whenever the number of ingesters change.
 
   Requires `-ingester.ring.replication-factor` and `-ingester.ring.zone-awareness-enabled` set for the ingesters too.
 
@@ -363,7 +309,7 @@ Valid per-tenant limits are (with their corresponding flags for default values):
 
 ## Ingester instance limits
 
-Mimir ingesters support limits that are applied per-instance, meaning they apply to each ingester process. These can be used to ensure individual ingesters are not overwhelmed regardless of any per-user limits. These limits can be set under the `ingester.instance_limits` block in the global configuration file, with command line flags, or under the `ingester_limits` field in the runtime configuration file.
+Mimir ingesters support limits that are applied per-instance, meaning they apply to each ingester process. These can be used to ensure individual ingesters are not overwhelmed regardless of any per-tenant limits. These limits can be set under the `ingester.instance_limits` block in the global configuration file, with command line flags, or under the `ingester_limits` field in the runtime configuration file.
 
 An example as part of the runtime configuration file:
 

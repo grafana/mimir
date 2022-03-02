@@ -1565,7 +1565,7 @@
                   "renderer": "flot",
                   "seriesOverrides": [ ],
                   "sort": {
-                     "col": 3,
+                     "col": 2,
                      "desc": true
                   },
                   "spaceLength": 10,
@@ -1608,7 +1608,7 @@
                   ],
                   "targets": [
                      {
-                        "expr": "topk($limit, sum by (user, rule_group) (cortex_prometheus_rule_group_rules{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\", user=~\"$user\"}))",
+                        "expr": "topk($limit, sum by (rule_group) (cortex_prometheus_rule_group_rules{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\", user=~\"$user\"}))",
                         "format": "table",
                         "instant": true,
                         "intervalFactor": 2,
@@ -1681,7 +1681,7 @@
                   "renderer": "flot",
                   "seriesOverrides": [ ],
                   "sort": {
-                     "col": 3,
+                     "col": 2,
                      "desc": true
                   },
                   "spaceLength": 10,
@@ -1724,7 +1724,7 @@
                   ],
                   "targets": [
                      {
-                        "expr": "topk($limit, sum by (user, rule_group) (cortex_prometheus_rule_group_last_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\"}))",
+                        "expr": "topk($limit, sum by (rule_group) (cortex_prometheus_rule_group_last_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\", user=~\"$user\"}))",
                         "format": "table",
                         "instant": true,
                         "intervalFactor": 2,

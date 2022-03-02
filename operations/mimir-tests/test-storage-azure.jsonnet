@@ -23,8 +23,5 @@ mimir {
     alertmanager_azure_account_name: 'alerts-account-name',
     alertmanager_azure_account_key: 'alerts-account-key',
     alertmanager_azure_container_name: 'alerts-bucket',
-    alertmanager+: {
-      sharding_enabled: true,
-    },
   },
 }

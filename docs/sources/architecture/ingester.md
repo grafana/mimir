@@ -48,7 +48,7 @@ Contrary to the sole replication and given the persistent disk data is not lost,
 Zones may represent logical or physical failure domains, for example different data centers.
 Spreading replicas across multiple zones prevents data loss and service interruptions when there is a zone wide outage.
 
-To set up multi-zone replication, refer to [zone aware replication]({{<relref "../guides/zone-replication.md">}}).
+To set up multi-zone replication, refer to [Configuring zone-aware replication]({{<relref "../operating-grafana-mimir/configure-zone-aware-replication.md">}}).
 
 ## Shuffle sharding
 

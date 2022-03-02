@@ -1,0 +1,2 @@
+ruler:
+  alertmanager_url: 'dnssrvnoa+http://_http._tcp.alertmanager/am,dnssrvnoa+http://_http._tcp.alertmanager2/alertmanager'

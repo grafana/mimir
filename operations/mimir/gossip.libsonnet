@@ -45,42 +45,43 @@
 
   compactor_args+: setupGossipRing('compactor.ring.store', 'compactor.ring.consul.hostname') + memberlistConfig,
 
-  ingester_args+: {
-    // wait longer to see LEAVING ingester in the gossiped ring, to avoid
-    // auto-join without transfer from LEAVING ingester.
-    'ingester.ring.join-after': '60s',
-
-    // Updating heartbeat is low-cost operation when using gossiped ring, we can
-    // do it more often (gossiping will happen no matter what, we may as well send
-    // recent timestamps).
-    // It also helps other components to see more recent update in the ring.
-    'ingester.ring.heartbeat-period': '5s',
-  },
-
   local gossipRingPort = 7946,
 
   local containerPort = $.core.v1.containerPort,
   local gossipPort = containerPort.newNamed(name='gossip-ring', containerPort=gossipRingPort),
 
+  compactor_ports+:: [gossipPort],
   distributor_ports+:: [gossipPort],
-  querier_ports+:: [gossipPort],
   ingester_ports+:: [gossipPort],
+  querier_ports+:: [gossipPort],
+  ruler_ports+:: [gossipPort],
+  store_gateway_ports+:: [gossipPort],
 
-  distributor_deployment_labels+:: { [$._config.gossip_member_label]: 'true' },
-  ingester_deployment_labels+:: { [$._config.gossip_member_label]: 'true' },
-  querier_deployment_labels+:: { [$._config.gossip_member_label]: 'true' },
+  // Don't add label to matcher, only to pod labels.
+  local gossipLabel = $.apps.v1.statefulSet.spec.template.metadata.withLabelsMixin({ [$._config.gossip_member_label]: 'true' }),
 
-  // Headless service (= no assigned IP, DNS returns all targets instead) pointing to some
-  // users of gossiped-ring. We use ingesters as seed nodes for joining gossip cluster.
-  // During migration to gossip, it may be useful to use distributors instead, since they are restarted faster.
+  compactor_statefulset+:
+    gossipLabel,
+
+  distributor_deployment+:
+    gossipLabel,
+
+  ingester_statefulset+:
+    gossipLabel,
+
+  querier_deployment+:
+    gossipLabel,
+
+  ruler_deployment+:
+    if $._config.ruler_enabled then gossipLabel else {},
+
+  store_gateway_statefulset+:
+    gossipLabel,
+
+  // Headless service (= no assigned IP, DNS returns all targets instead) pointing to gossip network members.
   gossip_ring_service:
     local service = $.core.v1.service;
-
-    // backwards compatibility with ksonnet
-    local servicePort =
-      if std.objectHasAll($.core.v1, 'servicePort')
-      then $.core.v1.servicePort
-      else service.mixin.spec.portsType;
+    local servicePort = $.core.v1.servicePort;
 
     local ports = [
       servicePort.newNamed('gossip-ring', gossipRingPort, gossipRingPort) +

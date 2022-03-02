@@ -17,8 +17,5 @@ mimir {
     alertmanager_enabled: true,
     alertmanager_client_type: 'gcs',
     alertmanager_gcs_bucket_name: 'alerts-bucket',
-    alertmanager+: {
-      sharding_enabled: true,
-    },
   },
 }

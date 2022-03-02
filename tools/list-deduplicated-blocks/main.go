@@ -81,7 +81,7 @@ func main() {
 		[]string{"state"}, []string{"duplicate"})
 
 	log.Println("Running filter")
-	err = df.Filter(ctx, metasMap, s)
+	err = df.Filter(ctx, metasMap, s, nil)
 	if err != nil {
 		log.Fatalln("deduplication failed:", err)
 	}

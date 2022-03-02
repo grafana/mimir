@@ -12,21 +12,22 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/mitchellh/go-wordwrap"
 	"gopkg.in/yaml.v3"
 
-	wordwrap "github.com/mitchellh/go-wordwrap"
+	"github.com/grafana/mimir/tools/doc-generator/parse"
 )
 
 type specWriter struct {
 	out strings.Builder
 }
 
-func (w *specWriter) writeConfigBlock(b *configBlock, indent int) {
-	if len(b.entries) == 0 {
+func (w *specWriter) writeConfigBlock(b *parse.ConfigBlock, indent int) {
+	if len(b.Entries) == 0 {
 		return
 	}
 
-	for i, entry := range b.entries {
+	for i, entry := range b.Entries {
 		// Add a new line to separate from the previous entry
 		if i > 0 {
 			w.out.WriteString("\n")
@@ -36,49 +37,49 @@ func (w *specWriter) writeConfigBlock(b *configBlock, indent int) {
 	}
 }
 
-func (w *specWriter) writeConfigEntry(e *configEntry, indent int) {
-	if e.kind == "block" {
+func (w *specWriter) writeConfigEntry(e *parse.ConfigEntry, indent int) {
+	if e.Kind == parse.KindBlock {
 		// If the block is a root block it will have its dedicated section in the doc,
 		// so here we've just to write down the reference without re-iterating on it.
-		if e.root {
+		if e.Root {
 			// Description
-			w.writeComment(e.blockDesc, indent, 0)
-			if e.block.flagsPrefix != "" {
-				w.writeComment(fmt.Sprintf("The CLI flags prefix for this block configuration is: %s", e.block.flagsPrefix), indent, 0)
+			w.writeComment(e.BlockDesc, indent, 0)
+			if e.Block.FlagsPrefix != "" {
+				w.writeComment(fmt.Sprintf("The CLI flags prefix for this block configuration is: %s", e.Block.FlagsPrefix), indent, 0)
 			}
 
 			// Block reference without entries, because it's a root block
-			w.out.WriteString(pad(indent) + "[" + e.name + ": <" + e.block.name + ">]\n")
+			w.out.WriteString(pad(indent) + "[" + e.Name + ": <" + e.Block.Name + ">]\n")
 		} else {
 			// Description
-			w.writeComment(e.blockDesc, indent, 0)
+			w.writeComment(e.BlockDesc, indent, 0)
 
 			// Name
-			w.out.WriteString(pad(indent) + e.name + ":\n")
+			w.out.WriteString(pad(indent) + e.Name + ":\n")
 
 			// Entries
-			w.writeConfigBlock(e.block, indent+tabWidth)
+			w.writeConfigBlock(e.Block, indent+tabWidth)
 		}
 	}
 
-	if e.kind == "field" {
+	if e.Kind == parse.KindField {
 		// Description
-		w.writeComment(e.description(), indent, 0)
-		w.writeExample(e.fieldExample, indent)
-		w.writeFlag(e.fieldFlag, indent)
+		w.writeComment(e.Description(), indent, 0)
+		w.writeExample(e.FieldExample, indent)
+		w.writeFlag(e.FieldFlag, indent)
 
 		// Specification
-		fieldDefault := e.fieldDefault
-		if e.fieldType == "string" {
+		fieldDefault := e.FieldDefault
+		if e.FieldType == "string" {
 			fieldDefault = strconv.Quote(fieldDefault)
-		} else if e.fieldType == "duration" {
+		} else if e.FieldType == "duration" {
 			fieldDefault = cleanupDuration(fieldDefault)
 		}
 
-		if e.required {
-			w.out.WriteString(pad(indent) + e.name + ": <" + e.fieldType + "> | default = " + fieldDefault + "\n")
+		if e.Required {
+			w.out.WriteString(pad(indent) + e.Name + ": <" + e.FieldType + "> | default = " + fieldDefault + "\n")
 		} else {
-			w.out.WriteString(pad(indent) + "[" + e.name + ": <" + e.fieldType + "> | default = " + fieldDefault + "]\n")
+			w.out.WriteString(pad(indent) + "[" + e.Name + ": <" + e.FieldType + "> | default = " + fieldDefault + "]\n")
 		}
 	}
 }
@@ -100,17 +101,17 @@ func (w *specWriter) writeComment(comment string, indent, innerIndent int) {
 	w.writeWrappedString(wrapped, indent, innerIndent)
 }
 
-func (w *specWriter) writeExample(example *fieldExample, indent int) {
+func (w *specWriter) writeExample(example *parse.FieldExample, indent int) {
 	if example == nil {
 		return
 	}
 
 	w.writeComment("Example:", indent, 0)
-	if example.comment != "" {
-		w.writeComment(example.comment, indent, 2)
+	if example.Comment != "" {
+		w.writeComment(example.Comment, indent, 2)
 	}
 
-	data, err := yaml.Marshal(example.yaml)
+	data, err := yaml.Marshal(example.Yaml)
 	if err != nil {
 		panic(fmt.Errorf("can't render example: %w", err))
 	}
@@ -133,11 +134,11 @@ type markdownWriter struct {
 	out strings.Builder
 }
 
-func (w *markdownWriter) writeConfigDoc(blocks []*configBlock) {
+func (w *markdownWriter) writeConfigDoc(blocks []*parse.ConfigBlock) {
 	// Deduplicate root blocks.
-	uniqueBlocks := map[string]*configBlock{}
+	uniqueBlocks := map[string]*parse.ConfigBlock{}
 	for _, block := range blocks {
-		uniqueBlocks[block.name] = block
+		uniqueBlocks[block.Name] = block
 	}
 
 	// Generate the markdown, honoring the root blocks order.
@@ -145,28 +146,28 @@ func (w *markdownWriter) writeConfigDoc(blocks []*configBlock) {
 		w.writeConfigBlock(topBlock)
 	}
 
-	for _, rootBlock := range rootBlocks {
-		if block, ok := uniqueBlocks[rootBlock.name]; ok {
+	for _, rootBlock := range parse.RootBlocks {
+		if block, ok := uniqueBlocks[rootBlock.Name]; ok {
 			w.writeConfigBlock(block)
 		}
 	}
 }
 
-func (w *markdownWriter) writeConfigBlock(block *configBlock) {
+func (w *markdownWriter) writeConfigBlock(block *parse.ConfigBlock) {
 	// Title
-	if block.name != "" {
-		w.out.WriteString("### " + block.name + "\n")
+	if block.Name != "" {
+		w.out.WriteString("### " + block.Name + "\n")
 		w.out.WriteString("\n")
 	}
 
 	// Description
-	if block.desc != "" {
-		desc := block.desc
+	if block.Desc != "" {
+		desc := block.Desc
 
 		// Wrap first instance of the config block name with backticks
-		if block.name != "" {
+		if block.Name != "" {
 			var matches int
-			nameRegexp := regexp.MustCompile(regexp.QuoteMeta(block.name))
+			nameRegexp := regexp.MustCompile(regexp.QuoteMeta(block.Name))
 			desc = nameRegexp.ReplaceAllStringFunc(desc, func(input string) string {
 				if matches == 0 {
 					matches++
@@ -177,8 +178,8 @@ func (w *markdownWriter) writeConfigBlock(block *configBlock) {
 		}
 
 		// List of all prefixes used to reference this config block.
-		if len(block.flagsPrefixes) > 1 {
-			sortedPrefixes := sort.StringSlice(block.flagsPrefixes)
+		if len(block.FlagsPrefixes) > 1 {
+			sortedPrefixes := sort.StringSlice(block.FlagsPrefixes)
 			sortedPrefixes.Sort()
 
 			desc += " The supported CLI flags `<prefix>` used to reference this configuration block are:\n\n"

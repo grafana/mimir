@@ -263,7 +263,8 @@ func (prometheusCodec) EncodeRequest(ctx context.Context, r Request) (*http.Requ
 }
 
 func (prometheusCodec) DecodeResponse(ctx context.Context, r *http.Response, _ Request, logger log.Logger) (Response, error) {
-	if r.StatusCode/100 != 2 {
+	var resp PrometheusResponse
+	if r.StatusCode/100 == 5 {
 		body, _ := ioutil.ReadAll(r.Body)
 		return nil, httpgrpc.ErrorFromHTTPResponse(&httpgrpc.HTTPResponse{
 			Code: int32(r.StatusCode),
@@ -272,6 +273,7 @@ func (prometheusCodec) DecodeResponse(ctx context.Context, r *http.Response, _ R
 	}
 	log, ctx := spanlogger.NewWithLogger(ctx, logger, "ParseQueryRangeResponse") //nolint:ineffassign,staticcheck
 	defer log.Finish()
+	log.LogFields(otlog.Int("status_code", r.StatusCode))
 
 	buf, err := bodyBuffer(r)
 	if err != nil {
@@ -280,9 +282,12 @@ func (prometheusCodec) DecodeResponse(ctx context.Context, r *http.Response, _ R
 	}
 	log.LogFields(otlog.Int("bytes", len(buf)))
 
-	var resp PrometheusResponse
 	if err := json.Unmarshal(buf, &resp); err != nil {
 		return nil, apierror.Newf(apierror.TypeInternal, "error decoding response: %v", err)
+	}
+
+	if resp.Status == statusError {
+		return nil, apierror.New(apierror.Type(resp.ErrorType), resp.Error)
 	}
 
 	for h, hv := range r.Header {
@@ -398,7 +403,7 @@ func bodyBuffer(res *http.Response) ([]byte, error) {
 	// internally works.
 	buf := bytes.NewBuffer(make([]byte, 0, res.ContentLength+bytes.MinRead))
 	if _, err := buf.ReadFrom(res.Body); err != nil {
-		return nil, apierror.Newf(apierror.TypeInternal, "error decoding response: %v", err)
+		return nil, apierror.Newf(apierror.TypeInternal, "error decoding response with status %d: %v", res.StatusCode, err)
 	}
 	return buf.Bytes(), nil
 }
