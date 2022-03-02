@@ -315,20 +315,20 @@ func TestDecodeDurationInVariousFormats(t *testing.T) {
 
 	for name, test := range map[string]testcase{
 		"number": {
-			yamlRawValue: "1000000000",
-			jsonRawValue: "1000000000",
+			yamlRawValue: `1000000000`,
+			jsonRawValue: `1000000000`,
 			expected:     time.Second,
 		},
 
 		"time.Duration": {
-			yamlRawValue: "1000000000ns", // nanoseconds are not supported by model.Duration
-			jsonRawValue: "\"1000000000ns\"",
+			yamlRawValue: `1000000000ns`, // nanoseconds are not supported by model.Duration
+			jsonRawValue: `"1000000000ns"`,
 			expected:     time.Second,
 		},
 
 		"model.Duration": {
-			yamlRawValue: "1d", // days are not supported by time.Duration
-			jsonRawValue: "\"1d\"",
+			yamlRawValue: `1d`, // days are not supported by time.Duration
+			jsonRawValue: `"1d"`,
 			expected:     time.Hour * 24,
 		},
 	} {
