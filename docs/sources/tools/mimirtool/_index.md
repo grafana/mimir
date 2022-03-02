@@ -6,7 +6,36 @@ weight: 100
 
 # Mimirtool
 
-Mimirtool is designed to interact with:
+Mimirtool is a command-line tool that operators and tenants can use to execute a number of common commands in Grafana Mimir and Grafana Cloud Metrics.
+
+- The `alertmanager` command enables you to create, update, and delete tenant configurations in Grafana Mimir Alertmanager or Grafana Cloud Metrics.
+
+  For more information about the `alertmanager` command, refer to [Alertmanager]({{< relref "#alertmanager" >}}).
+
+- The `rules` command enables you work validate and lint Prometheus rule files and convert them for use in Grafana Mimir.
+  You can also create, update, and delete rulegroups in Grafana Mimir or Grafana Cloud Metrics.
+
+  For more information about the `rules` command, refer to [Rules]({{< relref "#rules" >}}).
+
+- The `remote-read` subcommand enables you fetch statistics and series from [remote-read](https://prometheus.io/docs/prometheus/latest/storage/#remote-storage-integrations) APIs.
+  You can write series from a remote-read API to a local TSDB file that you load into Prometheus.
+
+  For more information about the remote-read command, refer to [Remote-read]({{< relref "#remote-read" >}}).
+
+- The `analyze` command extracts statistics about metric usage from Grafana or Hosted Grafana instances.
+  You can also extract the same metrics from Grafana dashboard JSON files or Prometheus rule YAML files.
+
+  For more information about the `analyze` command, refer to [Analyze]({{< relref "#analyze" >}}).
+
+- The `bucket-validate` command verifies that an object storage bucket is suitable as a backend storage for Grafana Mimir.
+
+  For more information about the `bucket-validate` command, refer to [Bucket-validate]({{< relref "#bucket-validate" >}}).
+
+- The `acl` command generates the label-based access control header used in Grafana Enterprise Metrics and Grafana Cloud Metrics.
+
+  For more information about the `acl` command, refer to [ACL]({{< relref "#acl" >}}).
+
+Mimirtool interacts with:
 
 - User-facing APIs provided by Grafana Mimir.
 - Backend storage components containing Grafana Mimir data.
@@ -28,11 +57,11 @@ For Mimirtools to interact with Grafana Mimir, Grafana Enterprise Metrics, Prome
 
 ## Commands
 
-Filller...
+The following sections outline the commands that you can run against Grafana Mimir and Grafana Cloud Metrics.
 
-### Alertmanager commands
+### Alertmanager
 
-The following commands interact with Grafana Mimir alertmanager configuration and alert template files.
+The following commands interact with Grafana Mimir Alertmanager configuration and alert template files.
 
 #### Get configuration
 
@@ -85,7 +114,9 @@ mimirtool alerts verify
 
 ### Rules
 
-The following commands:
+The rules command features sub-commands for working with Prometheus rule files and with the APIs in the Grafana Mimir ruler.
+
+The commands in this section enable you to perform the following actions:
 
 - Load and show Prometheus rule files
 - Interact with individual rule groups in the Mimir ruler
@@ -125,7 +156,8 @@ mimirtool rules delete <namespace> <rule_group_name>
 
 #### Load
 
-The following command loads each rule group from the files into Grafana Mimir. This command overwrites all existing rule groups with the same name.
+The following command loads each rule group from the files into Grafana Mimir.
+This command overwrites all existing rule groups with the same name.
 
 ```bash
 mimirtool rules load <file_path>...
@@ -151,11 +183,12 @@ groups:
 
 #### Lint
 
-The purpose of the following command is to provide YAML and PromQL expression formatting within the rule file.
+The `lint` command provides YAML and PromQL expression formatting within the rule file.
 
-This command edits the rule file in place. To perform a trial run that does not make changes, you can use the dry run flag (`-n`).
+This command edits the rule file in place.
+To perform a trial run that does not make changes, you can use the dry run flag (`-n`).
 
-> **Note**: This command does not verify if a query is correct and does not interact with your Grafana Mimir cluster.
+> **Note:** This command does not verify if a query is correct and does not interact with your Grafana Mimir cluster.
 
 ```bash
 mimirtool rules lint <file_path>...
@@ -165,9 +198,11 @@ The format of the file is the same format as shown in [rules load](#load).
 
 #### Prepare
 
-This command prepares a rules file that you upload to Grafana Mimir. It lints all PromQL expressions and adds a label to your PromQL query aggregations in the file. The format of the file is the same format as shown in [rules load](#load).
+This `prepare` command prepares a rules file that you upload to Grafana Mimir.
+It lints all PromQL expressions and adds a label to your PromQL query aggregations in the file.
+The format of the file is the same format as shown in [rules load](#load).
 
-> **Note**: This command does not interact with your Grafana Mimir cluster.
+> **Note:** This command does not interact with your Grafana Mimir cluster.
 
 ```bash
 mimirtool rules prepare <file_path>...
@@ -219,8 +254,9 @@ INFO[0000] SUCCESS: 1 rules found, 0 modified expressions
 
 #### Check
 
-This command checks rules against the recommended [best practices](https://prometheus.io/docs/practices/rules/) for
-rules. This command does not interact with your Grafana Mimir cluster.
+The `check` command checks rules against the recommended [best practices](https://prometheus.io/docs/practices/rules/) for
+rules.
+This command does not interact with your Grafana Mimir cluster.
 
 ```bash
 mimirtool rules check <file_path>...
@@ -252,7 +288,7 @@ The format of the file is the same format as shown in [rules load](#load).
 
 #### Diff
 
-This command compares rules against the rules in your Grafana Mimir cluster.
+The following command compares rules against the rules in your Grafana Mimir cluster.
 
 ```bash
 mimirtool rules diff <file_path>...
@@ -262,7 +298,8 @@ The format of the file is the same format as shown in [rules load](#load).
 
 #### Sync
 
-This command compares rules against the rules in your Grafana Mimir cluster. It applies any differences to your Grafana Mimir cluster.
+The `sync` command compares rules against the rules in your Grafana Mimir cluster.
+The command applies any differences to your Grafana Mimir cluster.
 
 ```bash
 mimirtool rules sync <file_path>...
@@ -272,7 +309,8 @@ The format of the file is the same format as shown in [rules load](#load).
 
 ### Remote-read
 
-Grafana Mimir exposes a [remote read API] which allows the system to access the stored series. The `remote-read` subcommand `mimirtool` enables you to interact with its API, and to determine which series are stored.
+Grafana Mimir exposes a [remote read API] which allows the system to access the stored series.
+The `remote-read` subcommand `mimirtool` enables you to interact with its API, and to determine which series are stored.
 
 [remote read api]: https://prometheus.io/docs/prometheus/latest/storage/#remote-storage-integrations
 
@@ -315,7 +353,8 @@ Running the command results in the following output:
 
 #### Export
 
-The `remote-read export` command exports all series and samples that match the selector into a local TSDB. The TSDB can be further analyzed with local tooling such as `prometheus` and [`promtool`](https://github.com/prometheus/prometheus/tree/main/cmd/promtool).
+The `remote-read export` command exports all series and samples that match the selector into a local TSDB.
+You can use local tooling such as `prometheus` and [`promtool`](https://github.com/prometheus/prometheus/tree/main/cmd/promtool) to further analyze the TSDB.
 
 ```bash
 # Use Remote Read API to download all metrics with label job=name into local tsdb
@@ -335,7 +374,7 @@ INFO[0001] 01ETT28D6B8948J87NZXY8VYD9  2020-12-30 13:53:59 +0000 UTC  2020-12-30
 INFO[0001] 01ETT28D91Z9SVRYF3DY0KNV41  2020-12-30 14:00:00 +0000 UTC  2020-12-30 14:53:58 +0000 UTC  53m58.001s   143530       1325         425          509KiB679B
 ```
 
-##### Examples when using a local TSDB
+##### Local TSDB examples
 
 The following command uses promtool to analyze file contents.
 
@@ -356,6 +395,8 @@ prometheus --storage.tsdb.path ./local-tsdb --config.file=<(echo "")
 ```
 
 ### ACL
+
+The `acl` command generates the label-based access control header used in Grafana Enterprise Metrics and Grafana Cloud Metrics.
 
 #### Generate header
 
@@ -387,7 +428,8 @@ You can analyze your Grafana or Hosted Grafana instance to determine which metri
 #### Grafana
 
 The following command runs against your Grafana instance, downloads its dashboards, and extracts the Prometheus
-metrics used in its queries. The output is a JSON file. You can use this file with `analyse prometheus --grafana-metrics-file`.
+metrics used in its queries.
+The output is a JSON file. You can use this file with `analyse prometheus --grafana-metrics-file`.
 
 ```bash
 mimirtool analyze grafana --address=<url>
@@ -395,11 +437,11 @@ mimirtool analyze grafana --address=<url>
 
 ##### Configuration
 
-| Environment variable | Flag        | Description                                                                                                                                   |
-| -------------------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GRAFANA_ADDRESS`    | `--address` | The address of the Grafana instance.                                                                                                          |
-| `GRAFANA_API_KEY`    | `--key`     | The API Key for the Grafana instance. To create a key, refer to [Authentication API](https://grafana.com/docs/grafana/latest/http_api/auth/). |
-| -                    | `--output`  | The output file path, which by default is `metrics-in-grafana.json`.                                                                          |
+| Environment variable | Flag        | Description                                                                                                                                        |
+| -------------------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GRAFANA_ADDRESS`    | `--address` | Sets the address of the Grafana instance.                                                                                                          |
+| `GRAFANA_API_KEY`    | `--key`     | Sets the API Key for the Grafana instance. To create a key, refer to [Authentication API](https://grafana.com/docs/grafana/latest/http_api/auth/). |
+| -                    | `--output`  | Sets the output file path, which by default is `metrics-in-grafana.json`.                                                                          |
 
 ##### Example output file
 
@@ -430,7 +472,8 @@ mimirtool analyze grafana --address=<url>
 
 #### Ruler
 
-The following command runs against your Grafana Mimir, Grafana Enterprise Metrics, or Grafana Cloud Prometheus instance. The command fetches the rule groups and extracts the Prometheus metrics used in the rule queries. The output is a JSON file. You can use this file with `analyse prometheus --ruler-metrics-file`.
+The following command runs against your Grafana Mimir, Grafana Enterprise Metrics, or Grafana Cloud Prometheus instance. The command fetches the rule groups and extracts the Prometheus metrics used in the rule queries.
+The output is a JSON file. You can use this file with `analyse prometheus --ruler-metrics-file`.
 
 ```bash
 mimirtool analyze ruler --address=<url> --id=<tenant_id>
@@ -440,10 +483,10 @@ mimirtool analyze ruler --address=<url> --id=<tenant_id>
 
 | Environment variable | Flag        | Description                                                                                     |
 | -------------------- | ----------- | ----------------------------------------------------------------------------------------------- |
-| `MIMIR_ADDRESS`      | `--address` | The address of the Prometheus instance.                                                         |
+| `MIMIR_ADDRESS`      | `--address` | Sets the address of the Prometheus instance.                                                    |
 | `MIMIR_TENANT_ID`    | `--user`    | Sets the basic auth username. If you're using Grafana Cloud, this variable is your instance ID. |
 | `MIMIR_API_KEY`      | `--key`     | Sets the basic auth password. If you're using Grafana Cloud, this variable is your API key.     |
-| -                    | `--output`  | The output file path, which by default is `metrics-in-ruler.json`.                              |
+| -                    | `--output`  | Sets the output file path, which by default is `metrics-in-ruler.json`.                         |
 
 ##### Example output file
 
@@ -471,8 +514,9 @@ mimirtool analyze ruler --address=<url> --id=<tenant_id>
 
 #### Dashboard
 
-This command accepts Grafana dashboard JSON files as input and extracts Prometheus metrics used in the queries. The
-output is a JSON file. You can use this file with `analyze prometheus --grafana-metrics-file`.
+The following command accepts Grafana dashboard JSON files as input and extracts Prometheus metrics used in the queries.
+The output is a JSON file.
+You can use the output file with `analyze prometheus --grafana-metrics-file`.
 
 ```bash
 mimirtool analyze dashboard <file>...
@@ -480,13 +524,14 @@ mimirtool analyze dashboard <file>...
 
 ##### Configuration
 
-| Environment variable | Flag       | Description                                                          |
-| -------------------- | ---------- | -------------------------------------------------------------------- |
-| -                    | `--output` | The output file path, which by default is `prometheus-metrics.json`. |
+| Environment variable | Flag       | Description                                                               |
+| -------------------- | ---------- | ------------------------------------------------------------------------- |
+| -                    | `--output` | Sets the output file path, which by default is `prometheus-metrics.json`. |
 
 #### Rule-file
 
-This command accepts Prometheus rule YAML files as input and extracts Prometheus metrics used in the queries. The output is a JSON file. You can use this file with `analyse prometheus --ruler-metrics-file`.
+The following command accepts Prometheus rule YAML files as input and extracts Prometheus metrics used in the queries.
+The output is a JSON file. You can use the output file with `analyse prometheus --ruler-metrics-file`.
 
 ```bash
 mimirtool analyze rule-file <file>
@@ -494,15 +539,16 @@ mimirtool analyze rule-file <file>
 
 ##### Configuration
 
-| Environment variable | Flag       | Description                                                          |
-| -------------------- | ---------- | -------------------------------------------------------------------- |
-| -                    | `--output` | The output file path, which by default is `prometheus-metrics.json`. |
+| Environment variable | Flag       | Description                                                               |
+| -------------------- | ---------- | ------------------------------------------------------------------------- |
+| -                    | `--output` | Sets the output file path, which by default is `prometheus-metrics.json`. |
 
 #### Prometheus
 
-This command runs against your Grafana Mimir, Grafana Metrics Enterprise, Prometheus, or Cloud Prometheus instance.
+The following command runs against your Grafana Mimir, Grafana Metrics Enterprise, Prometheus, or Cloud Prometheus instance.
 The command uses the output from a previous run of `analyse grafana`, `analyse dashboard`, `analyse ruler`
-or `analyse rule-file` to show the number of series in the Prometheus instance that are used in dashboards or rules, or both. This command also shows which metrics exist in Grafana Cloud that are _not_ in dashboards or rules. The output is a JSON file.
+or `analyse rule-file` to show the number of series in the Prometheus instance that are used in dashboards or rules, or both.
+This command also shows which metrics exist in Grafana Cloud that are _not_ in dashboards or rules. The output is a JSON file.
 
 > **Note:** The command makes a request for every active series in the Prometheus instance.
 > For Prometheus instances with a large number of active series, this command might take time to complete.
@@ -513,14 +559,14 @@ mimirtool analyze prometheus --address=<url> --id=<tenant_id>
 
 ##### Configuration
 
-| Environment Variable | Flag                     | Description                                                                                                              |
+| Environment variable | Flag                     | Description                                                                                                              |
 | -------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------ |
-| `MIMIR_ADDRESS`      | `--address`              | The address of the Prometheus instance.                                                                                  |
+| `MIMIR_ADDRESS`      | `--address`              | Sets the address of the Prometheus instance.                                                                             |
 | `MIMIR_TENANT_ID`    | `--user`                 | Sets the basic auth username. If you're using Grafana Cloud this variable is your instance ID.                           |
 | `MIMIR_API_KEY`      | `--key`                  | Sets the basic auth password. If you're using Grafana Cloud, this variable is your API key.                              |
 | -                    | `--grafana-metrics-file` | `mimirtool analyse grafana` or `mimirtool analyse dashboard` output file, which by default is `metrics-in-grafana.json`. |
 | -                    | `--ruler-metrics-file`   | `mimirtool analyse ruler` or `mimirtool analyse rule-file` output file, which by default is `metrics-in-ruler.json`.     |
-| -                    | `--output`               | The output file path, which by default is `prometheus-metrics.json`.                                                     |
+| -                    | `--output`               | Sets the output file path, which by default is `prometheus-metrics.json`.                                                |
 
 ##### Example output
 
@@ -574,15 +620,15 @@ The following command validates that the object store bucket works correctly.
 mimirtool bucket-validation
 ```
 
-| Env Variable | Flag                   | Description                                                                      |
-| ------------ | ---------------------- | -------------------------------------------------------------------------------- |
-| -            | `--object-count`       | The number of objects to create and delete. By default, the value is 2000.       |
-| -            | `--report-every`       | Every 'X' operations a progress report is printed. By default, the value is 100. |
-| -            | `--test-runs`          | The number of times to run the test. By default, the value is 1.                 |
-| -            | `--prefix`             | The path prefix to use for test objects in the object store.                     |
-| -            | `--retries-on-error`   | The number of times to retry if the object store returns an error.               |
-| -            | `--bucket-config`      | The CLI arguments to configure a storage bucket.                                 |
-| -            | `--bucket-config-help` | The help text explaining how to use the -bucket-config parameter.                |
+| Env Variable | Flag                   | Description                                                                                                   |
+| ------------ | ---------------------- | ------------------------------------------------------------------------------------------------------------- |
+| -            | `--object-count`       | Sets the number of objects to create and delete. By default, the value is 2000.                               |
+| -            | `--report-every`       | Sets the number operations afterwhich an operations progress report is printed. By default, the value is 100. |
+| -            | `--test-runs`          | Sets the number of times to run the test. By default, the value is 1.                                         |
+| -            | `--prefix`             | Sets the path prefix to use for test objects in the object store.                                             |
+| -            | `--retries-on-error`   | Sets the number of times to retry if the object store returns an error.                                       |
+| -            | `--bucket-config`      | Sets the CLI arguments to configure a storage bucket.                                                         |
+| -            | `--bucket-config-help` | Displays help text that explains how to use the -bucket-config parameter.                                     |
 
 ## License
 
