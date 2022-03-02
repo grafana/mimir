@@ -322,7 +322,6 @@ local podAntiAffinity = deployment.mixin.spec.template.spec.affinity.podAntiAffi
   rollout_operator_deployment: if !rollout_operator_enabled then null else
     deployment.new('rollout-operator', 1, [$.rollout_operator_container]) +
     deployment.mixin.metadata.withName('rollout-operator') +
-    deployment.mixin.spec.template.spec.withImagePullSecrets({ name: $.pentagon.gcr_secret_name }) +
     deployment.mixin.spec.template.spec.withServiceAccountName('rollout-operator') +
     // Ensure Kubernetes doesn't run 2 operators at the same time.
     deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge(0) +
