@@ -324,8 +324,7 @@ _Changes since Cortex 1.10.0._
   * `-querier.split-queries-by-interval` renamed to `-query-frontend.split-queries-by-interval`
   * `-querier.align-querier-with-step` renamed to `-query-frontend.align-querier-with-step`
   * `-querier.cache-results` renamed to `-query-frontend.cache-results`
-  * `-query-frontend.parallelize-shardable-queries` renamed to `-query-frontend.parallelize-shardable-queries`
-  * `-query-frontend.cache-unaligned-requests` renamed to `-query-frontend.cache-unaligned-requests`
+  * `-querier.parallelise-shardable-queries` renamed to `-query-frontend.parallelize-shardable-queries`
 * [CHANGE] Query-frontend: the default value of `-query-frontend.split-queries-by-interval` has changed from `0` to `24h`. #1131
 * [CHANGE] Query-frontend: `-frontend.` flags were renamed to `-query-frontend.`: #1167
 * [CHANGE] Query-frontend / Query-scheduler: classified the `-query-frontend.querier-forget-delay` and `-query-scheduler.querier-forget-delay` flags (and their respective YAML config options) as experimental. #1208

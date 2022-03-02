@@ -1,0 +1,4 @@
+alertmanager_storage:
+  s3:
+    sse:
+      type: SSE-KMS

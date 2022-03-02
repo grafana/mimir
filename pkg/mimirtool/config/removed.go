@@ -377,6 +377,120 @@ var removedConfigPaths = []string{
 
 	// All `-grpc-store.*` flags
 	"storage.grpc_store.server_address", // -grpc-store.server-address
+
+	// Alertmanager legacy sharding removed
+	"alertmanager.cluster.advertise_address",  // -alertmanager.cluster.advertise-address
+	"alertmanager.cluster.gossip_interval",    // -alertmanager.cluster.gossip-interval
+	"alertmanager.cluster.listen_address",     // -alertmanager.cluster.listen-address
+	"alertmanager.cluster.peers",              // -alertmanager.cluster.peers
+	"alertmanager.cluster.push_pull_interval", // -alertmanager.cluster.push-pull-interval
+	"alertmanager.sharding_enabled",           // -alertmanager.sharding-enabled
+
+	// alertmanager.storage removal
+	"alertmanager.storage.azure.download_buffer_size", // -alertmanager.storage.azure.download-buffer-size
+	"alertmanager.storage.azure.environment",          // -alertmanager.storage.azure.environment
+	"alertmanager.storage.azure.max_retry_delay",      // -alertmanager.storage.azure.max-retry-delay
+	"alertmanager.storage.azure.min_retry_delay",      // -alertmanager.storage.azure.min-retry-delay
+	"alertmanager.storage.azure.request_timeout",      // -alertmanager.storage.azure.request-timeout
+	"alertmanager.storage.azure.upload_buffer_count",  // -alertmanager.storage.azure.download-buffer-count
+	"alertmanager.storage.azure.upload_buffer_size",   // -alertmanager.storage.azure.upload-buffer-size
+	"alertmanager.storage.gcs.chunk_buffer_size",      // -alertmanager.storage.gcs.chunk-buffer-size
+	"alertmanager.storage.gcs.enable_opencensus",      // -alertmanager.storage.gcs.enable-opencensus
+	"alertmanager.storage.gcs.request_timeout",        // -alertmanager.storage.gcs.request-timeout
+	"alertmanager.storage.s3.s3forcepathstyle",        // -alertmanager.storage.s3.force-path-style
+
+	// ruler.storage removal
+	"ruler.storage.azure.download_buffer_size", // -ruler.storage.azure.download-buffer-size
+	"ruler.storage.azure.environment",          // -ruler.storage.azure.environment
+	"ruler.storage.azure.max_retry_delay",      // -ruler.storage.azure.max-retry-delay
+	"ruler.storage.azure.min_retry_delay",      // -ruler.storage.azure.min-retry-delay
+	"ruler.storage.azure.request_timeout",      // -ruler.storage.azure.request-timeout
+	"ruler.storage.azure.upload_buffer_count",  // -ruler.storage.azure.download-buffer-count
+	"ruler.storage.azure.upload_buffer_size",   // -ruler.storage.azure.upload-buffer-size
+	"ruler.storage.gcs.chunk_buffer_size",      // -ruler.storage.gcs.chunk-buffer-size
+	"ruler.storage.gcs.enable_opencensus",      // -ruler.storage.gcs.enable-opencensus
+	"ruler.storage.gcs.request_timeout",        // -ruler.storage.gcs.request-timeout
+	"ruler.storage.s3.s3forcepathstyle",        // -ruler.storage.s3.force-path-style
+
+	// Removed support for configdb
+	"alertmanager.storage.configdb.client_timeout",           // -alertmanager.configs.client-timeout
+	"alertmanager.storage.configdb.configs_api_url",          // -alertmanager.configs.url
+	"alertmanager.storage.configdb.tls_ca_path",              // -alertmanager.configs.tls-ca-path
+	"alertmanager.storage.configdb.tls_cert_path",            // -alertmanager.configs.tls-cert-path
+	"alertmanager.storage.configdb.tls_insecure_skip_verify", // -alertmanager.configs.tls-insecure-skip-verify
+	"alertmanager.storage.configdb.tls_key_path",             // -alertmanager.configs.tls-key-path
+	"alertmanager.storage.configdb.tls_server_name",          // -alertmanager.configs.tls-server-name
+	"alertmanager_storage.configdb.client_timeout",           // -alertmanager-storage.configs.client-timeout
+	"alertmanager_storage.configdb.configs_api_url",          // -alertmanager-storage.configs.url
+	"alertmanager_storage.configdb.tls_ca_path",              // -alertmanager-storage.configs.tls-ca-path
+	"alertmanager_storage.configdb.tls_cert_path",            // -alertmanager-storage.configs.tls-cert-path
+	"alertmanager_storage.configdb.tls_insecure_skip_verify", // -alertmanager-storage.configs.tls-insecure-skip-verify
+	"alertmanager_storage.configdb.tls_key_path",             // -alertmanager-storage.configs.tls-key-path
+	"alertmanager_storage.configdb.tls_server_name",          // -alertmanager-storage.configs.tls-server-name
+	"ruler.storage.configdb.client_timeout",                  // -ruler-storage.configs.client-timeout
+	"ruler.storage.configdb.configs_api_url",                 // -ruler-storage.configs.url
+	"ruler.storage.configdb.tls_ca_path",                     // -ruler-storage.configs.tls-ca-path
+	"ruler.storage.configdb.tls_cert_path",                   // -ruler-storage.configs.tls-cert-path
+	"ruler.storage.configdb.tls_insecure_skip_verify",        // -ruler-storage.configs.tls-insecure-skip-verify
+	"ruler.storage.configdb.tls_key_path",                    // -ruler-storage.configs.tls-key-path
+	"ruler.storage.configdb.tls_server_name",                 // -ruler-storage.configs.tls-server-name
+	"ruler_storage.configdb.client_timeout",                  // -ruler-storage.configs.client-timeout
+	"ruler_storage.configdb.configs_api_url",                 // -ruler-storage.configs.url
+	"ruler_storage.configdb.tls_ca_path",                     // -ruler-storage.configs.tls-ca-path
+	"ruler_storage.configdb.tls_cert_path",                   // -ruler-storage.configs.tls-cert-path
+	"ruler_storage.configdb.tls_insecure_skip_verify",        // -ruler-storage.configs.tls-insecure-skip-verify
+	"ruler_storage.configdb.tls_key_path",                    // -ruler-storage.configs.tls-key-path
+	"ruler_storage.configdb.tls_server_name",                 // -ruler-storage.configs.tls-server-name
+
+	// query_range and frontend merged
+	"query_range.results_cache.cache.default_validity",                                      // -frontend.default-validity
+	"query_range.results_cache.cache.enable_fifocache",                                      // -frontend.cache.enable-fifocache
+	"query_range.results_cache.cache.fifocache.max_size_bytes",                              // -frontend.fifocache.max-size-bytes
+	"query_range.results_cache.cache.fifocache.max_size_items",                              // -frontend.fifocache.max-size-items
+	"query_range.results_cache.cache.fifocache.size",                                        // -frontend.fifocache.size
+	"query_range.results_cache.cache.fifocache.validity",                                    // -frontend.fifocache.duration
+	"query_range.results_cache.cache.memcached.expiration",                                  // -frontend.memcached.expiration
+	"query_range.results_cache.cache.memcached_client.circuit_breaker_consecutive_failures", // -frontend.memcached.circuit-breaker-consecutive-failures
+	"query_range.results_cache.cache.memcached_client.circuit_breaker_interval",             // -frontend.memcached.circuit-breaker-interval
+	"query_range.results_cache.cache.memcached_client.circuit_breaker_timeout",              // -frontend.memcached.circuit-breaker-timeout
+	"query_range.results_cache.cache.memcached_client.consistent_hash",                      // -frontend.memcached.consistent-hash
+	"query_range.results_cache.cache.memcached_client.update_interval",                      // -frontend.memcached.update-interval
+	"query_range.results_cache.cache.redis.db",                                              // -frontend.redis.db
+	"query_range.results_cache.cache.redis.endpoint",                                        // -frontend.redis.endpoint
+	"query_range.results_cache.cache.redis.expiration",                                      // -frontend.redis.expiration
+	"query_range.results_cache.cache.redis.idle_timeout",                                    // -frontend.redis.idle-timeout
+	"query_range.results_cache.cache.redis.master_name",                                     // -frontend.redis.master-name
+	"query_range.results_cache.cache.redis.max_connection_age",                              // -frontend.redis.max-connection-age
+	"query_range.results_cache.cache.redis.password",                                        // -frontend.redis.password
+	"query_range.results_cache.cache.redis.pool_size",                                       // -frontend.redis.pool-size
+	"query_range.results_cache.cache.redis.timeout",                                         // -frontend.redis.timeout
+	"query_range.results_cache.cache.redis.tls_enabled",                                     // -frontend.redis.tls-enabled
+	"query_range.results_cache.cache.redis.tls_insecure_skip_verify",                        // -frontend.redis.tls-insecure-skip-verify
+
+	// The rest
+	"alertmanager.auto_webhook_root",         // -alertmanager.configs.auto-webhook-root
+	"api.response_compression_enabled",       // -api.response-compression-enabled
+	"compactor.sharding_enabled",             // -compactor.sharding-enabled
+	"distributor.extra_queue_delay",          // -distributor.extra-query-delay
+	"distributor.shard_by_all_labels",        // -distributor.shard-by-all-labels
+	"distributor.sharding_strategy",          // -distributor.sharding-strategy
+	"frontend_worker.match_max_concurrent",   // -querier.worker-match-max-concurrent
+	"frontend_worker.parallelism",            // -querier.worker-parallelism
+	"http_prefix",                            // -http.prefix
+	"limits.enforce_metric_name",             // -validation.enforce-metric-name
+	"limits.ingestion_rate_strategy",         // -distributor.ingestion-rate-limit-strategy
+	"limits.max_samples_per_query",           // -ingester.max-samples-per-query
+	"limits.reject_old_samples",              // -validation.reject-old-samples
+	"limits.reject_old_samples_max_age",      // -validation.reject-old-samples.max-age
+	"querier.at_modifier_enabled",            // -querier.at-modifier-enabled
+	"querier.ingester_streaming",             // -querier.ingester-streaming
+	"querier.query_store_for_labels_enabled", // -querier.query-store-for-labels-enabled
+	"querier.store_gateway_addresses",        // -querier.store-gateway-addresses
+	"ruler.enable_alertmanager_v2",           // -ruler.alertmanager-use-v2
+	"ruler.enable_sharding",                  // -ruler.enable-sharding
+	"ruler.sharding_strategy",                // -ruler.sharding-strategy
+	"store_gateway.sharding_enabled",         // -store-gateway.sharding-enabled
+	"store_gateway.sharding_strategy",        // -store-gateway.sharding-strategy
 }
 
 // CLI options removed since Cortex 1.11.0. These flags only existed as CLI Flags, and were not included in YAML Config.
@@ -384,4 +498,11 @@ var removedCLIOptions = []string{
 	"schema-config-file",
 	"ingester.chunk-encoding",
 	"querier.query-parallelism",
+	"ingester.lifecycler.address",
+	"ingester.lifecycler.id",
+	"ingester.lifecycler.port",
+	"frontend.cache-split-interval",
+	"ingester-client.expected-samples-per-series",
+	"ingester-client.expected-labels",
+	"ingester-client.expected-timeseries",
 }

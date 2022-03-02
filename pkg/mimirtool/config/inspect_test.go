@@ -225,8 +225,7 @@ func TestInspectedConfig_MarshalThenUnmarshalRetainsTypeInformation(t *testing.T
 	require.NoError(t, err)
 	require.NoError(t, yaml.Unmarshal(bytes, &inspectedConfig))
 
-	val, err := inspectedConfig.GetValue("distributor.remote_timeout")
-	require.NoError(t, err)
+	val := inspectedConfig.MustGetValue("distributor.remote_timeout")
 	assert.Equal(t, time.Minute, val) // if type info was lost this would be "1m" instead of time.Minute
 }
 
@@ -238,16 +237,14 @@ distributor:
   remote_timeout: 10s
 `), &d))
 
-	val, err := d.GetValue("distributor.remote_timeout")
-	assert.NoError(t, err)
+	val := d.MustGetValue("distributor.remote_timeout")
 	assert.Equal(t, time.Second*10, val)
 }
 
 func TestInspectConfig_HasDefaultValues(t *testing.T) {
 	d, err := DefaultValueInspector.InspectConfig(&mimir.Config{})
 	require.NoError(t, err)
-	val, err := d.GetValue("distributor.remote_timeout")
-	assert.NoError(t, err)
+	val := d.MustGetValue("distributor.remote_timeout")
 	assert.Equal(t, time.Second*20, val)
 }
 
@@ -302,8 +299,7 @@ func TestInspectConfig_LoadingAConfigHasCorrectTypes(t *testing.T) {
 	params := DefaultCortexConfig()
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			val, err := params.GetValue(tc.path)
-			assert.NoError(t, err)
+			val := params.MustGetValue(tc.path)
 			assert.IsType(t, tc.expectedType, val)
 		})
 	}

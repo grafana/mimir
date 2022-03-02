@@ -1,0 +1,4 @@
+ruler_storage:
+  s3:
+    sse:
+      type: SSE-S3
