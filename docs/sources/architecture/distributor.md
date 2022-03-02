@@ -96,9 +96,9 @@ We recommend randomly load balancing write requests across distributor instances
 If you're running Grafana Mimir in a Kubernetes cluster, you can define a Kubernetes [Service](https://kubernetes.io/docs/concepts/services-networking/service/) as ingress for the distributors.
 
 > **Note:** A Kubernetes Service balances TCP connections across Kubernetes endpoints and does not balance HTTP requests within a single TCP connection.
-If you enable HTTP persistent connections (HTTP keep-alive), Prometheus re-uses the same TCP connection for each remote-write HTTP request of a remote-write shard.
-This can cause distributors to receive an uneven distribution of remote-write HTTP requests.
-Consider increasing `min_shards` in the Prometheus [remote write config](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#remote_write).
+> If you enable HTTP persistent connections (HTTP keep-alive), Prometheus re-uses the same TCP connection for each remote-write HTTP request of a remote-write shard.
+> This can cause distributors to receive an uneven distribution of remote-write HTTP requests.
+> Consider increasing `min_shards` in the Prometheus [remote write config](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#remote_write).
 
 ## Configuration
 
