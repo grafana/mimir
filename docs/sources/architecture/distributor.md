@@ -36,8 +36,9 @@ The distributor includes a built-in rate limiter that it applies to each tenant.
 The rate limit is the maximum ingestion rate for each tenant across the Grafana Mimir cluster.
 If the rate exceeds the maximum number of samples per second, the distributor drops the request and returns an HTTP 429 response code.
 
-Internally, the local rate limiter for each distributor uses `ingestion rate limit / N`, where `N` is the number of healthy distributor replicas.
-The distributor automatically adjusts the ingester rate limit if the number of replicas change.
+Internally, the limit is implemented using a per-distributor local rate limiter.
+The local rate limiter for each distributor is configured with a limit of `ingestion rate limit / N`, where `N` is the number of healthy distributor replicas.
+The distributor automatically adjusts the ingestion rate limit if the number of distributor replicas change.
 Because the rate limit is implemented using a per-distributor local rate limiter, the ingestion rate limit requires that write requests are [evenly distributed across the pool of distributors]({{< relref "#load-balancing-across-distributors" >}}).
 
 Use the following flags to configure the rate limit:
