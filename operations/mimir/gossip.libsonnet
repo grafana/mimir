@@ -66,8 +66,17 @@
   distributor_deployment+:
     gossipLabel,
 
-  ingester_statefulset+:
-    gossipLabel,
+  ingester_statefulset: if $._config.cortex_multi_zone_ingester_enabled && !$._config.cortex_multi_zone_ingester_migration_enabled then null else
+    super.ingester_statefulset + gossipLabel,
+
+  ingester_zone_a_statefulset: if !$._config.cortex_multi_zone_ingester_enabled then null else
+    super.ingester_zone_a_statefulset + gossipLabel,
+
+  ingester_zone_b_statefulset: if !$._config.cortex_multi_zone_ingester_enabled then null else
+    super.ingester_zone_b_statefulset + gossipLabel,
+
+  ingester_zone_c_statefulset: if !$._config.cortex_multi_zone_ingester_enabled then null else
+    super.ingester_zone_c_statefulset + gossipLabel,
 
   querier_deployment+:
     gossipLabel,
@@ -75,8 +84,17 @@
   ruler_deployment+:
     if $._config.ruler_enabled then gossipLabel else {},
 
-  store_gateway_statefulset+:
-    gossipLabel,
+  store_gateway_statefulset: if $._config.cortex_multi_zone_store_gateway_enabled && !$._config.cortex_multi_zone_store_gateway_migration_enabled then null else
+    super.store_gateway_statefulset + gossipLabel,
+
+  store_gateway_zone_a_statefulset: if !$._config.cortex_multi_zone_store_gateway_enabled then null else
+    super.store_gateway_zone_a_statefulset + gossipLabel,
+
+  store_gateway_zone_b_statefulset: if !$._config.cortex_multi_zone_store_gateway_enabled then null else
+    super.store_gateway_zone_b_statefulset + gossipLabel,
+
+  store_gateway_zone_c_statefulset: if !$._config.cortex_multi_zone_store_gateway_enabled then null else
+    super.store_gateway_zone_c_statefulset + gossipLabel,
 
   // Headless service (= no assigned IP, DNS returns all targets instead) pointing to gossip network members.
   gossip_ring_service:
