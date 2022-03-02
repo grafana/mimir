@@ -12,6 +12,8 @@
 
 ### Jsonnet
 
+* [FEATURE] Added multi-zone ingesters and store-gateways support. #1352
+
 ### Mimirtool
 
 * [CHANGE] `analyse` command has been renamed to `analyze`. #1318
