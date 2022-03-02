@@ -6,8 +6,9 @@ weight: 40
 
 # Configuring zone-aware replication
 
-Zone-aware replication is the replication of data across failure domains. Zone-aware replication helps to avoid data loss during a domain outage.
-Grafana Mimir defines failure domains as _zones_, which include:
+Zone-aware replication is the replication of data across failure domains.
+Zone-aware replication helps to avoid data loss during a domain outage.
+Grafana Mimir defines failure domains as _zones_, which includes, but are not limited to:
 
 - Availability zones
 - Data centers
@@ -20,7 +21,8 @@ If an outage affects a zone containing multiple replicas, data loss might occur.
 With zone-aware replication enabled, Grafana Mimir ensures data replication to replicas across different zones.
 
 > **Warning:**
-> Ensure that you configure deployment tooling so that it is also zone-aware. The deployment tooling is responsible for executing rolling updates.
+> Ensure that you configure deployment tooling so that it is also zone-aware.
+> The deployment tooling is responsible for executing rolling updates.
 > Rolling updates should only update replicas in a single zone at any given time.
 
 Grafana Mimir supports zone-aware replication for the following:
@@ -35,9 +37,9 @@ Zone-aware replication in the Alertmanager ensures that Grafana Mimir replicates
 
 **To enable zone-aware replication for alerts**:
 
-1. Set the zone for each Alertmanager replica via the `-alertmanager.sharding-ring.instance-availability-zone` CLI flag or its respective YAML configuration parameter.
-2. Roll out Alertmanagers so that each Alertmanager replica runs in a configured zone.
-3. Set the `-alertmanager.sharding-ring.zone-awareness-enabled=true` CLI flag or its respective YAML configuration parameter for Alertmanagers.
+1. Configure the zone of each Alertmanager replica via the `-alertmanager.sharding-ring.instance-availability-zone` CLI flag or its respective YAML configuration parameter.
+1. Roll out Alertmanagers so that each Alertmanager replica runs with a configured zone.
+1. Set the `-alertmanager.sharding-ring.zone-awareness-enabled=true` CLI flag or its respective YAML configuration parameter for Alertmanagers.
 
 ## Configuring ingester time series replication
 
@@ -45,8 +47,8 @@ Zone-aware replication in the ingester ensures that Grafana Mimir replicates eac
 
 **To enable zone-aware replication for time series**:
 
-1. Set the zone for each ingester replica via the `-ingester.ring.instance-availability-zone` CLI flag or its respective YAML configuration parameter.
-2. Roll out ingesters so that each ingester replica run in a configured zone.
+1. Configure the zone of each ingester replica via the `-ingester.ring.instance-availability-zone` CLI flag or its respective YAML configuration parameter.
+2. Roll out ingesters so that each ingester replica runs with a configured zone.
 3. Set the `-ingester.ring.zone-awareness-enabled=true` CLI flag or its respective YAML configuration parameter for distributors, ingesters, and queriers.
 
 ## Configuring store-gateway blocks replication
@@ -69,4 +71,5 @@ When replica counts are unbalanced, zones with fewer replicas have higher resour
 
 ## Costs
 
-Most cloud providers charge for inter-availability zone networking. Deploying Grafana Mimir with zone-aware replication across multiple cloud provider availability zones might result in additional networking costs.
+Most cloud providers charge for inter-availability zone networking.
+Deploying Grafana Mimir with zone-aware replication across multiple cloud provider availability zones likely results in additional networking costs.
