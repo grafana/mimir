@@ -8,7 +8,6 @@ package net
 import (
 	"context"
 	"fmt"
-	"net"
 	"strings"
 	"testing"
 	"time"
@@ -101,40 +100,6 @@ func TestFirewallDialer(t *testing.T) {
 				})
 			}
 		})
-	}
-}
-
-func TestIsPrivate(t *testing.T) {
-	tests := []struct {
-		ip       net.IP
-		expected bool
-	}{
-		{nil, false},
-		{net.IPv4(1, 1, 1, 1), false},
-		{net.IPv4(9, 255, 255, 255), false},
-		{net.IPv4(10, 0, 0, 0), true},
-		{net.IPv4(10, 255, 255, 255), true},
-		{net.IPv4(11, 0, 0, 0), false},
-		{net.IPv4(172, 15, 255, 255), false},
-		{net.IPv4(172, 16, 0, 0), true},
-		{net.IPv4(172, 16, 255, 255), true},
-		{net.IPv4(172, 23, 18, 255), true},
-		{net.IPv4(172, 31, 255, 255), true},
-		{net.IPv4(172, 31, 0, 0), true},
-		{net.IPv4(172, 32, 0, 0), false},
-		{net.IPv4(192, 167, 255, 255), false},
-		{net.IPv4(192, 168, 0, 0), true},
-		{net.IPv4(192, 168, 255, 255), true},
-		{net.IPv4(192, 169, 0, 0), false},
-		{net.IP{0xfc, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, true},
-		{net.IP{0xfc, 0xff, 0x12, 0, 0, 0, 0, 0x44, 0, 0, 0, 0, 0, 0, 0, 0}, true},
-		{net.IP{0xfb, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff}, false},
-		{net.IP{0xfd, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff}, true},
-		{net.IP{0xfe, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, false},
-	}
-
-	for _, test := range tests {
-		assert.Equalf(t, test.expected, isPrivate(test.ip), "ip: %s", test.ip.String())
 	}
 }
 
