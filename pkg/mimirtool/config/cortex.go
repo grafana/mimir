@@ -2,6 +2,313 @@
 
 package config
 
+import (
+	"fmt"
+	"reflect"
+	"strings"
+
+	"github.com/pkg/errors"
+
+	"github.com/grafana/mimir/pkg/storage/bucket/s3"
+)
+
+// CortexToMimirMapper maps from cortex-1.11.0 to mimir-2.0.0 configurations
+var CortexToMimirMapper = MultiMapper{
+	// first try to naively map keys from old config to same keys from new config
+	BestEffortDirectMapper{},
+	// next map alertmanager URL in the ruler config
+	MapperFunc(alertmanagerURLMapperFunc),
+	// Removed `-alertmanager.storage.*` configuration options, use `-alertmanager-storage.*` instead. -alertmanager.storage.* should take precedence
+	alertmanagerStorageMapperFunc(DefaultCortexConfig()),
+	// Removed the support for `-ruler.storage.*`, use `-ruler-storage.*` instead. -ruler.storage.* should take precedence
+	rulerStorageMapperFunc(DefaultCortexConfig()),
+	// Replace (ruler|alertmanager).storage.s3.sse_encryption=true with (alertmanager|ruler)_storage.s3.sse.type="SSE-S3"
+	mapS3SSE("alertmanager"), mapS3SSE("ruler"),
+	// Apply trivial renames and moves of parameters
+	PathMapper{PathMappings: simpleRenameMappings},
+	// Convert provided memcached service and host to the DNS service discovery format
+	MapperFunc(mapMemcachedAddresses),
+}
+
+var simpleRenameMappings = map[string]Mapping{
+	"blocks_storage.tsdb.max_exemplars": RenameMapping("limits.max_global_exemplars_per_user"),
+
+	"query_range.results_cache.cache.background.writeback_buffer":     RenameMapping("frontend.results_cache.memcached.max_async_buffer_size"),
+	"query_range.results_cache.cache.background.writeback_goroutines": RenameMapping("frontend.results_cache.memcached.max_async_concurrency"),
+	"query_range.results_cache.cache.memcached.batch_size":            RenameMapping("frontend.results_cache.memcached.max_get_multi_batch_size"),
+	"query_range.results_cache.cache.memcached.parallelism":           RenameMapping("frontend.results_cache.memcached.max_get_multi_concurrency"),
+	"query_range.results_cache.cache.memcached_client.addresses":      RenameMapping("frontend.results_cache.memcached.addresses"),
+	"query_range.results_cache.cache.memcached_client.max_idle_conns": RenameMapping("frontend.results_cache.memcached.max_idle_connections"),
+	"query_range.results_cache.cache.memcached_client.max_item_size":  RenameMapping("frontend.results_cache.memcached.max_item_size"),
+	"query_range.results_cache.cache.memcached_client.timeout":        RenameMapping("frontend.results_cache.memcached.timeout"),
+	"query_range.results_cache.compression":                           RenameMapping("frontend.results_cache.compression"),
+
+	"alertmanager.cluster.peer_timeout": RenameMapping("alertmanager.peer_timeout"),
+	"alertmanager.enable_api":           RenameMapping("alertmanager.enable_api"), // added because CLI flag was renamed
+	"ruler.enable_api":                  RenameMapping("ruler.enable_api"),        // added because CLI flag was renamed
+
+	"limits.max_chunks_per_query":      RenameMapping("limits.max_fetched_chunks_per_query"),
+	"querier.active_query_tracker_dir": RenameMapping("activity_tracker.filepath"),
+
+	// frontend query-frontend flags have been renamed to query-frontend, all the mappings below are there mostly for posterity (and maybe for logging)
+	"frontend.downstream_url":                                RenameMapping("frontend.downstream_url"),
+	"frontend.grpc_client_config.backoff_config.max_period":  RenameMapping("frontend.grpc_client_config.backoff_config.max_period"),
+	"frontend.grpc_client_config.backoff_config.max_retries": RenameMapping("frontend.grpc_client_config.backoff_config.max_retries"),
+	"frontend.grpc_client_config.backoff_config.min_period":  RenameMapping("frontend.grpc_client_config.backoff_config.min_period"),
+	"frontend.grpc_client_config.backoff_on_ratelimits":      RenameMapping("frontend.grpc_client_config.backoff_on_ratelimits"),
+	"frontend.grpc_client_config.grpc_compression":           RenameMapping("frontend.grpc_client_config.grpc_compression"),
+	"frontend.grpc_client_config.max_recv_msg_size":          RenameMapping("frontend.grpc_client_config.max_recv_msg_size"),
+	"frontend.grpc_client_config.max_send_msg_size":          RenameMapping("frontend.grpc_client_config.max_send_msg_size"),
+	"frontend.grpc_client_config.rate_limit":                 RenameMapping("frontend.grpc_client_config.rate_limit"),
+	"frontend.grpc_client_config.rate_limit_burst":           RenameMapping("frontend.grpc_client_config.rate_limit_burst"),
+	"frontend.grpc_client_config.tls_ca_path":                RenameMapping("frontend.grpc_client_config.tls_ca_path"),
+	"frontend.grpc_client_config.tls_cert_path":              RenameMapping("frontend.grpc_client_config.tls_cert_path"),
+	"frontend.grpc_client_config.tls_enabled":                RenameMapping("frontend.grpc_client_config.tls_enabled"),
+	"frontend.grpc_client_config.tls_insecure_skip_verify":   RenameMapping("frontend.grpc_client_config.tls_insecure_skip_verify"),
+	"frontend.grpc_client_config.tls_key_path":               RenameMapping("frontend.grpc_client_config.tls_key_path"),
+	"frontend.grpc_client_config.tls_server_name":            RenameMapping("frontend.grpc_client_config.tls_server_name"),
+	"frontend.instance_interface_names":                      RenameMapping("frontend.instance_interface_names"),
+	"frontend.log_queries_longer_than":                       RenameMapping("frontend.log_queries_longer_than"),
+	"frontend.max_body_size":                                 RenameMapping("frontend.max_body_size"),
+	"frontend.max_outstanding_per_tenant":                    RenameMapping("frontend.max_outstanding_per_tenant"),
+	"frontend.querier_forget_delay":                          RenameMapping("frontend.querier_forget_delay"),
+	"frontend.query_stats_enabled":                           RenameMapping("frontend.query_stats_enabled"),
+	"frontend.scheduler_address":                             RenameMapping("frontend.scheduler_address"),
+	"frontend.scheduler_dns_lookup_period":                   RenameMapping("frontend.scheduler_dns_lookup_period"),
+	"frontend.scheduler_worker_concurrency":                  RenameMapping("frontend.scheduler_worker_concurrency"),
+
+	"query_range.align_queries_with_step":       RenameMapping("frontend.align_queries_with_step"),
+	"query_range.cache_results":                 RenameMapping("frontend.cache_results"),
+	"query_range.max_retries":                   RenameMapping("frontend.max_retries"),
+	"query_range.parallelise_shardable_queries": RenameMapping("frontend.parallelize_shardable_queries"),
+	"query_range.split_queries_by_interval":     RenameMapping("frontend.split_queries_by_interval"),
+
+	"ingester.lifecycler.availability_zone":                          RenameMapping("ingester.ring.instance_availability_zone"),
+	"ingester.lifecycler.final_sleep":                                RenameMapping("ingester.ring.final_sleep"),
+	"ingester.lifecycler.heartbeat_period":                           RenameMapping("ingester.ring.heartbeat_period"),
+	"ingester.lifecycler.interface_names":                            RenameMapping("ingester.ring.instance_interface_names"),
+	"ingester.lifecycler.join_after":                                 RenameMapping("ingester.ring.join_after"),
+	"ingester.lifecycler.min_ready_duration":                         RenameMapping("ingester.ring.min_ready_duration"),
+	"ingester.lifecycler.num_tokens":                                 RenameMapping("ingester.ring.num_tokens"),
+	"ingester.lifecycler.observe_period":                             RenameMapping("ingester.ring.observe_period"),
+	"ingester.lifecycler.ring.heartbeat_timeout":                     RenameMapping("ingester.ring.heartbeat_timeout"),
+	"ingester.lifecycler.ring.kvstore.consul.acl_token":              RenameMapping("ingester.ring.kvstore.consul.acl_token"),
+	"ingester.lifecycler.ring.kvstore.consul.consistent_reads":       RenameMapping("ingester.ring.kvstore.consul.consistent_reads"),
+	"ingester.lifecycler.ring.kvstore.consul.host":                   RenameMapping("ingester.ring.kvstore.consul.host"),
+	"ingester.lifecycler.ring.kvstore.consul.http_client_timeout":    RenameMapping("ingester.ring.kvstore.consul.http_client_timeout"),
+	"ingester.lifecycler.ring.kvstore.consul.watch_burst_size":       RenameMapping("ingester.ring.kvstore.consul.watch_burst_size"),
+	"ingester.lifecycler.ring.kvstore.consul.watch_rate_limit":       RenameMapping("ingester.ring.kvstore.consul.watch_rate_limit"),
+	"ingester.lifecycler.ring.kvstore.etcd.dial_timeout":             RenameMapping("ingester.ring.kvstore.etcd.dial_timeout"),
+	"ingester.lifecycler.ring.kvstore.etcd.endpoints":                RenameMapping("ingester.ring.kvstore.etcd.endpoints"),
+	"ingester.lifecycler.ring.kvstore.etcd.max_retries":              RenameMapping("ingester.ring.kvstore.etcd.max_retries"),
+	"ingester.lifecycler.ring.kvstore.etcd.password":                 RenameMapping("ingester.ring.kvstore.etcd.password"),
+	"ingester.lifecycler.ring.kvstore.etcd.tls_ca_path":              RenameMapping("ingester.ring.kvstore.etcd.tls_ca_path"),
+	"ingester.lifecycler.ring.kvstore.etcd.tls_cert_path":            RenameMapping("ingester.ring.kvstore.etcd.tls_cert_path"),
+	"ingester.lifecycler.ring.kvstore.etcd.tls_enabled":              RenameMapping("ingester.ring.kvstore.etcd.tls_enabled"),
+	"ingester.lifecycler.ring.kvstore.etcd.tls_insecure_skip_verify": RenameMapping("ingester.ring.kvstore.etcd.tls_insecure_skip_verify"),
+	"ingester.lifecycler.ring.kvstore.etcd.tls_key_path":             RenameMapping("ingester.ring.kvstore.etcd.tls_key_path"),
+	"ingester.lifecycler.ring.kvstore.etcd.tls_server_name":          RenameMapping("ingester.ring.kvstore.etcd.tls_server_name"),
+	"ingester.lifecycler.ring.kvstore.etcd.username":                 RenameMapping("ingester.ring.kvstore.etcd.username"),
+	"ingester.lifecycler.ring.kvstore.multi.mirror_enabled":          RenameMapping("ingester.ring.kvstore.multi.mirror_enabled"),
+	"ingester.lifecycler.ring.kvstore.multi.mirror_timeout":          RenameMapping("ingester.ring.kvstore.multi.mirror_timeout"),
+	"ingester.lifecycler.ring.kvstore.multi.primary":                 RenameMapping("ingester.ring.kvstore.multi.primary"),
+	"ingester.lifecycler.ring.kvstore.multi.secondary":               RenameMapping("ingester.ring.kvstore.multi.secondary"),
+	"ingester.lifecycler.ring.kvstore.prefix":                        RenameMapping("ingester.ring.kvstore.prefix"),
+	"ingester.lifecycler.ring.kvstore.store":                         RenameMapping("ingester.ring.kvstore.store"),
+	"ingester.lifecycler.ring.replication_factor":                    RenameMapping("ingester.ring.replication_factor"),
+	"ingester.lifecycler.tokens_file_path":                           RenameMapping("ingester.ring.tokens_file_path"),
+	"ingester.lifecycler.unregister_on_shutdown":                     RenameMapping("ingester.ring.unregister_on_shutdown"),
+
+	"auth_enabled": RenameMapping("multitenancy_enabled"),
+}
+
+func alertmanagerURLMapperFunc(source, target *InspectedEntry) error {
+	amDiscovery, err := source.GetValue("ruler.enable_alertmanager_discovery")
+	if err != nil {
+		return errors.Wrap(err, "could not convert ruler.enable_alertmanager_discovery")
+	}
+	if amDiscovery == nil || !amDiscovery.(bool) {
+		return nil
+	}
+
+	amURL, err := source.GetValue("ruler.alertmanager_url")
+	if err != nil {
+		return errors.Wrap(err, "could not get ruler.alertmanager_url")
+	}
+
+	amURLs := strings.Split(amURL.(string), ",")
+	for i := range amURLs {
+		amURLs[i] = "dnssrvnoa+" + amURLs[i]
+	}
+	return target.SetValue("ruler.alertmanager_url", strings.Join(amURLs, ","))
+}
+
+// rulerStorageMapperFunc returns a MapperFunc that maps alertmanager.storage and alertmanager_storage to alertmanager_storage.
+// Values from alertmanager.storage take precedence.
+func alertmanagerStorageMapperFunc(sourceDefaults *InspectedEntry) MapperFunc {
+	return func(source, target *InspectedEntry) error {
+		_, err := source.GetValue("alertmanager.storage.type")
+		if err != nil {
+			// When doing flag mappings this function gets called with a source config that
+			// contains only the values we have from flags. In order for the code later to not
+			// panic, we do a quick check if the source contains a parameter we expect to exist.
+			//
+			// Known bug: This also means that if a user has passed only their -alertmanager.storage.type
+			// as a flag, this check will pass and the below will still panic. This should be uncommon.
+			return err
+		}
+
+		pathRenames := map[string]string{
+			"alertmanager.storage.azure.account_key":                      "alertmanager_storage.azure.account_key",
+			"alertmanager.storage.azure.account_name":                     "alertmanager_storage.azure.account_name",
+			"alertmanager.storage.azure.container_name":                   "alertmanager_storage.azure.container_name",
+			"alertmanager.storage.azure.max_retries":                      "alertmanager_storage.azure.max_retries",
+			"alertmanager.storage.gcs.bucket_name":                        "alertmanager_storage.gcs.bucket_name",
+			"alertmanager.storage.local.path":                             "alertmanager_storage.local.path",
+			"alertmanager.storage.s3.access_key_id":                       "alertmanager_storage.s3.access_key_id",
+			"alertmanager.storage.s3.bucketnames":                         "alertmanager_storage.s3.bucket_name", // TODO dimitarvdimitrov if it is comma-delimited, then it's invalid
+			"alertmanager.storage.s3.endpoint":                            "alertmanager_storage.s3.endpoint",    // TODO dimitarvdimitrov if it is already set by the previous mapping, then err
+			"alertmanager.storage.s3.http_config.idle_conn_timeout":       "alertmanager_storage.s3.http.idle_conn_timeout",
+			"alertmanager.storage.s3.http_config.insecure_skip_verify":    "alertmanager_storage.s3.http.insecure_skip_verify",
+			"alertmanager.storage.s3.http_config.response_header_timeout": "alertmanager_storage.s3.http.response_header_timeout",
+			"alertmanager.storage.s3.insecure":                            "alertmanager_storage.s3.insecure",
+			"alertmanager.storage.s3.region":                              "alertmanager_storage.s3.region",
+			//"alertmanager.storage.s3.s3":                                  RenameMapping("alertmanager_storage.s3.endpoint"), // TODO dimitarvdimitrov if it contains "inmemory://" this should be invalid, also how do we know if the URL contains "escaped Key and Secret encoded"?
+			"alertmanager.storage.s3.secret_access_key":          "alertmanager_storage.s3.secret_access_key",
+			"alertmanager.storage.s3.signature_version":          "alertmanager_storage.s3.signature_version",
+			"alertmanager.storage.s3.sse.kms_encryption_context": "alertmanager_storage.s3.sse.kms_encryption_context",
+			"alertmanager.storage.s3.sse.kms_key_id":             "alertmanager_storage.s3.sse.kms_key_id",
+			"alertmanager.storage.s3.sse.type":                   "alertmanager_storage.s3.sse.type",
+			"alertmanager.storage.type":                          "alertmanager_storage.backend",
+		}
+
+		return mapDotStorage(pathRenames, source, target, sourceDefaults)
+	}
+}
+
+// rulerStorageMapperFunc returns a MapperFunc that maps ruler.storage and ruler_storage to ruler_storage.
+// Values from ruler.storage take precedence.
+func rulerStorageMapperFunc(sourceDefaults *InspectedEntry) MapperFunc {
+	return func(source, target *InspectedEntry) error {
+		_, err := source.GetValue("ruler.storage.type")
+		if err != nil {
+			// When doing flag mappings this function gets called with a source config that
+			// contains only the values we have from flags. In order for the code later to not
+			// panic, we do a quick check if the source contains a parameter we expect to exist.
+			//
+			// Known bug: This also means that if a user has passed only their -ruler.storage.type
+			// as a flag, this check will pass and the below will still panic. This should be uncommon.
+			return err
+		}
+
+		pathRenames := map[string]string{
+			"ruler.storage.azure.account_key":                      "ruler_storage.azure.account_key",
+			"ruler.storage.azure.account_name":                     "ruler_storage.azure.account_name",
+			"ruler.storage.azure.container_name":                   "ruler_storage.azure.container_name",
+			"ruler.storage.azure.max_retries":                      "ruler_storage.azure.max_retries",
+			"ruler.storage.gcs.bucket_name":                        "ruler_storage.gcs.bucket_name",
+			"ruler.storage.local.directory":                        "ruler_storage.local.directory",
+			"ruler.storage.s3.access_key_id":                       "ruler_storage.s3.access_key_id",
+			"ruler.storage.s3.bucketnames":                         "ruler_storage.s3.bucket_name", // TODO dimitarvdimitrov if it is comma-delimited, then it's invalid
+			"ruler.storage.s3.endpoint":                            "ruler_storage.s3.endpoint",    // TODO dimitarvdimitrov if it is already set by the previous mapping, then err
+			"ruler.storage.s3.http_config.idle_conn_timeout":       "ruler_storage.s3.http.idle_conn_timeout",
+			"ruler.storage.s3.http_config.insecure_skip_verify":    "ruler_storage.s3.http.insecure_skip_verify",
+			"ruler.storage.s3.http_config.response_header_timeout": "ruler_storage.s3.http.response_header_timeout",
+			"ruler.storage.s3.insecure":                            "ruler_storage.s3.insecure",
+			"ruler.storage.s3.region":                              "ruler_storage.s3.region",
+			//"ruler.storage.s3.s3":                                  RenameMapping("ruler_storage.s3.endpoint"), // TODO dimitarvdimitrov if it contains "inmemory://" this should be invalid, also how do we know if the URL contains "escaped Key and Secret encoded"?
+			"ruler.storage.s3.secret_access_key":          "ruler_storage.s3.secret_access_key",
+			"ruler.storage.s3.signature_version":          "ruler_storage.s3.signature_version",
+			"ruler.storage.s3.sse.kms_encryption_context": "ruler_storage.s3.sse.kms_encryption_context",
+			"ruler.storage.s3.sse.kms_key_id":             "ruler_storage.s3.sse.kms_key_id",
+			"ruler.storage.s3.sse.type":                   "ruler_storage.s3.sse.type",
+			"ruler.storage.swift.auth_url":                "ruler_storage.swift.auth_url",
+			"ruler.storage.swift.auth_version":            "ruler_storage.swift.auth_version",
+			"ruler.storage.swift.connect_timeout":         "ruler_storage.swift.connect_timeout",
+			"ruler.storage.swift.container_name":          "ruler_storage.swift.container_name",
+			"ruler.storage.swift.domain_id":               "ruler_storage.swift.domain_id",
+			"ruler.storage.swift.domain_name":             "ruler_storage.swift.domain_name",
+			"ruler.storage.swift.max_retries":             "ruler_storage.swift.max_retries",
+			"ruler.storage.swift.password":                "ruler_storage.swift.password",
+			"ruler.storage.swift.project_domain_id":       "ruler_storage.swift.project_domain_id",
+			"ruler.storage.swift.project_domain_name":     "ruler_storage.swift.project_domain_name",
+			"ruler.storage.swift.project_id":              "ruler_storage.swift.project_id",
+			"ruler.storage.swift.project_name":            "ruler_storage.swift.project_name",
+			"ruler.storage.swift.region_name":             "ruler_storage.swift.region_name",
+			"ruler.storage.swift.request_timeout":         "ruler_storage.swift.request_timeout",
+			"ruler.storage.swift.user_domain_id":          "ruler_storage.swift.user_domain_id",
+			"ruler.storage.swift.user_domain_name":        "ruler_storage.swift.user_domain_name",
+			"ruler.storage.swift.user_id":                 "ruler_storage.swift.user_id",
+			"ruler.storage.swift.username":                "ruler_storage.swift.username",
+		}
+
+		return mapDotStorage(pathRenames, source, target, sourceDefaults)
+	}
+}
+
+func mapDotStorage(pathRenames map[string]string, source, target, sourceDefaults *InspectedEntry) error {
+	mapper := &PathMapper{PathMappings: map[string]Mapping{}}
+	for dotStoragePath, storagePath := range pathRenames {
+		// if the ruler.storage was set, then use that in the final config
+		if !reflect.DeepEqual(source.MustGetValue(dotStoragePath), sourceDefaults.MustGetValue(dotStoragePath)) {
+			mapper.PathMappings[dotStoragePath] = RenameMapping(storagePath)
+			continue
+		}
+
+		// if the ruler_storage was set to something other than the default, then we
+		// take that value as the one in the final config.
+		if !reflect.DeepEqual(source.MustGetValue(storagePath), sourceDefaults.MustGetValue(storagePath)) {
+			mapper.PathMappings[storagePath] = RenameMapping(storagePath)
+		}
+	}
+
+	return mapper.DoMap(source, target)
+}
+
+// mapS3SSE maps (alertmanager|ruler).storage.s3.sse_encryption to (alertmanager|ruler)_storage.s3.sse.type.
+// prefix should be either "alertmanager" or "ruler". If <prefix>.storage.s3.sse_encryption was true,
+// it is replaced by alertmanager_storage.s3.sse.type="SSE-S3"
+func mapS3SSE(prefix string) MapperFunc {
+	return func(source, target *InspectedEntry) error {
+		var (
+			sseEncryptionPath = prefix + ".storage.s3.sse_encryption"
+			sseTypePath       = prefix + "_storage.s3.sse.type"
+		)
+
+		sseWasEnabledVal, err := source.GetValue(sseEncryptionPath)
+		if err != nil {
+			return err
+		}
+		if sseWasEnabledVal.(bool) && target.MustGetValue(sseTypePath) == "" {
+			return target.SetValue(sseTypePath, s3.SSES3)
+		}
+
+		return nil
+	}
+}
+
+// mapMemcachedAddresses maps query_range...memcached_client.host and .service to a DNS Service Discovery format
+// address. This should preserve the behaviour in cortex v1.11.0:
+// https://github.com/cortexproject/cortex/blob/43c646ba3ff906e80a6a1812f2322a0c276e9deb/pkg/chunk/cache/memcached_client.go#L242-L258
+func mapMemcachedAddresses(source, target *InspectedEntry) error {
+	const (
+		oldPrefix = "query_range.results_cache.cache.memcached_client"
+		newPrefix = "frontend.results_cache.memcached"
+	)
+	presetAddressesVal, err := source.GetValue(oldPrefix + ".addresses")
+	if err != nil {
+		return err
+	}
+	if presetAddressesVal.(string) != "" {
+		return nil // respect already set values of addresses
+	}
+
+	service, hostname := source.MustGetValue(oldPrefix+".service"), source.MustGetValue(oldPrefix+".host")
+	newAddress := fmt.Sprintf("dnssrvnoa+_%s._tcp.%s", service, hostname)
+
+	return target.SetValue(newPrefix+".addresses", newAddress)
+}
+
 // YAML Paths for config options removed since Cortex 1.11.0.
 var removedConfigPaths = []string{
 	"flusher.concurrent_flushes",                            // -flusher.concurrent-flushes
