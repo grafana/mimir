@@ -7,13 +7,13 @@ weight: 10
 # Distributor
 
 The distributor is a stateless component that receives time-series data from Prometheus or the Grafana agent.
-The distributor validates the data for correctness to ensure that it is within the configured limits for a given tenant.
+The distributor validates the data for correctness and to ensure that it is within the configured limits for a given tenant.
 The distributor then divides the data into batches and sends it to multiple [ingesters]({{< relref "./ingester.md" >}}) in parallel, shards the series among ingesters, and replicates each series by the configured replication factor. By default, the configured replication factor is three.
 
 ## Validation
 
 The distributor validates the data that it receives before writing the data to the ingesters.
-Because a single request can contain valid and invalid data, metrics, samples, metadata, and exemplars, the distributor only passes valid data to the ingesters. The distributor does not include invalid data in its requests to the ingesters.
+Because a single request can contain valid and invalid metrics, samples, metadata, and exemplars, the distributor only passes valid data to the ingesters. The distributor does not include invalid data in its requests to the ingesters.
 If the request contains invalid data, the distributor returns a 400 HTTP status code and the details appear in the response body.
 The details about the first invalid data are typically logged by the sender, be it Prometheus or Grafana Agent.
 
@@ -37,7 +37,7 @@ The rate limit is the maximum ingestion rate for each tenant across the Grafana 
 If the rate exceeds the maximum number of samples per second, the distributor drops the request and returns an HTTP 429 response code.
 The local rate limiter for each distributor uses `ingestion rate limit / N`, where `N` is the number of healthy distributor replicas.
 The distributor automatically adjusts the ingester rate limit if the number of replicas change.
-Because the rate limit automatically adjusts, the ingestion rate limit requires that write requests are [evenly distributed across the pool of distributors]({{< relref "#load-balancing-across-distributors" >}}).
+Because the rate limit is implemented using a per-distributor local rate limiter, the ingestion rate limit requires that write requests are [evenly distributed across the pool of distributors]({{< relref "#load-balancing-across-distributors" >}}).
 
 Use the following flags to configure the rate limit:
 
@@ -98,7 +98,7 @@ If you're running Grafana Mimir in a Kubernetes cluster, you can define a Kubern
 > **Note:** A Kubernetes Service balances TCP connections across Kubernetes endpoints and does not balance HTTP requests within a single TCP connection.
 > If you enable HTTP persistent connections (HTTP keep-alive), Prometheus re-uses the same TCP connection for each remote-write HTTP request of a remote-write shard.
 > This can cause distributors to receive an uneven distribution of remote-write HTTP requests.
-> Consider increasing `min_shards` in the Prometheus [remote write config](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#remote_write).
+> To improve the balancing of requests between distributors, consider increasing `min_shards` in the Prometheus [remote write config](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#remote_write).
 
 ## Configuration
 
