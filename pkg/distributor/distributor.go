@@ -249,7 +249,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		receivedSamples: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Namespace: "cortex",
 			Name:      "distributor_received_samples_total",
-			Help:      "The total number of received samples, excluding rejected and deduped samples.",
+			Help:      "The total number of received samples, excluding rejected, forwarded and deduped samples.",
 		}, []string{"user"}),
 		receivedExemplars: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Namespace: "cortex",
@@ -264,7 +264,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		incomingSamples: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Namespace: "cortex",
 			Name:      "distributor_samples_in_total",
-			Help:      "The total number of samples that have come in to the distributor, including rejected or deduped samples.",
+			Help:      "The total number of samples that have come in to the distributor, including rejected, forwarded or deduped samples.",
 		}, []string{"user"}),
 		incomingExemplars: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Namespace: "cortex",
