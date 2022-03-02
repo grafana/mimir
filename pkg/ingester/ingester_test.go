@@ -64,10 +64,10 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-func mustNewActiveSeriesCustomTrackersConfigFromMap(t *testing.T, source map[string]string) *activeseries.CustomTrackersConfig {
+func mustNewActiveSeriesCustomTrackersConfigFromMap(t *testing.T, source map[string]string) activeseries.CustomTrackersConfig {
 	m, err := activeseries.NewActiveSeriesCustomTrackersConfig(source)
 	require.NoError(t, err)
-	return &m
+	return m
 }
 
 func TestIngester_Push(t *testing.T) {
@@ -5167,7 +5167,7 @@ func TestIngesterActiveSeries(t *testing.T) {
 	userID := "test_user"
 	userID2 := "other_test_user"
 
-	defaultActiveSeriesCustomTrackersFn := func() *activeseries.CustomTrackersConfig {
+	defaultActiveSeriesCustomTrackersFn := func() activeseries.CustomTrackersConfig {
 		return mustNewActiveSeriesCustomTrackersConfigFromMap(t, map[string]string{
 			"bool_is_true":  `{bool="true"}`,
 			"bool_is_false": `{bool="false"}`,
@@ -5193,7 +5193,7 @@ func TestIngesterActiveSeries(t *testing.T) {
 		reqs                              []*mimirpb.WriteRequest
 		expectedMetrics                   string
 		disableActiveSeries               bool
-		defaultActiveSeriesCustomTrackers func() *activeseries.CustomTrackersConfig
+		defaultActiveSeriesCustomTrackers func() activeseries.CustomTrackersConfig
 		activeSeriesConfig                activeseries.CustomTrackersConfig
 		tenantLimits                      *TenantLimitsMock
 	}{
@@ -5339,7 +5339,7 @@ func TestIngesterActiveSeries(t *testing.T) {
 			},
 		},
 		"should not fail with empty runtime config": {
-			defaultActiveSeriesCustomTrackers: func() *activeseries.CustomTrackersConfig { return nil },
+			defaultActiveSeriesCustomTrackers: func() activeseries.CustomTrackersConfig { return activeseries.CustomTrackersConfig{} },
 			test: func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer) {
 				now := time.Now()
 
@@ -5385,7 +5385,7 @@ func TestIngesterActiveSeries(t *testing.T) {
 		},
 		"should use flag based custom tracker if no runtime config specified": {
 			defaultActiveSeriesCustomTrackers: nil,
-			activeSeriesConfig:                *activeSeriesDefaultConfig,
+			activeSeriesConfig:                activeSeriesDefaultConfig,
 			test: func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer) {
 				now := time.Now()
 
@@ -5415,7 +5415,7 @@ func TestIngesterActiveSeries(t *testing.T) {
 		"should use runtime matcher config if both specified": {
 			tenantLimits:                      activeSeriesTenantOverride,
 			defaultActiveSeriesCustomTrackers: defaultActiveSeriesCustomTrackersFn,
-			activeSeriesConfig:                *activeSeriesDefaultConfig,
+			activeSeriesConfig:                activeSeriesDefaultConfig,
 			test: func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer) {
 				now := time.Now()
 
@@ -5506,7 +5506,7 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 	userID := "test_user"
 	userID2 := "other_test_user"
 
-	defaultActiveSeriesCustomTrackersFn := func() *activeseries.CustomTrackersConfig {
+	defaultActiveSeriesCustomTrackersFn := func() activeseries.CustomTrackersConfig {
 		return mustNewActiveSeriesCustomTrackersConfigFromMap(t, map[string]string{
 			"bool_is_true":  `{bool="true"}`,
 			"bool_is_false": `{bool="false"}`,
@@ -5531,14 +5531,14 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 		test                              func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer)
 		reqs                              []*mimirpb.WriteRequest
 		expectedMetrics                   string
-		defaultActiveSeriesCustomTrackers func() *activeseries.CustomTrackersConfig
+		defaultActiveSeriesCustomTrackers func() activeseries.CustomTrackersConfig
 		activeSeriesConfig                activeseries.CustomTrackersConfig
 		tenantLimits                      *TenantLimitsMock
 	}{
 		"overwrite flag based config with runtime overwrite": {
 			defaultActiveSeriesCustomTrackers: nil,
 			tenantLimits:                      nil,
-			activeSeriesConfig:                *activeSeriesDefaultConfig,
+			activeSeriesConfig:                activeSeriesDefaultConfig,
 			test: func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer) {
 				firstPushTime := time.Now()
 
@@ -5603,7 +5603,7 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 		},
 		"remove runtime overwrite and revert to flag based config": {
 			defaultActiveSeriesCustomTrackers: defaultActiveSeriesCustomTrackersFn,
-			activeSeriesConfig:                *activeSeriesDefaultConfig,
+			activeSeriesConfig:                activeSeriesDefaultConfig,
 			tenantLimits:                      defaultActiveSeriesTenantOverride,
 			test: func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer) {
 				firstPushTime := time.Now()
@@ -5666,7 +5666,7 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 		},
 		"changing runtime overwrite should result in new metrics": {
 			defaultActiveSeriesCustomTrackers: defaultActiveSeriesCustomTrackersFn,
-			activeSeriesConfig:                *activeSeriesDefaultConfig,
+			activeSeriesConfig:                activeSeriesDefaultConfig,
 			test: func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer) {
 				firstPushTime := time.Now()
 

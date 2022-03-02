@@ -9,9 +9,9 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 )
 
-func NewMatchers(matchersConfig *CustomTrackersConfig) *Matchers {
+func NewMatchers(matchersConfig CustomTrackersConfig) *Matchers {
 	asm := &Matchers{cfg: matchersConfig}
-	for name, matchers := range (*matchersConfig).config {
+	for name, matchers := range matchersConfig.config {
 		asm.matchers = append(asm.matchers, matchers)
 		asm.names = append(asm.names, name)
 	}
@@ -22,7 +22,7 @@ func NewMatchers(matchersConfig *CustomTrackersConfig) *Matchers {
 }
 
 type Matchers struct {
-	cfg      *CustomTrackersConfig
+	cfg      CustomTrackersConfig
 	names    []string
 	matchers []labelsMatchers
 }
@@ -31,7 +31,7 @@ func (m *Matchers) MatcherNames() []string {
 	return m.names
 }
 
-func (m *Matchers) Config() *CustomTrackersConfig {
+func (m *Matchers) Config() CustomTrackersConfig {
 	return m.cfg
 }
 

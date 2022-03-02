@@ -86,7 +86,7 @@ func (c *ActiveSeries) LastAsmUpdate() int64 {
 	return c.lastAsmUpdate.Load()
 }
 
-func (c *ActiveSeries) CurrentConfig() *CustomTrackersConfig {
+func (c *ActiveSeries) CurrentConfig() CustomTrackersConfig {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.asm.Config()

@@ -2523,6 +2523,15 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -ingester.max-global-exemplars-per-user
 [max_global_exemplars_per_user: <int> | default = 0]
 
+# Example:
+#   The following configuration will count the active series coming from dev and
+#   prod namespaces for each tenant and label them as {name="dev"} and
+#   {name="prod"} in the cortex_ingester_active_series_custom_tracker metric.
+#   active_series_custom_trackers_config:
+#       dev: '{namespace=~"dev-.*"}'
+#       prod: '{namespace=~"prod-.*"}'
+[active_series_custom_trackers_config: <map of tracker name (string) to matcher (string)> | default = ]
+
 # Maximum number of chunks that can be fetched in a single query from ingesters
 # and long-term storage. This limit is enforced in the querier, ruler and
 # store-gateway. 0 to disable.

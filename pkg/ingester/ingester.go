@@ -122,11 +122,11 @@ type Config struct {
 
 	RateUpdatePeriod time.Duration `yaml:"rate_update_period" category:"advanced"`
 
-	ActiveSeriesMetricsEnabled            bool                                      `yaml:"active_series_metrics_enabled" category:"advanced"`
-	ActiveSeriesMetricsUpdatePeriod       time.Duration                             `yaml:"active_series_metrics_update_period" category:"advanced"`
-	ActiveSeriesMetricsIdleTimeout        time.Duration                             `yaml:"active_series_metrics_idle_timeout" category:"advanced"`
-	ActiveSeriesCustomTrackersConfig      activeseries.CustomTrackersConfig         `yaml:"active_series_custom_trackers" doc:"description=Additional custom trackers for active metrics. If there are active series matching a provided matcher (map value), the count will be exposed in the custom trackers metric labeled using the tracker name (map key). Zero valued counts are not exposed (and removed when they go back to zero)." category:"advanced"`
-	ActiveSeriesCustomTrackersOverridesFn func() *activeseries.CustomTrackersConfig `yaml:"-"`
+	ActiveSeriesMetricsEnabled            bool                                     `yaml:"active_series_metrics_enabled" category:"advanced"`
+	ActiveSeriesMetricsUpdatePeriod       time.Duration                            `yaml:"active_series_metrics_update_period" category:"advanced"`
+	ActiveSeriesMetricsIdleTimeout        time.Duration                            `yaml:"active_series_metrics_idle_timeout" category:"advanced"`
+	ActiveSeriesCustomTrackersConfig      activeseries.CustomTrackersConfig        `yaml:"active_series_custom_trackers" doc:"description=Additional custom trackers for active metrics. If there are active series matching a provided matcher (map value), the count will be exposed in the custom trackers metric labeled using the tracker name (map key). Zero valued counts are not exposed (and removed when they go back to zero)." category:"advanced"`
+	ActiveSeriesCustomTrackersOverridesFn func() activeseries.CustomTrackersConfig `yaml:"-"`
 
 	ExemplarsUpdatePeriod time.Duration `yaml:"exemplars_update_period" category:"experimental"`
 
@@ -199,8 +199,6 @@ type Ingester struct {
 	metrics *ingesterMetrics
 	logger  log.Logger
 
-	activeSeriesMatcher activeseries.Matchers
-
 	lifecycler         *ring.Lifecycler
 	limits             *validation.Overrides
 	limiter            *Limiter
@@ -250,13 +248,10 @@ func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus
 		return nil, errors.Wrap(err, "failed to create the bucket client")
 	}
 
-	asm := activeseries.NewMatchers(&cfg.ActiveSeriesCustomTrackersConfig)
-
 	return &Ingester{
-		cfg:                 cfg,
-		limits:              limits,
-		logger:              logger,
-		activeSeriesMatcher: *asm,
+		cfg:    cfg,
+		limits: limits,
+		logger: logger,
 
 		tsdbs:               make(map[string]*userTSDB),
 		usersMetadata:       make(map[string]*userMetricsMetadata),
@@ -472,15 +467,15 @@ func (i *Ingester) updateLoop(ctx context.Context) error {
 	}
 }
 
-func (i *Ingester) getActiveSeriesMatchersConfig(userID string) *activeseries.CustomTrackersConfig {
+func (i *Ingester) getActiveSeriesMatchersConfig(userID string) activeseries.CustomTrackersConfig {
 	matchersConfig := i.limits.ActiveSeriesCustomTrackersConfig(userID)
-	if matchersConfig == nil {
+	if matchersConfig.Empty() {
 		if i.cfg.ActiveSeriesCustomTrackersOverridesFn != nil {
 			matchersConfig = i.cfg.ActiveSeriesCustomTrackersOverridesFn()
 		}
 	}
-	if matchersConfig == nil {
-		matchersConfig = i.activeSeriesMatcher.Config()
+	if matchersConfig.Empty() {
+		matchersConfig = i.cfg.ActiveSeriesCustomTrackersConfig
 	}
 	return matchersConfig
 }

@@ -12,37 +12,37 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
-func mustNewCustomTrackersConfigFromMap(t *testing.T, source map[string]string) *CustomTrackersConfig {
+func mustNewCustomTrackersConfigFromMap(t *testing.T, source map[string]string) CustomTrackersConfig {
 	m, err := NewActiveSeriesCustomTrackersConfig(source)
 	require.NoError(t, err)
-	return &m
+	return m
 }
 
-func mustNewCustomTrackersConfigFromString(t *testing.T, source string) *CustomTrackersConfig {
+func mustNewCustomTrackersConfigFromString(t *testing.T, source string) CustomTrackersConfig {
 	m := CustomTrackersConfig{}
 	err := m.Set(source)
 	require.NoError(t, err)
-	return &m
+	return m
 }
 
-func mustNewCustomTrackersConfigDeserializedFromYaml(t *testing.T, yamlString string) *CustomTrackersConfig {
+func mustNewCustomTrackersConfigDeserializedFromYaml(t *testing.T, yamlString string) CustomTrackersConfig {
 	m := CustomTrackersConfig{}
 	err := yaml.Unmarshal([]byte(yamlString), &m)
 	require.NoError(t, err)
-	return &m
+	return m
 }
 
 func TestCustomTrackersConfigs(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
 		flags    []string
-		expected *CustomTrackersConfig
+		expected CustomTrackersConfig
 		error    error
 	}{
 		{
 			name:     "empty flag value produces empty config",
 			flags:    []string{`-ingester.active-series-custom-trackers=`},
-			expected: &CustomTrackersConfig{},
+			expected: CustomTrackersConfig{},
 		},
 		{
 			name:  "empty matcher fails",
@@ -112,7 +112,7 @@ func TestCustomTrackersConfigs(t *testing.T) {
 				return
 			}
 
-			require.Equal(t, tc.expected, &config)
+			require.Equal(t, tc.expected, config)
 
 			// Check that CustomTrackersConfig.String() value is a valid flag value.
 			flagSetAgain := flag.NewFlagSet("test-string", flag.ContinueOnError)
@@ -120,7 +120,7 @@ func TestCustomTrackersConfigs(t *testing.T) {
 			flagSetAgain.Var(&configAgain, "ingester.active-series-custom-trackers", "...usage docs...")
 			require.NoError(t, flagSetAgain.Parse([]string{"-ingester.active-series-custom-trackers=" + config.String()}))
 
-			require.Equal(t, tc.expected, &configAgain)
+			require.Equal(t, tc.expected, configAgain)
 		})
 	}
 }
@@ -128,23 +128,23 @@ func TestCustomTrackersConfigs(t *testing.T) {
 func TestCustomTrackerConfig_Equality(t *testing.T) {
 	configSets := [][]CustomTrackersConfig{
 		{
-			*mustNewCustomTrackersConfigFromString(t, `foo:{foo='bar'};baz:{baz='bar'}`),
-			*mustNewCustomTrackersConfigFromMap(t, map[string]string{
+			mustNewCustomTrackersConfigFromString(t, `foo:{foo='bar'};baz:{baz='bar'}`),
+			mustNewCustomTrackersConfigFromMap(t, map[string]string{
 				"baz": `{baz='bar'}`,
 				"foo": `{foo='bar'}`,
 			}),
-			*mustNewCustomTrackersConfigDeserializedFromYaml(t,
+			mustNewCustomTrackersConfigDeserializedFromYaml(t,
 				`
                 baz: "{baz='bar'}"
                 foo: "{foo='bar'}"`),
 		},
 		{
-			*mustNewCustomTrackersConfigFromString(t, `test:{test='true'}`),
-			*mustNewCustomTrackersConfigFromMap(t, map[string]string{"test": `{test='true'}`}),
-			*mustNewCustomTrackersConfigDeserializedFromYaml(t, `test: "{test='true'}"`),
+			mustNewCustomTrackersConfigFromString(t, `test:{test='true'}`),
+			mustNewCustomTrackersConfigFromMap(t, map[string]string{"test": `{test='true'}`}),
+			mustNewCustomTrackersConfigDeserializedFromYaml(t, `test: "{test='true'}"`),
 		},
 		{
-			*mustNewCustomTrackersConfigDeserializedFromYaml(t,
+			mustNewCustomTrackersConfigDeserializedFromYaml(t,
 				`
         baz: "{baz='bar'}"
         foo: "{foo='bar'}"

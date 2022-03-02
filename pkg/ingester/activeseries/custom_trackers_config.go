@@ -19,7 +19,7 @@ type CustomTrackersConfig struct {
 }
 
 // ExampleDoc provides an example doc for this config, especially valuable since it's custom-unmarshaled.
-func (c *CustomTrackersConfig) ExampleDoc() (comment string, yaml interface{}) {
+func (c CustomTrackersConfig) ExampleDoc() (comment string, yaml interface{}) {
 	return `The following configuration will count the active series coming from dev and prod namespaces for each tenant` +
 			` and label them as {name="dev"} and {name="prod"} in the cortex_ingester_active_series_custom_tracker metric.`,
 		map[string]string{
@@ -28,9 +28,13 @@ func (c *CustomTrackersConfig) ExampleDoc() (comment string, yaml interface{}) {
 		}
 }
 
+func (c CustomTrackersConfig) Empty() bool {
+	return c.string == ""
+}
+
 // String is a canonical representation of the config, it is compatible with flag definition.
 // String is also needed to implement flag.Value.
-func (c *CustomTrackersConfig) String() string {
+func (c CustomTrackersConfig) String() string {
 	return c.string
 }
 
