@@ -20,5 +20,8 @@
     overrides_exporter: self.mimir,
 
     query_tee: 'grafana/query-tee:mimir-2.0.0',
+
+    // See: https://github.com/grafana/rollout-operator
+    rollout_operator: 'grafana/rollout-operator:v0.1.1',
   },
 }
