@@ -58,10 +58,57 @@ func TestConvert(t *testing.T) {
 			inFlagsFile:  "testdata/flags-precedence-old.flags.txt",
 			outFlagsFile: "testdata/flags-precedence-new.flags.txt",
 		},
+		{
+			name:    "ruler.storage maps to ruler_storage",
+			inFile:  "testdata/ruler.storage-old.yaml",
+			outFile: "testdata/ruler_storage-new.yaml",
+		},
+		{
+			name:    "ruler.storage maps to ruler.storage",
+			inFile:  "testdata/ruler_storage-old.yaml",
+			outFile: "testdata/ruler_storage-new.yaml",
+		},
+		{
+			name:    "ruler_storage has precedence over ruler.storage",
+			inFile:  "testdata/ruler_storage-precedence-old.yaml",
+			outFile: "testdata/ruler_storage-new.yaml",
+		},
+		{
+			name:    "alertmanager.storage has precedence over alertmanager_storage",
+			inFile:  "testdata/am-storage-precedence-old.yaml",
+			outFile: "testdata/am-storage-precedence-new.yaml",
+		},
+		{
+			name:    "ruler S3 SSE conversion work",
+			inFile:  "testdata/ruler_storage-s3-sse-old.yaml",
+			outFile: "testdata/ruler_storage-s3-sse-new.yaml",
+		},
+		{
+			name:    "alertmanager S3 SSE conversion work",
+			inFile:  "testdata/am_storage-s3-sse-old.yaml",
+			outFile: "testdata/am_storage-s3-sse-new.yaml",
+		},
+		{
+			name:    "S3 SSE conversion doesn't overwrite existing values",
+			inFile:  "testdata/am_storage-s3-sse-repeated-old.yaml",
+			outFile: "testdata/am_storage-s3-sse-repeated-new.yaml",
+		},
+		{
+			name:    "new memcached addresses is constructed from old hostname and service",
+			inFile:  "testdata/frontend.memcached.addresses-old.yaml",
+			outFile: "testdata/frontend.memcached.addresses-new.yaml",
+		},
+		{
+			name:    "old memcached addresses take precedence over hostname and service",
+			inFile:  "testdata/frontend.memcached.addresses-existing-old.yaml",
+			outFile: "testdata/frontend.memcached.addresses-existing-new.yaml",
+		},
 	}
 
 	for _, tc := range testCases {
+		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			inBytes := loadFile(t, tc.inFile)
 			inFlags := loadFlags(t, tc.inFlagsFile)
 

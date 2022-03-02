@@ -1,0 +1,4 @@
+alertmanager:
+  storage:
+    s3:
+      sse_encryption: true
