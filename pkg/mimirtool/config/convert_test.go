@@ -112,7 +112,7 @@ func TestConvert(t *testing.T) {
 			inBytes := loadFile(t, tc.inFile)
 			inFlags := loadFlags(t, tc.inFlagsFile)
 
-			actualOut, actualOutFlags, err := Convert(inBytes, inFlags, CortexToMimirMapper, DefaultCortexConfig, DefaultMimirConfig)
+			actualOut, actualOutFlags, _, err := Convert(inBytes, inFlags, CortexToMimirMapper, DefaultCortexConfig, DefaultMimirConfig)
 			assert.NoError(t, err)
 
 			expectedOut := loadFile(t, tc.outFile)

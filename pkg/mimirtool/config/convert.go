@@ -18,40 +18,56 @@ import (
 	"github.com/grafana/mimir/tools/doc-generator/parse"
 )
 
+type ConversionNotices struct {
+	RemovedCLIFlags   []string
+	RemovedParameters []string
+	ChangedDefaults   []ChangedDefault
+}
+
+type ChangedDefault struct {
+	Path                   string
+	OldDefault, NewDefault string
+}
+
 // Convert converts the passed YAML contents and CLI flags in the source schema to a YAML config and CLI flags
 // in the target schema. sourceFactory and targetFactory are assumed to return
 // InspectedEntries where the FieldValue is the default value of the configuration parameter.
 // Convert uses sourceFactory and targetFactory to also prune the default values from the resulting config.
 // Convert returns the marshalled YAML config in the target schema.
-func Convert(contents []byte, flags []string, m Mapper, sourceFactory, targetFactory InspectedEntryFactory) ([]byte, []string, error) {
-	removedFieldPaths, removedFlags, err := reportDeletedFlags(contents, flags, sourceFactory)
+func Convert(contents []byte, flags []string, m Mapper, sourceFactory, targetFactory InspectedEntryFactory) (_ []byte, _ []string, _ ConversionNotices, err error) {
+	notices := &ConversionNotices{}
+	notices.RemovedParameters, notices.RemovedCLIFlags, err = reportDeletedFlags(contents, flags, sourceFactory)
 	if err != nil {
-		return nil, nil, err
+		return
 	}
 
 	source, target := sourceFactory(), targetFactory()
 
 	err = yaml.Unmarshal(contents, &source)
 	if err != nil {
-		return nil, nil, errors.Wrap(err, "could not unmarshal old Cortex configuration file")
+		err = errors.Wrap(err, "could not unmarshal old Cortex configuration file")
+		return
 	}
 
 	err = addFlags(source, flags)
 	if err != nil {
-		return nil, nil, errors.Wrap(err, "could not parse provided flags")
+		err = errors.Wrap(err, "could not parse provided flags")
+		return
 	}
 
 	err = m.DoMap(source, target)
 	if err != nil {
-		return nil, nil, errors.Wrap(err, "could not map old config to new config")
+		err = errors.Wrap(err, "could not map old config to new config")
+		return
 	}
 
 	sourceDefaults, targetDefaults, err := prepareDefaults(m, sourceFactory, targetFactory)
 	if err != nil {
-		return nil, nil, errors.Wrap(err, "could not prune defaults in new config")
+		err = errors.Wrap(err, "could not prune defaults in new config")
+		return
 	}
 
-	pruneDefaults(target, sourceDefaults, targetDefaults)
+	pruneDefaults(target, sourceDefaults, targetDefaults, notices)
 
 	var newFlags []string
 	if len(flags) > 0 {
@@ -63,17 +79,11 @@ func Convert(contents []byte, flags []string, m Mapper, sourceFactory, targetFac
 
 	yamlBytes, err := yaml.Marshal(target)
 	if err != nil {
-		return nil, nil, errors.Wrap(err, "could not marshal converted config to YAML")
+		err = errors.Wrap(err, "could not marshal converted config to YAML")
+		return
 	}
 
-	for _, f := range removedFieldPaths {
-		_, _ = fmt.Fprintln(os.Stderr, "field", f, "is no longer supported")
-	}
-	for _, f := range removedFlags {
-		_, _ = fmt.Fprintf(os.Stderr, "flag -%s is no longer supported", f)
-	}
-
-	return yamlBytes, newFlags, nil
+	return yamlBytes, newFlags, *notices, nil
 }
 
 func convertFlags(flags []string, m Mapper, target *InspectedEntry, sourceFactory, targetFactory InspectedEntryFactory) ([]string, error) {
@@ -218,9 +228,9 @@ func prepareDefaults(m Mapper, sourceFactory, targetFactory InspectedEntryFactor
 }
 
 // TODO dimitarvdimitrov convert this to a Mapper, ideally splitting default pruning from "default changed" warnings
-// pruneDefaults removes the defaults from fullParams and prints to os.Stderr any changed defaults
-// which haven't been overwritten. pruneDefaults swallows prints any errors during pruning to os.Stderr
-func pruneDefaults(fullParams, oldDefaults, newDefaults *InspectedEntry) {
+// pruneDefaults removes the defaults from fullParams and add any changed defaults to notices.ChangedDefaults
+// which haven't been overwritten. pruneDefaults prints any errors during pruning to os.Stderr
+func pruneDefaults(fullParams, oldDefaults, newDefaults *InspectedEntry, notices *ConversionNotices) {
 	var pathsToDelete []string
 
 	err := fullParams.Walk(func(path string, value interface{}) error {
@@ -239,7 +249,11 @@ func pruneDefaults(fullParams, oldDefaults, newDefaults *InspectedEntry) {
 		// fields with interface types, and maps and slices.
 		if value == nil || reflect.DeepEqual(value, oldDefault) || reflect.DeepEqual(value, newDefault) {
 			if !reflect.DeepEqual(oldDefault, newDefault) {
-				_, _ = fmt.Fprintf(os.Stderr, "using a new default for %s: %v (used to be %v)\n", path, newDefault, oldDefault)
+				notices.ChangedDefaults = append(notices.ChangedDefaults, ChangedDefault{
+					Path:       path,
+					OldDefault: fmt.Sprint(oldDefault),
+					NewDefault: fmt.Sprint(newDefault),
+				})
 			}
 
 			pathsToDelete = append(pathsToDelete, path)
