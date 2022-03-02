@@ -23,6 +23,8 @@ var (
 	ErrParameterNotFound = errors.New("could not find parameter with this path")
 )
 
+type InspectedEntryFactory func() *InspectedEntry
+
 // InspectedEntry is the structure that holds a configuration block or a single configuration parameters.
 // Blocks contain other other InspectedEntries.
 type InspectedEntry struct {
