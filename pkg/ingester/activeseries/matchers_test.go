@@ -13,7 +13,7 @@ import (
 )
 
 func TestActiveSeriesMatcher_MatchesSeries(t *testing.T) {
-	asm := NewActiveSeriesMatchers(mustNewActiveSeriesCustomTrackersConfigFromMap(t, map[string]string{
+	asm := NewMatchers(mustNewCustomTrackersConfigFromMap(t, map[string]string{
 		"bar_starts_with_1":             `{bar=~"1.*"}`,
 		"does_not_have_foo_label":       `{foo=""}`,
 		"has_foo_and_bar_starts_with_1": `{foo!="", bar=~"1.*"}`,

@@ -10,16 +10,16 @@ import (
 	amlabels "github.com/prometheus/alertmanager/pkg/labels"
 )
 
-// ActiveSeriesCustomTrackersConfig configures active series custom trackers.
+// CustomTrackersConfig configures active series custom trackers.
 // It can be set using a flag, or parsed from yaml.
-type ActiveSeriesCustomTrackersConfig struct {
+type CustomTrackersConfig struct {
 	source map[string]string
 	config map[string]labelsMatchers
 	string string
 }
 
 // ExampleDoc provides an example doc for this config, especially valuable since it's custom-unmarshaled.
-func (c *ActiveSeriesCustomTrackersConfig) ExampleDoc() (comment string, yaml interface{}) {
+func (c *CustomTrackersConfig) ExampleDoc() (comment string, yaml interface{}) {
 	return `The following configuration will count the active series coming from dev and prod namespaces for each tenant` +
 			` and label them as {name="dev"} and {name="prod"} in the cortex_ingester_active_series_custom_tracker metric.`,
 		map[string]string{
@@ -30,7 +30,7 @@ func (c *ActiveSeriesCustomTrackersConfig) ExampleDoc() (comment string, yaml in
 
 // String is a canonical representation of the config, it is compatible with flag definition.
 // String is also needed to implement flag.Value.
-func (c *ActiveSeriesCustomTrackersConfig) String() string {
+func (c *CustomTrackersConfig) String() string {
 	return c.string
 }
 
@@ -61,7 +61,7 @@ func activeSeriesCustomTrackersConfigString(cfg map[string]string) string {
 }
 
 // Set implements flag.Value, and is used to set the config value from a flag value provided as string.
-func (c *ActiveSeriesCustomTrackersConfig) Set(s string) error {
+func (c *CustomTrackersConfig) Set(s string) error {
 	if strings.TrimSpace(s) == "" {
 		return nil
 	}
@@ -118,8 +118,8 @@ func activeSeriesCustomTrackerFlagValueToMap(s string) (map[string]string, error
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
-// ActiveSeriesCustomTrackersConfig are marshaled in yaml as a map[string]string, with matcher names as keys and strings as matchers definitions.
-func (c *ActiveSeriesCustomTrackersConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+// CustomTrackersConfig are marshaled in yaml as a map[string]string, with matcher names as keys and strings as matchers definitions.
+func (c *CustomTrackersConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	stringMap := map[string]string{}
 	err := unmarshal(&stringMap)
 	if err != nil {
@@ -129,7 +129,7 @@ func (c *ActiveSeriesCustomTrackersConfig) UnmarshalYAML(unmarshal func(interfac
 	return err
 }
 
-func NewActiveSeriesCustomTrackersConfig(m map[string]string) (c ActiveSeriesCustomTrackersConfig, err error) {
+func NewActiveSeriesCustomTrackersConfig(m map[string]string) (c CustomTrackersConfig, err error) {
 	c.source = m
 	c.config = map[string]labelsMatchers{}
 	for name, matcher := range m {

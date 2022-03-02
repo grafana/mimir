@@ -28,7 +28,7 @@ func TestActiveSeries_UpdateSeries_NoMatchers(t *testing.T) {
 	ls2 := []labels.Label{{Name: "a", Value: "2"}}
 
 	currentNow := time.Now()
-	c := NewActiveSeries(&ActiveSeriesMatchers{}, 5*time.Minute)
+	c := NewActiveSeries(&Matchers{}, 5*time.Minute)
 	allActive, activeMatching := c.Active(currentNow)
 	assert.Equal(t, 0, allActive)
 	assert.Nil(t, activeMatching)
@@ -51,7 +51,7 @@ func TestActiveSeries_UpdateSeries_WithMatchers(t *testing.T) {
 	ls2 := []labels.Label{{Name: "a", Value: "2"}}
 	ls3 := []labels.Label{{Name: "a", Value: "3"}}
 
-	asm := NewActiveSeriesMatchers(mustNewActiveSeriesCustomTrackersConfigFromMap(t, map[string]string{"foo": `{a=~"2|3"}`}))
+	asm := NewMatchers(mustNewCustomTrackersConfigFromMap(t, map[string]string{"foo": `{a=~"2|3"}`}))
 
 	currentNow := time.Now()
 	c := NewActiveSeries(asm, 5*time.Minute)
@@ -87,7 +87,7 @@ func TestActiveSeries_ShouldCorrectlyHandleFingerprintCollisions(t *testing.T) {
 
 	require.True(t, client.Fingerprint(ls1) == client.Fingerprint(ls2))
 	currentNow := time.Now()
-	c := NewActiveSeries(&ActiveSeriesMatchers{}, 5*time.Minute)
+	c := NewActiveSeries(&Matchers{}, 5*time.Minute)
 	c.UpdateSeries(ls1, time.Now(), copyFn)
 	c.UpdateSeries(ls2, time.Now(), copyFn)
 
@@ -107,7 +107,7 @@ func TestActiveSeries_Purge_NoMatchers(t *testing.T) {
 	// Run the same test for increasing TTL values
 	for ttl := 1; ttl <= len(series); ttl++ {
 		t.Run(fmt.Sprintf("ttl: %d", ttl), func(t *testing.T) {
-			c := NewActiveSeries(&ActiveSeriesMatchers{}, time.Since(time.Unix(0, 0)))
+			c := NewActiveSeries(&Matchers{}, time.Since(time.Unix(0, 0)))
 
 			for i := 0; i < len(series); i++ {
 				c.UpdateSeries(series[i], time.Unix(int64(i), 0), copyFn)
@@ -118,7 +118,7 @@ func TestActiveSeries_Purge_NoMatchers(t *testing.T) {
 			c.purge(time.Unix(int64(ttl), 0))
 
 			exp := len(series) - (ttl)
-			// c.Active is not intented to purge
+			// c.Active is not intended to purge
 			allActive, activeMatching := c.Active(time.Unix(0, 0))
 			assert.Equal(t, exp, allActive)
 			assert.Nil(t, activeMatching)
@@ -135,7 +135,7 @@ func TestActiveSeries_Purge_WithMatchers(t *testing.T) {
 		{{Name: "_", Value: "KiqbryhzUpn"}, {Name: "__name__", Value: "logs"}},
 	}
 
-	asm := NewActiveSeriesMatchers(mustNewActiveSeriesCustomTrackersConfigFromMap(t, map[string]string{"foo": `{_=~"y.*"}`}))
+	asm := NewMatchers(mustNewCustomTrackersConfigFromMap(t, map[string]string{"foo": `{_=~"y.*"}`}))
 
 	// Run the same test for increasing TTL values
 	for ttl := 1; ttl <= len(series); ttl++ {
@@ -158,7 +158,7 @@ func TestActiveSeries_Purge_WithMatchers(t *testing.T) {
 			// call purge twice, just to hit "quick" path. It doesn't really do anything.
 			c.purge(time.Unix(int64(ttl), 0))
 
-			// c.Active is not intented to purge
+			// c.Active is not intended to purge
 			allActive, activeMatching := c.Active(time.Unix(0, 0))
 			assert.Equal(t, exp, allActive)
 			assert.Equal(t, []int{expMatchingSeries}, activeMatching)
@@ -172,7 +172,7 @@ func TestActiveSeries_PurgeOpt(t *testing.T) {
 	ls2 := metric.Set("_", "KiqbryhzUpn").Labels()
 
 	currentNow := time.Now()
-	c := NewActiveSeries(&ActiveSeriesMatchers{}, 59*time.Second)
+	c := NewActiveSeries(&Matchers{}, 59*time.Second)
 
 	c.UpdateSeries(ls1, currentNow.Add(-2*time.Minute), copyFn)
 	c.UpdateSeries(ls2, currentNow, copyFn)
@@ -199,7 +199,7 @@ func TestActiveSeries_ReloadSeriesMatchers(t *testing.T) {
 	ls3 := []labels.Label{{Name: "a", Value: "3"}}
 	ls4 := []labels.Label{{Name: "a", Value: "4"}}
 
-	asm := NewActiveSeriesMatchers(mustNewActiveSeriesCustomTrackersConfigFromMap(t, map[string]string{"foo": `{a=~.*}`}))
+	asm := NewMatchers(mustNewCustomTrackersConfigFromMap(t, map[string]string{"foo": `{a=~.*}`}))
 
 	currentNow := time.Now()
 	c := NewActiveSeries(asm, 5*time.Minute)
@@ -226,7 +226,7 @@ func TestActiveSeries_ReloadSeriesMatchers(t *testing.T) {
 	assert.Equal(t, 2, allActive)
 	assert.Equal(t, []int{2}, activeMatching)
 
-	asmWithLessMatchers := NewActiveSeriesMatchers(mustNewActiveSeriesCustomTrackersConfigFromMap(t, map[string]string{}))
+	asmWithLessMatchers := NewMatchers(mustNewCustomTrackersConfigFromMap(t, map[string]string{}))
 	c.ReloadSeriesMatchers(asmWithLessMatchers)
 
 	c.UpdateSeries(ls3, currentNow, copyFn)
@@ -234,7 +234,7 @@ func TestActiveSeries_ReloadSeriesMatchers(t *testing.T) {
 	assert.Equal(t, 1, allActive)
 	assert.Equal(t, []int(nil), activeMatching)
 
-	asmWithMoreMatchers := NewActiveSeriesMatchers(mustNewActiveSeriesCustomTrackersConfigFromMap(t, map[string]string{
+	asmWithMoreMatchers := NewMatchers(mustNewCustomTrackersConfigFromMap(t, map[string]string{
 		"a": `{a="3"}`,
 		"b": `{a="4"}`,
 	}))
@@ -249,7 +249,7 @@ func TestActiveSeries_ReloadSeriesMatchers(t *testing.T) {
 func TestActiveSeries_ReloadSeriesMatchers_LessMatchers(t *testing.T) {
 	ls1 := []labels.Label{{Name: "a", Value: "1"}}
 
-	asm := NewActiveSeriesMatchers(mustNewActiveSeriesCustomTrackersConfigFromMap(t, map[string]string{
+	asm := NewMatchers(mustNewCustomTrackersConfigFromMap(t, map[string]string{
 		"foo": `{a=~.+}`,
 		"bar": `{a=~.+}`,
 	}))
@@ -264,7 +264,7 @@ func TestActiveSeries_ReloadSeriesMatchers_LessMatchers(t *testing.T) {
 	assert.Equal(t, 1, allActive)
 	assert.Equal(t, []int{1, 1}, activeMatching)
 
-	asm = NewActiveSeriesMatchers(mustNewActiveSeriesCustomTrackersConfigFromMap(t, map[string]string{
+	asm = NewMatchers(mustNewCustomTrackersConfigFromMap(t, map[string]string{
 		"foo": `{a=~.+}`,
 	}))
 
@@ -279,7 +279,7 @@ func TestActiveSeries_ReloadSeriesMatchers_LessMatchers(t *testing.T) {
 func TestActiveSeries_ReloadSeriesMatchers_SameSizeNewLabels(t *testing.T) {
 	ls1 := []labels.Label{{Name: "a", Value: "1"}}
 
-	asm := NewActiveSeriesMatchers(mustNewActiveSeriesCustomTrackersConfigFromMap(t, map[string]string{
+	asm := NewMatchers(mustNewCustomTrackersConfigFromMap(t, map[string]string{
 		"foo": `{a=~.+}`,
 		"bar": `{a=~.+}`,
 	}))
@@ -294,7 +294,7 @@ func TestActiveSeries_ReloadSeriesMatchers_SameSizeNewLabels(t *testing.T) {
 	assert.Equal(t, 1, allActive)
 	assert.Equal(t, []int{1, 1}, activeMatching)
 
-	asm = NewActiveSeriesMatchers(mustNewActiveSeriesCustomTrackersConfigFromMap(t, map[string]string{
+	asm = NewMatchers(mustNewCustomTrackersConfigFromMap(t, map[string]string{
 		"foo": `{b=~.+}`,
 		"bar": `{b=~.+}`,
 	}))
@@ -322,7 +322,7 @@ func benchmarkActiveSeriesConcurrencySingleSeries(b *testing.B, goroutines int) 
 		{Name: "a", Value: "a"},
 	}
 
-	c := NewActiveSeries(&ActiveSeriesMatchers{}, 5*time.Minute)
+	c := NewActiveSeries(&Matchers{}, 5*time.Minute)
 
 	wg := &sync.WaitGroup{}
 	start := make(chan struct{})
@@ -349,7 +349,7 @@ func benchmarkActiveSeriesConcurrencySingleSeries(b *testing.B, goroutines int) 
 }
 
 func BenchmarkActiveSeries_UpdateSeries(b *testing.B) {
-	c := NewActiveSeries(&ActiveSeriesMatchers{}, 5*time.Minute)
+	c := NewActiveSeries(&Matchers{}, 5*time.Minute)
 
 	// Prepare series
 	nameBuf := bytes.Buffer{}
@@ -384,7 +384,7 @@ func benchmarkPurge(b *testing.B, twice bool) {
 	const numExpiresSeries = numSeries / 25
 
 	currentNow := time.Now()
-	c := NewActiveSeries(&ActiveSeriesMatchers{}, 5*time.Minute)
+	c := NewActiveSeries(&Matchers{}, 5*time.Minute)
 
 	series := [numSeries]labels.Labels{}
 	for s := 0; s < numSeries; s++ {

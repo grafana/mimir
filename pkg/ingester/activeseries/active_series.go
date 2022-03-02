@@ -23,7 +23,7 @@ const (
 // ActiveSeries is keeping track of recently active series for a single tenant.
 type ActiveSeries struct {
 	stripes       [numActiveSeriesStripes]activeSeriesStripe
-	asm           *ActiveSeriesMatchers
+	asm           *Matchers
 	lastAsmUpdate *atomic.Int64
 	// The duration after series become inactive.
 	timeout time.Duration
@@ -32,7 +32,7 @@ type ActiveSeries struct {
 
 // activeSeriesStripe holds a subset of the series timestamps for a single tenant.
 type activeSeriesStripe struct {
-	asm *ActiveSeriesMatchers
+	asm *Matchers
 
 	// Unix nanoseconds. Only used by purge. Zero = unknown.
 	// Updated in purge and when old timestamp is used when updating series (in this case, oldestEntryTs is updated
@@ -42,17 +42,17 @@ type activeSeriesStripe struct {
 	mu             sync.RWMutex
 	refs           map[uint64][]activeSeriesEntry
 	active         int   // Number of active entries in this stripe. Only decreased during purge or clear.
-	activeMatching []int // Number of active entries in this stripe matching each matcher of the configured ActiveSeriesMatchers.
+	activeMatching []int // Number of active entries in this stripe matching each matcher of the configured Matchers.
 }
 
 // activeSeriesEntry holds a timestamp for single series.
 type activeSeriesEntry struct {
 	lbs     labels.Labels
 	nanos   *atomic.Int64 // Unix timestamp in nanoseconds. Needs to be a pointer because we don't store pointers to entries in the stripe.
-	matches []bool        // Which matchers of ActiveSeriesMatchers does this series match
+	matches []bool        // Which matchers of Matchers does this series match
 }
 
-func NewActiveSeries(asm *ActiveSeriesMatchers, idleTimeout time.Duration) *ActiveSeries {
+func NewActiveSeries(asm *Matchers, idleTimeout time.Duration) *ActiveSeries {
 	c := &ActiveSeries{asm: asm, timeout: idleTimeout, lastAsmUpdate: atomic.NewInt64(0)}
 
 	// Stripes are pre-allocated so that we only read on them and no lock is required.
@@ -73,7 +73,7 @@ func (c *ActiveSeries) CurrentMatcherNames() []string {
 	return c.asm.MatcherNames()
 }
 
-func (c *ActiveSeries) ReloadSeriesMatchers(asm *ActiveSeriesMatchers) {
+func (c *ActiveSeries) ReloadSeriesMatchers(asm *Matchers) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -88,7 +88,7 @@ func (c *ActiveSeries) LastAsmUpdate() int64 {
 	return c.lastAsmUpdate.Load()
 }
 
-func (c *ActiveSeries) CurrentConfig() *ActiveSeriesCustomTrackersConfig {
+func (c *ActiveSeries) CurrentConfig() *CustomTrackersConfig {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.asm.Config()
@@ -245,8 +245,8 @@ func (s *activeSeriesStripe) clear() {
 	}
 }
 
-// Reinitalize is more than clear that it assigns new matchers and corresponding size activeMatching slices.
-func (s *activeSeriesStripe) reinitialize(asm *ActiveSeriesMatchers) {
+// Reinitialize is more than clear that it assigns new matchers and corresponding size activeMatching slices.
+func (s *activeSeriesStripe) reinitialize(asm *Matchers) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 

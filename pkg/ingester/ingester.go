@@ -12,7 +12,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"io"
 	"net/http"
 	"os"
@@ -48,6 +47,7 @@ import (
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/codes"
 
+	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/bucket"
@@ -122,11 +122,11 @@ type Config struct {
 
 	RateUpdatePeriod time.Duration `yaml:"rate_update_period" category:"advanced"`
 
-	ActiveSeriesMetricsEnabled            bool                                                  `yaml:"active_series_metrics_enabled" category:"advanced"`
-	ActiveSeriesMetricsUpdatePeriod       time.Duration                                         `yaml:"active_series_metrics_update_period" category:"advanced"`
-	ActiveSeriesMetricsIdleTimeout        time.Duration                                         `yaml:"active_series_metrics_idle_timeout" category:"advanced"`
-	ActiveSeriesCustomTrackersConfig      activeseries.ActiveSeriesCustomTrackersConfig         `yaml:"active_series_custom_trackers" doc:"description=Additional custom trackers for active metrics. If there are active series matching a provided matcher (map value), the count will be exposed in the custom trackers metric labeled using the tracker name (map key). Zero valued counts are not exposed (and removed when they go back to zero)." category:"advanced"`
-	ActiveSeriesCustomTrackersOverridesFn func() *activeseries.ActiveSeriesCustomTrackersConfig `yaml:"-"`
+	ActiveSeriesMetricsEnabled            bool                                      `yaml:"active_series_metrics_enabled" category:"advanced"`
+	ActiveSeriesMetricsUpdatePeriod       time.Duration                             `yaml:"active_series_metrics_update_period" category:"advanced"`
+	ActiveSeriesMetricsIdleTimeout        time.Duration                             `yaml:"active_series_metrics_idle_timeout" category:"advanced"`
+	ActiveSeriesCustomTrackersConfig      activeseries.CustomTrackersConfig         `yaml:"active_series_custom_trackers" doc:"description=Additional custom trackers for active metrics. If there are active series matching a provided matcher (map value), the count will be exposed in the custom trackers metric labeled using the tracker name (map key). Zero valued counts are not exposed (and removed when they go back to zero)." category:"advanced"`
+	ActiveSeriesCustomTrackersOverridesFn func() *activeseries.CustomTrackersConfig `yaml:"-"`
 
 	ExemplarsUpdatePeriod time.Duration `yaml:"exemplars_update_period" category:"experimental"`
 
@@ -199,7 +199,7 @@ type Ingester struct {
 	metrics *ingesterMetrics
 	logger  log.Logger
 
-	activeSeriesMatcher activeseries.ActiveSeriesMatchers
+	activeSeriesMatcher activeseries.Matchers
 
 	lifecycler         *ring.Lifecycler
 	limits             *validation.Overrides
@@ -250,7 +250,7 @@ func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus
 		return nil, errors.Wrap(err, "failed to create the bucket client")
 	}
 
-	asm := activeseries.NewActiveSeriesMatchers(&cfg.ActiveSeriesCustomTrackersConfig)
+	asm := activeseries.NewMatchers(&cfg.ActiveSeriesCustomTrackersConfig)
 
 	return &Ingester{
 		cfg:                 cfg,
@@ -472,7 +472,7 @@ func (i *Ingester) updateLoop(ctx context.Context) error {
 	}
 }
 
-func (i *Ingester) getActiveSeriesMatchersConfig(userID string) *activeseries.ActiveSeriesCustomTrackersConfig {
+func (i *Ingester) getActiveSeriesMatchersConfig(userID string) *activeseries.CustomTrackersConfig {
 	matchersConfig := i.limits.ActiveSeriesCustomTrackersConfig(userID)
 	if matchersConfig == nil {
 		if i.cfg.ActiveSeriesCustomTrackersOverridesFn != nil {
@@ -485,7 +485,7 @@ func (i *Ingester) getActiveSeriesMatchersConfig(userID string) *activeseries.Ac
 	return matchersConfig
 }
 
-func (i *Ingester) replaceMatchers(asm *activeseries.ActiveSeriesMatchers, userDB *userTSDB) {
+func (i *Ingester) replaceMatchers(asm *activeseries.Matchers, userDB *userTSDB) {
 	i.metrics.deletePerUserCustomTrackerMetrics(userDB.userID, userDB.activeSeries.CurrentMatcherNames())
 	userDB.activeSeries.ReloadSeriesMatchers(asm)
 }
@@ -499,7 +499,7 @@ func (i *Ingester) updateActiveSeries(now time.Time) {
 
 		newMatchersConfig := i.getActiveSeriesMatchersConfig(userID)
 		if newMatchersConfig.String() != userDB.activeSeries.CurrentConfig().String() {
-			i.replaceMatchers(activeseries.NewActiveSeriesMatchers(newMatchersConfig), userDB)
+			i.replaceMatchers(activeseries.NewMatchers(newMatchersConfig), userDB)
 		}
 		if userDB.activeSeries.LastAsmUpdate() < now.Add(-i.cfg.ActiveSeriesMetricsIdleTimeout).UnixNano() {
 			// We are not exposing metrics until enough time passed for stable metrics.
@@ -1469,7 +1469,7 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 
 	userDB := &userTSDB{
 		userID:              userID,
-		activeSeries:        activeseries.NewActiveSeries(activeseries.NewActiveSeriesMatchers(matchersConfig), i.cfg.ActiveSeriesMetricsIdleTimeout),
+		activeSeries:        activeseries.NewActiveSeries(activeseries.NewMatchers(matchersConfig), i.cfg.ActiveSeriesMetricsIdleTimeout),
 		seriesInMetric:      newMetricCounter(i.limiter, i.cfg.getIgnoreSeriesLimitForMetricNamesMap()),
 		ingestedAPISamples:  util_math.NewEWMARate(0.2, i.cfg.RateUpdatePeriod),
 		ingestedRuleSamples: util_math.NewEWMARate(0.2, i.cfg.RateUpdatePeriod),

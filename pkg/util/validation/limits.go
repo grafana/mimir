@@ -9,7 +9,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"flag"
-	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"math"
 	"strings"
 	"time"
@@ -18,6 +17,8 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/relabel"
 	"golang.org/x/time/rate"
+
+	"github.com/grafana/mimir/pkg/ingester/activeseries"
 )
 
 // LimitError are errors that do not comply with the limits specified.
@@ -57,7 +58,7 @@ type Limits struct {
 	// Exemplars
 	MaxGlobalExemplarsPerUser int `yaml:"max_global_exemplars_per_user" json:"max_global_exemplars_per_user" category:"experimental"`
 	// Active series custom trackers
-	ActiveSeriesCustomTrackersConfig *activeseries.ActiveSeriesCustomTrackersConfig `yaml:"active_series_custom_trackers_config"`
+	ActiveSeriesCustomTrackersConfig *activeseries.CustomTrackersConfig `yaml:"active_series_custom_trackers_config"`
 
 	// Querier enforced limits.
 	MaxChunksPerQuery              int            `yaml:"max_fetched_chunks_per_query" json:"max_fetched_chunks_per_query"`
@@ -424,7 +425,7 @@ func (o *Overrides) MaxGlobalExemplarsPerUser(userID string) int {
 	return o.getOverridesForUser(userID).MaxGlobalExemplarsPerUser
 }
 
-func (o *Overrides) ActiveSeriesCustomTrackersConfig(userID string) *activeseries.ActiveSeriesCustomTrackersConfig {
+func (o *Overrides) ActiveSeriesCustomTrackersConfig(userID string) *activeseries.CustomTrackersConfig {
 	return o.getOverridesForUser(userID).ActiveSeriesCustomTrackersConfig
 }
 

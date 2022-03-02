@@ -12,7 +12,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"io"
 	"io/ioutil"
 	"math"
@@ -53,6 +52,7 @@ import (
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 
+	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/chunk"
@@ -64,7 +64,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-func mustNewActiveSeriesCustomTrackersConfigFromMap(t *testing.T, source map[string]string) *activeseries.ActiveSeriesCustomTrackersConfig {
+func mustNewActiveSeriesCustomTrackersConfigFromMap(t *testing.T, source map[string]string) *activeseries.CustomTrackersConfig {
 	m, err := activeseries.NewActiveSeriesCustomTrackersConfig(source)
 	require.NoError(t, err)
 	return &m
@@ -5167,7 +5167,7 @@ func TestIngesterActiveSeries(t *testing.T) {
 	userID := "test_user"
 	userID2 := "other_test_user"
 
-	defaultActiveSeriesCustomTrackersFn := func() *activeseries.ActiveSeriesCustomTrackersConfig {
+	defaultActiveSeriesCustomTrackersFn := func() *activeseries.CustomTrackersConfig {
 		return mustNewActiveSeriesCustomTrackersConfigFromMap(t, map[string]string{
 			"bool_is_true":  `{bool="true"}`,
 			"bool_is_false": `{bool="false"}`,
@@ -5193,8 +5193,8 @@ func TestIngesterActiveSeries(t *testing.T) {
 		reqs                              []*mimirpb.WriteRequest
 		expectedMetrics                   string
 		disableActiveSeries               bool
-		defaultActiveSeriesCustomTrackers func() *activeseries.ActiveSeriesCustomTrackersConfig
-		activeSeriesConfig                activeseries.ActiveSeriesCustomTrackersConfig
+		defaultActiveSeriesCustomTrackers func() *activeseries.CustomTrackersConfig
+		activeSeriesConfig                activeseries.CustomTrackersConfig
 		tenantLimits                      *TenantLimitsMock
 	}{
 		"successful push, should count active series": {
@@ -5339,7 +5339,7 @@ func TestIngesterActiveSeries(t *testing.T) {
 			},
 		},
 		"should not fail with empty runtime config": {
-			defaultActiveSeriesCustomTrackers: func() *activeseries.ActiveSeriesCustomTrackersConfig { return nil },
+			defaultActiveSeriesCustomTrackers: func() *activeseries.CustomTrackersConfig { return nil },
 			test: func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer) {
 				now := time.Now()
 
@@ -5362,7 +5362,7 @@ func TestIngesterActiveSeries(t *testing.T) {
 		},
 		"should not fail with nil provider and default config": {
 			defaultActiveSeriesCustomTrackers: nil,
-			activeSeriesConfig:                activeseries.ActiveSeriesCustomTrackersConfig{},
+			activeSeriesConfig:                activeseries.CustomTrackersConfig{},
 			test: func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer) {
 				now := time.Now()
 
@@ -5506,7 +5506,7 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 	userID := "test_user"
 	userID2 := "other_test_user"
 
-	defaultActiveSeriesCustomTrackersFn := func() *activeseries.ActiveSeriesCustomTrackersConfig {
+	defaultActiveSeriesCustomTrackersFn := func() *activeseries.CustomTrackersConfig {
 		return mustNewActiveSeriesCustomTrackersConfigFromMap(t, map[string]string{
 			"bool_is_true":  `{bool="true"}`,
 			"bool_is_false": `{bool="false"}`,
@@ -5531,8 +5531,8 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 		test                              func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer)
 		reqs                              []*mimirpb.WriteRequest
 		expectedMetrics                   string
-		defaultActiveSeriesCustomTrackers func() *activeseries.ActiveSeriesCustomTrackersConfig
-		activeSeriesConfig                activeseries.ActiveSeriesCustomTrackersConfig
+		defaultActiveSeriesCustomTrackers func() *activeseries.CustomTrackersConfig
+		activeSeriesConfig                activeseries.CustomTrackersConfig
 		tenantLimits                      *TenantLimitsMock
 	}{
 		"overwrite flag based config with runtime overwrite": {
@@ -5756,6 +5756,7 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 			}
 
 			ing, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, overrides, "", registry)
+			require.NoError(t, err)
 			require.NoError(t, services.StartAndAwaitRunning(context.Background(), ing))
 			defer services.StopAndAwaitTerminated(context.Background(), ing) //nolint:errcheck
 

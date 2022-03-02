@@ -7,7 +7,6 @@ package ingester
 
 import (
 	"context"
-	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"os"
 	"sync"
 	"time"
@@ -20,6 +19,7 @@ import (
 	"github.com/thanos-io/thanos/pkg/shipper"
 	"go.uber.org/atomic"
 
+	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"github.com/grafana/mimir/pkg/util/extract"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 )
