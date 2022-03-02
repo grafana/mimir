@@ -9,11 +9,13 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/multierror"
 	"github.com/pkg/errors"
+	"github.com/prometheus/common/model"
 	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/tools/doc-generator/parse"
@@ -169,8 +171,20 @@ func (i *InspectedEntry) UnmarshalYAML(value *yaml.Node) error {
 
 func decodeValue(fieldType string, decoder interface{ Decode(interface{}) error }) (interface{}, error) {
 	typ := parse.ReflectType(fieldType)
+	if fieldType == "duration" {
+		d := duration(0)
+		typ = reflect.TypeOf(&d)
+	}
+
 	decoded := reflect.New(typ).Interface() // create a new typed pointer
 	err := decoder.Decode(decoded)
+
+	if fieldType == "duration" && err == nil {
+		// convert it to time.Duration.
+		value := decoded.(**duration)
+		return time.Duration(**value), err
+	}
+
 	// return a dereferenced typed value
 	return reflect.ValueOf(decoded).Elem().Interface(), err
 }
@@ -413,4 +427,64 @@ func (i Inspector) convertBlockToEntry(block *parse.ConfigBlock) *InspectedEntry
 		BlockFlagsPrefix:   block.FlagsPrefix,
 		BlockFlagsPrefixes: block.FlagsPrefixes,
 	}
+}
+
+// duration type allows parsing of time.Duration from multiple formats.
+type duration time.Duration
+
+func (d *duration) UnmarshalYAML(value *yaml.Node) error {
+	td := time.Duration(0)
+	err := value.Decode(&td)
+	if err == nil {
+		*d = duration(td)
+		return nil
+	}
+
+	md := model.Duration(0)
+	err = value.Decode(&md)
+	if err == nil {
+		*d = duration(md)
+		return nil
+	}
+
+	nanos := int64(0)
+	err = value.Decode(&nanos)
+	if err == nil {
+		*d = duration(nanos)
+		return nil
+	}
+
+	return fmt.Errorf("failed to decode duration: %q", value.Value)
+}
+
+func (d *duration) UnmarshalJSON(data []byte) error {
+	if bytes.HasPrefix(data, []byte("\"")) {
+		var s string
+		if err := json.Unmarshal(data, &s); err != nil {
+			return err
+		}
+
+		val1, err := time.ParseDuration(s)
+		if err == nil {
+			*d = duration(val1)
+			return nil
+		}
+
+		val2, err := model.ParseDuration(s)
+		if err == nil {
+			*d = duration(val2)
+			return nil
+		}
+		return err
+	}
+
+	// if it doesn't look like string, decode it as number.
+	val := int64(0)
+	err := json.Unmarshal(data, &val)
+	if err == nil {
+		*d = duration(val)
+		return nil
+	}
+
+	return fmt.Errorf("failed to decode duration: %q", data)
 }

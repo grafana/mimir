@@ -3,6 +3,7 @@
 package config
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -301,6 +302,50 @@ func TestInspectConfig_LoadingAConfigHasCorrectTypes(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			val := params.MustGetValue(tc.path)
 			assert.IsType(t, tc.expectedType, val)
+		})
+	}
+}
+
+func TestDecodeDurationInVariousFormats(t *testing.T) {
+	type testcase struct {
+		yamlRawValue string
+		jsonRawValue string
+		expected     time.Duration
+	}
+
+	for name, test := range map[string]testcase{
+		"number": {
+			yamlRawValue: `1000000000`,
+			jsonRawValue: `1000000000`,
+			expected:     time.Second,
+		},
+
+		"time.Duration": {
+			yamlRawValue: `1000000000ns`, // nanoseconds are not supported by model.Duration
+			jsonRawValue: `"1000000000ns"`,
+			expected:     time.Second,
+		},
+
+		"model.Duration": {
+			yamlRawValue: `1d`, // days are not supported by time.Duration
+			jsonRawValue: `"1d"`,
+			expected:     time.Hour * 24,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			d, err := DefaultValueInspector.InspectConfig(&mimir.Config{})
+			require.NoError(t, err)
+			require.NoError(t, yaml.Unmarshal([]byte(`
+distributor:
+  remote_timeout: `+test.yamlRawValue+`
+`), &d))
+
+			val := d.MustGetValue("distributor.remote_timeout")
+			assert.Equal(t, test.expected, val)
+
+			require.NoError(t, json.Unmarshal([]byte(`{ "distributor": { "remote_timeout": `+test.jsonRawValue+` }}`), &d))
+			val = d.MustGetValue("distributor.remote_timeout")
+			assert.Equal(t, test.expected, val)
 		})
 	}
 }
