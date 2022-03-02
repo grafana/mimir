@@ -3,6 +3,7 @@
 package config
 
 import (
+	"fmt"
 	"reflect"
 	"strings"
 
@@ -250,4 +251,26 @@ func mapS3SSE(prefix string) MapperFunc {
 
 		return nil
 	}
+}
+
+// mapMemcachedAddresses maps query_range...memcached_client.host and .service to a DNS Service Discovery format
+// address. This should preserve the behaviour in cortex v1.11.0:
+// https://github.com/cortexproject/cortex/blob/43c646ba3ff906e80a6a1812f2322a0c276e9deb/pkg/chunk/cache/memcached_client.go#L242-L258
+func mapMemcachedAddresses(source, target *InspectedEntry) error {
+	const (
+		oldPrefix = "query_range.results_cache.cache.memcached_client"
+		newPrefix = "frontend.results_cache.memcached"
+	)
+	presetAddressesVal, err := source.GetValue(oldPrefix + ".addresses")
+	if err != nil {
+		return err
+	}
+	if presetAddressesVal.(string) != "" {
+		return nil // respect already set values of addresses
+	}
+
+	service, hostname := source.MustGetValue(oldPrefix+".service"), source.MustGetValue(oldPrefix+".host")
+	newAddress := fmt.Sprintf("dnssrvnoa+_%s._tcp.%s", service, hostname)
+
+	return target.SetValue(newPrefix+".addresses", newAddress)
 }

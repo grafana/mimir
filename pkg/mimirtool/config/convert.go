@@ -39,6 +39,7 @@ var CortexToMimirMapper = MultiMapper{
 			"query_range.results_cache.cache.background.writeback_goroutines": RenameMapping("frontend.results_cache.memcached.max_async_concurrency"),
 			"query_range.results_cache.cache.memcached.batch_size":            RenameMapping("frontend.results_cache.memcached.max_get_multi_batch_size"),
 			"query_range.results_cache.cache.memcached.parallelism":           RenameMapping("frontend.results_cache.memcached.max_get_multi_concurrency"),
+			"query_range.results_cache.cache.memcached_client.addresses":      RenameMapping("frontend.results_cache.memcached.addresses"),
 			"query_range.results_cache.cache.memcached_client.max_idle_conns": RenameMapping("frontend.results_cache.memcached.max_idle_connections"),
 			"query_range.results_cache.cache.memcached_client.max_item_size":  RenameMapping("frontend.results_cache.memcached.max_item_size"),
 			"query_range.results_cache.cache.memcached_client.timeout":        RenameMapping("frontend.results_cache.memcached.timeout"),
@@ -123,6 +124,8 @@ var CortexToMimirMapper = MultiMapper{
 			"auth_enabled": RenameMapping("multitenancy_enabled"),
 		},
 	},
+	// Convert provided memcached service and host to the DNS service discovery format
+	MapperFunc(mapMemcachedAddresses),
 }
 
 type InspectedEntryFactory func() *InspectedEntry

@@ -93,10 +93,22 @@ func TestConvert(t *testing.T) {
 			inFile:  "testdata/am_storage-s3-sse-repeated-old.yaml",
 			outFile: "testdata/am_storage-s3-sse-repeated-new.yaml",
 		},
+		{
+			name:    "new memcached addresses is constructed from old hostname and service",
+			inFile:  "testdata/frontend.memcached.addresses-old.yaml",
+			outFile: "testdata/frontend.memcached.addresses-new.yaml",
+		},
+		{
+			name:    "old memcached addresses take precedence over hostname and service",
+			inFile:  "testdata/frontend.memcached.addresses-existing-old.yaml",
+			outFile: "testdata/frontend.memcached.addresses-existing-new.yaml",
+		},
 	}
 
 	for _, tc := range testCases {
+		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			inBytes := loadFile(t, tc.inFile)
 			inFlags := loadFlags(t, tc.inFlagsFile)
 
