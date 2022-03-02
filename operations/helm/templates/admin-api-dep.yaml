@@ -1,0 +1,173 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    {{- toYaml .Values.admin_api.annotations | nindent 4 }}
+  labels:
+    app: {{ template "enterprise-metrics.name" . }}-admin-api
+    chart: {{ template "enterprise-metrics.chart" . }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+  name: {{ template "enterprise-metrics.fullname" . }}-admin-api
+spec:
+  replicas: {{ .Values.admin_api.replicas }}
+  selector:
+    matchLabels:
+      app: {{ template "enterprise-metrics.name" . }}-admin-api
+      release: {{ .Release.Name }}
+  strategy:
+    {{- toYaml .Values.admin_api.strategy | nindent 4 }}
+  template:
+    metadata:
+      labels:
+        app: {{ template "enterprise-metrics.name" . }}-admin-api
+        # The name label is important for cortex-mixin compatibility which expects certain names for services.
+        name: admin-api
+        gossip_ring_member: "true"
+        target: admin-api
+        release: {{ .Release.Name }}
+        {{- with .Values.admin_api.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      annotations:
+        {{- if .Values.useExternalConfig }}
+        checksum/config: {{ .Values.externalConfigVersion }}
+        {{- else }}
+        checksum/config: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- end}}
+        {{- with .Values.admin_api.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ template "enterprise-metrics.serviceAccountName" . }}
+      {{- if .Values.admin_api.priorityClassName }}
+      priorityClassName: {{ .Values.admin_api.priorityClassName }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.admin_api.securityContext | nindent 8 }}
+      initContainers:
+        {{- with .Values.admin_api.initContainers }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- if .Values.minio.enabled }}
+        - name: minio-mc
+          image: "{{ .Values.minio.mcImage.repository }}:{{ .Values.minio.mcImage.tag }}"
+          imagePullPolicy: {{ .Values.minio.mcImage.pullPolicy }}
+          command: ["/bin/sh", "/config/initialize"]
+          env:
+            - name: MINIO_ENDPOINT
+              value: {{ .Release.Name }}-minio
+            - name: MINIO_PORT
+              value: {{ .Values.minio.service.port | quote }}
+          volumeMounts:
+            - name: minio-configuration
+              mountPath: /config
+          {{- if .Values.minio.tls.enabled }}
+            - name: cert-secret-volume-mc
+              mountPath: {{ .Values.minio.configPathmc }}certs
+          {{ end }}
+        {{- end }}
+      {{- if .Values.image.pullSecrets }}
+      imagePullSecrets:
+      {{- range .Values.image.pullSecrets }}
+        - name: {{ . }}
+      {{- end }}
+      {{- end }}
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - "-target=admin-api"
+            - -activity-tracker.filepath=
+            - "-config.file=/etc/enterprise-metrics/enterprise-metrics.yaml"
+            - "-memberlist.join={{ template "enterprise-metrics.fullname" . }}-gossip-ring"
+            {{- if .Values.minio.enabled }}
+            - -admin.client.backend-type=s3
+            - -admin.client.s3.endpoint={{ .Release.Name }}-minio.{{ .Release.Namespace }}.svc:9000
+            - -admin.client.s3.bucket-name=enterprise-metrics-admin
+            - -admin.client.s3.access-key-id=enterprise-metrics
+            - -admin.client.s3.secret-access-key=supersecret
+            - -admin.client.s3.insecure=true
+            {{- end }}
+            {{- range $key, $value := .Values.admin_api.extraArgs }}
+            - "-{{ $key }}={{ $value }}"
+            {{- end }}
+          volumeMounts:
+            {{- if .Values.admin_api.extraVolumeMounts }}
+              {{ toYaml .Values.admin_api.extraVolumeMounts | nindent 12}}
+            {{- end }}
+            - name: config
+              mountPath: /etc/enterprise-metrics
+            - name: runtime-config
+              mountPath: /var/enterprise-metrics
+            - name: license
+              mountPath: /license
+            - name: storage
+              mountPath: "/data"
+              subPath: {{ .Values.admin_api.persistence.subPath }}
+          ports:
+            - name: http-metrics
+              containerPort: {{ .Values.config.server.http_listen_port }}
+              protocol: TCP
+            - name: grpc
+              containerPort: {{ .Values.config.server.grpc_listen_port }}
+              protocol: TCP
+          livenessProbe:
+            {{- toYaml .Values.admin_api.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.admin_api.readinessProbe | nindent 12 }}
+          resources:
+            {{- toYaml .Values.admin_api.resources | nindent 12 }}
+          securityContext:
+            readOnlyRootFilesystem: true
+          env:
+            {{- if .Values.admin_api.env }}
+            {{ toYaml .Values.admin_api.env | nindent 12 }}
+            {{- end }}
+        {{- with .Values.admin_api.extraContainers }}
+        {{ toYaml . | nindent 8 }}
+        {{- end }}
+      nodeSelector:
+        {{- toYaml .Values.admin_api.nodeSelector | nindent 8 }}
+      affinity:
+        {{- toYaml .Values.admin_api.affinity | nindent 8 }}
+      tolerations:
+        {{- toYaml .Values.admin_api.tolerations | nindent 8 }}
+      terminationGracePeriodSeconds: {{ .Values.admin_api.terminationGracePeriodSeconds }}
+      volumes:
+        - name: config
+          secret:
+          {{- if .Values.useExternalConfig }}
+            secretName: {{ .Values.externalConfigSecretName }}
+          {{- else }}
+            secretName: {{ template "enterprise-metrics.fullname" . }}
+          {{- end }}
+        - name: runtime-config
+          configMap:
+            name: {{ template "enterprise-metrics.fullname" . }}-runtime
+        {{- if .Values.admin_api.extraVolumes }}
+        {{ toYaml .Values.admin_api.extraVolumes | nindent 8}}
+        {{- end }}
+        - name: license
+          secret:
+            secretName: {{ .Values.license.secretName }}
+        - name: storage
+          emptyDir: {}
+        {{- if .Values.minio.enabled }}
+        - name: minio-configuration
+          projected:
+            sources:
+            - configMap:
+                name: {{ .Release.Name }}-minio
+            - secret:
+                name: {{ .Release.Name }}-minio
+        {{- if .Values.minio.tls.enabled }}
+        - name: cert-secret-volume-mc
+          secret:
+            secretName: {{ .Values.minio.tls.certSecret }}
+            items:
+            - key: {{ .Values.minio.tls.publicCrt }}
+              path: CAs/public.crt
+        {{- end }}
+        {{- end }}

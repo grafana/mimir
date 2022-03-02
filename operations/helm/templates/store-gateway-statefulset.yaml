@@ -1,0 +1,187 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ template "enterprise-metrics.fullname" . }}-store-gateway
+  labels:
+    app: {{ template "enterprise-metrics.name" . }}-store-gateway
+    chart: {{ template "enterprise-metrics.chart" . }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+  annotations:
+    {{- toYaml .Values.store_gateway.annotations | nindent 4 }}
+spec:
+  replicas: {{ .Values.store_gateway.replicas }}
+  selector:
+    matchLabels:
+      app: {{ template "enterprise-metrics.name" . }}-store-gateway
+      release: {{ .Release.Name }}
+  updateStrategy:
+    {{- toYaml .Values.store_gateway.strategy | nindent 4 }}
+  serviceName: {{ template "enterprise-metrics.fullname" . }}-store-gateway
+  {{- if .Values.store_gateway.persistentVolume.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: storage
+        {{- if .Values.store_gateway.persistentVolume.annotations }}
+        annotations:
+          {{ toYaml .Values.store_gateway.persistentVolume.annotations | nindent 10 }}
+        {{- end }}
+      spec:
+        {{- if .Values.store_gateway.persistentVolume.storageClass }}
+        {{- if (eq "-" .Values.store_gateway.persistentVolume.storageClass) }}
+        storageClassName: ""
+        {{- else }}
+        storageClassName: "{{ .Values.store_gateway.persistentVolume.storageClass }}"
+        {{- end }}
+        {{- end }}
+        accessModes:
+          {{ toYaml .Values.store_gateway.persistentVolume.accessModes | nindent 10 }}
+        resources:
+          requests:
+            storage: "{{ .Values.store_gateway.persistentVolume.size }}"
+  {{- end }}
+  template:
+    metadata:
+      labels:
+        app: {{ template "enterprise-metrics.name" . }}-store-gateway
+        # The name label is important for cortex-mixin compatibility which expects certain names for services.
+        name: store-gateway
+        gossip_ring_member: "true"
+        target: store-gateway
+        release: {{ .Release.Name }}
+        {{- with .Values.store_gateway.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      annotations:
+        {{- if .Values.useExternalConfig }}
+        checksum/config: {{ .Values.externalConfigVersion }}
+        {{- else }}
+        checksum/config: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- end }}
+        {{- with .Values.store_gateway.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ template "enterprise-metrics.serviceAccountName" . }}
+      {{- if .Values.store_gateway.priorityClassName }}
+      priorityClassName: {{ .Values.store_gateway.priorityClassName }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.store_gateway.securityContext | nindent 8 }}
+      initContainers:
+        {{- toYaml .Values.store_gateway.initContainers | nindent 8 }}
+      {{- if .Values.image.pullSecrets }}
+      imagePullSecrets:
+      {{- range .Values.image.pullSecrets }}
+        - name: {{ . }}
+      {{- end }}
+      {{- end }}
+      nodeSelector:
+        {{- toYaml .Values.store_gateway.nodeSelector | nindent 8 }}
+      affinity:
+        {{- toYaml .Values.store_gateway.affinity | nindent 8 }}
+      tolerations:
+        {{- toYaml .Values.store_gateway.tolerations | nindent 8 }}
+      terminationGracePeriodSeconds: {{ .Values.store_gateway.terminationGracePeriodSeconds }}
+      volumes:
+        - name: config
+          secret:
+            {{- if .Values.useExternalConfig }}
+            secretName: {{ .Values.externalConfigSecretName }}
+            {{- else }}
+            secretName: {{ template "enterprise-metrics.fullname" . }}
+            {{- end }}
+        - name: runtime-config
+          configMap:
+            name: {{ template "enterprise-metrics.fullname" . }}-runtime
+        - name: license
+          secret:
+            secretName: {{ .Values.license.secretName }}
+        {{- if not .Values.store_gateway.persistentVolume.enabled }}
+        - name: storage
+          emptyDir: {}
+        {{- end }}
+        - name: active-queries
+          emptyDir: {}
+        {{- if .Values.store_gateway.extraVolumes }}
+        {{ toYaml .Values.store_gateway.extraVolumes | nindent 8 }}
+        {{- end }}
+      containers:
+        {{- if .Values.store_gateway.extraContainers }}
+        {{ toYaml .Values.store_gateway.extraContainers | nindent 8 }}
+        {{- end }}
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - "-target=store-gateway"
+            - -activity-tracker.filepath=/active-query-tracker/activity.log
+            - "-config.file=/etc/enterprise-metrics/enterprise-metrics.yaml"
+            - "-memberlist.join={{ template "enterprise-metrics.fullname" . }}-gossip-ring"
+            {{- if .Values.minio.enabled }}
+            - -admin.client.backend-type=s3
+            - -admin.client.s3.endpoint={{ .Release.Name }}-minio.{{ .Release.Namespace }}.svc:9000
+            - -admin.client.s3.bucket-name=enterprise-metrics-admin
+            - -admin.client.s3.access-key-id=enterprise-metrics
+            - -admin.client.s3.secret-access-key=supersecret
+            - -admin.client.s3.insecure=true
+            - -blocks-storage.s3.endpoint={{ .Release.Name }}-minio.{{ .Release.Namespace }}.svc:9000
+            - -blocks-storage.s3.bucket-name=enterprise-metrics-tsdb
+            - -blocks-storage.s3.access-key-id=enterprise-metrics
+            - -blocks-storage.s3.secret-access-key=supersecret
+            - -blocks-storage.s3.insecure=true
+            {{- end }}
+            {{- if .Values.memcached.enabled }}
+            - -blocks-storage.bucket-store.chunks-cache.backend=memcached
+            - -blocks-storage.bucket-store.chunks-cache.memcached.addresses=dns+{{ .Release.Name }}-memcached.{{ .Release.Namespace }}.svc:11211
+            - -blocks-storage.bucket-store.chunks-cache.memcached.max-item-size={{ .Values.memcached.maxItemMemory }}
+            {{- end }}
+            {{- if index .Values "memcached-queries" "enabled" }}
+            - -blocks-storage.bucket-store.index-cache.backend=memcached
+            - -blocks-storage.bucket-store.index-cache.memcached.addresses=dns+{{ .Release.Name }}-memcached-queries.{{ .Release.Namespace }}.svc:11211
+            - -blocks-storage.bucket-store.metadata-cache.memcached.max-item-size={{ (index .Values "memcached-queries").maxItemMemory }}
+            {{- end }}
+            {{- if index .Values "memcached-metadata" "enabled" }}
+            - -blocks-storage.bucket-store.metadata-cache.backend=memcached
+            - -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dns+{{ .Release.Name }}-memcached-metadata.{{ .Release.Namespace }}.svc:11211
+            - -blocks-storage.bucket-store.metadata-cache.memcached.max-item-size={{ (index .Values "memcached-metadata").maxItemMemory }}
+            {{- end }}
+            {{- range $key, $value := .Values.store_gateway.extraArgs }}
+            - "-{{ $key }}={{ $value }}"
+            {{- end }}
+          volumeMounts:
+            {{- if .Values.store_gateway.extraVolumeMounts }}
+            {{ toYaml .Values.store_gateway.extraVolumeMounts | nindent 12}}
+            {{- end }}
+            - name: config
+              mountPath: /etc/enterprise-metrics
+            - name: runtime-config
+              mountPath: /var/enterprise-metrics
+            - name: license
+              mountPath: /license
+            - name: storage
+              mountPath: "/data"
+              {{- if .Values.store_gateway.persistentVolume.subPath }}
+              subPath: {{ .Values.store_gateway.persistentVolume.subPath }}             
+              {{- end }}
+            - name: active-queries
+              mountPath: /active-query-tracker
+          ports:
+            - name: http-metrics
+              containerPort: {{ .Values.config.server.http_listen_port }}
+              protocol: TCP
+            - name: grpc
+              containerPort: {{ .Values.config.server.grpc_listen_port }}
+              protocol: TCP            
+          livenessProbe:
+            {{- toYaml .Values.store_gateway.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.store_gateway.readinessProbe | nindent 12 }}
+          resources:
+            {{- toYaml .Values.store_gateway.resources | nindent 12 }}
+          securityContext:
+            readOnlyRootFilesystem: true
+          env:
+            {{- if .Values.store_gateway.env }}
+              {{- toYaml .Values.store_gateway.env | nindent 12 }}
+            {{- end }}

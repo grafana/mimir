@@ -1,0 +1,16 @@
+{{- if .Values.podDisruptionBudget -}}
+apiVersion: policy/v1beta1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ template "enterprise-metrics.fullname" . }}
+  labels:
+    app: {{ template "enterprise-metrics.name" . }}
+    heritage: {{ .Release.Service }}
+    release: {{ .Release.Name }}
+    chart: {{ template "enterprise-metrics.chart" . }}
+spec:
+  selector:
+    matchLabels:
+      app: {{ template "enterprise-metrics.name" . }}
+{{ toYaml .Values.podDisruptionBudget | indent 2 }}
+{{- end -}}

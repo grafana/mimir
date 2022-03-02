@@ -1,0 +1,161 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ template "enterprise-metrics.fullname" . }}-ruler
+  labels:
+    app: {{ template "enterprise-metrics.name" . }}-ruler
+    chart: {{ template "enterprise-metrics.chart" . }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+  annotations:
+    {{- toYaml .Values.ruler.annotations | nindent 4 }}
+spec:
+  replicas: {{ .Values.ruler.replicas }}
+  selector:
+    matchLabels:
+      app: {{ template "enterprise-metrics.name" . }}-ruler
+      release: {{ .Release.Name }}
+  strategy:
+    {{- toYaml .Values.ruler.strategy | nindent 4 }}
+  template:
+    metadata:
+      labels:
+        app: {{ template "enterprise-metrics.name" . }}-ruler
+        # The name label is important for cortex-mixin compatibility which expects certain names for services.
+        name: ruler
+        gossip_ring_member: "true"
+        target: ruler
+        release: {{ .Release.Name }}
+        {{- with .Values.ruler.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      annotations:
+{{- if .Values.useExternalConfig }}
+        checksum/config: {{ .Values.externalConfigVersion }}
+{{- else }}
+        checksum/config: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+{{- end}}
+        {{- with .Values.ruler.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ template "enterprise-metrics.serviceAccountName" . }}
+    {{- if .Values.ruler.priorityClassName }}
+      priorityClassName: {{ .Values.ruler.priorityClassName }}
+    {{- end }}
+      securityContext:
+        {{- toYaml .Values.ruler.securityContext | nindent 8 }}
+      initContainers:
+        {{- toYaml .Values.ruler.initContainers | nindent 8 }}
+      {{- if .Values.image.pullSecrets }}
+      imagePullSecrets:
+      {{- range .Values.image.pullSecrets }}
+        - name: {{ . }}
+      {{- end}}
+      {{- end }}
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - "-target=ruler"
+            - -activity-tracker.filepath=/active-query-tracker/activity.log
+            - "-config.file=/etc/enterprise-metrics/enterprise-metrics.yaml"
+            - "-memberlist.join={{ template "enterprise-metrics.fullname" . }}-gossip-ring"
+            {{- if .Values.minio.enabled }}
+            - -admin.client.backend-type=s3
+            - -admin.client.s3.endpoint={{ .Release.Name }}-minio.{{ .Release.Namespace }}.svc:9000
+            - -admin.client.s3.bucket-name=enterprise-metrics-admin
+            - -admin.client.s3.access-key-id=enterprise-metrics
+            - -admin.client.s3.secret-access-key=supersecret
+            - -admin.client.s3.insecure=true
+            - -blocks-storage.s3.endpoint={{ .Release.Name }}-minio.{{ .Release.Namespace }}.svc:9000
+            - -blocks-storage.s3.bucket-name=enterprise-metrics-tsdb
+            - -blocks-storage.s3.access-key-id=enterprise-metrics
+            - -blocks-storage.s3.secret-access-key=supersecret
+            - -blocks-storage.s3.insecure=true
+            - -ruler-storage.s3.endpoint={{ .Release.Name }}-minio.{{ .Release.Namespace }}.svc:9000
+            - -ruler-storage.s3.bucket-name=enterprise-metrics-ruler
+            - -ruler-storage.s3.access-key-id=enterprise-metrics
+            - -ruler-storage.s3.secret-access-key=supersecret
+            - -ruler-storage.s3.insecure=true
+           {{- end }}
+            {{- if .Values.config.ruler.enable_alertmanager_discovery }}
+            - "-ruler.alertmanager-discovery=true"
+            - "-ruler.alertmanager-url=http://_http-metrics._tcp.{{ template "enterprise-metrics.name" . }}-alertmanager-headless/api/prom/alertmanager/"
+            {{- else }}
+            - "-ruler.alertmanager-url=http://{{ template "enterprise-metrics.fullname" . }}-alertmanager.{{ .Release.Namespace }}.svc:{{ .Values.config.server.http_listen_port }}/api/prom/alertmanager/"
+            {{- end }}
+            {{- if index .Values "memcached-metadata" "enabled" }}
+            - -blocks-storage.bucket-store.metadata-cache.backend=memcached
+            - -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dns+{{ .Release.Name }}-memcached-metadata.{{ .Release.Namespace }}.svc:11211
+            - -blocks-storage.bucket-store.metadata-cache.memcached.max-item-size={{ (index .Values "memcached-metadata").maxItemMemory }}
+            {{- end }}
+          {{- range $key, $value := .Values.ruler.extraArgs }}
+            - "-{{ $key }}={{ $value }}"
+          {{- end }}
+          volumeMounts:
+            {{- if .Values.ruler.extraVolumeMounts }}
+              {{ toYaml .Values.ruler.extraVolumeMounts | nindent 12}}
+            {{- end }}
+            - name: config
+              mountPath: /etc/enterprise-metrics
+            - name: runtime-config
+              mountPath: /var/enterprise-metrics
+            - name: license
+              mountPath: /license
+            - name: storage
+              mountPath: "/data"
+              subPath: {{ .Values.ruler.persistence.subPath }}
+            - name: active-queries
+              mountPath: /active-query-tracker
+          ports:
+            - name: http-metrics
+              containerPort: {{ .Values.config.server.http_listen_port }}
+              protocol: TCP
+            - name: grpc
+              containerPort: {{ .Values.config.server.grpc_listen_port }}
+              protocol: TCP
+          livenessProbe:
+            {{- toYaml .Values.ruler.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.ruler.readinessProbe | nindent 12 }}
+          resources:
+            {{- toYaml .Values.ruler.resources | nindent 12 }}
+          securityContext:
+            readOnlyRootFilesystem: true
+          env:
+            {{- if .Values.ruler.env }}
+              {{- toYaml .Values.ruler.env | nindent 12 }}
+            {{- end }}
+{{- if .Values.ruler.extraContainers }}
+{{ toYaml .Values.ruler.extraContainers | indent 8}}
+{{- end }}
+      nodeSelector:
+        {{- toYaml .Values.ruler.nodeSelector | nindent 8 }}
+      affinity:
+        {{- toYaml .Values.ruler.affinity | nindent 8 }}
+      tolerations:
+        {{- toYaml .Values.ruler.tolerations | nindent 8 }}
+      terminationGracePeriodSeconds: {{ .Values.ruler.terminationGracePeriodSeconds }}
+      volumes:
+        - name: config
+          secret:
+{{- if .Values.useExternalConfig }}
+            secretName: {{ .Values.externalConfigSecretName }}
+{{- else }}
+            secretName: {{ template "enterprise-metrics.fullname" . }}
+{{- end }}
+        - name: runtime-config
+          configMap:
+            name: {{ template "enterprise-metrics.fullname" . }}-runtime
+{{- if .Values.ruler.extraVolumes }}
+{{ toYaml .Values.ruler.extraVolumes | indent 8}}
+{{- end }}
+        - name: license
+          secret:
+            secretName: {{ .Values.license.secretName }}
+        - name: storage
+          emptyDir: {}
+        - name: active-queries
+          emptyDir: {}

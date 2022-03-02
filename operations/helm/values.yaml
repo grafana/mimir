@@ -1,0 +1,1056 @@
+# The default values specified in this file are enough to deploy all of the
+# Grafana Enterprise Metrics microservices but are not suitable for production
+# load.
+# To configure the resources for production load, refer to the the small.yaml or
+# large.yaml values files.
+
+# Container image settings.
+# Since the image is unique for all microservices, so are image settings.
+image:
+  repository: grafana/metrics-enterprise
+  tag: r174-ef5ba4a9
+  pullPolicy: IfNotPresent
+  # Optionally specify an array of imagePullSecrets.
+  # Secrets must be manually created in the namespace.
+  # ref: https://kubernetes.io/docs/tasks/configure-pod-container/pull-image-private-registry/
+  # pullSecrets:
+  #   - myRegistryKeySecretName
+
+serviceAccount:
+  create: true
+  name:
+  annotations: {}
+
+useExternalConfig: false
+externalConfigSecretName: 'enterprise-metrics-config'
+externalConfigVersion: '0'
+
+# In order to use Grafana Enterprise Metrics features, you will need to provide the contents of your Grafana Enterprise Metrics
+# license, either by providing the contents of the license.jwt, or the name Kubernetes Secret that contains your license.jwt.
+# To set the license contents, use the flag `--set-file 'license.contents=./license.jwt'`
+# To use your own Kubernetes Secret, `--set license.external=true`.
+useExternalLicense: false
+license:
+  contents: "NOTAVALIDLICENSE"
+  external: false
+  secretName: 'enterprise-metrics-license'
+
+tokengenJob:
+  enable: true
+  extraArgs: {}
+  env: []
+  annotations: {}
+  initContainers: []
+
+config:
+  multitenancy_enabled: true
+  auth:
+    type: enterprise
+
+  cluster_name: "{{ .Release.Name }}"
+
+  admin_api:
+    leader_election:
+      enabled: true
+      ring:
+        kvstore:
+          store: "memberlist"
+
+  admin_client:
+    storage:
+      type: s3
+
+  compactor:
+    data_dir: "/data"
+
+  license:
+    path: "/license/license.jwt"
+
+  ingester:
+    ring:
+      join_after: 0s
+      final_sleep: 0s
+      num_tokens: 512
+      replication_factor: 1
+
+  instrumentation:
+    enabled: true
+    distributor_client:
+      address: 'dns:///{{ template "enterprise-metrics.fullname" . }}-distributor.{{ .Release.Namespace }}.svc:{{ .Values.config.server.grpc_listen_port }}'
+
+  limits: {}
+
+  server:
+    http_listen_port: 8080
+    grpc_listen_port: 9095
+    grpc_server_max_recv_msg_size: 104857600
+    grpc_server_max_send_msg_size: 104857600
+    grpc_server_max_concurrent_streams: 1000
+
+  ingester_client:
+    grpc_client_config:
+      max_recv_msg_size: 104857600
+      max_send_msg_size: 104857600
+
+  memberlist:
+    bind_port: 7946
+
+  # This configures how the store-gateway synchronizes blocks stored in the bucket. It uses Minio by default for getting started (configured via flags) but this should be changed for production deployments.
+  blocks_storage:
+    backend: s3
+    tsdb:
+      dir: /data/tsdb
+    bucket_store:
+      sync_dir: /data/tsdb-sync
+
+  distributor:
+    pool:
+      health_check_ingesters: true
+
+  querier:
+    query_ingesters_within: 13h
+
+  ruler:
+    enable_api: true
+    rule_path: '/data'
+
+  runtime_config:
+    file: /var/enterprise-metrics/runtime.yaml
+
+  alertmanager:
+    data_dir: '/data'
+    enable_api: true
+    external_url: '/alertmanager'
+
+  frontend:
+    log_queries_longer_than: 10s
+    split_queries_by_interval: 24h
+    align_queries_with_step: true
+    cache_results: false
+
+# runtimeConfig provides a reloadable runtime configuration file for some specific configuration.
+runtimeConfig: {}
+
+rbac:
+  create: true
+  pspEnabled: true
+
+admin_api:
+  replicas: 1
+
+  annotations: {}
+  service:
+    annotations: {}
+    labels: {}
+
+  initContainers: []
+
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+
+  podLabels: {}
+  podAnnotations: {}
+
+  securityContext: {}
+
+  extraArgs: {}
+
+  persistence:
+    subPath:
+
+  readinessProbe:
+    httpGet:
+      path: /ready
+      port: http-metrics
+    initialDelaySeconds: 45
+
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+
+  extraContainers: []
+  extraVolumes: []
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
+  terminationGracePeriodSeconds: 60
+
+alertmanager:
+  replicas: 1
+
+  statefulSet:
+    enabled: true
+
+  service:
+    annotations: {}
+    labels: {}
+
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+
+  extraArgs: {}
+
+  # Pod Labels
+  podLabels: {}
+
+  # Pod Annotations
+  podAnnotations: {}
+
+  nodeSelector: {}
+  affinity: {}
+  annotations: {}
+
+  persistentVolume:
+    # If true and alertmanager.statefulSet.enabled is true,
+    # Alertmanager will create/use a Persistent Volume Claim
+    # If false, use emptyDir
+    enabled: true
+
+    # Alertmanager data Persistent Volume Claim annotations
+    #
+    annotations: {}
+
+    # Alertmanager data Persistent Volume access modes
+    # Must match those of existing PV or dynamic provisioner
+    # Ref: http://kubernetes.io/docs/user-guide/persistent-volumes/
+    #
+    accessModes:
+      - ReadWriteOnce
+
+    # Alertmanager data Persistent Volume size
+    #
+    size: 1Gi
+
+    # Subdirectory of Alertmanager data Persistent Volume to mount
+    # Useful if the volume's root directory is not empty
+    #
+    subPath: ''
+
+    # Alertmanager data Persistent Volume Storage Class
+    # If defined, storageClassName: <storageClass>
+    # If set to "-", storageClassName: "", which disables dynamic provisioning
+    # If undefined (the default) or set to null, no storageClassName spec is
+    #   set, choosing the default provisioner.  (gp2 on AWS, standard on
+    #   GKE, AWS & OpenStack)
+    #
+    # storageClass: "-"
+
+  readinessProbe:
+    httpGet:
+      path: /ready
+      port: http-metrics
+    initialDelaySeconds: 45
+
+  securityContext: {}
+
+  # Tolerations for pod assignment
+  # ref: https://kubernetes.io/docs/concepts/configuration/taint-and-toleration/
+  tolerations: []
+
+  # The values to set in the PodDisruptionBudget spec
+  # If not set then a PodDisruptionBudget will not be created
+  podDisruptionBudget: {}
+  # minAvailable: 1
+  # maxUnavailable: 1
+
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+  statefulStrategy:
+    type: RollingUpdate
+
+  terminationGracePeriodSeconds: 60
+
+  initContainers: []
+  # Init containers to be added to the enterprise-metrics pod.
+  # - name: my-init-container
+  #   image: busybox:latest
+  #   command: ['sh', '-c', 'echo hello']
+
+  extraContainers: []
+  # Additional containers to be added to the enterprise-metrics pod.
+  # - name: reverse-proxy
+  #   image: angelbarrera92/basic-auth-reverse-proxy:dev
+  #   args:
+  #     - "serve"
+  #     - "--upstream=http://localhost:3100"
+  #     - "--auth-config=/etc/reverse-proxy-conf/authn.yaml"
+  #   ports:
+  #     - name: http
+  #       containerPort: 11811
+  #       protocol: TCP
+  #   volumeMounts:
+  #     - name: reverse-proxy-auth-config
+  #       mountPath: /etc/reverse-proxy-conf
+
+  extraVolumes: []
+  # Additional volumes to the enterprise-metrics pod.
+  # - name: reverse-proxy-auth-config
+  #   secret:
+  #     secretName: reverse-proxy-auth-config
+
+  # Extra volume mounts that will be added to the enterprise-metrics container
+  extraVolumeMounts: []
+
+  extraPorts: []
+  # Additional ports to the enterprise-metrics services. Useful to expose extra container ports.
+  # - port: 11811
+  #   protocol: TCP
+  #   name: http
+  #   targetPort: http
+
+  # Extra env variables to pass to the enterprise-metrics container
+  env: []
+
+distributor:
+  replicas: 1
+
+  service:
+    annotations: {}
+    labels: {}
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 512Mi
+
+  # Additional Grafana Enterprise Metrics container arguments, e.g. log level (debug, info, warn, error)
+  extraArgs: {}
+
+  # Pod Labels
+  podLabels: {}
+
+  # Pod Annotations
+  podAnnotations: {}
+
+  nodeSelector: {}
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchExpressions:
+              - key: target
+                operator: In
+                values:
+                  - distributor
+          topologyKey: 'kubernetes.io/hostname'
+
+  annotations: {}
+  persistence:
+    subPath:
+
+  readinessProbe:
+    httpGet:
+      path: /ready
+      port: http-metrics
+    initialDelaySeconds: 45
+
+  securityContext: {}
+
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+
+  terminationGracePeriodSeconds: 60
+
+  tolerations: []
+  podDisruptionBudget: {}
+  initContainers: []
+  extraContainers: []
+  extraVolumes: []
+  extraVolumeMounts: []
+  extraPorts: []
+  env: []
+
+gateway:
+  # If you want to use your own proxy URLs, set this to false.
+  useDefaultProxyURLs: true
+  replicas: 1
+
+  annotations: {}
+  service:
+    annotations: {}
+    labels: {}
+
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+
+  podLabels: {}
+  podAnnotations: {}
+
+  securityContext: {}
+  initContainers: []
+
+  extraArgs: {}
+
+  persistence:
+    subPath:
+
+  readinessProbe:
+    httpGet:
+      path: /ready
+      port: http-metrics
+    initialDelaySeconds: 45
+
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+
+  extraContainers: []
+  extraVolumes: []
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
+  terminationGracePeriodSeconds: 60
+
+ingester:
+  replicas: 1
+
+  statefulSet:
+    # If true, use a StatefulSet instead of a Deployment for pod management.
+    # This is useful when using WAL
+    #
+    enabled: true
+
+  service:
+    annotations: {}
+    labels: {}
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 512Mi
+
+  # Additional Grafana Enterprise Metrics container arguments, e.g. log level (debug, info, warn, error)
+  extraArgs: {}
+  # Pod Labels
+  podLabels: {}
+
+  # Pod Annotations
+  podAnnotations: {}
+
+  nodeSelector: {}
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchExpressions:
+              - key: target
+                operator: In
+                values:
+                  - ingester
+          topologyKey: 'kubernetes.io/hostname'
+
+  annotations: {}
+
+  persistentVolume:
+    # If true and ingester.statefulSet.enabled is true,
+    # Ingester will create/use a Persistent Volume Claim
+    # If false, use emptyDir
+    #
+    enabled: true
+
+    # Ingester data Persistent Volume Claim annotations
+    #
+    annotations: {}
+
+    # Ingester data Persistent Volume access modes
+    # Must match those of existing PV or dynamic provisioner
+    # Ref: http://kubernetes.io/docs/user-guide/persistent-volumes/
+    accessModes:
+      - ReadWriteOnce
+
+    # Ingester data Persistent Volume size
+    size: 2Gi
+
+    # Subdirectory of Ingester data Persistent Volume to mount
+    # Useful if the volume's root directory is not empty
+    subPath: ''
+
+
+    # Ingester data Persistent Volume Storage Class
+    # If defined, storageClassName: <storageClass>
+    # If set to "-", storageClassName: "", which disables dynamic provisioning
+    # If undefined (the default) or set to null, no storageClassName spec is
+    #   set, choosing the default provisioner.  (gp2 on AWS, standard on
+    #   GKE, AWS & OpenStack)
+    #
+    # storageClass: "-"
+
+  readinessProbe:
+    httpGet:
+      path: /ready
+      port: http-metrics
+    initialDelaySeconds: 60
+
+  securityContext: {}
+
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+  statefulStrategy:
+    type: RollingUpdate
+
+  terminationGracePeriodSeconds: 240
+
+  tolerations: []
+  podDisruptionBudget: {}
+  initContainers: []
+  extraContainers: []
+  extraVolumes: []
+  extraVolumeMounts: []
+  extraPorts: []
+  env: []
+
+overrides_exporter:
+  replicas: 1
+
+  annotations: {}
+
+  initContainers: []
+
+  service:
+    annotations: {}
+    labels: {}
+
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+
+  podLabels: {}
+  podAnnotations: {}
+
+  securityContext: {}
+
+  extraArgs: {}
+
+  persistence:
+    subPath:
+
+  livenessProbe:
+    httpGet:
+      path: /ready
+      port: http-metrics
+    initialDelaySeconds: 45
+  readinessProbe:
+    httpGet:
+      path: /ready
+      port: http-metrics
+    initialDelaySeconds: 45
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+  extraContainers: []
+  extraVolumes: []
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
+  terminationGracePeriodSeconds: 60
+
+ruler:
+  replicas: 1
+
+  service:
+    annotations: {}
+    labels: {}
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+  # Additional Grafana Enterprise Metrics container arguments, e.g. log level (debug, info, warn, error)
+  extraArgs: {}
+    # log.level: debug
+
+  # Pod Labels
+  podLabels: {}
+
+  # Pod Annotations
+  podAnnotations: {}
+
+  nodeSelector: {}
+  affinity: {}
+  annotations: {}
+  persistence:
+    subPath:
+
+  readinessProbe:
+    httpGet:
+      path: /ready
+      port: http-metrics
+    initialDelaySeconds: 45
+
+  securityContext: {}
+
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+
+  terminationGracePeriodSeconds: 180
+
+  tolerations: []
+  podDisruptionBudget: {}
+  initContainers: []
+  extraContainers: []
+  extraVolumes: []
+  extraVolumeMounts: []
+  extraPorts: []
+  env: []
+
+querier:
+  replicas: 2
+
+  service:
+    annotations: {}
+    labels: {}
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+  # Additional Grafana Enterprise Metrics container arguments, e.g. log level (debug, info, warn, error)
+  extraArgs: {}
+
+  # Pod Labels
+  podLabels: {}
+
+  # Pod Annotations
+  podAnnotations: {}
+
+  nodeSelector: {}
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchExpressions:
+                - key: target
+                  operator: In
+                  values:
+                    - querier
+            topologyKey: 'kubernetes.io/hostname'
+
+  annotations: {}
+  persistence:
+    subPath:
+
+  readinessProbe:
+    httpGet:
+      path: /ready
+      port: http-metrics
+    initialDelaySeconds: 45
+
+  securityContext: {}
+
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+
+  terminationGracePeriodSeconds: 180
+
+  tolerations: []
+  podDisruptionBudget: {}
+  initContainers: []
+  extraContainers: []
+  extraVolumes: []
+  extraVolumeMounts: []
+  extraPorts: []
+  env: []
+
+query_frontend:
+  replicas: 1
+
+  service:
+    annotations: {}
+    labels: {}
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+  # Additional Grafana Enterprise Metrics container arguments, e.g. log level (debug, info, warn, error)
+  extraArgs: {}
+
+  # Pod Labels
+  podLabels: {}
+
+  # Pod Annotations
+  podAnnotations: {}
+
+  nodeSelector: {}
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchExpressions:
+                - key: target
+                  operator: In
+                  values:
+                    - query-frontend
+            topologyKey: 'kubernetes.io/hostname'
+
+  annotations: {}
+  persistence:
+    subPath:
+
+  readinessProbe:
+    httpGet:
+      path: /ready
+      port: http-metrics
+    initialDelaySeconds: 45
+
+  securityContext: {}
+
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+
+  terminationGracePeriodSeconds: 180
+
+  tolerations: []
+  podDisruptionBudget: {}
+  initContainers: []
+  extraContainers: []
+  extraVolumes: []
+  extraVolumeMounts: []
+  extraPorts: []
+  env: []
+
+store_gateway:
+  replicas: 1
+
+  service:
+    annotations: {}
+    labels: {}
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 512Mi
+
+  # Additional Grafana Enterprise Metrics container arguments, e.g. log level (debug, info, warn, error)
+  extraArgs: {}
+
+  # Pod Labels
+  podLabels: {}
+
+  # Pod Annotations
+  podAnnotations: {}
+
+  nodeSelector: {}
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchExpressions:
+              - key: target
+                operator: In
+                values:
+                  - store-gateway
+          topologyKey: 'kubernetes.io/hostname'
+
+  annotations: {}
+
+  persistentVolume:
+    # If true Store-gateway will create/use a Persistent Volume Claim
+    # If false, use emptyDir
+    #
+    enabled: true
+
+    # Store-gateway data Persistent Volume Claim annotations
+    #
+    annotations: {}
+
+    # Store-gateway data Persistent Volume access modes
+    # Must match those of existing PV or dynamic provisioner
+    # Ref: http://kubernetes.io/docs/user-guide/persistent-volumes/
+    #
+    accessModes:
+      - ReadWriteOnce
+
+    # Store-gateway data Persistent Volume size
+    #
+    size: 2Gi
+
+    # Subdirectory of Store-gateway data Persistent Volume to mount
+    # Useful if the volume's root directory is not empty
+    #
+    subPath: ''
+
+
+    # Store-gateway data Persistent Volume Storage Class
+    # If defined, storageClassName: <storageClass>
+    # If set to "-", storageClassName: "", which disables dynamic provisioning
+    # If undefined (the default) or set to null, no storageClassName spec is
+    #   set, choosing the default provisioner.  (gp2 on AWS, standard on
+    #   GKE, AWS & OpenStack)
+    #
+    # storageClass: "-"
+
+  readinessProbe:
+    httpGet:
+      path: /ready
+      port: http-metrics
+    initialDelaySeconds: 60
+
+  securityContext: {}
+
+  strategy:
+    type: RollingUpdate
+
+  terminationGracePeriodSeconds: 240
+
+  tolerations: []
+  podDisruptionBudget: {}
+  initContainers: []
+  extraContainers: []
+  extraVolumes: []
+  extraVolumeMounts: []
+  extraPorts: []
+  env: []
+
+compactor:
+  enabled: true
+  replicas: 1
+
+  service:
+    annotations: {}
+    labels: {}
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 512Mi
+
+  # Additional Grafana Enterprise Metrics container arguments, e.g. log level (debug, info, warn, error)
+  extraArgs: {}
+
+  # Pod Labels
+  podLabels: {}
+
+  # Pod Annotations
+  podAnnotations: {}
+
+  nodeSelector: {}
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchExpressions:
+                - key: target
+                  operator: In
+                  values:
+                    - compactor
+            topologyKey: 'kubernetes.io/hostname'
+
+  annotations: {}
+
+  persistentVolume:
+    # If true compactor will create/use a Persistent Volume Claim
+    # If false, use emptyDir
+    #
+    enabled: true
+
+    # compactor data Persistent Volume Claim annotations
+    #
+    annotations: {}
+
+    # compactor data Persistent Volume access modes
+    # Must match those of existing PV or dynamic provisioner
+    # Ref: http://kubernetes.io/docs/user-guide/persistent-volumes/
+    #
+    accessModes:
+      - ReadWriteOnce
+
+    # compactor data Persistent Volume size
+    #
+    size: 2Gi
+
+    # Subdirectory of compactor data Persistent Volume to mount
+    # Useful if the volume's root directory is not empty
+    #
+    subPath: ''
+
+
+    # compactor data Persistent Volume Storage Class
+    # If defined, storageClassName: <storageClass>
+    # If set to "-", storageClassName: "", which disables dynamic provisioning
+    # If undefined (the default) or set to null, no storageClassName spec is
+    #   set, choosing the default provisioner.  (gp2 on AWS, standard on
+    #   GKE, AWS & OpenStack)
+    #
+    # storageClass: "-"
+
+  readinessProbe:
+    httpGet:
+      path: /ready
+      port: http-metrics
+    initialDelaySeconds: 60
+
+  securityContext: {}
+
+  strategy:
+    type: RollingUpdate
+
+  terminationGracePeriodSeconds: 240
+
+  tolerations: []
+  podDisruptionBudget: {}
+  initContainers: []
+  extraContainers: []
+  extraVolumes: []
+  extraVolumeMounts: []
+  extraPorts: []
+  env: []
+
+memcached:
+  enabled: false
+  architecture: high-availability
+  arguments:
+    - -m 8192
+    - -o
+    - modern
+    - -v
+    - -I 1m
+    - -c 4096
+  image:
+    repository: memcached
+    tag: 1.6.9
+  # maxItemMemory is in bytes. Should match memcached -I flag (which is in MB)
+  # It is a string to avoid https://github.com/helm/helm/issues/1707.
+  maxItemMemory: '1048576'  # (* 1 (* 1024 1024))
+  metrics:
+    enabled: true
+    image:
+      registry: quay.io
+      repository: prometheus/memcached-exporter
+      tag: v0.9.0
+  replicaCount: 1
+  resources:
+    limits:
+      # memory limits should match requests
+      memory: 9830Mi
+    requests:
+      cpu: 500m
+      # memory requests should be exceed memcached -m flag
+      memory: 9830Mi  # (floor (* 1.2 8192))
+
+memcached-queries:
+  enabled: false
+  architecture: high-availability
+  arguments:
+    - -m 2048
+    - -o
+    - modern
+    - -v
+    - -I 15m
+    - -c 1024
+  image:
+    repository: memcached
+    tag: 1.6.9
+  # maxItemMemory is in bytes. Should match memcached -I flag (which is in MB)
+  # It is a string to avoid https://github.com/helm/helm/issues/1707.
+  maxItemMemory: '15728640'  # (* 15 (* 1024 1024))
+  metrics:
+    enabled: true
+    image:
+      registry: quay.io
+      repository: prometheus/memcached-exporter
+      tag: v0.9.0
+  replicaCount: 1
+  resources:
+    limits:
+      # memory limits should match requests
+      memory: 2457Mi
+    requests:
+      cpu: 500m
+      # memory requests should be exceed memcached -m flag
+      memory: 2457Mi  # (floor (* 1.2 2048))
+
+memcached-metadata:
+  enabled: false
+  architecture: high-availability
+  arguments:
+    - -m 512
+    - -o
+    - modern
+    - -v
+    - -I 1m
+    - -c 1024
+  image:
+    repository: memcached
+    tag: 1.6.9
+  # maxItemMemory is in bytes. Should match memcached -I flag (which is in MB)
+  # It is a string to avoid https://github.com/helm/helm/issues/1707.
+  maxItemMemory: '1048576'  # (* 1 (* 1024 1024))
+  metrics:
+    enabled: true
+    image:
+      registry: quay.io
+      repository: prometheus/memcached-exporter
+      tag: v0.9.0
+  replicaCount: 1
+  resources:
+    limits:
+      # memory limits should match requests
+      memory: 614Mi
+    requests:
+      cpu: 500m
+      # memory requests should be exceed memcached -m flag
+      memory: 614Mi  # (floor (* 1.2 512))
+
+minio:
+  enabled: true
+  accessKey: enterprise-metrics
+  buckets:
+    - name: enterprise-metrics-tsdb
+      policy: none
+      purge: false
+    - name: enterprise-metrics-admin
+      policy: none
+      purge: false
+    - name: enterprise-metrics-ruler
+      policy: none
+      purge: false
+  persistence:
+    size: 5Gi
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+  secretKey: supersecret

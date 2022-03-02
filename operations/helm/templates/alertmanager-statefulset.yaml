@@ -1,0 +1,177 @@
+{{- if .Values.alertmanager.statefulSet.enabled -}}
+{{- $clusterPort := regexReplaceAll ".+[:]" (default "0.0.0.0:9094" .Values.config.alertmanager.cluster_bind_address) "" -}}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ template "enterprise-metrics.fullname" . }}-alertmanager
+  labels:
+    app: {{ template "enterprise-metrics.name" . }}-alertmanager
+    chart: {{ template "enterprise-metrics.chart" . }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+  annotations:
+    {{- toYaml .Values.alertmanager.annotations | nindent 4 }}
+spec:
+  replicas: {{ .Values.alertmanager.replicas }}
+  selector:
+    matchLabels:
+      app: {{ template "enterprise-metrics.name" . }}-alertmanager
+      release: {{ .Release.Name }}
+  updateStrategy:
+    {{- toYaml .Values.alertmanager.statefulStrategy | nindent 4 }}          
+  serviceName: {{ template "enterprise-metrics.fullname" . }}-alertmanager
+  {{- if .Values.alertmanager.persistentVolume.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: storage
+        {{- if .Values.alertmanager.persistentVolume.annotations }}
+        annotations:
+          {{ toYaml .Values.alertmanager.persistentVolume.annotations | nindent 10 }}
+        {{- end }}
+      spec:
+        {{- if .Values.alertmanager.persistentVolume.storageClass }}
+        {{- if (eq "-" .Values.alertmanager.persistentVolume.storageClass) }}
+        storageClassName: ""
+        {{- else }}
+        storageClassName: "{{ .Values.alertmanager.persistentVolume.storageClass }}"
+        {{- end }}
+        {{- end }}
+        accessModes:
+          {{ toYaml .Values.alertmanager.persistentVolume.accessModes | nindent 10 }}
+        resources:
+          requests:
+            storage: "{{ .Values.alertmanager.persistentVolume.size }}"
+  {{- end }}
+  template:
+    metadata:
+      labels:
+        app: {{ template "enterprise-metrics.name" . }}-alertmanager
+        # The name label is important for cortex-mixin compatibility which expects certain names for services.
+        name: alertmanager
+        gossip_ring_member: "true"
+        target: alertmanager
+        release: {{ .Release.Name }}
+        {{- with .Values.alertmanager.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      annotations:
+        {{- if .Values.useExternalConfig }}
+        checksum/config: {{ .Values.externalConfigVersion }}
+        {{- else }}
+        checksum/config: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- end }}
+        {{- with .Values.alertmanager.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ template "enterprise-metrics.serviceAccountName" . }}
+      {{- if .Values.alertmanager.priorityClassName }}
+      priorityClassName: {{ .Values.alertmanager.priorityClassName }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.alertmanager.securityContext | nindent 8 }}
+      initContainers:
+        {{- toYaml .Values.alertmanager.initContainers | nindent 8 }}
+      {{- if .Values.image.pullSecrets }}
+      imagePullSecrets:
+      {{- range .Values.image.pullSecrets }}
+        - name: {{ . }}
+      {{- end }}
+      {{- end }}
+      nodeSelector:
+        {{- toYaml .Values.alertmanager.nodeSelector | nindent 8 }}
+      affinity:
+        {{- toYaml .Values.alertmanager.affinity | nindent 8 }}
+      tolerations:
+        {{- toYaml .Values.alertmanager.tolerations | nindent 8 }}
+      terminationGracePeriodSeconds: {{ .Values.alertmanager.terminationGracePeriodSeconds }}
+      volumes:
+        - name: config
+          secret:
+            {{- if .Values.useExternalConfig }}
+            secretName: {{ .Values.externalConfigSecretName }}
+            {{- else }}
+            secretName: {{ template "enterprise-metrics.fullname" . }}
+            {{- end }}
+        - name: runtime-config
+          configMap:
+            name: {{ template "enterprise-metrics.fullname" . }}-runtime
+        - name: license
+          secret:
+            secretName: {{ .Values.license.secretName }}
+        {{- if not .Values.alertmanager.persistentVolume.enabled }}
+        - name: storage
+          emptyDir: {}
+        {{- end }}
+        - name: tmp
+          emptyDir: {}
+        {{- if .Values.alertmanager.extraVolumes }}
+        {{ toYaml .Values.alertmanager.extraVolumes | nindent 8 }}
+        {{- end }}
+      containers:
+        {{- if .Values.alertmanager.extraContainers }}
+        {{ toYaml .Values.alertmanager.extraContainers | nindent 8 }}
+        {{- end }}
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - "-target=alertmanager"
+            - -activity-tracker.filepath=
+            - "-config.file=/etc/enterprise-metrics/enterprise-metrics.yaml"
+            - "-memberlist.join={{ template "enterprise-metrics.fullname" . }}-gossip-ring"
+            {{- if .Values.minio.enabled }}
+            - -admin.client.backend-type=s3
+            - -admin.client.s3.endpoint={{ .Release.Name }}-minio.{{ .Release.Namespace }}.svc:9000
+            - -admin.client.s3.bucket-name=enterprise-metrics-admin
+            - -admin.client.s3.access-key-id=enterprise-metrics
+            - -admin.client.s3.secret-access-key=supersecret
+            - -admin.client.s3.insecure=true
+            - -alertmanager-storage.backend=s3
+            - -alertmanager-storage.s3.endpoint={{ .Release.Name }}-minio.{{ .Release.Namespace }}.svc:9000
+            - -alertmanager-storage.s3.bucket-name=enterprise-metrics-ruler
+            - -alertmanager-storage.s3.access-key-id=enterprise-metrics
+            - -alertmanager-storage.s3.secret-access-key=supersecret
+            - -alertmanager-storage.s3.insecure=true
+            {{- end }}
+            {{- range $key, $value := .Values.alertmanager.extraArgs }}
+            - "-{{ $key }}={{ $value }}"
+            {{- end }}
+          volumeMounts:
+            {{- if .Values.alertmanager.extraVolumeMounts }}
+            {{ toYaml .Values.alertmanager.extraVolumeMounts | nindent 12}}
+            {{- end }}
+            - name: config
+              mountPath: /etc/enterprise-metrics
+            - name: runtime-config
+              mountPath: /var/enterprise-metrics
+            - name: license
+              mountPath: /license
+            - name: storage
+              mountPath: "/data"
+              {{- if .Values.alertmanager.persistentVolume.subPath }}
+              subPath: {{ .Values.alertmanager.persistentVolume.subPath }}
+              {{- else }}
+              {{- end }}
+            - name: tmp
+              mountPath: /tmp
+          ports:
+            - name: http-metrics
+              containerPort: {{ .Values.config.server.http_listen_port }}
+              protocol: TCP
+            - name: grpc
+              containerPort: {{ .Values.config.server.grpc_listen_port }}
+              protocol: TCP
+          livenessProbe:
+            {{- toYaml .Values.alertmanager.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.alertmanager.readinessProbe | nindent 12 }}
+          resources:
+            {{- toYaml .Values.alertmanager.resources | nindent 12 }}
+          securityContext:
+            readOnlyRootFilesystem: true
+          env:
+            {{- if .Values.alertmanager.env }}
+              {{- toYaml .Values.alertmanager.env | nindent 12 }}
+            {{- end }}
+{{- end -}}

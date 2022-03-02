@@ -1,0 +1,140 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ template "enterprise-metrics.fullname" . }}-query-frontend
+  labels:
+    app: {{ template "enterprise-metrics.name" . }}-query-frontend
+    chart: {{ template "enterprise-metrics.chart" . }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+  annotations:
+    {{- toYaml .Values.query_frontend.annotations | nindent 4 }}
+spec:
+  replicas: {{ .Values.query_frontend.replicas }}
+  selector:
+    matchLabels:
+      app: {{ template "enterprise-metrics.name" . }}-query-frontend
+      release: {{ .Release.Name }}
+  strategy:
+    {{- toYaml .Values.query_frontend.strategy | nindent 4 }}
+  template:
+    metadata:
+      labels:
+        app: {{ template "enterprise-metrics.name" . }}-query-frontend
+        # The name label is important for cortex-mixin compatibility which expects certain names for services.
+        name: query-frontend
+        target: query-frontend
+        release: {{ .Release.Name }}
+        {{- with .Values.query_frontend.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      annotations:
+{{- if .Values.useExternalConfig }}
+        checksum/config: {{ .Values.externalConfigVersion }}
+{{- else }}
+        checksum/config: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+{{- end}}
+        {{- with .Values.query_frontend.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ template "enterprise-metrics.serviceAccountName" . }}
+    {{- if .Values.query_frontend.priorityClassName }}
+      priorityClassName: {{ .Values.query_frontend.priorityClassName }}
+    {{- end }}
+      securityContext:
+        {{- toYaml .Values.query_frontend.securityContext | nindent 8 }}
+      initContainers:
+        {{- toYaml .Values.query_frontend.initContainers | nindent 8 }}
+      {{- if .Values.image.pullSecrets }}
+      imagePullSecrets:
+      {{- range .Values.image.pullSecrets }}
+        - name: {{ . }}
+      {{- end}}
+      {{- end }}
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - -activity-tracker.filepath=/active-query-tracker/activity.log
+            - "-target=query-frontend"
+            - "-config.file=/etc/enterprise-metrics/enterprise-metrics.yaml"
+          {{- if .Values.minio.enabled }}
+            - -admin.client.backend-type=s3
+            - -admin.client.s3.endpoint={{ .Release.Name }}-minio.{{ .Release.Namespace }}.svc:9000
+            - -admin.client.s3.bucket-name=enterprise-metrics-admin
+            - -admin.client.s3.access-key-id=enterprise-metrics
+            - -admin.client.s3.secret-access-key=supersecret
+            - -admin.client.s3.insecure=true
+          {{- end }}
+          {{- range $key, $value := .Values.query_frontend.extraArgs }}
+            - "-{{ $key }}={{ $value }}"
+          {{- end }}
+          volumeMounts:
+            {{- if .Values.query_frontend.extraVolumeMounts }}
+              {{ toYaml .Values.query_frontend.extraVolumeMounts | nindent 12}}
+            {{- end }}
+            - name: runtime-config
+              mountPath: /var/enterprise-metrics
+            - name: license
+              mountPath: /license
+            - name: config
+              mountPath: /etc/enterprise-metrics
+            - name: storage
+              mountPath: /data
+              {{- if .Values.query_frontend.persistence.subPath }}
+              subPath: {{ .Values.query_frontend.persistence.subPath }}
+              {{- end }}
+            - name: active-queries
+              mountPath: /active-query-tracker
+          ports:
+            - name: http-metrics
+              containerPort: {{ .Values.config.server.http_listen_port }}
+              protocol: TCP
+            - name: grpc
+              containerPort: {{ .Values.config.server.grpc_listen_port }}
+              protocol: TCP
+          livenessProbe:
+            {{- toYaml .Values.query_frontend.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.query_frontend.readinessProbe | nindent 12 }}
+          resources:
+            {{- toYaml .Values.query_frontend.resources | nindent 12 }}
+          securityContext:
+            readOnlyRootFilesystem: true
+          env:
+            {{- if .Values.query_frontend.env }}
+              {{- toYaml .Values.query_frontend.env | nindent 12 }}
+            {{- end }}
+{{- if .Values.query_frontend.extraContainers }}
+{{ toYaml .Values.query_frontend.extraContainers | indent 8}}
+{{- end }}
+      nodeSelector:
+        {{- toYaml .Values.query_frontend.nodeSelector | nindent 8 }}
+      affinity:
+        {{- toYaml .Values.query_frontend.affinity | nindent 8 }}
+      tolerations:
+        {{- toYaml .Values.query_frontend.tolerations | nindent 8 }}
+      terminationGracePeriodSeconds: {{ .Values.query_frontend.terminationGracePeriodSeconds }}
+      volumes:
+        - name: config
+          secret:
+{{- if .Values.useExternalConfig }}
+            secretName: {{ .Values.externalConfigSecretName }}
+{{- else }}
+            secretName: {{ template "enterprise-metrics.fullname" . }}
+{{- end }}
+        - name: runtime-config
+          configMap:
+            name: {{ template "enterprise-metrics.fullname" . }}-runtime
+        - name: license
+          secret:
+            secretName: {{ .Values.license.secretName }}
+{{- if .Values.query_frontend.extraVolumes }}
+{{ toYaml .Values.query_frontend.extraVolumes | indent 8}}
+{{- end }}
+        - name: storage
+          emptyDir: {}
+        - name: active-queries
+          emptyDir: {}

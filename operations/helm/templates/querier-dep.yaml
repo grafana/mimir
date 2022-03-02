@@ -1,0 +1,153 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ template "enterprise-metrics.fullname" . }}-querier
+  labels:
+    app: {{ template "enterprise-metrics.name" . }}-querier
+    chart: {{ template "enterprise-metrics.chart" . }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+  annotations:
+    {{- toYaml .Values.querier.annotations | nindent 4 }}
+spec:
+  replicas: {{ .Values.querier.replicas }}
+  selector:
+    matchLabels:
+      app: {{ template "enterprise-metrics.name" . }}-querier
+      release: {{ .Release.Name }}
+  strategy:
+    {{- toYaml .Values.querier.strategy | nindent 4 }}
+  template:
+    metadata:
+      labels:
+        app: {{ template "enterprise-metrics.name" . }}-querier
+        # The name label is important for cortex-mixin compatibility which expects certain names for services.
+        name: querier
+        gossip_ring_member: "true"
+        target: querier
+        release: {{ .Release.Name }}
+        {{- with .Values.querier.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      annotations:
+{{- if .Values.useExternalConfig }}
+        checksum/config: {{ .Values.externalConfigVersion }}
+{{- else }}
+        checksum/config: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+{{- end}}
+        {{- with .Values.querier.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ template "enterprise-metrics.serviceAccountName" . }}
+    {{- if .Values.querier.priorityClassName }}
+      priorityClassName: {{ .Values.querier.priorityClassName }}
+    {{- end }}
+      securityContext:
+        {{- toYaml .Values.querier.securityContext | nindent 8 }}
+      initContainers:
+        {{- toYaml .Values.querier.initContainers | nindent 8 }}
+      {{- if .Values.image.pullSecrets }}
+      imagePullSecrets:
+      {{- range .Values.image.pullSecrets }}
+        - name: {{ . }}
+      {{- end}}
+      {{- end }}
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - "-target=querier"
+            - -activity-tracker.filepath=/active-query-tracker/activity.log
+            - "-config.file=/etc/enterprise-metrics/enterprise-metrics.yaml"
+            - "-querier.frontend-address={{ template "enterprise-metrics.fullname" . }}-query-frontend-headless.{{ .Release.Namespace }}.svc:{{ .Values.config.server.grpc_listen_port }}"
+            {{- if .Values.minio.enabled }}
+            - -admin.client.backend-type=s3
+            - -admin.client.s3.endpoint={{ .Release.Name }}-minio.{{ .Release.Namespace }}.svc:9000
+            - -admin.client.s3.bucket-name=enterprise-metrics-admin
+            - -admin.client.s3.access-key-id=enterprise-metrics
+            - -admin.client.s3.secret-access-key=supersecret
+            - -admin.client.s3.insecure=true
+            - -blocks-storage.s3.endpoint={{ .Release.Name }}-minio.{{ .Release.Namespace }}.svc:9000
+            - -blocks-storage.s3.bucket-name=enterprise-metrics-tsdb
+            - -blocks-storage.s3.access-key-id=enterprise-metrics
+            - -blocks-storage.s3.secret-access-key=supersecret
+            - -blocks-storage.s3.insecure=true
+            {{- end }}
+            {{- if index .Values "memcached-metadata" "enabled" }}
+            - -blocks-storage.bucket-store.metadata-cache.backend=memcached
+            - -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dns+{{ .Release.Name }}-memcached-metadata.{{ .Release.Namespace }}.svc:11211
+            - -blocks-storage.bucket-store.metadata-cache.memcached.max-item-size={{ (index .Values "memcached-metadata").maxItemMemory }}
+            {{- end }}
+            - "-memberlist.join={{ template "enterprise-metrics.fullname" . }}-gossip-ring"
+            - -memberlist.abort-if-join-fails=false
+            - -memberlist.compression-enabled=false
+          {{- range $key, $value := .Values.querier.extraArgs }}
+            - "-{{ $key }}={{ $value }}"
+          {{- end }}
+          volumeMounts:
+            {{- if .Values.querier.extraVolumeMounts }}
+              {{ toYaml .Values.querier.extraVolumeMounts | nindent 12}}
+            {{- end }}
+            - name: config
+              mountPath: /etc/enterprise-metrics
+            - name: runtime-config
+              mountPath: /var/enterprise-metrics
+            - name: license
+              mountPath: /license
+            - name: storage
+              mountPath: "/data"
+              subPath: {{ .Values.querier.persistence.subPath }}
+            - name: active-queries
+              mountPath: /active-query-tracker
+          ports:
+            - name: http-metrics
+              containerPort: {{ .Values.config.server.http_listen_port }}
+              protocol: TCP
+            - name: grpc
+              containerPort: {{ .Values.config.server.grpc_listen_port }}
+              protocol: TCP
+          livenessProbe:
+            {{- toYaml .Values.querier.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.querier.readinessProbe | nindent 12 }}
+          resources:
+            {{- toYaml .Values.querier.resources | nindent 12 }}
+          securityContext:
+            readOnlyRootFilesystem: true
+          env:
+            {{- if .Values.querier.env }}
+              {{- toYaml .Values.querier.env | nindent 12 }}
+            {{- end }}
+{{- if .Values.querier.extraContainers }}
+{{ toYaml .Values.querier.extraContainers | indent 8}}
+{{- end }}
+      nodeSelector:
+        {{- toYaml .Values.querier.nodeSelector | nindent 8 }}
+      affinity:
+        {{- toYaml .Values.querier.affinity | nindent 8 }}
+      tolerations:
+        {{- toYaml .Values.querier.tolerations | nindent 8 }}
+      terminationGracePeriodSeconds: {{ .Values.querier.terminationGracePeriodSeconds }}
+      volumes:
+        - name: config
+          secret:
+{{- if .Values.useExternalConfig }}
+            secretName: {{ .Values.externalConfigSecretName }}
+{{- else }}
+            secretName: {{ template "enterprise-metrics.fullname" . }}
+{{- end }}
+        - name: runtime-config
+          configMap:
+            name: {{ template "enterprise-metrics.fullname" . }}-runtime
+{{- if .Values.querier.extraVolumes }}
+{{ toYaml .Values.querier.extraVolumes | indent 8}}
+{{- end }}
+        - name: license
+          secret:
+            secretName: {{ .Values.license.secretName }}
+        - name: storage
+          emptyDir: {}
+        - name: active-queries
+          emptyDir: {}

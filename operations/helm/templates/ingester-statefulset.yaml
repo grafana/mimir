@@ -1,0 +1,172 @@
+{{- if .Values.ingester.statefulSet.enabled -}}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ template "enterprise-metrics.fullname" . }}-ingester
+  labels:
+    app: {{ template "enterprise-metrics.name" . }}-ingester
+    chart: {{ template "enterprise-metrics.chart" . }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+  annotations:
+    {{- toYaml .Values.ingester.annotations | nindent 4 }}
+spec:
+  podManagementPolicy: Parallel
+  replicas: {{ .Values.ingester.replicas }}
+  selector:
+    matchLabels:
+      app: {{ template "enterprise-metrics.name" . }}-ingester
+      release: {{ .Release.Name }}
+  updateStrategy:
+    {{- toYaml .Values.ingester.statefulStrategy | nindent 4 }}
+  serviceName: {{ template "enterprise-metrics.fullname" . }}-ingester
+  {{- if .Values.ingester.persistentVolume.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: storage
+        {{- if .Values.ingester.persistentVolume.annotations }}
+        annotations:
+          {{ toYaml .Values.ingester.persistentVolume.annotations | nindent 10 }}
+        {{- end }}
+      spec:
+        {{- if .Values.ingester.persistentVolume.storageClass }}
+        {{- if (eq "-" .Values.ingester.persistentVolume.storageClass) }}
+        storageClassName: ""
+        {{- else }}
+        storageClassName: "{{ .Values.ingester.persistentVolume.storageClass }}"
+        {{- end }}
+        {{- end }}
+        accessModes:
+          {{ toYaml .Values.ingester.persistentVolume.accessModes | nindent 10 }}
+        resources:
+          requests:
+            storage: "{{ .Values.ingester.persistentVolume.size }}"
+  {{- end }}
+  template:
+    metadata:
+      labels:
+        app: {{ template "enterprise-metrics.name" . }}-ingester
+        # The name label is important for cortex-mixin compatibility which expects certain names for services.
+        name: ingester
+        gossip_ring_member: "true"
+        target: ingester
+        release: {{ .Release.Name }}
+        {{- with .Values.ingester.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      annotations:
+        {{- if .Values.useExternalConfig }}
+        checksum/config: {{ .Values.externalConfigVersion }}
+        {{- else }}
+        checksum/config: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- end }}
+        {{- with .Values.ingester.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ template "enterprise-metrics.serviceAccountName" . }}
+      {{- if .Values.ingester.priorityClassName }}
+      priorityClassName: {{ .Values.ingester.priorityClassName }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.ingester.securityContext | nindent 8 }}
+      initContainers:
+        {{- toYaml .Values.ingester.initContainers | nindent 8 }}
+      {{- if .Values.image.pullSecrets }}
+      imagePullSecrets:
+      {{- range .Values.image.pullSecrets }}
+        - name: {{ . }}
+      {{- end }}
+      {{- end }}
+      nodeSelector:
+        {{- toYaml .Values.ingester.nodeSelector | nindent 8 }}
+      affinity:
+        {{- toYaml .Values.ingester.affinity | nindent 8 }}
+      tolerations:
+        {{- toYaml .Values.ingester.tolerations | nindent 8 }}
+      terminationGracePeriodSeconds: {{ .Values.ingester.terminationGracePeriodSeconds }}
+      volumes:
+        - name: config
+          secret:
+            {{- if .Values.useExternalConfig }}
+            secretName: {{ .Values.externalConfigSecretName }}
+            {{- else }}
+            secretName: {{ template "enterprise-metrics.fullname" . }}
+            {{- end }}
+        - name: runtime-config
+          configMap:
+            name: {{ template "enterprise-metrics.fullname" . }}-runtime
+        - name: license
+          secret:
+            secretName: {{ .Values.license.secretName }}
+        {{- if not .Values.ingester.persistentVolume.enabled }}
+        - name: storage
+          emptyDir: {}
+        {{- end }}
+        {{- if .Values.ingester.extraVolumes }}
+        {{ toYaml .Values.ingester.extraVolumes | nindent 8 }}
+        {{- end }}
+      containers:
+        {{- if .Values.ingester.extraContainers }}
+        {{ toYaml .Values.ingester.extraContainers | nindent 8 }}
+        {{- end }}
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - "-target=ingester"
+            - -activity-tracker.filepath=
+            - "-config.file=/etc/enterprise-metrics/enterprise-metrics.yaml"
+            - "-memberlist.join={{ template "enterprise-metrics.fullname" . }}-gossip-ring"
+            {{- if .Values.minio.enabled }}
+            - -admin.client.backend-type=s3
+            - -admin.client.s3.endpoint={{ .Release.Name }}-minio.{{ .Release.Namespace }}.svc:9000
+            - -admin.client.s3.bucket-name=enterprise-metrics-admin
+            - -admin.client.s3.access-key-id=enterprise-metrics
+            - -admin.client.s3.secret-access-key=supersecret
+            - -admin.client.s3.insecure=true
+            - -blocks-storage.s3.endpoint={{ .Release.Name }}-minio.{{ .Release.Namespace }}.svc:9000
+            - -blocks-storage.s3.bucket-name=enterprise-metrics-tsdb
+            - -blocks-storage.s3.access-key-id=enterprise-metrics
+            - -blocks-storage.s3.secret-access-key=supersecret
+            - -blocks-storage.s3.insecure=true
+            {{- end }}
+            {{- range $key, $value := .Values.ingester.extraArgs }}
+            - "-{{ $key }}={{ $value }}"
+            {{- end }}
+          volumeMounts:
+            {{- if .Values.ingester.extraVolumeMounts }}
+            {{ toYaml .Values.ingester.extraVolumeMounts | nindent 12}}
+            {{- end }}
+            - name: config
+              mountPath: /etc/enterprise-metrics
+            - name: runtime-config
+              mountPath: /var/enterprise-metrics
+            - name: license
+              mountPath: /license
+            - name: storage
+              mountPath: "/data"
+              {{- if .Values.ingester.persistentVolume.subPath }}
+              subPath: {{ .Values.ingester.persistentVolume.subPath }}
+              {{- else }}
+              {{- end }}
+          ports:
+            - name: http-metrics
+              containerPort: {{ .Values.config.server.http_listen_port }}
+              protocol: TCP
+            - name: grpc
+              containerPort: {{ .Values.config.server.grpc_listen_port }}
+              protocol: TCP
+          livenessProbe:
+            {{- toYaml .Values.ingester.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.ingester.readinessProbe | nindent 12 }}
+          resources:
+            {{- toYaml .Values.ingester.resources | nindent 12 }}
+          securityContext:
+            readOnlyRootFilesystem: true
+          env:
+            {{- if .Values.ingester.env }}
+              {{- toYaml .Values.ingester.env | nindent 12 }}
+            {{- end }}
+{{- end -}}

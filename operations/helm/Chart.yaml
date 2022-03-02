@@ -1,0 +1,32 @@
+apiVersion: v2
+version: 2.0.0
+appVersion: v2.0.0
+description: "Grafana Mimir"
+engine: gotpl
+# TODO fix before launch
+home: https://grafana.com/metrics
+# TODO fix before launch
+icon: https://grafana.com/static/img/menu/metrics-enterprise.svg
+kubeVersion: ^1.10.0-0
+name: mimir
+dependencies:
+  - name: memcached
+    alias: memcached
+    version: 5.5.2
+    repository: https://charts.bitnami.com/bitnami
+    condition: memcached.enabled
+  - name: memcached
+    alias: memcached-queries
+    version: 5.5.2
+    repository: https://charts.bitnami.com/bitnami
+    condition: memcached-queries.enabled
+  - name: memcached
+    alias: memcached-metadata
+    version: 5.5.2
+    repository: https://charts.bitnami.com/bitnami
+    condition: memcached-metadata.enabled
+  - name: minio
+    alias: minio
+    version: 8.0.9
+    repository: https://helm.min.io/
+    condition: minio.enabled

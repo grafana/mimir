@@ -1,0 +1,137 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ template "enterprise-metrics.fullname" . }}-distributor
+  labels:
+    app: {{ template "enterprise-metrics.name" . }}-distributor
+    chart: {{ template "enterprise-metrics.chart" . }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+  annotations:
+    {{- toYaml .Values.distributor.annotations | nindent 4 }}
+spec:
+  replicas: {{ .Values.distributor.replicas }}
+  selector:
+    matchLabels:
+      app: {{ template "enterprise-metrics.name" . }}-distributor
+      release: {{ .Release.Name }}
+  strategy:
+    {{- toYaml .Values.distributor.strategy | nindent 4 }}
+  template:
+    metadata:
+      labels:
+        app: {{ template "enterprise-metrics.name" . }}-distributor
+        # The name label is important for cortex-mixin compatibility which expects certain names for services.
+        name: distributor
+        gossip_ring_member: "true"
+        target: distributor
+        release: {{ .Release.Name }}
+        {{- with .Values.distributor.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      annotations:
+{{- if .Values.useExternalConfig }}
+        checksum/config: {{ .Values.externalConfigVersion }}
+{{- else }}
+        checksum/config: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+{{- end}}
+        {{- with .Values.distributor.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ template "enterprise-metrics.serviceAccountName" . }}
+    {{- if .Values.distributor.priorityClassName }}
+      priorityClassName: {{ .Values.distributor.priorityClassName }}
+    {{- end }}
+      securityContext:
+        {{- toYaml .Values.distributor.securityContext | nindent 8 }}
+      initContainers:
+        {{- toYaml .Values.distributor.initContainers | nindent 8 }}
+      {{- if .Values.image.pullSecrets }}
+      imagePullSecrets:
+      {{- range .Values.image.pullSecrets }}
+        - name: {{ . }}
+      {{- end}}
+      {{- end }}
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - "-target=distributor"
+            - -activity-tracker.filepath=
+            - "-config.file=/etc/enterprise-metrics/enterprise-metrics.yaml"
+            - "-memberlist.join={{ template "enterprise-metrics.fullname" . }}-gossip-ring"
+          {{- if .Values.minio.enabled }}
+            - -admin.client.backend-type=s3
+            - -admin.client.s3.endpoint={{ .Release.Name }}-minio.{{ .Release.Namespace }}.svc:9000
+            - -admin.client.s3.bucket-name=enterprise-metrics-admin
+            - -admin.client.s3.access-key-id=enterprise-metrics
+            - -admin.client.s3.secret-access-key=supersecret
+            - -admin.client.s3.insecure=true
+          {{- end }}
+          {{- range $key, $value := .Values.distributor.extraArgs }}
+            - "-{{ $key }}={{ $value }}"
+          {{- end }}
+          volumeMounts:
+            {{- if .Values.distributor.extraVolumeMounts }}
+              {{ toYaml .Values.distributor.extraVolumeMounts | nindent 12}}
+            {{- end }}
+            - name: config
+              mountPath: /etc/enterprise-metrics
+            - name: runtime-config
+              mountPath: /var/enterprise-metrics
+            - name: license
+              mountPath: /license
+            - name: storage
+              mountPath: "/data"
+              subPath: {{ .Values.distributor.persistence.subPath }}
+          ports:
+            - name: http-metrics
+              containerPort: {{ .Values.config.server.http_listen_port }}
+              protocol: TCP
+            - name: grpc
+              containerPort: {{ .Values.config.server.grpc_listen_port }}
+              protocol: TCP
+          livenessProbe:
+            {{- toYaml .Values.distributor.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.distributor.readinessProbe | nindent 12 }}
+          resources:
+            {{- toYaml .Values.distributor.resources | nindent 12 }}
+          securityContext:
+            readOnlyRootFilesystem: true
+          env:
+            {{- if .Values.distributor.env }}
+              {{- toYaml .Values.distributor.env | nindent 12 }}
+            {{- end }}
+{{- if .Values.distributor.extraContainers }}
+{{ toYaml .Values.distributor.extraContainers | indent 8}}
+{{- end }}
+      nodeSelector:
+        {{- toYaml .Values.distributor.nodeSelector | nindent 8 }}
+      affinity:
+        {{- toYaml .Values.distributor.affinity | nindent 8 }}
+      tolerations:
+        {{- toYaml .Values.distributor.tolerations | nindent 8 }}
+      terminationGracePeriodSeconds: {{ .Values.distributor.terminationGracePeriodSeconds }}
+      volumes:
+        - name: config
+          secret:
+{{- if .Values.useExternalConfig }}
+            secretName: {{ .Values.externalConfigSecretName }}
+{{- else }}
+            secretName: {{ template "enterprise-metrics.fullname" . }}
+{{- end }}
+        - name: runtime-config
+          configMap:
+            name: {{ template "enterprise-metrics.fullname" . }}-runtime
+{{- if .Values.distributor.extraVolumes }}
+{{ toYaml .Values.distributor.extraVolumes | indent 8}}
+{{- end }}
+        - name: license
+          secret:
+            secretName: {{ .Values.license.secretName }}
+        - name: storage
+          emptyDir: {}
+

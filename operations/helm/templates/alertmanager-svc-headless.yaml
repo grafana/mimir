@@ -1,0 +1,33 @@
+{{- $clusterPort := regexReplaceAll ".+[:]" (default "0.0.0.0:9094" .Values.config.alertmanager.cluster_bind_address) "" -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ template "enterprise-metrics.fullname" . }}-alertmanager-headless
+  labels:
+    app: {{ template "enterprise-metrics.name" . }}-alertmanager
+    chart: {{ template "enterprise-metrics.chart" . }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+    {{- with .Values.alertmanager.service.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  annotations:
+    {{- toYaml .Values.alertmanager.service.annotations | nindent 4 }}
+spec:
+  type: ClusterIP
+  clusterIP: None
+  publishNotReadyAddresses: true
+  ports:
+    - port: {{ .Values.config.server.http_listen_port }}
+      protocol: TCP
+      name: http-metrics
+    - port: {{ .Values.config.server.grpc_listen_port }}
+      protocol: TCP
+      name: grpc
+      targetPort: grpc
+    - port: {{ $clusterPort }}
+      protocol: TCP
+      name: cluster
+  selector:
+    app: {{ template "enterprise-metrics.name" . }}-alertmanager
+    release: {{ .Release.Name }}
