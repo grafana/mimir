@@ -1,22 +1,16 @@
-local k = import 'ksonnet-util/kausal.libsonnet';
-local container = k.core.v1.container;
-local deployment = k.apps.v1.deployment;
-local statefulSet = k.apps.v1.statefulSet;
-local podDisruptionBudget = k.policy.v1beta1.podDisruptionBudget;
-local volume = k.core.v1.volume;
-local roleBinding = k.rbac.v1.roleBinding;
-local role = k.rbac.v1.role;
-local service = k.core.v1.service;
-local serviceAccount = k.core.v1.serviceAccount;
-local servicePort = k.core.v1.servicePort;
-local policyRule = k.rbac.v1.policyRule;
-local podAntiAffinity = deployment.mixin.spec.template.spec.affinity.podAntiAffinity;
-
 {
-  _images+:: {
-    // See: https://github.com/grafana/rollout-operator
-    rollout_operator: 'grafana/rollout-operator:v0.1.1',
-  },
+  local container = $.core.v1.container,
+  local deployment = $.apps.v1.deployment,
+  local statefulSet = $.apps.v1.statefulSet,
+  local podDisruptionBudget = $.policy.v1beta1.podDisruptionBudget,
+  local volume = $.core.v1.volume,
+  local roleBinding = $.rbac.v1.roleBinding,
+  local role = $.rbac.v1.role,
+  local service = $.core.v1.service,
+  local serviceAccount = $.core.v1.serviceAccount,
+  local servicePort = $.core.v1.servicePort,
+  local policyRule = $.rbac.v1.policyRule,
+  local podAntiAffinity = deployment.mixin.spec.template.spec.affinity.podAntiAffinity,
 
   _config+: {
     cortex_multi_zone_ingester_enabled: false,
@@ -310,7 +304,7 @@ local podAntiAffinity = deployment.mixin.spec.template.spec.affinity.podAntiAffi
     container.new('rollout-operator', $._images.rollout_operator) +
     container.withArgsMixin($.util.mapToFlags($.rollout_operator_args)) +
     container.withPorts([
-      k.core.v1.containerPort.new('http-metrics', 8001),
+      $.core.v1.containerPort.new('http-metrics', 8001),
     ]) +
     $.util.resourcesRequests('100m', '100Mi') +
     $.util.resourcesLimits('1', '200Mi') +
