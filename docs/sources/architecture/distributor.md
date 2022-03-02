@@ -34,10 +34,10 @@ The distributor validation includes the following checks:
 
 The distributor includes a built-in rate limiter that it applies to each tenant.
 The rate limit is the maximum ingestion rate for each tenant across the Grafana Mimir cluster.
-If the rate exceeds the maximum number of samples per second, the distributor drops the request and displays an HTTP 429 error.
-To configure the local rate limiter for each distributor, use `ingestion rate limit / N`, where `N` is the number of healthy distributor replicas.
+If the rate exceeds the maximum number of samples per second, the distributor drops the request and returns an HTTP 429 response code.
+The local rate limiter for each distributor uses `ingestion rate limit / N`, where `N` is the number of healthy distributor replicas.
 The distributor automatically adjusts the ingester rate limit if the number of replicas change.
-Because the rate limit automatically adjusts, the ingestion rate limit requires that write requests are [evenly distributed across the pool of distributors](#load-balancing-across-distributors).
+Because the rate limit automatically adjusts, the ingestion rate limit requires that write requests are [evenly distributed across the pool of distributors]({{< relref "#load-balancing-across-distributors" >}}).
 
 Use the following flags to configure the rate limit:
 
@@ -87,7 +87,7 @@ For more information, see [hash ring]({{< relref "./about-the-hash-ring.md" >}})
 
 Because distributors share access to the same hash ring, write requests can be sent to any distributor. You can also set up a stateless load balancer in front of it.
 
-To ensure consistent query results, Mimir uses [Dynamo-style](https://www.allthingsdistributed.com/files/amazon-dynamo-sosp2007.pdf) quorum consistency on reads and writes. 
+To ensure consistent query results, Mimir uses [Dynamo-style](https://www.allthingsdistributed.com/files/amazon-dynamo-sosp2007.pdf) quorum consistency on reads and writes.
 The distributor waits for a successful response from `n`/2 + 1 ingesters, where `n` is the configured replication factor, before sending a successful response to the Prometheus write request.
 
 ## Load balancing across distributors
@@ -95,8 +95,10 @@ The distributor waits for a successful response from `n`/2 + 1 ingesters, where 
 We recommend randomly load balancing write requests across distributor instances.
 If you're running Grafana Mimir in a Kubernetes cluster, you can define a Kubernetes [Service](https://kubernetes.io/docs/concepts/services-networking/service/) as ingress for the distributors.
 
-> **Note**: Be aware that when you enable HTTP keep-alive, a Kubernetes Service balances TCP connections, and not the HTTP requests within a single TCP connection.
-> Because a Prometheus server establishes a TCP connection for each remote write shard, and if distributors traffic is not evenly balanced, consider increasing `min_shards` in the Prometheus [remote write config](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#remote_write).
+> **Note:** A Kubernetes Service balances TCP connections across Kubernetes endpoints and does not balance HTTP requests within a single TCP connection.
+If you enable HTTP persistent connections (HTTP keep-alive), Prometheus re-uses the same TCP connection for each remote-write HTTP request of a remote-write shard.
+This can cause distributors to receive an uneven distribution of remote-write HTTP requests.
+Consider increasing `min_shards` in the Prometheus [remote write config](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#remote_write).
 
 ## Configuration
 
