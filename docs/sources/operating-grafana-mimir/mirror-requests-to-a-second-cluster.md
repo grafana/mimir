@@ -14,7 +14,15 @@ If you have control over the Prometheus remote write configuration, we recommend
 
 ## Mirroring with Envoy proxy
 
-You can use [Envoy proxy](https://www.envoyproxy.io/) to mirror HTTP requests to a secondary upstream cluster. From a network path perspective, run Envoy in front of both clusters' [distributors](../../architecture/distributor). This approach enables the Envoy proxy to make requests to the primary Grafana Mimir cluster and then mirror the requests to a secondary cluster running in the background. The performance and availability of the secondary cluster have no impact on the requests to the primary cluster. The response to the client is always sent from the primary cluster. Requests from Envoy to the secondary cluster are "fire and forget", which means that the system does not perform additional validation after the request is sent.
+You can use [Envoy proxy](https://www.envoyproxy.io/) to mirror HTTP requests to a secondary upstream cluster. 
+From a network path perspective, run Envoy in front of both clusters' [distributors](../../architecture/distributor). 
+
+This approach enables the Envoy proxy to make requests to the primary Grafana Mimir cluster and then in the background, Envoy mirrors the requests to the secondary cluster.
+
+The performance and availability of the secondary cluster have no impact on the requests to the primary cluster. 
+The response to the client is always sent from the primary cluster. 
+
+Requests from Envoy to the secondary cluster are "fire and forget", which means that Envoy doesn't wait until the requests are completed to the secondary cluster before sending back the response to the client.
 
 The following diagram illustrates a simplified network structure.
 
