@@ -43,7 +43,7 @@ Zone-aware replication in the Alertmanager ensures that Grafana Mimir replicates
 
 ## Configuring ingester time series replication
 
-Zone-aware replication in the ingester ensures that Grafana Mimir replicates each time series to `-ingester.ring.replication-factor` ingester replicas, with replica one located in each zone.
+Zone-aware replication in the ingester ensures that Grafana Mimir replicates each time series to `-ingester.ring.replication-factor` ingester replicas, with one replica located in each zone.
 
 **To enable zone-aware replication for time series**:
 
@@ -58,11 +58,11 @@ To enable zone-aware replication for the store-gateways, refer to [Zone awarenes
 ## Minimum number of zones
 
 To ensure zone-aware replication, deploy Grafana Mimir across a number of zones equal-to or greater-than the configured replication factor.
-With a replication factor of 3, which is the default for time series replication, deploy the Grafana Mimir cluster across at least three zones.
+With a replication factor of 3, which is the default, deploy the Grafana Mimir cluster across at least three zones.
 Deploying Grafana Mimir clusters to more zones than the configured replication factor does not have a negative impact.
 Deploying Grafana Mimir clusters to fewer zones than the configured replication factor can cause writes to the replica to be missed, or can cause writes to fail completely.
 
-If there are no more than `floor(replication factor / 2)` zones with failing replicas, reads can withstand zone failures.
+If there are no more than `floor(replication factor / 2)` zones with failing replicas, reads and writes can withstand zone failures.
 
 ## Unbalanced zones
 
