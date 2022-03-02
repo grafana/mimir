@@ -46,7 +46,7 @@ To install Grafana Mimirtool, refer to the [latest release](https://github.com/g
 
 ## Configuration options
 
-For Mimirtools to interact with Grafana Mimir, Grafana Enterprise Metrics, Prometheus, or a Grafana instance, set the following environment variables or CLI flags.
+For Mimirtools to interact with Grafana Mimir, Grafana Enterprise Metrics, Prometheus, or Grafana, set the following environment variables or CLI flags.
 
 | Environment variable | Flag        | Description                                                                                                                                                                                      |
 | -------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -388,7 +388,7 @@ The following command dumps all values of the TSDB.
 promtool tsdb dump ./local-tsdb
 ```
 
-The following command runs a local prometheus TSDB.
+The following command runs a local Prometheus with the local TSDB.
 
 ```bash
 prometheus --storage.tsdb.path ./local-tsdb --config.file=<(echo "")
