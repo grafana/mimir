@@ -3,7 +3,7 @@
 # Provenance-includes-license: Apache-2.0
 # Provenance-includes-copyright: The Cortex Authors.
 
-FROM       alpine:3.13
+FROM       alpine:3.15.0
 RUN        apk add --no-cache ca-certificates
 COPY       query-tee /
 ENTRYPOINT ["/query-tee"]
