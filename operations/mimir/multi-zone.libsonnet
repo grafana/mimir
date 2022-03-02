@@ -210,7 +210,7 @@
   // the StatefulSet pods. For more information, see:
   // https://v1-18.docs.kubernetes.io/docs/reference/generated/kubernetes-api/v1.18/#statefulset-v1-apps
   newStoreGatewayZoneService(sts)::
-    $.util.serviceFor(sts) +
+    $.util.serviceFor(sts, $._config.service_ignored_labels) +
     service.mixin.spec.withClusterIp('None'),  // Headless.
 
   local nonRetainablePVCs = {

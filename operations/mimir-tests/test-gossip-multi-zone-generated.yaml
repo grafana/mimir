@@ -721,7 +721,6 @@ spec:
     port: 7946
     targetPort: 7946
   selector:
-    gossip_ring_member: "true"
     name: store-gateway-zone-a
     rollout-group: store-gateway
 ---
@@ -745,7 +744,6 @@ spec:
     port: 7946
     targetPort: 7946
   selector:
-    gossip_ring_member: "true"
     name: store-gateway-zone-b
     rollout-group: store-gateway
 ---
@@ -769,7 +767,6 @@ spec:
     port: 7946
     targetPort: 7946
   selector:
-    gossip_ring_member: "true"
     name: store-gateway-zone-c
     rollout-group: store-gateway
 ---
