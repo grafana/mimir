@@ -1,14 +1,13 @@
 # The default values specified in this file are enough to deploy all of the
-# Grafana Enterprise Metrics microservices but are not suitable for production
-# load.
+# Grafana Mimir microservices but are not suitable for production load.
 # To configure the resources for production load, refer to the the small.yaml or
 # large.yaml values files.
 
 # Container image settings.
 # Since the image is unique for all microservices, so are image settings.
 image:
-  repository: grafana/metrics-enterprise
-  tag: r174-ef5ba4a9
+  repository: us.gcr.io/kubernetes-dev/mimir
+  tag: 2.0.0-rc.0
   pullPolicy: IfNotPresent
   # Optionally specify an array of imagePullSecrets.
   # Secrets must be manually created in the namespace.
@@ -22,49 +21,14 @@ serviceAccount:
   annotations: {}
 
 useExternalConfig: false
-externalConfigSecretName: 'enterprise-metrics-config'
+externalConfigSecretName: 'mimir-config'
 externalConfigVersion: '0'
-
-# In order to use Grafana Enterprise Metrics features, you will need to provide the contents of your Grafana Enterprise Metrics
-# license, either by providing the contents of the license.jwt, or the name Kubernetes Secret that contains your license.jwt.
-# To set the license contents, use the flag `--set-file 'license.contents=./license.jwt'`
-# To use your own Kubernetes Secret, `--set license.external=true`.
-useExternalLicense: false
-license:
-  contents: "NOTAVALIDLICENSE"
-  external: false
-  secretName: 'enterprise-metrics-license'
-
-tokengenJob:
-  enable: true
-  extraArgs: {}
-  env: []
-  annotations: {}
-  initContainers: []
 
 config:
   multitenancy_enabled: true
-  auth:
-    type: enterprise
-
-  cluster_name: "{{ .Release.Name }}"
-
-  admin_api:
-    leader_election:
-      enabled: true
-      ring:
-        kvstore:
-          store: "memberlist"
-
-  admin_client:
-    storage:
-      type: s3
 
   compactor:
     data_dir: "/data"
-
-  license:
-    path: "/license/license.jwt"
 
   ingester:
     ring:
@@ -72,11 +36,6 @@ config:
       final_sleep: 0s
       num_tokens: 512
       replication_factor: 1
-
-  instrumentation:
-    enabled: true
-    distributor_client:
-      address: 'dns:///{{ template "enterprise-metrics.fullname" . }}-distributor.{{ .Release.Namespace }}.svc:{{ .Values.config.server.grpc_listen_port }}'
 
   limits: {}
 
@@ -134,50 +93,6 @@ runtimeConfig: {}
 rbac:
   create: true
   pspEnabled: true
-
-admin_api:
-  replicas: 1
-
-  annotations: {}
-  service:
-    annotations: {}
-    labels: {}
-
-  initContainers: []
-
-  strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 0
-      maxUnavailable: 1
-
-  podLabels: {}
-  podAnnotations: {}
-
-  securityContext: {}
-
-  extraArgs: {}
-
-  persistence:
-    subPath:
-
-  readinessProbe:
-    httpGet:
-      path: /ready
-      port: http-metrics
-    initialDelaySeconds: 45
-
-  resources:
-    requests:
-      cpu: 10m
-      memory: 32Mi
-
-  extraContainers: []
-  extraVolumes: []
-  nodeSelector: {}
-  affinity: {}
-  tolerations: []
-  terminationGracePeriodSeconds: 60
 
 alertmanager:
   replicas: 1
@@ -372,58 +287,10 @@ distributor:
   extraPorts: []
   env: []
 
-gateway:
-  # If you want to use your own proxy URLs, set this to false.
-  useDefaultProxyURLs: true
-  replicas: 1
-
-  annotations: {}
-  service:
-    annotations: {}
-    labels: {}
-
-  strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 0
-      maxUnavailable: 1
-
-  podLabels: {}
-  podAnnotations: {}
-
-  securityContext: {}
-  initContainers: []
-
-  extraArgs: {}
-
-  persistence:
-    subPath:
-
-  readinessProbe:
-    httpGet:
-      path: /ready
-      port: http-metrics
-    initialDelaySeconds: 45
-
-  resources:
-    requests:
-      cpu: 10m
-      memory: 32Mi
-
-  extraContainers: []
-  extraVolumes: []
-  nodeSelector: {}
-  affinity: {}
-  tolerations: []
-  terminationGracePeriodSeconds: 60
-
 ingester:
   replicas: 1
 
   statefulSet:
-    # If true, use a StatefulSet instead of a Deployment for pod management.
-    # This is useful when using WAL
-    #
     enabled: true
 
   service:
@@ -1036,15 +903,12 @@ memcached-metadata:
 
 minio:
   enabled: true
-  accessKey: enterprise-metrics
+  accessKey: grafana-mimir
   buckets:
-    - name: enterprise-metrics-tsdb
+    - name: mimir-tsdb
       policy: none
       purge: false
-    - name: enterprise-metrics-admin
-      policy: none
-      purge: false
-    - name: enterprise-metrics-ruler
+    - name: mimir-ruler
       policy: none
       purge: false
   persistence:

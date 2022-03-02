@@ -18,16 +18,6 @@ config:
     ring:
       replication_factor: 3
 
-admin_api:
-  replicas: 3
-  resources:
-    requests:
-      cpu: 1
-      memory: 256Mi
-    limits:
-      cpu: 1
-      memory: 256Mi
-
 alertmanager:
   persistentVolume:
     enabled: true
@@ -62,16 +52,6 @@ distributor:
     limits:
       cpu: 2
       memory: 4Gi
-
-gateway:
-  replicas: 8
-  resources:
-    requests:
-      cpu: 1
-      memory: 384Mi
-    limits:
-      cpu: 1
-      memory: 384Mi
 
 ingester:
   persistentVolume:
