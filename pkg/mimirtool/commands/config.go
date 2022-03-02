@@ -89,7 +89,13 @@ func (c *ConfigCommand) output(yamlContents []byte, flags []string, notices conf
 		if err != nil {
 			return nil, nil, errors.Wrap(err, "could not open "+path)
 		}
-		return outWriter, func() { _ = outWriter.Close() }, nil
+		closeFn := func() {
+			err := outWriter.Close()
+			if err != nil {
+				_, _ = fmt.Fprint(os.Stderr, err)
+			}
+		}
+		return outWriter, closeFn, nil
 	}
 
 	outYAMLWriter, closeFile, err := openFile(c.outYAMLFile, os.Stdout)

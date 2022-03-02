@@ -34,37 +34,37 @@ type ChangedDefault struct {
 // InspectedEntries where the FieldValue is the default value of the configuration parameter.
 // Convert uses sourceFactory and targetFactory to also prune the default values from the resulting config.
 // Convert returns the marshalled YAML config in the target schema.
-func Convert(contents []byte, flags []string, m Mapper, sourceFactory, targetFactory InspectedEntryFactory) (_ []byte, _ []string, _ ConversionNotices, err error) {
-	notices := &ConversionNotices{}
+func Convert(contents []byte, flags []string, m Mapper, sourceFactory, targetFactory InspectedEntryFactory) (convertedContents []byte, convertedFlags []string, n ConversionNotices, conversionErr error) {
+	var (
+		notices = &ConversionNotices{}
+		err     error
+	)
+
 	notices.RemovedParameters, notices.RemovedCLIFlags, err = reportDeletedFlags(contents, flags, sourceFactory)
 	if err != nil {
-		return
+		return nil, nil, ConversionNotices{}, err
 	}
 
 	source, target := sourceFactory(), targetFactory()
 
 	err = yaml.Unmarshal(contents, &source)
 	if err != nil {
-		err = errors.Wrap(err, "could not unmarshal old Cortex configuration file")
-		return
+		return nil, nil, ConversionNotices{}, errors.Wrap(err, "could not unmarshal old Cortex configuration file")
 	}
 
 	err = addFlags(source, flags)
 	if err != nil {
-		err = errors.Wrap(err, "could not parse provided flags")
-		return
+		return nil, nil, ConversionNotices{}, errors.Wrap(err, "could not parse provided flags")
 	}
 
 	err = m.DoMap(source, target)
 	if err != nil {
-		err = errors.Wrap(err, "could not map old config to new config")
-		return
+		return nil, nil, ConversionNotices{}, errors.Wrap(err, "could not map old config to new config")
 	}
 
 	sourceDefaults, targetDefaults, err := prepareDefaults(m, sourceFactory, targetFactory)
 	if err != nil {
-		err = errors.Wrap(err, "could not prune defaults in new config")
-		return
+		return nil, nil, ConversionNotices{}, errors.Wrap(err, "could not prune defaults in new config")
 	}
 
 	pruneDefaults(target, sourceDefaults, targetDefaults, notices)
@@ -79,8 +79,7 @@ func Convert(contents []byte, flags []string, m Mapper, sourceFactory, targetFac
 
 	yamlBytes, err := yaml.Marshal(target)
 	if err != nil {
-		err = errors.Wrap(err, "could not marshal converted config to YAML")
-		return
+		return nil, nil, ConversionNotices{}, errors.Wrap(err, "could not marshal converted config to YAML")
 	}
 
 	return yamlBytes, newFlags, *notices, nil
