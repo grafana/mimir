@@ -39,6 +39,6 @@ To configure Consul, refer to [consul]({{< relref "../configuration/reference-co
 ### Etcd
 
 Grafana Mimir supports [etcd](https://etcd.io) as a backend KV store.
-If you choose to use etcd, you must install it. The Grafana Mimir installation does not includ etcd.
+If you choose to use etcd, you must install it. The Grafana Mimir installation does not include etcd.
 
 To configure etcd, refer to [etcd]({{< relref "../configuration/reference-configuration-parameters.md#etcd">}}).
