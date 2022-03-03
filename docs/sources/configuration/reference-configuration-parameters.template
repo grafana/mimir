@@ -64,11 +64,11 @@ In this reference, experimental-category parameters include `(experimental)` at
 the beginning of their description.
 
 ### Parameter lifecycle
-When new parameters are added, they can be introduced as **basic**, **advanced**, or **experimental**.
+When new parameters are added, they can be introduced as __basic__, __advanced__, or __experimental__.
 
-Experimental parameters will remain experimental until they are either made stable or removed. Parameters that are made stable will be classified as either **basic** or **advanced**. We aim to make this decision on an experimental parameter within 6 months of its initial release, but this decision may take longer depending on what we discover during testing, as well as upstream dependencies (e.g., Prometheus) of our code changes.
+__Experimental__ parameters will remain experimental until they are either made stable or removed. Parameters that are made stable will be classified as either __basic__ or __advanced__. We aim to make this decision on an experimental parameter within 6 months of its initial release, but this decision may take longer depending on what we discover during testing, as well as upstream dependencies (e.g., Prometheus) of our code changes.
 
-If we decide to eliminate a **basic** or **advanced** paramater, we will first mark it deprecated. After two more minor releases, a deprecated flag will be removed entirely. You can use the metric `deprecated_flags_inuse_total` to determine whether you're using deprecated flags.
+If we decide to eliminate a __basic__ or __advanced__ paramater, we will first mark it deprecated. After two more minor releases, a deprecated flag will be removed entirely. Use the metric `deprecated_flags_inuse_total` to determine whether you're using deprecated flags.
 
 ## Use environment variables in the configuration
 
