@@ -74,7 +74,7 @@ Whenever the pool of compactors grows or shrinks (ie. following up a scale up/do
 
 The compactor sharding is based on the Mimir [hash ring]({{< relref "./about-the-hash-ring.md" >}}). At startup, a compactor generates random tokens and registers itself to the ring. While running, it periodically scans the storage bucket at every interval defined by `-compactor.compaction-interval`, to discover the list of tenants in storage and compact blocks for each tenant which hash matches the token ranges assigned to the instance itself within the ring.
 
-This feature requires the backend [hash ring]({{< relref "./about-the-hash-ring.md" >}}) to be configured via `-compactor.ring.*` flags (or their respective YAML config options).
+To configure the compactors' hash ring, refer to [configuring hash rings]({{< relref "../operating-grafana-mimir/configure-hash-ring.md">}}).
 
 ### Waiting for stable ring at startup
 

@@ -53,13 +53,7 @@ Use the following flags to configure the rate limit:
 ### Configuration
 
 The distributors form a [hash ring]({{< relref "./about-the-hash-ring.md" >}}) (called the distributors’ ring) to discover each other and enforce limits correctly.
-
-The default configuration uses `memberlist` as the backend for the distributors’ ring.
-To configure a different backend, such as Consul or etcd, the following CLI flags (and their respective YAML configuration options) configure the key-value store of the distributors’ ring:
-
-- `-distributor.ring.store`: The backend storage to use.
-- `-distributor.ring.consul.*`: The Consul client configuration. Only use this if you have defined `consul` as your backend storage.
-- `-distributor.ring.etcd.*`: The etcd client configuration. Only use this if you have defined `etcd` as your backend storage.
+To configure the distributors' hash ring, refer to [configuring hash rings]({{< relref "../operating-grafana-mimir/configure-hash-ring.md">}}).
 
 ## High-availability tracker
 

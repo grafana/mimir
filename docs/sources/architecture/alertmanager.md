@@ -95,7 +95,9 @@ Grafana Mimir Alertmanager replicas use [hash ring]({{<relref "./about-the-hash-
 This means that any Mimir Alertmanager replica can respond to any API or UI request for any tenant.
 If the Mimir Alertmanager replica receiving the HTTP request doesn't own the tenant to which the request belongs, the request is internally routed to the appropriate replica.
 
-> **Note:** When running with a single tenant, scaling the number of replicas to be greater than the replication factor offers no benefits because the Mimir Alertmanager shards by tenant and not individual alerts.
+To configure the alertmanagers' hash ring, refer to [configuring hash rings]({{< relref "../operating-grafana-mimir/configure-hash-ring.md">}}).
+
+> **Note:** When running with a single tenant, scaling the number of replicas to be greater than the replication factor offers no benefits as the Mimir Alertmanager shards by tenant and not individual alerts.
 
 ### State
 

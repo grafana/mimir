@@ -23,9 +23,11 @@ Services calling the **ingesters** first read the **ingester states** from the [
 - **`UNHEALTHY`**<br />
   The ingester has failed to heartbeat to the ring's KV Store. While in this state, distributors skip the ingester while building the replication set for incoming series and the ingester does not receive write or read requests.
 
+To configure the ingesters' hash ring, refer to [configuring hash rings]({{< relref "../operating-grafana-mimir/configure-hash-ring.md">}}).
+
 ## Ingesters write de-amplification
 
-Ingesters store recently received samples in-memory in order to perform write de-amplification. If the ingesters would immediately write received samples to the long-term storage, the system would be difficult to scale due to the high pressure on the long-term storage. For this reason, the ingesters batch and compress samples in-memory and periodically upload them to the long-term storage.
+Ingesters store recently received samples in memory in order to perform write de-amplification. If the ingesters immediately write received samples to the long-term storage, it is difficult for the system to scale due to the high pressure on the long-term storage. For this reason, the ingesters batch and compress samples in memory and periodically upload them to the long-term storage.
 
 Write de-amplification is the main source of Mimir's low total cost of ownership (TCO).
 
