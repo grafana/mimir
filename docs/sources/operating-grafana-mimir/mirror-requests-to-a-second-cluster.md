@@ -6,15 +6,25 @@ weight: 10
 
 # Mirror requests to a second cluster
 
-Requests mirroring can be used when you need to setup a testing Grafana Mimir cluster receiving the same series ingested by a primary one and you don't have control over Prometheus remote write config. If you have control over it, then configuring two remote write entries in Prometheus would be the preferred option. Refer to the [Prometheus remote write reference][reference-prom-rw] for help.
+Use request mirroring when you want to set up a Grafana Mimir testing cluster that receives the same series that are ingested by a primary cluster and when you don't have control over the Prometheus remote write configuration.
+
+If you have control over the Prometheus remote write configuration, we recommend that you configure two remote write entries in Prometheus. For more information about Prometheus remote write configuration, refer to [Prometheus remote write reference][reference-prom-rw].
 
 [reference-prom-rw]: https://prometheus.io/docs/prometheus/latest/configuration/configuration/#remote_write
 
 ## Mirroring with Envoy proxy
 
-[Envoy proxy](https://www.envoyproxy.io/) can be used to mirror HTTP requests to a secondary upstream cluster. From a network path perspective, you should run Envoy in front of both clusters' [distributors](../../architecture/distributor). This lets Envoy proxy requests to the primary Grafana Mimir cluster and mirror them to a secondary cluster in the background. The performance and availability of the secondary cluster have no impact on the requests to the primary one. The response to the client will always be the one from the primary one. In this sense, the requests from Envoy to the secondary cluster are "fire and forget".
+You can use [Envoy proxy](https://www.envoyproxy.io/) to mirror HTTP requests to a secondary upstream cluster.
+From a network path perspective, run Envoy in front of both clusters' [distributors](../../architecture/distributor).
 
-The diagram below shows the simplified network structure.
+This approach enables the Envoy proxy to make requests to the primary Grafana Mimir cluster and then in the background, Envoy mirrors the requests to the secondary cluster.
+
+The performance and availability of the secondary cluster have no impact on the requests to the primary cluster.
+The response to the client is always sent from the primary cluster.
+
+Requests from Envoy to the secondary cluster are "fire and forget", which means that Envoy doesn't wait until the requests are completed to the secondary cluster before sending back the response to the client.
+
+The following diagram illustrates a simplified network structure.
 
 <!-- Diagram source at https://docs.google.com/presentation/d/1bHp8_zcoWCYoNU2AhO2lSagQyuIrghkCncViSqn14cU/edit -->
 
@@ -22,7 +32,7 @@ The diagram below shows the simplified network structure.
 
 ### Example Envoy configuration
 
-The following Envoy configuration shows an example with two Grafana Mimir clusters. Envoy will listen on port `9900` and will proxy all requests to `mimir-primary:8080`, while mirroring them to `mimir-secondary:8080`.
+The following Envoy configuration shows an example that includes two Grafana Mimir clusters. Envoy listens on port `9900` and proxies all requests to `mimir-primary:8080`, while also mirroring them to `mimir-secondary:8080`.
 
 <!-- prettier-ignore-start -->
 [embedmd]:# (../../configurations/requests-mirroring-envoy.yaml)
