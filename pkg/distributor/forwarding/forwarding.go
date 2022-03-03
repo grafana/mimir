@@ -31,7 +31,18 @@ type Forwarder interface {
 }
 
 type Request interface {
+	// Add adds a timeseries to the forwarding request.
+	// Samples which don't match any forwarding rule won't be added to the request.
+	// It returns a bool which indicates whether this timeseries should be sent to the Ingesters.
+	// A timeseries should be sent to the Ingester if any of the following conditions are true:
+	// - It has a labelset without a metric name, hence it can't match a forwarding rule.
+	// - There is no matching forwarding rule for the metric name of the timeseries.
+	// - There is a forwarding rule which defines that this metric should be forwarded and also pushed to the Ingesters.
 	Add(sample mimirpb.PreallocTimeseries) bool
+
+	// Send sends the timeseries which have been added to this forwarding request to the according endpoints.
+	// All errors returned via the returned error chan are http grpc errors.
+	// Send should only be called once, after it has been called this forwardingRequest must not be used anymore.
 	Send(ctx context.Context) <-chan error
 }
 
@@ -113,13 +124,6 @@ type request struct {
 	latency  prometheus.Observer
 }
 
-// Add adds a timeseries to the forwarding request.
-// Samples which don't match any forwarding rule won't be added to the request.
-// It returns a bool which indicates whether this timeseries should be sent to the Ingesters.
-// A timeseries should be sent to the Ingester if any of the following conditions are true:
-// - It has a labelset without a metric name, hence it can't match a forwarding rule.
-// - There is no matching forwarding rule for the metric name of the timeseries.
-// - There is a forwarding rule which defines that this metric should be forwarded and also pushed to the Ingesters.
 func (r *request) Add(sample mimirpb.PreallocTimeseries) bool {
 	metric, err := extract.UnsafeMetricNameFromLabelAdapters(sample.Labels)
 	if err != nil {
@@ -154,9 +158,6 @@ type recoverableError struct {
 	error
 }
 
-// Send sends the timeseries which have been added to this forwarding request to the according endpoints.
-// All errors returned via the returned error chan are http grpc errors.
-// Send should only be called once, after it has been called this forwardingRequest must not be used anymore.
 func (r *request) Send(ctx context.Context) <-chan error {
 	errCh := make(chan error)
 
