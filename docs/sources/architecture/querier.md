@@ -13,7 +13,7 @@ The querier uses the [store-gateway]({{< relref "./store-gateway.md" >}}) compon
 
 ## How it works
 
-To find the correct blocks to look up at query time, the querier requires an almost up-to-date view of the bucket in long-term storage. The querier performs the following actions to ensure that the bucket view is updated:
+To find the correct blocks to look up at query time, the querier requires an almost up-to-date view of the bucket in long-term storage. The querier performs one of the following actions to ensure that the bucket view is updated:
 
 1. Periodically download the [bucket index]({{< relref "../operating-grafana-mimir/blocks-storage/bucket-index.md" >}}) (default)
 2. Periodically scan the bucket
@@ -38,7 +38,7 @@ When running, queriers periodically iterate over the storage bucket to discover 
 
 When a querier receives a query range request, the request contains the following parameters:
 
-- `query`: the PromQL query expression (e.g. `rate(node_cpu_seconds_total[1m])`)
+- `query`: the PromQL query expression (for example, `rate(node_cpu_seconds_total[1m])`)
 - `start`: the start time
 - `end`: the end time
 - `step`: the query resolution (for example, `30` yields one data point every 30 seconds)
@@ -94,7 +94,7 @@ To enable the metadata cache, set `-blocks-storage.bucket-store.metadata-cache.b
 
 Additional flags for configuring the metadata cache begin with the prefix `-blocks-storage.bucket-store.metadata-cache.*`. By configuring the TTL to zero or a negative value, caching of given item type is disabled.
 
-> **Note:** The same memcached backend cluster should be shared between store-gateways and queriers.
+> **Note:** The same Memcached backend cluster should be shared between store-gateways and queriers.
 
 ## Querier configuration
 
