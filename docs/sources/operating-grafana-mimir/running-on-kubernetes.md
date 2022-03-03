@@ -9,14 +9,14 @@ weight: 40
 Because Grafana Mimir is designed to run multiple instances of each component
 (ingester, querier, etc.), you probably want to automate the placement
 and shepherding of these instances. Most users choose Kubernetes to do
-this, but this is not mandatory.
+this, but it's not mandatory.
 
 ## Configuration
 
 ### Resource requests
 
-If using Kubernetes, each container should specify resource requests
-so that the scheduler can place them on a node with sufficient capacity.
+Each container should specify resource requests so that the Kubernetes 
+scheduler can place them on a node with sufficient capacity.
 
 For example an ingester might request:
 
@@ -42,28 +42,24 @@ all replicas at once:
 - Spread out ingesters across racks / availability zones / whatever
   applies in your datacenters.
 
-You can ask Kubernetes to avoid running on the same node like this:
+The standard Grafana Mimir Kubernetes configuration avoids scheduling ingesters
+on the same nodes like this:
 
 ```
       affinity:
         podAntiAffinity:
-          preferredDuringSchedulingIgnoredDuringExecution:
-          - weight: 100
-            podAffinityTerm:
-              labelSelector:
-                matchExpressions:
-                - key: name
-                  operator: In
-                  values:
-                  - ingester
-              topologyKey: "kubernetes.io/hostname"
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                name: ingester
+            topologyKey: kubernetes.io/hostname
 ```
 
-Give plenty of time for an ingester to hand over or flush data to
-store when shutting down; for Kubernetes this looks like:
+Give plenty of time for an ingester to flush data to the store when shutting 
+down; for Kubernetes this looks like:
 
 ```
-      terminationGracePeriodSeconds: 2400
+      terminationGracePeriodSeconds: 1200
 ```
 
 Ask Kubernetes to limit rolling updates to one ingester at a time, and
@@ -85,6 +81,8 @@ problem:
           httpGet:
             path: /ready
             port: 80
+          initialDelaySeconds: 15
+          timeoutSeconds: 1
 ```
 
 We do not recommend configuring a liveness probe on ingesters -
