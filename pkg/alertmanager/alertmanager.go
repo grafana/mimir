@@ -68,8 +68,9 @@ const (
 
 // Config configures an Alertmanager.
 type Config struct {
+	Loggers
+
 	UserID      string
-	Logger      log.Logger
 	PeerTimeout time.Duration
 	Retention   time.Duration
 	ExternalURL *url.URL
@@ -85,11 +86,18 @@ type Config struct {
 	PersisterConfig   PersisterConfig
 }
 
+// Loggers represents the loggers for an Alertmanager.
+type Loggers struct {
+	Base     log.Logger
+	Dispatch log.Logger
+}
+
 // An Alertmanager manages the alerts for one user.
 type Alertmanager struct {
+	Loggers
+
 	cfg             *Config
 	api             *api.API
-	logger          log.Logger
 	state           *state
 	persister       *statePersister
 	nflog           *nflog.Log
@@ -165,9 +173,12 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 	}
 
 	am := &Alertmanager{
-		cfg:    cfg,
-		logger: log.With(cfg.Logger, "user", cfg.UserID),
-		stop:   make(chan struct{}),
+		Loggers: Loggers{
+			Base:     log.With(cfg.Loggers.Base, "user", cfg.UserID),
+			Dispatch: log.With(cfg.Loggers.Dispatch, "user", cfg.UserID),
+		},
+		cfg:  cfg,
+		stop: make(chan struct{}),
 		configHashMetric: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
 			Name: "alertmanager_config_hash",
 			Help: "Hash of the currently loaded alertmanager configuration.",
@@ -181,8 +192,8 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 	}
 
 	am.registry = reg
-	am.state = newReplicatedStates(cfg.UserID, cfg.ReplicationFactor, cfg.Replicator, cfg.Store, am.logger, am.registry)
-	am.persister = newStatePersister(cfg.PersisterConfig, cfg.UserID, am.state, cfg.Store, am.logger, am.registry)
+	am.state = newReplicatedStates(cfg.UserID, cfg.ReplicationFactor, cfg.Replicator, cfg.Store, am.Loggers.Base, am.registry)
+	am.persister = newStatePersister(cfg.PersisterConfig, cfg.UserID, am.state, cfg.Store, am.Loggers.Base, am.registry)
 
 	am.wg.Add(1)
 	var err error
@@ -191,7 +202,7 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 		nflog.WithSnapshot(filepath.Join(cfg.TenantDataDir, notificationLogSnapshot)),
 		nflog.WithMaintenance(maintenancePeriod, am.stop, am.wg.Done, nil),
 		nflog.WithMetrics(am.registry),
-		nflog.WithLogger(log.With(am.logger, "component", "nflog")),
+		nflog.WithLogger(log.With(am.Loggers.Base, "component", "nflog")),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create notification log: %v", err)
@@ -206,7 +217,7 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 	am.silences, err = silence.New(silence.Options{
 		SnapshotFile: silencesFile,
 		Retention:    cfg.Retention,
-		Logger:       log.With(am.logger, "component", "silences"),
+		Logger:       log.With(am.Loggers.Base, "component", "silences"),
 		Metrics:      am.registry,
 	})
 	if err != nil {
@@ -238,7 +249,7 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 		callback = newAlertsLimiter(am.cfg.UserID, am.cfg.Limits, reg)
 	}
 
-	am.alerts, err = mem.NewAlerts(context.Background(), am.marker, 30*time.Minute, callback, am.logger)
+	am.alerts, err = mem.NewAlerts(context.Background(), am.marker, 30*time.Minute, callback, am.Loggers.Base)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create alerts: %v", err)
 	}
@@ -250,7 +261,7 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 		// Mimir should not expose cluster information back to its tenants.
 		Peer:     &NilPeer{},
 		Registry: am.registry,
-		Logger:   log.With(am.logger, "component", "api"),
+		Logger:   log.With(am.Loggers.Base, "component", "api"),
 		GroupFunc: func(f1 func(*dispatch.Route) bool, f2 func(*types.Alert, time.Time) bool) (dispatch.AlertGroups, map[model.Fingerprint][]string) {
 			return am.dispatcher.Groups(f1, f2)
 		},
@@ -261,7 +272,7 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 
 	router := route.New().WithPrefix(am.cfg.ExternalURL.Path)
 
-	ui.Register(router, webReload, log.With(am.logger, "component", "ui"))
+	ui.Register(router, webReload, log.With(am.Loggers.Base, "component", "ui"))
 	am.mux = am.api.Register(router, am.cfg.ExternalURL.Path)
 
 	// Override some extra paths registered in the router (eg. /metrics which by default exposes prometheus.DefaultRegisterer).
@@ -326,7 +337,7 @@ func (am *Alertmanager) ApplyConfig(userID string, conf *config.Config, rawCfg s
 		am.dispatcher.Stop()
 	}
 
-	am.inhibitor = inhibit.NewInhibitor(am.alerts, conf.InhibitRules, am.marker, log.With(am.logger, "component", "inhibitor"))
+	am.inhibitor = inhibit.NewInhibitor(am.alerts, conf.InhibitRules, am.marker, log.With(am.Loggers.Base, "component", "inhibitor"))
 
 	waitFunc := clusterWait(am.state.Position, am.cfg.PeerTimeout)
 
@@ -340,7 +351,7 @@ func (am *Alertmanager) ApplyConfig(userID string, conf *config.Config, rawCfg s
 	// Create a firewall binded to the per-tenant config.
 	firewallDialer := util_net.NewFirewallDialer(newFirewallDialerConfigProvider(userID, am.cfg.Limits))
 
-	integrationsMap, err := buildIntegrationsMap(conf.Receivers, tmpl, firewallDialer, am.logger, func(integrationName string, notifier notify.Notifier) notify.Notifier {
+	integrationsMap, err := buildIntegrationsMap(conf.Receivers, tmpl, firewallDialer, am.Loggers.Base, func(integrationName string, notifier notify.Notifier) notify.Notifier {
 		if am.cfg.Limits != nil {
 			rl := &tenantRateLimits{
 				tenant:      userID,
@@ -365,7 +376,7 @@ func (am *Alertmanager) ApplyConfig(userID string, conf *config.Config, rawCfg s
 		integrationsMap,
 		waitFunc,
 		am.inhibitor,
-		silence.NewSilencer(am.silences, am.marker, am.logger),
+		silence.NewSilencer(am.silences, am.marker, am.Loggers.Base),
 		muteTimes,
 		am.nflog,
 		am.state,
@@ -378,7 +389,7 @@ func (am *Alertmanager) ApplyConfig(userID string, conf *config.Config, rawCfg s
 		am.marker,
 		timeoutFunc,
 		&dispatcherLimits{tenant: am.cfg.UserID, limits: am.cfg.Limits},
-		log.With(am.logger, "component", "dispatcher"),
+		log.With(am.Loggers.Dispatch, "component", "dispatcher"),
 		am.dispatcherMetrics,
 	)
 
@@ -410,11 +421,11 @@ func (am *Alertmanager) StopAndWait() {
 	am.Stop()
 
 	if err := am.persister.AwaitTerminated(context.Background()); err != nil {
-		level.Warn(am.logger).Log("msg", "error while stopping state persister service", "err", err)
+		level.Warn(am.Loggers.Base).Log("msg", "error while stopping state persister service", "err", err)
 	}
 
 	if err := am.state.AwaitTerminated(context.Background()); err != nil {
-		level.Warn(am.logger).Log("msg", "error while stopping ring-based replication service", "err", err)
+		level.Warn(am.Loggers.Base).Log("msg", "error while stopping ring-based replication service", "err", err)
 	}
 
 	am.wg.Wait()

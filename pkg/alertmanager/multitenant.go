@@ -214,6 +214,7 @@ type Limits interface {
 // organizations.
 type MultitenantAlertmanager struct {
 	services.Service
+	Loggers
 
 	cfg *MultitenantAlertmanagerConfig
 
@@ -250,6 +251,7 @@ type MultitenantAlertmanager struct {
 	cfgs map[string]alertspb.AlertConfigDesc
 
 	logger              log.Logger
+	dispatchLogger      log.Logger
 	alertmanagerMetrics *alertmanagerMetrics
 	multitenantMetrics  *multitenantAlertmanagerMetrics
 
@@ -266,7 +268,7 @@ type MultitenantAlertmanager struct {
 }
 
 // NewMultitenantAlertmanager creates a new MultitenantAlertmanager.
-func NewMultitenantAlertmanager(cfg *MultitenantAlertmanagerConfig, store alertstore.AlertStore, limits Limits, logger log.Logger, registerer prometheus.Registerer) (*MultitenantAlertmanager, error) {
+func NewMultitenantAlertmanager(cfg *MultitenantAlertmanagerConfig, store alertstore.AlertStore, limits Limits, loggers Loggers, registerer prometheus.Registerer) (*MultitenantAlertmanager, error) {
 	err := os.MkdirAll(cfg.DataDir, 0777)
 	if err != nil {
 		return nil, fmt.Errorf("unable to create Alertmanager data directory %q: %s", cfg.DataDir, err)
@@ -288,16 +290,17 @@ func NewMultitenantAlertmanager(cfg *MultitenantAlertmanagerConfig, store alerts
 		cfg.ShardingRing.KVStore,
 		ring.GetCodec(),
 		kv.RegistererWithKVName(prometheus.WrapRegistererWithPrefix("cortex_", registerer), "alertmanager"),
-		logger,
+		loggers.Base,
 	)
 	if err != nil {
 		return nil, errors.Wrap(err, "create KV store client")
 	}
 
-	return createMultitenantAlertmanager(cfg, fallbackConfig, store, ringStore, limits, logger, registerer)
+	return createMultitenantAlertmanager(cfg, fallbackConfig, store, ringStore, limits, loggers, registerer)
 }
 
-func createMultitenantAlertmanager(cfg *MultitenantAlertmanagerConfig, fallbackConfig []byte, store alertstore.AlertStore, ringStore kv.Client, limits Limits, logger log.Logger, registerer prometheus.Registerer) (*MultitenantAlertmanager, error) {
+func createMultitenantAlertmanager(cfg *MultitenantAlertmanagerConfig, fallbackConfig []byte, store alertstore.AlertStore, ringStore kv.Client, limits Limits, loggers Loggers, registerer prometheus.Registerer) (*MultitenantAlertmanager, error) {
+
 	am := &MultitenantAlertmanager{
 		cfg:                 cfg,
 		fallbackConfig:      string(fallbackConfig),
@@ -306,7 +309,7 @@ func createMultitenantAlertmanager(cfg *MultitenantAlertmanagerConfig, fallbackC
 		alertmanagerMetrics: newAlertmanagerMetrics(),
 		multitenantMetrics:  newMultitenantAlertmanagerMetrics(registerer),
 		store:               store,
-		logger:              log.With(logger, "component", "MultiTenantAlertmanager"),
+		logger:              log.With(loggers.Base, "component", "MultiTenantAlertmanager"),
 		registry:            registerer,
 		limits:              limits,
 		ringCheckErrors: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
@@ -360,8 +363,8 @@ func createMultitenantAlertmanager(cfg *MultitenantAlertmanagerConfig, fallbackC
 
 	am.grpcServer = server.NewServer(&handlerForGRPCServer{am: am})
 
-	am.alertmanagerClientsPool = newAlertmanagerClientsPool(client.NewRingServiceDiscovery(am.ring), cfg.AlertmanagerClient, logger, am.registry)
-	am.distributor, err = NewDistributor(cfg.AlertmanagerClient, cfg.MaxRecvMsgSize, am.ring, am.alertmanagerClientsPool, log.With(logger, "component", "AlertmanagerDistributor"), am.registry)
+	am.alertmanagerClientsPool = newAlertmanagerClientsPool(client.NewRingServiceDiscovery(am.ring), cfg.AlertmanagerClient, loggers.Base, am.registry)
+	am.distributor, err = NewDistributor(cfg.AlertmanagerClient, cfg.MaxRecvMsgSize, am.ring, am.alertmanagerClientsPool, log.With(loggers.Base, "component", "AlertmanagerDistributor"), am.registry)
 	if err != nil {
 		return nil, errors.Wrap(err, "create distributor")
 	}
@@ -844,7 +847,7 @@ func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *amco
 	newAM, err := New(&Config{
 		UserID:            userID,
 		TenantDataDir:     tenantDir,
-		Logger:            am.logger,
+		Loggers:           am.Loggers,
 		PeerTimeout:       am.cfg.PeerTimeout,
 		Retention:         am.cfg.Retention,
 		ExternalURL:       am.cfg.ExternalURL.URL,
