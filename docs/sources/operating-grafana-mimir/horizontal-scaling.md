@@ -22,7 +22,7 @@ To scale down the Mimir cluster, see [Scaling down ingesters](#scaling-down-inge
 When running Grafana Mimir in microservices mode, you can safely scale up any component.
 You can also safely scale down any stateless component.
 
-However, the following stateful components have some limitations when scaling down:
+The following stateful components have limitations when scaling down:
 
 - Alertmanagers
 - Ingesters
