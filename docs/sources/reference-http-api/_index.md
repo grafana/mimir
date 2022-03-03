@@ -178,7 +178,7 @@ GET /debug/pprof/mutex
 
 This endpoint returns runtime profiling data in the format expected by the pprof visualization tool. There are many things that can be profiled using this endpoint, including heap, trace, goroutine, and so on.
 
-_For more information about pprof, refer to [pprof](https://golang.org/pkg/net/http/pprof/)._
+For more information about pprof, refer to [pprof](https://golang.org/pkg/net/http/pprof/).
 
 ### Fgprof
 
@@ -188,7 +188,7 @@ GET /debug/fgprof
 
 This endpoint returns the sampling Go profiling data that you can use to analyze On-CPU and Off-CPU (for example, I/O) time.
 
-_For more information about fgprof, refer to [fgprof](https://github.com/felixge/fgprof)._
+For more information about fgprof, refer to [fgprof](https://github.com/felixge/fgprof).
 
 ### Build information
 
@@ -221,7 +221,7 @@ You can perform the following actions to skip the label name validation:
 - Enable API's flag `-api.skip-label-name-validation-header-enabled=true`
 - Ensure that the request is sent with the header `X-Mimir-SkipLabelNameValidation: true`
 
-This feature supports the writes of downstream clients that have specific requirements.
+This feature supports the writes from non-standard downstream clients that have metric name not Prometheus compliant.
 
 _For more information, refer to Prometheus [Remote storage integrations](https://prometheus.io/docs/prometheus/latest/storage/#remote-storage-integrations)._
 
@@ -233,7 +233,7 @@ _Requires [authentication](#authentication)._
 GET /distributor/ring
 ```
 
-This endpoint displays a web page with the distributor hash ring status, including the state, and the healthy and last heartbeat time of each distributor.
+This endpoint displays a web page with the distributor hash ring status, including the state, and the health and last heartbeat time of each distributor.
 
 ### Tenants stats
 
@@ -261,7 +261,7 @@ The following endpoints relate to the ingester.
 GET,POST /ingester/flush
 ```
 
-This endpoint triggers a flush of the in-memory chucks or blocks time series data to the long-term storage.
+This endpoint triggers a flush of the in-memory series time series data to the long-term storage.
 This endpoint also triggers the flush when you disable `-ingester.flush-on-shutdown-with-wal-enabled` or `-blocks-storage.tsdb.flush-blocks-on-shutdown`.
 
 This endpoint accepts a `tenant` parameter to specify the tenant whose blocks are compacted and shipped.
@@ -305,9 +305,9 @@ GET,POST <prometheus-http-prefix>/api/v1/query
 
 This endpoint is compatible with the Prometheus instant query endpoint.
 
-_For more information about Prometheus instant queries, refer to [instant query](https://prometheus.io/docs/prometheus/latest/querying/api/#instant-queries)._
+For more information about Prometheus instant queries, refer to [instant query](https://prometheus.io/docs/prometheus/latest/querying/api/#instant-queries).
 
-_Requires [authentication](#authentication)._
+Requires [authentication](#authentication).
 
 ### Range query
 
@@ -317,9 +317,9 @@ GET,POST <prometheus-http-prefix>/api/v1/query_range
 
 This endpoint is compatible with the Prometheus range query endpoint. When the system sends a request through the query-frontend, the query-frontend uses caching and execution parallelization to accelerate the query.
 
-_For more information about Prometheus range queries, refer to [range query](https://prometheus.io/docs/prometheus/latest/querying/api/#range-queries)._
+For more information about Prometheus range queries, refer to [range query](https://prometheus.io/docs/prometheus/latest/querying/api/#range-queries).
 
-_Requires [authentication](#authentication)._
+Requires [authentication](#authentication).
 
 ### Exemplar query
 
@@ -329,9 +329,9 @@ GET,POST <prometheus-http-prefix>/api/v1/query_exemplars
 
 This endpoint is compatible with the Prometheus exemplar query endpoint.
 
-_For more information about Prometheus exemplar queries, refer to [exemplar query](https://prometheus.io/docs/prometheus/latest/querying/api/#querying-exemplars)._
+For more information about Prometheus exemplar queries, refer to [exemplar query](https://prometheus.io/docs/prometheus/latest/querying/api/#querying-exemplars).
 
-_Requires [authentication](#authentication)._
+Requires [authentication](#authentication).
 
 ### Get series by label matchers
 
