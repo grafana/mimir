@@ -549,6 +549,23 @@ func (d *Distributor) validateSeries(nowt time.Time, ts mimirpb.PreallocTimeseri
 	return nil
 }
 
+// forwardingReq returns a forwarding request if one is necessary, given the user ID.
+// if no forwarding request is necessary it returns nil.
+func (d *Distributor) forwardingReq(ctx context.Context, userID string) forwarding.Request {
+	if !d.cfg.Forwarding {
+		return nil
+	}
+
+	forwardingRules := d.limits.ForwardingRules(userID)
+
+	// If this tenant has no forwarding rule(s) we can directly return "nil", which effectively disables forwarding.
+	if len(forwardingRules) == 0 {
+		return nil
+	}
+
+	return d.forwarder.NewRequest(ctx, userID, forwardingRules)
+}
+
 // Push implements client.IngesterServer
 func (d *Distributor) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error) {
 	return d.PushWithCleanup(ctx, req, func() { mimirpb.ReuseSlice(req.Timeseries) })
@@ -670,15 +687,7 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 		minExemplarTS = earliestSampleTimestampMs - 300000
 	}
 
-	var forwardingReq forwarding.Request
-	if d.cfg.Forwarding {
-		forwardingRules := d.limits.ForwardingRules(userID)
-
-		// If this tenant has at least one forwarding rule setup we need to instantiate the forwarding request.
-		if len(forwardingRules) > 0 {
-			forwardingReq = d.forwarder.NewRequest(ctx, userID, forwardingRules)
-		}
-	}
+	forwardingReq := d.forwardingReq(ctx, userID)
 
 	// For each timeseries, compute a hash to distribute across ingesters;
 	// check each sample and discard if outside limits.
