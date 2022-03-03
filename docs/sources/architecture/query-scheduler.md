@@ -6,44 +6,42 @@ weight: 10
 
 # (Optional) Query-scheduler
 
-The **query-scheduler** is an **optional component** that internally keeps a queue of queries to execute and distributes the workload to available [queriers]({{<relref "./querier.md">}}).
-
-When query-scheduler is employed, the [query-frontends]({{<relref "./query-frontend.md">}}) enqueue queries to execute into the query-scheduler and queriers pull queries from the query-scheduler. Once a query is executed, the querier sends the result to the query-frontend that enqueued the query.
+The query-scheduler is an optional, stateless component that retains a queue of queries to execute, and distributes the workload to available [queriers]({{< relref "./querier.md" >}}).
 
 ![Query-scheduler architecture](../../images/query-scheduler-architecture.png)
 
 [//]: # "Diagram source at https://docs.google.com/presentation/d/1bHp8_zcoWCYoNU2AhO2lSagQyuIrghkCncViSqn14cU/edit"
 
-The flow of a query in a Grafana Mimir cluster with the query-scheduler is:
+The following flow describes how a queries moves through a Grafana Mimir cluster:
 
-1. The query is received by the query-frontend, which can optionally split and shard it, or serve from the cache.
-2. The query-frontend enqueues the query to a random query-scheduler.
-3. The query-scheduler stores the query into an in-memory queue, where it waits for some querier to pick it up.
-4. A querier picks up the query, and executes it.
-5. The querier sends results back to query-frontend, which then forwards it to the client.
+1. The [query-frontend]({{< relref "./query-frontend.md" >}}) receives queries, and then either splits and shards them, or serves them from the cache.
+1. The query-frontend enqueues the queries into a query-scheduler.
+1. The query-scheduler stores the queries in an in-memory queue where they wait for a querier to pick them up.
+1. Queriers pick up the queries, and executes them.
+1. The querier sends results back to query-frontend, which then forwards the results to the client.
 
-The query-scheduler **stateless**.
+## Benefits of using the query-scheduler
 
-## Benefits
-
-The query-scheduler enables scaling of query-frontends. The query-frontend comes with some challenges when it comes to scaling it. You can read more about them in [Query-frontend]({{<relref "./query-frontend.md#scaling">}}).
+Query-scheduler enables the scaling of query-frontends. You might experience challenges when you scale query-frontend. To learn more about query-frontend scalability limits, refer to [Why query-frontend scalability is limited]({{<relref "./query-frontend.md#why-query-frontend-scalability-is-limited">}}).
 
 ### How query-scheduler solves query-frontend scalability limits
 
-When the query-scheduler is used, the queue is moved from the query-frontend to the query-scheduler, and the query-frontend can be scaled to any number of replicas.
+When you use the query-scheduler, the queue is moved from the query-frontend to the query-scheduler, and the query-frontend can be scaled to any number of replicas.
 
-The query-scheduler is affected by the same scalability limits of the query-frontend, but since a query-scheduler replica can handle a very high queries throughput, scaling the query-scheduler to a number of replicas higher than `-querier.max-concurrent` is typically not required even for the largest Grafana Mimir clusters.
+The query-scheduler is affected by the same scalability limits as the query-frontend, but because a query-scheduler replica can handle high amounts of query throughput, scaling the query-scheduler to a number of replicas greater than `-querier.max-concurrent` is typically not required, even for very large Grafana Mimir clusters.
 
 ## Configuration
 
-To use query-scheduler, both query-frontends and queriers must be configured to connect to the query-scheduler:
+To use the query-scheduler, configure the query-frontends and queriers to connect to the query-scheduler:
 
 - Query-frontend: `-query-frontend.scheduler-address`
 - Querier: `-querier.scheduler-address`
 
-> Note: the querier pulls queries only from query-frontend or query-scheduler, but not both. `-querier.frontend-address` and `-querier.scheduler-address` options are mutually exclusive, and only one of the two can be set.
+> **Note:** The querier pulls queries only from the query-frontend or the query-scheduler, but not both. `-querier.frontend-address` and `-querier.scheduler-address` options are mutually exclusive, and only one option can be set.
 
 ## Operational considerations
 
-We recommend to run two query-scheduler replicas for high-availability.
-In case you're running a Grafana Mimir cluster with a very high queries throughput we recommend to not scale the query-scheduler to a number of replicas higher than the configured `-querier.max-concurrent`.
+For high-availability, run two query-scheduler replicas.
+
+If you're running a Grafana Mimir cluster with a very high query throughput, you can add more query-scheduler replicas.
+If you scale the query-scheduler, ensure that the number of replicas you add is less or equal than the configured `-querier.max-concurrent`.
