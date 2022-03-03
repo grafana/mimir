@@ -15,7 +15,7 @@ this, but it's not mandatory.
 
 ### Resource requests
 
-Each container should specify resource requests so that the Kubernetes 
+Each container should specify resource requests so that the Kubernetes
 scheduler can place them on a node with sufficient capacity.
 
 For example an ingester might request:
@@ -46,16 +46,16 @@ The standard Grafana Mimir Kubernetes configuration avoids scheduling multiple i
 on the same nodes like this:
 
 ```yaml
-      affinity:
-        podAntiAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-          - labelSelector:
-              matchLabels:
-                name: ingester
-            topologyKey: kubernetes.io/hostname
+affinity:
+  podAntiAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      - labelSelector:
+          matchLabels:
+            name: ingester
+        topologyKey: kubernetes.io/hostname
 ```
 
-Give plenty of time for an ingester to flush data to the store when shutting 
+Give plenty of time for an ingester to flush data to the store when shutting
 down; for Kubernetes this looks like:
 
 ```
