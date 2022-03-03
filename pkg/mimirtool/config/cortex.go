@@ -802,14 +802,15 @@ var removedConfigPaths = []string{
 
 // CLI options removed since Cortex 1.11.0. These flags only existed as CLI Flags, and were not included in YAML Config.
 var removedCLIOptions = []string{
-	"schema-config-file",
+	"event.sample-rate",
+	"frontend.cache-split-interval",
+	"ingester-client.expected-labels",
+	"ingester-client.expected-samples-per-series",
+	"ingester-client.expected-timeseries",
 	"ingester.chunk-encoding",
-	"querier.query-parallelism",
 	"ingester.lifecycler.address",
 	"ingester.lifecycler.id",
 	"ingester.lifecycler.port",
-	"frontend.cache-split-interval",
-	"ingester-client.expected-samples-per-series",
-	"ingester-client.expected-labels",
-	"ingester-client.expected-timeseries",
+	"querier.query-parallelism",
+	"schema-config-file",
 }

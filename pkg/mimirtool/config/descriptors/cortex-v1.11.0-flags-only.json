@@ -30,6 +30,42 @@
       "fieldValue": 100,
       "fieldFlag": "querier.query-parallelism",
       "fieldType": "int"
+    },
+    {
+      "kind": "field",
+      "name": "config-file",
+      "required": false,
+      "desc": "Configuration file to load.",
+      "fieldValue": "",
+      "fieldFlag": "config.file",
+      "fieldType": "string"
+    },
+    {
+      "kind": "field",
+      "name": "config-expand-env",
+      "required": false,
+      "desc": "Expands ${var} or $var in config according to the values of the environment variables.",
+      "fieldValue": "",
+      "fieldFlag": "config.expand-env",
+      "fieldType": "string"
+    },
+    {
+      "kind": "field",
+      "name": "mem-ballast-size-bytes",
+      "required": false,
+      "desc": "Size of memory ballast to allocate.",
+      "fieldValue": 0,
+      "fieldFlag": "mem-ballast-size-bytes",
+      "fieldType": "int"
+    },
+    {
+      "kind": "field",
+      "name": "event-sample-rate",
+      "required": false,
+      "desc": "How often to sample observability events (0 = never).",
+      "fieldValue": 0,
+      "fieldFlag": "event.sample-rate",
+      "fieldType": "int"
     }
   ]
 }
