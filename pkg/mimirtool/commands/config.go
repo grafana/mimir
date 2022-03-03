@@ -43,7 +43,7 @@ func (c *ConfigCommand) Register(app *kingpin.Application, _ EnvVarNames) {
 	convertCmd.Flag("flags-file", "New-line-delimited list of CLI flags to convert.").StringVar(&c.flagsFile)
 	convertCmd.Flag("yaml-out", "Location to output the converted YAML configuration to. Default stdout").StringVar(&c.outYAMLFile)
 	convertCmd.Flag("flags-out", "Location to output list of converted CLI flags to. Default stdout").StringVar(&c.outFlagsFile)
-	convertCmd.Flag("keep-defaults", "Preserve default values in the resulting YAML and flags. By default (=false) configuration parameters using default values are omitted from the output CLI flags and YAML configuration.").BoolVar(&c.keepDefaults)
+	convertCmd.Flag("keep-defaults", "Preserve default values in the resulting YAML and flags. If not set, configuration parameters using default values are omitted from the output CLI flags and YAML configuration.").BoolVar(&c.keepDefaults)
 	convertCmd.Flag("verbose", "Print to stderr CLI flags and YAML paths from old config that no longer exist in the new one, changed default values between old and new, and deleted default values from -keep-defaults=false.").Short('v').BoolVar(&c.verbose)
 }
 
