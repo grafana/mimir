@@ -6,13 +6,11 @@ weight: 10
 
 # About versioning
 
-For the v1.0 release, we want to provide the following guarantees:
+Mimir provides the following guarantees:
 
 ## Flags, Config and minor version upgrades
 
-Upgrading Grafana Mimir from one minor version to the next should "just work"; that being said, we don't want to bump the major version every time we remove a configuration parameter, so we will keep deprecated flags and YAML config parameters around for 2 minor releases. There is a metric (`deprecated_flags_inuse_total`) you can alert on to find out if you're using a deprecated flag.
-
-These guarantees don't apply for [experimental features](#experimental-features).
+Upgrading Grafana Mimir from one minor version to the next should just work. That being said, we don't want to bump the major version every time we remove a configuration parameter. Please see [Parameter Lifecycle]({{< relref "./reference-configuration-parameters/#parameter-lifecycle" >}}) for how we handle removal of configuration paramaeters.
 
 ## Reading old data
 
@@ -28,7 +26,9 @@ Grafana Mimir strives to be 100% API compatible with Prometheus (under `/prometh
 
 ## Experimental features
 
-Grafana Mimir is an actively developed project and we want to encourage the introduction of new features and capabilities. As such, not everything in each release of Grafana Mimir is considered "production-ready". Features not considered "production-ready" and the flags used to enable and/or configure these features will be marked "Experimental". There are no backwards compatibility guarantees on anything marked experimental. Configuration and flags are subject to change.
+Grafana Mimir is an actively developed project and we want to encourage the introduction of new features and capabilities. As such, not everything in each release of Grafana Mimir is considered "production-ready". Features not considered "production-ready" will be marked "experimental" in the documentation. The flags used to enable and/or configure these features will also be marked "experimental", as described in [Parameter Categories]({{< relref "./reference-configuration-parameters/#parameter-categories" >}}).
+
+There are no backwards compatibility guarantees on anything marked experimental. All configuration  parameters relating to experimental features are subject to change.
 
 Currently experimental features are:
 
