@@ -13,7 +13,7 @@ By default, Grafana Mimir uses memberlist to implement a [key-value (KV) store](
 
 When using a memberlist-based KV store, each instance maintains a copy of the hash rings.
 Each Mimir instance updates a hash ring locally and uses memberlist to propagate the changes to other instances.
-Updates generated locally, and updates received from other instances are merged together to form the current state of the ring on the instance itself.
+Updates generated locally and updates received from other instances are merged together to form the current state of the ring on the instance itself.
 
 To configure memberlist, refer to [configuring hash rings]({{< relref "../operating-grafana-mimir/configure-hash-ring.md">}}).
 
