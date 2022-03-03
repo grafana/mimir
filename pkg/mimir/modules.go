@@ -437,7 +437,6 @@ func (t *Mimir) initIngesterService() (serv services.Service, err error) {
 	t.Cfg.Ingester.IngesterRing.ListenPort = t.Cfg.Server.GRPCListenPort
 	t.Cfg.Ingester.StreamTypeFn = ingesterChunkStreaming(t.RuntimeConfig)
 	t.Cfg.Ingester.InstanceLimitsFn = ingesterInstanceLimits(t.RuntimeConfig)
-	t.Cfg.Ingester.ActiveSeriesCustomTrackersOverridesFn = runtimeActiveSeriesCustomTrackersDefaultOverridesFn(t.RuntimeConfig)
 	t.tsdbIngesterConfig()
 
 	t.Ingester, err = ingester.New(t.Cfg.Ingester, t.Cfg.IngesterClient, t.Overrides, prometheus.DefaultRegisterer, util_log.Logger)

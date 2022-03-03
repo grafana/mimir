@@ -15,7 +15,6 @@ import (
 	"gopkg.in/yaml.v2"
 
 	"github.com/grafana/mimir/pkg/ingester"
-	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -35,8 +34,6 @@ type runtimeConfigValues struct {
 	IngesterChunkStreaming *bool `yaml:"ingester_stream_chunks_when_using_blocks"`
 
 	IngesterLimits *ingester.InstanceLimits `yaml:"ingester_limits"`
-
-	ActiveSeriesCustomTrackersDefaultOverrides activeseries.CustomTrackersConfig `yaml:"active_series_custom_trackers_overrides"`
 }
 
 // runtimeConfigTenantLimits provides per-tenant limit overrides based on a runtimeconfig.Manager
@@ -145,20 +142,6 @@ func ingesterInstanceLimits(manager *runtimeconfig.Manager) func() *ingester.Ins
 			return cfg.IngesterLimits
 		}
 		return nil
-	}
-}
-
-func runtimeActiveSeriesCustomTrackersDefaultOverridesFn(manager *runtimeconfig.Manager) func() activeseries.CustomTrackersConfig {
-	if manager == nil {
-		return nil
-	}
-
-	return func() activeseries.CustomTrackersConfig {
-		val := manager.GetConfig()
-		if cfg, ok := val.(*runtimeConfigValues); ok && cfg != nil {
-			return cfg.ActiveSeriesCustomTrackersDefaultOverrides
-		}
-		return activeseries.CustomTrackersConfig{}
 	}
 }
 

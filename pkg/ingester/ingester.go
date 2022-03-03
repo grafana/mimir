@@ -122,11 +122,9 @@ type Config struct {
 
 	RateUpdatePeriod time.Duration `yaml:"rate_update_period" category:"advanced"`
 
-	ActiveSeriesMetricsEnabled            bool                                     `yaml:"active_series_metrics_enabled" category:"advanced"`
-	ActiveSeriesMetricsUpdatePeriod       time.Duration                            `yaml:"active_series_metrics_update_period" category:"advanced"`
-	ActiveSeriesMetricsIdleTimeout        time.Duration                            `yaml:"active_series_metrics_idle_timeout" category:"advanced"`
-	ActiveSeriesCustomTrackersConfig      activeseries.CustomTrackersConfig        `yaml:"active_series_custom_trackers" doc:"description=Additional custom trackers for active metrics. If there are active series matching a provided matcher (map value), the count will be exposed in the custom trackers metric labeled using the tracker name (map key). Zero valued counts are not exposed (and removed when they go back to zero)." category:"advanced"`
-	ActiveSeriesCustomTrackersOverridesFn func() activeseries.CustomTrackersConfig `yaml:"-"`
+	ActiveSeriesMetricsEnabled      bool          `yaml:"active_series_metrics_enabled" category:"advanced"`
+	ActiveSeriesMetricsUpdatePeriod time.Duration `yaml:"active_series_metrics_update_period" category:"advanced"`
+	ActiveSeriesMetricsIdleTimeout  time.Duration `yaml:"active_series_metrics_idle_timeout" category:"advanced"`
 
 	ExemplarsUpdatePeriod time.Duration `yaml:"exemplars_update_period" category:"experimental"`
 
@@ -154,7 +152,6 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.BoolVar(&cfg.ActiveSeriesMetricsEnabled, "ingester.active-series-metrics-enabled", true, "Enable tracking of active series and export them as metrics.")
 	f.DurationVar(&cfg.ActiveSeriesMetricsUpdatePeriod, "ingester.active-series-metrics-update-period", 1*time.Minute, "How often to update active series metrics.")
 	f.DurationVar(&cfg.ActiveSeriesMetricsIdleTimeout, "ingester.active-series-metrics-idle-timeout", 10*time.Minute, "After what time a series is considered to be inactive.")
-	f.Var(&cfg.ActiveSeriesCustomTrackersConfig, "ingester.active-series-custom-trackers", "Additional active series metrics, matching the provided matchers. Matchers should be in form <name>:<matcher>, like 'foobar:{foo=\"bar\"}'. Multiple matchers can be provided either providing the flag multiple times or providing multiple semicolon-separated values to a single flag.")
 
 	f.BoolVar(&cfg.StreamChunksWhenUsingBlocks, "ingester.stream-chunks-when-using-blocks", true, "Stream chunks from ingesters to queriers.")
 	f.DurationVar(&cfg.ExemplarsUpdatePeriod, "ingester.exemplars-update-period", 15*time.Second, "Period with which to update per-tenant max exemplar limit.")
@@ -468,19 +465,11 @@ func (i *Ingester) updateLoop(ctx context.Context) error {
 }
 
 func (i *Ingester) getActiveSeriesMatchersConfig(userID string) activeseries.CustomTrackersConfig {
-	matchersConfig := i.limits.ActiveSeriesCustomTrackersConfig(userID)
-	if matchersConfig.Empty() {
-		if i.cfg.ActiveSeriesCustomTrackersOverridesFn != nil {
-			matchersConfig = i.cfg.ActiveSeriesCustomTrackersOverridesFn()
-		}
-	}
-	if matchersConfig.Empty() {
-		matchersConfig = i.cfg.ActiveSeriesCustomTrackersConfig
-	}
-	return matchersConfig
+	return i.limits.ActiveSeriesCustomTrackersConfig(userID)
 }
 
 func (i *Ingester) replaceMatchers(asm *activeseries.Matchers, userDB *userTSDB) {
+	i.metrics.activeSeriesPerUser.DeleteLabelValues(userDB.userID)
 	i.metrics.deletePerUserCustomTrackerMetrics(userDB.userID, userDB.activeSeries.CurrentMatcherNames())
 	userDB.activeSeries.ReloadSeriesMatchers(asm)
 }
