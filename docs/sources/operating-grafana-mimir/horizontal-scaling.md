@@ -35,7 +35,7 @@ The following stateful components have limitations when scaling down:
 - Scale down at most two alertmanagers at the same time.
 - Ensure at least `-alertmanager.sharding-ring.replication-factor` alertmanager instances are running (three when running Grafana Mimir with the default configuration).
 
-> **Note:** If you enabled [zone-aware replication]({{< relref "./configure-zone-aware-replication.md">}}) for alertmanagers, you can in parallel scale down any number of alertmanager instances within one zone at a time.
+> **Note:** If you enabled [zone-aware replication]({{< relref "./configure-zone-aware-replication.md">}}) for alertmanagers, you can, in parallel, scale down any number of alertmanager instances within one zone at a time.
 
 ### Scaling down ingesters
 
