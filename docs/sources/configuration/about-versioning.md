@@ -6,7 +6,7 @@ weight: 10
 
 # About versioning
 
-This topic describes our guarantees for the Grafana Mimir v2.0 release.
+This topic describes our guarantees for any Grafana Mimir release.
 
 ## Flags, configuration, and minor version upgrades
 
