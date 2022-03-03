@@ -108,6 +108,11 @@ func TestConvert(t *testing.T) {
 			inFlagsFile:  "testdata/not-in-yaml-old.flags.txt",
 			outFlagsFile: "testdata/not-in-yaml-new.flags.txt",
 		},
+		{
+			name:    "ingester ring config",
+			inFile:  "testdata/ingester-ring-old.yaml",
+			outFile: "testdata/ingester-ring-new.yaml",
+		},
 	}
 
 	for _, tc := range testCases {
