@@ -10,10 +10,10 @@ You can have more than one Prometheus instance that scrapes the same metrics for
 so you do not need to ingest the same data twice. In Grafana Mimir, you can deduplicate the data that you receive from HA pairs of Prometheus instances.
 
 Assume that there are two teams, each running their own Prometheus instance, which monitors different services: Prometheus `team-1` and Prometheus `team-2`.
-If the teams are running HA pairs, the individual Prometheus instances would be `team-1.a` and `team-1.b`, and `team-2.a` and `team-2.b`.
+If the teams are running Prometheus HA pairs, the individual Prometheus instances would be `team-1.a` and `team-1.b`, and `team-2.a` and `team-2.b`.
 
 Grafana Mimir only ingests from either `team-1.a` or `team-1.b`, and only from `team-2.a` or `team-2.b`. It does this by electing a leader replica for each
-cluster of Prometheus. For example, in the case of `team-1`, the leader replica would be `team-1.a`. As long as `team-1.a` is the leader, the samples
+Prometheus server. For example, in the case of `team-1`, the leader replica would be `team-1.a`. As long as `team-1.a` is the leader, the samples
 that `team-1.b` receives are dropped. And if Grafana Mimir does not see any new samples from `team-1.a` for a short period of time (30 seconds by default), it switches the leader to `team-1.b`.
 
 If `team-1.a` goes down for a few minutes, Grafana Mimir’s HA sample handling will have switched and elected `team-1.b` as the leader. The failure
@@ -65,8 +65,7 @@ global:
 > **Note:** The preceding labels are external labels and have nothing to do with `remote_write` configuration.
 
 These two label names are configurable on a per-tenant basis within Grafana Mimir. For example, if the label name of one cluster is used by
-some workloads, set the label name of another cluster to be something else that uniquely identifies the second cluster. Some examples
-include, `team`, `cluster`, or `prometheus`.
+some workloads, set the label name of another cluster to be something else that uniquely identifies the second cluster.
 
 Set the replica label so that the value for each Prometheus cluster is unique in that cluster.
 
@@ -90,7 +89,6 @@ Alternatively, you can enable the HA tracker only on a per-tenant basis, keeping
 
 #### Configure the HA tracker KV store
 
-e
 The HA tracker requires a key-value (KV) store to coordinate which replica is currently elected.
 The supported KV stores for the HA tracker are `consul` and `etcd`.
 
@@ -103,7 +101,7 @@ The following CLI flags (and their respective YAML configuration options) are av
 - `-distributor.ha-tracker.consul.*`: The Consul client configuration. Only use this if you have defined `consul` as your backend storage.
 - `-distributor.ha-tracker.etcd.*`: The etcd client configuration. Only use this if you have defined `etcd` as your backend storage.
 
-#### Configure expected label names for each Prometheus cluster and its replica
+#### Configure expected label names for each Prometheus cluster and replica
 
 The HA tracker deduplicates incoming series that have cluster and replica labels.
 You can configure the name of these labels either globally or on a per-tenant basis.
@@ -113,7 +111,7 @@ Configure the default cluster and replica label names using the following CLI fl
 - `-distributor.ha-tracker.cluster`: name of the label whose value uniquely identifies a Prometheus HA cluster (defaults to `cluster`).
 - `-distributor.ha-tracker.replica`: name of the label whose value uniquely identifies a Prometheus replica within the HA cluster (defaults to `__replica__`).
 
-> **Note:** The HA label names can be overridden on a per-tenant basis by setting `ha_cluster_label` and `ha_replica_label` in the overrides section of the runtime configuration.
+> **Note:** The HA label names can be overridden on a per-tenant basis by setting `ha_cluster_label` and `ha_replica_label` in the overrides section of the runtime configuration. For more information, see [Grafana Mimir arguments]({{<relref "./configuration/about-grafana-mimir-arguments.md" >}})".
 
 #### Example configuration
 
