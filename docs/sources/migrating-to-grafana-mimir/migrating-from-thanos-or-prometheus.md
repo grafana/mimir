@@ -12,11 +12,11 @@ Grafana Mimir stores series in TSDB blocks uploaded in an object storage bucket.
 These blocks are the same as those used by Prometheus and Thanos.
 Each project stores blocks in different places use different block metadata files.
 
-## Configure remote-write to Grafana Mimir
+## Configuring remote write to Grafana Mimir
 
-TODO
+For configuration of remote write to Grafana Mimir, refer to [Configuring Prometheus remote write]({{<relref "../about-authentication-and-authorization.md#configuring-prometheus-remote-write" >}}).
 
-## Upload historic blocks to the Grafana Mimir storage bucket
+## Uploading historic blocks to the Grafana Mimir storage bucket
 
 Prometheus stores TSDB blocks in the path specified in the `--storage.tsdb.path` flag.
 
@@ -44,13 +44,13 @@ aws s3 cp <DIRECTORY> s3://<TENANT>/<DIRECTORY>
 gsutil -m cp -r <DIRECTORY> gs://<TENANT>/<DIRECTORY>
 ```
 
-## Migrate the block metadata using `metaconvert`
+## Migrating the block `meta.json` metadata using `metaconvert`
 
 Every block has a `meta.json` metadata file used by Grafana Mimir, Prometheus, and Thanos to understand the block contents.
 Each project has its own metadata conventions.
-The `metaconvert` tool migrates the metadata from project to another.
+The `metaconvert` tool migrates the `meta.json` metadata from project to another.
 
-### Download `metaconvert`
+### Downloading `metaconvert`
 
 - Using Docker:
 
@@ -73,7 +73,7 @@ chmod +x metaconvert-linux-amd64
 go install github.com/grafana/mimir/cmd/metaconvert@latest
 ```
 
-### Run `metaconvert`
+### Running `metaconvert`
 
 > **Warning:** The `metaconvert` tool modifies objects in place.
 > Ensure you enable bucket versioning or have backups before running running the tool.
@@ -82,17 +82,17 @@ To run `metaconvert`, you need to provide it with the bucket configuration. Use 
 
 1. Use one of the following steps to run `metaconvert` in a dry-run mode that lists blocks for migration.
 
-- Using Docker:
+   - Using Docker:
 
-```bash
-docker run grafana/metaconvert -backend=gcs -gcs.bucket-name=bucket -tenant=anonymous -dry-run
-```
+   ```bash
+   docker run grafana/metaconvert -backend=gcs -gcs.bucket-name=bucket -tenant=anonymous -dry-run
+   ```
 
-- Using a local binary:
+   - Using a local binary:
 
-```bash
-./metaconvert -backend=filesystem -filesystem.dir=/bucket -tenant=anonymous -dry-run
-```
+   ```bash
+   ./metaconvert -backend=filesystem -filesystem.dir=/bucket -tenant=anonymous -dry-run
+   ```
 
-3. Remove the `--dry-run` flag to apply the migration.
-4. Verify the migration by re-running the tool with `--dry-run` and confirming that there is no output.
+1. Remove the `-dry-run` flag to apply the migration.
+1. Verify the migration by re-running the tool with `-dry-run` and confirming that no changes are needed.
