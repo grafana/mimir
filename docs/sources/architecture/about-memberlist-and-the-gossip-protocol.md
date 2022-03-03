@@ -27,6 +27,6 @@ When using a memberlist-based KV store, every Grafana Mimir instance propagates 
 Every `-memberlist.gossip-interval` an instance randomly selects a subset of all Grafana Mimir cluster instances configured by `-memberlist.gossip-nodes` and sends them the latest changes.
 This operation is done very frequently and it's the primary technique used to propagate changes.
 
-In addition, every `-memberlist.pullpush-interval` an instance randomly select another instance in the Grafana Mimir cluster and transfers the full content of KV store with all hash rings to it (unless `-memberlist.pullpush-interval` is zero, which disables this behavior).
+In addition, every `-memberlist.pullpush-interval` an instance randomly selects another instance in the Grafana Mimir cluster and transfers the full content of the KV store, including all hash rings (unless `-memberlist.pullpush-interval` is zero, which disables this behavior).
 Once this operation is completed, the two instances have the same exact content of KV store.
 This operation is computationally more expensive, it's done less frequently and is used to ensure that the hash rings periodically reconcile to a common state.
