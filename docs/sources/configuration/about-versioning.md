@@ -10,20 +10,21 @@ This topic describes our guarantees for the Grafana Mimir v2.0 release.
 
 ## Flags, configuration, and minor version upgrades
 
-Upgrading Grafana Mimir from one minor version to the next minor version should work, but we don't want to bump the major version every time we remove a configuration parameter. 
-We will keep deprecated flags and YAML configuration parameters in place for two minor releases. 
+Upgrading Grafana Mimir from one minor version to the next minor version should work, but we don't want to bump the major version every time we remove a configuration parameter.
+We will keep deprecated flags and YAML configuration parameters in place for two minor releases.
 You can use the `deprecated_flags_inuse_total` metric to generate an alert that helps you determine if you're using a deprecated flag.
 
 These guarantees don't apply to [experimental features](#experimental-features).
 
 ## Reading old data
 
-The Grafana Mimir maintainers commit to ensuring that future versions can read data written by versions within the last two years. 
+The Grafana Mimir maintainers commit to ensuring that future versions can read data written by versions within the last two years.
 In practice, we expect to be able to read data written more than two years ago, but a minimum of two years is our guarantee.
 
 ## API Compatibility
 
-Grafana Mimir strives to be 100% API compatible with Prometheus (under `/prometheus/*`). 
+Grafana Mimir strives to be 100% compatible with the Prometheus HTTP API which is by default served by endpoints with the /prometheus HTTP path prefix `/prometheus/*`.
+
 We consider any deviation from this 100% API compatibility to be a bug, except for the following scenarios:
 
 - Additional API endpoints for creating, removing, modifying alerts, and recording rules.
@@ -33,10 +34,10 @@ We consider any deviation from this 100% API compatibility to be a bug, except f
 ## Experimental features
 
 Grafana Mimir is an actively developed project and we encourage the introduction of new features and capabilities.
-Not everything in each release of Grafana Mimir is considered production-ready. 
+Not everything in each release of Grafana Mimir is considered production-ready.
 We mark as "Experimental" all features and flags that we don't consider production-ready.
 
-We do not guarantee backwards compatibility for experimental features and flags. 
+We do not guarantee backwards compatibility for experimental features and flags.
 Configuration and flags are subject to change.
 
 The following features are currently experimental:
