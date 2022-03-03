@@ -8,7 +8,7 @@ Grafana Mimir exposes an HTTP API that you can use to write and query time serie
 
 This document groups API endpoints by service. Note that the API endpoints are exposed when you run Grafana Mimir in microservices mode and monolithic mode:
 
-- **Microservices**: Each service exposes its own endpoints.
+- **Microservices mode**: Each service exposes its own endpoints.
 - **Monolithic mode**: The Grafana Mimir instance exposes all API endpoints.
 
 ## Endpoints
@@ -80,7 +80,7 @@ The following table provides usage of placeholder path prefixes, for prefixes th
 
 ### Authentication
 
-If you enable multi-tenancy, endpoints that require authentication must be called with the `X-Scope-OrgID` HTTP request header specified to the tenant ID.
+Endpoints that require authentication must be called with the `X-Scope-OrgID` HTTP request header specified to the tenant ID.
 
 If you disable multi-tenancy, Grafana Mimir doesn't require any request to include the `X-Scope-OrgID` header.
 
@@ -130,7 +130,7 @@ This endpoint displays the default configuration values.
 GET /runtime_config
 ```
 
-This endpoint displays the [runtime configuration]({{< relref "../configuration/about-grafana-mimir-arguments.md" >}})currently applied to Grafana Mimir, in YAML format, including default values.
+This endpoint displays the [runtime configuration]({{< relref "../configuration/about-grafana-mimir-arguments.md" >}}) currently applied to Grafana Mimir, in YAML format, including default values.
 The endpoint is only available if Grafana Mimir is configured with the `-runtime-config.file` option.
 
 #### Different modes
@@ -262,7 +262,7 @@ GET,POST /ingester/flush
 ```
 
 This endpoint triggers a flush of the in-memory series time series data to the long-term storage.
-This endpoint also triggers the flush when you disable `-blocks-storage.tsdb.flush-blocks-on-shutdown`.
+This endpoint also triggers the flush when `-blocks-storage.tsdb.flush-blocks-on-shutdown` is disabled.
 
 This endpoint accepts a `tenant` parameter to specify the tenant whose blocks are compacted and shipped.
 This parameter might be specified multiple times to select more tenants.
@@ -315,7 +315,7 @@ Requires [authentication](#authentication).
 GET,POST <prometheus-http-prefix>/api/v1/query_range
 ```
 
-This endpoint is compatible with the Prometheus range query endpoint. When the system sends a request through the query-frontend, the query-frontend uses caching and execution parallelization to accelerate the query.
+This endpoint is compatible with the Prometheus range query endpoint. When a client sends a request through the query-frontend, the query-frontend uses caching and execution parallelization to accelerate the query.
 
 For more information about Prometheus range queries, refer to Prometheus [range query](https://prometheus.io/docs/prometheus/latest/querying/api/#range-queries).
 
