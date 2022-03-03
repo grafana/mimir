@@ -94,5 +94,5 @@ To run `metaconvert`, you need to provide it with the bucket configuration. Use 
    ./metaconvert -backend=filesystem -filesystem.dir=/bucket -tenant=anonymous -dry-run
    ```
 
-1. Remove the `--dry-run` flag to apply the migration.
-1. Verify the migration by re-running the tool with `--dry-run` and confirming that there is no output.
+1. Remove the `-dry-run` flag to apply the migration.
+1. Verify the migration by re-running the tool with `-dry-run` and confirming that there is no output.
