@@ -55,7 +55,7 @@ func TestConvert(t *testing.T) {
 		},
 		{
 			name:         "config flags have precedence",
-			inFile:       "testdata/noop-old.yaml",
+			inFile:       "testdata/noop-notarget-old.yaml",
 			inFlagsFile:  "testdata/flags-precedence-old.flags.txt",
 			outFlagsFile: "testdata/flags-precedence-new.flags.txt",
 		},
@@ -113,6 +113,16 @@ func TestConvert(t *testing.T) {
 			name:    "ingester ring config",
 			inFile:  "testdata/ingester-ring-old.yaml",
 			outFile: "testdata/ingester-ring-new.yaml",
+		},
+		{
+			name:    "sharding with consul enabled",
+			inFile:  "testdata/sharding-consul-old.yaml",
+			outFile: "testdata/sharding-consul-new.yaml",
+		},
+		{
+			name:    "sharding disabled",
+			inFile:  "testdata/sharding-disabled-old.yaml",
+			outFile: "testdata/sharding-disabled-new.yaml",
 		},
 	}
 
@@ -202,7 +212,7 @@ func TestChangedDefaults(t *testing.T) {
 		{Path: "alertmanager.data_dir", OldDefault: "data/", NewDefault: "./data-alertmanager/"},
 		{Path: "alertmanager.enable_api", OldDefault: "false", NewDefault: "true"},
 		{Path: "alertmanager.external_url", OldDefault: "", NewDefault: "http://localhost:8080/alertmanager"},
-		{Path: "alertmanager.sharding_ring.kvstore.store", OldDefault: "consul", NewDefault: "memberlist"},
+		//{Path: "alertmanager.sharding_ring.kvstore.store", OldDefault: "consul", NewDefault: "memberlist"},
 		{Path: "alertmanager_storage.backend", OldDefault: "s3", NewDefault: "filesystem"},
 		{Path: "alertmanager_storage.filesystem.dir", OldDefault: "", NewDefault: "alertmanager"},
 		{Path: "blocks_storage.backend", OldDefault: "s3", NewDefault: "filesystem"},
@@ -229,11 +239,11 @@ func TestChangedDefaults(t *testing.T) {
 		{Path: "blocks_storage.tsdb.retention_period", OldDefault: "6h0m0s", NewDefault: "24h0m0s"},
 		{Path: "compactor.block_sync_concurrency", OldDefault: "20", NewDefault: "8"},
 		{Path: "compactor.data_dir", OldDefault: "./data", NewDefault: "./data-compactor/"},
-		{Path: "compactor.sharding_ring.kvstore.store", OldDefault: "consul", NewDefault: "memberlist"},
+		//{Path: "compactor.sharding_ring.kvstore.store", OldDefault: "consul", NewDefault: "memberlist"},
 		{Path: "compactor.sharding_ring.wait_stability_min_duration", OldDefault: "1m0s", NewDefault: "0s"},
 		{Path: "distributor.instance_limits.max_inflight_push_requests", OldDefault: "0", NewDefault: "2000"},
 		{Path: "distributor.remote_timeout", OldDefault: "2s", NewDefault: "20s"},
-		{Path: "distributor.ring.kvstore.store", OldDefault: "consul", NewDefault: "memberlist"},
+		//{Path: "distributor.ring.kvstore.store", OldDefault: "consul", NewDefault: "memberlist"},
 		{Path: "frontend.grpc_client_config.max_send_msg_size", OldDefault: "16777216", NewDefault: "104857600"},
 		{Path: "frontend.query_stats_enabled", OldDefault: "false", NewDefault: "true"},
 		{Path: "frontend.results_cache.memcached.addresses", OldDefault: "dnssrvnoa+_memcached._tcp.", NewDefault: ""},
@@ -247,6 +257,7 @@ func TestChangedDefaults(t *testing.T) {
 		{Path: "frontend_worker.grpc_client_config.max_send_msg_size", OldDefault: "16777216", NewDefault: "104857600"},
 		{Path: "ingester.instance_limits.max_inflight_push_requests", OldDefault: "0", NewDefault: "30000"},
 		{Path: "ingester.ring.final_sleep", OldDefault: "30s", NewDefault: "0s"},
+		// We can keep this, because when computing changed defaults, this one is detected.
 		{Path: "ingester.ring.kvstore.store", OldDefault: "consul", NewDefault: "memberlist"},
 		{Path: "ingester.ring.min_ready_duration", OldDefault: "1m0s", NewDefault: "15s"},
 		{Path: "ingester_client.grpc_client_config.max_send_msg_size", OldDefault: "16777216", NewDefault: "104857600"},
@@ -259,13 +270,13 @@ func TestChangedDefaults(t *testing.T) {
 		{Path: "querier.query_ingesters_within", OldDefault: "0s", NewDefault: "13h0m0s"},
 		{Path: "query_scheduler.grpc_client_config.max_send_msg_size", OldDefault: "16777216", NewDefault: "104857600"},
 		{Path: "ruler.enable_api", OldDefault: "false", NewDefault: "true"},
-		{Path: "ruler.ring.kvstore.store", OldDefault: "consul", NewDefault: "memberlist"},
+		//{Path: "ruler.ring.kvstore.store", OldDefault: "consul", NewDefault: "memberlist"},
 		{Path: "ruler.rule_path", OldDefault: "/rules", NewDefault: "./data-ruler/"},
 		{Path: "ruler.ruler_client.max_send_msg_size", OldDefault: "16777216", NewDefault: "104857600"},
 		{Path: "ruler_storage.backend", OldDefault: "s3", NewDefault: "filesystem"},
 		{Path: "ruler_storage.filesystem.dir", OldDefault: "", NewDefault: "ruler"},
 		{Path: "server.http_listen_port", OldDefault: "80", NewDefault: "8080"},
-		{Path: "store_gateway.sharding_ring.kvstore.store", OldDefault: "consul", NewDefault: "memberlist"},
+		//{Path: "store_gateway.sharding_ring.kvstore.store", OldDefault: "consul", NewDefault: "memberlist"},
 		{Path: "store_gateway.sharding_ring.wait_stability_min_duration", OldDefault: "1m0s", NewDefault: "0s"},
 	}
 

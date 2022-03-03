@@ -25,6 +25,8 @@ var CortexToMimirMapper = MultiMapper{
 	mapS3SSE("alertmanager"), mapS3SSE("ruler"),
 	// Apply trivial renames and moves of parameters
 	PathMapper{PathMappings: simpleRenameMappings},
+	// Remap sharding configs
+	MapperFunc(updateKVStoreValue),
 	// Convert provided memcached service and host to the DNS service discovery format
 	MapperFunc(mapMemcachedAddresses),
 }
@@ -120,6 +122,79 @@ var simpleRenameMappings = map[string]Mapping{
 	"ingester.lifecycler.unregister_on_shutdown":                     RenameMapping("ingester.ring.unregister_on_shutdown"),
 
 	"auth_enabled": RenameMapping("multitenancy_enabled"),
+}
+
+func updateKVStoreValue(source, target Parameters) error {
+	storeFields := map[string]string{
+		"alertmanager.sharding_ring.kvstore.store":  "alertmanager.sharding_enabled",
+		"compactor.sharding_ring.kvstore.store":     "compactor.sharding_enabled",
+		"ruler.ring.kvstore.store":                  "ruler.enable_sharding",
+		"store_gateway.sharding_ring.kvstore.store": "store_gateway.sharding_enabled",
+		"distributor.ring.kvstore.store":            "limits.ingestion_rate_strategy",
+
+		// Ingester ring is special: it's always enabled, but we don't want to copy its config if target is not ingester, distributor, querier or ruler,
+		// ie. components that actually need access to ingester ring.
+		"ingester.lifecycler.ring.kvstore.store": "target",
+	}
+
+	for storePath, shardingEnabledPath := range storeFields {
+		ringUsed := false
+		targetStorePath := storePath
+
+		{
+			enabled, err := source.GetValue(shardingEnabledPath)
+			if err != nil {
+				return errors.Wrapf(err, "could not find %s", shardingEnabledPath)
+			}
+			switch storePath {
+			case "distributor.ring.kvstore.store":
+				if _, ok := enabled.(string); !ok {
+					return errors.Wrapf(err, "%s is not a string", shardingEnabledPath)
+				}
+				ringUsed = enabled.(string) == "global" // Using of distributor ring was enabled by setting limits.ingestion_rate_strategy to "global".
+
+			case "ingester.lifecycler.ring.kvstore.store":
+				targetStorePath = "ingester.ring.kvstore.store"
+
+				if _, ok := enabled.(string); !ok {
+					return errors.Wrapf(err, "%s is not a string", shardingEnabledPath)
+				}
+
+				s := enabled.(string)
+				if strings.Contains(s, "all") || strings.Contains(s, "ingester") || strings.Contains(s, "distributor") || strings.Contains(s, "querier") || strings.Contains(s, "ruler") {
+					ringUsed = true
+				}
+
+			default:
+				if _, ok := enabled.(bool); !ok {
+					return errors.Wrapf(err, "%s is not a boolean", shardingEnabledPath)
+				}
+				ringUsed = enabled.(bool)
+			}
+		}
+
+		store, err := source.GetValue(storePath)
+		if err != nil {
+			return errors.Wrapf(err, "could not find %s", storePath)
+		}
+
+		storeString, ok := store.(string)
+		if !ok {
+			return errors.Wrapf(err, "%s is not a string value", storePath)
+		}
+
+		// If sharding was enabled, copy value to target, otherwise set it to default value, which will then be removed.
+		if ringUsed {
+			err = target.SetValue(targetStorePath, storeString)
+		} else {
+			err = target.SetValue(targetStorePath, "memberlist") // memberlist is new default value.
+		}
+		if err != nil {
+			return errors.Wrapf(err, "failed to update %s", targetStorePath)
+		}
+	}
+
+	return nil
 }
 
 func alertmanagerURLMapperFunc(source, target Parameters) error {
