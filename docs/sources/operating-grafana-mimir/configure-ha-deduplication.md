@@ -111,7 +111,7 @@ Configure the default cluster and replica label names using the following CLI fl
 - `-distributor.ha-tracker.cluster`: name of the label whose value uniquely identifies a Prometheus HA cluster (defaults to `cluster`).
 - `-distributor.ha-tracker.replica`: name of the label whose value uniquely identifies a Prometheus replica within the HA cluster (defaults to `__replica__`).
 
-> **Note:** The HA label names can be overridden on a per-tenant basis by setting `ha_cluster_label` and `ha_replica_label` in the overrides section of the runtime configuration. For more information, see [Grafana Mimir arguments]({{<relref "./configuration/about-grafana-mimir-arguments.md" >}})".
+> **Note:** The HA label names can be overridden on a per-tenant basis by setting `ha_cluster_label` and `ha_replica_label` in the overrides section of the runtime configuration.
 
 #### Example configuration
 
