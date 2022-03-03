@@ -6,7 +6,7 @@ weight: 10
 
 # About memberlist and the gossip protocol
 
-[Memberlist](https://github.com/hashicorp/memberlist) is a Go library that manages cluster membership, node failure detection, and message passing using a gossip based protocol.
+[Memberlist](https://github.com/hashicorp/memberlist) is a Go library that manages cluster membership, node failure detection, and message passing using a gossip-based protocol.
 Memberlist is eventually consistent and network partitions are partially tolerated by attempting to communicate to potentially dead nodes through multiple routes.
 
 By default, Grafana Mimir uses memberlist to implement a [key-value (KV) store]({{< relref "./about-the-key-value-store.md">}}) to share the [hash ring]({{< relref "./about-the-hash-ring.md">}}) data structures between instances.
