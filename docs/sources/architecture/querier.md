@@ -12,7 +12,7 @@ The querier uses the [store-gateway]({{< relref "./store-gateway.md" >}}) compon
 
 ## How it works
 
-To find the correct block to look up at query time, the querier requires an up-to-date view of the bucket in long-term storage. The querier performs the following actions to ensure that the bucket view is updated:
+To find the correct blocks to look up at query time, the querier requires an up-to-date view of the bucket in long-term storage. The querier performs the following actions to ensure that the bucket view is updated:
 
 1. Periodically download the [bucket index]({{< relref "../operating-grafana-mimir/blocks-storage/bucket-index.md" >}}) (default)
 2. Periodically scan the bucket
@@ -21,7 +21,7 @@ The minimum and maximum timestamp metadata is the only information a querier req
 
 ### Bucket index enabled (default)
 
-At startup, queriers lazily download the bucket index when it receives the first query for a given tenant. The querier caches the bucket index in memory and periodically keeps it up-to-date.
+At startup, queriers lazily download the bucket index when they receive the first query for a given tenant. The querier caches the bucket index in memory and periodically keeps it up-to-date.
 
 The bucket index contains a list of blocks and block deletion marks of a tenant. The querier later uses the list of blocks and block deletion marks to locate the set of blocks that need to be queried for the given query.
 
@@ -46,7 +46,7 @@ For each query, the querier analyzes the `start` and `end` time range to compute
 For each list of blocks, the querier computes a list of store-gateway instances holding the blocks. The querier sends a request to each matching store-gateway instance to fetch all samples for the series matching the `query` within the `start` and `end` time range.
 
 The request sent to each store-gateway contains the list of block IDs that are expected to be queried, and the response sent back by the store-gateway to the querier contains the list of block IDs that were queried.
-This list of block IDs might be a subset of the requested blocks, for example, when a recent blocks resharding event occurs within the last few seconds.
+This list of block IDs might be a subset of the requested blocks, for example, when a recent blocks-resharding event occurs within the last few seconds.
 
 The querier runs a consistency check on responses received from the store-gateways to ensure all expected blocks have been queried.
 If the expected blocks have not been queried, the querier retries fetching samples from the missing blocks from other store-gateways up to a maximum of three attempts.
@@ -75,7 +75,7 @@ Caching is optional, but highly recommended in a production environment. For mor
 
 ### Metadata cache
 
-[Store-gateways]({{< relref "./store-gateway.md" >}}) and queriers can use memcached to cache the following bucket metadata:
+[Store-gateways]({{< relref "./store-gateway.md" >}}) and queriers can use Memcached to cache the following bucket metadata:
 
 - List of tenants
 - List of blocks per tenant
