@@ -6,7 +6,7 @@ weight: 10
 
 # About versioning
 
-This topic describes our guarantees for the Grafana Mimir v1.0 release.
+This topic describes our guarantees for the Grafana Mimir v2.0 release.
 
 ## Flags, configuration, and minor version upgrades
 
@@ -19,7 +19,7 @@ These guarantees don't apply to [experimental features](#experimental-features).
 ## Reading old data
 
 The Grafana Mimir maintainers commit to ensuring that future versions can read data written by versions within the last two years. 
-In practice, we expect to be able to read data written more than two years ago, but a maximum of two years is our guarantee.
+In practice, we expect to be able to read data written more than two years ago, but a minimum of two years is our guarantee.
 
 ## API Compatibility
 
