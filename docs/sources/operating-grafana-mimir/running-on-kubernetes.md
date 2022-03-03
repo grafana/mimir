@@ -42,10 +42,10 @@ all replicas at once:
 - Spread out ingesters across racks / availability zones / whatever
   applies in your datacenters.
 
-The standard Grafana Mimir Kubernetes configuration avoids scheduling ingesters
+The standard Grafana Mimir Kubernetes configuration avoids scheduling multiple ingesters
 on the same nodes like this:
 
-```
+```yaml
       affinity:
         podAntiAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
