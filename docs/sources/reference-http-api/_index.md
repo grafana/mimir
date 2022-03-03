@@ -9,7 +9,7 @@ Grafana Mimir exposes an HTTP API that you can use to push and query time series
 This document groups API endpoints by service. Note that the API endpoints are exposed when you run Grafana Mimir in microservices mode and single-binary mode:
 
 - **Microservices**: Each service exposes its own endpoints.
-- **Single-binary**: The Grafana Mimir process exposes all API endpoints for the services that run internally.
+- **Monolithic mode**: The Grafana Mimir instance exposes all API endpoints.
 
 ## Endpoints
 
@@ -86,7 +86,7 @@ If you disable multi-tenancy, Grafana Mimir doesn't require any request to inclu
 
 Multi-tenancy can be enabled and disabled via the `-auth.multitenancy-enabled` flag `-auth.multitenancy-enabled` or its respective YAML configuration option.
 
-_For more information about authentication and authorization, refer to [Authentication and Authorisation](../guides/authentication-and-authorisation.md)._
+For more information about authentication and authorization, refer to [Authentication and Authorisation]({{< relref "../authentication-and-authorisation.md" >}}).
 
 ## All services
 
@@ -130,7 +130,7 @@ This endpoint displays the default configuration values.
 GET /runtime_config
 ```
 
-This endpoint displays the runtime configuration currently applied to Grafana Mimir, in YAML format, including default values.
+This endpoint displays the [runtime configuration]({{< relref "../configuration/about-grafana-mimir-arguments.md" >}})currently applied to Grafana Mimir, in YAML format, including default values.
 The endpoint is only available if Grafana Mimir is configured with the `-runtime-config.file` option.
 
 #### Different modes
@@ -176,7 +176,7 @@ GET /debug/pprof/goroutine
 GET /debug/pprof/mutex
 ```
 
-This endpoint returns runtime profiling data in the format expected by the pprof visualization tool. There are many things that can be profiled using this endpoint, including heap, trace, goroutine, and so on.
+These endpoints return runtime profiling data in the format expected by the pprof visualization tool. There are many things that can be profiled using this endpoint, including heap, trace, goroutine, and so on.
 
 For more information about pprof, refer to [pprof](https://golang.org/pkg/net/http/pprof/).
 
@@ -198,11 +198,11 @@ GET <prometheus-http-prefix>/api/v1/status/buildinfo
 GET <alertmanager-http-prefix>/api/v1/status/buildinfo
 ```
 
-This endpoint returns in JSON format information about a build and enabled features. The format returned is not identical, but is similar to the [Prometheus Build Information endpoint](https://prometheus.io/docs/prometheus/latest/querying/api/#build-information).
+This endpoint returns in JSON format information about the build and enabled features. The format returned is not identical, but is similar to the [Prometheus Build Information endpoint](https://prometheus.io/docs/prometheus/latest/querying/api/#build-information).
 
 ## Distributor
 
-The following endpoints relate to the distributor.
+The following endpoints relate to the [distributor]({{< relref "../architecture/distributor.md" >}}).
 
 ### Remote write
 
@@ -213,19 +213,19 @@ POST /api/v1/push
 Entrypoint for the [Prometheus remote write](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#remote_write).
 
 This endpoint accepts an HTTP POST request with a body that contains a request encoded with [Protocol Buffers](https://developers.google.com/protocol-buffers) and compressed with [Snappy](https://github.com/google/snappy).
-You can find the definition of the protobuf message in [`cortex.proto`](https://github.com/cortexproject/cortex/blob/master/pkg/cortexpb/cortex.proto#L12).
+You can find the definition of the protobuf message in [pkg/mimirpb/mimir.proto](https://github.com/grafana/mimir/blob/main/pkg/mimirpb/mimir.proto).
 The HTTP request must contain the header `X-Prometheus-Remote-Write-Version` set to `0.1.0`.
 
-You can perform the following actions to skip the label name validation:
+To skip the label name validation, perform the following actions:
 
 - Enable API's flag `-api.skip-label-name-validation-header-enabled=true`
 - Ensure that the request is sent with the header `X-Mimir-SkipLabelNameValidation: true`
 
 This feature supports the writes from non-standard downstream clients that have metric name not Prometheus compliant.
 
-_For more information, refer to Prometheus [Remote storage integrations](https://prometheus.io/docs/prometheus/latest/storage/#remote-storage-integrations)._
+For more information, refer to Prometheus [Remote storage integrations](https://prometheus.io/docs/prometheus/latest/storage/#remote-storage-integrations).
 
-_Requires [authentication](#authentication)._
+Requires [authentication](#authentication).
 
 ### Distributor ring status
 
@@ -253,7 +253,7 @@ This endpoint displays a web page with the current status of the HA tracker, inc
 
 ## Ingester
 
-The following endpoints relate to the ingester.
+The following endpoints relate to the [ingester]({{< relref "../architecture/ingester.md" >}}).
 
 ### Flush chunks / blocks
 
@@ -262,7 +262,7 @@ GET,POST /ingester/flush
 ```
 
 This endpoint triggers a flush of the in-memory series time series data to the long-term storage.
-This endpoint also triggers the flush when you disable `-ingester.flush-on-shutdown-with-wal-enabled` or `-blocks-storage.tsdb.flush-blocks-on-shutdown`.
+This endpoint also triggers the flush when you disable `-blocks-storage.tsdb.flush-blocks-on-shutdown`.
 
 This endpoint accepts a `tenant` parameter to specify the tenant whose blocks are compacted and shipped.
 This parameter might be specified multiple times to select more tenants.
@@ -279,11 +279,11 @@ GET,POST /ingester/shutdown
 ```
 
 This endpoint flushes in-memory time series data from ingesters to the long-term storage, and then shuts down the ingester service.
-Other Grafana Mimir services remain running. After the shutdown endpoint returns, the operator or any automation that's used terminates the process with a `SIGINT` / `SIGTERM` signal.
+After the shutdown endpoint returns, the operator or any automation that's used terminates the process with a `SIGINT` / `SIGTERM` signal.
 During this time, `/ready` does not return 200.
 This endpoint unregisters the ingester from the ring even if you disable `-ingester.ring.unregister-on-shutdown`.
 
-_This API endpoint is usually used by scale down automations._
+This API endpoint is usually used by scale down automations.
 
 ### Ingesters ring status
 
@@ -291,11 +291,11 @@ _This API endpoint is usually used by scale down automations._
 GET /ingester/ring
 ```
 
-This endpoint displays a web page with the ingesters hash ring status, including the state, and Thihealthy and last heartbeat time of each ingester.
+This endpoint displays a web page with the ingesters hash ring status, including the state, health, and last heartbeat time of each ingester.
 
 ## Querier / Query-frontend
 
-The following endpoints are exposed both by the querier and query-frontend.
+The following endpoints are exposed both by the [querier]({{< relref "../architecture/querier.md" >}}) and [query-frontend]({{< relref "../architecture/query-frontend.md" >}}).
 
 ### Instant query
 
@@ -305,7 +305,7 @@ GET,POST <prometheus-http-prefix>/api/v1/query
 
 This endpoint is compatible with the Prometheus instant query endpoint.
 
-For more information about Prometheus instant queries, refer to [instant query](https://prometheus.io/docs/prometheus/latest/querying/api/#instant-queries).
+For more information about Prometheus instant queries, refer to Prometheus [instant query](https://prometheus.io/docs/prometheus/latest/querying/api/#instant-queries).
 
 Requires [authentication](#authentication).
 
@@ -317,7 +317,7 @@ GET,POST <prometheus-http-prefix>/api/v1/query_range
 
 This endpoint is compatible with the Prometheus range query endpoint. When the system sends a request through the query-frontend, the query-frontend uses caching and execution parallelization to accelerate the query.
 
-For more information about Prometheus range queries, refer to [range query](https://prometheus.io/docs/prometheus/latest/querying/api/#range-queries).
+For more information about Prometheus range queries, refer to Prometheus [range query](https://prometheus.io/docs/prometheus/latest/querying/api/#range-queries).
 
 Requires [authentication](#authentication).
 
@@ -329,7 +329,7 @@ GET,POST <prometheus-http-prefix>/api/v1/query_exemplars
 
 This endpoint is compatible with the Prometheus exemplar query endpoint.
 
-For more information about Prometheus exemplar queries, refer to [exemplar query](https://prometheus.io/docs/prometheus/latest/querying/api/#querying-exemplars).
+For more information about Prometheus exemplar queries, refer to Prometheus [exemplar query](https://prometheus.io/docs/prometheus/latest/querying/api/#querying-exemplars).
 
 Requires [authentication](#authentication).
 
@@ -339,9 +339,9 @@ Requires [authentication](#authentication).
 GET,POST <prometheus-http-prefix>/api/v1/series
 ```
 
-_For more information, please check out the Prometheus [series endpoint](https://prometheus.io/docs/prometheus/latest/querying/api/#finding-series-by-label-matchers) documentation._
+For more information, refer to Prometheus [series endpoint](https://prometheus.io/docs/prometheus/latest/querying/api/#finding-series-by-label-matchers).
 
-_Requires [authentication](#authentication)._
+Requires [authentication](#authentication).
 
 ### Get label names
 
@@ -349,9 +349,9 @@ _Requires [authentication](#authentication)._
 GET,POST <prometheus-http-prefix>/api/v1/labels
 ```
 
-_For more information, please check out the Prometheus [get label names](https://prometheus.io/docs/prometheus/latest/querying/api/#getting-label-names) documentation._
+For more information, refer to Prometheus [get label names](https://prometheus.io/docs/prometheus/latest/querying/api/#getting-label-names).
 
-_Requires [authentication](#authentication)._
+Requires [authentication](#authentication).
 
 ### Get label values
 
@@ -359,9 +359,9 @@ _Requires [authentication](#authentication)._
 GET <prometheus-http-prefix>/api/v1/label/{name}/values
 ```
 
-_For more information, please check out the Prometheus [get label values](https://prometheus.io/docs/prometheus/latest/querying/api/#querying-label-values) documentation._
+For more information, refer to Prometheus [get label values](https://prometheus.io/docs/prometheus/latest/querying/api/#querying-label-values).
 
-_Requires [authentication](#authentication)._
+Requires [authentication](#authentication).
 
 ### Get metric metadata
 
@@ -371,9 +371,9 @@ GET <prometheus-http-prefix>/api/v1/metadata
 
 Prometheus-compatible metric metadata endpoint.
 
-_For more information, please check out the Prometheus [metric metadata](https://prometheus.io/docs/prometheus/latest/querying/api/#querying-metric-metadata) documentation._
+For more information, refer to Prometheus [metric metadata](https://prometheus.io/docs/prometheus/latest/querying/api/#querying-metric-metadata).
 
-_Requires [authentication](#authentication)._
+Requires [authentication](#authentication).
 
 ### Remote read
 
@@ -383,9 +383,9 @@ POST <prometheus-http-prefix>/api/v1/read
 
 Prometheus-compatible [remote read](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#remote_read) endpoint.
 
-_For more information, please check out Prometheus [Remote storage integrations](https://prometheus.io/docs/prometheus/latest/storage/#remote-storage-integrations)._
+For more information, refer to Prometheus [Remote storage integrations](https://prometheus.io/docs/prometheus/latest/storage/#remote-storage-integrations).
 
-_Requires [authentication](#authentication)._
+Requires [authentication](#authentication).
 
 ### Label names cardinality
 
@@ -403,9 +403,9 @@ The items in the field `cardinality` are sorted by `label_values_count` in DESC 
 
 The count of items is limited by `limit` request param.
 
-_This endpoint is disabled by default and can be enabled via the `-querier.cardinality-analysis-enabled` CLI flag (or its respective YAML config option)._
+This endpoint is disabled by default and can be enabled via the `-querier.cardinality-analysis-enabled` CLI flag (or its respective YAML config option).
 
-_Requires [authentication](#authentication)._
+Requires [authentication](#authentication).
 
 #### Request params
 
@@ -444,9 +444,9 @@ The items in the field `cardinality` are sorted by `series_count` in DESC order 
 
 The count of `cardinality` items is limited by request param `limit`.
 
-_This endpoint is disabled by default and can be enabled via the `-querier.cardinality-analysis-enabled` CLI flag (or its respective YAML config option)._
+This endpoint is disabled by default and can be enabled via the `-querier.cardinality-analysis-enabled` CLI flag (or its respective YAML config option).
 
-_Requires [authentication](#authentication)._
+Requires [authentication](#authentication).
 
 #### Request params
 
@@ -492,7 +492,7 @@ GET /api/v1/user_stats
 
 Returns realtime ingestion rate, for the authenticated tenant, in `JSON` format.
 
-_Requires [authentication](#authentication)._
+Requires [authentication](#authentication).
 
 ## Ruler
 
@@ -522,9 +522,9 @@ GET <prometheus-http-prefix>/api/v1/rules
 
 Prometheus-compatible rules endpoint to list alerting and recording rules that are currently loaded.
 
-_For more information, please check out the Prometheus [rules](https://prometheus.io/docs/prometheus/latest/querying/api/#rules) documentation._
+For more information, refer to Prometheus [rules](https://prometheus.io/docs/prometheus/latest/querying/api/#rules).
 
-_Requires [authentication](#authentication)._
+Requires [authentication](#authentication).
 
 ### List Prometheus alerts
 
@@ -534,9 +534,9 @@ GET <prometheus-http-prefix>/api/v1/alerts
 
 Prometheus-compatible rules endpoint to list of all active alerts.
 
-_For more information, please check out the Prometheus [alerts](https://prometheus.io/docs/prometheus/latest/querying/api/#alerts) documentation._
+For more information, refer to Prometheus [alerts](https://prometheus.io/docs/prometheus/latest/querying/api/#alerts) documentation.
 
-_Requires [authentication](#authentication)._
+Requires [authentication](#authentication).
 
 ### List rule groups
 
@@ -552,9 +552,9 @@ GET <prometheus-http-prefix>/rules
 
 List all rules configured for the authenticated tenant. This endpoint returns a YAML dictionary with all the rule groups for each namespace and `200` status code on success.
 
-_This endpoint can be disabled via the `-ruler.enable-api` CLI flag (or its respective YAML config option)._
+This endpoint can be disabled via the `-ruler.enable-api` CLI flag (or its respective YAML config option).
 
-_Requires [authentication](#authentication)._
+Requires [authentication](#authentication).
 
 **Example response**
 
@@ -620,9 +620,9 @@ GET <prometheus-http-prefix>/rules/{namespace}
 
 Returns the rule groups defined for a given namespace.
 
-_This endpoint can be disabled via the `-ruler.enable-api` CLI flag (or its respective YAML config option)._
+This endpoint can be disabled via the `-ruler.enable-api` CLI flag (or its respective YAML config option).
 
-_Requires [authentication](#authentication)._
+Requires [authentication](#authentication).
 
 **Example response**
 
@@ -657,9 +657,9 @@ GET <prometheus-http-prefix>/rules/{namespace}/{groupName}
 
 Returns the rule group matching the request namespace and group name.
 
-_This endpoint can be disabled via the `-ruler.enable-api` CLI flag (or its respective YAML config option)._
+This endpoint can be disabled via the `-ruler.enable-api` CLI flag (or its respective YAML config option).
 
-_Requires [authentication](#authentication)._
+Requires [authentication](#authentication).
 
 ### Set rule group
 
@@ -676,9 +676,9 @@ POST <prometheus-http-prefix>/rules/{namespace}
 Creates or updates a rule group. This endpoint expects a request with `Content-Type: application/yaml` header and the
 rules **YAML** definition in the request body, and returns `202` on success.
 
-_This endpoint can be disabled via the `-ruler.enable-api` CLI flag (or its respective YAML config option)._
+This endpoint can be disabled via the `-ruler.enable-api` CLI flag (or its respective YAML config option).
 
-_Requires [authentication](#authentication)._
+Requires [authentication](#authentication).
 
 #### Federated rule groups
 
@@ -748,9 +748,9 @@ DELETE <prometheus-http-prefix>/rules/{namespace}/{groupName}
 
 Deletes a rule group by namespace and group name. This endpoints returns `202` on success.
 
-_This endpoint can be disabled via the `-ruler.enable-api` CLI flag (or its respective YAML config option)._
+This endpoint can be disabled via the `-ruler.enable-api` CLI flag (or its respective YAML config option).
 
-_Requires [authentication](#authentication)._
+Requires [authentication](#authentication).
 
 ### Delete namespace
 
@@ -766,9 +766,9 @@ DELETE <prometheus-http-prefix>/rules/{namespace}
 
 Deletes all the rule groups in a namespace (including the namespace itself). This endpoint returns `202` on success.
 
-_This endpoint can be disabled via the `-ruler.enable-api` CLI flag (or its respective YAML config option)._
+This endpoint can be disabled via the `-ruler.enable-api` CLI flag (or its respective YAML config option).
 
-_Requires [authentication](#authentication)._
+Requires [authentication](#authentication).
 
 ### Delete tenant configuration
 
@@ -780,7 +780,7 @@ This deletes all rule groups for a tenant, and returns `200` on success. Calling
 
 This is intended as internal API, and not to be exposed to users. This endpoint is enabled regardless of whether `-ruler.enable-api` is enabled or not.
 
-_Requires [authentication](#authentication)._
+Requires [authentication](#authentication).
 
 ## Alertmanager
 
@@ -816,7 +816,7 @@ GET /<alertmanager-http-prefix>
 
 Displays the Alertmanager UI.
 
-_Requires [authentication](#authentication)._
+Requires [authentication](#authentication).
 
 ### Alertmanager Delete Tenant Configuration
 
@@ -828,7 +828,7 @@ This endpoint deletes configuration for a tenant identified by `X-Scope-OrgID` h
 It is internal, available even if Alertmanager API is disabled.
 The endpoint returns a status code of `200` if the user's configuration has been deleted, or it didn't exist in the first place.
 
-_Requires [authentication](#authentication)._
+Requires [authentication](#authentication).
 
 ### Get Alertmanager configuration
 
@@ -840,9 +840,9 @@ Get the current Alertmanager configuration for the authenticated tenant, reading
 
 This endpoint doesn't accept any URL query parameter and returns `200` on success.
 
-_This endpoint can disabled enabled via the `-alertmanager.enable-api` CLI flag (or its respective YAML config option)._
+This endpoint can disabled enabled via the `-alertmanager.enable-api` CLI flag (or its respective YAML config option).
 
-_Requires [authentication](#authentication)._
+Requires [authentication](#authentication).
 
 ### Set Alertmanager configuration
 
@@ -854,9 +854,9 @@ Stores or updates the Alertmanager configuration for the authenticated tenant. T
 
 This endpoint expects the Alertmanager **YAML** configuration in the request body and returns `201` on success.
 
-_This endpoint can disabled enabled via the `-alertmanager.enable-api` CLI flag (or its respective YAML config option)._
+This endpoint can disabled enabled via the `-alertmanager.enable-api` CLI flag (or its respective YAML config option).
 
-_Requires [authentication](#authentication)._
+Requires [authentication](#authentication).
 
 > **Note:** When using `curl` send the request body from a file, ensure that you use the `--data-binary` flag instead of `-d`, `--data`, or `--data-ascii`.
 > The latter options do not preserve carriage returns and newlines.
@@ -892,9 +892,9 @@ Deletes the Alertmanager configuration for the authenticated tenant.
 
 This endpoint doesn't accept any URL query parameter and returns `200` on success.
 
-_This endpoint can be disabled via the `-alertmanager.enable-api` CLI flag (or its respective YAML config option)._
+This endpoint can be disabled via the `-alertmanager.enable-api` CLI flag (or its respective YAML config option).
 
-_Requires [authentication](#authentication)._
+Requires [authentication](#authentication).
 
 ## Purger
 
@@ -908,7 +908,7 @@ POST /purger/delete_tenant
 
 Request deletion of ALL tenant data. Experimental.
 
-_Requires [authentication](#authentication)._
+Requires [authentication](#authentication).
 
 ### Tenant Delete Status
 
@@ -918,7 +918,7 @@ GET /purger/delete_tenant_status
 
 Returns status of tenant deletion. Output format to be defined. Experimental.
 
-_Requires [authentication](#authentication)._
+Requires [authentication](#authentication).
 
 ## Store-gateway
 
