@@ -22,6 +22,7 @@ type ConversionNotices struct {
 	RemovedCLIFlags   []string
 	RemovedParameters []string
 	ChangedDefaults   []ChangedDefault
+	PrunedDefaults    []PrunedDefault
 }
 
 type ChangedDefault struct {
@@ -29,12 +30,17 @@ type ChangedDefault struct {
 	OldDefault, NewDefault string
 }
 
+type PrunedDefault struct {
+	Path  string
+	Value string
+}
+
 // Convert converts the passed YAML contents and CLI flags in the source schema to a YAML config and CLI flags
 // in the target schema. sourceFactory and targetFactory are assumed to return
 // InspectedEntries where the FieldValue is the default value of the configuration parameter.
 // Convert uses sourceFactory and targetFactory to also prune the default values from the resulting config.
 // Convert returns the marshalled YAML config in the target schema.
-func Convert(contents []byte, flags []string, m Mapper, sourceFactory, targetFactory InspectedEntryFactory) (convertedContents []byte, convertedFlags []string, n ConversionNotices, conversionErr error) {
+func Convert(contents []byte, flags []string, m Mapper, sourceFactory, targetFactory InspectedEntryFactory, pruneDefaultValues bool) (convertedContents []byte, convertedFlags []string, n ConversionNotices, conversionErr error) {
 	var (
 		notices = &ConversionNotices{}
 		err     error
@@ -67,6 +73,20 @@ func Convert(contents []byte, flags []string, m Mapper, sourceFactory, targetFac
 		return nil, nil, ConversionNotices{}, errors.Wrap(err, "could not prune defaults in new config")
 	}
 
+	notices.ChangedDefaults, err = changedDefaults(sourceDefaults, targetDefaults)
+	if err != nil {
+		return nil, nil, ConversionNotices{}, errors.Wrap(err, "could not detect changed defaults")
+	}
+
+	err = changeOldDefaultsToNewDefaults(target, sourceDefaults, targetDefaults)
+	if err != nil {
+		return nil, nil, ConversionNotices{}, err
+	}
+
+	if pruneDefaultValues {
+		notices.PrunedDefaults = pruneDefaults(target, targetDefaults)
+	}
+
 	var newFlags []string
 	if len(flags) > 0 {
 		newFlags, err = convertFlags(flags, m, target, sourceFactory, targetFactory)
@@ -75,14 +95,29 @@ func Convert(contents []byte, flags []string, m Mapper, sourceFactory, targetFac
 		}
 	}
 
-	pruneDefaults(target, sourceDefaults, targetDefaults, notices)
-
 	yamlBytes, err := yaml.Marshal(target)
 	if err != nil {
 		return nil, nil, ConversionNotices{}, errors.Wrap(err, "could not marshal converted config to YAML")
 	}
 
 	return yamlBytes, newFlags, *notices, nil
+}
+
+func changeOldDefaultsToNewDefaults(target, oldDefaults, newDefaults *InspectedEntry) error {
+	return target.Walk(func(path string, value interface{}) error {
+		oldDefault, err := oldDefaults.GetValue(path)
+		if err != nil {
+			if errors.Is(err, ErrParameterNotFound) {
+				// This param is not in the old config, so there's no default to change from.
+				return nil
+			}
+			return err
+		}
+		if reflect.DeepEqual(oldDefault, value) {
+			return target.SetValue(path, newDefaults.MustGetValue(path))
+		}
+		return nil
+	})
 }
 
 func convertFlags(flags []string, m Mapper, target *InspectedEntry, sourceFactory, targetFactory InspectedEntryFactory) ([]string, error) {
@@ -111,6 +146,11 @@ func convertFlags(flags []string, m Mapper, target *InspectedEntry, sourceFactor
 	for f := range flagsNewPaths {
 		err = target.Delete(f)
 		if err != nil {
+			if errors.Is(err, ErrParameterNotFound) {
+				// This might happen when the flag was using the default value and was pruned before convertFlags was called.
+				// There's nothing to do.
+				continue
+			}
 			return nil, err
 		}
 	}
@@ -226,15 +266,9 @@ func prepareDefaults(m Mapper, sourceFactory, targetFactory InspectedEntryFactor
 	return mappedCortexDefaults, DefaultMimirConfig(), err
 }
 
-// TODO dimitarvdimitrov convert this to a Mapper, ideally splitting default pruning from "default changed" warnings
-// pruneDefaults removes the defaults from fullParams and add any changed defaults to notices.ChangedDefaults
-// which haven't been overwritten. pruneDefaults prints any errors during pruning to os.Stderr
-func pruneDefaults(fullParams, oldDefaults, newDefaults *InspectedEntry, notices *ConversionNotices) {
-	var pathsToDelete []string
-
-	err := fullParams.Walk(func(path string, value interface{}) error {
-		newDefault := newDefaults.MustGetValue(path)
-
+func changedDefaults(oldDefaults, newDefaults *InspectedEntry) ([]ChangedDefault, error) {
+	var defs []ChangedDefault
+	err := newDefaults.Walk(func(path string, newDefault interface{}) error {
 		oldDefault, err := oldDefaults.GetValue(path)
 		if err != nil {
 			// We don't expect new fields exist in the old struct.
@@ -246,16 +280,30 @@ func pruneDefaults(fullParams, oldDefaults, newDefaults *InspectedEntry, notices
 
 		// Use reflect.DeepEqual to easily compare different type aliases that resolve to the same underlying type,
 		// fields with interface types, and maps and slices.
-		if value == nil || reflect.DeepEqual(value, oldDefault) || reflect.DeepEqual(value, newDefault) {
-			if !reflect.DeepEqual(oldDefault, newDefault) {
-				notices.ChangedDefaults = append(notices.ChangedDefaults, ChangedDefault{
-					Path:       path,
-					OldDefault: fmt.Sprint(oldDefault),
-					NewDefault: fmt.Sprint(newDefault),
-				})
-			}
+		if !reflect.DeepEqual(oldDefault, newDefault) {
+			defs = append(defs, ChangedDefault{
+				Path:       path,
+				OldDefault: fmt.Sprint(oldDefault),
+				NewDefault: fmt.Sprint(newDefault),
+			})
+		}
+		return nil
+	})
+	return defs, err
+}
 
-			pathsToDelete = append(pathsToDelete, path)
+// pruneDefaults removes parameters from fullParams that are reflect.DeepEqual to either value from
+// oldDefaults or newDefaults with the same path. pruneDefaults prints any errors during pruning to os.Stderr
+func pruneDefaults(fullParams, newDefaults *InspectedEntry) []PrunedDefault {
+	var pathsToDelete []PrunedDefault
+
+	err := fullParams.Walk(func(path string, value interface{}) error {
+		newDefault := newDefaults.MustGetValue(path)
+
+		// Use reflect.DeepEqual to easily compare different type aliases that resolve to the same underlying type,
+		// fields with interface types, and maps and slices.
+		if value == nil || reflect.DeepEqual(value, newDefault) {
+			pathsToDelete = append(pathsToDelete, PrunedDefault{Path: path, Value: fmt.Sprint(value)})
 		}
 		return nil
 	})
@@ -264,12 +312,14 @@ func pruneDefaults(fullParams, oldDefaults, newDefaults *InspectedEntry, notices
 	}
 
 	for _, p := range pathsToDelete {
-		err = fullParams.Delete(p)
+		err = fullParams.Delete(p.Path)
 		if err != nil {
 			err = errors.Wrap(err, "cloud not delete parameter with default value from config")
 			_, _ = fmt.Fprintln(os.Stderr, err)
 		}
 	}
+
+	return pathsToDelete
 }
 
 func reportDeletedFlags(contents []byte, flags []string, sourceFactory InspectedEntryFactory) (removedFieldPaths, removedFlags []string, _ error) {

@@ -117,7 +117,7 @@ func TestConvert(t *testing.T) {
 			inBytes := loadFile(t, tc.inFile)
 			inFlags := loadFlags(t, tc.inFlagsFile)
 
-			actualOut, actualOutFlags, _, err := Convert(inBytes, inFlags, CortexToMimirMapper, DefaultCortexConfig, DefaultMimirConfig)
+			actualOut, actualOutFlags, _, err := Convert(inBytes, inFlags, CortexToMimirMapper, DefaultCortexConfig, DefaultMimirConfig, true)
 			assert.NoError(t, err)
 
 			expectedOut := loadFile(t, tc.outFile)
@@ -188,7 +188,6 @@ func TestReportDeletedFlags(t *testing.T) {
 			assert.ElementsMatch(t, tc.expectedRemovedFlags, removedFlags, "CLI flags")
 		})
 	}
-
 }
 
 func TestChangedDefaults(t *testing.T) {
@@ -265,9 +264,19 @@ func TestChangedDefaults(t *testing.T) {
 		{Path: "store_gateway.sharding_ring.wait_stability_min_duration", OldDefault: "1m0s", NewDefault: "0s"},
 	}
 
-	_, _, notices, err := Convert([]byte("{}"), nil, CortexToMimirMapper, DefaultCortexConfig, DefaultMimirConfig)
+	_, _, notices, err := Convert([]byte("{}"), nil, CortexToMimirMapper, DefaultCortexConfig, DefaultMimirConfig, true)
 	require.NoError(t, err)
 	assert.ElementsMatch(t, expectedChangedDefaults, notices.ChangedDefaults)
+}
+
+func TestConvert_KeepDefaultsShowsNewDefaults(t *testing.T) {
+	inYaml := []byte(`{}`)
+	inFlags := []string{"-experimental.alertmanager.enable-api=false"}
+	expectedOutFlags := []string{"-alertmanager.enable-api=true"}
+	_, outFlags, _, err := Convert(inYaml, inFlags, CortexToMimirMapper, DefaultCortexConfig, DefaultMimirConfig, false)
+
+	require.NoError(t, err)
+	assert.Equal(t, expectedOutFlags, outFlags)
 }
 
 func loadFile(t testing.TB, fileName string) []byte {
