@@ -25,6 +25,10 @@ type ConfigCommand struct {
 	outYAMLFile    string
 	outFlagsFile   string
 	outNoticesFile string
+
+	keepDefaults bool
+
+	verbose bool
 }
 
 // Register rule related commands and flags with the kingpin application
@@ -37,8 +41,10 @@ func (c *ConfigCommand) Register(app *kingpin.Application, _ EnvVarNames) {
 
 	convertCmd.Flag("yaml-file", "The YAML configuration file to convert.").StringVar(&c.yamlFile)
 	convertCmd.Flag("flags-file", "New-line-delimited list of CLI flags to convert.").StringVar(&c.flagsFile)
-	convertCmd.Flag("yaml-out", "Location to output the converted YAML configuration to. Default STDOUT").StringVar(&c.outYAMLFile)
-	convertCmd.Flag("flags-out", "Location to output list of converted CLI flags to. Default STDOUT").StringVar(&c.outFlagsFile)
+	convertCmd.Flag("yaml-out", "Location to output the converted YAML configuration to. Default stdout").StringVar(&c.outYAMLFile)
+	convertCmd.Flag("flags-out", "Location to output list of converted CLI flags to. Default stdout").StringVar(&c.outFlagsFile)
+	convertCmd.Flag("keep-defaults", "Preserve default values in the resulting YAML and flags. If not set, configuration parameters using default values are omitted from the output CLI flags and YAML configuration.").BoolVar(&c.keepDefaults)
+	convertCmd.Flag("verbose", "Print to stderr CLI flags and YAML paths from old config that no longer exist in the new one, changed default values between old and new, and deleted default values from -keep-defaults=false.").Short('v').BoolVar(&c.verbose)
 }
 
 func (c *ConfigCommand) convertConfig(_ *kingpin.ParseContext) error {
@@ -47,7 +53,7 @@ func (c *ConfigCommand) convertConfig(_ *kingpin.ParseContext) error {
 		return err
 	}
 
-	convertedYAML, flagsFlags, notices, err := config.Convert(yamlContents, flagsFlags, config.CortexToMimirMapper, config.DefaultCortexConfig, config.DefaultMimirConfig)
+	convertedYAML, flagsFlags, notices, err := config.Convert(yamlContents, flagsFlags, config.CortexToMimirMapper, config.DefaultCortexConfig, config.DefaultMimirConfig, !c.keepDefaults)
 	if err != nil {
 		return errors.Wrap(err, "could not convert configuration")
 	}
@@ -124,24 +130,31 @@ func (c *ConfigCommand) output(yamlContents []byte, flags []string, notices conf
 }
 
 func (c *ConfigCommand) writeNotices(notices config.ConversionNotices, w io.Writer) error {
+	if !c.verbose {
+		return nil
+	}
 	noticesOut := bytes.Buffer{}
 	for _, p := range notices.RemovedParameters {
-		_, _ = noticesOut.WriteString(fmt.Sprintf("field %s is no longer supported\n", p))
+		_, _ = noticesOut.WriteString(fmt.Sprintf("field is no longer supported: %s\n", p))
 	}
 	for _, f := range notices.RemovedCLIFlags {
-		_, _ = noticesOut.WriteString(fmt.Sprintf("flag -%s is no longer supported\n", f))
+		_, _ = noticesOut.WriteString(fmt.Sprintf("flag is no longer supported: -%s \n", f))
 	}
 	for _, d := range notices.ChangedDefaults {
-		oldDefault, newDefault := d.OldDefault, d.NewDefault
-		if newDefault == "" {
-			newDefault = "<empty>"
-		}
-		if oldDefault == "" {
-			oldDefault = "<empty>"
-		}
-		_, _ = noticesOut.WriteString(fmt.Sprintf("using a new default for %s: %v (used to be %v)\n", d.Path, newDefault, oldDefault))
+		oldDefault, newDefault := placeholderIfEmpty(d.OldDefault), placeholderIfEmpty(d.NewDefault)
+		_, _ = noticesOut.WriteString(fmt.Sprintf("using a new default for %s: %s (used to be %s)\n", d.Path, newDefault, oldDefault))
+	}
+	for _, d := range notices.PrunedDefaults {
+		_, _ = noticesOut.WriteString(fmt.Sprintf("removed default value %s: %s\n", d.Path, placeholderIfEmpty(d.Value)))
 	}
 
 	_, err := noticesOut.WriteTo(w)
 	return err
+}
+
+func placeholderIfEmpty(s string) string {
+	if s == "" {
+		return `""`
+	}
+	return s
 }
