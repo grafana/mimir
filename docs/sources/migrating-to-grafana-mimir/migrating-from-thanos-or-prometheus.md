@@ -44,11 +44,11 @@ aws s3 cp <DIRECTORY> s3://<TENANT>/<DIRECTORY>
 gsutil -m cp -r <DIRECTORY> gs://<TENANT>/<DIRECTORY>
 ```
 
-## Migrating the block metadata using `metaconvert`
+## Migrating the block `meta.json` metadata using `metaconvert`
 
 Every block has a `meta.json` metadata file used by Grafana Mimir, Prometheus, and Thanos to understand the block contents.
 Each project has its own metadata conventions.
-The `metaconvert` tool migrates the metadata from project to another.
+The `metaconvert` tool migrates the `meta.json` metadata from project to another.
 
 ### Downloading `metaconvert`
 
