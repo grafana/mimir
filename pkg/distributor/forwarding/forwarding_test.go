@@ -127,6 +127,18 @@ func TestForwardingSamplesWithDifferentErrors(t *testing.T) {
 			name:              "successful codes should result in no error",
 			remoteStatusCodes: []int{200, 200},
 			expectedError:     errNone,
+		}, {
+			name:              "codes which are not divisible by 100 (1)",
+			remoteStatusCodes: []int{204, 401, 200},
+			expectedError:     errNonRecoverable,
+		}, {
+			name:              "codes which are not divisible by 100 (2)",
+			remoteStatusCodes: []int{202, 403, 502},
+			expectedError:     errRecoverable,
+		}, {
+			name:              "codes which are not divisible by 100 (3)",
+			remoteStatusCodes: []int{504, 404, 201},
+			expectedError:     errRecoverable,
 		},
 	}
 
