@@ -14,7 +14,7 @@ If the teams are running Prometheus HA pairs, the individual Prometheus instance
 
 Grafana Mimir only ingests from either `team-1.a` or `team-1.b`, and only from `team-2.a` or `team-2.b`. It does this by electing a leader replica for each
 Prometheus server. For example, in the case of `team-1`, the leader replica would be `team-1.a`. As long as `team-1.a` is the leader, the samples
-that `team-1.b` receives are dropped. And if Grafana Mimir does not see any new samples from `team-1.a` for a short period of time (30 seconds by default), it switches the leader to `team-1.b`.
+that `team-1.b` sends are dropped. And if Grafana Mimir does not see any new samples from `team-1.a` for a short period of time (30 seconds by default), it switches the leader to `team-1.b`.
 
 If `team-1.a` goes down for a few minutes, Grafana Mimir’s HA sample handling will have switched and elected `team-1.b` as the leader. The failure
 timeout ensures that too much data is not dropped before failover to the other replica.
