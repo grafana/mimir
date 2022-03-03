@@ -7,17 +7,19 @@ weight: 60
 # Secure communications with TLS
 
 Grafana Mimir is a distributed system with significant traffic between its components.
-To allow for secure communication, Grafana Mimir supports TLS between all its
-components. This guide describes the process of setting up TLS.
+To allow for secure communication, Grafana Mimir supports TLS between its
+components. This topic describes the process you use to set up TLS.
 
-### Generation of certs to configure TLS
+### Generation of certificates to configure TLS
 
-The first step to establish secure inter-component communication in Grafana Mimir with TLS is
-generating certificates. A Certificate Authority (CA) will be used for this
-purpose which should be private to the organization, as any certificates signed
-by this CA will have permissions to communicate with the cluster.
+To establish secure inter-component communication in Grafana Mimir with TLS, you must generate certificates using a certificate authority (CA).
+The CA should be private to the organization because certificates signed by the CA will have permissions to communicate with the cluster.
 
-We will use the following script to generate self signed certs for the cluster:
+> **Note**: The generated certficates are valid for 100,000 days. You can change the duration by adjusting the `-days` option in the command. We recommended that you replace the certificates every two years.
+
+The following script generates self-signed certificates for the cluster.
+The script generates private keys `client.key`, `server.key` and certificates `client.crt`, `server.crt` for both the client and server.
+The script generates the CA cert as `root.crt`.
 
 ```
 # keys
@@ -37,20 +39,26 @@ openssl x509 -req -in client.csr -CA root.crt -CAkey root.key -CAcreateserial -o
 openssl x509 -req -in server.csr -CA root.crt -CAkey root.key -CAcreateserial -out server.crt -days 100000 -sha256
 ```
 
-Note that the above script generates certificates that are valid for 100000 days.
-This can be changed by adjusting the `-days` option in the above commands.
-It is recommended that the certs be replaced atleast once every 2 years.
-
-The above script generates keys `client.key, server.key` and certs
-`client.crt, server.crt` for both the client and server. The CA cert is
-generated as `root.crt`.
-
 ### Configure TLS certificates in Grafana Mimir
 
-Every gRPC link between Grafana Mimir components supports TLS configuration
-through the following config parameters:
+Every gRPC link between Grafana Mimir components supports TLS configuration as specified in server flags and client flags.
 
 #### Server flags
+
+Server flag settings determine if a server requires a client to provide a valid certificate back to the server.
+The flags support all the values defined in the [crypto/tls](https://pkg.go.dev/crypto/tls#ClientAuthType) standard library.
+
+For all values except `NoClientCert`, the policy defines that the server requests a client certificate during the handshake. The values determine whether the client must send certificates and if the server must verify them.
+
+Use the following options to define the server certificate policy:
+
+- `NoClientCert`: The server does not request a client certificate.
+- `RequestClientCert`: The server requests a client certificate, but the client is not required to send it.
+- `RequireClientCert`: The server requests a client to send at least one certificate, but a valid certificate is not required.
+- `VerifyClientCertIfGiven`: The server does not require the client to send a certificate, but if it does, the certificate must be valid.
+- `RequireAndVerifyClientCert`: The server requires the client to send at least one valid certificate.
+
+In the following example, both of the server authorization flags, `-server.http-tls-client-auth` and `-server.grpc-tls-client-auth`, are shown with the most restrictive option, which is `RequiredAndVerifyClientCert`.
 
 ```
     # Path to the TLS Cert for the HTTP Server
@@ -78,19 +86,31 @@ through the following config parameters:
     -server.grpc-tls-ca-path=/path/to/root.crt
 ```
 
-Both of the client authorization flags, `-server.http-tls-client-auth` and `-server.grpc-tls-client-auth`, are shown with the strictest option, `RequiredAndVerifyClientCert`. However the flags support all the values defined in the [crypto/tls](https://pkg.go.dev/crypto/tls#ClientAuthType) standard library. For all values except `NoClientCert`, the policy defines that the server should request a client certificate during the handshake. The values differ in whether the client should send certificates and if they should be verified by the server. The following are the available options:
-
-- `NoClientCert`: No client certificate should be requested.
-- `RequestClientCert`: A client certificate should be requested but the client is not required to send one.
-- `RequireClientCert`: The client is required to send at least one certificate, but it's not required to be a valid certificate.
-- `VerifyClientCertIfGiven`: The client is not required to send a certificate, but if it does, it has to be a valid certificate.
-- `RequireAndVerifyClientCert`: The client must send at least one valid certificate.
-
 #### Client flags
 
-Client flags are component specific.
+You can configure TLS private keys, certificates, and CAs in a similar fashion for gRPC clients in Grafana Mimir.
 
-For a gRPC client in the Querier:
+To enable TLS for a component, use the client flag that contains the suffix `*.tls-enabled=true`, for example, `-querier.frontend-client.tls-enabled=true`.
+
+The following Grafana Mimir components support TLS for inter-communication, which are shown with their corresponding configuration flag prefixes:
+
+- Query scheduler gRPC client used to connect to query-frontends: `-query-scheduler.grpc-client-config.*`
+- Querier gRPC client used to connect to store-gateways: `-querier.store-gateway-client.*`
+- Query-frontend gRPC client used to connect to query-schedulers: `-query-frontend.grpc-client-config.*`
+- Querier gRPC client used to connect to query-frontends and query-schedulers: `-querier.frontend-client.*`
+- Ruler gRPC client used to connect to other ruler instances: `-ruler.client.*`
+- Alertmanager gRPC client used to connect to other Alertmanager instances: `-alertmanager.alertmanager-client.*`
+- gRPC client used by distributors, queriers, and rulers to connect to ingesters: `-ingester.client.*`
+- etcd client used by all Mimir components to connect to etcd, which is required only if you're running the hash ring or HA tracker on the etcd backend: `-<prefix>.etcd.*`
+- Memberlist client used by all Mimir components to gossip the hash ring, which is required only if you're running the hash ring on memberlist: `-memberlist.`
+
+Each of the components listed above support the following TLS configuration options, which are shown with their corresponding flag suffixes:
+
+- `*.tls-enabled=<boolean>`: Enable TLS in the client.
+- `*.tls-server-name=<string>`: Override the expected name on the server certificate.
+- `*.tls-insecure-skip-verify=<boolean>`: Skip validating the server certificate.
+
+The following example shows how to configure the gRPC client flags in the querier used to connect to the query-frontend:
 
 ```
     # Path to the TLS Cert for the gRPC Client
@@ -102,36 +122,3 @@ For a gRPC client in the Querier:
     # Path to the TLS CA for the gRPC Client
     -querier.frontend-client.tls-ca-path=/path/to/root.crt
 ```
-
-Similarly, for the gRPC Ingester Client:
-
-```
-    # Path to the TLS Cert for the gRPC Client
-    -ingester.client.tls-cert-path=/path/to/client.crt
-
-    # Path to the TLS Key for the gRPC Client
-    -ingester.client.tls-key-path=/path/to/client.key
-
-    # Path to the TLS CA for the gRPC Client
-    -ingester.client.tls-ca-path=/path/to/root.crt
-```
-
-TLS keys, certificates, and certificate authorities can be configured in a similar fashion for other gRPC clients in Grafana Mimir.
-
-To enable TLS for a given component, use the client flag that is suffixed with `*.tls-enabled=true`, (e.g. `-querier.frontend-client.tls-enabled=true`). The following Grafana Mimir components support TLS for inter-communication, shown with their corresponding configuration flag prefixes:
-
-- Query scheduler gRPC client used to connect to query-frontend (`-query-scheduler.grpc-client-config.*`)
-- Querier gRPC client used to connect to store-gateway (`-querier.store-gateway-client.*`)
-- Query-frontend gRPC client used to connect to query-scheduler (`-query-frontend.grpc-client-config.*`)
-- Querier gRPC client to connect to query-frontend and query-scheduler (`-querier.frontend-client.*`)
-- Ruler gRPC client used to connect to other ruler instances (`-ruler.client.*`)
-- Alertmanager gRPC client used to connect to other Alertmanager instances (`-alertmanager.alertmanager-client.*`)
-- gRPC client used by distributor, querier and ruler to connect to ingesters (`-ingester.client.*`)
-- Etcd client used by all Mimir components to connect to etcd, required only if you're running the hash ring or HA tracker on etcd backend (`-<prefix>.etcd.*`)
-- Memberlist client used by all Mimir components to gossip the hash ring, required only if you're running the hash ring on memberlist (`-memberlist.`)
-
-Each of these components supports the following TLS configuration options, shown with their corresponding flag suffixes:
-
-- `*.tls-enabled=<boolean>`: Enable TLS in the client.
-- `*.tls-server-name=<string>`: Override the expected name on the server certificate.
-- `*.tls-insecure-skip-verify=<boolean>`: Skip validating server certificate.
