@@ -6,35 +6,44 @@ weight: 10
 
 # About versioning
 
-Mimir provides the following guarantees:
+This topic describes our guarantees for the Grafana Mimir v1.0 release.
 
-## Flags, Config and minor version upgrades
+## Flags, configuration, and minor version upgrades
 
-Upgrading Grafana Mimir from one minor version to the next should just work. That being said, we don't want to bump the major version every time we remove a configuration parameter. Please see [Parameter Lifecycle]({{< relref "./reference-configuration-parameters/#parameter-lifecycle" >}}) for how we handle removal of configuration paramaeters.
+Upgrading Grafana Mimir from one minor version to the next minor version should work, but we don't want to bump the major version every time we remove a configuration parameter. 
+We will keep deprecated flags and YAML configuration parameters in place for two minor releases. 
+You can use the `deprecated_flags_inuse_total` metric to generate an alert that helps you determine if you're using a deprecated flag.
+
+These guarantees don't apply to [experimental features](#experimental-features).
 
 ## Reading old data
 
-The Grafana Mimir maintainers commit to ensuring future versions can read data written by versions up to two years old. In practice we expect to be able to read more, but this is our guarantee.
+The Grafana Mimir maintainers commit to ensuring that future versions can read data written by versions within the last two years. 
+In practice, we expect to be able to read data written more than two years ago, but a maximum of two years is our guarantee.
 
 ## API Compatibility
 
-Grafana Mimir strives to be 100% API compatible with Prometheus (under `/prometheus/*`); any deviation from this is considered a bug, except:
+Grafana Mimir strives to be 100% API compatible with Prometheus (under `/prometheus/*`). 
+We consider any deviation from this 100% API compatibility to be a bug, except for the following scenarios:
 
-- Additional API endpoints for creating, removing and modifying alerts and recording rules.
-- Additional API around pushing metrics (under `/prometheus/api/push`).
-- Additional API endpoints for management of Grafana Mimir itself, such as the ring. These APIs are not part of the any compatibility guarantees.
+- Additional API endpoints for creating, removing, modifying alerts, and recording rules.
+- Additional APIs that push metrics (under `/prometheus/api/push`).
+- Additional API endpoints for management of Grafana Mimir, such as the ring. These APIs are not included in any compatibility guarantees.
 
 ## Experimental features
 
-Grafana Mimir is an actively developed project and we want to encourage the introduction of new features and capabilities. As such, not everything in each release of Grafana Mimir is considered "production-ready". Features not considered "production-ready" will be marked "experimental" in the documentation. The flags used to enable and/or configure these features will also be marked "experimental", as described in [Parameter Categories]({{< relref "./reference-configuration-parameters/#parameter-categories" >}}).
+Grafana Mimir is an actively developed project and we encourage the introduction of new features and capabilities.
+Not everything in each release of Grafana Mimir is considered production-ready. 
+We mark as "Experimental" all features and flags that we don't consider production-ready.
 
-There are no backwards compatibility guarantees on anything marked experimental. All configuration parameters relating to experimental features are subject to change.
+We do not guarantee backwards compatibility for experimental features and flags. 
+Configuration and flags are subject to change.
 
-Currently experimental features are:
+The following features are currently experimental:
 
-- Ruler: tenant federation.
-- Distributor: metrics relabeling.
-- Purger: tenant deletion API.
+- Ruler: Tenant federation
+- Distributor: Metrics relabeling
+- Purger: Tenant deletion API
 - Exemplar storage
   - `-ingester.max-global-exemplars-per-user`
   - `-ingester.exemplars-update-period`
@@ -66,7 +75,7 @@ Currently experimental features are:
 
 ## Deprecated features
 
-Currently deprecated features are:
+The following features are currently deprecated:
 
 - Ruler:
   - `/api/v1/rules/**` configuration endpoints. These will be removed in version 2.2.0. Use their `<prometheus-http-prefix>/config/v1/rules/**` equivalents instead.
