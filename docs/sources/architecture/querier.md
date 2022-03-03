@@ -6,13 +6,14 @@ weight: 10
 
 # Querier
 
-The querier is a stateless component that uses evaluates [Prometheus Query Language](https://prometheus.io/docs/prometheus/latest/querying/basics/) by fetching time series and labels on the read path.
+The querier is a stateless component that evaluates [PromQL](https://prometheus.io/docs/prometheus/latest/querying/basics/)
+expressions by fetching time series and labels on the read path.
 
 The querier uses the [store-gateway]({{< relref "./store-gateway.md" >}}) component to query the [long-term storage]({{< relref "./_index.md#long-term-storage" >}}) and the [ingester]({{< relref "./ingester.md" >}}) component to query recently written data.
 
 ## How it works
 
-To find the correct blocks to look up at query time, the querier requires an up-to-date view of the bucket in long-term storage. The querier performs the following actions to ensure that the bucket view is updated:
+To find the correct blocks to look up at query time, the querier requires an almost up-to-date view of the bucket in long-term storage. The querier performs the following actions to ensure that the bucket view is updated:
 
 1. Periodically download the [bucket index]({{< relref "../operating-grafana-mimir/blocks-storage/bucket-index.md" >}}) (default)
 2. Periodically scan the bucket
@@ -21,7 +22,7 @@ Queriers do not need any content from blocks except their metadata, which includ
 
 ### Bucket index enabled (default)
 
-At startup, queriers lazily download the bucket index when they receive the first query for a given tenant. The querier caches the bucket index in memory and periodically keeps it up-to-date.
+Queriers lazily download the bucket index when they receive the first query for a given tenant. The querier caches the bucket index in memory and periodically keeps it up-to-date.
 
 The bucket index contains a list of blocks and block deletion marks of a tenant. The querier later uses the list of blocks and block deletion marks to locate the set of blocks that need to be queried for the given query.
 
@@ -29,7 +30,7 @@ When the querier runs with the bucket index enabled, the querier startup time an
 
 ### Bucket index disabled
 
-When [bucket index]({{< relref "../operating-grafana-mimir/blocks-storage/bucket-index.md" >}}) is disabled, queriers iterate over the storage bucket to discover blocks for all tenants and download the `meta.json` of each block. During this initial bucket scanning phase, a querier cannot process incoming queries and its `/ready` readiness probe endpoint fails.
+When [bucket index]({{< relref "../operating-grafana-mimir/blocks-storage/bucket-index.md" >}}) is disabled, queriers iterate over the storage bucket to discover blocks for all tenants and download the `meta.json` of each block. During this initial bucket scanning phase, a querier cannot process incoming queries and its `/ready` readiness probe endpoint will not return the HTTP status code `200`.
 
 When running, queriers periodically iterate over the storage bucket to discover new tenants and recently uploaded blocks.
 
@@ -61,11 +62,11 @@ After all samples have been fetched from both the store-gateways and the ingeste
 
 ### Connecting to store-gateways
 
-You must configure the queriers with the same `-store-gateway.sharding-ring.*` flags (or their respective YAML configuration parameters) that you use to configure the store-gateways so that the querier can access the store-gateway hash ring and discover the address of the store-gateway.
+You must configure the queriers with the same `-store-gateway.sharding-ring.*` flags (or their respective YAML configuration parameters) that you use to configure the store-gateways so that the querier can access the store-gateway hash ring and discover the addresses of the store-gateways.
 
 ### Connecting to ingesters
 
-You must configure the querier with the same `-ingester.ring.*` flags (or their respective YAML configuration parameters) that you use to configure the ingesters so that the querier can access the ingester hash ring and discover the address of the ingesters.
+You must configure the querier with the same `-ingester.ring.*` flags (or their respective YAML configuration parameters) that you use to configure the ingesters so that the querier can access the ingester hash ring and discover the addresses of the ingesters.
 
 ## Caching
 
