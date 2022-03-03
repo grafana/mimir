@@ -89,9 +89,9 @@ When ingesters are deployed in a single zone, the scale-down procedure requires 
       ```
 1. Scale down one ingester at a time:
    1. Invoke the `/ingester/shutdown` API endpoint on the ingester to terminate.
-   1. Wait until the API endpoint call has successfully returned.
+   1. Wait until the API endpoint call has successfully returned and the ingester logged "finished flushing and shipping TSDB blocks".
    1. Send a `SIGINT` or `SIGTERM` signal to the process of the ingester to terminate.
-   1. Wait 10 minutes before proceeding with the next ingester.
+   1. Wait 10 minutes before proceeding with the next ingester. The temporarily configuration applied guarantees newly uploaded blocks are available for querying within 10 minutes.
 1. Wait until the originally configured `-querier.query-store-after` period of time has elapsed since when all ingesters have been shutdown.
 1. Revert the temporarily configuration changes done at the beginning of the scale down procedure.
 
@@ -104,7 +104,7 @@ You can leverage on ingesters deployed in multiple zones to simplify the scale d
 For each zone, go through the following steps:
 
 1. Invoke the `/ingester/shutdown` API endpoint on all ingesters that you want to terminate.
-1. Wait until the API endpoint calls have successfully returned.
+1. Wait until the API endpoint calls have successfully returned and the ingester logged "finished flushing and shipping TSDB blocks".
 1. Send a `SIGINT` or `SIGTERM` signal to the processes of ingesters that you want to terminate.
 1. Wait until the blocks uploaded by terminated ingesters are available for querying before proceeding with the next zone. The required amount of time to wait depends on your configuration and it's the maximum value among the following settings:
    - The configured `-querier.query-store-after`
