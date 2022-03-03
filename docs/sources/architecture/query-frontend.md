@@ -63,7 +63,7 @@ The queries exceeding the configured max concurrency create a backlog in the que
 
 The backlog might cause a suboptimal utilization of querier resources, leading to poor query performance when you run Grafana Mimir at scale.
 
-The [query-scheduler]({{< relref "./query-scheduler.md">}}) is an optional component you can deploy to overcome the query-frontend scalability limitations.
+The [query-scheduler]({{< relref "./query-scheduler.md">}}) is an optional component that you can deploy to overcome the query-frontend scalability limitations.
 
 ## DNS Configuration / Readiness
 

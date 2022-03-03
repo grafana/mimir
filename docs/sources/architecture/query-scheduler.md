@@ -22,7 +22,7 @@ The following flow describes how a queries moves through a Grafana Mimir cluster
 
 ## Benefits of using the query-scheduler
 
-The query-scheduler enables scaling of query-frontends. The query-frontend comes with some challenges when it comes to scaling it. To learn more about the query-frontend scalability limits, refer to [Why query-frontend scalability is limited]({{<relref "./query-frontend.md#why-query-frontend-scalability-is-limited">}}).
+Query-scheduler enables the scaling of query-frontends. You might experience challenges when you scale query-frontend. To learn more about query-frontend scalability limits, refer to [Why query-frontend scalability is limited]({{<relref "./query-frontend.md#why-query-frontend-scalability-is-limited">}}).
 
 ### How query-scheduler solves query-frontend scalability limits
 
