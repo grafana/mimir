@@ -18,7 +18,7 @@ The CA should be private to the organization because certificates signed by the 
 > **Note**: The generated certficates are valid for 100,000 days. You can change the duration by adjusting the `-days` option in the command. We recommended that you replace the certificates every two years.
 
 The following script generates self-signed certificates for the cluster.
-The script generates keys `client.key`, `server.key` and certificates `client.crt`, `server.crt` for both the client and server.
+The script generates private keys `client.key`, `server.key` and certificates `client.crt`, `server.crt` for both the client and server.
 The script generates the CA cert as `root.crt`.
 
 ```
@@ -50,7 +50,7 @@ The flags support all the values defined in the [crypto/tls](https://pkg.go.dev/
 
 For all values except `NoClientCert`, the policy defines that the server requests a client certificate during the handshake. The values determine whether the client must send certificates and if the server must verify them.
 
-Use the following options to define the client server certificate policy:
+Use the following options to define the server certificate policy:
 
 - `NoClientCert`: The server does not request a client certificate.
 - `RequestClientCert`: The server requests a client certificate, but the client is not required to send it.
@@ -58,7 +58,7 @@ Use the following options to define the client server certificate policy:
 - `VerifyClientCertIfGiven`: The server does not require the client to send a certificate, but if it does, the certificate must be valid.
 - `RequireAndVerifyClientCert`: The server requires the client to send at least one valid certificate.
 
-In the following example, both of the client authorization flags, `-server.http-tls-client-auth` and `-server.grpc-tls-client-auth`, are shown with the most restrictive option, which is `RequiredAndVerifyClientCert`.
+In the following example, both of the server authorization flags, `-server.http-tls-client-auth` and `-server.grpc-tls-client-auth`, are shown with the most restrictive option, which is `RequiredAndVerifyClientCert`.
 
 ```
     # Path to the TLS Cert for the HTTP Server
@@ -88,7 +88,7 @@ In the following example, both of the client authorization flags, `-server.http-
 
 #### Client flags
 
-You can configure TLS keys, certificates, and CAs in a similar fashion for other gRPC clients in Grafana Mimir.
+You can configure TLS private keys, certificates, and CAs in a similar fashion for gRPC clients in Grafana Mimir.
 
 To enable TLS for a component, use the client flag that contains the suffix `*.tls-enabled=true`, for example, `-querier.frontend-client.tls-enabled=true`.
 
@@ -110,7 +110,7 @@ Each of the components listed above support the following TLS configuration opti
 - `*.tls-server-name=<string>`: Override the expected name on the server certificate.
 - `*.tls-insecure-skip-verify=<boolean>`: Skip validating the server certificate.
 
-The following example shows how to configure the gRPC client flags in the querier:
+The following example shows how to configure the gRPC client flags in the querier used to connect to the query-frontend:
 
 ```
     # Path to the TLS Cert for the gRPC Client
