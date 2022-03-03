@@ -38,7 +38,7 @@ Not everything in each release of Grafana Mimir is considered production-ready.
 We mark as "Experimental" all features and flags that we don't consider production-ready.
 
 We do not guarantee backwards compatibility for experimental features and flags.
-Configuration and flags are subject to change.
+Experimental configuration and flags are subject to change.
 
 The following features are currently experimental:
 
