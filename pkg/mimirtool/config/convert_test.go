@@ -269,6 +269,16 @@ func TestChangedDefaults(t *testing.T) {
 	assert.ElementsMatch(t, expectedChangedDefaults, notices.ChangedDefaults)
 }
 
+func TestConvert_KeepDefaultsShowsNewDefaults(t *testing.T) {
+	inYaml := []byte(`{}`)
+	inFlags := []string{"-experimental.alertmanager.enable-api=false"}
+	expectedOutFlags := []string{"-alertmanager.enable-api=true"}
+	_, outFlags, _, err := Convert(inYaml, inFlags, CortexToMimirMapper, DefaultCortexConfig, DefaultMimirConfig, false)
+
+	require.NoError(t, err)
+	assert.Equal(t, expectedOutFlags, outFlags)
+}
+
 func loadFile(t testing.TB, fileName string) []byte {
 	t.Helper()
 

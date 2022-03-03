@@ -73,12 +73,18 @@ func Convert(contents []byte, flags []string, m Mapper, sourceFactory, targetFac
 		return nil, nil, ConversionNotices{}, errors.Wrap(err, "could not prune defaults in new config")
 	}
 
-	notices.ChangedDefaults, err = changedDefaults(target, sourceDefaults, targetDefaults)
+	notices.ChangedDefaults, err = changedDefaults(sourceDefaults, targetDefaults)
 	if err != nil {
 		return nil, nil, ConversionNotices{}, errors.Wrap(err, "could not detect changed defaults")
 	}
+
+	err = changeOldDefaultsToNewDefaults(target, sourceDefaults, targetDefaults)
+	if err != nil {
+		return nil, nil, ConversionNotices{}, err
+	}
+
 	if pruneDefaultValues {
-		notices.PrunedDefaults = pruneDefaults(target, sourceDefaults, targetDefaults)
+		notices.PrunedDefaults = pruneDefaults(target, targetDefaults)
 	}
 
 	var newFlags []string
@@ -95,6 +101,23 @@ func Convert(contents []byte, flags []string, m Mapper, sourceFactory, targetFac
 	}
 
 	return yamlBytes, newFlags, *notices, nil
+}
+
+func changeOldDefaultsToNewDefaults(target, oldDefaults, newDefaults *InspectedEntry) error {
+	return target.Walk(func(path string, value interface{}) error {
+		oldDefault, err := oldDefaults.GetValue(path)
+		if err != nil {
+			if errors.Is(err, ErrParameterNotFound) {
+				// This param is not in the old config, so there's no default to change from.
+				return nil
+			}
+			return err
+		}
+		if reflect.DeepEqual(oldDefault, value) {
+			return target.SetValue(path, newDefaults.MustGetValue(path))
+		}
+		return nil
+	})
 }
 
 func convertFlags(flags []string, m Mapper, target *InspectedEntry, sourceFactory, targetFactory InspectedEntryFactory) ([]string, error) {
@@ -243,11 +266,9 @@ func prepareDefaults(m Mapper, sourceFactory, targetFactory InspectedEntryFactor
 	return mappedCortexDefaults, DefaultMimirConfig(), err
 }
 
-func changedDefaults(cfg *InspectedEntry, oldDefaults, newDefaults *InspectedEntry) ([]ChangedDefault, error) {
+func changedDefaults(oldDefaults, newDefaults *InspectedEntry) ([]ChangedDefault, error) {
 	var defs []ChangedDefault
-	err := cfg.Walk(func(path string, _ interface{}) error {
-		newDefault := newDefaults.MustGetValue(path)
-
+	err := newDefaults.Walk(func(path string, newDefault interface{}) error {
 		oldDefault, err := oldDefaults.GetValue(path)
 		if err != nil {
 			// We don't expect new fields exist in the old struct.
@@ -273,24 +294,15 @@ func changedDefaults(cfg *InspectedEntry, oldDefaults, newDefaults *InspectedEnt
 
 // pruneDefaults removes parameters from fullParams that are reflect.DeepEqual to either value from
 // oldDefaults or newDefaults with the same path. pruneDefaults prints any errors during pruning to os.Stderr
-func pruneDefaults(fullParams, oldDefaults, newDefaults *InspectedEntry) []PrunedDefault {
+func pruneDefaults(fullParams, newDefaults *InspectedEntry) []PrunedDefault {
 	var pathsToDelete []PrunedDefault
 
 	err := fullParams.Walk(func(path string, value interface{}) error {
 		newDefault := newDefaults.MustGetValue(path)
 
-		oldDefault, err := oldDefaults.GetValue(path)
-		if err != nil {
-			// We don't expect new fields exist in the old struct.
-			if errors.Is(err, ErrParameterNotFound) {
-				return err
-			}
-			oldDefault = nil
-		}
-
 		// Use reflect.DeepEqual to easily compare different type aliases that resolve to the same underlying type,
 		// fields with interface types, and maps and slices.
-		if value == nil || reflect.DeepEqual(value, oldDefault) || reflect.DeepEqual(value, newDefault) {
+		if value == nil || reflect.DeepEqual(value, newDefault) {
 			pathsToDelete = append(pathsToDelete, PrunedDefault{Path: path, Value: fmt.Sprint(value)})
 		}
 		return nil
