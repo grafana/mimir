@@ -69,11 +69,11 @@ func (c *ConfigCommand) prepareInputs() ([]byte, []string, error) {
 	)
 
 	if c.flagsFile == "" && c.yamlFile == "" {
-		return nil, nil, errors.New("provide at least one of --config-file or --flags-file")
+		return nil, nil, errors.New("provide at least one of --yaml-file or --flags-file")
 	}
 	yamlContents, err = os.ReadFile(c.yamlFile)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return nil, nil, errors.Wrap(err, "could not read config-file")
+		return nil, nil, errors.Wrap(err, "could not read yaml-file")
 	}
 
 	flagsContents, err := os.ReadFile(c.flagsFile)
