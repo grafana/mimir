@@ -45,6 +45,7 @@ For more information, see [Compactor](./compactor.md) and [Production tips](./pr
 ### The read path
 
 [//]: # "Diagram source of read path at https://docs.google.com/presentation/d/1LemaTVqa4Lf_tpql060vVoDGXrthp-Pie_SQL7qwHjc/edit#slide=id.g11658e7e4c6_2_6"
+
 ![Architecture of Grafana Mimir's read path](../images/read-path.png)
 
 [Queriers](./querier.md) and [store-gateways](./store-gateway.md) periodically iterate over the storage bucket to discover blocks recently uploaded by ingesters.
