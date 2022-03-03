@@ -10,7 +10,7 @@ The **query-scheduler** is an **optional component** that internally keeps a que
 
 When query-scheduler is employed, the [query-frontends]({{<relref "./query-frontend.md">}}) enqueue queries to execute into the query-scheduler and queriers pull queries from the query-scheduler. Once a query is executed, the querier sends the result to the query-frontend that enqueued the query.
 
-![Query-scheduler architecture](../images/query-scheduler-architecture.png)
+![Query-scheduler architecture](../../images/query-scheduler-architecture.png)
 
 [//]: # "Diagram source at https://docs.google.com/presentation/d/1bHp8_zcoWCYoNU2AhO2lSagQyuIrghkCncViSqn14cU/edit"
 
@@ -26,23 +26,7 @@ The query-scheduler **stateless**.
 
 ## Benefits
 
-The query-scheduler enables scaling of query-frontends.
-
-### Why query-frontend scalability is limited
-
-When the query-scheduler is not used, the query-frontend scalability is limited by the configured number of workers per querier.
-
-The query-frontend keeps a queue of queries to execute. A querier internally runs `-querier.max-concurrent` workers and each worker connects to one of the query-frontend replicas to pull queries to execute. Each querier worker can execute one query at a time.
-
-The connection from a querier worker to a query-frontend is persistent: once established, multiple queries are delivered through the connection, one at a time. The querier workers select the query-frontend replicas to connect to in a round robin fashion, in order to keep a balanced number of total workers connected to each query-frontend.
-
-In the case you're running more query-frontend replicas than the number of workers per querier, the querier increases the number of internal workers to match the query-frontend replicas, to ensure all query-frontends have some workers connected.
-
-However, the PromQL engine running in the querier is also configured with a max concurrency equal to `-querier.max-concurrent`.
-In the event the number of querier workers is higher than the PromQL engine max concurrency, a worker may pull a query from the query-frontend but could not be able to execute it immediately because the max concurrency has already been reached.
-The queries exceeding the configured max concurrency will queue up in the querier itself until other queries will be completed.
-
-This may cause a suboptimal utilization of querier resources, leading to poor query performances when running Grafana Mimir at scale.
+The query-scheduler enables scaling of query-frontends. The query-frontend comes with some challenges when it comes to scaling it. You can read more about them in [Query-frontend]({{<relref "./query-frontend.md#scaling">}}).
 
 ### How query-scheduler solves query-frontend scalability limits
 
