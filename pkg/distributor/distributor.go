@@ -729,7 +729,7 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 
 		d.labelsHistogram.Observe(float64(len(ts.Labels)))
 
-		if d.cfg.Forwarding && forwardingReq != nil {
+		if forwardingReq != nil {
 			// If this tenant has any forwarding rules then we should add all samples to the forwarding request,
 			// those that don't match a forwarding rule will be discarded by the forwarding request.
 			sendToIngester := forwardingReq.Add(ts)
@@ -760,7 +760,7 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 	}
 
 	var forwardingErrCh <-chan error
-	if d.cfg.Forwarding && forwardingReq != nil {
+	if forwardingReq != nil {
 		forwardingErrCh = forwardingReq.Send(ctx)
 	}
 
@@ -783,7 +783,7 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 	d.receivedMetadata.WithLabelValues(userID).Add(float64(len(validatedMetadata)))
 
 	if len(seriesKeys) == 0 && len(metadataKeys) == 0 {
-		if d.cfg.Forwarding && forwardingErrCh != nil {
+		if forwardingErrCh != nil {
 			// Blocks until the forwarding requests have completed and the final status has been pushed through this chan.
 			err = httpgrpcutil.PrioritizeRecoverableErr(err, <-forwardingErrCh, firstPartialErr)
 			if err != nil {
@@ -847,13 +847,9 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 		return d.send(localCtx, ingester, timeseries, metadata, req.Source)
 	}, func() { cleanup(); cancel() })
 
-	if d.cfg.Forwarding {
-		var forwardingErr error
-		if forwardingErrCh != nil {
-			// Blocks until the forwarding requests have completed and the final status has been pushed through this chan.
-			forwardingErr = <-forwardingErrCh
-		}
-
+	if forwardingErrCh != nil {
+		// Blocks until the forwarding requests have completed and the final status has been pushed through this chan.
+		forwardingErr := <-forwardingErrCh
 		err = httpgrpcutil.PrioritizeRecoverableErr(err, forwardingErr, firstPartialErr)
 	}
 
