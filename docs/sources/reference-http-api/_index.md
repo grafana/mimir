@@ -4,9 +4,9 @@ description: ""
 weight: 10000
 ---
 
-Grafana Mimir exposes an HTTP API that you can use to push and query time series data, and operate the cluster.
+Grafana Mimir exposes an HTTP API that you can use to write and query time series data, and operate the cluster.
 
-This document groups API endpoints by service. Note that the API endpoints are exposed when you run Grafana Mimir in microservices mode and single-binary mode:
+This document groups API endpoints by service. Note that the API endpoints are exposed when you run Grafana Mimir in microservices mode and monolithic mode:
 
 - **Microservices**: Each service exposes its own endpoints.
 - **Monolithic mode**: The Grafana Mimir instance exposes all API endpoints.
@@ -84,7 +84,7 @@ If you enable multi-tenancy, endpoints that require authentication must be calle
 
 If you disable multi-tenancy, Grafana Mimir doesn't require any request to include the `X-Scope-OrgID` header.
 
-Multi-tenancy can be enabled and disabled via the `-auth.multitenancy-enabled` flag `-auth.multitenancy-enabled` or its respective YAML configuration option.
+Multi-tenancy can be enabled and disabled via the `-auth.multitenancy-enabled` flag or its respective YAML configuration option.
 
 For more information about authentication and authorization, refer to [Authentication and Authorisation]({{< relref "../authentication-and-authorisation.md" >}}).
 
