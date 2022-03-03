@@ -28,7 +28,7 @@ Grafana Mimir strives to be 100% API compatible with Prometheus (under `/prometh
 
 Grafana Mimir is an actively developed project and we want to encourage the introduction of new features and capabilities. As such, not everything in each release of Grafana Mimir is considered "production-ready". Features not considered "production-ready" will be marked "experimental" in the documentation. The flags used to enable and/or configure these features will also be marked "experimental", as described in [Parameter Categories]({{< relref "./reference-configuration-parameters/#parameter-categories" >}}).
 
-There are no backwards compatibility guarantees on anything marked experimental. All configuration  parameters relating to experimental features are subject to change.
+There are no backwards compatibility guarantees on anything marked experimental. All configuration parameters relating to experimental features are subject to change.
 
 Currently experimental features are:
 
