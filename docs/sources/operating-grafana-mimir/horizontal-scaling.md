@@ -7,10 +7,10 @@ weight: 10
 # Horizontal scaling
 
 Grafana Mimir can horizontally scale every component.
-Horizontal scaling means that to respond to increased load you can increase the number of replicas of each Mimir component.
+Horizontal scaling means that to respond to increased load you, can increase the number of replicas of each Grafana Mimir component.
 
 We have designed Grafana Mimir to scale up quickly, safely, and with no manual intervention.
-However, be careful when scaling down some of the stateful components.
+However, be careful when scaling down some of the stateful components as these action can result in download failures or receiving partial query results.
 
 ## Monolithic mode
 
@@ -30,57 +30,59 @@ The following stateful components have limitations when scaling down:
 
 ### Scaling down alertmanagers
 
-**To guarantee no downtime when scaling down [alertmanagers]({{< relref "../architecture/alertmanager.md">}}):**
+Scaling down [Alertmanagers]({{< relref "../architecture/alertmanager.md">}}) can result in downtime.
 
-- Scale down at most two alertmanagers at the same time.
-- Ensure at least `-alertmanager.sharding-ring.replication-factor` alertmanager instances are running (three when running Grafana Mimir with the default configuration).
+Consider the following guidelines when you scale down Alertmanagers:
 
-> **Note:** If you enabled [zone-aware replication]({{< relref "./configure-zone-aware-replication.md">}}) for alertmanagers, you can, in parallel, scale down any number of alertmanager instances within one zone at a time.
+- Scale down no more than two alertmanagers at the same time.
+- Ensure at least `-alertmanager.sharding-ring.replication-factor` Alertmanager instances are running (three when running Grafana Mimir with the default configuration).
+
+> **Note:** If you enabled [zone-aware replication]({{< relref "./configure-zone-aware-replication.md">}}) for Alertmanagers, you can, in parallel, scale down any number of Alertmanager instances within one zone at a time.
 
 ### Scaling down ingesters
 
 [Ingesters]({{< relref "../architecture/ingester.md">}}) store recently received samples in memory.
 When an ingester shuts down, because of a scale down operation, the samples stored in the ingester cannot be discarded in order to guarantee no data loss.
 
-There are two challenges to overcome when scaling down ingesters:
+You might experience the following challenges when you scale down ingesters:
 
-1. Ensure the ingester blocks are uploaded to the long-term storage before shutting down.
-1. Ensure no query temporarily returns partial results.
+- By default, when an ingester shuts down, the samples stored in the ingester are not uploaded to the long-term storage, which causes data loss.
 
-**Ensure ingester blocks are uploaded to the long-term storage before shutting down**:
+  Ingesters expose an API endpoint [`/ingester/shutdown`]({{< relref "../reference-http-api/_index.md#shutdown">}}) that flushes in-memory time series data from ingester to the long-term storage and unregisters the ingester from the ring.
 
-By default, when an ingester shuts down, the samples that are stored in the ingester are not uploaded to the long-term storage, which causes the data to be lost.
+  After the `/ingester/shutdown` API endpoint successfully returns, the ingester does not receive write or read requests, but the process will not exit.
 
-Ingesters expose an API endpoint [`/ingester/shutdown`]({{< relref "../reference-http-api/_index.md#shutdown">}}) that flushes in-memory time series data from ingester to the long-term storage and unregisters the ingester from the ring.
-After the `/ingester/shutdown` API endpoint successfully returns, the ingester will not receive any write or read request, but the process will not exit.
-Terminate the process by sending a `SIGINT` or `SIGTERM` signal after the shutdown endpoint returns.
+  You can terminate the process by sending a `SIGINT` or `SIGTERM` signal after the shutdown endpoint returns.
 
-**Ensure no query temporarily returns partial results**:
+  **To mitigate this challenge, ensure that the ingester blocks are uploaded to the long-term storage before shutting down.**
 
-The blocks an ingester uploads to the long-term storage are not immediately available for querying.
-The [queriers]({{< relref "../architecture/querier.md">}}) and [store-gateways]({{< relref "../architecture/store-gateway.md">}}) take some time before a newly uploaded block is available for querying.
-If you scale down two or more ingesters in a short period of time, queries might return partial results.
+- When you scale down ingesters, the querier might temporarily return partial results.
+
+  The blocks an ingester uploads to the long-term storage are not immediately available for querying.
+  It takes the [queriers]({{< relref "../architecture/querier.md">}}) and [store-gateways]({{< relref "../architecture/store-gateway.md">}}) some time before a newly uploaded block is available for querying.
+  If you scale down two or more ingesters in a short period of time, queries might return partial results.
 
 #### Scaling down ingesters deployed in a single zone (default)
 
-When ingesters are deployed in a single zone, the scale-down procedure requires the following steps:
+Complete the following steps to scale down ingesters deployed in a single zone.
 
-1. Configure the Grafana Mimir cluster to discover and query new uploaded blocks as quickly as possible:
-   1. Configure queriers and rulers to always query the long-term storage and to disable ingesters [shuffle sharding]({{< relref "./configure-shuffle-sharding.md">}}) on the read path:
+1. Configure the Grafana Mimir cluster to discover and query new uploaded blocks as quickly as possible.
+   
+   a. Configure queriers and rulers to always query the long-term storage and to disable ingesters [shuffle sharding]({{< relref "./configure-shuffle-sharding.md">}}) on the read path:
       ```
       -querier.query-store-after=0s
       -querier.shuffle-sharding-ingesters-lookback-period=87600h
       ```
-   1. Configure the compactors to frequently update the bucket index:
+   b. Configure the compactors to frequently update the bucket index:
       ```
       -compactor.cleanup-interval=5m
       ```
-   1. Configure the store-gateways to frequently refresh the bucket index and to immediately load all blocks:
+   c. Configure the store-gateways to frequently refresh the bucket index and to immediately load all blocks:
       ```
       -blocks-storage.bucket-store.sync-interval=5m
       -blocks-storage.bucket-store.ignore-blocks-within=0s
       ```
-    1. Configure queriers, rulers and store-gateways with reduced TTLs for the metadata cache:
+   d. Configure queriers, rulers and store-gateways with reduced TTLs for the metadata cache:
       ```
       -blocks-storage.bucket-store.metadata-cache.bucket-index-content-ttl=1m
       -blocks-storage.bucket-store.metadata-cache.tenants-list-ttl=1m
@@ -88,34 +90,41 @@ When ingesters are deployed in a single zone, the scale-down procedure requires 
       -blocks-storage.bucket-store.metadata-cache.metafile-doesnt-exist-ttl=1m
       ```
 1. Scale down one ingester at a time:
-   1. Invoke the `/ingester/shutdown` API endpoint on the ingester to terminate.
-   1. Wait until the API endpoint call has successfully returned and the ingester logged "finished flushing and shipping TSDB blocks".
-   1. Send a `SIGINT` or `SIGTERM` signal to the process of the ingester to terminate.
-   1. Wait 10 minutes before proceeding with the next ingester. The temporarily configuration applied guarantees newly uploaded blocks are available for querying within 10 minutes.
+   
+   a. Invoke the `/ingester/shutdown` API endpoint on the ingester to terminate.
+   
+   b. Wait until the API endpoint call has successfully returned and the ingester logged "finished flushing and shipping TSDB blocks".
+   
+   c. Send a `SIGINT` or `SIGTERM` signal to the process of the ingester to terminate.
+   
+   d. Wait 10 minutes before proceeding with the next ingester. The temporarily configuration applied guarantees newly uploaded blocks are available for querying within 10 minutes.
 1. Wait until the originally configured `-querier.query-store-after` period of time has elapsed since when all ingesters have been shutdown.
 1. Revert the temporarily configuration changes done at the beginning of the scale down procedure.
 
 #### Scaling down ingesters deployed in multiple zones
 
-Grafana Mimir can tolerate a full-zone outage when ingesters are deployed in [multiple zones]({{< relref "./configure-zone-aware-replication.md">}}).
+Grafana Mimir can tolerate a full-zone outage when you deploy ingesters in [multiple zones]({{< relref "./configure-zone-aware-replication.md">}}).
 A scale down of ingesters in one zone can be seen as a partial-zone outage.
-You can leverage on ingesters deployed in multiple zones to simplify the scale down procedure.
+To simplify the scale down process, you can leverage ingesters deployed in multiple zones.
 
-For each zone, go through the following steps:
+For each zone, complete the following steps:
 
 1. Invoke the `/ingester/shutdown` API endpoint on all ingesters that you want to terminate.
-1. Wait until the API endpoint calls have successfully returned and the ingester logged "finished flushing and shipping TSDB blocks".
-1. Send a `SIGINT` or `SIGTERM` signal to the processes of ingesters that you want to terminate.
-1. Wait until the blocks uploaded by terminated ingesters are available for querying before proceeding with the next zone. The required amount of time to wait depends on your configuration and it's the maximum value among the following settings:
-   - The configured `-querier.query-store-after`
-   - Two times the configured `-blocks-storage.bucket-store.sync-interval`
-   - Two times the configured `-compactor.cleanup-interval`
+1. Wait until the API endpoint calls have successfully returned and the ingester has logged "finished flushing and shipping TSDB blocks".
+1. Send a `SIGINT` or `SIGTERM` signal to the processes of the ingesters that you want to terminate.
+1. Wait until the blocks uploaded by terminated ingesters are available for querying before proceeding with the next zone.
+
+The required amount of time to wait depends on your configuration and it's the maximum value for the following settings:
+
+- The configured `-querier.query-store-after`
+- Two times the configured `-blocks-storage.bucket-store.sync-interval`
+- Two times the configured `-compactor.cleanup-interval`
 
 ### Scaling down store-gateways
 
-To guarantee no downtime when scaling down [store-gateways]({{< relref "../architecture/store-gateway.md">}}), you should:
+To guarantee no downtime when scaling down [store-gateways]({{< relref "../architecture/store-gateway.md">}}), complete the following steps:
 
-- Scale down at most two store-gateways at the same time.
-- Ensure at least `-store-gateway.sharding-ring.replication-factor` store-gateway instances are running (three when running Grafana Mimir with the default configuration).
+1. Scale down no more than two store-gateways at the same time.
+1. Ensure at least `-store-gateway.sharding-ring.replication-factor` store-gateway instances are running (three when running Grafana Mimir with the default configuration).
 
-> **Note:** if you enabled [zone-aware replication]({{< relref "./configure-zone-aware-replication.md">}}) for store-gateways, you can in parallel scale down any number of store-gateway instances in one zone at a time.
+> **Note:** If you enabled [zone-aware replication]({{< relref "./configure-zone-aware-replication.md">}}) for store-gateways, you can in parallel scale down any number of store-gateway instances in one zone at a time.
