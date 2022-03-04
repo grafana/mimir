@@ -27,7 +27,7 @@ In order to configure Grafana Mimir to send traces you must do two things:
 1. Enable sampling in the appropriate components:
    - The Ingester and Ruler self-initiate traces and should have sampling
      explicitly enabled.
-   - Sampling for the Distributor and Query Frontend can be enabled in Grafana Mimir
+   - Sampling for the distributor and query-frontend can be enabled in Grafana Mimir
      or in an upstream service.
 
 To enable sampling in Grafana Mimir components you can specify either
