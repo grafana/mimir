@@ -1,10 +1,10 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ template "enterprise-metrics.fullname" . }}-store-gateway
+  name: {{ template "mimir.fullname" . }}-store-gateway
   labels:
-    app: {{ template "enterprise-metrics.name" . }}-store-gateway
-    chart: {{ template "enterprise-metrics.chart" . }}
+    app: {{ template "mimir.name" . }}-store-gateway
+    chart: {{ template "mimir.chart" . }}
     release: {{ .Release.Name }}
     heritage: {{ .Release.Service }}
   annotations:
@@ -21,5 +21,5 @@ spec:
       name: grpc
       targetPort: grpc
   selector:
-    app: {{ template "enterprise-metrics.name" . }}-store-gateway
+    app: {{ template "mimir.name" . }}-store-gateway
     release: {{ .Release.Name }}

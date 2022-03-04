@@ -2,10 +2,10 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ template "enterprise-metrics.fullname" . }}-alertmanager-headless
+  name: {{ template "mimir.fullname" . }}-alertmanager-headless
   labels:
-    app: {{ template "enterprise-metrics.name" . }}-alertmanager
-    chart: {{ template "enterprise-metrics.chart" . }}
+    app: {{ template "mimir.name" . }}-alertmanager
+    chart: {{ template "mimir.chart" . }}
     release: {{ .Release.Name }}
     heritage: {{ .Release.Service }}
     {{- with .Values.alertmanager.service.labels }}
@@ -29,5 +29,5 @@ spec:
       protocol: TCP
       name: cluster
   selector:
-    app: {{ template "enterprise-metrics.name" . }}-alertmanager
+    app: {{ template "mimir.name" . }}-alertmanager
     release: {{ .Release.Name }}

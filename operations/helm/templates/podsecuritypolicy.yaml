@@ -2,10 +2,10 @@
 apiVersion: policy/v1beta1
 kind: PodSecurityPolicy
 metadata:
-  name: {{ template "enterprise-metrics.fullname" . }}
+  name: {{ template "mimir.fullname" . }}
   labels:
-    app: {{ template "enterprise-metrics.name" . }}
-    chart: {{ template "enterprise-metrics.chart" . }}
+    app: {{ template "mimir.name" . }}
+    chart: {{ template "mimir.chart" . }}
     heritage: {{ .Release.Service }}
     release: {{ .Release.Name }}
 spec:

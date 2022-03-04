@@ -4,23 +4,23 @@ metadata:
   annotations:
     {{- toYaml .Values.overrides_exporter.annotations | nindent 4 }}
   labels:
-    app: {{ template "enterprise-metrics.name" . }}-overrides-exporter
-    chart: {{ template "enterprise-metrics.chart" . }}
+    app: {{ template "mimir.name" . }}-overrides-exporter
+    chart: {{ template "mimir.chart" . }}
     release: {{ .Release.Name }}
     heritage: {{ .Release.Service }}
-  name: {{ template "enterprise-metrics.fullname" . }}-overrides-exporter
+  name: {{ template "mimir.fullname" . }}-overrides-exporter
 spec:
   replicas: {{ .Values.overrides_exporter.replicas }}
   selector:
     matchLabels:
-      app: {{ template "enterprise-metrics.name" . }}-overrides-exporter
+      app: {{ template "mimir.name" . }}-overrides-exporter
       release: {{ .Release.Name }}
   strategy:
     {{- toYaml .Values.overrides_exporter.strategy | nindent 4 }}
   template:
     metadata:
       labels:
-        app: {{ template "enterprise-metrics.name" . }}-overrides-exporter
+        app: {{ template "mimir.name" . }}-overrides-exporter
         # The name label is important for cortex-mixin compatibility which expects certain names for services.
         name: overrides-exporter
         gossip_ring_member: "true"
@@ -39,7 +39,7 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
     spec:
-      serviceAccountName: {{ template "enterprise-metrics.serviceAccountName" . }}
+      serviceAccountName: {{ template "mimir.serviceAccountName" . }}
       {{- if .Values.overrides_exporter.priorityClassName }}
       priorityClassName: {{ .Values.overrides_exporter.priorityClassName }}
       {{- end }}
@@ -60,7 +60,7 @@ spec:
           args:
             - "-target=overrides-exporter"
             - -activity-tracker.filepath=
-            - "-config.file=/etc/enterprise-metrics/enterprise-metrics.yaml"
+            - "-config.file=/etc/mimir/mimir.yaml"
             {{- range $key, $value := .Values.overrides_exporter.extraArgs }}
             - "-{{ $key }}={{ $value }}"
             {{- end }}
@@ -69,9 +69,9 @@ spec:
               {{ toYaml .Values.overrides_exporter.extraVolumeMounts | nindent 12}}
             {{- end }}
             - name: config
-              mountPath: /etc/enterprise-metrics
+              mountPath: /etc/mimir
             - name: runtime-config
-              mountPath: /var/enterprise-metrics
+              mountPath: /var/mimir
             - name: storage
               mountPath: "/data"
               subPath: {{ .Values.overrides_exporter.persistence.subPath }}
@@ -110,11 +110,11 @@ spec:
           {{- if .Values.useExternalConfig }}
             secretName: {{ .Values.externalConfigSecretName }}
           {{- else }}
-            secretName: {{ template "enterprise-metrics.fullname" . }}
+            secretName: {{ template "mimir.fullname" . }}
           {{- end }}
         - name: runtime-config
           configMap:
-            name: {{ template "enterprise-metrics.fullname" . }}-runtime
+            name: {{ template "mimir.fullname" . }}-runtime
         {{- if .Values.overrides_exporter.extraVolumes }}
         {{ toYaml .Values.overrides_exporter.extraVolumes | nindent 8}}
         {{- end }}

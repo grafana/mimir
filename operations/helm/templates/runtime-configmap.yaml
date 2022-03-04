@@ -1,10 +1,10 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: {{ template "enterprise-metrics.fullname" . }}-runtime
+  name: {{ template "mimir.fullname" . }}-runtime
   labels:
-    app: {{ template "enterprise-metrics.name" . }}
-    chart: {{ template "enterprise-metrics.chart" . }}
+    app: {{ template "mimir.name" . }}
+    chart: {{ template "mimir.chart" . }}
     release: {{ .Release.Name }}
     heritage: {{ .Release.Service }}
 data:

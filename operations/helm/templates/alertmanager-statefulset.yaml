@@ -3,10 +3,10 @@
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: {{ template "enterprise-metrics.fullname" . }}-alertmanager
+  name: {{ template "mimir.fullname" . }}-alertmanager
   labels:
-    app: {{ template "enterprise-metrics.name" . }}-alertmanager
-    chart: {{ template "enterprise-metrics.chart" . }}
+    app: {{ template "mimir.name" . }}-alertmanager
+    chart: {{ template "mimir.chart" . }}
     release: {{ .Release.Name }}
     heritage: {{ .Release.Service }}
   annotations:
@@ -15,11 +15,11 @@ spec:
   replicas: {{ .Values.alertmanager.replicas }}
   selector:
     matchLabels:
-      app: {{ template "enterprise-metrics.name" . }}-alertmanager
+      app: {{ template "mimir.name" . }}-alertmanager
       release: {{ .Release.Name }}
   updateStrategy:
     {{- toYaml .Values.alertmanager.statefulStrategy | nindent 4 }}          
-  serviceName: {{ template "enterprise-metrics.fullname" . }}-alertmanager
+  serviceName: {{ template "mimir.fullname" . }}-alertmanager
   {{- if .Values.alertmanager.persistentVolume.enabled }}
   volumeClaimTemplates:
     - metadata:
@@ -45,7 +45,7 @@ spec:
   template:
     metadata:
       labels:
-        app: {{ template "enterprise-metrics.name" . }}-alertmanager
+        app: {{ template "mimir.name" . }}-alertmanager
         # The name label is important for cortex-mixin compatibility which expects certain names for services.
         name: alertmanager
         gossip_ring_member: "true"
@@ -64,7 +64,7 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
     spec:
-      serviceAccountName: {{ template "enterprise-metrics.serviceAccountName" . }}
+      serviceAccountName: {{ template "mimir.serviceAccountName" . }}
       {{- if .Values.alertmanager.priorityClassName }}
       priorityClassName: {{ .Values.alertmanager.priorityClassName }}
       {{- end }}
@@ -91,11 +91,11 @@ spec:
             {{- if .Values.useExternalConfig }}
             secretName: {{ .Values.externalConfigSecretName }}
             {{- else }}
-            secretName: {{ template "enterprise-metrics.fullname" . }}
+            secretName: {{ template "mimir.fullname" . }}
             {{- end }}
         - name: runtime-config
           configMap:
-            name: {{ template "enterprise-metrics.fullname" . }}-runtime
+            name: {{ template "mimir.fullname" . }}-runtime
         {{- if not .Values.alertmanager.persistentVolume.enabled }}
         - name: storage
           emptyDir: {}
@@ -115,8 +115,8 @@ spec:
           args:
             - "-target=alertmanager"
             - -activity-tracker.filepath=
-            - "-config.file=/etc/enterprise-metrics/enterprise-metrics.yaml"
-            - "-memberlist.join={{ template "enterprise-metrics.fullname" . }}-gossip-ring"
+            - "-config.file=/etc/mimir/mimir.yaml"
+            - "-memberlist.join={{ template "mimir.fullname" . }}-gossip-ring"
             {{- if .Values.minio.enabled }}
             - -alertmanager-storage.backend=s3
             - -alertmanager-storage.s3.endpoint={{ .Release.Name }}-minio.{{ .Release.Namespace }}.svc:9000
@@ -133,9 +133,9 @@ spec:
             {{ toYaml .Values.alertmanager.extraVolumeMounts | nindent 12}}
             {{- end }}
             - name: config
-              mountPath: /etc/enterprise-metrics
+              mountPath: /etc/mimir
             - name: runtime-config
-              mountPath: /var/enterprise-metrics
+              mountPath: /var/mimir
             - name: storage
               mountPath: "/data"
               {{- if .Values.alertmanager.persistentVolume.subPath }}

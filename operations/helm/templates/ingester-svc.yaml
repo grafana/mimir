@@ -1,10 +1,10 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ template "enterprise-metrics.fullname" . }}-ingester
+  name: {{ template "mimir.fullname" . }}-ingester
   labels:
-    app: {{ template "enterprise-metrics.name" . }}-ingester
-    chart: {{ template "enterprise-metrics.chart" . }}
+    app: {{ template "mimir.name" . }}-ingester
+    chart: {{ template "mimir.chart" . }}
     release: {{ .Release.Name }}
     heritage: {{ .Release.Service }}
     {{- with .Values.ingester.labels }}
@@ -24,5 +24,5 @@ spec:
       name: grpc
       targetPort: grpc
   selector:
-    app: {{ template "enterprise-metrics.name" . }}-ingester
+    app: {{ template "mimir.name" . }}-ingester
     release: {{ .Release.Name }}

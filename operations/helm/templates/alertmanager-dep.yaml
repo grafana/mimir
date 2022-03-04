@@ -2,10 +2,10 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ template "enterprise-metrics.fullname" . }}-alertmanager
+  name: {{ template "mimir.fullname" . }}-alertmanager
   labels:
-    app: {{ template "enterprise-metrics.name" . }}-alertmanager
-    chart: {{ template "enterprise-metrics.chart" . }}
+    app: {{ template "mimir.name" . }}-alertmanager
+    chart: {{ template "mimir.chart" . }}
     release: {{ .Release.Name }}
     heritage: {{ .Release.Service }}
   annotations:
@@ -14,14 +14,14 @@ spec:
   replicas: {{ .Values.alertmanager.replicas }}
   selector:
     matchLabels:
-      app: {{ template "enterprise-metrics.name" . }}-alertmanager
+      app: {{ template "mimir.name" . }}-alertmanager
       release: {{ .Release.Name }}
   strategy:
     {{- toYaml .Values.alertmanager.strategy | nindent 4 }}
   template:
     metadata:
       labels:
-        app: {{ template "enterprise-metrics.name" . }}-alertmanager
+        app: {{ template "mimir.name" . }}-alertmanager
         # The name label is important for cortex-mixin compatibility which expects certain names for services.
         name: alertmanager
         target: alertmanager
@@ -39,7 +39,7 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
     spec:
-      serviceAccountName: {{ template "enterprise-metrics.serviceAccountName" . }}
+      serviceAccountName: {{ template "mimir.serviceAccountName" . }}
     {{- if .Values.alertmanager.priorityClassName }}
       priorityClassName: {{ .Values.query_frontend.priorityClassName }}
     {{- end }}
@@ -60,7 +60,7 @@ spec:
           args:
             - "-target=alertmanager"
             - -activity-tracker.filepath=
-            - "-config.file=/etc/enterprise-metrics/enterprise-metrics.yaml"
+            - "-config.file=/etc/mimir/mimir.yaml"
           {{- if .Values.minio.enabled }}
             - -alertmanager-storage.backend=s3
             - -alertmanager-storage.s3.endpoint={{ .Release.Name }}-minio.{{ .Release.Namespace }}.svc:9000
@@ -77,7 +77,7 @@ spec:
               {{ toYaml .Values.alertmanager.extraVolumeMounts | nindent 12}}
             {{- end }}
             - name: config
-              mountPath: /etc/enterprise-metrics
+              mountPath: /etc/mimir
             - name: storage
               mountPath: "/data"
               subPath: {{ .Values.alertmanager.persistence.subPath }}
@@ -118,7 +118,7 @@ spec:
 {{- if .Values.useExternalConfig }}
             secretName: {{ .Values.externalConfigSecretName }}
 {{- else }}
-            secretName: {{ template "enterprise-metrics.fullname" . }}
+            secretName: {{ template "mimir.fullname" . }}
 {{- end }}
 {{- if .Values.alertmanager.extraVolumes }}
 {{ toYaml .Values.alertmanager.extraVolumes | indent 8}}

@@ -1,10 +1,10 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ template "enterprise-metrics.fullname" . }}-ruler
+  name: {{ template "mimir.fullname" . }}-ruler
   labels:
-    app: {{ template "enterprise-metrics.name" . }}-ruler
-    chart: {{ template "enterprise-metrics.chart" . }}
+    app: {{ template "mimir.name" . }}-ruler
+    chart: {{ template "mimir.chart" . }}
     release: {{ .Release.Name }}
     heritage: {{ .Release.Service }}
   annotations:
@@ -13,14 +13,14 @@ spec:
   replicas: {{ .Values.ruler.replicas }}
   selector:
     matchLabels:
-      app: {{ template "enterprise-metrics.name" . }}-ruler
+      app: {{ template "mimir.name" . }}-ruler
       release: {{ .Release.Name }}
   strategy:
     {{- toYaml .Values.ruler.strategy | nindent 4 }}
   template:
     metadata:
       labels:
-        app: {{ template "enterprise-metrics.name" . }}-ruler
+        app: {{ template "mimir.name" . }}-ruler
         # The name label is important for cortex-mixin compatibility which expects certain names for services.
         name: ruler
         gossip_ring_member: "true"
@@ -39,7 +39,7 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
     spec:
-      serviceAccountName: {{ template "enterprise-metrics.serviceAccountName" . }}
+      serviceAccountName: {{ template "mimir.serviceAccountName" . }}
     {{- if .Values.ruler.priorityClassName }}
       priorityClassName: {{ .Values.ruler.priorityClassName }}
     {{- end }}
@@ -60,8 +60,8 @@ spec:
           args:
             - "-target=ruler"
             - -activity-tracker.filepath=/active-query-tracker/activity.log
-            - "-config.file=/etc/enterprise-metrics/enterprise-metrics.yaml"
-            - "-memberlist.join={{ template "enterprise-metrics.fullname" . }}-gossip-ring"
+            - "-config.file=/etc/mimir/mimir.yaml"
+            - "-memberlist.join={{ template "mimir.fullname" . }}-gossip-ring"
             {{- if .Values.minio.enabled }}
             - -blocks-storage.s3.endpoint={{ .Release.Name }}-minio.{{ .Release.Namespace }}.svc:9000
             - -blocks-storage.s3.bucket-name=mimir-tsdb
@@ -76,9 +76,9 @@ spec:
            {{- end }}
             {{- if .Values.config.ruler.enable_alertmanager_discovery }}
             - "-ruler.alertmanager-discovery=true"
-            - "-ruler.alertmanager-url=http://_http-metrics._tcp.{{ template "enterprise-metrics.name" . }}-alertmanager-headless/api/prom/alertmanager/"
+            - "-ruler.alertmanager-url=http://_http-metrics._tcp.{{ template "mimir.name" . }}-alertmanager-headless/api/prom/alertmanager/"
             {{- else }}
-            - "-ruler.alertmanager-url=http://{{ template "enterprise-metrics.fullname" . }}-alertmanager.{{ .Release.Namespace }}.svc:{{ .Values.config.server.http_listen_port }}/api/prom/alertmanager/"
+            - "-ruler.alertmanager-url=http://{{ template "mimir.fullname" . }}-alertmanager.{{ .Release.Namespace }}.svc:{{ .Values.config.server.http_listen_port }}/api/prom/alertmanager/"
             {{- end }}
             {{- if index .Values "memcached-metadata" "enabled" }}
             - -blocks-storage.bucket-store.metadata-cache.backend=memcached
@@ -93,9 +93,9 @@ spec:
               {{ toYaml .Values.ruler.extraVolumeMounts | nindent 12}}
             {{- end }}
             - name: config
-              mountPath: /etc/enterprise-metrics
+              mountPath: /etc/mimir
             - name: runtime-config
-              mountPath: /var/enterprise-metrics
+              mountPath: /var/mimir
             - name: storage
               mountPath: "/data"
               subPath: {{ .Values.ruler.persistence.subPath }}
@@ -136,11 +136,11 @@ spec:
 {{- if .Values.useExternalConfig }}
             secretName: {{ .Values.externalConfigSecretName }}
 {{- else }}
-            secretName: {{ template "enterprise-metrics.fullname" . }}
+            secretName: {{ template "mimir.fullname" . }}
 {{- end }}
         - name: runtime-config
           configMap:
-            name: {{ template "enterprise-metrics.fullname" . }}-runtime
+            name: {{ template "mimir.fullname" . }}-runtime
 {{- if .Values.ruler.extraVolumes }}
 {{ toYaml .Values.ruler.extraVolumes | indent 8}}
 {{- end }}

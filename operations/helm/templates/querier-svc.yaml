@@ -1,10 +1,10 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ template "enterprise-metrics.fullname" . }}-querier
+  name: {{ template "mimir.fullname" . }}-querier
   labels:
-    app: {{ template "enterprise-metrics.name" . }}-querier
-    chart: {{ template "enterprise-metrics.chart" . }}
+    app: {{ template "mimir.name" . }}-querier
+    chart: {{ template "mimir.chart" . }}
     release: {{ .Release.Name }}
     heritage: {{ .Release.Service }}
     {{- with .Values.querier.labels }}
@@ -24,5 +24,5 @@ spec:
       name: grpc
       targetPort: grpc
   selector:
-    app: {{ template "enterprise-metrics.name" . }}-querier
+    app: {{ template "mimir.name" . }}-querier
     release: {{ .Release.Name }}

@@ -1,10 +1,10 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ template "enterprise-metrics.fullname" . }}-distributor
+  name: {{ template "mimir.fullname" . }}-distributor
   labels:
-    app: {{ template "enterprise-metrics.name" . }}-distributor
-    chart: {{ template "enterprise-metrics.chart" . }}
+    app: {{ template "mimir.name" . }}-distributor
+    chart: {{ template "mimir.chart" . }}
     release: {{ .Release.Name }}
     heritage: {{ .Release.Service }}
   annotations:
@@ -13,14 +13,14 @@ spec:
   replicas: {{ .Values.distributor.replicas }}
   selector:
     matchLabels:
-      app: {{ template "enterprise-metrics.name" . }}-distributor
+      app: {{ template "mimir.name" . }}-distributor
       release: {{ .Release.Name }}
   strategy:
     {{- toYaml .Values.distributor.strategy | nindent 4 }}
   template:
     metadata:
       labels:
-        app: {{ template "enterprise-metrics.name" . }}-distributor
+        app: {{ template "mimir.name" . }}-distributor
         # The name label is important for cortex-mixin compatibility which expects certain names for services.
         name: distributor
         gossip_ring_member: "true"
@@ -39,7 +39,7 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
     spec:
-      serviceAccountName: {{ template "enterprise-metrics.serviceAccountName" . }}
+      serviceAccountName: {{ template "mimir.serviceAccountName" . }}
     {{- if .Values.distributor.priorityClassName }}
       priorityClassName: {{ .Values.distributor.priorityClassName }}
     {{- end }}
@@ -60,8 +60,8 @@ spec:
           args:
             - "-target=distributor"
             - -activity-tracker.filepath=
-            - "-config.file=/etc/enterprise-metrics/enterprise-metrics.yaml"
-            - "-memberlist.join={{ template "enterprise-metrics.fullname" . }}-gossip-ring"
+            - "-config.file=/etc/mimir/mimir.yaml"
+            - "-memberlist.join={{ template "mimir.fullname" . }}-gossip-ring"
           {{- range $key, $value := .Values.distributor.extraArgs }}
             - "-{{ $key }}={{ $value }}"
           {{- end }}
@@ -70,9 +70,9 @@ spec:
               {{ toYaml .Values.distributor.extraVolumeMounts | nindent 12}}
             {{- end }}
             - name: config
-              mountPath: /etc/enterprise-metrics
+              mountPath: /etc/mimir
             - name: runtime-config
-              mountPath: /var/enterprise-metrics
+              mountPath: /var/mimir
             - name: storage
               mountPath: "/data"
               subPath: {{ .Values.distributor.persistence.subPath }}
@@ -111,11 +111,11 @@ spec:
 {{- if .Values.useExternalConfig }}
             secretName: {{ .Values.externalConfigSecretName }}
 {{- else }}
-            secretName: {{ template "enterprise-metrics.fullname" . }}
+            secretName: {{ template "mimir.fullname" . }}
 {{- end }}
         - name: runtime-config
           configMap:
-            name: {{ template "enterprise-metrics.fullname" . }}-runtime
+            name: {{ template "mimir.fullname" . }}-runtime
 {{- if .Values.distributor.extraVolumes }}
 {{ toYaml .Values.distributor.extraVolumes | indent 8}}
 {{- end }}

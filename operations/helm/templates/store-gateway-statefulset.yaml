@@ -1,10 +1,10 @@
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: {{ template "enterprise-metrics.fullname" . }}-store-gateway
+  name: {{ template "mimir.fullname" . }}-store-gateway
   labels:
-    app: {{ template "enterprise-metrics.name" . }}-store-gateway
-    chart: {{ template "enterprise-metrics.chart" . }}
+    app: {{ template "mimir.name" . }}-store-gateway
+    chart: {{ template "mimir.chart" . }}
     release: {{ .Release.Name }}
     heritage: {{ .Release.Service }}
   annotations:
@@ -13,11 +13,11 @@ spec:
   replicas: {{ .Values.store_gateway.replicas }}
   selector:
     matchLabels:
-      app: {{ template "enterprise-metrics.name" . }}-store-gateway
+      app: {{ template "mimir.name" . }}-store-gateway
       release: {{ .Release.Name }}
   updateStrategy:
     {{- toYaml .Values.store_gateway.strategy | nindent 4 }}
-  serviceName: {{ template "enterprise-metrics.fullname" . }}-store-gateway
+  serviceName: {{ template "mimir.fullname" . }}-store-gateway
   {{- if .Values.store_gateway.persistentVolume.enabled }}
   volumeClaimTemplates:
     - metadata:
@@ -43,7 +43,7 @@ spec:
   template:
     metadata:
       labels:
-        app: {{ template "enterprise-metrics.name" . }}-store-gateway
+        app: {{ template "mimir.name" . }}-store-gateway
         # The name label is important for cortex-mixin compatibility which expects certain names for services.
         name: store-gateway
         gossip_ring_member: "true"
@@ -62,7 +62,7 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
     spec:
-      serviceAccountName: {{ template "enterprise-metrics.serviceAccountName" . }}
+      serviceAccountName: {{ template "mimir.serviceAccountName" . }}
       {{- if .Values.store_gateway.priorityClassName }}
       priorityClassName: {{ .Values.store_gateway.priorityClassName }}
       {{- end }}
@@ -89,11 +89,11 @@ spec:
             {{- if .Values.useExternalConfig }}
             secretName: {{ .Values.externalConfigSecretName }}
             {{- else }}
-            secretName: {{ template "enterprise-metrics.fullname" . }}
+            secretName: {{ template "mimir.fullname" . }}
             {{- end }}
         - name: runtime-config
           configMap:
-            name: {{ template "enterprise-metrics.fullname" . }}-runtime
+            name: {{ template "mimir.fullname" . }}-runtime
         {{- if not .Values.store_gateway.persistentVolume.enabled }}
         - name: storage
           emptyDir: {}
@@ -113,8 +113,8 @@ spec:
           args:
             - "-target=store-gateway"
             - -activity-tracker.filepath=/active-query-tracker/activity.log
-            - "-config.file=/etc/enterprise-metrics/enterprise-metrics.yaml"
-            - "-memberlist.join={{ template "enterprise-metrics.fullname" . }}-gossip-ring"
+            - "-config.file=/etc/mimir/mimir.yaml"
+            - "-memberlist.join={{ template "mimir.fullname" . }}-gossip-ring"
             {{- if .Values.minio.enabled }}
             - -blocks-storage.s3.endpoint={{ .Release.Name }}-minio.{{ .Release.Namespace }}.svc:9000
             - -blocks-storage.s3.bucket-name=mimir-tsdb
@@ -145,9 +145,9 @@ spec:
             {{ toYaml .Values.store_gateway.extraVolumeMounts | nindent 12}}
             {{- end }}
             - name: config
-              mountPath: /etc/enterprise-metrics
+              mountPath: /etc/mimir
             - name: runtime-config
-              mountPath: /var/enterprise-metrics
+              mountPath: /var/mimir
             - name: storage
               mountPath: "/data"
               {{- if .Values.store_gateway.persistentVolume.subPath }}

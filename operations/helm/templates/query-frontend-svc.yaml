@@ -1,10 +1,10 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ template "enterprise-metrics.fullname" . }}-query-frontend
+  name: {{ template "mimir.fullname" . }}-query-frontend
   labels:
-    app: {{ template "enterprise-metrics.name" . }}-query-frontend
-    chart: {{ template "enterprise-metrics.chart" . }}
+    app: {{ template "mimir.name" . }}-query-frontend
+    chart: {{ template "mimir.chart" . }}
     release: {{ .Release.Name }}
     heritage: {{ .Release.Service }}
     {{- with .Values.query_frontend.labels }}
@@ -24,5 +24,5 @@ spec:
       name: grpc
       targetPort: grpc
   selector:
-    app: {{ template "enterprise-metrics.name" . }}-query-frontend
+    app: {{ template "mimir.name" . }}-query-frontend
     release: {{ .Release.Name }}

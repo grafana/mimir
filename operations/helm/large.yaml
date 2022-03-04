@@ -1,4 +1,4 @@
-# These values configure the Grafana Enterprise Metrics cluster to
+# These values configure the Grafana Mimir cluster to
 # handle production ingestion of ~10M active series using the blocks
 # storage engine scraped with a 15s interval.
 # Query requirements can vary dramatically depending on query rate and query

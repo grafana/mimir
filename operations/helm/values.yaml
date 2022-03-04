@@ -74,7 +74,7 @@ config:
     rule_path: '/data'
 
   runtime_config:
-    file: /var/enterprise-metrics/runtime.yaml
+    file: /var/mimir/runtime.yaml
 
   alertmanager:
     data_dir: '/data'
@@ -185,13 +185,13 @@ alertmanager:
   terminationGracePeriodSeconds: 60
 
   initContainers: []
-  # Init containers to be added to the enterprise-metrics pod.
+  # Init containers to be added to the alertmanager pod.
   # - name: my-init-container
   #   image: busybox:latest
   #   command: ['sh', '-c', 'echo hello']
 
   extraContainers: []
-  # Additional containers to be added to the enterprise-metrics pod.
+  # Additional containers to be added to the alertmanager pod.
   # - name: reverse-proxy
   #   image: angelbarrera92/basic-auth-reverse-proxy:dev
   #   args:
@@ -207,22 +207,22 @@ alertmanager:
   #       mountPath: /etc/reverse-proxy-conf
 
   extraVolumes: []
-  # Additional volumes to the enterprise-metrics pod.
+  # Additional volumes to the alertmanager pod.
   # - name: reverse-proxy-auth-config
   #   secret:
   #     secretName: reverse-proxy-auth-config
 
-  # Extra volume mounts that will be added to the enterprise-metrics container
+  # Extra volume mounts that will be added to the alertmanager container
   extraVolumeMounts: []
 
   extraPorts: []
-  # Additional ports to the enterprise-metrics services. Useful to expose extra container ports.
+  # Additional ports to the alertmanager services. Useful to expose extra container ports.
   # - port: 11811
   #   protocol: TCP
   #   name: http
   #   targetPort: http
 
-  # Extra env variables to pass to the enterprise-metrics container
+  # Extra env variables to pass to the alertmanager container
   env: []
 
 distributor:
@@ -237,7 +237,7 @@ distributor:
       cpu: 100m
       memory: 512Mi
 
-  # Additional Grafana Enterprise Metrics container arguments, e.g. log level (debug, info, warn, error)
+  # Additional distributor container arguments, e.g. log level (debug, info, warn, error)
   extraArgs: {}
 
   # Pod Labels
@@ -302,7 +302,7 @@ ingester:
       cpu: 100m
       memory: 512Mi
 
-  # Additional Grafana Enterprise Metrics container arguments, e.g. log level (debug, info, warn, error)
+  # Additional ingester container arguments, e.g. log level (debug, info, warn, error)
   extraArgs: {}
   # Pod Labels
   podLabels: {}
@@ -447,7 +447,7 @@ ruler:
       cpu: 100m
       memory: 128Mi
 
-  # Additional Grafana Enterprise Metrics container arguments, e.g. log level (debug, info, warn, error)
+  # Additional ruler container arguments, e.g. log level (debug, info, warn, error)
   extraArgs: {}
     # log.level: debug
 
@@ -500,7 +500,7 @@ querier:
       cpu: 100m
       memory: 128Mi
 
-  # Additional Grafana Enterprise Metrics container arguments, e.g. log level (debug, info, warn, error)
+  # Additional querier container arguments, e.g. log level (debug, info, warn, error)
   extraArgs: {}
 
   # Pod Labels
@@ -564,7 +564,7 @@ query_frontend:
       cpu: 100m
       memory: 128Mi
 
-  # Additional Grafana Enterprise Metrics container arguments, e.g. log level (debug, info, warn, error)
+  # Additional query-frontend container arguments, e.g. log level (debug, info, warn, error)
   extraArgs: {}
 
   # Pod Labels
@@ -628,7 +628,7 @@ store_gateway:
       cpu: 100m
       memory: 512Mi
 
-  # Additional Grafana Enterprise Metrics container arguments, e.g. log level (debug, info, warn, error)
+  # Additional store-gateway container arguments, e.g. log level (debug, info, warn, error)
   extraArgs: {}
 
   # Pod Labels
@@ -722,7 +722,7 @@ compactor:
       cpu: 100m
       memory: 512Mi
 
-  # Additional Grafana Enterprise Metrics container arguments, e.g. log level (debug, info, warn, error)
+  # Additional compactor container arguments, e.g. log level (debug, info, warn, error)
   extraArgs: {}
 
   # Pod Labels

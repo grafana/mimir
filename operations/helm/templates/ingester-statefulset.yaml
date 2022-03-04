@@ -2,10 +2,10 @@
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: {{ template "enterprise-metrics.fullname" . }}-ingester
+  name: {{ template "mimir.fullname" . }}-ingester
   labels:
-    app: {{ template "enterprise-metrics.name" . }}-ingester
-    chart: {{ template "enterprise-metrics.chart" . }}
+    app: {{ template "mimir.name" . }}-ingester
+    chart: {{ template "mimir.chart" . }}
     release: {{ .Release.Name }}
     heritage: {{ .Release.Service }}
   annotations:
@@ -15,11 +15,11 @@ spec:
   replicas: {{ .Values.ingester.replicas }}
   selector:
     matchLabels:
-      app: {{ template "enterprise-metrics.name" . }}-ingester
+      app: {{ template "mimir.name" . }}-ingester
       release: {{ .Release.Name }}
   updateStrategy:
     {{- toYaml .Values.ingester.statefulStrategy | nindent 4 }}
-  serviceName: {{ template "enterprise-metrics.fullname" . }}-ingester
+  serviceName: {{ template "mimir.fullname" . }}-ingester
   {{- if .Values.ingester.persistentVolume.enabled }}
   volumeClaimTemplates:
     - metadata:
@@ -45,7 +45,7 @@ spec:
   template:
     metadata:
       labels:
-        app: {{ template "enterprise-metrics.name" . }}-ingester
+        app: {{ template "mimir.name" . }}-ingester
         # The name label is important for cortex-mixin compatibility which expects certain names for services.
         name: ingester
         gossip_ring_member: "true"
@@ -64,7 +64,7 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
     spec:
-      serviceAccountName: {{ template "enterprise-metrics.serviceAccountName" . }}
+      serviceAccountName: {{ template "mimir.serviceAccountName" . }}
       {{- if .Values.ingester.priorityClassName }}
       priorityClassName: {{ .Values.ingester.priorityClassName }}
       {{- end }}
@@ -91,11 +91,11 @@ spec:
             {{- if .Values.useExternalConfig }}
             secretName: {{ .Values.externalConfigSecretName }}
             {{- else }}
-            secretName: {{ template "enterprise-metrics.fullname" . }}
+            secretName: {{ template "mimir.fullname" . }}
             {{- end }}
         - name: runtime-config
           configMap:
-            name: {{ template "enterprise-metrics.fullname" . }}-runtime
+            name: {{ template "mimir.fullname" . }}-runtime
         {{- if not .Values.ingester.persistentVolume.enabled }}
         - name: storage
           emptyDir: {}
@@ -113,8 +113,8 @@ spec:
           args:
             - "-target=ingester"
             - -activity-tracker.filepath=
-            - "-config.file=/etc/enterprise-metrics/enterprise-metrics.yaml"
-            - "-memberlist.join={{ template "enterprise-metrics.fullname" . }}-gossip-ring"
+            - "-config.file=/etc/mimir/mimir.yaml"
+            - "-memberlist.join={{ template "mimir.fullname" . }}-gossip-ring"
             {{- if .Values.minio.enabled }}
             - -blocks-storage.s3.endpoint={{ .Release.Name }}-minio.{{ .Release.Namespace }}.svc:9000
             - -blocks-storage.s3.bucket-name=mimir-tsdb
@@ -130,9 +130,9 @@ spec:
             {{ toYaml .Values.ingester.extraVolumeMounts | nindent 12}}
             {{- end }}
             - name: config
-              mountPath: /etc/enterprise-metrics
+              mountPath: /etc/mimir
             - name: runtime-config
-              mountPath: /var/enterprise-metrics
+              mountPath: /var/mimir
             - name: storage
               mountPath: "/data"
               {{- if .Values.ingester.persistentVolume.subPath }}

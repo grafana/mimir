@@ -1,10 +1,10 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ template "enterprise-metrics.fullname" . }}-querier
+  name: {{ template "mimir.fullname" . }}-querier
   labels:
-    app: {{ template "enterprise-metrics.name" . }}-querier
-    chart: {{ template "enterprise-metrics.chart" . }}
+    app: {{ template "mimir.name" . }}-querier
+    chart: {{ template "mimir.chart" . }}
     release: {{ .Release.Name }}
     heritage: {{ .Release.Service }}
   annotations:
@@ -13,14 +13,14 @@ spec:
   replicas: {{ .Values.querier.replicas }}
   selector:
     matchLabels:
-      app: {{ template "enterprise-metrics.name" . }}-querier
+      app: {{ template "mimir.name" . }}-querier
       release: {{ .Release.Name }}
   strategy:
     {{- toYaml .Values.querier.strategy | nindent 4 }}
   template:
     metadata:
       labels:
-        app: {{ template "enterprise-metrics.name" . }}-querier
+        app: {{ template "mimir.name" . }}-querier
         # The name label is important for cortex-mixin compatibility which expects certain names for services.
         name: querier
         gossip_ring_member: "true"
@@ -39,7 +39,7 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
     spec:
-      serviceAccountName: {{ template "enterprise-metrics.serviceAccountName" . }}
+      serviceAccountName: {{ template "mimir.serviceAccountName" . }}
     {{- if .Values.querier.priorityClassName }}
       priorityClassName: {{ .Values.querier.priorityClassName }}
     {{- end }}
@@ -60,8 +60,8 @@ spec:
           args:
             - "-target=querier"
             - -activity-tracker.filepath=/active-query-tracker/activity.log
-            - "-config.file=/etc/enterprise-metrics/enterprise-metrics.yaml"
-            - "-querier.frontend-address={{ template "enterprise-metrics.fullname" . }}-query-frontend-headless.{{ .Release.Namespace }}.svc:{{ .Values.config.server.grpc_listen_port }}"
+            - "-config.file=/etc/mimir/mimir.yaml"
+            - "-querier.frontend-address={{ template "mimir.fullname" . }}-query-frontend-headless.{{ .Release.Namespace }}.svc:{{ .Values.config.server.grpc_listen_port }}"
             {{- if .Values.minio.enabled }}
             - -blocks-storage.s3.endpoint={{ .Release.Name }}-minio.{{ .Release.Namespace }}.svc:9000
             - -blocks-storage.s3.bucket-name=mimir-tsdb
@@ -74,7 +74,7 @@ spec:
             - -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dns+{{ .Release.Name }}-memcached-metadata.{{ .Release.Namespace }}.svc:11211
             - -blocks-storage.bucket-store.metadata-cache.memcached.max-item-size={{ (index .Values "memcached-metadata").maxItemMemory }}
             {{- end }}
-            - "-memberlist.join={{ template "enterprise-metrics.fullname" . }}-gossip-ring"
+            - "-memberlist.join={{ template "mimir.fullname" . }}-gossip-ring"
             - -memberlist.abort-if-join-fails=false
             - -memberlist.compression-enabled=false
           {{- range $key, $value := .Values.querier.extraArgs }}
@@ -85,9 +85,9 @@ spec:
               {{ toYaml .Values.querier.extraVolumeMounts | nindent 12}}
             {{- end }}
             - name: config
-              mountPath: /etc/enterprise-metrics
+              mountPath: /etc/mimir
             - name: runtime-config
-              mountPath: /var/enterprise-metrics
+              mountPath: /var/mimir
             - name: storage
               mountPath: "/data"
               subPath: {{ .Values.querier.persistence.subPath }}
@@ -128,11 +128,11 @@ spec:
 {{- if .Values.useExternalConfig }}
             secretName: {{ .Values.externalConfigSecretName }}
 {{- else }}
-            secretName: {{ template "enterprise-metrics.fullname" . }}
+            secretName: {{ template "mimir.fullname" . }}
 {{- end }}
         - name: runtime-config
           configMap:
-            name: {{ template "enterprise-metrics.fullname" . }}-runtime
+            name: {{ template "mimir.fullname" . }}-runtime
 {{- if .Values.querier.extraVolumes }}
 {{ toYaml .Values.querier.extraVolumes | indent 8}}
 {{- end }}

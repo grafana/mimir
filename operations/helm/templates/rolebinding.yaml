@@ -2,17 +2,17 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: {{ template "enterprise-metrics.fullname" . }}
+  name: {{ template "mimir.fullname" . }}
   labels:
-    app: {{ template "enterprise-metrics.name" . }}
-    chart: {{ template "enterprise-metrics.chart" . }}
+    app: {{ template "mimir.name" . }}
+    chart: {{ template "mimir.chart" . }}
     heritage: {{ .Release.Service }}
     release: {{ .Release.Name }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: {{ template "enterprise-metrics.fullname" . }}
+  name: {{ template "mimir.fullname" . }}
 subjects:
 - kind: ServiceAccount
-  name: {{ template "enterprise-metrics.serviceAccountName" . }}
+  name: {{ template "mimir.serviceAccountName" . }}
 {{- end }}

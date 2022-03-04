@@ -2,7 +2,7 @@
 {{/*
 Expand the name of the chart.
 */}}
-{{- define "enterprise-metrics.name" -}}
+{{- define "mimir.name" -}}
 {{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
@@ -11,7 +11,7 @@ Create a default fully qualified app name.
 We truncate at 63 chars because some Kubernetes name fields are limited to this (by the DNS naming spec).
 If release name contains chart name it will be used as a full name.
 */}}
-{{- define "enterprise-metrics.fullname" -}}
+{{- define "mimir.fullname" -}}
 {{- if .Values.fullnameOverride -}}
 {{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" -}}
 {{- else -}}
@@ -27,23 +27,23 @@ If release name contains chart name it will be used as a full name.
 {{/*
 Create chart name and version as used by the chart label.
 */}}
-{{- define "enterprise-metrics.chart" -}}
+{{- define "mimir.chart" -}}
 {{- printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
 {{/*
 Create the name of the service account
 */}}
-{{- define "enterprise-metrics.serviceAccountName" -}}
+{{- define "mimir.serviceAccountName" -}}
 {{- if .Values.serviceAccount.create -}}
-    {{ default (include "enterprise-metrics.fullname" .) .Values.serviceAccount.name }}
+    {{ default (include "mimir.fullname" .) .Values.serviceAccount.name }}
 {{- else -}}
     {{ default "default" .Values.serviceAccount.name }}
 {{- end -}}
 {{- end -}}
 
 {{/*
-Create the app name of enterprise-metrics clients. Defaults to the same logic as "enterprise-metrics.fullname", and default client expects "prometheus".
+Create the app name for clients. Defaults to the same logic as "mimir.fullname", and default client expects "prometheus".
 */}}
 {{- define "client.name" -}}
 {{- if .Values.client.name -}}
