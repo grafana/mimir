@@ -36,7 +36,7 @@ When an Alertmanager is restarted, the alerts stored on the Alertmanager are not
 By default, Alertmanagers replicate each tenant's alerts to three Alertmanagers.
 Alerts notification and visualization succeed as far as each tenant has at least one healthy Alertmanager in their shard.
 
-To ensure no alerts notification, deduplication or visualization fail during a rolling update, we recommend to roll out at most two Alertmanagers at a time.
+To ensure no alerts notification, reception or visualization fail during a rolling update, we recommend to roll out at most two Alertmanagers at a time.
 
 > **Note**: If you enabled [zone-aware replication]({{< relref "./configure-zone-aware-replication.md">}}) for Alertmanager, you can roll out all Alertmanagers in one zone at once.
 
