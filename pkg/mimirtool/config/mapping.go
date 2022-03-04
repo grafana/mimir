@@ -51,12 +51,6 @@ func (m PathMapper) DoMap(source, target *InspectedEntry) error {
 	return errs.Err()
 }
 
-type NoopMapper struct{}
-
-func (NoopMapper) DoMap(_, _ *InspectedEntry) error {
-	return nil
-}
-
 type MultiMapper []Mapper
 
 func (m MultiMapper) DoMap(source, target *InspectedEntry) error {
