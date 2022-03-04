@@ -26,7 +26,7 @@ Use Grafana Mimir’s `/runtime_config` endpoint to see the current value of the
 
 ## Ingester limits
 
-Mimir implements various limits on the requests it can process, in order to prevent a single tenant from overwhelming the cluster. There are various default global limits that apply to all tenants which can be set on the command line. These limits can also be overridden on a per-tenant basis by using the `overrides` field of a runtime configuration file.
+Mimir implements various limits on the requests it can process, in order to prevent a single tenant from overwhelming the cluster. There are various default global limits that apply to all tenants which can be set on the command line. These limits can also be overridden on a per-tenant basis by using the `overrides` field of the runtime configuration file.
 
 The `overrides` field is a map of tenant ID (same values as passed in the `X-Scope-OrgID` header) to the various limits. An example could look like:
 
