@@ -60,14 +60,6 @@ spec:
             - -activity-tracker.filepath=/active-query-tracker/activity.log
             - "-target=query-frontend"
             - "-config.file=/etc/enterprise-metrics/enterprise-metrics.yaml"
-          {{- if .Values.minio.enabled }}
-            - -admin.client.backend-type=s3
-            - -admin.client.s3.endpoint={{ .Release.Name }}-minio.{{ .Release.Namespace }}.svc:9000
-            - -admin.client.s3.bucket-name=enterprise-metrics-admin
-            - -admin.client.s3.access-key-id=enterprise-metrics
-            - -admin.client.s3.secret-access-key=supersecret
-            - -admin.client.s3.insecure=true
-          {{- end }}
           {{- range $key, $value := .Values.query_frontend.extraArgs }}
             - "-{{ $key }}={{ $value }}"
           {{- end }}
@@ -77,8 +69,6 @@ spec:
             {{- end }}
             - name: runtime-config
               mountPath: /var/enterprise-metrics
-            - name: license
-              mountPath: /license
             - name: config
               mountPath: /etc/enterprise-metrics
             - name: storage
@@ -128,9 +118,6 @@ spec:
         - name: runtime-config
           configMap:
             name: {{ template "enterprise-metrics.fullname" . }}-runtime
-        - name: license
-          secret:
-            secretName: {{ .Values.license.secretName }}
 {{- if .Values.query_frontend.extraVolumes }}
 {{ toYaml .Values.query_frontend.extraVolumes | indent 8}}
 {{- end }}

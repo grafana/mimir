@@ -96,9 +96,6 @@ spec:
         - name: runtime-config
           configMap:
             name: {{ template "enterprise-metrics.fullname" . }}-runtime
-        - name: license
-          secret:
-            secretName: {{ .Values.license.secretName }}
         {{- if not .Values.alertmanager.persistentVolume.enabled }}
         - name: storage
           emptyDir: {}
@@ -121,12 +118,6 @@ spec:
             - "-config.file=/etc/enterprise-metrics/enterprise-metrics.yaml"
             - "-memberlist.join={{ template "enterprise-metrics.fullname" . }}-gossip-ring"
             {{- if .Values.minio.enabled }}
-            - -admin.client.backend-type=s3
-            - -admin.client.s3.endpoint={{ .Release.Name }}-minio.{{ .Release.Namespace }}.svc:9000
-            - -admin.client.s3.bucket-name=enterprise-metrics-admin
-            - -admin.client.s3.access-key-id=enterprise-metrics
-            - -admin.client.s3.secret-access-key=supersecret
-            - -admin.client.s3.insecure=true
             - -alertmanager-storage.backend=s3
             - -alertmanager-storage.s3.endpoint={{ .Release.Name }}-minio.{{ .Release.Namespace }}.svc:9000
             - -alertmanager-storage.s3.bucket-name=enterprise-metrics-ruler
@@ -145,8 +136,6 @@ spec:
               mountPath: /etc/enterprise-metrics
             - name: runtime-config
               mountPath: /var/enterprise-metrics
-            - name: license
-              mountPath: /license
             - name: storage
               mountPath: "/data"
               {{- if .Values.alertmanager.persistentVolume.subPath }}

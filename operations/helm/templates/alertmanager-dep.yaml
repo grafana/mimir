@@ -62,12 +62,6 @@ spec:
             - -activity-tracker.filepath=
             - "-config.file=/etc/enterprise-metrics/enterprise-metrics.yaml"
           {{- if .Values.minio.enabled }}
-            - -admin.client.backend-type=s3
-            - -admin.client.s3.endpoint={{ .Release.Name }}-minio.{{ .Release.Namespace }}.svc:9000
-            - -admin.client.s3.bucket-name=enterprise-metrics-admin
-            - -admin.client.s3.access-key-id=enterprise-metrics
-            - -admin.client.s3.secret-access-key=supersecret
-            - -admin.client.s3.insecure=true
             - -alertmanager-storage.backend=s3
             - -alertmanager-storage.s3.endpoint={{ .Release.Name }}-minio.{{ .Release.Namespace }}.svc:9000
             - -alertmanager-storage.s3.bucket-name=enterprise-metrics-ruler
@@ -84,8 +78,6 @@ spec:
             {{- end }}
             - name: config
               mountPath: /etc/enterprise-metrics
-            - name: license
-              mountPath: /license
             - name: storage
               mountPath: "/data"
               subPath: {{ .Values.alertmanager.persistence.subPath }}
@@ -131,9 +123,6 @@ spec:
 {{- if .Values.alertmanager.extraVolumes }}
 {{ toYaml .Values.alertmanager.extraVolumes | indent 8}}
 {{- end }}
-        - name: license
-          secret:
-            secretName: {{ .Values.license.secretName }}
         - name: storage
           emptyDir: {}
         - name: tmp
