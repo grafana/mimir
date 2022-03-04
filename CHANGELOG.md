@@ -19,6 +19,10 @@
 
 * [CHANGE] `analyse` command has been renamed to `analyze`. #1318
 
+### Tools
+
+* [CHANGE] Removed `query-audit`. You can use `query-tee` to compare query results and performances of two Grafana Mimir backends. #1380
+
 ## 2.0.0-rc.1
 
 ### Grafana Mimir
