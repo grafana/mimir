@@ -73,13 +73,13 @@ func Convert(contents []byte, flags []string, m Mapper, sourceFactory, targetFac
 		return nil, nil, ConversionNotices{}, errors.Wrap(err, "could not detect changed defaults")
 	}
 
-	err = changeOldDefaultsToNewDefaults(target, sourceDefaults, targetDefaults)
+	err = changeOldDefaultsToNewDefaults(target, sourceDefaults)
 	if err != nil {
 		return nil, nil, ConversionNotices{}, err
 	}
 
 	if pruneDefaultValues {
-		notices.PrunedDefaults = pruneDefaults(target, targetDefaults)
+		notices.PrunedDefaults = pruneDefaults(target)
 	}
 
 	var newFlags []string
@@ -98,9 +98,9 @@ func Convert(contents []byte, flags []string, m Mapper, sourceFactory, targetFac
 	return yamlBytes, newFlags, *notices, nil
 }
 
-func changeOldDefaultsToNewDefaults(target, oldDefaults, newDefaults Parameters) error {
+func changeOldDefaultsToNewDefaults(target, oldDefaults Parameters) error {
 	return target.Walk(func(path string, value interface{}) error {
-		oldDefault, err := oldDefaults.GetValue(path)
+		oldDefault, err := oldDefaults.GetDefaultValue(path)
 		if err != nil {
 			if errors.Is(err, ErrParameterNotFound) {
 				// This param is not in the old config, so there's no default to change from.
@@ -109,7 +109,7 @@ func changeOldDefaultsToNewDefaults(target, oldDefaults, newDefaults Parameters)
 			return err
 		}
 		if reflect.DeepEqual(oldDefault, value) {
-			return target.SetValue(path, newDefaults.MustGetValue(path))
+			return target.SetValue(path, target.MustGetDefaultValue(path))
 		}
 		return nil
 	})
@@ -257,25 +257,20 @@ func parseFlagNames(flags []string) map[string]bool {
 func prepareDefaults(m Mapper, sourceFactory, targetFactory InspectedEntryFactory) (cortexDefaults, mimirDefaults Parameters, err error) {
 	oldCortexDefaults, mappedCortexDefaults := sourceFactory(), targetFactory()
 
-	err = m.DoMap(oldCortexDefaults, mappedCortexDefaults)
-	return mappedCortexDefaults, DefaultMimirConfig(), err
+	err = m.DoMap(defaultValueInspectedEntry{oldCortexDefaults}, defaultValueInspectedEntry{mappedCortexDefaults})
+	return mappedCortexDefaults, targetFactory(), err
 }
 
 func changedDefaults(oldDefaults, newDefaults Parameters) ([]ChangedDefault, error) {
 	var defs []ChangedDefault
-	err := newDefaults.Walk(func(path string, newDefault interface{}) error {
-		oldDefault, err := oldDefaults.GetValue(path)
-		if err != nil {
-			// We don't expect new fields exist in the old struct.
-			if errors.Is(err, ErrParameterNotFound) {
-				return err
-			}
-			oldDefault = nil
-		}
+	err := newDefaults.Walk(func(path string, _ interface{}) error {
+		newDefault := newDefaults.MustGetDefaultValue(path)
+		// We don't expect new fields exist in the old struct. A nil value works too, so we ignore the error.
+		oldDefault, _ := oldDefaults.GetDefaultValue(path)
 
 		// Use reflect.DeepEqual to easily compare different type aliases that resolve to the same underlying type,
 		// fields with interface types, and maps and slices.
-		if !reflect.DeepEqual(oldDefault, newDefault) {
+		if oldDefault != nil && !reflect.DeepEqual(oldDefault, newDefault) {
 			defs = append(defs, ChangedDefault{
 				Path:       path,
 				OldDefault: fmt.Sprint(oldDefault),
@@ -289,11 +284,11 @@ func changedDefaults(oldDefaults, newDefaults Parameters) ([]ChangedDefault, err
 
 // pruneDefaults removes parameters from fullParams that are reflect.DeepEqual to either value from
 // oldDefaults or newDefaults with the same path. pruneDefaults prints any errors during pruning to os.Stderr
-func pruneDefaults(fullParams, newDefaults Parameters) []PrunedDefault {
+func pruneDefaults(fullParams Parameters) []PrunedDefault {
 	var pathsToDelete []PrunedDefault
 
 	err := fullParams.Walk(func(path string, value interface{}) error {
-		newDefault := newDefaults.MustGetValue(path)
+		newDefault := fullParams.MustGetDefaultValue(path)
 
 		// Use reflect.DeepEqual to easily compare different type aliases that resolve to the same underlying type,
 		// fields with interface types, and maps and slices.

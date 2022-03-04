@@ -110,23 +110,36 @@ func (i *InspectedEntry) UnmarshalJSON(b []byte) error {
 // For example, it takes `{ "fieldValue": 123 }` and sets i.FieldValue to int(123). The default json.Unmarshal
 // behaviour would be to unmarshal it into float64(123).
 func (i *InspectedEntry) unmarshalJSONValue(b []byte) error {
-	jsonValue := &struct {
-		Raw json.RawMessage `json:"fieldValue"`
+	jsonValues := &struct {
+		Raw        json.RawMessage `json:"fieldValue"`
+		RawDefault json.RawMessage `json:"fieldDefaultValue"`
 	}{}
-
-	err := json.Unmarshal(b, jsonValue)
+	// TODO dimitarvdimitrov refactor this function
+	err := json.Unmarshal(b, jsonValues)
 	if err != nil {
 		return err
 	}
 
-	jsonDecoder := json.NewDecoder(bytes.NewBuffer(jsonValue.Raw))
-	if jsonValue.Raw == nil {
+	if jsonValues.Raw == nil {
 		i.FieldValue = nil
-		return nil
+	} else {
+		jsonDecoder := json.NewDecoder(bytes.NewBuffer(jsonValues.Raw))
+		i.FieldValue, err = decodeValue(i.FieldType, jsonDecoder)
+		if err != nil {
+			return err
+		}
 	}
 
-	i.FieldValue, err = decodeValue(i.FieldType, jsonDecoder)
-	return err
+	if jsonValues.RawDefault == nil {
+		i.FieldDefaultValue = nil
+	} else {
+		jsonDecoder := json.NewDecoder(bytes.NewBuffer(jsonValues.RawDefault))
+		i.FieldDefaultValue, err = decodeValue(i.FieldType, jsonDecoder)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (i *InspectedEntry) MarshalYAML() (interface{}, error) {
@@ -445,7 +458,7 @@ func (i Inspector) convertEntryToEntry(entry *parse.ConfigEntry) *InspectedEntry
 		e.FieldFlag = entry.FieldFlag
 		e.FieldType = entry.FieldType
 		e.FieldCategory = entry.FieldCategory
-		e.FieldValue = i.getValueFn(entry)
+		e.FieldValue = nil
 		e.FieldDefaultValue = getDefaultValue(entry)
 	}
 	return e

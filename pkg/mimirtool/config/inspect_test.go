@@ -245,7 +245,7 @@ distributor:
 func TestInspectConfig_HasDefaultValues(t *testing.T) {
 	d, err := DefaultValueInspector.InspectConfig(&mimir.Config{})
 	require.NoError(t, err)
-	val := d.MustGetValue("distributor.remote_timeout")
+	val := d.MustGetDefaultValue("distributor.remote_timeout")
 	assert.Equal(t, time.Second*20, val)
 }
 
@@ -300,7 +300,7 @@ func TestInspectConfig_LoadingAConfigHasCorrectTypes(t *testing.T) {
 	params := DefaultCortexConfig()
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			val := params.MustGetValue(tc.path)
+			val := params.MustGetDefaultValue(tc.path)
 			assert.IsType(t, tc.expectedType, val)
 		})
 	}

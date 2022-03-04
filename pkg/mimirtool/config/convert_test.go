@@ -64,7 +64,7 @@ func TestConvert(t *testing.T) {
 			outFile: "testdata/ruler_storage-new.yaml",
 		},
 		{
-			name:    "ruler.storage maps to ruler.storage",
+			name:    "ruler_storage maps to ruler_storage",
 			inFile:  "testdata/ruler_storage-old.yaml",
 			outFile: "testdata/ruler_storage-new.yaml",
 		},

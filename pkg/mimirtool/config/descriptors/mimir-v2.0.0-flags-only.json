@@ -9,7 +9,6 @@
       "name": "config-file",
       "required": false,
       "desc": "Configuration file to load.",
-      "fieldValue": "",
       "fieldDefaultValue": "",
       "fieldFlag": "config.file",
       "fieldType": "string"
@@ -19,7 +18,6 @@
       "name": "config-expand-env",
       "required": false,
       "desc": "Expands ${var} or $var in config according to the values of the environment variables.",
-      "fieldValue": "",
       "fieldDefaultValue": "",
       "fieldFlag": "config.expand-env",
       "fieldType": "string"
@@ -29,7 +27,6 @@
       "name": "mem-ballast-size-bytes",
       "required": false,
       "desc": "Size of memory ballast to allocate.",
-      "fieldValue": 0,
       "fieldDefaultValue": 0,
       "fieldFlag": "mem-ballast-size-bytes",
       "fieldType": "int"
