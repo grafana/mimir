@@ -43,10 +43,11 @@ type InspectedEntry struct {
 	BlockFlagsPrefixes []string          `json:"blockFlagsPrefixes,omitempty"`
 
 	// In case the Kind is "field"
-	FieldValue    interface{} `json:"fieldValue,omitempty"`
-	FieldFlag     string      `json:"fieldFlag,omitempty"`
-	FieldType     string      `json:"fieldType,omitempty"`
-	FieldCategory string      `json:"fieldCategory,omitempty"`
+	FieldValue        interface{} `json:"fieldValue,omitempty"`
+	FieldDefaultValue interface{} `json:"fieldDefaultValue,omitempty"`
+	FieldFlag         string      `json:"fieldFlag,omitempty"`
+	FieldType         string      `json:"fieldType,omitempty"`
+	FieldCategory     string      `json:"fieldCategory,omitempty"`
 }
 
 // String implements flag.Value
@@ -332,6 +333,32 @@ func (i InspectedEntry) GetFlag(path string) (string, error) {
 	return child.FieldFlag, nil
 }
 
+func (i InspectedEntry) GetDefaultValue(path string) (interface{}, error) {
+	child, err := i.find(path)
+	if err != nil {
+		return nil, err
+	}
+	return child.FieldDefaultValue, nil
+}
+
+func (i InspectedEntry) MustGetDefaultValue(path string) interface{} {
+	val, err := i.GetDefaultValue(path)
+	if err != nil {
+		panic(err)
+	}
+	return val
+}
+
+func (i InspectedEntry) SetDefault(path string, val interface{}) error {
+	entry, err := i.find(path)
+	if err != nil {
+		return errors.Wrap(ErrParameterNotFound, path)
+	}
+
+	entry.FieldDefaultValue = val
+	return nil
+}
+
 var (
 	// ZeroValueInspector inspects passed configuration structs and returns nested InspectedEntries
 	// where the InspectedEntry.FieldValue is the go zero-value for the type of the field.
@@ -345,18 +372,20 @@ var (
 	// where the InspectedEntry.FieldValue is the default value for the that particular field. This is determined
 	// by the default value that the registered CLI flags take.
 	DefaultValueInspector = Inspector{
-		getValueFn: func(entry *parse.ConfigEntry) interface{} {
-			yamlNodeKind := yaml.ScalarNode
-			if strings.HasPrefix(entry.FieldType, "map") {
-				yamlNodeKind = yaml.MappingNode
-			} else if strings.HasPrefix(entry.FieldType, "list") {
-				yamlNodeKind = yaml.SequenceNode
-			}
-			value, _ := decodeValue(entry.FieldType, &yaml.Node{Kind: yamlNodeKind, Value: entry.FieldDefault})
-			return value
-		},
+		getValueFn: getDefaultValue,
 	}
 )
+
+func getDefaultValue(entry *parse.ConfigEntry) interface{} {
+	yamlNodeKind := yaml.ScalarNode
+	if strings.HasPrefix(entry.FieldType, "map") {
+		yamlNodeKind = yaml.MappingNode
+	} else if strings.HasPrefix(entry.FieldType, "list") {
+		yamlNodeKind = yaml.SequenceNode
+	}
+	value, _ := decodeValue(entry.FieldType, &yaml.Node{Kind: yamlNodeKind, Value: entry.FieldDefault})
+	return value
+}
 
 // Inspector is the type that takes configuration structs and produces inspection profiles or descriptions.
 // Please use ZeroValueInspector or DefaultValueInspector. A zero-valued Inspector{} struct will panic.
@@ -417,6 +446,7 @@ func (i Inspector) convertEntryToEntry(entry *parse.ConfigEntry) *InspectedEntry
 		e.FieldType = entry.FieldType
 		e.FieldCategory = entry.FieldCategory
 		e.FieldValue = i.getValueFn(entry)
+		e.FieldDefaultValue = getDefaultValue(entry)
 	}
 	return e
 }
