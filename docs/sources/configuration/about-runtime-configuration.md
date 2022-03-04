@@ -73,7 +73,7 @@ Valid ingester instance limits are (with their corresponding CLI flags for defau
 
 - `max_series` \ `-ingester.instance-limits.max-series`
 
-  Limit the total number of series that an ingester keeps in memory, across all users. When this limit is reached, requests that create new series will fail with an HTTP 500 error.
+  Limit the total number of series that an ingester keeps in memory, across all tenants. When this limit is reached, requests that create new series will fail with an HTTP 500 error.
 
 - `max_tenants` \ `-ingester.instance-limits.max-tenants`
 
