@@ -35,7 +35,14 @@ type PrunedDefault struct {
 // InspectedEntries where the FieldValue is the default value of the configuration parameter.
 // Convert uses sourceFactory and targetFactory to also prune the default values from the resulting config.
 // Convert returns the marshalled YAML config in the target schema.
-func Convert(contents []byte, flags []string, m Mapper, sourceFactory, targetFactory InspectedEntryFactory, pruneDefaultValues bool) (convertedContents []byte, convertedFlags []string, n ConversionNotices, conversionErr error) {
+func Convert(
+	contents []byte,
+	flags []string,
+	m Mapper,
+	sourceFactory, targetFactory InspectedEntryFactory,
+	useNewDefaults, showDefaults bool,
+) (convertedContents []byte, convertedFlags []string, _ ConversionNotices, conversionErr error) {
+
 	var (
 		notices = &ConversionNotices{}
 		err     error
@@ -63,24 +70,21 @@ func Convert(contents []byte, flags []string, m Mapper, sourceFactory, targetFac
 		return nil, nil, ConversionNotices{}, errors.Wrap(err, "could not map old config to new config")
 	}
 
-	sourceDefaults, targetDefaults, err := prepareDefaults(m, sourceFactory, targetFactory)
+	sourceDefaults, err := prepareSourceDefaults(m, sourceFactory, targetFactory)
 	if err != nil {
 		return nil, nil, ConversionNotices{}, errors.Wrap(err, "could not prune defaults in new config")
 	}
 
-	notices.ChangedDefaults, err = changedDefaults(sourceDefaults, targetDefaults)
+	if useNewDefaults {
+		notices.ChangedDefaults, err = changeOldDefaultsToNewDefaults(target, sourceDefaults)
+	}
 	if err != nil {
 		return nil, nil, ConversionNotices{}, errors.Wrap(err, "could not detect changed defaults")
 	}
 
-	err = changeOldDefaultsToNewDefaults(target, sourceDefaults)
-	if err != nil {
-		return nil, nil, ConversionNotices{}, err
+	if showDefaults { // TODO dimitarvdimitrov implement this
 	}
-
-	if pruneDefaultValues {
-		notices.PrunedDefaults = pruneDefaults(target)
-	}
+	pruneNils(target)
 
 	var newFlags []string
 	if len(flags) > 0 {
@@ -98,21 +102,37 @@ func Convert(contents []byte, flags []string, m Mapper, sourceFactory, targetFac
 	return yamlBytes, newFlags, *notices, nil
 }
 
-func changeOldDefaultsToNewDefaults(target, oldDefaults Parameters) error {
-	return target.Walk(func(path string, value interface{}) error {
+func changeOldDefaultsToNewDefaults(target, oldDefaults Parameters) ([]ChangedDefault, error) {
+	var changedDefaults []ChangedDefault
+
+	err := target.Walk(func(path string, value interface{}) error {
+		if value == nil {
+			// The user hadn't set an explicit value, so the new default will be used anyway
+			return nil
+		}
 		oldDefault, err := oldDefaults.GetDefaultValue(path)
 		if err != nil {
 			if errors.Is(err, ErrParameterNotFound) {
-				// This param is not in the old config, so there's no default to change from.
+				// This looks like a new parameter because it doesn't exist in the old schema; no default to change from
 				return nil
 			}
 			return err
 		}
-		if reflect.DeepEqual(oldDefault, value) {
-			return target.SetValue(path, target.MustGetDefaultValue(path))
+		newDefault := target.MustGetDefaultValue(path)
+		if reflect.DeepEqual(value, oldDefault) && !reflect.DeepEqual(oldDefault, newDefault) {
+			err = target.SetValue(path, newDefault)
+			if err != nil {
+				return err
+			}
+			changedDefaults = append(changedDefaults, ChangedDefault{
+				Path:       path,
+				OldDefault: fmt.Sprint(oldDefault),
+				NewDefault: fmt.Sprint(newDefault),
+			})
 		}
 		return nil
 	})
+	return changedDefaults, err
 }
 
 func convertFlags(flags []string, m Mapper, target Parameters, sourceFactory, targetFactory InspectedEntryFactory) ([]string, error) {
@@ -252,64 +272,35 @@ func parseFlagNames(flags []string) map[string]bool {
 	return names
 }
 
-// prepareDefaults maps source defaults to target defaults the same way regular source config is mapped to target config.
-// This enables lookups of cortex default values using their mimir paths.
-func prepareDefaults(m Mapper, sourceFactory, targetFactory InspectedEntryFactory) (cortexDefaults, mimirDefaults Parameters, err error) {
-	oldCortexDefaults, mappedCortexDefaults := sourceFactory(), targetFactory()
-
-	err = m.DoMap(defaultValueInspectedEntry{oldCortexDefaults}, defaultValueInspectedEntry{mappedCortexDefaults})
-	return mappedCortexDefaults, targetFactory(), err
+// prepareSourceDefaults maps source defaults to target defaults the same way regular source config is mapped to target config.
+// This enables lookups of source default values using their target paths.
+func prepareSourceDefaults(m Mapper, sourceFactory, targetFactory InspectedEntryFactory) (Parameters, error) {
+	sourceDefaults, mappedSourceDefaults := sourceFactory(), targetFactory()
+	err := m.DoMap(defaultValueInspectedEntry{sourceDefaults}, defaultValueInspectedEntry{mappedSourceDefaults})
+	return mappedSourceDefaults, err
 }
 
-func changedDefaults(oldDefaults, newDefaults Parameters) ([]ChangedDefault, error) {
-	var defs []ChangedDefault
-	err := newDefaults.Walk(func(path string, _ interface{}) error {
-		newDefault := newDefaults.MustGetDefaultValue(path)
-		// We don't expect new fields exist in the old struct. A nil value works too, so we ignore the error.
-		oldDefault, _ := oldDefaults.GetDefaultValue(path)
+// pruneNils removes parameters from params that are nil. pruneNils prints any errors during pruning to os.Stderr
+func pruneNils(params Parameters) {
+	var pathsToDelete []string
 
-		// Use reflect.DeepEqual to easily compare different type aliases that resolve to the same underlying type,
-		// fields with interface types, and maps and slices.
-		if oldDefault != nil && !reflect.DeepEqual(oldDefault, newDefault) {
-			defs = append(defs, ChangedDefault{
-				Path:       path,
-				OldDefault: fmt.Sprint(oldDefault),
-				NewDefault: fmt.Sprint(newDefault),
-			})
-		}
-		return nil
-	})
-	return defs, err
-}
-
-// pruneDefaults removes parameters from fullParams that are reflect.DeepEqual to either value from
-// oldDefaults or newDefaults with the same path. pruneDefaults prints any errors during pruning to os.Stderr
-func pruneDefaults(fullParams Parameters) []PrunedDefault {
-	var pathsToDelete []PrunedDefault
-
-	err := fullParams.Walk(func(path string, value interface{}) error {
-		newDefault := fullParams.MustGetDefaultValue(path)
-
-		// Use reflect.DeepEqual to easily compare different type aliases that resolve to the same underlying type,
-		// fields with interface types, and maps and slices.
-		if value == nil || reflect.DeepEqual(value, newDefault) {
-			pathsToDelete = append(pathsToDelete, PrunedDefault{Path: path, Value: fmt.Sprint(value)})
+	err := params.Walk(func(path string, value interface{}) error {
+		if value == nil {
+			pathsToDelete = append(pathsToDelete, path)
 		}
 		return nil
 	})
 	if err != nil {
-		_, _ = fmt.Fprintln(os.Stderr, err)
+		panic(err)
 	}
 
 	for _, p := range pathsToDelete {
-		err = fullParams.Delete(p.Path)
+		err = params.Delete(p)
 		if err != nil {
 			err = errors.Wrap(err, "cloud not delete parameter with default value from config")
 			_, _ = fmt.Fprintln(os.Stderr, err)
 		}
 	}
-
-	return pathsToDelete
 }
 
 func reportDeletedFlags(contents []byte, flags []string, sourceFactory InspectedEntryFactory) (removedFieldPaths, removedFlags []string, _ error) {

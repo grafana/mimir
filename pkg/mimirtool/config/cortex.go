@@ -246,16 +246,24 @@ func rulerStorageMapperFunc(source, target Parameters) error {
 
 func mapDotStorage(pathRenames map[string]string, source, target Parameters) error {
 	mapper := &PathMapper{PathMappings: map[string]Mapping{}}
+
+	differentFromDefault := func(p Parameters, path string) bool {
+		val, err1 := p.GetValue(path)
+		defaultVal, err2 := p.GetDefaultValue(path)
+
+		return err1 == nil && err2 == nil && val != nil && val != defaultVal
+	}
+
 	for dotStoragePath, storagePath := range pathRenames {
 		// if the ruler.storage was set, then use that in the final config
-		if source.MustGetValue(dotStoragePath) != nil {
+		if differentFromDefault(source, dotStoragePath) {
 			mapper.PathMappings[dotStoragePath] = RenameMapping(storagePath)
 			continue
 		}
 
 		// if the ruler_storage was set to something other than the default, then we
 		// take that value as the one in the final config.
-		if source.MustGetValue(storagePath) != nil {
+		if differentFromDefault(source, storagePath) {
 			mapper.PathMappings[storagePath] = RenameMapping(storagePath)
 		}
 	}
@@ -303,13 +311,7 @@ func mapMemcachedAddresses(source, target Parameters) error {
 	}
 
 	service, hostname := source.MustGetValue(oldPrefix+".service"), source.MustGetValue(oldPrefix+".host")
-	if service == nil {
-		service = ""
-	}
-	if hostname == nil {
-		hostname = ""
-	}
-	if hostname == "" && service == "" {
+	if service == nil || hostname == nil {
 		return nil
 	}
 	newAddress := fmt.Sprintf("dnssrvnoa+_%s._tcp.%s", service, hostname)

@@ -53,7 +53,8 @@ func (c *ConfigCommand) convertConfig(_ *kingpin.ParseContext) error {
 		return err
 	}
 
-	convertedYAML, flagsFlags, notices, err := config.Convert(yamlContents, flagsFlags, config.CortexToMimirMapper, config.DefaultCortexConfig, config.DefaultMimirConfig, !c.keepDefaults)
+	// TODO dimitarvdimitrov rejig the flags - rename keep-defaults and add another one, also pass them here to the tool
+	convertedYAML, flagsFlags, notices, err := config.Convert(yamlContents, flagsFlags, config.CortexToMimirMapper, config.DefaultCortexConfig, config.DefaultMimirConfig, false, false)
 	if err != nil {
 		return errors.Wrap(err, "could not convert configuration")
 	}
