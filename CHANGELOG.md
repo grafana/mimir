@@ -19,6 +19,10 @@
 
 * [CHANGE] `analyse` command has been renamed to `analyze`. #1318
 
+### Tools
+
+* [CHANGE] Removed `query-audit`. #1380
+
 ## 2.0.0-rc.1
 
 ### Grafana Mimir
