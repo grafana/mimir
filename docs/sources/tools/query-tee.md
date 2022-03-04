@@ -10,7 +10,7 @@ The query-tee is a standalone tool that you can use for testing purposes when co
 The two Mimir clusters compared by the query-tee must ingest the same exact series and samples.
 
 The query-tee exposes Prometheus-compatible read API endpoints and acts as a proxy.
-When the query-tee receives a request, the query-tee performs the same request against thw two backend Grafana Mimir cluster and tracks the response time of each backend, and compare the query results.
+When the query-tee receives a request, the query-tee performs the same request against the two backend Grafana Mimir clusters and tracks the response time of each backend, and compares the query results.
 
 ## How to download the query-tee
 
