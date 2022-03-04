@@ -6,7 +6,7 @@ weight: 80
 
 # About DNS service discovery
 
-Some clients in Grafana Mimir support service discovery via DNS to find the addresses of backend (caching) servers to connect to. These clients support service discovery via DNS:
+Some clients in Grafana Mimir support service discovery via DNS to find the addresses of backend servers to connect to. These clients support service discovery via DNS:
 
 - [Block storage's memcached cache](../reference-configuration-parameters/#blocks_storage)
 - [All caching memcached servers](../reference-configuration-parameters/#memcached)
