@@ -77,7 +77,7 @@ Valid ingester instance limits are (with their corresponding CLI flags for defau
 
 - `max_tenants` \ `-ingester.instance-limits.max-tenants`
 
-  Limit the maximum number of users an ingester will accept metrics for. When this limit is reached, requests from new users will fail with an HTTP 500 error.
+  Limit the maximum number of tenants an ingester will accept metrics for. When this limit is reached, requests from new tenants will fail with an HTTP 500 error.
 
 - `max_inflight_push_requests` \ `-ingester.instance-limits.max-inflight-push-requests`
 
