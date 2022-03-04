@@ -36,24 +36,8 @@ overrides:
     ingestion_rate: 10000
 ```
 
-Valid per-tenant limits are (with their corresponding CLI flags for default values):
-
-- `max_global_series_per_user` / `-ingester.max-global-series-per-user`
-- `max_global_series_per_metric` / `-ingester.max-global-series-per-metric`
-
-  Enforced by the ingesters; limits the number of in-memory series a tenant (or a given metric) can have. A series is kept in memory if a sample has been written since the last TSDB head compaction (occurring every 2h) or in the last 1h (regardless when the last TSDB head compaction occurred). The limit is enforced across the cluster. Each ingester is configured with a local limit based on the replication factor and the current number of healthy ingesters. The local limit is updated whenever the number of ingesters change.
-
-  Requires that `-ingester.ring.replication-factor` and `-ingester.ring.zone-awareness-enabled` are set for the ingesters.
-
-- `max_global_metadata_per_user` / `-ingester.max-global-metadata-per-user`
-- `max_global_metadata_per_metric` / `-ingester.max-global-metadata-per-metric`
-
-  Enforced by the ingesters; limits the number of active metadata a tenant (or a given metric) can have. The limit is enforced across the cluster. Each ingester is configured with a local limit based on the replication factor and the current number of healthy ingesters. The local limit is updated whenever the number of ingesters change.
-
-  Requires that `-ingester.ring.replication-factor` and `-ingester.ring.zone-awareness-enabled` are set for the ingesters.
-
-- `max_fetched_series_per_query` / `querier.max-fetched-series-per-query`
-  This limit is enforced in the queriers on unique series fetched from ingesters and store-gateways (long-term storage).
+See the `instance_limits` block within the [ingester]({{< relref "./reference-configuration-parameters/#ingester" >}})
+block configuration for limits that may be placed in the overrides field of the runtime configuration file.
 
 ### Runtime configuration of per-tenant limits
 
