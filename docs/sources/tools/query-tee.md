@@ -6,7 +6,7 @@ weight: 20
 
 # Query-tee
 
-The query-tee is a standalone tool which can be used for testing purposes to compare the query results and performances of two Grafana Mimir clusters.
+The query-tee is a standalone tool that you can use for testing purposes when comparing the query results and performances of two Grafana Mimir clusters.
 The two Mimir clusters compared by the query-tee must ingest the same exact series and samples.
 
 The query-tee exposes Prometheus-compatible read API endpoints and acts as a proxy.
