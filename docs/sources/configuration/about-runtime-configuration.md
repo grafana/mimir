@@ -84,8 +84,8 @@ ingester_limits:
 An advanced runtime configuration
 controls whether ingesters transfer encoded chunks (the default) or transfer decoded series to queriers at query time.
 
-The command-line option `-ingester.stream_chunks_when_using_blocks` may only be used in runtime configuration.
+The parameter `ingester_stream_chunks_when_using_blocks` may only be used in runtime configuration.
 A value of true transfers encoded chunks,
 and a value of false transfers decoded series.
 
-We strongly recommend against using the runtime configuration to set this value. It already defaults to true, and should remain true except for rare corner cases where users have observed slowdowns in Grafana Mimir rules evaluation.
+We strongly recommend against changing the default setting. It already defaults to true, and should remain true except for rare corner cases where users have observed slowdowns in Grafana Mimir rules evaluation.
