@@ -54,7 +54,7 @@ The following Prometheus API endpoints are supported by `query-tee`:
 - `GET <prefix>/api/v1/alerts`
 - `GET <prefix>/api/v1/rules`
 
-You can configured the `<prefix>` setting the `-server.path-prefix` CLI flag (defaults to empty string).
+You can configure the `<prefix>` by setting the `-server.path-prefix` CLI flag (defaults to empty string).
 
 ### Pass-through requests
 
