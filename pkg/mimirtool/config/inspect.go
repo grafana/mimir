@@ -349,7 +349,7 @@ func (i InspectedEntry) MustGetDefaultValue(path string) interface{} {
 	return val
 }
 
-func (i InspectedEntry) SetDefault(path string, val interface{}) error {
+func (i InspectedEntry) SetDefaultValue(path string, val interface{}) error {
 	entry, err := i.find(path)
 	if err != nil {
 		return errors.Wrap(ErrParameterNotFound, path)

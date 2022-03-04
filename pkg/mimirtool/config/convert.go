@@ -98,7 +98,7 @@ func Convert(contents []byte, flags []string, m Mapper, sourceFactory, targetFac
 	return yamlBytes, newFlags, *notices, nil
 }
 
-func changeOldDefaultsToNewDefaults(target, oldDefaults, newDefaults *InspectedEntry) error {
+func changeOldDefaultsToNewDefaults(target, oldDefaults, newDefaults Parameters) error {
 	return target.Walk(func(path string, value interface{}) error {
 		oldDefault, err := oldDefaults.GetValue(path)
 		if err != nil {
@@ -115,7 +115,7 @@ func changeOldDefaultsToNewDefaults(target, oldDefaults, newDefaults *InspectedE
 	})
 }
 
-func convertFlags(flags []string, m Mapper, target *InspectedEntry, sourceFactory, targetFactory InspectedEntryFactory) ([]string, error) {
+func convertFlags(flags []string, m Mapper, target Parameters, sourceFactory, targetFactory InspectedEntryFactory) ([]string, error) {
 	flagsNewPaths, err := mapOldFlagsToNewPaths(flags, m, sourceFactory, targetFactory)
 	if err != nil {
 		return nil, err
@@ -254,14 +254,14 @@ func parseFlagNames(flags []string) map[string]bool {
 
 // prepareDefaults maps source defaults to target defaults the same way regular source config is mapped to target config.
 // This enables lookups of cortex default values using their mimir paths.
-func prepareDefaults(m Mapper, sourceFactory, targetFactory InspectedEntryFactory) (cortexDefaults, mimirDefaults *InspectedEntry, err error) {
+func prepareDefaults(m Mapper, sourceFactory, targetFactory InspectedEntryFactory) (cortexDefaults, mimirDefaults Parameters, err error) {
 	oldCortexDefaults, mappedCortexDefaults := sourceFactory(), targetFactory()
 
 	err = m.DoMap(oldCortexDefaults, mappedCortexDefaults)
 	return mappedCortexDefaults, DefaultMimirConfig(), err
 }
 
-func changedDefaults(oldDefaults, newDefaults *InspectedEntry) ([]ChangedDefault, error) {
+func changedDefaults(oldDefaults, newDefaults Parameters) ([]ChangedDefault, error) {
 	var defs []ChangedDefault
 	err := newDefaults.Walk(func(path string, newDefault interface{}) error {
 		oldDefault, err := oldDefaults.GetValue(path)
@@ -289,7 +289,7 @@ func changedDefaults(oldDefaults, newDefaults *InspectedEntry) ([]ChangedDefault
 
 // pruneDefaults removes parameters from fullParams that are reflect.DeepEqual to either value from
 // oldDefaults or newDefaults with the same path. pruneDefaults prints any errors during pruning to os.Stderr
-func pruneDefaults(fullParams, newDefaults *InspectedEntry) []PrunedDefault {
+func pruneDefaults(fullParams, newDefaults Parameters) []PrunedDefault {
 	var pathsToDelete []PrunedDefault
 
 	err := fullParams.Walk(func(path string, value interface{}) error {

@@ -123,7 +123,7 @@ var simpleRenameMappings = map[string]Mapping{
 	"auth_enabled": RenameMapping("multitenancy_enabled"),
 }
 
-func alertmanagerURLMapperFunc(source, target *InspectedEntry) error {
+func alertmanagerURLMapperFunc(source, target Parameters) error {
 	amDiscovery, err := source.GetValue("ruler.enable_alertmanager_discovery")
 	if err != nil {
 		return errors.Wrap(err, "could not convert ruler.enable_alertmanager_discovery")
@@ -146,8 +146,8 @@ func alertmanagerURLMapperFunc(source, target *InspectedEntry) error {
 
 // rulerStorageMapperFunc returns a MapperFunc that maps alertmanager.storage and alertmanager_storage to alertmanager_storage.
 // Values from alertmanager.storage take precedence.
-func alertmanagerStorageMapperFunc(sourceDefaults *InspectedEntry) MapperFunc {
-	return func(source, target *InspectedEntry) error {
+func alertmanagerStorageMapperFunc(sourceDefaults Parameters) MapperFunc {
+	return func(source, target Parameters) error {
 		_, err := source.GetValue("alertmanager.storage.type")
 		if err != nil {
 			// When doing flag mappings this function gets called with a source config that
@@ -189,8 +189,8 @@ func alertmanagerStorageMapperFunc(sourceDefaults *InspectedEntry) MapperFunc {
 
 // rulerStorageMapperFunc returns a MapperFunc that maps ruler.storage and ruler_storage to ruler_storage.
 // Values from ruler.storage take precedence.
-func rulerStorageMapperFunc(sourceDefaults *InspectedEntry) MapperFunc {
-	return func(source, target *InspectedEntry) error {
+func rulerStorageMapperFunc(sourceDefaults Parameters) MapperFunc {
+	return func(source, target Parameters) error {
 		_, err := source.GetValue("ruler.storage.type")
 		if err != nil {
 			// When doing flag mappings this function gets called with a source config that
@@ -247,7 +247,7 @@ func rulerStorageMapperFunc(sourceDefaults *InspectedEntry) MapperFunc {
 	}
 }
 
-func mapDotStorage(pathRenames map[string]string, source, target, sourceDefaults *InspectedEntry) error {
+func mapDotStorage(pathRenames map[string]string, source, target, sourceDefaults Parameters) error {
 	mapper := &PathMapper{PathMappings: map[string]Mapping{}}
 	for dotStoragePath, storagePath := range pathRenames {
 		// if the ruler.storage was set, then use that in the final config
@@ -270,7 +270,7 @@ func mapDotStorage(pathRenames map[string]string, source, target, sourceDefaults
 // prefix should be either "alertmanager" or "ruler". If <prefix>.storage.s3.sse_encryption was true,
 // it is replaced by alertmanager_storage.s3.sse.type="SSE-S3"
 func mapS3SSE(prefix string) MapperFunc {
-	return func(source, target *InspectedEntry) error {
+	return func(source, target Parameters) error {
 		var (
 			sseEncryptionPath = prefix + ".storage.s3.sse_encryption"
 			sseTypePath       = prefix + "_storage.s3.sse.type"
@@ -291,7 +291,7 @@ func mapS3SSE(prefix string) MapperFunc {
 // mapMemcachedAddresses maps query_range...memcached_client.host and .service to a DNS Service Discovery format
 // address. This should preserve the behaviour in cortex v1.11.0:
 // https://github.com/cortexproject/cortex/blob/43c646ba3ff906e80a6a1812f2322a0c276e9deb/pkg/chunk/cache/memcached_client.go#L242-L258
-func mapMemcachedAddresses(source, target *InspectedEntry) error {
+func mapMemcachedAddresses(source, target Parameters) error {
 	const (
 		oldPrefix = "query_range.results_cache.cache.memcached_client"
 		newPrefix = "frontend.results_cache.memcached"
