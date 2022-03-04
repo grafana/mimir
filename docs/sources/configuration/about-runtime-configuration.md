@@ -57,9 +57,9 @@ overrides:
 
 As a result, Grafana Mimir allows `tenant1` to send 50,000 SPS, and `tenant2` to send 75,000 SPS, while maintaining a 25,000 SPS rate limit on all other tenants.
 
-- On a per-tenant basis, you can override all of the limits in `limits_config` within the runtime configuration file.
+- On a per-tenant basis, you can override all of the limits listed in the [`limits`]({{< relref "./reference-configuration-parameters/#limits" >}}) block within the runtime configuration file.
 - For each tenant, you can override different limits.
-- For any tenant or limit that is not overridden in the runtime configuration file, you can inherit the limit values that are specified in `limits_config`.
+- For any tenant or limit that is not overridden in the runtime configuration file, you can inherit the limit values that are specified in the `limits` block.
 
 ## Ingester instance limits
 
