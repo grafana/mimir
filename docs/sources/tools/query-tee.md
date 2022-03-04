@@ -1,92 +1,112 @@
 ---
-title: "Query Tee (service)"
-linkTitle: "Query Tee (service)"
-weight: 3
-slug: query-tee
+title: "Query-tee"
+description: ""
+weight: 20
 ---
 
-The `query-tee` is a standalone service which can be used for testing purposes to compare the query performances of 2+ backend systems (ie. Cortex clusters) ingesting the same exact series.
+# Query-tee
 
-This service exposes Prometheus-compatible read API endpoints and, for each received request, performs the request against all backends tracking the response time of each backend and then sends back to the client one of the received responses.
+The query-tee is a standalone tool that you can use for testing purposes when comparing the query results and performances of two Grafana Mimir clusters.
+The two Mimir clusters compared by the query-tee must ingest the same exact series and samples.
 
-## How to run it
+The query-tee exposes Prometheus-compatible read API endpoints and acts as a proxy.
+When the query-tee receives a request, the query-tee performs the same request against the two backend Grafana Mimir clusters and tracks the response time of each backend, and compares the query results.
 
-You can run `query-tee` in two ways:
+## How to download the query-tee
 
-- Build it from sources
-  ```
-  go run ./cmd/query-tee -help
-  ```
-- Run it via the provided Docker image
-  ```
-  docker run quay.io/cortexproject/query-tee -help
-  ```
+- Using Docker:
 
-The service requires at least 1 backend endpoint (but 2 are required in order to compare performances) configured as comma-separated HTTP(S) URLs via the CLI flag **`-backend.endpoints`**. For each incoming request, `query-tee` will clone the request and send it to each backend, tracking performance metrics for each backend before sending back the response to the client.
+```bash
+docker pull "grafana/query-tee:latest"
+```
 
-## How it works
+- Using a local binary:
+
+Download the appropriate [release asset](https://github.com/grafana/mimir/releases/latest) for your operating system and architecture and make it executable.
+For Linux with the AMD64 architecture:
+
+```bash
+curl -Lo query-tee https://github.com/grafana/mimir/releases/latest/download/query-tee-linux-amd64
+chmod +x query-tee
+```
+
+## How to configure the query-tee
+
+The query-tee requires the endpoints of the backend Grafana Mimir clusters.
+You can configure the backend endpoints by setting the `-backend.endpoints` CLI flag to a comma-separated list of HTTP or HTTPS URLs.
+For each incoming request, the query-tee clones the request and sends it to each configured backend.
+
+> **Note:** You can configure the query-tee proxy listening port with the `-server.service-port` CLI flag.
+
+## How the query-tee works
 
 ### API endpoints
 
 The following Prometheus API endpoints are supported by `query-tee`:
 
-- `/api/v1/query` (GET)
-- `/api/v1/query_range` (GET)
-- `/api/v1/labels` (GET)
-- `/api/v1/label/{name}/values` (GET)
-- `/api/v1/series` (GET)
-- `/api/v1/metadata` (GET)
-- `/api/v1/alerts` (GET)
-- `/api/v1/rules` (GET)
+- `GET <prefix>/api/v1/query`
+- `GET <prefix>/api/v1/query_range`
+- `GET <prefix>/api/v1/query_exemplars`
+- `GET <prefix>/api/v1/labels`
+- `GET <prefix>/api/v1/label/{name}/values`
+- `GET <prefix>/api/v1/series`
+- `GET <prefix>/api/v1/metadata`
+- `GET <prefix>/api/v1/alerts`
+- `GET <prefix>/api/v1/rules`
 
-#### Pass-through requests
+You can configure the `<prefix>` by setting the `-server.path-prefix` CLI flag (defaults to empty string).
 
-`query-tee` supports acting as a transparent proxy for requests to routes not matching any of the documented API endpoints above.
-When enabled, those requests are passed on to just the configured preferred backend.
-To activate this feature it requires setting `-proxy.passthrough-non-registered-routes=true` flag and configuring a preferred backend.
+### Pass-through requests
+
+The query-tee can optionally act as a transparent proxy for requests to routes not matching any of the supported API endpoints.
+You can enable the pass-through support setting `-proxy.passthrough-non-registered-routes=true` and configuring a preferred backend using the `-backend.preferred` CLI flag.
+When pass-through is enabled, a request for an unsupported API endpoint is transparently proxied to the configured preferred backend.
 
 ### Authentication
 
-`query-tee` supports [HTTP basic authentication](https://developer.mozilla.org/en-US/docs/Web/HTTP/Authentication). It allows either to configure username and password in the backend URL, to forward the request auth to the backend or merge the two.
+The query-tee supports [HTTP basic authentication](https://developer.mozilla.org/en-US/docs/Web/HTTP/Authentication).
+The query-tee can merge the HTTP basic authentication in the received request with the username and configured in a backend URL.
 
-The request sent from the `query-tee` to the backend includes HTTP basic authentication when one of the following conditions are met:
+A request sent from the query-tee to a backend includes HTTP basic authentication when one of the following conditions are met:
 
-- If the endpoint URL has username and password, `query-tee` uses it.
-- If the endpoint URL has username only, `query-tee` keeps the username and inject the password received in the incoming request (if any).
-- If the endpoint URL has no username and no password, `query-tee` forwards the incoming request basic authentication (if any).
+- If the backend endpoint URL is configured with both a username and password, then query-tee uses it.
+- If the backend endpoint URL is configured only with a username, then query-tee keeps the configured username and inject the password received in the incoming request.
+- If the backend endpoint URL is configured without username and password, then query-tee forwards the authentication credentials found in the incoming request.
 
 ### Backend response selection
 
-`query-tee` allows to configure a preferred backend from which picking the response to send back to the client. The preferred backend can be configured via the CLI flag `-backend.preferred=<hostname>`, setting it to the hostname of the preferred backend.
+The query-tee allows to configure a preferred backend from which selecting the response to send back to the client.
+The preferred backend can be configured using the CLI flag `-backend.preferred=<hostname>`.
+The value of the preferred backend configuration option must be the hostname of one of the configured backends.
 
-When a preferred backend **is set**, `query-tee` sends back to the client:
+When a preferred backend is configured, the query-tee uses the following algorithm to select the backend response to send back to the client:
 
-- The preferred backend response if the status code is 2xx or 4xx
-- Otherwise, the first received 2xx or 4xx response if at least a backend succeeded
-- Otherwise, the first received response
+1. If the preferred backend response status code is 2xx or 4xx, the query-tee selects the response from the preferred backend.
+1. If at least one backend response has status code 2xx or 4xx, the query-tee selects the first received response whose status code is 2xx or 4xx.
+1. If no backend response has status code 2xx or 4xx, the query-tee selects the first received response regardless of the status code.
 
-When a preferred backend **is not set**, `query-tee` sends back to the client:
+When a preferred backend is not configured, the query-tee uses the following algorithm to select the backend response to send back to the client:
 
-- The first received 2xx or 4xx response if at least a backend succeeded
-- Otherwise, the first received response
+1. If at least one backend response has status code 2xx or 4xx, the query-tee selects the first received response whose status code is 2xx or 4xx.
+1. If no backend response has status code 2xx or 4xx, the query-tee selects the first received response regardless of the status code.
 
-_Note: from the `query-tee` perspective, a backend request is considered successful even if the status code is 4xx because it generally means the error is due to an invalid request and not to a backend issue._
+> **Note:** The query-tee considers a 4xx response as a valid response to select because a 4xx status code generally means the error is caused by an invalid request and not due to a server side issue.
 
 ### Backend results comparison
 
-`query-tee` allows to optionally enable the query results comparison between two backends. The results comparison can be enabled via the CLI flag `-proxy.compare-responses=true` and requires exactly two configured backends with a preferred one.
+The query-tee can optionally compare the query results received by two backends.
+The query results comparison can be enabled setting the CLI flag `-proxy.compare-responses=true` and requires that:
 
-When the comparison is enabled, the `query-tee` compares the response received from the two configured backends and logs a message for each query whose results don't match, as well as keeps track of the number of successful and failed comparison through the metric `cortex_querytee_responses_compared_total`.
+1. Exactly two backends have been configured setting `-backend.endpoints`.
+1. A preferred backend is configured setting `-backend.preferred`.
 
-Floating point sample values are compared with a small tolerance that can be configured via `-proxy.value-comparison-tolerance`. This prevents false positives due to differences in floating point values _rounding_ introduced by the non deterministic series ordering within the Prometheus PromQL engine.
+When the query results comparison is enabled, the query-tee compares the response received from the two configured backends and logs a message for each query whose results don't match, and keeps track of the number of successful and failed comparison through the metric `cortex_querytee_responses_compared_total`.
 
-### Slow backends
-
-`query-tee` sends back to the client the first viable response as soon as available, without waiting to receive a response from all backends.
+> **Note**: Floating point sample values are compared with a tolerance that can be configured via `-proxy.value-comparison-tolerance`. The configured tolerance prevents false positives due to differences in floating point values rounding introduced by the non deterministic series ordering within the Prometheus PromQL engine.
 
 ### Exported metrics
 
-`query-tee` exposes the following Prometheus metrics on the port configured via the CLI flag `-server.metrics-port`:
+The query-tee exposes the following Prometheus metrics at the `/metrics` endpoint listening on the port configured via the CLI flag `-server.metrics-port`:
 
 ```bash
 # HELP cortex_querytee_request_duration_seconds Time (in seconds) spent serving HTTP requests.
