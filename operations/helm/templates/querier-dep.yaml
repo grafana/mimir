@@ -64,8 +64,8 @@ spec:
             - "-querier.frontend-address={{ template "enterprise-metrics.fullname" . }}-query-frontend-headless.{{ .Release.Namespace }}.svc:{{ .Values.config.server.grpc_listen_port }}"
             {{- if .Values.minio.enabled }}
             - -blocks-storage.s3.endpoint={{ .Release.Name }}-minio.{{ .Release.Namespace }}.svc:9000
-            - -blocks-storage.s3.bucket-name=enterprise-metrics-tsdb
-            - -blocks-storage.s3.access-key-id=enterprise-metrics
+            - -blocks-storage.s3.bucket-name=mimir-tsdb
+            - -blocks-storage.s3.access-key-id=grafana-mimir
             - -blocks-storage.s3.secret-access-key=supersecret
             - -blocks-storage.s3.insecure=true
             {{- end }}

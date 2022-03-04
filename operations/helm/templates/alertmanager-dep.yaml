@@ -64,8 +64,8 @@ spec:
           {{- if .Values.minio.enabled }}
             - -alertmanager-storage.backend=s3
             - -alertmanager-storage.s3.endpoint={{ .Release.Name }}-minio.{{ .Release.Namespace }}.svc:9000
-            - -alertmanager-storage.s3.bucket-name=enterprise-metrics-ruler
-            - -alertmanager-storage.s3.access-key-id=enterprise-metrics
+            - -alertmanager-storage.s3.bucket-name=mimir-ruler
+            - -alertmanager-storage.s3.access-key-id=grafana-mimir
             - -alertmanager-storage.s3.secret-access-key=supersecret
             - -alertmanager-storage.s3.insecure=true
           {{- end }}

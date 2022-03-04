@@ -64,13 +64,13 @@ spec:
             - "-memberlist.join={{ template "enterprise-metrics.fullname" . }}-gossip-ring"
             {{- if .Values.minio.enabled }}
             - -blocks-storage.s3.endpoint={{ .Release.Name }}-minio.{{ .Release.Namespace }}.svc:9000
-            - -blocks-storage.s3.bucket-name=enterprise-metrics-tsdb
-            - -blocks-storage.s3.access-key-id=enterprise-metrics
+            - -blocks-storage.s3.bucket-name=mimir-tsdb
+            - -blocks-storage.s3.access-key-id=grafana-mimir
             - -blocks-storage.s3.secret-access-key=supersecret
             - -blocks-storage.s3.insecure=true
             - -ruler-storage.s3.endpoint={{ .Release.Name }}-minio.{{ .Release.Namespace }}.svc:9000
-            - -ruler-storage.s3.bucket-name=enterprise-metrics-ruler
-            - -ruler-storage.s3.access-key-id=enterprise-metrics
+            - -ruler-storage.s3.bucket-name=mimir-ruler
+            - -ruler-storage.s3.access-key-id=grafana-mimir
             - -ruler-storage.s3.secret-access-key=supersecret
             - -ruler-storage.s3.insecure=true
            {{- end }}
