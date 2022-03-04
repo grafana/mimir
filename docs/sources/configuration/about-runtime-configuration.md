@@ -67,7 +67,7 @@ Grafana Mimir ingesters support limits that are applied per instance, meaning th
 
 Valid ingester instance limits are (with their corresponding CLI flags for default values):
 
-- `max_ingestion_rate` \ `--ingester.instance-limits.max-ingestion-rate`
+- `max_ingestion_rate` \ `-ingester.instance-limits.max-ingestion-rate`
 
   Limit the ingestion rate in samples per second for an ingester. When this limit is reached, new requests will fail with an HTTP 500 error.
 
