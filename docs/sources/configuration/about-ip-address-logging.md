@@ -8,7 +8,7 @@ weight: 90
 
 If a reverse proxy is used in front of Mimir, it may be difficult to troubleshoot errors. The following settings can be used to log the IP address passed along by the reverse proxy in headers such as `X-Forwarded-For`.
 
-- `-server.log_source_ips_enabled`
+- `-server.log-source-ips-enabled`
 
   Set this to true to add IP address logging when a `Forwarded`, `X-Real-IP` or `X-Forwarded-For` header is used. A field called `sourceIPs` will be added to error logs when data is pushed into Grafana Mimir.
 
