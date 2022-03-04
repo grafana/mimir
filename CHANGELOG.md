@@ -21,7 +21,7 @@
 
 ### Tools
 
-* [CHANGE] Removed `query-audit`. #1380
+* [CHANGE] Removed `query-audit`. You can use `query-tee` to compare query results and performances of two Grafana Mimir backends. #1380
 
 ## 2.0.0-rc.1
 
