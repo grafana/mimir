@@ -469,7 +469,6 @@ func (i *Ingester) getActiveSeriesMatchersConfig(userID string) activeseries.Cus
 }
 
 func (i *Ingester) replaceMatchers(asm *activeseries.Matchers, userDB *userTSDB) {
-	i.metrics.activeSeriesPerUser.DeleteLabelValues(userDB.userID)
 	i.metrics.deletePerUserCustomTrackerMetrics(userDB.userID, userDB.activeSeries.CurrentMatcherNames())
 	userDB.activeSeries.ReloadSeriesMatchers(asm)
 }
@@ -485,8 +484,11 @@ func (i *Ingester) updateActiveSeries(now time.Time) {
 		if newMatchersConfig.String() != userDB.activeSeries.CurrentConfig().String() {
 			i.replaceMatchers(activeseries.NewMatchers(newMatchersConfig), userDB)
 		}
-		if userDB.activeSeries.LastAsmUpdate() < now.Add(-i.cfg.ActiveSeriesMetricsIdleTimeout).UnixNano() {
-			// We are not exposing metrics until enough time passed for stable metrics.
+		if userDB.activeSeries.LastAsmUpdate() >= now.Add(-i.cfg.ActiveSeriesMetricsIdleTimeout).UnixNano() {
+			// Active series config has been reloaded, exposing loading metric until MetricsIdleTimeout passes
+			i.metrics.activeSeriesLoading.WithLabelValues(userID).Set(1)
+		} else {
+			i.metrics.activeSeriesLoading.DeleteLabelValues(userID)
 			allActive, activeMatching := userDB.activeSeries.Active(now)
 			if allActive > 0 {
 				i.metrics.activeSeriesPerUser.WithLabelValues(userID).Set(float64(allActive))
@@ -1575,7 +1577,6 @@ func (i *Ingester) closeAllTSDB() {
 			i.tsdbsMtx.Unlock()
 
 			i.metrics.memUsers.Dec()
-			i.metrics.activeSeriesPerUser.DeleteLabelValues(userID)
 			i.metrics.deletePerUserCustomTrackerMetrics(userID, db.activeSeries.CurrentMatcherNames())
 		}(userDB)
 	}

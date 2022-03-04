@@ -5201,7 +5201,7 @@ func TestIngesterActiveSeries(t *testing.T) {
 					# HELP cortex_ingester_active_series Number of currently active series per user.
 					# TYPE cortex_ingester_active_series gauge
 					cortex_ingester_active_series{user="other_test_user"} 4
-                    cortex_ingester_active_series{user="test_user"} 4
+					cortex_ingester_active_series{user="test_user"} 4
 					# HELP cortex_ingester_active_series_custom_tracker Number of currently active series matching a pre-configured label matchers per user.
 					# TYPE cortex_ingester_active_series_custom_tracker gauge
 					cortex_ingester_active_series_custom_tracker{name="team_a",user="test_user"} 2
@@ -5228,7 +5228,7 @@ func TestIngesterActiveSeries(t *testing.T) {
 					# HELP cortex_ingester_active_series Number of currently active series per user.
 					# TYPE cortex_ingester_active_series gauge
 					cortex_ingester_active_series{user="other_test_user"} 4
-                    cortex_ingester_active_series{user="test_user"} 4
+					cortex_ingester_active_series{user="test_user"} 4
 					# HELP cortex_ingester_active_series_custom_tracker Number of currently active series matching a pre-configured label matchers per user.
 					# TYPE cortex_ingester_active_series_custom_tracker gauge
 					cortex_ingester_active_series_custom_tracker{name="team_a",user="test_user"} 2
@@ -5371,6 +5371,7 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 	}
 
 	metricNames := []string{
+		"cortex_ingester_active_series_loading",
 		"cortex_ingester_active_series",
 		"cortex_ingester_active_series_custom_tracker",
 	}
@@ -5444,6 +5445,9 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 					# TYPE cortex_ingester_active_series_custom_tracker gauge
 					cortex_ingester_active_series_custom_tracker{name="bool_is_false_flagbased",user="other_test_user"} 2
 					cortex_ingester_active_series_custom_tracker{name="bool_is_true_flagbased",user="other_test_user"} 2
+					# HELP cortex_ingester_active_series_loading Indicating that active series configuration has been reloaded, and waiting to become stable.
+					# TYPE cortex_ingester_active_series_loading gauge
+					cortex_ingester_active_series_loading{user="test_user"} 1
 				`
 				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
 
@@ -5511,6 +5515,9 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 					# TYPE cortex_ingester_active_series_custom_tracker gauge
 					cortex_ingester_active_series_custom_tracker{name="bool_is_true_flagbased",user="other_test_user"} 2
             	    cortex_ingester_active_series_custom_tracker{name="bool_is_false_flagbased",user="other_test_user"} 2
+					# HELP cortex_ingester_active_series_loading Indicating that active series configuration has been reloaded, and waiting to become stable.
+					# TYPE cortex_ingester_active_series_loading gauge
+					cortex_ingester_active_series_loading{user="test_user"} 1
 				`
 				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
 
@@ -5574,6 +5581,9 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 				configReloadTime := time.Now()
 				ingester.updateActiveSeries(configReloadTime)
 				expectedMetrics = `
+					# HELP cortex_ingester_active_series_loading Indicating that active series configuration has been reloaded, and waiting to become stable.
+					# TYPE cortex_ingester_active_series_loading gauge
+					cortex_ingester_active_series_loading{user="test_user"} 1
 				`
 				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
 
@@ -5595,6 +5605,52 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 					cortex_ingester_active_series_custom_tracker{name="team_b",user="test_user"} 2
 					cortex_ingester_active_series_custom_tracker{name="team_c",user="test_user"} 2
 					cortex_ingester_active_series_custom_tracker{name="team_d",user="test_user"} 2
+				`
+				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
+			},
+		},
+		"should cleanup loading metric at close": {
+			activeSeriesConfig: activeSeriesDefaultConfig,
+			tenantLimits:       defaultActiveSeriesTenantOverride,
+			test: func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer) {
+				firstPushTime := time.Now()
+
+				pushWithUser(t, ingester, labelsToPush, userID, req)
+				pushWithUser(t, ingester, labelsToPush, userID2, req)
+
+				// Update active series for metrics check.
+				ingester.updateActiveSeries(firstPushTime)
+
+				expectedMetrics := `
+					# HELP cortex_ingester_active_series Number of currently active series per user.
+					# TYPE cortex_ingester_active_series gauge
+					cortex_ingester_active_series{user="other_test_user"} 4
+					cortex_ingester_active_series{user="test_user"} 4
+					# HELP cortex_ingester_active_series_custom_tracker Number of currently active series matching a pre-configured label matchers per user.
+					# TYPE cortex_ingester_active_series_custom_tracker gauge
+					cortex_ingester_active_series_custom_tracker{name="bool_is_true_flagbased",user="other_test_user"} 2
+					cortex_ingester_active_series_custom_tracker{name="bool_is_false_flagbased",user="other_test_user"} 2
+					cortex_ingester_active_series_custom_tracker{name="team_a",user="test_user"} 2
+					cortex_ingester_active_series_custom_tracker{name="team_b",user="test_user"} 2
+				`
+				// Check tracked Prometheus metrics
+				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
+
+				// Remove all configs
+				limits := defaultLimitsTestConfig()
+				override, err := validation.NewOverrides(limits, nil)
+				require.NoError(t, err)
+				ingester.limits = override
+				ingester.updateActiveSeries(firstPushTime)
+				expectedMetrics = `
+					# HELP cortex_ingester_active_series_loading Indicating that active series configuration has been reloaded, and waiting to become stable.
+					# TYPE cortex_ingester_active_series_loading gauge
+					cortex_ingester_active_series_loading{user="test_user"} 1
+					cortex_ingester_active_series_loading{user="other_test_user"} 1
+				`
+				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
+				ingester.closeAllTSDB()
+				expectedMetrics = `
 				`
 				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
 			},

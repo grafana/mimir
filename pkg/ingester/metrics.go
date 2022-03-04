@@ -30,6 +30,7 @@ type ingesterMetrics struct {
 	memMetadataCreatedTotal *prometheus.CounterVec
 	memMetadataRemovedTotal *prometheus.CounterVec
 
+	activeSeriesLoading               *prometheus.GaugeVec
 	activeSeriesPerUser               *prometheus.GaugeVec
 	activeSeriesCustomTrackersPerUser *prometheus.GaugeVec
 
@@ -208,6 +209,12 @@ func newIngesterMetrics(
 		}),
 
 		// Not registered automatically, but only if activeSeriesEnabled is true.
+		activeSeriesLoading: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cortex_ingester_active_series_loading",
+			Help: "Indicating that active series configuration has been reloaded, and waiting to become stable.",
+		}, []string{"user"}),
+
+		// Not registered automatically, but only if activeSeriesEnabled is true.
 		activeSeriesPerUser: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cortex_ingester_active_series",
 			Help: "Number of currently active series per user.",
@@ -248,6 +255,7 @@ func newIngesterMetrics(
 	}
 
 	if activeSeriesEnabled && r != nil {
+		r.MustRegister(m.activeSeriesLoading)
 		r.MustRegister(m.activeSeriesPerUser)
 		r.MustRegister(m.activeSeriesCustomTrackersPerUser)
 	}
@@ -258,10 +266,11 @@ func newIngesterMetrics(
 func (m *ingesterMetrics) deletePerUserMetrics(userID string) {
 	m.memMetadataCreatedTotal.DeleteLabelValues(userID)
 	m.memMetadataRemovedTotal.DeleteLabelValues(userID)
-	m.activeSeriesPerUser.DeleteLabelValues(userID)
 }
 
 func (m *ingesterMetrics) deletePerUserCustomTrackerMetrics(userID string, customTrackerMetrics []string) {
+	m.activeSeriesLoading.DeleteLabelValues(userID)
+	m.activeSeriesPerUser.DeleteLabelValues(userID)
 	for _, name := range customTrackerMetrics {
 		m.activeSeriesCustomTrackersPerUser.DeleteLabelValues(userID, name)
 	}
