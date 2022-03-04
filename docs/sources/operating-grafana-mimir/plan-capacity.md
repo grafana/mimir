@@ -50,7 +50,7 @@ Estimated required CPU and memory:
 
 ### Ingester
 
-The [ingester]({{< relref "../architecture/ingester.md">}}) component resources utilization is driven by the number of series in memory.
+The [ingester]({{< relref "../architecture/ingester.md">}}) component resources’ utilization is determined by the number of series that are in memory.
 
 Estimated required CPU, memory, and disk space:
 
