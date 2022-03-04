@@ -9,9 +9,11 @@ weight: 50
 The information that follows is an overview about the CPU, memory, and disk space that Grafana Mimir requires at scale. 
 You can get a rough idea about the required resources, rather than a prescriptive recommendation about the exact amount of CPU, memory, and disk space.
 
-The resources utilization described in this documentation have been estimated based on a generic production workload, and assuming Grafana Mimir is running with one tenant and the default configuration.
-The real resources utilization might differ, based on the actual data, configuration and traffic patterns.
-For example, the real resources utilization might differ based on the actual number or length of series' labels, or the percentage of queries reaching the store-gateway.
+The resources utilization is estimated based on a general production workload, and the assumption
+is that Grafana Mimir is running with one tenant and the default configuration.
+Your real resources’ utilization likely differs, because it is based on actual data, configuration settings, and traffic patterns.
+For example, the real resources’ utilization might differ based on the actual number
+or length of series' labels, or the percentage of queries that reach the store-gateway.
 
 The resources’ utilization are the minimum requirements.
 To gracefully handle traffic peaks, run Grafana Mimir with 50% extra capacity for memory and disk.
