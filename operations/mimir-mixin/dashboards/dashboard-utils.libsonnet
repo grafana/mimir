@@ -8,8 +8,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
   // - default tags,
   // - some links that propagate the selectred cluster.
   dashboard(title)::
-    // Prefix the dashboard title with "<product> /".
-    super.dashboard('%(product)s / %(title)s' % { product: $._config.product, title: title }) + {
+    // Prefix the dashboard title with "<product> /" unless configured otherwise.
+    super.dashboard('%(prefix)s%(title)s' % { prefix: $._config.dashboard_prefix, title: title }) + {
       addRowIf(condition, row)::
         if condition
         then self.addRow(row)
