@@ -182,7 +182,6 @@ func alertmanagerStorageMapperFunc(source, target Parameters) error {
 	}
 
 	return mapDotStorage(pathRenames, source, target)
-
 }
 
 // rulerStorageMapperFunc returns a MapperFunc that maps ruler.storage and ruler_storage to ruler_storage.
@@ -248,6 +247,7 @@ func mapDotStorage(pathRenames map[string]string, source, target Parameters) err
 	mapper := &PathMapper{PathMappings: map[string]Mapping{}}
 
 	differentFromDefault := func(p Parameters, path string) bool {
+		// TODO dimitarvdimitrov explain why we need to use GetDefaultValue here
 		val, err1 := p.GetValue(path)
 		defaultVal, err2 := p.GetDefaultValue(path)
 
