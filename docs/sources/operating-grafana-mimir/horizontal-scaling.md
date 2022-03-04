@@ -15,7 +15,7 @@ However, be careful when scaling down some of the stateful components.
 ## Monolithic mode
 
 When running Grafana Mimir in monolithic mode, you can safely scale up to any number of instances.
-To scale down the Mimir cluster, see [Scaling down ingesters](#scaling-down-ingesters).
+To scale down the Grafana Mimir cluster, see [Scaling down ingesters](#scaling-down-ingesters).
 
 ## Microservices mode
 
