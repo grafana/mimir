@@ -67,37 +67,46 @@ You might experience the following challenges when you scale down ingesters:
 Complete the following steps to scale down ingesters deployed in a single zone.
 
 1. Configure the Grafana Mimir cluster to discover and query new uploaded blocks as quickly as possible.
-   
+
    a. Configure queriers and rulers to always query the long-term storage and to disable ingesters [shuffle sharding]({{< relref "./configure-shuffle-sharding.md">}}) on the read path:
-      ```
-      -querier.query-store-after=0s
-      -querier.shuffle-sharding-ingesters-lookback-period=87600h
-      ```
+
+   ```
+   -querier.query-store-after=0s
+   -querier.shuffle-sharding-ingesters-lookback-period=87600h
+   ```
+
    b. Configure the compactors to frequently update the bucket index:
-      ```
-      -compactor.cleanup-interval=5m
-      ```
+
+   ```
+   -compactor.cleanup-interval=5m
+   ```
+
    c. Configure the store-gateways to frequently refresh the bucket index and to immediately load all blocks:
-      ```
-      -blocks-storage.bucket-store.sync-interval=5m
-      -blocks-storage.bucket-store.ignore-blocks-within=0s
-      ```
+
+   ```
+   -blocks-storage.bucket-store.sync-interval=5m
+   -blocks-storage.bucket-store.ignore-blocks-within=0s
+   ```
+
    d. Configure queriers, rulers and store-gateways with reduced TTLs for the metadata cache:
-      ```
-      -blocks-storage.bucket-store.metadata-cache.bucket-index-content-ttl=1m
-      -blocks-storage.bucket-store.metadata-cache.tenants-list-ttl=1m
-      -blocks-storage.bucket-store.metadata-cache.tenant-blocks-list-ttl=1m
-      -blocks-storage.bucket-store.metadata-cache.metafile-doesnt-exist-ttl=1m
-      ```
+
+   ```
+   -blocks-storage.bucket-store.metadata-cache.bucket-index-content-ttl=1m
+   -blocks-storage.bucket-store.metadata-cache.tenants-list-ttl=1m
+   -blocks-storage.bucket-store.metadata-cache.tenant-blocks-list-ttl=1m
+   -blocks-storage.bucket-store.metadata-cache.metafile-doesnt-exist-ttl=1m
+   ```
+
 1. Scale down one ingester at a time:
-   
+
    a. Invoke the `/ingester/shutdown` API endpoint on the ingester to terminate.
-   
+
    b. Wait until the API endpoint call has successfully returned and the ingester logged "finished flushing and shipping TSDB blocks".
-   
+
    c. Send a `SIGINT` or `SIGTERM` signal to the process of the ingester to terminate.
-   
+
    d. Wait 10 minutes before proceeding with the next ingester. The temporarily configuration applied guarantees newly uploaded blocks are available for querying within 10 minutes.
+
 1. Wait until the originally configured `-querier.query-store-after` period of time has elapsed since when all ingesters have been shutdown.
 1. Revert the temporarily configuration changes done at the beginning of the scale down procedure.
 
