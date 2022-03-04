@@ -65,33 +65,11 @@ As a result, Grafana Mimir allows `tenant1` to send 50,000 SPS, and `tenant2` to
 
 Grafana Mimir ingesters support limits that are applied per instance, meaning that they apply to each ingester process. These limits can be used to ensure individual ingesters are not overwhelmed regardless of any per-tenant limits. These limits can be set under the `ingester.instance_limits` block in the global configuration file, with CLI flags, or under the `ingester_limits` field in the runtime configuration file.
 
-Valid ingester instance limits are (with their corresponding CLI flags for default values):
-
-- `max_ingestion_rate` \ `-ingester.instance-limits.max-ingestion-rate`
-
-  Limit the ingestion rate in samples per second for an ingester. When this limit is reached, new requests will fail with an HTTP 500 error.
-
-- `max_series` \ `-ingester.instance-limits.max-series`
-
-  Limit the total number of series that an ingester keeps in memory, across all tenants. When this limit is reached, requests that create new series will fail with an HTTP 500 error.
-
-- `max_tenants` \ `-ingester.instance-limits.max-tenants`
-
-  Limit the maximum number of tenants an ingester will accept metrics for. When this limit is reached, requests from new tenants will fail with an HTTP 500 error.
-
-- `max_inflight_push_requests` \ `-ingester.instance-limits.max-inflight-push-requests`
-
-  Limit the maximum number of concurrent requests being handled by an ingester. This setting is critical for preventing ingesters from using an excessive amount of memory during high load or temporary slow downs. When this limit is reached, new requests will fail with an HTTP 500 error.
-
-### Runtime configuration of ingester limits
-
 The runtime configuration file can be used to dynamically adjust ingester instance limits. While per-tenant limits are limits applied to each tenant, per-ingester-instance limits are limits applied to each ingester process.
 
-These limits are set at startup in the `ingester` block in the YAML configuration file or by the corresponding CLI flag.
+The runtime configuration allows you to override initial values, which is useful for advanced operators who need to dynamically change them in response to changes in ingest or query load.
 
-The runtime configuration allows you to override these initial values, which is useful for advanced operators who need to dynamically change them in response to changes in ingest or query load.
-
-Everything under the `instance_limits` section within the `ingester` block can be overridden via runtime configuration. Here is an example portion of runtime configuration that changes the ingester limits:
+Everything under the `instance_limits` section within the [`ingester`]({{< relref "./reference-configuration-parameters/#ingester" >}}) block can be overridden via runtime configuration. Here is an example portion of runtime configuration that changes the ingester limits:
 
 ```yaml
 ingester_limits:
