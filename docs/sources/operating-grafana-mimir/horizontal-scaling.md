@@ -10,7 +10,7 @@ Grafana Mimir can horizontally scale every component.
 Horizontal scaling means that to respond to increased load you, can increase the number of replicas of each Grafana Mimir component.
 
 We have designed Grafana Mimir to scale up quickly, safely, and with no manual intervention.
-However, be careful when scaling down some of the stateful components as these action can result in download failures or receiving partial query results.
+However, be careful when scaling down some of the stateful components as these action can result in writes and reads failures, or receiving partial query results.
 
 ## Monolithic mode
 
