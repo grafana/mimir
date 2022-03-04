@@ -14,7 +14,7 @@ Some clients in Grafana Mimir support service discovery via DNS to find the addr
 
 ## Supported discovery modes
 
-The DNS service discovery, inspired by Thanos DNS SD, supports different discovery modes. A discovery mode is selected adding a specific prefix to the address. Supported prefixes are:
+The DNS service discovery supports different discovery modes. A discovery mode is selected adding a specific prefix to the address. Supported prefixes are:
 
 - **`dns+`**<br />
   The domain name after the prefix is looked up as an A/AAAA query. For example: `dns+memcached.local:11211`.
