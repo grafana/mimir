@@ -29,7 +29,7 @@ When Grafana Mimir is running in microservices mode, you can estimate the requir
 
 ### Distributor
 
-The [distributor]({{< relref "../architecture/distributor.md">}}) component resources utilization is driven by the number of received samples per second.
+The [distributor]({{< relref "../architecture/distributor.md">}}) component resources utilization is determined by the number of received samples per second.
 
 Estimated required CPU and memory:
 
@@ -74,7 +74,7 @@ Estimated required CPU, memory, and disk space:
 
 ### Query-frontend
 
-The [query-frontend]({{< relref "../architecture/query-frontend.md">}}) component resources utilization is driven by the number of queries per second.
+The [query-frontend]({{< relref "../architecture/query-frontend.md">}}) component resources utilization is determined by the number of queries per second.
 
 Estimated required CPU and memory:
 
@@ -103,19 +103,19 @@ Estimated required CPU and memory:
 
 ### Store-gateway
 
-The [store-gateway]({{< relref "../architecture/store-gateway.md">}}) component resources’ utilization is determined by the number of queries per second and active series.
+The [store-gateway]({{< relref "../architecture/store-gateway.md">}}) component resources’ utilization is determined by the number of queries per second and active series before ingesters replication.
 
 Estimated required CPU, memory, and disk space:
 
 - CPU: 1 core every 10 queries per second
 - Memory: 1GB every 10 queries per second
-- Disk: 12GB every 1 million active series
+- Disk: 13GB every 1 million active series
 
 > **Note:** The CPU and memory requirements are computed by estimating 1 CPU core and 1GB per query, an average query latency of 1s when reaching the store-gateway, and only 10% of queries reaching the store-gateway.
 
 > **Note**: The disk requirement has been estimated assuming 2 bytes per sample for compacted blocks (both index and chunks), the index-header being 0.10% of a block size, a scrape interval of 15 seconds, a retention of 1 year and store-gateways replication factor configured to 3. The resulting estimated store-gateway disk space for one series is 13KB.
 
-**How to estimate the number of active series:**
+**How to estimate the number of active series before ingesters replication:**
 
 1. Query the number of active series across all your Prometheus servers:
    ```
@@ -124,21 +124,30 @@ Estimated required CPU, memory, and disk space:
 
 ### (Optional) Ruler
 
-The [ruler]({{< relref "../architecture/ruler.md">}}) component resources utilization is driven by the number of rules evaluated per second.
+The [ruler]({{< relref "../architecture/ruler.md">}}) component resources utilization is determined by the number of rules evaluated per second.
 The rules evaluation is computationally equal to queries execution, so the querier resources recommendations apply to ruler too.
 
 ### Compactor
 
-The [compactor]({{< relref "../architecture/compactor.md">}}) component resources utilization is driven by the number of active series.
+The [compactor]({{< relref "../architecture/compactor.md">}}) component resources utilization is determined by the number of active series.
 
-We recommend to run one compactor instance every 20 million active series ingested in the Grafana Mimir cluster.
-Estimated required CPU, memory and disk for each replica:
+The compactor can scale horizontally both in Grafana Mimir clusters with one tenant and multiple tenants.
+We recommend to run at least one compactor instance every 20 million active series ingested in total in the Grafana Mimir cluster, calculated before ingesters replication.
 
-- CPU: 1 core every compactor instance.
-- Memory: 2GB every 10 million active series owned by the largest tenant.
-- Disk: 150GB every 10 million active series owned by the largest tenant.
+Assuming you run one compactor instance every 20 million active series, the estimated required CPU, memory and disk for each compactor instance are:
+
+- CPU: 1 core
+- Memory: 4GB
+- Disk: 300GB
 
 For more information about disk requirements, refer to [Compactor disk utilization]({{< relref "../architecture/compactor.md#compactor-disk-utilization">}}).
+
+**How to estimate the number of active series before ingesters replication:**
+
+1. Query the number of active series across all your Prometheus servers:
+   ```
+   sum(prometheus_tsdb_head_series)
+   ```
 
 ### (Optional) Alertmanager
 
