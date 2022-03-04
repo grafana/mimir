@@ -1,0 +1,117 @@
+{{- if .Values.gateway.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "mimir.gatewayFullname" . }}
+  labels:
+    app: {{ include "mimir.name" . }}-gateway
+    chart: {{ include "mimir.chart" . }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+  annotations:
+    {{- toYaml .Values.gateway.annotations | nindent 4 }}
+spec:
+{{- if not .Values.gateway.autoscaling.enabled }}
+  replicas: {{ .Values.gateway.replicas }}
+{{- end }}
+{{- with .Values.gateway.deploymentStrategy }}
+  strategy:
+{{ toYaml . | trim | indent 4 }}
+{{- end }}
+  selector:
+    matchLabels:
+      app: {{ include "mimir.name" . }}-gateway
+      release: {{ .Release.Name }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print .Template.BasePath "/gateway/gateway-configmap.yaml") . | sha256sum }}
+        {{- with .Values.gateway.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        app: {{ include "mimir.name" . }}-gateway
+        # The name label is important for cortex-mixin compatibility which expects certain names for services.
+        name: gateway
+        release: {{ .Release.Name }}
+        component: gateway
+        {{- with .Values.gateway.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "mimir.serviceAccountName" . }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.gateway.priorityClassName }}
+      priorityClassName: {{ .Values.gateway.priorityClassName }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.gateway.podSecurityContext | nindent 8 }}
+      terminationGracePeriodSeconds: {{ .Values.gateway.terminationGracePeriodSeconds }}
+      containers:
+        - name: nginx
+          image: {{ .Values.gateway.image.registry }}/{{ .Values.gateway.image.repository }}:{{ .Values.gateway.image.tag }}
+          imagePullPolicy: {{ .Values.gateway.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          {{- with .Values.gateway.extraEnv }}
+          env:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.gateway.extraEnvFrom }}
+          envFrom:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          readinessProbe:
+            {{- toYaml .Values.gateway.readinessProbe | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.gateway.containerSecurityContext | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/nginx
+            {{- if .Values.gateway.basicAuth.enabled }}
+            - name: auth
+              mountPath: /etc/nginx/secrets
+            {{- end }}
+            - name: tmp
+              mountPath: /tmp
+            - name: docker-entrypoint-d-override
+              mountPath: /docker-entrypoint.d
+            {{- if .Values.gateway.extraVolumeMounts }}
+            {{- toYaml .Values.gateway.extraVolumeMounts | nindent 12 }}
+            {{- end }}
+          resources:
+            {{- toYaml .Values.gateway.resources | nindent 12 }}
+      {{- with .Values.gateway.affinity }}
+      affinity:
+        {{- tpl . $ | nindent 8 }}
+      {{- end }}
+      {{- with .Values.gateway.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.gateway.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "mimir.fullname" . }}-gateway
+        {{- if .Values.gateway.basicAuth.enabled }}
+        - name: auth
+          secret:
+            secretName: {{ include "mimir.gatewayAuthSecret" . }}
+        {{- end }}
+        - name: tmp
+          emptyDir: {}
+        - name: docker-entrypoint-d-override
+          emptyDir: {}
+        {{- if .Values.gateway.extraVolumes }}
+        {{- toYaml .Values.gateway.extraVolumes | nindent 8 }}
+        {{- end }}
+{{- end }}

@@ -3,6 +3,12 @@
 # To configure the resources for production load, refer to the the small.yaml or
 # large.yaml values files.
 
+# -- Overrides the chart's name
+nameOverride: null
+
+# -- Overrides the chart's computed fullname
+fullnameOverride: null
+
 # Container image settings.
 # Since the image is unique for all microservices, so are image settings.
 image:
@@ -14,6 +20,12 @@ image:
   # ref: https://kubernetes.io/docs/tasks/configure-pod-container/pull-image-private-registry/
   # pullSecrets:
   #   - myRegistryKeySecretName
+
+global:
+  # definitions to set up nginx resolver
+  dnsService: kube-dns
+  dnsNamespace: kube-system
+  clusterDomain: cluster.local
 
 serviceAccount:
   create: true
@@ -918,3 +930,237 @@ minio:
       cpu: 100m
       memory: 128Mi
   secretKey: supersecret
+
+# Configuration for the gateway
+gateway:
+  # -- Specifies whether the gateway should be enabled
+  enabled: true
+  # -- Number of replicas for the gateway
+  replicas: 1
+  # -- Enable logging of 2xx and 3xx HTTP requests
+  verboseLogging: true
+  autoscaling:
+    # -- Enable autoscaling for the gateway
+    enabled: false
+    # -- Minimum autoscaling replicas for the gateway
+    minReplicas: 1
+    # -- Maximum autoscaling replicas for the gateway
+    maxReplicas: 3
+    # -- Target CPU utilisation percentage for the gateway
+    targetCPUUtilizationPercentage: 60
+    # -- Target memory utilisation percentage for the gateway
+    targetMemoryUtilizationPercentage:
+  # -- See `kubectl explain deployment.spec.strategy` for more,
+  # ref: https://kubernetes.io/docs/concepts/workloads/controllers/deployment/#strategy
+  deploymentStrategy:
+    type: RollingUpdate
+  image:
+    # -- The Docker registry for the gateway image
+    registry: docker.io
+    # -- The gateway image repository
+    repository: nginxinc/nginx-unprivileged
+    # -- The gateway image tag
+    tag: 1.19-alpine
+    # -- The gateway image pull policy
+    pullPolicy: IfNotPresent
+  # -- The name of the PriorityClass for gateway pods
+  priorityClassName: null
+  # -- Labels for gateway pods
+  podLabels: {}
+  # -- Annotations for gateway pods
+  podAnnotations: {}
+  # -- Additional CLI args for the gateway
+  extraArgs: []
+  # -- Environment variables to add to the gateway pods
+  extraEnv: []
+  # -- Environment variables from secrets or configmaps to add to the gateway pods
+  extraEnvFrom: []
+  # -- Volumes to add to the gateway pods
+  extraVolumes: []
+  # -- Volume mounts to add to the gateway pods
+  extraVolumeMounts: []
+  # -- The SecurityContext for gateway containers
+  podSecurityContext:
+    fsGroup: 101
+    runAsGroup: 101
+    runAsNonRoot: true
+    runAsUser: 101
+  # -- The SecurityContext for gateway containers
+  containerSecurityContext:
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop:
+        - ALL
+    allowPrivilegeEscalation: false
+  # -- Resource requests and limits for the gateway
+  resources: {}
+  # -- Grace period to allow the gateway to shutdown before it is killed
+  terminationGracePeriodSeconds: 30
+  # -- Affinity for gateway pods. Passed through `tpl` and, thus, to be configured as string
+  # @default -- Hard node and soft zone anti-affinity
+  affinity: |
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchExpressions:
+                - key: component
+                  operator: In
+                  values:
+                    - gateway
+            topologyKey: failure-domain.beta.kubernetes.io/zone
+
+  annotations: {}
+
+  # -- Node selector for gateway pods
+  nodeSelector: {}
+  # -- Tolerations for gateway pods
+  tolerations: []
+  # Gateway service configuration
+  service:
+    # -- Port of the gateway service
+    port: 80
+    # -- Type of the gateway service
+    type: ClusterIP
+    # -- ClusterIP of the gateway service
+    clusterIP: null
+    # -- Node port if service type is NodePort
+    nodePort: null
+    # -- Load balancer IPO address if service type is LoadBalancer
+    loadBalancerIP: null
+    # -- Annotations for the gateway service
+    annotations: {}
+    # -- Labels for gateway service
+    labels: {}
+  # Gateway ingress configuration
+  ingress:
+    # -- Specifies whether an ingress for the gateway should be created
+    enabled: false
+    # -- Ingress Class Name. MAY be required for Kubernetes versions >= 1.18
+    # ingressClassName: nginx
+    # -- Annotations for the gateway ingress
+    annotations: {}
+    # -- Hosts configuration for the gateway ingress
+    hosts:
+      - host: gateway.loki.example.com
+        paths:
+          - path: /
+            # -- pathType (e.g. ImplementationSpecific, Prefix, .. etc.) might also be required by some Ingress Controllers
+            # pathType: Prefix
+    # -- TLS configuration for the gateway ingress
+    tls:
+      - secretName: loki-gateway-tls
+        hosts:
+          - gateway.loki.example.com
+  # Basic auth configuration
+  basicAuth:
+    # -- Enables basic authentication for the gateway
+    enabled: enable
+    # -- The basic auth username for the gateway
+    username: krajo
+    # -- The basic auth password for the gateway
+    password: titkos
+    # -- Uses the specified username and password to compute a htpasswd using Sprig's `htpasswd` function.
+    # The value is templated using `tpl`. Override this to use a custom htpasswd, e.g. in case the default causes
+    # high CPU load.
+    htpasswd: >-
+      {{ htpasswd (required "'gateway.basicAuth.username' is required" .Values.gateway.basicAuth.username) (required "'gateway.basicAuth.password' is required" .Values.gateway.basicAuth.password) }}
+    # -- Existing basic auth secret to use. Must contain '.htpasswd'
+    existingSecret: null
+  # Configures the readiness probe for the gateway
+  readinessProbe:
+    httpGet:
+      path: /
+      port: http
+    initialDelaySeconds: 15
+    timeoutSeconds: 1
+  nginxConfig:
+    # -- NGINX log format
+    logFormat: |-
+      main '$remote_addr - $remote_user [$time_local]  $status '
+              '"$request" $body_bytes_sent "$http_referer" '
+              '"$http_user_agent" "$http_x_forwarded_for"';
+    # -- Allows appending custom configuration to the server block
+    serverSnippet: ""
+    # -- Allows appending custom configuration to the http block
+    httpSnippet: ""
+    # -- Config file contents for Nginx. Passed through the `tpl` function to allow templating
+    # @default -- See values.yaml
+    file: |
+      worker_processes  5;  ## Default: 1
+      error_log  /dev/stderr;
+      pid        /tmp/nginx.pid;
+      worker_rlimit_nofile 8192;
+
+      events {
+        worker_connections  4096;  ## Default: 1024
+      }
+
+      http {
+        client_body_temp_path /tmp/client_temp;
+        proxy_temp_path       /tmp/proxy_temp_path;
+        fastcgi_temp_path     /tmp/fastcgi_temp;
+        uwsgi_temp_path       /tmp/uwsgi_temp;
+        scgi_temp_path        /tmp/scgi_temp;
+
+        default_type application/octet-stream;
+        log_format   {{ .Values.gateway.nginxConfig.logFormat }}
+
+        {{- if .Values.gateway.verboseLogging }}
+        access_log   /dev/stderr  main;
+        {{- else }}
+
+        map $status $loggable {
+          ~^[23]  0;
+          default 1;
+        }
+        access_log   /dev/stderr  main  if=$loggable;
+        {{- end }}
+
+        sendfile     on;
+        tcp_nopush   on;
+        resolver {{ .Values.global.dnsService }}.{{ .Values.global.dnsNamespace }}.svc.{{ .Values.global.clusterDomain }};
+
+        {{- with .Values.gateway.nginxConfig.httpSnippet }}
+        {{ . | nindent 2 }}
+        {{- end }}
+
+        server {
+          listen 8080;
+
+          {{- if .Values.gateway.basicAuth.enabled }}
+          auth_basic           "Mimir";
+          auth_basic_user_file /etc/nginx/secrets/.htpasswd;
+          {{- end }}
+
+          location = / {
+            return 200 'OK';
+            auth_basic off;
+          }
+
+          proxy_set_header X-Scope-OrgID 0;
+          location = /api/v1/push {
+            proxy_pass      http://{{ template "mimir.fullname" . }}-distributor.default.svc.cluster.local:{{ .Values.config.server.http_listen_port }}$request_uri;
+          }
+          location = /api/prom/push {
+            proxy_pass      http://{{ template "mimir.fullname" . }}-distributor.default.svc.cluster.local:{{ .Values.config.server.http_listen_port }}$request_uri;
+          }
+          location ~ /distributor/.* {
+            proxy_pass      http://{{ template "mimir.fullname" . }}-distributor.default.svc.cluster.local:{{ .Values.config.server.http_listen_port }}$request_uri;
+          }
+          location = /all_user_stats {
+            proxy_pass      http://{{ template "mimir.fullname" . }}-distributor.default.svc.cluster.local:{{ .Values.config.server.http_listen_port }}$request_uri;
+          }
+          location ~ /prometheus/.* {
+            proxy_pass      http://{{ template "mimir.fullname" . }}-query-frontend.default.svc.cluster.local:{{ .Values.config.server.http_listen_port }}$request_uri;
+          }
+          location ~ /api/prom/.* {
+            proxy_pass      http://{{ template "mimir.fullname" . }}-query-frontend.default.svc.cluster.local:{{ .Values.config.server.http_listen_port }}$request_uri;
+          }
+
+          {{- with .Values.gateway.nginxConfig.serverSnippet }}
+          {{ . | nindent 4 }}
+          {{- end }}
+        }
+      }

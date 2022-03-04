@@ -1,0 +1,14 @@
+{{- if .Values.gateway.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "mimir.gatewayFullname" . }}
+  labels:
+    app: {{ include "mimir.name" . }}-gateway
+    chart: {{ include "mimir.chart" . }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+data:
+  nginx.conf: |
+    {{- tpl .Values.gateway.nginxConfig.file . | nindent 4 }}
+{{- end }}
