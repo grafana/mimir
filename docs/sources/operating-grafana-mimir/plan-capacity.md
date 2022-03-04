@@ -6,7 +6,7 @@ weight: 50
 
 # Plan capacity
 
-The information that follows is an overview about the CPU, memory, and disk space that Grafana Mimir requires at scale. 
+The information that follows is an overview about the CPU, memory, and disk space that Grafana Mimir requires at scale.
 You can get a rough idea about the required resources, rather than a prescriptive recommendation about the exact amount of CPU, memory, and disk space.
 
 The resources utilization is estimated based on a general production workload, and the assumption
