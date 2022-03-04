@@ -33,7 +33,7 @@ chmod +x query-tee
 ## How to configure the query-tee
 
 The query-tee requires the endpoints of the backend Grafana Mimir clusters.
-You can configure the backend endpoints setting the `-backend.endpoints` CLI flag to a comma-separated list of HTTP(S) URLs.
+You can configure the backend endpoints by setting the `-backend.endpoints` CLI flag to a comma-separated list of HTTP or HTTPS URLs.
 For each incoming request, the query-tee will clone the request and send it to each configured backend.
 
 > **Note:** The query-tee proxy listening port can be configured using the `-server.service-port` CLI flag.
