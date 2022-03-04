@@ -65,7 +65,7 @@ As a result, Grafana Mimir allows `tenant1` to send 50,000 SPS, and `tenant2` to
 
 Grafana Mimir ingesters support limits that are applied per instance, meaning that they apply to each ingester process. These limits can be used to ensure individual ingesters are not overwhelmed regardless of any per-tenant limits. These limits can be set under the `ingester.instance_limits` block in the global configuration file, with CLI flags, or under the `ingester_limits` field in the runtime configuration file.
 
-Valid ingester instance limits are (with their corresponding flags):
+Valid ingester instance limits are (with their corresponding CLI flags for default values):
 
 - `max_ingestion_rate` \ `--ingester.instance-limits.max-ingestion-rate`
 
