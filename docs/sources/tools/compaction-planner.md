@@ -17,7 +17,7 @@ The compaction planner needs to be configured with at least the following parame
 
 * The tenant ID (the `-user` flag)
 * What storage backend to use (the `-backend` flag)
-* Those required by the chosen storage backend (f.ex. the `gcs` backend will require the `gcs.bucket-name` flag)
+* Those required by the chosen storage backend (f.ex. the `gcs` backend will require the `-gcs.bucket-name` flag)
 
 Additionally, you might need to tweak shard count (`-shard-count` flag) and split groups (`-split-groups` flag)
 to match the corresponding split-and-merge compactor parameters. The compaction planner tool is not able to 
