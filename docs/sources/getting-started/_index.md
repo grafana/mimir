@@ -6,12 +6,7 @@ weight: 20
 
 # Getting started with Grafana Mimir
 
-Grafana Mimir runs as either a single process or as multiple microservice processes.
-The single process mode is useful for users who want to try or develop on Grafana Mimir.
-The microservices mode allows you to independently scale different components and isolate failures.
-
-These instructions focus on deploying Grafana Mimir as a single process.
-For more information about the microservices, refer to [Architecture]({{< relref "../architecture/_index.md" >}}).
+These instructions focus on deploying Grafana Mimir as a [monolith]({{<relref "../architecture/deployment-modes.md#monolithic-mode" >}}), which is designed for users getting started with the project. For more information about the different ways to deploy Grafana Mimir, refer to [Deployment Modes]({{<relref "../architecture/deployment-modes.md" >}}).
 
 ## Before you begin
 
@@ -39,7 +34,7 @@ chmod +x mimir
 
 ## Start Grafana Mimir
 
-To run Grafana Mimir in a single process and with local filesystem storage, write the following configuration YAML to a file called `demo.yaml`:
+To run Grafana Mimir as a monolith and with local filesystem storage, write the following configuration YAML to a file called `demo.yaml`:
 
 <!-- prettier-ignore-start -->
 [embedmd]:# (../../configurations/demo.yaml)
