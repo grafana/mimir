@@ -74,7 +74,7 @@ Estimated required CPU, memory, and disk space:
 
 ### Query-frontend
 
-The [query-frontend]({{< relref "../architecture/components/query-frontend.md">}}) component resources utilization is determined by the number of queries per second.
+The [query-frontend]({{< relref "../architecture/components/query-frontend/_index.md">}}) component resources utilization is determined by the number of queries per second.
 
 Estimated required CPU and memory:
 

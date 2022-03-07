@@ -1,7 +1,7 @@
 ---
 title: "About runtime configuration"
 description: ""
-weight: 50
+weight: 10
 ---
 
 # About runtime configuration
@@ -42,7 +42,7 @@ overrides:
 
 As a result, Grafana Mimir allows `tenant1` to send 50,000 SPS, and `tenant2` to send 75,000 SPS, while maintaining a 25,000 SPS rate limit on all other tenants.
 
-- On a per-tenant basis, you can override all of the limits listed in the [`limits`]({{< relref "./reference-configuration-parameters/#limits" >}}) block within the runtime configuration file.
+- On a per-tenant basis, you can override all of the limits listed in the [`limits`]({{< relref "reference-configuration-parameters/#limits" >}}) block within the runtime configuration file.
 - For each tenant, you can override different limits.
 - For any tenant or limit that is not overridden in the runtime configuration file, you can inherit the limit values that are specified in the `limits` block.
 
@@ -54,7 +54,7 @@ The runtime configuration file can be used to dynamically adjust ingester instan
 
 The runtime configuration allows you to override initial values, which is useful for advanced operators who need to dynamically change them in response to changes in ingest or query load.
 
-Everything under the `instance_limits` section within the [`ingester`]({{< relref "./reference-configuration-parameters/#ingester" >}}) block can be overridden via runtime configuration. Here is an example portion of runtime configuration that changes the ingester limits:
+Everything under the `instance_limits` section within the [`ingester`]({{< relref "reference-configuration-parameters/#ingester" >}}) block can be overridden via runtime configuration. Here is an example portion of runtime configuration that changes the ingester limits:
 
 ```yaml
 ingester_limits:

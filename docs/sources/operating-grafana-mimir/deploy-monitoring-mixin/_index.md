@@ -6,7 +6,7 @@ weight: 10
 
 # Deploy monitoring mixin
 
-    Grafana Mimir exposes a `/metrics` endpoint returning Prometheus metrics. The endpoint is exposed on the Mimir HTTP server address / port which can be customized through `-server.http-listen-address` and `-server.http-listen-port` CLI flags or their respective YAML [config options]({{< relref "../../configuration/reference-configuration-parameters.md" >}}).
+    Grafana Mimir exposes a `/metrics` endpoint returning Prometheus metrics. The endpoint is exposed on the Mimir HTTP server address / port which can be customized through `-server.http-listen-address` and `-server.http-listen-port` CLI flags or their respective YAML [config options]({{< relref "../../configuring/reference-configuration-parameters.md" >}}).
 
 ## Dashboards and alerts
 
