@@ -27,7 +27,7 @@ limits:
 ## Enable exemplars for a specific tenant
 
 1. Ensure Grafana Mimir uses a runtime configuration file by verifying that the flag `-runtime-config.file` is set to a non-null value.
-   For more information about supported runtime configuration, refer to [Runtime configuration file]({{<relref "../../configuration/about-grafana-mimir-arguments.md#runtime-configuration-file" >}})
+   For more information about supported runtime configuration, refer to [Runtime configuration file]({{<relref "../../configuration/about-runtime-configuration.md" >}})
 1. In the runtime configuration file, set the `overrides.<TENANT>.max_global_exemplars_per_user` value.
    Start with a relatively low number (100,000) and adjust it if needed.
 
