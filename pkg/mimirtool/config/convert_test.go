@@ -3,6 +3,7 @@
 package config
 
 import (
+	"fmt"
 	"io/ioutil"
 	"strings"
 	"testing"
@@ -284,26 +285,35 @@ func TestChangedDefaults(t *testing.T) {
 	assert.ElementsMatch(t, expectedChangedDefaults, notices.ChangedDefaults)
 }
 
-// TODO dimitarvdimitrov make these two into table tests
-func TestConvert_PreservesExplicitlySetDefaults(t *testing.T) {
-	inYaml := []byte(`{}`)
-	inFlags := []string{"-experimental.alertmanager.enable-api=false"}
-	expectedOutFlags := []string{"-alertmanager.enable-api=false"}
-	_, outFlags, _, err := Convert(inYaml, inFlags, CortexToMimirMapper, DefaultCortexConfig, DefaultMimirConfig, false, false)
+func TestConvert_UseNewDefaults(t *testing.T) {
+	testCases := []struct {
+		name                   string
+		inFlags, expectedFlags []string
+		useNewDefaults         bool
+	}{
+		{
+			name:           "uses new defaults",
+			inFlags:        []string{"-experimental.alertmanager.enable-api=false"},
+			expectedFlags:  []string{"-alertmanager.enable-api=true"},
+			useNewDefaults: true,
+		},
+		{
+			name:           "keeps old defaults",
+			inFlags:        []string{"-experimental.alertmanager.enable-api=false"},
+			expectedFlags:  []string{"-alertmanager.enable-api=false"},
+			useNewDefaults: false,
+		},
+	}
 
-	require.NoError(t, err)
-	assert.Equal(t, expectedOutFlags, outFlags)
-}
+	inYaml := []byte("{}")
+	for _, tc := range testCases {
+		t.Run(fmt.Sprintf("useNewDefaults=%t %s", tc.useNewDefaults, tc.name), func(t *testing.T) {
+			_, outFlags, _, err := Convert(inYaml, tc.inFlags, CortexToMimirMapper, DefaultCortexConfig, DefaultMimirConfig, tc.useNewDefaults, false)
 
-// TODO dimitarvdimitrov make these two into table tests
-func TestConvert_ConvertsOldDefaultsToNewDefaults(t *testing.T) {
-	inYaml := []byte(`{}`)
-	inFlags := []string{"-experimental.alertmanager.enable-api=false"}
-	expectedOutFlags := []string{"-alertmanager.enable-api=true"}
-	_, outFlags, _, err := Convert(inYaml, inFlags, CortexToMimirMapper, DefaultCortexConfig, DefaultMimirConfig, true, false)
-
-	require.NoError(t, err)
-	assert.Equal(t, expectedOutFlags, outFlags)
+			require.NoError(t, err)
+			assert.Equal(t, tc.expectedFlags, outFlags)
+		})
+	}
 }
 
 func loadFile(t testing.TB, fileName string) []byte {
