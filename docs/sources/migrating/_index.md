@@ -1,7 +1,7 @@
 ---
 title: "Migrating to Grafana Mimir"
 description: ""
-weight: 1
+weight: 40
 ---
 
 # Migrating to Grafana Mimir
