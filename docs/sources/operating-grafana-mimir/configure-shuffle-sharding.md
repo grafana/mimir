@@ -150,7 +150,7 @@ When store-gateway shuffle sharding is enabled by setting `-store-gateway.tenant
 
 _The store-gateway shard size can be overridden on a per-tenant basis by setting `store_gateway_tenant_shard_size` in the overrides section of the runtime configuration._
 
-_Please check out the [store-gateway documentation](../architecture/store-gateway.md) for more information about how it works._
+_Please check out the [store-gateway documentation](../architecture/components/store-gateway.md) for more information about how it works._
 
 ### Ruler shuffle sharding
 

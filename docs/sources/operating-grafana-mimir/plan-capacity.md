@@ -29,7 +29,7 @@ When Grafana Mimir is running in microservices mode, you can estimate the requir
 
 ### Distributor
 
-The [distributor]({{< relref "../architecture/distributor.md">}}) component resources utilization is determined by the number of received samples per second.
+The [distributor]({{< relref "../architecture/components/distributor.md">}}) component resources utilization is determined by the number of received samples per second.
 
 Estimated required CPU and memory:
 
@@ -50,7 +50,7 @@ Estimated required CPU and memory:
 
 ### Ingester
 
-The [ingester]({{< relref "../architecture/ingester.md">}}) component resources’ utilization is determined by the number of series that are in memory.
+The [ingester]({{< relref "../architecture/components/ingester.md">}}) component resources’ utilization is determined by the number of series that are in memory.
 
 Estimated required CPU, memory, and disk space:
 
@@ -74,7 +74,7 @@ Estimated required CPU, memory, and disk space:
 
 ### Query-frontend
 
-The [query-frontend]({{< relref "../architecture/query-frontend.md">}}) component resources utilization is determined by the number of queries per second.
+The [query-frontend]({{< relref "../architecture/components/query-frontend.md">}}) component resources utilization is determined by the number of queries per second.
 
 Estimated required CPU and memory:
 
@@ -83,7 +83,7 @@ Estimated required CPU and memory:
 
 ### (Optional) Query-scheduler
 
-The [query-scheduler]({{< relref "../architecture/query-scheduler.md">}}) component resources’ utilization is determined by the number of queries per second.
+The [query-scheduler]({{< relref "../architecture/components/query-scheduler.md">}}) component resources’ utilization is determined by the number of queries per second.
 
 Estimated required CPU and memory:
 
@@ -92,7 +92,7 @@ Estimated required CPU and memory:
 
 ### Querier
 
-The [querier]({{< relref "../architecture/querier.md">}}) component resources utilization is determined by the number of queries per second.
+The [querier]({{< relref "../architecture/components/querier.md">}}) component resources utilization is determined by the number of queries per second.
 
 Estimated required CPU and memory:
 
@@ -103,7 +103,7 @@ Estimated required CPU and memory:
 
 ### Store-gateway
 
-The [store-gateway]({{< relref "../architecture/store-gateway.md">}}) component resources’ utilization is determined by the number of queries per second and active series before ingesters replication.
+The [store-gateway]({{< relref "../architecture/components/store-gateway.md">}}) component resources’ utilization is determined by the number of queries per second and active series before ingesters replication.
 
 Estimated required CPU, memory, and disk space:
 
@@ -124,12 +124,12 @@ Estimated required CPU, memory, and disk space:
 
 ### (Optional) Ruler
 
-The [ruler]({{< relref "../architecture/ruler.md">}}) component resources utilization is determined by the number of rules evaluated per second.
+The [ruler]({{< relref "../architecture/components/ruler.md">}}) component resources utilization is determined by the number of rules evaluated per second.
 The rules evaluation is computationally equal to queries execution, so the querier resources recommendations apply to ruler too.
 
 ### Compactor
 
-The [compactor]({{< relref "../architecture/compactor.md">}}) component resources utilization is determined by the number of active series.
+The [compactor]({{< relref "../architecture/components/compactor.md">}}) component resources utilization is determined by the number of active series.
 
 The compactor can scale horizontally both in Grafana Mimir clusters with one tenant and multiple tenants.
 We recommend to run at least one compactor instance every 20 million active series ingested in total in the Grafana Mimir cluster, calculated before ingesters replication.
@@ -140,7 +140,7 @@ Assuming you run one compactor instance every 20 million active series, the esti
 - Memory: 4GB
 - Disk: 300GB
 
-For more information about disk requirements, refer to [Compactor disk utilization]({{< relref "../architecture/compactor.md#compactor-disk-utilization">}}).
+For more information about disk requirements, refer to [Compactor disk utilization]({{< relref "../architecture/components/compactor.md#compactor-disk-utilization">}}).
 
 **How to estimate the number of active series before ingesters replication:**
 
@@ -151,7 +151,7 @@ For more information about disk requirements, refer to [Compactor disk utilizati
 
 ### (Optional) Alertmanager
 
-The [alertmanager]({{< relref "../architecture/alertmanager.md">}}) component resources’ utilization is determined by the number of alerts firing at the same time.
+The [alertmanager]({{< relref "../architecture/components/alertmanager.md">}}) component resources’ utilization is determined by the number of alerts firing at the same time.
 
 Estimated required CPU and memory:
 

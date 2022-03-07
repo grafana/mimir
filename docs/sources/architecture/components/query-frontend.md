@@ -6,7 +6,7 @@ weight: 10
 
 # Query-frontend
 
-The **query-frontend** is a component that provides the same API as the [querier]({{< relref "./querier.md" >}}) and can be used to accelerate the read path. It is not a required component, but we highly recommend deploying it. When the query-frontend is in place, incoming query requests should be directed to the query-frontend instead of the queriers. The queriers are still required within the cluster, in order to execute the actual queries.
+The **query-frontend** is a component that provides the same API as the [querier]({{< relref "querier.md" >}}) and can be used to accelerate the read path. It is not a required component, but we highly recommend deploying it. When the query-frontend is in place, incoming query requests should be directed to the query-frontend instead of the queriers. The queriers are still required within the cluster, in order to execute the actual queries.
 
 The query-frontend internally performs some query adjustments and holds queries in an internal queue. In this setup, queriers act as workers which pull jobs from the queue, execute them, and return their results to the query-frontend for aggregation. Queriers need to be configured with the query-frontend address (via the `-querier.frontend-address` CLI flag) to allow them to connect to the query-frontends.
 
@@ -45,13 +45,13 @@ The query-frontend supports caching query results and reuses them on subsequent 
 
 ### Query sharding
 
-The query-frontend also provides [query sharding]({{< relref "../guides/query-sharding.md" >}}).
+The query-frontend also provides [query sharding]({{< relref "../../guides/query-sharding.md" >}}).
 
 ## Why query-frontend scalability is limited
 
 The query-frontend scalability is limited by the configured number of workers per querier.
 
-When you don't use the [query-scheduler]({{< relref "./query-scheduler.md">}}), the query-frontend stores a queue of queries to execute. A querier runs `-querier.max-concurrent` workers and each worker connects to one of the query-frontend replicas to pull queries to execute. A querier worker executes one query at a time.
+When you don't use the [query-scheduler]({{< relref "query-scheduler.md" >}}), the query-frontend stores a queue of queries to execute. A querier runs `-querier.max-concurrent` workers and each worker connects to one of the query-frontend replicas to pull queries to execute. A querier worker executes one query at a time.
 
 The connection from a querier worker to a query-frontend is persistent. After a connection is established, multiple queries are delivered through the connection, one at a time. To balance the number of workers connected to each query-frontend, the querier workers use a round-robin method to select the query-frontend replicas to connect to.
 
@@ -63,10 +63,10 @@ The queries exceeding the configured max concurrency create a backlog in the que
 
 The backlog might cause a suboptimal utilization of querier resources, leading to poor query performance when you run Grafana Mimir at scale.
 
-The [query-scheduler]({{< relref "./query-scheduler.md">}}) is an optional component that you can deploy to overcome the query-frontend scalability limitations.
+The [query-scheduler]({{< relref "query-scheduler.md" >}}) is an optional component that you can deploy to overcome the query-frontend scalability limitations.
 
 ## DNS Configuration / Readiness
 
-When a query-frontend is first started it does not immediately have queriers attached to it. The [`/ready` endpoint]({{< relref "../reference-http-api/#readiness-probe" >}}) returns HTTP 200 status code only when the query-frontend has at least one querier attached and is ready to serve queries. Make sure to configure this endpoint as a healthcheck in your load balancer; otherwise, a query-frontend scale out event might result in failed queries or high latency until queriers connect to the query-frontend.
+When a query-frontend is first started it does not immediately have queriers attached to it. The [`/ready` endpoint]({{< relref "../../reference-http-api/#readiness-probe" >}}) returns HTTP 200 status code only when the query-frontend has at least one querier attached and is ready to serve queries. Make sure to configure this endpoint as a healthcheck in your load balancer; otherwise, a query-frontend scale out event might result in failed queries or high latency until queriers connect to the query-frontend.
 
 When using query-frontend with query-scheduler, `/ready` will report HTTP 200 status code only after the query-frontend connects to at least a query-scheduler.

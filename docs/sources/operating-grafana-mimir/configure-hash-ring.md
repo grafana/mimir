@@ -6,7 +6,7 @@ weight: 10
 
 # Configuring hash rings
 
-[Hash rings]({{< relref "../architecture/about-the-hash-ring.md">}}) are a distributed consistent hashing scheme and are widely used by Grafana Mimir for sharding and replication.
+[Hash rings]({{< relref "../architecture/hash-ring.md">}}) are a distributed consistent hashing scheme and are widely used by Grafana Mimir for sharding and replication.
 
 There are several Grafana Mimir components that require a hash ring.
 Each of the following components builds an independent hash ring.
@@ -25,7 +25,7 @@ You can configure each parameter either via the CLI flag or its respective YAML 
 ## Configuring the key-value store
 
 Hash ring data structures need to be shared between Grafana Mimir instances.
-To propagate changes to the hash ring, Grafana Mimir uses a [key-value store]({{< relref "../architecture/about-the-key-value-store.md">}}).
+To propagate changes to the hash ring, Grafana Mimir uses a [key-value store]({{< relref "../architecture/key-value-store.md">}}).
 The key-value store is required and can be configured independently for the hash rings of different components.
 
 Grafana Mimir supports the following key-value (KV) store backends for hash rings:
