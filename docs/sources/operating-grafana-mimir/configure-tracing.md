@@ -7,7 +7,7 @@ weight: 30
 # Configure Grafana Mimir to send traces
 
 Grafana Mimir uses [Jaeger](https://www.jaegertracing.io/) to implement distributed
-tracing. We have found Jaeger invaluable for troubleshooting the behavior of
+tracing. Jaeger is a valuable tool for troubleshooting the behavior of
 Grafana Mimir in production.
 
 ## Dependencies
