@@ -30,7 +30,7 @@ However, the stateful components have some restrictions:
 
 ### Alertmanagers
 
-[Alertmanagers]({{< relref "../architecture/alertmanager.md">}}) store alerts state in memory.
+[Alertmanagers]({{< relref "../architecture/components/alertmanager.md">}}) store alerts state in memory.
 When an Alertmanager is restarted, the alerts stored on the Alertmanager are not available until the Alertmanager is running again.
 
 By default, Alertmanagers replicate each tenant's alerts to three Alertmanagers.
@@ -42,7 +42,7 @@ To ensure no alerts notification, reception or visualization fail during a rolli
 
 ### Ingesters
 
-[Ingesters]({{< relref "../architecture/ingester.md">}}) store recently received samples in memory.
+[Ingesters]({{< relref "../architecture/components/ingester.md">}}) store recently received samples in memory.
 When an ingester is restarted, the samples stored in the restarting ingester are not available for querying until the ingester will be running again.
 
 By default, ingesters run with a replication factor equal to three.
@@ -55,7 +55,7 @@ To ensure no query fails during a rolling update, we recommend to roll out one i
 
 ### Store-gateways
 
-[Store-gateways]({{< relref "../architecture/store-gateway.md">}}) shard blocks among running instances.
+[Store-gateways]({{< relref "../architecture/components/store-gateway.md">}}) shard blocks among running instances.
 By default, each block is replicated to three store-gateways.
 Queries succeed as long as each required block is loaded by at least one store-gateway.
 
