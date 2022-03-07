@@ -1,7 +1,8 @@
-+++
-title = "Requirements"
-weight = 100
-+++
+---
+title: "Grafana Mimir dashboards and alerts requirements"
+description: ""
+weight: 100
+---
 
 # Grafana Mimir dashboards and alerts requirements
 

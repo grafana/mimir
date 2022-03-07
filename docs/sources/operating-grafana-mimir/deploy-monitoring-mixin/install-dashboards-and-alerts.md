@@ -1,7 +1,8 @@
-+++
-title = "Install dashboards and alerts"
-weight = 2
-+++
+---
+title: "Install dashboards and alerts"
+description: ""
+weight: 2
+---
 
 # Install Grafana Mimir dashboards and alerts
 
