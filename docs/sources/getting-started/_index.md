@@ -1,9 +1,7 @@
 ---
 title: "Getting started with Grafana Mimir"
-linkTitle: "Getting started with Grafana Mimir"
-weight: 1
-no_section_index_title: true
-slug: "getting-started-with-grafana-mimir"
+description: ""
+weight: 20
 ---
 
 # Getting started with Grafana Mimir
