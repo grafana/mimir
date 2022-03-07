@@ -63,6 +63,16 @@ features.
 In this reference, experimental-category parameters include `(experimental)` at
 the beginning of their description.
 
+### Parameter lifecycle
+
+When new parameters are added, they can be introduced as **basic**, **advanced**, or **experimental**.
+
+**Experimental** parameters will remain experimental until they are either made stable or removed. Parameters that are made stable will be classified as either **basic** or **advanced**. We aim to make this decision on an experimental parameter within 6 months of its initial release, but this decision may take longer depending on what we discover during testing, or if upstream dependencies (e.g., Prometheus) of our code changes.
+
+If we decide to eliminate a **basic** or **advanced** parameter, we will first mark it deprecated. After two more minor releases, a deprecated flag will be removed entirely. Use the metric `deprecated_flags_inuse_total` to determine whether you're using deprecated flags.
+
+![Parameter states](../../images/param-states.png)
+
 ## Use environment variables in the configuration
 
 You can use environment variable references in the YAML configuration file
