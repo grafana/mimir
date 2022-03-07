@@ -126,7 +126,7 @@ The `inmemory` index cache is **enabled by default** and its max size can be con
 
 #### Memcached index cache
 
-The `memcached` index cache uses [Memcached](https://memcached.org/) as cache backend. This cache backend is configured using `-blocks-storage.bucket-store.index-cache.backend=memcached` and requires setting the addresses of the Memcached servers with the `-blocks-storage.bucket-store.index-cache.memcached.addresses` flag . The addresses are resolved using [DNS service discovery]({{< relref "../configuration/about-grafana-mimir-arguments.md#dns-service-discovery" >}}).
+The `memcached` index cache uses [Memcached](https://memcached.org/) as cache backend. This cache backend is configured using `-blocks-storage.bucket-store.index-cache.backend=memcached` and requires setting the addresses of the Memcached servers with the `-blocks-storage.bucket-store.index-cache.memcached.addresses` flag . The addresses are resolved using [DNS service discovery]({{< relref "../configuration/about-dns-service-discovery.md" >}}).
 
 The trade-off of using the Memcached index cache is:
 
@@ -139,7 +139,7 @@ For example, if you're running Memcached in Kubernetes, you may:
 
 1. Deploy your Memcached cluster using a [StatefulSet](https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/)
 2. Create an [headless service](https://kubernetes.io/docs/concepts/services-networking/service/#headless-services) for Memcached StatefulSet
-3. Configure the Mimir's Memcached client address using the `dnssrvnoa+` [service discovery]({{< relref "../configuration/about-grafana-mimir-arguments.md#dns-service-discovery" >}})
+3. Configure the Mimir's Memcached client address using the `dnssrvnoa+` [service discovery]({{< relref "../configuration/about-dns-service-discovery.md" >}})
 
 ### Chunks cache
 

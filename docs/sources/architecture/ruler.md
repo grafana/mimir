@@ -26,7 +26,7 @@ After the alert has been active for the entire `for` duration, it enters the **F
 The ruler then notifies Alertmanagers of any **FIRING** (`firing`) alerts.
 
 Configure the addresses of Alertmanagers with the `-ruler.alertmanager-url` flag, which supports the DNS service discovery format.
-For more information about DNS service discovery, refer to [Supported discovery modes]({{< relref "../configuration/about-grafana-mimir-arguments.md#supported-discovery-modes" >}}).
+For more information about DNS service discovery, refer to [Supported discovery modes]({{< relref "../configuration/about-dns-service-discovery.md" >}}).
 
 ## Sharding
 

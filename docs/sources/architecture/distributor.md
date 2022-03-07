@@ -28,7 +28,7 @@ The distributor validation includes the following checks:
 - Each exemplar has a timestamp and at least one non-empty label name and value pair.
 - Each exemplar has no more than 128 labels.
 
-> **Note:** For each tenant, you can override the validation checks by modifying the [overrides section]({{< relref "../configuration/about-grafana-mimir-arguments.md" >}}) of the runtime configuration.
+> **Note:** For each tenant, you can override the validation checks by modifying the overrides section of the [runtime configuration]({{< relref "../configuration/about-runtime-configuration.md" >}}).
 
 ## Rate limiting
 
