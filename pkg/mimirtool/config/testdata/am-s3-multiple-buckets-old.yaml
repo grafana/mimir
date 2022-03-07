@@ -1,0 +1,4 @@
+alertmanager:
+  storage:
+    s3:
+      bucketnames: onebucket,anotherbucket

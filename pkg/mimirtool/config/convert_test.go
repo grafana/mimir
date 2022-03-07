@@ -124,6 +124,21 @@ func TestConvert(t *testing.T) {
 			inFile:  "testdata/sharding-disabled-old.yaml",
 			outFile: "testdata/sharding-disabled-new.yaml",
 		},
+		{
+			name:    "ruler S3 URL",
+			inFile:  "testdata/ruler-s3-url-old.yaml",
+			outFile: "testdata/ruler-s3-url-new.yaml",
+		},
+		{
+			name:    "alertmanager S3 URL",
+			inFile:  "testdata/am-s3-url-old.yaml",
+			outFile: "testdata/am-s3-url-new.yaml",
+		},
+		{
+			name:    "alertmanager S3 URL: existing endpoint isn't overwritten",
+			inFile:  "testdata/am-s3-url-with-endpoint-old.yaml",
+			outFile: "testdata/am-s3-url-with-endpoint-new.yaml",
+		},
 	}
 
 	for _, tc := range testCases {
@@ -144,6 +159,39 @@ func TestConvert(t *testing.T) {
 				expectedOut = []byte("{}")
 			}
 			assert.YAMLEq(t, string(expectedOut), string(actualOut))
+		})
+	}
+}
+
+func TestConvert_InvalidConfigs(t *testing.T) {
+	testCases := []struct {
+		name        string
+		inFile      string
+		inFlagsFile string
+
+		expectedErr string
+	}{
+		{
+			name:        "alertmanager S3 URL cannot contain inmemory",
+			inFile:      "testdata/am-s3-invalid-url-old.yaml",
+			expectedErr: "could not map old config to new config: alertmanager.storage.s3.s3: inmemory s3 storage is no longer supported, please provide a real s3 endpoint",
+		},
+		{
+			name:        "alertmanager S3 bucketnames contains multiple buckets",
+			inFile:      "testdata/am-s3-multiple-buckets-old.yaml",
+			expectedErr: "could not map old config to new config: alertmanager.storage.s3.bucketnames: multiple bucket names cannot be converted, please provide only a single bucket name",
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			inBytes := loadFile(t, tc.inFile)
+			inFlags := loadFlags(t, tc.inFlagsFile)
+
+			_, _, _, err := Convert(inBytes, inFlags, CortexToMimirMapper, DefaultCortexConfig, DefaultMimirConfig, false, false)
+			assert.EqualError(t, err, tc.expectedErr)
 		})
 	}
 }

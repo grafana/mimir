@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/grafana/dskit/flagext"
 	"github.com/pkg/errors"
 
 	"github.com/grafana/mimir/pkg/storage/bucket/s3"
@@ -29,6 +30,10 @@ var CortexToMimirMapper = MultiMapper{
 	MapperFunc(updateKVStoreValue),
 	// Convert provided memcached service and host to the DNS service discovery format
 	MapperFunc(mapMemcachedAddresses),
+	// Map `-*.s3.url` to `-*.s3.(endpoint|access_key_id|secret_access_key)`
+	mapRulerAlertmanagerS3URL("alertmanager.storage", "alertmanager_storage"), mapRulerAlertmanagerS3URL("ruler.storage", "ruler_storage"),
+	// Map `-*.s3.bucketnames` and (maybe part of `-*s3.s3.url`) to `-*.s3.bucket-name`
+	mapRulerAlertmanagerS3Buckets("alertmanager.storage", "alertmanager_storage"), mapRulerAlertmanagerS3Buckets("ruler.storage", "ruler_storage"),
 }
 
 var simpleRenameMappings = map[string]Mapping{
@@ -233,6 +238,7 @@ func alertmanagerURLMapperFunc(source, target Parameters) error {
 // rulerStorageMapperFunc returns a MapperFunc that maps alertmanager.storage and alertmanager_storage to alertmanager_storage.
 // Values from alertmanager.storage take precedence.
 func alertmanagerStorageMapperFunc(source, target Parameters) error {
+
 	pathRenames := map[string]string{
 		"alertmanager.storage.azure.account_key":                      "alertmanager_storage.azure.account_key",
 		"alertmanager.storage.azure.account_name":                     "alertmanager_storage.azure.account_name",
@@ -241,20 +247,18 @@ func alertmanagerStorageMapperFunc(source, target Parameters) error {
 		"alertmanager.storage.gcs.bucket_name":                        "alertmanager_storage.gcs.bucket_name",
 		"alertmanager.storage.local.path":                             "alertmanager_storage.local.path",
 		"alertmanager.storage.s3.access_key_id":                       "alertmanager_storage.s3.access_key_id",
-		"alertmanager.storage.s3.bucketnames":                         "alertmanager_storage.s3.bucket_name", // TODO dimitarvdimitrov if it is comma-delimited, then it's invalid
 		"alertmanager.storage.s3.endpoint":                            "alertmanager_storage.s3.endpoint",
 		"alertmanager.storage.s3.http_config.idle_conn_timeout":       "alertmanager_storage.s3.http.idle_conn_timeout",
 		"alertmanager.storage.s3.http_config.insecure_skip_verify":    "alertmanager_storage.s3.http.insecure_skip_verify",
 		"alertmanager.storage.s3.http_config.response_header_timeout": "alertmanager_storage.s3.http.response_header_timeout",
 		"alertmanager.storage.s3.insecure":                            "alertmanager_storage.s3.insecure",
 		"alertmanager.storage.s3.region":                              "alertmanager_storage.s3.region",
-		//"alertmanager.storage.s3.s3":                                  RenameMapping("alertmanager_storage.s3.endpoint"), // TODO dimitarvdimitrov if it contains "inmemory://" this should be invalid, also how do we know if the URL contains "escaped Key and Secret encoded"?
-		"alertmanager.storage.s3.secret_access_key":          "alertmanager_storage.s3.secret_access_key",
-		"alertmanager.storage.s3.signature_version":          "alertmanager_storage.s3.signature_version",
-		"alertmanager.storage.s3.sse.kms_encryption_context": "alertmanager_storage.s3.sse.kms_encryption_context",
-		"alertmanager.storage.s3.sse.kms_key_id":             "alertmanager_storage.s3.sse.kms_key_id",
-		"alertmanager.storage.s3.sse.type":                   "alertmanager_storage.s3.sse.type",
-		"alertmanager.storage.type":                          "alertmanager_storage.backend",
+		"alertmanager.storage.s3.secret_access_key":                   "alertmanager_storage.s3.secret_access_key",
+		"alertmanager.storage.s3.signature_version":                   "alertmanager_storage.s3.signature_version",
+		"alertmanager.storage.s3.sse.kms_encryption_context":          "alertmanager_storage.s3.sse.kms_encryption_context",
+		"alertmanager.storage.s3.sse.kms_key_id":                      "alertmanager_storage.s3.sse.kms_key_id",
+		"alertmanager.storage.s3.sse.type":                            "alertmanager_storage.s3.sse.type",
+		"alertmanager.storage.type":                                   "alertmanager_storage.backend",
 	}
 
 	return mapDotStorage(pathRenames, source, target)
@@ -271,56 +275,53 @@ func rulerStorageMapperFunc(source, target Parameters) error {
 		"ruler.storage.gcs.bucket_name":                        "ruler_storage.gcs.bucket_name",
 		"ruler.storage.local.directory":                        "ruler_storage.local.directory",
 		"ruler.storage.s3.access_key_id":                       "ruler_storage.s3.access_key_id",
-		"ruler.storage.s3.bucketnames":                         "ruler_storage.s3.bucket_name", // TODO dimitarvdimitrov if it is comma-delimited, then it's invalid
 		"ruler.storage.s3.endpoint":                            "ruler_storage.s3.endpoint",
 		"ruler.storage.s3.http_config.idle_conn_timeout":       "ruler_storage.s3.http.idle_conn_timeout",
 		"ruler.storage.s3.http_config.insecure_skip_verify":    "ruler_storage.s3.http.insecure_skip_verify",
 		"ruler.storage.s3.http_config.response_header_timeout": "ruler_storage.s3.http.response_header_timeout",
 		"ruler.storage.s3.insecure":                            "ruler_storage.s3.insecure",
 		"ruler.storage.s3.region":                              "ruler_storage.s3.region",
-		//"ruler.storage.s3.s3":                                  RenameMapping("ruler_storage.s3.endpoint"), // TODO dimitarvdimitrov if it contains "inmemory://" this should be invalid, also how do we know if the URL contains "escaped Key and Secret encoded"?
-		"ruler.storage.s3.secret_access_key":          "ruler_storage.s3.secret_access_key",
-		"ruler.storage.s3.signature_version":          "ruler_storage.s3.signature_version",
-		"ruler.storage.s3.sse.kms_encryption_context": "ruler_storage.s3.sse.kms_encryption_context",
-		"ruler.storage.s3.sse.kms_key_id":             "ruler_storage.s3.sse.kms_key_id",
-		"ruler.storage.s3.sse.type":                   "ruler_storage.s3.sse.type",
-		"ruler.storage.swift.auth_url":                "ruler_storage.swift.auth_url",
-		"ruler.storage.swift.auth_version":            "ruler_storage.swift.auth_version",
-		"ruler.storage.swift.connect_timeout":         "ruler_storage.swift.connect_timeout",
-		"ruler.storage.swift.container_name":          "ruler_storage.swift.container_name",
-		"ruler.storage.swift.domain_id":               "ruler_storage.swift.domain_id",
-		"ruler.storage.swift.domain_name":             "ruler_storage.swift.domain_name",
-		"ruler.storage.swift.max_retries":             "ruler_storage.swift.max_retries",
-		"ruler.storage.swift.password":                "ruler_storage.swift.password",
-		"ruler.storage.swift.project_domain_id":       "ruler_storage.swift.project_domain_id",
-		"ruler.storage.swift.project_domain_name":     "ruler_storage.swift.project_domain_name",
-		"ruler.storage.swift.project_id":              "ruler_storage.swift.project_id",
-		"ruler.storage.swift.project_name":            "ruler_storage.swift.project_name",
-		"ruler.storage.swift.region_name":             "ruler_storage.swift.region_name",
-		"ruler.storage.swift.request_timeout":         "ruler_storage.swift.request_timeout",
-		"ruler.storage.swift.user_domain_id":          "ruler_storage.swift.user_domain_id",
-		"ruler.storage.swift.user_domain_name":        "ruler_storage.swift.user_domain_name",
-		"ruler.storage.swift.user_id":                 "ruler_storage.swift.user_id",
-		"ruler.storage.swift.username":                "ruler_storage.swift.username",
-		"ruler.storage.type":                          "ruler_storage.backend",
+		"ruler.storage.s3.secret_access_key":                   "ruler_storage.s3.secret_access_key",
+		"ruler.storage.s3.signature_version":                   "ruler_storage.s3.signature_version",
+		"ruler.storage.s3.sse.kms_encryption_context":          "ruler_storage.s3.sse.kms_encryption_context",
+		"ruler.storage.s3.sse.kms_key_id":                      "ruler_storage.s3.sse.kms_key_id",
+		"ruler.storage.s3.sse.type":                            "ruler_storage.s3.sse.type",
+		"ruler.storage.swift.auth_url":                         "ruler_storage.swift.auth_url",
+		"ruler.storage.swift.auth_version":                     "ruler_storage.swift.auth_version",
+		"ruler.storage.swift.connect_timeout":                  "ruler_storage.swift.connect_timeout",
+		"ruler.storage.swift.container_name":                   "ruler_storage.swift.container_name",
+		"ruler.storage.swift.domain_id":                        "ruler_storage.swift.domain_id",
+		"ruler.storage.swift.domain_name":                      "ruler_storage.swift.domain_name",
+		"ruler.storage.swift.max_retries":                      "ruler_storage.swift.max_retries",
+		"ruler.storage.swift.password":                         "ruler_storage.swift.password",
+		"ruler.storage.swift.project_domain_id":                "ruler_storage.swift.project_domain_id",
+		"ruler.storage.swift.project_domain_name":              "ruler_storage.swift.project_domain_name",
+		"ruler.storage.swift.project_id":                       "ruler_storage.swift.project_id",
+		"ruler.storage.swift.project_name":                     "ruler_storage.swift.project_name",
+		"ruler.storage.swift.region_name":                      "ruler_storage.swift.region_name",
+		"ruler.storage.swift.request_timeout":                  "ruler_storage.swift.request_timeout",
+		"ruler.storage.swift.user_domain_id":                   "ruler_storage.swift.user_domain_id",
+		"ruler.storage.swift.user_domain_name":                 "ruler_storage.swift.user_domain_name",
+		"ruler.storage.swift.user_id":                          "ruler_storage.swift.user_id",
+		"ruler.storage.swift.username":                         "ruler_storage.swift.username",
+		"ruler.storage.type":                                   "ruler_storage.backend",
 	}
 
 	return mapDotStorage(pathRenames, source, target)
 }
 
+// Mappings run both for default values and user-provided values. We do the mapping from old
+// to new if and only if the value in the config is different from the default value:
+// this is only the case when mapping user-provided values, not defaults.
+func differentFromDefault(p Parameters, path string) bool {
+	val, err1 := p.GetValue(path)
+	defaultVal, err2 := p.GetDefaultValue(path)
+
+	return err1 == nil && err2 == nil && val != nil && val != defaultVal
+}
+
 func mapDotStorage(pathRenames map[string]string, source, target Parameters) error {
 	mapper := &PathMapper{PathMappings: map[string]Mapping{}}
-
-	differentFromDefault := func(p Parameters, path string) bool {
-		val, err1 := p.GetValue(path)
-		defaultVal, err2 := p.GetDefaultValue(path)
-
-		// This mapping runs both for default values and user-provided values. The (ruler|alertmanager).storage
-		// defaults should not override the old (ruler|alertmanager)_storage defaults. We do the mapping from old
-		// to new if and only if the value in the config is different from the default value:
-		// this is only the case when mapping user-provided values, not defaults.
-		return err1 == nil && err2 == nil && val != nil && val != defaultVal
-	}
 
 	for dotStoragePath, storagePath := range pathRenames {
 		// if the ruler.storage was set, then use that in the final config
@@ -360,6 +361,82 @@ func mapS3SSE(prefix string) MapperFunc {
 
 		return nil
 	}
+}
+
+func mapRulerAlertmanagerS3URL(dotStoragePath, storagePath string) MapperFunc {
+	return func(source, target Parameters) error {
+		var (
+			oldS3URLPath             = dotStoragePath + ".s3.s3"
+			newS3SecretAccessKeyPath = storagePath + ".s3.secret_access_key"
+			newS3KeyIDPath           = storagePath + ".s3.access_key_id"
+			newS3EndpointPath        = storagePath + ".s3.endpoint"
+		)
+
+		if differentFromDefault(target, newS3EndpointPath) {
+			// User has already set the s3 endpoint to something, we won't override it.
+			return nil
+		}
+
+		s3URLVal, _ := source.GetValue(oldS3URLPath)
+		s3URL, _ := s3URLVal.(flagext.URLValue)
+		if s3URL.URL == nil {
+			return nil
+		}
+		if s3URL.Scheme == "inmemory" {
+			return errors.New(oldS3URLPath + ": inmemory s3 storage is no longer supported, please provide a real s3 endpoint")
+		}
+		if s3URL.User != nil {
+			username := s3URL.User.Username()
+			password, _ := s3URL.User.Password()
+			err := target.SetValue(newS3SecretAccessKeyPath, password)
+			if err != nil {
+				return err
+			}
+			err = target.SetValue(newS3KeyIDPath, username)
+			if err != nil {
+				return err
+			}
+		}
+
+		err := target.SetValue(newS3EndpointPath, s3URL.Host)
+		if err != nil {
+			return err
+		}
+		return nil
+	}
+}
+
+func mapRulerAlertmanagerS3Buckets(dotStoragePath, storagePath string) Mapper {
+	return MapperFunc(func(source, target Parameters) error {
+		var (
+			oldBucketNamesPath = dotStoragePath + ".s3.bucketnames"
+			oldS3URLPath       = dotStoragePath + ".s3.s3"
+			newS3BucketPath    = storagePath + ".s3.bucket_name"
+		)
+
+		if differentFromDefault(target, newS3BucketPath) {
+			return nil
+		}
+
+		bucketNamesVal, _ := source.GetValue(oldBucketNamesPath)
+		bucketNames, _ := bucketNamesVal.(string)
+		if strings.Contains(bucketNames, ",") {
+			return errors.New(oldBucketNamesPath + ": multiple bucket names cannot be converted, please provide only a single bucket name")
+		}
+
+		if bucketNames == "" {
+			s3URLVal, _ := source.GetValue(oldS3URLPath)
+			s3URL, _ := s3URLVal.(flagext.URLValue)
+			if s3URL.URL != nil {
+				bucketNames = strings.TrimPrefix(s3URL.Path, "/")
+			}
+		}
+		if bucketNames == "" {
+			return nil
+		}
+
+		return target.SetValue(newS3BucketPath, bucketNames)
+	})
 }
 
 // mapMemcachedAddresses maps query_range...memcached_client.host and .service to a DNS Service Discovery format
