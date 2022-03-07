@@ -3,7 +3,6 @@
 package config
 
 import (
-	"fmt"
 	"io/ioutil"
 	"strings"
 	"testing"
@@ -286,32 +285,61 @@ func TestChangedDefaults(t *testing.T) {
 }
 
 func TestConvert_UseNewDefaults(t *testing.T) {
+	distributorTimeoutNotice := ChangedDefault{
+		Path:       "distributor.remote_timeout",
+		OldDefault: "2s",
+		NewDefault: "20s",
+	}
+
 	testCases := []struct {
-		name                   string
-		inFlags, expectedFlags []string
-		useNewDefaults         bool
+		name                 string
+		useNewDefaults       bool
+		inYAML, expectedYAML []byte
+
+		expectedNotice       ChangedDefault
+		valueShouldBeChanged bool
 	}{
 		{
-			name:           "uses new defaults",
-			inFlags:        []string{"-experimental.alertmanager.enable-api=false"},
-			expectedFlags:  []string{"-alertmanager.enable-api=true"},
-			useNewDefaults: true,
+			name:                 "replaces explicitly set old defaults when useNewDefaults=true",
+			useNewDefaults:       true,
+			inYAML:               []byte("distributor: { remote_timeout: 2s }"),
+			expectedYAML:         []byte("distributor: { remote_timeout: 20s }"),
+			expectedNotice:       distributorTimeoutNotice,
+			valueShouldBeChanged: true,
 		},
 		{
-			name:           "keeps old defaults",
-			inFlags:        []string{"-experimental.alertmanager.enable-api=false"},
-			expectedFlags:  []string{"-alertmanager.enable-api=false"},
-			useNewDefaults: false,
+			name:                 "keeps explicitly set old defaults useNewDefaults=false",
+			useNewDefaults:       false,
+			inYAML:               []byte("distributor: { remote_timeout: 2s }"),
+			expectedYAML:         []byte("distributor: { remote_timeout: 2s }"),
+			expectedNotice:       distributorTimeoutNotice,
+			valueShouldBeChanged: false,
+		},
+		{
+			name:                 "keeps explicitly set old non-default value when useNewDefaults=true",
+			useNewDefaults:       true,
+			inYAML:               []byte("distributor: { remote_timeout: 15s }"),
+			expectedYAML:         []byte("distributor: { remote_timeout: 15s }"),
+			expectedNotice:       distributorTimeoutNotice,
+			valueShouldBeChanged: false,
 		},
 	}
 
-	inYaml := []byte("{}")
 	for _, tc := range testCases {
-		t.Run(fmt.Sprintf("useNewDefaults=%t %s", tc.useNewDefaults, tc.name), func(t *testing.T) {
-			_, outFlags, _, err := Convert(inYaml, tc.inFlags, CortexToMimirMapper, DefaultCortexConfig, DefaultMimirConfig, tc.useNewDefaults, false)
-
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			outYAML, _, notices, err := Convert(tc.inYAML, nil, CortexToMimirMapper, DefaultCortexConfig, DefaultMimirConfig, tc.useNewDefaults, false)
 			require.NoError(t, err)
-			assert.Equal(t, tc.expectedFlags, outFlags)
+
+			assert.YAMLEq(t, string(tc.expectedYAML), string(outYAML))
+			if tc.valueShouldBeChanged {
+				assert.Contains(t, notices.ChangedDefaults, tc.expectedNotice)
+				assert.NotContains(t, notices.SkippedChangedDefaults, tc.expectedNotice)
+			} else {
+				assert.Contains(t, notices.SkippedChangedDefaults, tc.expectedNotice)
+				assert.NotContains(t, notices.ChangedDefaults, tc.expectedNotice)
+			}
 		})
 	}
 }
