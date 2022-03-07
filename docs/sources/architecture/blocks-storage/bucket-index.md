@@ -1,7 +1,7 @@
 ---
 title: "Bucket Index"
 linkTitle: "Bucket Index"
-weight: 5
+weight: 10
 slug: bucket-index
 ---
 
@@ -11,7 +11,7 @@ The bucket index is enabled by default, but it is **optional**. It can be disabl
 
 ## Benefits
 
-The [querier](./querier.md), [store-gateway](./store-gateway.md) and ruler need to have an almost up-to-date view over the entire storage bucket, in order to find the right blocks to lookup at query time (querier) and load block's [index-header](./binary-index-header.md) (store-gateway). Because of this, they need to periodically scan the bucket to look for new blocks uploaded by ingester or compactor, and blocks deleted (or marked for deletion) by compactor.
+The [querier](./querier.md), [store-gateway](./store-gateway.md) and ruler need to have an almost up-to-date view over the entire storage bucket, in order to find the right blocks to lookup at query time (querier) and load block's [index-header](./../../architecture/blocks-storage/binary-index-header.md) (store-gateway). Because of this, they need to periodically scan the bucket to look for new blocks uploaded by ingester or compactor, and blocks deleted (or marked for deletion) by compactor.
 
 When the bucket index is enabled, the querier, store-gateway and ruler periodically look up the per-tenant bucket index instead of scanning the bucket via "list objects" operations. This brings few benefits:
 

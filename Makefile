@@ -63,7 +63,7 @@ DOC_TEMPLATES := docs/sources/configuration/reference-configuration-parameters.t
 # Documents to run through embedding
 DOC_EMBED := docs/sources/configuration/using-the-query-frontend-with-prometheus.md \
 	docs/sources/operating-grafana-mimir/mirror-requests-to-a-second-cluster.md \
-	docs/sources/architecture/overrides-exporter.md \
+	docs/sources/architecture/components/overrides-exporter.md \
 	docs/sources/getting-started/_index.md \
 	operations/mimir/README.md
 

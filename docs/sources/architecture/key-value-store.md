@@ -1,15 +1,15 @@
 ---
-title: "About the key-value store"
+title: "Key-value store"
 description: ""
-weight: 10
+weight: 20
 ---
 
-# About the key-value store
+# Key-value store
 
 A key-value (KV) store is a database that stores data indexed by key.
 Grafana Mimir requires a key-value store for the following features:
 
-- [Hash ring]({{< relref "./about-the-hash-ring.md" >}})
+- [Hash ring]({{< relref "hash-ring.md" >}})
 - [(Optional) Distributor high-availability tracker]({{< relref "../operating-grafana-mimir/configure-ha-deduplication.md" >}})
 
 ## Supported key-value store backends
@@ -27,18 +27,18 @@ The data is shared between the instances using peer-to-peer communication and no
 
 We recommend that you use memberlist to run Grafana Mimir.
 
-To configure memberlist, refer to [configuring hash rings]({{< relref "../operating-grafana-mimir/configure-hash-ring.md">}}).
+To configure memberlist, refer to [configuring hash rings]({{< relref "../operating-grafana-mimir/configure-hash-ring.md" >}}).
 
 ### Consul
 
 Grafana Mimir supports [Consul](https://www.consul.io) as a backend KV store.
 If you want to use Consul, you must install it. The Grafana Mimir installation does not include Consul.
 
-To configure Consul, refer to [configuring hash rings]({{< relref "../operating-grafana-mimir/configure-hash-ring.md">}}).
+To configure Consul, refer to [configuring hash rings]({{< relref "../operating-grafana-mimir/configure-hash-ring.md" >}}).
 
 ### Etcd
 
 Grafana Mimir supports [etcd](https://etcd.io) as a backend KV store.
 If you want to use etcd, you must install it. The Grafana Mimir installation does not include etcd.
 
-To configure etcd, refer to [configuring hash rings]({{< relref "../operating-grafana-mimir/configure-hash-ring.md">}}).
+To configure etcd, refer to [configuring hash rings]({{< relref "../operating-grafana-mimir/configure-hash-ring.md" >}}).

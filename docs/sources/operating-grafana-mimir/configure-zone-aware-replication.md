@@ -53,7 +53,7 @@ Zone-aware replication in the ingester ensures that Grafana Mimir replicates eac
 
 ## Configuring store-gateway blocks replication
 
-To enable zone-aware replication for the store-gateways, refer to [Zone awareness]({{< relref "../architecture/store-gateway.md#zone-awareness" >}}).
+To enable zone-aware replication for the store-gateways, refer to [Zone awareness]({{< relref "../architecture/components/store-gateway.md#zone-awareness" >}}).
 
 ## Minimum number of zones
 

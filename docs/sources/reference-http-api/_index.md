@@ -202,7 +202,7 @@ This endpoint returns in JSON format information about the build and enabled fea
 
 ## Distributor
 
-The following endpoints relate to the [distributor]({{< relref "../architecture/distributor.md" >}}).
+The following endpoints relate to the [distributor]({{< relref "../architecture/components/distributor.md" >}}).
 
 ### Remote write
 
@@ -253,7 +253,7 @@ This endpoint displays a web page with the current status of the HA tracker, inc
 
 ## Ingester
 
-The following endpoints relate to the [ingester]({{< relref "../architecture/ingester.md" >}}).
+The following endpoints relate to the [ingester]({{< relref "../architecture/components/ingester.md" >}}).
 
 ### Flush chunks / blocks
 
@@ -295,7 +295,7 @@ This endpoint displays a web page with the ingesters hash ring status, including
 
 ## Querier / Query-frontend
 
-The following endpoints are exposed both by the [querier]({{< relref "../architecture/querier.md" >}}) and [query-frontend]({{< relref "../architecture/query-frontend.md" >}}).
+The following endpoints are exposed both by the [querier]({{< relref "../architecture/components/querier.md" >}}) and [query-frontend]({{< relref "../architecture/components/query-frontend.md" >}}).
 
 ### Instant query
 

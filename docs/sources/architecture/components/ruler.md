@@ -15,8 +15,8 @@ The ruler evaluates the expressions in the recording rules at regular intervals 
 The ruler has a built-in querier that evaluates the PromQL expressions and a built-in distributor, so that it can write directly to the ingesters.
 Configuration of the built-in querier and distributor uses their respective configuration parameters:
 
-- [Querier]({{< relref "../configuration/reference-configuration-parameters.md#querier" >}})
-- [Distributor]({{< relref "../configuration/reference-configuration-parameters.md#distributor" >}})
+- [Querier]({{< relref "../../configuration/reference-configuration-parameters.md#querier" >}})
+- [Distributor]({{< relref "../../configuration/reference-configuration-parameters.md#distributor" >}})
 
 ## Alerting rules
 
@@ -26,20 +26,20 @@ After the alert has been active for the entire `for` duration, it enters the **F
 The ruler then notifies Alertmanagers of any **FIRING** (`firing`) alerts.
 
 Configure the addresses of Alertmanagers with the `-ruler.alertmanager-url` flag, which supports the DNS service discovery format.
-For more information about DNS service discovery, refer to [Supported discovery modes]({{< relref "../configuration/about-dns-service-discovery.md" >}}).
+For more information about DNS service discovery, refer to [Supported discovery modes]({{< relref "../../configuration/about-dns-service-discovery.md" >}}).
 
 ## Sharding
 
 The ruler supports multi-tenancy and horizontal scalability.
 To achieve horizontal scalability, the ruler shards the execution of rules by rule groups.
-Ruler replicas form their own [hash ring]({{< relref "./about-the-hash-ring.md" >}}) stored in the [KV store]({{< relref "./about-the-key-value-store.md" >}}) to divide the work of the executing rules.
+Ruler replicas form their own [hash ring]({{< relref "../hash-ring.md" >}}) stored in the [KV store]({{< relref "../key-value-store.md" >}}) to divide the work of the executing rules.
 
-To configure the rulers' hash ring, refer to [configuring hash rings]({{< relref "../operating-grafana-mimir/configure-hash-ring.md">}}).
+To configure the rulers' hash ring, refer to [configuring hash rings]({{< relref "../../operating-grafana-mimir/configure-hash-ring.md" >}}).
 
 ## HTTP configuration API
 
 The ruler HTTP configuration API enables tenants to create, update, and delete rule groups.
-For a complete list of endpoints and example requests, refer to [ruler]({{< relref "../reference-http-api/_index.md#ruler" >}}).
+For a complete list of endpoints and example requests, refer to [ruler]({{< relref "../../reference-http-api/_index.md#ruler" >}}).
 
 ## State
 

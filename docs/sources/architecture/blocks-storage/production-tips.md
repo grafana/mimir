@@ -1,7 +1,7 @@
 ---
 title: "Production tips"
 linkTitle: "Production tips"
-weight: 4
+weight: 10
 slug: production-tips
 ---
 
@@ -35,7 +35,7 @@ The querier relies on caching to reduce the number API calls to the storage buck
 
 ### Ensure bucket index is enabled
 
-The bucket index reduces the number of API calls to the storage bucket and, when enabled, the querier is up and running immediately after the startup (no need to run an initial bucket scan). Ensure [bucket index](./bucket-index.md) is enabled for the querier.
+The bucket index reduces the number of API calls to the storage bucket and, when enabled, the querier is up and running immediately after the startup (no need to run an initial bucket scan). Ensure [bucket index](./../../architecture/blocks-storage/bucket-index.md) is enabled for the querier.
 
 ### Avoid querying non compacted blocks
 
@@ -77,7 +77,7 @@ The store-gateway heavily relies on caching both to speed up the queries and to 
 
 ### Ensure bucket index is enabled
 
-The bucket index reduces the number of API calls to the storage bucket and the startup time of the store-gateway. Ensure [bucket index](./bucket-index.md) is enabled for the store-gateway.
+The bucket index reduces the number of API calls to the storage bucket and the startup time of the store-gateway. Ensure [bucket index](./../../architecture/blocks-storage/bucket-index.md) is enabled for the store-gateway.
 
 ### Ensure a high number of max open file descriptors
 

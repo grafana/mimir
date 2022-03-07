@@ -10,7 +10,7 @@ Grafana Mimir supports applying overrides on a per-tenant basis.
 A number of overrides configure limits that prevent a single tenant from using too many resources.
 The overrides-exporter component exposes limits as Prometheus metrics so that operators can understand how close tenants are to their limits.
 
-For more information about configuring overrides, refer to [Runtime configuration file]({{<relref "../configuration/about-runtime-configuration.md" >}}).
+For more information about configuring overrides, refer to [Runtime configuration file]({{< relref "../../configuration/about-runtime-configuration.md" >}}).
 
 ## Running the overrides-exporter
 
@@ -23,7 +23,7 @@ The overrides-exporter must be explicitly enabled.
 With a `runtime.yaml` file as follows:
 
 <!-- prettier-ignore-start -->
-[embedmd]:# (../../configurations/overrides-exporter-runtime.yaml)
+[embedmd]:# (../../../configurations/overrides-exporter-runtime.yaml)
 ```yaml
 # file: runtime.yaml
 # In this example, we're overriding ingestion limits for a single tenant.

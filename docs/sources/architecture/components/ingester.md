@@ -6,11 +6,11 @@ weight: 10
 
 # Ingester
 
-The **ingester** service is responsible for writing incoming series to [long-term storage]({{<relref "./_index.md#long-term-storage">}}) on the write path and returning series samples for queries on the read path.
+The **ingester** service is responsible for writing incoming series to [long-term storage]({{< relref "../_index.md#long-term-storage" >}}) on the write path and returning series samples for queries on the read path.
 
-Incoming series from [distributors]({{<relref "./distributor.md">}}) are not immediately written to the long-term storage but kept in-memory or offloaded to disk. Eventually all series are written to disk and are periodically uploaded to the long-term storage (every 2 hours by default). For this reason, the [queriers]({{<relref "./querier.md">}}) may need to fetch samples both from ingesters and long-term storage while executing a query on the read path.
+Incoming series from [distributors]({{< relref "distributor.md" >}}) are not immediately written to the long-term storage but kept in-memory or offloaded to disk. Eventually all series are written to disk and are periodically uploaded to the long-term storage (every 2 hours by default). For this reason, the [queriers]({{< relref "querier.md" >}}) may need to fetch samples both from ingesters and long-term storage while executing a query on the read path.
 
-Services calling the **ingesters** first read the **ingester states** from the [hash ring]({{<relref "./about-the-hash-ring.md">}}) to determine which ingester(s) are available. Each ingester could be in one of the following states:
+Services calling the **ingesters** first read the **ingester states** from the [hash ring]({{< relref "../hash-ring.md" >}}) to determine which ingester(s) are available. Each ingester could be in one of the following states:
 
 - **`PENDING`**<br />
   The ingester has just started. While in this state, the ingester receives neither write nor read requests.
@@ -23,7 +23,7 @@ Services calling the **ingesters** first read the **ingester states** from the [
 - **`UNHEALTHY`**<br />
   The ingester has failed to heartbeat to the ring's KV Store. While in this state, distributors skip the ingester while building the replication set for incoming series and the ingester does not receive write or read requests.
 
-To configure the ingesters' hash ring, refer to [configuring hash rings]({{< relref "../operating-grafana-mimir/configure-hash-ring.md">}}).
+To configure the ingesters' hash ring, refer to [configuring hash rings]({{< relref "../../operating-grafana-mimir/configure-hash-ring.md" >}}).
 
 ## Ingesters write de-amplification
 
@@ -50,10 +50,10 @@ Contrary to the sole replication and given the persistent disk data is not lost,
 Zones may represent logical or physical failure domains, for example different data centers.
 Spreading replicas across multiple zones prevents data loss and service interruptions when there is a zone wide outage.
 
-To set up multi-zone replication, refer to [Configuring zone-aware replication]({{<relref "../operating-grafana-mimir/configure-zone-aware-replication.md">}}).
+To set up multi-zone replication, refer to [Configuring zone-aware replication]({{< relref "../../operating-grafana-mimir/configure-zone-aware-replication.md" >}}).
 
 ## Shuffle sharding
 
 **Shuffle sharding** (off by default) can be used to reduce the effect that multiple tenants can have on each other.
 
-For more information on shuffle sharding, refer to [configure shuffle sharding]({{<relref "../operating-grafana-mimir/configure-shuffle-sharding.md">}}).
+For more information on shuffle sharding, refer to [configure shuffle sharding]({{< relref "../../operating-grafana-mimir/configure-shuffle-sharding.md" >}}).

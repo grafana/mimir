@@ -1,21 +1,21 @@
 ---
-title: "About memberlist and the gossip protocol"
+title: "Memberlist and the gossip protocol"
 description: ""
-weight: 10
+weight: 20
 ---
 
-# About memberlist and the gossip protocol
+# Memberlist and the gossip protocol
 
 [Memberlist](https://github.com/hashicorp/memberlist) is a Go library that manages cluster membership, node failure detection, and message passing using a gossip-based protocol.
 Memberlist is eventually consistent and network partitions are partially tolerated by attempting to communicate to potentially dead nodes through multiple routes.
 
-By default, Grafana Mimir uses memberlist to implement a [key-value (KV) store]({{< relref "./about-the-key-value-store.md">}}) to share the [hash ring]({{< relref "./about-the-hash-ring.md">}}) data structures between instances.
+By default, Grafana Mimir uses memberlist to implement a [key-value (KV) store]({{< relref "key-value-store.md" >}}) to share the [hash ring]({{< relref "hash-ring.md" >}}) data structures between instances.
 
 When using a memberlist-based KV store, each instance maintains a copy of the hash rings.
 Each Mimir instance updates a hash ring locally and uses memberlist to propagate the changes to other instances.
 Updates generated locally and updates received from other instances are merged together to form the current state of the ring on the instance.
 
-To configure memberlist, refer to [configuring hash rings]({{< relref "../operating-grafana-mimir/configure-hash-ring.md">}}).
+To configure memberlist, refer to [configuring hash rings]({{< relref "../operating-grafana-mimir/configure-hash-ring.md" >}}).
 
 ## How memberlist propagates hash ring changes
 
