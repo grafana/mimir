@@ -146,17 +146,6 @@ func alertmanagerURLMapperFunc(source, target Parameters) error {
 // rulerStorageMapperFunc returns a MapperFunc that maps alertmanager.storage and alertmanager_storage to alertmanager_storage.
 // Values from alertmanager.storage take precedence.
 func alertmanagerStorageMapperFunc(source, target Parameters) error {
-	_, err := source.GetValue("alertmanager.storage.type")
-	if err != nil {
-		// When doing flag mappings this function gets called with a source config that
-		// contains only the values we have from flags. In order for the code later to not
-		// panic, we do a quick check if the source contains a parameter we expect to exist.
-		//
-		// Known bug: This also means that if a user has passed only their -alertmanager.storage.type
-		// as a flag, this check will pass and the below will still panic. This should be uncommon.
-		return err
-	}
-
 	pathRenames := map[string]string{
 		"alertmanager.storage.azure.account_key":                      "alertmanager_storage.azure.account_key",
 		"alertmanager.storage.azure.account_name":                     "alertmanager_storage.azure.account_name",
@@ -166,7 +155,7 @@ func alertmanagerStorageMapperFunc(source, target Parameters) error {
 		"alertmanager.storage.local.path":                             "alertmanager_storage.local.path",
 		"alertmanager.storage.s3.access_key_id":                       "alertmanager_storage.s3.access_key_id",
 		"alertmanager.storage.s3.bucketnames":                         "alertmanager_storage.s3.bucket_name", // TODO dimitarvdimitrov if it is comma-delimited, then it's invalid
-		"alertmanager.storage.s3.endpoint":                            "alertmanager_storage.s3.endpoint",    // TODO dimitarvdimitrov if it is already set by the previous mapping, then err
+		"alertmanager.storage.s3.endpoint":                            "alertmanager_storage.s3.endpoint",
 		"alertmanager.storage.s3.http_config.idle_conn_timeout":       "alertmanager_storage.s3.http.idle_conn_timeout",
 		"alertmanager.storage.s3.http_config.insecure_skip_verify":    "alertmanager_storage.s3.http.insecure_skip_verify",
 		"alertmanager.storage.s3.http_config.response_header_timeout": "alertmanager_storage.s3.http.response_header_timeout",
@@ -187,17 +176,6 @@ func alertmanagerStorageMapperFunc(source, target Parameters) error {
 // rulerStorageMapperFunc returns a MapperFunc that maps ruler.storage and ruler_storage to ruler_storage.
 // Values from ruler.storage take precedence.
 func rulerStorageMapperFunc(source, target Parameters) error {
-	_, err := source.GetValue("ruler.storage.type")
-	if err != nil {
-		// When doing flag mappings this function gets called with a source config that
-		// contains only the values we have from flags. In order for the code later to not
-		// panic, we do a quick check if the source contains a parameter we expect to exist.
-		//
-		// Known bug: This also means that if a user has passed only their -ruler.storage.type
-		// as a flag, this check will pass and the below will still panic. This should be uncommon.
-		return err
-	}
-
 	pathRenames := map[string]string{
 		"ruler.storage.azure.account_key":                      "ruler_storage.azure.account_key",
 		"ruler.storage.azure.account_name":                     "ruler_storage.azure.account_name",
@@ -207,7 +185,7 @@ func rulerStorageMapperFunc(source, target Parameters) error {
 		"ruler.storage.local.directory":                        "ruler_storage.local.directory",
 		"ruler.storage.s3.access_key_id":                       "ruler_storage.s3.access_key_id",
 		"ruler.storage.s3.bucketnames":                         "ruler_storage.s3.bucket_name", // TODO dimitarvdimitrov if it is comma-delimited, then it's invalid
-		"ruler.storage.s3.endpoint":                            "ruler_storage.s3.endpoint",    // TODO dimitarvdimitrov if it is already set by the previous mapping, then err
+		"ruler.storage.s3.endpoint":                            "ruler_storage.s3.endpoint",
 		"ruler.storage.s3.http_config.idle_conn_timeout":       "ruler_storage.s3.http.idle_conn_timeout",
 		"ruler.storage.s3.http_config.insecure_skip_verify":    "ruler_storage.s3.http.insecure_skip_verify",
 		"ruler.storage.s3.http_config.response_header_timeout": "ruler_storage.s3.http.response_header_timeout",
