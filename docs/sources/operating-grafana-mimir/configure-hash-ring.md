@@ -60,7 +60,7 @@ The default port is `7946`.
 > **Note**: the `memberlist` backend is configured globally and can't be customized on a per-component basis. In these regards, the `memberlist` backend differs from others supported backends, like Consul or etcd.
 
 Grafana Mimir supports TLS for memberlist connections between its components.
-For more information about TLS configuration, refer to [secure communications with TLS]({{< relref "./secure-communications-with-tls.md">}}).
+For more information about TLS configuration, refer to [secure communications with TLS]({{< relref "./../securing/securing-communications-with-tls.md">}}).
 
 To see all supported configuration parameters, refer to [memberlist]({{< relref "../configuring/reference-configuration-parameters.md#memberlist">}}).
 
@@ -110,7 +110,7 @@ To use [etcd](https://etcd.io) as a backend KV store, set the following paramete
 - `<prefix>.etcd.password`: Password used to authenticate to etcd. If etcd authentication is disabled, you can leave the password empty.
 
 Grafana Mimir supports TLS between its components and etcd.
-For more information about TLS configuration, refer to [secure communications with TLS]({{< relref "./secure-communications-with-tls.md">}}).
+For more information about TLS configuration, refer to [secure communications with TLS]({{< relref "./../securing/securing-communications-with-tls.md">}}).
 
 To see all supported configuration parameters, refer to [etcd]({{< relref "../configuring/reference-configuration-parameters.md#etcd">}}).
 
