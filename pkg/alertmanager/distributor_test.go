@@ -61,20 +61,27 @@ func TestDistributor_DistributeRequest(t *testing.T) {
 			expectedTotalCalls: 3,
 			route:              "/alerts",
 		}, {
-			name:                "Write /alerts, Less than quorum AM available",
-			numAM:               1,
-			numHappyAM:          1,
-			replicationFactor:   3,
-			expStatusCode:       http.StatusInternalServerError,
-			expectedTotalCalls:  0,
-			headersNotPreserved: true, // There is nothing to preserve since it does not hit any AM.
-			route:               "/alerts",
-		}, {
-			name:               "Write /alerts, Less than quorum AM succeed",
-			numAM:              5,
-			numHappyAM:         3, // Though we have 3 happy, it will hit >1 unhappy AM.
+			name:               "Write /alerts, no healthy Alertmanagers",
+			numAM:              3,
+			numHappyAM:         0,
 			replicationFactor:  3,
 			expStatusCode:      http.StatusInternalServerError,
+			expectedTotalCalls: 3,
+			route:              "/alerts",
+		}, {
+			name:               "Write /alerts, 1 healthy Alertmanager out of 3",
+			numAM:              3,
+			numHappyAM:         1,
+			replicationFactor:  3,
+			expStatusCode:      http.StatusOK,
+			expectedTotalCalls: 3,
+			route:              "/alerts",
+		}, {
+			name:               "Write /alerts, 3 healthy Alertmanagers out of 5",
+			numAM:              5,
+			numHappyAM:         3,
+			replicationFactor:  3,
+			expStatusCode:      http.StatusOK,
 			expectedTotalCalls: 3,
 			route:              "/alerts",
 		}, {
@@ -321,13 +328,13 @@ func prepare(t *testing.T, numAM, numHappyAM, replicationFactor int, responseBod
 	)
 	require.NoError(t, err)
 
-	amRing, err := ring.New(ring.Config{
+	amRing, err := ring.NewWithStoreClientAndStrategy(ring.Config{
 		KVStore: kv.Config{
 			Mock: kvStore,
 		},
 		HeartbeatTimeout:  60 * time.Minute,
 		ReplicationFactor: replicationFactor,
-	}, RingNameForServer, RingKey, log.NewNopLogger(), nil)
+	}, RingNameForServer, RingKey, kvStore, ring.NewIgnoreUnhealthyInstancesReplicationStrategy(), nil, log.NewNopLogger())
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), amRing))
 	test.Poll(t, time.Second, numAM, func() interface{} {
