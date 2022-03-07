@@ -77,12 +77,16 @@ func Convert(
 
 	if useNewDefaults {
 		notices.ChangedDefaults, err = changeOldDefaultsToNewDefaults(target, sourceDefaults)
-	}
-	if err != nil {
-		return nil, nil, ConversionNotices{}, errors.Wrap(err, "could not detect changed defaults")
+		if err != nil {
+			return nil, nil, ConversionNotices{}, errors.Wrap(err, "could not update explicit defaults")
+		}
 	}
 
-	if showDefaults { // TODO dimitarvdimitrov implement this
+	if showDefaults {
+		err = changeNilsToDefaults(target)
+		if err != nil {
+			return nil, nil, ConversionNotices{}, errors.Wrap(err, "could not set unset parameters to default values")
+		}
 	}
 	pruneNils(target)
 
@@ -100,6 +104,15 @@ func Convert(
 	}
 
 	return yamlBytes, newFlags, *notices, nil
+}
+
+func changeNilsToDefaults(target *InspectedEntry) error {
+	return target.Walk(func(path string, value interface{}) error {
+		if value != nil {
+			return nil // If the value is already set, don't change it.
+		}
+		return target.SetValue(path, target.MustGetDefaultValue(path))
+	})
 }
 
 func changeOldDefaultsToNewDefaults(target, oldDefaults Parameters) ([]ChangedDefault, error) {
@@ -297,7 +310,7 @@ func pruneNils(params Parameters) {
 	for _, p := range pathsToDelete {
 		err = params.Delete(p)
 		if err != nil {
-			err = errors.Wrap(err, "cloud not delete parameter with default value from config")
+			err = errors.Wrap(err, "could not delete parameter with default value from config")
 			_, _ = fmt.Fprintln(os.Stderr, err)
 		}
 	}

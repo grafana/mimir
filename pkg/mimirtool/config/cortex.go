@@ -247,10 +247,13 @@ func mapDotStorage(pathRenames map[string]string, source, target Parameters) err
 	mapper := &PathMapper{PathMappings: map[string]Mapping{}}
 
 	differentFromDefault := func(p Parameters, path string) bool {
-		// TODO dimitarvdimitrov explain why we need to use GetDefaultValue here
 		val, err1 := p.GetValue(path)
 		defaultVal, err2 := p.GetDefaultValue(path)
 
+		// This mapping runs both for default values and user-provided values. The (ruler|alertmanager).storage
+		// defaults should not override the old (ruler|alertmanager)_storage defaults. We do the mapping from old
+		// to new if and only if the value in the config is different from the default value:
+		// this is only the case when mapping user-provided values, not defaults.
 		return err1 == nil && err2 == nil && val != nil && val != defaultVal
 	}
 
