@@ -84,6 +84,6 @@ Mimir requires an object store for the block files, which can be:
 - [OpenStack Swift](https://wiki.openstack.org/wiki/Swift)
 - [Local Filesystem](https://thanos.io/storage.md/#filesystem) (single node only)
 
-For more information, see [Blocks storage]({{< relref "../operating-grafana-mimir/blocks-storage/_index.md" >}}).
+For more information, see [Blocks storage]({{< relref "blocks-storage/_index.md" >}}).
 
 <!-- END from architecture.md -->

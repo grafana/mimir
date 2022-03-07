@@ -1,7 +1,7 @@
 ---
 title: "Binary index-header"
 linkTitle: "Binary index-header"
-weight: 5
+weight: 10
 slug: binary-index-header
 ---
 
