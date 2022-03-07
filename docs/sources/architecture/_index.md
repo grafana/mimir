@@ -1,10 +1,10 @@
 ---
-title: "About the architecture"
-description: "Overview of the architecture of Grafana Mimir."
+title: "Grafana Mimir architecture"
+description: ""
 weight: 20
 ---
 
-# About the architecture
+# Grafana Mimir architecture
 
 Grafana Mimir has a service-based architecture.
 The system has multiple horizontally scalable microservices that run separately and in parallel.
@@ -21,7 +21,8 @@ Most microservices are stateless and do not require any data persisted between p
 
 ### The write path
 
-[//]: # "Diagram source of write path at https://docs.google.com/presentation/d/1LemaTVqa4Lf_tpql060vVoDGXrthp-Pie_SQL7qwHjc/edit#slide=id.g11658e7e4c6_0_899
+[//]: # "Diagram source of write path at https://docs.google.com/presentation/d/1LemaTVqa4Lf_tpql060vVoDGXrthp-Pie_SQL7qwHjc/edit#slide=id.g11658e7e4c6_0_899"
+
 ![Architecture of Grafana Mimir's write path](../images/write-path.png)
 
 Ingesters receive incoming samples from the distributors.
