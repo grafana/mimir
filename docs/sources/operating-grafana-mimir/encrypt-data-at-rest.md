@@ -30,11 +30,11 @@ You can configure AWS S3 SSE globally or for specific tenants.
 
 Configuring AWS S3 SSE globally requires setting SSE for each of the following storage backends:
 
-- [alertmanager_storage]({{< relref "../configuration/reference-configuration-parameters.md#alertmanager_storage" >}})
-- [blocks_storage]({{< relref "../configuration/reference-configuration-parameters.md#blocks_storage" >}})
-- [ruler_storage]({{< relref "../configuration/reference-configuration-parameters.md#ruler_storage" >}})
+- [alertmanager_storage]({{< relref "../configuring/reference-configuration-parameters.md#alertmanager_storage" >}})
+- [blocks_storage]({{< relref "../configuring/reference-configuration-parameters.md#blocks_storage" >}})
+- [ruler_storage]({{< relref "../configuring/reference-configuration-parameters.md#ruler_storage" >}})
 
-For more information about AWS S3 SSE configuration parameters, refer to [sse]({{< relref "../configuration/reference-configuration-parameters.md#sse" >}}).
+For more information about AWS S3 SSE configuration parameters, refer to [sse]({{< relref "../configuring/reference-configuration-parameters.md#sse" >}}).
 
 The following code sample shows a snippet of a Grafana Mimir configuration file with every backend storage configured to use AWS S3 SSE with and Amazon S3-managed key.
 
@@ -74,7 +74,7 @@ You can use the following settings to override AWS S3 SSE for each tenant:
 **To configure AWS S3 SSE for a specific tenant**:
 
 1. Ensure Grafana Mimir uses a runtime configuration file by verifying that the flag `-runtime-config.file` is set to a non-null value.
-   For more information about supported runtime configuration parameters, refer to [Runtime configuration]({{< relref "../configuration/about-runtime-configuration.md" >}}).
+   For more information about supported runtime configuration parameters, refer to [Runtime configuration]({{< relref "../configuring/about-runtime-configuration.md" >}}).
 1. In the runtime configuration file, apply the `overrides.<TENANT>` SSE settings.
 
    A partial runtime configuration file that has AWS S3 SSE with Amazon S3-managed keys set for a tenant called "tenant-a" appears as follows:

@@ -10,9 +10,9 @@ You can configure Grafana Mimir via a ([YAML](https://en.wikipedia.org/wiki/YAML
 
 To see the most common CLI flags that you need to get started with Grafana Mimir, run the `mimir -help` command. To see all of the available CLI flags, run the `mimir -help-all` command.
 
-A given configuration loads at startup and cannot be modified at runtime. However, Grafana Mimir does have a second configuration file, known as the _runtime configuration_, that is dynamically reloaded. For more information, see [About runtime configuration]({{< relref "./about-runtime-configuration.md" >}}).
+A given configuration loads at startup and cannot be modified at runtime. However, Grafana Mimir does have a second configuration file, known as the _runtime configuration_, that is dynamically reloaded. For more information, see [About runtime configuration]({{< relref "about-runtime-configuration.md" >}}).
 
-To see the current configuration state of any component, use the [`/config`]({{< relref "./../reference-http-api/#configuration" >}}) or [`/runtime_config`]({{< relref "./../reference-http-api/#runtime-configuration" >}}) HTTP API endpoint.
+To see the current configuration state of any component, use the [`/config`]({{< relref "../reference-http-api/#configuration" >}}) or [`/runtime_config`]({{< relref "../reference-http-api/#runtime-configuration" >}}) HTTP API endpoint.
 
 ## Operational considerations
 

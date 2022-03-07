@@ -14,7 +14,7 @@ The query-scheduler is an optional, stateless component that retains a queue of 
 
 The following flow describes how a queries moves through a Grafana Mimir cluster:
 
-1. The [query-frontend]({{< relref "query-frontend.md" >}}) receives queries, and then either splits and shards them, or serves them from the cache.
+1. The [query-frontend]({{< relref "query-frontend/_index.md" >}}) receives queries, and then either splits and shards them, or serves them from the cache.
 1. The query-frontend enqueues the queries into a query-scheduler.
 1. The query-scheduler stores the queries in an in-memory queue where they wait for a querier to pick them up.
 1. Queriers pick up the queries, and executes them.
@@ -22,7 +22,7 @@ The following flow describes how a queries moves through a Grafana Mimir cluster
 
 ## Benefits of using the query-scheduler
 
-Query-scheduler enables the scaling of query-frontends. You might experience challenges when you scale query-frontend. To learn more about query-frontend scalability limits, refer to [Why query-frontend scalability is limited]({{< relref "query-frontend.md#why-query-frontend-scalability-is-limited" >}}).
+Query-scheduler enables the scaling of query-frontends. You might experience challenges when you scale query-frontend. To learn more about query-frontend scalability limits, refer to [Why query-frontend scalability is limited]({{< relref "query-frontend/_index.md#why-query-frontend-scalability-is-limited" >}}).
 
 ### How query-scheduler solves query-frontend scalability limits
 

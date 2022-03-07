@@ -1,7 +1,7 @@
 ---
 title: "Configuration parameters"
 description: ""
-weight: 10
+weight: 30
 ---
 
 # Configuration parameters
