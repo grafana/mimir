@@ -14,15 +14,29 @@ import (
 )
 
 type ConversionNotices struct {
-	RemovedCLIFlags   []string
-	RemovedParameters []string
-	ChangedDefaults   []ChangedDefault
-	PrunedDefaults    []PrunedDefault
+	RemovedCLIFlags        []string
+	RemovedParameters      []string
+	ChangedDefaults        []ChangedDefault
+	SkippedChangedDefaults []ChangedDefault
+	PrunedDefaults         []PrunedDefault
 }
 
 type ChangedDefault struct {
 	Path                   string
 	OldDefault, NewDefault string
+}
+
+type changedDefault struct {
+	path                   string
+	oldDefault, newDefault interface{}
+}
+
+func (d changedDefault) asExported() ChangedDefault {
+	return ChangedDefault{
+		Path:       d.path,
+		OldDefault: fmt.Sprint(d.oldDefault),
+		NewDefault: fmt.Sprint(d.newDefault),
+	}
 }
 
 type PrunedDefault struct {
@@ -75,11 +89,13 @@ func Convert(
 		return nil, nil, ConversionNotices{}, errors.Wrap(err, "could not prune defaults in new config")
 	}
 
-	if useNewDefaults {
-		notices.ChangedDefaults, err = changeOldDefaultsToNewDefaults(target, sourceDefaults)
-		if err != nil {
-			return nil, nil, ConversionNotices{}, errors.Wrap(err, "could not update explicit defaults")
-		}
+	changeableDefaults, err := reportChangedDefaults(target, sourceDefaults)
+	if err != nil {
+		return nil, nil, ConversionNotices{}, err
+	}
+	notices.ChangedDefaults, notices.SkippedChangedDefaults, err = changeDefaults(changeableDefaults, target, useNewDefaults)
+	if err != nil {
+		return nil, nil, ConversionNotices{}, err
 	}
 
 	if showDefaults {
@@ -106,24 +122,31 @@ func Convert(
 	return yamlBytes, newFlags, *notices, nil
 }
 
-func changeNilsToDefaults(target *InspectedEntry) error {
-	return target.Walk(func(path string, value interface{}) error {
-		if value != nil {
-			return nil // If the value is already set, don't change it.
+func changeDefaults(defaults []changedDefault, target Parameters, useNewDefaults bool) ([]ChangedDefault, []ChangedDefault, error) {
+	var changedDefaults, skippedChangedDefault []ChangedDefault
+	for _, def := range defaults {
+		currentValue := target.MustGetValue(def.path)
+		if currentValue == nil {
+			// The value will be implicitly changed to the new default value.
+			changedDefaults = append(changedDefaults, def.asExported())
+		} else if useNewDefaults && reflect.DeepEqual(currentValue, def.oldDefault) {
+			err := target.SetValue(def.path, def.newDefault)
+			if err != nil {
+				return nil, nil, err
+			}
+			changedDefaults = append(changedDefaults, def.asExported())
+		} else {
+			skippedChangedDefault = append(skippedChangedDefault, def.asExported())
 		}
-		return target.SetValue(path, target.MustGetDefaultValue(path))
-	})
+	}
+	return changedDefaults, skippedChangedDefault, nil
 }
 
-func changeOldDefaultsToNewDefaults(target, oldDefaults Parameters) ([]ChangedDefault, error) {
-	var changedDefaults []ChangedDefault
+func reportChangedDefaults(target, sourceDefaults Parameters) ([]changedDefault, error) {
+	var defs []changedDefault
 
 	err := target.Walk(func(path string, value interface{}) error {
-		if value == nil {
-			// The user hadn't set an explicit value, so the new default will be used anyway
-			return nil
-		}
-		oldDefault, err := oldDefaults.GetDefaultValue(path)
+		oldDefault, err := sourceDefaults.GetDefaultValue(path)
 		if err != nil {
 			if errors.Is(err, ErrParameterNotFound) {
 				// This looks like a new parameter because it doesn't exist in the old schema; no default to change from
@@ -132,20 +155,26 @@ func changeOldDefaultsToNewDefaults(target, oldDefaults Parameters) ([]ChangedDe
 			return err
 		}
 		newDefault := target.MustGetDefaultValue(path)
-		if reflect.DeepEqual(value, oldDefault) && !reflect.DeepEqual(oldDefault, newDefault) {
-			err = target.SetValue(path, newDefault)
-			if err != nil {
-				return err
-			}
-			changedDefaults = append(changedDefaults, ChangedDefault{
-				Path:       path,
-				OldDefault: fmt.Sprint(oldDefault),
-				NewDefault: fmt.Sprint(newDefault),
+
+		if !reflect.DeepEqual(oldDefault, newDefault) {
+			defs = append(defs, changedDefault{
+				path:       path,
+				oldDefault: oldDefault,
+				newDefault: newDefault,
 			})
 		}
 		return nil
 	})
-	return changedDefaults, err
+	return defs, err
+}
+
+func changeNilsToDefaults(target *InspectedEntry) error {
+	return target.Walk(func(path string, value interface{}) error {
+		if value != nil {
+			return nil // If the value is already set, don't change it.
+		}
+		return target.SetValue(path, target.MustGetDefaultValue(path))
+	})
 }
 
 func convertFlags(flags []string, m Mapper, target Parameters, sourceFactory, targetFactory InspectedEntryFactory) ([]string, error) {

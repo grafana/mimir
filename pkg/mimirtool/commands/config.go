@@ -146,6 +146,10 @@ func (c *ConfigCommand) writeNotices(notices config.ConversionNotices, w io.Writ
 		oldDefault, newDefault := placeholderIfEmpty(d.OldDefault), placeholderIfEmpty(d.NewDefault)
 		_, _ = noticesOut.WriteString(fmt.Sprintf("using a new default for %s: %s (used to be %s)\n", d.Path, newDefault, oldDefault))
 	}
+	for _, d := range notices.SkippedChangedDefaults {
+		oldDefault, newDefault := placeholderIfEmpty(d.OldDefault), placeholderIfEmpty(d.NewDefault)
+		_, _ = noticesOut.WriteString(fmt.Sprintf("default value for %s changed: %s (used to be %s); not updating\n", d.Path, newDefault, oldDefault))
+	}
 	for _, d := range notices.PrunedDefaults {
 		_, _ = noticesOut.WriteString(fmt.Sprintf("removed default value %s: %s\n", d.Path, placeholderIfEmpty(d.Value)))
 	}
