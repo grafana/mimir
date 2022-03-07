@@ -1,10 +1,10 @@
 ---
-title: "About authentication and authorization"
+title: "Authentication and authorization"
 description: ""
 weight: 10
 ---
 
-# About authentication and authorization
+# Authentication and authorization
 
 Grafana Mimir is a multi-tenant system where tenants can query metrics and alerts that include their tenant ID. The query takes the tenant ID from the `X-Scope-OrgID` parameter that exists in the HTTP header of each request.
 
@@ -61,4 +61,4 @@ After you disable multi-tenancy, Grafana Mimir components internally set the ten
 
 To set an alternative tenant ID, use the `-auth.no-auth-tenant` flag.
 
-> **Note**: Not all tenant IDs are valid. For more inforamtion about tenant ID restrictions, refer to [About tenant IDs]({{< relref "./about-tenant-ids.md" >}}).
+> **Note**: Not all tenant IDs are valid. For more inforamtion about tenant ID restrictions, refer to [About tenant IDs]({{< relref "../about-tenant-ids.md" >}}).
