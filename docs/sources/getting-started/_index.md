@@ -18,7 +18,7 @@ For more information about the microservices, refer to [Architecture]({{<relref 
 ## Before you begin
 
 Verify that you have installed either a [Prometheus server](https://prometheus.io/docs/prometheus/latest/installation/)
-or the [Grafana Agent](https://github.com/grafana/agent/releases/latest).
+or the [Grafana Agent](https://grafana.com/docs/grafana-cloud/agent/#installing-the-grafana-agent).
 Verify that you have installed [Docker](https://docs.docker.com/engine/install/).
 
 ## Download Grafana Mimir
@@ -26,7 +26,7 @@ Verify that you have installed [Docker](https://docs.docker.com/engine/install/)
 - Using Docker:
 
 ```bash
-docker pull "grafana/mimir:latest"
+docker pull grafana/mimir:latest
 ```
 
 - Using a local binary:
@@ -35,7 +35,7 @@ Download the appropriate [release asset](https://github.com/grafana/mimir/releas
 For Linux with the AMD64 architecture:
 
 ```bash
-curl -Lo mimir https://github.com/grafana/mimir/releases/latest/download/mimir-linux-amd64
+curl -fLo mimir https://github.com/grafana/mimir/releases/latest/download/mimir-linux-amd64
 chmod +x mimir
 ```
 
@@ -100,7 +100,7 @@ In a terminal, run one of the following commands:
 - Using Docker:
 
   ```bash
-  docker run --rm --name mimir --publish 9009:9009 --volume "$(pwd)"/demo.yaml:/etc/mimir/demo.yaml "grafana/mimir:${MIMIR_LATEST}" --config.file=/etc/mimir/demo.yaml
+  docker run --rm --name mimir --publish 9009:9009 --volume "$(pwd)"/demo.yaml:/etc/mimir/demo.yaml grafana/mimir:${MIMIR_LATEST} --config.file=/etc/mimir/demo.yaml
   ```
 
 - Using a local binary:
@@ -147,8 +147,11 @@ The configuration for an Agent that scrapes itself for metrics and writes those 
 ```yaml
 server:
   http_listen_port: 12345
+  grpc_listen_port: 54321
 
 metrics:
+  wal_directory: /tmp/grafana-agent/wal
+
   configs:
     - name: agent
       scrape_configs:
@@ -156,7 +159,7 @@ metrics:
           static_configs:
             - targets: ["127.0.0.1:12345"]
       remote_write:
-        - url: http://localhost:9009/prometheus/api/v1/push
+        - url: http://localhost:9009/api/v1/push
 ```
 
 ## Query data in Grafana
