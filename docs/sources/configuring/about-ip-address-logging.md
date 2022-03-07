@@ -1,7 +1,7 @@
 ---
 title: "About IP address logging of a reverse proxy"
 description: ""
-weight: 90
+weight: 10
 ---
 
 # About IP address logging of a reverse proxy

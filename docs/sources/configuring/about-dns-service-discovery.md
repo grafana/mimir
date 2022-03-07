@@ -1,7 +1,7 @@
 ---
 title: "About DNS service discovery"
 description: ""
-weight: 80
+weight: 10
 ---
 
 # About DNS service discovery

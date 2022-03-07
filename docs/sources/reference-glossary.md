@@ -32,7 +32,7 @@ For component specific documentation, refer to one of the following topics:
 - [Compactor]({{<relref "./architecture/components/compactor.md" >}})
 - [Distributor]({{<relref "./architecture/components/distributor.md" >}})
 - [Ingester]({{<relref "./architecture/components/ingester.md" >}})
-- [Query-frontend]({{<relref "./architecture/components/query-frontend.md" >}})
+- [Query-frontend]({{<relref "./architecture/components/query-frontend/_index.md" >}})
 - [Query-scheduler]({{<relref "./architecture/components/query-scheduler.md" >}})
 - [Store-gateway]({{<relref "./architecture/components/store-gateway.md" >}})
 - [Optional: Alertmanager]({{<relref "./architecture/components/alertmanager.md" >}})

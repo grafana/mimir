@@ -23,7 +23,7 @@ Before deploying Mimir with a permanent storage backend, read:
 
 1. [An overview of Mimir’s architecture](architecture.md)
 1. [Getting started with Mimir](getting-started/_index.md)
-1. [Configuring Mimir](configuration/_index.md)
+1. [Configuring Mimir](configuring/_index.md)
 
 There are also individual [guides](guides/_index.md) to many tasks.
 Before deploying, review the important [security advice](guides/security.md).
