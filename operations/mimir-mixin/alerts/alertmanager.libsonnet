@@ -95,11 +95,9 @@
         {
           alert: $.alertName('AlertmanagerAllocatingTooMuchMemory'),
           expr: |||
-            (
-              container_memory_working_set_bytes{container="alertmanager"}
-                /
-              max(container_spec_memory_limit_bytes{container="alertmanager"})
-            ) > 0.80
+            (container_memory_working_set_bytes{container="alertmanager"} / container_spec_memory_limit_bytes{container="alertmanager"}) > 0.80
+            and
+            (container_spec_memory_limit_bytes{container="alertmanager"} > 0)
           |||,
           'for': '15m',
           labels: {
@@ -114,11 +112,9 @@
         {
           alert: $.alertName('AlertmanagerAllocatingTooMuchMemory'),
           expr: |||
-            (
-              container_memory_working_set_bytes{container="alertmanager"}
-                /
-              max(container_spec_memory_limit_bytes{container="alertmanager"})
-            ) > 0.90
+            (container_memory_working_set_bytes{container="alertmanager"} / container_spec_memory_limit_bytes{container="alertmanager"}) > 0.90
+            and
+            (container_spec_memory_limit_bytes{container="alertmanager"} > 0)
           |||,
           'for': '15m',
           labels: {
