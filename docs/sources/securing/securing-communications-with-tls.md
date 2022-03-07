@@ -1,10 +1,10 @@
 ---
-title: "Secure communications with TLS"
+title: "Securing communications with TLS"
 description: "How to configure TLS between Grafana Mimir microservices."
-weight: 60
+weight: 10
 ---
 
-# Secure communications with TLS
+# Securing communications with TLS
 
 Grafana Mimir is a distributed system with significant traffic between its components.
 To allow for secure communication, Grafana Mimir supports TLS between its

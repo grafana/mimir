@@ -14,7 +14,7 @@ Each project stores blocks in different places use different block metadata file
 
 ## Configuring remote write to Grafana Mimir
 
-For configuration of remote write to Grafana Mimir, refer to [Configuring Prometheus remote write]({{< relref "../about-authentication-and-authorization.md#configuring-prometheus-remote-write" >}}).
+For configuration of remote write to Grafana Mimir, refer to [Configuring Prometheus remote write]({{< relref "../securing/authentication-and-authorization.md#configuring-prometheus-remote-write" >}}).
 
 ## Uploading historic blocks to the Grafana Mimir storage bucket
 

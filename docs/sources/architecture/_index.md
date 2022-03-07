@@ -68,7 +68,7 @@ Queriers use the block’s metadata to compute the list of blocks that need to b
 Prometheus instances scrape samples from various targets and push them to Grafana Mimir by using Prometheus’ [remote write API](https://prometheus.io/docs/prometheus/latest/storage/#remote-storage-integrations).
 The remote write API emits batched [Snappy](https://google.github.io/snappy/)-compressed [Protocol Buffer](https://developers.google.com/protocol-buffers/) messages inside the body of an HTTP `PUT` request.
 
-Mimir requires that each HTTP request has a header that specifies a tenant ID for the request. Request [authentication and authorization]({{< relref "../about-authentication-and-authorization.md" >}}) are handled by an external reverse proxy.
+Mimir requires that each HTTP request has a header that specifies a tenant ID for the request. Request [authentication and authorization]({{< relref "../securing/authentication-and-authorization.md" >}}) are handled by an external reverse proxy.
 
 Incoming samples (writes from Prometheus) are handled by the [distributor]({{< relref "#distributor" >}}), and incoming reads (PromQL queries) are handled by the [query frontend]({{< relref "#query-frontend" >}}).
 
