@@ -1,9 +1,9 @@
 ---
-title: Query sharding
-weight: 1100
+title: About query sharding
+weight: 10
 ---
 
-# Query sharding
+# About query sharding
 
 Mimir includes the ability to run a single query across multiple machines. This is
 achieved by breaking the dataset into smaller pieces. These smaller pieces are
@@ -12,7 +12,7 @@ partial queries are distributed by the query-frontend to run on different
 queriers in parallel. The results of those partial queries are aggregated by the
 query-frontend to return the full query result.
 
-## Query sharding at glance
+## About query sharding at glance
 
 Not all queries are shardable. While the full query is not shardable, the inner
 parts of a query could still be shardable.

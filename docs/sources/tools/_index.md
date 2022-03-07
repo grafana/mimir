@@ -1,7 +1,7 @@
 ---
-title: "About Grafana Mimir tools"
+title: "Grafana Mimir tools"
 description: ""
-weight: 10
+weight: 100
 ---
 
 {{< section >}}

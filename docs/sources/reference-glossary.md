@@ -1,7 +1,7 @@
 ---
 title: "Reference: Glossary"
 description: ""
-weight: 10000
+weight: 100
 ---
 
 # Reference: Glossary
@@ -10,7 +10,7 @@ weight: 10000
 
 Blocks storage is the Mimir storage engine based on the Prometheus TSDB.
 Grafana Mimir stores blocks in object stores such as AWS S3, Google Cloud Storage (GCS), Azure blob storage, or OpenStack Object Storage (Swift).
-For the full list of supported backends and more information, refer to [Blocks storage]({{<relref "./architecture/blocks-storage/_index.md" >}})
+For the full list of supported backends and more information, refer to [Blocks storage]({{< relref "architecture/blocks-storage/_index.md" >}})
 
 ## Chunk
 
@@ -29,14 +29,14 @@ Grafana Mimir comprises several components.
 Each component provides a specific function to the system.
 For component specific documentation, refer to one of the following topics:
 
-- [Compactor]({{<relref "./architecture/components/compactor.md" >}})
-- [Distributor]({{<relref "./architecture/components/distributor.md" >}})
-- [Ingester]({{<relref "./architecture/components/ingester.md" >}})
-- [Query-frontend]({{<relref "./architecture/components/query-frontend/_index.md" >}})
-- [Query-scheduler]({{<relref "./architecture/components/query-scheduler.md" >}})
-- [Store-gateway]({{<relref "./architecture/components/store-gateway.md" >}})
-- [Optional: Alertmanager]({{<relref "./architecture/components/alertmanager.md" >}})
-- [Optional: Ruler]({{<relref "./architecture/components/ruler.md" >}})
+- [Compactor]({{< relref "architecture/components/compactor.md" >}})
+- [Distributor]({{< relref "architecture/components/distributor.md" >}})
+- [Ingester]({{< relref "architecture/components/ingester.md" >}})
+- [Query-frontend]({{< relref "architecture/components/query-frontend/_index.md" >}})
+- [Query-scheduler]({{< relref "architecture/components/query-scheduler.md" >}})
+- [Store-gateway]({{< relref "architecture/components/store-gateway.md" >}})
+- [Optional: Alertmanager]({{< relref "architecture/components/alertmanager.md" >}})
+- [Optional: Ruler]({{< relref "architecture/components/ruler.md" >}})
 
 ## Flushing
 
@@ -50,18 +50,18 @@ Gossip is a protocol by which components coordinate without the need for a centr
 
 The HA tracker is a feature of the Grafana Mimir distributor.
 It deduplicates time series received from two or more Prometheus servers that are configured to scrape the same targets.
-To configure HA tracking, refer to [Configuring high-availability deduplication]({{<relref "./operating/configuring-high-availability-deduplication.md" >}}).
+To configure HA tracking, refer to [Configuring high-availability deduplication]({{< relref "operating/configuring-high-availability-deduplication.md" >}}).
 
 ## Hash ring
 
 The hash ring is a distributed data structure used by Grafana Mimir for sharding, replication, and service discovery.
 Components use a [key-value store]({{<relref "#key-value-store" >}}) or [gossip]({{<relref "#gossip" >}}) to share the hash ring data structure.
-For more information, refer to the [Hash ring]({{<relref "./architecture/hash-ring.md" >}}).
+For more information, refer to the [Hash ring]({{< relref "architecture/hash-ring.md" >}}).
 
 ## Key-value store
 
 A key-value store is a database that associates keys with values.
-To understand how Grafana Mimir uses key-value stores, refer to [Key-value store]({{<relref "./architecture/key-value-store.md" >}}).
+To understand how Grafana Mimir uses key-value stores, refer to [Key-value store]({{< relref "architecture/key-value-store.md" >}}).
 
 ## Memberlist
 
@@ -107,7 +107,7 @@ node_cpu_seconds_total{instance="10.0.0.2",mode="user"}
 
 A tenant is the owner of a set of series written to and queried from Grafana Mimir.
 Grafana Mimir isolates series and alerts belonging to different tenants.
-To understand how Grafana Mimir authenticates tenants, refer to [Authentication and authorization]({{<relref "./securing/authentication-and-authorization.md" >}}).
+To understand how Grafana Mimir authenticates tenants, refer to [Authentication and authorization]({{< relref "securing/authentication-and-authorization.md" >}}).
 
 ## Time series
 
@@ -120,4 +120,4 @@ Refer to [Tenant]({{<relref "#tenant" >}}).
 ## Write-ahead log (WAL)
 
 The write-ahead Log (WAL) is an append only log stored on disk by ingesters to recover their in-memory state after the process gets restarted.
-For more information, refer to [The write path]({{<relref "./architecture/_index.md#the-write-path" >}}).
+For more information, refer to [The write path]({{< relref "architecture/_index.md#the-write-path" >}}).
