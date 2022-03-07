@@ -1,10 +1,10 @@
 ---
-title: "About the architecture"
-description: "Overview of the architecture of Grafana Mimir."
+title: "Grafana Mimir architecture"
+description: ""
 weight: 20
 ---
 
-# About the architecture
+# Grafana Mimir architecture
 
 Grafana Mimir has a service-based architecture.
 The system has multiple horizontally scalable microservices that run separately and in parallel.
@@ -27,7 +27,8 @@ A dedicate page describes each microservice in detail.
 
 ### The write path
 
-[//]: # "Diagram source of write path at https://docs.google.com/presentation/d/1LemaTVqa4Lf_tpql060vVoDGXrthp-Pie_SQL7qwHjc/edit#slide=id.g11658e7e4c6_0_899
+[//]: # "Diagram source of write path at https://docs.google.com/presentation/d/1LemaTVqa4Lf_tpql060vVoDGXrthp-Pie_SQL7qwHjc/edit#slide=id.g11658e7e4c6_0_899"
+
 ![Architecture of Grafana Mimir's write path](../images/write-path.png)
 
 **Ingesters** receive incoming samples from the distributors. Each push request belongs to a tenant, and the ingester appends the received samples to the specific per-tenant TSDB stored on the local disk. The received samples are both kept in-memory and written to a write-ahead log (WAL) and used to recover the in-memory series in case the ingester abruptly terminates. The per-tenant TSDB is lazily created in each ingester as soon as the first samples are received for that tenant.
