@@ -2,28 +2,13 @@
 
 ## Grafana Mimir - main / unreleased
 
-* [CHANGE] Compactor: No longer upload debug meta files to object storage. #1257
-* [ENHANCEMENT] Upgrade Go to 1.17.8. #1347 #1381
-* [ENHANCEMENT] Upgrade Docker base images to `alpine:3.15.0`. #1348
-
 ### Mixin
-
-* [FEATURE] Mimir / Top tenants dashboard now has tenants ranked by rule group size and evaluation time. #1338
 
 ### Jsonnet
 
-* [CHANGE] Disabled `-ingester.readiness-check-ring-health`. #1352
-* [FEATURE] Added multi-zone ingesters and store-gateways support. #1352
-
 ### Mimirtool
 
-* [CHANGE] `analyse` command has been renamed to `analyze`. #1318
-
-### Tools
-
-* [CHANGE] Removed `query-audit`. You can use `query-tee` to compare query results and performances of two Grafana Mimir backends. #1380
-
-## 2.0.0-rc.1
+## 2.0.0-rc.2
 
 ### Grafana Mimir
 
@@ -583,6 +568,8 @@ _Changes since Cortex 1.10.0._
   * `ruler_max_rule_groups_per_tenant`
 * [ENHANCEMENT] Overrides exporter: add a metrics `cortex_limits_defaults` to expose the default values of limits. #173
 * [ENHANCEMENT] Overrides exporter: Add `max_fetched_chunks_per_query` and `max_global_exemplars_per_user` limits to the default and per-tenant limits exported as metrics. #471 #515
+* [ENHANCEMENT] Upgrade Go to 1.17.8. #1347 #1381
+* [ENHANCEMENT] Upgrade Docker base images to `alpine:3.15.0`. #1348
 * [BUGFIX] Azure storage: only create HTTP client once, to reduce memory utilization. #605
 * [BUGFIX] Ingester: fixed ingester stuck on start up (LEAVING ring state) when `-ingester.ring.heartbeat-period=0` and `-ingester.unregister-on-shutdown=false`. [#4366](https://github.com/cortexproject/cortex/pull/4366)
 * [BUGFIX] Ingester: prevent any reads or writes while the ingester is stopping. This will prevent accessing TSDB blocks once they have been already closed. [#4304](https://github.com/cortexproject/cortex/pull/4304)
@@ -671,6 +658,7 @@ _Changes since `grafana/cortex-jsonnet` `1.9.0`._
 * [FEATURE] Added `Cortex / Overrides` dashboard, displaying default limits and per-tenant overrides applied to Mimir. #673
 * [FEATURE] Added `Mimir / Tenants` and `Mimir / Top tenants` dashboards, displaying user-based metrics. #776
 * [FEATURE] Added querier autoscaling panels and alerts. #1006 #1016
+* [FEATURE] Mimir / Top tenants dashboard now has tenants ranked by rule group size and evaluation time. #1338
 * [ENHANCEMENT] cortex-mixin: Make `cluster_namespace_deployment:kube_pod_container_resource_requests_{cpu_cores,memory_bytes}:sum` backwards compatible with `kube-state-metrics` v2.0.0. [#317](https://github.com/grafana/cortex-jsonnet/pull/317)
 * [ENHANCEMENT] Cortex-mixin: Include `cortex-gw-internal` naming variation in default `gateway` job names. [#328](https://github.com/grafana/cortex-jsonnet/pull/328)
 * [ENHANCEMENT] Ruler dashboard: added object storage metrics. [#354](https://github.com/grafana/cortex-jsonnet/pull/354)
@@ -831,6 +819,7 @@ _Changes since `grafana/cortex-jsonnet` `1.9.0`._
 * [CHANGE] Changed the default of `bucket_index_enabled` to `true`. #924
 * [CHANGE] Remove the support for the test-exporter. #1133
 * [CHANGE] Removed `$.distributor_deployment_labels`, `$.ingester_deployment_labels` and `$.querier_deployment_labels` fields, that were used by gossip.libsonnet to inject additional label. Now the label is injected directly into pods of statefulsets and deployments. #1297
+* [CHANGE] Disabled `-ingester.readiness-check-ring-health`. #1352
 * [FEATURE] Added query sharding support. It can be enabled setting `cortex_query_sharding_enabled: true` in the `_config` object. #653
 * [FEATURE] Added shuffle-sharding support. It can be enabled and configured using the following config: #902
    ```
@@ -844,6 +833,7 @@ _Changes since `grafana/cortex-jsonnet` `1.9.0`._
      },
    }
    ```
+* [FEATURE] Added multi-zone ingesters and store-gateways support. #1352
 * [ENHANCEMENT] Add overrides config to compactor. This allows setting retention configs per user. [#386](https://github.com/grafana/cortex-jsonnet/pull/386)
 * [ENHANCEMENT] Added 256MB memory ballast to querier. [#369](https://github.com/grafana/cortex-jsonnet/pull/369)
 * [ENHANCEMENT] Update `etcd-operator` to latest version (see https://github.com/grafana/jsonnet-libs/pull/480). [#263](https://github.com/grafana/cortex-jsonnet/pull/263)
@@ -876,6 +866,7 @@ _Changes since cortextool `0.10.7`._
   * `CORTEX_TLS_KEY_PATH` to `MIMIR_TLS_KEY_PATH`
 * [CHANGE] Change `cortex` backend to `mimir`. #883
 * [CHANGE] Do not publish `mimirtool` binary for 386 windows architecture. #1263
+* [CHANGE] `analyse` command has been renamed to `analyze`. #1318
 * [FEATURE] Support Arm64 on Darwin for all binaries (benchtool etc). https://github.com/grafana/cortex-tools/pull/215
 * [ENHANCEMENT] Correctly support federated rules. #823
 * [BUGFIX] Fix `cortextool rules` legends displaying wrong symbols for updates and deletions. https://github.com/grafana/cortex-tools/pull/226
@@ -907,6 +898,12 @@ _Changes since Cortex `1.10.0`._
 _Changes since Cortex `1.10.0`._
 
 * [CHANGE] Removed the test-exporter tool. #1133
+
+### Tools
+
+_Changes since Cortex `1.10.0`._
+
+* [CHANGE] Removed `query-audit`. You can use `query-tee` to compare query results and performances of two Grafana Mimir backends. #1380
 
 ## Cortex 1.10.0 / 2021-08-03
 
