@@ -33,21 +33,21 @@ The per-tenant TSDB is lazily created in each ingester as soon as the first samp
 The in-memory samples are periodically flushed to disk, and the WAL is truncated, when a new TSDB block is created.
 By default, this occurs every two hours.
 Each newly created block is uploaded to long-term storage and kept in the ingester until the configured `-blocks-storage.tsdb.retention-period` expires.
-This gives [queriers]({{< relref "./querier.md" >}}) and [store-gateways]({{< relref "./store-gateway.md" >}}) enough time to discover the new block on the storage and download its index-header.
+This gives [queriers]({{< relref "components/querier.md" >}}) and [store-gateways]({{< relref "components/store-gateway.md" >}}) enough time to discover the new block on the storage and download its index-header.
 
 To effectively use the WAL, and to be able to recover the in-memory series if an ingester abruptly terminates, store the WAL to a persistent disk that can survive an ingester failure.
 For example, when running in the cloud, include an AWS EBS volume or a GCP persistent disk.
 If you are running the Grafana Mimir cluster in Kubernetes, you can use a StatefulSet with a persistent volume claim for the ingesters.
 The location on the filesystem where the WAL is stored is the same location where local TSDB blocks (compacted from head) are stored. The location of the filesystem and the location of the local TSDB blocks cannot be decoupled.
 
-For more information, refer to [timeline of block uploads]({{< relref "../blocks-storage/production-tips/#how-to-estimate--querierquery-store-after" >}}) and [Ingester]({{< relref "./ingester.md" >}}).
+For more information, refer to [timeline of block uploads]({{< relref "blocks-storage/production-tips/#how-to-estimate--querierquery-store-after" >}}) and [Ingester]({{< relref "components/ingester.md" >}}).
 
 #### Series sharding and replication
 
 By default, each time series is replicated to three ingesters, and each ingester writes its own block to the long-term storage.
-The [Compactor]({{< relref "./compactor.md" >}}) merges blocks from multiple ingesters into a single block, and removes duplicate samples.
+The [Compactor]({{< relref "components/compactor.md" >}}) merges blocks from multiple ingesters into a single block, and removes duplicate samples.
 Blocks compaction significantly reduces storage utilization.
-For more information, refer to [Compactor]({{< relref "./compactor.md" >}}) and [Production tips]({{< relref "../blocks-storage/production-tips.md" >}}).
+For more information, refer to [Compactor]({{< relref "components/compactor.md" >}}) and [Production tips]({{< relref "blocks-storage/production-tips.md" >}}).
 
 ### The read path
 
@@ -55,7 +55,7 @@ For more information, refer to [Compactor]({{< relref "./compactor.md" >}}) and 
 
 ![Architecture of Grafana Mimir's read path](../images/read-path.png)
 
-[Queriers]({{< relref "./querier.md" >}}) and [store-gateways]({{< relref "./store-gateway.md" >}}) periodically download the bucket index to discover blocks that are recently uploaded by ingesters and compactors.
+[Queriers]({{< relref "components/querier.md" >}}) and [store-gateways]({{< relref "components/store-gateway.md" >}}) periodically download the bucket index to discover blocks that are recently uploaded by ingesters and compactors.
 The bucket index is kept updated by the compactors.
 
 For each discovered block, store-gateways download the `meta.json` and the index-header, which is a small subset of the block’s index that the store-gateway uses to look up series at query time.
