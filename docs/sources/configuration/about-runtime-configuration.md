@@ -24,22 +24,7 @@ When running Grafana Mimir on Kubernetes, store the runtime configuration file i
 
 Use Grafana Mimir’s `/runtime_config` endpoint to see the current value of the runtime configuration, including the overrides. To see only the non-default values of the configuration, specify the endpoint with `/runtime_config?mode=diff`.
 
-## Ingester limits
-
-Mimir implements various limits on the requests it can process, in order to prevent a single tenant from overwhelming the cluster. There are various default global limits that apply to all tenants which can be set on the command line. These limits can also be overridden on a per-tenant basis by using the `overrides` field of the runtime configuration file.
-
-The `overrides` field is a map of tenant ID (same values as passed in the `X-Scope-OrgID` header) to the various limits. An example could look like:
-
-```yaml
-overrides:
-  tenant1:
-    ingestion_rate: 10000
-```
-
-See the `instance_limits` block within the [ingester]({{< relref "./reference-configuration-parameters/#ingester" >}})
-block configuration for limits that may be placed in the overrides field of the runtime configuration file.
-
-### Runtime configuration of per-tenant limits
+## Runtime configuration of per-tenant limits
 
 The primary use case for the runtime configuration file is that it allows you to set and adjust limits for each tenant in Grafana Mimir. Doing so lets you set limits that are appropriate for each tenant based on their ingest and query needs.
 
