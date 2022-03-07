@@ -4740,7 +4740,7 @@
           "name": "reject_old_samples_max_age",
           "required": false,
           "desc": "Maximum accepted sample age before rejecting.",
-          "fieldDefaultValue": 0,
+          "fieldDefaultValue": 1209600000000000,
           "fieldFlag": "validation.reject-old-samples.max-age",
           "fieldType": "duration"
         },
@@ -4785,6 +4785,7 @@
           "name": "metric_relabel_configs",
           "required": false,
           "desc": "List of metric relabel configurations. Note that in most situations, it is more effective to use metrics relabeling directly in the Prometheus server, e.g. remote_write.write_relabel_configs.",
+          "fieldDefaultValue": null,
           "fieldType": "relabel_config..."
         },
         {
@@ -7382,7 +7383,7 @@
                       "kind": "field",
                       "name": "addresses",
                       "required": false,
-                      "desc": "Comma separated list of memcached addresses. Supported prefixes are: dns+ (looked up as an A/AAAA query), dnssrv+ (looked up as a SRV query, dnssrvnoa+ (looked up as a SRV query, with no A/AAAA lookup made after that).",
+                      "desc": "Comma separated list of memcached addresses. Supported prefixes are: dns+ (looked up as an A/AAAA query), dnssrv+ (looked up as a SRV query), dnssrvnoa+ (looked up as a SRV query, with no A/AAAA lookup made after that).",
                       "fieldDefaultValue": "",
                       "fieldFlag": "blocks-storage.bucket-store.index-cache.memcached.addresses",
                       "fieldType": "string"
@@ -7488,7 +7489,7 @@
                       "kind": "field",
                       "name": "addresses",
                       "required": false,
-                      "desc": "Comma separated list of memcached addresses. Supported prefixes are: dns+ (looked up as an A/AAAA query), dnssrv+ (looked up as a SRV query, dnssrvnoa+ (looked up as a SRV query, with no A/AAAA lookup made after that).",
+                      "desc": "Comma separated list of memcached addresses. Supported prefixes are: dns+ (looked up as an A/AAAA query), dnssrv+ (looked up as a SRV query), dnssrvnoa+ (looked up as a SRV query, with no A/AAAA lookup made after that).",
                       "fieldDefaultValue": "",
                       "fieldFlag": "blocks-storage.bucket-store.chunks-cache.memcached.addresses",
                       "fieldType": "string"
@@ -7630,7 +7631,7 @@
                       "kind": "field",
                       "name": "addresses",
                       "required": false,
-                      "desc": "Comma separated list of memcached addresses. Supported prefixes are: dns+ (looked up as an A/AAAA query), dnssrv+ (looked up as a SRV query, dnssrvnoa+ (looked up as a SRV query, with no A/AAAA lookup made after that).",
+                      "desc": "Comma separated list of memcached addresses. Supported prefixes are: dns+ (looked up as an A/AAAA query), dnssrv+ (looked up as a SRV query), dnssrvnoa+ (looked up as a SRV query, with no A/AAAA lookup made after that).",
                       "fieldDefaultValue": "",
                       "fieldFlag": "blocks-storage.bucket-store.metadata-cache.memcached.addresses",
                       "fieldType": "string"
