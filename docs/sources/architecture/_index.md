@@ -15,32 +15,39 @@ The system has multiple horizontally scalable microservices that run separately 
 
 ## Microservices
 
-Most microservices are stateless and don't require any data persisted between process restarts.
-
-Some microservices are stateful and rely on non-volatile storage to prevent data loss between process restarts.
-
-A dedicate page describes each microservice in detail.
+Most microservices are stateless and do not require any data persisted between process restarts. Some microservices are stateful and rely on non-volatile storage to prevent data loss between process restarts. For details about each microservice, see its page.
 
 {{< section >}}
-
-<!-- START from blocks-storage/_index.md -->
 
 ### The write path
 
 [//]: # "Diagram source of write path at https://docs.google.com/presentation/d/1LemaTVqa4Lf_tpql060vVoDGXrthp-Pie_SQL7qwHjc/edit#slide=id.g11658e7e4c6_0_899
 ![Architecture of Grafana Mimir's write path](../images/write-path.png)
 
-**Ingesters** receive incoming samples from the distributors. Each push request belongs to a tenant, and the ingester appends the received samples to the specific per-tenant TSDB stored on the local disk. The received samples are both kept in-memory and written to a write-ahead log (WAL) and used to recover the in-memory series in case the ingester abruptly terminates. The per-tenant TSDB is lazily created in each ingester as soon as the first samples are received for that tenant.
+Ingesters receive incoming samples from the distributors.
+Each push request belongs to a tenant, and the ingester appends the received samples to the specific per-tenant TSDB that is stored on the local disk.
+The samples that are received are both kept in-memory and written to a write-ahead log (WAL).
+If the ingester abruptly terminates, the WAL can help to recover the in-memory series.
+The per-tenant TSDB is lazily created in each ingester as soon as the first samples are received for that tenant.
 
-The in-memory samples are periodically flushed to disk - and the WAL truncated - when a new TSDB block is created, which by default occurs every 2 hours. Each newly created block is then uploaded to the long-term storage and kept in the ingester until the configured `-blocks-storage.tsdb.retention-period` expires, in order to give [queriers](./components/querier.md) and [store-gateways](./components/store-gateway.md) enough time to discover the new block on the storage and download its index-header.
+The in-memory samples are periodically flushed to disk, and the WAL is truncated, when a new TSDB block is created.
+By default, this occurs every two hours.
+Each newly created block is uploaded to long-term storage and kept in the ingester until the configured `-blocks-storage.tsdb.retention-period` expires.
+This gives [queriers]({{< relref "components/querier.md" >}}) and [store-gateways]({{< relref "components/store-gateway.md" >}}) enough time to discover the new block on the storage and download its index-header.
 
-In order to effectively use the **WAL** and being able to recover the in-memory series upon ingester abruptly termination, the WAL needs to be stored to a persistent disk which can survive in the event of an ingester failure (ie. AWS EBS volume or GCP persistent disk when running in the cloud). For example, if you're running the Mimir cluster in Kubernetes, you may use a StatefulSet with a persistent volume claim for the ingesters. The location on the filesystem where the WAL is stored is the same where local TSDB blocks (compacted from head) are stored and cannot be decoupled. See also the [timeline of block uploads](production-tips/#how-to-estimate--querierquery-store-after) and [disk space estimate](production-tips/#ingester-disk-space).
+To effectively use the WAL, and to be able to recover the in-memory series if an ingester abruptly terminates, store the WAL to a persistent disk that can survive an ingester failure.
+For example, when running in the cloud, include an AWS EBS volume or a GCP persistent disk.
+If you are running the Grafana Mimir cluster in Kubernetes, you can use a StatefulSet with a persistent volume claim for the ingesters.
+The location on the filesystem where the WAL is stored is the same location where local TSDB blocks (compacted from head) are stored. The location of the filesystem and the location of the local TSDB blocks cannot be decoupled.
 
-#### Distributor series sharding and replication
+For more information, refer to [timeline of block uploads]({{< relref "blocks-storage/production-tips/#how-to-estimate--querierquery-store-after" >}}) and [Ingester]({{< relref "components/ingester.md" >}}).
 
-Due to the replication factor N (typically 3), each time series is stored by N ingesters, and each ingester writes its own block to the long-term storage. [Compactor](./components/compactor.md) merges blocks from multiple ingesters into a single block, and removes duplicate samples. After blocks compaction, the storage utilization is significantly reduced.
+#### Series sharding and replication
 
-For more information, see [Compactor](./components/compactor.md) and [Production tips](./production-tips.md).
+By default, each time series is replicated to three ingesters, and each ingester writes its own block to the long-term storage.
+The [Compactor]({{< relref "components/compactor.md" >}}) merges blocks from multiple ingesters into a single block, and removes duplicate samples.
+Blocks compaction significantly reduces storage utilization.
+For more information, refer to [Compactor]({{< relref "components/compactor.md" >}}) and [Production tips]({{< relref "blocks-storage/production-tips.md" >}}).
 
 ### The read path
 
@@ -48,42 +55,36 @@ For more information, see [Compactor](./components/compactor.md) and [Production
 
 ![Architecture of Grafana Mimir's read path](../images/read-path.png)
 
-[Queriers](./components/querier.md) and [store-gateways](./components/store-gateway.md) periodically iterate over the storage bucket to discover blocks recently uploaded by ingesters.
+[Queriers]({{< relref "components/querier.md" >}}) and [store-gateways]({{< relref "components/store-gateway.md" >}}) periodically download the bucket index to discover blocks that are recently uploaded by ingesters and compactors.
+The bucket index is kept updated by the compactors.
 
-For each discovered block, queriers only download the block's `meta.json` file (containing some metadata including min and max timestamp of samples within the block), while store-gateways download the `meta.json` as well as the index-header, which is a small subset of the block's index used by the store-gateway to lookup series at query time.
+For each discovered block, store-gateways download the `meta.json` and the index-header, which is a small subset of the block’s index that the store-gateway uses to look up series at query time.
 
-Queriers use the blocks metadata to compute the list of blocks that need to be queried at query time and fetch matching series from the store-gateway instances holding the required blocks.
-
-For more information, please refer to the following dedicated sections:
-
-<!-- END from blocks-storage/_index.md -->
-
-<!-- START from architecture.md -->
+Queriers use the block’s metadata to compute the list of blocks that need to be queried at query time. Queriers also fetch matching series from the store-gateway instances that are holding the required blocks.
 
 ## The role of Prometheus
 
-Prometheus instances scrape samples from various targets and then push them to Mimir (using Prometheus' [remote write API](https://prometheus.io/docs/prometheus/latest/storage/#remote-storage-integrations)). That remote write API emits batched [Snappy](https://google.github.io/snappy/)-compressed [Protocol Buffer](https://developers.google.com/protocol-buffers/) messages inside the body of an HTTP `PUT` request.
+Prometheus instances scrape samples from various targets and push them to Grafana Mimir by using Prometheus’ [remote write API](https://prometheus.io/docs/prometheus/latest/storage/#remote-storage-integrations).
+The remote write API emits batched [Snappy](https://google.github.io/snappy/)-compressed [Protocol Buffer](https://developers.google.com/protocol-buffers/) messages inside the body of an HTTP `PUT` request.
 
-Mimir requires that each HTTP request bear a header specifying a tenant ID for the request. Request authentication and authorization are handled by an external reverse proxy.
+Mimir requires that each HTTP request has a header that specifies a tenant ID for the request. Request [authentication and authorization]({{< relref "../about-authentication-and-authorization.md" >}}) are handled by an external reverse proxy.
 
-Incoming samples (writes from Prometheus) are handled by the [distributor](#distributor) while incoming reads (PromQL queries) are handled by the [querier](#querier) or optionally by the [query frontend](#query-frontend).
+Incoming samples (writes from Prometheus) are handled by the [distributor]({{< relref "#distributor" >}}), and incoming reads (PromQL queries) are handled by the [query frontend]({{< relref "#query-frontend" >}}).
 
 ## Long-term storage
 
-The Grafana Mimir storage format is based on [Prometheus TSDB storage](https://prometheus.io/docs/prometheus/latest/storage/): it stores each tenant's time series into their own TSDB which persists series to an on-disk block.
-By default, each block has a two hour range.
-Each on-disk block directory contains an index file, a file containing metadata and the time series chunks.
+The Grafana Mimir storage format is based on [Prometheus TSDB storage](https://prometheus.io/docs/prometheus/latest/storage/).
+The Grafana Mimir storage format stores each tenant's time series into their own TSDB, which persists series to an on-disk block.
+By default, each block has a two-hour range.
+Each on-disk block directory contains an index file, a file containing metadata, and the time series chunks.
 
-The TSDB block files contain samples for multiple series. The series inside the blocks are then indexed by a per-block index, which indexes metric names and labels to time series in the block files.
+The TSDB block files contain samples for multiple series.
+The series inside the blocks are indexed by a per-block index, which indexes both metric names and labels to time series in the block files.
 
-Mimir requires an object store for the block files, which can be:
+Grafana Mimir requires any of the following object stores for the block files:
 
 - [Amazon S3](https://aws.amazon.com/s3)
 - [Google Cloud Storage](https://cloud.google.com/storage/)
 - [Microsoft Azure Storage](https://azure.microsoft.com/en-us/services/storage/)
 - [OpenStack Swift](https://wiki.openstack.org/wiki/Swift)
 - [Local Filesystem](https://thanos.io/storage.md/#filesystem) (single node only)
-
-For more information, see [Blocks storage]({{< relref "blocks-storage/_index.md" >}}).
-
-<!-- END from architecture.md -->
