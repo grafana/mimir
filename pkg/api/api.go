@@ -301,7 +301,7 @@ func (a *API) RegisterRulerAPI(r *ruler.API, configAPIEnabled bool) {
 		a.RegisterDeprecatedRoute("/api/v1/rules/{namespace}", http.HandlerFunc(r.DeleteNamespace), true, true, "DELETE")
 
 		// Configuration endpoints with Prometheus prefix, so we keep Prometheus-compatible EPs and config EPs under the same prefix.
-		// TODO remove the <prometheus-http-prefix>/config/v1/rules/** endpoints in Mimir 2.2.0 as agreed in https://github.com/grafana/mimir/pull/1222#issuecomment-1046759965
+		// TODO remove the <prometheus-http-prefix>/v1/rules/** endpoints in Mimir 2.2.0 as agreed in https://github.com/grafana/mimir/pull/1222#issuecomment-1046759965
 		a.RegisterDeprecatedRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/rules"), http.HandlerFunc(r.ListRules), true, true, "GET")
 		a.RegisterDeprecatedRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/rules/{namespace}"), http.HandlerFunc(r.ListRules), true, true, "GET")
 		a.RegisterDeprecatedRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/rules/{namespace}/{groupName}"), http.HandlerFunc(r.GetRuleGroup), true, true, "GET")
