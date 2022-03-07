@@ -114,30 +114,26 @@ func (i *InspectedEntry) unmarshalJSONValue(b []byte) error {
 		Raw        json.RawMessage `json:"fieldValue"`
 		RawDefault json.RawMessage `json:"fieldDefaultValue"`
 	}{}
-	// TODO dimitarvdimitrov refactor this function
 	err := json.Unmarshal(b, jsonValues)
 	if err != nil {
 		return err
 	}
 
-	if jsonValues.Raw == nil {
-		i.FieldValue = nil
-	} else {
-		jsonDecoder := json.NewDecoder(bytes.NewBuffer(jsonValues.Raw))
-		i.FieldValue, err = decodeValue(i.FieldType, jsonDecoder)
-		if err != nil {
-			return err
+	decodeIfPresent := func(b []byte) (interface{}, error) {
+		if len(b) == 0 {
+			return nil, nil
 		}
+		return decodeValue(i.FieldType, json.NewDecoder(bytes.NewBuffer(b)))
 	}
 
-	if jsonValues.RawDefault == nil {
-		i.FieldDefaultValue = nil
-	} else {
-		jsonDecoder := json.NewDecoder(bytes.NewBuffer(jsonValues.RawDefault))
-		i.FieldDefaultValue, err = decodeValue(i.FieldType, jsonDecoder)
-		if err != nil {
-			return err
-		}
+	i.FieldValue, err = decodeIfPresent(jsonValues.Raw)
+	if err != nil {
+		return err
+	}
+
+	i.FieldDefaultValue, err = decodeIfPresent(jsonValues.RawDefault)
+	if err != nil {
+		return err
 	}
 	return nil
 }
@@ -372,43 +368,9 @@ func (i InspectedEntry) SetDefaultValue(path string, val interface{}) error {
 	return nil
 }
 
-var (
-	// ZeroValueInspector inspects passed configuration structs and returns nested InspectedEntries
-	// where the InspectedEntry.FieldValue is the go zero-value for the type of the field.
-	ZeroValueInspector = Inspector{
-		getValueFn: func(entry *parse.ConfigEntry) interface{} {
-			return reflect.Zero(parse.ReflectType(entry.FieldType)).Interface()
-		},
-	}
-
-	// DefaultValueInspector inspects passed configuration structs and returns nested InspectedEntries
-	// where the InspectedEntry.FieldValue is the default value for the that particular field. This is determined
-	// by the default value that the registered CLI flags take.
-	DefaultValueInspector = Inspector{
-		getValueFn: getDefaultValue,
-	}
-)
-
-func getDefaultValue(entry *parse.ConfigEntry) interface{} {
-	yamlNodeKind := yaml.ScalarNode
-	if strings.HasPrefix(entry.FieldType, "map") {
-		yamlNodeKind = yaml.MappingNode
-	} else if strings.HasPrefix(entry.FieldType, "list") {
-		yamlNodeKind = yaml.SequenceNode
-	}
-	value, _ := decodeValue(entry.FieldType, &yaml.Node{Kind: yamlNodeKind, Value: entry.FieldDefault})
-	return value
-}
-
-// Inspector is the type that takes configuration structs and produces inspection profiles or descriptions.
-// Please use ZeroValueInspector or DefaultValueInspector. A zero-valued Inspector{} struct will panic.
-type Inspector struct {
-	getValueFn func(entry *parse.ConfigEntry) interface{}
-}
-
 // Describe returns a JSON-serialized result of InspectConfig
-func (i Inspector) Describe(val flagext.RegistererWithLogger) ([]byte, error) {
-	parsedCfg, err := i.InspectConfig(val)
+func Describe(val flagext.RegistererWithLogger) ([]byte, error) {
+	parsedCfg, err := InspectConfig(val)
 	if err != nil {
 		return nil, err
 	}
@@ -417,13 +379,13 @@ func (i Inspector) Describe(val flagext.RegistererWithLogger) ([]byte, error) {
 }
 
 // InspectConfig returns an InspectedEntry that represents the root block of the configuration.
-func (i Inspector) InspectConfig(cfg flagext.RegistererWithLogger) (*InspectedEntry, error) {
-	return i.InspectConfigWithFlags(cfg, parse.Flags(cfg, log.NewNopLogger()))
+func InspectConfig(cfg flagext.RegistererWithLogger) (*InspectedEntry, error) {
+	return InspectConfigWithFlags(cfg, parse.Flags(cfg, log.NewNopLogger()))
 }
 
 // InspectConfigWithFlags does the same as InspectConfig while allowing to provide custom CLI flags. This is
 // useful when the configuration struct does not implement flagext.RegistererWithLogger.
-func (i Inspector) InspectConfigWithFlags(cfg interface{}, flags map[uintptr]*flag.Flag) (*InspectedEntry, error) {
+func InspectConfigWithFlags(cfg interface{}, flags map[uintptr]*flag.Flag) (*InspectedEntry, error) {
 	blocks, err := parse.Config(nil, cfg, flags)
 	if err != nil {
 		return nil, errors.Wrap(err, "couldn't generate parsed config")
@@ -431,18 +393,18 @@ func (i Inspector) InspectConfigWithFlags(cfg interface{}, flags map[uintptr]*fl
 
 	// we use blocks[0] because parse.Config returns the root block as the first entry and every direct child of
 	// the root block as the rest of the entries in blocks
-	return i.convertBlockToEntry(blocks[0]), nil
+	return convertBlockToEntry(blocks[0]), nil
 }
 
-func (i Inspector) convertEntriesToEntries(blocks []*parse.ConfigEntry) []*InspectedEntry {
+func convertEntriesToEntries(blocks []*parse.ConfigEntry) []*InspectedEntry {
 	entries := make([]*InspectedEntry, len(blocks))
 	for idx := range entries {
-		entries[idx] = i.convertEntryToEntry(blocks[idx])
+		entries[idx] = convertEntryToEntry(blocks[idx])
 	}
 	return entries
 }
 
-func (i Inspector) convertEntryToEntry(entry *parse.ConfigEntry) *InspectedEntry {
+func convertEntryToEntry(entry *parse.ConfigEntry) *InspectedEntry {
 	e := &InspectedEntry{
 		Kind:     entry.Kind,
 		Name:     entry.Name,
@@ -451,7 +413,7 @@ func (i Inspector) convertEntryToEntry(entry *parse.ConfigEntry) *InspectedEntry
 	}
 
 	if e.Kind == parse.KindBlock {
-		e.BlockEntries = i.convertEntriesToEntries(entry.Block.Entries)
+		e.BlockEntries = convertEntriesToEntries(entry.Block.Entries)
 		e.BlockFlagsPrefix = entry.Block.FlagsPrefix
 		e.BlockFlagsPrefixes = entry.Block.FlagsPrefixes
 	} else {
@@ -464,11 +426,22 @@ func (i Inspector) convertEntryToEntry(entry *parse.ConfigEntry) *InspectedEntry
 	return e
 }
 
-func (i Inspector) convertBlockToEntry(block *parse.ConfigBlock) *InspectedEntry {
+func getDefaultValue(entry *parse.ConfigEntry) interface{} {
+	yamlNodeKind := yaml.ScalarNode
+	if strings.HasPrefix(entry.FieldType, "map") {
+		yamlNodeKind = yaml.MappingNode
+	} else if strings.HasPrefix(entry.FieldType, "list") {
+		yamlNodeKind = yaml.SequenceNode
+	}
+	value, _ := decodeValue(entry.FieldType, &yaml.Node{Kind: yamlNodeKind, Value: entry.FieldDefault})
+	return value
+}
+
+func convertBlockToEntry(block *parse.ConfigBlock) *InspectedEntry {
 	return &InspectedEntry{
 		Kind:               parse.KindBlock,
 		Name:               block.Name,
-		BlockEntries:       i.convertEntriesToEntries(block.Entries),
+		BlockEntries:       convertEntriesToEntries(block.Entries),
 		BlockFlagsPrefix:   block.FlagsPrefix,
 		BlockFlagsPrefixes: block.FlagsPrefixes,
 	}
@@ -546,7 +519,7 @@ var mimirConfigFlagsOnly []byte
 const notInYaml = "not-in-yaml"
 
 func DefaultMimirConfig() *InspectedEntry {
-	cfg, err := DefaultValueInspector.InspectConfig(&mimir.Config{})
+	cfg, err := InspectConfig(&mimir.Config{})
 	if err != nil {
 		panic(err)
 	}
