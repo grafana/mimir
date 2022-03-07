@@ -46,7 +46,7 @@ When an ingester restarts, the samples stored in the restarting ingester are not
 
 By default, ingesters run with a replication factor equal to `3`.
 Ingesters running with the replication factor of `3` require a quorum of two instances to successfully query any series samples.
-Given series are sharded across all ingesters. Grafana Mimir tolerates up to one unavailable ingester.
+Because series are sharded across all ingesters, Grafana Mimir tolerates up to one unavailable ingester.
 
 To ensure no query fails during a rolling update, roll out changes to one ingester at a time.
 
