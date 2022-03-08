@@ -55,7 +55,7 @@ func TestConvert(t *testing.T) {
 		},
 		{
 			name:         "config flags have precedence",
-			inFile:       "testdata/noop-notarget-old.yaml",
+			inFile:       "testdata/noop-old.yaml",
 			inFlagsFile:  "testdata/flags-precedence-old.flags.txt",
 			outFlagsFile: "testdata/flags-precedence-new.flags.txt",
 		},
