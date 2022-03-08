@@ -1,8 +1,6 @@
 ---
 title: Contributing
-linkTitle: "Contributing"
 weight: 10
-menu:
 ---
 
 Welcome! We're excited that you're interested in contributing. Below are some basic guidelines.
