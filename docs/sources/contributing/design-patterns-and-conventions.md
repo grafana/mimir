@@ -1,15 +1,16 @@
 ---
-title: "Design patterns and Code conventions"
-linkTitle: "Design patterns and Code conventions"
-weight: 2
-slug: design-patterns-and-code-conventions
+title: "Design patterns and code conventions"
+description: ""
+weight: 10
 ---
 
-Cortex adopts some design patterns and code conventions that we ask you to follow when contributing to the project. These conventions have been adopted based on the experience gained over the time and aim to enforce good coding practices and keep a consistent UX (ie. config).
+# Design patterns and code conventions
+
+Grafana Mimir adopts some design patterns and code conventions that we ask you to follow when contributing to the project. These conventions have been adopted based on the experience gained over the time and aim to enforce good coding practices and keep a consistent UX (ie. config).
 
 ## Go coding style
 
-Cortex follows the [Go Code Review Comments](https://github.com/golang/go/wiki/CodeReviewComments) styleguide and the [Formatting and style](https://peter.bourgon.org/go-in-production/#formatting-and-style) section of Peter Bourgon's [Go: Best Practices for Production Environments](https://peter.bourgon.org/go-in-production/).
+Grafana Mimir follows the [Go Code Review Comments](https://github.com/golang/go/wiki/CodeReviewComments) styleguide and the [Formatting and style](https://peter.bourgon.org/go-in-production/#formatting-and-style) section of Peter Bourgon's [Go: Best Practices for Production Environments](https://peter.bourgon.org/go-in-production/).
 
 ## No global variables
 
@@ -21,7 +22,7 @@ When registering a metric:
 
 - Do not use a global variable for the metric
 - Create and register the metric with `promauto.With(reg)`
-- In any internal Cortex component, do not register the metric to the default prometheus registerer, but pick the registerer in input (ie. `NewComponent(reg prometheus.Registerer)`)
+- In any internal Grafana Mimir component, do not register the metric to the default prometheus registerer, but take the registerer in input (ie. `NewComponent(reg prometheus.Registerer)`)
 
 Testing metrics:
 
