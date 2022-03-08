@@ -151,7 +151,7 @@ For more information about disk requirements, refer to [Compactor disk utilizati
 
 ### (Optional) Alertmanager
 
-The [alertmanager]({{< relref "../architecture/components/alertmanager.md" >}}) component resources’ utilization is determined by the number of alerts firing at the same time.
+The [Alertmanager]({{< relref "../architecture/components/alertmanager.md" >}}) component resources’ utilization is determined by the number of alerts firing at the same time.
 
 Estimated required CPU and memory:
 

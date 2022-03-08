@@ -28,13 +28,13 @@ The following stateful components have limitations when scaling down:
 - Ingesters
 - Store-gateways
 
-### Scaling down alertmanagers
+### Scaling down Alertmanagers
 
 Scaling down [Alertmanagers]({{< relref "../architecture/components/alertmanager.md" >}}) can result in downtime.
 
 Consider the following guidelines when you scale down Alertmanagers:
 
-- Scale down no more than two alertmanagers at the same time.
+- Scale down no more than two Alertmanagers at the same time.
 - Ensure at least `-alertmanager.sharding-ring.replication-factor` Alertmanager instances are running (three when running Grafana Mimir with the default configuration).
 
 > **Note:** If you enabled [zone-aware replication]({{< relref "configuring-zone-aware-replication.md" >}}) for Alertmanagers, you can, in parallel, scale down any number of Alertmanager instances within one zone at a time.
