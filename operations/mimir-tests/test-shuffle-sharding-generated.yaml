@@ -1337,6 +1337,7 @@ spec:
         - -distributor.ingestion-tenant-shard-size=3
         - -ingester.max-global-series-per-metric=20000
         - -ingester.max-global-series-per-user=150000
+        - -ingester.readiness-check-ring-health=false
         - -ingester.ring.consul.hostname=consul.default.svc.cluster.local:8500
         - -ingester.ring.heartbeat-period=15s
         - -ingester.ring.heartbeat-timeout=10m

@@ -6,59 +6,154 @@ weight: 50
 
 # Plan capacity
 
-You will want to estimate how many nodes are required, how many of
-each component to run, and how much storage space will be required.
-In practice, these will vary greatly depending on the metrics being
-sent to Cortex.
+The information that follows is an overview about the CPU, memory, and disk space that Grafana Mimir requires at scale.
+You can get a rough idea about the required resources, rather than a prescriptive recommendation about the exact amount of CPU, memory, and disk space.
 
-Some key parameters are:
+The resources utilization is estimated based on a general production workload, and the assumption
+is that Grafana Mimir is running with one tenant and the default configuration.
+Your real resources’ utilization likely differs, because it is based on actual data, configuration settings, and traffic patterns.
+For example, the real resources’ utilization might differ based on the actual number
+or length of series' labels, or the percentage of queries that reach the store-gateway.
 
-1.  The number of active series. If you have Prometheus already you
-    can query `prometheus_tsdb_head_series` to see this number.
-2.  Sampling rate, e.g. a new sample for each series every minute
-    (the default Prometheus [scrape_interval](https://prometheus.io/docs/prometheus/latest/configuration/configuration/)).
-    Multiply this by the number of active series to get the
-    total rate at which samples will arrive at Cortex.
-3.  The rate at which series are added and removed. This can be very
-    high if you monitor objects that come and go - for example if you run
-    thousands of batch jobs lasting a minute or so and capture metrics
-    with a unique ID for each one. [Read how to analyse this on
-    Prometheus](https://www.robustperception.io/using-tsdb-analyze-to-investigate-churn-and-cardinality).
-4.  How compressible the time-series data are. If a metric stays at
-    the same value constantly, then Cortex can compress it very well, so
-    12 hours of data sampled every 15 seconds would be around 2KB. On
-    the other hand if the value jumps around a lot it might take 10KB.
-    There are not currently any tools available to analyse this.
-5.  How long you want to retain data for, e.g. 1 month or 2 years.
+The resources’ utilization are the minimum requirements.
+To gracefully handle traffic peaks, run Grafana Mimir with 50% extra capacity for memory and disk.
 
-Other parameters which can become important if you have particularly
-high values:
+## Monolithic mode
 
-6.  Number of different series under one metric name.
-7.  Number of labels per series.
-8.  Rate and complexity of queries.
+When Grafana Mimir is running in monolithic mode, you can estimate the required resources by summing up all of the requirements for each Grafana Mimir component.
+For more information about per component requirements, refer to [Microservices mode](#microservices-mode).
 
-Now, some rules of thumb:
+## Microservices mode
 
-1.  Each million series in an ingester takes 15GB of RAM. Total number
-    of series in ingesters is number of active series times the
-    replication factor. This is with the default of 12-hour chunks - RAM
-    required will reduce if you set `-ingester.max-chunk-age` lower
-    (trading off more back-end database IO).
-    There are some additional considerations for planning for ingester memory usage.
-    1. Memory increases during write ahead log (WAL) replay, [See Prometheus issue #6934](https://github.com/prometheus/prometheus/issues/6934#issuecomment-726039115). If you do not have enough memory for WAL replay, the ingester will not be able to restart successfully without intervention.
-    2. Memory temporarily increases during resharding since timeseries are temporarily on both the new and old ingesters. This means you should scale up the number of ingesters before memory utilization is too high, otherwise you will not have the headroom to account for the temporary increase.
-2.  Each million series (including churn) consumes 15GB of chunk
-    storage and 4GB of index, per day (so multiply by the retention
-    period).
-3.  The distributors CPU utilization depends on the specific Cortex cluster
-    setup, while they don't need much RAM. Typically, distributors are capable
-    to process between 20,000 and 100,000 samples/sec with 1 CPU core. It's also
-    highly recommended to configure Prometheus `max_samples_per_send` to 1,000
-    samples, in order to reduce the distributors CPU utilization given the same
-    total samples/sec throughput.
+When Grafana Mimir is running in microservices mode, you can estimate the required resources of each component individually.
 
-If you turn on compression between distributors and ingesters (for
-example to save on inter-zone bandwidth charges at AWS/GCP) they will use
-significantly more CPU (approx 100% more for distributor and 50% more
-for ingester).
+### Distributor
+
+The [distributor]({{< relref "../architecture/components/distributor.md">}}) component resources utilization is determined by the number of received samples per second.
+
+Estimated required CPU and memory:
+
+- CPU: 1 core every 25,000 samples per second.
+- Memory: 1GB every 25,000 samples per second.
+
+**How to estimate the rate of samples per second:**
+
+1. Query the number of active series across all of your Prometheus servers:
+   ```
+   sum(prometheus_tsdb_head_series)
+   ```
+1. Check the [scrape_interval](https://prometheus.io/docs/prometheus/latest/configuration/configuration/) that you configured in Prometheus.
+1. Estimate the rate of samples per second by using the following formula:
+   ```
+   estimated rate = (<active series> * (60 / <scrape interval in seconds>)) / 60
+   ```
+
+### Ingester
+
+The [ingester]({{< relref "../architecture/components/ingester.md">}}) component resources’ utilization is determined by the number of series that are in memory.
+
+Estimated required CPU, memory, and disk space:
+
+- CPU: 1 core for every 300,000 series in memory
+- Memory: 2.5GB for every 300,000 series in memory
+- Disk space: 5GB for every 300,000 series in memory
+
+[//]: # "We estimated a scrape interval of 15s."
+
+**How to estimate the number of series in memory:**
+
+1. Query the number of active series across all your Prometheus servers:
+   ```
+   sum(prometheus_tsdb_head_series)
+   ```
+1. Check the configured `-ingester.ring.replication-factor` (defaults to `3`)
+1. Estimate the total number of series in memory across all ingesters using the following formula:
+   ```
+   total number of in-memory series = <active series> * <replication factor>
+   ```
+
+### Query-frontend
+
+The [query-frontend]({{< relref "../architecture/components/query-frontend/_index.md">}}) component resources utilization is determined by the number of queries per second.
+
+Estimated required CPU and memory:
+
+- CPU: 1 core for every 250 queries per second
+- Memory: 1GB for every 250 queries per second
+
+### (Optional) Query-scheduler
+
+The [query-scheduler]({{< relref "../architecture/components/query-scheduler.md">}}) component resources’ utilization is determined by the number of queries per second.
+
+Estimated required CPU and memory:
+
+- CPU: 1 core for every 500 queries per second
+- Memory: 100MB for every 500 queries per second
+
+### Querier
+
+The [querier]({{< relref "../architecture/components/querier.md">}}) component resources utilization is determined by the number of queries per second.
+
+Estimated required CPU and memory:
+
+- CPU: 1 core for every 10 queries per second
+- Memory: 1GB for every 10 queries per second
+
+> **Note:** The estimate is 1 CPU core and 1GB per query, with an average query latency of 100ms.
+
+### Store-gateway
+
+The [store-gateway]({{< relref "../architecture/components/store-gateway.md">}}) component resources’ utilization is determined by the number of queries per second and active series before ingesters replication.
+
+Estimated required CPU, memory, and disk space:
+
+- CPU: 1 core every 10 queries per second
+- Memory: 1GB every 10 queries per second
+- Disk: 13GB every 1 million active series
+
+> **Note:** The CPU and memory requirements are computed by estimating 1 CPU core and 1GB per query, an average query latency of 1s when reaching the store-gateway, and only 10% of queries reaching the store-gateway.
+
+> **Note**: The disk requirement has been estimated assuming 2 bytes per sample for compacted blocks (both index and chunks), the index-header being 0.10% of a block size, a scrape interval of 15 seconds, a retention of 1 year and store-gateways replication factor configured to 3. The resulting estimated store-gateway disk space for one series is 13KB.
+
+**How to estimate the number of active series before ingesters replication:**
+
+1. Query the number of active series across all your Prometheus servers:
+   ```
+   sum(prometheus_tsdb_head_series)
+   ```
+
+### (Optional) Ruler
+
+The [ruler]({{< relref "../architecture/components/ruler.md">}}) component resources utilization is determined by the number of rules evaluated per second.
+The rules evaluation is computationally equal to queries execution, so the querier resources recommendations apply to ruler too.
+
+### Compactor
+
+The [compactor]({{< relref "../architecture/components/compactor.md">}}) component resources utilization is determined by the number of active series.
+
+The compactor can scale horizontally both in Grafana Mimir clusters with one tenant and multiple tenants.
+We recommend to run at least one compactor instance every 20 million active series ingested in total in the Grafana Mimir cluster, calculated before ingesters replication.
+
+Assuming you run one compactor instance every 20 million active series, the estimated required CPU, memory and disk for each compactor instance are:
+
+- CPU: 1 core
+- Memory: 4GB
+- Disk: 300GB
+
+For more information about disk requirements, refer to [Compactor disk utilization]({{< relref "../architecture/components/compactor.md#compactor-disk-utilization">}}).
+
+**How to estimate the number of active series before ingesters replication:**
+
+1. Query the number of active series across all your Prometheus servers:
+   ```
+   sum(prometheus_tsdb_head_series)
+   ```
+
+### (Optional) Alertmanager
+
+The [alertmanager]({{< relref "../architecture/components/alertmanager.md">}}) component resources’ utilization is determined by the number of alerts firing at the same time.
+
+Estimated required CPU and memory:
+
+- CPU: 1 CPU core for every 100 firing alerts
+- Memory: 1GB for every 100 firing alerts

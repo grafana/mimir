@@ -1,0 +1,6 @@
+query_range:
+  results_cache:
+    cache:
+      memcached_client:
+        host: my-hostname
+        service: gossip

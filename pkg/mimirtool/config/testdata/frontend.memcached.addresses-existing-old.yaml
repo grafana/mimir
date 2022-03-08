@@ -1,0 +1,7 @@
+query_range:
+  results_cache:
+    cache:
+      memcached_client:
+        host: my-hostname
+        service: gossip
+        addresses: 'dns+_gossip._tcp.something'

@@ -58,12 +58,12 @@ MIXIN_OUT_PATH := operations/mimir-mixin-compiled
 JSONNET_MANIFESTS_PATH := operations/mimir
 
 # Doc templates in use
-DOC_TEMPLATES := docs/sources/configuration/reference-configuration-parameters.template
+DOC_TEMPLATES := docs/sources/configuring/reference-configuration-parameters.template
 
 # Documents to run through embedding
-DOC_EMBED := docs/sources/configuration/using-the-query-frontend-with-prometheus.md \
+DOC_EMBED := docs/sources/architecture/components/query-frontend/using-the-query-frontend-with-prometheus.md \
 	docs/sources/operating-grafana-mimir/mirror-requests-to-a-second-cluster.md \
-	docs/sources/architecture/overrides-exporter.md \
+	docs/sources/architecture/components/overrides-exporter.md \
 	docs/sources/getting-started/_index.md \
 	operations/mimir/README.md
 
@@ -183,7 +183,7 @@ mimir-build-image/$(UPTODATE): mimir-build-image/*
 # All the boiler plate for building golang follows:
 SUDO := $(shell docker info >/dev/null 2>&1 || echo "sudo -E")
 BUILD_IN_CONTAINER := true
-LATEST_BUILD_IMAGE_TAG ?= chore-publish-images-to-dockerhub-771364985
+LATEST_BUILD_IMAGE_TAG ?= update-go-1.17.8-8a996bb57
 
 # TTY is parameterized to allow Google Cloud Builder to run builds,
 # as it currently disallows TTY devices. This value needs to be overridden
@@ -206,7 +206,7 @@ GOVOLUMES=	-v $(shell pwd)/.cache:/go/cache:delegated,z \
 # Mount local ssh credentials to be able to clone private repos when doing `mod-check`
 SSHVOLUME=  -v ~/.ssh/:/root/.ssh:delegated,z
 
-exes $(EXES) protos $(PROTO_GOS) lint test test-with-race cover shell mod-check check-protos doc format: mimir-build-image/$(UPTODATE)
+exes $(EXES) protos $(PROTO_GOS) lint test test-with-race cover shell mod-check check-protos doc format dist: mimir-build-image/$(UPTODATE)
 	@mkdir -p $(shell pwd)/.pkg
 	@mkdir -p $(shell pwd)/.cache
 	@echo
@@ -334,6 +334,36 @@ license:
 
 check-license: license
 	@git diff --exit-code || (echo "Please add the license header running 'make BUILD_IN_CONTAINER=false license'" && false)
+
+dist: ## Generates binaries for a Mimir release.
+	rm -fr ./dist
+	mkdir -p ./dist
+	# Build binaries for various architectures and operating systems. Only
+	# mimirtool supports Windows for now.
+	for os in linux darwin windows; do \
+		for arch in amd64 arm64; do \
+			suffix="" ; \
+			if [ "$$os" = "windows" ]; then \
+				suffix=".exe" ; \
+			fi; \
+			echo "Building mimirtool for $$os/$$arch"; \
+			GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/mimirtool-$$os-$$arch$$suffix ./cmd/mimirtool; \
+			sha256sum ./dist/mimirtool-$$os-$$arch$$suffix | cut -d ' ' -f 1 > ./dist/mimirtool-$$os-$$arch$$suffix-sha-256; \
+			if [ "$$os" = "windows" ]; then \
+				continue; \
+			fi; \
+			echo "Building Mimir for $$os/$$arch"; \
+			GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/mimir-$$os-$$arch$$suffix ./cmd/mimir; \
+			sha256sum ./dist/mimir-$$os-$$arch$$suffix | cut -d ' ' -f 1 > ./dist/mimir-$$os-$$arch$$suffix-sha-256; \
+			echo "Building query-tee for $$os/$$arch"; \
+			GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/query-tee-$$os-$$arch$$suffix ./cmd/query-tee; \
+			sha256sum ./dist/query-tee-$$os-$$arch$$suffix | cut -d ' ' -f 1 > ./dist/query-tee-$$os-$$arch$$suffix-sha-256; \
+			echo "Building metaconvert for $$os/$$arch"; \
+			GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/metaconvert-$$os-$$arch$$suffix ./cmd/metaconvert; \
+			sha256sum ./dist/metaconvert-$$os-$$arch$$suffix | cut -d ' ' -f 1 > ./dist/metaconvert-$$os-$$arch$$suffix-sha-256; \
+			done; \
+		done; \
+		touch $@
 
 endif
 
@@ -465,36 +495,6 @@ check-jsonnet-tests: build-jsonnet-tests
 
 check-tsdb-blocks-storage-s3-docker-compose-yaml:
 	cd development/tsdb-blocks-storage-s3 && make check
-
-dist: ## Generates binaries for a Mimir release.
-	rm -fr ./dist
-	mkdir -p ./dist
-	# Build binaries for various architectures and operating systems. Only
-	# mimirtool supports Windows for now.
-	for os in linux darwin windows; do \
-		for arch in amd64 arm64; do \
-			suffix="" ; \
-			if [ "$$os" = "windows" ]; then \
-				suffix=".exe" ; \
-			fi; \
-			echo "Building mimirtool for $$os/$$arch"; \
-			GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/mimirtool-$$os-$$arch$$suffix ./cmd/mimirtool; \
-			sha256sum ./dist/mimirtool-$$os-$$arch$$suffix | cut -d ' ' -f 1 > ./dist/mimirtool-$$os-$$arch$$suffix-sha-256; \
-			if [ "$$os" = "windows" ]; then \
-				continue; \
-			fi; \
-			echo "Building Mimir for $$os/$$arch"; \
-			GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/mimir-$$os-$$arch$$suffix ./cmd/mimir; \
-			sha256sum ./dist/mimir-$$os-$$arch$$suffix | cut -d ' ' -f 1 > ./dist/mimir-$$os-$$arch$$suffix-sha-256; \
-			echo "Building query-tee for $$os/$$arch"; \
-			GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/query-tee-$$os-$$arch$$suffix ./cmd/query-tee; \
-			sha256sum ./dist/query-tee-$$os-$$arch$$suffix | cut -d ' ' -f 1 > ./dist/query-tee-$$os-$$arch$$suffix-sha-256; \
-			echo "Building metaconvert for $$os/$$arch"; \
-			GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/metaconvert-$$os-$$arch$$suffix ./cmd/metaconvert; \
-			sha256sum ./dist/metaconvert-$$os-$$arch$$suffix | cut -d ' ' -f 1 > ./dist/metaconvert-$$os-$$arch$$suffix-sha-256; \
-			done; \
-		done; \
-		touch $@
 
 integration-tests: cmd/mimir/$(UPTODATE)
 	go test -tags=requires_docker ./integration/...

@@ -10,7 +10,7 @@ weight: 10000
 
 Blocks storage is the Mimir storage engine based on the Prometheus TSDB.
 Grafana Mimir stores blocks in object stores such as AWS S3, Google Cloud Storage (GCS), Azure blob storage, or OpenStack Object Storage (Swift).
-For the full list of supported backends and more information, refer to [Blocks storage]({{<relref "./operating-grafana-mimir/blocks-storage/_index.md" >}})
+For the full list of supported backends and more information, refer to [Blocks storage]({{<relref "./architecture/blocks-storage/_index.md" >}})
 
 ## Chunk
 
@@ -29,14 +29,14 @@ Grafana Mimir comprises several components.
 Each component provides a specific function to the system.
 For component specific documentation, refer to one of the following topics:
 
-- [Compactor]({{<relref "./architecture/compactor.md" >}})
-- [Distributor]({{<relref "./architecture/distributor.md" >}})
-- [Ingester]({{<relref "./architecture/ingester.md" >}})
-- [Query-frontend]({{<relref "./architecture/query-frontend.md" >}})
-- [Query-scheduler]({{<relref "./architecture/query-scheduler.md" >}})
-- [Store-gateway]({{<relref "./architecture/store-gateway.md" >}})
-- [Optional: Alertmanager]({{<relref "./architecture/alertmanager.md" >}})
-- [Optional: Ruler]({{<relref "./architecture/ruler.md" >}})
+- [Compactor]({{<relref "./architecture/components/compactor.md" >}})
+- [Distributor]({{<relref "./architecture/components/distributor.md" >}})
+- [Ingester]({{<relref "./architecture/components/ingester.md" >}})
+- [Query-frontend]({{<relref "./architecture/components/query-frontend/_index.md" >}})
+- [Query-scheduler]({{<relref "./architecture/components/query-scheduler.md" >}})
+- [Store-gateway]({{<relref "./architecture/components/store-gateway.md" >}})
+- [Optional: Alertmanager]({{<relref "./architecture/components/alertmanager.md" >}})
+- [Optional: Ruler]({{<relref "./architecture/components/ruler.md" >}})
 
 ## Flushing
 
@@ -56,12 +56,12 @@ To configure HA tracking, refer to [Configure HA deduplication]({{<relref "./ope
 
 The hash ring is a distributed data structure used by Grafana Mimir for sharding, replication, and service discovery.
 Components use a [key-value store]({{<relref "#key-value-store" >}}) or [gossip]({{<relref "#gossip" >}}) to share the hash ring data structure.
-For more information, refer to the [About the hash ring]({{<relref "./architecture/about-the-hash-ring.md" >}}).
+For more information, refer to the [Hash ring]({{<relref "./architecture/hash-ring.md" >}}).
 
 ## Key-value store
 
 A key-value store is a database that associates keys with values.
-To understand how Grafana Mimir uses key-value stores, refer to [About the key-value store]({{<relref "./architecture/about-the-key-value-store.md" >}}).
+To understand how Grafana Mimir uses key-value stores, refer to [Key-value store]({{<relref "./architecture/key-value-store.md" >}}).
 
 ## Memberlist
 
@@ -107,7 +107,7 @@ node_cpu_seconds_total{instance="10.0.0.2",mode="user"}
 
 A tenant is the owner of a set of series written to and queried from Grafana Mimir.
 Grafana Mimir isolates series and alerts belonging to different tenants.
-To understand how Grafana Mimir authenticates tenants, refer to [About authentication and authorization]({{<relref "./about-authentication-and-authorization.md" >}}).
+To understand how Grafana Mimir authenticates tenants, refer to [Authentication and authorization]({{<relref "./securing/authentication-and-authorization.md" >}}).
 
 ## Time series
 
