@@ -8,7 +8,6 @@ weight: 10
 
 The compactor increases the efficiency of memory usage on disk and in long term storage by combining blocks.
 
-
 The compactor is the component responsible for:
 
 - Compacting multiple blocks of a given tenant into a single, optimized larger block. This deduplicates blocks and reduces the size of the index, resulting in reduced storage costs. Querying fewer blocks is faster, so it also increases query speed.
@@ -39,7 +38,6 @@ A sophisticated split-and-merge compaction algorithm can be tuned for clusters w
   The setting `-compactor.compaction-concurrency` configures the max number of concurrent compactions running in a single compactor instance. Each compaction uses one CPU core.
 - **Horizontal scaling**<br />
   When you run multiple compactor instances, compaction jobs will be sharded across those instances. CLI flag `-compactor.compactor-tenant-shard-size` or its respective YAML configuration option controls the spread of compaction jobs across the instances. If set to 0, compaction jobs will be spread across all available instances.
-  
 
 By design, the split-and-merge algorithm overcomes time series database (TSDB) index limitations, and it avoids situations in which compacted blocks grow indefinitely for a very large tenant at any compaction stage.
 
