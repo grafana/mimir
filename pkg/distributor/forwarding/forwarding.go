@@ -56,6 +56,7 @@ type pools struct {
 }
 
 type forwarder struct {
+	cfg    Config
 	pools  pools
 	client http.Client
 
@@ -64,8 +65,14 @@ type forwarder struct {
 	samplesTotal            *prometheus.CounterVec
 }
 
-func NewForwarder(reg prometheus.Registerer) Forwarder {
+// NewForwarder returns a new forwarder, if forwarding is disabled it returns nil.
+func NewForwarder(reg prometheus.Registerer, cfg Config) Forwarder {
+	if !cfg.Enabled {
+		return nil
+	}
+
 	return &forwarder{
+		cfg: cfg,
 		pools: pools{
 			timeseries: sync.Pool{New: func() interface{} { return &[]mimirpb.PreallocTimeseries{} }},
 			protobuf:   sync.Pool{New: func() interface{} { return &[]byte{} }},
@@ -93,11 +100,14 @@ func NewForwarder(reg prometheus.Registerer) Forwarder {
 
 func (r *forwarder) NewRequest(ctx context.Context, tenant string, rules validation.ForwardingRules) Request {
 	return &request{
-		ctx:          ctx,
-		client:       &r.client, // http client should be re-used so open connections get re-used.
-		rules:        rules,
+		ctx:    ctx,
+		client: &r.client, // http client should be re-used so open connections get re-used.
+		pools:  &r.pools,
+
 		tsByEndpoint: make(map[string]*[]mimirpb.PreallocTimeseries),
-		pools:        &r.pools,
+
+		rules:   rules,
+		timeout: r.cfg.RequestTimeout,
 
 		requests: r.requestsTotal.WithLabelValues(tenant),
 		samples:  r.samplesTotal.WithLabelValues(tenant),
@@ -117,7 +127,8 @@ type request struct {
 	// - which metrics get forwarded
 	// - where the metrics get forwarded to
 	// - whether the forwarded metrics should also be ingested (sent to ingesters)
-	rules validation.ForwardingRules
+	rules   validation.ForwardingRules
+	timeout time.Duration
 
 	requests prometheus.Counter
 	samples  prometheus.Counter
@@ -231,7 +242,10 @@ func (r *request) sendToEndpoint(ctx context.Context, endpoint string, ts []mimi
 	snappyBuf = snappy.Encode(snappyBuf[:cap(snappyBuf)], protoBufBytes)
 	defer r.pools.snappy.Put(&snappyBuf)
 
-	httpReq, err := http.NewRequest("POST", endpoint, bytes.NewReader(snappyBuf))
+	ctx, cancel := context.WithTimeout(ctx, r.timeout)
+	defer cancel()
+
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", endpoint, bytes.NewReader(snappyBuf))
 	if err != nil {
 		// Errors from NewRequest are from unparsable URLs being configured.
 		// Usually configuration errors should lead to recoverable errors (5xx), but this is an exception because we
@@ -242,11 +256,9 @@ func (r *request) sendToEndpoint(ctx context.Context, endpoint string, ts []mimi
 
 	httpReq.Header.Add("Content-Encoding", "snappy")
 	httpReq.Header.Set("Content-Type", "application/x-protobuf")
-	ctx, cancel := context.WithTimeout(ctx, time.Second)
-	defer cancel()
 
 	beforeTs := time.Now()
-	httpResp, err := r.client.Do(httpReq.WithContext(ctx))
+	httpResp, err := r.client.Do(httpReq)
 	r.latency.Observe(time.Since(beforeTs).Seconds())
 	if err != nil {
 		// Errors from Client.Do are from (for example) network errors, so are recoverable.

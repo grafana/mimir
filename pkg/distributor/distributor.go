@@ -148,8 +148,8 @@ type Config struct {
 	// Limits for distributor
 	InstanceLimits InstanceLimits `yaml:"instance_limits"`
 
-	// Enables feature to forward certain metrics in remote_write requests to alternative API endpoints.
-	Forwarding bool `yaml:"forwarding" category:"experimental"`
+	// Configuration for forwarding of metrics to alternative ingestion endpoint.
+	Forwarding forwarding.Config
 }
 
 type InstanceLimits struct {
@@ -162,11 +162,11 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.PoolConfig.RegisterFlags(f)
 	cfg.HATrackerConfig.RegisterFlags(f)
 	cfg.DistributorRing.RegisterFlags(f, logger)
+	cfg.Forwarding.RegisterFlags(f)
 
 	f.IntVar(&cfg.MaxRecvMsgSize, "distributor.max-recv-msg-size", 100<<20, "remote_write API max receive message size (bytes).")
 	f.DurationVar(&cfg.RemoteTimeout, "distributor.remote-timeout", 20*time.Second, "Timeout for downstream ingesters.")
 	f.BoolVar(&cfg.ExtendWrites, "distributor.extend-writes", true, "Try writing to an additional ingester in the presence of an ingester not in the ACTIVE state. It is useful to disable this along with -ingester.ring.unregister-on-shutdown=false in order to not spread samples to extra ingesters during rolling restarts with consistent naming.")
-	f.BoolVar(&cfg.Forwarding, "distributor.forwarding", false, "Enables the feature to forward certain metrics in remote_write requests, depending on defined rules.")
 	f.Float64Var(&cfg.InstanceLimits.MaxIngestionRate, "distributor.instance-limits.max-ingestion-rate", 0, "Max ingestion rate (samples/sec) that this distributor will accept. This limit is per-distributor, not per-tenant. Additional push requests will be rejected. Current ingestion rate is computed as exponentially weighted moving average, updated every second. 0 = unlimited.")
 	f.IntVar(&cfg.InstanceLimits.MaxInflightPushRequests, "distributor.instance-limits.max-inflight-push-requests", 2000, "Max inflight push requests that this distributor can handle. This limit is per-distributor, not per-tenant. Additional requests will be rejected. 0 = unlimited.")
 }
@@ -366,9 +366,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		return d.ingestionRate.Rate()
 	})
 
-	if d.cfg.Forwarding {
-		d.forwarder = forwarding.NewForwarder(reg)
-	}
+	d.forwarder = forwarding.NewForwarder(reg, d.cfg.Forwarding)
 
 	d.replicationFactor.Set(float64(ingestersRing.ReplicationFactor()))
 	d.activeUsers = util.NewActiveUsersCleanupWithDefaultValues(d.cleanupInactiveUser)
@@ -552,7 +550,7 @@ func (d *Distributor) validateSeries(nowt time.Time, ts mimirpb.PreallocTimeseri
 // forwardingReq returns a forwarding request if one is necessary, given the user ID.
 // if no forwarding request is necessary it returns nil.
 func (d *Distributor) forwardingReq(ctx context.Context, userID string) forwarding.Request {
-	if !d.cfg.Forwarding {
+	if d.forwarder == nil {
 		return nil
 	}
 

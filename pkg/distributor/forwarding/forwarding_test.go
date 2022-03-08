@@ -23,6 +23,11 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
+var testConfig = Config{
+	Enabled:        true,
+	RequestTimeout: time.Second,
+}
+
 func TestForwardingSamplesSuccessfully(t *testing.T) {
 	const tenant = "tenant"
 	now := time.Now().UnixMilli()
@@ -34,7 +39,7 @@ func TestForwardingSamplesSuccessfully(t *testing.T) {
 	defer close2()
 
 	reg := prometheus.NewPedanticRegistry()
-	forwarder := NewForwarder(reg)
+	forwarder := NewForwarder(reg, testConfig)
 
 	rules := validation.ForwardingRules{
 		"metric1": validation.ForwardingRule{Endpoint: url1, Ingest: false},
@@ -143,7 +148,7 @@ func TestForwardingSamplesWithDifferentErrors(t *testing.T) {
 	}
 
 	const tenant = "tenant"
-	forwarder := NewForwarder(nil)
+	forwarder := NewForwarder(nil, testConfig)
 	for _, tc := range tcs {
 		t.Run(tc.name, func(t *testing.T) {
 			urls := make([]string, len(tc.remoteStatusCodes))
@@ -273,7 +278,7 @@ func BenchmarkRemoteWriteForwarding(b *testing.B) {
 		rules[metric] = validation.ForwardingRule{Endpoint: "http://localhost/"}
 	}
 
-	forwarder := NewForwarder(nil).(*forwarder)
+	forwarder := NewForwarder(nil, testConfig).(*forwarder)
 
 	// No-op client, we don't want the benchmark to be skewed by TCP performance
 	forwarder.client = http.Client{Transport: &noopRoundTripper{}}
