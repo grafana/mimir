@@ -8,7 +8,7 @@ weight: 10
 
 The compactor is responsible for merging and deduplicating smaller blocks into larger ones, in order to reduce the number of blocks stored in long-term (object) storage for a given tenant and allowing for them to be queried more efficiently. It also keeps the [bucket index]({{< relref "../blocks-storage/bucket-index.md" >}}) updated and, for this reason, it's a required component.
 
-The [alertmanager]({{< relref "alertmanager.md" >}}) and [ruler]({{< relref "ruler.md" >}}) components can also use object storage to store their configurations and rules uploaded by users. In that case a separate bucket should be created to store alertmanager configurations and rules: using the same bucket between ruler/alertmanager and blocks will cause issues with the compactor.
+The [Alertmanager]({{< relref "alertmanager.md" >}}) and [ruler]({{< relref "ruler.md" >}}) components can also use object storage to store their configurations and rules uploaded by users. In that case a separate bucket should be created to store Alertmanager configurations and rules: using the same bucket between ruler/Alertmanager and blocks will cause issues with the compactor.
 
 The **compactor** is a component responsible for:
 
