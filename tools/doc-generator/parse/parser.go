@@ -373,7 +373,7 @@ func ReflectType(typ string) reflect.Type {
 	case "float":
 		return reflect.TypeOf(0.0)
 	case "list of string":
-		return reflect.TypeOf([]string{})
+		return reflect.TypeOf(flagext.StringSliceCSV{})
 	case "map of string to string":
 		fallthrough
 	case "map of tracker name (string) to matcher (string)":

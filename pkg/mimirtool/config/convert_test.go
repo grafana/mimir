@@ -140,6 +140,16 @@ func TestConvert(t *testing.T) {
 			inFile:  "testdata/am-s3-url-with-endpoint-old.yaml",
 			outFile: "testdata/am-s3-url-with-endpoint-new.yaml",
 		},
+		{
+			name:         "CSV string slice with single value",
+			inFlagsFile:  "testdata/string-slice-single-old.flags.txt",
+			outFlagsFile: "testdata/string-slice-single-new.flags.txt",
+		},
+		{
+			name:         "CSV string slice",
+			inFlagsFile:  "testdata/string-slice-old.flags.txt",
+			outFlagsFile: "testdata/string-slice-new.flags.txt",
+		},
 	}
 
 	for _, tc := range testCases {

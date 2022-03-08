@@ -317,7 +317,7 @@ func differentFromDefault(p Parameters, path string) bool {
 	val, err1 := p.GetValue(path)
 	defaultVal, err2 := p.GetDefaultValue(path)
 
-	return err1 == nil && err2 == nil && val != nil && val != defaultVal
+	return err1 == nil && err2 == nil && val != nil && !reflect.DeepEqual(val, defaultVal)
 }
 
 func mapDotStorage(pathRenames map[string]string, source, target Parameters) error {
