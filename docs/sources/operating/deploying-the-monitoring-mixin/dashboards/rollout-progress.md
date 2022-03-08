@@ -12,4 +12,4 @@ It also shows some key metrics to monitor during rollouts, like failures rate an
 
 The following screenshot shows an example of this dashboard from a demo cluster.
 
-![Grafana Mimir rollout progress dashboard](../../../../images/dashboards/mimir-rollout-progress.png)
+![Grafana Mimir rollout progress dashboard](../../../images/dashboards/mimir-rollout-progress.png)

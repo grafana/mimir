@@ -14,4 +14,4 @@ and organized by the order in which the write request flows.
 
 The following screenshot shows an example of this dashboard from a demo cluster.
 
-![Grafana Mimir writes dashboard](../../../../images/dashboards/mimir-writes.png)
+![Grafana Mimir writes dashboard](../../../images/dashboards/mimir-writes.png)
