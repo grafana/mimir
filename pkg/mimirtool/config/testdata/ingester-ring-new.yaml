@@ -5,6 +5,7 @@ ingester:
     instance_availability_zone: test-zone
     join_after: 30s
     kvstore:
+      store: consul
       consul:
         host: consul-host
     num_tokens: 512

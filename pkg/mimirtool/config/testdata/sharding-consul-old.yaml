@@ -1,0 +1,50 @@
+ingester:
+  lifecycler:
+    ring:
+      kvstore:
+        store: consul
+        consul:
+          host: consul
+
+alertmanager:
+  sharding_enabled: true
+  sharding_ring:
+    kvstore:
+      store: consul
+      consul:
+        host: consul
+
+compactor:
+  sharding_enabled: true
+  sharding_ring:
+    kvstore:
+      store: consul
+      consul:
+        host: consul
+
+store_gateway:
+  sharding_enabled: true
+  sharding_ring:
+    kvstore:
+      store: consul
+      consul:
+        host: consul
+
+
+ruler:
+  enable_sharding: true
+  ring:
+    kvstore:
+      store: consul
+      consul:
+        host: consul
+
+distributor:
+  ring:
+    kvstore:
+      store: consul
+      consul:
+        host: consul
+
+limits:
+  ingestion_rate_strategy: global

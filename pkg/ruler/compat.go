@@ -26,6 +26,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier"
+	querier_stats "github.com/grafana/mimir/pkg/querier/stats"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
@@ -188,17 +189,33 @@ func RecordAndReportRuleQueryMetrics(qf rules.QueryFunc, queryTime prometheus.Co
 	}
 
 	return func(ctx context.Context, qs string, t time.Time) (promql.Vector, error) {
+		// Inject a new stats object in the context to be updated by various queryables used to execute
+		// the query (blocks store queryable, distributor queryable, etc.). When used by the query-frontend
+		// this is normally handled by middleware: instrumenting a QueryFunc is the ruler equivalent.
+		stats, ctx := querier_stats.ContextWithEmptyStats(ctx)
 		// If we've been passed a counter we want to record the wall time spent executing this request.
 		timer := prometheus.NewTimer(nil)
 		defer func() {
-			querySeconds := timer.ObserveDuration().Seconds()
-			queryTime.Add(querySeconds)
+			// Update stats wall time based on the timer created above.
+			stats.AddWallTime(timer.ObserveDuration())
+
+			wallTime := stats.LoadWallTime()
+			numSeries := stats.LoadFetchedSeries()
+			numBytes := stats.LoadFetchedChunkBytes()
+			numChunks := stats.LoadFetchedChunks()
+			shardedQueries := stats.LoadShardedQueries()
+
+			queryTime.Add(wallTime.Seconds())
 
 			// Log ruler query stats.
 			logMessage := []interface{}{
 				"msg", "query stats",
 				"component", "ruler",
-				"cortex_ruler_query_seconds_total", querySeconds,
+				"query_wall_time_seconds", wallTime.Seconds(),
+				"fetched_series_count", numSeries,
+				"fetched_chunk_bytes", numBytes,
+				"fetched_chunks_count", numChunks,
+				"sharded_queries", shardedQueries,
 				"query", qs,
 			}
 			level.Info(util_log.WithContext(ctx, logger)).Log(logMessage...)
