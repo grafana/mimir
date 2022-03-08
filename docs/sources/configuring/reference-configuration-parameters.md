@@ -640,10 +640,16 @@ instance_limits:
   # CLI flag: -distributor.instance-limits.max-inflight-push-requests
   [max_inflight_push_requests: <int> | default = 2000]
 
-# (experimental) Enables the feature to forward certain metrics in remote_write
-# requests, depending on defined rules.
-# CLI flag: -distributor.forwarding
-[forwarding: <boolean> | default = false]
+forwarding:
+  # (experimental) Enables the feature to forward certain metrics in
+  # remote_write requests, depending on defined rules.
+  # CLI flag: -distributor.forwarding.enabled
+  [enabled: <boolean> | default = false]
+
+  # (experimental) Timeout for requests to ingestion endpoints to which we
+  # forward metrics.
+  # CLI flag: -distributor.forwarding.request-timeout
+  [request_timeout: <duration> | default = 10s]
 ```
 
 ### ingester
