@@ -120,8 +120,7 @@ type request struct {
 	client *http.Client
 	pools  *pools
 
-	tsByEndpointMtx sync.Mutex
-	tsByEndpoint    map[string]*[]mimirpb.PreallocTimeseries
+	tsByEndpoint map[string]*[]mimirpb.PreallocTimeseries
 
 	// The rules which define:
 	// - which metrics get forwarded
@@ -149,9 +148,6 @@ func (r *request) Add(sample mimirpb.PreallocTimeseries) bool {
 		return true
 	}
 	r.samples.Add(float64(len(sample.Samples)))
-
-	r.tsByEndpointMtx.Lock()
-	defer r.tsByEndpointMtx.Unlock()
 
 	ts, ok := r.tsByEndpoint[rule.Endpoint]
 	if !ok {
@@ -287,9 +283,6 @@ func (r *request) sendToEndpoint(ctx context.Context, endpoint string, ts []mimi
 
 // cleanup must be called to return the used buffers to their pools after a request has completed.
 func (r *request) cleanup() {
-	r.tsByEndpointMtx.Lock()
-	defer r.tsByEndpointMtx.Unlock()
-
 	for _, ts := range r.tsByEndpoint {
 		*ts = (*ts)[:0]
 		r.pools.timeseries.Put(ts)
