@@ -149,7 +149,7 @@ func (i *InspectedEntry) asMap() map[string]interface{} {
 			if e.FieldValue != nil {
 				combined[e.Name] = e.FieldValue
 			}
-		} else {
+		} else if e.Name != notInYaml {
 			combined[e.Name] = e.asMap()
 		}
 	}

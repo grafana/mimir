@@ -3,6 +3,7 @@
 package config
 
 import (
+	"fmt"
 	"io/ioutil"
 	"strings"
 	"testing"
@@ -399,6 +400,18 @@ func TestConvert_UseNewDefaults(t *testing.T) {
 				assert.NotContains(t, notices.ChangedDefaults, tc.expectedNotice)
 			}
 		})
+	}
+}
+
+func TestConvert_NotInYAMLIsNotPrinted(t *testing.T) {
+	for _, useNewDefaults := range []bool{true, false} {
+		for _, showDefaults := range []bool{true, false} {
+			t.Run(fmt.Sprintf("useNewDefault=%t_showDefaults=%t", useNewDefaults, showDefaults), func(t *testing.T) {
+				actualYAML, _, _, err := Convert([]byte("{}"), nil, CortexToMimirMapper, DefaultCortexConfig, DefaultMimirConfig, useNewDefaults, showDefaults)
+				assert.NoError(t, err)
+				assert.NotContains(t, string(actualYAML), notInYaml)
+			})
+		}
 	}
 }
 
