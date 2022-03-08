@@ -2740,7 +2740,12 @@ func prepare(t *testing.T, cfg prepConfig) ([]*Distributor, []mockIngester, []*p
 		distributorCfg.InstanceLimits.MaxInflightPushRequests = cfg.maxInflightRequests
 		distributorCfg.InstanceLimits.MaxIngestionRate = cfg.maxIngestionRate
 		distributorCfg.ShuffleShardingLookbackPeriod = time.Hour
-		distributorCfg.Forwarding = cfg.forwarding
+
+		if cfg.forwarding {
+			distributorCfg.Forwarding.Enabled = true
+			distributorCfg.Forwarding.RequestTimeout = 10 * time.Second
+		}
+
 		cfg.limits.IngestionTenantShardSize = cfg.shuffleShardSize
 
 		if cfg.enableTracker {
