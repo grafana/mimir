@@ -30,5 +30,3 @@ distributor:
 
 limits:
   ingestion_rate_strategy: local
-
-target: test

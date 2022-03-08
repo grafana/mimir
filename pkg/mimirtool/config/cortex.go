@@ -131,64 +131,76 @@ func updateKVStoreValue(source, target Parameters) error {
 		"ruler.ring.kvstore.store":                  "ruler.enable_sharding",
 		"store_gateway.sharding_ring.kvstore.store": "store_gateway.sharding_enabled",
 		"distributor.ring.kvstore.store":            "limits.ingestion_rate_strategy",
-
-		// Ingester ring is special: it's always enabled, but we don't want to copy its config if target is not ingester, distributor, querier or ruler,
-		// ie. components that actually need access to ingester ring.
-		"ingester.lifecycler.ring.kvstore.store": "target",
+		"ingester.lifecycler.ring.kvstore.store":    "",
 	}
 
+	// If KV store is NOT set by user, but sharding for given component is enabled, we must explicitly set KV store to "consul" (old default)
 	for storePath, shardingEnabledPath := range storeFields {
+		kvStore, err := source.GetValue(storePath)
+		if err != nil {
+			return errors.Wrapf(err, "could not find %s", storePath)
+		}
+
+		if kvStore != nil {
+			// set explicitly, don't change it.
+			continue
+		}
+
 		ringUsed := false
 		targetStorePath := storePath
 
-		{
+		switch storePath {
+		case "ingester.lifecycler.ring.kvstore.store":
+			targetStorePath = "ingester.ring.kvstore.store"
+
+			// For ingesters, check if consul was actually configured. If not (maybe this isn't even config for ingester),
+			// let's ignore this ring.
+			consul, err := source.GetValue("ingester.lifecycler.ring.kvstore.consul.host")
+			if err != nil {
+				return errors.Wrapf(err, "could not find %s", shardingEnabledPath)
+			}
+			if consul != nil {
+				// Only update configuration if consul is actually configured.
+				ringUsed = true
+			}
+
+		case "distributor.ring.kvstore.store":
 			enabled, err := source.GetValue(shardingEnabledPath)
 			if err != nil {
 				return errors.Wrapf(err, "could not find %s", shardingEnabledPath)
 			}
-			switch storePath {
-			case "distributor.ring.kvstore.store":
+			if enabled != nil {
 				if _, ok := enabled.(string); !ok {
-					return errors.Wrapf(err, "%s is not a string", shardingEnabledPath)
+					return fmt.Errorf("%s is not a string", shardingEnabledPath)
 				}
 				ringUsed = enabled.(string) == "global" // Using of distributor ring was enabled by setting limits.ingestion_rate_strategy to "global".
+			}
 
-			case "ingester.lifecycler.ring.kvstore.store":
-				targetStorePath = "ingester.ring.kvstore.store"
+		default:
+			enabled, err := source.GetValue(shardingEnabledPath)
+			if err != nil {
+				return errors.Wrapf(err, "could not find %s", shardingEnabledPath)
+			}
 
-				if _, ok := enabled.(string); !ok {
-					return errors.Wrapf(err, "%s is not a string", shardingEnabledPath)
-				}
-
-				s := enabled.(string)
-				if strings.Contains(s, "all") || strings.Contains(s, "ingester") || strings.Contains(s, "distributor") || strings.Contains(s, "querier") || strings.Contains(s, "ruler") {
-					ringUsed = true
-				}
-
-			default:
+			if enabled != nil {
 				if _, ok := enabled.(bool); !ok {
-					return errors.Wrapf(err, "%s is not a boolean", shardingEnabledPath)
+					return fmt.Errorf("%s is not a boolean", shardingEnabledPath)
 				}
 				ringUsed = enabled.(bool)
 			}
 		}
 
-		store, err := source.GetValue(storePath)
-		if err != nil {
-			return errors.Wrapf(err, "could not find %s", storePath)
+		// If ring is not used, ignore this KV store config.
+		if !ringUsed {
+			continue
 		}
 
-		storeString, ok := store.(string)
-		if !ok {
-			return errors.Wrapf(err, "%s is not a string value", storePath)
-		}
+		// At this point we know:
+		// 1) KV store was not configured (= consul)
+		// 2) Ring is actually used
+		// => We must set "consul" in new config.
 
-		// If sharding was enabled, copy value to target, otherwise set it to default value, which will then be removed.
-		if ringUsed {
-			err = target.SetValue(targetStorePath, storeString)
-		} else {
-			err = target.SetValue(targetStorePath, "memberlist") // memberlist is new default value.
-		}
+		err = target.SetValue(targetStorePath, "consul")
 		if err != nil {
 			return errors.Wrapf(err, "failed to update %s", targetStorePath)
 		}

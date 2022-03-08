@@ -1,1 +1,25 @@
-target: test
+alertmanager:
+  sharding_ring:
+    kvstore:
+      store: consul
+
+compactor:
+  sharding_ring:
+    kvstore:
+      store: consul
+
+store_gateway:
+  sharding_ring:
+    kvstore:
+      store: consul
+
+
+ruler:
+  ring:
+    kvstore:
+      store: consul
+
+distributor:
+  ring:
+    kvstore:
+      store: consul
