@@ -1,0 +1,41 @@
+alertmanager:
+  sharding_ring:
+    kvstore:
+      consul:
+        host: consul
+      store: consul
+
+compactor:
+  sharding_ring:
+    kvstore:
+      consul:
+        host: consul
+      store: consul
+
+distributor:
+  ring:
+    kvstore:
+      consul:
+        host: consul
+      store: consul
+
+ingester:
+  ring:
+    kvstore:
+      consul:
+        host: consul
+      store: consul
+
+ruler:
+  ring:
+    kvstore:
+      consul:
+        host: consul
+      store: consul
+
+store_gateway:
+  sharding_ring:
+    kvstore:
+      consul:
+        host: consul
+      store: consul

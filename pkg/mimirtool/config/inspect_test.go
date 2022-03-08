@@ -64,7 +64,7 @@ func TestInspectedEntry_SetThenGet(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			inspectedConfig, err := DefaultValueInspector.InspectConfigWithFlags(tc.testStruct, nil)
+			inspectedConfig, err := InspectConfigWithFlags(tc.testStruct, nil)
 			require.NoError(t, err)
 
 			err = inspectedConfig.SetValue(tc.path, tc.expectedValue)
@@ -130,7 +130,7 @@ func TestInspectedEntry_Walk(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 
-			inspectedConfig, err := DefaultValueInspector.InspectConfigWithFlags(tc.testStruct, nil)
+			inspectedConfig, err := InspectConfigWithFlags(tc.testStruct, nil)
 			require.NoError(t, err)
 
 			actualFields := listAllFields(inspectedConfig)
@@ -200,7 +200,7 @@ func TestInspectedEntry_Delete(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			inspected, err := ZeroValueInspector.InspectConfigWithFlags(tc.params, nil)
+			inspected, err := InspectConfigWithFlags(tc.params, nil)
 			require.NoError(t, err)
 
 			actualErr := inspected.Delete(tc.pathToDelete)
@@ -216,13 +216,13 @@ func TestInspectedEntry_Delete(t *testing.T) {
 }
 
 func TestInspectedConfig_MarshalThenUnmarshalRetainsTypeInformation(t *testing.T) {
-	inspectedConfig, err := DefaultValueInspector.InspectConfig(&mimir.Config{})
+	inspectedConfig, err := InspectConfig(&mimir.Config{})
 	require.NoError(t, err)
 	require.NoError(t, inspectedConfig.SetValue("distributor.remote_timeout", time.Minute))
 	bytes, err := yaml.Marshal(inspectedConfig)
 	require.NoError(t, err)
 
-	inspectedConfig, err = DefaultValueInspector.InspectConfig(&mimir.Config{})
+	inspectedConfig, err = InspectConfig(&mimir.Config{})
 	require.NoError(t, err)
 	require.NoError(t, yaml.Unmarshal(bytes, &inspectedConfig))
 
@@ -231,7 +231,7 @@ func TestInspectedConfig_MarshalThenUnmarshalRetainsTypeInformation(t *testing.T
 }
 
 func TestInspectedEntry_MarshalYAML(t *testing.T) {
-	d, err := DefaultValueInspector.InspectConfig(&mimir.Config{})
+	d, err := InspectConfig(&mimir.Config{})
 	require.NoError(t, err)
 	require.NoError(t, yaml.Unmarshal([]byte(`
 distributor:
@@ -243,9 +243,9 @@ distributor:
 }
 
 func TestInspectConfig_HasDefaultValues(t *testing.T) {
-	d, err := DefaultValueInspector.InspectConfig(&mimir.Config{})
+	d, err := InspectConfig(&mimir.Config{})
 	require.NoError(t, err)
-	val := d.MustGetValue("distributor.remote_timeout")
+	val := d.MustGetDefaultValue("distributor.remote_timeout")
 	assert.Equal(t, time.Second*20, val)
 }
 
@@ -300,7 +300,7 @@ func TestInspectConfig_LoadingAConfigHasCorrectTypes(t *testing.T) {
 	params := DefaultCortexConfig()
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			val := params.MustGetValue(tc.path)
+			val := params.MustGetDefaultValue(tc.path)
 			assert.IsType(t, tc.expectedType, val)
 		})
 	}
@@ -333,7 +333,7 @@ func TestDecodeDurationInVariousFormats(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			d, err := DefaultValueInspector.InspectConfig(&mimir.Config{})
+			d, err := InspectConfig(&mimir.Config{})
 			require.NoError(t, err)
 			require.NoError(t, yaml.Unmarshal([]byte(`
 distributor:

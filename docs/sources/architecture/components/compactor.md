@@ -8,6 +8,7 @@ weight: 10
 
 The compactor increases the efficiency of memory usage on disk and in long term storage by combining blocks.
 
+
 The compactor is the component responsible for:
 
 - Compacting multiple blocks of a given tenant into a single, optimized larger block. This deduplicates blocks and reduces the size of the index, resulting in reduced storage costs. Querying fewer blocks is faster, so it also increases query speed.
@@ -38,6 +39,7 @@ A sophisticated split-and-merge compaction algorithm can be tuned for clusters w
   The setting `-compactor.compaction-concurrency` configures the max number of concurrent compactions running in a single compactor instance. Each compaction uses one CPU core.
 - **Horizontal scaling**<br />
   When you run multiple compactor instances, compaction jobs will be sharded across those instances. CLI flag `-compactor.compactor-tenant-shard-size` or its respective YAML configuration option controls the spread of compaction jobs across the instances. If set to 0, compaction jobs will be spread across all available instances.
+  
 
 By design, the split-and-merge algorithm overcomes time series database (TSDB) index limitations, and it avoids situations in which compacted blocks grow indefinitely for a very large tenant at any compaction stage.
 
@@ -68,7 +70,7 @@ Whenever the pool of compactors grows or shrinks, tenants and jobs are resharded
 
 Compactor sharding uses a [hash ring]({{< relref "../hash-ring.md" >}}). At startup, a compactor generates random tokens and registers itself to the compactor hash ring. While running, it periodically scans the storage bucket at every interval defined by `-compactor.compaction-interval`, to discover the list of tenants in storage and compact blocks for each tenant which hash matches the token ranges assigned to the instance itself within the hash ring.
 
-To configure the compactors' hash ring, refer to [configuring hash rings]({{< relref "../../operating-grafana-mimir/configure-hash-ring.md" >}}).
+To configure the compactors' hash ring, refer to [configuring hash rings]({{< relref "../../operating/configuring-hash-rings.md" >}}).
 
 ### Waiting for a stable hash ring at startup
 

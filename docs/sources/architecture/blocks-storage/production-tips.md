@@ -1,8 +1,6 @@
 ---
 title: "Production tips"
-linkTitle: "Production tips"
 weight: 10
-slug: production-tips
 ---
 
 This page shares some tips and things to take in consideration when setting up a production Cortex cluster based on the blocks storage.

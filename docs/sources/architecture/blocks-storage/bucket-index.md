@@ -1,8 +1,6 @@
 ---
 title: "Bucket Index"
-linkTitle: "Bucket Index"
 weight: 10
-slug: bucket-index
 ---
 
 The bucket index is a **per-tenant file containing the list of blocks and block deletion marks** in the storage. The bucket index itself is stored in the backend object storage, is periodically updated by the compactor, and used by queriers, store-gateways and rulers to discover blocks in the storage.

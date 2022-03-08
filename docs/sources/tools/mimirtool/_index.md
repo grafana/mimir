@@ -1,7 +1,7 @@
 ---
 title: "Reference: Mimirtool"
 description: ""
-weight: 100
+weight: 10
 ---
 
 # Mimirtool
