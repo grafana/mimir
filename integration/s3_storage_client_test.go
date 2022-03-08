@@ -12,9 +12,11 @@ import (
 	"context"
 	"io"
 	"testing"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/dskit/test"
 	"github.com/grafana/e2e"
 	e2edb "github.com/grafana/e2e/db"
 	"github.com/stretchr/testify/require"
@@ -76,8 +78,10 @@ func TestS3Client(t *testing.T) {
 			objectKey := "key-" + tt.name
 			obj := []byte{0x01, 0x02, 0x03, 0x04}
 
-			err = client.Upload(ctx, objectKey, bytes.NewReader(obj))
-			require.NoError(t, err)
+			// The upload may fail if Minio is not ready yet, so we retry until succeed.
+			test.Poll(t, 5*time.Second, nil, func() interface{} {
+				return client.Upload(ctx, objectKey, bytes.NewReader(obj))
+			})
 
 			readCloser, err := client.Get(ctx, objectKey)
 			require.NoError(t, err)
