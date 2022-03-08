@@ -32,7 +32,7 @@ To configure Grafana Mimir to send traces, perform the following steps:
 To enable sampling in Grafana Mimir components you can specify either
 `JAEGER_SAMPLER_MANAGER_HOST_PORT` for remote sampling, or
 `JAEGER_SAMPLER_TYPE` and `JAEGER_SAMPLER_PARAM` to manually set sampling
-configuration. See the [Jaeger Client Go
+configuration. Refer to [Jaeger Client Go
 documentation](https://github.com/jaegertracing/jaeger-client-go#environment-variables)
 for the full list of environment variables you can configure.
 
