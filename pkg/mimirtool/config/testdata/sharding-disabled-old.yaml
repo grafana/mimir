@@ -1,0 +1,32 @@
+alertmanager:
+  sharding_enabled: false
+  sharding_ring:
+    kvstore:
+      store: consul
+
+compactor:
+  sharding_enabled: false
+  sharding_ring:
+    kvstore:
+      store: consul
+
+store_gateway:
+  sharding_enabled: false
+  sharding_ring:
+    kvstore:
+      store: consul
+
+
+ruler:
+  enable_sharding: false
+  ring:
+    kvstore:
+      store: consul
+
+distributor:
+  ring:
+    kvstore:
+      store: consul
+
+limits:
+  ingestion_rate_strategy: local

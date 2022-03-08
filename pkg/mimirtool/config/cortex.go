@@ -25,6 +25,8 @@ var CortexToMimirMapper = MultiMapper{
 	mapS3SSE("alertmanager"), mapS3SSE("ruler"),
 	// Apply trivial renames and moves of parameters
 	PathMapper{PathMappings: simpleRenameMappings},
+	// Remap sharding configs
+	MapperFunc(updateKVStoreValue),
 	// Convert provided memcached service and host to the DNS service discovery format
 	MapperFunc(mapMemcachedAddresses),
 }
@@ -120,6 +122,91 @@ var simpleRenameMappings = map[string]Mapping{
 	"ingester.lifecycler.unregister_on_shutdown":                     RenameMapping("ingester.ring.unregister_on_shutdown"),
 
 	"auth_enabled": RenameMapping("multitenancy_enabled"),
+}
+
+func updateKVStoreValue(source, target Parameters) error {
+	storeFields := map[string]string{
+		"alertmanager.sharding_ring.kvstore.store":  "alertmanager.sharding_enabled",
+		"compactor.sharding_ring.kvstore.store":     "compactor.sharding_enabled",
+		"ruler.ring.kvstore.store":                  "ruler.enable_sharding",
+		"store_gateway.sharding_ring.kvstore.store": "store_gateway.sharding_enabled",
+		"distributor.ring.kvstore.store":            "limits.ingestion_rate_strategy",
+		"ingester.lifecycler.ring.kvstore.store":    "",
+	}
+
+	// If KV store is NOT set by user, but sharding for given component is enabled, we must explicitly set KV store to "consul" (old default)
+	for storePath, shardingEnabledPath := range storeFields {
+		kvStore, err := source.GetValue(storePath)
+		if err != nil {
+			return errors.Wrapf(err, "could not find %s", storePath)
+		}
+
+		if kvStore != nil {
+			// set explicitly, don't change it.
+			continue
+		}
+
+		ringUsed := false
+		targetStorePath := storePath
+
+		switch storePath {
+		case "ingester.lifecycler.ring.kvstore.store":
+			targetStorePath = "ingester.ring.kvstore.store"
+
+			// For ingesters, check if consul was actually configured. If not (maybe this isn't even config for ingester),
+			// let's ignore this ring.
+			consul, err := source.GetValue("ingester.lifecycler.ring.kvstore.consul.host")
+			if err != nil {
+				return errors.Wrapf(err, "could not find %s", shardingEnabledPath)
+			}
+			if consul != nil {
+				// Only update configuration if consul is actually configured.
+				ringUsed = true
+			}
+
+		case "distributor.ring.kvstore.store":
+			enabled, err := source.GetValue(shardingEnabledPath)
+			if err != nil {
+				return errors.Wrapf(err, "could not find %s", shardingEnabledPath)
+			}
+			if enabled != nil {
+				if _, ok := enabled.(string); !ok {
+					return fmt.Errorf("%s is not a string", shardingEnabledPath)
+				}
+				ringUsed = enabled.(string) == "global" // Using of distributor ring was enabled by setting limits.ingestion_rate_strategy to "global".
+			}
+
+		default:
+			enabled, err := source.GetValue(shardingEnabledPath)
+			if err != nil {
+				return errors.Wrapf(err, "could not find %s", shardingEnabledPath)
+			}
+
+			if enabled != nil {
+				if _, ok := enabled.(bool); !ok {
+					return fmt.Errorf("%s is not a boolean", shardingEnabledPath)
+				}
+				ringUsed = enabled.(bool)
+			}
+		}
+
+		// If ring is not used, ignore this KV store config.
+		if !ringUsed {
+			continue
+		}
+
+		// At this point we know:
+		// 1) KV store was not configured (= consul)
+		// 2) Ring is actually used
+		// => We must set "consul" in new config.
+
+		err = target.SetValue(targetStorePath, "consul")
+		if err != nil {
+			return errors.Wrapf(err, "failed to update %s", targetStorePath)
+		}
+	}
+
+	return nil
 }
 
 func alertmanagerURLMapperFunc(source, target Parameters) error {
