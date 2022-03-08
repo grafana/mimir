@@ -7,7 +7,7 @@ import (
 )
 
 type Mapper interface {
-	DoMap(source, target *InspectedEntry) error
+	DoMap(source, target Parameters) error
 }
 
 type Mapping func(oldPath string, oldVal interface{}) (newPath string, newVal interface{})
@@ -16,7 +16,7 @@ type Mapping func(oldPath string, oldVal interface{}) (newPath string, newVal in
 // same name parameter in the target. It ignores all errors while setting the values.
 type BestEffortDirectMapper struct{}
 
-func (BestEffortDirectMapper) DoMap(source, target *InspectedEntry) error {
+func (BestEffortDirectMapper) DoMap(source, target Parameters) error {
 	err := source.Walk(func(path string, value interface{}) error {
 		_ = target.SetValue(path, value)
 		return nil
@@ -35,7 +35,7 @@ type PathMapper struct {
 // DoMap applies the Mappings from source to target.
 // The error DoMap returns are the combined errors that all Mappings returned. If no
 // Mappings returned an error, then DoMap returns nil.
-func (m PathMapper) DoMap(source, target *InspectedEntry) error {
+func (m PathMapper) DoMap(source, target Parameters) error {
 	errs := multierror.New()
 	for path, mapping := range m.PathMappings {
 		oldVal, err := source.GetValue(path)
@@ -51,15 +51,9 @@ func (m PathMapper) DoMap(source, target *InspectedEntry) error {
 	return errs.Err()
 }
 
-type NoopMapper struct{}
-
-func (NoopMapper) DoMap(_, _ *InspectedEntry) error {
-	return nil
-}
-
 type MultiMapper []Mapper
 
-func (m MultiMapper) DoMap(source, target *InspectedEntry) error {
+func (m MultiMapper) DoMap(source, target Parameters) error {
 	errs := multierror.New()
 	for _, mapper := range m {
 		errs.Add(mapper.DoMap(source, target))
@@ -67,9 +61,9 @@ func (m MultiMapper) DoMap(source, target *InspectedEntry) error {
 	return errs.Err()
 }
 
-type MapperFunc func(source, target *InspectedEntry) error
+type MapperFunc func(source, target Parameters) error
 
-func (m MapperFunc) DoMap(source, target *InspectedEntry) error {
+func (m MapperFunc) DoMap(source, target Parameters) error {
 	return m(source, target)
 }
 

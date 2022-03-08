@@ -2,11 +2,15 @@
 
 ## Grafana Mimir - main / unreleased
 
+* [CHANGE] Compactor: No longer upload debug meta files to object storage. #1257
+
 ### Mixin
 
 ### Jsonnet
 
 ### Mimirtool
+
+### Tools
 
 ## 2.0.0-rc.2
 

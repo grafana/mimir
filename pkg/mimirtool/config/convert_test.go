@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 )
 
 func TestConvert(t *testing.T) {
@@ -64,7 +65,7 @@ func TestConvert(t *testing.T) {
 			outFile: "testdata/ruler_storage-new.yaml",
 		},
 		{
-			name:    "ruler.storage maps to ruler.storage",
+			name:    "ruler_storage maps to ruler_storage",
 			inFile:  "testdata/ruler_storage-old.yaml",
 			outFile: "testdata/ruler_storage-new.yaml",
 		},
@@ -122,7 +123,7 @@ func TestConvert(t *testing.T) {
 			inBytes := loadFile(t, tc.inFile)
 			inFlags := loadFlags(t, tc.inFlagsFile)
 
-			actualOut, actualOutFlags, _, err := Convert(inBytes, inFlags, CortexToMimirMapper, DefaultCortexConfig, DefaultMimirConfig, true)
+			actualOut, actualOutFlags, _, err := Convert(inBytes, inFlags, CortexToMimirMapper, DefaultCortexConfig, DefaultMimirConfig, false, false)
 			assert.NoError(t, err)
 
 			expectedOut := loadFile(t, tc.outFile)
@@ -253,7 +254,6 @@ func TestChangedDefaults(t *testing.T) {
 		{Path: "limits.ingestion_rate", OldDefault: "25000", NewDefault: "10000"},
 		{Path: "limits.max_global_series_per_metric", OldDefault: "0", NewDefault: "20000"},
 		{Path: "limits.max_global_series_per_user", OldDefault: "0", NewDefault: "150000"},
-		{Path: "limits.metric_relabel_configs", OldDefault: "<nil>", NewDefault: "[]"},
 		{Path: "limits.ruler_max_rule_groups_per_tenant", OldDefault: "0", NewDefault: "70"},
 		{Path: "limits.ruler_max_rules_per_rule_group", OldDefault: "0", NewDefault: "20"},
 		{Path: "querier.query_ingesters_within", OldDefault: "0s", NewDefault: "13h0m0s"},
@@ -269,19 +269,79 @@ func TestChangedDefaults(t *testing.T) {
 		{Path: "store_gateway.sharding_ring.wait_stability_min_duration", OldDefault: "1m0s", NewDefault: "0s"},
 	}
 
-	_, _, notices, err := Convert([]byte("{}"), nil, CortexToMimirMapper, DefaultCortexConfig, DefaultMimirConfig, true)
+	// Create cortex config where all params have explicitly set default values
+	params := DefaultCortexConfig()
+	err := params.Walk(func(path string, value interface{}) error {
+		return params.SetValue(path, params.MustGetDefaultValue(path))
+	})
+	require.NoError(t, err)
+	config, err := yaml.Marshal(params)
+	require.NoError(t, err)
+
+	// Convert while also converting explicitly set defaults to new defaults
+	_, _, notices, err := Convert(config, nil, CortexToMimirMapper, DefaultCortexConfig, DefaultMimirConfig, true, false)
 	require.NoError(t, err)
 	assert.ElementsMatch(t, expectedChangedDefaults, notices.ChangedDefaults)
 }
 
-func TestConvert_KeepDefaultsShowsNewDefaults(t *testing.T) {
-	inYaml := []byte(`{}`)
-	inFlags := []string{"-experimental.alertmanager.enable-api=false"}
-	expectedOutFlags := []string{"-alertmanager.enable-api=true"}
-	_, outFlags, _, err := Convert(inYaml, inFlags, CortexToMimirMapper, DefaultCortexConfig, DefaultMimirConfig, false)
+func TestConvert_UseNewDefaults(t *testing.T) {
+	distributorTimeoutNotice := ChangedDefault{
+		Path:       "distributor.remote_timeout",
+		OldDefault: "2s",
+		NewDefault: "20s",
+	}
 
-	require.NoError(t, err)
-	assert.Equal(t, expectedOutFlags, outFlags)
+	testCases := []struct {
+		name                 string
+		useNewDefaults       bool
+		inYAML, expectedYAML []byte
+
+		expectedNotice       ChangedDefault
+		valueShouldBeChanged bool
+	}{
+		{
+			name:                 "replaces explicitly set old defaults when useNewDefaults=true",
+			useNewDefaults:       true,
+			inYAML:               []byte("distributor: { remote_timeout: 2s }"),
+			expectedYAML:         []byte("distributor: { remote_timeout: 20s }"),
+			expectedNotice:       distributorTimeoutNotice,
+			valueShouldBeChanged: true,
+		},
+		{
+			name:                 "keeps explicitly set old defaults useNewDefaults=false",
+			useNewDefaults:       false,
+			inYAML:               []byte("distributor: { remote_timeout: 2s }"),
+			expectedYAML:         []byte("distributor: { remote_timeout: 2s }"),
+			expectedNotice:       distributorTimeoutNotice,
+			valueShouldBeChanged: false,
+		},
+		{
+			name:                 "keeps explicitly set old non-default value when useNewDefaults=true",
+			useNewDefaults:       true,
+			inYAML:               []byte("distributor: { remote_timeout: 15s }"),
+			expectedYAML:         []byte("distributor: { remote_timeout: 15s }"),
+			expectedNotice:       distributorTimeoutNotice,
+			valueShouldBeChanged: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			outYAML, _, notices, err := Convert(tc.inYAML, nil, CortexToMimirMapper, DefaultCortexConfig, DefaultMimirConfig, tc.useNewDefaults, false)
+			require.NoError(t, err)
+
+			assert.YAMLEq(t, string(tc.expectedYAML), string(outYAML))
+			if tc.valueShouldBeChanged {
+				assert.Contains(t, notices.ChangedDefaults, tc.expectedNotice)
+				assert.NotContains(t, notices.SkippedChangedDefaults, tc.expectedNotice)
+			} else {
+				assert.Contains(t, notices.SkippedChangedDefaults, tc.expectedNotice)
+				assert.NotContains(t, notices.ChangedDefaults, tc.expectedNotice)
+			}
+		})
+	}
 }
 
 func loadFile(t testing.TB, fileName string) []byte {

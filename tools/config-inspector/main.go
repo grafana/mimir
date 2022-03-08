@@ -11,7 +11,7 @@ import (
 )
 
 func main() {
-	bytes, err := config.DefaultValueInspector.Describe(&mimir.Config{})
+	bytes, err := config.Describe(&mimir.Config{})
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)
