@@ -263,16 +263,14 @@ func (r *request) sendToEndpoint(ctx context.Context, endpoint string, ts []mimi
 		if scanner.Scan() {
 			line = scanner.Text()
 		}
-		err = errors.Errorf("server returned HTTP status %s: %s", httpResp.Status, line)
-	}
-	if httpResp.StatusCode/100 == 5 {
-		return recoverableError{err}
-	}
-	if httpResp.StatusCode == http.StatusTooManyRequests {
-		return recoverableError{err}
+		err := errors.Errorf("server returned HTTP status %s: %s", httpResp.Status, line)
+		if httpResp.StatusCode/100 == 5 || httpResp.StatusCode == http.StatusTooManyRequests {
+			return recoverableError{err}
+		}
+		return err
 	}
 
-	return err
+	return nil
 }
 
 // cleanup must be called to return the used buffers to their pools after a request has completed.
