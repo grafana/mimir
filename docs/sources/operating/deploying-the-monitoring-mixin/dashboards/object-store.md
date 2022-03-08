@@ -12,4 +12,4 @@ run by any Mimir component.
 
 The following screenshot shows an example of this dashboard from a demo cluster.
 
-![Grafana Mimir object store dashboard](../../../../images/dashboards/mimir-object-store.png)
+![Grafana Mimir object store dashboard](../../../images/dashboards/mimir-object-store.png)

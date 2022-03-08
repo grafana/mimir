@@ -13,4 +13,4 @@ Requires Kubernetes resources metrics.
 
 The following screenshot shows an example of this dashboard from a demo cluster.
 
-![Grafana Mimir compactor resources dashboard](../../../../images/dashboards/mimir-compactor-resources.png)
+![Grafana Mimir compactor resources dashboard](../../../images/dashboards/mimir-compactor-resources.png)

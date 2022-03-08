@@ -12,4 +12,4 @@ It includes object storage metrics for operations triggered by the ruler.
 
 The following screenshot shows an example of this dashboard from a demo cluster.
 
-![Grafana Mimir Alertmanager dashboard](../../../../images/dashboards/mimir-alertmanager.png)
+![Grafana Mimir Alertmanager dashboard](../../../images/dashboards/mimir-alertmanager.png)

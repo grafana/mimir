@@ -15,4 +15,4 @@ Requires Kubernetes resources metrics.
 
 The following screenshot shows an example of this dashboard from a demo cluster.
 
-![Grafana Mimir writes resources dashboard](../../../../images/dashboards/mimir-writes-resources.png)
+![Grafana Mimir writes resources dashboard](../../../images/dashboards/mimir-writes-resources.png)

@@ -11,4 +11,4 @@ This dashboard shows a drill-down into queries execution.
 
 The following screenshot shows an example of this dashboard from a demo cluster.
 
-![Grafana Mimir queries dashboard](../../../../images/dashboards/mimir-queries.png)
+![Grafana Mimir queries dashboard](../../../images/dashboards/mimir-queries.png)

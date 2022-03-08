@@ -52,7 +52,7 @@ Given the split blocks, the compactor then runs the **merge** stage for each sha
 
 The merge stage is then run for subsequent compaction time ranges (eg. 12h, 24h), compacting together blocks belonging to the same shard (_not shown in the picture below_).
 
-![Compactor - split-and-merge compaction strategy](../images/compactor-split-and-merge.png)
+![Compactor - split-and-merge compaction strategy](../../images/compactor-split-and-merge.png)
 
 <!-- Diagram source at https://docs.google.com/presentation/d/1bHp8_zcoWCYoNU2AhO2lSagQyuIrghkCncViSqn14cU/edit -->
 

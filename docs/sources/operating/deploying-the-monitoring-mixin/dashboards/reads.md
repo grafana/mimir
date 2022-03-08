@@ -14,4 +14,4 @@ and organized by the order in which the read request flows.
 
 The following screenshot shows an example of this dashboard from a demo cluster.
 
-![Grafana Mimir reads dashboard](../../../../images/dashboards/mimir-reads.png)
+![Grafana Mimir reads dashboard](../../../images/dashboards/mimir-reads.png)
