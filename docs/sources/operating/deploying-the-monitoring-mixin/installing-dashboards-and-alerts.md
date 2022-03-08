@@ -10,14 +10,14 @@ Grafana Mimir is shipped with a comprehensive set of production-ready Grafana [d
 
 ## Requirements
 
-- Grafana Mimir dashboards and alerts [require some labels]({{< relref "requirements.md" >}}) to be set by Prometheus or Grafana Agent when scraping your Mimir cluster metrics
+- Grafana Mimir dashboards and alerts [require specific labels]({{< relref "requirements.md" >}}) to be set by Prometheus or Grafana Agent when scraping your Mimir cluster metrics
 - Some dashboards require recording rules that you should install in your Prometheus
 
 ## Install from package
 
 Grafana Mimir provides ready to use Grafana dashboards in the `.json` format and Prometheus alerts in the `.yaml` format, that you can directly import into your Grafana installation and Prometheus config.
 
-The packaged dashboards and alerts have been compiled from the sources using a default configuration and don't allow to customize the [required metrics label names]({{< relref "requirements.md" >}}). If you need to customize the config please choose one of the other installation options.
+The packaged dashboards and alerts have been compiled from the sources using a default configuration and don't allow you to customize the [required metrics label names]({{< relref "requirements.md" >}}). If you need to customize the required metrics label names please choose one of the other installation options.
 
 1. Download [dashboards](https://github.com/grafana/mimir/tree/main/operations/mimir-mixin-compiled/dashboards), [recording rules](https://github.com/grafana/mimir/blob/main/operations/mimir-mixin-compiled/rules.yaml) and [alerts](https://github.com/grafana/mimir/blob/main/operations/mimir-mixin-compiled/alerts.yaml) from Grafana Mimir repository
 2. [Import dashboards in Grafana](https://grafana.com/docs/grafana/latest/dashboards/export-import/#import-dashboard)
