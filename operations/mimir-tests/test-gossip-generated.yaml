@@ -1203,9 +1203,11 @@ spec:
           initialDelaySeconds: 15
           timeoutSeconds: 1
         resources:
+          limits:
+            memory: 15Gi
           requests:
-            cpu: 100m
-            memory: 1Gi
+            cpu: "2"
+            memory: 10Gi
         volumeMounts:
         - mountPath: /data
           name: alertmanager-data

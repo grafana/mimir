@@ -10,10 +10,12 @@
 ### Mixin
 
 * [FEATURE] Mimir / Top tenants dashboard now has tenants ranked by rule group size and evaluation time. #1338
+* [ENHANCEMENT] Introduced a new alert for the Alertmanager: `MimirAlertmanagerAllocatingTooMuchMemory`. It has two severities based on the memory usage against limits, a `warning` level at 80% and a `critical` level at 90%. #1206
 
 ### Jsonnet
 
 * [CHANGE] Disabled `-ingester.readiness-check-ring-health`. #1352
+* [CHANGE] Changed Alertmanager CPU request from `100m` tp `2` cores, and memory request from `1Gi` to `10Gi`. Set Alertmanager memory limit to `15Gi`. #1206
 * [FEATURE] Added multi-zone ingesters and store-gateways support. #1352
 
 ### Mimirtool
