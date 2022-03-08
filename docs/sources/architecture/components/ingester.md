@@ -1,12 +1,12 @@
 ---
 title: "Ingester"
-description: "Overview of the ingester microservice."
+description: "Overview of the ingester component."
 weight: 10
 ---
 
 # Ingester
 
-The ingester is a stateful service that writes incoming series to [long-term storage]({{< relref "../_index.md#long-term-storage" >}}) on the write path and returns series samples for queries on the read path.
+The ingester is a stateful component that writes incoming series to [long-term storage]({{< relref "../_index.md#long-term-storage" >}}) on the write path and returns series samples for queries on the read path.
 
 Incoming series from [distributors]({{< relref "distributor.md" >}}) are not immediately written to the long-term storage but are either kept in ingesters memory or offloaded to ingesters disk.
 Eventually, all series are written to disk and periodically uploaded (by default every two hours) to the long-term storage.

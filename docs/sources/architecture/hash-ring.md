@@ -89,7 +89,7 @@ For more information, see the [key-value store documentation]({{< relref "key-va
 Grafana Mimir primarily uses the hash ring for sharding and replication.
 Features that are built using the hash ring:
 
-- **Service discovery**: instances can discover each other looking up who is registered in the ring.
-- **Heartbeating**: instances periodically send an heartbeat to the ring to signal they're up and running. An instance is considered unhealthy if misses the heartbeat for some period of time.
-- **Zone-aware replication**: zone-aware replication is the replication of data across failure domains and can be optionally enabled in Grafana Mimir. For more information, see [configuring zone-aware replication]({{< relref "../operating/configuring-zone-aware-replication.md" >}}).
-- **Shuffle sharding**: Grafana Mimir optionally support shuffle sharding in a multi-tenant cluster, to reduce the blast radius of an outage and better isolate tenants. For more information, see [configure shuffle sharding]({{< relref "../operating/configuring-shuffle-sharding.md" >}}).
+- **Service discovery**: Instances can discover each other looking up who is registered in the ring.
+- **Heartbeating**: Instances periodically send an heartbeat to the ring to signal they're up and running. An instance is considered unhealthy if misses the heartbeat for some period of time.
+- **Zone-aware replication**: Zone-aware replication is the replication of data across failure domains and can be optionally enabled in Grafana Mimir. For more information, see [configuring zone-aware replication]({{< relref "../operating/configuring-zone-aware-replication.md" >}}).
+- **Shuffle sharding**: Grafana Mimir optionally supports shuffle sharding in a multi-tenant cluster, to reduce the blast radius of an outage and better isolate tenants. For more information, refer to [configure shuffle sharding]({{< relref "../operating/configuring-shuffle-sharding.md" >}}).

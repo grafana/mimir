@@ -55,7 +55,7 @@ To configure HA tracking, refer to [Configuring high-availability deduplication]
 ## Hash ring
 
 The hash ring is a distributed data structure used by Grafana Mimir for sharding, replication, and service discovery.
-Components use a [key-value store]({{<relref "#key-value-store" >}}) or [gossip]({{<relref "#gossip" >}}) to share the hash ring data structure.
+Components use a [key-value store]({{< relref "#key-value-store" >}}) or [gossip]({{< relref "#gossip" >}}) to share the hash ring data structure.
 For more information, refer to the [Hash ring]({{< relref "architecture/hash-ring.md" >}}).
 
 ## Key-value store
@@ -65,15 +65,15 @@ To understand how Grafana Mimir uses key-value stores, refer to [Key-value store
 
 ## Memberlist
 
-Memberlist manages cluster membership and member failure detection using [gossip]({{<relref "#gossip" >}}).
+Memberlist manages cluster membership and member failure detection using [gossip]({{< relref "#gossip" >}}).
 
 ## Org
 
-Refer to [Tenant]({{<relref "#tenant" >}}).
+Refer to [Tenant]({{< relref "#tenant" >}}).
 
 ## Ring
 
-Refer to [Hash ring]({{<relref "#hash-ring" >}}).
+Refer to [Hash ring]({{< relref "#hash-ring" >}}).
 
 ## Sample
 
@@ -92,7 +92,7 @@ Given the series `node_cpu_seconds_total{instance="10.0.0.1",mode="system"}` its
 
 ## Series
 
-A series is a single stream of [samples]({{<relref "#sample" >}}) belonging to the same metric, with the same set of label key-value pairs.
+A series is a single stream of [samples]({{< relref "#sample" >}}) belonging to the same metric, with the same set of label key-value pairs.
 
 Given a single metric `node_cpu_seconds_total` you may have multiple series, each one uniquely identified by the combination of metric name and unique label key-value pairs:
 
@@ -111,11 +111,11 @@ To understand how Grafana Mimir authenticates tenants, refer to [Authentication 
 
 ## Time series
 
-Refer to [Series]({{<relref "#series" >}}).
+Refer to [Series]({{< relref "#series" >}}).
 
 ## User
 
-Refer to [Tenant]({{<relref "#tenant" >}}).
+Refer to [Tenant]({{< relref "#tenant" >}}).
 
 ## Write-ahead log (WAL)
 

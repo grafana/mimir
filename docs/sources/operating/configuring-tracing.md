@@ -27,7 +27,7 @@ To configure Grafana Mimir to send traces, perform the following steps:
    - The ingester and ruler self-initiate traces and should have sampling
      explicitly enabled.
    - Sampling for the distributor and query-frontend can be enabled in Grafana Mimir
-     or in an upstream service.
+     or in an upstream service, like a proxy or gateway running in front of Grafana Mimir.
 
 To enable sampling in Grafana Mimir components you can specify either
 `JAEGER_SAMPLER_MANAGER_HOST_PORT` for remote sampling, or

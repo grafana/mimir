@@ -1,6 +1,6 @@
 ---
 title: "Querier"
-description: "Overview of the querier microservice."
+description: "Overview of the querier component."
 weight: 10
 ---
 
