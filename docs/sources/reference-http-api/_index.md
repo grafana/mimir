@@ -1,7 +1,7 @@
 ---
 title: "Reference: HTTP API"
 description: ""
-weight: 10000
+weight: 100
 ---
 
 Grafana Mimir exposes an HTTP API that you can use to write and query time series data, and operate the cluster.

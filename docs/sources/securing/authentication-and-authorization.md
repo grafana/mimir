@@ -61,4 +61,4 @@ After you disable multi-tenancy, Grafana Mimir components internally set the ten
 
 To set an alternative tenant ID, use the `-auth.no-auth-tenant` flag.
 
-> **Note**: Not all tenant IDs are valid. For more inforamtion about tenant ID restrictions, refer to [About tenant IDs]({{< relref "../about-tenant-ids.md" >}}).
+> **Note**: Not all tenant IDs are valid. For more inforamtion about tenant ID restrictions, refer to [About tenant IDs]({{< relref "../operating/about-tenant-ids.md" >}}).
