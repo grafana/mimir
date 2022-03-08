@@ -8,7 +8,7 @@ weight: 20
 
 Grafana Mimir runs as either a single process or as multiple microservice processes.
 The single process mode is useful for users who want to try or develop on Grafana Mimir.
-The microservices mode allows you to independently scale different services and isolate failures.
+The microservices mode allows you to independently scale different components and isolate failures.
 
 These instructions focus on deploying Grafana Mimir as a single process.
 For more information about the microservices, refer to [Architecture]({{< relref "../architecture/_index.md" >}}).

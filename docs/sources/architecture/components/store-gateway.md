@@ -1,6 +1,6 @@
 ---
 title: "Store-gateway"
-description: "Overview of the store-gateway microservice."
+description: "Overview of the store-gateway component."
 weight: 10
 ---
 

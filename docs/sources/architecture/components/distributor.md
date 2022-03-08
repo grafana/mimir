@@ -1,6 +1,6 @@
 ---
 title: "Distributor"
-description: "Overview of the distributor microservice."
+description: "Overview of the distributor component."
 weight: 10
 ---
 
