@@ -114,6 +114,16 @@ func TestConvert(t *testing.T) {
 			inFile:  "testdata/ingester-ring-old.yaml",
 			outFile: "testdata/ingester-ring-new.yaml",
 		},
+		{
+			name:    "sharding with consul enabled",
+			inFile:  "testdata/sharding-consul-old.yaml",
+			outFile: "testdata/sharding-consul-new.yaml",
+		},
+		{
+			name:    "sharding disabled",
+			inFile:  "testdata/sharding-disabled-old.yaml",
+			outFile: "testdata/sharding-disabled-new.yaml",
+		},
 	}
 
 	for _, tc := range testCases {
