@@ -1,7 +1,7 @@
 ---
 title: "Query-tee"
 description: ""
-weight: 20
+weight: 10
 ---
 
 # Query-tee
