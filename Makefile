@@ -109,6 +109,7 @@ push-multiarch-mimir:
 	$(SUDO) docker buildx build -o type=registry --platform linux/amd64,linux/arm64 --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) --build-arg=USE_BINARY_SUFFIX=true -t $(IMAGE_PREFIX)mimir:$(IMAGE_TAG) cmd/mimir
 
 # This target fetches current build image, and tags it with "latest" tag. It can be used instead of building the image locally.
+.PHONY: fetch-build-image
 fetch-build-image:
 	docker pull $(BUILD_IMAGE):$(LATEST_BUILD_IMAGE_TAG)
 	docker tag $(BUILD_IMAGE):$(LATEST_BUILD_IMAGE_TAG) $(BUILD_IMAGE):latest
@@ -206,7 +207,7 @@ GOVOLUMES=	-v $(shell pwd)/.cache:/go/cache:delegated,z \
 # Mount local ssh credentials to be able to clone private repos when doing `mod-check`
 SSHVOLUME=  -v ~/.ssh/:/root/.ssh:delegated,z
 
-exes $(EXES) protos $(PROTO_GOS) lint test test-with-race cover shell mod-check check-protos doc format dist: mimir-build-image/$(UPTODATE)
+exes $(EXES) protos $(PROTO_GOS) lint test test-with-race cover shell mod-check check-protos doc format dist: fetch-build-image
 	@mkdir -p $(shell pwd)/.pkg
 	@mkdir -p $(shell pwd)/.cache
 	@echo
