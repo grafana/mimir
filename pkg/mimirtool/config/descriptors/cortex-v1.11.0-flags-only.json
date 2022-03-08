@@ -9,7 +9,7 @@
       "name": "schema-config-file",
       "required": false,
       "desc": "The path to the schema config file. The schema config is used only when running Cortex with the chunks storage.",
-      "fieldValue": "",
+      "fieldDefaultValue": "",
       "fieldFlag": "schema-config-file",
       "fieldType": "string"
     },
@@ -18,7 +18,7 @@
       "name": "ingester-chunk-encoding",
       "required": false,
       "desc": "Encoding version to use for chunks.",
-      "fieldValue": "",
+      "fieldDefaultValue": "",
       "fieldFlag": "ingester.chunk-encoding",
       "fieldType": "string"
     },
@@ -27,7 +27,7 @@
       "name": "querier-query-parallelism",
       "required": false,
       "desc": "Max subqueries run in parallel per higher-level query.",
-      "fieldValue": 100,
+      "fieldDefaultValue": 100,
       "fieldFlag": "querier.query-parallelism",
       "fieldType": "int"
     },
@@ -36,7 +36,7 @@
       "name": "config-file",
       "required": false,
       "desc": "Configuration file to load.",
-      "fieldValue": "",
+      "fieldDefaultValue": "",
       "fieldFlag": "config.file",
       "fieldType": "string"
     },
@@ -45,7 +45,7 @@
       "name": "config-expand-env",
       "required": false,
       "desc": "Expands ${var} or $var in config according to the values of the environment variables.",
-      "fieldValue": "",
+      "fieldDefaultValue": "",
       "fieldFlag": "config.expand-env",
       "fieldType": "string"
     },
@@ -54,7 +54,7 @@
       "name": "mem-ballast-size-bytes",
       "required": false,
       "desc": "Size of memory ballast to allocate.",
-      "fieldValue": 0,
+      "fieldDefaultValue": 0,
       "fieldFlag": "mem-ballast-size-bytes",
       "fieldType": "int"
     },
@@ -63,7 +63,7 @@
       "name": "event-sample-rate",
       "required": false,
       "desc": "How often to sample observability events (0 = never).",
-      "fieldValue": 0,
+      "fieldDefaultValue": 0,
       "fieldFlag": "event.sample-rate",
       "fieldType": "int"
     }
