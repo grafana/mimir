@@ -24,7 +24,7 @@ To configure Grafana Mimir to send traces, perform the following steps:
 1. Set the `JAEGER_AGENT_HOST` environment variable in all components to point
    to the Jaeger agent.
 1. Enable sampling in the appropriate components:
-   - The Ingester and Ruler self-initiate traces and should have sampling
+   - The ingester and ruler self-initiate traces and should have sampling
      explicitly enabled.
    - Sampling for the distributor and query-frontend can be enabled in Grafana Mimir
      or in an upstream service.
