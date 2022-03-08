@@ -6,14 +6,15 @@ weight: 20
 
 # Grafana Mimir architecture
 
-Grafana Mimir has a component-based architecture.
-The system has multiple horizontally scalable components that run separately and in parallel.
+Grafana Mimir has a microservices-based architecture.
+The system has multiple horizontally scalable microservices that can run separately and in parallel.
+Grafana Mimir microservices are called components.
 
 <!-- Diagram source at https://docs.google.com/presentation/d/1bHp8_zcoWCYoNU2AhO2lSagQyuIrghkCncViSqn14cU/edit -->
 
 ![Architecture of Grafana Mimir](../images/architecture.png)
 
-## Components
+## Grafana Mimir components
 
 Most components are stateless and do not require any data persisted between process restarts. Some components are stateful and rely on non-volatile storage to prevent data loss between process restarts. For details about each component, see its page.
 
