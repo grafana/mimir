@@ -15,7 +15,7 @@ Grafana Mimir in production.
 Set up Jaeger deployment to collect and store traces from Grafana Mimir. A
 deployment includes either the Jaeger all-in-one binary, or a distributed
 system of agents, collectors, and queriers. If you run Grafana Mimir on Kubernetes, refer to [Jaeger
-Kubernetes](https://github.com/jaegertracing/jaeger-kubernetes) is an excellent
+Kubernetes](https://github.com/jaegertracing/jaeger-kubernetes).
 resource.
 
 ## Configuration
