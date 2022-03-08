@@ -235,8 +235,8 @@ func (r *request) sendToEndpoint(ctx context.Context, endpoint string, ts []mimi
 	if err != nil {
 		// Errors from NewRequest are from unparsable URLs being configured.
 		// Usually configuration errors should lead to recoverable errors (5xx), but this is an exception because we
-		// don't want that a misconfigured forwarding rule can stop ingestion completely, so we don't signal to the
-		// client to retry by returning a recoverableError.
+		// don't want that a misconfigured forwarding rule can stop ingestion completely, so we return a non-recoverable
+		// to make the client move on and not retry the request.
 		return errBadEndpointConfiguration
 	}
 
