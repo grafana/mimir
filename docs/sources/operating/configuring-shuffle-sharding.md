@@ -48,7 +48,7 @@ Randomly picking two different tenants we have the:
 
 ## Grafana Mimir shuffle sharding
 
-Grafana Mimir supports shuffle sharding in the following services:
+Grafana Mimir supports shuffle sharding in the following components:
 
 - [Ingesters](#ingesters-shuffle-sharding)
 - [Query-frontend / Query-scheduler](#query-frontend-and-query-scheduler-shuffle-sharding)

@@ -1,6 +1,6 @@
 ---
 title: "(Optional) Query-scheduler"
-description: "Overview of the query-scheduler microservice."
+description: "Overview of the query-scheduler component."
 weight: 20
 ---
 

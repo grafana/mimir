@@ -21,7 +21,7 @@ the benefits of query parallelisation and caching.
 # X-Scope-OrgID header. `anonymous` will be substituted in instead.
 multitenancy_enabled: false
 
-# We only want to run the query-frontend module.
+# We only want to run the query-frontend component.
 target: query-frontend
 
 # We don't want the default /api/prom or /prometheus prefixes on endpoints.

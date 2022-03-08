@@ -6,7 +6,7 @@ weight: 10
 # Object store
 
 This dashboard shows an overview on all the activity and operations on the object storage,
-run by any Mimir service.
+run by any Mimir component.
 
 ## Example
 
