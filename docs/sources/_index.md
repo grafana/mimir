@@ -15,7 +15,7 @@ Grafana Mimir provides horizontally scalable, highly available, multi-tenant, lo
 
 If you’re new to Grafana Mimir, read [Getting started with Grafana Mimir]({{< relref "./getting-started/_index.md" >}}).
 
-Before deploying Grafana Mimir with a permanent storage backend, read:
+Before deploying Grafana Mimir, read:
 
 1. [Grafana Mimir architecture]({{< relref "architecture.md" >}})
 1. [Getting started with Grafana Mimir]({{< relref "getting-started/_index.md" >}})
