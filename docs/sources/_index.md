@@ -1,10 +1,6 @@
 ---
 title: "Mimir technical documentation"
-linkTitle: "Documentation"
 weight: 1
-menu:
-  main:
-    weight: 1
 ---
 
 Mimir provides horizontally scalable, highly available, multi-tenant, long-term storage for [Prometheus](https://prometheus.io).
