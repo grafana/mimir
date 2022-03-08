@@ -19,7 +19,7 @@ Kubernetes](https://github.com/jaegertracing/jaeger-kubernetes).
 
 ## Configuration
 
-In order to configure Grafana Mimir to send traces you must do two things:
+To configure Grafana Mimir to send traces, perform the following steps:
 
 1. Set the `JAEGER_AGENT_HOST` environment variable in all components to point
    to your Jaeger agent.
