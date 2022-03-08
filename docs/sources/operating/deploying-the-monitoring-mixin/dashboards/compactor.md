@@ -12,4 +12,4 @@ It includes object storage metrics for operations triggered by the compactor.
 
 The following screenshot shows an example of this dashboard from a demo cluster.
 
-![Grafana Mimir compactor dashboard](../../../../images/dashboards/mimir-compactor.png)
+![Grafana Mimir compactor dashboard](../../../images/dashboards/mimir-compactor.png)

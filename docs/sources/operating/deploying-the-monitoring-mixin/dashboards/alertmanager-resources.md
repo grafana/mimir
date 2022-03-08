@@ -13,4 +13,4 @@ Requires Kubernetes resources metrics.
 
 The following screenshot shows an example of this dashboard from a demo cluster.
 
-![Grafana Mimir Alertmanager resources dashboard](../../../../images/dashboards/mimir-alertmanager-resources.png)
+![Grafana Mimir Alertmanager resources dashboard](../../../images/dashboards/mimir-alertmanager-resources.png)

@@ -63,7 +63,7 @@ The following diagram shows all the timings involved in the estimation. This dia
 
 Given these assumptions, in the worst case scenario it would take up to 6h and 45m since when a sample has been ingested until that sample has been appended to a block flushed to the storage and that block has been [vertically compacted](./compactor.md) with all other overlapping 2h blocks shipped from ingesters.
 
-![Avoid querying non compacted blocks](/images/blocks-storage/avoid-querying-non-compacted-blocks.png)
+![Avoid querying non compacted blocks](../../images/avoid-querying-non-compacted-blocks.png)
 
 <!-- Diagram source at https://docs.google.com/presentation/d/1bHp8_zcoWCYoNU2AhO2lSagQyuIrghkCncViSqn14cU/edit -->
 

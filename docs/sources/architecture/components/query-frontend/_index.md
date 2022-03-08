@@ -17,7 +17,7 @@ To connect the queriers with the query-frontends, configure queriers with the qu
 
 We recommend that you run at least two query-frontend replicas for high-availability reasons.
 
-![Query-frontend architecture](../../images/query-frontend-architecture.png)
+![Query-frontend architecture](../../../images/query-frontend-architecture.png)
 
 [//]: # "Diagram source at https://docs.google.com/presentation/d/1bHp8_zcoWCYoNU2AhO2lSagQyuIrghkCncViSqn14cU/edit"
 

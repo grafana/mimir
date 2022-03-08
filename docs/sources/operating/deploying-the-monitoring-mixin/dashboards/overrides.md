@@ -11,4 +11,4 @@ This dashboard shows global limits and per-tenant overrides.
 
 The following screenshot shows an example of this dashboard from a demo cluster.
 
-![Grafana Mimir overrides dashboard](../../../../images/dashboards/mimir-overrides.png)
+![Grafana Mimir overrides dashboard](../../../images/dashboards/mimir-overrides.png)

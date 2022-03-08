@@ -47,14 +47,16 @@ It hashes the series’ labels, and the result of the hashing function is the to
 To find which ingester owns token `3`, Grafana Mimir looks up the token `3` in the ring and finds the ingester that is registered with the smallest token larger than `3`.
 The ingester #2, which is registered with token `4`, is the authoritative owner of the series `{__name__="cpu_seconds_total",instance="1.1.1.1"}`.
 
-![Hash ring without replication](../images/hash-ring-without-replication.png)
 [//]: # "Diagram source at https://docs.google.com/presentation/d/1bHp8_zcoWCYoNU2AhO2lSagQyuIrghkCncViSqn14cU/edit"
+
+![Hash ring without replication](../images/hash-ring-without-replication.png)
 
 By default, Grafana Mimir replicates each series to three ingesters.
 After finding the authoritative owner of the series, Grafana Mimir continues to walk the ring clockwise to find the remaining two instances where the series should be replicated.
 In the example that follows, the series are replicated to the instances of `Ingester #3` and `Ingester #4`.
 
 ![Hash ring with replication](../images/hash-ring-with-replication.png)
+
 [//]: # "Diagram source at https://docs.google.com/presentation/d/1bHp8_zcoWCYoNU2AhO2lSagQyuIrghkCncViSqn14cU/edit"
 
 ### Consistent hashing
