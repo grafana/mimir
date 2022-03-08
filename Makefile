@@ -33,8 +33,8 @@ BINARY_SUFFIX ?= ""
 IMAGE_PREFIX ?= grafana/
 BUILD_IMAGE ?= $(IMAGE_PREFIX)mimir-build-image
 
-# For a tag push GITHUB_REF will look like refs/tags/<tag_name>,
-# If finding refs/tags/ does not equal emptystring then use
+# For a tag push, $GITHUB_REF will look like refs/tags/<tag_name>.
+# If finding refs/tags/ does not equal empty string, then use
 # the tag we are at as the image tag.
 ifneq (,$(findstring refs/tags/, $(GITHUB_REF)))
 	GIT_TAG := $(shell git tag --points-at HEAD)
