@@ -166,7 +166,7 @@ type recoverableError struct {
 }
 
 func (r *request) Send(ctx context.Context) <-chan error {
-	errCh := make(chan error)
+	errCh := make(chan error, 1)
 
 	// Early return if there's no data to send.
 	if len(r.tsByEndpoint) == 0 {
