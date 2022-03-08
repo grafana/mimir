@@ -196,7 +196,7 @@ func (r *request) Send(ctx context.Context) <-chan error {
 
 		wg.Wait()
 
-		var firstNonRecoverable error
+		var nonRecoverable error
 		// No need to get errorsMtx because we already waited for all routines which might modify it to end.
 		for endpoint, err := range errorsByEndpoint {
 			if err == nil {
@@ -209,13 +209,11 @@ func (r *request) Send(ctx context.Context) <-chan error {
 				return
 			}
 
-			if firstNonRecoverable == nil {
-				firstNonRecoverable = httpgrpc.Errorf(http.StatusBadRequest, "endpoint %s: %s", endpoint, err.Error())
-			}
+			nonRecoverable = httpgrpc.Errorf(http.StatusBadRequest, "endpoint %s: %s", endpoint, err.Error())
 		}
 
-		if firstNonRecoverable != nil {
-			errCh <- firstNonRecoverable
+		if nonRecoverable != nil {
+			errCh <- nonRecoverable
 		}
 	}()
 
