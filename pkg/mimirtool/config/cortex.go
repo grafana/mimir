@@ -37,6 +37,8 @@ var CortexToMimirMapper = MultiMapper{
 	mapRulerAlertmanagerS3URL("alertmanager.storage", "alertmanager_storage"), mapRulerAlertmanagerS3URL("ruler.storage", "ruler_storage"),
 	// Map `-*.s3.bucketnames` and (maybe part of `-*s3.s3.url`) to `-*.s3.bucket-name`
 	mapRulerAlertmanagerS3Buckets("alertmanager.storage", "alertmanager_storage"), mapRulerAlertmanagerS3Buckets("ruler.storage", "ruler_storage"),
+	// Prevent server.http_listen_port from being updated with a new default and always output it.
+	MapperFunc(mapServerHTTPListenPort),
 }
 
 var simpleRenameMappings = map[string]Mapping{
@@ -512,6 +514,23 @@ func mapInstanceInterfaceNames(source, target Parameters) error {
 		errs.Add(target.Delete(targetPath))
 	}
 	return errs.Err()
+}
+
+func mapServerHTTPListenPort(source, target Parameters) error {
+	portVal, err := source.GetValue("server.http_listen_port")
+	if err != nil {
+		return err
+	}
+	// If the port wasn't set, or it was set to the default
+	if portVal == nil || !differentFromDefault(source, "server.http_listen_port") {
+		err = target.SetValue("server.http_listen_port", 80)
+		// We set the default after the value itself because when mapping defaults
+		// calling `SetValue` actually modifies the default value. So we want to retain the target default as it is.
+		err2 := target.SetDefaultValue("server.http_listen_port", 8080)
+		return multierror.New(err, err2).Err()
+	}
+
+	return nil
 }
 
 // YAML Paths for config options removed since Cortex 1.11.0.

@@ -1,3 +1,0 @@
-# The old config was using the previous default. This test should have run with useNewDefaults=true.
-# The new default will be dynamically detected when mimir boots, so no need to set it here.
-{}
