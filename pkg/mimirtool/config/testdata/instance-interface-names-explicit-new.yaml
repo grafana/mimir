@@ -1,0 +1,26 @@
+frontend:
+  instance_interface_names: [ eth0, en0 ]
+
+ingester:
+  ring:
+    instance_interface_names: [ eth0, en0 ]
+
+alertmanager:
+  sharding_ring:
+    instance_interface_names: [ eth0, en0 ]
+
+compactor:
+  sharding_ring:
+    instance_interface_names: [ eth0, en0 ]
+
+distributor:
+  ring:
+    instance_interface_names: [ eth0, en0 ]
+
+ruler:
+  ring:
+    instance_interface_names: [ eth0, en0 ]
+
+store_gateway:
+  sharding_ring:
+    instance_interface_names: [ eth0, en0 ]

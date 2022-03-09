@@ -204,8 +204,7 @@ func decodeValue(fieldType string, decoder interface{ Decode(interface{}) error 
 		value := decoded.(**duration)
 		return time.Duration(**value), err
 	case "list of string":
-		value := decoded.(*stringSlice)
-		return flagext.StringSliceCSV(*value), nil
+		return *decoded.(*stringSlice), nil
 	default:
 		// return a dereferenced typed value
 		return reflect.ValueOf(decoded).Elem().Interface(), nil
@@ -518,8 +517,20 @@ func (d *duration) UnmarshalJSON(data []byte) error {
 	return fmt.Errorf("failed to decode duration: %q", data)
 }
 
-// TODO dimitarvdimitrov add docs
+// stringSlice combines the behaviour of flagext.StringSlice and flagext.StringSliceCSV.
+// Its fmt.Stringer implementation returns a comma-joined string - this is handy for
+// outputting the slice as the value of a flag during convertFlags.
+// Its yaml.Unmarshaler implementation supports reading in both YAML sequences and comma-delimited strings.
+// Its yaml.Marshaler implementation marshals the slice as a regular go slice.
 type stringSlice []string
+
+func (s stringSlice) String() string {
+	return strings.Join(s, ",")
+}
+
+func (s stringSlice) MarshalYAML() (interface{}, error) {
+	return []string(s), nil
+}
 
 func (s *stringSlice) UnmarshalYAML(value *yaml.Node) error {
 	err := value.Decode((*[]string)(s))

@@ -1060,7 +1060,10 @@
               "name": "instance_interface_names",
               "required": false,
               "desc": "Name of network interface to read address from.",
-              "fieldDefaultValue": [],
+              "fieldDefaultValue": [
+                "eth0",
+                "en0"
+              ],
               "fieldFlag": "distributor.ring.instance-interface-names",
               "fieldType": "list of string"
             }
@@ -1883,7 +1886,10 @@
               "name": "interface_names",
               "required": false,
               "desc": "Name of network interface to read address from.",
-              "fieldDefaultValue": [],
+              "fieldDefaultValue": [
+                "eth0",
+                "en0"
+              ],
               "fieldFlag": "ingester.lifecycler.interface",
               "fieldType": "list of string"
             },
@@ -5594,7 +5600,10 @@
           "name": "instance_interface_names",
           "required": false,
           "desc": "Name of network interface to read address from. This address is sent to query-scheduler and querier, which uses it to send the query response back to query-frontend.",
-          "fieldDefaultValue": [],
+          "fieldDefaultValue": [
+            "eth0",
+            "en0"
+          ],
           "fieldFlag": "frontend.instance-interface-names",
           "fieldType": "list of string"
         },
@@ -8483,7 +8492,10 @@
               "name": "instance_interface_names",
               "required": false,
               "desc": "Name of network interface to read address from.",
-              "fieldDefaultValue": [],
+              "fieldDefaultValue": [
+                "eth0",
+                "en0"
+              ],
               "fieldFlag": "compactor.ring.instance-interface-names",
               "fieldType": "list of string"
             },
@@ -8828,7 +8840,10 @@
               "name": "instance_interface_names",
               "required": false,
               "desc": "Name of network interface to read address from.",
-              "fieldDefaultValue": [],
+              "fieldDefaultValue": [
+                "eth0",
+                "en0"
+              ],
               "fieldFlag": "store-gateway.sharding-ring.instance-interface-names",
               "fieldType": "list of string"
             },
@@ -10149,7 +10164,10 @@
               "name": "instance_interface_names",
               "required": false,
               "desc": "Name of network interface to read address from.",
-              "fieldDefaultValue": [],
+              "fieldDefaultValue": [
+                "eth0",
+                "en0"
+              ],
               "fieldFlag": "ruler.ring.instance-interface-names",
               "fieldType": "list of string"
             },
@@ -11191,7 +11209,10 @@
               "name": "instance_interface_names",
               "required": false,
               "desc": "Name of network interface to read address from.",
-              "fieldDefaultValue": [],
+              "fieldDefaultValue": [
+                "eth0",
+                "en0"
+              ],
               "fieldFlag": "alertmanager.sharding-ring.instance-interface-names",
               "fieldType": "list of string"
             },

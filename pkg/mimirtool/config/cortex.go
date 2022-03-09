@@ -4,9 +4,11 @@ package config
 
 import (
 	"fmt"
+	"reflect"
 	"strings"
 
 	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/dskit/multierror"
 	"github.com/pkg/errors"
 
 	"github.com/grafana/mimir/pkg/storage/bucket/s3"
@@ -14,6 +16,7 @@ import (
 
 // CortexToMimirMapper maps from cortex-1.11.0 to mimir-2.0.0 configurations
 var CortexToMimirMapper = MultiMapper{
+	MapperFunc(mapInstanceInterfaceNames),
 	// first try to naively map keys from old config to same keys from new config
 	BestEffortDirectMapper{},
 	// next map alertmanager URL in the ruler config
@@ -73,7 +76,6 @@ var simpleRenameMappings = map[string]Mapping{
 	"frontend.grpc_client_config.tls_insecure_skip_verify":   RenameMapping("frontend.grpc_client_config.tls_insecure_skip_verify"),
 	"frontend.grpc_client_config.tls_key_path":               RenameMapping("frontend.grpc_client_config.tls_key_path"),
 	"frontend.grpc_client_config.tls_server_name":            RenameMapping("frontend.grpc_client_config.tls_server_name"),
-	"frontend.instance_interface_names":                      RenameMapping("frontend.instance_interface_names"),
 	"frontend.log_queries_longer_than":                       RenameMapping("frontend.log_queries_longer_than"),
 	"frontend.max_body_size":                                 RenameMapping("frontend.max_body_size"),
 	"frontend.max_outstanding_per_tenant":                    RenameMapping("frontend.max_outstanding_per_tenant"),
@@ -92,7 +94,6 @@ var simpleRenameMappings = map[string]Mapping{
 	"ingester.lifecycler.availability_zone":                          RenameMapping("ingester.ring.instance_availability_zone"),
 	"ingester.lifecycler.final_sleep":                                RenameMapping("ingester.ring.final_sleep"),
 	"ingester.lifecycler.heartbeat_period":                           RenameMapping("ingester.ring.heartbeat_period"),
-	"ingester.lifecycler.interface_names":                            RenameMapping("ingester.ring.instance_interface_names"),
 	"ingester.lifecycler.join_after":                                 RenameMapping("ingester.ring.join_after"),
 	"ingester.lifecycler.min_ready_duration":                         RenameMapping("ingester.ring.min_ready_duration"),
 	"ingester.lifecycler.num_tokens":                                 RenameMapping("ingester.ring.num_tokens"),
@@ -462,6 +463,35 @@ func mapMemcachedAddresses(source, target Parameters) error {
 	newAddress := fmt.Sprintf("dnssrvnoa+_%s._tcp.%s", service, hostname)
 
 	return target.SetValue(newPrefix+".addresses", newAddress)
+}
+
+func mapInstanceInterfaceNames(source, target Parameters) error {
+	ifaceNames := map[string]string{
+		"alertmanager.sharding_ring.instance_interface_names":  "alertmanager.sharding_ring.instance_interface_names",
+		"compactor.sharding_ring.instance_interface_names":     "compactor.sharding_ring.instance_interface_names",
+		"distributor.ring.instance_interface_names":            "distributor.ring.instance_interface_names",
+		"frontend.instance_interface_names":                    "frontend.instance_interface_names",
+		"ingester.lifecycler.interface_names":                  "ingester.ring.instance_interface_names",
+		"ruler.ring.instance_interface_names":                  "ruler.ring.instance_interface_names",
+		"store_gateway.sharding_ring.instance_interface_names": "store_gateway.sharding_ring.instance_interface_names",
+	}
+
+	errs := multierror.New()
+	for sourcePath, targetPath := range ifaceNames {
+		err := target.SetDefaultValue(targetPath, nil)
+		if err != nil {
+			errs.Add(err)
+			continue
+		}
+		instanceNamesVal, _ := source.GetValue(sourcePath)
+		if instanceNamesVal != nil {
+			// The user has set the value to something, we want to keep that
+			errs.Add(target.SetValue(targetPath, instanceNamesVal))
+			continue
+		}
+		errs.Add(target.Delete(targetPath))
+	}
+	return errs.Err()
 }
 
 // YAML Paths for config options removed since Cortex 1.11.0.
