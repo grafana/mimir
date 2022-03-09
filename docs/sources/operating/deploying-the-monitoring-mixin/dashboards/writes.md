@@ -5,13 +5,12 @@ weight: 10
 
 # Writes
 
-This dashboard shows various health metrics for the write path.
-It includes object storage metrics for operations triggered by the read path.
-It is broken into sections for each service on the write path,
-and organized by the order in which the write request flows.
+The Writes dashboard shows health metrics for the write path and object storage metrics for operations triggered by the write path.
+
+The dashboard isolates each service on the write path into its own section and displays the order in which a write request flows.
 
 ## Example
 
-The following screenshot shows an example of this dashboard from a demo cluster.
+The following example shows a Writes dashboard from a demo cluster.
 
 ![Grafana Mimir writes dashboard](../../../images/dashboards/mimir-writes.png)

@@ -5,12 +5,12 @@ weight: 10
 
 # Alertmanager resources
 
-This dashboard shows CPU, memory, disk and networking metrics for the Alertmanager.
+The Alertmanager resources dashboard shows CPU, memory, disk and networking metrics for the Alertmanager.
 
-Requires Kubernetes resources metrics.
+This dashboard requires Kubernetes resources metrics.
 
 ## Example
 
-The following screenshot shows an example of this dashboard from a demo cluster.
+The following example shows an Alertmanager resources dashboard from a demo cluster.
 
 ![Grafana Mimir Alertmanager resources dashboard](../../../images/dashboards/mimir-alertmanager-resources.png)
