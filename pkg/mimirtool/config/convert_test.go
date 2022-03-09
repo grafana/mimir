@@ -137,6 +137,21 @@ func TestConvert(t *testing.T) {
 			outFile: "testdata/ruler-s3-url-with-secret-key-new.yaml",
 		},
 		{
+			name:    "ruler S3 URL: non-trivial user part, pt.1",
+			inFile:  "testdata/ruler-s3-non-trivial-1-url-old.yaml",
+			outFile: "testdata/ruler-s3-non-trivial-1-url-new.yaml",
+		},
+		{
+			name:    "ruler S3 URL: non-trivial user part, pt.2",
+			inFile:  "testdata/ruler-s3-non-trivial-2-url-old.yaml",
+			outFile: "testdata/ruler-s3-non-trivial-2-url-new.yaml",
+		},
+		{
+			name:    "ruler S3 URL: non-trivial user part, pt.3",
+			inFile:  "testdata/ruler-s3-non-trivial-3-url-old.yaml",
+			outFile: "testdata/ruler-s3-non-trivial-3-url-new.yaml",
+		},
+		{
 			name:    "alertmanager S3 URL",
 			inFile:  "testdata/am-s3-url-old.yaml",
 			outFile: "testdata/am-s3-url-new.yaml",

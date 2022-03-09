@@ -389,24 +389,30 @@ func mapRulerAlertmanagerS3URL(dotStoragePath, storagePath string) MapperFunc {
 		if s3URL.User != nil {
 			username := s3URL.User.Username()
 			password, _ := s3URL.User.Password()
-			{
-				secretAccessKey, _ := target.GetValue(newS3SecretAccessKeyPath)
-				if secretAccessKey == nil || secretAccessKey.(string) == "" {
-					err := target.SetValue(newS3SecretAccessKeyPath, password)
-					if err != nil {
-						return err
-					}
+			setIfNonEmpty := func(p Parameters, path, val string) error {
+				currentVal, _ := target.GetValue(path)
+				currentStr, _ := currentVal.(string)
+				if val == "" || currentStr != "" {
+					// Values set by the user take precedence over ones in the URL
+					return nil
 				}
-			}
-			{
-				keyID, _ := target.GetValue(newS3KeyIDPath)
-				if keyID == nil || keyID.(string) == "" {
-					err := target.SetValue(newS3KeyIDPath, username)
-					if err != nil {
-						return err
-					}
+				err := target.SetValue(path, val)
+				if err != nil {
+					return err
 				}
+				return nil
 			}
+
+			err := setIfNonEmpty(target, newS3SecretAccessKeyPath, password)
+			if err != nil {
+				return err
+			}
+
+			err = setIfNonEmpty(target, newS3KeyIDPath, username)
+			if err != nil {
+				return err
+			}
+
 		}
 
 		err := target.SetValue(newS3EndpointPath, s3URL.Host)
