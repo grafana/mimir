@@ -243,6 +243,8 @@ GET /distributor/all_user_stats
 
 This endpoint displays a web page that shows per-tenant statistics updated in real time, including the total number of active series across all ingesters and the current ingestion rate displayed in samples per second.
 
+> **Note:** This endpoint requires all ingesters to be `ACTIVE` in the ring for a successful response.
+
 ### HA tracker status
 
 ```
