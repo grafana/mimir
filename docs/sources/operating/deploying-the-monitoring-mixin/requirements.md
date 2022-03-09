@@ -10,13 +10,13 @@ Grafana Mimir dashboards and alerts require certain labels to exist on metrics s
 Your Prometheus or Grafana Agent must be configured to add these labels in order for the dashboards and alerts to function.
 The following table shows the required label names and whether they can be customized when [compiling dashboards or alerts from sources]({{< relref "installing-dashboards-and-alerts.md" >}}).
 
-| Label name  | Configurable | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| :---------- | :----------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `cluster`   | No           | The Kubernetes cluster or datacenter where the Mimir cluster is running.                                                                                                                                                                                                                                                                                                                                                                                                          |
-| `namespace` | No           | The Kubernetes namespace where the Mimir cluster is running.                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| Label name  | Configurable | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| :---------- | :----------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cluster`   | No           | The Kubernetes cluster or datacenter where the Mimir cluster is running.                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `namespace` | No           | The Kubernetes namespace where the Mimir cluster is running.                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | `job`       | Partially    | The Kubernetes namespace and Mimir component in the format `<namespace>/<component>`. When running in monolithic mode, the `<component>` should be `mimir`. When running in microservices mode, the `<component>` should be the name of the specific Mimir component (singular), like `distributor`, `ingester` or `store-gateway`. The label name can't be configured, while the regular expressions used to match components can be configured with the `job_names` field in the mixin config. |
-| `pod`       | Yes          | The unique identifier of a Mimir replica (eg. Pod ID when running on Kubernetes). The label name can be configured with the `per_instance_label` field in the mixin config.                                                                                                                                                                                                                                                                                                       |
-| `instance`  | Yes          | The unique identifier of the node or machine where the Mimir replica is running (eg. the node when running on Kubernetes). The label name can be configured with the `per_node_label` field in the mixin config.                                                                                                                                                                                                                                                                  |
+| `pod`       | Yes          | The unique identifier of a Mimir replica (eg. Pod ID when running on Kubernetes). The label name can be configured with the `per_instance_label` field in the mixin config.                                                                                                                                                                                                                                                                                                                      |
+| `instance`  | Yes          | The unique identifier of the node or machine where the Mimir replica is running (eg. the node when running on Kubernetes). The label name can be configured with the `per_node_label` field in the mixin config.                                                                                                                                                                                                                                                                                 |
 
 ## Job selection
 
@@ -35,13 +35,13 @@ When running Grafana Mimir in monolithic mode and using the pre-compiled dashboa
 
 When running Grafana Mimir in microservices mode and using the pre-compiled dashboards and alerts, the `job` label should be set according to the following table.
 
-| Mimir service   | Expected `job` label |
-| :-------------- | :----------------------- |
-| Distributor     | `<namespace>/distributor`            |
-| Ingester        | `<namespace>/ingester`               |
-| Querier         | `<namespace>/querier`                |
-| Ruler           | `<namespace>/ruler`                  |
-| Query-frontend  | `<namespace>/query-frontend`         |
-| Query-scheduler | `<namespace>/query-scheduler`         |
-| Store-gateway   | `<namespace>/store-gateway`          |
-| Compactor       | `<namespace>/compactor`              |
+| Mimir service   | Expected `job` label          |
+| :-------------- | :---------------------------- |
+| Distributor     | `<namespace>/distributor`     |
+| Ingester        | `<namespace>/ingester`        |
+| Querier         | `<namespace>/querier`         |
+| Ruler           | `<namespace>/ruler`           |
+| Query-frontend  | `<namespace>/query-frontend`  |
+| Query-scheduler | `<namespace>/query-scheduler` |
+| Store-gateway   | `<namespace>/store-gateway`   |
+| Compactor       | `<namespace>/compactor`       |
