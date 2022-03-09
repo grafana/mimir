@@ -75,7 +75,7 @@ The querier supports the following cache:
 
 - [Metadata cache](#metadata-cache)
 
-Caching is optional, but highly recommended in a production environment. For more information about configuring the cache, refer to [production tips]({{< relref "../blocks-storage/production-tips.md#caching" >}}).
+Caching is optional, but highly recommended in a production environment.
 
 ### Metadata cache
 
