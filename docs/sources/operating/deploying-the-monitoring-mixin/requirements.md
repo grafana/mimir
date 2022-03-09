@@ -6,11 +6,9 @@ weight: 10
 
 # Grafana Mimir dashboards and alerts requirements
 
-Grafana Mimir dashboards and alerts require certain labels to exist on metrics
-scraped from Grafana Mimir. Your Prometheus or Grafana Agent must be configured
-to add these labels in order for the dashboards and alerts to function. The
-following table shows the required label names and whether they can be customized when 
-[compiling dashboards or alerts from sources]({{< relref "installing-dashboards-and-alerts.md" >}}).
+Grafana Mimir dashboards and alerts require certain labels to exist on metrics scraped from Grafana Mimir.
+Your Prometheus or Grafana Agent must be configured to add these labels in order for the dashboards and alerts to function.
+The following table shows the required label names and whether they can be customized when [compiling dashboards or alerts from sources]({{< relref "installing-dashboards-and-alerts.md" >}}).
 
 | Label name  | Configurable | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | :---------- | :----------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -22,16 +20,12 @@ following table shows the required label names and whether they can be customize
 
 ## Job selection
 
-A metric could be exposed by multiple Grafana Mimir components, or even
-different applications running in the same namespace. To provide accurate
-dashboards and alerts, we use the `job` label to select a metric from specific
-components. A `job` is a combination of namespace and component, for example
-`<namespace>/ingester`.
+A metric could be exposed by multiple Grafana Mimir components, or even different applications running in the same namespace.
+To provide accurate dashboards and alerts, we use the `job` label to select a metric from specific components.
+A `job` is a combination of namespace and component, for example `<namespace>/ingester`.
 
-Pre-compiled dashboards and alerts are shipped with a default configuration. If
-you compile dashboards and alerts from source, you have the option to customize
-the regular expression used to select each Mimir component through the
-`job_names` field in the mixin config.
+Pre-compiled dashboards and alerts are shipped with a default configuration.
+If you compile dashboards and alerts from source, you have the option to customize the regular expression used to select each Mimir component through the `job_names` field in the mixin config.
 
 ### Default `job` selection in monolithic mode
 
