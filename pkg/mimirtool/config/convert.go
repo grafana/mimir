@@ -191,6 +191,11 @@ func convertFlags(flags []string, m Mapper, target Parameters, sourceFactory, ta
 		if err != nil {
 			return err
 		}
+		if _, ok := value.(string); ok {
+			// Escape the string in case it contains some special characters or spaces that will not be properly read
+			// when passed to cortex
+			value = fmt.Sprintf("'%s'", value)
+		}
 
 		newFlagsWithValues = append(newFlagsWithValues, fmt.Sprintf("-%s=%v", flagName, value))
 		return nil

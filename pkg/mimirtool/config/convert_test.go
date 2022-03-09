@@ -210,6 +210,11 @@ func TestConvert(t *testing.T) {
 			inFile:      "testdata/server-listen-http-port-random-old.yaml",
 			outFile:     "testdata/server-listen-http-port-random-new.yaml",
 		},
+		{
+			name:         "json in flags doesn't get messed up with escaping",
+			inFlagsFile:  "testdata/json-in-flag.txt",
+			outFlagsFile: "testdata/json-in-flag.txt",
+		},
 	}
 
 	for _, tc := range testCases {
