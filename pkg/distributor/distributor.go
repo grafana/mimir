@@ -37,10 +37,12 @@ import (
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/grafana/mimir/pkg/distributor/forwarding"
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/tenant"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -76,6 +78,7 @@ type Distributor struct {
 	ingestersRing ring.ReadRing
 	ingesterPool  *ring_client.Pool
 	limits        *validation.Overrides
+	forwarder     forwarding.Forwarder
 
 	// The global rate limiter requires a distributors ring to count
 	// the number of healthy instances
@@ -144,6 +147,9 @@ type Config struct {
 
 	// Limits for distributor
 	InstanceLimits InstanceLimits `yaml:"instance_limits"`
+
+	// Configuration for forwarding of metrics to alternative ingestion endpoint.
+	Forwarding forwarding.Config
 }
 
 type InstanceLimits struct {
@@ -156,11 +162,11 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.PoolConfig.RegisterFlags(f)
 	cfg.HATrackerConfig.RegisterFlags(f)
 	cfg.DistributorRing.RegisterFlags(f, logger)
+	cfg.Forwarding.RegisterFlags(f)
 
 	f.IntVar(&cfg.MaxRecvMsgSize, "distributor.max-recv-msg-size", 100<<20, "remote_write API max receive message size (bytes).")
 	f.DurationVar(&cfg.RemoteTimeout, "distributor.remote-timeout", 20*time.Second, "Timeout for downstream ingesters.")
 	f.BoolVar(&cfg.ExtendWrites, "distributor.extend-writes", true, "Try writing to an additional ingester in the presence of an ingester not in the ACTIVE state. It is useful to disable this along with -ingester.ring.unregister-on-shutdown=false in order to not spread samples to extra ingesters during rolling restarts with consistent naming.")
-
 	f.Float64Var(&cfg.InstanceLimits.MaxIngestionRate, "distributor.instance-limits.max-ingestion-rate", 0, "Max ingestion rate (samples/sec) that this distributor will accept. This limit is per-distributor, not per-tenant. Additional push requests will be rejected. Current ingestion rate is computed as exponentially weighted moving average, updated every second. 0 = unlimited.")
 	f.IntVar(&cfg.InstanceLimits.MaxInflightPushRequests, "distributor.instance-limits.max-inflight-push-requests", 2000, "Max inflight push requests that this distributor can handle. This limit is per-distributor, not per-tenant. Additional requests will be rejected. 0 = unlimited.")
 }
@@ -243,7 +249,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		receivedSamples: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Namespace: "cortex",
 			Name:      "distributor_received_samples_total",
-			Help:      "The total number of received samples, excluding rejected and deduped samples.",
+			Help:      "The total number of received samples, excluding rejected, forwarded and deduped samples.",
 		}, []string{"user"}),
 		receivedExemplars: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Namespace: "cortex",
@@ -258,7 +264,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		incomingSamples: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Namespace: "cortex",
 			Name:      "distributor_samples_in_total",
-			Help:      "The total number of samples that have come in to the distributor, including rejected or deduped samples.",
+			Help:      "The total number of samples that have come in to the distributor, including rejected, forwarded or deduped samples.",
 		}, []string{"user"}),
 		incomingExemplars: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Namespace: "cortex",
@@ -359,6 +365,8 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 	}, func() float64 {
 		return d.ingestionRate.Rate()
 	})
+
+	d.forwarder = forwarding.NewForwarder(reg, d.cfg.Forwarding)
 
 	d.replicationFactor.Set(float64(ingestersRing.ReplicationFactor()))
 	d.activeUsers = util.NewActiveUsersCleanupWithDefaultValues(d.cleanupInactiveUser)
@@ -539,6 +547,23 @@ func (d *Distributor) validateSeries(nowt time.Time, ts mimirpb.PreallocTimeseri
 	return nil
 }
 
+// forwardingReq returns a forwarding request if one is necessary, given the user ID.
+// if no forwarding request is necessary it returns nil.
+func (d *Distributor) forwardingReq(ctx context.Context, userID string) forwarding.Request {
+	if d.forwarder == nil {
+		return nil
+	}
+
+	forwardingRules := d.limits.ForwardingRules(userID)
+
+	// If this tenant has no forwarding rule(s) we can directly return "nil", which effectively disables forwarding.
+	if len(forwardingRules) == 0 {
+		return nil
+	}
+
+	return d.forwarder.NewRequest(ctx, userID, forwardingRules)
+}
+
 // Push implements client.IngesterServer
 func (d *Distributor) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error) {
 	return d.PushWithCleanup(ctx, req, func() { mimirpb.ReuseSlice(req.Timeseries) })
@@ -660,6 +685,8 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 		minExemplarTS = earliestSampleTimestampMs - 300000
 	}
 
+	forwardingReq := d.forwardingReq(ctx, userID)
+
 	// For each timeseries, compute a hash to distribute across ingesters;
 	// check each sample and discard if outside limits.
 	for _, ts := range req.Timeseries {
@@ -700,6 +727,15 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 
 		d.labelsHistogram.Observe(float64(len(ts.Labels)))
 
+		if forwardingReq != nil {
+			// If this tenant has any forwarding rules then we should add all samples to the forwarding request,
+			// those that don't match a forwarding rule will be discarded by the forwarding request.
+			sendToIngester := forwardingReq.Add(ts)
+			if !sendToIngester {
+				continue
+			}
+		}
+
 		skipLabelNameValidation := d.cfg.SkipLabelNameValidation || req.GetSkipLabelNameValidation()
 		// Note that validateSeries may drop some data in ts.
 		validationErr := d.validateSeries(now, ts, userID, skipLabelNameValidation, minExemplarTS)
@@ -721,6 +757,11 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 		validatedExemplars += len(ts.Exemplars)
 	}
 
+	var forwardingErrCh <-chan error
+	if forwardingReq != nil {
+		forwardingErrCh = forwardingReq.Send(ctx)
+	}
+
 	for _, m := range req.Metadata {
 		err := validation.ValidateMetadata(d.limits, userID, m)
 		if err != nil {
@@ -740,6 +781,14 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 	d.receivedMetadata.WithLabelValues(userID).Add(float64(len(validatedMetadata)))
 
 	if len(seriesKeys) == 0 && len(metadataKeys) == 0 {
+		if forwardingErrCh != nil {
+			// Blocks until the forwarding requests have completed and the final status has been pushed through this chan.
+			err = httpgrpcutil.PrioritizeRecoverableErr(err, <-forwardingErrCh, firstPartialErr)
+			if err != nil {
+				return nil, err
+			}
+		}
+
 		return &mimirpb.WriteResponse{}, firstPartialErr
 	}
 
@@ -795,6 +844,13 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 
 		return d.send(localCtx, ingester, timeseries, metadata, req.Source)
 	}, func() { cleanup(); cancel() })
+
+	if forwardingErrCh != nil {
+		// Blocks until the forwarding requests have completed and the final status has been pushed through this chan.
+		forwardingErr := <-forwardingErrCh
+		err = httpgrpcutil.PrioritizeRecoverableErr(err, forwardingErr, firstPartialErr)
+	}
+
 	if err != nil {
 		return nil, err
 	}

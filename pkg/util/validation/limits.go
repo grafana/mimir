@@ -26,6 +26,17 @@ func (e LimitError) Error() string {
 	return string(e)
 }
 
+type ForwardingRule struct {
+	// Ingest defines whether a metric should still be pushed to the Ingesters despite it being forwarded.
+	Ingest bool `yaml:"ingest" json:"ingest"`
+
+	// Endpoint is the URL of the remote_write endpoint to which a metric should be forwarded.
+	Endpoint string `yaml:"endpoint" json:"endpoint"`
+}
+
+// ForwardingRules are keyed by metric names, excluding labels.
+type ForwardingRules map[string]ForwardingRule
+
 // Limits describe all the limits for users; can be used to describe global default
 // limits via flags, or per-user limits via yaml config.
 type Limits struct {
@@ -107,6 +118,8 @@ type Limits struct {
 	AlertmanagerMaxDispatcherAggregationGroups int `yaml:"alertmanager_max_dispatcher_aggregation_groups" json:"alertmanager_max_dispatcher_aggregation_groups"`
 	AlertmanagerMaxAlertsCount                 int `yaml:"alertmanager_max_alerts_count" json:"alertmanager_max_alerts_count"`
 	AlertmanagerMaxAlertsSizeBytes             int `yaml:"alertmanager_max_alerts_size_bytes" json:"alertmanager_max_alerts_size_bytes"`
+
+	ForwardingRules ForwardingRules `yaml:"forwarding_rules" json:"forwarding_rules" doc:"nocli|description=Rules based on which the Distributor decides whether a metric should be forwarded to an alternative remote_write API endpoint."`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
@@ -578,6 +591,10 @@ func (o *Overrides) AlertmanagerMaxAlertsCount(userID string) int {
 
 func (o *Overrides) AlertmanagerMaxAlertsSizeBytes(userID string) int {
 	return o.getOverridesForUser(userID).AlertmanagerMaxAlertsSizeBytes
+}
+
+func (o *Overrides) ForwardingRules(user string) ForwardingRules {
+	return o.getOverridesForUser(user).ForwardingRules
 }
 
 func (o *Overrides) getOverridesForUser(userID string) *Limits {
