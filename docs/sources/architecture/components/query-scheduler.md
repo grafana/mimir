@@ -8,7 +8,7 @@ weight: 20
 
 The query-scheduler is an optional, stateless component that retains a queue of queries to execute, and distributes the workload to available [queriers]({{< relref "querier.md" >}}).
 
-![Query-scheduler architecture](../../images/query-scheduler-architecture.png)
+![Query-scheduler architecture](../../../images/query-scheduler-architecture.png)
 
 [//]: # "Diagram source at https://docs.google.com/presentation/d/1bHp8_zcoWCYoNU2AhO2lSagQyuIrghkCncViSqn14cU/edit"
 
