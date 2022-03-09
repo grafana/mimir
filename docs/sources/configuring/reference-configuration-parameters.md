@@ -71,7 +71,7 @@ When new parameters are added, they can be introduced as **basic**, **advanced**
 
 If we decide to eliminate a **basic** or **advanced** parameter, we will first mark it deprecated. After two more minor releases, a deprecated flag will be removed entirely. Use the metric `deprecated_flags_inuse_total` to determine whether you're using deprecated flags.
 
-![Parameter states](../../images/param-states.png)
+![Parameter states](../images/param-states.png)
 
 ## Use environment variables in the configuration
 
@@ -639,6 +639,17 @@ instance_limits:
   # rejected. 0 = unlimited.
   # CLI flag: -distributor.instance-limits.max-inflight-push-requests
   [max_inflight_push_requests: <int> | default = 2000]
+
+forwarding:
+  # (experimental) Enables the feature to forward certain metrics in
+  # remote_write requests, depending on defined rules.
+  # CLI flag: -distributor.forwarding.enabled
+  [enabled: <boolean> | default = false]
+
+  # (experimental) Timeout for requests to ingestion endpoints to which we
+  # forward metrics.
+  # CLI flag: -distributor.forwarding.request-timeout
+  [request_timeout: <duration> | default = 10s]
 ```
 
 ### ingester
@@ -2742,6 +2753,10 @@ The `limits` block configures default and per-tenant limits imposed by component
 # alerts will fail with a log message and metric increment. 0 = no limit.
 # CLI flag: -alertmanager.max-alerts-size-bytes
 [alertmanager_max_alerts_size_bytes: <int> | default = 0]
+
+# Rules based on which the Distributor decides whether a metric should be
+# forwarded to an alternative remote_write API endpoint.
+[forwarding_rules: <map of string to validation.ForwardingRule> | default = ]
 ```
 
 ### blocks_storage

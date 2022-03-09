@@ -11,4 +11,4 @@ This dashboard shows details about the runtime config currently loaded by each M
 
 The following screenshot shows an example of this dashboard from a demo cluster.
 
-![Grafana Mimir config dashboard](../../../../images/dashboards/mimir-config.png)
+![Grafana Mimir config dashboard](../../../images/dashboards/mimir-config.png)

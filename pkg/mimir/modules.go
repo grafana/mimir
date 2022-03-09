@@ -145,7 +145,6 @@ func (t *Mimir) initActivityTracker() (services.Service, error) {
 
 	return services.NewIdleService(nil, func(_ error) error {
 		entries, err := activitytracker.LoadUnfinishedEntries(t.Cfg.ActivityTracker.Filepath)
-
 		if err != nil {
 			level.Warn(l).Log("msg", "failed to fully read file with unfinished activities during shutdown", "err", err)
 		}

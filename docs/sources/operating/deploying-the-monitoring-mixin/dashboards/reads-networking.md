@@ -15,4 +15,4 @@ Requires Kubernetes networking metrics.
 
 The following screenshot shows an example of this dashboard from a demo cluster.
 
-![Grafana Mimir reads networking dashboard](../../../../images/dashboards/mimir-reads-networking.png)
+![Grafana Mimir reads networking dashboard](../../../images/dashboards/mimir-reads-networking.png)

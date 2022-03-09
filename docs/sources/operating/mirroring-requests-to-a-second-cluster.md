@@ -28,7 +28,7 @@ The following diagram illustrates a simplified network structure.
 
 <!-- Diagram source at https://docs.google.com/presentation/d/1bHp8_zcoWCYoNU2AhO2lSagQyuIrghkCncViSqn14cU/edit -->
 
-![Mirroring with Envoy Proxy - network diagram](../../images/mirroring-envoy.png)
+![Mirroring with Envoy Proxy - network diagram](../images/mirroring-envoy.png)
 
 ### Example Envoy configuration
 
