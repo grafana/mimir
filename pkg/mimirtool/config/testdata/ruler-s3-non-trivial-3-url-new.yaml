@@ -1,0 +1,4 @@
+ruler_storage:
+  s3:
+    endpoint: hostname.com:8080
+    bucket_name: my-bucket

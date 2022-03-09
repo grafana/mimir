@@ -1,0 +1,5 @@
+ruler_storage:
+  s3:
+    endpoint: hostname.com:8080
+    secret_access_key: pass
+    bucket_name: my-bucket

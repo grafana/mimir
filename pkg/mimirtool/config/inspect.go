@@ -149,7 +149,7 @@ func (i *InspectedEntry) asMap() map[string]interface{} {
 			if e.FieldValue != nil {
 				combined[e.Name] = e.FieldValue
 			}
-		} else {
+		} else if e.Name != notInYaml {
 			combined[e.Name] = e.asMap()
 		}
 	}
@@ -183,22 +183,32 @@ func (i *InspectedEntry) UnmarshalYAML(value *yaml.Node) error {
 
 func decodeValue(fieldType string, decoder interface{ Decode(interface{}) error }) (interface{}, error) {
 	typ := parse.ReflectType(fieldType)
-	if fieldType == "duration" {
+
+	switch fieldType {
+	case "duration":
 		d := duration(0)
 		typ = reflect.TypeOf(&d)
+	case "list of string":
+		typ = reflect.TypeOf(stringSlice{})
 	}
 
 	decoded := reflect.New(typ).Interface() // create a new typed pointer
 	err := decoder.Decode(decoded)
+	if err != nil {
+		return nil, err
+	}
 
-	if fieldType == "duration" && err == nil {
+	switch fieldType {
+	case "duration":
 		// convert it to time.Duration.
 		value := decoded.(**duration)
 		return time.Duration(**value), err
+	case "list of string":
+		return *decoded.(*stringSlice), nil
+	default:
+		// return a dereferenced typed value
+		return reflect.ValueOf(decoded).Elem().Interface(), nil
 	}
-
-	// return a dereferenced typed value
-	return reflect.ValueOf(decoded).Elem().Interface(), err
 }
 
 // GetValue returns the golang value of the parameter as an interface{}.
@@ -505,6 +515,32 @@ func (d *duration) UnmarshalJSON(data []byte) error {
 	}
 
 	return fmt.Errorf("failed to decode duration: %q", data)
+}
+
+// stringSlice combines the behaviour of flagext.StringSlice and flagext.StringSliceCSV.
+// Its fmt.Stringer implementation returns a comma-joined string - this is handy for
+// outputting the slice as the value of a flag during convertFlags.
+// Its yaml.Unmarshaler implementation supports reading in both YAML sequences and comma-delimited strings.
+// Its yaml.Marshaler implementation marshals the slice as a regular go slice.
+type stringSlice []string
+
+func (s stringSlice) String() string {
+	return strings.Join(s, ",")
+}
+
+func (s stringSlice) MarshalYAML() (interface{}, error) {
+	return []string(s), nil
+}
+
+func (s *stringSlice) UnmarshalYAML(value *yaml.Node) error {
+	err := value.Decode((*[]string)(s))
+	if err != nil {
+		err = value.Decode((*flagext.StringSliceCSV)(s))
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 //go:embed descriptors/cortex-v1.11.0.json

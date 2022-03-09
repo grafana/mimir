@@ -1,0 +1,4 @@
+alertmanager:
+  storage:
+    s3:
+      s3: inmemory://my-bucket

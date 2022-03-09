@@ -263,7 +263,7 @@ func TestInspectConfig_LoadingAConfigHasCorrectTypes(t *testing.T) {
 		{
 			name:         "[]string",
 			path:         "distributor.ha_tracker.kvstore.etcd.endpoints",
-			expectedType: []string{},
+			expectedType: stringSlice{},
 		},
 		{
 			name:         "duration",
