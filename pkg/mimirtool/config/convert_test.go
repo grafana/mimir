@@ -132,6 +132,11 @@ func TestConvert(t *testing.T) {
 			outFile: "testdata/ruler-s3-url-new.yaml",
 		},
 		{
+			name:    "ruler S3 URL: existing access_key and secret_key take precedence",
+			inFile:  "testdata/ruler-s3-url-with-secret-key-old.yaml",
+			outFile: "testdata/ruler-s3-url-with-secret-key-new.yaml",
+		},
+		{
 			name:    "alertmanager S3 URL",
 			inFile:  "testdata/am-s3-url-old.yaml",
 			outFile: "testdata/am-s3-url-new.yaml",
