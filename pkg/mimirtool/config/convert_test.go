@@ -60,6 +60,7 @@ func TestConvert(t *testing.T) {
 			inFile:       "testdata/noop-old.yaml",
 			inFlagsFile:  "testdata/flags-precedence-old.flags.txt",
 			outFlagsFile: "testdata/flags-precedence-new.flags.txt",
+			outFile:      "testdata/common-options.yaml",
 		},
 		{
 			name:    "ruler.storage maps to ruler_storage",
@@ -155,12 +156,39 @@ func TestConvert(t *testing.T) {
 			name:           "instance_interface_names using explicit old default and useNewDefaults=true gets pruned",
 			useNewDefaults: true,
 			inFile:         "testdata/instance-interface-names-explicit-old.yaml",
-			outFile:        "testdata/instance-interface-names-pruned-new.yaml",
+			// The old config was using the previous default.
+			// The new default will be dynamically detected when mimir boots, so no need to set it in the out YAML.
+			outFile: "testdata/empty.yaml",
 		},
 		{
 			name:    "instance_interface_names using explicit old default and useNewDefaults=false stays",
 			inFile:  "testdata/instance-interface-names-explicit-old.yaml",
 			outFile: "testdata/instance-interface-names-explicit-new.yaml",
+		},
+		{
+			name:        "server.http-listen-port old default is printed even when implicitly using the old default",
+			inFlagsFile: "testdata/empty.txt", // prevent the test from using common-flags.txt
+			inFile:      "testdata/empty.yaml",
+			outFile:     "testdata/server-listen-http-port-new.yaml",
+		},
+		{
+			name:           "server.http-listen-port old default is retained with useNewDefaults=true",
+			inFlagsFile:    "testdata/empty.txt", // prevent the test from using common-flags.txt
+			useNewDefaults: true,
+			inFile:         "testdata/server-listen-http-port-old.yaml",
+			outFile:        "testdata/server-listen-http-port-new.yaml",
+		},
+		{
+			name:        "server.http-listen-port old default is retained with useNewDefaults=false",
+			inFlagsFile: "testdata/empty.txt", // prevent the test from using common-flags.txt
+			inFile:      "testdata/server-listen-http-port-old.yaml",
+			outFile:     "testdata/server-listen-http-port-new.yaml",
+		},
+		{
+			name:        "server.http-listen-port random value is retained with useNewDefaults=false",
+			inFlagsFile: "testdata/empty.txt", // prevent the test from using common-flags.txt
+			inFile:      "testdata/server-listen-http-port-random-old.yaml",
+			outFile:     "testdata/server-listen-http-port-random-new.yaml",
 		},
 	}
 
@@ -168,14 +196,19 @@ func TestConvert(t *testing.T) {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			inBytes := loadFile(t, tc.inFile)
-			inFlags := loadFlags(t, tc.inFlagsFile)
+			inBytes, expectedOut := loadFile(t, tc.inFile), loadFile(t, tc.outFile)
+			inFlags, expectedOutFlags := loadFlags(t, tc.inFlagsFile), loadFlags(t, tc.outFlagsFile)
+			if inFlags == nil {
+				inFlags = loadFlags(t, "testdata/common-flags.txt")
+				expectedOutFlags = inFlags
+			}
+			if inBytes == nil {
+				inBytes = loadFile(t, "testdata/common-options.yaml")
+				expectedOut = inBytes
+			}
 
 			actualOut, actualOutFlags, _, err := Convert(inBytes, inFlags, CortexToMimirMapper, DefaultCortexConfig, DefaultMimirConfig, tc.useNewDefaults, false)
 			assert.NoError(t, err)
-
-			expectedOut := loadFile(t, tc.outFile)
-			expectedOutFlags := loadFlags(t, tc.outFlagsFile)
 
 			assert.ElementsMatch(t, expectedOutFlags, actualOutFlags)
 			if expectedOut == nil {
@@ -351,7 +384,6 @@ func TestChangedDefaults(t *testing.T) {
 		{Path: "ruler.ruler_client.max_send_msg_size", OldDefault: "16777216", NewDefault: "104857600"},
 		{Path: "ruler_storage.backend", OldDefault: "s3", NewDefault: "filesystem"},
 		{Path: "ruler_storage.filesystem.dir", OldDefault: "", NewDefault: "ruler"},
-		{Path: "server.http_listen_port", OldDefault: "80", NewDefault: "8080"},
 		{Path: "store_gateway.sharding_ring.instance_interface_names", OldDefault: "eth0,en0", NewDefault: "<nil>"},
 		{Path: "store_gateway.sharding_ring.kvstore.store", OldDefault: "consul", NewDefault: "memberlist"},
 		{Path: "store_gateway.sharding_ring.wait_stability_min_duration", OldDefault: "1m0s", NewDefault: "0s"},
@@ -417,7 +449,13 @@ func TestConvert_UseNewDefaults(t *testing.T) {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			outYAML, _, notices, err := Convert(tc.inYAML, nil, CortexToMimirMapper, DefaultCortexConfig, DefaultMimirConfig, tc.useNewDefaults, false)
+			// We pass the common flags in, but ignore the output.
+			// This is so that the always-present options in common-flags.txt get output in the flags instead of
+			// in the out YAML. This helps to keep the test cases and expected YAML clean of
+			// unrelated config options (e.g. server.http_listen_port)
+			inFlags := loadFlags(t, "testdata/common-flags.txt")
+
+			outYAML, _, notices, err := Convert(tc.inYAML, inFlags, CortexToMimirMapper, DefaultCortexConfig, DefaultMimirConfig, tc.useNewDefaults, false)
 			require.NoError(t, err)
 
 			assert.YAMLEq(t, string(tc.expectedYAML), string(outYAML))
