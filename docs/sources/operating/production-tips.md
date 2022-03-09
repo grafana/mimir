@@ -77,7 +77,7 @@ For more information about configuring the cache, refer to [store-gateway]({{< r
 
 ### Ensure a high number of maximum open file descriptors
 
-The store-gateway stores each block’s index-header on the local disk and loads it via mmap.
+The store-gateway stores each block’s index-header on the local disk and loads it via memory mapping.
 The store-gateway keeps a file descriptor open for each index-header loaded at a given time.
 The total number of file descriptors used to load index-headers linearly increases with the number of blocks owned by the store-gateway instance.
 
