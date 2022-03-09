@@ -217,7 +217,8 @@ func convertFlags(flags []string, m Mapper, target Parameters, sourceFactory, ta
 
 // addFlags parses the flags and add their values to the config
 func addFlags(entry *InspectedEntry, flags []string) error {
-	fs := flag.NewFlagSet("", flag.ContinueOnError)
+	fs := flag.NewFlagSet(flag.CommandLine.Name(), flag.ContinueOnError)
+	fs.Usage = func() {} // Disable dumping old cortex help text on error
 	entry.RegisterFlags(fs, nil)
 	return fs.Parse(flags)
 }
