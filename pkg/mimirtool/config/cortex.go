@@ -478,6 +478,10 @@ func mapInstanceInterfaceNames(source, target Parameters) error {
 
 	errs := multierror.New()
 	for sourcePath, targetPath := range ifaceNames {
+		// We want to update these interface_names to use the new autodetection in mimir
+		// if and only if they match the old default AND the user has provided -update-defaults.
+		// To do that we set the new default to nil. If -update-defaults is set, it will replace the
+		// [eth0, en0] default value with nil. pruneNils will then delete that nil parameter.
 		err := target.SetDefaultValue(targetPath, nil)
 		if err != nil {
 			errs.Add(err)
