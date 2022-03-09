@@ -14,7 +14,7 @@ If the Alertmanager network security is not hardened, Grafana Mimir users might 
 We recommend hardening the network on which the Alertmanager runs.
 Although hardening the network is out of the scope for Grafana Mimir, Grafana Mimir provides a basic built-in firewall that blocks connections created by Alertmanager receivers:
 
-- Set `-alertmanager.receivers-firewall-block-cidr-networks` to a comma-separated list of network CIDRs to block in Alertmanager receivers.
+To block specific network addresses in Alertmanager receivers, set `-alertmanager.receivers-firewall-block-cidr-networks` to a comma-separated list of network CIDRs to block.
 - To block private and local addresses in Alertmanager receivers, set `-alertmanager.receivers-firewall-block-private-addresses=true`.
 
 You can override the Alertmanager built-in firewall settings on a per-tenant basis in the overrides section of the [runtime configuration]({{< relref "../configuring/about-runtime-configuration.md" >}}).
