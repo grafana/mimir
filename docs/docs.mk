@@ -38,4 +38,4 @@ docs-pull:
 .PHONY: docs
 docs: ## Serve documentation locally.
 docs: docs-pull
-	$(call docs_docker_run,hugo server --debug --baseUrl=$(DOCS_BASE_URL) -p $(DOCS_LISTEN_PORT) --bind 0.0.0.0)
+	$(call docs_docker_run,make server HUGO_PORT=$(DOCS_LISTEN_PORT))
