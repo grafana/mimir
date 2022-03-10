@@ -1,15 +1,14 @@
 ---
-title: "Object store"
+title: "Object Store"
 weight: 10
 ---
 
-# Object store
+# Object Store
 
-This dashboard shows an overview on all the activity and operations on the object storage,
-run by any Mimir component.
+The Object Store dashboard shows an overview of all activity and operations run by any Grafana Mimir component on the object storage.
 
 ## Example
 
-The following screenshot shows an example of this dashboard from a demo cluster.
+The following example shows an Object Store dashboard from a demo cluster.
 
 ![Grafana Mimir object store dashboard](../../../images/dashboards/mimir-object-store.png)

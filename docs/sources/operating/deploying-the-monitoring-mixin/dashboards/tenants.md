@@ -5,10 +5,10 @@ weight: 10
 
 # Tenants
 
-This dashboard shows various metrics for the selected tenant.
+The Tenants dashboard shows various metrics for the selected tenant.
 
 ## Example
 
-The following screenshot shows an example of this dashboard from a demo cluster.
+The following example shows a Tenants dashboard from a demo cluster.
 
 ![Grafana Mimir tenants dashboard](../../../images/dashboards/mimir-tenants.png)

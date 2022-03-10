@@ -5,10 +5,10 @@ weight: 10
 
 # Queries
 
-This dashboard shows a drill-down into queries execution.
+The Queries dashboard shows information about query queues, duration, retries, and details about query execution performance.
 
 ## Example
 
-The following screenshot shows an example of this dashboard from a demo cluster.
+The following example shows a Queries dashboard from a demo cluster.
 
 ![Grafana Mimir queries dashboard](../../../images/dashboards/mimir-queries.png)
