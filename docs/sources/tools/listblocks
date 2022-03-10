@@ -6,11 +6,11 @@ weight: 10
 
 # Listblocks
 
-Listblocks can list blocks and show their details for a specific user. Listblocks requires at least configuration to
-access the bucket, and tenant.
+The listblocks tool lists blocks and show the block details for a specific tenant.
+Listblocks requires at least configuration to access the bucket and tenant.
 
-Listblocks doesn't use the bucket index, and works by downloading meta.json file of every block for the tenant. This
-means it has up-to-date view of the blocks in the bucket.
+Listblocks doesn't use the bucket index; instead, it downloads the `meta.json` file of every block in the tenant. 
+This means that listblocks has an up-to-date view of the blocks in the bucket.
 
 ```
 $ ./listblocks -backend=gcs -gcs.bucket-name=bucket-with-blocks -user=10428
@@ -27,13 +27,13 @@ Block ID                     Min Time               Max Time               Durat
 ...
 ```
 
-Listblocks has many options to modify the output, the most important ones are:
+Listblocks has many options you can use to modify the output. The following list contains the most important listblocks options:
 
 ```
   -max-time value
-    	If set, only blocks with MaxTime <= this value are printed
+    	If set, only blocks with MaxTime <= this value is printed
   -min-time value
-    	If set, only blocks with MinTime >= this value are printed
+    	If set, only blocks with MinTime >= this value is printed
   -show-block-size
     	Show size of block based on details in meta.json, if available
   -show-compaction-level
@@ -50,7 +50,7 @@ Listblocks has many options to modify the output, the most important ones are:
     	Show time from ULID
 ```
 
-For example:
+## Example
 
 ```
 $ ./listblocks -backend=gcs -gcs.bucket-name=bucket-with-blocks -user=10428 -min-time=2022-02-01T00:00:00Z -max-time=2022-02-04T00:00:00Z -show-labels -show-block-size
