@@ -17,4 +17,3 @@ Grafana Mimir provides horizontally scalable, highly available, multi-tenant, lo
 - **Long-term storage:** Grafana Mimir supports S3, GCS, Swift, and Microsoft Azure for long-term storage of metric data. This enables you to durably store data for longer than the lifetime of a single machine, and use this data for long-term capacity planning.
 
 > **Note:** You can use [Grafana Cloud](https://grafana.com/products/cloud/features/#cloud-metrics) to avoid installing, maintaining, and scaling your own instance of Grafana Mimir. The free forever plan includes 50GB of free logs. [Create an account to get started](https://grafana.com/auth/sign-up/create-user?pg=docs-mimir&plcmt=in-text).
-
