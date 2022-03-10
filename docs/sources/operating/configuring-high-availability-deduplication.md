@@ -128,4 +128,4 @@ distributor:
       [consul | etcd: <config>]
 ```
 
-For more information, see [distributor](../configuration/config-file-reference.md#distributor). The HA tracker flags are prefixed with `-distributor.ha-tracker.*`.
+For more information, see [distributor]({{< relref "../configuring/reference-configuration-parameters/index.md#distributor" >}}). The HA tracker flags are prefixed with `-distributor.ha-tracker.*`.

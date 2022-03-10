@@ -15,8 +15,8 @@ The ruler evaluates the expressions in the recording rules at regular intervals 
 The ruler has a built-in querier that evaluates the PromQL expressions and a built-in distributor, so that it can write directly to the ingesters.
 Configuration of the built-in querier and distributor uses their respective configuration parameters:
 
-- [Querier]({{< relref "../../configuring/reference-configuration-parameters.md#querier" >}})
-- [Distributor]({{< relref "../../configuring/reference-configuration-parameters.md#distributor" >}})
+- [Querier]({{< relref "../../configuring/reference-configuration-parameters/index.md#querier" >}})
+- [Distributor]({{< relref "../../configuring/reference-configuration-parameters/index.md#distributor" >}})
 
 ## Alerting rules
 
@@ -32,7 +32,7 @@ For more information about DNS service discovery, refer to [Supported discovery 
 
 The ruler supports multi-tenancy and horizontal scalability.
 To achieve horizontal scalability, the ruler shards the execution of rules by rule groups.
-Ruler replicas form their own [hash ring]({{< relref "../hash-ring.md" >}}) stored in the [KV store]({{< relref "../key-value-store.md" >}}) to divide the work of the executing rules.
+Ruler replicas form their own [hash ring]({{< relref "../hash-ring/index.md" >}}) stored in the [KV store]({{< relref "../key-value-store.md" >}}) to divide the work of the executing rules.
 
 To configure the rulers' hash ring, refer to [configuring hash rings]({{< relref "../../operating/configuring-hash-rings.md" >}}).
 

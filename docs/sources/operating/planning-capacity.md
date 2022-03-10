@@ -83,7 +83,7 @@ Estimated required CPU and memory:
 
 ### (Optional) Query-scheduler
 
-The [query-scheduler]({{< relref "../architecture/components/query-scheduler.md" >}}) component resources’ utilization is determined by the number of queries per second.
+The [query-scheduler]({{< relref "../architecture/components/query-scheduler/index.md" >}}) component resources’ utilization is determined by the number of queries per second.
 
 Estimated required CPU and memory:
 

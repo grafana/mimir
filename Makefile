@@ -184,7 +184,7 @@ mimir-build-image/$(UPTODATE): mimir-build-image/*
 # All the boiler plate for building golang follows:
 SUDO := $(shell docker info >/dev/null 2>&1 || echo "sudo -E")
 BUILD_IN_CONTAINER := true
-LATEST_BUILD_IMAGE_TAG ?= update-go-1.17.8-8a996bb57
+LATEST_BUILD_IMAGE_TAG ?= fix-broken-links-in-docs-and-validate-in-ci-69a1e765c-WIP
 
 # TTY is parameterized to allow Google Cloud Builder to run builds,
 # as it currently disallows TTY devices. This value needs to be overridden
@@ -326,6 +326,9 @@ check-protos: clean-protos protos
 
 doc: ## Generates the config file documentation.
 doc: clean-doc $(DOC_TEMPLATES:.template=.md) $(DOC_EMBED:.md=.md.embedmd)
+	# Find any broken link. We just check relative links. HTTP or HTTPS links are skipped.
+	find docs/ -name \*.md -print0 | xargs -0 -n1 markdown-link-check --quiet --config .markdown-link-check
+
 	# Make up markdown files prettier. When running with check-doc target, it will fail if this produces any change.
 	prettier --write "**/*.md"
 

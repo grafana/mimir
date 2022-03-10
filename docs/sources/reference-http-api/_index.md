@@ -691,7 +691,7 @@ of each rule in the group will be evaluated against the data of all tenants in `
 empty or omitted, then the tenant under which the group is created will be treated as the `source_tenant`.
 
 Federated rule groups are skipped during evaluation by default. This feature depends on
-the [cross-tenant query federation](../proposals/cross-tenant-query-federation.md) feature. To enable federated rules
+the cross-tenant query federation feature. To enable federated rules
 set `-ruler.tenant-federation.enabled=true` and `-tenant-federation.enabled=true` CLI flags (or their respective YAML
 config options).
 
@@ -702,7 +702,7 @@ will be saved. The same "no partial results" guarantee applies to queries failin
 unavailability).
 
 The time series used during evaluation of federated rules will have the `__tenant_id__` label, similar to how it is
-present on series returned with [cross-tenant query federation](../proposals/cross-tenant-query-federation.md).
+present on series returned with cross-tenant query federation.
 
 **Considerations:** Federated rule groups allow data from multiple source tenants to be written into a single
 destination tenant. This makes the existing separation of tenants' data less clear. For example, `tenant-a` has a

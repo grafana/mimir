@@ -34,7 +34,7 @@ Naming:
 
 - Config file options should be lowercase with words `_` (underscore) separated (ie. `memcached_client`)
 - CLI flags should be lowercase with words `-` (dash) separated (ie. `memcached-client`)
-- When adding a new config option, look if a similar one already exists within the [config](../configuration/config-file-reference.md) and keep the same naming (ie. `addresses` for a list of network endpoints)
+- When adding a new config option, look if a similar one already exists within the [config](../../sources/configuring/reference-configuration-parameters/index.md) and keep the same naming (ie. `addresses` for a list of network endpoints)
 
 Documentation:
 

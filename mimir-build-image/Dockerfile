@@ -12,7 +12,7 @@ RUN go install golang.org/x/tools/cmd/goimports@3fce476f0a782aeb5034d592c189e63b
 RUN curl -sL https://deb.nodesource.com/setup_14.x | bash -
 RUN apt-get install -y nodejs && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
-RUN npm install -g prettier@2.3.2
+RUN npm install -g prettier@2.3.2 markdown-link-check@3.9.3
 
 ENV SHFMT_VERSION=3.2.4
 RUN GOARCH=$(go env GOARCH) && \

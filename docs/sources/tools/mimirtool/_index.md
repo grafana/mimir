@@ -632,4 +632,4 @@ mimirtool bucket-validation
 
 ## License
 
-Licensed AGPLv3, see [LICENSE](../../LICENSE).
+Licensed AGPLv3, see [LICENSE](https://github.com/grafana/mimir/blob/main/LICENSE).
