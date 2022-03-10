@@ -13,4 +13,3 @@ Blocks storage supports the following backends:
 - [OpenStack Swift](https://wiki.openstack.org/wiki/Swift)
 - [Local Filesystem](https://thanos.io/storage.md/#filesystem) (single node only)
 
-Internally, some components are based on [Thanos](https://thanos.io), but you do not require knowledge of Thanos to run it.
