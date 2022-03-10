@@ -211,9 +211,9 @@ func TestConvert(t *testing.T) {
 			outFile:     "testdata/server-listen-http-port-random-new.yaml",
 		},
 		{
-			name:         "json in flags doesn't get messed up with escaping",
-			inFlagsFile:  "testdata/json-in-flag.txt",
-			outFlagsFile: "testdata/json-in-flag.txt",
+			name:         "flags with quotes and JSON don't get interpreted escaped",
+			inFlagsFile:  "testdata/uncommon-flag-values.txt",
+			outFlagsFile: "testdata/uncommon-flag-values.txt",
 		},
 	}
 
