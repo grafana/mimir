@@ -93,4 +93,4 @@ Grafana Mimir requires any of the following object stores for the block files:
 - [Google Cloud Storage](https://cloud.google.com/storage/)
 - [Microsoft Azure Storage](https://azure.microsoft.com/en-us/services/storage/)
 - [OpenStack Swift](https://wiki.openstack.org/wiki/Swift)
-- [Local Filesystem](https://thanos.io/storage.md/#filesystem) (single node only)
+- Local Filesystem (single node only)
