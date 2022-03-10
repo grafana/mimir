@@ -12,4 +12,3 @@ Blocks storage supports the following backends:
 - [Microsoft Azure Storage](https://azure.microsoft.com/en-us/services/storage/)
 - [OpenStack Swift](https://wiki.openstack.org/wiki/Swift)
 - [Local Filesystem](https://thanos.io/storage.md/#filesystem) (single node only)
-
