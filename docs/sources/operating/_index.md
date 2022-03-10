@@ -6,4 +6,6 @@ weight: 50
 
 # Operating Grafana Mimir
 
+This section presents information on planning, configuring, and maintaining a Grafana Mimir cluster.
+
 {{< section >}}
