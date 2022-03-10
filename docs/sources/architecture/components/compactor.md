@@ -52,7 +52,7 @@ To split, the first level of compaction, for example `2h`, the compactor divides
 
 The compactor merges the split blocks for each shard. This compacts all _N_ split blocks of a given shard. The merge reduces the number of blocks from _N \* M_ to _M_. For a given compaction time range, there will be a compacted block for each of the _M_ shards.
 
-![Compactor - split-and-merge compaction strategy](../../../images/compactor-split-and-merge.png)
+![Compactor - split-and-merge compaction strategy](../../images/compactor-split-and-merge.png)
 
 <!-- Diagram source at https://docs.google.com/presentation/d/1bHp8_zcoWCYoNU2AhO2lSagQyuIrghkCncViSqn14cU/edit -->
 
