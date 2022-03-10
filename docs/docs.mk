@@ -24,7 +24,9 @@ define docs_docker_run
 	@if [[ -z $${NON_INTERACTIVE} ]]; then \
 		read -p "Press a key to continue"; \
 	fi
-	@docker run --name $(DOCS_DOCKER_CONTAINER) $(DOCS_DOCKER_RUN_FLAGS) /bin/bash -c 'find content/docs/ -mindepth 1 -maxdepth 1 -type d -a ! -name "$(DOCS_PROJECT)" -exec rm -rf {} \; && touch content/docs/mimir/_index.md && exec $(1)'
+	# The loki _index.md file is intentionally used until the equivalent file in the grafana/website repository is
+	# created for Mimir.
+	@docker run --name $(DOCS_DOCKER_CONTAINER) $(DOCS_DOCKER_RUN_FLAGS) /bin/bash -c 'mv content/docs/loki/_index.md content/docs/$(DOCS_PROJECT)/ && find content/docs/ -mindepth 1 -maxdepth 1 -type d -a ! -name "$(DOCS_PROJECT)" -exec rm -rf {} \;  && exec $(1)'
 endef
 
 .PHONY: docs-docker-rm
