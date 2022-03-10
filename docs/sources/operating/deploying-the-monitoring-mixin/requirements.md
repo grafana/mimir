@@ -48,7 +48,7 @@ When running Grafana Mimir in microservices mode and using the pre-compiled dash
 
 ## Additional resources metrics
 
-The Grafana Mimir dashboards displaying CPU, memory, disk and network resources utilization require Prometheus metrics scraped from the following endpoints:
+The Grafana Mimir dashboards displaying CPU, memory, disk, and network resources utilization require Prometheus metrics scraped from the following endpoints:
 
 - cAdvisor
 - kubelet
