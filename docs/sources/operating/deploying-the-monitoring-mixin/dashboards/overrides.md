@@ -3,12 +3,12 @@ title: "Overrides"
 weight: 10
 ---
 
-# Config
+# Overrides
 
-This dashboard shows global limits and per-tenant overrides.
+The Overrides dashboard shows global limits and per-tenant overrides.
 
 ## Example
 
-The following screenshot shows an example of this dashboard from a demo cluster.
+The following example shows an Overrides dashboard from a demo cluster.
 
 ![Grafana Mimir overrides dashboard](../../../images/dashboards/mimir-overrides.png)

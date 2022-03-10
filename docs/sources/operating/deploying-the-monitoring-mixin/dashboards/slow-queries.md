@@ -5,8 +5,8 @@ weight: 10
 
 # Slow queries
 
-This dashboard shows details about the slowest queries for a given time range.
-It also allows to filter by a specific tenant/user.
-If [Grafana Tempo](https://grafana.com/oss/tempo/) tracing is enabled, it also displays a link to the trace of each query.
+The Slow queries dashboard shows details about the slowest queries for a given time range and enables you to filter results by a specific tenant.
 
-Requires Loki to fetch detailed query statistics from logs.
+If you enable [Grafana Tempo](https://grafana.com/oss/tempo/) tracing, the dashboard displays a link to the trace of each query.
+
+This dashboard requires [Grafana Loki](https://grafana.com/oss/loki/) to fetch detailed query statistics from logs.

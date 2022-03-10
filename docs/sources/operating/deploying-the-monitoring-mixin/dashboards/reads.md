@@ -5,13 +5,12 @@ weight: 10
 
 # Reads
 
-This dashboard shows health metrics for the read path.
-It includes object storage metrics for operations triggered by the read path.
-It is broken into sections for each service on the read path,
-and organized by the order in which the read request flows.
+The Reads dashboard shows health metrics for the read path and object storage metrics for operations triggered by the read path.
+
+The dashboard isolates each service on the read path into its own section and displays the order in which a read request flows.
 
 ## Example
 
-The following screenshot shows an example of this dashboard from a demo cluster.
+The following example shows a Reads dashboard from a demo cluster.
 
 ![Grafana Mimir reads dashboard](../../../images/dashboards/mimir-reads.png)
