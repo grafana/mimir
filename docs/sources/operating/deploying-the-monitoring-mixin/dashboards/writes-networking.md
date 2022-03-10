@@ -5,14 +5,13 @@ weight: 10
 
 # Writes networking
 
-This dashboard shows receive/transmit bandwidth, inflight requests and TCP connections.
-It is broken into sections for each service on the write path,
-and organized by the order in which the write request flows.
+The Writes networking dashboard shows receive/transmit bandwidth, inflight requests, and TCP connections.
+The dashboard isolates each service on the write path into its own section and displays the order in which a write request flows.
 
-Requires Kubernetes networking metrics.
+This dashboard requires Kubernetes networking metrics.
 
 ## Example
 
-The following screenshot shows an example of this dashboard from a demo cluster.
+The following example shows a Writes networking dashboard from a demo cluster.
 
 ![Grafana Mimir writes networking dashboard](../../../images/dashboards/mimir-writes-networking.png)

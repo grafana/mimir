@@ -5,10 +5,10 @@ weight: 10
 
 # Config
 
-This dashboard shows details about the runtime config currently loaded by each Mimir instance/replica.
+The Config dashboard shows details about the runtime configuration currently loaded by each Grafana Mimir instance.
 
 ## Example
 
-The following screenshot shows an example of this dashboard from a demo cluster.
+The following example shows a Config dashboard from a demo cluster.
 
 ![Grafana Mimir config dashboard](../../../images/dashboards/mimir-config.png)

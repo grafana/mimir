@@ -5,11 +5,10 @@ weight: 10
 
 # Ruler
 
-This dashboard shows health and activity metrics for the ruler.
-It includes object storage metrics for operations triggered by the ruler.
+The Ruler dashboard shows health and activity metrics for the ruler and object storage metrics for operations triggered by the ruler.
 
 ## Example
 
-The following screenshot shows an example of this dashboard from a demo cluster.
+The following example shows a Ruler dashboard from a demo cluster.
 
 ![Grafana Mimir ruler dashboard](../../../images/dashboards/mimir-ruler.png)
