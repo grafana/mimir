@@ -142,7 +142,7 @@ Assuming you run one compactor instance every 20 million active series, the esti
 
 For more information about disk requirements, refer to [Compactor disk utilization]({{< relref "../architecture/components/compactor.md#compactor-disk-utilization" >}}).
 
-**To estimate the number of active series before ingesters replication Query the number of active series across all Prometheus servers:**
+**To estimate the number of active series before ingesters replication, query the number of active series across all Prometheus servers:**
 
 ```
 sum(prometheus_tsdb_head_series)
