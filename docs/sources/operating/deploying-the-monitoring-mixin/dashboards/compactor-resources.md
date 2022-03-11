@@ -7,7 +7,7 @@ weight: 10
 
 The Compactor resources dashboard shows CPU, memory, disk, and networking metrics for the compactor.
 
-This dashboard requires Kubernetes resources metrics.
+This dashboard requires [additional resources metrics]({{< relref "../requirements.md#additional-resources-metrics" >}}).
 
 ## Example
 
