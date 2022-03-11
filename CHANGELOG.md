@@ -6,6 +6,8 @@
 
 ### Jsonnet
 
+* [BUGFIX] Rename `-ingester.readiness-check-ring-health` to `-ingester.ring.readiness-check-ring-health`, to reflect current name of flag. #1461
+
 ### Mimirtool
 
 ## 2.0.0-rc.2
