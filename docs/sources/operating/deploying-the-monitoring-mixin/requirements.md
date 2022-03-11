@@ -45,3 +45,14 @@ When running Grafana Mimir in microservices mode and using the pre-compiled dash
 | Query-scheduler | `<namespace>/query-scheduler` |
 | Store-gateway   | `<namespace>/store-gateway`   |
 | Compactor       | `<namespace>/compactor`       |
+
+## Additional resources metrics
+
+The Grafana Mimir dashboards displaying CPU, memory, disk, and network resources utilization require Prometheus metrics scraped from the following endpoints:
+
+- cAdvisor
+- kubelet
+- [node_exporter](https://github.com/prometheus/node_exporter)
+- [kube-state-metrics](https://github.com/kubernetes/kube-state-metrics) exporter
+
+For more information about the kubelet metrics and cAdvisor metrics exported by the kubelet, refer to [Metrics For Kubernetes System Components](https://kubernetes.io/docs/concepts/cluster-administration/system-metrics/).
