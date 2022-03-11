@@ -91,6 +91,9 @@ func (sp *schedulerProcessor) notifyShutdown(ctx context.Context, conn *grpc.Cli
 func (sp *schedulerProcessor) processQueriesOnSingleStream(ctx context.Context, conn *grpc.ClientConn, address string) {
 	schedulerClient := schedulerpb.NewSchedulerForQuerierClient(conn)
 
+	// TODO HACK
+	ctx = context.Background()
+
 	backoff := backoff.New(ctx, processorBackoffConfig)
 	for backoff.Ongoing() {
 		c, err := schedulerClient.QuerierLoop(ctx)

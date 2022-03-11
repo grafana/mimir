@@ -135,6 +135,7 @@ frontend:
   parallelize_shardable_queries: true
   align_queries_with_step: true
   cache_results: true
+  max_retries: 0
 
   results_cache:
     backend: "memcached"

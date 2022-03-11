@@ -83,7 +83,7 @@ func (w *moduleService) stop(_ error) error {
 		// Only wait for other modules, if underlying service is still running.
 		w.waitForModulesToStop()
 
-		level.Debug(w.logger).Log("msg", "stopping", "module", w.name)
+		level.Info(w.logger).Log("msg", "stopping", "module", w.name)
 
 		err = services.StopAndAwaitTerminated(context.Background(), w.service)
 	} else {
@@ -106,7 +106,7 @@ func (w *moduleService) waitForModulesToStop() {
 			continue
 		}
 
-		level.Debug(w.logger).Log("msg", "module waiting for", "module", w.name, "waiting_for", n)
+		level.Info(w.logger).Log("msg", "module waiting for", "module", w.name, "waiting_for", n)
 		// Passed context isn't canceled, so we can only get error here, if service
 		// fails. But we don't care *how* service stops, as long as it is done.
 		_ = s.AwaitTerminated(context.Background())

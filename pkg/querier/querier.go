@@ -224,6 +224,10 @@ func (q querier) Select(_ bool, sp *storage.SelectHints, matchers ...*labels.Mat
 	log, ctx := spanlogger.NewWithLogger(q.ctx, q.logger, "querier.Select")
 	defer log.Span.Finish()
 
+	level.Info(log).Log("msg", "Select() before sleep")
+	time.Sleep(10 * time.Second)
+	level.Info(log).Log("msg", "Select() after sleep")
+
 	// Older Prometheus passes nil SelectHints if it is doing a 'series' operation,
 	// which needs only metadata.
 	// Recent versions of Prometheus pass in the hint but with Func set to "series".

@@ -7,6 +7,7 @@ package worker
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -53,10 +54,13 @@ func (pm *processorManager) stop() {
 	pm.p.notifyShutdown(notifyCtx, pm.conn, pm.address)
 
 	// Stop all goroutines.
+	fmt.Println("processorManager.stop() before stopping workers")
 	pm.concurrency(0)
+	fmt.Println("processorManager.stop() after stopping workers")
 
 	// Wait until they finish.
 	pm.wg.Wait()
+	fmt.Println("processorManager.stop() after workers have actually stopped")
 
 	_ = pm.conn.Close()
 }
