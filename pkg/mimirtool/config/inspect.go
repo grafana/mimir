@@ -66,8 +66,13 @@ func (i *InspectedEntry) Set(s string) (err error) {
 	}
 	// Otherwise, it should be a primitive go type (int, string, float64).
 	// Decoding it as YAML should be sufficiently reliable.
-	jsonDecoder := yaml.NewDecoder(bytes.NewBuffer([]byte(s)))
-	i.FieldValue, err = decodeValue(i.FieldType, jsonDecoder)
+	switch i.FieldType {
+	case "string":
+		i.FieldValue = s
+	default:
+		jsonDecoder := yaml.NewDecoder(bytes.NewBuffer([]byte(s)))
+		i.FieldValue, err = decodeValue(i.FieldType, jsonDecoder)
+	}
 	return
 }
 
