@@ -1,0 +1,12 @@
+-http.alertmanager-http-prefix='hello'world
+-http.prometheus-http-prefix='hello'world'
+-ruler-storage.azure.account-key=''
+-ruler-storage.azure.account-name=
+-ruler-storage.azure.endpoint-suffix=""
+-ruler-storage.gcs.bucket-name=hello'world
+-ruler-storage.gcs.service-account={"type": "service_account"}
+-ruler-storage.swift.auth-url='"
+-ruler-storage.swift.user-domain-id=\\
+-ruler-storage.swift.user-domain-name=\"
+-ruler-storage.swift.user-id="
+-ruler-storage.swift.username="'
