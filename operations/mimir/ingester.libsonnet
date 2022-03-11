@@ -24,7 +24,7 @@
       // Disable the ring health check in the readiness endpoint so that we can quickly rollout
       // multiple ingesters in multi-zone deployments. It's also safe to disable it everywhere,
       // given we deploy all ingesters with StatefulSets.
-      'ingester.readiness-check-ring-health': false,
+      'ingester.ring.readiness-check-ring-health': false,
 
       // Limits config.
       'runtime-config.file': '%s/overrides.yaml' % $._config.overrides_configmap_mountpoint,
