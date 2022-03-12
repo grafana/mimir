@@ -26,9 +26,9 @@ The following steps describe how a query moves through the query-frontend.
 > **Note:** In this scenario, a query-scheduler is not deployed.
 
 1. A query-frontend receives a query.
-1. If the query has been previously cached, the query-frontend returns the cached result.
-1. If the query has not been previously cached, the query-frontend splits or shards the query into multiple queries to be executed by the querier workers.
-1. A query-frontend stores the query (or queries) in an in-memory queue, where it waits for a querier to pick it up.
+1. The query-frontend splits or shards the query into multiple queries to be executed by the querier workers.
+1. The query-frontend checks the results cache. If a query has been previously cached, the query-frontend returns the cached result.
+1. A query-frontend stores the query (or queries) that were not found in the results cache in an in-memory queue, where they wait for a querier to pick them up.
 1. A querier picks up the query and executes it. If the query was split or sharded, multiple queriers can pick up the work.
 1. A querier or queriers return the result to query-frontend, which then aggregates and forwards the results to the client.
 
