@@ -61,12 +61,15 @@ For more information, refer to [Compactor]({{< relref "components/compactor.md" 
 
 ![Architecture of Grafana Mimir's read path](../images/read-path.png)
 
-[Queriers]({{< relref "components/querier.md" >}}) and [store-gateways]({{< relref "components/store-gateway.md" >}}) periodically download the bucket index to discover blocks that are recently uploaded by ingesters and compactors.
-The bucket index is kept updated by the compactors.
+Queries coming into Grafana Mimir arrive at the [query-frontend]({{< relref "components/query-frontend" >}}). The query-frontend then splits and/or shards them into smaller queries which can be executed in parallel.
 
-For each discovered block, store-gateways download the `meta.json` and the index-header, which is a small subset of the block’s index that the store-gateway uses to look up series at query time.
+The query-frontend next checks the results cache. If the result of a query has been cached, the query-frontend returns the cached results. Queries that cannot be answered from the results cache are put into an in-memory queue within the query-frontend. _(If running the optional [query-scheduler]({{< relref "components/query-scheduler" >}}) component, this queue is  maintained in the query-scheduler instead.)_
 
-Queriers use the block’s metadata to compute the list of blocks that need to be queried at query time. Queriers also fetch matching series from the store-gateway instances that are holding the required blocks.
+The queriers act as workers, pulling queries from the queue.
+
+The queriers connect to the store-gateways and ingesters to fetch all data needed to execute a query. For more details on how the query is executed, see the [querier]({{< relref "components/querier.md" >}}) page.
+
+Once the query has been executed, the querier returns the results to the query-frontend for aggregation, after which the results are returned to the client. 
 
 ## The role of Prometheus
 
