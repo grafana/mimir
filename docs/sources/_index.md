@@ -11,7 +11,7 @@ Grafana Mimir is an open source software project that provides horizontally scal
 
 - **Massively scalable:** Mimir's horizontally scalable architecture makes it possible for it to exceed the resource constraints of a single machine and handle orders of magnitude more time-serise than a single Prometheus. Mimir has been tested at up to 1 billion active time-series. 
 - **Global view of metrics:** Run queries that aggregate series across multiple Prometheus instances to get a global view of your systems. Mimir's highly optimized query engine breaks incoming queries into smaller, parallelizable operations, so that even this highest cardinality queries excute with blazing speed.  
-- **Highly availability:** Grafana Mimir replicates incoming metrics data among machines, which ensures that no data is lost in the event of machine failure. 
+- **Highly availability:** Grafana Mimir replicates incoming metrics data among machines, ensuring that no data is lost in the event of machine failure. Its horziointally scalable architecture also means that it can be restarted, upgraded, or downgraded with zero downtime. 
 - **Multi-tenancy:** Grafana Mimir can isolate data and queries from multiple independent
   Prometheus sources in a single cluster, allowing untrusted parties to share the same cluster.
 - **Cheap, durable metric storage:** Grafana Mimir uses object storage for long-term storage of metric data. It is compatible with a variety of object stores, including AWS S3, Google Cloud Storage, Azure Blob Storage, Swift, and any S3-compliant object store (e.g. MinIO). 
