@@ -7,13 +7,13 @@ weight: 1
 
 ![Grafana Mimir](./images/mimir-logo.png)
 
-Grafana Mimir provides horizontally scalable, highly available, multi-tenant, long-term storage for [Prometheus](https://prometheus.io).
+Grafana Mimir is an open source software project that provides horizontally scalable long-term storage for [Prometheus](https://prometheus.io). Its core feature set includes: 
 
-- **Horizontally scalable:** Grafana Mimir can run across multiple machines in a cluster, exceeding the throughput and storage of a single machine. This enables you to send the metrics from multiple Prometheus servers to a single Grafana Mimir cluster and run globally aggregated queries across all data in a single place.
-- **Highly available:** When run in a cluster, Grafana Mimir replicates data between machines.
-  This makes Grafana Mimir resilient to machine failure, which ensures that there is no data missing in your graphs.
-- **Multi-tenant:** Grafana Mimir can isolate data and queries from multiple independent
+- **Massively scalable:** Mimir's horizontally scalable architecture makes it possible for it to exceed the resource constraints of a single machine and handle orders of magnitude more time-serise than a single Prometheus. Mimir has been tested at up to 1 billion active time-series. 
+- **Global view of metrics:** Run queries that aggregate series across multiple Prometheus instances to get a global view of your systems. Mimir's highly optimized query engine breaks incoming queries into smaller, parallelizable operations, so that even this highest cardinality queries excute with blazing speed.  
+- **Highly availability:** Grafana Mimir replicates incoming metrics data among machines, which ensures that no data is lost in the event of machine failure. 
+- **Multi-tenancy:** Grafana Mimir can isolate data and queries from multiple independent
   Prometheus sources in a single cluster, allowing untrusted parties to share the same cluster.
-- **Long-term storage:** Grafana Mimir supports S3, GCS, Swift, and Microsoft Azure for long-term storage of metric data. This enables you to durably store data for longer than the lifetime of a single machine, and use this data for long-term capacity planning.
+- **Cheap, durable metric storage:** Grafana Mimir uses object storage for long-term storage of metric data. It is compatible with a variety of object stores, including AWS S3, Google Cloud Storage, Azure Blob Storage, Swift, and any S3-compliant object store (e.g. MinIO). 
 
-> **Note:** You can use [Grafana Cloud](https://grafana.com/products/cloud/features/#cloud-metrics) to avoid installing, maintaining, and scaling your own instance of Grafana Mimir. The free forever plan includes 50GB of free logs. [Create an account to get started](https://grafana.com/auth/sign-up/create-user?pg=docs-mimir&plcmt=in-text).
+> **Note:** You can use [Grafana Cloud](https://grafana.com/products/cloud/features/#cloud-metrics) to avoid installing, maintaining, and scaling your own instance of Grafana Mimir. The free forever plan includes 10,000 metrics. [Create an account to get started](https://grafana.com/auth/sign-up/create-user?pg=docs-mimir&plcmt=in-text).
