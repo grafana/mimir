@@ -58,13 +58,13 @@ MIXIN_OUT_PATH := operations/mimir-mixin-compiled
 JSONNET_MANIFESTS_PATH := operations/mimir
 
 # Doc templates in use
-DOC_TEMPLATES := docs/sources/configuring/reference-configuration-parameters.template
+DOC_TEMPLATES := docs/sources/operators-guide/configuring/reference-configuration-parameters.template
 
 # Documents to run through embedding
-DOC_EMBED := docs/sources/architecture/components/query-frontend/using-the-query-frontend-with-prometheus.md \
-	docs/sources/operating/mirroring-requests-to-a-second-cluster.md \
-	docs/sources/architecture/components/overrides-exporter.md \
-	docs/sources/getting-started/_index.md \
+DOC_EMBED := docs/sources/operators-guide/configuring/configuring-the-query-frontend-work-with-prometheus.md \
+	docs/sources/operators-guide/configuring/mirroring-requests-to-a-second-cluster.md \
+	docs/sources/operators-guide/architecture/components/overrides-exporter.md \
+	docs/sources/operators-guide/getting-started/_index.md \
 	operations/mimir/README.md
 
 .PHONY: image-tag

@@ -210,6 +210,11 @@ func TestConvert(t *testing.T) {
 			inFile:      "testdata/server-listen-http-port-random-old.yaml",
 			outFile:     "testdata/server-listen-http-port-random-new.yaml",
 		},
+		{
+			name:         "flags with quotes and JSON don't get interpreted escaped",
+			inFlagsFile:  "testdata/uncommon-flag-values.txt",
+			outFlagsFile: "testdata/uncommon-flag-values.txt",
+		},
 	}
 
 	for _, tc := range testCases {

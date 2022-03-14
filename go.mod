@@ -18,7 +18,7 @@ require (
 	github.com/golang/snappy v0.0.4
 	github.com/google/gopacket v1.1.19
 	github.com/gorilla/mux v1.8.0
-	github.com/grafana/dskit v0.0.0-20220211095946-19921f863583
+	github.com/grafana/dskit v0.0.0-20220314143558-7b6c9c059728
 	github.com/grafana/e2e v0.1.0
 	github.com/hashicorp/golang-lru v0.5.4
 	github.com/json-iterator/go v1.1.12
@@ -222,7 +222,7 @@ replace github.com/hashicorp/go-immutable-radix => github.com/hashicorp/go-immut
 replace github.com/hashicorp/go-hclog => github.com/hashicorp/go-hclog v0.12.2
 
 // Replace memberlist with our fork which includes some fixes that haven't been
-// merged upstream yet.
+// merged upstream yet: https://github.com/hashicorp/memberlist/pull/260
 replace github.com/hashicorp/memberlist v0.2.4 => github.com/grafana/memberlist v0.2.5-0.20211201083710-c7bc8e9df94b
 
 replace github.com/vimeo/galaxycache => github.com/thanos-community/galaxycache v0.0.0-20211122094458-3a32041a1f1e
