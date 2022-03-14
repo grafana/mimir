@@ -3,6 +3,7 @@
 ## Grafana Mimir - main / unreleased
 
 * [CHANGE] Compactor: No longer upload debug meta files to object storage. #1257
+* [FEATURE] Ruler: Allow setting `evaluation_delay` for each rule group via config. #1474 
 * [FEATURE] Distributor: Added the ability to forward specifics metrics to alternative remote_write API endpoints. #1052
 * [ENHANCEMENT] Ruler: Add more detailed query information to ruler query stats logging. #1411
 
