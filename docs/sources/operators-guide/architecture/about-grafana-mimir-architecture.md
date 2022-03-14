@@ -12,12 +12,8 @@ The system has multiple horizontally scalable microservices that can run separat
 Grafana Mimir microservices are called components.
 
 Grafana Mimir's design compiles the code for all components into a single binary.
-The `-target` parameter controls which component that single binary will behave as. For those looking for a simple way to get started, Grafana Mimir can also be run as a monolith, with all components running simultaneously in one process.
+The `-target` parameter controls which component(s) that single binary will behave as. For those looking for a simple way to get started, Grafana Mimir can also be run in [monolithic mode]({{< relref "./deployment-modes.md#monolithic-mode" >}}), with all components running simultaneously in one process.
 For more information, refer to [Deployment modes]({{< relref "./deployment-modes.md" >}}).
-
-<!-- Diagram source at https://docs.google.com/presentation/d/1bHp8_zcoWCYoNU2AhO2lSagQyuIrghkCncViSqn14cU/edit -->
-
-![Architecture of Grafana Mimir](../../images/architecture.png)
 
 ## Grafana Mimir components
 
@@ -29,7 +25,7 @@ Most components are stateless and do not require any data persisted between proc
 
 [//]: # "Diagram source of write path at https://docs.google.com/presentation/d/1LemaTVqa4Lf_tpql060vVoDGXrthp-Pie_SQL7qwHjc/edit#slide=id.g11658e7e4c6_0_899"
 
-![Architecture of Grafana Mimir's write path](../../images/write-path.png)
+![Architecture of Grafana Mimir's write path](../../images/write-path.svg)
 
 Ingesters receive incoming samples from the distributors.
 Each push request belongs to a tenant, and the ingester appends the received samples to the specific per-tenant TSDB that is stored on the local disk.
@@ -60,7 +56,7 @@ For more information, refer to [Compactor]({{< relref "components/compactor.md" 
 
 [//]: # "Diagram source of read path at https://docs.google.com/presentation/d/1LemaTVqa4Lf_tpql060vVoDGXrthp-Pie_SQL7qwHjc/edit#slide=id.g11658e7e4c6_2_6"
 
-![Architecture of Grafana Mimir's read path](../../images/read-path.png)
+![Architecture of Grafana Mimir's read path](../../images/read-path.svg)
 
 [Queriers]({{< relref "components/querier.md" >}}) and [store-gateways]({{< relref "components/store-gateway.md" >}}) periodically download the bucket index to discover blocks that are recently uploaded by ingesters and compactors.
 The bucket index is kept updated by the compactors.

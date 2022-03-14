@@ -10,6 +10,10 @@ weight: 130
 The ruler is an optional component that evaluates PromQL expressions defined in recording and alerting rules.
 Each tenant has a set of recording and alerting rules and can group those rules into namespaces.
 
+[//]: # "Diagram source of ruler interactions https://docs.google.com/presentation/d/1LemaTVqa4Lf_tpql060vVoDGXrthp-Pie_SQL7qwHjc/edit#slide=id.g11658e7e4c6_0_938"
+
+![Architecture of Grafana Mimir's ruler component](../../../images/ruler.svg)
+
 ## Recording rules
 
 The ruler evaluates the expressions in the recording rules at regular intervals and writes the results back to the ingesters.
