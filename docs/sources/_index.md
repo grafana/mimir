@@ -17,4 +17,3 @@ Grafana Mimir is an open source software project that provides a scalable long-t
 - **Natively multi-tenant:** Grafana Mimir’s multi-tenant architecture allows you to isolate data and queries from independent teams or business units, making it possible for these groups to share the same cluster. Advanced limits and quality-of-service controls ensure that capacity is shared fairly among tenants.
 
 > **Note:** You can use [Grafana Cloud](https://grafana.com/products/cloud/features/#cloud-metrics) to avoid installing, maintaining, and scaling your own instance of Grafana Mimir. The free forever plan includes 10,000 metrics. [Create an account to get started](https://grafana.com/auth/sign-up/create-user?pg=docs-mimir&plcmt=in-text).
-
