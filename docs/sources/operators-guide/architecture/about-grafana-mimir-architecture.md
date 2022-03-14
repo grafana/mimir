@@ -58,7 +58,7 @@ For more information, refer to [Compactor]({{< relref "components/compactor.md" 
 
 ![Architecture of Grafana Mimir's read path](../../images/read-path.svg)
 
-Queries coming into Grafana Mimir arrive at the [query-frontend]({{< relref "components/query-frontend" >}}). The query-frontend then splits queries over longer time ranges into multiple, smaller queries which can be executed in parallel.
+Queries coming into Grafana Mimir arrive at the [query-frontend]({{< relref "components/query-frontend" >}}). The query-frontend then splits queries over longer time ranges into multiple, smaller queries.
 
 The query-frontend next checks the results cache. If the result of a query has been cached, the query-frontend returns the cached results. Queries that cannot be answered from the results cache are put into an in-memory queue within the query-frontend. 
 
