@@ -4,19 +4,11 @@
 
 ### Mixin
 
-* [FEATURE] Mimir / Top tenants dashboard now has tenants ranked by rule group size and evaluation time. #1338
-* [ENHANCEMENT] Introduced a new alert for the Alertmanager: `MimirAlertmanagerAllocatingTooMuchMemory`. It has two severities based on the memory usage against limits, a `warning` level at 80% and a `critical` level at 90%. #1206
-
 ### Jsonnet
-
-* [CHANGE] Disabled `-ingester.readiness-check-ring-health`. #1352
-* [CHANGE] Changed Alertmanager CPU request from `100m` tp `2` cores, and memory request from `1Gi` to `10Gi`. Set Alertmanager memory limit to `15Gi`. #1206
-* [FEATURE] Added multi-zone ingesters and store-gateways support. #1352
-* [BUGFIX] Rename `-ingester.readiness-check-ring-health` to `-ingester.ring.readiness-check-ring-health`, to reflect current name of flag. #1460
 
 ### Mimirtool
 
-## 2.0.0-rc.2
+## 2.0.0-rc.3
 
 ### Grafana Mimir
 
@@ -707,6 +699,7 @@ _Changes since `grafana/cortex-jsonnet` `1.9.0`._
 * [ENHANCEMENT] Added support to multi-zone store-gateway deployments. #608 #615
 * [ENHANCEMENT] Show supplementary alertmanager services in the Rollout Progress dashboard. #738 #855
 * [ENHANCEMENT] Added `mimir` to default job names. This makes dashboards and alerts working when Mimir is installed in single-binary mode and the deployment is named `mimir`. #921
+* [ENHANCEMENT] Introduced a new alert for the Alertmanager: `MimirAlertmanagerAllocatingTooMuchMemory`. It has two severities based on the memory usage against limits, a `warning` level at 80% and a `critical` level at 90%. #1206
 * [BUGFIX] Fixed `CortexIngesterHasNotShippedBlocks` alert false positive in case an ingester instance had ingested samples in the past, then no traffic was received for a long period and then it started receiving samples again. [#308](https://github.com/grafana/cortex-jsonnet/pull/308)
 * [BUGFIX] Fixed `CortexInconsistentRuntimeConfig` metric. [#335](https://github.com/grafana/cortex-jsonnet/pull/335)
 * [BUGFIX] Fixed scaling dashboard to correctly work when a Cortex service deployment spans across multiple zones (a zone is expected to have the `zone-[a-z]` suffix). [#365](https://github.com/grafana/cortex-jsonnet/pull/365)
@@ -828,6 +821,7 @@ _Changes since `grafana/cortex-jsonnet` `1.9.0`._
 * [CHANGE] Remove the support for the test-exporter. #1133
 * [CHANGE] Removed `$.distributor_deployment_labels`, `$.ingester_deployment_labels` and `$.querier_deployment_labels` fields, that were used by gossip.libsonnet to inject additional label. Now the label is injected directly into pods of statefulsets and deployments. #1297
 * [CHANGE] Disabled `-ingester.readiness-check-ring-health`. #1352
+* [CHANGE] Changed Alertmanager CPU request from `100m` to `2` cores, and memory request from `1Gi` to `10Gi`. Set Alertmanager memory limit to `15Gi`. #1206
 * [FEATURE] Added query sharding support. It can be enabled setting `cortex_query_sharding_enabled: true` in the `_config` object. #653
 * [FEATURE] Added shuffle-sharding support. It can be enabled and configured using the following config: #902
    ```
@@ -859,6 +853,7 @@ _Changes since `grafana/cortex-jsonnet` `1.9.0`._
 * [BUGFIX] Treat `compactor_blocks_retention_period` type as string rather than int.[#395](https://github.com/grafana/cortex-jsonnet/pull/395)
 * [BUGFIX] Pass `-ruler-storage.s3.endpoint` to ruler when using S3. [#421](https://github.com/grafana/cortex-jsonnet/pull/421)
 * [BUGFIX] Remove service selector on label `gossip_ring_member` from other services than `gossip-ring`. [#1008](https://github.com/grafana/mimir/pull/1008)
+* [BUGFIX] Rename `-ingester.readiness-check-ring-health` to `-ingester.ring.readiness-check-ring-health`, to reflect current name of flag. #1460
 
 ### Mimirtool
 
