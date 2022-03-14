@@ -1,6 +1,6 @@
 ---
 title: "Securing communications with TLS"
-description: "How to configure TLS between Grafana Mimir microservices."
+description: "How to configure TLS between Grafana Mimir components."
 weight: 10
 ---
 

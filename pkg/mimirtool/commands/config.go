@@ -26,7 +26,8 @@ type ConfigCommand struct {
 	outFlagsFile   string
 	outNoticesFile string
 
-	keepDefaults bool
+	updateDefaults  bool
+	includeDefaults bool
 
 	verbose bool
 }
@@ -36,14 +37,15 @@ func (c *ConfigCommand) Register(app *kingpin.Application, _ EnvVarNames) {
 	configCmd := app.Command("config", "Work with Grafana Mimir configuration.")
 
 	convertCmd := configCmd.
-		Command("convert", "Convert a configuration file from Cortex v1.11.0 to Grafana Mimir and output it to stdout").
+		Command("convert", "Convert a configuration file from Cortex v1.11.0 to Grafana Mimir v2.0.0 and output it to stdout").
 		Action(c.convertConfig)
 
 	convertCmd.Flag("yaml-file", "The YAML configuration file to convert.").StringVar(&c.yamlFile)
 	convertCmd.Flag("flags-file", "New-line-delimited list of CLI flags to convert.").StringVar(&c.flagsFile)
 	convertCmd.Flag("yaml-out", "Location to output the converted YAML configuration to. Default stdout").StringVar(&c.outYAMLFile)
 	convertCmd.Flag("flags-out", "Location to output list of converted CLI flags to. Default stdout").StringVar(&c.outFlagsFile)
-	convertCmd.Flag("keep-defaults", "Preserve default values in the resulting YAML and flags. If not set, configuration parameters using default values are omitted from the output CLI flags and YAML configuration.").BoolVar(&c.keepDefaults)
+	convertCmd.Flag("update-defaults", "If set and a configuration parameter is explicitly set to a default value which has changed in Mimir 2.0, the parameter value will be updated to the new default.").BoolVar(&c.updateDefaults)
+	convertCmd.Flag("include-defaults", "If set, includes all default values in the output YAML, regardless if they were explicitly set in the input YAML or not.").BoolVar(&c.includeDefaults)
 	convertCmd.Flag("verbose", "Print to stderr CLI flags and YAML paths from old config that no longer exist in the new one, changed default values between old and new, and deleted default values from -keep-defaults=false.").Short('v').BoolVar(&c.verbose)
 }
 
@@ -53,7 +55,7 @@ func (c *ConfigCommand) convertConfig(_ *kingpin.ParseContext) error {
 		return err
 	}
 
-	convertedYAML, flagsFlags, notices, err := config.Convert(yamlContents, flagsFlags, config.CortexToMimirMapper, config.DefaultCortexConfig, config.DefaultMimirConfig, !c.keepDefaults)
+	convertedYAML, flagsFlags, notices, err := config.Convert(yamlContents, flagsFlags, config.CortexToMimirMapper, config.DefaultCortexConfig, config.DefaultMimirConfig, c.updateDefaults, c.includeDefaults)
 	if err != nil {
 		return errors.Wrap(err, "could not convert configuration")
 	}
@@ -81,7 +83,12 @@ func (c *ConfigCommand) prepareInputs() ([]byte, []string, error) {
 		return nil, nil, errors.Wrap(err, "could not read flags-file")
 	}
 	if len(flagsContents) > 1 {
-		flags = strings.Split(string(flagsContents), "\n")
+		for _, flag := range strings.Split(string(flagsContents), "\n") {
+			flag = strings.TrimSpace(flag)
+			if len(flag) > 0 {
+				flags = append(flags, flag)
+			}
+		}
 	}
 	return yamlContents, flags, nil
 }
@@ -143,6 +150,10 @@ func (c *ConfigCommand) writeNotices(notices config.ConversionNotices, w io.Writ
 	for _, d := range notices.ChangedDefaults {
 		oldDefault, newDefault := placeholderIfEmpty(d.OldDefault), placeholderIfEmpty(d.NewDefault)
 		_, _ = noticesOut.WriteString(fmt.Sprintf("using a new default for %s: %s (used to be %s)\n", d.Path, newDefault, oldDefault))
+	}
+	for _, d := range notices.SkippedChangedDefaults {
+		oldDefault, newDefault := placeholderIfEmpty(d.OldDefault), placeholderIfEmpty(d.NewDefault)
+		_, _ = noticesOut.WriteString(fmt.Sprintf("default value for %s changed: %s (used to be %s); not updating\n", d.Path, newDefault, oldDefault))
 	}
 	for _, d := range notices.PrunedDefaults {
 		_, _ = noticesOut.WriteString(fmt.Sprintf("removed default value %s: %s\n", d.Path, placeholderIfEmpty(d.Value)))

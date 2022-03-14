@@ -17,7 +17,7 @@ To connect the queriers with the query-frontends, configure queriers with the qu
 
 We recommend that you run at least two query-frontend replicas for high-availability reasons.
 
-![Query-frontend architecture](../../images/query-frontend-architecture.png)
+![Query-frontend architecture](../../../images/query-frontend-architecture.png)
 
 [//]: # "Diagram source at https://docs.google.com/presentation/d/1bHp8_zcoWCYoNU2AhO2lSagQyuIrghkCncViSqn14cU/edit"
 
@@ -61,9 +61,9 @@ The result cache is backed by Memcached.
 
 Although aligning the step parameter to the query time range increases the performance of Grafana Mimir, it violates the [PromQL conformance](https://prometheus.io/blog/2021/05/03/introducing-prometheus-conformance-program/) of Grafana Mimir. If PromQL conformance is not a priority to you, you can enable step alignment by setting `-query-frontend.align-querier-with-step=true`.
 
-### Query sharding
+### About query sharding
 
-The query-frontend also provides [query sharding]({{< relref "../../../guides/query-sharding.md" >}}).
+The query-frontend also provides [query sharding]({{< relref "query-sharding.md" >}}).
 
 ## Why query-frontend scalability is limited
 

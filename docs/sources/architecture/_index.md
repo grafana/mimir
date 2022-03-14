@@ -6,16 +6,21 @@ weight: 20
 
 # Grafana Mimir architecture
 
-Grafana Mimir has a service-based architecture.
-The system has multiple horizontally scalable microservices that run separately and in parallel.
+Grafana Mimir has a microservices-based architecture.
+The system has multiple horizontally scalable microservices that can run separately and in parallel.
+Grafana Mimir microservices are called components.
+
+Grafana Mimir's design compiles the code for all components into a single binary.
+The `-target` parameter controls which component that single binary will behave as. For those looking for a simple way to get started, Grafana Mimir can also be run as a monolith, with all components running simultaneously in one process.
+For more information, refer to [Deployment modes]({{< relref "./deployment-modes.md" >}}).
 
 <!-- Diagram source at https://docs.google.com/presentation/d/1bHp8_zcoWCYoNU2AhO2lSagQyuIrghkCncViSqn14cU/edit -->
 
 ![Architecture of Grafana Mimir](../images/architecture.png)
 
-## Microservices
+## Grafana Mimir components
 
-Most microservices are stateless and do not require any data persisted between process restarts. Some microservices are stateful and rely on non-volatile storage to prevent data loss between process restarts. For details about each microservice, see its page.
+Most components are stateless and do not require any data persisted between process restarts. Some components are stateful and rely on non-volatile storage to prevent data loss between process restarts. For details about each component, see its page.
 
 {{< section >}}
 
@@ -41,14 +46,14 @@ For example, when running in the cloud, include an AWS EBS volume or a GCP persi
 If you are running the Grafana Mimir cluster in Kubernetes, you can use a StatefulSet with a persistent volume claim for the ingesters.
 The location on the filesystem where the WAL is stored is the same location where local TSDB blocks (compacted from head) are stored. The location of the filesystem and the location of the local TSDB blocks cannot be decoupled.
 
-For more information, refer to [timeline of block uploads]({{< relref "blocks-storage/production-tips/#how-to-estimate--querierquery-store-after" >}}) and [Ingester]({{< relref "components/ingester.md" >}}).
+For more information, refer to [timeline of block uploads]({{< relref "../operating/production-tips/#how-to-estimate--querierquery-store-after" >}}) and [Ingester]({{< relref "components/ingester.md" >}}).
 
 #### Series sharding and replication
 
 By default, each time series is replicated to three ingesters, and each ingester writes its own block to the long-term storage.
 The [Compactor]({{< relref "components/compactor.md" >}}) merges blocks from multiple ingesters into a single block, and removes duplicate samples.
 Blocks compaction significantly reduces storage utilization.
-For more information, refer to [Compactor]({{< relref "components/compactor.md" >}}) and [Production tips]({{< relref "blocks-storage/production-tips.md" >}}).
+For more information, refer to [Compactor]({{< relref "components/compactor.md" >}}) and [Production tips]({{< relref "../operating/production-tips.md" >}}).
 
 ### The read path
 
@@ -88,4 +93,4 @@ Grafana Mimir requires any of the following object stores for the block files:
 - [Google Cloud Storage](https://cloud.google.com/storage/)
 - [Microsoft Azure Storage](https://azure.microsoft.com/en-us/services/storage/)
 - [OpenStack Swift](https://wiki.openstack.org/wiki/Swift)
-- [Local Filesystem](https://thanos.io/storage.md/#filesystem) (single node only)
+- Local Filesystem (single node only)

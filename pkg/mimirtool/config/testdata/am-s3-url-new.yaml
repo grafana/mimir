@@ -1,0 +1,6 @@
+alertmanager_storage:
+  s3:
+    endpoint: hostname.com:8080
+    access_key_id: user
+    secret_access_key: pass
+    bucket_name: my-bucket

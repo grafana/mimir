@@ -1,6 +1,6 @@
 ---
 title: "Distributor"
-description: "Overview of the distributor microservice."
+description: "Overview of the distributor component."
 weight: 10
 ---
 
@@ -53,7 +53,7 @@ Use the following flags to configure the rate limit:
 ### Configuration
 
 The distributors form a [hash ring]({{< relref "../hash-ring.md" >}}) (called the distributors’ ring) to discover each other and enforce limits correctly.
-To configure the distributors' hash ring, refer to [configuring hash rings]({{< relref "../../operating-grafana-mimir/configure-hash-ring.md" >}}).
+To configure the distributors' hash ring, refer to [configuring hash rings]({{< relref "../../operating/configuring-hash-rings.md" >}}).
 
 ## High-availability tracker
 
@@ -64,7 +64,7 @@ The distributor includes an HA tracker.
 When the HA tracker is enabled, the distributor deduplicates incoming series from Prometheus HA pairs.
 This enables you to have multiple HA replicas of the same Prometheus servers that write the same series to Mimir and then deduplicates the series in the Mimir distributor.
 
-For more information about HA deduplication and how to configure it, refer to [configure HA deduplication]({{< relref "../../operating-grafana-mimir/configure-ha-deduplication.md" >}}).
+For more information about HA deduplication and how to configure it, refer to [configure HA deduplication]({{< relref "../../operating/configuring-high-availability-deduplication.md" >}}).
 
 ## Sharding and replication
 

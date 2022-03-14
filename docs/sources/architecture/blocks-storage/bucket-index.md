@@ -1,9 +1,9 @@
 ---
 title: "Bucket Index"
-linkTitle: "Bucket Index"
 weight: 10
-slug: bucket-index
 ---
+
+# Bucket index
 
 The bucket index is a **per-tenant file containing the list of blocks and block deletion marks** in the storage. The bucket index itself is stored in the backend object storage, is periodically updated by the compactor, and used by queriers, store-gateways and rulers to discover blocks in the storage.
 
@@ -42,7 +42,7 @@ At query time the [querier](./querier.md) and ruler check whether the bucket ind
 
 _Given it's a small file, lazy downloading it doesn't significantly impact on first query performances, but allows to get a querier up and running without pre-downloading every tenant's bucket index. Moreover, if the [metadata cache](./querier.md#metadata-cache) is enabled, the bucket index will be cached for a short time in a shared cache, reducing the actual latency and number of API calls to the object storage in case multiple queriers and rulers will fetch the same tenant's bucket index in a short time._
 
-![Querier - Bucket index](/images/blocks-storage/bucket-index-querier-workflow.png)
+![Querier - Bucket index](../../images/bucket-index-querier-workflow.png)
 
 <!-- Diagram source at https://docs.google.com/presentation/d/1bHp8_zcoWCYoNU2AhO2lSagQyuIrghkCncViSqn14cU/edit -->
 

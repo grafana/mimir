@@ -71,7 +71,7 @@ When new parameters are added, they can be introduced as **basic**, **advanced**
 
 If we decide to eliminate a **basic** or **advanced** parameter, we will first mark it deprecated. After two more minor releases, a deprecated flag will be removed entirely. Use the metric `deprecated_flags_inuse_total` to determine whether you're using deprecated flags.
 
-![Parameter states](../../images/param-states.png)
+![Parameter states](../images/param-states.png)
 
 ## Use environment variables in the configuration
 

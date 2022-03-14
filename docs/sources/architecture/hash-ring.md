@@ -47,14 +47,16 @@ It hashes the series’ labels, and the result of the hashing function is the to
 To find which ingester owns token `3`, Grafana Mimir looks up the token `3` in the ring and finds the ingester that is registered with the smallest token larger than `3`.
 The ingester #2, which is registered with token `4`, is the authoritative owner of the series `{__name__="cpu_seconds_total",instance="1.1.1.1"}`.
 
-![Hash ring without replication](../images/hash-ring-without-replication.png)
 [//]: # "Diagram source at https://docs.google.com/presentation/d/1bHp8_zcoWCYoNU2AhO2lSagQyuIrghkCncViSqn14cU/edit"
+
+![Hash ring without replication](../../images/hash-ring-without-replication.png)
 
 By default, Grafana Mimir replicates each series to three ingesters.
 After finding the authoritative owner of the series, Grafana Mimir continues to walk the ring clockwise to find the remaining two instances where the series should be replicated.
 In the example that follows, the series are replicated to the instances of `Ingester #3` and `Ingester #4`.
 
-![Hash ring with replication](../images/hash-ring-with-replication.png)
+![Hash ring with replication](../../images/hash-ring-with-replication.png)
+
 [//]: # "Diagram source at https://docs.google.com/presentation/d/1bHp8_zcoWCYoNU2AhO2lSagQyuIrghkCncViSqn14cU/edit"
 
 ### Consistent hashing
@@ -89,7 +91,7 @@ For more information, see the [key-value store documentation]({{< relref "key-va
 Grafana Mimir primarily uses the hash ring for sharding and replication.
 Features that are built using the hash ring:
 
-- **Service discovery**: instances can discover each other looking up who is registered in the ring.
-- **Heartbeating**: instances periodically send an heartbeat to the ring to signal they're up and running. An instance is considered unhealthy if misses the heartbeat for some period of time.
-- **Zone-aware replication**: zone-aware replication is the replication of data across failure domains and can be optionally enabled in Grafana Mimir. For more information, see [configuring zone-aware replication]({{< relref "../operating-grafana-mimir/configure-zone-aware-replication.md" >}}).
-- **Shuffle sharding**: Grafana Mimir optionally support shuffle sharding in a multi-tenant cluster, to reduce the blast radius of an outage and better isolate tenants. For more information, see [configure shuffle sharding]({{< relref "../operating-grafana-mimir/configure-shuffle-sharding.md" >}}).
+- **Service discovery**: Instances can discover each other looking up who is registered in the ring.
+- **Heartbeating**: Instances periodically send an heartbeat to the ring to signal they're up and running. An instance is considered unhealthy if misses the heartbeat for some period of time.
+- **Zone-aware replication**: Zone-aware replication is the replication of data across failure domains and can be optionally enabled in Grafana Mimir. For more information, see [configuring zone-aware replication]({{< relref "../operating/configuring-zone-aware-replication.md" >}}).
+- **Shuffle sharding**: Grafana Mimir optionally supports shuffle sharding in a multi-tenant cluster, to reduce the blast radius of an outage and better isolate tenants. For more information, refer to [configure shuffle sharding]({{< relref "../operating/configuring-shuffle-sharding.md" >}}).

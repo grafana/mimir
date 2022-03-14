@@ -1,9 +1,9 @@
 ---
 title: "Binary index-header"
-linkTitle: "Binary index-header"
 weight: 10
-slug: binary-index-header
 ---
+
+# Binary index-header
 
 In order to query series inside blocks from object storage, the [store-gateway](./store-gateway.md) has to know certain initial info from each block index. In order to achieve so, the store-gateway builds an index-header for each block and stores it on local disk; such index-header is built by downloading specific pieces of original block's index and storing them on local disk. Index header is then used by store-gateway at query time.
 

@@ -1,4 +1,4 @@
 ruler_storage:
+  backend: s3
   s3:
-    # `backend: s3` is missing because it's difficult to make this decision in code
     endpoint: 'http://primary'

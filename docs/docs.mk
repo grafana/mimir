@@ -12,7 +12,8 @@ DOCS_BASE_URL    ?= "localhost:$(DOCS_HOST_PORT)"
 
 DOCS_VERSION = next
 
-DOCS_DOCKER_RUN_FLAGS = -ti -v $(CURDIR)/$(DOCS_DIR):/hugo/content/docs/$(DOCS_PROJECT)/$(DOCS_VERSION):ro,z -e HUGO_REFLINKSERRORLEVEL=ERROR -p $(DOCS_HOST_PORT):$(DOCS_LISTEN_PORT) --rm $(DOCS_IMAGE)
+HUGO_REFLINKSERRORLEVEL ?= WARNING
+DOCS_DOCKER_RUN_FLAGS = -ti -v $(CURDIR)/$(DOCS_DIR):/hugo/content/docs/$(DOCS_PROJECT)/$(DOCS_VERSION):ro,z -e HUGO_REFLINKSERRORLEVEL=$(HUGO_REFLINKSERRORLEVEL) -p $(DOCS_HOST_PORT):$(DOCS_LISTEN_PORT) --rm $(DOCS_IMAGE)
 DOCS_DOCKER_CONTAINER = $(DOCS_PROJECT)-docs
 
 # This wrapper will serve documentation on a local webserver.
@@ -23,7 +24,9 @@ define docs_docker_run
 	@if [[ -z $${NON_INTERACTIVE} ]]; then \
 		read -p "Press a key to continue"; \
 	fi
-	@docker run --name $(DOCS_DOCKER_CONTAINER) $(DOCS_DOCKER_RUN_FLAGS) /bin/bash -c 'find content/docs/ -mindepth 1 -maxdepth 1 -type d -a ! -name "$(DOCS_PROJECT)" -exec rm -rf {} \; && touch content/docs/mimir/_index.md && exec $(1)'
+	# The loki _index.md file is intentionally used until the equivalent file in the grafana/website repository is
+	# created for Mimir.
+	@docker run --name $(DOCS_DOCKER_CONTAINER) $(DOCS_DOCKER_RUN_FLAGS) /bin/bash -c 'mv content/docs/loki/_index.md content/docs/$(DOCS_PROJECT)/ && find content/docs/ -mindepth 1 -maxdepth 1 -type d -a ! -name "$(DOCS_PROJECT)" -exec rm -rf {} \;  && exec $(1)'
 endef
 
 .PHONY: docs-docker-rm
@@ -37,4 +40,4 @@ docs-pull:
 .PHONY: docs
 docs: ## Serve documentation locally.
 docs: docs-pull
-	$(call docs_docker_run,hugo server --debug --baseUrl=$(DOCS_BASE_URL) -p $(DOCS_LISTEN_PORT) --bind 0.0.0.0)
+	$(call docs_docker_run,make server HUGO_PORT=$(DOCS_LISTEN_PORT))

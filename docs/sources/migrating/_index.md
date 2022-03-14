@@ -6,4 +6,4 @@ weight: 40
 
 # Migrating to Grafana Mimir
 
-TODO
+{{< section >}}

@@ -1,6 +1,6 @@
 ---
 title: "(Optional) Alertmanager"
-description: "Overview of the alertmanager microservice."
+description: "Overview of the Alertmanager component."
 weight: 20
 ---
 
@@ -51,7 +51,7 @@ After the tenant uploads an Alertmanager configuration, the tenant can access th
 
 #### Fallback configuration
 
-When a tenant doesn't have a Alertmanager configuration, the Mimir Alertmanager uses a fallback configuration, if configured.
+When a tenant doesn't have a Alertmanager configuration, the Grafana Mimir Alertmanager uses a fallback configuration, if configured.
 By default, there is no fallback configuration set.
 Specify a fallback configuration using the `-alertmanager.configs.fallback` command-line flag.
 
@@ -59,7 +59,7 @@ Specify a fallback configuration using the `-alertmanager.configs.fallback` comm
 
 ### Tenant limits
 
-The Mimir Alertmanager has a number of per-tenant limits documented in [`limits`]({{< relref "../../configuring/reference-configuration-parameters.md#limits" >}}).
+The Grafana Mimir Alertmanager has a number of per-tenant limits documented in [`limits`]({{< relref "../../configuring/reference-configuration-parameters.md#limits" >}}).
 Each Mimir Alertmanager limit configuration parameter has an `alertmanager` prefix.
 
 ## Alertmanager UI
@@ -88,14 +88,14 @@ When using a reverse proxy, use the following settings when you configure the HT
 
 ## Sharding and replication
 
-The alertmanager shards and replicates alerts by tenant.
+The Alertmanager shards and replicates alerts by tenant.
 Sharding requires that the number of Alertmanager replicas is greater-than or equal-to the replication factor configured by the `-alertmanager.sharding-ring.replication-factor` flag.
 
 Grafana Mimir Alertmanager replicas use [hash ring]({{< relref "../hash-ring.md" >}}) that is stored in the KV store to discover their peers.
 This means that any Mimir Alertmanager replica can respond to any API or UI request for any tenant.
 If the Mimir Alertmanager replica receiving the HTTP request doesn't own the tenant to which the request belongs, the request is internally routed to the appropriate replica.
 
-To configure the alertmanagers' hash ring, refer to [configuring hash rings]({{< relref "../../operating-grafana-mimir/configure-hash-ring.md" >}}).
+To configure the Alertmanagers' hash ring, refer to [configuring hash rings]({{< relref "../../operating/configuring-hash-rings.md" >}}).
 
 > **Note:** When running with a single tenant, scaling the number of replicas to be greater than the replication factor offers no benefits as the Mimir Alertmanager shards by tenant and not individual alerts.
 

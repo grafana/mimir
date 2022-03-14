@@ -33,8 +33,8 @@ BINARY_SUFFIX ?= ""
 IMAGE_PREFIX ?= grafana/
 BUILD_IMAGE ?= $(IMAGE_PREFIX)mimir-build-image
 
-# For a tag push GITHUB_REF will look like refs/tags/<tag_name>,
-# If finding refs/tags/ does not equal emptystring then use
+# For a tag push, $GITHUB_REF will look like refs/tags/<tag_name>.
+# If finding refs/tags/ does not equal empty string, then use
 # the tag we are at as the image tag.
 ifneq (,$(findstring refs/tags/, $(GITHUB_REF)))
 	GIT_TAG := $(shell git tag --points-at HEAD)
@@ -62,7 +62,7 @@ DOC_TEMPLATES := docs/sources/configuring/reference-configuration-parameters.tem
 
 # Documents to run through embedding
 DOC_EMBED := docs/sources/architecture/components/query-frontend/using-the-query-frontend-with-prometheus.md \
-	docs/sources/operating-grafana-mimir/mirror-requests-to-a-second-cluster.md \
+	docs/sources/operating/mirroring-requests-to-a-second-cluster.md \
 	docs/sources/architecture/components/overrides-exporter.md \
 	docs/sources/getting-started/_index.md \
 	operations/mimir/README.md
@@ -109,6 +109,7 @@ push-multiarch-mimir:
 	$(SUDO) docker buildx build -o type=registry --platform linux/amd64,linux/arm64 --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) --build-arg=USE_BINARY_SUFFIX=true -t $(IMAGE_PREFIX)mimir:$(IMAGE_TAG) cmd/mimir
 
 # This target fetches current build image, and tags it with "latest" tag. It can be used instead of building the image locally.
+.PHONY: fetch-build-image
 fetch-build-image:
 	docker pull $(BUILD_IMAGE):$(LATEST_BUILD_IMAGE_TAG)
 	docker tag $(BUILD_IMAGE):$(LATEST_BUILD_IMAGE_TAG) $(BUILD_IMAGE):latest
@@ -206,7 +207,7 @@ GOVOLUMES=	-v $(shell pwd)/.cache:/go/cache:delegated,z \
 # Mount local ssh credentials to be able to clone private repos when doing `mod-check`
 SSHVOLUME=  -v ~/.ssh/:/root/.ssh:delegated,z
 
-exes $(EXES) protos $(PROTO_GOS) lint test test-with-race cover shell mod-check check-protos doc format dist: mimir-build-image/$(UPTODATE)
+exes $(EXES) protos $(PROTO_GOS) lint test test-with-race cover shell mod-check check-protos doc format dist: fetch-build-image
 	@mkdir -p $(shell pwd)/.pkg
 	@mkdir -p $(shell pwd)/.cache
 	@echo
