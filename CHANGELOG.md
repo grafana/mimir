@@ -5,6 +5,7 @@
 * [CHANGE] Compactor: No longer upload debug meta files to object storage. #1257
 * [FEATURE] Distributor: Added the ability to forward specifics metrics to alternative remote_write API endpoints. #1052
 * [ENHANCEMENT] Ruler: Add more detailed query information to ruler query stats logging. #1411
+* [BUGFIX] Fix internal modules to wait for other modules depending on them before stopping. #1472
 
 ### Mixin
 
