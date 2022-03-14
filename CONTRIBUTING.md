@@ -1,3 +1,3 @@
 # Contributing to Grafana Mimir
 
-See [https://github.com/grafana/mimir/tree/main/docs/sources/contributing](https://github.com/grafana/mimir/tree/main/docs/sources/contributing).
+For contribution guidelines, refer to [https://github.com/grafana/mimir/tree/main/docs/internal/contributing](https://github.com/grafana/mimir/tree/main/docs/internal/contributing).
