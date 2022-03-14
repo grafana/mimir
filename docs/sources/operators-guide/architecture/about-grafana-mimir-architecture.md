@@ -60,13 +60,15 @@ For more information, refer to [Compactor]({{< relref "components/compactor.md" 
 
 Queries coming into Grafana Mimir arrive at the [query-frontend]({{< relref "components/query-frontend" >}}). The query-frontend then splits queries over longer time ranges into multiple, smaller queries which can be executed in parallel.
 
-The query-frontend next checks the results cache. If the result of a query has been cached, the query-frontend returns the cached results. Queries that cannot be answered from the results cache are put into an in-memory queue within the query-frontend. _(If running the optional [query-scheduler]({{< relref "components/query-scheduler" >}}) component, this queue is maintained in the query-scheduler instead.)_
+The query-frontend next checks the results cache. If the result of a query has been cached, the query-frontend returns the cached results. Queries that cannot be answered from the results cache are put into an in-memory queue within the query-frontend. 
+
+>**Note:** If you run the optional [query-scheduler]({{< relref "components/query-scheduler" >}}) component, this queue is maintained in the query-scheduler instead of the query-frontend.
 
 The queriers act as workers, pulling queries from the queue.
 
-The queriers connect to the store-gateways and ingesters to fetch all data needed to execute a query. For more details on how the query is executed, see the [querier]({{< relref "components/querier.md" >}}) page.
+The queriers connect to the store-gateways and the ingesters to fetch all the data needed to execute a query. For more information about how the query is executed, refer to [querier]({{< relref "components/querier.md" >}}).
 
-Once the query has been executed, the querier returns the results to the query-frontend for aggregation, after which the results are returned to the client.
+After the querier executes the query, it returns the results to the query-frontend for aggregation. The query-frontend then returns the aggregated results to the client.
 
 ## The role of Prometheus
 
