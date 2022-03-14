@@ -1,7 +1,10 @@
 ---
-title: "Grafana Mimir technical documentation"
+title: "Grafana Mimir"
+menuTitle: "Grafana Mimir"
 weight: 1
 ---
+
+# Grafana Mimir
 
 Grafana Mimir provides horizontally scalable, highly available, multi-tenant, long-term storage for [Prometheus](https://prometheus.io).
 
@@ -14,13 +17,13 @@ Grafana Mimir provides horizontally scalable, highly available, multi-tenant, lo
 
 ## Documentation
 
-If you’re new to Grafana Mimir, read [Getting started with Grafana Mimir]({{< relref "./getting-started/_index.md" >}}).
+If you’re new to Grafana Mimir, read [Getting started with Grafana Mimir]({{< relref "./operators-guide/getting-started/_index.md" >}}).
 
 Before deploying Grafana Mimir, read:
 
-1. [Grafana Mimir architecture]({{< relref "architecture.md" >}})
-1. [Getting started with Grafana Mimir]({{< relref "getting-started/_index.md" >}})
-1. [Configuring Grafana Mimir]({{< relref "configuring/_index.md" >}})
+1. [Grafana Mimir architecture]({{< relref "operators-guide/architecture/_index.md" >}})
+1. [Getting started with Grafana Mimir]({{< relref "operators-guide/getting-started/_index.md" >}})
+1. [Configuring Grafana Mimir]({{< relref "operators-guide/configuring/_index.md" >}})
 
 ## Hosted Grafana Mimir (Prometheus as a service)
 
