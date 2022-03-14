@@ -2,7 +2,7 @@
 title: "Grafana Mimir"
 menuTitle: "Grafana Mimir"
 weight: 1
-keywords: 
+keywords:
   - Grafana Mimir
   - Grafana metrics
   - time series database
