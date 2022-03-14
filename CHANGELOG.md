@@ -596,6 +596,7 @@ _Changes since Cortex 1.10.0._
 * [BUGFIX] Ring: multi KV runtime config changes are now propagated to all rings, not just ingester ring. #1047
 * [BUGFIX] Memberlist: fixed corrupted packets when sending compound messages with more than 255 messages or messages bigger than 64KB. #551
 * [BUGFIX] Overrides exporter: successfully startup even if runtime config is not set. #1056
+* [BUGFIX] Fix internal modules to wait for other modules depending on them before stopping. #1472
 
 ### Mixin
 
