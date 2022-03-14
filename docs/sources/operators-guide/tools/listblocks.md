@@ -10,7 +10,7 @@ weight: 10
 The listblocks tool lists blocks and show the block details of a tenant.
 Listblocks requires at least configuration to access the bucket and tenant.
 
-Listblocks doesn't use the bucket index; instead, it downloads the `meta.json` file of every block in the tenant. 
+Listblocks doesn't use the bucket index; instead, it downloads the `meta.json` file of every block in the tenant.
 This means that listblocks has an up-to-date view of the blocks in the bucket.
 
 ```

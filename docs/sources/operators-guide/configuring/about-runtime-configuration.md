@@ -5,7 +5,6 @@ description: "Runtime configuration enables you to change a subset of configurat
 weight: 40
 ---
 
-
 # About Grafana Mimir runtime configuration
 
 A runtime configuration file is a file containing configuration, which is periodically reloaded while Mimir is running. It allows you to change a subset of Grafana Mimir’s configuration without having to restart the Grafana Mimir component or instance.

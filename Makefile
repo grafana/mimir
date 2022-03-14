@@ -61,8 +61,8 @@ JSONNET_MANIFESTS_PATH := operations/mimir
 DOC_TEMPLATES := docs/sources/operators-guide/configuring/reference-configuration-parameters.template
 
 # Documents to run through embedding
-DOC_EMBED := docs/sources/operators-guide/architecture/components/query-frontend/using-the-query-frontend-with-prometheus.md \
-	docs/sources/operators-guide/operating/mirroring-requests-to-a-second-cluster.md \
+DOC_EMBED := docs/sources/operators-guide/configuring/configuring-the-query-frontend-work-with-prometheus.md \
+	docs/sources/operators-guide/configuring/mirroring-requests-to-a-second-cluster.md \
 	docs/sources/operators-guide/architecture/components/overrides-exporter.md \
 	docs/sources/operators-guide/getting-started/_index.md \
 	operations/mimir/README.md

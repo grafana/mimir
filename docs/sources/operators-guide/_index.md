@@ -5,7 +5,6 @@ description: "This guide contains information about deploying, configuring, and 
 weight: 20
 ---
 
-
 # Grafana Mimir operator and user guide
 
 This guide describes the decisions Grafana Mimir operators and users make and the actions they perform to deploy, configure, and maintain Grafana Mimir.
@@ -13,7 +12,7 @@ This guide describes the decisions Grafana Mimir operators and users make and th
 The intended audience for this guide includes:
 
 - Operators who are responsible for deploying and configuring Grafana Mimir.
-- Users who are responsible for viewing Grafana Mimir dashboards to troubleshoot production environment issues. 
+- Users who are responsible for viewing Grafana Mimir dashboards to troubleshoot production environment issues.
 
 This guide contains the following sections:
 
