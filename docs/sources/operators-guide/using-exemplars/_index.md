@@ -3,6 +3,8 @@ title: "Using exemplars with Grafana Mimir"
 menuTitle: "Using exemplars with Grafana Mimir"
 description: "Learn how to use examplars with Grafana Mimir."
 weight: 40
+keywords:
+  - Mimir exemplars
 ---
 
 # Using exemplars with Grafana Mimir

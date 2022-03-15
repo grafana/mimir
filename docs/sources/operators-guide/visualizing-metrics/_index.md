@@ -3,6 +3,8 @@ title: "Monitoring Grafana Mimir"
 menuTitle: "Monitoring Grafana Mimir"
 description: "View example Grafana Mimir dashboards."
 weight: 50
+keywords:
+  - Mimir dashboards
 ---
 
 # Monitoring Grafana Mimir
