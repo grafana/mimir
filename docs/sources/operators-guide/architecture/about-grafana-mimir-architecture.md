@@ -25,7 +25,7 @@ Most components are stateless and do not require any data persisted between proc
 
 [//]: # "Diagram source of write path at https://docs.google.com/presentation/d/1LemaTVqa4Lf_tpql060vVoDGXrthp-Pie_SQL7qwHjc/edit#slide=id.g11658e7e4c6_0_899"
 
-![Architecture of Grafana Mimir's write path](../../images/write-path.svg)
+![Architecture of Grafana Mimir's write path](../images/write-path.svg)
 
 Ingesters receive incoming samples from the distributors.
 Each push request belongs to a tenant, and the ingester appends the received samples to the specific per-tenant TSDB that is stored on the local disk.
@@ -56,7 +56,7 @@ For more information, refer to [Compactor]({{< relref "components/compactor.md" 
 
 [//]: # "Diagram source of read path at https://docs.google.com/presentation/d/1LemaTVqa4Lf_tpql060vVoDGXrthp-Pie_SQL7qwHjc/edit#slide=id.g11658e7e4c6_2_6"
 
-![Architecture of Grafana Mimir's read path](../../images/read-path.svg)
+![Architecture of Grafana Mimir's read path](../images/read-path.svg)
 
 Queries coming into Grafana Mimir arrive at the [query-frontend]({{< relref "components/query-frontend" >}}). The query-frontend then splits queries over longer time ranges into multiple, smaller queries.
 
