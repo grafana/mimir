@@ -7,7 +7,7 @@ weight: 20
 
 # About Grafana Mimir DNS service discovery
 
-Some clients in Grafana Mimir support service discovery via DNS to find the addresses of backend servers to connect to. These clients support service discovery via DNS:
+Some clients in Grafana Mimir support service discovery via DNS to locate the addresses of backend servers to connect to. The following clients support service discovery via DNS:
 
 - [Block storage's memcached cache]({{< relref "reference-configuration-parameters/#blocks_storage" >}})
 - [All caching memcached servers]({{< relref "reference-configuration-parameters/#memcached" >}})
@@ -15,7 +15,8 @@ Some clients in Grafana Mimir support service discovery via DNS to find the addr
 
 ## Supported discovery modes
 
-The DNS service discovery supports different discovery modes. A discovery mode is selected adding a specific prefix to the address. Supported prefixes are:
+DNS service discovery supports different discovery modes.
+You select a discovery mode by adding one of the following supported prefixes to the address:
 
 - **`dns+`**<br />
   The domain name after the prefix is looked up as an A/AAAA query. For example: `dns+memcached.local:11211`.
@@ -24,4 +25,4 @@ The DNS service discovery supports different discovery modes. A discovery mode i
 - **`dnssrvnoa+`**<br />
   The domain name after the prefix is looked up as a SRV query, with no A/AAAA lookup made after that. For example: `dnssrvnoa+_memcached._tcp.memcached.namespace.svc.cluster.local`.
 
-If no prefix is provided, the provided IP or hostname will be used without pre-resolving it.
+If no prefix is provided, the provided IP or hostname is used without pre-resolving it.

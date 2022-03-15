@@ -7,9 +7,11 @@ weight: 40
 
 # About Grafana Mimir runtime configuration
 
-A runtime configuration file is a file containing configuration, which is periodically reloaded while Mimir is running. It allows you to change a subset of Grafana Mimir’s configuration without having to restart the Grafana Mimir component or instance.
+A runtime configuration file is a file that contains configuration parameters, which is periodically reloaded while Mimir is running.
+It allows you to change a subset of Grafana Mimir’s configuration without having to restart the Grafana Mimir component or instance.
 
-Runtime configuration is available for a subset of the configuration that was set at startup. A Grafana Mimir operator can observe the configuration and use runtime configuration to make immediate adjustments to Grafana Mimir.
+Runtime configuration is available for a subset of the configuration that was set at startup.
+A Grafana Mimir operator can observe the configuration and use runtime configuration to make immediate adjustments to Grafana Mimir.
 
 Runtime configuration values take precedence over command-line options.
 
@@ -27,11 +29,11 @@ Use Grafana Mimir’s `/runtime_config` endpoint to see the current value of the
 
 ## Runtime configuration of per-tenant limits
 
-The primary use case for the runtime configuration file is that it allows you to set and adjust limits for each tenant in Grafana Mimir. Doing so lets you set limits that are appropriate for each tenant based on their ingest and query needs.
+The runtime configuration file is primarily used to set and adjust limits that are appropriate for each tenant based on their ingest and query needs.
 
-The values that are defined in the limits section of your YAML configuration define the default set of limits that are applied to tenants. For example, if you set the `ingestion_rate` to 25,000 in your YAML configuration file, any tenant in your cluster that is sending more than 25,000 samples per second (SPS) will be rate limited.
+The values that are defined in the limits section of your YAML configuration define the default set of limits that are applied to tenants. For example, if you set the `ingestion_rate` to `25,000` in your YAML configuration file, any tenant in your cluster that sends more than 25,000 samples per second (SPS) is rate limited.
 
-You can use the runtime configuration file to override this behavior. For example, if you have a tenant (`tenant1`) that needs to send twice as many data points as the current limit, and you have another tenant (`tenant2`) that needs to send three times as many data points, you can modify the contents of your runtime configuration file:
+You can use the runtime configuration file to override this behavior. For example, if you have a tenant (`tenant1`) that needs to send twice as many data points as the current limit, and you have another tenant (`tenant2`) that needs to send three times as many data points, you can modify the contents of your runtime configuration file as follows:
 
 ```yaml
 overrides:
@@ -49,13 +51,13 @@ As a result, Grafana Mimir allows `tenant1` to send 50,000 SPS, and `tenant2` to
 
 ## Ingester instance limits
 
-Grafana Mimir ingesters support limits that are applied per instance, meaning that they apply to each ingester process. These limits can be used to ensure individual ingesters are not overwhelmed regardless of any per-tenant limits. These limits can be set under the `ingester.instance_limits` block in the global configuration file, with CLI flags, or under the `ingester_limits` field in the runtime configuration file.
-
-The runtime configuration file can be used to dynamically adjust ingester instance limits. While per-tenant limits are limits applied to each tenant, per-ingester-instance limits are limits applied to each ingester process.
+The runtime configuration file can be used to dynamically adjust Grafana Mimir ingester instance limits. While per-tenant limits are limits applied to each tenant, per-ingester-instance limits are limits applied to each ingester process.
+Ingester limits ensure individual ingesters are not overwhelmed, regardless of any per-tenant limits. These limits can be set under the `ingester.instance_limits` block in the global configuration file, with CLI flags, or under the `ingester_limits` field in the runtime configuration file.
 
 The runtime configuration allows you to override initial values, which is useful for advanced operators who need to dynamically change them in response to changes in ingest or query load.
 
-Everything under the `instance_limits` section within the [`ingester`]({{< relref "reference-configuration-parameters/#ingester" >}}) block can be overridden via runtime configuration. Here is an example portion of runtime configuration that changes the ingester limits:
+Everything under the `instance_limits` section within the [`ingester`]({{< relref "reference-configuration-parameters/#ingester" >}}) block can be overridden via runtime configuration.
+The following example shows a portion of the runtime configuration that changes the ingester limits:
 
 ```yaml
 ingester_limits:
@@ -67,11 +69,9 @@ ingester_limits:
 
 ## Runtime configuration of ingester streaming
 
-An advanced runtime configuration
-controls whether ingesters transfer encoded chunks (the default) or transfer decoded series to queriers at query time.
+An advanced runtime configuration option controls if ingesters transfer encoded chunks (the default) or transfer decoded series to queriers at query time.
 
-The parameter `ingester_stream_chunks_when_using_blocks` may only be used in runtime configuration.
-A value of true transfers encoded chunks,
-and a value of false transfers decoded series.
+The parameter `ingester_stream_chunks_when_using_blocks` might only be used in runtime configuration.
+A value of `true` transfers encoded chunks, and a value of `false` transfers decoded series.
 
-We strongly recommend against changing the default setting. It already defaults to true, and should remain true except for rare corner cases where users have observed slowdowns in Grafana Mimir rules evaluation.
+> **Note:** We strongly recommend that you use the default setting, which is `true`, except in rare cases where users observe Grafana Mimir rules evaluation slowing down.
