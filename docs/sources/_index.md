@@ -2,6 +2,14 @@
 title: "Grafana Mimir"
 menuTitle: "Grafana Mimir"
 weight: 1
+keywords:
+  - Grafana Mimir
+  - Grafana metrics
+  - time series database
+  - TSDB
+  - Prometheus storage
+  - metrics storage
+  - metrics datastore
 ---
 
 # Grafana Mimir

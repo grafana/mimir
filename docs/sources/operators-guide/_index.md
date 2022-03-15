@@ -3,6 +3,13 @@ title: "Grafana Mimir operator and user guide"
 menuTitle: "Operator and user guide"
 description: "This guide contains information about deploying, configuring, and maintaining Grafana Mimir."
 weight: 20
+keywords:
+  - Grafana Mimir architecture
+  - Mimir architecture
+  - Mimir components
+  - query sharding
+  - Mimir deployment
+  - deploying Mimir
 ---
 
 # Grafana Mimir operator and user guide
