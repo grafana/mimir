@@ -229,7 +229,7 @@ func (a *API) RegisterAPI(httpPathPrefix string, actualCfg interface{}, defaultC
 // RegisterRuntimeConfig registers the endpoints associates with the runtime configuration
 func (a *API) RegisterRuntimeConfig(runtimeConfigHandler http.HandlerFunc) {
 	a.indexPage.AddDropdown(runtimeConfigWeight, "Current runtime config", []IndexPageDropdownElement{
-		{Desc: "Entire runtime config (incl. overrides)", Path: "/runtime_config"},
+		{Desc: "Entire runtime config (including overrides)", Path: "/runtime_config"},
 		{Desc: "Only values that differ from the defaults", Path: "/runtime_config?mode=diff"},
 	})
 
@@ -245,7 +245,7 @@ func (a *API) RegisterDistributor(d *distributor.Distributor, pushConfig distrib
 	a.indexPage.AddDropdown(defaultWeight, "Distributor", []IndexPageDropdownElement{
 		{Desc: "Ring status", Path: "/distributor/ring"},
 		{Desc: "Usage statistics", Path: "/distributor/all_user_stats"},
-		{Desc: "HA tracking status", Path: "/distributor/ha_tracker"},
+		{Desc: "HA tracker status", Path: "/distributor/ha_tracker"},
 	})
 
 	a.RegisterRoute("/distributor/ring", d, false, true, "GET", "POST")
@@ -346,7 +346,7 @@ func (a *API) RegisterRing(r http.Handler) {
 func (a *API) RegisterStoreGateway(s *storegateway.StoreGateway) {
 	storegatewaypb.RegisterStoreGatewayServer(a.server.GRPC, s)
 
-	a.indexPage.AddDropdown(defaultWeight, "Store Gateway", []IndexPageDropdownElement{
+	a.indexPage.AddDropdown(defaultWeight, "Store-gateway", []IndexPageDropdownElement{
 		{Desc: "Ring status", Path: "/store-gateway/ring"},
 		{Desc: "Tenants & Blocks", Path: "/store-gateway/tenants"},
 	})
