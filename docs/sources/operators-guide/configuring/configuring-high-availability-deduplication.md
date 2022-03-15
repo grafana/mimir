@@ -23,7 +23,7 @@ timeout ensures that too much data is not dropped before failover to the other r
 > **Note:** In a scenario where the default scrape period is 15 seconds, and the timeouts in Grafana Mimir are set to the default values,
 > when a leader-election failover occurs, you'll likely only lose a single scrape of data. For any query using the `rate()` function, make the rate time interval
 > at least four times that of the scrape period to account for any of these failover scenarios.
-> For example with the default scrape period of 15 seconds, use a rate time-interval at least 1-minute long.
+> For example, with the default scrape period of 15 seconds, use a rate time-interval at least 1-minute.
 
 ## Distributor high-availability (HA) tracker
 
@@ -32,20 +32,22 @@ The [distributor]({{< relref "../architecture/components/distributor.md" >}}) in
 The HA tracker deduplicates incoming samples based on a cluster and replica label expected on each incoming series.
 The cluster label uniquely identifies the cluster of redundant Prometheus servers for a given tenant.
 The replica label uniquely identifies the replica within the Prometheus cluster.
-Incoming samples are considered duplicated (and thus dropped) if received from any replica which is not the currently elected as leader within a cluster.
+Incoming samples are considered duplicated (and thus dropped) if they are received from any replica that is not the currently elected leader within a cluster.
 
-In the event the HA tracker is enabled but incoming samples contain only one or none of the cluster and replica labels, these samples will be accepted by default and never deduplicated.
+If the HA tracker is enabled but incoming samples contain only one or none of the cluster and replica labels, these samples are accepted by default and never deduplicated.
 
-> Note: for performance reasons, the HA tracker only checks the cluster and replica label of the first series in the request to decide whether all series in the request should be deduplicated. This assumes that all series inside the request have the same cluster and replica labels, which is typically true when Prometheus is configured with external labels. We recommend you to ensure this requirement is honored if you're having a non standard Prometheus setup (eg. you're using Prometheus federation or have a metrics proxy in between).
+> Note: for performance reasons, the HA tracker only checks the cluster and replica label of the first series in the request to determine whether all series in the request should be deduplicated. This assumes that all series inside the request have the same cluster and replica labels, which is typically true when Prometheus is configured with external labels. Ensure this requirement is honored if you have a non-standard Prometheus setup (for example, you're using Prometheus federation or have a metrics proxy in between).
 
 ## Configuration
 
-This section includes information about how to configure Prometheus and how to configure Grafana Mimir.
+This section includes information about how to configure Prometheus and Grafana Mimir.
 
 ### How to configure Prometheus
 
-To configure Prometheus, set two identifiers for each Prometheus server: one for the cluster, for example, `team-1` or `team-2`, and one to identify the replica in the cluster, for example `a` or `b`.
-It’s easiest to set [external labels](https://prometheus.io/docs/prometheus/latest/configuration/configuration/). The default labels are `cluster` and `__replica__`, for example:
+To configure Prometheus, set two identifiers for each Prometheus server, one for the cluster. For example, set `team-1` or `team-2`, and one to identify the replica in the cluster, for example `a` or `b`.
+The easiest approach is to set [external labels](https://prometheus.io/docs/prometheus/latest/configuration/configuration/). The default labels are `cluster` and `__replica__`.
+
+The following example shows how to set identifiers in Prometheus:
 
 ```
 global:
@@ -66,7 +68,7 @@ global:
 > **Note:** The preceding labels are external labels and have nothing to do with `remote_write` configuration.
 
 These two label names are configurable on a per-tenant basis within Grafana Mimir. For example, if the label name of one cluster is used by
-some workloads, set the label name of another cluster to be something else that uniquely identifies the second cluster.
+some workloads, set the label name of another cluster to something else that uniquely identifies the second cluster.
 
 Set the replica label so that the value for each Prometheus cluster is unique in that cluster.
 
@@ -84,7 +86,7 @@ The minimal configuration required is as follows:
 
 To enable the HA tracker feature, set the `-distributor.ha-tracker.enable=true` CLI flag (or its YAML configuration option) in the distributor.
 
-Next, decide whether you want to enable it for all tenants or just a subset of them.
+Next, decide whether you want to enable it for all tenants or just a subset of tenants.
 To enable it for all tenants, set `-distributor.ha-tracker.enable-for-all-users=true`.
 Alternatively, you can enable the HA tracker only on a per-tenant basis, keeping the default `-distributor.ha-tracker.enable-for-all-users=false` and overriding it on a per-tenant basis setting `accept_ha_samples` in the overrides section of the runtime configuration.
 
@@ -109,8 +111,8 @@ You can configure the name of these labels either globally or on a per-tenant ba
 
 Configure the default cluster and replica label names using the following CLI flags (or their respective YAML configuration options):
 
-- `-distributor.ha-tracker.cluster`: name of the label whose value uniquely identifies a Prometheus HA cluster (defaults to `cluster`).
-- `-distributor.ha-tracker.replica`: name of the label whose value uniquely identifies a Prometheus replica within the HA cluster (defaults to `__replica__`).
+- `-distributor.ha-tracker.cluster`: Name of the label whose value uniquely identifies a Prometheus HA cluster (defaults to `cluster`).
+- `-distributor.ha-tracker.replica`: Name of the label whose value uniquely identifies a Prometheus replica within the HA cluster (defaults to `__replica__`).
 
 > **Note:** The HA label names can be overridden on a per-tenant basis by setting `ha_cluster_label` and `ha_replica_label` in the overrides section of the runtime configuration.
 

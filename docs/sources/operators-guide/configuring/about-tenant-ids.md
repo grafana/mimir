@@ -12,7 +12,7 @@ For information about how Grafana Mimir components use tenant IDs, refer to [Aut
 
 ## Restrictions
 
-Tenant IDs must be less-than or equal-to 150 bytes or characters in length and must comprise only supported characters:
+Tenant IDs must be less-than or equal-to 150 bytes or characters in length and can only include the following supported characters:
 
 - Alphanumeric characters
   - `0-9`
