@@ -25,7 +25,7 @@ Grafana Mimir 2.0.0 includes significant changes to simplify the deployment and 
 All configuration parameters have been reviewed with this goal in mind.
 Parameters that do not require tuning have been removed, some parameters have been renamed so that they are more easily understood, and a number of parameters have updated default values so that Grafana Mimir is easier to run out of the box.
 
-[`mimirtool`]({{< relref "../tools/mimirtool/_index.md" >}}) has a command for converting Cortex configuration into Mimir configuration.
+[`mimirtool`]({{< relref "../operators-guide/tools/mimirtool.md" >}}) has a command for converting Cortex configuration into Mimir configuration.
 The tool can be used to update both flags and configuration files.
 
 ### Downloading mimirtool
@@ -68,11 +68,11 @@ mimirtool config convert --yaml-file <CORTEX YAML FILE> --verbose 2>&1 1>/dev/nu
 
 Each line of the output is one of the following:
 
-- **field is no longer supported: <CONFIGURATION PARAMETER>**:
+- `field is no longer supported: <CONFIGURATION PARAMETER>`:
   Grafana Mimir removed a configuration parameter and the tool removed that parameter from the output configuration.
-- **using a new default for <CONFIGURATION PARAMETER>: <NEW VALUE> (used to be <OLD VALUE>)**:
+- `using a new default for <CONFIGURATION PARAMETER>: <NEW VALUE> (used to be <OLD VALUE>)`:
   Grafana Mimir updated the default value for a configuration parameter not explicitly set in your input configuration file.
-- **default value for <CONFIGURATION PARAMETER> changed: <NEW VALUE> (used to be <OLD VALUE>); not updating**:
+- `default value for <CONFIGURATION PARAMETER> changed: <NEW VALUE> (used to be <OLD VALUE>); not updating`:
   Grafana Mimir updated the default value for a configuration parameter set in your configuration file.
   By default, the tool doesn't update it in the output configuration.
   To have the tool update this parameter to the new default, use the `--update-defaults` flag.
@@ -94,4 +94,99 @@ To deploy the updated Jsonnet, use the following steps:
 1. Install the updated monitoring mixin
    1. Add the dashboards to Grafana. The dashboards replace your Cortex dashboards and continue to work for monitoring Cortex deployments.
    > **Note:** Resource dashboards are now enabled by default an require additional metrics sources.
-   > Refer to 
+   > To understand the required metrics sources, refer to [Additional resource metrics]({{< relref "../operators-guide/visualizing-metrics/requirements.md#additional-resource-metrics" >}}).
+   1. Install the recording and alerting rules into the ruler or a Prometheus server.
+1. Replace the import of the Cortex Jsonnet library with the Mimir Jsonnet library.
+   For example:
+   ```jsonnet
+   import 'github.com/grafana/mimir/operations/mimir/mimir.libsonnet'
+   ```
+1. Remove the `cortex_` prefix from any member keys of the `<MIMIR>._config` object.
+   For example, `cortex_compactor_disk_data_size` becomes `compactor_disk_data_size`.
+1. If you are using the Cortex defaults, set the server HTTP port to 80.
+   The new Mimir default is 8080.
+   For example:
+   ```jsonnet
+   (import 'github.com/grafana/mimir/operations/mimir/mimir.libsonnet') {
+     _config+: {
+       server_http.port: 80,
+     },
+   }
+   ```
+1. For each component, use `mimirtool` to update the configured arguments.
+   To extract the arguments from a specific component, use the following bash script:
+   ```bash
+    #!/usr/bin/env bash
+
+    set -euf -o pipefail
+
+    function usage {
+      cat <<EOF
+    Extract the CLI flags from individual components.
+
+    Usage:
+      $0 <resources JSON> <component>
+
+    Examples:
+      $0 resources.json ingester
+      $0 <(tk eval environments/default) distributor
+      $0 <(jsonnet environments/default/main.jsonnet) query-frontend
+    EOF
+    }
+
+    if ! command -v jq &>/dev/null; then
+      echo "jq command not found in PATH"
+      echo "To download jq, refer to https://stedolan.github.io/jq/download/."
+    fi
+
+    if [[ $# -ne 2 ]]; then
+      usage
+      exit 1
+    fi
+
+    jq -rf /dev/stdin -- "$1" <<EOF
+    ..
+    | if type == "object" and .metadata.name == "$2" then .spec.template.spec.containers[]?.args[] else null end
+    | select(. != null)
+    EOF
+    ```
+    The first argument to the script is the file containing JSON from evaluating the Jsonnet.
+    The second argument is the name of the specific container you are interested in.
+    To retrieve the arguments from the distributor for a Tanka environment:
+
+```bash
+    <PATH TO SCRIPT> <(tk eval environments/default) distributor
+   ```
+   
+    The script will output something like the following:
+
+    ```console
+    -consul.hostname=consul.cortex-to-mimir.svc.cluster.local:8500
+    -distributor.extend-writes=true
+    -distributor.ha-tracker.enable=false
+    -distributor.ha-tracker.enable-for-all-users=true
+    -distributor.ha-tracker.etcd.endpoints=etcd-client.cortex-to-mimir.svc.cluster.local.:2379
+    -distributor.ha-tracker.prefix=prom_ha/
+    -distributor.ha-tracker.store=etcd
+    -distributor.health-check-ingesters=true
+    -distributor.ingestion-burst-size=200000
+    -distributor.ingestion-rate-limit=10000
+    -distributor.ingestion-rate-limit-strategy=global
+    -distributor.remote-timeout=20s
+    -distributor.replication-factor=3
+    -distributor.ring.consul.hostname=consul.cortex-to-mimir.svc.cluster.local:8500
+    -distributor.ring.prefix=
+    -distributor.shard-by-all-labels=true
+    -mem-ballast-size-bytes=1073741824
+    -ring.heartbeat-timeout=10m
+    -ring.prefix=
+    -runtime-config.file=/etc/cortex/overrides.yaml
+    -server.grpc.keepalive.max-connection-age=2m
+    -server.grpc.keepalive.max-connection-age-grace=5m
+    -server.grpc.keepalive.max-connection-idle=1m
+    -server.grpc.keepalive.min-time-between-pings=10s
+    -server.grpc.keepalive.ping-without-stream-allowed=true
+    -target=distributor
+    -validation.reject-old-samples=true
+    -validation.reject-old-samples.max-age=12h
+    ```
