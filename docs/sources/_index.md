@@ -8,8 +8,10 @@ keywords:
   - time series database
   - TSDB
   - Prometheus storage
+  - Prometheus remote write
   - metrics storage
   - metrics datastore
+  - observability
 ---
 
 # Grafana Mimir Documentation
