@@ -52,7 +52,7 @@ As a result, Grafana Mimir allows `tenant1` to send 50,000 SPS, and `tenant2` to
 ## Ingester instance limits
 
 The runtime configuration file can be used to dynamically adjust Grafana Mimir ingester instance limits. While per-tenant limits are limits applied to each tenant, per-ingester-instance limits are limits applied to each ingester process.
-Ingester limits to ensure individual ingesters are not overwhelmed, regardless of any per-tenant limits. These limits can be set under the `ingester.instance_limits` block in the global configuration file, with CLI flags, or under the `ingester_limits` field in the runtime configuration file.
+Ingester limits ensure individual ingesters are not overwhelmed, regardless of any per-tenant limits. These limits can be set under the `ingester.instance_limits` block in the global configuration file, with CLI flags, or under the `ingester_limits` field in the runtime configuration file.
 
 The runtime configuration allows you to override initial values, which is useful for advanced operators who need to dynamically change them in response to changes in ingest or query load.
 
@@ -71,7 +71,7 @@ ingester_limits:
 
 An advanced runtime configuration option controls if ingesters transfer encoded chunks (the default) or transfer decoded series to queriers at query time.
 
-The parameter `ingester_stream_chunks_when_using_blocks` migly only be used in runtime configuration.
+The parameter `ingester_stream_chunks_when_using_blocks` might only be used in runtime configuration.
 A value of `true` transfers encoded chunks, and a value of `false` transfers decoded series.
 
 > **Note:** We strongly recommend that you use the default setting, which is `true`, except in rare cases where users observe Grafana Mimir rules evaluation slowing down.
