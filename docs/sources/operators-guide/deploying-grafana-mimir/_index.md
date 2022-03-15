@@ -15,10 +15,10 @@ You can use Helm or Jsonnet+Tanka to deploy Grafana Mimir on Kubernetes.
 
 ### Helm
 
-A Helm chart for deploying Grafana Mimir in [microservices mode]({{< relref "../architecture/deployment-modes.md#microservices-mode" >}}) is available in the grafana/helm-charts repo. The chart is called [mimir-distributed](FIXME).
+A [mimir-distributed](FIXME) Helm chart that deploys Grafana Mimir in [microservices mode]({{< relref "../architecture/deployment-modes.md#microservices-mode" >}}) is available in the grafana/helm-charts repo.
 
 ### Jsonnet+Tanka
 
-Grafana Labs also publishes [jsonnet](https://jsonnet.org/) files that can be used to deploy Grafana Mimir in [microservices mode]({{< relref "../architecture/deployment-modes.md#microservices-mode" >}}). The files can be found [here](FIXME) along with a README. 
+Grafana Labs also publishes [jsonnet](https://jsonnet.org/) files that you can use to deploy Grafana Mimir in [microservices mode]({{< relref "../architecture/deployment-modes.md#microservices-mode" >}}). You can find the files [here](FIXME) along with a README file. 
 
-The README explains how [tanka](https://tanka.dev/) and [jsonnet-bundler](https://github.com/jsonnet-bundler/jsonnet-bundler) can be used to generate YAML manifests from the jsonnet files. Users familiar with tanka can also choose to use it directly to deploy Grafana Mimir. 
+The README explains how to use [tanka](https://tanka.dev/) and [jsonnet-bundler](https://github.com/jsonnet-bundler/jsonnet-bundler) to generate YAML manifests from the jsonnet files. If you are familiar with tanka, you can also use it directly to deploy Grafana Mimir. 
