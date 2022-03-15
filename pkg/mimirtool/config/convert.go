@@ -6,7 +6,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"reflect"
 	"strings"
 
 	"github.com/pkg/errors"
@@ -28,14 +27,14 @@ type ChangedDefault struct {
 
 type changedDefault struct {
 	path                   string
-	oldDefault, newDefault interface{}
+	oldDefault, newDefault Value
 }
 
 func (d changedDefault) asExported() ChangedDefault {
 	return ChangedDefault{
 		Path:       d.path,
-		OldDefault: fmt.Sprint(d.oldDefault),
-		NewDefault: fmt.Sprint(d.newDefault),
+		OldDefault: d.oldDefault.String(),
+		NewDefault: d.newDefault.String(),
 	}
 }
 
@@ -126,10 +125,10 @@ func changeDefaults(defaults []changedDefault, target Parameters, useNewDefaults
 	var changedDefaults, skippedChangedDefault []ChangedDefault
 	for _, def := range defaults {
 		currentValue := target.MustGetValue(def.path)
-		if currentValue == nil {
+		if currentValue.IsUnset() {
 			// The value will be implicitly changed to the new default value.
 			changedDefaults = append(changedDefaults, def.asExported())
-		} else if useNewDefaults && reflect.DeepEqual(currentValue, def.oldDefault) {
+		} else if useNewDefaults && currentValue.Equals(def.oldDefault) {
 			err := target.SetValue(def.path, def.newDefault)
 			if err != nil {
 				return nil, nil, err
@@ -145,7 +144,7 @@ func changeDefaults(defaults []changedDefault, target Parameters, useNewDefaults
 func reportChangedDefaults(target, sourceDefaults Parameters) ([]changedDefault, error) {
 	var defs []changedDefault
 
-	err := target.Walk(func(path string, value interface{}) error {
+	err := target.Walk(func(path string, _ Value) error {
 		oldDefault, err := sourceDefaults.GetDefaultValue(path)
 		if err != nil {
 			if errors.Is(err, ErrParameterNotFound) {
@@ -156,7 +155,7 @@ func reportChangedDefaults(target, sourceDefaults Parameters) ([]changedDefault,
 		}
 		newDefault := target.MustGetDefaultValue(path)
 
-		if !reflect.DeepEqual(oldDefault, newDefault) {
+		if !oldDefault.Equals(newDefault) {
 			defs = append(defs, changedDefault{
 				path:       path,
 				oldDefault: oldDefault,
@@ -169,8 +168,8 @@ func reportChangedDefaults(target, sourceDefaults Parameters) ([]changedDefault,
 }
 
 func changeNilsToDefaults(target *InspectedEntry) error {
-	return target.Walk(func(path string, value interface{}) error {
-		if value != nil {
+	return target.Walk(func(path string, value Value) error {
+		if !value.IsUnset() {
 			return nil // If the value is already set, don't change it.
 		}
 		return target.SetValue(path, target.MustGetDefaultValue(path))
@@ -183,7 +182,7 @@ func convertFlags(flags []string, m Mapper, target Parameters, sourceFactory, ta
 		return nil, err
 	}
 	var newFlagsWithValues []string
-	err = target.Walk(func(path string, value interface{}) error {
+	err = target.Walk(func(path string, value Value) error {
 		if _, ok := flagsNewPaths[path]; !ok {
 			return nil
 		}
@@ -192,7 +191,7 @@ func convertFlags(flags []string, m Mapper, target Parameters, sourceFactory, ta
 			return err
 		}
 
-		newFlagsWithValues = append(newFlagsWithValues, fmt.Sprintf("-%s=%v", flagName, value))
+		newFlagsWithValues = append(newFlagsWithValues, fmt.Sprintf("-%s=%s", flagName, value))
 		return nil
 	})
 	if err != nil {
@@ -242,7 +241,7 @@ func mapOldFlagsToNewPaths(flags []string, m Mapper, sourceFactory, targetFactor
 	flagIsSet := parseFlagNames(flags)
 
 	var parametersWithoutProvidedFlags []string
-	err = source.Walk(func(path string, value interface{}) error {
+	err = source.Walk(func(path string, _ Value) error {
 		flagName, err := source.GetFlag(path)
 		if err != nil {
 			if !errors.Is(err, ErrParameterNotFound) {
@@ -269,7 +268,7 @@ func mapOldFlagsToNewPaths(flags []string, m Mapper, sourceFactory, targetFactor
 	}
 
 	var allTargetParams []string
-	err = target.Walk(func(path string, value interface{}) error {
+	err = target.Walk(func(path string, _ Value) error {
 		allTargetParams = append(allTargetParams, path)
 		return nil
 	})
@@ -278,7 +277,7 @@ func mapOldFlagsToNewPaths(flags []string, m Mapper, sourceFactory, targetFactor
 	}
 
 	for _, path := range allTargetParams {
-		err = target.SetValue(path, nil)
+		err = target.SetValue(path, Nil)
 		if err != nil {
 			return nil, err
 		}
@@ -288,8 +287,8 @@ func mapOldFlagsToNewPaths(flags []string, m Mapper, sourceFactory, targetFactor
 	_ = m.DoMap(source, target)
 
 	remainingFlags := map[string]struct{}{}
-	err = target.Walk(func(path string, value interface{}) error {
-		if value != nil {
+	err = target.Walk(func(path string, value Value) error {
+		if !value.IsUnset() {
 			remainingFlags[path] = struct{}{}
 		}
 		return nil
@@ -327,8 +326,8 @@ func prepareSourceDefaults(m Mapper, sourceFactory, targetFactory InspectedEntry
 func pruneNils(params Parameters) {
 	var pathsToDelete []string
 
-	err := params.Walk(func(path string, value interface{}) error {
-		if value == nil {
+	err := params.Walk(func(path string, value Value) error {
+		if value.IsUnset() {
 			pathsToDelete = append(pathsToDelete, path)
 		}
 		return nil
@@ -347,20 +346,9 @@ func pruneNils(params Parameters) {
 }
 
 func reportDeletedFlags(contents []byte, flags []string, sourceFactory InspectedEntryFactory) (removedFieldPaths, removedFlags []string, _ error) {
-	cortexConfigWithNoValues := func() (*InspectedEntry, error) {
-		s := sourceFactory()
-
-		return s, s.Walk(func(path string, value interface{}) error {
-			return s.SetValue(path, nil)
-		})
-	}
-
 	// Find YAML options that user is using, but are no longer supported.
 	{
-		s, err := cortexConfigWithNoValues()
-		if err != nil {
-			return nil, nil, err
-		}
+		s := sourceFactory()
 
 		if err := yaml.Unmarshal(contents, &s); err != nil {
 			return nil, nil, errors.Wrap(err, "could not unmarshal Cortex configuration file")
@@ -368,7 +356,7 @@ func reportDeletedFlags(contents []byte, flags []string, sourceFactory Inspected
 
 		for _, path := range removedConfigPaths {
 			val, _ := s.GetValue(path)
-			if val != nil {
+			if !val.IsUnset() {
 				removedFieldPaths = append(removedFieldPaths, path)
 			}
 		}
@@ -376,10 +364,7 @@ func reportDeletedFlags(contents []byte, flags []string, sourceFactory Inspected
 
 	// Find CLI flags that user is using, but are no longer supported.
 	{
-		s, err := cortexConfigWithNoValues()
-		if err != nil {
-			return nil, nil, err
-		}
+		s := sourceFactory()
 
 		if err := addFlags(s, flags); err != nil {
 			return nil, nil, err
@@ -387,7 +372,7 @@ func reportDeletedFlags(contents []byte, flags []string, sourceFactory Inspected
 
 		for _, path := range removedConfigPaths {
 			val, _ := s.GetValue(path)
-			if val != nil {
+			if !val.IsUnset() {
 				fl, _ := s.GetFlag(path)
 				if fl != "" {
 					removedFlags = append(removedFlags, fl)

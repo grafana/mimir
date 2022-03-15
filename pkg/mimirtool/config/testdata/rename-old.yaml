@@ -1,0 +1,4 @@
+ingester:
+  lifecycler:
+    ring:
+      heartbeat_timeout: 14m

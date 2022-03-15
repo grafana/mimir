@@ -23,6 +23,7 @@ import (
 	"github.com/weaveworks/common/logging"
 
 	"github.com/grafana/mimir/pkg/ingester"
+	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/util/fieldcategory"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -183,7 +184,7 @@ func Config(block *ConfigBlock, cfg interface{}, flags map[uintptr]*flag.Flag) (
 		}
 
 		// Recursively re-iterate if it's a struct
-		if field.Type.Kind() == reflect.Struct {
+		if field.Type.Kind() == reflect.Struct || field.Type.Kind() == reflect.Ptr {
 			// Check whether the sub-block is a root config block
 			rootName, rootDesc, isRoot := isRootBlock(field.Type)
 
@@ -224,8 +225,15 @@ func Config(block *ConfigBlock, cfg interface{}, flags map[uintptr]*flag.Flag) (
 				subBlock = block
 			}
 
+			if field.Type.Kind() == reflect.Ptr {
+				// If this is a pointer, it's probably nil, so we initialize it.
+				fieldValue = reflect.New(field.Type.Elem())
+			} else if field.Type.Kind() == reflect.Struct {
+				fieldValue = fieldValue.Addr()
+			}
+
 			// Recursively generate the doc for the sub-block
-			otherBlocks, err := Config(subBlock, fieldValue.Addr().Interface(), flags)
+			otherBlocks, err := Config(subBlock, fieldValue.Interface(), flags)
 			if err != nil {
 				return nil, err
 			}
@@ -234,32 +242,32 @@ func Config(block *ConfigBlock, cfg interface{}, flags map[uintptr]*flag.Flag) (
 			continue
 		}
 
+		var (
+			element *ConfigBlock
+			kind    = KindField
+		)
+		{
+			// Add ConfigBlock for slices only if the field isn't a custom type,
+			// which shouldn't be inspected because doesn't have YAML tags, flag registrations, etc.
+			_, isCustomType := getFieldCustomType(field.Type)
+			isSliceOfStructs := field.Type.Kind() == reflect.Slice && (field.Type.Elem().Kind() == reflect.Struct || field.Type.Elem().Kind() == reflect.Ptr)
+			if !isCustomType && isSliceOfStructs {
+				element = &ConfigBlock{
+					Name: fieldName,
+					Desc: getFieldDescription(field, ""),
+				}
+				kind = KindSlice
+
+				_, err = Config(element, reflect.New(field.Type.Elem()).Interface(), flags)
+				if err != nil {
+					return nil, errors.Wrapf(err, "couldn't inspect slice, element_type=%s", field.Type.Elem())
+				}
+			}
+		}
+
 		fieldType, err := getFieldType(field.Type)
 		if err != nil {
 			return nil, errors.Wrapf(err, "config=%s.%s", t.PkgPath(), t.Name())
-		}
-
-		if field.Type.Kind() == reflect.Slice {
-			subBlock := &ConfigBlock{
-				Name: fieldName,
-				Desc: getFieldDescription(field, ""),
-			}
-			// Try parsing the field as a slice of structs. If it isn't a slice of structs, we will get an error.
-			// If that's the case, it is likely a slice of primitive values (e.g. []string)
-			_, err = Config(subBlock, reflect.New(field.Type.Elem()).Interface(), flags)
-			if err == nil {
-				block.Add(&ConfigEntry{
-					Kind:          KindSlice,
-					Name:          fieldName,
-					Required:      isFieldRequired(field),
-					FieldDesc:     getFieldDescription(field, ""),
-					FieldType:     fieldType,
-					FieldExample:  getFieldExample(fieldName, field.Type),
-					FieldCategory: getFieldCategory(field, ""),
-					Element:       subBlock,
-				})
-				continue
-			}
 		}
 
 		fieldFlag, err := getFieldFlag(field, fieldValue, flags)
@@ -268,19 +276,20 @@ func Config(block *ConfigBlock, cfg interface{}, flags map[uintptr]*flag.Flag) (
 		}
 		if fieldFlag == nil {
 			block.Add(&ConfigEntry{
-				Kind:          KindField,
+				Kind:          kind,
 				Name:          fieldName,
 				Required:      isFieldRequired(field),
 				FieldDesc:     getFieldDescription(field, ""),
 				FieldType:     fieldType,
 				FieldExample:  getFieldExample(fieldName, field.Type),
 				FieldCategory: getFieldCategory(field, ""),
+				Element:       element,
 			})
 			continue
 		}
 
 		block.Add(&ConfigEntry{
-			Kind:          KindField,
+			Kind:          kind,
 			Name:          fieldName,
 			Required:      isFieldRequired(field),
 			FieldFlag:     fieldFlag.Name,
@@ -289,6 +298,7 @@ func Config(block *ConfigBlock, cfg interface{}, flags map[uintptr]*flag.Flag) (
 			FieldDefault:  getFieldDefault(field, fieldFlag.DefValue),
 			FieldExample:  getFieldExample(fieldName, field.Type),
 			FieldCategory: getFieldCategory(field, fieldFlag.Name),
+			Element:       element,
 		})
 	}
 
@@ -319,21 +329,29 @@ func getFieldName(field reflect.StructField) string {
 	return fieldName
 }
 
-func getFieldType(t reflect.Type) (string, error) {
+func getFieldCustomType(t reflect.Type) (string, bool) {
 	// Handle custom data types used in the config
 	switch t.String() {
 	case reflect.TypeOf(&url.URL{}).String():
-		return "url", nil
+		return "url", true
 	case reflect.TypeOf(time.Duration(0)).String():
-		return "duration", nil
+		return "duration", true
 	case reflect.TypeOf(flagext.StringSliceCSV{}).String():
-		return "string", nil
+		return "string", true
 	case reflect.TypeOf(flagext.CIDRSliceCSV{}).String():
-		return "string", nil
+		return "string", true
 	case reflect.TypeOf([]*relabel.Config{}).String():
-		return "relabel_config...", nil
+		return "relabel_config...", true
 	case reflect.TypeOf(ingester.ActiveSeriesCustomTrackersConfig{}).String():
-		return "map of tracker name (string) to matcher (string)", nil
+		return "map of tracker name (string) to matcher (string)", true
+	default:
+		return "", false
+	}
+}
+
+func getFieldType(t reflect.Type) (string, error) {
+	if typ, isCustom := getFieldCustomType(t); isCustom {
+		return typ, nil
 	}
 
 	// Fallback to auto-detection of built-in data types
@@ -378,11 +396,14 @@ func getFieldType(t reflect.Type) (string, error) {
 		}
 
 		return "list of " + elemType, nil
-
 	case reflect.Map:
 		return fmt.Sprintf("map of %s to %s", t.Key(), t.Elem().String()), nil
+
 	case reflect.Struct:
 		return t.Name(), nil
+	case reflect.Ptr:
+		return getFieldType(t.Elem())
+
 	default:
 		return "", fmt.Errorf("unsupported data type %s", t.Kind())
 	}
@@ -415,7 +436,7 @@ func ReflectType(typ string) reflect.Type {
 	case "map of string to float64":
 		return reflect.TypeOf(map[string]float64{})
 	case "list of duration":
-		return reflect.TypeOf([]time.Duration{})
+		return reflect.TypeOf(tsdb.DurationList{})
 	case "map of string to validation.ForwardingRule":
 		return reflect.TypeOf(map[string]validation.ForwardingRule{})
 	default:
