@@ -276,7 +276,7 @@ func DefaultTenantManagerFactory(cfg Config, p Pusher, queryable, federatedQuery
 			ResendDelay:                cfg.ResendDelay,
 			DefaultEvaluationDelay: func() time.Duration {
 				// Delay the evaluation of all rules by a set interval to give a buffer
-				// to metric that haven't been forwarded to cortex yet.
+				// to metric that haven't been forwarded to Mimir yet.
 				return overrides.EvaluationDelay(userID)
 			},
 		})
