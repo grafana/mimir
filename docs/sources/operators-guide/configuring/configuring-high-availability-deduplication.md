@@ -45,7 +45,7 @@ This section includes information about how to configure Prometheus and Grafana 
 ### How to configure Prometheus
 
 To configure Prometheus, set two identifiers for each Prometheus server, one for the cluster. For example, set `team-1` or `team-2`, and one to identify the replica in the cluster, for example `a` or `b`.
-The easiest approach is to set [external labels](https://prometheus.io/docs/prometheus/latest/configuration/configuration/). The default labels are `cluster` and `__replica__`. 
+The easiest approach is to set [external labels](https://prometheus.io/docs/prometheus/latest/configuration/configuration/). The default labels are `cluster` and `__replica__`.
 
 The following example shows how to set identifiers in Prometheus:
 

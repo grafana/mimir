@@ -15,7 +15,7 @@ Some clients in Grafana Mimir support service discovery via DNS to locate the ad
 
 ## Supported discovery modes
 
-DNS service discovery supports different discovery modes. 
+DNS service discovery supports different discovery modes.
 You select a discovery mode by adding one of the following supported prefixes to the address:
 
 - **`dns+`**<br />

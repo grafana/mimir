@@ -7,10 +7,10 @@ weight: 40
 
 # About Grafana Mimir runtime configuration
 
-A runtime configuration file is a file that contains configuration parameters, which is periodically reloaded while Mimir is running. 
+A runtime configuration file is a file that contains configuration parameters, which is periodically reloaded while Mimir is running.
 It allows you to change a subset of Grafana Mimir’s configuration without having to restart the Grafana Mimir component or instance.
 
-Runtime configuration is available for a subset of the configuration that was set at startup. 
+Runtime configuration is available for a subset of the configuration that was set at startup.
 A Grafana Mimir operator can observe the configuration and use runtime configuration to make immediate adjustments to Grafana Mimir.
 
 Runtime configuration values take precedence over command-line options.
@@ -51,12 +51,12 @@ As a result, Grafana Mimir allows `tenant1` to send 50,000 SPS, and `tenant2` to
 
 ## Ingester instance limits
 
-The runtime configuration file can be used to dynamically adjust Grafana Mimir ingester instance limits. While per-tenant limits are limits applied to each tenant, per-ingester-instance limits are limits applied to each ingester process. 
+The runtime configuration file can be used to dynamically adjust Grafana Mimir ingester instance limits. While per-tenant limits are limits applied to each tenant, per-ingester-instance limits are limits applied to each ingester process.
 Ingester limits to ensure individual ingesters are not overwhelmed, regardless of any per-tenant limits. These limits can be set under the `ingester.instance_limits` block in the global configuration file, with CLI flags, or under the `ingester_limits` field in the runtime configuration file.
 
 The runtime configuration allows you to override initial values, which is useful for advanced operators who need to dynamically change them in response to changes in ingest or query load.
 
-Everything under the `instance_limits` section within the [`ingester`]({{< relref "reference-configuration-parameters/#ingester" >}}) block can be overridden via runtime configuration. 
+Everything under the `instance_limits` section within the [`ingester`]({{< relref "reference-configuration-parameters/#ingester" >}}) block can be overridden via runtime configuration.
 The following example shows a portion of the runtime configuration that changes the ingester limits:
 
 ```yaml

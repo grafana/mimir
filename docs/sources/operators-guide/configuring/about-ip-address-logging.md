@@ -7,7 +7,7 @@ weight: 30
 
 # About Grafana Mimir IP address logging of a reverse proxy
 
-If a reverse proxy is used in front of Mimir, it might be difficult to troubleshoot errors. 
+If a reverse proxy is used in front of Mimir, it might be difficult to troubleshoot errors.
 You can use the following settings to log the IP address passed along by the reverse proxy in headers such as `X-Forwarded-For`.
 
 - `-server.log-source-ips-enabled`
