@@ -16,6 +16,10 @@ If you're migrating to Grafana Mimir, refer to the following documents:
 - [Migrating from Thanos or Prometheus to Grafana Mimir](https://grafana.com/docs/mimir/next/migration-guide/migrating-from-thanos-or-prometheus/).
 - [Migrating from Cortex to Grafana Mimir](link TBD)
 
+## Deploying Grafana Mimir
+
+For information about how to deploy Grafana Mimir, refer to [Deploying Grafana Mimir](link TBD).
+
 ## Getting started
 
 If you’re new to Grafana Mimir, read the [Getting started guide](https://grafana.com/docs/mimir/latest/operators-guide/getting-started/).
@@ -24,14 +28,6 @@ Before deploying Grafana Mimir with a permanent storage backend, read:
 
 1. [An overview of Grafana Mimir’s architecture](https://grafana.com/docs/mimir/latest/operators-guide/architecture/)
 1. [Configuring Grafana Mimir](https://grafana.com/docs/mimir/latest/operators-guide/configuring/)
-
-## Deployment
-
-Intro here and link to a installation/deployment doc that Jen is working on.
-
-## Contributing
-
-To contribute to Grafana Mimir, refer to [Contributing to Grafana Mimir](./CONTRIBUTING.md).
 
 ## Documentation
 
@@ -46,6 +42,10 @@ We can add links here to specific topics that we anticipate will be most useful 
 - [Topic name](link)
 - [Topic name](link)
 
+## Contributing
+
+To contribute to Grafana Mimir, refer to [Contributing to Grafana Mimir](./CONTRIBUTING.md).
+
 ## Hosted Grafana Mimir (Prometheus as a service)
 
 Grafana Mimir is used in [Grafana Cloud](https://grafana.com/cloud), and is primarily used as a [remote write](https://prometheus.io/docs/operating/configuration/#remote_write) destination for Prometheus via a Prometheus-compatible query API.
@@ -56,7 +56,7 @@ As the creators of [Grafana](https://grafana.com/oss/grafana/), [Loki](https://g
 
 ## Getting Help
 
-If you have any questions or feedback regarding Loki:
+If you have any questions or feedback regarding Grafana Mimir:
 
 - Search existing thread in the Grafana Labs community forum for Loki: [https://community.grafana.com](https://community.grafana.com/c/grafana-loki/)
 - Ask a question on the Loki Slack channel. To invite yourself to the Grafana Slack, visit [https://slack.grafana.com/](https://slack.grafana.com/) and join the #loki channel.
@@ -85,7 +85,7 @@ Your feedback is always welcome.
 [kccna18-slides]: https://speakerdeck.com/davkal/on-the-path-to-full-observability-with-oss-and-launch-of-loki
 [kccna18-video]: https://www.youtube.com/watch?v=U7C5SpRtK74&list=PLj6h78yzYM2PZf9eA7bhWnIh_mK1vyOfU&index=346
 
-### Building from source
+## Building from source
 
 Loki can be run in a single host, no-dependencies mode using the following commands.
 
@@ -130,10 +130,7 @@ with CGO disabled:
 ```bash
 $ CGO_ENABLED=0 go build ./clients/cmd/promtail
 ```
-## Adopters
-Please see [ADOPTERS.md](ADOPTERS.md) for some of the organizations using Loki today.
-If you would like to add your organization to the list, please open a PR to add it to the list.
 
 ## License
 
-Grafana Loki is distributed under [AGPL-3.0-only](LICENSE). For Apache-2.0 exceptions, see [LICENSING.md](LICENSING.md).
+Grafana Mimir is distributed under [AGPL-3.0-only](LICENSE). For Apache-2.0 exceptions, see [LICENSING.md](LICENSING.md).
