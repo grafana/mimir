@@ -16,9 +16,9 @@ If you’re new to Grafana Mimir, read the [Getting started guide](docs/sources/
 
 Before deploying Grafana Mimir with a permanent storage backend, read:
 
-1. [An overview of Grafana Mimir’s architecture](docs/sources/architecture.md)
-1. [Getting started with Grafana Mimir](docs/sources/getting-started/_index.md)
-1. [Configuring Grafana Mimir](docs/sources/configuration/_index.md)
+1. [An overview of Grafana Mimir’s architecture](docs/sources/operators-guide/architecture/about-grafana-mimir-architecture.md)
+1. [Getting started with Grafana Mimir](docs/sources/operators-guide/getting-started/_index.md)
+1. [Configuring Grafana Mimir](docs/sources/operators-guide/configuring/about-configurations.md)
 
 ## Contributing
 
