@@ -2,26 +2,49 @@
 
 <p align="center"><img src="images/logo.png" alt="Grafana Mimir logo"></p>
 
-Grafana Mimir provides horizontally scalable, highly available, multi-tenant, long-term storage for [Prometheus](https://prometheus.io).
+Grafana Mimir is an open source software project that provides a scalable long-term storage for [Prometheus](https://prometheus.io). Some of the core strengths of Grafana Mimir include:
 
-- **Horizontally scalable:** Grafana Mimir can run across multiple machines in a cluster, exceeding the throughput and storage of a single machine. This enables you to send the metrics from multiple Prometheus servers to a single Mimir cluster and run "globally aggregated" queries across all data in a single place.
-- **Highly available:** When run in a cluster, Grafana Mimir can replicate data between machines. This allows you to survive machine failure without gaps in your graphs.
-- **Multi-tenant:** Grafana Mimir can isolate data and queries from multiple different independent
-  Prometheus sources in a single cluster, allowing untrusted parties to share the same cluster.
-- **Long term storage:** Grafana Mimir supports S3, GCS, Swift and Microsoft Azure for long term storage of metric data. This allows you to durably store data for longer than the lifetime of any single machine, and use this data for long term capacity planning.
+- **Massive scalability:** You can run Grafana Mimir's horizontally-scalable architecture across multiple machines, resulting in the ability to process orders of magnitude more time series than a single Prometheus instance. Internal testing shows that Grafana Mimir handles up to 1 billion active time series.
+- **Global view of metrics:** Grafana Mimir enables you to run queries that aggregate series from multiple Prometheus instances, giving you a global view of your systems. Its query engine extensively parallelizes query execution, so that even the highest-cardinality queries complete with blazing speed.
+- **Cheap, durable metric storage:** Grafana Mimir uses object storage for long-term data storage, allowing it to take advantage of this ubiquitous, cost-effective, high-durability technology. It is compatible with multiple object store implementations, including AWS S3, Google Cloud Storage, Azure Blob Storage, OpenStack Swift, as well as any S3-compatible object storage.
+- **High availability:** Grafana Mimir replicates incoming metrics, ensuring that no data is lost in the event of machine failure. Its horizontally scalable architecture also means that it can be restarted, upgraded, or downgraded with zero downtime, which means no interruptions to metrics ingestion or querying.
+- **Natively multi-tenant:** Grafana Mimir’s multi-tenant architecture enables you to isolate data and queries from independent teams or business units, making it possible for these groups to share the same cluster. Advanced limits and quality-of-service controls ensure that capacity is shared fairly among tenants.
+
+## Migrating to Grafana Mimir
+
+If you're migrating to Grafana Mimir, refer to the following documents:
+- [Migrating from Thanos or Prometheus to Grafana Mimir](https://grafana.com/docs/mimir/next/migration-guide/migrating-from-thanos-or-prometheus/).
+- [Migrating from Cortex to Grafana Mimir](link TBD)
 
 ## Getting started
 
-If you’re new to Grafana Mimir, read the [Getting started guide]({{< relref "./docs/sources/getting-started/_index.md" >}}).
+If you’re new to Grafana Mimir, read the [Getting started guide](https://grafana.com/docs/mimir/latest/operators-guide/getting-started/).
 
 Before deploying Grafana Mimir with a permanent storage backend, read:
 
-1. [An overview of Grafana Mimir’s architecture]({{< relref "./docs/sources/architecture/_index.md" >}})
-1. [Configuring Grafana Mimir]({{< relref "./docs/sources/configuring/_index.md" >}})
+1. [An overview of Grafana Mimir’s architecture](https://grafana.com/docs/mimir/latest/operators-guide/architecture/)
+1. [Configuring Grafana Mimir](https://grafana.com/docs/mimir/latest/operators-guide/configuring/)
+
+## Deployment
+
+Intro here and link to a installation/deployment doc that Jen is working on.
 
 ## Contributing
 
-To contribute to Grafana Mimir, see [Contributing to Grafana Mimir](./CONTRIBUTING.md).
+To contribute to Grafana Mimir, refer to [Contributing to Grafana Mimir](./CONTRIBUTING.md).
+
+## Documentation
+
+* [Latest release](https://grafana.com/docs/mimir/latest/)
+* [Upcoming release](https://grafana.com/docs/mimir/next/), at the tip of the main branch
+
+Commonly used sections:
+
+We can add links here to specific topics that we anticipate will be most useful to readers.
+
+- [Topic name](link)
+- [Topic name](link)
+- [Topic name](link)
 
 ## Hosted Grafana Mimir (Prometheus as a service)
 
@@ -31,49 +54,13 @@ Grafana Mimir is used in [Grafana Cloud](https://grafana.com/cloud), and is prim
 
 As the creators of [Grafana](https://grafana.com/oss/grafana/), [Loki](https://grafana.com/oss/loki/), and [Tempo](https://grafana.com/oss/tempo/), Grafana Labs offers you the most comprehensive Observability-as-a-Service stack available.
 
-
-
-
-
-+++++++++++++++++++++++++++++++++++++++++++++
-# Loki: like Prometheus, but for logs.
-
-
-## Getting started
-
-* [Installing Loki](https://grafana.com/docs/loki/latest/installation/)
-* [Installing Promtail](https://grafana.com/docs/loki/latest/clients/promtail/installation/)
-* [Getting Started](https://grafana.com/docs/loki/latest/getting-started/)
-
-## Upgrading
-
-* [Upgrading Loki](https://grafana.com/docs/loki/latest/upgrading/)
-
-## Documentation
-
-* [Latest release](https://grafana.com/docs/loki/latest/)
-* [Upcoming release](https://grafana.com/docs/loki/next/), at the tip of the main branch
-
-Commonly used sections:
-
-- [API documentation](https://grafana.com/docs/loki/latest/api/) for getting logs into Loki.
-- [Labels](https://grafana.com/docs/loki/latest/getting-started/labels/)
-- [Operations](https://grafana.com/docs/loki/latest/operations/)
-- [Promtail](https://grafana.com/docs/loki/latest/clients/promtail/) is an agent which tails log files and pushes them to Loki.
-- [Pipelines](https://grafana.com/docs/loki/latest/clients/promtail/pipelines/) details the log processing pipeline.
-- [Docker Driver Client](https://grafana.com/docs/loki/latest/clients/docker-driver/) is a Docker plugin to send logs directly to Loki from Docker containers.
-- [LogCLI](https://grafana.com/docs/loki/latest/getting-started/logcli/) provides a command-line interface for querying logs.
-- [Loki Canary](https://grafana.com/docs/loki/latest/operations/loki-canary/) monitors your Loki installation for missing logs.
-- [Troubleshooting](https://grafana.com/docs/loki/latest/getting-started/troubleshooting/) presents help dealing with error messages.
-- [Loki in Grafana](https://grafana.com/docs/loki/latest/getting-started/grafana/) describes how to set up a Loki datasource in Grafana.
-
 ## Getting Help
 
 If you have any questions or feedback regarding Loki:
 
 - Search existing thread in the Grafana Labs community forum for Loki: [https://community.grafana.com](https://community.grafana.com/c/grafana-loki/)
 - Ask a question on the Loki Slack channel. To invite yourself to the Grafana Slack, visit [https://slack.grafana.com/](https://slack.grafana.com/) and join the #loki channel.
-- [File an issue](https://github.com/grafana/loki/issues/new) for bugs, issues and feature suggestions.
+- [File an issue](https://github.com/grafana/mimir/issues/new) for bugs, issues and feature suggestions.
 - Send an email to [lokiproject@googlegroups.com](mailto:lokiproject@googlegroups.com), or use the [web interface](https://groups.google.com/forum/#!forum/lokiproject).
 - UI issues should be filed directly in [Grafana](https://github.com/grafana/grafana/issues/new).
 
@@ -97,10 +84,6 @@ Your feedback is always welcome.
 [kccna18-event]: https://kccna18.sched.com/event/GrXC/on-the-oss-path-to-full-observability-with-grafana-david-kaltschmidt-grafana-labs
 [kccna18-slides]: https://speakerdeck.com/davkal/on-the-path-to-full-observability-with-oss-and-launch-of-loki
 [kccna18-video]: https://www.youtube.com/watch?v=U7C5SpRtK74&list=PLj6h78yzYM2PZf9eA7bhWnIh_mK1vyOfU&index=346
-
-## Contributing
-
-Refer to [CONTRIBUTING.md](CONTRIBUTING.md)
 
 ### Building from source
 
