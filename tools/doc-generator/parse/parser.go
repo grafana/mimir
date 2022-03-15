@@ -61,6 +61,8 @@ type EntryKind string
 const (
 	KindBlock EntryKind = "block"
 	KindField EntryKind = "field"
+	KindSlice EntryKind = "slice"
+	KindMap   EntryKind = "map"
 )
 
 type ConfigEntry struct {
@@ -80,6 +82,9 @@ type ConfigEntry struct {
 	FieldDefault  string
 	FieldExample  *FieldExample
 	FieldCategory string
+
+	// In case the Kind is KindMap or KindSlice
+	Element *ConfigBlock
 }
 
 func (e ConfigEntry) Description() string {
@@ -114,7 +119,7 @@ func Flags(cfg flagext.RegistererWithLogger, logger log.Logger) map[uintptr]*fla
 	return flags
 }
 
-// Config returns a slice of ConfigBlocks. The first ConfigBlock is a resursively expanded cfg.
+// Config returns a slice of ConfigBlocks. The first ConfigBlock is a recursively expanded cfg.
 // The remaining entries in the slice are all (root or not) ConfigBlocks.
 func Config(block *ConfigBlock, cfg interface{}, flags map[uintptr]*flag.Flag) ([]*ConfigBlock, error) {
 	blocks := []*ConfigBlock{}
@@ -135,7 +140,9 @@ func Config(block *ConfigBlock, cfg interface{}, flags map[uintptr]*flag.Flag) (
 	v := reflect.ValueOf(cfg).Elem()
 	t := v.Type()
 
-	if v.Kind() != reflect.Struct {
+	switch v.Kind() {
+	case reflect.Struct, reflect.Slice:
+	default:
 		return nil, fmt.Errorf("%s is a %s while a %s is expected", v, v.Kind(), reflect.Struct)
 	}
 
@@ -230,6 +237,29 @@ func Config(block *ConfigBlock, cfg interface{}, flags map[uintptr]*flag.Flag) (
 		fieldType, err := getFieldType(field.Type)
 		if err != nil {
 			return nil, errors.Wrapf(err, "config=%s.%s", t.PkgPath(), t.Name())
+		}
+
+		if field.Type.Kind() == reflect.Slice {
+			subBlock := &ConfigBlock{
+				Name: fieldName,
+				Desc: getFieldDescription(field, ""),
+			}
+			// Try parsing the field as a slice of structs. If it isn't a slice of structs, we will get an error.
+			// If that's the case, it is likely a slice of primitive values (e.g. []string)
+			_, err = Config(subBlock, reflect.New(field.Type.Elem()).Interface(), flags)
+			if err == nil {
+				block.Add(&ConfigEntry{
+					Kind:          KindSlice,
+					Name:          fieldName,
+					Required:      isFieldRequired(field),
+					FieldDesc:     getFieldDescription(field, ""),
+					FieldType:     fieldType,
+					FieldExample:  getFieldExample(fieldName, field.Type),
+					FieldCategory: getFieldCategory(field, ""),
+					Element:       subBlock,
+				})
+				continue
+			}
 		}
 
 		fieldFlag, err := getFieldFlag(field, fieldValue, flags)
@@ -351,7 +381,8 @@ func getFieldType(t reflect.Type) (string, error) {
 
 	case reflect.Map:
 		return fmt.Sprintf("map of %s to %s", t.Key(), t.Elem().String()), nil
-
+	case reflect.Struct:
+		return t.Name(), nil
 	default:
 		return "", fmt.Errorf("unsupported data type %s", t.Kind())
 	}
