@@ -12,31 +12,16 @@ keywords:
   - metrics datastore
 ---
 
-# Grafana Mimir
+# Grafana Mimir Documentation
 
-Grafana Mimir provides horizontally scalable, highly available, multi-tenant, long-term storage for [Prometheus](https://prometheus.io).
+![Grafana Mimir](./images/mimir-logo.png)
 
-- **Horizontally scalable:** Grafana Mimir can run across multiple machines in a cluster, exceeding the throughput and storage of a single machine. This enables you to send the metrics from multiple Prometheus servers to a single Grafana Mimir cluster and run globally aggregated queries across all data in a single place.
-- **Highly available:** When run in a cluster, Grafana Mimir replicates data between machines.
-  This makes Grafana Mimir resilient to machine failure, which ensures that there is no data missing in your graphs.
-- **Multi-tenant:** Grafana Mimir can isolate data and queries from multiple independent
-  Prometheus sources in a single cluster, allowing untrusted parties to share the same cluster.
-- **Long-term storage:** Grafana Mimir supports S3, GCS, Swift, and Microsoft Azure for long-term storage of metric data. This enables you to durably store data for longer than the lifetime of a single machine, and use this data for long-term capacity planning.
+Grafana Mimir is an open source software project that provides a scalable long-term storage for [Prometheus](https://prometheus.io). Some of the core strengths of Grafana Mimir include:
 
-## Documentation
+- **Massive scalability:** You can run Grafana Mimir's horizontally-scalable architecture across multiple machines, resulting in the ability to process orders of magnitude more time series than a single Prometheus instance. Internal testing shows that Grafana Mimir handles up to 1 billion active time series.
+- **Global view of metrics:** Grafana Mimir enables you to run queries that aggregate series from multiple Prometheus instances, giving you a global view of your systems. Its query engine extensively parallelizes query execution, so that even the highest-cardinality queries complete with blazing speed.
+- **Cheap, durable metric storage:** Grafana Mimir uses object storage for long-term data storage, allowing it to take advantage of this ubiquitous, cost-effective, high-durability technology. It is compatible with multiple object store implementations, including AWS S3, Google Cloud Storage, Azure Blob Storage, OpenStack Swift, as well as any S3-compatible object storage.
+- **High availability:** Grafana Mimir replicates incoming metrics, ensuring that no data is lost in the event of machine failure. Its horizontally scalable architecture also means that it can be restarted, upgraded, or downgraded with zero downtime, which means no interruptions to metrics ingestion or querying.
+- **Natively multi-tenant:** Grafana Mimir’s multi-tenant architecture enables you to isolate data and queries from independent teams or business units, making it possible for these groups to share the same cluster. Advanced limits and quality-of-service controls ensure that capacity is shared fairly among tenants.
 
-If you’re new to Grafana Mimir, read [Getting started with Grafana Mimir]({{< relref "./operators-guide/getting-started/_index.md" >}}).
-
-Before deploying Grafana Mimir, read:
-
-1. [Grafana Mimir architecture]({{< relref "operators-guide/architecture/_index.md" >}})
-1. [Getting started with Grafana Mimir]({{< relref "operators-guide/getting-started/_index.md" >}})
-1. [Configuring Grafana Mimir]({{< relref "operators-guide/configuring/_index.md" >}})
-
-## Hosted Grafana Mimir (Prometheus as a service)
-
-Grafana Mimir is used in [Grafana Cloud](https://grafana.com/cloud), and is primarily used as a [remote write](https://prometheus.io/docs/operating/configuration/#remote_write) destination for Prometheus via a Prometheus-compatible query API.
-
-### Grafana Cloud
-
-As the creators of [Grafana](https://grafana.com/oss/grafana/), [Grafana Loki](https://grafana.com/oss/loki/), and [Grafana Tempo](https://grafana.com/oss/tempo/), Grafana Labs can offer you the most holistic Observability-as-a-Service stack out there.
+> **Note:** You can use [Grafana Cloud](https://grafana.com/products/cloud/features/#cloud-metrics) to avoid installing, maintaining, and scaling your own instance of Grafana Mimir. The free forever plan includes 10,000 metrics. [Create an account to get started](https://grafana.com/auth/sign-up/create-user?pg=docs-mimir&plcmt=in-text).
