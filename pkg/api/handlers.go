@@ -7,10 +7,12 @@ package api
 
 import (
 	"context"
+	"embed"
 	"html/template"
 	"net/http"
 	"path"
 	"regexp"
+	"sort"
 	"sync"
 
 	"github.com/go-kit/log"
@@ -33,70 +35,73 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-const (
-	SectionAdminEndpoints = "Admin Endpoints:"
-	SectionDangerous      = "Dangerous:"
-)
-
 func newIndexPageContent() *IndexPageContent {
-	return &IndexPageContent{
-		content: map[string]map[string]string{},
-	}
+	return &IndexPageContent{}
 }
 
 // IndexPageContent is a map of sections to path -> description.
 type IndexPageContent struct {
-	mu      sync.Mutex
-	content map[string]map[string]string
+	mu sync.Mutex
+
+	elements []IndexPageNavElement
 }
 
-func (pc *IndexPageContent) AddLink(section, path, description string) {
+type IndexPageNavElement struct {
+	weight   int
+	Desc     string
+	Path     string
+	Dropdown []IndexPageDropdownElement
+}
+
+type IndexPageDropdownElement struct {
+	Desc      string
+	Path      string
+	Dangerous bool
+}
+
+const (
+	serviceStatusWeight = iota
+	configWeight
+	runtimeConfigWeight
+	defaultWeight
+	memberlistWeight
+	dangerousWeight
+)
+
+func (pc *IndexPageContent) AddLink(weight int, desc, path string) {
 	pc.mu.Lock()
 	defer pc.mu.Unlock()
 
-	sectionMap := pc.content[section]
-	if sectionMap == nil {
-		sectionMap = make(map[string]string)
-		pc.content[section] = sectionMap
-	}
-
-	sectionMap[path] = description
+	pc.elements = append(pc.elements, IndexPageNavElement{weight: weight, Desc: desc, Path: path})
 }
 
-func (pc *IndexPageContent) GetContent() map[string]map[string]string {
+func (pc *IndexPageContent) AddDropdown(weight int, desc string, elements []IndexPageDropdownElement) {
 	pc.mu.Lock()
 	defer pc.mu.Unlock()
 
-	result := map[string]map[string]string{}
-	for k, v := range pc.content {
-		sm := map[string]string{}
-		for smK, smV := range v {
-			sm[smK] = smV
+	pc.elements = append(pc.elements, IndexPageNavElement{weight: weight, Desc: desc, Dropdown: elements})
+}
+
+func (pc *IndexPageContent) GetContent() []IndexPageNavElement {
+	pc.mu.Lock()
+	els := append([]IndexPageNavElement(nil), pc.elements...)
+	pc.mu.Unlock()
+
+	sort.Slice(els, func(i, j int) bool {
+		if els[i].weight != els[j].weight {
+			return els[i].weight < els[j].weight
 		}
-		result[k] = sm
-	}
-	return result
+		return els[i].Desc < els[j].Desc
+	})
+
+	return els
 }
 
-var indexPageTemplate = `
-<!DOCTYPE html>
-<html>
-	<head>
-		<meta charset="UTF-8">
-		<title>Mimir</title>
-	</head>
-	<body>
-		<h1>Mimir</h1>
-		{{ range $s, $links := . }}
-		<p>{{ $s }}</p>
-		<ul>
-			{{ range $path, $desc := $links }}
-				<li><a href="{{ AddPathPrefix $path }}">{{ $desc }}</a></li>
-			{{ end }}
-		</ul>
-		{{ end }}
-	</body>
-</html>`
+//go:embed index.gohtml
+var indexPageTemplate string
+
+//go:embed static
+var staticFiles embed.FS
 
 func indexHandler(httpPathPrefix string, content *IndexPageContent) http.HandlerFunc {
 	templ := template.New("main")
