@@ -58,8 +58,11 @@ func createAlertmanagerAndSendAlerts(t *testing.T, alertGroups, groupsLimit, exp
 
 	reg := prometheus.NewPedanticRegistry()
 	am, err := New(&Config{
-		UserID:            user,
-		Logger:            log.NewNopLogger(),
+		UserID: user,
+		Loggers: Loggers{
+			Base:     log.NewNopLogger(),
+			Dispatch: log.NewNopLogger(),
+		},
 		Limits:            &mockAlertManagerLimits{maxDispatcherAggregationGroups: groupsLimit},
 		TenantDataDir:     t.TempDir(),
 		ExternalURL:       &url.URL{Path: "/am"},

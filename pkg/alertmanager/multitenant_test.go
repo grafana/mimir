@@ -99,6 +99,13 @@ func mockAlertmanagerConfig(t *testing.T) *MultitenantAlertmanagerConfig {
 	return cfg
 }
 
+func newLoggers(logger log.Logger) Loggers {
+	return Loggers{
+		Base:     logger,
+		Dispatch: logger,
+	}
+}
+
 func setupSingleMultitenantAlertmanager(t *testing.T, cfg *MultitenantAlertmanagerConfig, store alertstore.AlertStore, limits Limits, logger log.Logger, registerer prometheus.Registerer) *MultitenantAlertmanager {
 	// The mock ring store means we do not need a real e.g. Consul running.
 	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
@@ -106,7 +113,7 @@ func setupSingleMultitenantAlertmanager(t *testing.T, cfg *MultitenantAlertmanag
 		assert.NoError(t, closer.Close())
 	})
 
-	am, err := createMultitenantAlertmanager(cfg, nil, store, ringStore, limits, logger, registerer)
+	am, err := createMultitenantAlertmanager(cfg, nil, store, ringStore, limits, newLoggers(logger), registerer)
 	require.NoError(t, err)
 
 	// The mock client pool allows the distributor to talk to the instance
@@ -584,7 +591,7 @@ func TestMultitenantAlertmanager_migrateStateFilesToPerTenantDirectories(t *test
 
 	reg := prometheus.NewPedanticRegistry()
 	cfg := mockAlertmanagerConfig(t)
-	am, err := createMultitenantAlertmanager(cfg, nil, store, nil, nil, log.NewNopLogger(), reg)
+	am, err := createMultitenantAlertmanager(cfg, nil, store, nil, nil, newLoggers(log.NewNopLogger()), reg)
 	require.NoError(t, err)
 
 	createFile(t, filepath.Join(cfg.DataDir, "nflog:"+user1))
@@ -638,6 +645,7 @@ func TestMultitenantAlertmanager_deleteUnusedLocalUserState(t *testing.T) {
 
 	reg := prometheus.NewPedanticRegistry()
 	cfg := mockAlertmanagerConfig(t)
+
 	am := setupSingleMultitenantAlertmanager(t, cfg, store, nil, log.NewNopLogger(), reg)
 
 	createFile(t, filepath.Join(cfg.DataDir, user1, notificationLogSnapshot))
@@ -685,7 +693,7 @@ func TestMultitenantAlertmanager_zoneAwareSharding(t *testing.T) {
 		cfg.ShardingRing.ZoneAwarenessEnabled = true
 		cfg.ShardingRing.InstanceZone = zone
 
-		am, err := createMultitenantAlertmanager(cfg, nil, alertStore, ringStore, nil, log.NewLogfmtLogger(os.Stdout), reg)
+		am, err := createMultitenantAlertmanager(cfg, nil, alertStore, ringStore, nil, newLoggers(log.NewLogfmtLogger(os.Stdout)), reg)
 		require.NoError(t, err)
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, am))
@@ -757,7 +765,7 @@ func TestMultitenantAlertmanager_deleteUnusedRemoteUserState(t *testing.T) {
 		// Increase state write interval so that state gets written sooner, making test faster.
 		cfg.Persister.Interval = 500 * time.Millisecond
 
-		am, err := createMultitenantAlertmanager(cfg, nil, alertStore, ringStore, nil, log.NewLogfmtLogger(os.Stdout), reg)
+		am, err := createMultitenantAlertmanager(cfg, nil, alertStore, ringStore, nil, newLoggers(log.NewLogfmtLogger(os.Stdout)), reg)
 		require.NoError(t, err)
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, am))
@@ -1130,7 +1138,7 @@ func TestMultitenantAlertmanager_InitialSync(t *testing.T) {
 				}))
 			}
 
-			am, err := createMultitenantAlertmanager(amConfig, nil, alertStore, ringStore, nil, log.NewNopLogger(), nil)
+			am, err := createMultitenantAlertmanager(amConfig, nil, alertStore, ringStore, nil, newLoggers(log.NewNopLogger()), nil)
 			require.NoError(t, err)
 			defer services.StopAndAwaitTerminated(ctx, am) //nolint:errcheck
 
@@ -1235,7 +1243,7 @@ func TestMultitenantAlertmanager_PerTenantSharding(t *testing.T) {
 				amConfig.ShardingRing.RingCheckPeriod = time.Hour
 
 				reg := prometheus.NewPedanticRegistry()
-				am, err := createMultitenantAlertmanager(amConfig, nil, alertStore, ringStore, nil, log.NewNopLogger(), reg)
+				am, err := createMultitenantAlertmanager(amConfig, nil, alertStore, ringStore, nil, newLoggers(log.NewNopLogger()), reg)
 				require.NoError(t, err)
 				defer services.StopAndAwaitTerminated(ctx, am) //nolint:errcheck
 
@@ -1390,7 +1398,7 @@ func TestMultitenantAlertmanager_SyncOnRingTopologyChanges(t *testing.T) {
 			alertStore := prepareInMemoryAlertStore()
 
 			reg := prometheus.NewPedanticRegistry()
-			am, err := createMultitenantAlertmanager(amConfig, nil, alertStore, ringStore, nil, log.NewNopLogger(), reg)
+			am, err := createMultitenantAlertmanager(amConfig, nil, alertStore, ringStore, nil, newLoggers(log.NewNopLogger()), reg)
 			require.NoError(t, err)
 
 			require.NoError(t, ringStore.CAS(ctx, RingKey, func(in interface{}) (interface{}, bool, error) {
@@ -1441,7 +1449,7 @@ func TestMultitenantAlertmanager_RingLifecyclerShouldAutoForgetUnhealthyInstance
 
 	alertStore := prepareInMemoryAlertStore()
 
-	am, err := createMultitenantAlertmanager(amConfig, nil, alertStore, ringStore, nil, log.NewNopLogger(), nil)
+	am, err := createMultitenantAlertmanager(amConfig, nil, alertStore, ringStore, nil, newLoggers(log.NewNopLogger()), nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, am))
 	defer services.StopAndAwaitTerminated(ctx, am) //nolint:errcheck
@@ -1478,7 +1486,7 @@ func TestMultitenantAlertmanager_InitialSyncFailure(t *testing.T) {
 	bkt.MockIter("alertmanager/", nil, nil)
 	store := bucketclient.NewBucketAlertStore(bkt, nil, log.NewNopLogger())
 
-	am, err := createMultitenantAlertmanager(amConfig, nil, store, ringStore, nil, log.NewNopLogger(), nil)
+	am, err := createMultitenantAlertmanager(amConfig, nil, store, ringStore, nil, newLoggers(log.NewNopLogger()), nil)
 	require.NoError(t, err)
 	defer services.StopAndAwaitTerminated(ctx, am) //nolint:errcheck
 
@@ -1521,7 +1529,7 @@ func TestAlertmanager_ReplicasPosition(t *testing.T) {
 		amConfig.ShardingRing.RingCheckPeriod = time.Hour
 
 		reg := prometheus.NewPedanticRegistry()
-		am, err := createMultitenantAlertmanager(amConfig, nil, mockStore, ringStore, nil, log.NewNopLogger(), reg)
+		am, err := createMultitenantAlertmanager(amConfig, nil, mockStore, ringStore, nil, newLoggers(log.NewNopLogger()), reg)
 		require.NoError(t, err)
 		defer services.StopAndAwaitTerminated(ctx, am) //nolint:errcheck
 
@@ -1627,7 +1635,7 @@ func TestAlertmanager_StateReplication(t *testing.T) {
 				amConfig.ShardingRing.RingCheckPeriod = time.Hour
 
 				reg := prometheus.NewPedanticRegistry()
-				am, err := createMultitenantAlertmanager(amConfig, nil, mockStore, ringStore, nil, log.NewNopLogger(), reg)
+				am, err := createMultitenantAlertmanager(amConfig, nil, mockStore, ringStore, nil, newLoggers(log.NewNopLogger()), reg)
 				require.NoError(t, err)
 				defer services.StopAndAwaitTerminated(ctx, am) //nolint:errcheck
 
@@ -1806,7 +1814,7 @@ func TestAlertmanager_StateReplication_InitialSyncFromPeers(t *testing.T) {
 				amConfig.ShardingRing.RingCheckPeriod = time.Hour
 
 				reg := prometheus.NewPedanticRegistry()
-				am, err := createMultitenantAlertmanager(amConfig, nil, mockStore, ringStore, nil, log.NewNopLogger(), reg)
+				am, err := createMultitenantAlertmanager(amConfig, nil, mockStore, ringStore, nil, newLoggers(log.NewNopLogger()), reg)
 				require.NoError(t, err)
 
 				clientPool.setServer(amConfig.ShardingRing.InstanceAddr+":0", am)

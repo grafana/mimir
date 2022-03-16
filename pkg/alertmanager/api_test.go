@@ -577,8 +577,11 @@ template_files:
 
 	limits := &mockAlertManagerLimits{}
 	am := &MultitenantAlertmanager{
-		store:  prepareInMemoryAlertStore(),
-		logger: util_log.Logger,
+		store: prepareInMemoryAlertStore(),
+		Loggers: Loggers{
+			Base:     util_log.Logger,
+			Dispatch: util_log.Logger,
+		},
 		limits: limits,
 	}
 	for _, tc := range testCases {
@@ -612,8 +615,11 @@ func TestMultitenantAlertmanager_DeleteUserConfig(t *testing.T) {
 	alertStore := bucketclient.NewBucketAlertStore(storage, nil, log.NewNopLogger())
 
 	am := &MultitenantAlertmanager{
-		store:  alertStore,
-		logger: util_log.Logger,
+		store: alertStore,
+		Loggers: Loggers{
+			Base:     util_log.Logger,
+			Dispatch: util_log.Logger,
+		},
 	}
 
 	require.NoError(t, alertStore.SetAlertConfig(context.Background(), alertspb.AlertConfigDesc{
