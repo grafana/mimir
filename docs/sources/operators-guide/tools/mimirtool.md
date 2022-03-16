@@ -656,7 +656,7 @@ It supports converting both CLI flags and [YAML configuration files]({{< relref 
 
 ##### Example
 
-The following example shows a command that converts Cortex [query-frontend]({{< relref "../architecture/components/query-frontend" >}}) YAML configuration file and CLI flag to Mimir-compatible YAML and CLI flag.
+The following example shows a command that converts Cortex [query-frontend]({{< relref "../architecture/components/query-frontend" >}}) YAML configuration file and CLI flag to a Mimir-compatible YAML and CLI flag.
 
 ```bash
 mimirtool config convert --yaml-file=cortex.yaml --flags-file=cortex.flags --yaml-out=mimir.yaml --flags-out=mimir.flags
