@@ -639,7 +639,7 @@ mimirtool bucket-validation
 
 #### Convert
 
-The config convert command converts configuration parameters that work with Cortex v1.11.0 to parameters that work with Grafana Mimir v2.0.0.
+The config convert command converts configuration parameters that work with Cortex v1.10.0 and above to parameters that work with Grafana Mimir v2.0.0.
 It supports converting both CLI flags and [YAML configuration files]({{< relref "../configuring/reference-configuration-parameters.md" >}}).
 
 ##### Configuration
