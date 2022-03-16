@@ -8,6 +8,7 @@
 * [ENHANCEMENT] Ruler: Add more detailed query information to ruler query stats logging. #1411
 * [ENHANCEMENT] Admin: Admin API now has some styling. #1482
 * [BUGFIX] Fix internal modules to wait for other modules depending on them before stopping. #1472
+* [ENHANCEMENT] Alertmanager: Support configuring alertmanager dispatch logger separately. #1379
 
 ### Mixin
 
