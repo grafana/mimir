@@ -5449,7 +5449,7 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 					# TYPE cortex_ingester_active_series_custom_tracker gauge
 					cortex_ingester_active_series_custom_tracker{name="bool_is_false_flagbased",user="other_test_user"} 2
 					cortex_ingester_active_series_custom_tracker{name="bool_is_true_flagbased",user="other_test_user"} 2
-					# HELP cortex_ingester_active_series_loading Indicating that active series configuration has been reloaded, and waiting to become stable.
+					# HELP cortex_ingester_active_series_loading Indicates that active series configuration is being reloaded, and waiting to become stable. While this metric is non zero, values from active series metrics shouldn't be considered.
 					# TYPE cortex_ingester_active_series_loading gauge
 					cortex_ingester_active_series_loading{user="test_user"} 1
 				`
@@ -5523,7 +5523,7 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 					# TYPE cortex_ingester_active_series_custom_tracker gauge
 					cortex_ingester_active_series_custom_tracker{name="bool_is_true_flagbased",user="other_test_user"} 2
             	    cortex_ingester_active_series_custom_tracker{name="bool_is_false_flagbased",user="other_test_user"} 2
-					# HELP cortex_ingester_active_series_loading Indicating that active series configuration has been reloaded, and waiting to become stable.
+					# HELP cortex_ingester_active_series_loading Indicates that active series configuration is being reloaded, and waiting to become stable. While this metric is non zero, values from active series metrics shouldn't be considered.
 					# TYPE cortex_ingester_active_series_loading gauge
 					cortex_ingester_active_series_loading{user="test_user"} 1
 				`
@@ -5592,7 +5592,7 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 				ingester.limits = override
 				ingester.updateActiveSeries()
 				expectedMetrics = `
-					# HELP cortex_ingester_active_series_loading Indicating that active series configuration has been reloaded, and waiting to become stable.
+					# HELP cortex_ingester_active_series_loading Indicates that active series configuration is being reloaded, and waiting to become stable. While this metric is non zero, values from active series metrics shouldn't be considered.
 					# TYPE cortex_ingester_active_series_loading gauge
 					cortex_ingester_active_series_loading{user="test_user"} 1
 				`
@@ -5656,7 +5656,7 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 				ingester.limits = override
 				ingester.updateActiveSeries()
 				expectedMetrics = `
-					# HELP cortex_ingester_active_series_loading Indicating that active series configuration has been reloaded, and waiting to become stable.
+					# HELP cortex_ingester_active_series_loading Indicates that active series configuration is being reloaded, and waiting to become stable. While this metric is non zero, values from active series metrics shouldn't be considered.
 					# TYPE cortex_ingester_active_series_loading gauge
 					cortex_ingester_active_series_loading{user="test_user"} 1
 					cortex_ingester_active_series_loading{user="other_test_user"} 1
