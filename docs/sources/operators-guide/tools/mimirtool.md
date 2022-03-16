@@ -644,15 +644,15 @@ It supports converting both CLI flags and [YAML configuration files]({{< relref 
 
 ##### Configuration
 
-| Environment variable | Flag                 | Description                                                                                                                                                  |
-| -------------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| -                    | `--yaml-file`        | The YAML configuration file to convert.                                                                                                                      |
-| -                    | `--flags-file`       | Newline-delimited list of CLI flags to convert.                                                                                                              |
-| -                    | `--yaml-out`         | The file to output the converted YAML configuration to. If not set, output to `stdout`.                                                                      |
-| -                    | `--flags-out`        | The file to output the list of converted CLI flags to. If not set, output to `stdout`.                                                                       |
-| -                    | `--update-defaults`  | If you set this flag and you set a configuration parameter to a default value that has changed in Mimir 2.0, the parameter updates to the new default value. |
-| -                    | `--include-defaults` | If set, includes all default values in the output YAML, regardless if they were explicitly set in the input files or not.                                    |
-| -                    | `-v`, `--verbose`    | If set, prints to `stderr` CLI flags and YAML paths from old config that no longer exist in the new one, and changed default values between old and new.     |
+| Environment variable | Flag                 | Description                                                                                                                                                                                                                                         |
+| -------------------- | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| -                    | `--yaml-file`        | The YAML configuration file to convert.                                                                                                                                                                                                             |
+| -                    | `--flags-file`       | Newline-delimited list of CLI flags to convert.                                                                                                                                                                                                     |
+| -                    | `--yaml-out`         | The file to output the converted YAML configuration to. If not set, output to `stdout`.                                                                                                                                                             |
+| -                    | `--flags-out`        | The file to output the list of converted CLI flags to. If not set, output to `stdout`.                                                                                                                                                              |
+| -                    | `--update-defaults`  | If you set this flag and you set a configuration parameter to a default value that has changed in Mimir 2.0, the parameter updates to the new default value.                                                                                        |
+| -                    | `--include-defaults` | If set, includes all default values in the output YAML, regardless if they were explicitly set in the input files or not.                                                                                                                           |
+| -                    | `-v`, `--verbose`    | If you set this flag, the CLI flags and YAML paths from the old configuration that do not exist in the new configuration are printed to `stderr`. This flag also prints default values that have changed between the old and the new configuration. |
 
 ##### Example
 
