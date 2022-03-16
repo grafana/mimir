@@ -9,12 +9,12 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"github.com/grafana/dskit/flagext"
 	"net/http"
 	"strconv"
 	"time"
 
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv/codec"
 	"github.com/grafana/dskit/kv/memberlist"
 	"github.com/grafana/dskit/modules"
