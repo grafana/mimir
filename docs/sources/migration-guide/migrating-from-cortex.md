@@ -276,3 +276,9 @@ You can update to the Grafana Mimir Helm chart from a the Cortex Helm chart.
    ```
 
    d. Remove the original Cortex `$.config` member.
+
+1. Run Helm upgrade with the Mimir chart.
+
+   ```bash
+   helm upgrade <RELEASE> grafana/mimir
+   ```
