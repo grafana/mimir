@@ -36,6 +36,10 @@ Mimirtool is a command-line tool that operators and tenants can use to execute a
 
   For more information about the `acl` command, refer to [ACL]({{< relref "#acl" >}}).
 
+- The `config` command helps convert configuration files from Cortex to Grafana Mimir.
+
+  For more information about the `config` command, refer to [Config]({{< relref "#config" >}})
+
 Mimirtool interacts with:
 
 - User-facing APIs provided by Grafana Mimir.
@@ -211,10 +215,10 @@ mimirtool rules prepare <file_path>...
 
 ##### Configuration
 
-| Environment variable | Flag                      | Description                                                                                                                  |
-| -------------------- | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| -                    | `-i`, `--in-place`        | Edits the file in place. If not set, the system generates a new file with the extension `.result` that contains the results. |
-| -                    | `-l`, `--label="cluster"` | Specifies the label for aggregations. By default, the label is set to `cluster`.                                             |
+| Flag                      | Description                                                                                                                  |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `-i`, `--in-place`        | Edits the file in place. If not set, the system generates a new file with the extension `.result` that contains the results. |
+| `-l`, `--label="cluster"` | Specifies the label for aggregations. By default, the label is set to `cluster`.                                             |
 
 ##### Example
 
@@ -621,15 +625,111 @@ The following command validates that the object store bucket works correctly.
 mimirtool bucket-validation
 ```
 
-| Env Variable | Flag                   | Description                                                                                                   |
-| ------------ | ---------------------- | ------------------------------------------------------------------------------------------------------------- |
-| -            | `--object-count`       | Sets the number of objects to create and delete. By default, the value is 2000.                               |
-| -            | `--report-every`       | Sets the number operations afterwhich an operations progress report is printed. By default, the value is 100. |
-| -            | `--test-runs`          | Sets the number of times to run the test. By default, the value is 1.                                         |
-| -            | `--prefix`             | Sets the path prefix to use for test objects in the object store.                                             |
-| -            | `--retries-on-error`   | Sets the number of times to retry if the object store returns an error.                                       |
-| -            | `--bucket-config`      | Sets the CLI arguments to configure a storage bucket.                                                         |
-| -            | `--bucket-config-help` | Displays help text that explains how to use the -bucket-config parameter.                                     |
+| Flag                   | Description                                                                                                   |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `--object-count`       | Sets the number of objects to create and delete. By default, the value is 2000.                               |
+| `--report-every`       | Sets the number operations afterwhich an operations progress report is printed. By default, the value is 100. |
+| `--test-runs`          | Sets the number of times to run the test. By default, the value is 1.                                         |
+| `--prefix`             | Sets the path prefix to use for test objects in the object store.                                             |
+| `--retries-on-error`   | Sets the number of times to retry if the object store returns an error.                                       |
+| `--bucket-config`      | Sets the CLI arguments to configure a storage bucket.                                                         |
+| `--bucket-config-help` | Displays help text that explains how to use the -bucket-config parameter.                                     |
+
+### Config
+
+#### Convert
+
+The config convert command converts configuration parameters that work with Cortex v1.10.0 and above to parameters that work with Grafana Mimir v2.0.0.
+It supports converting both CLI flags and [YAML configuration files]({{< relref "../configuring/reference-configuration-parameters.md" >}}).
+
+##### Configuration
+
+| Flag                 | Description                                                                                                                                                                                                                                         |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--yaml-file`        | The YAML configuration file to convert.                                                                                                                                                                                                             |
+| `--flags-file`       | Newline-delimited list of CLI flags to convert.                                                                                                                                                                                                     |
+| `--yaml-out`         | The file to output the converted YAML configuration to. If not set, output to `stdout`.                                                                                                                                                             |
+| `--flags-out`        | The file to output the list of converted CLI flags to. If not set, output to `stdout`.                                                                                                                                                              |
+| `--update-defaults`  | If you set this flag and you set a configuration parameter to a default value that has changed in Mimir 2.0, the parameter updates to the new default value.                                                                                        |
+| `--include-defaults` | If you set this flag, all default values are included in the output YAML, regardless of whether you explicitly set the values in the input files.                                                                                                   |
+| `-v`, `--verbose`    | If you set this flag, the CLI flags and YAML paths from the old configuration that do not exist in the new configuration are printed to `stderr`. This flag also prints default values that have changed between the old and the new configuration. |
+
+##### Example
+
+The following example shows a command that converts Cortex [query-frontend]({{< relref "../architecture/components/query-frontend" >}}) YAML configuration file and CLI flag to a Mimir-compatible YAML and CLI flag.
+
+```bash
+mimirtool config convert --yaml-file=cortex.yaml --flags-file=cortex.flags --yaml-out=mimir.yaml --flags-out=mimir.flags
+```
+
+`cortex.yaml`:
+
+```yaml
+query_range:
+  results_cache:
+    cache:
+      memcached:
+        expiration: 10s # Expiration was removed in Grafana Mimir, so this parameter will be missing from the output YAML
+        batch_size: 2048
+        parallelism: 10
+      memcached_client:
+        max_idle_conns: 32
+```
+
+`cortex.flags`:
+
+```
+-frontend.background.write-back-concurrency=45
+```
+
+After you run the command, the contents of `mimir.yaml` and `mimir.flags` should look like:
+
+`mimir.yaml`:
+
+```yaml
+frontend:
+  results_cache:
+    memcached:
+      max_get_multi_batch_size: 2048
+      max_get_multi_concurrency: 10
+      max_idle_connections: 32
+
+server:
+  http_listen_port: 80
+```
+
+> **Note:** As a precaution,`server.http_listen_port` is included. The default value in Grafana Mimir changed from 80 to 8080. Unless you explicitly set the port in the input configuration, the tool outputs the old default value.
+
+`mimir.flags`:
+
+```
+-query-frontend.results-cache.memcached.max-async-concurrency=45
+```
+
+##### Verbose output
+
+When you set the `--verbose` flag, the output explains which configuration parameters were removed and which default values were changed.
+The verbose output is printed to `stderr`.
+
+The output includes the following entries:
+
+- `field is no longer supported: <yaml_path>`
+
+  This parameter was used in the input Cortex YAML file and removed from the output configuration.
+
+- `flag is no longer supported: <flag_name>`
+
+  This parameter was used in the input Cortex CLI flags file, but the parameter was removed in Grafana Mimir. The tool removed this CLI flag from the output configuration.
+
+- `using a new default for <yaml_path>: <new_value> (used to be <old_value>)`
+
+  The default value for a configuration parameter changed in Grafana Mimir. This parameter was not explicitly set in the input configuration files.
+  When you run Grafana Mimir with the output configuration from `mimirtool config convert` Grafana Mimir uses the new default.
+
+- `default value for <yaml_path> changed: <new_value> (used to be <old_value>); not updating`
+
+  The default value for a configuration parameter that was set in the input configuration file has changed in Grafana Mimir.
+  The tool has not converted the old default value to the new default value. To automatically update the default value to the new default value, pass the `--update-defaults` flag.
 
 ## License
 
