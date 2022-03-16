@@ -54,7 +54,7 @@ mimirtool config convert --yaml-file <CORTEX YAML FILE>
 ```
 
 The tool writes the converted configuration file to the terminal.
-The tool removes any configuration parameters that are no longer present in Mimir and rename any configuration parameters that have a new name.
+The tool removes any configuration parameters that are no longer available in Grafana Mimir and renames configuration parameters that have a new name.
 
 Grafana Mimir has updated some default values.
 To include them in the output YAML, use the flag `--include-defaults`.
