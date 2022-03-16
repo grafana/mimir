@@ -80,4 +80,5 @@ Deploying Grafana Mimir with zone-aware replication across multiple cloud provid
 The [Kubernetes Rollout Operator](https://github.com/grafana/rollout-operator) is a Kubernetes operator aimed at making it easier to manage multi-availability-zone rollouts. Users running Grafana Mimir on Kubernetes with zone awareness enabled are encouraged to check it out.
 
 ## Enabling zone-awareness via the Grafana Mimir Jsonnet
+
 The [Grafama Mimir Jsonnet](https://github.com/grafana/mimir/tree/main/operations/mimir) makes it easy to enable zone awareness for the ingester and store-gateway components. Simply set the top level `cortex_multi_zone_store_gateway_enabled` or `cortex_multi_zone_ingester_enabled` Jsonnet fields to true and all the required Mimir configuration parameters will be set appropriately.
