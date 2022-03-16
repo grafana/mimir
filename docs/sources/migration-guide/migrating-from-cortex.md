@@ -158,7 +158,7 @@ jb install github.com/grafana/mimir/operations/mimir-mixin@main
    ```
 
    The first argument to the script is the file containing JSON from evaluating the Jsonnet.
-   The second argument is the name of the specific container you are interested in.
+   The second argument is the name of the specific container.
    To retrieve the arguments from the distributor for a Tanka environment:
 
    ```bash
@@ -204,4 +204,32 @@ jb install github.com/grafana/mimir/operations/mimir-mixin@main
    mimirtool config convert --flags-file=<FLAGS FILE> --yaml-out=/dev/null
    ```
 
-   The converted flags
+   You can transform the converted flags back into JSON with the following script:
+
+    ```bash
+   #!/usr/bin/env bash
+
+   set -euf -o pipefail
+
+   function usage {
+     cat <<EOF
+   Transform Go flags into JSON key value pairs
+
+   Usage:
+     $0 <flags file>
+
+   Examples:
+     $0 flags.flags
+   EOF
+   }
+
+   if [[ $# -ne 1 ]]; then
+     usage
+     exit 1
+   fi
+
+   key_values=$(sed -E -e 's/^-*(.*)=(.*)$/  "\1": "\2",/' "$1")
+   printf "{\n%s\n}" "${key_values::-1}"
+   ```
+
+   The only argument to the script is a file containing the newline separated flags.
