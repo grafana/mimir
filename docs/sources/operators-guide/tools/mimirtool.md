@@ -723,13 +723,13 @@ The output includes the following entries:
 
 - `using a new default for <yaml_path>: <new_value> (used to be <old_value>)`
 
-  The default value for a configuration parameter changed in Grafana Mimir. This parameter was not explicitly set in your input configuration files.
-  When running Grafana Mimir with the output configuration from `mimirtool config convert` Grafana Mimir will use the new default.
+  The default value for a configuration parameter changed in Grafana Mimir. This parameter was not explicitly set in the input configuration files.
+  When you run Grafana Mimir with the output configuration from `mimirtool config convert` Grafana Mimir uses the new default.
 
 - `default value for <yaml_path> changed: <new_value> (used to be <old_value>); not updating`
 
   The default value for a configuration parameter that was set in the input configuration file has changed in Grafana Mimir.
-  The explicit old default was not converted to the new default. Pass the `--update-defaults` flag to automatically update explicit old defaults to new defaults.
+  The tool has not converted the old default value to the new default value. To automatically update the default value to the new default value, pass the `--update-defaults` flag.
 
 ## License
 
