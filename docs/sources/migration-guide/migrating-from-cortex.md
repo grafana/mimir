@@ -93,8 +93,8 @@ To deploy the updated Jsonnet, use the following steps:
 
 1. Install the updated monitoring mixin
    1. Add the dashboards to Grafana. The dashboards replace your Cortex dashboards and continue to work for monitoring Cortex deployments.
-   > **Note:** Resource dashboards are now enabled by default an require additional metrics sources.
-   > To understand the required metrics sources, refer to [Additional resource metrics]({{< relref "../operators-guide/visualizing-metrics/requirements.md#additional-resource-metrics" >}}).
+      > **Note:** Resource dashboards are now enabled by default an require additional metrics sources.
+      > To understand the required metrics sources, refer to [Additional resource metrics]({{< relref "../operators-guide/visualizing-metrics/requirements.md#additional-resource-metrics" >}}).
    1. Install the recording and alerting rules into the ruler or a Prometheus server.
 1. Replace the import of the Cortex Jsonnet library with the Mimir Jsonnet library.
    For example:
@@ -115,6 +115,7 @@ To deploy the updated Jsonnet, use the following steps:
    ```
 1. For each component, use `mimirtool` to update the configured arguments.
    To extract the arguments from a specific component, use the following bash script:
+
    ```bash
     #!/usr/bin/env bash
 
@@ -149,44 +150,53 @@ To deploy the updated Jsonnet, use the following steps:
     | if type == "object" and .metadata.name == "$2" then .spec.template.spec.containers[]?.args[] else null end
     | select(. != null)
     EOF
-    ```
-    The first argument to the script is the file containing JSON from evaluating the Jsonnet.
-    The second argument is the name of the specific container you are interested in.
-    To retrieve the arguments from the distributor for a Tanka environment:
-
-```bash
-    <PATH TO SCRIPT> <(tk eval environments/default) distributor
    ```
-   
-    The script will output something like the following:
 
-    ```console
-    -consul.hostname=consul.cortex-to-mimir.svc.cluster.local:8500
-    -distributor.extend-writes=true
-    -distributor.ha-tracker.enable=false
-    -distributor.ha-tracker.enable-for-all-users=true
-    -distributor.ha-tracker.etcd.endpoints=etcd-client.cortex-to-mimir.svc.cluster.local.:2379
-    -distributor.ha-tracker.prefix=prom_ha/
-    -distributor.ha-tracker.store=etcd
-    -distributor.health-check-ingesters=true
-    -distributor.ingestion-burst-size=200000
-    -distributor.ingestion-rate-limit=10000
-    -distributor.ingestion-rate-limit-strategy=global
-    -distributor.remote-timeout=20s
-    -distributor.replication-factor=3
-    -distributor.ring.consul.hostname=consul.cortex-to-mimir.svc.cluster.local:8500
-    -distributor.ring.prefix=
-    -distributor.shard-by-all-labels=true
-    -mem-ballast-size-bytes=1073741824
-    -ring.heartbeat-timeout=10m
-    -ring.prefix=
-    -runtime-config.file=/etc/cortex/overrides.yaml
-    -server.grpc.keepalive.max-connection-age=2m
-    -server.grpc.keepalive.max-connection-age-grace=5m
-    -server.grpc.keepalive.max-connection-idle=1m
-    -server.grpc.keepalive.min-time-between-pings=10s
-    -server.grpc.keepalive.ping-without-stream-allowed=true
-    -target=distributor
-    -validation.reject-old-samples=true
-    -validation.reject-old-samples.max-age=12h
-    ```
+   The first argument to the script is the file containing JSON from evaluating the Jsonnet.
+   The second argument is the name of the specific container you are interested in.
+   To retrieve the arguments from the distributor for a Tanka environment:
+
+   ```bash
+   <PATH TO SCRIPT> <(tk eval environments/default) distributor
+   ```
+
+   The script outputs something like the following:
+
+   ```console
+   -consul.hostname=consul.cortex-to-mimir.svc.cluster.local:8500
+   -distributor.extend-writes=true
+   -distributor.ha-tracker.enable=false
+   -distributor.ha-tracker.enable-for-all-users=true
+   -distributor.ha-tracker.etcd.endpoints=etcd-client.cortex-to-mimir.svc.cluster.local.:2379
+   -distributor.ha-tracker.prefix=prom_ha/
+   -distributor.ha-tracker.store=etcd
+   -distributor.health-check-ingesters=true
+   -distributor.ingestion-burst-size=200000
+   -distributor.ingestion-rate-limit=10000
+   -distributor.ingestion-rate-limit-strategy=global
+   -distributor.remote-timeout=20s
+   -distributor.replication-factor=3
+   -distributor.ring.consul.hostname=consul.cortex-to-mimir.svc.cluster.local:8500
+   -distributor.ring.prefix=
+   -distributor.shard-by-all-labels=true
+   -mem-ballast-size-bytes=1073741824
+   -ring.heartbeat-timeout=10m
+   -ring.prefix=
+   -runtime-config.file=/etc/cortex/overrides.yaml
+   -server.grpc.keepalive.max-connection-age=2m
+   -server.grpc.keepalive.max-connection-age-grace=5m
+   -server.grpc.keepalive.max-connection-idle=1m
+   -server.grpc.keepalive.min-time-between-pings=10s
+   -server.grpc.keepalive.ping-without-stream-allowed=true
+   -target=distributor
+   -validation.reject-old-samples=true
+   -validation.reject-old-samples.max-age=12h
+   ```
+
+   The output of the script is the format for `mimirtool` conversion via the `--flags-file` flag.
+
+   ```bash
+   mimirtool config convert --flags-file=<FLAGS FILE> --yaml-out=/dev/null
+   ```
+
+   The converted flags
