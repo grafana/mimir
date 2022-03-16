@@ -74,3 +74,12 @@ When replica counts are unbalanced, zones with fewer replicas have higher resour
 
 Most cloud providers charge for inter-availability zone networking.
 Deploying Grafana Mimir with zone-aware replication across multiple cloud provider availability zones likely results in additional networking costs.
+
+## Kubernetes operator for simplifying rollouts of zone-aware components
+
+The [Kubernetes Rollout Operator](https://github.com/grafana/rollout-operator) is a Kubernetes operator that makes it easier for you to manage multi-availability-zone rollouts. Consider using the Kubernetes Rollout Operator when you run Grafana Mimir on Kubernetes with zone awareness enabled.
+
+## Enabling zone-awareness via the Grafana Mimir Jsonnet
+
+Instead of configuring Grafana Mimir directly, you can use the [Grafana Mimir Jsonnet](https://github.com/grafana/mimir/tree/main/operations/mimir) to enable ingester and store-gateway zone awareness.
+To enable ingester and store-gateway zone awareness, set the top level `cortex_multi_zone_store_gateway_enabled` or `cortex_multi_zone_ingester_enabled` Jsonnet fields to `true`. These flags set the required Grafana Mimir configuration parameters that support ingester and store-gateway zone awareness.
