@@ -682,7 +682,7 @@ query_range:
 -frontend.background.write-back-concurrency=45
 ```
 
-After you run the command, the contents of `mimir.yaml` and `mimr.flags` should look like:
+After you run the command, the contents of `mimir.yaml` and `mimir.flags` should look like:
 
 `mimir.yaml`:
 
