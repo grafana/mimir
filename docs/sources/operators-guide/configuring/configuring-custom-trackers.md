@@ -13,7 +13,7 @@ The label pattern to match against is specified using the `-ingester.active-seri
 
 The following example configures a custom tracker to count the active series coming from `dev` and `prod` namespaces for each tenant.
 
-```
+```yaml
 active_series_custom_trackers:
   dev: '{namespace=~"dev-.*"}'
   prod: '{namespace=~"prod-.*"}'
@@ -21,19 +21,19 @@ active_series_custom_trackers:
 
 If you configure a custom tracker for an ingester, the ingester exposes a `cortex_ingester_active_series_custom_tracker` gauge metric on its [/metrics endpoint](({{< relref "../reference-http-api#metrics" >}})). 
 
-Each custom tracker provides a count of active series matching its label pattern on a per-tenant basis, which means that each custom tracker generates as many as (# of tenants) number of series with metric name `cortex_ingester_active_series_custom_tracker`. Only custom trackers that have matched at least one series are exposed on the metric, and they are removed if they become 0 again.
+Each custom tracker counts the active series matching its label pattern on a per-tenant basis, which means that each custom tracker generates as many as `# of tenants` series with metric name `cortex_ingester_active_series_custom_tracker`. To limit the cardinality of this metric, only custom trackers that have matched at least one series are exposed on the metric, and they are removed if they become 0 again.
 
-Series with metric name `cortex_ingester_active_series_custom_tracker` will have 2 labels: `name` and `user`. The value of the `name` label is the name of the custom tracker. The value of the `user` label is the tenant-id for which the series count applies.
+Series with metric name `cortex_ingester_active_series_custom_tracker` will have 2 labels applied: `name` and `user`. The value of the `name` label is the name of the custom tracker specified in the configuration. The value of the `user` label is the tenant-id for which the series count applies.
 
-Assume two custom trackers are configured as in the example above, and that your Grafana Mimir cluster has 3 tenants: `tenant_1`, `tenant_2`, and `tenant_with_only_prod_metrics`. Assume all series within `tenant_with_only_prod_metrics` are labeled with `{namespace=~"prod-.*"}` and none are labeled with  `{namespace=~"dev-.*"}`. 
+Assume two custom trackers are configured as in the example above, and that your Grafana Mimir cluster has 3 tenants: `tenant_1`, `tenant_2`, and `tenant_with_only_prod_metrics`. Assume all series within `tenant_with_only_prod_metrics` have labels that match the pattern `{namespace=~"prod-.*"}` and none that match `{namespace=~"dev-.*"}`. 
 
-In this case, you'd see the following output when the `/metrics` endpoint for the ingester component is scraped:
+You'd see the following output when the `/metrics` endpoint for the ingester component is scraped:
 
-```yaml
+```
 cortex_ingester_active_series_custom_tracker{name="dev", user="tenant_1"}
 cortex_ingester_active_series_custom_tracker{name="prod", user="tenant_2"}
 cortex_ingester_active_series_custom_tracker{name="prod", user="tenant_with_only_prod_metrics"}
 ```
 
-> **Note:** The count of active series is exposed on each ingester. To understand the count of active series matching a particular label pattern in your Grafana Mimir cluster at a global level, you must collect and sum this metric across all ingesters. If you're running Grafana Mimir with a `replication_factor` > 1, you must also adjust for the fact that the same series will be replicated `RF` times across your ingesters. 
+> **Note:** The custom active series trackers are exposed on each ingester. To understand the count of active series matching a particular label pattern in your Grafana Mimir cluster at a global level, you must collect and sum this metric across all ingesters. If you're running Grafana Mimir with a `replication_factor` > 1, you must also adjust for the fact that the same series will be replicated `RF` times across your ingesters. 
 
