@@ -47,12 +47,6 @@ chmod +x mimirtool
 
 ### Converting a Cortex configuration file with mimirtool
 
-> **Note:** If you are using the [Cortex Helm chart](https://github.com/cortexproject/cortex-helm-chart), you can extract the configuration file from the `values.yaml` file with the [`yq`](https://github.com/kislyuk/yq) tool.
->
-> ```bash
-> yq -Y '.config' <VALUES YAML FILE>
-> ```
-
 ```bash
 mimirtool config convert --yaml-file <CORTEX YAML FILE>
 ```
@@ -97,7 +91,7 @@ jb install github.com/grafana/mimir/operations/mimir-mixin@main
 
 **To deploy the updated Jsonnet:**
 
-1. Install the updated monitoring mixin
+1. Install the updated monitoring mixin.
 
    a. Add the dashboards to Grafana. The dashboards replace your Cortex dashboards and continue to work for monitoring Cortex deployments.
 
@@ -238,3 +232,48 @@ jb install github.com/grafana/mimir/operations/mimir-mixin@main
    ```
 
    The only argument to the script is a file containing the newline separated flags.
+
+## Updating to Grafana Mimir using Helm
+
+You can update to the Grafana Mimir Helm chart from a the Cortex Helm chart.
+
+1. Install the updated monitoring mixin.
+
+   a. Add the dashboards to Grafana. The dashboards replace your Cortex dashboards and continue to work for monitoring Cortex deployments.
+
+   > **Note:** Resource dashboards are now enabled by default and require additional metrics sources.
+   > To understand the required metrics sources, refer to [Additional resource metrics]({{< relref "../operators-guide/visualizing-metrics/requirements.md#additional-resource-metrics" >}}).
+
+   b. Install the recording and alerting rules into the ruler or a Prometheus server.
+
+1. Add the Grafana Helm chart repository.
+
+   ```bash
+   helm repo add grafana https://grafana.github.io/helm-charts
+   ```
+
+1. Convert the Cortex configuration in your `values.yaml` file.
+
+   a. Extract the Cortex configuration, writing the output the `cortex.yaml` file:
+
+   ```bash
+   yq -Y '.config' <VALUES YAML FILE> > cortex.yaml
+   ```
+
+   b. Use `mimirtool` to update the configuration:
+
+   ```bash
+   mimirtool config convert cortex.yaml
+   ```
+
+   c. Place the updated configuration under the `$.mimir.config` key.
+
+   The `values.yaml` file looks similar to:
+
+   ```yaml
+   mimir:
+     config: |
+       <CONFIGURATION FILE CONTENTS>
+   ```
+
+   d. Remove the original Cortex `$.config` member.
