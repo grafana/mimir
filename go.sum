@@ -995,13 +995,13 @@ github.com/grafana-tools/sdk v0.0.0-20211220201350-966b3088eec9 h1:LQAhgcUPnzdjU
 github.com/grafana-tools/sdk v0.0.0-20211220201350-966b3088eec9/go.mod h1:AHHlOEv1+GGQ3ktHMlhuTUwo3zljV3QJbC0+8o2kn+4=
 github.com/grafana/dskit v0.0.0-20211021180445-3bd016e9d7f1/go.mod h1:uPG2nyK4CtgNDmWv7qyzYcdI+S90kHHRWvHnBtEMBXM=
 github.com/grafana/dskit v0.0.0-20220112093026-95274ccc858d/go.mod h1:M0/dlftwBvH7+hdNNpjMa/CUXD7gsew67mbkCuDlFXE=
-github.com/grafana/dskit v0.0.0-20220211095946-19921f863583 h1:UCLVGNJptATClAs4CbClVmn5b4YA6GTG3yoCObI//0E=
-github.com/grafana/dskit v0.0.0-20220211095946-19921f863583/go.mod h1:q51XdMLLHNZJSG6KOGujC20ed2OoLFdx0hBmOEVfRs0=
+github.com/grafana/dskit v0.0.0-20220314143558-7b6c9c059728 h1:eH3UVEXwgEIwz1Xr7XexKyLOKH8jR2wqbK4DKqU6ELA=
+github.com/grafana/dskit v0.0.0-20220314143558-7b6c9c059728/go.mod h1:q51XdMLLHNZJSG6KOGujC20ed2OoLFdx0hBmOEVfRs0=
 github.com/grafana/e2e v0.1.0 h1:nThd0U0TjUqyOOupSb+qDd4BOdhqwhR/oYbjoqiMlZk=
 github.com/grafana/e2e v0.1.0/go.mod h1:+26VJWpczg2OU3D0537acnHSHzhJORpxOs6F+M27tZo=
 github.com/grafana/memberlist v0.2.5-0.20211201083710-c7bc8e9df94b/go.mod h1:MS2lj3INKhZjWNqd3N0m3J+Jxf3DAOnAH9VT3Sh9MUE=
-github.com/grafana/mimir-prometheus v0.0.0-20220210151959-f8e3195f7500 h1:1l+T/VWSSC3Uz+9Pkgxv7pUngRLpoeRWagX3DPsTn6I=
-github.com/grafana/mimir-prometheus v0.0.0-20220210151959-f8e3195f7500/go.mod h1:6K+MGuCdYASOcOEKusiGUeYeRoobrW/26smN9OCXb0M=
+github.com/grafana/mimir-prometheus v0.0.0-20220314132007-23ce9ad9f0ff h1:8cfiJnBz2zYCBvMNK1zAmVc7lu27mQBtuHxoCdxpqPw=
+github.com/grafana/mimir-prometheus v0.0.0-20220314132007-23ce9ad9f0ff/go.mod h1:6K+MGuCdYASOcOEKusiGUeYeRoobrW/26smN9OCXb0M=
 github.com/gregjones/httpcache v0.0.0-20180305231024-9cad4c3443a7/go.mod h1:FecbI9+v66THATjSRHfNgh1IVFe/9kFxbXtjV0ctIMA=
 github.com/grpc-ecosystem/go-grpc-middleware v1.0.0/go.mod h1:FiyG127CGDf3tlThmgyCl78X/SZQqEOJBCDaAfeWzPs=
 github.com/grpc-ecosystem/go-grpc-middleware v1.0.1-0.20190118093823-f849b5445de4/go.mod h1:FiyG127CGDf3tlThmgyCl78X/SZQqEOJBCDaAfeWzPs=

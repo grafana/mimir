@@ -65,7 +65,7 @@ To publish a release candidate:
 1. Wait until the CI pipeline succeeds (once a tag is created, the release process through GitHub Actions will be triggered for this tag)
 1. Create a pre-release on GitHub
    - Write the release notes (including a copy-paste of the changelog)
-   - Build binaries with `make dist` and attach them to the release
+   - Build binaries with `make BUILD_IN_CONTAINER=true dist` and attach them to the release (building in container ensures standardized toolchain)
 
 ### Publish a stable release
 
@@ -84,7 +84,7 @@ To publish a stable release:
 1. Wait until the CI pipeline succeeds (once a tag is created, the release process through GitHub Actions will be triggered for this tag)
 1. Create a release on GitHub
    - Write the release notes (including a copy-paste of the changelog)
-   - Build binaries with `make dist` and attach them to the release
+   - Build binaries with `make BUILD_IN_CONTAINER=true dist` and attach them to the release (building in container ensures standardized toolchain)
 1. Merge the release branch `release-x.y` into `main`
    - Create `merge-release-X.Y-to-main` branch **from the `release-X.Y` branch** locally
    - Merge the upstream `main` branch into your `merge-release-X.Y-to-main` branch and resolve conflicts

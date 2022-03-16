@@ -1,0 +1,3 @@
+alertmanager_storage:
+  s3:
+    endpoint: 'http://primary'

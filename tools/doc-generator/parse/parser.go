@@ -24,6 +24,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"github.com/grafana/mimir/pkg/util/fieldcategory"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 var (
@@ -381,7 +382,7 @@ func ReflectType(typ string) reflect.Type {
 	case "float":
 		return reflect.TypeOf(0.0)
 	case "list of string":
-		return reflect.TypeOf([]string{})
+		return reflect.TypeOf(flagext.StringSliceCSV{})
 	case "map of string to string":
 		fallthrough
 	case "map of tracker name (string) to matcher (string)":
@@ -392,6 +393,8 @@ func ReflectType(typ string) reflect.Type {
 		return reflect.TypeOf(map[string]float64{})
 	case "list of duration":
 		return reflect.TypeOf([]time.Duration{})
+	case "map of string to validation.ForwardingRule":
+		return reflect.TypeOf(map[string]validation.ForwardingRule{})
 	default:
 		panic("unknown field type " + typ)
 	}

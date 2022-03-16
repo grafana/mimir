@@ -3,8 +3,6 @@
 package config
 
 import (
-	_ "embed" // need this for oldCortexConfig
-	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -13,110 +11,173 @@ import (
 
 	"github.com/pkg/errors"
 	"gopkg.in/yaml.v3"
-
-	"github.com/grafana/mimir/pkg/mimir"
-	"github.com/grafana/mimir/tools/doc-generator/parse"
 )
 
-// CortexToMimirMapper maps from cortex-1.11.0 to mimir-2.0.0 configurations
-var CortexToMimirMapper = MultiMapper{
-	// first try to naively map keys from old config to same keys from new config
-	BestEffortDirectMapper{},
-	// next map
-	MapperFunc(func(source, target *InspectedEntry) error {
-		amDiscovery, err := source.GetValue("ruler.enable_alertmanager_discovery")
-		if err != nil {
-			return errors.Wrap(err, "could not convert ruler.enable_alertmanager_discovery")
-		}
-		if amDiscovery == nil || !amDiscovery.(bool) {
-			return nil
-		}
-
-		amURL, err := source.GetValue("ruler.alertmanager_url")
-		if err != nil {
-			return errors.Wrap(err, "could not get ruler.alertmanager_url")
-		}
-
-		amURLs := strings.Split(amURL.(string), ",")
-		for i := range amURLs {
-			amURLs[i] = "dnssrvnoa+" + amURLs[i]
-		}
-		return target.SetValue("ruler.alertmanager_url", strings.Join(amURLs, ","))
-	}),
-	// last apply any special treatment to other parameters
-	PathMapper{
-		PathMappings: map[string]Mapping{
-			"blocks_storage.tsdb.max_exemplars":                               RenameMapping("limits.max_global_exemplars_per_user"),
-			"query_range.results_cache.cache.background.writeback_goroutines": RenameMapping("frontend.results_cache.memcached.max_async_concurrency"),
-			"query_range.results_cache.cache.background.writeback_buffer":     RenameMapping("frontend.results_cache.memcached.max_async_buffer_size"),
-			"query_range.results_cache.cache.memcached.batch_size":            RenameMapping("frontend.results_cache.memcached.max_get_multi_batch_size"),
-			"query_range.results_cache.cache.memcached.parallelism":           RenameMapping("frontend.results_cache.memcached.max_get_multi_concurrency"),
-			"query_range.results_cache.cache.memcached_client.max_idle_conns": RenameMapping("frontend.results_cache.memcached.max_idle_connections"),
-		},
-	},
+type ConversionNotices struct {
+	RemovedCLIFlags        []string
+	RemovedParameters      []string
+	ChangedDefaults        []ChangedDefault
+	SkippedChangedDefaults []ChangedDefault
+	PrunedDefaults         []PrunedDefault
 }
 
-type InspectedEntryFactory func() *InspectedEntry
+type ChangedDefault struct {
+	Path                   string
+	OldDefault, NewDefault string
+}
+
+type changedDefault struct {
+	path                   string
+	oldDefault, newDefault interface{}
+}
+
+func (d changedDefault) asExported() ChangedDefault {
+	return ChangedDefault{
+		Path:       d.path,
+		OldDefault: fmt.Sprint(d.oldDefault),
+		NewDefault: fmt.Sprint(d.newDefault),
+	}
+}
+
+type PrunedDefault struct {
+	Path  string
+	Value string
+}
 
 // Convert converts the passed YAML contents and CLI flags in the source schema to a YAML config and CLI flags
 // in the target schema. sourceFactory and targetFactory are assumed to return
 // InspectedEntries where the FieldValue is the default value of the configuration parameter.
 // Convert uses sourceFactory and targetFactory to also prune the default values from the resulting config.
 // Convert returns the marshalled YAML config in the target schema.
-func Convert(contents []byte, flags []string, m Mapper, sourceFactory, targetFactory InspectedEntryFactory) ([]byte, []string, error) {
-	removedFieldPaths, removedFlags, err := reportDeletedFlags(contents, flags, sourceFactory)
+func Convert(
+	contents []byte,
+	flags []string,
+	m Mapper,
+	sourceFactory, targetFactory InspectedEntryFactory,
+	useNewDefaults, showDefaults bool,
+) (convertedContents []byte, convertedFlags []string, _ ConversionNotices, conversionErr error) {
+
+	var (
+		notices = &ConversionNotices{}
+		err     error
+	)
+
+	notices.RemovedParameters, notices.RemovedCLIFlags, err = reportDeletedFlags(contents, flags, sourceFactory)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, ConversionNotices{}, err
 	}
 
 	source, target := sourceFactory(), targetFactory()
 
 	err = yaml.Unmarshal(contents, &source)
 	if err != nil {
-		return nil, nil, errors.Wrap(err, "could not unmarshal old Cortex configuration file")
+		return nil, nil, ConversionNotices{}, errors.Wrap(err, "could not unmarshal old Cortex configuration file")
 	}
 
 	err = addFlags(source, flags)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, ConversionNotices{}, errors.Wrap(err, "could not parse provided flags")
 	}
 
 	err = m.DoMap(source, target)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, ConversionNotices{}, errors.Wrap(err, "could not map old config to new config")
 	}
 
-	sourceDefaults, targetDefaults, err := prepareDefaults(m, sourceFactory, targetFactory)
+	sourceDefaults, err := prepareSourceDefaults(m, sourceFactory, targetFactory)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, ConversionNotices{}, errors.Wrap(err, "could not prune defaults in new config")
 	}
 
-	pruneDefaults(target, sourceDefaults, targetDefaults)
+	changeableDefaults, err := reportChangedDefaults(target, sourceDefaults)
+	if err != nil {
+		return nil, nil, ConversionNotices{}, err
+	}
+	notices.ChangedDefaults, notices.SkippedChangedDefaults, err = changeDefaults(changeableDefaults, target, useNewDefaults)
+	if err != nil {
+		return nil, nil, ConversionNotices{}, err
+	}
+
+	if showDefaults {
+		err = changeNilsToDefaults(target)
+		if err != nil {
+			return nil, nil, ConversionNotices{}, errors.Wrap(err, "could not set unset parameters to default values")
+		}
+	}
+	pruneNils(target)
 
 	var newFlags []string
 	if len(flags) > 0 {
 		newFlags, err = convertFlags(flags, m, target, sourceFactory, targetFactory)
 		if err != nil {
-			_, _ = fmt.Fprintln(os.Stderr, "could not convert passed CLI args: "+err.Error())
+			return nil, nil, ConversionNotices{}, errors.Wrap(err, "could not convert passed CLI args")
 		}
 	}
 
 	yamlBytes, err := yaml.Marshal(target)
 	if err != nil {
-		return nil, nil, errors.Wrap(err, "could not marshal converted config to YAML")
+		return nil, nil, ConversionNotices{}, errors.Wrap(err, "could not marshal converted config to YAML")
 	}
 
-	for _, f := range removedFieldPaths {
-		_, _ = fmt.Fprintln(os.Stderr, "field", f, "is no longer supported")
-	}
-	for _, f := range removedFlags {
-		_, _ = fmt.Fprintf(os.Stderr, "flag -%s is no longer supported", f)
-	}
-
-	return yamlBytes, newFlags, err
+	return yamlBytes, newFlags, *notices, nil
 }
 
-func convertFlags(flags []string, m Mapper, target *InspectedEntry, sourceFactory, targetFactory InspectedEntryFactory) ([]string, error) {
+func changeDefaults(defaults []changedDefault, target Parameters, useNewDefaults bool) ([]ChangedDefault, []ChangedDefault, error) {
+	var changedDefaults, skippedChangedDefault []ChangedDefault
+	for _, def := range defaults {
+		currentValue := target.MustGetValue(def.path)
+		if currentValue == nil {
+			// The value will be implicitly changed to the new default value.
+			changedDefaults = append(changedDefaults, def.asExported())
+		} else if useNewDefaults && reflect.DeepEqual(currentValue, def.oldDefault) {
+			err := target.SetValue(def.path, def.newDefault)
+			if err != nil {
+				return nil, nil, err
+			}
+			changedDefaults = append(changedDefaults, def.asExported())
+		} else {
+			skippedChangedDefault = append(skippedChangedDefault, def.asExported())
+		}
+	}
+	return changedDefaults, skippedChangedDefault, nil
+}
+
+func reportChangedDefaults(target, sourceDefaults Parameters) ([]changedDefault, error) {
+	var defs []changedDefault
+
+	err := target.Walk(func(path string, value interface{}) error {
+		oldDefault, err := sourceDefaults.GetDefaultValue(path)
+		if err != nil {
+			if errors.Is(err, ErrParameterNotFound) {
+				// This looks like a new parameter because it doesn't exist in the old schema; no default to change from
+				return nil
+			}
+			return err
+		}
+		newDefault := target.MustGetDefaultValue(path)
+
+		if !reflect.DeepEqual(oldDefault, newDefault) {
+			defs = append(defs, changedDefault{
+				path:       path,
+				oldDefault: oldDefault,
+				newDefault: newDefault,
+			})
+		}
+		return nil
+	})
+	return defs, err
+}
+
+func changeNilsToDefaults(target *InspectedEntry) error {
+	return target.Walk(func(path string, value interface{}) error {
+		if value != nil {
+			return nil // If the value is already set, don't change it.
+		}
+		return target.SetValue(path, target.MustGetDefaultValue(path))
+	})
+}
+
+func convertFlags(flags []string, m Mapper, target Parameters, sourceFactory, targetFactory InspectedEntryFactory) ([]string, error) {
 	flagsNewPaths, err := mapOldFlagsToNewPaths(flags, m, sourceFactory, targetFactory)
 	if err != nil {
 		return nil, err
@@ -142,6 +203,11 @@ func convertFlags(flags []string, m Mapper, target *InspectedEntry, sourceFactor
 	for f := range flagsNewPaths {
 		err = target.Delete(f)
 		if err != nil {
+			if errors.Is(err, ErrParameterNotFound) {
+				// This might happen when the flag was using the default value and was pruned before convertFlags was called.
+				// There's nothing to do.
+				continue
+			}
 			return nil, err
 		}
 	}
@@ -151,7 +217,8 @@ func convertFlags(flags []string, m Mapper, target *InspectedEntry, sourceFactor
 
 // addFlags parses the flags and add their values to the config
 func addFlags(entry *InspectedEntry, flags []string) error {
-	fs := flag.NewFlagSet("", flag.ContinueOnError)
+	fs := flag.NewFlagSet(flag.CommandLine.Name(), flag.ContinueOnError)
+	fs.Usage = func() {} // Disable dumping old cortex help text on error
 	entry.RegisterFlags(fs, nil)
 	return fs.Parse(flags)
 }
@@ -248,55 +315,32 @@ func parseFlagNames(flags []string) map[string]bool {
 	return names
 }
 
-// prepareDefaults maps source defaults to target defaults the same way regular source config is mapped to target config.
-// This enables lookups of cortex default values using their mimir paths.
-func prepareDefaults(m Mapper, sourceFactory, targetFactory InspectedEntryFactory) (cortexDefaults, mimirDefaults *InspectedEntry, err error) {
-	oldCortexDefaults, mappedCortexDefaults := sourceFactory(), targetFactory()
-
-	err = m.DoMap(oldCortexDefaults, mappedCortexDefaults)
-	return mappedCortexDefaults, DefaultMimirConfig(), err
+// prepareSourceDefaults maps source defaults to target defaults the same way regular source config is mapped to target config.
+// This enables lookups of source default values using their target paths.
+func prepareSourceDefaults(m Mapper, sourceFactory, targetFactory InspectedEntryFactory) (Parameters, error) {
+	sourceDefaults, mappedSourceDefaults := sourceFactory(), targetFactory()
+	err := m.DoMap(defaultValueInspectedEntry{sourceDefaults}, defaultValueInspectedEntry{mappedSourceDefaults})
+	return mappedSourceDefaults, err
 }
 
-// TODO dimitarvdimitrov convert this to a Mapper, ideally splitting default pruning from "default changed" warnings
-// pruneDefaults removes the defaults from fullParams and prints to os.Stderr any changed defaults
-// which haven't been overwritten. pruneDefaults swallows prints any errors during pruning to os.Stderr
-func pruneDefaults(fullParams, oldDefaults, newDefaults *InspectedEntry) {
+// pruneNils removes parameters from params that are nil. pruneNils prints any errors during pruning to os.Stderr
+func pruneNils(params Parameters) {
 	var pathsToDelete []string
 
-	err := fullParams.Walk(func(path string, value interface{}) error {
-		newDefault, err := newDefaults.GetValue(path)
-		if err != nil {
-			return errors.Wrap(err, "expecting value "+path+" to have a default")
-		}
-
-		oldDefault, err := oldDefaults.GetValue(path)
-		if err != nil {
-			// We don't expect new fields exist in the old struct.
-			if errors.Is(err, ErrParameterNotFound) {
-				return err
-			}
-			oldDefault = nil
-		}
-
-		// Use reflect.DeepEqual to easily compare different type aliases that resolve to the same underlying type,
-		// fields with interface types, and maps and slices.
-		if value == nil || reflect.DeepEqual(value, oldDefault) || reflect.DeepEqual(value, newDefault) {
-			if !reflect.DeepEqual(oldDefault, newDefault) {
-				_, _ = fmt.Fprintf(os.Stderr, "using a new default for %s: %v (used to be %v)\n", path, newDefault, oldDefault)
-			}
-
+	err := params.Walk(func(path string, value interface{}) error {
+		if value == nil {
 			pathsToDelete = append(pathsToDelete, path)
 		}
 		return nil
 	})
 	if err != nil {
-		_, _ = fmt.Fprintln(os.Stderr, err)
+		panic(err)
 	}
 
 	for _, p := range pathsToDelete {
-		err = fullParams.Delete(p)
+		err = params.Delete(p)
 		if err != nil {
-			err = errors.Wrap(err, "cloud not delete parameter with default value from config")
+			err = errors.Wrap(err, "could not delete parameter with default value from config")
 			_, _ = fmt.Fprintln(os.Stderr, err)
 		}
 	}
@@ -361,41 +405,4 @@ func reportDeletedFlags(contents []byte, flags []string, sourceFactory Inspected
 	}
 
 	return
-}
-
-func DefaultMimirConfig() *InspectedEntry {
-	cfg, err := DefaultValueInspector.InspectConfig(&mimir.Config{})
-	if err != nil {
-		panic(err)
-	}
-	return cfg
-}
-
-//go:embed descriptors/cortex-v1.11.0.json
-var oldCortexConfig []byte
-
-//go:embed descriptors/cortex-v1.11.0-flags-only.json
-var oldCortexConfigFlagsOnly []byte
-
-const notInYaml = "not-in-yaml"
-
-func DefaultCortexConfig() *InspectedEntry {
-	cfg := &InspectedEntry{}
-	if err := json.Unmarshal(oldCortexConfig, cfg); err != nil {
-		panic(err)
-	}
-
-	cfgFlagsOnly := &InspectedEntry{}
-	if err := json.Unmarshal(oldCortexConfigFlagsOnly, cfgFlagsOnly); err != nil {
-		panic(err)
-	}
-
-	cfg.BlockEntries = append(cfg.BlockEntries, &InspectedEntry{
-		Kind:         parse.KindBlock,
-		Name:         notInYaml,
-		Required:     false,
-		Desc:         "Flags not available in YAML file.",
-		BlockEntries: cfgFlagsOnly.BlockEntries,
-	})
-	return cfg
 }

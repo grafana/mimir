@@ -6,6 +6,9 @@
     // The product name used when building dashboards.
     product: 'Mimir',
 
+    // The prefix including product name used when building dashboards.
+    dashboard_prefix: '%(product)s / ' % $._config.product,
+
     // Tags for dashboards.
     tags: ['mimir'],
 

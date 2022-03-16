@@ -1,0 +1,4 @@
+frontend:
+  results_cache:
+    memcached:
+      addresses: 'dns+_gossip._tcp.something'

@@ -36,7 +36,6 @@ func main() {
 		shardCount  int
 		splitGroups int
 		sorting     string
-		ringFile    string
 	}{}
 
 	// Loads bucket index, and plans compaction for all loaded meta files.

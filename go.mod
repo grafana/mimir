@@ -18,7 +18,7 @@ require (
 	github.com/golang/snappy v0.0.4
 	github.com/google/gopacket v1.1.19
 	github.com/gorilla/mux v1.8.0
-	github.com/grafana/dskit v0.0.0-20220211095946-19921f863583
+	github.com/grafana/dskit v0.0.0-20220314143558-7b6c9c059728
 	github.com/grafana/e2e v0.1.0
 	github.com/hashicorp/golang-lru v0.5.4
 	github.com/json-iterator/go v1.1.12
@@ -51,7 +51,6 @@ require (
 	google.golang.org/grpc v1.41.1
 	gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b
-	sigs.k8s.io/yaml v1.2.0
 )
 
 require (
@@ -215,7 +214,7 @@ replace git.apache.org/thrift.git => github.com/apache/thrift v0.0.0-20180902110
 replace github.com/bradfitz/gomemcache => github.com/themihai/gomemcache v0.0.0-20180902122335-24332e2d58ab
 
 // Using a fork of Prometheus while we work on querysharding to avoid a dependency on the upstream.
-replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20220210151959-f8e3195f7500
+replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20220314132007-23ce9ad9f0ff
 
 // Pin hashicorp depencencies since the Prometheus fork, go mod tries to update them.
 replace github.com/hashicorp/go-immutable-radix => github.com/hashicorp/go-immutable-radix v1.2.0
@@ -223,7 +222,7 @@ replace github.com/hashicorp/go-immutable-radix => github.com/hashicorp/go-immut
 replace github.com/hashicorp/go-hclog => github.com/hashicorp/go-hclog v0.12.2
 
 // Replace memberlist with our fork which includes some fixes that haven't been
-// merged upstream yet.
+// merged upstream yet: https://github.com/hashicorp/memberlist/pull/260
 replace github.com/hashicorp/memberlist v0.2.4 => github.com/grafana/memberlist v0.2.5-0.20211201083710-c7bc8e9df94b
 
 replace github.com/vimeo/galaxycache => github.com/thanos-community/galaxycache v0.0.0-20211122094458-3a32041a1f1e

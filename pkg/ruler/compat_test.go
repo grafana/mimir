@@ -48,7 +48,6 @@ func TestPusherAppendable(t *testing.T) {
 	for _, tc := range []struct {
 		name       string
 		series     string
-		evalDelay  time.Duration
 		value      float64
 		expectedTS int64
 	}{
@@ -65,50 +64,20 @@ func TestPusherAppendable(t *testing.T) {
 			expectedTS: 120_000,
 		},
 		{
-			name:       "tenant with delay, normal value",
-			series:     "foo_bar",
-			value:      1.234,
-			expectedTS: 120_000,
-			evalDelay:  time.Minute,
-		},
-		{
-			name:       "tenant with delay, stale nan value",
-			value:      math.Float64frombits(value.StaleNaN),
-			expectedTS: 60_000,
-			evalDelay:  time.Minute,
-		},
-		{
-			name:       "ALERTS without delay, normal value",
+			name:       "ALERTS, normal value",
 			series:     `ALERTS{alertname="boop"}`,
 			value:      1.234,
 			expectedTS: 120_000,
 		},
 		{
-			name:       "ALERTS without delay, stale nan value",
+			name:       "ALERTS, stale nan value",
 			series:     `ALERTS{alertname="boop"}`,
 			value:      math.Float64frombits(value.StaleNaN),
 			expectedTS: 120_000,
-		},
-		{
-			name:       "ALERTS with delay, normal value",
-			series:     `ALERTS{alertname="boop"}`,
-			value:      1.234,
-			expectedTS: 60_000,
-			evalDelay:  time.Minute,
-		},
-		{
-			name:       "ALERTS with delay, stale nan value",
-			series:     `ALERTS_FOR_STATE{alertname="boop"}`,
-			value:      math.Float64frombits(value.StaleNaN),
-			expectedTS: 60_000,
-			evalDelay:  time.Minute,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := context.Background()
-			pa.rulesLimits = &ruleLimits{
-				evalDelay: tc.evalDelay,
-			}
 
 			lbls, err := parser.ParseMetric(tc.series)
 			require.NoError(t, err)

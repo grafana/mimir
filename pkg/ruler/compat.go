@@ -16,7 +16,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/rules"
@@ -26,6 +25,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier"
+	querier_stats "github.com/grafana/mimir/pkg/querier/stats"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
@@ -38,29 +38,15 @@ type PusherAppender struct {
 	failedWrites prometheus.Counter
 	totalWrites  prometheus.Counter
 
-	ctx             context.Context
-	pusher          Pusher
-	labels          []labels.Labels
-	samples         []mimirpb.Sample
-	userID          string
-	evaluationDelay time.Duration
+	ctx     context.Context
+	pusher  Pusher
+	labels  []labels.Labels
+	samples []mimirpb.Sample
+	userID  string
 }
 
 func (a *PusherAppender) Append(_ storage.SeriesRef, l labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
 	a.labels = append(a.labels, l)
-
-	// Adapt staleness markers for ruler evaluation delay. As the upstream code
-	// is using the actual time, when there is a no longer available series.
-	// This then causes 'out of order' append failures once the series is
-	// becoming available again.
-	// see https://github.com/prometheus/prometheus/blob/6c56a1faaaad07317ff585bda75b99bdba0517ad/rules/manager.go#L647-L660
-	// Similar to staleness markers, the rule manager also appends actual time to the ALERTS and ALERTS_FOR_STATE series.
-	// See: https://github.com/prometheus/prometheus/blob/ae086c73cb4d6db9e8b67d5038d3704fea6aec4a/rules/alerting.go#L414-L417
-	metricName := l.Get(labels.MetricName)
-	if a.evaluationDelay > 0 && (value.IsStaleNaN(v) || metricName == "ALERTS" || metricName == "ALERTS_FOR_STATE") {
-		t -= a.evaluationDelay.Milliseconds()
-	}
-
 	a.samples = append(a.samples, mimirpb.Sample{
 		TimestampMs: t,
 		Value:       v,
@@ -99,9 +85,8 @@ func (a *PusherAppender) Rollback() error {
 
 // PusherAppendable fulfills the storage.Appendable interface for prometheus manager
 type PusherAppendable struct {
-	pusher      Pusher
-	userID      string
-	rulesLimits RulesLimits
+	pusher Pusher
+	userID string
 
 	totalWrites  prometheus.Counter
 	failedWrites prometheus.Counter
@@ -111,7 +96,6 @@ func NewPusherAppendable(pusher Pusher, userID string, limits RulesLimits, total
 	return &PusherAppendable{
 		pusher:       pusher,
 		userID:       userID,
-		rulesLimits:  limits,
 		totalWrites:  totalWrites,
 		failedWrites: failedWrites,
 	}
@@ -123,10 +107,9 @@ func (t *PusherAppendable) Appender(ctx context.Context) storage.Appender {
 		failedWrites: t.failedWrites,
 		totalWrites:  t.totalWrites,
 
-		ctx:             ctx,
-		pusher:          t.pusher,
-		userID:          t.userID,
-		evaluationDelay: t.rulesLimits.EvaluationDelay(t.userID),
+		ctx:    ctx,
+		pusher: t.pusher,
+		userID: t.userID,
 	}
 }
 
@@ -136,18 +119,6 @@ type RulesLimits interface {
 	RulerTenantShardSize(userID string) int
 	RulerMaxRuleGroupsPerTenant(userID string) int
 	RulerMaxRulesPerRuleGroup(userID string) int
-}
-
-// EngineQueryFunc returns a new query function using the rules.EngineQueryFunc function
-// and passing an altered timestamp.
-func EngineQueryFunc(engine *promql.Engine, q storage.Queryable, overrides RulesLimits, userID string) rules.QueryFunc {
-	return func(ctx context.Context, qs string, t time.Time) (promql.Vector, error) {
-		orig := rules.EngineQueryFunc(engine, q)
-		// Delay the evaluation of all rules by a set interval to give a buffer
-		// to metric that haven't been forwarded to cortex yet.
-		evaluationDelay := overrides.EvaluationDelay(userID)
-		return orig(ctx, qs, t.Add(-evaluationDelay))
-	}
 }
 
 func MetricsQueryFunc(qf rules.QueryFunc, queries, failedQueries prometheus.Counter) rules.QueryFunc {
@@ -188,17 +159,33 @@ func RecordAndReportRuleQueryMetrics(qf rules.QueryFunc, queryTime prometheus.Co
 	}
 
 	return func(ctx context.Context, qs string, t time.Time) (promql.Vector, error) {
+		// Inject a new stats object in the context to be updated by various queryables used to execute
+		// the query (blocks store queryable, distributor queryable, etc.). When used by the query-frontend
+		// this is normally handled by middleware: instrumenting a QueryFunc is the ruler equivalent.
+		stats, ctx := querier_stats.ContextWithEmptyStats(ctx)
 		// If we've been passed a counter we want to record the wall time spent executing this request.
 		timer := prometheus.NewTimer(nil)
 		defer func() {
-			querySeconds := timer.ObserveDuration().Seconds()
-			queryTime.Add(querySeconds)
+			// Update stats wall time based on the timer created above.
+			stats.AddWallTime(timer.ObserveDuration())
+
+			wallTime := stats.LoadWallTime()
+			numSeries := stats.LoadFetchedSeries()
+			numBytes := stats.LoadFetchedChunkBytes()
+			numChunks := stats.LoadFetchedChunks()
+			shardedQueries := stats.LoadShardedQueries()
+
+			queryTime.Add(wallTime.Seconds())
 
 			// Log ruler query stats.
 			logMessage := []interface{}{
 				"msg", "query stats",
 				"component", "ruler",
-				"cortex_ruler_query_seconds_total", querySeconds,
+				"query_wall_time_seconds", wallTime.Seconds(),
+				"fetched_series_count", numSeries,
+				"fetched_chunk_bytes", numBytes,
+				"fetched_chunks_count", numChunks,
+				"sharded_queries", shardedQueries,
 				"query", qs,
 			}
 			level.Info(util_log.WithContext(ctx, logger)).Log(logMessage...)
@@ -265,7 +252,7 @@ func DefaultTenantManagerFactory(cfg Config, p Pusher, queryable, federatedQuery
 			// Errors from PromQL are always "user" errors.
 			q = querier.NewErrorTranslateQueryableWithFn(q, WrapQueryableErrors)
 
-			queryFunc = EngineQueryFunc(engine, q, overrides, userID)
+			queryFunc = rules.EngineQueryFunc(engine, q)
 			queryFunc = MetricsQueryFunc(queryFunc, totalQueries, failedQueries)
 			queryFunc = RecordAndReportRuleQueryMetrics(queryFunc, queryTime, logger)
 			return queryFunc
@@ -287,6 +274,11 @@ func DefaultTenantManagerFactory(cfg Config, p Pusher, queryable, federatedQuery
 			OutageTolerance:            cfg.OutageTolerance,
 			ForGracePeriod:             cfg.ForGracePeriod,
 			ResendDelay:                cfg.ResendDelay,
+			DefaultEvaluationDelay: func() time.Duration {
+				// Delay the evaluation of all rules by a set interval to give a buffer
+				// to metric that haven't been forwarded to Mimir yet.
+				return overrides.EvaluationDelay(userID)
+			},
 		})
 	}
 }

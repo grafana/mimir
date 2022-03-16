@@ -1,0 +1,7 @@
+alertmanager:
+  storage:
+    s3:
+      s3: https://user:pass@hostname.com:8080/my-bucket
+alertmanager_storage:
+  s3:
+    endpoint: main_endpoint.com:1234
