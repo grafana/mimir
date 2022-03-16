@@ -38,7 +38,7 @@ func (c CustomTrackersConfig) String() string {
 	return c.string
 }
 
-func activeSeriesCustomTrackersConfigString(cfg map[string]string) string {
+func customTrackersConfigString(cfg map[string]string) string {
 	if len(cfg) == 0 {
 		return ""
 	}
@@ -70,12 +70,12 @@ func (c *CustomTrackersConfig) Set(s string) error {
 		return nil
 	}
 
-	f, err := activeSeriesCustomTrackerFlagValueToMap(s)
+	f, err := customTrackerFlagValueToMap(s)
 	if err != nil {
 		return err
 	}
 
-	nc, err := NewActiveSeriesCustomTrackersConfig(f)
+	nc, err := NewCustomTrackersConfig(f)
 	if err != nil {
 		return err
 	}
@@ -97,11 +97,11 @@ func (c *CustomTrackersConfig) Set(s string) error {
 	}
 
 	// Recalculate the string after merging.
-	c.string = activeSeriesCustomTrackersConfigString(c.source)
+	c.string = customTrackersConfigString(c.source)
 	return nil
 }
 
-func activeSeriesCustomTrackerFlagValueToMap(s string) (map[string]string, error) {
+func customTrackerFlagValueToMap(s string) (map[string]string, error) {
 	source := map[string]string{}
 	pairs := strings.Split(s, ";")
 	for i, p := range pairs {
@@ -129,11 +129,11 @@ func (c *CustomTrackersConfig) UnmarshalYAML(unmarshal func(interface{}) error) 
 	if err != nil {
 		return err
 	}
-	*c, err = NewActiveSeriesCustomTrackersConfig(stringMap)
+	*c, err = NewCustomTrackersConfig(stringMap)
 	return err
 }
 
-func NewActiveSeriesCustomTrackersConfig(m map[string]string) (c CustomTrackersConfig, err error) {
+func NewCustomTrackersConfig(m map[string]string) (c CustomTrackersConfig, err error) {
 	c.source = m
 	c.config = map[string]labelsMatchers{}
 	for name, matcher := range m {
@@ -147,6 +147,6 @@ func NewActiveSeriesCustomTrackersConfig(m map[string]string) (c CustomTrackersC
 		}
 		c.config[name] = matchers
 	}
-	c.string = activeSeriesCustomTrackersConfigString(c.source)
+	c.string = customTrackersConfigString(c.source)
 	return c, nil
 }

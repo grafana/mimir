@@ -65,7 +65,7 @@ import (
 )
 
 func mustNewActiveSeriesCustomTrackersConfigFromMap(t *testing.T, source map[string]string) activeseries.CustomTrackersConfig {
-	m, err := activeseries.NewActiveSeriesCustomTrackersConfig(source)
+	m, err := activeseries.NewCustomTrackersConfig(source)
 	require.NoError(t, err)
 	return m
 }
@@ -696,7 +696,7 @@ func TestIngester_Push(t *testing.T) {
 
 			// Update active series for metrics check.
 			if !testData.disableActiveSeries {
-				i.updateActiveSeries(time.Now())
+				i.updateActiveSeries()
 			}
 
 			// Append additional metrics to assert on.
@@ -765,7 +765,7 @@ func TestIngester_Push_ShouldCorrectlyTrackMetricsInMultiTenantScenario(t *testi
 	}
 
 	// Update active series for metrics check.
-	i.updateActiveSeries(time.Now())
+	i.updateActiveSeries()
 
 	// Check tracked Prometheus metrics
 	expectedMetrics := `
@@ -815,6 +815,11 @@ func TestIngester_Push_DecreaseInactiveSeries(t *testing.T) {
 	cfg.IngesterRing.JoinAfter = 0
 
 	i, err := prepareIngesterWithBlocksStorage(t, cfg, registry)
+	currentTime := time.Now()
+	currentNow := func() time.Time {
+		return currentTime
+	}
+	i.now = currentNow
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
@@ -852,7 +857,8 @@ func TestIngester_Push_DecreaseInactiveSeries(t *testing.T) {
 
 	// Update active series the after the idle timeout (in the future).
 	// This will remove inactive series.
-	i.updateActiveSeries(time.Now().Add(cfg.ActiveSeriesMetricsIdleTimeout))
+	currentTime = currentTime.Add(cfg.ActiveSeriesMetricsIdleTimeout + 1*time.Second)
+	i.updateActiveSeries()
 
 	// Check tracked Prometheus metrics
 	expectedMetrics := `
@@ -3865,7 +3871,7 @@ func TestIngesterCompactAndCloseIdleTSDB(t *testing.T) {
 	})
 
 	pushSingleSampleWithMetadata(t, i)
-	i.updateActiveSeries(time.Now())
+	i.updateActiveSeries()
 
 	require.Equal(t, int64(1), i.seriesCount.Load())
 
@@ -3906,7 +3912,7 @@ func TestIngesterCompactAndCloseIdleTSDB(t *testing.T) {
 	})
 
 	require.Greater(t, testutil.ToFloat64(i.metrics.idleTsdbChecks.WithLabelValues(string(tsdbIdleClosed))), float64(0))
-	i.updateActiveSeries(time.Now())
+	i.updateActiveSeries()
 	require.Equal(t, int64(0), i.seriesCount.Load()) // Flushing removed all series from memory.
 
 	// Verify that user has disappeared from metrics.
@@ -3931,7 +3937,7 @@ func TestIngesterCompactAndCloseIdleTSDB(t *testing.T) {
 
 	// Pushing another sample will recreate TSDB.
 	pushSingleSampleWithMetadata(t, i)
-	i.updateActiveSeries(time.Now())
+	i.updateActiveSeries()
 
 	// User is back.
 	require.NoError(t, testutil.GatherAndCompare(r, strings.NewReader(`
@@ -5189,13 +5195,11 @@ func TestIngesterActiveSeries(t *testing.T) {
 	}{
 		"successful push, should count active series": {
 			test: func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer) {
-				now := time.Now()
-
 				pushWithUser(t, ingester, labelsToPush, userID, req)
 				pushWithUser(t, ingester, labelsToPush, userID2, req)
 
 				// Update active series for metrics check.
-				ingester.updateActiveSeries(now)
+				ingester.updateActiveSeries()
 
 				expectedMetrics := `
 					# HELP cortex_ingester_active_series Number of currently active series per user.
@@ -5216,13 +5220,11 @@ func TestIngesterActiveSeries(t *testing.T) {
 		},
 		"should cleanup metrics when tsdb closed": {
 			test: func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer) {
-				now := time.Now()
-
 				pushWithUser(t, ingester, labelsToPush, userID, req)
 				pushWithUser(t, ingester, labelsToPush, userID2, req)
 
 				// Update active series for metrics check.
-				ingester.updateActiveSeries(now)
+				ingester.updateActiveSeries()
 
 				expectedMetrics := `
 					# HELP cortex_ingester_active_series Number of currently active series per user.
@@ -5247,13 +5249,17 @@ func TestIngesterActiveSeries(t *testing.T) {
 		},
 		"should track custom matchers, removing when zero": {
 			test: func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer) {
-				firstPushTime := time.Now()
+				currentTime := time.Now()
+				currentNow := func() time.Time {
+					return currentTime
+				}
 
+				ingester.now = currentNow
 				pushWithUser(t, ingester, labelsToPush, userID, req)
 				pushWithUser(t, ingester, labelsToPush, userID2, req)
 
 				// Update active series for metrics check.
-				ingester.updateActiveSeries(firstPushTime)
+				ingester.updateActiveSeries()
 
 				expectedMetrics := `
 					# HELP cortex_ingester_active_series Number of currently active series per user.
@@ -5271,20 +5277,15 @@ func TestIngesterActiveSeries(t *testing.T) {
 				// Check tracked Prometheus metrics
 				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
 
-				// Sleep for one millisecond, this will make the append time of first push smaller than
-				// secondPushTime. This is something required to make the test deterministic
-				// (otherwise it _could_ be the same nanosecond theoretically, although unlikely in practice)
-				time.Sleep(time.Millisecond)
-				secondPushTime := time.Now()
-				// Sleep another millisecond to make sure that secondPushTime is strictly less than the append time of the second push.
-				time.Sleep(time.Millisecond)
-
+				// Pushing second time to have entires which are not going to be purged
+				currentTime = currentTime.Add(10 * time.Second)
 				pushWithUser(t, ingester, labelsToPush, userID, req)
 
-				// Update active series for metrics check in the future.
+				// Adding time to make the first batch of pushes idle.
 				// We update them in the exact moment in time where append time of the first push is already considered idle,
 				// while the second append happens after the purge timestamp.
-				ingester.updateActiveSeries(secondPushTime.Add(ingester.cfg.ActiveSeriesMetricsIdleTimeout))
+				currentTime = currentTime.Add(ingester.cfg.ActiveSeriesMetricsIdleTimeout - 5*time.Second)
+				ingester.updateActiveSeries()
 
 				expectedMetrics = `
 					# HELP cortex_ingester_active_series Number of currently active series per user.
@@ -5300,20 +5301,19 @@ func TestIngesterActiveSeries(t *testing.T) {
 				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
 
 				// Update active series again in a further future where no series are active anymore.
-				ingester.updateActiveSeries(time.Now().Add(ingester.cfg.ActiveSeriesMetricsIdleTimeout))
+				currentTime = currentTime.Add(ingester.cfg.ActiveSeriesMetricsIdleTimeout)
+				ingester.updateActiveSeries()
 				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(""), metricNames...))
 			},
 		},
 		"successful push, active series disabled": {
 			disableActiveSeries: true,
 			test: func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer) {
-				now := time.Now()
-
 				pushWithUser(t, ingester, labelsToPush, userID, req)
 				pushWithUser(t, ingester, labelsToPush, userID2, req)
 
 				// Update active series for metrics check.
-				ingester.updateActiveSeries(now)
+				ingester.updateActiveSeries()
 
 				expectedMetrics := ``
 
@@ -5403,13 +5403,17 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 			tenantLimits:       nil,
 			activeSeriesConfig: activeSeriesDefaultConfig,
 			test: func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer) {
-				firstPushTime := time.Now()
+				currentTime := time.Now()
+				currentNow := func() time.Time {
+					return currentTime
+				}
+				ingester.now = currentNow
 
 				pushWithUser(t, ingester, labelsToPush, userID, req)
 				pushWithUser(t, ingester, labelsToPush, userID2, req)
 
 				// Update active series for metrics check.
-				ingester.updateActiveSeries(firstPushTime)
+				ingester.updateActiveSeries()
 
 				expectedMetrics := `
 					# HELP cortex_ingester_active_series Number of currently active series per user.
@@ -5436,7 +5440,7 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 				require.NoError(t, err)
 				ingester.limits = override
 				// First update reloads the config
-				ingester.updateActiveSeries(firstPushTime)
+				ingester.updateActiveSeries()
 				expectedMetrics = `
 					# HELP cortex_ingester_active_series Number of currently active series per user.
 					# TYPE cortex_ingester_active_series gauge
@@ -5451,13 +5455,13 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 				`
 				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
 
-				secondPushtime := time.Now()
-				// Sleep here to ensure that the second batch of push happens after purgeTime to have entries for custom trackers
-				time.Sleep(time.Millisecond)
+				// Adding time to second push to avoid purging it before exposing.
+				currentTime = currentTime.Add(10 * time.Second)
 				pushWithUser(t, ingester, labelsToPush, userID, req)
 				pushWithUser(t, ingester, labelsToPush, userID2, req)
-				// Adding idleTimeout to expose the metrics
-				ingester.updateActiveSeries(secondPushtime.Add(ingester.cfg.ActiveSeriesMetricsIdleTimeout))
+				// Adding idleTimeout - 1 to expose the metrics but not purge the pushes.
+				currentTime = currentTime.Add(ingester.cfg.ActiveSeriesMetricsIdleTimeout - time.Second)
+				ingester.updateActiveSeries()
 				expectedMetrics = `
 					# HELP cortex_ingester_active_series Number of currently active series per user.
 					# TYPE cortex_ingester_active_series gauge
@@ -5477,13 +5481,17 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 			activeSeriesConfig: activeSeriesDefaultConfig,
 			tenantLimits:       defaultActiveSeriesTenantOverride,
 			test: func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer) {
-				firstPushTime := time.Now()
+				currentTime := time.Now()
+				currentNow := func() time.Time {
+					return currentTime
+				}
+				ingester.now = currentNow
 
 				pushWithUser(t, ingester, labelsToPush, userID, req)
 				pushWithUser(t, ingester, labelsToPush, userID2, req)
 
 				// Update active series for metrics check.
-				ingester.updateActiveSeries(firstPushTime)
+				ingester.updateActiveSeries()
 
 				expectedMetrics := `
 					# HELP cortex_ingester_active_series Number of currently active series per user.
@@ -5506,7 +5514,7 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 				override, err := validation.NewOverrides(limits, nil)
 				require.NoError(t, err)
 				ingester.limits = override
-				ingester.updateActiveSeries(firstPushTime)
+				ingester.updateActiveSeries()
 				expectedMetrics = `
 					# HELP cortex_ingester_active_series Number of currently active series per user.
 					# TYPE cortex_ingester_active_series gauge
@@ -5521,12 +5529,13 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 				`
 				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
 
-				secondPushtime := time.Now()
-				// Sleep here to ensure that the second batch of push happens after purgeTime to have entries for custom trackers
-				time.Sleep(time.Millisecond)
+				// Adding time to second push to avoid purging it before exposing.
+				currentTime = currentTime.Add(10 * time.Second)
 				pushWithUser(t, ingester, labelsToPush, userID, req)
 				pushWithUser(t, ingester, labelsToPush, userID2, req)
-				ingester.updateActiveSeries(secondPushtime.Add(ingester.cfg.ActiveSeriesMetricsIdleTimeout))
+				// Adding idleTimeout - 1 to expose the metrics but not purge the pushes.
+				currentTime = currentTime.Add(ingester.cfg.ActiveSeriesMetricsIdleTimeout - time.Second)
+				ingester.updateActiveSeries()
 				expectedMetrics = `
 					# HELP cortex_ingester_active_series Number of currently active series per user.
 					# TYPE cortex_ingester_active_series gauge
@@ -5545,12 +5554,16 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 		"changing runtime override should result in new metrics": {
 			activeSeriesConfig: activeSeriesDefaultConfig,
 			test: func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer) {
-				firstPushTime := time.Now()
+				currentTime := time.Now()
+				currentNow := func() time.Time {
+					return currentTime
+				}
+				ingester.now = currentNow
 
 				pushWithUser(t, ingester, labelsToPush, userID, req)
 
 				// Update active series for metrics check.
-				ingester.updateActiveSeries(firstPushTime)
+				ingester.updateActiveSeries()
 
 				expectedMetrics := `
 					# HELP cortex_ingester_active_series Number of currently active series per user.
@@ -5577,9 +5590,7 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 				override, err := validation.NewOverrides(limits, activeSeriesTenantOverride)
 				require.NoError(t, err)
 				ingester.limits = override
-				// This will update the runtime config.
-				configReloadTime := time.Now()
-				ingester.updateActiveSeries(configReloadTime)
+				ingester.updateActiveSeries()
 				expectedMetrics = `
 					# HELP cortex_ingester_active_series_loading Indicating that active series configuration has been reloaded, and waiting to become stable.
 					# TYPE cortex_ingester_active_series_loading gauge
@@ -5587,14 +5598,12 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 				`
 				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
 
-				secondPushtime := time.Now()
-				for _, label := range labelsToPush {
-					ctx := user.InjectOrgID(context.Background(), userID)
-					_, err := ingester.Push(ctx, req(label, secondPushtime))
-					require.NoError(t, err)
-				}
-				updateTime := secondPushtime.Add(ingester.cfg.ActiveSeriesMetricsIdleTimeout)
-				ingester.updateActiveSeries(updateTime)
+				// Adding time to second push to avoid purging it before exposing.
+				currentTime = currentTime.Add(10 * time.Second)
+				pushWithUser(t, ingester, labelsToPush, userID, req)
+				// Adding idleTimeout - 1 to expose the metrics but not purge the pushes.
+				currentTime = currentTime.Add(ingester.cfg.ActiveSeriesMetricsIdleTimeout - time.Second)
+				ingester.updateActiveSeries()
 				expectedMetrics = `
 					# HELP cortex_ingester_active_series Number of currently active series per user.
 					# TYPE cortex_ingester_active_series gauge
@@ -5613,13 +5622,17 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 			activeSeriesConfig: activeSeriesDefaultConfig,
 			tenantLimits:       defaultActiveSeriesTenantOverride,
 			test: func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer) {
-				firstPushTime := time.Now()
+				currentTime := time.Now()
+				currentNow := func() time.Time {
+					return currentTime
+				}
+				ingester.now = currentNow
 
 				pushWithUser(t, ingester, labelsToPush, userID, req)
 				pushWithUser(t, ingester, labelsToPush, userID2, req)
 
 				// Update active series for metrics check.
-				ingester.updateActiveSeries(firstPushTime)
+				ingester.updateActiveSeries()
 
 				expectedMetrics := `
 					# HELP cortex_ingester_active_series Number of currently active series per user.
@@ -5641,7 +5654,7 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 				override, err := validation.NewOverrides(limits, nil)
 				require.NoError(t, err)
 				ingester.limits = override
-				ingester.updateActiveSeries(firstPushTime)
+				ingester.updateActiveSeries()
 				expectedMetrics = `
 					# HELP cortex_ingester_active_series_loading Indicating that active series configuration has been reloaded, and waiting to become stable.
 					# TYPE cortex_ingester_active_series_loading gauge

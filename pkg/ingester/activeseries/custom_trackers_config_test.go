@@ -13,7 +13,7 @@ import (
 )
 
 func mustNewCustomTrackersConfigFromMap(t *testing.T, source map[string]string) CustomTrackersConfig {
-	m, err := NewActiveSeriesCustomTrackersConfig(source)
+	m, err := NewCustomTrackersConfig(source)
 	require.NoError(t, err)
 	return m
 }
@@ -191,7 +191,7 @@ func TestTrackersConfigs_Deserialization(t *testing.T) {
 		config := CustomTrackersConfig{}
 		err := yaml.Unmarshal([]byte(correctInput), &config)
 		assert.NoError(t, err, "failed do deserialize Matchers")
-		expectedConfig, err := NewActiveSeriesCustomTrackersConfig(map[string]string{
+		expectedConfig, err := NewCustomTrackersConfig(map[string]string{
 			"baz": "{baz='bar'}",
 			"foo": "{foo='bar'}",
 		})

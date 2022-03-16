@@ -211,7 +211,7 @@ func newIngesterMetrics(
 		// Not registered automatically, but only if activeSeriesEnabled is true.
 		activeSeriesLoading: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cortex_ingester_active_series_loading",
-			Help: "Indicating that active series configuration has been reloaded, and waiting to become stable.",
+			Help: "Indicates that active series configuration is being reloaded, and waiting to become stable. While this metric is non zero, values from active series metrics shouldn't be considered.",
 		}, []string{"user"}),
 
 		// Not registered automatically, but only if activeSeriesEnabled is true.

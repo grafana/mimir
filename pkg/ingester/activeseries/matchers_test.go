@@ -96,7 +96,7 @@ func TestActiveSeriesCustomTrackersConfigs_MalformedMatcher(t *testing.T) {
 				"malformed": matcher,
 			}
 
-			_, err := NewActiveSeriesCustomTrackersConfig(config)
+			_, err := NewCustomTrackersConfig(config)
 			assert.Error(t, err)
 		})
 	}

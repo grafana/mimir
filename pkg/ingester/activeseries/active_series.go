@@ -20,17 +20,19 @@ const (
 
 // ActiveSeries is keeping track of recently active series for a single tenant.
 type ActiveSeries struct {
-	stripes       [numActiveSeriesStripes]activeSeriesStripe
-	asm           *Matchers
-	lastAsmUpdate *atomic.Int64
+	mu       sync.RWMutex
+	stripes  [numActiveSeriesStripes]activeSeriesStripe
+	matchers *Matchers
+
+	lastMatchersUpdate time.Time
 	// The duration after series become inactive.
 	timeout time.Duration
-	mu      sync.RWMutex
+	now     func() time.Time
 }
 
 // activeSeriesStripe holds a subset of the series timestamps for a single tenant.
 type activeSeriesStripe struct {
-	asm *Matchers
+	matchers *Matchers
 
 	// Unix nanoseconds. Only used by purge. Zero = unknown.
 	// Updated in purge and when old timestamp is used when updating series (in this case, oldestEntryTs is updated
@@ -50,13 +52,13 @@ type activeSeriesEntry struct {
 	matches []bool        // Which matchers of Matchers does this series match
 }
 
-func NewActiveSeries(asm *Matchers, idleTimeout time.Duration) *ActiveSeries {
-	c := &ActiveSeries{asm: asm, timeout: idleTimeout, lastAsmUpdate: atomic.NewInt64(0)}
+func NewActiveSeries(asm *Matchers, idleTimeout time.Duration, now func() time.Time) *ActiveSeries {
+	c := &ActiveSeries{matchers: asm, timeout: idleTimeout, now: now}
 
 	// Stripes are pre-allocated so that we only read on them and no lock is required.
 	for i := 0; i < numActiveSeriesStripes; i++ {
 		c.stripes[i] = activeSeriesStripe{
-			asm:            asm,
+			matchers:       asm,
 			refs:           map[uint64][]activeSeriesEntry{},
 			activeMatching: resizeAndClear(len(asm.MatcherNames()), nil),
 		}
@@ -68,28 +70,24 @@ func NewActiveSeries(asm *Matchers, idleTimeout time.Duration) *ActiveSeries {
 func (c *ActiveSeries) CurrentMatcherNames() []string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return c.asm.MatcherNames()
+	return c.matchers.MatcherNames()
 }
 
-func (c *ActiveSeries) ReloadSeriesMatchers(asm *Matchers) {
+func (c *ActiveSeries) ReloadMatchers(asm *Matchers) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	for i := 0; i < numActiveSeriesStripes; i++ {
 		c.stripes[i].reinitialize(asm)
 	}
-	c.asm = asm
-	c.lastAsmUpdate.Store(time.Now().UnixNano())
-}
-
-func (c *ActiveSeries) LastAsmUpdate() int64 {
-	return c.lastAsmUpdate.Load()
+	c.matchers = asm
+	c.lastMatchersUpdate = c.now()
 }
 
 func (c *ActiveSeries) CurrentConfig() CustomTrackersConfig {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return c.asm.Config()
+	return c.matchers.Config()
 }
 
 // Updates series timestamp to 'now'. Function is called to make a copy of labels if entry doesn't exist yet.
@@ -115,19 +113,21 @@ func (c *ActiveSeries) clear() {
 }
 
 // Active returns the total number of active series, as well as a slice of active series matching each one of the
-// custom trackers provided (in the same order as custom trackers are defined)
+// custom trackers provided (in the same order as custom trackers are defined). The third return value shows
+// if enough time has passed since last reload to consider the result.
 // This should be called periodically to avoid memory leaks.
-// Active cannot be called concurrently with ReloadSeriesMatchers.
-func (c *ActiveSeries) Active(now time.Time) (int, []int) {
+// Active cannot be called concurrently with ReloadMatchers.
+func (c *ActiveSeries) Active() (int, []int, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.purge(now.Add(-c.timeout))
+	purgeTime := c.now().Add(-c.timeout)
+	c.purge(purgeTime)
 	total := 0
-	totalMatching := resizeAndClear(len(c.asm.MatcherNames()), nil)
+	totalMatching := resizeAndClear(len(c.matchers.MatcherNames()), nil)
 	for s := 0; s < numActiveSeriesStripes; s++ {
 		total += c.stripes[s].getTotalAndUpdateMatching(totalMatching)
 	}
-	return total, totalMatching
+	return total, totalMatching, purgeTime.After(c.lastMatchersUpdate)
 }
 
 // getTotalAndUpdateMatching will return the total active series in the stripe and also update the slice provided
@@ -196,7 +196,7 @@ func (s *activeSeriesStripe) findOrCreateEntryForSeries(fingerprint uint64, seri
 		}
 	}
 
-	matches := s.asm.Matches(series)
+	matches := s.matchers.Matches(series)
 
 	s.active++
 	for i, ok := range matches {
@@ -237,7 +237,7 @@ func (s *activeSeriesStripe) reinitialize(asm *Matchers) {
 	s.oldestEntryTs.Store(0)
 	s.refs = map[uint64][]activeSeriesEntry{}
 	s.active = 0
-	s.asm = asm
+	s.matchers = asm
 	s.activeMatching = resizeAndClear(len(asm.MatcherNames()), s.activeMatching)
 }
 

@@ -233,6 +233,9 @@ type Ingester struct {
 	// Rate of pushed samples. Used to limit global samples push rate.
 	ingestionRate        *util_math.EwmaRate
 	inflightPushRequests atomic.Int64
+
+	// Single source of time for making ingester testable.
+	now func() time.Time
 }
 
 func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
@@ -257,6 +260,7 @@ func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus
 		forceCompactTrigger: make(chan requestWithUsersAndCallback),
 		shipTrigger:         make(chan requestWithUsersAndCallback),
 		seriesHashCache:     hashcache.NewSeriesHashCache(cfg.BlocksStorageConfig.TSDB.SeriesHashCacheMaxBytes),
+		now:                 time.Now,
 	}, nil
 }
 
@@ -454,7 +458,7 @@ func (i *Ingester) updateLoop(ctx context.Context) error {
 			i.applyExemplarsSettings()
 
 		case <-activeSeriesTickerChan:
-			i.updateActiveSeries(time.Now())
+			i.updateActiveSeries()
 
 		case <-ctx.Done():
 			return nil
@@ -464,32 +468,28 @@ func (i *Ingester) updateLoop(ctx context.Context) error {
 	}
 }
 
-func (i *Ingester) getActiveSeriesMatchersConfig(userID string) activeseries.CustomTrackersConfig {
-	return i.limits.ActiveSeriesCustomTrackersConfig(userID)
-}
-
 func (i *Ingester) replaceMatchers(asm *activeseries.Matchers, userDB *userTSDB) {
 	i.metrics.deletePerUserCustomTrackerMetrics(userDB.userID, userDB.activeSeries.CurrentMatcherNames())
-	userDB.activeSeries.ReloadSeriesMatchers(asm)
+	userDB.activeSeries.ReloadMatchers(asm)
 }
 
-func (i *Ingester) updateActiveSeries(now time.Time) {
+func (i *Ingester) updateActiveSeries() {
 	for _, userID := range i.getTSDBUsers() {
 		userDB := i.getTSDB(userID)
 		if userDB == nil {
 			continue
 		}
 
-		newMatchersConfig := i.getActiveSeriesMatchersConfig(userID)
+		newMatchersConfig := i.limits.ActiveSeriesCustomTrackersConfig(userID)
 		if newMatchersConfig.String() != userDB.activeSeries.CurrentConfig().String() {
 			i.replaceMatchers(activeseries.NewMatchers(newMatchersConfig), userDB)
 		}
-		if userDB.activeSeries.LastAsmUpdate() >= now.Add(-i.cfg.ActiveSeriesMetricsIdleTimeout).UnixNano() {
-			// Active series config has been reloaded, exposing loading metric until MetricsIdleTimeout passes
+		allActive, activeMatching, valid := userDB.activeSeries.Active()
+		if !valid {
+			// Active series config has been reloaded, exposing loading metric until MetricsIdleTimeout passes.
 			i.metrics.activeSeriesLoading.WithLabelValues(userID).Set(1)
 		} else {
 			i.metrics.activeSeriesLoading.DeleteLabelValues(userID)
-			allActive, activeMatching := userDB.activeSeries.Active(now)
 			if allActive > 0 {
 				i.metrics.activeSeriesPerUser.WithLabelValues(userID).Set(float64(allActive))
 			} else {
@@ -609,7 +609,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 		failedSamplesCount        = 0
 		succeededExemplarsCount   = 0
 		failedExemplarsCount      = 0
-		startAppend               = time.Now()
+		startAppend               = i.now()
 		sampleOutOfBoundsCount    = 0
 		sampleOutOfOrderCount     = 0
 		newValueForTimestampCount = 0
@@ -1451,11 +1451,11 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 	userLogger := util_log.WithUserID(userID, i.logger)
 
 	blockRanges := i.cfg.BlocksStorageConfig.TSDB.BlockRanges.ToMilliseconds()
-	matchersConfig := i.getActiveSeriesMatchersConfig(userID)
+	matchersConfig := i.limits.ActiveSeriesCustomTrackersConfig(userID)
 
 	userDB := &userTSDB{
 		userID:              userID,
-		activeSeries:        activeseries.NewActiveSeries(activeseries.NewMatchers(matchersConfig), i.cfg.ActiveSeriesMetricsIdleTimeout),
+		activeSeries:        activeseries.NewActiveSeries(activeseries.NewMatchers(matchersConfig), i.cfg.ActiveSeriesMetricsIdleTimeout, i.now),
 		seriesInMetric:      newMetricCounter(i.limiter, i.cfg.getIgnoreSeriesLimitForMetricNamesMap()),
 		ingestedAPISamples:  util_math.NewEWMARate(0.2, i.cfg.RateUpdatePeriod),
 		ingestedRuleSamples: util_math.NewEWMARate(0.2, i.cfg.RateUpdatePeriod),
