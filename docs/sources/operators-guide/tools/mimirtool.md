@@ -36,6 +36,10 @@ Mimirtool is a command-line tool that operators and tenants can use to execute a
 
   For more information about the `acl` command, refer to [ACL]({{< relref "#acl" >}}).
 
+- The `config` command helps convert configuration files from Cortex to Grafana Mimir.
+
+  For more information about the `config` command, refer to [Config]({{< relref "#config" >}})
+
 Mimirtool interacts with:
 
 - User-facing APIs provided by Grafana Mimir.
@@ -630,6 +634,100 @@ mimirtool bucket-validation
 | -            | `--retries-on-error`   | Sets the number of times to retry if the object store returns an error.                                       |
 | -            | `--bucket-config`      | Sets the CLI arguments to configure a storage bucket.                                                         |
 | -            | `--bucket-config-help` | Displays help text that explains how to use the -bucket-config parameter.                                     |
+
+### Config
+
+#### Convert
+
+The config convert command converts configuration files that work with Cortex v1.11.0 to ones that work with Grafana Mimir v2.0.0.
+It supports converting both CLI flags and YAML files.
+
+##### Configuration
+
+| Environment variable | Flag                 | Description                                                                                                                                                       |
+| -------------------- | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| -                    | `--yaml-file`        | The YAML configuration file to convert.                                                                                                                           |
+| -                    | `--flags-file`       | New-line-delimited list of CLI flags to convert.                                                                                                                  |
+| -                    | `--yaml-out`         | File to output the converted YAML configuration to. If unset, output to `stdout`.                                                                                 |
+| -                    | `--flags-out`        | File to output the list of converted CLI flags to. If unset, output to `stdout`.                                                                                  |
+| -                    | `--update-defaults`  | If set and a configuration parameter is explicitly set to a default value which has changed in Mimir 2.0, the parameter value will be updated to the new default. |
+| -                    | `--include-defaults` | If set, includes all default values in the output YAML, regardless if they were explicitly set in the input files or not.                                         |
+| -                    | `-v`, `--verbose`    | If set, prints to `stderr` CLI flags and YAML paths from old config that no longer exist in the new one, and changed default values between old and new.          |
+
+##### Example
+
+```bash
+mimirtool config convert --yaml-file=cortex.yaml --flags-file=cortex.flags --yaml-out=mimir.yaml --flags-out=mimir.flags
+```
+
+`cortex.yaml`:
+
+```yaml
+query_range:
+  results_cache:
+    cache:
+      memcached:
+        expiration: 10s # Expiration was removed in Grafana Mimir, so this parameter will be missing from the output YAML
+        batch_size: 2048
+        parallelism: 10
+      memcached_client:
+        max_idle_conns: 32
+```
+
+`cortex.flags`:
+
+```
+-frontend.background.write-back-concurrency=45
+```
+
+After running the command the contents of `mimir.yaml` and `mimr.flags` should be as follows:
+
+`mimir.yaml`:
+
+```yaml
+frontend:
+  results_cache:
+    memcached:
+      max_get_multi_batch_size: 2048
+      max_get_multi_concurrency: 10
+      max_idle_connections: 32
+
+server:
+  http_listen_port: 80
+```
+
+> **Note:** `server.http_listen_port` is included as a precaution. The default value in Grafana Mimir changed from 80 to 8080. The tool will output the value with the old default unless the port is explicitly set in the input configuration.
+
+`mimir.flags`:
+
+```
+-query-frontend.results-cache.memcached.max-async-concurrency=45
+```
+
+##### Verbose output
+
+With the `--verbose` flag set, the tool outputs explanations for removed configuration parameters and changed default.
+The verbose output is printed to `stderr`.
+
+The entries in the output are several kinds:
+
+- `field is no longer supported: <yaml_path>`
+
+  This parameter was used in the input Cortex YAML file, but the parameter was removed in Grafana Mimir. The tool removed this YAML parameter from the output configuration.
+
+- `flag is no longer supported: <flag_name>`
+
+  This parameter was used in the input Cortex CLI flags file, but the parameter was removed in Grafana Mimir. The tool removed this CLI flag from the output configuration.
+
+- `using a new default for <yaml_path>: <new_value> (used to be <old_value>)`
+
+  The default value for a configuration parameter changed in Grafana Mimir. This parameter was not explicitly set in your input configuration files.
+  When running Grafana Mimir with the output configuration from `mimirtool config convert` Grafana Mimir will use the new default.
+
+- `default value for <yaml_path> changed: <new_value> (used to be <old_value>); not updating`
+
+  The default value for a configuration parameter changed in Grafana Mimir. This parameter was explicitly set in your input configuration files.
+  The explicit old default was not converted to the new default. Pass the `--update-defaults` flag to automatically update explicit old defaults to new defaults.
 
 ## License
 
