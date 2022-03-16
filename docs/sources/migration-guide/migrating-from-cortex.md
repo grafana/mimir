@@ -91,7 +91,7 @@ jb install github.com/grafana/mimir/operations/mimir@main
 jb install github.com/grafana/mimir/operations/mimir-mixin@main
 ```
 
-To deploy the updated Jsonnet, use the following steps:
+**To deploy the updated Jsonnet:**
 
 1. Install the updated monitoring mixin
    1. Add the dashboards to Grafana. The dashboards replace your Cortex dashboards and continue to work for monitoring Cortex deployments.
