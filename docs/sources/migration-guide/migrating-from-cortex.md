@@ -181,3 +181,48 @@ jb install github.com/grafana/mimir/operations/mimir-mixin@main
 1. Apply the updated Jsonnet
 
 To verify that the cluster is operating correctly, use the [monitoring mixin dashboards]({{< relref "../operators-guide/visualizing-metrics/dashboards/_index.md" >}}).
+
+## Updating to Grafana Mimir using Helm
+
+You can update to the Grafana Mimir Helm chart from a the Cortex Helm chart.
+
+1. Install the updated monitoring mixin.
+
+   a. Add the dashboards to Grafana. The dashboards replace your Cortex dashboards and continue to work for monitoring Cortex deployments.
+
+   > **Note:** Resource dashboards are now enabled by default and require additional metrics sources.
+   > To understand the required metrics sources, refer to [Additional resource metrics]({{< relref "../operators-guide/visualizing-metrics/requirements.md#additional-resource-metrics" >}}).
+
+   b. Install the recording and alerting rules into the ruler or a Prometheus server.
+
+1. Add the Grafana Helm chart repository.
+
+   ```bash
+   helm repo add grafana https://grafana.github.io/helm-charts
+   ```
+
+1. Convert the Cortex configuration in your `values.yaml` file.
+
+   a. Extract the Cortex configuration, writing the output the `cortex.yaml` file:
+
+   ```bash
+   yq -Y '.config' <VALUES YAML FILE> > cortex.yaml
+   ```
+
+   b. Use `mimirtool` to update the configuration:
+
+   ```bash
+   mimirtool config convert cortex.yaml
+   ```
+
+   c. Place the updated configuration under the `$.mimir.config` key.
+
+   The `values.yaml` file looks similar to:
+
+   ```yaml
+   mimir:
+     config: |
+       <CONFIGURATION FILE CONTENTS>
+   ```
+
+   d. Remove the original Cortex `$.config` member.
