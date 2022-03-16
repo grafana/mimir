@@ -82,8 +82,7 @@ The output includes the following lines:
 
 ## Updating to Grafana Mimir using Jsonnet
 
-Grafana Mimir has a Jsonnet library that replaces the existing [Cortex Jsonnet](https://github.com/grafana/cortex-jsonnet) library.
-There is also an updated monitoring mixin.
+Grafana Mimir has a Jsonnet library that replaces the existing Cortex Jsonnet library and updated monitoring mixin.
 
 To install the updated libraries using `jsonnet-bundler`:
 
