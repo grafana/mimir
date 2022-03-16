@@ -89,7 +89,7 @@ The output includes the following lines:
 
 Grafana Mimir has a Jsonnet library that replaces the existing Cortex Jsonnet library and updated monitoring mixin.
 
-Run the following commands to install the updated libraries using `jsonnet-bundler`:
+To install the updated libraries using `jsonnet-bundler`, run the following commands:
 
 ```bash
 jb install github.com/grafana/mimir/operations/mimir@main
