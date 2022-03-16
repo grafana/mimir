@@ -1,11 +1,11 @@
 ---
-title: "Configuring custom trackers"
-menuTitle: "Configuring custom trackers"
+title: "Configuring custom active series trackers"
+menuTitle: "Configuring custom active series trackers"
 description: "Use the custom tracker to count the number of active series on an ingester."
 weight: 55
 ---
 
-# Configuring custom trackers
+# Configuring custom active series trackers
 
 You can use the custom tracker feature to count the number of active series on an ingester that match a particular label pattern.
 
@@ -19,11 +19,12 @@ active_series_custom_trackers:
   prod: '{namespace=~"prod-.*"}'
 ```
 
-If you configure a custom tracker for an ingester, the ingester exposes a `cortex_ingester_active_series_custom_tracker` gauge metric on its [/metrics endpoint](({{< relref "../reference-http-api#metrics" >}})). Each custom tracker is a time series and each series has a `name` label applied to it. The value of the `name` label is the name of the custom tracker.
+If you configure a custom tracker for an ingester, the ingester exposes a `cortex_ingester_active_series_custom_tracker` gauge metric on its [/metrics endpoint](({{< relref "../reference-http-api#metrics" >}})). Each custom tracker is a time series and each series has `name` and `user` labels applied to it. The value of the `name` label is the name of the custom tracker. The value of the `user` label is the tenant-id for which the series count applies. Only custom trackers that have matched at least one series are exposed on the metric, and they are removed if they become 0 again.
 
 When two custom trackers are configured in the example above, the following output is generated after the `/metrics` endpoint for the ingester component is scraped:
 
 ```yaml
-cortex_ingester_active_series_custom_tracker{name=dev}
-cortex_ingester_active_series_custom_tracker{name=prod}
+cortex_ingester_active_series_custom_tracker{name="dev", user="tenant_1"}
+cortex_ingester_active_series_custom_tracker{name="prod", user="tenant_2"}
+cortex_ingester_active_series_custom_tracker{name="prod", user="tenant_with_only_prod_metrics"}
 ```
