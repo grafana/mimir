@@ -22,6 +22,10 @@ This document guides an operator through the process of migrating a deployment o
   To upload rules to the ruler using mimirtool, refer to [mimirtool rules]({{< relref "../operators-guide/tools/mimirtool.md" >}}).
   To import the dashboards into Grafana, refer to [Import dashboard](https://grafana.com/docs/grafana/latest/dashboards/export-import/#import-dashboard).
 
+- Ensure you have read the [Release notes]({{< relref "../release-notes/v2.0.md" >}}) for any breaking configuration changes.
+
+  > **Note:** Mimirtool can automate configuration conversion, documented below.
+
 ## Updating Cortex configuration for Grafana Mimir
 
 Grafana Mimir 2.0.0 includes significant changes to simplify the deployment and continued operation of a horizontally scalable, multi-tenant time series database with long-term storage.
