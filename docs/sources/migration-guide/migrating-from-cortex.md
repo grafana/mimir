@@ -78,7 +78,7 @@ The output includes the following lines:
 - `default value for <CONFIGURATION PARAMETER> changed: <NEW VALUE> (used to be <OLD VALUE>); not updating`:
   Grafana Mimir updated the default value for a configuration parameter set in your configuration file.
   By default, the tool doesn't update the value the output configuration.
-  To have the tool update this parameter to the new default value, use the `--update-defaults` flag.
+  If you want the tool to update this parameter to the new default value, use the `--update-defaults` flag.
 
 ## Updating to Grafana Mimir using Jsonnet
 
