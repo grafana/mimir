@@ -19,6 +19,9 @@ This document guides an operator through the process of migrating a deployment o
   The monitoring mixin has alerting and recording rules that you install in either Prometheus or Cortex and dashboards that you install in Grafana.
   To download a prebuilt ZIP file that contains the alerting and recording rules, refer to [Release Cortex-jsonnet 1.11.0](https://github.com/grafana/cortex-jsonnet/releases/download/1.11.0/cortex-mixin.zip).
 
+  To upload rules to the ruler using mimirtool, refer to [mimirtool rules]({{< relref "../operators-guide/tools/mimirtool.md" >}}).
+  To import the dashboards into Grafana, refer to [Import dashboard](https://grafana.com/docs/grafana/latest/dashboards/export-import/#import-dashboard).
+
 ## Updating Cortex configuration for Grafana Mimir
 
 Grafana Mimir 2.0.0 includes significant changes to simplify the deployment and continued operation of a horizontally scalable, multi-tenant time series database with long-term storage.
