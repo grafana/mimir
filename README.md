@@ -44,7 +44,7 @@ We can add links here to specific topics that we anticipate will be most useful 
 
 ## Contributing
 
-To contribute to Grafana Mimir, refer to [Contributing to Grafana Mimir](./CONTRIBUTING.md).
+To contribute to Grafana Mimir, refer to [Contributing to Grafana Mimir](https://github.com/grafana/mimir/tree/main/docs/internal/contributing).
 
 ## Hosted Grafana Mimir (Prometheus as a service)
 
