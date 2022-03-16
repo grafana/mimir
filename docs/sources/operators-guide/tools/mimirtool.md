@@ -640,19 +640,19 @@ mimirtool bucket-validation
 #### Convert
 
 The config convert command converts configuration parameters that work with Cortex v1.11.0 to parameters that work with Grafana Mimir v2.0.0.
-It supports converting both CLI flags and YAML files.
+It supports converting both CLI flags and [YAML configuration files]({{< relref "../configuring/reference-configuration-parameters.md" >}}).
 
 ##### Configuration
 
-| Environment variable | Flag                 | Description                                                                                                                                                       |
-| -------------------- | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| -                    | `--yaml-file`        | The YAML configuration file to convert.                                                                                                                           |
-| -                    | `--flags-file`       | Newline-delimited list of CLI flags to convert.                                                                                                                  |
-| -                    | `--yaml-out`         | The file to output the converted YAML configuration to. If not set, output to `stdout`.                                                                                 |
-| -                    | `--flags-out`        | The file to output the list of converted CLI flags to. If not set, output to `stdout`.                                                                                  |
+| Environment variable | Flag                 | Description                                                                                                                                                  |
+| -------------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| -                    | `--yaml-file`        | The YAML configuration file to convert.                                                                                                                      |
+| -                    | `--flags-file`       | Newline-delimited list of CLI flags to convert.                                                                                                              |
+| -                    | `--yaml-out`         | The file to output the converted YAML configuration to. If not set, output to `stdout`.                                                                      |
+| -                    | `--flags-out`        | The file to output the list of converted CLI flags to. If not set, output to `stdout`.                                                                       |
 | -                    | `--update-defaults`  | If you set this flag and you set a configuration parameter to a default value that has changed in Mimir 2.0, the parameter updates to the new default value. |
-| -                    | `--include-defaults` | If set, includes all default values in the output YAML, regardless if they were explicitly set in the input files or not.                                         |
-| -                    | `-v`, `--verbose`    | If set, prints to `stderr` CLI flags and YAML paths from old config that no longer exist in the new one, and changed default values between old and new.          |
+| -                    | `--include-defaults` | If set, includes all default values in the output YAML, regardless if they were explicitly set in the input files or not.                                    |
+| -                    | `-v`, `--verbose`    | If set, prints to `stderr` CLI flags and YAML paths from old config that no longer exist in the new one, and changed default values between old and new.     |
 
 ##### Example
 
