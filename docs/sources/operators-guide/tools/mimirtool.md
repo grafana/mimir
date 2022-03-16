@@ -215,10 +215,10 @@ mimirtool rules prepare <file_path>...
 
 ##### Configuration
 
-| Environment variable | Flag                      | Description                                                                                                                  |
-| -------------------- | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| -                    | `-i`, `--in-place`        | Edits the file in place. If not set, the system generates a new file with the extension `.result` that contains the results. |
-| -                    | `-l`, `--label="cluster"` | Specifies the label for aggregations. By default, the label is set to `cluster`.                                             |
+| Flag                      | Description                                                                                                                  |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `-i`, `--in-place`        | Edits the file in place. If not set, the system generates a new file with the extension `.result` that contains the results. |
+| `-l`, `--label="cluster"` | Specifies the label for aggregations. By default, the label is set to `cluster`.                                             |
 
 ##### Example
 
@@ -625,15 +625,15 @@ The following command validates that the object store bucket works correctly.
 mimirtool bucket-validation
 ```
 
-| Env Variable | Flag                   | Description                                                                                                   |
-| ------------ | ---------------------- | ------------------------------------------------------------------------------------------------------------- |
-| -            | `--object-count`       | Sets the number of objects to create and delete. By default, the value is 2000.                               |
-| -            | `--report-every`       | Sets the number operations afterwhich an operations progress report is printed. By default, the value is 100. |
-| -            | `--test-runs`          | Sets the number of times to run the test. By default, the value is 1.                                         |
-| -            | `--prefix`             | Sets the path prefix to use for test objects in the object store.                                             |
-| -            | `--retries-on-error`   | Sets the number of times to retry if the object store returns an error.                                       |
-| -            | `--bucket-config`      | Sets the CLI arguments to configure a storage bucket.                                                         |
-| -            | `--bucket-config-help` | Displays help text that explains how to use the -bucket-config parameter.                                     |
+| Flag                   | Description                                                                                                   |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `--object-count`       | Sets the number of objects to create and delete. By default, the value is 2000.                               |
+| `--report-every`       | Sets the number operations afterwhich an operations progress report is printed. By default, the value is 100. |
+| `--test-runs`          | Sets the number of times to run the test. By default, the value is 1.                                         |
+| `--prefix`             | Sets the path prefix to use for test objects in the object store.                                             |
+| `--retries-on-error`   | Sets the number of times to retry if the object store returns an error.                                       |
+| `--bucket-config`      | Sets the CLI arguments to configure a storage bucket.                                                         |
+| `--bucket-config-help` | Displays help text that explains how to use the -bucket-config parameter.                                     |
 
 ### Config
 
@@ -644,15 +644,15 @@ It supports converting both CLI flags and [YAML configuration files]({{< relref 
 
 ##### Configuration
 
-| Environment variable | Flag                 | Description                                                                                                                                                                                                                                         |
-| -------------------- | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| -                    | `--yaml-file`        | The YAML configuration file to convert.                                                                                                                                                                                                             |
-| -                    | `--flags-file`       | Newline-delimited list of CLI flags to convert.                                                                                                                                                                                                     |
-| -                    | `--yaml-out`         | The file to output the converted YAML configuration to. If not set, output to `stdout`.                                                                                                                                                             |
-| -                    | `--flags-out`        | The file to output the list of converted CLI flags to. If not set, output to `stdout`.                                                                                                                                                              |
-| -                    | `--update-defaults`  | If you set this flag and you set a configuration parameter to a default value that has changed in Mimir 2.0, the parameter updates to the new default value.                                                                                        |
-| -                    | `--include-defaults` | If you set this flag, all default values are included in the output YAML, regardless of whether you explicitly set the values in the input files.                                                                                                   |
-| -                    | `-v`, `--verbose`    | If you set this flag, the CLI flags and YAML paths from the old configuration that do not exist in the new configuration are printed to `stderr`. This flag also prints default values that have changed between the old and the new configuration. |
+| Flag                 | Description                                                                                                                                                                                                                                         |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--yaml-file`        | The YAML configuration file to convert.                                                                                                                                                                                                             |
+| `--flags-file`       | Newline-delimited list of CLI flags to convert.                                                                                                                                                                                                     |
+| `--yaml-out`         | The file to output the converted YAML configuration to. If not set, output to `stdout`.                                                                                                                                                             |
+| `--flags-out`        | The file to output the list of converted CLI flags to. If not set, output to `stdout`.                                                                                                                                                              |
+| `--update-defaults`  | If you set this flag and you set a configuration parameter to a default value that has changed in Mimir 2.0, the parameter updates to the new default value.                                                                                        |
+| `--include-defaults` | If you set this flag, all default values are included in the output YAML, regardless of whether you explicitly set the values in the input files.                                                                                                   |
+| `-v`, `--verbose`    | If you set this flag, the CLI flags and YAML paths from the old configuration that do not exist in the new configuration are printed to `stderr`. This flag also prints default values that have changed between the old and the new configuration. |
 
 ##### Example
 
