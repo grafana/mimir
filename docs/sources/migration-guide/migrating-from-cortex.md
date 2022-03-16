@@ -94,10 +94,12 @@ jb install github.com/grafana/mimir/operations/mimir-mixin@main
 **To deploy the updated Jsonnet:**
 
 1. Install the updated monitoring mixin
-   1. Add the dashboards to Grafana. The dashboards replace your Cortex dashboards and continue to work for monitoring Cortex deployments.
+
+   a. Add the dashboards to Grafana. The dashboards replace your Cortex dashboards and continue to work for monitoring Cortex deployments.
       > **Note:** Resource dashboards are now enabled by default an require additional metrics sources.
       > To understand the required metrics sources, refer to [Additional resource metrics]({{< relref "../operators-guide/visualizing-metrics/requirements.md#additional-resource-metrics" >}}).
-   1. Install the recording and alerting rules into the ruler or a Prometheus server.
+
+   b. Install the recording and alerting rules into the ruler or a Prometheus server.
 1. Replace the import of the Cortex Jsonnet library with the Mimir Jsonnet library.
    For example:
    ```jsonnet
