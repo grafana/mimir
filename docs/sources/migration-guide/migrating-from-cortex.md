@@ -46,36 +46,18 @@ chmod +x mimirtool
 
 ### Converting a Cortex configuration file with mimirtool
 
-```bash
-mimirtool config convert --yaml-file <CORTEX YAML FILE>
-```
-
-The tool writes the converted configuration file to the terminal.
+The Grafana Mimir team has written a tool for converting Cortex 1.11 configuration files to Grafana Mimir 2.0 configuration files.
 The tool removes any configuration parameters that are no longer available in Grafana Mimir and renames configuration parameters that have a new name.
-
-Grafana Mimir has updated some default values.
 Unless you provide the `--update-defaults` flag, the tool doesn't update default values that you have explicitly set in your configuration file.
-To include all defaults values in the output YAML, use the flag `--include-defaults`.
+For more information on how to use Mimirtool for configuration conversion, refer to [convert]({{< relref "../operators-guide/tools/mimirtool.md#convert" >}}).
 
-To understand all the configuration changes, use the `--verbose` flag.
-The tool outputs a line to `stderr` for each configuration parameter change.
-To only output the changes, use shell input redirection.
-The following command redirects `stderr` to `stdout` and `stdout` to `/dev/null`:
+To install mimirtool, download the appropriate [release asset](https://github.com/grafana/mimir/releases/latest) for your operating system and architecture and make it executable.
+For Linux with the AMD64 architecture:
 
 ```bash
-mimirtool config convert --yaml-file <CORTEX YAML FILE> --verbose 2>&1 1>/dev/null
+curl -fLo mimirtool https://github.com/grafana/mimir/releases/latest/download/mimirtool-linux-amd64
+chmod +x mimirtool
 ```
-
-The output includes the following lines:
-
-- `field is no longer supported: <CONFIGURATION PARAMETER>`:
-  Grafana Mimir removed a configuration parameter and the tool removed that parameter from the output configuration.
-- `using a new default for <CONFIGURATION PARAMETER>: <NEW VALUE> (used to be <OLD VALUE>)`:
-  Grafana Mimir updated the default value for a configuration parameter not explicitly set in your input configuration file.
-- `default value for <CONFIGURATION PARAMETER> changed: <NEW VALUE> (used to be <OLD VALUE>); not updating`:
-  Grafana Mimir updated the default value for a configuration parameter set in your configuration file.
-  By default, the tool doesn't update the value of the output configuration.
-  If you want the tool to update this parameter to the new default value, use the `--update-defaults` flag.
 
 ## Updating to Grafana Mimir using Jsonnet
 
