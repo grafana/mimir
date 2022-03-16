@@ -57,8 +57,9 @@ The tool writes the converted configuration file to the terminal.
 The tool removes any configuration parameters that are no longer available in Grafana Mimir and renames configuration parameters that have a new name.
 
 Grafana Mimir has updated some default values.
-To include them in the output YAML, use the flag `--include-defaults`.
 Unless you provide the `--update-defaults` flag, the tool doesn't update default values that you have explicitly set in your configuration file.
+To include all defaults values in the output YAML, use the flag `--include-defaults`.
+
 
 To understand all the configuration changes, use the `--verbose` flag.
 The tool outputs a line to `stderr` for each configuration parameter change.
