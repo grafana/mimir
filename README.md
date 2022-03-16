@@ -24,7 +24,7 @@ For information about how to deploy Grafana Mimir, refer to [Deploying Grafana M
 
 If you’re new to Grafana Mimir, read the [Getting started guide](https://grafana.com/docs/mimir/latest/operators-guide/getting-started/).
 
-Before deploying Grafana Mimir with a permanent storage backend, read:
+Before deploying Grafana Mimir in production, read:
 
 1. [An overview of Grafana Mimir’s architecture](https://grafana.com/docs/mimir/latest/operators-guide/architecture/)
 1. [Configuring Grafana Mimir](https://grafana.com/docs/mimir/latest/operators-guide/configuring/)
