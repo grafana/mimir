@@ -64,7 +64,6 @@ Grafana Mimir has updated some default values.
 Unless you provide the `--update-defaults` flag, the tool doesn't update default values that you have explicitly set in your configuration file.
 To include all defaults values in the output YAML, use the flag `--include-defaults`.
 
-
 To understand all the configuration changes, use the `--verbose` flag.
 The tool outputs a line to `stderr` for each configuration parameter change.
 To only output the changes, use shell input redirection.
@@ -101,10 +100,12 @@ jb install github.com/grafana/mimir/operations/mimir-mixin@main
 1. Install the updated monitoring mixin
 
    a. Add the dashboards to Grafana. The dashboards replace your Cortex dashboards and continue to work for monitoring Cortex deployments.
-      > **Note:** Resource dashboards are now enabled by default and require additional metrics sources.
-      > To understand the required metrics sources, refer to [Additional resource metrics]({{< relref "../operators-guide/visualizing-metrics/requirements.md#additional-resource-metrics" >}}).
+
+   > **Note:** Resource dashboards are now enabled by default and require additional metrics sources.
+   > To understand the required metrics sources, refer to [Additional resource metrics]({{< relref "../operators-guide/visualizing-metrics/requirements.md#additional-resource-metrics" >}}).
 
    b. Install the recording and alerting rules into the ruler or a Prometheus server.
+
 1. Replace the import of the Cortex Jsonnet library with the Mimir Jsonnet library.
    For example:
    ```jsonnet
@@ -210,26 +211,26 @@ jb install github.com/grafana/mimir/operations/mimir-mixin@main
 
    You can transform the converted flags back into JSON with the following script:
 
-    ```bash
+   ```bash
    #!/usr/bin/env bash
 
    set -euf -o pipefail
 
    function usage {
-     cat <<EOF
+    cat <<EOF
    Transform Go flags into JSON key value pairs
 
    Usage:
-     $0 <flags file>
+    $0 <flags file>
 
    Examples:
-     $0 flags.flags
+    $0 flags.flags
    EOF
    }
 
    if [[ $# -ne 1 ]]; then
-     usage
-     exit 1
+    usage
+    exit 1
    fi
 
    key_values=$(sed -E -e 's/^-*(.*)=(.*)$/  "\1": "\2",/' "$1")
