@@ -696,7 +696,7 @@ server:
   http_listen_port: 80
 ```
 
-> **Note:** `server.http_listen_port` is included as a precaution. The default value in Grafana Mimir changed from 80 to 8080. The tool will output the value with the old default unless the port is explicitly set in the input configuration.
+> **Note:** As a precaution,`server.http_listen_port` is included. The default value in Grafana Mimir changed from 80 to 8080. Unless you explicitly set the port in the input configuration, the tool outputs the old default value.
 
 `mimir.flags`:
 
