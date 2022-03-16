@@ -28,9 +28,8 @@ This document guides an operator through the process of migrating a deployment o
 
 ## Updating Cortex configuration for Grafana Mimir
 
-Grafana Mimir 2.0.0 includes significant changes to simplify the deployment and continued operation of a horizontally scalable, multi-tenant time series database with long-term storage.
-All configuration parameters have been reviewed with this goal in mind.
-Parameters that do not require tuning have been removed, some parameters have been renamed so that they are more easily understood, and a number of parameters have updated default values so that Grafana Mimir is easier to run out of the box.
+Grafana Mimir 2.0.0 includes significant changes that simplifies the deployment and continued operation of a horizontally scalable, multi-tenant time series database with long-term storage.
+Parameters that don't require tuning have been removed, some parameters have been renamed so that they are more easily understood, and a number of parameters have updated default values so that Grafana Mimir is easier to run out of the box.
 
 [`mimirtool`]({{< relref "../operators-guide/tools/mimirtool.md" >}}) has a command for converting Cortex configuration into Mimir configuration.
 You can use to update both flags and configuration files.
@@ -156,15 +155,15 @@ jb install github.com/grafana/mimir/operations/mimir-mixin@main
     EOF
    ```
 
-   The first argument to the script is the file containing JSON from evaluating the Jsonnet.
-   The second argument is the name of the specific container.
+   The first parameter of the script is a JSON file containing Kubernetes resources.
+   The second parameter of the script is the name of a container.
    To retrieve the arguments from the distributor for a Tanka environment:
 
    ```bash
    <PATH TO SCRIPT> <(tk eval environments/default) distributor
    ```
 
-   The script outputs something like the following:
+   The script outputs results that are similar to the following:
 
    ```console
    -consul.hostname=consul.cortex-to-mimir.svc.cluster.local:8500
@@ -197,13 +196,13 @@ jb install github.com/grafana/mimir/operations/mimir-mixin@main
    -validation.reject-old-samples.max-age=12h
    ```
 
-   The output of the script is the format for `mimirtool` conversion via the `--flags-file` flag.
+   You can use the output of the script as input to `mimirtool` conversion via the `--flags-file` flag.
 
    ```bash
    mimirtool config convert --flags-file=<FLAGS FILE> --yaml-out=/dev/null
    ```
 
-   You can transform the converted flags back into JSON with the following script:
+   You can use the following script to transform the converted flags back into JSON:
 
    ```bash
    #!/usr/bin/env bash
@@ -231,7 +230,7 @@ jb install github.com/grafana/mimir/operations/mimir-mixin@main
    printf "{\n%s\n}" "${key_values::-1}"
    ```
 
-   The only argument to the script is a file containing the newline separated flags.
+   The only parameter of the script is a file containing the newline separated flags.
 
 ## Updating to Grafana Mimir using Helm
 
@@ -254,7 +253,7 @@ You can update to the Grafana Mimir Helm chart from a the Cortex Helm chart.
 
 1. Convert the Cortex configuration in your `values.yaml` file.
 
-   a. Extract the Cortex configuration, writing the output the `cortex.yaml` file:
+   a. Extract the Cortex configuration and write the output to the `cortex.yaml` file:
 
    ```bash
    yq -Y '.config' <VALUES YAML FILE> > cortex.yaml
