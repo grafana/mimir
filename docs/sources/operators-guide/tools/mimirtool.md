@@ -708,14 +708,14 @@ server:
 
 ##### Verbose output
 
-With the `--verbose` flag set, the tool outputs explanations for removed configuration parameters and changed default.
+When you set the `--verbose` flag, the output explains which configuration parameters were removed and which default values were changed.
 The verbose output is printed to `stderr`.
 
-The entries in the output are several kinds:
+The output includes the following entries:
 
 - `field is no longer supported: <yaml_path>`
 
-  This parameter was used in the input Cortex YAML file, but the parameter was removed in Grafana Mimir. The tool removed this YAML parameter from the output configuration.
+  This parameter was used in the input Cortex YAML file and removed from the output configuration.
 
 - `flag is no longer supported: <flag_name>`
 
@@ -728,7 +728,7 @@ The entries in the output are several kinds:
 
 - `default value for <yaml_path> changed: <new_value> (used to be <old_value>); not updating`
 
-  The default value for a configuration parameter changed in Grafana Mimir. This parameter was explicitly set in your input configuration files.
+  The default value for a configuration parameter that was set in the input configuration file has changed in Grafana Mimir.
   The explicit old default was not converted to the new default. Pass the `--update-defaults` flag to automatically update explicit old defaults to new defaults.
 
 ## License
