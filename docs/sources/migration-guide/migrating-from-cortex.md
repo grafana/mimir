@@ -14,7 +14,7 @@ This document guides an operator through the process of migrating a deployment o
 
   If you are running an older version of Cortex, upgrade to 1.11.0 before proceeding with the migration.
 
-- Ensure you have the Cortex monitoring mixin installed.
+- Ensure you have the Cortex alerting and recordings rules, and dashboards installed.
 
   The monitoring mixin has alerting and recording rules that you install in either Prometheus or Cortex and dashboards that you install in Grafana.
   To download a prebuilt ZIP file that contains the alerting and recording rules, refer to [Release Cortex-jsonnet 1.11.0](https://github.com/grafana/cortex-jsonnet/releases/download/1.11.0/cortex-mixin.zip).
