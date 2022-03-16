@@ -21,7 +21,7 @@ active_series_custom_trackers:
 
 If you configure a custom tracker for an ingester, the ingester exposes a `cortex_ingester_active_series_custom_tracker` gauge metric on its [/metrics endpoint](({{< relref "../reference-http-api#metrics" >}})). 
 
-Each custom tracker counts the active series matching its label pattern on a per-tenant basis, which means that each custom tracker generates as many as `# of tenants` series with metric name `cortex_ingester_active_series_custom_tracker`. To limit the cardinality of this metric, only custom trackers that have matched at least one series are exposed on the metric, and they are removed if they become 0 again.
+Each custom tracker counts the active series matching its label pattern on a per-tenant basis, which means that each custom tracker generates as many as `# of tenants` series with metric name `cortex_ingester_active_series_custom_tracker`. To reduce the cardinality of this metric, only custom trackers that have matched at least one series are exposed on the metric, and they are removed if they become 0 again.
 
 Series with metric name `cortex_ingester_active_series_custom_tracker` will have 2 labels applied: `name` and `user`. The value of the `name` label is the name of the custom tracker specified in the configuration. The value of the `user` label is the tenant-id for which the series count applies.
 
