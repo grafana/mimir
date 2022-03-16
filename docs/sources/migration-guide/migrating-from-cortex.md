@@ -16,8 +16,8 @@ This document guides an operator through the process of migrating a deployment o
 
 - Ensure you have the Cortex monitoring mixin installed.
 
-  The monitoring mixin has alerting and recording rules to be installed in either Prometheus or Cortex and dashboards to be installed in Grafana.
   To download a prebuilt ZIP file of these rules and dashboards, refer to [Release Cortex-jsonnet 1.11.0](https://github.com/grafana/cortex-jsonnet/releases/download/1.11.0/cortex-mixin.zip).
+  The monitoring mixin has alerting and recording rules that you install in either Prometheus or Cortex and dashboards that you install in Grafana.
 
 ## Updating Cortex configuration for Grafana Mimir
 
@@ -26,7 +26,7 @@ All configuration parameters have been reviewed with this goal in mind.
 Parameters that do not require tuning have been removed, some parameters have been renamed so that they are more easily understood, and a number of parameters have updated default values so that Grafana Mimir is easier to run out of the box.
 
 [`mimirtool`]({{< relref "../operators-guide/tools/mimirtool.md" >}}) has a command for converting Cortex configuration into Mimir configuration.
-The tool can be used to update both flags and configuration files.
+You can use to update both flags and configuration files.
 
 ### Downloading mimirtool
 
@@ -66,7 +66,7 @@ The following command redirects `stderr` to `stdout` and `stdout` to `/dev/null`
 mimirtool config convert --yaml-file <CORTEX YAML FILE> --verbose 2>&1 1>/dev/null
 ```
 
-Each line of the output is one of the following:
+The output includes the following lines:
 
 - `field is no longer supported: <CONFIGURATION PARAMETER>`:
   Grafana Mimir removed a configuration parameter and the tool removed that parameter from the output configuration.
