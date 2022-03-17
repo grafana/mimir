@@ -28,10 +28,16 @@ var logger = log.NewLogfmtLogger(os.Stderr)
 
 func main() {
 	verifyChunks := flag.Bool("check-chunks", false, "Verify chunks in segment files.")
+	flag.Usage = func() {
+		fmt.Fprintf(flag.CommandLine.Output(), "Usage: %s [options...] <block-dir> [<block-dir> ...]:\n", os.Args[0])
+		fmt.Fprintln(flag.CommandLine.Output())
+		flag.PrintDefaults()
+	}
+
 	flag.Parse()
 
 	if flag.NArg() == 0 {
-		fmt.Println("Usage:", os.Args[0], "[options...] <block-dir> [<block-dir> ...]")
+		flag.Usage()
 		return
 	}
 
