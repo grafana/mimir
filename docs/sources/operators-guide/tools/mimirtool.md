@@ -732,115 +732,123 @@ The output includes the following entries:
   The default value for a configuration parameter that was set in the input configuration file has changed in Grafana Mimir.
   The tool has not converted the old default value to the new default value. To automatically update the default value to the new default value, pass the `--update-defaults` flag.
 
+##### Extracting flags from Jsonnet
+
+When using the Grafana Mimir Jsonnet library, all configuration uses flags set as object member key-value pairs.
+To perform conversion with mimirtool, you first need to extract the flags from the JSON manifested from the Jsonnet evaluation.
+
+Use the following bash script to extract the arguments from a specific component:
+
+```bash
+ #!/usr/bin/env bash
+
+ set -euf -o pipefail
+
+ function usage {
+   cat <<EOF
+ Extract the CLI flags from individual components.
+
+ Usage:
+   $0 <resources JSON> <component>
+
+ Examples:
+   $0 resources.json ingester
+   $0 <(tk eval environments/default) distributor
+   $0 <(jsonnet environments/default/main.jsonnet) query-frontend
+ EOF
+ }
+
+ if ! command -v jq &>/dev/null; then
+   echo "jq command not found in PATH"
+   echo "To download jq, refer to https://stedolan.github.io/jq/download/."
+ fi
+
+ if [[ $# -ne 2 ]]; then
+   usage
+   exit 1
+ fi
+
+ jq -rf /dev/stdin -- "$1" <<EOF
+ ..
+ | if type == "object" and .metadata.name == "$2" then .spec.template.spec.containers[]?.args[] else null end
+ | select(. != null)
+ EOF
+```
+
+The first parameter of the script is a JSON file containing Kubernetes resources.
+The second parameter of the script is the name of a container.
+
+To retrieve the arguments from the distributor for a Tanka environment:
+
+```bash
+<PATH TO SCRIPT> <(tk eval environments/default) distributor
+```
+
+The script outputs results that are similar to the following:
+
+```console
+-consul.hostname=consul.cortex-to-mimir.svc.cluster.local:8500
+-distributor.extend-writes=true
+-distributor.ha-tracker.enable=false
+-distributor.ha-tracker.enable-for-all-users=true
+-distributor.ha-tracker.etcd.endpoints=etcd-client.cortex-to-mimir.svc.cluster.local.:2379
+-distributor.ha-tracker.prefix=prom_ha/
+-distributor.ha-tracker.store=etcd
+-distributor.health-check-ingesters=true
+-distributor.ingestion-burst-size=200000
+-distributor.ingestion-rate-limit=10000
+-distributor.ingestion-rate-limit-strategy=global
+-distributor.remote-timeout=20s
+-distributor.replication-factor=3
+-distributor.ring.consul.hostname=consul.cortex-to-mimir.svc.cluster.local:8500
+-distributor.ring.prefix=
+-distributor.shard-by-all-labels=true
+-mem-ballast-size-bytes=1073741824
+-ring.heartbeat-timeout=10m
+-ring.prefix=
+-runtime-config.file=/etc/cortex/overrides.yaml
+-server.grpc.keepalive.max-connection-age=2m
+-server.grpc.keepalive.max-connection-age-grace=5m
+-server.grpc.keepalive.max-connection-idle=1m
+-server.grpc.keepalive.min-time-between-pings=10s
+-server.grpc.keepalive.ping-without-stream-allowed=true
+-target=distributor
+-validation.reject-old-samples=true
+-validation.reject-old-samples.max-age=12h
+```
+
+Use the output of the script as input to mimirtool config convert.
+
+After conversion, you can use the following script to transform the converted flags back into JSON:
+
+```bash
+#!/usr/bin/env bash
+
+set -euf -o pipefail
+
+function usage {
+ cat <<EOF
+Transform Go flags into JSON key value pairs
+
+Usage:
+ $0 <flags file>
+
+Examples:
+ $0 flags.flags
+EOF
+}
+
+if [[ $# -ne 1 ]]; then
+ usage
+ exit 1
+fi
+
+key_values=$(sed -E -e 's/^-*(.*)=(.*)$/  "\1": "\2",/' "$1")
+printf "{\n%s\n}" "${key_values::-1}"
+```
+
+The only parameter of the script is a file containing the newline separated flags.
+
 ## License
 
 Licensed AGPLv3, see [LICENSE](../../LICENSE).
-
-## Config 
-   To extract the arguments from a specific component, use the following bash script:
-
-   ```bash
-    #!/usr/bin/env bash
-
-    set -euf -o pipefail
-
-    function usage {
-      cat <<EOF
-    Extract the CLI flags from individual components.
-
-    Usage:
-      $0 <resources JSON> <component>
-
-    Examples:
-      $0 resources.json ingester
-      $0 <(tk eval environments/default) distributor
-      $0 <(jsonnet environments/default/main.jsonnet) query-frontend
-    EOF
-    }
-
-    if ! command -v jq &>/dev/null; then
-      echo "jq command not found in PATH"
-      echo "To download jq, refer to https://stedolan.github.io/jq/download/."
-    fi
-
-    if [[ $# -ne 2 ]]; then
-      usage
-      exit 1
-    fi
-
-    jq -rf /dev/stdin -- "$1" <<EOF
-    ..
-    | if type == "object" and .metadata.name == "$2" then .spec.template.spec.containers[]?.args[] else null end
-    | select(. != null)
-    EOF
-   ```
-
-   The first parameter of the script is a JSON file containing Kubernetes resources.
-   The second parameter of the script is the name of a container.
-   To retrieve the arguments from the distributor for a Tanka environment:
-
-   ```bash
-   <PATH TO SCRIPT> <(tk eval environments/default) distributor
-   ```
-
-   The script outputs results that are similar to the following:
-
-   ```console
-   -consul.hostname=consul.cortex-to-mimir.svc.cluster.local:8500
-   -distributor.extend-writes=true
-   -distributor.ha-tracker.enable=false
-   -distributor.ha-tracker.enable-for-all-users=true
-   -distributor.ha-tracker.etcd.endpoints=etcd-client.cortex-to-mimir.svc.cluster.local.:2379
-   -distributor.ha-tracker.prefix=prom_ha/
-   -distributor.ha-tracker.store=etcd
-   -distributor.health-check-ingesters=true
-   -distributor.ingestion-burst-size=200000
-   -distributor.ingestion-rate-limit=10000
-   -distributor.ingestion-rate-limit-strategy=global
-   -distributor.remote-timeout=20s
-   -distributor.replication-factor=3
-   -distributor.ring.consul.hostname=consul.cortex-to-mimir.svc.cluster.local:8500
-   -distributor.ring.prefix=
-   -distributor.shard-by-all-labels=true
-   -mem-ballast-size-bytes=1073741824
-   -ring.heartbeat-timeout=10m
-   -ring.prefix=
-   -runtime-config.file=/etc/cortex/overrides.yaml
-   -server.grpc.keepalive.max-connection-age=2m
-   -server.grpc.keepalive.max-connection-age-grace=5m
-   -server.grpc.keepalive.max-connection-idle=1m
-   -server.grpc.keepalive.min-time-between-pings=10s
-   -server.grpc.keepalive.ping-without-stream-allowed=true
-   -target=distributor
-   -validation.reject-old-samples=true
-   -validation.reject-old-samples.max-age=12h
-   ```
-   You can use the following script to transform the converted flags back into JSON:
-
-   ```bash
-   #!/usr/bin/env bash
-
-   set -euf -o pipefail
-
-   function usage {
-    cat <<EOF
-   Transform Go flags into JSON key value pairs
-
-   Usage:
-    $0 <flags file>
-
-   Examples:
-    $0 flags.flags
-   EOF
-   }
-
-   if [[ $# -ne 1 ]]; then
-    usage
-    exit 1
-   fi
-
-   key_values=$(sed -E -e 's/^-*(.*)=(.*)$/  "\1": "\2",/' "$1")
-   printf "{\n%s\n}" "${key_values::-1}"
-   ```
-
-   The only parameter of the script is a file containing the newline separated flags.
