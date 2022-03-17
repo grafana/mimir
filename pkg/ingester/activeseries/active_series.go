@@ -15,23 +15,23 @@ import (
 )
 
 const (
-	numActiveSeriesStripes = 512
+	numStripes = 512
 )
 
 // ActiveSeries is keeping track of recently active series for a single tenant.
 type ActiveSeries struct {
-	mu       sync.RWMutex
-	stripes  [numActiveSeriesStripes]activeSeriesStripe
-	matchers *Matchers
-
+	mu                 sync.RWMutex
+	stripes            [numStripes]seriesStripe
+	matchers           *Matchers
 	lastMatchersUpdate time.Time
+
 	// The duration after series become inactive.
 	timeout time.Duration
 	now     func() time.Time
 }
 
-// activeSeriesStripe holds a subset of the series timestamps for a single tenant.
-type activeSeriesStripe struct {
+// seriesStripe holds a subset of the series timestamps for a single tenant.
+type seriesStripe struct {
 	matchers *Matchers
 
 	// Unix nanoseconds. Only used by purge. Zero = unknown.
@@ -40,26 +40,26 @@ type activeSeriesStripe struct {
 	oldestEntryTs atomic.Int64
 
 	mu             sync.RWMutex
-	refs           map[uint64][]activeSeriesEntry
+	refs           map[uint64][]seriesEntry
 	active         int   // Number of active entries in this stripe. Only decreased during purge or clear.
 	activeMatching []int // Number of active entries in this stripe matching each matcher of the configured Matchers.
 }
 
-// activeSeriesEntry holds a timestamp for single series.
-type activeSeriesEntry struct {
+// seriesEntry holds a timestamp for single series.
+type seriesEntry struct {
 	lbs     labels.Labels
 	nanos   *atomic.Int64 // Unix timestamp in nanoseconds. Needs to be a pointer because we don't store pointers to entries in the stripe.
 	matches []bool        // Which matchers of Matchers does this series match
 }
 
-func NewActiveSeries(asm *Matchers, idleTimeout time.Duration, now func() time.Time) *ActiveSeries {
-	c := &ActiveSeries{matchers: asm, timeout: idleTimeout, now: now}
+func NewActiveSeries(asm *Matchers, timeout time.Duration, now func() time.Time) *ActiveSeries {
+	c := &ActiveSeries{matchers: asm, timeout: timeout, now: now}
 
 	// Stripes are pre-allocated so that we only read on them and no lock is required.
-	for i := 0; i < numActiveSeriesStripes; i++ {
-		c.stripes[i] = activeSeriesStripe{
+	for i := 0; i < numStripes; i++ {
+		c.stripes[i] = seriesStripe{
 			matchers:       asm,
-			refs:           map[uint64][]activeSeriesEntry{},
+			refs:           map[uint64][]seriesEntry{},
 			activeMatching: resizeAndClear(len(asm.MatcherNames()), nil),
 		}
 	}
@@ -77,7 +77,7 @@ func (c *ActiveSeries) ReloadMatchers(asm *Matchers) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	for i := 0; i < numActiveSeriesStripes; i++ {
+	for i := 0; i < numStripes; i++ {
 		c.stripes[i].reinitialize(asm)
 	}
 	c.matchers = asm
@@ -93,28 +93,28 @@ func (c *ActiveSeries) CurrentConfig() CustomTrackersConfig {
 // Updates series timestamp to 'now'. Function is called to make a copy of labels if entry doesn't exist yet.
 func (c *ActiveSeries) UpdateSeries(series labels.Labels, now time.Time, labelsCopy func(labels.Labels) labels.Labels) {
 	fp := series.Hash()
-	stripeID := fp % numActiveSeriesStripes
+	stripeID := fp % numStripes
 
 	c.stripes[stripeID].updateSeriesTimestamp(now, series, fp, labelsCopy)
 }
 
-// Purge removes expired entries from the cache. This function is called by Active.
+// purge removes expired entries from the cache.
 func (c *ActiveSeries) purge(keepUntil time.Time) {
-	for s := 0; s < numActiveSeriesStripes; s++ {
+	for s := 0; s < numStripes; s++ {
 		c.stripes[s].purge(keepUntil)
 	}
 }
 
 //nolint // Linter reports that this method is unused, but it is.
 func (c *ActiveSeries) clear() {
-	for s := 0; s < numActiveSeriesStripes; s++ {
+	for s := 0; s < numStripes; s++ {
 		c.stripes[s].clear()
 	}
 }
 
 // Active returns the total number of active series, as well as a slice of active series matching each one of the
-// custom trackers provided (in the same order as custom trackers are defined). The third return value shows
-// if enough time has passed since last reload to consider the result.
+// custom trackers provided (in the same order as custom trackers are defined).
+// The result is correct only if the third return value is true, which shows if enough time has passed since last reload.
 // This should be called periodically to avoid memory leaks.
 // Active cannot be called concurrently with ReloadMatchers.
 func (c *ActiveSeries) Active() (int, []int, bool) {
@@ -122,17 +122,23 @@ func (c *ActiveSeries) Active() (int, []int, bool) {
 	defer c.mu.Unlock()
 	purgeTime := c.now().Add(-c.timeout)
 	c.purge(purgeTime)
+
+	if c.lastMatchersUpdate.After(purgeTime) {
+		return 0, nil, false
+	}
+
 	total := 0
 	totalMatching := resizeAndClear(len(c.matchers.MatcherNames()), nil)
-	for s := 0; s < numActiveSeriesStripes; s++ {
+	for s := 0; s < numStripes; s++ {
 		total += c.stripes[s].getTotalAndUpdateMatching(totalMatching)
 	}
-	return total, totalMatching, purgeTime.After(c.lastMatchersUpdate)
+
+	return total, totalMatching, true
 }
 
 // getTotalAndUpdateMatching will return the total active series in the stripe and also update the slice provided
 // with each matcher's total.
-func (s *activeSeriesStripe) getTotalAndUpdateMatching(matching []int) int {
+func (s *seriesStripe) getTotalAndUpdateMatching(matching []int) int {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -144,7 +150,7 @@ func (s *activeSeriesStripe) getTotalAndUpdateMatching(matching []int) int {
 	return s.active
 }
 
-func (s *activeSeriesStripe) updateSeriesTimestamp(now time.Time, series labels.Labels, fingerprint uint64, labelsCopy func(labels.Labels) labels.Labels) {
+func (s *seriesStripe) updateSeriesTimestamp(now time.Time, series labels.Labels, fingerprint uint64, labelsCopy func(labels.Labels) labels.Labels) {
 	nowNanos := now.UnixNano()
 
 	e := s.findEntryForSeries(fingerprint, series)
@@ -170,7 +176,7 @@ func (s *activeSeriesStripe) updateSeriesTimestamp(now time.Time, series labels.
 	}
 }
 
-func (s *activeSeriesStripe) findEntryForSeries(fingerprint uint64, series labels.Labels) *atomic.Int64 {
+func (s *seriesStripe) findEntryForSeries(fingerprint uint64, series labels.Labels) *atomic.Int64 {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -184,7 +190,7 @@ func (s *activeSeriesStripe) findEntryForSeries(fingerprint uint64, series label
 	return nil
 }
 
-func (s *activeSeriesStripe) findOrCreateEntryForSeries(fingerprint uint64, series labels.Labels, nowNanos int64, labelsCopy func(labels.Labels) labels.Labels) (*atomic.Int64, bool) {
+func (s *seriesStripe) findOrCreateEntryForSeries(fingerprint uint64, series labels.Labels, nowNanos int64, labelsCopy func(labels.Labels) labels.Labels) (*atomic.Int64, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -205,7 +211,7 @@ func (s *activeSeriesStripe) findOrCreateEntryForSeries(fingerprint uint64, seri
 		}
 	}
 
-	e := activeSeriesEntry{
+	e := seriesEntry{
 		lbs:     labelsCopy(series),
 		nanos:   atomic.NewInt64(nowNanos),
 		matches: matches,
@@ -217,31 +223,31 @@ func (s *activeSeriesStripe) findOrCreateEntryForSeries(fingerprint uint64, seri
 }
 
 //nolint // Linter reports that this method is unused, but it is.
-func (s *activeSeriesStripe) clear() {
+func (s *seriesStripe) clear() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	s.oldestEntryTs.Store(0)
-	s.refs = map[uint64][]activeSeriesEntry{}
+	s.refs = map[uint64][]seriesEntry{}
 	s.active = 0
 	for i := range s.activeMatching {
 		s.activeMatching[i] = 0
 	}
 }
 
-// Reinitialize is more than clear that it assigns new matchers and corresponding size activeMatching slices.
-func (s *activeSeriesStripe) reinitialize(asm *Matchers) {
+// Reinitialize assigns new matchers and corresponding size activeMatching slices.
+func (s *seriesStripe) reinitialize(asm *Matchers) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	s.oldestEntryTs.Store(0)
-	s.refs = map[uint64][]activeSeriesEntry{}
+	s.refs = map[uint64][]seriesEntry{}
 	s.active = 0
 	s.matchers = asm
 	s.activeMatching = resizeAndClear(len(asm.MatcherNames()), s.activeMatching)
 }
 
-func (s *activeSeriesStripe) purge(keepUntil time.Time) {
+func (s *seriesStripe) purge(keepUntil time.Time) {
 	keepUntilNanos := keepUntil.UnixNano()
 	if oldest := s.oldestEntryTs.Load(); oldest > 0 && keepUntilNanos <= oldest {
 		// Nothing to do.

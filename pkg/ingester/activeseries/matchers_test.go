@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestActiveSeriesMatcher_MatchesSeries(t *testing.T) {
+func TestMatcher_MatchesSeries(t *testing.T) {
 	asm := NewMatchers(mustNewCustomTrackersConfigFromMap(t, map[string]string{
 		"bar_starts_with_1":             `{bar=~"1.*"}`,
 		"does_not_have_foo_label":       `{foo=""}`,
@@ -86,7 +86,7 @@ func TestActiveSeriesMatcher_MatchesSeries(t *testing.T) {
 	}
 }
 
-func TestActiveSeriesCustomTrackersConfigs_MalformedMatcher(t *testing.T) {
+func TestCustomTrackersConfigs_MalformedMatcher(t *testing.T) {
 	for _, matcher := range []string{
 		`{foo}`,
 		`{foo=~"}`,
