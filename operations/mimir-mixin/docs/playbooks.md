@@ -455,6 +455,18 @@ How to **investigate**:
 
 - Look for any error in the compactor logs
   - Corruption: [`not healthy index found`](#compactor-is-failing-because-of-not-healthy-index-found)
+  - Invalid result block:
+    - **How to detect**: Search compactor logs for `invalid result block`: [explore](https://admin-ops-us-east-0.grafana.net/grafana/explore?orgId=1&left=%7B%22datasource%22:%22loki-ops%22,%22queries%22:%5B%7B%22refId%22:%22A%22,%22expr%22:%22%7Bjob%3D~%5C%22.*%2Fcompactor%5C%22,%20namespace%3D%5C%22%3Cnamespace%3E%5C%22%7D%20%7C%3D%20%5C%22invalid%20result%20block%5C%22%22,%22queryType%22:%22range%22%7D%5D,%22range%22:%7B%22from%22:%22now-3h%22,%22to%22:%22now%22%7D%7D) (replace `<namespace>` with the namespace from the alert)
+    - **What it means**: The compactor successfully validated the source blocks. But the validation on the result block after the compaction did not succeed. The result block was not uploaded and the compaction job will be retried.
+    - Out-of-order chunks
+      - Search compactor logs for `out-of-order chunks`: [explore](https://admin-ops-us-east-0.grafana.net/grafana/explore?orgId=1&left=%7B%22datasource%22:%22loki-ops%22,%22queries%22:%5B%7B%22refId%22:%22A%22,%22expr%22:%22%7Bjob%3D~%5C%22.*%2Fcompactor%5C%22,%20namespace%3D%5C%22%3Cnamespace%3E%5C%22%7D%20%7C%3D%20%5C%22invalid%20result%20block%5C%22%20%7C%3D%20%5C%22out-of-order%20chunks%5C%22%20%22,%22queryType%22:%22range%22%7D%5D,%22range%22:%7B%22from%22:%22now-3h%22,%22to%22:%22now%22%7D%7D) (replace `<namespace>`)
+      - This is caused by [a bug in the ingester](https://github.com/grafana/mimir-squad/issues/453#issuecomment-1015193060). Ingesters upload blocks where the MinT and MaxT of some chunks don't match the first and last samples in the chunk. When the faulty chunks' MinT and MaxT overlap with other chunks, the compactor merges the chunks. Because one chunks's MinT and MaxT are incorrect the merge may be performed incorrectly, leading to OoO samples.
+      - **How to mitigate**: Mark the faulty blocks to avoid compaction:
+        - Find all affected compaction jobs: [explore](https://admin-ops-us-east-0.grafana.net/grafana/explore?orgId=1&left=%7B%22datasource%22:%22loki-ops%22,%22queries%22:%5B%7B%22refId%22:%22A%22,%22expr%22:%22%7Bjob%3D~%5C%22.*%2Fcompactor%5C%22,%20namespace%3D%5C%22%3Cnamespace%3E%5C%22%7D%20%7C%3D%20%5C%22invalid%20result%20block%5C%22%20%7C%3D%20%5C%22out-of-order%20chunks%5C%22%20%7C%20pattern%20%60%3C_%3E%20invalid%20result%20block%20%2Fdata%2Fcompact%2F%3Ccompaction_group%3E%2F%3Cresult_block%3E:%20%3C_%3E%60%20%7C%20line_format%20%60%7B%7B.compaction_group%7D%7D%20%7B%7B.result_block%7D%7D%60%22,%22queryType%22:%22range%22%7D%5D,%22range%22:%7B%22from%22:%22now-3h%22,%22to%22:%22now%22%7D%7D) (replace `<namesapace>`)
+        - For each failed compaction job
+          - Pick one result block (doesn't matter which)
+          - Find source blocks for the compaction job: [explore](https://admin-ops-us-east-0.grafana.net/grafana/explore?orgId=1&left=%7B%22datasource%22:%22loki-ops%22,%22queries%22:%5B%7B%22refId%22:%22A%22,%22expr%22:%22%7Bjob%3D~%5C%22.*%2Fcompactor%5C%22%7D%20%7C%3D%20%6001FYBQDRBD3DN2BE5Q3CFY5G0W%60%20%7C%3D%20%5C%22compact%20blocks%5C%22%20%7C%20logfmt%20%7C%20line_format%20%60%7B%7B.sources%7D%7D%60%22,%22queryType%22:%22range%22%7D%5D,%22range%22:%7B%22from%22:%22now-3h%22,%22to%22:%22now%22%7D%7D) (replace `<result_block>`)
+          - Follow instructions in the description of https://github.com/grafana/mimir-squad/issues/453 to upload `no-compact-mark.json` files to the faulty source blocks.
 
 ### MimirCompactorSkippedBlocksWithOutOfOrderChunks
 
