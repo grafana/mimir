@@ -32,12 +32,11 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/notifier"
-	"github.com/prometheus/prometheus/promql"
 	promRules "github.com/prometheus/prometheus/rules"
-	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/thanos/pkg/objstore"
+	"github.com/weaveworks/common/httpgrpc"
 	"github.com/weaveworks/common/user"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc"
@@ -98,19 +97,15 @@ func (r ruleLimits) RulerMaxRulesPerRuleGroup(_ string) int {
 	return r.maxRulesPerRuleGroup
 }
 
-func testSetup(t *testing.T) (*promql.Engine, storage.QueryableFunc, Pusher, log.Logger, RulesLimits) {
-	dir := t.TempDir()
-	tracker := promql.NewActiveQueryTracker(dir, 20, log.NewNopLogger())
+type noopRoundTripper struct{}
 
-	engine := promql.NewEngine(promql.EngineOpts{
-		MaxSamples:         1e6,
-		ActiveQueryTracker: tracker,
-		Timeout:            2 * time.Minute,
-	})
+func (r *noopRoundTripper) RoundTrip(_ context.Context, _ *httpgrpc.HTTPRequest) (*httpgrpc.HTTPResponse, error) {
+	return &httpgrpc.HTTPResponse{Code: http.StatusOK, Body: []byte(`{}`)}, nil
+}
 
-	noopQueryable := storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
-		return storage.NoopQuerier(), nil
-	})
+func testSetup() (*RemoteQuerier, Pusher, log.Logger, RulesLimits) {
+	// Mock the remote querier
+	noopRemoteQuerier := NewRemoteQuerier(&noopRoundTripper{}, "", log.NewNopLogger())
 
 	// Mock the pusher
 	pusher := newPusherMock()
@@ -119,12 +114,12 @@ func testSetup(t *testing.T) (*promql.Engine, storage.QueryableFunc, Pusher, log
 	l := log.NewLogfmtLogger(os.Stdout)
 	l = level.NewFilter(l, level.AllowInfo())
 
-	return engine, noopQueryable, pusher, l, ruleLimits{evalDelay: 0, maxRuleGroups: 20, maxRulesPerRuleGroup: 15}
+	return noopRemoteQuerier, pusher, l, ruleLimits{evalDelay: 0, maxRuleGroups: 20, maxRulesPerRuleGroup: 15}
 }
 
 func newManager(t *testing.T, cfg Config) *DefaultMultiTenantManager {
-	engine, noopQueryable, pusher, logger, overrides := testSetup(t)
-	manager, err := NewDefaultMultiTenantManager(cfg, DefaultTenantManagerFactory(cfg, pusher, noopQueryable, noopQueryable, engine, overrides, nil), prometheus.NewRegistry(), logger, nil)
+	noopRemoteQuerier, pusher, logger, overrides := testSetup()
+	manager, err := NewDefaultMultiTenantManager(cfg, DefaultTenantManagerFactory(cfg, pusher, noopRemoteQuerier, overrides, nil), prometheus.NewRegistry(), logger, nil)
 	require.NoError(t, err)
 
 	return manager
@@ -169,10 +164,10 @@ func newMockClientsPool(cfg Config, logger log.Logger, reg prometheus.Registerer
 }
 
 func buildRuler(t *testing.T, cfg Config, storage rulestore.RuleStore, rulerAddrMap map[string]*Ruler) *Ruler {
-	engine, noopQueryable, pusher, logger, overrides := testSetup(t)
+	noopRemoteQuerier, pusher, logger, overrides := testSetup()
 
 	reg := prometheus.NewRegistry()
-	managerFactory := DefaultTenantManagerFactory(cfg, pusher, noopQueryable, noopQueryable, engine, overrides, reg)
+	managerFactory := DefaultTenantManagerFactory(cfg, pusher, noopRemoteQuerier, overrides, reg)
 	manager, err := NewDefaultMultiTenantManager(cfg, managerFactory, reg, log.NewNopLogger(), nil)
 	require.NoError(t, err)
 

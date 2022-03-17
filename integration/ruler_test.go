@@ -184,9 +184,6 @@ func TestRulerAPISingleBinary(t *testing.T) {
 	require.NoError(t, mimir.WaitSumMetricsWithOptions(e2e.Equals(0), []string{"prometheus_engine_queries"}, e2e.WithLabelMatchers(
 		labels.MustNewMatcher(labels.MatchEqual, "engine", "querier"))))
 
-	require.NoError(t, mimir.WaitSumMetricsWithOptions(e2e.Equals(0), []string{"prometheus_engine_queries"}, e2e.WithLabelMatchers(
-		labels.MustNewMatcher(labels.MatchEqual, "engine", "ruler"))))
-
 	// Test Cleanup and Restart
 
 	// Stop the running mimir
@@ -221,6 +218,7 @@ func TestRulerEvaluationDelay(t *testing.T) {
 			"-ruler.poll-interval":             "2s",
 			"-ruler.rule-path":                 filepath.Join(e2e.ContainerSharedDir, "rule_tmp/"),
 			"-ruler.evaluation-delay-duration": evaluationDelay.String(),
+			"-ruler.querier.address":           "127.0.0.1:9095",
 		},
 	)
 
@@ -572,10 +570,21 @@ func TestRulerMetricsForInvalidQueries(t *testing.T) {
 	const namespace = "test"
 	const user = "user"
 
+	// Start the query-frontend.
+	queryFrontend := e2emimir.NewQueryFrontend("query-frontend", flags)
+	require.NoError(t, s.Start(queryFrontend))
+	flags["-querier.frontend-address"] = queryFrontend.NetworkGRPCEndpoint()
+
+	// Use query-frontend for rule evaluation.
+	flags["-ruler.querier.address"] = fmt.Sprintf("dns:///%s", queryFrontend.NetworkGRPCEndpoint())
+
 	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags)
 	ruler := e2emimir.NewRuler("ruler", consul.NetworkHTTPEndpoint(), flags)
 	ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags)
-	require.NoError(t, s.StartAndWaitReady(distributor, ingester, ruler))
+	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags)
+
+	require.NoError(t, s.StartAndWaitReady(distributor, ingester, ruler, querier))
+	require.NoError(t, s.WaitReady(queryFrontend))
 
 	// Wait until both the distributor and ruler have updated the ring. The querier will also watch
 	// the store-gateway ring if blocks sharding is enabled.
@@ -729,18 +738,28 @@ func TestRulerFederatedRules(t *testing.T) {
 		BlocksStorageFlags(),
 		RulerFlags(),
 		map[string]string{
-			"-ruler.tenant-federation.enabled":  "true",
 			"-tenant-federation.enabled":        "true",
+			"-ruler.tenant-federation.enabled":  "true",
 			"-ingester.ring.replication-factor": "1",
 		},
 	)
 
+	// Start the query-frontend.
+	queryFrontend := e2emimir.NewQueryFrontend("query-frontend", flags)
+	require.NoError(t, s.Start(queryFrontend))
+	flags["-querier.frontend-address"] = queryFrontend.NetworkGRPCEndpoint()
+
+	// Use query-frontend for rule evaluation.
+	flags["-ruler.querier.address"] = fmt.Sprintf("dns:///%s", queryFrontend.NetworkGRPCEndpoint())
+
 	// Start up services
 	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags)
-	ruler := e2emimir.NewRuler("ruler", consul.NetworkHTTPEndpoint(), flags)
 	ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags)
+	ruler := e2emimir.NewRuler("ruler", consul.NetworkHTTPEndpoint(), flags)
 	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags)
+
 	require.NoError(t, s.StartAndWaitReady(distributor, ingester, ruler, querier))
+	require.NoError(t, s.WaitReady(queryFrontend))
 
 	// Wait until both the distributor and ruler are ready
 	// The distributor should have 512 tokens for the ingester ring and 1 for the distributor rin

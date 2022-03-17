@@ -443,6 +443,8 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of rule groups per-tenant. 0 to disable. (default 70)
   -ruler.max-rules-per-rule-group int
     	Maximum number of rules per rule group per-tenant. 0 to disable. (default 20)
+  -ruler.querier.address string
+    	GRPC listen address of the remote querier(s). Must be a DNS address (prefixed with dns:///) to enable client side load balancing.
   -ruler.ring.consul.hostname string
     	Hostname and port of Consul. (default "localhost:8500")
   -ruler.ring.etcd.endpoints value

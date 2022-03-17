@@ -1391,6 +1391,20 @@ Usage of ./cmd/mimir/mimir:
     	HTTP timeout duration when sending notifications to the Alertmanager. (default 10s)
   -ruler.poll-interval duration
     	How frequently to poll for rule changes (default 1m0s)
+  -ruler.querier.address string
+    	GRPC listen address of the remote querier(s). Must be a DNS address (prefixed with dns:///) to enable client side load balancing.
+  -ruler.querier.tls-ca-path string
+    	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
+  -ruler.querier.tls-cert-path string
+    	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -ruler.querier.tls-enabled
+    	Set to true if remote querier connection requires TLS.
+  -ruler.querier.tls-insecure-skip-verify
+    	Skip validating server certificate.
+  -ruler.querier.tls-key-path string
+    	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+  -ruler.querier.tls-server-name string
+    	Override the expected name on the server certificate.
   -ruler.query-stats-enabled
     	Report the wall time for ruler queries to complete as a per-tenant metric and as an info level log message.
   -ruler.resend-delay duration
