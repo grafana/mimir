@@ -51,14 +51,6 @@ The tool removes any configuration parameters that are no longer available in Gr
 Unless you provide the `--update-defaults` flag, the tool doesn't update default values that you have explicitly set in your configuration file.
 For more information on how to use Mimirtool for configuration conversion, refer to [convert]({{< relref "../operators-guide/tools/mimirtool.md#convert" >}}).
 
-To install mimirtool, download the appropriate [release asset](https://github.com/grafana/mimir/releases/latest) for your operating system and architecture and make it executable.
-For Linux with the AMD64 architecture:
-
-```bash
-curl -fLo mimirtool https://github.com/grafana/mimir/releases/latest/download/mimirtool-linux-amd64
-chmod +x mimirtool
-```
-
 ## Updating to Grafana Mimir using Jsonnet
 
 Grafana Mimir has a Jsonnet library that replaces the existing Cortex Jsonnet library and updated monitoring mixin.
