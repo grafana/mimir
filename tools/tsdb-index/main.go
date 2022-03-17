@@ -6,10 +6,12 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -99,7 +101,9 @@ func printBlockIndex(blockDir string, printChunks bool, matchers []*labels.Match
 		fmt.Println("series", lbls.String())
 		if printChunks {
 			for _, c := range chks {
-				fmt.Println("chunk", c.Ref, "min time:", c.MinTime, "max time:", c.MaxTime)
+				fmt.Println("chunk", c.Ref,
+					"min time:", c.MinTime, timestamp.Time(c.MinTime).UTC().Format(time.RFC3339Nano),
+					"max time:", c.MaxTime, timestamp.Time(c.MaxTime).UTC().Format(time.RFC3339Nano))
 			}
 		}
 	}
