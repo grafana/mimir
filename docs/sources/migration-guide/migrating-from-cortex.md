@@ -99,6 +99,7 @@ jb install github.com/grafana/mimir/operations/mimir-mixin@main
    }
    ```
 1. For each component, use `mimirtool` to update the configured arguments.
+   To extract the flags for each component, refer to [Extracting flags from Jsonnet]({{< relref "../operators-guide/tools/mimirtool.md#extracting-flags-from-jsonnet" >}}).
 1. Apply the updated Jsonnet
 
 To verify the cluster is operating correctly, use the [monitoring mixin dashboards]({{< relref "../operators-guide/visualizing-metrics/dashboards/_index.md" >}}).
