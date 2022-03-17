@@ -31,7 +31,7 @@ func main() {
 	flag.Parse()
 
 	if flag.NArg() == 0 {
-		fmt.Println("Usage:", os.Args[0], "<block-dir> [<block-dir> ...]")
+		fmt.Println("Usage:", os.Args[0], "[options...] <block-dir> [<block-dir> ...]")
 		return
 	}
 
