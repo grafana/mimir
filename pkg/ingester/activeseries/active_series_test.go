@@ -449,7 +449,7 @@ func BenchmarkActiveSeries_UpdateSeries(b *testing.B) {
 	}
 }
 
-func BenchmarkActiveSeries_Purge_once(b *testing.B) {
+func BenchmarkActiveSeries_Active_once(b *testing.B) {
 	benchmarkPurge(b, false)
 }
 
