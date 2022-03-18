@@ -457,10 +457,10 @@ How to **investigate**:
   - Corruption: [`not healthy index found`](#compactor-is-failing-because-of-not-healthy-index-found)
   - Invalid result block:
     - **How to detect**: Search compactor logs for `invalid result block`.
-    - **What it means**: The compactor successfully validated the source blocks. But the validation on the result block after the compaction did not succeed. The result block was not uploaded and the compaction job will be retried.
+    - **What it means**: The compactor successfully validated the source blocks. But the validation of the result block after the compaction did not succeed. The result block was not uploaded and the compaction job will be retried.
     - Out-of-order chunks
       - **How to detect**: Search compactor logs for `invalid result block` and `out-of-order chunks`.
-      - This is caused by a bug in the ingester. Ingesters upload blocks where the MinT and MaxT of some chunks don't match the first and last samples in the chunk. When the faulty chunks' MinT and MaxT overlap with other chunks, the compactor merges the chunks. Because one chunks's MinT and MaxT are incorrect the merge may be performed incorrectly, leading to OoO samples.
+      - This is caused by a bug in the ingester. Ingesters upload blocks where the MinT and MaxT of some chunks don't match the first and last samples in the chunk. When the faulty chunks' MinT and MaxT overlap with other chunks, the compactor merges the chunks. Because one chunk's MinT and MaxT are incorrect the merge may be performed incorrectly, leading to OoO samples.
       - **How to mitigate**: Mark the faulty blocks to avoid compacting them in the future:
         - Find all affected compaction groups in the compactor logs. You will find them as `invalid result block /data/compact/<compaction_group>/<result_block>`.
         - For each failed compaction job
