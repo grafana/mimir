@@ -1,10 +1,10 @@
 blocks_storage:
   tsdb:
     block_ranges_period:
-      - 2h
+      - 3h
 
 compactor:
   block_ranges:
-    - 2h
-    - 12h
-    - 24h
+    - 3h
+    - 13h
+    - 25h

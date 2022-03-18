@@ -1,2 +1,2 @@
 -blocks-storage.tsdb.block-ranges-period=2h
--compactor.block-ranges=2h,12h,24h
+-compactor.block-ranges=2h,12h,25h
