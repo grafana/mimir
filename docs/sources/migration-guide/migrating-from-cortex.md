@@ -186,6 +186,19 @@ To verify that the cluster is operating correctly, use the [monitoring mixin das
 
 You can update to the Grafana Mimir Helm chart from a the Cortex Helm chart.
 
+### Prerequisites
+
+- Ensure you are running the v1.4.0 release of the Cortex Helm chart.
+- Ensure that you are running ingesters using StatefulSets.
+
+  In the `values.yaml` file:
+
+  ```
+  ingester:
+    statefulSets:
+      enabled: true
+  ```
+
 1. Install the updated monitoring mixin.
 
    a. Add the dashboards to Grafana. The dashboards replace your Cortex dashboards and continue to work for monitoring Cortex deployments.
@@ -217,7 +230,7 @@ You can update to the Grafana Mimir Helm chart from a the Cortex Helm chart.
 
    c. Place the updated configuration under the `$.mimir.config` key.
 
-   The `values.yaml` file looks similar to:
+   In your `values.yaml` file:
 
    ```yaml
    mimir:
@@ -226,6 +239,16 @@ You can update to the Grafana Mimir Helm chart from a the Cortex Helm chart.
    ```
 
    d. Remove the original Cortex `$.config` member.
+
+   e. Set the ingester `podManagementPolicy` to `OrderedReady`.
+      The Mimir chart prefers `Parallel` for faster scale up but this field is immutable on an existing StatefulSet.
+
+   In your `values.yaml` file:
+
+   ```yaml
+   ingester:
+     podManagementPolicy: "OrderedReady"
+   ```
 
 1. Run Helm upgrade with the Mimir chart.
 
