@@ -8,6 +8,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"sort"
 	"strings"
 
 	"github.com/grafana/dskit/multierror"
@@ -136,6 +137,8 @@ func (c *ConfigCommand) output(yamlContents []byte, flags []string, notices conf
 		return err
 	}
 	defer closeFile()
+
+	sort.Strings(flags)
 
 	_, err = fmt.Fprintln(outYAMLWriter, string(yamlContents))
 	_, err2 := fmt.Fprintln(outFlagsWriter, strings.Join(flags, "\n"))
