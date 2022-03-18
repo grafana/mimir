@@ -25,7 +25,7 @@ type ActiveSeries struct {
 	matchers           *Matchers
 	lastMatchersUpdate time.Time
 
-	// The duration after series become inactive.
+	// The duration after which series become inactive.
 	timeout time.Duration
 	now     func() time.Time
 }
