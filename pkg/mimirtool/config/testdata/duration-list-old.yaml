@@ -1,0 +1,10 @@
+blocks_storage:
+  tsdb:
+    block_ranges_period:
+      - 3h
+
+compactor:
+  block_ranges:
+    - 3h
+    - 13h
+    - 25h
