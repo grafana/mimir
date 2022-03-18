@@ -75,17 +75,17 @@ It provides a simple migration by generating Mimir configuration from Cortex con
 
   - Ruler endpoints
 
-    | Legacy                                                | Alternative                                         | Alternative #2 (not available before Mimir 2.0.0)                  |
-    | ----------------------------------------------------- | --------------------------------------------------- | ------------------------------------------------------------------ |
-    | `/<legacy-http-prefix>/api/v1/rules`                  | `<prometheus-http-prefix>/api/v1/rules`             |                                                                    |
-    | `/<legacy-http-prefix>/api/v1/alerts`                 | `<prometheus-http-prefix>/api/v1/alerts`            |                                                                    |
-    | `/<legacy-http-prefix>/rules`                         | `/api/v1/rules` (see below)                         | `<prometheus-http-prefix>/config/v1/rules`                         |
-    | `/<legacy-http-prefix>/rules/{namespace}`             | `/api/v1/rules/{namespace}` (see below)             | `<prometheus-http-prefix>/config/v1/rules/{namespace}`             |
-    | `/<legacy-http-prefix>/rules/{namespace}/{groupName}` | `/api/v1/rules/{namespace}/{groupName}` (see below) | `<prometheus-http-prefix>/config/v1/rules/{namespace}/{groupName}` |
-    | `/<legacy-http-prefix>/rules/{namespace}`             | `/api/v1/rules/{namespace}` (see below)             | `<prometheus-http-prefix>/config/v1/rules/{namespace}`             |
-    | `/<legacy-http-prefix>/rules/{namespace}/{groupName}` | `/api/v1/rules/{namespace}/{groupName}` (see below) | `<prometheus-http-prefix>/config/v1/rules/{namespace}/{groupName}` |
-    | `/<legacy-http-prefix>/rules/{namespace}`             | `/api/v1/rules/{namespace}` (see below)             | `<prometheus-http-prefix>/config/v1/rules/{namespace}`             |
-    | `/ruler_ring`                                         | `/ruler/ring`                                       |                                                                    |
+    | Legacy                                                | Alternative                                         |
+    | ----------------------------------------------------- | --------------------------------------------------- |
+    | `/<legacy-http-prefix>/api/v1/rules`                  | `<prometheus-http-prefix>/api/v1/rules`             |
+    | `/<legacy-http-prefix>/api/v1/alerts`                 | `<prometheus-http-prefix>/api/v1/alerts`            |
+    | `/<legacy-http-prefix>/rules`                         | `/api/v1/rules` (see below)                         |
+    | `/<legacy-http-prefix>/rules/{namespace}`             | `/api/v1/rules/{namespace}` (see below)             |
+    | `/<legacy-http-prefix>/rules/{namespace}/{groupName}` | `/api/v1/rules/{namespace}/{groupName}` (see below) |
+    | `/<legacy-http-prefix>/rules/{namespace}`             | `/api/v1/rules/{namespace}` (see below)             |
+    | `/<legacy-http-prefix>/rules/{namespace}/{groupName}` | `/api/v1/rules/{namespace}/{groupName}` (see below) |
+    | `/<legacy-http-prefix>/rules/{namespace}`             | `/api/v1/rules/{namespace}` (see below)             |
+    | `/ruler_ring`                                         | `/ruler/ring`                                       |
 
     > **Note:** The `/api/v1/rules/**` endpoints are considered deprecated with Mimir 2.0.0 and will be removed
     > in Mimir 2.2.0. After upgrading to 2.0.0 we recommend switching uses to the equivalent
