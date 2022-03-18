@@ -468,7 +468,13 @@ How to **investigate**:
           - Find source blocks for the compaction job: search for `msg="compact blocks"` and a mention of the result block ID.
           - Upload a JSON file to the markers directory of the compactor: `<tenant_id>/markers/<faulty_source_block>-no-compact-mark.json`. The format of the file follows. Replace the `id` and `no_compact_time`:
             ```json
-            {"id":"01FYAFBE9F0VH6555R3J1CFPHP","version":1,"details":"When compacting with other blocks is leading to out-of-order chunks","no_compact_time":1647514725,"reason":"manual"}
+            {
+              "id": "01FYAFBE9F0VH6555R3J1CFPHP",
+              "version": 1,
+              "details": "When compacting with other blocks is leading to out-of-order chunks",
+              "no_compact_time": 1647514725,
+              "reason": "manual"
+            }
             ```
 
 ### MimirCompactorSkippedBlocksWithOutOfOrderChunks
