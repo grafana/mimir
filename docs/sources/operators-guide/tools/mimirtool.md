@@ -647,9 +647,9 @@ It supports converting both CLI flags and [YAML configuration files]({{< relref 
 | Flag                 | Description                                                                                                                                                                                                                                         |
 | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `--yaml-file`        | The YAML configuration file to convert.                                                                                                                                                                                                             |
-| `--flags-file`       | Newline-delimited list of CLI flags to convert.                                                                                                                                                                                                     |
-| `--yaml-out`         | The file to output the converted YAML configuration to. If not set, output to `stdout`.                                                                                                                                                             |
-| `--flags-out`        | The file to output the list of converted CLI flags to. If not set, output to `stdout`.                                                                                                                                                              |
+| `--flags-file`       | A file containing a newline-delimited list of CLI flags to convert.                                                                                                                                                                                                     |
+| `--yaml-out`         | File to use for the converted YAML configuration. If not set, output to `stdout`.                                                                                                                                                             |
+| `--flags-out`        | File to use for list of converted CLI flags. If not set, output to `stdout`.                                                                                                                                                              |
 | `--update-defaults`  | If you set this flag and you set a configuration parameter to a default value that has changed in Mimir 2.0, the parameter updates to the new default value.                                                                                        |
 | `--include-defaults` | If you set this flag, all default values are included in the output YAML, regardless of whether you explicitly set the values in the input files.                                                                                                   |
 | `-v`, `--verbose`    | If you set this flag, the CLI flags and YAML paths from the old configuration that do not exist in the new configuration are printed to `stderr`. This flag also prints default values that have changed between the old and the new configuration. |
@@ -663,7 +663,7 @@ The following example shows a command that converts Cortex [query-frontend]({{< 
 mimirtool config convert --yaml-file=cortex.yaml --flags-file=cortex.flags --yaml-out=mimir.yaml --flags-out=mimir.flags
 ```
 
-`cortex.yaml`:
+`cortex.yaml` input file:
 
 ```yaml
 query_range:
@@ -677,15 +677,15 @@ query_range:
         max_idle_conns: 32
 ```
 
-`cortex.flags`:
+`cortex.flags` input file:
 
 ```
 -frontend.background.write-back-concurrency=45
 ```
 
-After you run the command, the contents of `mimir.yaml` and `mimir.flags` should look like:
+After you run the command, the converted output should be:
 
-`mimir.yaml`:
+`mimir.yaml` converted output file:
 
 ```yaml
 frontend:
@@ -701,7 +701,7 @@ server:
 
 > **Note:** As a precaution,`server.http_listen_port` is included. The default value in Grafana Mimir changed from 80 to 8080. Unless you explicitly set the port in the input configuration, the tool outputs the old default value.
 
-`mimir.flags`:
+`mimir.flags` converted output file:
 
 ```
 -query-frontend.results-cache.memcached.max-async-concurrency=45
@@ -847,7 +847,7 @@ key_values=$(sed -E -e 's/^-*(.*)=(.*)$/  "\1": "\2",/' "$1")
 printf "{\n%s\n}" "${key_values::-1}"
 ```
 
-The only parameter of the script is a file containing the newline separated flags.
+The only parameter of the script is a file containing the flags, with each flag on its own line.
 
 ## License
 

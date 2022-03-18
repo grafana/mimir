@@ -8,6 +8,13 @@ weight: 10
 
 This document guides an operator through the process of migrating a deployment of [Cortex](https://cortexmetrics.io/) to Grafana Mimir.
 
+Grafana Mimir 2.0.0 includes significant changes that simplify the deployment and continued operation of a horizontally scalable, multi-tenant time series database with long-term storage.
+Configuration parameters that don't require tuning have been removed, some parameters have been renamed so that they are more easily understood, and some existing parameters have updated default values, so that Grafana Mimir is easier to run out of the box.
+
+`mimirtool` automates configuration conversion.
+It is used to generate Mimir configuration from Cortex configuration,
+providing a simple migration path.
+
 ## Prerequisites
 
 - Ensure that you are running [Cortex 1.11.0](https://github.com/cortexproject/cortex/releases).
@@ -22,19 +29,15 @@ This document guides an operator through the process of migrating a deployment o
   To upload rules to the ruler using mimirtool, refer to [mimirtool rules]({{< relref "../operators-guide/tools/mimirtool.md" >}}).
   To import the dashboards into Grafana, refer to [Import dashboard](https://grafana.com/docs/grafana/latest/dashboards/export-import/#import-dashboard).
 
-- Ensure you have read the [Release notes]({{< relref "../release-notes/v2.0.md" >}}) for any breaking configuration changes.
+- Read the [Release notes]({{< relref "../release-notes/v2.0.md" >}}) to fully understand any breaking configuration changes.
 
-  > **Note:** Mimirtool can automate configuration conversion, documented below.
 
-## Updating Cortex configuration for Grafana Mimir
-
-Grafana Mimir 2.0.0 includes significant changes that simplifies the deployment and continued operation of a horizontally scalable, multi-tenant time series database with long-term storage.
-Parameters that don't require tuning have been removed, some parameters have been renamed so that they are more easily understood, and a number of parameters have updated default values so that Grafana Mimir is easier to run out of the box.
+## Generating configuration for Grafana Mimir
 
 [`mimirtool`]({{< relref "../operators-guide/tools/mimirtool.md" >}}) has a command for converting Cortex configuration into Mimir configuration.
-You can use to update both flags and configuration files.
+Use it to update both flags and configuration files.
 
-### Downloading mimirtool
+### Download mimirtool
 
 Download the appropriate [release asset](https://github.com/grafana/mimir/releases/latest) for your operating system and architecture and make it executable.
 For Linux with the AMD64 architecture:
@@ -44,12 +47,12 @@ curl -fLo mimirtool https://github.com/grafana/mimir/releases/latest/download/mi
 chmod +x mimirtool
 ```
 
-### Converting a Cortex configuration file with mimirtool
+### Use mimirtool
 
-The Grafana Mimir team has written a tool for converting Cortex 1.11 configuration files to Grafana Mimir 2.0 configuration files.
-The tool removes any configuration parameters that are no longer available in Grafana Mimir and renames configuration parameters that have a new name.
-Unless you provide the `--update-defaults` flag, the tool doesn't update default values that you have explicitly set in your configuration file.
-For more information on how to use Mimirtool for configuration conversion, refer to [convert]({{< relref "../operators-guide/tools/mimirtool.md#convert" >}}).
+The `mimirtool config convert` command converts Cortex 1.11 configuration files to Grafana Mimir 2.0 configuration files.
+It removes any configuration parameters that are no longer available in Grafana Mimir, and it renames configuration parameters that have a new name.
+Unless you provide the `--update-defaults` flag, the command doesn't update default values that you have explicitly set in your Cortex configuration file.
+Refer to [convert]({{< relref "../operators-guide/tools/mimirtool.md#convert" >}}) for more information on using `mimirtool` for configuration conversion.
 
 ## Updating to Grafana Mimir using Jsonnet
 
