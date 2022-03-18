@@ -161,7 +161,7 @@ The ex-member is
 
 If needed, we reserve the right to publicly announce removal.
 
-[announce]: https://github.com/grafana/mimir/discussions/categories/announcementse
+[announce]: https://github.com/grafana/mimir/discussions/categories/announcements
 [coc]: https://github.com/grafana/mimir/blob/master/CODE_OF_CONDUCT.md
 [devs]: https://github.com/grafana/mimir/discussions/categories/development
 [maintainers]: https://github.com/grafana/mimir/blob/master/MAINTAINERS.md
