@@ -247,6 +247,11 @@ func TestConvert_Cortex(t *testing.T) {
 			inFile:  "testdata/duration-list-old.yaml",
 			outFile: "testdata/duration-list-new.yaml",
 		},
+		{
+			name:    "new frontend.results_cache.backend == memberlist when old query_range.cache_results == true",
+			inFile:  "testdata/query-frontend-results-cache-old.yaml",
+			outFile: "testdata/query-frontend-results-cache-new.yaml",
+		},
 	}
 
 	for _, tc := range testCases {

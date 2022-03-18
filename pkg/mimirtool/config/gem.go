@@ -40,6 +40,8 @@ func GEM170ToGEM200Mapper() Mapper {
 		mapRulerAlertmanagerS3Buckets("alertmanager.storage", "alertmanager_storage"), mapRulerAlertmanagerS3Buckets("ruler.storage", "ruler_storage"),
 		// Prevent server.http_listen_port from being updated with a new default and always output it.
 		MapperFunc(mapServerHTTPListenPort),
+		// Set frontend.results_cache.backend when results cache was enabled in cortex
+		MapperFunc(mapQueryFrontendBackend),
 	}
 }
 
