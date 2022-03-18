@@ -29,9 +29,6 @@ providing a simple migration path.
   To upload rules to the ruler using mimirtool, refer to [mimirtool rules]({{< relref "../operators-guide/tools/mimirtool.md" >}}).
   To import the dashboards into Grafana, refer to [Import dashboard](https://grafana.com/docs/grafana/latest/dashboards/export-import/#import-dashboard).
 
-- Read the [Release notes]({{< relref "../release-notes/v2.0.md" >}}) to fully understand any breaking configuration changes.
-
-
 ## Generating configuration for Grafana Mimir
 
 [`mimirtool`]({{< relref "../operators-guide/tools/mimirtool.md" >}}) has a command for converting Cortex configuration into Mimir configuration.
