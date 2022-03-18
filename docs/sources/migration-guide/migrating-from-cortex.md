@@ -113,7 +113,8 @@ chmod +x mimirtool
 
 The `mimirtool config convert` command converts Cortex 1.11 configuration files to Grafana Mimir 2.0 configuration files.
 It removes any configuration parameters that are no longer available in Grafana Mimir, and it renames configuration parameters that have a new name.
-Unless you provide the `--update-defaults` flag, the command doesn't update default values that you have explicitly set in your Cortex configuration file.
+If you have explicitly set configuration parameters to a value matching the Cortex default, by default, `mimirtool config convert` doesn't update the value.
+To have `mimirtool config convert` update explicitly set values from the Cortex defaults to the new Grafana Mimir defaults, provide the `--update-defaults` flag.
 Refer to [convert]({{< relref "../operators-guide/tools/mimirtool.md#convert" >}}) for more information on using `mimirtool` for configuration conversion.
 
 ## Updating to Grafana Mimir using Jsonnet
