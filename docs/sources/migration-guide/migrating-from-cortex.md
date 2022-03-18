@@ -26,7 +26,7 @@ It provides a simple migration by generating Mimir configuration from Cortex con
 
   If you are running an older version of Cortex, upgrade to 1.11.0 before proceeding with the migration.
 
-- Ensure you have installed Cortex alerting and recordings rules as well as Cortex dashboards.
+- Ensure you have installed Cortex alerting and recording rules as well as Cortex dashboards.
 
   The monitoring mixin has both alerting and recording rules to install in either Prometheus or Cortex as well as dashboards to install in Grafana.
   To download a prebuilt ZIP file that contains the alerting and recording rules, refer to [Release Cortex-jsonnet 1.11.0](https://github.com/grafana/cortex-jsonnet/releases/download/1.11.0/cortex-mixin.zip).
@@ -163,4 +163,4 @@ jb install github.com/grafana/mimir/operations/mimir-mixin@main
    To extract the flags for each component, refer to [Extracting flags from Jsonnet]({{< relref "../operators-guide/tools/mimirtool.md#extracting-flags-from-jsonnet" >}}).
 1. Apply the updated Jsonnet
 
-To verify the cluster is operating correctly, use the [monitoring mixin dashboards]({{< relref "../operators-guide/visualizing-metrics/dashboards/_index.md" >}}).
+To verify that the cluster is operating correctly, use the [monitoring mixin dashboards]({{< relref "../operators-guide/visualizing-metrics/dashboards/_index.md" >}}).
