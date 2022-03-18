@@ -186,7 +186,7 @@ func extractInputFlags(target *InspectedEntry, inputFlags []string, m Mapper, so
 		return nil, err
 	}
 
-	return extractFlags(target, func(path string, v Value) bool {
+	return extractFlags(target, func(path string, _ Value) bool {
 		_, ok := flagsNewPaths[path]
 		return ok
 	})
