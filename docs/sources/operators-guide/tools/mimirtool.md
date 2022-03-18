@@ -817,7 +817,7 @@ The script outputs results that are similar to the following:
 -validation.reject-old-samples.max-age=12h
 ```
 
-Use the output of the script as input to mimirtool config convert.
+Use the output of the script as input to run the `mimirtool` configuration conversion.
 
 After conversion, you can use the following script to transform the converted flags back into JSON:
 
