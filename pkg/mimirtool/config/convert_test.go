@@ -237,9 +237,14 @@ func TestConvert_Cortex(t *testing.T) {
 			outFlagsFile: "testdata/uncommon-flag-values.txt",
 		},
 		{
-			name:         "duration list flags with single element",
+			name:         "duration list flags",
 			inFlagsFile:  "testdata/duration-slice-old.flags.txt",
 			outFlagsFile: "testdata/duration-slice-new.flags.txt",
+		},
+		{
+			name:    "duration list YAML",
+			inFile:  "testdata/duration-list-old.yaml",
+			outFile: "testdata/duration-list-new.yaml",
 		},
 	}
 
