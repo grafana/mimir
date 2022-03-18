@@ -7,7 +7,9 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
+	"fmt"
 	"net/http"
 	"path"
 	"strings"
@@ -19,6 +21,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/gorilla/mux"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/weaveworks/common/httpgrpc"
 	"github.com/weaveworks/common/middleware"
 	"github.com/weaveworks/common/server"
 
@@ -40,6 +43,7 @@ import (
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
 	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
+	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/push"
 )
@@ -240,6 +244,41 @@ func (a *API) RegisterDistributor(d *distributor.Distributor, pushConfig distrib
 	distributorpb.RegisterDistributorServer(a.server.GRPC, d)
 
 	a.RegisterRoute("/api/v1/push", push.Handler(pushConfig.MaxRecvMsgSize, a.sourceIPs, a.cfg.SkipLabelNameValidationHeader, a.cfg.wrapDistributorPush(d)), true, false, "POST")
+	a.RegisterRoute("/api/v1/backfill", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		logger := util_log.WithContext(ctx, util_log.Logger)
+		if a.sourceIPs != nil {
+			source := a.sourceIPs.Get(r)
+			if source != "" {
+				ctx = util.AddSourceIPsToOutgoingContext(ctx, source)
+				logger = util_log.WithSourceIPs(source, logger)
+			}
+		}
+
+		var bfReq distributor.StartBackfillRequest
+		decoder := json.NewDecoder(r.Body)
+		if err := decoder.Decode(&bfReq); err != nil {
+			http.Error(w, "Invalid request body", http.StatusBadRequest)
+			return
+		}
+
+		token, err := d.StartBackfill(ctx, bfReq)
+		if err != nil {
+			resp, ok := httpgrpc.HTTPResponseFromError(err)
+			if !ok {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+			} else {
+				http.Error(w, string(resp.Body), int(resp.Code))
+			}
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		if _, err := fmt.Fprintf(w, `{token: "%s"}`, token); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+	}), true, false, "POST")
 
 	a.indexPage.AddLinks(defaultWeight, "Distributor", []IndexPageLink{
 		{Desc: "Ring status", Path: "/distributor/ring"},

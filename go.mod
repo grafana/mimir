@@ -56,6 +56,7 @@ require (
 require (
 	github.com/alecthomas/chroma v0.10.0
 	github.com/google/go-github/v32 v32.1.0
+	github.com/google/uuid v1.2.0
 	github.com/grafana-tools/sdk v0.0.0-20211220201350-966b3088eec9
 	github.com/grpc-ecosystem/go-grpc-middleware v1.3.0
 	github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db
@@ -130,7 +131,6 @@ require (
 	github.com/google/btree v1.0.1 // indirect
 	github.com/google/go-querystring v1.0.0 // indirect
 	github.com/google/pprof v0.0.0-20211214055906-6f57359322fd // indirect
-	github.com/google/uuid v1.2.0 // indirect
 	github.com/googleapis/gax-go/v2 v2.1.1 // indirect
 	github.com/gopherjs/gopherjs v0.0.0-20191106031601-ce3c9ade29de // indirect
 	github.com/gosimple/slug v1.1.1 // indirect

@@ -18,6 +18,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/google/uuid"
 	"github.com/grafana/dskit/limiter"
 	"github.com/grafana/dskit/ring"
 	ring_client "github.com/grafana/dskit/ring/client"
@@ -856,6 +857,21 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 		return nil, err
 	}
 	return &mimirpb.WriteResponse{}, firstPartialErr
+}
+
+// StartBackfillRequest contains parameters for starting a metrics backfill session.
+type StartBackfillRequest struct {
+	// TenantID is the ID of the tenant for which to backfill.
+	TenantID int `json:"tenantId"`
+	// NumBlocks is the number of blocks that should be backfilled.
+	NumBlocks int `json:"numBlocks"`
+}
+
+// StartBackfill requests the starting of a backfill session based on parameters from req.
+func (d *Distributor) StartBackfill(ctx context.Context, req StartBackfillRequest) (string, error) {
+	token := uuid.New()
+	// TODO: Create session document in staging object storage bucket.
+	return token.String(), nil
 }
 
 func copyString(s string) string {
