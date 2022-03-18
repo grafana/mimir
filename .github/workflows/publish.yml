@@ -18,8 +18,7 @@ jobs:
       id: publish
       with:
         repository: grafana/website
-        # Temporarily sync to the mimir branch until we are ready for launch.
-        branch: mimir
+        branch: master
         host: github.com
         github_pat: '${{ secrets.GH_BOT_ACCESS_TOKEN }}'
         source_folder: docs/sources
