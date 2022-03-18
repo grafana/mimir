@@ -10,14 +10,14 @@ type Mapper interface {
 	DoMap(source, target Parameters) error
 }
 
-type Mapping func(oldPath string, oldVal interface{}) (newPath string, newVal interface{})
+type Mapping func(oldPath string, oldVal Value) (newPath string, newVal Value)
 
 // BestEffortDirectMapper implement Mapper and naively maps the values of all parameters form the source to the
 // same name parameter in the target. It ignores all errors while setting the values.
 type BestEffortDirectMapper struct{}
 
 func (BestEffortDirectMapper) DoMap(source, target Parameters) error {
-	err := source.Walk(func(path string, value interface{}) error {
+	err := source.Walk(func(path string, value Value) error {
 		_ = target.SetValue(path, value)
 		return nil
 	})
@@ -43,7 +43,8 @@ func (m PathMapper) DoMap(source, target Parameters) error {
 			errs.Add(err)
 			continue
 		}
-		err = target.SetValue(mapping(path, oldVal))
+		newPath, newVal := mapping(path, oldVal)
+		err = target.SetValue(newPath, newVal)
 		if err != nil {
 			errs.Add(err)
 		}
@@ -68,7 +69,7 @@ func (m MapperFunc) DoMap(source, target Parameters) error {
 }
 
 func RenameMapping(to string) Mapping {
-	return func(oldPath string, oldVal interface{}) (newPath string, newVal interface{}) {
+	return func(oldPath string, oldVal Value) (newPath string, newVal Value) {
 		newPath = to
 		newVal = oldVal
 		return

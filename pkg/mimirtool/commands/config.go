@@ -30,6 +30,8 @@ type ConfigCommand struct {
 	includeDefaults bool
 
 	verbose bool
+
+	gem bool
 }
 
 // Register rule related commands and flags with the kingpin application
@@ -37,16 +39,17 @@ func (c *ConfigCommand) Register(app *kingpin.Application, _ EnvVarNames) {
 	configCmd := app.Command("config", "Work with Grafana Mimir configuration.")
 
 	convertCmd := configCmd.
-		Command("convert", "Convert a configuration file from Cortex v1.11.0 to Grafana Mimir v2.0.0 and output it to stdout").
+		Command("convert", "Convert configuration parameters (YAML and CLI flags) from Cortex v1.10.0 and above to Grafana Mimir v2.0.0 (default), and from Grafana Metrics Enterprise v1.7.0 to v2.0.0 (via --gem flag).").
 		Action(c.convertConfig)
 
 	convertCmd.Flag("yaml-file", "The YAML configuration file to convert.").StringVar(&c.yamlFile)
-	convertCmd.Flag("flags-file", "New-line-delimited list of CLI flags to convert.").StringVar(&c.flagsFile)
-	convertCmd.Flag("yaml-out", "Location to output the converted YAML configuration to. Default stdout").StringVar(&c.outYAMLFile)
-	convertCmd.Flag("flags-out", "Location to output list of converted CLI flags to. Default stdout").StringVar(&c.outFlagsFile)
-	convertCmd.Flag("update-defaults", "If set and a configuration parameter is explicitly set to a default value which has changed in Mimir 2.0, the parameter value will be updated to the new default.").BoolVar(&c.updateDefaults)
-	convertCmd.Flag("include-defaults", "If set, includes all default values in the output YAML, regardless if they were explicitly set in the input YAML or not.").BoolVar(&c.includeDefaults)
-	convertCmd.Flag("verbose", "Print to stderr CLI flags and YAML paths from old config that no longer exist in the new one, changed default values between old and new, and deleted default values from -keep-defaults=false.").Short('v').BoolVar(&c.verbose)
+	convertCmd.Flag("flags-file", "Newline-delimited list of CLI flags to convert.").StringVar(&c.flagsFile)
+	convertCmd.Flag("yaml-out", "The file to output the converted YAML configuration to. If not set, output to stdout.").StringVar(&c.outYAMLFile)
+	convertCmd.Flag("flags-out", "The file to output the list of converted CLI flags to. If not set, output to stdout.").StringVar(&c.outFlagsFile)
+	convertCmd.Flag("update-defaults", "If you set this flag and you set a configuration parameter to a default value that has changed in Mimir 2.0, the parameter updates to the new default value.").BoolVar(&c.updateDefaults)
+	convertCmd.Flag("include-defaults", "If you set this flag, all default values are included in the output YAML, regardless of whether you explicitly set the values in the input files.").BoolVar(&c.includeDefaults)
+	convertCmd.Flag("verbose", "If you set this flag, the CLI flags and YAML paths from the old configuration that do not exist in the new configuration are printed to stderr. This flag also prints default values that have changed between the old and the new configuration.").Short('v').BoolVar(&c.verbose)
+	convertCmd.Flag("gem", "If you set this flag, the tool will convert from Grafana Metrics Enterprise (GEM) v1.7.x to v2.0.0.").BoolVar(&c.gem)
 }
 
 func (c *ConfigCommand) convertConfig(_ *kingpin.ParseContext) error {
@@ -55,7 +58,12 @@ func (c *ConfigCommand) convertConfig(_ *kingpin.ParseContext) error {
 		return err
 	}
 
-	convertedYAML, flagsFlags, notices, err := config.Convert(yamlContents, flagsFlags, config.CortexToMimirMapper, config.DefaultCortexConfig, config.DefaultMimirConfig, c.updateDefaults, c.includeDefaults)
+	sourceFactory, targetFactory, mapper := config.DefaultCortexConfig, config.DefaultMimirConfig, config.CortexToMimirMapper()
+	if c.gem {
+		sourceFactory, targetFactory, mapper = config.DefaultGEM170Config, config.DefaultGEM200COnfig, config.GEM170ToGEM200Mapper()
+	}
+
+	convertedYAML, flagsFlags, notices, err := config.Convert(yamlContents, flagsFlags, mapper, sourceFactory, targetFactory, c.updateDefaults, c.includeDefaults)
 	if err != nil {
 		return errors.Wrap(err, "could not convert configuration")
 	}
