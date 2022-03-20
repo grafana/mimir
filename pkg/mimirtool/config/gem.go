@@ -8,7 +8,38 @@ func GEM170ToGEM200Mapper() Mapper {
 		"blocks_storage.tsdb.max_exemplars":         {},
 		"query_range.parallelise_shardable_queries": {},
 	}
-	gemRenames := make(map[string]Mapping, len(cortexRenameMappings))
+	gemRenames := map[string]Mapping{
+		"graphite.querier.metric_name_cache.background.writeback_buffer":     RenameMapping("graphite.querier.metric_name_cache.memcached.max_async_buffer_size"),
+		"graphite.querier.metric_name_cache.background.writeback_goroutines": RenameMapping("graphite.querier.metric_name_cache.memcached.max_async_concurrency"),
+		"graphite.querier.metric_name_cache.memcached.batch_size":            RenameMapping("graphite.querier.metric_name_cache.memcached.max_get_multi_batch_size"),
+		"graphite.querier.metric_name_cache.memcached.parallelism":           RenameMapping("graphite.querier.metric_name_cache.memcached.max_get_multi_concurrency"),
+		"graphite.querier.metric_name_cache.memcached_client.addresses":      RenameMapping("graphite.querier.metric_name_cache.memcached.addresses"),
+		"graphite.querier.metric_name_cache.memcached_client.max_idle_conns": RenameMapping("graphite.querier.metric_name_cache.memcached.max_idle_connections"),
+		"graphite.querier.metric_name_cache.memcached_client.max_item_size":  RenameMapping("graphite.querier.metric_name_cache.memcached.max_item_size"),
+		"graphite.querier.metric_name_cache.memcached_client.timeout":        RenameMapping("graphite.querier.metric_name_cache.memcached.timeout"),
+
+		"graphite.querier.aggregation_cache.background.writeback_buffer":     RenameMapping("graphite.querier.aggregation_cache.memcached.max_async_buffer_size"),
+		"graphite.querier.aggregation_cache.background.writeback_goroutines": RenameMapping("graphite.querier.aggregation_cache.memcached.max_async_concurrency"),
+		"graphite.querier.aggregation_cache.memcached.batch_size":            RenameMapping("graphite.querier.aggregation_cache.memcached.max_get_multi_batch_size"),
+		"graphite.querier.aggregation_cache.memcached.parallelism":           RenameMapping("graphite.querier.aggregation_cache.memcached.max_get_multi_concurrency"),
+		"graphite.querier.aggregation_cache.memcached_client.addresses":      RenameMapping("graphite.querier.aggregation_cache.memcached.addresses"),
+		"graphite.querier.aggregation_cache.memcached_client.max_idle_conns": RenameMapping("graphite.querier.aggregation_cache.memcached.max_idle_connections"),
+		"graphite.querier.aggregation_cache.memcached_client.max_item_size":  RenameMapping("graphite.querier.aggregation_cache.memcached.max_item_size"),
+		"graphite.querier.aggregation_cache.memcached_client.timeout":        RenameMapping("graphite.querier.aggregation_cache.memcached.timeout"),
+
+		"query_range.cache_unaligned_requests": RenameMapping("frontend.cache_unaligned_requests"),
+
+		"gateway.proxy.graphite.enable_keepalive":         RenameMapping("gateway.proxy.graphite_querier.enable_keepalive"),
+		"gateway.proxy.graphite.read_timeout":             RenameMapping("gateway.proxy.graphite_querier.read_timeout"),
+		"gateway.proxy.graphite.tls_ca_path":              RenameMapping("gateway.proxy.graphite_querier.tls_ca_path"),
+		"gateway.proxy.graphite.tls_cert_path":            RenameMapping("gateway.proxy.graphite_querier.tls_cert_path"),
+		"gateway.proxy.graphite.tls_enabled":              RenameMapping("gateway.proxy.graphite_querier.tls_enabled"),
+		"gateway.proxy.graphite.tls_insecure_skip_verify": RenameMapping("gateway.proxy.graphite_querier.tls_insecure_skip_verify"),
+		"gateway.proxy.graphite.tls_key_path":             RenameMapping("gateway.proxy.graphite_querier.tls_key_path"),
+		"gateway.proxy.graphite.tls_server_name":          RenameMapping("gateway.proxy.graphite_querier.tls_server_name"),
+		"gateway.proxy.graphite.url":                      RenameMapping("gateway.proxy.graphite_querier.url"),
+		"gateway.proxy.graphite.write_timeout":            RenameMapping("gateway.proxy.graphite_querier.write_timeout"),
+	}
 	for path, mapping := range cortexRenameMappings {
 		if _, notInGEM := nonExistentGEMPaths[path]; notInGEM {
 			continue
@@ -18,7 +49,7 @@ func GEM170ToGEM200Mapper() Mapper {
 
 	return MultiMapper{
 		mapGEMInstanceInterfaceNames(),
-		// first try to naively map keys from old config to same keys from new config
+		// Try to naively map keys from old config to same keys from new config
 		BestEffortDirectMapper{},
 		// next map alertmanager URL in the ruler config
 		MapperFunc(alertmanagerURLMapperFunc),
@@ -33,13 +64,18 @@ func GEM170ToGEM200Mapper() Mapper {
 		// Remap sharding configs
 		MapperFunc(updateKVStoreValue),
 		// Convert provided memcached service and host to the DNS service discovery format
-		MapperFunc(mapMemcachedAddresses),
+		mapMemcachedAddresses("query_range.results_cache.cache.memcached_client", "frontend.results_cache.memcached"),
+		mapMemcachedAddresses("graphite.querier.metric_name_cache.memcached_client", "graphite.querier.metric_name_cache.memcached"),
+		mapMemcachedAddresses("graphite.querier.aggregation_cache.memcached_client", "graphite.querier.aggregation_cache.memcached"),
+
 		// Map `-*.s3.url` to `-*.s3.(endpoint|access_key_id|secret_access_key)`
 		mapRulerAlertmanagerS3URL("alertmanager.storage", "alertmanager_storage"), mapRulerAlertmanagerS3URL("ruler.storage", "ruler_storage"),
 		// Map `-*.s3.bucketnames` and (maybe part of `-*s3.s3.url`) to `-*.s3.bucket-name`
 		mapRulerAlertmanagerS3Buckets("alertmanager.storage", "alertmanager_storage"), mapRulerAlertmanagerS3Buckets("ruler.storage", "ruler_storage"),
 		// Prevent server.http_listen_port from being updated with a new default and always output it.
-		MapperFunc(mapServerHTTPListenPort),
+		setOldDefaultExplicitly("server.http_listen_port"),
+		// Prevent auth.type from being updated with a new default and always output it.
+		setOldDefaultExplicitly("auth.type"),
 		// Set frontend.results_cache.backend when results cache was enabled in cortex
 		MapperFunc(mapQueryFrontendBackend),
 	}

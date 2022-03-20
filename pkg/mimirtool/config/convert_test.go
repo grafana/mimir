@@ -16,21 +16,21 @@ import (
 type conversionInput struct {
 	useNewDefaults bool
 	outputDefaults bool
-	inYAML         []byte
-	inFlags        []string
+	yaml           []byte
+	flags          []string
 }
 
 func testCortexAndGEM(t *testing.T, tc conversionInput, assert func(t *testing.T, outYAML []byte, outFlags []string, notices ConversionNotices, err error)) {
 	t.Parallel()
 	t.Run("cortex->mimir", func(t *testing.T) {
 		t.Parallel()
-		mimirYAML, mimirFlags, mimirNotices, mimirErr := Convert(tc.inYAML, tc.inFlags, CortexToMimirMapper(), DefaultCortexConfig, DefaultMimirConfig, tc.useNewDefaults, tc.outputDefaults)
+		mimirYAML, mimirFlags, mimirNotices, mimirErr := Convert(tc.yaml, tc.flags, CortexToMimirMapper(), DefaultCortexConfig, DefaultMimirConfig, tc.useNewDefaults, tc.outputDefaults)
 		assert(t, mimirYAML, mimirFlags, mimirNotices, mimirErr)
 	})
 
 	t.Run("gem170->gem200", func(t *testing.T) {
 		t.Parallel()
-		gemYAML, gemFlags, gemNotices, gemErr := Convert(tc.inYAML, tc.inFlags, GEM170ToGEM200Mapper(), DefaultGEM170Config, DefaultGEM200COnfig, tc.useNewDefaults, tc.outputDefaults)
+		gemYAML, gemFlags, gemNotices, gemErr := Convert(tc.yaml, tc.flags, GEM170ToGEM200Mapper(), DefaultGEM170Config, DefaultGEM200COnfig, tc.useNewDefaults, tc.outputDefaults)
 		assert(t, gemYAML, gemFlags, gemNotices, gemErr)
 	})
 }
@@ -270,9 +270,8 @@ func TestConvert_Cortex(t *testing.T) {
 
 			in := conversionInput{
 				useNewDefaults: tc.useNewDefaults,
-				outputDefaults: false,
-				inYAML:         inBytes,
-				inFlags:        inFlags,
+				yaml:           inBytes,
+				flags:          inFlags,
 			}
 
 			testCortexAndGEM(t, in, func(t *testing.T, outYAML []byte, outFlags []string, notices ConversionNotices, err error) {
@@ -357,8 +356,8 @@ func TestConvert_InvalidConfigs(t *testing.T) {
 			inFlags := loadFlags(t, tc.inFlagsFile)
 
 			in := conversionInput{
-				inFlags: inFlags,
-				inYAML:  inBytes,
+				flags: inFlags,
+				yaml:  inBytes,
 			}
 			testCortexAndGEM(t, in, func(t *testing.T, outYAML []byte, outFlags []string, notices ConversionNotices, err error) {
 				assert.EqualError(t, err, tc.expectedErr)
@@ -616,8 +615,8 @@ func TestConvert_UseNewDefaults(t *testing.T) {
 			// unrelated config options (e.g. server.http_listen_port)
 			inFlags := loadFlags(t, "testdata/common-flags.txt")
 			in := conversionInput{
-				inYAML:         tc.inYAML,
-				inFlags:        inFlags,
+				yaml:           tc.inYAML,
+				flags:          inFlags,
 				useNewDefaults: tc.useNewDefaults,
 			}
 
@@ -645,8 +644,8 @@ func TestConvert_NotInYAMLIsNotPrinted(t *testing.T) {
 				in := conversionInput{
 					useNewDefaults: useNewDefaults,
 					outputDefaults: showDefaults,
-					inYAML:         nil,
-					inFlags:        nil,
+					yaml:           nil,
+					flags:          nil,
 				}
 				testCortexAndGEM(t, in, func(t *testing.T, outYAML []byte, outFlags []string, notices ConversionNotices, err error) {
 					assert.NoError(t, err)
