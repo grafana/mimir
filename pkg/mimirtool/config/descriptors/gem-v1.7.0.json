@@ -1198,6 +1198,16 @@
             },
             {
               "kind": "field",
+              "name": "instance_id",
+              "required": false,
+              "desc": "Instance ID to register in the ring.",
+              "fieldValue": null,
+              "fieldDefaultValue": null,
+              "fieldFlag": "distributor.ring.instance-id",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
               "name": "instance_interface_names",
               "required": false,
               "desc": "Name of network interface to read address from.",
@@ -1208,6 +1218,26 @@
               ],
               "fieldFlag": "distributor.ring.instance-interface-names",
               "fieldType": "list of string"
+            },
+            {
+              "kind": "field",
+              "name": "instance_port",
+              "required": false,
+              "desc": "Port to advertise in the ring (defaults to server.grpc-listen-port).",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "distributor.ring.instance-port",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "instance_addr",
+              "required": false,
+              "desc": "IP address to advertise in the ring.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "distributor.ring.instance-addr",
+              "fieldType": "string"
             }
           ],
           "fieldValue": null,
@@ -2201,6 +2231,16 @@
               "fieldDefaultValue": true,
               "fieldFlag": "ingester.readiness-check-ring-health",
               "fieldType": "boolean"
+            },
+            {
+              "kind": "field",
+              "name": "address",
+              "required": false,
+              "desc": "IP address to advertise in the ring.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ingester.lifecycler.addr",
+              "fieldType": "string"
             }
           ],
           "fieldValue": null,
@@ -4191,6 +4231,15 @@
               ],
               "fieldValue": null,
               "fieldDefaultValue": null
+            },
+            {
+              "kind": "field",
+              "name": "prefix",
+              "required": false,
+              "desc": "",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldType": "string"
             }
           ],
           "fieldValue": null,
@@ -4851,6 +4900,15 @@
               ],
               "fieldValue": null,
               "fieldDefaultValue": null
+            },
+            {
+              "kind": "field",
+              "name": "prefix",
+              "required": false,
+              "desc": "",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldType": "string"
             }
           ],
           "fieldValue": null,
@@ -5241,6 +5299,15 @@
               ],
               "fieldValue": null,
               "fieldDefaultValue": null
+            },
+            {
+              "kind": "field",
+              "name": "prefix",
+              "required": false,
+              "desc": "",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldType": "string"
             }
           ],
           "fieldValue": null,
@@ -6447,6 +6514,16 @@
         },
         {
           "kind": "field",
+          "name": "address",
+          "required": false,
+          "desc": "IP address to advertise to querier (via scheduler) (resolved via interfaces by default).",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldFlag": "frontend.instance-addr",
+          "fieldType": "string"
+        },
+        {
+          "kind": "field",
           "name": "downstream_url",
           "required": false,
           "desc": "URL of downstream Prometheus.",
@@ -6876,6 +6953,15 @@
                   ],
                   "fieldValue": null,
                   "fieldDefaultValue": null
+                },
+                {
+                  "kind": "field",
+                  "name": "prefix",
+                  "required": false,
+                  "desc": "",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldType": "string"
                 }
               ],
               "fieldValue": null,
@@ -6933,6 +7019,16 @@
           "fieldValue": null,
           "fieldDefaultValue": false,
           "fieldFlag": "query-frontend.cache-unaligned-requests",
+          "fieldType": "boolean"
+        },
+        {
+          "kind": "field",
+          "name": "max_sharded_queries_limit_enabled",
+          "required": false,
+          "desc": "If enabled the query-frontend uses a new implementation of split by interval and results cache",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "query-frontend.max-sharded-queries-limit-enabled",
           "fieldType": "boolean"
         }
       ],
@@ -9003,6 +9099,26 @@
             },
             {
               "kind": "field",
+              "name": "chunk_pool_min_bucket_size_bytes",
+              "required": false,
+              "desc": "Size - in bytes - of the smallest chunks pool bucket.",
+              "fieldValue": null,
+              "fieldDefaultValue": 16000,
+              "fieldFlag": "blocks-storage.bucket-store.chunk-pool-min-bucket-size-bytes",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "chunk_pool_max_bucket_size_bytes",
+              "required": false,
+              "desc": "Size - in bytes - of the largest chunks pool bucket.",
+              "fieldValue": null,
+              "fieldDefaultValue": 50000000,
+              "fieldFlag": "blocks-storage.bucket-store.chunk-pool-max-bucket-size-bytes",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
               "name": "series_hash_cache_max_size_bytes",
               "required": false,
               "desc": "Max size - in bytes - of the in-memory series hash cache. The cache is shared across all tenants and it's used only when query sharding is enabled.",
@@ -9030,6 +9146,26 @@
               "fieldDefaultValue": 1200000000000,
               "fieldFlag": "blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout",
               "fieldType": "duration"
+            },
+            {
+              "kind": "field",
+              "name": "partitioner_max_gap_bytes",
+              "required": false,
+              "desc": "Max size - in bytes - of a gap for which the partitioner aggregates together two bucket GET object requests.",
+              "fieldValue": null,
+              "fieldDefaultValue": 524288,
+              "fieldFlag": "blocks-storage.bucket-store.partitioner-max-gap-bytes",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "postings_offsets_in_mem_sampling",
+              "required": false,
+              "desc": "Controls what is the ratio of postings offsets that the store will hold in memory.",
+              "fieldValue": null,
+              "fieldDefaultValue": 32,
+              "fieldFlag": "blocks-storage.bucket-store.posting-offsets-in-mem-sampling",
+              "fieldType": "int"
             }
           ],
           "fieldValue": null,
@@ -9693,6 +9829,16 @@
             },
             {
               "kind": "field",
+              "name": "instance_id",
+              "required": false,
+              "desc": "Instance ID to register in the ring.",
+              "fieldValue": null,
+              "fieldDefaultValue": null,
+              "fieldFlag": "compactor.ring.instance-id",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
               "name": "instance_interface_names",
               "required": false,
               "desc": "Name of network interface to read address from.",
@@ -9703,6 +9849,26 @@
               ],
               "fieldFlag": "compactor.ring.instance-interface-names",
               "fieldType": "list of string"
+            },
+            {
+              "kind": "field",
+              "name": "instance_port",
+              "required": false,
+              "desc": "Port to advertise in the ring (defaults to server.grpc-listen-port).",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "compactor.ring.instance-port",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "instance_addr",
+              "required": false,
+              "desc": "IP address to advertise in the ring.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "compactor.ring.instance-addr",
+              "fieldType": "string"
             },
             {
               "kind": "field",
@@ -10106,6 +10272,16 @@
             },
             {
               "kind": "field",
+              "name": "instance_id",
+              "required": false,
+              "desc": "Instance ID to register in the ring.",
+              "fieldValue": null,
+              "fieldDefaultValue": null,
+              "fieldFlag": "store-gateway.sharding-ring.instance-id",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
               "name": "instance_interface_names",
               "required": false,
               "desc": "Name of network interface to read address from.",
@@ -10116,6 +10292,26 @@
               ],
               "fieldFlag": "store-gateway.sharding-ring.instance-interface-names",
               "fieldType": "list of string"
+            },
+            {
+              "kind": "field",
+              "name": "instance_port",
+              "required": false,
+              "desc": "Port to advertise in the ring (defaults to server.grpc-listen-port).",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "store-gateway.sharding-ring.instance-port",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "instance_addr",
+              "required": false,
+              "desc": "IP address to advertise in the ring.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "store-gateway.sharding-ring.instance-addr",
+              "fieldType": "string"
             },
             {
               "kind": "field",
@@ -11519,6 +11715,16 @@
             },
             {
               "kind": "field",
+              "name": "instance_id",
+              "required": false,
+              "desc": "Instance ID to register in the ring.",
+              "fieldValue": null,
+              "fieldDefaultValue": null,
+              "fieldFlag": "ruler.ring.instance-id",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
               "name": "instance_interface_names",
               "required": false,
               "desc": "Name of network interface to read address from.",
@@ -11529,6 +11735,26 @@
               ],
               "fieldFlag": "ruler.ring.instance-interface-names",
               "fieldType": "list of string"
+            },
+            {
+              "kind": "field",
+              "name": "instance_port",
+              "required": false,
+              "desc": "Port to advertise in the ring (defaults to server.grpc-listen-port).",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "ruler.ring.instance-port",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "instance_addr",
+              "required": false,
+              "desc": "IP address to advertise in the ring.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ruler.ring.instance-addr",
+              "fieldType": "string"
             },
             {
               "kind": "field",
@@ -12532,6 +12758,16 @@
             },
             {
               "kind": "field",
+              "name": "instance_id",
+              "required": false,
+              "desc": "Instance ID to register in the ring.",
+              "fieldValue": null,
+              "fieldDefaultValue": null,
+              "fieldFlag": "alertmanager.sharding-ring.instance-id",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
               "name": "instance_interface_names",
               "required": false,
               "desc": "Name of network interface to read address from.",
@@ -12542,6 +12778,26 @@
               ],
               "fieldFlag": "alertmanager.sharding-ring.instance-interface-names",
               "fieldType": "list of string"
+            },
+            {
+              "kind": "field",
+              "name": "instance_port",
+              "required": false,
+              "desc": "Port to advertise in the ring (defaults to server.grpc-listen-port).",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "alertmanager.sharding-ring.instance-port",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "instance_addr",
+              "required": false,
+              "desc": "IP address to advertise in the ring.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "alertmanager.sharding-ring.instance-addr",
+              "fieldType": "string"
             },
             {
               "kind": "field",
@@ -14591,6 +14847,16 @@
                 },
                 {
                   "kind": "field",
+                  "name": "instance_id",
+                  "required": false,
+                  "desc": "Instance ID to register in the ring.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": null,
+                  "fieldFlag": "admin-api.leader-election.ring.instance-id",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "field",
                   "name": "instance_interface_names",
                   "required": false,
                   "desc": "Name of network interface to read address from.",
@@ -14601,6 +14867,26 @@
                   ],
                   "fieldFlag": "admin-api.leader-election.ring.instance-interface-names",
                   "fieldType": "list of string"
+                },
+                {
+                  "kind": "field",
+                  "name": "instance_port",
+                  "required": false,
+                  "desc": "Port to advertise in the ring (defaults to server.grpc-listen-port).",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 0,
+                  "fieldFlag": "admin-api.leader-election.ring.instance-port",
+                  "fieldType": "int"
+                },
+                {
+                  "kind": "field",
+                  "name": "instance_addr",
+                  "required": false,
+                  "desc": "IP address to advertise in the ring.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "admin-api.leader-election.ring.instance-addr",
+                  "fieldType": "string"
                 }
               ],
               "fieldValue": null,
@@ -17571,6 +17857,15 @@
                   ],
                   "fieldValue": null,
                   "fieldDefaultValue": null
+                },
+                {
+                  "kind": "field",
+                  "name": "prefix",
+                  "required": false,
+                  "desc": "",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldType": "string"
                 }
               ],
               "fieldValue": null,
@@ -17961,6 +18256,15 @@
                   ],
                   "fieldValue": null,
                   "fieldDefaultValue": null
+                },
+                {
+                  "kind": "field",
+                  "name": "prefix",
+                  "required": false,
+                  "desc": "",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldType": "string"
                 }
               ],
               "fieldValue": null,
@@ -18420,6 +18724,16 @@
       "required": false,
       "desc": "",
       "blockEntries": [
+        {
+          "kind": "field",
+          "name": "type",
+          "required": false,
+          "desc": "Type of license.",
+          "fieldValue": null,
+          "fieldDefaultValue": "jwt",
+          "fieldFlag": "license.type",
+          "fieldType": "string"
+        },
         {
           "kind": "field",
           "name": "path",

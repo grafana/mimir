@@ -130,6 +130,7 @@ var cortexRenameMappings = map[string]Mapping{
 	"ingester.lifecycler.ring.zone_awareness_enabled":                RenameMapping("ingester.ring.zone_awareness_enabled"),
 	"ingester.lifecycler.tokens_file_path":                           RenameMapping("ingester.ring.tokens_file_path"),
 	"ingester.lifecycler.unregister_on_shutdown":                     RenameMapping("ingester.ring.unregister_on_shutdown"),
+	notInYaml + ".ingester-lifecycler-id":                            RenameMapping("ingester.ring.instance_id"),
 
 	"auth_enabled": RenameMapping("multitenancy_enabled"),
 }

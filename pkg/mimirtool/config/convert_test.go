@@ -302,6 +302,11 @@ func TestConvert_Cortex(t *testing.T) {
 			outFile: "testdata/duration-list-new.yaml",
 		},
 		{
+			name:         "instance_id is preserved",
+			inFlagsFile:  "testdata/ring-instance-id-old.flags.txt",
+			outFlagsFile: "testdata/ring-instance-id-new.flags.txt",
+		},
+		{
 			name:    "new frontend.results_cache.backend == memcached when old query_range.cache_results == true",
 			inFile:  "testdata/query-frontend-results-cache-old.yaml",
 			outFile: "testdata/query-frontend-results-cache-new.yaml",

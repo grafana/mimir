@@ -1243,7 +1243,7 @@
               "required": false,
               "desc": "Instance ID to register in the ring.",
               "fieldValue": null,
-              "fieldDefaultValue": "\u003chostname\u003e",
+              "fieldDefaultValue": null,
               "fieldFlag": "distributor.ring.instance-id",
               "fieldType": "string",
               "fieldCategory": "advanced"
@@ -2129,7 +2129,7 @@
               "required": false,
               "desc": "Instance ID to register in the ring.",
               "fieldValue": null,
-              "fieldDefaultValue": "\u003chostname\u003e",
+              "fieldDefaultValue": null,
               "fieldFlag": "ingester.ring.instance-id",
               "fieldType": "string",
               "fieldCategory": "advanced"
@@ -5881,7 +5881,7 @@
               "required": false,
               "desc": "Instance ID to register in the ring.",
               "fieldValue": null,
-              "fieldDefaultValue": "\u003chostname\u003e",
+              "fieldDefaultValue": null,
               "fieldFlag": "compactor.ring.instance-id",
               "fieldType": "string",
               "fieldCategory": "advanced"
@@ -6329,7 +6329,7 @@
               "required": false,
               "desc": "Instance ID to register in the ring.",
               "fieldValue": null,
-              "fieldDefaultValue": "\u003chostname\u003e",
+              "fieldDefaultValue": null,
               "fieldFlag": "store-gateway.sharding-ring.instance-id",
               "fieldType": "string",
               "fieldCategory": "advanced"
@@ -7172,7 +7172,7 @@
               "required": false,
               "desc": "Instance ID to register in the ring.",
               "fieldValue": null,
-              "fieldDefaultValue": "\u003chostname\u003e",
+              "fieldDefaultValue": null,
               "fieldFlag": "ruler.ring.instance-id",
               "fieldType": "string",
               "fieldCategory": "advanced"
@@ -8302,7 +8302,7 @@
               "required": false,
               "desc": "Instance ID to register in the ring.",
               "fieldValue": null,
-              "fieldDefaultValue": "\u003chostname\u003e",
+              "fieldDefaultValue": null,
               "fieldFlag": "alertmanager.sharding-ring.instance-id",
               "fieldType": "string",
               "fieldCategory": "advanced"
