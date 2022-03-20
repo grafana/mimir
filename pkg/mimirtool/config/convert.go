@@ -106,7 +106,7 @@ func Convert(
 	var newFlags []string
 	if len(contents) == 0 {
 		newFlags, err = extractAllAsFlags(target)
-	} else if len(contents) > 0 && len(flags) > 0 {
+	} else if len(flags) > 0 {
 		newFlags, err = extractInputFlags(target, flags, m, sourceFactory, targetFactory)
 	}
 	if err != nil {
