@@ -378,6 +378,11 @@ func TestConvert_GEM(t *testing.T) {
 			inFile:            "testdata/gem/server-listen-http-port-random-old.yaml",
 			outFile:           "testdata/gem/server-listen-http-port-random-new.yaml",
 		},
+		{
+			name:         "instance_id is preserved",
+			inFlagsFile:  "testdata/gem/ring-instance-id-old.flags.txt",
+			outFlagsFile: "testdata/gem/ring-instance-id-new.flags.txt",
+		},
 	}
 
 	for _, tc := range testCases {

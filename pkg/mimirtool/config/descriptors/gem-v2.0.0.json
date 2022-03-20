@@ -1243,7 +1243,7 @@
               "required": false,
               "desc": "Instance ID to register in the ring.",
               "fieldValue": null,
-              "fieldDefaultValue": null,
+              "fieldDefaultValue": "\u003chostname\u003e",
               "fieldFlag": "distributor.ring.instance-id",
               "fieldType": "string",
               "fieldCategory": "advanced"
@@ -2129,7 +2129,7 @@
               "required": false,
               "desc": "Instance ID to register in the ring.",
               "fieldValue": null,
-              "fieldDefaultValue": null,
+              "fieldDefaultValue": "\u003chostname\u003e",
               "fieldFlag": "ingester.ring.instance-id",
               "fieldType": "string",
               "fieldCategory": "advanced"
@@ -5881,7 +5881,7 @@
               "required": false,
               "desc": "Instance ID to register in the ring.",
               "fieldValue": null,
-              "fieldDefaultValue": null,
+              "fieldDefaultValue": "\u003chostname\u003e",
               "fieldFlag": "compactor.ring.instance-id",
               "fieldType": "string",
               "fieldCategory": "advanced"
@@ -6329,7 +6329,7 @@
               "required": false,
               "desc": "Instance ID to register in the ring.",
               "fieldValue": null,
-              "fieldDefaultValue": null,
+              "fieldDefaultValue": "\u003chostname\u003e",
               "fieldFlag": "store-gateway.sharding-ring.instance-id",
               "fieldType": "string",
               "fieldCategory": "advanced"
@@ -7172,7 +7172,7 @@
               "required": false,
               "desc": "Instance ID to register in the ring.",
               "fieldValue": null,
-              "fieldDefaultValue": null,
+              "fieldDefaultValue": "\u003chostname\u003e",
               "fieldFlag": "ruler.ring.instance-id",
               "fieldType": "string",
               "fieldCategory": "advanced"
@@ -8302,7 +8302,7 @@
               "required": false,
               "desc": "Instance ID to register in the ring.",
               "fieldValue": null,
-              "fieldDefaultValue": null,
+              "fieldDefaultValue": "\u003chostname\u003e",
               "fieldFlag": "alertmanager.sharding-ring.instance-id",
               "fieldType": "string",
               "fieldCategory": "advanced"
@@ -10030,6 +10030,17 @@
                 },
                 {
                   "kind": "field",
+                  "name": "instance_id",
+                  "required": false,
+                  "desc": "Instance ID to register in the ring.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "\u003chostname\u003e",
+                  "fieldFlag": "admin-api.leader-election.ring.instance-id",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
                   "name": "instance_interface_names",
                   "required": false,
                   "desc": "Name of network interface to read address from.",
@@ -10037,6 +10048,28 @@
                   "fieldDefaultValue": [],
                   "fieldFlag": "admin-api.leader-election.ring.instance-interface-names",
                   "fieldType": "list of string"
+                },
+                {
+                  "kind": "field",
+                  "name": "instance_port",
+                  "required": false,
+                  "desc": "Port to advertise in the ring (defaults to server.grpc-listen-port).",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 0,
+                  "fieldFlag": "admin-api.leader-election.ring.instance-port",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "instance_addr",
+                  "required": false,
+                  "desc": "IP address to advertise in the ring.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "admin-api.leader-election.ring.instance-addr",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
                 }
               ],
               "fieldValue": null,

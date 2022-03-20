@@ -38,6 +38,8 @@ func CortexToMimirMapper() Mapper {
 		mapRulerAlertmanagerS3Buckets("alertmanager.storage", "alertmanager_storage"), mapRulerAlertmanagerS3Buckets("ruler.storage", "ruler_storage"),
 		// Prevent server.http_listen_port from being updated with a new default and always output it.
 		setOldDefaultExplicitly("server.http_listen_port"),
+		// Manually override the dynamic fields' default values.
+		MapperFunc(mapCortexRingInstanceIDDefaults),
 		// Set frontend.results_cache.backend when results cache was enabled in cortex
 		MapperFunc(mapQueryFrontendBackend),
 	}
@@ -540,6 +542,17 @@ func mapQueryFrontendBackend(source, target Parameters) error {
 		return target.SetValue("frontend.results_cache.backend", StringValue("memcached"))
 	}
 	return nil
+}
+
+func mapCortexRingInstanceIDDefaults(source, target Parameters) error {
+	return multierror.New(
+		target.SetDefaultValue("alertmanager.sharding_ring.instance_id", Nil),
+		target.SetDefaultValue("compactor.sharding_ring.instance_id", Nil),
+		target.SetDefaultValue("distributor.ring.instance_id", Nil),
+		target.SetDefaultValue("ingester.ring.instance_id", Nil),
+		target.SetDefaultValue("ruler.ring.instance_id", Nil),
+		target.SetDefaultValue("store_gateway.sharding_ring.instance_id", Nil),
+	).Err()
 }
 
 // YAML Paths for config options removed since Cortex 1.11.0.

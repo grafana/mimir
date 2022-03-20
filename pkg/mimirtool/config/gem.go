@@ -78,6 +78,9 @@ func GEM170ToGEM200Mapper() Mapper {
 		setOldDefaultExplicitly("auth.type"),
 		// Set frontend.results_cache.backend when results cache was enabled in cortex
 		MapperFunc(mapQueryFrontendBackend),
+		// Manually override the dynamic fields' default values.
+		MapperFunc(mapCortexRingInstanceIDDefaults),
+		MapperFunc(mapAdminAPIRingInstanceIDDefaults),
 	}
 }
 
@@ -93,4 +96,8 @@ func mapGEMInstanceInterfaceNames() Mapper {
 		"store_gateway.sharding_ring.instance_interface_names":    "store_gateway.sharding_ring.instance_interface_names",
 	}
 	return mapInstanceInterfaceNames(ifaceNames)
+}
+
+func mapAdminAPIRingInstanceIDDefaults(source, target Parameters) error {
+	return target.SetDefaultValue("admin_api.leader_election.ring.instance_id", Nil)
 }
