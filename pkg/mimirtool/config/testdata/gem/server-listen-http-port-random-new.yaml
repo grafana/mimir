@@ -1,0 +1,5 @@
+server:
+  http_listen_port: 1234
+
+auth:
+  type: trust
