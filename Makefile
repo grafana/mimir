@@ -502,4 +502,4 @@ integration-tests: cmd/mimir/$(UPTODATE)
 
 include docs/docs.mk
 DOCS_DIR = docs/sources
-docs:
+docs: doc
