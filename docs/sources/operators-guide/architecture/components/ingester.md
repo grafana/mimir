@@ -7,7 +7,7 @@ weight: 30
 
 # Grafana Mimir ingester
 
-The ingester is a stateful component that writes incoming series to [long-term storage]({{< relref "../_index.md#long-term-storage" >}}) on the write path and returns series samples for queries on the read path.
+The ingester is a stateful component that writes incoming series to [long-term storage]({{< relref "../about-grafana-mimir-architecture/index.md#long-term-storage" >}}) on the write path and returns series samples for queries on the read path.
 
 Incoming series from [distributors]({{< relref "distributor.md" >}}) are not immediately written to the long-term storage but are either kept in ingesters memory or offloaded to ingesters disk.
 Eventually, all series are written to disk and periodically uploaded (by default every two hours) to the long-term storage.

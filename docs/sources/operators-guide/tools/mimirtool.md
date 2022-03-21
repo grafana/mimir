@@ -28,9 +28,9 @@ Mimirtool is a command-line tool that operators and tenants can use to execute a
 
   For more information about the `analyze` command, refer to [Analyze]({{< relref "#analyze" >}}).
 
-- The `bucket-validate` command verifies that an object storage bucket is suitable as a backend storage for Grafana Mimir.
+- The `bucket-validation` command verifies that an object storage bucket is suitable as a backend storage for Grafana Mimir.
 
-  For more information about the `bucket-validate` command, refer to [Bucket-validate]({{< relref "#bucket-validate" >}}).
+  For more information about the `bucket-validation` command, refer to [Bucket validation]({{< relref "#bucket-validation" >}}).
 
 - The `acl` command generates the label-based access control header used in Grafana Enterprise Metrics and Grafana Cloud Metrics.
 
@@ -851,4 +851,4 @@ The only parameter of the script is a file containing the flags, with each flag 
 
 ## License
 
-Licensed AGPLv3, see [LICENSE](../../LICENSE).
+Licensed AGPLv3, see [LICENSE](https://github.com/grafana/mimir/blob/main/LICENSE).

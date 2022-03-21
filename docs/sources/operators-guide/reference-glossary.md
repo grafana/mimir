@@ -121,4 +121,4 @@ Refer to [Tenant]({{< relref "#tenant" >}}).
 ## Write-ahead log (WAL)
 
 The write-ahead Log (WAL) is an append only log stored on disk by ingesters to recover their in-memory state after the process gets restarted.
-For more information, refer to [The write path]({{< relref "architecture/_index.md#the-write-path" >}}).
+For more information, refer to [The write path]({{< relref "architecture/about-grafana-mimir-architecture/index.md#the-write-path" >}}).

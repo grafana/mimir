@@ -43,14 +43,14 @@ For example, when running in the cloud, include an AWS EBS volume or a GCP persi
 If you are running the Grafana Mimir cluster in Kubernetes, you can use a StatefulSet with a persistent volume claim for the ingesters.
 The location on the filesystem where the WAL is stored is the same location where local TSDB blocks (compacted from head) are stored. The location of the filesystem and the location of the local TSDB blocks cannot be decoupled.
 
-For more information, refer to [timeline of block uploads]({{< relref "../../running-production-environment/production-tips/#how-to-estimate--querierquery-store-after" >}}) and [Ingester]({{< relref "../components/ingester.md" >}}).
+For more information, refer to [timeline of block uploads]({{< relref "../../running-production-environment/production-tips/index.md#how-to-estimate--querierquery-store-after" >}}) and [Ingester]({{< relref "../components/ingester.md" >}}).
 
 #### Series sharding and replication
 
 By default, each time series is replicated to three ingesters, and each ingester writes its own block to the long-term storage.
 The [Compactor]({{< relref "../components/compactor/index.md" >}}) merges blocks from multiple ingesters into a single block, and removes duplicate samples.
 Blocks compaction significantly reduces storage utilization.
-For more information, refer to [Compactor]({{< relref "../components/compactor/index.md" >}}) and [Production tips]({{< relref "../../running-production-environment/production-tips.md" >}}).
+For more information, refer to [Compactor]({{< relref "../components/compactor/index.md" >}}) and [Production tips]({{< relref "../../running-production-environment/production-tips/index.md" >}}).
 
 ### The read path
 
@@ -77,7 +77,7 @@ The remote write API emits batched [Snappy](https://google.github.io/snappy/)-co
 
 Mimir requires that each HTTP request has a header that specifies a tenant ID for the request. Request [authentication and authorization]({{< relref "../../securing/authentication-and-authorization.md" >}}) are handled by an external reverse proxy.
 
-Incoming samples (writes from Prometheus) are handled by the [distributor]({{< relref "../components/distributor.md" >}}), and incoming reads (PromQL queries) are handled by the [query frontend]({{< relref "../#query-frontend" >}}).
+Incoming samples (writes from Prometheus) are handled by the [distributor]({{< relref "../components/distributor.md" >}}), and incoming reads (PromQL queries) are handled by the [query frontend]({{< relref "../components/query-frontend/index.md" >}}).
 
 ## Long-term storage
 
