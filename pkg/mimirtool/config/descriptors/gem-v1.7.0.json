@@ -9923,6 +9923,16 @@
           "fieldDefaultValue": "smallest-range-oldest-blocks-first",
           "fieldFlag": "compactor.compaction-jobs-order",
           "fieldType": "string"
+        },
+        {
+          "kind": "field",
+          "name": "sharding_strategy",
+          "required": false,
+          "desc": "The sharding strategy to use. Supported values are: default, time-sharding.",
+          "fieldValue": null,
+          "fieldDefaultValue": "default",
+          "fieldFlag": "compactor.sharding-strategy",
+          "fieldType": "string"
         }
       ],
       "fieldValue": null,
