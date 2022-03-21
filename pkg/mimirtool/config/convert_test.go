@@ -754,7 +754,7 @@ func TestConvert_NotInYAMLIsNotPrinted(t *testing.T) {
 
 func TestConvert_PassingOnlyYAMLReturnsOnlyYAML(t *testing.T) {
 	inYAML := []byte("distributor: { remote_timeout: 11s }")
-	expectedOutYAML := []byte(`{distributor: { remote_timeout: 11s }, server: { http_listen_port: 80 }}`)
+	expectedOutYAML := inYAML
 
 	in := conversionInput{
 		yaml: inYAML,
@@ -769,7 +769,7 @@ func TestConvert_PassingOnlyYAMLReturnsOnlyYAML(t *testing.T) {
 
 func TestConvert_PassingOnlyFlagsReturnsOnlyFlags(t *testing.T) {
 	inFlags := []string{"-distributor.remote-timeout=11s"}
-	expectedOutFlags := append([]string{"-server.http-listen-port=80"}, inFlags...)
+	expectedOutFlags := inFlags
 
 	in := conversionInput{
 		flags: inFlags,
@@ -777,7 +777,7 @@ func TestConvert_PassingOnlyFlagsReturnsOnlyFlags(t *testing.T) {
 
 	testConvertCortexAndGEM(t, in, func(t *testing.T, outYAML []byte, outFlags []string, notices ConversionNotices, err error) {
 		assert.NoError(t, err)
-		assert.YAMLEq(t, "{}", string(outYAML))
+		assert.Empty(t, outYAML)
 		assert.ElementsMatch(t, expectedOutFlags, outFlags)
 	})
 }

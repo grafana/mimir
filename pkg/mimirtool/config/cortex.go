@@ -556,7 +556,7 @@ func mapCortexRingInstanceIDDefaults(source, target Parameters) error {
 }
 
 // YAML Paths for config options removed since Cortex 1.11.0.
-var removedConfigPaths = []string{
+var removedConfigPaths = append(gemRemovedConfigPath, []string{
 	"flusher.concurrent_flushes",                            // -flusher.concurrent-flushes
 	"flusher.flush_op_timeout",                              // -flusher.flush-op-timeout
 	"flusher.wal_dir",                                       // -flusher.wal-dir
@@ -1045,63 +1045,7 @@ var removedConfigPaths = []string{
 	"ruler.sharding_strategy",                // -ruler.sharding-strategy
 	"store_gateway.sharding_enabled",         // -store-gateway.sharding-enabled
 	"store_gateway.sharding_strategy",        // -store-gateway.sharding-strategy
-
-	// GEM-specific removed options
-	"graphite.querier_remote_read_enabled", // -graphite.querier.remote-read-enabled
-
-	// changed memcached config and dropped support for redis and fifocache
-	"graphite.querier.metric_name_cache.cache.default_validity",                                      // -graphite.querier.metric-name-cache.default-validity
-	"graphite.querier.metric_name_cache.cache.enable_fifocache",                                      // -graphite.querier.metric-name-cache.cache.enable-fifocache
-	"graphite.querier.metric_name_cache.cache.fifocache.max_size_bytes",                              // -graphite.querier.metric-name-cache.fifocache.max-size-bytes
-	"graphite.querier.metric_name_cache.cache.fifocache.max_size_items",                              // -graphite.querier.metric-name-cache.fifocache.max-size-items
-	"graphite.querier.metric_name_cache.cache.fifocache.size",                                        // -graphite.querier.metric-name-cache.fifocache.size
-	"graphite.querier.metric_name_cache.cache.fifocache.validity",                                    // -graphite.querier.metric-name-cache.fifocache.duration
-	"graphite.querier.metric_name_cache.cache.memcached.expiration",                                  // -graphite.querier.metric-name-cache.memcached.expiration
-	"graphite.querier.metric_name_cache.cache.memcached_client.circuit_breaker_consecutive_failures", // -graphite.querier.metric-name-cache.memcached.circuit-breaker-consecutive-failures
-	"graphite.querier.metric_name_cache.cache.memcached_client.circuit_breaker_interval",             // -graphite.querier.metric-name-cache.memcached.circuit-breaker-interval
-	"graphite.querier.metric_name_cache.cache.memcached_client.circuit_breaker_timeout",              // -graphite.querier.metric-name-cache.memcached.circuit-breaker-timeout
-	"graphite.querier.metric_name_cache.cache.memcached_client.consistent_hash",                      // -graphite.querier.metric-name-cache.memcached.consistent-hash
-	"graphite.querier.metric_name_cache.cache.memcached_client.update_interval",                      // -graphite.querier.metric-name-cache.memcached.update-interval
-	"graphite.querier.metric_name_cache.cache.redis.db",                                              // -graphite.querier.metric-name-cache.redis.db
-	"graphite.querier.metric_name_cache.cache.redis.endpoint",                                        // -graphite.querier.metric-name-cache.redis.endpoint
-	"graphite.querier.metric_name_cache.cache.redis.expiration",                                      // -graphite.querier.metric-name-cache.redis.expiration
-	"graphite.querier.metric_name_cache.cache.redis.idle_timeout",                                    // -graphite.querier.metric-name-cache.redis.idle-timeout
-	"graphite.querier.metric_name_cache.cache.redis.master_name",                                     // -graphite.querier.metric-name-cache.redis.master-name
-	"graphite.querier.metric_name_cache.cache.redis.max_connection_age",                              // -graphite.querier.metric-name-cache.redis.max-connection-age
-	"graphite.querier.metric_name_cache.cache.redis.password",                                        // -graphite.querier.metric-name-cache.redis.password
-	"graphite.querier.metric_name_cache.cache.redis.pool_size",                                       // -graphite.querier.metric-name-cache.redis.pool-size
-	"graphite.querier.metric_name_cache.cache.redis.timeout",                                         // -graphite.querier.metric-name-cache.redis.timeout
-	"graphite.querier.metric_name_cache.cache.redis.tls_enabled",                                     // -graphite.querier.metric-name-cache.redis.tls-enabled
-	"graphite.querier.metric_name_cache.cache.redis.tls_insecure_skip_verify",                        // -graphite.querier.metric-name-cache.redis.tls-insecure-skip-verify
-
-	"graphite.querier.aggregation_cache.cache.default_validity",                                      // -graphite.querier.aggregation-cache.default-validity
-	"graphite.querier.aggregation_cache.cache.enable_fifocache",                                      // -graphite.querier.aggregation-cache.cache.enable-fifocache
-	"graphite.querier.aggregation_cache.cache.fifocache.max_size_bytes",                              // -graphite.querier.aggregation-cache.fifocache.max-size-bytes
-	"graphite.querier.aggregation_cache.cache.fifocache.max_size_items",                              // -graphite.querier.aggregation-cache.fifocache.max-size-items
-	"graphite.querier.aggregation_cache.cache.fifocache.size",                                        // -graphite.querier.aggregation-cache.fifocache.size
-	"graphite.querier.aggregation_cache.cache.fifocache.validity",                                    // -graphite.querier.aggregation-cache.fifocache.duration
-	"graphite.querier.aggregation_cache.cache.memcached.expiration",                                  // -graphite.querier.aggregation-cache.memcached.expiration
-	"graphite.querier.aggregation_cache.cache.memcached_client.circuit_breaker_consecutive_failures", // -graphite.querier.aggregation-cache.memcached.circuit-breaker-consecutive-failures
-	"graphite.querier.aggregation_cache.cache.memcached_client.circuit_breaker_interval",             // -graphite.querier.aggregation-cache.memcached.circuit-breaker-interval
-	"graphite.querier.aggregation_cache.cache.memcached_client.circuit_breaker_timeout",              // -graphite.querier.aggregation-cache.memcached.circuit-breaker-timeout
-	"graphite.querier.aggregation_cache.cache.memcached_client.consistent_hash",                      // -graphite.querier.aggregation-cache.memcached.consistent-hash
-	"graphite.querier.aggregation_cache.cache.memcached_client.update_interval",                      // -graphite.querier.aggregation-cache.memcached.update-interval
-	"graphite.querier.aggregation_cache.cache.redis.db",                                              // -graphite.querier.aggregation-cache.redis.db
-	"graphite.querier.aggregation_cache.cache.redis.endpoint",                                        // -graphite.querier.aggregation-cache.redis.endpoint
-	"graphite.querier.aggregation_cache.cache.redis.expiration",                                      // -graphite.querier.aggregation-cache.redis.expiration
-	"graphite.querier.aggregation_cache.cache.redis.idle_timeout",                                    // -graphite.querier.aggregation-cache.redis.idle-timeout
-	"graphite.querier.aggregation_cache.cache.redis.master_name",                                     // -graphite.querier.aggregation-cache.redis.master-name
-	"graphite.querier.aggregation_cache.cache.redis.max_connection_age",                              // -graphite.querier.aggregation-cache.redis.max-connection-age
-	"graphite.querier.aggregation_cache.cache.redis.password",                                        // -graphite.querier.aggregation-cache.redis.password
-	"graphite.querier.aggregation_cache.cache.redis.pool_size",                                       // -graphite.querier.aggregation-cache.redis.pool-size
-	"graphite.querier.aggregation_cache.cache.redis.timeout",                                         // -graphite.querier.aggregation-cache.redis.timeout
-	"graphite.querier.aggregation_cache.cache.redis.tls_enabled",                                     // -graphite.querier.aggregation-cache.redis.tls-enabled
-	"graphite.querier.aggregation_cache.cache.redis.tls_insecure_skip_verify",                        // -graphite.querier.aggregation-cache.redis.tls-insecure-skip-verify
-
-	"compactor.compaction_strategy", // -compactor.compaction-strategy
-
-	"querier.query_label_names_with_matchers_enabled", // -querier.query-label-names-with-matchers-enabled
-}
+}...)
 
 // CLI options removed since Cortex 1.10.0. These flags only existed as CLI Flags, and were not included in YAML Config.
 var removedCLIOptions = []string{
