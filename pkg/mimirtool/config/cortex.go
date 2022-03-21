@@ -3,6 +3,8 @@
 package config
 
 import (
+	_ "embed" // need this for oldCortexConfig
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -11,6 +13,67 @@ import (
 
 	"github.com/grafana/mimir/pkg/storage/bucket/s3"
 )
+
+//go:embed descriptors/mimir-v2.0.0-flags-only.json
+var mimirConfigFlagsOnly []byte
+
+//go:embed descriptors/mimir-v2.0.0.json
+var mimirConfig []byte
+
+var CortexToMimirFactory = InspectedEntryFactory{
+	sourceFactory:   defaultCortexConfig,
+	targetFactory:   defaultMimirConfig,
+	removedOptions:  removedConfigPaths,
+	removedCLIFlags: removedCLIOptions,
+}
+
+func defaultMimirConfig() *InspectedEntry {
+	cfg := &InspectedEntry{}
+	if err := json.Unmarshal(mimirConfig, cfg); err != nil {
+		panic(err)
+	}
+
+	cfgFlagsOnly := &InspectedEntry{}
+	if err := json.Unmarshal(mimirConfigFlagsOnly, cfgFlagsOnly); err != nil {
+		panic(err)
+	}
+
+	cfg.BlockEntries = append(cfg.BlockEntries, &InspectedEntry{
+		Kind:         KindBlock,
+		Name:         notInYaml,
+		Required:     false,
+		Desc:         "Flags not available in YAML file.",
+		BlockEntries: cfgFlagsOnly.BlockEntries,
+	})
+	return cfg
+}
+
+//go:embed descriptors/cortex-v1.11.0.json
+var oldCortexConfig []byte
+
+//go:embed descriptors/cortex-v1.11.0-flags-only.json
+var oldCortexConfigFlagsOnly []byte
+
+func defaultCortexConfig() *InspectedEntry {
+	cfg := &InspectedEntry{}
+	if err := json.Unmarshal(oldCortexConfig, cfg); err != nil {
+		panic(err)
+	}
+
+	cfgFlagsOnly := &InspectedEntry{}
+	if err := json.Unmarshal(oldCortexConfigFlagsOnly, cfgFlagsOnly); err != nil {
+		panic(err)
+	}
+
+	cfg.BlockEntries = append(cfg.BlockEntries, &InspectedEntry{
+		Kind:         KindBlock,
+		Name:         notInYaml,
+		Required:     false,
+		Desc:         "Flags not available in YAML file.",
+		BlockEntries: cfgFlagsOnly.BlockEntries,
+	})
+	return cfg
+}
 
 // CortexToMimirMapper maps from cortex-1.11.0 to mimir-2.0.0 configurations
 func CortexToMimirMapper() Mapper {

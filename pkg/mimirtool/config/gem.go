@@ -2,6 +2,72 @@
 
 package config
 
+import (
+	_ "embed" // need this for oldCortexConfig
+	"encoding/json"
+)
+
+//go:embed descriptors/gem-v1.7.0.json
+var gem170CortexConfig []byte
+
+//go:embed descriptors/gem-v1.7.0-flags-only.json
+var gem170CortexConfigFlagsOnly []byte
+
+var GEM170ToGEM200Factory = InspectedEntryFactory{
+	sourceFactory:   defaultGEM170Config,
+	targetFactory:   defaultGEM200Config,
+	removedOptions:  gemRemovedConfigPaths,
+	removedCLIFlags: removedCLIOptions,
+}
+
+func defaultGEM170Config() *InspectedEntry {
+	cfg := &InspectedEntry{}
+	if err := json.Unmarshal(gem170CortexConfig, cfg); err != nil {
+		panic(err)
+	}
+
+	cfgFlagsOnly := &InspectedEntry{}
+	if err := json.Unmarshal(gem170CortexConfigFlagsOnly, cfgFlagsOnly); err != nil {
+		panic(err)
+	}
+
+	cfg.BlockEntries = append(cfg.BlockEntries, &InspectedEntry{
+		Kind:         KindBlock,
+		Name:         notInYaml,
+		Required:     false,
+		Desc:         "Flags not available in YAML file.",
+		BlockEntries: cfgFlagsOnly.BlockEntries,
+	})
+	return cfg
+}
+
+//go:embed descriptors/gem-v2.0.0.json
+var gem200CortexConfig []byte
+
+//go:embed descriptors/gem-v2.0.0-flags-only.json
+var gem200CortexConfigFlagsOnly []byte
+
+func defaultGEM200Config() *InspectedEntry {
+	cfg := &InspectedEntry{}
+	if err := json.Unmarshal(gem200CortexConfig, cfg); err != nil {
+		panic(err)
+	}
+
+	cfgFlagsOnly := &InspectedEntry{}
+	if err := json.Unmarshal(gem200CortexConfigFlagsOnly, cfgFlagsOnly); err != nil {
+		panic(err)
+	}
+
+	cfg.BlockEntries = append(cfg.BlockEntries, &InspectedEntry{
+		Kind:         KindBlock,
+		Name:         notInYaml,
+		Required:     false,
+		Desc:         "Flags not available in YAML file.",
+		BlockEntries: cfgFlagsOnly.BlockEntries,
+	})
+	return cfg
+}
+
 // GEM170ToGEM200Mapper maps from gem-1.7.0 to gem-2.0.0 configurations
 func GEM170ToGEM200Mapper() Mapper {
 	nonExistentGEMPaths := map[string]struct{}{
