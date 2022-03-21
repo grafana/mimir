@@ -7,7 +7,7 @@ weight: 60
 
 # Configuring Grafana Mimir hash rings
 
-[Hash rings]({{< relref "../architecture/hash-ring.md" >}}) are a distributed consistent hashing scheme and are widely used by Grafana Mimir for sharding and replication.
+[Hash rings]({{< relref "../architecture/hash-ring/index.md" >}}) are a distributed consistent hashing scheme and are widely used by Grafana Mimir for sharding and replication.
 
 Each of the following Grafana Mimir components builds an independent hash ring.
 The CLI flags used to configure the hash ring of each component have the following prefixes:

@@ -13,7 +13,7 @@ Incoming series from [distributors]({{< relref "distributor.md" >}}) are not imm
 Eventually, all series are written to disk and periodically uploaded (by default every two hours) to the long-term storage.
 For this reason, the [queriers]({{< relref "querier.md" >}}) might need to fetch samples from both ingesters and long-term storage while executing a query on the read path.
 
-Any Grafana Mimir component that calls the ingesters starts by first looking up ingesters registered in the [hash ring]({{< relref "../hash-ring.md" >}}) to determine which ingesters are available.
+Any Grafana Mimir component that calls the ingesters starts by first looking up ingesters registered in the [hash ring]({{< relref "../hash-ring/index.md" >}}) to determine which ingesters are available.
 Each ingester could be in one of the following states:
 
 - `PENDING`<br />
