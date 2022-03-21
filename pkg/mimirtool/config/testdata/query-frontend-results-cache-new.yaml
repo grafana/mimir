@@ -1,0 +1,4 @@
+frontend:
+  results_cache:
+    backend: memcached
+  cache_results: true

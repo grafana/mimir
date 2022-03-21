@@ -38,6 +38,8 @@ func CortexToMimirMapper() Mapper {
 		mapRulerAlertmanagerS3Buckets("alertmanager.storage", "alertmanager_storage"), mapRulerAlertmanagerS3Buckets("ruler.storage", "ruler_storage"),
 		// Prevent server.http_listen_port from being updated with a new default and always output it.
 		MapperFunc(mapServerHTTPListenPort),
+		// Set frontend.results_cache.backend when results cache was enabled in cortex
+		MapperFunc(mapQueryFrontendBackend),
 	}
 }
 
@@ -525,6 +527,14 @@ func mapServerHTTPListenPort(source, target Parameters) error {
 		return multierror.New(err, err2).Err()
 	}
 
+	return nil
+}
+
+func mapQueryFrontendBackend(source, target Parameters) error {
+	v, _ := source.GetValue("query_range.cache_results")
+	if v.AsBool() {
+		return target.SetValue("frontend.results_cache.backend", StringValue("memcached"))
+	}
 	return nil
 }
 

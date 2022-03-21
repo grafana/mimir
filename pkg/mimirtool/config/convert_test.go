@@ -21,6 +21,7 @@ type conversionInput struct {
 }
 
 func testCortexAndGEM(t *testing.T, tc conversionInput, assert func(t *testing.T, outYAML []byte, outFlags []string, notices ConversionNotices, err error)) {
+	t.Parallel()
 	t.Run("cortex->mimir", func(t *testing.T) {
 		t.Parallel()
 		mimirYAML, mimirFlags, mimirNotices, mimirErr := Convert(tc.inYAML, tc.inFlags, CortexToMimirMapper(), DefaultCortexConfig, DefaultMimirConfig, tc.useNewDefaults, tc.outputDefaults)
@@ -246,12 +247,16 @@ func TestConvert_Cortex(t *testing.T) {
 			inFile:  "testdata/duration-list-old.yaml",
 			outFile: "testdata/duration-list-new.yaml",
 		},
+		{
+			name:    "new frontend.results_cache.backend == memcached when old query_range.cache_results == true",
+			inFile:  "testdata/query-frontend-results-cache-old.yaml",
+			outFile: "testdata/query-frontend-results-cache-new.yaml",
+		},
 	}
 
 	for _, tc := range testCases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
 			inBytes, expectedOut := loadFile(t, tc.inFile), loadFile(t, tc.outFile)
 			inFlags, expectedOutFlags := loadFlags(t, tc.inFlagsFile), loadFlags(t, tc.outFlagsFile)
 			if inFlags == nil {
@@ -348,7 +353,6 @@ func TestConvert_InvalidConfigs(t *testing.T) {
 	for _, tc := range testCases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
 			inBytes := loadFile(t, tc.inFile)
 			inFlags := loadFlags(t, tc.inFlagsFile)
 
@@ -606,7 +610,6 @@ func TestConvert_UseNewDefaults(t *testing.T) {
 	for _, tc := range testCases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
 			// We pass the common flags in, but ignore the output.
 			// This is so that the always-present options in common-flags.txt get output in the flags instead of
 			// in the out YAML. This helps to keep the test cases and expected YAML clean of
@@ -639,7 +642,6 @@ func TestConvert_NotInYAMLIsNotPrinted(t *testing.T) {
 		for _, showDefaults := range []bool{true, false} {
 			showDefaults, useNewDefaults := showDefaults, useNewDefaults
 			t.Run(fmt.Sprintf("useNewDefault=%t_showDefaults=%t", useNewDefaults, showDefaults), func(t *testing.T) {
-				t.Parallel()
 				in := conversionInput{
 					useNewDefaults: useNewDefaults,
 					outputDefaults: showDefaults,
@@ -653,6 +655,36 @@ func TestConvert_NotInYAMLIsNotPrinted(t *testing.T) {
 			})
 		}
 	}
+}
+
+func TestConvert_PassingOnlyYAMLReturnsOnlyYAML(t *testing.T) {
+	inYAML := []byte("distributor: { remote_timeout: 11s }")
+	expectedOutYAML := []byte(`{distributor: { remote_timeout: 11s }, server: { http_listen_port: 80 }}`)
+
+	in := conversionInput{
+		inYAML: inYAML,
+	}
+
+	testCortexAndGEM(t, in, func(t *testing.T, outYAML []byte, outFlags []string, notices ConversionNotices, err error) {
+		assert.NoError(t, err)
+		assert.YAMLEq(t, string(expectedOutYAML), string(outYAML))
+		assert.Empty(t, outFlags)
+	})
+}
+
+func TestConvert_PassingOnlyFlagsReturnsOnlyFlags(t *testing.T) {
+	inFlags := []string{"-distributor.remote-timeout=11s"}
+	expectedOutFlags := append([]string{"-server.http-listen-port=80"}, inFlags...)
+
+	in := conversionInput{
+		inFlags: inFlags,
+	}
+
+	testCortexAndGEM(t, in, func(t *testing.T, outYAML []byte, outFlags []string, notices ConversionNotices, err error) {
+		assert.NoError(t, err)
+		assert.YAMLEq(t, "{}", string(outYAML))
+		assert.ElementsMatch(t, expectedOutFlags, outFlags)
+	})
 }
 
 func loadFile(t testing.TB, fileName string) []byte {
