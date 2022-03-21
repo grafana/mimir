@@ -12,7 +12,7 @@ The compactor increases query performance and reduces long-term storage usage by
 The compactor is the component responsible for:
 
 - Compacting multiple blocks of a given tenant into a single, optimized larger block. This deduplicates chunks and reduces the size of the index, resulting in reduced storage costs. Querying fewer blocks is faster, so it also increases query speed.
-- Keeping the per-tenant bucket index updated. The [bucket index]({{< relref "../../bucket-index.md" >}}) is used by [queriers]({{< relref "../querier.md" >}}), [store-gateways]({{< relref "../store-gateway.md" >}}), and [rulers]({{< relref "../ruler.md" >}}) to discover both new blocks and deleted blocks in the storage.
+- Keeping the per-tenant bucket index updated. The [bucket index]({{< relref "../../bucket-index/index.md" >}}) is used by [queriers]({{< relref "../querier.md" >}}), [store-gateways]({{< relref "../store-gateway.md" >}}), and [rulers]({{< relref "../ruler.md" >}}) to discover both new blocks and deleted blocks in the storage.
 - Deleting blocks that are no longer within a configurable retention period.
 
 The compactor is stateless.
@@ -73,7 +73,7 @@ The compactor shards compaction jobs, either from a single tenant or multiple te
 
 Whenever the pool of compactors grows or shrinks, tenants and jobs are resharded across the available compactor instances without any manual intervention.
 
-Compactor sharding uses a [hash ring]({{< relref "../../hash-ring.md" >}}). At startup, a compactor generates random tokens and registers itself to the compactor hash ring. While running, it periodically scans the storage bucket at every interval defined by `-compactor.compaction-interval`, to discover the list of tenants in storage and compact blocks for each tenant which hash matches the token ranges assigned to the instance itself within the hash ring.
+Compactor sharding uses a [hash ring]({{< relref "../../hash-ring/index.md" >}}). At startup, a compactor generates random tokens and registers itself to the compactor hash ring. While running, it periodically scans the storage bucket at every interval defined by `-compactor.compaction-interval`, to discover the list of tenants in storage and compact blocks for each tenant which hash matches the token ranges assigned to the instance itself within the hash ring.
 
 To configure the compactors' hash ring, refer to [configuring hash rings]({{< relref "../../../configuring/configuring-hash-rings.md" >}}).
 

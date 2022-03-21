@@ -16,7 +16,7 @@ The querier uses the [store-gateway]({{< relref "store-gateway.md" >}}) componen
 
 To find the correct blocks to look up at query time, the querier requires an almost up-to-date view of the bucket in long-term storage. The querier performs one of the following actions to ensure that the bucket view is updated:
 
-1. Periodically download the [bucket index]({{< relref "../bucket-index.md" >}}) (default)
+1. Periodically download the [bucket index]({{< relref "../bucket-index/index.md" >}}) (default)
 2. Periodically scan the bucket
 
 Queriers do not need any content from blocks except their metadata, which includes the minimum and maximum timestamp of samples within the block.
@@ -32,7 +32,7 @@ We recommend that you keep the bucket index enabled.
 
 ### Bucket index disabled
 
-When [bucket index]({{< relref "../bucket-index.md" >}}) is disabled, queriers iterate over the storage bucket to discover blocks for all tenants and download the `meta.json` of each block. During this initial bucket scanning phase, a querier cannot process incoming queries and its `/ready` readiness probe endpoint will not return the HTTP status code `200`.
+When [bucket index]({{< relref "../bucket-index/index.md" >}}) is disabled, queriers iterate over the storage bucket to discover blocks for all tenants and download the `meta.json` of each block. During this initial bucket scanning phase, a querier cannot process incoming queries and its `/ready` readiness probe endpoint will not return the HTTP status code `200`.
 
 When running, queriers periodically iterate over the storage bucket to discover new tenants and recently uploaded blocks.
 

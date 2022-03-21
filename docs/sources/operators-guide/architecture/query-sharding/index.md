@@ -90,7 +90,7 @@ sum(
 )
 ```
 
-![Flow of a query with two shardable portions](../../images/query-sharding.png)
+![Flow of a query with two shardable portions](query-sharding.png)
 
 ## How to enable query sharding
 

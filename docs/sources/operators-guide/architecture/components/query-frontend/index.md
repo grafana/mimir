@@ -65,7 +65,7 @@ Although aligning the step parameter to the query time range increases the perfo
 
 ### About query sharding
 
-The query-frontend also provides [query sharding]({{< relref "../../query-sharding.md" >}}).
+The query-frontend also provides [query sharding]({{< relref "../../query-sharding/index.md" >}}).
 
 ## Why query-frontend scalability is limited
 

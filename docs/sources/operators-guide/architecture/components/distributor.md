@@ -53,7 +53,7 @@ Use the following flags to configure the rate limit:
 
 ### Configuration
 
-The distributors form a [hash ring]({{< relref "../hash-ring.md" >}}) (called the distributors’ ring) to discover each other and enforce limits correctly.
+The distributors form a [hash ring]({{< relref "../hash-ring/index.md" >}}) (called the distributors’ ring) to discover each other and enforce limits correctly.
 To configure the distributors' hash ring, refer to [configuring hash rings]({{< relref "../../configuring/configuring-hash-rings.md" >}}).
 
 ## High-availability tracker
@@ -78,7 +78,7 @@ For each incoming series, the distributor computes a hash using the metric name,
 The computed hash is called a _token_.
 The distributor looks up the token in the hash ring to determine which ingesters to write a series to.
 
-For more information, see [hash ring]({{< relref "../hash-ring.md" >}}).
+For more information, see [hash ring]({{< relref "../hash-ring/index.md" >}}).
 
 #### Quorum consistency
 

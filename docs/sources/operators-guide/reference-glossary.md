@@ -57,7 +57,7 @@ To configure HA tracking, refer to [Configuring high-availability deduplication]
 
 The hash ring is a distributed data structure used by Grafana Mimir for sharding, replication, and service discovery.
 Components use a [key-value store]({{< relref "#key-value-store" >}}) or [gossip]({{< relref "#gossip" >}}) to share the hash ring data structure.
-For more information, refer to the [Hash ring]({{< relref "architecture/hash-ring.md" >}}).
+For more information, refer to the [Hash ring]({{< relref "architecture/hash-ring/index.md" >}}).
 
 ## Key-value store
 

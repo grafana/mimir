@@ -14,7 +14,7 @@ Disabling the bucket index is not recommended.
 
 ## Benefits
 
-The [querier](./querier.md), [store-gateway](./store-gateway.md) and [ruler](./ruler.md) must have an almost up-to-date view of the storage bucket, in order to find the right blocks to lookup at query time (querier) and load block's [index-header](./binary-index-header.md) (store-gateway).
+The [querier]({{< relref "../components/querier.md" >}}), [store-gateway]({{< relref "../components/store-gateway.md" >}}) and [ruler]({{< relref "../components/ruler.md" >}}) must have an almost up-to-date view of the storage bucket, in order to find the right blocks to lookup at query time (querier) and load block's [index-header]({{< relref "../binary-index-header.md" >}}) (store-gateway).
 Because of this, they need to periodically scan the bucket to look for new blocks uploaded by ingester or compactor, and blocks deleted (or marked for deletion) by compactor.
 
 When the bucket index is enabled, the querier, store-gateway, and ruler periodically look up the per-tenant bucket index instead of scanning the bucket via `list objects` operations.
@@ -23,7 +23,7 @@ This provides the following benefits:
 
 1. Reduced number of API calls to the object storage by querier and store-gateway
 1. No "list objects" storage API calls performed by querier and store-gateway
-1. The [querier](./querier.md) is up and running immediately after the startup, so there is no need to run an initial bucket scan
+1. The [querier]({{< relref "../components/querier.md" >}}) is up and running immediately after the startup, so there is no need to run an initial bucket scan
 
 ## Structure of the index
 
@@ -38,7 +38,7 @@ The `bucket-index.json.gz` contains:
 
 ## How it gets updated
 
-The [compactor](./compactor/index.md) periodically scans the bucket and uploads an updated bucket index to the storage.
+The [compactor]({{< relref "../components/compactor/index.md" >}}) periodically scans the bucket and uploads an updated bucket index to the storage.
 You can configure the frequency with which the bucket index is updated via `-compactor.cleanup-interval`.
 
 The use of the bucket index is optional, but the index is built and updated by the compactor even if `-blocks-storage.bucket-store.bucket-index.enabled=false`.
@@ -47,13 +47,13 @@ The overhead introduced by keeping the bucket index updated is not signifcant.
 
 ## How it's used by the querier
 
-At query time the [querier](./querier.md) and [ruler](./ruler.md) determine whether the bucket index for the tenant has already been loaded to memory.
+At query time the [querier]({{< relref "../components/querier.md" >}}) and [ruler]({{< relref "../components/ruler.md" >}}) determine whether the bucket index for the tenant has already been loaded to memory.
 If not, the querier and ruler download it from the storage and cache it.
 
 Because the bucket index is a small file, lazy downloading it doesn't have a significant impact on first query performances, but it does allow a querier to get up and running without pre-downloading every tenant's bucket index.
-In addition, if the [metadata cache](./querier.md#metadata-cache) is enabled, the bucket index is cached for a short time in a shared cache, which reduces the latency and number of API calls to the object storage in case multiple queriers and rulers fetch the same tenant's bucket index within a short time.
+In addition, if the [metadata cache]({{< relref "../components/querier.md#metadata-cache" >}}) is enabled, the bucket index is cached for a short time in a shared cache, which reduces the latency and number of API calls to the object storage in case multiple queriers and rulers fetch the same tenant's bucket index within a short time.
 
-![Querier - Bucket index](../../images/bucket-index-querier-workflow.png)
+![Querier - Bucket index](bucket-index-querier-workflow.png)
 
 <!-- Diagram source at https://docs.google.com/presentation/d/1bHp8_zcoWCYoNU2AhO2lSagQyuIrghkCncViSqn14cU/edit -->
 
@@ -68,7 +68,7 @@ The following configuration options determine bucket index update intervals:
   This option configures the frequency with which the bucket store attempts to load a failed bucket index.
 
 If a bucket index is unused for the amount of time configured via `-blocks-storage.bucket-store.bucket-index.idle-timeout`, (for example, if a querier instance is not receiving any query from the tenant), the querier offload its, which stops the querier from updating it at regular intervals.
-This is useful for tenants that are resharded to different queriers when [shuffle sharding](../guides/shuffle-sharding.md) is enabled.
+This is useful for tenants that are resharded to different queriers when [shuffle sharding]({{< relref "../../configuring/configuring-shuffle-sharding.md" >}}) is enabled.
 
 At query time the querier and ruler determine how old a bucket index is based on its `updated_at`.
 If the age is older than the period configured via `-blocks-storage.bucket-store.bucket-index.max-stale-period` a query fails.
@@ -76,4 +76,4 @@ This circuit breaker ensures queriers and rulers do not return any partial query
 
 ## How it's used by the store-gateway
 
-The [store-gateway](./store-gateway.md), at startup and periodically, fetches the bucket index for each tenant that belong to their shard, and uses it as the source of truth for the blocks and deletion marks in the storage. This removes the need to periodically scan the bucket to discover blocks belonging to their shard.
+The [store-gateway]({{< relref "../components/store-gateway.md" >}}), at startup and periodically, fetches the bucket index for each tenant that belong to their shard, and uses it as the source of truth for the blocks and deletion marks in the storage. This removes the need to periodically scan the bucket to discover blocks belonging to their shard.
