@@ -38,7 +38,7 @@ The `bucket-index.json.gz` contains:
 
 ## How it gets updated
 
-The [compactor](./compactor.md) periodically scans the bucket and uploads an updated bucket index to the storage.
+The [compactor](./compactor/index.md) periodically scans the bucket and uploads an updated bucket index to the storage.
 You can configure the frequency with which the bucket index is updated via `-compactor.cleanup-interval`.
 
 The use of the bucket index is optional, but the index is built and updated by the compactor even if `-blocks-storage.bucket-store.bucket-index.enabled=false`.

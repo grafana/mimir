@@ -7,7 +7,7 @@ weight: 60
 
 # Grafana Mimir query-frontend
 
-The query-frontend is a stateless component that provides the same API as the [querier]({{< relref "./querier.md" >}}) and can be used to accelerate the read path.
+The query-frontend is a stateless component that provides the same API as the [querier]({{< relref "../querier.md" >}}) and can be used to accelerate the read path.
 Although the query-frontend is not required, we recommend that you deploy it.
 When you deploy the query-frontend, you should make query requests to the query-frontend instead of the queriers.
 The queriers are required within the cluster to execute the queries.
@@ -18,7 +18,7 @@ To connect the queriers with the query-frontends, configure queriers with the qu
 
 We recommend that you run at least two query-frontend replicas for high-availability reasons.
 
-![Query-frontend architecture](../../../images/query-frontend-architecture.png)
+![Query-frontend architecture](query-frontend-architecture.png)
 
 [//]: # "Diagram source at https://docs.google.com/presentation/d/1bHp8_zcoWCYoNU2AhO2lSagQyuIrghkCncViSqn14cU/edit"
 
@@ -65,13 +65,13 @@ Although aligning the step parameter to the query time range increases the perfo
 
 ### About query sharding
 
-The query-frontend also provides [query sharding]({{< relref "query-sharding.md" >}}).
+The query-frontend also provides [query sharding]({{< relref "../../query-sharding.md" >}}).
 
 ## Why query-frontend scalability is limited
 
 The query-frontend scalability is limited by the configured number of workers per querier.
 
-When you don't use the [query-scheduler]({{< relref "./query-scheduler.md">}}), the query-frontend stores a queue of queries to execute.
+When you don't use the [query-scheduler]({{< relref "../query-scheduler/index.md">}}), the query-frontend stores a queue of queries to execute.
 A querier runs `-querier.max-concurrent` workers and each worker connects to one of the query-frontend replicas to pull queries to execute.
 A querier worker executes one query at a time.
 
@@ -88,12 +88,12 @@ The queries exceeding the configured maximum concurrency create a backlog in the
 
 The backlog might cause a suboptimal utilization of querier resources, which can result in poor query performance when you run Grafana Mimir at scale.
 
-The [query-scheduler]({{< relref "./query-scheduler.md" >}}) is an optional component that you can deploy to overcome the query-frontend scalability limitations.
+The [query-scheduler]({{< relref "../query-scheduler/index.md" >}}) is an optional component that you can deploy to overcome the query-frontend scalability limitations.
 
 ## DNS configuration and readiness
 
 When a query-frontend starts up, it does not immediately have queriers attached to it.
-The [`/ready` endpoint]({{< relref "../../reference-http-api/#readiness-probe" >}}) returns an HTTP 200 status code only when the query-frontend has at least one querier attached to it, and is then ready to serve queries.
+The [`/ready` endpoint]({{< relref "../../../reference-http-api/#readiness-probe" >}}) returns an HTTP 200 status code only when the query-frontend has at least one querier attached to it, and is then ready to serve queries.
 Configure the `/ready` endpoint as a healthcheck in your load balancer; otherwise, a query-frontend scale-out event might result in failed queries or high latency until queriers connect to the query-frontend.
 
 If you use query-frontend with query-scheduler, the `/ready` endpoint reports an HTTP 200 status code only after the query-frontend connects to at least one query-scheduler.

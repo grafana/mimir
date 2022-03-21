@@ -74,7 +74,7 @@ Each of the following components builds an independent hash ring:
 
 - [Ingesters]({{< relref "components/ingester.md" >}}) shard and replicate series.
 - [Distributors]({{< relref "components/distributor.md" >}}) enforce rate limits.
-- [Compactors]({{< relref "components/compactor.md" >}}) shard compaction workload.
+- [Compactors]({{< relref "components/compactor/index.md" >}}) shard compaction workload.
 - [Store-gateways]({{< relref "components/store-gateway.md" >}}) shard blocks to query from long-term storage.
 - [(Optional) Rulers]({{< relref "components/ruler.md" >}}) shard rule groups to evaluate.
 - [(Optional) Alertmanagers]({{< relref "components/alertmanager.md" >}}) shard tenants.

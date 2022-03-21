@@ -75,7 +75,7 @@ Estimated required CPU, memory, and disk space:
 
 ### Query-frontend
 
-The [query-frontend]({{< relref "../architecture/components/query-frontend/_index.md" >}}) component resources utilization is determined by the number of queries per second.
+The [query-frontend]({{< relref "../architecture/components/query-frontend/index.md" >}}) component resources utilization is determined by the number of queries per second.
 
 Estimated required CPU and memory:
 
@@ -84,7 +84,7 @@ Estimated required CPU and memory:
 
 ### (Optional) Query-scheduler
 
-The [query-scheduler]({{< relref "../architecture/components/query-scheduler.md" >}}) component resources’ utilization is determined by the number of queries per second.
+The [query-scheduler]({{< relref "../architecture/components/query-scheduler/index.md" >}}) component resources’ utilization is determined by the number of queries per second.
 
 Estimated required CPU and memory:
 
@@ -130,7 +130,7 @@ The rules evaluation is computationally equal to queries execution, so the queri
 
 ### Compactor
 
-The [compactor]({{< relref "../architecture/components/compactor.md" >}}) component resources utilization is determined by the number of active series.
+The [compactor]({{< relref "../architecture/components/compactor/index.md" >}}) component resources utilization is determined by the number of active series.
 
 The compactor can scale horizontally both in Grafana Mimir clusters with one tenant and multiple tenants.
 We recommend to run at least one compactor instance every 20 million active series ingested in total in the Grafana Mimir cluster, calculated before ingesters replication.
@@ -141,7 +141,7 @@ Assuming you run one compactor instance every 20 million active series, the esti
 - Memory: 4GB
 - Disk: 300GB
 
-For more information about disk requirements, refer to [Compactor disk utilization]({{< relref "../architecture/components/compactor.md#compactor-disk-utilization" >}}).
+For more information about disk requirements, refer to [Compactor disk utilization]({{< relref "../architecture/components/compactor/index.md#compactor-disk-utilization" >}}).
 
 **To estimate the number of active series before ingesters replication, query the number of active series across all Prometheus servers:**
 
