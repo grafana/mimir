@@ -468,7 +468,7 @@ mixin-serve: ## Runs Grafana (listening on port 3000) loading the mixin dashboar
 	@./operations/mimir-mixin-tools/serve/run.sh
 
 mixin-screenshots: ## Generates mixin dashboards screenshots.
-	@rm -f docs/sources/images/dashboards/*.png
+	@find docs/sources/operators-guide/visualizing-metrics/dashboards -name '*.png' -delete
 	@./operations/mimir-mixin-tools/screenshots/run.sh
 
 check-jsonnet-manifests: format-jsonnet-manifests

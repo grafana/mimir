@@ -92,7 +92,8 @@ async function takeScreenshot(browser, dashboard) {
     await page.waitForNetworkIdle({idleTime: 1000, timeout: 15000 });
 
     // Take screenshot.
-    const screenshotPath = "/output/" + dashboard.name + ".png";
+    const directoryName = dashboard.name.replace(/^(mimir-)/,'');
+    const screenshotPath = "/output/" + directoryName + "/" + dashboard.name + ".png";
     await page.screenshot({path: screenshotPath});
     await page.close();
 
