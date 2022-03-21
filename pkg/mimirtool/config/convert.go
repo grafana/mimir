@@ -51,7 +51,7 @@ func Convert(
 	contents []byte,
 	flags []string,
 	m Mapper,
-	sourceFactory, targetFactory InspectedEntryFactory,
+	factory InspectedEntryFactory,
 	useNewDefaults, showDefaults bool,
 ) (convertedContents []byte, convertedFlags []string, _ ConversionNotices, conversionErr error) {
 
@@ -60,12 +60,12 @@ func Convert(
 		err     error
 	)
 
-	notices.RemovedParameters, notices.RemovedCLIFlags, err = reportDeletedFlags(contents, flags, sourceFactory)
+	notices.RemovedParameters, notices.RemovedCLIFlags, err = reportDeletedFlags(contents, flags, factory)
 	if err != nil {
 		return nil, nil, ConversionNotices{}, err
 	}
 
-	source, target := sourceFactory(), targetFactory()
+	source, target := factory.NewSourceConfig(), factory.NewTargetConfig()
 
 	err = yaml.Unmarshal(contents, &source)
 	if err != nil {
@@ -82,7 +82,7 @@ func Convert(
 		return nil, nil, ConversionNotices{}, errors.Wrap(err, "could not map old config to new config")
 	}
 
-	sourceDefaults, err := prepareSourceDefaults(m, sourceFactory, targetFactory)
+	sourceDefaults, err := prepareSourceDefaults(m, factory)
 	if err != nil {
 		return nil, nil, ConversionNotices{}, errors.Wrap(err, "could not prune defaults in new config")
 	}
@@ -107,7 +107,7 @@ func Convert(
 	if len(contents) == 0 {
 		newFlags, err = extractAllAsFlags(target)
 	} else if len(flags) > 0 {
-		newFlags, err = extractInputFlags(target, flags, m, sourceFactory, targetFactory)
+		newFlags, err = extractInputFlags(target, flags, m, factory)
 	}
 	if err != nil {
 		return nil, nil, ConversionNotices{}, err
@@ -180,8 +180,8 @@ func extractAllAsFlags(target *InspectedEntry) ([]string, error) {
 	return extractFlags(target, func(_ string, v Value) bool { return !v.IsUnset() })
 }
 
-func extractInputFlags(target *InspectedEntry, inputFlags []string, m Mapper, sourceFactory, targetFactory InspectedEntryFactory) ([]string, error) {
-	flagsNewPaths, err := mapOldFlagsToNewPaths(inputFlags, m, sourceFactory, targetFactory)
+func extractInputFlags(target *InspectedEntry, inputFlags []string, m Mapper, factory InspectedEntryFactory) ([]string, error) {
+	flagsNewPaths, err := mapOldFlagsToNewPaths(inputFlags, m, factory)
 	if err != nil {
 		return nil, err
 	}
@@ -242,8 +242,8 @@ func addFlags(entry *InspectedEntry, flags []string) error {
 // mapOldFlagsToNewPaths does not return values along with the flag names because it does not have the rest of the
 // config values from the YAML file, so it's likely that the Mapper didn't have enough information to do a correct mapping.
 // Renames and other trivial mappings should not be affected by this.
-func mapOldFlagsToNewPaths(flags []string, m Mapper, sourceFactory, targetFactory InspectedEntryFactory) (map[string]struct{}, error) {
-	source, target := sourceFactory(), targetFactory()
+func mapOldFlagsToNewPaths(flags []string, m Mapper, factory InspectedEntryFactory) (map[string]struct{}, error) {
+	source, target := factory.NewSourceConfig(), factory.NewTargetConfig()
 
 	err := addFlags(source, flags)
 	if err != nil {
@@ -327,22 +327,22 @@ func parseFlagNames(flags []string) map[string]bool {
 
 // prepareSourceDefaults maps source defaults to target defaults the same way regular source config is mapped to target config.
 // This enables lookups of source default values using their target paths.
-func prepareSourceDefaults(m Mapper, sourceFactory, targetFactory InspectedEntryFactory) (Parameters, error) {
-	sourceDefaults, mappedSourceDefaults := sourceFactory(), targetFactory()
+func prepareSourceDefaults(m Mapper, factory InspectedEntryFactory) (Parameters, error) {
+	sourceDefaults, mappedSourceDefaults := factory.NewSourceConfig(), factory.NewTargetConfig()
 	err := m.DoMap(defaultValueInspectedEntry{sourceDefaults}, defaultValueInspectedEntry{mappedSourceDefaults})
 	return mappedSourceDefaults, err
 }
 
-func reportDeletedFlags(contents []byte, flags []string, sourceFactory InspectedEntryFactory) (removedFieldPaths, removedFlags []string, _ error) {
+func reportDeletedFlags(contents []byte, flags []string, factory InspectedEntryFactory) (removedFieldPaths, removedFlags []string, _ error) {
 	// Find YAML options that user is using, but are no longer supported.
 	{
-		s := sourceFactory()
+		s := factory.NewSourceConfig()
 
 		if err := yaml.Unmarshal(contents, &s); err != nil {
 			return nil, nil, errors.Wrap(err, "could not unmarshal Cortex configuration file")
 		}
 
-		for _, path := range removedConfigPaths {
+		for _, path := range factory.RemovedPaths() {
 			val, _ := s.GetValue(path)
 			if !val.IsUnset() {
 				removedFieldPaths = append(removedFieldPaths, path)
@@ -352,13 +352,13 @@ func reportDeletedFlags(contents []byte, flags []string, sourceFactory Inspected
 
 	// Find CLI flags that user is using, but are no longer supported.
 	{
-		s := sourceFactory()
+		s := factory.NewSourceConfig()
 
 		if err := addFlags(s, flags); err != nil {
 			return nil, nil, err
 		}
 
-		for _, path := range removedConfigPaths {
+		for _, path := range factory.RemovedPaths() {
 			val, _ := s.GetValue(path)
 			if !val.IsUnset() {
 				fl, _ := s.GetFlag(path)
@@ -371,7 +371,7 @@ func reportDeletedFlags(contents []byte, flags []string, sourceFactory Inspected
 
 	// Report any provided CLI flags that cannot be found in YAML, and that are not supported anymore.
 	providedFlags := parseFlagNames(flags)
-	for _, f := range removedCLIOptions {
+	for _, f := range factory.RemovedCLIFlags() {
 		if providedFlags[f] {
 			removedFlags = append(removedFlags, f)
 		}

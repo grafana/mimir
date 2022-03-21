@@ -26,8 +26,6 @@ var (
 	ErrParameterNotFound = errors.New("could not find parameter with this path")
 )
 
-type InspectedEntryFactory func() *InspectedEntry
-
 // InspectedEntry is the structure that holds a configuration block or a single configuration parameters.
 // Blocks contain other other InspectedEntries.
 
@@ -638,13 +636,42 @@ func (s *stringSlice) UnmarshalYAML(value *yaml.Node) error {
 
 const notInYaml = "not-in-yaml"
 
+type InspectedEntryFactory struct {
+	sourceFactory, targetFactory func() *InspectedEntry
+	removedOptions               []string
+	removedCLIFlags              []string
+}
+
+func (f InspectedEntryFactory) NewSourceConfig() *InspectedEntry {
+	return f.sourceFactory()
+}
+
+func (f InspectedEntryFactory) NewTargetConfig() *InspectedEntry {
+	return f.targetFactory()
+}
+
+func (f InspectedEntryFactory) RemovedPaths() []string {
+	return f.removedOptions
+}
+
+func (f InspectedEntryFactory) RemovedCLIFlags() []string {
+	return f.removedCLIFlags
+}
+
 //go:embed descriptors/mimir-v2.0.0-flags-only.json
 var mimirConfigFlagsOnly []byte
 
 //go:embed descriptors/mimir-v2.0.0.json
 var mimirConfig []byte
 
-func DefaultMimirConfig() *InspectedEntry {
+var CortexToMimirFactory = InspectedEntryFactory{
+	sourceFactory:   defaultCortexConfig,
+	targetFactory:   defaultMimirConfig,
+	removedOptions:  removedConfigPaths,
+	removedCLIFlags: removedCLIOptions,
+}
+
+func defaultMimirConfig() *InspectedEntry {
 	cfg := &InspectedEntry{}
 	if err := json.Unmarshal(mimirConfig, cfg); err != nil {
 		panic(err)
@@ -671,7 +698,7 @@ var oldCortexConfig []byte
 //go:embed descriptors/cortex-v1.11.0-flags-only.json
 var oldCortexConfigFlagsOnly []byte
 
-func DefaultCortexConfig() *InspectedEntry {
+func defaultCortexConfig() *InspectedEntry {
 	cfg := &InspectedEntry{}
 	if err := json.Unmarshal(oldCortexConfig, cfg); err != nil {
 		panic(err)
@@ -698,7 +725,14 @@ var gem170CortexConfig []byte
 //go:embed descriptors/gem-v1.7.0-flags-only.json
 var gem170CortexConfigFlagsOnly []byte
 
-func DefaultGEM170Config() *InspectedEntry {
+var GEM170ToGEM200Factory = InspectedEntryFactory{
+	sourceFactory:   defaultGEM170Config,
+	targetFactory:   defaultGEM200Config,
+	removedOptions:  gemRemovedConfigPaths,
+	removedCLIFlags: removedCLIOptions,
+}
+
+func defaultGEM170Config() *InspectedEntry {
 	cfg := &InspectedEntry{}
 	if err := json.Unmarshal(gem170CortexConfig, cfg); err != nil {
 		panic(err)
@@ -725,7 +759,7 @@ var gem200CortexConfig []byte
 //go:embed descriptors/gem-v2.0.0-flags-only.json
 var gem200CortexConfigFlagsOnly []byte
 
-func DefaultGEM200COnfig() *InspectedEntry {
+func defaultGEM200Config() *InspectedEntry {
 	cfg := &InspectedEntry{}
 	if err := json.Unmarshal(gem200CortexConfig, cfg); err != nil {
 		panic(err)

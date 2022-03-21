@@ -59,12 +59,12 @@ func (c *ConfigCommand) convertConfig(_ *kingpin.ParseContext) error {
 		return err
 	}
 
-	sourceFactory, targetFactory, mapper := config.DefaultCortexConfig, config.DefaultMimirConfig, config.CortexToMimirMapper()
+	factory, mapper := config.CortexToMimirFactory, config.CortexToMimirMapper()
 	if c.gem {
-		sourceFactory, targetFactory, mapper = config.DefaultGEM170Config, config.DefaultGEM200COnfig, config.GEM170ToGEM200Mapper()
+		factory, mapper = config.GEM170ToGEM200Factory, config.GEM170ToGEM200Mapper()
 	}
 
-	convertedYAML, flagsFlags, notices, err := config.Convert(yamlContents, flagsFlags, mapper, sourceFactory, targetFactory, c.updateDefaults, c.includeDefaults)
+	convertedYAML, flagsFlags, notices, err := config.Convert(yamlContents, flagsFlags, mapper, factory, c.updateDefaults, c.includeDefaults)
 	if err != nil {
 		return errors.Wrap(err, "could not convert configuration")
 	}

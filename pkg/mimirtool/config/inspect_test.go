@@ -297,7 +297,7 @@ func TestInspectConfig_LoadingAConfigHasCorrectTypes(t *testing.T) {
 		},
 	}
 
-	params := DefaultCortexConfig()
+	params := CortexToMimirFactory.NewSourceConfig()
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			val := params.MustGetDefaultValue(tc.path)

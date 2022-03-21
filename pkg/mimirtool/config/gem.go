@@ -102,7 +102,7 @@ func mapAdminAPIRingInstanceIDDefaults(source, target Parameters) error {
 	return target.SetDefaultValue("admin_api.leader_election.ring.instance_id", Nil)
 }
 
-var gemRemovedConfigPath = []string{
+var gemRemovedConfigPaths = append([]string{
 	"graphite.querier_remote_read_enabled", // -graphite.querier.remote-read-enabled
 
 	// changed memcached config and dropped support for redis and fifocache
@@ -157,4 +157,4 @@ var gemRemovedConfigPath = []string{
 	"compactor.compaction_strategy", // -compactor.compaction-strategy
 
 	"querier.query_label_names_with_matchers_enabled", // -querier.query-label-names-with-matchers-enabled
-}
+}, removedConfigPaths...)

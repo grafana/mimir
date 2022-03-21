@@ -556,7 +556,7 @@ func mapCortexRingInstanceIDDefaults(source, target Parameters) error {
 }
 
 // YAML Paths for config options removed since Cortex 1.11.0.
-var removedConfigPaths = append(gemRemovedConfigPath, []string{
+var removedConfigPaths = []string{
 	"flusher.concurrent_flushes",                            // -flusher.concurrent-flushes
 	"flusher.flush_op_timeout",                              // -flusher.flush-op-timeout
 	"flusher.wal_dir",                                       // -flusher.wal-dir
@@ -1045,7 +1045,7 @@ var removedConfigPaths = append(gemRemovedConfigPath, []string{
 	"ruler.sharding_strategy",                // -ruler.sharding-strategy
 	"store_gateway.sharding_enabled",         // -store-gateway.sharding-enabled
 	"store_gateway.sharding_strategy",        // -store-gateway.sharding-strategy
-}...)
+}
 
 // CLI options removed since Cortex 1.10.0. These flags only existed as CLI Flags, and were not included in YAML Config.
 var removedCLIOptions = []string{

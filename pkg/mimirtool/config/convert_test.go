@@ -47,7 +47,7 @@ func testConvertGEM(t *testing.T, tc conversionInput, test func(t *testing.T, ou
 		t.Parallel()
 
 		expectedCommonYAML, expectedCommonFlags := tc.loadCommonOpts(t, "testdata/gem/common-options-old.yaml", "testdata/gem/common-flags-old.txt")
-		outYAML, outFlags, notices, err := Convert(tc.yaml, tc.flags, GEM170ToGEM200Mapper(), DefaultGEM170Config, DefaultGEM200COnfig, tc.useNewDefaults, tc.outputDefaults)
+		outYAML, outFlags, notices, err := Convert(tc.yaml, tc.flags, GEM170ToGEM200Mapper(), GEM170ToGEM200Factory, tc.useNewDefaults, tc.outputDefaults)
 
 		if expectedCommonYAML != nil {
 			assert.YAMLEq(t, string(expectedCommonYAML), string(outYAML), "common config options did not map correctly")
@@ -67,7 +67,7 @@ func testConvertCortex(t *testing.T, tc conversionInput, test func(t *testing.T,
 		t.Parallel()
 
 		expectedCommonYAML, expectedCommonFlags := tc.loadCommonOpts(t, "testdata/common-options.yaml", "testdata/common-flags.txt")
-		outYAML, outFlags, notices, err := Convert(tc.yaml, tc.flags, CortexToMimirMapper(), DefaultCortexConfig, DefaultMimirConfig, tc.useNewDefaults, tc.outputDefaults)
+		outYAML, outFlags, notices, err := Convert(tc.yaml, tc.flags, CortexToMimirMapper(), CortexToMimirFactory, tc.useNewDefaults, tc.outputDefaults)
 
 		if expectedCommonYAML != nil {
 			assert.YAMLEq(t, string(expectedCommonYAML), string(outYAML), "common config options did not map correctly")
@@ -493,7 +493,7 @@ func TestReportDeletedFlags(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			inBytes := loadFile(t, tc.cortexConfigFile)
 
-			removedFieldPaths, removedFlags, err := reportDeletedFlags(inBytes, tc.flags, DefaultCortexConfig)
+			removedFieldPaths, removedFlags, err := reportDeletedFlags(inBytes, tc.flags, CortexToMimirFactory)
 			require.NoError(t, err)
 
 			assert.ElementsMatch(t, tc.expectedRemovedPaths, removedFieldPaths, "YAML paths")
@@ -586,7 +586,7 @@ var changedCortexDefaults = []ChangedDefault{
 
 func TestChangedCortexDefaults(t *testing.T) {
 	// Create cortex config where all params have explicitly set default values so that all of them can be changed and reported as changed
-	params := DefaultCortexConfig()
+	params := CortexToMimirFactory.NewSourceConfig()
 	err := params.Walk(func(path string, _ Value) error {
 		return params.SetValue(path, params.MustGetDefaultValue(path))
 	})
@@ -647,7 +647,7 @@ func TestChangedGEMDefaults(t *testing.T) {
 	}
 
 	// Create cortex config where all params have explicitly set default values so that all of them can be changed and reported as changed
-	params := DefaultGEM170Config()
+	params := GEM170ToGEM200Factory.NewSourceConfig()
 	err := params.Walk(func(path string, _ Value) error {
 		return params.SetValue(path, params.MustGetDefaultValue(path))
 	})
