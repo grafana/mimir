@@ -9,11 +9,15 @@ weight: 10
 
 These instructions focus on deploying Grafana Mimir as a [monolith]({{< relref "../architecture/deployment-modes.md#monolithic-mode" >}}), which is designed for users getting started with the project. For more information about the different ways to deploy Grafana Mimir, refer to [Deployment Modes]({{< relref "../architecture/deployment-modes.md" >}}).
 
+{{< vimeo 689843025 >}}
+
+<br/>
+
 ## Before you begin
 
-Verify that you have installed either a [Prometheus server](https://prometheus.io/docs/prometheus/latest/installation/)
-or the [Grafana Agent](https://grafana.com/docs/grafana-cloud/agent/#installing-the-grafana-agent).
-Verify that you have installed [Docker](https://docs.docker.com/engine/install/).
+- Verify that you have installed either a [Prometheus server](https://prometheus.io/docs/prometheus/latest/installation/)
+  or the [Grafana Agent](https://grafana.com/docs/grafana-cloud/agent/#installing-the-grafana-agent).
+- Verify that you have installed [Docker](https://docs.docker.com/engine/install/).
 
 ## Download Grafana Mimir
 
