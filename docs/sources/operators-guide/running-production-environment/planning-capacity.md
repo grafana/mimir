@@ -130,7 +130,7 @@ The rules evaluation is computationally equal to queries execution, so the queri
 
 ### Compactor
 
-The [compactor]({{< relref "../architecture/components/compactor.md" >}}) component resources utilization is determined by the number of active series.
+The [compactor]({{< relref "../architecture/components/compactor/index.md" >}}) component resources utilization is determined by the number of active series.
 
 The compactor can scale horizontally both in Grafana Mimir clusters with one tenant and multiple tenants.
 We recommend to run at least one compactor instance every 20 million active series ingested in total in the Grafana Mimir cluster, calculated before ingesters replication.
@@ -141,7 +141,7 @@ Assuming you run one compactor instance every 20 million active series, the esti
 - Memory: 4GB
 - Disk: 300GB
 
-For more information about disk requirements, refer to [Compactor disk utilization]({{< relref "../architecture/components/compactor.md#compactor-disk-utilization" >}}).
+For more information about disk requirements, refer to [Compactor disk utilization]({{< relref "../architecture/components/compactor/index.md#compactor-disk-utilization" >}}).
 
 **To estimate the number of active series before ingesters replication, query the number of active series across all Prometheus servers:**
 

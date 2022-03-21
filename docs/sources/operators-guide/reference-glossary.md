@@ -30,7 +30,7 @@ Grafana Mimir comprises several components.
 Each component provides a specific function to the system.
 For component specific documentation, refer to one of the following topics:
 
-- [Compactor]({{< relref "architecture/components/compactor.md" >}})
+- [Compactor]({{< relref "architecture/components/compactor/index.md" >}})
 - [Distributor]({{< relref "architecture/components/distributor.md" >}})
 - [Ingester]({{< relref "architecture/components/ingester.md" >}})
 - [Query-frontend]({{< relref "architecture/components/query-frontend/index.md" >}})

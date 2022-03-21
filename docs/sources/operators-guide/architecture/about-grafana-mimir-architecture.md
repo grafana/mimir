@@ -48,9 +48,9 @@ For more information, refer to [timeline of block uploads]({{< relref "../runnin
 #### Series sharding and replication
 
 By default, each time series is replicated to three ingesters, and each ingester writes its own block to the long-term storage.
-The [Compactor]({{< relref "components/compactor.md" >}}) merges blocks from multiple ingesters into a single block, and removes duplicate samples.
+The [Compactor]({{< relref "components/compactor/index.md" >}}) merges blocks from multiple ingesters into a single block, and removes duplicate samples.
 Blocks compaction significantly reduces storage utilization.
-For more information, refer to [Compactor]({{< relref "components/compactor.md" >}}) and [Production tips]({{< relref "../running-production-environment/production-tips.md" >}}).
+For more information, refer to [Compactor]({{< relref "components/compactor/index.md" >}}) and [Production tips]({{< relref "../running-production-environment/production-tips.md" >}}).
 
 ### The read path
 
