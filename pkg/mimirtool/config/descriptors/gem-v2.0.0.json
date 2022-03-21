@@ -10030,6 +10030,17 @@
                 },
                 {
                   "kind": "field",
+                  "name": "instance_id",
+                  "required": false,
+                  "desc": "Instance ID to register in the ring.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "\u003chostname\u003e",
+                  "fieldFlag": "admin-api.leader-election.ring.instance-id",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
                   "name": "instance_interface_names",
                   "required": false,
                   "desc": "Name of network interface to read address from.",
@@ -10037,6 +10048,28 @@
                   "fieldDefaultValue": [],
                   "fieldFlag": "admin-api.leader-election.ring.instance-interface-names",
                   "fieldType": "list of string"
+                },
+                {
+                  "kind": "field",
+                  "name": "instance_port",
+                  "required": false,
+                  "desc": "Port to advertise in the ring (defaults to server.grpc-listen-port).",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 0,
+                  "fieldFlag": "admin-api.leader-election.ring.instance-port",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "instance_addr",
+                  "required": false,
+                  "desc": "IP address to advertise in the ring.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "admin-api.leader-election.ring.instance-addr",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
                 }
               ],
               "fieldValue": null,
@@ -12366,7 +12399,8 @@
                   "fieldValue": null,
                   "fieldDefaultValue": 10000000000,
                   "fieldFlag": "graphite.querier.schemas.schema-ttl",
-                  "fieldType": "duration"
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
                 },
                 {
                   "kind": "field",
@@ -12376,7 +12410,8 @@
                   "fieldValue": null,
                   "fieldDefaultValue": "/etc/cortextank/storage-schemas.conf",
                   "fieldFlag": "graphite.querier.schemas.default-storage-schemas-file",
-                  "fieldType": "string"
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
                 },
                 {
                   "kind": "field",
@@ -12386,7 +12421,8 @@
                   "fieldValue": null,
                   "fieldDefaultValue": "/etc/cortextank/storage-aggregation.conf",
                   "fieldFlag": "graphite.querier.schemas.default-storage-aggregations-file",
-                  "fieldType": "string"
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
                 },
                 {
                   "kind": "field",
@@ -12396,7 +12432,8 @@
                   "fieldValue": null,
                   "fieldDefaultValue": false,
                   "fieldFlag": "graphite.querier.schemas.enable-user-overrides",
-                  "fieldType": "boolean"
+                  "fieldType": "boolean",
+                  "fieldCategory": "advanced"
                 },
                 {
                   "kind": "field",
@@ -12962,7 +12999,8 @@
                   "fieldValue": null,
                   "fieldDefaultValue": false,
                   "fieldFlag": "graphite.querier.schemas.enable-deduplicator",
-                  "fieldType": "boolean"
+                  "fieldType": "boolean",
+                  "fieldCategory": "advanced"
                 },
                 {
                   "kind": "block",
@@ -12978,7 +13016,8 @@
                       "fieldValue": null,
                       "fieldDefaultValue": 15000000000,
                       "fieldFlag": "graphite.querier.schemas.deduplicator.timeout",
-                      "fieldType": "duration"
+                      "fieldType": "duration",
+                      "fieldCategory": "advanced"
                     },
                     {
                       "kind": "field",
@@ -12988,7 +13027,8 @@
                       "fieldValue": null,
                       "fieldDefaultValue": 43200000000000,
                       "fieldFlag": "graphite.querier.schemas.deduplicator.ttl",
-                      "fieldType": "duration"
+                      "fieldType": "duration",
+                      "fieldCategory": "advanced"
                     },
                     {
                       "kind": "field",
@@ -12998,7 +13038,8 @@
                       "fieldValue": null,
                       "fieldDefaultValue": 100000000,
                       "fieldFlag": "graphite.querier.schemas.deduplicator.retry-delay",
-                      "fieldType": "duration"
+                      "fieldType": "duration",
+                      "fieldCategory": "advanced"
                     },
                     {
                       "kind": "field",
@@ -13008,7 +13049,8 @@
                       "fieldValue": null,
                       "fieldDefaultValue": 10,
                       "fieldFlag": "graphite.querier.schemas.deduplicator.max-retries",
-                      "fieldType": "int"
+                      "fieldType": "int",
+                      "fieldCategory": "advanced"
                     },
                     {
                       "kind": "block",
@@ -13034,17 +13076,19 @@
                           "fieldValue": null,
                           "fieldDefaultValue": "memcached",
                           "fieldFlag": "graphite.querier.schemas.deduplicator.memcached.service",
-                          "fieldType": "string"
+                          "fieldType": "string",
+                          "fieldCategory": "advanced"
                         },
                         {
                           "kind": "field",
                           "name": "addresses",
                           "required": false,
-                          "desc": "EXPERIMENTAL: Comma separated addresses list in DNS Service Discovery format: https://cortexmetrics.io/docs/configuration/arguments/#dns-service-discovery",
+                          "desc": "Comma separated addresses list in DNS Service Discovery format: https://cortexmetrics.io/docs/configuration/arguments/#dns-service-discovery",
                           "fieldValue": null,
                           "fieldDefaultValue": "",
                           "fieldFlag": "graphite.querier.schemas.deduplicator.memcached.addresses",
-                          "fieldType": "string"
+                          "fieldType": "string",
+                          "fieldCategory": "experimental"
                         },
                         {
                           "kind": "field",
@@ -13054,7 +13098,8 @@
                           "fieldValue": null,
                           "fieldDefaultValue": 100000000,
                           "fieldFlag": "graphite.querier.schemas.deduplicator.memcached.timeout",
-                          "fieldType": "duration"
+                          "fieldType": "duration",
+                          "fieldCategory": "advanced"
                         },
                         {
                           "kind": "field",
@@ -13064,7 +13109,8 @@
                           "fieldValue": null,
                           "fieldDefaultValue": 16,
                           "fieldFlag": "graphite.querier.schemas.deduplicator.memcached.max-idle-conns",
-                          "fieldType": "int"
+                          "fieldType": "int",
+                          "fieldCategory": "advanced"
                         },
                         {
                           "kind": "field",
@@ -13074,7 +13120,8 @@
                           "fieldValue": null,
                           "fieldDefaultValue": 0,
                           "fieldFlag": "graphite.querier.schemas.deduplicator.memcached.max-item-size",
-                          "fieldType": "int"
+                          "fieldType": "int",
+                          "fieldCategory": "advanced"
                         },
                         {
                           "kind": "field",
@@ -13084,7 +13131,8 @@
                           "fieldValue": null,
                           "fieldDefaultValue": 60000000000,
                           "fieldFlag": "graphite.querier.schemas.deduplicator.memcached.update-interval",
-                          "fieldType": "duration"
+                          "fieldType": "duration",
+                          "fieldCategory": "advanced"
                         },
                         {
                           "kind": "field",
@@ -13094,7 +13142,8 @@
                           "fieldValue": null,
                           "fieldDefaultValue": true,
                           "fieldFlag": "graphite.querier.schemas.deduplicator.memcached.consistent-hash",
-                          "fieldType": "boolean"
+                          "fieldType": "boolean",
+                          "fieldCategory": "advanced"
                         },
                         {
                           "kind": "field",
@@ -13104,7 +13153,8 @@
                           "fieldValue": null,
                           "fieldDefaultValue": 10,
                           "fieldFlag": "graphite.querier.schemas.deduplicator.memcached.circuit-breaker-consecutive-failures",
-                          "fieldType": "int"
+                          "fieldType": "int",
+                          "fieldCategory": "advanced"
                         },
                         {
                           "kind": "field",
@@ -13114,7 +13164,8 @@
                           "fieldValue": null,
                           "fieldDefaultValue": 10000000000,
                           "fieldFlag": "graphite.querier.schemas.deduplicator.memcached.circuit-breaker-timeout",
-                          "fieldType": "duration"
+                          "fieldType": "duration",
+                          "fieldCategory": "advanced"
                         },
                         {
                           "kind": "field",
@@ -13124,7 +13175,8 @@
                           "fieldValue": null,
                           "fieldDefaultValue": 10000000000,
                           "fieldFlag": "graphite.querier.schemas.deduplicator.memcached.circuit-breaker-interval",
-                          "fieldType": "duration"
+                          "fieldType": "duration",
+                          "fieldCategory": "advanced"
                         }
                       ],
                       "fieldValue": null,
@@ -13146,7 +13198,8 @@
               "fieldValue": null,
               "fieldDefaultValue": 300000000000,
               "fieldFlag": "graphite.querier.cache-grace-period",
-              "fieldType": "duration"
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
             },
             {
               "kind": "block",
@@ -13388,7 +13441,8 @@
               "fieldValue": null,
               "fieldDefaultValue": 8,
               "fieldFlag": "graphite.querier.query-handling-concurrency",
-              "fieldType": "int"
+              "fieldType": "int",
+              "fieldCategory": "advanced"
             },
             {
               "kind": "field",
@@ -13398,7 +13452,8 @@
               "fieldValue": null,
               "fieldDefaultValue": 86400000000000,
               "fieldFlag": "graphite.querier.split-queries-by-interval",
-              "fieldType": "duration"
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
             },
             {
               "kind": "field",
@@ -13408,7 +13463,8 @@
               "fieldValue": null,
               "fieldDefaultValue": true,
               "fieldFlag": "graphite.querier.proxy-bad-requests",
-              "fieldType": "boolean"
+              "fieldType": "boolean",
+              "fieldCategory": "advanced"
             },
             {
               "kind": "field",
@@ -13428,7 +13484,8 @@
               "fieldValue": null,
               "fieldDefaultValue": "32d",
               "fieldFlag": "graphite.querier.metrics-find-cutoff",
-              "fieldType": "string"
+              "fieldType": "string",
+              "fieldCategory": "advanced"
             },
             {
               "kind": "field",
@@ -13438,7 +13495,8 @@
               "fieldValue": null,
               "fieldDefaultValue": 1000000,
               "fieldFlag": "graphite.querier.max-points-per-req-soft",
-              "fieldType": "int"
+              "fieldType": "int",
+              "fieldCategory": "advanced"
             },
             {
               "kind": "field",
@@ -13448,7 +13506,8 @@
               "fieldValue": null,
               "fieldDefaultValue": 20000000,
               "fieldFlag": "graphite.querier.max-points-per-req-hard",
-              "fieldType": "int"
+              "fieldType": "int",
+              "fieldCategory": "advanced"
             },
             {
               "kind": "block",
@@ -13474,7 +13533,8 @@
                   "fieldValue": null,
                   "fieldDefaultValue": 30000000000,
                   "fieldFlag": "graphite.querier.query-timeout",
-                  "fieldType": "duration"
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
                 },
                 {
                   "kind": "field",
@@ -13484,7 +13544,8 @@
                   "fieldValue": null,
                   "fieldDefaultValue": 30000000000,
                   "fieldFlag": "graphite.querier.query-keep-alive",
-                  "fieldType": "duration"
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
                 },
                 {
                   "kind": "field",
@@ -13494,7 +13555,8 @@
                   "fieldValue": null,
                   "fieldDefaultValue": 10,
                   "fieldFlag": "graphite.querier.query-max-idle-conns",
-                  "fieldType": "int"
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
                 },
                 {
                   "kind": "field",
@@ -13504,7 +13566,8 @@
                   "fieldValue": null,
                   "fieldDefaultValue": 100,
                   "fieldFlag": "graphite.querier.query-max-conns",
-                  "fieldType": "int"
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
                 },
                 {
                   "kind": "field",
@@ -13514,7 +13577,8 @@
                   "fieldValue": null,
                   "fieldDefaultValue": "graphite-querier",
                   "fieldFlag": "graphite.querier.query-client-name",
-                  "fieldType": "string"
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
                 }
               ],
               "fieldValue": null,
@@ -13548,7 +13612,8 @@
               "fieldValue": null,
               "fieldDefaultValue": 30000000000,
               "fieldFlag": "graphite.querier.remote-subquery-timeout",
-              "fieldType": "duration"
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
             },
             {
               "kind": "field",
@@ -13556,7 +13621,7 @@
               "required": false,
               "desc": "If set, results from subqueries will be used.  If false, queries that would be fanned out to subqueriers are answered locally. The remote subqueries are still issued but the results are dropped.",
               "fieldValue": null,
-              "fieldDefaultValue": false,
+              "fieldDefaultValue": true,
               "fieldFlag": "graphite.querier.use-remote-results",
               "fieldType": "boolean"
             },
@@ -13566,7 +13631,7 @@
               "required": false,
               "desc": "Enables remote subquery server.",
               "fieldValue": null,
-              "fieldDefaultValue": false,
+              "fieldDefaultValue": true,
               "fieldFlag": "graphite.querier.enable-remote-subquerier",
               "fieldType": "boolean"
             }
@@ -13703,7 +13768,7 @@
                 },
                 {
                   "kind": "field",
-                  "name": "keepalive",
+                  "name": "keep_alive",
                   "required": false,
                   "desc": "KeepAlive for write to upstream Prometheus remote write API.",
                   "fieldValue": null,
@@ -13713,7 +13778,7 @@
                 },
                 {
                   "kind": "field",
-                  "name": "maxidleconns",
+                  "name": "max_idle_conns",
                   "required": false,
                   "desc": "Max idle conns per host for writes to upstream Prometheus remote write API.",
                   "fieldValue": null,
@@ -13723,7 +13788,7 @@
                 },
                 {
                   "kind": "field",
-                  "name": "maxconns",
+                  "name": "max_conns",
                   "required": false,
                   "desc": "Max open conns per host for writes to upstream Prometheus remote write API.",
                   "fieldValue": null,
@@ -13733,7 +13798,7 @@
                 },
                 {
                   "kind": "field",
-                  "name": "skiplabelvalidation",
+                  "name": "skip_label_validation",
                   "required": false,
                   "desc": "If set to true sends requests with headers to skip label validation.",
                   "fieldValue": null,

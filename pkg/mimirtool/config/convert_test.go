@@ -14,24 +14,71 @@ import (
 )
 
 type conversionInput struct {
-	useNewDefaults bool
-	outputDefaults bool
-	inYAML         []byte
-	inFlags        []string
+	useNewDefaults     bool
+	outputDefaults     bool
+	yaml               []byte
+	flags              []string
+	dontLoadCommonOpts bool
 }
 
-func testCortexAndGEM(t *testing.T, tc conversionInput, assert func(t *testing.T, outYAML []byte, outFlags []string, notices ConversionNotices, err error)) {
-	t.Parallel()
-	t.Run("cortex->mimir", func(t *testing.T) {
-		t.Parallel()
-		mimirYAML, mimirFlags, mimirNotices, mimirErr := Convert(tc.inYAML, tc.inFlags, CortexToMimirMapper(), DefaultCortexConfig, DefaultMimirConfig, tc.useNewDefaults, tc.outputDefaults)
-		assert(t, mimirYAML, mimirFlags, mimirNotices, mimirErr)
-	})
+func (in *conversionInput) loadCommonOpts(t *testing.T, yamlFile, flagsFile string) (commonYAML []byte, commonFlags []string) {
+	if in.dontLoadCommonOpts {
+		return nil, nil
+	}
+	if in.yaml == nil {
+		in.yaml = loadFile(t, yamlFile)
+		commonYAML = in.yaml
+	}
+	if in.flags == nil {
+		in.flags = loadFlags(t, flagsFile)
+		commonFlags = in.flags
+	}
 
+	return
+}
+
+func testConvertCortexAndGEM(t *testing.T, tc conversionInput, test func(t *testing.T, outYAML []byte, outFlags []string, notices ConversionNotices, err error)) {
+	testConvertCortex(t, tc, test)
+	testConvertGEM(t, tc, test)
+}
+
+func testConvertGEM(t *testing.T, tc conversionInput, test func(t *testing.T, outYAML []byte, outFlags []string, notices ConversionNotices, err error)) {
 	t.Run("gem170->gem200", func(t *testing.T) {
 		t.Parallel()
-		gemYAML, gemFlags, gemNotices, gemErr := Convert(tc.inYAML, tc.inFlags, GEM170ToGEM200Mapper(), DefaultGEM170Config, DefaultGEM200COnfig, tc.useNewDefaults, tc.outputDefaults)
-		assert(t, gemYAML, gemFlags, gemNotices, gemErr)
+
+		expectedCommonYAML, expectedCommonFlags := tc.loadCommonOpts(t, "testdata/gem/common-options-old.yaml", "testdata/gem/common-flags-old.txt")
+		outYAML, outFlags, notices, err := Convert(tc.yaml, tc.flags, GEM170ToGEM200Mapper(), DefaultGEM170Config, DefaultGEM200COnfig, tc.useNewDefaults, tc.outputDefaults)
+
+		if expectedCommonYAML != nil {
+			assert.YAMLEq(t, string(expectedCommonYAML), string(outYAML), "common config options did not map correctly")
+			outYAML = nil
+		}
+		if expectedCommonFlags != nil {
+			assert.ElementsMatch(t, expectedCommonFlags, outFlags, "common config options did not map correctly")
+			outFlags = []string{}
+		}
+
+		test(t, outYAML, outFlags, notices, err)
+	})
+}
+
+func testConvertCortex(t *testing.T, tc conversionInput, test func(t *testing.T, outYAML []byte, outFlags []string, notices ConversionNotices, err error)) {
+	t.Run("cortex->mimir", func(t *testing.T) {
+		t.Parallel()
+
+		expectedCommonYAML, expectedCommonFlags := tc.loadCommonOpts(t, "testdata/common-options.yaml", "testdata/common-flags.txt")
+		outYAML, outFlags, notices, err := Convert(tc.yaml, tc.flags, CortexToMimirMapper(), DefaultCortexConfig, DefaultMimirConfig, tc.useNewDefaults, tc.outputDefaults)
+
+		if expectedCommonYAML != nil {
+			assert.YAMLEq(t, string(expectedCommonYAML), string(outYAML), "common config options did not map correctly")
+			outYAML = nil
+		}
+		if expectedCommonFlags != nil {
+			assert.ElementsMatch(t, expectedCommonFlags, outFlags, "common config options did not map correctly")
+			outFlags = []string{}
+		}
+
+		test(t, outYAML, outFlags, notices, err)
 	})
 }
 
@@ -41,6 +88,8 @@ func TestConvert_Cortex(t *testing.T) {
 		useNewDefaults            bool
 		inFile, outFile           string
 		inFlagsFile, outFlagsFile string
+		skipGEMTest               bool
+		dontAddCommonOpts         bool
 	}{
 		{
 			name:    "shouldn't need any conversion",
@@ -83,6 +132,7 @@ func TestConvert_Cortex(t *testing.T) {
 			inFlagsFile:  "testdata/flags-precedence-old.flags.txt",
 			outFlagsFile: "testdata/flags-precedence-new.flags.txt",
 			outFile:      "testdata/common-options.yaml",
+			skipGEMTest:  true, // no need to test this in GEM too; plus, output for GEM also includes GEM common opts
 		},
 		{
 			name:    "ruler.storage maps to ruler_storage",
@@ -208,29 +258,33 @@ func TestConvert_Cortex(t *testing.T) {
 			outFile: "testdata/instance-interface-names-explicit-new.yaml",
 		},
 		{
-			name:        "server.http-listen-port old default is printed even when implicitly using the old default",
-			inFlagsFile: "testdata/empty.txt", // prevent the test from using common-flags.txt
-			inFile:      "testdata/empty.yaml",
-			outFile:     "testdata/server-listen-http-port-new.yaml",
+			name:              "server.http-listen-port old default is printed even when implicitly using the old default",
+			skipGEMTest:       true,
+			dontAddCommonOpts: true, // The common opts are in the outFile. That's the same reason why this test case doesn't work for GEM
+			inFile:            "testdata/empty.yaml",
+			outFile:           "testdata/server-listen-http-port-new.yaml",
 		},
 		{
-			name:           "server.http-listen-port old default is retained with useNewDefaults=true",
-			inFlagsFile:    "testdata/empty.txt", // prevent the test from using common-flags.txt
-			useNewDefaults: true,
-			inFile:         "testdata/server-listen-http-port-old.yaml",
-			outFile:        "testdata/server-listen-http-port-new.yaml",
+			name:              "server.http-listen-port old default is retained with useNewDefaults=true",
+			skipGEMTest:       true,
+			dontAddCommonOpts: true, // The common opts are in the outFile. That's the same reason why this test case doesn't work for GEM
+			useNewDefaults:    true,
+			inFile:            "testdata/server-listen-http-port-old.yaml",
+			outFile:           "testdata/server-listen-http-port-new.yaml",
 		},
 		{
-			name:        "server.http-listen-port old default is retained with useNewDefaults=false",
-			inFlagsFile: "testdata/empty.txt", // prevent the test from using common-flags.txt
-			inFile:      "testdata/server-listen-http-port-old.yaml",
-			outFile:     "testdata/server-listen-http-port-new.yaml",
+			name:              "server.http-listen-port old default is retained with useNewDefaults=false",
+			skipGEMTest:       true,
+			dontAddCommonOpts: true, // The common opts are in the outFile. That's the same reason why this test case doesn't work for GEM
+			inFile:            "testdata/server-listen-http-port-old.yaml",
+			outFile:           "testdata/server-listen-http-port-new.yaml",
 		},
 		{
-			name:        "server.http-listen-port random value is retained with useNewDefaults=false",
-			inFlagsFile: "testdata/empty.txt", // prevent the test from using common-flags.txt
-			inFile:      "testdata/server-listen-http-port-random-old.yaml",
-			outFile:     "testdata/server-listen-http-port-random-new.yaml",
+			name:              "server.http-listen-port random value is retained with useNewDefaults=false",
+			skipGEMTest:       true,
+			dontAddCommonOpts: true, // The common opts are in the outFile. That's the same reason why this test case doesn't work for GEM
+			inFile:            "testdata/server-listen-http-port-random-old.yaml",
+			outFile:           "testdata/server-listen-http-port-random-new.yaml",
 		},
 		{
 			name:         "flags with quotes and JSON don't get interpreted escaped",
@@ -248,6 +302,11 @@ func TestConvert_Cortex(t *testing.T) {
 			outFile: "testdata/duration-list-new.yaml",
 		},
 		{
+			name:         "instance_id is preserved",
+			inFlagsFile:  "testdata/ring-instance-id-old.flags.txt",
+			outFlagsFile: "testdata/ring-instance-id-new.flags.txt",
+		},
+		{
 			name:    "new frontend.results_cache.backend == memcached when old query_range.cache_results == true",
 			inFile:  "testdata/query-frontend-results-cache-old.yaml",
 			outFile: "testdata/query-frontend-results-cache-new.yaml",
@@ -257,33 +316,26 @@ func TestConvert_Cortex(t *testing.T) {
 	for _, tc := range testCases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			inBytes, expectedOut := loadFile(t, tc.inFile), loadFile(t, tc.outFile)
-			inFlags, expectedOutFlags := loadFlags(t, tc.inFlagsFile), loadFlags(t, tc.outFlagsFile)
-			if inFlags == nil {
-				inFlags = loadFlags(t, "testdata/common-flags.txt")
-				expectedOutFlags = inFlags
-			}
-			if inBytes == nil {
-				inBytes = loadFile(t, "testdata/common-options.yaml")
-				expectedOut = inBytes
-			}
+			t.Parallel()
+			expectedOut := loadFile(t, tc.outFile)
+			expectedOutFlags := loadFlags(t, tc.outFlagsFile)
 
 			in := conversionInput{
-				useNewDefaults: tc.useNewDefaults,
-				outputDefaults: false,
-				inYAML:         inBytes,
-				inFlags:        inFlags,
+				useNewDefaults:     tc.useNewDefaults,
+				dontLoadCommonOpts: tc.dontAddCommonOpts,
+				yaml:               loadFile(t, tc.inFile),
+				flags:              loadFlags(t, tc.inFlagsFile),
 			}
 
-			testCortexAndGEM(t, in, func(t *testing.T, outYAML []byte, outFlags []string, notices ConversionNotices, err error) {
+			assertion := func(t *testing.T, outYAML []byte, outFlags []string, notices ConversionNotices, err error) {
 				assert.NoError(t, err)
-
 				assert.ElementsMatch(t, expectedOutFlags, outFlags)
-				if expectedOut == nil {
-					expectedOut = []byte("{}")
-				}
 				assert.YAMLEq(t, string(expectedOut), string(outYAML))
-			})
+			}
+			testConvertCortex(t, in, assertion)
+			if !tc.skipGEMTest {
+				testConvertGEM(t, in, assertion)
+			}
 		})
 	}
 }
@@ -294,11 +346,42 @@ func TestConvert_GEM(t *testing.T) {
 		useNewDefaults            bool
 		inFile, outFile           string
 		inFlagsFile, outFlagsFile string
+		dontAddCommonOpts         bool
 	}{
 		{
 			name:    "proxy_targets get translated",
-			inFile:  "testdata/proxy-targets.yaml",
-			outFile: "testdata/proxy-targets.yaml",
+			inFile:  "testdata/gem/proxy-targets.yaml",
+			outFile: "testdata/gem/proxy-targets.yaml",
+		},
+		{
+			name:              "server.http-listen-port old default is printed even when implicitly using the old default",
+			dontAddCommonOpts: true, // The common opts are in the outFile
+			inFile:            "testdata/empty.yaml",
+			outFile:           "testdata/gem/server-listen-http-port-new.yaml",
+		},
+		{
+			name:              "server.http-listen-port old default is retained with useNewDefaults=true",
+			dontAddCommonOpts: true, // The common opts are in the outFile
+			useNewDefaults:    true,
+			inFile:            "testdata/gem/server-listen-http-port-old.yaml",
+			outFile:           "testdata/gem/server-listen-http-port-new.yaml",
+		},
+		{
+			name:              "server.http-listen-port old default is retained with useNewDefaults=false",
+			dontAddCommonOpts: true, // The common opts are in the outFile
+			inFile:            "testdata/gem/server-listen-http-port-old.yaml",
+			outFile:           "testdata/gem/server-listen-http-port-new.yaml",
+		},
+		{
+			name:              "server.http-listen-port random value is retained with useNewDefaults=false",
+			dontAddCommonOpts: true, // The common opts are in the outFile
+			inFile:            "testdata/gem/server-listen-http-port-random-old.yaml",
+			outFile:           "testdata/gem/server-listen-http-port-random-new.yaml",
+		},
+		{
+			name:         "instance_id is preserved",
+			inFlagsFile:  "testdata/gem/ring-instance-id-old.flags.txt",
+			outFlagsFile: "testdata/gem/ring-instance-id-new.flags.txt",
 		},
 	}
 
@@ -306,26 +389,21 @@ func TestConvert_GEM(t *testing.T) {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			inBytes, expectedOut := loadFile(t, tc.inFile), loadFile(t, tc.outFile)
-			inFlags, expectedOutFlags := loadFlags(t, tc.inFlagsFile), loadFlags(t, tc.outFlagsFile)
-			if inFlags == nil {
-				inFlags = loadFlags(t, "testdata/common-flags.txt")
-				expectedOutFlags = inFlags
-			}
-			if inBytes == nil {
-				inBytes = loadFile(t, "testdata/common-options.yaml")
-				expectedOut = inBytes
+			expectedOut := loadFile(t, tc.outFile)
+			expectedOutFlags := loadFlags(t, tc.outFlagsFile)
+
+			in := conversionInput{
+				useNewDefaults:     tc.useNewDefaults,
+				dontLoadCommonOpts: tc.dontAddCommonOpts,
+				yaml:               loadFile(t, tc.inFile),
+				flags:              loadFlags(t, tc.inFlagsFile),
 			}
 
-			outYAML, outFlags, _, err := Convert(inBytes, inFlags, GEM170ToGEM200Mapper(), DefaultGEM170Config, DefaultGEM200COnfig, tc.useNewDefaults, false)
-			assert.NoError(t, err)
-
-			assert.ElementsMatch(t, expectedOutFlags, outFlags)
-			if expectedOut == nil {
-				expectedOut = []byte("{}")
-			}
-			assert.YAMLEq(t, string(expectedOut), string(outYAML))
-
+			testConvertGEM(t, in, func(t *testing.T, outYAML []byte, outFlags []string, notices ConversionNotices, err error) {
+				assert.NoError(t, err)
+				assert.ElementsMatch(t, expectedOutFlags, outFlags)
+				assert.YAMLEq(t, string(expectedOut), string(outYAML))
+			})
 		})
 	}
 }
@@ -353,14 +431,13 @@ func TestConvert_InvalidConfigs(t *testing.T) {
 	for _, tc := range testCases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			inBytes := loadFile(t, tc.inFile)
-			inFlags := loadFlags(t, tc.inFlagsFile)
-
+			t.Parallel()
 			in := conversionInput{
-				inFlags: inFlags,
-				inYAML:  inBytes,
+				flags:              loadFlags(t, tc.inFlagsFile),
+				yaml:               loadFile(t, tc.inFile),
+				dontLoadCommonOpts: true,
 			}
-			testCortexAndGEM(t, in, func(t *testing.T, outYAML []byte, outFlags []string, notices ConversionNotices, err error) {
+			testConvertCortexAndGEM(t, in, func(t *testing.T, outYAML []byte, outFlags []string, notices ConversionNotices, err error) {
 				assert.EqualError(t, err, tc.expectedErr)
 			})
 		})
@@ -508,7 +585,7 @@ var changedCortexDefaults = []ChangedDefault{
 }
 
 func TestChangedCortexDefaults(t *testing.T) {
-	// Create cortex config where all params have explicitly set default values
+	// Create cortex config where all params have explicitly set default values so that all of them can be changed and reported as changed
 	params := DefaultCortexConfig()
 	err := params.Walk(func(path string, _ Value) error {
 		return params.SetValue(path, params.MustGetDefaultValue(path))
@@ -517,10 +594,15 @@ func TestChangedCortexDefaults(t *testing.T) {
 	config, err := yaml.Marshal(params)
 	require.NoError(t, err)
 
-	// Create cortex config where all params have explicitly set default values so that all of them can be changed and reported as changed
-	_, _, notices, err := Convert(config, nil, CortexToMimirMapper(), DefaultCortexConfig, DefaultMimirConfig, true, false)
-	require.NoError(t, err)
-	assert.ElementsMatch(t, changedCortexDefaults, notices.ChangedDefaults)
+	in := conversionInput{
+		useNewDefaults: true,
+		yaml:           config,
+	}
+
+	testConvertCortex(t, in, func(t *testing.T, outYAML []byte, outFlags []string, notices ConversionNotices, err error) {
+		require.NoError(t, err)
+		assert.ElementsMatch(t, changedCortexDefaults, notices.ChangedDefaults)
+	})
 }
 
 func TestChangedGEMDefaults(t *testing.T) {
@@ -528,8 +610,21 @@ func TestChangedGEMDefaults(t *testing.T) {
 		{Path: "admin_api.leader_election.client_config.max_send_msg_size", OldDefault: "16777216", NewDefault: "104857600"},
 		{Path: "admin_api.leader_election.enabled", OldDefault: "false", NewDefault: "true"},
 		{Path: "admin_api.leader_election.ring.instance_interface_names", OldDefault: "eth0,en0", NewDefault: "<nil>"},
-		{Path: "auth.type", OldDefault: "trust", NewDefault: "enterprise"},
 		{Path: "graphite.enabled", OldDefault: "false", NewDefault: "true"},
+		{Path: "graphite.querier.aggregation_cache.memcached.addresses", OldDefault: "dnssrvnoa+_memcached._tcp.", NewDefault: ""},
+		{Path: "graphite.querier.aggregation_cache.memcached.max_async_buffer_size", OldDefault: "10000", NewDefault: "25000"},
+		{Path: "graphite.querier.aggregation_cache.memcached.max_async_concurrency", OldDefault: "10", NewDefault: "50"},
+		{Path: "graphite.querier.aggregation_cache.memcached.max_get_multi_batch_size", OldDefault: "1024", NewDefault: "100"},
+		{Path: "graphite.querier.aggregation_cache.memcached.max_idle_connections", OldDefault: "16", NewDefault: "100"},
+		{Path: "graphite.querier.aggregation_cache.memcached.max_item_size", OldDefault: "0", NewDefault: "1048576"},
+		{Path: "graphite.querier.aggregation_cache.memcached.timeout", OldDefault: "100ms", NewDefault: "200ms"},
+		{Path: "graphite.querier.metric_name_cache.memcached.addresses", OldDefault: "dnssrvnoa+_memcached._tcp.", NewDefault: ""},
+		{Path: "graphite.querier.metric_name_cache.memcached.max_async_buffer_size", OldDefault: "10000", NewDefault: "25000"},
+		{Path: "graphite.querier.metric_name_cache.memcached.max_async_concurrency", OldDefault: "10", NewDefault: "50"},
+		{Path: "graphite.querier.metric_name_cache.memcached.max_get_multi_batch_size", OldDefault: "1024", NewDefault: "100"},
+		{Path: "graphite.querier.metric_name_cache.memcached.max_idle_connections", OldDefault: "16", NewDefault: "100"},
+		{Path: "graphite.querier.metric_name_cache.memcached.max_item_size", OldDefault: "0", NewDefault: "1048576"},
+		{Path: "graphite.querier.metric_name_cache.memcached.timeout", OldDefault: "100ms", NewDefault: "200ms"},
 		{Path: "graphite.querier.schemas.backend", OldDefault: "s3", NewDefault: "filesystem"},
 		{Path: "instrumentation.enabled", OldDefault: "false", NewDefault: "true"},
 		{Path: "limits.compactor_split_groups", OldDefault: "4", NewDefault: "1"},
@@ -560,10 +655,15 @@ func TestChangedGEMDefaults(t *testing.T) {
 	config, err := yaml.Marshal(params)
 	require.NoError(t, err)
 
-	// Convert while also converting explicitly set defaults to new defaults
-	_, _, notices, err := Convert(config, nil, GEM170ToGEM200Mapper(), DefaultGEM170Config, DefaultGEM200COnfig, true, false)
-	require.NoError(t, err)
-	assert.ElementsMatch(t, expectedChangedDefaults, notices.ChangedDefaults)
+	in := conversionInput{
+		useNewDefaults: true,
+		yaml:           config,
+	}
+
+	testConvertGEM(t, in, func(t *testing.T, outYAML []byte, outFlags []string, notices ConversionNotices, err error) {
+		require.NoError(t, err)
+		assert.ElementsMatch(t, expectedChangedDefaults, notices.ChangedDefaults)
+	})
 }
 
 func TestConvert_UseNewDefaults(t *testing.T) {
@@ -610,18 +710,13 @@ func TestConvert_UseNewDefaults(t *testing.T) {
 	for _, tc := range testCases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			// We pass the common flags in, but ignore the output.
-			// This is so that the always-present options in common-flags.txt get output in the flags instead of
-			// in the out YAML. This helps to keep the test cases and expected YAML clean of
-			// unrelated config options (e.g. server.http_listen_port)
-			inFlags := loadFlags(t, "testdata/common-flags.txt")
+			t.Parallel()
 			in := conversionInput{
-				inYAML:         tc.inYAML,
-				inFlags:        inFlags,
+				yaml:           tc.inYAML,
 				useNewDefaults: tc.useNewDefaults,
 			}
 
-			testCortexAndGEM(t, in, func(t *testing.T, outYAML []byte, outFlags []string, notices ConversionNotices, err error) {
+			testConvertCortexAndGEM(t, in, func(t *testing.T, outYAML []byte, outFlags []string, notices ConversionNotices, err error) {
 				require.NoError(t, err)
 
 				assert.YAMLEq(t, string(tc.expectedYAML), string(outYAML))
@@ -642,13 +737,13 @@ func TestConvert_NotInYAMLIsNotPrinted(t *testing.T) {
 		for _, showDefaults := range []bool{true, false} {
 			showDefaults, useNewDefaults := showDefaults, useNewDefaults
 			t.Run(fmt.Sprintf("useNewDefault=%t_showDefaults=%t", useNewDefaults, showDefaults), func(t *testing.T) {
+				t.Parallel()
 				in := conversionInput{
-					useNewDefaults: useNewDefaults,
-					outputDefaults: showDefaults,
-					inYAML:         nil,
-					inFlags:        nil,
+					useNewDefaults:     useNewDefaults,
+					outputDefaults:     showDefaults,
+					dontLoadCommonOpts: true,
 				}
-				testCortexAndGEM(t, in, func(t *testing.T, outYAML []byte, outFlags []string, notices ConversionNotices, err error) {
+				testConvertCortexAndGEM(t, in, func(t *testing.T, outYAML []byte, outFlags []string, notices ConversionNotices, err error) {
 					assert.NoError(t, err)
 					assert.NotContains(t, string(outYAML), notInYaml)
 				})
@@ -659,13 +754,13 @@ func TestConvert_NotInYAMLIsNotPrinted(t *testing.T) {
 
 func TestConvert_PassingOnlyYAMLReturnsOnlyYAML(t *testing.T) {
 	inYAML := []byte("distributor: { remote_timeout: 11s }")
-	expectedOutYAML := []byte(`{distributor: { remote_timeout: 11s }, server: { http_listen_port: 80 }}`)
+	expectedOutYAML := inYAML
 
 	in := conversionInput{
-		inYAML: inYAML,
+		yaml: inYAML,
 	}
 
-	testCortexAndGEM(t, in, func(t *testing.T, outYAML []byte, outFlags []string, notices ConversionNotices, err error) {
+	testConvertCortexAndGEM(t, in, func(t *testing.T, outYAML []byte, outFlags []string, notices ConversionNotices, err error) {
 		assert.NoError(t, err)
 		assert.YAMLEq(t, string(expectedOutYAML), string(outYAML))
 		assert.Empty(t, outFlags)
@@ -674,15 +769,15 @@ func TestConvert_PassingOnlyYAMLReturnsOnlyYAML(t *testing.T) {
 
 func TestConvert_PassingOnlyFlagsReturnsOnlyFlags(t *testing.T) {
 	inFlags := []string{"-distributor.remote-timeout=11s"}
-	expectedOutFlags := append([]string{"-server.http-listen-port=80"}, inFlags...)
+	expectedOutFlags := inFlags
 
 	in := conversionInput{
-		inFlags: inFlags,
+		flags: inFlags,
 	}
 
-	testCortexAndGEM(t, in, func(t *testing.T, outYAML []byte, outFlags []string, notices ConversionNotices, err error) {
+	testConvertCortexAndGEM(t, in, func(t *testing.T, outYAML []byte, outFlags []string, notices ConversionNotices, err error) {
 		assert.NoError(t, err)
-		assert.YAMLEq(t, "{}", string(outYAML))
+		assert.Empty(t, outYAML)
 		assert.ElementsMatch(t, expectedOutFlags, outFlags)
 	})
 }

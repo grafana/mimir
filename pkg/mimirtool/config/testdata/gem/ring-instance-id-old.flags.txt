@@ -1,0 +1,7 @@
+-admin-api.leader-election.ring.instance-id=123abc-7
+-alertmanager.sharding-ring.instance-id=123abc-2
+-compactor.ring.instance-id=123abc-4
+-distributor.ring.instance-id=123abc-1
+-ingester.lifecycler.id=123abc-6
+-ruler.ring.instance-id=123abc-3
+-store-gateway.sharding-ring.instance-id=123abc-5
