@@ -48,7 +48,7 @@ When running Grafana Mimir at scale, querying non-compacted blocks might be inef
 
 Configure Grafana Mimir to ensure only compacted blocks are queried:
 
-1. Configure compactor's `-compactor.split-and-merge-shards` and `-compactor.split-groups` for every tenant with more than 20 million active series. For more information about configuring the compactor's split and merge shards, refer to [compactor]({{< relref "../architecture/components/compactor.md" >}}).
+1. Configure compactor's `-compactor.split-and-merge-shards` and `-compactor.split-groups` for every tenant with more than 20 million active series. For more information about configuring the compactor's split and merge shards, refer to [compactor]({{< relref "../architecture/components/compactor/index.md" >}}).
 1. Configure querier's `-querier.query-store-after` equal to `-querier.query-ingesters-within` minus five minutes. The five-minute delta is recommended to ensure the time range on the boundary is queried both from ingesters and queriers.
 
 #### How to estimate `-querier.query-store-after`
@@ -61,7 +61,7 @@ The following diagram shows all of the timings involved in the estimation. This 
 - The compactor takes up to three hours to compact two-hour blocks shipped from all ingesters
 - Querier and store-gateways take up to 15 minutes to discover and load a new compacted block
 
-Based on these assumptions, in the worst-case scenario, it takes up to six hours and 45 minutes from when a sample is ingested until that sample has been appended to a block flushed to the storage and the block is [vertically compacted](./compactor.md) with all other overlapping two-hour blocks shipped from ingesters.
+Based on these assumptions, in the worst-case scenario, it takes up to six hours and 45 minutes from when a sample is ingested until that sample has been appended to a block flushed to the storage and the block is [vertically compacted](./compactor/index.md) with all other overlapping two-hour blocks shipped from ingesters.
 
 ![Avoid querying non compacted blocks](../../images/avoid-querying-non-compacted-blocks.png)
 
@@ -89,7 +89,7 @@ We recommend configuring the system's `file-max` ulimit at least to `65536` to a
 ### Ensure the compactor has enough disk space
 
 The compactor requires a lot of disk space to download source blocks from the long-term storage and temporarily store the compacted block before uploading it to the storage.
-For more information about required disk space, refer to [Compactor disk utilization](../architecture/components/compactor.md#compactor-disk-utilization).
+For more information about required disk space, refer to [Compactor disk utilization](../architecture/components/compactor/index.md#compactor-disk-utilization).
 
 ## Caching
 

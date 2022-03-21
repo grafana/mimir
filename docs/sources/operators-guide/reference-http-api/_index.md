@@ -305,7 +305,7 @@ This endpoint displays a web page with the ingesters hash ring status, including
 
 ## Querier / Query-frontend
 
-The following endpoints are exposed both by the [querier]({{< relref "../architecture/components/querier.md" >}}) and [query-frontend]({{< relref "../architecture/components/query-frontend/_index.md" >}}).
+The following endpoints are exposed both by the [querier]({{< relref "../architecture/components/querier.md" >}}) and [query-frontend]({{< relref "../architecture/components/query-frontend/index.md" >}}).
 
 ### Instant query
 
