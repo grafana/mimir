@@ -64,9 +64,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-var (
-	errInvalidBucketConfig = errors.New("invalid bucket config")
-)
+var errInvalidBucketConfig = errors.New("invalid bucket config")
 
 // The design pattern for Mimir is a series of config objects, which are
 // registered for command line flags, and then a series of components that

@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <title>Grafana Mimir</title>
+
+    <link rel="stylesheet" href="{{ AddPathPrefix "/static/bootstrap-3.4.1.min.css" }}">
+    <link rel="stylesheet" href="{{ AddPathPrefix "/static/bootstrap-theme-3.4.1.min.css" }}">
+    <link rel="stylesheet" href="{{ AddPathPrefix "/static/mimir-styles.css" }}">
+</head>
+<body>
+<div class="container">
+    <div class="page-header">
+        <h1>Grafana Mimir Admin<img class="mimir-brand pull-right" src="{{ AddPathPrefix "/static/mimir-icon.png" }}"></h1>
+    </div>
+    <ul class="nav nav-pills nav-stacked">
+        {{ range . }}
+            {{- /*gotype: github.com/grafana/mimir/pkg/api.IndexPageNavElement */ -}}
+            {{ if .Dropdown }}
+                <li role="presentation" class="dropdown">
+                    <a class="dropdown-toggle" data-toggle="dropdown" href="#" role="button" aria-haspopup="true"
+                       aria-expanded="false">
+                        {{ .Desc }} <span class="caret"></span>
+                    </a>
+                    <ul class="dropdown-menu">
+                        {{ range .Dropdown }}
+                            <li>
+                                <a href="{{ AddPathPrefix .Path }}">
+                                    {{ if .Dangerous }}<span class="label label-danger">Dangerous</span>{{ end }}
+                                    {{ .Desc }}
+                                </a>
+                            </li>
+                        {{ end }}
+                    </ul>
+                </li>
+            {{ else }}
+                <li role="presentation"><a href="{{ AddPathPrefix .Path }}">{{ .Desc }}</a></li>
+            {{ end }}
+        {{ end }}
+    </ul>
+</div>
+
+<script src="{{ AddPathPrefix "/static/jquery-1.12.4.min.js" }}"></script>
+<script src="{{ AddPathPrefix "/static/bootstrap-3.4.1.min.js" }}"></script>
+</body>
+</html>

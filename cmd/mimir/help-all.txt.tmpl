@@ -609,6 +609,10 @@ Usage of ./cmd/mimir/mimir:
     	This flag can be used to specify label names that to drop during sample ingestion within the distributor and can be repeated in order to drop multiple labels.
   -distributor.extend-writes
     	Try writing to an additional ingester in the presence of an ingester not in the ACTIVE state. It is useful to disable this along with -ingester.ring.unregister-on-shutdown=false in order to not spread samples to extra ingesters during rolling restarts with consistent naming. (default true)
+  -distributor.forwarding.enabled
+    	[experimental] Enables the feature to forward certain metrics in remote_write requests, depending on defined rules.
+  -distributor.forwarding.request-timeout duration
+    	[experimental] Timeout for requests to ingestion endpoints to which we forward metrics. (default 10s)
   -distributor.ha-tracker.cluster string
     	Prometheus label to look for in samples to identify a Prometheus HA cluster. (default "cluster")
   -distributor.ha-tracker.consul.acl-token string

@@ -463,8 +463,7 @@ func (u *BucketStores) getOrCreateStore(userID string) (*BucketStore, error) {
 			u.logger,
 			fetcherReg,
 			filters,
-			nil,
-		) // No modifiers needed.
+		)
 	} else {
 		// Wrap the bucket reader to skip iterating the bucket at all if the user doesn't
 		// belong to the store-gateway shard. We need to run the BucketStore synching anyway
@@ -481,7 +480,6 @@ func (u *BucketStores) getOrCreateStore(userID string) (*BucketStore, error) {
 			u.syncDirForUser(userID), // The fetcher stores cached metas in the "meta-syncer/" sub directory
 			fetcherReg,
 			filters,
-			nil, // No modifiers needed.
 		)
 		if err != nil {
 			return nil, err

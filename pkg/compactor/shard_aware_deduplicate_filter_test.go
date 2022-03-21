@@ -373,7 +373,7 @@ func TestShardAwareDeduplicateFilter_Filter(t *testing.T) {
 				expected[id] = m
 			}
 
-			require.NoError(t, f.Filter(context.Background(), metas, m.Synced))
+			require.NoError(t, f.Filter(context.Background(), metas, m.Synced, m.Modified))
 			require.Equal(t, expected, metas)
 			require.Equal(t, float64(inputLen-len(tcase.expected)), promtest.ToFloat64(m.Synced.WithLabelValues(duplicateMeta)))
 		})
@@ -448,7 +448,7 @@ func BenchmarkDeduplicateFilter_Filter(b *testing.B) {
 				b.ResetTimer()
 				b.Run("", func(b *testing.B) {
 					for n := 0; n <= b.N; n++ {
-						_ = dedupFilter.Filter(context.Background(), tcase, synced)
+						_ = dedupFilter.Filter(context.Background(), tcase, synced, nil)
 						require.Equal(b, 0, len(dedupFilter.DuplicateIDs()))
 					}
 				})
