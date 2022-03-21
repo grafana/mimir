@@ -34,7 +34,7 @@ For component specific documentation, refer to one of the following topics:
 - [Distributor]({{< relref "architecture/components/distributor.md" >}})
 - [Ingester]({{< relref "architecture/components/ingester.md" >}})
 - [Query-frontend]({{< relref "architecture/components/query-frontend/index.md" >}})
-- [Query-scheduler]({{< relref "architecture/components/query-scheduler.md" >}})
+- [Query-scheduler]({{< relref "architecture/components/query-scheduler/index.md" >}})
 - [Store-gateway]({{< relref "architecture/components/store-gateway.md" >}})
 - [Optional: Alertmanager]({{< relref "architecture/components/alertmanager.md" >}})
 - [Optional: Ruler]({{< relref "architecture/components/ruler.md" >}})

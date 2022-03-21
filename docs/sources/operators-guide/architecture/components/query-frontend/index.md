@@ -71,7 +71,7 @@ The query-frontend also provides [query sharding]({{< relref "query-sharding.md"
 
 The query-frontend scalability is limited by the configured number of workers per querier.
 
-When you don't use the [query-scheduler]({{< relref "./query-scheduler.md">}}), the query-frontend stores a queue of queries to execute.
+When you don't use the [query-scheduler]({{< relref "./query-scheduler/index.md">}}), the query-frontend stores a queue of queries to execute.
 A querier runs `-querier.max-concurrent` workers and each worker connects to one of the query-frontend replicas to pull queries to execute.
 A querier worker executes one query at a time.
 
@@ -88,7 +88,7 @@ The queries exceeding the configured maximum concurrency create a backlog in the
 
 The backlog might cause a suboptimal utilization of querier resources, which can result in poor query performance when you run Grafana Mimir at scale.
 
-The [query-scheduler]({{< relref "./query-scheduler.md" >}}) is an optional component that you can deploy to overcome the query-frontend scalability limitations.
+The [query-scheduler]({{< relref "./query-scheduler/index.md" >}}) is an optional component that you can deploy to overcome the query-frontend scalability limitations.
 
 ## DNS configuration and readiness
 
