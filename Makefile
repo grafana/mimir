@@ -428,6 +428,7 @@ check-doc: doc
 reference-help: cmd/mimir/mimir
 	@(./cmd/mimir/mimir -h || true) > cmd/mimir/help.txt.tmpl
 	@(./cmd/mimir/mimir -help-all || true) > cmd/mimir/help-all.txt.tmpl
+	@(go run ./tools/config-inspector || true) > cmd/mimir/config-descriptor.json
 
 clean-white-noise:
 	@find . -path ./.pkg -prune -o -path ./vendor -prune -or -type f -name "*.md" -print | \
