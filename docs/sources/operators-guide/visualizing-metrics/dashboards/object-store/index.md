@@ -13,4 +13,4 @@ The Object Store dashboard shows an overview of all activity and operations run 
 
 The following example shows an Object Store dashboard from a demo cluster.
 
-![Grafana Mimir object store dashboard](../../../images/dashboards/mimir-object-store.png)
+![Grafana Mimir object store dashboard](mimir-object-store.png)

@@ -15,4 +15,4 @@ The dashboard isolates each service on the write path into its own section and d
 
 The following example shows a Writes dashboard from a demo cluster.
 
-![Grafana Mimir writes dashboard](../../../images/dashboards/mimir-writes.png)
+![Grafana Mimir writes dashboard](mimir-writes.png)

@@ -9,10 +9,10 @@ weight: 40
 
 The Compactor resources dashboard shows CPU, memory, disk, and networking metrics for the compactor.
 
-This dashboard requires [additional resources metrics]({{< relref "../requirements.md#additional-resources-metrics" >}}).
+This dashboard requires [additional resources metrics]({{< relref "../../requirements.md#additional-resources-metrics" >}}).
 
 ## Example
 
 The following example shows a Compactor resources dashboard from a demo cluster.
 
-![Grafana Mimir compactor resources dashboard](../../../images/dashboards/mimir-compactor-resources.png)
+![Grafana Mimir compactor resources dashboard](mimir-compactor-resources.png)

@@ -15,4 +15,4 @@ The dashboard isolates each service on the read path into its own section and di
 
 The following example shows a Reads dashboard from a demo cluster.
 
-![Grafana Mimir reads dashboard](../../../images/dashboards/mimir-reads.png)
+![Grafana Mimir reads dashboard](mimir-reads.png)

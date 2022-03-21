@@ -13,4 +13,4 @@ The Alertmanager dashboard shows health and activity metrics for the Alertmanage
 
 The following example shows an Alertmanager dashboard from a demo cluster.
 
-![Grafana Mimir Alertmanager dashboard](../../../images/dashboards/mimir-alertmanager.png)
+![Grafana Mimir Alertmanager dashboard](mimir-alertmanager.png)

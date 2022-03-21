@@ -13,4 +13,4 @@ The Rollout progress dashboard shows the progress of a rollout across a Grafana 
 
 The following example shows a Rollout progress dashboard from a demo cluster.
 
-![Grafana Mimir rollout progress dashboard](../../../images/dashboards/mimir-rollout-progress.png)
+![Grafana Mimir rollout progress dashboard](mimir-rollout-progress.png)

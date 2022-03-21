@@ -13,4 +13,4 @@ The Compactor dashboard shows health and activity metrics for the compactor and 
 
 The following example shows a Compactor dashboard from a demo cluster.
 
-![Grafana Mimir compactor dashboard](../../../images/dashboards/mimir-compactor.png)
+![Grafana Mimir compactor dashboard](mimir-compactor.png)

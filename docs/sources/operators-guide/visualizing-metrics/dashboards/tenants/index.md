@@ -13,4 +13,4 @@ The Tenants dashboard shows various metrics for the selected tenant.
 
 The following example shows a Tenants dashboard from a demo cluster.
 
-![Grafana Mimir tenants dashboard](../../../images/dashboards/mimir-tenants.png)
+![Grafana Mimir tenants dashboard](mimir-tenants.png)

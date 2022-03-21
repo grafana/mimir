@@ -13,4 +13,4 @@ The Config dashboard shows details about the runtime configuration currently loa
 
 The following example shows a Config dashboard from a demo cluster.
 
-![Grafana Mimir config dashboard](../../../images/dashboards/mimir-config.png)
+![Grafana Mimir config dashboard](mimir-config.png)

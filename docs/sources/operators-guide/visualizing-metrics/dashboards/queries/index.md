@@ -13,4 +13,4 @@ The Queries dashboard shows information about query queues, duration, retries, a
 
 The following example shows a Queries dashboard from a demo cluster.
 
-![Grafana Mimir queries dashboard](../../../images/dashboards/mimir-queries.png)
+![Grafana Mimir queries dashboard](mimir-queries.png)

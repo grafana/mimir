@@ -13,4 +13,4 @@ The Scaling dashboard shows services that are not scaled correctly.
 
 The following example shows a Scaling dashboard from a demo cluster.
 
-![Grafana Mimir scaling dashboard](../../../images/dashboards/mimir-scaling.png)
+![Grafana Mimir scaling dashboard](mimir-scaling.png)
