@@ -13,17 +13,17 @@ On the read path, the [querier]({{< relref "./querier.md" >}}) and the [ruler]({
 To find the right blocks to look up at query time, the store-gateway requires an almost up-to-date view of the bucket in long-term storage.
 The store-gateway keeps the bucket view updated using one of the following options:
 
-- Periodically downloading the [bucket index]({{< relref "../bucket-index.md" >}}) (default)
+- Periodically downloading the [bucket index]({{< relref "../bucket-index/index.md" >}}) (default)
 - Periodically scanning the bucket
 
 ### Bucket index enabled (default)
 
-To discover each tenant's blocks and block deletion marks, at startup, store-gateways fetch the [bucket index]({{< relref "../bucket-index.md" >}}) from long-term storage for each tenant that belongs to their [shard](#blocks-sharding-and-replication).
+To discover each tenant's blocks and block deletion marks, at startup, store-gateways fetch the [bucket index]({{< relref "../bucket-index/index.md" >}}) from long-term storage for each tenant that belongs to their [shard](#blocks-sharding-and-replication).
 
 For each discovered block, the store-gateway downloads the [index header](#blocks-index-header) to the local disk.
 During this initial bucket-synchronization phase, the store-gateway’s `/ready` readiness probe endpoint reports a not-ready status.
 
-For more information about the bucket index, refer to [bucket index]({{< relref "../bucket-index.md" >}}).
+For more information about the bucket index, refer to [bucket index]({{< relref "../bucket-index/index.md" >}}).
 
 Store-gateways periodically re-download the bucket index to obtain an updated view of the long-term storage and discover new blocks uploaded by ingesters and compactors, or deleted by compactors.
 

@@ -12,7 +12,7 @@ The compactor increases query performance and reduces long-term storage usage by
 The compactor is the component responsible for:
 
 - Compacting multiple blocks of a given tenant into a single, optimized larger block. This deduplicates chunks and reduces the size of the index, resulting in reduced storage costs. Querying fewer blocks is faster, so it also increases query speed.
-- Keeping the per-tenant bucket index updated. The [bucket index]({{< relref "../../bucket-index.md" >}}) is used by [queriers]({{< relref "../querier.md" >}}), [store-gateways]({{< relref "../store-gateway.md" >}}), and [rulers]({{< relref "../ruler.md" >}}) to discover both new blocks and deleted blocks in the storage.
+- Keeping the per-tenant bucket index updated. The [bucket index]({{< relref "../../bucket-index/index.md" >}}) is used by [queriers]({{< relref "../querier.md" >}}), [store-gateways]({{< relref "../store-gateway.md" >}}), and [rulers]({{< relref "../ruler.md" >}}) to discover both new blocks and deleted blocks in the storage.
 - Deleting blocks that are no longer within a configurable retention period.
 
 The compactor is stateless.
