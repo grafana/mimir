@@ -50,7 +50,7 @@ The store-gateway uses blocks sharding to horizontally scale blocks in a large c
 Blocks are replicated across multiple store-gateway instances based on a replication factor configured via `-store-gateway.sharding-ring.replication-factor`.
 The blocks replication is used to protect from query failures caused by some blocks not loaded by any store-gateway instance at a given time, such as in the event of a store-gateway failure or while restarting a store-gateway instance (for example, during a rolling update).
 
-Store-gateway instances build a [hash ring]({{< relref "../hash-ring.md" >}}) and shard and replicate blocks across the pool of store-gateway instances registered in the ring.
+Store-gateway instances build a [hash ring]({{< relref "../hash-ring/index.md" >}}) and shard and replicate blocks across the pool of store-gateway instances registered in the ring.
 
 Store-gateways continuously monitor the ring state.
 When the ring topology changes, for example, when a new instance is added or removed, or the instance becomes healthy or unhealthy, each store-gateway instance resynchronizes the blocks assigned to its shard.
@@ -62,7 +62,7 @@ When the querier queries blocks via a store-gateway, the response contains the l
 If a querier attempts to query a block that the store-gateway has not loaded, the querier retries the query on a different store-gateway up to the `-store-gateway.sharding-ring.replication-factor` value, which by default is `3`.
 The query fails if the block can't be successfully queried from any replica.
 
-> **Note:** You must configure the [hash ring]({{< relref "../hash-ring.md" >}}) via the `-store-gateway.sharding-ring.*` flags or their respective YAML configuration parameters.
+> **Note:** You must configure the [hash ring]({{< relref "../hash-ring/index.md" >}}) via the `-store-gateway.sharding-ring.*` flags or their respective YAML configuration parameters.
 
 ### Sharding strategy
 

@@ -19,7 +19,7 @@ This value is called _token_ and used as the ID of the data.
 The token determines the location on the hash ring deterministically.
 This allows independent determination of what instance of Grafana Mimir is the authoritative owner of any specific data.
 
-For example, series are sharded across [ingesters]({{< relref "components/ingester.md" >}}).
+For example, series are sharded across [ingesters]({{< relref "../components/ingester.md" >}}).
 The token of a given series is computed by hashing all of the series’ labels and the tenant ID: the result of which is an unsigned 32-bit integer within the space of the tokens.
 The ingester that owns that series is the instance that owns the range of the tokens, including the series' token.
 
@@ -50,13 +50,13 @@ The ingester #2, which is registered with token `4`, is the authoritative owner 
 
 [//]: # "Diagram source at https://docs.google.com/presentation/d/1bHp8_zcoWCYoNU2AhO2lSagQyuIrghkCncViSqn14cU/edit"
 
-![Hash ring without replication](../../images/hash-ring-without-replication.png)
+![Hash ring without replication](hash-ring-without-replication.png)
 
 By default, Grafana Mimir replicates each series to three ingesters.
 After finding the authoritative owner of the series, Grafana Mimir continues to walk the ring clockwise to find the remaining two instances where the series should be replicated.
 In the example that follows, the series are replicated to the instances of `Ingester #3` and `Ingester #4`.
 
-![Hash ring with replication](../../images/hash-ring-with-replication.png)
+![Hash ring with replication](hash-ring-with-replication.png)
 
 [//]: # "Diagram source at https://docs.google.com/presentation/d/1bHp8_zcoWCYoNU2AhO2lSagQyuIrghkCncViSqn14cU/edit"
 
@@ -72,12 +72,12 @@ On average, the number of tokens that need to move to a different instance is on
 There are several Grafana Mimir components that need a hash ring.
 Each of the following components builds an independent hash ring:
 
-- [Ingesters]({{< relref "components/ingester.md" >}}) shard and replicate series.
-- [Distributors]({{< relref "components/distributor.md" >}}) enforce rate limits.
-- [Compactors]({{< relref "components/compactor/index.md" >}}) shard compaction workload.
-- [Store-gateways]({{< relref "components/store-gateway.md" >}}) shard blocks to query from long-term storage.
-- [(Optional) Rulers]({{< relref "components/ruler.md" >}}) shard rule groups to evaluate.
-- [(Optional) Alertmanagers]({{< relref "components/alertmanager.md" >}}) shard tenants.
+- [Ingesters]({{< relref "../components/ingester.md" >}}) shard and replicate series.
+- [Distributors]({{< relref "../components/distributor.md" >}}) enforce rate limits.
+- [Compactors]({{< relref "../components/compactor/index.md" >}}) shard compaction workload.
+- [Store-gateways]({{< relref "../components/store-gateway.md" >}}) shard blocks to query from long-term storage.
+- [(Optional) Rulers]({{< relref "../components/ruler.md" >}}) shard rule groups to evaluate.
+- [(Optional) Alertmanagers]({{< relref "../components/alertmanager.md" >}}) shard tenants.
 
 ## How the hash ring is shared between Grafana Mimir instances
 
@@ -85,7 +85,7 @@ Hash ring data structures need to be shared between Grafana Mimir instances.
 To propagate changes to the hash ring, Grafana Mimir uses a key-value store.
 The key-value store is required and can be configured independently for the hash rings of different components.
 
-For more information, see the [key-value store documentation]({{< relref "key-value-store.md" >}}).
+For more information, see the [key-value store documentation]({{< relref "../key-value-store.md" >}}).
 
 ## Features that are built using the hash ring
 
@@ -94,5 +94,5 @@ Features that are built using the hash ring:
 
 - **Service discovery**: Instances can discover each other looking up who is registered in the ring.
 - **Heartbeating**: Instances periodically send an heartbeat to the ring to signal they're up and running. An instance is considered unhealthy if misses the heartbeat for some period of time.
-- **Zone-aware replication**: Zone-aware replication is the replication of data across failure domains and can be optionally enabled in Grafana Mimir. For more information, see [configuring zone-aware replication]({{< relref "../configuring/configuring-zone-aware-replication.md" >}}).
-- **Shuffle sharding**: Grafana Mimir optionally supports shuffle sharding in a multi-tenant cluster, to reduce the blast radius of an outage and better isolate tenants. For more information, refer to [configure shuffle sharding]({{< relref "../configuring/configuring-shuffle-sharding.md" >}}).
+- **Zone-aware replication**: Zone-aware replication is the replication of data across failure domains and can be optionally enabled in Grafana Mimir. For more information, see [configuring zone-aware replication]({{< relref "../../configuring/configuring-zone-aware-replication.md" >}}).
+- **Shuffle sharding**: Grafana Mimir optionally supports shuffle sharding in a multi-tenant cluster, to reduce the blast radius of an outage and better isolate tenants. For more information, refer to [configure shuffle sharding]({{< relref "../../configuring/configuring-shuffle-sharding.md" >}}).
