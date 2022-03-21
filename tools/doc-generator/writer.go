@@ -62,7 +62,7 @@ func (w *specWriter) writeConfigEntry(e *parse.ConfigEntry, indent int) {
 		}
 	}
 
-	if e.Kind == parse.KindField {
+	if e.Kind == parse.KindField || e.Kind == parse.KindSlice || e.Kind == parse.KindMap {
 		// Description
 		w.writeComment(e.Description(), indent, 0)
 		w.writeExample(e.FieldExample, indent)

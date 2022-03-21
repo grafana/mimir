@@ -455,6 +455,27 @@ How to **investigate**:
 
 - Look for any error in the compactor logs
   - Corruption: [`not healthy index found`](#compactor-is-failing-because-of-not-healthy-index-found)
+  - Invalid result block:
+    - **How to detect**: Search compactor logs for `invalid result block`.
+    - **What it means**: The compactor successfully validated the source blocks. But the validation of the result block after the compaction did not succeed. The result block was not uploaded and the compaction job will be retried.
+    - Out-of-order chunks
+      - **How to detect**: Search compactor logs for `invalid result block` and `out-of-order chunks`.
+      - This is caused by a bug in the ingester. Ingesters upload blocks where the MinT and MaxT of some chunks don't match the first and last samples in the chunk. When the faulty chunks' MinT and MaxT overlap with other chunks, the compactor merges the chunks. Because one chunk's MinT and MaxT are incorrect the merge may be performed incorrectly, leading to OoO samples.
+      - **How to mitigate**: Mark the faulty blocks to avoid compacting them in the future:
+        - Find all affected compaction groups in the compactor logs. You will find them as `invalid result block /data/compact/<compaction_group>/<result_block>`.
+        - For each failed compaction job
+          - Pick one result block (doesn't matter which)
+          - Find source blocks for the compaction job: search for `msg="compact blocks"` and a mention of the result block ID.
+          - Upload a JSON file to the markers directory of the compactor: `<tenant_id>/markers/<faulty_source_block>-no-compact-mark.json`. The format of the file follows. Replace the `id` and `no_compact_time`:
+            ```json
+            {
+              "id": "01FYAFBE9F0VH6555R3J1CFPHP",
+              "version": 1,
+              "details": "When compacting with other blocks is leading to out-of-order chunks",
+              "no_compact_time": 1647514725,
+              "reason": "manual"
+            }
+            ```
 
 ### MimirCompactorSkippedBlocksWithOutOfOrderChunks
 

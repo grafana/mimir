@@ -19,7 +19,6 @@ import (
 	"github.com/prometheus/common/model"
 	"gopkg.in/yaml.v3"
 
-	"github.com/grafana/mimir/pkg/mimir"
 	"github.com/grafana/mimir/tools/doc-generator/parse"
 )
 
@@ -31,11 +30,19 @@ type InspectedEntryFactory func() *InspectedEntry
 
 // InspectedEntry is the structure that holds a configuration block or a single configuration parameters.
 // Blocks contain other other InspectedEntries.
+
+type EntryKind string
+
+const (
+	KindBlock EntryKind = "block"
+	KindField EntryKind = "field"
+)
+
 type InspectedEntry struct {
-	Kind     parse.EntryKind `json:"kind"`
-	Name     string          `json:"name"`
-	Required bool            `json:"required"`
-	Desc     string          `json:"desc"`
+	Kind     EntryKind `json:"kind"`
+	Name     string    `json:"name"`
+	Required bool      `json:"required"`
+	Desc     string    `json:"desc"`
 
 	// In case the Kind is "block"
 	BlockEntries       []*InspectedEntry `json:"blockEntries,omitempty"`
@@ -43,36 +50,76 @@ type InspectedEntry struct {
 	BlockFlagsPrefixes []string          `json:"blockFlagsPrefixes,omitempty"`
 
 	// In case the Kind is "field"
-	FieldValue        interface{} `json:"fieldValue,omitempty"`
-	FieldDefaultValue interface{} `json:"fieldDefaultValue,omitempty"`
-	FieldFlag         string      `json:"fieldFlag,omitempty"`
-	FieldType         string      `json:"fieldType,omitempty"`
-	FieldCategory     string      `json:"fieldCategory,omitempty"`
+	FieldValue        Value           `json:"fieldValue,omitempty"`
+	FieldDefaultValue Value           `json:"fieldDefaultValue,omitempty"`
+	FieldFlag         string          `json:"fieldFlag,omitempty"`
+	FieldType         string          `json:"fieldType,omitempty"`
+	FieldCategory     string          `json:"fieldCategory,omitempty"`
+	FieldElement      *InspectedEntry `json:"fieldElement,omitempty"` // when FieldType is "slice" or "map"
+}
+
+func (i *InspectedEntry) GetValue(path string) (Value, error) {
+	child, err := i.find(path)
+	if err != nil {
+		return Value{}, errors.Wrap(err, path)
+	}
+	return child.FieldValue, nil
+}
+
+// MustGetValue does the same as GetVValue, but panics if there's an error.
+func (i *InspectedEntry) MustGetValue(path string) Value {
+	v, err := i.GetValue(path)
+	if err != nil {
+		panic(err)
+	}
+	return v
+}
+
+// SetValue sets individual parameters. val can be any value. If an error is returned,
+// its errors.Cause will be ErrParameterNotFound.
+func (i *InspectedEntry) SetValue(path string, v Value) error {
+	child, err := i.find(path)
+	if err != nil {
+		return err
+	}
+
+	child.FieldValue = v
+	return nil
 }
 
 // String implements flag.Value
 func (i *InspectedEntry) String() string {
-	if val, ok := i.FieldValue.(flag.Value); ok {
+	if val, ok := i.FieldValue.AsInterface().(flag.Value); ok {
 		return val.String()
 	}
-	return fmt.Sprintf("%v", i.FieldValue)
+	return fmt.Sprintf("%v", i.FieldValue.AsInterface())
 }
 
 // Set implements flag.Value
 func (i *InspectedEntry) Set(s string) (err error) {
-	if val, ok := i.FieldValue.(flag.Value); ok {
-		// If the value already know how to be set, then use that
+	if val, ok := i.FieldValue.AsInterface().(flag.Value); ok {
+		// If the value already knows how to be set, then use that
 		return val.Set(s)
+	} else if i.FieldValue.IsUnset() {
+		// Else, maybe the value wasn't initialized and is nil, so the type assertion failed.
+		zero := i.zeroValuePtr()
+		if zeroValue, ok := zero.AsInterface().(flag.Value); ok {
+			i.FieldValue = zero
+			return zeroValue.Set(s)
+		}
 	}
+
 	// Otherwise, it should be a primitive go type (int, string, float64).
 	// Decoding it as YAML should be sufficiently reliable.
+	var v Value
 	switch i.FieldType {
 	case "string":
-		i.FieldValue = s
+		v = StringValue(s)
 	default:
 		jsonDecoder := yaml.NewDecoder(bytes.NewBuffer([]byte(s)))
-		i.FieldValue, err = decodeValue(i.FieldType, jsonDecoder)
+		v, err = i.decodeValue(jsonDecoder)
 	}
+	i.FieldValue = v
 	return
 }
 
@@ -82,7 +129,7 @@ func (i *InspectedEntry) IsBoolFlag() bool {
 }
 
 func (i *InspectedEntry) RegisterFlags(fs *flag.FlagSet, logger log.Logger) {
-	if i.Kind == parse.KindBlock {
+	if i.Kind == KindBlock {
 		for _, e := range i.BlockEntries {
 			e.RegisterFlags(fs, logger)
 		}
@@ -102,7 +149,7 @@ func (i *InspectedEntry) UnmarshalJSON(b []byte) error {
 		return err
 	}
 
-	if i.Kind != parse.KindField {
+	if i.Kind != KindField {
 		return nil
 	}
 
@@ -124,22 +171,25 @@ func (i *InspectedEntry) unmarshalJSONValue(b []byte) error {
 		return err
 	}
 
-	decodeIfPresent := func(b []byte) (interface{}, error) {
-		if len(b) == 0 {
-			return nil, nil
+	decodeIfPresent := func(b []byte) (Value, error) {
+		if len(b) == 0 || bytes.Equal(b, []byte("null")) {
+			return Value{}, nil
 		}
-		return decodeValue(i.FieldType, json.NewDecoder(bytes.NewBuffer(b)))
+		return i.decodeValue(json.NewDecoder(bytes.NewBuffer(b)))
 	}
 
-	i.FieldValue, err = decodeIfPresent(jsonValues.Raw)
+	var v Value
+	v, err = decodeIfPresent(jsonValues.Raw)
 	if err != nil {
 		return err
 	}
+	i.FieldValue = v
 
-	i.FieldDefaultValue, err = decodeIfPresent(jsonValues.RawDefault)
+	v, err = decodeIfPresent(jsonValues.RawDefault)
 	if err != nil {
 		return err
 	}
+	i.FieldDefaultValue = v
 	return nil
 }
 
@@ -150,25 +200,40 @@ func (i *InspectedEntry) MarshalYAML() (interface{}, error) {
 func (i *InspectedEntry) asMap() map[string]interface{} {
 	combined := make(map[string]interface{}, len(i.BlockEntries))
 	for _, e := range i.BlockEntries {
-		if e.Kind == parse.KindField {
-			if e.FieldValue != nil {
-				combined[e.Name] = e.FieldValue
+		if e.Kind == KindField {
+			if val := e.FieldValue; !val.IsUnset() {
+				if val.IsSlice() {
+					combined[e.Name] = val.AsSlice()
+				} else {
+					combined[e.Name] = val.AsInterface()
+				}
 			}
 		} else if e.Name != notInYaml {
-			combined[e.Name] = e.asMap()
+			if subMap := e.asMap(); len(subMap) > 0 {
+				combined[e.Name] = subMap
+			}
 		}
 	}
 	return combined
 }
 
 func (i *InspectedEntry) UnmarshalYAML(value *yaml.Node) error {
-	if i.Kind == parse.KindField {
-		decodedValue, err := decodeValue(i.FieldType, value)
+	if i.FieldType == "slice" {
+		decodedSlice, err := i.decodeSlice(value)
+		if err != nil {
+			return errors.Wrapf(err, "could not unmarshal %s", i.Name)
+		}
+		i.FieldValue = decodedSlice
+		return nil
+	}
+
+	if i.Kind == KindField {
+		decodedValue, err := i.decodeValue(value)
 		if err != nil {
 			return err
 		}
 		i.FieldValue = decodedValue
-		return err
+		return nil
 	}
 
 	for idx := 0; idx < len(value.Content); idx += 2 {
@@ -186,59 +251,55 @@ func (i *InspectedEntry) UnmarshalYAML(value *yaml.Node) error {
 	return nil
 }
 
-func decodeValue(fieldType string, decoder interface{ Decode(interface{}) error }) (interface{}, error) {
-	typ := parse.ReflectType(fieldType)
-
-	switch fieldType {
+func (i *InspectedEntry) zeroValuePtr() Value {
+	var typ reflect.Type
+	switch i.FieldType {
 	case "duration":
 		d := duration(0)
 		typ = reflect.TypeOf(&d)
 	case "list of string":
 		typ = reflect.TypeOf(stringSlice{})
+	default:
+		typ = parse.ReflectType(i.FieldType)
 	}
 
-	decoded := reflect.New(typ).Interface() // create a new typed pointer
-	err := decoder.Decode(decoded)
+	return InterfaceValue(reflect.New(typ).Interface()) // create a new typed pointer
+}
+
+type decoder interface {
+	Decode(interface{}) error
+}
+
+func (i *InspectedEntry) decodeValue(decoder decoder) (Value, error) {
+	decoded := i.zeroValuePtr()
+
+	err := decoder.Decode(decoded.AsInterface())
 	if err != nil {
-		return nil, err
+		return Value{}, err
 	}
 
-	switch fieldType {
+	switch i.FieldType {
 	case "duration":
-		// convert it to time.Duration.
-		value := decoded.(**duration)
-		return time.Duration(**value), err
+		value := decoded.AsInterface().(**duration)
+		return DurationValue(time.Duration(**value)), err
 	case "list of string":
-		return *decoded.(*stringSlice), nil
+		return InterfaceValue(*decoded.AsInterface().(*stringSlice)), nil
 	default:
 		// return a dereferenced typed value
-		return reflect.ValueOf(decoded).Elem().Interface(), nil
+		return InterfaceValue(reflect.ValueOf(decoded.AsInterface()).Elem().Interface()), nil
 	}
 }
 
-// GetValue returns the golang value of the parameter as an interface{}.
-// The value will be returned so that type assertions on the value work.
-// For example, for a duration parameter writing
-// 	val, _ := inspectedEntry.GetValue("path"); duration := val.(time.Duration)
-// will not panic
-func (i InspectedEntry) GetValue(path string) (interface{}, error) {
-	entry, err := i.find(path)
-	if err != nil {
-		return nil, errors.Wrap(err, path)
+func (i *InspectedEntry) decodeSlice(value *yaml.Node) (Value, error) {
+	slice := make([]*InspectedEntry, len(value.Content))
+	for idx := range slice {
+		slice[idx] = i.FieldElement.Clone()
+		err := value.Content[idx].Decode(slice[idx])
+		if err != nil {
+			return Value{}, err
+		}
 	}
-	if entry.Kind != parse.KindField {
-		return nil, errors.Wrap(ErrParameterNotFound, path)
-	}
-	return entry.FieldValue, nil
-}
-
-// MustGetValue does the same as GetValue, but panics if there's an error.
-func (i InspectedEntry) MustGetValue(path string) interface{} {
-	val, err := i.GetValue(path)
-	if err != nil {
-		panic(err)
-	}
-	return val
+	return SliceValue(slice), nil
 }
 
 func (i *InspectedEntry) find(path string) (*InspectedEntry, error) {
@@ -248,7 +309,7 @@ func (i *InspectedEntry) find(path string) (*InspectedEntry, error) {
 
 	nextSegment, restOfPath := cutFirstPathSegment(path)
 
-	if i.Kind != parse.KindBlock {
+	if i.Kind != KindBlock {
 		// if path was non-empty, then there's more to recurse, but this isn't a block
 		return nil, ErrParameterNotFound
 	}
@@ -269,18 +330,6 @@ func cutFirstPathSegment(path string) (string, string) {
 		restOfPath = segments[1]
 	}
 	return nextSegment, restOfPath
-}
-
-// SetValue sets individual parameters. val can be any value. If an error is returned,
-// its errors.Cause will be ErrParameterNotFound.
-func (i *InspectedEntry) SetValue(path string, val interface{}) error {
-	entry, err := i.find(path)
-	if err != nil {
-		return errors.Wrap(ErrParameterNotFound, path)
-	}
-
-	entry.FieldValue = val
-	return nil
 }
 
 // Delete deletes a leaf parameter or entire subtree from the InspectedEntry.
@@ -327,20 +376,20 @@ func (i *InspectedEntry) delete(path string) error {
 // Walk visits all leaf parameters of the InspectedEntry in a depth-first manner and calls f. If f returns an error,
 // the traversal is not stopped. The error Walk returns are the combined errors that all f invocations returned. If no
 // f invocations returned an error, then Walk returns nil.
-func (i InspectedEntry) Walk(f func(path string, value interface{}) error) error {
+func (i InspectedEntry) Walk(f func(path string, value Value) error) error {
 	errs := multierror.New()
 	i.walk("", &errs, f)
 	return errs.Err()
 }
 
-func (i InspectedEntry) walk(path string, errs *multierror.MultiError, f func(path string, value interface{}) error) {
+func (i InspectedEntry) walk(path string, errs *multierror.MultiError, f func(path string, value Value) error) {
 	for _, e := range i.BlockEntries {
 		fieldPath := e.Name
 		if path != "" {
 			fieldPath = path + "." + e.Name
 		}
 
-		if e.Kind == parse.KindField {
+		if e.Kind == KindField {
 			errs.Add(f(fieldPath, e.FieldValue))
 		} else {
 			e.walk(fieldPath, errs, f)
@@ -357,15 +406,15 @@ func (i InspectedEntry) GetFlag(path string) (string, error) {
 	return child.FieldFlag, nil
 }
 
-func (i InspectedEntry) GetDefaultValue(path string) (interface{}, error) {
+func (i InspectedEntry) GetDefaultValue(path string) (Value, error) {
 	child, err := i.find(path)
 	if err != nil {
-		return nil, err
+		return Value{}, err
 	}
 	return child.FieldDefaultValue, nil
 }
 
-func (i InspectedEntry) MustGetDefaultValue(path string) interface{} {
+func (i InspectedEntry) MustGetDefaultValue(path string) Value {
 	val, err := i.GetDefaultValue(path)
 	if err != nil {
 		panic(err)
@@ -373,7 +422,7 @@ func (i InspectedEntry) MustGetDefaultValue(path string) interface{} {
 	return val
 }
 
-func (i InspectedEntry) SetDefaultValue(path string, val interface{}) error {
+func (i InspectedEntry) SetDefaultValue(path string, val Value) error {
 	entry, err := i.find(path)
 	if err != nil {
 		return errors.Wrap(ErrParameterNotFound, path)
@@ -381,6 +430,37 @@ func (i InspectedEntry) SetDefaultValue(path string, val interface{}) error {
 
 	entry.FieldDefaultValue = val
 	return nil
+}
+
+func (i *InspectedEntry) Clone() *InspectedEntry {
+	if i == nil {
+		return nil
+	}
+	blockEntries := make([]*InspectedEntry, len(i.BlockEntries))
+	for idx := range blockEntries {
+		blockEntries[idx] = i.BlockEntries[idx].Clone()
+	}
+
+	blockFlagsPrefixes := make([]string, len(i.BlockFlagsPrefixes))
+	for idx := range blockFlagsPrefixes {
+		blockFlagsPrefixes[idx] = i.BlockFlagsPrefixes[idx]
+	}
+
+	return &InspectedEntry{
+		Kind:               i.Kind,
+		Name:               i.Name,
+		Required:           i.Required,
+		Desc:               i.Desc,
+		BlockEntries:       blockEntries,
+		BlockFlagsPrefix:   i.BlockFlagsPrefix,
+		BlockFlagsPrefixes: blockFlagsPrefixes,
+		FieldValue:         i.FieldValue,
+		FieldDefaultValue:  i.FieldDefaultValue,
+		FieldFlag:          i.FieldFlag,
+		FieldType:          i.FieldType,
+		FieldCategory:      i.FieldCategory,
+		FieldElement:       i.FieldElement.Clone(),
+	}
 }
 
 // Describe returns a JSON-serialized result of InspectConfig
@@ -421,40 +501,48 @@ func convertEntriesToEntries(blocks []*parse.ConfigEntry) []*InspectedEntry {
 
 func convertEntryToEntry(entry *parse.ConfigEntry) *InspectedEntry {
 	e := &InspectedEntry{
-		Kind:     entry.Kind,
 		Name:     entry.Name,
 		Required: entry.Required,
 		Desc:     entry.FieldDesc,
 	}
 
-	if e.Kind == parse.KindBlock {
+	switch entry.Kind {
+	case parse.KindSlice:
+		e.Kind = KindField
+		e.FieldType = "slice"
+		element := convertBlockToEntry(entry.Element)
+		e.FieldElement = element
+	case parse.KindBlock:
+		e.Kind = KindBlock
 		e.BlockEntries = convertEntriesToEntries(entry.Block.Entries)
 		e.BlockFlagsPrefix = entry.Block.FlagsPrefix
 		e.BlockFlagsPrefixes = entry.Block.FlagsPrefixes
-	} else {
+	case parse.KindField:
+		e.Kind = KindField
 		e.FieldFlag = entry.FieldFlag
 		e.FieldType = entry.FieldType
 		e.FieldCategory = entry.FieldCategory
-		e.FieldValue = nil
-		e.FieldDefaultValue = getDefaultValue(entry)
+		e.FieldDefaultValue = parseDefaultValue(e, entry.FieldDefault)
+	default:
+		panic(fmt.Sprintf("cannot handle parse kind %q, entry name: %s", entry.Kind, entry.Name))
 	}
 	return e
 }
 
-func getDefaultValue(entry *parse.ConfigEntry) interface{} {
+func parseDefaultValue(e *InspectedEntry, def string) Value {
 	yamlNodeKind := yaml.ScalarNode
-	if strings.HasPrefix(entry.FieldType, "map") {
+	if strings.HasPrefix(e.FieldType, "map") {
 		yamlNodeKind = yaml.MappingNode
-	} else if strings.HasPrefix(entry.FieldType, "list") {
+	} else if strings.HasPrefix(e.FieldType, "list") {
 		yamlNodeKind = yaml.SequenceNode
 	}
-	value, _ := decodeValue(entry.FieldType, &yaml.Node{Kind: yamlNodeKind, Value: entry.FieldDefault})
+	value, _ := e.decodeValue(&yaml.Node{Kind: yamlNodeKind, Value: def})
 	return value
 }
 
 func convertBlockToEntry(block *parse.ConfigBlock) *InspectedEntry {
 	return &InspectedEntry{
-		Kind:               parse.KindBlock,
+		Kind:               KindBlock,
 		Name:               block.Name,
 		BlockEntries:       convertEntriesToEntries(block.Entries),
 		BlockFlagsPrefix:   block.FlagsPrefix,
@@ -524,7 +612,7 @@ func (d *duration) UnmarshalJSON(data []byte) error {
 
 // stringSlice combines the behaviour of flagext.StringSlice and flagext.StringSliceCSV.
 // Its fmt.Stringer implementation returns a comma-joined string - this is handy for
-// outputting the slice as the value of a flag during convertFlags.
+// outputting the slice as the value of a flag during extractFlags.
 // Its yaml.Unmarshaler implementation supports reading in both YAML sequences and comma-delimited strings.
 // Its yaml.Marshaler implementation marshals the slice as a regular go slice.
 type stringSlice []string
@@ -548,20 +636,17 @@ func (s *stringSlice) UnmarshalYAML(value *yaml.Node) error {
 	return nil
 }
 
-//go:embed descriptors/cortex-v1.11.0.json
-var oldCortexConfig []byte
-
-//go:embed descriptors/cortex-v1.11.0-flags-only.json
-var oldCortexConfigFlagsOnly []byte
+const notInYaml = "not-in-yaml"
 
 //go:embed descriptors/mimir-v2.0.0-flags-only.json
 var mimirConfigFlagsOnly []byte
 
-const notInYaml = "not-in-yaml"
+//go:embed descriptors/mimir-v2.0.0.json
+var mimirConfig []byte
 
 func DefaultMimirConfig() *InspectedEntry {
-	cfg, err := InspectConfig(&mimir.Config{})
-	if err != nil {
+	cfg := &InspectedEntry{}
+	if err := json.Unmarshal(mimirConfig, cfg); err != nil {
 		panic(err)
 	}
 
@@ -571,7 +656,7 @@ func DefaultMimirConfig() *InspectedEntry {
 	}
 
 	cfg.BlockEntries = append(cfg.BlockEntries, &InspectedEntry{
-		Kind:         parse.KindBlock,
+		Kind:         KindBlock,
 		Name:         notInYaml,
 		Required:     false,
 		Desc:         "Flags not available in YAML file.",
@@ -579,6 +664,12 @@ func DefaultMimirConfig() *InspectedEntry {
 	})
 	return cfg
 }
+
+//go:embed descriptors/cortex-v1.11.0.json
+var oldCortexConfig []byte
+
+//go:embed descriptors/cortex-v1.11.0-flags-only.json
+var oldCortexConfigFlagsOnly []byte
 
 func DefaultCortexConfig() *InspectedEntry {
 	cfg := &InspectedEntry{}
@@ -592,7 +683,61 @@ func DefaultCortexConfig() *InspectedEntry {
 	}
 
 	cfg.BlockEntries = append(cfg.BlockEntries, &InspectedEntry{
-		Kind:         parse.KindBlock,
+		Kind:         KindBlock,
+		Name:         notInYaml,
+		Required:     false,
+		Desc:         "Flags not available in YAML file.",
+		BlockEntries: cfgFlagsOnly.BlockEntries,
+	})
+	return cfg
+}
+
+//go:embed descriptors/gem-v1.7.0.json
+var gem170CortexConfig []byte
+
+//go:embed descriptors/gem-v1.7.0-flags-only.json
+var gem170CortexConfigFlagsOnly []byte
+
+func DefaultGEM170Config() *InspectedEntry {
+	cfg := &InspectedEntry{}
+	if err := json.Unmarshal(gem170CortexConfig, cfg); err != nil {
+		panic(err)
+	}
+
+	cfgFlagsOnly := &InspectedEntry{}
+	if err := json.Unmarshal(gem170CortexConfigFlagsOnly, cfgFlagsOnly); err != nil {
+		panic(err)
+	}
+
+	cfg.BlockEntries = append(cfg.BlockEntries, &InspectedEntry{
+		Kind:         KindBlock,
+		Name:         notInYaml,
+		Required:     false,
+		Desc:         "Flags not available in YAML file.",
+		BlockEntries: cfgFlagsOnly.BlockEntries,
+	})
+	return cfg
+}
+
+//go:embed descriptors/gem-v2.0.0.json
+var gem200CortexConfig []byte
+
+//go:embed descriptors/gem-v2.0.0-flags-only.json
+var gem200CortexConfigFlagsOnly []byte
+
+func DefaultGEM200COnfig() *InspectedEntry {
+	cfg := &InspectedEntry{}
+	if err := json.Unmarshal(gem200CortexConfig, cfg); err != nil {
+		panic(err)
+	}
+
+	cfgFlagsOnly := &InspectedEntry{}
+	if err := json.Unmarshal(gem200CortexConfigFlagsOnly, cfgFlagsOnly); err != nil {
+		panic(err)
+	}
+
+	cfg.BlockEntries = append(cfg.BlockEntries, &InspectedEntry{
+		Kind:         KindBlock,
 		Name:         notInYaml,
 		Required:     false,
 		Desc:         "Flags not available in YAML file.",

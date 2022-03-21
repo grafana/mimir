@@ -66,6 +66,15 @@
       "fieldDefaultValue": 0,
       "fieldFlag": "event.sample-rate",
       "fieldType": "int"
+    },
+    {
+      "kind": "field",
+      "name": "ingester-lifecycler-id",
+      "required": false,
+      "desc": "ID to register in the ring.",
+      "fieldDefaultValue": null,
+      "fieldFlag": "ingester.lifecycler.id",
+      "fieldType": "string"
     }
   ]
 }
