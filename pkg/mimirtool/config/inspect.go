@@ -209,7 +209,9 @@ func (i *InspectedEntry) asMap() map[string]interface{} {
 				}
 			}
 		} else if e.Name != notInYaml {
-			combined[e.Name] = e.asMap()
+			if subMap := e.asMap(); len(subMap) > 0 {
+				combined[e.Name] = subMap
+			}
 		}
 	}
 	return combined
@@ -610,7 +612,7 @@ func (d *duration) UnmarshalJSON(data []byte) error {
 
 // stringSlice combines the behaviour of flagext.StringSlice and flagext.StringSliceCSV.
 // Its fmt.Stringer implementation returns a comma-joined string - this is handy for
-// outputting the slice as the value of a flag during convertFlags.
+// outputting the slice as the value of a flag during extractFlags.
 // Its yaml.Unmarshaler implementation supports reading in both YAML sequences and comma-delimited strings.
 // Its yaml.Marshaler implementation marshals the slice as a regular go slice.
 type stringSlice []string

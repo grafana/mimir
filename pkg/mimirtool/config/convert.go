@@ -5,7 +5,6 @@ package config
 import (
 	"flag"
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/pkg/errors"
@@ -103,14 +102,15 @@ func Convert(
 			return nil, nil, ConversionNotices{}, errors.Wrap(err, "could not set unset parameters to default values")
 		}
 	}
-	pruneNils(target)
 
 	var newFlags []string
-	if len(flags) > 0 {
-		newFlags, err = convertFlags(flags, m, target, sourceFactory, targetFactory)
-		if err != nil {
-			return nil, nil, ConversionNotices{}, errors.Wrap(err, "could not convert passed CLI args")
-		}
+	if len(contents) == 0 {
+		newFlags, err = extractAllAsFlags(target)
+	} else if len(flags) > 0 {
+		newFlags, err = extractInputFlags(target, flags, m, sourceFactory, targetFactory)
+	}
+	if err != nil {
+		return nil, nil, ConversionNotices{}, err
 	}
 
 	yamlBytes, err := yaml.Marshal(target)
@@ -176,42 +176,53 @@ func changeNilsToDefaults(target *InspectedEntry) error {
 	})
 }
 
-func convertFlags(flags []string, m Mapper, target Parameters, sourceFactory, targetFactory InspectedEntryFactory) ([]string, error) {
-	flagsNewPaths, err := mapOldFlagsToNewPaths(flags, m, sourceFactory, targetFactory)
+func extractAllAsFlags(target *InspectedEntry) ([]string, error) {
+	return extractFlags(target, func(_ string, v Value) bool { return !v.IsUnset() })
+}
+
+func extractInputFlags(target *InspectedEntry, inputFlags []string, m Mapper, sourceFactory, targetFactory InspectedEntryFactory) ([]string, error) {
+	flagsNewPaths, err := mapOldFlagsToNewPaths(inputFlags, m, sourceFactory, targetFactory)
 	if err != nil {
 		return nil, err
 	}
-	var newFlagsWithValues []string
-	err = target.Walk(func(path string, value Value) error {
-		if _, ok := flagsNewPaths[path]; !ok {
-			return nil
-		}
+
+	return extractFlags(target, func(path string, _ Value) bool {
+		_, ok := flagsNewPaths[path]
+		return ok
+	})
+}
+
+func extractFlags(target *InspectedEntry, shouldExtract func(path string, v Value) bool) ([]string, error) {
+	var flagsWithValues, toDelete []string
+
+	err := target.Walk(func(path string, value Value) error {
 		flagName, err := target.GetFlag(path)
 		if err != nil {
 			return err
 		}
+		if flagName == "" {
+			return nil
+		}
 
-		newFlagsWithValues = append(newFlagsWithValues, fmt.Sprintf("-%s=%s", flagName, value))
+		if !shouldExtract(path, value) {
+			return nil
+		}
+
+		flagsWithValues = append(flagsWithValues, fmt.Sprintf("-%s=%s", flagName, value))
+		toDelete = append(toDelete, path)
 		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	// remove the parameters from the YAML, only keep the flags
-	for f := range flagsNewPaths {
-		err = target.Delete(f)
+	for _, path := range toDelete {
+		err = target.Delete(path)
 		if err != nil {
-			if errors.Is(err, ErrParameterNotFound) {
-				// This might happen when the flag was using the default value and was pruned before convertFlags was called.
-				// There's nothing to do.
-				continue
-			}
 			return nil, err
 		}
 	}
-
-	return newFlagsWithValues, nil
+	return flagsWithValues, nil
 }
 
 // addFlags parses the flags and add their values to the config
@@ -320,29 +331,6 @@ func prepareSourceDefaults(m Mapper, sourceFactory, targetFactory InspectedEntry
 	sourceDefaults, mappedSourceDefaults := sourceFactory(), targetFactory()
 	err := m.DoMap(defaultValueInspectedEntry{sourceDefaults}, defaultValueInspectedEntry{mappedSourceDefaults})
 	return mappedSourceDefaults, err
-}
-
-// pruneNils removes parameters from params that are nil. pruneNils prints any errors during pruning to os.Stderr
-func pruneNils(params Parameters) {
-	var pathsToDelete []string
-
-	err := params.Walk(func(path string, value Value) error {
-		if value.IsUnset() {
-			pathsToDelete = append(pathsToDelete, path)
-		}
-		return nil
-	})
-	if err != nil {
-		panic(err)
-	}
-
-	for _, p := range pathsToDelete {
-		err = params.Delete(p)
-		if err != nil {
-			err = errors.Wrap(err, "could not delete parameter with default value from config")
-			_, _ = fmt.Fprintln(os.Stderr, err)
-		}
-	}
 }
 
 func reportDeletedFlags(contents []byte, flags []string, sourceFactory InspectedEntryFactory) (removedFieldPaths, removedFlags []string, _ error) {
