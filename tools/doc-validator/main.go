@@ -210,7 +210,7 @@ func validateMarkdownLink(sourceFile, link string, anchors markdownAnchors) erro
 		// Build the actual destination of the link (could be the page itself if it's just an anchor).
 		destination := sourceFile
 		if linkPath != "" {
-			destination = filepath.Clean(filepath.Join(filepath.Dir(sourceFile), linkPath))
+			destination = filepath.Join(filepath.Dir(sourceFile), linkPath)
 		}
 
 		// Check if the linked document exists.
