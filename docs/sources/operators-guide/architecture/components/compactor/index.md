@@ -12,7 +12,7 @@ The compactor increases query performance and reduces long-term storage usage by
 The compactor is the component responsible for:
 
 - Compacting multiple blocks of a given tenant into a single, optimized larger block. This deduplicates chunks and reduces the size of the index, resulting in reduced storage costs. Querying fewer blocks is faster, so it also increases query speed.
-- Keeping the per-tenant bucket index updated. The [bucket index]({{< relref "../../bucket-index/index.md" >}}) is used by [queriers]({{< relref "../querier.md" >}}), [store-gateways]({{< relref "../store-gateway.md" >}}), and [rulers]({{< relref "../ruler.md" >}}) to discover both new blocks and deleted blocks in the storage.
+- Keeping the per-tenant bucket index updated. The [bucket index]({{< relref "../../bucket-index/index.md" >}}) is used by [queriers]({{< relref "../querier.md" >}}), [store-gateways]({{< relref "../store-gateway.md" >}}), and [rulers]({{< relref "../ruler/index.md" >}}) to discover both new blocks and deleted blocks in the storage.
 - Deleting blocks that are no longer within a configurable retention period.
 
 The compactor is stateless.
@@ -132,4 +132,4 @@ Alternatively, assuming the largest `-compactor.block-ranges` is `24h` (the defa
 Refer to the [compactor](../../../configuring/reference-configuration-parameters/#compactor)
 block section and the [limits](../../../configuring/reference-configuration-parameters/#limits) block section for details of compaction-related configuration.
 
-The [alertmanager]({{< relref "../alertmanager.md" >}}) and [ruler]({{< relref "../ruler.md" >}}) components can also use object storage to store their configurations and rules uploaded by users. In that case a separate bucket should be created to store alertmanager configurations and rules: using the same bucket between ruler/alertmanager and blocks will cause issues with the compactor.
+The [alertmanager]({{< relref "../alertmanager.md" >}}) and [ruler]({{< relref "../ruler/index.md" >}}) components can also use object storage to store their configurations and rules uploaded by users. In that case a separate bucket should be created to store alertmanager configurations and rules: using the same bucket between ruler/alertmanager and blocks will cause issues with the compactor.
