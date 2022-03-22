@@ -20,6 +20,10 @@ The changes focus on making Grafana Mimir easier to run out of the box, includin
 The `mimirtool` automates configuration conversion.
 It provides a simple migration by generating Mimir configuration from Cortex configuration.
 
+{{< vimeo 672821966 >}}
+
+<br/>
+
 ## Before you begin
 
 - Ensure that you are running either Cortex 1.10.X or Cortex 1.11.X.
