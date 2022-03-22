@@ -11,7 +11,7 @@ weight: 100
 
 Blocks storage is the Mimir storage engine based on the Prometheus TSDB.
 Grafana Mimir stores blocks in object stores such as AWS S3, Google Cloud Storage (GCS), Azure blob storage, or OpenStack Object Storage (Swift).
-For a complete list of supported backends, refer to [About the architecture]({{< relref "architecture/about-grafana-mimir-architecture.md" >}})
+For a complete list of supported backends, refer to [About the architecture]({{< relref "architecture/about-grafana-mimir-architecture/index.md" >}})
 
 ## Chunk
 
