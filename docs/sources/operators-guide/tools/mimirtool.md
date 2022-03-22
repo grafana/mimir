@@ -647,9 +647,9 @@ It supports converting both CLI flags and [YAML configuration files]({{< relref 
 | Flag                 | Description                                                                                                                                                                                                                                         |
 | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `--yaml-file`        | The YAML configuration file to convert.                                                                                                                                                                                                             |
-| `--flags-file`       | Newline-delimited list of CLI flags to convert.                                                                                                                                                                                                     |
-| `--yaml-out`         | The file to output the converted YAML configuration to. If not set, output to `stdout`.                                                                                                                                                             |
-| `--flags-out`        | The file to output the list of converted CLI flags to. If not set, output to `stdout`.                                                                                                                                                              |
+| `--flags-file`       | A file containing a newline-delimited list of CLI flags to convert.                                                                                                                                                                                 |
+| `--yaml-out`         | File to use for the converted YAML configuration. If not set, output to `stdout`.                                                                                                                                                                   |
+| `--flags-out`        | File to use for list of converted CLI flags. If not set, output to `stdout`.                                                                                                                                                                        |
 | `--update-defaults`  | If you set this flag and you set a configuration parameter to a default value that has changed in Mimir 2.0, the parameter updates to the new default value.                                                                                        |
 | `--include-defaults` | If you set this flag, all default values are included in the output YAML, regardless of whether you explicitly set the values in the input files.                                                                                                   |
 | `-v`, `--verbose`    | If you set this flag, the CLI flags and YAML paths from the old configuration that do not exist in the new configuration are printed to `stderr`. This flag also prints default values that have changed between the old and the new configuration. |
@@ -663,7 +663,7 @@ The following example shows a command that converts Cortex [query-frontend]({{< 
 mimirtool config convert --yaml-file=cortex.yaml --flags-file=cortex.flags --yaml-out=mimir.yaml --flags-out=mimir.flags
 ```
 
-`cortex.yaml`:
+`cortex.yaml` input file:
 
 ```yaml
 query_range:
@@ -677,15 +677,15 @@ query_range:
         max_idle_conns: 32
 ```
 
-`cortex.flags`:
+`cortex.flags` input file:
 
 ```
 -frontend.background.write-back-concurrency=45
 ```
 
-After you run the command, the contents of `mimir.yaml` and `mimir.flags` should look like:
+After you run the command, the converted output should be:
 
-`mimir.yaml`:
+`mimir.yaml` converted output file:
 
 ```yaml
 frontend:
@@ -701,7 +701,7 @@ server:
 
 > **Note:** As a precaution,`server.http_listen_port` is included. The default value in Grafana Mimir changed from 80 to 8080. Unless you explicitly set the port in the input configuration, the tool outputs the old default value.
 
-`mimir.flags`:
+`mimir.flags` converted output file:
 
 ```
 -query-frontend.results-cache.memcached.max-async-concurrency=45
@@ -731,6 +731,123 @@ The output includes the following entries:
 
   The default value for a configuration parameter that was set in the input configuration file has changed in Grafana Mimir.
   The tool has not converted the old default value to the new default value. To automatically update the default value to the new default value, pass the `--update-defaults` flag.
+
+##### Extracting flags from Jsonnet
+
+When using the Grafana Mimir Jsonnet library, all configuration uses flags set as object member key-value pairs.
+To perform conversion with mimirtool, you first need to extract the flags from the JSON manifested from the Jsonnet evaluation.
+
+Use the following bash script to extract the arguments from a specific component:
+
+```bash
+ #!/usr/bin/env bash
+
+ set -euf -o pipefail
+
+ function usage {
+   cat <<EOF
+ Extract the CLI flags from individual components.
+
+ Usage:
+   $0 <resources JSON> <component>
+
+ Examples:
+   $0 resources.json ingester
+   $0 <(tk eval environments/default) distributor
+   $0 <(jsonnet environments/default/main.jsonnet) query-frontend
+ EOF
+ }
+
+ if ! command -v jq &>/dev/null; then
+   echo "jq command not found in PATH"
+   echo "To download jq, refer to https://stedolan.github.io/jq/download/."
+ fi
+
+ if [[ $# -ne 2 ]]; then
+   usage
+   exit 1
+ fi
+
+ jq -rf /dev/stdin -- "$1" <<EOF
+ ..
+ | if type == "object" and .metadata.name == "$2" then .spec.template.spec.containers[]?.args[] else null end
+ | select(. != null)
+ EOF
+```
+
+The first parameter of the script is a JSON file containing Kubernetes resources.
+The second parameter of the script is the name of a container.
+
+To retrieve the arguments from the distributor for a Tanka environment:
+
+```bash
+<PATH TO SCRIPT> <(tk eval environments/default) distributor
+```
+
+The script outputs results that are similar to the following:
+
+```console
+-consul.hostname=consul.cortex-to-mimir.svc.cluster.local:8500
+-distributor.extend-writes=true
+-distributor.ha-tracker.enable=false
+-distributor.ha-tracker.enable-for-all-users=true
+-distributor.ha-tracker.etcd.endpoints=etcd-client.cortex-to-mimir.svc.cluster.local.:2379
+-distributor.ha-tracker.prefix=prom_ha/
+-distributor.ha-tracker.store=etcd
+-distributor.health-check-ingesters=true
+-distributor.ingestion-burst-size=200000
+-distributor.ingestion-rate-limit=10000
+-distributor.ingestion-rate-limit-strategy=global
+-distributor.remote-timeout=20s
+-distributor.replication-factor=3
+-distributor.ring.consul.hostname=consul.cortex-to-mimir.svc.cluster.local:8500
+-distributor.ring.prefix=
+-distributor.shard-by-all-labels=true
+-mem-ballast-size-bytes=1073741824
+-ring.heartbeat-timeout=10m
+-ring.prefix=
+-runtime-config.file=/etc/cortex/overrides.yaml
+-server.grpc.keepalive.max-connection-age=2m
+-server.grpc.keepalive.max-connection-age-grace=5m
+-server.grpc.keepalive.max-connection-idle=1m
+-server.grpc.keepalive.min-time-between-pings=10s
+-server.grpc.keepalive.ping-without-stream-allowed=true
+-target=distributor
+-validation.reject-old-samples=true
+-validation.reject-old-samples.max-age=12h
+```
+
+Use the output of the script as input to run the `mimirtool` configuration conversion.
+
+After conversion, you can use the following script to transform the converted flags back into JSON:
+
+```bash
+#!/usr/bin/env bash
+
+set -euf -o pipefail
+
+function usage {
+ cat <<EOF
+Transform Go flags into JSON key value pairs
+
+Usage:
+ $0 <flags file>
+
+Examples:
+ $0 flags.flags
+EOF
+}
+
+if [[ $# -ne 1 ]]; then
+ usage
+ exit 1
+fi
+
+key_values=$(sed -E -e 's/^-*(.*)=(.*)$/  "\1": "\2",/' "$1")
+printf "{\n%s\n}" "${key_values::-1}"
+```
+
+The only parameter of the script is a file containing the flags, with each flag on its own line.
 
 ## License
 
