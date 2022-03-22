@@ -434,7 +434,7 @@ reference-help: cmd/mimir/mimir
 	@(go run ./tools/config-inspector || true) > cmd/mimir/config-descriptor.json
 
 clean-white-noise:
-	@find . -path ./.pkg -prune -o -path ./vendor -prune -or -type f -name "*.md" -print | \
+	@find . -path ./.pkg -prune -o -path "*/vendor/*" -prune -or -type f -name "*.md" -print | \
 	SED_BIN="$(SED)" xargs ./tools/cleanup-white-noise.sh
 
 check-white-noise: clean-white-noise
