@@ -234,9 +234,6 @@ type Ingester struct {
 	// Rate of pushed samples. Used to limit global samples push rate.
 	ingestionRate        *util_math.EwmaRate
 	inflightPushRequests atomic.Int64
-
-	// Single source of time for making ingester testable.
-	now func() time.Time
 }
 
 func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
@@ -261,7 +258,6 @@ func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus
 		forceCompactTrigger: make(chan requestWithUsersAndCallback),
 		shipTrigger:         make(chan requestWithUsersAndCallback),
 		seriesHashCache:     hashcache.NewSeriesHashCache(cfg.BlocksStorageConfig.TSDB.SeriesHashCacheMaxBytes),
-		now:                 time.Now,
 	}, nil
 }
 
@@ -459,7 +455,7 @@ func (i *Ingester) updateLoop(ctx context.Context) error {
 			i.applyExemplarsSettings()
 
 		case <-activeSeriesTickerChan:
-			i.updateActiveSeries()
+			i.updateActiveSeries(time.Now())
 
 		case <-ctx.Done():
 			return nil
@@ -469,12 +465,12 @@ func (i *Ingester) updateLoop(ctx context.Context) error {
 	}
 }
 
-func (i *Ingester) replaceMatchers(asm *activeseries.Matchers, userDB *userTSDB) {
+func (i *Ingester) replaceMatchers(asm *activeseries.Matchers, userDB *userTSDB, now time.Time) {
 	i.metrics.deletePerUserCustomTrackerMetrics(userDB.userID, userDB.activeSeries.CurrentMatcherNames())
-	userDB.activeSeries.ReloadMatchers(asm)
+	userDB.activeSeries.ReloadMatchers(asm, now)
 }
 
-func (i *Ingester) updateActiveSeries() {
+func (i *Ingester) updateActiveSeries(now time.Time) {
 	for _, userID := range i.getTSDBUsers() {
 		userDB := i.getTSDB(userID)
 		if userDB == nil {
@@ -483,9 +479,9 @@ func (i *Ingester) updateActiveSeries() {
 
 		newMatchersConfig := i.limits.ActiveSeriesCustomTrackersConfig(userID)
 		if newMatchersConfig.String() != userDB.activeSeries.CurrentConfig().String() {
-			i.replaceMatchers(activeseries.NewMatchers(newMatchersConfig), userDB)
+			i.replaceMatchers(activeseries.NewMatchers(newMatchersConfig), userDB, now)
 		}
-		allActive, activeMatching, valid := userDB.activeSeries.Active()
+		allActive, activeMatching, valid := userDB.activeSeries.Active(now)
 		if !valid {
 			// Active series config has been reloaded, exposing loading metric until MetricsIdleTimeout passes.
 			i.metrics.activeSeriesLoading.WithLabelValues(userID).Set(1)
@@ -610,7 +606,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 		failedSamplesCount        = 0
 		succeededExemplarsCount   = 0
 		failedExemplarsCount      = 0
-		startAppend               = i.now()
+		startAppend               = time.Now()
 		sampleOutOfBoundsCount    = 0
 		sampleOutOfOrderCount     = 0
 		newValueForTimestampCount = 0
@@ -1456,7 +1452,7 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 
 	userDB := &userTSDB{
 		userID:              userID,
-		activeSeries:        activeseries.NewActiveSeries(activeseries.NewMatchers(matchersConfig), i.cfg.ActiveSeriesMetricsIdleTimeout, i.now),
+		activeSeries:        activeseries.NewActiveSeries(activeseries.NewMatchers(matchersConfig), i.cfg.ActiveSeriesMetricsIdleTimeout),
 		seriesInMetric:      newMetricCounter(i.limiter, i.cfg.getIgnoreSeriesLimitForMetricNamesMap()),
 		ingestedAPISamples:  util_math.NewEWMARate(0.2, i.cfg.RateUpdatePeriod),
 		ingestedRuleSamples: util_math.NewEWMARate(0.2, i.cfg.RateUpdatePeriod),
