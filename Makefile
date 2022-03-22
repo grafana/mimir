@@ -424,6 +424,9 @@ check-doc: doc
 	@find . -name "*.md" | xargs git diff --exit-code -- \
 	|| (echo "Please update generated documentation by running 'make doc' and committing the changes" && false)
 
+check-doc-links:
+	cd ./tools/doc-validator && go run . ../../docs/sources/
+
 .PHONY: reference-help
 reference-help: cmd/mimir/mimir
 	@(./cmd/mimir/mimir -h || true) > cmd/mimir/help.txt.tmpl
