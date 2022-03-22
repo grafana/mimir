@@ -12,8 +12,8 @@ The system has multiple horizontally scalable microservices that can run separat
 Grafana Mimir microservices are called components.
 
 Grafana Mimir's design compiles the code for all components into a single binary.
-The `-target` parameter controls which component(s) that single binary will behave as. For those looking for a simple way to get started, Grafana Mimir can also be run in [monolithic mode]({{< relref ".././deployment-modes.md#monolithic-mode" >}}), with all components running simultaneously in one process.
-For more information, refer to [Deployment modes]({{< relref ".././deployment-modes.md" >}}).
+The `-target` parameter controls which component(s) that single binary will behave as. For those looking for a simple way to get started, Grafana Mimir can also be run in [monolithic mode]({{< relref ".././deployment-modes/index.md#monolithic-mode" >}}), with all components running simultaneously in one process.
+For more information, refer to [Deployment modes]({{< relref ".././deployment-modes/index.md" >}}).
 
 ## Grafana Mimir components
 
