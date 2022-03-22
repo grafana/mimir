@@ -31,7 +31,7 @@ var (
 
 	errLinkInvalid         = `The link %q is invalid. Ensure the link is a http or https URL, an anchor starting with # or a relative link in the Hugo format (eg. '{{< relref "path-to.md" >}}')`
 	errLinkNotExist        = "The link %q references a document which does not exist"
-	errAnchorNotExist      = "the anchor %q does not exist in the file %v. Available anchors are: %s"
+	errAnchorNotExist      = "The anchor %q does not exist in the file %v. Available anchors are: %s"
 	errImageLocatedOutside = `The image %q must be located in the same directory of the markdown file %q`
 	errImageNotIndex       = `The image %q can only be linked from an index.md or _index.md file. Move %q to a Hugo bundle and the image inside the bundle directory.`
 	errImageNotExist       = `The image %q does not exist`
