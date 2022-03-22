@@ -15,8 +15,7 @@ These instructions focus on deploying Grafana Mimir as a [monolith]({{< relref "
 
 ## Before you begin
 
-- Verify that you have installed either a [Prometheus server](https://prometheus.io/docs/prometheus/latest/installation/)
-  or the [Grafana Agent](https://grafana.com/docs/grafana-cloud/agent/#installing-the-grafana-agent).
+- Verify that you have installed either a [Prometheus server](https://prometheus.io/docs/prometheus/latest/installation/) or the [Grafana Agent](https://grafana.com/docs/grafana-cloud/agent/#installing-the-grafana-agent).
 - Verify that you have installed [Docker](https://docs.docker.com/engine/install/).
 
 ## Download Grafana Mimir
