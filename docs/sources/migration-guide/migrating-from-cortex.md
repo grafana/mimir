@@ -36,6 +36,8 @@ It provides a simple migration by generating Mimir configuration from Cortex con
 
 ## Notable changes
 
+> **Note:** For full list of changes, refer to the project [CHANGELOG](https://github.com/grafana/mimir/blob/main/CHANGELOG.md).
+
 - The Grafana Mimir HTTP server defaults to listening on port 8080; Cortex defaults to listening on port 80.
   To maintain port 80 as the listening port, set `-server.http-listen-port=80`.
 - Grafana Mimir removes the legacy HTTP prefixes deprecated in Cortex.
