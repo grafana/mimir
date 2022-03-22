@@ -20,7 +20,7 @@ The total number of file descriptors, used to load TSDB files, linearly increase
 We recommend fine-tuning the following settings to avoid reaching the maximum number of open file descriptors:
 
 1. Configure the system's `file-max` ulimit to at least `65536`. Increase the limit to `1048576` when running a Grafana Mimir cluster with more than a thousand tenants.
-1. Enable ingesters [shuffle sharding](../guides/shuffle-sharding.md) to reduce the number of tenants per ingester.
+1. Enable ingesters [shuffle sharding]({{< relref "../../configuring/configuring-shuffle-sharding.md" >}}) to reduce the number of tenants per ingester.
 
 ### Ingester disk space
 
@@ -28,7 +28,7 @@ The ingester writes received samples to a write-ahead log (WAL) and by default, 
 Both the WAL and blocks are temporarily stored on the local disk.
 The required disk space depends on the number of time series stored in the ingester and the configured `-blocks-storage.tsdb.retention-period`.
 
-For more information about estimating the required ingester disk space, refer to [Planning capacity]({{< relref "planning-capacity.md#ingester" >}}).
+For more information about estimating the required ingester disk space, refer to [Planning capacity]({{< relref "../planning-capacity.md#ingester" >}}).
 
 ## Querier
 
@@ -37,7 +37,7 @@ For more information about estimating the required ingester disk space, refer to
 The querier supports caching to reduce the number API calls to the long-term storage.
 
 We recommend enabling caching in the querier.
-For more information about configuring the cache, refer to [querier]({{< relref "../architecture/components/querier.md" >}}).
+For more information about configuring the cache, refer to [querier]({{< relref "../../architecture/components/querier.md" >}}).
 
 ### Avoid querying non-compacted blocks
 
@@ -48,7 +48,7 @@ When running Grafana Mimir at scale, querying non-compacted blocks might be inef
 
 Configure Grafana Mimir to ensure only compacted blocks are queried:
 
-1. Configure compactor's `-compactor.split-and-merge-shards` and `-compactor.split-groups` for every tenant with more than 20 million active series. For more information about configuring the compactor's split and merge shards, refer to [compactor]({{< relref "../architecture/components/compactor/index.md" >}}).
+1. Configure compactor's `-compactor.split-and-merge-shards` and `-compactor.split-groups` for every tenant with more than 20 million active series. For more information about configuring the compactor's split and merge shards, refer to [compactor]({{< relref "../../architecture/components/compactor/index.md" >}}).
 1. Configure querier's `-querier.query-store-after` equal to `-querier.query-ingesters-within` minus five minutes. The five-minute delta is recommended to ensure the time range on the boundary is queried both from ingesters and queriers.
 
 #### How to estimate `-querier.query-store-after`
@@ -61,9 +61,9 @@ The following diagram shows all of the timings involved in the estimation. This 
 - The compactor takes up to three hours to compact two-hour blocks shipped from all ingesters
 - Querier and store-gateways take up to 15 minutes to discover and load a new compacted block
 
-Based on these assumptions, in the worst-case scenario, it takes up to six hours and 45 minutes from when a sample is ingested until that sample has been appended to a block flushed to the storage and the block is [vertically compacted](./compactor/index.md) with all other overlapping two-hour blocks shipped from ingesters.
+Based on these assumptions, in the worst-case scenario, it takes up to six hours and 45 minutes from when a sample is ingested until that sample has been appended to a block flushed to the storage and the block is [vertically compacted]({{< relref "../../architecture/components/compactor/index.md" >}}) with all other overlapping two-hour blocks shipped from ingesters.
 
-![Avoid querying non compacted blocks](../../images/avoid-querying-non-compacted-blocks.png)
+![Avoid querying non compacted blocks](avoid-querying-non-compacted-blocks.png)
 
 [//]: # "Diagram source at https://docs.google.com/presentation/d/1bHp8_zcoWCYoNU2AhO2lSagQyuIrghkCncViSqn14cU/edit"
 
@@ -74,7 +74,7 @@ Based on these assumptions, in the worst-case scenario, it takes up to six hours
 The store-gateway supports caching that reduces the number of API calls to the long-term storage and improves query performance.
 
 We recommend enabling caching in the store-gateway.
-For more information about configuring the cache, refer to [store-gateway]({{< relref "../architecture/components/store-gateway.md" >}}).
+For more information about configuring the cache, refer to [store-gateway]({{< relref "../../architecture/components/store-gateway.md" >}}).
 
 ### Ensure a high number of maximum open file descriptors
 
@@ -89,7 +89,7 @@ We recommend configuring the system's `file-max` ulimit at least to `65536` to a
 ### Ensure the compactor has enough disk space
 
 The compactor requires a lot of disk space to download source blocks from the long-term storage and temporarily store the compacted block before uploading it to the storage.
-For more information about required disk space, refer to [Compactor disk utilization](../architecture/components/compactor/index.md#compactor-disk-utilization).
+For more information about required disk space, refer to [Compactor disk utilization]({{< relref "../../architecture/components/compactor/index.md#compactor-disk-utilization" >}}).
 
 ## Caching
 
@@ -105,4 +105,4 @@ Running a dedicated Memcached cluster for each cache type is not required, but r
 ## Security
 
 We recommend securing the Grafana Mimir cluster.
-For more information about securing a Mimir cluster, refer to [Securing Grafana Mimir]({{< relref "../securing/_index.md" >}}).
+For more information about securing a Mimir cluster, refer to [Securing Grafana Mimir]({{< relref "../../securing/_index.md" >}}).
