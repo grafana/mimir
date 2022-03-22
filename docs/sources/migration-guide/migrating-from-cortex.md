@@ -44,7 +44,7 @@ It provides a simple migration by generating Mimir configuration from Cortex con
 
   - Query endpoints
 
-    | Legacy                                                  | Current                                                |
+    | Legacy                                                  | Current                                                    |
     | ------------------------------------------------------- | ---------------------------------------------------------- |
     | `/<legacy-http-prefix>/api/v1/query`                    | `<prometheus-http-prefix>/api/v1/query`                    |
     | `/<legacy-http-prefix>/api/v1/query_range`              | `<prometheus-http-prefix>/api/v1/query_range`              |
@@ -60,7 +60,7 @@ It provides a simple migration by generating Mimir configuration from Cortex con
 
   - Distributor endpoints
 
-    | Legacy endpoint              | Current                   |
+    | Legacy endpoint              | Current                       |
     | ---------------------------- | ----------------------------- |
     | `/<legacy-http-prefix>/push` | `/api/v1/push`                |
     | `/all_user_stats`            | `/distributor/all_user_stats` |
@@ -68,7 +68,7 @@ It provides a simple migration by generating Mimir configuration from Cortex con
 
   - Ingester endpoints
 
-    | Legacy      | Current          |
+    | Legacy      | Current              |
     | ----------- | -------------------- |
     | `/ring`     | `/ingester/ring`     |
     | `/shutdown` | `/ingester/shutdown` |
@@ -77,7 +77,7 @@ It provides a simple migration by generating Mimir configuration from Cortex con
 
   - Ruler endpoints
 
-    | Legacy                                                | Current                                         |
+    | Legacy                                                | Current                                             |
     | ----------------------------------------------------- | --------------------------------------------------- |
     | `/<legacy-http-prefix>/api/v1/rules`                  | `<prometheus-http-prefix>/api/v1/rules`             |
     | `/<legacy-http-prefix>/api/v1/alerts`                 | `<prometheus-http-prefix>/api/v1/alerts`            |
@@ -95,7 +95,7 @@ It provides a simple migration by generating Mimir configuration from Cortex con
 
   - Alertmanager endpoints
 
-    | Legacy                  | Current                        |
+    | Legacy                  | Current                            |
     | ----------------------- | ---------------------------------- |
     | `/<legacy-http-prefix>` | `/alertmanager`                    |
     | `/status`               | `/multitenant_alertmanager/status` |
