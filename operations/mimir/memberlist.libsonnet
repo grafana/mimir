@@ -100,7 +100,8 @@
 
   // Headless service (= no assigned IP, DNS returns all targets instead) pointing to gossip network members.
   gossip_ring_service:
-    if !$._config.memberlist_ring_enabled then {} else
+    if !$._config.memberlist_ring_enabled then null
+    else
       local service = $.core.v1.service;
       local servicePort = $.core.v1.servicePort;
 
