@@ -775,8 +775,8 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 	// Increment metrics only if the samples have been successfully committed.
 	// If the code didn't reach this point, it means that we returned an error
 	// which will be converted into an HTTP 5xx and the client should/will retry.
-	i.metrics.ingestedSamples.Add(float64(succeededSamplesCount))
-	i.metrics.ingestedSamplesFail.Add(float64(failedSamplesCount))
+	i.metrics.ingestedSamples.WithLabelValues(userID).Add(float64(succeededSamplesCount))
+	i.metrics.ingestedSamplesFail.WithLabelValues(userID).Add(float64(failedSamplesCount))
 	i.metrics.ingestedExemplars.Add(float64(succeededExemplarsCount))
 	i.metrics.ingestedExemplarsFail.Add(float64(failedExemplarsCount))
 
