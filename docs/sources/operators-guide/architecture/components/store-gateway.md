@@ -75,7 +75,7 @@ The `store_gateway_tenant_shard_size` in the limits overrides can override the s
 
 The default `-store-gateway.tenant-shard-size` value is 0, which means that tenant's blocks are sharded across all store-gateway instances.
 
-For more information about shuffle sharding, refer to [configure shuffle sharding]({{< relref "../../configuring/configuring-shuffle-sharding.md" >}}).
+For more information about shuffle sharding, refer to [configure shuffle sharding]({{< relref "../../configuring/configuring-shuffle-sharding/index.md" >}}).
 
 ### Auto-forget
 

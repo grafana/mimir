@@ -38,7 +38,7 @@ Compaction can be tuned for clusters with large tenants. Configuration specifies
 - **Vertical scaling**<br />
   The setting `-compactor.compaction-concurrency` configures the max number of concurrent compactions running in a single compactor instance. Each compaction uses one CPU core.
 - **Horizontal scaling**<br />
-  By default, tenant blocks can be compacted by any Grafana Mimir compactor. When you enable compactor [shuffle sharding]({{< relref "../../../configuring/configuring-shuffle-sharding.md" >}}) by setting `-compactor.compactor-tenant-shard-size` (or its respective YAML configuration option) to a value higher than `0` and lower than the number of available compactors, only the specified number of compactors are eligible to compact blocks for a given tenant.
+  By default, tenant blocks can be compacted by any Grafana Mimir compactor. When you enable compactor [shuffle sharding]({{< relref "../../../configuring/configuring-shuffle-sharding/index.md" >}}) by setting `-compactor.compactor-tenant-shard-size` (or its respective YAML configuration option) to a value higher than `0` and lower than the number of available compactors, only the specified number of compactors are eligible to compact blocks for a given tenant.
 
 ## Compaction algorithm
 
