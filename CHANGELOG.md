@@ -12,6 +12,8 @@
 
 ### Jsonnet
 
+* [CHANGE] gossip.libsonnet has been renamed to memberlist.libsonnet, and is now imported by default. Use of memberlist for ring is enabled by setting `_config.memberlist_ring_enabled` to true. #1526
+
 ### Mimirtool
 
 ### Tools
