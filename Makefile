@@ -58,11 +58,11 @@ MIXIN_OUT_PATH := operations/mimir-mixin-compiled
 JSONNET_MANIFESTS_PATH := operations/mimir
 
 # Doc templates in use
-DOC_TEMPLATES := docs/sources/operators-guide/configuring/reference-configuration-parameters.template
+DOC_TEMPLATES := docs/sources/operators-guide/configuring/reference-configuration-parameters/index.template
 
 # Documents to run through embedding
 DOC_EMBED := docs/sources/operators-guide/configuring/configuring-the-query-frontend-work-with-prometheus.md \
-	docs/sources/operators-guide/configuring/mirroring-requests-to-a-second-cluster.md \
+	docs/sources/operators-guide/configuring/mirroring-requests-to-a-second-cluster/index.md \
 	docs/sources/operators-guide/architecture/components/overrides-exporter.md \
 	docs/sources/operators-guide/getting-started/_index.md \
 	operations/mimir/README.md

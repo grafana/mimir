@@ -20,8 +20,8 @@ The ruler evaluates the expressions in the recording rules at regular intervals 
 The ruler has a built-in querier that evaluates the PromQL expressions and a built-in distributor, so that it can write directly to the ingesters.
 Configuration of the built-in querier and distributor uses their respective configuration parameters:
 
-- [Querier]({{< relref "../../configuring/reference-configuration-parameters.md#querier" >}})
-- [Distributor]({{< relref "../../configuring/reference-configuration-parameters.md#distributor" >}})
+- [Querier]({{< relref "../../configuring/reference-configuration-parameters/index.md#querier" >}})
+- [Distributor]({{< relref "../../configuring/reference-configuration-parameters/index.md#distributor" >}})
 
 ## Alerting rules
 
