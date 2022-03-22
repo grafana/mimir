@@ -9350,6 +9350,26 @@
           ],
           "fieldValue": null,
           "fieldDefaultValue": null
+        },
+        {
+          "kind": "field",
+          "name": "bucket_rate_limit",
+          "required": false,
+          "desc": "Rate limit (per second), if set \u003c= 0 rate limiting is disabled.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "blocks-storage.bucket-rate-limit.limit",
+          "fieldType": "float"
+        },
+        {
+          "kind": "field",
+          "name": "bucket_rate_limit_burst",
+          "required": false,
+          "desc": "Burst size",
+          "fieldValue": null,
+          "fieldDefaultValue": 1,
+          "fieldFlag": "blocks-storage.bucket-rate-limit.burst",
+          "fieldType": "int"
         }
       ],
       "fieldValue": null,
@@ -9902,6 +9922,16 @@
           "fieldValue": null,
           "fieldDefaultValue": "smallest-range-oldest-blocks-first",
           "fieldFlag": "compactor.compaction-jobs-order",
+          "fieldType": "string"
+        },
+        {
+          "kind": "field",
+          "name": "sharding_strategy",
+          "required": false,
+          "desc": "The sharding strategy to use. Supported values are: default, time-sharding.",
+          "fieldValue": null,
+          "fieldDefaultValue": "default",
+          "fieldFlag": "compactor.sharding-strategy",
           "fieldType": "string"
         }
       ],
@@ -11819,6 +11849,66 @@
           "fieldDefaultValue": false,
           "fieldFlag": "ruler.query-stats-enabled",
           "fieldType": "boolean"
+        },
+        {
+          "kind": "block",
+          "name": "remote_write",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "wal_dir",
+              "required": false,
+              "desc": "Directory to store WAL (for Ruler Remote Write).",
+              "fieldValue": null,
+              "fieldDefaultValue": "wal",
+              "fieldFlag": "ruler.remote-write.wal-dir",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "enabled",
+              "required": false,
+              "desc": "Enable remote write rules for the Ruler.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "ruler.remote-write.enabled",
+              "fieldType": "boolean"
+            },
+            {
+              "kind": "field",
+              "name": "wal_truncate_frequency",
+              "required": false,
+              "desc": "Frequency for truncating WAL",
+              "fieldValue": null,
+              "fieldDefaultValue": 3600000000000,
+              "fieldFlag": "ruler.remote-write.wal-truncate-frequency",
+              "fieldType": "duration"
+            },
+            {
+              "kind": "field",
+              "name": "min_wal_time",
+              "required": false,
+              "desc": "Minimum time to stay in WAL",
+              "fieldValue": null,
+              "fieldDefaultValue": 300000000000,
+              "fieldFlag": "ruler.remote-write.min-wal-time",
+              "fieldType": "duration"
+            },
+            {
+              "kind": "field",
+              "name": "max_wal_time",
+              "required": false,
+              "desc": "Maximum time to stay in WAL",
+              "fieldValue": null,
+              "fieldDefaultValue": 14400000000000,
+              "fieldFlag": "ruler.remote-write.max-wal-time",
+              "fieldType": "duration"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
         }
       ],
       "fieldValue": null,
