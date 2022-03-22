@@ -8,7 +8,7 @@ weight: 100
 # (Optional) Grafana Mimir Alertmanager
 
 The Mimir Alertmanager adds multi-tenancy support and horizontal scalability to the [Prometheus Alertmanager](https://prometheus.io/docs/alerting/alertmanager/).
-The Mimir Alertmanager is an optional component that accepts alert notifications from the [Mimir ruler]({{< relref "ruler.md" >}}).
+The Mimir Alertmanager is an optional component that accepts alert notifications from the [Mimir ruler]({{< relref "ruler/index.md" >}}).
 The Alertmanager deduplicates and groups alert notifications, and routes them to a notification channel, such as email, PagerDuty, or OpsGenie.
 
 ## Multi-tenancy

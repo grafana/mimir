@@ -14,7 +14,7 @@ Disabling the bucket index is not recommended.
 
 ## Benefits
 
-The [querier]({{< relref "../components/querier.md" >}}), [store-gateway]({{< relref "../components/store-gateway.md" >}}) and [ruler]({{< relref "../components/ruler.md" >}}) must have an almost up-to-date view of the storage bucket, in order to find the right blocks to lookup at query time (querier) and load block's [index-header]({{< relref "../binary-index-header.md" >}}) (store-gateway).
+The [querier]({{< relref "../components/querier.md" >}}), [store-gateway]({{< relref "../components/store-gateway.md" >}}) and [ruler]({{< relref "../components/ruler/index.md" >}}) must have an almost up-to-date view of the storage bucket, in order to find the right blocks to lookup at query time (querier) and load block's [index-header]({{< relref "../binary-index-header.md" >}}) (store-gateway).
 Because of this, they need to periodically scan the bucket to look for new blocks uploaded by ingester or compactor, and blocks deleted (or marked for deletion) by compactor.
 
 When the bucket index is enabled, the querier, store-gateway, and ruler periodically look up the per-tenant bucket index instead of scanning the bucket via `list objects` operations.
@@ -47,7 +47,7 @@ The overhead introduced by keeping the bucket index updated is not signifcant.
 
 ## How it's used by the querier
 
-At query time the [querier]({{< relref "../components/querier.md" >}}) and [ruler]({{< relref "../components/ruler.md" >}}) determine whether the bucket index for the tenant has already been loaded to memory.
+At query time the [querier]({{< relref "../components/querier.md" >}}) and [ruler]({{< relref "../components/ruler/index.md" >}}) determine whether the bucket index for the tenant has already been loaded to memory.
 If not, the querier and ruler download it from the storage and cache it.
 
 Because the bucket index is a small file, lazy downloading it doesn't have a significant impact on first query performances, but it does allow a querier to get up and running without pre-downloading every tenant's bucket index.
