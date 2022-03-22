@@ -37,7 +37,7 @@ For component specific documentation, refer to one of the following topics:
 - [Query-scheduler]({{< relref "architecture/components/query-scheduler/index.md" >}})
 - [Store-gateway]({{< relref "architecture/components/store-gateway.md" >}})
 - [Optional: Alertmanager]({{< relref "architecture/components/alertmanager.md" >}})
-- [Optional: Ruler]({{< relref "architecture/components/ruler.md" >}})
+- [Optional: Ruler]({{< relref "architecture/components/ruler/index.md" >}})
 
 ## Flushing
 

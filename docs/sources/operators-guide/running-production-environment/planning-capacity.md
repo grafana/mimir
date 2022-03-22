@@ -125,7 +125,7 @@ Estimated required CPU, memory, and disk space:
 
 ### (Optional) Ruler
 
-The [ruler]({{< relref "../architecture/components/ruler.md" >}}) component resources utilization is determined by the number of rules evaluated per second.
+The [ruler]({{< relref "../architecture/components/ruler/index.md" >}}) component resources utilization is determined by the number of rules evaluated per second.
 The rules evaluation is computationally equal to queries execution, so the querier resources recommendations apply to ruler too.
 
 ### Compactor

@@ -76,7 +76,7 @@ Each of the following components builds an independent hash ring:
 - [Distributors]({{< relref "../components/distributor.md" >}}) enforce rate limits.
 - [Compactors]({{< relref "../components/compactor/index.md" >}}) shard compaction workload.
 - [Store-gateways]({{< relref "../components/store-gateway.md" >}}) shard blocks to query from long-term storage.
-- [(Optional) Rulers]({{< relref "../components/ruler.md" >}}) shard rule groups to evaluate.
+- [(Optional) Rulers]({{< relref "../components/ruler/index.md" >}}) shard rule groups to evaluate.
 - [(Optional) Alertmanagers]({{< relref "../components/alertmanager.md" >}}) shard tenants.
 
 ## How the hash ring is shared between Grafana Mimir instances
