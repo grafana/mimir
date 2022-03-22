@@ -69,7 +69,7 @@ Complete the following steps to scale down ingesters deployed in a single zone.
 
 1. Configure the Grafana Mimir cluster to discover and query new uploaded blocks as quickly as possible.
 
-   a. Configure queriers and rulers to always query the long-term storage and to disable ingesters [shuffle sharding]({{< relref "configuring-shuffle-sharding.md" >}}) on the read path:
+   a. Configure queriers and rulers to always query the long-term storage and to disable ingesters [shuffle sharding]({{< relref "../configuring/configuring-shuffle-sharding/index.md" >}}) on the read path:
 
    ```
    -querier.query-store-after=0s
