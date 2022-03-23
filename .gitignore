@@ -3,6 +3,7 @@ cmd/test-exporter/test-exporter
 cmd/mimir/mimir
 cmd/query-tee/query-tee
 cmd/metaconvert/metaconvert
+cmd/mimir-continuous-test/mimir-continuous-test
 .uptodate
 .pkg
 .cache

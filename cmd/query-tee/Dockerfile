@@ -10,5 +10,5 @@ ENTRYPOINT ["/query-tee"]
 
 ARG revision
 LABEL org.opencontainers.image.title="query-tee" \
-      org.opencontainers.image.source="https://github.com/grafana/mimir/tree/main/tools/query-tee" \
+      org.opencontainers.image.source="https://github.com/grafana/mimir/tree/main/cmd/query-tee" \
       org.opencontainers.image.revision="${revision}"
