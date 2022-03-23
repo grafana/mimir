@@ -10,7 +10,7 @@ Grafana Mimir documentation follows Grafana Labs technical documentation [style 
 
 ## Content organization
 
-Grafana Mimir documentation uses [Hugo page bundles](https://gohugo.io/content-management/page-bundles/) to group resources (eg. images) with the pages.
+Grafana Mimir documentation uses [Hugo page bundles](https://gohugo.io/content-management/page-bundles/) to group resources, such as images, with the pages.
 
 The documentation adopts the following conventions:
 
