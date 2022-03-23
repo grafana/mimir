@@ -58,11 +58,11 @@ MIXIN_OUT_PATH := operations/mimir-mixin-compiled
 JSONNET_MANIFESTS_PATH := operations/mimir
 
 # Doc templates in use
-DOC_TEMPLATES := docs/sources/operators-guide/configuring/reference-configuration-parameters.template
+DOC_TEMPLATES := docs/sources/operators-guide/configuring/reference-configuration-parameters/index.template
 
 # Documents to run through embedding
 DOC_EMBED := docs/sources/operators-guide/configuring/configuring-the-query-frontend-work-with-prometheus.md \
-	docs/sources/operators-guide/configuring/mirroring-requests-to-a-second-cluster.md \
+	docs/sources/operators-guide/configuring/mirroring-requests-to-a-second-cluster/index.md \
 	docs/sources/operators-guide/architecture/components/overrides-exporter.md \
 	docs/sources/operators-guide/getting-started/_index.md \
 	operations/mimir/README.md
@@ -362,6 +362,9 @@ dist: ## Generates binaries for a Mimir release.
 			echo "Building metaconvert for $$os/$$arch"; \
 			GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/metaconvert-$$os-$$arch$$suffix ./cmd/metaconvert; \
 			sha256sum ./dist/metaconvert-$$os-$$arch$$suffix | cut -d ' ' -f 1 > ./dist/metaconvert-$$os-$$arch$$suffix-sha-256; \
+			echo "Building mimir-continuous-test for $$os/$$arch"; \
+			GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/mimir-continuous-test-$$os-$$arch$$suffix ./cmd/mimir-continuous-test; \
+			sha256sum ./dist/mimir-continuous-test-$$os-$$arch$$suffix | cut -d ' ' -f 1 > ./dist/mimir-continuous-test-$$os-$$arch$$suffix-sha-256; \
 			done; \
 		done; \
 		touch $@
@@ -424,13 +427,17 @@ check-doc: doc
 	@find . -name "*.md" | xargs git diff --exit-code -- \
 	|| (echo "Please update generated documentation by running 'make doc' and committing the changes" && false)
 
+check-doc-links:
+	cd ./tools/doc-validator && go run . ../../docs/sources/
+
 .PHONY: reference-help
 reference-help: cmd/mimir/mimir
 	@(./cmd/mimir/mimir -h || true) > cmd/mimir/help.txt.tmpl
 	@(./cmd/mimir/mimir -help-all || true) > cmd/mimir/help-all.txt.tmpl
+	@(go run ./tools/config-inspector || true) > cmd/mimir/config-descriptor.json
 
 clean-white-noise:
-	@find . -path ./.pkg -prune -o -path ./vendor -prune -or -type f -name "*.md" -print | \
+	@find . -path ./.pkg -prune -o -path "*/vendor/*" -prune -or -type f -name "*.md" -print | \
 	SED_BIN="$(SED)" xargs ./tools/cleanup-white-noise.sh
 
 check-white-noise: clean-white-noise

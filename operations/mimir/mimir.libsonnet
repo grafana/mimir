@@ -23,4 +23,5 @@
 // Mimir features
 (import 'shuffle-sharding.libsonnet') +
 (import 'query-sharding.libsonnet') +
-(import 'multi-zone.libsonnet')
+(import 'multi-zone.libsonnet') +
+(import 'memberlist.libsonnet')

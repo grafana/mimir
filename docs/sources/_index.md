@@ -16,7 +16,7 @@ keywords:
 
 # Grafana Mimir Documentation
 
-![Grafana Mimir](./images/mimir-logo.png)
+![Grafana Mimir](mimir-logo.png)
 
 Grafana Mimir is an open source software project that provides a scalable long-term storage for [Prometheus](https://prometheus.io). Some of the core strengths of Grafana Mimir include:
 
