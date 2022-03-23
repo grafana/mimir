@@ -3,7 +3,7 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
 
-package querytee
+package instrumentation
 
 import (
 	"fmt"
@@ -18,22 +18,22 @@ import (
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
-type InstrumentationServer struct {
+type MetricsServer struct {
 	port     int
 	registry *prometheus.Registry
 	srv      *http.Server
 }
 
-// NewInstrumentationServer returns a server exposing Prometheus metrics.
-func NewInstrumentationServer(port int, registry *prometheus.Registry) *InstrumentationServer {
-	return &InstrumentationServer{
+// NewMetricsServer returns a server exposing Prometheus metrics.
+func NewMetricsServer(port int, registry *prometheus.Registry) *MetricsServer {
+	return &MetricsServer{
 		port:     port,
 		registry: registry,
 	}
 }
 
 // Start the instrumentation server.
-func (s *InstrumentationServer) Start() error {
+func (s *MetricsServer) Start() error {
 	// Setup listener first, so we can fail early if the port is in use.
 	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", s.port))
 	if err != nil {
@@ -57,7 +57,7 @@ func (s *InstrumentationServer) Start() error {
 }
 
 // Stop closes the instrumentation server.
-func (s *InstrumentationServer) Stop() {
+func (s *MetricsServer) Stop() {
 	if s.srv != nil {
 		s.srv.Close()
 		s.srv = nil
