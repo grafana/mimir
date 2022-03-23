@@ -51,9 +51,9 @@ This document groups API endpoints by service. Note that the API endpoints are e
 | [Build information](#build-information)                                               | Querier, Query-frontend | `GET <prometheus-http-prefix>/api/v1/status/buildinfo`                    |
 | [Get tenant ingestion stats](#get-tenant-ingestion-stats)                             | Querier                 | `GET /api/v1/user_stats`                                                  |
 | [Ruler ring status](#ruler-ring-status)                                               | Ruler                   | `GET /ruler/ring`                                                         |
-| [Ruler rules ](#ruler-rule-groups)                                                    | Ruler                   | `GET /ruler/rule_groups`                                                  |
-| [List rules](#list-rules)                                                             | Ruler                   | `GET <prometheus-http-prefix>/api/v1/rules`                               |
-| [List alerts](#list-alerts)                                                           | Ruler                   | `GET <prometheus-http-prefix>/api/v1/alerts`                              |
+| [Ruler rules ](#ruler-rules)                                                          | Ruler                   | `GET /ruler/rule_groups`                                                  |
+| [List Prometheus rules](#list-prometheus-rules)                                       | Ruler                   | `GET <prometheus-http-prefix>/api/v1/rules`                               |
+| [List Prometheus alerts](#list-prometheus-alerts)                                     | Ruler                   | `GET <prometheus-http-prefix>/api/v1/alerts`                              |
 | [List rule groups](#list-rule-groups)                                                 | Ruler                   | `GET <prometheus-http-prefix>/config/v1/rules`                            |
 | [Get rule groups by namespace](#get-rule-groups-by-namespace)                         | Ruler                   | `GET <prometheus-http-prefix>/config/v1/rules/{namespace}`                |
 | [Get rule group](#get-rule-group)                                                     | Ruler                   | `GET <prometheus-http-prefix>/config/v1/rules/{namespace}/{groupName}`    |
@@ -699,7 +699,7 @@ of each rule in the group will be evaluated against the data of all tenants in `
 empty or omitted, then the tenant under which the group is created will be treated as the `source_tenant`.
 
 Federated rule groups are skipped during evaluation by default. This feature depends on
-the [cross-tenant query federation](../proposals/cross-tenant-query-federation.md) feature. To enable federated rules
+the cross-tenant query federation feature. To enable federated rules
 set `-ruler.tenant-federation.enabled=true` and `-tenant-federation.enabled=true` CLI flags (or their respective YAML
 config options).
 
@@ -710,7 +710,7 @@ will be saved. The same "no partial results" guarantee applies to queries failin
 unavailability).
 
 The time series used during evaluation of federated rules will have the `__tenant_id__` label, similar to how it is
-present on series returned with [cross-tenant query federation](../proposals/cross-tenant-query-federation.md).
+present on series returned with cross-tenant query federation.
 
 **Considerations:** Federated rule groups allow data from multiple source tenants to be written into a single
 destination tenant. This makes the existing separation of tenants' data less clear. For example, `tenant-a` has a

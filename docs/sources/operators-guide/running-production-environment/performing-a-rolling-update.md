@@ -26,7 +26,7 @@ Stateful components have the following restrictions:
 - Ingesters: Roll out changes to one ingester at a time.
 - Store-gateways: Roll out changes to a maximum of two store-gateways at a time.
 
-> **Note**: If you enabled [zone-aware replication]({{< relref "configuring-zone-aware-replication.md">}}) for a component, you can roll out changes to all component instances in the same zone at the same time.
+> **Note**: If you enabled [zone-aware replication]({{< relref "../configuring/configuring-zone-aware-replication.md">}}) for a component, you can roll out changes to all component instances in the same zone at the same time.
 
 ### Alertmanagers
 
@@ -38,7 +38,7 @@ Alerts notification and visualization succeed when each tenant has at least one 
 
 To ensure no alerts notification, reception, or visualization fail during a rolling update, roll out changes to a maximum of two Alertmanagers at a time.
 
-> **Note**: If you enabled [zone-aware replication]({{< relref "configuring-zone-aware-replication.md">}}) for Alertmanager, you can roll out changes to all Alertmanagers in one zone at the same time.
+> **Note**: If you enabled [zone-aware replication]({{< relref "../configuring/configuring-zone-aware-replication.md">}}) for Alertmanager, you can roll out changes to all Alertmanagers in one zone at the same time.
 
 ### Ingesters
 
@@ -51,7 +51,7 @@ Because series are sharded across all ingesters, Grafana Mimir tolerates up to o
 
 To ensure no query fails during a rolling update, roll out changes to one ingester at a time.
 
-> **Note**: If you enabled [zone-aware replication]({{< relref "configuring-zone-aware-replication.md">}}) for ingesters, you can roll out changes to all ingesters in one zone at the same time.
+> **Note**: If you enabled [zone-aware replication]({{< relref "../configuring/configuring-zone-aware-replication.md">}}) for ingesters, you can roll out changes to all ingesters in one zone at the same time.
 
 ### Store-gateways
 
@@ -61,4 +61,4 @@ Queries succeed when each required block is loaded by at least one store-gateway
 
 To ensure no query fails during a rolling update, roll out changes to a maximum of two store-gateways at a time.
 
-> **Note**: If you enabled [zone-aware replication]({{< relref "configuring-zone-aware-replication.md">}}) for store-gateways, you can roll out changes to all store-gateways in one zone at the same time.
+> **Note**: If you enabled [zone-aware replication]({{< relref "../configuring/configuring-zone-aware-replication.md">}}) for store-gateways, you can roll out changes to all store-gateways in one zone at the same time.
