@@ -214,7 +214,7 @@ type Limits interface {
 // organizations.
 type MultitenantAlertmanager struct {
 	services.Service
-	Loggers
+	loggers Loggers
 
 	cfg *MultitenantAlertmanagerConfig
 
@@ -288,7 +288,7 @@ func NewMultitenantAlertmanager(cfg *MultitenantAlertmanagerConfig, store alerts
 		cfg.ShardingRing.KVStore,
 		ring.GetCodec(),
 		kv.RegistererWithKVName(prometheus.WrapRegistererWithPrefix("cortex_", registerer), "alertmanager"),
-		loggers.Base,
+		loggers.Default,
 	)
 	if err != nil {
 		return nil, errors.Wrap(err, "create KV store client")
@@ -307,9 +307,9 @@ func createMultitenantAlertmanager(cfg *MultitenantAlertmanagerConfig, fallbackC
 		alertmanagerMetrics: newAlertmanagerMetrics(),
 		multitenantMetrics:  newMultitenantAlertmanagerMetrics(registerer),
 		store:               store,
-		Loggers: Loggers{
-			Base:     log.With(loggers.Base, "component", "MultiTenantAlertmanager"),
-			Dispatch: log.With(loggers.Dispatch, "component", "MultiTenantAlertmanager"),
+		loggers: Loggers{
+			Default:    log.With(loggers.Default, "component", "MultiTenantAlertmanager"),
+			Dispatcher: log.With(loggers.Dispatcher, "component", "MultiTenantAlertmanager"),
 		},
 		registry: registerer,
 		limits:   limits,
@@ -341,7 +341,7 @@ func createMultitenantAlertmanager(cfg *MultitenantAlertmanagerConfig, fallbackC
 		am.syncFailures.WithLabelValues(r)
 	}
 
-	lifecyclerCfg, err := am.cfg.ShardingRing.ToLifecyclerConfig(am.Loggers.Base)
+	lifecyclerCfg, err := am.cfg.ShardingRing.ToLifecyclerConfig(am.loggers.Default)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to initialize Alertmanager's lifecycler config")
 	}
@@ -349,23 +349,23 @@ func createMultitenantAlertmanager(cfg *MultitenantAlertmanagerConfig, fallbackC
 	// Define lifecycler delegates in reverse order (last to be called defined first because they're
 	// chained via "next delegate").
 	delegate := ring.BasicLifecyclerDelegate(am)
-	delegate = ring.NewLeaveOnStoppingDelegate(delegate, am.Loggers.Base)
-	delegate = ring.NewAutoForgetDelegate(am.cfg.ShardingRing.HeartbeatTimeout*ringAutoForgetUnhealthyPeriods, delegate, am.Loggers.Base)
+	delegate = ring.NewLeaveOnStoppingDelegate(delegate, am.loggers.Default)
+	delegate = ring.NewAutoForgetDelegate(am.cfg.ShardingRing.HeartbeatTimeout*ringAutoForgetUnhealthyPeriods, delegate, am.loggers.Default)
 
-	am.ringLifecycler, err = ring.NewBasicLifecycler(lifecyclerCfg, RingNameForServer, RingKey, ringStore, delegate, am.Loggers.Base, prometheus.WrapRegistererWithPrefix("cortex_", am.registry))
+	am.ringLifecycler, err = ring.NewBasicLifecycler(lifecyclerCfg, RingNameForServer, RingKey, ringStore, delegate, am.loggers.Default, prometheus.WrapRegistererWithPrefix("cortex_", am.registry))
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to initialize Alertmanager's lifecycler")
 	}
 
-	am.ring, err = ring.NewWithStoreClientAndStrategy(am.cfg.ShardingRing.ToRingConfig(), RingNameForServer, RingKey, ringStore, ring.NewIgnoreUnhealthyInstancesReplicationStrategy(), prometheus.WrapRegistererWithPrefix("cortex_", am.registry), am.Loggers.Base)
+	am.ring, err = ring.NewWithStoreClientAndStrategy(am.cfg.ShardingRing.ToRingConfig(), RingNameForServer, RingKey, ringStore, ring.NewIgnoreUnhealthyInstancesReplicationStrategy(), prometheus.WrapRegistererWithPrefix("cortex_", am.registry), am.loggers.Default)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to initialize Alertmanager's ring")
 	}
 
 	am.grpcServer = server.NewServer(&handlerForGRPCServer{am: am})
 
-	am.alertmanagerClientsPool = newAlertmanagerClientsPool(client.NewRingServiceDiscovery(am.ring), cfg.AlertmanagerClient, am.Loggers.Base, am.registry)
-	am.distributor, err = NewDistributor(cfg.AlertmanagerClient, cfg.MaxRecvMsgSize, am.ring, am.alertmanagerClientsPool, log.With(am.Loggers.Base, "component", "AlertmanagerDistributor"), am.registry)
+	am.alertmanagerClientsPool = newAlertmanagerClientsPool(client.NewRingServiceDiscovery(am.ring), cfg.AlertmanagerClient, am.loggers.Default, am.registry)
+	am.distributor, err = NewDistributor(cfg.AlertmanagerClient, cfg.MaxRecvMsgSize, am.ring, am.alertmanagerClientsPool, log.With(am.loggers.Default, "component", "AlertmanagerDistributor"), am.registry)
 	if err != nil {
 		return nil, errors.Wrap(err, "create distributor")
 	}
@@ -401,7 +401,7 @@ func (am *MultitenantAlertmanager) starting(ctx context.Context) (err error) {
 		}
 
 		if stopErr := services.StopManagerAndAwaitStopped(context.Background(), am.subservices); stopErr != nil {
-			level.Error(am.Loggers.Base).Log("msg", "failed to gracefully stop alertmanager dependencies", "err", stopErr)
+			level.Error(am.loggers.Default).Log("msg", "failed to gracefully stop alertmanager dependencies", "err", stopErr)
 		}
 	}()
 
@@ -417,11 +417,11 @@ func (am *MultitenantAlertmanager) starting(ctx context.Context) (err error) {
 	am.subservicesWatcher.WatchManager(am.subservices)
 
 	// We wait until the instance is in the JOINING state, once it does we know that tokens are assigned to this instance and we'll be ready to perform an initial sync of configs.
-	level.Info(am.Loggers.Base).Log("waiting until alertmanager is JOINING in the ring")
+	level.Info(am.loggers.Default).Log("waiting until alertmanager is JOINING in the ring")
 	if err = ring.WaitInstanceState(ctx, am.ring, am.ringLifecycler.GetInstanceID(), ring.JOINING); err != nil {
 		return err
 	}
-	level.Info(am.Loggers.Base).Log("msg", "alertmanager is JOINING in the ring")
+	level.Info(am.loggers.Default).Log("msg", "alertmanager is JOINING in the ring")
 
 	// At this point, if sharding is enabled, the instance is registered with some tokens
 	// and we can run the initial iteration to sync configs.
@@ -436,11 +436,11 @@ func (am *MultitenantAlertmanager) starting(ctx context.Context) (err error) {
 	// Make sure that all the alertmanagers we were initially configured with have
 	// fetched state from the replicas, before advertising as ACTIVE. This will
 	// reduce the possibility that we lose state when new instances join/leave.
-	level.Info(am.Loggers.Base).Log("msg", "waiting until initial state sync is complete for all users")
+	level.Info(am.loggers.Default).Log("msg", "waiting until initial state sync is complete for all users")
 	if err := am.waitInitialStateSync(ctx); err != nil {
 		return errors.Wrap(err, "failed to wait for initial state sync")
 	}
-	level.Info(am.Loggers.Base).Log("msg", "initial state sync is complete")
+	level.Info(am.loggers.Default).Log("msg", "initial state sync is complete")
 
 	// With the initial sync now completed, we should have loaded all assigned alertmanager configurations to this instance. We can switch it to ACTIVE and start serving requests.
 	if err := am.ringLifecycler.ChangeState(ctx, ring.ACTIVE); err != nil {
@@ -448,11 +448,11 @@ func (am *MultitenantAlertmanager) starting(ctx context.Context) (err error) {
 	}
 
 	// Wait until the ring client detected this instance in the ACTIVE state.
-	level.Info(am.Loggers.Base).Log("msg", "waiting until alertmanager is ACTIVE in the ring")
+	level.Info(am.loggers.Default).Log("msg", "waiting until alertmanager is ACTIVE in the ring")
 	if err := ring.WaitInstanceState(ctx, am.ring, am.ringLifecycler.GetInstanceID(), ring.ACTIVE); err != nil {
 		return err
 	}
-	level.Info(am.Loggers.Base).Log("msg", "alertmanager is ACTIVE in the ring")
+	level.Info(am.loggers.Default).Log("msg", "alertmanager is ACTIVE in the ring")
 
 	return nil
 }
@@ -461,7 +461,7 @@ func (am *MultitenantAlertmanager) starting(ctx context.Context) (err error) {
 // TODO: Remove in Cortex 1.11.
 func (am *MultitenantAlertmanager) migrateStateFilesToPerTenantDirectories() error {
 	migrate := func(from, to string) error {
-		level.Info(am.Loggers.Base).Log("msg", "migrating alertmanager state", "from", from, "to", to)
+		level.Info(am.loggers.Default).Log("msg", "migrating alertmanager state", "from", from, "to", to)
 		err := os.Rename(from, to)
 		return errors.Wrapf(err, "failed to migrate alertmanager state from %v to %v", from, to)
 	}
@@ -543,7 +543,7 @@ func (am *MultitenantAlertmanager) getObsoleteFilesPerUser() (map[string]obsolet
 					v.templatesDir = filepath.Join(fullPath, d.Name())
 					result[d.Name()] = v
 				} else {
-					level.Warn(am.Loggers.Base).Log("msg", "ignoring unknown local file while migrating local alertmanager state files", "file", filepath.Join(fullPath, d.Name()))
+					level.Warn(am.loggers.Default).Log("msg", "ignoring unknown local file while migrating local alertmanager state files", "file", filepath.Join(fullPath, d.Name()))
 				}
 			}
 			continue
@@ -563,7 +563,7 @@ func (am *MultitenantAlertmanager) getObsoleteFilesPerUser() (map[string]obsolet
 			result[userID] = v
 
 		default:
-			level.Warn(am.Loggers.Base).Log("msg", "ignoring unknown local data file while migrating local alertmanager state files", "file", fullPath)
+			level.Warn(am.loggers.Default).Log("msg", "ignoring unknown local data file while migrating local alertmanager state files", "file", fullPath)
 		}
 	}
 
@@ -586,7 +586,7 @@ func (am *MultitenantAlertmanager) run(ctx context.Context) error {
 		case <-tick.C:
 			// We don't want to halt execution here but instead just log what happened.
 			if err := am.loadAndSyncConfigs(ctx, reasonPeriodic); err != nil {
-				level.Warn(am.Loggers.Base).Log("msg", "error while synchronizing alertmanager configs", "err", err)
+				level.Warn(am.loggers.Default).Log("msg", "error while synchronizing alertmanager configs", "err", err)
 			}
 		case <-ringTicker.C:
 			// We ignore the error because in case of error it will return an empty
@@ -596,7 +596,7 @@ func (am *MultitenantAlertmanager) run(ctx context.Context) error {
 			if ring.HasReplicationSetChanged(am.ringLastState, currRingState) {
 				am.ringLastState = currRingState
 				if err := am.loadAndSyncConfigs(ctx, reasonRingChange); err != nil {
-					level.Warn(am.Loggers.Base).Log("msg", "error while synchronizing alertmanager configs", "err", err)
+					level.Warn(am.loggers.Default).Log("msg", "error while synchronizing alertmanager configs", "err", err)
 				}
 			}
 		}
@@ -604,7 +604,7 @@ func (am *MultitenantAlertmanager) run(ctx context.Context) error {
 }
 
 func (am *MultitenantAlertmanager) loadAndSyncConfigs(ctx context.Context, syncReason string) error {
-	level.Info(am.Loggers.Base).Log("msg", "synchronizing alertmanager configs for users")
+	level.Info(am.loggers.Default).Log("msg", "synchronizing alertmanager configs for users")
 	am.syncTotal.WithLabelValues(syncReason).Inc()
 
 	allUsers, cfgs, err := am.loadAlertmanagerConfigs(ctx)
@@ -690,7 +690,7 @@ func (am *MultitenantAlertmanager) isUserOwned(userID string) bool {
 	alertmanagers, err := am.ring.Get(shardByUser(userID), SyncRingOp, nil, nil, nil)
 	if err != nil {
 		am.ringCheckErrors.Inc()
-		level.Error(am.Loggers.Base).Log("msg", "failed to load alertmanager configuration", "user", userID, "err", err)
+		level.Error(am.loggers.Default).Log("msg", "failed to load alertmanager configuration", "user", userID, "err", err)
 		return false
 	}
 
@@ -698,12 +698,12 @@ func (am *MultitenantAlertmanager) isUserOwned(userID string) bool {
 }
 
 func (am *MultitenantAlertmanager) syncConfigs(cfgs map[string]alertspb.AlertConfigDesc) {
-	level.Debug(am.Loggers.Base).Log("msg", "adding configurations", "num_configs", len(cfgs))
+	level.Debug(am.loggers.Default).Log("msg", "adding configurations", "num_configs", len(cfgs))
 	for user, cfg := range cfgs {
 		err := am.setConfig(cfg)
 		if err != nil {
 			am.multitenantMetrics.lastReloadSuccessful.WithLabelValues(user).Set(float64(0))
-			level.Warn(am.Loggers.Base).Log("msg", "error applying config", "err", err)
+			level.Warn(am.loggers.Default).Log("msg", "error applying config", "err", err)
 			continue
 		}
 
@@ -728,9 +728,9 @@ func (am *MultitenantAlertmanager) syncConfigs(cfgs map[string]alertspb.AlertCon
 
 	// Now stop alertmanagers and wait until they are really stopped, without holding lock.
 	for userID, userAM := range userAlertmanagersToStop {
-		level.Info(am.Loggers.Base).Log("msg", "deactivating per-tenant alertmanager", "user", userID)
+		level.Info(am.loggers.Default).Log("msg", "deactivating per-tenant alertmanager", "user", userID)
 		userAM.StopAndWait()
-		level.Info(am.Loggers.Base).Log("msg", "deactivated per-tenant alertmanager", "user", userID)
+		level.Info(am.loggers.Default).Log("msg", "deactivated per-tenant alertmanager", "user", userID)
 	}
 }
 
@@ -771,12 +771,12 @@ func (am *MultitenantAlertmanager) setConfig(cfg alertspb.AlertConfigDesc) error
 	for pathToRemove := range pathsToRemove {
 		err := os.Remove(pathToRemove)
 		if err != nil {
-			level.Warn(am.Loggers.Base).Log("msg", "failed to remove file", "file", pathToRemove, "err", err)
+			level.Warn(am.loggers.Default).Log("msg", "failed to remove file", "file", pathToRemove, "err", err)
 		}
 		hasTemplateChanges = true
 	}
 
-	level.Debug(am.Loggers.Base).Log("msg", "setting config", "user", cfg.User)
+	level.Debug(am.loggers.Default).Log("msg", "setting config", "user", cfg.User)
 
 	am.alertmanagersMtx.Lock()
 	defer am.alertmanagersMtx.Unlock()
@@ -787,7 +787,7 @@ func (am *MultitenantAlertmanager) setConfig(cfg alertspb.AlertConfigDesc) error
 		if am.fallbackConfig == "" {
 			return fmt.Errorf("blank Alertmanager configuration for %v", cfg.User)
 		}
-		level.Debug(am.Loggers.Base).Log("msg", "blank Alertmanager configuration; using fallback", "user", cfg.User)
+		level.Debug(am.loggers.Default).Log("msg", "blank Alertmanager configuration; using fallback", "user", cfg.User)
 		userAmConfig, err = amconfig.Load(am.fallbackConfig)
 		if err != nil {
 			return fmt.Errorf("unable to load fallback configuration for %v: %v", cfg.User, err)
@@ -813,14 +813,14 @@ func (am *MultitenantAlertmanager) setConfig(cfg alertspb.AlertConfigDesc) error
 
 	// If no Alertmanager instance exists for this user yet, start one.
 	if !hasExisting {
-		level.Debug(am.Loggers.Base).Log("msg", "initializing new per-tenant alertmanager", "user", cfg.User)
+		level.Debug(am.loggers.Default).Log("msg", "initializing new per-tenant alertmanager", "user", cfg.User)
 		newAM, err := am.newAlertmanager(cfg.User, userAmConfig, rawCfg)
 		if err != nil {
 			return err
 		}
 		am.alertmanagers[cfg.User] = newAM
 	} else if am.cfgs[cfg.User].RawConfig != cfg.RawConfig || hasTemplateChanges {
-		level.Info(am.Loggers.Base).Log("msg", "updating new per-tenant alertmanager", "user", cfg.User)
+		level.Info(am.loggers.Default).Log("msg", "updating new per-tenant alertmanager", "user", cfg.User)
 		// If the config changed, apply the new one.
 		err := existing.ApplyConfig(cfg.User, userAmConfig, rawCfg)
 		if err != nil {
@@ -848,7 +848,7 @@ func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *amco
 	newAM, err := New(&Config{
 		UserID:            userID,
 		TenantDataDir:     tenantDir,
-		Loggers:           am.Loggers,
+		Loggers:           am.loggers,
 		PeerTimeout:       am.cfg.PeerTimeout,
 		Retention:         am.cfg.Retention,
 		ExternalURL:       am.cfg.ExternalURL.URL,
@@ -879,7 +879,7 @@ func (am *MultitenantAlertmanager) GetPositionForUser(userID string) int {
 
 	set, err := am.ring.Get(shardByUser(userID), RingOp, nil, nil, nil)
 	if err != nil {
-		level.Error(am.Loggers.Base).Log("msg", "unable to read the ring while trying to determine the alertmanager position", "err", err)
+		level.Error(am.loggers.Default).Log("msg", "unable to read the ring while trying to determine the alertmanager position", "err", err)
 		// If we're  unable to determine the position, we don't want a tenant to miss out on the notification - instead,
 		// just assume we're the first in line and run the risk of a double notification.
 		return 0
@@ -930,11 +930,11 @@ func (am *MultitenantAlertmanager) serveRequest(w http.ResponseWriter, req *http
 	if am.fallbackConfig != "" {
 		userAM, err = am.alertmanagerFromFallbackConfig(req.Context(), userID)
 		if errors.Is(err, errNotUploadingFallback) {
-			level.Warn(am.Loggers.Base).Log("msg", "not initializing Alertmanager", "user", userID, "err", err)
+			level.Warn(am.loggers.Default).Log("msg", "not initializing Alertmanager", "user", userID, "err", err)
 			http.Error(w, "Not initializing the Alertmanager", http.StatusNotAcceptable)
 			return
 		} else if err != nil {
-			level.Error(am.Loggers.Base).Log("msg", "unable to initialize the Alertmanager with a fallback configuration", "user", userID, "err", err)
+			level.Error(am.loggers.Default).Log("msg", "unable to initialize the Alertmanager with a fallback configuration", "user", userID, "err", err)
 			http.Error(w, "Failed to initialize the Alertmanager", http.StatusInternalServerError)
 			return
 		}
@@ -943,7 +943,7 @@ func (am *MultitenantAlertmanager) serveRequest(w http.ResponseWriter, req *http
 		return
 	}
 
-	level.Debug(am.Loggers.Base).Log("msg", "the Alertmanager has no configuration and no fallback specified", "user", userID)
+	level.Debug(am.loggers.Default).Log("msg", "the Alertmanager has no configuration and no fallback specified", "user", userID)
 	http.Error(w, "the Alertmanager is not configured", http.StatusNotFound)
 }
 
@@ -968,7 +968,7 @@ func (am *MultitenantAlertmanager) alertmanagerFromFallbackConfig(ctx context.Co
 		return nil, errors.Wrap(err, "failed to check for existing configuration")
 	}
 
-	level.Warn(am.Loggers.Base).Log("msg", "no configuration exists for user; uploading fallback configuration", "user", userID)
+	level.Warn(am.loggers.Default).Log("msg", "no configuration exists for user; uploading fallback configuration", "user", userID)
 
 	// Upload an empty config so that the Alertmanager is no de-activated in the next poll
 	cfgDesc := alertspb.ToProto("", nil, userID)
@@ -990,7 +990,7 @@ func (am *MultitenantAlertmanager) alertmanagerFromFallbackConfig(ctx context.Co
 
 // ReplicateStateForUser attempts to replicate a partial state sent by an alertmanager to its other replicas through the ring.
 func (am *MultitenantAlertmanager) ReplicateStateForUser(ctx context.Context, userID string, part *clusterpb.Part) error {
-	level.Debug(am.Loggers.Base).Log("msg", "message received for replication", "user", userID, "key", part.Key)
+	level.Debug(am.loggers.Default).Log("msg", "message received for replication", "user", userID, "key", part.Key)
 
 	selfAddress := am.ringLifecycler.GetInstanceAddr()
 	err := ring.DoBatch(ctx, RingOp, am.ring, []uint32{shardByUser(userID)}, func(desc ring.InstanceDesc, _ []int) error {
@@ -1010,9 +1010,9 @@ func (am *MultitenantAlertmanager) ReplicateStateForUser(ctx context.Context, us
 
 		switch resp.Status {
 		case alertmanagerpb.MERGE_ERROR:
-			level.Error(am.Loggers.Base).Log("msg", "state replication failed", "user", userID, "key", part.Key, "err", resp.Error)
+			level.Error(am.loggers.Default).Log("msg", "state replication failed", "user", userID, "key", part.Key, "err", resp.Error)
 		case alertmanagerpb.USER_NOT_FOUND:
-			level.Debug(am.Loggers.Base).Log("msg", "user not found while trying to replicate state", "user", userID, "key", part.Key)
+			level.Debug(am.loggers.Default).Log("msg", "user not found while trying to replicate state", "user", userID, "key", part.Key)
 		}
 		return nil
 	}, func() {})
@@ -1042,17 +1042,17 @@ func (am *MultitenantAlertmanager) ReadFullStateForUser(ctx context.Context, use
 	// Note that the jobs swallow the errors - this is because we want to give each replica a chance to respond.
 	err = concurrency.ForEachJob(ctx, len(addrs), len(addrs), func(ctx context.Context, idx int) error {
 		addr := addrs[idx]
-		level.Debug(am.Loggers.Base).Log("msg", "contacting replica for full state", "user", userID, "addr", addr)
+		level.Debug(am.loggers.Default).Log("msg", "contacting replica for full state", "user", userID, "addr", addr)
 
 		c, err := am.alertmanagerClientsPool.GetClientFor(addr)
 		if err != nil {
-			level.Error(am.Loggers.Base).Log("msg", "failed to get rpc client", "err", err)
+			level.Error(am.loggers.Default).Log("msg", "failed to get rpc client", "err", err)
 			return nil
 		}
 
 		resp, err := c.ReadState(user.InjectOrgID(ctx, userID), &alertmanagerpb.ReadStateRequest{})
 		if err != nil {
-			level.Error(am.Loggers.Base).Log("msg", "rpc reading state from replica failed", "addr", addr, "user", userID, "err", err)
+			level.Error(am.loggers.Default).Log("msg", "rpc reading state from replica failed", "addr", addr, "user", userID, "err", err)
 			return nil
 		}
 
@@ -1062,14 +1062,14 @@ func (am *MultitenantAlertmanager) ReadFullStateForUser(ctx context.Context, use
 			results = append(results, resp.State)
 			resultsMtx.Unlock()
 		case alertmanagerpb.READ_ERROR:
-			level.Error(am.Loggers.Base).Log("msg", "error trying to read state", "addr", addr, "user", userID, "err", resp.Error)
+			level.Error(am.loggers.Default).Log("msg", "error trying to read state", "addr", addr, "user", userID, "err", resp.Error)
 		case alertmanagerpb.READ_USER_NOT_FOUND:
-			level.Debug(am.Loggers.Base).Log("msg", "user not found while trying to read state", "addr", addr, "user", userID)
+			level.Debug(am.loggers.Default).Log("msg", "user not found while trying to read state", "addr", addr, "user", userID)
 			resultsMtx.Lock()
 			notFound++
 			resultsMtx.Unlock()
 		default:
-			level.Error(am.Loggers.Base).Log("msg", "unknown response trying to read state", "addr", addr, "user", userID)
+			level.Error(am.loggers.Default).Log("msg", "unknown response trying to read state", "addr", addr, "user", userID)
 		}
 		return nil
 	})
@@ -1103,7 +1103,7 @@ func (am *MultitenantAlertmanager) UpdateState(ctx context.Context, part *cluste
 
 	if !ok {
 		// We can end up trying to replicate state to an alertmanager that is no longer available due to e.g. a ring topology change.
-		level.Debug(am.Loggers.Base).Log("msg", "user does not have an alertmanager in this instance", "user", userID)
+		level.Debug(am.loggers.Default).Log("msg", "user does not have an alertmanager in this instance", "user", userID)
 		return &alertmanagerpb.UpdateStateResponse{
 			Status: alertmanagerpb.USER_NOT_FOUND,
 			Error:  "alertmanager for this user does not exists",
@@ -1130,7 +1130,7 @@ func (am *MultitenantAlertmanager) deleteUnusedRemoteUserState(ctx context.Conte
 
 	usersWithState, err := am.store.ListUsersWithFullState(ctx)
 	if err != nil {
-		level.Warn(am.Loggers.Base).Log("msg", "failed to list users with state", "err", err)
+		level.Warn(am.loggers.Default).Log("msg", "failed to list users with state", "err", err)
 		return
 	}
 
@@ -1141,9 +1141,9 @@ func (am *MultitenantAlertmanager) deleteUnusedRemoteUserState(ctx context.Conte
 
 		err := am.store.DeleteFullState(ctx, userID)
 		if err != nil {
-			level.Warn(am.Loggers.Base).Log("msg", "failed to delete remote state for user", "user", userID, "err", err)
+			level.Warn(am.loggers.Default).Log("msg", "failed to delete remote state for user", "user", userID, "err", err)
 		} else {
-			level.Info(am.Loggers.Base).Log("msg", "deleted remote state for user", "user", userID)
+			level.Info(am.loggers.Default).Log("msg", "deleted remote state for user", "user", userID)
 		}
 	}
 }
@@ -1165,9 +1165,9 @@ func (am *MultitenantAlertmanager) deleteUnusedLocalUserState() {
 
 		err := os.RemoveAll(dir)
 		if err != nil {
-			level.Warn(am.Loggers.Base).Log("msg", "failed to delete directory for user", "dir", dir, "user", userID, "err", err)
+			level.Warn(am.loggers.Default).Log("msg", "failed to delete directory for user", "dir", dir, "user", userID, "err", err)
 		} else {
-			level.Info(am.Loggers.Base).Log("msg", "deleted local directory for user", "dir", dir, "user", userID)
+			level.Info(am.loggers.Default).Log("msg", "deleted local directory for user", "dir", dir, "user", userID)
 		}
 	}
 }
@@ -1177,7 +1177,7 @@ func (am *MultitenantAlertmanager) deleteUnusedLocalUserState() {
 func (am *MultitenantAlertmanager) getPerUserDirectories() map[string]string {
 	files, err := ioutil.ReadDir(am.cfg.DataDir)
 	if err != nil {
-		level.Warn(am.Loggers.Base).Log("msg", "failed to list local dir", "dir", am.cfg.DataDir, "err", err)
+		level.Warn(am.loggers.Default).Log("msg", "failed to list local dir", "dir", am.cfg.DataDir, "err", err)
 		return nil
 	}
 
@@ -1187,7 +1187,7 @@ func (am *MultitenantAlertmanager) getPerUserDirectories() map[string]string {
 		fullPath := filepath.Join(am.cfg.DataDir, f.Name())
 
 		if !f.IsDir() {
-			level.Warn(am.Loggers.Base).Log("msg", "ignoring unexpected file while scanning local alertmanager configs", "file", fullPath)
+			level.Warn(am.loggers.Default).Log("msg", "ignoring unexpected file while scanning local alertmanager configs", "file", fullPath)
 			continue
 		}
 
@@ -1208,7 +1208,7 @@ func (am *MultitenantAlertmanager) ReadState(ctx context.Context, req *alertmana
 	am.alertmanagersMtx.Unlock()
 
 	if !ok {
-		level.Debug(am.Loggers.Base).Log("msg", "user does not have an alertmanager in this instance", "user", userID)
+		level.Debug(am.loggers.Default).Log("msg", "user does not have an alertmanager in this instance", "user", userID)
 		return &alertmanagerpb.ReadStateResponse{
 			Status: alertmanagerpb.READ_USER_NOT_FOUND,
 			Error:  "alertmanager for this user does not exists",

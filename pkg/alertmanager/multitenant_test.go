@@ -101,8 +101,8 @@ func mockAlertmanagerConfig(t *testing.T) *MultitenantAlertmanagerConfig {
 
 func newLoggers(logger log.Logger) Loggers {
 	return Loggers{
-		Base:     logger,
-		Dispatch: logger,
+		Default:    logger,
+		Dispatcher: logger,
 	}
 }
 

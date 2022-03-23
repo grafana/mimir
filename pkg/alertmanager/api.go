@@ -61,7 +61,7 @@ type UserConfig struct {
 }
 
 func (am *MultitenantAlertmanager) GetUserConfig(w http.ResponseWriter, r *http.Request) {
-	logger := util_log.WithContext(r.Context(), am.Loggers.Base)
+	logger := util_log.WithContext(r.Context(), am.loggers.Default)
 
 	userID, err := tenant.TenantID(r.Context())
 	if err != nil {
@@ -99,7 +99,7 @@ func (am *MultitenantAlertmanager) GetUserConfig(w http.ResponseWriter, r *http.
 }
 
 func (am *MultitenantAlertmanager) SetUserConfig(w http.ResponseWriter, r *http.Request) {
-	logger := util_log.WithContext(r.Context(), am.Loggers.Base)
+	logger := util_log.WithContext(r.Context(), am.loggers.Default)
 	userID, err := tenant.TenantID(r.Context())
 	if err != nil {
 		level.Error(logger).Log("msg", errNoOrgID, "err", err.Error())
@@ -159,7 +159,7 @@ func (am *MultitenantAlertmanager) SetUserConfig(w http.ResponseWriter, r *http.
 // DeleteUserConfig is exposed via user-visible API (if enabled, uses DELETE method), but also as an internal endpoint using POST method.
 // Note that if no config exists for a user, StatusOK is returned.
 func (am *MultitenantAlertmanager) DeleteUserConfig(w http.ResponseWriter, r *http.Request) {
-	logger := util_log.WithContext(r.Context(), am.Loggers.Base)
+	logger := util_log.WithContext(r.Context(), am.loggers.Default)
 	userID, err := tenant.TenantID(r.Context())
 	if err != nil {
 		level.Error(logger).Log("msg", errNoOrgID, "err", err.Error())
@@ -267,7 +267,7 @@ func validateUserConfig(logger log.Logger, cfg alertspb.AlertConfigDesc, limits 
 }
 
 func (am *MultitenantAlertmanager) ListAllConfigs(w http.ResponseWriter, r *http.Request) {
-	logger := util_log.WithContext(r.Context(), am.Loggers.Base)
+	logger := util_log.WithContext(r.Context(), am.loggers.Default)
 	userIDs, err := am.store.ListAllUsers(r.Context())
 	if err != nil {
 		level.Error(logger).Log("msg", "failed to list users of alertmanager", "err", err)

@@ -608,8 +608,8 @@ func (t *Mimir) initAlertManager() (serv services.Service, err error) {
 	}
 
 	loggers := alertmanager.Loggers{
-		Base:     util_log.Logger,
-		Dispatch: util_log.Logger,
+		Default:    util_log.Logger,
+		Dispatcher: util_log.Logger,
 	}
 	t.Alertmanager, err = alertmanager.NewMultitenantAlertmanager(&t.Cfg.Alertmanager, store, t.Overrides, loggers, prometheus.DefaultRegisterer)
 	if err != nil {

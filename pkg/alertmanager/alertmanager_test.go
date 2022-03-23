@@ -60,8 +60,8 @@ func createAlertmanagerAndSendAlerts(t *testing.T, alertGroups, groupsLimit, exp
 	am, err := New(&Config{
 		UserID: user,
 		Loggers: Loggers{
-			Base:     log.NewNopLogger(),
-			Dispatch: log.NewNopLogger(),
+			Default:    log.NewNopLogger(),
+			Dispatcher: log.NewNopLogger(),
 		},
 		Limits:            &mockAlertManagerLimits{maxDispatcherAggregationGroups: groupsLimit},
 		TenantDataDir:     t.TempDir(),

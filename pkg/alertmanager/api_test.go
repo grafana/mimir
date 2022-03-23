@@ -578,9 +578,9 @@ template_files:
 	limits := &mockAlertManagerLimits{}
 	am := &MultitenantAlertmanager{
 		store: prepareInMemoryAlertStore(),
-		Loggers: Loggers{
-			Base:     util_log.Logger,
-			Dispatch: util_log.Logger,
+		loggers: Loggers{
+			Default:    util_log.Logger,
+			Dispatcher: util_log.Logger,
 		},
 		limits: limits,
 	}
@@ -616,9 +616,9 @@ func TestMultitenantAlertmanager_DeleteUserConfig(t *testing.T) {
 
 	am := &MultitenantAlertmanager{
 		store: alertStore,
-		Loggers: Loggers{
-			Base:     util_log.Logger,
-			Dispatch: util_log.Logger,
+		loggers: Loggers{
+			Default:    util_log.Logger,
+			Dispatcher: util_log.Logger,
 		},
 	}
 
