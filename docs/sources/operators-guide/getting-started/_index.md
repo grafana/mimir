@@ -11,9 +11,9 @@ On this page, we provide two different options to getting started with Grafana M
 
 {{< vimeo 689843025 >}}
 
-The written instructions focus on deploying Grafana Mimir as a [monolith]({{< relref "../architecture/deployment-modes.md#monolithic-mode" >}}), which is designed for users getting started with the project. For more information about the different ways to deploy Grafana Mimir, refer to [Deployment Modes]({{< relref "../architecture/deployment-modes.md" >}}).
-
 <br/>
+
+The written instructions focus on deploying Grafana Mimir as a [monolith]({{< relref "../architecture/deployment-modes.md#monolithic-mode" >}}), which is designed for users getting started with the project. For more information about the different ways to deploy Grafana Mimir, refer to [Deployment Modes]({{< relref "../architecture/deployment-modes.md" >}}).
 
 ## Before you begin
 
