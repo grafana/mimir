@@ -8,7 +8,7 @@ weight: 100
 # (Optional) Grafana Mimir Alertmanager
 
 The Mimir Alertmanager adds multi-tenancy support and horizontal scalability to the [Prometheus Alertmanager](https://prometheus.io/docs/alerting/alertmanager/).
-The Mimir Alertmanager is an optional component that accepts alert notifications from the [Mimir ruler]({{< relref "ruler.md" >}}).
+The Mimir Alertmanager is an optional component that accepts alert notifications from the [Mimir ruler]({{< relref "ruler/index.md" >}}).
 The Alertmanager deduplicates and groups alert notifications, and routes them to a notification channel, such as email, PagerDuty, or OpsGenie.
 
 ## Multi-tenancy
@@ -60,7 +60,7 @@ Specify a fallback configuration using the `-alertmanager.configs.fallback` comm
 
 ### Tenant limits
 
-The Grafana Mimir Alertmanager has a number of per-tenant limits documented in [`limits`]({{< relref "../../configuring/reference-configuration-parameters.md#limits" >}}).
+The Grafana Mimir Alertmanager has a number of per-tenant limits documented in [`limits`]({{< relref "../../configuring/reference-configuration-parameters/index.md#limits" >}}).
 Each Mimir Alertmanager limit configuration parameter has an `alertmanager` prefix.
 
 ## Alertmanager UI
@@ -70,7 +70,7 @@ The Mimir Alertmanager exposes the same web UI as the Prometheus Alertmanager at
 When running Grafana Mimir with multi-tenancy enabled, the Alertmanager requires that any HTTP request include the tenant ID header.
 Tenants only see alerts sent to their Alertmanager.
 
-For a complete reference of the tenant ID header and Alertmanager endpoints, refer to [HTTP API]({{< relref "../../reference-http-api/_index.md" >}}).
+For a complete reference of the tenant ID header and Alertmanager endpoints, refer to [HTTP API]({{< relref "../../reference-http-api/index.md" >}}).
 
 You can configure the HTTP path prefix for the UI and the HTTP API:
 
@@ -92,7 +92,7 @@ When using a reverse proxy, use the following settings when you configure the HT
 The Alertmanager shards and replicates alerts by tenant.
 Sharding requires that the number of Alertmanager replicas is greater-than or equal-to the replication factor configured by the `-alertmanager.sharding-ring.replication-factor` flag.
 
-Grafana Mimir Alertmanager replicas use [hash ring]({{< relref "../hash-ring.md" >}}) that is stored in the KV store to discover their peers.
+Grafana Mimir Alertmanager replicas use [hash ring]({{< relref "../hash-ring/index.md" >}}) that is stored in the KV store to discover their peers.
 This means that any Mimir Alertmanager replica can respond to any API or UI request for any tenant.
 If the Mimir Alertmanager replica receiving the HTTP request doesn't own the tenant to which the request belongs, the request is internally routed to the appropriate replica.
 

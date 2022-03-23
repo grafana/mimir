@@ -28,13 +28,17 @@ Mimirtool is a command-line tool that operators and tenants can use to execute a
 
   For more information about the `analyze` command, refer to [Analyze]({{< relref "#analyze" >}}).
 
-- The `bucket-validate` command verifies that an object storage bucket is suitable as a backend storage for Grafana Mimir.
+- The `bucket-validation` command verifies that an object storage bucket is suitable as a backend storage for Grafana Mimir.
 
-  For more information about the `bucket-validate` command, refer to [Bucket-validate]({{< relref "#bucket-validate" >}}).
+  For more information about the `bucket-validation` command, refer to [Bucket validation]({{< relref "#bucket-validation" >}}).
 
 - The `acl` command generates the label-based access control header used in Grafana Enterprise Metrics and Grafana Cloud Metrics.
 
   For more information about the `acl` command, refer to [ACL]({{< relref "#acl" >}}).
+
+- The `config` command helps convert configuration files from Cortex to Grafana Mimir.
+
+  For more information about the `config` command, refer to [Config]({{< relref "#config" >}})
 
 Mimirtool interacts with:
 
@@ -211,10 +215,10 @@ mimirtool rules prepare <file_path>...
 
 ##### Configuration
 
-| Environment variable | Flag                      | Description                                                                                                                  |
-| -------------------- | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| -                    | `-i`, `--in-place`        | Edits the file in place. If not set, the system generates a new file with the extension `.result` that contains the results. |
-| -                    | `-l`, `--label="cluster"` | Specifies the label for aggregations. By default, the label is set to `cluster`.                                             |
+| Flag                      | Description                                                                                                                  |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `-i`, `--in-place`        | Edits the file in place. If not set, the system generates a new file with the extension `.result` that contains the results. |
+| `-l`, `--label="cluster"` | Specifies the label for aggregations. By default, the label is set to `cluster`.                                             |
 
 ##### Example
 
@@ -621,16 +625,230 @@ The following command validates that the object store bucket works correctly.
 mimirtool bucket-validation
 ```
 
-| Env Variable | Flag                   | Description                                                                                                   |
-| ------------ | ---------------------- | ------------------------------------------------------------------------------------------------------------- |
-| -            | `--object-count`       | Sets the number of objects to create and delete. By default, the value is 2000.                               |
-| -            | `--report-every`       | Sets the number operations afterwhich an operations progress report is printed. By default, the value is 100. |
-| -            | `--test-runs`          | Sets the number of times to run the test. By default, the value is 1.                                         |
-| -            | `--prefix`             | Sets the path prefix to use for test objects in the object store.                                             |
-| -            | `--retries-on-error`   | Sets the number of times to retry if the object store returns an error.                                       |
-| -            | `--bucket-config`      | Sets the CLI arguments to configure a storage bucket.                                                         |
-| -            | `--bucket-config-help` | Displays help text that explains how to use the -bucket-config parameter.                                     |
+| Flag                   | Description                                                                                                   |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `--object-count`       | Sets the number of objects to create and delete. By default, the value is 2000.                               |
+| `--report-every`       | Sets the number operations afterwhich an operations progress report is printed. By default, the value is 100. |
+| `--test-runs`          | Sets the number of times to run the test. By default, the value is 1.                                         |
+| `--prefix`             | Sets the path prefix to use for test objects in the object store.                                             |
+| `--retries-on-error`   | Sets the number of times to retry if the object store returns an error.                                       |
+| `--bucket-config`      | Sets the CLI arguments to configure a storage bucket.                                                         |
+| `--bucket-config-help` | Displays help text that explains how to use the -bucket-config parameter.                                     |
+
+### Config
+
+#### Convert
+
+The config convert command converts configuration parameters that work with Cortex v1.10.0 and above to parameters that work with Grafana Mimir v2.0.0.
+It supports converting both CLI flags and [YAML configuration files]({{< relref "../configuring/reference-configuration-parameters/index.md" >}}).
+
+##### Configuration
+
+| Flag                 | Description                                                                                                                                                                                                                                         |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--yaml-file`        | The YAML configuration file to convert.                                                                                                                                                                                                             |
+| `--flags-file`       | A file containing a newline-delimited list of CLI flags to convert.                                                                                                                                                                                 |
+| `--yaml-out`         | File to use for the converted YAML configuration. If not set, output to `stdout`.                                                                                                                                                                   |
+| `--flags-out`        | File to use for list of converted CLI flags. If not set, output to `stdout`.                                                                                                                                                                        |
+| `--update-defaults`  | If you set this flag and you set a configuration parameter to a default value that has changed in Mimir 2.0, the parameter updates to the new default value.                                                                                        |
+| `--include-defaults` | If you set this flag, all default values are included in the output YAML, regardless of whether you explicitly set the values in the input files.                                                                                                   |
+| `-v`, `--verbose`    | If you set this flag, the CLI flags and YAML paths from the old configuration that do not exist in the new configuration are printed to `stderr`. This flag also prints default values that have changed between the old and the new configuration. |
+| `--gem`              | If you set this flag, the tool will convert from Grafana Metrics Enterprise (GEM) v1.7.x to v2.0.0.                                                                                                                                                 |
+
+##### Example
+
+The following example shows a command that converts Cortex [query-frontend]({{< relref "../architecture/components/query-frontend" >}}) YAML configuration file and CLI flag to a Mimir-compatible YAML and CLI flag.
+
+```bash
+mimirtool config convert --yaml-file=cortex.yaml --flags-file=cortex.flags --yaml-out=mimir.yaml --flags-out=mimir.flags
+```
+
+`cortex.yaml` input file:
+
+```yaml
+query_range:
+  results_cache:
+    cache:
+      memcached:
+        expiration: 10s # Expiration was removed in Grafana Mimir, so this parameter will be missing from the output YAML
+        batch_size: 2048
+        parallelism: 10
+      memcached_client:
+        max_idle_conns: 32
+```
+
+`cortex.flags` input file:
+
+```
+-frontend.background.write-back-concurrency=45
+```
+
+After you run the command, the converted output should be:
+
+`mimir.yaml` converted output file:
+
+```yaml
+frontend:
+  results_cache:
+    memcached:
+      max_get_multi_batch_size: 2048
+      max_get_multi_concurrency: 10
+      max_idle_connections: 32
+
+server:
+  http_listen_port: 80
+```
+
+> **Note:** As a precaution,`server.http_listen_port` is included. The default value in Grafana Mimir changed from 80 to 8080. Unless you explicitly set the port in the input configuration, the tool outputs the old default value.
+
+`mimir.flags` converted output file:
+
+```
+-query-frontend.results-cache.memcached.max-async-concurrency=45
+```
+
+##### Verbose output
+
+When you set the `--verbose` flag, the output explains which configuration parameters were removed and which default values were changed.
+The verbose output is printed to `stderr`.
+
+The output includes the following entries:
+
+- `field is no longer supported: <yaml_path>`
+
+  This parameter was used in the input Cortex YAML file and removed from the output configuration.
+
+- `flag is no longer supported: <flag_name>`
+
+  This parameter was used in the input Cortex CLI flags file, but the parameter was removed in Grafana Mimir. The tool removed this CLI flag from the output configuration.
+
+- `using a new default for <yaml_path>: <new_value> (used to be <old_value>)`
+
+  The default value for a configuration parameter changed in Grafana Mimir. This parameter was not explicitly set in the input configuration files.
+  When you run Grafana Mimir with the output configuration from `mimirtool config convert` Grafana Mimir uses the new default.
+
+- `default value for <yaml_path> changed: <new_value> (used to be <old_value>); not updating`
+
+  The default value for a configuration parameter that was set in the input configuration file has changed in Grafana Mimir.
+  The tool has not converted the old default value to the new default value. To automatically update the default value to the new default value, pass the `--update-defaults` flag.
+
+##### Extracting flags from Jsonnet
+
+When using the Grafana Mimir Jsonnet library, all configuration uses flags set as object member key-value pairs.
+To perform conversion with mimirtool, you first need to extract the flags from the JSON manifested from the Jsonnet evaluation.
+
+Use the following bash script to extract the arguments from a specific component:
+
+```bash
+ #!/usr/bin/env bash
+
+ set -euf -o pipefail
+
+ function usage {
+   cat <<EOF
+ Extract the CLI flags from individual components.
+
+ Usage:
+   $0 <resources JSON> <component>
+
+ Examples:
+   $0 resources.json ingester
+   $0 <(tk eval environments/default) distributor
+   $0 <(jsonnet environments/default/main.jsonnet) query-frontend
+ EOF
+ }
+
+ if ! command -v jq &>/dev/null; then
+   echo "jq command not found in PATH"
+   echo "To download jq, refer to https://stedolan.github.io/jq/download/."
+ fi
+
+ if [[ $# -ne 2 ]]; then
+   usage
+   exit 1
+ fi
+
+ jq -rf /dev/stdin -- "$1" <<EOF
+ ..
+ | if type == "object" and .metadata.name == "$2" then .spec.template.spec.containers[]?.args[] else null end
+ | select(. != null)
+ EOF
+```
+
+The first parameter of the script is a JSON file containing Kubernetes resources.
+The second parameter of the script is the name of a container.
+
+To retrieve the arguments from the distributor for a Tanka environment:
+
+```bash
+<PATH TO SCRIPT> <(tk eval environments/default) distributor
+```
+
+The script outputs results that are similar to the following:
+
+```console
+-consul.hostname=consul.cortex-to-mimir.svc.cluster.local:8500
+-distributor.extend-writes=true
+-distributor.ha-tracker.enable=false
+-distributor.ha-tracker.enable-for-all-users=true
+-distributor.ha-tracker.etcd.endpoints=etcd-client.cortex-to-mimir.svc.cluster.local.:2379
+-distributor.ha-tracker.prefix=prom_ha/
+-distributor.ha-tracker.store=etcd
+-distributor.health-check-ingesters=true
+-distributor.ingestion-burst-size=200000
+-distributor.ingestion-rate-limit=10000
+-distributor.ingestion-rate-limit-strategy=global
+-distributor.remote-timeout=20s
+-distributor.replication-factor=3
+-distributor.ring.consul.hostname=consul.cortex-to-mimir.svc.cluster.local:8500
+-distributor.ring.prefix=
+-distributor.shard-by-all-labels=true
+-mem-ballast-size-bytes=1073741824
+-ring.heartbeat-timeout=10m
+-ring.prefix=
+-runtime-config.file=/etc/cortex/overrides.yaml
+-server.grpc.keepalive.max-connection-age=2m
+-server.grpc.keepalive.max-connection-age-grace=5m
+-server.grpc.keepalive.max-connection-idle=1m
+-server.grpc.keepalive.min-time-between-pings=10s
+-server.grpc.keepalive.ping-without-stream-allowed=true
+-target=distributor
+-validation.reject-old-samples=true
+-validation.reject-old-samples.max-age=12h
+```
+
+Use the output of the script as input to run the `mimirtool` configuration conversion.
+
+After conversion, you can use the following script to transform the converted flags back into JSON:
+
+```bash
+#!/usr/bin/env bash
+
+set -euf -o pipefail
+
+function usage {
+ cat <<EOF
+Transform Go flags into JSON key value pairs
+
+Usage:
+ $0 <flags file>
+
+Examples:
+ $0 flags.flags
+EOF
+}
+
+if [[ $# -ne 1 ]]; then
+ usage
+ exit 1
+fi
+
+key_values=$(sed -E -e 's/^-*(.*)=(.*)$/  "\1": "\2",/' "$1")
+printf "{\n%s\n}" "${key_values::-1}"
+```
+
+The only parameter of the script is a file containing the flags, with each flag on its own line.
 
 ## License
 
-Licensed AGPLv3, see [LICENSE](../../LICENSE).
+Licensed AGPLv3, see [LICENSE](https://github.com/grafana/mimir/blob/main/LICENSE).

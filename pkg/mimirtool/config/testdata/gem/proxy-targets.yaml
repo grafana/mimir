@@ -1,0 +1,16 @@
+federation:
+  proxy_targets:
+    - name: target-1
+      url: https://gem-1.com
+      basic_auth:
+        username: user
+        password: pass
+      tls:
+        tls_key_path: /tmp/key
+    - name: target-2
+      url: https://gem-2.com
+      basic_auth:
+        username: u
+        password: p
+      tls:
+        tls_key_path: /tmp/key.key

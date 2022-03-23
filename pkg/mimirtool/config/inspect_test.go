@@ -67,7 +67,7 @@ func TestInspectedEntry_SetThenGet(t *testing.T) {
 			inspectedConfig, err := InspectConfigWithFlags(tc.testStruct, nil)
 			require.NoError(t, err)
 
-			err = inspectedConfig.SetValue(tc.path, tc.expectedValue)
+			err = inspectedConfig.SetValue(tc.path, InterfaceValue(tc.expectedValue))
 			if tc.expectedErr != nil {
 				assert.ErrorIs(t, err, tc.expectedErr)
 			} else {
@@ -78,7 +78,7 @@ func TestInspectedEntry_SetThenGet(t *testing.T) {
 			if tc.expectedErr != nil {
 				assert.ErrorIs(t, err, tc.expectedErr)
 			} else {
-				assert.Equal(t, tc.expectedValue, actualValue)
+				assert.Equal(t, tc.expectedValue, actualValue.AsInterface())
 				assert.NoError(t, err)
 			}
 		})
@@ -218,7 +218,7 @@ func TestInspectedEntry_Delete(t *testing.T) {
 func TestInspectedConfig_MarshalThenUnmarshalRetainsTypeInformation(t *testing.T) {
 	inspectedConfig, err := InspectConfig(&mimir.Config{})
 	require.NoError(t, err)
-	require.NoError(t, inspectedConfig.SetValue("distributor.remote_timeout", time.Minute))
+	require.NoError(t, inspectedConfig.SetValue("distributor.remote_timeout", DurationValue(time.Minute)))
 	bytes, err := yaml.Marshal(inspectedConfig)
 	require.NoError(t, err)
 
@@ -227,7 +227,7 @@ func TestInspectedConfig_MarshalThenUnmarshalRetainsTypeInformation(t *testing.T
 	require.NoError(t, yaml.Unmarshal(bytes, &inspectedConfig))
 
 	val := inspectedConfig.MustGetValue("distributor.remote_timeout")
-	assert.Equal(t, time.Minute, val) // if type info was lost this would be "1m" instead of time.Minute
+	assert.Equal(t, time.Minute, val.AsDuration()) // if type info was lost this would be "1m" instead of time.Minute
 }
 
 func TestInspectedEntry_MarshalYAML(t *testing.T) {
@@ -239,14 +239,14 @@ distributor:
 `), &d))
 
 	val := d.MustGetValue("distributor.remote_timeout")
-	assert.Equal(t, time.Second*10, val)
+	assert.Equal(t, time.Second*10, val.AsDuration())
 }
 
 func TestInspectConfig_HasDefaultValues(t *testing.T) {
 	d, err := InspectConfig(&mimir.Config{})
 	require.NoError(t, err)
 	val := d.MustGetDefaultValue("distributor.remote_timeout")
-	assert.Equal(t, time.Second*20, val)
+	assert.Equal(t, time.Second*20, val.AsDuration())
 }
 
 func TestInspectConfig_LoadingAConfigHasCorrectTypes(t *testing.T) {
@@ -301,7 +301,7 @@ func TestInspectConfig_LoadingAConfigHasCorrectTypes(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			val := params.MustGetDefaultValue(tc.path)
-			assert.IsType(t, tc.expectedType, val)
+			assert.IsType(t, tc.expectedType, val.AsInterface())
 		})
 	}
 }
@@ -341,18 +341,18 @@ distributor:
 `), &d))
 
 			val := d.MustGetValue("distributor.remote_timeout")
-			assert.Equal(t, test.expected, val)
+			assert.Equal(t, test.expected, val.AsDuration())
 
 			require.NoError(t, json.Unmarshal([]byte(`{ "distributor": { "remote_timeout": `+test.jsonRawValue+` }}`), &d))
 			val = d.MustGetValue("distributor.remote_timeout")
-			assert.Equal(t, test.expected, val)
+			assert.Equal(t, test.expected, val.AsDuration())
 		})
 	}
 }
 
 func listAllFields(inspectedConfig *InspectedEntry) []string {
 	var actualFields []string
-	err := inspectedConfig.Walk(func(path string, value interface{}) error {
+	err := inspectedConfig.Walk(func(path string, _ Value) error {
 		actualFields = append(actualFields, path)
 		return nil
 	})

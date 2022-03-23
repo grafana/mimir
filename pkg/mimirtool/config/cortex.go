@@ -4,10 +4,8 @@ package config
 
 import (
 	"fmt"
-	"reflect"
 	"strings"
 
-	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/multierror"
 	"github.com/pkg/errors"
 
@@ -15,33 +13,39 @@ import (
 )
 
 // CortexToMimirMapper maps from cortex-1.11.0 to mimir-2.0.0 configurations
-var CortexToMimirMapper = MultiMapper{
-	MapperFunc(mapInstanceInterfaceNames),
-	// first try to naively map keys from old config to same keys from new config
-	BestEffortDirectMapper{},
-	// next map alertmanager URL in the ruler config
-	MapperFunc(alertmanagerURLMapperFunc),
-	// Removed `-alertmanager.storage.*` configuration options, use `-alertmanager-storage.*` instead. -alertmanager.storage.* should take precedence
-	MapperFunc(alertmanagerStorageMapperFunc),
-	// Removed the support for `-ruler.storage.*`, use `-ruler-storage.*` instead. -ruler.storage.* should take precedence
-	MapperFunc(rulerStorageMapperFunc),
-	// Replace (ruler|alertmanager).storage.s3.sse_encryption=true with (alertmanager|ruler)_storage.s3.sse.type="SSE-S3"
-	mapS3SSE("alertmanager"), mapS3SSE("ruler"),
-	// Apply trivial renames and moves of parameters
-	PathMapper{PathMappings: simpleRenameMappings},
-	// Remap sharding configs
-	MapperFunc(updateKVStoreValue),
-	// Convert provided memcached service and host to the DNS service discovery format
-	MapperFunc(mapMemcachedAddresses),
-	// Map `-*.s3.url` to `-*.s3.(endpoint|access_key_id|secret_access_key)`
-	mapRulerAlertmanagerS3URL("alertmanager.storage", "alertmanager_storage"), mapRulerAlertmanagerS3URL("ruler.storage", "ruler_storage"),
-	// Map `-*.s3.bucketnames` and (maybe part of `-*s3.s3.url`) to `-*.s3.bucket-name`
-	mapRulerAlertmanagerS3Buckets("alertmanager.storage", "alertmanager_storage"), mapRulerAlertmanagerS3Buckets("ruler.storage", "ruler_storage"),
-	// Prevent server.http_listen_port from being updated with a new default and always output it.
-	MapperFunc(mapServerHTTPListenPort),
+func CortexToMimirMapper() Mapper {
+	return MultiMapper{
+		mapCortexInstanceInterfaceNames(),
+		// Try to naively map keys from old config to same keys from new config
+		BestEffortDirectMapper{},
+		// next map alertmanager URL in the ruler config
+		MapperFunc(alertmanagerURLMapperFunc),
+		// Removed `-alertmanager.storage.*` configuration options, use `-alertmanager-storage.*` instead. -alertmanager.storage.* should take precedence
+		MapperFunc(alertmanagerStorageMapperFunc),
+		// Removed the support for `-ruler.storage.*`, use `-ruler-storage.*` instead. -ruler.storage.* should take precedence
+		MapperFunc(rulerStorageMapperFunc),
+		// Replace (ruler|alertmanager).storage.s3.sse_encryption=true with (alertmanager|ruler)_storage.s3.sse.type="SSE-S3"
+		mapS3SSE("alertmanager"), mapS3SSE("ruler"),
+		// Apply trivial renames and moves of parameters
+		PathMapper{PathMappings: cortexRenameMappings},
+		// Remap sharding configs
+		MapperFunc(updateKVStoreValue),
+		// Convert provided memcached service and host to the DNS service discovery format
+		mapMemcachedAddresses("query_range.results_cache.cache.memcached_client", "frontend.results_cache.memcached"),
+		// Map `-*.s3.url` to `-*.s3.(endpoint|access_key_id|secret_access_key)`
+		mapRulerAlertmanagerS3URL("alertmanager.storage", "alertmanager_storage"), mapRulerAlertmanagerS3URL("ruler.storage", "ruler_storage"),
+		// Map `-*.s3.bucketnames` and (maybe part of `-*s3.s3.url`) to `-*.s3.bucket-name`
+		mapRulerAlertmanagerS3Buckets("alertmanager.storage", "alertmanager_storage"), mapRulerAlertmanagerS3Buckets("ruler.storage", "ruler_storage"),
+		// Prevent server.http_listen_port from being updated with a new default and always output it.
+		setOldDefaultExplicitly("server.http_listen_port"),
+		// Manually override the dynamic fields' default values.
+		MapperFunc(mapCortexRingInstanceIDDefaults),
+		// Set frontend.results_cache.backend when results cache was enabled in cortex
+		MapperFunc(mapQueryFrontendBackend),
+	}
 }
 
-var simpleRenameMappings = map[string]Mapping{
+var cortexRenameMappings = map[string]Mapping{
 	"blocks_storage.tsdb.max_exemplars": RenameMapping("limits.max_global_exemplars_per_user"),
 
 	"query_range.results_cache.cache.background.writeback_buffer":     RenameMapping("frontend.results_cache.memcached.max_async_buffer_size"),
@@ -128,6 +132,7 @@ var simpleRenameMappings = map[string]Mapping{
 	"ingester.lifecycler.ring.zone_awareness_enabled":                RenameMapping("ingester.ring.zone_awareness_enabled"),
 	"ingester.lifecycler.tokens_file_path":                           RenameMapping("ingester.ring.tokens_file_path"),
 	"ingester.lifecycler.unregister_on_shutdown":                     RenameMapping("ingester.ring.unregister_on_shutdown"),
+	notInYaml + ".ingester-lifecycler-id":                            RenameMapping("ingester.ring.instance_id"),
 
 	"auth_enabled": RenameMapping("multitenancy_enabled"),
 }
@@ -149,7 +154,7 @@ func updateKVStoreValue(source, target Parameters) error {
 			return errors.Wrapf(err, "could not find %s", storePath)
 		}
 
-		if kvStore != nil {
+		if !kvStore.IsUnset() {
 			// set explicitly, don't change it.
 			continue
 		}
@@ -167,7 +172,7 @@ func updateKVStoreValue(source, target Parameters) error {
 			if err != nil {
 				return errors.Wrapf(err, "could not find %s", shardingEnabledPath)
 			}
-			if consul != nil {
+			if !consul.IsUnset() {
 				// Only update configuration if consul is actually configured.
 				ringUsed = true
 			}
@@ -177,12 +182,8 @@ func updateKVStoreValue(source, target Parameters) error {
 			if err != nil {
 				return errors.Wrapf(err, "could not find %s", shardingEnabledPath)
 			}
-			if enabled != nil {
-				if _, ok := enabled.(string); !ok {
-					return fmt.Errorf("%s is not a string", shardingEnabledPath)
-				}
-				ringUsed = enabled.(string) == "global" // Using of distributor ring was enabled by setting limits.ingestion_rate_strategy to "global".
-			}
+
+			ringUsed = enabled.AsString() == "global" // Using of distributor ring was enabled by setting limits.ingestion_rate_strategy to "global".
 
 		default:
 			enabled, err := source.GetValue(shardingEnabledPath)
@@ -190,12 +191,7 @@ func updateKVStoreValue(source, target Parameters) error {
 				return errors.Wrapf(err, "could not find %s", shardingEnabledPath)
 			}
 
-			if enabled != nil {
-				if _, ok := enabled.(bool); !ok {
-					return fmt.Errorf("%s is not a boolean", shardingEnabledPath)
-				}
-				ringUsed = enabled.(bool)
-			}
+			ringUsed = enabled.AsBool()
 		}
 
 		// If ring is not used, ignore this KV store config.
@@ -208,7 +204,7 @@ func updateKVStoreValue(source, target Parameters) error {
 		// 2) Ring is actually used
 		// => We must set "consul" in new config.
 
-		err = target.SetValue(targetStorePath, "consul")
+		err = target.SetValue(targetStorePath, StringValue("consul"))
 		if err != nil {
 			return errors.Wrapf(err, "failed to update %s", targetStorePath)
 		}
@@ -222,7 +218,7 @@ func alertmanagerURLMapperFunc(source, target Parameters) error {
 	if err != nil {
 		return errors.Wrap(err, "could not convert ruler.enable_alertmanager_discovery")
 	}
-	if amDiscovery == nil || !amDiscovery.(bool) {
+	if !amDiscovery.AsBool() {
 		return nil
 	}
 
@@ -231,11 +227,11 @@ func alertmanagerURLMapperFunc(source, target Parameters) error {
 		return errors.Wrap(err, "could not get ruler.alertmanager_url")
 	}
 
-	amURLs := strings.Split(amURL.(string), ",")
+	amURLs := strings.Split(amURL.AsString(), ",")
 	for i := range amURLs {
 		amURLs[i] = "dnssrvnoa+" + amURLs[i]
 	}
-	return target.SetValue("ruler.alertmanager_url", strings.Join(amURLs, ","))
+	return target.SetValue("ruler.alertmanager_url", StringValue(strings.Join(amURLs, ",")))
 }
 
 // rulerStorageMapperFunc returns a MapperFunc that maps alertmanager.storage and alertmanager_storage to alertmanager_storage.
@@ -320,7 +316,7 @@ func differentFromDefault(p Parameters, path string) bool {
 	val, err1 := p.GetValue(path)
 	defaultVal, err2 := p.GetDefaultValue(path)
 
-	return err1 == nil && err2 == nil && val != nil && !reflect.DeepEqual(val, defaultVal)
+	return err1 == nil && err2 == nil && !val.IsUnset() && !val.Equals(defaultVal)
 }
 
 func mapDotStorage(pathRenames map[string]string, source, target Parameters) error {
@@ -357,9 +353,9 @@ func mapS3SSE(prefix string) MapperFunc {
 		if err != nil {
 			return err
 		}
-		sseWasEnabled, _ := sseWasEnabledVal.(bool)
-		if sseWasEnabled && target.MustGetValue(sseTypePath) == nil {
-			return target.SetValue(sseTypePath, s3.SSES3)
+		sseWasEnabled := sseWasEnabledVal.AsBool()
+		if sseWasEnabled && target.MustGetValue(sseTypePath).IsUnset() {
+			return target.SetValue(sseTypePath, StringValue(s3.SSES3))
 		}
 
 		return nil
@@ -381,7 +377,7 @@ func mapRulerAlertmanagerS3URL(dotStoragePath, storagePath string) MapperFunc {
 		}
 
 		s3URLVal, _ := source.GetValue(oldS3URLPath)
-		s3URL, _ := s3URLVal.(flagext.URLValue)
+		s3URL := s3URLVal.AsURL()
 		if s3URL.URL == nil {
 			return nil
 		}
@@ -393,12 +389,12 @@ func mapRulerAlertmanagerS3URL(dotStoragePath, storagePath string) MapperFunc {
 			password, _ := s3URL.User.Password()
 			setIfNonEmpty := func(p Parameters, path, val string) error {
 				currentVal, _ := target.GetValue(path)
-				currentStr, _ := currentVal.(string)
+				currentStr := currentVal.AsString()
 				if val == "" || currentStr != "" {
 					// Values set by the user take precedence over ones in the URL
 					return nil
 				}
-				err := target.SetValue(path, val)
+				err := target.SetValue(path, StringValue(val))
 				if err != nil {
 					return err
 				}
@@ -414,10 +410,9 @@ func mapRulerAlertmanagerS3URL(dotStoragePath, storagePath string) MapperFunc {
 			if err != nil {
 				return err
 			}
-
 		}
 
-		err := target.SetValue(newS3EndpointPath, s3URL.Host)
+		err := target.SetValue(newS3EndpointPath, StringValue(s3URL.Host))
 		if err != nil {
 			return err
 		}
@@ -438,14 +433,14 @@ func mapRulerAlertmanagerS3Buckets(dotStoragePath, storagePath string) Mapper {
 		}
 
 		bucketNamesVal, _ := source.GetValue(oldBucketNamesPath)
-		bucketNames, _ := bucketNamesVal.(string)
+		bucketNames := bucketNamesVal.AsString()
 		if strings.Contains(bucketNames, ",") {
 			return errors.New(oldBucketNamesPath + ": multiple bucket names cannot be converted, please provide only a single bucket name")
 		}
 
 		if bucketNames == "" {
 			s3URLVal, _ := source.GetValue(oldS3URLPath)
-			s3URL, _ := s3URLVal.(flagext.URLValue)
+			s3URL := s3URLVal.AsURL()
 			if s3URL.URL != nil {
 				bucketNames = strings.TrimPrefix(s3URL.Path, "/")
 			}
@@ -454,36 +449,35 @@ func mapRulerAlertmanagerS3Buckets(dotStoragePath, storagePath string) Mapper {
 			return nil
 		}
 
-		return target.SetValue(newS3BucketPath, bucketNames)
+		return target.SetValue(newS3BucketPath, StringValue(bucketNames))
 	})
 }
 
 // mapMemcachedAddresses maps query_range...memcached_client.host and .service to a DNS Service Discovery format
 // address. This should preserve the behaviour in cortex v1.11.0:
 // https://github.com/cortexproject/cortex/blob/43c646ba3ff906e80a6a1812f2322a0c276e9deb/pkg/chunk/cache/memcached_client.go#L242-L258
-func mapMemcachedAddresses(source, target Parameters) error {
-	const (
-		oldPrefix = "query_range.results_cache.cache.memcached_client"
-		newPrefix = "frontend.results_cache.memcached"
-	)
-	presetAddressesVal, err := source.GetValue(oldPrefix + ".addresses")
-	if err != nil {
-		return err
-	}
-	if presetAddresses, _ := presetAddressesVal.(string); presetAddresses != "" {
-		return nil // respect already set values of addresses
-	}
+// Also applies to GEM and graphite querier caches
+func mapMemcachedAddresses(oldPrefix, newPrefix string) MapperFunc {
+	return func(source, target Parameters) error {
+		presetAddressesVal, err := source.GetValue(oldPrefix + ".addresses")
+		if err != nil {
+			return err
+		}
+		if presetAddressesVal.AsString() != "" {
+			return nil // respect already set values of addresses
+		}
 
-	service, hostname := source.MustGetValue(oldPrefix+".service"), source.MustGetValue(oldPrefix+".host")
-	if service == nil || hostname == nil {
-		return nil
-	}
-	newAddress := fmt.Sprintf("dnssrvnoa+_%s._tcp.%s", service, hostname)
+		service, hostname := source.MustGetValue(oldPrefix+".service"), source.MustGetValue(oldPrefix+".host")
+		if service.IsUnset() || hostname.IsUnset() {
+			return nil
+		}
+		newAddress := fmt.Sprintf("dnssrvnoa+_%s._tcp.%s", service.AsString(), hostname.AsString())
 
-	return target.SetValue(newPrefix+".addresses", newAddress)
+		return target.SetValue(newPrefix+".addresses", StringValue(newAddress))
+	}
 }
 
-func mapInstanceInterfaceNames(source, target Parameters) error {
+func mapCortexInstanceInterfaceNames() Mapper {
 	ifaceNames := map[string]string{
 		"alertmanager.sharding_ring.instance_interface_names":  "alertmanager.sharding_ring.instance_interface_names",
 		"compactor.sharding_ring.instance_interface_names":     "compactor.sharding_ring.instance_interface_names",
@@ -493,48 +487,76 @@ func mapInstanceInterfaceNames(source, target Parameters) error {
 		"ruler.ring.instance_interface_names":                  "ruler.ring.instance_interface_names",
 		"store_gateway.sharding_ring.instance_interface_names": "store_gateway.sharding_ring.instance_interface_names",
 	}
-
-	errs := multierror.New()
-	for sourcePath, targetPath := range ifaceNames {
-		// We want to update these interface_names to use the new autodetection in mimir
-		// if and only if they match the old default AND the user has provided -update-defaults.
-		// To do that we set the new default to nil. If -update-defaults is set, it will replace the
-		// [eth0, en0] default value with nil. pruneNils will then delete that nil parameter.
-		err := target.SetDefaultValue(targetPath, nil)
-		if err != nil {
-			errs.Add(err)
-			continue
-		}
-		instanceNamesVal, _ := source.GetValue(sourcePath)
-		if instanceNamesVal != nil {
-			// The user has set the value to something, we want to keep that
-			errs.Add(target.SetValue(targetPath, instanceNamesVal))
-			continue
-		}
-		errs.Add(target.Delete(targetPath))
-	}
-	return errs.Err()
+	return mapInstanceInterfaceNames(ifaceNames)
 }
 
-func mapServerHTTPListenPort(source, target Parameters) error {
-	portVal, err := source.GetValue("server.http_listen_port")
-	if err != nil {
-		return err
-	}
-	// If the port wasn't set, or it was set to the default
-	if portVal == nil || !differentFromDefault(source, "server.http_listen_port") {
-		err = target.SetValue("server.http_listen_port", 80)
-		// We set the default after the value itself because when mapping defaults
-		// calling `SetValue` actually modifies the default value. So we want to retain the target default as it is.
-		err2 := target.SetDefaultValue("server.http_listen_port", 8080)
-		return multierror.New(err, err2).Err()
-	}
+func mapInstanceInterfaceNames(ifaceNames map[string]string) Mapper {
+	return MapperFunc(func(source, target Parameters) error {
+		errs := multierror.New()
+		for sourcePath, targetPath := range ifaceNames {
+			// We want to update these interface_names to use the new autodetection in mimir
+			// if and only if they match the old default AND the user has provided -update-defaults.
+			// To do that we set the new default to nil. If -update-defaults is set, it will replace the
+			// [eth0, en0] default value with nil. pruneNils will then delete that nil parameter.
+			err := target.SetDefaultValue(targetPath, Nil)
+			if err != nil {
+				errs.Add(err)
+				continue
+			}
+			instanceNamesVal, _ := source.GetValue(sourcePath)
+			if !instanceNamesVal.IsUnset() {
+				// The user has set the value to something, we want to keep that.
+				// But also when mapping defaults this restores the old default when mapping defaults after we've set it to Nil above.
+				errs.Add(target.SetValue(targetPath, instanceNamesVal))
+				continue
+			}
+			errs.Add(target.Delete(targetPath))
+		}
+		return errs.Err()
+	})
+}
 
+func setOldDefaultExplicitly(path string) Mapper {
+	return MapperFunc(func(source, target Parameters) error {
+		v, err := source.GetValue(path)
+		if err != nil {
+			return err
+		}
+
+		if v.IsUnset() || !differentFromDefault(source, path) {
+			err = target.SetValue(path, source.MustGetDefaultValue(path))
+			// We set the default again after the value itself because when prepareSourceDefaults is mapping defaults
+			// `SetValue` actually sets the default value.
+			// Also set the source default to Nil, so that when updating defaults this parameter isn't affected
+			err2 := target.SetDefaultValue(path, Nil)
+			return multierror.New(err, err2).Err()
+		}
+
+		return nil
+	})
+}
+
+func mapQueryFrontendBackend(source, target Parameters) error {
+	v, _ := source.GetValue("query_range.cache_results")
+	if v.AsBool() {
+		return target.SetValue("frontend.results_cache.backend", StringValue("memcached"))
+	}
 	return nil
 }
 
+func mapCortexRingInstanceIDDefaults(source, target Parameters) error {
+	return multierror.New(
+		target.SetDefaultValue("alertmanager.sharding_ring.instance_id", Nil),
+		target.SetDefaultValue("compactor.sharding_ring.instance_id", Nil),
+		target.SetDefaultValue("distributor.ring.instance_id", Nil),
+		target.SetDefaultValue("ingester.ring.instance_id", Nil),
+		target.SetDefaultValue("ruler.ring.instance_id", Nil),
+		target.SetDefaultValue("store_gateway.sharding_ring.instance_id", Nil),
+	).Err()
+}
+
 // YAML Paths for config options removed since Cortex 1.11.0.
-var removedConfigPaths = []string{
+var removedConfigPaths = append(gemRemovedConfigPath, []string{
 	"flusher.concurrent_flushes",                            // -flusher.concurrent-flushes
 	"flusher.flush_op_timeout",                              // -flusher.flush-op-timeout
 	"flusher.wal_dir",                                       // -flusher.wal-dir
@@ -1002,6 +1024,7 @@ var removedConfigPaths = []string{
 	"alertmanager.auto_webhook_root",         // -alertmanager.configs.auto-webhook-root
 	"api.response_compression_enabled",       // -api.response-compression-enabled
 	"compactor.sharding_enabled",             // -compactor.sharding-enabled
+	"compactor.sharding_strategy",            // -compactor.sharding-strategy
 	"distributor.extra_queue_delay",          // -distributor.extra-query-delay
 	"distributor.shard_by_all_labels",        // -distributor.shard-by-all-labels
 	"distributor.sharding_strategy",          // -distributor.sharding-strategy
@@ -1022,9 +1045,9 @@ var removedConfigPaths = []string{
 	"ruler.sharding_strategy",                // -ruler.sharding-strategy
 	"store_gateway.sharding_enabled",         // -store-gateway.sharding-enabled
 	"store_gateway.sharding_strategy",        // -store-gateway.sharding-strategy
-}
+}...)
 
-// CLI options removed since Cortex 1.11.0. These flags only existed as CLI Flags, and were not included in YAML Config.
+// CLI options removed since Cortex 1.10.0. These flags only existed as CLI Flags, and were not included in YAML Config.
 var removedCLIOptions = []string{
 	"event.sample-rate",
 	"frontend.cache-split-interval",

@@ -1,3 +1,0 @@
-blocks_storage:
-  tsdb:
-    max_exemplars: 100

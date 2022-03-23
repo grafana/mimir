@@ -7,7 +7,7 @@ weight: 10
 
 # Getting started with Grafana Mimir
 
-These instructions focus on deploying Grafana Mimir as a [monolith]({{< relref "../architecture/deployment-modes.md#monolithic-mode" >}}), which is designed for users getting started with the project. For more information about the different ways to deploy Grafana Mimir, refer to [Deployment Modes]({{< relref "../architecture/deployment-modes.md" >}}).
+These instructions focus on deploying Grafana Mimir as a [monolith]({{< relref "../architecture/deployment-modes/index.md#monolithic-mode" >}}), which is designed for users getting started with the project. For more information about the different ways to deploy Grafana Mimir, refer to [Deployment Modes]({{< relref "../architecture/deployment-modes/index.md" >}}).
 
 ## Before you begin
 
