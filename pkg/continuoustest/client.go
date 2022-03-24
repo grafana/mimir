@@ -96,7 +96,7 @@ func (c *Client) sendWriteRequest(ctx context.Context, req *prompb.WriteRequest)
 		return 0, err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), c.cfg.WriteTimeout)
+	ctx, cancel := context.WithTimeout(ctx, c.cfg.WriteTimeout)
 	defer cancel()
 
 	compressed := snappy.Encode(nil, data)
