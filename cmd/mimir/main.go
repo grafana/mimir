@@ -74,13 +74,11 @@ func (mf *mainFlags) registerFlags(fs *flag.FlagSet) {
 
 func main() {
 	var (
-		cfg        mimir.Config
-		mainFlags  mainFlags
-		configFile string
-		expandEnv  bool
+		cfg       mimir.Config
+		mainFlags mainFlags
 	)
 
-	parseConfigFileParameter(&configFile, &expandEnv, os.Args[1:])
+	configFile, expandEnv := parseConfigFileParameter(os.Args[1:])
 
 	// This sets default values from flags to the config.
 	// It needs to be called before parsing the config file!
@@ -209,14 +207,14 @@ func main() {
 }
 
 // Parse -config.file and -config.expand-env option via separate flag set, to avoid polluting default one and calling flag.Parse on it twice.
-func parseConfigFileParameter(configFile *string, expandEnv *bool, args []string) {
+func parseConfigFileParameter(args []string) (configFile string, expandEnv bool) {
 	// ignore errors and any output here. Any flag errors will be reported by main flag.Parse() call.
 	fs := flag.NewFlagSet("", flag.ContinueOnError)
 	fs.SetOutput(ioutil.Discard)
 
 	// usage not used in these functions.
-	fs.StringVar(configFile, configFileOption, "", "")
-	fs.BoolVar(expandEnv, configExpandEnv, false, "")
+	fs.StringVar(&configFile, configFileOption, "", "")
+	fs.BoolVar(&expandEnv, configExpandEnv, false, "")
 
 	// Try to find -config.file and -config.expand-env option in the flags. As Parsing stops on the first error, eg. unknown flag, we simply
 	// try remaining parameters until we find config flag, or there are no params left.
@@ -225,6 +223,8 @@ func parseConfigFileParameter(configFile *string, expandEnv *bool, args []string
 		_ = fs.Parse(args)
 		args = args[1:]
 	}
+
+	return
 }
 
 // LoadConfig read YAML-formatted config from filename into cfg.

@@ -340,11 +340,7 @@ func TestParseConfigFileParameter(t *testing.T) {
 		test := test
 		t.Run(test.args, func(t *testing.T) {
 			args := strings.Split(test.args, " ")
-			var (
-				configFile string
-				expandEnv  bool
-			)
-			parseConfigFileParameter(&configFile, &expandEnv, args)
+			configFile, expandEnv := parseConfigFileParameter(args)
 			assert.Equal(t, test.configFile, configFile)
 			assert.Equal(t, test.expandEnv, expandEnv)
 		})
