@@ -26,6 +26,7 @@ type ActiveSeries struct {
 	lastMatchersUpdate time.Time
 
 	// The duration after which series become inactive.
+	// Also used to determine if enough time has passed since configuration reload for valid results.
 	timeout time.Duration
 }
 
@@ -56,11 +57,7 @@ func NewActiveSeries(asm *Matchers, timeout time.Duration) *ActiveSeries {
 
 	// Stripes are pre-allocated so that we only read on them and no lock is required.
 	for i := 0; i < numStripes; i++ {
-		c.stripes[i] = seriesStripe{
-			matchers:       asm,
-			refs:           map[uint64][]seriesEntry{},
-			activeMatching: resizeAndClear(len(asm.MatcherNames()), nil),
-		}
+		c.stripes[i].reinitialize(asm)
 	}
 
 	return c
@@ -89,7 +86,7 @@ func (c *ActiveSeries) CurrentConfig() CustomTrackersConfig {
 	return c.matchers.Config()
 }
 
-// Updates series timestamp to 'now'. Function is called to make a copy of labels if entry doesn't exist yet.
+// UpdateSeries updates series timestamp to 'now'. Function is called to make a copy of labels if entry doesn't exist yet.
 func (c *ActiveSeries) UpdateSeries(series labels.Labels, now time.Time, labelsCopy func(labels.Labels) labels.Labels) {
 	fp := series.Hash()
 	stripeID := fp % numStripes
@@ -114,8 +111,7 @@ func (c *ActiveSeries) clear() {
 // Active returns the total number of active series, as well as a slice of active series matching each one of the
 // custom trackers provided (in the same order as custom trackers are defined).
 // The result is correct only if the third return value is true, which shows if enough time has passed since last reload.
-// This should be called periodically to avoid memory leaks.
-// Active cannot be called concurrently with ReloadMatchers.
+// This should be called periodically to avoid unbounded memory growth.
 func (c *ActiveSeries) Active(now time.Time) (int, []int, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
