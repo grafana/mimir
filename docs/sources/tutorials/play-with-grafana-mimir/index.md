@@ -1,3 +1,24 @@
+---
+title: "Play with Grafana Mimir"
+menuTitle: "Play with Grafana Mimir"
+description: "This tutorial helps you learn about Grafana Mimir, which provides distributed, horizontally scalable, and highly available long term storage for Prometheus."
+weight: 1
+keywords:
+  - mimir tutorial
+  - learn mimir
+  - mimir overview
+  - what is mimir
+  - time series database
+  - TSDB
+  - Prometheus storage
+  - metrics storage
+  - metrics datastore
+  - observability
+  - Prometheus read write
+author:
+  - marco
+---
+
 # Play with Grafana Mimir
 
 Grafana Mimir is a distributed, horizontally scalable, and highly available long term storage for [Prometheus](https://prometheus.io).
@@ -24,10 +45,10 @@ In this tutorial, you'll:
    ```
 1. Navigate to the tutorial directory:
    ```bash
-   cd tutorials/play-with-grafana-mimir/
+   cd docs/sources/tutorials/play-with-grafana-mimir/
    ```
 
-**Note**: the instructions in this tutorial assume that your working directory is `tutorials/play-with-grafana-mimir/`.
+**Note**: the instructions in this tutorial assume that your working directory is `docs/sources/tutorials/play-with-grafana-mimir/`.
 
 ## Start Grafana Mimir and dependencies
 
