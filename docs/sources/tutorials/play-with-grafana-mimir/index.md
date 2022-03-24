@@ -1,7 +1,20 @@
 ---
 title: "Play with Grafana Mimir"
 menuTitle: "Play with Grafana Mimir"
+description: "This tutorial helps you learn about Grafana Mimir, which provides distributed, horizontally scalable, and highly available long term storage for Prometheus."
 weight: 1
+keywords:
+  - mimir tutorial
+  - learn mimir
+  - mimir overview
+  - what is mimir
+  - time series database
+  - TSDB
+  - Prometheus storage
+  - metrics storage
+  - metrics datastore
+  - observability
+  - Prometheus read write
 author:
   - marco
 ---
