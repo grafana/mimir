@@ -20,10 +20,6 @@ The changes focus on making Grafana Mimir easier to run out of the box, includin
 The `mimirtool` automates configuration conversion.
 It provides a simple migration by generating Mimir configuration from Cortex configuration.
 
-{{< vimeo 691929138 >}}
-
-<br/>
-
 ## Before you begin
 
 - Ensure that you are running either Cortex 1.10.X or Cortex 1.11.X.
@@ -129,6 +125,18 @@ Refer to [convert]({{< relref "../operators-guide/tools/mimirtool.md#convert" >}
 ## Updating to Grafana Mimir using Jsonnet
 
 Grafana Mimir has a Jsonnet library that replaces the existing Cortex Jsonnet library and updated monitoring mixin.
+
+### Migrate to Grafana Mimir video
+
+The following video shows you how to migrate to Grafana Mimir using Jsonnet.
+
+{{< vimeo 691929138 >}}
+
+<br/>
+
+### Migrate to Grafana Mimir instructions
+
+The following instructions describe how to migrate to Grafana Mimir using Jsonnet.
 
 To install the updated libraries using `jsonnet-bundler`, run the following commands:
 
