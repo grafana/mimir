@@ -29,7 +29,7 @@ type RoundTripper interface {
 	RoundTrip(ctx context.Context, req *httpgrpc.HTTPRequest) (*httpgrpc.HTTPResponse, error)
 }
 
-// Config defines ruler transport configuration.
+// Config defines remote querier transport configuration.
 type Config struct {
 	// The address of the remote querier to connect to.
 	Address string `yaml:"address"`
@@ -53,7 +53,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet) {
 	c.TLS.RegisterFlagsWithPrefix("ruler.querier", f)
 }
 
-// Transport forwards httpgrpc requests to a remote querier server.
+// Transport forwards httpgrpc requests to a remote querier service.
 type Transport struct {
 	client httpgrpc.HTTPClient
 	conn   *grpc.ClientConn

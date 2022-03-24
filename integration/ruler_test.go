@@ -184,6 +184,9 @@ func TestRulerAPISingleBinary(t *testing.T) {
 	require.NoError(t, mimir.WaitSumMetricsWithOptions(e2e.Equals(0), []string{"prometheus_engine_queries"}, e2e.WithLabelMatchers(
 		labels.MustNewMatcher(labels.MatchEqual, "engine", "querier"))))
 
+	require.NoError(t, mimir.WaitSumMetricsWithOptions(e2e.Equals(0), []string{"prometheus_engine_queries"}, e2e.WithLabelMatchers(
+		labels.MustNewMatcher(labels.MatchEqual, "engine", "ruler"))))
+
 	// Test Cleanup and Restart
 
 	// Stop the running mimir

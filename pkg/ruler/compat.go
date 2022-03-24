@@ -8,10 +8,12 @@ package ruler
 import (
 	"context"
 	"errors"
+	"net/http"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/gogo/status"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/exemplar"
@@ -20,7 +22,7 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/storage"
-	prom_storage "github.com/prometheus/prometheus/storage"
+	prom_remote "github.com/prometheus/prometheus/storage/remote"
 	"github.com/weaveworks/common/httpgrpc"
 	"github.com/weaveworks/common/user"
 
@@ -28,6 +30,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier"
 	querier_stats "github.com/grafana/mimir/pkg/querier/stats"
 	util_log "github.com/grafana/mimir/pkg/util/log"
+	"github.com/grafana/mimir/pkg/util/remotequerier"
 )
 
 // Pusher is an ingester server that accepts pushes.
@@ -127,11 +130,25 @@ func MetricsQueryFunc(qf rules.QueryFunc, queries, failedQueries prometheus.Coun
 		queries.Inc()
 		result, err := qf(ctx, qs, t)
 
-		// We only care about errors returned by underlying Queryable. Errors returned by PromQL engine are "user-errors",
-		// and not interesting here.
-		qerr := QueryableError{}
-		if err != nil && errors.As(err, &qerr) {
-			origErr := qerr.Unwrap()
+		if err != nil {
+			var origErr error
+
+			qerr := QueryableError{}
+			if errors.As(err, &qerr) {
+				// We only care about errors returned by underlying Queryable. Errors returned by PromQL engine are "user-errors",
+				// and not interesting here.
+				origErr = qerr.Unwrap()
+			} else {
+				st, ok := status.FromError(err)
+				if !ok {
+					return result, err
+				}
+				// When remote querier enabled only consider failed queries those returning a 500 status code.
+				if st.Code() == http.StatusInternalServerError {
+					failedQueries.Inc()
+				}
+				return result, err
+			}
 
 			// Not all errors returned by Queryable are interesting, only those that would result in 500 status code.
 			//
@@ -215,7 +232,16 @@ type RulesManager interface {
 // ManagerFactory is a function that creates new RulesManager for given user and notifier.Manager.
 type ManagerFactory func(ctx context.Context, userID string, notifier *notifier.Manager, logger log.Logger, reg prometheus.Registerer) RulesManager
 
-func DefaultTenantManagerFactory(cfg Config, p Pusher, remoteQuerier *RemoteQuerier, overrides RulesLimits, reg prometheus.Registerer) ManagerFactory {
+func DefaultTenantManagerFactory(
+	cfg Config,
+	p Pusher,
+	regularQueryable storage.Queryable,
+	federatedQueryable storage.Queryable,
+	engine *promql.Engine,
+	remoteQuerier *remotequerier.Querier,
+	overrides RulesLimits,
+	reg prometheus.Registerer,
+) ManagerFactory {
 	totalWrites := promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Name: "cortex_ruler_write_requests_total",
 		Help: "Number of write requests to ingesters.",
@@ -240,22 +266,51 @@ func DefaultTenantManagerFactory(cfg Config, p Pusher, remoteQuerier *RemoteQuer
 			Help: "Total amount of wall clock time spent processing queries by the ruler.",
 		}, []string{"user"})
 	}
-
 	return func(ctx context.Context, userID string, notifier *notifier.Manager, logger log.Logger, reg prometheus.Registerer) RulesManager {
 		var queryTime prometheus.Counter = nil
 		if rulerQuerySeconds != nil {
 			queryTime = rulerQuerySeconds.WithLabelValues(userID)
 		}
-		queryFunc := remoteQuerier.Query
+		var queryable storage.Queryable
+		var queryFunc rules.QueryFunc
 
-		queryFunc = MetricsQueryFunc(queryFunc, totalQueries, failedQueries)
-		queryFunc = RecordAndReportRuleQueryMetrics(queryFunc, queryTime, logger)
+		if remoteQuerier == nil {
+			wrapQueryable := func(q storage.Queryable) (queryFunc rules.QueryFunc) {
+				// Wrap errors returned by Queryable to our wrapper, so that we can distinguish between those errors
+				// and errors returned by PromQL engine. Errors from Queryable can be either caused by user (limits) or internal errors.
+				// Errors from PromQL are always "user" errors.
+				q = querier.NewErrorTranslateQueryableWithFn(q, WrapQueryableErrors)
+
+				queryFunc = rules.EngineQueryFunc(engine, q)
+				queryFunc = MetricsQueryFunc(queryFunc, totalQueries, failedQueries)
+				queryFunc = RecordAndReportRuleQueryMetrics(queryFunc, queryTime, logger)
+				return queryFunc
+			}
+			regularQueryFunc := wrapQueryable(regularQueryable)
+			federatedQueryFunc := wrapQueryable(federatedQueryable)
+
+			queryable = regularQueryable
+			queryFunc = TenantFederationQueryFunc(regularQueryFunc, federatedQueryFunc)
+
+		} else {
+			queryable = prom_remote.NewSampleAndChunkQueryableClient(
+				remoteQuerier,
+				labels.Labels{},
+				nil,
+				true,
+				func() (int64, error) {
+					return 0, nil
+				},
+			)
+
+			queryFunc = RemoteQueryFunc(remoteQuerier)
+			queryFunc = MetricsQueryFunc(queryFunc, totalQueries, failedQueries)
+			queryFunc = RecordAndReportRuleQueryMetrics(queryFunc, queryTime, logger)
+		}
 
 		return rules.NewManager(&rules.ManagerOptions{
-			Appendable: NewPusherAppendable(p, userID, overrides, totalWrites, failedWrites),
-			Queryable: prom_storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (prom_storage.Querier, error) {
-				return prom_storage.NoopQuerier(), nil
-			}),
+			Appendable:                 NewPusherAppendable(p, userID, overrides, totalWrites, failedWrites),
+			Queryable:                  queryable,
 			QueryFunc:                  queryFunc,
 			Context:                    user.InjectOrgID(ctx, userID),
 			GroupEvaluationContextFunc: FederatedGroupContextFunc,

@@ -40,9 +40,9 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
 	"github.com/grafana/mimir/pkg/ruler/rulestore"
-	rulertransport "github.com/grafana/mimir/pkg/ruler/transport"
 	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
+	queriertransport "github.com/grafana/mimir/pkg/util/remotequerier/transport"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -117,7 +117,7 @@ type Config struct {
 
 	EnableQueryStats bool `yaml:"query_stats_enabled" category:"advanced"`
 
-	Querier rulertransport.Config `yaml:"querier"`
+	Querier queriertransport.Config `yaml:"querier"`
 
 	TenantFederation TenantFederationConfig `yaml:"tenant_federation"`
 }

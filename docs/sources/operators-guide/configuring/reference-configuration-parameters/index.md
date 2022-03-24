@@ -1394,6 +1394,39 @@ ring:
 # CLI flag: -ruler.query-stats-enabled
 [query_stats_enabled: <boolean> | default = false]
 
+querier:
+  # GRPC listen address of the remote querier(s). Must be a DNS address
+  # (prefixed with dns:///) to enable client side load balancing.
+  # CLI flag: -ruler.querier.address
+  [address: <string> | default = ""]
+
+  # (advanced) Set to true if remote querier connection requires TLS.
+  # CLI flag: -ruler.querier.tls-enabled
+  [tls_enabled: <boolean> | default = false]
+
+  # (advanced) Path to the client certificate file, which will be used for
+  # authenticating with the server. Also requires the key path to be configured.
+  # CLI flag: -ruler.querier.tls-cert-path
+  [tls_cert_path: <string> | default = ""]
+
+  # (advanced) Path to the key file for the client certificate. Also requires
+  # the client certificate to be configured.
+  # CLI flag: -ruler.querier.tls-key-path
+  [tls_key_path: <string> | default = ""]
+
+  # (advanced) Path to the CA certificates file to validate server certificate
+  # against. If not set, the host's root CA certificates are used.
+  # CLI flag: -ruler.querier.tls-ca-path
+  [tls_ca_path: <string> | default = ""]
+
+  # (advanced) Override the expected name on the server certificate.
+  # CLI flag: -ruler.querier.tls-server-name
+  [tls_server_name: <string> | default = ""]
+
+  # (advanced) Skip validating server certificate.
+  # CLI flag: -ruler.querier.tls-insecure-skip-verify
+  [tls_insecure_skip_verify: <boolean> | default = false]
+
 tenant_federation:
   # Enable running rule groups against multiple tenants. The tenant IDs involved
   # need to be in the rule group's 'source_tenants' field. If this flag is set

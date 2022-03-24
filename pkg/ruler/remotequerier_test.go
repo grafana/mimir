@@ -18,6 +18,7 @@ import (
 	"github.com/weaveworks/common/user"
 
 	"github.com/grafana/mimir/pkg/tenant"
+	"github.com/grafana/mimir/pkg/util/remotequerier"
 )
 
 type mockRoundTripper struct {
@@ -30,7 +31,7 @@ func (r *mockRoundTripper) RoundTrip(_ context.Context, req *httpgrpc.HTTPReques
 	return &httpgrpc.HTTPResponse{Code: http.StatusOK, Body: []byte(r.respContent)}, nil
 }
 
-func TestRemoteQuerier_OrgHeaders(t *testing.T) {
+func TestRemote_OrgHeaders(t *testing.T) {
 	testCases := map[string]struct {
 		contextFn       func() context.Context
 		expectedHeaders []*httpgrpc.Header
@@ -55,18 +56,19 @@ func TestRemoteQuerier_OrgHeaders(t *testing.T) {
 	}
 	for tName, tData := range testCases {
 		t.Run(tName, func(t *testing.T) {
-			rt := &mockRoundTripper{
+			mockTr := &mockRoundTripper{
 				respContent: `{"status": "success", "data": {"resultType":"vector","result":[]}}`,
 			}
+			tr := NewOrgRoundTripper(mockTr)
 
-			rq := NewRemoteQuerier(NewOrgRoundTripper(rt), "/prometheus", log.NewNopLogger())
+			queryFunc := RemoteQueryFunc(remotequerier.New(tr, "/prometheus", log.NewNopLogger()))
 
-			_, err := rq.Query(tData.contextFn(), "up", time.Now())
+			_, err := queryFunc(tData.contextFn(), "up", time.Now())
 			require.NoError(t, err)
 
 			for _, hd := range tData.expectedHeaders {
 				var isPresent bool
-				for _, reqHeader := range rt.reqHeaders {
+				for _, reqHeader := range mockTr.reqHeaders {
 					if reqHeader.Key != hd.Key || !reflect.DeepEqual(reqHeader.Values, hd.Values) {
 						continue
 					}
@@ -81,7 +83,7 @@ func TestRemoteQuerier_OrgHeaders(t *testing.T) {
 	}
 }
 
-func TestRemoteQuerier_Response(t *testing.T) {
+func TestRemote_QueryResponse(t *testing.T) {
 	testCases := map[string]struct {
 		respContent       string
 		expectedPromQLVec promql.Vector
@@ -129,11 +131,14 @@ func TestRemoteQuerier_Response(t *testing.T) {
 	}
 	for tName, tData := range testCases {
 		t.Run(tName, func(t *testing.T) {
-			rt := &mockRoundTripper{respContent: tData.respContent}
+			mockTr := &mockRoundTripper{
+				respContent: tData.respContent,
+			}
+			tr := NewOrgRoundTripper(mockTr)
 
-			rq := NewRemoteQuerier(NewOrgRoundTripper(rt), "/prometheus", log.NewNopLogger())
+			queryFunc := RemoteQueryFunc(remotequerier.New(tr, "/prometheus", log.NewNopLogger()))
 
-			resp, err := rq.Query(user.InjectOrgID(context.Background(), "tenant-1"), "up", time.Now())
+			resp, err := queryFunc(user.InjectOrgID(context.Background(), "tenant-1"), "up", time.Now())
 
 			if len(tData.expectedError) > 0 {
 				require.Error(t, err)

@@ -25,6 +25,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/rules"
+	prom_storage "github.com/prometheus/prometheus/storage"
 	"github.com/thanos-io/thanos/pkg/discovery/dns"
 	httpgrpc_server "github.com/weaveworks/common/httpgrpc/server"
 	"github.com/weaveworks/common/server"
@@ -45,12 +46,13 @@ import (
 	"github.com/grafana/mimir/pkg/querier/tenantfederation"
 	querier_worker "github.com/grafana/mimir/pkg/querier/worker"
 	"github.com/grafana/mimir/pkg/ruler"
-	rulertransport "github.com/grafana/mimir/pkg/ruler/transport"
 	"github.com/grafana/mimir/pkg/scheduler"
 	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
 	util_log "github.com/grafana/mimir/pkg/util/log"
+	"github.com/grafana/mimir/pkg/util/remotequerier"
+	queriertransport "github.com/grafana/mimir/pkg/util/remotequerier/transport"
 	"github.com/grafana/mimir/pkg/util/validation"
 	"github.com/grafana/mimir/pkg/util/version"
 )
@@ -542,17 +544,42 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 
 	t.Cfg.Ruler.Ring.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
 	t.Cfg.Ruler.Ring.ListenPort = t.Cfg.Server.GRPCListenPort
+	rulerRegisterer := prometheus.WrapRegistererWith(prometheus.Labels{"engine": "ruler"}, prometheus.DefaultRegisterer)
 
-	tr, err := rulertransport.New(t.Cfg.Ruler.Querier)
-	if err != nil {
-		return nil, err
+	var queryable, federatedQueryable prom_storage.Queryable
+	// TODO: Consider wrapping logger to differentiate from querier module logger
+	queryable, _, eng := querier.New(t.Cfg.Querier, t.Overrides, t.Distributor, t.StoreQueryables, rulerRegisterer, util_log.Logger, t.ActivityTracker)
+
+	if t.Cfg.Ruler.TenantFederation.Enabled {
+		if !t.Cfg.TenantFederation.Enabled {
+			return nil, errors.New("-ruler.tenant-federation.enabled=true requires -tenant-federation.enabled=true")
+		}
+		// Setting bypassForSingleQuerier=false forces `tenantfederation.NewQueryable` to add
+		// the `__tenant_id__` label on all metrics regardless if they're for a single tenant or multiple tenants.
+		// This makes this label more consistent and hopefully less confusing to users.
+		const bypassForSingleQuerier = false
+
+		federatedQueryable = tenantfederation.NewQueryable(queryable, bypassForSingleQuerier, util_log.Logger)
 	}
-	remoteQuerier := ruler.NewRemoteQuerier(
-		ruler.NewOrgRoundTripper(tr),
-		t.Cfg.API.PrometheusHTTPPrefix,
-		util_log.Logger,
+	var remoteQuerier *remotequerier.Querier
+
+	if len(t.Cfg.Ruler.Querier.Address) > 0 {
+		tr, err := queriertransport.New(t.Cfg.Ruler.Querier)
+		if err != nil {
+			return nil, err
+		}
+		remoteQuerier = remotequerier.New(ruler.NewOrgRoundTripper(tr), t.Cfg.API.PrometheusHTTPPrefix, util_log.Logger)
+	}
+	managerFactory := ruler.DefaultTenantManagerFactory(
+		t.Cfg.Ruler,
+		t.Distributor,
+		queryable,
+		federatedQueryable,
+		eng,
+		remoteQuerier,
+		t.Overrides,
+		prometheus.DefaultRegisterer,
 	)
-	managerFactory := ruler.DefaultTenantManagerFactory(t.Cfg.Ruler, t.Distributor, remoteQuerier, t.Overrides, prometheus.DefaultRegisterer)
 
 	// We need to prefix and add a label to the metrics for the DNS resolver because, unlike other mimir components,
 	// it doesn't already have the `cortex_` prefix and the `component` label to the metrics it emits
