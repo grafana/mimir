@@ -11,7 +11,7 @@ import (
 )
 
 func alignTimestampToInterval(ts time.Time, interval time.Duration) time.Time {
-	return time.Unix(0, (ts.UnixNano()/int64(interval))*int64(interval))
+	return ts.Truncate(interval)
 }
 
 func generateSineWaveSeries(name string, t time.Time, numSeries int) []prompb.TimeSeries {
@@ -38,8 +38,7 @@ func generateSineWaveSeries(name string, t time.Time, numSeries int) []prompb.Ti
 }
 
 func generateSineWaveValue(t time.Time) float64 {
-	// With a 15-second scrape interval this gives a ten-minute period
-	period := float64(40 * (15 * time.Second))
-	radians := float64(t.UnixNano()) / period * 2 * math.Pi
+	period := 10 * time.Minute
+	radians := 2 * math.Pi * float64(t.UnixNano()) / float64(period.Nanoseconds())
 	return math.Sin(radians)
 }

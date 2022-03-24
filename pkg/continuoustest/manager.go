@@ -39,13 +39,16 @@ func (m *Manager) Run(ctx context.Context) error {
 		}
 	}
 
-	// Continuously run all tests. Each test is executed in a dedicated routine.
+	// Continuously run all tests. Each test is executed in a dedicated goroutine.
 	wg := sync.WaitGroup{}
 	wg.Add(len(m.tests))
 
 	for _, test := range m.tests {
 		go func(t Test) {
 			defer wg.Done()
+
+			// Run it immediately, and then every configured period.
+			t.Run(ctx, time.Now())
 
 			// TODO We may consider to allow to configure the test interval.
 			ticker := time.NewTicker(time.Minute)
