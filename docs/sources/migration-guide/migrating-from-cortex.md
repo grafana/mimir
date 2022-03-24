@@ -126,6 +126,18 @@ Refer to [convert]({{< relref "../operators-guide/tools/mimirtool.md#convert" >}
 
 Grafana Mimir has a Jsonnet library that replaces the existing Cortex Jsonnet library and updated monitoring mixin.
 
+### Migrate to Grafana Mimir video
+
+The following video shows you how to migrate to Grafana Mimir using Jsonnet.
+
+{{< vimeo 691929138 >}}
+
+<br/>
+
+### Migrate to Grafana Mimir instructions
+
+The following instructions describe how to migrate to Grafana Mimir using Jsonnet.
+
 To install the updated libraries using `jsonnet-bundler`, run the following commands:
 
 ```bash
