@@ -14,8 +14,8 @@ Grafana Mimir documentation uses [Hugo page bundles](https://gohugo.io/content-m
 
 The documentation adopts the following conventions:
 
-- If a directory contains only one page, then it's a "Leaf bundle" and the content filename must be `index.md`.
-- If a directory contains multiple pages or subdirectories, then it's a "Branch bundle" and the index filename must be `_index.md`.
-- Images must be placed in the same directory as the markdown file linking the image, and the markdown file linking an image can only be `index.md` or `_index.md`. If any page which is different than `index.md` or `_index.md` needs to link an image, covert the page into a "Leaf bundle".
+- If a directory contains only one page, then it's a _leaf bundle_ and the content filename must be `index.md`.
+- If a directory contains multiple pages or subdirectories, then it's a _branch bundle_ and the index filename must be `_index.md`.
+- Images need to be in the same directory as the Markdown file that links to the image, and the Markdown file that links to an image can only be `index.md` or `_index.md`. If any page that is different than `index.md` or `_index.md` needs to link to an image, covert the page to a _leaf bundle_.
 
-For more information, refer to [Hugo page bundles documentation](https://gohugo.io/content-management/page-bundles/).
+For more information, refer to Hugo’s [Page bundles](https://gohugo.io/content-management/page-bundles/) documentation.
