@@ -52,8 +52,6 @@ const (
 var testMode = false
 
 type mainFlags struct {
-	configFile           string
-	expandEnv            bool
 	ballastBytes         int `category:"advanced"`
 	mutexProfileFraction int `category:"advanced"`
 	blockProfileRate     int `category:"advanced"`
@@ -64,10 +62,6 @@ type mainFlags struct {
 }
 
 func (mf *mainFlags) registerFlags(fs *flag.FlagSet) {
-	// Ignore -config.file and -config.expand-env here, since they are parsed separately, but are still present on the command line.
-	flagext.IgnoredFlag(fs, configFileOption, "Configuration file to load.")
-	_ = fs.Bool(configExpandEnv, false, "Expands ${var} or $var in config according to the values of the environment variables.")
-
 	fs.IntVar(&mf.ballastBytes, "mem-ballast-size-bytes", 0, "Size of memory ballast to allocate.")
 	fs.IntVar(&mf.mutexProfileFraction, "debug.mutex-profile-fraction", 0, "Fraction of mutex contention events that are reported in the mutex profile. On average 1/rate events are reported. 0 to disable.")
 	fs.IntVar(&mf.blockProfileRate, "debug.block-profile-rate", 0, "Fraction of goroutine blocking events that are reported in the blocking profile. 1 to include every blocking event in the profile, 0 to disable.")
@@ -80,25 +74,31 @@ func (mf *mainFlags) registerFlags(fs *flag.FlagSet) {
 
 func main() {
 	var (
-		cfg       mimir.Config
-		mainFlags mainFlags
+		cfg        mimir.Config
+		mainFlags  mainFlags
+		configFile string
+		expandEnv  bool
 	)
 
-	parseConfigFileParameter(&mainFlags.configFile, &mainFlags.expandEnv, os.Args[1:])
+	parseConfigFileParameter(&configFile, &expandEnv, os.Args[1:])
 
 	// This sets default values from flags to the config.
 	// It needs to be called before parsing the config file!
 	flagext.RegisterFlagsWithLogger(util_log.Logger, &cfg)
 
-	if mainFlags.configFile != "" {
-		if err := LoadConfig(mainFlags.configFile, mainFlags.expandEnv, &cfg); err != nil {
-			fmt.Fprintf(os.Stderr, "error loading config from %s: %v\n", mainFlags.configFile, err)
+	if configFile != "" {
+		if err := LoadConfig(configFile, expandEnv, &cfg); err != nil {
+			fmt.Fprintf(os.Stderr, "error loading config from %s: %v\n", configFile, err)
 			if testMode {
 				return
 			}
 			os.Exit(1)
 		}
 	}
+
+	// Ignore -config.file and -config.expand-env here, since they are parsed separately, but are still present on the command line.
+	flagext.IgnoredFlag(flag.CommandLine, configFileOption, "Configuration file to load.")
+	_ = flag.CommandLine.Bool(configExpandEnv, false, "Expands ${var} or $var in config according to the values of the environment variables.")
 
 	mainFlags.registerFlags(flag.CommandLine)
 
