@@ -39,8 +39,8 @@ function wet_run {
 readonly WEBSITE_DIR="$1"
 # TAG is the git tag for the release.
 readonly TAG="$2"
-# VERSION is TAG without the leading 'v'.
-readonly VERSION="${TAG/v/}"
+# VERSION is TAG without the leading 'mimir-'.
+readonly VERSION="${TAG/mimir-/}"
 
 # MIMIR_DIR is the path to the grafana/mimir repository.
 readonly MIMIR_DIR="${MIMIR_DIR:-$(git rev-parse --show-toplevel)}"
