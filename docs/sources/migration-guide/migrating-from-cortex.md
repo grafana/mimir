@@ -20,7 +20,7 @@ The changes focus on making Grafana Mimir easier to run out of the box, includin
 The `mimirtool` automates configuration conversion.
 It provides a simple migration by generating Mimir configuration from Cortex configuration.
 
-{{< vimeo 672821966 >}}
+{{< vimeo 691929138 >}}
 
 <br/>
 
