@@ -548,3 +548,14 @@ groups:
   - expr: |
       sum by (cluster, job) (rate(cortex_alertmanager_partial_state_merges_failed_total[5m]))
     record: cluster_job:cortex_alertmanager_partial_state_merges_failed_total:rate5m
+- name: mimir_ingester_rules
+  rules:
+  - expr: |
+      sum by(cluster, job, instance) (rate(cortex_ingester_ingested_samples_total[1m]))
+    record: cluster_job_instance:cortex_ingester_ingested_samples_total:rate1m
+  - expr: |
+      sum by(cluster, job, instance) (rate(cortex_ingester_ingested_samples_total[1h]))
+    record: cluster_job_instance:cortex_ingester_ingested_samples_total:rate1h
+  - expr: |
+      sum by(cluster, job, instance) (rate(cortex_ingester_ingested_samples_total[4h]))
+    record: cluster_job_instance:cortex_ingester_ingested_samples_total:rate4h
