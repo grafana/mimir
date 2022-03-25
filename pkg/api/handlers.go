@@ -43,10 +43,10 @@ func newIndexPageContent() *IndexPageContent {
 type IndexPageContent struct {
 	mu sync.Mutex
 
-	elements []IndexPagerLinkGroup
+	elements []IndexPageLinkGroup
 }
 
-type IndexPagerLinkGroup struct {
+type IndexPageLinkGroup struct {
 	weight int
 	Desc   string
 	Path   string
@@ -73,12 +73,12 @@ func (pc *IndexPageContent) AddLinks(weight int, groupDesc string, links []Index
 	pc.mu.Lock()
 	defer pc.mu.Unlock()
 
-	pc.elements = append(pc.elements, IndexPagerLinkGroup{weight: weight, Desc: groupDesc, Links: links})
+	pc.elements = append(pc.elements, IndexPageLinkGroup{weight: weight, Desc: groupDesc, Links: links})
 }
 
-func (pc *IndexPageContent) GetContent() []IndexPagerLinkGroup {
+func (pc *IndexPageContent) GetContent() []IndexPageLinkGroup {
 	pc.mu.Lock()
-	els := append([]IndexPagerLinkGroup(nil), pc.elements...)
+	els := append([]IndexPageLinkGroup(nil), pc.elements...)
 	pc.mu.Unlock()
 
 	sort.Slice(els, func(i, j int) bool {
