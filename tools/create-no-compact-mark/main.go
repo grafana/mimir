@@ -7,7 +7,6 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	"os"
 	"os/signal"
 	"syscall"
 	"time"
@@ -61,8 +60,7 @@ func main() {
 
 	blockID, err := ulid.Parse(cfg.blockID)
 	if err != nil {
-		fmt.Printf("Can't parse %q as ULID: %s.\n", cfg.blockID, err)
-		os.Exit(1)
+		log.Fatalf("Can't parse %q as ULID: %s.\n", cfg.blockID, err)
 	}
 
 	noCompactMark, err := json.Marshal(metadata.NoCompactMark{
