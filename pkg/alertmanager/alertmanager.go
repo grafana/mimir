@@ -72,6 +72,7 @@ type Config struct {
 	Logger      log.Logger
 	PeerTimeout time.Duration
 	Retention   time.Duration
+	Concurrency int
 	ExternalURL *url.URL
 	Limits      Limits
 
@@ -244,9 +245,10 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 	}
 
 	am.api, err = api.New(api.Options{
-		Alerts:     am.alerts,
-		Silences:   am.silences,
-		StatusFunc: am.marker.Status,
+		Alerts:      am.alerts,
+		Silences:    am.silences,
+		StatusFunc:  am.marker.Status,
+		Concurrency: cfg.Concurrency,
 		// Mimir should not expose cluster information back to its tenants.
 		Peer:     &NilPeer{},
 		Registry: am.registry,

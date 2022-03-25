@@ -79,6 +79,8 @@ type MultitenantAlertmanagerConfig struct {
 
 	EnableAPI bool `yaml:"enable_api" category:"advanced"`
 
+	Concurrency int `yaml:"concurrency" category:"advanced"`
+
 	// For distributor.
 	AlertmanagerClient ClientConfig `yaml:"alertmanager_client"`
 
@@ -103,6 +105,7 @@ func (cfg *MultitenantAlertmanagerConfig) RegisterFlags(f *flag.FlagSet, logger 
 	f.DurationVar(&cfg.PollInterval, "alertmanager.configs.poll-interval", 15*time.Second, "How frequently to poll Alertmanager configs.")
 
 	f.BoolVar(&cfg.EnableAPI, "alertmanager.enable-api", true, "Enable the alertmanager config API.")
+	f.IntVar(&cfg.Concurrency, "alertmanager.concurrency", 0, "Concurrency limit for GET requests. The zero value (and negative values) result in a limit of GOMAXPROCS or 8, whichever is larger. Status code 503 is served for GET requests that would exceed the concurrency limit.")
 
 	cfg.AlertmanagerClient.RegisterFlagsWithPrefix("alertmanager.alertmanager-client", f)
 	cfg.Persister.RegisterFlagsWithPrefix("alertmanager", f)
@@ -847,6 +850,7 @@ func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *amco
 		Logger:            am.logger,
 		PeerTimeout:       am.cfg.PeerTimeout,
 		Retention:         am.cfg.Retention,
+		Concurrency:       am.cfg.Concurrency,
 		ExternalURL:       am.cfg.ExternalURL.URL,
 		Replicator:        am,
 		ReplicationFactor: am.cfg.ShardingRing.ReplicationFactor,
