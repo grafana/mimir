@@ -30,6 +30,8 @@ func main() {
 		blockID string
 		reason  string
 		details string
+
+		dryRun bool
 	}{}
 	cfg.bucket.RegisterFlags(flag.CommandLine)
 	flag.StringVar(&cfg.blockID, "ulid", "", "The ULID of the block to mark.")
@@ -38,6 +40,7 @@ func main() {
 		fmt.Sprintf("The reason field of the marker. Valid values are %q, %q and %q.",
 			metadata.ManualNoCompactReason, metadata.IndexSizeExceedingNoCompactReason, metadata.OutOfOrderChunksNoCompactReason))
 	flag.StringVar(&cfg.details, "details", "", "The details field of the marker.")
+	flag.BoolVar(&cfg.dryRun, "dry-run", false, "Don't upload the marker, just print the intentions on the screen.")
 	flag.Parse()
 
 	if cfg.userID == "" {
@@ -84,11 +87,22 @@ func main() {
 		log.Fatalf("Can't create bucket: %s.", err)
 	}
 
-	filename := bucketindex.NoCompactMarkFilepath(blockID)
-	userBucket := bucket.NewUserBucketClient(cfg.userID, bkt, nil)
-	if err := userBucket.Upload(ctx, filename, bytes.NewReader(noCompactMark)); err != nil {
-		log.Fatalf("Can't upload the compaction mark to the bucket: %s.", err)
+	tenantMarkFilename := bucketindex.NoCompactMarkFilepath(blockID)
+	blockMarkFilename := fmt.Sprintf("%s/%s", blockID, metadata.NoCompactMarkFilename)
+	if cfg.dryRun {
+		log.Printf("Mark contents: %s", string(noCompactMark))
+		log.Printf("Would be uploaded to %s and to %s", tenantMarkFilename, blockMarkFilename)
+		log.Printf("No changes have been made because the --dry-run flag was provided.")
+		return
 	}
 
-	log.Printf("Successfully uploaded no-compaction mark file %q.", filename)
+	userBucket := bucket.NewUserBucketClient(cfg.userID, bkt, nil)
+	if err := userBucket.Upload(ctx, tenantMarkFilename, bytes.NewReader(noCompactMark)); err != nil {
+		log.Fatalf("Can't upload the tenant compaction mark to the bucket: %s.", err)
+	}
+	if err := userBucket.Upload(ctx, blockMarkFilename, bytes.NewReader(noCompactMark)); err != nil {
+		log.Fatalf("Can't upload the block compaction mark to the bucket: %s.", err)
+	}
+
+	log.Printf("Successfully uploaded no-compaction mark file %q.", tenantMarkFilename)
 }
