@@ -5,6 +5,18 @@
 * [CHANGE] Compactor: No longer upload debug meta files to object storage. #1257
 * [FEATURE] Ruler: Allow setting `evaluation_delay` for each rule group via rules group configuration file. #1474
 * [FEATURE] Distributor: Added the ability to forward specifics metrics to alternative remote_write API endpoints. #1052
+* [FEATURE] Alertmanager: Added the ability to configure GRPC client settings #1547
+  - `-alertmanager.alertmanager-client.backoff-max-period duration`
+  - `-alertmanager.alertmanager-client.backoff-min-period duration`
+  - `-alertmanager.alertmanager-client.backoff-on-ratelimits`
+  - `-alertmanager.alertmanager-client.backoff-retries int`
+  - `-alertmanager.alertmanager-client.grpc-client-rate-limit float`
+  - `-alertmanager.alertmanager-client.grpc-client-rate-limit-burst int`
+  - `-alertmanager.alertmanager-client.grpc-compression string`
+  - `-alertmanager.alertmanager-client.grpc-max-recv-msg-size int`
+  - `-alertmanager.alertmanager-client.grpc-max-send-msg-size int`
+* [FEATURE] Alertmanager: Added the ability to configure Alertmanager GET request concurrency #1547
+  - `alertmanager.concurrency`
 * [ENHANCEMENT] Ruler: Add more detailed query information to ruler query stats logging. #1411
 * [ENHANCEMENT] Admin: Admin API now has some styling. #1482
 * [BUGFIX] Query-frontend: do not shard queries with a subquery unless the subquery is inside a shardable aggregation function call. #1542
