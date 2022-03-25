@@ -36,7 +36,7 @@ func main() {
 	flag.StringVar(&cfg.blockID, "ulid", "", "The ULID of the block to mark.")
 	flag.StringVar(&cfg.userID, "user", "", "User (tenant).")
 	flag.StringVar(&cfg.reason, "reason", string(metadata.ManualNoCompactReason),
-		fmt.Sprintf("The reason field of the marker. Valid values are %q, %q and %q",
+		fmt.Sprintf("The reason field of the marker. Valid values are %q, %q and %q.",
 			metadata.ManualNoCompactReason, metadata.IndexSizeExceedingNoCompactReason, metadata.OutOfOrderChunksNoCompactReason))
 	flag.StringVar(&cfg.details, "details", "", "The details field of the marker.")
 	flag.Parse()
