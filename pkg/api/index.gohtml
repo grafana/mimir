@@ -25,7 +25,7 @@
         {{ if $i }}
             <hr>
         {{ end }}
-            <dt>{{ .Desc }}</dt>
+            <dt><h2>{{ .Desc }}</h2></dt>
             {{ range .Links }}
                 <dd>
                     <a href="{{ AddPathPrefix .Path }}">{{ .Desc }}</a>
