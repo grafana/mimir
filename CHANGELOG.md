@@ -9,7 +9,14 @@
     - `-alertmanager.max-recv-msg-size` now defaults to 100 MiB (previously was 16 MiB)
 * [FEATURE] Ruler: Allow setting `evaluation_delay` for each rule group via rules group configuration file. #1474
 * [FEATURE] Ruler: Added support for expression remote evaluation. #1536
-  * Added `-ruler.querier.address` config flag.
+  * The following CLI flags (and their respective YAML config options) have been added:
+    * `-ruler.querier.address`
+    * `-ruler.querier.tls-enabled`
+    * `-ruler.querier.tls-ca-path`
+    * `-ruler.querier.tls-cert-path`
+    * `-ruler.querier.tls-key-path`
+    * `-ruler.querier.tls-server-name`
+    * `-ruler.querier.tls-insecure-skip-verify`
 * [FEATURE] Distributor: Added the ability to forward specifics metrics to alternative remote_write API endpoints. #1052
 * [ENHANCEMENT] Alertmanager API: Concurrency limit for GET requests is now configurable using `-alertmanager.max-concurrent-get-requests-per-tenant`. #1547
 * [ENHANCEMENT] Alertmanager: Added the ability to configure additional gRPC client settings for the Alertmanager distributor #1547
