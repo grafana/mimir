@@ -14,31 +14,25 @@
 <body>
 <div class="container">
     <div class="page-header">
-        <h1>Grafana Mimir Admin<img class="mimir-brand pull-right" src="{{ AddPathPrefix "/static/mimir-icon.png" }}"></h1>
+        <h1>Grafana Mimir Admin<img class="mimir-brand pull-right" src="{{ AddPathPrefix "/static/mimir-icon.png" }}">
+        </h1>
     </div>
     <ul class="nav nav-pills nav-stacked">
         {{ range . }}
-            {{- /*gotype: github.com/grafana/mimir/pkg/api.IndexPageNavElement */ -}}
-            {{ if .Dropdown }}
-                <li role="presentation" class="dropdown">
-                    <a class="dropdown-toggle" data-toggle="dropdown" href="#" role="button" aria-haspopup="true"
-                       aria-expanded="false">
-                        {{ .Desc }} <span class="caret"></span>
-                    </a>
-                    <ul class="dropdown-menu">
-                        {{ range .Dropdown }}
-                            <li>
-                                <a href="{{ AddPathPrefix .Path }}">
-                                    {{ if .Dangerous }}<span class="label label-danger">Dangerous</span>{{ end }}
-                                    {{ .Desc }}
-                                </a>
-                            </li>
+            {{- /*gotype: github.com/grafana/mimir/pkg/api.IndexPagerLinkGroup */ -}}
+            <div class="panel panel-default">
+                <div class="panel-body">
+                    <dl class="dl-horizontal">
+                        <dt>{{ .Desc }}</dt>
+                        {{ range .Links }}
+                            <dd>
+                                <a href="{{ AddPathPrefix .Path }}">{{ .Desc }}</a>
+                                {{ if .Dangerous }}<span class="label label-danger">Dangerous</span>{{ end }}
+                            </dd>
                         {{ end }}
-                    </ul>
-                </li>
-            {{ else }}
-                <li role="presentation"><a href="{{ AddPathPrefix .Path }}">{{ .Desc }}</a></li>
-            {{ end }}
+                    </dl>
+                </div>
+            </div>
         {{ end }}
     </ul>
 </div>
