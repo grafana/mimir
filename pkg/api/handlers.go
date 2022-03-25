@@ -43,22 +43,23 @@ func newIndexPageContent() *IndexPageContent {
 type IndexPageContent struct {
 	mu sync.Mutex
 
-	elements []IndexPageNavElement
+	elements []IndexPageLinkGroup
 }
 
-type IndexPageNavElement struct {
-	weight   int
-	Desc     string
-	Path     string
-	Dropdown []IndexPageDropdownElement
+type IndexPageLinkGroup struct {
+	weight int
+	Desc   string
+	Path   string
+	Links  []IndexPageLink
 }
 
-type IndexPageDropdownElement struct {
+type IndexPageLink struct {
 	Desc      string
 	Path      string
 	Dangerous bool
 }
 
+// List of weights to order link groups in the same order as weights are ordered here.
 const (
 	serviceStatusWeight = iota
 	configWeight
@@ -68,23 +69,16 @@ const (
 	dangerousWeight
 )
 
-func (pc *IndexPageContent) AddLink(weight int, desc, path string) {
+func (pc *IndexPageContent) AddLinks(weight int, groupDesc string, links []IndexPageLink) {
 	pc.mu.Lock()
 	defer pc.mu.Unlock()
 
-	pc.elements = append(pc.elements, IndexPageNavElement{weight: weight, Desc: desc, Path: path})
+	pc.elements = append(pc.elements, IndexPageLinkGroup{weight: weight, Desc: groupDesc, Links: links})
 }
 
-func (pc *IndexPageContent) AddDropdown(weight int, desc string, elements []IndexPageDropdownElement) {
+func (pc *IndexPageContent) GetContent() []IndexPageLinkGroup {
 	pc.mu.Lock()
-	defer pc.mu.Unlock()
-
-	pc.elements = append(pc.elements, IndexPageNavElement{weight: weight, Desc: desc, Dropdown: elements})
-}
-
-func (pc *IndexPageContent) GetContent() []IndexPageNavElement {
-	pc.mu.Lock()
-	els := append([]IndexPageNavElement(nil), pc.elements...)
+	els := append([]IndexPageLinkGroup(nil), pc.elements...)
 	pc.mu.Unlock()
 
 	sort.Slice(els, func(i, j int) bool {

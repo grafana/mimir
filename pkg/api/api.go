@@ -188,7 +188,7 @@ func (a *API) newRoute(path string, handler http.Handler, isPrefix, auth, gzip b
 func (a *API) RegisterAlertmanager(am *alertmanager.MultitenantAlertmanager, apiEnabled bool, buildInfoHandler http.Handler) {
 	alertmanagerpb.RegisterAlertmanagerServer(a.server.GRPC, am)
 
-	a.indexPage.AddDropdown(defaultWeight, "Alertmanager", []IndexPageDropdownElement{
+	a.indexPage.AddLinks(defaultWeight, "Alertmanager", []IndexPageLink{
 		{Desc: "Status", Path: "/multitenant_alertmanager/status"},
 		{Desc: "Ring status", Path: "/multitenant_alertmanager/ring"},
 	})
@@ -214,7 +214,7 @@ func (a *API) RegisterAlertmanager(am *alertmanager.MultitenantAlertmanager, api
 
 // RegisterAPI registers the standard endpoints associated with a running Mimir.
 func (a *API) RegisterAPI(httpPathPrefix string, actualCfg interface{}, defaultCfg interface{}, buildInfoHandler http.Handler) {
-	a.indexPage.AddDropdown(configWeight, "Current config", []IndexPageDropdownElement{
+	a.indexPage.AddLinks(configWeight, "Current config", []IndexPageLink{
 		{Desc: "Including the default values", Path: "/config"},
 		{Desc: "Only values that differ from the defaults", Path: "/config?mode=diff"},
 	})
@@ -228,7 +228,7 @@ func (a *API) RegisterAPI(httpPathPrefix string, actualCfg interface{}, defaultC
 
 // RegisterRuntimeConfig registers the endpoints associates with the runtime configuration
 func (a *API) RegisterRuntimeConfig(runtimeConfigHandler http.HandlerFunc) {
-	a.indexPage.AddDropdown(runtimeConfigWeight, "Current runtime config", []IndexPageDropdownElement{
+	a.indexPage.AddLinks(runtimeConfigWeight, "Current runtime config", []IndexPageLink{
 		{Desc: "Entire runtime config (including overrides)", Path: "/runtime_config"},
 		{Desc: "Only values that differ from the defaults", Path: "/runtime_config?mode=diff"},
 	})
@@ -242,7 +242,7 @@ func (a *API) RegisterDistributor(d *distributor.Distributor, pushConfig distrib
 
 	a.RegisterRoute("/api/v1/push", push.Handler(pushConfig.MaxRecvMsgSize, a.sourceIPs, a.cfg.SkipLabelNameValidationHeader, a.cfg.wrapDistributorPush(d)), true, false, "POST")
 
-	a.indexPage.AddDropdown(defaultWeight, "Distributor", []IndexPageDropdownElement{
+	a.indexPage.AddLinks(defaultWeight, "Distributor", []IndexPageLink{
 		{Desc: "Ring status", Path: "/distributor/ring"},
 		{Desc: "Usage statistics", Path: "/distributor/all_user_stats"},
 		{Desc: "HA tracker status", Path: "/distributor/ha_tracker"},
@@ -266,7 +266,7 @@ type Ingester interface {
 func (a *API) RegisterIngester(i Ingester, pushConfig distributor.Config) {
 	client.RegisterIngesterServer(a.server.GRPC, i)
 
-	a.indexPage.AddDropdown(dangerousWeight, "Dangerous", []IndexPageDropdownElement{
+	a.indexPage.AddLinks(dangerousWeight, "Dangerous", []IndexPageLink{
 		{Dangerous: true, Desc: "Trigger a flush of data from ingester to storage", Path: "/ingester/flush"},
 		{Dangerous: true, Desc: "Trigger ingester shutdown", Path: "/ingester/shutdown"},
 	})
@@ -283,7 +283,7 @@ func (a *API) RegisterTenantDeletion(api *purger.TenantDeletionAPI) {
 
 // RegisterRuler registers routes associated with the Ruler service.
 func (a *API) RegisterRuler(r *ruler.Ruler) {
-	a.indexPage.AddDropdown(defaultWeight, "Ruler", []IndexPageDropdownElement{
+	a.indexPage.AddLinks(defaultWeight, "Ruler", []IndexPageLink{
 		{Desc: "Ring status", Path: "/ruler/ring"},
 	})
 	a.RegisterRoute("/ruler/ring", r, false, true, "GET", "POST")
@@ -336,7 +336,7 @@ func (a *API) RegisterRulerAPI(r *ruler.API, configAPIEnabled bool) {
 
 // RegisterRing registers the ring UI page associated with the distributor for writes.
 func (a *API) RegisterRing(r http.Handler) {
-	a.indexPage.AddDropdown(defaultWeight, "Ingester", []IndexPageDropdownElement{
+	a.indexPage.AddLinks(defaultWeight, "Ingester", []IndexPageLink{
 		{Desc: "Ring status", Path: "/ingester/ring"},
 	})
 	a.RegisterRoute("/ingester/ring", r, false, true, "GET", "POST")
@@ -346,7 +346,7 @@ func (a *API) RegisterRing(r http.Handler) {
 func (a *API) RegisterStoreGateway(s *storegateway.StoreGateway) {
 	storegatewaypb.RegisterStoreGatewayServer(a.server.GRPC, s)
 
-	a.indexPage.AddDropdown(defaultWeight, "Store-gateway", []IndexPageDropdownElement{
+	a.indexPage.AddLinks(defaultWeight, "Store-gateway", []IndexPageLink{
 		{Desc: "Ring status", Path: "/store-gateway/ring"},
 		{Desc: "Tenants & Blocks", Path: "/store-gateway/tenants"},
 	})
@@ -357,7 +357,7 @@ func (a *API) RegisterStoreGateway(s *storegateway.StoreGateway) {
 
 // RegisterCompactor registers the ring UI page associated with the compactor.
 func (a *API) RegisterCompactor(c *compactor.MultitenantCompactor) {
-	a.indexPage.AddDropdown(defaultWeight, "Compactor", []IndexPageDropdownElement{
+	a.indexPage.AddLinks(defaultWeight, "Compactor", []IndexPageLink{
 		{Desc: "Ring status", Path: "/compactor/ring"},
 	})
 	a.RegisterRoute("/compactor/ring", http.HandlerFunc(c.RingHandler), false, true, "GET", "POST")
@@ -417,11 +417,15 @@ func (a *API) RegisterQueryScheduler(f *scheduler.Scheduler) {
 // TODO: Refactor this code to be accomplished using the services.ServiceManager
 // or a future module manager #2291
 func (a *API) RegisterServiceMapHandler(handler http.Handler) {
-	a.indexPage.AddLink(serviceStatusWeight, "Service status", "/services")
+	a.indexPage.AddLinks(serviceStatusWeight, "Overview", []IndexPageLink{
+		{Desc: "Service status", Path: "/services"},
+	})
 	a.RegisterRoute("/services", handler, false, true, "GET")
 }
 
 func (a *API) RegisterMemberlistKV(handler http.Handler) {
-	a.indexPage.AddLink(memberlistWeight, "Memberlist status", "/memberlist")
+	a.indexPage.AddLinks(memberlistWeight, "Memberlist", []IndexPageLink{
+		{Desc: "Status", Path: "/memberlist"},
+	})
 	a.RegisterRoute("/memberlist", handler, false, true, "GET")
 }
