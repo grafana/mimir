@@ -1,13 +1,22 @@
 package main
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
-	"io/fs"
-	"io/ioutil"
+	"log"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
+
+	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
+
+	gokitlog "github.com/go-kit/log"
+
+	"github.com/grafana/mimir/pkg/storage/bucket"
 
 	"github.com/oklog/ulid"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
@@ -15,37 +24,44 @@ import (
 
 // Creates a no-compaction mark for a block.
 func main() {
-	var (
-		ulidString   string
-		reasonString string
-		details      string
-	)
-	flag.StringVar(&ulidString, "ulid", "", "The ulid of the block to mark.")
-	flag.StringVar(&reasonString, "reason", string(metadata.ManualNoCompactReason),
+
+	cfg := struct {
+		bucket  bucket.Config
+		userID  string
+		blockID string
+		reason  string
+		details string
+	}{}
+	cfg.bucket.RegisterFlags(flag.CommandLine)
+	flag.StringVar(&cfg.blockID, "ulid", "", "The ULID of the block to mark.")
+	flag.StringVar(&cfg.userID, "user", "", "User (tenant).")
+	flag.StringVar(&cfg.reason, "reason", string(metadata.ManualNoCompactReason),
 		fmt.Sprintf("The reason field of the marker. Valid values are %q, %q and %q",
 			metadata.ManualNoCompactReason, metadata.IndexSizeExceedingNoCompactReason, metadata.OutOfOrderChunksNoCompactReason))
-	flag.StringVar(&details, "details", "", "The details field of the marker.")
+	flag.StringVar(&cfg.details, "details", "", "The details field of the marker.")
 	flag.Parse()
 
-	if ulidString == "" {
-		fmt.Println("ulid cannot be blank")
-		os.Exit(1)
+	if cfg.userID == "" {
+		log.Fatal("User cannot be blank.")
 	}
 
-	reason := metadata.NoCompactReason(reasonString)
+	if cfg.blockID == "" {
+		log.Fatal("ULID cannot be blank.")
+	}
+
+	reason := metadata.NoCompactReason(cfg.reason)
 	switch reason {
 	case metadata.ManualNoCompactReason,
 		metadata.IndexSizeExceedingNoCompactReason,
 		metadata.OutOfOrderChunksNoCompactReason:
 		// Valid.
 	default:
-		fmt.Printf("Invalid reason %q, see help for valid reason values.\n", reasonString)
-		os.Exit(1)
+		log.Fatalf("Invalid reason %q, see help for valid reason values.\n", cfg.reason)
 	}
 
-	blockID, err := ulid.Parse(ulidString)
+	blockID, err := ulid.Parse(cfg.blockID)
 	if err != nil {
-		fmt.Printf("Can't parse %q as ULID: %s.\n", ulidString, err)
+		fmt.Printf("Can't parse %q as ULID: %s.\n", cfg.blockID, err)
 		os.Exit(1)
 	}
 
@@ -54,19 +70,27 @@ func main() {
 		Version:       metadata.NoCompactMarkVersion1,
 		NoCompactTime: time.Now().Unix(),
 		Reason:        reason,
-		Details:       details,
+		Details:       cfg.details,
 	})
-
 	if err != nil {
-		fmt.Printf("Can't create the mark: %s.\n", err)
-		os.Exit(1)
+		log.Fatalf("Can't create the mark: %s.\n", err)
 	}
 
-	filename := blockID.String() + "-no-compact-mark.json"
-	if err := ioutil.WriteFile(filename, noCompactMark, fs.ModePerm); err != nil {
-		fmt.Println(err)
-		os.Exit(1)
+	logger := gokitlog.NewNopLogger()
+
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT)
+	defer cancel()
+
+	bkt, err := bucket.NewClient(ctx, cfg.bucket, "bucket", logger, nil)
+	if err != nil {
+		log.Fatalf("Can't create bucket: %s.", err)
 	}
 
-	fmt.Printf("Mark saved in %q.\n", filename)
+	filename := bucketindex.NoCompactMarkFilepath(blockID)
+	userBucket := bucket.NewUserBucketClient(cfg.userID, bkt, nil)
+	if err := userBucket.Upload(ctx, filename, bytes.NewReader(noCompactMark)); err != nil {
+		log.Fatalf("Can't upload the compaction mark to the bucket: %s.", err)
+	}
+
+	log.Printf("Successfully uploaded no-compaction mark file %q.", filename)
 }
