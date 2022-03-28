@@ -1,8 +1,3 @@
----
-title: Contributing
-weight: 10
----
-
 Welcome! We're excited that you're interested in contributing. Below are some basic guidelines.
 
 ## Workflow
