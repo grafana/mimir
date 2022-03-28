@@ -17,6 +17,8 @@ keywords:
   - Prometheus read write
 author:
   - marco
+associated_technologies:
+  - mimir
 ---
 
 # Play with Grafana Mimir
