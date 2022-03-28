@@ -6,11 +6,9 @@
 
 ### Jsonnet
 
-* [CHANGE] gossip.libsonnet has been renamed to memberlist.libsonnet, and is now imported by default. Use of memberlist for ring is enabled by setting `_config.memberlist_ring_enabled` to true. #1526
-
 ### Mimirtool
 
-## 2.0.0-rc.4
+## 2.0.0
 
 ### Grafana Mimir
 
@@ -825,6 +823,7 @@ _Changes since `grafana/cortex-jsonnet` `1.9.0`._
 * [CHANGE] Removed `$.distributor_deployment_labels`, `$.ingester_deployment_labels` and `$.querier_deployment_labels` fields, that were used by gossip.libsonnet to inject additional label. Now the label is injected directly into pods of statefulsets and deployments. #1297
 * [CHANGE] Disabled `-ingester.readiness-check-ring-health`. #1352
 * [CHANGE] Changed Alertmanager CPU request from `100m` to `2` cores, and memory request from `1Gi` to `10Gi`. Set Alertmanager memory limit to `15Gi`. #1206
+* [CHANGE] gossip.libsonnet has been renamed to memberlist.libsonnet, and is now imported by default. Use of memberlist for ring is enabled by setting `_config.memberlist_ring_enabled` to true. #1526
 * [FEATURE] Added query sharding support. It can be enabled setting `cortex_query_sharding_enabled: true` in the `_config` object. #653
 * [FEATURE] Added shuffle-sharding support. It can be enabled and configured using the following config: #902
    ```
