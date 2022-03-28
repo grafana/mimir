@@ -1,9 +1,3 @@
----
-title: "List deduplicated blocks"
-description: ""
-weight: 100
----
-
 # List deduplicated blocks
 
 `list-deduplicated-blocks` downloads all `meta.json` files from tenants' debug/metas directory, removes duplicates

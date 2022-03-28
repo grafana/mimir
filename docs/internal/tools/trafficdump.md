@@ -1,9 +1,3 @@
----
-title: "Trafficdump"
-description: ""
-weight: 100
----
-
 # Trafficdump
 
 Trafficdump is a tool that can read packets from captured `tcpdump` output, reassemble them into TCP streams
