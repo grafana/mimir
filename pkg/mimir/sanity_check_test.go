@@ -121,7 +121,7 @@ func TestCheckObjectStoresConfig(t *testing.T) {
 				for i, bucketCfg := range []*bucket.Config{&cfg.BlocksStorage.Bucket, &cfg.AlertmanagerStorage.Config, &cfg.RulerStorage.Config} {
 					bucketCfg.Backend = bucket.Azure
 					bucketCfg.Azure.ContainerName = "invalid"
-					bucketCfg.Azure.StorageAccountName = "xxx"
+					bucketCfg.Azure.StorageAccountName = ""
 					bucketCfg.Azure.StorageAccountKey = flagext.Secret{Value: "eHh4"}
 
 					// Set a different container name for blocks storage to avoid config validation error.
