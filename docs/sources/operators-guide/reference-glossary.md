@@ -11,7 +11,7 @@ weight: 100
 
 Blocks storage is the Mimir storage engine based on the Prometheus TSDB.
 Grafana Mimir stores blocks in object stores such as AWS S3, Google Cloud Storage (GCS), Azure blob storage, or OpenStack Object Storage (Swift).
-For a complete list of supported backends, refer to [About the architecture]({{< relref "architecture/about-grafana-mimir-architecture.md" >}})
+For a complete list of supported backends, refer to [About the architecture]({{< relref "architecture/about-grafana-mimir-architecture/index.md" >}})
 
 ## Chunk
 
@@ -37,7 +37,7 @@ For component specific documentation, refer to one of the following topics:
 - [Query-scheduler]({{< relref "architecture/components/query-scheduler/index.md" >}})
 - [Store-gateway]({{< relref "architecture/components/store-gateway.md" >}})
 - [Optional: Alertmanager]({{< relref "architecture/components/alertmanager.md" >}})
-- [Optional: Ruler]({{< relref "architecture/components/ruler.md" >}})
+- [Optional: Ruler]({{< relref "architecture/components/ruler/index.md" >}})
 
 ## Flushing
 
@@ -57,7 +57,7 @@ To configure HA tracking, refer to [Configuring high-availability deduplication]
 
 The hash ring is a distributed data structure used by Grafana Mimir for sharding, replication, and service discovery.
 Components use a [key-value store]({{< relref "#key-value-store" >}}) or [gossip]({{< relref "#gossip" >}}) to share the hash ring data structure.
-For more information, refer to the [Hash ring]({{< relref "architecture/hash-ring.md" >}}).
+For more information, refer to the [Hash ring]({{< relref "architecture/hash-ring/index.md" >}}).
 
 ## Key-value store
 
@@ -121,4 +121,4 @@ Refer to [Tenant]({{< relref "#tenant" >}}).
 ## Write-ahead log (WAL)
 
 The write-ahead Log (WAL) is an append only log stored on disk by ingesters to recover their in-memory state after the process gets restarted.
-For more information, refer to [The write path]({{< relref "architecture/_index.md#the-write-path" >}}).
+For more information, refer to [The write path]({{< relref "architecture/about-grafana-mimir-architecture/index.md#the-write-path" >}}).

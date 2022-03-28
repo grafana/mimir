@@ -40,7 +40,7 @@ func TestPlayWithGrafanaMimirTutorial(t *testing.T) {
 	require.NoError(t, err)
 	defer s.Close()
 
-	require.NoError(t, copyFileToSharedDir(s, "tutorials/play-with-grafana-mimir/config/mimir.yaml", "mimir.yaml"))
+	require.NoError(t, copyFileToSharedDir(s, "docs/sources/tutorials/play-with-grafana-mimir/config/mimir.yaml", "mimir.yaml"))
 
 	// Start dependencies.
 	minio := e2edb.NewMinio(9000, blocksBucketName, rulestoreBucketName, alertsBucketName)

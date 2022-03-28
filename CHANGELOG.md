@@ -8,7 +8,7 @@
 
 ### Mimirtool
 
-## 2.0.0-rc.4
+## 2.0.0
 
 ### Grafana Mimir
 
@@ -449,7 +449,7 @@ _Changes since Cortex 1.10.0._
 * [FEATURE] Distributor: Added `-api.skip-label-name-validation-header-enabled` option to allow skipping label name validation on the HTTP write path based on `X-Mimir-SkipLabelNameValidation` header being `true` or not. #390
 * [FEATURE] Query-frontend: Add `cortex_query_fetched_series_total` and `cortex_query_fetched_chunks_bytes_total` per-user counters to expose the number of series and bytes fetched as part of queries. These metrics can be enabled with the `-frontend.query-stats-enabled` flag (or its respective YAML config option `query_stats_enabled`). [#4343](https://github.com/cortexproject/cortex/pull/4343)
 * [FEATURE] Query-frontend: Add `cortex_query_fetched_chunks_total` per-user counter to expose the number of chunks fetched as part of queries. This metric can be enabled with the `-query-frontend.query-stats-enabled` flag (or its respective YAML config option `query_stats_enabled`). #31
-* [FEATURE] Query-frontend: Add query sharding for instant and range queries. You can enable querysharding by setting `-query-frontend.parallelize-shardable-queries` to `true`. The following additional config and exported metrics have been added. #79 #80 #100 #124 #140 #148 #150 #151 #153 #154 #155 #156 #157 #158 #159 #160 #163 #169 #172 #196 #205 #225 #226 #227 #228 #230 #235 #240 #239 #246 #244 #319 #330 #371 #385 #400 #458 #586 #630 #660 #707
+* [FEATURE] Query-frontend: Add query sharding for instant and range queries. You can enable querysharding by setting `-query-frontend.parallelize-shardable-queries` to `true`. The following additional config and exported metrics have been added. #79 #80 #100 #124 #140 #148 #150 #151 #153 #154 #155 #156 #157 #158 #159 #160 #163 #169 #172 #196 #205 #225 #226 #227 #228 #230 #235 #240 #239 #246 #244 #319 #330 #371 #385 #400 #458 #586 #630 #660 #707 #1542
   * New config options:
     * `-query-frontend.query-sharding-total-shards`: The amount of shards to use when doing parallelisation via query sharding.
     * `-query-frontend.query-sharding-max-sharded-queries`: The max number of sharded queries that can be run for a given received query. 0 to disable limit.
@@ -823,6 +823,7 @@ _Changes since `grafana/cortex-jsonnet` `1.9.0`._
 * [CHANGE] Removed `$.distributor_deployment_labels`, `$.ingester_deployment_labels` and `$.querier_deployment_labels` fields, that were used by gossip.libsonnet to inject additional label. Now the label is injected directly into pods of statefulsets and deployments. #1297
 * [CHANGE] Disabled `-ingester.readiness-check-ring-health`. #1352
 * [CHANGE] Changed Alertmanager CPU request from `100m` to `2` cores, and memory request from `1Gi` to `10Gi`. Set Alertmanager memory limit to `15Gi`. #1206
+* [CHANGE] gossip.libsonnet has been renamed to memberlist.libsonnet, and is now imported by default. Use of memberlist for ring is enabled by setting `_config.memberlist_ring_enabled` to true. #1526
 * [FEATURE] Added query sharding support. It can be enabled setting `cortex_query_sharding_enabled: true` in the `_config` object. #653
 * [FEATURE] Added shuffle-sharding support. It can be enabled and configured using the following config: #902
    ```
@@ -836,7 +837,7 @@ _Changes since `grafana/cortex-jsonnet` `1.9.0`._
      },
    }
    ```
-* [FEATURE] Added multi-zone ingesters and store-gateways support. #1352
+* [FEATURE] Added multi-zone ingesters and store-gateways support. #1352 #1552
 * [ENHANCEMENT] Add overrides config to compactor. This allows setting retention configs per user. [#386](https://github.com/grafana/cortex-jsonnet/pull/386)
 * [ENHANCEMENT] Added 256MB memory ballast to querier. [#369](https://github.com/grafana/cortex-jsonnet/pull/369)
 * [ENHANCEMENT] Update `etcd-operator` to latest version (see https://github.com/grafana/jsonnet-libs/pull/480). [#263](https://github.com/grafana/cortex-jsonnet/pull/263)

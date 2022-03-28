@@ -86,6 +86,7 @@ func (summer *shardSummer) MapNode(node parser.Node, stats *MapperStats) (mapped
 			return mapped, true, err
 		}
 		return n, true, nil
+
 	case *parser.Call:
 		// only shard the most outer function call.
 		if summer.currentShard == nil {
@@ -113,6 +114,18 @@ func (summer *shardSummer) MapNode(node parser.Node, stats *MapperStats) (mapped
 			return summer.shardBinOp(n, stats)
 		}
 		return n, false, nil
+
+	case *parser.SubqueryExpr:
+		// If the mapped node is part of the sharded query, then it means we already checked whether it was
+		// safe to shard so we must keep it as is.
+		if summer.currentShard != nil {
+			return n, false, nil
+		}
+
+		// If the mapper hits a subquery expression, it means it's a subquery whose sharding is currently
+		// not supported, so we terminate the mapping here. If the subquery was parallelizable we didn't reach
+		// this point, because the subquery was part of a parent shardable node.
+		return n, true, nil
 
 	default:
 		return n, false, nil

@@ -7,23 +7,23 @@ weight: 70
 
 # Grafana Mimir store-gateway
 
-The store-gateway component, which is stateful, queries blocks from [long-term storage]({{< relref "./_index.md#long-term-storage" >}}).
-On the read path, the [querier]({{< relref "./querier.md" >}}) and the [ruler]({{< relref "./ruler.md">}}) use the store-gateway when handling the query, whether the query comes from a user or from when a rule is being evaluated.
+The store-gateway component, which is stateful, queries blocks from [long-term storage]({{< relref "../about-grafana-mimir-architecture/index.md#long-term-storage" >}}).
+On the read path, the [querier]({{< relref "./querier.md" >}}) and the [ruler]({{< relref "./ruler/index.md">}}) use the store-gateway when handling the query, whether the query comes from a user or from when a rule is being evaluated.
 
 To find the right blocks to look up at query time, the store-gateway requires an almost up-to-date view of the bucket in long-term storage.
 The store-gateway keeps the bucket view updated using one of the following options:
 
-- Periodically downloading the [bucket index]({{< relref "../bucket-index.md" >}}) (default)
+- Periodically downloading the [bucket index]({{< relref "../bucket-index/index.md" >}}) (default)
 - Periodically scanning the bucket
 
 ### Bucket index enabled (default)
 
-To discover each tenant's blocks and block deletion marks, at startup, store-gateways fetch the [bucket index]({{< relref "../bucket-index.md" >}}) from long-term storage for each tenant that belongs to their [shard](#blocks-sharding-and-replication).
+To discover each tenant's blocks and block deletion marks, at startup, store-gateways fetch the [bucket index]({{< relref "../bucket-index/index.md" >}}) from long-term storage for each tenant that belongs to their [shard](#blocks-sharding-and-replication).
 
 For each discovered block, the store-gateway downloads the [index header](#blocks-index-header) to the local disk.
 During this initial bucket-synchronization phase, the store-gateway’s `/ready` readiness probe endpoint reports a not-ready status.
 
-For more information about the bucket index, refer to [bucket index]({{< relref "../bucket-index.md" >}}).
+For more information about the bucket index, refer to [bucket index]({{< relref "../bucket-index/index.md" >}}).
 
 Store-gateways periodically re-download the bucket index to obtain an updated view of the long-term storage and discover new blocks uploaded by ingesters and compactors, or deleted by compactors.
 
@@ -50,7 +50,7 @@ The store-gateway uses blocks sharding to horizontally scale blocks in a large c
 Blocks are replicated across multiple store-gateway instances based on a replication factor configured via `-store-gateway.sharding-ring.replication-factor`.
 The blocks replication is used to protect from query failures caused by some blocks not loaded by any store-gateway instance at a given time, such as in the event of a store-gateway failure or while restarting a store-gateway instance (for example, during a rolling update).
 
-Store-gateway instances build a [hash ring]({{< relref "../hash-ring.md" >}}) and shard and replicate blocks across the pool of store-gateway instances registered in the ring.
+Store-gateway instances build a [hash ring]({{< relref "../hash-ring/index.md" >}}) and shard and replicate blocks across the pool of store-gateway instances registered in the ring.
 
 Store-gateways continuously monitor the ring state.
 When the ring topology changes, for example, when a new instance is added or removed, or the instance becomes healthy or unhealthy, each store-gateway instance resynchronizes the blocks assigned to its shard.
@@ -62,7 +62,7 @@ When the querier queries blocks via a store-gateway, the response contains the l
 If a querier attempts to query a block that the store-gateway has not loaded, the querier retries the query on a different store-gateway up to the `-store-gateway.sharding-ring.replication-factor` value, which by default is `3`.
 The query fails if the block can't be successfully queried from any replica.
 
-> **Note:** You must configure the [hash ring]({{< relref "../hash-ring.md" >}}) via the `-store-gateway.sharding-ring.*` flags or their respective YAML configuration parameters.
+> **Note:** You must configure the [hash ring]({{< relref "../hash-ring/index.md" >}}) via the `-store-gateway.sharding-ring.*` flags or their respective YAML configuration parameters.
 
 ### Sharding strategy
 
@@ -75,7 +75,7 @@ The `store_gateway_tenant_shard_size` in the limits overrides can override the s
 
 The default `-store-gateway.tenant-shard-size` value is 0, which means that tenant's blocks are sharded across all store-gateway instances.
 
-For more information about shuffle sharding, refer to [configure shuffle sharding]({{< relref "../../configuring/configuring-shuffle-sharding.md" >}}).
+For more information about shuffle sharding, refer to [configure shuffle sharding]({{< relref "../../configuring/configuring-shuffle-sharding/index.md" >}}).
 
 ### Auto-forget
 
@@ -128,7 +128,7 @@ The store-gateway supports the following type of caches:
 - [Metadata cache](#metadata-cache)
 
 We recommend that you use caching in a production environment.
-For more information about configuring the cache, refer to [production tips]({{< relref "../../running-production-environment/production-tips.md#caching" >}}).
+For more information about configuring the cache, refer to [production tips]({{< relref "../../running-production-environment/production-tips/index.md#caching" >}}).
 
 ### Index cache
 
@@ -211,4 +211,4 @@ Additional flags for configuring metadata cache begin with the prefix `-blocks-s
 
 ## Store-gateway configuration
 
-For more information about store-gateway configuration, refer to [store_gateway]({{< relref "../../configuring/reference-configuration-parameters.md#store_gateway" >}}).
+For more information about store-gateway configuration, refer to [store_gateway]({{< relref "../../configuring/reference-configuration-parameters/index.md#store_gateway" >}}).

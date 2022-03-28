@@ -52,6 +52,9 @@ func addLicense(dir string) error {
 		}
 
 		if info.IsDir() {
+			if info.Name() == "vendor" {
+				return filepath.SkipDir
+			}
 			return nil
 		}
 

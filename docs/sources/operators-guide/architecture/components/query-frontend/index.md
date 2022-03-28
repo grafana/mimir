@@ -65,7 +65,7 @@ Although aligning the step parameter to the query time range increases the perfo
 
 ### About query sharding
 
-The query-frontend also provides [query sharding]({{< relref "../../query-sharding.md" >}}).
+The query-frontend also provides [query sharding]({{< relref "../../query-sharding/index.md" >}}).
 
 ## Why query-frontend scalability is limited
 
@@ -93,7 +93,7 @@ The [query-scheduler]({{< relref "../query-scheduler/index.md" >}}) is an option
 ## DNS configuration and readiness
 
 When a query-frontend starts up, it does not immediately have queriers attached to it.
-The [`/ready` endpoint]({{< relref "../../../reference-http-api/#readiness-probe" >}}) returns an HTTP 200 status code only when the query-frontend has at least one querier attached to it, and is then ready to serve queries.
+The [`/ready` endpoint]({{< relref "../../../reference-http-api/index.md#readiness-probe" >}}) returns an HTTP 200 status code only when the query-frontend has at least one querier attached to it, and is then ready to serve queries.
 Configure the `/ready` endpoint as a healthcheck in your load balancer; otherwise, a query-frontend scale-out event might result in failed queries or high latency until queriers connect to the query-frontend.
 
 If you use query-frontend with query-scheduler, the `/ready` endpoint reports an HTTP 200 status code only after the query-frontend connects to at least one query-scheduler.
