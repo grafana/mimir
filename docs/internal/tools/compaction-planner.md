@@ -1,9 +1,3 @@
----
-title: "Compaction planner tool"
-description: ""
-weight: 100
----
-
 # Compaction planner tool
 
 You can use the compaction planner tool to troubleshoot the Grafana Mimir compactor.
