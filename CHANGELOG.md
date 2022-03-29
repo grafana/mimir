@@ -8,7 +8,7 @@
 * [ENHANCEMENT] Ruler: Add more detailed query information to ruler query stats logging. #1411
 * [ENHANCEMENT] Admin: Admin API now has some styling. #1482 #1549
 * [BUGFIX] Query-frontend: do not shard queries with a subquery unless the subquery is inside a shardable aggregation function call. #1542
-* [ENHANCEMENT] Alertmanager: Support configuring alertmanager dispatch logger separately. #1379
+* [ENHANCEMENT] Alertmanager: Configure alertmanager dispatch logs with insight key. #1379
 
 ### Mixin
 
