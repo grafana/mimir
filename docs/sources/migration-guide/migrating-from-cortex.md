@@ -210,7 +210,7 @@ You can update to the Grafana Mimir Helm chart from the Cortex Helm chart.
 
    b. Install the recording and alerting rules into the ruler or a Prometheus server.
 
-1. Add the Grafana Helm chart repository.
+1. Run the following command to add the Grafana Helm chart repository:
 
    ```bash
    helm repo add grafana https://grafana.github.io/helm-charts
