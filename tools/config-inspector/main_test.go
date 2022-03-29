@@ -21,5 +21,5 @@ func TestConfigDescriptorIsUpToDate(t *testing.T) {
 	committedBytes, err := os.ReadFile(descriptorLocation)
 	require.NoError(t, err)
 
-	assert.JSONEq(t, string(upToDateBytes), string(committedBytes), "config descriptor is not up to date; run `make reference-help`")
+	assert.JSONEq(t, string(upToDateBytes), string(committedBytes), "config descriptor is not up to date; run `make doc`")
 }
