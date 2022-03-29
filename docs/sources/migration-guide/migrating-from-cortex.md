@@ -206,7 +206,7 @@ You can update to the Grafana Mimir Helm chart from the Cortex Helm chart.
    a. Add the dashboards to Grafana. The dashboards replace your Cortex dashboards and continue to work for monitoring Cortex deployments.
 
    > **Note:** Resource dashboards are now enabled by default and require additional metrics sources.
-   > To understand the required metrics sources, refer to [Additional resource metrics]({{< relref "../operators-guide/visualizing-metrics/requirements.md#additional-resource-metrics" >}}).
+   > To understand the required metrics sources, refer to [Additional resources metrics]({{< relref "../operators-guide/visualizing-metrics/requirements.md#additional-resources-metrics" >}}).
 
    b. Install the recording and alerting rules into the ruler or a Prometheus server.
 
