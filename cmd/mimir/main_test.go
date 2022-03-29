@@ -117,6 +117,11 @@ func TestFlagParsing(t *testing.T) {
 }
 
 func TestHelp(t *testing.T) {
+	const (
+		memBallastLine      = "-mem-ballast-size-bytes int"
+		profileFractionLine = "-debug.mutex-profile-fraction int"
+	)
+
 	for name, tc := range map[string]struct {
 		arg         string
 		expected    []string
@@ -126,12 +131,12 @@ func TestHelp(t *testing.T) {
 			arg:      "-h",
 			expected: []string{"-version"},
 			// Advanced flags are not present for basic -help
-			notExpected: []string{"-mem-ballast-size-bytes int", "-debug.mutex-profile-fraction int"},
+			notExpected: []string{memBallastLine, profileFractionLine},
 		},
 		"all": {
 			arg: "-help-all",
 			// Advanced flags are present for -help-all.
-			expected: []string{"-version", "-mem-ballast-size-bytes int", "-debug.mutex-profile-fraction int"},
+			expected: []string{"-version", memBallastLine, profileFractionLine},
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
