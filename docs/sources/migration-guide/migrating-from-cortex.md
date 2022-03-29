@@ -181,3 +181,152 @@ jb install github.com/grafana/mimir/operations/mimir-mixin@main
 1. Apply the updated Jsonnet
 
 To verify that the cluster is operating correctly, use the [monitoring mixin dashboards]({{< relref "../operators-guide/visualizing-metrics/dashboards/_index.md" >}}).
+
+## Updating to Grafana Mimir using Helm
+
+You can update to the Grafana Mimir Helm chart from the Cortex Helm chart.
+
+### Before you begin
+
+- Ensure that you are running the v1.4.0 release of the Cortex Helm chart.
+- Ensure that you are running ingesters using a Kubernetes StatefulSet.
+
+  In the `values.yaml` file:
+
+  ```
+  ingester:
+    statefulSet:
+      enabled: true
+  ```
+
+**To migrate to the Grafana Mimir Helm chart:**
+
+1. Install the updated monitoring mixin.
+
+   a. Add the dashboards to Grafana. The dashboards replace your Cortex dashboards and continue to work for monitoring Cortex deployments.
+
+   > **Note:** Resource dashboards are now enabled by default and require additional metrics sources.
+   > To understand the required metrics sources, refer to [Additional resources metrics]({{< relref "../operators-guide/visualizing-metrics/requirements.md#additional-resources-metrics" >}}).
+
+   b. Install the recording and alerting rules into the ruler or a Prometheus server.
+
+1. Run the following command to add the Grafana Helm chart repository:
+
+   ```bash
+   helm repo add grafana https://grafana.github.io/helm-charts
+   ```
+
+1. Convert the Cortex configuration in your `values.yaml` file.
+
+   a. Extract the Cortex configuration and write the output to the `cortex.yaml` file.
+
+   ```bash
+   yq -Y '.config' <VALUES YAML FILE> > cortex.yaml
+   ```
+
+   b. Use `mimirtool` to update the configuration.
+
+   ```bash
+   mimirtool config convert cortex.yaml
+   ```
+
+   c. Place the updated configuration under the `mimir.config` key at the top level of your Helm values file.
+
+   > **Note:** The Grafana Mimir Helm chart expects the configuration as a string value.
+   > You can provide a literal block string with the `|` symbol.
+
+   In your Helm values file:
+
+   ```yaml
+   mimir:
+     config: |
+       <CONFIGURATION FILE CONTENTS>
+   ```
+
+   d. Merge the templated configuration from the `mimir-distributed` `values.yaml` file.
+   The Cortex Helm chart sets some additional configuration using flags.
+   The Grafana Mimir Helm chart sets that additional configuration in the configuration file.
+
+   - Set `frontend_worker.frontend_address` to `'{{ template "mimir.fullname" . }}-query-frontend-headless.{{ .Release.Namespace }}.svc:{{ include "mimir.serverGrpcListenPort" . }}'`.
+   - Set `ruler.alertmanager_url` to `'dnssrvnoa+http://_http-metrics._tcp.{{ template "mimir.fullname" . }}-alertmanager-headless.{{ .Release.Namespace }}.svc.cluster.local/alertmanager'`.
+   - If you want to use memberlist as the ring KV store, set `memberlist.join_members` to `['{{ include "mimir.fullname" . }}-gossip-ring']`.
+   - Append the caching configuration to `blocks_storage.bucket_store`.
+
+   A partial Helm values file with the changes incorporated looks similar to:
+
+   ```yaml
+   mimir:
+     config: |
+       blocks_storage:
+         {{- if .Values.memcached.enabled }}
+         chunks_cache:
+           backend: "memcached"
+           memcached:
+             addresses: "dns+{{ .Release.Name }}-memcached.{{ .Release.Namespace }}.svc:11211"
+             max_item_size: {{ .Values.memcached.maxItemMemory }}
+         {{- end }}
+         {{- if index .Values "memcached-metadata" "enabled" }}
+         metadata_cache:
+           backend: "memcached"
+           memcached:
+             addresses: "dns+{{ .Release.Name }}-memcached-metadata.{{ .Release.Namespace }}.svc:11211"
+             max_item_size: {{ (index .Values "memcached-metadata").maxItemMemory }}
+         {{- end }}
+         {{- if index .Values "memcached-queries" "enabled" }}
+         index_cache:
+           backend: "memcached"
+           memcached:
+             addresses: "dns+{{ .Release.Name }}-memcached-queries.{{ .Release.Namespace }}.svc:11211"
+             max_item_size: {{ (index .Values "memcached-queries").maxItemMemory }}
+         {{- end }}
+       frontend_worker:
+         frontend_address: "{{ template "mimir.fullname" . }}-query-frontend-headless.{{ .Release.Namespace }}.svc:{{ include "mimir.serverGrpcListenPort" . }}"
+       memberlist:
+         join_members: ["{{ include "mimir.fullname" . }}-gossip-ring"]
+       ruler:
+         alertmanager_url: "dnssrvnoa+http://_http-metrics._tcp.{{ template "mimir.fullname" . }}-alertmanager-headless.{{ .Release.Namespace }}.svc.cluster.local/alertmanager"
+   ```
+
+   e. Remove the original Cortex `$.config` member.
+
+   > **Note:** The `$` symbol refers to the top level of the values file.
+
+   f. Set the ingester `podManagementPolicy` to `"OrderedReady"`.
+   The Grafana Mimir chart prefers `"Parallel"` for faster scale up, but this field is immutable on an existing StatefulSet.
+
+   In your `values.yaml` file:
+
+   ```yaml
+   ingester:
+     podManagementPolicy: "OrderedReady"
+   ```
+
+   g. Set the `nameOverride` to `cortex`.
+   This configuration parameter ensures that resources have the same names as those created by the Cortex Helm chart and ensures Kubernetes performs a rolling upgrade of existing resources instead of creating new resources.
+
+   In your `values.yaml` file:
+
+   ```yaml
+   nameOverride: "cortex"
+   ```
+
+   h. Disable MinIO.
+   The Grafana Mimir Helm chart enables MinIO by default for convenience during first time installs.
+   If you are migrating from Cortex, use your existing object storage, and disable MinIO.
+
+   In your `values.yaml` file:
+
+   ```yaml
+   minio:
+     enabled: false
+   ```
+
+1. Run the Helm upgrade with the Grafana Mimir chart.
+
+   > **Note:** The name of the release must match your Cortex Helm chart release.
+
+   ```bash
+   helm upgrade <RELEASE> grafana/mimir [-n <NAMESPACE>]
+   ```
+
+To verify that the cluster is operating correctly, use the [monitoring mixin dashboards]({{< relref "../operators-guide/visualizing-metrics/dashboards/_index.md" >}}).
