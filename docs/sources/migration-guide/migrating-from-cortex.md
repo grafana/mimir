@@ -310,6 +310,17 @@ You can update to the Grafana Mimir Helm chart from the Cortex Helm chart.
    nameOverride: "cortex"
    ```
 
+   h. Disable MinIO.
+   The Grafana Mimir Helm chart enables MinIO by default for convenience during first time installs.
+   If you are migrating from Cortex, use your existing object storage, and disable MinIO.
+
+   In your `values.yaml` file:
+
+   ```yaml
+   minio:
+     enabled: false
+   ```
+
 1. Run Helm upgrade with the Grafana Mimir chart.
 
    > **Note:** The name of the release must match your Cortex Helm chart release.
