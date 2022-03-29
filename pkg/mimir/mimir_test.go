@@ -11,6 +11,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net"
 	"net/http"
 	"os"
@@ -40,6 +41,7 @@ import (
 	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/frontend/v1/frontendv1pb"
 	"github.com/grafana/mimir/pkg/ingester"
+	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"github.com/grafana/mimir/pkg/ruler"
 	"github.com/grafana/mimir/pkg/ruler/rulestore"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
@@ -425,6 +427,66 @@ func TestFlagDefaults(t *testing.T) {
 
 	require.Equal(t, true, c.Server.GRPCServerPingWithoutStreamAllowed)
 	require.Equal(t, 10*time.Second, c.Server.GRPCServerMinTimeBetweenPings)
+}
+
+// TODO Remove in Mimir 2.2.
+//      Previously ActiveSeriesCustomTrackers was an ingester config, now it's in LimitsConfig.
+//      We provide backwards compatibility for it by parsing the old YAML location and copying it to LimitsConfig here,
+//      unless it's also defined in the limits, which is invalid.
+//		This needs to be set before setting default limits for unmarshalling.
+// 		For more context see https://github.com/grafana/mimir/pull/1188#discussion_r830129443
+func TestActiveSeriesDeprecationDefaultOverrideWithSomeRuntimeOverrides(t *testing.T) {
+	yamlContent := `
+overrides:
+  '1234':
+    ingestion_burst_size: 15000
+    ingestion_rate: 1500
+    max_global_series_per_metric: 7000
+    max_global_series_per_user: 15000
+    ruler_max_rule_groups_per_tenant: 20
+    ruler_max_rules_per_rule_group: 20
+`
+	prepareGlobalMetricsRegistry(t)
+
+	cfg := Config{}
+
+	// This sets default values from flags to the config.
+	flagext.RegisterFlagsWithLogger(log.NewNopLogger(), &cfg)
+
+	// Creating test file with runtime overrides.
+	tmpDir := t.TempDir()
+	cfg.RuntimeConfig.LoadPath = filepath.Join(tmpDir, "overrides.yml")
+	err := ioutil.WriteFile(cfg.RuntimeConfig.LoadPath, []byte(yamlContent), 777)
+	require.NoError(t, err, "Failed to write test override.yml.")
+
+	// Setting up deprecated value as an ingester config value.
+	cfg.Ingester.ActiveSeriesCustomTrackers, err = activeseries.NewCustomTrackersConfig(map[string]string{
+		"bool_is_true_flag-based": `{bool="true"}`,
+		"bool_is_false_flagbased": `{bool="false"}`,
+	})
+	require.NoError(t, err)
+
+	cfg.Target = []string{RuntimeConfig}
+	cfg.Server = getServerConfig(t)
+	require.NoError(t, cfg.Server.LogFormat.Set("logfmt"))
+	require.NoError(t, cfg.Server.LogLevel.Set("debug"))
+	util_log.InitLogger(&cfg.Server)
+
+	c, err := New(cfg)
+	require.NoError(t, err)
+
+	errCh := make(chan error)
+	go func() {
+		errCh <- c.Run()
+	}()
+
+	// Waiting for RuntimeConfig to load config from file.
+	test.Poll(t, cfg.RuntimeConfig.ReloadPeriod, true, func() interface{} {
+		return c.RuntimeConfig != nil
+	})
+	assert.NotNil(t, c.RuntimeConfig.GetConfig())
+	assert.False(t, c.TenantLimits.ByUserID("1234").ActiveSeriesCustomTrackersConfig.Empty(),
+		"Default deserialization value for active series trackers should be set from ingester config.")
 }
 
 // Generates server config, with gRPC listening on random port.

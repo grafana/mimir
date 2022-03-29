@@ -215,11 +215,16 @@ func TestMultiKVSetup(t *testing.T) {
 	}
 }
 
+// TODO Remove in Mimir 2.2.
+//      Previously ActiveSeriesCustomTrackers was an ingester config, now it's in LimitsConfig.
+//      We provide backwards compatibility for it by parsing the old YAML location and copying it to LimitsConfig here,
+//      unless it's also defined in the limits, which is invalid.
+//		This needs to be set before setting default limits for unmarshalling.
 func TestActiveSeriesOverrides(t *testing.T) {
 	tests := map[string]struct {
 		config Config
 	}{
-		"Override with runtime config specified": {
+		"Override with runtime path specified": {
 			config: func() Config {
 				cfg := Config{}
 				flagext.DefaultValues(&cfg)
