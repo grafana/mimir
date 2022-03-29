@@ -118,6 +118,7 @@ func TestFlagParsing(t *testing.T) {
 
 func TestHelp(t *testing.T) {
 	const (
+		versionLine         = "-version"
 		memBallastLine      = "-mem-ballast-size-bytes int"
 		profileFractionLine = "-debug.mutex-profile-fraction int"
 	)
@@ -129,14 +130,14 @@ func TestHelp(t *testing.T) {
 	}{
 		"basic": {
 			arg:      "-h",
-			expected: []string{"-version"},
+			expected: []string{versionLine},
 			// Advanced flags are not present for basic -help
 			notExpected: []string{memBallastLine, profileFractionLine},
 		},
 		"all": {
 			arg: "-help-all",
 			// Advanced flags are present for -help-all.
-			expected: []string{"-version", memBallastLine, profileFractionLine},
+			expected: []string{versionLine, memBallastLine, profileFractionLine},
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
