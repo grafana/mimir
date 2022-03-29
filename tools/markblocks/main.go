@@ -63,7 +63,7 @@ func main() {
 
 func validateUserAndBlocks(logger log.Logger, userID string, blockIDs flagext.StringSlice) []ulid.ULID {
 	if userID == "" {
-		level.Error(logger).Log("msg", "Flag --user is required.")
+		level.Error(logger).Log("msg", "Flag -user is required.")
 		os.Exit(1)
 	}
 
@@ -89,7 +89,7 @@ func createMarker(markType string, reason string, logger log.Logger, details str
 	case "no-compact":
 		reason, validReason := isValidNoCompactReason(reason)
 		if !validReason {
-			level.Error(logger).Log("msg", "Invalid --reason value", "value", reason, "valid_reasons", validNoCompactReasons)
+			level.Error(logger).Log("msg", "Invalid -reason value", "value", reason, "valid_reasons", validNoCompactReasons)
 			os.Exit(1)
 		}
 		return func(b ulid.ULID) ([]byte, error) {
@@ -103,7 +103,7 @@ func createMarker(markType string, reason string, logger log.Logger, details str
 		}, metadata.NoCompactMarkFilename
 	case "deletion":
 		if reason != "" {
-			level.Error(logger).Log("msg", "Flag --reason is unsupported for deletion mark")
+			level.Error(logger).Log("msg", "Flag -reason is unsupported for deletion mark")
 			os.Exit(1)
 		}
 
@@ -115,7 +115,7 @@ func createMarker(markType string, reason string, logger log.Logger, details str
 			})
 		}, metadata.DeletionMarkFilename
 	default:
-		level.Error(logger).Log("msg", "Invalid --mark flag value. Should be no-compact or deletion.", "value", markType)
+		level.Error(logger).Log("msg", "Invalid -mark flag value. Should be no-compact or deletion.", "value", markType)
 		os.Exit(1)
 	}
 	panic("We never reach this.")
