@@ -13,10 +13,13 @@ import (
 	"github.com/grafana/mimir/pkg/util/fieldcategory"
 )
 
-// usage prints command-line usage, the printAll argument controls whether also non-basic flags will be included.
-func usage(cfg *mimir.Config, printAll bool) error {
+// usage prints command-line usage. If mf.printHelpAll is false then only basic flags are included, otherwise all flags are included.
+func usage(mf *mainFlags, cfg *mimir.Config) error {
 	fields := map[uintptr]reflect.StructField{}
-	if err := parseConfig(cfg, fields); err != nil {
+	if err := parseStructure(mf, fields); err != nil {
+		return err
+	}
+	if err := parseStructure(cfg, fields); err != nil {
 		return err
 	}
 
@@ -43,7 +46,7 @@ func usage(cfg *mimir.Config, printAll bool) error {
 			}
 		}
 
-		if fieldCat != fieldcategory.Basic && !printAll {
+		if fieldCat != fieldcategory.Basic && !mf.printHelpAll {
 			// Don't print help for this flag since we're supposed to print only basic flags
 			return
 		}
@@ -79,7 +82,7 @@ func usage(cfg *mimir.Config, printAll bool) error {
 		fmt.Fprint(fs.Output(), b.String(), "\n")
 	})
 
-	if !printAll {
+	if !mf.printHelpAll {
 		fmt.Fprintf(fs.Output(), "\nTo see all flags, use -help-all\n")
 	}
 
@@ -102,14 +105,14 @@ func isZeroValue(fl *flag.Flag, value string) bool {
 	return value == z.Interface().(flag.Value).String()
 }
 
-// parseConfig parses a mimir.Config and populates fields.
-func parseConfig(cfg interface{}, fields map[uintptr]reflect.StructField) error {
-	// The input config is expected to be a pointer to struct.
-	if reflect.TypeOf(cfg).Kind() != reflect.Ptr {
-		t := reflect.TypeOf(cfg)
+// parseStructure parses a struct and populates fields.
+func parseStructure(structure interface{}, fields map[uintptr]reflect.StructField) error {
+	// structure is expected to be a pointer to a struct
+	if reflect.TypeOf(structure).Kind() != reflect.Ptr {
+		t := reflect.TypeOf(structure)
 		return fmt.Errorf("%s is a %s while a %s is expected", t, t.Kind(), reflect.Ptr)
 	}
-	v := reflect.ValueOf(cfg).Elem()
+	v := reflect.ValueOf(structure).Elem()
 	if v.Kind() != reflect.Struct {
 		return fmt.Errorf("%s is a %s while a %s is expected", v, v.Kind(), reflect.Struct)
 	}
@@ -132,7 +135,7 @@ func parseConfig(cfg interface{}, fields map[uintptr]reflect.StructField) error 
 			continue
 		}
 
-		if err := parseConfig(fieldValue.Addr().Interface(), fields); err != nil {
+		if err := parseStructure(fieldValue.Addr().Interface(), fields); err != nil {
 			return err
 		}
 	}

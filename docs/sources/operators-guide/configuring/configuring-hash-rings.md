@@ -7,7 +7,7 @@ weight: 60
 
 # Configuring Grafana Mimir hash rings
 
-[Hash rings]({{< relref "../architecture/hash-ring.md" >}}) are a distributed consistent hashing scheme and are widely used by Grafana Mimir for sharding and replication.
+[Hash rings]({{< relref "../architecture/hash-ring/index.md" >}}) are a distributed consistent hashing scheme and are widely used by Grafana Mimir for sharding and replication.
 
 Each of the following Grafana Mimir components builds an independent hash ring.
 The CLI flags used to configure the hash ring of each component have the following prefixes:
@@ -20,7 +20,7 @@ The CLI flags used to configure the hash ring of each component have the followi
 - (Optional) Alertmanagers: `-alertmanager.sharding-ring.*`
 
 The rest of the documentation refers to these prefixes as `<prefix>`.
-You can configure each parameter either via the CLI flag or its respective YAML [config option]({{< relref "../configuring/reference-configuration-parameters.md" >}}).
+You can configure each parameter either via the CLI flag or its respective YAML [config option]({{< relref "../configuring/reference-configuration-parameters/index.md" >}}).
 
 ## Configuring the key-value store
 
@@ -62,7 +62,7 @@ The default port is `7946`.
 Grafana Mimir supports TLS for memberlist connections between its components.
 For more information about TLS configuration, refer to [secure communications with TLS]({{< relref "../securing/securing-communications-with-tls.md" >}}).
 
-To see all supported configuration parameters, refer to [memberlist]({{< relref "../configuring/reference-configuration-parameters.md#memberlist" >}}).
+To see all supported configuration parameters, refer to [memberlist]({{< relref "../configuring/reference-configuration-parameters/index.md#memberlist" >}}).
 
 #### Configuring the memberlist address and port
 
@@ -99,7 +99,7 @@ To use [Consul](https://www.consul.io) as a backend KV store, set the following 
 - `<prefix>.consul.hostname`: Consul hostname and port separated by colon. For example, `consul:8500`.
 - `<prefix>.consul.acl-token`: [ACL token](https://www.consul.io/docs/security/acl/acl-system) used to authenticate to Consul. If Consul authentication is disabled, you can leave the token empty.
 
-To see all supported configuration parameters, refer [consul]({{< relref "../configuring/reference-configuration-parameters.md#consul" >}}).
+To see all supported configuration parameters, refer [consul]({{< relref "../configuring/reference-configuration-parameters/index.md#consul" >}}).
 
 ### Etcd
 
@@ -112,7 +112,7 @@ To use [etcd](https://etcd.io) as a backend KV store, set the following paramete
 Grafana Mimir supports TLS between its components and etcd.
 For more information about TLS configuration, refer to [secure communications with TLS]({{< relref "../securing/securing-communications-with-tls.md" >}}).
 
-To see all supported configuration parameters, refer to [etcd]({{< relref "../configuring/reference-configuration-parameters.md#etcd" >}}).
+To see all supported configuration parameters, refer to [etcd]({{< relref "../configuring/reference-configuration-parameters/index.md#etcd" >}}).
 
 ### Multi
 

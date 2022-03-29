@@ -9,9 +9,9 @@ weight: 20
 
 Some clients in Grafana Mimir support service discovery via DNS to locate the addresses of backend servers to connect to. The following clients support service discovery via DNS:
 
-- [Block storage's memcached cache]({{< relref "reference-configuration-parameters/#blocks_storage" >}})
-- [All caching memcached servers]({{< relref "reference-configuration-parameters/#memcached" >}})
-- [Memberlist KV store]({{< relref "reference-configuration-parameters#memberlist" >}})
+- [Block storage's memcached cache]({{< relref "reference-configuration-parameters/index.md#blocks_storage" >}})
+- [All caching memcached servers]({{< relref "reference-configuration-parameters/index.md#memcached" >}})
+- [Memberlist KV store]({{< relref "reference-configuration-parameters/index.md#memberlist" >}})
 
 ## Supported discovery modes
 

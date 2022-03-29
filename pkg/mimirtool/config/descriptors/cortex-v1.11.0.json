@@ -103,7 +103,7 @@
           "kind": "field",
           "name": "http_listen_conn_limit",
           "required": false,
-          "desc": "Maximum number of simultaneous http connections, <=0 to disable",
+          "desc": "Maximum number of simultaneous http connections, \u003c=0 to disable",
           "fieldDefaultValue": 0,
           "fieldFlag": "server.http-conn-limit",
           "fieldType": "int"
@@ -139,7 +139,7 @@
           "kind": "field",
           "name": "grpc_listen_conn_limit",
           "required": false,
-          "desc": "Maximum number of simultaneous grpc connections, <=0 to disable",
+          "desc": "Maximum number of simultaneous grpc connections, \u003c=0 to disable",
           "fieldDefaultValue": 0,
           "fieldFlag": "server.grpc-conn-limit",
           "fieldType": "int"
@@ -1057,6 +1057,15 @@
             },
             {
               "kind": "field",
+              "name": "instance_id",
+              "required": false,
+              "desc": "Instance ID to register in the ring.",
+              "fieldDefaultValue": null,
+              "fieldFlag": "distributor.ring.instance-id",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
               "name": "instance_interface_names",
               "required": false,
               "desc": "Name of network interface to read address from.",
@@ -1066,6 +1075,24 @@
               ],
               "fieldFlag": "distributor.ring.instance-interface-names",
               "fieldType": "list of string"
+            },
+            {
+              "kind": "field",
+              "name": "instance_port",
+              "required": false,
+              "desc": "Port to advertise in the ring (defaults to server.grpc-listen-port).",
+              "fieldDefaultValue": 0,
+              "fieldFlag": "distributor.ring.instance-port",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "instance_addr",
+              "required": false,
+              "desc": "IP address to advertise in the ring.",
+              "fieldDefaultValue": "",
+              "fieldFlag": "distributor.ring.instance-addr",
+              "fieldType": "string"
             }
           ]
         },
@@ -1322,7 +1349,7 @@
           "kind": "field",
           "name": "shuffle_sharding_ingesters_lookback_period",
           "required": false,
-          "desc": "When distributor's sharding strategy is shuffle-sharding and this setting is > 0, queriers fetch in-memory series from the minimum set of required ingesters, selecting only ingesters which may have received series since 'now - lookback period'. The lookback period should be greater or equal than the configured 'query store after' and 'query ingesters within'. If this setting is 0, queriers always query all ingesters (ingesters shuffle sharding on read path is disabled).",
+          "desc": "When distributor's sharding strategy is shuffle-sharding and this setting is \u003e 0, queriers fetch in-memory series from the minimum set of required ingesters, selecting only ingesters which may have received series since 'now - lookback period'. The lookback period should be greater or equal than the configured 'query store after' and 'query ingesters within'. If this setting is 0, queriers always query all ingesters (ingesters shuffle sharding on read path is disabled).",
           "fieldDefaultValue": 0,
           "fieldFlag": "querier.shuffle-sharding-ingesters-lookback-period",
           "fieldType": "duration"
@@ -1928,6 +1955,15 @@
               "fieldDefaultValue": true,
               "fieldFlag": "ingester.unregister-on-shutdown",
               "fieldType": "boolean"
+            },
+            {
+              "kind": "field",
+              "name": "address",
+              "required": false,
+              "desc": "IP address to advertise in the ring.",
+              "fieldDefaultValue": "",
+              "fieldFlag": "ingester.lifecycler.addr",
+              "fieldType": "string"
             }
           ]
         },
@@ -2196,7 +2232,7 @@
                   "kind": "field",
                   "name": "dynamodb_url",
                   "required": false,
-                  "desc": "DynamoDB endpoint URL with escaped Key and Secret encoded. If only region is specified as a host, proper endpoint will be deduced. Use inmemory:///<table-name> to use a mock in-memory implementation.",
+                  "desc": "DynamoDB endpoint URL with escaped Key and Secret encoded. If only region is specified as a host, proper endpoint will be deduced. Use inmemory:///\u003ctable-name\u003e to use a mock in-memory implementation.",
                   "fieldDefaultValue": {},
                   "fieldFlag": "dynamodb.url",
                   "fieldType": "url"
@@ -2275,7 +2311,7 @@
                       "name": "write_throttle_query",
                       "required": false,
                       "desc": "query to fetch throttle rates per table",
-                      "fieldDefaultValue": "sum(rate(cortex_dynamo_throttled_total{operation=\"DynamoDB.BatchWriteItem\"}[1m])) by (table) > 0",
+                      "fieldDefaultValue": "sum(rate(cortex_dynamo_throttled_total{operation=\"DynamoDB.BatchWriteItem\"}[1m])) by (table) \u003e 0",
                       "fieldFlag": "metrics.write-throttle-query",
                       "fieldType": "string"
                     },
@@ -2284,7 +2320,7 @@
                       "name": "write_usage_query",
                       "required": false,
                       "desc": "query to fetch write capacity usage per table",
-                      "fieldDefaultValue": "sum(rate(cortex_dynamo_consumed_capacity_total{operation=\"DynamoDB.BatchWriteItem\"}[15m])) by (table) > 0",
+                      "fieldDefaultValue": "sum(rate(cortex_dynamo_consumed_capacity_total{operation=\"DynamoDB.BatchWriteItem\"}[15m])) by (table) \u003e 0",
                       "fieldFlag": "metrics.usage-query",
                       "fieldType": "string"
                     },
@@ -2293,7 +2329,7 @@
                       "name": "read_usage_query",
                       "required": false,
                       "desc": "query to fetch read capacity usage per table",
-                      "fieldDefaultValue": "sum(rate(cortex_dynamo_consumed_capacity_total{operation=\"DynamoDB.QueryPages\"}[1h])) by (table) > 0",
+                      "fieldDefaultValue": "sum(rate(cortex_dynamo_consumed_capacity_total{operation=\"DynamoDB.QueryPages\"}[1h])) by (table) \u003e 0",
                       "fieldFlag": "metrics.read-usage-query",
                       "fieldType": "string"
                     },
@@ -2302,7 +2338,7 @@
                       "name": "read_error_query",
                       "required": false,
                       "desc": "query to fetch read errors per table",
-                      "fieldDefaultValue": "sum(increase(cortex_dynamo_failures_total{operation=\"DynamoDB.QueryPages\",error=\"ProvisionedThroughputExceededException\"}[1m])) by (table) > 0",
+                      "fieldDefaultValue": "sum(increase(cortex_dynamo_failures_total{operation=\"DynamoDB.QueryPages\",error=\"ProvisionedThroughputExceededException\"}[1m])) by (table) \u003e 0",
                       "fieldFlag": "metrics.read-error-query",
                       "fieldType": "string"
                     }
@@ -2367,7 +2403,7 @@
               "kind": "field",
               "name": "s3",
               "required": false,
-              "desc": "S3 endpoint URL with escaped Key and Secret encoded. If only region is specified as a host, proper endpoint will be deduced. Use inmemory:///<bucket-name> to use a mock in-memory implementation.",
+              "desc": "S3 endpoint URL with escaped Key and Secret encoded. If only region is specified as a host, proper endpoint will be deduced. Use inmemory:///\u003cbucket-name\u003e to use a mock in-memory implementation.",
               "fieldDefaultValue": {},
               "fieldFlag": "s3.url",
               "fieldType": "url"
@@ -3115,7 +3151,7 @@
               "kind": "field",
               "name": "table_options",
               "required": false,
-              "desc": "Table options used to create index or chunk tables. This value is used as plain text in the table `WITH` like this, \"CREATE TABLE <generated_by_cortex> (...) WITH <cassandra.table-options>\". For details, see https://cortexmetrics.io/docs/production/cassandra. By default it will use the default table options of your Cassandra cluster.",
+              "desc": "Table options used to create index or chunk tables. This value is used as plain text in the table `WITH` like this, \"CREATE TABLE \u003cgenerated_by_cortex\u003e (...) WITH \u003ccassandra.table-options\u003e\". For details, see https://cortexmetrics.io/docs/production/cassandra. By default it will use the default table options of your Cassandra cluster.",
               "fieldDefaultValue": "",
               "fieldFlag": "cassandra.table-options",
               "fieldType": "string"
@@ -3677,6 +3713,14 @@
                   "fieldType": "int"
                 }
               ]
+            },
+            {
+              "kind": "field",
+              "name": "prefix",
+              "required": false,
+              "desc": "",
+              "fieldDefaultValue": "",
+              "fieldType": "string"
             }
           ]
         },
@@ -4259,6 +4303,14 @@
                   "fieldType": "int"
                 }
               ]
+            },
+            {
+              "kind": "field",
+              "name": "prefix",
+              "required": false,
+              "desc": "",
+              "fieldDefaultValue": "",
+              "fieldType": "string"
             }
           ]
         },
@@ -4604,6 +4656,14 @@
                   "fieldType": "int"
                 }
               ]
+            },
+            {
+              "kind": "field",
+              "name": "prefix",
+              "required": false,
+              "desc": "",
+              "fieldDefaultValue": "",
+              "fieldType": "string"
             }
           ]
         },
@@ -4933,7 +4993,7 @@
           "kind": "field",
           "name": "max_query_lookback",
           "required": false,
-          "desc": "Limit how long back data (series and metadata) can be queried, up until <lookback> duration ago. This limit is enforced in the query-frontend, querier and ruler. If the requested time range is outside the allowed range, the request will not fail but will be manipulated to only query data within the allowed time range. 0 to disable.",
+          "desc": "Limit how long back data (series and metadata) can be queried, up until \u003clookback\u003e duration ago. This limit is enforced in the query-frontend, querier and ruler. If the requested time range is outside the allowed range, the request will not fail but will be manipulated to only query data within the allowed time range. 0 to disable.",
           "fieldDefaultValue": 0,
           "fieldFlag": "querier.max-query-lookback",
           "fieldType": "duration"
@@ -5376,7 +5436,7 @@
           "kind": "field",
           "name": "log_queries_longer_than",
           "required": false,
-          "desc": "Log queries that are slower than the specified duration. Set to 0 to disable. Set to < 0 to enable on all queries.",
+          "desc": "Log queries that are slower than the specified duration. Set to 0 to disable. Set to \u003c 0 to enable on all queries.",
           "fieldDefaultValue": 0,
           "fieldFlag": "frontend.log-queries-longer-than",
           "fieldType": "duration"
@@ -5606,6 +5666,15 @@
           ],
           "fieldFlag": "frontend.instance-interface-names",
           "fieldType": "list of string"
+        },
+        {
+          "kind": "field",
+          "name": "address",
+          "required": false,
+          "desc": "IP address to advertise to querier (via scheduler) (resolved via interfaces by default).",
+          "fieldDefaultValue": "",
+          "fieldFlag": "frontend.instance-addr",
+          "fieldType": "string"
         },
         {
           "kind": "field",
@@ -5990,6 +6059,14 @@
                       "fieldType": "int"
                     }
                   ]
+                },
+                {
+                  "kind": "field",
+                  "name": "prefix",
+                  "required": false,
+                  "desc": "",
+                  "fieldDefaultValue": "",
+                  "fieldType": "string"
                 }
               ]
             },
@@ -7392,7 +7469,7 @@
                       "kind": "field",
                       "name": "addresses",
                       "required": false,
-                      "desc": "Comma separated list of memcached addresses. Supported prefixes are: dns+ (looked up as an A/AAAA query), dnssrv+ (looked up as a SRV query), dnssrvnoa+ (looked up as a SRV query, with no A/AAAA lookup made after that).",
+                      "desc": "Comma separated list of memcached addresses. Supported prefixes are: dns+ (looked up as an A/AAAA query), dnssrv+ (looked up as a SRV query, dnssrvnoa+ (looked up as a SRV query, with no A/AAAA lookup made after that).",
                       "fieldDefaultValue": "",
                       "fieldFlag": "blocks-storage.bucket-store.index-cache.memcached.addresses",
                       "fieldType": "string"
@@ -7498,7 +7575,7 @@
                       "kind": "field",
                       "name": "addresses",
                       "required": false,
-                      "desc": "Comma separated list of memcached addresses. Supported prefixes are: dns+ (looked up as an A/AAAA query), dnssrv+ (looked up as a SRV query), dnssrvnoa+ (looked up as a SRV query, with no A/AAAA lookup made after that).",
+                      "desc": "Comma separated list of memcached addresses. Supported prefixes are: dns+ (looked up as an A/AAAA query), dnssrv+ (looked up as a SRV query, dnssrvnoa+ (looked up as a SRV query, with no A/AAAA lookup made after that).",
                       "fieldDefaultValue": "",
                       "fieldFlag": "blocks-storage.bucket-store.chunks-cache.memcached.addresses",
                       "fieldType": "string"
@@ -7640,7 +7717,7 @@
                       "kind": "field",
                       "name": "addresses",
                       "required": false,
-                      "desc": "Comma separated list of memcached addresses. Supported prefixes are: dns+ (looked up as an A/AAAA query), dnssrv+ (looked up as a SRV query), dnssrvnoa+ (looked up as a SRV query, with no A/AAAA lookup made after that).",
+                      "desc": "Comma separated list of memcached addresses. Supported prefixes are: dns+ (looked up as an A/AAAA query), dnssrv+ (looked up as a SRV query, dnssrvnoa+ (looked up as a SRV query, with no A/AAAA lookup made after that).",
                       "fieldDefaultValue": "",
                       "fieldFlag": "blocks-storage.bucket-store.metadata-cache.memcached.addresses",
                       "fieldType": "string"
@@ -7884,6 +7961,24 @@
             },
             {
               "kind": "field",
+              "name": "chunk_pool_min_bucket_size_bytes",
+              "required": false,
+              "desc": "Size - in bytes - of the smallest chunks pool bucket.",
+              "fieldDefaultValue": 16000,
+              "fieldFlag": "blocks-storage.bucket-store.chunk-pool-min-bucket-size-bytes",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "chunk_pool_max_bucket_size_bytes",
+              "required": false,
+              "desc": "Size - in bytes - of the largest chunks pool bucket.",
+              "fieldDefaultValue": 50000000,
+              "fieldFlag": "blocks-storage.bucket-store.chunk-pool-max-bucket-size-bytes",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
               "name": "index_header_lazy_loading_enabled",
               "required": false,
               "desc": "If enabled, store-gateway will lazy load an index-header only once required by a query.",
@@ -7895,10 +7990,28 @@
               "kind": "field",
               "name": "index_header_lazy_loading_idle_timeout",
               "required": false,
-              "desc": "If index-header lazy loading is enabled and this setting is > 0, the store-gateway will offload unused index-headers after 'idle timeout' inactivity.",
+              "desc": "If index-header lazy loading is enabled and this setting is \u003e 0, the store-gateway will offload unused index-headers after 'idle timeout' inactivity.",
               "fieldDefaultValue": 1200000000000,
               "fieldFlag": "blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout",
               "fieldType": "duration"
+            },
+            {
+              "kind": "field",
+              "name": "partitioner_max_gap_bytes",
+              "required": false,
+              "desc": "Max size - in bytes - of a gap for which the partitioner aggregates together two bucket GET object requests.",
+              "fieldDefaultValue": 524288,
+              "fieldFlag": "blocks-storage.bucket-store.partitioner-max-gap-bytes",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "postings_offsets_in_mem_sampling",
+              "required": false,
+              "desc": "Controls what is the ratio of postings offsets that the store will hold in memory.",
+              "fieldDefaultValue": 32,
+              "fieldFlag": "blocks-storage.bucket-store.posting-offsets-in-mem-sampling",
+              "fieldType": "int"
             }
           ]
         },
@@ -8489,6 +8602,15 @@
             },
             {
               "kind": "field",
+              "name": "instance_id",
+              "required": false,
+              "desc": "Instance ID to register in the ring.",
+              "fieldDefaultValue": null,
+              "fieldFlag": "compactor.ring.instance-id",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
               "name": "instance_interface_names",
               "required": false,
               "desc": "Name of network interface to read address from.",
@@ -8498,6 +8620,24 @@
               ],
               "fieldFlag": "compactor.ring.instance-interface-names",
               "fieldType": "list of string"
+            },
+            {
+              "kind": "field",
+              "name": "instance_port",
+              "required": false,
+              "desc": "Port to advertise in the ring (defaults to server.grpc-listen-port).",
+              "fieldDefaultValue": 0,
+              "fieldFlag": "compactor.ring.instance-port",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "instance_addr",
+              "required": false,
+              "desc": "IP address to advertise in the ring.",
+              "fieldDefaultValue": "",
+              "fieldFlag": "compactor.ring.instance-addr",
+              "fieldType": "string"
             },
             {
               "kind": "field",
@@ -8837,6 +8977,15 @@
             },
             {
               "kind": "field",
+              "name": "instance_id",
+              "required": false,
+              "desc": "Instance ID to register in the ring.",
+              "fieldDefaultValue": null,
+              "fieldFlag": "store-gateway.sharding-ring.instance-id",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
               "name": "instance_interface_names",
               "required": false,
               "desc": "Name of network interface to read address from.",
@@ -8846,6 +8995,24 @@
               ],
               "fieldFlag": "store-gateway.sharding-ring.instance-interface-names",
               "fieldType": "list of string"
+            },
+            {
+              "kind": "field",
+              "name": "instance_port",
+              "required": false,
+              "desc": "Port to advertise in the ring (defaults to server.grpc-listen-port).",
+              "fieldDefaultValue": 0,
+              "fieldFlag": "store-gateway.sharding-ring.instance-port",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "instance_addr",
+              "required": false,
+              "desc": "IP address to advertise in the ring.",
+              "fieldDefaultValue": "",
+              "fieldFlag": "store-gateway.sharding-ring.instance-addr",
+              "fieldType": "string"
             },
             {
               "kind": "field",
@@ -9361,7 +9528,7 @@
                   "kind": "field",
                   "name": "s3",
                   "required": false,
-                  "desc": "S3 endpoint URL with escaped Key and Secret encoded. If only region is specified as a host, proper endpoint will be deduced. Use inmemory:///<bucket-name> to use a mock in-memory implementation.",
+                  "desc": "S3 endpoint URL with escaped Key and Secret encoded. If only region is specified as a host, proper endpoint will be deduced. Use inmemory:///\u003cbucket-name\u003e to use a mock in-memory implementation.",
                   "fieldDefaultValue": {},
                   "fieldFlag": "ruler.storage.s3.url",
                   "fieldType": "url"
@@ -10161,6 +10328,15 @@
             },
             {
               "kind": "field",
+              "name": "instance_id",
+              "required": false,
+              "desc": "Instance ID to register in the ring.",
+              "fieldDefaultValue": null,
+              "fieldFlag": "ruler.ring.instance-id",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
               "name": "instance_interface_names",
               "required": false,
               "desc": "Name of network interface to read address from.",
@@ -10170,6 +10346,24 @@
               ],
               "fieldFlag": "ruler.ring.instance-interface-names",
               "fieldType": "list of string"
+            },
+            {
+              "kind": "field",
+              "name": "instance_port",
+              "required": false,
+              "desc": "Port to advertise in the ring (defaults to server.grpc-listen-port).",
+              "fieldDefaultValue": 0,
+              "fieldFlag": "ruler.ring.instance-port",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "instance_addr",
+              "required": false,
+              "desc": "IP address to advertise in the ring.",
+              "fieldDefaultValue": "",
+              "fieldFlag": "ruler.ring.instance-addr",
+              "fieldType": "string"
             },
             {
               "kind": "field",
@@ -11206,6 +11400,15 @@
             },
             {
               "kind": "field",
+              "name": "instance_id",
+              "required": false,
+              "desc": "Instance ID to register in the ring.",
+              "fieldDefaultValue": null,
+              "fieldFlag": "alertmanager.sharding-ring.instance-id",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
               "name": "instance_interface_names",
               "required": false,
               "desc": "Name of network interface to read address from.",
@@ -11215,6 +11418,24 @@
               ],
               "fieldFlag": "alertmanager.sharding-ring.instance-interface-names",
               "fieldType": "list of string"
+            },
+            {
+              "kind": "field",
+              "name": "instance_port",
+              "required": false,
+              "desc": "Port to advertise in the ring (defaults to server.grpc-listen-port).",
+              "fieldDefaultValue": 0,
+              "fieldFlag": "alertmanager.sharding-ring.instance-port",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "instance_addr",
+              "required": false,
+              "desc": "IP address to advertise in the ring.",
+              "fieldDefaultValue": "",
+              "fieldFlag": "alertmanager.sharding-ring.instance-addr",
+              "fieldType": "string"
             },
             {
               "kind": "field",
@@ -11492,7 +11713,7 @@
                   "kind": "field",
                   "name": "s3",
                   "required": false,
-                  "desc": "S3 endpoint URL with escaped Key and Secret encoded. If only region is specified as a host, proper endpoint will be deduced. Use inmemory:///<bucket-name> to use a mock in-memory implementation.",
+                  "desc": "S3 endpoint URL with escaped Key and Secret encoded. If only region is specified as a host, proper endpoint will be deduced. Use inmemory:///\u003cbucket-name\u003e to use a mock in-memory implementation.",
                   "fieldDefaultValue": {},
                   "fieldFlag": "alertmanager.storage.s3.url",
                   "fieldType": "url"

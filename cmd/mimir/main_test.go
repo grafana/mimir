@@ -9,15 +9,18 @@ import (
 	"bytes"
 	"flag"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 
+	"github.com/go-kit/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/mimir"
+	"github.com/grafana/mimir/pkg/util/fieldcategory"
 )
 
 func TestFlagParsing(t *testing.T) {
@@ -162,7 +165,7 @@ func TestHelp(t *testing.T) {
 			// Restore stdout and stderr before reporting errors to make them visible.
 			restoreIfNeeded()
 
-			expected, err := ioutil.ReadFile(tc.filename)
+			expected, err := os.ReadFile(tc.filename)
 			require.NoError(t, err)
 			assert.Equalf(t, string(expected), string(stdout), "%s %s output changed; try `make reference-help`", cmd, tc.arg)
 			assert.Empty(t, stderr)
@@ -273,7 +276,7 @@ func (co *capturedOutput) Done() (stdout []byte, stderr []byte) {
 	return co.stdoutBuf.Bytes(), co.stderrBuf.Bytes()
 }
 
-func TestExpandEnv(t *testing.T) {
+func TestExpandEnvironmentVariables(t *testing.T) {
 	var tests = []struct {
 		in  string
 		out string
@@ -299,7 +302,7 @@ func TestExpandEnv(t *testing.T) {
 		test := test
 		t.Run(test.in, func(t *testing.T) {
 			_ = os.Setenv("y", "y")
-			output := expandEnv([]byte(test.in))
+			output := expandEnvironmentVariables([]byte(test.in))
 			assert.Equal(t, test.out, string(output), "Input: %s", test.in)
 		})
 	}
@@ -309,7 +312,7 @@ func TestParseConfigFileParameter(t *testing.T) {
 	var tests = []struct {
 		args       string
 		configFile string
-		expandENV  bool
+		expandEnv  bool
 	}{
 		{"", "", false},
 		{"--foo", "", false},
@@ -337,9 +340,31 @@ func TestParseConfigFileParameter(t *testing.T) {
 		test := test
 		t.Run(test.args, func(t *testing.T) {
 			args := strings.Split(test.args, " ")
-			configFile, expandENV := parseConfigFileParameter(args)
+			configFile, expandEnv := parseConfigFileParameter(args)
 			assert.Equal(t, test.configFile, configFile)
-			assert.Equal(t, test.expandENV, expandENV)
+			assert.Equal(t, test.expandEnv, expandEnv)
 		})
 	}
+}
+
+func TestFieldCategoryOverridesNotStale(t *testing.T) {
+	overrides := make(map[string]struct{})
+	fieldcategory.VisitOverrides(func(s string) {
+		overrides[s] = struct{}{}
+	})
+
+	fs := flag.NewFlagSet("test", flag.PanicOnError)
+
+	var (
+		cfg mimir.Config
+		mf  mainFlags
+	)
+	cfg.RegisterFlags(fs, log.NewNopLogger())
+	mf.registerFlags(fs)
+
+	fs.VisitAll(func(fl *flag.Flag) {
+		delete(overrides, fl.Name)
+	})
+
+	require.Empty(t, overrides, "There are category overrides for configuration options that no longer exist")
 }

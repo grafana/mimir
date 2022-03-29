@@ -18,10 +18,10 @@ mimir {
     alertmanager_client_type: 'gcs',
     alertmanager_gcs_bucket_name: 'alerts-bucket',
 
-    cortex_multi_zone_ingester_enabled: true,
-    cortex_multi_zone_ingester_replicas: 3,
+    multi_zone_ingester_enabled: true,
+    multi_zone_ingester_replicas: 3,
 
-    cortex_multi_zone_store_gateway_enabled: true,
-    cortex_multi_zone_store_gateway_replicas: 3,
+    multi_zone_store_gateway_enabled: true,
+    multi_zone_store_gateway_replicas: 3,
   },
 }

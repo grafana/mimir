@@ -15,6 +15,7 @@ import (
 	"github.com/weaveworks/common/logging"
 	"github.com/weaveworks/common/server"
 
+	"github.com/grafana/mimir/pkg/util/instrumentation"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/tools/querytee"
 )
@@ -43,7 +44,7 @@ func main() {
 	registry := prometheus.NewRegistry()
 	registry.MustRegister(collectors.NewGoCollector())
 
-	i := querytee.NewInstrumentationServer(cfg.ServerMetricsPort, registry)
+	i := instrumentation.NewMetricsServer(cfg.ServerMetricsPort, registry)
 	if err := i.Start(); err != nil {
 		level.Error(util_log.Logger).Log("msg", "Unable to start instrumentation server", "err", err.Error())
 		os.Exit(1)

@@ -75,7 +75,6 @@ To publish a stable release:
    1. Ensure the `VERSION` file has **no** `-rc.X` suffix
    1. Update the Mimir version in the following locations:
       - `operations/mimir/images.libsonnet` (`_images.mimir` and `_images.query_tee` fields)
-      - Documentation located at `docs/`
 1. Update dashboard screenshots
    1. Run `make mixin-screenshots`
    1. Review all updated screenshots and ensure no sensitive data is disclosed

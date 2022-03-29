@@ -1,9 +1,3 @@
----
-title: "TSDB Tools"
-description: ""
-weight: 100
----
-
 # TSDB Tools
 
 Grafana Mimir has multiple tools useful for inspecting or debugging TSDB blocks.

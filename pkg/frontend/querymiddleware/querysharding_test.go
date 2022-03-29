@@ -385,6 +385,16 @@ func TestQueryShardingCorrectness(t *testing.T) {
 					)`,
 			expectedShardedQueries: 0,
 		},
+		"outer subquery on top of sum": {
+			query:                  `sum(metric_counter) by (group_1)[5m:1m]`,
+			expectedShardedQueries: 0,
+			noRangeQuery:           true,
+		},
+		"outer subquery on top of avg": {
+			query:                  `avg(metric_counter) by (group_1)[5m:1m]`,
+			expectedShardedQueries: 0,
+			noRangeQuery:           true,
+		},
 		"stddev()": {
 			query:                  `stddev(metric_counter{const="fixed"})`,
 			expectedShardedQueries: 0,
