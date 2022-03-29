@@ -17,7 +17,6 @@ import (
 	"github.com/weaveworks/common/httpgrpc"
 	"github.com/weaveworks/common/user"
 
-	"github.com/grafana/mimir/pkg/tenant"
 	"github.com/grafana/mimir/pkg/util/remotequerier"
 	queriertransport "github.com/grafana/mimir/pkg/util/remotequerier/transport"
 )
@@ -34,16 +33,9 @@ func NewOrgRoundTripper(next queriertransport.RoundTripper) queriertransport.Rou
 
 // RoundTrip satisfies transport.RoundTripper interface.
 func (r *orgRoundTripper) RoundTrip(ctx context.Context, req *httpgrpc.HTTPRequest) (*httpgrpc.HTTPResponse, error) {
-	var orgID string
-
-	if sourceTenants, _ := ctx.Value(federatedGroupSourceTenants).([]string); len(sourceTenants) > 0 {
-		orgID = tenant.JoinTenantIDs(sourceTenants)
-	} else {
-		var err error
-		orgID, err = tenant.TenantID(ctx)
-		if err != nil {
-			return nil, err
-		}
+	orgID, err := ExtractTenantIDs(ctx)
+	if err != nil {
+		return nil, err
 	}
 	req.Headers = append(req.Headers, &httpgrpc.Header{
 		Key:    textproto.CanonicalMIMEHeaderKey(user.OrgIDHeaderName),
