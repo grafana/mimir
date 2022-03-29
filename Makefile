@@ -326,6 +326,7 @@ check-protos: clean-protos protos
 
 doc: ## Generates the config file documentation.
 doc: clean-doc $(DOC_TEMPLATES:.template=.md) $(DOC_EMBED:.md=.md.embedmd)
+	@(go run ./tools/config-inspector || true) > cmd/mimir/config-descriptor.json
 	# Make up markdown files prettier. When running with check-doc target, it will fail if this produces any change.
 	prettier --write "**/*.md"
 
@@ -429,10 +430,6 @@ check-doc: doc
 
 check-doc-links:
 	cd ./tools/doc-validator && go run . ../../docs/sources/
-
-.PHONY: reference-help
-reference-help: cmd/mimir/mimir
-	@(go run ./tools/config-inspector || true) > cmd/mimir/config-descriptor.json
 
 clean-white-noise:
 	@find . -path ./.pkg -prune -o -path "*/vendor/*" -prune -or -type f -name "*.md" -print | \
