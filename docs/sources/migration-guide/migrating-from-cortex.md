@@ -292,7 +292,7 @@ You can update to the Grafana Mimir Helm chart from the Cortex Helm chart.
    > **Note:** The `$` symbol refers to the top level of the values file.
 
    f. Set the ingester `podManagementPolicy` to `"OrderedReady"`.
-   The Mimir chart prefers `"Parallel"` for faster scale up but this field is immutable on an existing StatefulSet.
+   The Grafana Mimir chart prefers `"Parallel"` for faster scale up but this field is immutable on an existing StatefulSet.
 
    In your `values.yaml` file:
 
@@ -302,6 +302,7 @@ You can update to the Grafana Mimir Helm chart from the Cortex Helm chart.
    ```
 
    g. Set the `nameOverride` to `cortex`.
+   This ensures that resources have the same names as those created by the Cortex Helm chart and causes a rolling upgrade instead of a separate resource being created.
 
    In your `values.yaml` file:
 
@@ -310,6 +311,8 @@ You can update to the Grafana Mimir Helm chart from the Cortex Helm chart.
    ```
 
 1. Run Helm upgrade with the Grafana Mimir chart.
+
+   > **Note:** The name of the release must match your Cortex Helm chart release.
 
    ```bash
    helm upgrade <RELEASE> grafana/mimir
