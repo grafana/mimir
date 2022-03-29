@@ -32,8 +32,6 @@ func main() {
 }
 
 type marker struct {
-	mark string
-
 	bucket   bucket.Config
 	userID   string
 	blockIDs []string
