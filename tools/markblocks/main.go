@@ -117,8 +117,8 @@ func createMarker(markType string, reason string, logger log.Logger, details str
 	default:
 		level.Error(logger).Log("msg", "Invalid -mark flag value. Should be no-compact or deletion.", "value", markType)
 		os.Exit(1)
+		panic("We never reach this.")
 	}
-	panic("We never reach this.")
 }
 
 func createUserBucket(ctx context.Context, logger log.Logger, cfg bucket.Config, userID string) objstore.Bucket {
