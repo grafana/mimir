@@ -1748,11 +1748,12 @@ sharding_ring:
 # CLI flag: -alertmanager.enable-api
 [enable_api: <boolean> | default = true]
 
-# (advanced) Concurrency limit for GET requests. The zero value (and negative
-# values) result in a limit of GOMAXPROCS or 8, whichever is larger. Status code
-# 503 is served for GET requests that would exceed the concurrency limit.
-# CLI flag: -alertmanager.concurrency
-[concurrency: <int> | default = 0]
+# (advanced) Maximum number of concurrent GET requests allowed per tenant. The
+# zero value (and negative values) result in a limit of GOMAXPROCS or 8,
+# whichever is larger. Status code 503 is served for GET requests that would
+# exceed the concurrency limit.
+# CLI flag: -alertmanager.max-concurrent-get-requests-per-tenant
+[max_concurrent_get_requests_per_tenant: <int> | default = 0]
 
 alertmanager_client:
   # (advanced) Timeout for downstream alertmanagers.

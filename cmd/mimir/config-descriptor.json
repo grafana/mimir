@@ -8389,12 +8389,12 @@
         },
         {
           "kind": "field",
-          "name": "concurrency",
+          "name": "max_concurrent_get_requests_per_tenant",
           "required": false,
-          "desc": "Concurrency limit for GET requests. The zero value (and negative values) result in a limit of GOMAXPROCS or 8, whichever is larger. Status code 503 is served for GET requests that would exceed the concurrency limit.",
+          "desc": "Maximum number of concurrent GET requests allowed per tenant. The zero value (and negative values) result in a limit of GOMAXPROCS or 8, whichever is larger. Status code 503 is served for GET requests that would exceed the concurrency limit.",
           "fieldValue": null,
           "fieldDefaultValue": 0,
-          "fieldFlag": "alertmanager.concurrency",
+          "fieldFlag": "alertmanager.max-concurrent-get-requests-per-tenant",
           "fieldType": "int",
           "fieldCategory": "advanced"
         },

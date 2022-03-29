@@ -79,7 +79,7 @@ type MultitenantAlertmanagerConfig struct {
 
 	EnableAPI bool `yaml:"enable_api" category:"advanced"`
 
-	Concurrency int `yaml:"concurrency" category:"advanced"`
+	MaxConcurrentGetRequestsPerTenant int `yaml:"max_concurrent_get_requests_per_tenant" category:"advanced"`
 
 	// For distributor.
 	AlertmanagerClient ClientConfig `yaml:"alertmanager_client"`
@@ -105,7 +105,7 @@ func (cfg *MultitenantAlertmanagerConfig) RegisterFlags(f *flag.FlagSet, logger 
 	f.DurationVar(&cfg.PollInterval, "alertmanager.configs.poll-interval", 15*time.Second, "How frequently to poll Alertmanager configs.")
 
 	f.BoolVar(&cfg.EnableAPI, "alertmanager.enable-api", true, "Enable the alertmanager config API.")
-	f.IntVar(&cfg.Concurrency, "alertmanager.concurrency", 0, "Concurrency limit for GET requests. The zero value (and negative values) result in a limit of GOMAXPROCS or 8, whichever is larger. Status code 503 is served for GET requests that would exceed the concurrency limit.")
+	f.IntVar(&cfg.MaxConcurrentGetRequestsPerTenant, "alertmanager.max-concurrent-get-requests-per-tenant", 0, "Maximum number of concurrent GET requests allowed per tenant. The zero value (and negative values) result in a limit of GOMAXPROCS or 8, whichever is larger. Status code 503 is served for GET requests that would exceed the concurrency limit.")
 
 	cfg.AlertmanagerClient.RegisterFlagsWithPrefix("alertmanager.alertmanager-client", f)
 	cfg.Persister.RegisterFlagsWithPrefix("alertmanager", f)
@@ -845,18 +845,18 @@ func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *amco
 	}
 
 	newAM, err := New(&Config{
-		UserID:            userID,
-		TenantDataDir:     tenantDir,
-		Logger:            am.logger,
-		PeerTimeout:       am.cfg.PeerTimeout,
-		Retention:         am.cfg.Retention,
-		Concurrency:       am.cfg.Concurrency,
-		ExternalURL:       am.cfg.ExternalURL.URL,
-		Replicator:        am,
-		ReplicationFactor: am.cfg.ShardingRing.ReplicationFactor,
-		Store:             am.store,
-		PersisterConfig:   am.cfg.Persister,
-		Limits:            am.limits,
+		UserID:                            userID,
+		TenantDataDir:                     tenantDir,
+		Logger:                            am.logger,
+		PeerTimeout:                       am.cfg.PeerTimeout,
+		Retention:                         am.cfg.Retention,
+		MaxConcurrentGetRequestsPerTenant: am.cfg.MaxConcurrentGetRequestsPerTenant,
+		ExternalURL:                       am.cfg.ExternalURL.URL,
+		Replicator:                        am,
+		ReplicationFactor:                 am.cfg.ShardingRing.ReplicationFactor,
+		Store:                             am.store,
+		PersisterConfig:                   am.cfg.Persister,
+		Limits:                            am.limits,
 	}, reg)
 	if err != nil {
 		return nil, fmt.Errorf("unable to start Alertmanager for user %v: %v", userID, err)

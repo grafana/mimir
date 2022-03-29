@@ -68,13 +68,13 @@ const (
 
 // Config configures an Alertmanager.
 type Config struct {
-	UserID      string
-	Logger      log.Logger
-	PeerTimeout time.Duration
-	Retention   time.Duration
-	Concurrency int
-	ExternalURL *url.URL
-	Limits      Limits
+	UserID                            string
+	Logger                            log.Logger
+	PeerTimeout                       time.Duration
+	Retention                         time.Duration
+	MaxConcurrentGetRequestsPerTenant int
+	ExternalURL                       *url.URL
+	Limits                            Limits
 
 	// Tenant-specific local directory where AM can store its state (notifications, silences, templates). When AM is stopped, entire dir is removed.
 	TenantDataDir string
@@ -248,7 +248,7 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 		Alerts:      am.alerts,
 		Silences:    am.silences,
 		StatusFunc:  am.marker.Status,
-		Concurrency: cfg.Concurrency,
+		Concurrency: cfg.MaxConcurrentGetRequestsPerTenant,
 		// Mimir should not expose cluster information back to its tenants.
 		Peer:     &NilPeer{},
 		Registry: am.registry,
