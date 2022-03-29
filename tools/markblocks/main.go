@@ -157,7 +157,7 @@ type deleteMark struct {
 func (mark *deleteMark) filename() string { return metadata.DeletionMarkFilename }
 
 func (mark *deleteMark) register(app *kingpin.Application) {
-	cmd := app.Command("delete", "Mark blocks as non-compactable.").
+	cmd := app.Command("delete", "Mark blocks for deletion.").
 		Action(func(_ *kingpin.ParseContext) error { return mark.marker.run(mark) })
 	cmd.Flag("details", "The details field of the marker.").
 		StringVar(&mark.details)
