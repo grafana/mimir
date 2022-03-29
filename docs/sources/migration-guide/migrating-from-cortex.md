@@ -184,9 +184,9 @@ To verify that the cluster is operating correctly, use the [monitoring mixin das
 
 ## Updating to Grafana Mimir using Helm
 
-You can update to the Grafana Mimir Helm chart from a the Cortex Helm chart.
+You can update to the Grafana Mimir Helm chart from the Cortex Helm chart.
 
-### Prerequisites
+### Before you begin
 
 - Ensure you are running the v1.4.0 release of the Cortex Helm chart.
 - Ensure that you are running ingesters using StatefulSets.
@@ -195,9 +195,11 @@ You can update to the Grafana Mimir Helm chart from a the Cortex Helm chart.
 
   ```
   ingester:
-    statefulSets:
+    statefulSet:
       enabled: true
   ```
+
+**To migrate to the Grafana Mimir Helm chart:**
 
 1. Install the updated monitoring mixin.
 
@@ -230,7 +232,9 @@ You can update to the Grafana Mimir Helm chart from a the Cortex Helm chart.
 
    c. Place the updated configuration under the `$.mimir.config` key.
 
-   In your `values.yaml` file:
+   > **Note:** The `$` symbol refers to the top level of the values file.
+
+   In your Helm values file:
 
    ```yaml
    mimir:
@@ -238,9 +242,56 @@ You can update to the Grafana Mimir Helm chart from a the Cortex Helm chart.
        <CONFIGURATION FILE CONTENTS>
    ```
 
-   d. Remove the original Cortex `$.config` member.
+   d. Incorporate templated configuration from the `mimir-distributed` `values.yaml` file.
+      The Cortex Helm chart set this configuration using flags.
+      The Grafana Mimir Helm chart sets this in the configuration file.
 
-   e. Set the ingester `podManagementPolicy` to `OrderedReady`.
+      - Set `frontend_worker.frontend_address` to `'{{ template "mimir.fullname" . }}-query-frontend-headless.{{ .Release.Namespace }}.svc:{{ include "mimir.serverGrpcListenPort" . }}'`.
+      - Set `ruler.alertmanager_url` to `'dnssrvnoa+http://_http-metrics._tcp.{{ template "mimir.fullname" . }}-alertmanager-headless.{{ .Release.Namespace }}.svc.cluster.local/alertmanager'`.
+      - If you wish to use memberlist as the ring KV store, set `memberlist.join_members` to `['{{ include "mimir.fullname" . }}-gossip-ring']`.
+      - Append caching configuration to `blocks_storage.bucket_store`.
+
+      A partial Helm `values` file with the changes incorporated looks similar to:
+
+      ```yaml
+      mimir:
+        config: |
+          blocks_storage:
+            {{- if .Values.memcached.enabled }}
+            chunks_cache:
+              backend: memcached
+              memcached:
+                addresses: dns+{{ .Release.Name }}-memcached.{{ .Release.Namespace }}.svc:11211
+                max_item_size: {{ .Values.memcached.maxItemMemory }}
+            {{- end }}
+            {{- if index .Values "memcached-metadata" "enabled" }}
+            metadata_cache:
+              backend: memcached
+              memcached:
+                addresses: dns+{{ .Release.Name }}-memcached-metadata.{{ .Release.Namespace }}.svc:11211
+                max_item_size: {{ (index .Values "memcached-metadata").maxItemMemory }}
+            {{- end }}
+            {{- if index .Values "memcached-queries" "enabled" }}
+            index_cache:
+              backend: memcached
+              memcached:
+                addresses: dns+{{ .Release.Name }}-memcached-queries.{{ .Release.Namespace }}.svc:11211
+                max_item_size: {{ (index .Values "memcached-queries").maxItemMemory }}
+            {{- end }}
+          frontend_worker:
+            frontend_address: {{ template "mimir.fullname" . }}-query-frontend-headless.{{ .Release.Namespace }}.svc:{{ include "mimir.serverGrpcListenPort" . }}
+          memberlist:
+            join_members:
+            - {{ include "mimir.fullname" . }}-gossip-ring
+          ruler:
+            alertmanager_url: dnssrvnoa+http://_http-metrics._tcp.{{ template "mimir.fullname" . }}-alertmanager-headless.{{ .Release.Namespace }}.svc.cluster.local/alertmanager
+    ```
+
+   e. Remove the original Cortex `$.config` member.
+
+   > **Note:** The `$` symbol refers to the top level of the values file.
+
+   f. Set the ingester `podManagementPolicy` to `OrderedReady`.
       The Mimir chart prefers `Parallel` for faster scale up but this field is immutable on an existing StatefulSet.
 
    In your `values.yaml` file:
@@ -250,8 +301,11 @@ You can update to the Grafana Mimir Helm chart from a the Cortex Helm chart.
      podManagementPolicy: "OrderedReady"
    ```
 
+
 1. Run Helm upgrade with the Mimir chart.
 
    ```bash
    helm upgrade <RELEASE> grafana/mimir
    ```
+
+To verify that the cluster is operating correctly, use the [monitoring mixin dashboards]({{< relref "../operators-guide/visualizing-metrics/dashboards/_index.md" >}}).
