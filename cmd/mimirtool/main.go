@@ -31,7 +31,7 @@ var (
 )
 
 func main() {
-	app := kingpin.New("mimirtool", "A command-line tool to manage mimir and GEM.")
+	app := kingpin.New("mimirtool", "A command-line tool to manage Mimir and GEM.")
 
 	envVars := commands.NewEnvVarsWithPrefix("MIMIR")
 	aclCommand.Register(app, envVars)
