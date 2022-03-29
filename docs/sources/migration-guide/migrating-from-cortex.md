@@ -292,7 +292,7 @@ You can update to the Grafana Mimir Helm chart from the Cortex Helm chart.
    > **Note:** The `$` symbol refers to the top level of the values file.
 
    f. Set the ingester `podManagementPolicy` to `"OrderedReady"`.
-   The Grafana Mimir chart prefers `"Parallel"` for faster scale up but this field is immutable on an existing StatefulSet.
+   The Grafana Mimir chart prefers `"Parallel"` for faster scale up, but this field is immutable on an existing StatefulSet.
 
    In your `values.yaml` file:
 
