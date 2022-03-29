@@ -244,8 +244,8 @@ You can update to the Grafana Mimir Helm chart from the Cortex Helm chart.
    ```
 
    d. Merge the templated configuration from the `mimir-distributed` `values.yaml` file.
-   The Cortex Helm chart sets this configuration using flags.
-   The Grafana Mimir Helm chart sets this in the configuration file.
+   The Cortex Helm chart sets some additional configuration using flags.
+   The Grafana Mimir Helm chart sets that additional configuration in the configuration file.
 
    - Set `frontend_worker.frontend_address` to `'{{ template "mimir.fullname" . }}-query-frontend-headless.{{ .Release.Namespace }}.svc:{{ include "mimir.serverGrpcListenPort" . }}'`.
    - Set `ruler.alertmanager_url` to `'dnssrvnoa+http://_http-metrics._tcp.{{ template "mimir.fullname" . }}-alertmanager-headless.{{ .Release.Namespace }}.svc.cluster.local/alertmanager'`.
