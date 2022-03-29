@@ -11,6 +11,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -125,12 +126,12 @@ func TestHelp(t *testing.T) {
 			arg:      "-h",
 			expected: []string{"-version"},
 			// Advanced flags are not present for basic -help
-			notExpected: []string{"-mem-ballast-size-bytes", "-debug.mutex-profile-fraction"},
+			notExpected: []string{"-mem-ballast-size-bytes int", "-debug.mutex-profile-fraction int"},
 		},
 		"all": {
 			arg: "-help-all",
 			// Advanced flags are present for -help-all.
-			expected: []string{"-version", "-mem-ballast-size-bytes", "-debug.mutex-profile-fraction"},
+			expected: []string{"-version", "-mem-ballast-size-bytes int", "-debug.mutex-profile-fraction int"},
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -167,11 +168,14 @@ func TestHelp(t *testing.T) {
 			// Restore stdout and stderr before reporting errors to make them visible.
 			restoreIfNeeded()
 
+			// Split by newlines, and remove white space right before (eg. optional \r) and after newlines (space or tabs prefix).
+			stdoutList := regexp.MustCompile("\\s*\n\\s+").Split(string(stdout), -1)
+
 			for _, e := range tc.expected {
-				assert.Contains(t, string(stdout), e)
+				assert.Contains(t, stdoutList, e, e)
 			}
 			for _, e := range tc.notExpected {
-				assert.NotContains(t, string(stdout), e)
+				assert.NotContains(t, stdoutList, e, e)
 			}
 		})
 	}
