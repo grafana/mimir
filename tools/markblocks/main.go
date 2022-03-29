@@ -109,9 +109,10 @@ func createMarker(markType string, reason string, logger log.Logger, details str
 
 		return func(b ulid.ULID) ([]byte, error) {
 			return json.Marshal(metadata.DeletionMark{
-				ID:      b,
-				Version: metadata.NoCompactMarkVersion1,
-				Details: details,
+				ID:           b,
+				Version:      metadata.NoCompactMarkVersion1,
+				Details:      details,
+				DeletionTime: time.Now().Unix(),
 			})
 		}, metadata.DeletionMarkFilename
 	default:
