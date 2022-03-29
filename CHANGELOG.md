@@ -17,7 +17,7 @@
 
 ### Tools
 
-* [FEATURE] Added a `create-no-compact-mark` tool that creates no-compact marks. #1551
+* [FEATURE] Added a `markblocks` tool that creates `no-compact` and `delete` marks for the blocks. #1551
 
 ## 2.0.0
 
