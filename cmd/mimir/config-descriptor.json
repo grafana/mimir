@@ -1315,6 +1315,38 @@
           ],
           "fieldValue": null,
           "fieldDefaultValue": null
+        },
+        {
+          "kind": "block",
+          "name": "forwarding",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "enabled",
+              "required": false,
+              "desc": "Enables the feature to forward certain metrics in remote_write requests, depending on defined rules.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "distributor.forwarding.enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "request_timeout",
+              "required": false,
+              "desc": "Timeout for requests to ingestion endpoints to which we forward metrics.",
+              "fieldValue": null,
+              "fieldDefaultValue": 10000000000,
+              "fieldFlag": "distributor.forwarding.request-timeout",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
         }
       ],
       "fieldValue": null,
@@ -2950,6 +2982,15 @@
           "fieldDefaultValue": 0,
           "fieldFlag": "alertmanager.max-alerts-size-bytes",
           "fieldType": "int"
+        },
+        {
+          "kind": "field",
+          "name": "forwarding_rules",
+          "required": false,
+          "desc": "Rules based on which the Distributor decides whether a metric should be forwarded to an alternative remote_write API endpoint.",
+          "fieldValue": null,
+          "fieldDefaultValue": {},
+          "fieldType": "map of string to validation.ForwardingRule"
         }
       ],
       "fieldValue": null,

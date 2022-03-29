@@ -40,6 +40,9 @@ It provides a simple migration by generating Mimir configuration from Cortex con
 
 - The Grafana Mimir HTTP server defaults to listening on port 8080; Cortex defaults to listening on port 80.
   To maintain port 80 as the listening port, set `-server.http-listen-port=80`.
+- Grafana Mimir uses `anonymous` as the default tenant ID when `-auth.multitenancy=false`.
+  Cortex uses `fake` as the default tenant ID when `-auth.enabled=false`.
+  Use `-auth.no-auth-tenant=fake` when `-auth.multitenancy=false` to match the Cortex default tenant ID.
 - Grafana Mimir removes the legacy HTTP prefixes deprecated in Cortex.
 
   - Query endpoints

@@ -656,7 +656,6 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 		c.metaSyncDirForUser(userID),
 		reg,
 		fetcherFilters,
-		nil,
 	)
 	if err != nil {
 		return err

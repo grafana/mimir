@@ -1,8 +1,3 @@
----
-title: "How to upgrade Golang version"
-weight: 4
----
-
 To upgrade the Golang version:
 
 1. Upgrade build image version

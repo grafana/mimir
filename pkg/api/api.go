@@ -188,8 +188,11 @@ func (a *API) newRoute(path string, handler http.Handler, isPrefix, auth, gzip b
 func (a *API) RegisterAlertmanager(am *alertmanager.MultitenantAlertmanager, apiEnabled bool, buildInfoHandler http.Handler) {
 	alertmanagerpb.RegisterAlertmanagerServer(a.server.GRPC, am)
 
-	a.indexPage.AddLink(SectionAdminEndpoints, "/multitenant_alertmanager/status", "Alertmanager Status")
-	a.indexPage.AddLink(SectionAdminEndpoints, "/multitenant_alertmanager/ring", "Alertmanager Ring Status")
+	a.indexPage.AddLinks(defaultWeight, "Alertmanager", []IndexPageLink{
+		{Desc: "Status", Path: "/multitenant_alertmanager/status"},
+		{Desc: "Ring status", Path: "/multitenant_alertmanager/ring"},
+	})
+
 	// Ensure this route is registered before the prefixed AM route
 	a.RegisterRoute("/multitenant_alertmanager/status", am.GetStatusHandler(), false, true, "GET")
 	a.RegisterRoute("/multitenant_alertmanager/configs", http.HandlerFunc(am.ListAllConfigs), false, true, "GET")
@@ -211,19 +214,24 @@ func (a *API) RegisterAlertmanager(am *alertmanager.MultitenantAlertmanager, api
 
 // RegisterAPI registers the standard endpoints associated with a running Mimir.
 func (a *API) RegisterAPI(httpPathPrefix string, actualCfg interface{}, defaultCfg interface{}, buildInfoHandler http.Handler) {
-	a.indexPage.AddLink(SectionAdminEndpoints, "/config", "Current Config (including the default values)")
-	a.indexPage.AddLink(SectionAdminEndpoints, "/config?mode=diff", "Current Config (show only values that differ from the defaults)")
+	a.indexPage.AddLinks(configWeight, "Current config", []IndexPageLink{
+		{Desc: "Including the default values", Path: "/config"},
+		{Desc: "Only values that differ from the defaults", Path: "/config?mode=diff"},
+	})
 
 	a.RegisterRoute("/config", a.cfg.configHandler(actualCfg, defaultCfg), false, true, "GET")
 	a.RegisterRoute("/", indexHandler(httpPathPrefix, a.indexPage), false, true, "GET")
+	a.RegisterRoutesWithPrefix("/static/", http.StripPrefix(httpPathPrefix, http.FileServer(http.FS(staticFiles))), false, true, "GET")
 	a.RegisterRoute("/debug/fgprof", fgprof.Handler(), false, true, "GET")
 	a.RegisterRoute("/api/v1/status/buildinfo", buildInfoHandler, false, true, "GET")
 }
 
 // RegisterRuntimeConfig registers the endpoints associates with the runtime configuration
 func (a *API) RegisterRuntimeConfig(runtimeConfigHandler http.HandlerFunc) {
-	a.indexPage.AddLink(SectionAdminEndpoints, "/runtime_config", "Current Runtime Config (incl. Overrides)")
-	a.indexPage.AddLink(SectionAdminEndpoints, "/runtime_config?mode=diff", "Current Runtime Config (show only values that differ from the defaults)")
+	a.indexPage.AddLinks(runtimeConfigWeight, "Current runtime config", []IndexPageLink{
+		{Desc: "Entire runtime config (including overrides)", Path: "/runtime_config"},
+		{Desc: "Only values that differ from the defaults", Path: "/runtime_config?mode=diff"},
+	})
 
 	a.RegisterRoute("/runtime_config", runtimeConfigHandler, false, true, "GET")
 }
@@ -234,9 +242,11 @@ func (a *API) RegisterDistributor(d *distributor.Distributor, pushConfig distrib
 
 	a.RegisterRoute("/api/v1/push", push.Handler(pushConfig.MaxRecvMsgSize, a.sourceIPs, a.cfg.SkipLabelNameValidationHeader, a.cfg.wrapDistributorPush(d)), true, false, "POST")
 
-	a.indexPage.AddLink(SectionAdminEndpoints, "/distributor/ring", "Distributor Ring Status")
-	a.indexPage.AddLink(SectionAdminEndpoints, "/distributor/all_user_stats", "Usage Statistics")
-	a.indexPage.AddLink(SectionAdminEndpoints, "/distributor/ha_tracker", "HA Tracking Status")
+	a.indexPage.AddLinks(defaultWeight, "Distributor", []IndexPageLink{
+		{Desc: "Ring status", Path: "/distributor/ring"},
+		{Desc: "Usage statistics", Path: "/distributor/all_user_stats"},
+		{Desc: "HA tracker status", Path: "/distributor/ha_tracker"},
+	})
 
 	a.RegisterRoute("/distributor/ring", d, false, true, "GET", "POST")
 	a.RegisterRoute("/distributor/all_user_stats", http.HandlerFunc(d.AllUserStatsHandler), false, true, "GET")
@@ -256,8 +266,11 @@ type Ingester interface {
 func (a *API) RegisterIngester(i Ingester, pushConfig distributor.Config) {
 	client.RegisterIngesterServer(a.server.GRPC, i)
 
-	a.indexPage.AddLink(SectionDangerous, "/ingester/flush", "Trigger a Flush of data from Ingester to storage")
-	a.indexPage.AddLink(SectionDangerous, "/ingester/shutdown", "Trigger Ingester Shutdown (Dangerous)")
+	a.indexPage.AddLinks(dangerousWeight, "Dangerous", []IndexPageLink{
+		{Dangerous: true, Desc: "Trigger a flush of data from ingester to storage", Path: "/ingester/flush"},
+		{Dangerous: true, Desc: "Trigger ingester shutdown", Path: "/ingester/shutdown"},
+	})
+
 	a.RegisterRoute("/ingester/flush", http.HandlerFunc(i.FlushHandler), false, true, "GET", "POST")
 	a.RegisterRoute("/ingester/shutdown", http.HandlerFunc(i.ShutdownHandler), false, true, "GET", "POST")
 	a.RegisterRoute("/ingester/push", push.Handler(pushConfig.MaxRecvMsgSize, a.sourceIPs, a.cfg.SkipLabelNameValidationHeader, i.PushWithCleanup), true, false, "POST") // For testing and debugging.
@@ -270,7 +283,9 @@ func (a *API) RegisterTenantDeletion(api *purger.TenantDeletionAPI) {
 
 // RegisterRuler registers routes associated with the Ruler service.
 func (a *API) RegisterRuler(r *ruler.Ruler) {
-	a.indexPage.AddLink(SectionAdminEndpoints, "/ruler/ring", "Ruler Ring Status")
+	a.indexPage.AddLinks(defaultWeight, "Ruler", []IndexPageLink{
+		{Desc: "Ring status", Path: "/ruler/ring"},
+	})
 	a.RegisterRoute("/ruler/ring", r, false, true, "GET", "POST")
 
 	// Administrative API, uses authentication to inform which user's configuration to delete.
@@ -321,7 +336,9 @@ func (a *API) RegisterRulerAPI(r *ruler.API, configAPIEnabled bool) {
 
 // RegisterRing registers the ring UI page associated with the distributor for writes.
 func (a *API) RegisterRing(r http.Handler) {
-	a.indexPage.AddLink(SectionAdminEndpoints, "/ingester/ring", "Ingester Ring Status")
+	a.indexPage.AddLinks(defaultWeight, "Ingester", []IndexPageLink{
+		{Desc: "Ring status", Path: "/ingester/ring"},
+	})
 	a.RegisterRoute("/ingester/ring", r, false, true, "GET", "POST")
 }
 
@@ -329,8 +346,10 @@ func (a *API) RegisterRing(r http.Handler) {
 func (a *API) RegisterStoreGateway(s *storegateway.StoreGateway) {
 	storegatewaypb.RegisterStoreGatewayServer(a.server.GRPC, s)
 
-	a.indexPage.AddLink(SectionAdminEndpoints, "/store-gateway/ring", "Store Gateway Ring")
-	a.indexPage.AddLink(SectionAdminEndpoints, "/store-gateway/tenants", "Store Gateway Tenants & Blocks")
+	a.indexPage.AddLinks(defaultWeight, "Store-gateway", []IndexPageLink{
+		{Desc: "Ring status", Path: "/store-gateway/ring"},
+		{Desc: "Tenants & Blocks", Path: "/store-gateway/tenants"},
+	})
 	a.RegisterRoute("/store-gateway/ring", http.HandlerFunc(s.RingHandler), false, true, "GET", "POST")
 	a.RegisterRoute("/store-gateway/tenants", http.HandlerFunc(s.TenantsHandler), false, true, "GET")
 	a.RegisterRoute("/store-gateway/tenant/{tenant}/blocks", http.HandlerFunc(s.BlocksHandler), false, true, "GET")
@@ -338,7 +357,9 @@ func (a *API) RegisterStoreGateway(s *storegateway.StoreGateway) {
 
 // RegisterCompactor registers the ring UI page associated with the compactor.
 func (a *API) RegisterCompactor(c *compactor.MultitenantCompactor) {
-	a.indexPage.AddLink(SectionAdminEndpoints, "/compactor/ring", "Compactor Ring Status")
+	a.indexPage.AddLinks(defaultWeight, "Compactor", []IndexPageLink{
+		{Desc: "Ring status", Path: "/compactor/ring"},
+	})
 	a.RegisterRoute("/compactor/ring", http.HandlerFunc(c.RingHandler), false, true, "GET", "POST")
 }
 
@@ -396,11 +417,15 @@ func (a *API) RegisterQueryScheduler(f *scheduler.Scheduler) {
 // TODO: Refactor this code to be accomplished using the services.ServiceManager
 // or a future module manager #2291
 func (a *API) RegisterServiceMapHandler(handler http.Handler) {
-	a.indexPage.AddLink(SectionAdminEndpoints, "/services", "Service Status")
+	a.indexPage.AddLinks(serviceStatusWeight, "Overview", []IndexPageLink{
+		{Desc: "Service status", Path: "/services"},
+	})
 	a.RegisterRoute("/services", handler, false, true, "GET")
 }
 
 func (a *API) RegisterMemberlistKV(handler http.Handler) {
-	a.indexPage.AddLink(SectionAdminEndpoints, "/memberlist", "Memberlist Status")
+	a.indexPage.AddLinks(memberlistWeight, "Memberlist", []IndexPageLink{
+		{Desc: "Status", Path: "/memberlist"},
+	})
 	a.RegisterRoute("/memberlist", handler, false, true, "GET")
 }

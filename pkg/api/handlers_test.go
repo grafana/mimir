@@ -18,16 +18,16 @@ import (
 
 func TestIndexHandlerPrefix(t *testing.T) {
 	c := newIndexPageContent()
-	c.AddLink(SectionAdminEndpoints, "/ingester/ring", "Ingester Ring")
+	c.AddLinks(defaultWeight, "Store Gateway", []IndexPageLink{{Desc: "Ring status", Path: "/store-gateway/ring"}})
 
 	for _, tc := range []struct {
 		prefix    string
 		toBeFound string
 	}{
-		{prefix: "", toBeFound: "<a href=\"/ingester/ring\">"},
-		{prefix: "/test", toBeFound: "<a href=\"/test/ingester/ring\">"},
+		{prefix: "", toBeFound: "<a href=\"/store-gateway/ring\">"},
+		{prefix: "/test", toBeFound: "<a href=\"/test/store-gateway/ring\">"},
 		// All the extra slashed are cleaned up in the result.
-		{prefix: "///test///", toBeFound: "<a href=\"/test/ingester/ring\">"},
+		{prefix: "///test///", toBeFound: "<a href=\"/test/store-gateway/ring\">"},
 	} {
 		h := indexHandler(tc.prefix, c)
 
@@ -43,9 +43,10 @@ func TestIndexHandlerPrefix(t *testing.T) {
 
 func TestIndexPageContent(t *testing.T) {
 	c := newIndexPageContent()
-	c.AddLink(SectionAdminEndpoints, "/ingester/ring", "Ingester Ring")
-	c.AddLink(SectionAdminEndpoints, "/store-gateway/ring", "Store Gateway Ring")
-	c.AddLink(SectionDangerous, "/ingester/shutdown", "Shutdown")
+	c.AddLinks(defaultWeight, "Some group", []IndexPageLink{
+		{Desc: "Some link", Path: "/store-gateway/ring"},
+		{Dangerous: true, Desc: "Boom!", Path: "/store-gateway/boom"},
+	})
 
 	h := indexHandler("", c)
 
@@ -55,10 +56,13 @@ func TestIndexPageContent(t *testing.T) {
 	h.ServeHTTP(resp, req)
 
 	require.Equal(t, 200, resp.Code)
-	require.True(t, strings.Contains(resp.Body.String(), SectionAdminEndpoints))
-	require.True(t, strings.Contains(resp.Body.String(), SectionDangerous))
-	require.True(t, strings.Contains(resp.Body.String(), "Store Gateway Ring"))
-	require.True(t, strings.Contains(resp.Body.String(), "/ingester/shutdown"))
+	require.True(t, strings.Contains(resp.Body.String(), "Some group"))
+	require.True(t, strings.Contains(resp.Body.String(), "Some link"))
+	require.True(t, strings.Contains(resp.Body.String(), "Dangerous"))
+	require.True(t, strings.Contains(resp.Body.String(), "Boom!"))
+	require.True(t, strings.Contains(resp.Body.String(), "Dangerous"))
+	require.True(t, strings.Contains(resp.Body.String(), "/store-gateway/ring"))
+	require.True(t, strings.Contains(resp.Body.String(), "/store-gateway/boom"))
 	require.False(t, strings.Contains(resp.Body.String(), "/compactor/ring"))
 }
 

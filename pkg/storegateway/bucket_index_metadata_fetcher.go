@@ -35,7 +35,6 @@ type BucketIndexMetadataFetcher struct {
 	cfgProvider bucket.TenantConfigProvider
 	logger      log.Logger
 	filters     []block.MetadataFilter
-	modifiers   []block.MetadataModifier
 	metrics     *block.FetcherMetrics
 }
 
@@ -47,7 +46,6 @@ func NewBucketIndexMetadataFetcher(
 	logger log.Logger,
 	reg prometheus.Registerer,
 	filters []block.MetadataFilter,
-	modifiers []block.MetadataModifier,
 ) *BucketIndexMetadataFetcher {
 	return &BucketIndexMetadataFetcher{
 		userID:      userID,
@@ -56,7 +54,6 @@ func NewBucketIndexMetadataFetcher(
 		cfgProvider: cfgProvider,
 		logger:      logger,
 		filters:     filters,
-		modifiers:   modifiers,
 		metrics:     block.NewFetcherMetrics(reg, [][]string{{corruptedBucketIndex}, {noBucketIndex}, {minTimeExcludedMeta}}, nil),
 	}
 }
@@ -121,18 +118,11 @@ func (f *BucketIndexMetadataFetcher) Fetch(ctx context.Context) (metas map[ulid.
 		if customFilter, ok := filter.(MetadataFilterWithBucketIndex); ok {
 			err = customFilter.FilterWithBucketIndex(ctx, metas, idx, f.metrics.Synced)
 		} else {
-			err = filter.Filter(ctx, metas, f.metrics.Synced)
+			err = filter.Filter(ctx, metas, f.metrics.Synced, f.metrics.Modified)
 		}
 
 		if err != nil {
 			return nil, nil, errors.Wrap(err, "filter metas")
-		}
-	}
-
-	for _, m := range f.modifiers {
-		// NOTE: modifier can update modified metric accordingly to the reason of the modification.
-		if err := m.Modify(ctx, metas, f.metrics.Modified); err != nil {
-			return nil, nil, errors.Wrap(err, "modify metas")
 		}
 	}
 
