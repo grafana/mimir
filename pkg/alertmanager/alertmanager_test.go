@@ -150,7 +150,7 @@ func TestDispatcherLoggerInsightKey(t *testing.T) {
 		ShardingEnabled:   true,
 		Replicator:        &stubReplicator{},
 		ReplicationFactor: 1,
-		PersisterConfig: PersisterConfig{Interval: time.Hour},
+		PersisterConfig:   PersisterConfig{Interval: time.Hour},
 	}, reg)
 	require.NoError(t, err)
 	defer am.StopAndWait()
@@ -191,7 +191,7 @@ route:
 		logs := buf.String()
 		return strings.Contains(logs, "insight=true")
 		// Ensure that the dispatcher component emits logs with a "true" insight key,
-        // identifying these logs to be exposed to end users via the usage insights system.
+		// identifying these logs to be exposed to end users via the usage insights system.
 	})
 }
 
