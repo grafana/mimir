@@ -302,7 +302,7 @@ You can update to the Grafana Mimir Helm chart from the Cortex Helm chart.
    ```
 
    g. Set the `nameOverride` to `cortex`.
-   This ensures that resources have the same names as those created by the Cortex Helm chart and causes a rolling upgrade instead of a separate resource being created.
+   This configuration parameter ensures that resources have the same names as those created by the Cortex Helm chart and ensures Kubernetes performs a rolling upgrade of existing resources instead of creating new resources.
 
    In your `values.yaml` file:
 
