@@ -243,7 +243,7 @@ You can update to the Grafana Mimir Helm chart from the Cortex Helm chart.
        <CONFIGURATION FILE CONTENTS>
    ```
 
-   d. Incorporate templated configuration from the `mimir-distributed` `values.yaml` file.
+   d. Merge the templated configuration from the `mimir-distributed` `values.yaml` file.
    The Cortex Helm chart set this configuration using flags.
    The Grafana Mimir Helm chart sets this in the configuration file.
 
