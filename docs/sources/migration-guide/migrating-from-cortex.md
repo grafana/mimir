@@ -260,40 +260,39 @@ You can update to the Grafana Mimir Helm chart from the Cortex Helm chart.
        blocks_storage:
          {{- if .Values.memcached.enabled }}
          chunks_cache:
-           backend: memcached
+           backend: "memcached"
            memcached:
-             addresses: dns+{{ .Release.Name }}-memcached.{{ .Release.Namespace }}.svc:11211
+             addresses: "dns+{{ .Release.Name }}-memcached.{{ .Release.Namespace }}.svc:11211"
              max_item_size: {{ .Values.memcached.maxItemMemory }}
          {{- end }}
          {{- if index .Values "memcached-metadata" "enabled" }}
          metadata_cache:
-           backend: memcached
+           backend: "memcached"
            memcached:
-             addresses: dns+{{ .Release.Name }}-memcached-metadata.{{ .Release.Namespace }}.svc:11211
+             addresses: "dns+{{ .Release.Name }}-memcached-metadata.{{ .Release.Namespace }}.svc:11211"
              max_item_size: {{ (index .Values "memcached-metadata").maxItemMemory }}
          {{- end }}
          {{- if index .Values "memcached-queries" "enabled" }}
          index_cache:
-           backend: memcached
+           backend: "memcached"
            memcached:
-             addresses: dns+{{ .Release.Name }}-memcached-queries.{{ .Release.Namespace }}.svc:11211
+             addresses: "dns+{{ .Release.Name }}-memcached-queries.{{ .Release.Namespace }}.svc:11211"
              max_item_size: {{ (index .Values "memcached-queries").maxItemMemory }}
          {{- end }}
        frontend_worker:
-         frontend_address: {{ template "mimir.fullname" . }}-query-frontend-headless.{{ .Release.Namespace }}.svc:{{ include "mimir.serverGrpcListenPort" . }}
+         frontend_address: "{{ template "mimir.fullname" . }}-query-frontend-headless.{{ .Release.Namespace }}.svc:{{ include "mimir.serverGrpcListenPort" . }}"
        memberlist:
-         join_members:
-         - {{ include "mimir.fullname" . }}-gossip-ring
+         join_members: ["{{ include "mimir.fullname" . }}-gossip-ring"]
        ruler:
-         alertmanager_url: dnssrvnoa+http://_http-metrics._tcp.{{ template "mimir.fullname" . }}-alertmanager-headless.{{ .Release.Namespace }}.svc.cluster.local/alertmanager
+         alertmanager_url: "dnssrvnoa+http://_http-metrics._tcp.{{ template "mimir.fullname" . }}-alertmanager-headless.{{ .Release.Namespace }}.svc.cluster.local/alertmanager"
    ```
 
    e. Remove the original Cortex `$.config` member.
 
    > **Note:** The `$` symbol refers to the top level of the values file.
 
-   f. Set the ingester `podManagementPolicy` to `OrderedReady`.
-   The Mimir chart prefers `Parallel` for faster scale up but this field is immutable on an existing StatefulSet.
+   f. Set the ingester `podManagementPolicy` to `"OrderedReady"`.
+   The Mimir chart prefers `"Parallel"` for faster scale up but this field is immutable on an existing StatefulSet.
 
    In your `values.yaml` file:
 
@@ -302,7 +301,15 @@ You can update to the Grafana Mimir Helm chart from the Cortex Helm chart.
      podManagementPolicy: "OrderedReady"
    ```
 
-1. Run Helm upgrade with the Mimir chart.
+   g. Set the `nameOverride` to `cortex`.
+
+   In your `values.yaml` file:
+
+   ```yaml
+   nameOverride: "cortex"
+   ```
+
+1. Run Helm upgrade with the Grafana Mimir chart.
 
    ```bash
    helm upgrade <RELEASE> grafana/mimir
