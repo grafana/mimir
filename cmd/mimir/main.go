@@ -46,31 +46,46 @@ func init() {
 
 const (
 	configFileOption = "config.file"
-	configExpandENV  = "config.expand-env"
+	configExpandEnv  = "config.expand-env"
 )
 
 var testMode = false
 
+type mainFlags struct {
+	ballastBytes         int `category:"advanced"`
+	mutexProfileFraction int `category:"advanced"`
+	blockProfileRate     int `category:"advanced"`
+	printVersion         bool
+	printModules         bool
+	printHelp            bool
+	printHelpAll         bool
+}
+
+func (mf *mainFlags) registerFlags(fs *flag.FlagSet) {
+	fs.IntVar(&mf.ballastBytes, "mem-ballast-size-bytes", 0, "Size of memory ballast to allocate.")
+	fs.IntVar(&mf.mutexProfileFraction, "debug.mutex-profile-fraction", 0, "Fraction of mutex contention events that are reported in the mutex profile. On average 1/rate events are reported. 0 to disable.")
+	fs.IntVar(&mf.blockProfileRate, "debug.block-profile-rate", 0, "Fraction of goroutine blocking events that are reported in the blocking profile. 1 to include every blocking event in the profile, 0 to disable.")
+	fs.BoolVar(&mf.printVersion, "version", false, "Print application version and exit.")
+	fs.BoolVar(&mf.printModules, "modules", false, "List available values that can be used as target.")
+	fs.BoolVar(&mf.printHelp, "help", false, "Print basic help.")
+	fs.BoolVar(&mf.printHelp, "h", false, "Print basic help.")
+	fs.BoolVar(&mf.printHelpAll, "help-all", false, "Print help, also including advanced and experimental parameters.")
+}
+
 func main() {
 	var (
-		cfg                  mimir.Config
-		ballastBytes         int
-		mutexProfileFraction int
-		blockProfileRate     int
-		printVersion         bool
-		printModules         bool
-		printHelp            bool
-		printHelpAll         bool
+		cfg       mimir.Config
+		mainFlags mainFlags
 	)
 
-	configFile, expandENV := parseConfigFileParameter(os.Args[1:])
+	configFile, expandEnv := parseConfigFileParameter(os.Args[1:])
 
 	// This sets default values from flags to the config.
 	// It needs to be called before parsing the config file!
 	flagext.RegisterFlagsWithLogger(util_log.Logger, &cfg)
 
 	if configFile != "" {
-		if err := LoadConfig(configFile, expandENV, &cfg); err != nil {
+		if err := LoadConfig(configFile, expandEnv, &cfg); err != nil {
 			fmt.Fprintf(os.Stderr, "error loading config from %s: %v\n", configFile, err)
 			if testMode {
 				return
@@ -79,18 +94,11 @@ func main() {
 		}
 	}
 
-	// Ignore -config.file and -config.expand-env here, since it was already parsed, but it's still present on command line.
+	// Ignore -config.file and -config.expand-env here, since they are parsed separately, but are still present on the command line.
 	flagext.IgnoredFlag(flag.CommandLine, configFileOption, "Configuration file to load.")
-	_ = flag.CommandLine.Bool(configExpandENV, false, "Expands ${var} or $var in config according to the values of the environment variables.")
+	_ = flag.CommandLine.Bool(configExpandEnv, false, "Expands ${var} or $var in config according to the values of the environment variables.")
 
-	flag.IntVar(&ballastBytes, "mem-ballast-size-bytes", 0, "Size of memory ballast to allocate.")
-	flag.IntVar(&mutexProfileFraction, "debug.mutex-profile-fraction", 0, "Fraction of mutex contention events that are reported in the mutex profile. On average 1/rate events are reported. 0 to disable.")
-	flag.IntVar(&blockProfileRate, "debug.block-profile-rate", 0, "Fraction of goroutine blocking events that are reported in the blocking profile. 1 to include every blocking event in the profile, 0 to disable.")
-	flag.BoolVar(&printVersion, "version", false, "Print application version and exit.")
-	flag.BoolVar(&printModules, "modules", false, "List available values that can be used as target.")
-	flag.BoolVar(&printHelp, "help", false, "Print basic help.")
-	flag.BoolVar(&printHelp, "h", false, "Print basic help.")
-	flag.BoolVar(&printHelpAll, "help-all", false, "Print help, also including advanced and experimental parameters.")
+	mainFlags.registerFlags(flag.CommandLine)
 
 	flag.CommandLine.Usage = func() { /* don't do anything by default, we will print usage ourselves, but only when requested. */ }
 	flag.CommandLine.Init(flag.CommandLine.Name(), flag.ContinueOnError)
@@ -102,10 +110,10 @@ func main() {
 		}
 	}
 
-	if printHelp || printHelpAll {
+	if mainFlags.printHelp || mainFlags.printHelpAll {
 		// Print available parameters to stdout, so that users can grep/less them easily.
 		flag.CommandLine.SetOutput(os.Stdout)
-		if err := usage(&cfg, printHelpAll); err != nil {
+		if err := usage(&mainFlags, &cfg); err != nil {
 			fmt.Fprintf(os.Stderr, "error printing usage: %s\n", err)
 			os.Exit(1)
 		}
@@ -116,7 +124,7 @@ func main() {
 		return
 	}
 
-	if printVersion {
+	if mainFlags.printVersion {
 		fmt.Fprintln(os.Stdout, version.Print("Mimir"))
 		return
 	}
@@ -132,22 +140,22 @@ func main() {
 
 	// Continue on if -modules flag is given. Code handling the
 	// -modules flag will not start mimir.
-	if testMode && !printModules {
+	if testMode && !mainFlags.printModules {
 		DumpYaml(&cfg)
 		return
 	}
 
-	if mutexProfileFraction > 0 {
-		runtime.SetMutexProfileFraction(mutexProfileFraction)
+	if mainFlags.mutexProfileFraction > 0 {
+		runtime.SetMutexProfileFraction(mainFlags.mutexProfileFraction)
 	}
-	if blockProfileRate > 0 {
-		runtime.SetBlockProfileRate(blockProfileRate)
+	if mainFlags.blockProfileRate > 0 {
+		runtime.SetBlockProfileRate(mainFlags.blockProfileRate)
 	}
 
 	util_log.InitLogger(&cfg.Server)
 
 	// Allocate a block of memory to alter GC behaviour. See https://github.com/golang/go/issues/23044
-	ballast := make([]byte, ballastBytes)
+	ballast := make([]byte, mainFlags.ballastBytes)
 
 	// In testing mode skip JAEGER setup to avoid panic due to
 	// "duplicate metrics collector registration attempted"
@@ -171,7 +179,7 @@ func main() {
 	t, err := mimir.New(cfg)
 	util_log.CheckFatal("initializing application", err)
 
-	if printModules {
+	if mainFlags.printModules {
 		allDeps := t.ModuleManager.DependenciesForModule(mimir.All)
 
 		for _, m := range t.ModuleManager.UserVisibleModuleNames() {
@@ -206,7 +214,7 @@ func parseConfigFileParameter(args []string) (configFile string, expandEnv bool)
 
 	// usage not used in these functions.
 	fs.StringVar(&configFile, configFileOption, "", "")
-	fs.BoolVar(&expandEnv, configExpandENV, false, "")
+	fs.BoolVar(&expandEnv, configExpandEnv, false, "")
 
 	// Try to find -config.file and -config.expand-env option in the flags. As Parsing stops on the first error, eg. unknown flag, we simply
 	// try remaining parameters until we find config flag, or there are no params left.
@@ -220,7 +228,7 @@ func parseConfigFileParameter(args []string) (configFile string, expandEnv bool)
 }
 
 // LoadConfig read YAML-formatted config from filename into cfg.
-func LoadConfig(filename string, expandENV bool, cfg *mimir.Config) error {
+func LoadConfig(filename string, expandEnv bool, cfg *mimir.Config) error {
 	buf, err := ioutil.ReadFile(filename)
 	if err != nil {
 		return errors.Wrap(err, "Error reading config file")
@@ -232,8 +240,8 @@ func LoadConfig(filename string, expandENV bool, cfg *mimir.Config) error {
 	configHash.Reset()
 	configHash.WithLabelValues(fmt.Sprintf("%x", hash)).Set(1)
 
-	if expandENV {
-		buf = expandEnv(buf)
+	if expandEnv {
+		buf = expandEnvironmentVariables(buf)
 	}
 
 	err = yaml.UnmarshalStrict(buf, cfg)
@@ -253,10 +261,10 @@ func DumpYaml(cfg *mimir.Config) {
 	}
 }
 
-// expandEnv replaces ${var} or $var in config according to the values of the current environment variables.
+// expandEnvironmentVariables replaces ${var} or $var in config according to the values of the current environment variables.
 // The replacement is case-sensitive. References to undefined variables are replaced by the empty string.
 // A default value can be given by using the form ${var:default value}.
-func expandEnv(config []byte) []byte {
+func expandEnvironmentVariables(config []byte) []byte {
 	return []byte(os.Expand(string(config), func(key string) string {
 		keyAndDefault := strings.SplitN(key, ":", 2)
 		key = keyAndDefault[0]

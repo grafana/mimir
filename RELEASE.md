@@ -75,7 +75,6 @@ To publish a stable release:
    1. Ensure the `VERSION` file has **no** `-rc.X` suffix
    1. Update the Mimir version in the following locations:
       - `operations/mimir/images.libsonnet` (`_images.mimir` and `_images.query_tee` fields)
-      - Documentation located at `docs/`
 1. Update dashboard screenshots
    1. Run `make mixin-screenshots`
    1. Review all updated screenshots and ensure no sensitive data is disclosed
@@ -94,10 +93,16 @@ To publish a stable release:
      - Locally merge the `merge-release-X.Y-to-main` branch into `main`, and push the changes to `main` back to GitHub. This doesn't break `main` branch protection, since the PR has been approved already, and it also doesn't require removing the protection.
 1. Open a PR to add the new version to the backward compatibility integration test (`integration/backward_compatibility_test.go`)
 1. Publish release documentation using `./tools/release-docs`:
-
-```console
-$ ./tools/release-docs /tmp/grafana/website mimir-2.0.0
-```
+   ```console
+   $ ./tools/release-docs /tmp/grafana/website mimir-2.0.0
+   ```
+1. Publish dashboards (done by a Grafana Labs member)
+   1. Login to [https://grafana.com](https://grafana.com) with your Grafana Labs account
+   1. Open [https://grafana.com/orgs/grafana/dashboards](https://grafana.com/orgs/grafana/dashboards)
+   1. For each dashboard at `operations/mimir-mixin-compiled/dashboards`:
+      1. Open the respective dashboard page
+      1. Click "Revisions" tab
+      1. Click "Upload new revision" and upload the updated `.json`
 
 ### How to tag a release
 
