@@ -6,7 +6,6 @@
 package alertmanager
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"net/url"
@@ -15,6 +14,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/test"
 	"github.com/prometheus/alertmanager/cluster/clusterpb"
 	"github.com/prometheus/alertmanager/config"
@@ -136,7 +136,7 @@ route:
 }
 
 func TestDispatcherLoggerInsightKey(t *testing.T) {
-	var buf bytes.Buffer
+	var buf concurrency.SyncBuffer
 	logger := log.NewLogfmtLogger(&buf)
 
 	user := "test"
