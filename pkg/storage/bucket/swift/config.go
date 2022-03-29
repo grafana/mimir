@@ -6,11 +6,10 @@
 package swift
 
 import (
+	"flag"
 	"time"
 
 	"github.com/grafana/dskit/flagext"
-
-	"github.com/grafana/mimir/pkg/util"
 )
 
 // Config holds the config options for Swift backend
@@ -36,12 +35,12 @@ type Config struct {
 }
 
 // RegisterFlags registers the flags for Swift storage
-func (cfg *Config) RegisterFlags(f util.FlagSet) {
+func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	cfg.RegisterFlagsWithPrefix("", f)
 }
 
 // RegisterFlagsWithPrefix registers the flags for Swift storage with the provided prefix
-func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f util.FlagSet) {
+func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.IntVar(&cfg.AuthVersion, prefix+"swift.auth-version", 0, "OpenStack Swift authentication API version. 0 to autodetect.")
 	f.StringVar(&cfg.AuthURL, prefix+"swift.auth-url", "", "OpenStack Swift authentication URL")
 	f.StringVar(&cfg.Username, prefix+"swift.username", "", "OpenStack Swift username.")
