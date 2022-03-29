@@ -4,169 +4,178 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"os"
 	"strings"
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/flagext"
 	"github.com/oklog/ulid"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
-	"gopkg.in/alecthomas/kingpin.v2"
+	"github.com/thanos-io/thanos/pkg/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 )
 
+var validNoCompactReasons = []string{
+	string(metadata.ManualNoCompactReason),
+	string(metadata.IndexSizeExceedingNoCompactReason),
+	string(metadata.OutOfOrderChunksNoCompactReason),
+}
+
 func main() {
-	var markerCmd marker
-	app := kingpin.New("markblocks", "A command-line tool to create and upload markers for Mimir TSDB blocks.")
-	markerCmd.register(app)
-
-	noCompactMarkCmd := &noCompactMark{marker: &markerCmd}
-	noCompactMarkCmd.register(app)
-	deleteMarkCmd := &deleteMark{marker: &markerCmd}
-	deleteMarkCmd.register(app)
-
-	kingpin.MustParse(app.Parse(os.Args[1:]))
-}
-
-type marker struct {
-	bucket   bucket.Config
-	userID   string
-	blockIDs []string
-
-	dryRun bool
-}
-
-func (m *marker) register(app *kingpin.Application) {
-	m.bucket.RegisterFlags(kingPinFlagSet{app})
-	app.Flag("user", "User (tenant) owner of the block.").
-		Required().
-		StringVar(&m.userID)
-	app.Flag("block", "The ULIDs of the blocks to be marked.").
-		Required().
-		StringsVar(&m.blockIDs)
-	app.Flag("dry-run", "Don't upload the markers generated, just print the intentions on the screen.").
-		BoolVar(&m.dryRun)
-}
-
-func (m *marker) run(mark blockMarker) error {
 	ctx := context.Background()
 	logger := log.WithPrefix(log.NewLogfmtLogger(os.Stderr), "time", log.DefaultTimestampUTC)
 
+	var cfg struct {
+		bucket   bucket.Config
+		userID   string
+		blockIDs flagext.StringSlice
+
+		mark string
+
+		details string
+		reason  string // used for no-compact only
+
+		dryRun bool
+	}
+
+	cfg.bucket.RegisterFlags(flag.CommandLine)
+	flag.StringVar(&cfg.userID, "user", "", "User (tenant) owner of the block. Required.")
+	flag.Var(&cfg.blockIDs, "block", "The ULIDs of the blocks to be marked. Required. Can be provided multiple times.")
+	flag.StringVar(&cfg.mark, "mark", "", "Mark type to create, valid options: deletion, no-compact. Required.")
+	flag.BoolVar(&cfg.dryRun, "dry-run", false, "Don't upload the markers generated, just print the intentions on the screen. Optional.")
+	flag.StringVar(&cfg.details, "details", "", "Details field of the uploaded mark. Optional but recommended.")
+	flag.StringVar(&cfg.reason, "reason", string(metadata.ManualNoCompactReason), fmt.Sprintf("Reason field of no-compact mark. Only used for no-compact. Valid reasons: %s.", strings.Join(validNoCompactReasons, ", ")))
+	flag.Parse()
+
+	marker, filename := createMarker(cfg.mark, cfg.reason, logger, cfg.details)
+	ulids := validateUserAndBlocks(logger, cfg.userID, cfg.blockIDs)
+	userBucket := createUserBucket(ctx, logger, cfg.bucket, cfg.userID)
+	uploadMarks(ctx, logger, ulids, marker, filename, cfg.dryRun, userBucket)
+}
+
+func validateUserAndBlocks(logger log.Logger, userID string, blockIDs flagext.StringSlice) []ulid.ULID {
+	if userID == "" {
+		level.Error(logger).Log("msg", "Flag --user is required.")
+		os.Exit(1)
+	}
+
+	if len(blockIDs) == 0 {
+		level.Warn(logger).Log("msg", "No blocks were provided. Nothing was done.")
+		os.Exit(0)
+	}
+
 	var ulids []ulid.ULID
-	for _, b := range m.blockIDs {
+	for _, b := range blockIDs {
 		blockID, err := ulid.Parse(b)
 		if err != nil {
-			return fmt.Errorf("can't parse %q as ULID: %w", b, err)
+			level.Error(logger).Log("msg", "Can't parse block ID.", "block_id", b, "err", err)
+			os.Exit(1)
 		}
 		ulids = append(ulids, blockID)
 	}
+	return ulids
+}
 
-	bkt, err := bucket.NewClient(ctx, m.bucket, "bucket", logger, nil)
+func createMarker(markType string, reason string, logger log.Logger, details string) (func(b ulid.ULID) ([]byte, error), string) {
+	switch markType {
+	case "no-compact":
+		reason, validReason := isValidNoCompactReason(reason)
+		if !validReason {
+			level.Error(logger).Log("msg", "Invalid --reason value", "value", reason, "valid_reasons", validNoCompactReasons)
+			os.Exit(1)
+		}
+		return func(b ulid.ULID) ([]byte, error) {
+			return json.Marshal(metadata.NoCompactMark{
+				ID:            b,
+				Version:       metadata.NoCompactMarkVersion1,
+				NoCompactTime: time.Now().Unix(),
+				Reason:        reason,
+				Details:       details,
+			})
+		}, metadata.NoCompactMarkFilename
+	case "deletion":
+		if reason != "" {
+			level.Error(logger).Log("msg", "Flag --reason is unsupported for deletion mark")
+			os.Exit(1)
+		}
+
+		return func(b ulid.ULID) ([]byte, error) {
+			return json.Marshal(metadata.DeletionMark{
+				ID:      b,
+				Version: metadata.NoCompactMarkVersion1,
+				Details: details,
+			})
+		}, metadata.DeletionMarkFilename
+	default:
+		level.Error(logger).Log("msg", "Invalid --mark flag value. Should be no-compact or deletion.", "value", markType)
+		os.Exit(1)
+	}
+	panic("We never reach this.")
+}
+
+func createUserBucket(ctx context.Context, logger log.Logger, cfg bucket.Config, userID string) objstore.Bucket {
+	bkt, err := bucket.NewClient(ctx, cfg, "bucket", logger, nil)
 	if err != nil {
-		return fmt.Errorf("can't instantiate bucket: %w", err)
+		level.Error(logger).Log("msg", "Can't instantiate bucket.", "err", err)
+		os.Exit(1)
 	}
 	userBucket := bucketindex.BucketWithGlobalMarkers(
-		bucket.NewUserBucketClient(m.userID, bkt, nil),
+		bucket.NewUserBucketClient(userID, bkt, nil),
 	)
+	return userBucket
+}
 
+func uploadMarks(ctx context.Context, logger log.Logger, ulids []ulid.ULID, mark func(b ulid.ULID) ([]byte, error), filename string, dryRun bool, userBucket objstore.Bucket) {
 	for _, b := range ulids {
 		blockMetaFilename := fmt.Sprintf("%s/meta.json", b)
 
 		if exists, err := userBucket.Exists(ctx, blockMetaFilename); err != nil {
-			return fmt.Errorf("can't check whether block meta.json exists for %s: %w", b, err)
+			level.Error(logger).Log("msg", "Can't check meta.json existence.", "block_id", b, "filename", blockMetaFilename, "err", err)
+			os.Exit(1)
 		} else if !exists {
-			logger.Log("msg", "Block does not exist, skipping", "block_id", b)
+			level.Info(logger).Log("msg", "Block does not exist, skipping.", "block_id", b)
 			continue
 		}
 
-		blockMarkFilename := fmt.Sprintf("%s/%s", b, mark.filename())
+		blockMarkFilename := fmt.Sprintf("%s/%s", b, filename)
 		if exists, err := userBucket.Exists(ctx, blockMarkFilename); err != nil {
-			return fmt.Errorf("can't check whether block meta.json exists for %s: %w", b, err)
+			level.Error(logger).Log("msg", "Can't check mark file existence.", "block_id", b, "filename", blockMarkFilename, "err", err)
+			os.Exit(1)
 		} else if exists {
-			logger.Log("msg", "Mark already exists, skipping", "block_id", b)
+			level.Info(logger).Log("msg", "Mark already exists, skipping.", "block_id", b)
 			continue
 		}
 
-		data, err := mark.block(b)
+		data, err := mark(b)
 		if err != nil {
-			return fmt.Errorf("can't create mark for block %s: %w", b, err)
+			level.Error(logger).Log("msg", "Can't create mark.", "block_id", b, "err", err)
+			os.Exit(1)
 		}
-		if m.dryRun {
-			logger.Log("msg", "Dry-run, so not making changes", "block_id", b, "mark", string(data))
+		if dryRun {
+			logger.Log("msg", "Dry-run, so not making changes.", "block_id", b, "mark", string(data))
 			continue
 		}
 
 		if err := userBucket.Upload(ctx, blockMarkFilename, bytes.NewReader(data)); err != nil {
-			logger.Log("msg", "Can't upload mark", "block_id", b, "err", err)
-			return fmt.Errorf("can't upload mark for block %s: %w", b, err)
+			level.Info(logger).Log("msg", "Can't upload mark.", "block_id", b, "err", err)
+			os.Exit(1)
+		}
+
+		level.Info(logger).Log("msg", "Successfully uploaded mark.", "block_id", b)
+	}
+}
+
+func isValidNoCompactReason(reason string) (metadata.NoCompactReason, bool) {
+	for _, r := range validNoCompactReasons {
+		if r == reason {
+			return metadata.NoCompactReason(r), true
 		}
 	}
-
-	return nil
-}
-
-type blockMarker interface {
-	filename() string
-	block(b ulid.ULID) ([]byte, error)
-}
-
-type noCompactMark struct {
-	marker *marker
-
-	reason  string
-	details string
-}
-
-func (mark *noCompactMark) filename() string { return metadata.NoCompactMarkFilename }
-
-func (mark *noCompactMark) register(app *kingpin.Application) {
-	validReasons := []string{
-		string(metadata.ManualNoCompactReason),
-		string(metadata.IndexSizeExceedingNoCompactReason),
-		string(metadata.OutOfOrderChunksNoCompactReason),
-	}
-
-	cmd := app.Command("no-compact", "Mark blocks as non-compactable.").
-		Action(func(_ *kingpin.ParseContext) error { return mark.marker.run(mark) })
-	cmd.Flag("reason", fmt.Sprintf("The reason field of the marker. Valid reasons are: %s.", strings.Join(validReasons, ", "))).
-		Default(string(metadata.ManualNoCompactReason)).
-		EnumVar(&mark.reason, validReasons...)
-	cmd.Flag("details", "The details field of the marker.").
-		StringVar(&mark.details)
-}
-
-func (mark *noCompactMark) block(b ulid.ULID) ([]byte, error) {
-	return json.Marshal(metadata.NoCompactMark{
-		ID:            b,
-		Version:       metadata.NoCompactMarkVersion1,
-		NoCompactTime: time.Now().Unix(),
-		Reason:        metadata.NoCompactReason(mark.reason),
-		Details:       mark.details,
-	})
-}
-
-type deleteMark struct {
-	marker *marker
-
-	details string
-}
-
-func (mark *deleteMark) filename() string { return metadata.DeletionMarkFilename }
-
-func (mark *deleteMark) register(app *kingpin.Application) {
-	cmd := app.Command("delete", "Mark blocks for deletion.").
-		Action(func(_ *kingpin.ParseContext) error { return mark.marker.run(mark) })
-	cmd.Flag("details", "The details field of the marker.").
-		StringVar(&mark.details)
-}
-
-func (mark *deleteMark) block(b ulid.ULID) ([]byte, error) {
-	return json.Marshal(metadata.DeletionMark{
-		ID:      b,
-		Version: metadata.NoCompactMarkVersion1,
-		Details: mark.details,
-	})
+	return "", false
 }
