@@ -321,7 +321,7 @@ You can update to the Grafana Mimir Helm chart from the Cortex Helm chart.
      enabled: false
    ```
 
-1. Run Helm upgrade with the Grafana Mimir chart.
+1. Run the Helm upgrade with the Grafana Mimir chart.
 
    > **Note:** The name of the release must match your Cortex Helm chart release.
 
