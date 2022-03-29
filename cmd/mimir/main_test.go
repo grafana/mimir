@@ -116,23 +116,24 @@ func TestFlagParsing(t *testing.T) {
 }
 
 func TestHelp(t *testing.T) {
-	for _, tc := range []struct {
-		name     string
-		arg      string
-		filename string
+	for name, tc := range map[string]struct {
+		arg         string
+		expected    []string
+		notExpected []string
 	}{
-		{
-			name:     "basic",
+		"basic": {
 			arg:      "-h",
-			filename: "help.txt.tmpl",
+			expected: []string{"-version"},
+			// Advanced flags are not present for basic -help
+			notExpected: []string{"-mem-ballast-size-bytes", "-debug.mutex-profile-fraction"},
 		},
-		{
-			name:     "all",
-			arg:      "-help-all",
-			filename: "help-all.txt.tmpl",
+		"all": {
+			arg: "-help-all",
+			// Advanced flags are present for -help-all.
+			expected: []string{"-version", "-mem-ballast-size-bytes", "-debug.mutex-profile-fraction"},
 		},
 	} {
-		t.Run(tc.name, func(t *testing.T) {
+		t.Run(name, func(t *testing.T) {
 			oldArgs, oldStdout, oldStderr, oldTestMode, oldCmdLine := os.Args, os.Stdout, os.Stderr, testMode, flag.CommandLine
 			restored := false
 			restoreIfNeeded := func() {
@@ -161,14 +162,17 @@ func TestHelp(t *testing.T) {
 			main()
 
 			stdout, stderr := co.Done()
+			assert.Empty(t, stderr)
 
 			// Restore stdout and stderr before reporting errors to make them visible.
 			restoreIfNeeded()
 
-			expected, err := os.ReadFile(tc.filename)
-			require.NoError(t, err)
-			assert.Equalf(t, string(expected), string(stdout), "%s %s output changed; try `make reference-help`", cmd, tc.arg)
-			assert.Empty(t, stderr)
+			for _, e := range tc.expected {
+				assert.Contains(t, string(stdout), e)
+			}
+			for _, e := range tc.notExpected {
+				assert.NotContains(t, string(stdout), e)
+			}
 		})
 	}
 }
