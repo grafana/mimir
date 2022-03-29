@@ -35,7 +35,7 @@ func main() {
 
 	var cfg struct {
 		bucket   bucket.Config
-		userID   string
+		tenantID string
 		blockIDs flagext.StringSlice
 
 		mark string
@@ -47,7 +47,7 @@ func main() {
 	}
 
 	cfg.bucket.RegisterFlags(flag.CommandLine)
-	flag.StringVar(&cfg.userID, "user", "", "User (tenant) owner of the block. Required.")
+	flag.StringVar(&cfg.tenantID, "tenant", "", "Tenant ID of the owner of the block. Required.")
 	flag.Var(&cfg.blockIDs, "block", "The ULIDs of the blocks to be marked. Required. Can be provided multiple times.")
 	flag.StringVar(&cfg.mark, "mark", "", "Mark type to create, valid options: deletion, no-compact. Required.")
 	flag.BoolVar(&cfg.dryRun, "dry-run", false, "Don't upload the markers generated, just print the intentions on the screen. Optional.")
@@ -56,14 +56,14 @@ func main() {
 	flag.Parse()
 
 	marker, filename := createMarker(cfg.mark, cfg.reason, logger, cfg.details)
-	ulids := validateUserAndBlocks(logger, cfg.userID, cfg.blockIDs)
-	userBucket := createUserBucket(ctx, logger, cfg.bucket, cfg.userID)
+	ulids := validateTenantAndBlocks(logger, cfg.tenantID, cfg.blockIDs)
+	userBucket := createUserBucket(ctx, logger, cfg.bucket, cfg.tenantID)
 	uploadMarks(ctx, logger, ulids, marker, filename, cfg.dryRun, userBucket)
 }
 
-func validateUserAndBlocks(logger log.Logger, userID string, blockIDs flagext.StringSlice) []ulid.ULID {
-	if userID == "" {
-		level.Error(logger).Log("msg", "Flag -user is required.")
+func validateTenantAndBlocks(logger log.Logger, tenantID string, blockIDs flagext.StringSlice) []ulid.ULID {
+	if tenantID == "" {
+		level.Error(logger).Log("msg", "Flag -tenant is required.")
 		os.Exit(1)
 	}
 
@@ -121,14 +121,14 @@ func createMarker(markType string, reason string, logger log.Logger, details str
 	}
 }
 
-func createUserBucket(ctx context.Context, logger log.Logger, cfg bucket.Config, userID string) objstore.Bucket {
+func createUserBucket(ctx context.Context, logger log.Logger, cfg bucket.Config, tenantID string) objstore.Bucket {
 	bkt, err := bucket.NewClient(ctx, cfg, "bucket", logger, nil)
 	if err != nil {
 		level.Error(logger).Log("msg", "Can't instantiate bucket.", "err", err)
 		os.Exit(1)
 	}
 	userBucket := bucketindex.BucketWithGlobalMarkers(
-		bucket.NewUserBucketClient(userID, bkt, nil),
+		bucket.NewUserBucketClient(tenantID, bkt, nil),
 	)
 	return userBucket
 }
