@@ -100,7 +100,8 @@ To publish a stable release:
    1. Login to [https://grafana.com](https://grafana.com) with your Grafana Labs account
    1. Open [https://grafana.com/orgs/grafana/dashboards](https://grafana.com/orgs/grafana/dashboards)
    1. For each dashboard at `operations/mimir-mixin-compiled/dashboards`:
-      1. Open the "Revisions" tab in the respective dashboard page
+      1. Open the respective dashboard page
+      1. Click "Revisions" tab
       1. Click "Upload new revision" and upload the updated `.json`
 
 ### How to tag a release
