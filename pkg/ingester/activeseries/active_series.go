@@ -101,13 +101,6 @@ func (c *ActiveSeries) purge(keepUntil time.Time) {
 	}
 }
 
-//nolint // Linter reports that this method is unused, but it is.
-func (c *ActiveSeries) clear() {
-	for s := 0; s < numStripes; s++ {
-		c.stripes[s].clear()
-	}
-}
-
 // Active returns the total number of active series, as well as a slice of active series matching each one of the
 // custom trackers provided (in the same order as custom trackers are defined).
 // The result is correct only if the third return value is true, which shows if enough time has passed since last reload.
