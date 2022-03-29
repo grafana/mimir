@@ -188,8 +188,8 @@ You can update to the Grafana Mimir Helm chart from the Cortex Helm chart.
 
 ### Before you begin
 
-- Ensure you are running the v1.4.0 release of the Cortex Helm chart.
-- Ensure that you are running ingesters using StatefulSets.
+- Ensure that you are running the v1.4.0 release of the Cortex Helm chart.
+- Ensure that you are running ingesters using a Kubernetes StatefulSet.
 
   In the `values.yaml` file:
 
