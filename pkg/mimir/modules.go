@@ -210,6 +210,20 @@ func (t *Mimir) initRing() (serv services.Service, err error) {
 }
 
 func (t *Mimir) initRuntimeConfig() (services.Service, error) {
+	// TODO Remove in Mimir 2.2.
+	//      Previously ActiveSeriesCustomTrackers was an ingester config, now it's in LimitsConfig.
+	//      We provide backwards compatibility for it by parsing the old YAML location and copying it to LimitsConfig here,
+	//      unless it's also defined in the limits, which is invalid.
+	//		This needs to be set before setting default limits for unmarshalling.
+	if !t.Cfg.Ingester.ActiveSeriesCustomTrackers.Empty() {
+		if !t.Cfg.LimitsConfig.ActiveSeriesCustomTrackersConfig.Empty() {
+			return nil, fmt.Errorf("can't define active series custom trackers in both ingester and limits config, please define them only in the limits")
+		}
+		level.Warn(util_log.Logger).Log("msg", "active_series_custom_trackers is defined as an ingester config, this location is deprecated, please move it to the limits config")
+		flagext.DeprecatedFlagsUsed.Inc()
+		t.Cfg.LimitsConfig.ActiveSeriesCustomTrackersConfig = t.Cfg.Ingester.ActiveSeriesCustomTrackers
+	}
+
 	if t.Cfg.RuntimeConfig.LoadPath == "" {
 		// no need to initialize module if load path is empty
 		return nil, nil
@@ -233,18 +247,6 @@ func (t *Mimir) initRuntimeConfig() (services.Service, error) {
 }
 
 func (t *Mimir) initOverrides() (serv services.Service, err error) {
-	// TODO Remove in Mimir 2.2.
-	//      Previously ActiveSeriesCustomTrackers was an ingester config, now it's in LimitsConfig.
-	//      We provide backwards compatibility for it by parsing the old YAML location and copying it to LimitsConfig here,
-	//      unless it's also defined in the limits, which is invalid.
-	if !t.Cfg.Ingester.ActiveSeriesCustomTrackers.Empty() {
-		if !t.Cfg.LimitsConfig.ActiveSeriesCustomTrackersConfig.Empty() {
-			return nil, fmt.Errorf("can't define active series custom trackers in both ingester and limits config, please define them only in the limits")
-		}
-		level.Warn(util_log.Logger).Log("msg", "active_series_custom_trackers is defined as an ingester config, this location is deprecated, please move it to the limits config")
-		flagext.DeprecatedFlagsUsed.Inc()
-		t.Cfg.LimitsConfig.ActiveSeriesCustomTrackersConfig = t.Cfg.Ingester.ActiveSeriesCustomTrackers
-	}
 	t.Overrides, err = validation.NewOverrides(t.Cfg.LimitsConfig, t.TenantLimits)
 	// overrides don't have operational state, nor do they need to do anything more in starting/stopping phase,
 	// so there is no need to return any service.
