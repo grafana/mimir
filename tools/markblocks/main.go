@@ -121,7 +121,7 @@ func validateTenantAndBlocks(logger log.Logger, tenantID string, blockIDs flagex
 	for _, b := range blockIDs {
 		blockID, err := ulid.Parse(b)
 		if err != nil {
-			level.Error(logger).Log("msg", "Can't parse block ID.", "block_id", b, "err", err)
+			level.Error(logger).Log("msg", "Can't parse block ID.", "block", b, "err", err)
 			os.Exit(1)
 		}
 		ulids = append(ulids, blockID)
@@ -164,16 +164,16 @@ func uploadMarks(ctx context.Context, logger log.Logger, ulids []ulid.ULID, mark
 		blockMetaFilename := fmt.Sprintf("%s/meta.json", b)
 
 		if exists, err := userBucketWithGlobalMarkers.Exists(ctx, blockMetaFilename); err != nil {
-			level.Error(logger).Log("msg", "Can't check meta.json existence.", "block_id", b, "filename", blockMetaFilename, "err", err)
+			level.Error(logger).Log("msg", "Can't check meta.json existence.", "block", b, "filename", blockMetaFilename, "err", err)
 			os.Exit(1)
 		} else if !exists {
-			level.Info(logger).Log("msg", "Block does not exist, skipping.", "block_id", b)
+			level.Info(logger).Log("msg", "Block does not exist, skipping.", "block", b)
 			continue
 		}
 
 		blockMarkFilename := fmt.Sprintf("%s/%s", b, filename)
 		if exists, err := userBucketWithGlobalMarkers.Exists(ctx, blockMarkFilename); err != nil {
-			level.Error(logger).Log("msg", "Can't check mark file existence.", "block_id", b, "filename", blockMarkFilename, "err", err)
+			level.Error(logger).Log("msg", "Can't check mark file existence.", "block", b, "filename", blockMarkFilename, "err", err)
 			os.Exit(1)
 		} else if exists {
 			level.Info(logger).Log("msg", "Mark already exists, skipping.", "block_id", b)
@@ -186,16 +186,16 @@ func uploadMarks(ctx context.Context, logger log.Logger, ulids []ulid.ULID, mark
 			os.Exit(1)
 		}
 		if dryRun {
-			logger.Log("msg", "Dry-run, so not making changes.", "block_id", b, "mark", string(data))
+			logger.Log("msg", "Dry-run, so not making changes.", "block", b, "mark", string(data))
 			continue
 		}
 
 		if err := userBucketWithGlobalMarkers.Upload(ctx, blockMarkFilename, bytes.NewReader(data)); err != nil {
-			level.Info(logger).Log("msg", "Can't upload mark.", "block_id", b, "err", err)
+			level.Info(logger).Log("msg", "Can't upload mark.", "block", b, "err", err)
 			os.Exit(1)
 		}
 
-		level.Info(logger).Log("msg", "Successfully uploaded mark.", "block_id", b)
+		level.Info(logger).Log("msg", "Successfully uploaded mark.", "block", b)
 	}
 }
 

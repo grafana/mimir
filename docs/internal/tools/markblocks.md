@@ -28,8 +28,8 @@ tenant-1
 2 directories, 1 file
 
 $ go run ./tools/markblocks -mark deletion -tenant tenant-1 -details "Corrupted blocks" 01FSCTA0A4M1YQHZQ4B2VTGS2R 01FSCTA0A4M1YQHZQ4B2VTGS2U
-level=info time=2022-03-30T08:50:41.277334365Z msg="Successfully uploaded mark." block_id=01FSCTA0A4M1YQHZQ4B2VTGS2R
-level=info time=2022-03-30T08:50:41.277359767Z msg="Block does not exist, skipping." block_id=01FSCTA0A4M1YQHZQ4B2VTGS7Z
+level=info time=2022-03-30T08:50:41.277334365Z msg="Successfully uploaded mark." block=01FSCTA0A4M1YQHZQ4B2VTGS2R
+level=info time=2022-03-30T08:50:41.277359767Z msg="Block does not exist, skipping." block=01FSCTA0A4M1YQHZQ4B2VTGS7Z
 
 $ tree -f tenant-1
 tenant-1
@@ -59,13 +59,13 @@ $ tree -f tenant-1
 tenant-1
 ├── tenant-1/01FSCTA0A4M1YQHZQ4B2VTGS2R
 │   └── tenant-1/01FSCTA0A4M1YQHZQ4B2VTGS2R/meta.json
-└── tenant-1/01FSCTA0A4M1YQHZQ4B2VTGS2U
+└── ten ant-1/01FSCTA0A4M1YQHZQ4B2VTGS2U
 
 2 directories, 1 file
 
 $ go run ./tools/markblocks -mark no-compact -tenant tenant-1 -details "Blocks with out of order chunks" 01FSCTA0A4M1YQHZQ4B2VTGS2R 01FSCTA0A4M1YQHZQ4B2VTGS2U
-level=info time=2022-03-30T08:53:13.012462019Z msg="Successfully uploaded mark." block_id=01FSCTA0A4M1YQHZQ4B2VTGS2R
-level=info time=2022-03-30T08:53:13.012492902Z msg="Block does not exist, skipping." block_id=01FSCTA0A4M1YQHZQ4B2VTGS7Z
+level=info time=2022-03-30T08:53:13.012462019Z msg="Successfully uploaded mark." block=01FSCTA0A4M1YQHZQ4B2VTGS2R
+level=info time=2022-03-30T08:53:13.012492902Z msg="Block does not exist, skipping." block=01FSCTA0A4M1YQHZQ4B2VTGS7Z
 
 $ tree -f tenant-1
 tenant-1
