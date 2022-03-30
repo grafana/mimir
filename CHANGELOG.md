@@ -18,6 +18,8 @@
 
 ### Tools
 
+* [FEATURE] Added a `markblocks` tool that creates `no-compact` and `delete` marks for the blocks. #1551
+
 ## 2.0.0
 
 ### Grafana Mimir
