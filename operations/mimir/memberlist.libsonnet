@@ -5,8 +5,10 @@
     'memberlist.join': 'gossip-ring.%s.svc.cluster.local:%d' % [$._config.namespace, gossipRingPort],
   },
 
-  local setupGossipRing(storeOption, consulHostnameOption) = if $._config.multikv_migration_enabled then {
+  local setupGossipRing(storeOption, consulHostnameOption, multiStoreOptionsPrefix) = if $._config.multikv_migration_enabled then {
     [storeOption]: 'multi',
+    [multiStoreOptionsPrefix + '.primary']: $._config.multikv_primary,
+    [multiStoreOptionsPrefix + '.secondary']: $._config.multikv_secondary,
     // don't remove consul.hostname, it may still be needed.
   } else {
     [storeOption]: 'memberlist',
@@ -26,28 +28,28 @@
     multikv_migration_enabled: false,
     multikv_primary: 'consul',
     multikv_secondary: 'memberlist',
+    multikv_switch_primary_secondary: false,
     multikv_mirror_enabled: false,
 
     // Use memberlist only. This works fine on already-migrated clusters.
     // To do a migration from Consul to memberlist, multi kv storage needs to be used (See below).
-    ingesterRingClientConfig+: if !$._config.memberlist_ring_enabled then {} else (setupGossipRing('ingester.ring.store', 'ingester.ring.consul.hostname') + memberlistConfig),
+    ingesterRingClientConfig+: if !$._config.memberlist_ring_enabled then {} else (setupGossipRing('ingester.ring.store', 'ingester.ring.consul.hostname', 'ingester.ring.multi') + memberlistConfig),
 
-    queryBlocksStorageConfig+:: if !$._config.memberlist_ring_enabled then {} else (setupGossipRing('store-gateway.sharding-ring.store', 'store-gateway.sharding-ring.consul.hostname') + memberlistConfig),
+    queryBlocksStorageConfig+:: if !$._config.memberlist_ring_enabled then {} else (setupGossipRing('store-gateway.sharding-ring.store', 'store-gateway.sharding-ring.consul.hostname', 'store-gateway.sharding-ring.multi') + memberlistConfig),
 
     // When doing migration via multi KV store, this section can be used
     // to configure runtime parameters of multi KV store
     multi_kv_config: if !$._config.multikv_migration_enabled then {} else {
-      primary: $._config.multikv_primary,
-      secondary: $._config.multikv_secondary,
+      primary: if $._config.multikv_switch_primary_secondary then $._config.multikv_secondary else $._config.multikv_primary,
       mirror_enabled: $._config.multikv_mirror_enabled,
     },
   },
 
-  distributor_args+: if !$._config.memberlist_ring_enabled then {} else (setupGossipRing('distributor.ring.store', 'distributor.ring.consul.hostname') + memberlistConfig),
+  distributor_args+: if !$._config.memberlist_ring_enabled then {} else (setupGossipRing('distributor.ring.store', 'distributor.ring.consul.hostname', 'distributor.ring.multi') + memberlistConfig),
 
-  ruler_args+: if !$._config.memberlist_ring_enabled then {} else (setupGossipRing('ruler.ring.store', 'ruler.ring.consul.hostname') + memberlistConfig),
+  ruler_args+: if !$._config.memberlist_ring_enabled then {} else (setupGossipRing('ruler.ring.store', 'ruler.ring.consul.hostname', 'ruler.ring.multi') + memberlistConfig),
 
-  compactor_args+: if !$._config.memberlist_ring_enabled then {} else (setupGossipRing('compactor.ring.store', 'compactor.ring.consul.hostname') + memberlistConfig),
+  compactor_args+: if !$._config.memberlist_ring_enabled then {} else (setupGossipRing('compactor.ring.store', 'compactor.ring.consul.hostname', 'compactor.ring.multi') + memberlistConfig),
 
   local gossipRingPort = 7946,
 
