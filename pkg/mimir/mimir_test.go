@@ -447,10 +447,9 @@ func (t *Mimir) initTest() (services.Service, error) {
 			// Sleep to avoid issue https://github.com/grafana/dskit/issues/151 .
 			time.Sleep(100 * time.Millisecond)
 			if t.Overrides.ActiveSeriesCustomTrackersConfig("1235").Empty() {
-				return errors.New("Active series config should not be empty!")
-			} else {
-				return modules.ErrStopProcess
+				return errors.New("active series config should not be empty")
 			}
+			return modules.ErrStopProcess
 		},
 		nil), nil
 }
@@ -474,7 +473,7 @@ overrides:
     ruler_max_rule_groups_per_tenant: 20
     ruler_max_rules_per_rule_group: 20
 `
-	TEST_MODULE_NAME := "test"
+	TestModuleName := "test"
 	cfg := Config{}
 
 	// This sets default values from flags to the config.
@@ -493,7 +492,7 @@ overrides:
 	})
 	require.NoError(t, err)
 
-	cfg.Target = []string{TEST_MODULE_NAME}
+	cfg.Target = []string{TestModuleName}
 	cfg.Server = getServerConfig(t)
 	require.NoError(t, cfg.Server.LogFormat.Set("logfmt"))
 	require.NoError(t, cfg.Server.LogLevel.Set("debug"))
@@ -502,8 +501,9 @@ overrides:
 	c, err := New(cfg)
 	require.NoError(t, err)
 	// Creating a test module to ensure that runtime config check happens after initialization.
-	c.ModuleManager.RegisterModule(TEST_MODULE_NAME, c.initTest)
-	c.ModuleManager.AddDependency(TEST_MODULE_NAME, Overrides)
+	c.ModuleManager.RegisterModule(TestModuleName, c.initTest)
+	err = c.ModuleManager.AddDependency(TestModuleName, Overrides)
+	require.NoError(t, err)
 
 	errCh := make(chan error)
 	go func() {
