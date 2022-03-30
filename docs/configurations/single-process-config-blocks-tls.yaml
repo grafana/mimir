@@ -27,10 +27,6 @@ distributor:
 
 ingester_client:
   grpc_client_config:
-    # Configure the client to allow messages up to 100MB.
-    max_recv_msg_size: 104857600
-    max_send_msg_size: 104857600
-    grpc_compression: gzip
     tls_cert_path: "client.crt"
     tls_key_path: "client.key"
     tls_ca_path: "root.crt"
