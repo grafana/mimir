@@ -29,36 +29,78 @@ var validNoCompactReasons = []string{
 	string(metadata.OutOfOrderChunksNoCompactReason),
 }
 
+type config struct {
+	bucket   bucket.Config
+	tenantID string
+	dryRun   bool
+
+	mark    string
+	details string
+
+	fullHelp bool
+}
+
 func main() {
 	ctx := context.Background()
 	logger := log.WithPrefix(log.NewLogfmtLogger(os.Stderr), "time", log.DefaultTimestampUTC)
 
-	var cfg struct {
-		bucket   bucket.Config
-		tenantID string
-		blockIDs flagext.StringSlice
+	cfg := parseFlags()
+	marker, filename := createMarker(cfg.mark, logger, cfg.details)
+	ulids := validateTenantAndBlocks(logger, cfg.tenantID, flag.Args())
+	uploadMarks(ctx, logger, ulids, marker, filename, cfg.dryRun, cfg.bucket, cfg.tenantID)
+}
 
-		mark string
+func parseFlags() config {
+	var cfg config
 
-		details string
-		reason  string // used for no-compact only
+	// We define two flag sets, one on basic straightforward flags of this cli, and the other one with all flags,
+	// which includes the bucket configuration flags, as there quite a lot of them and the help output with them
+	// might look a little bit overwhelming at first contact.
+	fullFlagSet := flag.NewFlagSet("markblocks", flag.ExitOnError)
+	basicFlagSet := flag.NewFlagSet("markblocks", flag.ExitOnError)
 
-		dryRun bool
+	// We register our basic flags on both basic and full flag set.
+	for _, f := range []*flag.FlagSet{basicFlagSet, fullFlagSet} {
+		f.StringVar(&cfg.tenantID, "tenant", "", "Tenant ID of the owner of the block. Required.")
+		f.StringVar(&cfg.mark, "mark", "", "Mark type to create, valid options: deletion, no-compact. Required.")
+		f.BoolVar(&cfg.dryRun, "dry-run", false, "Don't upload the markers generated, just print the intentions on the screen.")
+		f.StringVar(&cfg.details, "details", "", "Details field of the uploaded mark. Recommended. (default empty).")
+		f.BoolVar(&cfg.fullHelp, "full-help", false, "Show help for all flags, including the bucket backend configuration.")
 	}
 
-	cfg.bucket.RegisterFlags(flag.CommandLine)
-	flag.StringVar(&cfg.tenantID, "tenant", "", "Tenant ID of the owner of the block. Required.")
-	flag.Var(&cfg.blockIDs, "block", "The ULIDs of the blocks to be marked. Required. Can be provided multiple times.")
-	flag.StringVar(&cfg.mark, "mark", "", "Mark type to create, valid options: deletion, no-compact. Required.")
-	flag.BoolVar(&cfg.dryRun, "dry-run", false, "Don't upload the markers generated, just print the intentions on the screen. Optional.")
-	flag.StringVar(&cfg.details, "details", "", "Details field of the uploaded mark. Optional but recommended.")
-	flag.StringVar(&cfg.reason, "reason", string(metadata.ManualNoCompactReason), fmt.Sprintf("Reason field of no-compact mark. Only used for no-compact. Valid reasons: %s.", strings.Join(validNoCompactReasons, ", ")))
-	flag.Parse()
+	commonUsageHeader := func() {
+		fmt.Println("This tool creates marks for TSDB blocks used by Mimir and uploads them to the specified backend.")
+		fmt.Println("")
+		fmt.Println("Usage:")
+		fmt.Println("        markblocks -tenant <tenant id> -mark <deletion|no-compact> [-details <details message>] [-dry-run] blockID [blockID2 blockID3 ...]")
+		fmt.Println("")
+	}
 
-	marker, filename := createMarker(cfg.mark, cfg.reason, logger, cfg.details)
-	ulids := validateTenantAndBlocks(logger, cfg.tenantID, cfg.blockIDs)
-	userBucket := createUserBucket(ctx, logger, cfg.bucket, cfg.tenantID)
-	uploadMarks(ctx, logger, ulids, marker, filename, cfg.dryRun, userBucket)
+	// We set the usage to fullFlagSet as that's the flag set we'll be always parsing,
+	// but by default we print only the basic flag set defaults.
+	fullFlagSet.Usage = func() {
+		commonUsageHeader()
+		if cfg.fullHelp {
+			fullFlagSet.PrintDefaults()
+		} else {
+			basicFlagSet.PrintDefaults()
+		}
+	}
+
+	// We set only the `-backend` flag on the basicFlagSet, to make sure that user sees that there are more backends supported.
+	// Then we register all bucket flags on the full flag set, which is the flag set we're parsing.
+	basicFlagSet.StringVar(&cfg.bucket.Backend, "backend", bucket.Filesystem, fmt.Sprintf("Backend storage to use. Supported backends are: %s. Use -full-help to see help on backends configuration.", strings.Join(bucket.SupportedBackends, ", ")))
+	cfg.bucket.RegisterFlags(fullFlagSet)
+
+	fullFlagSet.Parse(os.Args[1:])
+
+	// See if user did `markblocks -full-help`.
+	if cfg.fullHelp {
+		commonUsageHeader()
+		fullFlagSet.PrintDefaults()
+		os.Exit(0)
+	}
+	return cfg
 }
 
 func validateTenantAndBlocks(logger log.Logger, tenantID string, blockIDs flagext.StringSlice) []ulid.ULID {
@@ -84,29 +126,19 @@ func validateTenantAndBlocks(logger log.Logger, tenantID string, blockIDs flagex
 	return ulids
 }
 
-func createMarker(markType string, reason string, logger log.Logger, details string) (func(b ulid.ULID) ([]byte, error), string) {
+func createMarker(markType string, logger log.Logger, details string) (func(b ulid.ULID) ([]byte, error), string) {
 	switch markType {
 	case "no-compact":
-		reason, validReason := isValidNoCompactReason(reason)
-		if !validReason {
-			level.Error(logger).Log("msg", "Invalid -reason value", "value", reason, "valid_reasons", validNoCompactReasons)
-			os.Exit(1)
-		}
 		return func(b ulid.ULID) ([]byte, error) {
 			return json.Marshal(metadata.NoCompactMark{
 				ID:            b,
 				Version:       metadata.NoCompactMarkVersion1,
 				NoCompactTime: time.Now().Unix(),
-				Reason:        reason,
+				Reason:        metadata.ManualNoCompactReason,
 				Details:       details,
 			})
 		}, metadata.NoCompactMarkFilename
 	case "deletion":
-		if reason != "" {
-			level.Error(logger).Log("msg", "Flag -reason is unsupported for deletion mark")
-			os.Exit(1)
-		}
-
 		return func(b ulid.ULID) ([]byte, error) {
 			return json.Marshal(metadata.DeletionMark{
 				ID:           b,
@@ -122,23 +154,13 @@ func createMarker(markType string, reason string, logger log.Logger, details str
 	}
 }
 
-func createUserBucket(ctx context.Context, logger log.Logger, cfg bucket.Config, tenantID string) objstore.Bucket {
-	bkt, err := bucket.NewClient(ctx, cfg, "bucket", logger, nil)
-	if err != nil {
-		level.Error(logger).Log("msg", "Can't instantiate bucket.", "err", err)
-		os.Exit(1)
-	}
-	userBucket := bucketindex.BucketWithGlobalMarkers(
-		bucket.NewUserBucketClient(tenantID, bkt, nil),
-	)
-	return userBucket
-}
+func uploadMarks(ctx context.Context, logger log.Logger, ulids []ulid.ULID, mark func(b ulid.ULID) ([]byte, error), filename string, dryRun bool, cfg bucket.Config, tenantID string) {
+	userBucketWithGlobalMarkers := createUserBucketWithGlobalMarkers(ctx, logger, cfg, tenantID)
 
-func uploadMarks(ctx context.Context, logger log.Logger, ulids []ulid.ULID, mark func(b ulid.ULID) ([]byte, error), filename string, dryRun bool, userBucket objstore.Bucket) {
 	for _, b := range ulids {
 		blockMetaFilename := fmt.Sprintf("%s/meta.json", b)
 
-		if exists, err := userBucket.Exists(ctx, blockMetaFilename); err != nil {
+		if exists, err := userBucketWithGlobalMarkers.Exists(ctx, blockMetaFilename); err != nil {
 			level.Error(logger).Log("msg", "Can't check meta.json existence.", "block_id", b, "filename", blockMetaFilename, "err", err)
 			os.Exit(1)
 		} else if !exists {
@@ -147,7 +169,7 @@ func uploadMarks(ctx context.Context, logger log.Logger, ulids []ulid.ULID, mark
 		}
 
 		blockMarkFilename := fmt.Sprintf("%s/%s", b, filename)
-		if exists, err := userBucket.Exists(ctx, blockMarkFilename); err != nil {
+		if exists, err := userBucketWithGlobalMarkers.Exists(ctx, blockMarkFilename); err != nil {
 			level.Error(logger).Log("msg", "Can't check mark file existence.", "block_id", b, "filename", blockMarkFilename, "err", err)
 			os.Exit(1)
 		} else if exists {
@@ -165,7 +187,7 @@ func uploadMarks(ctx context.Context, logger log.Logger, ulids []ulid.ULID, mark
 			continue
 		}
 
-		if err := userBucket.Upload(ctx, blockMarkFilename, bytes.NewReader(data)); err != nil {
+		if err := userBucketWithGlobalMarkers.Upload(ctx, blockMarkFilename, bytes.NewReader(data)); err != nil {
 			level.Info(logger).Log("msg", "Can't upload mark.", "block_id", b, "err", err)
 			os.Exit(1)
 		}
@@ -174,11 +196,14 @@ func uploadMarks(ctx context.Context, logger log.Logger, ulids []ulid.ULID, mark
 	}
 }
 
-func isValidNoCompactReason(reason string) (metadata.NoCompactReason, bool) {
-	for _, r := range validNoCompactReasons {
-		if r == reason {
-			return metadata.NoCompactReason(r), true
-		}
+func createUserBucketWithGlobalMarkers(ctx context.Context, logger log.Logger, cfg bucket.Config, tenantID string) objstore.Bucket {
+	bkt, err := bucket.NewClient(ctx, cfg, "bucket", logger, nil)
+	if err != nil {
+		level.Error(logger).Log("msg", "Can't instantiate bucket.", "err", err)
+		os.Exit(1)
 	}
-	return "", false
+	userBucket := bucketindex.BucketWithGlobalMarkers(
+		bucket.NewUserBucketClient(tenantID, bkt, nil),
+	)
+	return userBucket
 }
