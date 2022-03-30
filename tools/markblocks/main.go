@@ -23,12 +23,6 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 )
 
-var validNoCompactReasons = []string{
-	string(metadata.ManualNoCompactReason),
-	string(metadata.IndexSizeExceedingNoCompactReason),
-	string(metadata.OutOfOrderChunksNoCompactReason),
-}
-
 type config struct {
 	bucket   bucket.Config
 	tenantID string
@@ -58,13 +52,15 @@ func parseFlags() config {
 	// which includes the bucket configuration flags, as there quite a lot of them and the help output with them
 	// might look a little bit overwhelming at first contact.
 	fullFlagSet := flag.NewFlagSet("markblocks", flag.ExitOnError)
+	fullFlagSet.SetOutput(os.Stdout)
 	basicFlagSet := flag.NewFlagSet("markblocks", flag.ExitOnError)
+	basicFlagSet.SetOutput(os.Stdout)
 
 	// We register our basic flags on both basic and full flag set.
 	for _, f := range []*flag.FlagSet{basicFlagSet, fullFlagSet} {
 		f.StringVar(&cfg.tenantID, "tenant", "", "Tenant ID of the owner of the block. Required.")
 		f.StringVar(&cfg.mark, "mark", "", "Mark type to create, valid options: deletion, no-compact. Required.")
-		f.BoolVar(&cfg.dryRun, "dry-run", false, "Don't upload the markers generated, just print the intentions on the screen.")
+		f.BoolVar(&cfg.dryRun, "dry-run", false, "Don't upload the markers generated, just print the intentions.")
 		f.StringVar(&cfg.details, "details", "", "Details field of the uploaded mark. Recommended. (default empty).")
 		f.BoolVar(&cfg.fullHelp, "full-help", false, "Show help for all flags, including the bucket backend configuration.")
 	}
@@ -145,7 +141,7 @@ func createMarker(markType string, logger log.Logger, details string) (func(b ul
 		return func(b ulid.ULID) ([]byte, error) {
 			return json.Marshal(metadata.DeletionMark{
 				ID:           b,
-				Version:      metadata.NoCompactMarkVersion1,
+				Version:      metadata.DeletionMarkVersion1,
 				Details:      details,
 				DeletionTime: time.Now().Unix(),
 			})
@@ -186,12 +182,12 @@ func uploadMarks(ctx context.Context, logger log.Logger, ulids []ulid.ULID, mark
 			os.Exit(1)
 		}
 		if dryRun {
-			logger.Log("msg", "Dry-run, so not making changes.", "block", b, "mark", string(data))
+			logger.Log("msg", "Dry-run, not uploading marker.", "block", b, "marker", blockMarkFilename, "data", string(data))
 			continue
 		}
 
 		if err := userBucketWithGlobalMarkers.Upload(ctx, blockMarkFilename, bytes.NewReader(data)); err != nil {
-			level.Info(logger).Log("msg", "Can't upload mark.", "block", b, "err", err)
+			level.Error(logger).Log("msg", "Can't upload mark.", "block", b, "err", err)
 			os.Exit(1)
 		}
 
