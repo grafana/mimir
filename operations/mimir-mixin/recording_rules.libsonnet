@@ -478,11 +478,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
         name: 'mimir_ingester_rules',
         rules: [
           {
-            // cortex_ingester_ingested_samples_total is per user, in this rule we want to see the sum per cluster/job/instance
-            record: 'cluster_job_instance:cortex_ingester_ingested_samples_total:rate1m',
+            // cortex_ingester_ingested_samples_total is per user, in this rule we want to see the sum per cluster/namespace/instance
+            record: 'cluster_namespace_%s:cortex_ingester_ingested_samples_total:rate1m' % $._config.per_instance_label,
             expr: |||
-              sum by(cluster, job, instance) (rate(cortex_ingester_ingested_samples_total[1m]))
-            |||,
+              sum by(%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ingester_ingested_samples_total[1m]))
+            ||| % $._config,
           },
         ],
       },
