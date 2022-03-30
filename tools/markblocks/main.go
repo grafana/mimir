@@ -156,7 +156,16 @@ func createMarker(markType string, logger log.Logger, details string) (func(b ul
 	}
 }
 
-func uploadMarks(ctx context.Context, logger log.Logger, ulids []ulid.ULID, mark func(b ulid.ULID) ([]byte, error), filename string, dryRun bool, cfg bucket.Config, tenantID string) {
+func uploadMarks(
+	ctx context.Context,
+	logger log.Logger,
+	ulids []ulid.ULID,
+	mark func(b ulid.ULID) ([]byte, error),
+	filename string,
+	dryRun bool,
+	cfg bucket.Config,
+	tenantID string,
+) {
 	userBucketWithGlobalMarkers := createUserBucketWithGlobalMarkers(ctx, logger, cfg, tenantID)
 
 	for _, b := range ulids {
