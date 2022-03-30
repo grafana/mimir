@@ -6,7 +6,7 @@
 * [FEATURE] Ruler: Allow setting `evaluation_delay` for each rule group via rules group configuration file. #1474
 * [FEATURE] Distributor: Added the ability to forward specifics metrics to alternative remote_write API endpoints. #1052
 * [ENHANCEMENT] Alertmanager API: Concurrency limit for GET requests is now configurable using `-alertmanager.max-concurrent-get-requests-per-tenant`. #1547
-* [ENHANCEMENT] Alertmanager: Added the ability to configure GRPC client settings #1547
+* [ENHANCEMENT] Alertmanager: Added the ability to configure additional gRPC client settings for the Alertmanager distributor #1547
   - `-alertmanager.alertmanager-client.backoff-max-period`
   - `-alertmanager.alertmanager-client.backoff-min-period`
   - `-alertmanager.alertmanager-client.backoff-on-ratelimits`
