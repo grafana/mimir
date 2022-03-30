@@ -25,6 +25,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv"
+	"github.com/grafana/dskit/modules"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
 	"github.com/pkg/errors"
@@ -439,10 +440,18 @@ func TestFlagDefaults(t *testing.T) {
 //		This needs to be set before setting default limits for unmarshalling.
 // 		For more context see https://github.com/grafana/mimir/pull/1188#discussion_r830129443
 func (t *Mimir) initTest() (services.Service, error) {
-	if t.Overrides.ActiveSeriesCustomTrackersConfig("1235").Empty() {
-		return nil, errors.New("Active series config should not be empty!")
-	}
-	return nil, nil
+
+	return services.NewTimerService(time.Second,
+		nil,
+		func(_ context.Context) error {
+			time.Sleep(100 * time.Millisecond)
+			if t.Overrides.ActiveSeriesCustomTrackersConfig("1235").Empty() {
+				return errors.New("Active series config should not be empty!")
+			} else {
+				return modules.ErrStopProcess
+			}
+		},
+		nil), nil
 }
 
 // TODO Remove in Mimir 2.2.
@@ -491,6 +500,7 @@ overrides:
 
 	c, err := New(cfg)
 	require.NoError(t, err)
+	// Creating a test module to ensure that runtime config check happens after initialization.
 	c.ModuleManager.RegisterModule(TEST_MODULE_NAME, c.initTest)
 	c.ModuleManager.AddDependency(TEST_MODULE_NAME, Overrides)
 
@@ -501,9 +511,7 @@ overrides:
 
 	select {
 	case <-time.After(5 * time.Second):
-		proc, err := os.FindProcess(os.Getpid())
-		require.NoError(t, err)
-		require.NoError(t, proc.Signal(syscall.SIGINT))
+		require.Fail(t, "Mimir didn't stop in time")
 	case err := <-errCh:
 		require.NoError(t, err, "Active series deprecation override not in place!")
 	}
