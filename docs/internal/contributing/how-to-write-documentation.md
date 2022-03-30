@@ -1,7 +1,3 @@
----
-title: "How to write documentation"
----
-
 # How to write documentation
 
 ## Style guide
