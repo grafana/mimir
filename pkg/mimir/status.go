@@ -55,9 +55,6 @@ func init() {
 }
 
 func (t *Mimir) servicesHandler(w http.ResponseWriter, r *http.Request) {
-	w.WriteHeader(200)
-	w.Header().Set("Content-Type", "text/plain")
-
 	svcs := make([]renderService, 0)
 	for mod, s := range t.ServiceMap {
 		svcs = append(svcs, renderService{
