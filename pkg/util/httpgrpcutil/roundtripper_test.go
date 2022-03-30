@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package transport
+package httpgrpcutil
 
 import (
 	"context"
@@ -37,8 +37,7 @@ func TestTransport_RoundTrip(t *testing.T) {
 	defer conn.Close()
 
 	hnd := &Transport{
-		client: httpgrpc.NewHTTPClient(conn),
-		conn:   conn,
+		Client: httpgrpc.NewHTTPClient(conn),
 	}
 	headers := []*httpgrpc.Header{
 		{Key: "Content-Type", Values: []string{"application/json"}},

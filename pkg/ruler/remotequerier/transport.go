@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package transport
+package remotequerier
 
 import (
-	"context"
 	"flag"
 	"time"
 
@@ -15,6 +14,8 @@ import (
 	"github.com/weaveworks/common/middleware"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/keepalive"
+
+	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
 )
 
 const (
@@ -23,11 +24,6 @@ const (
 
 	serviceConfig = `{"loadBalancingPolicy": "round_robin"}`
 )
-
-// RoundTripper is similar to http.RoundTripper, but works with HTTP requests converted to protobuf messages.
-type RoundTripper interface {
-	RoundTrip(ctx context.Context, req *httpgrpc.HTTPRequest) (*httpgrpc.HTTPResponse, error)
-}
 
 // Config defines remote querier transport configuration.
 type Config struct {
@@ -53,14 +49,8 @@ func (c *Config) RegisterFlags(f *flag.FlagSet) {
 	c.TLS.RegisterFlagsWithPrefix("ruler.querier", f)
 }
 
-// Transport forwards httpgrpc requests to a remote querier service.
-type Transport struct {
-	client httpgrpc.HTTPClient
-	conn   *grpc.ClientConn
-}
-
-// New creates and initializes a new Transport instance.
-func New(cfg Config) (RoundTripper, error) {
+// NewTransport creates and initializes a new ruler Transport instance.
+func NewTransport(cfg Config) (httpgrpcutil.RoundTripper, error) {
 	tlsDialOptions, err := cfg.TLS.GetGRPCDialOptions(cfg.TLSEnabled)
 	if err != nil {
 		return nil, err
@@ -89,13 +79,7 @@ func New(cfg Config) (RoundTripper, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Transport{
-		client: httpgrpc.NewHTTPClient(conn),
-		conn:   conn,
+	return &httpgrpcutil.Transport{
+		Client: httpgrpc.NewHTTPClient(conn),
 	}, nil
-}
-
-// RoundTrip satisfies RoundTripper interface.
-func (h *Transport) RoundTrip(ctx context.Context, req *httpgrpc.HTTPRequest) (*httpgrpc.HTTPResponse, error) {
-	return h.client.Handle(ctx, req)
 }

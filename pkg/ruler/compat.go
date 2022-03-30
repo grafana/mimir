@@ -29,8 +29,8 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier"
 	querier_stats "github.com/grafana/mimir/pkg/querier/stats"
+	"github.com/grafana/mimir/pkg/ruler/remotequerier"
 	util_log "github.com/grafana/mimir/pkg/util/log"
-	"github.com/grafana/mimir/pkg/util/remotequerier"
 )
 
 // Pusher is an ingester server that accepts pushes.
@@ -130,25 +130,11 @@ func MetricsQueryFunc(qf rules.QueryFunc, queries, failedQueries prometheus.Coun
 		queries.Inc()
 		result, err := qf(ctx, qs, t)
 
-		if err != nil {
-			var origErr error
-
-			qerr := QueryableError{}
-			if errors.As(err, &qerr) {
-				// We only care about errors returned by underlying Queryable. Errors returned by PromQL engine are "user-errors",
-				// and not interesting here.
-				origErr = qerr.Unwrap()
-			} else {
-				st, ok := status.FromError(err)
-				if !ok {
-					return result, err
-				}
-				// When remote querier enabled only consider failed queries those returning a 500 status code.
-				if st.Code() == http.StatusInternalServerError {
-					failedQueries.Inc()
-				}
-				return result, err
-			}
+		// We only care about errors returned by underlying Queryable. Errors returned by PromQL engine are "user-errors",
+		// and not interesting here.
+		qerr := QueryableError{}
+		if err != nil && errors.As(err, &qerr) {
+			origErr := qerr.Unwrap()
 
 			// Not all errors returned by Queryable are interesting, only those that would result in 500 status code.
 			//
@@ -165,8 +151,14 @@ func MetricsQueryFunc(qf rules.QueryFunc, queries, failedQueries prometheus.Coun
 
 			// Return unwrapped error.
 			return result, origErr
-		}
 
+		} else if err != nil {
+			// When remote querier enabled, only consider failed queries those returning a 500 status code.
+			st, ok := status.FromError(err)
+			if ok && st.Code() == http.StatusInternalServerError {
+				failedQueries.Inc()
+			}
+		}
 		return result, err
 	}
 }
@@ -235,7 +227,7 @@ type ManagerFactory func(ctx context.Context, userID string, notifier *notifier.
 func DefaultTenantManagerFactory(
 	cfg Config,
 	p Pusher,
-	regularQueryable storage.Queryable,
+	embeddedQueryable storage.Queryable,
 	federatedQueryable storage.Queryable,
 	engine *promql.Engine,
 	remoteQuerier *remotequerier.Querier,
@@ -286,10 +278,10 @@ func DefaultTenantManagerFactory(
 				queryFunc = RecordAndReportRuleQueryMetrics(queryFunc, queryTime, logger)
 				return queryFunc
 			}
-			regularQueryFunc := wrapQueryable(regularQueryable)
+			regularQueryFunc := wrapQueryable(embeddedQueryable)
 			federatedQueryFunc := wrapQueryable(federatedQueryable)
 
-			queryable = regularQueryable
+			queryable = embeddedQueryable
 			queryFunc = TenantFederationQueryFunc(regularQueryFunc, federatedQueryFunc)
 
 		} else {

@@ -22,7 +22,7 @@ import (
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/weaveworks/common/httpgrpc"
 
-	"github.com/grafana/mimir/pkg/util/remotequerier/transport"
+	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/version"
 )
@@ -40,19 +40,19 @@ var userAgent = fmt.Sprintf("mimir/%s", version.Version)
 
 // Querier executes read operations against a transport.RoundTripper.
 type Querier struct {
-	roundTripper   transport.RoundTripper
+	transport      httpgrpcutil.RoundTripper
 	promHTTPPrefix string
 	logger         log.Logger
 }
 
 // New creates and initializes a new Querier instance.
 func New(
-	roundTripper transport.RoundTripper,
+	transport httpgrpcutil.RoundTripper,
 	prometheusHTTPPrefix string,
 	logger log.Logger,
 ) *Querier {
 	return &Querier{
-		roundTripper:   roundTripper,
+		transport:      transport,
 		promHTTPPrefix: prometheusHTTPPrefix,
 		logger:         logger,
 	}
@@ -75,26 +75,11 @@ func (r *Querier) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryR
 	}
 	// add required HTTP headers
 	headers := []*httpgrpc.Header{
-		{
-			Key:    textproto.CanonicalMIMEHeaderKey("Content-Encoding"),
-			Values: []string{"snappy"},
-		},
-		{
-			Key:    textproto.CanonicalMIMEHeaderKey("Accept-Encoding"),
-			Values: []string{"snappy"},
-		},
-		{
-			Key:    textproto.CanonicalMIMEHeaderKey("Content-Type"),
-			Values: []string{"application/x-protobuf"},
-		},
-		{
-			Key:    textproto.CanonicalMIMEHeaderKey("User-Agent"),
-			Values: []string{userAgent},
-		},
-		{
-			Key:    textproto.CanonicalMIMEHeaderKey("X-Prometheus-Remote-Read-Version"),
-			Values: []string{"0.1.0"},
-		},
+		{Key: textproto.CanonicalMIMEHeaderKey("Content-Encoding"), Values: []string{"snappy"}},
+		{Key: textproto.CanonicalMIMEHeaderKey("Accept-Encoding"), Values: []string{"snappy"}},
+		{Key: textproto.CanonicalMIMEHeaderKey("Content-Type"), Values: []string{"application/x-protobuf"}},
+		{Key: textproto.CanonicalMIMEHeaderKey("User-Agent"), Values: []string{userAgent}},
+		{Key: textproto.CanonicalMIMEHeaderKey("X-Prometheus-Remote-Read-Version"), Values: []string{"0.1.0"}},
 	}
 
 	req := httpgrpc.HTTPRequest{
@@ -104,7 +89,7 @@ func (r *Querier) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryR
 		Headers: headers,
 	}
 
-	resp, err := r.roundTripper.RoundTrip(ctx, &req)
+	resp, err := r.transport.RoundTrip(ctx, &req)
 	if err != nil {
 		level.Warn(log).Log("msg", "failed to perform remote read", "err", err, "qs", query)
 		return nil, err
@@ -126,8 +111,8 @@ func (r *Querier) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryR
 		return nil, errors.Wrap(err, "unable to unmarshal response body")
 	}
 
-	if len(rdResp.Results) != len(rdReq.Queries) {
-		return nil, errors.Errorf("responses: want %d, got %d", len(rdReq.Queries), len(rdResp.Results))
+	if len(rdResp.Results) != 1 {
+		return nil, errors.Errorf("responses: want %d, got %d", 1, len(rdResp.Results))
 	}
 	return rdResp.Results[0], nil
 }
@@ -155,7 +140,7 @@ func (r *Querier) Query(ctx context.Context, query string, ts time.Time) (model.
 		},
 	}
 
-	resp, err := r.roundTripper.RoundTrip(ctx, &req)
+	resp, err := r.transport.RoundTrip(ctx, &req)
 	if err != nil {
 		level.Warn(log).Log("msg", "failed to remotely evaluate query expression", "err", err, "qs", query, "tm", ts)
 		return model.ValNone, nil, err

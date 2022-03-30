@@ -17,17 +17,17 @@ import (
 	"github.com/weaveworks/common/httpgrpc"
 	"github.com/weaveworks/common/user"
 
-	"github.com/grafana/mimir/pkg/util/remotequerier"
-	queriertransport "github.com/grafana/mimir/pkg/util/remotequerier/transport"
+	"github.com/grafana/mimir/pkg/ruler/remotequerier"
+	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
 )
 
 type orgRoundTripper struct {
-	next queriertransport.RoundTripper
+	next httpgrpcutil.RoundTripper
 }
 
 // NewOrgRoundTripper returns a new transport.RoundTripper implementation that injects orgID HTTP header
 // by inspecting the passed context.
-func NewOrgRoundTripper(next queriertransport.RoundTripper) queriertransport.RoundTripper {
+func NewOrgRoundTripper(next httpgrpcutil.RoundTripper) httpgrpcutil.RoundTripper {
 	return &orgRoundTripper{next: next}
 }
 

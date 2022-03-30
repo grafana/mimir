@@ -39,18 +39,10 @@ func FederatedGroupContextFunc(ctx context.Context, g *rules.Group) context.Cont
 
 // ExtractTenantIDs gets the rule group org ID from the context.
 func ExtractTenantIDs(ctx context.Context) (string, error) {
-	var orgID string
-
 	if sourceTenants, _ := ctx.Value(federatedGroupSourceTenants).([]string); len(sourceTenants) > 0 {
-		orgID = tenant.JoinTenantIDs(sourceTenants)
-	} else {
-		var err error
-		orgID, err = tenant.TenantID(ctx)
-		if err != nil {
-			return "", err
-		}
+		return tenant.JoinTenantIDs(sourceTenants), nil
 	}
-	return orgID, nil
+	return tenant.TenantID(ctx)
 }
 
 func TenantFederationQueryFunc(regularQueryable, federatedQueryable rules.QueryFunc) rules.QueryFunc {

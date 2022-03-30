@@ -46,13 +46,12 @@ import (
 	"github.com/grafana/mimir/pkg/querier/tenantfederation"
 	querier_worker "github.com/grafana/mimir/pkg/querier/worker"
 	"github.com/grafana/mimir/pkg/ruler"
+	"github.com/grafana/mimir/pkg/ruler/remotequerier"
 	"github.com/grafana/mimir/pkg/scheduler"
 	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
 	util_log "github.com/grafana/mimir/pkg/util/log"
-	"github.com/grafana/mimir/pkg/util/remotequerier"
-	queriertransport "github.com/grafana/mimir/pkg/util/remotequerier/transport"
 	"github.com/grafana/mimir/pkg/util/validation"
 	"github.com/grafana/mimir/pkg/util/version"
 )
@@ -564,7 +563,7 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 	var remoteQuerier *remotequerier.Querier
 
 	if len(t.Cfg.Ruler.Querier.Address) > 0 {
-		tr, err := queriertransport.New(t.Cfg.Ruler.Querier)
+		tr, err := remotequerier.NewTransport(t.Cfg.Ruler.Querier)
 		if err != nil {
 			return nil, err
 		}
