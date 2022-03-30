@@ -378,7 +378,7 @@ func (am *Alertmanager) ApplyConfig(userID string, conf *config.Config, rawCfg s
 		am.marker,
 		timeoutFunc,
 		&dispatcherLimits{tenant: am.cfg.UserID, limits: am.cfg.Limits},
-		log.With(am.logger, "component", "dispatcher"),
+		log.With(am.logger, "component", "dispatcher", "insight", "true"),
 		am.dispatcherMetrics,
 	)
 

@@ -7,6 +7,7 @@
 * [FEATURE] Distributor: Added the ability to forward specifics metrics to alternative remote_write API endpoints. #1052
 * [ENHANCEMENT] Ruler: Add more detailed query information to ruler query stats logging. #1411
 * [ENHANCEMENT] Admin: Admin API now has some styling. #1482 #1549
+* [ENHANCEMENT] Alertmanager: added `insight=true` field to alertmanager dispatch logs. #1379
 * [BUGFIX] Query-frontend: do not shard queries with a subquery unless the subquery is inside a shardable aggregation function call. #1542
 
 ### Mixin
