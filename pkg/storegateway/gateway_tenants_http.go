@@ -3,7 +3,7 @@
 package storegateway
 
 import (
-	_ "embed"
+	_ "embed" // Used to embed html template
 	"fmt"
 	"html/template"
 	"net/http"

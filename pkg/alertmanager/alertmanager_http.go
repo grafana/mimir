@@ -6,7 +6,7 @@
 package alertmanager
 
 import (
-	_ "embed"
+	_ "embed" // Used to embed html template
 	"net/http"
 	"text/template"
 

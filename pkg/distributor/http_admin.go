@@ -6,7 +6,7 @@
 package distributor
 
 import (
-	_ "embed"
+	_ "embed" // Used to embed html template
 	"encoding/json"
 	"fmt"
 	"html/template"
