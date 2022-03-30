@@ -7953,7 +7953,7 @@
           "required": false,
           "desc": "Maximum size (bytes) of an accepted HTTP request body.",
           "fieldValue": null,
-          "fieldDefaultValue": 16777216,
+          "fieldDefaultValue": 104857600,
           "fieldFlag": "alertmanager.max-recv-msg-size",
           "fieldType": "int",
           "fieldCategory": "advanced"

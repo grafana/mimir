@@ -1654,7 +1654,7 @@ The `alertmanager` block configures the alertmanager.
 
 # (advanced) Maximum size (bytes) of an accepted HTTP request body.
 # CLI flag: -alertmanager.max-recv-msg-size
-[max_recv_msg_size: <int> | default = 16777216]
+[max_recv_msg_size: <int> | default = 104857600]
 
 sharding_ring:
   # The key-value store used to share the hash ring across multiple instances.
