@@ -1,0 +1,36 @@
+{{- /*gotype: github.com/grafana/mimir/pkg/distributor.haTrackerStatusPageContents*/ -}}
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>HA Tracker Status</title>
+</head>
+<body>
+<h1>HA Tracker Status</h1>
+<p>Current time: {{ .Now }}</p>
+<table width="100%" border="1">
+    <thead>
+    <tr>
+        <th>User ID</th>
+        <th>Cluster</th>
+        <th>Replica</th>
+        <th>Elected Time</th>
+        <th>Time Until Update</th>
+        <th>Time Until Failover</th>
+    </tr>
+    </thead>
+    <tbody>
+    {{ range .Elected }}
+        <tr>
+            <td>{{ .UserID }}</td>
+            <td>{{ .Cluster }}</td>
+            <td>{{ .Replica }}</td>
+            <td>{{ .ElectedAt }}</td>
+            <td>{{ .UpdateTime }}</td>
+            <td>{{ .FailoverTime }}</td>
+        </tr>
+    {{ end }}
+    </tbody>
+</table>
+</body>
+</html>
