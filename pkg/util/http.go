@@ -108,7 +108,7 @@ func RenderHTTPResponse(w http.ResponseWriter, v interface{}, t *template.Templa
 		return
 	}
 
-	w.Header().Set("Content-Type", "text/html; utf=8")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	err := t.Execute(w, v)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
