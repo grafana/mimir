@@ -9,6 +9,7 @@
 * [ENHANCEMENT] Admin: Admin API now has some styling. #1482 #1549
 * [ENHANCEMENT] Alertmanager: added `insight=true` field to alertmanager dispatch logs. #1379
 * [BUGFIX] Query-frontend: do not shard queries with a subquery unless the subquery is inside a shardable aggregation function call. #1542
+* [BUGFIX] Mimir: services' status content-type is now correctly set to `text/html`. #1575
 
 ### Mixin
 

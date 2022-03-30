@@ -83,7 +83,7 @@ func WriteYAMLResponse(w http.ResponseWriter, v interface{}) {
 	_, _ = w.Write(data)
 }
 
-// Sends message as text/plain response with 200 status code.
+// WriteTextResponse sends message as text/plain response with 200 status code.
 func WriteTextResponse(w http.ResponseWriter, message string) {
 	w.Header().Set("Content-Type", "text/plain")
 
@@ -91,7 +91,7 @@ func WriteTextResponse(w http.ResponseWriter, message string) {
 	_, _ = w.Write([]byte(message))
 }
 
-// Sends message as text/html response with 200 status code.
+// WriteHTMLResponse sends message as text/html response with 200 status code.
 func WriteHTMLResponse(w http.ResponseWriter, message string) {
 	w.Header().Set("Content-Type", "text/html")
 
@@ -99,8 +99,8 @@ func WriteHTMLResponse(w http.ResponseWriter, message string) {
 	_, _ = w.Write([]byte(message))
 }
 
-// RenderHTTPResponse either responds with json or a rendered html page using the passed in template
-// by checking the Accepts header
+// RenderHTTPResponse either responds with JSON or a rendered HTML page using the passed in template
+// by checking the Accepts header.
 func RenderHTTPResponse(w http.ResponseWriter, v interface{}, t *template.Template, r *http.Request) {
 	accept := r.Header.Get("Accept")
 	if strings.Contains(accept, "application/json") {
@@ -108,6 +108,7 @@ func RenderHTTPResponse(w http.ResponseWriter, v interface{}, t *template.Templa
 		return
 	}
 
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	err := t.Execute(w, v)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
