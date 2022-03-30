@@ -444,6 +444,7 @@ func (t *Mimir) initTest() (services.Service, error) {
 	return services.NewTimerService(time.Second,
 		nil,
 		func(_ context.Context) error {
+			// Sleep to avoid issue https://github.com/grafana/dskit/issues/151 .
 			time.Sleep(100 * time.Millisecond)
 			if t.Overrides.ActiveSeriesCustomTrackersConfig("1235").Empty() {
 				return errors.New("Active series config should not be empty!")
