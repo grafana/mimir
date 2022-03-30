@@ -27,6 +27,7 @@ import (
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
+	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -168,6 +169,7 @@ func TestMimir(t *testing.T) {
 }
 
 func TestMimirServerShutdownWithActivityTrackerEnabled(t *testing.T) {
+	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
 	prepareGlobalMetricsRegistry(t)
 
 	cfg := Config{}
@@ -385,6 +387,7 @@ func TestGrpcAuthMiddleware(t *testing.T) {
 }
 
 func TestFlagDefaults(t *testing.T) {
+	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
 	c := Config{}
 
 	f := flag.NewFlagSet("test", flag.PanicOnError)
@@ -435,10 +438,25 @@ func TestFlagDefaults(t *testing.T) {
 //      unless it's also defined in the limits, which is invalid.
 //		This needs to be set before setting default limits for unmarshalling.
 // 		For more context see https://github.com/grafana/mimir/pull/1188#discussion_r830129443
+func (t *Mimir) initTest() (services.Service, error) {
+	if t.Overrides.ActiveSeriesCustomTrackersConfig("1235").Empty() {
+		return nil, errors.New("Active series config should not be empty!")
+	}
+	return nil, nil
+}
+
+// TODO Remove in Mimir 2.2.
+//      Previously ActiveSeriesCustomTrackers was an ingester config, now it's in LimitsConfig.
+//      We provide backwards compatibility for it by parsing the old YAML location and copying it to LimitsConfig here,
+//      unless it's also defined in the limits, which is invalid.
+//		This needs to be set before setting default limits for unmarshalling.
+// 		For more context see https://github.com/grafana/mimir/pull/1188#discussion_r830129443
 func TestActiveSeriesDeprecationDefaultOverrideWithSomeRuntimeOverrides(t *testing.T) {
+	prepareGlobalMetricsRegistry(t)
+	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
 	yamlContent := `
 overrides:
-  '1234':
+  '1235':
     ingestion_burst_size: 15000
     ingestion_rate: 1500
     max_global_series_per_metric: 7000
@@ -446,8 +464,7 @@ overrides:
     ruler_max_rule_groups_per_tenant: 20
     ruler_max_rules_per_rule_group: 20
 `
-	prepareGlobalMetricsRegistry(t)
-
+	TEST_MODULE_NAME := "test"
 	cfg := Config{}
 
 	// This sets default values from flags to the config.
@@ -456,17 +473,17 @@ overrides:
 	// Creating test file with runtime overrides.
 	tmpDir := t.TempDir()
 	cfg.RuntimeConfig.LoadPath = filepath.Join(tmpDir, "overrides.yml")
-	err := ioutil.WriteFile(cfg.RuntimeConfig.LoadPath, []byte(yamlContent), 777)
+	err := ioutil.WriteFile(cfg.RuntimeConfig.LoadPath, []byte(yamlContent), 0777)
 	require.NoError(t, err, "Failed to write test override.yml.")
 
-	// Setting up deprecated value as an ingester config value.
+	// Setting up tracker config value as an deprecated ingester config.
 	cfg.Ingester.ActiveSeriesCustomTrackers, err = activeseries.NewCustomTrackersConfig(map[string]string{
 		"bool_is_true_flag-based": `{bool="true"}`,
 		"bool_is_false_flagbased": `{bool="false"}`,
 	})
 	require.NoError(t, err)
 
-	cfg.Target = []string{RuntimeConfig}
+	cfg.Target = []string{TEST_MODULE_NAME}
 	cfg.Server = getServerConfig(t)
 	require.NoError(t, cfg.Server.LogFormat.Set("logfmt"))
 	require.NoError(t, cfg.Server.LogLevel.Set("debug"))
@@ -474,19 +491,22 @@ overrides:
 
 	c, err := New(cfg)
 	require.NoError(t, err)
+	c.ModuleManager.RegisterModule(TEST_MODULE_NAME, c.initTest)
+	c.ModuleManager.AddDependency(TEST_MODULE_NAME, Overrides)
 
 	errCh := make(chan error)
 	go func() {
 		errCh <- c.Run()
 	}()
 
-	// Waiting for RuntimeConfig to load config from file.
-	test.Poll(t, cfg.RuntimeConfig.ReloadPeriod, true, func() interface{} {
-		return c.RuntimeConfig != nil
-	})
-	assert.NotNil(t, c.RuntimeConfig.GetConfig())
-	assert.False(t, c.TenantLimits.ByUserID("1234").ActiveSeriesCustomTrackersConfig.Empty(),
-		"Default deserialization value for active series trackers should be set from ingester config.")
+	select {
+	case <-time.After(5 * time.Second):
+		proc, err := os.FindProcess(os.Getpid())
+		require.NoError(t, err)
+		require.NoError(t, proc.Signal(syscall.SIGINT))
+	case err := <-errCh:
+		require.NoError(t, err, "Active series deprecation override not in place!")
+	}
 }
 
 // Generates server config, with gRPC listening on random port.
