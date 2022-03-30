@@ -89,7 +89,10 @@ func parseFlags() config {
 	basicFlagSet.StringVar(&cfg.bucket.Backend, "backend", bucket.Filesystem, fmt.Sprintf("Backend storage to use. Supported backends are: %s. Use -full-help to see help on backends configuration.", strings.Join(bucket.SupportedBackends, ", ")))
 	cfg.bucket.RegisterFlags(fullFlagSet)
 
-	fullFlagSet.Parse(os.Args[1:])
+	if err := fullFlagSet.Parse(os.Args[1:]); err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
 
 	// See if user did `markblocks -full-help`.
 	if cfg.fullHelp {
