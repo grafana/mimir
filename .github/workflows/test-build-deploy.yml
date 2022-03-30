@@ -200,6 +200,15 @@ jobs:
         run: |
           sudo mkdir -p /go/src/github.com/grafana/mimir
           sudo ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
+      # TODO Remove "Docker login" step after Mimir Docker Hub repo is public.
+      - name: Docker login
+        run: |
+          if [ -n "$DOCKER_PASSWORD" ]; then
+            printenv DOCKER_PASSWORD | docker login -u "$DOCKER_USERNAME" --password-stdin
+          fi
+        env:
+          DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+          DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
       - name: Download Docker Images Mimir Artifacts
         uses: actions/download-artifact@v2
         with:
