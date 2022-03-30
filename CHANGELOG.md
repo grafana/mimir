@@ -14,6 +14,8 @@
 
 ### Jsonnet
 
+* [BUGFIX] Pass primary and secondary multikv stores via CLI flags. Introduced new `multikv_switch_primary_secondary` config option to flip primary and secondary in runtime config.
+
 ### Mimirtool
 
 ### Tools
