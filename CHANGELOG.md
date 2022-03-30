@@ -7,8 +7,8 @@
 * [FEATURE] Distributor: Added the ability to forward specifics metrics to alternative remote_write API endpoints. #1052
 * [FEATURE] Alertmanager API: Concurrency limit for GET requests is now configurable using `-alertmanager.max-concurrent-get-requests-per-tenant`. #1547
 * [ENHANCEMENT] Alertmanager: Added the ability to configure GRPC client settings #1547
-  - `-alertmanager.alertmanager-client.backoff-max-period duration`
-  - `-alertmanager.alertmanager-client.backoff-min-period duration`
+  - `-alertmanager.alertmanager-client.backoff-max-period`
+  - `-alertmanager.alertmanager-client.backoff-min-period`
   - `-alertmanager.alertmanager-client.backoff-on-ratelimits`
   - `-alertmanager.alertmanager-client.backoff-retries`
   - `-alertmanager.alertmanager-client.grpc-client-rate-limit`
