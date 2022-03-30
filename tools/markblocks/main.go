@@ -184,13 +184,13 @@ func uploadMarks(
 			level.Error(logger).Log("msg", "Can't check mark file existence.", "block", b, "filename", blockMarkFilename, "err", err)
 			os.Exit(1)
 		} else if exists {
-			level.Info(logger).Log("msg", "Mark already exists, skipping.", "block_id", b)
+			level.Info(logger).Log("msg", "Mark already exists, skipping.", "block", b)
 			continue
 		}
 
 		data, err := mark(b)
 		if err != nil {
-			level.Error(logger).Log("msg", "Can't create mark.", "block_id", b, "err", err)
+			level.Error(logger).Log("msg", "Can't create mark.", "block", b, "err", err)
 			os.Exit(1)
 		}
 		if dryRun {
