@@ -484,20 +484,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
               sum by(cluster, job, instance) (rate(cortex_ingester_ingested_samples_total[1m]))
             |||,
           },
-          {
-            // cortex_ingester_ingested_samples_total is per user, in this rule we want to see the sum per cluster/job/instance
-            record: 'cluster_job_instance:cortex_ingester_ingested_samples_total:rate1h',
-            expr: |||
-              sum by(cluster, job, instance) (rate(cortex_ingester_ingested_samples_total[1h]))
-            |||,
-          },
-          {
-            // cortex_ingester_ingested_samples_total is per user, in this rule we want to see the sum per cluster/job/instance
-            record: 'cluster_job_instance:cortex_ingester_ingested_samples_total:rate4h',
-            expr: |||
-              sum by(cluster, job, instance) (rate(cortex_ingester_ingested_samples_total[4h]))
-            |||,
-          },
         ],
       },
     ],
