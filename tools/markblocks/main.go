@@ -32,7 +32,7 @@ type config struct {
 	details string
 	blocks  []string
 
-	fullHelp bool
+	helpAll bool
 }
 
 func main() {
@@ -62,7 +62,7 @@ func parseFlags() config {
 		f.StringVar(&cfg.mark, "mark", "", "Mark type to create, valid options: deletion, no-compact. Required.")
 		f.BoolVar(&cfg.dryRun, "dry-run", false, "Don't upload the markers generated, just print the intentions.")
 		f.StringVar(&cfg.details, "details", "", "Details field of the uploaded mark. Recommended. (default empty).")
-		f.BoolVar(&cfg.fullHelp, "full-help", false, "Show help for all flags, including the bucket backend configuration.")
+		f.BoolVar(&cfg.helpAll, "help-all", false, "Show help for all flags, including the bucket backend configuration.")
 	}
 
 	commonUsageHeader := func() {
@@ -77,7 +77,7 @@ func parseFlags() config {
 	// but by default we print only the basic flag set defaults.
 	fullFlagSet.Usage = func() {
 		commonUsageHeader()
-		if cfg.fullHelp {
+		if cfg.helpAll {
 			fullFlagSet.PrintDefaults()
 		} else {
 			basicFlagSet.PrintDefaults()
@@ -86,7 +86,7 @@ func parseFlags() config {
 
 	// We set only the `-backend` flag on the basicFlagSet, to make sure that user sees that there are more backends supported.
 	// Then we register all bucket flags on the full flag set, which is the flag set we're parsing.
-	basicFlagSet.StringVar(&cfg.bucket.Backend, "backend", bucket.Filesystem, fmt.Sprintf("Backend storage to use. Supported backends are: %s. Use -full-help to see help on backends configuration.", strings.Join(bucket.SupportedBackends, ", ")))
+	basicFlagSet.StringVar(&cfg.bucket.Backend, "backend", bucket.Filesystem, fmt.Sprintf("Backend storage to use. Supported backends are: %s. Use -help-all to see help on backends configuration.", strings.Join(bucket.SupportedBackends, ", ")))
 	cfg.bucket.RegisterFlags(fullFlagSet)
 
 	if err := fullFlagSet.Parse(os.Args[1:]); err != nil {
@@ -94,8 +94,8 @@ func parseFlags() config {
 		os.Exit(1)
 	}
 
-	// See if user did `markblocks -full-help`.
-	if cfg.fullHelp {
+	// See if user did `markblocks -help-all`.
+	if cfg.helpAll {
 		commonUsageHeader()
 		fullFlagSet.PrintDefaults()
 		os.Exit(0)

@@ -3,7 +3,7 @@
 `markblocks` is a tool that creates and uploads block markers to a specified backend.
 Marks are uploaded to both block folder and the global marks folder for the provided tenant.
 
-See `markblocks -help` for flags usage, and `markblocks -full-help` for full backend configuration flags list.
+See `markblocks -help` for flags usage, and `markblocks -help-all` for full backend configuration flags list.
 
 This tool can create two types of marks, depending on the `-mark` flag provided:
 
