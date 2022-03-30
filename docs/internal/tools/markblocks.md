@@ -9,7 +9,7 @@ This tool can create two types of marks, depending on the `-mark` flag provided:
 
 ## `deletion` mark
 
-When `-mark deletion` is provided, this tool uploads a `DeletionMark` which tells the compactor that the block provided should be deleted. 
+When `-mark deletion` is provided, this tool uploads a `DeletionMark` which tells the compactor that the block provided should be deleted.
 This is a **destructive operation** (although it won't happen immediately, the default delation delay is 12h, see `-compactor.deletion-delay` value), proceed with caution.
 
 ### Example
