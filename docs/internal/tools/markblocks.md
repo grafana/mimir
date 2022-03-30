@@ -9,8 +9,8 @@ This tool can create two types of marks, depending on the `-mark` flag provided:
 
 ## `deletion` mark
 
-When `-mark deletion` is provided, this tool uploads a `DeletionMark` which tells the compactor that the block provided. 
-This is a **destructive operation**, proceed with caution.
+When `-mark deletion` is provided, this tool uploads a `DeletionMark` which tells the compactor that the block provided should be deleted. 
+This is a **destructive operation** (although it won't happen immediately, the default delation delay is 12h, see `-compactor.deletion-delay` value), proceed with caution.
 
 ### Example
 
@@ -22,7 +22,7 @@ $ touch tenant-1/01FSCTA0A4M1YQHZQ4B2VTGS2R/meta.json
 $ tree -f tenant-1
 tenant-1
 ├── tenant-1/01FSCTA0A4M1YQHZQ4B2VTGS2R
-│   └── tenant-1/01FSCTA0A4M1YQHZQ4B2VTGS2R/meta.json
+│   └── tenant-1/01FSCTA0A4M1YQHZQ4B2VTGS2R/meta.json
 └── tenant-1/01FSCTA0A4M1YQHZQ4B2VTGS2U
 
 2 directories, 1 file
@@ -46,7 +46,7 @@ tenant-1
 ## `no-compact` mark
 
 When `-mark no-compact` is provided, this tool uploads a `NoCompactMark` which tells the compactor that the marked blocks should not be compacted.
-It is a good practice to provide a descriptive `-details` value explaining why the block is marked as such (who marked it? issue link?).
+`-details` flag can be used to provide an explanation of why the block is marked as such (who marked it? issue link?).
 
 ### Example
 
