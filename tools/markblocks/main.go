@@ -36,6 +36,7 @@ type config struct {
 
 	mark    string
 	details string
+	blocks  []string
 
 	fullHelp bool
 }
@@ -46,7 +47,7 @@ func main() {
 
 	cfg := parseFlags()
 	marker, filename := createMarker(cfg.mark, logger, cfg.details)
-	ulids := validateTenantAndBlocks(logger, cfg.tenantID, flag.Args())
+	ulids := validateTenantAndBlocks(logger, cfg.tenantID, cfg.blocks)
 	uploadMarks(ctx, logger, ulids, marker, filename, cfg.dryRun, cfg.bucket, cfg.tenantID)
 }
 
@@ -100,6 +101,8 @@ func parseFlags() config {
 		fullFlagSet.PrintDefaults()
 		os.Exit(0)
 	}
+	cfg.blocks = fullFlagSet.Args()
+
 	return cfg
 }
 
