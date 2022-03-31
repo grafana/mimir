@@ -33,9 +33,7 @@ jobs:
       - name: Lint
         run: make BUILD_IN_CONTAINER=false lint
       - name: Check Vendor Directory
-        run: |
-          git config --global url."https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com/grafana/mimir-prometheus".insteadOf "https://github.com/grafana/mimir-prometheus"
-          make BUILD_IN_CONTAINER=false mod-check
+        run: make BUILD_IN_CONTAINER=false mod-check
       - name: Check Protos
         run: make BUILD_IN_CONTAINER=false check-protos
       - name: Check Generated Documentation
@@ -67,9 +65,7 @@ jobs:
       - name: Check Jsonnet Manifests
         run: make BUILD_IN_CONTAINER=false check-jsonnet-manifests
       - name: Check Jsonnet Getting Started
-        run: |
-          git config --global url."https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com/grafana/mimir".insteadOf "https://github.com/grafana/mimir"
-          make BUILD_IN_CONTAINER=false check-jsonnet-getting-started
+        run: make BUILD_IN_CONTAINER=false check-jsonnet-getting-started
       - name: Check Jsonnet Tests
         run: make BUILD_IN_CONTAINER=false check-jsonnet-tests
 
