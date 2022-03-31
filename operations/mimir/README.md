@@ -81,7 +81,7 @@ mimir {
 
 ### Resources
 
-Default scaling of Mimir components in this jsonnet is opinionated and based on years of experience of Grafana Labs running them. 
+Default scaling of Mimir components in this jsonnet is opinionated and based on years of experience of Grafana Labs running them.
 The resources requests and limits set here are fine-tuned for the alerting rules provided by `mimir-mixin`, but there are still use cases when an operator may want to change them.
 For example, if you're just playing with Mimir and want to run it on a small (possibly one-node) cluster, you probably don't have tens of gigabytes or multiple cores to schedule the components, in that case you can override the scaling using as follows:
 
@@ -95,7 +95,7 @@ mimir {
   _config+:: {
     // ... configuration values
   },
-  
+
   compactor_container+: k.util.resourcesRequests('100m', '128Mi'),
   compactor_statefulset+: statefulSet.mixin.spec.withReplicas(1),
 
