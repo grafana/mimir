@@ -1,8 +1,3 @@
-// SPDX-License-Identifier: AGPL-3.0-only
-// Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/pkg/tenant/resolver.go
-// Provenance-includes-license: Apache-2.0
-// Provenance-includes-copyright: The Cortex Authors.
-
 package tenant
 
 import (
@@ -14,12 +9,11 @@ import (
 	"github.com/weaveworks/common/user"
 )
 
-// DefaultResolver is the default tenant ID resolver.
-var DefaultResolver Resolver = NewSingleResolver()
+var defaultResolver Resolver = NewSingleResolver()
 
 // WithDefaultResolver updates the resolver used for the package methods.
 func WithDefaultResolver(r Resolver) {
-	DefaultResolver = r
+	defaultResolver = r
 }
 
 // TenantID returns exactly a single tenant ID from the context. It should be
@@ -28,9 +22,9 @@ func WithDefaultResolver(r Resolver) {
 // supplied or user.ErrTooManyOrgIDs if there are multiple tenant IDs present.
 //
 // ignore stutter warning
-//nolint:golint
+//nolint:revive
 func TenantID(ctx context.Context) (string, error) {
-	return DefaultResolver.TenantID(ctx)
+	return defaultResolver.TenantID(ctx)
 }
 
 // TenantIDs returns all tenant IDs from the context. It should return
@@ -38,9 +32,9 @@ func TenantID(ctx context.Context) (string, error) {
 // NormalizeTenantIDs).
 //
 // ignore stutter warning
-//nolint:golint
+//nolint:revive
 func TenantIDs(ctx context.Context) ([]string, error) {
-	return DefaultResolver.TenantIDs(ctx)
+	return defaultResolver.TenantIDs(ctx)
 }
 
 type Resolver interface {
@@ -108,7 +102,7 @@ type MultiResolver struct {
 // NewMultiResolver creates a tenant resolver, which allows request to have
 // multiple tenant ids submitted separated by a '|' character. This enforces
 // further limits on the character set allowed within tenants as detailed here:
-// https://github.com/grafana/mimir/blob/main/docs/sources/about-tenant-ids.md
+// https://cortexmetrics.io/docs/guides/limitations/#tenant-id-naming)
 func NewMultiResolver() *MultiResolver {
 	return &MultiResolver{}
 }
@@ -155,7 +149,7 @@ func ExtractTenantIDFromHTTPRequest(req *http.Request) (string, context.Context,
 		return "", nil, err
 	}
 
-	tenantID, err := DefaultResolver.TenantID(ctx)
+	tenantID, err := defaultResolver.TenantID(ctx)
 	if err != nil {
 		return "", nil, err
 	}

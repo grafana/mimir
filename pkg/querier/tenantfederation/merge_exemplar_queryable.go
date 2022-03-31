@@ -13,7 +13,8 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/weaveworks/common/user"
 
-	"github.com/grafana/mimir/pkg/tenant"
+	"github.com/grafana/dskit/tenant"
+
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 

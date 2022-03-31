@@ -19,7 +19,8 @@ import (
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/weaveworks/common/user"
 
-	"github.com/grafana/mimir/pkg/tenant"
+	"github.com/grafana/dskit/tenant"
+
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 

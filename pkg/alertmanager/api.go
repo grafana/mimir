@@ -24,8 +24,9 @@ import (
 	commoncfg "github.com/prometheus/common/config"
 	"gopkg.in/yaml.v2"
 
+	"github.com/grafana/dskit/tenant"
+
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
-	"github.com/grafana/mimir/pkg/tenant"
 	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
