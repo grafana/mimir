@@ -111,11 +111,11 @@ where `default_value` is the value to use if the environment variable is undefin
 [no_auth_tenant: <string> | default = "anonymous"]
 
 api:
-  # (advanced) Allows to skip label name validation via header on the http write
-  # path. Use with caution as it breaks PromQL. Allowing this for external
-  # clients allows any client to send invalid label names. After enabling it,
-  # requests with a specific HTTP header set to true will not have label names
-  # validated.
+  # (advanced) Allows to skip label name validation via
+  # X-Mimir-SkipLabelNameValidation header on the http write path. Use with
+  # caution as it breaks PromQL. Allowing this for external clients allows any
+  # client to send invalid label names. After enabling it, requests with a
+  # specific HTTP header set to true will not have label names validated.
   # CLI flag: -api.skip-label-name-validation-header-enabled
   [skip_label_name_validation_header_enabled: <boolean> | default = false]
 
