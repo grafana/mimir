@@ -9,8 +9,8 @@ weight: 10
 
 There are two different options for getting started with Grafana Mimir:
 
-* The written tutorial provides a series of imperative commands to start a single Mimir process.
-* The visual tutorial (in the form of a video) uses `docker-compose` to declaratively deploy multiple Mimir processes.
+- The written tutorial provides a series of imperative commands to start a single Mimir process.
+- The visual tutorial (in the form of a video) uses `docker-compose` to declaratively deploy multiple Mimir processes.
 
 {{< vimeo 691947043 >}}
 
