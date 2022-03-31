@@ -2,7 +2,6 @@
 
 ## Grafana Mimir - main / unreleased
 
-* [ENHANCEMENT] Microservices: Ability to add NodeSelector
 * [CHANGE] Compactor: No longer upload debug meta files to object storage. #1257
 * [CHANGE] Default values have changed for the following settings: #1547
     - `-alertmanager.alertmanager-client.grpc-max-recv-msg-size` now defaults to 100 MiB (previously was not configurable and set to 16 MiB)
@@ -33,6 +32,8 @@
 ### Jsonnet
 
 * [CHANGE] Dashboards: Remove per-user series legends from Tenants dashboard. #1605
+* [ENHANCEMENT] Microservices: Ability to add NodeSelector
+* [BUGFIX] Pass primary and secondary multikv stores via CLI flags. Introduced new `multikv_switch_primary_secondary` config option to flip primary and secondary in runtime config.
 * [ENHANCEMENT] Ingester anti-affinity can now be disabled by using `ingester_allow_multiple_replicas_on_same_node` configuration key. #1581
 * [BUGFIX] Pass primary and secondary multikv stores via CLI flags. Introduced new `multikv_switch_primary_secondary` config option to flip primary and secondary in runtime config.
 
