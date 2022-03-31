@@ -149,9 +149,6 @@ func NewIngester(name string, consulAddress string, flags map[string]string, opt
 }
 
 func getBinaryNameForBackwardsCompatibility(image string) string {
-	if strings.Contains(image, "quay.io/cortexproject/cortex") {
-		return "cortex"
-	}
 	return "mimir"
 }
 

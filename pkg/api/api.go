@@ -71,8 +71,7 @@ type Config struct {
 
 // RegisterFlags adds the flags required to config this to the given FlagSet.
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
-	// TODO(56quarters): Mention the specific header "X-Mimir-SkipLabelNameValidation" after Mimir is public
-	f.BoolVar(&cfg.SkipLabelNameValidationHeader, "api.skip-label-name-validation-header-enabled", false, "Allows to skip label name validation via header on the http write path. Use with caution as it breaks PromQL. Allowing this for external clients allows any client to send invalid label names. After enabling it, requests with a specific HTTP header set to true will not have label names validated.")
+	f.BoolVar(&cfg.SkipLabelNameValidationHeader, "api.skip-label-name-validation-header-enabled", false, "Allows to skip label name validation via X-Mimir-SkipLabelNameValidation header on the http write path. Use with caution as it breaks PromQL. Allowing this for external clients allows any client to send invalid label names. After enabling it, requests with a specific HTTP header set to true will not have label names validated.")
 	cfg.RegisterFlagsWithPrefix("", f)
 }
 
@@ -418,7 +417,7 @@ func (a *API) RegisterQueryScheduler(f *scheduler.Scheduler) {
 // or a future module manager #2291
 func (a *API) RegisterServiceMapHandler(handler http.Handler) {
 	a.indexPage.AddLinks(serviceStatusWeight, "Overview", []IndexPageLink{
-		{Desc: "Service status", Path: "/services"},
+		{Desc: "Services' status", Path: "/services"},
 	})
 	a.RegisterRoute("/services", handler, false, true, "GET")
 }

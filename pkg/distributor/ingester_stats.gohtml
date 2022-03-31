@@ -1,0 +1,38 @@
+{{- /*gotype: github.com/grafana/mimir/pkg/distributor.ingesterStatsPageContents */ -}}
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Ingester Stats</title>
+</head>
+<body>
+<h1>Ingester Stats</h1>
+<p>Current time: {{ .Now }}</p>
+<p><b>NB stats do not account for replication factor, which is currently set to {{ .ReplicationFactor }}</b></p>
+<form action="" method="POST">
+    <input type="hidden" name="csrf_token" value="$__CSRF_TOKEN_PLACEHOLDER__">
+    <table border="1">
+        <thead>
+        <tr>
+            <th>User</th>
+            <th># Series</th>
+            <th>Total Ingest Rate</th>
+            <th>API Ingest Rate</th>
+            <th>Rule Ingest Rate</th>
+        </tr>
+        </thead>
+        <tbody>
+        {{ range .Stats }}
+            <tr>
+                <td>{{ .UserID }}</td>
+                <td align='right'>{{ .UserStats.NumSeries }}</td>
+                <td align='right'>{{ printf "%.2f" .UserStats.IngestionRate }}</td>
+                <td align='right'>{{ printf "%.2f" .UserStats.APIIngestionRate }}</td>
+                <td align='right'>{{ printf "%.2f" .UserStats.RuleIngestionRate }}</td>
+            </tr>
+        {{ end }}
+        </tbody>
+    </table>
+</form>
+</body>
+</html>

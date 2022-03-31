@@ -79,6 +79,8 @@ type MultitenantAlertmanagerConfig struct {
 
 	EnableAPI bool `yaml:"enable_api" category:"advanced"`
 
+	MaxConcurrentGetRequestsPerTenant int `yaml:"max_concurrent_get_requests_per_tenant" category:"advanced"`
+
 	// For distributor.
 	AlertmanagerClient ClientConfig `yaml:"alertmanager_client"`
 
@@ -94,7 +96,7 @@ const (
 func (cfg *MultitenantAlertmanagerConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.StringVar(&cfg.DataDir, "alertmanager.storage.path", "./data-alertmanager/", "Directory to store Alertmanager state and temporarily configuration files. The content of this directory is not required to be persisted between restarts unless Alertmanager replication has been disabled.")
 	f.DurationVar(&cfg.Retention, "alertmanager.storage.retention", 5*24*time.Hour, "How long to keep data for.")
-	f.Int64Var(&cfg.MaxRecvMsgSize, "alertmanager.max-recv-msg-size", 16<<20, "Maximum size (bytes) of an accepted HTTP request body.")
+	f.Int64Var(&cfg.MaxRecvMsgSize, "alertmanager.max-recv-msg-size", 100<<20, "Maximum size (bytes) of an accepted HTTP request body.")
 
 	_ = cfg.ExternalURL.Set("http://localhost:8080/alertmanager") // set the default
 	f.Var(&cfg.ExternalURL, "alertmanager.web.external-url", "The URL under which Alertmanager is externally reachable (eg. could be different than -http.alertmanager-http-prefix in case Alertmanager is served via a reverse proxy). This setting is used both to configure the internal requests router and to generate links in alert templates. If the external URL has a path portion, it will be used to prefix all HTTP endpoints served by Alertmanager, both the UI and API.")
@@ -103,6 +105,7 @@ func (cfg *MultitenantAlertmanagerConfig) RegisterFlags(f *flag.FlagSet, logger 
 	f.DurationVar(&cfg.PollInterval, "alertmanager.configs.poll-interval", 15*time.Second, "How frequently to poll Alertmanager configs.")
 
 	f.BoolVar(&cfg.EnableAPI, "alertmanager.enable-api", true, "Enable the alertmanager config API.")
+	f.IntVar(&cfg.MaxConcurrentGetRequestsPerTenant, "alertmanager.max-concurrent-get-requests-per-tenant", 0, "Maximum number of concurrent GET requests allowed per tenant. The zero value (and negative values) result in a limit of GOMAXPROCS or 8, whichever is larger. Status code 503 is served for GET requests that would exceed the concurrency limit.")
 
 	cfg.AlertmanagerClient.RegisterFlagsWithPrefix("alertmanager.alertmanager-client", f)
 	cfg.Persister.RegisterFlagsWithPrefix("alertmanager", f)
@@ -842,17 +845,18 @@ func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *amco
 	}
 
 	newAM, err := New(&Config{
-		UserID:            userID,
-		TenantDataDir:     tenantDir,
-		Logger:            am.logger,
-		PeerTimeout:       am.cfg.PeerTimeout,
-		Retention:         am.cfg.Retention,
-		ExternalURL:       am.cfg.ExternalURL.URL,
-		Replicator:        am,
-		ReplicationFactor: am.cfg.ShardingRing.ReplicationFactor,
-		Store:             am.store,
-		PersisterConfig:   am.cfg.Persister,
-		Limits:            am.limits,
+		UserID:                            userID,
+		TenantDataDir:                     tenantDir,
+		Logger:                            am.logger,
+		PeerTimeout:                       am.cfg.PeerTimeout,
+		Retention:                         am.cfg.Retention,
+		MaxConcurrentGetRequestsPerTenant: am.cfg.MaxConcurrentGetRequestsPerTenant,
+		ExternalURL:                       am.cfg.ExternalURL.URL,
+		Replicator:                        am,
+		ReplicationFactor:                 am.cfg.ShardingRing.ReplicationFactor,
+		Store:                             am.store,
+		PersisterConfig:                   am.cfg.Persister,
+		Limits:                            am.limits,
 	}, reg)
 	if err != nil {
 		return nil, fmt.Errorf("unable to start Alertmanager for user %v: %v", userID, err)

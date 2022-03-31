@@ -6,6 +6,7 @@
 package alertmanager
 
 import (
+	_ "embed" // Used to embed html template
 	"net/http"
 	"text/template"
 
@@ -16,34 +17,26 @@ import (
 )
 
 var (
-	ringStatusPageTemplate = template.Must(template.New("ringStatusPage").Parse(`
-	<!DOCTYPE html>
-	<html>
-		<head>
-			<meta charset="UTF-8">
-			<title>Alertmanager Ring</title>
-		</head>
-		<body>
-			<h1>Alertmanager Ring</h1>
-			<p>{{ .Message }}</p>
-		</body>
-	</html>`))
+	//go:embed ring_status.gohtml
+	ringStatusPageHTML     string
+	ringStatusPageTemplate = template.Must(template.New("ringStatusPage").Parse(ringStatusPageHTML))
 
-	statusTemplate = template.Must(template.New("statusPage").Parse(`
-    <!doctype html>
-    <html>
-        <head><title>Alertmanager Status</title></head>
-        <body>
-            <h1>Alertmanager Status: {{ .State }}</h1>
-        </body>
-    </html>`))
+	//go:embed status.gohtml
+	statusPageHTML     string
+	statusPageTemplate = template.Must(template.New("statusPage").Parse(statusPageHTML))
 )
+
+type ringStatusPageContents struct {
+	Message string
+}
+
+type statusPageContents struct {
+	State string
+}
 
 func writeRingStatusMessage(w http.ResponseWriter, message string) {
 	w.WriteHeader(http.StatusOK)
-	err := ringStatusPageTemplate.Execute(w, struct {
-		Message string
-	}{Message: message})
+	err := ringStatusPageTemplate.Execute(w, ringStatusPageContents{Message: message})
 	if err != nil {
 		level.Error(util_log.Logger).Log("msg", "unable to serve alertmanager ring page", "err", err)
 	}
@@ -75,9 +68,7 @@ type StatusHandler struct {
 
 // ServeHTTP serves the status of the alertmanager.
 func (s StatusHandler) ServeHTTP(w http.ResponseWriter, _ *http.Request) {
-	err := statusTemplate.Execute(w, struct {
-		State string
-	}{
+	err := statusPageTemplate.Execute(w, statusPageContents{
 		State: s.am.State().String(),
 	})
 	if err != nil {

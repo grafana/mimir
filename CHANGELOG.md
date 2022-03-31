@@ -3,20 +3,42 @@
 ## Grafana Mimir - main / unreleased
 
 * [CHANGE] Compactor: No longer upload debug meta files to object storage. #1257
+* [CHANGE] Default values have changed for the following settings: #1547
+    - `-alertmanager.alertmanager-client.grpc-max-recv-msg-size` now defaults to 100 MiB (previously was not configurable and set to 16 MiB)
+    - `-alertmanager.alertmanager-client.grpc-max-send-msg-size` now defaults to 100 MiB (previously was not configurable and set to 4 MiB)
+    - `-alertmanager.max-recv-msg-size` now defaults to 100 MiB (previously was 16 MiB)
 * [FEATURE] Ruler: Allow setting `evaluation_delay` for each rule group via rules group configuration file. #1474
 * [FEATURE] Distributor: Added the ability to forward specifics metrics to alternative remote_write API endpoints. #1052
 * [FEATURE] Ingester: Active series custom trackers now supports runtime tenant-specific overrides. The configuration has been moved to limit config, the ingester config has been deprecated.  #1188
+* [ENHANCEMENT] Alertmanager API: Concurrency limit for GET requests is now configurable using `-alertmanager.max-concurrent-get-requests-per-tenant`. #1547
+* [ENHANCEMENT] Alertmanager: Added the ability to configure additional gRPC client settings for the Alertmanager distributor #1547
+  - `-alertmanager.alertmanager-client.backoff-max-period`
+  - `-alertmanager.alertmanager-client.backoff-min-period`
+  - `-alertmanager.alertmanager-client.backoff-on-ratelimits`
+  - `-alertmanager.alertmanager-client.backoff-retries`
+  - `-alertmanager.alertmanager-client.grpc-client-rate-limit`
+  - `-alertmanager.alertmanager-client.grpc-client-rate-limit-burst`
+  - `-alertmanager.alertmanager-client.grpc-compression`
+  - `-alertmanager.alertmanager-client.grpc-max-recv-msg-size`
+  - `-alertmanager.alertmanager-client.grpc-max-send-msg-size`
 * [ENHANCEMENT] Ruler: Add more detailed query information to ruler query stats logging. #1411
 * [ENHANCEMENT] Admin: Admin API now has some styling. #1482 #1549
+* [ENHANCEMENT] Alertmanager: added `insight=true` field to alertmanager dispatch logs. #1379
 * [BUGFIX] Query-frontend: do not shard queries with a subquery unless the subquery is inside a shardable aggregation function call. #1542
+* [BUGFIX] Mimir: services' status content-type is now correctly set to `text/html`. #1575
 
 ### Mixin
 
 ### Jsonnet
 
+* [BUGFIX] Pass primary and secondary multikv stores via CLI flags. Introduced new `multikv_switch_primary_secondary` config option to flip primary and secondary in runtime config.
+* [ENHANCEMENT] Ingester anti-affinity can now be disabled by using `ingester_allow_multiple_replicas_on_same_node` configuration key. #1581
+
 ### Mimirtool
 
 ### Tools
+
+* [FEATURE] Added a `markblocks` tool that creates `no-compact` and `delete` marks for the blocks. #1551
 
 ## 2.0.0
 

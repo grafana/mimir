@@ -49,7 +49,6 @@ type IndexPageContent struct {
 type IndexPageLinkGroup struct {
 	weight int
 	Desc   string
-	Path   string
 	Links  []IndexPageLink
 }
 
@@ -92,7 +91,11 @@ func (pc *IndexPageContent) GetContent() []IndexPageLinkGroup {
 }
 
 //go:embed index.gohtml
-var indexPageTemplate string
+var indexPageHTML string
+
+type indexPageContents struct {
+	LinkGroups []IndexPageLinkGroup
+}
 
 //go:embed static
 var staticFiles embed.FS
@@ -104,10 +107,10 @@ func indexHandler(httpPathPrefix string, content *IndexPageContent) http.Handler
 			return path.Join(httpPathPrefix, link)
 		},
 	})
-	template.Must(templ.Parse(indexPageTemplate))
+	template.Must(templ.Parse(indexPageHTML))
 
 	return func(w http.ResponseWriter, r *http.Request) {
-		err := templ.Execute(w, content.GetContent())
+		err := templ.Execute(w, indexPageContents{LinkGroups: content.GetContent()})
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}

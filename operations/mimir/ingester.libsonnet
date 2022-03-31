@@ -95,7 +95,7 @@
     statefulSet.mixin.spec.withPodManagementPolicy('Parallel') +
     (if with_anti_affinity then $.util.antiAffinity else {}),
 
-  ingester_statefulset: self.newIngesterStatefulSet('ingester', $.ingester_container),
+  ingester_statefulset: self.newIngesterStatefulSet('ingester', $.ingester_container, !$._config.ingester_allow_multiple_replicas_on_same_node),
 
   ingester_service:
     $.util.serviceFor($.ingester_statefulset, $._config.service_ignored_labels),

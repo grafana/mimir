@@ -7,12 +7,7 @@ import "github.com/grafana/mimir/integration/e2emimir"
 // DefaultPreviousVersionImages is used by `tools/pre-pull-images` so it needs
 // to be in a non `_test.go` file.
 var DefaultPreviousVersionImages = map[string]e2emimir.FlagMapper{
-	"quay.io/cortexproject/cortex:v1.11.0": e2emimir.ChainFlagMappers(
-		cortexFlagMapper,
-		revertRenameFrontendToQueryFrontendFlagMapper,
-		ingesterRingRename,
-		ingesterRingNewFeatures,
-	),
+	"grafana/mimir:2.0.0": e2emimir.NoopFlagMapper,
 }
 
 var (

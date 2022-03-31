@@ -644,7 +644,9 @@ var mimirConfigFlagsOnly []byte
 //go:embed descriptors/mimir-v2.0.0.json
 var mimirConfig []byte
 
-func DefaultMimirConfig() *InspectedEntry {
+var mimirConfigDeserialized = loadDefaultMimirConfig()
+
+func loadDefaultMimirConfig() *InspectedEntry {
 	cfg := &InspectedEntry{}
 	if err := json.Unmarshal(mimirConfig, cfg); err != nil {
 		panic(err)
@@ -665,13 +667,19 @@ func DefaultMimirConfig() *InspectedEntry {
 	return cfg
 }
 
+func DefaultMimirConfig() *InspectedEntry {
+	return mimirConfigDeserialized.Clone()
+}
+
 //go:embed descriptors/cortex-v1.11.0.json
 var oldCortexConfig []byte
 
 //go:embed descriptors/cortex-v1.11.0-flags-only.json
 var oldCortexConfigFlagsOnly []byte
 
-func DefaultCortexConfig() *InspectedEntry {
+var oldCortexConfigDeserialized = loadDefaultCortexConfig()
+
+func loadDefaultCortexConfig() *InspectedEntry {
 	cfg := &InspectedEntry{}
 	if err := json.Unmarshal(oldCortexConfig, cfg); err != nil {
 		panic(err)
@@ -692,13 +700,19 @@ func DefaultCortexConfig() *InspectedEntry {
 	return cfg
 }
 
+func DefaultCortexConfig() *InspectedEntry {
+	return oldCortexConfigDeserialized.Clone()
+}
+
 //go:embed descriptors/gem-v1.7.0.json
 var gem170CortexConfig []byte
 
 //go:embed descriptors/gem-v1.7.0-flags-only.json
 var gem170CortexConfigFlagsOnly []byte
 
-func DefaultGEM170Config() *InspectedEntry {
+var gem170CortexConfigDeserialized = loadDefaultGEM170Config()
+
+func loadDefaultGEM170Config() *InspectedEntry {
 	cfg := &InspectedEntry{}
 	if err := json.Unmarshal(gem170CortexConfig, cfg); err != nil {
 		panic(err)
@@ -719,13 +733,19 @@ func DefaultGEM170Config() *InspectedEntry {
 	return cfg
 }
 
+func DefaultGEM170Config() *InspectedEntry {
+	return gem170CortexConfigDeserialized.Clone()
+}
+
 //go:embed descriptors/gem-v2.0.0.json
 var gem200CortexConfig []byte
 
 //go:embed descriptors/gem-v2.0.0-flags-only.json
 var gem200CortexConfigFlagsOnly []byte
 
-func DefaultGEM200COnfig() *InspectedEntry {
+var gem200CortexConfigDeserialized = loadDefaultGEM200COnfig()
+
+func loadDefaultGEM200COnfig() *InspectedEntry {
 	cfg := &InspectedEntry{}
 	if err := json.Unmarshal(gem200CortexConfig, cfg); err != nil {
 		panic(err)
@@ -744,4 +764,8 @@ func DefaultGEM200COnfig() *InspectedEntry {
 		BlockEntries: cfgFlagsOnly.BlockEntries,
 	})
 	return cfg
+}
+
+func DefaultGEM200COnfig() *InspectedEntry {
+	return gem200CortexConfigDeserialized.Clone()
 }

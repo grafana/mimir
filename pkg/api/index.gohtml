@@ -1,3 +1,4 @@
+{{- /*gotype: github.com/grafana/mimir/pkg/api.indexPageContents */ -}}
 <!DOCTYPE html>
 <html>
 <head>
@@ -20,19 +21,18 @@
         </h1>
     </div>
     <dl class="dl-horizontal">
-    {{ range $i, $ := . }}
-        {{- /*gotype: github.com/grafana/mimir/pkg/api.IndexPageLinkGroup */ -}}
-        {{ if $i }}
-            <hr>
-        {{ end }}
-            <dt><h2>{{ .Desc }}</h2></dt>
-            {{ range .Links }}
+        {{ range $i, $ := .LinkGroups }}
+            {{ if $i }}
+                <hr>
+            {{ end }}
+            <dt><h2>{{ $.Desc }}</h2></dt>
+            {{ range $.Links }}
                 <dd>
                     <a href="{{ AddPathPrefix .Path }}">{{ .Desc }}</a>
                     {{ if .Dangerous }}<span class="label label-danger">Dangerous</span>{{ end }}
                 </dd>
             {{ end }}
-    {{ end }}
+        {{ end }}
     </dl>
 </div>
 

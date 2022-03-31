@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/grafana/dskit/crypto/tls"
 	"github.com/grafana/dskit/grpcclient"
 	"github.com/grafana/dskit/ring/client"
 	"github.com/pkg/errors"
@@ -39,16 +38,14 @@ type Client interface {
 
 // ClientConfig is the configuration struct for the alertmanager client.
 type ClientConfig struct {
-	RemoteTimeout time.Duration    `yaml:"remote_timeout" category:"advanced"`
-	TLSEnabled    bool             `yaml:"tls_enabled" category:"advanced"`
-	TLS           tls.ClientConfig `yaml:",inline"`
+	RemoteTimeout    time.Duration     `yaml:"remote_timeout" category:"advanced"`
+	GRPCClientConfig grpcclient.Config `yaml:",inline"`
 }
 
 // RegisterFlagsWithPrefix registers flags with prefix.
 func (cfg *ClientConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
-	f.BoolVar(&cfg.TLSEnabled, prefix+".tls-enabled", cfg.TLSEnabled, "Enable TLS in the GRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.")
+	cfg.GRPCClientConfig.RegisterFlagsWithPrefix(prefix, f)
 	f.DurationVar(&cfg.RemoteTimeout, prefix+".remote-timeout", 2*time.Second, "Timeout for downstream alertmanagers.")
-	cfg.TLS.RegisterFlagsWithPrefix(prefix, f)
 }
 
 // alertmanagerClientsPool is a pool of alertmanager clients.
@@ -58,18 +55,6 @@ type alertmanagerClientsPool struct {
 
 // newAlertmanagerClientsPool creates a new pool of alertmanager clients.
 func newAlertmanagerClientsPool(discovery client.PoolServiceDiscovery, amClientCfg ClientConfig, logger log.Logger, reg prometheus.Registerer) ClientsPool {
-	// We prefer sensible defaults instead of exposing further config options.
-	grpcCfg := grpcclient.Config{
-		MaxRecvMsgSize:      16 * 1024 * 1024, // 16MiB.
-		MaxSendMsgSize:      4 * 1024 * 1024,  // 4MiB.
-		GRPCCompression:     "",               // No compression.
-		RateLimit:           0,                // No rate limit.
-		RateLimitBurst:      0,                // No burst of rate limit.
-		BackoffOnRatelimits: false,            // No backoffs for rate limiting.
-		TLSEnabled:          amClientCfg.TLSEnabled,
-		TLS:                 amClientCfg.TLS,
-	}
-
 	requestDuration := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 		Name: "cortex_alertmanager_distributor_client_request_duration_seconds",
 		Help: "Time spent executing requests from an alertmanager to another alertmanager.",
@@ -86,7 +71,7 @@ func newAlertmanagerClientsPool(discovery client.PoolServiceDiscovery, amClientC
 	}, []string{"operation", "status_code"})
 
 	factory := func(addr string) (client.PoolClient, error) {
-		return dialAlertmanagerClient(grpcCfg, addr, requestDuration)
+		return dialAlertmanagerClient(amClientCfg.GRPCClientConfig, addr, requestDuration)
 	}
 
 	poolCfg := client.PoolConfig{

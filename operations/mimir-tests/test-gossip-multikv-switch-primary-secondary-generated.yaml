@@ -253,7 +253,7 @@ data:
   overrides.yaml: |
     multi_kv_config:
         mirror_enabled: false
-        primary: consul
+        primary: memberlist
     overrides: {}
 kind: ConfigMap
 metadata:
