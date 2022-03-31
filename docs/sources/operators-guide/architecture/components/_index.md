@@ -7,7 +7,7 @@ keywords:
   - Mimir components
   - Mimir compactor
   - Mimir distributor
-  - Mimir Ingester
+  - Mimir ingester
   - Mimir querier
   - Mimir query-frontend
   - Mimir store-gateway
@@ -16,7 +16,7 @@ keywords:
   - Mimir ruler
 ---
 
-# Grafana Mimir Components
+# Grafana Mimir components
 
 Grafana Mimir includes a set of components that interact to form a cluster.
 
