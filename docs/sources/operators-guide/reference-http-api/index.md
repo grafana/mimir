@@ -26,7 +26,7 @@ This document groups API endpoints by service. Note that the API endpoints are e
 | [Index page](#index-page)                                                             | _All services_          | `GET /`                                                                   |
 | [Configuration](#configuration)                                                       | _All services_          | `GET /config`                                                             |
 | [Runtime Configuration](#runtime-configuration)                                       | _All services_          | `GET /runtime_config`                                                     |
-| [Services status](#services-status)                                                   | _All services_          | `GET /services`                                                           |
+| [Services' status](#services-status)                                                  | _All services_          | `GET /services`                                                           |
 | [Readiness probe](#readiness-probe)                                                   | _All services_          | `GET /ready`                                                              |
 | [Metrics](#metrics)                                                                   | _All services_          | `GET /metrics`                                                            |
 | [Pprof](#pprof)                                                                       | _All services_          | `GET /debug/pprof`                                                        |
