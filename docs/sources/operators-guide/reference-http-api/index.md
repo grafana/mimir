@@ -149,7 +149,7 @@ GET /runtime_config?mode=diff
 
 This endpoint displays the differences between the Grafana Mimir default runtime configuration and the current runtime configuration.
 
-### Services status
+### Services' status
 
 ```
 GET /services
