@@ -25,6 +25,7 @@ import (
 	"github.com/weaveworks/common/httpgrpc"
 	"github.com/weaveworks/common/middleware"
 	"github.com/weaveworks/common/user"
+	"go.uber.org/atomic"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health/grpc_health_v1"
 
@@ -91,9 +92,28 @@ func (sp *schedulerProcessor) notifyShutdown(ctx context.Context, conn *grpc.Cli
 func (sp *schedulerProcessor) processQueriesOnSingleStream(ctx context.Context, conn *grpc.ClientConn, address string) {
 	schedulerClient := schedulerpb.NewSchedulerForQuerierClient(conn)
 
+	execCtx, execCancel := context.WithCancel(context.Background())
+	propagateCancel := atomic.NewBool(true)
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				// This code is executed when the input context gets canceled.
+				if propagateCancel.Load() {
+					execCancel()
+					return
+				}
+
+				// Wait until it's safe to propagate the cancel to the execution context.
+				// TODO wait until propagateCancel is TRUE
+				execCancel()
+			}
+		}
+	}()
+
 	backoff := backoff.New(ctx, processorBackoffConfig)
 	for backoff.Ongoing() {
-		c, err := schedulerClient.QuerierLoop(ctx)
+		c, err := schedulerClient.QuerierLoop(execCtx)
 		if err == nil {
 			err = c.Send(&schedulerpb.QuerierToScheduler{QuerierID: sp.querierID})
 		}
@@ -104,7 +124,7 @@ func (sp *schedulerProcessor) processQueriesOnSingleStream(ctx context.Context, 
 			continue
 		}
 
-		if err := sp.querierLoop(c, address); err != nil {
+		if err := sp.querierLoop(c, address, propagateCancel); err != nil {
 			level.Error(sp.log).Log("msg", "error processing requests from scheduler", "err", err, "addr", address)
 			backoff.Wait()
 			continue
@@ -115,16 +135,23 @@ func (sp *schedulerProcessor) processQueriesOnSingleStream(ctx context.Context, 
 }
 
 // process loops processing requests on an established stream.
-func (sp *schedulerProcessor) querierLoop(c schedulerpb.SchedulerForQuerier_QuerierLoopClient, address string) error {
+func (sp *schedulerProcessor) querierLoop(c schedulerpb.SchedulerForQuerier_QuerierLoopClient, address string, propagateCancel *atomic.Bool) error {
 	// Build a child context so we can cancel a query when the stream is closed.
 	ctx, cancel := context.WithCancel(c.Context())
 	defer cancel()
 
 	for {
+		// If we're waiting on the Recv() we want to cancel the context used to create the gRPC client (the gRPC is stored in the variable named "c").
 		request, err := c.Recv()
 		if err != nil {
 			return err
 		}
+
+		// TODO if the execution context is cancelled when this goroutine is running this point
+		// then we have a race condition, because the query will fail anyway.
+
+		// We just received a query, so it's not safe to interrupt the execution.
+		propagateCancel.Store(false)
 
 		// Handle the request on a "background" goroutine, so we go back to
 		// blocking on c.Recv().  This allows us to detect the stream closing
@@ -132,6 +159,11 @@ func (sp *schedulerProcessor) querierLoop(c schedulerpb.SchedulerForQuerier_Quer
 		// here, as we're running in lock step with the server - each Recv is
 		// paired with a Send.
 		go func() {
+			defer func() {
+				// When the query execution will terminate, we can cancel the context at that time.
+				propagateCancel.Store(true)
+			}()
+
 			// We need to inject user into context for sending response back.
 			ctx := user.InjectOrgID(ctx, request.UserID)
 
