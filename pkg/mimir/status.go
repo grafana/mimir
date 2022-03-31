@@ -6,6 +6,7 @@
 package mimir
 
 import (
+	_ "embed" // Used to embed html template
 	"html/template"
 	"net/http"
 	"sort"
@@ -14,44 +15,18 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 )
 
-const tpl = `
-<!DOCTYPE html>
-<html>
-	<head>
-		<meta charset="UTF-8">
-		<title>Services Status</title>
-	</head>
-	<body>
-		<h1>Services Status</h1>
-		<p>Current time: {{ .Now }}</p>
-		<table border="1">
-			<thead>
-				<tr>
-					<th>Service</th>
-					<th>Status</th>
-				</tr>
-			</thead>
-			<tbody>
-				{{ range .Services }}
-				<tr>
-					<td>{{ .Name }}</td>
-					<td>{{ .Status }}</td>
-				</tr>
-				{{ end }}
-			</tbody>
-		</table>
-	</body>
-</html>`
+//go:embed status.gohtml
+var statusPageHTML string
+var statusPageTemplate = template.Must(template.New("webpage").Parse(statusPageHTML))
 
-var tmpl *template.Template
+type statusPageContents struct {
+	Now      time.Time       `json:"now"`
+	Services []renderService `json:"services"`
+}
 
 type renderService struct {
 	Name   string `json:"name"`
 	Status string `json:"status"`
-}
-
-func init() {
-	tmpl = template.Must(template.New("webpage").Parse(tpl))
 }
 
 func (t *Mimir) servicesHandler(w http.ResponseWriter, r *http.Request) {
@@ -67,11 +42,8 @@ func (t *Mimir) servicesHandler(w http.ResponseWriter, r *http.Request) {
 	})
 
 	// TODO: this could be extended to also print sub-services, if given service has any
-	util.RenderHTTPResponse(w, struct {
-		Now      time.Time       `json:"now"`
-		Services []renderService `json:"services"`
-	}{
+	util.RenderHTTPResponse(w, statusPageContents{
 		Now:      time.Now(),
 		Services: svcs,
-	}, tmpl, r)
+	}, statusPageTemplate, r)
 }

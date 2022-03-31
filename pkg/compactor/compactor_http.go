@@ -6,6 +6,7 @@
 package compactor
 
 import (
+	_ "embed" // Used to embed html template
 	"html/template"
 	"net/http"
 
@@ -16,25 +17,18 @@ import (
 )
 
 var (
-	compactorStatusPageTemplate = template.Must(template.New("main").Parse(`
-	<!DOCTYPE html>
-	<html>
-		<head>
-			<meta charset="UTF-8">
-			<title>Compactor Ring</title>
-		</head>
-		<body>
-			<h1>Compactor Ring</h1>
-			<p>{{ .Message }}</p>
-		</body>
-	</html>`))
+	//go:embed status.gohtml
+	statusPageHTML     string
+	statusPageTemplate = template.Must(template.New("main").Parse(statusPageHTML))
 )
+
+type statusPageContents struct {
+	Message string
+}
 
 func writeMessage(w http.ResponseWriter, message string) {
 	w.WriteHeader(http.StatusOK)
-	err := compactorStatusPageTemplate.Execute(w, struct {
-		Message string
-	}{Message: message})
+	err := statusPageTemplate.Execute(w, statusPageContents{Message: message})
 
 	if err != nil {
 		level.Error(util_log.Logger).Log("msg", "unable to serve compactor ring page", "err", err)

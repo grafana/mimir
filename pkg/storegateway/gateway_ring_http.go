@@ -6,6 +6,7 @@
 package storegateway
 
 import (
+	_ "embed" // Used to embed html template
 	"net/http"
 	"text/template"
 
@@ -16,25 +17,18 @@ import (
 )
 
 var (
-	statusPageTemplate = template.Must(template.New("main").Parse(`
-	<!DOCTYPE html>
-	<html>
-		<head>
-			<meta charset="UTF-8">
-			<title>Store Gateway Ring</title>
-		</head>
-		<body>
-			<h1>Store Gateway Ring</h1>
-			<p>{{ .Message }}</p>
-		</body>
-	</html>`))
+	//go:embed ring_status.gohtml
+	ringStatusPageHTML     string
+	ringStatusPageTemplate = template.Must(template.New("main").Parse(ringStatusPageHTML))
 )
+
+type ringStatusPageContents struct {
+	Message string
+}
 
 func writeMessage(w http.ResponseWriter, message string) {
 	w.WriteHeader(http.StatusOK)
-	err := statusPageTemplate.Execute(w, struct {
-		Message string
-	}{Message: message})
+	err := ringStatusPageTemplate.Execute(w, ringStatusPageContents{Message: message})
 
 	if err != nil {
 		level.Error(util_log.Logger).Log("msg", "unable to serve store gateway ring page", "err", err)

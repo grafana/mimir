@@ -6,6 +6,7 @@
 package distributor
 
 import (
+	_ "embed" // Used to embed html template
 	"html/template"
 	"net/http"
 	"sort"
@@ -16,65 +17,32 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 )
 
-const trackerTpl = `
-<!DOCTYPE html>
-<html>
-	<head>
-		<meta charset="UTF-8">
-		<title>HA Tracker Status</title>
-	</head>
-	<body>
-		<h1>HA Tracker Status</h1>
-		<p>Current time: {{ .Now }}</p>
-		<table width="100%" border="1">
-			<thead>
-				<tr>
-					<th>User ID</th>
-					<th>Cluster</th>
-					<th>Replica</th>
-					<th>Elected Time</th>
-					<th>Time Until Update</th>
-					<th>Time Until Failover</th>
-				</tr>
-			</thead>
-			<tbody>
-				{{ range .Elected }}
-				<tr>
-					<td>{{ .UserID }}</td>
-					<td>{{ .Cluster }}</td>
-					<td>{{ .Replica }}</td>
-					<td>{{ .ElectedAt }}</td>
-					<td>{{ .UpdateTime }}</td>
-					<td>{{ .FailoverTime }}</td>
-				</tr>
-				{{ end }}
-			</tbody>
-		</table>
-	</body>
-</html>`
+//go:embed ha_tracker_status.gohtml
+var haTrackerStatusPageHTML string
+var haTrackerStatusPageTemplate = template.Must(template.New("ha-tracker").Parse(haTrackerStatusPageHTML))
 
-var trackerTmpl *template.Template
+type haTrackerStatusPageContents struct {
+	Elected []haTrackerReplica `json:"elected"`
+	Now     time.Time          `json:"now"`
+}
 
-func init() {
-	trackerTmpl = template.Must(template.New("ha-tracker").Parse(trackerTpl))
+type haTrackerReplica struct {
+	UserID       string        `json:"userID"`
+	Cluster      string        `json:"cluster"`
+	Replica      string        `json:"replica"`
+	ElectedAt    time.Time     `json:"electedAt"`
+	UpdateTime   time.Duration `json:"updateDuration"`
+	FailoverTime time.Duration `json:"failoverDuration"`
 }
 
 func (h *haTracker) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	h.electedLock.RLock()
-	type replica struct {
-		UserID       string        `json:"userID"`
-		Cluster      string        `json:"cluster"`
-		Replica      string        `json:"replica"`
-		ElectedAt    time.Time     `json:"electedAt"`
-		UpdateTime   time.Duration `json:"updateDuration"`
-		FailoverTime time.Duration `json:"failoverDuration"`
-	}
 
-	electedReplicas := []replica{}
+	var electedReplicas []haTrackerReplica
 	for userID, clusters := range h.clusters {
 		for cluster, entry := range clusters {
 			desc := &entry.elected
-			electedReplicas = append(electedReplicas, replica{
+			electedReplicas = append(electedReplicas, haTrackerReplica{
 				UserID:       userID,
 				Cluster:      cluster,
 				Replica:      desc.Replica,
@@ -96,11 +64,8 @@ func (h *haTracker) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		return first.Cluster < second.Cluster
 	})
 
-	util.RenderHTTPResponse(w, struct {
-		Elected []replica `json:"elected"`
-		Now     time.Time `json:"now"`
-	}{
+	util.RenderHTTPResponse(w, haTrackerStatusPageContents{
 		Elected: electedReplicas,
 		Now:     time.Now(),
-	}, trackerTmpl, req)
+	}, haTrackerStatusPageTemplate, req)
 }

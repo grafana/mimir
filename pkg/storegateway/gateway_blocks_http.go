@@ -3,6 +3,7 @@
 package storegateway
 
 import (
+	_ "embed" // Used to embed html template
 	"fmt"
 	"html/template"
 	"net/http"
@@ -19,87 +20,47 @@ import (
 	"github.com/grafana/mimir/pkg/util/listblocks"
 )
 
-const blocksPageTemplate = `
-<!DOCTYPE html>
-<html>
-	<head>
-		<meta charset="UTF-8">
-		<title>Store-gateway: bucket tenant blocks</title>
-		</script>
-	</head>
-	<body>
-		<h1>Store-gateway: bucket tenant blocks</h1>
-		<p>Current time: {{ .Now }}</p>
-		<p>Showing blocks for tenant: {{ .Tenant }}</p>
-		<p>
-			{{ if not .ShowDeleted }}
-				<a href="{{ .ShowDeletedQuery }}">Show Deleted</a>
-			{{ end }}
-			{{ if not .ShowSources }}
-				<a href="{{ .ShowSourcesQuery }}">Show Sources</a>
-			{{ end }}
-			{{ if not .ShowParents }}
-				<a href="{{ .ShowParentsQuery }}">Show Parents</a>
-			{{ end }}
-		</p>
-		<p>
-			Use ?split_count= query param to show split compactor count preview.
-		</p>
-		<table border="1" cellpadding="5" style="border-collapse: collapse">
-			<thead>
-				<tr>
-					<th>Block ID</th>
-					{{ if .ShowSplitCount }}<th>Split ID</th>{{ end }}
-					<th>ULID Time</th>
-					<th>Min Time</th>
-					<th>Max Time</th>
-					<th>Duration</th>
-					{{ if .ShowDeleted }}<th>Deletion Time</th>{{ end }}
-					<th>Lvl</th>
-					<th>Size</th>
-					<th>Labels (excl. {{ .TSDBTenantIDExternalLabel }})</th>
-					{{ if .ShowSources }}<th>Sources</th>{{ end }}
-					{{ if .ShowParents }}<th>Parents</th>{{ end }}
-				</tr>
-			</thead>
-			<tbody style="font-family: monospace;">
-				{{ $page := . }}
-				{{ range .FormattedBlocks }}
-				<tr>
-					<td>{{ .ULID }}</td>
-					{{ if $page.ShowSplitCount }}<td>{{ .SplitCount }}</td>{{ end }}
-					<td>{{ .ULIDTime }}</td>
-					<td>{{ .MinTime }}</td>
-					<td>{{ .MaxTime }}</td>
-					<td>{{ .Duration }}</td>
-					{{ if $page.ShowDeleted }}<td>{{ .DeletedTime }}</td>{{ end }}
-					<td>{{ .CompactionLevel }}</td>
-					<td>{{ .BlockSize }}</td>
-					<td>{{ .Labels }}</td>
-					{{ if $page.ShowSources }}
-						<td>
-							{{ range $i, $source := .Sources }}
-								{{ if $i }}<br>{{ end }}
-								{{ . }}
-							{{ end }}
-						</td>
-					{{ end }}
-					{{ if $page.ShowParents }}
-						<td>
-							{{ range $i, $source := .Parents }}
-								{{ if $i }}<br>{{ end }}
-								{{ . }}
-							{{ end }}
-						</td>
-					{{ end }}
-				</tr>
-				{{ end }}
-			</tbody>
-		</table>
-	</body>
-</html>`
+//go:embed blocks.gohtml
+var blocksPageHTML string
+var blocksPageTemplate = template.Must(template.New("webpage").Parse(blocksPageHTML))
 
-var blocksTemplate = template.Must(template.New("webpage").Parse(blocksPageTemplate))
+type blocksPageContents struct {
+	Now             time.Time            `json:"now"`
+	Tenant          string               `json:"tenant,omitempty"`
+	RichMetas       []richMeta           `json:"metas"`
+	FormattedBlocks []formattedBlockData `json:"-"`
+	ShowDeleted     bool                 `json:"-"`
+	ShowSplitCount  bool                 `json:"-"`
+	ShowSources     bool                 `json:"-"`
+	ShowParents     bool                 `json:"-"`
+
+	ShowDeletedQuery string `json:"-"`
+	ShowSourcesQuery string `json:"-"`
+	ShowParentsQuery string `json:"-"`
+
+	TSDBTenantIDExternalLabel string `json:"-"`
+}
+
+type formattedBlockData struct {
+	ULID            string
+	ULIDTime        string
+	SplitCount      *uint32
+	MinTime         string
+	MaxTime         string
+	Duration        string
+	DeletedTime     string
+	CompactionLevel int
+	BlockSize       string
+	Labels          string
+	Sources         []string
+	Parents         []string
+}
+
+type richMeta struct {
+	*metadata.Meta
+	DeletedTime *int64  `json:"deletedTime,omitempty"`
+	SplitID     *uint32 `json:"splitId,omitempty"`
+}
 
 func (s *StoreGateway) BlocksHandler(w http.ResponseWriter, req *http.Request) {
 	vars := mux.Vars(req)
@@ -133,27 +94,6 @@ func (s *StoreGateway) BlocksHandler(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	metas := listblocks.SortBlocks(metasMap)
-
-	type formattedBlockData struct {
-		ULID            string
-		ULIDTime        string
-		SplitCount      *uint32
-		MinTime         string
-		MaxTime         string
-		Duration        string
-		DeletedTime     string
-		CompactionLevel int
-		BlockSize       string
-		Labels          string
-		Sources         []string
-		Parents         []string
-	}
-
-	type richMeta struct {
-		*metadata.Meta
-		DeletedTime *int64  `json:"deletedTime,omitempty"`
-		SplitID     *uint32 `json:"splitId,omitempty"`
-	}
 
 	formattedBlocks := make([]formattedBlockData, 0, len(metas))
 	richMetas := make([]richMeta, 0, len(metas))
@@ -202,22 +142,7 @@ func (s *StoreGateway) BlocksHandler(w http.ResponseWriter, req *http.Request) {
 		})
 	}
 
-	util.RenderHTTPResponse(w, struct {
-		Now             time.Time            `json:"now"`
-		Tenant          string               `json:"tenant,omitempty"`
-		RichMetas       []richMeta           `json:"metas"`
-		FormattedBlocks []formattedBlockData `json:"-"`
-		ShowDeleted     bool                 `json:"-"`
-		ShowSplitCount  bool                 `json:"-"`
-		ShowSources     bool                 `json:"-"`
-		ShowParents     bool                 `json:"-"`
-
-		ShowDeletedQuery string `json:"-"`
-		ShowSourcesQuery string `json:"-"`
-		ShowParentsQuery string `json:"-"`
-
-		TSDBTenantIDExternalLabel string `json:"-"`
-	}{
+	util.RenderHTTPResponse(w, blocksPageContents{
 		Now:             time.Now(),
 		Tenant:          tenantID,
 		RichMetas:       richMetas,
@@ -233,7 +158,7 @@ func (s *StoreGateway) BlocksHandler(w http.ResponseWriter, req *http.Request) {
 		ShowParentsQuery: queryWithTrueBoolParam(*req.URL, req.Form, "show_parents"),
 
 		TSDBTenantIDExternalLabel: tsdb.TenantIDExternalLabel,
-	}, blocksTemplate, req)
+	}, blocksPageTemplate, req)
 }
 
 func queryWithTrueBoolParam(u url.URL, form url.Values, boolParam string) string {
