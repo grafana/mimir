@@ -527,7 +527,7 @@ How to **investigate**:
 
 1. Look for partial blocks in the logs. Example Loki query: `{cluster="<cluster>",namespace="<namespace>",container="compactor"} |= "skipped partial block"`
 1. Pick a block and note its ID (`block` field in log entry) and tenant ID (`org_id` in log entry)
-1. Find the bucket used by the Mimir cell, by consulting the field `blocks_storage_bucket_name` in the cell's main.jsonnet file in deployment_tools
+1. Find the bucket used by the Mimir cell, such as checking the configured `blocks_storage_bucket_name` if you are using Jsonnet.
 1. Find out which Mimir component operated on the block last (e.g. uploaded by ingester/compactor, or deleted by compactor)
    1. Determine when the partial block was created: `gsutil ls -l gs://${BUCKET}/${TENANT_ID}/${BLOCK_ID}`
    1. Search in the logs around that time to find the log entry from when the compactor created the block ("compacted blocks" for log message)
