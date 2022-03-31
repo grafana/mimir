@@ -136,42 +136,8 @@ func (c *Client) Push(timeseries []prompb.TimeSeries) (*http.Response, error) {
 // OTLPPush the input timeseries to the remote endpoint in OTLP format
 func (c *Client) OTLPPush(timeseries []prompb.TimeSeries) (*http.Response, error) {
 	// Create write request
-	otlpMetrics := &metricpb.ResourceMetrics{}
-	metrics := []*metricsv1.Metric{}
-	for _, ts := range timeseries {
-		name := ""
-		otlpLabels := make([]*v11.StringKeyValue, 0, len(ts.Labels))
-		for _, l := range ts.Labels {
-			if l.Name == "__name__" {
-				name = l.Value
-				continue
-			}
+	otlpMetrics := TimeseriesToOTLPResourceMetrics(timeseries)
 
-			otlpLabels = append(otlpLabels, &v11.StringKeyValue{
-				Key:   l.Name,
-				Value: l.Value,
-			})
-		}
-
-		for _, sample := range ts.Samples {
-			metrics = append(metrics, &metricsv1.Metric{
-				Name: name,
-				Data: &metricsv1.Metric_DoubleGauge{
-					DoubleGauge: &metricsv1.DoubleGauge{
-						DataPoints: []*metricsv1.DoubleDataPoint{
-							{
-								Labels:       otlpLabels,
-								TimeUnixNano: uint64(sample.Timestamp) * 1000000,
-								Value:        sample.Value,
-							},
-						},
-					},
-				},
-			})
-		}
-	}
-
-	otlpMetrics.InstrumentationLibraryMetrics = []*metricsv1.InstrumentationLibraryMetrics{{Metrics: metrics}}
 	pbRequest := &colmetricpb.ExportMetricsServiceRequest{
 		ResourceMetrics: []*metricpb.ResourceMetrics{otlpMetrics},
 	}
@@ -1083,4 +1049,45 @@ func (c *Client) doRequest(method, url string, body io.Reader) (*http.Response, 
 // FormatTime converts a time to a string acceptable by the Prometheus API.
 func FormatTime(t time.Time) string {
 	return strconv.FormatFloat(float64(t.Unix())+float64(t.Nanosecond())/1e9, 'f', -1, 64)
+}
+
+func TimeseriesToOTLPResourceMetrics(timeseries []prompb.TimeSeries) *metricpb.ResourceMetrics {
+	otlpMetrics := &metricpb.ResourceMetrics{}
+	metrics := []*metricsv1.Metric{}
+	for _, ts := range timeseries {
+		name := ""
+		otlpLabels := make([]*v11.StringKeyValue, 0, len(ts.Labels))
+		for _, l := range ts.Labels {
+			if l.Name == "__name__" {
+				name = l.Value
+				continue
+			}
+
+			otlpLabels = append(otlpLabels, &v11.StringKeyValue{
+				Key:   l.Name,
+				Value: l.Value,
+			})
+		}
+
+		for _, sample := range ts.Samples {
+			metrics = append(metrics, &metricsv1.Metric{
+				Name: name,
+				Data: &metricsv1.Metric_DoubleGauge{
+					DoubleGauge: &metricsv1.DoubleGauge{
+						DataPoints: []*metricsv1.DoubleDataPoint{
+							{
+								Labels:       otlpLabels,
+								TimeUnixNano: uint64(sample.Timestamp) * 1000000,
+								Value:        sample.Value,
+							},
+						},
+					},
+				},
+			})
+		}
+	}
+
+	otlpMetrics.InstrumentationLibraryMetrics = []*metricsv1.InstrumentationLibraryMetrics{{Metrics: metrics}}
+
+	return otlpMetrics
 }

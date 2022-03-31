@@ -21,11 +21,10 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/middleware"
 	colmetricpb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
-	v11 "go.opentelemetry.io/proto/otlp/common/v1"
 	metricpb "go.opentelemetry.io/proto/otlp/metrics/v1"
-	metricsv1 "go.opentelemetry.io/proto/otlp/metrics/v1"
 	golangproto "google.golang.org/protobuf/proto"
 
+	"github.com/grafana/mimir/integration/e2emimir"
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
@@ -215,44 +214,7 @@ func otlpMetricsFromPRWBytes(t testing.TB, input []byte) *metricpb.ResourceMetri
 	prwReq := &prompb.WriteRequest{}
 	require.NoError(t, proto.Unmarshal(input, prwReq))
 
-	output := &metricpb.ResourceMetrics{}
-	metrics := []*metricsv1.Metric{}
-	for _, ts := range prwReq.Timeseries {
-		name := ""
-		otlpLabels := make([]*v11.StringKeyValue, 0, len(ts.Labels))
-		for _, l := range ts.Labels {
-			if l.Name == "__name__" {
-				name = l.Value
-				continue
-			}
-
-			otlpLabels = append(otlpLabels, &v11.StringKeyValue{
-				Key:   l.Name,
-				Value: l.Value,
-			})
-		}
-
-		for _, sample := range ts.Samples {
-			metrics = append(metrics, &metricsv1.Metric{
-				Name: name,
-				Data: &metricsv1.Metric_DoubleGauge{
-					DoubleGauge: &metricsv1.DoubleGauge{
-						DataPoints: []*metricsv1.DoubleDataPoint{
-							{
-								Labels:       otlpLabels,
-								TimeUnixNano: uint64(sample.Timestamp) * 1000000,
-								Value:        sample.Value,
-							},
-						},
-					},
-				},
-			})
-		}
-	}
-
-	output.InstrumentationLibraryMetrics = []*metricsv1.InstrumentationLibraryMetrics{{Metrics: metrics}}
-
-	return output
+	return e2emimir.TimeseriesToOTLPResourceMetrics(prwReq.Timeseries)
 }
 
 func createPrometheusRemoteWriteProtobuf(t testing.TB) []byte {
