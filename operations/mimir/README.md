@@ -58,8 +58,8 @@ $ tk export manifests environments/default
 
 ### Anti-affinity
 
-Given the distributed nature of Mimir, both performance and reliability are improved when pods are spread across different nodes: for example, multiple queriers can be processing the same query at the same time, so it's better to distribute them across different nodes, and since losing multiple ingesters can cause data loss, it's also important to have them spread. 
-This is why, by default, anti-affinity rules are applied to some deployments and statefulsets. 
+Given the distributed nature of Mimir, both performance and reliability are improved when pods are spread across different nodes: for example, multiple queriers can be processing the same query at the same time, so it's better to distribute them across different nodes, and since losing multiple ingesters can cause data loss, it's also important to have them spread.
+This is why, by default, anti-affinity rules are applied to some deployments and statefulsets.
 This can become an issue when playing with Mimir in a single-node kubernetes cluster, so anti-affinity can be disabled by enabling the configuration values `_config.<component>_allow_multiple_replicas_on_same_node`.
 
 For example:
