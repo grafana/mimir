@@ -86,7 +86,7 @@
   newIngesterZoneStatefulSet(zone, container)::
     local name = 'ingester-zone-%s' % zone;
 
-    self.newIngesterStatefulSet(name, container, with_anti_affinity=false) +
+    self.newIngesterStatefulSet(name, container, with_anti_affinity=!$._config.ingester_allow_multiple_replicas_on_same_node) +
     statefulSet.mixin.metadata.withLabels({ 'rollout-group': 'ingester' }) +
     statefulSet.mixin.metadata.withAnnotations({ 'rollout-max-unavailable': std.toString($._config.multi_zone_ingester_max_unavailable) }) +
     statefulSet.mixin.spec.template.metadata.withLabels({ name: name, 'rollout-group': 'ingester' }) +
