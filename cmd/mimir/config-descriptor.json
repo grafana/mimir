@@ -7953,7 +7953,7 @@
           "required": false,
           "desc": "Maximum size (bytes) of an accepted HTTP request body.",
           "fieldValue": null,
-          "fieldDefaultValue": 16777216,
+          "fieldDefaultValue": 104857600,
           "fieldFlag": "alertmanager.max-recv-msg-size",
           "fieldType": "int",
           "fieldCategory": "advanced"
@@ -8388,6 +8388,17 @@
           "fieldCategory": "advanced"
         },
         {
+          "kind": "field",
+          "name": "max_concurrent_get_requests_per_tenant",
+          "required": false,
+          "desc": "Maximum number of concurrent GET requests allowed per tenant. The zero value (and negative values) result in a limit of GOMAXPROCS or 8, whichever is larger. Status code 503 is served for GET requests that would exceed the concurrency limit.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "alertmanager.max-concurrent-get-requests-per-tenant",
+          "fieldType": "int",
+          "fieldCategory": "advanced"
+        },
+        {
           "kind": "block",
           "name": "alertmanager_client",
           "required": false,
@@ -8403,6 +8414,115 @@
               "fieldFlag": "alertmanager.alertmanager-client.remote-timeout",
               "fieldType": "duration",
               "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "max_recv_msg_size",
+              "required": false,
+              "desc": "gRPC client max receive message size (bytes).",
+              "fieldValue": null,
+              "fieldDefaultValue": 104857600,
+              "fieldFlag": "alertmanager.alertmanager-client.grpc-max-recv-msg-size",
+              "fieldType": "int",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "max_send_msg_size",
+              "required": false,
+              "desc": "gRPC client max send message size (bytes).",
+              "fieldValue": null,
+              "fieldDefaultValue": 104857600,
+              "fieldFlag": "alertmanager.alertmanager-client.grpc-max-send-msg-size",
+              "fieldType": "int",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "grpc_compression",
+              "required": false,
+              "desc": "Use compression when sending messages. Supported values are: 'gzip', 'snappy' and '' (disable compression)",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "alertmanager.alertmanager-client.grpc-compression",
+              "fieldType": "string",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "rate_limit",
+              "required": false,
+              "desc": "Rate limit for gRPC client; 0 means disabled.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "alertmanager.alertmanager-client.grpc-client-rate-limit",
+              "fieldType": "float",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "rate_limit_burst",
+              "required": false,
+              "desc": "Rate limit burst for gRPC client.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "alertmanager.alertmanager-client.grpc-client-rate-limit-burst",
+              "fieldType": "int",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "backoff_on_ratelimits",
+              "required": false,
+              "desc": "Enable backoff and retry when we hit ratelimits.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "alertmanager.alertmanager-client.backoff-on-ratelimits",
+              "fieldType": "boolean",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "block",
+              "name": "backoff_config",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "min_period",
+                  "required": false,
+                  "desc": "Minimum delay when backing off.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 100000000,
+                  "fieldFlag": "alertmanager.alertmanager-client.backoff-min-period",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "max_period",
+                  "required": false,
+                  "desc": "Maximum delay when backing off.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 10000000000,
+                  "fieldFlag": "alertmanager.alertmanager-client.backoff-max-period",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "max_retries",
+                  "required": false,
+                  "desc": "Number of times to backoff and retry before failing.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 10,
+                  "fieldFlag": "alertmanager.alertmanager-client.backoff-retries",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
             },
             {
               "kind": "field",

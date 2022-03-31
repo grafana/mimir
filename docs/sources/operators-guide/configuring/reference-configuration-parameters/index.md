@@ -1654,7 +1654,7 @@ The `alertmanager` block configures the alertmanager.
 
 # (advanced) Maximum size (bytes) of an accepted HTTP request body.
 # CLI flag: -alertmanager.max-recv-msg-size
-[max_recv_msg_size: <int> | default = 16777216]
+[max_recv_msg_size: <int> | default = 104857600]
 
 sharding_ring:
   # The key-value store used to share the hash ring across multiple instances.
@@ -1748,10 +1748,55 @@ sharding_ring:
 # CLI flag: -alertmanager.enable-api
 [enable_api: <boolean> | default = true]
 
+# (advanced) Maximum number of concurrent GET requests allowed per tenant. The
+# zero value (and negative values) result in a limit of GOMAXPROCS or 8,
+# whichever is larger. Status code 503 is served for GET requests that would
+# exceed the concurrency limit.
+# CLI flag: -alertmanager.max-concurrent-get-requests-per-tenant
+[max_concurrent_get_requests_per_tenant: <int> | default = 0]
+
 alertmanager_client:
   # (advanced) Timeout for downstream alertmanagers.
   # CLI flag: -alertmanager.alertmanager-client.remote-timeout
   [remote_timeout: <duration> | default = 2s]
+
+  # (advanced) gRPC client max receive message size (bytes).
+  # CLI flag: -alertmanager.alertmanager-client.grpc-max-recv-msg-size
+  [max_recv_msg_size: <int> | default = 104857600]
+
+  # (advanced) gRPC client max send message size (bytes).
+  # CLI flag: -alertmanager.alertmanager-client.grpc-max-send-msg-size
+  [max_send_msg_size: <int> | default = 104857600]
+
+  # (advanced) Use compression when sending messages. Supported values are:
+  # 'gzip', 'snappy' and '' (disable compression)
+  # CLI flag: -alertmanager.alertmanager-client.grpc-compression
+  [grpc_compression: <string> | default = ""]
+
+  # (advanced) Rate limit for gRPC client; 0 means disabled.
+  # CLI flag: -alertmanager.alertmanager-client.grpc-client-rate-limit
+  [rate_limit: <float> | default = 0]
+
+  # (advanced) Rate limit burst for gRPC client.
+  # CLI flag: -alertmanager.alertmanager-client.grpc-client-rate-limit-burst
+  [rate_limit_burst: <int> | default = 0]
+
+  # (advanced) Enable backoff and retry when we hit ratelimits.
+  # CLI flag: -alertmanager.alertmanager-client.backoff-on-ratelimits
+  [backoff_on_ratelimits: <boolean> | default = false]
+
+  backoff_config:
+    # (advanced) Minimum delay when backing off.
+    # CLI flag: -alertmanager.alertmanager-client.backoff-min-period
+    [min_period: <duration> | default = 100ms]
+
+    # (advanced) Maximum delay when backing off.
+    # CLI flag: -alertmanager.alertmanager-client.backoff-max-period
+    [max_period: <duration> | default = 10s]
+
+    # (advanced) Number of times to backoff and retry before failing.
+    # CLI flag: -alertmanager.alertmanager-client.backoff-retries
+    [max_retries: <int> | default = 10]
 
   # (advanced) Enable TLS in the GRPC client. This flag needs to be enabled when
   # any other TLS flag is set. If set to false, insecure connection to gRPC

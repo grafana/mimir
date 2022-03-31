@@ -99,6 +99,24 @@ Usage of ./cmd/mimir/mimir:
     	OpenStack Swift user ID.
   -alertmanager-storage.swift.username string
     	OpenStack Swift username.
+  -alertmanager.alertmanager-client.backoff-max-period duration
+    	Maximum delay when backing off. (default 10s)
+  -alertmanager.alertmanager-client.backoff-min-period duration
+    	Minimum delay when backing off. (default 100ms)
+  -alertmanager.alertmanager-client.backoff-on-ratelimits
+    	Enable backoff and retry when we hit ratelimits.
+  -alertmanager.alertmanager-client.backoff-retries int
+    	Number of times to backoff and retry before failing. (default 10)
+  -alertmanager.alertmanager-client.grpc-client-rate-limit float
+    	Rate limit for gRPC client; 0 means disabled.
+  -alertmanager.alertmanager-client.grpc-client-rate-limit-burst int
+    	Rate limit burst for gRPC client.
+  -alertmanager.alertmanager-client.grpc-compression string
+    	Use compression when sending messages. Supported values are: 'gzip', 'snappy' and '' (disable compression)
+  -alertmanager.alertmanager-client.grpc-max-recv-msg-size int
+    	gRPC client max receive message size (bytes). (default 104857600)
+  -alertmanager.alertmanager-client.grpc-max-send-msg-size int
+    	gRPC client max send message size (bytes). (default 104857600)
   -alertmanager.alertmanager-client.remote-timeout duration
     	Timeout for downstream alertmanagers. (default 2s)
   -alertmanager.alertmanager-client.tls-ca-path string
@@ -123,12 +141,14 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of alerts that a single tenant can have. Inserting more alerts will fail with a log message and metric increment. 0 = no limit.
   -alertmanager.max-alerts-size-bytes int
     	Maximum total size of alerts that a single tenant can have, alert size is the sum of the bytes of its labels, annotations and generatorURL. Inserting more alerts will fail with a log message and metric increment. 0 = no limit.
+  -alertmanager.max-concurrent-get-requests-per-tenant int
+    	Maximum number of concurrent GET requests allowed per tenant. The zero value (and negative values) result in a limit of GOMAXPROCS or 8, whichever is larger. Status code 503 is served for GET requests that would exceed the concurrency limit.
   -alertmanager.max-config-size-bytes int
     	Maximum size of configuration file for Alertmanager that tenant can upload via Alertmanager API. 0 = no limit.
   -alertmanager.max-dispatcher-aggregation-groups int
     	Maximum number of aggregation groups in Alertmanager's dispatcher that a tenant can have. Each active aggregation group uses single goroutine. When the limit is reached, dispatcher will not dispatch alerts that belong to additional aggregation groups, but existing groups will keep working properly. 0 = no limit.
   -alertmanager.max-recv-msg-size int
-    	Maximum size (bytes) of an accepted HTTP request body. (default 16777216)
+    	Maximum size (bytes) of an accepted HTTP request body. (default 104857600)
   -alertmanager.max-template-size-bytes int
     	Maximum size of single template in tenant's Alertmanager configuration uploaded via Alertmanager API. 0 = no limit.
   -alertmanager.max-templates-count int
