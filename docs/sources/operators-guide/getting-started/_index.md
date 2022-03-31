@@ -7,13 +7,16 @@ weight: 10
 
 # Getting started with Grafana Mimir
 
-On this page, we provide two different options to getting started with Grafana Mimir. The written tutorial provides a series of imperative commands to start a single Mimir process. Our second tutorial, in video form, uses docker-compose to declaratively deploy multiple Mimir processes.
+There are two different options for getting started with Grafana Mimir:
+
+- The written tutorial provides a series of imperative commands to start a single Mimir process.
+- The visual tutorial (in the form of a video) uses `docker-compose` to declaratively deploy multiple Mimir processes.
 
 {{< vimeo 691947043 >}}
 
 <br/>
 
-The written instructions focus on deploying Grafana Mimir as a [monolith]({{< relref "../architecture/deployment-modes/index.md#monolithic-mode" >}}), which is designed for users getting started with the project. For more information about the different ways to deploy Grafana Mimir, refer to [Deployment Modes]({{< relref "../architecture/deployment-modes/index.md" >}}).
+The written instructions focus on deploying Grafana Mimir as a [monolith]({{< relref "../architecture/deployment-modes/index.md#monolithic-mode" >}}), which is designed for users getting started with the project. For more information about the different ways to deploy Grafana Mimir, refer to [Grafana Mimir deployment modes]({{< relref "../architecture/deployment-modes/index.md" >}}).
 
 ## Before you begin
 
@@ -24,23 +27,24 @@ The written instructions focus on deploying Grafana Mimir as a [monolith]({{< re
 
 - Using Docker:
 
-```bash
-docker pull grafana/mimir:latest
-```
+  ```bash
+  docker pull grafana/mimir:latest
+  ```
 
 - Using a local binary:
 
-Download the appropriate [release asset](https://github.com/grafana/mimir/releases/latest) for your operating system and architecture and make it executable.
-For Linux with the AMD64 architecture:
+  Download the appropriate [release asset](https://github.com/grafana/mimir/releases/latest) for your operating system and architecture and make it executable.
 
-```bash
-curl -fLo mimir https://github.com/grafana/mimir/releases/latest/download/mimir-linux-amd64
-chmod +x mimir
-```
+  For Linux with the AMD64 architecture:
+
+  ```bash
+  curl -fLo mimir https://github.com/grafana/mimir/releases/latest/download/mimir-linux-amd64
+  chmod +x mimir
+  ```
 
 ## Start Grafana Mimir
 
-To run Grafana Mimir as a monolith and with local filesystem storage, write the following configuration YAML to a file called `demo.yaml`:
+To run Grafana Mimir as a monolith and with local filesystem storage, write the following YAML configuration to a file called `demo.yaml`:
 
 <!-- prettier-ignore-start -->
 [embedmd]:# (../../../configurations/demo.yaml)
@@ -175,10 +179,10 @@ docker run --rm --name=grafana --network=host grafana/grafana
 1. Sign in using the default username `admin` and password `admin`.
 1. Configure a new Prometheus data source to query the local Grafana Mimir server using the following settings:
 
-| Field | Value                                                                |
-| ----- | -------------------------------------------------------------------- |
-| Name  | Mimir                                                                |
-| URL   | [http://localhost:9009/prometheus](http://localhost:9009/prometheus) |
+   | Field | Value                                                                |
+   | ----- | -------------------------------------------------------------------- |
+   | Name  | Mimir                                                                |
+   | URL   | [http://localhost:9009/prometheus](http://localhost:9009/prometheus) |
 
 To add a data source, refer to [Add a data source](https://grafana.com/docs/grafana/latest/datasources/add-a-data-source/).
 
