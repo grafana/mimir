@@ -85,7 +85,7 @@ func TestCheckObjectStoresConfig(t *testing.T) {
 					bucketCfg.S3.Endpoint = "s3.dualstack.us-east-1.amazonaws.com"
 					bucketCfg.S3.BucketName = "invalid"
 					bucketCfg.S3.AccessKeyID = "xxx"
-					bucketCfg.S3.SecretAccessKey = flagext.Secret{Value: "yyy"}
+					bucketCfg.S3.SecretAccessKey = flagext.SecretWithValue("yyy")
 
 					// Set a different bucket name for blocks storage to avoid config validation error.
 					if i == 0 {
@@ -122,7 +122,7 @@ func TestCheckObjectStoresConfig(t *testing.T) {
 					bucketCfg.Backend = bucket.Azure
 					bucketCfg.Azure.ContainerName = "invalid"
 					bucketCfg.Azure.StorageAccountName = ""
-					bucketCfg.Azure.StorageAccountKey = flagext.Secret{Value: "eHh4"}
+					bucketCfg.Azure.StorageAccountKey = flagext.SecretWithValue("eHh4")
 
 					// Set a different container name for blocks storage to avoid config validation error.
 					if i == 0 {

@@ -25,9 +25,10 @@ import (
 	"github.com/weaveworks/common/httpgrpc"
 	"github.com/weaveworks/common/httpgrpc/server"
 
+	"github.com/grafana/dskit/tenant"
+
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	querier_stats "github.com/grafana/mimir/pkg/querier/stats"
-	"github.com/grafana/mimir/pkg/tenant"
 	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )

@@ -201,7 +201,7 @@ func TestBuildNotifierConfig(t *testing.T) {
 				Notifier: NotifierConfig{
 					BasicAuth: util.BasicAuth{
 						Username: "jacob",
-						Password: flagext.Secret{Value: "test"},
+						Password: flagext.SecretWithValue("test"),
 					},
 				},
 			},

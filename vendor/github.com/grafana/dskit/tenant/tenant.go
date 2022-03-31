@@ -1,8 +1,3 @@
-// SPDX-License-Identifier: AGPL-3.0-only
-// Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/pkg/tenant/tenant.go
-// Provenance-includes-license: Apache-2.0
-// Provenance-includes-copyright: The Cortex Authors.
-
 package tenant
 
 import (
@@ -34,7 +29,7 @@ func (e *errTenantIDUnsupportedCharacter) Error() string {
 
 const tenantIDsLabelSeparator = "|"
 
-// NormalizeTenantIDs is creating a normalized form by sorting and de-duplicating the list of tenantIDs.
+// NormalizeTenantIDs is creating a normalized form by sortiing and de-duplicating the list of tenantIDs
 func NormalizeTenantIDs(tenantIDs []string) []string {
 	sort.Strings(tenantIDs)
 
@@ -77,9 +72,8 @@ func JoinTenantIDs(tenantIDs []string) string {
 	return strings.Join(tenantIDs, tenantIDsLabelSeparator)
 }
 
-// This checks if a rune is supported in tenant IDs according to the rules
-// documented in "About tenant IDs":
-// https://github.com/grafana/mimir/blob/main/docs/sources/about-tenant-ids.md
+// this checks if a rune is supported in tenant IDs (according to
+// https://cortexmetrics.io/docs/guides/limitations/#tenant-id-naming)
 func isSupported(c rune) bool {
 	// characters
 	if ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z') {
@@ -105,7 +99,7 @@ func isSupported(c rune) bool {
 // TenantIDsFromOrgID extracts different tenants from an orgID string value
 //
 // ignore stutter warning
-//nolint:golint
+//nolint:revive
 func TenantIDsFromOrgID(orgID string) ([]string, error) {
 	return TenantIDs(user.InjectOrgID(context.TODO(), orgID))
 }

@@ -87,6 +87,8 @@ Usage of ./cmd/mimir/mimir:
     	Comma-separated list of network CIDRs to block in Alertmanager receiver integrations.
   -alertmanager.receivers-firewall-block-private-addresses
     	True to block private and local addresses in Alertmanager receiver integrations. It blocks private addresses defined by  RFC 1918 (IPv4 addresses) and RFC 4193 (IPv6 addresses), as well as loopback, local unicast and local multicast addresses.
+  -alertmanager.sharding-ring.consul.acl-token string
+    	ACL Token used to interact with Consul.
   -alertmanager.sharding-ring.consul.hostname string
     	Hostname and port of Consul. (default "localhost:8500")
   -alertmanager.sharding-ring.etcd.endpoints value
@@ -199,6 +201,8 @@ Usage of ./cmd/mimir/mimir:
     	Max number of compactors that can compact blocks for single tenant. 0 to disable the limit and use all compactors.
   -compactor.data-dir string
     	Directory to temporarily store blocks during compaction. This directory is not required to be persisted between restarts. (default "./data-compactor/")
+  -compactor.ring.consul.acl-token string
+    	ACL Token used to interact with Consul.
   -compactor.ring.consul.hostname string
     	Hostname and port of Consul. (default "localhost:8500")
   -compactor.ring.etcd.endpoints value
@@ -221,6 +225,8 @@ Usage of ./cmd/mimir/mimir:
     	Configuration file to load.
   -distributor.ha-tracker.cluster string
     	Prometheus label to look for in samples to identify a Prometheus HA cluster. (default "cluster")
+  -distributor.ha-tracker.consul.acl-token string
+    	ACL Token used to interact with Consul.
   -distributor.ha-tracker.consul.hostname string
     	Hostname and port of Consul. (default "localhost:8500")
   -distributor.ha-tracker.enable
@@ -245,6 +251,8 @@ Usage of ./cmd/mimir/mimir:
     	Per-tenant ingestion rate limit in samples per second. (default 10000)
   -distributor.ingestion-tenant-shard-size int
     	The tenant's shard size used by shuffle-sharding. Must be set both on ingesters and distributors. 0 disables shuffle sharding.
+  -distributor.ring.consul.acl-token string
+    	ACL Token used to interact with Consul.
   -distributor.ring.consul.hostname string
     	Hostname and port of Consul. (default "localhost:8500")
   -distributor.ring.etcd.endpoints value
@@ -271,6 +279,8 @@ Usage of ./cmd/mimir/mimir:
     	The maximum number of active series per metric name, across the cluster before replication. 0 to disable. (default 20000)
   -ingester.max-global-series-per-user int
     	The maximum number of active series per tenant, across the cluster before replication. 0 to disable. (default 150000)
+  -ingester.ring.consul.acl-token string
+    	ACL Token used to interact with Consul.
   -ingester.ring.consul.hostname string
     	Hostname and port of Consul. (default "localhost:8500")
   -ingester.ring.etcd.endpoints value
@@ -443,6 +453,8 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of rule groups per-tenant. 0 to disable. (default 70)
   -ruler.max-rules-per-rule-group int
     	Maximum number of rules per rule group per-tenant. 0 to disable. (default 20)
+  -ruler.ring.consul.acl-token string
+    	ACL Token used to interact with Consul.
   -ruler.ring.consul.hostname string
     	Hostname and port of Consul. (default "localhost:8500")
   -ruler.ring.etcd.endpoints value
@@ -471,6 +483,8 @@ Usage of ./cmd/mimir/mimir:
     	HTTP server listen address.
   -server.http-listen-port int
     	HTTP server listen port. (default 8080)
+  -store-gateway.sharding-ring.consul.acl-token string
+    	ACL Token used to interact with Consul.
   -store-gateway.sharding-ring.consul.hostname string
     	Hostname and port of Consul. (default "localhost:8500")
   -store-gateway.sharding-ring.etcd.endpoints value
