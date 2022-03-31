@@ -4,6 +4,7 @@ package push
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 
@@ -27,6 +28,8 @@ const (
 
 	otelParseError = "otlp_parse_error"
 	maxErrMsgLen   = 1024
+
+	messageSizeLargerErrFmt = "received message larger than max (%d vs %d)"
 )
 
 func HandlerForOTLP(
@@ -49,12 +52,17 @@ func HandlerForOTLP(
 			decoderFunc = otlpgrpc.UnmarshalJSONMetricsRequest
 		}
 
-		reader := io.LimitReader(r.Body, int64(maxRecvMsgSize)+1)
+		if r.ContentLength > int64(maxSize) {
+			return nil, fmt.Errorf(messageSizeLargerErrFmt, r.ContentLength, maxSize)
+		}
+
+		reader := http.MaxBytesReader(nil, r.Body, int64(maxRecvMsgSize))
 		body, err := io.ReadAll(reader)
 		if err != nil {
 			r.Body.Close()
 			return body, err
 		}
+
 		if err = r.Body.Close(); err != nil {
 			return body, err
 		}
