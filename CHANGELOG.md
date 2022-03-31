@@ -2,6 +2,7 @@
 
 ## Grafana Mimir - main / unreleased
 
+* [ENHANCEMENT] Microservices: Ability to add NodeSelector
 * [CHANGE] Compactor: No longer upload debug meta files to object storage. #1257
 * [CHANGE] Default values have changed for the following settings: #1547
     - `-alertmanager.alertmanager-client.grpc-max-recv-msg-size` now defaults to 100 MiB (previously was not configurable and set to 16 MiB)
