@@ -87,6 +87,13 @@ jobs:
 
   test:
     runs-on: ubuntu-20.04
+    strategy:
+      # Do not abort other groups when one fails.
+      fail-fast: false
+      # Split tests into 4 groups.
+      matrix:
+        test_group_id:    [0, 1, 2, 3]
+        test_group_total: [4]
     container:
       image: grafana/mimir-build-image:update-go-1.17.8-8a996bb57
       credentials:
@@ -99,9 +106,11 @@ jobs:
         run: |
           mkdir -p /go/src/github.com/grafana/mimir
           ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
-      # Note that we're running the 'test-with-race' target here which runs unit tests with the go data race detector
       - name: Run Tests
-        run: make BUILD_IN_CONTAINER=false test-with-race
+        run: |
+          echo "Running unit tests (group ${{ matrix.test_group_id }} of ${{ matrix.test_group_total }}) with Go version: $(go version)"
+          ./.github/workflows/scripts/run-unit-tests-group.sh --index ${{ matrix.test_group_id }} --total ${{ matrix.test_group_total }}
+        
 
   test-docs:
     runs-on: ubuntu-latest
