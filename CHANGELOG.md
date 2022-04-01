@@ -7,7 +7,6 @@
     - `-alertmanager.alertmanager-client.grpc-max-recv-msg-size` now defaults to 100 MiB (previously was not configurable and set to 16 MiB)
     - `-alertmanager.alertmanager-client.grpc-max-send-msg-size` now defaults to 100 MiB (previously was not configurable and set to 4 MiB)
     - `-alertmanager.max-recv-msg-size` now defaults to 100 MiB (previously was 16 MiB)
-* [CHANGE] Dashboards: Remove per-user series legends from Tenants dashboard. #1605
 * [FEATURE] Ruler: Allow setting `evaluation_delay` for each rule group via rules group configuration file. #1474
 * [FEATURE] Distributor: Added the ability to forward specifics metrics to alternative remote_write API endpoints. #1052
 * [ENHANCEMENT] Alertmanager API: Concurrency limit for GET requests is now configurable using `-alertmanager.max-concurrent-get-requests-per-tenant`. #1547
@@ -32,8 +31,9 @@
 
 ### Jsonnet
 
-* [BUGFIX] Pass primary and secondary multikv stores via CLI flags. Introduced new `multikv_switch_primary_secondary` config option to flip primary and secondary in runtime config.
+* [CHANGE] Dashboards: Remove per-user series legends from Tenants dashboard. #1605
 * [ENHANCEMENT] Ingester anti-affinity can now be disabled by using `ingester_allow_multiple_replicas_on_same_node` configuration key. #1581
+* [BUGFIX] Pass primary and secondary multikv stores via CLI flags. Introduced new `multikv_switch_primary_secondary` config option to flip primary and secondary in runtime config.
 
 ### Mimirtool
 
