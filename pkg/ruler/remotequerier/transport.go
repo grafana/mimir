@@ -39,14 +39,14 @@ type Config struct {
 
 func (c *Config) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&c.Address,
-		"ruler.querier.address",
+		"ruler.query-frontend.address",
 		"",
-		"GRPC listen address of the remote querier(s). Must be a DNS address (prefixed with dns:///) "+
+		"GRPC listen address of the query-frontend(s). Must be a DNS address (prefixed with dns:///) "+
 			"to enable client side load balancing.")
 
-	f.BoolVar(&c.TLSEnabled, "ruler.querier.tls-enabled", false, "Set to true if remote querier connection requires TLS.")
+	f.BoolVar(&c.TLSEnabled, "ruler.query-frontend.tls-enabled", false, "Set to true if query-frontend connection requires TLS.")
 
-	c.TLS.RegisterFlagsWithPrefix("ruler.querier", f)
+	c.TLS.RegisterFlagsWithPrefix("ruler.query-frontend", f)
 }
 
 // NewTransport creates and initializes a new ruler Transport instance.

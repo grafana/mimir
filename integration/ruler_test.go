@@ -221,7 +221,7 @@ func TestRulerEvaluationDelay(t *testing.T) {
 			"-ruler.poll-interval":             "2s",
 			"-ruler.rule-path":                 filepath.Join(e2e.ContainerSharedDir, "rule_tmp/"),
 			"-ruler.evaluation-delay-duration": evaluationDelay.String(),
-			"-ruler.querier.address":           "127.0.0.1:9095",
+			"-ruler.query-frontend.address":    "127.0.0.1:9095",
 		},
 	)
 
@@ -579,7 +579,7 @@ func TestRulerMetricsForInvalidQueries(t *testing.T) {
 	flags["-querier.frontend-address"] = queryFrontend.NetworkGRPCEndpoint()
 
 	// Use query-frontend for rule evaluation.
-	flags["-ruler.querier.address"] = fmt.Sprintf("dns:///%s", queryFrontend.NetworkGRPCEndpoint())
+	flags["-ruler.query-frontend.address"] = fmt.Sprintf("dns:///%s", queryFrontend.NetworkGRPCEndpoint())
 
 	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags)
 	ruler := e2emimir.NewRuler("ruler", consul.NetworkHTTPEndpoint(), flags)
@@ -753,7 +753,7 @@ func TestRulerFederatedRules(t *testing.T) {
 	flags["-querier.frontend-address"] = queryFrontend.NetworkGRPCEndpoint()
 
 	// Use query-frontend for rule evaluation.
-	flags["-ruler.querier.address"] = fmt.Sprintf("dns:///%s", queryFrontend.NetworkGRPCEndpoint())
+	flags["-ruler.query-frontend.address"] = fmt.Sprintf("dns:///%s", queryFrontend.NetworkGRPCEndpoint())
 
 	// Start up services
 	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags)

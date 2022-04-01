@@ -7288,20 +7288,20 @@
               "kind": "field",
               "name": "address",
               "required": false,
-              "desc": "GRPC listen address of the remote querier(s). Must be a DNS address (prefixed with dns:///) to enable client side load balancing.",
+              "desc": "GRPC listen address of the query-frontend(s). Must be a DNS address (prefixed with dns:///) to enable client side load balancing.",
               "fieldValue": null,
               "fieldDefaultValue": "",
-              "fieldFlag": "ruler.querier.address",
+              "fieldFlag": "ruler.query-frontend.address",
               "fieldType": "string"
             },
             {
               "kind": "field",
               "name": "tls_enabled",
               "required": false,
-              "desc": "Set to true if remote querier connection requires TLS.",
+              "desc": "Set to true if query-frontend connection requires TLS.",
               "fieldValue": null,
               "fieldDefaultValue": false,
-              "fieldFlag": "ruler.querier.tls-enabled",
+              "fieldFlag": "ruler.query-frontend.tls-enabled",
               "fieldType": "boolean",
               "fieldCategory": "advanced"
             },
@@ -7312,7 +7312,7 @@
               "desc": "Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.",
               "fieldValue": null,
               "fieldDefaultValue": "",
-              "fieldFlag": "ruler.querier.tls-cert-path",
+              "fieldFlag": "ruler.query-frontend.tls-cert-path",
               "fieldType": "string",
               "fieldCategory": "advanced"
             },
@@ -7323,7 +7323,7 @@
               "desc": "Path to the key file for the client certificate. Also requires the client certificate to be configured.",
               "fieldValue": null,
               "fieldDefaultValue": "",
-              "fieldFlag": "ruler.querier.tls-key-path",
+              "fieldFlag": "ruler.query-frontend.tls-key-path",
               "fieldType": "string",
               "fieldCategory": "advanced"
             },
@@ -7334,7 +7334,7 @@
               "desc": "Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.",
               "fieldValue": null,
               "fieldDefaultValue": "",
-              "fieldFlag": "ruler.querier.tls-ca-path",
+              "fieldFlag": "ruler.query-frontend.tls-ca-path",
               "fieldType": "string",
               "fieldCategory": "advanced"
             },
@@ -7345,7 +7345,7 @@
               "desc": "Override the expected name on the server certificate.",
               "fieldValue": null,
               "fieldDefaultValue": "",
-              "fieldFlag": "ruler.querier.tls-server-name",
+              "fieldFlag": "ruler.query-frontend.tls-server-name",
               "fieldType": "string",
               "fieldCategory": "advanced"
             },
@@ -7356,7 +7356,7 @@
               "desc": "Skip validating server certificate.",
               "fieldValue": null,
               "fieldDefaultValue": false,
-              "fieldFlag": "ruler.querier.tls-insecure-skip-verify",
+              "fieldFlag": "ruler.query-frontend.tls-insecure-skip-verify",
               "fieldType": "boolean",
               "fieldCategory": "advanced"
             }
