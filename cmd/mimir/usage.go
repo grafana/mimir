@@ -145,6 +145,9 @@ func parseStructure(structure interface{}, fields map[uintptr]reflect.StructFiel
 	return nil
 }
 
+// Descending into some structs breaks check for "advanced" category for some fields (eg. flagext.Secret),
+// because field itself is at the same memory address as the internal field in the struct, and advanced-category-check
+// then gets confused.
 var ignoredStructTypes = []reflect.Type{
 	reflect.TypeOf(flagext.Secret{}),
 }
