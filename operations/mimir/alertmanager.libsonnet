@@ -75,6 +75,7 @@
       statefulSet.mixin.spec.updateStrategy.withType('RollingUpdate') +
       statefulSet.mixin.spec.template.spec.withTerminationGracePeriodSeconds(900) +
       $.util.configVolumeMount($._config.overrides_configmap, $._config.overrides_configmap_mountpoint) +
+      (if !std.isObject($._config.node_selector) then {} else statefulSet.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector)) +
       statefulSet.mixin.spec.template.spec.withVolumesMixin(
         if hasFallbackConfig then
           [volume.fromConfigMap('alertmanager-fallback-config', 'alertmanager-fallback-config')]

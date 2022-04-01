@@ -21,6 +21,7 @@
     $.jaeger_mixin,
 
   query_tee_deployment: if !($._config.query_tee_enabled) then {} else
+    (if !std.isObject($._config.node_selector) then {} else deployment.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector)) +
     deployment.new('query-tee', 2, [$.query_tee_container]),
 
   query_tee_service: if !($._config.query_tee_enabled) then {} else

@@ -14,6 +14,7 @@ memcached {
         self.memcached_exporter,
       ], []) +
       statefulSet.mixin.spec.withServiceName(self.name) +
+      (if !std.isObject($._config.node_selector) then {} else statefulSet.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector)) +
       $.util.antiAffinity,
 
     local service = $.core.v1.service,

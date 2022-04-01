@@ -94,6 +94,7 @@
     statefulSet.mixin.spec.updateStrategy.withType('OnDelete') +
     statefulSet.mixin.spec.template.spec.withTerminationGracePeriodSeconds(1200) +
     statefulSet.mixin.spec.withReplicas(std.ceil($._config.multi_zone_ingester_replicas / 3)) +
+    (if !std.isObject($._config.node_selector) then {} else statefulSet.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector)) +
     if $._config.ingester_allow_multiple_replicas_on_same_node then {} else {
       spec+:
         // Allow to schedule 2+ ingesters in the same zone on the same node, but do not schedule 2+ ingesters in

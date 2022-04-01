@@ -5,6 +5,8 @@
     replication_factor: 3,
     external_url: error 'must define external url for cluster',
 
+    node_selector: null,
+
     aws_region: error 'must specify AWS region',
 
     // If false, ingesters are not unregistered on shutdown and left in the ring with
