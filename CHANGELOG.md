@@ -25,6 +25,7 @@
 * [ENHANCEMENT] Alertmanager: added `insight=true` field to alertmanager dispatch logs. #1379
 * [BUGFIX] Query-frontend: do not shard queries with a subquery unless the subquery is inside a shardable aggregation function call. #1542
 * [BUGFIX] Mimir: services' status content-type is now correctly set to `text/html`. #1575
+* [BUGFIX] Multikv: Fix panic when using using runtime config to set primary KV store used by `multi` KV. #1587
 
 ### Mixin
 
