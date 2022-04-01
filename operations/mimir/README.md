@@ -69,12 +69,61 @@ local mimir = 'mimir/mimir.libsonnet';
 
 mimir {
   _config+:: {
-    // ... default configuration values
+    // ... configuration values
     distributor_allow_multiple_replicas_on_same_node: true,
     ingester_allow_multiple_replicas_on_same_node: true,
     ruler_allow_multiple_replicas_on_same_node: true,
     querier_allow_multiple_replicas_on_same_node: true,
     query_frontend_allow_multiple_replicas_on_same_node: true,
   },
+}
+```
+
+### Resources
+
+Default scaling of Mimir components in this jsonnet is opinionated and based on years of experience of Grafana Labs running them.
+The resources requests and limits set here are fine-tuned for the alerting rules provided by `mimir-mixin`, but there are still use cases when an operator may want to change them.
+For example, if you're just playing with Mimir and want to run it on a small (possibly one-node) cluster, you probably don't have tens of gigabytes or multiple cores to schedule the components, in that case you can override the scaling using as follows:
+
+```jsonnet
+local k = import 'github.com/grafana/jsonnet-libs/ksonnet-util/kausal.libsonnet',
+      deployment = k.apps.v1.deployment,
+      statefulSet = k.apps.v1.statefulSet;
+local mimir = 'mimir/mimir.libsonnet';
+
+mimir {
+  _config+:: {
+    // ... configuration values
+  },
+
+  compactor_container+: k.util.resourcesRequests('100m', '128Mi'),
+  compactor_statefulset+: statefulSet.mixin.spec.withReplicas(1),
+
+  distributor_container+: k.util.resourcesRequests('100m', '128Mi'),
+  distributor_deployment+: deployment.mixin.spec.withReplicas(2),
+
+  ingester_container+: k.util.resourcesRequests('100m', '128Mi'),
+  ingester_statefulset+: statefulSet.mixin.spec.withReplicas(3),
+
+  querier_container+: k.util.resourcesRequests('100m', '128Mi'),
+  querier_deployment+: deployment.mixin.spec.withReplicas(2),
+
+  query_frontend_container+: k.util.resourcesRequests('100m', '128Mi'),
+  query_frontend_deployment+: deployment.mixin.spec.withReplicas(2),
+
+  store_gateway_container+: k.util.resourcesRequests('100m', '128Mi'),
+  store_gateway_statefulset+: statefulSet.mixin.spec.withReplicas(1),
+
+  local smallMemcached = {
+    cpu_requests: '100m',
+    memory_limit_mb: 64,
+    memory_request_overhead_mb: 8,
+    statefulSet+: statefulSet.mixin.spec.withReplicas(1),
+  },
+
+  memcached_chunks+: smallMemcached,
+  memcached_frontend+: smallMemcached,
+  memcached_index_queries+: smallMemcached,
+  memcached_metadata+: smallMemcached,
 }
 ```
