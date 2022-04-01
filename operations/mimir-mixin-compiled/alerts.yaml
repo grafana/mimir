@@ -436,6 +436,28 @@ groups:
       increase(cortex_alertmanager_state_initial_sync_completed_total{outcome="failed"}[1m]) > 0
     labels:
       severity: critical
+  - alert: MimirAlertmanagerAllocatingTooMuchMemory
+    annotations:
+      message: |
+        Alertmanager {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} is using too much memory.
+    expr: |
+      (container_memory_working_set_bytes{container="alertmanager"} / container_spec_memory_limit_bytes{container="alertmanager"}) > 0.80
+      and
+      (container_spec_memory_limit_bytes{container="alertmanager"} > 0)
+    for: 15m
+    labels:
+      severity: warning
+  - alert: MimirAlertmanagerAllocatingTooMuchMemory
+    annotations:
+      message: |
+        Alertmanager {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} is using too much memory.
+    expr: |
+      (container_memory_working_set_bytes{container="alertmanager"} / container_spec_memory_limit_bytes{container="alertmanager"}) > 0.90
+      and
+      (container_spec_memory_limit_bytes{container="alertmanager"} > 0)
+    for: 15m
+    labels:
+      severity: critical
 - name: mimir_blocks_alerts
   rules:
   - alert: MimirIngesterHasNotShippedBlocks
