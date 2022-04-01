@@ -31,8 +31,9 @@
 
 ### Jsonnet
 
-* [BUGFIX] Pass primary and secondary multikv stores via CLI flags. Introduced new `multikv_switch_primary_secondary` config option to flip primary and secondary in runtime config.
+* [CHANGE] Dashboards: Remove per-user series legends from Tenants dashboard. #1605
 * [ENHANCEMENT] Ingester anti-affinity can now be disabled by using `ingester_allow_multiple_replicas_on_same_node` configuration key. #1581
+* [BUGFIX] Pass primary and secondary multikv stores via CLI flags. Introduced new `multikv_switch_primary_secondary` config option to flip primary and secondary in runtime config.
 
 ### Mimirtool
 
