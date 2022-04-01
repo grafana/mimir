@@ -418,7 +418,7 @@ github.com/gosimple/slug
 # github.com/grafana-tools/sdk v0.0.0-20211220201350-966b3088eec9
 ## explicit; go 1.13
 github.com/grafana-tools/sdk
-# github.com/grafana/dskit v0.0.0-20220314143558-7b6c9c059728
+# github.com/grafana/dskit v0.0.0-20220331160727-49faf69f72ca
 ## explicit; go 1.17
 github.com/grafana/dskit/backoff
 github.com/grafana/dskit/concurrency
@@ -446,6 +446,7 @@ github.com/grafana/dskit/runtimeconfig
 github.com/grafana/dskit/runutil
 github.com/grafana/dskit/services
 github.com/grafana/dskit/spanlogger
+github.com/grafana/dskit/tenant
 github.com/grafana/dskit/test
 # github.com/grafana/e2e v0.1.0
 ## explicit; go 1.17

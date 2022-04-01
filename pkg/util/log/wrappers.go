@@ -11,7 +11,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/weaveworks/common/tracing"
 
-	"github.com/grafana/mimir/pkg/tenant"
+	"github.com/grafana/dskit/tenant"
 )
 
 // WithUserID returns a Logger that has information about the current user in

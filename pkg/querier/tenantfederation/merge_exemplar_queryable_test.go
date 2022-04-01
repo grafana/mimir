@@ -16,7 +16,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/user"
 
-	"github.com/grafana/mimir/pkg/tenant"
+	"github.com/grafana/dskit/tenant"
+
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -92,12 +93,7 @@ func (m *mockExemplarQuerier) matches(res exemplar.QueryResult, matchers []*labe
 }
 
 func TestMergeExemplarQueryable_ExemplarQuerier(t *testing.T) {
-	resolver := tenant.DefaultResolver
 	tenant.WithDefaultResolver(tenant.NewMultiResolver())
-
-	t.Cleanup(func() {
-		tenant.WithDefaultResolver(resolver)
-	})
 
 	t.Run("error getting tenant IDs", func(t *testing.T) {
 		upstream := &mockExemplarQueryable{}
@@ -165,13 +161,7 @@ func TestMergeExemplarQueryable_ExemplarQuerier(t *testing.T) {
 }
 
 func TestMergeExemplarQuerier_Select(t *testing.T) {
-	resolver := tenant.DefaultResolver
 	tenant.WithDefaultResolver(tenant.NewMultiResolver())
-
-	t.Cleanup(func() {
-		tenant.WithDefaultResolver(resolver)
-	})
-
 	now := time.Now()
 
 	// fixtureResults returns two slices of exemplar results, one for each of two

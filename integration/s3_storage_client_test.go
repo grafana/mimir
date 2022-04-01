@@ -50,7 +50,7 @@ func TestS3Client(t *testing.T) {
 				BucketName:      blocksBucketName,
 				Insecure:        true,
 				AccessKeyID:     e2edb.MinioAccessKey,
-				SecretAccessKey: flagext.Secret{Value: e2edb.MinioSecretKey},
+				SecretAccessKey: flagext.SecretWithValue(e2edb.MinioSecretKey),
 			},
 		},
 		{
@@ -60,7 +60,7 @@ func TestS3Client(t *testing.T) {
 				BucketName:      blocksBucketName,
 				Insecure:        true,
 				AccessKeyID:     e2edb.MinioAccessKey,
-				SecretAccessKey: flagext.Secret{Value: e2edb.MinioSecretKey},
+				SecretAccessKey: flagext.SecretWithValue(e2edb.MinioSecretKey),
 				SSE: s3.SSEConfig{
 					Type: "SSE-S3",
 				},

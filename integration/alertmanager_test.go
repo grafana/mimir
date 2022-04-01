@@ -45,7 +45,7 @@ func uploadAlertmanagerConfig(minio *e2e.HTTPService, user, config string) error
 		Insecure:        true,
 		BucketName:      alertsBucketName,
 		AccessKeyID:     e2edb.MinioAccessKey,
-		SecretAccessKey: flagext.Secret{Value: e2edb.MinioSecretKey},
+		SecretAccessKey: flagext.SecretWithValue(e2edb.MinioSecretKey),
 	}, "test", log.NewNopLogger())
 	if err != nil {
 		return err
@@ -222,7 +222,7 @@ func TestAlertmanagerSharding(t *testing.T) {
 				Insecure:        true,
 				BucketName:      alertsBucketName,
 				AccessKeyID:     e2edb.MinioAccessKey,
-				SecretAccessKey: flagext.Secret{Value: e2edb.MinioSecretKey},
+				SecretAccessKey: flagext.SecretWithValue(e2edb.MinioSecretKey),
 			}, "test", log.NewNopLogger())
 			require.NoError(t, err)
 
@@ -611,7 +611,7 @@ func TestAlertmanagerShardingScaling(t *testing.T) {
 				Insecure:        true,
 				BucketName:      alertsBucketName,
 				AccessKeyID:     e2edb.MinioAccessKey,
-				SecretAccessKey: flagext.Secret{Value: e2edb.MinioSecretKey},
+				SecretAccessKey: flagext.SecretWithValue(e2edb.MinioSecretKey),
 			}, "test", log.NewNopLogger())
 			require.NoError(t, err)
 

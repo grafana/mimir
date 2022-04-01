@@ -17,7 +17,7 @@ func NewBucketClient(cfg Config, name string, logger log.Logger) (objstore.Bucke
 	// HTTP Config field.
 	bucketConfig := azure.DefaultConfig
 	bucketConfig.StorageAccountName = cfg.StorageAccountName
-	bucketConfig.StorageAccountKey = cfg.StorageAccountKey.Value
+	bucketConfig.StorageAccountKey = cfg.StorageAccountKey.String()
 	bucketConfig.ContainerName = cfg.ContainerName
 	bucketConfig.Endpoint = cfg.Endpoint
 	bucketConfig.MaxRetries = cfg.MaxRetries

@@ -10,7 +10,8 @@ import (
 	"github.com/weaveworks/common/tracing"
 	"golang.org/x/sync/semaphore"
 
-	"github.com/grafana/mimir/pkg/tenant"               //lint:ignore faillint queryTracker needs tenant package
+	"github.com/grafana/dskit/tenant" //lint:ignore faillint queryTracker needs tenant package
+
 	"github.com/grafana/mimir/pkg/util/activitytracker" //lint:ignore faillint queryTracker needs activitytracker
 )
 

@@ -21,9 +21,6 @@ jobs:
     runs-on: ubuntu-20.04
     container:
       image: grafana/mimir-build-image:update-go-1.17.8-8a996bb57
-      credentials:
-        username: ${{ secrets.docker_username }}
-        password: ${{ secrets.docker_password }}
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v2
@@ -36,12 +33,7 @@ jobs:
       - name: Lint
         run: make BUILD_IN_CONTAINER=false lint
       - name: Check Vendor Directory
-        run: |
-          git config --global url."https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com/grafana/mimir-prometheus".insteadOf "https://github.com/grafana/mimir-prometheus"
-          make BUILD_IN_CONTAINER=false mod-check
-        env:
-          GIT_PASSWORD: ${{ secrets.GIT_PASSWORD }}
-          GIT_USERNAME: ${{ secrets.GIT_USERNAME }}
+        run: make BUILD_IN_CONTAINER=false mod-check
       - name: Check Protos
         run: make BUILD_IN_CONTAINER=false check-protos
       - name: Check Generated Documentation
@@ -59,9 +51,6 @@ jobs:
     runs-on: ubuntu-20.04
     container:
       image: grafana/mimir-build-image:update-go-1.17.8-8a996bb57
-      credentials:
-        username: ${{ secrets.docker_username }}
-        password: ${{ secrets.docker_password }}
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v2
@@ -76,12 +65,7 @@ jobs:
       - name: Check Jsonnet Manifests
         run: make BUILD_IN_CONTAINER=false check-jsonnet-manifests
       - name: Check Jsonnet Getting Started
-        run: |
-          git config --global url."https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com/grafana/mimir".insteadOf "https://github.com/grafana/mimir"
-          make BUILD_IN_CONTAINER=false check-jsonnet-getting-started
-        env:
-          GIT_PASSWORD: ${{ secrets.GIT_PASSWORD }}
-          GIT_USERNAME: ${{ secrets.GIT_USERNAME }}
+        run: make BUILD_IN_CONTAINER=false check-jsonnet-getting-started
       - name: Check Jsonnet Tests
         run: make BUILD_IN_CONTAINER=false check-jsonnet-tests
 
@@ -96,9 +80,6 @@ jobs:
         test_group_total: [4]
     container:
       image: grafana/mimir-build-image:update-go-1.17.8-8a996bb57
-      credentials:
-        username: ${{ secrets.docker_username }}
-        password: ${{ secrets.docker_password }}
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v2
@@ -125,9 +106,6 @@ jobs:
     runs-on: ubuntu-20.04
     container:
       image: grafana/mimir-build-image:update-go-1.17.8-8a996bb57
-      credentials:
-        username: ${{ secrets.docker_username }}
-        password: ${{ secrets.docker_password }}
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v2
@@ -157,9 +135,6 @@ jobs:
     runs-on: ubuntu-20.04
     container:
       image: grafana/mimir-build-image:update-go-1.17.8-8a996bb57
-      credentials:
-        username: ${{ secrets.docker_username }}
-        password: ${{ secrets.docker_password }}
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v2
@@ -240,9 +215,6 @@ jobs:
     runs-on: ubuntu-20.04
     container:
       image: grafana/mimir-build-image:update-go-1.17.8-8a996bb57
-      credentials:
-        username: ${{ secrets.docker_username }}
-        password: ${{ secrets.docker_password }}
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v2
