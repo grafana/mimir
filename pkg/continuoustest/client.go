@@ -16,6 +16,9 @@ import (
 	"github.com/golang/snappy"
 	"github.com/grafana/dskit/flagext"
 	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/api"
+	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/prompb"
 
 	util_math "github.com/grafana/mimir/pkg/util/math"
@@ -30,6 +33,9 @@ type MimirClient interface {
 	// WriteSeries writes input series to Mimir. Returns the response status code and optionally
 	// an error. The error is always returned if request was not successful (eg. received a 4xx or 5xx error).
 	WriteSeries(ctx context.Context, series []prompb.TimeSeries) (statusCode int, err error)
+
+	// QueryRange performs a query for the given range.
+	QueryRange(ctx context.Context, query string, start, end time.Time, step time.Duration) (model.Matrix, error)
 }
 
 type ClientConfig struct {
@@ -38,6 +44,9 @@ type ClientConfig struct {
 	WriteBaseEndpoint flagext.URLValue
 	WriteBatchSize    int
 	WriteTimeout      time.Duration
+
+	ReadBaseEndpoint flagext.URLValue
+	ReadTimeout      time.Duration
 }
 
 func (cfg *ClientConfig) RegisterFlags(f *flag.FlagSet) {
@@ -46,12 +55,16 @@ func (cfg *ClientConfig) RegisterFlags(f *flag.FlagSet) {
 	f.Var(&cfg.WriteBaseEndpoint, "tests.write-endpoint", "The base endpoint on the write path. The URL should have no trailing slash. The specific API path is appended by the tool to the URL, for example /api/v1/push for the remote write API endpoint, so the configured URL must not include it.")
 	f.IntVar(&cfg.WriteBatchSize, "tests.write-batch-size", 1000, "The maximum number of series to write in a single request.")
 	f.DurationVar(&cfg.WriteTimeout, "tests.write-timeout", 5*time.Second, "The timeout for a single write request.")
+
+	f.Var(&cfg.ReadBaseEndpoint, "tests.read-endpoint", "The base endpoint on the read path. The URL should have no trailing slash. The specific API path is appended by the tool to the URL, for example /api/v1/query_range for range query API, so the configured URL must not include it.")
+	f.DurationVar(&cfg.ReadTimeout, "tests.read-timeout", 30*time.Second, "The timeout for a single read request.")
 }
 
 type Client struct {
-	client *http.Client
-	cfg    ClientConfig
-	logger log.Logger
+	writeClient *http.Client
+	readClient  v1.API
+	cfg         ClientConfig
+	logger      log.Logger
 }
 
 func NewClient(cfg ClientConfig, logger log.Logger) (*Client, error) {
@@ -62,12 +75,52 @@ func NewClient(cfg ClientConfig, logger log.Logger) (*Client, error) {
 	if cfg.WriteBaseEndpoint.URL == nil {
 		return nil, errors.New("the write endpoint has not been set")
 	}
+	if cfg.ReadBaseEndpoint.URL == nil {
+		return nil, errors.New("the read endpoint has not been set")
+	}
+
+	apiCfg := api.Config{
+		Address:      cfg.ReadBaseEndpoint.String(),
+		RoundTripper: rt,
+	}
+
+	readClient, err := api.NewClient(apiCfg)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to create read client")
+	}
 
 	return &Client{
-		client: &http.Client{Transport: rt},
-		cfg:    cfg,
-		logger: logger,
+		writeClient: &http.Client{Transport: rt},
+		readClient:  v1.NewAPI(readClient),
+		cfg:         cfg,
+		logger:      logger,
 	}, nil
+}
+
+// QueryRange implements MimirClient.
+func (c *Client) QueryRange(ctx context.Context, query string, start, end time.Time, step time.Duration) (model.Matrix, error) {
+	ctx, cancel := context.WithTimeout(ctx, c.cfg.ReadTimeout)
+	defer cancel()
+
+	value, _, err := c.readClient.QueryRange(ctx, query, v1.Range{
+		Start: start,
+		End:   end,
+		Step:  step,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	if value.Type() != model.ValMatrix {
+		return nil, errors.New("was expecting to get a Matrix")
+	}
+
+	matrix, ok := value.(model.Matrix)
+	if !ok {
+		return nil, errors.New("failed to cast type to Matrix")
+	}
+
+	return matrix, nil
 }
 
 // WriteSeries implements MimirClient.
@@ -111,7 +164,7 @@ func (c *Client) sendWriteRequest(ctx context.Context, req *prompb.WriteRequest)
 	httpReq.Header.Set("User-Agent", "mimir-continuous-test")
 	httpReq.Header.Set("X-Prometheus-Remote-Write-Version", "0.1.0")
 
-	httpResp, err := c.client.Do(httpReq)
+	httpResp, err := c.writeClient.Do(httpReq)
 	if err != nil {
 		return 0, err
 	}
