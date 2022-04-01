@@ -207,7 +207,7 @@ GOVOLUMES=	-v $(shell pwd)/.cache:/go/cache:delegated,z \
 # Mount local ssh credentials to be able to clone private repos when doing `mod-check`
 SSHVOLUME=  -v ~/.ssh/:/root/.ssh:delegated,z
 
-exes $(EXES) protos $(PROTO_GOS) lint test test-with-race cover shell mod-check check-protos doc format dist: fetch-build-image
+exes $(EXES) protos $(PROTO_GOS) lint test test-with-race cover shell mod-check check-protos doc format dist build-mixin format-mixin: fetch-build-image
 	@mkdir -p $(shell pwd)/.pkg
 	@mkdir -p $(shell pwd)/.cache
 	@echo
@@ -369,6 +369,15 @@ dist: ## Generates binaries for a Mimir release.
 		done; \
 		touch $@
 
+build-mixin: check-mixin-jb
+	@rm -rf $(MIXIN_OUT_PATH) && mkdir $(MIXIN_OUT_PATH)
+	@mixtool generate all --output-alerts $(MIXIN_OUT_PATH)/alerts.yaml --output-rules $(MIXIN_OUT_PATH)/rules.yaml --directory $(MIXIN_OUT_PATH)/dashboards ${MIXIN_PATH}/mixin-compiled.libsonnet
+	@cd $(MIXIN_OUT_PATH)/.. && zip -q -r mimir-mixin.zip $$(basename "$(MIXIN_OUT_PATH)")
+	@echo "The mixin has been compiled to $(MIXIN_OUT_PATH) and archived to $$(realpath --relative-to=$$(pwd) $(MIXIN_OUT_PATH)/../mimir-mixin.zip)"
+
+format-mixin:
+	@find $(MIXIN_PATH) -type f -name '*.libsonnet' | xargs jsonnetfmt -i
+
 endif
 
 .PHONY: check-makefiles
@@ -443,9 +452,9 @@ clean-white-noise:
 check-white-noise: clean-white-noise
 	@git diff --exit-code -- '*.md' || (echo "Please remove trailing whitespaces running 'make clean-white-noise'" && false)
 
-check-mixin: format-mixin check-mixin-jb check-mixin-mixtool check-mixin-playbook
+check-mixin: build-mixin format-mixin check-mixin-jb check-mixin-mixtool check-mixin-playbook
 	@echo "Checking diff:"
-	@git diff --exit-code -- $(MIXIN_PATH) || (echo "Please build and format mixin by running 'make build-mixin format-mixin'" && false)
+	@git diff --exit-code -- $(MIXIN_PATH) $(MIXIN_OUT_PATH) || (echo "Please build and format mixin by running 'make build-mixin format-mixin'" && false)
 
 	@cd $(MIXIN_PATH) && \
 	jb install && \
@@ -461,15 +470,6 @@ check-mixin-mixtool: check-mixin-jb
 
 check-mixin-playbook: build-mixin
 	@$(MIXIN_PATH)/scripts/lint-playbooks.sh
-
-build-mixin: check-mixin-jb
-	@rm -rf $(MIXIN_OUT_PATH) && mkdir $(MIXIN_OUT_PATH)
-	@mixtool generate all --output-alerts $(MIXIN_OUT_PATH)/alerts.yaml --output-rules $(MIXIN_OUT_PATH)/rules.yaml --directory $(MIXIN_OUT_PATH)/dashboards ${MIXIN_PATH}/mixin-compiled.libsonnet
-	@cd $(MIXIN_OUT_PATH)/.. && zip -q -r mimir-mixin.zip $$(basename "$(MIXIN_OUT_PATH)")
-	@echo "The mixin has been compiled to $(MIXIN_OUT_PATH) and archived to $$(realpath --relative-to=$$(pwd) $(MIXIN_OUT_PATH)/../mimir-mixin.zip)"
-
-format-mixin:
-	@find $(MIXIN_PATH) -type f -name '*.libsonnet' -print -o -name '*.jsonnet' -print | xargs jsonnetfmt -i
 
 mixin-serve: ## Runs Grafana (listening on port 3000) loading the mixin dashboards compiled at operations/mimir-mixin-compiled.
 	@./operations/mimir-mixin-tools/serve/run.sh

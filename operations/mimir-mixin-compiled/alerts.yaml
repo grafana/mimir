@@ -3,7 +3,8 @@ groups:
   rules:
   - alert: MimirIngesterUnhealthy
     annotations:
-      message: Mimir cluster {{ $labels.cluster }}/{{ $labels.namespace }} has {{ printf "%f" $value }} unhealthy ingester(s).
+      message: Mimir cluster {{ $labels.cluster }}/{{ $labels.namespace }} has {{
+        printf "%f" $value }} unhealthy ingester(s).
     expr: |
       min by (cluster, namespace) (cortex_ring_members{state="Unhealthy", name="ingester"}) > 0
     for: 15m
@@ -94,7 +95,8 @@ groups:
       severity: warning
   - alert: MimirIngesterRestarts
     annotations:
-      message: '{{ $labels.job }}/{{ $labels.instance }} has restarted {{ printf "%.2f" $value }} times in the last 30 mins.'
+      message: '{{ $labels.job }}/{{ $labels.instance }} has restarted {{ printf "%.2f"
+        $value }} times in the last 30 mins.'
     expr: |
       changes(process_start_time_seconds{job=~".+(cortex|ingester.*)"}[30m]) >= 2
     labels:
@@ -116,7 +118,8 @@ groups:
       severity: critical
   - alert: MimirMemoryMapAreasTooHigh
     annotations:
-      message: '{{ $labels.job }}/{{ $labels.instance }} has a number of mmap-ed areas close to the limit.'
+      message: '{{ $labels.job }}/{{ $labels.instance }} has a number of mmap-ed areas
+        close to the limit.'
     expr: |
       process_memory_map_areas{job=~".+(cortex|ingester.*|store-gateway.*)"} / process_memory_map_areas_limit{job=~".+(cortex|ingester.*|store-gateway.*)"} > 0.8
     for: 5m
@@ -345,7 +348,8 @@ groups:
   rules:
   - alert: MimirGossipMembersMismatch
     annotations:
-      message: Mimir instance {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} sees incorrect number of gossip members.
+      message: Mimir instance {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace
+        }} sees incorrect number of gossip members.
     expr: |
       memberlist_client_cluster_members_count
         != on (cluster, namespace) group_left
@@ -436,11 +440,34 @@ groups:
       increase(cortex_alertmanager_state_initial_sync_completed_total{outcome="failed"}[1m]) > 0
     labels:
       severity: critical
+  - alert: MimirAlertmanagerAllocatingTooMuchMemory
+    annotations:
+      message: |
+        Alertmanager {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} is using too much memory.
+    expr: |
+      (container_memory_working_set_bytes{container="alertmanager"} / container_spec_memory_limit_bytes{container="alertmanager"}) > 0.80
+      and
+      (container_spec_memory_limit_bytes{container="alertmanager"} > 0)
+    for: 15m
+    labels:
+      severity: warning
+  - alert: MimirAlertmanagerAllocatingTooMuchMemory
+    annotations:
+      message: |
+        Alertmanager {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} is using too much memory.
+    expr: |
+      (container_memory_working_set_bytes{container="alertmanager"} / container_spec_memory_limit_bytes{container="alertmanager"}) > 0.90
+      and
+      (container_spec_memory_limit_bytes{container="alertmanager"} > 0)
+    for: 15m
+    labels:
+      severity: critical
 - name: mimir_blocks_alerts
   rules:
   - alert: MimirIngesterHasNotShippedBlocks
     annotations:
-      message: Mimir Ingester {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} has not shipped any block in the last 4 hours.
+      message: Mimir Ingester {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace
+        }} has not shipped any block in the last 4 hours.
     expr: |
       (min by(cluster, namespace, instance) (time() - thanos_objstore_bucket_last_successful_upload_time{job=~".+/ingester.*"}) > 60 * 60 * 4)
       and
@@ -459,7 +486,8 @@ groups:
       severity: critical
   - alert: MimirIngesterHasNotShippedBlocksSinceStart
     annotations:
-      message: Mimir Ingester {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} has not shipped any block in the last 4 hours.
+      message: Mimir Ingester {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace
+        }} has not shipped any block in the last 4 hours.
     expr: |
       (max by(cluster, namespace, instance) (thanos_objstore_bucket_last_successful_upload_time{job=~".+/ingester.*"}) == 0)
       and
@@ -469,7 +497,9 @@ groups:
       severity: critical
   - alert: MimirIngesterHasUnshippedBlocks
     annotations:
-      message: Mimir Ingester {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} has compacted a block {{ $value | humanizeDuration }} ago but it hasn't been successfully uploaded to the storage yet.
+      message: Mimir Ingester {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace
+        }} has compacted a block {{ $value | humanizeDuration }} ago but it hasn't
+        been successfully uploaded to the storage yet.
     expr: |
       (time() - cortex_ingester_oldest_unshipped_block_timestamp_seconds > 3600)
       and
@@ -479,7 +509,8 @@ groups:
       severity: critical
   - alert: MimirIngesterTSDBHeadCompactionFailed
     annotations:
-      message: Mimir Ingester {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} is failing to compact TSDB head.
+      message: Mimir Ingester {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace
+        }} is failing to compact TSDB head.
     expr: |
       rate(cortex_ingester_tsdb_compactions_failed_total[5m]) > 0
     for: 15m
@@ -487,42 +518,48 @@ groups:
       severity: critical
   - alert: MimirIngesterTSDBHeadTruncationFailed
     annotations:
-      message: Mimir Ingester {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} is failing to truncate TSDB head.
+      message: Mimir Ingester {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace
+        }} is failing to truncate TSDB head.
     expr: |
       rate(cortex_ingester_tsdb_head_truncations_failed_total[5m]) > 0
     labels:
       severity: critical
   - alert: MimirIngesterTSDBCheckpointCreationFailed
     annotations:
-      message: Mimir Ingester {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} is failing to create TSDB checkpoint.
+      message: Mimir Ingester {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace
+        }} is failing to create TSDB checkpoint.
     expr: |
       rate(cortex_ingester_tsdb_checkpoint_creations_failed_total[5m]) > 0
     labels:
       severity: critical
   - alert: MimirIngesterTSDBCheckpointDeletionFailed
     annotations:
-      message: Mimir Ingester {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} is failing to delete TSDB checkpoint.
+      message: Mimir Ingester {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace
+        }} is failing to delete TSDB checkpoint.
     expr: |
       rate(cortex_ingester_tsdb_checkpoint_deletions_failed_total[5m]) > 0
     labels:
       severity: critical
   - alert: MimirIngesterTSDBWALTruncationFailed
     annotations:
-      message: Mimir Ingester {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} is failing to truncate TSDB WAL.
+      message: Mimir Ingester {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace
+        }} is failing to truncate TSDB WAL.
     expr: |
       rate(cortex_ingester_tsdb_wal_truncations_failed_total[5m]) > 0
     labels:
       severity: warning
   - alert: MimirIngesterTSDBWALCorrupted
     annotations:
-      message: Mimir Ingester {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} got a corrupted TSDB WAL.
+      message: Mimir Ingester {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace
+        }} got a corrupted TSDB WAL.
     expr: |
       rate(cortex_ingester_tsdb_wal_corruptions_total[5m]) > 0
     labels:
       severity: critical
   - alert: MimirIngesterTSDBWALWritesFailed
     annotations:
-      message: Mimir Ingester {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} is failing to write to TSDB WAL.
+      message: Mimir Ingester {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace
+        }} is failing to write to TSDB WAL.
     expr: |
       rate(cortex_ingester_tsdb_wal_writes_failed_total[1m]) > 0
     for: 3m
@@ -530,7 +567,9 @@ groups:
       severity: critical
   - alert: MimirQuerierHasNotScanTheBucket
     annotations:
-      message: Mimir Querier {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} has not successfully scanned the bucket since {{ $value | humanizeDuration }}.
+      message: Mimir Querier {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace
+        }} has not successfully scanned the bucket since {{ $value | humanizeDuration
+        }}.
     expr: |
       (time() - cortex_querier_blocks_last_successful_scan_timestamp_seconds > 60 * 30)
       and
@@ -540,7 +579,9 @@ groups:
       severity: critical
   - alert: MimirQuerierHighRefetchRate
     annotations:
-      message: Mimir Queries in {{ $labels.cluster }}/{{ $labels.namespace }} are refetching series from different store-gateways (because of missing blocks) for the {{ printf "%.0f" $value }}% of queries.
+      message: Mimir Queries in {{ $labels.cluster }}/{{ $labels.namespace }} are
+        refetching series from different store-gateways (because of missing blocks)
+        for the {{ printf "%.0f" $value }}% of queries.
     expr: |
       100 * (
         (
@@ -557,7 +598,9 @@ groups:
       severity: warning
   - alert: MimirStoreGatewayHasNotSyncTheBucket
     annotations:
-      message: Mimir Store Gateway {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} has not successfully synched the bucket since {{ $value | humanizeDuration }}.
+      message: Mimir Store Gateway {{ $labels.instance }} in {{ $labels.cluster }}/{{
+        $labels.namespace }} has not successfully synched the bucket since {{ $value
+        | humanizeDuration }}.
     expr: |
       (time() - cortex_bucket_stores_blocks_last_successful_sync_timestamp_seconds{component="store-gateway"} > 60 * 30)
       and
@@ -567,14 +610,17 @@ groups:
       severity: critical
   - alert: MimirBucketIndexNotUpdated
     annotations:
-      message: Mimir bucket index for tenant {{ $labels.user }} in {{ $labels.cluster }}/{{ $labels.namespace }} has not been updated since {{ $value | humanizeDuration }}.
+      message: Mimir bucket index for tenant {{ $labels.user }} in {{ $labels.cluster
+        }}/{{ $labels.namespace }} has not been updated since {{ $value | humanizeDuration
+        }}.
     expr: |
       min by(cluster, namespace, user) (time() - cortex_bucket_index_last_successful_update_timestamp_seconds) > 7200
     labels:
       severity: critical
   - alert: MimirTenantHasPartialBlocks
     annotations:
-      message: Mimir tenant {{ $labels.user }} in {{ $labels.cluster }}/{{ $labels.namespace }} has {{ $value }} partial blocks.
+      message: Mimir tenant {{ $labels.user }} in {{ $labels.cluster }}/{{ $labels.namespace
+        }} has {{ $value }} partial blocks.
     expr: |
       max by(cluster, namespace, user) (cortex_bucket_blocks_partials_count) > 0
     for: 6h
@@ -584,7 +630,9 @@ groups:
   rules:
   - alert: MimirCompactorHasNotSuccessfullyCleanedUpBlocks
     annotations:
-      message: Mimir Compactor {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} has not successfully cleaned up blocks in the last 6 hours.
+      message: Mimir Compactor {{ $labels.instance }} in {{ $labels.cluster }}/{{
+        $labels.namespace }} has not successfully cleaned up blocks in the last 6
+        hours.
     expr: |
       (time() - cortex_compactor_block_cleanup_last_successful_run_timestamp_seconds > 60 * 60 * 6)
     for: 1h
@@ -592,7 +640,8 @@ groups:
       severity: critical
   - alert: MimirCompactorHasNotSuccessfullyRunCompaction
     annotations:
-      message: Mimir Compactor {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} has not run compaction in the last 24 hours.
+      message: Mimir Compactor {{ $labels.instance }} in {{ $labels.cluster }}/{{
+        $labels.namespace }} has not run compaction in the last 24 hours.
     expr: |
       (time() - cortex_compactor_last_successful_run_timestamp_seconds > 60 * 60 * 24)
       and
@@ -602,7 +651,8 @@ groups:
       severity: critical
   - alert: MimirCompactorHasNotSuccessfullyRunCompaction
     annotations:
-      message: Mimir Compactor {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} has not run compaction in the last 24 hours.
+      message: Mimir Compactor {{ $labels.instance }} in {{ $labels.cluster }}/{{
+        $labels.namespace }} has not run compaction in the last 24 hours.
     expr: |
       cortex_compactor_last_successful_run_timestamp_seconds == 0
     for: 24h
@@ -610,14 +660,16 @@ groups:
       severity: critical
   - alert: MimirCompactorHasNotSuccessfullyRunCompaction
     annotations:
-      message: Mimir Compactor {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} failed to run 2 consecutive compactions.
+      message: Mimir Compactor {{ $labels.instance }} in {{ $labels.cluster }}/{{
+        $labels.namespace }} failed to run 2 consecutive compactions.
     expr: |
       increase(cortex_compactor_runs_failed_total[2h]) >= 2
     labels:
       severity: critical
   - alert: MimirCompactorHasNotUploadedBlocks
     annotations:
-      message: Mimir Compactor {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} has not uploaded any block in the last 24 hours.
+      message: Mimir Compactor {{ $labels.instance }} in {{ $labels.cluster }}/{{
+        $labels.namespace }} has not uploaded any block in the last 24 hours.
     expr: |
       (time() - thanos_objstore_bucket_last_successful_upload_time{job=~".+/(compactor.*|cortex|mimir)"} > 60 * 60 * 24)
       and
@@ -627,7 +679,8 @@ groups:
       severity: critical
   - alert: MimirCompactorHasNotUploadedBlocks
     annotations:
-      message: Mimir Compactor {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} has not uploaded any block in the last 24 hours.
+      message: Mimir Compactor {{ $labels.instance }} in {{ $labels.cluster }}/{{
+        $labels.namespace }} has not uploaded any block in the last 24 hours.
     expr: |
       thanos_objstore_bucket_last_successful_upload_time{job=~".+/(compactor.*|cortex|mimir)"} == 0
     for: 24h
@@ -635,7 +688,8 @@ groups:
       severity: critical
   - alert: MimirCompactorSkippedBlocksWithOutOfOrderChunks
     annotations:
-      message: Mimir Compactor {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} has found and ignored blocks with out of order chunks.
+      message: Mimir Compactor {{ $labels.instance }} in {{ $labels.cluster }}/{{
+        $labels.namespace }} has found and ignored blocks with out of order chunks.
     expr: |
       increase(cortex_compactor_blocks_marked_for_no_compaction_total{job=~".+/(compactor.*|cortex|mimir)", reason="block-index-out-of-order-chunk"}[5m]) > 0
     for: 1m
@@ -645,7 +699,8 @@ groups:
   rules:
   - alert: MimirQuerierAutoscalerNotActive
     annotations:
-      message: The Horizontal Pod Autoscaler (HPA) in {{ $labels.namespace }} is not active.
+      message: The Horizontal Pod Autoscaler (HPA) in {{ $labels.namespace }} is not
+        active.
     expr: |
       kube_horizontalpodautoscaler_status_condition{horizontalpodautoscaler="keda-hpa-querier",condition="ScalingActive",status="false"}
       * on(cluster, namespace) group_left max by(cluster, namespace) (cortex_build_info)
