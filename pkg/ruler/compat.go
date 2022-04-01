@@ -22,14 +22,12 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/storage"
-	prom_remote "github.com/prometheus/prometheus/storage/remote"
 	"github.com/weaveworks/common/httpgrpc"
 	"github.com/weaveworks/common/user"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier"
 	querier_stats "github.com/grafana/mimir/pkg/querier/stats"
-	"github.com/grafana/mimir/pkg/ruler/remote"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
@@ -228,9 +226,7 @@ func DefaultTenantManagerFactory(
 	cfg Config,
 	p Pusher,
 	embeddedQueryable storage.Queryable,
-	federatedQueryable storage.Queryable,
-	engine *promql.Engine,
-	remoteQuerier *remote.Querier,
+	queryFunc rules.QueryFunc,
 	overrides RulesLimits,
 	reg prometheus.Registerer,
 ) ManagerFactory {
@@ -263,47 +259,15 @@ func DefaultTenantManagerFactory(
 		if rulerQuerySeconds != nil {
 			queryTime = rulerQuerySeconds.WithLabelValues(userID)
 		}
-		var queryable storage.Queryable
-		var queryFunc rules.QueryFunc
+		var wrappedQueryFunc rules.QueryFunc
 
-		if remoteQuerier == nil {
-			wrapQueryable := func(q storage.Queryable) (queryFunc rules.QueryFunc) {
-				// Wrap errors returned by Queryable to our wrapper, so that we can distinguish between those errors
-				// and errors returned by PromQL engine. Errors from Queryable can be either caused by user (limits) or internal errors.
-				// Errors from PromQL are always "user" errors.
-				q = querier.NewErrorTranslateQueryableWithFn(q, WrapQueryableErrors)
-
-				queryFunc = rules.EngineQueryFunc(engine, q)
-				queryFunc = MetricsQueryFunc(queryFunc, totalQueries, failedQueries)
-				queryFunc = RecordAndReportRuleQueryMetrics(queryFunc, queryTime, logger)
-				return queryFunc
-			}
-			regularQueryFunc := wrapQueryable(embeddedQueryable)
-			federatedQueryFunc := wrapQueryable(federatedQueryable)
-
-			queryable = embeddedQueryable
-			queryFunc = TenantFederationQueryFunc(regularQueryFunc, federatedQueryFunc)
-
-		} else {
-			queryable = prom_remote.NewSampleAndChunkQueryableClient(
-				remoteQuerier,
-				labels.Labels{},
-				nil,
-				true,
-				func() (int64, error) {
-					return 0, nil
-				},
-			)
-
-			queryFunc = remote.QueryFunc(remoteQuerier)
-			queryFunc = MetricsQueryFunc(queryFunc, totalQueries, failedQueries)
-			queryFunc = RecordAndReportRuleQueryMetrics(queryFunc, queryTime, logger)
-		}
+		wrappedQueryFunc = MetricsQueryFunc(queryFunc, totalQueries, failedQueries)
+		wrappedQueryFunc = RecordAndReportRuleQueryMetrics(wrappedQueryFunc, queryTime, logger)
 
 		return rules.NewManager(&rules.ManagerOptions{
 			Appendable:                 NewPusherAppendable(p, userID, overrides, totalWrites, failedWrites),
-			Queryable:                  queryable,
-			QueryFunc:                  queryFunc,
+			Queryable:                  embeddedQueryable,
+			QueryFunc:                  wrappedQueryFunc,
 			Context:                    user.InjectOrgID(ctx, userID),
 			GroupEvaluationContextFunc: FederatedGroupContextFunc,
 			ExternalURL:                cfg.ExternalURL.URL,

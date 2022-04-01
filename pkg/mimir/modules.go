@@ -24,8 +24,10 @@ import (
 	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/rules"
 	prom_storage "github.com/prometheus/prometheus/storage"
+	prom_remote "github.com/prometheus/prometheus/storage/remote"
 	"github.com/thanos-io/thanos/pkg/discovery/dns"
 	httpgrpc_server "github.com/weaveworks/common/httpgrpc/server"
 	"github.com/weaveworks/common/server"
@@ -543,44 +545,62 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 
 	t.Cfg.Ruler.Ring.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
 	t.Cfg.Ruler.Ring.ListenPort = t.Cfg.Server.GRPCListenPort
-	rulerRegisterer := prometheus.WrapRegistererWith(prometheus.Labels{"engine": "ruler"}, prometheus.DefaultRegisterer)
 
-	var queryable, federatedQueryable prom_storage.Queryable
-	// TODO: Consider wrapping logger to differentiate from querier module logger
-	queryable, _, eng := querier.New(t.Cfg.Querier, t.Overrides, t.Distributor, t.StoreQueryables, rulerRegisterer, util_log.Logger, t.ActivityTracker)
-
-	if t.Cfg.Ruler.TenantFederation.Enabled {
-		if !t.Cfg.TenantFederation.Enabled {
-			return nil, errors.New("-ruler.tenant-federation.enabled=true requires -tenant-federation.enabled=true")
-		}
-		// Setting bypassForSingleQuerier=false forces `tenantfederation.NewQueryable` to add
-		// the `__tenant_id__` label on all metrics regardless if they're for a single tenant or multiple tenants.
-		// This makes this label more consistent and hopefully less confusing to users.
-		const bypassForSingleQuerier = false
-
-		federatedQueryable = tenantfederation.NewQueryable(queryable, bypassForSingleQuerier, util_log.Logger)
-	}
-	var remoteQuerier *remote.Querier
+	var embeddedQueryable prom_storage.Queryable
+	var queryFunc rules.QueryFunc
 
 	if len(t.Cfg.Ruler.Querier.Address) > 0 {
-		tr, err := remote.NewTransport(t.Cfg.Ruler.Querier)
+		querierTransport, err := remote.NewTransport(t.Cfg.Ruler.Querier)
 		if err != nil {
 			return nil, err
 		}
-		remoteQuerier = remote.New(
-			tr,
-			t.Cfg.API.PrometheusHTTPPrefix,
-			util_log.Logger,
-			ruler.WithOrgIDHeader,
+		remoteQuerier := remote.New(querierTransport, t.Cfg.API.PrometheusHTTPPrefix, util_log.Logger, ruler.WithOrgIDHeader)
+
+		embeddedQueryable = prom_remote.NewSampleAndChunkQueryableClient(
+			remoteQuerier,
+			labels.Labels{},
+			nil,
+			true,
+			func() (int64, error) { return 0, nil },
 		)
+		queryFunc = remote.QueryFunc(remoteQuerier)
+
+	} else {
+		var queryable, federatedQueryable prom_storage.Queryable
+
+		// TODO: Consider wrapping logger to differentiate from querier module logger
+		rulerRegisterer := prometheus.WrapRegistererWith(prometheus.Labels{"engine": "ruler"}, prometheus.DefaultRegisterer)
+
+		queryable, _, eng := querier.New(t.Cfg.Querier, t.Overrides, t.Distributor, t.StoreQueryables, rulerRegisterer, util_log.Logger, t.ActivityTracker)
+		queryable = querier.NewErrorTranslateQueryableWithFn(queryable, ruler.WrapQueryableErrors)
+
+		if t.Cfg.Ruler.TenantFederation.Enabled {
+			if !t.Cfg.TenantFederation.Enabled {
+				return nil, errors.New("-ruler.tenant-federation.enabled=true requires -tenant-federation.enabled=true")
+			}
+			// Setting bypassForSingleQuerier=false forces `tenantfederation.NewQueryable` to add
+			// the `__tenant_id__` label on all metrics regardless if they're for a single tenant or multiple tenants.
+			// This makes this label more consistent and hopefully less confusing to users.
+			const bypassForSingleQuerier = false
+
+			federatedQueryable = tenantfederation.NewQueryable(queryable, bypassForSingleQuerier, util_log.Logger)
+
+			regularQueryFunc := rules.EngineQueryFunc(eng, queryable)
+			federatedQueryFunc := rules.EngineQueryFunc(eng, federatedQueryable)
+
+			embeddedQueryable = federatedQueryable
+			queryFunc = ruler.TenantFederationQueryFunc(regularQueryFunc, federatedQueryFunc)
+
+		} else {
+			embeddedQueryable = queryable
+			queryFunc = rules.EngineQueryFunc(eng, queryable)
+		}
 	}
 	managerFactory := ruler.DefaultTenantManagerFactory(
 		t.Cfg.Ruler,
 		t.Distributor,
-		queryable,
-		federatedQueryable,
-		eng,
-		remoteQuerier,
+		embeddedQueryable,
+		queryFunc,
 		t.Overrides,
 		prometheus.DefaultRegisterer,
 	)
