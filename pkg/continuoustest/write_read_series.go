@@ -166,7 +166,7 @@ func (t *WriteReadSeriesTest) runRangeQueryAndVerifyResult(ctx context.Context, 
 	step := getQueryStep(start, end, writeInterval)
 	query := fmt.Sprintf("sum(%s)", metricName)
 
-	logger := log.With(t.logger, "query", query, "start", start.Unix(), "end", end.Unix(), "step", step)
+	logger := log.With(t.logger, "query", query, "start", start.UnixMilli(), "end", end.UnixMilli(), "step", step)
 	level.Debug(logger).Log("msg", "Running range query")
 
 	t.metrics.queriesTotal.Inc()
