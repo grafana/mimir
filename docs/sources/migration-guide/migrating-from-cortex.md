@@ -326,7 +326,7 @@ You can update to the Grafana Mimir Helm chart from the Cortex Helm chart.
    > **Note:** The name of the release must match your Cortex Helm chart release.
 
    ```bash
-   helm upgrade <RELEASE> grafana/mimir [-n <NAMESPACE>]
+   helm upgrade <RELEASE> grafana/mimir-distributed [-n <NAMESPACE>]
    ```
 
 To verify that the cluster is operating correctly, use the [monitoring mixin dashboards]({{< relref "../operators-guide/visualizing-metrics/dashboards/_index.md" >}}).
