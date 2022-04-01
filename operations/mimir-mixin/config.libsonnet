@@ -32,6 +32,7 @@
       gateway: '(gateway|cortex-gw|cortex-gw-internal)',
       compactor: 'compactor.*|cortex|mimir',  // Match also custom compactor deployments.
       alertmanager: 'alertmanager|cortex|mimir',
+      overrides_exporter: 'overrides-exporter',
     },
 
     // Grouping labels, to uniquely identify and group by {jobs, clusters}
