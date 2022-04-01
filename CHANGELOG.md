@@ -10,13 +10,13 @@
 * [FEATURE] Ruler: Allow setting `evaluation_delay` for each rule group via rules group configuration file. #1474
 * [FEATURE] Ruler: Added support for expression remote evaluation. #1536
   * The following CLI flags (and their respective YAML config options) have been added:
-    * `-ruler.querier.address`
-    * `-ruler.querier.tls-enabled`
-    * `-ruler.querier.tls-ca-path`
-    * `-ruler.querier.tls-cert-path`
-    * `-ruler.querier.tls-key-path`
-    * `-ruler.querier.tls-server-name`
-    * `-ruler.querier.tls-insecure-skip-verify`
+    * `-ruler.query-frontend.address`
+    * `-ruler.query-frontend.tls-enabled`
+    * `-ruler.query-frontend.tls-ca-path`
+    * `-ruler.query-frontend.tls-cert-path`
+    * `-ruler.query-frontend.tls-key-path`
+    * `-ruler.query-frontend.tls-server-name`
+    * `-ruler.query-frontend.tls-insecure-skip-verify`
 * [FEATURE] Distributor: Added the ability to forward specifics metrics to alternative remote_write API endpoints. #1052
 * [ENHANCEMENT] Alertmanager API: Concurrency limit for GET requests is now configurable using `-alertmanager.max-concurrent-get-requests-per-tenant`. #1547
 * [ENHANCEMENT] Alertmanager: Added the ability to configure additional gRPC client settings for the Alertmanager distributor #1547

@@ -46,7 +46,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/tenantfederation"
 	querier_worker "github.com/grafana/mimir/pkg/querier/worker"
 	"github.com/grafana/mimir/pkg/ruler"
-	"github.com/grafana/mimir/pkg/ruler/remotequerier"
+	"github.com/grafana/mimir/pkg/ruler/remote"
 	"github.com/grafana/mimir/pkg/scheduler"
 	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/util"
@@ -560,14 +560,19 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 
 		federatedQueryable = tenantfederation.NewQueryable(queryable, bypassForSingleQuerier, util_log.Logger)
 	}
-	var remoteQuerier *remotequerier.Querier
+	var remoteQuerier *remote.Querier
 
 	if len(t.Cfg.Ruler.Querier.Address) > 0 {
-		tr, err := remotequerier.NewTransport(t.Cfg.Ruler.Querier)
+		tr, err := remote.NewTransport(t.Cfg.Ruler.Querier)
 		if err != nil {
 			return nil, err
 		}
-		remoteQuerier = remotequerier.New(ruler.NewOrgRoundTripper(tr), t.Cfg.API.PrometheusHTTPPrefix, util_log.Logger)
+		remoteQuerier = remote.New(
+			tr,
+			t.Cfg.API.PrometheusHTTPPrefix,
+			util_log.Logger,
+			ruler.WithOrgIDHeader,
+		)
 	}
 	managerFactory := ruler.DefaultTenantManagerFactory(
 		t.Cfg.Ruler,

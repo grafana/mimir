@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package remotequerier
+package remote
 
 import (
 	"bytes"
@@ -38,9 +38,13 @@ const (
 
 var userAgent = fmt.Sprintf("mimir/%s", version.Version)
 
-// Querier executes read operations against a transport.RoundTripper.
+// Middleware provides a mechanism to inspect outgoing Querier requests.
+type Middleware func(ctx context.Context, req *httpgrpc.HTTPRequest) error
+
+// Querier executes read operations against a httpgrpcutil.RoundTripper.
 type Querier struct {
 	transport      httpgrpcutil.RoundTripper
+	middlewares    []Middleware
 	promHTTPPrefix string
 	logger         log.Logger
 }
@@ -50,9 +54,11 @@ func New(
 	transport httpgrpcutil.RoundTripper,
 	prometheusHTTPPrefix string,
 	logger log.Logger,
+	middlewares ...Middleware,
 ) *Querier {
 	return &Querier{
 		transport:      transport,
+		middlewares:    middlewares,
 		promHTTPPrefix: prometheusHTTPPrefix,
 		logger:         logger,
 	}
@@ -73,20 +79,24 @@ func (r *Querier) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryR
 	if err != nil {
 		return nil, errors.Wrapf(err, "unable to marshal read request")
 	}
-	// add required HTTP headers
-	headers := []*httpgrpc.Header{
-		{Key: textproto.CanonicalMIMEHeaderKey("Content-Encoding"), Values: []string{"snappy"}},
-		{Key: textproto.CanonicalMIMEHeaderKey("Accept-Encoding"), Values: []string{"snappy"}},
-		{Key: textproto.CanonicalMIMEHeaderKey("Content-Type"), Values: []string{"application/x-protobuf"}},
-		{Key: textproto.CanonicalMIMEHeaderKey("User-Agent"), Values: []string{userAgent}},
-		{Key: textproto.CanonicalMIMEHeaderKey("X-Prometheus-Remote-Read-Version"), Values: []string{"0.1.0"}},
-	}
 
 	req := httpgrpc.HTTPRequest{
-		Method:  http.MethodPost,
-		Url:     r.promHTTPPrefix + readEndpointPath,
-		Body:    snappy.Encode(nil, data),
-		Headers: headers,
+		Method: http.MethodPost,
+		Url:    r.promHTTPPrefix + readEndpointPath,
+		Body:   snappy.Encode(nil, data),
+		Headers: []*httpgrpc.Header{
+			{Key: textproto.CanonicalMIMEHeaderKey("Content-Encoding"), Values: []string{"snappy"}},
+			{Key: textproto.CanonicalMIMEHeaderKey("Accept-Encoding"), Values: []string{"snappy"}},
+			{Key: textproto.CanonicalMIMEHeaderKey("Content-Type"), Values: []string{"application/x-protobuf"}},
+			{Key: textproto.CanonicalMIMEHeaderKey("User-Agent"), Values: []string{userAgent}},
+			{Key: textproto.CanonicalMIMEHeaderKey("X-Prometheus-Remote-Read-Version"), Values: []string{"0.1.0"}},
+		},
+	}
+
+	for _, mdw := range r.middlewares {
+		if err := mdw(ctx, &req); err != nil {
+			return nil, err
+		}
 	}
 
 	resp, err := r.transport.RoundTrip(ctx, &req)
@@ -138,6 +148,12 @@ func (r *Querier) Query(ctx context.Context, query string, ts time.Time) (model.
 			{Key: textproto.CanonicalMIMEHeaderKey("Content-Type"), Values: []string{mimeTypeFormPost}},
 			{Key: textproto.CanonicalMIMEHeaderKey("Content-Length"), Values: []string{strconv.Itoa(len(body))}},
 		},
+	}
+
+	for _, mdw := range r.middlewares {
+		if err := mdw(ctx, &req); err != nil {
+			return model.ValNone, nil, err
+		}
 	}
 
 	resp, err := r.transport.RoundTrip(ctx, &req)

@@ -29,7 +29,7 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier"
 	querier_stats "github.com/grafana/mimir/pkg/querier/stats"
-	"github.com/grafana/mimir/pkg/ruler/remotequerier"
+	"github.com/grafana/mimir/pkg/ruler/remote"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
@@ -230,7 +230,7 @@ func DefaultTenantManagerFactory(
 	embeddedQueryable storage.Queryable,
 	federatedQueryable storage.Queryable,
 	engine *promql.Engine,
-	remoteQuerier *remotequerier.Querier,
+	remoteQuerier *remote.Querier,
 	overrides RulesLimits,
 	reg prometheus.Registerer,
 ) ManagerFactory {
@@ -295,7 +295,7 @@ func DefaultTenantManagerFactory(
 				},
 			)
 
-			queryFunc = RemoteQueryFunc(remoteQuerier)
+			queryFunc = remote.QueryFunc(remoteQuerier)
 			queryFunc = MetricsQueryFunc(queryFunc, totalQueries, failedQueries)
 			queryFunc = RecordAndReportRuleQueryMetrics(queryFunc, queryTime, logger)
 		}

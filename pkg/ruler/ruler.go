@@ -25,6 +25,7 @@ import (
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
+	"github.com/grafana/dskit/tenant"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -35,10 +36,8 @@ import (
 	"github.com/weaveworks/common/user"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/grafana/dskit/tenant"
-
 	"github.com/grafana/mimir/pkg/mimirpb"
-	rulerremotequerier "github.com/grafana/mimir/pkg/ruler/remotequerier"
+	rulerremote "github.com/grafana/mimir/pkg/ruler/remote"
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
 	"github.com/grafana/mimir/pkg/ruler/rulestore"
 	"github.com/grafana/mimir/pkg/util"
@@ -117,7 +116,7 @@ type Config struct {
 
 	EnableQueryStats bool `yaml:"query_stats_enabled" category:"advanced"`
 
-	Querier rulerremotequerier.Config `yaml:"querier"`
+	Querier rulerremote.Config `yaml:"querier"`
 
 	TenantFederation TenantFederationConfig `yaml:"tenant_federation"`
 }
