@@ -1304,14 +1304,10 @@ func TestMultitenantCompactor_ShouldSkipCompactionForJobsNoMoreOwnedAfterPlannin
 
 func createTSDBBlock(t *testing.T, bkt objstore.Bucket, userID string, minT, maxT int64, numSeries int, externalLabels map[string]string) ulid.ULID {
 	// Create a temporary dir for TSDB.
-	tempDir, err := ioutil.TempDir(os.TempDir(), "tsdb")
-	require.NoError(t, err)
-	defer os.RemoveAll(tempDir) //nolint:errcheck
+	tempDir := t.TempDir()
 
 	// Create a temporary dir for the snapshot.
-	snapshotDir, err := ioutil.TempDir(os.TempDir(), "snapshot")
-	require.NoError(t, err)
-	defer os.RemoveAll(snapshotDir) //nolint:errcheck
+	snapshotDir := t.TempDir()
 
 	// Create a new TSDB.
 	db, err := tsdb.Open(tempDir, nil, nil, &tsdb.Options{
@@ -1505,13 +1501,9 @@ func prepareWithConfigProvider(t *testing.T, compactorCfg Config, bucketClient o
 	flagext.DefaultValues(&storageCfg)
 
 	// Create a temporary directory for compactor data.
-	dataDir, err := ioutil.TempDir(os.TempDir(), "compactor-test")
-	require.NoError(t, err)
+	dataDir := t.TempDir()
 
 	compactorCfg.DataDir = dataDir
-	t.Cleanup(func() {
-		require.NoError(t, os.RemoveAll(dataDir))
-	})
 
 	tsdbCompactor := &tsdbCompactorMock{}
 	tsdbPlanner := &tsdbPlannerMock{}

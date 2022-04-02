@@ -10,7 +10,6 @@ package storegateway
 
 import (
 	"context"
-	"io/ioutil"
 	"math"
 	"math/rand"
 	"os"
@@ -25,11 +24,7 @@ import (
 )
 
 func TestDiffVarintCodec(t *testing.T) {
-	chunksDir, err := ioutil.TempDir("", "diff_varint_codec")
-	assert.NoError(t, err)
-	t.Cleanup(func() {
-		assert.NoError(t, os.RemoveAll(chunksDir))
-	})
+	chunksDir := t.TempDir()
 
 	headOpts := tsdb.DefaultHeadOptions()
 	headOpts.ChunkDirRoot = chunksDir

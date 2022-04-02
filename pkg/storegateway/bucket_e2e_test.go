@@ -8,7 +8,6 @@ package storegateway
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -424,9 +423,7 @@ func TestBucketStore_e2e(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
-		dir, err := ioutil.TempDir("", "test_bucketstore_e2e")
-		assert.NoError(t, err)
-		defer func() { assert.NoError(t, os.RemoveAll(dir)) }()
+		dir := t.TempDir()
 
 		s := prepareStoreWithTestBlocks(t, dir, bkt, false, NewChunksLimiterFactory(0), NewSeriesLimiterFactory(0), emptyRelabelConfig, allowAllFilterConf)
 
@@ -479,9 +476,7 @@ func TestBucketStore_ManyParts_e2e(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
-		dir, err := ioutil.TempDir("", "test_bucketstore_e2e")
-		assert.NoError(t, err)
-		defer func() { assert.NoError(t, os.RemoveAll(dir)) }()
+		dir := t.TempDir()
 
 		s := prepareStoreWithTestBlocks(t, dir, bkt, true, NewChunksLimiterFactory(0), NewSeriesLimiterFactory(0), emptyRelabelConfig, allowAllFilterConf)
 
@@ -501,9 +496,7 @@ func TestBucketStore_TimePartitioning_e2e(t *testing.T) {
 	defer cancel()
 	bkt := objstore.NewInMemBucket()
 
-	dir, err := ioutil.TempDir("", "test_bucket_time_part_e2e")
-	assert.NoError(t, err)
-	defer func() { assert.NoError(t, os.RemoveAll(dir)) }()
+	dir := t.TempDir()
 
 	hourAfter := time.Now().Add(1 * time.Hour)
 	filterMaxTime := model.TimeOrDurationValue{Time: &hourAfter}
@@ -588,9 +581,7 @@ func TestBucketStore_Series_ChunksLimiter_e2e(t *testing.T) {
 			defer cancel()
 			bkt := objstore.NewInMemBucket()
 
-			dir, err := ioutil.TempDir("", "test_bucket_chunks_limiter_e2e")
-			assert.NoError(t, err)
-			defer func() { assert.NoError(t, os.RemoveAll(dir)) }()
+			dir := t.TempDir()
 
 			s := prepareStoreWithTestBlocks(t, dir, bkt, false, newCustomChunksLimiterFactory(testData.maxChunksLimit, testData.code), newCustomSeriesLimiterFactory(testData.maxSeriesLimit, testData.code), emptyRelabelConfig, allowAllFilterConf)
 			assert.NoError(t, s.store.SyncBlocks(ctx))
@@ -605,7 +596,7 @@ func TestBucketStore_Series_ChunksLimiter_e2e(t *testing.T) {
 
 			s.cache.SwapWith(noopCache{})
 			srv := newBucketStoreSeriesServer(ctx)
-			err = s.store.Series(req, srv)
+			err := s.store.Series(req, srv)
 
 			if testData.expectedErr == "" {
 				assert.NoError(t, err)
@@ -625,9 +616,7 @@ func TestBucketStore_LabelNames_e2e(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
-		dir, err := ioutil.TempDir("", "test_bucketstore_label_names_e2e")
-		assert.NoError(t, err)
-		defer func() { assert.NoError(t, os.RemoveAll(dir)) }()
+		dir := t.TempDir()
 
 		s := prepareStoreWithTestBlocks(t, dir, bkt, false, NewChunksLimiterFactory(0), NewSeriesLimiterFactory(0), emptyRelabelConfig, allowAllFilterConf)
 		s.cache.SwapWith(noopCache{})
@@ -727,9 +716,7 @@ func TestBucketStore_LabelValues_e2e(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
-		dir, err := ioutil.TempDir("", "test_bucketstore_label_values_e2e")
-		assert.NoError(t, err)
-		defer func() { assert.NoError(t, os.RemoveAll(dir)) }()
+		dir := t.TempDir()
 
 		s := prepareStoreWithTestBlocks(t, dir, bkt, false, NewChunksLimiterFactory(0), NewSeriesLimiterFactory(0), emptyRelabelConfig, allowAllFilterConf)
 		s.cache.SwapWith(noopCache{})
@@ -833,9 +820,7 @@ func foreachStore(t *testing.T, testFn func(t *testing.T, bkt objstore.Bucket)) 
 	t.Run("filesystem", func(t *testing.T) {
 		t.Parallel()
 
-		dir, err := ioutil.TempDir("", "filesystem-foreach-store-test")
-		assert.NoError(t, err)
-		defer assert.NoError(t, os.RemoveAll(dir))
+		dir := t.TempDir()
 
 		b, err := filesystem.NewBucket(dir)
 		assert.NoError(t, err)
