@@ -14,7 +14,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"math"
 	"math/rand"
 	"os"
@@ -206,9 +205,7 @@ func TestBucketBlock_Property(t *testing.T) {
 }
 
 func TestBucketBlock_matchLabels(t *testing.T) {
-	dir, err := ioutil.TempDir("", "bucketblock-test")
-	assert.NoError(t, err)
-	defer assert.NoError(t, os.RemoveAll(dir))
+	dir := t.TempDir()
 
 	bkt, err := filesystem.NewBucket(dir)
 	assert.NoError(t, err)
@@ -509,10 +506,7 @@ func TestBucketStore_Info(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	dir, err := ioutil.TempDir("", "bucketstore-test")
-	assert.NoError(t, err)
-
-	defer assert.NoError(t, os.RemoveAll(dir))
+	dir := t.TempDir()
 
 	chunkPool, err := NewDefaultChunkBytesPool(2e5)
 	assert.NoError(t, err)
@@ -577,9 +571,7 @@ func TestBucketStore_Sharding(t *testing.T) {
 	ctx := context.Background()
 	logger := log.NewNopLogger()
 
-	dir, err := ioutil.TempDir("", "test-sharding-prepare")
-	assert.NoError(t, err)
-	defer func() { assert.NoError(t, os.RemoveAll(dir)) }()
+	dir := t.TempDir()
 
 	bkt := objstore.NewInMemBucket()
 	series := []labels.Labels{labels.FromStrings("a", "1", "b", "1")}
@@ -606,9 +598,7 @@ func TestBucketStore_Sharding(t *testing.T) {
 		return
 	}
 
-	dir2, err := ioutil.TempDir("", "test-sharding2")
-	assert.NoError(t, err)
-	defer func() { assert.NoError(t, os.RemoveAll(dir2)) }()
+	dir2 := t.TempDir()
 
 	t.Run("reuse_disk", func(t *testing.T) {
 		testSharding(t, dir2, bkt, id1, id2, id3, id4)
@@ -753,10 +743,7 @@ func testSharding(t *testing.T, reuseDisk string, bkt objstore.Bucket, all ...ul
 			dir := reuseDisk
 
 			if dir == "" {
-				var err error
-				dir, err = ioutil.TempDir("", "test-sharding")
-				assert.NoError(t, err)
-				defer func() { assert.NoError(t, os.RemoveAll(dir)) }()
+				dir = t.TempDir()
 			}
 			relabelConf, err := block.ParseRelabelConfig([]byte(sc.relabel), block.SelectorSupportedRelabelActions)
 			assert.NoError(t, err)
@@ -948,7 +935,7 @@ func TestBlockLabelNames(t *testing.T) {
 	sort.Strings(jNotFooLabelNames)
 
 	sl := NewLimiter(math.MaxUint64, prometheus.NewCounter(prometheus.CounterOpts{Name: "test"}))
-	newTestBucketBlock := prepareTestBlock(test.NewTB(t), series, "test-block-label-names")
+	newTestBucketBlock := prepareTestBlock(test.NewTB(t), series)
 
 	t.Run("happy case with no matchers", func(t *testing.T) {
 		b := newTestBucketBlock()
@@ -1056,7 +1043,7 @@ func (c cacheNotExpectingToStoreLabelNames) StoreLabelNames(ctx context.Context,
 func TestBlockLabelValues(t *testing.T) {
 	const series = 500
 
-	newTestBucketBlock := prepareTestBlock(test.NewTB(t), series, "test-block-label-values")
+	newTestBucketBlock := prepareTestBlock(test.NewTB(t), series)
 
 	t.Run("happy case with no matchers", func(t *testing.T) {
 		b := newTestBucketBlock()
@@ -1158,7 +1145,7 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 	tb := test.NewTB(t)
 	const series = 500
 
-	newTestBucketBlock := prepareTestBlock(tb, series, "test-expanded-postings")
+	newTestBucketBlock := prepareTestBlock(tb, series)
 
 	t.Run("happy cases", func(t *testing.T) {
 		benchmarkExpandedPostings(test.NewTB(t), newTestBucketBlock, series)
@@ -1448,16 +1435,12 @@ func (c cacheNotExpectingToStoreExpandedPostings) StoreExpandedPostings(ctx cont
 func BenchmarkBucketIndexReader_ExpandedPostings(b *testing.B) {
 	tb := test.NewTB(b)
 	const series = 50e5
-	newTestBucketBlock := prepareTestBlock(tb, series, "bench-expanded-postings")
+	newTestBucketBlock := prepareTestBlock(tb, series)
 	benchmarkExpandedPostings(test.NewTB(b), newTestBucketBlock, series)
 }
 
-func prepareTestBlock(tb test.TB, series int, dirPattern string) func() *bucketBlock {
-	tmpDir, err := ioutil.TempDir("", dirPattern)
-	assert.NoError(tb, err)
-	tb.Cleanup(func() {
-		assert.NoError(tb, os.RemoveAll(tmpDir))
-	})
+func prepareTestBlock(tb test.TB, series int) func() *bucketBlock {
+	tmpDir := tb.TempDir()
 
 	bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
 	assert.NoError(tb, err)
@@ -1659,9 +1642,7 @@ func BenchmarkBucketSkipChunksSeries(b *testing.B) {
 func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries int, requestedRatios ...float64) {
 	const numOfBlocks = 4
 
-	tmpDir, err := ioutil.TempDir("", "testorbench-bucketseries")
-	assert.NoError(t, err)
-	defer func() { assert.NoError(t, os.RemoveAll(tmpDir)) }()
+	tmpDir := t.TempDir()
 
 	bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
 	assert.NoError(t, err)
@@ -1826,9 +1807,7 @@ func (m *mockedPool) Put(b *[]byte) {
 
 // Regression test against: https://github.com/thanos-io/thanos/issues/2147.
 func TestBucketSeries_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
-	tmpDir, err := ioutil.TempDir("", "segfault-series")
-	assert.NoError(t, err)
-	defer func() { assert.NoError(t, os.RemoveAll(tmpDir)) }()
+	tmpDir := t.TempDir()
 
 	bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
 	assert.NoError(t, err)
@@ -2070,9 +2049,7 @@ func TestSeries_RequestAndResponseHints(t *testing.T) {
 }
 
 func TestSeries_ErrorUnmarshallingRequestHints(t *testing.T) {
-	tmpDir, err := ioutil.TempDir("", "test-series-hints-enabled")
-	assert.NoError(t, err)
-	defer func() { assert.NoError(t, os.RemoveAll(tmpDir)) }()
+	tmpDir := t.TempDir()
 
 	bktDir := filepath.Join(tmpDir, "bkt")
 	bkt, err := filesystem.NewBucket(bktDir)
@@ -2132,9 +2109,7 @@ func TestSeries_ErrorUnmarshallingRequestHints(t *testing.T) {
 }
 
 func TestSeries_BlockWithMultipleChunks(t *testing.T) {
-	tmpDir, err := ioutil.TempDir("", "test-block-with-multiple-chunks")
-	assert.NoError(t, err)
-	defer func() { assert.NoError(t, os.RemoveAll(tmpDir)) }()
+	tmpDir := t.TempDir()
 
 	// Create a block with 1 series but an high number of samples,
 	// so that they will span across multiple chunks.
@@ -2315,9 +2290,7 @@ func setupStoreForHintsTest(t *testing.T) (test.TB, *BucketStore, []*storepb.Ser
 
 	closers := []func(){}
 
-	tmpDir, err := ioutil.TempDir("", "test-hints")
-	assert.NoError(t, err)
-	closers = append(closers, func() { assert.NoError(t, os.RemoveAll(tmpDir)) })
+	tmpDir := t.TempDir()
 
 	bktDir := filepath.Join(tmpDir, "bkt")
 	bkt, err := filesystem.NewBucket(bktDir)
@@ -2568,11 +2541,7 @@ func BenchmarkBucketBlock_readChunkRange(b *testing.B) {
 		readLengths = []int64{300, 500, 1000, 5000, 10000, 30000, 50000, 100000, 300000, 1500000}
 	)
 
-	tmpDir, err := ioutil.TempDir("", "benchmark")
-	assert.NoError(b, err)
-	b.Cleanup(func() {
-		assert.NoError(b, os.RemoveAll(tmpDir))
-	})
+	tmpDir := b.TempDir()
 
 	bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
 	assert.NoError(b, err)
@@ -2635,11 +2604,7 @@ func prepareBucket(b *testing.B, resolutionLevel compactor.ResolutionLevel) (*bu
 		logger = log.NewNopLogger()
 	)
 
-	tmpDir, err := ioutil.TempDir("", "benchmark")
-	assert.NoError(b, err)
-	b.Cleanup(func() {
-		assert.NoError(b, os.RemoveAll(tmpDir))
-	})
+	tmpDir := b.TempDir()
 
 	bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
 	assert.NoError(b, err)
@@ -2790,7 +2755,7 @@ func BenchmarkDownsampledBlockSeries(b *testing.B) {
 
 func TestBlockSeries_skipChunks_ignoresMintMaxt(t *testing.T) {
 	const series = 100
-	newTestBucketBlock := prepareTestBlock(test.NewTB(t), series, "test-block-series-skipchunks-mint-maxt-override")
+	newTestBucketBlock := prepareTestBlock(test.NewTB(t), series)
 	b := newTestBucketBlock()
 
 	mint, maxt := int64(0), int64(0)
@@ -2804,7 +2769,7 @@ func TestBlockSeries_skipChunks_ignoresMintMaxt(t *testing.T) {
 }
 
 func TestBlockSeries_Cache(t *testing.T) {
-	newTestBucketBlock := prepareTestBlock(test.NewTB(t), 100, "test-block-series-cache")
+	newTestBucketBlock := prepareTestBlock(test.NewTB(t), 100)
 
 	t.Run("does not update cache on error", func(t *testing.T) {
 		b := newTestBucketBlock()

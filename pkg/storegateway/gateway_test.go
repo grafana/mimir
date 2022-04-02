@@ -805,9 +805,7 @@ func TestStoreGateway_SeriesQueryingShouldRemoveExternalLabels(t *testing.T) {
 	logger := log.NewNopLogger()
 	userID := "user-1"
 
-	storageDir, err := ioutil.TempDir(os.TempDir(), "")
-	require.NoError(t, err)
-	t.Cleanup(func() { assert.NoError(t, os.RemoveAll(storageDir)) })
+	storageDir := t.TempDir()
 
 	// Generate 2 TSDB blocks with the same exact series (and data points).
 	numSeries := 2
@@ -1125,9 +1123,7 @@ func TestStoreGateway_SeriesQueryingShouldEnforceMaxChunksPerQueryLimit(t *testi
 	logger := log.NewNopLogger()
 	userID := "user-1"
 
-	storageDir, err := ioutil.TempDir(os.TempDir(), "")
-	require.NoError(t, err)
-	t.Cleanup(func() { assert.NoError(t, os.RemoveAll(storageDir)) })
+	storageDir := t.TempDir()
 
 	// Generate 1 TSDB block with chunksQueried series. Since each mocked series contains only 1 sample,
 	// it will also only have 1 chunk.
@@ -1203,11 +1199,7 @@ func mockGatewayConfig() Config {
 }
 
 func mockStorageConfig(t *testing.T) mimir_tsdb.BlocksStorageConfig {
-	tmpDir, err := ioutil.TempDir(os.TempDir(), "store-gateway-test-*")
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		require.NoError(t, os.RemoveAll(tmpDir))
-	})
+	tmpDir := t.TempDir()
 
 	cfg := mimir_tsdb.BlocksStorageConfig{}
 	flagext.DefaultValues(&cfg)
@@ -1226,9 +1218,7 @@ func mockStorageConfig(t *testing.T) mimir_tsdb.BlocksStorageConfig {
 func mockTSDB(t *testing.T, dir string, numSeries, numBlocks int, minT, maxT int64) {
 	// Create a new TSDB on a temporary directory. The blocks
 	// will be then snapshotted to the input dir.
-	tempDir, err := ioutil.TempDir(os.TempDir(), "tsdb")
-	require.NoError(t, err)
-	t.Cleanup(func() { assert.NoError(t, os.RemoveAll(tempDir)) })
+	tempDir := t.TempDir()
 
 	db, err := tsdb.Open(tempDir, nil, nil, &tsdb.Options{
 		MinBlockDuration:  2 * time.Hour.Milliseconds(),
@@ -1270,9 +1260,7 @@ func mockTSDB(t *testing.T, dir string, numSeries, numBlocks int, minT, maxT int
 func mockTSDBWithGenerator(t *testing.T, dir string, next func() (bool, labels.Labels, int64, float64)) {
 	// Create a new TSDB on a temporary directory. The blocks
 	// will be then snapshotted to the input dir.
-	tempDir, err := ioutil.TempDir(os.TempDir(), "tsdb")
-	require.NoError(t, err)
-	t.Cleanup(func() { assert.NoError(t, os.RemoveAll(tempDir)) })
+	tempDir := t.TempDir()
 
 	db, err := tsdb.Open(tempDir, nil, nil, &tsdb.Options{
 		MinBlockDuration:  2 * time.Hour.Milliseconds(),

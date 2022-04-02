@@ -64,8 +64,7 @@ func TestBucketStores_InitialSync(t *testing.T) {
 	ctx := context.Background()
 	cfg := prepareStorageConfig(t)
 
-	storageDir, err := ioutil.TempDir(os.TempDir(), "storage-*")
-	require.NoError(t, err)
+	storageDir := t.TempDir()
 
 	for userID, metricName := range userToMetric {
 		generateStorageBlock(t, storageDir, userID, metricName, 10, 100, 15)
@@ -140,8 +139,7 @@ func TestBucketStores_InitialSyncShouldRetryOnFailure(t *testing.T) {
 	ctx := context.Background()
 	cfg := prepareStorageConfig(t)
 
-	storageDir, err := ioutil.TempDir(os.TempDir(), "storage-*")
-	require.NoError(t, err)
+	storageDir := t.TempDir()
 
 	// Generate a block for the user in the storage.
 	generateStorageBlock(t, storageDir, "user-1", "series_1", 10, 100, 15)
@@ -208,8 +206,7 @@ func TestBucketStores_SyncBlocks(t *testing.T) {
 	ctx := context.Background()
 	cfg := prepareStorageConfig(t)
 
-	storageDir, err := ioutil.TempDir(os.TempDir(), "storage-*")
-	require.NoError(t, err)
+	storageDir := t.TempDir()
 
 	bucket, err := filesystem.NewBucketClient(filesystem.Config{Directory: storageDir})
 	require.NoError(t, err)
@@ -336,8 +333,7 @@ func testBucketStoresSeriesShouldCorrectlyQuerySeriesSpanningMultipleChunks(t *t
 	cfg.BucketStore.IndexHeaderLazyLoadingEnabled = lazyLoadingEnabled
 	cfg.BucketStore.IndexHeaderLazyLoadingIdleTimeout = time.Minute
 
-	storageDir, err := ioutil.TempDir(os.TempDir(), "storage-*")
-	require.NoError(t, err)
+	storageDir := t.TempDir()
 
 	// Generate a single block with 1 series and a lot of samples.
 	generateStorageBlock(t, storageDir, userID, metricName, 0, 10000, 1)
@@ -504,17 +500,12 @@ func TestBucketStore_Series_ShouldQueryBlockWithOutOfOrderChunks(t *testing.T) {
 }
 
 func prepareStorageConfig(t *testing.T) mimir_tsdb.BlocksStorageConfig {
-	tmpDir, err := ioutil.TempDir(os.TempDir(), "blocks-sync-*")
-	require.NoError(t, err)
+	tmpDir := t.TempDir()
 
 	cfg := mimir_tsdb.BlocksStorageConfig{}
 	flagext.DefaultValues(&cfg)
 	cfg.BucketStore.BucketIndex.Enabled = false
 	cfg.BucketStore.SyncDir = tmpDir
-
-	t.Cleanup(func() {
-		require.NoError(t, os.RemoveAll(tmpDir))
-	})
 
 	return cfg
 }
@@ -528,11 +519,7 @@ func generateStorageBlock(t *testing.T, storageDir, userID string, metricName st
 
 	// Create a temporary directory where the TSDB is opened,
 	// then it will be snapshotted to the storage directory.
-	tmpDir, err := ioutil.TempDir(os.TempDir(), "tsdb-*")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(tmpDir))
-	}()
+	tmpDir := t.TempDir()
 
 	db, err := tsdb.Open(tmpDir, log.NewNopLogger(), nil, tsdb.DefaultOptions(), nil)
 	require.NoError(t, err)
@@ -604,11 +591,7 @@ func TestBucketStores_deleteLocalFilesForExcludedTenants(t *testing.T) {
 	ctx := context.Background()
 	cfg := prepareStorageConfig(t)
 
-	storageDir, err := ioutil.TempDir(os.TempDir(), "storage-*")
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		require.NoError(t, os.RemoveAll(storageDir))
-	})
+	storageDir := t.TempDir()
 
 	for userID, metricName := range userToMetric {
 		generateStorageBlock(t, storageDir, userID, metricName, 10, 100, 15)
@@ -746,9 +729,7 @@ func BenchmarkBucketStoreLabelValues(tb *testing.B) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	dir, err := ioutil.TempDir("", "bench-label-values")
-	assert.NoError(tb, err)
-	defer func() { assert.NoError(tb, os.RemoveAll(dir)) }()
+	dir := tb.TempDir()
 
 	bkt, err := filesystemstore.NewBucket(filepath.Join(dir, "bkt"))
 	assert.NoError(tb, err)

@@ -7,8 +7,6 @@ package ruler
 
 import (
 	"context"
-	"io/ioutil"
-	"os"
 	"testing"
 	"time"
 
@@ -25,11 +23,7 @@ import (
 )
 
 func TestSyncRuleGroups(t *testing.T) {
-	dir, err := ioutil.TempDir("", "rules")
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		_ = os.RemoveAll(dir)
-	})
+	dir := t.TempDir()
 
 	m, err := NewDefaultMultiTenantManager(Config{RulePath: dir}, factory, nil, log.NewNopLogger(), nil)
 	require.NoError(t, err)
