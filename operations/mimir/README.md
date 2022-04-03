@@ -115,9 +115,9 @@ mimir {
   store_gateway_statefulset+: statefulSet.mixin.spec.withReplicas(1),
 
   local smallMemcached = {
-    cpu_requests: '100m',
-    memory_limit_mb: 64,
-    memory_request_overhead_mb: 8,
+    cpu_requests:: '100m',
+    memory_limit_mb:: 64,
+    memory_request_overhead_mb:: 8,
     statefulSet+: statefulSet.mixin.spec.withReplicas(1),
   },
 
