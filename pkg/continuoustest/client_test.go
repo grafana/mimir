@@ -14,6 +14,7 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 	"github.com/grafana/dskit/flagext"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -48,6 +49,7 @@ func TestClient_WriteSeries(t *testing.T) {
 	flagext.DefaultValues(&cfg)
 	cfg.WriteBatchSize = 10
 	require.NoError(t, cfg.WriteBaseEndpoint.Set(server.URL))
+	require.NoError(t, cfg.ReadBaseEndpoint.Set(server.URL))
 
 	c, err := NewClient(cfg, log.NewNopLogger())
 	require.NoError(t, err)
@@ -112,4 +114,9 @@ type ClientMock struct {
 func (m *ClientMock) WriteSeries(ctx context.Context, series []prompb.TimeSeries) (int, error) {
 	args := m.Called(ctx, series)
 	return args.Int(0), args.Error(1)
+}
+
+func (m *ClientMock) QueryRange(ctx context.Context, query string, start, end time.Time, step time.Duration) (model.Matrix, error) {
+	args := m.Called(ctx, query, start, end, step)
+	return args.Get(0).(model.Matrix), args.Error(1)
 }

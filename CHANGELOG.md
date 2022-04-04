@@ -26,13 +26,16 @@
 * [ENHANCEMENT] Alertmanager: added `insight=true` field to alertmanager dispatch logs. #1379
 * [BUGFIX] Query-frontend: do not shard queries with a subquery unless the subquery is inside a shardable aggregation function call. #1542
 * [BUGFIX] Mimir: services' status content-type is now correctly set to `text/html`. #1575
+* [BUGFIX] Multikv: Fix panic when using using runtime config to set primary KV store used by `multi` KV. #1587
 
 ### Mixin
 
 ### Jsonnet
 
-* [BUGFIX] Pass primary and secondary multikv stores via CLI flags. Introduced new `multikv_switch_primary_secondary` config option to flip primary and secondary in runtime config.
+* [CHANGE] Dashboards: Remove per-user series legends from Tenants dashboard. #1605
 * [ENHANCEMENT] Ingester anti-affinity can now be disabled by using `ingester_allow_multiple_replicas_on_same_node` configuration key. #1581
+* [ENHANCEMENT] Microservices: Ability to add NodeSelector. #1596
+* [BUGFIX] Pass primary and secondary multikv stores via CLI flags. Introduced new `multikv_switch_primary_secondary` config option to flip primary and secondary in runtime config.
 
 ### Mimirtool
 

@@ -447,9 +447,7 @@ type blockgenSpec struct {
 }
 
 func createAndUpload(t testing.TB, bkt objstore.Bucket, blocks []blockgenSpec, blocksWithOutOfOrderChunks []blockgenSpec) (metas []*metadata.Meta) {
-	prepareDir, err := ioutil.TempDir("", "test-compact-prepare")
-	require.NoError(t, err)
-	defer func() { require.NoError(t, os.RemoveAll(prepareDir)) }()
+	prepareDir := t.TempDir()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
@@ -606,9 +604,7 @@ func foreachStore(t *testing.T, testFn func(t *testing.T, bkt objstore.Bucket)) 
 	t.Run("filesystem", func(t *testing.T) {
 		t.Parallel()
 
-		dir, err := ioutil.TempDir("", "filesystem-foreach-store-test")
-		require.NoError(t, err)
-		defer require.NoError(t, os.RemoveAll(dir))
+		dir := t.TempDir()
 
 		b, err := filesystem.NewBucket(dir)
 		require.NoError(t, err)

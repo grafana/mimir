@@ -82,20 +82,20 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by (user) (\n  cortex_ingester_active_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", user=~\"$user\"}\n  / on(cluster, namespace) group_left\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir))\"})\n)\n",
+                        "expr": "sum(\n  cortex_ingester_active_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", user=\"$user\"}\n  / on(cluster, namespace) group_left\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir))\"})\n)\n",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
-                        "legendFormat": "{{ user }}",
+                        "legendFormat": "active",
                         "legendLink": null,
                         "step": 10
                      },
                      {
-                        "expr": "sum by (user, name) (\n  cortex_ingester_active_series_custom_tracker{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", user=~\"$user\"}\n  / on(cluster, namespace) group_left\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir))\"})\n) > 0\n",
+                        "expr": "sum by (name) (\n  cortex_ingester_active_series_custom_tracker{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", user=\"$user\"}\n  / on(cluster, namespace) group_left\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir))\"})\n) > 0\n",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
-                        "legendFormat": "{{ user }} ({{ name }})",
+                        "legendFormat": "active ({{ name }})",
                         "legendLink": null,
                         "step": 10
                      }
@@ -146,13 +146,7 @@
                   "fill": 1,
                   "id": 3,
                   "legend": {
-                     "avg": false,
-                     "current": false,
-                     "max": false,
-                     "min": false,
-                     "show": true,
-                     "total": false,
-                     "values": false
+                     "show": false
                   },
                   "lines": true,
                   "linewidth": 1,
@@ -169,11 +163,11 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by (user) (\n  cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", user=~\"$user\"}\n  / on(cluster, namespace) group_left\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir))\"})\n)\n",
+                        "expr": "sum(\n  cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", user=\"$user\"}\n  / on(cluster, namespace) group_left\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir))\"})\n)\n",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
-                        "legendFormat": "{{ user }}",
+                        "legendFormat": "series",
                         "legendLink": null,
                         "step": 10
                      }
@@ -224,13 +218,7 @@
                   "fill": 1,
                   "id": 4,
                   "legend": {
-                     "avg": false,
-                     "current": false,
-                     "max": false,
-                     "min": false,
-                     "show": true,
-                     "total": false,
-                     "values": false
+                     "show": false
                   },
                   "lines": true,
                   "linewidth": 1,
@@ -247,11 +235,11 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "time() - max by (user) (cortex_distributor_latest_seen_sample_timestamp_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir))\", user=~\"$user\"} > 0)",
+                        "expr": "time() - max(cortex_distributor_latest_seen_sample_timestamp_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir))\", user=\"$user\"} > 0)",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
-                        "legendFormat": "{{ user }}",
+                        "legendFormat": "age",
                         "legendLink": null,
                         "step": 10
                      }
@@ -302,13 +290,7 @@
                   "fill": 1,
                   "id": 5,
                   "legend": {
-                     "avg": false,
-                     "current": false,
-                     "max": false,
-                     "min": false,
-                     "show": true,
-                     "total": false,
-                     "values": false
+                     "show": false
                   },
                   "lines": true,
                   "linewidth": 1,
@@ -325,11 +307,11 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "time() - min by (user) (cortex_ingester_tsdb_exemplar_last_exemplars_timestamp_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", user=~\"$user\"} > 0)",
+                        "expr": "time() - min(cortex_ingester_tsdb_exemplar_last_exemplars_timestamp_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", user=\"$user\"} > 0)",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
-                        "legendFormat": "{{ user }}",
+                        "legendFormat": "age",
                         "legendLink": null,
                         "step": 10
                      }
@@ -392,13 +374,7 @@
                   "fill": 1,
                   "id": 6,
                   "legend": {
-                     "avg": false,
-                     "current": false,
-                     "max": false,
-                     "min": false,
-                     "show": true,
-                     "total": false,
-                     "values": false
+                     "show": false
                   },
                   "lines": true,
                   "linewidth": 1,
@@ -415,11 +391,11 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by (user) (rate(cortex_distributor_samples_in_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir))\", user=~\"$user\"}[$__rate_interval]))",
+                        "expr": "sum(rate(cortex_distributor_samples_in_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir))\", user=\"$user\"}[$__rate_interval]))",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
-                        "legendFormat": "{{ user }}",
+                        "legendFormat": "rate",
                         "legendLink": null,
                         "step": 10
                      }
@@ -470,13 +446,7 @@
                   "fill": 1,
                   "id": 7,
                   "legend": {
-                     "avg": false,
-                     "current": false,
-                     "max": false,
-                     "min": false,
-                     "show": true,
-                     "total": false,
-                     "values": false
+                     "show": false
                   },
                   "lines": true,
                   "linewidth": 1,
@@ -493,11 +463,11 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by (user) (rate(cortex_distributor_received_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir))\", user=~\"$user\"}[$__rate_interval]))",
+                        "expr": "sum(rate(cortex_distributor_received_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir))\", user=\"$user\"}[$__rate_interval]))",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
-                        "legendFormat": "{{ user }}",
+                        "legendFormat": "rate",
                         "legendLink": null,
                         "step": 10
                      }
@@ -571,20 +541,20 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by (user) (rate(cortex_distributor_deduped_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir))\", user=~\"$user\"}[$__rate_interval]))",
+                        "expr": "sum(rate(cortex_distributor_deduped_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir))\", user=\"$user\"}[$__rate_interval]))",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
-                        "legendFormat": "{{ user }}: deduplicated",
+                        "legendFormat": "deduplicated",
                         "legendLink": null,
                         "step": 10
                      },
                      {
-                        "expr": "sum by (user) (rate(cortex_distributor_non_ha_samples_received_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir))\", user=~\"$user\"}[$__rate_interval]))",
+                        "expr": "sum(rate(cortex_distributor_non_ha_samples_received_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir))\", user=\"$user\"}[$__rate_interval]))",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
-                        "legendFormat": "{{ user }}: non-HA",
+                        "legendFormat": "non-HA",
                         "legendLink": null,
                         "step": 10
                      }
@@ -658,20 +628,20 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by (user, reason) (rate(cortex_discarded_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir))\", user=~\"$user\"}[$__rate_interval]))",
+                        "expr": "sum by (reason) (rate(cortex_discarded_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir))\", user=\"$user\"}[$__rate_interval]))",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
-                        "legendFormat": "{{ user }}: {{ reason }} (distributor)",
+                        "legendFormat": "{{ reason }} (distributor)",
                         "legendLink": null,
                         "step": 10
                      },
                      {
-                        "expr": "sum by (user, reason) (rate(cortex_discarded_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", user=~\"$user\"}[$__rate_interval]))",
+                        "expr": "sum by (reason) (rate(cortex_discarded_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", user=\"$user\"}[$__rate_interval]))",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
-                        "legendFormat": "{{ user }}: {{ reason }} (ingester)",
+                        "legendFormat": "{{ reason }} (ingester)",
                         "legendLink": null,
                         "step": 10
                      }
@@ -734,13 +704,7 @@
                   "fill": 1,
                   "id": 10,
                   "legend": {
-                     "avg": false,
-                     "current": false,
-                     "max": false,
-                     "min": false,
-                     "show": true,
-                     "total": false,
-                     "values": false
+                     "show": false
                   },
                   "lines": true,
                   "linewidth": 1,
@@ -757,11 +721,11 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by (user) (rate(cortex_distributor_exemplars_in_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir))\", user=~\"$user\"}[$__rate_interval]))",
+                        "expr": "sum(rate(cortex_distributor_exemplars_in_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir))\", user=\"$user\"}[$__rate_interval]))",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
-                        "legendFormat": "{{ user }}",
+                        "legendFormat": "rate",
                         "legendLink": null,
                         "step": 10
                      }
@@ -812,13 +776,7 @@
                   "fill": 1,
                   "id": 11,
                   "legend": {
-                     "avg": false,
-                     "current": false,
-                     "max": false,
-                     "min": false,
-                     "show": true,
-                     "total": false,
-                     "values": false
+                     "show": false
                   },
                   "lines": true,
                   "linewidth": 1,
@@ -835,11 +793,11 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by (user) (rate(cortex_distributor_received_exemplars_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir))\", user=~\"$user\"}[$__rate_interval]))",
+                        "expr": "sum(rate(cortex_distributor_received_exemplars_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir))\", user=\"$user\"}[$__rate_interval]))",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
-                        "legendFormat": "{{ user }}",
+                        "legendFormat": "rate",
                         "legendLink": null,
                         "step": 10
                      }
@@ -913,11 +871,11 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by (user, reason) (rate(cortex_discarded_exemplars_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir))\", user=~\"$user\"}[$__rate_interval]))",
+                        "expr": "sum by (reason) (rate(cortex_discarded_exemplars_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir))\", user=\"$user\"}[$__rate_interval]))",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
-                        "legendFormat": "{{ user }}: {{ reason }}",
+                        "legendFormat": "{{ reason }}",
                         "legendLink": null,
                         "step": 10
                      }
@@ -968,13 +926,7 @@
                   "fill": 1,
                   "id": 13,
                   "legend": {
-                     "avg": false,
-                     "current": false,
-                     "max": false,
-                     "min": false,
-                     "show": true,
-                     "total": false,
-                     "values": false
+                     "show": false
                   },
                   "lines": true,
                   "linewidth": 1,
@@ -991,11 +943,11 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by (user) (\n  rate(cortex_ingester_tsdb_exemplar_exemplars_appended_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", user=~\"$user\"}[$__rate_interval])\n  / on(cluster, namespace) group_left\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir))\"})\n)\n",
+                        "expr": "sum(\n  rate(cortex_ingester_tsdb_exemplar_exemplars_appended_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", user=\"$user\"}[$__rate_interval])\n  / on(cluster, namespace) group_left\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir))\"})\n)\n",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
-                        "legendFormat": "{{ user }}",
+                        "legendFormat": "rate",
                         "legendLink": null,
                         "step": 10
                      }
@@ -1081,11 +1033,11 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by (user, job) (cortex_ingester_tsdb_symbol_table_size_bytes{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", user=~\"$user\"})",
+                        "expr": "sum by (job) (cortex_ingester_tsdb_symbol_table_size_bytes{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", user=\"$user\"})",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
-                        "legendFormat": "{{ user }} in {{ job }}",
+                        "legendFormat": "{{ job }}",
                         "legendLink": null,
                         "step": 10
                      }
@@ -1159,11 +1111,11 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by (user, job) (cortex_ingester_tsdb_storage_blocks_bytes{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", user=~\"$user\"})",
+                        "expr": "sum by (job) (cortex_ingester_tsdb_storage_blocks_bytes{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", user=\"$user\"})",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
-                        "legendFormat": "{{ user }} in {{ job }}",
+                        "legendFormat": "{{ job }}",
                         "legendLink": null,
                         "step": 10
                      }
@@ -1226,13 +1178,7 @@
                   "fill": 1,
                   "id": 16,
                   "legend": {
-                     "avg": false,
-                     "current": false,
-                     "max": false,
-                     "min": false,
-                     "show": true,
-                     "total": false,
-                     "values": false
+                     "show": false
                   },
                   "lines": true,
                   "linewidth": 1,
@@ -1249,11 +1195,11 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "count by (user) (sum by (user, rule_group) (cortex_prometheus_rule_group_rules{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\", user=~\"$user\"}))",
+                        "expr": "count(sum by (rule_group) (cortex_prometheus_rule_group_rules{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\", user=\"$user\"}))",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
-                        "legendFormat": "{{ user }}",
+                        "legendFormat": "groups",
                         "legendLink": null,
                         "step": 10
                      }
@@ -1304,13 +1250,7 @@
                   "fill": 1,
                   "id": 17,
                   "legend": {
-                     "avg": false,
-                     "current": false,
-                     "max": false,
-                     "min": false,
-                     "show": true,
-                     "total": false,
-                     "values": false
+                     "show": false
                   },
                   "lines": true,
                   "linewidth": 1,
@@ -1327,11 +1267,11 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by (user) (cortex_prometheus_rule_group_rules{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\", user=~\"$user\"})",
+                        "expr": "sum(cortex_prometheus_rule_group_rules{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\", user=\"$user\"})",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
-                        "legendFormat": "{{ user }}",
+                        "legendFormat": "rules",
                         "legendLink": null,
                         "step": 10
                      }
@@ -1381,13 +1321,7 @@
                   "fill": 1,
                   "id": 18,
                   "legend": {
-                     "avg": false,
-                     "current": false,
-                     "max": false,
-                     "min": false,
-                     "show": true,
-                     "total": false,
-                     "values": false
+                     "show": false
                   },
                   "lines": true,
                   "linewidth": 1,
@@ -1404,11 +1338,11 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by (user) (rate(cortex_prometheus_rule_evaluations_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\", user=~\"$user\"}[$__rate_interval]))",
+                        "expr": "sum(rate(cortex_prometheus_rule_evaluations_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\", user=\"$user\"}[$__rate_interval]))",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
-                        "legendFormat": "{{ user }}",
+                        "legendFormat": "rate",
                         "legendLink": null,
                         "step": 10
                      }
@@ -1481,11 +1415,11 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by (user, rule_group) (rate(cortex_prometheus_rule_group_rules{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\", user=~\"$user\"}[$__rate_interval]))",
+                        "expr": "sum by (rule_group) (rate(cortex_prometheus_rule_group_rules{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\", user=\"$user\"}[$__rate_interval]))",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
-                        "legendFormat": "{{ user }}: {{ rule_group }}",
+                        "legendFormat": "{{ rule_group }}",
                         "legendLink": null,
                         "step": 10
                      }
@@ -1608,7 +1542,7 @@
                   ],
                   "targets": [
                      {
-                        "expr": "topk($limit, sum by (rule_group) (cortex_prometheus_rule_group_rules{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\", user=~\"$user\"}))",
+                        "expr": "topk($limit, sum by (rule_group) (cortex_prometheus_rule_group_rules{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\", user=\"$user\"}))",
                         "format": "table",
                         "instant": true,
                         "intervalFactor": 2,
@@ -1724,7 +1658,7 @@
                   ],
                   "targets": [
                      {
-                        "expr": "topk($limit, sum by (rule_group) (cortex_prometheus_rule_group_last_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\", user=~\"$user\"}))",
+                        "expr": "topk($limit, sum by (rule_group) (cortex_prometheus_rule_group_last_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\", user=\"$user\"}))",
                         "format": "table",
                         "instant": true,
                         "intervalFactor": 2,
@@ -1791,13 +1725,7 @@
                   "fill": 1,
                   "id": 22,
                   "legend": {
-                     "avg": false,
-                     "current": false,
-                     "max": false,
-                     "min": false,
-                     "show": true,
-                     "total": false,
-                     "values": false
+                     "show": false
                   },
                   "lines": true,
                   "linewidth": 1,
@@ -1814,11 +1742,11 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by(user) (rate(cortex_prometheus_notifications_sent_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\", user=~\"$user\"}[$__rate_interval]))",
+                        "expr": "sum(rate(cortex_prometheus_notifications_sent_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\", user=\"$user\"}[$__rate_interval]))",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
-                        "legendFormat": "{{ user }}",
+                        "legendFormat": "rate",
                         "legendLink": null,
                         "step": 10
                      }
@@ -1868,13 +1796,7 @@
                   "fill": 1,
                   "id": 23,
                   "legend": {
-                     "avg": false,
-                     "current": false,
-                     "max": false,
-                     "min": false,
-                     "show": true,
-                     "total": false,
-                     "values": false
+                     "show": false
                   },
                   "lines": true,
                   "linewidth": 1,
@@ -1891,11 +1813,11 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by(user) (rate(cortex_prometheus_notifications_errors_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\", user=~\"$user\"}[$__rate_interval]))",
+                        "expr": "sum(rate(cortex_prometheus_notifications_errors_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\", user=\"$user\"}[$__rate_interval]))",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
-                        "legendFormat": "{{ user }}",
+                        "legendFormat": "rate",
                         "legendLink": null,
                         "step": 10
                      }

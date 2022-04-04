@@ -9,6 +9,8 @@ import (
 	"reflect"
 	"strings"
 
+	"github.com/grafana/dskit/flagext"
+
 	"github.com/grafana/mimir/pkg/mimir"
 	"github.com/grafana/mimir/pkg/util/fieldcategory"
 )
@@ -131,7 +133,7 @@ func parseStructure(structure interface{}, fields map[uintptr]reflect.StructFiel
 		fields[fieldValue.Addr().Pointer()] = field
 
 		// Recurse if a struct
-		if field.Type.Kind() != reflect.Struct {
+		if field.Type.Kind() != reflect.Struct || ignoreStructType(field.Type) {
 			continue
 		}
 
@@ -141,6 +143,22 @@ func parseStructure(structure interface{}, fields map[uintptr]reflect.StructFiel
 	}
 
 	return nil
+}
+
+// Descending into some structs breaks check for "advanced" category for some fields (eg. flagext.Secret),
+// because field itself is at the same memory address as the internal field in the struct, and advanced-category-check
+// then gets confused.
+var ignoredStructTypes = []reflect.Type{
+	reflect.TypeOf(flagext.Secret{}),
+}
+
+func ignoreStructType(fieldType reflect.Type) bool {
+	for _, t := range ignoredStructTypes {
+		if fieldType == t {
+			return true
+		}
+	}
+	return false
 }
 
 func getFlagName(fl *flag.Flag) string {

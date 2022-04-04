@@ -115,6 +115,7 @@
     statefulSet.mixin.spec.template.spec.securityContext.withRunAsUser(0) +
     statefulSet.mixin.spec.updateStrategy.withType('RollingUpdate') +
     statefulSet.mixin.spec.template.spec.withTerminationGracePeriodSeconds(900) +
+    (if !std.isObject($._config.node_selector) then {} else statefulSet.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector)) +
     // Parallelly scale up/down compactor instances instead of starting them
     // one by one. This does NOT affect rolling updates: they will continue to be
     // rolled out one by one (the next pod will be rolled out once the previous is
