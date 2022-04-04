@@ -55,7 +55,7 @@
                   "dashLength": 10,
                   "dashes": false,
                   "datasource": "$datasource",
-                  "description": "### Active series\nNumber of active series per user, and active series matching custom trackers (in parenthesis).\nNote that active series matching custom trackers are included in the total active series count.\n\n",
+                  "description": "### Series\nNumber of active and in-memory series per user, and active series matching custom trackers (in parenthesis).\nNote that active series matching custom trackers are included in the total active series count.\n\n",
                   "fill": 1,
                   "id": 2,
                   "legend": {
@@ -75,12 +75,36 @@
                   "pointradius": 5,
                   "points": false,
                   "renderer": "flot",
-                  "seriesOverrides": [ ],
+                  "seriesOverrides": [
+                     {
+                        "alias": "limit",
+                        "dashes": true,
+                        "fill": 0
+                     }
+                  ],
                   "spaceLength": 10,
                   "span": 3,
                   "stack": false,
                   "steppedLine": false,
                   "targets": [
+                     {
+                        "expr": "sum(\n  (\n    cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", user=\"$user\"}\n    - cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", user=\"$user\"}\n  )\n  / on(cluster, namespace) group_left\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir))\"})\n)\n",
+                        "format": "time_series",
+                        "interval": "15s",
+                        "intervalFactor": 2,
+                        "legendFormat": "in-memory",
+                        "legendLink": null,
+                        "step": 10
+                     },
+                     {
+                        "expr": "max(cortex_limits_overrides{cluster=~\"$cluster\", job=~\"($namespace)/(overrides-exporter)\", limit_name=\"max_global_series_per_user\", user=\"$user\"})\nor\nmax(cortex_limits_defaults{cluster=~\"$cluster\", job=~\"($namespace)/(overrides-exporter)\", limit_name=\"max_global_series_per_user\"})\n",
+                        "format": "time_series",
+                        "interval": "15s",
+                        "intervalFactor": 2,
+                        "legendFormat": "limit",
+                        "legendLink": null,
+                        "step": 10
+                     },
                      {
                         "expr": "sum(\n  cortex_ingester_active_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", user=\"$user\"}\n  / on(cluster, namespace) group_left\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir))\"})\n)\n",
                         "format": "time_series",
@@ -103,7 +127,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Active series",
+                  "title": "Series",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -357,7 +381,7 @@
             "repeatIteration": null,
             "repeatRowId": null,
             "showTitle": true,
-            "title": "Active series & exemplars",
+            "title": "Series and exemplars",
             "titleSize": "h6"
          },
          {

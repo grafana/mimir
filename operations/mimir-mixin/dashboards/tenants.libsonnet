@@ -19,12 +19,33 @@ local utils = import 'mixin-utils/utils.libsonnet';
     )
 
     .addRow(
-      $.row('Active series & exemplars')
+      $.row('Series and exemplars')
       .addPanel(
-        local title = 'Active series';
+        local title = 'Series';
         $.panel(title) +
         $.queryPanel(
           [
+            |||
+              sum(
+                (
+                  cortex_ingester_memory_series_created_total{%(ingester)s, user="$user"}
+                  - cortex_ingester_memory_series_removed_total{%(ingester)s, user="$user"}
+                )
+                / on(%(group_by_cluster)s) group_left
+                max by (%(group_by_cluster)s) (cortex_distributor_replication_factor{%(distributor)s})
+              )
+            ||| % {
+              ingester: $.jobMatcher($._config.job_names.ingester),
+              distributor: $.jobMatcher($._config.job_names.distributor),
+              group_by_cluster: $._config.group_by_cluster,
+            },
+            |||
+              max(cortex_limits_overrides{%(overrides_exporter)s, limit_name="max_global_series_per_user", user="$user"})
+              or
+              max(cortex_limits_defaults{%(overrides_exporter)s, limit_name="max_global_series_per_user"})
+            ||| % {
+              overrides_exporter: $.jobMatcher($._config.job_names.overrides_exporter),
+            },
             |||
               sum(
                 cortex_ingester_active_series{%(ingester)s, user="$user"}
@@ -49,14 +70,25 @@ local utils = import 'mixin-utils/utils.libsonnet';
             },
           ],
           [
+            'in-memory',
+            'limit',
             'active',
             'active ({{ name }})',
           ],
         ) +
+        {
+          seriesOverrides: [
+            {
+              alias: 'limit',
+              fill: 0,
+              dashes: true,
+            },
+          ],
+        } +
         $.panelDescription(
           title,
           |||
-            Number of active series per user, and active series matching custom trackers (in parenthesis).
+            Number of active and in-memory series per user, and active series matching custom trackers (in parenthesis).
             Note that active series matching custom trackers are included in the total active series count.
           |||
         ),
