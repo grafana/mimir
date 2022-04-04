@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package remote
+package ruler
 
 import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"net/http"
 	"net/textproto"
@@ -17,17 +18,33 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
+	"github.com/grafana/dskit/crypto/tls"
+	grpc_middleware "github.com/grpc-ecosystem/go-grpc-middleware"
+	otgrpc "github.com/opentracing-contrib/go-grpc"
+	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
+	prommodel "github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
+	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/rules"
 	"github.com/weaveworks/common/httpgrpc"
+	"github.com/weaveworks/common/middleware"
+	"github.com/weaveworks/common/user"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/keepalive"
 
-	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/version"
 )
 
 const (
+	keepAlive        = time.Second * 10
+	keepAliveTimeout = time.Second * 5
+
+	serviceConfig = `{"loadBalancingPolicy": "round_robin"}`
+
 	readEndpointPath  = "/api/v1/read"
 	queryEndpointPath = "/api/v1/query"
 
@@ -38,12 +55,69 @@ const (
 
 var userAgent = fmt.Sprintf("mimir/%s", version.Version)
 
+// QuerierConfig defines remote querier transport configuration.
+type QuerierConfig struct {
+	// The address of the remote querier to connect to.
+	Address string `yaml:"address"`
+
+	// TLSEnabled tells whether TLS should be used to establish remote connection.
+	TLSEnabled bool `yaml:"tls_enabled" category:"advanced"`
+
+	// TLS is the config for client TLS.
+	TLS tls.ClientConfig `yaml:",inline"`
+}
+
+func (c *QuerierConfig) RegisterFlags(f *flag.FlagSet) {
+	f.StringVar(&c.Address,
+		"ruler.query-frontend.address",
+		"",
+		"GRPC listen address of the query-frontend(s). Must be a DNS address (prefixed with dns:///) "+
+			"to enable client side load balancing.")
+
+	f.BoolVar(&c.TLSEnabled, "ruler.query-frontend.tls-enabled", false, "Set to true if query-frontend connection requires TLS.")
+
+	c.TLS.RegisterFlagsWithPrefix("ruler.query-frontend", f)
+}
+
+// DialQuerier creates and initializes a new ruler Querier instance.
+func DialQuerier(cfg QuerierConfig) (httpgrpc.HTTPClient, error) {
+	tlsDialOptions, err := cfg.TLS.GetGRPCDialOptions(cfg.TLSEnabled)
+	if err != nil {
+		return nil, err
+	}
+	dialOptions := append(
+		[]grpc.DialOption{
+			grpc.WithKeepaliveParams(
+				keepalive.ClientParameters{
+					Time:                keepAlive,
+					Timeout:             keepAliveTimeout,
+					PermitWithoutStream: true,
+				},
+			),
+			grpc.WithUnaryInterceptor(
+				grpc_middleware.ChainUnaryClient(
+					otgrpc.OpenTracingClientInterceptor(opentracing.GlobalTracer()),
+					middleware.ClientUserHeaderInterceptor,
+				),
+			),
+			grpc.WithDefaultServiceConfig(serviceConfig),
+		},
+		tlsDialOptions...,
+	)
+
+	conn, err := grpc.Dial(cfg.Address, dialOptions...)
+	if err != nil {
+		return nil, err
+	}
+	return httpgrpc.NewHTTPClient(conn), nil
+}
+
 // Middleware provides a mechanism to inspect outgoing Querier requests.
 type Middleware func(ctx context.Context, req *httpgrpc.HTTPRequest) error
 
-// Querier executes read operations against a httpgrpcutil.RoundTripper.
+// Querier executes read operations against a httpgrpc.HTTPClient.
 type Querier struct {
-	transport      httpgrpcutil.RoundTripper
+	client         httpgrpc.HTTPClient
 	middlewares    []Middleware
 	promHTTPPrefix string
 	logger         log.Logger
@@ -51,13 +125,13 @@ type Querier struct {
 
 // New creates and initializes a new Querier instance.
 func New(
-	transport httpgrpcutil.RoundTripper,
+	client httpgrpc.HTTPClient,
 	prometheusHTTPPrefix string,
 	logger log.Logger,
 	middlewares ...Middleware,
 ) *Querier {
 	return &Querier{
-		transport:      transport,
+		client:         client,
 		middlewares:    middlewares,
 		promHTTPPrefix: prometheusHTTPPrefix,
 		logger:         logger,
@@ -66,8 +140,8 @@ func New(
 
 // Read satisfies Prometheus remote.ReadClient.
 // See: https://github.com/prometheus/prometheus/blob/1291ec71851a7383de30b089f456fdb6202d037a/storage/remote/client.go#L264
-func (r *Querier) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryResult, error) {
-	log, ctx := spanlogger.NewWithLogger(ctx, r.logger, "remotequerier.Querier.Read")
+func (q *Querier) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryResult, error) {
+	log, ctx := spanlogger.NewWithLogger(ctx, q.logger, "remotequerier.Querier.Read")
 	defer log.Span.Finish()
 
 	rdReq := &prompb.ReadRequest{
@@ -82,7 +156,7 @@ func (r *Querier) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryR
 
 	req := httpgrpc.HTTPRequest{
 		Method: http.MethodPost,
-		Url:    r.promHTTPPrefix + readEndpointPath,
+		Url:    q.promHTTPPrefix + readEndpointPath,
 		Body:   snappy.Encode(nil, data),
 		Headers: []*httpgrpc.Header{
 			{Key: textproto.CanonicalMIMEHeaderKey("Content-Encoding"), Values: []string{"snappy"}},
@@ -93,13 +167,13 @@ func (r *Querier) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryR
 		},
 	}
 
-	for _, mdw := range r.middlewares {
+	for _, mdw := range q.middlewares {
 		if err := mdw(ctx, &req); err != nil {
 			return nil, err
 		}
 	}
 
-	resp, err := r.transport.RoundTrip(ctx, &req)
+	resp, err := q.client.Handle(ctx, &req)
 	if err != nil {
 		level.Warn(log).Log("msg", "failed to perform remote read", "err", err, "qs", query)
 		return nil, err
@@ -128,8 +202,8 @@ func (r *Querier) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryR
 }
 
 // Query performs a query for the given time.
-func (r *Querier) Query(ctx context.Context, query string, ts time.Time) (model.ValueType, json.RawMessage, error) {
-	log, ctx := spanlogger.NewWithLogger(ctx, r.logger, "remotequerier.Querier.Query")
+func (q *Querier) Query(ctx context.Context, query string, ts time.Time) (model.ValueType, json.RawMessage, error) {
+	log, ctx := spanlogger.NewWithLogger(ctx, q.logger, "remotequerier.Querier.Query")
 	defer log.Span.Finish()
 
 	args := make(url.Values)
@@ -141,7 +215,7 @@ func (r *Querier) Query(ctx context.Context, query string, ts time.Time) (model.
 
 	req := httpgrpc.HTTPRequest{
 		Method: http.MethodPost,
-		Url:    r.promHTTPPrefix + queryEndpointPath,
+		Url:    q.promHTTPPrefix + queryEndpointPath,
 		Body:   body,
 		Headers: []*httpgrpc.Header{
 			{Key: textproto.CanonicalMIMEHeaderKey("User-Agent"), Values: []string{userAgent}},
@@ -150,13 +224,13 @@ func (r *Querier) Query(ctx context.Context, query string, ts time.Time) (model.
 		},
 	}
 
-	for _, mdw := range r.middlewares {
+	for _, mdw := range q.middlewares {
 		if err := mdw(ctx, &req); err != nil {
 			return model.ValNone, nil, err
 		}
 	}
 
-	resp, err := r.transport.RoundTrip(ctx, &req)
+	resp, err := q.client.Handle(ctx, &req)
 	if err != nil {
 		level.Warn(log).Log("msg", "failed to remotely evaluate query expression", "err", err, "qs", query, "tm", ts)
 		return model.ValNone, nil, err
@@ -190,6 +264,80 @@ func (r *Querier) Query(ctx context.Context, query string, ts time.Time) (model.
 	return v.Type, v.Result, nil
 }
 
+// QueryFunc returns a rules.QueryFunc derived from a Querier instance.
+func (q *Querier) QueryFunc() rules.QueryFunc {
+	return func(ctx context.Context, qs string, t time.Time) (promql.Vector, error) {
+		valTyp, res, err := q.Query(ctx, qs, t)
+		if err != nil {
+			return nil, err
+		}
+		return decodeQueryResponse(valTyp, res)
+	}
+}
+
+func decodeQueryResponse(valTyp model.ValueType, result json.RawMessage) (promql.Vector, error) {
+	switch valTyp {
+	case model.ValScalar:
+		var sv model.Scalar
+		if err := json.Unmarshal(result, &sv); err != nil {
+			return nil, err
+		}
+		return scalarToPromQLVector(&sv), nil
+
+	case model.ValVector:
+		var vv model.Vector
+		if err := json.Unmarshal(result, &vv); err != nil {
+			return nil, err
+		}
+		return vectorToPromQLVector(vv), nil
+
+	default:
+		return nil, fmt.Errorf("rule result is not a vector or scalar: %q", valTyp)
+	}
+}
+
+func vectorToPromQLVector(vec prommodel.Vector) promql.Vector {
+	var retVal promql.Vector
+	for _, p := range vec {
+		var sm promql.Sample
+
+		sm.V = float64(p.Value)
+		sm.T = int64(p.Timestamp)
+
+		var lbl labels.Labels
+		for ln, lv := range p.Metric {
+			lbl = append(lbl, labels.Label{Name: string(ln), Value: string(lv)})
+		}
+		sm.Metric = lbl
+
+		retVal = append(retVal, sm)
+	}
+	return retVal
+}
+
+func scalarToPromQLVector(sc *prommodel.Scalar) promql.Vector {
+	return promql.Vector{promql.Sample{
+		Point: promql.Point{
+			V: float64(sc.Value),
+			T: int64(sc.Timestamp),
+		},
+		Metric: labels.Labels{},
+	}}
+}
+
 func formatQueryTime(t time.Time) string {
 	return strconv.FormatFloat(float64(t.Unix())+float64(t.Nanosecond())/1e9, 'f', -1, 64)
+}
+
+// WithOrgIDHeader attaches orgID header by inspecting the passed context.
+func WithOrgIDHeader(ctx context.Context, req *httpgrpc.HTTPRequest) error {
+	orgID, err := ExtractTenantIDs(ctx)
+	if err != nil {
+		return err
+	}
+	req.Headers = append(req.Headers, &httpgrpc.Header{
+		Key:    textproto.CanonicalMIMEHeaderKey(user.OrgIDHeaderName),
+		Values: []string{orgID},
+	})
+	return nil
 }

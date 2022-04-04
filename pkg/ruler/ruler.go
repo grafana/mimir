@@ -37,7 +37,6 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
-	rulerremote "github.com/grafana/mimir/pkg/ruler/remote"
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
 	"github.com/grafana/mimir/pkg/ruler/rulestore"
 	"github.com/grafana/mimir/pkg/util"
@@ -116,7 +115,7 @@ type Config struct {
 
 	EnableQueryStats bool `yaml:"query_stats_enabled" category:"advanced"`
 
-	Querier rulerremote.Config `yaml:"querier"`
+	Querier QuerierConfig `yaml:"query-frontend"`
 
 	TenantFederation TenantFederationConfig `yaml:"tenant_federation"`
 }

@@ -48,7 +48,6 @@ import (
 	"github.com/grafana/mimir/pkg/querier/tenantfederation"
 	querier_worker "github.com/grafana/mimir/pkg/querier/worker"
 	"github.com/grafana/mimir/pkg/ruler"
-	"github.com/grafana/mimir/pkg/ruler/remote"
 	"github.com/grafana/mimir/pkg/scheduler"
 	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/util"
@@ -550,11 +549,11 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 	var queryFunc rules.QueryFunc
 
 	if len(t.Cfg.Ruler.Querier.Address) > 0 {
-		querierTransport, err := remote.NewTransport(t.Cfg.Ruler.Querier)
+		querierClient, err := ruler.DialQuerier(t.Cfg.Ruler.Querier)
 		if err != nil {
 			return nil, err
 		}
-		remoteQuerier := remote.New(querierTransport, t.Cfg.API.PrometheusHTTPPrefix, util_log.Logger, ruler.WithOrgIDHeader)
+		remoteQuerier := ruler.New(querierClient, t.Cfg.API.PrometheusHTTPPrefix, util_log.Logger, ruler.WithOrgIDHeader)
 
 		embeddedQueryable = prom_remote.NewSampleAndChunkQueryableClient(
 			remoteQuerier,
@@ -563,7 +562,7 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 			true,
 			func() (int64, error) { return 0, nil },
 		)
-		queryFunc = remote.QueryFunc(remoteQuerier)
+		queryFunc = remoteQuerier.QueryFunc()
 
 	} else {
 		var queryable, federatedQueryable prom_storage.Queryable
