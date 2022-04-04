@@ -433,15 +433,10 @@ func TestFlagDefaults(t *testing.T) {
 	require.Equal(t, 10*time.Second, c.Server.GRPCServerMinTimeBetweenPings)
 }
 
-// TODO Remove in Mimir 2.2.
-//      Previously ActiveSeriesCustomTrackers was an ingester config, now it's in LimitsConfig.
-//      We provide backwards compatibility for it by parsing the old YAML location and copying it to LimitsConfig here,
-//      unless it's also defined in the limits, which is invalid.
-//		This needs to be set before setting default limits for unmarshalling.
-// 		For more context see https://github.com/grafana/mimir/pull/1188#discussion_r830129443
+// TODO Remove in Mimir 2.3.
 func (t *Mimir) initTest() (services.Service, error) {
 
-	return services.NewTimerService(time.Second,
+	return services.NewBasicService(
 		nil,
 		func(_ context.Context) error {
 			// Sleep to avoid issue https://github.com/grafana/dskit/issues/151 .
@@ -454,7 +449,7 @@ func (t *Mimir) initTest() (services.Service, error) {
 		nil), nil
 }
 
-// TODO Remove in Mimir 2.2.
+// TODO Remove in Mimir 2.3.
 //      Previously ActiveSeriesCustomTrackers was an ingester config, now it's in LimitsConfig.
 //      We provide backwards compatibility for it by parsing the old YAML location and copying it to LimitsConfig here,
 //      unless it's also defined in the limits, which is invalid.

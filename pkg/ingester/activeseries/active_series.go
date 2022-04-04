@@ -245,8 +245,8 @@ func (s *seriesStripe) purge(keepUntil time.Time) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	active := 0
-	activeMatching := resizeAndClear(len(s.activeMatching), s.activeMatching)
+	s.active = 0
+	s.activeMatching = resizeAndClear(len(s.activeMatching), s.activeMatching)
 
 	oldest := int64(math.MaxInt64)
 	for fp, entries := range s.refs {
@@ -259,10 +259,10 @@ func (s *seriesStripe) purge(keepUntil time.Time) {
 				continue
 			}
 
-			active++
+			s.active++
 			for i, ok := range entries[0].matches {
 				if ok {
-					activeMatching[i]++
+					s.activeMatching[i]++
 				}
 			}
 			if ts < oldest {
@@ -290,11 +290,11 @@ func (s *seriesStripe) purge(keepUntil time.Time) {
 		if cnt := len(entries); cnt == 0 {
 			delete(s.refs, fp)
 		} else {
-			active += cnt
+			s.active += cnt
 			for i := range entries {
 				for i, ok := range entries[i].matches {
 					if ok {
-						activeMatching[i]++
+						s.activeMatching[i]++
 					}
 				}
 			}
@@ -308,8 +308,6 @@ func (s *seriesStripe) purge(keepUntil time.Time) {
 	} else {
 		s.oldestEntryTs.Store(oldest)
 	}
-	s.active = active
-	s.activeMatching = activeMatching
 }
 
 func resizeAndClear(l int, prev []int) []int {

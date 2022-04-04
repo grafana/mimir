@@ -215,7 +215,7 @@ func TestMultiKVSetup(t *testing.T) {
 	}
 }
 
-// TODO Remove in Mimir 2.2.
+// TODO Remove in Mimir 2.3.
 //      Previously ActiveSeriesCustomTrackers was an ingester config, now it's in LimitsConfig.
 //      We provide backwards compatibility for it by parsing the old YAML location and copying it to LimitsConfig here,
 //      unless it's also defined in the limits, which is invalid.
