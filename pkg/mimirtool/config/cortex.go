@@ -42,6 +42,8 @@ func CortexToMimirMapper() Mapper {
 		MapperFunc(mapCortexRingInstanceIDDefaults),
 		// Set frontend.results_cache.backend when results cache was enabled in cortex
 		MapperFunc(mapQueryFrontendBackend),
+		// Prevent blocks_storage.backend from being updated with a new default and always set it
+		setOldDefaultExplicitly("blocks_storage.backend"),
 	}
 }
 
@@ -544,7 +546,7 @@ func mapQueryFrontendBackend(source, target Parameters) error {
 	return nil
 }
 
-func mapCortexRingInstanceIDDefaults(source, target Parameters) error {
+func mapCortexRingInstanceIDDefaults(_, target Parameters) error {
 	return multierror.New(
 		target.SetDefaultValue("alertmanager.sharding_ring.instance_id", Nil),
 		target.SetDefaultValue("compactor.sharding_ring.instance_id", Nil),

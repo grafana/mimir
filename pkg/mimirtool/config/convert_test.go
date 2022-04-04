@@ -511,7 +511,6 @@ var changedCortexDefaults = []ChangedDefault{
 	{Path: "alertmanager.sharding_ring.kvstore.store", OldDefault: "consul", NewDefault: "memberlist"},
 	{Path: "alertmanager_storage.backend", OldDefault: "s3", NewDefault: "filesystem"},
 	{Path: "alertmanager_storage.filesystem.dir", OldDefault: "", NewDefault: "alertmanager"},
-	{Path: "blocks_storage.backend", OldDefault: "s3", NewDefault: "filesystem"},
 	{Path: "blocks_storage.bucket_store.bucket_index.enabled", OldDefault: "false", NewDefault: "true"},
 	{Path: "blocks_storage.bucket_store.chunks_cache.memcached.max_async_buffer_size", OldDefault: "10000", NewDefault: "25000"},
 	{Path: "blocks_storage.bucket_store.chunks_cache.memcached.max_get_multi_batch_size", OldDefault: "0", NewDefault: "100"},

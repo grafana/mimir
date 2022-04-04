@@ -1,2 +1,3 @@
 -server.http-listen-port=80
 -auth.type=trust
+-blocks-storage.backend=s3

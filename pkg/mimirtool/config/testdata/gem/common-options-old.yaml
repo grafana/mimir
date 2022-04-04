@@ -3,3 +3,6 @@ server:
 
 auth:
   type: trust
+
+blocks_storage:
+  backend: s3

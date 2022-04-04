@@ -81,6 +81,8 @@ func GEM170ToGEM200Mapper() Mapper {
 		// Manually override the dynamic fields' default values.
 		MapperFunc(mapCortexRingInstanceIDDefaults),
 		MapperFunc(mapAdminAPIRingInstanceIDDefaults),
+		// Prevent blocks_storage.backend from being updated with a new default and always set it
+		setOldDefaultExplicitly("blocks_storage.backend"),
 	}
 }
 
@@ -98,7 +100,7 @@ func mapGEMInstanceInterfaceNames() Mapper {
 	return mapInstanceInterfaceNames(ifaceNames)
 }
 
-func mapAdminAPIRingInstanceIDDefaults(source, target Parameters) error {
+func mapAdminAPIRingInstanceIDDefaults(_, target Parameters) error {
 	return target.SetDefaultValue("admin_api.leader_election.ring.instance_id", Nil)
 }
 

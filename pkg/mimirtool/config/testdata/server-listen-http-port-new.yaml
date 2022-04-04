@@ -1,2 +1,5 @@
 server:
   http_listen_port: 80
+
+blocks_storage:
+  backend: s3
