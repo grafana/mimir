@@ -19,7 +19,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     )
 
     .addRow(
-      $.row('Series & exemplars')
+      $.row('Series and exemplars')
       .addPanel(
         local title = 'Series';
         $.panel(title) +
@@ -70,7 +70,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
             },
           ],
           [
-            'memory',
+            'in-memory',
             'limit',
             'active',
             'active ({{ name }})',

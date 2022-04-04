@@ -92,7 +92,7 @@
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
-                        "legendFormat": "memory",
+                        "legendFormat": "in-memory",
                         "legendLink": null,
                         "step": 10
                      },
@@ -381,7 +381,7 @@
             "repeatIteration": null,
             "repeatRowId": null,
             "showTitle": true,
-            "title": "Series & exemplars",
+            "title": "Series and exemplars",
             "titleSize": "h6"
          },
          {
