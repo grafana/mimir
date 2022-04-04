@@ -239,7 +239,21 @@ local fixTargetsForTransformations(panel, refIds) = panel {
           'Longest time since last successful run',
           |||
             Displays the amount of time since the most recent successful execution
-            of the compactor replica with the longest delay (per compaction interval).
+            of the compactor.
+            The value shown will be for the compactor replica which has the longest time since its
+            last successful run, relative to its compaction interval.
+            The table to the right shows a summary for all compactor replicas.
+
+            If there is no time value, one of the following messages may appear:
+
+            - If you see "No compactor data" in this panel, that means that no compactors are active yet.
+            
+            - If you see "No successful runs" in this panel, that means that compactors are active, but none 
+              of them were successfully executed yet.
+            
+            These may be expected - for example, if you just recently restarted your compactors, they may not 
+            yet be broadcasting metrics, or they may not have had a chance to complete their first compaction run. 
+            However, if these messages persist, you should check the health of your compactors.
           |||
         ) +
         $.lastRunStatPanel()
@@ -249,9 +263,17 @@ local fixTargetsForTransformations(panel, refIds) = panel {
         $.panelDescription(
           'Last successful run per-compactor replica',
           |||
-            Displays the compactor replicas, and for each, indicate the status of their
-            most recent compaction in terms of how long it has been since that compactor
-            was successfully executed, along with its compaction interval.
+            Displays the compactor replicas, and for each, shows how long it has been since
+            its last successful compaction run.
+
+            The value in status column is based on how long it has been since the last compaction, 
+            relative to the compaction interval (which is by default, one hour long).
+
+            - Delayed: more than 3 times the interval
+            - Late: more than 6 times the interval
+            - Very late: more than 9 times the interval
+
+            If the status of any compactor replicas are late, you should check their health.
           |||
         ) +
         $.lastRunTablePanel()
