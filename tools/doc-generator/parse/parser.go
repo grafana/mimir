@@ -122,7 +122,11 @@ func Flags(cfg flagext.RegistererWithLogger, logger log.Logger) map[uintptr]*fla
 
 // Config returns a slice of ConfigBlocks. The first ConfigBlock is a recursively expanded cfg.
 // The remaining entries in the slice are all (root or not) ConfigBlocks.
-func Config(block *ConfigBlock, cfg interface{}, flags map[uintptr]*flag.Flag) ([]*ConfigBlock, error) {
+func Config(cfg interface{}, flags map[uintptr]*flag.Flag, rootBlocks []RootBlock) ([]*ConfigBlock, error) {
+	return config(nil, cfg, flags, rootBlocks)
+}
+
+func config(block *ConfigBlock, cfg interface{}, flags map[uintptr]*flag.Flag, rootBlocks []RootBlock) ([]*ConfigBlock, error) {
 	blocks := []*ConfigBlock{}
 
 	// If the input block is nil it means we're generating the doc for the top-level block
@@ -186,7 +190,7 @@ func Config(block *ConfigBlock, cfg interface{}, flags map[uintptr]*flag.Flag) (
 		// Recursively re-iterate if it's a struct
 		if field.Type.Kind() == reflect.Struct || field.Type.Kind() == reflect.Ptr {
 			// Check whether the sub-block is a root config block
-			rootName, rootDesc, isRoot := isRootBlock(field.Type)
+			rootName, rootDesc, isRoot := isRootBlock(field.Type, rootBlocks)
 
 			// Since we're going to recursively iterate, we need to create a new sub
 			// block and pass it to the doc generation function.
@@ -233,7 +237,7 @@ func Config(block *ConfigBlock, cfg interface{}, flags map[uintptr]*flag.Flag) (
 			}
 
 			// Recursively generate the doc for the sub-block
-			otherBlocks, err := Config(subBlock, fieldValue.Interface(), flags)
+			otherBlocks, err := config(subBlock, fieldValue.Interface(), flags, rootBlocks)
 			if err != nil {
 				return nil, err
 			}
@@ -258,7 +262,7 @@ func Config(block *ConfigBlock, cfg interface{}, flags map[uintptr]*flag.Flag) (
 				}
 				kind = KindSlice
 
-				_, err = Config(element, reflect.New(field.Type.Elem()).Interface(), flags)
+				_, err = config(element, reflect.New(field.Type.Elem()).Interface(), flags, rootBlocks)
 				if err != nil {
 					return nil, errors.Wrapf(err, "couldn't inspect slice, element_type=%s", field.Type.Elem())
 				}
@@ -598,8 +602,8 @@ func getFieldDescription(f reflect.StructField, fallback string) string {
 	return fallback
 }
 
-func isRootBlock(t reflect.Type) (string, string, bool) {
-	for _, rootBlock := range RootBlocks {
+func isRootBlock(t reflect.Type, rootBlocks []RootBlock) (string, string, bool) {
+	for _, rootBlock := range rootBlocks {
 		if t == rootBlock.StructType {
 			return rootBlock.Name, rootBlock.Desc, true
 		}

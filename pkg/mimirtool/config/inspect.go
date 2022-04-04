@@ -481,7 +481,7 @@ func InspectConfig(cfg flagext.RegistererWithLogger) (*InspectedEntry, error) {
 // InspectConfigWithFlags does the same as InspectConfig while allowing to provide custom CLI flags. This is
 // useful when the configuration struct does not implement flagext.RegistererWithLogger.
 func InspectConfigWithFlags(cfg interface{}, flags map[uintptr]*flag.Flag) (*InspectedEntry, error) {
-	blocks, err := parse.Config(nil, cfg, flags)
+	blocks, err := parse.Config(cfg, flags, parse.RootBlocks)
 	if err != nil {
 		return nil, errors.Wrap(err, "couldn't generate parsed config")
 	}
