@@ -123,9 +123,9 @@ local fixTargetsForTransformations(panel, refIds) = panel {
         transformations:
           [transformation('merge')] +
           lastRunCommonTransformations +
-          [  
+          [
             // Not a visible field, but used as a max to determine what the "Red" value is in GrYlRd
-            // This corresponds to the "Very late" mapping range in `lastRunTablePanel` 
+            // This corresponds to the "Very late" mapping range in `lastRunTablePanel`
             transformationCalculateField('Maximum of threshold', 'Interval', '*', '9'),
           ],
         fieldConfig: super.fieldConfig + {
@@ -138,7 +138,7 @@ local fixTargetsForTransformations(panel, refIds) = panel {
               overrideProperty('mappings', [
                 mappingRange('-Infinity', 0, { color: 'text', text: 'No successful runs' }),
               ]),
-              overrideProperty('color', { mode: 'continuous-GrYlRd' }), // Green is zero, red is `Maximum of threshold`
+              overrideProperty('color', { mode: 'continuous-GrYlRd' }),  // Green is zero, red is `Maximum of threshold`
             ]),
           ],
         },
@@ -247,10 +247,10 @@ local fixTargetsForTransformations(panel, refIds) = panel {
             If there is no time value, one of the following messages may appear:
 
             - If you see "No compactor data" in this panel, that means that no compactors are active yet.
-            
+
             - If you see "No successful runs" in this panel, that means that compactors are active, but none 
               of them were successfully executed yet.
-            
+
             These may be expected - for example, if you just recently restarted your compactors, they may not 
             yet be broadcasting metrics, or they may not have had a chance to complete their first compaction run. 
             However, if these messages persist, you should check the health of your compactors.
