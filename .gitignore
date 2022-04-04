@@ -27,5 +27,8 @@ metrics-activity.log
 Makefile.local
 
 .idea
+.vscode
 compose
 compose-simple
+.DS_Store
+coverage.txt
