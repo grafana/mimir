@@ -16,7 +16,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           targets: [
             {
               // Filter out the remote read endpoint.
-              expr: '{%s=~"$cluster",namespace=~"$namespace",name=~"query-frontend.*"} |= "query stats" != "/api/v1/read" | logfmt | org_id=~"${tenant_id}" | response_time > ${min_duration}' % $._config.per_cluster_label,
+              expr: '{%s=~"$cluster",namespace=~"$namespace",name=~"query-frontend.*"} |= "query stats" != "/api/v1/read" | logfmt | user=~"${tenant_id}" | response_time > ${min_duration}' % $._config.per_cluster_label,
               instant: false,
               legendFormat: '',
               range: true,
@@ -59,7 +59,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
                 },
 
                 // Order fields.
-                local orderedFields = ['ts', 'org_id', 'param_query', 'Time range', 'param_step', 'response_time'],
+                local orderedFields = ['ts', 'user', 'param_query', 'Time range', 'param_step', 'response_time'],
 
                 indexByName: {
                   [orderedFields[i]]: i
