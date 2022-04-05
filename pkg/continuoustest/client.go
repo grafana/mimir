@@ -120,7 +120,7 @@ func (c *Client) QueryRange(ctx context.Context, query string, start, end time.T
 
 	matrix, ok := value.(model.Matrix)
 	if !ok {
-		return nil, errors.New("failed to cast type to Matrix")
+		return nil, fmt.Errorf("failed to cast type to Matrix, type was %T", value)
 	}
 
 	return matrix, nil
@@ -142,7 +142,7 @@ func (c *Client) Query(ctx context.Context, query string, ts time.Time) (model.V
 
 	vector, ok := value.(model.Vector)
 	if !ok {
-		return nil, errors.New("failed to cast type to Vector")
+		return nil, fmt.Errorf("failed to cast type to Vector, type was %T", value)
 	}
 
 	return vector, nil
