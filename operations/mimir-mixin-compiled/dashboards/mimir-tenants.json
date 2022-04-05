@@ -1439,7 +1439,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by (rule_group) (rate(cortex_prometheus_rule_group_rules{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\", user=\"$user\"}[$__rate_interval]))",
+                        "expr": "sum by (rule_group) (rate(cortex_prometheus_rule_evaluation_failures_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\", user=\"$user\"}[$__rate_interval])) > 0",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
