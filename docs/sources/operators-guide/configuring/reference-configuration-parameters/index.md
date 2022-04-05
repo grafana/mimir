@@ -212,7 +212,7 @@ runtime_config:
 # The memberlist block configures the Gossip memberlist.
 [memberlist: <memberlist>]
 
-# The query_scheduler configures query-scheduler component.
+# The query_scheduler block configures the query-scheduler.
 [query_scheduler: <query_scheduler>]
 ```
 
