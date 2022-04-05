@@ -1,11 +1,11 @@
-server:
-  http_listen_port: 80
+ruler_storage:
+  backend: s3
 
 blocks_storage:
   backend: s3
 
-ruler_storage:
-  backend: s3
-
 alertmanager_storage:
   backend: s3
+
+server:
+  http_listen_port: 80

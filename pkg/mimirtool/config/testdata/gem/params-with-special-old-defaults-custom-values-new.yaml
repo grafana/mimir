@@ -1,0 +1,14 @@
+server:
+  http_listen_port: 1234
+
+auth:
+  type: something-else
+
+blocks_storage:
+  backend: s1
+
+ruler_storage:
+  backend: s2
+
+alertmanager_storage:
+  backend: s4
