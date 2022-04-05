@@ -23,6 +23,7 @@ import (
 	querier_worker "github.com/grafana/mimir/pkg/querier/worker"
 	"github.com/grafana/mimir/pkg/ruler"
 	"github.com/grafana/mimir/pkg/ruler/rulestore"
+	"github.com/grafana/mimir/pkg/scheduler"
 	"github.com/grafana/mimir/pkg/storage/bucket/s3"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storegateway"
@@ -57,6 +58,11 @@ var (
 			Name:       "frontend",
 			StructType: reflect.TypeOf(frontend.CombinedFrontendConfig{}),
 			Desc:       "The frontend block configures the query-frontend.",
+		},
+		{
+			Name:       "query_scheduler",
+			StructType: reflect.TypeOf(scheduler.Config{}),
+			Desc:       "The query_scheduler block configures the query-scheduler.",
 		},
 		{
 			Name:       "ruler",

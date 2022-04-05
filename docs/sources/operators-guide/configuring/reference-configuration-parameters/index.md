@@ -212,90 +212,8 @@ runtime_config:
 # The memberlist block configures the Gossip memberlist.
 [memberlist: <memberlist>]
 
-query_scheduler:
-  # Maximum number of outstanding requests per tenant per query-scheduler.
-  # In-flight requests above this limit will fail with HTTP response status code
-  # 429.
-  # CLI flag: -query-scheduler.max-outstanding-requests-per-tenant
-  [max_outstanding_requests_per_tenant: <int> | default = 100]
-
-  # (experimental) If a querier disconnects without sending notification about
-  # graceful shutdown, the query-scheduler will keep the querier in the tenant's
-  # shard until the forget delay has passed. This feature is useful to reduce
-  # the blast radius when shuffle-sharding is enabled.
-  # CLI flag: -query-scheduler.querier-forget-delay
-  [querier_forget_delay: <duration> | default = 0s]
-
-  # This configures the gRPC client used to report errors back to the
-  # query-frontend.
-  grpc_client_config:
-    # (advanced) gRPC client max receive message size (bytes).
-    # CLI flag: -query-scheduler.grpc-client-config.grpc-max-recv-msg-size
-    [max_recv_msg_size: <int> | default = 104857600]
-
-    # (advanced) gRPC client max send message size (bytes).
-    # CLI flag: -query-scheduler.grpc-client-config.grpc-max-send-msg-size
-    [max_send_msg_size: <int> | default = 104857600]
-
-    # (advanced) Use compression when sending messages. Supported values are:
-    # 'gzip', 'snappy' and '' (disable compression)
-    # CLI flag: -query-scheduler.grpc-client-config.grpc-compression
-    [grpc_compression: <string> | default = ""]
-
-    # (advanced) Rate limit for gRPC client; 0 means disabled.
-    # CLI flag: -query-scheduler.grpc-client-config.grpc-client-rate-limit
-    [rate_limit: <float> | default = 0]
-
-    # (advanced) Rate limit burst for gRPC client.
-    # CLI flag: -query-scheduler.grpc-client-config.grpc-client-rate-limit-burst
-    [rate_limit_burst: <int> | default = 0]
-
-    # (advanced) Enable backoff and retry when we hit ratelimits.
-    # CLI flag: -query-scheduler.grpc-client-config.backoff-on-ratelimits
-    [backoff_on_ratelimits: <boolean> | default = false]
-
-    backoff_config:
-      # (advanced) Minimum delay when backing off.
-      # CLI flag: -query-scheduler.grpc-client-config.backoff-min-period
-      [min_period: <duration> | default = 100ms]
-
-      # (advanced) Maximum delay when backing off.
-      # CLI flag: -query-scheduler.grpc-client-config.backoff-max-period
-      [max_period: <duration> | default = 10s]
-
-      # (advanced) Number of times to backoff and retry before failing.
-      # CLI flag: -query-scheduler.grpc-client-config.backoff-retries
-      [max_retries: <int> | default = 10]
-
-    # (advanced) Enable TLS in the GRPC client. This flag needs to be enabled
-    # when any other TLS flag is set. If set to false, insecure connection to
-    # gRPC server will be used.
-    # CLI flag: -query-scheduler.grpc-client-config.tls-enabled
-    [tls_enabled: <boolean> | default = false]
-
-    # (advanced) Path to the client certificate file, which will be used for
-    # authenticating with the server. Also requires the key path to be
-    # configured.
-    # CLI flag: -query-scheduler.grpc-client-config.tls-cert-path
-    [tls_cert_path: <string> | default = ""]
-
-    # (advanced) Path to the key file for the client certificate. Also requires
-    # the client certificate to be configured.
-    # CLI flag: -query-scheduler.grpc-client-config.tls-key-path
-    [tls_key_path: <string> | default = ""]
-
-    # (advanced) Path to the CA certificates file to validate server certificate
-    # against. If not set, the host's root CA certificates are used.
-    # CLI flag: -query-scheduler.grpc-client-config.tls-ca-path
-    [tls_ca_path: <string> | default = ""]
-
-    # (advanced) Override the expected name on the server certificate.
-    # CLI flag: -query-scheduler.grpc-client-config.tls-server-name
-    [tls_server_name: <string> | default = ""]
-
-    # (advanced) Skip validating server certificate.
-    # CLI flag: -query-scheduler.grpc-client-config.tls-insecure-skip-verify
-    [tls_insecure_skip_verify: <boolean> | default = false]
+# The query_scheduler block configures the query-scheduler.
+[query_scheduler: <query_scheduler>]
 ```
 
 ### server
@@ -1135,6 +1053,95 @@ results_cache:
 # (advanced) URL of downstream Prometheus.
 # CLI flag: -query-frontend.downstream-url
 [downstream_url: <string> | default = ""]
+```
+
+### query_scheduler
+
+The `query_scheduler` block configures the query-scheduler.
+
+```yaml
+# Maximum number of outstanding requests per tenant per query-scheduler.
+# In-flight requests above this limit will fail with HTTP response status code
+# 429.
+# CLI flag: -query-scheduler.max-outstanding-requests-per-tenant
+[max_outstanding_requests_per_tenant: <int> | default = 100]
+
+# (experimental) If a querier disconnects without sending notification about
+# graceful shutdown, the query-scheduler will keep the querier in the tenant's
+# shard until the forget delay has passed. This feature is useful to reduce the
+# blast radius when shuffle-sharding is enabled.
+# CLI flag: -query-scheduler.querier-forget-delay
+[querier_forget_delay: <duration> | default = 0s]
+
+# This configures the gRPC client used to report errors back to the
+# query-frontend.
+grpc_client_config:
+  # (advanced) gRPC client max receive message size (bytes).
+  # CLI flag: -query-scheduler.grpc-client-config.grpc-max-recv-msg-size
+  [max_recv_msg_size: <int> | default = 104857600]
+
+  # (advanced) gRPC client max send message size (bytes).
+  # CLI flag: -query-scheduler.grpc-client-config.grpc-max-send-msg-size
+  [max_send_msg_size: <int> | default = 104857600]
+
+  # (advanced) Use compression when sending messages. Supported values are:
+  # 'gzip', 'snappy' and '' (disable compression)
+  # CLI flag: -query-scheduler.grpc-client-config.grpc-compression
+  [grpc_compression: <string> | default = ""]
+
+  # (advanced) Rate limit for gRPC client; 0 means disabled.
+  # CLI flag: -query-scheduler.grpc-client-config.grpc-client-rate-limit
+  [rate_limit: <float> | default = 0]
+
+  # (advanced) Rate limit burst for gRPC client.
+  # CLI flag: -query-scheduler.grpc-client-config.grpc-client-rate-limit-burst
+  [rate_limit_burst: <int> | default = 0]
+
+  # (advanced) Enable backoff and retry when we hit ratelimits.
+  # CLI flag: -query-scheduler.grpc-client-config.backoff-on-ratelimits
+  [backoff_on_ratelimits: <boolean> | default = false]
+
+  backoff_config:
+    # (advanced) Minimum delay when backing off.
+    # CLI flag: -query-scheduler.grpc-client-config.backoff-min-period
+    [min_period: <duration> | default = 100ms]
+
+    # (advanced) Maximum delay when backing off.
+    # CLI flag: -query-scheduler.grpc-client-config.backoff-max-period
+    [max_period: <duration> | default = 10s]
+
+    # (advanced) Number of times to backoff and retry before failing.
+    # CLI flag: -query-scheduler.grpc-client-config.backoff-retries
+    [max_retries: <int> | default = 10]
+
+  # (advanced) Enable TLS in the GRPC client. This flag needs to be enabled when
+  # any other TLS flag is set. If set to false, insecure connection to gRPC
+  # server will be used.
+  # CLI flag: -query-scheduler.grpc-client-config.tls-enabled
+  [tls_enabled: <boolean> | default = false]
+
+  # (advanced) Path to the client certificate file, which will be used for
+  # authenticating with the server. Also requires the key path to be configured.
+  # CLI flag: -query-scheduler.grpc-client-config.tls-cert-path
+  [tls_cert_path: <string> | default = ""]
+
+  # (advanced) Path to the key file for the client certificate. Also requires
+  # the client certificate to be configured.
+  # CLI flag: -query-scheduler.grpc-client-config.tls-key-path
+  [tls_key_path: <string> | default = ""]
+
+  # (advanced) Path to the CA certificates file to validate server certificate
+  # against. If not set, the host's root CA certificates are used.
+  # CLI flag: -query-scheduler.grpc-client-config.tls-ca-path
+  [tls_ca_path: <string> | default = ""]
+
+  # (advanced) Override the expected name on the server certificate.
+  # CLI flag: -query-scheduler.grpc-client-config.tls-server-name
+  [tls_server_name: <string> | default = ""]
+
+  # (advanced) Skip validating server certificate.
+  # CLI flag: -query-scheduler.grpc-client-config.tls-insecure-skip-verify
+  [tls_insecure_skip_verify: <boolean> | default = false]
 ```
 
 ### ruler
