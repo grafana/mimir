@@ -30,9 +30,9 @@ type ingesterMetrics struct {
 	memMetadataCreatedTotal *prometheus.CounterVec
 	memMetadataRemovedTotal *prometheus.CounterVec
 
+	activeSeriesLoading               *prometheus.GaugeVec
 	activeSeriesPerUser               *prometheus.GaugeVec
 	activeSeriesCustomTrackersPerUser *prometheus.GaugeVec
-	activeSeriesCustomTrackerNames    []string
 
 	// Global limit metrics
 	maxUsersGauge           prometheus.GaugeFunc
@@ -54,7 +54,6 @@ type ingesterMetrics struct {
 func newIngesterMetrics(
 	r prometheus.Registerer,
 	activeSeriesEnabled bool,
-	activeSeriesCustomTrackerNames []string,
 	instanceLimitsFn func() *InstanceLimits,
 	ingestionRate *util_math.EwmaRate,
 	inflightRequests *atomic.Int64,
@@ -210,6 +209,12 @@ func newIngesterMetrics(
 		}),
 
 		// Not registered automatically, but only if activeSeriesEnabled is true.
+		activeSeriesLoading: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cortex_ingester_active_series_loading",
+			Help: "Indicates that active series configuration is being reloaded, and waiting to become stable. While this metric is non zero, values from active series metrics shouldn't be considered.",
+		}, []string{"user"}),
+
+		// Not registered automatically, but only if activeSeriesEnabled is true.
 		activeSeriesPerUser: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cortex_ingester_active_series",
 			Help: "Number of currently active series per user.",
@@ -220,9 +225,6 @@ func newIngesterMetrics(
 			Name: "cortex_ingester_active_series_custom_tracker",
 			Help: "Number of currently active series matching a pre-configured label matchers per user.",
 		}, []string{"user", "name"}),
-		// activeSeriesCustomTrackerNames contains all the values for the `name` label of activeSeriesCustomTrackersPerUser,
-		// so we can delete all the labels for each user when needed.
-		activeSeriesCustomTrackerNames: activeSeriesCustomTrackerNames,
 
 		compactionsTriggered: promauto.With(r).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_ingester_tsdb_compactions_triggered_total",
@@ -253,6 +255,7 @@ func newIngesterMetrics(
 	}
 
 	if activeSeriesEnabled && r != nil {
+		r.MustRegister(m.activeSeriesLoading)
 		r.MustRegister(m.activeSeriesPerUser)
 		r.MustRegister(m.activeSeriesCustomTrackersPerUser)
 	}
@@ -265,8 +268,12 @@ func (m *ingesterMetrics) deletePerUserMetrics(userID string) {
 	m.ingestedSamplesFail.DeleteLabelValues(userID)
 	m.memMetadataCreatedTotal.DeleteLabelValues(userID)
 	m.memMetadataRemovedTotal.DeleteLabelValues(userID)
+}
+
+func (m *ingesterMetrics) deletePerUserCustomTrackerMetrics(userID string, customTrackerMetrics []string) {
+	m.activeSeriesLoading.DeleteLabelValues(userID)
 	m.activeSeriesPerUser.DeleteLabelValues(userID)
-	for _, name := range m.activeSeriesCustomTrackerNames {
+	for _, name := range customTrackerMetrics {
 		m.activeSeriesCustomTrackersPerUser.DeleteLabelValues(userID, name)
 	}
 }

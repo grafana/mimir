@@ -734,10 +734,12 @@ ring:
 # CLI flag: -ingester.active-series-metrics-idle-timeout
 [active_series_metrics_idle_timeout: <duration> | default = 10m]
 
-# (advanced) Additional custom trackers for active metrics. If there are active
-# series matching a provided matcher (map value), the count will be exposed in
-# the custom trackers metric labeled using the tracker name (map key). Zero
-# valued counts are not exposed (and removed when they go back to zero).
+# (advanced) [Deprecated] This config has been moved to the limits config,
+# please set it there. Additional custom trackers for active metrics. If there
+# are active series matching a provided matcher (map value), the count will be
+# exposed in the custom trackers metric labeled using the tracker name (map
+# key). Zero valued counts are not exposed (and removed when they go back to
+# zero).
 # Example:
 #   The following configuration will count the active series coming from dev and
 #   prod namespaces for each tenant and label them as {name="dev"} and
@@ -745,7 +747,6 @@ ring:
 #   active_series_custom_trackers:
 #       dev: '{namespace=~"dev-.*"}'
 #       prod: '{namespace=~"prod-.*"}'
-# CLI flag: -ingester.active-series-custom-trackers
 [active_series_custom_trackers: <map of tracker name (string) to matcher (string)> | default = ]
 
 # (experimental) Period with which to update per-tenant max exemplar limit.
@@ -2596,6 +2597,20 @@ The `limits` block configures default and per-tenant limits imposed by component
 # 0 to disable exemplars ingestion.
 # CLI flag: -ingester.max-global-exemplars-per-user
 [max_global_exemplars_per_user: <int> | default = 0]
+
+# (advanced) Additional custom trackers for active metrics. If there are active
+# series matching a provided matcher (map value), the count will be exposed in
+# the custom trackers metric labeled using the tracker name (map key). Zero
+# valued counts are not exposed (and removed when they go back to zero).
+# Example:
+#   The following configuration will count the active series coming from dev and
+#   prod namespaces for each tenant and label them as {name="dev"} and
+#   {name="prod"} in the cortex_ingester_active_series_custom_tracker metric.
+#   active_series_custom_trackers_config:
+#       dev: '{namespace=~"dev-.*"}'
+#       prod: '{namespace=~"prod-.*"}'
+# CLI flag: -ingester.active-series-custom-trackers
+[active_series_custom_trackers_config: <map of tracker name (string) to matcher (string)> | default = ]
 
 # Maximum number of chunks that can be fetched in a single query from ingesters
 # and long-term storage. This limit is enforced in the querier, ruler and
