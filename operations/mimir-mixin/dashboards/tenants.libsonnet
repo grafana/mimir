@@ -400,7 +400,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         local title = 'Failed evaluations rate';
         $.panel(title) +
         $.queryPanel(
-          'sum by (rule_group) (rate(cortex_prometheus_rule_group_rules{%(job)s, user="$user"}[$__rate_interval]))'
+          'sum by (rule_group) (rate(cortex_prometheus_rule_evaluation_failures_total{%(job)s, user="$user"}[$__rate_interval])) > 0'
           % { job: $.jobMatcher($._config.job_names.ruler) },
           '{{ rule_group }}',
         ) + { stack: true },
