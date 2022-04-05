@@ -15,10 +15,10 @@ import (
 )
 
 type ingesterMetrics struct {
-	ingestedSamples         prometheus.Counter
+	ingestedSamples         *prometheus.CounterVec
 	ingestedExemplars       prometheus.Counter
 	ingestedMetadata        prometheus.Counter
-	ingestedSamplesFail     prometheus.Counter
+	ingestedSamplesFail     *prometheus.CounterVec
 	ingestedExemplarsFail   prometheus.Counter
 	ingestedMetadataFail    prometheus.Counter
 	queries                 prometheus.Counter
@@ -82,10 +82,10 @@ func newIngesterMetrics(
 	idleTsdbChecks.WithLabelValues(string(tsdbIdleClosed))
 
 	m := &ingesterMetrics{
-		ingestedSamples: promauto.With(r).NewCounter(prometheus.CounterOpts{
+		ingestedSamples: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_ingester_ingested_samples_total",
-			Help: "The total number of samples ingested.",
-		}),
+			Help: "The total number of samples ingested per user.",
+		}, []string{"user"}),
 		ingestedExemplars: promauto.With(r).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_ingester_ingested_exemplars_total",
 			Help: "The total number of exemplars ingested.",
@@ -94,10 +94,10 @@ func newIngesterMetrics(
 			Name: "cortex_ingester_ingested_metadata_total",
 			Help: "The total number of metadata ingested.",
 		}),
-		ingestedSamplesFail: promauto.With(r).NewCounter(prometheus.CounterOpts{
+		ingestedSamplesFail: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_ingester_ingested_samples_failures_total",
-			Help: "The total number of samples that errored on ingestion.",
-		}),
+			Help: "The total number of samples that errored on ingestion per user.",
+		}, []string{"user"}),
 		ingestedExemplarsFail: promauto.With(r).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_ingester_ingested_exemplars_failures_total",
 			Help: "The total number of exemplars that errored on ingestion.",
@@ -261,6 +261,8 @@ func newIngesterMetrics(
 }
 
 func (m *ingesterMetrics) deletePerUserMetrics(userID string) {
+	m.ingestedSamples.DeleteLabelValues(userID)
+	m.ingestedSamplesFail.DeleteLabelValues(userID)
 	m.memMetadataCreatedTotal.DeleteLabelValues(userID)
 	m.memMetadataRemovedTotal.DeleteLabelValues(userID)
 	m.activeSeriesPerUser.DeleteLabelValues(userID)

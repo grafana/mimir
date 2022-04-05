@@ -435,8 +435,8 @@
           alert: $.alertName('ProvisioningTooManyWrites'),
           // 80k writes / s per ingester max.
           expr: |||
-            avg by (%s) (rate(cortex_ingester_ingested_samples_total[1m])) > 80e3
-          ||| % $._config.alert_aggregation_labels,
+            avg by (%(alert_aggregation_labels)s) (cluster_namespace_%(per_instance_label)s:cortex_ingester_ingested_samples_total:rate1m) > 80e3
+          ||| % $._config,
           'for': '15m',
           labels: {
             severity: 'warning',
