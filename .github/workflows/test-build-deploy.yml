@@ -21,9 +21,6 @@ jobs:
     runs-on: ubuntu-20.04
     container:
       image: grafana/mimir-build-image:chore-build-multiplatform-images-75dbba45b
-      credentials:
-        username: ${{ secrets.docker_username }}
-        password: ${{ secrets.docker_password }}
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v2
@@ -123,7 +120,7 @@ jobs:
           export GIT_REVISION=$(git rev-parse --short HEAD)
           export VERSION=$(cat "./VERSION" 2> /dev/null)
           export GIT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
-          # This configures ko's image creation timestamp correspond to the commit timestamp
+          # Configure ko's image creation timestamp to correspond to the commit timestamp
           export SOURCE_DATE_EPOCH=$(git show -s --format=%ct)
           export KO_DOCKER_REPO=grafana
           ko build -B --image-label org.opencontainers.image.title=mimir,org.opencontainers.image.source=https://github.com/grafana/mimir/tree/main/cmd/mimir,org.opencontainers.image.revision=${GIT_REVISION} --oci-layout-path mimir-oci-layout --platform=linux/amd64,linux/arm64 --push=false ./cmd/mimir
@@ -155,7 +152,7 @@ jobs:
           export GIT_REVISION=$(git rev-parse --short HEAD)
           export VERSION=$(cat "./VERSION" 2> /dev/null)
           export GIT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
-          # This configures ko's image creation timestamp correspond to the commit timestamp
+          # Configure ko's image creation timestamp to correspond to the commit timestamp
           export SOURCE_DATE_EPOCH=$(git show -s --format=%ct)
           export KO_DOCKER_REPO=grafana
           for name in ${IMAGES}; do
@@ -188,7 +185,7 @@ jobs:
         uses: actions/checkout@v2
       - name: Install Docker Client
         run: sudo ./.github/workflows/scripts/install-docker.sh
-      # TODO: Work into image, since this job doesn't use the Mimir build image (that has ko installed)
+      # TODO: Work into image, since this job doesn't use the Mimir build image (which has ko installed)
       - name: Install ko
         run: |
           go install github.com/grafana/ko@main
