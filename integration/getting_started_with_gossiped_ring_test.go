@@ -28,38 +28,36 @@ func TestGettingStartedWithGossipedRing(t *testing.T) {
 	defer s.Close()
 
 	// Start dependencies.
-	minio := e2edb.NewMinio(9000, bucketName)
+	minio := e2edb.NewMinio(9000, blocksBucketName)
 	require.NoError(t, s.StartAndWaitReady(minio))
 
 	// Start Mimir components.
-	require.NoError(t, copyFileToSharedDir(s, "docs/sources/configuration/single-process-config-blocks-gossip-1.yaml", "config1.yaml"))
-	require.NoError(t, copyFileToSharedDir(s, "docs/sources/configuration/single-process-config-blocks-gossip-2.yaml", "config2.yaml"))
+	require.NoError(t, copyFileToSharedDir(s, "docs/configurations/single-process-config-blocks-gossip-1.yaml", "config1.yaml"))
+	require.NoError(t, copyFileToSharedDir(s, "docs/configurations/single-process-config-blocks-gossip-2.yaml", "config2.yaml"))
 
 	// We don't care for storage part too much here. Both Mimir instances will write new blocks to /tmp, but that's fine.
 	flags := map[string]string{
 		// decrease timeouts to make test faster. should still be fine with two instances only
-		"-ingester.join-after":                                     "0s", // join quickly
-		"-ingester.observe-period":                                 "5s", // to avoid conflicts in tokens
-		"-blocks-storage.bucket-store.sync-interval":               "1s", // sync continuously
-		"-blocks-storage.backend":                                  "s3",
-		"-blocks-storage.s3.bucket-name":                           bucketName,
-		"-blocks-storage.s3.access-key-id":                         e2edb.MinioAccessKey,
-		"-blocks-storage.s3.secret-access-key":                     e2edb.MinioSecretKey,
-		"-blocks-storage.s3.endpoint":                              fmt.Sprintf("%s-minio-9000:9000", networkName),
-		"-blocks-storage.s3.insecure":                              "true",
-		"-store-gateway.sharding-ring.wait-stability-min-duration": "0", // start quickly
-		"-store-gateway.sharding-ring.wait-stability-max-duration": "0", // start quickly
+		"-ingester.ring.observe-period":                     "5s", // to avoid conflicts in tokens
+		"-blocks-storage.bucket-store.bucket-index.enabled": "false",
+		"-blocks-storage.bucket-store.sync-interval":        "1s", // sync continuously
+		"-blocks-storage.backend":                           "s3",
+		"-blocks-storage.s3.bucket-name":                    blocksBucketName,
+		"-blocks-storage.s3.access-key-id":                  e2edb.MinioAccessKey,
+		"-blocks-storage.s3.secret-access-key":              e2edb.MinioSecretKey,
+		"-blocks-storage.s3.endpoint":                       fmt.Sprintf("%s-minio-9000:9000", networkName),
+		"-blocks-storage.s3.insecure":                       "true",
 	}
 
 	// This mimir will fail to join the cluster configured in yaml file. That's fine.
-	mimir1 := e2emimir.NewSingleBinaryWithConfigFile("mimir-1", "config1.yaml", e2e.MergeFlags(flags, map[string]string{
-		"-ingester.lifecycler.addr": networkName + "-mimir-1", // Ingester's hostname in docker setup
-	}), "", 9109, 9195)
+	mimir1 := e2emimir.NewSingleBinary("mimir-1", e2e.MergeFlags(flags, map[string]string{
+		"-ingester.ring.instance-addr": networkName + "-mimir-1", // Ingester's hostname in docker setup
+	}), e2emimir.WithPorts(9109, 9095), e2emimir.WithConfigFile("config1.yaml"))
 
-	mimir2 := e2emimir.NewSingleBinaryWithConfigFile("mimir-2", "config2.yaml", e2e.MergeFlags(flags, map[string]string{
-		"-ingester.lifecycler.addr": networkName + "-mimir-2", // Ingester's hostname in docker setup
-		"-memberlist.join":          networkName + "-mimir-1:7946",
-	}), "", 9209, 9295)
+	mimir2 := e2emimir.NewSingleBinary("mimir-2", e2e.MergeFlags(flags, map[string]string{
+		"-ingester.ring.instance-addr": networkName + "-mimir-2", // Ingester's hostname in docker setup
+		"-memberlist.join":             networkName + "-mimir-1:7946",
+	}), e2emimir.WithPorts(9209, 9095), e2emimir.WithConfigFile("config2.yaml"))
 
 	require.NoError(t, s.StartAndWaitReady(mimir1))
 	require.NoError(t, s.StartAndWaitReady(mimir2))
@@ -68,12 +66,19 @@ func TestGettingStartedWithGossipedRing(t *testing.T) {
 	require.NoError(t, mimir1.WaitSumMetrics(e2e.Equals(2), "memberlist_client_cluster_members_count"))
 	require.NoError(t, mimir2.WaitSumMetrics(e2e.Equals(2), "memberlist_client_cluster_members_count"))
 
-	// Both Mimir servers should have 512 tokens for ingesters ring and 512 tokens for store-gateways ring.
-	for _, ringName := range []string{"ingester", "store-gateway", "ruler"} {
+	for _, ringName := range []string{"ingester", "store-gateway", "ruler", "compactor", "distributor"} {
 		ringMatcher := labels.MustNewMatcher(labels.MatchEqual, "name", ringName)
 
-		require.NoError(t, mimir1.WaitSumMetricsWithOptions(e2e.Equals(2*512), []string{"cortex_ring_tokens_total"}, e2e.WithLabelMatchers(ringMatcher)))
-		require.NoError(t, mimir2.WaitSumMetricsWithOptions(e2e.Equals(2*512), []string{"cortex_ring_tokens_total"}, e2e.WithLabelMatchers(ringMatcher)))
+		expectedTokens := 2 * 512 // Ingesters, store-gateways and compactors use 512 tokens by default.
+		if ringName == "ruler" {
+			expectedTokens = 2 * 128 // rulers use 128 tokens by default
+		}
+		if ringName == "distributor" {
+			expectedTokens = 2 * 1 // distributors use one token only
+		}
+
+		require.NoError(t, mimir1.WaitSumMetricsWithOptions(e2e.Equals(float64(expectedTokens)), []string{"cortex_ring_tokens_total"}, e2e.WithLabelMatchers(ringMatcher)), ringName)
+		require.NoError(t, mimir2.WaitSumMetricsWithOptions(e2e.Equals(float64(expectedTokens)), []string{"cortex_ring_tokens_total"}, e2e.WithLabelMatchers(ringMatcher)), ringName)
 	}
 
 	// We need two "ring members" visible from both Mimir instances for ingesters
@@ -120,7 +125,7 @@ func TestGettingStartedWithGossipedRing(t *testing.T) {
 
 	// Flush blocks from ingesters to the store.
 	for _, instance := range []*e2emimir.MimirService{mimir1, mimir2} {
-		res, err = e2e.DoGet("http://" + instance.HTTPEndpoint() + "/flush")
+		res, err = e2e.DoGet("http://" + instance.HTTPEndpoint() + "/ingester/flush")
 		require.NoError(t, err)
 		require.Equal(t, 204, res.StatusCode)
 	}
@@ -133,7 +138,7 @@ func TestGettingStartedWithGossipedRing(t *testing.T) {
 
 	// Make sure that no DNS failures occurred.
 	// No actual DNS lookups are necessarily performed, so we can't really assert on that.
-	mlMatcher := labels.MustNewMatcher(labels.MatchEqual, "name", "memberlist")
+	mlMatcher := labels.MustNewMatcher(labels.MatchEqual, "component", "memberlist")
 	require.NoError(t, mimir1.WaitSumMetricsWithOptions(e2e.Equals(0), []string{"cortex_dns_failures_total"}, e2e.WithLabelMatchers(mlMatcher)))
 	require.NoError(t, mimir2.WaitSumMetricsWithOptions(e2e.Equals(0), []string{"cortex_dns_failures_total"}, e2e.WithLabelMatchers(mlMatcher)))
 }

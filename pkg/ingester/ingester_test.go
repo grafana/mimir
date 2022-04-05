@@ -52,6 +52,7 @@ import (
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 
+	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/chunk"
@@ -62,6 +63,12 @@ import (
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
+
+func mustNewActiveSeriesCustomTrackersConfigFromMap(t *testing.T, source map[string]string) activeseries.CustomTrackersConfig {
+	m, err := activeseries.NewCustomTrackersConfig(source)
+	require.NoError(t, err)
+	return m
+}
 
 func TestIngester_Push(t *testing.T) {
 	metricLabelAdapters := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
@@ -137,12 +144,12 @@ func TestIngester_Push(t *testing.T) {
 				# HELP cortex_ingester_memory_metadata_created_total The total number of metadata that were created per user
 				# TYPE cortex_ingester_memory_metadata_created_total counter
 				cortex_ingester_memory_metadata_created_total{user="test"} 2
-				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested.
+				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
 				# TYPE cortex_ingester_ingested_samples_total counter
-				cortex_ingester_ingested_samples_total 2
-				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion.
+				cortex_ingester_ingested_samples_total{user="test"} 2
+				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
 				# TYPE cortex_ingester_ingested_samples_failures_total counter
-				cortex_ingester_ingested_samples_failures_total 0
+				cortex_ingester_ingested_samples_failures_total{user="test"} 0
 				# HELP cortex_ingester_memory_users The current number of users in memory.
 				# TYPE cortex_ingester_memory_users gauge
 				cortex_ingester_memory_users 1
@@ -210,12 +217,12 @@ func TestIngester_Push(t *testing.T) {
 				"cortex_ingester_tsdb_exemplar_out_of_order_exemplars_total",
 			},
 			expectedMetrics: `
-				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested.
+				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
 				# TYPE cortex_ingester_ingested_samples_total counter
-				cortex_ingester_ingested_samples_total 2
-				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion.
+				cortex_ingester_ingested_samples_total{user="test"} 2
+				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
 				# TYPE cortex_ingester_ingested_samples_failures_total counter
-				cortex_ingester_ingested_samples_failures_total 0
+				cortex_ingester_ingested_samples_failures_total{user="test"} 0
 				# HELP cortex_ingester_memory_users The current number of users in memory.
 				# TYPE cortex_ingester_memory_users gauge
 				cortex_ingester_memory_users 1
@@ -274,12 +281,12 @@ func TestIngester_Push(t *testing.T) {
 				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{{Value: 1, Timestamp: 9}, {Value: 2, Timestamp: 10}}},
 			},
 			expectedMetrics: `
-				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested.
+				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
 				# TYPE cortex_ingester_ingested_samples_total counter
-				cortex_ingester_ingested_samples_total 2
-				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion.
+				cortex_ingester_ingested_samples_total{user="test"} 2
+				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
 				# TYPE cortex_ingester_ingested_samples_failures_total counter
-				cortex_ingester_ingested_samples_failures_total 0
+				cortex_ingester_ingested_samples_failures_total{user="test"} 0
 				# HELP cortex_ingester_memory_users The current number of users in memory.
 				# TYPE cortex_ingester_memory_users gauge
 				cortex_ingester_memory_users 1
@@ -316,12 +323,12 @@ func TestIngester_Push(t *testing.T) {
 				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{{Value: 2, Timestamp: 10}}},
 			},
 			expectedMetrics: `
-				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested.
+				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
 				# TYPE cortex_ingester_ingested_samples_total counter
-				cortex_ingester_ingested_samples_total 1
-				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion.
+				cortex_ingester_ingested_samples_total{user="test"} 1
+				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
 				# TYPE cortex_ingester_ingested_samples_failures_total counter
-				cortex_ingester_ingested_samples_failures_total 1
+				cortex_ingester_ingested_samples_failures_total{user="test"} 1
 				# HELP cortex_ingester_memory_users The current number of users in memory.
 				# TYPE cortex_ingester_memory_users gauge
 				cortex_ingester_memory_users 1
@@ -368,12 +375,12 @@ func TestIngester_Push(t *testing.T) {
 				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{{Value: 2, Timestamp: 1575043969}}},
 			},
 			expectedMetrics: `
-				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested.
+				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
 				# TYPE cortex_ingester_ingested_samples_total counter
-				cortex_ingester_ingested_samples_total 1
-				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion.
+				cortex_ingester_ingested_samples_total{user="test"} 1
+				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
 				# TYPE cortex_ingester_ingested_samples_failures_total counter
-				cortex_ingester_ingested_samples_failures_total 2
+				cortex_ingester_ingested_samples_failures_total{user="test"} 2
 				# HELP cortex_ingester_memory_users The current number of users in memory.
 				# TYPE cortex_ingester_memory_users gauge
 				cortex_ingester_memory_users 1
@@ -423,12 +430,12 @@ func TestIngester_Push(t *testing.T) {
 				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{{Value: 2, Timestamp: 1575043969}, {Value: 3, Timestamp: 1575043969 + 1}}},
 			},
 			expectedMetrics: `
-				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested.
+				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
 				# TYPE cortex_ingester_ingested_samples_total counter
-				cortex_ingester_ingested_samples_total 2
-				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion.
+				cortex_ingester_ingested_samples_total{user="test"} 2
+				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
 				# TYPE cortex_ingester_ingested_samples_failures_total counter
-				cortex_ingester_ingested_samples_failures_total 2
+				cortex_ingester_ingested_samples_failures_total{user="test"} 2
 				# HELP cortex_ingester_memory_users The current number of users in memory.
 				# TYPE cortex_ingester_memory_users gauge
 				cortex_ingester_memory_users 1
@@ -471,12 +478,12 @@ func TestIngester_Push(t *testing.T) {
 				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{{Value: 2, Timestamp: 1575043969}}},
 			},
 			expectedMetrics: `
-				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested.
+				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
 				# TYPE cortex_ingester_ingested_samples_total counter
-				cortex_ingester_ingested_samples_total 1
-				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion.
+				cortex_ingester_ingested_samples_total{user="test"} 1
+				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
 				# TYPE cortex_ingester_ingested_samples_failures_total counter
-				cortex_ingester_ingested_samples_failures_total 1
+				cortex_ingester_ingested_samples_failures_total{user="test"} 1
 				# HELP cortex_ingester_memory_users The current number of users in memory.
 				# TYPE cortex_ingester_memory_users gauge
 				cortex_ingester_memory_users 1
@@ -530,12 +537,12 @@ func TestIngester_Push(t *testing.T) {
 				"cortex_ingester_tsdb_exemplar_out_of_order_exemplars_total",
 			},
 			expectedMetrics: `
-				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested.
+				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
 				# TYPE cortex_ingester_ingested_samples_total counter
-				cortex_ingester_ingested_samples_total 0
-				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion.
+				cortex_ingester_ingested_samples_total{user="test"} 0
+				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
 				# TYPE cortex_ingester_ingested_samples_failures_total counter
-				cortex_ingester_ingested_samples_failures_total 0
+				cortex_ingester_ingested_samples_failures_total{user="test"} 0
 				# HELP cortex_ingester_memory_users The current number of users in memory.
 				# TYPE cortex_ingester_memory_users gauge
 				cortex_ingester_memory_users 1
@@ -590,12 +597,6 @@ func TestIngester_Push(t *testing.T) {
 			// NOTE cortex_ingester_memory_users is 0 here - the metric really counts tsdbs not users.
 			// we may want to change that one day but for now make the test match the code.
 			expectedMetrics: `
-				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion.
-				# TYPE cortex_ingester_ingested_samples_failures_total counter
-				cortex_ingester_ingested_samples_failures_total 0
-				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested.
-				# TYPE cortex_ingester_ingested_samples_total counter
-				cortex_ingester_ingested_samples_total 0
 				# HELP cortex_ingester_memory_series The current number of series in memory.
 				# TYPE cortex_ingester_memory_series gauge
 				cortex_ingester_memory_series 0
@@ -618,7 +619,7 @@ func TestIngester_Push(t *testing.T) {
 
 			// Create a mocked ingester
 			cfg := defaultIngesterTestConfig(t)
-			cfg.LifecyclerConfig.JoinAfter = 0
+			cfg.IngesterRing.JoinAfter = 0
 			cfg.ActiveSeriesMetricsEnabled = !testData.disableActiveSeries
 			limits := defaultLimitsTestConfig()
 			limits.MaxGlobalExemplarsPerUser = testData.maxExemplars
@@ -719,7 +720,7 @@ func TestIngester_Push_ShouldCorrectlyTrackMetricsInMultiTenantScenario(t *testi
 
 	// Create a mocked ingester
 	cfg := defaultIngesterTestConfig(t)
-	cfg.LifecyclerConfig.JoinAfter = 0
+	cfg.IngesterRing.JoinAfter = 0
 
 	i, err := prepareIngesterWithBlocksStorage(t, cfg, registry)
 	require.NoError(t, err)
@@ -762,12 +763,14 @@ func TestIngester_Push_ShouldCorrectlyTrackMetricsInMultiTenantScenario(t *testi
 
 	// Check tracked Prometheus metrics
 	expectedMetrics := `
-		# HELP cortex_ingester_ingested_samples_total The total number of samples ingested.
+		# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
 		# TYPE cortex_ingester_ingested_samples_total counter
-		cortex_ingester_ingested_samples_total 4
-		# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion.
+		cortex_ingester_ingested_samples_total{user="test-1"} 2
+		cortex_ingester_ingested_samples_total{user="test-2"} 2
+		# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
 		# TYPE cortex_ingester_ingested_samples_failures_total counter
-		cortex_ingester_ingested_samples_failures_total 0
+		cortex_ingester_ingested_samples_failures_total{user="test-1"} 0
+		cortex_ingester_ingested_samples_failures_total{user="test-2"} 0
 		# HELP cortex_ingester_memory_users The current number of users in memory.
 		# TYPE cortex_ingester_memory_users gauge
 		cortex_ingester_memory_users 2
@@ -805,9 +808,10 @@ func TestIngester_Push_DecreaseInactiveSeries(t *testing.T) {
 	// Create a mocked ingester
 	cfg := defaultIngesterTestConfig(t)
 	cfg.ActiveSeriesMetricsIdleTimeout = 100 * time.Millisecond
-	cfg.LifecyclerConfig.JoinAfter = 0
+	cfg.IngesterRing.JoinAfter = 0
 
 	i, err := prepareIngesterWithBlocksStorage(t, cfg, registry)
+	currentTime := time.Now()
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
@@ -845,7 +849,8 @@ func TestIngester_Push_DecreaseInactiveSeries(t *testing.T) {
 
 	// Update active series the after the idle timeout (in the future).
 	// This will remove inactive series.
-	i.updateActiveSeries(time.Now().Add(cfg.ActiveSeriesMetricsIdleTimeout))
+	currentTime = currentTime.Add(cfg.ActiveSeriesMetricsIdleTimeout + 1*time.Second)
+	i.updateActiveSeries(currentTime)
 
 	// Check tracked Prometheus metrics
 	expectedMetrics := `
@@ -873,7 +878,7 @@ func benchmarkIngesterPush(b *testing.B, limits validation.Limits, errorsExpecte
 
 	// Create a mocked ingester
 	cfg := defaultIngesterTestConfig(b)
-	cfg.LifecyclerConfig.JoinAfter = 0
+	cfg.IngesterRing.JoinAfter = 0
 
 	ingester, err := prepareIngesterWithBlocksStorage(b, cfg, registry)
 	require.NoError(b, err)
@@ -1171,7 +1176,7 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 
 					// Create a mocked ingester
 					cfg := defaultIngesterTestConfig(b)
-					cfg.LifecyclerConfig.JoinAfter = 0
+					cfg.IngesterRing.JoinAfter = 0
 
 					limits := defaultLimitsTestConfig()
 					if !testData.prepareConfig(&limits, instanceLimits) {
@@ -1833,7 +1838,7 @@ func TestIngester_Push_ShouldNotCreateTSDBIfNotInActiveState(t *testing.T) {
 	// Configure the lifecycler to not immediately join the ring, to make sure
 	// the ingester will NOT be in the ACTIVE state when we'll push samples.
 	cfg := defaultIngesterTestConfig(t)
-	cfg.LifecyclerConfig.JoinAfter = 10 * time.Second
+	cfg.IngesterRing.JoinAfter = 10 * time.Second
 
 	i, err := prepareIngesterWithBlocksStorage(t, cfg, nil)
 	require.NoError(t, err)
@@ -1881,7 +1886,7 @@ func TestIngester_getOrCreateTSDB_ShouldNotAllowToCreateTSDBIfIngesterStateIsNot
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			cfg := defaultIngesterTestConfig(t)
-			cfg.LifecyclerConfig.JoinAfter = 60 * time.Second
+			cfg.IngesterRing.JoinAfter = 60 * time.Second
 
 			i, err := prepareIngesterWithBlocksStorage(t, cfg, nil)
 			require.NoError(t, err)
@@ -2844,33 +2849,21 @@ func prepareIngesterWithBlocksStorage(t testing.TB, ingesterCfg Config, register
 }
 
 func prepareIngesterWithBlocksStorageAndLimits(t testing.TB, ingesterCfg Config, limits validation.Limits, dataDir string, registerer prometheus.Registerer) (*Ingester, error) {
-	// Create a data dir if none has been provided.
-	if dataDir == "" {
-		var err error
-		if dataDir, err = ioutil.TempDir("", "ingester"); err != nil {
-			return nil, err
-		}
-
-		t.Cleanup(func() {
-			require.NoError(t, os.RemoveAll(dataDir))
-		})
-	}
-
-	bucketDir, err := ioutil.TempDir("", "bucket")
-	if err != nil {
-		return nil, err
-	}
-
-	t.Cleanup(func() {
-		require.NoError(t, os.RemoveAll(bucketDir))
-	})
-
-	clientCfg := defaultClientTestConfig()
-
 	overrides, err := validation.NewOverrides(limits, nil)
 	if err != nil {
 		return nil, err
 	}
+	return prepareIngesterWithBlockStorageAndOverrides(t, ingesterCfg, overrides, dataDir, registerer)
+}
+
+func prepareIngesterWithBlockStorageAndOverrides(t testing.TB, ingesterCfg Config, overrides *validation.Overrides, dataDir string, registerer prometheus.Registerer) (*Ingester, error) {
+	// Create a data dir if none has been provided.
+	if dataDir == "" {
+		dataDir = t.TempDir()
+	}
+
+	bucketDir := t.TempDir()
+	clientCfg := defaultClientTestConfig()
 
 	ingesterCfg.BlocksStorageConfig.TSDB.Dir = dataDir
 	ingesterCfg.BlocksStorageConfig.Bucket.Backend = "filesystem"
@@ -3007,9 +3000,7 @@ func TestIngester_OpenExistingTSDBOnStartup(t *testing.T) {
 			require.NoError(t, err)
 
 			// Create a temporary directory for TSDB
-			tempDir, err := ioutil.TempDir("", "tsdb")
-			require.NoError(t, err)
-			defer os.RemoveAll(tempDir)
+			tempDir := t.TempDir()
 
 			ingesterCfg := defaultIngesterTestConfig(t)
 			ingesterCfg.BlocksStorageConfig.TSDB.Dir = tempDir
@@ -3039,7 +3030,7 @@ func TestIngester_OpenExistingTSDBOnStartup(t *testing.T) {
 
 func TestIngester_shipBlocks(t *testing.T) {
 	cfg := defaultIngesterTestConfig(t)
-	cfg.LifecyclerConfig.JoinAfter = 0
+	cfg.IngesterRing.JoinAfter = 0
 	cfg.BlocksStorageConfig.TSDB.ShipConcurrency = 2
 
 	// Create ingester
@@ -3077,7 +3068,7 @@ func TestIngester_shipBlocks(t *testing.T) {
 
 func TestIngester_dontShipBlocksWhenTenantDeletionMarkerIsPresent(t *testing.T) {
 	cfg := defaultIngesterTestConfig(t)
-	cfg.LifecyclerConfig.JoinAfter = 0
+	cfg.IngesterRing.JoinAfter = 0
 	cfg.BlocksStorageConfig.TSDB.ShipConcurrency = 2
 
 	// Create ingester
@@ -3126,7 +3117,7 @@ func TestIngester_dontShipBlocksWhenTenantDeletionMarkerIsPresent(t *testing.T) 
 
 func TestIngester_seriesCountIsCorrectAfterClosingTSDBForDeletedTenant(t *testing.T) {
 	cfg := defaultIngesterTestConfig(t)
-	cfg.LifecyclerConfig.JoinAfter = 0
+	cfg.IngesterRing.JoinAfter = 0
 	cfg.BlocksStorageConfig.TSDB.ShipConcurrency = 2
 
 	// Create ingester
@@ -3170,8 +3161,11 @@ func TestIngester_seriesCountIsCorrectAfterClosingTSDBForDeletedTenant(t *testin
 func TestIngester_closeAndDeleteUserTSDBIfIdle_shouldNotCloseTSDBIfShippingIsInProgress(t *testing.T) {
 	ctx := context.Background()
 	cfg := defaultIngesterTestConfig(t)
-	cfg.LifecyclerConfig.JoinAfter = 0
+	cfg.IngesterRing.JoinAfter = 0
 	cfg.BlocksStorageConfig.TSDB.ShipConcurrency = 2
+
+	// We want it to be idle immediately (setting to 1ns because 0 means disabled).
+	cfg.BlocksStorageConfig.TSDB.CloseIdleTSDBTimeout = time.Nanosecond
 
 	// Create ingester
 	i, err := prepareIngesterWithBlocksStorage(t, cfg, nil)
@@ -3313,7 +3307,7 @@ func (m *shipperMock) Sync(ctx context.Context) (uploaded int, err error) {
 
 func TestIngester_invalidSamplesDontChangeLastUpdateTime(t *testing.T) {
 	cfg := defaultIngesterTestConfig(t)
-	cfg.LifecyclerConfig.JoinAfter = 0
+	cfg.IngesterRing.JoinAfter = 0
 
 	// Create ingester
 	i, err := prepareIngesterWithBlocksStorage(t, cfg, nil)
@@ -3405,7 +3399,7 @@ func TestIngester_flushing(t *testing.T) {
 		cortex_ingester_shipper_uploads_total 0
 	`), "cortex_ingester_shipper_uploads_total"))
 
-				i.ShutdownHandler(httptest.NewRecorder(), httptest.NewRequest("POST", "/shutdown", nil))
+				i.ShutdownHandler(httptest.NewRecorder(), httptest.NewRequest("POST", "/ingester/shutdown", nil))
 
 				verifyCompactedHead(t, i, true)
 				require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
@@ -3432,7 +3426,7 @@ func TestIngester_flushing(t *testing.T) {
 				`), "cortex_ingester_shipper_uploads_total"))
 
 				// Using wait=true makes this a synchronous call.
-				i.FlushHandler(httptest.NewRecorder(), httptest.NewRequest("POST", "/flush?wait=true", nil))
+				i.FlushHandler(httptest.NewRecorder(), httptest.NewRequest("POST", "/ingester/flush?wait=true", nil))
 
 				verifyCompactedHead(t, i, true)
 				require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
@@ -3463,7 +3457,7 @@ func TestIngester_flushing(t *testing.T) {
 				users.Add(tenantParam, "another-unknown-user")
 
 				// Using wait=true makes this a synchronous call.
-				i.FlushHandler(httptest.NewRecorder(), httptest.NewRequest("POST", "/flush?wait=true&"+users.Encode(), nil))
+				i.FlushHandler(httptest.NewRecorder(), httptest.NewRequest("POST", "/ingester/flush?wait=true&"+users.Encode(), nil))
 
 				// Still nothing shipped or compacted.
 				require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
@@ -3478,7 +3472,7 @@ func TestIngester_flushing(t *testing.T) {
 				users.Add(tenantParam, userID) // Our user
 				users.Add(tenantParam, "yet-another-user")
 
-				i.FlushHandler(httptest.NewRecorder(), httptest.NewRequest("POST", "/flush?wait=true&"+users.Encode(), nil))
+				i.FlushHandler(httptest.NewRecorder(), httptest.NewRequest("POST", "/ingester/flush?wait=true&"+users.Encode(), nil))
 
 				verifyCompactedHead(t, i, true)
 				require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
@@ -3514,7 +3508,7 @@ func TestIngester_flushing(t *testing.T) {
 					cortex_ingester_shipper_uploads_total 0
 				`), "cortex_ingester_shipper_uploads_total"))
 
-				i.FlushHandler(httptest.NewRecorder(), httptest.NewRequest("POST", "/flush?wait=true", nil))
+				i.FlushHandler(httptest.NewRecorder(), httptest.NewRequest("POST", "/ingester/flush?wait=true", nil))
 
 				verifyCompactedHead(t, i, true)
 
@@ -3541,7 +3535,7 @@ func TestIngester_flushing(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			cfg := defaultIngesterTestConfig(t)
-			cfg.LifecyclerConfig.JoinAfter = 0
+			cfg.IngesterRing.JoinAfter = 0
 			cfg.BlocksStorageConfig.TSDB.ShipConcurrency = 1
 			cfg.BlocksStorageConfig.TSDB.ShipInterval = 1 * time.Minute // Long enough to not be reached during the test.
 
@@ -3572,7 +3566,7 @@ func TestIngester_flushing(t *testing.T) {
 
 func TestIngester_ForFlush(t *testing.T) {
 	cfg := defaultIngesterTestConfig(t)
-	cfg.LifecyclerConfig.JoinAfter = 0
+	cfg.IngesterRing.JoinAfter = 0
 	cfg.BlocksStorageConfig.TSDB.ShipConcurrency = 1
 	cfg.BlocksStorageConfig.TSDB.ShipInterval = 10 * time.Minute // Long enough to not be reached during the test.
 
@@ -3748,7 +3742,7 @@ func Test_Ingester_AllUserStats(t *testing.T) {
 
 func TestIngesterCompactIdleBlock(t *testing.T) {
 	cfg := defaultIngesterTestConfig(t)
-	cfg.LifecyclerConfig.JoinAfter = 0
+	cfg.IngesterRing.JoinAfter = 0
 	cfg.BlocksStorageConfig.TSDB.ShipConcurrency = 1
 	cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = 1 * time.Hour      // Long enough to not be reached during the test.
 	cfg.BlocksStorageConfig.TSDB.HeadCompactionIdleTimeout = 1 * time.Second // Testing this.
@@ -3827,7 +3821,7 @@ func TestIngesterCompactIdleBlock(t *testing.T) {
 
 func TestIngesterCompactAndCloseIdleTSDB(t *testing.T) {
 	cfg := defaultIngesterTestConfig(t)
-	cfg.LifecyclerConfig.JoinAfter = 0
+	cfg.IngesterRing.JoinAfter = 0
 	cfg.BlocksStorageConfig.TSDB.ShipInterval = 1 * time.Second // Required to enable shipping.
 	cfg.BlocksStorageConfig.TSDB.ShipConcurrency = 1
 	cfg.BlocksStorageConfig.TSDB.HeadCompactionIdleTimeout = 1 * time.Second
@@ -3973,11 +3967,7 @@ func pushSingleSampleAtTime(t *testing.T, i *Ingester, ts int64) {
 
 func TestHeadCompactionOnStartup(t *testing.T) {
 	// Create a temporary directory for TSDB
-	tempDir, err := ioutil.TempDir("", "tsdb")
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		os.RemoveAll(tempDir)
-	})
+	tempDir := t.TempDir()
 
 	// Build TSDB for user, with data covering 24 hours.
 	{
@@ -4046,7 +4036,7 @@ func TestHeadCompactionOnStartup(t *testing.T) {
 
 func TestIngester_CloseTSDBsOnShutdown(t *testing.T) {
 	cfg := defaultIngesterTestConfig(t)
-	cfg.LifecyclerConfig.JoinAfter = 0
+	cfg.IngesterRing.JoinAfter = 0
 
 	// Create ingester
 	i, err := prepareIngesterWithBlocksStorage(t, cfg, nil)
@@ -4079,7 +4069,7 @@ func TestIngesterNotDeleteUnshippedBlocks(t *testing.T) {
 	cfg := defaultIngesterTestConfig(t)
 	cfg.BlocksStorageConfig.TSDB.BlockRanges = []time.Duration{chunkRange}
 	cfg.BlocksStorageConfig.TSDB.Retention = time.Millisecond // Which means delete all but first block.
-	cfg.LifecyclerConfig.JoinAfter = 0
+	cfg.IngesterRing.JoinAfter = 0
 
 	// Create ingester
 	reg := prometheus.NewPedanticRegistry()
@@ -4244,7 +4234,7 @@ func TestIngesterNoFlushWithInFlightRequest(t *testing.T) {
 
 	// Flush handler only triggers compactions, but doesn't wait for them to finish. We cannot use ?wait=true here,
 	// because it would deadlock -- flush will wait for appendLock to be released.
-	i.FlushHandler(httptest.NewRecorder(), httptest.NewRequest("POST", "/flush", nil))
+	i.FlushHandler(httptest.NewRecorder(), httptest.NewRequest("POST", "/ingester/flush", nil))
 
 	// Flushing should not have succeeded even after 5 seconds.
 	time.Sleep(5 * time.Second)
@@ -4383,7 +4373,7 @@ func TestIngester_PushInstanceLimits(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			// Create a mocked ingester
 			cfg := defaultIngesterTestConfig(t)
-			cfg.LifecyclerConfig.JoinAfter = 0
+			cfg.IngesterRing.JoinAfter = 0
 			cfg.InstanceLimitsFn = func() *InstanceLimits {
 				return &testData.limits
 			}
@@ -4452,7 +4442,7 @@ func TestIngester_instanceLimitsMetrics(t *testing.T) {
 	cfg.InstanceLimitsFn = func() *InstanceLimits {
 		return &l
 	}
-	cfg.LifecyclerConfig.JoinAfter = 0
+	cfg.IngesterRing.JoinAfter = 0
 
 	_, err := prepareIngesterWithBlocksStorage(t, cfg, reg)
 	require.NoError(t, err)
@@ -4485,7 +4475,7 @@ func TestIngester_inflightPushRequests(t *testing.T) {
 	// Create a mocked ingester
 	cfg := defaultIngesterTestConfig(t)
 	cfg.InstanceLimitsFn = func() *InstanceLimits { return &limits }
-	cfg.LifecyclerConfig.JoinAfter = 0
+	cfg.IngesterRing.JoinAfter = 0
 
 	i, err := prepareIngesterWithBlocksStorage(t, cfg, nil)
 	require.NoError(t, err)
@@ -4856,8 +4846,8 @@ func TestIngester_Push_SeriesWithBlankLabel(t *testing.T) {
 	require.NoError(t, err)
 
 	res, _, err := runTestQuery(ctx, t, ing, labels.MatchEqual, labels.MetricName, "testmetric")
-	require.NoError(t, err)
 
+	require.NoError(t, err)
 	expected := model.Matrix{
 		{
 			Metric: model.Metric{labels.MetricName: "testmetric"},
@@ -4883,7 +4873,7 @@ func TestIngesterUserLimitExceeded(t *testing.T) {
 		// Global Ingester limits are computed based on replication factor
 		// Set RF=1 here to ensure the series and metadata limits
 		// are actually set to 1 instead of 3.
-		cfg.LifecyclerConfig.RingConfig.ReplicationFactor = 1
+		cfg.IngesterRing.ReplicationFactor = 1
 		ing, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, limits, dataDir, nil)
 		require.NoError(t, err)
 		require.NoError(t, services.StartAndAwaitRunning(context.Background(), ing))
@@ -4988,7 +4978,7 @@ func TestIngesterMetricLimitExceeded(t *testing.T) {
 		// Global Ingester limits are computed based on replication factor
 		// Set RF=1 here to ensure the series and metadata limits
 		// are actually set to 1 instead of 3.
-		cfg.LifecyclerConfig.RingConfig.ReplicationFactor = 1
+		cfg.IngesterRing.ReplicationFactor = 1
 		ing, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, limits, dataDir, nil)
 		require.NoError(t, err)
 		require.NoError(t, services.StartAndAwaitRunning(context.Background(), ing))
@@ -5116,9 +5106,26 @@ func benchmarkData(nSeries int) (allLabels []labels.Labels, allSamples []mimirpb
 	return
 }
 
+type TenantLimitsMock struct {
+	mock.Mock
+	validation.TenantLimits
+}
+
+func (t *TenantLimitsMock) ByUserID(userID string) *validation.Limits {
+	returnArgs := t.Called(userID)
+	if returnArgs.Get(0) == nil {
+		return nil
+	}
+	return returnArgs.Get(0).(*validation.Limits)
+}
+
 func TestIngesterActiveSeries(t *testing.T) {
-	metricLabelsBoolTrue := labels.FromStrings(labels.MetricName, "test", "bool", "true")
-	metricLabelsBoolFalse := labels.FromStrings(labels.MetricName, "test", "bool", "false")
+	labelsToPush := []labels.Labels{
+		labels.FromStrings(labels.MetricName, "test_metric", "bool", "false", "team", "a"),
+		labels.FromStrings(labels.MetricName, "test_metric", "bool", "false", "team", "b"),
+		labels.FromStrings(labels.MetricName, "test_metric", "bool", "true", "team", "a"),
+		labels.FromStrings(labels.MetricName, "test_metric", "bool", "true", "team", "b"),
+	}
 
 	req := func(lbls labels.Labels, t time.Time) *mimirpb.WriteRequest {
 		return mimirpb.ToWriteRequest(
@@ -5134,7 +5141,22 @@ func TestIngesterActiveSeries(t *testing.T) {
 		"cortex_ingester_active_series",
 		"cortex_ingester_active_series_custom_tracker",
 	}
-	userID := "test"
+	userID := "test_user"
+	userID2 := "other_test_user"
+
+	activeSeriesDefaultConfig := mustNewActiveSeriesCustomTrackersConfigFromMap(t, map[string]string{
+		"bool_is_true_flagbased":  `{bool="true"}`,
+		"bool_is_false_flagbased": `{bool="false"}`,
+	})
+
+	activeSeriesTenantConfig := mustNewActiveSeriesCustomTrackersConfigFromMap(t, map[string]string{
+		"team_a": `{team="a"}`,
+		"team_b": `{team="b"}`,
+	})
+
+	activeSeriesTenantOverride := new(TenantLimitsMock)
+	activeSeriesTenantOverride.On("ByUserID", userID).Return(&validation.Limits{ActiveSeriesCustomTrackersConfig: activeSeriesTenantConfig})
+	activeSeriesTenantOverride.On("ByUserID", userID2).Return(nil)
 
 	tests := map[string]struct {
 		test                func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer)
@@ -5144,113 +5166,120 @@ func TestIngesterActiveSeries(t *testing.T) {
 	}{
 		"successful push, should count active series": {
 			test: func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer) {
-				now := time.Now()
-
-				for _, req := range []*mimirpb.WriteRequest{
-					req(metricLabelsBoolTrue, now.Add(-2*time.Minute)),
-					req(metricLabelsBoolTrue, now.Add(-1*time.Minute)),
-				} {
-					ctx := user.InjectOrgID(context.Background(), userID)
-					_, err := ingester.Push(ctx, req)
-					require.NoError(t, err)
-				}
+				pushWithUser(t, ingester, labelsToPush, userID, req)
+				pushWithUser(t, ingester, labelsToPush, userID2, req)
 
 				// Update active series for metrics check.
-				ingester.updateActiveSeries(now)
+				ingester.updateActiveSeries(time.Now())
 
 				expectedMetrics := `
 					# HELP cortex_ingester_active_series Number of currently active series per user.
 					# TYPE cortex_ingester_active_series gauge
-					cortex_ingester_active_series{user="test"} 1
+					cortex_ingester_active_series{user="other_test_user"} 4
+					cortex_ingester_active_series{user="test_user"} 4
 					# HELP cortex_ingester_active_series_custom_tracker Number of currently active series matching a pre-configured label matchers per user.
 					# TYPE cortex_ingester_active_series_custom_tracker gauge
-					cortex_ingester_active_series_custom_tracker{name="bool_is_true",user="test"} 1
+					cortex_ingester_active_series_custom_tracker{name="team_a",user="test_user"} 2
+					cortex_ingester_active_series_custom_tracker{name="team_b",user="test_user"} 2
+					cortex_ingester_active_series_custom_tracker{name="bool_is_true_flagbased",user="other_test_user"} 2
+					cortex_ingester_active_series_custom_tracker{name="bool_is_false_flagbased",user="other_test_user"} 2
 				`
 
 				// Check tracked Prometheus metrics
 				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
 			},
 		},
-		"should track custom matchers, removing when zero": {
+		"should cleanup metrics when tsdb closed": {
 			test: func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer) {
-				firstPushTime := time.Now()
-
-				// We're pushing samples at firstPushTime - 1m, but they're accounted as pushed at firstPushTime
-				for _, req := range []*mimirpb.WriteRequest{
-					req(metricLabelsBoolTrue, firstPushTime.Add(-time.Minute)),
-					req(metricLabelsBoolFalse, firstPushTime.Add(-time.Minute)),
-				} {
-					ctx := user.InjectOrgID(context.Background(), userID)
-					_, err := ingester.Push(ctx, req)
-					require.NoError(t, err)
-				}
+				pushWithUser(t, ingester, labelsToPush, userID, req)
+				pushWithUser(t, ingester, labelsToPush, userID2, req)
 
 				// Update active series for metrics check.
-				ingester.updateActiveSeries(firstPushTime)
+				ingester.updateActiveSeries(time.Now())
 
 				expectedMetrics := `
 					# HELP cortex_ingester_active_series Number of currently active series per user.
 					# TYPE cortex_ingester_active_series gauge
-					cortex_ingester_active_series{user="test"} 2
+					cortex_ingester_active_series{user="other_test_user"} 4
+					cortex_ingester_active_series{user="test_user"} 4
 					# HELP cortex_ingester_active_series_custom_tracker Number of currently active series matching a pre-configured label matchers per user.
 					# TYPE cortex_ingester_active_series_custom_tracker gauge
-					cortex_ingester_active_series_custom_tracker{name="bool_is_false",user="test"} 1
-					cortex_ingester_active_series_custom_tracker{name="bool_is_true",user="test"} 1
+					cortex_ingester_active_series_custom_tracker{name="team_a",user="test_user"} 2
+					cortex_ingester_active_series_custom_tracker{name="team_b",user="test_user"} 2
+					cortex_ingester_active_series_custom_tracker{name="bool_is_true_flagbased",user="other_test_user"} 2
+					cortex_ingester_active_series_custom_tracker{name="bool_is_false_flagbased",user="other_test_user"} 2
+				`
+
+				// Check tracked Prometheus metrics
+				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
+				// close tsdbs and check for cleanup
+				ingester.closeAllTSDB()
+				expectedMetrics = ""
+				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
+			},
+		},
+		"should track custom matchers, removing when zero": {
+			test: func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer) {
+				currentTime := time.Now()
+				pushWithUser(t, ingester, labelsToPush, userID, req)
+				pushWithUser(t, ingester, labelsToPush, userID2, req)
+
+				// Update active series for metrics check.
+				ingester.updateActiveSeries(currentTime)
+
+				expectedMetrics := `
+					# HELP cortex_ingester_active_series Number of currently active series per user.
+					# TYPE cortex_ingester_active_series gauge
+					cortex_ingester_active_series{user="other_test_user"} 4
+					cortex_ingester_active_series{user="test_user"} 4
+					# HELP cortex_ingester_active_series_custom_tracker Number of currently active series matching a pre-configured label matchers per user.
+					# TYPE cortex_ingester_active_series_custom_tracker gauge
+					cortex_ingester_active_series_custom_tracker{name="team_a",user="test_user"} 2
+					cortex_ingester_active_series_custom_tracker{name="team_b",user="test_user"} 2
+					cortex_ingester_active_series_custom_tracker{name="bool_is_true_flagbased",user="other_test_user"} 2
+					cortex_ingester_active_series_custom_tracker{name="bool_is_false_flagbased",user="other_test_user"} 2
 				`
 
 				// Check tracked Prometheus metrics
 				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
 
-				// Sleep for one millisecond, this will make the append time of first push smaller than
-				// secondPushTime. This is something required to make the test deterministic
-				// (otherwise it _could_ be the same nanosecond theoretically, although unlikely in practice)
-				time.Sleep(time.Millisecond)
-				secondPushTime := time.Now()
-				// Sleep another millisecond to make sure that secondPushTime is strictly less than the append time of the second push.
-				time.Sleep(time.Millisecond)
+				// Pushing second time to have entires which are not going to be purged
+				currentTime = time.Now()
+				pushWithUser(t, ingester, labelsToPush, userID, req)
 
-				ctx := user.InjectOrgID(context.Background(), userID)
-				_, err := ingester.Push(ctx, req(metricLabelsBoolTrue, secondPushTime))
-				require.NoError(t, err)
-
-				// Update active series for metrics check in the future.
+				// Adding time to make the first batch of pushes idle.
 				// We update them in the exact moment in time where append time of the first push is already considered idle,
 				// while the second append happens after the purge timestamp.
-				ingester.updateActiveSeries(secondPushTime.Add(ingester.cfg.ActiveSeriesMetricsIdleTimeout))
+				currentTime = currentTime.Add(ingester.cfg.ActiveSeriesMetricsIdleTimeout)
+				ingester.updateActiveSeries(currentTime)
 
 				expectedMetrics = `
 					# HELP cortex_ingester_active_series Number of currently active series per user.
 					# TYPE cortex_ingester_active_series gauge
-					cortex_ingester_active_series{user="test"} 1
+					cortex_ingester_active_series{user="test_user"} 4
 					# HELP cortex_ingester_active_series_custom_tracker Number of currently active series matching a pre-configured label matchers per user.
 					# TYPE cortex_ingester_active_series_custom_tracker gauge
-					cortex_ingester_active_series_custom_tracker{name="bool_is_true",user="test"} 1
+					cortex_ingester_active_series_custom_tracker{name="team_a",user="test_user"} 2
+					cortex_ingester_active_series_custom_tracker{name="team_b",user="test_user"} 2
 				`
 
 				// Check tracked Prometheus metrics
 				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
 
 				// Update active series again in a further future where no series are active anymore.
-				ingester.updateActiveSeries(time.Now().Add(ingester.cfg.ActiveSeriesMetricsIdleTimeout))
+				currentTime = currentTime.Add(ingester.cfg.ActiveSeriesMetricsIdleTimeout)
+				ingester.updateActiveSeries(currentTime)
 				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(""), metricNames...))
 			},
 		},
 		"successful push, active series disabled": {
 			disableActiveSeries: true,
 			test: func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer) {
-				now := time.Now()
-
-				for _, req := range []*mimirpb.WriteRequest{
-					req(metricLabelsBoolTrue, now.Add(-2*time.Minute)),
-					req(metricLabelsBoolTrue, now.Add(-1*time.Minute)),
-				} {
-					ctx := user.InjectOrgID(context.Background(), userID)
-					_, err := ingester.Push(ctx, req)
-					require.NoError(t, err)
-				}
+				pushWithUser(t, ingester, labelsToPush, userID, req)
+				pushWithUser(t, ingester, labelsToPush, userID2, req)
 
 				// Update active series for metrics check.
-				ingester.updateActiveSeries(now)
+				ingester.updateActiveSeries(time.Now())
 
 				expectedMetrics := ``
 
@@ -5266,14 +5295,15 @@ func TestIngesterActiveSeries(t *testing.T) {
 
 			// Create a mocked ingester
 			cfg := defaultIngesterTestConfig(t)
-			cfg.LifecyclerConfig.JoinAfter = 0
+			cfg.IngesterRing.JoinAfter = 0
 			cfg.ActiveSeriesMetricsEnabled = !testData.disableActiveSeries
-			cfg.ActiveSeriesCustomTrackers = map[string]string{
-				"bool_is_true":  `{bool="true"}`,
-				"bool_is_false": `{bool="false"}`,
-			}
 
-			ing, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, defaultLimitsTestConfig(), "", registry)
+			limits := defaultLimitsTestConfig()
+			limits.ActiveSeriesCustomTrackersConfig = activeSeriesDefaultConfig
+			overrides, err := validation.NewOverrides(limits, activeSeriesTenantOverride)
+			require.NoError(t, err)
+
+			ing, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, overrides, "", registry)
 			require.NoError(t, err)
 			require.NoError(t, services.StartAndAwaitRunning(context.Background(), ing))
 			defer services.StopAndAwaitTerminated(context.Background(), ing) //nolint:errcheck
@@ -5285,6 +5315,354 @@ func TestIngesterActiveSeries(t *testing.T) {
 
 			testData.test(t, ing, registry)
 		})
+	}
+}
+
+func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
+	labelsToPush := []labels.Labels{
+		labels.FromStrings(labels.MetricName, "test_metric", "bool", "false", "team", "a"),
+		labels.FromStrings(labels.MetricName, "test_metric", "bool", "false", "team", "b"),
+		labels.FromStrings(labels.MetricName, "test_metric", "bool", "true", "team", "a"),
+		labels.FromStrings(labels.MetricName, "test_metric", "bool", "true", "team", "b"),
+	}
+
+	req := func(lbls labels.Labels, t time.Time) *mimirpb.WriteRequest {
+		return mimirpb.ToWriteRequest(
+			[]labels.Labels{lbls},
+			[]mimirpb.Sample{{Value: 1, TimestampMs: t.UnixMilli()}},
+			nil,
+			nil,
+			mimirpb.API,
+		)
+	}
+
+	metricNames := []string{
+		"cortex_ingester_active_series_loading",
+		"cortex_ingester_active_series",
+		"cortex_ingester_active_series_custom_tracker",
+	}
+	userID := "test_user"
+	userID2 := "other_test_user"
+
+	activeSeriesDefaultConfig := mustNewActiveSeriesCustomTrackersConfigFromMap(t, map[string]string{
+		"bool_is_true_flagbased":  `{bool="true"}`,
+		"bool_is_false_flagbased": `{bool="false"}`,
+	})
+
+	activeSeriesTenantConfig := mustNewActiveSeriesCustomTrackersConfigFromMap(t, map[string]string{
+		"team_a": `{team="a"}`,
+		"team_b": `{team="b"}`,
+	})
+
+	defaultActiveSeriesTenantOverride := new(TenantLimitsMock)
+	defaultActiveSeriesTenantOverride.On("ByUserID", userID2).Return(nil)
+	defaultActiveSeriesTenantOverride.On("ByUserID", userID).Return(&validation.Limits{ActiveSeriesCustomTrackersConfig: activeSeriesTenantConfig})
+
+	tests := map[string]struct {
+		test               func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer)
+		reqs               []*mimirpb.WriteRequest
+		expectedMetrics    string
+		activeSeriesConfig activeseries.CustomTrackersConfig
+		tenantLimits       *TenantLimitsMock
+	}{
+		"override flag based config with runtime overwrite": {
+			tenantLimits:       nil,
+			activeSeriesConfig: activeSeriesDefaultConfig,
+			test: func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer) {
+				currentTime := time.Now()
+
+				pushWithUser(t, ingester, labelsToPush, userID, req)
+				pushWithUser(t, ingester, labelsToPush, userID2, req)
+
+				// Update active series for metrics check.
+				ingester.updateActiveSeries(currentTime)
+
+				expectedMetrics := `
+					# HELP cortex_ingester_active_series Number of currently active series per user.
+					# TYPE cortex_ingester_active_series gauge
+					cortex_ingester_active_series{user="other_test_user"} 4
+					cortex_ingester_active_series{user="test_user"} 4
+					# HELP cortex_ingester_active_series_custom_tracker Number of currently active series matching a pre-configured label matchers per user.
+					# TYPE cortex_ingester_active_series_custom_tracker gauge
+					cortex_ingester_active_series_custom_tracker{name="bool_is_false_flagbased",user="other_test_user"} 2
+					cortex_ingester_active_series_custom_tracker{name="bool_is_true_flagbased",user="other_test_user"} 2
+					cortex_ingester_active_series_custom_tracker{name="bool_is_false_flagbased",user="test_user"} 2
+					cortex_ingester_active_series_custom_tracker{name="bool_is_true_flagbased",user="test_user"} 2
+				`
+				// Check tracked Prometheus metrics
+				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
+
+				// Add new runtime configs
+				activeSeriesTenantOverride := new(TenantLimitsMock)
+				activeSeriesTenantOverride.On("ByUserID", userID2).Return(nil)
+				activeSeriesTenantOverride.On("ByUserID", userID).Return(&validation.Limits{ActiveSeriesCustomTrackersConfig: activeSeriesTenantConfig})
+				limits := defaultLimitsTestConfig()
+				limits.ActiveSeriesCustomTrackersConfig = activeSeriesDefaultConfig
+				override, err := validation.NewOverrides(limits, activeSeriesTenantOverride)
+				require.NoError(t, err)
+				ingester.limits = override
+				currentTime = time.Now()
+				// First update reloads the config
+				ingester.updateActiveSeries(currentTime)
+				expectedMetrics = `
+					# HELP cortex_ingester_active_series Number of currently active series per user.
+					# TYPE cortex_ingester_active_series gauge
+					cortex_ingester_active_series{user="other_test_user"} 4
+					# HELP cortex_ingester_active_series_custom_tracker Number of currently active series matching a pre-configured label matchers per user.
+					# TYPE cortex_ingester_active_series_custom_tracker gauge
+					cortex_ingester_active_series_custom_tracker{name="bool_is_false_flagbased",user="other_test_user"} 2
+					cortex_ingester_active_series_custom_tracker{name="bool_is_true_flagbased",user="other_test_user"} 2
+					# HELP cortex_ingester_active_series_loading Indicates that active series configuration is being reloaded, and waiting to become stable. While this metric is non zero, values from active series metrics shouldn't be considered.
+					# TYPE cortex_ingester_active_series_loading gauge
+					cortex_ingester_active_series_loading{user="test_user"} 1
+				`
+				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
+
+				// Saving time before second push to avoid purging it before exposing.
+				currentTime = time.Now()
+				pushWithUser(t, ingester, labelsToPush, userID, req)
+				pushWithUser(t, ingester, labelsToPush, userID2, req)
+				// Adding idleTimeout to expose the metrics but not purge the pushes.
+				currentTime = currentTime.Add(ingester.cfg.ActiveSeriesMetricsIdleTimeout)
+				ingester.updateActiveSeries(currentTime)
+				expectedMetrics = `
+					# HELP cortex_ingester_active_series Number of currently active series per user.
+					# TYPE cortex_ingester_active_series gauge
+					cortex_ingester_active_series{user="other_test_user"} 4
+					cortex_ingester_active_series{user="test_user"} 4
+					# HELP cortex_ingester_active_series_custom_tracker Number of currently active series matching a pre-configured label matchers per user.
+					# TYPE cortex_ingester_active_series_custom_tracker gauge
+					cortex_ingester_active_series_custom_tracker{name="bool_is_true_flagbased",user="other_test_user"} 2
+            	    cortex_ingester_active_series_custom_tracker{name="bool_is_false_flagbased",user="other_test_user"} 2
+					cortex_ingester_active_series_custom_tracker{name="team_a",user="test_user"} 2
+            	    cortex_ingester_active_series_custom_tracker{name="team_b",user="test_user"} 2
+				`
+				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
+			},
+		},
+		"remove runtime overwrite and revert to flag based config": {
+			activeSeriesConfig: activeSeriesDefaultConfig,
+			tenantLimits:       defaultActiveSeriesTenantOverride,
+			test: func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer) {
+				currentTime := time.Now()
+
+				pushWithUser(t, ingester, labelsToPush, userID, req)
+				pushWithUser(t, ingester, labelsToPush, userID2, req)
+
+				// Update active series for metrics check.
+				ingester.updateActiveSeries(currentTime)
+
+				expectedMetrics := `
+					# HELP cortex_ingester_active_series Number of currently active series per user.
+					# TYPE cortex_ingester_active_series gauge
+					cortex_ingester_active_series{user="other_test_user"} 4
+					cortex_ingester_active_series{user="test_user"} 4
+					# HELP cortex_ingester_active_series_custom_tracker Number of currently active series matching a pre-configured label matchers per user.
+					# TYPE cortex_ingester_active_series_custom_tracker gauge
+					cortex_ingester_active_series_custom_tracker{name="bool_is_true_flagbased",user="other_test_user"} 2
+            	    cortex_ingester_active_series_custom_tracker{name="bool_is_false_flagbased",user="other_test_user"} 2
+					cortex_ingester_active_series_custom_tracker{name="team_a",user="test_user"} 2
+            	    cortex_ingester_active_series_custom_tracker{name="team_b",user="test_user"} 2
+				`
+				// Check tracked Prometheus metrics
+				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
+
+				// Remove runtime configs
+				limits := defaultLimitsTestConfig()
+				limits.ActiveSeriesCustomTrackersConfig = activeSeriesDefaultConfig
+				override, err := validation.NewOverrides(limits, nil)
+				require.NoError(t, err)
+				ingester.limits = override
+				ingester.updateActiveSeries(currentTime)
+				expectedMetrics = `
+					# HELP cortex_ingester_active_series Number of currently active series per user.
+					# TYPE cortex_ingester_active_series gauge
+					cortex_ingester_active_series{user="other_test_user"} 4
+					# HELP cortex_ingester_active_series_custom_tracker Number of currently active series matching a pre-configured label matchers per user.
+					# TYPE cortex_ingester_active_series_custom_tracker gauge
+					cortex_ingester_active_series_custom_tracker{name="bool_is_true_flagbased",user="other_test_user"} 2
+            	    cortex_ingester_active_series_custom_tracker{name="bool_is_false_flagbased",user="other_test_user"} 2
+					# HELP cortex_ingester_active_series_loading Indicates that active series configuration is being reloaded, and waiting to become stable. While this metric is non zero, values from active series metrics shouldn't be considered.
+					# TYPE cortex_ingester_active_series_loading gauge
+					cortex_ingester_active_series_loading{user="test_user"} 1
+				`
+				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
+
+				// Saving time before second push to avoid purging it before exposing.
+				currentTime = time.Now()
+				pushWithUser(t, ingester, labelsToPush, userID, req)
+				pushWithUser(t, ingester, labelsToPush, userID2, req)
+				// Adding idleTimeout to expose the metrics but not purge the pushes.
+				currentTime = currentTime.Add(ingester.cfg.ActiveSeriesMetricsIdleTimeout)
+				ingester.updateActiveSeries(currentTime)
+				expectedMetrics = `
+					# HELP cortex_ingester_active_series Number of currently active series per user.
+					# TYPE cortex_ingester_active_series gauge
+					cortex_ingester_active_series{user="other_test_user"} 4
+					cortex_ingester_active_series{user="test_user"} 4
+					# HELP cortex_ingester_active_series_custom_tracker Number of currently active series matching a pre-configured label matchers per user.
+					# TYPE cortex_ingester_active_series_custom_tracker gauge
+					cortex_ingester_active_series_custom_tracker{name="bool_is_false_flagbased",user="other_test_user"} 2
+					cortex_ingester_active_series_custom_tracker{name="bool_is_true_flagbased",user="other_test_user"} 2
+					cortex_ingester_active_series_custom_tracker{name="bool_is_false_flagbased",user="test_user"} 2
+					cortex_ingester_active_series_custom_tracker{name="bool_is_true_flagbased",user="test_user"} 2
+				`
+				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
+			},
+		},
+		"changing runtime override should result in new metrics": {
+			activeSeriesConfig: activeSeriesDefaultConfig,
+			test: func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer) {
+				currentTime := time.Now()
+
+				pushWithUser(t, ingester, labelsToPush, userID, req)
+
+				// Update active series for metrics check.
+				ingester.updateActiveSeries(currentTime)
+
+				expectedMetrics := `
+					# HELP cortex_ingester_active_series Number of currently active series per user.
+					# TYPE cortex_ingester_active_series gauge
+					cortex_ingester_active_series{user="test_user"} 4
+					# HELP cortex_ingester_active_series_custom_tracker Number of currently active series matching a pre-configured label matchers per user.
+					# TYPE cortex_ingester_active_series_custom_tracker gauge
+					cortex_ingester_active_series_custom_tracker{name="bool_is_false_flagbased",user="test_user"} 2
+					cortex_ingester_active_series_custom_tracker{name="bool_is_true_flagbased",user="test_user"} 2
+				`
+				// Check tracked Prometheus metrics
+				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
+
+				// Change runtime configs
+				activeSeriesTenantOverride := new(TenantLimitsMock)
+				activeSeriesTenantOverride.On("ByUserID", userID).Return(&validation.Limits{ActiveSeriesCustomTrackersConfig: mustNewActiveSeriesCustomTrackersConfigFromMap(t, map[string]string{
+					"team_a": `{team="a"}`,
+					"team_b": `{team="b"}`,
+					"team_c": `{team="b"}`,
+					"team_d": `{team="b"}`,
+				})})
+				limits := defaultLimitsTestConfig()
+				limits.ActiveSeriesCustomTrackersConfig = activeSeriesDefaultConfig
+				override, err := validation.NewOverrides(limits, activeSeriesTenantOverride)
+				require.NoError(t, err)
+				ingester.limits = override
+				ingester.updateActiveSeries(currentTime)
+				expectedMetrics = `
+					# HELP cortex_ingester_active_series_loading Indicates that active series configuration is being reloaded, and waiting to become stable. While this metric is non zero, values from active series metrics shouldn't be considered.
+					# TYPE cortex_ingester_active_series_loading gauge
+					cortex_ingester_active_series_loading{user="test_user"} 1
+				`
+				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
+
+				// Saving time before second push to avoid purging it before exposing.
+				currentTime = time.Now()
+				pushWithUser(t, ingester, labelsToPush, userID, req)
+				// Adding idleTimeout to expose the metrics but not purge the pushes.
+				currentTime = currentTime.Add(ingester.cfg.ActiveSeriesMetricsIdleTimeout)
+				ingester.updateActiveSeries(currentTime)
+				expectedMetrics = `
+					# HELP cortex_ingester_active_series Number of currently active series per user.
+					# TYPE cortex_ingester_active_series gauge
+					cortex_ingester_active_series{user="test_user"} 4
+					# HELP cortex_ingester_active_series_custom_tracker Number of currently active series matching a pre-configured label matchers per user.
+					# TYPE cortex_ingester_active_series_custom_tracker gauge
+					cortex_ingester_active_series_custom_tracker{name="team_a",user="test_user"} 2
+					cortex_ingester_active_series_custom_tracker{name="team_b",user="test_user"} 2
+					cortex_ingester_active_series_custom_tracker{name="team_c",user="test_user"} 2
+					cortex_ingester_active_series_custom_tracker{name="team_d",user="test_user"} 2
+				`
+				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
+			},
+		},
+		"should cleanup loading metric at close": {
+			activeSeriesConfig: activeSeriesDefaultConfig,
+			tenantLimits:       defaultActiveSeriesTenantOverride,
+			test: func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer) {
+				currentTime := time.Now()
+
+				pushWithUser(t, ingester, labelsToPush, userID, req)
+				pushWithUser(t, ingester, labelsToPush, userID2, req)
+
+				// Update active series for metrics check.
+				ingester.updateActiveSeries(currentTime)
+
+				expectedMetrics := `
+					# HELP cortex_ingester_active_series Number of currently active series per user.
+					# TYPE cortex_ingester_active_series gauge
+					cortex_ingester_active_series{user="other_test_user"} 4
+					cortex_ingester_active_series{user="test_user"} 4
+					# HELP cortex_ingester_active_series_custom_tracker Number of currently active series matching a pre-configured label matchers per user.
+					# TYPE cortex_ingester_active_series_custom_tracker gauge
+					cortex_ingester_active_series_custom_tracker{name="bool_is_true_flagbased",user="other_test_user"} 2
+					cortex_ingester_active_series_custom_tracker{name="bool_is_false_flagbased",user="other_test_user"} 2
+					cortex_ingester_active_series_custom_tracker{name="team_a",user="test_user"} 2
+					cortex_ingester_active_series_custom_tracker{name="team_b",user="test_user"} 2
+				`
+				// Check tracked Prometheus metrics
+				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
+
+				// Remove all configs
+				limits := defaultLimitsTestConfig()
+				override, err := validation.NewOverrides(limits, nil)
+				require.NoError(t, err)
+				ingester.limits = override
+				ingester.updateActiveSeries(currentTime)
+				expectedMetrics = `
+					# HELP cortex_ingester_active_series_loading Indicates that active series configuration is being reloaded, and waiting to become stable. While this metric is non zero, values from active series metrics shouldn't be considered.
+					# TYPE cortex_ingester_active_series_loading gauge
+					cortex_ingester_active_series_loading{user="test_user"} 1
+					cortex_ingester_active_series_loading{user="other_test_user"} 1
+				`
+				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
+				ingester.closeAllTSDB()
+				expectedMetrics = `
+				`
+				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
+			},
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			registry := prometheus.NewRegistry()
+
+			// Create a mocked ingester
+			cfg := defaultIngesterTestConfig(t)
+			cfg.IngesterRing.JoinAfter = 0
+			cfg.ActiveSeriesMetricsEnabled = true
+
+			limits := defaultLimitsTestConfig()
+			limits.ActiveSeriesCustomTrackersConfig = testData.activeSeriesConfig
+			var overrides *validation.Overrides
+			var err error
+			// Without this, TenantLimitsMock(nil) != nil when using getOverridesForUser in limits.go
+			if testData.tenantLimits != nil {
+				overrides, err = validation.NewOverrides(limits, testData.tenantLimits)
+				require.NoError(t, err)
+			} else {
+				overrides, err = validation.NewOverrides(limits, nil)
+				require.NoError(t, err)
+			}
+
+			ing, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, overrides, "", registry)
+			require.NoError(t, err)
+			require.NoError(t, services.StartAndAwaitRunning(context.Background(), ing))
+			defer services.StopAndAwaitTerminated(context.Background(), ing) //nolint:errcheck
+
+			// Wait until the ingester is healthy
+			test.Poll(t, 100*time.Millisecond, 1, func() interface{} {
+				return ing.lifecycler.HealthyInstancesCount()
+			})
+
+			testData.test(t, ing, registry)
+		})
+	}
+}
+
+func pushWithUser(t *testing.T, ingester *Ingester, labelsToPush []labels.Labels, userID string, req func(lbls labels.Labels, t time.Time) *mimirpb.WriteRequest) {
+	for _, label := range labelsToPush {
+		ctx := user.InjectOrgID(context.Background(), userID)
+		_, err := ingester.Push(ctx, req(label, time.Now()))
+		require.NoError(t, err)
 	}
 }
 

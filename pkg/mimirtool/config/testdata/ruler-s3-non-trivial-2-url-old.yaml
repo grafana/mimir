@@ -1,0 +1,4 @@
+ruler:
+  storage:
+    s3:
+      s3: https://:pass@hostname.com:8080/my-bucket

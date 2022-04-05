@@ -5,7 +5,7 @@
     memcachedExporter: 'prom/memcached-exporter:v0.6.0',
 
     // Our services.
-    mimir: 'cortexproject/cortex:v1.9.0',
+    mimir: 'grafana/mimir:2.0.0',
 
     alertmanager: self.mimir,
     distributor: self.mimir,
@@ -19,7 +19,9 @@
     query_scheduler: self.mimir,
     overrides_exporter: self.mimir,
 
-    query_tee: 'quay.io/cortexproject/query-tee:v1.9.0',
-    testExporter: 'cortexproject/test-exporter:v1.9.0',
+    query_tee: 'grafana/query-tee:2.0.0',
+
+    // See: https://github.com/grafana/rollout-operator
+    rollout_operator: 'grafana/rollout-operator:v0.1.1',
   },
 }

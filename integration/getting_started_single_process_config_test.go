@@ -2,6 +2,7 @@
 // Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/integration/getting_started_single_process_config_test.go
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
+//go:build requires_docker
 // +build requires_docker
 
 package integration
@@ -28,23 +29,23 @@ func TestGettingStartedSingleProcessConfigWithBlocksStorage(t *testing.T) {
 	defer s.Close()
 
 	// Start dependencies.
-	minio := e2edb.NewMinio(9000, bucketName)
+	minio := e2edb.NewMinio(9000, blocksBucketName)
 	require.NoError(t, s.StartAndWaitReady(minio))
 
 	// Start Mimir components.
-	require.NoError(t, copyFileToSharedDir(s, "docs/sources/configuration/single-process-config-blocks.yaml", mimirConfigFile))
+	require.NoError(t, copyFileToSharedDir(s, "docs/configurations/single-process-config-blocks.yaml", mimirConfigFile))
 
 	// Start Mimir in single binary mode, reading the config from file and overwriting
 	// the backend config to make it work with Minio.
 	flags := map[string]string{
 		"-blocks-storage.s3.access-key-id":     e2edb.MinioAccessKey,
 		"-blocks-storage.s3.secret-access-key": e2edb.MinioSecretKey,
-		"-blocks-storage.s3.bucket-name":       bucketName,
+		"-blocks-storage.s3.bucket-name":       blocksBucketName,
 		"-blocks-storage.s3.endpoint":          fmt.Sprintf("%s-minio-9000:9000", networkName),
 		"-blocks-storage.s3.insecure":          "true",
 	}
 
-	mimir := e2emimir.NewSingleBinaryWithConfigFile("mimir-1", mimirConfigFile, flags, "", 9009, 9095)
+	mimir := e2emimir.NewSingleBinary("mimir-1", flags, e2emimir.WithPorts(9009, 9095), e2emimir.WithConfigFile(mimirConfigFile))
 	require.NoError(t, s.StartAndWaitReady(mimir))
 
 	c, err := e2emimir.NewClient(mimir.HTTPEndpoint(), mimir.HTTPEndpoint(), "", "", "user-1")
@@ -64,7 +65,7 @@ func TestGettingStartedSingleProcessConfigWithBlocksStorage(t *testing.T) {
 	require.Equal(t, model.ValVector, result.Type())
 	assert.Equal(t, expectedVector, result.(model.Vector))
 
-	// Work round Prometheus client lib not having a way to omit the start&end params
+	// Work around the Prometheus client lib not having a way to omit the start and end params.
 	minTime := time.Unix(math.MinInt64/1000+62135596801, 0).UTC()
 	maxTime := time.Unix(math.MaxInt64/1000-62135596801, 999999999).UTC()
 

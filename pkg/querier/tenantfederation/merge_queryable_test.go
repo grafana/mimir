@@ -25,8 +25,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/user"
 
+	"github.com/grafana/dskit/tenant"
+
 	"github.com/grafana/mimir/pkg/storage/series"
-	"github.com/grafana/mimir/pkg/tenant"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -345,7 +346,7 @@ type labelValuesScenario struct {
 func TestMergeQueryable_Querier(t *testing.T) {
 	t.Run("querying without a tenant specified should error", func(t *testing.T) {
 		queryable := &mockTenantQueryableWithFilter{logger: log.NewNopLogger()}
-		q := NewQueryable(queryable, false /* byPassWithSingleQuerier */, log.NewNopLogger())
+		q := NewQueryable(queryable, false /* bypassWithSingleQuerier */, log.NewNopLogger())
 		// Create a context with no tenant specified.
 		ctx := context.Background()
 

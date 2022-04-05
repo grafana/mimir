@@ -28,6 +28,7 @@
       // Persist ring tokens so that when the store-gateway will be restarted
       // it will pick the same tokens
       'store-gateway.sharding-ring.tokens-file-path': '/data/tokens',
+      'store-gateway.sharding-ring.wait-stability-min-duration': '1m',
 
       // Block index-headers are pre-downloaded but lazy mmaped and loaded at query time.
       'blocks-storage.bucket-store.index-header-lazy-loading-enabled': 'true',
@@ -81,6 +82,7 @@
     statefulSet.mixin.spec.template.metadata.withLabels({ name: name }) +
     statefulSet.mixin.spec.selector.withMatchLabels({ name: name }) +
     statefulSet.mixin.spec.template.spec.securityContext.withRunAsUser(0) +
+    (if !std.isObject($._config.node_selector) then {} else statefulSet.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector)) +
     statefulSet.mixin.spec.updateStrategy.withType('RollingUpdate') +
     statefulSet.mixin.spec.template.spec.withTerminationGracePeriodSeconds(120) +
     // Parallelly scale up/down store-gateway instances instead of starting them
@@ -93,7 +95,7 @@
   store_gateway_statefulset: self.newStoreGatewayStatefulSet('store-gateway', $.store_gateway_container),
 
   store_gateway_service:
-    $.util.serviceFor($.store_gateway_statefulset),
+    $.util.serviceFor($.store_gateway_statefulset, $._config.service_ignored_labels),
 
   store_gateway_pdb:
     podDisruptionBudget.new() +

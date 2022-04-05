@@ -11,8 +11,9 @@ import (
 	"github.com/prometheus/prometheus/rules"
 	"github.com/weaveworks/common/user"
 
+	"github.com/grafana/dskit/tenant"
+
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
-	"github.com/grafana/mimir/pkg/tenant"
 )
 
 type TenantFederationConfig struct {

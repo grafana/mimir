@@ -10,9 +10,11 @@ import (
 	"flag"
 	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv/codec"
 	"github.com/grafana/dskit/kv/memberlist"
 	"github.com/grafana/dskit/modules"
@@ -51,12 +53,14 @@ import (
 	"github.com/grafana/mimir/pkg/util/activitytracker"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/validation"
+	"github.com/grafana/mimir/pkg/util/version"
 )
 
 // The various modules that make up Mimir.
 const (
 	ActivityTracker          string = "activity-tracker"
 	API                      string = "api"
+	SanityCheck              string = "sanity-check"
 	Ring                     string = "ring"
 	RuntimeConfig            string = "runtime-config"
 	Overrides                string = "overrides"
@@ -94,15 +98,23 @@ func newDefaultConfig() *Config {
 
 func (t *Mimir) initAPI() (services.Service, error) {
 	t.Cfg.API.ServerPrefix = t.Cfg.Server.PathPrefix
-	t.Cfg.API.LegacyHTTPPrefix = t.Cfg.HTTPPrefix
 
 	a, err := api.New(t.Cfg.API, t.Cfg.Server, t.Server, util_log.Logger)
 	if err != nil {
 		return nil, err
 	}
 
+	t.BuildInfoHandler = version.BuildInfoHandler(
+		t.Cfg.ApplicationName,
+		version.BuildInfoFeatures{
+			AlertmanagerConfigAPI: strconv.FormatBool(t.Cfg.Alertmanager.EnableAPI),
+			QuerySharding:         strconv.FormatBool(t.Cfg.Frontend.QueryMiddleware.ShardedQueries),
+			RulerConfigAPI:        strconv.FormatBool(t.Cfg.Ruler.EnableAPI),
+			FederatedRules:        strconv.FormatBool(t.Cfg.Ruler.TenantFederation.Enabled),
+		})
+
 	t.API = a
-	t.API.RegisterAPI(t.Cfg.Server.PathPrefix, t.Cfg, newDefaultConfig())
+	t.API.RegisterAPI(t.Cfg.Server.PathPrefix, t.Cfg, newDefaultConfig(), t.BuildInfoHandler)
 
 	return nil, nil
 }
@@ -134,7 +146,6 @@ func (t *Mimir) initActivityTracker() (services.Service, error) {
 
 	return services.NewIdleService(nil, func(_ error) error {
 		entries, err := activitytracker.LoadUnfinishedEntries(t.Cfg.ActivityTracker.Filepath)
-
 		if err != nil {
 			level.Warn(l).Log("msg", "failed to fully read file with unfinished activities during shutdown", "err", err)
 		}
@@ -146,6 +157,12 @@ func (t *Mimir) initActivityTracker() (services.Service, error) {
 		}
 		return nil
 	}), nil
+}
+
+func (t *Mimir) initSanityCheck() (services.Service, error) {
+	return services.NewIdleService(func(ctx context.Context) error {
+		return runSanityCheck(ctx, t.Cfg, util_log.Logger)
+	}, nil), nil
 }
 
 func (t *Mimir) initServer() (services.Service, error) {
@@ -184,8 +201,8 @@ func (t *Mimir) initServer() (services.Service, error) {
 }
 
 func (t *Mimir) initRing() (serv services.Service, err error) {
-	t.Cfg.Ingester.LifecyclerConfig.RingConfig.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
-	t.Ring, err = ring.New(t.Cfg.Ingester.LifecyclerConfig.RingConfig, "ingester", ingester.IngesterRingKey, util_log.Logger, prometheus.WrapRegistererWithPrefix("cortex_", prometheus.DefaultRegisterer))
+	t.Cfg.Ingester.IngesterRing.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
+	t.Ring, err = ring.New(t.Cfg.Ingester.IngesterRing.ToRingConfig(), "ingester", ingester.IngesterRingKey, util_log.Logger, prometheus.WrapRegistererWithPrefix("cortex_", prometheus.DefaultRegisterer))
 	if err != nil {
 		return nil, err
 	}
@@ -193,6 +210,20 @@ func (t *Mimir) initRing() (serv services.Service, err error) {
 }
 
 func (t *Mimir) initRuntimeConfig() (services.Service, error) {
+	// TODO Remove in Mimir 2.3.
+	//      Previously ActiveSeriesCustomTrackers was an ingester config, now it's in LimitsConfig.
+	//      We provide backwards compatibility for it by parsing the old YAML location and copying it to LimitsConfig here,
+	//      unless it's also defined in the limits, which is invalid.
+	//      This needs to be set before setting default limits for unmarshalling.
+	if !t.Cfg.Ingester.ActiveSeriesCustomTrackers.Empty() {
+		if !t.Cfg.LimitsConfig.ActiveSeriesCustomTrackersConfig.Empty() {
+			return nil, fmt.Errorf("can't define active series custom trackers in both ingester and limits config, please define them only in the limits")
+		}
+		level.Warn(util_log.Logger).Log("msg", "active_series_custom_trackers is defined as an ingester config, this location is deprecated, please move it to the limits config")
+		flagext.DeprecatedFlagsUsed.Inc()
+		t.Cfg.LimitsConfig.ActiveSeriesCustomTrackersConfig = t.Cfg.Ingester.ActiveSeriesCustomTrackers
+	}
+
 	if t.Cfg.RuntimeConfig.LoadPath == "" {
 		// no need to initialize module if load path is empty
 		return nil, nil
@@ -223,13 +254,6 @@ func (t *Mimir) initOverrides() (serv services.Service, err error) {
 }
 
 func (t *Mimir) initOverridesExporter() (services.Service, error) {
-	if t.Cfg.isModuleEnabled(OverridesExporter) && t.TenantLimits == nil {
-		// This target isn't enabled by default ("all") and requires per-tenant limits to
-		// work. Fail if it can't be setup correctly since the user explicitly wanted this
-		// target to run.
-		return nil, errors.New("overrides-exporter has been enabled, but no runtime configuration file was configured")
-	}
-
 	exporter := validation.NewOverridesExporter(&t.Cfg.LimitsConfig, t.TenantLimits)
 	prometheus.MustRegister(exporter)
 
@@ -239,6 +263,7 @@ func (t *Mimir) initOverridesExporter() (services.Service, error) {
 }
 
 func (t *Mimir) initDistributorService() (serv services.Service, err error) {
+	t.Cfg.Distributor.DistributorRing.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
 	t.Cfg.Distributor.DistributorRing.ListenPort = t.Cfg.Server.GRPCListenPort
 	t.Cfg.Distributor.ShuffleShardingLookbackPeriod = t.Cfg.Querier.ShuffleShardingIngestersLookbackPeriod
 
@@ -281,8 +306,9 @@ func (t *Mimir) initTenantFederation() (serv services.Service, err error) {
 		// Make sure the mergeQuerier is only used for request with more than a
 		// single tenant. This allows for a less impactful enabling of tenant
 		// federation.
-		const byPassForSingleQuerier = true
-		t.QuerierQueryable = querier.NewSampleAndChunkQueryable(tenantfederation.NewQueryable(t.QuerierQueryable, byPassForSingleQuerier, util_log.Logger))
+		const bypassForSingleQuerier = true
+		t.QuerierQueryable = querier.NewSampleAndChunkQueryable(tenantfederation.NewQueryable(t.QuerierQueryable, bypassForSingleQuerier, util_log.Logger))
+		t.ExemplarQueryable = tenantfederation.NewExemplarQueryable(t.ExemplarQueryable, bypassForSingleQuerier, util_log.Logger)
 	}
 	return nil, nil
 }
@@ -323,11 +349,11 @@ func (t *Mimir) initTenantFederation() (serv services.Service, err error) {
 //        requests     │                     │                     │
 //                     │                     │                     │
 //                     ▼                     ▼                     ▼
-//           ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐
-//           │                  │  │                  │  │                  │
-//           │Querier Queryable │  │  /api/v1 router  │  │ /api/prom router │
-//           │                  │  │                  │  │                  │
-//           └──────────────────┘  └──────────────────┘  └──────────────────┘
+//           ┌──────────────────┐  ┌──────────────────┐  ┌────────────────────┐
+//           │                  │  │                  │  │                    │
+//           │Querier Queryable │  │  /api/v1 router  │  │ /prometheus router │
+//           │                  │  │                  │  │                    │
+//           └──────────────────┘  └──────────────────┘  └────────────────────┘
 //                     ▲                     │                     │
 //                     │                     └──────────┬──────────┘
 //                     │                                ▼
@@ -356,7 +382,7 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 	// to ensure requests it processes use the default middleware instrumentation.
 	if !t.Cfg.isModuleEnabled(QueryFrontend) && !t.Cfg.isModuleEnabled(QueryScheduler) && !t.Cfg.isModuleEnabled(All) {
 		// First, register the internal querier handler with the external HTTP server
-		t.API.RegisterQueryAPI(internalQuerierRouter)
+		t.API.RegisterQueryAPI(internalQuerierRouter, t.BuildInfoHandler)
 
 		// Second, set the http.Handler that the frontend worker will use to process requests to point to
 		// the external HTTP server. This will allow the querier to consolidate query metrics both external
@@ -394,12 +420,6 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 func (t *Mimir) initStoreQueryables() (services.Service, error) {
 	var servs []services.Service
 
-	// When running in single binary, if the blocks sharding is disabled and no custom
-	// store-gateway address has been configured, we can set it to the running process.
-	if t.Cfg.isModuleEnabled(All) && !t.Cfg.StoreGateway.ShardingEnabled && t.Cfg.Querier.StoreGatewayAddresses == "" {
-		t.Cfg.Querier.StoreGatewayAddresses = fmt.Sprintf("127.0.0.1:%d", t.Cfg.Server.GRPCListenPort)
-	}
-
 	//nolint:golint // I prefer this form over removing 'else', because it allows q to have smaller scope.
 	if q, err := querier.NewBlocksStoreQueryableFromConfig(t.Cfg.Querier, t.Cfg.StoreGateway, t.Cfg.BlocksStorage, t.Overrides, util_log.Logger, prometheus.DefaultRegisterer); err != nil {
 		return nil, fmt.Errorf("failed to initialize querier: %v", err)
@@ -427,8 +447,8 @@ func (t *Mimir) tsdbIngesterConfig() {
 }
 
 func (t *Mimir) initIngesterService() (serv services.Service, err error) {
-	t.Cfg.Ingester.LifecyclerConfig.RingConfig.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
-	t.Cfg.Ingester.LifecyclerConfig.ListenPort = t.Cfg.Server.GRPCListenPort
+	t.Cfg.Ingester.IngesterRing.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
+	t.Cfg.Ingester.IngesterRing.ListenPort = t.Cfg.Server.GRPCListenPort
 	t.Cfg.Ingester.StreamTypeFn = ingesterChunkStreaming(t.RuntimeConfig)
 	t.Cfg.Ingester.InstanceLimitsFn = ingesterInstanceLimits(t.RuntimeConfig)
 	t.tsdbIngesterConfig()
@@ -442,7 +462,13 @@ func (t *Mimir) initIngesterService() (serv services.Service, err error) {
 }
 
 func (t *Mimir) initIngester() (serv services.Service, err error) {
-	t.API.RegisterIngester(t.Ingester, t.Cfg.Distributor)
+	var ing api.Ingester
+
+	ing = t.Ingester
+	if t.ActivityTracker != nil {
+		ing = ingester.NewIngesterActivityTracker(t.Ingester, t.ActivityTracker)
+	}
+	t.API.RegisterIngester(ing, t.Cfg.Distributor)
 	return nil, nil
 }
 
@@ -493,7 +519,7 @@ func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 	roundTripper = t.QueryFrontendTripperware(roundTripper)
 
 	handler := transport.NewHandler(t.Cfg.Frontend.Handler, roundTripper, util_log.Logger, prometheus.DefaultRegisterer)
-	t.API.RegisterQueryFrontendHandler(handler)
+	t.API.RegisterQueryFrontendHandler(handler, t.BuildInfoHandler)
 
 	if frontendV1 != nil {
 		t.API.RegisterQueryFrontend1(frontendV1)
@@ -529,6 +555,7 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 		return nil, nil
 	}
 
+	t.Cfg.Ruler.Ring.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
 	t.Cfg.Ruler.Ring.ListenPort = t.Cfg.Server.GRPCListenPort
 	rulerRegisterer := prometheus.WrapRegistererWith(prometheus.Labels{"engine": "ruler"}, prometheus.DefaultRegisterer)
 	var queryable, federatedQueryable prom_storage.Queryable
@@ -539,16 +566,27 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 		if !t.Cfg.TenantFederation.Enabled {
 			return nil, errors.New("-ruler.tenant-federation.enabled=true requires -tenant-federation.enabled=true")
 		}
-		// Setting byPassForSingleQuerier=false forces `tenantfederation.NewQueryable` to add
+		// Setting bypassForSingleQuerier=false forces `tenantfederation.NewQueryable` to add
 		// the `__tenant_id__` label on all metrics regardless if they're for a single tenant or multiple tenants.
 		// This makes this label more consistent and hopefully less confusing to users.
-		const byPassForSingleQuerier = false
+		const bypassForSingleQuerier = false
 
-		federatedQueryable = tenantfederation.NewQueryable(queryable, byPassForSingleQuerier, util_log.Logger)
+		federatedQueryable = tenantfederation.NewQueryable(queryable, bypassForSingleQuerier, util_log.Logger)
 	}
-
 	managerFactory := ruler.DefaultTenantManagerFactory(t.Cfg.Ruler, t.Distributor, queryable, federatedQueryable, eng, t.Overrides, prometheus.DefaultRegisterer)
-	manager, err := ruler.NewDefaultMultiTenantManager(t.Cfg.Ruler, managerFactory, prometheus.DefaultRegisterer, util_log.Logger)
+
+	// We need to prefix and add a label to the metrics for the DNS resolver because, unlike other mimir components,
+	// it doesn't already have the `cortex_` prefix and the `component` label to the metrics it emits
+	dnsProviderReg := prometheus.WrapRegistererWithPrefix(
+		"cortex_",
+		prometheus.WrapRegistererWith(
+			prometheus.Labels{"component": "ruler"},
+			prometheus.DefaultRegisterer,
+		),
+	)
+
+	dnsResolver := dns.NewProvider(util_log.Logger, dnsProviderReg, dns.GolangResolverType)
+	manager, err := ruler.NewDefaultMultiTenantManager(t.Cfg.Ruler, managerFactory, prometheus.DefaultRegisterer, util_log.Logger, dnsResolver)
 	if err != nil {
 		return nil, err
 	}
@@ -565,19 +603,19 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 		return
 	}
 
-	// Expose HTTP/GRPC endpoints for the Ruler service
+	// Expose HTTP/GRPC admin endpoints for the Ruler service
 	t.API.RegisterRuler(t.Ruler)
 
-	// If the API is enabled, register the Ruler API
-	if t.Cfg.Ruler.EnableAPI {
-		t.API.RegisterRulerAPI(ruler.NewAPI(t.Ruler, t.RulerStorage, util_log.Logger))
-	}
+	// Expose HTTP configuration and prometheus-compatible Ruler APIs
+	t.API.RegisterRulerAPI(ruler.NewAPI(t.Ruler, t.RulerStorage, util_log.Logger), t.Cfg.Ruler.EnableAPI)
 
 	return t.Ruler, nil
 }
 
 func (t *Mimir) initAlertManager() (serv services.Service, err error) {
+	t.Cfg.Alertmanager.ShardingRing.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
 	t.Cfg.Alertmanager.ShardingRing.ListenPort = t.Cfg.Server.GRPCListenPort
+	t.Cfg.Alertmanager.CheckExternalURL(t.Cfg.API.AlertmanagerHTTPPrefix, util_log.Logger)
 
 	store, err := alertstore.NewAlertStore(context.Background(), t.Cfg.AlertmanagerStorage, t.Overrides, util_log.Logger, prometheus.DefaultRegisterer)
 	if err != nil {
@@ -589,11 +627,12 @@ func (t *Mimir) initAlertManager() (serv services.Service, err error) {
 		return
 	}
 
-	t.API.RegisterAlertmanager(t.Alertmanager, t.Cfg.isModuleEnabled(AlertManager), t.Cfg.Alertmanager.EnableAPI)
+	t.API.RegisterAlertmanager(t.Alertmanager, t.Cfg.Alertmanager.EnableAPI, t.BuildInfoHandler)
 	return t.Alertmanager, nil
 }
 
 func (t *Mimir) initCompactor() (serv services.Service, err error) {
+	t.Cfg.Compactor.ShardingRing.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
 	t.Cfg.Compactor.ShardingRing.ListenPort = t.Cfg.Server.GRPCListenPort
 
 	t.Compactor, err = compactor.NewMultitenantCompactor(t.Cfg.Compactor, t.Cfg.BlocksStorage, t.Overrides, util_log.Logger, prometheus.DefaultRegisterer)
@@ -607,6 +646,7 @@ func (t *Mimir) initCompactor() (serv services.Service, err error) {
 }
 
 func (t *Mimir) initStoreGateway() (serv services.Service, err error) {
+	t.Cfg.StoreGateway.ShardingRing.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
 	t.Cfg.StoreGateway.ShardingRing.ListenPort = t.Cfg.Server.GRPCListenPort
 
 	t.StoreGateway, err = storegateway.NewStoreGateway(t.Cfg.StoreGateway, t.Cfg.BlocksStorage, t.Overrides, t.Cfg.Server.LogLevel, util_log.Logger, prometheus.DefaultRegisterer, t.ActivityTracker)
@@ -629,7 +669,7 @@ func (t *Mimir) initMemberlistKV() (services.Service, error) {
 	dnsProviderReg := prometheus.WrapRegistererWithPrefix(
 		"cortex_",
 		prometheus.WrapRegistererWith(
-			prometheus.Labels{"name": "memberlist"},
+			prometheus.Labels{"component": "memberlist"},
 			reg,
 		),
 	)
@@ -639,7 +679,7 @@ func (t *Mimir) initMemberlistKV() (services.Service, error) {
 
 	// Update the config.
 	t.Cfg.Distributor.DistributorRing.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
-	t.Cfg.Ingester.LifecyclerConfig.RingConfig.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
+	t.Cfg.Ingester.IngesterRing.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
 	t.Cfg.StoreGateway.ShardingRing.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
 	t.Cfg.Compactor.ShardingRing.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
 	t.Cfg.Ruler.Ring.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
@@ -676,6 +716,7 @@ func (t *Mimir) setupModuleManager() error {
 	// RegisterModule(name string, initFn func()(services.Service, error))
 	mm.RegisterModule(Server, t.initServer, modules.UserInvisibleModule)
 	mm.RegisterModule(ActivityTracker, t.initActivityTracker, modules.UserInvisibleModule)
+	mm.RegisterModule(SanityCheck, t.initSanityCheck, modules.UserInvisibleModule)
 	mm.RegisterModule(API, t.initAPI, modules.UserInvisibleModule)
 	mm.RegisterModule(RuntimeConfig, t.initRuntimeConfig, modules.UserInvisibleModule)
 	mm.RegisterModule(MemberlistKV, t.initMemberlistKV, modules.UserInvisibleModule)
@@ -705,7 +746,7 @@ func (t *Mimir) setupModuleManager() error {
 
 	// Add dependencies
 	deps := map[string][]string{
-		Server:                   {ActivityTracker},
+		Server:                   {ActivityTracker, SanityCheck},
 		API:                      {Server},
 		MemberlistKV:             {API},
 		RuntimeConfig:            {API},

@@ -8,12 +8,16 @@ package mimir
 import (
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/gorilla/mux"
+	"github.com/grafana/dskit/flagext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/server"
+
+	"github.com/grafana/mimir/pkg/ingester/activeseries"
 )
 
 func changeTargetConfig(c *Config) {
@@ -155,6 +159,118 @@ func TestMimir_InitRulerStorage(t *testing.T) {
 			} else {
 				assert.Nil(t, mimir.RulerStorage)
 			}
+		})
+	}
+}
+
+func TestMultiKVSetup(t *testing.T) {
+	dir := t.TempDir()
+
+	for target, checkFn := range map[string]func(t *testing.T, c Config){
+		All: func(t *testing.T, c Config) {
+			require.NotNil(t, c.Distributor.DistributorRing.KVStore.Multi.ConfigProvider)
+			require.NotNil(t, c.Ingester.IngesterRing.KVStore.Multi)
+			require.NotNil(t, c.StoreGateway.ShardingRing.KVStore.Multi.ConfigProvider)
+			require.NotNil(t, c.Compactor.ShardingRing.KVStore.Multi.ConfigProvider)
+		},
+
+		Ruler: func(t *testing.T, c Config) {
+			require.NotNil(t, c.Ruler.Ring.KVStore.Multi.ConfigProvider)
+		},
+
+		AlertManager: func(t *testing.T, c Config) {
+			require.NotNil(t, c.Alertmanager.ShardingRing.KVStore.Multi.ConfigProvider)
+		},
+
+		Distributor: func(t *testing.T, c Config) {
+			require.NotNil(t, c.Ingester.IngesterRing.KVStore.Multi.ConfigProvider)
+		},
+
+		Ingester: func(t *testing.T, c Config) {
+			require.NotNil(t, c.Ingester.IngesterRing.KVStore.Multi.ConfigProvider)
+		},
+	} {
+		t.Run(target, func(t *testing.T) {
+			prepareGlobalMetricsRegistry(t)
+
+			cfg := Config{}
+			flagext.DefaultValues(&cfg)
+			// Set to 0 to find any free port.
+			cfg.Server.HTTPListenPort = 0
+			cfg.Server.GRPCListenPort = 0
+			cfg.Target = []string{target}
+
+			// Must be set, otherwise MultiKV config provider will not be set.
+			cfg.RuntimeConfig.LoadPath = filepath.Join(dir, "config.yaml")
+
+			c, err := New(cfg)
+			require.NoError(t, err)
+
+			_, err = c.ModuleManager.InitModuleServices(cfg.Target...)
+			require.NoError(t, err)
+			defer c.Server.Stop()
+
+			checkFn(t, c.Cfg)
+		})
+	}
+}
+
+// TODO Remove in Mimir 2.3.
+//      Previously ActiveSeriesCustomTrackers was an ingester config, now it's in LimitsConfig.
+//      We provide backwards compatibility for it by parsing the old YAML location and copying it to LimitsConfig here,
+//      unless it's also defined in the limits, which is invalid.
+//		This needs to be set before setting default limits for unmarshalling.
+func TestActiveSeriesOverrides(t *testing.T) {
+	tests := map[string]struct {
+		config Config
+	}{
+		"Override with runtime path specified": {
+			config: func() Config {
+				cfg := Config{}
+				flagext.DefaultValues(&cfg)
+				// Adding loadpath to hit default value set
+				cfg.RuntimeConfig.LoadPath = "testpath"
+
+				trackersConfig, err := activeseries.NewCustomTrackersConfig(map[string]string{
+					"bool_is_true_flag-based": `{bool="true"}`,
+					"bool_is_false_flagbased": `{bool="false"}`,
+				})
+				require.Nil(t, err)
+				cfg.Ingester.ActiveSeriesCustomTrackers = trackersConfig
+				return cfg
+			}(),
+		},
+		"Override without runtime path specified": {
+			config: func() Config {
+				cfg := Config{}
+				flagext.DefaultValues(&cfg)
+
+				trackersConfig, err := activeseries.NewCustomTrackersConfig(map[string]string{
+					"bool_is_true_flag-based": `{bool="true"}`,
+					"bool_is_false_flagbased": `{bool="false"}`,
+				})
+				require.Nil(t, err)
+				cfg.Ingester.ActiveSeriesCustomTrackers = trackersConfig
+				return cfg
+			}(),
+		},
+	}
+	for test, testData := range tests {
+		t.Run(test, func(t *testing.T) {
+			prepareGlobalMetricsRegistry(t)
+			// Set to 0 to find any free port.
+			cfg := testData.config
+			cfg.Server.HTTPListenPort = 0
+			cfg.Server.GRPCListenPort = 0
+			c, err := New(cfg)
+			require.Nil(t, err)
+			_, err = c.ModuleManager.InitModuleServices(Overrides)
+			require.NoError(t, err)
+			defer c.Server.Stop()
+
+			defaultActiveSeriesConfig := c.Overrides.ActiveSeriesCustomTrackersConfig("nonexistent")
+			assert.False(t, defaultActiveSeriesConfig.Empty())
+
 		})
 	}
 }

@@ -1,9 +1,9 @@
 Usage of ./cmd/mimir/mimir:
   -activity-tracker.filepath string
-    	File where ongoing activities are stored. If empty, activity tracking is disabled. (default "/tmp/metrics-activity.log")
+    	File where ongoing activities are stored. If empty, activity tracking is disabled. (default "./metrics-activity.log")
   -activity-tracker.max-entries int
     	Max number of concurrent activities that can be tracked. Used to size the file in advance. Additional activities are ignored. (default 1024)
-  -alertmanager-storage.azure.account-key value
+  -alertmanager-storage.azure.account-key string
     	Azure storage account key
   -alertmanager-storage.azure.account-name string
     	Azure storage account name
@@ -23,7 +23,7 @@ Usage of ./cmd/mimir/mimir:
     	Local filesystem storage directory. (default "alertmanager")
   -alertmanager-storage.gcs.bucket-name string
     	GCS bucket name
-  -alertmanager-storage.gcs.service-account value
+  -alertmanager-storage.gcs.service-account string
     	JSON representing either a Google Developers Console client_credentials.json file or a Google Developers service account key file. If empty, fallback to Google default logic.
   -alertmanager-storage.local.path string
     	Path at which alertmanager configurations are stored.
@@ -51,7 +51,7 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of idle (keep-alive) connections to keep per-host. If 0, a built-in default value is used. (default 100)
   -alertmanager-storage.s3.region string
     	S3 region. If unset, the client will issue a S3 GetBucketLocation API call to autodetect it.
-  -alertmanager-storage.s3.secret-access-key value
+  -alertmanager-storage.s3.secret-access-key string
     	S3 secret access key
   -alertmanager-storage.s3.signature-version string
     	The signature version to use for authenticating against S3. Supported values are: v4, v2. (default "v4")
@@ -99,6 +99,24 @@ Usage of ./cmd/mimir/mimir:
     	OpenStack Swift user ID.
   -alertmanager-storage.swift.username string
     	OpenStack Swift username.
+  -alertmanager.alertmanager-client.backoff-max-period duration
+    	Maximum delay when backing off. (default 10s)
+  -alertmanager.alertmanager-client.backoff-min-period duration
+    	Minimum delay when backing off. (default 100ms)
+  -alertmanager.alertmanager-client.backoff-on-ratelimits
+    	Enable backoff and retry when we hit ratelimits.
+  -alertmanager.alertmanager-client.backoff-retries int
+    	Number of times to backoff and retry before failing. (default 10)
+  -alertmanager.alertmanager-client.grpc-client-rate-limit float
+    	Rate limit for gRPC client; 0 means disabled.
+  -alertmanager.alertmanager-client.grpc-client-rate-limit-burst int
+    	Rate limit burst for gRPC client.
+  -alertmanager.alertmanager-client.grpc-compression string
+    	Use compression when sending messages. Supported values are: 'gzip', 'snappy' and '' (disable compression)
+  -alertmanager.alertmanager-client.grpc-max-recv-msg-size int
+    	gRPC client max receive message size (bytes). (default 104857600)
+  -alertmanager.alertmanager-client.grpc-max-send-msg-size int
+    	gRPC client max send message size (bytes). (default 104857600)
   -alertmanager.alertmanager-client.remote-timeout duration
     	Timeout for downstream alertmanagers. (default 2s)
   -alertmanager.alertmanager-client.tls-ca-path string
@@ -113,50 +131,40 @@ Usage of ./cmd/mimir/mimir:
     	Path to the key file for the client certificate. Also requires the client certificate to be configured.
   -alertmanager.alertmanager-client.tls-server-name string
     	Override the expected name on the server certificate.
-  -alertmanager.cluster.advertise-address string
-    	Explicit address or hostname to advertise in cluster.
-  -alertmanager.cluster.gossip-interval duration
-    	The interval between sending gossip messages. By lowering this value (more frequent) gossip messages are propagated across cluster more quickly at the expense of increased bandwidth usage. (default 200ms)
-  -alertmanager.cluster.listen-address string
-    	Listen address and port for the cluster. Not specifying this flag disables high-availability mode. (default "0.0.0.0:9094")
-  -alertmanager.cluster.peer-timeout duration
-    	Time to wait between peers to send notifications. (default 15s)
-  -alertmanager.cluster.peers value
-    	Comma-separated list of initial peers.
-  -alertmanager.cluster.push-pull-interval duration
-    	The interval between gossip state syncs. Setting this interval lower (more frequent) will increase convergence speeds across larger clusters at the expense of increased bandwidth usage. (default 1m0s)
-  -alertmanager.configs.auto-webhook-root string
-    	Root of URL to generate if config is http://internal.monitor
   -alertmanager.configs.fallback string
     	Filename of fallback config to use if none specified for instance.
   -alertmanager.configs.poll-interval duration
     	How frequently to poll Alertmanager configs. (default 15s)
+  -alertmanager.enable-api
+    	Enable the alertmanager config API. (default true)
   -alertmanager.max-alerts-count int
-    	Maximum number of alerts that a single user can have. Inserting more alerts will fail with a log message and metric increment. 0 = no limit.
+    	Maximum number of alerts that a single tenant can have. Inserting more alerts will fail with a log message and metric increment. 0 = no limit.
   -alertmanager.max-alerts-size-bytes int
-    	Maximum total size of alerts that a single user can have, alert size is the sum of the bytes of its labels, annotations and generatorURL. Inserting more alerts will fail with a log message and metric increment. 0 = no limit.
+    	Maximum total size of alerts that a single tenant can have, alert size is the sum of the bytes of its labels, annotations and generatorURL. Inserting more alerts will fail with a log message and metric increment. 0 = no limit.
+  -alertmanager.max-concurrent-get-requests-per-tenant int
+    	Maximum number of concurrent GET requests allowed per tenant. The zero value (and negative values) result in a limit of GOMAXPROCS or 8, whichever is larger. Status code 503 is served for GET requests that would exceed the concurrency limit.
   -alertmanager.max-config-size-bytes int
     	Maximum size of configuration file for Alertmanager that tenant can upload via Alertmanager API. 0 = no limit.
   -alertmanager.max-dispatcher-aggregation-groups int
     	Maximum number of aggregation groups in Alertmanager's dispatcher that a tenant can have. Each active aggregation group uses single goroutine. When the limit is reached, dispatcher will not dispatch alerts that belong to additional aggregation groups, but existing groups will keep working properly. 0 = no limit.
   -alertmanager.max-recv-msg-size int
-    	Maximum size (bytes) of an accepted HTTP request body. (default 16777216)
+    	Maximum size (bytes) of an accepted HTTP request body. (default 104857600)
   -alertmanager.max-template-size-bytes int
     	Maximum size of single template in tenant's Alertmanager configuration uploaded via Alertmanager API. 0 = no limit.
   -alertmanager.max-templates-count int
     	Maximum number of templates in tenant's Alertmanager configuration uploaded via Alertmanager API. 0 = no limit.
   -alertmanager.notification-rate-limit float
-    	Per-user rate limit for sending notifications from Alertmanager in notifications/sec. 0 = rate limit disabled. Negative value = no notifications are allowed.
+    	Per-tenant rate limit for sending notifications from Alertmanager in notifications/sec. 0 = rate limit disabled. Negative value = no notifications are allowed.
   -alertmanager.notification-rate-limit-per-integration value
     	Per-integration notification rate limits. Value is a map, where each key is integration name and value is a rate-limit (float). On command line, this map is given in JSON format. Rate limit has the same meaning as -alertmanager.notification-rate-limit, but only applies for specific integration. Allowed integration names: webhook, email, pagerduty, opsgenie, wechat, slack, victorops, pushover, sns. (default {})
+  -alertmanager.peer-timeout duration
+    	Time to wait between peers to send notifications. (default 15s)
   -alertmanager.persist-interval duration
     	The interval between persisting the current alertmanager state (notification log and silences) to object storage. This is only used when sharding is enabled. This state is read when all replicas for a shard can not be contacted. In this scenario, having persisted the state more frequently will result in potentially fewer lost silences, and fewer duplicate notifications. (default 15m0s)
   -alertmanager.receivers-firewall-block-cidr-networks value
     	Comma-separated list of network CIDRs to block in Alertmanager receiver integrations.
   -alertmanager.receivers-firewall-block-private-addresses
     	True to block private and local addresses in Alertmanager receiver integrations. It blocks private addresses defined by  RFC 1918 (IPv4 addresses) and RFC 4193 (IPv6 addresses), as well as loopback, local unicast and local multicast addresses.
-  -alertmanager.sharding-enabled
-    	Shard tenants across multiple alertmanager instances.
   -alertmanager.sharding-ring.consul.acl-token string
     	ACL Token used to interact with Consul.
   -alertmanager.sharding-ring.consul.client-timeout duration
@@ -196,15 +204,15 @@ Usage of ./cmd/mimir/mimir:
   -alertmanager.sharding-ring.heartbeat-timeout duration
     	The heartbeat timeout after which alertmanagers are considered unhealthy within the ring. 0 = never (timeout disabled). (default 1m0s)
   -alertmanager.sharding-ring.instance-addr string
-    	IP address to advertise in the ring.
+    	IP address to advertise in the ring. Default is auto-detected.
   -alertmanager.sharding-ring.instance-availability-zone string
     	The availability zone where this instance is running. Required if zone-awareness is enabled.
   -alertmanager.sharding-ring.instance-id string
-    	Instance ID to register in the ring. (default "{{.Hostname}}")
+    	Instance ID to register in the ring. (default "<hostname>")
   -alertmanager.sharding-ring.instance-interface-names value
-    	Name of network interface to read address from. (default [eth0 en0])
+    	List of network interface names to look up when finding the instance IP address. (default [<private network interfaces>])
   -alertmanager.sharding-ring.instance-port int
-    	Port to advertise in the ring (defaults to server.grpc-listen-port).
+    	Port to advertise in the ring (defaults to -server.grpc-listen-port).
   -alertmanager.sharding-ring.multi.mirror-enabled
     	Mirror writes to secondary store.
   -alertmanager.sharding-ring.multi.mirror-timeout duration
@@ -218,22 +226,22 @@ Usage of ./cmd/mimir/mimir:
   -alertmanager.sharding-ring.replication-factor int
     	The replication factor to use when sharding the alertmanager. (default 3)
   -alertmanager.sharding-ring.store string
-    	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "consul")
+    	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
   -alertmanager.sharding-ring.zone-awareness-enabled
     	True to enable zone-awareness and replicate alerts across different availability zones.
   -alertmanager.storage.path string
-    	Base path for data storage. (default "data/")
+    	Directory to store Alertmanager state and temporarily configuration files. The content of this directory is not required to be persisted between restarts unless Alertmanager replication has been disabled. (default "./data-alertmanager/")
   -alertmanager.storage.retention duration
     	How long to keep data for. (default 120h0m0s)
   -alertmanager.web.external-url value
-    	The URL under which Alertmanager is externally reachable (for example, if Alertmanager is served via a reverse proxy). Used for generating relative and absolute links back to Alertmanager itself. If the URL has a path portion, it will be used to prefix all HTTP endpoints served by Alertmanager. (default http://localhost)
-  -api.response-compression-enabled
-    	Use GZIP compression for API responses. Some endpoints serve large YAML or JSON blobs which can benefit from compression.
+    	The URL under which Alertmanager is externally reachable (eg. could be different than -http.alertmanager-http-prefix in case Alertmanager is served via a reverse proxy). This setting is used both to configure the internal requests router and to generate links in alert templates. If the external URL has a path portion, it will be used to prefix all HTTP endpoints served by Alertmanager, both the UI and API. (default http://localhost:8080/alertmanager)
   -api.skip-label-name-validation-header-enabled
-    	Allows to skip label name validation via header on the http write path. Use with caution as it breaks PromQL. Allowing this for external clients allows any client to send invalid label names. After enabling it, requests with a specific HTTP header set to true will not have label names validated.
-  -auth.enabled
-    	Set to false to disable auth. (default true)
-  -blocks-storage.azure.account-key value
+    	Allows to skip label name validation via X-Mimir-SkipLabelNameValidation header on the http write path. Use with caution as it breaks PromQL. Allowing this for external clients allows any client to send invalid label names. After enabling it, requests with a specific HTTP header set to true will not have label names validated.
+  -auth.multitenancy-enabled
+    	When set to true, incoming HTTP requests must specify tenant ID in HTTP X-Scope-OrgId header. When set to false, tenant ID from -auth.no-auth-tenant is used instead. (default true)
+  -auth.no-auth-tenant string
+    	Tenant ID to use when multitenancy is disabled. (default "anonymous")
+  -blocks-storage.azure.account-key string
     	Azure storage account key
   -blocks-storage.azure.account-name string
     	Azure storage account name
@@ -252,7 +260,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.bucket-store.block-sync-concurrency int
     	Maximum number of concurrent blocks synching per tenant. (default 20)
   -blocks-storage.bucket-store.bucket-index.enabled
-    	True to enable querier and store-gateway to discover blocks in the storage via bucket index instead of bucket scanning.
+    	If enabled, queriers and store-gateways discover blocks by reading a bucket index (created and updated by the compactor) instead of periodically scanning the bucket. (default true)
   -blocks-storage.bucket-store.bucket-index.idle-timeout duration
     	How long a unused bucket index should be cached. Once this timeout expires, the unused bucket index is removed from the in-memory cache. This option is used only by querier. (default 1h0m0s)
   -blocks-storage.bucket-store.bucket-index.max-stale-period duration
@@ -286,7 +294,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.bucket-store.chunks-cache.memcached.max-item-size int
     	The maximum size of an item stored in memcached. Bigger items are not stored. If set to 0, no maximum size is enforced. (default 1048576)
   -blocks-storage.bucket-store.chunks-cache.memcached.timeout duration
-    	The socket read/write timeout. (default 100ms)
+    	The socket read/write timeout. (default 200ms)
   -blocks-storage.bucket-store.chunks-cache.subrange-size int
     	Size of each subrange that bucket object is split into for better caching. (default 16000)
   -blocks-storage.bucket-store.chunks-cache.subrange-ttl duration
@@ -316,7 +324,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.bucket-store.index-cache.memcached.max-item-size int
     	The maximum size of an item stored in memcached. Bigger items are not stored. If set to 0, no maximum size is enforced. (default 1048576)
   -blocks-storage.bucket-store.index-cache.memcached.timeout duration
-    	The socket read/write timeout. (default 100ms)
+    	The socket read/write timeout. (default 200ms)
   -blocks-storage.bucket-store.index-header-lazy-loading-enabled
     	If enabled, store-gateway will lazy load an index-header only once required by a query. (default true)
   -blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout duration
@@ -352,15 +360,15 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.bucket-store.metadata-cache.memcached.max-item-size int
     	The maximum size of an item stored in memcached. Bigger items are not stored. If set to 0, no maximum size is enforced. (default 1048576)
   -blocks-storage.bucket-store.metadata-cache.memcached.timeout duration
-    	The socket read/write timeout. (default 100ms)
+    	The socket read/write timeout. (default 200ms)
   -blocks-storage.bucket-store.metadata-cache.metafile-attributes-ttl duration
     	How long to cache attributes of the block metafile. (default 168h0m0s)
   -blocks-storage.bucket-store.metadata-cache.metafile-content-ttl duration
     	How long to cache content of the metafile. (default 24h0m0s)
   -blocks-storage.bucket-store.metadata-cache.metafile-doesnt-exist-ttl duration
-    	How long to cache information that block metafile doesn't exist. Also used for user deletion mark file. (default 5m0s)
+    	How long to cache information that block metafile doesn't exist. Also used for tenant deletion mark file. (default 5m0s)
   -blocks-storage.bucket-store.metadata-cache.metafile-exists-ttl duration
-    	How long to cache information that block metafile exists. Also used for user deletion mark file. (default 2h0m0s)
+    	How long to cache information that block metafile exists. Also used for tenant deletion mark file. (default 2h0m0s)
   -blocks-storage.bucket-store.metadata-cache.metafile-max-size-bytes int
     	Maximum size of metafile content to cache in bytes. Caching will be skipped if the content exceeds this size. This is useful to avoid network round trip for large content if the configured caching backend has an hard limit on cached items size (in this case, you should set this limit to the same limit in the caching backend). (default 1048576)
   -blocks-storage.bucket-store.metadata-cache.tenant-blocks-list-ttl duration
@@ -374,7 +382,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.bucket-store.series-hash-cache-max-size-bytes uint
     	Max size - in bytes - of the in-memory series hash cache. The cache is shared across all tenants and it's used only when query sharding is enabled. (default 1073741824)
   -blocks-storage.bucket-store.sync-dir string
-    	Directory to store synchronized TSDB index headers. (default "tsdb-sync")
+    	Directory to store synchronized TSDB index headers. This directory is not required to be persisted between restarts, but it's highly recommended in order to improve the store-gateway startup time. (default "./tsdb-sync/")
   -blocks-storage.bucket-store.sync-interval duration
     	How frequently to scan the bucket, or to refresh the bucket index (if enabled), in order to look for changes (new blocks shipped by ingesters and blocks deleted by retention or compaction). (default 15m0s)
   -blocks-storage.bucket-store.tenant-sync-concurrency int
@@ -383,7 +391,7 @@ Usage of ./cmd/mimir/mimir:
     	Local filesystem storage directory. (default "blocks")
   -blocks-storage.gcs.bucket-name string
     	GCS bucket name
-  -blocks-storage.gcs.service-account value
+  -blocks-storage.gcs.service-account string
     	JSON representing either a Google Developers Console client_credentials.json file or a Google Developers service account key file. If empty, fallback to Google default logic.
   -blocks-storage.s3.access-key-id string
     	S3 access key ID
@@ -409,7 +417,7 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of idle (keep-alive) connections to keep per-host. If 0, a built-in default value is used. (default 100)
   -blocks-storage.s3.region string
     	S3 region. If unset, the client will issue a S3 GetBucketLocation API call to autodetect it.
-  -blocks-storage.s3.secret-access-key value
+  -blocks-storage.s3.secret-access-key string
     	S3 secret access key
   -blocks-storage.s3.signature-version string
     	The signature version to use for authenticating against S3. Supported values are: v4, v2. (default "v4")
@@ -460,17 +468,17 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.tsdb.block-ranges-period value
     	TSDB blocks range period. (default 2h0m0s)
   -blocks-storage.tsdb.close-idle-tsdb-timeout duration
-    	If TSDB has not received any data for this duration, and all blocks from TSDB have been shipped, TSDB is closed and deleted from local disk. If set to positive value, this value should be equal or higher than -querier.query-ingesters-within flag to make sure that TSDB is not closed prematurely, which could cause partial query results. 0 or negative value disables closing of idle TSDB.
+    	If TSDB has not received any data for this duration, and all blocks from TSDB have been shipped, TSDB is closed and deleted from local disk. If set to positive value, this value should be equal or higher than -querier.query-ingesters-within flag to make sure that TSDB is not closed prematurely, which could cause partial query results. 0 or negative value disables closing of idle TSDB. (default 13h0m0s)
   -blocks-storage.tsdb.dir string
-    	Local directory to store TSDBs in the ingesters. (default "tsdb")
+    	Directory to store TSDBs (including WAL) in the ingesters. This directory is required to be persisted between restarts. (default "./tsdb/")
   -blocks-storage.tsdb.flush-blocks-on-shutdown
     	True to flush blocks to storage on shutdown. If false, incomplete blocks will be reused after restart.
   -blocks-storage.tsdb.head-chunks-end-time-variance float
-    	How much variance (as percentage between 0 and 1) should be applied to the chunk end time, to spread chunks writing across time. Doesn't apply to the last chunk of the chunk range. 0 means no variance.
+    	[experimental] How much variance (as percentage between 0 and 1) should be applied to the chunk end time, to spread chunks writing across time. Doesn't apply to the last chunk of the chunk range. 0 means no variance.
   -blocks-storage.tsdb.head-chunks-write-buffer-size-bytes int
     	The write buffer size used by the head chunks mapper. Lower values reduce memory utilisation on clusters with a large number of tenants at the cost of increased disk I/O operations. (default 4194304)
   -blocks-storage.tsdb.head-chunks-write-queue-size int
-    	The size of the write queue used by the head chunks mapper. Lower values reduce memory utilisation at the cost of potentially higher ingest latency. (default 1000000)
+    	[experimental] The size of the write queue used by the head chunks mapper. Lower values reduce memory utilisation at the cost of potentially higher ingest latency. Value of 0 switches chunks mapper to implementation without a queue.
   -blocks-storage.tsdb.head-compaction-concurrency int
     	Maximum number of tenants concurrently compacting TSDB head into a new block (default 5)
   -blocks-storage.tsdb.head-compaction-idle-timeout duration
@@ -482,9 +490,9 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup int
     	limit the number of concurrently opening TSDB's on startup (default 10)
   -blocks-storage.tsdb.memory-snapshot-on-shutdown
-    	True to enable snapshotting of in-memory TSDB data on disk when shutting down.
+    	[experimental] True to enable snapshotting of in-memory TSDB data on disk when shutting down.
   -blocks-storage.tsdb.retention-period duration
-    	TSDB blocks retention in the ingester before a block is removed. This should be larger than the block_ranges_period and large enough to give store-gateways and queriers enough time to discover newly uploaded blocks. (default 6h0m0s)
+    	TSDB blocks retention in the ingester before a block is removed. This should be larger than the -blocks-storage.tsdb.block-ranges-period, -querier.query-store-after and large enough to give store-gateways and queriers enough time to discover newly uploaded blocks. (default 24h0m0s)
   -blocks-storage.tsdb.series-hash-cache-max-size-bytes uint
     	Max size - in bytes - of the in-memory series hash cache. The cache is shared across all tenants and it's used only when query sharding is enabled. (default 1073741824)
   -blocks-storage.tsdb.ship-concurrency int
@@ -520,7 +528,7 @@ Usage of ./cmd/mimir/mimir:
   -compactor.consistency-delay duration
     	Minimum age of fresh (non-compacted) blocks before they are being processed. Malformed blocks older than the maximum of consistency-delay and 48h0m0s will be removed.
   -compactor.data-dir string
-    	Data directory in which to cache blocks and process compactions (default "./data")
+    	Directory to temporarily store blocks during compaction. This directory is not required to be persisted between restarts. (default "./data-compactor/")
   -compactor.deletion-delay duration
     	Time before a block marked for deletion is deleted from bucket. If not 0, blocks will be marked for deletion and compactor component will permanently delete blocks marked for deletion from the bucket. If 0, blocks will be deleted straight away. Note that deleting blocks immediately can cause query failures. (default 12h0m0s)
   -compactor.disabled-tenants value
@@ -574,13 +582,13 @@ Usage of ./cmd/mimir/mimir:
   -compactor.ring.heartbeat-timeout duration
     	The heartbeat timeout after which compactors are considered unhealthy within the ring. 0 = never (timeout disabled). (default 1m0s)
   -compactor.ring.instance-addr string
-    	IP address to advertise in the ring.
+    	IP address to advertise in the ring. Default is auto-detected.
   -compactor.ring.instance-id string
-    	Instance ID to register in the ring. (default "{{.Hostname}}")
+    	Instance ID to register in the ring. (default "<hostname>")
   -compactor.ring.instance-interface-names value
-    	Name of network interface to read address from. (default [eth0 en0])
+    	List of network interface names to look up when finding the instance IP address. (default [<private network interfaces>])
   -compactor.ring.instance-port int
-    	Port to advertise in the ring (defaults to server.grpc-listen-port).
+    	Port to advertise in the ring (defaults to -server.grpc-listen-port).
   -compactor.ring.multi.mirror-enabled
     	Mirror writes to secondary store.
   -compactor.ring.multi.mirror-timeout duration
@@ -611,18 +619,6 @@ Usage of ./cmd/mimir/mimir:
     	Expands ${var} or $var in config according to the values of the environment variables.
   -config.file value
     	Configuration file to load.
-  -consul.acl-token string
-    	ACL Token used to interact with Consul.
-  -consul.client-timeout duration
-    	HTTP timeout when talking to Consul (default 20s)
-  -consul.consistent-reads
-    	Enable consistent reads to Consul.
-  -consul.hostname string
-    	Hostname and port of Consul. (default "localhost:8500")
-  -consul.watch-burst-size int
-    	Burst size used in rate limit. Values less than 1 are treated as 1. (default 1)
-  -consul.watch-rate-limit float
-    	Rate limit when watching key or prefix in Consul, in requests per second. 0 disables the rate limit. (default 1)
   -debug.block-profile-rate int
     	Fraction of goroutine blocking events that are reported in the blocking profile. 1 to include every blocking event in the profile, 0 to disable.
   -debug.mutex-profile-fraction int
@@ -631,12 +627,12 @@ Usage of ./cmd/mimir/mimir:
     	How frequently to clean up clients for ingesters that have gone away. (default 15s)
   -distributor.drop-label value
     	This flag can be used to specify label names that to drop during sample ingestion within the distributor and can be repeated in order to drop multiple labels.
-  -distributor.excluded-zones value
-    	Comma-separated list of zones to exclude from the ring. Instances in excluded zones will be filtered out from the ring.
   -distributor.extend-writes
-    	Try writing to an additional ingester in the presence of an ingester not in the ACTIVE state. It is useful to disable this along with -ingester.unregister-on-shutdown=false in order to not spread samples to extra ingesters during rolling restarts with consistent naming. (default true)
-  -distributor.extra-query-delay duration
-    	Time to wait before sending more than the minimum successful query requests.
+    	Try writing to an additional ingester in the presence of an ingester not in the ACTIVE state. It is useful to disable this along with -ingester.ring.unregister-on-shutdown=false in order to not spread samples to extra ingesters during rolling restarts with consistent naming. (default true)
+  -distributor.forwarding.enabled
+    	[experimental] Enables the feature to forward certain metrics in remote_write requests, depending on defined rules.
+  -distributor.forwarding.request-timeout duration
+    	[experimental] Timeout for requests to ingestion endpoints to which we forward metrics. (default 10s)
   -distributor.ha-tracker.cluster string
     	Prometheus label to look for in samples to identify a Prometheus HA cluster. (default "cluster")
   -distributor.ha-tracker.consul.acl-token string
@@ -654,7 +650,7 @@ Usage of ./cmd/mimir/mimir:
   -distributor.ha-tracker.enable
     	Enable the distributors HA tracker so that it can accept samples from Prometheus HA replicas gracefully (requires labels).
   -distributor.ha-tracker.enable-for-all-users
-    	Flag to enable, for all users, handling of samples with external labels identifying replicas in an HA Prometheus setup.
+    	Flag to enable, for all tenants, handling of samples with external labels identifying replicas in an HA Prometheus setup.
   -distributor.ha-tracker.etcd.dial-timeout duration
     	The dial timeout for the etcd connection. (default 10s)
   -distributor.ha-tracker.etcd.endpoints value
@@ -680,7 +676,7 @@ Usage of ./cmd/mimir/mimir:
   -distributor.ha-tracker.failover-timeout duration
     	If we don't receive any samples from the accepted replica for a cluster in this amount of time we will failover to the next replica we receive a sample from. This value must be greater than the update timeout (default 30s)
   -distributor.ha-tracker.max-clusters int
-    	Maximum number of clusters that HA tracker will keep track of for single user. 0 to disable the limit.
+    	Maximum number of clusters that HA tracker will keep track of for a single tenant. 0 to disable the limit.
   -distributor.ha-tracker.multi.mirror-enabled
     	Mirror writes to secondary store.
   -distributor.ha-tracker.multi.mirror-timeout duration
@@ -702,9 +698,9 @@ Usage of ./cmd/mimir/mimir:
   -distributor.health-check-ingesters
     	Run a health check on each ingester client during periodic cleanup. (default true)
   -distributor.ingestion-burst-size int
-    	Per-user allowed ingestion burst size (in number of samples). (default 200000)
+    	Per-tenant allowed ingestion burst size (in number of samples). (default 200000)
   -distributor.ingestion-rate-limit float
-    	Per-user ingestion rate limit in samples per second. (default 10000)
+    	Per-tenant ingestion rate limit in samples per second. (default 10000)
   -distributor.ingestion-tenant-shard-size int
     	The tenant's shard size used by shuffle-sharding. Must be set both on ingesters and distributors. 0 disables shuffle sharding.
   -distributor.instance-limits.max-inflight-push-requests int
@@ -715,8 +711,6 @@ Usage of ./cmd/mimir/mimir:
     	remote_write API max receive message size (bytes). (default 104857600)
   -distributor.remote-timeout duration
     	Timeout for downstream ingesters. (default 20s)
-  -distributor.replication-factor int
-    	The number of ingesters to write to and read from. (default 3)
   -distributor.ring.consul.acl-token string
     	ACL Token used to interact with Consul.
   -distributor.ring.consul.client-timeout duration
@@ -756,13 +750,13 @@ Usage of ./cmd/mimir/mimir:
   -distributor.ring.heartbeat-timeout duration
     	The heartbeat timeout after which distributors are considered unhealthy within the ring. 0 = never (timeout disabled). (default 1m0s)
   -distributor.ring.instance-addr string
-    	IP address to advertise in the ring.
+    	IP address to advertise in the ring. Default is auto-detected.
   -distributor.ring.instance-id string
-    	Instance ID to register in the ring. (default "{{.Hostname}}")
+    	Instance ID to register in the ring. (default "<hostname>")
   -distributor.ring.instance-interface-names value
-    	Name of network interface to read address from. (default [eth0 en0])
+    	List of network interface names to look up when finding the instance IP address. (default [<private network interfaces>])
   -distributor.ring.instance-port int
-    	Port to advertise in the ring (defaults to server.grpc-listen-port).
+    	Port to advertise in the ring (defaults to -server.grpc-listen-port).
   -distributor.ring.multi.mirror-enabled
     	Mirror writes to secondary store.
   -distributor.ring.multi.mirror-timeout duration
@@ -774,127 +768,9 @@ Usage of ./cmd/mimir/mimir:
   -distributor.ring.prefix string
     	The prefix for the keys in the store. Should end with a /. (default "collectors/")
   -distributor.ring.store string
-    	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "consul")
-  -distributor.zone-awareness-enabled
-    	True to enable the zone-awareness and replicate ingested samples across different availability zones.
-  -etcd.dial-timeout duration
-    	The dial timeout for the etcd connection. (default 10s)
-  -etcd.endpoints value
-    	The etcd endpoints to connect to.
-  -etcd.max-retries int
-    	The maximum number of retries to do for failed ops. (default 10)
-  -etcd.password string
-    	Etcd password.
-  -etcd.tls-ca-path string
-    	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
-  -etcd.tls-cert-path string
-    	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
-  -etcd.tls-enabled
-    	Enable TLS.
-  -etcd.tls-insecure-skip-verify
-    	Skip validating server certificate.
-  -etcd.tls-key-path string
-    	Path to the key file for the client certificate. Also requires the client certificate to be configured.
-  -etcd.tls-server-name string
-    	Override the expected name on the server certificate.
-  -etcd.username string
-    	Etcd username.
-  -experimental.alertmanager.enable-api
-    	Enable the experimental alertmanager config api.
-  -experimental.ruler.enable-api
-    	Enable the ruler api
+    	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
   -flusher.exit-after-flush
     	Stop after flush has finished. If false, process will keep running, doing nothing. (default true)
-  -frontend.align-querier-with-step
-    	Mutate incoming queries to align their start and end with their step.
-  -frontend.cache-results
-    	Cache query results.
-  -frontend.cache-unaligned-requests
-    	Cache requests that are not step-aligned.
-  -frontend.downstream-url string
-    	URL of downstream Prometheus.
-  -frontend.grpc-client-config.backoff-max-period duration
-    	Maximum delay when backing off. (default 10s)
-  -frontend.grpc-client-config.backoff-min-period duration
-    	Minimum delay when backing off. (default 100ms)
-  -frontend.grpc-client-config.backoff-on-ratelimits
-    	Enable backoff and retry when we hit ratelimits.
-  -frontend.grpc-client-config.backoff-retries int
-    	Number of times to backoff and retry before failing. (default 10)
-  -frontend.grpc-client-config.grpc-client-rate-limit float
-    	Rate limit for gRPC client; 0 means disabled.
-  -frontend.grpc-client-config.grpc-client-rate-limit-burst int
-    	Rate limit burst for gRPC client.
-  -frontend.grpc-client-config.grpc-compression string
-    	Use compression when sending messages. Supported values are: 'gzip', 'snappy' and '' (disable compression)
-  -frontend.grpc-client-config.grpc-max-recv-msg-size int
-    	gRPC client max receive message size (bytes). (default 104857600)
-  -frontend.grpc-client-config.grpc-max-send-msg-size int
-    	gRPC client max send message size (bytes). (default 16777216)
-  -frontend.grpc-client-config.tls-ca-path string
-    	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
-  -frontend.grpc-client-config.tls-cert-path string
-    	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
-  -frontend.grpc-client-config.tls-enabled
-    	Enable TLS in the GRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.
-  -frontend.grpc-client-config.tls-insecure-skip-verify
-    	Skip validating server certificate.
-  -frontend.grpc-client-config.tls-key-path string
-    	Path to the key file for the client certificate. Also requires the client certificate to be configured.
-  -frontend.grpc-client-config.tls-server-name string
-    	Override the expected name on the server certificate.
-  -frontend.instance-addr string
-    	IP address to advertise to querier (via scheduler) (resolved via interfaces by default).
-  -frontend.instance-interface-names value
-    	Name of network interface to read address from. This address is sent to query-scheduler and querier, which uses it to send the query response back to query-frontend. (default [eth0 en0])
-  -frontend.instance-port int
-    	Port to advertise to querier (via scheduler) (defaults to server.grpc-listen-port).
-  -frontend.log-queries-longer-than duration
-    	Log queries that are slower than the specified duration. Set to 0 to disable. Set to < 0 to enable on all queries.
-  -frontend.max-body-size int
-    	Max body size for downstream prometheus. (default 10485760)
-  -frontend.max-cache-freshness value
-    	Most recent allowed cacheable result per-tenant, to prevent caching very recent results that might still be in flux. (default 1m)
-  -frontend.max-queriers-per-tenant int
-    	Maximum number of queriers that can handle requests for a single tenant. If set to 0 or value higher than number of available queriers, *all* queriers will handle requests for the tenant. Each frontend (or query-scheduler, if used) will select the same set of queriers for the same tenant (given that all queriers are connected to all frontends / query-schedulers). This option only works with queriers connecting to the query-frontend / query-scheduler, not when using downstream URL.
-  -frontend.max-retries-per-request int
-    	Maximum number of retries for a single request; beyond this, the downstream error is returned. (default 5)
-  -frontend.parallelize-shardable-queries
-    	True to enable query sharding.
-  -frontend.query-sharding-max-sharded-queries int
-    	The max number of sharded queries that can be run for a given received query. 0 to disable limit. (default 128)
-  -frontend.query-sharding-total-shards int
-    	The amount of shards to use when doing parallelisation via query sharding by tenant. 0 to disable query sharding for tenant. Query sharding implementation will adjust the number of query shards based on compactor shards. This allows querier to not search the blocks which cannot possibly have the series for given query shard. (default 16)
-  -frontend.query-stats-enabled
-    	False to disable query statistics tracking. When enabled, a message with some statistics is logged for every query. (default true)
-  -frontend.results-cache.backend string
-    	Backend for query-frontend results cache, if not empty. Supported values: [memcached].
-  -frontend.results-cache.compression string
-    	Enable cache compression, if not empty. Supported values are: snappy.
-  -frontend.results-cache.memcached.addresses string
-    	Comma separated list of memcached addresses. Supported prefixes are: dns+ (looked up as an A/AAAA query), dnssrv+ (looked up as a SRV query, dnssrvnoa+ (looked up as a SRV query, with no A/AAAA lookup made after that).
-  -frontend.results-cache.memcached.max-async-buffer-size int
-    	The maximum number of enqueued asynchronous operations allowed. (default 25000)
-  -frontend.results-cache.memcached.max-async-concurrency int
-    	The maximum number of concurrent asynchronous operations can occur. (default 50)
-  -frontend.results-cache.memcached.max-get-multi-batch-size int
-    	The maximum number of keys a single underlying get operation should run. If more keys are specified, internally keys are split into multiple batches and fetched concurrently, honoring the max concurrency. If set to 0, the max batch size is unlimited. (default 100)
-  -frontend.results-cache.memcached.max-get-multi-concurrency int
-    	The maximum number of concurrent connections running get operations. If set to 0, concurrency is unlimited. (default 100)
-  -frontend.results-cache.memcached.max-idle-connections int
-    	The maximum number of idle connections that will be maintained per address. (default 100)
-  -frontend.results-cache.memcached.max-item-size int
-    	The maximum size of an item stored in memcached. Bigger items are not stored. If set to 0, no maximum size is enforced. (default 1048576)
-  -frontend.results-cache.memcached.timeout duration
-    	The socket read/write timeout. (default 100ms)
-  -frontend.scheduler-address string
-    	DNS hostname used for finding query-schedulers.
-  -frontend.scheduler-dns-lookup-period duration
-    	How often to resolve the scheduler-address, in order to look for new query-scheduler instances. (default 10s)
-  -frontend.scheduler-worker-concurrency int
-    	Number of concurrent workers forwarding queries to single query-scheduler. (default 5)
-  -frontend.split-queries-by-interval duration
-    	Split queries by an interval and execute in parallel, 0 disables it. You should use an a multiple of 24 hours (same as the storage bucketing scheme), to avoid queriers downloading and processing the same chunks. This also determines how cache keys are chosen when result caching is enabled.
   -h
     	Print basic help.
   -help
@@ -903,16 +779,8 @@ Usage of ./cmd/mimir/mimir:
     	Print help, also including advanced and experimental parameters.
   -http.alertmanager-http-prefix string
     	HTTP URL path under which the Alertmanager ui and api will be served. (default "/alertmanager")
-  -http.prefix string
-    	HTTP path prefix for API. (default "/api/prom")
   -http.prometheus-http-prefix string
     	HTTP URL path under which the Prometheus api will be served. (default "/prometheus")
-  -ingester-client.expected-labels int
-    	Expected number of labels per timeseries, used for preallocations. (default 20)
-  -ingester-client.expected-samples-per-series int
-    	Expected number of samples per timeseries, used for preallocations. (default 10)
-  -ingester-client.expected-timeseries int
-    	Expected number of timeseries per request, used for preallocations. (default 100)
   -ingester.active-series-custom-trackers value
     	Additional active series metrics, matching the provided matchers. Matchers should be in form <name>:<matcher>, like 'foobar:{foo="bar"}'. Multiple matchers can be provided either providing the flag multiple times or providing multiple semicolon-separated values to a single flag.
   -ingester.active-series-metrics-enabled
@@ -921,8 +789,6 @@ Usage of ./cmd/mimir/mimir:
     	After what time a series is considered to be inactive. (default 10m0s)
   -ingester.active-series-metrics-update-period duration
     	How often to update active series metrics. (default 1m0s)
-  -ingester.availability-zone string
-    	The availability zone where this instance is running.
   -ingester.client.backoff-max-period duration
     	Maximum delay when backing off. (default 10s)
   -ingester.client.backoff-min-period duration
@@ -940,7 +806,7 @@ Usage of ./cmd/mimir/mimir:
   -ingester.client.grpc-max-recv-msg-size int
     	gRPC client max receive message size (bytes). (default 104857600)
   -ingester.client.grpc-max-send-msg-size int
-    	gRPC client max send message size (bytes). (default 16777216)
+    	gRPC client max send message size (bytes). (default 104857600)
   -ingester.client.tls-ca-path string
     	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
   -ingester.client.tls-cert-path string
@@ -954,61 +820,115 @@ Usage of ./cmd/mimir/mimir:
   -ingester.client.tls-server-name string
     	Override the expected name on the server certificate.
   -ingester.exemplars-update-period duration
-    	Period with which to update per-user max exemplars. (default 15s)
-  -ingester.final-sleep duration
-    	Duration to sleep for before exiting, to ensure metrics are scraped. (default 30s)
-  -ingester.heartbeat-period duration
-    	Period at which to heartbeat to consul. 0 = disabled. (default 5s)
+    	[experimental] Period with which to update per-tenant max exemplar limit. (default 15s)
   -ingester.ignore-series-limit-for-metric-names string
     	Comma-separated list of metric names, for which the -ingester.max-global-series-per-metric limit will be ignored. Does not affect the -ingester.max-global-series-per-user limit.
   -ingester.instance-limits.max-inflight-push-requests int
     	Max inflight push requests that this ingester can handle (across all tenants). Additional requests will be rejected. 0 = unlimited. (default 30000)
   -ingester.instance-limits.max-ingestion-rate float
-    	Max ingestion rate (samples/sec) that ingester will accept. This limit is per-ingester, not per-tenant. Additional push requests will be rejected. Current ingestion rate is computed as exponentially weighted moving average, updated every second. This limit only works when using blocks engine. 0 = unlimited.
+    	Max ingestion rate (samples/sec) that ingester will accept. This limit is per-ingester, not per-tenant. Additional push requests will be rejected. Current ingestion rate is computed as exponentially weighted moving average, updated every second. 0 = unlimited.
   -ingester.instance-limits.max-series int
-    	Max series that this ingester can hold (across all tenants). Requests to create additional series will be rejected. This limit only works when using blocks engine. 0 = unlimited.
+    	Max series that this ingester can hold (across all tenants). Requests to create additional series will be rejected. 0 = unlimited.
   -ingester.instance-limits.max-tenants int
-    	Max users that this ingester can hold. Requests from additional users will be rejected. This limit only works when using blocks engine. 0 = unlimited.
-  -ingester.join-after duration
-    	Period to wait for a claim from another member; will join automatically after this.
-  -ingester.lifecycler.ID string
-    	ID to register in the ring. (default "{{.Hostname}}")
-  -ingester.lifecycler.addr string
-    	IP address to advertise in the ring.
-  -ingester.lifecycler.interface value
-    	Name of network interface to read address from. (default [eth0 en0])
-  -ingester.lifecycler.port int
-    	port to advertise in consul (defaults to server.grpc-listen-port).
+    	Max tenants that this ingester can hold. Requests from additional tenants will be rejected. 0 = unlimited.
   -ingester.max-global-exemplars-per-user int
-    	The maximum number of exemplars in memory, across the cluster. 0 to disable exemplars ingestion.
+    	[experimental] The maximum number of exemplars in memory, across the cluster. 0 to disable exemplars ingestion.
   -ingester.max-global-metadata-per-metric int
     	The maximum number of metadata per metric, across the cluster. 0 to disable.
   -ingester.max-global-metadata-per-user int
-    	The maximum number of active metrics with metadata per user, across the cluster. 0 to disable.
+    	The maximum number of active metrics with metadata per tenant, across the cluster. 0 to disable.
   -ingester.max-global-series-per-metric int
     	The maximum number of active series per metric name, across the cluster before replication. 0 to disable. (default 20000)
   -ingester.max-global-series-per-user int
-    	The maximum number of active series per user, across the cluster before replication. 0 to disable. (default 150000)
-  -ingester.max-samples-per-query value
-    	This option is no longer used, and will be removed.
+    	The maximum number of active series per tenant, across the cluster before replication. 0 to disable. (default 150000)
   -ingester.metadata-retain-period duration
     	Period at which metadata we have not seen will remain in memory before being deleted. (default 10m0s)
-  -ingester.min-ready-duration duration
-    	Minimum duration to wait after the internal readiness checks have passed but before succeeding the readiness endpoint. This is used to slowdown deployment controllers (eg. Kubernetes) after an instance is ready and before they proceed with a rolling update, to give the rest of the cluster instances enough time to receive ring updates. (default 15s)
-  -ingester.num-tokens int
-    	Number of tokens for each ingester. (default 128)
-  -ingester.observe-period duration
-    	Observe tokens after generating to resolve collisions. Useful when using gossiping ring.
   -ingester.rate-update-period duration
-    	Period with which to update the per-user ingestion rates. (default 15s)
-  -ingester.readiness-check-ring-health
+    	Period with which to update the per-tenant ingestion rates. (default 15s)
+  -ingester.ring.consul.acl-token string
+    	ACL Token used to interact with Consul.
+  -ingester.ring.consul.client-timeout duration
+    	HTTP timeout when talking to Consul (default 20s)
+  -ingester.ring.consul.consistent-reads
+    	Enable consistent reads to Consul.
+  -ingester.ring.consul.hostname string
+    	Hostname and port of Consul. (default "localhost:8500")
+  -ingester.ring.consul.watch-burst-size int
+    	Burst size used in rate limit. Values less than 1 are treated as 1. (default 1)
+  -ingester.ring.consul.watch-rate-limit float
+    	Rate limit when watching key or prefix in Consul, in requests per second. 0 disables the rate limit. (default 1)
+  -ingester.ring.etcd.dial-timeout duration
+    	The dial timeout for the etcd connection. (default 10s)
+  -ingester.ring.etcd.endpoints value
+    	The etcd endpoints to connect to.
+  -ingester.ring.etcd.max-retries int
+    	The maximum number of retries to do for failed ops. (default 10)
+  -ingester.ring.etcd.password string
+    	Etcd password.
+  -ingester.ring.etcd.tls-ca-path string
+    	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
+  -ingester.ring.etcd.tls-cert-path string
+    	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -ingester.ring.etcd.tls-enabled
+    	Enable TLS.
+  -ingester.ring.etcd.tls-insecure-skip-verify
+    	Skip validating server certificate.
+  -ingester.ring.etcd.tls-key-path string
+    	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+  -ingester.ring.etcd.tls-server-name string
+    	Override the expected name on the server certificate.
+  -ingester.ring.etcd.username string
+    	Etcd username.
+  -ingester.ring.excluded-zones value
+    	Comma-separated list of zones to exclude from the ring. Instances in excluded zones will be filtered out from the ring. This option needs be set on ingesters, distributors, queriers and rulers when running in microservices mode.
+  -ingester.ring.final-sleep duration
+    	Duration to sleep for before exiting, to ensure metrics are scraped.
+  -ingester.ring.heartbeat-period duration
+    	Period at which to heartbeat to the ring. 0 = disabled. (default 5s)
+  -ingester.ring.heartbeat-timeout duration
+    	The heartbeat timeout after which ingesters are skipped for reads/writes. 0 = never (timeout disabled). This option needs be set on ingesters, distributors, queriers and rulers when running in microservices mode. (default 1m0s)
+  -ingester.ring.instance-addr string
+    	IP address to advertise in the ring. Default is auto-detected.
+  -ingester.ring.instance-availability-zone string
+    	The availability zone where this instance is running.
+  -ingester.ring.instance-id string
+    	Instance ID to register in the ring. (default "<hostname>")
+  -ingester.ring.instance-interface-names value
+    	List of network interface names to look up when finding the instance IP address. (default [<private network interfaces>])
+  -ingester.ring.instance-port int
+    	Port to advertise in the ring (defaults to -server.grpc-listen-port).
+  -ingester.ring.join-after duration
+    	Period to wait for a claim from another member; will join automatically after this.
+  -ingester.ring.min-ready-duration duration
+    	Minimum duration to wait after the internal readiness checks have passed but before succeeding the readiness endpoint. This is used to slowdown deployment controllers (eg. Kubernetes) after an instance is ready and before they proceed with a rolling update, to give the rest of the cluster instances enough time to receive ring updates. (default 15s)
+  -ingester.ring.multi.mirror-enabled
+    	Mirror writes to secondary store.
+  -ingester.ring.multi.mirror-timeout duration
+    	Timeout for storing value to secondary store. (default 2s)
+  -ingester.ring.multi.primary string
+    	Primary backend storage used by multi-client.
+  -ingester.ring.multi.secondary string
+    	Secondary backend storage used by multi-client.
+  -ingester.ring.num-tokens int
+    	Number of tokens for each ingester. (default 128)
+  -ingester.ring.observe-period duration
+    	Observe tokens after generating to resolve collisions. Useful when using gossiping ring.
+  -ingester.ring.prefix string
+    	The prefix for the keys in the store. Should end with a /. (default "collectors/")
+  -ingester.ring.readiness-check-ring-health
     	When enabled the readiness probe succeeds only after all instances are ACTIVE and healthy in the ring, otherwise only the instance itself is checked. This option should be disabled if in your cluster multiple instances can be rolled out simultaneously, otherwise rolling updates may be slowed down. (default true)
+  -ingester.ring.replication-factor int
+    	Number of ingesters that each time series is replicated to. This option needs be set on ingesters, distributors, queriers and rulers when running in microservices mode. (default 3)
+  -ingester.ring.store string
+    	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
+  -ingester.ring.tokens-file-path string
+    	File path where tokens are stored. If empty, tokens are not stored at shutdown and restored at startup.
+  -ingester.ring.unregister-on-shutdown
+    	Unregister from the ring upon clean shutdown. It can be useful to disable for rolling restarts with consistent naming in conjunction with -distributor.extend-writes=false. (default true)
+  -ingester.ring.zone-awareness-enabled
+    	True to enable the zone-awareness and replicate ingested samples across different availability zones. This option needs be set on ingesters, distributors, queriers and rulers when running in microservices mode.
   -ingester.stream-chunks-when-using-blocks
     	Stream chunks from ingesters to queriers. (default true)
-  -ingester.tokens-file-path string
-    	File path where tokens are stored. If empty, tokens are not stored at shutdown and restored at startup.
-  -ingester.unregister-on-shutdown
-    	Unregister from the ring upon clean shutdown. It can be useful to disable for rolling restarts with consistent naming in conjunction with -distributor.extend-writes=false. (default true)
   -log.format value
     	Output log messages in the given format. Valid formats: [logfmt, json] (default logfmt)
   -log.level value
@@ -1081,14 +1001,6 @@ Usage of ./cmd/mimir/mimir:
     	Log debug transport messages. Note: global log.level must be at debug level as well.
   -modules
     	List available values that can be used as target.
-  -multi.mirror-enabled
-    	Mirror writes to secondary store.
-  -multi.mirror-timeout duration
-    	Timeout for storing value to secondary store. (default 2s)
-  -multi.primary string
-    	Primary backend storage used by multi-client.
-  -multi.secondary string
-    	Secondary backend storage used by multi-client.
   -print.config
     	Print the config and exit.
   -querier.batch-iterators
@@ -1100,7 +1012,7 @@ Usage of ./cmd/mimir/mimir:
   -querier.dns-lookup-period duration
     	How often to query DNS for query-frontend or query-scheduler address. (default 10s)
   -querier.frontend-address string
-    	Address of query frontend service, in host:port format. If -querier.scheduler-address is set as well, querier will use scheduler instead. Only one of -querier.frontend-address or -querier.scheduler-address can be set. If neither is set, queries are only received via HTTP endpoint.
+    	Address of the query-frontend component, in host:port format. Only one of -querier.frontend-address or -querier.scheduler-address can be set. If neither is set, queries are only received via HTTP endpoint.
   -querier.frontend-client.backoff-max-period duration
     	Maximum delay when backing off. (default 10s)
   -querier.frontend-client.backoff-min-period duration
@@ -1118,7 +1030,7 @@ Usage of ./cmd/mimir/mimir:
   -querier.frontend-client.grpc-max-recv-msg-size int
     	gRPC client max receive message size (bytes). (default 104857600)
   -querier.frontend-client.grpc-max-send-msg-size int
-    	gRPC client max send message size (bytes). (default 16777216)
+    	gRPC client max send message size (bytes). (default 104857600)
   -querier.frontend-client.tls-ca-path string
     	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
   -querier.frontend-client.tls-cert-path string
@@ -1132,7 +1044,7 @@ Usage of ./cmd/mimir/mimir:
   -querier.frontend-client.tls-server-name string
     	Override the expected name on the server certificate.
   -querier.id string
-    	Querier ID, sent to frontend service to identify requests from the same querier. Defaults to hostname.
+    	Querier ID, sent to the query-frontend to identify requests from the same querier. Defaults to hostname.
   -querier.iterators
     	Use iterators to execute query, as opposed to fully materialising the series in memory.
   -querier.label-names-and-values-results-max-size-bytes int
@@ -1156,23 +1068,17 @@ Usage of ./cmd/mimir/mimir:
   -querier.max-query-lookback value
     	Limit how long back data (series and metadata) can be queried, up until <lookback> duration ago. This limit is enforced in the query-frontend, querier and ruler. If the requested time range is outside the allowed range, the request will not fail but will be manipulated to only query data within the allowed time range. 0 to disable.
   -querier.max-query-parallelism int
-    	Maximum number of split queries will be scheduled in parallel by the frontend. (default 14)
+    	Maximum number of split (by time) or partial (by shard) queries that will be scheduled in parallel by the query-frontend for a single input query. This limit is introduced to have a fairer query scheduling and avoid a single query over a large time range saturating all available queriers. (default 14)
   -querier.max-samples int
     	Maximum number of samples a single query can load into memory. This config option should be set on query-frontend too when query sharding is enabled. (default 50000000)
   -querier.query-ingesters-within duration
-    	Maximum lookback beyond which queries are not sent to ingester. 0 means all queries are sent to ingester.
-  -querier.query-label-names-with-matchers-enabled
-    	True to enable queriers to use an optimized implementation which passes down to ingesters the label matchers when running the label names API. Can be enabled once all ingesters run a version >= the one where this option has been introduced.
+    	Maximum lookback beyond which queries are not sent to ingester. 0 means all queries are sent to ingester. (default 13h0m0s)
   -querier.query-store-after duration
     	The time after which a metric should be queried from storage and not just ingesters. 0 means all queries are sent to store. If this option is enabled, the time range of the query sent to the store-gateway will be manipulated to ensure the query end is not more recent than 'now - query-store-after'.
-  -querier.query-store-for-labels-enabled value
-    	This option is no longer used, and will be removed.
   -querier.scheduler-address string
-    	Hostname (and port) of scheduler that querier will periodically resolve, connect to and receive queries from. Only one of -querier.frontend-address or -querier.scheduler-address can be set. If neither is set, queries are only received via HTTP endpoint.
+    	Address of the query-scheduler component, in host:port format. Only one of -querier.frontend-address or -querier.scheduler-address can be set. If neither is set, queries are only received via HTTP endpoint.
   -querier.shuffle-sharding-ingesters-lookback-period duration
-    	When distributor's sharding strategy is shuffle-sharding and this setting is > 0, queriers fetch in-memory series from the minimum set of required ingesters, selecting only ingesters which may have received series since 'now - lookback period'. The lookback period should be greater or equal than the configured 'query store after' and 'query ingesters within'. If this setting is 0, queriers always query all ingesters (ingesters shuffle sharding on read path is disabled).
-  -querier.store-gateway-addresses string
-    	Comma separated list of store-gateway addresses in DNS Service Discovery format. This option should be set when the store-gateway sharding is disabled (when enabled, the store-gateway instances form a ring and addresses are picked from the ring).
+    	When distributor's sharding strategy is shuffle-sharding and this setting is > 0, queriers fetch in-memory series from the minimum set of required ingesters, selecting only ingesters which may have received series since 'now - lookback period'. The lookback period should be greater or equal than the configured -querier.query-store-after and -querier.query-ingesters-within. If this setting is 0, queriers always query all ingesters (ingesters shuffle sharding on read path is disabled).
   -querier.store-gateway-client.tls-ca-path string
     	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
   -querier.store-gateway-client.tls-cert-path string
@@ -1187,8 +1093,98 @@ Usage of ./cmd/mimir/mimir:
     	Override the expected name on the server certificate.
   -querier.timeout duration
     	The timeout for a query. This config option should be set on query-frontend too when query sharding is enabled. (default 2m0s)
+  -query-frontend.align-querier-with-step
+    	Mutate incoming queries to align their start and end with their step.
+  -query-frontend.cache-results
+    	Cache query results.
+  -query-frontend.cache-unaligned-requests
+    	Cache requests that are not step-aligned.
+  -query-frontend.downstream-url string
+    	URL of downstream Prometheus.
+  -query-frontend.grpc-client-config.backoff-max-period duration
+    	Maximum delay when backing off. (default 10s)
+  -query-frontend.grpc-client-config.backoff-min-period duration
+    	Minimum delay when backing off. (default 100ms)
+  -query-frontend.grpc-client-config.backoff-on-ratelimits
+    	Enable backoff and retry when we hit ratelimits.
+  -query-frontend.grpc-client-config.backoff-retries int
+    	Number of times to backoff and retry before failing. (default 10)
+  -query-frontend.grpc-client-config.grpc-client-rate-limit float
+    	Rate limit for gRPC client; 0 means disabled.
+  -query-frontend.grpc-client-config.grpc-client-rate-limit-burst int
+    	Rate limit burst for gRPC client.
+  -query-frontend.grpc-client-config.grpc-compression string
+    	Use compression when sending messages. Supported values are: 'gzip', 'snappy' and '' (disable compression)
+  -query-frontend.grpc-client-config.grpc-max-recv-msg-size int
+    	gRPC client max receive message size (bytes). (default 104857600)
+  -query-frontend.grpc-client-config.grpc-max-send-msg-size int
+    	gRPC client max send message size (bytes). (default 104857600)
+  -query-frontend.grpc-client-config.tls-ca-path string
+    	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
+  -query-frontend.grpc-client-config.tls-cert-path string
+    	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -query-frontend.grpc-client-config.tls-enabled
+    	Enable TLS in the GRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.
+  -query-frontend.grpc-client-config.tls-insecure-skip-verify
+    	Skip validating server certificate.
+  -query-frontend.grpc-client-config.tls-key-path string
+    	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+  -query-frontend.grpc-client-config.tls-server-name string
+    	Override the expected name on the server certificate.
+  -query-frontend.instance-addr string
+    	IP address to advertise to the querier (via scheduler) (default is auto-detected from network interfaces).
+  -query-frontend.instance-interface-names value
+    	List of network interface names to look up when finding the instance IP address. This address is sent to query-scheduler and querier, which uses it to send the query response back to query-frontend. (default [<private network interfaces>])
+  -query-frontend.instance-port int
+    	Port to advertise to querier (via scheduler) (defaults to server.grpc-listen-port).
+  -query-frontend.log-queries-longer-than duration
+    	Log queries that are slower than the specified duration. Set to 0 to disable. Set to < 0 to enable on all queries.
+  -query-frontend.max-body-size int
+    	Max body size for downstream prometheus. (default 10485760)
+  -query-frontend.max-cache-freshness value
+    	Most recent allowed cacheable result per-tenant, to prevent caching very recent results that might still be in flux. (default 1m)
+  -query-frontend.max-queriers-per-tenant int
+    	Maximum number of queriers that can handle requests for a single tenant. If set to 0 or value higher than number of available queriers, *all* queriers will handle requests for the tenant. Each frontend (or query-scheduler, if used) will select the same set of queriers for the same tenant (given that all queriers are connected to all frontends / query-schedulers). This option only works with queriers connecting to the query-frontend / query-scheduler, not when using downstream URL.
+  -query-frontend.max-retries-per-request int
+    	Maximum number of retries for a single request; beyond this, the downstream error is returned. (default 5)
+  -query-frontend.parallelize-shardable-queries
+    	True to enable query sharding.
   -query-frontend.querier-forget-delay duration
-    	If a querier disconnects without sending notification about graceful shutdown, the query-frontend will keep the querier in the tenant's shard until the forget delay has passed. This feature is useful to reduce the blast radius when shuffle-sharding is enabled.
+    	[experimental] If a querier disconnects without sending notification about graceful shutdown, the query-frontend will keep the querier in the tenant's shard until the forget delay has passed. This feature is useful to reduce the blast radius when shuffle-sharding is enabled.
+  -query-frontend.query-sharding-max-sharded-queries int
+    	The max number of sharded queries that can be run for a given received query. 0 to disable limit. (default 128)
+  -query-frontend.query-sharding-total-shards int
+    	The amount of shards to use when doing parallelisation via query sharding by tenant. 0 to disable query sharding for tenant. Query sharding implementation will adjust the number of query shards based on compactor shards. This allows querier to not search the blocks which cannot possibly have the series for given query shard. (default 16)
+  -query-frontend.query-stats-enabled
+    	False to disable query statistics tracking. When enabled, a message with some statistics is logged for every query. (default true)
+  -query-frontend.results-cache.backend string
+    	Backend for query-frontend results cache, if not empty. Supported values: [memcached].
+  -query-frontend.results-cache.compression string
+    	Enable cache compression, if not empty. Supported values are: snappy.
+  -query-frontend.results-cache.memcached.addresses string
+    	Comma separated list of memcached addresses. Supported prefixes are: dns+ (looked up as an A/AAAA query), dnssrv+ (looked up as a SRV query, dnssrvnoa+ (looked up as a SRV query, with no A/AAAA lookup made after that).
+  -query-frontend.results-cache.memcached.max-async-buffer-size int
+    	The maximum number of enqueued asynchronous operations allowed. (default 25000)
+  -query-frontend.results-cache.memcached.max-async-concurrency int
+    	The maximum number of concurrent asynchronous operations can occur. (default 50)
+  -query-frontend.results-cache.memcached.max-get-multi-batch-size int
+    	The maximum number of keys a single underlying get operation should run. If more keys are specified, internally keys are split into multiple batches and fetched concurrently, honoring the max concurrency. If set to 0, the max batch size is unlimited. (default 100)
+  -query-frontend.results-cache.memcached.max-get-multi-concurrency int
+    	The maximum number of concurrent connections running get operations. If set to 0, concurrency is unlimited. (default 100)
+  -query-frontend.results-cache.memcached.max-idle-connections int
+    	The maximum number of idle connections that will be maintained per address. (default 100)
+  -query-frontend.results-cache.memcached.max-item-size int
+    	The maximum size of an item stored in memcached. Bigger items are not stored. If set to 0, no maximum size is enforced. (default 1048576)
+  -query-frontend.results-cache.memcached.timeout duration
+    	The socket read/write timeout. (default 200ms)
+  -query-frontend.scheduler-address string
+    	DNS hostname used for finding query-schedulers.
+  -query-frontend.scheduler-dns-lookup-period duration
+    	How often to resolve the scheduler-address, in order to look for new query-scheduler instances. (default 10s)
+  -query-frontend.scheduler-worker-concurrency int
+    	Number of concurrent workers forwarding queries to single query-scheduler. (default 5)
+  -query-frontend.split-queries-by-interval duration
+    	Split queries by an interval and execute in parallel. You should use a multiple of 24 hours to optimize querying blocks. 0 to disable it. (default 24h0m0s)
   -query-scheduler.grpc-client-config.backoff-max-period duration
     	Maximum delay when backing off. (default 10s)
   -query-scheduler.grpc-client-config.backoff-min-period duration
@@ -1206,7 +1202,7 @@ Usage of ./cmd/mimir/mimir:
   -query-scheduler.grpc-client-config.grpc-max-recv-msg-size int
     	gRPC client max receive message size (bytes). (default 104857600)
   -query-scheduler.grpc-client-config.grpc-max-send-msg-size int
-    	gRPC client max send message size (bytes). (default 16777216)
+    	gRPC client max send message size (bytes). (default 104857600)
   -query-scheduler.grpc-client-config.tls-ca-path string
     	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
   -query-scheduler.grpc-client-config.tls-cert-path string
@@ -1222,14 +1218,8 @@ Usage of ./cmd/mimir/mimir:
   -query-scheduler.max-outstanding-requests-per-tenant int
     	Maximum number of outstanding requests per tenant per query-scheduler. In-flight requests above this limit will fail with HTTP response status code 429. (default 100)
   -query-scheduler.querier-forget-delay duration
-    	If a querier disconnects without sending notification about graceful shutdown, the query-scheduler will keep the querier in the tenant's shard until the forget delay has passed. This feature is useful to reduce the blast radius when shuffle-sharding is enabled.
-  -ring.heartbeat-timeout duration
-    	The heartbeat timeout after which ingesters are skipped for reads/writes. 0 = never (timeout disabled). (default 1m0s)
-  -ring.prefix string
-    	The prefix for the keys in the store. Should end with a /. (default "collectors/")
-  -ring.store string
-    	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "consul")
-  -ruler-storage.azure.account-key value
+    	[experimental] If a querier disconnects without sending notification about graceful shutdown, the query-scheduler will keep the querier in the tenant's shard until the forget delay has passed. This feature is useful to reduce the blast radius when shuffle-sharding is enabled.
+  -ruler-storage.azure.account-key string
     	Azure storage account key
   -ruler-storage.azure.account-name string
     	Azure storage account name
@@ -1249,7 +1239,7 @@ Usage of ./cmd/mimir/mimir:
     	Local filesystem storage directory. (default "ruler")
   -ruler-storage.gcs.bucket-name string
     	GCS bucket name
-  -ruler-storage.gcs.service-account value
+  -ruler-storage.gcs.service-account string
     	JSON representing either a Google Developers Console client_credentials.json file or a Google Developers service account key file. If empty, fallback to Google default logic.
   -ruler-storage.local.directory string
     	Directory to scan for rules
@@ -1277,7 +1267,7 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of idle (keep-alive) connections to keep per-host. If 0, a built-in default value is used. (default 100)
   -ruler-storage.s3.region string
     	S3 region. If unset, the client will issue a S3 GetBucketLocation API call to autodetect it.
-  -ruler-storage.s3.secret-access-key value
+  -ruler-storage.s3.secret-access-key string
     	S3 secret access key
   -ruler-storage.s3.signature-version string
     	The signature version to use for authenticating against S3. Supported values are: v4, v2. (default "v4")
@@ -1339,14 +1329,10 @@ Usage of ./cmd/mimir/mimir:
     	Path to the key file for the client certificate. Also requires the client certificate to be configured.
   -ruler.alertmanager-client.tls-server-name string
     	Override the expected name on the server certificate.
-  -ruler.alertmanager-discovery
-    	Use DNS SRV records to discover Alertmanager hosts.
   -ruler.alertmanager-refresh-interval duration
     	How long to wait between refreshing DNS resolutions of Alertmanager hosts. (default 1m0s)
   -ruler.alertmanager-url string
-    	Comma-separated list of URL(s) of the Alertmanager(s) to send notifications to. Each Alertmanager URL is treated as a separate group in the configuration. Multiple Alertmanagers in HA per group can be supported by using DNS resolution via -ruler.alertmanager-discovery.
-  -ruler.alertmanager-use-v2
-    	If enabled requests to Alertmanager will utilize the V2 API. (default true)
+    	Comma-separated list of URL(s) of the Alertmanager(s) to send notifications to. Each URL is treated as a separate group. Multiple Alertmanagers in HA per group can be supported by using DNS service discovery format. Basic auth is supported as part of the URL.
   -ruler.client.backoff-max-period duration
     	Maximum delay when backing off. (default 10s)
   -ruler.client.backoff-min-period duration
@@ -1364,7 +1350,7 @@ Usage of ./cmd/mimir/mimir:
   -ruler.client.grpc-max-recv-msg-size int
     	gRPC client max receive message size (bytes). (default 104857600)
   -ruler.client.grpc-max-send-msg-size int
-    	gRPC client max send message size (bytes). (default 16777216)
+    	gRPC client max send message size (bytes). (default 104857600)
   -ruler.client.tls-ca-path string
     	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
   -ruler.client.tls-cert-path string
@@ -1379,6 +1365,8 @@ Usage of ./cmd/mimir/mimir:
     	Override the expected name on the server certificate.
   -ruler.disabled-tenants value
     	Comma separated list of tenants whose rules this ruler cannot evaluate. If specified, a ruler that would normally pick the specified tenant(s) for processing will ignore them instead. Subject to sharding.
+  -ruler.enable-api
+    	Enable the ruler config API. (default true)
   -ruler.enabled-tenants value
     	Comma separated list of tenants whose rules this ruler can evaluate. If specified, only these tenants will be handled by ruler, otherwise this ruler can process rules from all tenants. Subject to sharding.
   -ruler.evaluation-delay-duration value
@@ -1404,7 +1392,7 @@ Usage of ./cmd/mimir/mimir:
   -ruler.poll-interval duration
     	How frequently to poll for rule changes (default 1m0s)
   -ruler.query-stats-enabled
-    	Report the wall time for ruler queries to complete as a per user metric and as an info level log message.
+    	Report the wall time for ruler queries to complete as a per-tenant metric and as an info level log message.
   -ruler.resend-delay duration
     	Minimum amount of time to wait before resending an alert to Alertmanager. (default 1m0s)
   -ruler.ring.consul.acl-token string
@@ -1446,13 +1434,13 @@ Usage of ./cmd/mimir/mimir:
   -ruler.ring.heartbeat-timeout duration
     	The heartbeat timeout after which rulers are considered unhealthy within the ring. 0 = never (timeout disabled). (default 1m0s)
   -ruler.ring.instance-addr string
-    	IP address to advertise in the ring.
+    	IP address to advertise in the ring. Default is auto-detected.
   -ruler.ring.instance-id string
-    	Instance ID to register in the ring. (default "{{.Hostname}}")
+    	Instance ID to register in the ring. (default "<hostname>")
   -ruler.ring.instance-interface-names value
-    	Name of network interface to read address from. (default [eth0 en0])
+    	List of network interface names to look up when finding the instance IP address. (default [<private network interfaces>])
   -ruler.ring.instance-port int
-    	Port to advertise in the ring (defaults to server.grpc-listen-port).
+    	Port to advertise in the ring (defaults to -server.grpc-listen-port).
   -ruler.ring.multi.mirror-enabled
     	Mirror writes to secondary store.
   -ruler.ring.multi.mirror-timeout duration
@@ -1468,7 +1456,7 @@ Usage of ./cmd/mimir/mimir:
   -ruler.ring.store string
     	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
   -ruler.rule-path string
-    	file path to store temporary rule files for the prometheus rule managers (default "/rules")
+    	Directory to store temporary rule files loaded by the Prometheus rule managers. This directory is not required to be persisted between restarts. (default "./data-ruler/")
   -ruler.search-pending-for duration
     	Time to spend searching for a pending ruler when shutting down. (default 5m0s)
   -ruler.tenant-federation.enabled
@@ -1549,8 +1537,6 @@ Usage of ./cmd/mimir/mimir:
     	Base path to serve all API routes from (e.g. /v1/)
   -server.register-instrumentation
     	Register the intrumentation handlers (/metrics etc). (default true)
-  -store-gateway.sharding-enabled
-    	Shard blocks across multiple store gateway instances. This option needs be set both on the store-gateway and querier when running in microservices mode.
   -store-gateway.sharding-ring.consul.acl-token string
     	ACL Token used to interact with Consul.
   -store-gateway.sharding-ring.consul.client-timeout duration
@@ -1588,17 +1574,17 @@ Usage of ./cmd/mimir/mimir:
   -store-gateway.sharding-ring.heartbeat-period duration
     	Period at which to heartbeat to the ring. 0 = disabled. (default 15s)
   -store-gateway.sharding-ring.heartbeat-timeout duration
-    	The heartbeat timeout after which store gateways are considered unhealthy within the ring. 0 = never (timeout disabled). This option needs be set both on the store-gateway and querier when running in microservices mode. (default 1m0s)
+    	The heartbeat timeout after which store gateways are considered unhealthy within the ring. 0 = never (timeout disabled). This option needs be set both on the store-gateway, querier and ruler when running in microservices mode. (default 1m0s)
   -store-gateway.sharding-ring.instance-addr string
-    	IP address to advertise in the ring.
+    	IP address to advertise in the ring. Default is auto-detected.
   -store-gateway.sharding-ring.instance-availability-zone string
     	The availability zone where this instance is running. Required if zone-awareness is enabled.
   -store-gateway.sharding-ring.instance-id string
-    	Instance ID to register in the ring. (default "{{.Hostname}}")
+    	Instance ID to register in the ring. (default "<hostname>")
   -store-gateway.sharding-ring.instance-interface-names value
-    	Name of network interface to read address from. (default [eth0 en0])
+    	List of network interface names to look up when finding the instance IP address. (default [<private network interfaces>])
   -store-gateway.sharding-ring.instance-port int
-    	Port to advertise in the ring (defaults to server.grpc-listen-port).
+    	Port to advertise in the ring (defaults to -server.grpc-listen-port).
   -store-gateway.sharding-ring.multi.mirror-enabled
     	Mirror writes to secondary store.
   -store-gateway.sharding-ring.multi.mirror-timeout duration
@@ -1610,9 +1596,9 @@ Usage of ./cmd/mimir/mimir:
   -store-gateway.sharding-ring.prefix string
     	The prefix for the keys in the store. Should end with a /. (default "collectors/")
   -store-gateway.sharding-ring.replication-factor int
-    	The replication factor to use when sharding blocks. This option needs be set both on the store-gateway and querier when running in microservices mode. (default 3)
+    	The replication factor to use when sharding blocks. This option needs be set both on the store-gateway, querier and ruler when running in microservices mode. (default 3)
   -store-gateway.sharding-ring.store string
-    	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "consul")
+    	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
   -store-gateway.sharding-ring.tokens-file-path string
     	File path where tokens are stored. If empty, tokens are not stored at shutdown and restored at startup.
   -store-gateway.sharding-ring.unregister-on-shutdown
@@ -1620,9 +1606,9 @@ Usage of ./cmd/mimir/mimir:
   -store-gateway.sharding-ring.wait-stability-max-duration duration
     	Maximum time to wait for ring stability at startup. If the store-gateway ring keeps changing after this period of time, the store-gateway will start anyway. (default 5m0s)
   -store-gateway.sharding-ring.wait-stability-min-duration duration
-    	Minimum time to wait for ring stability at startup. 0 to disable. (default 1m0s)
+    	Minimum time to wait for ring stability at startup, if set to positive value.
   -store-gateway.sharding-ring.zone-awareness-enabled
-    	True to enable zone-awareness and replicate blocks across different availability zones.
+    	True to enable zone-awareness and replicate blocks across different availability zones. This option needs be set both on the store-gateway, querier and ruler when running in microservices mode.
   -store-gateway.tenant-shard-size int
     	The tenant's shard size, used when store-gateway sharding is enabled. Value of 0 disables shuffle sharding for the tenant, that is all tenant blocks are sharded across all store-gateway replicas.
   -store.max-labels-query-length value
@@ -1630,11 +1616,11 @@ Usage of ./cmd/mimir/mimir:
   -store.max-query-length value
     	Limit the query time range (end - start time). This limit is enforced in the query-frontend (on the received query), in the querier (on the query possibly split by the query-frontend) and ruler. 0 to disable.
   -target value
-    	Comma-separated list of modules to load. The alias 'all' can be used in the list to load a number of core modules and will enable single-binary mode. Use '-modules' command line flag to get a list of available modules, and to see which modules are included in 'all'. (default all)
+    	Comma-separated list of components to include in the instantiated process. The default value 'all' includes all components that are required to form a functional Grafana Mimir instance in single-binary mode. Use the '-modules' command line flag to get a list of available components, and to see which components are included with 'all'. (default all)
   -tenant-federation.enabled
-    	If enabled on all services, queries can be federated across multiple tenants. The tenant IDs involved need to be specified separated by a '|' character in the 'X-Scope-OrgID' header (experimental).
+    	If enabled on all services, queries can be federated across multiple tenants. The tenant IDs involved need to be specified separated by a '|' character in the 'X-Scope-OrgID' header.
   -validation.create-grace-period value
-    	Duration which table will be created/deleted before/after it's needed; we won't accept sample from before this time. (default 10m)
+    	Controls how far into the future incoming samples are accepted compared to the wall clock. Any sample with timestamp `t` will be rejected if `t > (now + validation.create-grace-period)`. (default 10m)
   -validation.enforce-metadata-metric-name
     	Enforce every metadata has a metric name. (default true)
   -validation.max-label-names-per-series int

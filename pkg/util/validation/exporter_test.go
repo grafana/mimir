@@ -14,11 +14,24 @@ import (
 )
 
 func TestOverridesExporter_noConfig(t *testing.T) {
+	exporter := NewOverridesExporter(&Limits{}, nil)
+
+	// With no updated override configurations, there should be no override metrics
+	count := testutil.CollectAndCount(exporter, "cortex_limits_overrides")
+	assert.Equal(t, 0, count)
+
+	// The defaults should exist though
+	count = testutil.CollectAndCount(exporter, "cortex_limits_defaults")
+	assert.Equal(t, 10, count)
+}
+
+func TestOverridesExporter_emptyConfig(t *testing.T) {
 	exporter := NewOverridesExporter(&Limits{}, newMockTenantLimits(nil))
 
 	// With no updated override configurations, there should be no override metrics
 	count := testutil.CollectAndCount(exporter, "cortex_limits_overrides")
 	assert.Equal(t, 0, count)
+
 	// The defaults should exist though
 	count = testutil.CollectAndCount(exporter, "cortex_limits_defaults")
 	assert.Equal(t, 10, count)

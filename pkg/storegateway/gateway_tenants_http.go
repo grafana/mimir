@@ -3,6 +3,7 @@
 package storegateway
 
 import (
+	_ "embed" // Used to embed html template
 	"fmt"
 	"html/template"
 	"net/http"
@@ -11,34 +12,14 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 )
 
-const tenantsPageTemplate = `
-<!DOCTYPE html>
-<html>
-	<head>
-		<meta charset="UTF-8">
-		<title>Store-gateway: bucket tenants</title>
-	</head>
-	<body>
-		<h1>Store-gateway: bucket tenants</h1>
-		<p>Current time: {{ .Now }}</p>
-		<table border="1" cellpadding="5" style="border-collapse: collapse">
-			<thead>
-				<tr>
-					<th>Tenant</th>
-				</tr>
-			</thead>
-			<tbody style="font-family: monospace;">
-				{{ range .Tenants }}
-				<tr>
-					<td><a href="tenant/{{ . }}/blocks">{{ . }}</a></td>
-				</tr>
-				{{ end }}
-			</tbody>
-		</table>
-	</body>
-</html>`
+//go:embed tenants.gohtml
+var tenantsPageHTML string
+var tenantsTemplate = template.Must(template.New("webpage").Parse(tenantsPageHTML))
 
-var tenantsTemplate = template.Must(template.New("webpage").Parse(tenantsPageTemplate))
+type tenantsPageContents struct {
+	Now     time.Time `json:"now"`
+	Tenants []string  `json:"tenants,omitempty"`
+}
 
 func (s *StoreGateway) TenantsHandler(w http.ResponseWriter, req *http.Request) {
 	tenantIDs, err := s.stores.scanUsers(req.Context())
@@ -47,10 +28,7 @@ func (s *StoreGateway) TenantsHandler(w http.ResponseWriter, req *http.Request) 
 		return
 	}
 
-	util.RenderHTTPResponse(w, struct {
-		Now     time.Time `json:"now"`
-		Tenants []string  `json:"tenants,omitempty"`
-	}{
+	util.RenderHTTPResponse(w, tenantsPageContents{
 		Now:     time.Now(),
 		Tenants: tenantIDs,
 	}, tenantsTemplate, req)

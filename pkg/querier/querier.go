@@ -10,13 +10,11 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/grafana/dskit/flagext"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
@@ -25,12 +23,13 @@ import (
 	"github.com/thanos-io/thanos/pkg/strutil"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/grafana/dskit/tenant"
+
 	"github.com/grafana/mimir/pkg/querier/batch"
 	"github.com/grafana/mimir/pkg/querier/engine"
 	"github.com/grafana/mimir/pkg/querier/iterators"
 	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/storage/lazyquery"
-	"github.com/grafana/mimir/pkg/tenant"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -40,23 +39,17 @@ import (
 
 // Config contains the configuration require to create a querier
 type Config struct {
-	Iterators            bool          `yaml:"iterators"`
-	BatchIterators       bool          `yaml:"batch_iterators"`
+	Iterators            bool          `yaml:"iterators" category:"advanced"`
+	BatchIterators       bool          `yaml:"batch_iterators" category:"advanced"`
 	QueryIngestersWithin time.Duration `yaml:"query_ingesters_within"`
-
-	// QueryLabelNamesWithMatchers enables the usage of matchers in the LabelNames call.
-	// Can be enabled once this code is deployed on all ingesters, so they correctly read that request param.
-	// When disabled, the MetricsForLabelMatchers method is used to retrieve label names when matchers are provided.
-	QueryLabelNamesWithMatchers bool `yaml:"query_label_names_with_matchers_enabled"`
 
 	// QueryStoreAfter the time after which queries should also be sent to the store and not just ingesters.
 	QueryStoreAfter    time.Duration `yaml:"query_store_after"`
-	MaxQueryIntoFuture time.Duration `yaml:"max_query_into_future"`
+	MaxQueryIntoFuture time.Duration `yaml:"max_query_into_future" category:"advanced"`
 
-	StoreGatewayAddresses string       `yaml:"store_gateway_addresses"`
-	StoreGatewayClient    ClientConfig `yaml:"store_gateway_client"`
+	StoreGatewayClient ClientConfig `yaml:"store_gateway_client"`
 
-	ShuffleShardingIngestersLookbackPeriod time.Duration `yaml:"shuffle_sharding_ingesters_lookback_period"`
+	ShuffleShardingIngestersLookbackPeriod time.Duration `yaml:"shuffle_sharding_ingesters_lookback_period" category:"advanced"`
 
 	// PromQL engine config.
 	EngineConfig engine.Config `yaml:",inline"`
@@ -69,17 +62,14 @@ var (
 )
 
 // RegisterFlags adds the flags required to config this to the given FlagSet.
-func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
+func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	cfg.StoreGatewayClient.RegisterFlagsWithPrefix("querier.store-gateway-client", f)
 	f.BoolVar(&cfg.Iterators, "querier.iterators", false, "Use iterators to execute query, as opposed to fully materialising the series in memory.")
 	f.BoolVar(&cfg.BatchIterators, "querier.batch-iterators", true, "Use batch iterators to execute query, as opposed to fully materialising the series in memory.  Takes precedent over the -querier.iterators flag.")
-	f.DurationVar(&cfg.QueryIngestersWithin, "querier.query-ingesters-within", 0, "Maximum lookback beyond which queries are not sent to ingester. 0 means all queries are sent to ingester.")
-	flagext.DeprecatedFlag(f, "querier.query-store-for-labels-enabled", "This option is no longer used, and will be removed.", logger)
-	f.BoolVar(&cfg.QueryLabelNamesWithMatchers, "querier.query-label-names-with-matchers-enabled", false, "True to enable queriers to use an optimized implementation which passes down to ingesters the label matchers when running the label names API. Can be enabled once all ingesters run a version >= the one where this option has been introduced.")
+	f.DurationVar(&cfg.QueryIngestersWithin, "querier.query-ingesters-within", 13*time.Hour, "Maximum lookback beyond which queries are not sent to ingester. 0 means all queries are sent to ingester.")
 	f.DurationVar(&cfg.MaxQueryIntoFuture, "querier.max-query-into-future", 10*time.Minute, "Maximum duration into the future you can query. 0 to disable.")
 	f.DurationVar(&cfg.QueryStoreAfter, "querier.query-store-after", 0, "The time after which a metric should be queried from storage and not just ingesters. 0 means all queries are sent to store. If this option is enabled, the time range of the query sent to the store-gateway will be manipulated to ensure the query end is not more recent than 'now - query-store-after'.")
-	f.StringVar(&cfg.StoreGatewayAddresses, "querier.store-gateway-addresses", "", "Comma separated list of store-gateway addresses in DNS Service Discovery format. This option should be set when the store-gateway sharding is disabled (when enabled, the store-gateway instances form a ring and addresses are picked from the ring).")
-	f.DurationVar(&cfg.ShuffleShardingIngestersLookbackPeriod, "querier.shuffle-sharding-ingesters-lookback-period", 0, "When distributor's sharding strategy is shuffle-sharding and this setting is > 0, queriers fetch in-memory series from the minimum set of required ingesters, selecting only ingesters which may have received series since 'now - lookback period'. The lookback period should be greater or equal than the configured 'query store after' and 'query ingesters within'. If this setting is 0, queriers always query all ingesters (ingesters shuffle sharding on read path is disabled).")
+	f.DurationVar(&cfg.ShuffleShardingIngestersLookbackPeriod, "querier.shuffle-sharding-ingesters-lookback-period", 0, "When distributor's sharding strategy is shuffle-sharding and this setting is > 0, queriers fetch in-memory series from the minimum set of required ingesters, selecting only ingesters which may have received series since 'now - lookback period'. The lookback period should be greater or equal than the configured -querier.query-store-after and -querier.query-ingesters-within. If this setting is 0, queriers always query all ingesters (ingesters shuffle sharding on read path is disabled).")
 
 	cfg.EngineConfig.RegisterFlags(f)
 }
@@ -102,14 +92,6 @@ func (cfg *Config) Validate() error {
 	return nil
 }
 
-func (cfg *Config) GetStoreGatewayAddresses() []string {
-	if cfg.StoreGatewayAddresses == "" {
-		return nil
-	}
-
-	return strings.Split(cfg.StoreGatewayAddresses, ",")
-}
-
 func getChunksIteratorFunction(cfg Config) chunkIteratorFunc {
 	if cfg.BatchIterators {
 		return batch.NewChunkMergeIterator
@@ -123,7 +105,7 @@ func getChunksIteratorFunction(cfg Config) chunkIteratorFunc {
 func New(cfg Config, limits *validation.Overrides, distributor Distributor, stores []QueryableWithFilter, reg prometheus.Registerer, logger log.Logger, tracker *activitytracker.ActivityTracker) (storage.SampleAndChunkQueryable, storage.ExemplarQueryable, *promql.Engine) {
 	iteratorFunc := getChunksIteratorFunction(cfg)
 
-	distributorQueryable := newDistributorQueryable(distributor, iteratorFunc, cfg.QueryIngestersWithin, cfg.QueryLabelNamesWithMatchers, logger)
+	distributorQueryable := newDistributorQueryable(distributor, iteratorFunc, cfg.QueryIngestersWithin, logger)
 
 	ns := make([]QueryableWithFilter, len(stores))
 	for ix, s := range stores {

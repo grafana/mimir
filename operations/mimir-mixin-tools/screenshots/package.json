@@ -1,0 +1,5 @@
+{
+  "dependencies": {
+    "puppeteer": "^13.1.2"
+  }
+}

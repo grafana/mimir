@@ -22,17 +22,17 @@ var (
 type MemcachedConfig struct {
 	Addresses              string        `yaml:"addresses"`
 	Timeout                time.Duration `yaml:"timeout"`
-	MaxIdleConnections     int           `yaml:"max_idle_connections"`
-	MaxAsyncConcurrency    int           `yaml:"max_async_concurrency"`
-	MaxAsyncBufferSize     int           `yaml:"max_async_buffer_size"`
-	MaxGetMultiConcurrency int           `yaml:"max_get_multi_concurrency"`
-	MaxGetMultiBatchSize   int           `yaml:"max_get_multi_batch_size"`
-	MaxItemSize            int           `yaml:"max_item_size"`
+	MaxIdleConnections     int           `yaml:"max_idle_connections" category:"advanced"`
+	MaxAsyncConcurrency    int           `yaml:"max_async_concurrency" category:"advanced"`
+	MaxAsyncBufferSize     int           `yaml:"max_async_buffer_size" category:"advanced"`
+	MaxGetMultiConcurrency int           `yaml:"max_get_multi_concurrency" category:"advanced"`
+	MaxGetMultiBatchSize   int           `yaml:"max_get_multi_batch_size" category:"advanced"`
+	MaxItemSize            int           `yaml:"max_item_size" category:"advanced"`
 }
 
 func (cfg *MemcachedConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
 	f.StringVar(&cfg.Addresses, prefix+"addresses", "", "Comma separated list of memcached addresses. Supported prefixes are: dns+ (looked up as an A/AAAA query), dnssrv+ (looked up as a SRV query, dnssrvnoa+ (looked up as a SRV query, with no A/AAAA lookup made after that).")
-	f.DurationVar(&cfg.Timeout, prefix+"timeout", 100*time.Millisecond, "The socket read/write timeout.")
+	f.DurationVar(&cfg.Timeout, prefix+"timeout", 200*time.Millisecond, "The socket read/write timeout.")
 	f.IntVar(&cfg.MaxIdleConnections, prefix+"max-idle-connections", 100, "The maximum number of idle connections that will be maintained per address.")
 	f.IntVar(&cfg.MaxAsyncConcurrency, prefix+"max-async-concurrency", 50, "The maximum number of concurrent asynchronous operations can occur.")
 	f.IntVar(&cfg.MaxAsyncBufferSize, prefix+"max-async-buffer-size", 25000, "The maximum number of enqueued asynchronous operations allowed.")

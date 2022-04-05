@@ -12,22 +12,15 @@
       // queries that return a lot of data timeing out.
       'server.http-write-timeout': '1m',
 
-      // Split long queries up into multiple day-long queries.
-      'frontend.split-queries-by-interval': '24h',
-
       // Cache query results.
-      'frontend.align-querier-with-step': false,
-      'frontend.cache-results': true,
-      'frontend.results-cache.backend': 'memcached',
-      'frontend.results-cache.memcached.addresses': 'dnssrvnoa+memcached-frontend.%(namespace)s.svc.cluster.local:11211' % $._config,
-      'frontend.results-cache.memcached.timeout': '500ms',
+      'query-frontend.align-querier-with-step': false,
+      'query-frontend.cache-results': true,
+      'query-frontend.results-cache.backend': 'memcached',
+      'query-frontend.results-cache.memcached.addresses': 'dnssrvnoa+memcached-frontend.%(namespace)s.svc.cluster.local:11211' % $._config,
+      'query-frontend.results-cache.memcached.timeout': '500ms',
 
       // So that exporters like cloudwatch can still send in data and be un-cached.
-      'frontend.max-cache-freshness': '10m',
-
-      // Use GZIP compression for API responses; improves latency for very big results and slow
-      // connections.
-      'api.response-compression-enabled': true,
+      'query-frontend.max-cache-freshness': '10m',
 
       // So it can receive big responses from the querier.
       'server.grpc-max-recv-msg-size-bytes': 100 << 20,
@@ -52,6 +45,7 @@
     deployment.new(name, $._config.queryFrontend.replicas, [container]) +
     $.util.configVolumeMount($._config.overrides_configmap, $._config.overrides_configmap_mountpoint) +
     (if $._config.query_frontend_allow_multiple_replicas_on_same_node then {} else $.util.antiAffinity) +
+    (if !std.isObject($._config.node_selector) then {} else deployment.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector)) +
     deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge(1) +
     deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(1),
 
@@ -60,10 +54,10 @@
   local service = $.core.v1.service,
 
   query_frontend_service:
-    $.util.serviceFor($.query_frontend_deployment),
+    $.util.serviceFor($.query_frontend_deployment, $._config.service_ignored_labels),
 
   query_frontend_discovery_service:
-    $.util.serviceFor($.query_frontend_deployment) +
+    $.util.serviceFor($.query_frontend_deployment, $._config.service_ignored_labels) +
     // Make sure that query frontend worker, running in the querier, do resolve
     // each query-frontend pod IP and NOT the service IP. To make it, we do NOT
     // use the service cluster IP so that when the service DNS is resolved it

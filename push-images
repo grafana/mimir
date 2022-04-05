@@ -25,26 +25,23 @@ push_image() {
     echo "Pushing ${image}:${IMAGE_TAG}"
     docker push "${image}:${IMAGE_TAG}"
 
-    # If image is the latest stable git tag, update the latest docker image tag
-    if [[ "$(git tag | grep -E '^v?[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1)" == "${IMAGE_TAG}" ]]; then
+    # If image is the latest stable git tag, update the latest docker image tag.
+    # Do not tag with latest any release candidate (tag ends with "-rc.*").
+    if [[ "$(git tag | grep -E '^mimir-[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1)" == "mimir-${IMAGE_TAG}" ]]; then
       docker tag "${image}:${IMAGE_TAG}" "${image}:latest"
       docker push "${image}:latest"
     fi
 }
 
 # Push images
-for image in $(make images ); do
+for image in $(make images); do
     image_name=$(basename "$image")
     case "$image_name" in
         mimir-build-image)
             # skip mimir-build-image
             continue
             ;;
-        mimir|mimirtool)
-            old_image="$image"
-            image="docker.io/grafana/${image_name}"
-            docker tag "${old_image}:${IMAGE_TAG}" "${image}:${IMAGE_TAG}"
-            ;;
     esac
+
     push_image "${image}"
 done

@@ -1,0 +1,89 @@
+{
+  "kind": "block",
+  "name": "",
+  "required": false,
+  "desc": "",
+  "blockEntries": [
+    {
+      "kind": "field",
+      "name": "schema-config-file",
+      "required": false,
+      "desc": "The path to the schema config file. The schema config is used only when running Cortex with the chunks storage.",
+      "fieldDefaultValue": "",
+      "fieldFlag": "schema-config-file",
+      "fieldType": "string"
+    },
+    {
+      "kind": "field",
+      "name": "ingester-chunk-encoding",
+      "required": false,
+      "desc": "Encoding version to use for chunks.",
+      "fieldDefaultValue": "",
+      "fieldFlag": "ingester.chunk-encoding",
+      "fieldType": "string"
+    },
+    {
+      "kind": "field",
+      "name": "querier-query-parallelism",
+      "required": false,
+      "desc": "Max subqueries run in parallel per higher-level query.",
+      "fieldDefaultValue": 100,
+      "fieldFlag": "querier.query-parallelism",
+      "fieldType": "int"
+    },
+    {
+      "kind": "field",
+      "name": "config-file",
+      "required": false,
+      "desc": "Configuration file to load.",
+      "fieldDefaultValue": "",
+      "fieldFlag": "config.file",
+      "fieldType": "string"
+    },
+    {
+      "kind": "field",
+      "name": "config-expand-env",
+      "required": false,
+      "desc": "Expands ${var} or $var in config according to the values of the environment variables.",
+      "fieldDefaultValue": "",
+      "fieldFlag": "config.expand-env",
+      "fieldType": "string"
+    },
+    {
+      "kind": "field",
+      "name": "mem-ballast-size-bytes",
+      "required": false,
+      "desc": "Size of memory ballast to allocate.",
+      "fieldDefaultValue": 0,
+      "fieldFlag": "mem-ballast-size-bytes",
+      "fieldType": "int"
+    },
+    {
+      "kind": "field",
+      "name": "debug-mutex-profile-fraction",
+      "required": false,
+      "desc": "Fraction of mutex contention events that are reported in the mutex profile. On average 1/rate events are reported. 0 to disable.",
+      "fieldDefaultValue": 0,
+      "fieldFlag": "debug.mutex-profile-fraction",
+      "fieldType": "int"
+    },
+    {
+      "kind": "field",
+      "name": "debug-block-profile-rate",
+      "required": false,
+      "desc": "Fraction of goroutine blocking events that are reported in the blocking profile. 1 to include every blocking event in the profile, 0 to disable.",
+      "fieldDefaultValue": 0,
+      "fieldFlag": "debug.block-profile-rate",
+      "fieldType": "int"
+    },
+    {
+      "kind": "field",
+      "name": "ingester-lifecycler-id",
+      "required": false,
+      "desc": "ID to register in the ring.",
+      "fieldDefaultValue": null,
+      "fieldFlag": "ingester.lifecycler.id",
+      "fieldType": "string"
+    }
+  ]
+}

@@ -6,6 +6,9 @@
     // The product name used when building dashboards.
     product: 'Mimir',
 
+    // The prefix including product name used when building dashboards.
+    dashboard_prefix: '%(product)s / ' % $._config.product,
+
     // Tags for dashboards.
     tags: ['mimir'],
 
@@ -15,6 +18,8 @@
 
     // These are used by the dashboards and allow for the simultaneous display of
     // microservice and single binary Mimir clusters.
+    // Whenever you do any change here, please reflect it in the doc at:
+    // docs/sources/operations/observability/requirements.md
     job_names: {
       ingester: '(ingester.*|cortex|mimir)',  // Match also custom and per-zone ingester deployments.
       distributor: '(distributor|cortex|mimir)',
@@ -26,6 +31,8 @@
       store_gateway: '(store-gateway.*|cortex|mimir)',  // Match also per-zone store-gateway deployments.
       gateway: '(gateway|cortex-gw|cortex-gw-internal)',
       compactor: 'compactor.*|cortex|mimir',  // Match also custom compactor deployments.
+      alertmanager: 'alertmanager|cortex|mimir',
+      overrides_exporter: 'overrides-exporter',
     },
 
     // Grouping labels, to uniquely identify and group by {jobs, clusters}
@@ -63,6 +70,12 @@
       reads: true,
       tenants: true,
       top_tenants: true,
+    },
+
+    // Whether autoscaling panels and alerts should be enabled for specific Mimir services.
+    autoscaling: {
+      querier_enabled: false,
+      querier_hpa_name: 'keda-hpa-querier',
     },
 
     // The routes to exclude from alerts.

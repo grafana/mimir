@@ -17,10 +17,10 @@ import (
 	"github.com/grafana-tools/sdk"
 	"gopkg.in/alecthomas/kingpin.v2"
 
-	"github.com/grafana/mimir/pkg/mimirtool/analyse"
+	"github.com/grafana/mimir/pkg/mimirtool/analyze"
 )
 
-type GrafanaAnalyseCommand struct {
+type GrafanaAnalyzeCommand struct {
 	address     string
 	apiKey      string
 	readTimeout time.Duration
@@ -28,8 +28,8 @@ type GrafanaAnalyseCommand struct {
 	outputFile string
 }
 
-func (cmd *GrafanaAnalyseCommand) run(k *kingpin.ParseContext) error {
-	output := &analyse.MetricsInGrafana{}
+func (cmd *GrafanaAnalyzeCommand) run(k *kingpin.ParseContext) error {
+	output := &analyze.MetricsInGrafana{}
 	output.OverallMetrics = make(map[string]struct{})
 
 	ctx, cancel := context.WithTimeout(context.Background(), cmd.readTimeout)
@@ -51,7 +51,7 @@ func (cmd *GrafanaAnalyseCommand) run(k *kingpin.ParseContext) error {
 			fmt.Fprintf(os.Stderr, "%s for %s %s\n", err, link.UID, link.Title)
 			continue
 		}
-		analyse.ParseMetricsInBoard(output, board)
+		analyze.ParseMetricsInBoard(output, board)
 	}
 
 	err = writeOut(output, cmd.outputFile)
@@ -62,7 +62,7 @@ func (cmd *GrafanaAnalyseCommand) run(k *kingpin.ParseContext) error {
 	return nil
 }
 
-func writeOut(mig *analyse.MetricsInGrafana, outputFile string) error {
+func writeOut(mig *analyze.MetricsInGrafana, outputFile string) error {
 	var metricsUsed []string
 	for metric := range mig.OverallMetrics {
 		metricsUsed = append(metricsUsed, metric)

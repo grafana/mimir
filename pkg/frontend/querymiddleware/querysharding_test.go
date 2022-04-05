@@ -10,6 +10,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"net/http"
 	"regexp"
 	"runtime"
 	"sort"
@@ -31,6 +32,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/weaveworks/common/httpgrpc"
 	"github.com/weaveworks/common/user"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
@@ -246,6 +248,15 @@ func TestQueryShardingCorrectness(t *testing.T) {
 				avg(rate(metric_counter[1m]))`,
 			expectedShardedQueries: 3, // avg() is parallelized as sum()/count().
 		},
+		"sum by(unique) on (unique) group_left (group_1) * avg by (unique, group_1)": {
+			// ensure that avg transformation into sum/count does not break label matching in previous binop.
+			query: `
+				metric_counter
+				*
+				on (unique) group_left (group_1) 
+				avg by (unique, group_1) (metric_counter)`,
+			expectedShardedQueries: 2,
+		},
 		"sum by (rate()) / 2 ^ 2": {
 			query: `
 			sum by (group_1) (rate(metric_counter[1m])) / 2 ^ 2`,
@@ -373,6 +384,16 @@ func TestQueryShardingCorrectness(t *testing.T) {
 						)[10m:]
 					)`,
 			expectedShardedQueries: 0,
+		},
+		"outer subquery on top of sum": {
+			query:                  `sum(metric_counter) by (group_1)[5m:1m]`,
+			expectedShardedQueries: 0,
+			noRangeQuery:           true,
+		},
+		"outer subquery on top of avg": {
+			query:                  `avg(metric_counter) by (group_1)[5m:1m]`,
+			expectedShardedQueries: 0,
+			noRangeQuery:           true,
 		},
 		"stddev()": {
 			query:                  `stddev(metric_counter{const="fixed"})`,
@@ -1117,8 +1138,11 @@ func TestQuerySharding_ShouldReturnErrorInCorrectFormat(t *testing.T) {
 				return int64(1 * time.Minute / (time.Millisecond / time.Nanosecond))
 			},
 		})
-		queryableErr = storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
-			return nil, errors.New("fatal queryable error")
+		queryableInternalErr = storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
+			return nil, httpgrpc.ErrorFromHTTPResponse(&httpgrpc.HTTPResponse{Code: http.StatusInternalServerError, Body: []byte("fatal queryable error")})
+		})
+		queryablePrometheusExecErr = storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
+			return nil, apierror.New(apierror.TypeExec, "expanding series: the query time range exceeds the limit (query length: 744h6m0s, limit: 720h0m0s")
 		})
 		queryable = storageSeriesQueryable([]*promql.StorageSeries{
 			newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}}, start.Add(-lookbackDelta), end, step, factor(5)),
@@ -1146,7 +1170,7 @@ func TestQuerySharding_ShouldReturnErrorInCorrectFormat(t *testing.T) {
 			queryable:        queryableSlow,
 		},
 		{
-			name:             "downstream - sample limit",
+			name:             "sharding - sample limit",
 			engineDownstream: engineSampleLimit,
 			engineSharding:   engine,
 			expError:         apierror.New(apierror.TypeExec, "query processing would load too many samples into memory in query execution"),
@@ -1159,11 +1183,18 @@ func TestQuerySharding_ShouldReturnErrorInCorrectFormat(t *testing.T) {
 			queryable:        queryableSlow,
 		},
 		{
-			name:             "downstream - storage",
+			name:             "downstream - storage internal error",
 			engineDownstream: engine,
 			engineSharding:   engineSampleLimit,
-			queryable:        queryableErr,
-			expError:         apierror.New(apierror.TypeInternal, "fatal queryable error"),
+			queryable:        queryableInternalErr,
+			expError:         apierror.New(apierror.TypeInternal, "rpc error: code = Code(500) desc = fatal queryable error"),
+		},
+		{
+			name:             "downstream - storage prometheus execution error",
+			engineDownstream: engine,
+			engineSharding:   engineSampleLimit,
+			queryable:        queryablePrometheusExecErr,
+			expError:         apierror.New(apierror.TypeExec, "expanding series: the query time range exceeds the limit (query length: 744h6m0s, limit: 720h0m0s"),
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1193,7 +1224,17 @@ func TestQuerySharding_ShouldReturnErrorInCorrectFormat(t *testing.T) {
 				require.NoError(t, err)
 			} else {
 				require.Error(t, err)
-				assert.Equal(t, tc.expError, err)
+
+				// We don't really care about the specific error returned,
+				// all we care is that they produce the same http response.
+				expResp, ok := apierror.HTTPResponseFromError(tc.expError)
+				require.True(t, ok, "expected error should be an api error")
+
+				gotResp, ok := apierror.HTTPResponseFromError(err)
+				require.True(t, ok, "got error should be an api error")
+
+				assert.Equal(t, expResp.GetCode(), gotResp.GetCode())
+				assert.JSONEq(t, string(expResp.GetBody()), string(gotResp.GetBody()))
 			}
 		})
 	}

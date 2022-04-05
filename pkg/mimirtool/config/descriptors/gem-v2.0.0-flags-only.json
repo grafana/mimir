@@ -1,0 +1,53 @@
+{
+  "kind": "block",
+  "name": "",
+  "required": false,
+  "desc": "",
+  "blockEntries": [
+    {
+      "kind": "field",
+      "name": "config-file",
+      "required": false,
+      "desc": "Configuration file to load.",
+      "fieldDefaultValue": "",
+      "fieldFlag": "config.file",
+      "fieldType": "string"
+    },
+    {
+      "kind": "field",
+      "name": "config-expand-env",
+      "required": false,
+      "desc": "Expands ${var} or $var in config according to the values of the environment variables.",
+      "fieldDefaultValue": "",
+      "fieldFlag": "config.expand-env",
+      "fieldType": "string"
+    },
+    {
+      "kind": "field",
+      "name": "mem-ballast-size-bytes",
+      "required": false,
+      "desc": "Size of memory ballast to allocate.",
+      "fieldDefaultValue": 0,
+      "fieldFlag": "mem-ballast-size-bytes",
+      "fieldType": "int"
+    },
+    {
+      "kind": "field",
+      "name": "debug-mutex-profile-fraction",
+      "required": false,
+      "desc": "Fraction of mutex contention events that are reported in the mutex profile. On average 1/rate events are reported. 0 to disable.",
+      "fieldDefaultValue": 0,
+      "fieldFlag": "debug.mutex-profile-fraction",
+      "fieldType": "int"
+    },
+    {
+      "kind": "field",
+      "name": "debug-block-profile-rate",
+      "required": false,
+      "desc": "Fraction of goroutine blocking events that are reported in the blocking profile. 1 to include every blocking event in the profile, 0 to disable.",
+      "fieldDefaultValue": 0,
+      "fieldFlag": "debug.block-profile-rate",
+      "fieldType": "int"
+    }
+  ]
+}

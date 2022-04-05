@@ -29,6 +29,7 @@ func TestRingConfig_DefaultConfigToLifecyclerConfig(t *testing.T) {
 	expected.NumTokens = 512
 	expected.MinReadyDuration = 0
 	expected.FinalSleep = 0
+	expected.InfNames = cfg.InstanceInterfaceNames
 
 	assert.Equal(t, expected, cfg.ToLifecyclerConfig())
 }

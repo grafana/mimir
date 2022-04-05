@@ -61,7 +61,7 @@ How to **fix**:
 2. **Check if shuffle-sharding shard size is correct**<br />
 
 - When shuffle-sharding is enabled, we target up to 100K series / tenant / ingester assuming tenants on average use 50% of their max series limit.
-- Run the following **instant query** to find tenants that may cause higher pressure on some ingesters:
+- Run the following **instant query** to find tenants that might cause higher pressure on some ingesters:
 
   ```
   (
@@ -90,6 +90,9 @@ How to **fix**:
   ```
 
 - Check the current shard size of each tenant in the output and, if they're not already sharded across all ingesters, you may consider to double their shard size
+- Be warned that the when increasing the shard size for a tenant, the number of in-memory series will temporarily increase. Make sure to monitor:
+  - The per-ingester number of series, to make sure that any are not close to reaching the limit. You might need to temporarily raise the ingester `max_series`.
+  - The per-tenant number of series. Due to reshuffling, series will be counted multiple times (in the new and old ingesters), and therefore a tenant may risk having samples rejected because they hit the `per_user` series limit. You might need to temporarily raise the limit.
 - The in-memory series in the ingesters will be effectively reduced at the TSDB head compaction happening at least 1h after you increased the shard size for the affected tenants
 
 3. **Scale up ingesters**<br />
@@ -166,10 +169,14 @@ How to **investigate**:
 
 - Check the `Mimir / Writes` dashboard
   - Looking at the dashboard you should see in which Mimir service the high latency originates
-  - The panels in the dashboard are vertically sorted by the network path (eg. cortex-gw -> distributor -> ingester)
+  - The panels in the dashboard are vertically sorted by the network path (eg. gateway -> distributor -> ingester)
 - Deduce where in the stack the latency is being introduced
-  - **`cortex-gw`**
-    - The cortex-gw may need to be scaled up. Use the `Mimir / Scaling` dashboard to check for CPU usage vs requests.
+  - **`gateway`**
+    - Latency may be caused by the time taken for the gateway to receive the entire request from the client. There are a multitude of reasons this can occur, so communication with the user may be necessary. For example:
+      - Network issues such as packet loss between the client and gateway.
+      - Poor performance of intermediate network hops such as load balancers or HTTP proxies.
+      - Client process having insufficient CPU resources.
+    - The gateway may need to be scaled up. Use the `Mimir / Scaling` dashboard to check for CPU usage vs requests.
     - There could be a problem with authentication (eg. slow to run auth layer)
   - **`distributor`**
     - Typically, distributor p99 latency is in the range 50-100ms. If the distributor latency is higher than this, you may need to scale up the distributors.
@@ -187,11 +194,11 @@ How to **investigate**:
 
 - Check the `Mimir / Reads` dashboard
   - Looking at the dashboard you should see in which Mimir service the high latency originates
-  - The panels in the dashboard are vertically sorted by the network path (eg. cortex-gw -> query-frontend -> query->scheduler -> querier -> store-gateway)
+  - The panels in the dashboard are vertically sorted by the network path (eg. gateway -> query-frontend -> query->scheduler -> querier -> store-gateway)
 - Check the `Mimir / Slow Queries` dashboard to find out if it's caused by few slow queries
 - Deduce where in the stack the latency is being introduced
-  - **`cortex-gw`**
-    - The cortex-gw may need to be scaled up. Use the `Mimir / Scaling` dashboard to check for CPU usage vs requests.
+  - **`gateway`**
+    - The gateway may need to be scaled up. Use the `Mimir / Scaling` dashboard to check for CPU usage vs requests.
     - There could be a problem with authentication (eg. slow to run auth layer)
   - **`query-frontend`**
     - The query-frontend may need to be scaled up. If the Mimir cluster is running with the query-scheduler, the query-frontend can be scaled up with no side effects, otherwise the maximum number of query-frontend replicas should be the configured `-querier.max-concurrent`.
@@ -219,9 +226,10 @@ How to **investigate**:
   - Write path: open the `Mimir / Writes` dashboard
   - Read path: open the `Mimir / Reads` dashboard
 - Looking at the dashboard you should see in which Mimir service the error originates
-  - The panels in the dashboard are vertically sorted by the network path (eg. on the write path: cortex-gw -> distributor -> ingester)
+  - The panels in the dashboard are vertically sorted by the network path (eg. on the write path: gateway -> distributor -> ingester)
 - If the failing service is going OOM (`OOMKilled`): scale up or increase the memory
 - If the failing service is crashing / panicking: look for the stack trace in the logs and investigate from there
+  - If crashing service is query-frontend, querier or store-gateway, and you have "activity tracker" feature enabled, look for `found unfinished activities from previous run` message and subsequent `activity` messages in the log file to see which queries caused the crash.
 
 ### MimirIngesterUnhealthy
 
@@ -362,7 +370,21 @@ How to **investigate**:
 
 This alert fires when a Mimir ingester finds a corrupted TSDB WAL (stored on disk) while replaying it at ingester startup or when creation of a checkpoint comes across a WAL corruption.
 
-If this alert fires during an **ingester startup**, the WAL should have been auto-repaired, but manual investigation is required. The WAL repair mechanism cause data loss because all WAL records after the corrupted segment are discarded and so their samples lost while replaying the WAL. If this issue happen only on 1 ingester then Mimir doesn't suffer any data loss because of the replication factor, while if it happens on multiple ingesters then some data loss is possible.
+If this alert fires during an **ingester startup**, the WAL should have been auto-repaired, but manual investigation is required. The WAL repair mechanism causes data loss because all WAL records after the corrupted segment are discarded, and so their samples are lost while replaying the WAL. If this happens only on 1 ingester then Mimir doesn't suffer any data loss because of the replication factor, but if it happens on multiple ingesters some data loss is possible.
+
+To investigate how the ingester dealt with the WAL corruption, it's recommended you search the logs, e.g. with the following Grafana Loki query:
+
+```
+{cluster="<cluster>",namespace="<namespace>", pod="<pod>"} |= "corrupt"
+```
+
+The aforementioned query should typically produce entries starting with the ingester discovering the WAL corruption ("Encountered WAL read error, attempting repair"), and should hopefully show that the ingester repaired the WAL.
+
+WAL corruption can occur after pods are rescheduled following a fault with the underlying node, causing the node to be marked `NotReady` (e.g. an unplanned power outage, storage and/or network fault). Check for recent events related to the ingester pod in question:
+
+```
+kubectl get events --field-selector involvedObject.name=ingester-X
+```
 
 If this alert fires during a **checkpoint creation**, you should have also been paged with `MimirIngesterTSDBCheckpointCreationFailed`, and you can follow the steps under that alert.
 
@@ -433,6 +455,27 @@ How to **investigate**:
 
 - Look for any error in the compactor logs
   - Corruption: [`not healthy index found`](#compactor-is-failing-because-of-not-healthy-index-found)
+  - Invalid result block:
+    - **How to detect**: Search compactor logs for `invalid result block`.
+    - **What it means**: The compactor successfully validated the source blocks. But the validation of the result block after the compaction did not succeed. The result block was not uploaded and the compaction job will be retried.
+    - Out-of-order chunks
+      - **How to detect**: Search compactor logs for `invalid result block` and `out-of-order chunks`.
+      - This is caused by a bug in the ingester - see [mimir#1537](https://github.com/grafana/mimir/issues/1537). Ingesters upload blocks where the MinT and MaxT of some chunks don't match the first and last samples in the chunk. When the faulty chunks' MinT and MaxT overlap with other chunks, the compactor merges the chunks. Because one chunk's MinT and MaxT are incorrect the merge may be performed incorrectly, leading to OoO samples.
+      - **How to mitigate**: Mark the faulty blocks to avoid compacting them in the future:
+        - Find all affected compaction groups in the compactor logs. You will find them as `invalid result block /data/compact/<compaction_group>/<result_block>`.
+        - For each failed compaction job
+          - Pick one result block (doesn't matter which)
+          - Find source blocks for the compaction job: search for `msg="compact blocks"` and a mention of the result block ID.
+          - Upload a JSON file to the markers directory of the compactor: `<tenant_id>/markers/<faulty_source_block>-no-compact-mark.json`. The format of the file follows. Replace the `id` and `no_compact_time`:
+            ```json
+            {
+              "id": "01FYAFBE9F0VH6555R3J1CFPHP",
+              "version": 1,
+              "details": "When compacting with other blocks is leading to out-of-order chunks",
+              "no_compact_time": 1647514725,
+              "reason": "manual"
+            }
+            ```
 
 ### MimirCompactorSkippedBlocksWithOutOfOrderChunks
 
@@ -482,14 +525,17 @@ This alert fires when Mimir finds partial blocks for a given tenant. A partial b
 
 How to **investigate**:
 
-- Look for the block ID in the logs. Example Loki query:
-  ```
-  {cluster="<cluster>",namespace="<namespace>",container="compactor"} |= "skipped partial block"
-  ```
-- Find out which Mimir component operated on the block at last (eg. uploaded by ingester/compactor, or deleted by compactor)
-- Investigate if was a partial upload or partial delete
-- Safely manually delete the block from the bucket if was a partial delete or an upload failed by a compactor
-- Further investigate if was an upload failed by an ingester but not later retried (ingesters are expected to retry uploads until succeed)
+1. Look for partial blocks in the logs. Example Loki query: `{cluster="<cluster>",namespace="<namespace>",container="compactor"} |= "skipped partial block"`
+1. Pick a block and note its ID (`block` field in log entry) and tenant ID (`org_id` in log entry)
+1. Find the bucket used by the Mimir cell, such as checking the configured `blocks_storage_bucket_name` if you are using Jsonnet.
+1. Find out which Mimir component operated on the block last (e.g. uploaded by ingester/compactor, or deleted by compactor)
+   1. Determine when the partial block was created: `gsutil ls -l gs://${BUCKET}/${TENANT_ID}/${BLOCK_ID}`
+   1. Search in the logs around that time to find the log entry from when the compactor created the block ("compacted blocks" for log message)
+   1. From the compactor log entry you found, pick the job ID from the `groupKey` field, f.ex. `0@9748515562602778029-merge--1645711200000-1645718400000`
+   1. Then search the logs for the job ID and look for an entry with the message "compaction job finished" and `false` for the `success` field, this will show that the compactor failed uploading the block
+1. Investigate if it was a partial upload or partial delete
+1. If it was a partial delete or an upload failed by a compactor you can safely delete the block from the bucket manually: `gsutil rm -r gs://${BUCKET}/${TENANT_ID}/${BLOCK_ID}`
+1. If it was a failed upload by an ingester, but not later retried (ingesters are expected to retry uploads until succeed), further investigate
 
 ### MimirQueriesIncorrect
 
@@ -547,6 +593,7 @@ How to **investigate**:
 - Are queriers in a crash loop (eg. OOMKilled)?
   - `OOMKilled`: temporarily increase queriers memory request/limit
   - `panic`: look for the stack trace in the logs and investigate from there
+  - if queriers run with activity tracker enabled, they may log `unfinished activities` message on startup with queries that possibly caused the crash.
 - Is QPS increased?
   - Scale up queriers to satisfy the increased workload
 - Is query latency increased?
@@ -619,13 +666,13 @@ How to **fix**:
 
 ### MimirAllocatingTooMuchMemory
 
-This alert fires when an ingester memory utilization is getting closer to the limit.
+This alert fires when ingester memory utilization is getting too close to the limit.
 
 How it **works**:
 
-- Mimir ingesters are a stateful service
-- Having 2+ ingesters `OOMKilled` may cause a cluster outage
-- Ingester memory baseline usage is primarily influenced by memory allocated by the process (mostly go heap) and mmap-ed files (used by TSDB)
+- Mimir ingesters are stateful services
+- Having 2+ ingesters `OOMKilled` might cause a cluster outage
+- Ingester memory baseline usage is primarily influenced by memory allocated by the process (mostly Go heap) and mmap-ed files (used by TSDB)
 - Ingester memory short spikes are primarily influenced by queries and TSDB head compaction into new blocks (occurring every 2h)
 - A pod gets `OOMKilled` once its working set memory reaches the configured limit, so it's important to prevent ingesters' memory utilization (working set memory) from getting close to the limit (we need to keep at least 30% room for spikes due to queries)
 
@@ -638,7 +685,7 @@ How to **fix**:
     ```
   - Restarting an ingester typically reduces the memory allocated by mmap-ed files. After the restart, ingester may allocate this memory again over time, but it may give more time while working on a longer term solution
 - Check the `Mimir / Writes Resources` dashboard to see if the number of series per ingester is above the target (1.5M). If so:
-  - Scale up ingesters
+  - Scale up ingesters; you can use e.g. the `Mimir / Scaling` dashboard for reference, in order to determine the needed amount of ingesters (also keep in mind that each ingester should handle ~1.5 million series, and the series will be duplicated across three instances)
   - Memory is expected to be reclaimed at the next TSDB head compaction (occurring every 2h)
 
 ### MimirGossipMembersMismatch
@@ -777,6 +824,21 @@ When an alertmanager cannot read the state for a tenant from storage it gets log
 - The state could not be merged because it might be invalid and could not be decoded. This could indicate data corruption and therefore a bug in the reading or writing of the state, and would need further investigation.
 - The state could not be read from storage. This could be due to a networking issue such as a timeout or an authentication and authorization issue with the remote object store.
 
+### MimirAlertmanagerAllocatingTooMuchMemory
+
+This alert fires when alertmanager memory utilization is getting too close to the limit.
+
+How it **works**:
+
+- Mimir alertmanager is an stateful service
+- Having 2+ alertmanagers `OOMKilled` might cause service interruption as it needs quorum for API responses. Notification (from alertmanager to third-party) can succeed without quorum.
+- Alertmanager memory baseline usage is primarily influenced by memory allocated by the process (mostly Go heap) for alerts and silences.
+- A pod gets `OOMKilled` once its working set memory reaches the configured limit, so it's important to prevent alertmanager's memory utilization (working set memory) from going over to the limit. The memory usage is typically sustained and does not suffer from spikes, hence thresholds are set very close to the limit.
+
+How to **fix**:
+
+- Scale up alertmanager replicas; you can use e.g. the `Mimir / Scaling` dashboard for reference, in order to determine the needed amount of alertmanagers.
+
 ### MimirRolloutStuck
 
 This alert fires when a Mimir service rollout is stuck, which means the number of updated replicas doesn't match the expected one and looks there's no progress in the rollout. The alert monitors services deployed as Kubernetes `StatefulSet` and `Deployment`.
@@ -818,10 +880,10 @@ How it **works**:
 
 How to **investigate**:
 
-- Limit reached in `cortex-gateway`:
+- Limit reached in `gateway`:
   - Check if it's caused by an **high latency on write path**:
     - Check the distributors and ingesters latency in the `Mimir / Writes` dashboard
-    - An high latency on write path could lead our customers Prometheus / Agent to increase the number of shards nearly at the same time, leading to a significantly higher number of concurrent requests to the load balancer and thus cortex-gateway
+    - An high latency on write path could lead our customers Prometheus / Agent to increase the number of shards nearly at the same time, leading to a significantly higher number of concurrent requests to the load balancer and thus gateway
   - Check if it's caused by a **single tenant**:
     - We don't have a metric tracking the active TCP connections or QPS per tenant
     - As a proxy metric, you can check if the ingestion rate has significantly increased for any tenant (it's not a very accurate proxy metric for number of TCP connections so take it with a grain of salt):
@@ -830,6 +892,33 @@ How to **investigate**:
     ```
     - In case you need to quickly reject write path traffic from a single tenant, you can override its `ingestion_rate` and `ingestion_rate_burst` setting lower values (so that some/most of their traffic will be rejected)
 
+### MimirQuerierAutoscalerNotActive
+
+This alert fires when the Mimir querier Kubernetes Horizontal Pod Autoscaler's (HPA) `ScalingActive` condition is `false`. When this happens, it's not able to calculate desired scale and generally indicates problems with fetching metrics.
+
+How it **works**:
+
+- HPA is configured to autoscale Mimir queriers based on custom metrics fetched from Prometheus via the KEDA custom metrics API server
+- HPA periodically queries updated metrics and updates the number of desired replicas based on that
+- Please refer to the [HPA documentation](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/) for more information about it
+
+How to **investigate**:
+
+- Check HPA conditions and events to get more details about the failure
+  ```
+  kubectl describe hpa -n <namespace> keda-hpa-querier
+  ```
+- Ensure KEDA custom metrics API server is up and running
+  ```
+  # Assuming KEDA is running in a dedicated namespace "keda":
+  kubectl get pods -n keda
+  ```
+- Check KEDA custom metrics API server logs
+  ```
+  # Assuming KEDA is running in a dedicated namespace "keda":
+  kubectl logs -n keda deployment/keda-operator-metrics-apiserver
+  ```
+
 ## Mimir routes by path
 
 **Write path**:
@@ -837,7 +926,6 @@ How to **investigate**:
 - `/distributor.Distributor/Push`
 - `/cortex.Ingester/Push`
 - `api_v1_push`
-- `api_prom_push`
 - `api_v1_push_influx_write`
 
 **Read path**:
@@ -846,14 +934,22 @@ How to **investigate**:
 - `/cortex.Ingester/QueryStream`
 - `/cortex.Ingester/QueryExemplars`
 - `/gatewaypb.StoreGateway/Series`
-- `api_prom_label`
+- `api_prom_api_v1_label_name_values`
+- `api_prom_api_v1_labels`
+- `api_prom_api_v1_metadata`
+- `api_prom_api_v1_query`
 - `api_prom_api_v1_query_exemplars`
+- `api_prom_api_v1_query_range`
+- `api_prom_api_v1_rules`
+- `api_prom_api_v1_series`
 
 **Ruler / rules path**:
 
 - `api_v1_rules`
 - `api_v1_rules_namespace`
-- `api_prom_rules_namespace`
+- `prometheus_api_v1_rules`
+- `prometheus_rules_namespace`
+- `prometheus_rules`
 
 ## Mimir blocks storage - What to do when things to wrong
 

@@ -161,10 +161,10 @@ The ex-member is
 
 If needed, we reserve the right to publicly announce removal.
 
-[announce]: https://groups.google.com/forum/#!forum/mimir-announce
+[announce]: https://github.com/grafana/mimir/discussions/categories/announcements
 [coc]: https://github.com/grafana/mimir/blob/master/CODE_OF_CONDUCT.md
-[devs]: https://groups.google.com/forum/#!forum/mimir-developers
+[devs]: https://github.com/grafana/mimir/discussions/categories/development
 [maintainers]: https://github.com/grafana/mimir/blob/master/MAINTAINERS.md
 [rough]: https://tools.ietf.org/html/rfc7282
-[team]: https://groups.google.com/forum/#!forum/mimir-team
-[users]: https://groups.google.com/forum/#!forum/mimir-users
+[team]: https://groups.google.com/g/mimir-team
+[users]: https://github.com/grafana/mimir/discussions

@@ -389,6 +389,18 @@ func Test_mapper_MapRulesSpecialCharNamespace(t *testing.T) {
 	})
 }
 
+func Test_mapper_CleanupShouldNotFailIfPathDoesNotExist(t *testing.T) {
+	m := &mapper{
+		Path:   "/path-does-not-exist",
+		FS:     afero.NewMemMapFs(),
+		logger: log.NewNopLogger(),
+	}
+
+	actual, err := m.users()
+	require.NoError(t, err)
+	require.Empty(t, actual)
+}
+
 func sliceContains(t *testing.T, find string, in []string) bool {
 	t.Helper()
 

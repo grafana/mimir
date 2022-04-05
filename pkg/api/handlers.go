@@ -7,10 +7,12 @@ package api
 
 import (
 	"context"
+	"embed"
 	"html/template"
 	"net/http"
 	"path"
 	"regexp"
+	"sort"
 	"sync"
 
 	"github.com/go-kit/log"
@@ -33,70 +35,70 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-const (
-	SectionAdminEndpoints = "Admin Endpoints:"
-	SectionDangerous      = "Dangerous:"
-)
-
 func newIndexPageContent() *IndexPageContent {
-	return &IndexPageContent{
-		content: map[string]map[string]string{},
-	}
+	return &IndexPageContent{}
 }
 
 // IndexPageContent is a map of sections to path -> description.
 type IndexPageContent struct {
-	mu      sync.Mutex
-	content map[string]map[string]string
+	mu sync.Mutex
+
+	elements []IndexPageLinkGroup
 }
 
-func (pc *IndexPageContent) AddLink(section, path, description string) {
+type IndexPageLinkGroup struct {
+	weight int
+	Desc   string
+	Links  []IndexPageLink
+}
+
+type IndexPageLink struct {
+	Desc      string
+	Path      string
+	Dangerous bool
+}
+
+// List of weights to order link groups in the same order as weights are ordered here.
+const (
+	serviceStatusWeight = iota
+	configWeight
+	runtimeConfigWeight
+	defaultWeight
+	memberlistWeight
+	dangerousWeight
+)
+
+func (pc *IndexPageContent) AddLinks(weight int, groupDesc string, links []IndexPageLink) {
 	pc.mu.Lock()
 	defer pc.mu.Unlock()
 
-	sectionMap := pc.content[section]
-	if sectionMap == nil {
-		sectionMap = make(map[string]string)
-		pc.content[section] = sectionMap
-	}
-
-	sectionMap[path] = description
+	pc.elements = append(pc.elements, IndexPageLinkGroup{weight: weight, Desc: groupDesc, Links: links})
 }
 
-func (pc *IndexPageContent) GetContent() map[string]map[string]string {
+func (pc *IndexPageContent) GetContent() []IndexPageLinkGroup {
 	pc.mu.Lock()
-	defer pc.mu.Unlock()
+	els := append([]IndexPageLinkGroup(nil), pc.elements...)
+	pc.mu.Unlock()
 
-	result := map[string]map[string]string{}
-	for k, v := range pc.content {
-		sm := map[string]string{}
-		for smK, smV := range v {
-			sm[smK] = smV
+	sort.Slice(els, func(i, j int) bool {
+		if els[i].weight != els[j].weight {
+			return els[i].weight < els[j].weight
 		}
-		result[k] = sm
-	}
-	return result
+		return els[i].Desc < els[j].Desc
+	})
+
+	return els
 }
 
-var indexPageTemplate = `
-<!DOCTYPE html>
-<html>
-	<head>
-		<meta charset="UTF-8">
-		<title>Mimir</title>
-	</head>
-	<body>
-		<h1>Mimir</h1>
-		{{ range $s, $links := . }}
-		<p>{{ $s }}</p>
-		<ul>
-			{{ range $path, $desc := $links }}
-				<li><a href="{{ AddPathPrefix $path }}">{{ $desc }}</a></li>
-			{{ end }}
-		</ul>
-		{{ end }}
-	</body>
-</html>`
+//go:embed index.gohtml
+var indexPageHTML string
+
+type indexPageContents struct {
+	LinkGroups []IndexPageLinkGroup
+}
+
+//go:embed static
+var staticFiles embed.FS
 
 func indexHandler(httpPathPrefix string, content *IndexPageContent) http.HandlerFunc {
 	templ := template.New("main")
@@ -105,10 +107,10 @@ func indexHandler(httpPathPrefix string, content *IndexPageContent) http.Handler
 			return path.Join(httpPathPrefix, link)
 		},
 	})
-	template.Must(templ.Parse(indexPageTemplate))
+	template.Must(templ.Parse(indexPageHTML))
 
 	return func(w http.ResponseWriter, r *http.Request) {
-		err := templ.Execute(w, content.GetContent())
+		err := templ.Execute(w, indexPageContents{LinkGroups: content.GetContent()})
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
@@ -238,13 +240,9 @@ func NewQuerierHandler(
 
 	// Define the prefixes for all routes
 	prefix := path.Join(cfg.ServerPrefix, cfg.PrometheusHTTPPrefix)
-	legacyPrefix := path.Join(cfg.ServerPrefix, cfg.LegacyHTTPPrefix)
 
 	promRouter := route.New().WithPrefix(path.Join(prefix, "/api/v1"))
 	api.Register(promRouter)
-
-	legacyPromRouter := route.New().WithPrefix(path.Join(legacyPrefix, "/api/v1"))
-	api.Register(legacyPromRouter)
 
 	// TODO(gotjosh): This custom handler is temporary until we're able to vendor the changes in:
 	// https://github.com/prometheus/prometheus/pull/7125/files
@@ -260,21 +258,6 @@ func NewQuerierHandler(
 	router.Path(path.Join(prefix, "/api/v1/metadata")).Methods("GET").Handler(promRouter)
 	router.Path(path.Join(prefix, "/api/v1/cardinality/label_names")).Methods("GET", "POST").Handler(querier.LabelNamesCardinalityHandler(distributor, limits))
 	router.Path(path.Join(prefix, "/api/v1/cardinality/label_values")).Methods("GET", "POST").Handler(querier.LabelValuesCardinalityHandler(distributor, limits))
-
-	// TODO(gotjosh): This custom handler is temporary until we're able to vendor the changes in:
-	// https://github.com/prometheus/prometheus/pull/7125/files
-	router.Path(path.Join(legacyPrefix, "/api/v1/metadata")).Handler(querier.MetadataHandler(distributor))
-	router.Path(path.Join(legacyPrefix, "/api/v1/read")).Handler(querier.RemoteReadHandler(queryable, logger))
-	router.Path(path.Join(legacyPrefix, "/api/v1/read")).Methods("POST").Handler(legacyPromRouter)
-	router.Path(path.Join(legacyPrefix, "/api/v1/query")).Methods("GET", "POST").Handler(legacyPromRouter)
-	router.Path(path.Join(legacyPrefix, "/api/v1/query_range")).Methods("GET", "POST").Handler(legacyPromRouter)
-	router.Path(path.Join(legacyPrefix, "/api/v1/query_exemplars")).Methods("GET", "POST").Handler(legacyPromRouter)
-	router.Path(path.Join(legacyPrefix, "/api/v1/labels")).Methods("GET", "POST").Handler(legacyPromRouter)
-	router.Path(path.Join(legacyPrefix, "/api/v1/label/{name}/values")).Methods("GET").Handler(legacyPromRouter)
-	router.Path(path.Join(legacyPrefix, "/api/v1/series")).Methods("GET", "POST", "DELETE").Handler(legacyPromRouter)
-	router.Path(path.Join(legacyPrefix, "/api/v1/metadata")).Methods("GET").Handler(legacyPromRouter)
-	router.Path(path.Join(legacyPrefix, "/api/v1/cardinality/label_names")).Methods("GET", "POST").Handler(querier.LabelNamesCardinalityHandler(distributor, limits))
-	router.Path(path.Join(legacyPrefix, "/api/v1/cardinality/label_values")).Methods("GET", "POST").Handler(querier.LabelValuesCardinalityHandler(distributor, limits))
 
 	// Track execution time.
 	return stats.NewWallTimeMiddleware().Wrap(router)

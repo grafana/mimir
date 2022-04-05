@@ -97,3 +97,10 @@ func New(typ Type, msg string) error {
 func Newf(typ Type, tmpl string, args ...interface{}) error {
 	return New(typ, fmt.Sprintf(tmpl, args...))
 }
+
+// IsAPIError returns true if the error provided is an apiError.
+// This implies that HTTPResponseFromError will succeed.
+func IsAPIError(err error) bool {
+	apiErr := &apiError{}
+	return errors.As(err, &apiErr)
+}

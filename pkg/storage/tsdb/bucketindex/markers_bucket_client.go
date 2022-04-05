@@ -12,6 +12,7 @@ import (
 	"io/ioutil"
 	"path"
 
+	"github.com/grafana/dskit/multierror"
 	"github.com/oklog/ulid"
 	"github.com/thanos-io/thanos/pkg/block"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
@@ -34,12 +35,8 @@ func BucketWithGlobalMarkers(b objstore.Bucket) objstore.Bucket {
 
 // Upload implements objstore.Bucket.
 func (b *globalMarkersBucket) Upload(ctx context.Context, name string, r io.Reader) error {
-	globalMarkPath := ""
-	if blockID, ok := b.isBlockDeletionMark(name); ok {
-		globalMarkPath = path.Clean(path.Join(path.Dir(name), "../", BlockDeletionMarkFilepath(blockID)))
-	} else if blockID, ok := b.isNoCompactMark(name); ok {
-		globalMarkPath = path.Clean(path.Join(path.Dir(name), "../", NoCompactMarkFilepath(blockID)))
-	} else {
+	globalMarkPath := getGlobalMarkPathFromBlockMark(name)
+	if globalMarkPath == "" {
 		return b.parent.Upload(ctx, name, r)
 	}
 
@@ -60,28 +57,32 @@ func (b *globalMarkersBucket) Upload(ctx context.Context, name string, r io.Read
 
 // Delete implements objstore.Bucket.
 func (b *globalMarkersBucket) Delete(ctx context.Context, name string) error {
-	// Call the parent.
-	if err := b.parent.Delete(ctx, name); err != nil {
-		return err
+	// Call the parent. Only return error here (without deleting global marker too) if error is different than "not found".
+	err1 := b.parent.Delete(ctx, name)
+	if err1 != nil && !b.parent.IsObjNotFoundErr(err1) {
+		return err1
 	}
 
 	// Delete the marker in the global markers location too.
-	globalMarkPath := ""
-	if blockID, ok := b.isBlockDeletionMark(name); ok {
-		globalMarkPath = path.Clean(path.Join(path.Dir(name), "../", BlockDeletionMarkFilepath(blockID)))
-	} else if blockID, ok := b.isNoCompactMark(name); ok {
-		globalMarkPath = path.Clean(path.Join(path.Dir(name), "../", NoCompactMarkFilepath(blockID)))
+	globalMarkPath := getGlobalMarkPathFromBlockMark(name)
+	if globalMarkPath == "" {
+		return err1
 	}
 
-	if globalMarkPath != "" {
-		if err := b.parent.Delete(ctx, globalMarkPath); err != nil {
-			if !b.parent.IsObjNotFoundErr(err) {
-				return err
-			}
+	var err2 error
+	if err := b.parent.Delete(ctx, globalMarkPath); err != nil {
+		if !b.parent.IsObjNotFoundErr(err) {
+			err2 = err
 		}
 	}
 
-	return nil
+	if err1 != nil {
+		// In this case err1 is "ObjNotFound". If we tried to wrap it together with err2, we would need to
+		// handle this possibility in globalMarkersBucket.IsObjNotFoundErr(). Instead we just ignore err2, if any.
+		return err1
+	}
+
+	return err2
 }
 
 // Name implements objstore.Bucket.
@@ -111,7 +112,21 @@ func (b *globalMarkersBucket) GetRange(ctx context.Context, name string, off, le
 
 // Exists implements objstore.Bucket.
 func (b *globalMarkersBucket) Exists(ctx context.Context, name string) (bool, error) {
-	return b.parent.Exists(ctx, name)
+	globalMarkPath := getGlobalMarkPathFromBlockMark(name)
+	if globalMarkPath == "" {
+		return b.parent.Exists(ctx, name)
+	}
+
+	// Report "exists" only if BOTH (block-local, and global) files exist, otherwise Thanos
+	// code will never try to upload the file again, if it finds that it exist.
+	ok1, err1 := b.parent.Exists(ctx, name)
+	ok2, err2 := b.parent.Exists(ctx, globalMarkPath)
+
+	var me multierror.MultiError
+	me.Add(err1)
+	me.Add(err2)
+
+	return ok1 && ok2, me.Err()
 }
 
 // IsObjNotFoundErr implements objstore.Bucket.
@@ -142,7 +157,21 @@ func (b *globalMarkersBucket) ReaderWithExpectedErrs(fn objstore.IsOpFailureExpe
 	return b
 }
 
-func (b *globalMarkersBucket) isBlockDeletionMark(name string) (ulid.ULID, bool) {
+// getGlobalMarkPathFromBlockMark returns path to global mark, if name points to a block-local mark file. If name
+// doesn't point to a block-local mark file, returns empty string.
+func getGlobalMarkPathFromBlockMark(name string) string {
+	if blockID, ok := isBlockDeletionMark(name); ok {
+		return path.Clean(path.Join(path.Dir(name), "../", BlockDeletionMarkFilepath(blockID)))
+	}
+
+	if blockID, ok := isNoCompactMark(name); ok {
+		return path.Clean(path.Join(path.Dir(name), "../", NoCompactMarkFilepath(blockID)))
+	}
+
+	return ""
+}
+
+func isBlockDeletionMark(name string) (ulid.ULID, bool) {
 	if path.Base(name) != metadata.DeletionMarkFilename {
 		return ulid.ULID{}, false
 	}
@@ -152,7 +181,7 @@ func (b *globalMarkersBucket) isBlockDeletionMark(name string) (ulid.ULID, bool)
 	return block.IsBlockDir(path.Dir(name))
 }
 
-func (b *globalMarkersBucket) isNoCompactMark(name string) (ulid.ULID, bool) {
+func isNoCompactMark(name string) (ulid.ULID, bool) {
 	if path.Base(name) != metadata.NoCompactMarkFilename {
 		return ulid.ULID{}, false
 	}

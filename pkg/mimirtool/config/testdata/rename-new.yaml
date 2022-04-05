@@ -1,0 +1,3 @@
+ingester:
+  ring:
+    heartbeat_timeout: 14m0s

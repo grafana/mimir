@@ -15,6 +15,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv"
+	"github.com/grafana/dskit/netutil"
 	"github.com/grafana/dskit/ring"
 
 	util_log "github.com/grafana/mimir/pkg/util/log"
@@ -49,17 +50,17 @@ var SyncRingOp = ring.NewOp([]ring.InstanceState{ring.ACTIVE, ring.JOINING}, fun
 // to the user.
 type RingConfig struct {
 	KVStore              kv.Config     `yaml:"kvstore" doc:"description=The key-value store used to share the hash ring across multiple instances."`
-	HeartbeatPeriod      time.Duration `yaml:"heartbeat_period"`
-	HeartbeatTimeout     time.Duration `yaml:"heartbeat_timeout"`
-	ReplicationFactor    int           `yaml:"replication_factor"`
-	ZoneAwarenessEnabled bool          `yaml:"zone_awareness_enabled"`
+	HeartbeatPeriod      time.Duration `yaml:"heartbeat_period" category:"advanced"`
+	HeartbeatTimeout     time.Duration `yaml:"heartbeat_timeout" category:"advanced"`
+	ReplicationFactor    int           `yaml:"replication_factor" category:"advanced"`
+	ZoneAwarenessEnabled bool          `yaml:"zone_awareness_enabled" category:"advanced"`
 
 	// Instance details
-	InstanceID             string   `yaml:"instance_id" doc:"hidden"`
-	InstanceInterfaceNames []string `yaml:"instance_interface_names"`
-	InstancePort           int      `yaml:"instance_port" doc:"hidden"`
-	InstanceAddr           string   `yaml:"instance_addr" doc:"hidden"`
-	InstanceZone           string   `yaml:"instance_availability_zone"`
+	InstanceID             string   `yaml:"instance_id" doc:"default=<hostname>" category:"advanced"`
+	InstanceInterfaceNames []string `yaml:"instance_interface_names" category:"advanced" doc:"default=[<private network interfaces>]"`
+	InstancePort           int      `yaml:"instance_port" category:"advanced"`
+	InstanceAddr           string   `yaml:"instance_addr" category:"advanced"`
+	InstanceZone           string   `yaml:"instance_availability_zone" category:"advanced"`
 
 	// Injected internally
 	ListenPort      int           `yaml:"-"`
@@ -70,7 +71,7 @@ type RingConfig struct {
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
-func (cfg *RingConfig) RegisterFlags(f *flag.FlagSet) {
+func (cfg *RingConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	hostname, err := os.Hostname()
 	if err != nil {
 		level.Error(util_log.Logger).Log("msg", "failed to get hostname", "err", err)
@@ -81,6 +82,7 @@ func (cfg *RingConfig) RegisterFlags(f *flag.FlagSet) {
 	rfprefix := "alertmanager.sharding-ring."
 
 	// Ring flags
+	cfg.KVStore.Store = "memberlist" // Override default value.
 	cfg.KVStore.RegisterFlagsWithPrefix(rfprefix, "alertmanagers/", f)
 	f.DurationVar(&cfg.HeartbeatPeriod, rfprefix+"heartbeat-period", 15*time.Second, "Period at which to heartbeat to the ring. 0 = disabled.")
 	f.DurationVar(&cfg.HeartbeatTimeout, rfprefix+"heartbeat-timeout", time.Minute, "The heartbeat timeout after which alertmanagers are considered unhealthy within the ring. 0 = never (timeout disabled).")
@@ -88,10 +90,10 @@ func (cfg *RingConfig) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.ZoneAwarenessEnabled, rfprefix+"zone-awareness-enabled", false, "True to enable zone-awareness and replicate alerts across different availability zones.")
 
 	// Instance flags
-	cfg.InstanceInterfaceNames = []string{"eth0", "en0"}
-	f.Var((*flagext.StringSlice)(&cfg.InstanceInterfaceNames), rfprefix+"instance-interface-names", "Name of network interface to read address from.")
-	f.StringVar(&cfg.InstanceAddr, rfprefix+"instance-addr", "", "IP address to advertise in the ring.")
-	f.IntVar(&cfg.InstancePort, rfprefix+"instance-port", 0, "Port to advertise in the ring (defaults to server.grpc-listen-port).")
+	cfg.InstanceInterfaceNames = netutil.PrivateNetworkInterfacesWithFallback([]string{"eth0", "en0"}, logger)
+	f.Var((*flagext.StringSlice)(&cfg.InstanceInterfaceNames), rfprefix+"instance-interface-names", "List of network interface names to look up when finding the instance IP address.")
+	f.StringVar(&cfg.InstanceAddr, rfprefix+"instance-addr", "", "IP address to advertise in the ring. Default is auto-detected.")
+	f.IntVar(&cfg.InstancePort, rfprefix+"instance-port", 0, "Port to advertise in the ring (defaults to -server.grpc-listen-port).")
 	f.StringVar(&cfg.InstanceID, rfprefix+"instance-id", hostname, "Instance ID to register in the ring.")
 	f.StringVar(&cfg.InstanceZone, rfprefix+"instance-availability-zone", "", "The availability zone where this instance is running. Required if zone-awareness is enabled.")
 

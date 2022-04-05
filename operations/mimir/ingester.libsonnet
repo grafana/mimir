@@ -7,10 +7,9 @@
 
   ingester_args::
     $._config.grpcConfig +
-    $._config.ringConfig +
     $._config.storageConfig +
     $._config.blocksStorageConfig +
-    $._config.distributorConfig +  // This adds the distributor ring flags to the ingester.
+    $._config.ingesterRingClientConfig +
     $._config.ingesterLimitsConfig +
     {
       target: 'ingester',
@@ -18,10 +17,14 @@
       'server.http-listen-port': $._config.server_http_port,
 
       // Ring config.
-      'ingester.num-tokens': 512,
-      'ingester.join-after': '0s',
-      'ingester.heartbeat-period': '15s',
-      'ingester.unregister-on-shutdown': $._config.unregister_ingesters_on_shutdown,
+      'ingester.ring.num-tokens': 512,
+      'ingester.ring.heartbeat-period': '15s',
+      'ingester.ring.unregister-on-shutdown': $._config.unregister_ingesters_on_shutdown,
+
+      // Disable the ring health check in the readiness endpoint so that we can quickly rollout
+      // multiple ingesters in multi-zone deployments. It's also safe to disable it everywhere,
+      // given we deploy all ingesters with StatefulSets.
+      'ingester.ring.readiness-check-ring-health': false,
 
       // Limits config.
       'runtime-config.file': '%s/overrides.yaml' % $._config.overrides_configmap_mountpoint,
@@ -32,7 +35,6 @@
       // Blocks storage.
       'blocks-storage.tsdb.dir': '/data/tsdb',
       'blocks-storage.tsdb.block-ranges-period': '2h',
-      'blocks-storage.tsdb.retention-period': '24h',  // 1 day protection against blocks not being uploaded from ingesters.
       'blocks-storage.tsdb.ship-interval': '1m',
 
       // Close idle TSDBs.
@@ -43,7 +45,7 @@
 
       // Persist ring tokens so that when the ingester will be restarted
       // it will pick the same tokens
-      'ingester.tokens-file-path': '/data/tokens',
+      'ingester.ring.tokens-file-path': '/data/tokens',
     },
 
   ingester_ports:: $.util.defaultPorts,
@@ -58,8 +60,6 @@
     $.util.resourcesLimits(null, '25Gi') +
     $.util.readinessProbe +
     $.jaeger_mixin,
-
-  ingester_deployment_labels:: {},
 
   // The ingesters should persist TSDB blocks and WAL on a persistent
   // volume in order to be crash resilient.
@@ -79,7 +79,7 @@
     statefulSet.mixin.spec.withServiceName(name) +
     statefulSet.mixin.metadata.withNamespace($._config.namespace) +
     statefulSet.mixin.metadata.withLabels({ name: name }) +
-    statefulSet.mixin.spec.template.metadata.withLabels({ name: name } + $.ingester_deployment_labels) +
+    statefulSet.mixin.spec.template.metadata.withLabels({ name: name }) +
     statefulSet.mixin.spec.selector.withMatchLabels({ name: name }) +
     statefulSet.mixin.spec.template.spec.securityContext.withRunAsUser(0) +
     // When the ingester needs to flush blocks to the storage, it may take quite a lot of time.
@@ -93,14 +93,13 @@
     // rolled out one by one (the next pod will be rolled out once the previous is
     // ready).
     statefulSet.mixin.spec.withPodManagementPolicy('Parallel') +
+    (if !std.isObject($._config.node_selector) then {} else statefulSet.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector)) +
     (if with_anti_affinity then $.util.antiAffinity else {}),
 
-  ingester_statefulset: self.newIngesterStatefulSet('ingester', $.ingester_container),
-
-  ingester_service_ignored_labels:: [],
+  ingester_statefulset: self.newIngesterStatefulSet('ingester', $.ingester_container, !$._config.ingester_allow_multiple_replicas_on_same_node),
 
   ingester_service:
-    $.util.serviceFor($.ingester_statefulset, $.ingester_service_ignored_labels),
+    $.util.serviceFor($.ingester_statefulset, $._config.service_ignored_labels),
 
   newIngesterPdb(pdbName, ingesterName)::
     podDisruptionBudget.new() +

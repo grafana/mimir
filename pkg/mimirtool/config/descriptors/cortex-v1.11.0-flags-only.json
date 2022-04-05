@@ -1,0 +1,80 @@
+{
+  "kind": "block",
+  "name": "",
+  "required": false,
+  "desc": "",
+  "blockEntries": [
+    {
+      "kind": "field",
+      "name": "schema-config-file",
+      "required": false,
+      "desc": "The path to the schema config file. The schema config is used only when running Cortex with the chunks storage.",
+      "fieldDefaultValue": "",
+      "fieldFlag": "schema-config-file",
+      "fieldType": "string"
+    },
+    {
+      "kind": "field",
+      "name": "ingester-chunk-encoding",
+      "required": false,
+      "desc": "Encoding version to use for chunks.",
+      "fieldDefaultValue": "",
+      "fieldFlag": "ingester.chunk-encoding",
+      "fieldType": "string"
+    },
+    {
+      "kind": "field",
+      "name": "querier-query-parallelism",
+      "required": false,
+      "desc": "Max subqueries run in parallel per higher-level query.",
+      "fieldDefaultValue": 100,
+      "fieldFlag": "querier.query-parallelism",
+      "fieldType": "int"
+    },
+    {
+      "kind": "field",
+      "name": "config-file",
+      "required": false,
+      "desc": "Configuration file to load.",
+      "fieldDefaultValue": "",
+      "fieldFlag": "config.file",
+      "fieldType": "string"
+    },
+    {
+      "kind": "field",
+      "name": "config-expand-env",
+      "required": false,
+      "desc": "Expands ${var} or $var in config according to the values of the environment variables.",
+      "fieldDefaultValue": "",
+      "fieldFlag": "config.expand-env",
+      "fieldType": "string"
+    },
+    {
+      "kind": "field",
+      "name": "mem-ballast-size-bytes",
+      "required": false,
+      "desc": "Size of memory ballast to allocate.",
+      "fieldDefaultValue": 0,
+      "fieldFlag": "mem-ballast-size-bytes",
+      "fieldType": "int"
+    },
+    {
+      "kind": "field",
+      "name": "event-sample-rate",
+      "required": false,
+      "desc": "How often to sample observability events (0 = never).",
+      "fieldDefaultValue": 0,
+      "fieldFlag": "event.sample-rate",
+      "fieldType": "int"
+    },
+    {
+      "kind": "field",
+      "name": "ingester-lifecycler-id",
+      "required": false,
+      "desc": "ID to register in the ring.",
+      "fieldDefaultValue": null,
+      "fieldFlag": "ingester.lifecycler.id",
+      "fieldType": "string"
+    }
+  ]
+}

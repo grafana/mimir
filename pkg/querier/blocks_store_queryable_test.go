@@ -746,6 +746,73 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 					cortex_querier_storegateway_refetches_per_query_count 1
 			`,
 		},
+		"multiple store-gateways have the block, but one of them fails to return": {
+			finderResult: bucketindex.Blocks{
+				{ID: block1},
+			},
+			storeSetResponses: []interface{}{
+				map[BlocksStoreClient][]ulid.ULID{
+					&storeGatewayClientMock{
+						remoteAddr:      "1.1.1.1",
+						mockedSeriesErr: errors.New("failed to receive from store-gateway"),
+					}: {block1},
+				},
+				map[BlocksStoreClient][]ulid.ULID{
+					&storeGatewayClientMock{remoteAddr: "2.2.2.2", mockedSeriesResponses: []*storepb.SeriesResponse{
+						mockSeriesResponse(labels.Labels{metricNameLabel, series1Label}, minT, 2),
+						mockHintsResponse(block1),
+					}}: {block1},
+				},
+			},
+			limits:       &blocksStoreLimitsMock{},
+			queryLimiter: noOpQueryLimiter,
+			expectedSeries: []seriesResult{
+				{
+					lbls: labels.New(metricNameLabel, series1Label),
+					values: []valueResult{
+						{t: minT, v: 2},
+					},
+				},
+			},
+			expectedMetrics: `
+					# HELP cortex_querier_blocks_found_total Number of blocks found based on query time range.
+					# TYPE cortex_querier_blocks_found_total counter
+					cortex_querier_blocks_found_total 1
+
+					# HELP cortex_querier_blocks_queried_total Number of blocks queried to satisfy query. Compared to blocks found, some blocks may have been filtered out thanks to query and compactor sharding.
+					# TYPE cortex_querier_blocks_queried_total counter
+					cortex_querier_blocks_queried_total 1
+
+					# HELP cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total Blocks that couldn't be checked for query and compactor sharding optimization due to incompatible shard counts.
+					# TYPE cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total counter
+					cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total 0
+
+					# HELP cortex_querier_storegateway_instances_hit_per_query Number of store-gateway instances hit for a single query.
+					# TYPE cortex_querier_storegateway_instances_hit_per_query histogram
+					cortex_querier_storegateway_instances_hit_per_query_bucket{le="0"} 0
+					cortex_querier_storegateway_instances_hit_per_query_bucket{le="1"} 0
+					cortex_querier_storegateway_instances_hit_per_query_bucket{le="2"} 1
+					cortex_querier_storegateway_instances_hit_per_query_bucket{le="3"} 1
+					cortex_querier_storegateway_instances_hit_per_query_bucket{le="4"} 1
+					cortex_querier_storegateway_instances_hit_per_query_bucket{le="5"} 1
+					cortex_querier_storegateway_instances_hit_per_query_bucket{le="6"} 1
+					cortex_querier_storegateway_instances_hit_per_query_bucket{le="7"} 1
+					cortex_querier_storegateway_instances_hit_per_query_bucket{le="8"} 1
+					cortex_querier_storegateway_instances_hit_per_query_bucket{le="9"} 1
+					cortex_querier_storegateway_instances_hit_per_query_bucket{le="10"} 1
+					cortex_querier_storegateway_instances_hit_per_query_bucket{le="+Inf"} 1
+					cortex_querier_storegateway_instances_hit_per_query_sum 2
+					cortex_querier_storegateway_instances_hit_per_query_count 1
+					# HELP cortex_querier_storegateway_refetches_per_query Number of re-fetches attempted while querying store-gateway instances due to missing blocks.
+					# TYPE cortex_querier_storegateway_refetches_per_query histogram
+					cortex_querier_storegateway_refetches_per_query_bucket{le="0"} 0
+					cortex_querier_storegateway_refetches_per_query_bucket{le="1"} 1
+					cortex_querier_storegateway_refetches_per_query_bucket{le="2"} 1
+					cortex_querier_storegateway_refetches_per_query_bucket{le="+Inf"} 1
+					cortex_querier_storegateway_refetches_per_query_sum 1
+					cortex_querier_storegateway_refetches_per_query_count 1
+			`,
+		},
 	}
 
 	for testName, testData := range tests {
@@ -1229,6 +1296,64 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 				cortex_querier_storegateway_refetches_per_query_count 1
 			`,
 		},
+		"multiple store-gateways have the block, but one of them fails to return": {
+			finderResult: bucketindex.Blocks{
+				{ID: block1},
+			},
+			storeSetResponses: []interface{}{
+				map[BlocksStoreClient][]ulid.ULID{
+					&storeGatewayClientMock{
+						remoteAddr:           "1.1.1.1",
+						mockedLabelNamesErr:  errors.New("failed to receive from store-gateway"),
+						mockedLabelValuesErr: errors.New("failed to receive from store-gateway"),
+					}: {block1},
+				},
+				map[BlocksStoreClient][]ulid.ULID{
+					&storeGatewayClientMock{
+						remoteAddr: "2.2.2.2",
+						mockedLabelNamesResponse: &storepb.LabelNamesResponse{
+							Names:    namesFromSeries(series1),
+							Warnings: []string{},
+							Hints:    mockNamesHints(block1),
+						},
+						mockedLabelValuesResponse: &storepb.LabelValuesResponse{
+							Values:   valuesFromSeries(labels.MetricName, series1),
+							Warnings: []string{},
+							Hints:    mockValuesHints(block1),
+						},
+					}: {block1},
+				},
+			},
+			expectedLabelNames:  namesFromSeries(series1),
+			expectedLabelValues: valuesFromSeries(labels.MetricName, series1),
+			expectedMetrics: `
+				# HELP cortex_querier_storegateway_instances_hit_per_query Number of store-gateway instances hit for a single query.
+				# TYPE cortex_querier_storegateway_instances_hit_per_query histogram
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="0"} 0
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="1"} 0
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="2"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="3"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="4"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="5"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="6"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="7"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="8"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="9"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="10"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="+Inf"} 1
+				cortex_querier_storegateway_instances_hit_per_query_sum 2
+				cortex_querier_storegateway_instances_hit_per_query_count 1
+
+				# HELP cortex_querier_storegateway_refetches_per_query Number of re-fetches attempted while querying store-gateway instances due to missing blocks.
+				# TYPE cortex_querier_storegateway_refetches_per_query histogram
+				cortex_querier_storegateway_refetches_per_query_bucket{le="0"} 0
+				cortex_querier_storegateway_refetches_per_query_bucket{le="1"} 1
+				cortex_querier_storegateway_refetches_per_query_bucket{le="2"} 1
+				cortex_querier_storegateway_refetches_per_query_bucket{le="+Inf"} 1
+				cortex_querier_storegateway_refetches_per_query_sum 1
+				cortex_querier_storegateway_refetches_per_query_count 1
+			`,
+		},
 	}
 
 	for testName, testData := range tests {
@@ -1708,8 +1833,11 @@ func (m *blocksFinderMock) GetBlocks(ctx context.Context, userID string, minT, m
 type storeGatewayClientMock struct {
 	remoteAddr                string
 	mockedSeriesResponses     []*storepb.SeriesResponse
+	mockedSeriesErr           error
 	mockedLabelNamesResponse  *storepb.LabelNamesResponse
+	mockedLabelNamesErr       error
 	mockedLabelValuesResponse *storepb.LabelValuesResponse
+	mockedLabelValuesErr      error
 }
 
 func (m *storeGatewayClientMock) Series(ctx context.Context, in *storepb.SeriesRequest, opts ...grpc.CallOption) (storegatewaypb.StoreGateway_SeriesClient, error) {
@@ -1717,15 +1845,15 @@ func (m *storeGatewayClientMock) Series(ctx context.Context, in *storepb.SeriesR
 		mockedResponses: m.mockedSeriesResponses,
 	}
 
-	return seriesClient, nil
+	return seriesClient, m.mockedSeriesErr
 }
 
 func (m *storeGatewayClientMock) LabelNames(context.Context, *storepb.LabelNamesRequest, ...grpc.CallOption) (*storepb.LabelNamesResponse, error) {
-	return m.mockedLabelNamesResponse, nil
+	return m.mockedLabelNamesResponse, m.mockedLabelNamesErr
 }
 
 func (m *storeGatewayClientMock) LabelValues(context.Context, *storepb.LabelValuesRequest, ...grpc.CallOption) (*storepb.LabelValuesResponse, error) {
-	return m.mockedLabelValuesResponse, nil
+	return m.mockedLabelValuesResponse, m.mockedLabelValuesErr
 }
 
 func (m *storeGatewayClientMock) RemoteAddress() string {

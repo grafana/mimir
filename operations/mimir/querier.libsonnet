@@ -3,12 +3,11 @@
 
   querier_args::
     $._config.grpcConfig +
-    $._config.ringConfig +
     $._config.storageConfig +
     $._config.blocksStorageConfig +
     $._config.queryConfig +
     $._config.queryEngineConfig +
-    $._config.distributorConfig +
+    $._config.ingesterRingClientConfig +
     $._config.queryBlocksStorageConfig +
     $.blocks_metadata_caching_config +
     $.bucket_index_config
@@ -26,8 +25,6 @@
 
       'querier.frontend-address': 'query-frontend-discovery.%(namespace)s.svc.cluster.local:9095' % $._config,
       'querier.frontend-client.grpc-max-send-msg-size': 100 << 20,
-
-      'querier.query-store-for-labels-enabled': true,
 
       // We request high memory but the Go heap is typically very low (< 100MB) and this causes
       // the GC to trigger continuously. Setting a ballast of 256MB reduces GC.
@@ -52,12 +49,11 @@
 
   local deployment = $.apps.v1.deployment,
 
-  querier_deployment_labels: {},
-
   newQuerierDeployment(name, container)::
-    deployment.new(name, $._config.querier.replicas, [container], $.querier_deployment_labels) +
+    deployment.new(name, $._config.querier.replicas, [container]) +
     (if $._config.querier_allow_multiple_replicas_on_same_node then {} else $.util.antiAffinity) +
     $.util.configVolumeMount($._config.overrides_configmap, $._config.overrides_configmap_mountpoint) +
+    (if !std.isObject($._config.node_selector) then {} else deployment.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector)) +
     deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge(5) +
     deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(1),
 
@@ -66,8 +62,6 @@
 
   local service = $.core.v1.service,
 
-  querier_service_ignored_labels:: [],
-
   querier_service:
-    $.util.serviceFor($.querier_deployment, $.querier_service_ignored_labels),
+    $.util.serviceFor($.querier_deployment, $._config.service_ignored_labels),
 }

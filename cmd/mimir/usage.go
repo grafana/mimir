@@ -9,25 +9,20 @@ import (
 	"reflect"
 	"strings"
 
+	"github.com/grafana/dskit/flagext"
+
+	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"github.com/grafana/mimir/pkg/mimir"
+	"github.com/grafana/mimir/pkg/util/fieldcategory"
 )
 
-// category is an enumeration of flag categories.
-type category int
-
-const (
-	// categoryBasic is the basic flag category, and the default if none is defined.
-	categoryBasic category = iota
-	// categoryAdvanced is the advanced flag category.
-	categoryAdvanced
-	// categoryExperimental is the experimental flag category.
-	categoryExperimental
-)
-
-// usage prints command-line usage, the printAll argument controls whether also non-basic flags will be included.
-func usage(cfg *mimir.Config, printAll bool) error {
+// usage prints command-line usage. If mf.printHelpAll is false then only basic flags are included, otherwise all flags are included.
+func usage(mf *mainFlags, cfg *mimir.Config) error {
 	fields := map[uintptr]reflect.StructField{}
-	if err := parseConfig(cfg, fields); err != nil {
+	if err := parseStructure(mf, fields); err != nil {
+		return err
+	}
+	if err := parseStructure(cfg, fields); err != nil {
 		return err
 	}
 
@@ -35,22 +30,26 @@ func usage(cfg *mimir.Config, printAll bool) error {
 	fmt.Fprintf(fs.Output(), "Usage of %s:\n", os.Args[0])
 	fs.VisitAll(func(fl *flag.Flag) {
 		v := reflect.ValueOf(fl.Value)
-		fieldCat := categoryBasic
-		if v.Kind() == reflect.Ptr {
+		fieldCat := fieldcategory.Basic
+		var field reflect.StructField
+
+		if override, ok := fieldcategory.GetOverride(fl.Name); ok {
+			fieldCat = override
+		} else if v.Kind() == reflect.Ptr {
 			ptr := v.Pointer()
-			field, ok := fields[ptr]
+			field, ok = fields[ptr]
 			if ok {
 				catStr := field.Tag.Get("category")
 				switch catStr {
 				case "advanced":
-					fieldCat = categoryAdvanced
+					fieldCat = fieldcategory.Advanced
 				case "experimental":
-					fieldCat = categoryExperimental
+					fieldCat = fieldcategory.Experimental
 				}
 			}
 		}
 
-		if fieldCat != categoryBasic && !printAll {
+		if fieldCat != fieldcategory.Basic && !mf.printHelpAll {
 			// Don't print help for this flag since we're supposed to print only basic flags
 			return
 		}
@@ -66,27 +65,27 @@ func usage(cfg *mimir.Config, printAll bool) error {
 		// Four spaces before the tab triggers good alignment
 		// for both 4- and 8-space tab stops.
 		b.WriteString("\n    \t")
-		if fieldCat == categoryExperimental {
+		if fieldCat == fieldcategory.Experimental {
 			b.WriteString("[experimental] ")
 		}
 		b.WriteString(strings.ReplaceAll(fl.Usage, "\n", "\n    \t"))
 
-		if !isZeroValue(fl, fl.DefValue) {
+		if defValue := getFlagDefault(fl, field); !isZeroValue(fl, defValue) {
 			v := reflect.ValueOf(fl.Value)
 			if v.Kind() == reflect.Ptr {
 				v = v.Elem()
 			}
 			if v.Kind() == reflect.String {
 				// put quotes on the value
-				fmt.Fprintf(&b, " (default %q)", fl.DefValue)
+				fmt.Fprintf(&b, " (default %q)", defValue)
 			} else {
-				fmt.Fprintf(&b, " (default %v)", fl.DefValue)
+				fmt.Fprintf(&b, " (default %v)", defValue)
 			}
 		}
 		fmt.Fprint(fs.Output(), b.String(), "\n")
 	})
 
-	if !printAll {
+	if !mf.printHelpAll {
 		fmt.Fprintf(fs.Output(), "\nTo see all flags, use -help-all\n")
 	}
 
@@ -109,14 +108,14 @@ func isZeroValue(fl *flag.Flag, value string) bool {
 	return value == z.Interface().(flag.Value).String()
 }
 
-// parseConfig parses a mimir.Config and populates fields.
-func parseConfig(cfg interface{}, fields map[uintptr]reflect.StructField) error {
-	// The input config is expected to be a pointer to struct.
-	if reflect.TypeOf(cfg).Kind() != reflect.Ptr {
-		t := reflect.TypeOf(cfg)
+// parseStructure parses a struct and populates fields.
+func parseStructure(structure interface{}, fields map[uintptr]reflect.StructField) error {
+	// structure is expected to be a pointer to a struct
+	if reflect.TypeOf(structure).Kind() != reflect.Ptr {
+		t := reflect.TypeOf(structure)
 		return fmt.Errorf("%s is a %s while a %s is expected", t, t.Kind(), reflect.Ptr)
 	}
-	v := reflect.ValueOf(cfg).Elem()
+	v := reflect.ValueOf(structure).Elem()
 	if v.Kind() != reflect.Struct {
 		return fmt.Errorf("%s is a %s while a %s is expected", v, v.Kind(), reflect.Struct)
 	}
@@ -135,11 +134,11 @@ func parseConfig(cfg interface{}, fields map[uintptr]reflect.StructField) error 
 		fields[fieldValue.Addr().Pointer()] = field
 
 		// Recurse if a struct
-		if field.Type.Kind() != reflect.Struct {
+		if field.Type.Kind() != reflect.Struct || ignoreStructType(field.Type) {
 			continue
 		}
 
-		if err := parseConfig(fieldValue.Addr().Interface(), fields); err != nil {
+		if err := parseStructure(fieldValue.Addr().Interface(), fields); err != nil {
 			return err
 		}
 	}
@@ -147,30 +146,84 @@ func parseConfig(cfg interface{}, fields map[uintptr]reflect.StructField) error 
 	return nil
 }
 
+// Descending into some structs breaks check for "advanced" category for some fields (eg. flagext.Secret),
+// because field itself is at the same memory address as the internal field in the struct, and advanced-category-check
+// then gets confused.
+var ignoredStructTypes = []reflect.Type{
+	reflect.TypeOf(flagext.Secret{}),
+	reflect.TypeOf(activeseries.CustomTrackersConfig{}),
+}
+
+func ignoreStructType(fieldType reflect.Type) bool {
+	for _, t := range ignoredStructTypes {
+		if fieldType == t {
+			return true
+		}
+	}
+	return false
+}
+
 func getFlagName(fl *flag.Flag) string {
-	getter, ok := fl.Value.(flag.Getter)
-	if !ok {
-		return "value"
+	if getter, ok := fl.Value.(flag.Getter); ok {
+		if v := reflect.ValueOf(getter.Get()); v.IsValid() {
+			t := v.Type()
+			switch t.Name() {
+			case "bool":
+				return ""
+			case "Duration":
+				return "duration"
+			case "float64":
+				return "float"
+			case "int", "int64":
+				return "int"
+			case "string":
+				return "string"
+			case "uint", "uint64":
+				return "uint"
+			case "Secret":
+				return "string"
+			default:
+				return "value"
+			}
+		}
 	}
 
-	name := "value"
-
-	v := reflect.ValueOf(getter.Get())
-	t := v.Type()
-	switch t.Name() {
-	case "bool":
-		name = ""
-	case "Duration":
-		name = "duration"
-	case "float64":
-		name = "float"
-	case "int", "int64":
-		name = "int"
-	case "string":
-		name = "string"
-	case "uint", "uint64":
-		name = "uint"
+	// Check custom types.
+	if v := reflect.ValueOf(fl.Value); v.IsValid() {
+		switch v.Type().String() {
+		case "*flagext.Secret":
+			return "string"
+		}
 	}
 
-	return name
+	return "value"
+}
+
+func getFlagDefault(fl *flag.Flag, field reflect.StructField) string {
+	if docDefault := parseDocTag(field)["default"]; docDefault != "" {
+		return docDefault
+	}
+	return fl.DefValue
+}
+
+func parseDocTag(f reflect.StructField) map[string]string {
+	cfg := map[string]string{}
+	tag := f.Tag.Get("doc")
+
+	if tag == "" {
+		return cfg
+	}
+
+	for _, entry := range strings.Split(tag, "|") {
+		parts := strings.SplitN(entry, "=", 2)
+
+		switch len(parts) {
+		case 1:
+			cfg[parts[0]] = ""
+		case 2:
+			cfg[parts[0]] = parts[1]
+		}
+	}
+
+	return cfg
 }

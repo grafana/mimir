@@ -22,10 +22,10 @@ import (
 	log "github.com/sirupsen/logrus"
 	"gopkg.in/alecthomas/kingpin.v2"
 
-	"github.com/grafana/mimir/pkg/mimirtool/analyse"
+	"github.com/grafana/mimir/pkg/mimirtool/analyze"
 )
 
-type PrometheusAnalyseCommand struct {
+type PrometheusAnalyzeCommand struct {
 	address     string
 	username    string
 	password    string
@@ -36,11 +36,11 @@ type PrometheusAnalyseCommand struct {
 	outputFile         string
 }
 
-func (cmd *PrometheusAnalyseCommand) run(k *kingpin.ParseContext) error {
+func (cmd *PrometheusAnalyzeCommand) run(k *kingpin.ParseContext) error {
 	var (
 		hasGrafanaMetrics, hasRulerMetrics = false, false
-		grafanaMetrics                     = analyse.MetricsInGrafana{}
-		rulerMetrics                       = analyse.MetricsInRuler{}
+		grafanaMetrics                     = analyze.MetricsInGrafana{}
+		rulerMetrics                       = analyze.MetricsInRuler{}
 		metricsUsed                        []string
 	)
 
@@ -188,15 +188,15 @@ func (cmd *PrometheusAnalyseCommand) run(k *kingpin.ParseContext) error {
 
 	log.Infof("%d active series are NOT being used in dashboards", additionalMetricsCardinality)
 
-	output := analyse.MetricsInPrometheus{}
+	output := analyze.MetricsInPrometheus{}
 	output.TotalActiveSeries = inUseCardinality + additionalMetricsCardinality
 	output.InUseActiveSeries = inUseCardinality
 	output.AdditionalActiveSeries = additionalMetricsCardinality
 
 	for metric, counts := range inUseMetrics {
-		jobCounts := make([]analyse.JobCount, 0, len(counts.jobCount))
+		jobCounts := make([]analyze.JobCount, 0, len(counts.jobCount))
 		for job, count := range counts.jobCount {
-			jobCounts = append(jobCounts, analyse.JobCount{
+			jobCounts = append(jobCounts, analyze.JobCount{
 				Job:   job,
 				Count: count,
 			})
@@ -205,16 +205,16 @@ func (cmd *PrometheusAnalyseCommand) run(k *kingpin.ParseContext) error {
 			return jobCounts[i].Count > jobCounts[j].Count
 		})
 
-		output.InUseMetricCounts = append(output.InUseMetricCounts, analyse.MetricCount{Metric: metric, Count: counts.totalCount, JobCounts: jobCounts})
+		output.InUseMetricCounts = append(output.InUseMetricCounts, analyze.MetricCount{Metric: metric, Count: counts.totalCount, JobCounts: jobCounts})
 	}
 	sort.Slice(output.InUseMetricCounts, func(i, j int) bool {
 		return output.InUseMetricCounts[i].Count > output.InUseMetricCounts[j].Count
 	})
 
 	for metric, counts := range additionalMetrics {
-		jobCounts := make([]analyse.JobCount, 0, len(counts.jobCount))
+		jobCounts := make([]analyze.JobCount, 0, len(counts.jobCount))
 		for job, count := range counts.jobCount {
-			jobCounts = append(jobCounts, analyse.JobCount{
+			jobCounts = append(jobCounts, analyze.JobCount{
 				Job:   job,
 				Count: count,
 			})
@@ -222,7 +222,7 @@ func (cmd *PrometheusAnalyseCommand) run(k *kingpin.ParseContext) error {
 		sort.Slice(jobCounts, func(i, j int) bool {
 			return jobCounts[i].Count > jobCounts[j].Count
 		})
-		output.AdditionalMetricCounts = append(output.AdditionalMetricCounts, analyse.MetricCount{Metric: metric, Count: counts.totalCount, JobCounts: jobCounts})
+		output.AdditionalMetricCounts = append(output.AdditionalMetricCounts, analyze.MetricCount{Metric: metric, Count: counts.totalCount, JobCounts: jobCounts})
 	}
 	sort.Slice(output.AdditionalMetricCounts, func(i, j int) bool {
 		return output.AdditionalMetricCounts[i].Count > output.AdditionalMetricCounts[j].Count

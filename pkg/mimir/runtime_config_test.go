@@ -19,6 +19,8 @@ import (
 // a configmap is limited to 1MB, we need to minimise the limits file.
 // One way to do it is via YAML anchors.
 func TestLoadRuntimeConfig_ShouldLoadAnchoredYAML(t *testing.T) {
+	validation.SetDefaultLimitsForYAMLUnmarshalling(validation.Limits{})
+
 	yamlFile := strings.NewReader(`
 overrides:
   '1234': &id001
@@ -35,12 +37,13 @@ overrides:
 	require.NoError(t, err)
 
 	limits := validation.Limits{
-		IngestionRate:               1500,
-		IngestionBurstSize:          15000,
-		MaxGlobalSeriesPerUser:      15000,
-		MaxGlobalSeriesPerMetric:    7000,
-		RulerMaxRulesPerRuleGroup:   20,
-		RulerMaxRuleGroupsPerTenant: 20,
+		IngestionRate:                       1500,
+		IngestionBurstSize:                  15000,
+		MaxGlobalSeriesPerUser:              15000,
+		MaxGlobalSeriesPerMetric:            7000,
+		RulerMaxRulesPerRuleGroup:           20,
+		RulerMaxRuleGroupsPerTenant:         20,
+		NotificationRateLimitPerIntegration: validation.NotificationRateLimitMap{},
 	}
 
 	loadedLimits := runtimeCfg.(*runtimeConfigValues).TenantLimits

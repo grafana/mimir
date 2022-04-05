@@ -119,8 +119,8 @@ type Config struct {
 }
 
 // RegisterFlags registers the MultitenantCompactor flags.
-func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
-	cfg.ShardingRing.RegisterFlags(f)
+func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
+	cfg.ShardingRing.RegisterFlags(f, logger)
 
 	cfg.BlockRanges = mimir_tsdb.DurationList{2 * time.Hour, 12 * time.Hour, 24 * time.Hour}
 	cfg.retryMinBackoff = 10 * time.Second
@@ -130,7 +130,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.ConsistencyDelay, "compactor.consistency-delay", 0, fmt.Sprintf("Minimum age of fresh (non-compacted) blocks before they are being processed. Malformed blocks older than the maximum of consistency-delay and %s will be removed.", PartialUploadThresholdAge))
 	f.IntVar(&cfg.BlockSyncConcurrency, "compactor.block-sync-concurrency", 8, "Number of Go routines to use when downloading blocks for compaction and uploading resulting blocks.")
 	f.IntVar(&cfg.MetaSyncConcurrency, "compactor.meta-sync-concurrency", 20, "Number of Go routines to use when syncing block meta files from the long term storage.")
-	f.StringVar(&cfg.DataDir, "compactor.data-dir", "./data", "Data directory in which to cache blocks and process compactions")
+	f.StringVar(&cfg.DataDir, "compactor.data-dir", "./data-compactor/", "Directory to temporarily store blocks during compaction. This directory is not required to be persisted between restarts.")
 	f.DurationVar(&cfg.CompactionInterval, "compactor.compaction-interval", time.Hour, "The frequency at which the compaction runs")
 	f.DurationVar(&cfg.MaxCompactionTime, "compactor.max-compaction-time", 0, "Max time for starting compactions for a single tenant. After this time no new compactions for the tenant are started before next compaction cycle. This can help in multi-tenant environments to avoid single tenant using all compaction time, but also in single-tenant environments to force new discovery of blocks more often. 0 = disabled.")
 	f.IntVar(&cfg.CompactionRetries, "compactor.compaction-retries", 3, "How many times to retry a failed compaction within a single compaction run.")
@@ -426,7 +426,7 @@ func (c *MultitenantCompactor) starting(ctx context.Context) error {
 	// In the event of a cluster cold start or scale up of 2+ compactor instances at the same
 	// time, we may end up in a situation where each new compactor instance starts at a slightly
 	// different time and thus each one starts with a different state of the ring. It's better
-	// to just wait the ring stability for a short time.
+	// to just wait a short time for ring stability.
 	if c.compactorCfg.ShardingRing.WaitStabilityMinDuration > 0 {
 		minWaiting := c.compactorCfg.ShardingRing.WaitStabilityMinDuration
 		maxWaiting := c.compactorCfg.ShardingRing.WaitStabilityMaxDuration
@@ -656,7 +656,6 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 		c.metaSyncDirForUser(userID),
 		reg,
 		fetcherFilters,
-		nil,
 	)
 	if err != nil {
 		return err

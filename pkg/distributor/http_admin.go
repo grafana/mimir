@@ -6,6 +6,7 @@
 package distributor
 
 import (
+	_ "embed" // Used to embed html template
 	"encoding/json"
 	"fmt"
 	"html/template"
@@ -17,49 +18,14 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 )
 
-const tpl = `
-<!DOCTYPE html>
-<html>
-	<head>
-		<meta charset="UTF-8">
-		<title>Ingester Stats</title>
-	</head>
-	<body>
-		<h1>Ingester Stats</h1>
-		<p>Current time: {{ .Now }}</p>
-		<p><b>NB stats do not account for replication factor, which is currently set to {{ .ReplicationFactor }}</b></p>
-		<form action="" method="POST">
-			<input type="hidden" name="csrf_token" value="$__CSRF_TOKEN_PLACEHOLDER__">
-			<table border="1">
-				<thead>
-					<tr>
-						<th>User</th>
-						<th># Series</th>
-						<th>Total Ingest Rate</th>
-						<th>API Ingest Rate</th>
-						<th>Rule Ingest Rate</th>
-					</tr>
-				</thead>
-				<tbody>
-					{{ range .Stats }}
-					<tr>
-						<td>{{ .UserID }}</td>
-						<td align='right'>{{ .UserStats.NumSeries }}</td>
-						<td align='right'>{{ printf "%.2f" .UserStats.IngestionRate }}</td>
-						<td align='right'>{{ printf "%.2f" .UserStats.APIIngestionRate }}</td>
-						<td align='right'>{{ printf "%.2f" .UserStats.RuleIngestionRate }}</td>
-					</tr>
-					{{ end }}
-				</tbody>
-			</table>
-		</form>
-	</body>
-</html>`
+//go:embed ingester_stats.gohtml
+var ingesterStatsPageHTML string
+var ingesterStatsPageTemplate = template.Must(template.New("webpage").Parse(ingesterStatsPageHTML))
 
-var tmpl *template.Template
-
-func init() {
-	tmpl = template.Must(template.New("webpage").Parse(tpl))
+type ingesterStatsPageContents struct {
+	Now               time.Time     `json:"now"`
+	Stats             []UserIDStats `json:"stats"`
+	ReplicationFactor int           `json:"replicationFactor"`
 }
 
 type userStatsByTimeseries []UserIDStats
@@ -90,13 +56,9 @@ func (d *Distributor) AllUserStatsHandler(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	util.RenderHTTPResponse(w, struct {
-		Now               time.Time     `json:"now"`
-		Stats             []UserIDStats `json:"stats"`
-		ReplicationFactor int           `json:"replicationFactor"`
-	}{
+	util.RenderHTTPResponse(w, ingesterStatsPageContents{
 		Now:               time.Now(),
 		Stats:             stats,
 		ReplicationFactor: d.ingestersRing.ReplicationFactor(),
-	}, tmpl, r)
+	}, ingesterStatsPageTemplate, r)
 }

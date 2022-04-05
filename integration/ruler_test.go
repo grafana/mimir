@@ -49,21 +49,14 @@ func TestRulerAPI(t *testing.T) {
 
 	// Start dependencies.
 	consul := e2edb.NewConsul()
-	minio := e2edb.NewMinio(9000, bucketName, rulestoreBucketName)
+	minio := e2edb.NewMinio(9000, blocksBucketName, rulestoreBucketName)
 	require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 	// Configure the ruler.
-	rulerFlags := mergeFlags(
-		BlocksStorageFlags(),
-		RulerFlags(),
-		map[string]string{
-			// set store-gateway to an invalid address, as there is no store-gateway ring configured this flag is mandatory.
-			"-querier.store-gateway-addresses": "localhost:12345",
-		},
-	)
+	rulerFlags := mergeFlags(BlocksStorageFlags(), RulerFlags())
 
 	// Start Mimir components.
-	ruler := e2emimir.NewRuler("ruler", consul.NetworkHTTPEndpoint(), rulerFlags, "")
+	ruler := e2emimir.NewRuler("ruler", consul.NetworkHTTPEndpoint(), rulerFlags)
 	require.NoError(t, s.StartAndWaitReady(ruler))
 
 	// Create a client with the ruler address configured
@@ -104,7 +97,7 @@ func TestRulerAPI(t *testing.T) {
 	require.Equal(t, retrievedNamespace[0].Name, ruleGroup.Name)
 
 	// Test compression by inspecting the response Headers
-	req, err := http.NewRequest("GET", fmt.Sprintf("http://%s/api/prom/rules", ruler.HTTPEndpoint()), nil)
+	req, err := http.NewRequest("GET", fmt.Sprintf("http://%s/api/v1/rules", ruler.HTTPEndpoint()), nil)
 	require.NoError(t, err)
 
 	req.Header.Set("X-Scope-OrgID", "user-1")
@@ -150,10 +143,10 @@ func TestRulerAPISingleBinary(t *testing.T) {
 	defer s.Close()
 
 	namespace := "ns"
-	user := "fake"
+	user := "anonymous"
 
 	// Start dependencies.
-	minio := e2edb.NewMinio(9000, bucketName)
+	minio := e2edb.NewMinio(9000, blocksBucketName)
 	require.NoError(t, s.StartAndWaitReady(minio))
 
 	flags := mergeFlags(
@@ -166,9 +159,9 @@ func TestRulerAPISingleBinary(t *testing.T) {
 	)
 
 	// Start Mimir components.
-	require.NoError(t, copyFileToSharedDir(s, "docs/sources/configuration/single-process-config-blocks.yaml", mimirConfigFile))
+	require.NoError(t, copyFileToSharedDir(s, "docs/configurations/single-process-config-blocks.yaml", mimirConfigFile))
 	require.NoError(t, writeFileToSharedDir(s, filepath.Join("ruler_configs", user, namespace), []byte(mimirRulerUserConfigYaml)))
-	mimir := e2emimir.NewSingleBinaryWithConfigFile("mimir", mimirConfigFile, flags, "", 9009, 9095)
+	mimir := e2emimir.NewSingleBinary("mimir", flags, e2emimir.WithConfigFile(mimirConfigFile), e2emimir.WithPorts(9009, 9095))
 	require.NoError(t, s.StartAndWaitReady(mimir))
 
 	// Create a client with the ruler address configured
@@ -200,7 +193,7 @@ func TestRulerAPISingleBinary(t *testing.T) {
 	require.NoError(t, mimir.Stop())
 
 	// Restart Mimir with identical configs
-	mimirRestarted := e2emimir.NewSingleBinaryWithConfigFile("mimir-restarted", mimirConfigFile, flags, "", 9009, 9095)
+	mimirRestarted := e2emimir.NewSingleBinary("mimir-restarted", flags, e2emimir.WithConfigFile(mimirConfigFile), e2emimir.WithPorts(9009, 9095))
 	require.NoError(t, s.StartAndWaitReady(mimirRestarted))
 
 	// Wait until the user manager is created
@@ -213,12 +206,12 @@ func TestRulerEvaluationDelay(t *testing.T) {
 	defer s.Close()
 
 	namespace := "ns"
-	user := "fake"
+	user := "anonymous"
 
 	evaluationDelay := time.Minute * 5
 
 	// Start dependencies.
-	minio := e2edb.NewMinio(9000, bucketName)
+	minio := e2edb.NewMinio(9000, blocksBucketName)
 	require.NoError(t, s.StartAndWaitReady(minio))
 
 	flags := mergeFlags(
@@ -232,9 +225,9 @@ func TestRulerEvaluationDelay(t *testing.T) {
 	)
 
 	// Start Mimir components.
-	require.NoError(t, copyFileToSharedDir(s, "docs/sources/configuration/single-process-config-blocks.yaml", mimirConfigFile))
+	require.NoError(t, copyFileToSharedDir(s, "docs/configurations/single-process-config-blocks.yaml", mimirConfigFile))
 	require.NoError(t, writeFileToSharedDir(s, filepath.Join("ruler_configs", user, namespace), []byte(mimirRulerEvalStaleNanConfigYaml)))
-	mimir := e2emimir.NewSingleBinaryWithConfigFile("mimir", mimirConfigFile, flags, "", 9009, 9095)
+	mimir := e2emimir.NewSingleBinary("mimir", flags, e2emimir.WithConfigFile(mimirConfigFile), e2emimir.WithPorts(9009, 9095))
 	require.NoError(t, s.StartAndWaitReady(mimir))
 
 	// Create a client with the ruler address configured
@@ -358,7 +351,7 @@ func TestRulerSharding(t *testing.T) {
 
 	// Start dependencies.
 	consul := e2edb.NewConsul()
-	minio := e2edb.NewMinio(9000, rulestoreBucketName)
+	minio := e2edb.NewMinio(9000, rulestoreBucketName, blocksBucketName)
 	require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 	// Configure the ruler.
@@ -367,9 +360,6 @@ func TestRulerSharding(t *testing.T) {
 		RulerFlags(),
 		RulerShardingFlags(consul.NetworkHTTPEndpoint()),
 		map[string]string{
-			// Since we're not going to run any rule, we don't need the
-			// store-gateway to be configured to a valid address.
-			"-querier.store-gateway-addresses": "localhost:12345",
 			// Enable the bucket index so we can skip the initial bucket scan.
 			"-blocks-storage.bucket-store.bucket-index.enabled": "true",
 			// Disable rule group limit
@@ -378,8 +368,8 @@ func TestRulerSharding(t *testing.T) {
 	)
 
 	// Start rulers.
-	ruler1 := e2emimir.NewRuler("ruler-1", consul.NetworkHTTPEndpoint(), rulerFlags, "")
-	ruler2 := e2emimir.NewRuler("ruler-2", consul.NetworkHTTPEndpoint(), rulerFlags, "")
+	ruler1 := e2emimir.NewRuler("ruler-1", consul.NetworkHTTPEndpoint(), rulerFlags)
+	ruler2 := e2emimir.NewRuler("ruler-2", consul.NetworkHTTPEndpoint(), rulerFlags)
 	rulers := e2emimir.NewCompositeMimirService(ruler1, ruler2)
 	require.NoError(t, s.StartAndWaitReady(ruler1, ruler2))
 
@@ -420,16 +410,16 @@ func TestRulerAlertmanager(t *testing.T) {
 
 	// Start dependencies.
 	consul := e2edb.NewConsul()
-	minio := e2edb.NewMinio(9000, bucketName, rulestoreBucketName)
+	minio := e2edb.NewMinio(9000, blocksBucketName, rulestoreBucketName, alertsBucketName)
 	require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 	// Have at least one alertmanager configuration.
-	require.NoError(t, writeFileToSharedDir(s, "alertmanager_configs/user-1.yaml", []byte(mimirAlertmanagerUserConfigYaml)))
+	require.NoError(t, uploadAlertmanagerConfig(minio, "user-1", mimirAlertmanagerUserConfigYaml))
 
 	// Start Alertmanagers.
-	amFlags := mergeFlags(AlertmanagerFlags(), AlertmanagerLocalFlags())
-	am1 := e2emimir.NewAlertmanager("alertmanager1", amFlags, "")
-	am2 := e2emimir.NewAlertmanager("alertmanager2", amFlags, "")
+	amFlags := mergeFlags(AlertmanagerFlags(), AlertmanagerS3Flags(), AlertmanagerShardingFlags(consul.NetworkHTTPEndpoint(), 1))
+	am1 := e2emimir.NewAlertmanager("alertmanager1", amFlags)
+	am2 := e2emimir.NewAlertmanager("alertmanager2", amFlags)
 	require.NoError(t, s.StartAndWaitReady(am1, am2))
 
 	am1URL := "http://" + am1.HTTPEndpoint()
@@ -440,16 +430,13 @@ func TestRulerAlertmanager(t *testing.T) {
 		BlocksStorageFlags(),
 		RulerFlags(),
 		map[string]string{
-			// set store-gateway to an invalid address, as there is no store-gateway ring configured this flag is mandatory.
-			"-querier.store-gateway-addresses": "localhost:12345",
-
 			// Connect the ruler to Alertmanagers
 			"-ruler.alertmanager-url": strings.Join([]string{am1URL, am2URL}, ","),
 		},
 	)
 
 	// Start Ruler.
-	ruler := e2emimir.NewRuler("ruler", consul.NetworkHTTPEndpoint(), rulerFlags, "")
+	ruler := e2emimir.NewRuler("ruler", consul.NetworkHTTPEndpoint(), rulerFlags)
 	require.NoError(t, s.StartAndWaitReady(ruler))
 
 	// Create a client with the ruler address configured
@@ -476,7 +463,7 @@ func TestRulerAlertmanagerTLS(t *testing.T) {
 
 	// Start dependencies.
 	consul := e2edb.NewConsul()
-	minio := e2edb.NewMinio(9000, bucketName, rulestoreBucketName)
+	minio := e2edb.NewMinio(9000, blocksBucketName, rulestoreBucketName, alertsBucketName)
 	require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 	// set the ca
@@ -507,15 +494,16 @@ func TestRulerAlertmanagerTLS(t *testing.T) {
 	))
 
 	// Have at least one alertmanager configuration.
-	require.NoError(t, writeFileToSharedDir(s, "alertmanager_configs/user-1.yaml", []byte(mimirAlertmanagerUserConfigYaml)))
+	require.NoError(t, uploadAlertmanagerConfig(minio, "user-1", mimirAlertmanagerUserConfigYaml))
 
 	// Start Alertmanagers.
 	amFlags := mergeFlags(
 		AlertmanagerFlags(),
-		AlertmanagerLocalFlags(),
+		AlertmanagerS3Flags(),
+		AlertmanagerShardingFlags(consul.NetworkHTTPEndpoint(), 1),
 		getServerHTTPTLSFlags(),
 	)
-	am1 := e2emimir.NewAlertmanagerWithTLS("alertmanager1", amFlags, "")
+	am1 := e2emimir.NewAlertmanagerWithTLS("alertmanager1", amFlags)
 	require.NoError(t, s.StartAndWaitReady(am1))
 
 	// Configure the ruler.
@@ -523,16 +511,13 @@ func TestRulerAlertmanagerTLS(t *testing.T) {
 		BlocksStorageFlags(),
 		RulerFlags(),
 		map[string]string{
-			// set store-gateway to an invalid address, as there is no store-gateway ring configured this flag is mandatory.
-			"-querier.store-gateway-addresses": "localhost:12345",
-
 			// Connect the ruler to the Alertmanager
 			"-ruler.alertmanager-url": "https://" + am1.HTTPEndpoint(),
 		},
 	)
 
 	// Start Ruler.
-	ruler := e2emimir.NewRuler("ruler", consul.NetworkHTTPEndpoint(), rulerFlags, "")
+	ruler := e2emimir.NewRuler("ruler", consul.NetworkHTTPEndpoint(), rulerFlags)
 	require.NoError(t, s.StartAndWaitReady(ruler))
 
 	// Create a client with the ruler address configured
@@ -556,7 +541,7 @@ func TestRulerMetricsForInvalidQueries(t *testing.T) {
 
 	// Start dependencies.
 	consul := e2edb.NewConsul()
-	minio := e2edb.NewMinio(9000, bucketName, rulestoreBucketName)
+	minio := e2edb.NewMinio(9000, blocksBucketName, rulestoreBucketName)
 	require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 	// Configure the ruler.
@@ -564,9 +549,6 @@ func TestRulerMetricsForInvalidQueries(t *testing.T) {
 		BlocksStorageFlags(),
 		RulerFlags(),
 		map[string]string{
-			// Since we're not going to run any rule (our only rule is invalid), we don't need the
-			// store-gateway to be configured to a valid address.
-			"-querier.store-gateway-addresses": "localhost:12345",
 			// Enable the bucket index so we can skip the initial bucket scan.
 			"-blocks-storage.bucket-store.bucket-index.enabled": "true",
 			// Evaluate rules often, so that we don't need to wait for metrics to show up.
@@ -580,7 +562,7 @@ func TestRulerMetricsForInvalidQueries(t *testing.T) {
 			"-blocks-storage.tsdb.retention-period":      "2h",
 
 			// We run single ingester only, no replication.
-			"-distributor.replication-factor": "1",
+			"-ingester.ring.replication-factor": "1",
 
 			// Very low limit so that ruler hits it.
 			"-querier.max-fetched-chunks-per-query": "5",
@@ -590,9 +572,9 @@ func TestRulerMetricsForInvalidQueries(t *testing.T) {
 	const namespace = "test"
 	const user = "user"
 
-	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags, "")
-	ruler := e2emimir.NewRuler("ruler", consul.NetworkHTTPEndpoint(), flags, "")
-	ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags, "")
+	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags)
+	ruler := e2emimir.NewRuler("ruler", consul.NetworkHTTPEndpoint(), flags)
+	ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags)
 	require.NoError(t, s.StartAndWaitReady(distributor, ingester, ruler))
 
 	// Wait until both the distributor and ruler have updated the ring. The querier will also watch
@@ -740,26 +722,24 @@ func TestRulerFederatedRules(t *testing.T) {
 
 	// Start dependencies.
 	consul := e2edb.NewConsul()
-	minio := e2edb.NewMinio(9000, bucketName, rulestoreBucketName)
+	minio := e2edb.NewMinio(9000, blocksBucketName, rulestoreBucketName)
 	require.NoError(t, s.StartAndWaitReady(minio, consul))
 
 	flags := mergeFlags(
 		BlocksStorageFlags(),
 		RulerFlags(),
 		map[string]string{
-			"-ruler.tenant-federation.enabled": "true",
-			"-tenant-federation.enabled":       "true",
-			"-distributor.replication-factor":  "1",
-			// Set store-gateway to an invalid address. As there is no store-gateway ring configured, this flag is mandatory.
-			"-querier.store-gateway-addresses": "localhost:12345",
+			"-ruler.tenant-federation.enabled":  "true",
+			"-tenant-federation.enabled":        "true",
+			"-ingester.ring.replication-factor": "1",
 		},
 	)
 
 	// Start up services
-	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags, "")
-	ruler := e2emimir.NewRuler("ruler", consul.NetworkHTTPEndpoint(), flags, "")
-	ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags, "")
-	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags, "")
+	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags)
+	ruler := e2emimir.NewRuler("ruler", consul.NetworkHTTPEndpoint(), flags)
+	ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags)
+	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags)
 	require.NoError(t, s.StartAndWaitReady(distributor, ingester, ruler, querier))
 
 	// Wait until both the distributor and ruler are ready
@@ -838,8 +818,125 @@ func TestRulerFederatedRules(t *testing.T) {
 	}
 }
 
+func TestRulerEnableAPIs(t *testing.T) {
+	testCases := []struct {
+		name                        string
+		apiEnabled                  bool
+		expectedRegisteredEndpoints [][2]string
+		expectedMissingEndpoints    [][2]string
+	}{
+		{
+			name:       "API is disabled",
+			apiEnabled: false,
+
+			expectedRegisteredEndpoints: [][2]string{
+				{http.MethodGet, "/prometheus/api/v1/alerts"},
+				{http.MethodGet, "/prometheus/api/v1/rules"},
+			},
+			expectedMissingEndpoints: [][2]string{
+				{http.MethodGet, "/api/v1/rules"},
+				{http.MethodGet, "/api/v1/rules/my_namespace"},
+				{http.MethodGet, "/api/v1/rules/my_namespace/my_group"},
+				{http.MethodPost, "/api/v1/rules/my_namespace"},
+
+				{http.MethodGet, "/prometheus/rules"},
+				{http.MethodGet, "/prometheus/rules/my_namespace"},
+				{http.MethodGet, "/prometheus/rules/my_namespace/my_group"},
+				{http.MethodPost, "/prometheus/rules/my_namespace"},
+
+				{http.MethodGet, "/prometheus/config/v1/rules"},
+				{http.MethodGet, "/prometheus/config/v1/rules/my_namespace"},
+				{http.MethodGet, "/prometheus/config/v1/rules/my_namespace/my_group"},
+				{http.MethodPost, "/prometheus/config/v1/rules/my_namespace"},
+			},
+		},
+		{
+			name:       "API is enabled",
+			apiEnabled: true,
+
+			expectedRegisteredEndpoints: [][2]string{
+				// not going to test GET /api/v1/rules/my_namespace/my_group because it requires creating a rule group
+				{http.MethodGet, "/prometheus/api/v1/alerts"},
+				{http.MethodGet, "/prometheus/api/v1/rules"},
+
+				{http.MethodGet, "/api/v1/rules"},
+				{http.MethodGet, "/api/v1/rules/my_namespace"},
+				{http.MethodPost, "/api/v1/rules/my_namespace"},
+
+				{http.MethodGet, "/prometheus/rules"},
+				{http.MethodGet, "/prometheus/rules/my_namespace"},
+				{http.MethodPost, "/prometheus/rules/my_namespace"},
+
+				{http.MethodGet, "/prometheus/config/v1/rules"},
+				{http.MethodGet, "/prometheus/config/v1/rules/my_namespace"},
+				{http.MethodPost, "/prometheus/config/v1/rules/my_namespace"},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			s, err := e2e.NewScenario(networkName)
+			require.NoError(t, err)
+			defer s.Close()
+
+			// Start dependencies.
+			consul := e2edb.NewConsul()
+			minio := e2edb.NewMinio(9000, blocksBucketName, rulestoreBucketName)
+			require.NoError(t, s.StartAndWaitReady(consul, minio))
+
+			// Configure the ruler.
+			rulerFlags := mergeFlags(BlocksStorageFlags(), RulerFlags(), map[string]string{
+				"-ruler.enable-api": fmt.Sprintf("%t", tc.apiEnabled),
+			})
+
+			// Start Mimir components.
+			ruler := e2emimir.NewRuler("ruler", consul.NetworkHTTPEndpoint(), rulerFlags)
+			require.NoError(t, s.StartAndWaitReady(ruler))
+
+			runTest := func(name, method, path string, shouldBeFound bool) {
+				t.Run(name, func(t *testing.T) {
+					client, err := e2emimir.NewClient("", "", "", "", "fake")
+					require.NoError(t, err)
+
+					url := "http://" + ruler.HTTPEndpoint() + path
+
+					var resp *http.Response
+					switch method {
+					case http.MethodGet:
+						resp, err = client.DoGet(url)
+					case http.MethodPost:
+						resp, err = client.DoPost(url, nil)
+					default:
+						require.Contains(t, []string{http.MethodGet, http.MethodPost}, method, "test only supports POST and GET")
+					}
+
+					assert.NoError(t, err)
+					if shouldBeFound {
+						assert.NotEqual(t, resp.StatusCode, http.StatusNotFound)
+					} else {
+						assert.Equal(t, resp.StatusCode, http.StatusNotFound)
+					}
+				})
+			}
+
+			for _, ep := range tc.expectedRegisteredEndpoints {
+				method, path := ep[0], ep[1]
+				name := "!=404_" + method + "_" + path
+				runTest(name, method, path, true)
+			}
+
+			for _, ep := range tc.expectedMissingEndpoints {
+				method, path := ep[0], ep[1]
+				name := "==404_" + method + "_" + path
+				runTest(name, method, path, false)
+			}
+		})
+	}
+}
+
 func ruleGroupMatcher(user, namespace, groupName string) *labels.Matcher {
-	return labels.MustNewMatcher(labels.MatchEqual, "rule_group", fmt.Sprintf("/rules/%s/%s;%s", user, namespace, groupName))
+	return labels.MustNewMatcher(labels.MatchEqual, "rule_group", fmt.Sprintf("data-ruler/%s/%s;%s", user, namespace, groupName))
 }
 
 func ruleGroupWithRule(groupName string, ruleName string, expression string) rulefmt.RuleGroup {

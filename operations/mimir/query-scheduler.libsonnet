@@ -25,6 +25,7 @@
   newQuerySchedulerDeployment(name, container)::
     deployment.new(name, 2, [container]) +
     $.util.configVolumeMount($._config.overrides_configmap, $._config.overrides_configmap_mountpoint) +
+    (if !std.isObject($._config.node_selector) then {} else deployment.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector)) +
     $.util.antiAffinity +
     // Do not run more query-schedulers than expected.
     deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge(0) +
@@ -34,11 +35,11 @@
     self.newQuerySchedulerDeployment('query-scheduler', $.query_scheduler_container),
 
   query_scheduler_service: if !$._config.query_scheduler_enabled then {} else
-    $.util.serviceFor($.query_scheduler_deployment),
+    $.util.serviceFor($.query_scheduler_deployment, $._config.service_ignored_labels),
 
   // Headless to make sure resolution gets IP address of target pods, and not service IP.
   query_scheduler_discovery_service: if !$._config.query_scheduler_enabled then {} else
-    $.util.serviceFor($.query_scheduler_deployment) +
+    $.util.serviceFor($.query_scheduler_deployment, $._config.service_ignored_labels) +
     service.mixin.spec.withPublishNotReadyAddresses(true) +
     service.mixin.spec.withClusterIp('None') +
     service.mixin.metadata.withName('query-scheduler-discovery'),
@@ -50,6 +51,6 @@
   },
 
   query_frontend_args+:: if !$._config.query_scheduler_enabled then {} else {
-    'frontend.scheduler-address': 'query-scheduler-discovery.%(namespace)s.svc.cluster.local:9095' % $._config,
+    'query-frontend.scheduler-address': 'query-scheduler-discovery.%(namespace)s.svc.cluster.local:9095' % $._config,
   },
 }

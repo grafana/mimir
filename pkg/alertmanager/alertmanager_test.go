@@ -6,6 +6,7 @@
 package alertmanager
 
 import (
+	"context"
 	"fmt"
 	"net/url"
 	"strings"
@@ -13,7 +14,9 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/test"
+	"github.com/prometheus/alertmanager/cluster/clusterpb"
 	"github.com/prometheus/alertmanager/config"
 	"github.com/prometheus/alertmanager/types"
 	"github.com/prometheus/client_golang/prometheus"
@@ -39,17 +42,33 @@ func TestDispatcherGroupLimits(t *testing.T) {
 	}
 }
 
+type stubReplicator struct{}
+
+func (*stubReplicator) ReplicateStateForUser(context.Context, string, *clusterpb.Part) error {
+	return nil
+}
+func (*stubReplicator) GetPositionForUser(userID string) int {
+	return 0
+}
+func (*stubReplicator) ReadFullStateForUser(context.Context, string) ([]*clusterpb.FullState, error) {
+	return nil, nil
+}
+
 func createAlertmanagerAndSendAlerts(t *testing.T, alertGroups, groupsLimit, expectedFailures int) {
 	user := "test"
 
 	reg := prometheus.NewPedanticRegistry()
 	am, err := New(&Config{
-		UserID:          user,
-		Logger:          log.NewNopLogger(),
-		Limits:          &mockAlertManagerLimits{maxDispatcherAggregationGroups: groupsLimit},
-		TenantDataDir:   t.TempDir(),
-		ExternalURL:     &url.URL{Path: "/am"},
-		ShardingEnabled: false,
+		UserID:            user,
+		Logger:            log.NewNopLogger(),
+		Limits:            &mockAlertManagerLimits{maxDispatcherAggregationGroups: groupsLimit},
+		TenantDataDir:     t.TempDir(),
+		ExternalURL:       &url.URL{Path: "/am"},
+		ShardingEnabled:   true,
+		Replicator:        &stubReplicator{},
+		ReplicationFactor: 1,
+		// We have to set this interval non-zero, though we don't need the persister to do anything.
+		PersisterConfig: PersisterConfig{Interval: time.Hour},
 	}, reg)
 	require.NoError(t, err)
 	defer am.StopAndWait()
@@ -113,6 +132,66 @@ route:
 		# TYPE alertmanager_dispatcher_aggregation_group_limit_reached_total counter
 		alertmanager_dispatcher_aggregation_group_limit_reached_total %d
 	`, expectedFailures)), "alertmanager_dispatcher_aggregation_group_limit_reached_total")
+	})
+}
+
+func TestDispatcherLoggerInsightKey(t *testing.T) {
+	var buf concurrency.SyncBuffer
+	logger := log.NewLogfmtLogger(&buf)
+
+	user := "test"
+	reg := prometheus.NewPedanticRegistry()
+	am, err := New(&Config{
+		UserID:            user,
+		Logger:            logger,
+		Limits:            &mockAlertManagerLimits{maxDispatcherAggregationGroups: 10},
+		TenantDataDir:     t.TempDir(),
+		ExternalURL:       &url.URL{Path: "/am"},
+		ShardingEnabled:   true,
+		Replicator:        &stubReplicator{},
+		ReplicationFactor: 1,
+		PersisterConfig:   PersisterConfig{Interval: time.Hour},
+	}, reg)
+	require.NoError(t, err)
+	defer am.StopAndWait()
+
+	cfgRaw := `receivers:
+- name: 'prod'
+
+route:
+  group_by: ['alertname']
+  group_wait: 10ms
+  group_interval: 10ms
+  receiver: 'prod'`
+
+	cfg, err := config.Load(cfgRaw)
+	require.NoError(t, err)
+	require.NoError(t, am.ApplyConfig(user, cfg, cfgRaw))
+
+	now := time.Now()
+	inputAlerts := []*types.Alert{
+		{
+			Alert: model.Alert{
+				Labels: model.LabelSet{
+					"alertname": model.LabelValue("Alert-1"),
+					"a":         "b",
+				},
+				Annotations:  model.LabelSet{"foo": "bar"},
+				StartsAt:     now,
+				EndsAt:       now.Add(5 * time.Minute),
+				GeneratorURL: "http://example.com/prometheus",
+			},
+			UpdatedAt: now,
+			Timeout:   false,
+		},
+	}
+	require.NoError(t, am.alerts.Put(inputAlerts...))
+
+	test.Poll(t, 3*time.Second, true, func() interface{} {
+		logs := buf.String()
+		return strings.Contains(logs, "insight=true")
+		// Ensure that the dispatcher component emits logs with a "true" insight key,
+		// identifying these logs to be exposed to end users via the usage insights system.
 	})
 }
 

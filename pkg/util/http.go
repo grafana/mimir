@@ -20,6 +20,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
+	"github.com/grafana/dskit/flagext"
 	"github.com/opentracing/opentracing-go"
 	otlog "github.com/opentracing/opentracing-go/log"
 	"gopkg.in/yaml.v3"
@@ -34,18 +35,18 @@ func IsRequestBodyTooLarge(err error) bool {
 
 // BasicAuth configures basic authentication for HTTP clients.
 type BasicAuth struct {
-	Username string `yaml:"basic_auth_username"`
-	Password string `yaml:"basic_auth_password"`
+	Username string         `yaml:"basic_auth_username"`
+	Password flagext.Secret `yaml:"basic_auth_password"`
 }
 
 func (b *BasicAuth) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.StringVar(&b.Username, prefix+"basic-auth-username", "", "HTTP Basic authentication username. It overrides the username set in the URL (if any).")
-	f.StringVar(&b.Password, prefix+"basic-auth-password", "", "HTTP Basic authentication password. It overrides the password set in the URL (if any).")
+	f.Var(&b.Password, prefix+"basic-auth-password", "HTTP Basic authentication password. It overrides the password set in the URL (if any).")
 }
 
 // IsEnabled returns false if basic authentication isn't enabled.
 func (b BasicAuth) IsEnabled() bool {
-	return b.Username != "" || b.Password != ""
+	return b.Username != "" || b.Password.String() != ""
 }
 
 // WriteJSONResponse writes some JSON as a HTTP response.
@@ -82,7 +83,7 @@ func WriteYAMLResponse(w http.ResponseWriter, v interface{}) {
 	_, _ = w.Write(data)
 }
 
-// Sends message as text/plain response with 200 status code.
+// WriteTextResponse sends message as text/plain response with 200 status code.
 func WriteTextResponse(w http.ResponseWriter, message string) {
 	w.Header().Set("Content-Type", "text/plain")
 
@@ -90,7 +91,7 @@ func WriteTextResponse(w http.ResponseWriter, message string) {
 	_, _ = w.Write([]byte(message))
 }
 
-// Sends message as text/html response with 200 status code.
+// WriteHTMLResponse sends message as text/html response with 200 status code.
 func WriteHTMLResponse(w http.ResponseWriter, message string) {
 	w.Header().Set("Content-Type", "text/html")
 
@@ -98,8 +99,8 @@ func WriteHTMLResponse(w http.ResponseWriter, message string) {
 	_, _ = w.Write([]byte(message))
 }
 
-// RenderHTTPResponse either responds with json or a rendered html page using the passed in template
-// by checking the Accepts header
+// RenderHTTPResponse either responds with JSON or a rendered HTML page using the passed in template
+// by checking the Accepts header.
 func RenderHTTPResponse(w http.ResponseWriter, v interface{}, t *template.Template, r *http.Request) {
 	accept := r.Header.Get("Accept")
 	if strings.Contains(accept, "application/json") {
@@ -107,6 +108,7 @@ func RenderHTTPResponse(w http.ResponseWriter, v interface{}, t *template.Templa
 		return
 	}
 
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	err := t.Execute(w, v)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

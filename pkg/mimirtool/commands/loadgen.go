@@ -74,7 +74,7 @@ type LoadgenCommand struct {
 
 func (c *LoadgenCommand) Register(app *kingpin.Application, _ EnvVarNames) {
 	loadgenCommand := &LoadgenCommand{}
-	cmd := app.Command("loadgen", "Simple load generator for Cortex.").Action(loadgenCommand.run)
+	cmd := app.Command("loadgen", "Simple load generator for Grafana Mimir.").Action(loadgenCommand.run)
 	cmd.Flag("write-url", "").
 		Default("").StringVar(&loadgenCommand.writeURL)
 	cmd.Flag("series-name", "name of the metric that will be generated").

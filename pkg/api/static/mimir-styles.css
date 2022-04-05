@@ -1,0 +1,10 @@
+
+.page-header .mimir-brand {
+    height: 34px;
+}
+
+.dl-horizontal dt h2 {
+    display: inline;
+    font-size: 14px; /* Same as default for the body */
+    font-weight: 700; /* Same as dt */
+}

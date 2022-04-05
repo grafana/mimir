@@ -1,0 +1,13 @@
+ingester:
+  lifecycler:
+    availability_zone: test-zone
+    final_sleep: 1m0s
+    heartbeat_period: 15s
+    join_after: 30s
+    num_tokens: 512
+    ring:
+      kvstore:
+        consul:
+          host: consul-host
+      zone_awareness_enabled: true
+    tokens_file_path: /path/tokens

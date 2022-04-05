@@ -65,33 +65,33 @@ func runQuerierTenantFederationTest(t *testing.T, cfg querierTenantFederationCon
 	require.NoError(t, s.StartAndWaitReady(consul, memcached))
 
 	flags := mergeFlags(BlocksStorageFlags(), map[string]string{
-		"-frontend.cache-results":                     "true",
-		"-frontend.split-queries-by-interval":         "24h",
-		"-querier.query-ingesters-within":             "12h", // Required by the test on query /series out of ingesters time range
-		"-frontend.results-cache.backend":             "memcached",
-		"-frontend.results-cache.memcached.addresses": "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
-		"-tenant-federation.enabled":                  "true",
+		"-query-frontend.cache-results":                     "true",
+		"-querier.query-ingesters-within":                   "12h", // Required by the test on query /series out of ingesters time range
+		"-query-frontend.results-cache.backend":             "memcached",
+		"-query-frontend.results-cache.memcached.addresses": "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
+		"-tenant-federation.enabled":                        "true",
+		"-ingester.max-global-exemplars-per-user":           "10000",
 	})
 
 	// Start the query-scheduler if enabled.
 	var queryScheduler *e2emimir.MimirService
 	if cfg.querySchedulerEnabled {
-		queryScheduler = e2emimir.NewQueryScheduler("query-scheduler", flags, "")
+		queryScheduler = e2emimir.NewQueryScheduler("query-scheduler", flags)
 		require.NoError(t, s.StartAndWaitReady(queryScheduler))
-		flags["-frontend.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
+		flags["-query-frontend.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
 		flags["-querier.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
 	}
 
 	if cfg.shuffleShardingEnabled {
 		// Use only single querier for each user.
-		flags["-frontend.max-queriers-per-tenant"] = "1"
+		flags["-query-frontend.max-queriers-per-tenant"] = "1"
 	}
 
 	minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
 	require.NoError(t, s.StartAndWaitReady(minio))
 
 	// Start the query-frontend.
-	queryFrontend := e2emimir.NewQueryFrontend("query-frontend", flags, "")
+	queryFrontend := e2emimir.NewQueryFrontend("query-frontend", flags)
 	require.NoError(t, s.Start(queryFrontend))
 
 	if !cfg.querySchedulerEnabled {
@@ -99,13 +99,13 @@ func runQuerierTenantFederationTest(t *testing.T, cfg querierTenantFederationCon
 	}
 
 	// Start all other services.
-	ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags, "")
-	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags, "")
-	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags, "")
+	ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags)
+	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags)
+	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags)
 
 	var querier2 *e2emimir.MimirService
 	if cfg.shuffleShardingEnabled {
-		querier2 = e2emimir.NewQuerier("querier-2", consul.NetworkHTTPEndpoint(), flags, "")
+		querier2 = e2emimir.NewQuerier("querier-2", consul.NetworkHTTPEndpoint(), flags)
 	}
 
 	require.NoError(t, s.StartAndWaitReady(querier, ingester, distributor))
@@ -149,6 +149,11 @@ func runQuerierTenantFederationTest(t *testing.T, cfg querierTenantFederationCon
 
 	assert.Equal(t, mergeResults(tenantIDs, expectedVectors), result.(model.Vector))
 
+	// query exemplars for all tenants
+	exemplars, err := c.QueryExemplars("series_1", now.Add(-1*time.Hour), now.Add(1*time.Hour))
+	require.NoError(t, err)
+	assert.Len(t, exemplars, numUsers)
+
 	// ensure a push to multiple tenants is failing
 	series, _ := generateSeries("series_1", now)
 	res, err := c.Push(series)
@@ -156,7 +161,7 @@ func runQuerierTenantFederationTest(t *testing.T, cfg querierTenantFederationCon
 	require.Equal(t, 500, res.StatusCode)
 
 	// check metric label values for total queries in the query frontend
-	require.NoError(t, queryFrontend.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_query_frontend_queries_total"}, e2e.WithLabelMatchers(
+	require.NoError(t, queryFrontend.WaitSumMetricsWithOptions(e2e.Equals(2), []string{"cortex_query_frontend_queries_total"}, e2e.WithLabelMatchers(
 		labels.MustNewMatcher(labels.MatchEqual, "user", strings.Join(tenantIDs, "|")),
 		labels.MustNewMatcher(labels.MatchEqual, "op", "query"))))
 

@@ -4,6 +4,7 @@ package main
 
 import (
 	"encoding/json"
+	"flag"
 	"fmt"
 	"math"
 	"os"
@@ -26,19 +27,28 @@ import (
 var logger = log.NewLogfmtLogger(os.Stderr)
 
 func main() {
-	if len(os.Args) < 2 {
-		fmt.Println("Usage:", os.Args[0], "<block-dir> [<block-dir> ...]")
+	verifyChunks := flag.Bool("check-chunks", false, "Verify chunks in segment files.")
+	flag.Usage = func() {
+		fmt.Fprintf(flag.CommandLine.Output(), "Usage: %s [options...] <block-dir> [<block-dir> ...]:\n", os.Args[0])
+		fmt.Fprintln(flag.CommandLine.Output())
+		flag.PrintDefaults()
+	}
+
+	flag.Parse()
+
+	if flag.NArg() == 0 {
+		flag.Usage()
 		return
 	}
 
-	for _, b := range os.Args[1:] {
+	for _, b := range flag.Args() {
 		meta, err := metadata.ReadFromDir(b)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "Failed to read meta from block dir", b, "error:", err)
 			continue
 		}
 
-		stats, err := GatherIndexHealthStats(logger, filepath.Join(b, block.IndexFilename), meta.MinTime, meta.MaxTime)
+		stats, err := GatherIndexHealthStats(logger, b, meta.MinTime, meta.MaxTime, *verifyChunks)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "Failed to gather health stats from block dir", b, "error:", err)
 			continue
@@ -137,8 +147,17 @@ func (n *minMaxSumInt64) Avg() int64 {
 	return n.sum / n.cnt
 }
 
-func GatherIndexHealthStats(logger log.Logger, fn string, minTime, maxTime int64) (stats HealthStats, err error) {
-	r, err := index.NewFileReader(fn)
+func GatherIndexHealthStats(logger log.Logger, blockDir string, minTime, maxTime int64, checkChunks bool) (stats HealthStats, err error) {
+	var cr *chunks.Reader
+	if checkChunks {
+		cr, err = chunks.NewDirReader(filepath.Join(blockDir, block.ChunksDirname), nil)
+		if err != nil {
+			return stats, errors.Wrap(err, "open chunks dir")
+		}
+		defer runutil.CloseWithErrCapture(&err, cr, "closing chunks reader")
+	}
+
+	r, err := index.NewFileReader(filepath.Join(blockDir, block.IndexFilename))
 	if err != nil {
 		return stats, errors.Wrap(err, "open index file")
 	}
@@ -274,6 +293,10 @@ func GatherIndexHealthStats(logger log.Logger, fn string, minTime, maxTime int64
 		} else {
 			seriesLifeDurationWithoutSingleSampleSeries.Add(seriesLifeTimeMs)
 		}
+
+		if checkChunks {
+			verifyChunks(logger, cr, lset, chks)
+		}
 	}
 	if p.Err() != nil {
 		return stats, errors.Wrap(err, "walk postings")
@@ -299,4 +322,47 @@ func GatherIndexHealthStats(logger log.Logger, fn string, minTime, maxTime int64
 	stats.ChunkAvgDuration = model.Duration(time.Duration(chunkDuration.Avg()) * time.Millisecond)
 	stats.ChunkMinDuration = model.Duration(time.Duration(chunkDuration.min) * time.Millisecond)
 	return stats, nil
+}
+
+func verifyChunks(l log.Logger, cr *chunks.Reader, lset labels.Labels, chks []chunks.Meta) {
+	for _, cm := range chks {
+		ch, err := cr.Chunk(cm.Ref)
+		if err != nil {
+			level.Error(l).Log("msg", "failed to read chunk", "ref", cm.Ref, "err", err)
+			continue
+		}
+
+		samples := 0
+		firstSample := true
+		prevTs := int64(-1)
+
+		it := ch.Iterator(nil)
+		for it.Err() == nil && it.Next() {
+			samples++
+			ts, _ := it.At()
+
+			if firstSample {
+				firstSample = false
+				if ts != cm.MinTime {
+					level.Warn(l).Log("ref", cm.Ref, "msg", "timestamp of the first sample doesn't match chunk MinTime", "sampleTimestamp", formatTimestamp(ts), "chunkMinTime", formatTimestamp(cm.MinTime))
+				}
+			} else if ts <= prevTs {
+				level.Warn(l).Log("ref", cm.Ref, "msg", "found sample with timestamp not strictly higher than previous timestamp", "previous", formatTimestamp(prevTs), "sampleTimestamp", formatTimestamp(ts))
+			}
+
+			prevTs = ts
+		}
+
+		if e := it.Err(); e != nil {
+			level.Warn(l).Log("ref", cm.Ref, "msg", "failed to iterate over chunk samples", "err", err)
+		} else if samples == 0 {
+			level.Warn(l).Log("ref", cm.Ref, "msg", "no samples found in the chunk")
+		} else if prevTs != cm.MaxTime {
+			level.Warn(l).Log("ref", cm.Ref, "msg", "timestamp of the last sample doesn't match chunk MaxTime", "sampleTimestamp", formatTimestamp(prevTs), "chunkMaxTime", formatTimestamp(cm.MaxTime))
+		}
+	}
+}
+
+func formatTimestamp(ts int64) string {
+	return fmt.Sprintf("%d (%s)", ts, timestamp.Time(ts).UTC().Format(time.RFC3339Nano))
 }

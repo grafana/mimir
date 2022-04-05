@@ -168,25 +168,24 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 	configFile, flags := cfg.setup(t, s)
 
 	flags = mergeFlags(flags, map[string]string{
-		"-frontend.cache-results":                     "true",
-		"-frontend.split-queries-by-interval":         "24h",
-		"-querier.query-ingesters-within":             "12h", // Required by the test on query /series out of ingesters time range
-		"-frontend.results-cache.backend":             "memcached",
-		"-frontend.results-cache.memcached.addresses": "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
-		"-frontend.query-stats-enabled":               strconv.FormatBool(cfg.queryStatsEnabled),
+		"-query-frontend.cache-results":                     "true",
+		"-querier.query-ingesters-within":                   "12h", // Required by the test on query /series out of ingesters time range
+		"-query-frontend.results-cache.backend":             "memcached",
+		"-query-frontend.results-cache.memcached.addresses": "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
+		"-query-frontend.query-stats-enabled":               strconv.FormatBool(cfg.queryStatsEnabled),
 	})
 
 	// Start the query-scheduler if enabled.
 	var queryScheduler *e2emimir.MimirService
 	if cfg.querySchedulerEnabled {
-		queryScheduler = e2emimir.NewQueryScheduler("query-scheduler", flags, "")
+		queryScheduler = e2emimir.NewQueryScheduler("query-scheduler", flags)
 		require.NoError(t, s.StartAndWaitReady(queryScheduler))
-		flags["-frontend.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
+		flags["-query-frontend.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
 		flags["-querier.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
 	}
 
 	// Start the query-frontend.
-	queryFrontend := e2emimir.NewQueryFrontendWithConfigFile("query-frontend", configFile, flags, "")
+	queryFrontend := e2emimir.NewQueryFrontend("query-frontend", flags, e2emimir.WithConfigFile(configFile))
 	require.NoError(t, s.Start(queryFrontend))
 
 	if !cfg.querySchedulerEnabled {
@@ -194,9 +193,9 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 	}
 
 	// Start all other services.
-	ingester := e2emimir.NewIngesterWithConfigFile("ingester", consul.NetworkHTTPEndpoint(), configFile, flags, "")
-	distributor := e2emimir.NewDistributorWithConfigFile("distributor", consul.NetworkHTTPEndpoint(), configFile, flags, "")
-	querier := e2emimir.NewQuerierWithConfigFile("querier", consul.NetworkHTTPEndpoint(), configFile, flags, "")
+	ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags, e2emimir.WithConfigFile(configFile))
+	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags, e2emimir.WithConfigFile(configFile))
+	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags, e2emimir.WithConfigFile(configFile))
 
 	require.NoError(t, s.StartAndWaitReady(querier, ingester, distributor))
 	require.NoError(t, s.WaitReady(queryFrontend))
@@ -343,25 +342,24 @@ overrides:
 `)))
 
 	flags = mergeFlags(flags, map[string]string{
-		"-frontend.split-queries-by-interval": "24h",
-		"-querier.max-samples":                "20", // Very low limit so that we can easily hit it, but high enough to test other features.
-
-		"-frontend.parallelize-shardable-queries": "true",                                               // Allow queries to be parallized (query-sharding)
-		"-frontend.query-sharding-total-shards":   "0",                                                  // Disable query-sharding by default
-		"-runtime-config.file":                    filepath.Join(e2e.ContainerSharedDir, runtimeConfig), // Read per tenant runtime config
+		"-querier.max-samples":                          "20",                                                 // Very low limit so that we can easily hit it, but high enough to test other features.
+		"-query-frontend.parallelize-shardable-queries": "true",                                               // Allow queries to be parallized (query-sharding)
+		"-query-frontend.query-sharding-total-shards":   "0",                                                  // Disable query-sharding by default
+		"-store.max-query-length":                       "30d",                                                // To test too long query error (31d)
+		"-runtime-config.file":                          filepath.Join(e2e.ContainerSharedDir, runtimeConfig), // Read per tenant runtime config
 	})
 	consul := e2edb.NewConsul()
 	require.NoError(t, s.StartAndWaitReady(consul))
 
-	queryFrontend := e2emimir.NewQueryFrontendWithConfigFile("query-frontend", configFile, flags, "")
+	queryFrontend := e2emimir.NewQueryFrontend("query-frontend", flags, e2emimir.WithConfigFile(configFile))
 	require.NoError(t, s.Start(queryFrontend))
 
 	flags["-querier.frontend-address"] = queryFrontend.NetworkGRPCEndpoint()
 
 	// Start all other services.
-	distributor := e2emimir.NewDistributorWithConfigFile("distributor", consul.NetworkHTTPEndpoint(), configFile, flags, "")
-	ingester := e2emimir.NewIngesterWithConfigFile("ingester", consul.NetworkHTTPEndpoint(), configFile, flags, "")
-	querier := e2emimir.NewQuerierWithConfigFile("querier", consul.NetworkHTTPEndpoint(), configFile, flags, "")
+	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags, e2emimir.WithConfigFile(configFile))
+	ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags, e2emimir.WithConfigFile(configFile))
+	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags, e2emimir.WithConfigFile(configFile))
 
 	require.NoError(t, s.StartAndWaitReady(distributor, querier, ingester))
 	require.NoError(t, s.WaitReady(queryFrontend))
@@ -455,7 +453,7 @@ overrides:
 			name: "wrong duration specified in step",
 			query: func(c *e2emimir.Client) (*http.Response, []byte, error) {
 				return c.DoGetBody(fmt.Sprintf(
-					"http://%s/api/prom/api/v1/query_range?query=%s&start=%s&end=%s&step=%s",
+					"http://%s/prometheus/api/v1/query_range?query=%s&start=%s&end=%s&step=%s",
 					c.QuerierAddress(),
 					url.QueryEscape("unknown"),
 					e2emimir.FormatTime(now.Add(-time.Hour)),
@@ -470,7 +468,7 @@ overrides:
 			name: "wrong timestamp in start",
 			query: func(c *e2emimir.Client) (*http.Response, []byte, error) {
 				return c.DoGetBody(fmt.Sprintf(
-					"http://%s/api/prom/api/v1/query_range?query=%s&start=%s&end=%s&step=%s",
+					"http://%s/prometheus/api/v1/query_range?query=%s&start=%s&end=%s&step=%s",
 					c.QuerierAddress(),
 					url.QueryEscape("unknown"),
 					"depths-of-time",
@@ -488,6 +486,14 @@ overrides:
 			},
 			expStatusCode: http.StatusUnprocessableEntity,
 			expBody:       `{"error":"query processing would load too many samples into memory in query execution", "errorType":"execution", "status":"error"}`,
+		},
+		{
+			name: "query time range exceeds the limit",
+			query: func(c *e2emimir.Client) (*http.Response, []byte, error) {
+				return c.QueryRangeRaw(`sum_over_time(metric[31d:1s])`, now.Add(-time.Minute), now, time.Minute)
+			},
+			expStatusCode: http.StatusUnprocessableEntity,
+			expBody:       `{"error":"expanding series: the query time range exceeds the limit (query length: 744h6m0s, limit: 720h0m0s)", "errorType":"execution", "status":"error"}`,
 		},
 		{
 			name: "execution error",

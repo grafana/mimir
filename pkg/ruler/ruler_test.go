@@ -42,11 +42,12 @@ import (
 	"go.uber.org/atomic"
 	"google.golang.org/grpc"
 
+	"github.com/grafana/dskit/tenant"
+
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
 	"github.com/grafana/mimir/pkg/ruler/rulestore"
 	"github.com/grafana/mimir/pkg/ruler/rulestore/bucketclient"
-	"github.com/grafana/mimir/pkg/tenant"
 	"github.com/grafana/mimir/pkg/util"
 )
 
@@ -123,7 +124,7 @@ func testSetup(t *testing.T) (*promql.Engine, storage.QueryableFunc, Pusher, log
 
 func newManager(t *testing.T, cfg Config) *DefaultMultiTenantManager {
 	engine, noopQueryable, pusher, logger, overrides := testSetup(t)
-	manager, err := NewDefaultMultiTenantManager(cfg, DefaultTenantManagerFactory(cfg, pusher, noopQueryable, noopQueryable, engine, overrides, nil), prometheus.NewRegistry(), logger)
+	manager, err := NewDefaultMultiTenantManager(cfg, DefaultTenantManagerFactory(cfg, pusher, noopQueryable, noopQueryable, engine, overrides, nil), prometheus.NewRegistry(), logger, nil)
 	require.NoError(t, err)
 
 	return manager
@@ -172,7 +173,7 @@ func buildRuler(t *testing.T, cfg Config, storage rulestore.RuleStore, rulerAddr
 
 	reg := prometheus.NewRegistry()
 	managerFactory := DefaultTenantManagerFactory(cfg, pusher, noopQueryable, noopQueryable, engine, overrides, reg)
-	manager, err := NewDefaultMultiTenantManager(cfg, managerFactory, reg, log.NewNopLogger())
+	manager, err := NewDefaultMultiTenantManager(cfg, managerFactory, reg, log.NewNopLogger(), nil)
 	require.NoError(t, err)
 
 	ruler, err := newRuler(cfg, manager, reg, logger, storage, overrides, newMockClientsPool(cfg, logger, reg, rulerAddrMap))
@@ -208,7 +209,6 @@ func TestNotifierSendsUserIDHeader(t *testing.T) {
 	// We create an empty rule store so that the ruler will not load any rule from it.
 	cfg := defaultRulerConfig(t)
 	cfg.AlertmanagerURL = ts.URL
-	cfg.AlertmanagerDiscovery = false
 
 	manager := newManager(t, cfg)
 	defer manager.Stop()

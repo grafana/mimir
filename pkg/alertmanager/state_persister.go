@@ -31,7 +31,7 @@ var (
 )
 
 type PersisterConfig struct {
-	Interval time.Duration `yaml:"persist_interval"`
+	Interval time.Duration `yaml:"persist_interval" category:"advanced"`
 }
 
 func (cfg *PersisterConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {

@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -27,7 +26,6 @@ import (
 	"github.com/grafana/dskit/ring/client"
 	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
-	"github.com/prometheus/alertmanager/cluster"
 	"github.com/prometheus/alertmanager/cluster/clusterpb"
 	amconfig "github.com/prometheus/alertmanager/config"
 	"github.com/prometheus/client_golang/prometheus"
@@ -38,19 +36,15 @@ import (
 	"github.com/weaveworks/common/user"
 	"golang.org/x/time/rate"
 
+	"github.com/grafana/dskit/tenant"
+
 	"github.com/grafana/mimir/pkg/alertmanager/alertmanagerpb"
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
-	"github.com/grafana/mimir/pkg/tenant"
 	"github.com/grafana/mimir/pkg/util"
-	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
 const (
-	// If a config sets the webhook URL to this, it will be rewritten to
-	// a URL derived from Config.AutoWebhookRoot
-	autoWebhookURL = "http://internal.monitor"
-
 	// Reasons for (re)syncing alertmanager configurations from object storage.
 	reasonPeriodic   = "periodic"
 	reasonInitial    = "initial"
@@ -72,21 +66,21 @@ var (
 // MultitenantAlertmanagerConfig is the configuration for a multitenant Alertmanager.
 type MultitenantAlertmanagerConfig struct {
 	DataDir        string           `yaml:"data_dir"`
-	Retention      time.Duration    `yaml:"retention"`
+	Retention      time.Duration    `yaml:"retention" category:"advanced"`
 	ExternalURL    flagext.URLValue `yaml:"external_url"`
-	PollInterval   time.Duration    `yaml:"poll_interval"`
-	MaxRecvMsgSize int64            `yaml:"max_recv_msg_size"`
+	PollInterval   time.Duration    `yaml:"poll_interval" category:"advanced"`
+	MaxRecvMsgSize int64            `yaml:"max_recv_msg_size" category:"advanced"`
 
-	// Enable sharding for the Alertmanager
-	ShardingEnabled bool       `yaml:"sharding_enabled"`
-	ShardingRing    RingConfig `yaml:"sharding_ring"`
+	// Sharding confiuration for the Alertmanager
+	ShardingRing RingConfig `yaml:"sharding_ring"`
 
 	FallbackConfigFile string `yaml:"fallback_config_file"`
-	AutoWebhookRoot    string `yaml:"auto_webhook_root"`
 
-	Cluster ClusterConfig `yaml:"cluster"`
+	PeerTimeout time.Duration `yaml:"peer_timeout" category:"advanced"`
 
-	EnableAPI bool `yaml:"enable_api"`
+	EnableAPI bool `yaml:"enable_api" category:"advanced"`
+
+	MaxConcurrentGetRequestsPerTenant int `yaml:"max_concurrent_get_requests_per_tenant" category:"advanced"`
 
 	// For distributor.
 	AlertmanagerClient ClientConfig `yaml:"alertmanager_client"`
@@ -95,51 +89,30 @@ type MultitenantAlertmanagerConfig struct {
 	Persister PersisterConfig `yaml:",inline"`
 }
 
-type ClusterConfig struct {
-	ListenAddr       string                 `yaml:"listen_address"`
-	AdvertiseAddr    string                 `yaml:"advertise_address"`
-	Peers            flagext.StringSliceCSV `yaml:"peers"`
-	PeerTimeout      time.Duration          `yaml:"peer_timeout"`
-	GossipInterval   time.Duration          `yaml:"gossip_interval"`
-	PushPullInterval time.Duration          `yaml:"push_pull_interval"`
-}
-
 const (
-	defaultClusterAddr = "0.0.0.0:9094"
 	defaultPeerTimeout = 15 * time.Second
 )
 
 // RegisterFlags adds the flags required to config this to the given FlagSet.
-func (cfg *MultitenantAlertmanagerConfig) RegisterFlags(f *flag.FlagSet) {
-	f.StringVar(&cfg.DataDir, "alertmanager.storage.path", "data/", "Base path for data storage.")
+func (cfg *MultitenantAlertmanagerConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
+	f.StringVar(&cfg.DataDir, "alertmanager.storage.path", "./data-alertmanager/", "Directory to store Alertmanager state and temporarily configuration files. The content of this directory is not required to be persisted between restarts unless Alertmanager replication has been disabled.")
 	f.DurationVar(&cfg.Retention, "alertmanager.storage.retention", 5*24*time.Hour, "How long to keep data for.")
-	f.Int64Var(&cfg.MaxRecvMsgSize, "alertmanager.max-recv-msg-size", 16<<20, "Maximum size (bytes) of an accepted HTTP request body.")
+	f.Int64Var(&cfg.MaxRecvMsgSize, "alertmanager.max-recv-msg-size", 100<<20, "Maximum size (bytes) of an accepted HTTP request body.")
 
-	_ = cfg.ExternalURL.Set("http://localhost") // set the default
-	f.Var(&cfg.ExternalURL, "alertmanager.web.external-url", "The URL under which Alertmanager is externally reachable (for example, if Alertmanager is served via a reverse proxy). Used for generating relative and absolute links back to Alertmanager itself. If the URL has a path portion, it will be used to prefix all HTTP endpoints served by Alertmanager.")
+	_ = cfg.ExternalURL.Set("http://localhost:8080/alertmanager") // set the default
+	f.Var(&cfg.ExternalURL, "alertmanager.web.external-url", "The URL under which Alertmanager is externally reachable (eg. could be different than -http.alertmanager-http-prefix in case Alertmanager is served via a reverse proxy). This setting is used both to configure the internal requests router and to generate links in alert templates. If the external URL has a path portion, it will be used to prefix all HTTP endpoints served by Alertmanager, both the UI and API.")
 
 	f.StringVar(&cfg.FallbackConfigFile, "alertmanager.configs.fallback", "", "Filename of fallback config to use if none specified for instance.")
-	f.StringVar(&cfg.AutoWebhookRoot, "alertmanager.configs.auto-webhook-root", "", "Root of URL to generate if config is "+autoWebhookURL)
 	f.DurationVar(&cfg.PollInterval, "alertmanager.configs.poll-interval", 15*time.Second, "How frequently to poll Alertmanager configs.")
 
-	f.BoolVar(&cfg.EnableAPI, "experimental.alertmanager.enable-api", false, "Enable the experimental alertmanager config api.")
-
-	f.BoolVar(&cfg.ShardingEnabled, "alertmanager.sharding-enabled", false, "Shard tenants across multiple alertmanager instances.")
+	f.BoolVar(&cfg.EnableAPI, "alertmanager.enable-api", true, "Enable the alertmanager config API.")
+	f.IntVar(&cfg.MaxConcurrentGetRequestsPerTenant, "alertmanager.max-concurrent-get-requests-per-tenant", 0, "Maximum number of concurrent GET requests allowed per tenant. The zero value (and negative values) result in a limit of GOMAXPROCS or 8, whichever is larger. Status code 503 is served for GET requests that would exceed the concurrency limit.")
 
 	cfg.AlertmanagerClient.RegisterFlagsWithPrefix("alertmanager.alertmanager-client", f)
 	cfg.Persister.RegisterFlagsWithPrefix("alertmanager", f)
-	cfg.ShardingRing.RegisterFlags(f)
-	cfg.Cluster.RegisterFlags(f)
-}
+	cfg.ShardingRing.RegisterFlags(f, logger)
 
-func (cfg *ClusterConfig) RegisterFlags(f *flag.FlagSet) {
-	prefix := "alertmanager.cluster."
-	f.StringVar(&cfg.ListenAddr, prefix+"listen-address", defaultClusterAddr, "Listen address and port for the cluster. Not specifying this flag disables high-availability mode.")
-	f.StringVar(&cfg.AdvertiseAddr, prefix+"advertise-address", "", "Explicit address or hostname to advertise in cluster.")
-	f.Var(&cfg.Peers, prefix+"peers", "Comma-separated list of initial peers.")
-	f.DurationVar(&cfg.PeerTimeout, prefix+"peer-timeout", defaultPeerTimeout, "Time to wait between peers to send notifications.")
-	f.DurationVar(&cfg.GossipInterval, prefix+"gossip-interval", cluster.DefaultGossipInterval, "The interval between sending gossip messages. By lowering this value (more frequent) gossip messages are propagated across cluster more quickly at the expense of increased bandwidth usage.")
-	f.DurationVar(&cfg.PushPullInterval, prefix+"push-pull-interval", cluster.DefaultPushPullInterval, "The interval between gossip state syncs. Setting this interval lower (more frequent) will increase convergence speeds across larger clusters at the expense of increased bandwidth usage.")
+	f.DurationVar(&cfg.PeerTimeout, "alertmanager.peer-timeout", defaultPeerTimeout, "Time to wait between peers to send notifications.")
 }
 
 // Validate config and returns error on failure
@@ -156,16 +129,23 @@ func (cfg *MultitenantAlertmanagerConfig) Validate(storageCfg alertstore.Config)
 		return err
 	}
 
-	if cfg.ShardingEnabled {
-		if !storageCfg.IsFullStateSupported() {
-			return errShardingUnsupportedStorage
-		}
-		if cfg.ShardingRing.ZoneAwarenessEnabled && cfg.ShardingRing.InstanceZone == "" {
-			return errZoneAwarenessEnabledWithoutZoneInfo
-		}
+	if !storageCfg.IsFullStateSupported() {
+		return errShardingUnsupportedStorage
+	}
+	if cfg.ShardingRing.ZoneAwarenessEnabled && cfg.ShardingRing.InstanceZone == "" {
+		return errZoneAwarenessEnabledWithoutZoneInfo
 	}
 
 	return nil
+}
+
+func (cfg *MultitenantAlertmanagerConfig) CheckExternalURL(alertmanagerHTTPPrefix string, logger log.Logger) {
+	if cfg.ExternalURL.Path != alertmanagerHTTPPrefix {
+		level.Warn(logger).Log("msg", fmt.Sprintf(""+
+			"The configured Alertmanager HTTP prefix '%s' is different than the path specified in the external URL '%s': "+
+			"the Alertmanager UI and API may not work as expected unless you have a reverse proxy exposing the Alertmanager endpoints under '%s' prefix",
+			alertmanagerHTTPPrefix, cfg.ExternalURL.String(), alertmanagerHTTPPrefix))
+	}
 }
 
 type multitenantAlertmanagerMetrics struct {
@@ -277,7 +257,6 @@ type MultitenantAlertmanager struct {
 	alertmanagerMetrics *alertmanagerMetrics
 	multitenantMetrics  *multitenantAlertmanagerMetrics
 
-	peer                    *cluster.Peer
 	alertmanagerClientsPool ClientsPool
 
 	limits Limits
@@ -309,52 +288,20 @@ func NewMultitenantAlertmanager(cfg *MultitenantAlertmanagerConfig, store alerts
 		}
 	}
 
-	var peer *cluster.Peer
-	// We need to take this case into account to support our legacy upstream clustering.
-	if cfg.Cluster.ListenAddr != "" && !cfg.ShardingEnabled {
-		peer, err = cluster.Create(
-			log.With(logger, "component", "cluster"),
-			registerer,
-			cfg.Cluster.ListenAddr,
-			cfg.Cluster.AdvertiseAddr,
-			cfg.Cluster.Peers,
-			true,
-			cfg.Cluster.PushPullInterval,
-			cfg.Cluster.GossipInterval,
-			cluster.DefaultTcpTimeout,
-			cluster.DefaultProbeTimeout,
-			cluster.DefaultProbeInterval,
-			nil,
-		)
-		if err != nil {
-			return nil, errors.Wrap(err, "unable to initialize gossip mesh")
-		}
-		err = peer.Join(cluster.DefaultReconnectInterval, cluster.DefaultReconnectTimeout)
-		if err != nil {
-			level.Warn(logger).Log("msg", "unable to join gossip mesh while initializing cluster for high availability mode", "err", err)
-		}
-		go peer.Settle(context.Background(), cluster.DefaultGossipInterval)
+	ringStore, err := kv.NewClient(
+		cfg.ShardingRing.KVStore,
+		ring.GetCodec(),
+		kv.RegistererWithKVName(prometheus.WrapRegistererWithPrefix("cortex_", registerer), "alertmanager"),
+		logger,
+	)
+	if err != nil {
+		return nil, errors.Wrap(err, "create KV store client")
 	}
 
-	var ringStore kv.Client
-	if cfg.ShardingEnabled {
-		util_log.WarnExperimentalUse("Alertmanager sharding")
-
-		ringStore, err = kv.NewClient(
-			cfg.ShardingRing.KVStore,
-			ring.GetCodec(),
-			kv.RegistererWithKVName(prometheus.WrapRegistererWithPrefix("cortex_", registerer), "alertmanager"),
-			logger,
-		)
-		if err != nil {
-			return nil, errors.Wrap(err, "create KV store client")
-		}
-	}
-
-	return createMultitenantAlertmanager(cfg, fallbackConfig, peer, store, ringStore, limits, logger, registerer)
+	return createMultitenantAlertmanager(cfg, fallbackConfig, store, ringStore, limits, logger, registerer)
 }
 
-func createMultitenantAlertmanager(cfg *MultitenantAlertmanagerConfig, fallbackConfig []byte, peer *cluster.Peer, store alertstore.AlertStore, ringStore kv.Client, limits Limits, logger log.Logger, registerer prometheus.Registerer) (*MultitenantAlertmanager, error) {
+func createMultitenantAlertmanager(cfg *MultitenantAlertmanagerConfig, fallbackConfig []byte, store alertstore.AlertStore, ringStore kv.Client, limits Limits, logger log.Logger, registerer prometheus.Registerer) (*MultitenantAlertmanager, error) {
 	am := &MultitenantAlertmanager{
 		cfg:                 cfg,
 		fallbackConfig:      string(fallbackConfig),
@@ -362,7 +309,6 @@ func createMultitenantAlertmanager(cfg *MultitenantAlertmanagerConfig, fallbackC
 		alertmanagers:       map[string]*Alertmanager{},
 		alertmanagerMetrics: newAlertmanagerMetrics(),
 		multitenantMetrics:  newMultitenantAlertmanagerMetrics(registerer),
-		peer:                peer,
 		store:               store,
 		logger:              log.With(logger, "component", "MultiTenantAlertmanager"),
 		registry:            registerer,
@@ -395,35 +341,33 @@ func createMultitenantAlertmanager(cfg *MultitenantAlertmanagerConfig, fallbackC
 		am.syncFailures.WithLabelValues(r)
 	}
 
-	if cfg.ShardingEnabled {
-		lifecyclerCfg, err := am.cfg.ShardingRing.ToLifecyclerConfig(am.logger)
-		if err != nil {
-			return nil, errors.Wrap(err, "failed to initialize Alertmanager's lifecycler config")
-		}
+	lifecyclerCfg, err := am.cfg.ShardingRing.ToLifecyclerConfig(am.logger)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to initialize Alertmanager's lifecycler config")
+	}
 
-		// Define lifecycler delegates in reverse order (last to be called defined first because they're
-		// chained via "next delegate").
-		delegate := ring.BasicLifecyclerDelegate(am)
-		delegate = ring.NewLeaveOnStoppingDelegate(delegate, am.logger)
-		delegate = ring.NewAutoForgetDelegate(am.cfg.ShardingRing.HeartbeatTimeout*ringAutoForgetUnhealthyPeriods, delegate, am.logger)
+	// Define lifecycler delegates in reverse order (last to be called defined first because they're
+	// chained via "next delegate").
+	delegate := ring.BasicLifecyclerDelegate(am)
+	delegate = ring.NewLeaveOnStoppingDelegate(delegate, am.logger)
+	delegate = ring.NewAutoForgetDelegate(am.cfg.ShardingRing.HeartbeatTimeout*ringAutoForgetUnhealthyPeriods, delegate, am.logger)
 
-		am.ringLifecycler, err = ring.NewBasicLifecycler(lifecyclerCfg, RingNameForServer, RingKey, ringStore, delegate, am.logger, prometheus.WrapRegistererWithPrefix("cortex_", am.registry))
-		if err != nil {
-			return nil, errors.Wrap(err, "failed to initialize Alertmanager's lifecycler")
-		}
+	am.ringLifecycler, err = ring.NewBasicLifecycler(lifecyclerCfg, RingNameForServer, RingKey, ringStore, delegate, am.logger, prometheus.WrapRegistererWithPrefix("cortex_", am.registry))
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to initialize Alertmanager's lifecycler")
+	}
 
-		am.ring, err = ring.NewWithStoreClientAndStrategy(am.cfg.ShardingRing.ToRingConfig(), RingNameForServer, RingKey, ringStore, ring.NewIgnoreUnhealthyInstancesReplicationStrategy(), prometheus.WrapRegistererWithPrefix("cortex_", am.registry), am.logger)
-		if err != nil {
-			return nil, errors.Wrap(err, "failed to initialize Alertmanager's ring")
-		}
+	am.ring, err = ring.NewWithStoreClientAndStrategy(am.cfg.ShardingRing.ToRingConfig(), RingNameForServer, RingKey, ringStore, ring.NewIgnoreUnhealthyInstancesReplicationStrategy(), prometheus.WrapRegistererWithPrefix("cortex_", am.registry), am.logger)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to initialize Alertmanager's ring")
+	}
 
-		am.grpcServer = server.NewServer(&handlerForGRPCServer{am: am})
+	am.grpcServer = server.NewServer(&handlerForGRPCServer{am: am})
 
-		am.alertmanagerClientsPool = newAlertmanagerClientsPool(client.NewRingServiceDiscovery(am.ring), cfg.AlertmanagerClient, logger, am.registry)
-		am.distributor, err = NewDistributor(cfg.AlertmanagerClient, cfg.MaxRecvMsgSize, am.ring, am.alertmanagerClientsPool, log.With(logger, "component", "AlertmanagerDistributor"), am.registry)
-		if err != nil {
-			return nil, errors.Wrap(err, "create distributor")
-		}
+	am.alertmanagerClientsPool = newAlertmanagerClientsPool(client.NewRingServiceDiscovery(am.ring), cfg.AlertmanagerClient, logger, am.registry)
+	am.distributor, err = NewDistributor(cfg.AlertmanagerClient, cfg.MaxRecvMsgSize, am.ring, am.alertmanagerClientsPool, log.With(logger, "component", "AlertmanagerDistributor"), am.registry)
+	if err != nil {
+		return nil, errors.Wrap(err, "create distributor")
 	}
 
 	if registerer != nil {
@@ -461,58 +405,54 @@ func (am *MultitenantAlertmanager) starting(ctx context.Context) (err error) {
 		}
 	}()
 
-	if am.cfg.ShardingEnabled {
-		if am.subservices, err = services.NewManager(am.ringLifecycler, am.ring, am.distributor); err != nil {
-			return errors.Wrap(err, "failed to start alertmanager's subservices")
-		}
-
-		if err = services.StartManagerAndAwaitHealthy(ctx, am.subservices); err != nil {
-			return errors.Wrap(err, "failed to start alertmanager's subservices")
-		}
-
-		am.subservicesWatcher = services.NewFailureWatcher()
-		am.subservicesWatcher.WatchManager(am.subservices)
-
-		// We wait until the instance is in the JOINING state, once it does we know that tokens are assigned to this instance and we'll be ready to perform an initial sync of configs.
-		level.Info(am.logger).Log("waiting until alertmanager is JOINING in the ring")
-		if err = ring.WaitInstanceState(ctx, am.ring, am.ringLifecycler.GetInstanceID(), ring.JOINING); err != nil {
-			return err
-		}
-		level.Info(am.logger).Log("msg", "alertmanager is JOINING in the ring")
+	if am.subservices, err = services.NewManager(am.ringLifecycler, am.ring, am.distributor); err != nil {
+		return errors.Wrap(err, "failed to start alertmanager's subservices")
 	}
 
+	if err = services.StartManagerAndAwaitHealthy(ctx, am.subservices); err != nil {
+		return errors.Wrap(err, "failed to start alertmanager's subservices")
+	}
+
+	am.subservicesWatcher = services.NewFailureWatcher()
+	am.subservicesWatcher.WatchManager(am.subservices)
+
+	// We wait until the instance is in the JOINING state, once it does we know that tokens are assigned to this instance and we'll be ready to perform an initial sync of configs.
+	level.Info(am.logger).Log("waiting until alertmanager is JOINING in the ring")
+	if err = ring.WaitInstanceState(ctx, am.ring, am.ringLifecycler.GetInstanceID(), ring.JOINING); err != nil {
+		return err
+	}
+	level.Info(am.logger).Log("msg", "alertmanager is JOINING in the ring")
+
 	// At this point, if sharding is enabled, the instance is registered with some tokens
-	// and we can run the initial iteration to sync configs. If no sharding is enabled we load _all_ the configs.
+	// and we can run the initial iteration to sync configs.
 	if err := am.loadAndSyncConfigs(ctx, reasonInitial); err != nil {
 		return err
 	}
 
-	if am.cfg.ShardingEnabled {
-		// Store the ring state after the initial Alertmanager configs sync has been done and before we do change
-		// our state in the ring.
-		am.ringLastState, _ = am.ring.GetAllHealthy(RingOp)
+	// Store the ring state after the initial Alertmanager configs sync has been done and before we do change
+	// our state in the ring.
+	am.ringLastState, _ = am.ring.GetAllHealthy(RingOp)
 
-		// Make sure that all the alertmanagers we were initially configured with have
-		// fetched state from the replicas, before advertising as ACTIVE. This will
-		// reduce the possibility that we lose state when new instances join/leave.
-		level.Info(am.logger).Log("msg", "waiting until initial state sync is complete for all users")
-		if err := am.waitInitialStateSync(ctx); err != nil {
-			return errors.Wrap(err, "failed to wait for initial state sync")
-		}
-		level.Info(am.logger).Log("msg", "initial state sync is complete")
-
-		// With the initial sync now completed, we should have loaded all assigned alertmanager configurations to this instance. We can switch it to ACTIVE and start serving requests.
-		if err := am.ringLifecycler.ChangeState(ctx, ring.ACTIVE); err != nil {
-			return errors.Wrapf(err, "switch instance to %s in the ring", ring.ACTIVE)
-		}
-
-		// Wait until the ring client detected this instance in the ACTIVE state.
-		level.Info(am.logger).Log("msg", "waiting until alertmanager is ACTIVE in the ring")
-		if err := ring.WaitInstanceState(ctx, am.ring, am.ringLifecycler.GetInstanceID(), ring.ACTIVE); err != nil {
-			return err
-		}
-		level.Info(am.logger).Log("msg", "alertmanager is ACTIVE in the ring")
+	// Make sure that all the alertmanagers we were initially configured with have
+	// fetched state from the replicas, before advertising as ACTIVE. This will
+	// reduce the possibility that we lose state when new instances join/leave.
+	level.Info(am.logger).Log("msg", "waiting until initial state sync is complete for all users")
+	if err := am.waitInitialStateSync(ctx); err != nil {
+		return errors.Wrap(err, "failed to wait for initial state sync")
 	}
+	level.Info(am.logger).Log("msg", "initial state sync is complete")
+
+	// With the initial sync now completed, we should have loaded all assigned alertmanager configurations to this instance. We can switch it to ACTIVE and start serving requests.
+	if err := am.ringLifecycler.ChangeState(ctx, ring.ACTIVE); err != nil {
+		return errors.Wrapf(err, "switch instance to %s in the ring", ring.ACTIVE)
+	}
+
+	// Wait until the ring client detected this instance in the ACTIVE state.
+	level.Info(am.logger).Log("msg", "waiting until alertmanager is ACTIVE in the ring")
+	if err := ring.WaitInstanceState(ctx, am.ring, am.ringLifecycler.GetInstanceID(), ring.ACTIVE); err != nil {
+		return err
+	}
+	level.Info(am.logger).Log("msg", "alertmanager is ACTIVE in the ring")
 
 	return nil
 }
@@ -634,13 +574,8 @@ func (am *MultitenantAlertmanager) run(ctx context.Context) error {
 	tick := time.NewTicker(am.cfg.PollInterval)
 	defer tick.Stop()
 
-	var ringTickerChan <-chan time.Time
-
-	if am.cfg.ShardingEnabled {
-		ringTicker := time.NewTicker(util.DurationWithJitter(am.cfg.ShardingRing.RingCheckPeriod, 0.2))
-		defer ringTicker.Stop()
-		ringTickerChan = ringTicker.C
-	}
+	ringTicker := time.NewTicker(util.DurationWithJitter(am.cfg.ShardingRing.RingCheckPeriod, 0.2))
+	defer ringTicker.Stop()
 
 	for {
 		select {
@@ -653,7 +588,7 @@ func (am *MultitenantAlertmanager) run(ctx context.Context) error {
 			if err := am.loadAndSyncConfigs(ctx, reasonPeriodic); err != nil {
 				level.Warn(am.logger).Log("msg", "error while synchronizing alertmanager configs", "err", err)
 			}
-		case <-ringTickerChan:
+		case <-ringTicker.C:
 			// We ignore the error because in case of error it will return an empty
 			// replication set which we use to compare with the previous state.
 			currRingState, _ := am.ring.GetAllHealthy(RingOp)
@@ -681,12 +616,9 @@ func (am *MultitenantAlertmanager) loadAndSyncConfigs(ctx context.Context, syncR
 	am.syncConfigs(cfgs)
 	am.deleteUnusedLocalUserState()
 
-	// Currently, remote state persistence is only used when sharding is enabled.
-	if am.cfg.ShardingEnabled {
-		// Note when cleaning up remote state, remember that the user may not necessarily be configured
-		// in this instance. Therefore, pass the list of _all_ configured users to filter by.
-		am.deleteUnusedRemoteUserState(ctx, allUsers)
-	}
+	// Note when cleaning up remote state, remember that the user may not necessarily be configured
+	// in this instance. Therefore, pass the list of _all_ configured users to filter by.
+	am.deleteUnusedRemoteUserState(ctx, allUsers)
 
 	return nil
 }
@@ -715,15 +647,9 @@ func (am *MultitenantAlertmanager) stopping(_ error) error {
 		am.StopAndWait()
 	}
 	am.alertmanagersMtx.Unlock()
-	if am.peer != nil { // Tests don't setup any peer.
-		err := am.peer.Leave(am.cfg.Cluster.PeerTimeout)
-		if err != nil {
-			level.Warn(am.logger).Log("msg", "failed to leave the cluster", "err", err)
-		}
-	}
 
 	if am.subservices != nil {
-		// subservices manages ring and lifecycler, if sharding was enabled.
+		// subservices manages ring and lifecycler.
 		_ = services.StopManagerAndAwaitStopped(context.Background(), am.subservices)
 	}
 	return nil
@@ -761,11 +687,6 @@ func (am *MultitenantAlertmanager) loadAlertmanagerConfigs(ctx context.Context) 
 }
 
 func (am *MultitenantAlertmanager) isUserOwned(userID string) bool {
-	// If sharding is disabled, any alertmanager instance owns all users.
-	if !am.cfg.ShardingEnabled {
-		return true
-	}
-
 	alertmanagers, err := am.ring.Get(shardByUser(userID), SyncRingOp, nil, nil, nil)
 	if err != nil {
 		am.ringCheckErrors.Inc()
@@ -890,22 +811,6 @@ func (am *MultitenantAlertmanager) setConfig(cfg alertspb.AlertConfigDesc) error
 		return fmt.Errorf("no usable Alertmanager configuration for %v", cfg.User)
 	}
 
-	// Transform webhook configs URLs to the per tenant monitor
-	if am.cfg.AutoWebhookRoot != "" {
-		for i, r := range userAmConfig.Receivers {
-			for j, w := range r.WebhookConfigs {
-				if w.URL.String() == autoWebhookURL {
-					u, err := url.Parse(am.cfg.AutoWebhookRoot + "/" + cfg.User + "/monitor")
-					if err != nil {
-						return err
-					}
-
-					userAmConfig.Receivers[i].WebhookConfigs[j].URL = &amconfig.URL{URL: u}
-				}
-			}
-		}
-	}
-
 	// If no Alertmanager instance exists for this user yet, start one.
 	if !hasExisting {
 		level.Debug(am.logger).Log("msg", "initializing new per-tenant alertmanager", "user", cfg.User)
@@ -941,19 +846,18 @@ func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *amco
 	}
 
 	newAM, err := New(&Config{
-		UserID:            userID,
-		TenantDataDir:     tenantDir,
-		Logger:            am.logger,
-		Peer:              am.peer,
-		PeerTimeout:       am.cfg.Cluster.PeerTimeout,
-		Retention:         am.cfg.Retention,
-		ExternalURL:       am.cfg.ExternalURL.URL,
-		ShardingEnabled:   am.cfg.ShardingEnabled,
-		Replicator:        am,
-		ReplicationFactor: am.cfg.ShardingRing.ReplicationFactor,
-		Store:             am.store,
-		PersisterConfig:   am.cfg.Persister,
-		Limits:            am.limits,
+		UserID:                            userID,
+		TenantDataDir:                     tenantDir,
+		Logger:                            am.logger,
+		PeerTimeout:                       am.cfg.PeerTimeout,
+		Retention:                         am.cfg.Retention,
+		MaxConcurrentGetRequestsPerTenant: am.cfg.MaxConcurrentGetRequestsPerTenant,
+		ExternalURL:                       am.cfg.ExternalURL.URL,
+		Replicator:                        am,
+		ReplicationFactor:                 am.cfg.ShardingRing.ReplicationFactor,
+		Store:                             am.store,
+		PersisterConfig:                   am.cfg.Persister,
+		Limits:                            am.limits,
 	}, reg)
 	if err != nil {
 		return nil, fmt.Errorf("unable to start Alertmanager for user %v: %v", userID, err)
@@ -1000,13 +904,7 @@ func (am *MultitenantAlertmanager) ServeHTTP(w http.ResponseWriter, req *http.Re
 		return
 	}
 
-	if am.cfg.ShardingEnabled {
-		am.distributor.DistributeRequest(w, req)
-		return
-	}
-
-	// If sharding (thus distributor) is not enabled then it is served by this instance.
-	am.serveRequest(w, req)
+	am.distributor.DistributeRequest(w, req)
 }
 
 // HandleRequest implements gRPC Alertmanager service, which receives request from AlertManager-Distributor.

@@ -4,15 +4,13 @@
 2. Rebase your PR if it gets out of sync with main
 -->
 
-**What this PR does**:
+#### What this PR does
 
-**Which issue(s) this PR fixes**:
-
-<!-- Please make sure you don't reference cortex issues here, as the references can be publicly seen under certain conditions -->
+#### Which issue(s) this PR fixes or relates to
 
 Fixes #<issue number>
 
-**Checklist**
+#### Checklist
 
 - [ ] Tests updated
 - [ ] Documentation added

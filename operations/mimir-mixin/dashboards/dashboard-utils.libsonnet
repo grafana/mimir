@@ -8,8 +8,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
   // - default tags,
   // - some links that propagate the selectred cluster.
   dashboard(title)::
-    // Prefix the dashboard title with "<product> /".
-    super.dashboard('%(product)s / %(title)s' % { product: $._config.product, title: title }) + {
+    // Prefix the dashboard title with "<product> /" unless configured otherwise.
+    super.dashboard('%(prefix)s%(title)s' % { prefix: $._config.dashboard_prefix, title: title }) + {
       addRowIf(condition, row)::
         if condition
         then self.addRow(row)
@@ -560,6 +560,36 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.namespaceMatcher(),
       containerName,
     ],
+
+  filterKedaMetricByHPA(query, hpa_name)::
+    |||
+      %(query)s +
+      on(metric) group_left
+      label_replace(
+          kube_horizontalpodautoscaler_spec_target_metric{%(namespace)s, horizontalpodautoscaler="%(hpa_name)s"}
+          * 0, "metric", "$1", "metric_name", "(.+)"
+      )
+    ||| % {
+      query: query,
+      hpa_name: hpa_name,
+      namespace: $.namespaceMatcher(),
+    },
+
+  // panelAxisPlacement allows to place a series on the right axis.
+  // This function supports the old Graph panel.
+  panelAxisPlacement(seriesName, placement)::
+    if placement != 'right' then {} else {
+      seriesOverrides+: [
+        {
+          alias: seriesName,
+          yaxis: 2,
+        },
+      ],
+      // Ensure all Y-axis are displayed (default is that right axis is hidden).
+      yaxes: std.map(function(entry) entry {
+        show: true,
+      }, super.yaxes),
+    },
 
   panelDescription(title, description):: {
     description: |||

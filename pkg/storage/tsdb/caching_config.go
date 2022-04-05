@@ -29,11 +29,11 @@ import (
 type ChunksCacheConfig struct {
 	cache.BackendConfig `yaml:",inline"`
 
-	SubrangeSize               int64         `yaml:"subrange_size"`
-	MaxGetRangeRequests        int           `yaml:"max_get_range_requests"`
-	AttributesTTL              time.Duration `yaml:"attributes_ttl"`
-	AttributesInMemoryMaxItems int           `yaml:"attributes_in_memory_max_items"`
-	SubrangeTTL                time.Duration `yaml:"subrange_ttl"`
+	SubrangeSize               int64         `yaml:"subrange_size" category:"advanced"`
+	MaxGetRangeRequests        int           `yaml:"max_get_range_requests" category:"advanced"`
+	AttributesTTL              time.Duration `yaml:"attributes_ttl" category:"advanced"`
+	AttributesInMemoryMaxItems int           `yaml:"attributes_in_memory_max_items" category:"advanced"`
+	SubrangeTTL                time.Duration `yaml:"subrange_ttl" category:"advanced"`
 }
 
 func (cfg *ChunksCacheConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
@@ -55,17 +55,17 @@ func (cfg *ChunksCacheConfig) Validate() error {
 type MetadataCacheConfig struct {
 	cache.BackendConfig `yaml:",inline"`
 
-	TenantsListTTL          time.Duration `yaml:"tenants_list_ttl"`
-	TenantBlocksListTTL     time.Duration `yaml:"tenant_blocks_list_ttl"`
-	ChunksListTTL           time.Duration `yaml:"chunks_list_ttl"`
-	MetafileExistsTTL       time.Duration `yaml:"metafile_exists_ttl"`
-	MetafileDoesntExistTTL  time.Duration `yaml:"metafile_doesnt_exist_ttl"`
-	MetafileContentTTL      time.Duration `yaml:"metafile_content_ttl"`
-	MetafileMaxSize         int           `yaml:"metafile_max_size_bytes"`
-	MetafileAttributesTTL   time.Duration `yaml:"metafile_attributes_ttl"`
-	BlockIndexAttributesTTL time.Duration `yaml:"block_index_attributes_ttl"`
-	BucketIndexContentTTL   time.Duration `yaml:"bucket_index_content_ttl"`
-	BucketIndexMaxSize      int           `yaml:"bucket_index_max_size_bytes"`
+	TenantsListTTL          time.Duration `yaml:"tenants_list_ttl" category:"advanced"`
+	TenantBlocksListTTL     time.Duration `yaml:"tenant_blocks_list_ttl" category:"advanced"`
+	ChunksListTTL           time.Duration `yaml:"chunks_list_ttl" category:"advanced"`
+	MetafileExistsTTL       time.Duration `yaml:"metafile_exists_ttl" category:"advanced"`
+	MetafileDoesntExistTTL  time.Duration `yaml:"metafile_doesnt_exist_ttl" category:"advanced"`
+	MetafileContentTTL      time.Duration `yaml:"metafile_content_ttl" category:"advanced"`
+	MetafileMaxSize         int           `yaml:"metafile_max_size_bytes" category:"advanced"`
+	MetafileAttributesTTL   time.Duration `yaml:"metafile_attributes_ttl" category:"advanced"`
+	BlockIndexAttributesTTL time.Duration `yaml:"block_index_attributes_ttl" category:"advanced"`
+	BucketIndexContentTTL   time.Duration `yaml:"bucket_index_content_ttl" category:"advanced"`
+	BucketIndexMaxSize      int           `yaml:"bucket_index_max_size_bytes" category:"advanced"`
 }
 
 func (cfg *MetadataCacheConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
@@ -76,8 +76,8 @@ func (cfg *MetadataCacheConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix 
 	f.DurationVar(&cfg.TenantsListTTL, prefix+"tenants-list-ttl", 15*time.Minute, "How long to cache list of tenants in the bucket.")
 	f.DurationVar(&cfg.TenantBlocksListTTL, prefix+"tenant-blocks-list-ttl", 5*time.Minute, "How long to cache list of blocks for each tenant.")
 	f.DurationVar(&cfg.ChunksListTTL, prefix+"chunks-list-ttl", 24*time.Hour, "How long to cache list of chunks for a block.")
-	f.DurationVar(&cfg.MetafileExistsTTL, prefix+"metafile-exists-ttl", 2*time.Hour, "How long to cache information that block metafile exists. Also used for user deletion mark file.")
-	f.DurationVar(&cfg.MetafileDoesntExistTTL, prefix+"metafile-doesnt-exist-ttl", 5*time.Minute, "How long to cache information that block metafile doesn't exist. Also used for user deletion mark file.")
+	f.DurationVar(&cfg.MetafileExistsTTL, prefix+"metafile-exists-ttl", 2*time.Hour, "How long to cache information that block metafile exists. Also used for tenant deletion mark file.")
+	f.DurationVar(&cfg.MetafileDoesntExistTTL, prefix+"metafile-doesnt-exist-ttl", 5*time.Minute, "How long to cache information that block metafile doesn't exist. Also used for tenant deletion mark file.")
 	f.DurationVar(&cfg.MetafileContentTTL, prefix+"metafile-content-ttl", 24*time.Hour, "How long to cache content of the metafile.")
 	f.IntVar(&cfg.MetafileMaxSize, prefix+"metafile-max-size-bytes", 1*1024*1024, "Maximum size of metafile content to cache in bytes. Caching will be skipped if the content exceeds this size. This is useful to avoid network round trip for large content if the configured caching backend has an hard limit on cached items size (in this case, you should set this limit to the same limit in the caching backend).")
 	f.DurationVar(&cfg.MetafileAttributesTTL, prefix+"metafile-attributes-ttl", 168*time.Hour, "How long to cache attributes of the block metafile.")

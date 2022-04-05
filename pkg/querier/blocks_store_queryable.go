@@ -36,6 +36,8 @@ import (
 	"golang.org/x/sync/errgroup"
 	grpc_metadata "google.golang.org/grpc/metadata"
 
+	"github.com/grafana/dskit/tenant"
+
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/bucket"
@@ -45,7 +47,6 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
-	"github.com/grafana/mimir/pkg/tenant"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	util_log "github.com/grafana/mimir/pkg/util/log"
@@ -62,7 +63,6 @@ const (
 )
 
 var (
-	errNoStoreGatewayAddress  = errors.New("no store-gateway address configured")
 	errMaxChunksPerQueryLimit = "the query hit the max number of chunks limit while fetching chunks from store-gateways for %s (limit: %d)"
 )
 
@@ -230,33 +230,25 @@ func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegatewa
 		}, bucketClient, limits, logger, reg)
 	}
 
-	if gatewayCfg.ShardingEnabled {
-		storesRingCfg := gatewayCfg.ShardingRing.ToRingConfig()
-		storesRingBackend, err := kv.NewClient(
-			storesRingCfg.KVStore,
-			ring.GetCodec(),
-			kv.RegistererWithKVName(prometheus.WrapRegistererWithPrefix("cortex_", reg), "querier-store-gateway"),
-			logger,
-		)
-		if err != nil {
-			return nil, errors.Wrap(err, "failed to create store-gateway ring backend")
-		}
+	storesRingCfg := gatewayCfg.ShardingRing.ToRingConfig()
+	storesRingBackend, err := kv.NewClient(
+		storesRingCfg.KVStore,
+		ring.GetCodec(),
+		kv.RegistererWithKVName(prometheus.WrapRegistererWithPrefix("cortex_", reg), "querier-store-gateway"),
+		logger,
+	)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to create store-gateway ring backend")
+	}
 
-		storesRing, err := ring.NewWithStoreClientAndStrategy(storesRingCfg, storegateway.RingNameForClient, storegateway.RingKey, storesRingBackend, ring.NewIgnoreUnhealthyInstancesReplicationStrategy(), prometheus.WrapRegistererWithPrefix("cortex_", reg), logger)
-		if err != nil {
-			return nil, errors.Wrap(err, "failed to create store-gateway ring client")
-		}
+	storesRing, err := ring.NewWithStoreClientAndStrategy(storesRingCfg, storegateway.RingNameForClient, storegateway.RingKey, storesRingBackend, ring.NewIgnoreUnhealthyInstancesReplicationStrategy(), prometheus.WrapRegistererWithPrefix("cortex_", reg), logger)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to create store-gateway ring client")
+	}
 
-		stores, err = newBlocksStoreReplicationSet(storesRing, randomLoadBalancing, limits, querierCfg.StoreGatewayClient, logger, reg)
-		if err != nil {
-			return nil, errors.Wrap(err, "failed to create store set")
-		}
-	} else {
-		if len(querierCfg.GetStoreGatewayAddresses()) == 0 {
-			return nil, errNoStoreGatewayAddress
-		}
-
-		stores = newBlocksStoreBalancedSet(querierCfg.GetStoreGatewayAddresses(), querierCfg.StoreGatewayClient, logger, reg)
+	stores, err = newBlocksStoreReplicationSet(storesRing, randomLoadBalancing, limits, querierCfg.StoreGatewayClient, logger, reg)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to create store set")
 	}
 
 	consistency := NewBlocksConsistencyChecker(
@@ -730,7 +722,8 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(
 
 			stream, err := c.Series(gCtx, req)
 			if err != nil {
-				return errors.Wrapf(err, "failed to fetch series from %s", c.RemoteAddress())
+				level.Warn(spanLog).Log("msg", "failed to fetch series", "remote", c.RemoteAddress(), "err", err)
+				return nil
 			}
 
 			mySeries := []*storepb.Series(nil)
@@ -749,7 +742,8 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(
 					break
 				}
 				if err != nil {
-					return errors.Wrapf(err, "failed to receive series from %s", c.RemoteAddress())
+					level.Warn(spanLog).Log("msg", "failed to receive series", "remote", c.RemoteAddress(), "err", err)
+					return nil
 				}
 
 				// Response may either contain series, warning or hints.
@@ -863,7 +857,8 @@ func (q *blocksStoreQuerier) fetchLabelNamesFromStore(
 
 			namesResp, err := c.LabelNames(gCtx, req)
 			if err != nil {
-				return errors.Wrapf(err, "failed to fetch series from %s", c.RemoteAddress())
+				level.Warn(spanLog).Log("msg", "failed to fetch label names", "remote", c.RemoteAddress(), "err", err)
+				return nil
 			}
 
 			myQueriedBlocks := []ulid.ULID(nil)
@@ -940,7 +935,8 @@ func (q *blocksStoreQuerier) fetchLabelValuesFromStore(
 
 			valuesResp, err := c.LabelValues(gCtx, req)
 			if err != nil {
-				return errors.Wrapf(err, "failed to fetch series from %s", c.RemoteAddress())
+				level.Warn(spanLog).Log("msg", "failed to fetch label values", "remote", c.RemoteAddress(), "err", err)
+				return nil
 			}
 
 			myQueriedBlocks := []ulid.ULID(nil)

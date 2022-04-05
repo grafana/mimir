@@ -8,8 +8,6 @@ package querier
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
-	"os"
 	"strconv"
 	"testing"
 	"time"
@@ -153,6 +151,7 @@ func TestQuerier_QueryableReturnsChunksOutsideQueriedRange(t *testing.T) {
 
 	var cfg Config
 	flagext.DefaultValues(&cfg)
+	cfg.QueryIngestersWithin = 0 // Always query ingesters in this test.
 
 	// Mock distributor to return chunks containing samples outside the queried range.
 	distributor := &mockDistributor{}
@@ -230,12 +229,7 @@ func TestQuerier_QueryableReturnsChunksOutsideQueriedRange(t *testing.T) {
 }
 
 func mockTSDB(t *testing.T, mint model.Time, samples int, step, chunkOffset time.Duration, samplesPerChunk int) (storage.Queryable, model.Time) {
-	dir, err := ioutil.TempDir("", "tsdb")
-	require.NoError(t, err)
-
-	t.Cleanup(func() {
-		_ = os.RemoveAll(dir)
-	})
+	dir := t.TempDir()
 
 	opts := tsdb.DefaultHeadOptions()
 	opts.ChunkDirRoot = dir
@@ -321,9 +315,7 @@ func TestQuerier_QueryIngestersWithinConfig(t *testing.T) {
 		},
 	}
 
-	dir, err := ioutil.TempDir("", t.Name())
-	assert.NoError(t, err)
-	defer os.RemoveAll(dir)
+	dir := t.TempDir()
 	queryTracker := promql.NewActiveQueryTracker(dir, 10, log.NewNopLogger())
 
 	engine := promql.NewEngine(promql.EngineOpts{
@@ -610,7 +602,7 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 
 			var cfg Config
 			flagext.DefaultValues(&cfg)
-			cfg.QueryLabelNamesWithMatchers = true
+			cfg.QueryIngestersWithin = 0 // Always query ingesters in this test.
 
 			limits := defaultLimitsConfig()
 			limits.MaxQueryLookback = testData.maxQueryLookback
@@ -739,8 +731,7 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 // because the implementation of those makes it really hard to do in Querier.
 func TestQuerier_MaxLabelsQueryRange(t *testing.T) {
 	const (
-		engineLookbackDelta = 5 * time.Minute
-		thirtyDays          = 30 * 24 * time.Hour
+		thirtyDays = 30 * 24 * time.Hour
 	)
 
 	now := time.Now()
@@ -767,7 +758,7 @@ func TestQuerier_MaxLabelsQueryRange(t *testing.T) {
 
 			var cfg Config
 			flagext.DefaultValues(&cfg)
-			cfg.QueryLabelNamesWithMatchers = true
+			cfg.QueryIngestersWithin = 0 // Always query ingesters in this test.
 
 			limits := defaultLimitsConfig()
 			limits.MaxQueryLookback = model.Duration(thirtyDays * 2)
@@ -810,9 +801,7 @@ func TestQuerier_MaxLabelsQueryRange(t *testing.T) {
 }
 
 func testRangeQuery(t testing.TB, queryable storage.Queryable, end model.Time, q query) *promql.Result {
-	dir, err := ioutil.TempDir("", "test_query")
-	assert.NoError(t, err)
-	defer os.RemoveAll(dir)
+	dir := t.TempDir()
 	queryTracker := promql.NewActiveQueryTracker(dir, 10, log.NewNopLogger())
 
 	from, through, step := time.Unix(0, 0), end.Time(), q.step
@@ -955,9 +944,7 @@ func TestQuerier_QueryStoreAfterConfig(t *testing.T) {
 		},
 	}
 
-	dir, err := ioutil.TempDir("", t.Name())
-	assert.NoError(t, err)
-	defer os.RemoveAll(dir)
+	dir := t.TempDir()
 	queryTracker := promql.NewActiveQueryTracker(dir, 10, log.NewNopLogger())
 
 	engine := promql.NewEngine(promql.EngineOpts{

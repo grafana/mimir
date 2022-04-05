@@ -1,0 +1,2 @@
+-server.http-listen-port=80
+-auth.type=trust

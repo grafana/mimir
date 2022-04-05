@@ -125,7 +125,7 @@ func TestSyncer_GarbageCollect_e2e(t *testing.T) {
 		duplicateBlocksFilter := NewShardAwareDeduplicateFilter()
 		metaFetcher, err := block.NewMetaFetcher(nil, 32, objstore.WithNoopInstr(bkt), "", nil, []block.MetadataFilter{
 			duplicateBlocksFilter,
-		}, nil)
+		})
 		require.NoError(t, err)
 
 		blocksMarkedForDeletion := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
@@ -236,7 +236,7 @@ func TestGroupCompactE2E(t *testing.T) {
 			ignoreDeletionMarkFilter,
 			duplicateBlocksFilter,
 			noCompactMarkerFilter,
-		}, nil)
+		})
 		require.NoError(t, err)
 
 		blocksMarkedForDeletion := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
@@ -447,9 +447,7 @@ type blockgenSpec struct {
 }
 
 func createAndUpload(t testing.TB, bkt objstore.Bucket, blocks []blockgenSpec, blocksWithOutOfOrderChunks []blockgenSpec) (metas []*metadata.Meta) {
-	prepareDir, err := ioutil.TempDir("", "test-compact-prepare")
-	require.NoError(t, err)
-	defer func() { require.NoError(t, os.RemoveAll(prepareDir)) }()
+	prepareDir := t.TempDir()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
@@ -536,7 +534,7 @@ func TestGarbageCollectDoesntCreateEmptyBlocksWithDeletionMarksOnly(t *testing.T
 		metaFetcher, err := block.NewMetaFetcher(nil, 32, objstore.WithNoopInstr(bkt), "", nil, []block.MetadataFilter{
 			ignoreDeletionMarkFilter,
 			duplicateBlocksFilter,
-		}, nil)
+		})
 		require.NoError(t, err)
 
 		sy, err := NewMetaSyncer(nil, nil, bkt, metaFetcher, duplicateBlocksFilter, ignoreDeletionMarkFilter, blocksMarkedForDeletion, garbageCollectedBlocks)
@@ -606,9 +604,7 @@ func foreachStore(t *testing.T, testFn func(t *testing.T, bkt objstore.Bucket)) 
 	t.Run("filesystem", func(t *testing.T) {
 		t.Parallel()
 
-		dir, err := ioutil.TempDir("", "filesystem-foreach-store-test")
-		require.NoError(t, err)
-		defer require.NoError(t, os.RemoveAll(dir))
+		dir := t.TempDir()
 
 		b, err := filesystem.NewBucket(dir)
 		require.NoError(t, err)

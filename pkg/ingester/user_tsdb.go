@@ -19,6 +19,7 @@ import (
 	"github.com/thanos-io/thanos/pkg/shipper"
 	"go.uber.org/atomic"
 
+	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"github.com/grafana/mimir/pkg/util/extract"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 )
@@ -57,7 +58,7 @@ func (r tsdbCloseCheckResult) shouldClose() bool {
 type userTSDB struct {
 	db             *tsdb.DB
 	userID         string
-	activeSeries   *ActiveSeries
+	activeSeries   *activeseries.ActiveSeries
 	seriesInMetric *metricCounter
 	limiter        *Limiter
 

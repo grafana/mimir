@@ -17,9 +17,9 @@ type Config struct {
 	StorageAccountKey  flagext.Secret `yaml:"account_key"`
 	ContainerName      string         `yaml:"container_name"`
 	Endpoint           string         `yaml:"endpoint_suffix"`
-	MaxRetries         int            `yaml:"max_retries"`
-	MSIResource        string         `yaml:"msi_resource"`
-	UserAssignedID     string         `yaml:"user_assigned_id"`
+	MaxRetries         int            `yaml:"max_retries" category:"advanced"`
+	MSIResource        string         `yaml:"msi_resource" category:"advanced"`
+	UserAssignedID     string         `yaml:"user_assigned_id" category:"advanced"`
 }
 
 // RegisterFlags registers the flags for Azure storage

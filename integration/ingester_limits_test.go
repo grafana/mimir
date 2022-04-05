@@ -50,11 +50,11 @@ func TestIngesterGlobalLimits(t *testing.T) {
 			defer s.Close()
 
 			flags := BlocksStorageFlags()
-			flags["-distributor.replication-factor"] = "1"
+			flags["-ingester.ring.replication-factor"] = "1"
 			flags["-distributor.ingestion-tenant-shard-size"] = strconv.Itoa(testData.tenantShardSize)
 			flags["-ingester.max-global-series-per-user"] = strconv.Itoa(testData.maxGlobalSeriesPerTenant)
 			flags["-ingester.max-global-series-per-metric"] = strconv.Itoa(testData.maxGlobalSeriesPerMetric)
-			flags["-ingester.heartbeat-period"] = "1s"
+			flags["-ingester.ring.heartbeat-period"] = "1s"
 
 			// Start dependencies.
 			consul := e2edb.NewConsul()
@@ -62,10 +62,10 @@ func TestIngesterGlobalLimits(t *testing.T) {
 			require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 			// Start Mimir components.
-			distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags, "")
-			ingester1 := e2emimir.NewIngester("ingester-1", consul.NetworkHTTPEndpoint(), flags, "")
-			ingester2 := e2emimir.NewIngester("ingester-2", consul.NetworkHTTPEndpoint(), flags, "")
-			ingester3 := e2emimir.NewIngester("ingester-3", consul.NetworkHTTPEndpoint(), flags, "")
+			distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags)
+			ingester1 := e2emimir.NewIngester("ingester-1", consul.NetworkHTTPEndpoint(), flags)
+			ingester2 := e2emimir.NewIngester("ingester-2", consul.NetworkHTTPEndpoint(), flags)
+			ingester3 := e2emimir.NewIngester("ingester-3", consul.NetworkHTTPEndpoint(), flags)
 			require.NoError(t, s.StartAndWaitReady(distributor, ingester1, ingester2, ingester3))
 
 			// Wait until distributor has updated the ring.
@@ -139,7 +139,7 @@ func TestIngesterDynamicLimits(t *testing.T) {
 		overridesFile     = "overrides.yaml"
 		overridesTemplate = `
 overrides:
-  fake:
+  anonymous:
     max_global_series_per_user:    {{.MaxGlobalSeriesPerTenant}}
     max_global_series_per_metric:  {{.MaxGlobalSeriesPerMetric}}
     max_global_exemplars_per_user: {{.MaxGlobalExemplarsPerUser}}
@@ -171,16 +171,17 @@ overrides:
 			require.NoError(t, writeFileToSharedDir(s, overridesFile, []byte{}))
 
 			// Start Cortex in single binary mode, reading the config from file.
-			require.NoError(t, copyFileToSharedDir(s, "docs/sources/configuration/single-process-config-blocks.yaml", mimirConfigFile))
+			require.NoError(t, copyFileToSharedDir(s, "docs/configurations/single-process-config-blocks.yaml", mimirConfigFile))
 
 			flags := map[string]string{
-				"-runtime-config.reload-period":  "100ms",
-				"-blocks-storage.backend":        "filesystem",
-				"-blocks-storage.filesystem.dir": "/tmp",
-				"-ruler-storage.local.directory": "/tmp", // Avoid warning "unable to list rules".
-				"-runtime-config.file":           filepath.Join(e2e.ContainerSharedDir, overridesFile),
+				"-runtime-config.reload-period":                     "100ms",
+				"-blocks-storage.backend":                           "filesystem",
+				"-blocks-storage.filesystem.dir":                    "/tmp",
+				"-blocks-storage.bucket-store.bucket-index.enabled": "false",
+				"-ruler-storage.local.directory":                    "/tmp", // Avoid warning "unable to list rules".
+				"-runtime-config.file":                              filepath.Join(e2e.ContainerSharedDir, overridesFile),
 			}
-			cortex1 := e2emimir.NewSingleBinaryWithConfigFile("cortex-1", mimirConfigFile, flags, "", 9009, 9095)
+			cortex1 := e2emimir.NewSingleBinary("cortex-1", flags, e2emimir.WithConfigFile(mimirConfigFile), e2emimir.WithPorts(9009, 9095))
 			require.NoError(t, s.StartAndWaitReady(cortex1))
 
 			// Populate the overrides we want, then wait long enough for it to be read.

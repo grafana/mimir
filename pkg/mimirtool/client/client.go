@@ -105,7 +105,7 @@ func (r *CortexClient) Query(ctx context.Context, query string) (*http.Response,
 	query = fmt.Sprintf("query=%s&time=%d", query, time.Now().Unix())
 	escapedQuery := url.PathEscape(query)
 
-	res, err := r.doRequest("/api/prom/api/v1/query?"+escapedQuery, "GET", nil)
+	res, err := r.doRequest("/prometheus/api/v1/query?"+escapedQuery, "GET", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -130,7 +130,7 @@ func (r *CortexClient) doRequest(path, method string, payload []byte) (*http.Res
 	log.WithFields(log.Fields{
 		"url":    req.URL.String(),
 		"method": req.Method,
-	}).Debugln("sending request to cortex api")
+	}).Debugln("sending request to Grafana Mimir API")
 
 	resp, err := r.Client.Do(req)
 	if err != nil {
@@ -138,7 +138,7 @@ func (r *CortexClient) doRequest(path, method string, payload []byte) (*http.Res
 			"url":    req.URL.String(),
 			"method": req.Method,
 			"error":  err.Error(),
-		}).Errorln("error during request to cortex api")
+		}).Errorln("error during request to Grafana Mimir API")
 		return nil, err
 	}
 

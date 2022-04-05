@@ -20,8 +20,9 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/promql"
 
+	"github.com/grafana/dskit/tenant"
+
 	"github.com/grafana/mimir/pkg/cache"
-	"github.com/grafana/mimir/pkg/tenant"
 	"github.com/grafana/mimir/pkg/util"
 )
 
@@ -33,23 +34,23 @@ const (
 
 // Config for query_range middleware chain.
 type Config struct {
-	SplitQueriesByInterval time.Duration `yaml:"split_queries_by_interval"`
+	SplitQueriesByInterval time.Duration `yaml:"split_queries_by_interval" category:"advanced"`
 	AlignQueriesWithStep   bool          `yaml:"align_queries_with_step"`
 	ResultsCacheConfig     `yaml:"results_cache"`
 	CacheResults           bool `yaml:"cache_results"`
-	MaxRetries             int  `yaml:"max_retries"`
+	MaxRetries             int  `yaml:"max_retries" category:"advanced"`
 	ShardedQueries         bool `yaml:"parallelize_shardable_queries"`
-	CacheUnalignedRequests bool `yaml:"cache_unaligned_requests"`
+	CacheUnalignedRequests bool `yaml:"cache_unaligned_requests" category:"advanced"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet.
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
-	f.IntVar(&cfg.MaxRetries, "frontend.max-retries-per-request", 5, "Maximum number of retries for a single request; beyond this, the downstream error is returned.")
-	f.DurationVar(&cfg.SplitQueriesByInterval, "frontend.split-queries-by-interval", 0, "Split queries by an interval and execute in parallel, 0 disables it. You should use an a multiple of 24 hours (same as the storage bucketing scheme), to avoid queriers downloading and processing the same chunks. This also determines how cache keys are chosen when result caching is enabled.")
-	f.BoolVar(&cfg.AlignQueriesWithStep, "frontend.align-querier-with-step", false, "Mutate incoming queries to align their start and end with their step.")
-	f.BoolVar(&cfg.CacheResults, "frontend.cache-results", false, "Cache query results.")
-	f.BoolVar(&cfg.ShardedQueries, "frontend.parallelize-shardable-queries", false, "True to enable query sharding.")
-	f.BoolVar(&cfg.CacheUnalignedRequests, "frontend.cache-unaligned-requests", false, "Cache requests that are not step-aligned.")
+	f.IntVar(&cfg.MaxRetries, "query-frontend.max-retries-per-request", 5, "Maximum number of retries for a single request; beyond this, the downstream error is returned.")
+	f.DurationVar(&cfg.SplitQueriesByInterval, "query-frontend.split-queries-by-interval", 24*time.Hour, "Split queries by an interval and execute in parallel. You should use a multiple of 24 hours to optimize querying blocks. 0 to disable it.")
+	f.BoolVar(&cfg.AlignQueriesWithStep, "query-frontend.align-querier-with-step", false, "Mutate incoming queries to align their start and end with their step.")
+	f.BoolVar(&cfg.CacheResults, "query-frontend.cache-results", false, "Cache query results.")
+	f.BoolVar(&cfg.ShardedQueries, "query-frontend.parallelize-shardable-queries", false, "True to enable query sharding.")
+	f.BoolVar(&cfg.CacheUnalignedRequests, "query-frontend.cache-unaligned-requests", false, "Cache requests that are not step-aligned.")
 	cfg.ResultsCacheConfig.RegisterFlags(f)
 }
 
@@ -57,7 +58,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 func (cfg *Config) Validate() error {
 	if cfg.CacheResults {
 		if cfg.SplitQueriesByInterval <= 0 {
-			return errors.New("frontend.cache-results may only be enabled in conjunction with frontend.split-queries-by-interval. Please set the latter")
+			return errors.New("-query-frontend.cache-results may only be enabled in conjunction with -query-frontend.split-queries-by-interval. Please set the latter")
 		}
 		if err := cfg.ResultsCacheConfig.Validate(); err != nil {
 			return errors.Wrap(err, "invalid ResultsCache config")

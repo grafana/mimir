@@ -16,7 +16,6 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/value"
-	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 
@@ -75,10 +74,7 @@ type shardedQuerier struct {
 
 // Select implements storage.Querier.
 // The sorted bool is ignored because the series is always sorted.
-func (q *shardedQuerier) Select(_ bool, hints *storage.SelectHints, matchers ...*labels.Matcher) (ss storage.SeriesSet) {
-	// Whatever we return, decorate it with the error wrapper, to track the errors coming from here.
-	defer func() { ss = errorWrapperSeriesSet{ss} }()
-
+func (q *shardedQuerier) Select(_ bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
 	var embeddedQuery string
 	var isEmbedded bool
 	for _, matcher := range matchers {
@@ -138,12 +134,12 @@ func (q *shardedQuerier) handleEmbeddedQueries(queries []string, hints *storage.
 
 // LabelValues implements storage.LabelQuerier.
 func (q *shardedQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
-	return nil, nil, promql.ErrStorage{Err: errNotImplemented}
+	return nil, nil, errNotImplemented
 }
 
 // LabelNames implements storage.LabelQuerier.
 func (q *shardedQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
-	return nil, nil, promql.ErrStorage{Err: errNotImplemented}
+	return nil, nil, errNotImplemented
 }
 
 // Close implements storage.LabelQuerier.
@@ -283,14 +279,4 @@ func responseToSamples(resp Response) ([]SampleStream, error) {
 		parser.ValueTypeVector,
 		parser.ValueTypeMatrix,
 	)
-}
-
-// errorWrapperSeriesSet wraps the Err() call results with promql.ErrStorage when the returned error is not nil.
-type errorWrapperSeriesSet struct{ storage.SeriesSet }
-
-func (ss errorWrapperSeriesSet) Err() error {
-	if err := ss.SeriesSet.Err(); err != nil {
-		return promql.ErrStorage{Err: err}
-	}
-	return nil
 }

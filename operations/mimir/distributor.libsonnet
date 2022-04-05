@@ -4,8 +4,7 @@
 
   distributor_args::
     $._config.grpcConfig +
-    $._config.ringConfig +
-    $._config.distributorConfig +
+    $._config.ingesterRingClientConfig +
     $._config.distributorLimitsConfig +
     {
       target: 'distributor',
@@ -29,6 +28,7 @@
       'server.grpc.keepalive.max-connection-idle': '1m',
 
       // The ingestion rate global limit requires the distributors to form a ring.
+      'distributor.ring.store': 'consul',
       'distributor.ring.consul.hostname': 'consul.%s.svc.cluster.local:8500' % $._config.namespace,
       'distributor.ring.prefix': '',
 
@@ -50,20 +50,17 @@
 
   local deployment = $.apps.v1.deployment,
 
-  distributor_deployment_labels:: {},
-
   distributor_deployment:
-    deployment.new('distributor', 3, [$.distributor_container], $.distributor_deployment_labels) +
+    deployment.new('distributor', 3, [$.distributor_container]) +
     (if $._config.distributor_allow_multiple_replicas_on_same_node then {} else $.util.antiAffinity) +
     $.util.configVolumeMount($._config.overrides_configmap, $._config.overrides_configmap_mountpoint) +
+    (if !std.isObject($._config.node_selector) then {} else deployment.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector)) +
     deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge(5) +
     deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(1),
 
   local service = $.core.v1.service,
 
-  distributor_service_ignored_labels:: [],
-
   distributor_service:
-    $.util.serviceFor($.distributor_deployment, $.distributor_service_ignored_labels) +
+    $.util.serviceFor($.distributor_deployment, $._config.service_ignored_labels) +
     service.mixin.spec.withClusterIp('None'),
 }

@@ -1,4 +1,4 @@
-auth_enabled: false
+multitenancy_enabled: false
 
 distributor:
   pool:
@@ -12,18 +12,16 @@ ingester_client:
     grpc_compression: gzip
 
 ingester:
-  lifecycler:
+  ring:
     # We want to start immediately.
     join_after: 0
     final_sleep: 0s
     num_tokens: 512
-
-    ring:
-      kvstore:
-        store: consul
-        consul:
-          host: consul:8500
-      replication_factor: 1
+    kvstore:
+      store: consul
+      consul:
+        host: consul:8500
+    replication_factor: 1
 
 # These memberlist options will be only used if memberlist is activated via CLI option.
 memberlist:
@@ -33,9 +31,6 @@ memberlist:
 
 querier:
   query_ingesters_within: 3h
-
-  # Used when the blocks sharding is disabled.
-  store_gateway_addresses: store-gateway-1:9008,store-gateway-2:9009
 
 blocks_storage:
   backend: s3
@@ -74,7 +69,6 @@ blocks_storage:
     insecure:          true
 
 ruler:
-  enable_api: true
   ring:
     heartbeat_period:   5s
     heartbeat_timeout:  15s
@@ -84,7 +78,6 @@ ruler:
         host: consul:8500
 
   alertmanager_url: http://alertmanager-1:8031/alertmanager,http://alertmanager-2:8032/alertmanager,http://alertmanager-3:8033/alertmanager
-  enable_alertmanager_v2: false
 
 ruler_storage:
   backend: s3
@@ -96,8 +89,6 @@ ruler_storage:
     insecure:          true
 
 alertmanager:
-  enable_api: true
-  sharding_enabled: true
   sharding_ring:
     replication_factor: 3
     heartbeat_period: 5s
@@ -129,7 +120,6 @@ compactor:
         host: consul:8500
 
 store_gateway:
-  sharding_enabled: true
   sharding_ring:
     replication_factor: 1
     heartbeat_period:   5s
@@ -142,15 +132,6 @@ store_gateway:
 
 frontend:
   query_stats_enabled: true
-
-frontend_worker:
-  frontend_address: "query-frontend:9007"
-
-  # By setting scheduler_address, querier worker would use scheduler instead of frontend.
-  # scheduler_address: "query-scheduler:9012"
-
-query_range:
-  split_queries_by_interval: 24h
   parallelize_shardable_queries: true
   align_queries_with_step: true
   cache_results: true
@@ -163,7 +144,6 @@ query_range:
 
 frontend_worker:
   frontend_address: "query-frontend:9007"
-  match_max_concurrent: true
 
   # By setting scheduler_address, querier worker would use scheduler instead of frontend.
   # scheduler_address: "query-scheduler:9012"

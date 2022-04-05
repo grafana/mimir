@@ -10,35 +10,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"text/template"
 
-	"github.com/grafana/dskit/kv/consul"
-	"github.com/grafana/dskit/kv/etcd"
-	"github.com/grafana/dskit/kv/memberlist"
-	"github.com/weaveworks/common/server"
-
-	"github.com/grafana/mimir/pkg/alertmanager"
-	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
-	"github.com/grafana/mimir/pkg/cache"
-	"github.com/grafana/mimir/pkg/compactor"
-	"github.com/grafana/mimir/pkg/distributor"
-	"github.com/grafana/mimir/pkg/flusher"
-	"github.com/grafana/mimir/pkg/frontend"
-	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
-	"github.com/grafana/mimir/pkg/ingester"
-	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimir"
-	"github.com/grafana/mimir/pkg/querier"
-	querier_worker "github.com/grafana/mimir/pkg/querier/worker"
-	"github.com/grafana/mimir/pkg/ruler"
-	"github.com/grafana/mimir/pkg/ruler/rulestore"
-	"github.com/grafana/mimir/pkg/storage/bucket/s3"
-	"github.com/grafana/mimir/pkg/storage/tsdb"
-	"github.com/grafana/mimir/pkg/storegateway"
 	util_log "github.com/grafana/mimir/pkg/util/log"
-	"github.com/grafana/mimir/pkg/util/validation"
+	"github.com/grafana/mimir/tools/doc-generator/parse"
 )
 
 const (
@@ -46,144 +23,27 @@ const (
 	tabWidth     = 2
 )
 
-var (
-	// Ordered list of root blocks. The order is the same order that will
-	// follow the markdown generation.
-	rootBlocks = []rootBlock{
-		{
-			name:       "server_config",
-			structType: reflect.TypeOf(server.Config{}),
-			desc:       "The server_config configures the HTTP and gRPC server of the launched service(s).",
-		},
-		{
-			name:       "distributor_config",
-			structType: reflect.TypeOf(distributor.Config{}),
-			desc:       "The distributor_config configures the distributor.",
-		},
-		{
-			name:       "ingester_config",
-			structType: reflect.TypeOf(ingester.Config{}),
-			desc:       "The ingester_config configures the ingester.",
-		},
-		{
-			name:       "querier_config",
-			structType: reflect.TypeOf(querier.Config{}),
-			desc:       "The querier_config configures the querier.",
-		},
-		{
-			name:       "query_frontend_config",
-			structType: reflect.TypeOf(frontend.CombinedFrontendConfig{}),
-			desc:       "The query_frontend_config configures the query-frontend.",
-		},
-		{
-			name:       "query_range_config",
-			structType: reflect.TypeOf(querymiddleware.Config{}),
-			desc:       "The query_range_config configures the query splitting and caching in the query-frontend.",
-		},
-		{
-			name:       "ruler_config",
-			structType: reflect.TypeOf(ruler.Config{}),
-			desc:       "The ruler_config configures the ruler.",
-		},
-		{
-			name:       "ruler_storage_config",
-			structType: reflect.TypeOf(rulestore.Config{}),
-			desc:       "The ruler_storage_config configures the ruler storage backend.",
-		},
-		{
-			name:       "alertmanager_config",
-			structType: reflect.TypeOf(alertmanager.MultitenantAlertmanagerConfig{}),
-			desc:       "The alertmanager_config configures the alertmanager.",
-		},
-		{
-			name:       "alertmanager_storage_config",
-			structType: reflect.TypeOf(alertstore.Config{}),
-			desc:       "The alertmanager_storage_config configures the alertmanager storage backend.",
-		},
-		{
-			name:       "flusher_config",
-			structType: reflect.TypeOf(flusher.Config{}),
-			desc:       "The flusher_config configures the WAL flusher target, used to manually run one-time flushes when scaling down ingesters.",
-		},
-		{
-			name:       "ingester_client_config",
-			structType: reflect.TypeOf(client.Config{}),
-			desc:       "The ingester_client_config configures how the distributors connect to the ingesters.",
-		},
-		{
-			name:       "frontend_worker_config",
-			structType: reflect.TypeOf(querier_worker.Config{}),
-			desc:       "The frontend_worker_config configures the worker - running within the querier - picking up and executing queries enqueued by the query-frontend or query-scheduler.",
-		},
-		{
-			name:       "etcd_config",
-			structType: reflect.TypeOf(etcd.Config{}),
-			desc:       "The etcd_config configures the etcd client.",
-		},
-		{
-			name:       "consul_config",
-			structType: reflect.TypeOf(consul.Config{}),
-			desc:       "The consul_config configures the consul client.",
-		},
-		{
-			name:       "memberlist_config",
-			structType: reflect.TypeOf(memberlist.KVConfig{}),
-			desc:       "The memberlist_config configures the Gossip memberlist.",
-		},
-		{
-			name:       "limits_config",
-			structType: reflect.TypeOf(validation.Limits{}),
-			desc:       "The limits_config configures default and per-tenant limits imposed by services (ie. distributor, ingester, ...).",
-		},
-		{
-			name:       "blocks_storage_config",
-			structType: reflect.TypeOf(tsdb.BlocksStorageConfig{}),
-			desc:       "The blocks_storage_config configures the blocks storage.",
-		},
-		{
-			name:       "compactor_config",
-			structType: reflect.TypeOf(compactor.Config{}),
-			desc:       "The compactor_config configures the compactor service.",
-		},
-		{
-			name:       "store_gateway_config",
-			structType: reflect.TypeOf(storegateway.Config{}),
-			desc:       "The store_gateway_config configures the store-gateway service.",
-		},
-		{
-			name:       "s3_sse_config",
-			structType: reflect.TypeOf(s3.SSEConfig{}),
-			desc:       "The s3_sse_config configures the S3 server-side encryption.",
-		},
-		{
-			name:       "memcached_config",
-			structType: reflect.TypeOf(cache.MemcachedConfig{}),
-			desc:       "The memcached_config configures the Memcached-based caching backend.",
-		},
-	}
-)
-
-func removeFlagPrefix(block *configBlock, prefix string) {
-	for _, entry := range block.entries {
-		switch entry.kind {
-		case "block":
+func removeFlagPrefix(block *parse.ConfigBlock, prefix string) {
+	for _, entry := range block.Entries {
+		switch entry.Kind {
+		case parse.KindBlock:
 			// Skip root blocks
-			if !entry.root {
-				removeFlagPrefix(entry.block, prefix)
+			if !entry.Root {
+				removeFlagPrefix(entry.Block, prefix)
 			}
-		case "field":
-			if strings.HasPrefix(entry.fieldFlag, prefix) {
-				entry.fieldFlag = "<prefix>" + entry.fieldFlag[len(prefix):]
+		case parse.KindField:
+			if strings.HasPrefix(entry.FieldFlag, prefix) {
+				entry.FieldFlag = "<prefix>" + entry.FieldFlag[len(prefix):]
 			}
 		}
 	}
 }
 
-func annotateFlagPrefix(blocks []*configBlock) {
+func annotateFlagPrefix(blocks []*parse.ConfigBlock) {
 	// Find duplicated blocks
-	groups := map[string][]*configBlock{}
+	groups := map[string][]*parse.ConfigBlock{}
 	for _, block := range blocks {
-		groups[block.name] = append(groups[block.name], block)
+		groups[block.Name] = append(groups[block.Name], block)
 	}
 
 	// For each duplicated block, we need to fix the CLI flags, because
@@ -200,46 +60,46 @@ func annotateFlagPrefix(blocks []*configBlock) {
 		// different prefix across all of them.
 		flags := []string{}
 		for _, block := range group {
-			for _, entry := range block.entries {
-				if entry.kind == "field" {
-					flags = append(flags, entry.fieldFlag)
+			for _, entry := range block.Entries {
+				if entry.Kind == parse.KindField {
+					flags = append(flags, entry.FieldFlag)
 					break
 				}
 			}
 		}
 
 		allPrefixes := []string{}
-		for i, prefix := range findFlagsPrefix(flags) {
-			group[i].flagsPrefix = prefix
+		for i, prefix := range parse.FindFlagsPrefix(flags) {
+			group[i].FlagsPrefix = prefix
 			allPrefixes = append(allPrefixes, prefix)
 		}
 
 		// Store all found prefixes into each block so that when we generate the
 		// markdown we also know which are all the prefixes for each root block.
 		for _, block := range group {
-			block.flagsPrefixes = allPrefixes
+			block.FlagsPrefixes = allPrefixes
 		}
 	}
 
 	// Finally, we can remove the CLI flags prefix from the blocks
 	// which have one annotated.
 	for _, block := range blocks {
-		if block.flagsPrefix != "" {
-			removeFlagPrefix(block, block.flagsPrefix)
+		if block.FlagsPrefix != "" {
+			removeFlagPrefix(block, block.FlagsPrefix)
 		}
 	}
 }
 
-func generateBlocksMarkdown(blocks []*configBlock) string {
+func generateBlocksMarkdown(blocks []*parse.ConfigBlock) string {
 	md := &markdownWriter{}
 	md.writeConfigDoc(blocks)
 	return md.string()
 }
 
-func generateBlockMarkdown(blocks []*configBlock, blockName, fieldName string) string {
+func generateBlockMarkdown(blocks []*parse.ConfigBlock, blockName, fieldName string) string {
 	// Look for the requested block.
 	for _, block := range blocks {
-		if block.name != blockName {
+		if block.Name != blockName {
 			continue
 		}
 
@@ -247,17 +107,17 @@ func generateBlockMarkdown(blocks []*configBlock, blockName, fieldName string) s
 
 		// Wrap the root block with another block, so that we can show the name of the
 		// root field containing the block specs.
-		md.writeConfigBlock(&configBlock{
-			name: blockName,
-			desc: block.desc,
-			entries: []*configEntry{
+		md.writeConfigBlock(&parse.ConfigBlock{
+			Name: blockName,
+			Desc: block.Desc,
+			Entries: []*parse.ConfigEntry{
 				{
-					kind:      "block",
-					name:      fieldName,
-					required:  true,
-					block:     block,
-					blockDesc: "",
-					root:      false,
+					Kind:      parse.KindBlock,
+					Name:      fieldName,
+					Required:  true,
+					Block:     block,
+					BlockDesc: "",
+					Root:      false,
 				},
 			},
 		})
@@ -283,10 +143,10 @@ func main() {
 	// the memory address of the CLI flag variables and match them with
 	// the config struct fields' addresses.
 	cfg := &mimir.Config{}
-	flags := parseFlags(cfg, util_log.Logger)
+	flags := parse.Flags(cfg, util_log.Logger)
 
 	// Parse the config, mapping each config field with the related CLI flag.
-	blocks, err := parseConfig(nil, cfg, flags)
+	blocks, err := parse.Config(cfg, flags, parse.RootBlocks)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "An error occurred while generating the doc: %s\n", err.Error())
 		os.Exit(1)
