@@ -40,6 +40,8 @@
 
 ### Mimirtool
 
+* [BUGFIX] `config convert`: Retain Cortex defaults for `blocks_storage.backend`, `ruler_storage.backend`, and `alertmanager_storage.backend`. #1626
+
 ### Tools
 
 * [FEATURE] Added a `markblocks` tool that creates `no-compact` and `delete` marks for the blocks. #1551
