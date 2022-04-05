@@ -668,7 +668,7 @@ parameters are:
 * (GEM only) `auth.type` - Cortex default is `trust`, Mimir default is `enterprise`
 
 This command will output the Cortex default value even when the configuration parameter is not explicitly set in the input
-configuration. If the Cortex default value is explicitly set in the input configuraiton, and you have provided
+configuration. If the Cortex default value is explicitly set in the input configuration, and you have provided
 the `--update-defaults` flag, the command will not update the value to the Mimir default.
 
 ##### Example
