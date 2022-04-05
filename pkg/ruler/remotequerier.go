@@ -55,8 +55,8 @@ const (
 
 var userAgent = fmt.Sprintf("mimir/%s", version.Version)
 
-// QuerierConfig defines remote querier transport configuration.
-type QuerierConfig struct {
+// RemoteQuerierConfig defines remote querier transport configuration.
+type RemoteQuerierConfig struct {
 	// The address of the remote querier to connect to.
 	Address string `yaml:"address"`
 
@@ -67,7 +67,7 @@ type QuerierConfig struct {
 	TLS tls.ClientConfig `yaml:",inline"`
 }
 
-func (c *QuerierConfig) RegisterFlags(f *flag.FlagSet) {
+func (c *RemoteQuerierConfig) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&c.Address,
 		"ruler.query-frontend.address",
 		"",
@@ -79,8 +79,8 @@ func (c *QuerierConfig) RegisterFlags(f *flag.FlagSet) {
 	c.TLS.RegisterFlagsWithPrefix("ruler.query-frontend", f)
 }
 
-// DialQuerier creates and initializes a new ruler Querier instance.
-func DialQuerier(cfg QuerierConfig) (httpgrpc.HTTPClient, error) {
+// DialRemoteQuerier creates and initializes a new httpgrpc.HTTPClient taking a remote querier configuration.
+func DialRemoteQuerier(cfg RemoteQuerierConfig) (httpgrpc.HTTPClient, error) {
 	tlsDialOptions, err := cfg.TLS.GetGRPCDialOptions(cfg.TLSEnabled)
 	if err != nil {
 		return nil, err
@@ -112,25 +112,25 @@ func DialQuerier(cfg QuerierConfig) (httpgrpc.HTTPClient, error) {
 	return httpgrpc.NewHTTPClient(conn), nil
 }
 
-// Middleware provides a mechanism to inspect outgoing Querier requests.
+// Middleware provides a mechanism to inspect outgoing remote querier requests.
 type Middleware func(ctx context.Context, req *httpgrpc.HTTPRequest) error
 
-// Querier executes read operations against a httpgrpc.HTTPClient.
-type Querier struct {
+// RemoteQuerier executes read operations against a httpgrpc.HTTPClient.
+type RemoteQuerier struct {
 	client         httpgrpc.HTTPClient
 	middlewares    []Middleware
 	promHTTPPrefix string
 	logger         log.Logger
 }
 
-// New creates and initializes a new Querier instance.
-func New(
+// NewRemoteQuerier creates and initializes a new RemoteQuerier instance.
+func NewRemoteQuerier(
 	client httpgrpc.HTTPClient,
 	prometheusHTTPPrefix string,
 	logger log.Logger,
 	middlewares ...Middleware,
-) *Querier {
-	return &Querier{
+) *RemoteQuerier {
+	return &RemoteQuerier{
 		client:         client,
 		middlewares:    middlewares,
 		promHTTPPrefix: prometheusHTTPPrefix,
@@ -140,7 +140,7 @@ func New(
 
 // Read satisfies Prometheus remote.ReadClient.
 // See: https://github.com/prometheus/prometheus/blob/1291ec71851a7383de30b089f456fdb6202d037a/storage/remote/client.go#L264
-func (q *Querier) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryResult, error) {
+func (q *RemoteQuerier) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryResult, error) {
 	log, ctx := spanlogger.NewWithLogger(ctx, q.logger, "remotequerier.Querier.Read")
 	defer log.Span.Finish()
 
@@ -202,7 +202,7 @@ func (q *Querier) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryR
 }
 
 // Query performs a query for the given time.
-func (q *Querier) Query(ctx context.Context, query string, ts time.Time) (model.ValueType, json.RawMessage, error) {
+func (q *RemoteQuerier) Query(ctx context.Context, query string, ts time.Time) (model.ValueType, json.RawMessage, error) {
 	log, ctx := spanlogger.NewWithLogger(ctx, q.logger, "remotequerier.Querier.Query")
 	defer log.Span.Finish()
 
@@ -264,8 +264,8 @@ func (q *Querier) Query(ctx context.Context, query string, ts time.Time) (model.
 	return v.Type, v.Result, nil
 }
 
-// QueryFunc returns a rules.QueryFunc derived from a Querier instance.
-func (q *Querier) QueryFunc() rules.QueryFunc {
+// QueryFunc returns a rules.QueryFunc derived from a RemoteQuerier instance.
+func (q *RemoteQuerier) QueryFunc() rules.QueryFunc {
 	return func(ctx context.Context, qs string, t time.Time) (promql.Vector, error) {
 		valTyp, res, err := q.Query(ctx, qs, t)
 		if err != nil {

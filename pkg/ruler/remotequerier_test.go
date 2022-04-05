@@ -17,13 +17,13 @@ import (
 	"google.golang.org/grpc"
 )
 
-type mockHTTPGrpcClient func(ctx context.Context, req *httpgrpc.HTTPRequest, _ ...grpc.CallOption) (*httpgrpc.HTTPResponse, error)
+type mockHTTPGRPCClient func(ctx context.Context, req *httpgrpc.HTTPRequest, _ ...grpc.CallOption) (*httpgrpc.HTTPResponse, error)
 
-func (c mockHTTPGrpcClient) Handle(ctx context.Context, req *httpgrpc.HTTPRequest, opts ...grpc.CallOption) (*httpgrpc.HTTPResponse, error) {
+func (c mockHTTPGRPCClient) Handle(ctx context.Context, req *httpgrpc.HTTPRequest, opts ...grpc.CallOption) (*httpgrpc.HTTPResponse, error) {
 	return c(ctx, req, opts...)
 }
 
-func TestQuerier_ReadReq(t *testing.T) {
+func TestRemoteQuerier_ReadReq(t *testing.T) {
 	var inReq *httpgrpc.HTTPRequest
 	var body []byte
 
@@ -43,7 +43,7 @@ func TestQuerier_ReadReq(t *testing.T) {
 			Body: snappy.Encode(nil, b),
 		}, nil
 	}
-	q := New(mockHTTPGrpcClient(mockClientFn), "/prometheus", log.NewNopLogger())
+	q := NewRemoteQuerier(mockHTTPGRPCClient(mockClientFn), "/prometheus", log.NewNopLogger())
 
 	_, err := q.Read(context.Background(), &prompb.Query{})
 	require.NoError(t, err)
@@ -54,7 +54,7 @@ func TestQuerier_ReadReq(t *testing.T) {
 	require.Equal(t, "/prometheus/api/v1/read", inReq.Url)
 }
 
-func TestQuerier_QueryReq(t *testing.T) {
+func TestRemoteQuerier_QueryReq(t *testing.T) {
 	var inReq *httpgrpc.HTTPRequest
 	mockClientFn := func(ctx context.Context, req *httpgrpc.HTTPRequest, _ ...grpc.CallOption) (*httpgrpc.HTTPResponse, error) {
 		inReq = req
@@ -62,7 +62,7 @@ func TestQuerier_QueryReq(t *testing.T) {
 							"status": "success","data": {"resultType":"vector","result":[]}
 						}`)}, nil
 	}
-	q := New(mockHTTPGrpcClient(mockClientFn), "/prometheus", log.NewNopLogger())
+	q := NewRemoteQuerier(mockHTTPGRPCClient(mockClientFn), "/prometheus", log.NewNopLogger())
 
 	_, _, err := q.Query(context.Background(), "qs", time.Unix(1649092025, 515834))
 	require.NoError(t, err)

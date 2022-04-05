@@ -7280,7 +7280,7 @@
         },
         {
           "kind": "block",
-          "name": "query-frontend",
+          "name": "query_frontend",
           "required": false,
           "desc": "",
           "blockEntries": [

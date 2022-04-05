@@ -1394,7 +1394,7 @@ ring:
 # CLI flag: -ruler.query-stats-enabled
 [query_stats_enabled: <boolean> | default = false]
 
-query-frontend:
+query_frontend:
   # GRPC listen address of the query-frontend(s). Must be a DNS address
   # (prefixed with dns:///) to enable client side load balancing.
   # CLI flag: -ruler.query-frontend.address
