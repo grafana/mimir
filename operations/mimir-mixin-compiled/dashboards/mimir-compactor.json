@@ -210,7 +210,7 @@
                   "dashLength": 10,
                   "dashes": false,
                   "datasource": "$datasource",
-                  "description": "### Longest time since last successful run\nDisplays the amount of time since the most recent successful execution\nof the compactor.\nThe value shown will be for the compactor replica which has the longest time since its\nlast successful run, relative to its compaction interval.\nThe table to the right shows a summary for all compactor replicas.\n\nIf there is no time value, one of the following messages may appear:\n\n- If you see \"No compactor data\" in this panel, that means that no compactors are active yet.\n\n- If you see \"No successful runs\" in this panel, that means that compactors are active, but none \n  of them were successfully executed yet.\n\nThese may be expected - for example, if you just recently restarted your compactors, they may not \nyet be broadcasting metrics, or they may not have had a chance to complete their first compaction run. \nHowever, if these messages persist, you should check the health of your compactors.\n\n",
+                  "description": "### Longest time since last successful run\nDisplays the amount of time since the most recent successful execution\nof the compactor.\nThe value shown will be for the compactor replica which has the longest time since its\nlast successful run.\nThe table to the right shows a summary for all compactor replicas.\n\nIf there is no time value, one of the following messages may appear:\n\n- If you see \"No compactor data\" in this panel, that means that no compactors are active yet.\n\n- If you see \"No successful runs\" in this panel, that means that compactors are active, but none \n  of them were successfully executed yet.\n\nThese may be expected - for example, if you just recently restarted your compactors, they may not \nyet be broadcasting metrics, or they may not have had a chance to complete their first compaction run. \nHowever, if these messages persist, you should check the health of your compactors.\n\n",
                   "fieldConfig": {
                      "defaults": {
                         "color": {
@@ -254,7 +254,31 @@
                               {
                                  "id": "color",
                                  "value": {
-                                    "mode": "continuous-GrYlRd"
+                                    "mode": "thresholds"
+                                 }
+                              },
+                              {
+                                 "id": "thresholds",
+                                 "value": {
+                                    "mode": "absolute",
+                                    "steps": [
+                                       {
+                                          "color": "green",
+                                          "value": 0
+                                       },
+                                       {
+                                          "color": "yellow",
+                                          "value": 7200
+                                       },
+                                       {
+                                          "color": "orange",
+                                          "value": 21600
+                                       },
+                                       {
+                                          "color": "red",
+                                          "value": 43200
+                                       }
+                                    ]
                                  }
                               }
                            ]
@@ -302,20 +326,8 @@
                         "instant": true,
                         "interval": "",
                         "intervalFactor": null,
-                        "legendFormat": "Last run",
+                        "legendFormat": "",
                         "legendLink": null,
-                        "refId": "Last run",
-                        "step": null
-                     },
-                     {
-                        "expr": "max by (pod) \n(\n  cortex_compactor_compaction_interval_seconds\n)\n",
-                        "format": "table",
-                        "instant": true,
-                        "interval": "",
-                        "intervalFactor": null,
-                        "legendFormat": "Interval",
-                        "legendLink": null,
-                        "refId": "Interval",
                         "step": null
                      }
                   ],
@@ -330,15 +342,10 @@
                   },
                   "transformations": [
                      {
-                        "id": "merge",
-                        "options": { }
-                     },
-                     {
                         "id": "organize",
                         "options": {
                            "renameByName": {
-                              "Value #Interval": "Interval",
-                              "Value #Last run": "Last run",
+                              "Value": "Last run",
                               "pod": "Compactor"
                            }
                         }
@@ -349,8 +356,8 @@
                            "alias": "Status",
                            "binary": {
                               "left": "Last run",
-                              "operator": "/",
-                              "right": "Interval"
+                              "operator": "*",
+                              "right": 1
                            },
                            "mode": "binary",
                            "replaceFields": false
@@ -362,22 +369,9 @@
                            "sort": [
                               {
                                  "desc": true,
-                                 "field": "Status"
+                                 "field": "Last run"
                               }
                            ]
-                        }
-                     },
-                     {
-                        "id": "calculateField",
-                        "options": {
-                           "alias": "Maximum of threshold",
-                           "binary": {
-                              "left": "Interval",
-                              "operator": "*",
-                              "right": "9"
-                           },
-                           "mode": "binary",
-                           "replaceFields": false
                         }
                      }
                   ],
@@ -414,7 +408,7 @@
                   "dashLength": 10,
                   "dashes": false,
                   "datasource": "$datasource",
-                  "description": "### Last successful run per-compactor replica\nDisplays the compactor replicas, and for each, shows how long it has been since\nits last successful compaction run.\n\nThe value in status column is based on how long it has been since the last compaction, \nrelative to the compaction interval (which is by default, one hour long).\n\n- Delayed: more than 3 times the interval\n- Late: more than 6 times the interval\n- Very late: more than 9 times the interval\n\nIf the status of any compactor replicas are late, you should check their health.\n\n",
+                  "description": "### Last successful run per-compactor replica\nDisplays the compactor replicas, and for each, shows how long it has been since\nits last successful compaction run.\n\nThe value in status column is based on how long it has been since the last successful compaction.\n\n- Delayed: more than 2 hours\n- Late: more than 6 hours\n- Very late: more than 12 hours\n\nIf the status of any compactor replicas are late, you should check their health.\n\n",
                   "fieldConfig": {
                      "overrides": [
                         {
@@ -448,35 +442,35 @@
                                              "color": "green",
                                              "text": "Ok"
                                           },
-                                          "to": 3
+                                          "to": 7200
                                        },
                                        "type": "range"
                                     },
                                     {
                                        "options": {
-                                          "from": 3,
+                                          "from": 7200,
                                           "result": {
                                              "color": "yellow",
                                              "text": "Delayed"
                                           },
-                                          "to": 6
+                                          "to": 21600
                                        },
                                        "type": "range"
                                     },
                                     {
                                        "options": {
-                                          "from": 6,
+                                          "from": 21600,
                                           "result": {
                                              "color": "orange",
                                              "text": "Late"
                                           },
-                                          "to": 9
+                                          "to": 43200
                                        },
                                        "type": "range"
                                     },
                                     {
                                        "options": {
-                                          "from": 9,
+                                          "from": 43200,
                                           "result": {
                                              "color": "red",
                                              "text": "Very late"
@@ -573,18 +567,6 @@
                         "intervalFactor": 2,
                         "legendFormat": "Last run",
                         "legendLink": null,
-                        "refId": "Last run",
-                        "step": 10
-                     },
-                     {
-                        "expr": "max by (pod) \n(\n  cortex_compactor_compaction_interval_seconds\n)\n",
-                        "format": "table",
-                        "instant": true,
-                        "interval": "15s",
-                        "intervalFactor": 2,
-                        "legendFormat": "Interval",
-                        "legendLink": null,
-                        "refId": "Interval",
                         "step": 10
                      }
                   ],
@@ -599,17 +581,10 @@
                   },
                   "transformations": [
                      {
-                        "id": "seriesToColumns",
-                        "options": {
-                           "byField": "instance"
-                        }
-                     },
-                     {
                         "id": "organize",
                         "options": {
                            "renameByName": {
-                              "Value #Interval": "Interval",
-                              "Value #Last run": "Last run",
+                              "Value": "Last run",
                               "pod": "Compactor"
                            }
                         }
@@ -620,8 +595,8 @@
                            "alias": "Status",
                            "binary": {
                               "left": "Last run",
-                              "operator": "/",
-                              "right": "Interval"
+                              "operator": "*",
+                              "right": 1
                            },
                            "mode": "binary",
                            "replaceFields": false
@@ -633,7 +608,7 @@
                            "sort": [
                               {
                                  "desc": true,
-                                 "field": "Status"
+                                 "field": "Last run"
                               }
                            ]
                         }
@@ -648,21 +623,6 @@
                                  "Status"
                               ]
                            }
-                        }
-                     },
-                     {
-                        "id": "filterByValue",
-                        "options": {
-                           "filters": [
-                              {
-                                 "config": {
-                                    "id": "isNull"
-                                 },
-                                 "fieldName": "Last run"
-                              }
-                           ],
-                           "match": "any",
-                           "type": "exclude"
                         }
                      }
                   ],

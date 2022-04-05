@@ -65,135 +65,64 @@ local fixTargetsForTransformations(panel, refIds) = panel {
     instance: $._config.per_instance_label,
   },
 
-  local lastRunQueries = {
-    queries: [
-      // Last run - (will be exactly zero if no successful run)
-      |||
-        max by(%(instance)s)
-        (
-          (time() * (cortex_compactor_last_successful_run_timestamp_seconds !=bool 0))
-          - 
-          cortex_compactor_last_successful_run_timestamp_seconds
-        )
-      ||| % (vars),
-      // Interval
-      |||
-        max by (%(instance)s) 
-        (
-          cortex_compactor_compaction_interval_seconds
-        )
-      ||| % (vars),
+  local lastRunThresholds = {
+
+    local hours = 60 * 60,
+
+    // In terms of hours
+    delayed: 2 * hours,
+    late: 6 * hours,
+    veryLate: 12 * hours,
+
+    local _ = self,
+
+    // steps for thresholds
+    steps: [
+      { value: 0, color: 'green' },
+      { value: _.delayed, color: 'yellow' },
+      { value: _.late, color: 'orange' },
+      { value: _.veryLate, color: 'red' },
     ],
-    refIds: [
-      'Last run',
-      'Interval',
+
+    // status mappings: messages and colors
+    mappings: [
+      mappingRange('-Infinity', 0, { color: 'transparent', text: 'N/A' }),
+      mappingRange(0, _.delayed, { color: 'green', text: 'Ok' }),
+      mappingRange(_.delayed, _.late, { color: 'yellow', text: 'Delayed' }),
+      mappingRange(_.late, _.veryLate, { color: 'orange', text: 'Late' }),
+      mappingRange(_.veryLate, 'Infinity', { color: 'red', text: 'Very late' }),
+      mappingSpecial('null+nan', { color: 'transparent', text: 'Unknown' }),
     ],
   },
+
+  local lastRunQuery =
+    |||
+      max by(%(instance)s)
+      (
+        (time() * (cortex_compactor_last_successful_run_timestamp_seconds !=bool 0))
+        - 
+        cortex_compactor_last_successful_run_timestamp_seconds
+      )
+    ||| % (vars),
 
   local lastRunCommonTransformations = [
     transformation('organize', {
       renameByName: {
-        'Value #Interval': 'Interval',
-        'Value #Last run': 'Last run',
+        Value: 'Last run',
         ['%s' % vars.instance]: 'Compactor',
       },
     }),
-    transformationCalculateField('Status', 'Last run', '/', 'Interval'),
+    transformationCalculateField('Status', 'Last run', '*', 1),  // Duplicate field to be transformed
     transformation('sortBy', {
       sort: [
         {
           desc: true,
-          field: 'Status',
+          field: 'Last run',
         },
       ],
     }),
   ],
 
-  lastRunStatPanel():: (
-    local panel =
-      $.newStatPanel(lastRunQueries.queries, lastRunQueries.refIds, unit='s') + {
-        options: {
-          reduceOptions: {
-            values: false,
-            calcs: ['first'],
-            fields: '/^Last run$/',
-          },
-          textMode: 'value',
-        },
-        transformations:
-          [transformation('merge')] +
-          lastRunCommonTransformations +
-          [
-            // Not a visible field, but used as a max to determine what the "Red" value is in GrYlRd
-            // This corresponds to the "Very late" mapping range in `lastRunTablePanel`
-            transformationCalculateField('Maximum of threshold', 'Interval', '*', '9'),
-          ],
-        fieldConfig: super.fieldConfig + {
-          defaults: super.defaults {
-            noValue: 'No compactor data',
-          },
-          overrides: [
-            overrideFieldByName('Last run', [
-              overrideProperty('custom.width', 74),
-              overrideProperty('mappings', [
-                mappingRange('-Infinity', 0, { color: 'text', text: 'No successful runs' }),
-              ]),
-              overrideProperty('color', { mode: 'continuous-GrYlRd' }),  // Green is zero, red is `Maximum of threshold`
-            ]),
-          ],
-        },
-      };
-    fixTargetsForTransformations(panel, lastRunQueries.refIds)
-  ),
-
-  lastRunTablePanel():: (
-    local panel =
-      $.queryPanel(lastRunQueries.queries, lastRunQueries.refIds) + {
-        type: 'table',
-        transformations:
-          [{ id: 'seriesToColumns', options: { byField: 'instance' } }] +
-          lastRunCommonTransformations +
-          [
-            transformation('filterFieldsByName', {
-              include: {  // Only include these fields in the display
-                names: ['Compactor', 'Last run', 'Status'],
-              },
-            }),
-            transformation('filterByValue', {
-              filters: [{ fieldName: 'Last run', config: { id: 'isNull' } }],
-              type: 'exclude',
-              match: 'any',
-            }),
-          ],
-        fieldConfig: {
-          overrides: [
-            overrideFieldByName('Status', [
-              overrideProperty('custom.displayMode', 'color-background'),
-              overrideProperty('mappings', [
-                mappingRange('-Infinity', 0, { color: 'transparent', text: 'N/A' }),
-                // These numbers are multiples of the compaction interval
-                // Default interval 1hr, so 0hrs to 3hrs is okay, 3hrs to 6hrs is Delayed, etc.
-                mappingRange(0, 3, { color: 'green', text: 'Ok' }),
-                mappingRange(3, 6, { color: 'yellow', text: 'Delayed' }),
-                mappingRange(6, 9, { color: 'orange', text: 'Late' }),
-                mappingRange(9, 'Infinity', { color: 'red', text: 'Very late' }),
-                mappingSpecial('null+nan', { color: 'transparent', text: 'Unknown' }),
-              ]),
-              overrideProperty('custom.width', 86),
-              overrideProperty('custom.align', 'center'),
-            ]),
-            overrideFieldByName('Last run', [
-              overrideProperty('unit', 's'),
-              overrideProperty('custom.width', 74),
-              overrideProperty('mappings', [
-                mappingRange('-Infinity', 0, { text: 'Never' }),
-              ]),
-            ]),
-          ],
-        },
-      };
-    fixTargetsForTransformations(panel, lastRunQueries.refIds)
-  ),
   'mimir-compactor.json':
     ($.dashboard('Compactor') + { uid: '9c408e1d55681ecb8a22c9fab46875cc' })
     .addClusterSelectorTemplates()
@@ -241,7 +170,7 @@ local fixTargetsForTransformations(panel, refIds) = panel {
             Displays the amount of time since the most recent successful execution
             of the compactor.
             The value shown will be for the compactor replica which has the longest time since its
-            last successful run, relative to its compaction interval.
+            last successful run.
             The table to the right shows a summary for all compactor replicas.
 
             If there is no time value, one of the following messages may appear:
@@ -256,7 +185,35 @@ local fixTargetsForTransformations(panel, refIds) = panel {
             However, if these messages persist, you should check the health of your compactors.
           |||
         ) +
-        $.lastRunStatPanel()
+        $.newStatPanel(lastRunQuery, unit='s') + {
+          options: {
+            reduceOptions: {
+              values: false,
+              calcs: ['first'],
+              fields: '/^Last run$/',
+            },
+            textMode: 'value',
+          },
+          targets: [target { format: 'table', instant: true } for target in super.targets],
+          transformations:
+            //[transformation('merge')] +
+            lastRunCommonTransformations,
+          fieldConfig: super.fieldConfig + {
+            defaults: super.defaults {
+              noValue: 'No compactor data',
+            },
+            overrides: [
+              overrideFieldByName('Last run', [
+                overrideProperty('custom.width', 74),
+                overrideProperty('mappings', [
+                  mappingRange('-Infinity', 0, { color: 'text', text: 'No successful runs' }),
+                ]),
+                overrideProperty('color', { mode: 'thresholds' }),
+                overrideProperty('thresholds', { mode: 'absolute', steps: lastRunThresholds.steps }),
+              ]),
+            ],
+          },
+        },
       )
       .addPanel(
         $.panel('Last successful run per-compactor replica') +
@@ -266,17 +223,43 @@ local fixTargetsForTransformations(panel, refIds) = panel {
             Displays the compactor replicas, and for each, shows how long it has been since
             its last successful compaction run.
 
-            The value in status column is based on how long it has been since the last compaction, 
-            relative to the compaction interval (which is by default, one hour long).
+            The value in status column is based on how long it has been since the last successful compaction.
 
-            - Delayed: more than 3 times the interval
-            - Late: more than 6 times the interval
-            - Very late: more than 9 times the interval
+            - Delayed: more than 2 hours
+            - Late: more than 6 hours
+            - Very late: more than 12 hours
 
             If the status of any compactor replicas are late, you should check their health.
           |||
         ) +
-        $.lastRunTablePanel()
+        $.queryPanel(lastRunQuery, 'Last run') {
+          type: 'table',
+          targets: [target { format: 'table', instant: true } for target in super.targets],
+          transformations:
+            lastRunCommonTransformations +
+            [transformation('filterFieldsByName', {
+              include: {  // Only include these fields in the display
+                names: ['Compactor', 'Last run', 'Status'],
+              },
+            })],
+          fieldConfig: {
+            overrides: [
+              overrideFieldByName('Status', [
+                overrideProperty('custom.displayMode', 'color-background'),
+                overrideProperty('mappings', lastRunThresholds.mappings),
+                overrideProperty('custom.width', 86),
+                overrideProperty('custom.align', 'center'),
+              ]),
+              overrideFieldByName('Last run', [
+                overrideProperty('unit', 's'),
+                overrideProperty('custom.width', 74),
+                overrideProperty('mappings', [
+                  mappingRange('-Infinity', 0, { text: 'Never' }),
+                ]),
+              ]),
+            ],
+          },
+        },
       )
     )
     .addRow(
