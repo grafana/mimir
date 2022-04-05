@@ -661,10 +661,10 @@ This command is designed to aid a migration from Cortex to Grafana Mimir. There 
 some configuration parameters in Mimir v2.0.0 that we think you would not want to make as part of this migration. These
 parameters are:
 
--`blocks_storage.backend` - Cortex default is `s3`, Mimir default is `filesystem`
--`ruler_storage.backend` - Cortex default is `s3`, Mimir default is `filesystem`
--`alertmanager_storage.backend` - Cortex default is `s3`, Mimir default is `filesystem`
--`server.http_listen_port` - Cortex default is `80`, Mimir default is `8080`
+- `blocks_storage.backend` - Cortex default is `s3`, Mimir default is `filesystem`
+- `ruler_storage.backend` - Cortex default is `s3`, Mimir default is `filesystem`
+- `alertmanager_storage.backend` - Cortex default is `s3`, Mimir default is `filesystem`
+- `server.http_listen_port` - Cortex default is `80`, Mimir default is `8080`
 - (GEM only) `auth.type` - Cortex default is `trust`, Mimir default is `enterprise`
 
 This command will output the Cortex default value even when the configuration parameter is not explicitly set in the input
