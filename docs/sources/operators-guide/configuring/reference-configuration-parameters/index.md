@@ -1057,7 +1057,7 @@ results_cache:
 
 ### query_scheduler
 
-The `query_scheduler` configures query-scheduler component.
+The `query_scheduler` block configures the query-scheduler.
 
 ```yaml
 # Maximum number of outstanding requests per tenant per query-scheduler.
