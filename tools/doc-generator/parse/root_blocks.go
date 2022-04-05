@@ -62,7 +62,7 @@ var (
 		{
 			Name:       "query_scheduler",
 			StructType: reflect.TypeOf(scheduler.Config{}),
-			Desc:       "The query_scheduler configures query scheduler module.",
+			Desc:       "The query_scheduler configures query-scheduler component.",
 		},
 		{
 			Name:       "ruler",

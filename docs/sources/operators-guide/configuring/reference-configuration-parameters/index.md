@@ -212,7 +212,7 @@ runtime_config:
 # The memberlist block configures the Gossip memberlist.
 [memberlist: <memberlist>]
 
-# The query_scheduler configures query scheduler module.
+# The query_scheduler configures query-scheduler component.
 [query_scheduler: <query_scheduler>]
 ```
 
@@ -1057,7 +1057,7 @@ results_cache:
 
 ### query_scheduler
 
-The `query_scheduler` configures query scheduler module.
+The `query_scheduler` configures query-scheduler component.
 
 ```yaml
 # Maximum number of outstanding requests per tenant per query-scheduler.
