@@ -12,6 +12,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/model"
 )
 
 const (
@@ -103,23 +104,28 @@ func (t *WriteReadSeriesTest) Run(ctx context.Context, now time.Time) {
 		}
 	}
 
-	for _, timeRange := range t.getRangeQueryTimeRanges(now) {
+	queryRanges, queryInstants := t.getQueryTimeRanges(now)
+	for _, timeRange := range queryRanges {
 		t.runRangeQueryAndVerifyResult(ctx, timeRange[0], timeRange[1])
+	}
+	for _, ts := range queryInstants {
+		t.runInstantQueryAndVerifyResult(ctx, ts)
 	}
 }
 
-// getRangeQueryTimeRanges returns the start/end time ranges to use to run test range queries.
-func (t *WriteReadSeriesTest) getRangeQueryTimeRanges(now time.Time) (ranges [][2]time.Time) {
+// getQueryTimeRanges returns the start/end time ranges to use to run test range queries,
+// and the timestamps to use to run test instant queries.
+func (t *WriteReadSeriesTest) getQueryTimeRanges(now time.Time) (ranges [][2]time.Time, instants []time.Time) {
 	// The min and max allowed query timestamps are zero if there's no successfully written data yet.
 	if t.queryMinTime.IsZero() || t.queryMaxTime.IsZero() {
-		level.Info(t.logger).Log("msg", "Skipped range queries because there's no valid time range to query")
-		return nil
+		level.Info(t.logger).Log("msg", "Skipped queries because there's no valid time range to query")
+		return nil, nil
 	}
 
 	// Honor the configured max age.
 	adjustedQueryMinTime := maxTime(t.queryMinTime, now.Add(-t.cfg.MaxQueryAge))
 	if t.queryMaxTime.Before(adjustedQueryMinTime) {
-		level.Info(t.logger).Log("msg", "Skipped range queries because there's no valid time range to query after honoring configured max query age", "min_valid_time", t.queryMinTime, "max_valid_time", t.queryMaxTime, "max_query_age", t.cfg.MaxQueryAge)
+		level.Info(t.logger).Log("msg", "Skipped queries because there's no valid time range to query after honoring configured max query age", "min_valid_time", t.queryMinTime, "max_valid_time", t.queryMaxTime, "max_query_age", t.cfg.MaxQueryAge)
 		return
 	}
 
@@ -129,6 +135,7 @@ func (t *WriteReadSeriesTest) getRangeQueryTimeRanges(now time.Time) (ranges [][
 			maxTime(adjustedQueryMinTime, now.Add(-1*time.Hour)),
 			minTime(t.queryMaxTime, now),
 		})
+		instants = append(instants, minTime(t.queryMaxTime, now))
 	}
 
 	// Last 24h (only if the actual time range is not already covered by "Last 1h").
@@ -137,6 +144,7 @@ func (t *WriteReadSeriesTest) getRangeQueryTimeRanges(now time.Time) (ranges [][
 			maxTime(adjustedQueryMinTime, now.Add(-24*time.Hour)),
 			minTime(t.queryMaxTime, now),
 		})
+		instants = append(instants, maxTime(adjustedQueryMinTime, now.Add(-24*time.Hour)))
 	}
 
 	// From last 23h to last 24h.
@@ -150,8 +158,9 @@ func (t *WriteReadSeriesTest) getRangeQueryTimeRanges(now time.Time) (ranges [][
 	// A random time range.
 	randMinTime := randTime(adjustedQueryMinTime, t.queryMaxTime)
 	ranges = append(ranges, [2]time.Time{randMinTime, randTime(randMinTime, t.queryMaxTime)})
+	instants = append(instants, randMinTime)
 
-	return ranges
+	return ranges, instants
 }
 
 func (t *WriteReadSeriesTest) runRangeQueryAndVerifyResult(ctx context.Context, start, end time.Time) {
@@ -182,6 +191,48 @@ func (t *WriteReadSeriesTest) runRangeQueryAndVerifyResult(ctx context.Context, 
 	if err != nil {
 		t.metrics.queryResultChecksFailedTotal.Inc()
 		level.Warn(logger).Log("msg", "Range query result check failed", "err", err)
+		return
+	}
+}
+
+func (t *WriteReadSeriesTest) runInstantQueryAndVerifyResult(ctx context.Context, ts time.Time) {
+	// We align the query timestamp to write interval in order to avoid any false positives
+	// when checking results correctness. The min/max query time is always aligned.
+	ts = maxTime(t.queryMinTime, alignTimestampToInterval(ts, writeInterval))
+	if t.queryMaxTime.Before(ts) {
+		return
+	}
+
+	query := fmt.Sprintf("sum(%s)", metricName)
+
+	logger := log.With(t.logger, "query", query, "ts", ts.UnixMilli())
+	level.Debug(logger).Log("msg", "Running instant query")
+
+	t.metrics.queriesTotal.Inc()
+	vector, err := t.client.Query(ctx, query, ts)
+	if err != nil {
+		t.metrics.queriesFailedTotal.Inc()
+		level.Warn(logger).Log("msg", "Failed to execute instant query", "err", err)
+		return
+	}
+
+	// Convert the vector to matrix to reuse the same results comparison utility.
+	matrix := make(model.Matrix, 0, len(vector))
+	for _, entry := range vector {
+		matrix = append(matrix, &model.SampleStream{
+			Metric: entry.Metric,
+			Values: []model.SamplePair{{
+				Timestamp: entry.Timestamp,
+				Value:     entry.Value,
+			}},
+		})
+	}
+
+	t.metrics.queryResultChecksTotal.Inc()
+	err = verifySineWaveSamplesSum(matrix, t.cfg.NumSeries, 0)
+	if err != nil {
+		t.metrics.queryResultChecksFailedTotal.Inc()
+		level.Warn(logger).Log("msg", "Instant query result check failed", "err", err)
 		return
 	}
 }

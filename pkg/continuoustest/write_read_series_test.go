@@ -29,6 +29,7 @@ func TestWriteReadSeriesTest_Run(t *testing.T) {
 		client := &ClientMock{}
 		client.On("WriteSeries", mock.Anything, mock.Anything).Return(200, nil)
 		client.On("QueryRange", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Matrix{}, nil)
+		client.On("Query", mock.Anything, mock.Anything, mock.Anything).Return(model.Vector{}, nil)
 
 		reg := prometheus.NewPedanticRegistry()
 		test := NewWriteReadSeriesTest(cfg, client, logger, reg)
@@ -43,6 +44,9 @@ func TestWriteReadSeriesTest_Run(t *testing.T) {
 		client.AssertNumberOfCalls(t, "QueryRange", 2)
 		client.AssertCalled(t, "QueryRange", mock.Anything, "sum(mimir_continuous_test_sine_wave)", time.Unix(1000, 0), time.Unix(1000, 0), writeInterval)
 
+		client.AssertNumberOfCalls(t, "Query", 2)
+		client.AssertCalled(t, "Query", mock.Anything, "sum(mimir_continuous_test_sine_wave)", time.Unix(1000, 0))
+
 		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP mimir_continuous_test_writes_total Total number of attempted write requests.
 			# TYPE mimir_continuous_test_writes_total counter
@@ -50,7 +54,7 @@ func TestWriteReadSeriesTest_Run(t *testing.T) {
 
 			# HELP mimir_continuous_test_queries_total Total number of attempted query requests.
 			# TYPE mimir_continuous_test_queries_total counter
-			mimir_continuous_test_queries_total{test="write-read-series"} 2
+			mimir_continuous_test_queries_total{test="write-read-series"} 4
 
 			# HELP mimir_continuous_test_queries_failed_total Total number of failed query requests.
 			# TYPE mimir_continuous_test_queries_failed_total counter
@@ -64,6 +68,7 @@ func TestWriteReadSeriesTest_Run(t *testing.T) {
 		client := &ClientMock{}
 		client.On("WriteSeries", mock.Anything, mock.Anything).Return(200, nil)
 		client.On("QueryRange", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Matrix{}, nil)
+		client.On("Query", mock.Anything, mock.Anything, mock.Anything).Return(model.Vector{}, nil)
 
 		reg := prometheus.NewPedanticRegistry()
 		test := NewWriteReadSeriesTest(cfg, client, logger, reg)
@@ -78,6 +83,9 @@ func TestWriteReadSeriesTest_Run(t *testing.T) {
 		client.AssertNumberOfCalls(t, "QueryRange", 2)
 		client.AssertCalled(t, "QueryRange", mock.Anything, "sum(mimir_continuous_test_sine_wave)", time.Unix(980, 0), time.Unix(980, 0), writeInterval)
 
+		client.AssertNumberOfCalls(t, "Query", 2)
+		client.AssertCalled(t, "Query", mock.Anything, "sum(mimir_continuous_test_sine_wave)", time.Unix(980, 0))
+
 		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP mimir_continuous_test_writes_total Total number of attempted write requests.
 			# TYPE mimir_continuous_test_writes_total counter
@@ -85,7 +93,7 @@ func TestWriteReadSeriesTest_Run(t *testing.T) {
 
 			# HELP mimir_continuous_test_queries_total Total number of attempted query requests.
 			# TYPE mimir_continuous_test_queries_total counter
-			mimir_continuous_test_queries_total{test="write-read-series"} 2
+			mimir_continuous_test_queries_total{test="write-read-series"} 4
 
 			# HELP mimir_continuous_test_queries_failed_total Total number of failed query requests.
 			# TYPE mimir_continuous_test_queries_failed_total counter
@@ -99,6 +107,7 @@ func TestWriteReadSeriesTest_Run(t *testing.T) {
 		client := &ClientMock{}
 		client.On("WriteSeries", mock.Anything, mock.Anything).Return(200, nil)
 		client.On("QueryRange", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Matrix{}, nil)
+		client.On("Query", mock.Anything, mock.Anything, mock.Anything).Return(model.Vector{}, nil)
 
 		reg := prometheus.NewPedanticRegistry()
 		test := NewWriteReadSeriesTest(cfg, client, logger, reg)
@@ -116,6 +125,9 @@ func TestWriteReadSeriesTest_Run(t *testing.T) {
 		client.AssertNumberOfCalls(t, "QueryRange", 2)
 		client.AssertCalled(t, "QueryRange", mock.Anything, "sum(mimir_continuous_test_sine_wave)", time.Unix(960, 0), time.Unix(1000, 0), writeInterval)
 
+		client.AssertNumberOfCalls(t, "Query", 2)
+		client.AssertCalled(t, "Query", mock.Anything, "sum(mimir_continuous_test_sine_wave)", time.Unix(1000, 0))
+
 		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP mimir_continuous_test_writes_total Total number of attempted write requests.
 			# TYPE mimir_continuous_test_writes_total counter
@@ -123,7 +135,7 @@ func TestWriteReadSeriesTest_Run(t *testing.T) {
 
 			# HELP mimir_continuous_test_queries_total Total number of attempted query requests.
 			# TYPE mimir_continuous_test_queries_total counter
-			mimir_continuous_test_queries_total{test="write-read-series"} 2
+			mimir_continuous_test_queries_total{test="write-read-series"} 4
 
 			# HELP mimir_continuous_test_queries_failed_total Total number of failed query requests.
 			# TYPE mimir_continuous_test_queries_failed_total counter
@@ -233,6 +245,9 @@ func TestWriteReadSeriesTest_Run(t *testing.T) {
 		client.On("QueryRange", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Matrix{
 			{Values: []model.SamplePair{newSamplePair(now, generateSineWaveValue(now)*float64(cfg.NumSeries))}},
 		}, nil)
+		client.On("Query", mock.Anything, mock.Anything, mock.Anything).Return(model.Vector{
+			{Timestamp: model.Time(now.UnixMilli()), Value: model.SampleValue(generateSineWaveValue(now) * float64(cfg.NumSeries))},
+		}, nil)
 
 		reg := prometheus.NewPedanticRegistry()
 		test := NewWriteReadSeriesTest(cfg, client, logger, reg)
@@ -246,6 +261,9 @@ func TestWriteReadSeriesTest_Run(t *testing.T) {
 		client.AssertNumberOfCalls(t, "QueryRange", 2)
 		client.AssertCalled(t, "QueryRange", mock.Anything, "sum(mimir_continuous_test_sine_wave)", time.Unix(1000, 0), time.Unix(1000, 0), writeInterval)
 
+		client.AssertNumberOfCalls(t, "Query", 2)
+		client.AssertCalled(t, "Query", mock.Anything, "sum(mimir_continuous_test_sine_wave)", time.Unix(1000, 0))
+
 		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP mimir_continuous_test_writes_total Total number of attempted write requests.
 			# TYPE mimir_continuous_test_writes_total counter
@@ -253,7 +271,7 @@ func TestWriteReadSeriesTest_Run(t *testing.T) {
 
 			# HELP mimir_continuous_test_queries_total Total number of attempted query requests.
 			# TYPE mimir_continuous_test_queries_total counter
-			mimir_continuous_test_queries_total{test="write-read-series"} 2
+			mimir_continuous_test_queries_total{test="write-read-series"} 4
 
 			# HELP mimir_continuous_test_queries_failed_total Total number of failed query requests.
 			# TYPE mimir_continuous_test_queries_failed_total counter
@@ -261,7 +279,7 @@ func TestWriteReadSeriesTest_Run(t *testing.T) {
 
 			# HELP mimir_continuous_test_query_result_checks_total Total number of query results checked for correctness.
 			# TYPE mimir_continuous_test_query_result_checks_total counter
-			mimir_continuous_test_query_result_checks_total{test="write-read-series"} 2
+			mimir_continuous_test_query_result_checks_total{test="write-read-series"} 4
 
 			# HELP mimir_continuous_test_query_result_checks_failed_total Total number of query results failed when checking for correctness.
 			# TYPE mimir_continuous_test_query_result_checks_failed_total counter
@@ -281,6 +299,10 @@ func TestWriteReadSeriesTest_Run(t *testing.T) {
 			{Values: []model.SamplePair{{Timestamp: model.Time(now.UnixMilli()), Value: 12345}}},
 		}, nil)
 
+		client.On("Query", mock.Anything, mock.Anything, mock.Anything).Return(model.Vector{
+			{Timestamp: model.Time(now.UnixMilli()), Value: 12345},
+		}, nil)
+
 		reg := prometheus.NewPedanticRegistry()
 		test := NewWriteReadSeriesTest(cfg, client, logger, reg)
 
@@ -293,6 +315,9 @@ func TestWriteReadSeriesTest_Run(t *testing.T) {
 		client.AssertNumberOfCalls(t, "QueryRange", 2)
 		client.AssertCalled(t, "QueryRange", mock.Anything, "sum(mimir_continuous_test_sine_wave)", time.Unix(1000, 0), time.Unix(1000, 0), writeInterval)
 
+		client.AssertNumberOfCalls(t, "Query", 2)
+		client.AssertCalled(t, "Query", mock.Anything, "sum(mimir_continuous_test_sine_wave)", time.Unix(1000, 0))
+
 		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP mimir_continuous_test_writes_total Total number of attempted write requests.
 			# TYPE mimir_continuous_test_writes_total counter
@@ -300,7 +325,7 @@ func TestWriteReadSeriesTest_Run(t *testing.T) {
 
 			# HELP mimir_continuous_test_queries_total Total number of attempted query requests.
 			# TYPE mimir_continuous_test_queries_total counter
-			mimir_continuous_test_queries_total{test="write-read-series"} 2
+			mimir_continuous_test_queries_total{test="write-read-series"} 4
 
 			# HELP mimir_continuous_test_queries_failed_total Total number of failed query requests.
 			# TYPE mimir_continuous_test_queries_failed_total counter
@@ -308,11 +333,11 @@ func TestWriteReadSeriesTest_Run(t *testing.T) {
 
 			# HELP mimir_continuous_test_query_result_checks_total Total number of query results checked for correctness.
 			# TYPE mimir_continuous_test_query_result_checks_total counter
-			mimir_continuous_test_query_result_checks_total{test="write-read-series"} 2
+			mimir_continuous_test_query_result_checks_total{test="write-read-series"} 4
 
 			# HELP mimir_continuous_test_query_result_checks_failed_total Total number of query results failed when checking for correctness.
 			# TYPE mimir_continuous_test_query_result_checks_failed_total counter
-			mimir_continuous_test_query_result_checks_failed_total{test="write-read-series"} 2
+			mimir_continuous_test_query_result_checks_failed_total{test="write-read-series"} 4
 		`),
 			"mimir_continuous_test_writes_total", "mimir_continuous_test_writes_failed_total",
 			"mimir_continuous_test_queries_total", "mimir_continuous_test_queries_failed_total",
@@ -330,7 +355,9 @@ func TestWriteReadSeriesTest_getRangeQueryTimeRanges(t *testing.T) {
 	t.Run("min/max query time has not been set yet", func(t *testing.T) {
 		test := NewWriteReadSeriesTest(cfg, &ClientMock{}, log.NewNopLogger(), nil)
 
-		assert.Empty(t, test.getRangeQueryTimeRanges(now))
+		actualRanges, actualInstants := test.getQueryTimeRanges(now)
+		assert.Empty(t, actualRanges)
+		assert.Empty(t, actualInstants)
 	})
 
 	t.Run("min/max query time is older than max age", func(t *testing.T) {
@@ -338,7 +365,9 @@ func TestWriteReadSeriesTest_getRangeQueryTimeRanges(t *testing.T) {
 		test.queryMinTime = now.Add(-cfg.MaxQueryAge).Add(-time.Minute)
 		test.queryMaxTime = now.Add(-cfg.MaxQueryAge).Add(-time.Minute)
 
-		assert.Empty(t, test.getRangeQueryTimeRanges(now))
+		actualRanges, actualInstants := test.getQueryTimeRanges(now)
+		assert.Empty(t, actualRanges)
+		assert.Empty(t, actualInstants)
 	})
 
 	t.Run("min query time = max query time", func(t *testing.T) {
@@ -346,10 +375,14 @@ func TestWriteReadSeriesTest_getRangeQueryTimeRanges(t *testing.T) {
 		test.queryMinTime = now.Add(-time.Minute)
 		test.queryMaxTime = now.Add(-time.Minute)
 
-		actual := test.getRangeQueryTimeRanges(now)
-		require.Len(t, actual, 2)
-		require.Equal(t, [2]time.Time{now.Add(-time.Minute), now.Add(-time.Minute)}, actual[0]) // Last 1h.
-		require.Equal(t, [2]time.Time{now.Add(-time.Minute), now.Add(-time.Minute)}, actual[1]) // Random time range.
+		actualRanges, actualInstants := test.getQueryTimeRanges(now)
+		require.Len(t, actualRanges, 2)
+		require.Equal(t, [2]time.Time{now.Add(-time.Minute), now.Add(-time.Minute)}, actualRanges[0]) // Last 1h.
+		require.Equal(t, [2]time.Time{now.Add(-time.Minute), now.Add(-time.Minute)}, actualRanges[1]) // Random time range.
+
+		require.Len(t, actualInstants, 2)
+		require.Equal(t, now.Add(-time.Minute), actualInstants[0]) // Last 1h.
+		require.Equal(t, now.Add(-time.Minute), actualInstants[1]) // Random time range.
 	})
 
 	t.Run("min and max query time are within the last 1h", func(t *testing.T) {
@@ -357,13 +390,19 @@ func TestWriteReadSeriesTest_getRangeQueryTimeRanges(t *testing.T) {
 		test.queryMinTime = now.Add(-30 * time.Minute)
 		test.queryMaxTime = now.Add(-time.Minute)
 
-		actual := test.getRangeQueryTimeRanges(now)
-		require.Len(t, actual, 2)
-		require.Equal(t, [2]time.Time{now.Add(-30 * time.Minute), now.Add(-time.Minute)}, actual[0]) // Last 1h.
+		actualRanges, actualInstants := test.getQueryTimeRanges(now)
+		require.Len(t, actualRanges, 2)
+		require.Equal(t, [2]time.Time{now.Add(-30 * time.Minute), now.Add(-time.Minute)}, actualRanges[0]) // Last 1h.
+
+		require.Len(t, actualInstants, 2)
+		require.Equal(t, now.Add(-time.Minute), actualInstants[0]) // Last 1h.
 
 		// Random time range.
-		require.GreaterOrEqual(t, actual[len(actual)-1][0].Unix(), test.queryMinTime.Unix())
-		require.LessOrEqual(t, actual[len(actual)-1][1].Unix(), test.queryMaxTime.Unix())
+		require.GreaterOrEqual(t, actualRanges[len(actualRanges)-1][0].Unix(), test.queryMinTime.Unix())
+		require.LessOrEqual(t, actualRanges[len(actualRanges)-1][1].Unix(), test.queryMaxTime.Unix())
+
+		require.GreaterOrEqual(t, actualInstants[len(actualInstants)-1].Unix(), test.queryMinTime.Unix())
+		require.LessOrEqual(t, actualInstants[len(actualInstants)-1].Unix(), test.queryMaxTime.Unix())
 	})
 
 	t.Run("min and max query time are within the last 2h", func(t *testing.T) {
@@ -371,13 +410,19 @@ func TestWriteReadSeriesTest_getRangeQueryTimeRanges(t *testing.T) {
 		test.queryMinTime = now.Add(-90 * time.Minute)
 		test.queryMaxTime = now.Add(-80 * time.Minute)
 
-		actual := test.getRangeQueryTimeRanges(now)
-		require.Len(t, actual, 2)
-		require.Equal(t, [2]time.Time{now.Add(-90 * time.Minute), now.Add(-80 * time.Minute)}, actual[0]) // Last 24h.
+		actualRanges, actualInstants := test.getQueryTimeRanges(now)
+		require.Len(t, actualRanges, 2)
+		require.Equal(t, [2]time.Time{now.Add(-90 * time.Minute), now.Add(-80 * time.Minute)}, actualRanges[0]) // Last 24h.
+
+		require.Len(t, actualInstants, 2)
+		require.Equal(t, now.Add(-90*time.Minute), actualInstants[0]) // Last 24h.
 
 		// Random time range.
-		require.GreaterOrEqual(t, actual[len(actual)-1][0].Unix(), test.queryMinTime.Unix())
-		require.LessOrEqual(t, actual[len(actual)-1][1].Unix(), test.queryMaxTime.Unix())
+		require.GreaterOrEqual(t, actualRanges[len(actualRanges)-1][0].Unix(), test.queryMinTime.Unix())
+		require.LessOrEqual(t, actualRanges[len(actualRanges)-1][1].Unix(), test.queryMaxTime.Unix())
+
+		require.GreaterOrEqual(t, actualInstants[len(actualInstants)-1].Unix(), test.queryMinTime.Unix())
+		require.LessOrEqual(t, actualInstants[len(actualInstants)-1].Unix(), test.queryMaxTime.Unix())
 	})
 
 	t.Run("min query time is older than 24h", func(t *testing.T) {
@@ -385,15 +430,22 @@ func TestWriteReadSeriesTest_getRangeQueryTimeRanges(t *testing.T) {
 		test.queryMinTime = now.Add(-30 * time.Hour)
 		test.queryMaxTime = now.Add(-time.Minute)
 
-		actual := test.getRangeQueryTimeRanges(now)
-		require.Len(t, actual, 4)
-		require.Equal(t, [2]time.Time{now.Add(-time.Hour), now.Add(-time.Minute)}, actual[0])         // Last 1h.
-		require.Equal(t, [2]time.Time{now.Add(-24 * time.Hour), now.Add(-time.Minute)}, actual[1])    // Last 24h.
-		require.Equal(t, [2]time.Time{now.Add(-24 * time.Hour), now.Add(-23 * time.Hour)}, actual[2]) // From last 23h to last 24h.
+		actualRanges, actualInstants := test.getQueryTimeRanges(now)
+		require.Len(t, actualRanges, 4)
+		require.Equal(t, [2]time.Time{now.Add(-time.Hour), now.Add(-time.Minute)}, actualRanges[0])         // Last 1h.
+		require.Equal(t, [2]time.Time{now.Add(-24 * time.Hour), now.Add(-time.Minute)}, actualRanges[1])    // Last 24h.
+		require.Equal(t, [2]time.Time{now.Add(-24 * time.Hour), now.Add(-23 * time.Hour)}, actualRanges[2]) // From last 23h to last 24h.
+
+		require.Len(t, actualInstants, 3)
+		require.Equal(t, now.Add(-time.Minute), actualInstants[0])  // Last 1h.
+		require.Equal(t, now.Add(-24*time.Hour), actualInstants[1]) // Last 24h.
 
 		// Random time range.
-		require.GreaterOrEqual(t, actual[len(actual)-1][0].Unix(), test.queryMinTime.Unix())
-		require.LessOrEqual(t, actual[len(actual)-1][1].Unix(), test.queryMaxTime.Unix())
+		require.GreaterOrEqual(t, actualRanges[len(actualRanges)-1][0].Unix(), test.queryMinTime.Unix())
+		require.LessOrEqual(t, actualRanges[len(actualRanges)-1][1].Unix(), test.queryMaxTime.Unix())
+
+		require.GreaterOrEqual(t, actualInstants[len(actualInstants)-1].Unix(), test.queryMinTime.Unix())
+		require.LessOrEqual(t, actualInstants[len(actualInstants)-1].Unix(), test.queryMaxTime.Unix())
 	})
 
 	t.Run("max query time is older than 24h but more recent than max query age", func(t *testing.T) {
@@ -401,12 +453,16 @@ func TestWriteReadSeriesTest_getRangeQueryTimeRanges(t *testing.T) {
 		test.queryMinTime = now.Add(-30 * time.Hour)
 		test.queryMaxTime = now.Add(-25 * time.Hour)
 
-		actual := test.getRangeQueryTimeRanges(now)
-		require.Len(t, actual, 1)
+		actualRanges, actualInstants := test.getQueryTimeRanges(now)
+		require.Len(t, actualRanges, 1)
+		require.Len(t, actualInstants, 1)
 
 		// Random time range.
-		require.GreaterOrEqual(t, actual[len(actual)-1][0].Unix(), test.queryMinTime.Unix())
-		require.LessOrEqual(t, actual[len(actual)-1][1].Unix(), test.queryMaxTime.Unix())
+		require.GreaterOrEqual(t, actualRanges[len(actualRanges)-1][0].Unix(), test.queryMinTime.Unix())
+		require.LessOrEqual(t, actualRanges[len(actualRanges)-1][1].Unix(), test.queryMaxTime.Unix())
+
+		require.GreaterOrEqual(t, actualInstants[len(actualInstants)-1].Unix(), test.queryMinTime.Unix())
+		require.LessOrEqual(t, actualInstants[len(actualInstants)-1].Unix(), test.queryMaxTime.Unix())
 	})
 
 	t.Run("min query time is older than 24h but max query age is only 10m", func(t *testing.T) {
@@ -417,12 +473,18 @@ func TestWriteReadSeriesTest_getRangeQueryTimeRanges(t *testing.T) {
 		test.queryMinTime = now.Add(-30 * time.Hour)
 		test.queryMaxTime = now.Add(-time.Minute)
 
-		actual := test.getRangeQueryTimeRanges(now)
-		require.Len(t, actual, 2)
-		require.Equal(t, [2]time.Time{now.Add(-10 * time.Minute), now.Add(-time.Minute)}, actual[0]) // Last 1h.
+		actualRanges, actualInstants := test.getQueryTimeRanges(now)
+		require.Len(t, actualRanges, 2)
+		require.Equal(t, [2]time.Time{now.Add(-10 * time.Minute), now.Add(-time.Minute)}, actualRanges[0]) // Last 1h.
+
+		require.Len(t, actualInstants, 2)
+		require.Equal(t, now.Add(-time.Minute), actualInstants[0]) // Last 1h.
 
 		// Random time range.
-		require.GreaterOrEqual(t, actual[len(actual)-1][0].Unix(), test.queryMinTime.Unix())
-		require.LessOrEqual(t, actual[len(actual)-1][1].Unix(), test.queryMaxTime.Unix())
+		require.GreaterOrEqual(t, actualRanges[len(actualRanges)-1][0].Unix(), test.queryMinTime.Unix())
+		require.LessOrEqual(t, actualRanges[len(actualRanges)-1][1].Unix(), test.queryMaxTime.Unix())
+
+		require.GreaterOrEqual(t, actualInstants[len(actualInstants)-1].Unix(), test.queryMinTime.Unix())
+		require.LessOrEqual(t, actualInstants[len(actualInstants)-1].Unix(), test.queryMaxTime.Unix())
 	})
 }

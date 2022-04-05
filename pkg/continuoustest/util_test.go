@@ -47,7 +47,7 @@ func TestGetQueryStep(t *testing.T) {
 	}
 }
 
-func TestVerifySineWaveSamplesSums(t *testing.T) {
+func TestVerifySineWaveSamplesSum(t *testing.T) {
 	// Round to millis since that's the precision of Prometheus timestamps.
 	now := time.UnixMilli(time.Now().UnixMilli()).UTC()
 
