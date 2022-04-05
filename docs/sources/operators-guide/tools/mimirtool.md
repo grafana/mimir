@@ -655,6 +655,22 @@ It supports converting both CLI flags and [YAML configuration files]({{< relref 
 | `-v`, `--verbose`    | If you set this flag, the CLI flags and YAML paths from the old configuration that do not exist in the new configuration are printed to `stderr`. This flag also prints default values that have changed between the old and the new configuration. |
 | `--gem`              | If you set this flag, the tool will convert from Grafana Metrics Enterprise (GEM) v1.7.x to v2.0.0.                                                                                                                                                 |
 
+##### A note on default values
+
+This command is designed to aid a migration from Cortex to Grafana Mimir. There are changes to the default values of
+some configuration parameters in Mimir v2.0.0 that we think you would not want to make as part of this migration. These
+parameters are:
+
+* `blocks_storage.backend` - Cortex default is `s3`, Mimir default is `filesystem`
+* `ruler_storage.backend` - Cortex default is `s3`, Mimir default is `filesystem`
+* `alertmanager_storage.backend` - Cortex default is `s3`, Mimir default is `filesystem`
+* `server.http_listen_port` - Cortex default is `80`, Mimir default is `8080`
+* (GEM only) `auth.type` - Cortex default is `trust`, Mimir default is `enterprise`
+
+This command will output the Cortex default value even when the configuration parameter is not explicitly set in the input
+configuration. If the Cortex default value is explicitly set in the input configuraiton, and you have provided
+the `--update-defaults` flag, the command will not update the value to the Mimir default.
+
 ##### Example
 
 The following example shows a command that converts Cortex [query-frontend]({{< relref "../architecture/components/query-frontend" >}}) YAML configuration file and CLI flag to a Mimir-compatible YAML and CLI flag.
