@@ -169,19 +169,19 @@ local fixTargetsForTransformations(panel, refIds) = panel {
           |||
             Displays the amount of time since the most recent successful execution
             of the compactor.
-            The value shown will be for the compactor replica which has the longest time since its
+            The value shown will be for the compactor replica that has the longest time since its
             last successful run.
             The table to the right shows a summary for all compactor replicas.
 
-            If there is no time value, one of the following messages may appear:
+            If there is no time value, one of the following messages might appear:
 
             - If you see "No compactor data" in this panel, that means that no compactors are active yet.
 
             - If you see "No successful runs" in this panel, that means that compactors are active, but none 
               of them were successfully executed yet.
 
-            These may be expected - for example, if you just recently restarted your compactors, they may not 
-            yet be broadcasting metrics, or they may not have had a chance to complete their first compaction run. 
+            These might be expected - for example, if you just recently restarted your compactors, they might not 
+            yet be broadcasting metrics, or they might not have had a chance to complete their first compaction run. 
             However, if these messages persist, you should check the health of your compactors.
           |||
         ) +
@@ -223,13 +223,14 @@ local fixTargetsForTransformations(panel, refIds) = panel {
             Displays the compactor replicas, and for each, shows how long it has been since
             its last successful compaction run.
 
-            The value in status column is based on how long it has been since the last successful compaction.
+            The value in the status column is based on how long it has been since the last successful compaction.
 
+            - Okay: less than 2 hours
             - Delayed: more than 2 hours
             - Late: more than 6 hours
             - Very late: more than 12 hours
 
-            If the status of any compactor replicas are late, you should check their health.
+            If the status of any compactor replicas are *Late* or *Very late*, check their health.
           |||
         ) +
         $.queryPanel(lastRunQuery, 'Last run') {

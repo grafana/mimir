@@ -210,7 +210,7 @@
                   "dashLength": 10,
                   "dashes": false,
                   "datasource": "$datasource",
-                  "description": "### Longest time since last successful run\nDisplays the amount of time since the most recent successful execution\nof the compactor.\nThe value shown will be for the compactor replica which has the longest time since its\nlast successful run.\nThe table to the right shows a summary for all compactor replicas.\n\nIf there is no time value, one of the following messages may appear:\n\n- If you see \"No compactor data\" in this panel, that means that no compactors are active yet.\n\n- If you see \"No successful runs\" in this panel, that means that compactors are active, but none \n  of them were successfully executed yet.\n\nThese may be expected - for example, if you just recently restarted your compactors, they may not \nyet be broadcasting metrics, or they may not have had a chance to complete their first compaction run. \nHowever, if these messages persist, you should check the health of your compactors.\n\n",
+                  "description": "### Longest time since last successful run\nDisplays the amount of time since the most recent successful execution\nof the compactor.\nThe value shown will be for the compactor replica that has the longest time since its\nlast successful run.\nThe table to the right shows a summary for all compactor replicas.\n\nIf there is no time value, one of the following messages might appear:\n\n- If you see \"No compactor data\" in this panel, that means that no compactors are active yet.\n\n- If you see \"No successful runs\" in this panel, that means that compactors are active, but none \n  of them were successfully executed yet.\n\nThese might be expected - for example, if you just recently restarted your compactors, they might not \nyet be broadcasting metrics, or they might not have had a chance to complete their first compaction run. \nHowever, if these messages persist, you should check the health of your compactors.\n\n",
                   "fieldConfig": {
                      "defaults": {
                         "color": {
@@ -408,7 +408,7 @@
                   "dashLength": 10,
                   "dashes": false,
                   "datasource": "$datasource",
-                  "description": "### Last successful run per-compactor replica\nDisplays the compactor replicas, and for each, shows how long it has been since\nits last successful compaction run.\n\nThe value in status column is based on how long it has been since the last successful compaction.\n\n- Delayed: more than 2 hours\n- Late: more than 6 hours\n- Very late: more than 12 hours\n\nIf the status of any compactor replicas are late, you should check their health.\n\n",
+                  "description": "### Last successful run per-compactor replica\nDisplays the compactor replicas, and for each, shows how long it has been since\nits last successful compaction run.\n\nThe value in the status column is based on how long it has been since the last successful compaction.\n\n- Okay: less than 2 hours\n- Delayed: more than 2 hours\n- Late: more than 6 hours\n- Very late: more than 12 hours\n\nIf the status of any compactor replicas are *Late* or *Very late*, check their health.\n\n",
                   "fieldConfig": {
                      "overrides": [
                         {
