@@ -221,13 +221,13 @@ You can update to the Grafana Mimir Helm chart from the Cortex Helm chart.
    a. Extract the Cortex configuration and write the output to the `cortex.yaml` file.
 
    ```bash
-   yq -Y '.config' <VALUES YAML FILE> > cortex.yaml
+   yq '.config' <VALUES YAML FILE> > cortex.yaml
    ```
 
    b. Use `mimirtool` to update the configuration.
 
    ```bash
-   mimirtool config convert cortex.yaml
+   mimirtool config convert --yaml-file cortex.yaml
    ```
 
    c. Place the updated configuration under the `mimir.config` key at the top level of your Helm values file.
