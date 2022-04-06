@@ -20,7 +20,7 @@ jobs:
   lint:
     runs-on: ubuntu-20.04
     container:
-      image: grafana/mimir-build-image:chore-build-multiplatform-images-75dbba45b
+      image: grafana/mimir-build-image:chore-build-multiplatform-images-3b8a0c120
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v2
@@ -50,7 +50,7 @@ jobs:
   lint-jsonnet:
     runs-on: ubuntu-20.04
     container:
-      image: grafana/mimir-build-image:chore-build-multiplatform-images-75dbba45b
+      image: grafana/mimir-build-image:chore-build-multiplatform-images-3b8a0c120
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v2
@@ -79,7 +79,7 @@ jobs:
         test_group_id:    [0, 1, 2, 3]
         test_group_total: [4]
     container:
-      image: grafana/mimir-build-image:chore-build-multiplatform-images-75dbba45b
+      image: grafana/mimir-build-image:chore-build-multiplatform-images-3b8a0c120
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v2
@@ -105,7 +105,7 @@ jobs:
   build-mimir:
     runs-on: ubuntu-20.04
     container:
-      image: grafana/mimir-build-image:chore-build-multiplatform-images-75dbba45b
+      image: grafana/mimir-build-image:chore-build-multiplatform-images-3b8a0c120
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v2
@@ -135,7 +135,7 @@ jobs:
   build-tools:
     runs-on: ubuntu-20.04
     container:
-      image: grafana/mimir-build-image:chore-build-multiplatform-images-75dbba45b
+      image: grafana/mimir-build-image:chore-build-multiplatform-images-3b8a0c120
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v2
@@ -223,7 +223,7 @@ jobs:
     if: (startsWith(github.ref, 'refs/tags/') || startsWith(github.ref, 'refs/heads/r') ) && github.event_name == 'push' && github.repository == 'grafana/mimir'
     runs-on: ubuntu-20.04
     container:
-      image: grafana/mimir-build-image:chore-build-multiplatform-images-75dbba45b
+      image: grafana/mimir-build-image:chore-build-multiplatform-images-3b8a0c120
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v2
