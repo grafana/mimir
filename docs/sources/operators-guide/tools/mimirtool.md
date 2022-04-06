@@ -665,7 +665,7 @@ parameters are:
 - `ruler_storage.backend` - Cortex default is `s3`, Mimir default is `filesystem`
 - `alertmanager_storage.backend` - Cortex default is `s3`, Mimir default is `filesystem`
 - `server.http_listen_port` - Cortex default is `80`, Mimir default is `8080`
-- (GEM only) `auth.type` - Cortex default is `trust`, Mimir default is `enterprise`
+- (GEM only) `auth.type` - GEM 1.x default is `trust`, 2.x default is `enterprise`
 
 This command will output the Cortex default value even when the configuration parameter is not explicitly set in the input
 configuration. If the Cortex default value is explicitly set in the input configuration, and you have provided
