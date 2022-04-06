@@ -6,13 +6,13 @@
 
 Install xk6, used for building k6 with additional modules
 
-```console
+```sh
 go install go.k6.io/xk6/cmd/xk6@latest
 ```
 
 Build k6 with k6-client-prometheus-remote support using xk6
 
-```console
+```sh
 xk6 build --with github.com/grafana/xk6-client-prometheus-remote@latest
 ```
 
@@ -39,13 +39,13 @@ The [load-testing-with-k6.js] script can be configured using the following envir
 
 For example, if Mimir is running on `localhost:80` you can run a small scale test with this command:
 
-```console
+```sh
 k6 run load-testing-with-k6.js -e K6_WRITE_HOSTNAME="localhost:80" -e K6_READ_HOSTNAME="localhost:80"
 ```
 
 Assuming Mimir is scaled up appropriately and you have enough k6 workers capacity, you can load test Mimir with 1 billion active series running this command:
 
-```console
+```sh
 k6 run load-testing-with-k6.js \
     -e K6_WRITE_HOSTNAME="mimir:80" \
     -e K6_READ_HOSTNAME="mimir:80" \
@@ -64,11 +64,11 @@ Assuming your k6 account has an enterprise plan:
 
 1. Log into k6 cloud
 1. Go to https://app.k6.io/tests/new/cli to retrieve the command to authenticate the CLI tool with k6 cloud. It should look something like:
-   ```console
+   ```sh
    k6 login cloud -t <token>
    ```
 1. Run the load test in k6 cloud
-   ```console
+   ```sh
    k6 cloud load-testing-with-k6.js
    ```
 
