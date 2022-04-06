@@ -64,7 +64,7 @@ func TestRemoteQuerier_QueryReq(t *testing.T) {
 	}
 	q := NewRemoteQuerier(mockHTTPGRPCClient(mockClientFn), "/prometheus", log.NewNopLogger())
 
-	_, _, err := q.Query(context.Background(), "qs", time.Unix(1649092025, 515834))
+	_, err := q.Query(context.Background(), "qs", time.Unix(1649092025, 515834))
 	require.NoError(t, err)
 
 	require.NotNil(t, inReq)

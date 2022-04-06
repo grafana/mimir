@@ -28,7 +28,6 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/rules"
 	"github.com/weaveworks/common/httpgrpc"
 	"github.com/weaveworks/common/middleware"
 	"github.com/weaveworks/common/user"
@@ -55,8 +54,8 @@ const (
 
 var userAgent = fmt.Sprintf("mimir/%s", version.Version)
 
-// RemoteQuerierConfig defines remote querier transport configuration.
-type RemoteQuerierConfig struct {
+// QueryFrontendConfig defines query-frontend transport configuration.
+type QueryFrontendConfig struct {
 	// The address of the remote querier to connect to.
 	Address string `yaml:"address"`
 
@@ -67,7 +66,7 @@ type RemoteQuerierConfig struct {
 	TLS tls.ClientConfig `yaml:",inline"`
 }
 
-func (c *RemoteQuerierConfig) RegisterFlags(f *flag.FlagSet) {
+func (c *QueryFrontendConfig) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&c.Address,
 		"ruler.query-frontend.address",
 		"",
@@ -79,8 +78,8 @@ func (c *RemoteQuerierConfig) RegisterFlags(f *flag.FlagSet) {
 	c.TLS.RegisterFlagsWithPrefix("ruler.query-frontend", f)
 }
 
-// DialRemoteQuerier creates and initializes a new httpgrpc.HTTPClient taking a remote querier configuration.
-func DialRemoteQuerier(cfg RemoteQuerierConfig) (httpgrpc.HTTPClient, error) {
+// DialQueryFrontend creates and initializes a new httpgrpc.HTTPClient taking a QueryFrontendConfig configuration.
+func DialQueryFrontend(cfg QueryFrontendConfig) (httpgrpc.HTTPClient, error) {
 	tlsDialOptions, err := cfg.TLS.GetGRPCDialOptions(cfg.TLSEnabled)
 	if err != nil {
 		return nil, err
@@ -141,7 +140,7 @@ func NewRemoteQuerier(
 // Read satisfies Prometheus remote.ReadClient.
 // See: https://github.com/prometheus/prometheus/blob/1291ec71851a7383de30b089f456fdb6202d037a/storage/remote/client.go#L264
 func (q *RemoteQuerier) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryResult, error) {
-	log, ctx := spanlogger.NewWithLogger(ctx, q.logger, "remotequerier.Querier.Read")
+	log, ctx := spanlogger.NewWithLogger(ctx, q.logger, "ruler.RemoteQuerier.Read")
 	defer log.Span.Finish()
 
 	rdReq := &prompb.ReadRequest{
@@ -178,11 +177,10 @@ func (q *RemoteQuerier) Read(ctx context.Context, query *prompb.Query) (*prompb.
 		level.Warn(log).Log("msg", "failed to perform remote read", "err", err, "qs", query)
 		return nil, err
 	}
-	level.Debug(log).Log("msg", "remote read successfully performed", "qs", query)
-
-	if resp != nil && resp.Code/100 != 2 {
+	if resp.Code/100 != 2 {
 		return nil, fmt.Errorf("unexpected response status code %d: %s", resp.Code, string(resp.Body))
 	}
+	level.Debug(log).Log("msg", "remote read successfully performed", "qs", query)
 
 	uncompressed, err := snappy.Decode(nil, resp.Body)
 	if err != nil {
@@ -202,14 +200,22 @@ func (q *RemoteQuerier) Read(ctx context.Context, query *prompb.Query) (*prompb.
 }
 
 // Query performs a query for the given time.
-func (q *RemoteQuerier) Query(ctx context.Context, query string, ts time.Time) (model.ValueType, json.RawMessage, error) {
-	log, ctx := spanlogger.NewWithLogger(ctx, q.logger, "remotequerier.Querier.Query")
-	defer log.Span.Finish()
+func (q *RemoteQuerier) Query(ctx context.Context, qs string, t time.Time) (promql.Vector, error) {
+	logger, ctx := spanlogger.NewWithLogger(ctx, q.logger, "ruler.RemoteQuerier.Query")
+	defer logger.Span.Finish()
 
+	valTyp, res, err := q.query(ctx, qs, t, logger)
+	if err != nil {
+		return nil, err
+	}
+	return decodeQueryResponse(valTyp, res)
+}
+
+func (q *RemoteQuerier) query(ctx context.Context, query string, ts time.Time, logger log.Logger) (model.ValueType, json.RawMessage, error) {
 	args := make(url.Values)
 	args.Set("query", query)
 	if !ts.IsZero() {
-		args.Set("time", formatQueryTime(ts))
+		args.Set("time", ts.Format(time.RFC3339Nano))
 	}
 	body := []byte(args.Encode())
 
@@ -232,14 +238,13 @@ func (q *RemoteQuerier) Query(ctx context.Context, query string, ts time.Time) (
 
 	resp, err := q.client.Handle(ctx, &req)
 	if err != nil {
-		level.Warn(log).Log("msg", "failed to remotely evaluate query expression", "err", err, "qs", query, "tm", ts)
+		level.Warn(logger).Log("msg", "failed to remotely evaluate query expression", "err", err, "qs", query, "tm", ts)
 		return model.ValNone, nil, err
 	}
-	level.Debug(log).Log("msg", "query expression successfully evaluated", "qs", query, "tm", ts)
-
-	if resp != nil && resp.Code/100 != 2 {
+	if resp.Code/100 != 2 {
 		return model.ValNone, nil, fmt.Errorf("unexpected response status code %d: %s", resp.Code, string(resp.Body))
 	}
+	level.Debug(logger).Log("msg", "query expression successfully evaluated", "qs", query, "tm", ts)
 
 	var apiResp struct {
 		Status    string          `json:"status"`
@@ -262,17 +267,6 @@ func (q *RemoteQuerier) Query(ctx context.Context, query string, ts time.Time) (
 		return model.ValNone, nil, err
 	}
 	return v.Type, v.Result, nil
-}
-
-// QueryFunc returns a rules.QueryFunc derived from a RemoteQuerier instance.
-func (q *RemoteQuerier) QueryFunc() rules.QueryFunc {
-	return func(ctx context.Context, qs string, t time.Time) (promql.Vector, error) {
-		valTyp, res, err := q.Query(ctx, qs, t)
-		if err != nil {
-			return nil, err
-		}
-		return decodeQueryResponse(valTyp, res)
-	}
 }
 
 func decodeQueryResponse(valTyp model.ValueType, result json.RawMessage) (promql.Vector, error) {
@@ -323,10 +317,6 @@ func scalarToPromQLVector(sc *prommodel.Scalar) promql.Vector {
 		},
 		Metric: labels.Labels{},
 	}}
-}
-
-func formatQueryTime(t time.Time) string {
-	return strconv.FormatFloat(float64(t.Unix())+float64(t.Nanosecond())/1e9, 'f', -1, 64)
 }
 
 // WithOrgIDHeader attaches orgID header by inspecting the passed context.

@@ -548,12 +548,12 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 	var embeddedQueryable prom_storage.Queryable
 	var queryFunc rules.QueryFunc
 
-	if len(t.Cfg.Ruler.RemoteQuerier.Address) > 0 {
-		querierClient, err := ruler.DialRemoteQuerier(t.Cfg.Ruler.RemoteQuerier)
+	if t.Cfg.Ruler.QueryFrontend.Address != "" {
+		queryFrontendClient, err := ruler.DialQueryFrontend(t.Cfg.Ruler.QueryFrontend)
 		if err != nil {
 			return nil, err
 		}
-		remoteQuerier := ruler.NewRemoteQuerier(querierClient, t.Cfg.API.PrometheusHTTPPrefix, util_log.Logger, ruler.WithOrgIDHeader)
+		remoteQuerier := ruler.NewRemoteQuerier(queryFrontendClient, t.Cfg.API.PrometheusHTTPPrefix, util_log.Logger, ruler.WithOrgIDHeader)
 
 		embeddedQueryable = prom_remote.NewSampleAndChunkQueryableClient(
 			remoteQuerier,
@@ -562,7 +562,7 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 			true,
 			func() (int64, error) { return 0, nil },
 		)
-		queryFunc = remoteQuerier.QueryFunc()
+		queryFunc = remoteQuerier.Query
 
 	} else {
 		var queryable, federatedQueryable prom_storage.Queryable
