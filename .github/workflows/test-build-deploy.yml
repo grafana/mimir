@@ -189,7 +189,7 @@ jobs:
       # Keep revision in sync with that in Mimir build image
       - name: Install ko
         run: |
-          go install github.com/grafana/ko@f63d0237fc792872ba4b17434afc94b03c9dc2cf
+          go install github.com/grafana/ko@37f6651b50ba1ecdfb691be4602472d4df8424e4
       - name: Symlink Expected Path to Workspace
         run: |
           sudo mkdir -p /go/src/github.com/grafana/mimir
