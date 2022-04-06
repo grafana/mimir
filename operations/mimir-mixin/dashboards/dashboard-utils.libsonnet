@@ -54,17 +54,17 @@ local utils = import 'mixin-utils/utils.libsonnet';
           if $._config.singleBinary
           then d.addMultiTemplate('job', 'cortex_build_info', 'job')
           else d
-               .addMultiTemplate('cluster', 'cortex_build_info', 'cluster')
-               .addMultiTemplate('namespace', 'cortex_build_info{cluster=~"$cluster"}', 'namespace')
+               .addMultiTemplate('cluster', 'cortex_build_info', '%s' % $._config.clusterLabel)
+               .addMultiTemplate('namespace', 'cortex_build_info{%s=~"$cluster"}' % $._config.clusterLabel , 'namespace')
         else
           if $._config.singleBinary
           then d.addTemplate('job', 'cortex_build_info', 'job')
           else d
-               .addTemplate('cluster', 'cortex_build_info', 'cluster')
-               .addTemplate('namespace', 'cortex_build_info{cluster=~"$cluster"}', 'namespace'),
+               .addTemplate('cluster', 'cortex_build_info', '%s' % $._config.clusterLabel)
+               .addTemplate('namespace', 'cortex_build_info{%s=~"$cluster"}' % $._config.clusterLabel, 'namespace'),
 
       addActiveUserSelectorTemplates()::
-        self.addTemplate('user', 'cortex_ingester_active_series{cluster=~"$cluster", namespace=~"$namespace"}', 'user'),
+        self.addTemplate('user', 'cortex_ingester_active_series{%s=~"$cluster", namespace=~"$namespace"}' % $._config.clusterLabel, 'user'),
 
       addCustomTemplate(name, values, defaultIndex=0):: self {
         templating+: {
@@ -99,17 +99,17 @@ local utils = import 'mixin-utils/utils.libsonnet';
   jobMatcher(job)::
     if $._config.singleBinary
     then 'job=~"$job"'
-    else 'cluster=~"$cluster", job=~"($namespace)/(%s)"' % job,
+    else '%s=~"$cluster", job=~"($namespace)/(%s)"' % [$._config.clusterLabel, job],
 
   namespaceMatcher()::
     if $._config.singleBinary
     then 'job=~"$job"'
-    else 'cluster=~"$cluster", namespace=~"$namespace"',
+    else '%s=~"$cluster", namespace=~"$namespace"' % $._config.clusterLabel,
 
   jobSelector(job)::
     if $._config.singleBinary
-    then [utils.selector.noop('cluster'), utils.selector.re('job', '$job')]
-    else [utils.selector.re('cluster', '$cluster'), utils.selector.re('job', '($namespace)/(%s)' % job)],
+    then [utils.selector.noop('%s' % $._config.clusterLabel), utils.selector.re('job', '$job')]
+    else [utils.selector.re('%s' % $._config.clusterLabel, '$cluster'), utils.selector.re('job', '($namespace)/(%s)' % job)],
 
   queryPanel(queries, legends, legendLink=null)::
     super.queryPanel(queries, legends, legendLink) + {

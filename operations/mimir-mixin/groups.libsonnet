@@ -7,10 +7,12 @@
   _group_config+:: {
     // Each group prefix is composed of `_`-separated labels
     group_prefix_jobs: makePrefix($._config.job_labels),
+    group_prefix_namespaces: makePrefix($._config.namespace_labels),
     group_prefix_clusters: makePrefix($._config.cluster_labels),
 
     // Each group-by label list is `, `-separated and unique identifies
     group_by_job: makeGroupBy($._config.job_labels),
+    group_by_namespace: makeGroupBy($._config.namespace_labels),
     group_by_cluster: group_by_cluster,
   },
 
