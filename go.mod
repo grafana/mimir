@@ -57,6 +57,7 @@ require (
 	github.com/alecthomas/chroma v0.10.0
 	github.com/google/go-github/v32 v32.1.0
 	github.com/grafana-tools/sdk v0.0.0-20211220201350-966b3088eec9
+	github.com/grpc-ecosystem/go-grpc-middleware v1.3.0
 	github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db
 	gopkg.in/alecthomas/kingpin.v2 v2.2.6
 )
@@ -133,7 +134,6 @@ require (
 	github.com/googleapis/gax-go/v2 v2.1.1 // indirect
 	github.com/gopherjs/gopherjs v0.0.0-20191106031601-ce3c9ade29de // indirect
 	github.com/gosimple/slug v1.1.1 // indirect
-	github.com/grpc-ecosystem/go-grpc-middleware v1.3.0 // indirect
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.0.0-rc.2.0.20201207153454-9f6bf00c00a7 // indirect
 	github.com/hashicorp/consul/api v1.12.0 // indirect
 	github.com/hashicorp/errwrap v1.0.0 // indirect

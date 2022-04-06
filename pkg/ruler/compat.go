@@ -8,10 +8,12 @@ package ruler
 import (
 	"context"
 	"errors"
+	"net/http"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/gogo/status"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/exemplar"
@@ -147,8 +149,14 @@ func MetricsQueryFunc(qf rules.QueryFunc, queries, failedQueries prometheus.Coun
 
 			// Return unwrapped error.
 			return result, origErr
-		}
 
+		} else if err != nil {
+			// When remote querier enabled, only consider failed queries those returning a 500 status code.
+			st, ok := status.FromError(err)
+			if ok && st.Code() == http.StatusInternalServerError {
+				failedQueries.Inc()
+			}
+		}
 		return result, err
 	}
 }
@@ -214,7 +222,14 @@ type RulesManager interface {
 // ManagerFactory is a function that creates new RulesManager for given user and notifier.Manager.
 type ManagerFactory func(ctx context.Context, userID string, notifier *notifier.Manager, logger log.Logger, reg prometheus.Registerer) RulesManager
 
-func DefaultTenantManagerFactory(cfg Config, p Pusher, queryable, federatedQueryable storage.Queryable, engine *promql.Engine, overrides RulesLimits, reg prometheus.Registerer) ManagerFactory {
+func DefaultTenantManagerFactory(
+	cfg Config,
+	p Pusher,
+	embeddedQueryable storage.Queryable,
+	queryFunc rules.QueryFunc,
+	overrides RulesLimits,
+	reg prometheus.Registerer,
+) ManagerFactory {
 	totalWrites := promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Name: "cortex_ruler_write_requests_total",
 		Help: "Number of write requests to ingesters.",
@@ -239,32 +254,20 @@ func DefaultTenantManagerFactory(cfg Config, p Pusher, queryable, federatedQuery
 			Help: "Total amount of wall clock time spent processing queries by the ruler.",
 		}, []string{"user"})
 	}
-
 	return func(ctx context.Context, userID string, notifier *notifier.Manager, logger log.Logger, reg prometheus.Registerer) RulesManager {
 		var queryTime prometheus.Counter = nil
 		if rulerQuerySeconds != nil {
 			queryTime = rulerQuerySeconds.WithLabelValues(userID)
 		}
+		var wrappedQueryFunc rules.QueryFunc
 
-		wrapQueryable := func(q storage.Queryable) (queryFunc rules.QueryFunc) {
-			// Wrap errors returned by Queryable to our wrapper, so that we can distinguish between those errors
-			// and errors returned by PromQL engine. Errors from Queryable can be either caused by user (limits) or internal errors.
-			// Errors from PromQL are always "user" errors.
-			q = querier.NewErrorTranslateQueryableWithFn(q, WrapQueryableErrors)
-
-			queryFunc = rules.EngineQueryFunc(engine, q)
-			queryFunc = MetricsQueryFunc(queryFunc, totalQueries, failedQueries)
-			queryFunc = RecordAndReportRuleQueryMetrics(queryFunc, queryTime, logger)
-			return queryFunc
-		}
-
-		regularQueryFunc := wrapQueryable(queryable)
-		federatedQueryFunc := wrapQueryable(federatedQueryable)
+		wrappedQueryFunc = MetricsQueryFunc(queryFunc, totalQueries, failedQueries)
+		wrappedQueryFunc = RecordAndReportRuleQueryMetrics(wrappedQueryFunc, queryTime, logger)
 
 		return rules.NewManager(&rules.ManagerOptions{
 			Appendable:                 NewPusherAppendable(p, userID, overrides, totalWrites, failedWrites),
-			Queryable:                  queryable,
-			QueryFunc:                  TenantFederationQueryFunc(regularQueryFunc, federatedQueryFunc),
+			Queryable:                  embeddedQueryable,
+			QueryFunc:                  wrappedQueryFunc,
 			Context:                    user.InjectOrgID(ctx, userID),
 			GroupEvaluationContextFunc: FederatedGroupContextFunc,
 			ExternalURL:                cfg.ExternalURL.URL,

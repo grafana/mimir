@@ -22,6 +22,7 @@ import (
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/httpgrpc"
@@ -288,13 +289,25 @@ func TestManagerFactory_CorrectQueryableUsed(t *testing.T) {
 
 			// setup
 			cfg := defaultRulerConfig(t)
-			engine, _, pusher, logger, overrides := testSetup(t)
+			_, _, pusher, logger, overrides := testSetup()
 			notifierManager := notifier.NewManager(&notifier.Options{Do: func(_ context.Context, _ *http.Client, _ *http.Request) (*http.Response, error) { return nil, nil }}, logger)
 			ruleFiles := writeRuleGroupToFiles(t, cfg.RulePath, logger, userID, tc.ruleGroup)
 			regularQueryable, federatedQueryable := newMockQueryable(), newMockQueryable()
 
+			tracker := promql.NewActiveQueryTracker(t.TempDir(), 20, log.NewNopLogger())
+			eng := promql.NewEngine(promql.EngineOpts{
+				MaxSamples:         1e6,
+				ActiveQueryTracker: tracker,
+				Timeout:            2 * time.Minute,
+			})
+			regularQueryFunc := rules.EngineQueryFunc(eng, regularQueryable)
+			federatedQueryFunc := rules.EngineQueryFunc(eng, federatedQueryable)
+
+			queryFunc := TenantFederationQueryFunc(regularQueryFunc, federatedQueryFunc)
+
 			// create and use manager factory
-			managerFactory := DefaultTenantManagerFactory(cfg, pusher, regularQueryable, federatedQueryable, engine, overrides, nil)
+			managerFactory := DefaultTenantManagerFactory(cfg, pusher, federatedQueryable, queryFunc, overrides, nil)
+
 			manager := managerFactory(context.Background(), userID, notifierManager, logger, nil)
 
 			// load rules into manager and start

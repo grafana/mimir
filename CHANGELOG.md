@@ -10,6 +10,15 @@
 * [CHANGE] Ingester: Add `user` label to metrics `cortex_ingester_ingested_samples_total` and `cortex_ingester_ingested_samples_failures_total`. #1533
 * [CHANGE] Query-frontend: results cache keys are now versioned, this will cause cache to be re-filled when rolling out this version. #1631
 * [FEATURE] Ruler: Allow setting `evaluation_delay` for each rule group via rules group configuration file. #1474
+* [FEATURE] Ruler: Added support for expression remote evaluation. #1536
+  * The following CLI flags (and their respective YAML config options) have been added:
+    * `-ruler.query-frontend.address`
+    * `-ruler.query-frontend.tls-enabled`
+    * `-ruler.query-frontend.tls-ca-path`
+    * `-ruler.query-frontend.tls-cert-path`
+    * `-ruler.query-frontend.tls-key-path`
+    * `-ruler.query-frontend.tls-server-name`
+    * `-ruler.query-frontend.tls-insecure-skip-verify`
 * [FEATURE] Distributor: Added the ability to forward specifics metrics to alternative remote_write API endpoints. #1052
 * [FEATURE] Ingester: Active series custom trackers now supports runtime tenant-specific overrides. The configuration has been moved to limit config, the ingester config has been deprecated.  #1188
 * [ENHANCEMENT] Alertmanager API: Concurrency limit for GET requests is now configurable using `-alertmanager.max-concurrent-get-requests-per-tenant`. #1547
