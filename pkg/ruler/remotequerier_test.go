@@ -5,6 +5,7 @@ package ruler
 import (
 	"context"
 	"net/http"
+	"net/url"
 	"testing"
 	"time"
 
@@ -64,11 +65,12 @@ func TestRemoteQuerier_QueryReq(t *testing.T) {
 	}
 	q := NewRemoteQuerier(mockHTTPGRPCClient(mockClientFn), "/prometheus", log.NewNopLogger())
 
-	_, err := q.Query(context.Background(), "qs", time.Unix(1649092025, 515834))
+	tm := time.Unix(1649092025, 515834)
+	_, err := q.Query(context.Background(), "qs", tm)
 	require.NoError(t, err)
 
 	require.NotNil(t, inReq)
 	require.Equal(t, http.MethodPost, inReq.Method)
-	require.Equal(t, "query=qs&time=1649092025.000516", string(inReq.Body))
+	require.Equal(t, "query=qs&time="+url.QueryEscape(tm.Format(time.RFC3339Nano)), string(inReq.Body))
 	require.Equal(t, "/prometheus/api/v1/query", inReq.Url)
 }
