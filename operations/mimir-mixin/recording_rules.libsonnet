@@ -115,7 +115,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
             // Multi-zone deployments are grouped together removing the "zone-X" suffix.
             record: '%(group_prefix_namespaces)s_deployment:actual_replicas:count' % _config,
             expr: |||
-              sum by (%(namespace_labels)s, deployment) (
+              sum by (%(group_by_namespace)s, deployment) (
                 label_replace(
                   kube_deployment_spec_replicas,
                   # The question mark in "(.*?)" is used to make it non-greedy, otherwise it
@@ -124,10 +124,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
                 )
               )
               or
-              sum by (%(namespace_labels)s, deployment) (
+              sum by (%(group_by_namespace)s, deployment) (
                 label_replace(kube_statefulset_replicas, "deployment", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?")
               )
-            ||| % $._config,
+            ||| % _config,
           },
           {
             // Distributors should be able to deal with 240k samples/s.
@@ -139,7 +139,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
             expr: |||
               ceil(
                 quantile_over_time(0.99,
-                  sum by (%(namespace_labels)s) (
+                  sum by (%(group_by_namespace)s) (
                     %(group_prefix_jobs)s:cortex_distributor_received_samples:rate5m
                   )[24h:]
                 )
@@ -157,7 +157,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
             },
             expr: |||
               ceil(
-                sum by (%(namespace_labels)s) (cortex_limits_overrides{limit_name="ingestion_rate"})
+                sum by (%(group_by_namespace)s) (cortex_limits_overrides{limit_name="ingestion_rate"})
                 * %(limit_utilisation_target)s / %(max_samples_per_sec_per_distributor)s
               )
             ||| % _config,
@@ -173,7 +173,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
             expr: |||
               ceil(
                 quantile_over_time(0.99,
-                  sum by (%(namespace_labels)s) (
+                  sum by (%(group_by_namespace)s) (
                     %(group_prefix_jobs)s:cortex_distributor_received_samples:rate5m
                   )[24h:]
                 )
@@ -191,7 +191,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
             expr: |||
               ceil(
                 quantile_over_time(0.99,
-                  sum by(%(namespace_labels)s) (
+                  sum by(%(group_by_namespace)s) (
                     cortex_ingester_memory_series
                   )[24h:]
                 )
@@ -209,7 +209,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
             },
             expr: |||
               ceil(
-                sum by (%(namespace_labels)s) (cortex_limits_overrides{limit_name="max_global_series_per_user"})
+                sum by (%(group_by_namespace)s) (cortex_limits_overrides{limit_name="max_global_series_per_user"})
                 * 3 * %(limit_utilisation_target)s / %(max_series_per_ingester)s
               )
             ||| % _config,
@@ -224,7 +224,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
             },
             expr: |||
               ceil(
-                sum by (%(namespace_labels)s) (cortex_limits_overrides{limit_name="ingestion_rate"})
+                sum by (%(group_by_namespace)s) (cortex_limits_overrides{limit_name="ingestion_rate"})
                 * %(limit_utilisation_target)s / %(max_samples_per_sec_per_ingester)s
               )
             ||| % _config,
@@ -238,11 +238,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
             },
             expr: |||
               ceil(
-                (sum by (%(namespace_labels)s) (
+                (sum by (%(group_by_namespace)s) (
                   cortex_ingester_tsdb_storage_blocks_bytes{job=~".+/ingester.*"}
                 ) / 4)
                   /
-                avg by (%(namespace_labels)s) (
+                avg by (%(group_by_namespace)s) (
                   memcached_limit_bytes{job=~".+/memcached"}
                 )
               )
@@ -253,7 +253,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
             // Multi-zone deployments are grouped together removing the "zone-X" suffix.
             record: '%(group_prefix_namespaces)s_deployment:container_cpu_usage_seconds_total:sum_rate' % _config,
             expr: |||
-              sum by (%(namespace_labels)s, deployment) (
+              sum by (%(group_by_namespace)s, deployment) (
                 label_replace(
                   label_replace(
                     node_namespace_pod_container:container_cpu_usage_seconds_total:sum_irate,
@@ -279,7 +279,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
               # This is the old expression, compatible with kube-state-metrics < v2.0.0,
               # where kube_pod_container_resource_requests_cpu_cores was removed:
               (
-                sum by (%(namespace_labels)s, deployment) (
+                sum by (%(group_by_namespace)s, deployment) (
                   label_replace(
                     label_replace(
                       kube_pod_container_resource_requests_cpu_cores,
@@ -295,7 +295,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
               # This expression is compatible with kube-state-metrics >= v1.4.0,
               # where kube_pod_container_resource_requests was introduced.
               (
-                sum by (%(namespace_labels)s, deployment) (
+                sum by (%(group_by_namespace)s, deployment) (
                   label_replace(
                     label_replace(
                       kube_pod_container_resource_requests{resource="cpu"},
@@ -332,7 +332,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
             // Multi-zone deployments are grouped together removing the "zone-X" suffix.
             record: '%(group_prefix_namespaces)s_deployment:container_memory_usage_bytes:sum' % _config,
             expr: |||
-              sum by (%(namespace_labels)s, deployment) (
+              sum by (%(group_by_namespace)s, deployment) (
                 label_replace(
                   label_replace(
                     container_memory_usage_bytes,
@@ -358,7 +358,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
               # This is the old expression, compatible with kube-state-metrics < v2.0.0,
               # where kube_pod_container_resource_requests_memory_bytes was removed:
               (
-                sum by (%(namespace_labels)s, deployment) (
+                sum by (%(group_by_namespace)s, deployment) (
                   label_replace(
                     label_replace(
                       kube_pod_container_resource_requests_memory_bytes,
@@ -374,7 +374,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
               # This expression is compatible with kube-state-metrics >= v1.4.0,
               # where kube_pod_container_resource_requests was introduced.
               (
-                sum by (%(namespace_labels)s, deployment) (
+                sum by (%(group_by_namespace)s, deployment) (
                   label_replace(
                     label_replace(
                       kube_pod_container_resource_requests{resource="memory"},
