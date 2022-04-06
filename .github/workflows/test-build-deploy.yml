@@ -186,9 +186,10 @@ jobs:
       - name: Install Docker Client
         run: sudo ./.github/workflows/scripts/install-docker.sh
       # TODO: Work into image, since this job doesn't use the Mimir build image (which has ko installed)
+      # Keep revision in sync with that in Mimir build image
       - name: Install ko
         run: |
-          go install github.com/grafana/ko@main
+          go install github.com/grafana/ko@f63d0237fc792872ba4b17434afc94b03c9dc2cf
       - name: Symlink Expected Path to Workspace
         run: |
           sudo mkdir -p /go/src/github.com/grafana/mimir
@@ -197,7 +198,7 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           name: Mimir OCI Image Layout
-      - name: Load Docker Images
+      - name: Load Mimir Docker Image
         run: |
           tar -xvf mimir-oci-layout.tar
           IMAGE_TAG=$(make image-tag)
