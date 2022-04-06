@@ -319,8 +319,10 @@ func scalarToPromQLVector(sc *prommodel.Scalar) promql.Vector {
 	}}
 }
 
-// WithOrgIDHeader attaches orgID header by inspecting the passed context.
-func WithOrgIDHeader(ctx context.Context, req *httpgrpc.HTTPRequest) error {
+// WithOrgIDMiddleware attaches 'X-Scope-OrgID' header value to the outgoing request by inspecting the passed context.
+// In case the expression to evaluate corresponds to a federated rule, the ExtractTenantIDs function will take care
+// of normalizing and concatenating source tenants by separating them with a '|' character.
+func WithOrgIDMiddleware(ctx context.Context, req *httpgrpc.HTTPRequest) error {
 	orgID, err := ExtractTenantIDs(ctx)
 	if err != nil {
 		return err
