@@ -31,6 +31,9 @@ import (
 )
 
 const (
+	// resultsCacheVersion should be increased every time cache should be invalidated (after a bugfix or cache format change).
+	resultsCacheVersion = 1
+
 	// cacheControlHeader is the name of the cache control header.
 	cacheControlHeader = "Cache-Control"
 
@@ -86,7 +89,10 @@ func newResultsCache(cfg ResultsCacheConfig, logger log.Logger, reg prometheus.R
 		return nil, errUnsupportedResultsCacheBackend(cfg.Backend)
 	}
 
-	return cache.NewSpanlessTracingCache(client, logger), nil
+	return cache.NewVersioned(
+		cache.NewSpanlessTracingCache(client, logger),
+		resultsCacheVersion,
+	), nil
 }
 
 // Extractor is used by the cache to extract a subset of a response from a cache entry.
