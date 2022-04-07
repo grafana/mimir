@@ -7,11 +7,12 @@ package api
 
 import (
 	"context"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"net/http"
+	"net/url"
 	"path"
+	"strconv"
 	"strings"
 	"time"
 
@@ -244,7 +245,18 @@ func (a *API) RegisterDistributor(d *distributor.Distributor, pushConfig distrib
 	distributorpb.RegisterDistributorServer(a.server.GRPC, d)
 
 	a.RegisterRoute("/api/v1/push", push.Handler(pushConfig.MaxRecvMsgSize, a.sourceIPs, a.cfg.SkipLabelNameValidationHeader, a.cfg.wrapDistributorPush(d)), true, false, "POST")
-	a.RegisterRoute("/api/v1/backfill", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	// Endpoint to handle requests for starting of block backfilling.
+	// Starting the backfilling of a block means to verify that the backfill can go ahead.
+	// In practice this means to check that the block isn't already in block storage.
+	a.RegisterRoute("/api/v1/backfill/{tenant:[0-9]+}/{block}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		vars := mux.Vars(r)
+		tenantID, err := strconv.Atoi(vars["tenant"])
+		if err != nil {
+			http.Error(w, fmt.Sprintf("invalid tenant ID: %q", vars["tenant"]), http.StatusBadRequest)
+			return
+		}
+		blockID := vars["block"]
+
 		ctx := r.Context()
 		logger := util_log.WithContext(ctx, util_log.Logger)
 		if a.sourceIPs != nil {
@@ -255,15 +267,7 @@ func (a *API) RegisterDistributor(d *distributor.Distributor, pushConfig distrib
 			}
 		}
 
-		var bfReq distributor.StartBackfillRequest
-		decoder := json.NewDecoder(r.Body)
-		if err := decoder.Decode(&bfReq); err != nil {
-			http.Error(w, "Invalid request body", http.StatusBadRequest)
-			return
-		}
-
-		token, err := d.StartBackfill(ctx, bfReq)
-		if err != nil {
+		if err := d.StartBackfill(ctx, tenantID, blockID); err != nil {
 			resp, ok := httpgrpc.HTTPResponseFromError(err)
 			if !ok {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -273,12 +277,77 @@ func (a *API) RegisterDistributor(d *distributor.Distributor, pushConfig distrib
 			return
 		}
 
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusCreated)
-		if _, err := fmt.Fprintf(w, `{token: "%s"}`, token); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+		w.WriteHeader(http.StatusOK)
+	}), true, false, http.MethodPost)
+	// Endpoint to handle requests for uploading block files.
+	a.RegisterRoute("/api/v1/backfill/{tenant:[0-9]+}/{block}/{path}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		vars := mux.Vars(r)
+		tenantID, err := strconv.Atoi(vars["tenant"])
+		if err != nil {
+			http.Error(w, fmt.Sprintf("invalid tenant ID: %q", vars["tenant"]), http.StatusBadRequest)
+			return
 		}
-	}), true, false, "POST")
+		blockID := vars["block"]
+		pth, err := url.PathUnescape(vars["path"])
+		if err != nil {
+			http.Error(w, fmt.Sprintf("invalid file path: %q", vars["path"]), http.StatusBadRequest)
+			return
+		}
+
+		ctx := r.Context()
+		logger := util_log.WithContext(ctx, util_log.Logger)
+		if a.sourceIPs != nil {
+			source := a.sourceIPs.Get(r)
+			if source != "" {
+				ctx = util.AddSourceIPsToOutgoingContext(ctx, source)
+				logger = util_log.WithSourceIPs(source, logger)
+			}
+		}
+
+		if err := d.AddBackfillFile(ctx, tenantID, blockID, pth, r); err != nil {
+			resp, ok := httpgrpc.HTTPResponseFromError(err)
+			if !ok {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+			} else {
+				http.Error(w, string(resp.Body), int(resp.Code))
+			}
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
+	}), true, false, http.MethodPost)
+	// Endpoint to handle requests for finishing of block backfilling.
+	a.RegisterRoute("/api/v1/backfill/{tenant:[0-9]+}/{block}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		vars := mux.Vars(r)
+		tenantID, err := strconv.Atoi(vars["tenant"])
+		if err != nil {
+			http.Error(w, fmt.Sprintf("invalid tenant ID: %q", vars["tenant"]), http.StatusBadRequest)
+			return
+		}
+		blockID := vars["block"]
+
+		ctx := r.Context()
+		logger := util_log.WithContext(ctx, util_log.Logger)
+		if a.sourceIPs != nil {
+			source := a.sourceIPs.Get(r)
+			if source != "" {
+				ctx = util.AddSourceIPsToOutgoingContext(ctx, source)
+				logger = util_log.WithSourceIPs(source, logger)
+			}
+		}
+
+		if err := d.FinishBackfill(ctx, tenantID, blockID); err != nil {
+			resp, ok := httpgrpc.HTTPResponseFromError(err)
+			if !ok {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+			} else {
+				http.Error(w, string(resp.Body), int(resp.Code))
+			}
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
+	}), true, false, http.MethodDelete)
 
 	a.indexPage.AddLinks(defaultWeight, "Distributor", []IndexPageLink{
 		{Desc: "Ring status", Path: "/distributor/ring"},

@@ -6,6 +6,7 @@
 package client
 
 import (
+	"bytes"
 	"context"
 	"io"
 
@@ -31,7 +32,7 @@ func (r *MimirClient) CreateAlertmanagerConfig(ctx context.Context, cfg string, 
 		return err
 	}
 
-	res, err := r.doRequest(alertmanagerAPIPath, "POST", payload)
+	res, err := r.doRequest(alertmanagerAPIPath, "POST", bytes.NewBuffer(payload))
 	if err != nil {
 		return err
 	}

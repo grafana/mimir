@@ -18,7 +18,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/google/uuid"
 	"github.com/grafana/dskit/limiter"
 	"github.com/grafana/dskit/ring"
 	ring_client "github.com/grafana/dskit/ring/client"
@@ -859,19 +858,23 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 	return &mimirpb.WriteResponse{}, firstPartialErr
 }
 
-// StartBackfillRequest contains parameters for starting a metrics backfill session.
-type StartBackfillRequest struct {
-	// TenantID is the ID of the tenant for which to backfill.
-	TenantID int `json:"tenantId"`
-	// NumBlocks is the number of blocks that should be backfilled.
-	NumBlocks int `json:"numBlocks"`
+// StartBackfill requests the starting of a backfill session.
+func (d *Distributor) StartBackfill(ctx context.Context, tenantID int, blockID string) error {
+	level.Info(d.log).Log("msg", "starting backfill", "tenantId", tenantID, "blockId", blockID)
+	// TODO: Verify that block hasn't already been ingested
+	return nil
 }
 
-// StartBackfill requests the starting of a backfill session based on parameters from req.
-func (d *Distributor) StartBackfill(ctx context.Context, req StartBackfillRequest) (string, error) {
-	token := uuid.New()
-	// TODO: Create session document in staging object storage bucket.
-	return token.String(), nil
+// AddBackfillFile adds a file to an ongoing metrics backfill.
+func (d *Distributor) AddBackfillFile(ctx context.Context, tenantID int, blockID, pth string, r *http.Request) error {
+	level.Info(d.log).Log("msg", "adding file to metrics backfill", "tenantId", tenantID, "blockId", blockID, "path", pth)
+	return nil
+}
+
+// FinishBackfill requests the finishing of a backfill session.
+func (d *Distributor) FinishBackfill(ctx context.Context, tenantID int, blockID string) error {
+	level.Info(d.log).Log("msg", "finishing backfill", "tenantId", tenantID, "blockId", blockID)
+	return nil
 }
 
 func copyString(s string) string {

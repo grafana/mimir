@@ -7,7 +7,6 @@ package client
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -112,7 +111,7 @@ func (r *MimirClient) Query(ctx context.Context, query string) (*http.Response, 
 	return res, nil
 }
 
-func (r *MimirClient) doRequest(path, method string, payload []byte) (*http.Response, error) {
+func (r *MimirClient) doRequest(path, method string, payload io.Reader) (*http.Response, error) {
 	req, err := buildRequest(path, method, *r.endpoint, payload)
 	if err != nil {
 		return nil, err
@@ -143,7 +142,7 @@ func (r *MimirClient) doRequest(path, method string, payload []byte) (*http.Resp
 
 	err = checkResponse(resp)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrapf(err, "%s request to %s failed", req.Method, req.URL.String())
 	}
 
 	return resp, nil
@@ -192,7 +191,7 @@ func joinPath(baseURLPath, targetPath string) string {
 	return strings.TrimSuffix(baseURLPath, "/") + targetPath
 }
 
-func buildRequest(p, m string, endpoint url.URL, payload []byte) (*http.Request, error) {
+func buildRequest(p, m string, endpoint url.URL, payload io.Reader) (*http.Request, error) {
 	// parse path parameter again (as it already contains escaped path information
 	pURL, err := url.Parse(p)
 	if err != nil {
@@ -204,5 +203,5 @@ func buildRequest(p, m string, endpoint url.URL, payload []byte) (*http.Request,
 		endpoint.RawPath = joinPath(endpoint.EscapedPath(), pURL.EscapedPath())
 	}
 	endpoint.Path = joinPath(endpoint.Path, pURL.Path)
-	return http.NewRequest(m, endpoint.String(), bytes.NewBuffer(payload))
+	return http.NewRequest(m, endpoint.String(), payload)
 }

@@ -6,6 +6,7 @@
 package client
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -28,7 +29,7 @@ func (r *MimirClient) CreateRuleGroup(ctx context.Context, namespace string, rg 
 	escapedNamespace := url.PathEscape(namespace)
 	path := r.apiPath + "/" + escapedNamespace
 
-	res, err := r.doRequest(path, "POST", payload)
+	res, err := r.doRequest(path, "POST", bytes.NewBuffer(payload))
 	if err != nil {
 		return err
 	}
