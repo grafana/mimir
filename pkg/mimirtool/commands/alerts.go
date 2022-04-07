@@ -46,7 +46,7 @@ type AlertmanagerCommand struct {
 	TemplateFiles          []string
 	DisableColor           bool
 
-	cli *client.CortexClient
+	cli *client.MimirClient
 }
 
 // AlertCommand configures and executes rule related PromQL queries for alerts comparison.
@@ -59,7 +59,7 @@ type AlertCommand struct {
 	GracePeriod    int
 	CheckFrequency int
 	ClientConfig   client.Config
-	cli            *client.CortexClient
+	cli            *client.MimirClient
 }
 
 // Register rule related commands and flags with the kingpin application

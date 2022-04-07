@@ -21,7 +21,7 @@ import (
 
 type RulerAnalyzeCommand struct {
 	ClientConfig client.Config
-	cli          *client.CortexClient
+	cli          *client.MimirClient
 	outputFile   string
 }
 

@@ -51,7 +51,7 @@ var (
 type RuleCommand struct {
 	ClientConfig client.Config
 
-	cli *client.CortexClient
+	cli *client.MimirClient
 
 	// Backend type (cortex | loki)
 	Backend string
