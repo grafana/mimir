@@ -41,7 +41,7 @@ type Config struct {
 	UseLegacyRoutes bool `yaml:"use_legacy_routes"`
 }
 
-// MimirClient is used to get and load rules into a Mimir ruler.
+// MimirClient is a client to the Mimir API.
 type MimirClient struct {
 	user     string
 	key      string
@@ -61,7 +61,7 @@ func New(cfg Config) (*MimirClient, error) {
 	log.WithFields(log.Fields{
 		"address": cfg.Address,
 		"id":      cfg.ID,
-	}).Debugln("New ruler client created")
+	}).Debugln("New Mimir client created")
 
 	client := http.Client{}
 
@@ -72,8 +72,8 @@ func New(cfg Config) (*MimirClient, error) {
 			"tls-ca":   cfg.TLS.CAPath,
 			"tls-cert": cfg.TLS.CertPath,
 			"tls-key":  cfg.TLS.KeyPath,
-		}).Errorf("error loading tls files")
-		return nil, fmt.Errorf("client initialization unsuccessful")
+		}).Errorf("error loading TLS files")
+		return nil, fmt.Errorf("Mimir client initialization unsuccessful")
 	}
 
 	if tlsConfig != nil {
@@ -101,7 +101,6 @@ func New(cfg Config) (*MimirClient, error) {
 
 // Query executes a PromQL query against the Mimir cluster.
 func (r *MimirClient) Query(ctx context.Context, query string) (*http.Response, error) {
-
 	query = fmt.Sprintf("query=%s&time=%d", query, time.Now().Unix())
 	escapedQuery := url.PathEscape(query)
 
@@ -150,7 +149,7 @@ func (r *MimirClient) doRequest(path, method string, payload []byte) (*http.Resp
 	return resp, nil
 }
 
-// checkResponse checks the API response for errors
+// checkResponse checks an API response for errors.
 func checkResponse(r *http.Response) error {
 	log.WithFields(log.Fields{
 		"status": r.Status,

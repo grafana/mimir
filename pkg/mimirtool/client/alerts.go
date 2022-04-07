@@ -53,7 +53,7 @@ func (r *MimirClient) DeleteAlermanagerConfig(ctx context.Context) error {
 	return nil
 }
 
-// GetAlertmanagerConfig retrieves a rule group
+// GetAlertmanagerConfig retrieves a Mimir cluster's Alertmanager config.
 func (r *MimirClient) GetAlertmanagerConfig(ctx context.Context) (string, map[string]string, error) {
 	res, err := r.doRequest(alertmanagerAPIPath, "GET", nil)
 	if err != nil {
