@@ -35,7 +35,7 @@
       overrides_exporter: 'overrides-exporter',
     },
 
-        // Custom Cluster label to use in dashboards.
+    // Custom Cluster label to use in dashboards.
     clusterLabel: 'cluster',
 
     // Grouping labels, to uniquely identify and group by {jobs, clusters}
