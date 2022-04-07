@@ -5307,9 +5307,9 @@
               "kind": "field",
               "name": "isolation_enabled",
               "required": false,
-              "desc": "Enables TSDB isolation feature. Disabling may improve performance.",
+              "desc": "[Deprecated] Enables TSDB isolation feature. Disabling may improve performance.",
               "fieldValue": null,
-              "fieldDefaultValue": true,
+              "fieldDefaultValue": false,
               "fieldFlag": "blocks-storage.tsdb.isolation-enabled",
               "fieldType": "boolean",
               "fieldCategory": "advanced"

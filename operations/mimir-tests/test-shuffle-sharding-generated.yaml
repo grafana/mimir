@@ -1333,7 +1333,6 @@ spec:
         - -blocks-storage.tsdb.block-ranges-period=2h
         - -blocks-storage.tsdb.close-idle-tsdb-timeout=13h
         - -blocks-storage.tsdb.dir=/data/tsdb
-        - -blocks-storage.tsdb.isolation-enabled=false
         - -blocks-storage.tsdb.ship-interval=1m
         - -distributor.health-check-ingesters=true
         - -distributor.ingestion-tenant-shard-size=3

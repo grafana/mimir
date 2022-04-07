@@ -40,9 +40,6 @@
       // Close idle TSDBs.
       'blocks-storage.tsdb.close-idle-tsdb-timeout': $._config.queryConfig['querier.query-ingesters-within'],
 
-      // Disable TSDB isolation.
-      'blocks-storage.tsdb.isolation-enabled': 'false',
-
       // Persist ring tokens so that when the ingester will be restarted
       // it will pick the same tokens
       'ingester.ring.tokens-file-path': '/data/tokens',
