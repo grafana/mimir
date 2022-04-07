@@ -8,7 +8,7 @@ package client
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/url"
 
 	"github.com/pkg/errors"
@@ -67,7 +67,7 @@ func (r *MimirClient) GetRuleGroup(ctx context.Context, namespace, groupName str
 	}
 
 	defer res.Body.Close()
-	body, err := ioutil.ReadAll(res.Body)
+	body, err := io.ReadAll(res.Body)
 
 	if err != nil {
 		return nil, err
@@ -99,7 +99,7 @@ func (r *MimirClient) ListRules(ctx context.Context, namespace string) (map[stri
 	}
 
 	defer res.Body.Close()
-	body, err := ioutil.ReadAll(res.Body)
+	body, err := io.ReadAll(res.Body)
 
 	if err != nil {
 		return nil, err
