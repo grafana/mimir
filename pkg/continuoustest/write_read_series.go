@@ -281,6 +281,7 @@ func (t *WriteReadSeriesTest) findPreviouslyWrittenTimeRange(ctx context.Context
 		logger := log.With(t.logger, "query", query, "start", start, "end", end, "step", step)
 		level.Debug(logger).Log("msg", "Executing query to find previously written samples")
 
+		// TODO Run this query with cache disabled (once will be supported by Mimir).
 		matrix, err := t.client.QueryRange(ctx, query, start, end, step)
 		if err != nil {
 			level.Warn(logger).Log("msg", "Failed to execute range query used to find previously written samples", "err", err)
