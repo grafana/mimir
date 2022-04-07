@@ -86,8 +86,8 @@ func verifySineWaveSamplesSum(matrix model.Matrix, expectedSeries int, expectedS
 		ts := time.UnixMilli(int64(sample.Timestamp)).UTC()
 
 		// Assert on value.
-		expectedValue := generateSineWaveValue(ts)
-		if !compareSampleValues(float64(sample.Value), expectedValue*float64(expectedSeries)) {
+		expectedValue := generateSineWaveValue(ts) * float64(expectedSeries)
+		if !compareSampleValues(float64(sample.Value), expectedValue) {
 			return lastMatchingIdx, fmt.Errorf("sample at timestamp %d (%s) has value %f while was expecting %f", sample.Timestamp, ts.String(), sample.Value, expectedValue)
 		}
 
