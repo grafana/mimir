@@ -31,7 +31,7 @@ var (
 	ErrResourceNotFound = errors.New("requested resource not found")
 )
 
-// Config is used to configure a Ruler Client
+// Config is used to configure a MimirClient.
 type Config struct {
 	User            string `yaml:"user"`
 	Key             string `yaml:"key"`
@@ -41,8 +41,8 @@ type Config struct {
 	UseLegacyRoutes bool `yaml:"use_legacy_routes"`
 }
 
-// CortexClient is used to get and load rules into a cortex ruler
-type CortexClient struct {
+// MimirClient is used to get and load rules into a Mimir ruler.
+type MimirClient struct {
 	user     string
 	key      string
 	id       string
@@ -51,8 +51,8 @@ type CortexClient struct {
 	apiPath  string
 }
 
-// New returns a new Client
-func New(cfg Config) (*CortexClient, error) {
+// New returns a new MimirClient.
+func New(cfg Config) (*MimirClient, error) {
 	endpoint, err := url.Parse(cfg.Address)
 	if err != nil {
 		return nil, err
@@ -89,7 +89,7 @@ func New(cfg Config) (*CortexClient, error) {
 		path = legacyAPIPath
 	}
 
-	return &CortexClient{
+	return &MimirClient{
 		user:     cfg.User,
 		key:      cfg.Key,
 		id:       cfg.ID,
@@ -100,7 +100,7 @@ func New(cfg Config) (*CortexClient, error) {
 }
 
 // Query executes a PromQL query against the Mimir cluster.
-func (r *CortexClient) Query(ctx context.Context, query string) (*http.Response, error) {
+func (r *MimirClient) Query(ctx context.Context, query string) (*http.Response, error) {
 
 	query = fmt.Sprintf("query=%s&time=%d", query, time.Now().Unix())
 	escapedQuery := url.PathEscape(query)
@@ -113,7 +113,7 @@ func (r *CortexClient) Query(ctx context.Context, query string) (*http.Response,
 	return res, nil
 }
 
-func (r *CortexClient) doRequest(path, method string, payload []byte) (*http.Response, error) {
+func (r *MimirClient) doRequest(path, method string, payload []byte) (*http.Response, error) {
 	req, err := buildRequest(path, method, *r.endpoint, payload)
 	if err != nil {
 		return nil, err

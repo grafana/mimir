@@ -15,7 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestCortexClient_X(t *testing.T) {
+func TestMimirClient_X(t *testing.T) {
 	requestCh := make(chan *http.Request, 1)
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
