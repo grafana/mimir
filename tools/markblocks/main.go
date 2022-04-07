@@ -187,22 +187,27 @@ func uploadMarks(
 			return nil
 		})
 		if err != nil {
+			if userBucketWithGlobalMarkers.IsObjNotFoundErr(err) {
+				level.Warn(logger).Log("msg", "Block does not exist", "block", b, "err", err)
+				continue
+			}
+
 			level.Error(logger).Log("msg", "Failed to list files for block.", "block", b, "err", err)
 			os.Exit(1)
 		}
 
 		if len(blockFiles) == 0 {
-			level.Info(logger).Log("msg", "Block does not exist, skipping.", "block", b)
+			level.Warn(logger).Log("msg", "Block does not exist, skipping.", "block", b)
 			continue
 		}
 
 		if !blockFiles["meta.json"] && !allowPartialBlocks {
-			level.Info(logger).Log("msg", "Block's meta.json file does not exist, skipping.", "block", b)
+			level.Warn(logger).Log("msg", "Block's meta.json file does not exist, skipping.", "block", b)
 			continue
 		}
 
 		if blockFiles[markFilename] {
-			level.Info(logger).Log("msg", "Mark already exists, skipping.", "block", b)
+			level.Warn(logger).Log("msg", "Mark already exists, skipping.", "block", b)
 			continue
 		}
 
@@ -214,7 +219,7 @@ func uploadMarks(
 
 		blockMarkPath := fmt.Sprintf("%s/%s", b, markFilename)
 		if dryRun {
-			logger.Log("msg", "Dry-run, not uploading marker.", "block", b, "marker", blockMarkPath, "data", string(data))
+			level.Info(logger).Log("msg", "Dry-run, not uploading marker.", "block", b, "marker", blockMarkPath, "data", string(data))
 			continue
 		}
 
