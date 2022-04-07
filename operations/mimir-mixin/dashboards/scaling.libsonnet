@@ -41,9 +41,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.tablePanel([
           |||
             sort_desc(
-              %(group_prefix_namespaces)s_deployment_reason:required_replicas:count{%(clusterLabel)s=~"$cluster", namespace=~"$namespace"}
+              %(clusterLabel)s_namespace_deployment_reason:required_replicas:count{%(clusterLabel)s=~"$cluster", namespace=~"$namespace"}
                 > ignoring(reason) group_left
-              %(group_prefix_namespaces)s_deployment:actual_replicas:count{%(clusterLabel)s=~"$cluster", namespace=~"$namespace"}
+              %(clusterLabel)s_namespace_deployment:actual_replicas:count{%(clusterLabel)s=~"$cluster", namespace=~"$namespace"}
             )
           ||| % $._config,
         ], {

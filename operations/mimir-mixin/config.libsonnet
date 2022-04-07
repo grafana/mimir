@@ -40,8 +40,7 @@
 
     // Grouping labels, to uniquely identify and group by {jobs, clusters}
     job_labels: [$._config.clusterLabel, 'namespace', 'job'],
-    namespace_labels: [$._config.clusterLabel, 'namespace'],
-    cluster_labels: [$._config.clusterLabel, 'job'],
+    cluster_labels: [$._config.clusterLabel, 'namespace'],
 
     cortex_p99_latency_threshold_seconds: 2.5,
 
