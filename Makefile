@@ -130,7 +130,10 @@ push-multiarch-build-image:
 # 'make: Entering directory '/go/src/github.com/grafana/mimir' phase.
 DONT_FIND := -name vendor -prune -o -name .git -prune -o -name .cache -prune -o -name .pkg -prune -o -name mimir-mixin-tools -prune -o -name trafficdump -prune -o
 
-MAKEFILES = $(shell find . $(DONT_FIND) \( -name 'Makefile' -o -name '*.mk' \) -print)
+# MAKE_FILES is a list of make files to lint.
+# We purposefully avoid MAKEFILES as a variable name as it influences
+# the files included in recursive invocations of make
+MAKE_FILES = $(shell find . $(DONT_FIND) \( -name 'Makefile' -o -name '*.mk' \) -print)
 
 # Get a list of directories containing Dockerfiles
 DOCKERFILES := $(shell find . $(DONT_FIND) -type f -name 'Dockerfile' -print)
@@ -382,11 +385,11 @@ endif
 
 .PHONY: check-makefiles
 check-makefiles: format-makefiles
-	@git diff --exit-code -- $(MAKEFILES) || (echo "Please format Makefiles by running 'make format-makefiles'" && false)
+	@git diff --exit-code -- $(MAKE_FILES) || (echo "Please format Makefiles by running 'make format-makefiles'" && false)
 
 .PHONY: format-makefiles
 format-makefiles: ## Format all Makefiles.
-format-makefiles: $(MAKEFILES)
+format-makefiles: $(MAKE_FILES)
 	$(SED) -i -e 's/^\(\t*\)  /\1\t/g' -e 's/^\(\t*\) /\1/' -- $?
 
 clean:
