@@ -130,6 +130,9 @@ push-multiarch-build-image:
 # 'make: Entering directory '/go/src/github.com/grafana/mimir' phase.
 DONT_FIND := -name vendor -prune -o -name .git -prune -o -name .cache -prune -o -name .pkg -prune -o -name mimir-mixin-tools -prune -o -name trafficdump -prune -o
 
+# MAKE_FILES is a list of make files to lint.
+# We purposefully avoid MAKEFILES as a variable name as it influences
+# the files included in recursive invocations of make
 MAKE_FILES = $(shell find . $(DONT_FIND) \( -name 'Makefile' -o -name '*.mk' \) -print)
 
 # Get a list of directories containing Dockerfiles
