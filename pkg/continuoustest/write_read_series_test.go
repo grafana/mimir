@@ -345,6 +345,262 @@ func TestWriteReadSeriesTest_Run(t *testing.T) {
 	})
 }
 
+func TestWriteReadSeriesTest_Init(t *testing.T) {
+	logger := log.NewNopLogger()
+	cfg := WriteReadSeriesTestConfig{}
+	flagext.DefaultValues(&cfg)
+	cfg.NumSeries = 2
+	cfg.MaxQueryAge = 3 * 24 * time.Hour
+
+	now := time.Unix(10*86400, 0)
+
+	t.Run("no previously written samples found", func(t *testing.T) {
+		client := &ClientMock{}
+		client.On("QueryRange", mock.Anything, "sum(max_over_time(mimir_continuous_test_sine_wave[1s]))", now.Add(-24*time.Hour).Add(writeInterval), now, writeInterval).Return(model.Matrix{}, nil)
+
+		test := NewWriteReadSeriesTest(cfg, client, logger, nil)
+
+		require.NoError(t, test.Init(context.Background(), now))
+
+		client.AssertNumberOfCalls(t, "QueryRange", 1)
+
+		require.Zero(t, test.lastWrittenTimestamp)
+		require.Zero(t, test.queryMinTime)
+		require.Zero(t, test.queryMaxTime)
+	})
+
+	t.Run("previously written data points are in the range [-2h, -1m]", func(t *testing.T) {
+		client := &ClientMock{}
+		client.On("QueryRange", mock.Anything, "sum(max_over_time(mimir_continuous_test_sine_wave[1s]))", now.Add(-24*time.Hour).Add(writeInterval), now, writeInterval).Return(model.Matrix{{
+			Values: generateSineWaveSamplesSum(now.Add(-2*time.Hour), now.Add(-1*time.Minute), cfg.NumSeries, writeInterval),
+		}}, nil)
+
+		test := NewWriteReadSeriesTest(cfg, client, logger, nil)
+
+		require.NoError(t, test.Init(context.Background(), now))
+
+		client.AssertNumberOfCalls(t, "QueryRange", 1)
+
+		require.Equal(t, now.Add(-1*time.Minute), test.lastWrittenTimestamp)
+		require.Equal(t, now.Add(-2*time.Hour), test.queryMinTime)
+		require.Equal(t, now.Add(-1*time.Minute), test.queryMaxTime)
+	})
+
+	t.Run("previously written data points are in the range [-36h, -1m]", func(t *testing.T) {
+		client := &ClientMock{}
+		client.On("QueryRange", mock.Anything, "sum(max_over_time(mimir_continuous_test_sine_wave[1s]))", now.Add(-24*time.Hour).Add(writeInterval), now, writeInterval).Return(model.Matrix{{
+			Values: generateSineWaveSamplesSum(now.Add(-24*time.Hour).Add(writeInterval), now.Add(-1*time.Minute), cfg.NumSeries, writeInterval),
+		}}, nil)
+		client.On("QueryRange", mock.Anything, "sum(max_over_time(mimir_continuous_test_sine_wave[1s]))", now.Add(-48*time.Hour).Add(writeInterval), now.Add(-24*time.Hour), writeInterval).Return(model.Matrix{{
+			Values: generateSineWaveSamplesSum(now.Add(-36*time.Hour), now.Add(-24*time.Hour), cfg.NumSeries, writeInterval),
+		}}, nil)
+
+		test := NewWriteReadSeriesTest(cfg, client, logger, nil)
+
+		require.NoError(t, test.Init(context.Background(), now))
+
+		client.AssertNumberOfCalls(t, "QueryRange", 2)
+
+		require.Equal(t, now.Add(-1*time.Minute), test.lastWrittenTimestamp)
+		require.Equal(t, now.Add(-36*time.Hour), test.queryMinTime)
+		require.Equal(t, now.Add(-1*time.Minute), test.queryMaxTime)
+	})
+
+	t.Run("previously written data points are in the range [-36h, -1m] but last data point of previous 24h period is missing", func(t *testing.T) {
+		client := &ClientMock{}
+		client.On("QueryRange", mock.Anything, "sum(max_over_time(mimir_continuous_test_sine_wave[1s]))", now.Add(-24*time.Hour).Add(writeInterval), now, writeInterval).Return(model.Matrix{{
+			Values: generateSineWaveSamplesSum(now.Add(-24*time.Hour).Add(writeInterval), now.Add(-1*time.Minute), cfg.NumSeries, writeInterval),
+		}}, nil)
+		client.On("QueryRange", mock.Anything, "sum(max_over_time(mimir_continuous_test_sine_wave[1s]))", now.Add(-48*time.Hour).Add(writeInterval), now.Add(-24*time.Hour), writeInterval).Return(model.Matrix{{
+			// Last data point is missing.
+			Values: generateSineWaveSamplesSum(now.Add(-36*time.Hour), now.Add(-24*time.Hour).Add(-writeInterval), cfg.NumSeries, writeInterval),
+		}}, nil)
+
+		test := NewWriteReadSeriesTest(cfg, client, logger, nil)
+
+		require.NoError(t, test.Init(context.Background(), now))
+
+		client.AssertNumberOfCalls(t, "QueryRange", 2)
+
+		require.Equal(t, now.Add(-1*time.Minute), test.lastWrittenTimestamp)
+		require.Equal(t, now.Add(-24*time.Hour).Add(writeInterval), test.queryMinTime)
+		require.Equal(t, now.Add(-1*time.Minute), test.queryMaxTime)
+	})
+
+	t.Run("previously written data points are in the range [-24h, -1m]", func(t *testing.T) {
+		client := &ClientMock{}
+		client.On("QueryRange", mock.Anything, "sum(max_over_time(mimir_continuous_test_sine_wave[1s]))", now.Add(-24*time.Hour).Add(writeInterval), now, writeInterval).Return(model.Matrix{{
+			Values: generateSineWaveSamplesSum(now.Add(-24*time.Hour).Add(writeInterval), now.Add(-1*time.Minute), cfg.NumSeries, writeInterval),
+		}}, nil)
+		client.On("QueryRange", mock.Anything, "sum(max_over_time(mimir_continuous_test_sine_wave[1s]))", now.Add(-48*time.Hour).Add(writeInterval), now.Add(-24*time.Hour), writeInterval).Return(model.Matrix{{}}, nil)
+
+		test := NewWriteReadSeriesTest(cfg, client, logger, nil)
+
+		require.NoError(t, test.Init(context.Background(), now))
+
+		client.AssertNumberOfCalls(t, "QueryRange", 2)
+
+		require.Equal(t, now.Add(-1*time.Minute), test.lastWrittenTimestamp)
+		require.Equal(t, now.Add(-24*time.Hour).Add(writeInterval), test.queryMinTime)
+		require.Equal(t, now.Add(-1*time.Minute), test.queryMaxTime)
+	})
+
+	t.Run("the configured query max age is > 24h", func(t *testing.T) {
+		client := &ClientMock{}
+		client.On("QueryRange", mock.Anything, "sum(max_over_time(mimir_continuous_test_sine_wave[1s]))", now.Add(-24*time.Hour).Add(writeInterval), now, writeInterval).Return(model.Matrix{{
+			Values: generateSineWaveSamplesSum(now.Add(-24*time.Hour).Add(writeInterval), now.Add(-1*time.Minute), cfg.NumSeries, writeInterval),
+		}}, nil)
+		client.On("QueryRange", mock.Anything, "sum(max_over_time(mimir_continuous_test_sine_wave[1s]))", now.Add(-48*time.Hour).Add(writeInterval), now.Add(-24*time.Hour), writeInterval).Return(model.Matrix{{
+			Values: generateSineWaveSamplesSum(now.Add(-48*time.Hour).Add(writeInterval), now.Add(-24*time.Hour), cfg.NumSeries, writeInterval),
+		}}, nil)
+		client.On("QueryRange", mock.Anything, "sum(max_over_time(mimir_continuous_test_sine_wave[1s]))", now.Add(-72*time.Hour).Add(writeInterval), now.Add(-48*time.Hour), writeInterval).Return(model.Matrix{{
+			Values: generateSineWaveSamplesSum(now.Add(-72*time.Hour).Add(writeInterval), now.Add(-48*time.Hour), cfg.NumSeries, writeInterval),
+		}}, nil)
+
+		test := NewWriteReadSeriesTest(cfg, client, logger, nil)
+
+		require.NoError(t, test.Init(context.Background(), now))
+
+		client.AssertNumberOfCalls(t, "QueryRange", 3)
+
+		require.Equal(t, now.Add(-1*time.Minute), test.lastWrittenTimestamp)
+		require.Equal(t, now.Add(-72*time.Hour).Add(writeInterval), test.queryMinTime)
+		require.Equal(t, now.Add(-1*time.Minute), test.queryMaxTime)
+	})
+
+	t.Run("the configured query max age is < 24h", func(t *testing.T) {
+		client := &ClientMock{}
+		client.On("QueryRange", mock.Anything, "sum(max_over_time(mimir_continuous_test_sine_wave[1s]))", now.Add(-2*time.Hour), now, writeInterval).Return(model.Matrix{{
+			Values: generateSineWaveSamplesSum(now.Add(-2*time.Hour), now.Add(-1*time.Minute), cfg.NumSeries, writeInterval),
+		}}, nil)
+
+		testCfg := cfg
+		testCfg.MaxQueryAge = 2 * time.Hour
+		test := NewWriteReadSeriesTest(testCfg, client, logger, nil)
+
+		require.NoError(t, test.Init(context.Background(), now))
+
+		client.AssertNumberOfCalls(t, "QueryRange", 1)
+
+		require.Equal(t, now.Add(-1*time.Minute), test.lastWrittenTimestamp)
+		require.Equal(t, now.Add(-2*time.Hour), test.queryMinTime)
+		require.Equal(t, now.Add(-1*time.Minute), test.queryMaxTime)
+	})
+
+	t.Run("the most recent previously written data point is older than 1h ago", func(t *testing.T) {
+		client := &ClientMock{}
+		client.On("QueryRange", mock.Anything, "sum(max_over_time(mimir_continuous_test_sine_wave[1s]))", now.Add(-24*time.Hour).Add(writeInterval), now, writeInterval).Return(model.Matrix{{
+			Values: generateSineWaveSamplesSum(now.Add(-2*time.Hour).Add(writeInterval), now.Add(-1*time.Hour), cfg.NumSeries, writeInterval),
+		}}, nil)
+
+		test := NewWriteReadSeriesTest(cfg, client, logger, nil)
+
+		require.NoError(t, test.Init(context.Background(), now))
+
+		client.AssertNumberOfCalls(t, "QueryRange", 1)
+
+		require.Zero(t, test.lastWrittenTimestamp)
+		require.Zero(t, test.queryMinTime)
+		require.Zero(t, test.queryMaxTime)
+	})
+
+	t.Run("the first query fails", func(t *testing.T) {
+		client := &ClientMock{}
+		client.On("QueryRange", mock.Anything, "sum(max_over_time(mimir_continuous_test_sine_wave[1s]))", now.Add(-24*time.Hour).Add(writeInterval), now, writeInterval).Return(model.Matrix{}, errors.New("failed"))
+
+		test := NewWriteReadSeriesTest(cfg, client, logger, nil)
+
+		require.NoError(t, test.Init(context.Background(), now))
+
+		client.AssertNumberOfCalls(t, "QueryRange", 1)
+
+		require.Zero(t, test.lastWrittenTimestamp)
+		require.Zero(t, test.queryMinTime)
+		require.Zero(t, test.queryMaxTime)
+	})
+
+	t.Run("a subsequent query fails", func(t *testing.T) {
+		client := &ClientMock{}
+		client.On("QueryRange", mock.Anything, "sum(max_over_time(mimir_continuous_test_sine_wave[1s]))", now.Add(-24*time.Hour).Add(writeInterval), now, writeInterval).Return(model.Matrix{{
+			Values: generateSineWaveSamplesSum(now.Add(-24*time.Hour).Add(writeInterval), now.Add(-1*time.Minute), cfg.NumSeries, writeInterval),
+		}}, nil)
+		client.On("QueryRange", mock.Anything, "sum(max_over_time(mimir_continuous_test_sine_wave[1s]))", now.Add(-48*time.Hour).Add(writeInterval), now.Add(-24*time.Hour), writeInterval).Return(model.Matrix{{}}, errors.New("failed"))
+
+		test := NewWriteReadSeriesTest(cfg, client, logger, nil)
+
+		require.NoError(t, test.Init(context.Background(), now))
+
+		client.AssertNumberOfCalls(t, "QueryRange", 2)
+
+		require.Equal(t, now.Add(-1*time.Minute), test.lastWrittenTimestamp)
+		require.Equal(t, now.Add(-24*time.Hour).Add(writeInterval), test.queryMinTime)
+		require.Equal(t, now.Add(-1*time.Minute), test.queryMaxTime)
+	})
+
+	t.Run("the testing tool has been restarted with a different number of series in the middle of the last 24h period", func(t *testing.T) {
+		client := &ClientMock{}
+		client.On("QueryRange", mock.Anything, "sum(max_over_time(mimir_continuous_test_sine_wave[1s]))", now.Add(-24*time.Hour).Add(writeInterval), now, writeInterval).Return(model.Matrix{{
+			Values: append(
+				generateSineWaveSamplesSum(now.Add(-24*time.Hour).Add(writeInterval), now.Add(-67*time.Minute), cfg.NumSeries-1, writeInterval),
+				generateSineWaveSamplesSum(now.Add(-67*time.Minute).Add(writeInterval), now.Add(-1*time.Minute), cfg.NumSeries, writeInterval)...,
+			),
+		}}, nil)
+
+		test := NewWriteReadSeriesTest(cfg, client, logger, nil)
+
+		require.NoError(t, test.Init(context.Background(), now))
+
+		client.AssertNumberOfCalls(t, "QueryRange", 1)
+
+		require.Equal(t, now.Add(-1*time.Minute), test.lastWrittenTimestamp)
+		require.Equal(t, now.Add(-67*time.Minute).Add(writeInterval), test.queryMinTime)
+		require.Equal(t, now.Add(-1*time.Minute), test.queryMaxTime)
+	})
+
+	t.Run("the testing tool has been restarted with a different number of series in the middle of the previous 24h period", func(t *testing.T) {
+		client := &ClientMock{}
+		client.On("QueryRange", mock.Anything, "sum(max_over_time(mimir_continuous_test_sine_wave[1s]))", now.Add(-24*time.Hour).Add(writeInterval), now, writeInterval).Return(model.Matrix{{
+			Values: generateSineWaveSamplesSum(now.Add(-24*time.Hour).Add(writeInterval), now.Add(-1*time.Minute), cfg.NumSeries, writeInterval),
+		}}, nil)
+		client.On("QueryRange", mock.Anything, "sum(max_over_time(mimir_continuous_test_sine_wave[1s]))", now.Add(-48*time.Hour).Add(writeInterval), now.Add(-24*time.Hour), writeInterval).Return(model.Matrix{{
+			Values: append(
+				generateSineWaveSamplesSum(now.Add(-48*time.Hour).Add(writeInterval), now.Add(-36*time.Hour).Add(time.Minute), cfg.NumSeries-1, writeInterval),
+				generateSineWaveSamplesSum(now.Add(-36*time.Hour).Add(time.Minute+writeInterval), now.Add(-24*time.Hour), cfg.NumSeries, writeInterval)...,
+			),
+		}}, nil)
+
+		test := NewWriteReadSeriesTest(cfg, client, logger, nil)
+
+		require.NoError(t, test.Init(context.Background(), now))
+
+		client.AssertNumberOfCalls(t, "QueryRange", 2)
+
+		require.Equal(t, now.Add(-1*time.Minute), test.lastWrittenTimestamp)
+		require.Equal(t, now.Add(-36*time.Hour).Add(time.Minute+writeInterval), test.queryMinTime)
+		require.Equal(t, now.Add(-1*time.Minute), test.queryMaxTime)
+	})
+
+	t.Run("the testing tool has been restarted with a different number of series exactly at the beginning of this 24h period", func(t *testing.T) {
+		client := &ClientMock{}
+		client.On("QueryRange", mock.Anything, "sum(max_over_time(mimir_continuous_test_sine_wave[1s]))", now.Add(-24*time.Hour).Add(writeInterval), now, writeInterval).Return(model.Matrix{{
+			Values: generateSineWaveSamplesSum(now.Add(-24*time.Hour).Add(writeInterval), now.Add(-1*time.Minute), cfg.NumSeries, writeInterval),
+		}}, nil)
+		client.On("QueryRange", mock.Anything, "sum(max_over_time(mimir_continuous_test_sine_wave[1s]))", now.Add(-48*time.Hour).Add(writeInterval), now.Add(-24*time.Hour), writeInterval).Return(model.Matrix{{
+			Values: generateSineWaveSamplesSum(now.Add(-24*time.Hour).Add(writeInterval), now.Add(-1*time.Minute), cfg.NumSeries-1, writeInterval),
+		}}, nil)
+
+		test := NewWriteReadSeriesTest(cfg, client, logger, nil)
+
+		require.NoError(t, test.Init(context.Background(), now))
+
+		client.AssertNumberOfCalls(t, "QueryRange", 2)
+
+		require.Equal(t, now.Add(-1*time.Minute), test.lastWrittenTimestamp)
+		require.Equal(t, now.Add(-24*time.Hour).Add(writeInterval), test.queryMinTime)
+		require.Equal(t, now.Add(-1*time.Minute), test.queryMaxTime)
+	})
+}
+
 func TestWriteReadSeriesTest_getRangeQueryTimeRanges(t *testing.T) {
 	cfg := WriteReadSeriesTestConfig{}
 	flagext.DefaultValues(&cfg)
