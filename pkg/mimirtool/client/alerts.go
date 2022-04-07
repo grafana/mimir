@@ -7,7 +7,7 @@ package client
 
 import (
 	"context"
-	"io/ioutil"
+	"io"
 
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
@@ -62,7 +62,7 @@ func (r *MimirClient) GetAlertmanagerConfig(ctx context.Context) (string, map[st
 	}
 
 	defer res.Body.Close()
-	body, err := ioutil.ReadAll(res.Body)
+	body, err := io.ReadAll(res.Body)
 	if err != nil {
 		return "", nil, err
 	}

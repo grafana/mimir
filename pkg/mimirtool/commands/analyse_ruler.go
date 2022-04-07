@@ -8,7 +8,6 @@ package commands
 import (
 	"context"
 	"encoding/json"
-	"io/ioutil"
 	"os"
 	"sort"
 
@@ -70,7 +69,7 @@ func writeOutRuleMetrics(mir *analyze.MetricsInRuler, outputFile string) error {
 		return err
 	}
 
-	if err := ioutil.WriteFile(outputFile, out, os.FileMode(int(0666))); err != nil {
+	if err := os.WriteFile(outputFile, out, os.FileMode(int(0666))); err != nil {
 		return err
 	}
 
