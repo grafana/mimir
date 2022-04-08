@@ -175,6 +175,7 @@ func TestMultiKVSetup(t *testing.T) {
 		},
 
 		Ruler: func(t *testing.T, c Config) {
+			require.NotNil(t, c.StoreGateway.ShardingRing.KVStore.Multi.ConfigProvider)
 			require.NotNil(t, c.Ruler.Ring.KVStore.Multi.ConfigProvider)
 		},
 
@@ -188,6 +189,14 @@ func TestMultiKVSetup(t *testing.T) {
 
 		Ingester: func(t *testing.T, c Config) {
 			require.NotNil(t, c.Ingester.IngesterRing.KVStore.Multi.ConfigProvider)
+		},
+
+		StoreGateway: func(t *testing.T, c Config) {
+			require.NotNil(t, c.StoreGateway.ShardingRing.KVStore.Multi.ConfigProvider)
+		},
+
+		Querier: func(t *testing.T, c Config) {
+			require.NotNil(t, c.StoreGateway.ShardingRing.KVStore.Multi.ConfigProvider)
 		},
 	} {
 		t.Run(target, func(t *testing.T) {
