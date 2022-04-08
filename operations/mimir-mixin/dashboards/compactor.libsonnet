@@ -198,7 +198,7 @@ local fixTargetsForTransformations(panel, refIds) = panel {
               overrideFieldByName('Last run', [
                 overrideProperty('custom.width', 74),
                 overrideProperty('mappings', [
-                  mappingRange('-Infinity', 0, { color: 'text', text: 'No successful runs' }),
+                  mappingRange('-Infinity', 0, { color: 'text', text: 'No successful runs since startup yet' }),
                 ]),
                 overrideProperty('color', { mode: 'thresholds' }),
                 overrideProperty('thresholds', { mode: 'absolute', steps: lastRunThresholds.steps }),
