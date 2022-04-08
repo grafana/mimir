@@ -486,7 +486,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.tsdb.head-compaction-interval duration
     	How frequently ingesters try to compact TSDB head. Block is only created if data covers smallest block range. Must be greater than 0 and max 5 minutes. (default 1m0s)
   -blocks-storage.tsdb.isolation-enabled
-    	Enables TSDB isolation feature. Disabling may improve performance. (default true)
+    	[Deprecated] Enables TSDB isolation feature. Disabling may improve performance.
   -blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup int
     	limit the number of concurrently opening TSDB's on startup (default 10)
   -blocks-storage.tsdb.memory-snapshot-on-shutdown
