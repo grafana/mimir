@@ -15,7 +15,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
             The table below gives a suggested number of replicas and the reason why.
             If the system is failing for one of the below reasons, try scaling up to the specified number.
             These are not meant as a prescriptive number, but rather as a helpful guideline when things go wrong.
-            We only show services where the suggested number of replicas is larger than the current number of replicas.
 
             Reasons:
             - **sample_rate**: There are not enough replicas to handle the
