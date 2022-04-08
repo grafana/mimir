@@ -321,7 +321,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "max by(pod)\n(\n  (time() * (cortex_compactor_last_successful_run_timestamp_seconds !=bool 0))\n  -\n  cortex_compactor_last_successful_run_timestamp_seconds\n)\n",
+                        "expr": "max by(pod)\n(\n  (time() * (cortex_compactor_last_successful_run_timestamp_seconds{cluster=~\"$cluster\", job=~\"($namespace)/(compactor.*|cortex|mimir)\"}, !=bool 0))\n  -\n  cortex_compactor_last_successful_run_timestamp_seconds{cluster=~\"$cluster\", job=~\"($namespace)/(compactor.*|cortex|mimir)\"},\n)\n",
                         "format": "table",
                         "instant": true,
                         "interval": "",
@@ -560,7 +560,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "max by(pod)\n(\n  (time() * (cortex_compactor_last_successful_run_timestamp_seconds !=bool 0))\n  -\n  cortex_compactor_last_successful_run_timestamp_seconds\n)\n",
+                        "expr": "max by(pod)\n(\n  (time() * (cortex_compactor_last_successful_run_timestamp_seconds{cluster=~\"$cluster\", job=~\"($namespace)/(compactor.*|cortex|mimir)\"}, !=bool 0))\n  -\n  cortex_compactor_last_successful_run_timestamp_seconds{cluster=~\"$cluster\", job=~\"($namespace)/(compactor.*|cortex|mimir)\"},\n)\n",
                         "format": "table",
                         "instant": true,
                         "interval": "15s",

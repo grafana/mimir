@@ -66,11 +66,9 @@ local fixTargetsForTransformations(panel, refIds) = panel {
     local hours = 60 * 60,
 
     // In terms of hours
-    delayed: 2 * hours,
-    late: 6 * hours,
-    veryLate: 12 * hours,
-
-    local _ = self,
+    local delayed = 2 * hours,
+    local late = 6 * hours,
+    local veryLate = 12 * hours,
 
     // steps for thresholds
     steps: [
@@ -95,11 +93,11 @@ local fixTargetsForTransformations(panel, refIds) = panel {
     |||
       max by(%(instance)s)
       (
-        (time() * (max_over_time(cortex_compactor_last_successful_run_timestamp_seconds[1h]) !=bool 0))
+        (time() * (max_over_time(cortex_compactor_last_successful_run_timestamp_seconds{%(job)s}[1h]) !=bool 0))
         -
-        max_over_time(cortex_compactor_last_successful_run_timestamp_seconds[1h])
+        max_over_time(cortex_compactor_last_successful_run_timestamp_seconds{%(job)s}[1h])
       )
-    ||| % { instance: $._config.per_instance_label },
+    ||| % { instance: $._config.per_instance_label, job: $.jobMatcher($._config.job_names.compactor) },
 
   local lastRunCommonTransformations = [
     transformation('organize', {
