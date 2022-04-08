@@ -180,8 +180,8 @@ local fixTargetsForTransformations(panel, refIds) = panel {
             - If you see "No successful runs" in this panel, that means that compactors are active, but none 
               of them were successfully executed yet.
 
-            These might be expected - for example, if you just recently restarted your compactors, they might not 
-            yet be broadcasting metrics, or they might not have had a chance to complete their first compaction run. 
+            These might be expected - for example, if you just recently restarted your compactors,
+            they might not have had a chance to complete their first compaction run. 
             However, if these messages persist, you should check the health of your compactors.
           |||
         ) +
