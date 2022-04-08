@@ -113,9 +113,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
           {
             // Convenience rule to get the number of replicas for both a deployment and a statefulset.
             // Multi-zone deployments are grouped together removing the "zone-X" suffix.
-            record: '%(clusterLabel)s_namespace_deployment:actual_replicas:count' % _config,
+            record: '%(alert_aggregation_rule_prefix)s_deployment:actual_replicas:count' % _config,
             expr: |||
-              sum by (%(clusterLabel)s, namespace, deployment) (
+              sum by (%(alert_aggregation_labels)s, deployment) (
                 label_replace(
                   kube_deployment_spec_replicas,
                   # The question mark in "(.*?)" is used to make it non-greedy, otherwise it
@@ -124,14 +124,14 @@ local utils = import 'mixin-utils/utils.libsonnet';
                 )
               )
               or
-              sum by (%(clusterLabel)s, namespace, deployment) (
+              sum by (%(alert_aggregation_labels)s, deployment) (
                 label_replace(kube_statefulset_replicas, "deployment", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?")
               )
             ||| % _config,
           },
           {
             // Distributors should be able to deal with 240k samples/s.
-            record: '%(clusterLabel)s_namespace_deployment_reason:required_replicas:count' % _config,
+            record: '%(alert_aggregation_rule_prefix)s_deployment_reason:required_replicas:count' % _config,
             labels: {
               deployment: 'distributor',
               reason: 'sample_rate',
@@ -139,7 +139,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
             expr: |||
               ceil(
                 quantile_over_time(0.99,
-                  sum by (%(clusterLabel)s, namespace) (
+                  sum by (%(alert_aggregation_labels)s) (
                     %(group_prefix_jobs)s:cortex_distributor_received_samples:rate5m
                   )[24h:]
                 )
@@ -150,14 +150,14 @@ local utils = import 'mixin-utils/utils.libsonnet';
           {
             // We should be about to cover 80% of our limits,
             // and ingester can have 80k samples/s.
-            record: '%(clusterLabel)s_namespace_deployment_reason:required_replicas:count' % _config,
+            record: '%(alert_aggregation_rule_prefix)s_deployment_reason:required_replicas:count' % _config,
             labels: {
               deployment: 'distributor',
               reason: 'sample_rate_limits',
             },
             expr: |||
               ceil(
-                sum by (%(clusterLabel)s, namespace) (cortex_limits_overrides{limit_name="ingestion_rate"})
+                sum by (%(alert_aggregation_labels)s) (cortex_limits_overrides{limit_name="ingestion_rate"})
                 * %(limit_utilisation_target)s / %(max_samples_per_sec_per_distributor)s
               )
             ||| % _config,
@@ -165,7 +165,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           {
             // We want ingesters each ingester to deal with 80k samples/s.
             // NB we measure this at the distributors and multiple by RF (3).
-            record: '%(clusterLabel)s_namespace_deployment_reason:required_replicas:count' % _config,
+            record: '%(alert_aggregation_rule_prefix)s_deployment_reason:required_replicas:count' % _config,
             labels: {
               deployment: 'ingester',
               reason: 'sample_rate',
@@ -173,7 +173,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
             expr: |||
               ceil(
                 quantile_over_time(0.99,
-                  sum by (%(clusterLabel)s, namespace) (
+                  sum by (%(alert_aggregation_labels)s) (
                     %(group_prefix_jobs)s:cortex_distributor_received_samples:rate5m
                   )[24h:]
                 )
@@ -183,7 +183,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           },
           {
             // Ingester should have 1.5M series in memory
-            record: '%(clusterLabel)s_namespace_deployment_reason:required_replicas:count' % _config,
+            record: '%(alert_aggregation_rule_prefix)s_deployment_reason:required_replicas:count' % _config,
             labels: {
               deployment: 'ingester',
               reason: 'active_series',
@@ -191,7 +191,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
             expr: |||
               ceil(
                 quantile_over_time(0.99,
-                  sum by(%(clusterLabel)s, namespace) (
+                  sum by(%(alert_aggregation_labels)s) (
                     cortex_ingester_memory_series
                   )[24h:]
                 )
@@ -202,14 +202,14 @@ local utils = import 'mixin-utils/utils.libsonnet';
           {
             // We should be about to cover 60% of our limits,
             // and ingester can have 1.5M series in memory
-            record: '%(clusterLabel)s_namespace_deployment_reason:required_replicas:count' % _config,
+            record: '%(alert_aggregation_rule_prefix)s_deployment_reason:required_replicas:count' % _config,
             labels: {
               deployment: 'ingester',
               reason: 'active_series_limits',
             },
             expr: |||
               ceil(
-                sum by (%(clusterLabel)s, namespace) (cortex_limits_overrides{limit_name="max_global_series_per_user"})
+                sum by (%(alert_aggregation_labels)s) (cortex_limits_overrides{limit_name="max_global_series_per_user"})
                 * 3 * %(limit_utilisation_target)s / %(max_series_per_ingester)s
               )
             ||| % _config,
@@ -217,32 +217,32 @@ local utils = import 'mixin-utils/utils.libsonnet';
           {
             // We should be about to cover 60% of our limits,
             // and ingester can have 80k samples/s.
-            record: '%(clusterLabel)s_namespace_deployment_reason:required_replicas:count' % _config,
+            record: '%(alert_aggregation_rule_prefix)s_deployment_reason:required_replicas:count' % _config,
             labels: {
               deployment: 'ingester',
               reason: 'sample_rate_limits',
             },
             expr: |||
               ceil(
-                sum by (%(clusterLabel)s, namespace) (cortex_limits_overrides{limit_name="ingestion_rate"})
+                sum by (%(alert_aggregation_labels)s) (cortex_limits_overrides{limit_name="ingestion_rate"})
                 * %(limit_utilisation_target)s / %(max_samples_per_sec_per_ingester)s
               )
             ||| % _config,
           },
           {
             // Ingesters store 96h of data on disk - we want memcached to store 1/4 of that.
-            record: '%(clusterLabel)s_namespace_deployment_reason:required_replicas:count' % _config,
+            record: '%(alert_aggregation_rule_prefix)s_deployment_reason:required_replicas:count' % _config,
             labels: {
               deployment: 'memcached',
               reason: 'active_series',
             },
             expr: |||
               ceil(
-                (sum by (%(clusterLabel)s, namespace) (
+                (sum by (%(alert_aggregation_labels)s) (
                   cortex_ingester_tsdb_storage_blocks_bytes{job=~".+/ingester.*"}
                 ) / 4)
                   /
-                avg by (%(clusterLabel)s, namespace) (
+                avg by (%(alert_aggregation_labels)s) (
                   memcached_limit_bytes{job=~".+/memcached"}
                 )
               )
@@ -251,9 +251,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
           {
             // Convenience rule to get the CPU utilization for both a deployment and a statefulset.
             // Multi-zone deployments are grouped together removing the "zone-X" suffix.
-            record: '%(clusterLabel)s_namespace_deployment:container_cpu_usage_seconds_total:sum_rate' % _config,
+            record: '%(alert_aggregation_rule_prefix)s_deployment:container_cpu_usage_seconds_total:sum_rate' % _config,
             expr: |||
-              sum by (%(clusterLabel)s, namespace, deployment) (
+              sum by (%(alert_aggregation_labels)s, deployment) (
                 label_replace(
                   label_replace(
                     node_namespace_pod_container:container_cpu_usage_seconds_total:sum_irate,
@@ -269,7 +269,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           {
             // Convenience rule to get the CPU request for both a deployment and a statefulset.
             // Multi-zone deployments are grouped together removing the "zone-X" suffix.
-            record: '%(clusterLabel)s_namespace_deployment:kube_pod_container_resource_requests_cpu_cores:sum' % _config,
+            record: '%(alert_aggregation_rule_prefix)s_deployment:kube_pod_container_resource_requests_cpu_cores:sum' % _config,
             expr: |||
               # This recording rule is made compatible with the breaking changes introduced in kube-state-metrics v2
               # that remove resource metrics, ref:
@@ -279,7 +279,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
               # This is the old expression, compatible with kube-state-metrics < v2.0.0,
               # where kube_pod_container_resource_requests_cpu_cores was removed:
               (
-                sum by (%(clusterLabel)s, namespace, deployment) (
+                sum by (%(alert_aggregation_labels)s, deployment) (
                   label_replace(
                     label_replace(
                       kube_pod_container_resource_requests_cpu_cores,
@@ -295,7 +295,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
               # This expression is compatible with kube-state-metrics >= v1.4.0,
               # where kube_pod_container_resource_requests was introduced.
               (
-                sum by (%(clusterLabel)s, namespace, deployment) (
+                sum by (%(alert_aggregation_labels)s, deployment) (
                   label_replace(
                     label_replace(
                       kube_pod_container_resource_requests{resource="cpu"},
@@ -313,26 +313,26 @@ local utils = import 'mixin-utils/utils.libsonnet';
             // Jobs should be sized to their CPU usage.
             // We do this by comparing 99th percentile usage over the last 24hrs to
             // their current provisioned #replicas and resource requests.
-            record: '%(clusterLabel)s_namespace_deployment_reason:required_replicas:count' % _config,
+            record: '%(alert_aggregation_rule_prefix)s_deployment_reason:required_replicas:count' % _config,
             labels: {
               reason: 'cpu_usage',
             },
             expr: |||
               ceil(
-                %(clusterLabel)s_namespace_deployment:actual_replicas:count
+                %(alert_aggregation_rule_prefix)s_deployment:actual_replicas:count
                   *
-                quantile_over_time(0.99, %(clusterLabel)s_namespace_deployment:container_cpu_usage_seconds_total:sum_rate[24h])
+                quantile_over_time(0.99, %(alert_aggregation_rule_prefix)s_deployment:container_cpu_usage_seconds_total:sum_rate[24h])
                   /
-                %(clusterLabel)s_namespace_deployment:kube_pod_container_resource_requests_cpu_cores:sum
+                %(alert_aggregation_rule_prefix)s_deployment:kube_pod_container_resource_requests_cpu_cores:sum
               )
             ||| % _config,
           },
           {
             // Convenience rule to get the Memory utilization for both a deployment and a statefulset.
             // Multi-zone deployments are grouped together removing the "zone-X" suffix.
-            record: '%(clusterLabel)s_namespace_deployment:container_memory_usage_bytes:sum' % _config,
+            record: '%(alert_aggregation_rule_prefix)s_deployment:container_memory_usage_bytes:sum' % _config,
             expr: |||
-              sum by (%(clusterLabel)s, namespace, deployment) (
+              sum by (%(alert_aggregation_labels)s, deployment) (
                 label_replace(
                   label_replace(
                     container_memory_usage_bytes,
@@ -348,7 +348,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           {
             // Convenience rule to get the Memory request for both a deployment and a statefulset.
             // Multi-zone deployments are grouped together removing the "zone-X" suffix.
-            record: '%(clusterLabel)s_namespace_deployment:kube_pod_container_resource_requests_memory_bytes:sum' % _config,
+            record: '%(alert_aggregation_rule_prefix)s_deployment:kube_pod_container_resource_requests_memory_bytes:sum' % _config,
             expr: |||
               # This recording rule is made compatible with the breaking changes introduced in kube-state-metrics v2
               # that remove resource metrics, ref:
@@ -358,7 +358,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
               # This is the old expression, compatible with kube-state-metrics < v2.0.0,
               # where kube_pod_container_resource_requests_memory_bytes was removed:
               (
-                sum by (%(clusterLabel)s, namespace, deployment) (
+                sum by (%(alert_aggregation_labels)s, deployment) (
                   label_replace(
                     label_replace(
                       kube_pod_container_resource_requests_memory_bytes,
@@ -374,7 +374,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
               # This expression is compatible with kube-state-metrics >= v1.4.0,
               # where kube_pod_container_resource_requests was introduced.
               (
-                sum by (%(clusterLabel)s, namespace, deployment) (
+                sum by (%(alert_aggregation_labels)s, deployment) (
                   label_replace(
                     label_replace(
                       kube_pod_container_resource_requests{resource="memory"},
@@ -392,17 +392,17 @@ local utils = import 'mixin-utils/utils.libsonnet';
             // Jobs should be sized to their Memory usage.
             // We do this by comparing 99th percentile usage over the last 24hrs to
             // their current provisioned #replicas and resource requests.
-            record: '%(clusterLabel)s_namespace_deployment_reason:required_replicas:count' % _config,
+            record: '%(alert_aggregation_rule_prefix)s_deployment_reason:required_replicas:count' % _config,
             labels: {
               reason: 'memory_usage',
             },
             expr: |||
               ceil(
-                %(clusterLabel)s_namespace_deployment:actual_replicas:count
+                %(alert_aggregation_rule_prefix)s_deployment:actual_replicas:count
                   *
-                quantile_over_time(0.99, %(clusterLabel)s_namespace_deployment:container_memory_usage_bytes:sum[24h])
+                quantile_over_time(0.99, %(alert_aggregation_rule_prefix)s_deployment:container_memory_usage_bytes:sum[24h])
                   /
-                %(clusterLabel)s_namespace_deployment:kube_pod_container_resource_requests_memory_bytes:sum
+                %(alert_aggregation_rule_prefix)s_deployment:kube_pod_container_resource_requests_memory_bytes:sum
               )
             ||| % _config,
           },
@@ -479,7 +479,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         rules: [
           {
             // cortex_ingester_ingested_samples_total is per user, in this rule we want to see the sum per cluster/namespace/instance
-            record: '%s_namespace_%s:cortex_ingester_ingested_samples_total:rate1m' % [$._config.clusterLabel, $._config.per_instance_label],
+            record: '%s_%s:cortex_ingester_ingested_samples_total:rate1m' % [$._config.alert_aggregation_rule_prefix, $._config.per_instance_label],
             expr: |||
               sum by(%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ingester_ingested_samples_total[1m]))
             ||| % $._config,
