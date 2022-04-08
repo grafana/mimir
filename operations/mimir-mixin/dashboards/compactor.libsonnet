@@ -61,10 +61,6 @@ local fixTargetsForTransformations(panel, refIds) = panel {
 
 (import 'dashboard-utils.libsonnet') {
 
-  local vars = {
-    instance: $._config.per_instance_label,
-  },
-
   local lastRunThresholds = {
 
     local hours = 60 * 60,
@@ -100,16 +96,16 @@ local fixTargetsForTransformations(panel, refIds) = panel {
       max by(%(instance)s)
       (
         (time() * (max_over_time(cortex_compactor_last_successful_run_timestamp_seconds[1h]) !=bool 0))
-        - 
+        -
         max_over_time(cortex_compactor_last_successful_run_timestamp_seconds[1h])
       )
-    ||| % (vars),
+    ||| % { instance: $._config.per_instance_label },
 
   local lastRunCommonTransformations = [
     transformation('organize', {
       renameByName: {
         Value: 'Last run',
-        ['%s' % vars.instance]: 'Compactor',
+        ['%s' % $._config.per_instance_label]: 'Compactor',
       },
     }),
     transformationCalculateField('Status', 'Last run', '*', 1),  // Duplicate field to be transformed
@@ -177,11 +173,11 @@ local fixTargetsForTransformations(panel, refIds) = panel {
 
             - If you see "No compactor data" in this panel, that means that no compactors are active yet.
 
-            - If you see "No successful runs" in this panel, that means that compactors are active, but none 
+            - If you see "No successful runs" in this panel, that means that compactors are active, but none
               of them were successfully executed yet.
 
             These might be expected - for example, if you just recently restarted your compactors,
-            they might not have had a chance to complete their first compaction run. 
+            they might not have had a chance to complete their first compaction run.
             However, if these messages persist, you should check the health of your compactors.
           |||
         ) +
