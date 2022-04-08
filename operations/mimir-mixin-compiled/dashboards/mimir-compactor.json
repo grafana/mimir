@@ -210,7 +210,7 @@
                   "dashLength": 10,
                   "dashes": false,
                   "datasource": "$datasource",
-                  "description": "### Longest time since last successful run\nDisplays the amount of time since the most recent successful execution\nof the compactor.\nThe value shown will be for the compactor replica that has the longest time since its\nlast successful run.\nThe table to the right shows a summary for all compactor replicas.\n\nIf there is no time value, one of the following messages might appear:\n\n- If you see \"No compactor data\" in this panel, that means that no compactors are active yet.\n\n- If you see \"No successful runs\" in this panel, that means that compactors are active, but none\n  of them were successfully executed yet.\n\nThese might be expected - for example, if you just recently restarted your compactors, they might not\nyet be broadcasting metrics, or they might not have had a chance to complete their first compaction run.\nHowever, if these messages persist, you should check the health of your compactors.\n\n",
+                  "description": "### Longest time since last successful run\nDisplays the amount of time since the most recent successful execution\nof the compactor.\nThe value shown will be for the compactor replica that has the longest time since its\nlast successful run.\nThe table to the right shows a summary for all compactor replicas.\n\nIf there is no time value, one of the following messages might appear:\n\n- If you see \"No compactor data\" in this panel, that means that no compactors are active yet.\n\n- If you see \"No successful runs\" in this panel, that means that compactors are active, but none\n  of them were successfully executed yet.\n\nThese might be expected - for example, if you just recently restarted your compactors,\nthey might not have had a chance to complete their first compaction run.\nHowever, if these messages persist, you should check the health of your compactors.\n\n",
                   "fieldConfig": {
                      "defaults": {
                         "color": {
@@ -321,7 +321,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "max by(pod)\n(\n  (time() * (cortex_compactor_last_successful_run_timestamp_seconds{cluster=~\"$cluster\", job=~\"($namespace)/(compactor.*|cortex|mimir)\"}, !=bool 0))\n  -\n  cortex_compactor_last_successful_run_timestamp_seconds{cluster=~\"$cluster\", job=~\"($namespace)/(compactor.*|cortex|mimir)\"},\n)\n",
+                        "expr": "max by(pod)\n(\n  (time() * (max_over_time(cortex_compactor_last_successful_run_timestamp_seconds{cluster=~\"$cluster\", job=~\"($namespace)/(compactor.*|cortex|mimir)\"}[1h]) !=bool 0))\n  -\n  max_over_time(cortex_compactor_last_successful_run_timestamp_seconds{cluster=~\"$cluster\", job=~\"($namespace)/(compactor.*|cortex|mimir)\"}[1h])\n)\n",
                         "format": "table",
                         "instant": true,
                         "interval": "",
@@ -560,7 +560,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "max by(pod)\n(\n  (time() * (cortex_compactor_last_successful_run_timestamp_seconds{cluster=~\"$cluster\", job=~\"($namespace)/(compactor.*|cortex|mimir)\"}, !=bool 0))\n  -\n  cortex_compactor_last_successful_run_timestamp_seconds{cluster=~\"$cluster\", job=~\"($namespace)/(compactor.*|cortex|mimir)\"},\n)\n",
+                        "expr": "max by(pod)\n(\n  (time() * (max_over_time(cortex_compactor_last_successful_run_timestamp_seconds{cluster=~\"$cluster\", job=~\"($namespace)/(compactor.*|cortex|mimir)\"}[1h]) !=bool 0))\n  -\n  max_over_time(cortex_compactor_last_successful_run_timestamp_seconds{cluster=~\"$cluster\", job=~\"($namespace)/(compactor.*|cortex|mimir)\"}[1h])\n)\n",
                         "format": "table",
                         "instant": true,
                         "interval": "15s",

@@ -189,9 +189,7 @@ local fixTargetsForTransformations(panel, refIds) = panel {
             textMode: 'value',
           },
           targets: [target { format: 'table', instant: true } for target in super.targets],
-          transformations:
-            //[transformation('merge')] +
-            lastRunCommonTransformations,
+          transformations: lastRunCommonTransformations,
           fieldConfig: super.fieldConfig + {
             defaults: super.defaults {
               noValue: 'No compactor data',
