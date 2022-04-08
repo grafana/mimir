@@ -75,18 +75,18 @@ local fixTargetsForTransformations(panel, refIds) = panel {
     // steps for thresholds
     steps: [
       { value: 0, color: 'green' },
-      { value: _.delayed, color: 'yellow' },
-      { value: _.late, color: 'orange' },
-      { value: _.veryLate, color: 'red' },
+      { value: delayed, color: 'yellow' },
+      { value: late, color: 'orange' },
+      { value: veryLate, color: 'red' },
     ],
 
     // status mappings: messages and colors
     mappings: [
       mappingRange('-Infinity', 0, { color: 'transparent', text: 'N/A' }),
-      mappingRange(0, _.delayed, { color: 'green', text: 'Ok' }),
-      mappingRange(_.delayed, _.late, { color: 'yellow', text: 'Delayed' }),
-      mappingRange(_.late, _.veryLate, { color: 'orange', text: 'Late' }),
-      mappingRange(_.veryLate, 'Infinity', { color: 'red', text: 'Very late' }),
+      mappingRange(0, delayed, { color: 'green', text: 'Ok' }),
+      mappingRange(delayed, late, { color: 'yellow', text: 'Delayed' }),
+      mappingRange(late, veryLate, { color: 'orange', text: 'Late' }),
+      mappingRange(veryLate, 'Infinity', { color: 'red', text: 'Very late' }),
       mappingSpecial('null+nan', { color: 'transparent', text: 'Unknown' }),
     ],
   },
