@@ -24,8 +24,10 @@
     // 1) Enable multikv_migration_enabled, with primary=consul, secondary=memberlist, and multikv_mirror_enabled=false, restart components.
     // 2) Set multikv_mirror_enabled=true. This doesn't require restart.
     // 3) Swap multikv_primary and multikv_secondary, ie. multikv_primary=memberlist, multikv_secondary=consul. This doesn't require restart.
-    // 4) Set multikv_migration_enabled=false. This requires restart, but components will now use only memberlist.
+    // 4) Set multikv_migration_enabled=false and multikv_migration_teardown=true. This requires a restart, but components will now use only memberlist.
+    // 5) Set multikv_migration_teardown=false. This doesn't require a restart.
     multikv_migration_enabled: false,
+    multikv_migration_teardown: false,
     multikv_primary: 'consul',
     multikv_secondary: 'memberlist',
     multikv_switch_primary_secondary: false,
@@ -39,7 +41,7 @@
 
     // When doing migration via multi KV store, this section can be used
     // to configure runtime parameters of multi KV store
-    multi_kv_config: if !$._config.multikv_migration_enabled then {} else {
+    multi_kv_config: if !$._config.multikv_migration_enabled && !$._config.multikv_migration_teardown then {} else {
       primary: if $._config.multikv_switch_primary_secondary then $._config.multikv_secondary else $._config.multikv_primary,
       mirror_enabled: $._config.multikv_mirror_enabled,
     },
