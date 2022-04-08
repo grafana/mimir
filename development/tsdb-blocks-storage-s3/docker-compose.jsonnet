@@ -10,8 +10,11 @@ std.manifestYamlDoc({
     // Whether query-frontend and querier should use query-scheduler. If set to true, query-scheduler is started as well.
     use_query_scheduler: true,
 
-    // If enabled, then Memberlist is used instead of consul, and consul service is disabled.
-    use_memberlist_for_ring: false,
+    // Three options are supported for ring in this jsonnet:
+    // - consul
+    // - memberlist (consul is not started at all)
+    // - multi (uses consul as primary and memberlist as secondary, but this can be switched in runtime via runtime.yaml)
+    ring: 'consul',
   },
 
   // We explicitely list all important services here, so that it's easy to disable them by commenting out.
@@ -29,7 +32,7 @@ std.manifestYamlDoc({
     self.grafana_agent +
     self.memcached +
     self.jaeger +
-    (if !$._config.use_memberlist_for_ring then self.consul else {}) +
+    (if $._config.ring == 'consul' || $._config.ring == 'multi' then self.consul else {}) +
     {},
 
   distributor:: {
@@ -131,6 +134,8 @@ std.manifestYamlDoc({
     }),
   },
 
+  local all_rings = ['-ingester.ring', '-distributor.ring', '-compactor.ring', '-store-gateway.sharding-ring', '-ruler.ring', '-alertmanager.sharding-ring'],
+
   // This function builds docker-compose declaration for Mimir service.
   // Default grpcPort is (httpPort + 1000), and default debug port is (httpPort + 10000)
   local mimirService(serviceOptions) = {
@@ -143,7 +148,7 @@ std.manifestYamlDoc({
       debugPort: self.httpPort + 10000,
       // Extra arguments passed to Mimir command line.
       extraArguments: '',
-      dependsOn: ['minio'] + (if !$._config.use_memberlist_for_ring then ['consul'] else if s.target != 'distributor' then ['distributor'] else []),
+      dependsOn: ['minio'] + (if $._config.ring == 'consul' || $._config.ring == 'multi' then ['consul'] else if s.target != 'distributor' then ['distributor'] else []),
       env: {
         JAEGER_AGENT_HOST: 'jaeger',
         JAEGER_AGENT_PORT: 6831,
@@ -166,11 +171,15 @@ std.manifestYamlDoc({
     command: [
       'sh',
       '-c',
-      (if $._config.sleep_seconds > 0 then 'sleep %d && ' % [$._config.sleep_seconds] else '') +
-      (if $._config.debug then 'exec ./dlv exec ./mimir --listen=:%(debugPort)d --headless=true --api-version=2 --accept-multiclient --continue -- ' % options
-       else 'exec ./mimir ') +
-      ('-config.file=./config/mimir.yaml -target=%(target)s -server.http-listen-port=%(httpPort)d -server.grpc-listen-port=%(grpcPort)d -activity-tracker.filepath=/activity/%(target)s-%(httpPort)d %(extraArguments)s' % options) +
-      (if $._config.use_memberlist_for_ring then ' -memberlist.nodename=%(memberlistNodeName)s -memberlist.bind-port=%(memberlistBindPort)d -ingester.ring.store=memberlist -distributor.ring.store=memberlist -compactor.ring.store=memberlist -store-gateway.sharding-ring.store=memberlist -ruler.ring.store=memberlist' % options else ''),
+      std.join(' ', [
+        // some of the following expressions use "... else null", which std.join seem to ignore.
+        (if $._config.sleep_seconds > 0 then 'sleep %d &&' % [$._config.sleep_seconds] else null),
+        (if $._config.debug then 'exec ./dlv exec ./mimir --listen=:%(debugPort)d --headless=true --api-version=2 --accept-multiclient --continue -- ' % options else 'exec ./mimir'),
+        ('-config.file=./config/mimir.yaml -target=%(target)s -server.http-listen-port=%(httpPort)d -server.grpc-listen-port=%(grpcPort)d -activity-tracker.filepath=/activity/%(target)s-%(httpPort)d %(extraArguments)s' % options),
+        (if $._config.ring == 'memberlist' || $._config.ring == 'multi' then '-memberlist.nodename=%(memberlistNodeName)s -memberlist.bind-port=%(memberlistBindPort)d' % options else null),
+        (if $._config.ring == 'memberlist' then std.join(' ', [x + '.store=memberlist' for x in all_rings]) else null),
+        (if $._config.ring == 'multi' then std.join(' ', [x + '.store=multi' for x in all_rings] + [x + '.multi.primary=consul' for x in all_rings] + [x + '.multi.secondary=memberlist' for x in all_rings]) else null),
+      ]),
     ],
     environment: [
       '%s=%s' % [key, options.env[key]]
