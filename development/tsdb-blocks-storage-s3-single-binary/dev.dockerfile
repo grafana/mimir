@@ -1,5 +1,5 @@
-FROM alpine:3.15.0
+FROM alpine:3.15.4
 
-RUN     mkdir /mimr
+RUN     mkdir /mimir
 WORKDIR /mimir
-ADD     ./mimir ./
+COPY     ./mimir ./
