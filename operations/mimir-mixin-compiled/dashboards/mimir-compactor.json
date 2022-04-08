@@ -243,7 +243,7 @@
                                           "from": "-Infinity",
                                           "result": {
                                              "color": "text",
-                                             "text": "No successful runs"
+                                             "text": "No successful runs since startup yet"
                                           },
                                           "to": 0
                                        },

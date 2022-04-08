@@ -63,12 +63,12 @@ local fixTargetsForTransformations(panel, refIds) = panel {
 
   local lastRunThresholds = {
 
-    local hours = 60 * 60,
+    local secondsPerHour = 60 * 60,
 
     // In terms of hours
-    local delayed = 2 * hours,
-    local late = 6 * hours,
-    local veryLate = 12 * hours,
+    local delayed = 2 * secondsPerHour,
+    local late = 6 * secondsPerHour,
+    local veryLate = 12 * secondsPerHour,
 
     // steps for thresholds
     steps: [
@@ -87,6 +87,19 @@ local fixTargetsForTransformations(panel, refIds) = panel {
       mappingRange(veryLate, 'Infinity', { color: 'red', text: 'Very late' }),
       mappingSpecial('null+nan', { color: 'transparent', text: 'Unknown' }),
     ],
+
+    descriptions: |||
+      The value in the status column is based on how long it has been since the last successful compaction.
+
+      - Okay: less than %(delayed)s hours
+      - Delayed: more than %(delayed)s hours
+      - Late: more than %(late)s hours
+      - Very late: more than %(veryLate)s hours
+    ||| % {
+      delayed: delayed / secondsPerHour,
+      late: late / secondsPerHour,
+      veryLate: veryLate / secondsPerHour,
+    },
   },
 
   local lastRunQuery =
@@ -215,15 +228,9 @@ local fixTargetsForTransformations(panel, refIds) = panel {
             Displays the compactor replicas, and for each, shows how long it has been since
             its last successful compaction run.
 
-            The value in the status column is based on how long it has been since the last successful compaction.
-
-            - Okay: less than 2 hours
-            - Delayed: more than 2 hours
-            - Late: more than 6 hours
-            - Very late: more than 12 hours
-
+            %(thresholdDescriptions)s
             If the status of any compactor replicas are *Late* or *Very late*, check their health.
-          |||
+          ||| % { thresholdDescriptions: lastRunThresholds.descriptions },
         ) +
         $.queryPanel(lastRunQuery, 'Last run') {
           type: 'table',
