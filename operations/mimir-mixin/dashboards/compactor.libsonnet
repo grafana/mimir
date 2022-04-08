@@ -99,9 +99,9 @@ local fixTargetsForTransformations(panel, refIds) = panel {
     |||
       max by(%(instance)s)
       (
-        (time() * (cortex_compactor_last_successful_run_timestamp_seconds !=bool 0))
+        (time() * (max_over_time(cortex_compactor_last_successful_run_timestamp_seconds[1h]) !=bool 0))
         - 
-        cortex_compactor_last_successful_run_timestamp_seconds
+        max_over_time(cortex_compactor_last_successful_run_timestamp_seconds[1h])
       )
     ||| % (vars),
 
