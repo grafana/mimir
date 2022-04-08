@@ -1,51 +1,5 @@
 local utils = import 'mixin-utils/utils.libsonnet';
 
-// Panel query override functions
-local overrideFieldByName(fieldName, overrideProperties) = {
-  matcher: {
-    id: 'byName',
-    options: fieldName,
-  },
-  properties: overrideProperties,
-};
-
-local overrideProperty(id, value) = { id: id, value: value };
-
-// Panel query value mapping functions
-local mappingRange(from, to, result) = {
-  type: 'range',
-  options: {
-    from: from,
-    to: to,
-    result: result,
-  },
-};
-
-local mappingSpecial(match, result) = {
-  type: 'special',
-  options: {
-    match: match,
-    result: result,
-  },
-};
-
-// Panel query transformation functions
-
-local transformation(id, options={}) = { id: id, options: options };
-
-local transformationCalculateField(alias, left, operator, right, replaceFields=false) =
-  transformation('calculateField', {
-    alias: alias,
-    binary: {
-      left: left,
-      operator: operator,
-      right: right,
-    },
-    mode: 'binary',
-    replaceFields: replaceFields,
-  });
-
-
 // This applies to the "longest time since successful run queries"
 local fixTargetsForTransformations(panel, refIds) = panel {
   // Make some adjustments to the targets to make them compatible with the transformations required
@@ -80,12 +34,12 @@ local fixTargetsForTransformations(panel, refIds) = panel {
 
     // status mappings: messages and colors
     mappings: [
-      mappingRange('-Infinity', 0, { color: 'transparent', text: 'N/A' }),
-      mappingRange(0, delayed, { color: 'green', text: 'Ok' }),
-      mappingRange(delayed, late, { color: 'yellow', text: 'Delayed' }),
-      mappingRange(late, veryLate, { color: 'orange', text: 'Late' }),
-      mappingRange(veryLate, 'Infinity', { color: 'red', text: 'Very late' }),
-      mappingSpecial('null+nan', { color: 'transparent', text: 'Unknown' }),
+      $.mappingRange('-Infinity', 0, { color: 'transparent', text: 'N/A' }),
+      $.mappingRange(0, delayed, { color: 'green', text: 'Ok' }),
+      $.mappingRange(delayed, late, { color: 'yellow', text: 'Delayed' }),
+      $.mappingRange(late, veryLate, { color: 'orange', text: 'Late' }),
+      $.mappingRange(veryLate, 'Infinity', { color: 'red', text: 'Very late' }),
+      $.mappingSpecial('null+nan', { color: 'transparent', text: 'Unknown' }),
     ],
 
     descriptions: |||
@@ -113,14 +67,14 @@ local fixTargetsForTransformations(panel, refIds) = panel {
     ||| % { instance: $._config.per_instance_label, job: $.jobMatcher($._config.job_names.compactor) },
 
   local lastRunCommonTransformations = [
-    transformation('organize', {
+    $.transformation('organize', {
       renameByName: {
         Value: 'Last run',
         ['%s' % $._config.per_instance_label]: 'Compactor',
       },
     }),
-    transformationCalculateField('Status', 'Last run', '*', 1),  // Duplicate field to be transformed
-    transformation('sortBy', {
+    $.transformationCalculateField('Status', 'Last run', '*', 1),  // Duplicate field to be transformed
+    $.transformation('sortBy', {
       sort: [
         {
           desc: true,
@@ -208,13 +162,13 @@ local fixTargetsForTransformations(panel, refIds) = panel {
               noValue: 'No compactor data',
             },
             overrides: [
-              overrideFieldByName('Last run', [
-                overrideProperty('custom.width', 74),
-                overrideProperty('mappings', [
-                  mappingRange('-Infinity', 0, { color: 'text', text: 'No successful runs since startup yet' }),
+              $.overrideFieldByName('Last run', [
+                $.overrideProperty('custom.width', 74),
+                $.overrideProperty('mappings', [
+                  $.mappingRange('-Infinity', 0, { color: 'text', text: 'No successful runs since startup yet' }),
                 ]),
-                overrideProperty('color', { mode: 'thresholds' }),
-                overrideProperty('thresholds', { mode: 'absolute', steps: lastRunThresholds.steps }),
+                $.overrideProperty('color', { mode: 'thresholds' }),
+                $.overrideProperty('thresholds', { mode: 'absolute', steps: lastRunThresholds.steps }),
               ]),
             ],
           },
@@ -237,24 +191,24 @@ local fixTargetsForTransformations(panel, refIds) = panel {
           targets: [target { format: 'table', instant: true } for target in super.targets],
           transformations:
             lastRunCommonTransformations +
-            [transformation('filterFieldsByName', {
+            [$.transformation('filterFieldsByName', {
               include: {  // Only include these fields in the display
                 names: ['Compactor', 'Last run', 'Status'],
               },
             })],
           fieldConfig: {
             overrides: [
-              overrideFieldByName('Status', [
-                overrideProperty('custom.displayMode', 'color-background'),
-                overrideProperty('mappings', lastRunThresholds.mappings),
-                overrideProperty('custom.width', 86),
-                overrideProperty('custom.align', 'center'),
+              $.overrideFieldByName('Status', [
+                $.overrideProperty('custom.displayMode', 'color-background'),
+                $.overrideProperty('mappings', lastRunThresholds.mappings),
+                $.overrideProperty('custom.width', 86),
+                $.overrideProperty('custom.align', 'center'),
               ]),
-              overrideFieldByName('Last run', [
-                overrideProperty('unit', 's'),
-                overrideProperty('custom.width', 74),
-                overrideProperty('mappings', [
-                  mappingRange('-Infinity', 0, { text: 'Never' }),
+              $.overrideFieldByName('Last run', [
+                $.overrideProperty('unit', 's'),
+                $.overrideProperty('custom.width', 74),
+                $.overrideProperty('mappings', [
+                  $.mappingRange('-Infinity', 0, { text: 'Never' }),
                 ]),
               ]),
             ],

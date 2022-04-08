@@ -597,4 +597,50 @@ local utils = import 'mixin-utils/utils.libsonnet';
       %s
     ||| % [title, description],
   },
+
+  // Panel query override functions
+  overrideFieldByName(fieldName, overrideProperties):: {
+    matcher: {
+      id: 'byName',
+      options: fieldName,
+    },
+    properties: overrideProperties,
+  },
+
+  overrideProperty(id, value):: { id: id, value: value },
+
+  // Panel query value mapping functions
+  mappingRange(from, to, result):: {
+    type: 'range',
+    options: {
+      from: from,
+      to: to,
+      result: result,
+    },
+  },
+
+  mappingSpecial(match, result):: {
+    type: 'special',
+    options: {
+      match: match,
+      result: result,
+    },
+  },
+
+  // Panel query transformation functions
+
+  transformation(id, options={}):: { id: id, options: options },
+
+  transformationCalculateField(alias, left, operator, right, replaceFields=false)::
+    $.transformation('calculateField', {
+      alias: alias,
+      binary: {
+        left: left,
+        operator: operator,
+        right: right,
+      },
+      mode: 'binary',
+      replaceFields: replaceFields,
+    }),
+
 }
