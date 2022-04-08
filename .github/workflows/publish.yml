@@ -14,11 +14,12 @@ jobs:
   test:
     runs-on: "ubuntu-latest"
     steps:
-      - name: "Check out code"
-        uses: "actions/checkout@v3"
-      - name: "Build website"
-        run: |
-          docker run -v ${PWD}/sources:/hugo/content/docs/mimir --rm grafana/docs-base:latest /bin/bash -c 'make hugo'
+    - name: "Check out code"
+      uses: "actions/checkout@v3"
+    - name: "Build website"
+      run: |
+        docker run -v "${PWD}/docs/sources:/hugo/content/docs/mimir/next" --rm grafana/docs-base:latest /bin/bash -c 'make hugo
+
   sync:
     runs-on: "ubuntu-latest"
     needs: "test"
