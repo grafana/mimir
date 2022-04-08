@@ -1,1 +1,7 @@
 # This file can be used to set overrides or other runtime config.
+
+# Runtime configuration for "multi" KV.
+# multi_kv_config:
+#  mirror_enabled: false
+#  primary: consul
+
