@@ -201,7 +201,7 @@ func uploadMarks(
 			continue
 		}
 
-		if !blockFiles["meta.json"] && !allowPartialBlocks {
+		if !blockFiles[metadata.MetaFilename] && !allowPartialBlocks {
 			level.Warn(logger).Log("msg", "Block's meta.json file does not exist, skipping.", "block", b)
 			continue
 		}
