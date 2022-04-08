@@ -20,6 +20,7 @@ mimir {
     alertmanager_client_type: 'gcs',
     alertmanager_gcs_bucket_name: 'alerts-bucket',
 
+    multikv_migration_enabled: false,
     multikv_migration_teardown: true,
     multikv_switch_primary_secondary: true,
   },
