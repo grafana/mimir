@@ -13,7 +13,7 @@ type Test interface {
 	Name() string
 
 	// Init initializes the test. If the initialization fails, the testing tool will terminate.
-	Init() error
+	Init(ctx context.Context, now time.Time) error
 
 	// Run runs a single test cycle. This function is called multiple times, at periodic intervals.
 	Run(ctx context.Context, now time.Time)
@@ -34,7 +34,7 @@ func (m *Manager) AddTest(t Test) {
 func (m *Manager) Run(ctx context.Context) error {
 	// Initialize all tests.
 	for _, t := range m.tests {
-		if err := t.Init(); err != nil {
+		if err := t.Init(ctx, time.Now()); err != nil {
 			return err
 		}
 	}

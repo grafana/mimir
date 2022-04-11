@@ -52,10 +52,11 @@ func TestVerifySineWaveSamplesSum(t *testing.T) {
 	now := time.UnixMilli(time.Now().UnixMilli()).UTC()
 
 	tests := map[string]struct {
-		samples        []model.SamplePair
-		expectedSeries int
-		expectedStep   time.Duration
-		expectedErr    string
+		samples                 []model.SamplePair
+		expectedSeries          int
+		expectedStep            time.Duration
+		expectedLastMatchingIdx int
+		expectedErr             string
 	}{
 		"should return no error if all samples value and timestamp match the expected one (1 series)": {
 			samples: []model.SamplePair{
@@ -63,9 +64,10 @@ func TestVerifySineWaveSamplesSum(t *testing.T) {
 				newSamplePair(now.Add(20*time.Second), generateSineWaveValue(now.Add(20*time.Second))),
 				newSamplePair(now.Add(30*time.Second), generateSineWaveValue(now.Add(30*time.Second))),
 			},
-			expectedSeries: 1,
-			expectedStep:   10 * time.Second,
-			expectedErr:    "",
+			expectedSeries:          1,
+			expectedStep:            10 * time.Second,
+			expectedLastMatchingIdx: 0,
+			expectedErr:             "",
 		},
 		"should return no error if all samples value and timestamp match the expected one (multiple series)": {
 			samples: []model.SamplePair{
@@ -73,9 +75,10 @@ func TestVerifySineWaveSamplesSum(t *testing.T) {
 				newSamplePair(now.Add(20*time.Second), 5*generateSineWaveValue(now.Add(20*time.Second))),
 				newSamplePair(now.Add(30*time.Second), 5*generateSineWaveValue(now.Add(30*time.Second))),
 			},
-			expectedSeries: 5,
-			expectedStep:   10 * time.Second,
-			expectedErr:    "",
+			expectedSeries:          5,
+			expectedStep:            10 * time.Second,
+			expectedLastMatchingIdx: 0,
+			expectedErr:             "",
 		},
 		"should return error if there's a missing series": {
 			samples: []model.SamplePair{
@@ -83,31 +86,45 @@ func TestVerifySineWaveSamplesSum(t *testing.T) {
 				newSamplePair(now.Add(20*time.Second), 4*generateSineWaveValue(now.Add(20*time.Second))),
 				newSamplePair(now.Add(30*time.Second), 4*generateSineWaveValue(now.Add(30*time.Second))),
 			},
-			expectedSeries: 5,
-			expectedStep:   10 * time.Second,
-			expectedErr:    "sample at timestamp .* has value .* while was expecting .*",
+			expectedSeries:          5,
+			expectedStep:            10 * time.Second,
+			expectedLastMatchingIdx: -1,
+			expectedErr:             "sample at timestamp .* has value .* while was expecting .*",
 		},
 		"should return error if there's a missing sample": {
 			samples: []model.SamplePair{
 				newSamplePair(now.Add(10*time.Second), 5*generateSineWaveValue(now.Add(10*time.Second))),
 				newSamplePair(now.Add(30*time.Second), 5*generateSineWaveValue(now.Add(30*time.Second))),
 			},
-			expectedSeries: 5,
-			expectedStep:   10 * time.Second,
-			expectedErr:    "sample at timestamp .* was expected to have timestamp .*",
+			expectedSeries:          5,
+			expectedStep:            10 * time.Second,
+			expectedLastMatchingIdx: 1,
+			expectedErr:             "sample at timestamp .* was expected to have timestamp .*",
+		},
+		"should return error if the 2nd last sample has an unexpected timestamp": {
+			samples: []model.SamplePair{
+				newSamplePair(now.Add(10*time.Second), 5*generateSineWaveValue(now.Add(10*time.Second))),
+				newSamplePair(now.Add(21*time.Second), 5*generateSineWaveValue(now.Add(21*time.Second))),
+				newSamplePair(now.Add(30*time.Second), 5*generateSineWaveValue(now.Add(30*time.Second))),
+			},
+			expectedSeries:          5,
+			expectedStep:            10 * time.Second,
+			expectedLastMatchingIdx: 2,
+			expectedErr:             "sample at timestamp .* was expected to have timestamp .*",
 		},
 	}
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			matrix := model.Matrix{{Values: testData.samples}}
-			actual := verifySineWaveSamplesSum(matrix, testData.expectedSeries, testData.expectedStep)
+			actualLastMatchingIdx, actualErr := verifySineWaveSamplesSum(matrix, testData.expectedSeries, testData.expectedStep)
 			if testData.expectedErr == "" {
-				assert.NoError(t, actual)
+				assert.NoError(t, actualErr)
 			} else {
-				assert.Error(t, actual)
-				assert.Regexp(t, testData.expectedErr, actual.Error())
+				assert.Error(t, actualErr)
+				assert.Regexp(t, testData.expectedErr, actualErr.Error())
 			}
+			assert.Equal(t, testData.expectedLastMatchingIdx, actualLastMatchingIdx)
 		})
 	}
 }
@@ -144,4 +161,16 @@ func newSamplePair(ts time.Time, value float64) model.SamplePair {
 		Timestamp: model.Time(ts.UnixMilli()),
 		Value:     model.SampleValue(value),
 	}
+}
+
+// generateSineWaveSamplesSum generates a list of samples whose timestamps range between from and to (both included),
+// where each sample value is numSeries multiplied by the expected sine wave value at the sample's timestamp.
+func generateSineWaveSamplesSum(from, to time.Time, numSeries int, step time.Duration) []model.SamplePair {
+	var samples []model.SamplePair
+
+	for ts := from; !ts.After(to); ts = ts.Add(step) {
+		samples = append(samples, newSamplePair(ts, float64(numSeries)*generateSineWaveValue(ts)))
+	}
+
+	return samples
 }
