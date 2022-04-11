@@ -3322,10 +3322,11 @@ tsdb:
   # CLI flag: -blocks-storage.tsdb.block-ranges-period
   [block_ranges_period: <list of duration> | default = 2h0m0s]
 
-  # TSDB blocks retention in the ingester before a block is removed. This should
-  # be larger than the -blocks-storage.tsdb.block-ranges-period,
-  # -querier.query-store-after and large enough to give store-gateways and
-  # queriers enough time to discover newly uploaded blocks.
+  # TSDB blocks retention in the ingester before a block is removed, relative to
+  # the newest block written for the tenant. This should be larger than the
+  # -blocks-storage.tsdb.block-ranges-period, -querier.query-store-after and
+  # large enough to give store-gateways and queriers enough time to discover
+  # newly uploaded blocks.
   # CLI flag: -blocks-storage.tsdb.retention-period
   [retention_period: <duration> | default = 24h]
 
