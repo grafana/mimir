@@ -710,7 +710,7 @@ groups:
       severity: warning
 - name: mimir_continuous_test
   rules:
-  - alert: MimirContinuousTestNotRunning
+  - alert: MimirContinuousTestNotRunningOnWrites
     annotations:
       message: Mimir continuous test {{ $labels.test }} in {{ $labels.cluster }}/{{
         $labels.namespace }} is not effectively running because writes are failing.
@@ -719,7 +719,7 @@ groups:
     for: 1h
     labels:
       severity: warning
-  - alert: MimirContinuousTestNotRunning
+  - alert: MimirContinuousTestNotRunningOnReads
     annotations:
       message: Mimir continuous test {{ $labels.test }} in {{ $labels.cluster }}/{{
         $labels.namespace }} is not effectively running because queries are failing.

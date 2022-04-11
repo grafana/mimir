@@ -6,7 +6,7 @@
         {
           // Alert if Mimir continuous test is not effectively running because writes are failing.
           // This alert tolerates short failures, due to temporarily outages in the Mimir cluster.
-          alert: $.alertName('ContinuousTestNotRunning'),
+          alert: $.alertName('ContinuousTestNotRunningOnWrites'),
           'for': '1h',
           expr: |||
             sum by(%(alert_aggregation_labels)s, test) (rate(mimir_continuous_test_writes_failed_total[5m])) > 0
@@ -21,7 +21,7 @@
         {
           // Alert if Mimir continuous test is not effectively running because queries are failing.
           // This alert tolerates short failures, due to temporarily outages in the Mimir cluster.
-          alert: $.alertName('ContinuousTestNotRunning'),
+          alert: $.alertName('ContinuousTestNotRunningOnReads'),
           'for': '1h',
           expr: |||
             sum by(%(alert_aggregation_labels)s, test) (rate(mimir_continuous_test_queries_failed_total[5m])) > 0

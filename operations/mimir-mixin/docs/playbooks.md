@@ -919,9 +919,9 @@ How to **investigate**:
   kubectl logs -n keda deployment/keda-operator-metrics-apiserver
   ```
 
-### MimirContinuousTestNotRunning
+### MimirContinuousTestNotRunningOnWrites
 
-This alert fires when `mimir-continuous-test` is deployed in the Mimir cluster, and continuous testing is not effectively running because either writes or queries are failing.
+This alert fires when `mimir-continuous-test` is deployed in the Mimir cluster, and continuous testing is not effectively running because writes are failing.
 
 How it **works**:
 
@@ -935,6 +935,10 @@ How to **investigate**:
   ```
   kubectl logs -n <namespace> deployment/continuous-test
   ```
+
+### MimirContinuousTestNotRunningOnReads
+
+This alert is like [`MimirContinuousTestNotRunningOnWrites`](#MimirContinuousTestNotRunningOnWrites) but it fires when queries are failing.
 
 ### MimirContinuousTestFailed
 
