@@ -10,6 +10,7 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/json"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/runutil"
@@ -20,14 +21,76 @@ import (
 )
 
 var (
-	ErrIndexNotFound  = errors.New("bucket index not found")
-	ErrIndexCorrupted = errors.New("bucket index corrupted")
+	ErrIndexNotFound    = errors.New("bucket index not found")
+	ErrIndexCorrupted   = errors.New("bucket index corrupted")
+	ErrIndexNotModified = errors.New("bucket index not modified")
 )
+
+// ReadNewIndex reads bucket index only if it has been modified since lastModified, otherwise it returns ErrIndexNotModified
+func ReadNewIndex(
+	ctx context.Context,
+	bkt objstore.Bucket,
+	userID string,
+	cfgProvider bucket.TenantConfigProvider,
+	logger log.Logger,
+	lastModified time.Time,
+) (*IndexWithLastModified, error) {
+	userBkt := bucket.NewUserBucketClient(userID, bkt, cfgProvider)
+	attrs, err := userBkt.WithExpectedErrs(userBkt.IsObjNotFoundErr).Attributes(ctx, IndexCompressedFilename)
+	if err != nil {
+		if userBkt.IsObjNotFoundErr(err) {
+			return nil, ErrIndexNotFound
+		}
+		return nil, errors.Wrap(err, "attribute bucket index")
+	}
+	if !attrs.LastModified.After(lastModified) {
+		return nil, ErrIndexNotModified
+	}
+	idx, err := readIndex(ctx, userBkt, logger)
+	if err != nil {
+		return nil, err
+	}
+	return &IndexWithLastModified{
+		Index:        idx,
+		LastModified: attrs.LastModified,
+	}, nil
+}
+
+// ReadLastModifiedIndex reads index and extend result with Last-Modified attribute
+func ReadLastModifiedIndex(
+	ctx context.Context,
+	bkt objstore.Bucket,
+	userID string,
+	cfgProvider bucket.TenantConfigProvider,
+	logger log.Logger,
+) (*IndexWithLastModified, error) {
+	userBkt := bucket.NewUserBucketClient(userID, bkt, cfgProvider)
+
+	attrs, err := userBkt.WithExpectedErrs(userBkt.IsObjNotFoundErr).Attributes(ctx, IndexCompressedFilename)
+	if err != nil {
+		if userBkt.IsObjNotFoundErr(err) {
+			return nil, ErrIndexNotFound
+		}
+		return nil, errors.Wrap(err, "attribute bucket index")
+	}
+
+	idx, err := readIndex(ctx, userBkt, logger)
+	if err != nil {
+		return nil, err
+	}
+	return &IndexWithLastModified{
+		Index:        idx,
+		LastModified: attrs.LastModified,
+	}, nil
+}
 
 // ReadIndex reads, parses and returns a bucket index from the bucket.
 func ReadIndex(ctx context.Context, bkt objstore.Bucket, userID string, cfgProvider bucket.TenantConfigProvider, logger log.Logger) (*Index, error) {
 	userBkt := bucket.NewUserBucketClient(userID, bkt, cfgProvider)
+	return readIndex(ctx, userBkt, logger)
+}
 
+func readIndex(ctx context.Context, userBkt objstore.InstrumentedBucket, logger log.Logger) (*Index, error) {
 	// Get the bucket index.
 	reader, err := userBkt.WithExpectedErrs(userBkt.IsObjNotFoundErr).Get(ctx, IndexCompressedFilename)
 	if err != nil {

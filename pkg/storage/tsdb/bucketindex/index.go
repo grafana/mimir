@@ -32,6 +32,14 @@ const (
 	SegmentsFormat1Based6Digits = "1b6d"
 )
 
+// IndexWithLastModified index wrapped with Last-Modified attribute
+type IndexWithLastModified struct {
+	*Index
+
+	// LastModified filled from object attributes in storage on read
+	LastModified time.Time
+}
+
 // Index contains all known blocks and markers of a tenant.
 type Index struct {
 	// Version of the index format.

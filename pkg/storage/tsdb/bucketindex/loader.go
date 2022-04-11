@@ -51,10 +51,11 @@ type Loader struct {
 	indexes   map[string]*cachedIndex
 
 	// Metrics.
-	loadAttempts prometheus.Counter
-	loadFailures prometheus.Counter
-	loadDuration prometheus.Histogram
-	loaded       prometheus.GaugeFunc
+	loadAttempts    prometheus.Counter
+	loadFailures    prometheus.Counter
+	loadNotModified prometheus.Counter
+	loadDuration    prometheus.Histogram
+	loaded          prometheus.GaugeFunc
 }
 
 // NewLoader makes a new Loader.
@@ -73,6 +74,10 @@ func NewLoader(cfg LoaderConfig, bucketClient objstore.Bucket, cfgProvider bucke
 		loadFailures: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_bucket_index_load_failures_total",
 			Help: "Total number of bucket index loading failures.",
+		}),
+		loadNotModified: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_bucket_index_load_not_modified_total",
+			Help: "Total number of bucket index skipping loading because of not modified.",
 		}),
 		loadDuration: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 			Name:    "cortex_bucket_index_load_duration_seconds",
@@ -112,7 +117,7 @@ func (l *Loader) GetIndex(ctx context.Context, userID string) (*Index, error) {
 
 	startTime := time.Now()
 	l.loadAttempts.Inc()
-	idx, err := ReadIndex(ctx, l.bkt, userID, l.cfgProvider, l.logger)
+	idx, err := ReadLastModifiedIndex(ctx, l.bkt, userID, l.cfgProvider, l.logger)
 	if err != nil {
 		// Cache the error, to avoid hammering the object store in case of persistent issues
 		// (eg. corrupted bucket index or not existing).
@@ -136,10 +141,10 @@ func (l *Loader) GetIndex(ctx context.Context, userID string) (*Index, error) {
 	elapsedTime := time.Since(startTime)
 	l.loadDuration.Observe(elapsedTime.Seconds())
 	level.Info(l.logger).Log("msg", "loaded bucket index", "user", userID, "duration", elapsedTime)
-	return idx, nil
+	return idx.Index, nil
 }
 
-func (l *Loader) cacheIndex(userID string, idx *Index, err error) {
+func (l *Loader) cacheIndex(userID string, idx *IndexWithLastModified, err error) {
 	l.indexesMx.Lock()
 	defer l.indexesMx.Unlock()
 
@@ -161,15 +166,20 @@ func (l *Loader) checkCachedIndexes(ctx context.Context) error {
 	}
 
 	// Update actively used indexes.
-	for _, userID := range toUpdate {
-		l.updateCachedIndex(ctx, userID)
+	for _, rec := range toUpdate {
+		l.updateCachedIndex(ctx, rec.UserID, rec.UpdatedAt)
 	}
 
 	// Never return error, otherwise the service terminates.
 	return nil
 }
 
-func (l *Loader) checkCachedIndexesToUpdateAndDelete() (toUpdate, toDelete []string) {
+type toUpdateRecord struct {
+	UserID    string
+	UpdatedAt time.Time
+}
+
+func (l *Loader) checkCachedIndexesToUpdateAndDelete() (toUpdate []toUpdateRecord, toDelete []string) {
 	now := time.Now()
 
 	l.indexesMx.RLock()
@@ -185,22 +195,38 @@ func (l *Loader) checkCachedIndexesToUpdateAndDelete() (toUpdate, toDelete []str
 		case now.Sub(entry.getRequestedAt()) >= l.cfg.IdleTimeout:
 			toDelete = append(toDelete, userID)
 		case isError && now.Sub(entry.getUpdatedAt()) >= l.cfg.UpdateOnErrorInterval:
-			toUpdate = append(toUpdate, userID)
+			// keep zero time to read index at any way
+			toUpdate = append(toUpdate, toUpdateRecord{UserID: userID})
 		case !isError && now.Sub(entry.getUpdatedAt()) >= l.cfg.UpdateOnStaleInterval:
-			toUpdate = append(toUpdate, userID)
+			toUpdate = append(toUpdate, toUpdateRecord{UserID: userID, UpdatedAt: entry.lastModified})
 		}
 	}
 
 	return
 }
 
-func (l *Loader) updateCachedIndex(ctx context.Context, userID string) {
+func (l *Loader) updateCachedIndex(ctx context.Context, userID string, updatedAt time.Time) {
+	fn := func(ctx context.Context) (*IndexWithLastModified, error) {
+		return ReadNewIndex(ctx, l.bkt, userID, l.cfgProvider, l.logger, updatedAt)
+	}
+	if updatedAt.IsZero() {
+		fn = func(ctx context.Context) (*IndexWithLastModified, error) {
+			return ReadLastModifiedIndex(ctx, l.bkt, userID, l.cfgProvider, l.logger)
+		}
+	}
 	readCtx, cancel := context.WithTimeout(ctx, readIndexTimeout)
 	defer cancel()
 
 	l.loadAttempts.Inc()
 	startTime := time.Now()
-	idx, err := ReadIndex(readCtx, l.bkt, userID, l.cfgProvider, l.logger)
+	idx, err := fn(readCtx)
+	if errors.Is(err, ErrIndexNotModified) {
+		l.loadNotModified.Inc()
+		l.indexesMx.Lock()
+		l.indexes[userID].setUpdatedAt(startTime)
+		l.indexesMx.Unlock()
+		return
+	}
 	if err != nil && !errors.Is(err, ErrIndexNotFound) {
 		l.loadFailures.Inc()
 		level.Warn(l.logger).Log("msg", "unable to update bucket index", "user", userID, "err", err)
@@ -213,9 +239,14 @@ func (l *Loader) updateCachedIndex(ctx context.Context, userID string) {
 	// is when a tenant has rules configured but hasn't started remote writing yet. Rules will be evaluated and
 	// bucket index loaded by the ruler.
 	l.indexesMx.Lock()
-	l.indexes[userID].index = idx
+	l.indexes[userID].index = nil
 	l.indexes[userID].err = err
 	l.indexes[userID].setUpdatedAt(startTime)
+	l.indexes[userID].lastModified = time.Time{}
+	if err == nil {
+		l.indexes[userID].index = idx.Index
+		l.indexes[userID].lastModified = idx.LastModified
+	}
 	l.indexesMx.Unlock()
 }
 
@@ -243,8 +274,9 @@ func (l *Loader) countLoadedIndexesMetric() float64 {
 type cachedIndex struct {
 	// We cache either the index or the error occurred while fetching it. They're
 	// mutually exclusive.
-	index *Index
-	err   error
+	index        *Index
+	err          error
+	lastModified time.Time
 
 	// Unix timestamp (seconds) of when the index has been updated from the storage the last time.
 	updatedAt atomic.Int64
@@ -253,10 +285,13 @@ type cachedIndex struct {
 	requestedAt atomic.Int64
 }
 
-func newCachedIndex(idx *Index, err error) *cachedIndex {
+func newCachedIndex(idx *IndexWithLastModified, err error) *cachedIndex {
 	entry := &cachedIndex{
-		index: idx,
-		err:   err,
+		err: err,
+	}
+	if err == nil {
+		entry.index = idx.Index
+		entry.lastModified = idx.LastModified
 	}
 
 	now := time.Now()
