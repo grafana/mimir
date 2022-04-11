@@ -24,4 +24,5 @@
 (import 'shuffle-sharding.libsonnet') +
 (import 'query-sharding.libsonnet') +
 (import 'multi-zone.libsonnet') +
-(import 'memberlist.libsonnet')
+(import 'memberlist.libsonnet') +
+(import 'continuous-test.libsonnet')
