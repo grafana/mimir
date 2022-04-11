@@ -7,7 +7,7 @@ weight: 10
 # Migrating from Cortex to Grafana Mimir
 
 This document guides an operator through the process of migrating a deployment of [Cortex](https://cortexmetrics.io/) to Grafana Mimir.
-It includes an overview of the steps required for any environment and specific instructions for [environments deployed with Jsonnet](#updating-to-grafana-mimir-using-jsonnet).
+It includes an overview of the steps required for any environment, and specific instructions for [environments deployed with Jsonnet](#updating-to-grafana-mimir-using-jsonnet) and [environments deployed with Helm](#updating-to-grafana-mimir-using-helm).
 
 Grafana Mimir 2.0.0 includes significant changes that simplify the deployment and continued operation of a horizontally scalable, multi-tenant time series database with long-term storage.
 
