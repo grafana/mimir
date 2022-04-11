@@ -7,7 +7,7 @@ weight: 10
 # Migrating from Cortex to Grafana Mimir
 
 This document guides an operator through the process of migrating a deployment of [Cortex](https://cortexmetrics.io/) to Grafana Mimir.
-It includes an overview of the steps required for any environment and specific instructions for [environments deployed with Jsonnet](#updating-to-grafana-mimir-using-jsonnet).
+It includes an overview of the steps required for any environment, and specific instructions for [environments deployed with Jsonnet](#migrating-to-grafana-mimir-using-jsonnet) and [environments deployed with Helm](#migrating-to-grafana-mimir-using-helm).
 
 Grafana Mimir 2.0.0 includes significant changes that simplify the deployment and continued operation of a horizontally scalable, multi-tenant time series database with long-term storage.
 
@@ -125,7 +125,7 @@ If you have explicitly set configuration parameters to a value matching the Cort
 To have `mimirtool config convert` update explicitly set values from the Cortex defaults to the new Grafana Mimir defaults, provide the `--update-defaults` flag.
 Refer to [convert]({{< relref "../operators-guide/tools/mimirtool.md#convert" >}}) for more information on using `mimirtool` for configuration conversion.
 
-## Updating to Grafana Mimir using Jsonnet
+## Migrating to Grafana Mimir using Jsonnet
 
 Grafana Mimir has a Jsonnet library that replaces the existing Cortex Jsonnet library and updated monitoring mixin.
 
@@ -182,7 +182,7 @@ jb install github.com/grafana/mimir/operations/mimir-mixin@main
 
 To verify that the cluster is operating correctly, use the [monitoring mixin dashboards]({{< relref "../operators-guide/visualizing-metrics/dashboards/_index.md" >}}).
 
-## Updating to Grafana Mimir using Helm
+## Migrating to Grafana Mimir using Helm
 
 You can update to the Grafana Mimir Helm chart from the Cortex Helm chart.
 
