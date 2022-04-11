@@ -45,6 +45,10 @@
 
 * [CHANGE] Dashboards: Remove per-user series legends from Tenants dashboard. #1605
 * [CHANGE] Dashboards: Show in-memory series and the per-user series limit on Tenants dashboard. #1613
+* [FEATURE] Alerts: added the following alerts on `mimir-continuous-test` tool: #1676
+  - `MimirContinuousTestNotRunningOnWrites`
+  - `MimirContinuousTestNotRunningOnReads`
+  - `MimirContinuousTestFailed`
 * [BUGFIX] Dashboards: Fix "Failed evaluation rate" panel on Tenants dashboard. #1629
 
 ### Jsonnet

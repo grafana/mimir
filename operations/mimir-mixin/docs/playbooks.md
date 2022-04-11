@@ -913,6 +913,48 @@ How to **investigate**:
   kubectl logs -n keda deployment/keda-operator-metrics-apiserver
   ```
 
+### MimirContinuousTestNotRunningOnWrites
+
+This alert fires when `mimir-continuous-test` is deployed in the Mimir cluster, and continuous testing is not effectively running because writes are failing.
+
+How it **works**:
+
+- `mimir-continuous-test` is an optional testing tool that can be deployed in the Mimir cluster
+- The tool runs some tests against the Mimir cluster itself at regular intervals
+- This alert fires if the tool is unable to properly run the tests, and not if the tool assertions don't match the expected results
+
+How to **investigate**:
+
+- Check continuous test logs to find out more details about the failure:
+  ```
+  kubectl logs -n <namespace> deployment/continuous-test
+  ```
+
+### MimirContinuousTestNotRunningOnReads
+
+This alert is like [`MimirContinuousTestNotRunningOnWrites`](#MimirContinuousTestNotRunningOnWrites) but it fires when queries are failing.
+
+### MimirContinuousTestFailed
+
+This alert fires when `mimir-continuous-test` is deployed in the Mimir cluster, and continuous testing tool's assertions don't match the expected results.
+When this alert fires there could be a bug in Mimir that should be investigated as soon as possible.
+
+How it **works**:
+
+- `mimir-continuous-test` is an optional testing tool that can be deployed in the Mimir cluster
+- The tool runs some tests against the Mimir cluster itself at regular intervals
+- This alert fires if the tool assertions don't match the expected results
+
+How to **investigate**:
+
+- Check continuous test logs to find out more details about the failed assertions:
+  ```
+  kubectl logs -n <namespace> deployment/continuous-test
+  ```
+- This alert should always be actionable. There are two possible outcomes:
+  1. The alert fired because of a bug in Mimir: fix it.
+  1. The alert fired because of a bug or edge case in the continuous test tool, causing a false positive: fix it.
+
 ## Mimir routes by path
 
 **Write path**:

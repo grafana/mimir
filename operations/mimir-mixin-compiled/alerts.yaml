@@ -708,3 +708,31 @@ groups:
     for: 15m
     labels:
       severity: warning
+- name: mimir_continuous_test
+  rules:
+  - alert: MimirContinuousTestNotRunningOnWrites
+    annotations:
+      message: Mimir continuous test {{ $labels.test }} in {{ $labels.cluster }}/{{
+        $labels.namespace }} is not effectively running because writes are failing.
+    expr: |
+      sum by(cluster, namespace, test) (rate(mimir_continuous_test_writes_failed_total[5m])) > 0
+    for: 1h
+    labels:
+      severity: warning
+  - alert: MimirContinuousTestNotRunningOnReads
+    annotations:
+      message: Mimir continuous test {{ $labels.test }} in {{ $labels.cluster }}/{{
+        $labels.namespace }} is not effectively running because queries are failing.
+    expr: |
+      sum by(cluster, namespace, test) (rate(mimir_continuous_test_queries_failed_total[5m])) > 0
+    for: 1h
+    labels:
+      severity: warning
+  - alert: MimirContinuousTestFailed
+    annotations:
+      message: Mimir continuous test {{ $labels.test }} in {{ $labels.cluster }}/{{
+        $labels.namespace }} failed when asserting query results.
+    expr: |
+      sum by(cluster, namespace, test) (rate(mimir_continuous_test_query_result_checks_failed_total[5m])) > 0
+    labels:
+      severity: warning
