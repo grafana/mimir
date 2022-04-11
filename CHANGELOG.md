@@ -45,6 +45,7 @@
 
 * [CHANGE] Dashboards: Remove per-user series legends from Tenants dashboard. #1605
 * [CHANGE] Dashboards: Show in-memory series and the per-user series limit on Tenants dashboard. #1613
+* [FEATURE] Alerts: added `mimir-continuous-test` alerts. #1676
 * [BUGFIX] Dashboards: Fix "Failed evaluation rate" panel on Tenants dashboard. #1629
 
 ### Jsonnet
