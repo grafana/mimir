@@ -1537,9 +1537,9 @@ gcs:
   # CLI flag: -ruler-storage.gcs.bucket-name
   [bucket_name: <string> | default = ""]
 
-  # JSON representing either a Google Developers Console client_credentials.json
-  # file or a Google Developers service account key file. If empty, fallback to
-  # Google default logic.
+  # JSON either from a Google Developers Console client_credentials.json file,
+  # or a Google Developers service account key. Needs to be valid JSON, not a
+  # filesystem path. If empty, fallback to Google default logic.
   # CLI flag: -ruler-storage.gcs.service-account
   [service_account: <string> | default = ""]
 
@@ -1971,9 +1971,9 @@ gcs:
   # CLI flag: -alertmanager-storage.gcs.bucket-name
   [bucket_name: <string> | default = ""]
 
-  # JSON representing either a Google Developers Console client_credentials.json
-  # file or a Google Developers service account key file. If empty, fallback to
-  # Google default logic.
+  # JSON either from a Google Developers Console client_credentials.json file,
+  # or a Google Developers service account key. Needs to be valid JSON, not a
+  # filesystem path. If empty, fallback to Google default logic.
   # CLI flag: -alertmanager-storage.gcs.service-account
   [service_account: <string> | default = ""]
 
@@ -2953,9 +2953,9 @@ gcs:
   # CLI flag: -blocks-storage.gcs.bucket-name
   [bucket_name: <string> | default = ""]
 
-  # JSON representing either a Google Developers Console client_credentials.json
-  # file or a Google Developers service account key file. If empty, fallback to
-  # Google default logic.
+  # JSON either from a Google Developers Console client_credentials.json file,
+  # or a Google Developers service account key. Needs to be valid JSON, not a
+  # filesystem path. If empty, fallback to Google default logic.
   # CLI flag: -blocks-storage.gcs.service-account
   [service_account: <string> | default = ""]
 
