@@ -97,15 +97,12 @@ SED ?= $(shell which gsed 2>/dev/null || which sed)
 	@touch $@
 
 # This target compiles mimir for linux/amd64 and linux/arm64 and then builds and pushes a multiarch image to the target repository.
-# Images are first built for each platform separately, as building both at once used to fail more often.
+# We don't separate building of single-platform and multiplatform images here (as we do for push-multiarch-build-image), as
+# Mimir's Dockerfile is not doing much, and is unlikely to fail.
 push-multiarch-mimir:
 	@echo
 	$(MAKE) GOOS=linux GOARCH=amd64 BINARY_SUFFIX=_linux_amd64 cmd/mimir/mimir
-	$(SUDO) docker buildx build --platform linux/amd64 --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) --build-arg=USE_BINARY_SUFFIX=true cmd/mimir
 	$(MAKE) GOOS=linux GOARCH=arm64 BINARY_SUFFIX=_linux_arm64 cmd/mimir/mimir
-	$(SUDO) docker buildx build --platform linux/arm64 --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) --build-arg=USE_BINARY_SUFFIX=true cmd/mimir
-	# This command will run the same build as above, but it will reuse existing platform-specific images,
-	# put them together and push to registry.
 	$(SUDO) docker buildx build -o type=registry --platform linux/amd64,linux/arm64 --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) --build-arg=USE_BINARY_SUFFIX=true -t $(IMAGE_PREFIX)mimir:$(IMAGE_TAG) cmd/mimir
 
 # This target fetches current build image, and tags it with "latest" tag. It can be used instead of building the image locally.
