@@ -37,6 +37,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
+	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -48,6 +49,7 @@ type BucketStores struct {
 	logger             log.Logger
 	cfg                tsdb.BlocksStorageConfig
 	limits             *validation.Overrides
+	indexLoader        *bucketindex.Loader
 	bucket             objstore.Bucket
 	logLevel           logging.Level
 	bucketStoreMetrics *BucketStoreMetrics
@@ -96,10 +98,18 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 		Help: "Number of maximum concurrent queries allowed.",
 	}).Set(float64(cfg.BucketStore.MaxConcurrent))
 
+	indexLoader := bucketindex.NewLoader(bucketindex.LoaderConfig{
+		CheckInterval:         time.Minute,
+		UpdateOnStaleInterval: cfg.BucketStore.SyncInterval,
+		UpdateOnErrorInterval: cfg.BucketStore.BucketIndex.UpdateOnErrorInterval,
+		IdleTimeout:           cfg.BucketStore.BucketIndex.IdleTimeout,
+	}, bucketClient, limits, logger, reg)
+
 	u := &BucketStores{
 		logger:             logger,
 		cfg:                cfg,
 		limits:             limits,
+		indexLoader:        indexLoader,
 		bucket:             cachingBucket,
 		shardingStrategy:   shardingStrategy,
 		stores:             map[string]*BucketStore{},
@@ -457,9 +467,8 @@ func (u *BucketStores) getOrCreateStore(userID string) (*BucketStore, error) {
 	if u.cfg.BucketStore.BucketIndex.Enabled {
 		fetcher = NewBucketIndexMetadataFetcher(
 			userID,
-			u.bucket,
 			u.shardingStrategy,
-			u.limits,
+			u.indexLoader,
 			u.logger,
 			fetcherReg,
 			filters,

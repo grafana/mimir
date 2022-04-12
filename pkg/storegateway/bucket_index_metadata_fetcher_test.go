@@ -25,6 +25,7 @@ import (
 	"github.com/thanos-io/thanos/pkg/block"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
 	"github.com/thanos-io/thanos/pkg/extprom"
+	"github.com/thanos-io/thanos/pkg/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
@@ -40,6 +41,7 @@ func TestBucketIndexMetadataFetcher_Fetch(t *testing.T) {
 	now := time.Now()
 	logs := &concurrency.SyncBuffer{}
 	logger := log.NewLogfmtLogger(logs)
+	loader := &NoCacheBucketIndexLoader{bucket: bkt, cfgProvider: nil, logger: logger}
 
 	// Create a bucket index.
 	block1 := &bucketindex.Block{ID: ulid.MustNew(1, nil)}
@@ -63,7 +65,7 @@ func TestBucketIndexMetadataFetcher_Fetch(t *testing.T) {
 		newMinTimeMetaFilter(1 * time.Hour),
 	}
 
-	fetcher := NewBucketIndexMetadataFetcher(userID, bkt, newNoShardingStrategy(), nil, logger, reg, filters)
+	fetcher := NewBucketIndexMetadataFetcher(userID, newNoShardingStrategy(), loader, logger, reg, filters)
 	metas, partials, err := fetcher.Fetch(ctx)
 	require.NoError(t, err)
 	assert.Equal(t, map[ulid.ULID]*metadata.Meta{
@@ -117,8 +119,9 @@ func TestBucketIndexMetadataFetcher_Fetch_NoBucketIndex(t *testing.T) {
 	ctx := context.Background()
 	logs := &concurrency.SyncBuffer{}
 	logger := log.NewLogfmtLogger(logs)
+	loader := &NoCacheBucketIndexLoader{bucket: bkt, cfgProvider: nil, logger: logger}
 
-	fetcher := NewBucketIndexMetadataFetcher(userID, bkt, newNoShardingStrategy(), nil, logger, reg, nil)
+	fetcher := NewBucketIndexMetadataFetcher(userID, newNoShardingStrategy(), loader, logger, reg, nil)
 	metas, partials, err := fetcher.Fetch(ctx)
 	require.NoError(t, err)
 	assert.Empty(t, metas)
@@ -169,11 +172,12 @@ func TestBucketIndexMetadataFetcher_Fetch_CorruptedBucketIndex(t *testing.T) {
 	ctx := context.Background()
 	logs := &concurrency.SyncBuffer{}
 	logger := log.NewLogfmtLogger(logs)
+	loader := &NoCacheBucketIndexLoader{bucket: bkt, cfgProvider: nil, logger: logger}
 
 	// Upload a corrupted bucket index.
 	require.NoError(t, bkt.Upload(ctx, path.Join(userID, bucketindex.IndexCompressedFilename), strings.NewReader("invalid}!")))
 
-	fetcher := NewBucketIndexMetadataFetcher(userID, bkt, newNoShardingStrategy(), nil, logger, reg, nil)
+	fetcher := NewBucketIndexMetadataFetcher(userID, newNoShardingStrategy(), loader, logger, reg, nil)
 	metas, partials, err := fetcher.Fetch(ctx)
 	require.NoError(t, err)
 	assert.Empty(t, metas)
@@ -224,13 +228,14 @@ func TestBucketIndexMetadataFetcher_Fetch_ShouldResetGaugeMetrics(t *testing.T) 
 	ctx := context.Background()
 	now := time.Now()
 	logger := log.NewNopLogger()
+	loader := &NoCacheBucketIndexLoader{bucket: bkt, cfgProvider: nil, logger: logger}
 	strategy := &mockShardingStrategy{}
 	strategy.On("FilterUsers", mock.Anything, mock.Anything).Return([]string{userID})
 
 	// Corrupted bucket index.
 	require.NoError(t, bkt.Upload(ctx, path.Join(userID, bucketindex.IndexCompressedFilename), strings.NewReader("invalid}!")))
 
-	fetcher := NewBucketIndexMetadataFetcher(userID, bkt, strategy, nil, logger, reg, nil)
+	fetcher := NewBucketIndexMetadataFetcher(userID, strategy, loader, logger, reg, nil)
 	metas, _, err := fetcher.Fetch(ctx)
 	require.NoError(t, err)
 	assert.Len(t, metas, 0)
@@ -352,4 +357,14 @@ func (s *noShardingStrategy) FilterUsers(_ context.Context, userIDs []string) []
 
 func (s *noShardingStrategy) FilterBlocks(_ context.Context, _ string, _ map[ulid.ULID]*metadata.Meta, _ map[ulid.ULID]struct{}, _ *extprom.TxGaugeVec) error {
 	return nil
+}
+
+type NoCacheBucketIndexLoader struct {
+	bucket      objstore.Bucket
+	cfgProvider bucket.TenantConfigProvider
+	logger      log.Logger
+}
+
+func (loader *NoCacheBucketIndexLoader) GetIndex(ctx context.Context, userID string) (*bucketindex.Index, error) {
+	return bucketindex.ReadIndex(ctx, loader.bucket, userID, loader.cfgProvider, loader.logger)
 }
