@@ -49,7 +49,8 @@ var (
 
 // Config holds configuration for accessing long-term storage.
 type Config struct {
-	Backend string `yaml:"backend"`
+	Backend       string `yaml:"backend"`
+	StoragePrefix string `yaml:"storage_prefix" category:"advanced"`
 	// Backends
 	S3         s3.Config         `yaml:"s3"`
 	GCS        gcs.Config        `yaml:"gcs"`
@@ -84,6 +85,7 @@ func (cfg *Config) RegisterFlagsWithPrefixAndDefaultDirectory(prefix, dir string
 	cfg.Filesystem.RegisterFlagsWithPrefixAndDefaultDirectory(prefix, dir, f)
 
 	f.StringVar(&cfg.Backend, prefix+"backend", Filesystem, fmt.Sprintf("Backend storage to use. Supported backends are: %s.", strings.Join(cfg.supportedBackends(), ", ")))
+	f.StringVar(&cfg.StoragePrefix, prefix+"storage-prefix", "", "Prefix for all objects stored in the backend storage.")
 }
 
 func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
@@ -123,6 +125,10 @@ func NewClient(ctx context.Context, cfg Config, name string, logger log.Logger, 
 
 	if err != nil {
 		return nil, err
+	}
+
+	if cfg.StoragePrefix != "" {
+		client = NewPrefixedBucketClient(client, cfg.StoragePrefix)
 	}
 
 	client = objstore.NewTracingBucket(bucketWithMetrics(client, name, reg))
