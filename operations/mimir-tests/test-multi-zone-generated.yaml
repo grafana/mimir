@@ -7,6 +7,19 @@ apiVersion: policy/v1beta1
 kind: PodDisruptionBudget
 metadata:
   labels:
+    name: alertmanager-pdb
+  name: alertmanager-pdb
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: alertmanager
+---
+apiVersion: policy/v1beta1
+kind: PodDisruptionBudget
+metadata:
+  labels:
     name: ingester-rollout-pdb
   name: ingester-rollout-pdb
   namespace: default
