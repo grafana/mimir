@@ -251,6 +251,8 @@ You can update to the Grafana Mimir Helm chart from the Cortex Helm chart.
    - Set `ruler.alertmanager_url` to `'dnssrvnoa+http://_http-metrics._tcp.{{ template "mimir.fullname" . }}-alertmanager-headless.{{ .Release.Namespace }}.svc.cluster.local/alertmanager'`.
    - If you want to use memberlist as the ring KV store, set `memberlist.join_members` to `['{{ include "mimir.fullname" . }}-gossip-ring']`.
    - Append the caching configuration to `blocks_storage.bucket_store`.
+   - Set `ingester.ring.num_tokens` to the existing value you set in `ingester.lifecycler.num_tokens`.
+     This is especially important if you are using the default Cortex Helm chart values as it sets this to `512`.
 
    A partial Helm values file with the changes incorporated looks similar to:
 
@@ -281,6 +283,9 @@ You can update to the Grafana Mimir Helm chart from the Cortex Helm chart.
          {{- end }}
        frontend_worker:
          frontend_address: "{{ template "mimir.fullname" . }}-query-frontend-headless.{{ .Release.Namespace }}.svc:{{ include "mimir.serverGrpcListenPort" . }}"
+       ingester:
+         ring:
+           num_tokens: 512
        memberlist:
          join_members: ["{{ include "mimir.fullname" . }}-gossip-ring"]
        ruler:
