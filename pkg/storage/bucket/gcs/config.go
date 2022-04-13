@@ -28,7 +28,6 @@ func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.Var(&cfg.ServiceAccount, prefix+"gcs.service-account", "JSON either from a Google Developers Console client_credentials.json file, or a Google Developers service account key. Needs to be valid JSON, not a filesystem path. "+
 		"If empty, fallback to Google default logic: "+
 		"\n1. A JSON file whose path is specified by the GOOGLE_APPLICATION_CREDENTIALS environment variable. For workload identity federation, refer to https://cloud.google.com/iam/docs/how-to#using-workload-identity-federation on how to generate the JSON configuration file for on-prem/non-Google cloud platforms."+
-		"\n2. A JSON file in a location known to the gcloud command-line tool. On Windows, this is %APPDATA%/gcloud/application_default_credentials.json. On other systems, $HOME/.config/gcloud/application_default_credentials.json."+
-		"\n3. On Google App Engine standard first generation runtimes (<= Go 1.9) it uses the appengine.AccessToken function."+
-		"\n4. On Google Compute Engine, Google App Engine standard second generation runtimes (>= Go 1.11), and Google App Engine flexible environment, it fetches credentials from the metadata server.")
+		"\n2. A JSON file in a location known to the gcloud command-line tool: $HOME/.config/gcloud/application_default_credentials.json."+
+		"\n3. On Google Compute Engine it fetches credentials from the metadata server.")
 }
