@@ -11,12 +11,12 @@ import (
 	"html/template"
 	"net/http"
 	"path"
-	"regexp"
 	"sort"
 	"sync"
 
 	"github.com/go-kit/log"
 	"github.com/gorilla/mux"
+	"github.com/grafana/regexp"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
