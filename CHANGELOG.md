@@ -33,9 +33,7 @@
 
 * [CHANGE] Dashboards: Remove per-user series legends from Tenants dashboard. #1605
 * [CHANGE] Dashboards: Show in-memory series and the per-user series limit on Tenants dashboard. #1613
-* [ENHANCEMENT] Alerting rules: Add possibility to use a custom cluster label.
-* [ENHANCEMENT] Dashboards: Add possibility to use a custom cluster label.
-* [ENHANCEMENT] Recording rules: Add possibility to use a custom cluster label.
+* [ENHANCEMENT] Added `per_cluster_label` support to allow to change the label name used to differentiate between Kubernetes clusters.
 * [BUGFIX] Dashboards: Fix "Failed evaluation rate" panel on Tenants dashboard. #1629
 
 ### Jsonnet

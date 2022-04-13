@@ -35,12 +35,12 @@
       overrides_exporter: 'overrides-exporter',
     },
 
-    // Custom Cluster label to use in dashboards.
-    clusterLabel: 'cluster',
+    // The label used to differentiate between different Kubernetes clusters.
+    per_cluster_label: 'cluster',
 
     // Grouping labels, to uniquely identify and group by {jobs, clusters}
-    job_labels: [$._config.clusterLabel, 'namespace', 'job'],
-    cluster_labels: [$._config.clusterLabel, 'namespace'],
+    job_labels: [$._config.per_cluster_label, 'namespace', 'job'],
+    cluster_labels: [$._config.per_cluster_label, 'namespace'],
 
     cortex_p99_latency_threshold_seconds: 2.5,
 
