@@ -20,7 +20,7 @@ service Ingester {
   rpc Push(cortexpb.WriteRequest) returns (cortexpb.WriteResponse) {};
   rpc QueryStream(QueryRequest) returns (stream QueryStreamResponse) {};
   rpc QueryExemplars(ExemplarQueryRequest) returns (ExemplarQueryResponse) {};
-  rpc AddBackfillFile(cortexpb.AddBackfillFileRequest) returns (cortexpb.AddBackfillFileResponse) {};
+  rpc AddBackfillFile(stream cortexpb.AddBackfillFileRequest) returns (cortexpb.AddBackfillFileResponse) {};
 
   rpc LabelValues(LabelValuesRequest) returns (LabelValuesResponse) {};
   rpc LabelNames(LabelNamesRequest) returns (LabelNamesResponse) {};

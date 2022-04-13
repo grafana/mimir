@@ -12,6 +12,7 @@ import (
 	"io"
 	math "math"
 	"net/http"
+	"path/filepath"
 	"sort"
 	"sync"
 	"time"
@@ -871,8 +872,7 @@ func (d *Distributor) AddBackfillFile(ctx context.Context, tenantID int, blockID
 	if err != nil {
 		return err
 	}
-	localCtx, cancel := context.WithTimeout(context.Background(), d.cfg.RemoteTimeout)
-	localCtx = user.InjectOrgID(localCtx, tenantIDFromCtx)
+	localCtx := user.InjectOrgID(ctx, tenantIDFromCtx)
 	// Get clientIP(s) from Context and add it to localCtx
 	source := util.GetSourceIPsFromOutgoingCtx(ctx)
 	localCtx = util.AddSourceIPsToOutgoingContext(localCtx, source)
@@ -880,7 +880,8 @@ func (d *Distributor) AddBackfillFile(ctx context.Context, tenantID int, blockID
 		localCtx = opentracing.ContextWithSpan(localCtx, sp)
 	}
 
-	level.Info(d.log).Log("msg", "adding file to metrics backfill", "tenantId", tenantID, "blockId", blockID, "path", pth)
+	level.Info(d.log).Log("msg", "adding file to metrics backfill", "tenantId", tenantID,
+		"blockId", blockID, "path", pth, "size", r.ContentLength)
 	op := ring.WriteNoExtend
 	if d.cfg.ExtendWrites {
 		op = ring.Write
@@ -897,18 +898,48 @@ func (d *Distributor) AddBackfillFile(ctx context.Context, tenantID int, blockID
 		}
 		c := h.(ingester_client.IngesterClient)
 
-		// TODO: Stream content
-		content, err := io.ReadAll(r.Body)
+		stream, err := c.AddBackfillFile(localCtx)
 		if err != nil {
-			return errors.Wrap(err, "failed to read HTTP request body")
+			return errors.Wrap(err, "failed to get gRPC stream for adding file to backfill")
 		}
-		_, err = c.AddBackfillFile(localCtx, &mimirpb.AddBackfillFileRequest{
-			BlockId: blockID,
-			Path:    pth,
-			Content: content,
-		})
-		return err
-	}, cancel); err != nil {
+
+		buf := make([]byte, 8192)
+		var bytesWritten int64
+		for {
+			n, err := r.Body.Read(buf)
+			if err != nil && (err != io.EOF || n == 0) {
+				if err == io.EOF {
+					break
+				}
+
+				return errors.Wrap(err, "failed to read HTTP request body")
+			}
+
+			bytesWritten += int64(n)
+			if err := stream.Send(&mimirpb.AddBackfillFileRequest{
+				TenantId: uint32(tenantID),
+				BlockId:  blockID,
+				Path:     pth,
+				Chunk:    buf[:n],
+			}); err != nil {
+				if err == io.EOF {
+					break
+				}
+
+				level.Error(d.log).Log("msg", "streaming backfill file chunk via gRPC failed", "path", pth, "err", err)
+				return errors.Wrap(err, "failed streaming via gRPC")
+			}
+		}
+
+		if _, err := stream.CloseAndRecv(); err != nil {
+			level.Error(d.log).Log("msg", "failed to close gRPC stream", "err", err)
+			return err
+		}
+
+		level.Info(d.log).Log("msg", "successfully added file to backfill via gRPC", "bytesWritten", bytesWritten)
+
+		return nil
+	}, func() {}); err != nil {
 		return err
 	}
 

@@ -50,7 +50,7 @@ func (c *MimirClient) backfillBlock(dpath string, tenantID int, logger log.Logge
 	level.Info(logger).Log("msg", "Making request to start block backfill", "tenantId", tenantID, "blockId", blockID)
 
 	// TODO: Figure out how to set tenant ID in request header
-	res, err := c.doRequest(fmt.Sprintf("/api/v1/backfill/%d/%s", tenantID, blockID), http.MethodPost, nil)
+	res, err := c.doRequest(fmt.Sprintf("/api/v1/backfill/%d/%s", tenantID, blockID), http.MethodPost, nil, -1)
 	if err != nil {
 		return errors.Wrap(err, "request to start backfill failed")
 	}
@@ -67,12 +67,25 @@ func (c *MimirClient) backfillBlock(dpath string, tenantID int, logger log.Logge
 			return nil
 		}
 
+		f, err := os.Open(pth)
+		if err != nil {
+			return errors.Wrapf(err, "failed to open %q", pth)
+		}
+		defer f.Close()
+
+		st, err := f.Stat()
+		if err != nil {
+			return errors.Wrap(err, "failed to get file info")
+		}
+
 		relPath := strings.TrimPrefix(pth, dpath+string(filepath.Separator))
 		escapedPath := url.PathEscape(relPath)
-		level.Info(logger).Log("msg", "uploading block file", "path", pth, "tenantId", tenantID, "blockId", blockID)
-		res, err := c.doRequest(fmt.Sprintf("/api/v1/backfill/%d/%s/%s", tenantID, blockID, escapedPath), http.MethodPost, nil)
+		level.Info(logger).Log("msg", "uploading block file", "path", pth, "tenantId",
+			tenantID, "blockId", blockID, "size", st.Size())
+		res, err := c.doRequest(fmt.Sprintf("/api/v1/backfill/%d/%s/%s", tenantID, blockID,
+			escapedPath), http.MethodPost, f, st.Size())
 		if err != nil {
-			return errors.Wrap(err, "request to upload backfill file failed")
+			return errors.Wrapf(err, "request to upload backfill of file %q failed", pth)
 		}
 		defer res.Body.Close()
 		if res.StatusCode/100 != 2 {
@@ -84,7 +97,8 @@ func (c *MimirClient) backfillBlock(dpath string, tenantID int, logger log.Logge
 		return errors.Wrapf(err, "failed to traverse %q", dpath)
 	}
 
-	res, err = c.doRequest(fmt.Sprintf("/api/v1/backfill/%d/%s", tenantID, blockID), http.MethodDelete, nil)
+	res, err = c.doRequest(fmt.Sprintf("/api/v1/backfill/%d/%s", tenantID, blockID), http.MethodDelete,
+		nil, -1)
 	if err != nil {
 		return errors.Wrap(err, "request to finish backfill failed")
 	}

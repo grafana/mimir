@@ -279,7 +279,7 @@ func (a *API) RegisterDistributor(d *distributor.Distributor, pushConfig distrib
 
 		w.WriteHeader(http.StatusOK)
 	}), true, false, http.MethodPost)
-	// Endpoint to handle requests for uploading block files.
+	// Endpoint to handle requests for uploading block files to a backfill.
 	a.RegisterRoute("/api/v1/backfill/{tenant:[0-9]+}/{block}/{path}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		vars := mux.Vars(r)
 		tenantID, err := strconv.Atoi(vars["tenant"])

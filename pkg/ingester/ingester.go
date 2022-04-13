@@ -15,6 +15,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -2299,22 +2300,79 @@ func (i *Ingester) RingHandler() http.Handler {
 	return i.lifecycler
 }
 
-func (i *Ingester) AddBackfillFile(ctx context.Context, req *mimirpb.AddBackfillFileRequest) (*mimirpb.AddBackfillFileResponse, error) {
+func (i *Ingester) AddBackfillFile(stream client.Ingester_AddBackfillFileServer) error {
 	if err := i.checkRunning(); err != nil {
-		return nil, err
+		return err
 	}
 
-	tenantID, err := tenant.TenantID(ctx)
+	ctx := context.Background()
+
+	level.Info(i.logger).Log("msg", "processing request to add backfill file")
+
+	f, err := os.CreateTemp("", "")
 	if err != nil {
-		return nil, err
+		return errors.Wrap(err, "creating temp file")
+	}
+	defer func() {
+		_ = f.Close()
+		if err := os.Remove(f.Name()); err != nil {
+			level.Warn(i.logger).Log("msg", "failed to remove temporary file", "file", f.Name(), "err", err)
+		}
+	}()
+
+	var tenantID int
+	var blockID string
+	var pth string
+	var chunk int
+	var bytesWritten int64
+	for {
+		req, err := stream.Recv()
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return errors.Wrap(err, "failed to receive from gRPC stream")
+		}
+
+		if blockID == "" {
+			tenantID = int(req.TenantId)
+			blockID = req.BlockId
+			pth = req.Path
+			level.Info(i.logger).Log("msg", "adding file to backfill", "tenantId",
+				tenantID, "blockId", blockID, "path", pth, "chunkLength",
+				len(req.Chunk))
+			chunk = 1
+		} else {
+			chunk++
+		}
+
+		if _, err := f.Write(req.Chunk); err != nil {
+			return errors.Wrap(err, "failed to write to file")
+		}
+		bytesWritten += int64(len(req.Chunk))
+	}
+	if chunk == 0 {
+		level.Warn(i.logger).Log("msg", "no backfill file content was sent")
+		return stream.SendAndClose(&mimirpb.AddBackfillFileResponse{})
 	}
 
-	level.Info(i.logger).Log("msg", "Processing request to add backfill file", "tenant", tenantID,
-		"blockID", req.BlockId, "path", req.Path, "bytes", len(req.Content))
+	level.Info(i.logger).Log("msg", "finished writing chunks to backfill file", "tenantId",
+		tenantID, "blockId", blockID, "path", pth, "chunks", chunk, "bytesWritten", bytesWritten)
 
-	// TODO: Write backfill file to staging area
+	if _, err := f.Seek(0, 0); err != nil {
+		return errors.Wrap(err, "seeking in file")
+	}
 
-	return &mimirpb.AddBackfillFileResponse{}, nil
+	dst := path.Join("uploads", blockID, pth)
+	level.Info(i.logger).Log("msg", "uploading backfill file to bucket", "tenantId", tenantID,
+		"destination", dst)
+	bkt := bucket.NewUserBucketClient(string(tenantID), i.bucket, i.limits)
+	defer bkt.Close()
+	if err := bkt.Upload(ctx, dst, f); err != nil {
+		return errors.Wrap(err, "uploading backfill file to bucket")
+	}
+
+	return stream.SendAndClose(&mimirpb.AddBackfillFileResponse{})
 }
 
 func initSelectHints(start, end int64) *storage.SelectHints {
