@@ -129,6 +129,15 @@ func (i *ActivityTrackerWrapper) LabelValuesCardinality(request *client.LabelVal
 	return i.ing.LabelValuesCardinality(request, server)
 }
 
+func (i *ActivityTrackerWrapper) AddBackfillFile(ctx context.Context, request *mimirpb.AddBackfillFileRequest) (*mimirpb.AddBackfillFileResponse, error) {
+	ix := i.tracker.Insert(func() string {
+		return requestActivity(ctx, "Ingester/AddBackfillFile", request)
+	})
+	defer i.tracker.Delete(ix)
+
+	return i.ing.AddBackfillFile(ctx, request)
+}
+
 func (i *ActivityTrackerWrapper) FlushHandler(w http.ResponseWriter, r *http.Request) {
 	ix := i.tracker.Insert(func() string {
 		return requestActivity(r.Context(), "Ingester/FlushHandler", nil)

@@ -49,6 +49,7 @@ func (c *MimirClient) backfillBlock(dpath string, tenantID int, logger log.Logge
 
 	level.Info(logger).Log("msg", "Making request to start block backfill", "tenantId", tenantID, "blockId", blockID)
 
+	// TODO: Figure out how to set tenant ID in request header
 	res, err := c.doRequest(fmt.Sprintf("/api/v1/backfill/%d/%s", tenantID, blockID), http.MethodPost, nil)
 	if err != nil {
 		return errors.Wrap(err, "request to start backfill failed")

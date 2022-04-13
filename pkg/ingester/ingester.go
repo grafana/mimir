@@ -2299,6 +2299,24 @@ func (i *Ingester) RingHandler() http.Handler {
 	return i.lifecycler
 }
 
+func (i *Ingester) AddBackfillFile(ctx context.Context, req *mimirpb.AddBackfillFileRequest) (*mimirpb.AddBackfillFileResponse, error) {
+	if err := i.checkRunning(); err != nil {
+		return nil, err
+	}
+
+	tenantID, err := tenant.TenantID(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	level.Info(i.logger).Log("msg", "Processing request to add backfill file", "tenant", tenantID,
+		"blockID", req.BlockId, "path", req.Path, "bytes", len(req.Content))
+
+	// TODO: Write backfill file to staging area
+
+	return &mimirpb.AddBackfillFileResponse{}, nil
+}
+
 func initSelectHints(start, end int64) *storage.SelectHints {
 	return &storage.SelectHints{
 		Start: start,

@@ -28,6 +28,14 @@ message WriteRequest {
 
 message WriteResponse {}
 
+message AddBackfillFileRequest {
+  string block_id = 1;
+  string path = 2;
+  bytes content = 3;
+}
+
+message AddBackfillFileResponse {}
+
 message TimeSeries {
   repeated LabelPair labels = 1 [(gogoproto.nullable) = false, (gogoproto.customtype) = "LabelAdapter"];
   // Sorted by time, oldest sample first.

@@ -867,13 +867,58 @@ func (d *Distributor) StartBackfill(ctx context.Context, tenantID int, blockID s
 
 // AddBackfillFile adds a file to an ongoing metrics backfill.
 func (d *Distributor) AddBackfillFile(ctx context.Context, tenantID int, blockID, pth string, r *http.Request) error {
+	tenantIDFromCtx, err := tenant.TenantID(ctx)
+	if err != nil {
+		return err
+	}
+	localCtx, cancel := context.WithTimeout(context.Background(), d.cfg.RemoteTimeout)
+	localCtx = user.InjectOrgID(localCtx, tenantIDFromCtx)
+	// Get clientIP(s) from Context and add it to localCtx
+	source := util.GetSourceIPsFromOutgoingCtx(ctx)
+	localCtx = util.AddSourceIPsToOutgoingContext(localCtx, source)
+	if sp := opentracing.SpanFromContext(ctx); sp != nil {
+		localCtx = opentracing.ContextWithSpan(localCtx, sp)
+	}
+
 	level.Info(d.log).Log("msg", "adding file to metrics backfill", "tenantId", tenantID, "blockId", blockID, "path", pth)
+	op := ring.WriteNoExtend
+	if d.cfg.ExtendWrites {
+		op = ring.Write
+	}
+	key, err := d.tokenForLabels(tenantIDFromCtx, nil)
+	if err != nil {
+		return err
+	}
+	subRing := d.ingestersRing.ShuffleShard(tenantIDFromCtx, d.limits.IngestionTenantShardSize(tenantIDFromCtx))
+	if err := ring.DoBatch(ctx, op, subRing, []uint32{key}, func(ingester ring.InstanceDesc, indexes []int) error {
+		h, err := d.ingesterPool.GetClientFor(ingester.Addr)
+		if err != nil {
+			return err
+		}
+		c := h.(ingester_client.IngesterClient)
+
+		// TODO: Stream content
+		content, err := io.ReadAll(r.Body)
+		if err != nil {
+			return errors.Wrap(err, "failed to read HTTP request body")
+		}
+		_, err = c.AddBackfillFile(localCtx, &mimirpb.AddBackfillFileRequest{
+			BlockId: blockID,
+			Path:    pth,
+			Content: content,
+		})
+		return err
+	}, cancel); err != nil {
+		return err
+	}
+
 	return nil
 }
 
 // FinishBackfill requests the finishing of a backfill session.
 func (d *Distributor) FinishBackfill(ctx context.Context, tenantID int, blockID string) error {
 	level.Info(d.log).Log("msg", "finishing backfill", "tenantId", tenantID, "blockId", blockID)
+	// TODO: Move block files to production location, meta.json last
 	return nil
 }
 
