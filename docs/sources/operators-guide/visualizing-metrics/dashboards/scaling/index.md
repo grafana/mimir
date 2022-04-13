@@ -5,10 +5,9 @@ description: "View an example Scaling dashboard."
 weight: 140
 ---
 
-# Grafana Mimir Scaling dashboard
+# Grafana Mimir scaling dashboard
 
-The Scaling dashboard suggests services that should be scaled up in the event of a failure for one of several specific reasons.
-These suggestions are meant to serve as helpful guidelines rather than prescriptive requirements.
+The scaling dashboard displays services that you can optionally scale up, in the event of a failure that is caused by one or more specific reasons.
 
 ## Example
 
