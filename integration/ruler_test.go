@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/e2e"
 	e2edb "github.com/grafana/e2e/db"
 	"github.com/prometheus/common/model"
@@ -575,7 +576,8 @@ func TestRulerMetricsForInvalidQueries(t *testing.T) {
 	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags)
 	ruler := e2emimir.NewRuler("ruler", consul.NetworkHTTPEndpoint(), flags)
 	ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags)
-	require.NoError(t, s.StartAndWaitReady(distributor, ingester, ruler))
+	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags)
+	require.NoError(t, s.StartAndWaitReady(distributor, ingester, ruler, querier))
 
 	// Wait until both the distributor and ruler have updated the ring. The querier will also watch
 	// the store-gateway ring if blocks sharding is enabled.
@@ -729,16 +731,16 @@ func TestRulerFederatedRules(t *testing.T) {
 		BlocksStorageFlags(),
 		RulerFlags(),
 		map[string]string{
-			"-ruler.tenant-federation.enabled":  "true",
 			"-tenant-federation.enabled":        "true",
+			"-ruler.tenant-federation.enabled":  "true",
 			"-ingester.ring.replication-factor": "1",
 		},
 	)
 
 	// Start up services
 	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags)
-	ruler := e2emimir.NewRuler("ruler", consul.NetworkHTTPEndpoint(), flags)
 	ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags)
+	ruler := e2emimir.NewRuler("ruler", consul.NetworkHTTPEndpoint(), flags)
 	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags)
 	require.NoError(t, s.StartAndWaitReady(distributor, ingester, ruler, querier))
 
@@ -811,6 +813,139 @@ func TestRulerFederatedRules(t *testing.T) {
 			// Wait until rule evaluation resulting series had been pushed
 			require.NoError(t, ingester.WaitSumMetrics(e2e.Greater(totalSeriesBeforeEval[0]), "cortex_ingester_memory_series"))
 
+			result, err := c.Query(ruleName, time.Now())
+			require.NoError(t, err)
+			tc.assertEvalResult(result.(model.Vector))
+		})
+	}
+}
+
+func TestRulerRemoteEvaluation(t *testing.T) {
+	tcs := map[string]struct {
+		tenantsWithMetrics []string
+		groupSourceTenants []string
+		ruleGroupOwner     string
+		ruleExpression     string
+		assertEvalResult   func(model.Vector)
+	}{
+		"non federated rule group": {
+			tenantsWithMetrics: []string{"tenant-1"},
+			ruleGroupOwner:     "tenant-1",
+			ruleExpression:     "count(sum_over_time(metric[1h]))",
+			assertEvalResult: func(evalResult model.Vector) {
+				require.Len(t, evalResult, 1)
+				require.Equal(t, evalResult[0].Value, model.SampleValue(1))
+			},
+		},
+		"federated rule group": {
+			tenantsWithMetrics: []string{"tenant-1", "tenant-2"},
+			ruleGroupOwner:     "tenant-2",
+			ruleExpression:     "count(group by (__tenant_id__) (metric))",
+			groupSourceTenants: []string{"tenant-1", "tenant-2"},
+			assertEvalResult: func(evalResult model.Vector) {
+				require.Len(t, evalResult, 1)
+				require.Equal(t, evalResult[0].Value, model.SampleValue(2))
+			},
+		},
+	}
+
+	s, err := e2e.NewScenario(networkName)
+	require.NoError(t, err)
+	t.Cleanup(s.Close)
+
+	// Start dependencies.
+	consul := e2edb.NewConsul()
+	minio := e2edb.NewMinio(9000, blocksBucketName, rulestoreBucketName)
+	require.NoError(t, s.StartAndWaitReady(minio, consul))
+
+	flags := mergeFlags(
+		BlocksStorageFlags(),
+		RulerFlags(),
+		map[string]string{
+			"-tenant-federation.enabled":        "true",
+			"-ruler.tenant-federation.enabled":  "true",
+			"-ingester.ring.replication-factor": "1",
+		},
+	)
+
+	// Start the query-frontend.
+	queryFrontend := e2emimir.NewQueryFrontend("query-frontend", flags)
+	require.NoError(t, s.Start(queryFrontend))
+	flags["-querier.frontend-address"] = queryFrontend.NetworkGRPCEndpoint()
+
+	// Use query-frontend for rule evaluation.
+	flags["-ruler.query-frontend.address"] = fmt.Sprintf("dns:///%s", queryFrontend.NetworkGRPCEndpoint())
+
+	// Start up services
+	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags)
+	ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags)
+	ruler := e2emimir.NewRuler("ruler", consul.NetworkHTTPEndpoint(), flags)
+	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags)
+
+	require.NoError(t, s.StartAndWaitReady(distributor, ingester, ruler, querier))
+	require.NoError(t, s.WaitReady(queryFrontend))
+
+	// Wait until both the distributor and ruler are ready
+	// The distributor should have 512 tokens for the ingester ring and 1 for the distributor ring
+	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512+1), "cortex_ring_tokens_total"))
+	// Ruler will see 512 tokens from ingester, and 128 tokens from itself.
+	require.NoError(t, ruler.WaitSumMetrics(e2e.Equals(512+128), "cortex_ring_tokens_total"))
+
+	for tName, tc := range tcs {
+		t.Run(tName, func(t *testing.T) {
+			// Generate some series under different tenants
+			sampleTime := time.Now()
+			for _, tenantID := range tc.tenantsWithMetrics {
+				client, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", "", tenantID)
+				require.NoError(t, err)
+
+				series, _ := generateSeries("metric", sampleTime)
+
+				res, err := client.Push(series)
+				require.NoError(t, err)
+				require.Equal(t, 200, res.StatusCode)
+			}
+
+			// Create a client as owner tenant to upload groups and then make assertions
+			c, err := e2emimir.NewClient(distributor.HTTPEndpoint(), querier.HTTPEndpoint(), "", ruler.HTTPEndpoint(), tc.ruleGroupOwner)
+			require.NoError(t, err)
+
+			// Obtain total series before rule evaluation
+			totalSeriesBeforeEval, err := ingester.SumMetrics([]string{"cortex_ingester_memory_series"})
+			require.NoError(t, err)
+
+			// Obtain total rule managers before rule group creation
+			managersTotalBeforeCreate, err := ruler.SumMetrics([]string{"cortex_ruler_managers_total"})
+			require.NoError(t, err)
+
+			// Create rule group
+			namespace := "test_namespace"
+			ruleName := "rule_name"
+			g := ruleGroupWithRule("x", ruleName, tc.ruleExpression)
+			g.Interval = model.Duration(time.Second / 4)
+			g.SourceTenants = tc.groupSourceTenants
+			require.NoError(t, c.SetRuleGroup(g, namespace))
+
+			// Wait until another user manager is created.
+			require.NoError(t, ruler.WaitSumMetrics(e2e.Greater(float64(managersTotalBeforeCreate[0])), "cortex_ruler_managers_total"))
+
+			// Wait until rule evaluation resulting series had been pushed
+			require.NoError(t, ingester.WaitSumMetrics(e2e.Greater(totalSeriesBeforeEval[0]), "cortex_ingester_memory_series"))
+
+			// Ensure that expression evaluation was performed on the query-frontend service
+			var queryEvalUser string
+			if len(tc.groupSourceTenants) > 0 {
+				queryEvalUser = tenant.JoinTenantIDs(tc.groupSourceTenants)
+			} else {
+				queryEvalUser = tc.ruleGroupOwner
+			}
+			require.NoError(t, queryFrontend.WaitSumMetricsWithOptions(
+				e2e.GreaterOrEqual(1),
+				[]string{"cortex_query_frontend_queries_total"},
+				e2e.WithLabelMatchers(labels.MustNewMatcher(labels.MatchEqual, "user", queryEvalUser)),
+			))
+
+			// Assert rule evaluation result
 			result, err := c.Query(ruleName, time.Now())
 			require.NoError(t, err)
 			tc.assertEvalResult(result.(model.Vector))

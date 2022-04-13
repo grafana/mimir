@@ -8,7 +8,6 @@ package commands
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -51,7 +50,7 @@ var (
 type RuleCommand struct {
 	ClientConfig client.Config
 
-	cli *client.CortexClient
+	cli *client.MimirClient
 
 	// Backend type (cortex | loki)
 	Backend string
@@ -774,7 +773,7 @@ func save(nss map[string]rules.RuleNamespace, i bool) error {
 			filepath = filepath + ".result"
 		}
 
-		if err := ioutil.WriteFile(filepath, payload, 0644); err != nil {
+		if err := os.WriteFile(filepath, payload, 0644); err != nil {
 			return err
 		}
 	}

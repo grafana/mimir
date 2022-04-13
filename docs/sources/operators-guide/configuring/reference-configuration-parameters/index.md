@@ -1402,6 +1402,39 @@ ring:
 # CLI flag: -ruler.query-stats-enabled
 [query_stats_enabled: <boolean> | default = false]
 
+query_frontend:
+  # GRPC listen address of the query-frontend(s). Must be a DNS address
+  # (prefixed with dns:///) to enable client side load balancing.
+  # CLI flag: -ruler.query-frontend.address
+  [address: <string> | default = ""]
+
+  # (advanced) Set to true if query-frontend connection requires TLS.
+  # CLI flag: -ruler.query-frontend.tls-enabled
+  [tls_enabled: <boolean> | default = false]
+
+  # (advanced) Path to the client certificate file, which will be used for
+  # authenticating with the server. Also requires the key path to be configured.
+  # CLI flag: -ruler.query-frontend.tls-cert-path
+  [tls_cert_path: <string> | default = ""]
+
+  # (advanced) Path to the key file for the client certificate. Also requires
+  # the client certificate to be configured.
+  # CLI flag: -ruler.query-frontend.tls-key-path
+  [tls_key_path: <string> | default = ""]
+
+  # (advanced) Path to the CA certificates file to validate server certificate
+  # against. If not set, the host's root CA certificates are used.
+  # CLI flag: -ruler.query-frontend.tls-ca-path
+  [tls_ca_path: <string> | default = ""]
+
+  # (advanced) Override the expected name on the server certificate.
+  # CLI flag: -ruler.query-frontend.tls-server-name
+  [tls_server_name: <string> | default = ""]
+
+  # (advanced) Skip validating server certificate.
+  # CLI flag: -ruler.query-frontend.tls-insecure-skip-verify
+  [tls_insecure_skip_verify: <boolean> | default = false]
+
 tenant_federation:
   # Enable running rule groups against multiple tenants. The tenant IDs involved
   # need to be in the rule group's 'source_tenants' field. If this flag is set
@@ -3289,10 +3322,11 @@ tsdb:
   # CLI flag: -blocks-storage.tsdb.block-ranges-period
   [block_ranges_period: <list of duration> | default = 2h0m0s]
 
-  # TSDB blocks retention in the ingester before a block is removed. This should
-  # be larger than the -blocks-storage.tsdb.block-ranges-period,
-  # -querier.query-store-after and large enough to give store-gateways and
-  # queriers enough time to discover newly uploaded blocks.
+  # TSDB blocks retention in the ingester before a block is removed, relative to
+  # the newest block written for the tenant. This should be larger than the
+  # -blocks-storage.tsdb.block-ranges-period, -querier.query-store-after and
+  # large enough to give store-gateways and queriers enough time to discover
+  # newly uploaded blocks.
   # CLI flag: -blocks-storage.tsdb.retention-period
   [retention_period: <duration> | default = 24h]
 
@@ -3375,10 +3409,10 @@ tsdb:
   # CLI flag: -blocks-storage.tsdb.head-chunks-write-queue-size
   [head_chunks_write_queue_size: <int> | default = 0]
 
-  # (advanced) Enables TSDB isolation feature. Disabling may improve
-  # performance.
+  # (advanced) [Deprecated] Enables TSDB isolation feature. Disabling may
+  # improve performance.
   # CLI flag: -blocks-storage.tsdb.isolation-enabled
-  [isolation_enabled: <boolean> | default = true]
+  [isolation_enabled: <boolean> | default = false]
 
   # (advanced) Max size - in bytes - of the in-memory series hash cache. The
   # cache is shared across all tenants and it's used only when query sharding is

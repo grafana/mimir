@@ -4,7 +4,7 @@ package config
 
 import (
 	"fmt"
-	"io/ioutil"
+	"os"
 	"strings"
 	"testing"
 
@@ -788,7 +788,7 @@ func loadFile(t testing.TB, fileName string) []byte {
 	if fileName == "" {
 		return nil
 	}
-	bytes, err := ioutil.ReadFile(fileName)
+	bytes, err := os.ReadFile(fileName)
 	require.NoError(t, err)
 	return bytes
 }
@@ -799,7 +799,7 @@ func loadFlags(t testing.TB, fileName string) []string {
 	if fileName == "" {
 		return nil
 	}
-	flagBytes, err := ioutil.ReadFile(fileName)
+	flagBytes, err := os.ReadFile(fileName)
 	require.NoError(t, err)
 	return strings.Split(string(flagBytes), "\n")
 }

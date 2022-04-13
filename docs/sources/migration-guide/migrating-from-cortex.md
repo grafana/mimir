@@ -7,7 +7,7 @@ weight: 10
 # Migrating from Cortex to Grafana Mimir
 
 This document guides an operator through the process of migrating a deployment of [Cortex](https://cortexmetrics.io/) to Grafana Mimir.
-It includes an overview of the steps required for any environment and specific instructions for [environments deployed with Jsonnet](#updating-to-grafana-mimir-using-jsonnet).
+It includes an overview of the steps required for any environment, and specific instructions for [environments deployed with Jsonnet](#migrating-to-grafana-mimir-using-jsonnet) and [environments deployed with Helm](#migrating-to-grafana-mimir-using-helm).
 
 Grafana Mimir 2.0.0 includes significant changes that simplify the deployment and continued operation of a horizontally scalable, multi-tenant time series database with long-term storage.
 
@@ -29,7 +29,7 @@ It provides a simple migration by generating Mimir configuration from Cortex con
 - Ensure you have installed Cortex alerting and recording rules as well as Cortex dashboards.
 
   The monitoring mixin has both alerting and recording rules to install in either Prometheus or Cortex as well as dashboards to install in Grafana.
-  To download a prebuilt ZIP file that contains the alerting and recording rules, refer to [Release Cortex-jsonnet 1.11.1](https://github.com/grafana/cortex-jsonnet/releases/download/1.11.1/cortex-mixin.zip).
+  To download a prebuilt ZIP file that contains the alerting and recording rules, refer to [Release Cortex-jsonnet 1.11.0](https://github.com/grafana/cortex-jsonnet/releases/download/1.11.0/cortex-mixin.zip).
 
   To upload rules to the ruler using mimirtool, refer to [mimirtool rules]({{< relref "../operators-guide/tools/mimirtool.md" >}}).
   To import the dashboards into Grafana, refer to [Import dashboard](https://grafana.com/docs/grafana/latest/dashboards/export-import/#import-dashboard).
@@ -125,7 +125,7 @@ If you have explicitly set configuration parameters to a value matching the Cort
 To have `mimirtool config convert` update explicitly set values from the Cortex defaults to the new Grafana Mimir defaults, provide the `--update-defaults` flag.
 Refer to [convert]({{< relref "../operators-guide/tools/mimirtool.md#convert" >}}) for more information on using `mimirtool` for configuration conversion.
 
-## Updating to Grafana Mimir using Jsonnet
+## Migrating to Grafana Mimir using Jsonnet
 
 Grafana Mimir has a Jsonnet library that replaces the existing Cortex Jsonnet library and updated monitoring mixin.
 
@@ -182,7 +182,7 @@ jb install github.com/grafana/mimir/operations/mimir-mixin@main
 
 To verify that the cluster is operating correctly, use the [monitoring mixin dashboards]({{< relref "../operators-guide/visualizing-metrics/dashboards/_index.md" >}}).
 
-## Updating to Grafana Mimir using Helm
+## Migrating to Grafana Mimir using Helm
 
 You can update to the Grafana Mimir Helm chart from the Cortex Helm chart.
 
@@ -221,13 +221,13 @@ You can update to the Grafana Mimir Helm chart from the Cortex Helm chart.
    a. Extract the Cortex configuration and write the output to the `cortex.yaml` file.
 
    ```bash
-   yq -Y '.config' <VALUES YAML FILE> > cortex.yaml
+   yq '.config' <VALUES YAML FILE> > cortex.yaml
    ```
 
    b. Use `mimirtool` to update the configuration.
 
    ```bash
-   mimirtool config convert cortex.yaml
+   mimirtool config convert --yaml-file cortex.yaml
    ```
 
    c. Place the updated configuration under the `mimir.config` key at the top level of your Helm values file.
@@ -251,6 +251,8 @@ You can update to the Grafana Mimir Helm chart from the Cortex Helm chart.
    - Set `ruler.alertmanager_url` to `'dnssrvnoa+http://_http-metrics._tcp.{{ template "mimir.fullname" . }}-alertmanager-headless.{{ .Release.Namespace }}.svc.cluster.local/alertmanager'`.
    - If you want to use memberlist as the ring KV store, set `memberlist.join_members` to `['{{ include "mimir.fullname" . }}-gossip-ring']`.
    - Append the caching configuration to `blocks_storage.bucket_store`.
+   - Set `ingester.ring.num_tokens` to the existing value you set in `ingester.lifecycler.num_tokens`.
+     This is especially important if you are using the default Cortex Helm chart values as it sets this to `512`.
 
    A partial Helm values file with the changes incorporated looks similar to:
 
@@ -281,6 +283,9 @@ You can update to the Grafana Mimir Helm chart from the Cortex Helm chart.
          {{- end }}
        frontend_worker:
          frontend_address: "{{ template "mimir.fullname" . }}-query-frontend-headless.{{ .Release.Namespace }}.svc:{{ include "mimir.serverGrpcListenPort" . }}"
+       ingester:
+         ring:
+           num_tokens: 512
        memberlist:
          join_members: ["{{ include "mimir.fullname" . }}-gossip-ring"]
        ruler:

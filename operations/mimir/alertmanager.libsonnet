@@ -1,11 +1,12 @@
 {
-  local pvc = $.core.v1.persistentVolumeClaim,
-  local volumeMount = $.core.v1.volumeMount,
-  local volume = $.core.v1.volume,
-  local container = $.core.v1.container,
-  local statefulSet = $.apps.v1.statefulSet,
-  local service = $.core.v1.service,
   local configMap = $.core.v1.configMap,
+  local container = $.core.v1.container,
+  local podDisruptionBudget = $.policy.v1beta1.podDisruptionBudget,
+  local pvc = $.core.v1.persistentVolumeClaim,
+  local service = $.core.v1.service,
+  local statefulSet = $.apps.v1.statefulSet,
+  local volume = $.core.v1.volume,
+  local volumeMount = $.core.v1.volumeMount,
 
   local hasFallbackConfig = std.length($._config.alertmanager.fallback_config) > 0,
 
@@ -87,5 +88,15 @@
     if $._config.alertmanager_enabled then
       $.util.serviceFor($.alertmanager_statefulset, $._config.service_ignored_labels) +
       service.mixin.spec.withClusterIp('None')
+    else {},
+
+  alertmanager_pdb:
+    if $._config.alertmanager_enabled then
+      podDisruptionBudget.new('alertmanager-pdb') +
+      podDisruptionBudget.mixin.metadata.withLabels({ name: 'alertmanager-pdb' }) +
+      podDisruptionBudget.mixin.spec.selector.withMatchLabels({
+        name: $.alertmanager_statefulset.spec.template.metadata.labels.name,
+      }) +
+      podDisruptionBudget.mixin.spec.withMaxUnavailable(1)
     else {},
 }

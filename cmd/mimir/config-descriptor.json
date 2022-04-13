@@ -5143,7 +5143,7 @@
               "kind": "field",
               "name": "retention_period",
               "required": false,
-              "desc": "TSDB blocks retention in the ingester before a block is removed. This should be larger than the -blocks-storage.tsdb.block-ranges-period, -querier.query-store-after and large enough to give store-gateways and queriers enough time to discover newly uploaded blocks.",
+              "desc": "TSDB blocks retention in the ingester before a block is removed, relative to the newest block written for the tenant. This should be larger than the -blocks-storage.tsdb.block-ranges-period, -querier.query-store-after and large enough to give store-gateways and queriers enough time to discover newly uploaded blocks.",
               "fieldValue": null,
               "fieldDefaultValue": 86400000000000,
               "fieldFlag": "blocks-storage.tsdb.retention-period",
@@ -5307,9 +5307,9 @@
               "kind": "field",
               "name": "isolation_enabled",
               "required": false,
-              "desc": "Enables TSDB isolation feature. Disabling may improve performance.",
+              "desc": "[Deprecated] Enables TSDB isolation feature. Disabling may improve performance.",
               "fieldValue": null,
-              "fieldDefaultValue": true,
+              "fieldDefaultValue": false,
               "fieldFlag": "blocks-storage.tsdb.isolation-enabled",
               "fieldType": "boolean",
               "fieldCategory": "advanced"
@@ -7287,6 +7287,92 @@
           "fieldFlag": "ruler.query-stats-enabled",
           "fieldType": "boolean",
           "fieldCategory": "advanced"
+        },
+        {
+          "kind": "block",
+          "name": "query_frontend",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "address",
+              "required": false,
+              "desc": "GRPC listen address of the query-frontend(s). Must be a DNS address (prefixed with dns:///) to enable client side load balancing.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ruler.query-frontend.address",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "tls_enabled",
+              "required": false,
+              "desc": "Set to true if query-frontend connection requires TLS.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "ruler.query-frontend.tls-enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "tls_cert_path",
+              "required": false,
+              "desc": "Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ruler.query-frontend.tls-cert-path",
+              "fieldType": "string",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "tls_key_path",
+              "required": false,
+              "desc": "Path to the key file for the client certificate. Also requires the client certificate to be configured.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ruler.query-frontend.tls-key-path",
+              "fieldType": "string",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "tls_ca_path",
+              "required": false,
+              "desc": "Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ruler.query-frontend.tls-ca-path",
+              "fieldType": "string",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "tls_server_name",
+              "required": false,
+              "desc": "Override the expected name on the server certificate.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ruler.query-frontend.tls-server-name",
+              "fieldType": "string",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "tls_insecure_skip_verify",
+              "required": false,
+              "desc": "Skip validating server certificate.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "ruler.query-frontend.tls-insecure-skip-verify",
+              "fieldType": "boolean",
+              "fieldCategory": "advanced"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
         },
         {
           "kind": "block",

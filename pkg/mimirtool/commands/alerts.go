@@ -9,7 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -46,7 +46,7 @@ type AlertmanagerCommand struct {
 	TemplateFiles          []string
 	DisableColor           bool
 
-	cli *client.CortexClient
+	cli *client.MimirClient
 }
 
 // AlertCommand configures and executes rule related PromQL queries for alerts comparison.
@@ -59,7 +59,7 @@ type AlertCommand struct {
 	GracePeriod    int
 	CheckFrequency int
 	ClientConfig   client.Config
-	cli            *client.CortexClient
+	cli            *client.MimirClient
 }
 
 // Register rule related commands and flags with the kingpin application
@@ -110,7 +110,7 @@ func (a *AlertmanagerCommand) getConfig(k *kingpin.ParseContext) error {
 }
 
 func (a *AlertmanagerCommand) loadConfig(k *kingpin.ParseContext) error {
-	content, err := ioutil.ReadFile(a.AlertmanagerConfigFile)
+	content, err := os.ReadFile(a.AlertmanagerConfigFile)
 	if err != nil {
 		return errors.Wrap(err, "unable to load config file: "+a.AlertmanagerConfigFile)
 	}
@@ -123,7 +123,7 @@ func (a *AlertmanagerCommand) loadConfig(k *kingpin.ParseContext) error {
 
 	templates := map[string]string{}
 	for _, f := range a.TemplateFiles {
-		tmpl, err := ioutil.ReadFile(f)
+		tmpl, err := os.ReadFile(f)
 		if err != nil {
 			return errors.Wrap(err, "unable to load template file: "+f)
 		}
@@ -258,7 +258,7 @@ func (a *AlertCommand) runVerifyQuery(ctx context.Context, query string) (int, e
 		return 0, err
 	}
 
-	body, err := ioutil.ReadAll(res.Body)
+	body, err := io.ReadAll(res.Body)
 	if err != nil {
 		return 0, err
 	}

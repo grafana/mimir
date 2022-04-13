@@ -7,6 +7,19 @@ apiVersion: policy/v1beta1
 kind: PodDisruptionBudget
 metadata:
   labels:
+    name: alertmanager-pdb
+  name: alertmanager-pdb
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: alertmanager
+---
+apiVersion: policy/v1beta1
+kind: PodDisruptionBudget
+metadata:
+  labels:
     name: ingester-rollout-pdb
   name: ingester-rollout-pdb
   namespace: default
@@ -1534,7 +1547,6 @@ spec:
         - -blocks-storage.tsdb.block-ranges-period=2h
         - -blocks-storage.tsdb.close-idle-tsdb-timeout=13h
         - -blocks-storage.tsdb.dir=/data/tsdb
-        - -blocks-storage.tsdb.isolation-enabled=false
         - -blocks-storage.tsdb.ship-interval=1m
         - -distributor.health-check-ingesters=true
         - -ingester.max-global-series-per-metric=20000
@@ -1650,7 +1662,6 @@ spec:
         - -blocks-storage.tsdb.block-ranges-period=2h
         - -blocks-storage.tsdb.close-idle-tsdb-timeout=13h
         - -blocks-storage.tsdb.dir=/data/tsdb
-        - -blocks-storage.tsdb.isolation-enabled=false
         - -blocks-storage.tsdb.ship-interval=1m
         - -distributor.health-check-ingesters=true
         - -ingester.max-global-series-per-metric=20000
@@ -1766,7 +1777,6 @@ spec:
         - -blocks-storage.tsdb.block-ranges-period=2h
         - -blocks-storage.tsdb.close-idle-tsdb-timeout=13h
         - -blocks-storage.tsdb.dir=/data/tsdb
-        - -blocks-storage.tsdb.isolation-enabled=false
         - -blocks-storage.tsdb.ship-interval=1m
         - -distributor.health-check-ingesters=true
         - -ingester.max-global-series-per-metric=20000

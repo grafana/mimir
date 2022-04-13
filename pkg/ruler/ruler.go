@@ -25,6 +25,7 @@ import (
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
+	"github.com/grafana/dskit/tenant"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -34,8 +35,6 @@ import (
 	"github.com/prometheus/prometheus/util/strutil"
 	"github.com/weaveworks/common/user"
 	"golang.org/x/sync/errgroup"
-
-	"github.com/grafana/dskit/tenant"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
@@ -116,6 +115,8 @@ type Config struct {
 
 	EnableQueryStats bool `yaml:"query_stats_enabled" category:"advanced"`
 
+	QueryFrontend QueryFrontendConfig `yaml:"query_frontend" category:"experimental"`
+
 	TenantFederation TenantFederationConfig `yaml:"tenant_federation"`
 }
 
@@ -137,6 +138,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.Ring.RegisterFlags(f, logger)
 	cfg.Notifier.RegisterFlags(f)
 	cfg.TenantFederation.RegisterFlags(f)
+	cfg.QueryFrontend.RegisterFlags(f)
 
 	cfg.ExternalURL.URL, _ = url.Parse("") // Must be non-nil
 	f.Var(&cfg.ExternalURL, "ruler.external.url", "URL of alerts return path.")

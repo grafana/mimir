@@ -71,36 +71,41 @@ func generateSineWaveValue(t time.Time) float64 {
 
 // verifySineWaveSamplesSum assumes the input matrix is the result of a range query summing the values
 // of expectedSeries sine wave series and checks whether the actual values match the expected ones.
-// Returns error if values don't match.
-func verifySineWaveSamplesSum(matrix model.Matrix, expectedSeries int, expectedStep time.Duration) error {
+// Samples are checked in backward order, from newest to oldest. Returns error if values don't match,
+// and the index of the last sample that matched the expectation or -1 if no sample matches.
+func verifySineWaveSamplesSum(matrix model.Matrix, expectedSeries int, expectedStep time.Duration) (lastMatchingIdx int, err error) {
+	lastMatchingIdx = -1
 	if len(matrix) != 1 {
-		return fmt.Errorf("expected 1 series in the result but got %d", len(matrix))
+		return lastMatchingIdx, fmt.Errorf("expected 1 series in the result but got %d", len(matrix))
 	}
 
 	samples := matrix[0].Values
 
-	for idx, sample := range samples {
+	for idx := len(samples) - 1; idx >= 0; idx-- {
+		sample := samples[idx]
 		ts := time.UnixMilli(int64(sample.Timestamp)).UTC()
 
 		// Assert on value.
-		expectedValue := generateSineWaveValue(ts)
-		if !compareSampleValues(float64(sample.Value), expectedValue*float64(expectedSeries)) {
-			return fmt.Errorf("sample at timestamp %d (%s) has value %f while was expecting %f", sample.Timestamp, ts.String(), sample.Value, expectedValue)
+		expectedValue := generateSineWaveValue(ts) * float64(expectedSeries)
+		if !compareSampleValues(float64(sample.Value), expectedValue) {
+			return lastMatchingIdx, fmt.Errorf("sample at timestamp %d (%s) has value %f while was expecting %f", sample.Timestamp, ts.String(), sample.Value, expectedValue)
 		}
 
 		// Assert on sample timestamp. We expect no gaps.
-		if idx > 0 {
-			prevTs := time.UnixMilli(int64(samples[idx-1].Timestamp)).UTC()
-			expectedTs := prevTs.Add(expectedStep)
+		if idx < len(samples)-1 {
+			nextTs := time.UnixMilli(int64(samples[idx+1].Timestamp)).UTC()
+			expectedTs := nextTs.Add(-expectedStep)
 
 			if ts.UnixMilli() != expectedTs.UnixMilli() {
-				return fmt.Errorf("sample at timestamp %d (%s) was expected to have timestamp %d (%s) because previous sample had timestamp %d (%s)",
-					sample.Timestamp, ts.String(), expectedTs.UnixMilli(), expectedTs.String(), prevTs.UnixMilli(), prevTs.String())
+				return lastMatchingIdx, fmt.Errorf("sample at timestamp %d (%s) was expected to have timestamp %d (%s) because next sample has timestamp %d (%s)",
+					sample.Timestamp, ts.String(), expectedTs.UnixMilli(), expectedTs.String(), nextTs.UnixMilli(), nextTs.String())
 			}
 		}
+
+		lastMatchingIdx = idx
 	}
 
-	return nil
+	return lastMatchingIdx, nil
 }
 
 func compareSampleValues(actual, expected float64) bool {

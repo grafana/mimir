@@ -34,8 +34,11 @@ type MimirClient interface {
 	// an error. The error is always returned if request was not successful (eg. received a 4xx or 5xx error).
 	WriteSeries(ctx context.Context, series []prompb.TimeSeries) (statusCode int, err error)
 
-	// QueryRange performs a query for the given range.
+	// QueryRange performs a range query.
 	QueryRange(ctx context.Context, query string, start, end time.Time, step time.Duration) (model.Matrix, error)
+
+	// Query performs an instant query.
+	Query(ctx context.Context, query string, ts time.Time) (model.Vector, error)
 }
 
 type ClientConfig struct {
@@ -112,15 +115,37 @@ func (c *Client) QueryRange(ctx context.Context, query string, start, end time.T
 	}
 
 	if value.Type() != model.ValMatrix {
-		return nil, errors.New("was expecting to get a Matrix")
+		return nil, fmt.Errorf("was expecting to get a Matrix, but got %s", value.Type().String())
 	}
 
 	matrix, ok := value.(model.Matrix)
 	if !ok {
-		return nil, errors.New("failed to cast type to Matrix")
+		return nil, fmt.Errorf("failed to cast type to Matrix, type was %T", value)
 	}
 
 	return matrix, nil
+}
+
+// Query implements MimirClient.
+func (c *Client) Query(ctx context.Context, query string, ts time.Time) (model.Vector, error) {
+	ctx, cancel := context.WithTimeout(ctx, c.cfg.ReadTimeout)
+	defer cancel()
+
+	value, _, err := c.readClient.Query(ctx, query, ts)
+	if err != nil {
+		return nil, err
+	}
+
+	if value.Type() != model.ValVector {
+		return nil, fmt.Errorf("was expecting to get a Vector, but got %s", value.Type().String())
+	}
+
+	vector, ok := value.(model.Vector)
+	if !ok {
+		return nil, fmt.Errorf("failed to cast type to Vector, type was %T", value)
+	}
+
+	return vector, nil
 }
 
 // WriteSeries implements MimirClient.

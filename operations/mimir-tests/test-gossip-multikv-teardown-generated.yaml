@@ -7,6 +7,19 @@ apiVersion: policy/v1beta1
 kind: PodDisruptionBudget
 metadata:
   labels:
+    name: alertmanager-pdb
+  name: alertmanager-pdb
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: alertmanager
+---
+apiVersion: policy/v1beta1
+kind: PodDisruptionBudget
+metadata:
+  labels:
     name: ingester-pdb
   name: ingester-pdb
   namespace: default
@@ -251,6 +264,9 @@ metadata:
 apiVersion: v1
 data:
   overrides.yaml: |
+    multi_kv_config:
+        mirror_enabled: false
+        primary: memberlist
     overrides: {}
 kind: ConfigMap
 metadata:
@@ -288,6 +304,25 @@ subjects:
 - kind: ServiceAccount
   name: consul-sidekick
   namespace: default
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: alertmanager
+  name: alertmanager
+  namespace: default
+spec:
+  clusterIP: None
+  ports:
+  - name: alertmanager-http-metrics
+    port: 8080
+    targetPort: 8080
+  - name: alertmanager-grpc
+    port: 9095
+    targetPort: 9095
+  selector:
+    name: alertmanager
 ---
 apiVersion: v1
 kind: Service
@@ -335,8 +370,26 @@ spec:
   - name: distributor-grpc
     port: 9095
     targetPort: 9095
+  - name: distributor-gossip-ring
+    port: 7946
+    targetPort: 7946
   selector:
     name: distributor
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gossip-ring
+  namespace: default
+spec:
+  clusterIP: None
+  ports:
+  - name: gossip-ring
+    port: 7946
+    protocol: TCP
+    targetPort: 7946
+  selector:
+    gossip_ring_member: "true"
 ---
 apiVersion: v1
 kind: Service
@@ -353,6 +406,9 @@ spec:
   - name: ingester-grpc
     port: 9095
     targetPort: 9095
+  - name: ingester-gossip-ring
+    port: 7946
+    targetPort: 7946
   selector:
     name: ingester
 ---
@@ -447,6 +503,9 @@ spec:
   - name: querier-grpc
     port: 9095
     targetPort: 9095
+  - name: querier-gossip-ring
+    port: 7946
+    targetPort: 7946
   selector:
     name: querier
 ---
@@ -492,6 +551,62 @@ apiVersion: v1
 kind: Service
 metadata:
   labels:
+    name: query-scheduler
+  name: query-scheduler
+  namespace: default
+spec:
+  ports:
+  - name: query-scheduler-http-metrics
+    port: 8080
+    targetPort: 8080
+  - name: query-scheduler-grpc
+    port: 9095
+    targetPort: 9095
+  selector:
+    name: query-scheduler
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: query-scheduler
+  name: query-scheduler-discovery
+  namespace: default
+spec:
+  clusterIP: None
+  ports:
+  - name: query-scheduler-http-metrics
+    port: 8080
+    targetPort: 8080
+  - name: query-scheduler-grpc
+    port: 9095
+    targetPort: 9095
+  publishNotReadyAddresses: true
+  selector:
+    name: query-scheduler
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: ruler
+  name: ruler
+  namespace: default
+spec:
+  ports:
+  - name: ruler-http-metrics
+    port: 8080
+    targetPort: 8080
+  - name: ruler-grpc
+    port: 9095
+    targetPort: 9095
+  selector:
+    name: ruler
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
     name: store-gateway
   name: store-gateway
   namespace: default
@@ -503,6 +618,9 @@ spec:
   - name: store-gateway-grpc
     port: 9095
     targetPort: 9095
+  - name: store-gateway-gossip-ring
+    port: 7946
+    targetPort: 7946
   selector:
     name: store-gateway
 ---
@@ -650,6 +768,7 @@ spec:
   template:
     metadata:
       labels:
+        gossip_ring_member: "true"
         name: distributor
     spec:
       affinity:
@@ -670,15 +789,16 @@ spec:
         - -distributor.health-check-ingesters=true
         - -distributor.ingestion-burst-size=200000
         - -distributor.ingestion-rate-limit=10000
-        - -distributor.ring.consul.hostname=consul.default.svc.cluster.local:8500
         - -distributor.ring.prefix=
-        - -distributor.ring.store=consul
-        - -ingester.ring.consul.hostname=consul.default.svc.cluster.local:8500
+        - -distributor.ring.store=memberlist
         - -ingester.ring.heartbeat-timeout=10m
         - -ingester.ring.prefix=
         - -ingester.ring.replication-factor=3
-        - -ingester.ring.store=consul
+        - -ingester.ring.store=memberlist
         - -mem-ballast-size-bytes=1073741824
+        - -memberlist.abort-if-join-fails=false
+        - -memberlist.bind-port=7946
+        - -memberlist.join=gossip-ring.default.svc.cluster.local:7946
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc.keepalive.max-connection-age=2m
         - -server.grpc.keepalive.max-connection-age-grace=5m
@@ -695,6 +815,8 @@ spec:
           name: http-metrics
         - containerPort: 9095
           name: grpc
+        - containerPort: 7946
+          name: gossip-ring
         readinessProbe:
           httpGet:
             path: /ready
@@ -734,6 +856,7 @@ spec:
   template:
     metadata:
       labels:
+        gossip_ring_member: "true"
         name: querier
     spec:
       affinity:
@@ -754,26 +877,27 @@ spec:
         - -blocks-storage.bucket-store.sync-interval=15m
         - -blocks-storage.gcs.bucket-name=blocks-bucket
         - -distributor.health-check-ingesters=true
-        - -ingester.ring.consul.hostname=consul.default.svc.cluster.local:8500
         - -ingester.ring.heartbeat-timeout=10m
         - -ingester.ring.prefix=
         - -ingester.ring.replication-factor=3
-        - -ingester.ring.store=consul
+        - -ingester.ring.store=memberlist
         - -mem-ballast-size-bytes=268435456
-        - -querier.frontend-address=query-frontend-discovery.default.svc.cluster.local:9095
+        - -memberlist.abort-if-join-fails=false
+        - -memberlist.bind-port=7946
+        - -memberlist.join=gossip-ring.default.svc.cluster.local:7946
         - -querier.frontend-client.grpc-max-send-msg-size=104857600
         - -querier.max-concurrent=8
         - -querier.query-ingesters-within=13h
         - -querier.query-store-after=12h
+        - -querier.scheduler-address=query-scheduler-discovery.default.svc.cluster.local:9095
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
         - -server.http-write-timeout=1m
-        - -store-gateway.sharding-ring.consul.hostname=consul.default.svc.cluster.local:8500
         - -store-gateway.sharding-ring.prefix=
         - -store-gateway.sharding-ring.replication-factor=3
-        - -store-gateway.sharding-ring.store=consul
+        - -store-gateway.sharding-ring.store=memberlist
         - -store.max-query-length=768h
         - -target=querier
         env:
@@ -787,6 +911,8 @@ spec:
           name: http-metrics
         - containerPort: 9095
           name: grpc
+        - containerPort: 7946
+          name: gossip-ring
         readinessProbe:
           httpGet:
             path: /ready
@@ -843,6 +969,7 @@ spec:
         - -query-frontend.results-cache.backend=memcached
         - -query-frontend.results-cache.memcached.addresses=dnssrvnoa+memcached-frontend.default.svc.cluster.local:11211
         - -query-frontend.results-cache.memcached.timeout=500ms
+        - -query-frontend.scheduler-address=query-scheduler-discovery.default.svc.cluster.local:9095
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc-max-recv-msg-size-bytes=104857600
         - -server.grpc.keepalive.min-time-between-pings=10s
@@ -880,6 +1007,250 @@ spec:
         name: overrides
 ---
 apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: query-scheduler
+  namespace: default
+spec:
+  minReadySeconds: 10
+  replicas: 2
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      name: query-scheduler
+  strategy:
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+  template:
+    metadata:
+      labels:
+        name: query-scheduler
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                name: query-scheduler
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - args:
+        - -query-scheduler.max-outstanding-requests-per-tenant=100
+        - -server.grpc.keepalive.min-time-between-pings=10s
+        - -server.grpc.keepalive.ping-without-stream-allowed=true
+        - -server.http-listen-port=8080
+        - -target=query-scheduler
+        image: grafana/mimir:2.0.0
+        imagePullPolicy: IfNotPresent
+        name: query-scheduler
+        ports:
+        - containerPort: 8080
+          name: http-metrics
+        - containerPort: 9095
+          name: grpc
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 15
+          timeoutSeconds: 1
+        resources:
+          limits:
+            memory: 2Gi
+          requests:
+            cpu: "2"
+            memory: 1Gi
+        volumeMounts:
+        - mountPath: /etc/mimir
+          name: overrides
+      volumes:
+      - configMap:
+          name: overrides
+        name: overrides
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ruler
+  namespace: default
+spec:
+  minReadySeconds: 10
+  replicas: 2
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      name: ruler
+  strategy:
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+  template:
+    metadata:
+      labels:
+        gossip_ring_member: "true"
+        name: ruler
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                name: ruler
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - args:
+        - -blocks-storage.backend=gcs
+        - -blocks-storage.bucket-store.metadata-cache.backend=memcached
+        - -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local:11211
+        - -blocks-storage.bucket-store.metadata-cache.memcached.max-async-concurrency=50
+        - -blocks-storage.bucket-store.metadata-cache.memcached.max-item-size=1048576
+        - -blocks-storage.bucket-store.sync-dir=/data/tsdb
+        - -blocks-storage.bucket-store.sync-interval=15m
+        - -blocks-storage.gcs.bucket-name=blocks-bucket
+        - -distributor.extend-writes=true
+        - -distributor.health-check-ingesters=true
+        - -ingester.ring.heartbeat-timeout=10m
+        - -ingester.ring.prefix=
+        - -ingester.ring.replication-factor=3
+        - -ingester.ring.store=memberlist
+        - -memberlist.abort-if-join-fails=false
+        - -memberlist.bind-port=7946
+        - -memberlist.join=gossip-ring.default.svc.cluster.local:7946
+        - -querier.query-ingesters-within=13h
+        - -querier.query-store-after=12h
+        - -ruler-storage.backend=gcs
+        - -ruler-storage.gcs.bucket-name=rules-bucket
+        - -ruler.alertmanager-url=http://alertmanager.default.svc.cluster.local/alertmanager
+        - -ruler.max-rule-groups-per-tenant=35
+        - -ruler.max-rules-per-rule-group=20
+        - -ruler.ring.store=memberlist
+        - -ruler.rule-path=/rules
+        - -runtime-config.file=/etc/mimir/overrides.yaml
+        - -server.grpc-max-recv-msg-size-bytes=10485760
+        - -server.grpc-max-send-msg-size-bytes=10485760
+        - -server.grpc.keepalive.min-time-between-pings=10s
+        - -server.grpc.keepalive.ping-without-stream-allowed=true
+        - -server.http-listen-port=8080
+        - -store-gateway.sharding-ring.prefix=
+        - -store-gateway.sharding-ring.replication-factor=3
+        - -store-gateway.sharding-ring.store=memberlist
+        - -store.max-query-length=768h
+        - -target=ruler
+        image: grafana/mimir:2.0.0
+        imagePullPolicy: IfNotPresent
+        name: ruler
+        ports:
+        - containerPort: 8080
+          name: http-metrics
+        - containerPort: 9095
+          name: grpc
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 15
+          timeoutSeconds: 1
+        resources:
+          limits:
+            cpu: "16"
+            memory: 16Gi
+          requests:
+            cpu: "1"
+            memory: 6Gi
+        volumeMounts:
+        - mountPath: /etc/mimir
+          name: overrides
+      terminationGracePeriodSeconds: 600
+      volumes:
+      - configMap:
+          name: overrides
+        name: overrides
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  labels:
+    name: alertmanager
+  name: alertmanager
+  namespace: default
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      name: alertmanager
+  serviceName: alertmanager
+  template:
+    metadata:
+      labels:
+        name: alertmanager
+    spec:
+      containers:
+      - args:
+        - -alertmanager-storage.backend=gcs
+        - -alertmanager-storage.gcs.bucket-name=alerts-bucket
+        - -alertmanager.sharding-ring.consul.hostname=consul.default.svc.cluster.local:8500
+        - -alertmanager.sharding-ring.replication-factor=3
+        - -alertmanager.sharding-ring.store=consul
+        - -alertmanager.storage.path=/data
+        - -alertmanager.web.external-url=http://test/alertmanager
+        - -runtime-config.file=/etc/mimir/overrides.yaml
+        - -server.grpc.keepalive.min-time-between-pings=10s
+        - -server.grpc.keepalive.ping-without-stream-allowed=true
+        - -server.http-listen-port=8080
+        - -target=alertmanager
+        env:
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        image: grafana/mimir:2.0.0
+        imagePullPolicy: IfNotPresent
+        name: alertmanager
+        ports:
+        - containerPort: 8080
+          name: http-metrics
+        - containerPort: 9095
+          name: grpc
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 15
+          timeoutSeconds: 1
+        resources:
+          limits:
+            memory: 15Gi
+          requests:
+            cpu: "2"
+            memory: 10Gi
+        volumeMounts:
+        - mountPath: /data
+          name: alertmanager-data
+        - mountPath: /etc/mimir
+          name: overrides
+      securityContext:
+        runAsUser: 0
+      terminationGracePeriodSeconds: 900
+      volumes:
+      - configMap:
+          name: overrides
+        name: overrides
+  updateStrategy:
+    type: RollingUpdate
+  volumeClaimTemplates:
+  - apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata:
+      name: alertmanager-data
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      resources:
+        requests:
+          storage: 100Gi
+---
+apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   labels:
@@ -896,6 +1267,7 @@ spec:
   template:
     metadata:
       labels:
+        gossip_ring_member: "true"
         name: compactor
     spec:
       containers:
@@ -912,13 +1284,15 @@ spec:
         - -compactor.deletion-delay=2h
         - -compactor.max-closing-blocks-concurrency=2
         - -compactor.max-opening-blocks-concurrency=4
-        - -compactor.ring.consul.hostname=consul.default.svc.cluster.local:8500
         - -compactor.ring.prefix=
-        - -compactor.ring.store=consul
+        - -compactor.ring.store=memberlist
         - -compactor.ring.wait-stability-min-duration=1m
         - -compactor.split-and-merge-shards=0
         - -compactor.split-groups=1
         - -compactor.symbols-flushers-concurrency=4
+        - -memberlist.abort-if-join-fails=false
+        - -memberlist.bind-port=7946
+        - -memberlist.join=gossip-ring.default.svc.cluster.local:7946
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
@@ -932,6 +1306,8 @@ spec:
           name: http-metrics
         - containerPort: 9095
           name: grpc
+        - containerPort: 7946
+          name: gossip-ring
         readinessProbe:
           httpGet:
             path: /ready
@@ -988,6 +1364,7 @@ spec:
   template:
     metadata:
       labels:
+        gossip_ring_member: "true"
         name: ingester
     spec:
       affinity:
@@ -1008,16 +1385,18 @@ spec:
         - -distributor.health-check-ingesters=true
         - -ingester.max-global-series-per-metric=20000
         - -ingester.max-global-series-per-user=150000
-        - -ingester.ring.consul.hostname=consul.default.svc.cluster.local:8500
         - -ingester.ring.heartbeat-period=15s
         - -ingester.ring.heartbeat-timeout=10m
         - -ingester.ring.num-tokens=512
         - -ingester.ring.prefix=
         - -ingester.ring.readiness-check-ring-health=false
         - -ingester.ring.replication-factor=3
-        - -ingester.ring.store=consul
+        - -ingester.ring.store=memberlist
         - -ingester.ring.tokens-file-path=/data/tokens
         - -ingester.ring.unregister-on-shutdown=true
+        - -memberlist.abort-if-join-fails=false
+        - -memberlist.bind-port=7946
+        - -memberlist.join=gossip-ring.default.svc.cluster.local:7946
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc-max-concurrent-streams=10000
         - -server.grpc-max-recv-msg-size-bytes=10485760
@@ -1034,6 +1413,8 @@ spec:
           name: http-metrics
         - containerPort: 9095
           name: grpc
+        - containerPort: 7946
+          name: gossip-ring
         readinessProbe:
           httpGet:
             path: /ready
@@ -1302,6 +1683,7 @@ spec:
   template:
     metadata:
       labels:
+        gossip_ring_member: "true"
         name: store-gateway
     spec:
       containers:
@@ -1333,14 +1715,16 @@ spec:
         - -blocks-storage.bucket-store.sync-dir=/data/tsdb
         - -blocks-storage.bucket-store.sync-interval=15m
         - -blocks-storage.gcs.bucket-name=blocks-bucket
+        - -memberlist.abort-if-join-fails=false
+        - -memberlist.bind-port=7946
+        - -memberlist.join=gossip-ring.default.svc.cluster.local:7946
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
-        - -store-gateway.sharding-ring.consul.hostname=consul.default.svc.cluster.local:8500
         - -store-gateway.sharding-ring.prefix=
         - -store-gateway.sharding-ring.replication-factor=3
-        - -store-gateway.sharding-ring.store=consul
+        - -store-gateway.sharding-ring.store=memberlist
         - -store-gateway.sharding-ring.tokens-file-path=/data/tokens
         - -store-gateway.sharding-ring.wait-stability-min-duration=1m
         - -target=store-gateway
@@ -1352,6 +1736,8 @@ spec:
           name: http-metrics
         - containerPort: 9095
           name: grpc
+        - containerPort: 7946
+          name: gossip-ring
         readinessProbe:
           httpGet:
             path: /ready

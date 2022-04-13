@@ -58,7 +58,7 @@
                   "renderer": "flot",
                   "seriesOverrides": [ ],
                   "spaceLength": 10,
-                  "span": 6,
+                  "span": 3,
                   "stack": true,
                   "steppedLine": false,
                   "targets": [
@@ -154,7 +154,7 @@
                   "renderer": "flot",
                   "seriesOverrides": [ ],
                   "spaceLength": 10,
-                  "span": 6,
+                  "span": 3,
                   "stack": false,
                   "steppedLine": false,
                   "targets": [
@@ -203,6 +203,455 @@
                         "show": false
                      }
                   ]
+               },
+               {
+                  "aliasColors": { },
+                  "bars": false,
+                  "dashLength": 10,
+                  "dashes": false,
+                  "datasource": "$datasource",
+                  "description": "### Longest time since last successful run\nDisplays the amount of time since the most recent successful execution\nof the compactor.\nThe value shown will be for the compactor replica that has the longest time since its\nlast successful run.\nThe table to the right shows a summary for all compactor replicas.\n\nIf there is no time value, one of the following messages might appear:\n\n- If you see \"No compactor data\" in this panel, that means that no compactors are active yet.\n\n- If you see \"No successful runs\" in this panel, that means that compactors are active, but none\n  of them were successfully executed yet.\n\nThese might be expected - for example, if you just recently restarted your compactors,\nthey might not have had a chance to complete their first compaction run.\nHowever, if these messages persist, you should check the health of your compactors.\n\n",
+                  "fieldConfig": {
+                     "defaults": {
+                        "color": {
+                           "mode": "thresholds"
+                        },
+                        "decimals": 1,
+                        "noValue": "No compactor data",
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "s"
+                     },
+                     "overrides": [
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "Last run"
+                           },
+                           "properties": [
+                              {
+                                 "id": "custom.width",
+                                 "value": 74
+                              },
+                              {
+                                 "id": "mappings",
+                                 "value": [
+                                    {
+                                       "options": {
+                                          "from": "-Infinity",
+                                          "result": {
+                                             "color": "text",
+                                             "text": "No successful runs since startup yet"
+                                          },
+                                          "to": 0
+                                       },
+                                       "type": "range"
+                                    }
+                                 ]
+                              },
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "mode": "thresholds"
+                                 }
+                              },
+                              {
+                                 "id": "thresholds",
+                                 "value": {
+                                    "mode": "absolute",
+                                    "steps": [
+                                       {
+                                          "color": "green",
+                                          "value": 0
+                                       },
+                                       {
+                                          "color": "yellow",
+                                          "value": 7200
+                                       },
+                                       {
+                                          "color": "orange",
+                                          "value": 21600
+                                       },
+                                       {
+                                          "color": "red",
+                                          "value": 43200
+                                       }
+                                    ]
+                                 }
+                              }
+                           ]
+                        }
+                     ]
+                  },
+                  "fill": 1,
+                  "id": 3,
+                  "legend": {
+                     "avg": false,
+                     "current": false,
+                     "max": false,
+                     "min": false,
+                     "show": true,
+                     "total": false,
+                     "values": false
+                  },
+                  "lines": true,
+                  "linewidth": 1,
+                  "links": [ ],
+                  "nullPointMode": "null as zero",
+                  "options": {
+                     "reduceOptions": {
+                        "calcs": [
+                           "first"
+                        ],
+                        "fields": "/^Last run$/",
+                        "values": false
+                     },
+                     "textMode": "value"
+                  },
+                  "percentage": false,
+                  "pointradius": 5,
+                  "points": false,
+                  "renderer": "flot",
+                  "seriesOverrides": [ ],
+                  "spaceLength": 10,
+                  "span": 3,
+                  "stack": false,
+                  "steppedLine": false,
+                  "targets": [
+                     {
+                        "expr": "max by(pod)\n(\n  (time() * (max_over_time(cortex_compactor_last_successful_run_timestamp_seconds{cluster=~\"$cluster\", job=~\"($namespace)/(compactor.*|cortex|mimir)\"}[1h]) !=bool 0))\n  -\n  max_over_time(cortex_compactor_last_successful_run_timestamp_seconds{cluster=~\"$cluster\", job=~\"($namespace)/(compactor.*|cortex|mimir)\"}[1h])\n)\n",
+                        "format": "table",
+                        "instant": true,
+                        "interval": "",
+                        "intervalFactor": null,
+                        "legendFormat": "",
+                        "legendLink": null,
+                        "step": null
+                     }
+                  ],
+                  "thresholds": [ ],
+                  "timeFrom": null,
+                  "timeShift": null,
+                  "title": "Longest time since last successful run",
+                  "tooltip": {
+                     "shared": false,
+                     "sort": 0,
+                     "value_type": "individual"
+                  },
+                  "transformations": [
+                     {
+                        "id": "organize",
+                        "options": {
+                           "renameByName": {
+                              "Value": "Last run",
+                              "pod": "Compactor"
+                           }
+                        }
+                     },
+                     {
+                        "id": "calculateField",
+                        "options": {
+                           "alias": "Status",
+                           "binary": {
+                              "left": "Last run",
+                              "operator": "*",
+                              "right": 1
+                           },
+                           "mode": "binary",
+                           "replaceFields": false
+                        }
+                     },
+                     {
+                        "id": "sortBy",
+                        "options": {
+                           "sort": [
+                              {
+                                 "desc": true,
+                                 "field": "Last run"
+                              }
+                           ]
+                        }
+                     }
+                  ],
+                  "type": "stat",
+                  "xaxis": {
+                     "buckets": null,
+                     "mode": "time",
+                     "name": null,
+                     "show": true,
+                     "values": [ ]
+                  },
+                  "yaxes": [
+                     {
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": 0,
+                        "show": true
+                     },
+                     {
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": null,
+                        "show": false
+                     }
+                  ]
+               },
+               {
+                  "aliasColors": { },
+                  "bars": false,
+                  "dashLength": 10,
+                  "dashes": false,
+                  "datasource": "$datasource",
+                  "description": "### Last successful run per-compactor replica\nDisplays the compactor replicas, and for each, shows how long it has been since\nits last successful compaction run.\n\nThe value in the status column is based on how long it has been since the last successful compaction.\n\n- Okay: less than 2 hours\n- Delayed: more than 2 hours\n- Late: more than 6 hours\n- Very late: more than 12 hours\n\nIf the status of any compactor replicas are *Late* or *Very late*, check their health.\n\n",
+                  "fieldConfig": {
+                     "overrides": [
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "Status"
+                           },
+                           "properties": [
+                              {
+                                 "id": "custom.displayMode",
+                                 "value": "color-background"
+                              },
+                              {
+                                 "id": "mappings",
+                                 "value": [
+                                    {
+                                       "options": {
+                                          "from": "-Infinity",
+                                          "result": {
+                                             "color": "transparent",
+                                             "text": "N/A"
+                                          },
+                                          "to": 0
+                                       },
+                                       "type": "range"
+                                    },
+                                    {
+                                       "options": {
+                                          "from": 0,
+                                          "result": {
+                                             "color": "green",
+                                             "text": "Ok"
+                                          },
+                                          "to": 7200
+                                       },
+                                       "type": "range"
+                                    },
+                                    {
+                                       "options": {
+                                          "from": 7200,
+                                          "result": {
+                                             "color": "yellow",
+                                             "text": "Delayed"
+                                          },
+                                          "to": 21600
+                                       },
+                                       "type": "range"
+                                    },
+                                    {
+                                       "options": {
+                                          "from": 21600,
+                                          "result": {
+                                             "color": "orange",
+                                             "text": "Late"
+                                          },
+                                          "to": 43200
+                                       },
+                                       "type": "range"
+                                    },
+                                    {
+                                       "options": {
+                                          "from": 43200,
+                                          "result": {
+                                             "color": "red",
+                                             "text": "Very late"
+                                          },
+                                          "to": "Infinity"
+                                       },
+                                       "type": "range"
+                                    },
+                                    {
+                                       "options": {
+                                          "match": "null+nan",
+                                          "result": {
+                                             "color": "transparent",
+                                             "text": "Unknown"
+                                          }
+                                       },
+                                       "type": "special"
+                                    }
+                                 ]
+                              },
+                              {
+                                 "id": "custom.width",
+                                 "value": 86
+                              },
+                              {
+                                 "id": "custom.align",
+                                 "value": "center"
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "Last run"
+                           },
+                           "properties": [
+                              {
+                                 "id": "unit",
+                                 "value": "s"
+                              },
+                              {
+                                 "id": "custom.width",
+                                 "value": 74
+                              },
+                              {
+                                 "id": "mappings",
+                                 "value": [
+                                    {
+                                       "options": {
+                                          "from": "-Infinity",
+                                          "result": {
+                                             "text": "Never"
+                                          },
+                                          "to": 0
+                                       },
+                                       "type": "range"
+                                    }
+                                 ]
+                              }
+                           ]
+                        }
+                     ]
+                  },
+                  "fill": 1,
+                  "id": 4,
+                  "legend": {
+                     "avg": false,
+                     "current": false,
+                     "max": false,
+                     "min": false,
+                     "show": true,
+                     "total": false,
+                     "values": false
+                  },
+                  "lines": true,
+                  "linewidth": 1,
+                  "links": [ ],
+                  "nullPointMode": "null as zero",
+                  "percentage": false,
+                  "pointradius": 5,
+                  "points": false,
+                  "renderer": "flot",
+                  "seriesOverrides": [ ],
+                  "spaceLength": 10,
+                  "span": 3,
+                  "stack": false,
+                  "steppedLine": false,
+                  "targets": [
+                     {
+                        "expr": "max by(pod)\n(\n  (time() * (max_over_time(cortex_compactor_last_successful_run_timestamp_seconds{cluster=~\"$cluster\", job=~\"($namespace)/(compactor.*|cortex|mimir)\"}[1h]) !=bool 0))\n  -\n  max_over_time(cortex_compactor_last_successful_run_timestamp_seconds{cluster=~\"$cluster\", job=~\"($namespace)/(compactor.*|cortex|mimir)\"}[1h])\n)\n",
+                        "format": "table",
+                        "instant": true,
+                        "interval": "15s",
+                        "intervalFactor": 2,
+                        "legendFormat": "Last run",
+                        "legendLink": null,
+                        "step": 10
+                     }
+                  ],
+                  "thresholds": [ ],
+                  "timeFrom": null,
+                  "timeShift": null,
+                  "title": "Last successful run per-compactor replica",
+                  "tooltip": {
+                     "shared": false,
+                     "sort": 0,
+                     "value_type": "individual"
+                  },
+                  "transformations": [
+                     {
+                        "id": "organize",
+                        "options": {
+                           "renameByName": {
+                              "Value": "Last run",
+                              "pod": "Compactor"
+                           }
+                        }
+                     },
+                     {
+                        "id": "calculateField",
+                        "options": {
+                           "alias": "Status",
+                           "binary": {
+                              "left": "Last run",
+                              "operator": "*",
+                              "right": 1
+                           },
+                           "mode": "binary",
+                           "replaceFields": false
+                        }
+                     },
+                     {
+                        "id": "sortBy",
+                        "options": {
+                           "sort": [
+                              {
+                                 "desc": true,
+                                 "field": "Last run"
+                              }
+                           ]
+                        }
+                     },
+                     {
+                        "id": "filterFieldsByName",
+                        "options": {
+                           "include": {
+                              "names": [
+                                 "Compactor",
+                                 "Last run",
+                                 "Status"
+                              ]
+                           }
+                        }
+                     }
+                  ],
+                  "type": "table",
+                  "xaxis": {
+                     "buckets": null,
+                     "mode": "time",
+                     "name": null,
+                     "show": true,
+                     "values": [ ]
+                  },
+                  "yaxes": [
+                     {
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": 0,
+                        "show": true
+                     },
+                     {
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": null,
+                        "show": false
+                     }
+                  ]
                }
             ],
             "repeat": null,
@@ -224,7 +673,7 @@
                   "datasource": "$datasource",
                   "description": "### TSDB compactions / sec\nRate of TSDB compactions. Single TSDB compaction takes one or more input blocks and produces one or more (during \"split\" phase) output blocks.\n\n",
                   "fill": 1,
-                  "id": 3,
+                  "id": 5,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -302,7 +751,7 @@
                   "datasource": "$datasource",
                   "description": "### TSDB compaction duration\nDisplay the amount of time that it has taken to run a single TSDB compaction.\n\n",
                   "fill": 1,
-                  "id": 4,
+                  "id": 6,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -409,7 +858,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 5,
+                  "id": 7,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -487,7 +936,7 @@
                   "datasource": "$datasource",
                   "description": "### Tenants with largest number of blocks\nThe 10 tenants with the largest number of blocks.\n\n",
                   "fill": 1,
-                  "id": 6,
+                  "id": 8,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -576,7 +1025,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 7,
+                  "id": 9,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -656,7 +1105,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 10,
-                  "id": 8,
+                  "id": 10,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -757,7 +1206,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 10,
-                  "id": 9,
+                  "id": 11,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -843,7 +1292,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 10,
+                  "id": 12,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -950,7 +1399,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 10,
-                  "id": 11,
+                  "id": 13,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -1027,7 +1476,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 12,
+                  "id": 14,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -1104,7 +1553,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 13,
+                  "id": 15,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -1199,7 +1648,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 14,
+                  "id": 16,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -1306,7 +1755,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 15,
+                  "id": 17,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -1401,7 +1850,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 16,
+                  "id": 18,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -1496,7 +1945,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 17,
+                  "id": 19,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -1591,7 +2040,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 18,
+                  "id": 20,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -1706,7 +2155,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 10,
-                  "id": 19,
+                  "id": 21,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -1783,7 +2232,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 20,
+                  "id": 22,
                   "legend": {
                      "avg": false,
                      "current": false,

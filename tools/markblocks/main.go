@@ -24,9 +24,10 @@ import (
 )
 
 type config struct {
-	bucket   bucket.Config
-	tenantID string
-	dryRun   bool
+	bucket             bucket.Config
+	tenantID           string
+	dryRun             bool
+	allowPartialBlocks bool
 
 	mark    string
 	details string
@@ -42,7 +43,7 @@ func main() {
 	cfg := parseFlags()
 	marker, filename := createMarker(cfg.mark, logger, cfg.details)
 	ulids := validateTenantAndBlocks(logger, cfg.tenantID, cfg.blocks)
-	uploadMarks(ctx, logger, ulids, marker, filename, cfg.dryRun, cfg.bucket, cfg.tenantID)
+	uploadMarks(ctx, logger, ulids, marker, filename, cfg.dryRun, cfg.bucket, cfg.tenantID, cfg.allowPartialBlocks)
 }
 
 func parseFlags() config {
@@ -63,6 +64,7 @@ func parseFlags() config {
 		f.BoolVar(&cfg.dryRun, "dry-run", false, "Don't upload the markers generated, just print the intentions.")
 		f.StringVar(&cfg.details, "details", "", "Details field of the uploaded mark. Recommended. (default empty).")
 		f.BoolVar(&cfg.helpAll, "help-all", false, "Show help for all flags, including the bucket backend configuration.")
+		f.BoolVar(&cfg.allowPartialBlocks, "allow-partial", false, "Allow upload of marks into partial blocks (ie. blocks without meta.json). Only useful for deletion mark.")
 	}
 
 	commonUsageHeader := func() {
@@ -161,30 +163,51 @@ func uploadMarks(
 	logger log.Logger,
 	ulids []ulid.ULID,
 	mark func(b ulid.ULID) ([]byte, error),
-	filename string,
+	markFilename string,
 	dryRun bool,
 	cfg bucket.Config,
 	tenantID string,
+	allowPartialBlocks bool,
 ) {
 	userBucketWithGlobalMarkers := createUserBucketWithGlobalMarkers(ctx, logger, cfg, tenantID)
 
 	for _, b := range ulids {
-		blockMetaFilename := fmt.Sprintf("%s/meta.json", b)
+		blockFiles := map[string]bool{}
+		// List all files in the blocks directory. We don't need recursive listing: if any segment
+		// files (chunks/0000xxx) are present, we will find "chunks" during iter.
+		err := userBucketWithGlobalMarkers.Iter(ctx, b.String(), func(fn string) error {
+			if !strings.HasPrefix(fn, b.String()+"/") {
+				return nil
+			}
 
-		if exists, err := userBucketWithGlobalMarkers.Exists(ctx, blockMetaFilename); err != nil {
-			level.Error(logger).Log("msg", "Can't check meta.json existence.", "block", b, "filename", blockMetaFilename, "err", err)
+			fn = strings.TrimPrefix(fn, b.String()+"/")
+			fn = strings.TrimSuffix(fn, "/")
+
+			blockFiles[fn] = true
+			return nil
+		})
+		if err != nil {
+			if userBucketWithGlobalMarkers.IsObjNotFoundErr(err) {
+				level.Warn(logger).Log("msg", "Block does not exist", "block", b, "err", err)
+				continue
+			}
+
+			level.Error(logger).Log("msg", "Failed to list files for block.", "block", b, "err", err)
 			os.Exit(1)
-		} else if !exists {
-			level.Info(logger).Log("msg", "Block does not exist, skipping.", "block", b)
+		}
+
+		if len(blockFiles) == 0 {
+			level.Warn(logger).Log("msg", "Block does not exist, skipping.", "block", b)
 			continue
 		}
 
-		blockMarkFilename := fmt.Sprintf("%s/%s", b, filename)
-		if exists, err := userBucketWithGlobalMarkers.Exists(ctx, blockMarkFilename); err != nil {
-			level.Error(logger).Log("msg", "Can't check mark file existence.", "block", b, "filename", blockMarkFilename, "err", err)
-			os.Exit(1)
-		} else if exists {
-			level.Info(logger).Log("msg", "Mark already exists, skipping.", "block", b)
+		if !blockFiles[metadata.MetaFilename] && !allowPartialBlocks {
+			level.Warn(logger).Log("msg", "Block's meta.json file does not exist, skipping.", "block", b)
+			continue
+		}
+
+		if blockFiles[markFilename] {
+			level.Warn(logger).Log("msg", "Mark already exists, skipping.", "block", b)
 			continue
 		}
 
@@ -193,12 +216,14 @@ func uploadMarks(
 			level.Error(logger).Log("msg", "Can't create mark.", "block", b, "err", err)
 			os.Exit(1)
 		}
+
+		blockMarkPath := fmt.Sprintf("%s/%s", b, markFilename)
 		if dryRun {
-			logger.Log("msg", "Dry-run, not uploading marker.", "block", b, "marker", blockMarkFilename, "data", string(data))
+			level.Info(logger).Log("msg", "Dry-run, not uploading marker.", "block", b, "marker", blockMarkPath, "data", string(data))
 			continue
 		}
 
-		if err := userBucketWithGlobalMarkers.Upload(ctx, blockMarkFilename, bytes.NewReader(data)); err != nil {
+		if err := userBucketWithGlobalMarkers.Upload(ctx, blockMarkPath, bytes.NewReader(data)); err != nil {
 			level.Error(logger).Log("msg", "Can't upload mark.", "block", b, "err", err)
 			os.Exit(1)
 		}

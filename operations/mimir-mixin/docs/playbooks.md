@@ -466,15 +466,9 @@ How to **investigate**:
         - For each failed compaction job
           - Pick one result block (doesn't matter which)
           - Find source blocks for the compaction job: search for `msg="compact blocks"` and a mention of the result block ID.
-          - Upload a JSON file to the markers directory of the compactor: `<tenant_id>/markers/<faulty_source_block>-no-compact-mark.json`. The format of the file follows. Replace the `id` and `no_compact_time`:
-            ```json
-            {
-              "id": "01FYAFBE9F0VH6555R3J1CFPHP",
-              "version": 1,
-              "details": "When compacting with other blocks is leading to out-of-order chunks",
-              "no_compact_time": 1647514725,
-              "reason": "manual"
-            }
+          - Mark the source blocks for no compaction (in this example the object storage backend is GCS):
+            ```
+            ./tools/markblocks/markblocks -backend gcs -gcs.bucket-name <bucket> -mark no-compact -tenant <tenant-id> -details "Leading to out-of-order chunks when compacting with other blocks" <block-1> <block-2>...
             ```
 
 ### MimirCompactorSkippedBlocksWithOutOfOrderChunks
@@ -529,13 +523,13 @@ How to **investigate**:
 1. Pick a block and note its ID (`block` field in log entry) and tenant ID (`org_id` in log entry)
 1. Find the bucket used by the Mimir cell, such as checking the configured `blocks_storage_bucket_name` if you are using Jsonnet.
 1. Find out which Mimir component operated on the block last (e.g. uploaded by ingester/compactor, or deleted by compactor)
-   1. Determine when the partial block was created: `gsutil ls -l gs://${BUCKET}/${TENANT_ID}/${BLOCK_ID}`
+   1. Determine when the partial block was uploaded: `gsutil ls -l gs://${BUCKET}/${TENANT_ID}/${BLOCK_ID}`. Alternatively you can use `ulidtime` command from Mimir tools directory `ulidtime ${BLOCK_ID}` to find block creation time.
    1. Search in the logs around that time to find the log entry from when the compactor created the block ("compacted blocks" for log message)
    1. From the compactor log entry you found, pick the job ID from the `groupKey` field, f.ex. `0@9748515562602778029-merge--1645711200000-1645718400000`
    1. Then search the logs for the job ID and look for an entry with the message "compaction job finished" and `false` for the `success` field, this will show that the compactor failed uploading the block
 1. Investigate if it was a partial upload or partial delete
-1. If it was a partial delete or an upload failed by a compactor you can safely delete the block from the bucket manually: `gsutil rm -r gs://${BUCKET}/${TENANT_ID}/${BLOCK_ID}`
-1. If it was a failed upload by an ingester, but not later retried (ingesters are expected to retry uploads until succeed), further investigate
+   1. If it was a partial delete or an upload failed by a compactor you can safely mark the block for deletion, and compactor will delete the block. You can use `markblocks` command from Mimir tools directory: `markblocks -mark deletion -allow-partial -tenant <tenant> <blockID>` with correct backend (eg. GCS) configuration.
+   1. If it was a failed upload by an ingester, but not later retried (ingesters are expected to retry uploads until succeed), further investigate
 
 ### MimirQueriesIncorrect
 
@@ -918,6 +912,48 @@ How to **investigate**:
   # Assuming KEDA is running in a dedicated namespace "keda":
   kubectl logs -n keda deployment/keda-operator-metrics-apiserver
   ```
+
+### MimirContinuousTestNotRunningOnWrites
+
+This alert fires when `mimir-continuous-test` is deployed in the Mimir cluster, and continuous testing is not effectively running because writes are failing.
+
+How it **works**:
+
+- `mimir-continuous-test` is an optional testing tool that can be deployed in the Mimir cluster
+- The tool runs some tests against the Mimir cluster itself at regular intervals
+- This alert fires if the tool is unable to properly run the tests, and not if the tool assertions don't match the expected results
+
+How to **investigate**:
+
+- Check continuous test logs to find out more details about the failure:
+  ```
+  kubectl logs -n <namespace> deployment/continuous-test
+  ```
+
+### MimirContinuousTestNotRunningOnReads
+
+This alert is like [`MimirContinuousTestNotRunningOnWrites`](#MimirContinuousTestNotRunningOnWrites) but it fires when queries are failing.
+
+### MimirContinuousTestFailed
+
+This alert fires when `mimir-continuous-test` is deployed in the Mimir cluster, and continuous testing tool's assertions don't match the expected results.
+When this alert fires there could be a bug in Mimir that should be investigated as soon as possible.
+
+How it **works**:
+
+- `mimir-continuous-test` is an optional testing tool that can be deployed in the Mimir cluster
+- The tool runs some tests against the Mimir cluster itself at regular intervals
+- This alert fires if the tool assertions don't match the expected results
+
+How to **investigate**:
+
+- Check continuous test logs to find out more details about the failed assertions:
+  ```
+  kubectl logs -n <namespace> deployment/continuous-test
+  ```
+- This alert should always be actionable. There are two possible outcomes:
+  1. The alert fired because of a bug in Mimir: fix it.
+  1. The alert fired because of a bug or edge case in the continuous test tool, causing a false positive: fix it.
 
 ## Mimir routes by path
 

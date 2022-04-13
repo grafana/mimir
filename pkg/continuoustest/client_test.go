@@ -120,3 +120,8 @@ func (m *ClientMock) QueryRange(ctx context.Context, query string, start, end ti
 	args := m.Called(ctx, query, start, end, step)
 	return args.Get(0).(model.Matrix), args.Error(1)
 }
+
+func (m *ClientMock) Query(ctx context.Context, query string, ts time.Time) (model.Vector, error) {
+	args := m.Called(ctx, query, ts)
+	return args.Get(0).(model.Vector), args.Error(1)
+}
