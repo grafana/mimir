@@ -49,6 +49,7 @@
   - `MimirContinuousTestNotRunningOnWrites`
   - `MimirContinuousTestNotRunningOnReads`
   - `MimirContinuousTestFailed`
+* [ENHANCEMENT] Added `per_cluster_label` support to allow to change the label name used to differentiate between Kubernetes clusters. #1651
 * [BUGFIX] Dashboards: Fix "Failed evaluation rate" panel on Tenants dashboard. #1629
 
 ### Jsonnet

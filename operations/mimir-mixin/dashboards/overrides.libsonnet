@@ -13,7 +13,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           datasource: '${datasource}',
           targets: [
             {
-              expr: 'max by(limit_name) (cortex_limits_defaults{cluster=~"$cluster",namespace=~"$namespace"})',
+              expr: 'max by(limit_name) (cortex_limits_defaults{%s=~"$cluster",namespace=~"$namespace"})' % $._config.per_cluster_label,
               instant: true,
               legendFormat: '',
               refId: 'A',
@@ -69,7 +69,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           datasource: '${datasource}',
           targets: [
             {
-              expr: 'max by(user, limit_name) (cortex_limits_overrides{cluster=~"$cluster",namespace=~"$namespace",user=~"${tenant_id}"})',
+              expr: 'max by(user, limit_name) (cortex_limits_overrides{%s=~"$cluster",namespace=~"$namespace",user=~"${tenant_id}"})' % $._config.per_cluster_label,
               instant: true,
               legendFormat: '',
               refId: 'A',

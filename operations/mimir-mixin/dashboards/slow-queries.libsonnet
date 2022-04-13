@@ -16,7 +16,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           targets: [
             {
               // Filter out the remote read endpoint.
-              expr: '{cluster=~"$cluster",namespace=~"$namespace",name=~"query-frontend.*"} |= "query stats" != "/api/v1/read" | logfmt | org_id=~"${tenant_id}" | response_time > ${min_duration}',
+              expr: '{%s=~"$cluster",namespace=~"$namespace",name=~"query-frontend.*"} |= "query stats" != "/api/v1/read" | logfmt | org_id=~"${tenant_id}" | response_time > ${min_duration}' % $._config.per_cluster_label,
               instant: false,
               legendFormat: '',
               range: true,

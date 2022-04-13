@@ -41,11 +41,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.tablePanel([
           |||
             sort_desc(
-              cluster_namespace_deployment_reason:required_replicas:count{cluster=~"$cluster", namespace=~"$namespace"}
+              %s_deployment_reason:required_replicas:count{%s}
                 > ignoring(reason) group_left
-              cluster_namespace_deployment:actual_replicas:count{cluster=~"$cluster", namespace=~"$namespace"}
+              %s_deployment:actual_replicas:count{%s}
             )
-          |||,
+          ||| % [$._config.alert_aggregation_rule_prefix, $.namespaceMatcher(), $._config.alert_aggregation_rule_prefix, $.namespaceMatcher()],
         ], {
           __name__: { alias: 'Cluster', type: 'hidden' },
           cluster: { alias: 'Cluster' },

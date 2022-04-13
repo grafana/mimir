@@ -58,5 +58,14 @@
           ),
         ),
       ),
+    alert_aggregation_rule_prefix:
+      std.join(
+        '_',
+        // Split the configured labels by comma and remove whitespaces.
+        std.map(
+          function(l) std.strReplace(l, ' ', ''),
+          std.split($._config.alert_aggregation_labels, ',')
+        ),
+      ),
   },
 }

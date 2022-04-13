@@ -116,7 +116,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       .addPanel(
         $.panel('Per route p99 latency') +
         $.queryPanel(
-          'histogram_quantile(0.99, sum by (route, le) (cluster_job_route:cortex_request_duration_seconds_bucket:sum_rate{%s, route=~"%s"}))' % [$.jobMatcher($._config.job_names.gateway), ruler_config_api_routes_re],
+          'histogram_quantile(0.99, sum by (route, le) (%s_job_route:cortex_request_duration_seconds_bucket:sum_rate{%s, route=~"%s"}))' % [$._config.per_cluster_label, $.jobMatcher($._config.job_names.gateway), ruler_config_api_routes_re],
           '{{ route }}'
         ) +
         { yaxes: $.yaxes('s') }
