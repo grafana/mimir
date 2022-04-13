@@ -28,8 +28,8 @@ func TestWriteReadSeriesTest_Run(t *testing.T) {
 	t.Run("should write series with current timestamp if it's already aligned to write interval", func(t *testing.T) {
 		client := &ClientMock{}
 		client.On("WriteSeries", mock.Anything, mock.Anything).Return(200, nil)
-		client.On("QueryRange", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Matrix{}, nil)
-		client.On("Query", mock.Anything, mock.Anything, mock.Anything).Return(model.Vector{}, nil)
+		client.On("QueryRange", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Matrix{}, nil)
+		client.On("Query", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Vector{}, nil)
 
 		reg := prometheus.NewPedanticRegistry()
 		test := NewWriteReadSeriesTest(cfg, client, logger, reg)
@@ -41,11 +41,11 @@ func TestWriteReadSeriesTest_Run(t *testing.T) {
 		client.AssertCalled(t, "WriteSeries", mock.Anything, generateSineWaveSeries(metricName, now, 2))
 		assert.Equal(t, int64(1000), test.lastWrittenTimestamp.Unix())
 
-		client.AssertNumberOfCalls(t, "QueryRange", 2)
-		client.AssertCalled(t, "QueryRange", mock.Anything, "sum(mimir_continuous_test_sine_wave)", time.Unix(1000, 0), time.Unix(1000, 0), writeInterval)
+		client.AssertNumberOfCalls(t, "QueryRange", 4)
+		client.AssertCalled(t, "QueryRange", mock.Anything, "sum(mimir_continuous_test_sine_wave)", time.Unix(1000, 0), time.Unix(1000, 0), writeInterval, mock.Anything)
 
-		client.AssertNumberOfCalls(t, "Query", 2)
-		client.AssertCalled(t, "Query", mock.Anything, "sum(mimir_continuous_test_sine_wave)", time.Unix(1000, 0))
+		client.AssertNumberOfCalls(t, "Query", 4)
+		client.AssertCalled(t, "Query", mock.Anything, "sum(mimir_continuous_test_sine_wave)", time.Unix(1000, 0), mock.Anything)
 
 		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP mimir_continuous_test_writes_total Total number of attempted write requests.
@@ -54,7 +54,7 @@ func TestWriteReadSeriesTest_Run(t *testing.T) {
 
 			# HELP mimir_continuous_test_queries_total Total number of attempted query requests.
 			# TYPE mimir_continuous_test_queries_total counter
-			mimir_continuous_test_queries_total{test="write-read-series"} 4
+			mimir_continuous_test_queries_total{test="write-read-series"} 8
 
 			# HELP mimir_continuous_test_queries_failed_total Total number of failed query requests.
 			# TYPE mimir_continuous_test_queries_failed_total counter
@@ -67,8 +67,8 @@ func TestWriteReadSeriesTest_Run(t *testing.T) {
 	t.Run("should write series with timestamp aligned to write interval", func(t *testing.T) {
 		client := &ClientMock{}
 		client.On("WriteSeries", mock.Anything, mock.Anything).Return(200, nil)
-		client.On("QueryRange", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Matrix{}, nil)
-		client.On("Query", mock.Anything, mock.Anything, mock.Anything).Return(model.Vector{}, nil)
+		client.On("QueryRange", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Matrix{}, nil)
+		client.On("Query", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Vector{}, nil)
 
 		reg := prometheus.NewPedanticRegistry()
 		test := NewWriteReadSeriesTest(cfg, client, logger, reg)
@@ -80,11 +80,11 @@ func TestWriteReadSeriesTest_Run(t *testing.T) {
 		client.AssertCalled(t, "WriteSeries", mock.Anything, generateSineWaveSeries(metricName, time.Unix(980, 0), 2))
 		assert.Equal(t, int64(980), test.lastWrittenTimestamp.Unix())
 
-		client.AssertNumberOfCalls(t, "QueryRange", 2)
-		client.AssertCalled(t, "QueryRange", mock.Anything, "sum(mimir_continuous_test_sine_wave)", time.Unix(980, 0), time.Unix(980, 0), writeInterval)
+		client.AssertNumberOfCalls(t, "QueryRange", 4)
+		client.AssertCalled(t, "QueryRange", mock.Anything, "sum(mimir_continuous_test_sine_wave)", time.Unix(980, 0), time.Unix(980, 0), writeInterval, mock.Anything)
 
-		client.AssertNumberOfCalls(t, "Query", 2)
-		client.AssertCalled(t, "Query", mock.Anything, "sum(mimir_continuous_test_sine_wave)", time.Unix(980, 0))
+		client.AssertNumberOfCalls(t, "Query", 4)
+		client.AssertCalled(t, "Query", mock.Anything, "sum(mimir_continuous_test_sine_wave)", time.Unix(980, 0), mock.Anything)
 
 		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP mimir_continuous_test_writes_total Total number of attempted write requests.
@@ -93,7 +93,7 @@ func TestWriteReadSeriesTest_Run(t *testing.T) {
 
 			# HELP mimir_continuous_test_queries_total Total number of attempted query requests.
 			# TYPE mimir_continuous_test_queries_total counter
-			mimir_continuous_test_queries_total{test="write-read-series"} 4
+			mimir_continuous_test_queries_total{test="write-read-series"} 8
 
 			# HELP mimir_continuous_test_queries_failed_total Total number of failed query requests.
 			# TYPE mimir_continuous_test_queries_failed_total counter
@@ -106,8 +106,8 @@ func TestWriteReadSeriesTest_Run(t *testing.T) {
 	t.Run("should write series from last written timestamp until now", func(t *testing.T) {
 		client := &ClientMock{}
 		client.On("WriteSeries", mock.Anything, mock.Anything).Return(200, nil)
-		client.On("QueryRange", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Matrix{}, nil)
-		client.On("Query", mock.Anything, mock.Anything, mock.Anything).Return(model.Vector{}, nil)
+		client.On("QueryRange", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Matrix{}, nil)
+		client.On("Query", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Vector{}, nil)
 
 		reg := prometheus.NewPedanticRegistry()
 		test := NewWriteReadSeriesTest(cfg, client, logger, reg)
@@ -122,11 +122,11 @@ func TestWriteReadSeriesTest_Run(t *testing.T) {
 		client.AssertCalled(t, "WriteSeries", mock.Anything, generateSineWaveSeries(metricName, time.Unix(1000, 0), 2))
 		assert.Equal(t, int64(1000), test.lastWrittenTimestamp.Unix())
 
-		client.AssertNumberOfCalls(t, "QueryRange", 2)
-		client.AssertCalled(t, "QueryRange", mock.Anything, "sum(mimir_continuous_test_sine_wave)", time.Unix(960, 0), time.Unix(1000, 0), writeInterval)
+		client.AssertNumberOfCalls(t, "QueryRange", 4)
+		client.AssertCalled(t, "QueryRange", mock.Anything, "sum(mimir_continuous_test_sine_wave)", time.Unix(960, 0), time.Unix(1000, 0), writeInterval, mock.Anything)
 
-		client.AssertNumberOfCalls(t, "Query", 2)
-		client.AssertCalled(t, "Query", mock.Anything, "sum(mimir_continuous_test_sine_wave)", time.Unix(1000, 0))
+		client.AssertNumberOfCalls(t, "Query", 4)
+		client.AssertCalled(t, "Query", mock.Anything, "sum(mimir_continuous_test_sine_wave)", time.Unix(1000, 0), mock.Anything)
 
 		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP mimir_continuous_test_writes_total Total number of attempted write requests.
@@ -135,7 +135,7 @@ func TestWriteReadSeriesTest_Run(t *testing.T) {
 
 			# HELP mimir_continuous_test_queries_total Total number of attempted query requests.
 			# TYPE mimir_continuous_test_queries_total counter
-			mimir_continuous_test_queries_total{test="write-read-series"} 4
+			mimir_continuous_test_queries_total{test="write-read-series"} 8
 
 			# HELP mimir_continuous_test_queries_failed_total Total number of failed query requests.
 			# TYPE mimir_continuous_test_queries_failed_total counter
@@ -242,10 +242,10 @@ func TestWriteReadSeriesTest_Run(t *testing.T) {
 
 		client := &ClientMock{}
 		client.On("WriteSeries", mock.Anything, mock.Anything).Return(200, nil)
-		client.On("QueryRange", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Matrix{
+		client.On("QueryRange", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Matrix{
 			{Values: []model.SamplePair{newSamplePair(now, generateSineWaveValue(now)*float64(cfg.NumSeries))}},
 		}, nil)
-		client.On("Query", mock.Anything, mock.Anything, mock.Anything).Return(model.Vector{
+		client.On("Query", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Vector{
 			{Timestamp: model.Time(now.UnixMilli()), Value: model.SampleValue(generateSineWaveValue(now) * float64(cfg.NumSeries))},
 		}, nil)
 
@@ -258,11 +258,11 @@ func TestWriteReadSeriesTest_Run(t *testing.T) {
 		client.AssertCalled(t, "WriteSeries", mock.Anything, generateSineWaveSeries(metricName, now, 2))
 		assert.Equal(t, int64(1000), test.lastWrittenTimestamp.Unix())
 
-		client.AssertNumberOfCalls(t, "QueryRange", 2)
-		client.AssertCalled(t, "QueryRange", mock.Anything, "sum(mimir_continuous_test_sine_wave)", time.Unix(1000, 0), time.Unix(1000, 0), writeInterval)
+		client.AssertNumberOfCalls(t, "QueryRange", 4)
+		client.AssertCalled(t, "QueryRange", mock.Anything, "sum(mimir_continuous_test_sine_wave)", time.Unix(1000, 0), time.Unix(1000, 0), writeInterval, mock.Anything)
 
-		client.AssertNumberOfCalls(t, "Query", 2)
-		client.AssertCalled(t, "Query", mock.Anything, "sum(mimir_continuous_test_sine_wave)", time.Unix(1000, 0))
+		client.AssertNumberOfCalls(t, "Query", 4)
+		client.AssertCalled(t, "Query", mock.Anything, "sum(mimir_continuous_test_sine_wave)", time.Unix(1000, 0), mock.Anything)
 
 		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP mimir_continuous_test_writes_total Total number of attempted write requests.
@@ -271,7 +271,7 @@ func TestWriteReadSeriesTest_Run(t *testing.T) {
 
 			# HELP mimir_continuous_test_queries_total Total number of attempted query requests.
 			# TYPE mimir_continuous_test_queries_total counter
-			mimir_continuous_test_queries_total{test="write-read-series"} 4
+			mimir_continuous_test_queries_total{test="write-read-series"} 8
 
 			# HELP mimir_continuous_test_queries_failed_total Total number of failed query requests.
 			# TYPE mimir_continuous_test_queries_failed_total counter
@@ -279,7 +279,7 @@ func TestWriteReadSeriesTest_Run(t *testing.T) {
 
 			# HELP mimir_continuous_test_query_result_checks_total Total number of query results checked for correctness.
 			# TYPE mimir_continuous_test_query_result_checks_total counter
-			mimir_continuous_test_query_result_checks_total{test="write-read-series"} 4
+			mimir_continuous_test_query_result_checks_total{test="write-read-series"} 8
 
 			# HELP mimir_continuous_test_query_result_checks_failed_total Total number of query results failed when checking for correctness.
 			# TYPE mimir_continuous_test_query_result_checks_failed_total counter
@@ -295,11 +295,11 @@ func TestWriteReadSeriesTest_Run(t *testing.T) {
 
 		client := &ClientMock{}
 		client.On("WriteSeries", mock.Anything, mock.Anything).Return(200, nil)
-		client.On("QueryRange", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Matrix{
+		client.On("QueryRange", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Matrix{
 			{Values: []model.SamplePair{{Timestamp: model.Time(now.UnixMilli()), Value: 12345}}},
 		}, nil)
 
-		client.On("Query", mock.Anything, mock.Anything, mock.Anything).Return(model.Vector{
+		client.On("Query", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Vector{
 			{Timestamp: model.Time(now.UnixMilli()), Value: 12345},
 		}, nil)
 
@@ -312,11 +312,11 @@ func TestWriteReadSeriesTest_Run(t *testing.T) {
 		client.AssertCalled(t, "WriteSeries", mock.Anything, generateSineWaveSeries(metricName, now, 2))
 		assert.Equal(t, int64(1000), test.lastWrittenTimestamp.Unix())
 
-		client.AssertNumberOfCalls(t, "QueryRange", 2)
-		client.AssertCalled(t, "QueryRange", mock.Anything, "sum(mimir_continuous_test_sine_wave)", time.Unix(1000, 0), time.Unix(1000, 0), writeInterval)
+		client.AssertNumberOfCalls(t, "QueryRange", 4)
+		client.AssertCalled(t, "QueryRange", mock.Anything, "sum(mimir_continuous_test_sine_wave)", time.Unix(1000, 0), time.Unix(1000, 0), writeInterval, mock.Anything)
 
-		client.AssertNumberOfCalls(t, "Query", 2)
-		client.AssertCalled(t, "Query", mock.Anything, "sum(mimir_continuous_test_sine_wave)", time.Unix(1000, 0))
+		client.AssertNumberOfCalls(t, "Query", 4)
+		client.AssertCalled(t, "Query", mock.Anything, "sum(mimir_continuous_test_sine_wave)", time.Unix(1000, 0), mock.Anything)
 
 		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP mimir_continuous_test_writes_total Total number of attempted write requests.
@@ -325,7 +325,7 @@ func TestWriteReadSeriesTest_Run(t *testing.T) {
 
 			# HELP mimir_continuous_test_queries_total Total number of attempted query requests.
 			# TYPE mimir_continuous_test_queries_total counter
-			mimir_continuous_test_queries_total{test="write-read-series"} 4
+			mimir_continuous_test_queries_total{test="write-read-series"} 8
 
 			# HELP mimir_continuous_test_queries_failed_total Total number of failed query requests.
 			# TYPE mimir_continuous_test_queries_failed_total counter
@@ -333,11 +333,11 @@ func TestWriteReadSeriesTest_Run(t *testing.T) {
 
 			# HELP mimir_continuous_test_query_result_checks_total Total number of query results checked for correctness.
 			# TYPE mimir_continuous_test_query_result_checks_total counter
-			mimir_continuous_test_query_result_checks_total{test="write-read-series"} 4
+			mimir_continuous_test_query_result_checks_total{test="write-read-series"} 8
 
 			# HELP mimir_continuous_test_query_result_checks_failed_total Total number of query results failed when checking for correctness.
 			# TYPE mimir_continuous_test_query_result_checks_failed_total counter
-			mimir_continuous_test_query_result_checks_failed_total{test="write-read-series"} 4
+			mimir_continuous_test_query_result_checks_failed_total{test="write-read-series"} 8
 		`),
 			"mimir_continuous_test_writes_total", "mimir_continuous_test_writes_failed_total",
 			"mimir_continuous_test_queries_total", "mimir_continuous_test_queries_failed_total",
@@ -356,7 +356,7 @@ func TestWriteReadSeriesTest_Init(t *testing.T) {
 
 	t.Run("no previously written samples found", func(t *testing.T) {
 		client := &ClientMock{}
-		client.On("QueryRange", mock.Anything, "sum(max_over_time(mimir_continuous_test_sine_wave[1s]))", now.Add(-24*time.Hour).Add(writeInterval), now, writeInterval).Return(model.Matrix{}, nil)
+		client.On("QueryRange", mock.Anything, "sum(max_over_time(mimir_continuous_test_sine_wave[1s]))", now.Add(-24*time.Hour).Add(writeInterval), now, writeInterval, mock.Anything).Return(model.Matrix{}, nil)
 
 		test := NewWriteReadSeriesTest(cfg, client, logger, nil)
 
@@ -371,7 +371,7 @@ func TestWriteReadSeriesTest_Init(t *testing.T) {
 
 	t.Run("previously written data points are in the range [-2h, -1m]", func(t *testing.T) {
 		client := &ClientMock{}
-		client.On("QueryRange", mock.Anything, "sum(max_over_time(mimir_continuous_test_sine_wave[1s]))", now.Add(-24*time.Hour).Add(writeInterval), now, writeInterval).Return(model.Matrix{{
+		client.On("QueryRange", mock.Anything, "sum(max_over_time(mimir_continuous_test_sine_wave[1s]))", now.Add(-24*time.Hour).Add(writeInterval), now, writeInterval, mock.Anything).Return(model.Matrix{{
 			Values: generateSineWaveSamplesSum(now.Add(-2*time.Hour), now.Add(-1*time.Minute), cfg.NumSeries, writeInterval),
 		}}, nil)
 
@@ -388,10 +388,10 @@ func TestWriteReadSeriesTest_Init(t *testing.T) {
 
 	t.Run("previously written data points are in the range [-36h, -1m]", func(t *testing.T) {
 		client := &ClientMock{}
-		client.On("QueryRange", mock.Anything, "sum(max_over_time(mimir_continuous_test_sine_wave[1s]))", now.Add(-24*time.Hour).Add(writeInterval), now, writeInterval).Return(model.Matrix{{
+		client.On("QueryRange", mock.Anything, "sum(max_over_time(mimir_continuous_test_sine_wave[1s]))", now.Add(-24*time.Hour).Add(writeInterval), now, writeInterval, mock.Anything).Return(model.Matrix{{
 			Values: generateSineWaveSamplesSum(now.Add(-24*time.Hour).Add(writeInterval), now.Add(-1*time.Minute), cfg.NumSeries, writeInterval),
 		}}, nil)
-		client.On("QueryRange", mock.Anything, "sum(max_over_time(mimir_continuous_test_sine_wave[1s]))", now.Add(-48*time.Hour).Add(writeInterval), now.Add(-24*time.Hour), writeInterval).Return(model.Matrix{{
+		client.On("QueryRange", mock.Anything, "sum(max_over_time(mimir_continuous_test_sine_wave[1s]))", now.Add(-48*time.Hour).Add(writeInterval), now.Add(-24*time.Hour), writeInterval, mock.Anything).Return(model.Matrix{{
 			Values: generateSineWaveSamplesSum(now.Add(-36*time.Hour), now.Add(-24*time.Hour), cfg.NumSeries, writeInterval),
 		}}, nil)
 
@@ -408,10 +408,10 @@ func TestWriteReadSeriesTest_Init(t *testing.T) {
 
 	t.Run("previously written data points are in the range [-36h, -1m] but last data point of previous 24h period is missing", func(t *testing.T) {
 		client := &ClientMock{}
-		client.On("QueryRange", mock.Anything, "sum(max_over_time(mimir_continuous_test_sine_wave[1s]))", now.Add(-24*time.Hour).Add(writeInterval), now, writeInterval).Return(model.Matrix{{
+		client.On("QueryRange", mock.Anything, "sum(max_over_time(mimir_continuous_test_sine_wave[1s]))", now.Add(-24*time.Hour).Add(writeInterval), now, writeInterval, mock.Anything).Return(model.Matrix{{
 			Values: generateSineWaveSamplesSum(now.Add(-24*time.Hour).Add(writeInterval), now.Add(-1*time.Minute), cfg.NumSeries, writeInterval),
 		}}, nil)
-		client.On("QueryRange", mock.Anything, "sum(max_over_time(mimir_continuous_test_sine_wave[1s]))", now.Add(-48*time.Hour).Add(writeInterval), now.Add(-24*time.Hour), writeInterval).Return(model.Matrix{{
+		client.On("QueryRange", mock.Anything, "sum(max_over_time(mimir_continuous_test_sine_wave[1s]))", now.Add(-48*time.Hour).Add(writeInterval), now.Add(-24*time.Hour), writeInterval, mock.Anything).Return(model.Matrix{{
 			// Last data point is missing.
 			Values: generateSineWaveSamplesSum(now.Add(-36*time.Hour), now.Add(-24*time.Hour).Add(-writeInterval), cfg.NumSeries, writeInterval),
 		}}, nil)
@@ -429,10 +429,10 @@ func TestWriteReadSeriesTest_Init(t *testing.T) {
 
 	t.Run("previously written data points are in the range [-24h, -1m]", func(t *testing.T) {
 		client := &ClientMock{}
-		client.On("QueryRange", mock.Anything, "sum(max_over_time(mimir_continuous_test_sine_wave[1s]))", now.Add(-24*time.Hour).Add(writeInterval), now, writeInterval).Return(model.Matrix{{
+		client.On("QueryRange", mock.Anything, "sum(max_over_time(mimir_continuous_test_sine_wave[1s]))", now.Add(-24*time.Hour).Add(writeInterval), now, writeInterval, mock.Anything).Return(model.Matrix{{
 			Values: generateSineWaveSamplesSum(now.Add(-24*time.Hour).Add(writeInterval), now.Add(-1*time.Minute), cfg.NumSeries, writeInterval),
 		}}, nil)
-		client.On("QueryRange", mock.Anything, "sum(max_over_time(mimir_continuous_test_sine_wave[1s]))", now.Add(-48*time.Hour).Add(writeInterval), now.Add(-24*time.Hour), writeInterval).Return(model.Matrix{{}}, nil)
+		client.On("QueryRange", mock.Anything, "sum(max_over_time(mimir_continuous_test_sine_wave[1s]))", now.Add(-48*time.Hour).Add(writeInterval), now.Add(-24*time.Hour), writeInterval, mock.Anything).Return(model.Matrix{{}}, nil)
 
 		test := NewWriteReadSeriesTest(cfg, client, logger, nil)
 
@@ -447,13 +447,13 @@ func TestWriteReadSeriesTest_Init(t *testing.T) {
 
 	t.Run("the configured query max age is > 24h", func(t *testing.T) {
 		client := &ClientMock{}
-		client.On("QueryRange", mock.Anything, "sum(max_over_time(mimir_continuous_test_sine_wave[1s]))", now.Add(-24*time.Hour).Add(writeInterval), now, writeInterval).Return(model.Matrix{{
+		client.On("QueryRange", mock.Anything, "sum(max_over_time(mimir_continuous_test_sine_wave[1s]))", now.Add(-24*time.Hour).Add(writeInterval), now, writeInterval, mock.Anything).Return(model.Matrix{{
 			Values: generateSineWaveSamplesSum(now.Add(-24*time.Hour).Add(writeInterval), now.Add(-1*time.Minute), cfg.NumSeries, writeInterval),
 		}}, nil)
-		client.On("QueryRange", mock.Anything, "sum(max_over_time(mimir_continuous_test_sine_wave[1s]))", now.Add(-48*time.Hour).Add(writeInterval), now.Add(-24*time.Hour), writeInterval).Return(model.Matrix{{
+		client.On("QueryRange", mock.Anything, "sum(max_over_time(mimir_continuous_test_sine_wave[1s]))", now.Add(-48*time.Hour).Add(writeInterval), now.Add(-24*time.Hour), writeInterval, mock.Anything).Return(model.Matrix{{
 			Values: generateSineWaveSamplesSum(now.Add(-48*time.Hour).Add(writeInterval), now.Add(-24*time.Hour), cfg.NumSeries, writeInterval),
 		}}, nil)
-		client.On("QueryRange", mock.Anything, "sum(max_over_time(mimir_continuous_test_sine_wave[1s]))", now.Add(-72*time.Hour).Add(writeInterval), now.Add(-48*time.Hour), writeInterval).Return(model.Matrix{{
+		client.On("QueryRange", mock.Anything, "sum(max_over_time(mimir_continuous_test_sine_wave[1s]))", now.Add(-72*time.Hour).Add(writeInterval), now.Add(-48*time.Hour), writeInterval, mock.Anything).Return(model.Matrix{{
 			Values: generateSineWaveSamplesSum(now.Add(-72*time.Hour).Add(writeInterval), now.Add(-48*time.Hour), cfg.NumSeries, writeInterval),
 		}}, nil)
 
@@ -470,7 +470,7 @@ func TestWriteReadSeriesTest_Init(t *testing.T) {
 
 	t.Run("the configured query max age is < 24h", func(t *testing.T) {
 		client := &ClientMock{}
-		client.On("QueryRange", mock.Anything, "sum(max_over_time(mimir_continuous_test_sine_wave[1s]))", now.Add(-2*time.Hour), now, writeInterval).Return(model.Matrix{{
+		client.On("QueryRange", mock.Anything, "sum(max_over_time(mimir_continuous_test_sine_wave[1s]))", now.Add(-2*time.Hour), now, writeInterval, mock.Anything).Return(model.Matrix{{
 			Values: generateSineWaveSamplesSum(now.Add(-2*time.Hour), now.Add(-1*time.Minute), cfg.NumSeries, writeInterval),
 		}}, nil)
 
@@ -489,7 +489,7 @@ func TestWriteReadSeriesTest_Init(t *testing.T) {
 
 	t.Run("the most recent previously written data point is older than 1h ago", func(t *testing.T) {
 		client := &ClientMock{}
-		client.On("QueryRange", mock.Anything, "sum(max_over_time(mimir_continuous_test_sine_wave[1s]))", now.Add(-24*time.Hour).Add(writeInterval), now, writeInterval).Return(model.Matrix{{
+		client.On("QueryRange", mock.Anything, "sum(max_over_time(mimir_continuous_test_sine_wave[1s]))", now.Add(-24*time.Hour).Add(writeInterval), now, writeInterval, mock.Anything).Return(model.Matrix{{
 			Values: generateSineWaveSamplesSum(now.Add(-2*time.Hour).Add(writeInterval), now.Add(-1*time.Hour), cfg.NumSeries, writeInterval),
 		}}, nil)
 
@@ -506,7 +506,7 @@ func TestWriteReadSeriesTest_Init(t *testing.T) {
 
 	t.Run("the first query fails", func(t *testing.T) {
 		client := &ClientMock{}
-		client.On("QueryRange", mock.Anything, "sum(max_over_time(mimir_continuous_test_sine_wave[1s]))", now.Add(-24*time.Hour).Add(writeInterval), now, writeInterval).Return(model.Matrix{}, errors.New("failed"))
+		client.On("QueryRange", mock.Anything, "sum(max_over_time(mimir_continuous_test_sine_wave[1s]))", now.Add(-24*time.Hour).Add(writeInterval), now, writeInterval, mock.Anything).Return(model.Matrix{}, errors.New("failed"))
 
 		test := NewWriteReadSeriesTest(cfg, client, logger, nil)
 
@@ -521,10 +521,10 @@ func TestWriteReadSeriesTest_Init(t *testing.T) {
 
 	t.Run("a subsequent query fails", func(t *testing.T) {
 		client := &ClientMock{}
-		client.On("QueryRange", mock.Anything, "sum(max_over_time(mimir_continuous_test_sine_wave[1s]))", now.Add(-24*time.Hour).Add(writeInterval), now, writeInterval).Return(model.Matrix{{
+		client.On("QueryRange", mock.Anything, "sum(max_over_time(mimir_continuous_test_sine_wave[1s]))", now.Add(-24*time.Hour).Add(writeInterval), now, writeInterval, mock.Anything).Return(model.Matrix{{
 			Values: generateSineWaveSamplesSum(now.Add(-24*time.Hour).Add(writeInterval), now.Add(-1*time.Minute), cfg.NumSeries, writeInterval),
 		}}, nil)
-		client.On("QueryRange", mock.Anything, "sum(max_over_time(mimir_continuous_test_sine_wave[1s]))", now.Add(-48*time.Hour).Add(writeInterval), now.Add(-24*time.Hour), writeInterval).Return(model.Matrix{{}}, errors.New("failed"))
+		client.On("QueryRange", mock.Anything, "sum(max_over_time(mimir_continuous_test_sine_wave[1s]))", now.Add(-48*time.Hour).Add(writeInterval), now.Add(-24*time.Hour), writeInterval, mock.Anything).Return(model.Matrix{{}}, errors.New("failed"))
 
 		test := NewWriteReadSeriesTest(cfg, client, logger, nil)
 
@@ -539,7 +539,7 @@ func TestWriteReadSeriesTest_Init(t *testing.T) {
 
 	t.Run("the testing tool has been restarted with a different number of series in the middle of the last 24h period", func(t *testing.T) {
 		client := &ClientMock{}
-		client.On("QueryRange", mock.Anything, "sum(max_over_time(mimir_continuous_test_sine_wave[1s]))", now.Add(-24*time.Hour).Add(writeInterval), now, writeInterval).Return(model.Matrix{{
+		client.On("QueryRange", mock.Anything, "sum(max_over_time(mimir_continuous_test_sine_wave[1s]))", now.Add(-24*time.Hour).Add(writeInterval), now, writeInterval, mock.Anything).Return(model.Matrix{{
 			Values: append(
 				generateSineWaveSamplesSum(now.Add(-24*time.Hour).Add(writeInterval), now.Add(-67*time.Minute), cfg.NumSeries-1, writeInterval),
 				generateSineWaveSamplesSum(now.Add(-67*time.Minute).Add(writeInterval), now.Add(-1*time.Minute), cfg.NumSeries, writeInterval)...,
@@ -559,10 +559,10 @@ func TestWriteReadSeriesTest_Init(t *testing.T) {
 
 	t.Run("the testing tool has been restarted with a different number of series in the middle of the previous 24h period", func(t *testing.T) {
 		client := &ClientMock{}
-		client.On("QueryRange", mock.Anything, "sum(max_over_time(mimir_continuous_test_sine_wave[1s]))", now.Add(-24*time.Hour).Add(writeInterval), now, writeInterval).Return(model.Matrix{{
+		client.On("QueryRange", mock.Anything, "sum(max_over_time(mimir_continuous_test_sine_wave[1s]))", now.Add(-24*time.Hour).Add(writeInterval), now, writeInterval, mock.Anything).Return(model.Matrix{{
 			Values: generateSineWaveSamplesSum(now.Add(-24*time.Hour).Add(writeInterval), now.Add(-1*time.Minute), cfg.NumSeries, writeInterval),
 		}}, nil)
-		client.On("QueryRange", mock.Anything, "sum(max_over_time(mimir_continuous_test_sine_wave[1s]))", now.Add(-48*time.Hour).Add(writeInterval), now.Add(-24*time.Hour), writeInterval).Return(model.Matrix{{
+		client.On("QueryRange", mock.Anything, "sum(max_over_time(mimir_continuous_test_sine_wave[1s]))", now.Add(-48*time.Hour).Add(writeInterval), now.Add(-24*time.Hour), writeInterval, mock.Anything).Return(model.Matrix{{
 			Values: append(
 				generateSineWaveSamplesSum(now.Add(-48*time.Hour).Add(writeInterval), now.Add(-36*time.Hour).Add(time.Minute), cfg.NumSeries-1, writeInterval),
 				generateSineWaveSamplesSum(now.Add(-36*time.Hour).Add(time.Minute+writeInterval), now.Add(-24*time.Hour), cfg.NumSeries, writeInterval)...,
@@ -582,10 +582,10 @@ func TestWriteReadSeriesTest_Init(t *testing.T) {
 
 	t.Run("the testing tool has been restarted with a different number of series exactly at the beginning of this 24h period", func(t *testing.T) {
 		client := &ClientMock{}
-		client.On("QueryRange", mock.Anything, "sum(max_over_time(mimir_continuous_test_sine_wave[1s]))", now.Add(-24*time.Hour).Add(writeInterval), now, writeInterval).Return(model.Matrix{{
+		client.On("QueryRange", mock.Anything, "sum(max_over_time(mimir_continuous_test_sine_wave[1s]))", now.Add(-24*time.Hour).Add(writeInterval), now, writeInterval, mock.Anything).Return(model.Matrix{{
 			Values: generateSineWaveSamplesSum(now.Add(-24*time.Hour).Add(writeInterval), now.Add(-1*time.Minute), cfg.NumSeries, writeInterval),
 		}}, nil)
-		client.On("QueryRange", mock.Anything, "sum(max_over_time(mimir_continuous_test_sine_wave[1s]))", now.Add(-48*time.Hour).Add(writeInterval), now.Add(-24*time.Hour), writeInterval).Return(model.Matrix{{
+		client.On("QueryRange", mock.Anything, "sum(max_over_time(mimir_continuous_test_sine_wave[1s]))", now.Add(-48*time.Hour).Add(writeInterval), now.Add(-24*time.Hour), writeInterval, mock.Anything).Return(model.Matrix{{
 			Values: generateSineWaveSamplesSum(now.Add(-24*time.Hour).Add(writeInterval), now.Add(-1*time.Minute), cfg.NumSeries-1, writeInterval),
 		}}, nil)
 

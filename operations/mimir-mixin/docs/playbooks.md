@@ -951,6 +951,8 @@ How to **investigate**:
   ```
   kubectl logs -n <namespace> deployment/continuous-test
   ```
+- Check if query result comparison is failing
+  - Is query failing both when results cache is enabled and when it's disabled?
 - This alert should always be actionable. There are two possible outcomes:
   1. The alert fired because of a bug in Mimir: fix it.
   1. The alert fired because of a bug or edge case in the continuous test tool, causing a false positive: fix it.

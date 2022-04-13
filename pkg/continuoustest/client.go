@@ -35,10 +35,10 @@ type MimirClient interface {
 	WriteSeries(ctx context.Context, series []prompb.TimeSeries) (statusCode int, err error)
 
 	// QueryRange performs a range query.
-	QueryRange(ctx context.Context, query string, start, end time.Time, step time.Duration) (model.Matrix, error)
+	QueryRange(ctx context.Context, query string, start, end time.Time, step time.Duration, options ...RequestOption) (model.Matrix, error)
 
 	// Query performs an instant query.
-	Query(ctx context.Context, query string, ts time.Time) (model.Vector, error)
+	Query(ctx context.Context, query string, ts time.Time, options ...RequestOption) (model.Vector, error)
 }
 
 type ClientConfig struct {
@@ -101,7 +101,8 @@ func NewClient(cfg ClientConfig, logger log.Logger) (*Client, error) {
 }
 
 // QueryRange implements MimirClient.
-func (c *Client) QueryRange(ctx context.Context, query string, start, end time.Time, step time.Duration) (model.Matrix, error) {
+func (c *Client) QueryRange(ctx context.Context, query string, start, end time.Time, step time.Duration, options ...RequestOption) (model.Matrix, error) {
+	ctx = contextWithRequestOptions(ctx, options...)
 	ctx, cancel := context.WithTimeout(ctx, c.cfg.ReadTimeout)
 	defer cancel()
 
@@ -127,7 +128,8 @@ func (c *Client) QueryRange(ctx context.Context, query string, start, end time.T
 }
 
 // Query implements MimirClient.
-func (c *Client) Query(ctx context.Context, query string, ts time.Time) (model.Vector, error) {
+func (c *Client) Query(ctx context.Context, query string, ts time.Time, options ...RequestOption) (model.Vector, error) {
+	ctx = contextWithRequestOptions(ctx, options...)
 	ctx, cancel := context.WithTimeout(ctx, c.cfg.ReadTimeout)
 	defer cancel()
 
@@ -207,6 +209,35 @@ func (c *Client) sendWriteRequest(ctx context.Context, req *prompb.WriteRequest)
 	return httpResp.StatusCode, nil
 }
 
+// RequestOption defines a functional-style request option.
+type RequestOption func(options *requestOptions)
+
+// WithResultsCacheEnabled controls whether the query-frontend results cache should be enabled or disabled for the request.
+// This function assumes query-frontend results cache is enabled by default.
+func WithResultsCacheEnabled(enabled bool) RequestOption {
+	return func(options *requestOptions) {
+		options.resultsCacheDisabled = !enabled
+	}
+}
+
+// contextWithRequestOptions returns a context.Context with the request options applied.
+func contextWithRequestOptions(ctx context.Context, options ...RequestOption) context.Context {
+	actual := &requestOptions{}
+	for _, option := range options {
+		option(actual)
+	}
+
+	return context.WithValue(ctx, requestOptionsKey, actual)
+}
+
+type requestOptions struct {
+	resultsCacheDisabled bool
+}
+
+type key int
+
+var requestOptionsKey key
+
 type clientRoundTripper struct {
 	tenantID string
 	rt       http.RoundTripper
@@ -214,6 +245,12 @@ type clientRoundTripper struct {
 
 // RoundTrip add the tenant ID header required by Mimir.
 func (rt *clientRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	options, _ := req.Context().Value(requestOptionsKey).(*requestOptions)
+	if options != nil && options.resultsCacheDisabled {
+		// Despite the name, the "no-store" directive also disables results cache lookup in Mimir.
+		req.Header.Set("Cache-Control", "no-store")
+	}
+
 	req.Header.Set("X-Scope-OrgID", rt.tenantID)
 	return rt.rt.RoundTrip(req)
 }
