@@ -209,7 +209,7 @@ func (c *Client) sendWriteRequest(ctx context.Context, req *prompb.WriteRequest)
 	return httpResp.StatusCode, nil
 }
 
-// RequestOption defined a functional-style request option.
+// RequestOption defines a functional-style request option.
 type RequestOption func(options *requestOptions)
 
 // WithResultsCacheEnabled controls whether the query-frontend results cache should be enabled or disabled for the request.
