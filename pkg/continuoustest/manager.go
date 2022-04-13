@@ -4,6 +4,7 @@ package continuoustest
 
 import (
 	"context"
+	"flag"
 	"sync"
 	"time"
 )
@@ -19,12 +20,23 @@ type Test interface {
 	Run(ctx context.Context, now time.Time)
 }
 
+type ManagerConfig struct {
+	RunInterval time.Duration
+}
+
+func (cfg *ManagerConfig) RegisterFlags(f *flag.FlagSet) {
+	f.DurationVar(&cfg.RunInterval, "tests.run-interval", time.Minute, "How frequently tests should run.")
+}
+
 type Manager struct {
+	cfg   ManagerConfig
 	tests []Test
 }
 
-func NewManager() *Manager {
-	return &Manager{}
+func NewManager(cfg ManagerConfig) *Manager {
+	return &Manager{
+		cfg: cfg,
+	}
 }
 
 func (m *Manager) AddTest(t Test) {
@@ -50,8 +62,7 @@ func (m *Manager) Run(ctx context.Context) error {
 			// Run it immediately, and then every configured period.
 			t.Run(ctx, time.Now())
 
-			// TODO We may consider to allow to configure the test interval.
-			ticker := time.NewTicker(time.Minute)
+			ticker := time.NewTicker(m.cfg.RunInterval)
 
 			for {
 				select {

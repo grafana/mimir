@@ -22,6 +22,7 @@ type Config struct {
 	ServerMetricsPort   int
 	LogLevel            logging.Level
 	Client              continuoustest.ClientConfig
+	Manager             continuoustest.ManagerConfig
 	WriteReadSeriesTest continuoustest.WriteReadSeriesTestConfig
 }
 
@@ -29,6 +30,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&cfg.ServerMetricsPort, "server.metrics-port", 9900, "The port where metrics are exposed.")
 	cfg.LogLevel.RegisterFlags(f)
 	cfg.Client.RegisterFlags(f)
+	cfg.Manager.RegisterFlags(f)
 	cfg.WriteReadSeriesTest.RegisterFlags(f)
 }
 
@@ -61,7 +63,7 @@ func main() {
 	}
 
 	// Run continuous testing.
-	m := continuoustest.NewManager()
+	m := continuoustest.NewManager(cfg.Manager)
 	m.AddTest(continuoustest.NewWriteReadSeriesTest(cfg.WriteReadSeriesTest, client, logger, registry))
 	if err := m.Run(context.Background()); err != nil {
 		level.Error(logger).Log("msg", "Failed to run continuous test", "err", err.Error())
