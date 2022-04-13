@@ -123,10 +123,12 @@ func (t *WriteReadSeriesTest) Run(ctx context.Context, now time.Time) {
 
 	queryRanges, queryInstants := t.getQueryTimeRanges(now)
 	for _, timeRange := range queryRanges {
-		t.runRangeQueryAndVerifyResult(ctx, timeRange[0], timeRange[1])
+		t.runRangeQueryAndVerifyResult(ctx, timeRange[0], timeRange[1], true)
+		t.runRangeQueryAndVerifyResult(ctx, timeRange[0], timeRange[1], false)
 	}
 	for _, ts := range queryInstants {
-		t.runInstantQueryAndVerifyResult(ctx, ts)
+		t.runInstantQueryAndVerifyResult(ctx, ts, true)
+		t.runInstantQueryAndVerifyResult(ctx, ts, false)
 	}
 }
 
@@ -180,7 +182,7 @@ func (t *WriteReadSeriesTest) getQueryTimeRanges(now time.Time) (ranges [][2]tim
 	return ranges, instants
 }
 
-func (t *WriteReadSeriesTest) runRangeQueryAndVerifyResult(ctx context.Context, start, end time.Time) {
+func (t *WriteReadSeriesTest) runRangeQueryAndVerifyResult(ctx context.Context, start, end time.Time, resultsCacheEnabled bool) {
 	// We align start, end and step to write interval in order to avoid any false positives
 	// when checking results correctness. The min/max query time is always aligned.
 	start = maxTime(t.queryMinTime, alignTimestampToInterval(start, writeInterval))
@@ -192,11 +194,11 @@ func (t *WriteReadSeriesTest) runRangeQueryAndVerifyResult(ctx context.Context, 
 	step := getQueryStep(start, end, writeInterval)
 	query := fmt.Sprintf("sum(%s)", metricName)
 
-	logger := log.With(t.logger, "query", query, "start", start.UnixMilli(), "end", end.UnixMilli(), "step", step)
+	logger := log.With(t.logger, "query", query, "start", start.UnixMilli(), "end", end.UnixMilli(), "step", step, "results_cache", strconv.FormatBool(resultsCacheEnabled))
 	level.Debug(logger).Log("msg", "Running range query")
 
 	t.metrics.queriesTotal.Inc()
-	matrix, err := t.client.QueryRange(ctx, query, start, end, step)
+	matrix, err := t.client.QueryRange(ctx, query, start, end, step, WithResultsCacheEnabled(resultsCacheEnabled))
 	if err != nil {
 		t.metrics.queriesFailedTotal.Inc()
 		level.Warn(logger).Log("msg", "Failed to execute range query", "err", err)
@@ -212,7 +214,7 @@ func (t *WriteReadSeriesTest) runRangeQueryAndVerifyResult(ctx context.Context, 
 	}
 }
 
-func (t *WriteReadSeriesTest) runInstantQueryAndVerifyResult(ctx context.Context, ts time.Time) {
+func (t *WriteReadSeriesTest) runInstantQueryAndVerifyResult(ctx context.Context, ts time.Time, resultsCacheEnabled bool) {
 	// We align the query timestamp to write interval in order to avoid any false positives
 	// when checking results correctness. The min/max query time is always aligned.
 	ts = maxTime(t.queryMinTime, alignTimestampToInterval(ts, writeInterval))
@@ -222,11 +224,11 @@ func (t *WriteReadSeriesTest) runInstantQueryAndVerifyResult(ctx context.Context
 
 	query := fmt.Sprintf("sum(%s)", metricName)
 
-	logger := log.With(t.logger, "query", query, "ts", ts.UnixMilli())
+	logger := log.With(t.logger, "query", query, "ts", ts.UnixMilli(), "results_cache", strconv.FormatBool(resultsCacheEnabled))
 	level.Debug(logger).Log("msg", "Running instant query")
 
 	t.metrics.queriesTotal.Inc()
-	vector, err := t.client.Query(ctx, query, ts)
+	vector, err := t.client.Query(ctx, query, ts, WithResultsCacheEnabled(resultsCacheEnabled))
 	if err != nil {
 		t.metrics.queriesFailedTotal.Inc()
 		level.Warn(logger).Log("msg", "Failed to execute instant query", "err", err)
@@ -281,8 +283,7 @@ func (t *WriteReadSeriesTest) findPreviouslyWrittenTimeRange(ctx context.Context
 		logger := log.With(t.logger, "query", query, "start", start, "end", end, "step", step)
 		level.Debug(logger).Log("msg", "Executing query to find previously written samples")
 
-		// TODO Run this query with cache disabled (once will be supported by Mimir).
-		matrix, err := t.client.QueryRange(ctx, query, start, end, step)
+		matrix, err := t.client.QueryRange(ctx, query, start, end, step, WithResultsCacheEnabled(false))
 		if err != nil {
 			level.Warn(logger).Log("msg", "Failed to execute range query used to find previously written samples", "err", err)
 			return

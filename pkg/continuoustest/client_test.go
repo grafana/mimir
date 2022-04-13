@@ -106,6 +106,96 @@ func TestClient_WriteSeries(t *testing.T) {
 	})
 }
 
+func TestClient_QueryRange(t *testing.T) {
+	var (
+		receivedRequests []*http.Request
+	)
+
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		receivedRequests = append(receivedRequests, request)
+
+		writer.WriteHeader(http.StatusOK)
+		_, err := writer.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[]}}`))
+		require.NoError(t, err)
+	}))
+	t.Cleanup(server.Close)
+
+	cfg := ClientConfig{}
+	flagext.DefaultValues(&cfg)
+	require.NoError(t, cfg.WriteBaseEndpoint.Set(server.URL))
+	require.NoError(t, cfg.ReadBaseEndpoint.Set(server.URL))
+
+	c, err := NewClient(cfg, log.NewNopLogger())
+	require.NoError(t, err)
+
+	ctx := context.Background()
+
+	t.Run("results cache not explicitly disabled", func(t *testing.T) {
+		receivedRequests = nil
+
+		_, err := c.QueryRange(ctx, "up", time.Unix(0, 0), time.Unix(1000, 0), 10)
+		require.NoError(t, err)
+
+		require.Len(t, receivedRequests, 1)
+		assert.Empty(t, receivedRequests[0].Header.Get("Cache-Control"))
+	})
+
+	t.Run("results cache disabled", func(t *testing.T) {
+		receivedRequests = nil
+
+		_, err := c.QueryRange(ctx, "up", time.Unix(0, 0), time.Unix(1000, 0), 10, WithResultsCacheEnabled(false))
+		require.NoError(t, err)
+
+		require.Len(t, receivedRequests, 1)
+		assert.Equal(t, "no-store", receivedRequests[0].Header.Get("Cache-Control"))
+	})
+}
+
+func TestClient_Query(t *testing.T) {
+	var (
+		receivedRequests []*http.Request
+	)
+
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		receivedRequests = append(receivedRequests, request)
+
+		writer.WriteHeader(http.StatusOK)
+		_, err := writer.Write([]byte(`{"status":"success","data":{"resultType":"vector","result":[]}}`))
+		require.NoError(t, err)
+	}))
+	t.Cleanup(server.Close)
+
+	cfg := ClientConfig{}
+	flagext.DefaultValues(&cfg)
+	require.NoError(t, cfg.WriteBaseEndpoint.Set(server.URL))
+	require.NoError(t, cfg.ReadBaseEndpoint.Set(server.URL))
+
+	c, err := NewClient(cfg, log.NewNopLogger())
+	require.NoError(t, err)
+
+	ctx := context.Background()
+
+	t.Run("results cache not explicitly disabled", func(t *testing.T) {
+		receivedRequests = nil
+
+		_, err := c.Query(ctx, "up", time.Unix(0, 0))
+		require.NoError(t, err)
+
+		require.Len(t, receivedRequests, 1)
+		assert.Empty(t, receivedRequests[0].Header.Get("Cache-Control"))
+	})
+
+	t.Run("results cache disabled", func(t *testing.T) {
+		receivedRequests = nil
+
+		_, err := c.Query(ctx, "up", time.Unix(0, 0), WithResultsCacheEnabled(false))
+		require.NoError(t, err)
+
+		require.Len(t, receivedRequests, 1)
+		assert.Equal(t, "no-store", receivedRequests[0].Header.Get("Cache-Control"))
+	})
+}
+
 // ClientMock mocks MimirClient.
 type ClientMock struct {
 	mock.Mock
@@ -116,12 +206,12 @@ func (m *ClientMock) WriteSeries(ctx context.Context, series []prompb.TimeSeries
 	return args.Int(0), args.Error(1)
 }
 
-func (m *ClientMock) QueryRange(ctx context.Context, query string, start, end time.Time, step time.Duration) (model.Matrix, error) {
-	args := m.Called(ctx, query, start, end, step)
+func (m *ClientMock) QueryRange(ctx context.Context, query string, start, end time.Time, step time.Duration, options ...RequestOption) (model.Matrix, error) {
+	args := m.Called(ctx, query, start, end, step, options)
 	return args.Get(0).(model.Matrix), args.Error(1)
 }
 
-func (m *ClientMock) Query(ctx context.Context, query string, ts time.Time) (model.Vector, error) {
-	args := m.Called(ctx, query, ts)
+func (m *ClientMock) Query(ctx context.Context, query string, ts time.Time, options ...RequestOption) (model.Vector, error) {
+	args := m.Called(ctx, query, ts, options)
 	return args.Get(0).(model.Vector), args.Error(1)
 }
