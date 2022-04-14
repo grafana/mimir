@@ -96,11 +96,11 @@ jobs:
   test-docs:
     runs-on: ubuntu-latest
     steps:
-      - name: Check out code
-        uses: actions/checkout@v1
-      - name: Build Website
+      - name: "Check out code"
+        uses: "actions/checkout@v3"
+      - name: "Build website"
         run: |
-          docker run -v ${PWD}/docs/sources:/hugo/content/docs/mimir/latest -e HUGO_REFLINKSERRORLEVEL=ERROR --rm grafana/docs-base:latest /bin/bash -c 'mkdir -p content/docs/grafana/latest/ && touch content/docs/grafana/latest/menu.yaml && make prod'
+          docker run -v ${PWD}/docs/sources:/hugo/content/docs/mimir/latest -e HUGO_REFLINKSERRORLEVEL=ERROR --rm grafana/docs-base:latest /bin/bash -c 'make hugo'
 
   build-mimir:
     runs-on: ubuntu-20.04
