@@ -48,7 +48,7 @@ jobs:
       id: "latest-released"
       shell: "bash"
       run: |
-        tag="$(./tools/latest-tag '^mimir-(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$')"
+        tag="$(git tag --sort=-v:refname | grep -E '^mimir-(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$' | head -n1)"
         echo "::set-output name=tag::${tag}"
 
     - name: "Determine latest release tag target"
