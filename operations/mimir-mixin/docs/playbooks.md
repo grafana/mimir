@@ -228,7 +228,7 @@ How to **investigate**:
       - Client process having insufficient CPU resources.
     - The gateway may need to be scaled up. Use the `Mimir / Scaling` dashboard to check for CPU usage vs requests.
     - There could be a problem with authentication (eg. slow to run auth layer)
-  - **`Distributor`**
+  - **Alertmanager distributor**
     - Typically, distributor p99 latency is in the range 50-100ms. If the distributor latency is higher than this, you may need to scale up the number of alertmanager replicas.
 
 ### MimirRequestErrors
