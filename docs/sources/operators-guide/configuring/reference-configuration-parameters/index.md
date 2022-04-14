@@ -1684,7 +1684,10 @@ The `alertmanager` block configures the alertmanager.
 # CLI flag: -alertmanager.storage.path
 [data_dir: <string> | default = "./data-alertmanager/"]
 
-# (advanced) How long to keep data for.
+# (advanced) How long should we store stateful data (notification logs and
+# silences). For notification log entries, refers to how long should we keep
+# entries before they expire and are deleted. For silences, refers to how long
+# should tenants view silences after they expire and are deleted.
 # CLI flag: -alertmanager.storage.retention
 [retention: <duration> | default = 120h]
 
