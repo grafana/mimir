@@ -71,7 +71,7 @@ jobs:
         host: "github.com"
         github_pat: "${{ secrets.GH_BOT_ACCESS_TOKEN }}"
         source_folder: "docs/sources"
-        target_folder: "content/docs/mimir/${{ steps.target.outputs.target }}"
+        target_folder: "content/docs/mimir/next"
 
     - name: "Publish to website repository (release)"
       uses: "./.github/actions/website-sync"
