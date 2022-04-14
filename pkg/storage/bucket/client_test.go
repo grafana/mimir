@@ -127,3 +127,38 @@ func TestClientMock_MockGet(t *testing.T) {
 
 	wg.Wait()
 }
+
+func TestClient_ConfigValidation(t *testing.T) {
+	testCases := []struct {
+		name           string
+		cfg            Config
+		expectingError bool
+	}{
+		{
+			name:           "valid storage_prefix",
+			cfg:            Config{Backend: Filesystem, StoragePrefix: "hello-world!"},
+			expectingError: false,
+		},
+		{
+			name:           "invalid storage_prefix",
+			cfg:            Config{Backend: Filesystem, StoragePrefix: "/hello-world!"},
+			expectingError: true,
+		},
+		{
+			name:           "unsupported backend",
+			cfg:            Config{Backend: "flash drive"},
+			expectingError: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			if actualErr := tc.cfg.Validate(); tc.expectingError {
+				assert.Error(t, actualErr)
+			} else {
+				assert.NoError(t, actualErr)
+			}
+		})
+	}
+}

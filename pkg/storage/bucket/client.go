@@ -10,6 +10,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/go-kit/log"
@@ -39,12 +40,15 @@ const (
 
 	// Filesystem is the value for the filesystem storage backend.
 	Filesystem = "filesystem"
+
+	validPrefixCharactersRegex = `^[\da-zA-Z\-_.*'()!]+$`
 )
 
 var (
 	SupportedBackends = []string{S3, GCS, Azure, Swift, Filesystem}
 
-	ErrUnsupportedStorageBackend = errors.New("unsupported storage backend")
+	ErrUnsupportedStorageBackend        = errors.New("unsupported storage backend")
+	ErrInvalidCharactersInStoragePrefix = errors.New("storage_prefix contains invalid characters, it should match the Go regexp " + validPrefixCharactersRegex)
 )
 
 // Config holds configuration for accessing long-term storage.
@@ -100,6 +104,14 @@ func (cfg *Config) Validate() error {
 	if cfg.Backend == S3 {
 		if err := cfg.S3.Validate(); err != nil {
 			return err
+		}
+	}
+
+	if cfg.StoragePrefix != "" {
+		// Takes from S3's guide on key names https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-keys.html#object-key-guidelines
+		acceptablePrefixCharacters := regexp.MustCompile(validPrefixCharactersRegex)
+		if !acceptablePrefixCharacters.MatchString(cfg.StoragePrefix) {
+			return ErrInvalidCharactersInStoragePrefix
 		}
 	}
 
