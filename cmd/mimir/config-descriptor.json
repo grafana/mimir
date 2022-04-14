@@ -8004,7 +8004,7 @@
           "kind": "field",
           "name": "retention",
           "required": false,
-          "desc": "How long to keep data for.",
+          "desc": "How long should we store stateful data (notification logs and silences). For notification log entries, refers to how long should we keep entries before they expire and are deleted. For silences, refers to how long should tenants view silences after they expire and are deleted.",
           "fieldValue": null,
           "fieldDefaultValue": 432000000000000,
           "fieldFlag": "alertmanager.storage.retention",
