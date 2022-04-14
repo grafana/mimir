@@ -51,6 +51,7 @@
   - `MimirContinuousTestFailed`
 * [ENHANCEMENT] Added `per_cluster_label` support to allow to change the label name used to differentiate between Kubernetes clusters. #1651
 * [ENHANCEMENT] Dashboards: Show QPS and latency of the Alertmanager Distributor. #1696
+* [ENHANCEMENT] Playbooks: Add Alertmanager suggestions for `MimirRequestErrors` and `MimirRequestLatency` #XXXX
 * [BUGFIX] Dashboards: Fix "Failed evaluation rate" panel on Tenants dashboard. #1629
 
 ### Jsonnet
