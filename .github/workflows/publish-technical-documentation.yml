@@ -60,14 +60,27 @@ jobs:
     - name: "Clone website-sync Action"
       run: "git clone --single-branch --no-tags --depth 1 -b master https://grafanabot:${{ secrets.GH_BOT_ACCESS_TOKEN }}@github.com/grafana/website-sync ./.github/actions/website-sync"
 
-    - name: "Publish to website repository"
+    - name: "Publish to website repository (next)"
       uses: "./.github/actions/website-sync"
-      id: "publish"
+      id: "publish-next"
+      # Only publish on main branch.
+      if: "github.ref == 'refs/heads/main'"
+      with:
+        repository: "grafana/website"
+        branch: "master"
+        host: "github.com"
+        github_pat: "${{ secrets.GH_BOT_ACCESS_TOKEN }}"
+        source_folder: "docs/sources"
+        target_folder: "content/docs/mimir/${{ steps.target.outputs.target }}"
+
+    - name: "Publish to website repository (release)"
+      uses: "./.github/actions/website-sync"
+      id: "publish-release"
       # Only publish if the target of the latest release tag matches the target of this reference.
       # For release tags the tag and reference are the same.
       # For release branches, this guard prevents publishing documentation before a tag
       # has been pushed that has officially "released" that documentation.
-      if: "(github.ref == 'refs/heads/main' || (steps.latest-released-target.outputs.target == steps.target.outputs.target)"
+      if: "steps.latest-released-target.outputs.target == steps.target.outputs.target"
       with:
         repository: "grafana/website"
         branch: "master"
