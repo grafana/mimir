@@ -4,7 +4,7 @@ This document describes the Mimir release process as well as release shepherd re
 
 ## Release schedule
 
-A new Grafana Mimir release is cut about every 6 weeks. The following table shows the past releases and tenantive date for upcoming ones.
+A new Grafana Mimir release is cut approximately every 6 weeks. The following table contains past releases and tentative dates for upcoming releases:
 
 | Version | Date       | Release shepherd  |
 | ------- | ---------- | ----------------- |
