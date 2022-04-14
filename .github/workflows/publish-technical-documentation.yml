@@ -67,7 +67,7 @@ jobs:
       # For release tags the tag and reference are the same.
       # For release branches, this guard prevents publishing documentation before a tag
       # has been pushed that has officially "released" that documentation.
-      if: "steps.latest-released-target.outputs.target == steps.target.outputs.target"
+      if: "(github.ref == 'refs/heads/main' || (steps.latest-released-target.outputs.target == steps.target.outputs.target)"
       with:
         repository: "grafana/website"
         branch: "master"
