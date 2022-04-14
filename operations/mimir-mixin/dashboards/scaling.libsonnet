@@ -11,9 +11,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
         title: '',
         options: {
           content: |||
-            This dashboards shows any services which are not scaled correctly.
-            The table below gives the required number of replicas and the reason why.
-            We only show services without enough replicas.
+            This dashboard identifies scaling-related issues by suggesting services that you might want to scale up.
+            The table that follows contains a suggested number of replicas and the reason why.
+            If the system is failing and depending on the reason, try scaling up to the specified number.
+            The specified numbers are intended as helpful guidelines when things go wrong, rather than prescriptive guidelines.
 
             Reasons:
             - **sample_rate**: There are not enough replicas to handle the
