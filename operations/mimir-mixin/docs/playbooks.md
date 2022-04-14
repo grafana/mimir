@@ -221,7 +221,7 @@ How to **investigate**:
 - Check the `Mimir / Alertmanager` dashboard
   - Looking at the dashboard you should see which part of the stack is affected
 - Deduce where in the stack the latency is being introduced
-  - **`Configuration API (gateway) + Alertmanager UI`**
+  - **Configuration API (gateway) + Alertmanager UI**
     - Latency may be caused by the time taken for the gateway to receive the entire request from the client. There are a multitude of reasons this can occur, so communication with the user may be necessary. For example:
       - Network issues such as packet loss between the client and gateway.
       - Poor performance of intermediate network hops such as load balancers or HTTP proxies.
