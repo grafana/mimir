@@ -214,6 +214,23 @@ How to **investigate**:
         - If memcached eviction rate is high, then you should scale up memcached replicas. Check the recommendations by `Mimir / Scaling` dashboard and make reasonable adjustments as necessary.
         - If memcached eviction rate is zero or very low, then it may be caused by "first time" queries
 
+#### Alertmanager
+
+How to **investigate**:
+
+- Check the `Mimir / Alertmanager` dashboard
+  - Looking at the dashboard you should see which part of the stack is affected
+- Deduce where in the stack the latency is being introduced
+  - **Configuration API (gateway) + Alertmanager UI**
+    - Latency may be caused by the time taken for the gateway to receive the entire request from the client. There are a multitude of reasons this can occur, so communication with the user may be necessary. For example:
+      - Network issues such as packet loss between the client and gateway.
+      - Poor performance of intermediate network hops such as load balancers or HTTP proxies.
+      - Client process having insufficient CPU resources.
+    - The gateway may need to be scaled up. Use the `Mimir / Scaling` dashboard to check for CPU usage vs requests.
+    - There could be a problem with authentication (eg. slow to run auth layer)
+  - **Alertmanager distributor**
+    - Typically, Alertmanager distributor p99 latency is in the range 50-100ms. If the distributor latency is higher than this, you may need to scale up the number of alertmanager replicas.
+
 ### MimirRequestErrors
 
 This alert fires when the rate of 5xx errors of a specific route is > 1% for some time.
@@ -230,6 +247,14 @@ How to **investigate**:
 - If the failing service is going OOM (`OOMKilled`): scale up or increase the memory
 - If the failing service is crashing / panicking: look for the stack trace in the logs and investigate from there
   - If crashing service is query-frontend, querier or store-gateway, and you have "activity tracker" feature enabled, look for `found unfinished activities from previous run` message and subsequent `activity` messages in the log file to see which queries caused the crash.
+
+#### Alertmanager
+
+How to **investigate**:
+
+- Looking at `Mimir / Alertmanager` dashboard you should see in which part of the stack the error originates
+- If some replicas are going OOM (`OOMKilled`): scale up or increase the memory
+- If the failing service is crashing / panicking: look for the stack trace in the logs and investigate from there
 
 ### MimirIngesterUnhealthy
 
