@@ -23,6 +23,17 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addRow(
+      $.row('Alertmanager Distributor')
+      .addPanel(
+        $.panel('QPS') +
+        $.qpsPanel('cortex_request_duration_seconds_count{%s, route=~"/alertmanagerpb.Alertmanager/HandleRequest"}' % $.jobMatcher($._config.job_names.alertmanager))
+      )
+      .addPanel(
+        $.panel('Latency') +
+        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.alertmanager) + [utils.selector.re('route', '/alertmanagerpb.Alertmanager/HandleRequest')])
+      )
+    )
+    .addRow(
       $.row('Alerts received')
       .addPanel(
         $.panel('APS') +
