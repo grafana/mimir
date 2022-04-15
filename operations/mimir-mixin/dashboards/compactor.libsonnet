@@ -64,7 +64,10 @@ local fixTargetsForTransformations(panel, refIds) = panel {
         -
         max_over_time(cortex_compactor_last_successful_run_timestamp_seconds{%(job)s}[1h])
       )
-    ||| % { instance: $._config.per_instance_label, job: $.jobMatcher($._config.job_names.compactor) },
+    ||| % {
+      instance: $._config.per_instance_label,
+      job: $.jobMatcher($._config.job_names.compactor),
+    },
 
   local lastRunCommonTransformations = [
     $.transformation('organize', {
@@ -107,13 +110,20 @@ local fixTargetsForTransformations(panel, refIds) = panel {
       )
       .addPanel(
         $.panel('Tenants compaction progress') +
-        $.queryPanel(|||
-          (
-            cortex_compactor_tenants_processing_succeeded{%s} +
-            cortex_compactor_tenants_processing_failed{%s} +
-            cortex_compactor_tenants_skipped{%s}
-          ) / cortex_compactor_tenants_discovered{%s}
-        ||| % [$.jobMatcher($._config.job_names.compactor), $.jobMatcher($._config.job_names.compactor), $.jobMatcher($._config.job_names.compactor), $.jobMatcher($._config.job_names.compactor)], '{{%s}}' % $._config.per_instance_label) +
+        $.queryPanel(
+          |||
+            (
+              cortex_compactor_tenants_processing_succeeded{%(job)s} +
+              cortex_compactor_tenants_processing_failed{%(job)s} +
+              cortex_compactor_tenants_skipped{%(job)s}
+            )
+            /
+            cortex_compactor_tenants_discovered{%(job)s}
+          ||| % {
+            job: $.jobMatcher($._config.job_names.compactor),
+          },
+          '{{%s}}' % $._config.per_instance_label
+        ) +
         { yaxes: $.yaxes({ format: 'percentunit', max: 1 }) } +
         $.panelDescription(
           'Tenants compaction progress',
@@ -184,7 +194,9 @@ local fixTargetsForTransformations(panel, refIds) = panel {
 
             %(thresholdDescriptions)s
             If the status of any compactor replicas are *Late* or *Very late*, check their health.
-          ||| % { thresholdDescriptions: lastRunThresholds.descriptions },
+          ||| % {
+            thresholdDescriptions: lastRunThresholds.descriptions,
+          },
         ) +
         $.queryPanel(lastRunQuery, 'Last run') {
           type: 'table',
@@ -261,7 +273,14 @@ local fixTargetsForTransformations(panel, refIds) = panel {
       $.row('Garbage collector')
       .addPanel(
         $.panel('Blocks marked for deletion / sec') +
-        $.queryPanel('sum(rate(cortex_compactor_blocks_marked_for_deletion_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.compactor), 'blocks') +
+        $.queryPanel(
+          |||
+            sum(rate(cortex_compactor_blocks_marked_for_deletion_total{%(job)s}[$__rate_interval]))
+          ||| % {
+            job: $.jobMatcher($._config.job_names.compactor),
+          },
+          'blocks'
+        ) +
         { yaxes: $.yaxes('ops') },
       )
       .addPanel(
@@ -269,8 +288,16 @@ local fixTargetsForTransformations(panel, refIds) = panel {
           'Blocks deletions / sec',
           // The cortex_compactor_blocks_cleaned_total tracks the number of successfully
           // deleted blocks.
-          'sum(rate(cortex_compactor_blocks_cleaned_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.compactor),
-          'sum(rate(cortex_compactor_block_cleanup_failures_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.compactor),
+          |||
+            sum(rate(cortex_compactor_blocks_cleaned_total{%(job)s}[$__rate_interval]))
+          ||| % {
+            job: $.jobMatcher($._config.job_names.compactor),
+          },
+          |||
+            sum(rate(cortex_compactor_block_cleanup_failures_total{%(job)s}[$__rate_interval]))
+          ||| % {
+            job: $.jobMatcher($._config.job_names.compactor),
+          },
         ) + { yaxes: $.yaxes('ops') }
       )
     )
@@ -281,8 +308,18 @@ local fixTargetsForTransformations(panel, refIds) = panel {
           'Metadata syncs / sec',
           // The cortex_compactor_meta_syncs_total metric is incremented each time a per-tenant
           // metadata sync is triggered.
-          'sum(rate(cortex_compactor_meta_syncs_total{%s}[$__rate_interval])) - sum(rate(cortex_compactor_meta_sync_failures_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.compactor), $.jobMatcher($._config.job_names.compactor)],
-          'sum(rate(cortex_compactor_meta_sync_failures_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.compactor),
+          |||
+            sum(rate(cortex_compactor_meta_syncs_total{%(job)s}[$__rate_interval]))
+            -
+            sum(rate(cortex_compactor_meta_sync_failures_total{%(job)s}[$__rate_interval]))
+          ||| % {
+            job: $.jobMatcher($._config.job_names.compactor),
+          },
+          |||
+            sum(rate(cortex_compactor_meta_sync_failures_total{%(job)s}[$__rate_interval]))
+          ||| % {
+            job: $.jobMatcher($._config.job_names.compactor),
+          },
         ) + { yaxes: $.yaxes('ops') }
       )
       .addPanel(
