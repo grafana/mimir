@@ -37,6 +37,13 @@ message AddBackfillFileRequest {
 
 message AddBackfillFileResponse {}
 
+message FinishBackfillRequest {
+  uint32 tenant_id = 1;
+  string block_id = 2;
+}
+
+message FinishBackfillResponse {}
+
 message TimeSeries {
   repeated LabelPair labels = 1 [(gogoproto.nullable) = false, (gogoproto.customtype) = "LabelAdapter"];
   // Sorted by time, oldest sample first.

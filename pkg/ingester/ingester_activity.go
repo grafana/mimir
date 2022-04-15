@@ -138,6 +138,15 @@ func (i *ActivityTrackerWrapper) AddBackfillFile(stream client.Ingester_AddBackf
 	return i.ing.AddBackfillFile(stream)
 }
 
+func (i *ActivityTrackerWrapper) FinishBackfill(ctx context.Context, req *mimirpb.FinishBackfillRequest) (*mimirpb.FinishBackfillResponse, error) {
+	ix := i.tracker.Insert(func() string {
+		return requestActivity(context.Background(), "Ingester/FinishBackfill", req)
+	})
+	defer i.tracker.Delete(ix)
+
+	return i.ing.FinishBackfill(ctx, req)
+}
+
 func (i *ActivityTrackerWrapper) FlushHandler(w http.ResponseWriter, r *http.Request) {
 	ix := i.tracker.Insert(func() string {
 		return requestActivity(r.Context(), "Ingester/FlushHandler", nil)

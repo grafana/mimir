@@ -2360,7 +2360,7 @@ func (i *Ingester) AddBackfillFile(stream client.Ingester_AddBackfillFileServer)
 		tenantID, "blockId", blockID, "path", pth, "chunks", chunk, "bytesWritten", bytesWritten)
 
 	if _, err := f.Seek(0, 0); err != nil {
-		return errors.Wrap(err, "seeking in file")
+		return errors.Wrap(err, "failed seeking in file")
 	}
 
 	dst := path.Join("uploads", blockID, pth)
@@ -2369,10 +2369,30 @@ func (i *Ingester) AddBackfillFile(stream client.Ingester_AddBackfillFileServer)
 	bkt := bucket.NewUserBucketClient(string(tenantID), i.bucket, i.limits)
 	defer bkt.Close()
 	if err := bkt.Upload(ctx, dst, f); err != nil {
-		return errors.Wrap(err, "uploading backfill file to bucket")
+		return errors.Wrap(err, "failed uploading backfill file to bucket")
 	}
 
 	return stream.SendAndClose(&mimirpb.AddBackfillFileResponse{})
+}
+
+func (i *Ingester) FinishBackfill(ctx context.Context, req *mimirpb.FinishBackfillRequest) (*mimirpb.FinishBackfillResponse, error) {
+	if err := i.checkRunning(); err != nil {
+		return nil, err
+	}
+
+	level.Info(i.logger).Log("msg", "processing request to finish backfill", "tenantId",
+		req.TenantId, "blockId", req.BlockId)
+
+	// TODO: Move backfilled block from staging area to destination in bucket
+	/*
+		bkt := bucket.NewUserBucketClient(string(req.TenantId), i.bucket, i.limits)
+		defer bkt.Close()
+		if err := bkt.Move(ctx, src, dst); err != nil {
+			return nil, errors.Wrap(err, "failed uploading backfill file to bucket")
+		}
+	*/
+
+	return &mimirpb.FinishBackfillResponse{}, nil
 }
 
 func initSelectHints(start, end int64) *storage.SelectHints {

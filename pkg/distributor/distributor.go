@@ -12,7 +12,6 @@ import (
 	"io"
 	math "math"
 	"net/http"
-	"path/filepath"
 	"sort"
 	"sync"
 	"time"
@@ -868,37 +867,10 @@ func (d *Distributor) StartBackfill(ctx context.Context, tenantID int, blockID s
 
 // AddBackfillFile adds a file to an ongoing metrics backfill.
 func (d *Distributor) AddBackfillFile(ctx context.Context, tenantID int, blockID, pth string, r *http.Request) error {
-	tenantIDFromCtx, err := tenant.TenantID(ctx)
-	if err != nil {
-		return err
-	}
-	localCtx := user.InjectOrgID(ctx, tenantIDFromCtx)
-	// Get clientIP(s) from Context and add it to localCtx
-	source := util.GetSourceIPsFromOutgoingCtx(ctx)
-	localCtx = util.AddSourceIPsToOutgoingContext(localCtx, source)
-	if sp := opentracing.SpanFromContext(ctx); sp != nil {
-		localCtx = opentracing.ContextWithSpan(localCtx, sp)
-	}
-
 	level.Info(d.log).Log("msg", "adding file to metrics backfill", "tenantId", tenantID,
 		"blockId", blockID, "path", pth, "size", r.ContentLength)
-	op := ring.WriteNoExtend
-	if d.cfg.ExtendWrites {
-		op = ring.Write
-	}
-	key, err := d.tokenForLabels(tenantIDFromCtx, nil)
-	if err != nil {
-		return err
-	}
-	subRing := d.ingestersRing.ShuffleShard(tenantIDFromCtx, d.limits.IngestionTenantShardSize(tenantIDFromCtx))
-	if err := ring.DoBatch(ctx, op, subRing, []uint32{key}, func(ingester ring.InstanceDesc, indexes []int) error {
-		h, err := d.ingesterPool.GetClientFor(ingester.Addr)
-		if err != nil {
-			return err
-		}
-		c := h.(ingester_client.IngesterClient)
-
-		stream, err := c.AddBackfillFile(localCtx)
+	return d.backfillRPC(ctx, tenantID, blockID, func(ctx context.Context, c ingester_client.IngesterClient) error {
+		stream, err := c.AddBackfillFile(ctx)
 		if err != nil {
 			return errors.Wrap(err, "failed to get gRPC stream for adding file to backfill")
 		}
@@ -937,11 +909,8 @@ func (d *Distributor) AddBackfillFile(ctx context.Context, tenantID int, blockID
 		}
 
 		level.Info(d.log).Log("msg", "successfully added file to backfill via gRPC", "bytesWritten", bytesWritten)
-
 		return nil
-	}, func() {}); err != nil {
-		return err
-	}
+	})
 
 	return nil
 }
@@ -949,7 +918,55 @@ func (d *Distributor) AddBackfillFile(ctx context.Context, tenantID int, blockID
 // FinishBackfill requests the finishing of a backfill session.
 func (d *Distributor) FinishBackfill(ctx context.Context, tenantID int, blockID string) error {
 	level.Info(d.log).Log("msg", "finishing backfill", "tenantId", tenantID, "blockId", blockID)
-	// TODO: Move block files to production location, meta.json last
+
+	return d.backfillRPC(ctx, tenantID, blockID, func(ctx context.Context, c ingester_client.IngesterClient) error {
+		if _, err := c.FinishBackfill(ctx, &mimirpb.FinishBackfillRequest{
+			TenantId: uint32(tenantID),
+			BlockId:  blockID,
+		}); err != nil {
+			return errors.Wrap(err, "gRPC call to finish backfill failed")
+		}
+
+		level.Info(d.log).Log("msg", "successfully finished backfill via gRPC")
+		return nil
+	})
+}
+
+// backfillRPC makes a backfill gRPC call to ingesters.
+func (d *Distributor) backfillRPC(ctx context.Context, tenantID int, blockID string, callback func(context.Context, ingester_client.IngesterClient) error) error {
+	tenantIDFromCtx, err := tenant.TenantID(ctx)
+	if err != nil {
+		return err
+	}
+	localCtx := user.InjectOrgID(ctx, tenantIDFromCtx)
+	// Get clientIP(s) from Context and add it to localCtx
+	source := util.GetSourceIPsFromOutgoingCtx(ctx)
+	localCtx = util.AddSourceIPsToOutgoingContext(localCtx, source)
+	if sp := opentracing.SpanFromContext(ctx); sp != nil {
+		localCtx = opentracing.ContextWithSpan(localCtx, sp)
+	}
+
+	op := ring.WriteNoExtend
+	if d.cfg.ExtendWrites {
+		op = ring.Write
+	}
+	key, err := d.tokenForLabels(tenantIDFromCtx, nil)
+	if err != nil {
+		return err
+	}
+	subRing := d.ingestersRing.ShuffleShard(tenantIDFromCtx, d.limits.IngestionTenantShardSize(tenantIDFromCtx))
+	if err := ring.DoBatch(ctx, op, subRing, []uint32{key}, func(ingester ring.InstanceDesc, indexes []int) error {
+		h, err := d.ingesterPool.GetClientFor(ingester.Addr)
+		if err != nil {
+			return err
+		}
+		c := h.(ingester_client.IngesterClient)
+
+		return callback(localCtx, c)
+	}, func() {}); err != nil {
+		return err
+	}
+
 	return nil
 }
 

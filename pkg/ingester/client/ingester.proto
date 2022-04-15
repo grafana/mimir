@@ -21,6 +21,7 @@ service Ingester {
   rpc QueryStream(QueryRequest) returns (stream QueryStreamResponse) {};
   rpc QueryExemplars(ExemplarQueryRequest) returns (ExemplarQueryResponse) {};
   rpc AddBackfillFile(stream cortexpb.AddBackfillFileRequest) returns (cortexpb.AddBackfillFileResponse) {};
+  rpc FinishBackfill(cortexpb.FinishBackfillRequest) returns (cortexpb.FinishBackfillResponse) {};
 
   rpc LabelValues(LabelValuesRequest) returns (LabelValuesResponse) {};
   rpc LabelNames(LabelNamesRequest) returns (LabelNamesResponse) {};
