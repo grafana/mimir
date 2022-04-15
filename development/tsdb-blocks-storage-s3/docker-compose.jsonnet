@@ -56,6 +56,13 @@ std.manifestYamlDoc({
       jaegerApp: 'ingester-2',
       extraVolumes: ['.data-ingester-2:/tmp/mimir-tsdb-ingester:delegated'],
     }),
+
+    'ingester-3': mimirService({
+      target: 'ingester',
+      httpPort: 8005,
+      jaegerApp: 'ingester-3',
+      extraVolumes: ['.data-ingester-3:/tmp/mimir-tsdb-ingester:delegated'],
+    }),
   },
 
   read_components::

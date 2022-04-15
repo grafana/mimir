@@ -539,6 +539,8 @@ type extendedAppender interface {
 	storage.GetRef
 }
 
+var requestsCount = atomic.NewInt64(0)
+
 // PushWithCleanup is the Push() implementation for blocks storage and takes a WriteRequest and adds it to the TSDB head.
 func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteRequest, cleanup func()) (*mimirpb.WriteResponse, error) {
 	// NOTE: because we use `unsafe` in deserialisation, we must not
@@ -625,6 +627,11 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 
 	// Walk the samples, appending them to the users database
 	app := db.Appender(ctx).(extendedAppender)
+
+	// Slow down 1 request every 2, only on 1 of the 3 ingesters.
+	if strings.Contains(i.lifecycler.Addr, ":9002") && requestsCount.Inc()%2 == 0 {
+		time.Sleep(2 * time.Second)
+	}
 
 	if span != nil {
 		span.LogFields(otlog.String("event", "got appender"),

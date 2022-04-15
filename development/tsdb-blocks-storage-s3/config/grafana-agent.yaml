@@ -4,7 +4,7 @@ server:
 
 prometheus:
   global:
-    scrape_interval: 5s
+    scrape_interval: 1s
     external_labels:
       scraped_by: grafana-agent
   configs:
