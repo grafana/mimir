@@ -296,6 +296,11 @@ func (d *delayingBucket) Delete(ctx context.Context, name string) error {
 	return d.bkt.Delete(ctx, name)
 }
 
+func (d *delayingBucket) Move(ctx context.Context, src, dst string) error {
+	time.Sleep(d.delay)
+	return d.bkt.Move(ctx, src, dst)
+}
+
 func (d *delayingBucket) Name() string {
 	time.Sleep(d.delay)
 	return d.bkt.Name()

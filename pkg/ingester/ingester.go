@@ -17,6 +17,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -2381,16 +2382,37 @@ func (i *Ingester) FinishBackfill(ctx context.Context, req *mimirpb.FinishBackfi
 	}
 
 	level.Info(i.logger).Log("msg", "processing request to finish backfill", "tenantId",
-		req.TenantId, "blockId", req.BlockId)
+		req.TenantId, "blockId", req.BlockId, "files", len(req.Files))
 
-	// TODO: Move backfilled block from staging area to destination in bucket
-	/*
-		bkt := bucket.NewUserBucketClient(string(req.TenantId), i.bucket, i.limits)
-		defer bkt.Close()
-		if err := bkt.Move(ctx, src, dst); err != nil {
-			return nil, errors.Wrap(err, "failed uploading backfill file to bucket")
+	tenantID := strconv.Itoa(int(req.TenantId))
+	bkt := bucket.NewUserBucketClient(tenantID, i.bucket, i.limits)
+	defer bkt.Close()
+
+	for _, fpath := range req.Files {
+		if path.Base(fpath) == "meta.json" {
+			continue
 		}
-	*/
+
+		src := path.Join(tenantID, "uploads", req.BlockId, fpath)
+		dst := path.Join(tenantID, req.BlockId, fpath)
+		level.Info(i.logger).Log("msg", "moving file in bucket", "src", src, "dst", dst)
+		if err := bkt.Move(ctx, src, dst); err != nil {
+			return nil, errors.Wrapf(err, "failed moving %s to %s in bucket", src, dst)
+		}
+	}
+
+	// Move meta.json into place last, so the block isn't considered complete before it actually is
+	src := path.Join(tenantID, "uploads", req.BlockId, "meta.json")
+	dst := path.Join(tenantID, req.BlockId, "meta.json")
+	level.Info(i.logger).Log("msg", "moving file in bucket", "src", src, "dst", dst)
+	if err := bkt.Move(ctx, src, dst); err != nil {
+		return nil, errors.Wrapf(err, "failed moving %s to %s in bucket", src, dst)
+	}
+
+	blockDir := path.Join(tenantID, "uploads", req.BlockId)
+	if err := bkt.Delete(ctx, blockDir); err != nil {
+		return nil, errors.Wrapf(err, "failed to delete %s from bucket", blockDir)
+	}
 
 	return &mimirpb.FinishBackfillResponse{}, nil
 }

@@ -503,6 +503,12 @@ func (b *Bucket) Upload(ctx context.Context, name string, r io.Reader) error {
 	return nil
 }
 
+// Move the object at path src to path dst.
+func (b *Bucket) Move(ctx context.Context, src, dst string) error {
+	// TODO
+	return nil
+}
+
 // Attributes returns information about the specified object.
 func (b *Bucket) Attributes(ctx context.Context, name string) (objstore.ObjectAttributes, error) {
 	objInfo, err := b.client.StatObject(ctx, b.name, name, minio.StatObjectOptions{})

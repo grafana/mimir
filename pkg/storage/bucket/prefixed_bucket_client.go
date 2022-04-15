@@ -46,6 +46,11 @@ func (b *PrefixedBucketClient) Delete(ctx context.Context, name string) error {
 	return b.bucket.Delete(ctx, b.fullName(name))
 }
 
+// Move moves the object with path src to path dst.
+func (b *PrefixedBucketClient) Move(ctx context.Context, src, dst string) error {
+	return b.bucket.Move(ctx, b.fullName(src), b.fullName(dst))
+}
+
 // Name returns the bucket name for the provider.
 func (b *PrefixedBucketClient) Name() string { return b.bucket.Name() }
 

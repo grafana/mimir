@@ -182,6 +182,11 @@ func NewBucket(logger log.Logger, azureConfig []byte, component string) (*Bucket
 		return nil, err
 	}
 
+	return NewBucketWithConfig(logger, conf, component)
+}
+
+// NewBucketWithConfig returns a new Bucket using the provided Azure config struct.
+func NewBucketWithConfig(logger log.Logger, conf Config, component string) (*Bucket, error) {
 	if err := conf.validate(); err != nil {
 		return nil, err
 	}
@@ -410,6 +415,25 @@ func (b *Bucket) Delete(ctx context.Context, name string) error {
 	if _, err := blobURL.Delete(ctx, blob.DeleteSnapshotsOptionInclude, blob.BlobAccessConditions{}); err != nil {
 		return errors.Wrapf(err, "error deleting blob, address: %s", name)
 	}
+	return nil
+}
+
+// Move the object at path src to path dst.
+func (b *Bucket) Move(ctx context.Context, src, dst string) error {
+	level.Debug(b.logger).Log("msg", "Moving blob", "src", src, "dst", dst)
+	// TODO
+	/*
+		blobURL := getBlobURL(name, b.containerURL)
+
+		if _, err := blob.UploadStreamToBlockBlob(ctx, r, blobURL,
+			blob.UploadStreamToBlockBlobOptions{
+				BufferSize: 3 * 1024 * 1024,
+				MaxBuffers: 4,
+			},
+		); err != nil {
+			return errors.Wrapf(err, "cannot move Azure blob from %s to %s", src, dst)
+		}
+	*/
 	return nil
 }
 

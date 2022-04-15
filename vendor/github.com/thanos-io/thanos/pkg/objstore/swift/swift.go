@@ -325,6 +325,12 @@ func (c *Container) Delete(_ context.Context, name string) error {
 	return errors.Wrap(c.connection.LargeObjectDelete(c.name, name), "delete object")
 }
 
+// Move the object at path src to path dst.
+func (c *Container) Move(ctx context.Context, src, dst string) error {
+	// TODO
+	return nil
+}
+
 func (*Container) Close() error {
 	// Nothing to close.
 	return nil

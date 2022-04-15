@@ -194,6 +194,37 @@ func (b *Bucket) Upload(_ context.Context, name string, r io.Reader) (err error)
 	return nil
 }
 
+// Move the object at path src to path dst.
+func (b *Bucket) Move(ctx context.Context, src, dst string) error {
+	dstPath := filepath.Join(b.rootDir, dst)
+	if err := os.MkdirAll(filepath.Dir(dstPath), os.ModePerm); err != nil {
+		return err
+	}
+
+	srcPath := filepath.Join(b.rootDir, src)
+	if err := os.Rename(srcPath, dstPath); err != nil {
+		return err
+	}
+
+	srcDir := filepath.Dir(srcPath)
+	for srcDir != b.rootDir {
+		empty, err := isDirEmpty(srcDir)
+		if err != nil {
+			return err
+		}
+		if !empty {
+			break
+		}
+
+		if err := os.Remove(srcDir); err != nil {
+			return errors.Wrapf(err, "rm %s", srcDir)
+		}
+		srcDir = filepath.Dir(srcDir)
+	}
+
+	return nil
+}
+
 func isDirEmpty(name string) (ok bool, err error) {
 	f, err := os.Open(filepath.Clean(name))
 	if os.IsNotExist(err) {

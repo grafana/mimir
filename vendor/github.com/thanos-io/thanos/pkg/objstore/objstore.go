@@ -7,7 +7,9 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"time"
@@ -28,6 +30,7 @@ const (
 	OpExists     = "exists"
 	OpUpload     = "upload"
 	OpDelete     = "delete"
+	OpMove       = "move"
 	OpAttributes = "attributes"
 )
 
@@ -44,6 +47,10 @@ type Bucket interface {
 	// Delete removes the object with the given name.
 	// If object does not exists in the moment of deletion, Delete should throw error.
 	Delete(ctx context.Context, name string) error
+
+	// Move moves the object with path src to path dst.
+	// If no object with path src doesn't exist, an error is returned.
+	Move(ctx context.Context, src, dst string) error
 
 	// Name returns the bucket name for the provider.
 	Name() string
@@ -178,15 +185,19 @@ func UploadDir(ctx context.Context, logger log.Logger, bkt Bucket, srcdir, dstdi
 	if !df.IsDir() {
 		return errors.Errorf("%s is not a directory", srcdir)
 	}
-	return filepath.Walk(srcdir, func(src string, fi os.FileInfo, err error) error {
+	return filepath.WalkDir(srcdir, func(src string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		if fi.IsDir() {
+		if d.IsDir() {
 			return nil
 		}
-		dst := filepath.Join(dstdir, strings.TrimPrefix(src, srcdir))
+		srcRel, err := filepath.Rel(srcdir, src)
+		if err != nil {
+			return errors.Wrap(err, "getting relative path")
+		}
 
+		dst := path.Join(dstdir, filepath.ToSlash(srcRel))
 		return UploadFile(ctx, logger, bkt, src, dst)
 	})
 }
@@ -255,8 +266,13 @@ func DownloadDir(ctx context.Context, logger log.Logger, bkt BucketReader, origi
 
 	var downloadedFiles []string
 	if err := bkt.Iter(ctx, src, func(name string) error {
+		dst := filepath.Join(dst, filepath.Base(name))
 		if strings.HasSuffix(name, DirDelim) {
-			return DownloadDir(ctx, logger, bkt, originalSrc, name, filepath.Join(dst, filepath.Base(name)), ignoredPaths...)
+			if err := DownloadDir(ctx, logger, bkt, originalSrc, name, dst, ignoredPaths...); err != nil {
+				return err
+			}
+			downloadedFiles = append(downloadedFiles, dst)
+			return nil
 		}
 		for _, ignoredPath := range ignoredPaths {
 			if ignoredPath == strings.TrimPrefix(name, string(originalSrc)+DirDelim) {
@@ -271,6 +287,7 @@ func DownloadDir(ctx context.Context, logger log.Logger, bkt BucketReader, origi
 		downloadedFiles = append(downloadedFiles, dst)
 		return nil
 	}); err != nil {
+		downloadedFiles = append(downloadedFiles, dst) // Last, clean up the root dst directory.
 		// Best-effort cleanup if the download failed.
 		for _, f := range downloadedFiles {
 			if rerr := os.Remove(f); rerr != nil {
@@ -317,6 +334,11 @@ func BucketWithMetrics(name string, b Bucket, reg prometheus.Registerer) *metric
 			Name: "thanos_objstore_bucket_last_successful_upload_time",
 			Help: "Second timestamp of the last successful upload to the bucket.",
 		}, []string{"bucket"}),
+
+		lastSuccessfulMoveTime: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
+			Name: "thanos_objstore_bucket_last_successful_move_time",
+			Help: "Second timestamp of the last successful move in the bucket.",
+		}, []string{"bucket"}),
 	}
 	for _, op := range []string{
 		OpIter,
@@ -332,6 +354,7 @@ func BucketWithMetrics(name string, b Bucket, reg prometheus.Registerer) *metric
 		bkt.opsDuration.WithLabelValues(op)
 	}
 	bkt.lastSuccessfulUploadTime.WithLabelValues(b.Name())
+	bkt.lastSuccessfulMoveTime.WithLabelValues(b.Name())
 	return bkt
 }
 
@@ -344,6 +367,7 @@ type metricBucket struct {
 
 	opsDuration              *prometheus.HistogramVec
 	lastSuccessfulUploadTime *prometheus.GaugeVec
+	lastSuccessfulMoveTime   *prometheus.GaugeVec
 }
 
 func (b *metricBucket) WithExpectedErrs(fn IsOpFailureExpectedFunc) Bucket {
@@ -354,6 +378,7 @@ func (b *metricBucket) WithExpectedErrs(fn IsOpFailureExpectedFunc) Bucket {
 		isOpFailureExpected:      fn,
 		opsDuration:              b.opsDuration,
 		lastSuccessfulUploadTime: b.lastSuccessfulUploadTime,
+		lastSuccessfulMoveTime:   b.lastSuccessfulMoveTime,
 	}
 }
 
@@ -478,6 +503,22 @@ func (b *metricBucket) Delete(ctx context.Context, name string) error {
 	return nil
 }
 
+func (b *metricBucket) Move(ctx context.Context, src, dst string) error {
+	const op = OpMove
+	b.ops.WithLabelValues(op).Inc()
+
+	start := time.Now()
+	if err := b.bkt.Move(ctx, src, dst); err != nil {
+		if !b.isOpFailureExpected(err) && ctx.Err() != context.Canceled {
+			b.opsFailures.WithLabelValues(op).Inc()
+		}
+		return err
+	}
+	b.lastSuccessfulMoveTime.WithLabelValues(b.bkt.Name()).SetToCurrentTime()
+	b.opsDuration.WithLabelValues(op).Observe(time.Since(start).Seconds())
+	return nil
+}
+
 func (b *metricBucket) IsObjNotFoundErr(err error) bool {
 	return b.bkt.IsObjNotFoundErr(err)
 }
@@ -492,6 +533,8 @@ func (b *metricBucket) Name() string {
 
 type timingReadCloser struct {
 	io.ReadCloser
+	objSize    int64
+	objSizeErr error
 
 	alreadyGotErr bool
 
@@ -506,14 +549,21 @@ func newTimingReadCloser(rc io.ReadCloser, op string, dur *prometheus.HistogramV
 	// Initialize the metrics with 0.
 	dur.WithLabelValues(op)
 	failed.WithLabelValues(op)
+	objSize, objSizeErr := TryToGetSize(rc)
 	return &timingReadCloser{
 		ReadCloser:        rc,
+		objSize:           objSize,
+		objSizeErr:        objSizeErr,
 		start:             time.Now(),
 		op:                op,
 		duration:          dur,
 		failed:            failed,
 		isFailureExpected: isFailureExpected,
 	}
+}
+
+func (t *timingReadCloser) ObjectSize() (int64, error) {
+	return t.objSize, t.objSizeErr
 }
 
 func (rc *timingReadCloser) Close() error {

@@ -7,6 +7,7 @@ package distributor
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -916,13 +917,24 @@ func (d *Distributor) AddBackfillFile(ctx context.Context, tenantID int, blockID
 }
 
 // FinishBackfill requests the finishing of a backfill session.
-func (d *Distributor) FinishBackfill(ctx context.Context, tenantID int, blockID string) error {
+func (d *Distributor) FinishBackfill(ctx context.Context, tenantID int, blockID string, r *http.Request) error {
 	level.Info(d.log).Log("msg", "finishing backfill", "tenantId", tenantID, "blockId", blockID)
+	dec := json.NewDecoder(r.Body)
+	var payload struct {
+		Files []string `json:"files"`
+	}
+	if err := dec.Decode(&payload); err != nil {
+		return errors.Wrap(err, "failed to decode JSON payload")
+	}
+	if len(payload.Files) == 0 {
+		return fmt.Errorf("no files listed in payload")
+	}
 
 	return d.backfillRPC(ctx, tenantID, blockID, func(ctx context.Context, c ingester_client.IngesterClient) error {
 		if _, err := c.FinishBackfill(ctx, &mimirpb.FinishBackfillRequest{
 			TenantId: uint32(tenantID),
 			BlockId:  blockID,
+			Files:    payload.Files,
 		}); err != nil {
 			return errors.Wrap(err, "gRPC call to finish backfill failed")
 		}

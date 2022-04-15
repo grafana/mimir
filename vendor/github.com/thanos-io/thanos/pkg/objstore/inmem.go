@@ -195,6 +195,20 @@ func (b *InMemBucket) Delete(_ context.Context, name string) error {
 	return nil
 }
 
+// Move the object at path src to path dst.
+func (b *InMemBucket) Move(ctx context.Context, src, dst string) error {
+	defer b.mtx.Unlock()
+	if _, ok := b.objects[src]; !ok {
+		return errNotFound
+	}
+
+	b.objects[dst] = b.objects[src]
+	b.attrs[dst] = b.attrs[src]
+	delete(b.objects, src)
+	delete(b.attrs, src)
+	return nil
+}
+
 // IsObjNotFoundErr returns true if error means that object is not found. Relevant to Get operations.
 func (b *InMemBucket) IsObjNotFoundErr(err error) bool {
 	return errors.Is(err, errNotFound)

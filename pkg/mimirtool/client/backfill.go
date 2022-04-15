@@ -1,6 +1,7 @@
 package client
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -40,9 +41,20 @@ func (c *MimirClient) backfillBlock(dpath string, tenantID int, logger log.Logge
 	}
 
 	dec := json.NewDecoder(f)
-	var blockMeta tsdb.BlockMeta
+	var blockMeta struct {
+		tsdb.BlockMeta
+
+		Thanos struct {
+			Files []struct {
+				RelPath string `json:"rel_path"`
+			} `json:"files"`
+		} `json:"thanos"`
+	}
 	if err := dec.Decode(&blockMeta); err != nil {
 		return errors.Wrapf(err, "failed to decode %q", metaPath)
+	}
+	if len(blockMeta.Thanos.Files) == 0 {
+		return fmt.Errorf("no files listed in meta.json")
 	}
 
 	blockID := filepath.Base(dpath)
@@ -97,8 +109,18 @@ func (c *MimirClient) backfillBlock(dpath string, tenantID int, logger log.Logge
 		return errors.Wrapf(err, "failed to traverse %q", dpath)
 	}
 
+	var payload struct {
+		Files []string `json:"files"`
+	}
+	for _, f := range blockMeta.Thanos.Files {
+		payload.Files = append(payload.Files, f.RelPath)
+	}
+	payloadB, err := json.Marshal(payload)
+	if err != nil {
+		return errors.Wrap(err, "failed to JSON encode payload")
+	}
 	res, err = c.doRequest(fmt.Sprintf("/api/v1/backfill/%d/%s", tenantID, blockID), http.MethodDelete,
-		nil, -1)
+		bytes.NewBuffer(payloadB), int64(len(payloadB)))
 	if err != nil {
 		return errors.Wrap(err, "request to finish backfill failed")
 	}

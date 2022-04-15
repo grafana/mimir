@@ -40,6 +40,7 @@ message AddBackfillFileResponse {}
 message FinishBackfillRequest {
   uint32 tenant_id = 1;
   string block_id = 2;
+  repeated string files = 3;
 }
 
 message FinishBackfillResponse {}

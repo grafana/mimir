@@ -89,6 +89,14 @@ func (t TracingBucket) Delete(ctx context.Context, name string) (err error) {
 	return
 }
 
+func (t TracingBucket) Move(ctx context.Context, src, dst string) (err error) {
+	tracing.DoWithSpan(ctx, "bucket_move", func(spanCtx context.Context, span opentracing.Span) {
+		span.LogKV("src", src, "dst", dst)
+		err = t.bkt.Move(spanCtx, src, dst)
+	})
+	return
+}
+
 func (t TracingBucket) Name() string {
 	return "tracing: " + t.bkt.Name()
 }
