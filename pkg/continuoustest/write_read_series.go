@@ -86,7 +86,7 @@ func (t *WriteReadSeriesTest) Init(ctx context.Context, now time.Time) error {
 // Run implements Test.
 func (t *WriteReadSeriesTest) Run(ctx context.Context, now time.Time) {
 	// Configure the rate limiter to send a sample for each series per second. At startup, this test may catch up
-	// with previous missing writes: this rate limit reduce the chances to hit the ingestion limit on Mimir side.
+	// with previous missing writes: this rate limit reduces the chances to hit the ingestion limit on Mimir side.
 	writeLimiter := rate.NewLimiter(rate.Limit(t.cfg.NumSeries), t.cfg.NumSeries)
 
 	// Write series for each expected timestamp until now.
