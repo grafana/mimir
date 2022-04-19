@@ -20,22 +20,23 @@ xk6 build --with github.com/grafana/xk6-client-prometheus-remote@latest
 
 The [load-testing-with-k6.js] script can be configured using the following environment variables:
 
-| Environment variable          | Required | Description                                                                           |
-| ----------------------------- | -------- | ------------------------------------------------------------------------------------- |
-| `K6_WRITE_HOSTNAME`           | Yes      | Mimir hostname to connect to on the write path.                                       |
-| `K6_READ_HOSTNAME`            | Yes      | Mimir hostname to connect to on the read path.                                        |
-| `K6_USERNAME`                 |          | Mimir username to use for HTTP bearer authentication.                                 |
-| `K6_WRITE_TOKEN`              |          | Authentication token to use for HTTP bearer authentication on requests to write path. |
-| `K6_READ_TOKEN`               |          | Authentication token to use for HTTP bearer authentication on requests to read path.  |
-| `K6_WRITE_REQUEST_RATE`       |          | Number of remote write requests to send every `K6_SCRAPE_INTERVAL_SECONDS`.           |
-| `K6_WRITE_SERIES_PER_REQUEST` |          | Number of series per remote write request.                                            |
-| `K6_READ_REQUEST_RATE`        |          | Number of query requests per second.                                                  |
-| `K6_DURATION_MIN`             |          | Duration of the load test in minutes (including ramp up and down).                    |
-| `K6_RAMP_UP_MIN`              |          | Duration of the ramp up period in minutes.                                            |
-| `K6_RAMP_DOWN_MIN`            |          | Duration of the ramp down period in minutes.                                          |
-| `K6_SCRAPE_INTERVAL_SECONDS`  |          | Simulated Prometheus scrape interval in seconds.                                      |
-| `K6_HA_REPLICAS`              |          | Number of HA replicas to simulate (use 1 for no HA).                                  |
-| `K6_HA_CLUSTERS`              |          | Number of HA clusters to simulate.                                                    |
+| Environment variable          | Required | Default value | Description                                                                           |
+| ----------------------------- | -------- | ------------- | ------------------------------------------------------------------------------------- |
+| `K6_WRITE_HOSTNAME`           | Yes      |               | Mimir hostname to connect to on the write path.                                       |
+| `K6_READ_HOSTNAME`            | Yes      |               | Mimir hostname to connect to on the read path.                                        |
+| `K6_SCHEME`                   |          | http          | The protocol scheme used for requests.                                                |
+| `K6_USERNAME`                 |          | ''            | Mimir username to use for HTTP bearer authentication.                                 |
+| `K6_WRITE_TOKEN`              |          | ''            | Authentication token to use for HTTP bearer authentication on requests to write path. |
+| `K6_READ_TOKEN`               |          | ''            | Authentication token to use for HTTP bearer authentication on requests to read path.  |
+| `K6_WRITE_REQUEST_RATE`       |          | 1             | Number of remote write requests to send every `K6_SCRAPE_INTERVAL_SECONDS`.           |
+| `K6_WRITE_SERIES_PER_REQUEST` |          | 1000          | Number of series per remote write request.                                            |
+| `K6_READ_REQUEST_RATE`        |          | 1             | Number of query requests per second.                                                  |
+| `K6_DURATION_MIN`             |          | 720           | Duration of the load test in minutes (including ramp up and down).                    |
+| `K6_RAMP_UP_MIN`              |          | 0             | Duration of the ramp up period in minutes.                                            |
+| `K6_RAMP_DOWN_MIN`            |          | 0             | Duration of the ramp down period in minutes.                                          |
+| `K6_SCRAPE_INTERVAL_SECONDS`  |          | 20            | Simulated Prometheus scrape interval in seconds.                                      |
+| `K6_HA_REPLICAS`              |          | 1             | Number of HA replicas to simulate (use 1 for no HA).                                  |
+| `K6_HA_CLUSTERS`              |          | 100           | Number of HA clusters to simulate.                                                    |
 
 For example, if Mimir is running on `localhost:80` you can run a small scale test with this command:
 
