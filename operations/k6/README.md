@@ -24,6 +24,7 @@ The [load-testing-with-k6.js] script can be configured using the following envir
 | ----------------------------- | -------- | ------------------------------------------------------------------------------------- |
 | `K6_WRITE_HOSTNAME`           | Yes      | Mimir hostname to connect to on the write path.                                       |
 | `K6_READ_HOSTNAME`            | Yes      | Mimir hostname to connect to on the read path.                                        |
+| `K6_SCHEME`                   |          | The protocol scheme used for requests.                                                |
 | `K6_USERNAME`                 |          | Mimir username to use for HTTP bearer authentication.                                 |
 | `K6_WRITE_TOKEN`              |          | Authentication token to use for HTTP bearer authentication on requests to write path. |
 | `K6_READ_TOKEN`               |          | Authentication token to use for HTTP bearer authentication on requests to read path.  |
