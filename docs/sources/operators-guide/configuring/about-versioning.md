@@ -74,6 +74,8 @@ The following features are currently experimental:
   - `-query-frontend.querier-forget-delay`
 - Query-scheduler
   - `-query-scheduler.querier-forget-delay`
+- Store-gateway
+  - `-blocks-storage.bucket-store.index-header-thread-pool-size`
 
 ## Deprecated features
 
