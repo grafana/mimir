@@ -356,7 +356,6 @@ func (q *blocksStoreQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, 
 	}
 
 	var (
-		resMtx            sync.Mutex
 		resNameSets       = [][]string{}
 		resWarnings       = storage.Warnings(nil)
 		convertedMatchers = convertMatchersToLabelMatcher(matchers)
@@ -368,10 +367,8 @@ func (q *blocksStoreQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, 
 			return nil, err
 		}
 
-		resMtx.Lock()
 		resNameSets = append(resNameSets, nameSets...)
 		resWarnings = append(resWarnings, warnings...)
-		resMtx.Unlock()
 
 		return queriedBlocks, nil
 	}
