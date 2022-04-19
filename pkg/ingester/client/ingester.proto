@@ -67,10 +67,39 @@ message LabelValueSeriesCount {
 
 message ReadRequest {
   repeated QueryRequest queries = 1;
+
+  enum ResponseType {
+    SAMPLES = 0;
+    STREAMED_XOR_CHUNKS = 1;
+  }
+  repeated ResponseType accepted_response_types = 2;
 }
 
 message ReadResponse {
   repeated QueryResponse results = 1;
+}
+
+message StreamReadResponse {
+  repeated StreamChunkedSeries chunked_series = 1;
+
+  int64 query_index = 2;
+}
+
+message StreamChunkedSeries {
+  repeated cortexpb.LabelPair labels = 1 [(gogoproto.nullable) = false, (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"];
+  repeated StreamChunk chunks = 2 [(gogoproto.nullable) = false];
+}
+
+message StreamChunk {
+  int64 min_time_ms = 1;
+  int64 max_time_ms = 2;
+
+  enum Encoding {
+    UNKNOWN = 0;
+    XOR     = 1;
+  }
+  Encoding type  = 3;
+  bytes data     = 4;
 }
 
 message QueryRequest {
