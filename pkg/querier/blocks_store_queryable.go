@@ -403,8 +403,6 @@ func (q *blocksStoreQuerier) LabelValues(name string, matchers ...*labels.Matche
 	var (
 		resValueSets = [][]string{}
 		resWarnings  = storage.Warnings(nil)
-
-		resultMtx sync.Mutex
 	)
 
 	queryFunc := func(clients map[BlocksStoreClient][]ulid.ULID, minT, maxT int64) ([]ulid.ULID, error) {
@@ -413,10 +411,8 @@ func (q *blocksStoreQuerier) LabelValues(name string, matchers ...*labels.Matche
 			return nil, err
 		}
 
-		resultMtx.Lock()
 		resValueSets = append(resValueSets, valueSets...)
 		resWarnings = append(resWarnings, warnings...)
-		resultMtx.Unlock()
 
 		return queriedBlocks, nil
 	}
@@ -446,8 +442,6 @@ func (q *blocksStoreQuerier) selectSorted(sp *storage.SelectHints, matchers ...*
 
 		maxChunksLimit  = q.limits.MaxChunksPerQuery(q.userID)
 		leftChunksLimit = maxChunksLimit
-
-		resultMtx sync.Mutex
 	)
 
 	shard, _, err := sharding.ShardFromMatchers(matchers)
@@ -461,8 +455,6 @@ func (q *blocksStoreQuerier) selectSorted(sp *storage.SelectHints, matchers ...*
 			return nil, err
 		}
 
-		resultMtx.Lock()
-
 		resSeriesSets = append(resSeriesSets, seriesSets...)
 		resWarnings = append(resWarnings, warnings...)
 
@@ -471,7 +463,6 @@ func (q *blocksStoreQuerier) selectSorted(sp *storage.SelectHints, matchers ...*
 		if maxChunksLimit > 0 {
 			leftChunksLimit -= numChunks
 		}
-		resultMtx.Unlock()
 
 		return queriedBlocks, nil
 	}
