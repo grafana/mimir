@@ -116,8 +116,8 @@ func (t *Threadpool) Execute(fn func() (interface{}, error)) (interface{}, error
 
 			t.pool <- thread
 			t.tasks.Dec()
-			t.timing.WithLabelValues(labelWaiting).Observe(start.Sub(acquired).Seconds())
-			t.timing.WithLabelValues(labelRunning).Observe(acquired.Sub(complete).Seconds())
+			t.timing.WithLabelValues(labelWaiting).Observe(acquired.Sub(start).Seconds())
+			t.timing.WithLabelValues(labelRunning).Observe(complete.Sub(acquired).Seconds())
 		}()
 
 		t.tasks.Inc()
