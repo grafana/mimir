@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: AGPL-3.0-only
+
 set -euo pipefail
 
 # Start from a clean setup.

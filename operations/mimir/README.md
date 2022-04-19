@@ -22,6 +22,8 @@ Initialise the Tanka, install the Mimir and Kubernetes Jsonnet libraries, and se
 [embedmd]:# (./getting-started.sh)
 ```sh
 #!/usr/bin/env bash
+# SPDX-License-Identifier: AGPL-3.0-only
+
 set -e
 
 # Initialise the Tanka.

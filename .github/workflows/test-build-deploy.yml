@@ -62,6 +62,8 @@ jobs:
           ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
       - name: Check Mixin
         run: make BUILD_IN_CONTAINER=false check-mixin
+      - name: Check Mixin Tests
+        run: make BUILD_IN_CONTAINER=false check-mixin-tests
       - name: Check Jsonnet Manifests
         run: make BUILD_IN_CONTAINER=false check-jsonnet-manifests
       - name: Check Jsonnet Getting Started
