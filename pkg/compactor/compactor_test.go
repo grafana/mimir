@@ -191,10 +191,6 @@ func TestMultitenantCompactor_ShouldDoNothingOnNoUserBlocks(t *testing.T) {
 		# HELP cortex_compactor_runs_failed_total Total number of compaction runs failed.
 		cortex_compactor_runs_failed_total 0
 
-		# HELP cortex_compactor_garbage_collected_blocks_total Total number of blocks marked for deletion by compactor.
-		# TYPE cortex_compactor_garbage_collected_blocks_total counter
-		cortex_compactor_garbage_collected_blocks_total 0
-
 		# HELP cortex_compactor_garbage_collection_duration_seconds Time it took to perform garbage collection iteration.
 		# TYPE cortex_compactor_garbage_collection_duration_seconds histogram
 		cortex_compactor_garbage_collection_duration_seconds_bucket{le="+Inf"} 0
@@ -271,7 +267,6 @@ func TestMultitenantCompactor_ShouldDoNothingOnNoUserBlocks(t *testing.T) {
 		"cortex_compactor_runs_started_total",
 		"cortex_compactor_runs_completed_total",
 		"cortex_compactor_runs_failed_total",
-		"cortex_compactor_garbage_collected_blocks_total",
 		"cortex_compactor_garbage_collection_duration_seconds",
 		"cortex_compactor_garbage_collection_failures_total",
 		"cortex_compactor_garbage_collection_total",
@@ -334,10 +329,6 @@ func TestMultitenantCompactor_ShouldRetryCompactionOnFailureWhileDiscoveringUser
 		# TYPE cortex_compactor_runs_failed_total counter
 		# HELP cortex_compactor_runs_failed_total Total number of compaction runs failed.
 		cortex_compactor_runs_failed_total 1
-
-		# HELP cortex_compactor_garbage_collected_blocks_total Total number of blocks marked for deletion by compactor.
-		# TYPE cortex_compactor_garbage_collected_blocks_total counter
-		cortex_compactor_garbage_collected_blocks_total 0
 
 		# HELP cortex_compactor_garbage_collection_duration_seconds Time it took to perform garbage collection iteration.
 		# TYPE cortex_compactor_garbage_collection_duration_seconds histogram
@@ -415,7 +406,6 @@ func TestMultitenantCompactor_ShouldRetryCompactionOnFailureWhileDiscoveringUser
 		"cortex_compactor_runs_started_total",
 		"cortex_compactor_runs_completed_total",
 		"cortex_compactor_runs_failed_total",
-		"cortex_compactor_garbage_collected_blocks_total",
 		"cortex_compactor_garbage_collection_duration_seconds",
 		"cortex_compactor_garbage_collection_failures_total",
 		"cortex_compactor_garbage_collection_total",
