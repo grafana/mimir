@@ -7,8 +7,7 @@ weight: 30
 
 # Grafana mimir-continuous-test
 
-Mimir-continuous-test is a standalone tool that you can use to continuously run smoke tests on live Grafana Mimir clusters.
-This tool targets Mimir developers.
+As a developer, you can use the standalone mimir-continuous-test tool to continuously run smoke tests on live Grafana Mimir clusters.
 This tool aims to help identifying a class of bugs that could be difficult to spot during development with unit and integration tests.
 
 ## Download mimir-continuous-test
@@ -34,21 +33,20 @@ chmod +x mimir-continuous-test
 
 Mimir-continuous-test requires the endpoints of the backend Grafana Mimir clusters and the tenant ID for writing and querying testing metrics:
 
-- Set `-tests.write-endpoint` to the base endpoint on the write path. The URL should have no trailing slash. The specific API path is appended by the tool to the URL, for example `/api/v1/push` for the remote write API.
-- Set `-tests.read-endpoint` to the base endpoint on the read path. The URL should have no trailing slash. The specific API path is appended by the tool to the URL, for example `/api/v1/query_range` for range query API.
+- Set `-tests.write-endpoint` to the base endpoint on the write path. Remove any trailing slash from the URL. The tool appends the specific API path to the URL, for example `/api/v1/push` for the remote-write API.
+- Set `-tests.read-endpoint` to the base endpoint on the read path. Remove any trailing slash from the URL. The tool appends the specific API path to the URL, for example `/api/v1/query_range` for the range-query API.
 - Set `-tests.tenant-id` to the tenant ID to use to write and read metrics in tests.
 
 > **Note:** You can run `mimir-continuous-test -help` to list all available configuration options.
 
 ## How it works
 
-Mimir-continuous-test periodically runs a suite of tests writing data to Mimir, querying it back, and checking if the query results match the expected ones.
-The tool exposes metrics that can be used to alert on test failures.
-Details about the failed tests are logged.
+Mimir-continuous-test periodically runs a suite of tests, writes data to Mimir, queries that data back, and checks if the query results match what is expected.
+The tool exposes metrics that you can use to alert on test failures, and the tool logs the details about the failed tests.
 
 ### Exported metrics
 
-Mimir-continuous-test exposes the following Prometheus metrics at the `/metrics` endpoint listening on the port configured via the flag `-server.metrics-port`:
+Mimir-continuous-test exposes the following Prometheus metrics at the `/metrics` endpoint listening on the port that you configured via the flag `-server.metrics-port`:
 
 ```bash
 # HELP mimir_continuous_test_writes_total Total number of attempted write requests.
@@ -79,5 +77,5 @@ mimir_continuous_test_query_result_checks_failed_total{test="<name>"}
 
 ### Alerts
 
-The released [Mimir alerts]({{< relref "../visualizing-metrics/installing-dashboards-and-alerts.md" >}}) include checks on failures tracked by mimir-continuous-test.
-We recommend using the provided alerts when running mimir-continuous-test.
+[Grafana Mimir alerts]({{< relref "../visualizing-metrics/installing-dashboards-and-alerts.md" >}}) include checks on failures that mimir-continuous-test tracks.
+When running mimir-continuous-test, use the provided alerts.
