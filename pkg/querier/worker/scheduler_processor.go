@@ -89,24 +89,26 @@ func (sp *schedulerProcessor) notifyShutdown(ctx context.Context, conn *grpc.Cli
 	}
 }
 
-func (sp *schedulerProcessor) processQueriesOnSingleStream(ctx context.Context, conn *grpc.ClientConn, address string) {
+func (sp *schedulerProcessor) processQueriesOnSingleStream(ctx context.Context, conn *grpc.ClientConn, address string, openTx *atomic.Int32) {
 	schedulerClient := schedulerpb.NewSchedulerForQuerierClient(conn)
 
 	execCtx, execCancel := context.WithCancel(context.Background())
-	propagateCancel := atomic.NewBool(true)
+
 	go func() {
 		for {
 			select {
 			case <-ctx.Done():
 				// This code is executed when the input context gets canceled.
-				if propagateCancel.Load() {
+				if openTx.Load() == 0 {
+					level.Info(sp.log).Log("msg", "Closing single stream", "Open Queries", openTx.Load())
 					execCancel()
 					return
 				}
 
 				// Wait until it's safe to propagate the cancel to the execution context.
 				// TODO wait until propagateCancel is TRUE
-				execCancel()
+				level.Info(sp.log).Log("msg", "Closing single stream", "Open Queries", openTx.Load())
+				//execCancel()
 			}
 		}
 	}()
@@ -124,7 +126,7 @@ func (sp *schedulerProcessor) processQueriesOnSingleStream(ctx context.Context, 
 			continue
 		}
 
-		if err := sp.querierLoop(c, address, propagateCancel); err != nil {
+		if err := sp.querierLoop(c, address, openTx); err != nil {
 			level.Error(sp.log).Log("msg", "error processing requests from scheduler", "err", err, "addr", address)
 			backoff.Wait()
 			continue
@@ -135,7 +137,7 @@ func (sp *schedulerProcessor) processQueriesOnSingleStream(ctx context.Context, 
 }
 
 // process loops processing requests on an established stream.
-func (sp *schedulerProcessor) querierLoop(c schedulerpb.SchedulerForQuerier_QuerierLoopClient, address string, propagateCancel *atomic.Bool) error {
+func (sp *schedulerProcessor) querierLoop(c schedulerpb.SchedulerForQuerier_QuerierLoopClient, address string, openTx *atomic.Int32) error {
 	// Build a child context so we can cancel a query when the stream is closed.
 	ctx, cancel := context.WithCancel(c.Context())
 	defer cancel()
@@ -151,7 +153,8 @@ func (sp *schedulerProcessor) querierLoop(c schedulerpb.SchedulerForQuerier_Quer
 		// then we have a race condition, because the query will fail anyway.
 
 		// We just received a query, so it's not safe to interrupt the execution.
-		propagateCancel.Store(false)
+		openTx.Inc()
+		level.Info(sp.log).Log("msg", "inc process count", "count", openTx.Load())
 
 		// Handle the request on a "background" goroutine, so we go back to
 		// blocking on c.Recv().  This allows us to detect the stream closing
@@ -161,7 +164,8 @@ func (sp *schedulerProcessor) querierLoop(c schedulerpb.SchedulerForQuerier_Quer
 		go func() {
 			defer func() {
 				// When the query execution will terminate, we can cancel the context at that time.
-				propagateCancel.Store(true)
+				openTx.Dec()
+				level.Info(sp.log).Log("msg", "dec process count", "count", openTx.Load())
 			}()
 
 			// We need to inject user into context for sending response back.

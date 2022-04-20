@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	notifyShutdownTimeout = 5 * time.Second
+	notifyShutdownTimeout = 60 * time.Second
 )
 
 // Manages processor goroutines for single grpc connection.
@@ -33,6 +33,7 @@ type processorManager struct {
 	cancels   []context.CancelFunc
 
 	currentProcessors *atomic.Int32
+	openTx            *atomic.Int32
 }
 
 func newProcessorManager(ctx context.Context, p processor, conn *grpc.ClientConn, address string) *processorManager {
@@ -42,6 +43,7 @@ func newProcessorManager(ctx context.Context, p processor, conn *grpc.ClientConn
 		conn:              conn,
 		address:           address,
 		currentProcessors: atomic.NewInt32(0),
+		openTx:            atomic.NewInt32(0),
 	}
 }
 
@@ -50,6 +52,11 @@ func (pm *processorManager) stop() {
 	// We use a new context to make sure it's not cancelled.
 	notifyCtx, cancel := context.WithTimeout(context.Background(), notifyShutdownTimeout)
 	defer cancel()
+
+	for pm.openTx.Load() != 0 {
+
+	}
+
 	pm.p.notifyShutdown(notifyCtx, pm.conn, pm.address)
 
 	// Stop all goroutines.
@@ -79,12 +86,11 @@ func (pm *processorManager) concurrency(n int) {
 
 			pm.currentProcessors.Inc()
 			defer pm.currentProcessors.Dec()
-
-			pm.p.processQueriesOnSingleStream(ctx, pm.conn, pm.address)
+			pm.p.processQueriesOnSingleStream(ctx, pm.conn, pm.address, pm.openTx)
 		}()
 	}
 
-	for len(pm.cancels) > n {
+	for len(pm.cancels) > n && pm.openTx.Load() == 0 {
 		pm.cancels[0]()
 		pm.cancels = pm.cancels[1:]
 	}

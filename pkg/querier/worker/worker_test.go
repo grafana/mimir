@@ -16,6 +16,7 @@ import (
 	"github.com/grafana/dskit/test"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
 	"google.golang.org/grpc"
 )
 
@@ -86,7 +87,7 @@ func getConcurrentProcessors(w *querierWorker) int {
 
 type mockProcessor struct{}
 
-func (m mockProcessor) processQueriesOnSingleStream(ctx context.Context, _ *grpc.ClientConn, _ string) {
+func (m mockProcessor) processQueriesOnSingleStream(ctx context.Context, conn *grpc.ClientConn, address string, tx *atomic.Int32) {
 	<-ctx.Done()
 }
 
