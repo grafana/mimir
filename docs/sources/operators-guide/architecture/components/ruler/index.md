@@ -14,6 +14,17 @@ Each tenant has a set of recording and alerting rules and can group those rules 
 
 ![Architecture of Grafana Mimir's ruler component](ruler.svg)
 
+## Operational modes
+
+The ruler supports two different rule evaluation modes, adaptable according to the specific needs of the user:
+
+- **Internal:** This is the default mode. When set, the ruler connects directly through its built-in querier to ingesters and store-gateways, and internally evaluates the rule expression to generate the resulting series.
+  In most use cases this mode is solvent enough. However, in those where the evaluation complexity is high enough, the latency can be increased up to the point of limiting the correct functioning of the component.
+
+- **Remote:** In this mode the ruler delegates rule expression evaluation to the query-frontend. In this way, we can leverage all the optimizations that this component offers us, such as [query sharding]({{< relref "../../query-sharding/index.md" >}}), allowing us to horizontally scale and drastically reducing evaluation times.<br/>
+  To enable query-frontend rule evaluation, set the `-ruler.query-frontend.address` CLI flag or its respective YAML configuration parameter for the ruler.
+  Communication between ruler and query-frontend is established over gRPC, so if needed, we can make use of client-side load balancing by prefixing the address value with `dns://`.
+
 ## Recording rules
 
 The ruler evaluates the expressions in the recording rules at regular intervals and writes the results back to the ingesters.
