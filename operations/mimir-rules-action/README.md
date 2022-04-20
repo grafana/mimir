@@ -6,15 +6,15 @@ This action is used to lint, prepare, verify, diff, and sync rules to a [Grafana
 
 This action is configured using environment variables defined in the workflow. The following variables can be configured.
 
-| Name                         | Description                                                                                                                                                                                                                                | Required | Default |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------- | ------- |
-| `MIMIR_ADDRESS`             | URL address for the target Mimir cluster                                                                                                                                                                                                  | `false`  | N/A     |
-| `MIMIR_TENANT_ID`           | ID for the desired tenant in the target Mimir cluster. Used as the username under HTTP Basic authentication.                                                                                                                                                                                     | `false`  | N/A     |
-| `MIMIR_API_KEY`             | Optional password that is required for password-protected Mimir clusters. An encrypted [github secret](https://help.github.com/en/actions/automating-your-workflow-with-github-actions/creating-and-using-encrypted-secrets ) is recommended. Used as the password under HTTP Basic authentication. | `false`  | N/A     |
-| `ACTION`                     | Which action to take. One of `lint`, `prepare`, `check`, `diff` or `sync`                                                                                                                                                                  | `true`   | N/A     |
-| `RULES_DIR`                  | Comma-separated list of directories to walk in order to source rules files                                                                                                                                                                 | `false`  | `./`    |
-| `LABEL_EXCLUDED_RULE_GROUPS` | Comma separated list of rule group names to exclude when including the configured label to aggregations. This option is supported only by the `prepare` action.                                                                            | `false`  | N/A     |
-| `NAMESPACES`                 | Comma-separated list of namespaces to use                                                                                                                                                                                                  | `false`  | N/A     |
+| Name                         | Description                                                                                                                                                                                                                                                                                        | Required | Default |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | ------- |
+| `MIMIR_ADDRESS`              | URL address for the target Mimir cluster                                                                                                                                                                                                                                                           | `false`  | N/A     |
+| `MIMIR_TENANT_ID`            | ID for the desired tenant in the target Mimir cluster. Used as the username under HTTP Basic authentication.                                                                                                                                                                                       | `false`  | N/A     |
+| `MIMIR_API_KEY`              | Optional password that is required for password-protected Mimir clusters. An encrypted [github secret](https://help.github.com/en/actions/automating-your-workflow-with-github-actions/creating-and-using-encrypted-secrets) is recommended. Used as the password under HTTP Basic authentication. | `false`  | N/A     |
+| `ACTION`                     | Which action to take. One of `lint`, `prepare`, `check`, `diff` or `sync`                                                                                                                                                                                                                          | `true`   | N/A     |
+| `RULES_DIR`                  | Comma-separated list of directories to walk in order to source rules files                                                                                                                                                                                                                         | `false`  | `./`    |
+| `LABEL_EXCLUDED_RULE_GROUPS` | Comma separated list of rule group names to exclude when including the configured label to aggregations. This option is supported only by the `prepare` action.                                                                                                                                    | `false`  | N/A     |
+| `NAMESPACES`                 | Comma-separated list of namespaces to use                                                                                                                                                                                                                                                          | `false`  | N/A     |
 
 ## Authentication
 
@@ -38,6 +38,7 @@ Reconcile the differences with the sourced rules and the rules currently running
 Lints a rules file(s). The linter's aim is not to verify correctness but to fix YAML and PromQL expression formatting within the rule file(s). The linting happens in-place within the specified file(s). Does not interact with your Mimir cluster.
 
 ### `prepare`
+
 Prepares a rules file(s) for upload to Mimir. It lints all your PromQL expressions and adds a `cluster` label to your PromQL query aggregations in the file. Prepare modifies the file(s) in-place. Does not interact with your Mimir cluster.
 
 ### `check`
@@ -97,9 +98,9 @@ The following workflow will sync the rule files in the `master` branch with the 
 ```yaml
 name: sync_rules_master
 on:
- push:
-   branches:
-     - master
+  push:
+    branches:
+      - master
 jobs:
   sync-master:
     runs-on: ubuntu-latest
