@@ -8,7 +8,7 @@ weight: 30
 # Grafana mimir-continuous-test
 
 As a developer, you can use the standalone mimir-continuous-test tool to continuously run smoke tests on live Grafana Mimir clusters.
-This tool aims to help identifying a class of bugs that could be difficult to spot during development with unit and integration tests.
+This tool identifies a class of bugs that could be difficult to spot during development.
 
 ## Download mimir-continuous-test
 
@@ -20,7 +20,7 @@ docker pull "grafana/mimir-continuous-test:latest"
 
 - Using a local binary:
 
-Download the appropriate [release asset](https://github.com/grafana/mimir/releases/latest) for your operating system and architecture and make it executable.
+Download the appropriate [mimir-continuous-test binary](https://github.com/grafana/mimir/releases/latest) for your operating system and architecture, and make it executable.
 
 For Linux with the AMD64 architecture, execute the following command:
 
