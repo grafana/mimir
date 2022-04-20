@@ -90,7 +90,7 @@
     $.util.configVolumeMount($._config.overrides_configmap, $._config.overrides_configmap_mountpoint) +
     (if with_anti_affinity then $.util.antiAffinity else {}),
 
-  store_gateway_statefulset: self.newStoreGatewayStatefulSet('store-gateway', $.store_gateway_container, !$._config.storegateway_allow_multiple_replicas_on_same_node),
+  store_gateway_statefulset: self.newStoreGatewayStatefulSet('store-gateway', $.store_gateway_container, !$._config.store_gateway_allow_multiple_replicas_on_same_node),
 
   store_gateway_service:
     $.util.serviceFor($.store_gateway_statefulset, $._config.service_ignored_labels),
