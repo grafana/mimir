@@ -53,10 +53,6 @@ func (pm *processorManager) stop() {
 	notifyCtx, cancel := context.WithTimeout(context.Background(), notifyShutdownTimeout)
 	defer cancel()
 
-	for pm.openTx.Load() != 0 {
-
-	}
-
 	pm.p.notifyShutdown(notifyCtx, pm.conn, pm.address)
 
 	// Stop all goroutines.
@@ -90,7 +86,7 @@ func (pm *processorManager) concurrency(n int) {
 		}()
 	}
 
-	for len(pm.cancels) > n && pm.openTx.Load() == 0 {
+	for len(pm.cancels) > n {
 		pm.cancels[0]()
 		pm.cancels = pm.cancels[1:]
 	}

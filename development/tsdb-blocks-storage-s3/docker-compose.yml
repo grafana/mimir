@@ -254,6 +254,29 @@
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
+  "querier-2":
+    "build":
+      "context": "."
+      "dockerfile": "dev.dockerfile"
+    "command":
+      - "sh"
+      - "-c"
+      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=querier -server.http-listen-port=8024 -server.grpc-listen-port=9024 -activity-tracker.filepath=/activity/querier-8024 -querier.scheduler-address=query-scheduler:9011 -querier.frontend-address="
+    "depends_on":
+      - "minio"
+      - "consul"
+    "environment":
+      - "JAEGER_AGENT_HOST=jaeger"
+      - "JAEGER_AGENT_PORT=6831"
+      - "JAEGER_SAMPLER_PARAM=1"
+      - "JAEGER_SAMPLER_TYPE=const"
+      - "JAEGER_TAGS=app=querier"
+    "image": "mimir"
+    "ports":
+      - "8024:8024"
+    "volumes":
+      - "./config:/mimir/config"
+      - "./activity:/activity"
   "query-frontend":
     "build":
       "context": "."

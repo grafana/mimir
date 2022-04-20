@@ -92,23 +92,27 @@ func (sp *schedulerProcessor) notifyShutdown(ctx context.Context, conn *grpc.Cli
 func (sp *schedulerProcessor) processQueriesOnSingleStream(ctx context.Context, conn *grpc.ClientConn, address string, openTx *atomic.Int32) {
 	schedulerClient := schedulerpb.NewSchedulerForQuerierClient(conn)
 
-	execCtx, execCancel := context.WithCancel(context.Background())
+	execCtx, _ := context.WithCancel(context.Background())
+	shutdown := atomic.NewBool(false)
 
 	go func() {
 		for {
 			select {
 			case <-ctx.Done():
+				// when the context is done, we set the shutdown boolean to true and return
+				shutdown.Store(true)
 				// This code is executed when the input context gets canceled.
-				if openTx.Load() == 0 {
-					level.Info(sp.log).Log("msg", "Closing single stream", "Open Queries", openTx.Load())
-					execCancel()
-					return
-				}
+				// if openTx.Load() == 0 {
+				// 	level.Info(sp.log).Log("msg", "Closing single stream", "Open Queries", openTx.Load())
+				// 	execCancel()
+				// 	return
+				// }
 
 				// Wait until it's safe to propagate the cancel to the execution context.
 				// TODO wait until propagateCancel is TRUE
-				level.Info(sp.log).Log("msg", "Closing single stream", "Open Queries", openTx.Load())
-				//execCancel()
+				level.Info(sp.log).Log("msg", "shutting down stream")
+				return
+				// execCancel()
 			}
 		}
 	}()
@@ -126,7 +130,7 @@ func (sp *schedulerProcessor) processQueriesOnSingleStream(ctx context.Context, 
 			continue
 		}
 
-		if err := sp.querierLoop(c, address, openTx); err != nil {
+		if err := sp.querierLoop(c, address, shutdown); err != nil {
 			level.Error(sp.log).Log("msg", "error processing requests from scheduler", "err", err, "addr", address)
 			backoff.Wait()
 			continue
@@ -137,12 +141,16 @@ func (sp *schedulerProcessor) processQueriesOnSingleStream(ctx context.Context, 
 }
 
 // process loops processing requests on an established stream.
-func (sp *schedulerProcessor) querierLoop(c schedulerpb.SchedulerForQuerier_QuerierLoopClient, address string, openTx *atomic.Int32) error {
+func (sp *schedulerProcessor) querierLoop(c schedulerpb.SchedulerForQuerier_QuerierLoopClient, address string, shutdown *atomic.Bool) error {
 	// Build a child context so we can cancel a query when the stream is closed.
 	ctx, cancel := context.WithCancel(c.Context())
 	defer cancel()
 
-	for {
+	for shutdown.Load() == false {
+
+		// select {
+		// case <-ctx.Done():
+		// }
 		// If we're waiting on the Recv() we want to cancel the context used to create the gRPC client (the gRPC is stored in the variable named "c").
 		request, err := c.Recv()
 		if err != nil {
@@ -153,43 +161,39 @@ func (sp *schedulerProcessor) querierLoop(c schedulerpb.SchedulerForQuerier_Quer
 		// then we have a race condition, because the query will fail anyway.
 
 		// We just received a query, so it's not safe to interrupt the execution.
-		openTx.Inc()
-		level.Info(sp.log).Log("msg", "inc process count", "count", openTx.Load())
+		// openTx.Inc()
+		// level.Info(sp.log).Log("msg", "inc process count", "count", openTx.Load())
 
 		// Handle the request on a "background" goroutine, so we go back to
 		// blocking on c.Recv().  This allows us to detect the stream closing
 		// and cancel the query.  We don't actually handle queries in parallel
 		// here, as we're running in lock step with the server - each Recv is
 		// paired with a Send.
-		go func() {
-			defer func() {
-				// When the query execution will terminate, we can cancel the context at that time.
-				openTx.Dec()
-				level.Info(sp.log).Log("msg", "dec process count", "count", openTx.Load())
-			}()
+		// go func() {
 
-			// We need to inject user into context for sending response back.
-			ctx := user.InjectOrgID(ctx, request.UserID)
+		// We need to inject user into context for sending response back.
+		ctx := user.InjectOrgID(ctx, request.UserID)
 
-			tracer := opentracing.GlobalTracer()
-			// Ignore errors here. If we cannot get parent span, we just don't create new one.
-			parentSpanContext, _ := httpgrpcutil.GetParentSpanForRequest(tracer, request.HttpRequest)
-			if parentSpanContext != nil {
-				queueSpan, spanCtx := opentracing.StartSpanFromContextWithTracer(ctx, tracer, "querier_processor_runRequest", opentracing.ChildOf(parentSpanContext))
-				defer queueSpan.Finish()
+		tracer := opentracing.GlobalTracer()
+		// Ignore errors here. If we cannot get parent span, we just don't create new one.
+		parentSpanContext, _ := httpgrpcutil.GetParentSpanForRequest(tracer, request.HttpRequest)
+		if parentSpanContext != nil {
+			queueSpan, spanCtx := opentracing.StartSpanFromContextWithTracer(ctx, tracer, "querier_processor_runRequest", opentracing.ChildOf(parentSpanContext))
+			defer queueSpan.Finish()
 
-				ctx = spanCtx
-			}
-			logger := util_log.WithContext(ctx, sp.log)
+			ctx = spanCtx
+		}
+		logger := util_log.WithContext(ctx, sp.log)
 
-			sp.runRequest(ctx, logger, request.QueryID, request.FrontendAddress, request.StatsEnabled, request.HttpRequest)
+		sp.runRequest(ctx, logger, request.QueryID, request.FrontendAddress, request.StatsEnabled, request.HttpRequest)
 
-			// Report back to scheduler that processing of the query has finished.
-			if err := c.Send(&schedulerpb.QuerierToScheduler{}); err != nil {
-				level.Error(logger).Log("msg", "error notifying scheduler about finished query", "err", err, "addr", address)
-			}
-		}()
+		// Report back to scheduler that processing of the query has finished.
+		if err := c.Send(&schedulerpb.QuerierToScheduler{}); err != nil {
+			level.Error(logger).Log("msg", "error notifying scheduler about finished query", "err", err, "addr", address)
+		}
+		// }()
 	}
+	return nil
 }
 
 func (sp *schedulerProcessor) runRequest(ctx context.Context, logger log.Logger, queryID uint64, frontendAddress string, statsEnabled bool, request *httpgrpc.HTTPRequest) {
