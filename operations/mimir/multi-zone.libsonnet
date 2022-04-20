@@ -207,8 +207,8 @@
     statefulSet.mixin.spec.withReplicas(std.ceil($._config.multi_zone_store_gateway_replicas / 3)) +
     if $._config.storegateway_allow_multiple_replicas_on_same_node then {} else {
       spec+:
-        // Allow to schedule 2+ store gateways in the same zone on the same node, but do not schedule 2+ ingesters in
-        // different zones on the same node. In case of 1 node failure in the Kubernetes cluster, only ingesters
+        // Allow to schedule 2+ store-gateways in the same zone on the same node, but do not schedule 2+ store-gateways in
+        // different zones on the same node. In case of 1 node failure in the Kubernetes cluster, only store-gateways
         // in 1 zone will be affected.
         podAntiAffinity.withRequiredDuringSchedulingIgnoredDuringExecution([
           podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecutionType.new() +
