@@ -74,7 +74,7 @@
 * [ENHANCEMENT] Ingester anti-affinity can now be disabled by using `ingester_allow_multiple_replicas_on_same_node` configuration key. #1581
 * [ENHANCEMENT] Added `node_selector` configuration option to select Kubernetes nodes where Mimir should run. #1596
 * [ENHANCEMENT] Alertmanager: Added a `PodDisruptionBudget` of `withMaxUnavailable = 1`, to ensure we maintain quorum during rollouts. #1683
-* [ENHANCEMENT] Store Gateway anti-affinity can now be enabled/disabled using `storegateway_allow_multiple_replicas_on_same_node` configuration key. #1730
+* [ENHANCEMENT] Store-gateway anti-affinity can now be enabled/disabled using `store_gateway_allow_multiple_replicas_on_same_node` configuration key. #1730
 * [BUGFIX] Pass primary and secondary multikv stores via CLI flags. Introduced new `multikv_switch_primary_secondary` config option to flip primary and secondary in runtime config.
 
 ### Mimirtool
