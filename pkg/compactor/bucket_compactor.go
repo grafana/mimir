@@ -68,17 +68,15 @@ type Syncer struct {
 }
 
 type syncerMetrics struct {
-	garbageCollectedBlocks    prometheus.Counter
 	garbageCollections        prometheus.Counter
 	garbageCollectionFailures prometheus.Counter
 	garbageCollectionDuration prometheus.Histogram
 	blocksMarkedForDeletion   prometheus.Counter
 }
 
-func newSyncerMetrics(reg prometheus.Registerer, blocksMarkedForDeletion, garbageCollectedBlocks prometheus.Counter) *syncerMetrics {
+func newSyncerMetrics(reg prometheus.Registerer, blocksMarkedForDeletion prometheus.Counter) *syncerMetrics {
 	var m syncerMetrics
 
-	m.garbageCollectedBlocks = garbageCollectedBlocks
 	m.garbageCollections = promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Name: "thanos_compact_garbage_collection_total",
 		Help: "Total number of garbage collection operations.",
@@ -100,7 +98,7 @@ func newSyncerMetrics(reg prometheus.Registerer, blocksMarkedForDeletion, garbag
 
 // NewMetaSyncer returns a new Syncer for the given Bucket and directory.
 // Blocks must be at least as old as the sync delay for being considered.
-func NewMetaSyncer(logger log.Logger, reg prometheus.Registerer, bkt objstore.Bucket, fetcher block.MetadataFetcher, deduplicateBlocksFilter DeduplicateFilter, excludeMarkedForDeletionFilter *ExcludeMarkedForDeletionFilter, blocksMarkedForDeletion, garbageCollectedBlocks prometheus.Counter) (*Syncer, error) {
+func NewMetaSyncer(logger log.Logger, reg prometheus.Registerer, bkt objstore.Bucket, fetcher block.MetadataFetcher, deduplicateBlocksFilter DeduplicateFilter, excludeMarkedForDeletionFilter *ExcludeMarkedForDeletionFilter, blocksMarkedForDeletion prometheus.Counter) (*Syncer, error) {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
@@ -109,7 +107,7 @@ func NewMetaSyncer(logger log.Logger, reg prometheus.Registerer, bkt objstore.Bu
 		bkt:                            bkt,
 		fetcher:                        fetcher,
 		blocks:                         map[ulid.ULID]*metadata.Meta{},
-		metrics:                        newSyncerMetrics(reg, blocksMarkedForDeletion, garbageCollectedBlocks),
+		metrics:                        newSyncerMetrics(reg, blocksMarkedForDeletion),
 		deduplicateBlocksFilter:        deduplicateBlocksFilter,
 		excludeMarkedForDeletionFilter: excludeMarkedForDeletionFilter,
 	}, nil
@@ -187,7 +185,6 @@ func (s *Syncer) GarbageCollect(ctx context.Context) error {
 		// Immediately update our in-memory state so no further call to SyncMetas is needed
 		// after running garbage collection.
 		delete(s.blocks, id)
-		s.metrics.garbageCollectedBlocks.Inc()
 	}
 	s.metrics.garbageCollections.Inc()
 	s.metrics.garbageCollectionDuration.Observe(time.Since(begin).Seconds())
@@ -452,7 +449,6 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 		if err := deleteBlock(c.bkt, meta.ULID, filepath.Join(subDir, meta.ULID.String()), jobLogger, c.metrics.blocksMarkedForDeletion); err != nil {
 			return false, nil, errors.Wrapf(err, "mark old block for deletion from bucket")
 		}
-		c.metrics.garbageCollectedBlocks.Inc()
 	}
 
 	return true, compIDs, nil
@@ -604,13 +600,12 @@ type BucketCompactorMetrics struct {
 	groupCompactionRunsCompleted prometheus.Counter
 	groupCompactionRunsFailed    prometheus.Counter
 	groupCompactions             prometheus.Counter
-	garbageCollectedBlocks       prometheus.Counter
 	blocksMarkedForDeletion      prometheus.Counter
 	blocksMarkedForNoCompact     prometheus.Counter
 }
 
 // NewBucketCompactorMetrics makes a new BucketCompactorMetrics.
-func NewBucketCompactorMetrics(blocksMarkedForDeletion, garbageCollectedBlocks prometheus.Counter, reg prometheus.Registerer) *BucketCompactorMetrics {
+func NewBucketCompactorMetrics(blocksMarkedForDeletion prometheus.Counter, reg prometheus.Registerer) *BucketCompactorMetrics {
 	return &BucketCompactorMetrics{
 		groupCompactionRunsStarted: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_compactor_group_compaction_runs_started_total",
@@ -634,7 +629,6 @@ func NewBucketCompactorMetrics(blocksMarkedForDeletion, garbageCollectedBlocks p
 			Help:        "Total number of blocks that were marked for no-compaction.",
 			ConstLabels: prometheus.Labels{"reason": metadata.OutOfOrderChunksNoCompactReason},
 		}),
-		garbageCollectedBlocks: garbageCollectedBlocks,
 	}
 }
 
