@@ -275,7 +275,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.bucket-store.chunk-pool-min-bucket-size-bytes int
     	Size - in bytes - of the smallest chunks pool bucket. (default 16000)
   -blocks-storage.bucket-store.chunks-cache.attributes-in-memory-max-items int
-    	Maximum number of object attribute items to keep in a first level in-memory LRU cache. Metadata will be stored and fetched in-memory before hitting the cache backend. 0 to disable the in-memory cache.
+    	Maximum number of object attribute items to keep in a first level in-memory LRU cache. Metadata will be stored and fetched in-memory before hitting the cache backend. 0 to disable the in-memory cache. (default 50000)
   -blocks-storage.bucket-store.chunks-cache.attributes-ttl duration
     	TTL for caching object attributes for chunks. If the metadata cache is configured, attributes will be stored under this cache backend, otherwise attributes are stored in the chunks cache backend. (default 168h0m0s)
   -blocks-storage.bucket-store.chunks-cache.backend string

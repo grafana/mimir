@@ -4688,7 +4688,7 @@
                   "required": false,
                   "desc": "Maximum number of object attribute items to keep in a first level in-memory LRU cache. Metadata will be stored and fetched in-memory before hitting the cache backend. 0 to disable the in-memory cache.",
                   "fieldValue": null,
-                  "fieldDefaultValue": 0,
+                  "fieldDefaultValue": 50000,
                   "fieldFlag": "blocks-storage.bucket-store.chunks-cache.attributes-in-memory-max-items",
                   "fieldType": "int",
                   "fieldCategory": "advanced"
