@@ -1686,6 +1686,13 @@ spec:
         gossip_ring_member: "true"
         name: store-gateway
     spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                name: store-gateway
+            topologyKey: kubernetes.io/hostname
       containers:
       - args:
         - -blocks-storage.backend=gcs
