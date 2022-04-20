@@ -2253,7 +2253,6 @@ spec:
       containers:
       - args:
         - -blocks-storage.backend=gcs
-        - -blocks-storage.bucket-store.chunks-cache.attributes-in-memory-max-items=50000
         - -blocks-storage.bucket-store.chunks-cache.backend=memcached
         - -blocks-storage.bucket-store.chunks-cache.memcached.addresses=dnssrvnoa+memcached.default.svc.cluster.local:11211
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-async-concurrency=50
@@ -2377,7 +2376,6 @@ spec:
       containers:
       - args:
         - -blocks-storage.backend=gcs
-        - -blocks-storage.bucket-store.chunks-cache.attributes-in-memory-max-items=50000
         - -blocks-storage.bucket-store.chunks-cache.backend=memcached
         - -blocks-storage.bucket-store.chunks-cache.memcached.addresses=dnssrvnoa+memcached.default.svc.cluster.local:11211
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-async-concurrency=50
@@ -2504,7 +2502,6 @@ spec:
       containers:
       - args:
         - -blocks-storage.backend=gcs
-        - -blocks-storage.bucket-store.chunks-cache.attributes-in-memory-max-items=50000
         - -blocks-storage.bucket-store.chunks-cache.backend=memcached
         - -blocks-storage.bucket-store.chunks-cache.memcached.addresses=dnssrvnoa+memcached.default.svc.cluster.local:11211
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-async-concurrency=50
@@ -2631,7 +2628,6 @@ spec:
       containers:
       - args:
         - -blocks-storage.backend=gcs
-        - -blocks-storage.bucket-store.chunks-cache.attributes-in-memory-max-items=50000
         - -blocks-storage.bucket-store.chunks-cache.backend=memcached
         - -blocks-storage.bucket-store.chunks-cache.memcached.addresses=dnssrvnoa+memcached.default.svc.cluster.local:11211
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-async-concurrency=50

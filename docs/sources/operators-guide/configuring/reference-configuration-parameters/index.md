@@ -3188,7 +3188,7 @@ bucket_store:
     # level in-memory LRU cache. Metadata will be stored and fetched in-memory
     # before hitting the cache backend. 0 to disable the in-memory cache.
     # CLI flag: -blocks-storage.bucket-store.chunks-cache.attributes-in-memory-max-items
-    [attributes_in_memory_max_items: <int> | default = 0]
+    [attributes_in_memory_max_items: <int> | default = 50000]
 
     # (advanced) TTL for caching individual chunks subranges.
     # CLI flag: -blocks-storage.bucket-store.chunks-cache.subrange-ttl
