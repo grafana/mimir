@@ -20,7 +20,7 @@ Also, there is a set of extra parameters (`-ruler.query-frontend.tls-*` or its r
 
 #### Example configuration
 
-The following YAML configuration snippet shows how to configure Grafana Mimir to offload expression evaluation to the query-frontend.
+The following YAML configuration snippet configures Grafana Mimir to offload expression evaluation to the query-frontend:
 
 ```yaml
 ruler:
