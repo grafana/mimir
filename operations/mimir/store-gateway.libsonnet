@@ -74,7 +74,7 @@
     $.util.readinessProbe +
     $.jaeger_mixin,
 
-  newStoreGatewayStatefulSet(name, container)::
+  newStoreGatewayStatefulSet(name, container, with_anti_affinity=false)::
     statefulSet.new(name, 3, [container], store_gateway_data_pvc) +
     statefulSet.mixin.spec.withServiceName(name) +
     statefulSet.mixin.metadata.withNamespace($._config.namespace) +
@@ -90,9 +90,10 @@
     // rolled out one by one (the next pod will be rolled out once the previous is
     // ready).
     statefulSet.mixin.spec.withPodManagementPolicy('Parallel') +
-    $.util.configVolumeMount($._config.overrides_configmap, $._config.overrides_configmap_mountpoint),
+    $.util.configVolumeMount($._config.overrides_configmap, $._config.overrides_configmap_mountpoint) +
+    (if with_anti_affinity then $.util.antiAffinity else {}),
 
-  store_gateway_statefulset: self.newStoreGatewayStatefulSet('store-gateway', $.store_gateway_container),
+  store_gateway_statefulset: self.newStoreGatewayStatefulSet('store-gateway', $.store_gateway_container, !$._config.storegateway_allow_multiple_replicas_on_same_node),
 
   store_gateway_service:
     $.util.serviceFor($.store_gateway_statefulset, $._config.service_ignored_labels),

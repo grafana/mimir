@@ -77,6 +77,7 @@ mimir {
     ruler_allow_multiple_replicas_on_same_node: true,
     querier_allow_multiple_replicas_on_same_node: true,
     query_frontend_allow_multiple_replicas_on_same_node: true,
+    storegateway_allow_multiple_replicas_on_same_node: true,
   },
 }
 ```

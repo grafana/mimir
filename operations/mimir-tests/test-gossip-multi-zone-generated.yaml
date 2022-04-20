@@ -2152,6 +2152,20 @@ spec:
         name: store-gateway-zone-a
         rollout-group: store-gateway
     spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: rollout-group
+                operator: In
+                values:
+                - store-gateway
+              - key: name
+                operator: NotIn
+                values:
+                - store-gateway-zone-a
+            topologyKey: kubernetes.io/hostname
       containers:
       - args:
         - -blocks-storage.backend=gcs
@@ -2270,6 +2284,20 @@ spec:
         name: store-gateway-zone-b
         rollout-group: store-gateway
     spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: rollout-group
+                operator: In
+                values:
+                - store-gateway
+              - key: name
+                operator: NotIn
+                values:
+                - store-gateway-zone-b
+            topologyKey: kubernetes.io/hostname
       containers:
       - args:
         - -blocks-storage.backend=gcs
@@ -2388,6 +2416,20 @@ spec:
         name: store-gateway-zone-c
         rollout-group: store-gateway
     spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: rollout-group
+                operator: In
+                values:
+                - store-gateway
+              - key: name
+                operator: NotIn
+                values:
+                - store-gateway-zone-c
+            topologyKey: kubernetes.io/hostname
       containers:
       - args:
         - -blocks-storage.backend=gcs
