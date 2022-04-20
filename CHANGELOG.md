@@ -42,6 +42,7 @@
 * [BUGFIX] Mimir: services' status content-type is now correctly set to `text/html`. #1575
 * [BUGFIX] Multikv: Fix panic when using using runtime config to set primary KV store used by `multi` KV. #1587
 * [BUGFIX] Multikv: Fix watching for runtime config changes in `multi` KV store in ruler and querier. #1665
+* [BUGFIX] Memcached: allow to use CNAME DNS records for the memcached backend addresses. #1654
 
 ### Mixin
 
