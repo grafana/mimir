@@ -16,7 +16,7 @@ To enable query-frontend rule evaluation, set the `-ruler.query-frontend.address
 
 Communication between ruler and query-frontend is established over gRPC, so if needed, we can make use of client-side load balancing by prefixing the address value with `dns://`.
 
-On top of that, there's a set of extra parameters `-ruler.query-frontend.tls-*` (and its respective YAML configuration options) that allow us to secure the connection when necessary.
+Also, there is a set of extra parameters (`-ruler.query-frontend.tls-*` or its respective YAML configuration options) that allow you to secure the connection when necessary.
 
 #### Example configuration
 
