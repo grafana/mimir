@@ -8,7 +8,7 @@ weight: 95
 # Configuring to evaluate rules using query-frontend
 
 Grafana Mimir allows you to configure the ruler to delegate evaluation of rule expressions to the query-frontend.
-In this way, it is possible to leverage query optimization capabilities (e.g. [query sharding]({{< relref "../architecture/query-sharding/index.md" >}})) in order to drastically reduce evaluation times.
+In this way, it is possible to leverage query optimization capabilities, such as [query sharding]({{< relref "../architecture/query-sharding/index.md" >}})), to drastically reduce evaluation times.
 
 ## Configuration
 
