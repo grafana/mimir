@@ -12,7 +12,7 @@ In this way, it is possible to leverage query optimization capabilities, such as
 
 ## Configuration
 
-To enable query-frontend rule evaluation, you need to set `-ruler.query-frontend.address` CLI flag or its respective YAML configuration parameter for the ruler.
+To enable query-frontend rule evaluation, set the `-ruler.query-frontend.address` CLI flag or its respective YAML configuration parameter for the ruler.
 
 Communication between ruler and query-frontend is established over gRPC, so if needed, we can make use of client-side load balancing by prefixing the address value with the `dns://` literal.
 
