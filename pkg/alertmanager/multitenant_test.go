@@ -458,6 +458,23 @@ receivers:
 `, backendURL)
 			},
 		},
+		"telegram": {
+			getAlertmanagerConfig: func(backendURL string) string {
+				return fmt.Sprintf(`
+route:
+  receiver: telegram
+  group_wait: 0s
+  group_interval: 1s
+
+receivers:
+  - name: telegram
+    telegram_configs:
+      - api_url: %s
+        bot_token: xxx
+        chat_id: 111
+`, backendURL)
+			},
+		},
 	}
 
 	for receiverName, testData := range tests {

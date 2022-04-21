@@ -217,6 +217,7 @@ require (
 	google.golang.org/genproto v0.0.0-20220324131243-acbaeb5b85eb // indirect
 	google.golang.org/protobuf v1.28.0 // indirect
 	gopkg.in/ini.v1 v1.57.0 // indirect
+	gopkg.in/telebot.v3 v3.0.0 // indirect
 )
 
 // Override since git.apache.org is down.  The docs say to fetch from github.
