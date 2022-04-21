@@ -657,7 +657,7 @@ It supports converting both CLI flags and [YAML configuration files]({{< relref 
 
 ##### A note on default values
 
-This command is designed to aid a migration from Cortex to Grafana Mimir. There are changes to the default values of
+`mimirtool config convert` helps you migrate from Cortex to Grafana Mimir. There are changes to the default values of
 some configuration parameters in Mimir v2.0.0 that we think you would not want to make as part of this migration. These
 parameters are:
 
@@ -667,9 +667,9 @@ parameters are:
 - `server.http_listen_port` - Cortex default is `80`, Mimir default is `8080`
 - (GEM only) `auth.type` - GEM 1.x default is `trust`, 2.x default is `enterprise`
 
-This command will output the Cortex default value even when the configuration parameter is not explicitly set in the input
-configuration. If the Cortex default value is explicitly set in the input configuration, and you have provided
-the `--update-defaults` flag, the command will not update the value to the Mimir default.
+For these parameters `mimirtool config convert` will output the Cortex default value even when the configuration parameter is not explicitly set in the input
+configuration. If in the input configuration you explicitly set the Cortex default value, and you have provided
+the `--update-defaults` flag, `mimirtool config convert` will not update the value to the Mimir default.
 
 ##### Example
 
