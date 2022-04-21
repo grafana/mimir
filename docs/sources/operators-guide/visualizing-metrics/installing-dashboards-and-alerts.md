@@ -34,12 +34,12 @@ If you choose this option, you can change the configuration to match your deploy
    ```bash
    git clone https://github.com/grafana/mimir.git
    ```
-2. Install dependencies
+2. Review the mixin configuration at `operations/mimir-mixin/config.libsonnet`, and apply your changes if necessary.
+3. Install dependencies:
    ```bash
    GO111MODULE=on go get github.com/monitoring-mixins/mixtool/cmd/mixtool
    GO111MODULE=on go get github.com/jsonnet-bundler/jsonnet-bundler/cmd/jb
    ```
-3. Review the mixin configuration at `operations/mimir-mixin/config.libsonnet` and apply your changes if required
 4. Compile the mixin
    ```bash
    make build-mixin
@@ -47,6 +47,12 @@ If you choose this option, you can change the configuration to match your deploy
 5. Import the dashboards saved at `operations/mimir-mixin-compiled/dashboards/` in [Grafana](https://grafana.com/docs/grafana/latest/dashboards/export-import/#import-dashboard)
 6. Install the recording rules saved at `operations/mimir-mixin-compiled/rules.yaml` in your Prometheus
 7. Install the alerts saved at `operations/mimir-mixin-compiled/alerts.yaml` in your Prometheus
+
+Alternatively, you can compile the mixin in a container. To do so, replace the previous two steps with the following command:
+
+```bash
+make BUILD_IN_CONTAINER=true build-mixin
+```
 
 ## Install dashboards from Jsonnet mixin
 
