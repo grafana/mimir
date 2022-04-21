@@ -18,7 +18,7 @@ import (
 // its details.
 func WithUserID(userID string, l log.Logger) log.Logger {
 	// See note in WithContext.
-	return log.With(l, "org_id", userID)
+	return log.With(l, "user", userID)
 }
 
 // WithTraceID returns a Logger that has information about the traceID in

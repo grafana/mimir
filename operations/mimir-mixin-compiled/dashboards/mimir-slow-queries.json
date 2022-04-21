@@ -73,7 +73,7 @@
                   "span": 12,
                   "targets": [
                      {
-                        "expr": "{cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"query-frontend.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | org_id=~\"${tenant_id}\" | response_time > ${min_duration}",
+                        "expr": "{cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"query-frontend.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | response_time > ${min_duration}",
                         "instant": false,
                         "legendFormat": "",
                         "range": true,
@@ -132,11 +132,11 @@
                            },
                            "indexByName": {
                               "Time range": 3,
-                              "org_id": 1,
                               "param_query": 2,
                               "param_step": 4,
                               "response_time": 5,
-                              "ts": 0
+                              "ts": 0,
+                              "user": 1
                            },
                            "renameByName": {
                               "org_id": "Tenant ID",
