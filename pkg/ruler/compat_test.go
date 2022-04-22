@@ -311,7 +311,7 @@ func TestManagerFactory_CorrectQueryableUsed(t *testing.T) {
 			manager := managerFactory(context.Background(), userID, notifierManager, logger, nil)
 
 			// load rules into manager and start
-			require.NoError(t, manager.Update(time.Millisecond, ruleFiles, nil, ""))
+			require.NoError(t, manager.Update(time.Millisecond, ruleFiles, nil, "", nil))
 			go manager.Run()
 
 			select {

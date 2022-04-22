@@ -165,6 +165,7 @@ func newQuery(r Request, engine *promql.Engine, queryable storage.Queryable) (pr
 	case *PrometheusRangeQueryRequest:
 		return engine.NewRangeQuery(
 			queryable,
+			nil,
 			r.GetQuery(),
 			util.TimeFromMillis(r.GetStart()),
 			util.TimeFromMillis(r.GetEnd()),
@@ -173,6 +174,7 @@ func newQuery(r Request, engine *promql.Engine, queryable storage.Queryable) (pr
 	case *PrometheusInstantQueryRequest:
 		return engine.NewInstantQuery(
 			queryable,
+			nil,
 			r.GetQuery(),
 			util.TimeFromMillis(r.GetTime()),
 		)

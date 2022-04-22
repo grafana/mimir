@@ -47,12 +47,13 @@ const (
 )
 
 var (
-	errPasswordFileNotAllowed        = errors.New("setting password_file, bearer_token_file and credentials_file is not allowed")
-	errOAuth2SecretFileNotAllowed    = errors.New("setting OAuth2 client_secret_file is not allowed")
-	errProxyURLNotAllowed            = errors.New("setting proxy_url is not allowed")
-	errTLSFileNotAllowed             = errors.New("setting TLS ca_file, cert_file and key_file is not allowed")
-	errSlackAPIURLFileNotAllowed     = errors.New("setting Slack api_url_file and global slack_api_url_file is not allowed")
-	errVictorOpsAPIKeyFileNotAllowed = errors.New("setting VictorOps api_key_file is not allowed")
+	errPasswordFileNotAllowed           = errors.New("setting password_file, bearer_token_file and credentials_file is not allowed")
+	errOAuth2SecretFileNotAllowed       = errors.New("setting OAuth2 client_secret_file is not allowed")
+	errProxyURLNotAllowed               = errors.New("setting proxy_url is not allowed")
+	errTLSFileNotAllowed                = errors.New("setting TLS ca_file, cert_file and key_file is not allowed")
+	errSlackAPIURLFileNotAllowed        = errors.New("setting Slack api_url_file and global slack_api_url_file is not allowed")
+	errVictorOpsAPIKeyFileNotAllowed    = errors.New("setting VictorOps api_key_file is not allowed")
+	errOpsGenieAPIKeyFileFileNotAllowed = errors.New("setting OpsGenie api_key_file and global opsgenie_api_key_file is not allowed")
 )
 
 // UserConfig is used to communicate a users alertmanager configs
@@ -354,6 +355,11 @@ func validateAlertmanagerConfig(cfg interface{}) error {
 			return err
 		}
 
+	case reflect.TypeOf(config.OpsGenieConfig{}):
+		if err := validateOpsGenieConfig(v.Interface().(config.OpsGenieConfig)); err != nil {
+			return err
+		}
+
 	case reflect.TypeOf(config.VictorOpsConfig{}):
 		if err := validateVictorOpsConfig(v.Interface().(config.VictorOpsConfig)); err != nil {
 			return err
@@ -422,6 +428,9 @@ func validateReceiverHTTPConfig(cfg commoncfg.HTTPClientConfig) error {
 	if cfg.OAuth2 != nil && cfg.OAuth2.ClientSecretFile != "" {
 		return errOAuth2SecretFileNotAllowed
 	}
+	if cfg.OAuth2 != nil && cfg.OAuth2.ProxyURL.URL != nil {
+		return errProxyURLNotAllowed
+	}
 	return validateReceiverTLSConfig(cfg.TLSConfig)
 }
 
@@ -440,6 +449,9 @@ func validateGlobalConfig(cfg config.GlobalConfig) error {
 	if cfg.SlackAPIURLFile != "" {
 		return errSlackAPIURLFileNotAllowed
 	}
+	if cfg.OpsGenieAPIKeyFile != "" {
+		return errOpsGenieAPIKeyFileFileNotAllowed
+	}
 	return nil
 }
 
@@ -457,6 +469,15 @@ func validateSlackConfig(cfg config.SlackConfig) error {
 func validateVictorOpsConfig(cfg config.VictorOpsConfig) error {
 	if cfg.APIKeyFile != "" {
 		return errVictorOpsAPIKeyFileNotAllowed
+	}
+	return nil
+}
+
+// validateOpsGenieConfig validates the OpsGenie config and returns an error if it contains
+// settings now allowed by Mimir.
+func validateOpsGenieConfig(cfg config.OpsGenieConfig) error {
+	if cfg.APIKeyFile != "" {
+		return errOpsGenieAPIKeyFileFileNotAllowed
 	}
 	return nil
 }
