@@ -81,6 +81,8 @@
 
 ### Mimirtool
 
+* [BUGFIX] `config convert`: Retain Cortex defaults for `blocks_storage.backend`, `ruler_storage.backend`, and `alertmanager_storage.backend`. #1626
+
 ### Tools
 
 * [FEATURE] Added a `markblocks` tool that creates `no-compact` and `delete` marks for the blocks. #1551
@@ -222,7 +224,7 @@ _Changes since Cortex 1.10.0._
   * `-ruler.client.grpc-max-send-msg-size`
 * [CHANGE] Remove `-http.prefix` flag (and `http_prefix` config file option). #763
 * [CHANGE] Remove legacy endpoints. Please use their alternatives listed below. As part of the removal process we are
-  introducing two new sets of endpoints for the ruler configuraiton API: `<prometheus-http-prefix>/rules` and
+  introducing two new sets of endpoints for the ruler configuration API: `<prometheus-http-prefix>/rules` and
   `<prometheus-http-prefix>/config/v1/rules/**`. We are also deprecating `<prometheus-http-prefix>/rules` and `/api/v1/rules`;
   and will remove them in Mimir 2.2.0. #763 #1222
   * Query endpoints

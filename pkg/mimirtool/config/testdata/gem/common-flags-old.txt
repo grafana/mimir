@@ -1,2 +1,5 @@
 -server.http-listen-port=80
 -auth.type=trust
+-blocks-storage.backend=s3
+-ruler-storage.backend=s3
+-alertmanager-storage.backend=s3
