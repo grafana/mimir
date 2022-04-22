@@ -7,11 +7,11 @@ package main
 
 import (
 	"fmt"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 
+	"github.com/grafana/regexp"
 	"github.com/mitchellh/go-wordwrap"
 	"gopkg.in/yaml.v3"
 

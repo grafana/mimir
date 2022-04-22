@@ -10,8 +10,9 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
+
+	"github.com/grafana/regexp"
 )
 
 var (

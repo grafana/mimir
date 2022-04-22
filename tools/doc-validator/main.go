@@ -9,11 +9,11 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 
 	"github.com/gomarkdown/markdown/ast"
 	"github.com/gomarkdown/markdown/parser"
+	"github.com/grafana/regexp"
 	"github.com/pkg/errors"
 )
 
