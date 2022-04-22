@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"regexp"
 	"sort"
 	"strings"
 	"testing"
@@ -20,6 +19,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/runutil"
+	"github.com/grafana/regexp"
 	"github.com/pkg/errors"
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"

@@ -8,15 +8,14 @@ package analyze
 import (
 	"encoding/json"
 	"fmt"
-	"regexp"
 	"sort"
 	"strings"
 
-	log "github.com/sirupsen/logrus"
-
 	"github.com/grafana-tools/sdk"
+	"github.com/grafana/regexp"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/promql/parser"
+	log "github.com/sirupsen/logrus"
 )
 
 type MetricsInGrafana struct {
