@@ -9,12 +9,12 @@ import (
 	"flag"
 	"fmt"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/golang/snappy"
+	"github.com/grafana/regexp"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
