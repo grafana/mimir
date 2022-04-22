@@ -236,7 +236,7 @@ func TestQuerierStreamingRemoteRead(t *testing.T) {
 		results = append(results, res)
 	}
 
-	// Validate the returned remote read data matches what was written
+	// Validate the returned remote read data
 	require.Len(t, results, 1)
 	require.Len(t, results[0].ChunkedSeries, 1)
 	require.Len(t, results[0].ChunkedSeries[0].Labels, 1)
