@@ -428,6 +428,9 @@ func validateReceiverHTTPConfig(cfg commoncfg.HTTPClientConfig) error {
 	if cfg.OAuth2 != nil && cfg.OAuth2.ClientSecretFile != "" {
 		return errOAuth2SecretFileNotAllowed
 	}
+	if cfg.OAuth2 != nil && cfg.OAuth2.ProxyURL.URL != nil {
+		return errProxyURLNotAllowed
+	}
 	return validateReceiverTLSConfig(cfg.TLSConfig)
 }
 
