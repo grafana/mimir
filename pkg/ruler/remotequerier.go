@@ -291,20 +291,24 @@ func decodeQueryResponse(valTyp model.ValueType, result json.RawMessage) (promql
 }
 
 func vectorToPromQLVector(vec prommodel.Vector) promql.Vector {
-	var retVal promql.Vector
+	retVal := make(promql.Vector, 0, len(vec))
 	for _, p := range vec {
-		var sm promql.Sample
 
-		sm.V = float64(p.Value)
-		sm.T = int64(p.Timestamp)
-
-		var lbl labels.Labels
+		lbl := make(labels.Labels, 0, len(p.Metric))
 		for ln, lv := range p.Metric {
-			lbl = append(lbl, labels.Label{Name: string(ln), Value: string(lv)})
+			lbl = append(lbl, labels.Label{
+				Name:  string(ln),
+				Value: string(lv),
+			})
 		}
-		sm.Metric = lbl
 
-		retVal = append(retVal, sm)
+		retVal = append(retVal, promql.Sample{
+			Metric: lbl,
+			Point: promql.Point{
+				V: float64(p.Value),
+				T: int64(p.Timestamp),
+			},
+		})
 	}
 	return retVal
 }
