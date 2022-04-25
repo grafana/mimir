@@ -83,5 +83,8 @@
 
     // The routes to exclude from alerts.
     alert_excluded_routes: [],
+
+    // The default datasource used for dashboards.
+    dashboard_datasource: 'default',
   },
 }
