@@ -4,12 +4,10 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"strconv"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/mimir/pkg/mimirtool/client"
-	"github.com/pkg/errors"
 	"gopkg.in/alecthomas/kingpin.v2"
 )
 
@@ -47,9 +45,5 @@ func (c *BackfillCommand) backfill(k *kingpin.ParseContext) error {
 		return err
 	}
 
-	tenantID, err := strconv.Atoi(c.clientConfig.ID)
-	if err != nil {
-		return errors.Wrap(err, "failed to convert tenant ID to int")
-	}
-	return cli.Backfill(ctx, c.source, tenantID, c.logger)
+	return cli.Backfill(ctx, c.source, c.clientConfig.ID, c.logger)
 }

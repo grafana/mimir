@@ -16,16 +16,17 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/tsdb"
+	"github.com/weaveworks/common/user"
 )
 
-func (c *MimirClient) Backfill(ctx context.Context, source string, tenantID int, logger log.Logger) error {
+func (c *MimirClient) Backfill(ctx context.Context, source string, tenantID string, logger log.Logger) error {
 	// Scan blocks in source directory
 	es, err := os.ReadDir(source)
 	if err != nil {
 		return errors.Wrapf(err, "failed to read directory %q", source)
 	}
 	for _, e := range es {
-		if err := c.backfillBlock(filepath.Join(source, e.Name()), tenantID, logger); err != nil {
+		if err := c.backfillBlock(ctx, filepath.Join(source, e.Name()), tenantID, logger); err != nil {
 			return err
 		}
 	}
@@ -33,7 +34,7 @@ func (c *MimirClient) Backfill(ctx context.Context, source string, tenantID int,
 	return nil
 }
 
-func (c *MimirClient) backfillBlock(dpath string, tenantID int, logger log.Logger) error {
+func (c *MimirClient) backfillBlock(ctx context.Context, dpath string, tenantID string, logger log.Logger) error {
 	metaPath := filepath.Join(dpath, "meta.json")
 	f, err := os.Open(metaPath)
 	if err != nil {
@@ -59,10 +60,10 @@ func (c *MimirClient) backfillBlock(dpath string, tenantID int, logger log.Logge
 
 	blockID := filepath.Base(dpath)
 
-	level.Info(logger).Log("msg", "Making request to start block backfill", "tenantId", tenantID, "blockId", blockID)
+	level.Info(logger).Log("msg", "Making request to start block backfill", "user", tenantID, "block_id", blockID)
+	ctx = user.InjectOrgID(ctx, tenantID)
 
-	// TODO: Figure out how to set tenant ID in request header
-	res, err := c.doRequest(fmt.Sprintf("/api/v1/backfill/%d/%s", tenantID, blockID), http.MethodPost, nil, -1)
+	res, err := c.doRequest(fmt.Sprintf("/api/v1/backfill/%s", blockID), http.MethodPost, nil, -1)
 	if err != nil {
 		return errors.Wrap(err, "request to start backfill failed")
 	}
@@ -92,8 +93,8 @@ func (c *MimirClient) backfillBlock(dpath string, tenantID int, logger log.Logge
 
 		relPath := strings.TrimPrefix(pth, dpath+string(filepath.Separator))
 		escapedPath := url.PathEscape(relPath)
-		level.Info(logger).Log("msg", "uploading block file", "path", pth, "tenantId",
-			tenantID, "blockId", blockID, "size", st.Size())
+		level.Info(logger).Log("msg", "uploading block file", "path", pth, "user",
+			tenantID, "block_id", blockID, "size", st.Size())
 		res, err := c.doRequest(fmt.Sprintf("/api/v1/backfill/%d/%s/%s", tenantID, blockID,
 			escapedPath), http.MethodPost, f, st.Size())
 		if err != nil {
@@ -129,7 +130,7 @@ func (c *MimirClient) backfillBlock(dpath string, tenantID int, logger log.Logge
 		return fmt.Errorf("request to finish backfill failed, status code %d", res.StatusCode)
 	}
 
-	level.Info(logger).Log("msg", "Block backfill successful", "tenantId", tenantID, "blockId", blockID)
+	level.Info(logger).Log("msg", "Block backfill successful", "user", tenantID, "block_id", blockID)
 
 	return nil
 }

@@ -861,7 +861,7 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 
 // StartBackfill requests the starting of a backfill session.
 func (d *Distributor) StartBackfill(ctx context.Context, tenantID int, blockID string) error {
-	level.Info(d.log).Log("msg", "starting backfill", "tenantId", tenantID, "blockId", blockID)
+	level.Info(d.log).Log("msg", "starting backfill", "user", tenantID, "block_id", blockID)
 	// TODO: Verify that block hasn't already been ingested
 	return nil
 }

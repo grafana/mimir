@@ -26,6 +26,7 @@ import (
 	"github.com/weaveworks/common/middleware"
 	"github.com/weaveworks/common/server"
 
+	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/mimir/pkg/alertmanager"
 	"github.com/grafana/mimir/pkg/alertmanager/alertmanagerpb"
 	"github.com/grafana/mimir/pkg/compactor"
@@ -248,16 +249,16 @@ func (a *API) RegisterDistributor(d *distributor.Distributor, pushConfig distrib
 	// Endpoint to handle requests for starting of block backfilling.
 	// Starting the backfilling of a block means to verify that the backfill can go ahead.
 	// In practice this means to check that the block isn't already in block storage.
-	a.RegisterRoute("/api/v1/backfill/{tenant:[0-9]+}/{block}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	a.RegisterRoute("/api/v1/backfill/{block}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		vars := mux.Vars(r)
-		tenantID, err := strconv.Atoi(vars["tenant"])
+		blockID := vars["block"]
+
+		ctx := r.Context()
+		tenantID, err := tenant.TenantID(ctx)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("invalid tenant ID: %q", vars["tenant"]), http.StatusBadRequest)
 			return
 		}
-		blockID := vars["block"]
-
-		ctx := r.Context()
 		logger := util_log.WithContext(ctx, util_log.Logger)
 		if a.sourceIPs != nil {
 			source := a.sourceIPs.Get(r)
