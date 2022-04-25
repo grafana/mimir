@@ -50,9 +50,6 @@
       'blocks-storage.bucket-store.chunks-cache.memcached.max-idle-connections': $.store_gateway_args['blocks-storage.bucket-store.chunks-cache.memcached.max-get-multi-concurrency'],
       'blocks-storage.bucket-store.metadata-cache.memcached.max-idle-connections': $.store_gateway_args['blocks-storage.bucket-store.metadata-cache.memcached.max-get-multi-concurrency'],
 
-      // Enable segment objects attributes in-memory cache.
-      'blocks-storage.bucket-store.chunks-cache.attributes-in-memory-max-items': 50000,
-
       // Queriers will not query store for data younger than 12h (see -querier.query-store-after).
       // Store-gateways don't need to load blocks with very most recent data. We use 2h buffer to
       // make sure that blocks are ready for querying when needed.
@@ -74,7 +71,7 @@
     $.util.readinessProbe +
     $.jaeger_mixin,
 
-  newStoreGatewayStatefulSet(name, container)::
+  newStoreGatewayStatefulSet(name, container, with_anti_affinity=false)::
     statefulSet.new(name, 3, [container], store_gateway_data_pvc) +
     statefulSet.mixin.spec.withServiceName(name) +
     statefulSet.mixin.metadata.withNamespace($._config.namespace) +
@@ -90,9 +87,10 @@
     // rolled out one by one (the next pod will be rolled out once the previous is
     // ready).
     statefulSet.mixin.spec.withPodManagementPolicy('Parallel') +
-    $.util.configVolumeMount($._config.overrides_configmap, $._config.overrides_configmap_mountpoint),
+    $.util.configVolumeMount($._config.overrides_configmap, $._config.overrides_configmap_mountpoint) +
+    (if with_anti_affinity then $.util.antiAffinity else {}),
 
-  store_gateway_statefulset: self.newStoreGatewayStatefulSet('store-gateway', $.store_gateway_container),
+  store_gateway_statefulset: self.newStoreGatewayStatefulSet('store-gateway', $.store_gateway_container, !$._config.store_gateway_allow_multiple_replicas_on_same_node),
 
   store_gateway_service:
     $.util.serviceFor($.store_gateway_statefulset, $._config.service_ignored_labels),

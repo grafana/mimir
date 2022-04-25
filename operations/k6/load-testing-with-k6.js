@@ -18,6 +18,11 @@ const WRITE_HOSTNAME = __ENV.K6_WRITE_HOSTNAME || fail('K6_WRITE_HOSTNAME enviro
  */
 const READ_HOSTNAME = __ENV.K6_READ_HOSTNAME || fail('K6_READ_HOSTNAME environment variable missing: set it to the ingress hostname on the read path (eg. query-frontend hostname)');
 /**
+ * Configures the protocol scheme used for requests.
+ * @constant {string}
+ */
+const SCHEME = __ENV.K6_SCHEME || 'http';
+/**
  * Username to use for HTTP bearer authentication.
  * @constant {string}
  */
@@ -91,7 +96,7 @@ console.debug("Remote write URL:", remote_write_url)
 const write_client = new remote.Client({ url: remote_write_url, timeout: '32s' });
 
 const query_client = new Httpx({
-    baseURL: `http://${READ_HOSTNAME}/prometheus/api/v1`,
+    baseURL: `${SCHEME}://${READ_HOSTNAME}/prometheus/api/v1`,
     headers: {
         'User-Agent': 'k6-load-test',
         "Content-Type": 'application/x-www-form-urlencoded',
@@ -468,10 +473,10 @@ function align_timestamp_to_step(ts, step) {
  */
 function get_remote_write_url() {
     if (USERNAME !== '' || WRITE_TOKEN !== '') {
-        return `http://${USERNAME}:${WRITE_TOKEN}@${WRITE_HOSTNAME}/api/v1/push`;
+        return `${SCHEME}://${USERNAME}:${WRITE_TOKEN}@${WRITE_HOSTNAME}/api/v1/push`;
     }
 
-    return `http://${WRITE_HOSTNAME}/api/v1/push`;
+    return `${SCHEME}://${WRITE_HOSTNAME}/api/v1/push`;
 }
 
 /**

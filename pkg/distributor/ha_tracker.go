@@ -207,8 +207,8 @@ func newHATracker(cfg HATrackerConfig, limits haTrackerLimits, reg prometheus.Re
 }
 
 // Follows pattern used by ring for WatchKey.
-func (c *haTracker) loop(ctx context.Context) error {
-	if !c.cfg.EnableHATracker {
+func (h *haTracker) loop(ctx context.Context) error {
+	if !h.cfg.EnableHATracker {
 		// don't do anything, but wait until asked to stop.
 		<-ctx.Done()
 		return nil
@@ -219,13 +219,13 @@ func (c *haTracker) loop(ctx context.Context) error {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		c.updateKVLoop(ctx)
+		h.updateKVLoop(ctx)
 	}()
 
 	// Request callbacks from KVStore when data changes.
-	// The KVStore config we gave when creating c should have contained a prefix,
+	// The KVStore config we gave when creating h should have contained a prefix,
 	// which would have given us a prefixed KVStore client. So, we can pass empty string here.
-	c.client.WatchPrefix(ctx, "", func(key string, value interface{}) bool {
+	h.client.WatchPrefix(ctx, "", func(key string, value interface{}) bool {
 		replica := value.(*ReplicaDesc)
 		segments := strings.SplitN(key, "/", 2)
 
@@ -238,26 +238,26 @@ func (c *haTracker) loop(ctx context.Context) error {
 		cluster := segments[1]
 
 		if replica.DeletedAt > 0 {
-			c.electedReplicaChanges.DeleteLabelValues(user, cluster)
-			c.electedReplicaTimestamp.DeleteLabelValues(user, cluster)
+			h.electedReplicaChanges.DeleteLabelValues(user, cluster)
+			h.electedReplicaTimestamp.DeleteLabelValues(user, cluster)
 
-			c.electedLock.Lock()
-			defer c.electedLock.Unlock()
-			userClusters := c.clusters[user]
+			h.electedLock.Lock()
+			defer h.electedLock.Unlock()
+			userClusters := h.clusters[user]
 			if userClusters != nil {
 				delete(userClusters, cluster)
 				if len(userClusters) == 0 {
-					delete(c.clusters, user)
+					delete(h.clusters, user)
 				}
 			}
 			return true
 		}
 
 		// Store the received information into our cache
-		c.electedLock.Lock()
-		c.updateCache(user, cluster, replica)
-		c.electedLock.Unlock()
-		c.electedReplicaPropagationTime.Observe(time.Since(timestamp.Time(replica.ReceivedAt)).Seconds())
+		h.electedLock.Lock()
+		h.updateCache(user, cluster, replica)
+		h.electedLock.Unlock()
+		h.electedReplicaPropagationTime.Observe(time.Since(timestamp.Time(replica.ReceivedAt)).Seconds())
 		return true
 	})
 
@@ -274,10 +274,10 @@ const (
 	deletionTimeout = 30 * time.Minute
 )
 
-func (c *haTracker) updateKVLoop(ctx context.Context) {
+func (h *haTracker) updateKVLoop(ctx context.Context) {
 	cleanupTick := time.NewTicker(util.DurationWithJitter(cleanupCyclePeriod, cleanupCycleJitterVariance))
 	defer cleanupTick.Stop()
-	tick := time.NewTicker(c.cfg.UpdateTimeout)
+	tick := time.NewTicker(h.cfg.UpdateTimeout)
 	defer tick.Stop()
 
 	for {
@@ -285,43 +285,43 @@ func (c *haTracker) updateKVLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case t := <-tick.C:
-			c.updateKVStoreAll(ctx, t)
+			h.updateKVStoreAll(ctx, t)
 		case t := <-cleanupTick.C:
-			c.cleanupRuns.Inc()
-			c.cleanupOldReplicas(ctx, t.Add(-deletionTimeout))
+			h.cleanupRuns.Inc()
+			h.cleanupOldReplicas(ctx, t.Add(-deletionTimeout))
 		}
 	}
 }
 
 // Loop over all entries in our cache and update KVStore where it is out of date,
 // electing a new replica if necessary.
-func (c *haTracker) updateKVStoreAll(ctx context.Context, now time.Time) {
-	c.electedLock.RLock()
-	defer c.electedLock.RUnlock()
+func (h *haTracker) updateKVStoreAll(ctx context.Context, now time.Time) {
+	h.electedLock.RLock()
+	defer h.electedLock.RUnlock()
 	// Note the maps may change when we release the lock while talking to KVStore;
 	// the Go language allows this: https://golang.org/ref/spec#For_range note 3.
-	for userID, clusters := range c.clusters {
+	for userID, clusters := range h.clusters {
 		for cluster, entry := range clusters {
-			if c.withinUpdateTimeout(now, entry.elected.ReceivedAt) {
+			if h.withinUpdateTimeout(now, entry.elected.ReceivedAt) {
 				continue // Some other process updated it recently; nothing to do.
 			}
 			var replica string
-			if c.withinUpdateTimeout(now, entry.electedLastSeenTimestamp) {
+			if h.withinUpdateTimeout(now, entry.electedLastSeenTimestamp) {
 				// We have seen the elected replica recently; carry on with that choice.
 				replica = entry.elected.Replica
-			} else if c.withinUpdateTimeout(now, entry.nonElectedLastSeenTimestamp) {
+			} else if h.withinUpdateTimeout(now, entry.nonElectedLastSeenTimestamp) {
 				// Not seen elected but have seen another: attempt to fail over.
 				replica = entry.nonElectedLastSeenReplica
 			} else {
 				continue // we don't have any recent timestamps
 			}
 			// Release lock while we talk to KVStore, which could take a while.
-			c.electedLock.RUnlock()
-			err := c.updateKVStore(ctx, userID, cluster, replica, now)
-			c.electedLock.RLock()
+			h.electedLock.RUnlock()
+			err := h.updateKVStore(ctx, userID, cluster, replica, now)
+			h.electedLock.RLock()
 			if err != nil {
 				// Failed to store - log it but carry on
-				level.Error(c.logger).Log("msg", "failed to update KVStore", "err", err)
+				level.Error(h.logger).Log("msg", "failed to update KVStore", "err", err)
 			}
 		}
 	}
@@ -329,10 +329,10 @@ func (c *haTracker) updateKVStoreAll(ctx context.Context, now time.Time) {
 
 // Replicas marked for deletion before deadline will be deleted.
 // Replicas with last-received timestamp before deadline will be marked for deletion.
-func (c *haTracker) cleanupOldReplicas(ctx context.Context, deadline time.Time) {
-	keys, err := c.client.List(ctx, "")
+func (h *haTracker) cleanupOldReplicas(ctx context.Context, deadline time.Time) {
+	keys, err := h.client.List(ctx, "")
 	if err != nil {
-		level.Warn(c.logger).Log("msg", "cleanup: failed to list replica keys", "err", err)
+		level.Warn(h.logger).Log("msg", "cleanup: failed to list replica keys", "err", err)
 		return
 	}
 
@@ -341,15 +341,15 @@ func (c *haTracker) cleanupOldReplicas(ctx context.Context, deadline time.Time) 
 			return
 		}
 
-		val, err := c.client.Get(ctx, key)
+		val, err := h.client.Get(ctx, key)
 		if err != nil {
-			level.Warn(c.logger).Log("msg", "cleanup: failed to get replica value", "key", key, "err", err)
+			level.Warn(h.logger).Log("msg", "cleanup: failed to get replica value", "key", key, "err", err)
 			continue
 		}
 
 		desc, ok := val.(*ReplicaDesc)
 		if !ok {
-			level.Error(c.logger).Log("msg", "cleanup: got invalid replica descriptor", "key", key)
+			level.Error(h.logger).Log("msg", "cleanup: got invalid replica descriptor", "key", key)
 			continue
 		}
 
@@ -366,20 +366,20 @@ func (c *haTracker) cleanupOldReplicas(ctx context.Context, deadline time.Time) 
 			// If KV store doesn't send Watch notification for Delete, distributors *with* replica in memory will keep using it,
 			// while distributors *without* replica in memory will try to write it to KV store -- which will update *all*
 			// watching distributors.
-			err = c.client.Delete(ctx, key)
+			err = h.client.Delete(ctx, key)
 			if err != nil {
-				level.Error(c.logger).Log("msg", "cleanup: failed to delete old replica", "key", key, "err", err)
-				c.markingForDeletionsFailed.Inc()
+				level.Error(h.logger).Log("msg", "cleanup: failed to delete old replica", "key", key, "err", err)
+				h.markingForDeletionsFailed.Inc()
 			} else {
-				level.Info(c.logger).Log("msg", "cleanup: deleted old replica", "key", key)
-				c.deletedReplicas.Inc()
+				level.Info(h.logger).Log("msg", "cleanup: deleted old replica", "key", key)
+				h.deletedReplicas.Inc()
 			}
 			continue
 		}
 
 		// Not marked as deleted yet.
 		if desc.DeletedAt == 0 && timestamp.Time(desc.ReceivedAt).Before(deadline) {
-			err := c.client.CAS(ctx, key, func(in interface{}) (out interface{}, retry bool, err error) {
+			err := h.client.CAS(ctx, key, func(in interface{}) (out interface{}, retry bool, err error) {
 				d, ok := in.(*ReplicaDesc)
 				if !ok || d == nil || d.DeletedAt > 0 || !timestamp.Time(desc.ReceivedAt).Before(deadline) {
 					return nil, false, nil
@@ -390,11 +390,11 @@ func (c *haTracker) cleanupOldReplicas(ctx context.Context, deadline time.Time) 
 			})
 
 			if err != nil {
-				c.markingForDeletionsFailed.Inc()
-				level.Error(c.logger).Log("msg", "cleanup: failed to mark replica as deleted", "key", key, "err", err)
+				h.markingForDeletionsFailed.Inc()
+				level.Error(h.logger).Log("msg", "cleanup: failed to mark replica as deleted", "key", key, "err", err)
 			} else {
-				c.replicasMarkedForDeletion.Inc()
-				level.Info(c.logger).Log("msg", "cleanup: marked replica as deleted", "key", key)
+				h.replicasMarkedForDeletion.Inc()
+				level.Info(h.logger).Log("msg", "cleanup: marked replica as deleted", "key", key)
 			}
 		}
 	}
@@ -407,14 +407,14 @@ func (c *haTracker) cleanupOldReplicas(ctx context.Context, deadline time.Time) 
 // Updates to and from the KV store are handled in the background, except
 // if we have no cached data for this cluster in which case we create the
 // record and store it in-band.
-func (c *haTracker) checkReplica(ctx context.Context, userID, cluster, replica string, now time.Time) error {
+func (h *haTracker) checkReplica(ctx context.Context, userID, cluster, replica string, now time.Time) error {
 	// If HA tracking isn't enabled then accept the sample
-	if !c.cfg.EnableHATracker {
+	if !h.cfg.EnableHATracker {
 		return nil
 	}
 
-	c.electedLock.Lock()
-	if entry := c.clusters[userID][cluster]; entry != nil {
+	h.electedLock.Lock()
+	if entry := h.clusters[userID][cluster]; entry != nil {
 		var err error
 		if entry.elected.Replica == replica {
 			// Sample received is from elected replica: update timestamp and carry on.
@@ -425,60 +425,60 @@ func (c *haTracker) checkReplica(ctx context.Context, userID, cluster, replica s
 			entry.nonElectedLastSeenTimestamp = timestamp.FromTime(now)
 			err = replicasNotMatchError{replica: replica, elected: entry.elected.Replica}
 		}
-		c.electedLock.Unlock()
+		h.electedLock.Unlock()
 		return err
 	}
 
 	// We don't know about this cluster yet.
-	nClusters := len(c.clusters[userID])
-	c.electedLock.Unlock()
+	nClusters := len(h.clusters[userID])
+	h.electedLock.Unlock()
 	// If we have reached the limit for number of clusters, error out now.
-	if limit := c.limits.MaxHAClusters(userID); limit > 0 && nClusters+1 > limit {
+	if limit := h.limits.MaxHAClusters(userID); limit > 0 && nClusters+1 > limit {
 		return tooManyClustersError{limit: limit}
 	}
 
-	err := c.updateKVStore(ctx, userID, cluster, replica, now)
+	err := h.updateKVStore(ctx, userID, cluster, replica, now)
 	if err != nil {
-		level.Error(c.logger).Log("msg", "failed to update KVStore - rejecting sample", "err", err)
+		level.Error(h.logger).Log("msg", "failed to update KVStore - rejecting sample", "err", err)
 		return err
 	}
 	// Cache will now have the value - recurse to check it again.
-	return c.checkReplica(ctx, userID, cluster, replica, now)
+	return h.checkReplica(ctx, userID, cluster, replica, now)
 }
 
-func (c *haTracker) withinUpdateTimeout(now time.Time, receivedAt int64) bool {
-	return now.Sub(timestamp.Time(receivedAt)) < c.cfg.UpdateTimeout+c.updateTimeoutJitter
+func (h *haTracker) withinUpdateTimeout(now time.Time, receivedAt int64) bool {
+	return now.Sub(timestamp.Time(receivedAt)) < h.cfg.UpdateTimeout+h.updateTimeoutJitter
 }
 
 // Must be called with electedLock held.
-func (c *haTracker) updateCache(userID, cluster string, desc *ReplicaDesc) {
-	if c.clusters[userID] == nil {
-		c.clusters[userID] = map[string]*haClusterInfo{}
+func (h *haTracker) updateCache(userID, cluster string, desc *ReplicaDesc) {
+	if h.clusters[userID] == nil {
+		h.clusters[userID] = map[string]*haClusterInfo{}
 	}
-	entry := c.clusters[userID][cluster]
+	entry := h.clusters[userID][cluster]
 	if entry == nil {
 		entry = &haClusterInfo{}
-		c.clusters[userID][cluster] = entry
+		h.clusters[userID][cluster] = entry
 	}
 	if desc.Replica != entry.elected.Replica {
-		c.electedReplicaChanges.WithLabelValues(userID, cluster).Inc()
+		h.electedReplicaChanges.WithLabelValues(userID, cluster).Inc()
 	}
 	entry.elected = *desc
-	c.electedReplicaTimestamp.WithLabelValues(userID, cluster).Set(float64(desc.ReceivedAt / 1000))
+	h.electedReplicaTimestamp.WithLabelValues(userID, cluster).Set(float64(desc.ReceivedAt / 1000))
 }
 
 // If we do set the value then err will be nil and desc will contain the value we set.
 // If there is already a valid value in the store, return nil, nil.
-func (c *haTracker) updateKVStore(ctx context.Context, userID, cluster, replica string, now time.Time) error {
+func (h *haTracker) updateKVStore(ctx context.Context, userID, cluster, replica string, now time.Time) error {
 	key := fmt.Sprintf("%s/%s", userID, cluster)
 	var desc *ReplicaDesc
-	err := c.client.CAS(ctx, key, func(in interface{}) (out interface{}, retry bool, err error) {
+	err := h.client.CAS(ctx, key, func(in interface{}) (out interface{}, retry bool, err error) {
 		var ok bool
 		if desc, ok = in.(*ReplicaDesc); ok && desc.DeletedAt == 0 {
 			// If the entry in KVStore is up-to-date, just stop the loop.
-			if c.withinUpdateTimeout(now, desc.ReceivedAt) ||
+			if h.withinUpdateTimeout(now, desc.ReceivedAt) ||
 				// If our replica is different, wait until the failover time.
-				desc.Replica != replica && now.Sub(timestamp.Time(desc.ReceivedAt)) < c.cfg.FailoverTimeout {
+				desc.Replica != replica && now.Sub(timestamp.Time(desc.ReceivedAt)) < h.cfg.FailoverTimeout {
 				return nil, false, nil
 			}
 		}
@@ -491,14 +491,14 @@ func (c *haTracker) updateKVStore(ctx context.Context, userID, cluster, replica 
 		}
 		return desc, true, nil
 	})
-	c.kvCASCalls.WithLabelValues(userID, cluster).Inc()
+	h.kvCASCalls.WithLabelValues(userID, cluster).Inc()
 	// If cache is currently empty, add the data we either stored or received from KVStore
 	if err == nil && desc != nil {
-		c.electedLock.Lock()
-		if c.clusters[userID][cluster] == nil {
-			c.updateCache(userID, cluster, desc)
+		h.electedLock.Lock()
+		if h.clusters[userID][cluster] == nil {
+			h.updateCache(userID, cluster, desc)
 		}
-		c.electedLock.Unlock()
+		h.electedLock.Unlock()
 	}
 	return err
 }
@@ -554,16 +554,16 @@ func findHALabels(replicaLabel, clusterLabel string, labels []mimirpb.LabelAdapt
 	return cluster, replica
 }
 
-func (c *haTracker) cleanupHATrackerMetricsForUser(userID string) {
+func (h *haTracker) cleanupHATrackerMetricsForUser(userID string) {
 	filter := map[string]string{"user": userID}
 
-	if err := util.DeleteMatchingLabels(c.electedReplicaChanges, filter); err != nil {
-		level.Warn(c.logger).Log("msg", "failed to remove cortex_ha_tracker_elected_replica_changes_total metric for user", "user", userID, "err", err)
+	if err := util.DeleteMatchingLabels(h.electedReplicaChanges, filter); err != nil {
+		level.Warn(h.logger).Log("msg", "failed to remove cortex_ha_tracker_elected_replica_changes_total metric for user", "user", userID, "err", err)
 	}
-	if err := util.DeleteMatchingLabels(c.electedReplicaTimestamp, filter); err != nil {
-		level.Warn(c.logger).Log("msg", "failed to remove cortex_ha_tracker_elected_replica_timestamp_seconds metric for user", "user", userID, "err", err)
+	if err := util.DeleteMatchingLabels(h.electedReplicaTimestamp, filter); err != nil {
+		level.Warn(h.logger).Log("msg", "failed to remove cortex_ha_tracker_elected_replica_timestamp_seconds metric for user", "user", userID, "err", err)
 	}
-	if err := util.DeleteMatchingLabels(c.kvCASCalls, filter); err != nil {
-		level.Warn(c.logger).Log("msg", "failed to remove cortex_ha_tracker_kv_store_cas_total metric for user", "user", userID, "err", err)
+	if err := util.DeleteMatchingLabels(h.kvCASCalls, filter); err != nil {
+		level.Warn(h.logger).Log("msg", "failed to remove cortex_ha_tracker_kv_store_cas_total metric for user", "user", userID, "err", err)
 	}
 }

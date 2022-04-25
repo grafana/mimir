@@ -1,5 +1,0 @@
-server:
-  http_listen_port: 80
-
-auth:
-  type: trust

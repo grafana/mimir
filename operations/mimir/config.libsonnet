@@ -24,6 +24,7 @@
     ruler_allow_multiple_replicas_on_same_node: false,
     querier_allow_multiple_replicas_on_same_node: false,
     query_frontend_allow_multiple_replicas_on_same_node: false,
+    store_gateway_allow_multiple_replicas_on_same_node: false,
 
     test_exporter_enabled: false,
     test_exporter_start_time: error 'must specify test exporter start time',

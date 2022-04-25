@@ -213,7 +213,7 @@ type RulesManager interface {
 	Stop()
 
 	// Update rules manager state.
-	Update(interval time.Duration, files []string, externalLabels labels.Labels, externalURL string) error
+	Update(interval time.Duration, files []string, externalLabels labels.Labels, externalURL string, ruleGroupPostProcessFunc rules.RuleGroupPostProcessFunc) error
 
 	// RuleGroups returns current rules groups.
 	RuleGroups() []*rules.Group

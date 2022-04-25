@@ -47,7 +47,7 @@ To contribute to Grafana Mimir, refer to [Contributing to Grafana Mimir](https:/
 
 If you have any questions or feedback regarding Grafana Mimir, join the [Grafana Mimir Discussion](https://github.com/grafana/mimir/discussions). Alternatively, consider joining the monthly [Grafana Mimir Community Call](https://docs.google.com/document/d/1E4jJcGicvLTyMEY6cUFFZUg_I8ytrBuW8r5yt1LyMv4).
 
-Your feedback is always welcome.
+Your feedback is always welcome, and you can also share it via the [`#mimir` Slack channel](https://slack.grafana.com/).
 
 ## License
 

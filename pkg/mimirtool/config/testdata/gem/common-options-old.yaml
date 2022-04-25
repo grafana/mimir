@@ -3,3 +3,12 @@ server:
 
 auth:
   type: trust
+
+blocks_storage:
+  backend: s3
+
+ruler_storage:
+  backend: s3
+
+alertmanager_storage:
+  backend: s3
