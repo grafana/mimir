@@ -129,13 +129,13 @@ func (i *ActivityTrackerWrapper) LabelValuesCardinality(request *client.LabelVal
 	return i.ing.LabelValuesCardinality(request, server)
 }
 
-func (i *ActivityTrackerWrapper) AddBackfillFile(stream client.Ingester_AddBackfillFileServer) error {
+func (i *ActivityTrackerWrapper) UploadBackfillFile(stream client.Ingester_UploadBackfillFileServer) error {
 	ix := i.tracker.Insert(func() string {
-		return requestActivity(context.Background(), "Ingester/AddBackfillFile", stream)
+		return requestActivity(context.Background(), "Ingester/UploadBackfillFile", stream)
 	})
 	defer i.tracker.Delete(ix)
 
-	return i.ing.AddBackfillFile(stream)
+	return i.ing.UploadBackfillFile(stream)
 }
 
 func (i *ActivityTrackerWrapper) FinishBackfill(ctx context.Context, req *mimirpb.FinishBackfillRequest) (*mimirpb.FinishBackfillResponse, error) {

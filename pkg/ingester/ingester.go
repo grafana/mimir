@@ -2301,7 +2301,7 @@ func (i *Ingester) RingHandler() http.Handler {
 	return i.lifecycler
 }
 
-func (i *Ingester) AddBackfillFile(stream client.Ingester_AddBackfillFileServer) error {
+func (i *Ingester) UploadBackfillFile(stream client.Ingester_UploadBackfillFileServer) error {
 	if err := i.checkRunning(); err != nil {
 		return err
 	}
@@ -2354,7 +2354,7 @@ func (i *Ingester) AddBackfillFile(stream client.Ingester_AddBackfillFileServer)
 	}
 	if chunk == 0 {
 		level.Warn(i.logger).Log("msg", "no backfill file content was sent")
-		return stream.SendAndClose(&mimirpb.AddBackfillFileResponse{})
+		return stream.SendAndClose(&mimirpb.UploadBackfillFileResponse{})
 	}
 
 	level.Info(i.logger).Log("msg", "finished writing chunks to backfill file", "tenantId",
@@ -2373,7 +2373,7 @@ func (i *Ingester) AddBackfillFile(stream client.Ingester_AddBackfillFileServer)
 		return errors.Wrap(err, "failed uploading backfill file to bucket")
 	}
 
-	return stream.SendAndClose(&mimirpb.AddBackfillFileResponse{})
+	return stream.SendAndClose(&mimirpb.UploadBackfillFileResponse{})
 }
 
 func (i *Ingester) FinishBackfill(ctx context.Context, req *mimirpb.FinishBackfillRequest) (*mimirpb.FinishBackfillResponse, error) {

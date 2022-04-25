@@ -305,7 +305,7 @@ func (a *API) RegisterDistributor(d *distributor.Distributor, pushConfig distrib
 			}
 		}
 
-		if err := d.AddBackfillFile(ctx, tenantID, blockID, pth, r); err != nil {
+		if err := d.UploadBackfillFile(ctx, tenantID, blockID, pth, r); err != nil {
 			resp, ok := httpgrpc.HTTPResponseFromError(err)
 			if !ok {
 				http.Error(w, err.Error(), http.StatusInternalServerError)

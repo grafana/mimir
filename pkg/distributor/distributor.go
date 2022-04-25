@@ -866,12 +866,12 @@ func (d *Distributor) StartBackfill(ctx context.Context, tenantID int, blockID s
 	return nil
 }
 
-// AddBackfillFile adds a file to an ongoing metrics backfill.
-func (d *Distributor) AddBackfillFile(ctx context.Context, tenantID int, blockID, pth string, r *http.Request) error {
+// UploadBackfillFile uploads a file to an ongoing metrics backfill.
+func (d *Distributor) UploadBackfillFile(ctx context.Context, tenantID int, blockID, pth string, r *http.Request) error {
 	level.Info(d.log).Log("msg", "adding file to metrics backfill", "tenantId", tenantID,
 		"blockId", blockID, "path", pth, "size", r.ContentLength)
 	return d.backfillRPC(ctx, tenantID, blockID, func(ctx context.Context, c ingester_client.IngesterClient) error {
-		stream, err := c.AddBackfillFile(ctx)
+		stream, err := c.UploadBackfillFile(ctx)
 		if err != nil {
 			return errors.Wrap(err, "failed to get gRPC stream for adding file to backfill")
 		}
@@ -889,7 +889,7 @@ func (d *Distributor) AddBackfillFile(ctx context.Context, tenantID int, blockID
 			}
 
 			bytesWritten += int64(n)
-			if err := stream.Send(&mimirpb.AddBackfillFileRequest{
+			if err := stream.Send(&mimirpb.UploadBackfillFileRequest{
 				TenantId: uint32(tenantID),
 				BlockId:  blockID,
 				Path:     pth,

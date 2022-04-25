@@ -28,14 +28,14 @@ message WriteRequest {
 
 message WriteResponse {}
 
-message AddBackfillFileRequest {
+message UploadBackfillFileRequest {
   uint32 tenant_id = 1;
   string block_id = 2;
   string path = 3;
   bytes chunk = 4;
 }
 
-message AddBackfillFileResponse {}
+message UploadBackfillFileResponse {}
 
 message FinishBackfillRequest {
   uint32 tenant_id = 1;
