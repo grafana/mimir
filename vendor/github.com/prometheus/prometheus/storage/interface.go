@@ -27,7 +27,8 @@ import (
 // The errors exposed.
 var (
 	ErrNotFound                    = errors.New("not found")
-	ErrOutOfOrderSample            = errors.New("out of order sample")
+	ErrOutOfOrderSample            = errors.New("out of order sample") // OOO support disabled and sample is OOO
+	ErrTooOldSample                = errors.New("too old sample")      // OOO support enabled, but sample outside of tolerance
 	ErrDuplicateSampleForTimestamp = errors.New("duplicate sample for timestamp")
 	ErrOutOfBounds                 = errors.New("out of bounds")
 	ErrOutOfOrderExemplar          = errors.New("out of order exemplar")

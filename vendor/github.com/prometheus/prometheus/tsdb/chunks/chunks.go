@@ -122,6 +122,15 @@ type Meta struct {
 	// Time range the data covers.
 	// When MaxTime == math.MaxInt64 the chunk is still open and being appended to.
 	MinTime, MaxTime int64
+
+	// OOOLastRef, OOOLastMinTime and OOOLastMaxTime are kept as markers for
+	// overlapping chunks.
+	// These fields point to the last created out of order Chunk (the head) that existed
+	// when Series() was called and was overlapping.
+	// Series() and Chunk() method responses should be consistent for the same
+	// query even if new data is added in between the calls.
+	OOOLastRef                     ChunkRef
+	OOOLastMinTime, OOOLastMaxTime int64
 }
 
 // Iterator iterates over the chunks of a single time series.
@@ -546,8 +555,8 @@ func (s *Reader) Size() int64 {
 }
 
 // Chunk returns a chunk from a given reference.
-func (s *Reader) Chunk(ref ChunkRef) (chunkenc.Chunk, error) {
-	sgmIndex, chkStart := BlockChunkRef(ref).Unpack()
+func (s *Reader) Chunk(meta Meta) (chunkenc.Chunk, error) {
+	sgmIndex, chkStart := BlockChunkRef(meta.Ref).Unpack()
 	chkCRC32 := newCRC32()
 
 	if sgmIndex >= len(s.bs) {
