@@ -17,7 +17,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -2306,7 +2305,11 @@ func (i *Ingester) UploadBackfillFile(stream client.Ingester_UploadBackfillFileS
 		return err
 	}
 
-	ctx := context.Background()
+	ctx := stream.Context()
+	tenantID, err := tenant.TenantID(ctx)
+	if err != nil {
+		return errors.Wrap(err, "failed to get tenantID from stream context")
+	}
 
 	level.Info(i.logger).Log("msg", "processing request to add backfill file")
 
@@ -2321,7 +2324,6 @@ func (i *Ingester) UploadBackfillFile(stream client.Ingester_UploadBackfillFileS
 		}
 	}()
 
-	var tenantID int
 	var blockID string
 	var pth string
 	var chunk int
@@ -2336,11 +2338,10 @@ func (i *Ingester) UploadBackfillFile(stream client.Ingester_UploadBackfillFileS
 		}
 
 		if blockID == "" {
-			tenantID = int(req.TenantId)
 			blockID = req.BlockId
 			pth = req.Path
-			level.Info(i.logger).Log("msg", "adding file to backfill", "tenantId",
-				tenantID, "blockId", blockID, "path", pth, "chunkLength",
+			level.Info(i.logger).Log("msg", "adding file to backfill", "user",
+				tenantID, "block_id", blockID, "path", pth, "chunkLength",
 				len(req.Chunk))
 			chunk = 1
 		} else {
@@ -2357,15 +2358,15 @@ func (i *Ingester) UploadBackfillFile(stream client.Ingester_UploadBackfillFileS
 		return stream.SendAndClose(&mimirpb.UploadBackfillFileResponse{})
 	}
 
-	level.Info(i.logger).Log("msg", "finished writing chunks to backfill file", "tenantId",
-		tenantID, "blockId", blockID, "path", pth, "chunks", chunk, "bytesWritten", bytesWritten)
+	level.Info(i.logger).Log("msg", "finished writing chunks to backfill file", "user",
+		tenantID, "block_id", blockID, "path", pth, "chunks", chunk, "bytesWritten", bytesWritten)
 
 	if _, err := f.Seek(0, 0); err != nil {
 		return errors.Wrap(err, "failed seeking in file")
 	}
 
 	dst := path.Join("uploads", blockID, pth)
-	level.Info(i.logger).Log("msg", "uploading backfill file to bucket", "tenantId", tenantID,
+	level.Info(i.logger).Log("msg", "uploading backfill file to bucket", "user", tenantID,
 		"destination", dst)
 	bkt := bucket.NewUserBucketClient(string(tenantID), i.bucket, i.limits)
 	defer bkt.Close()
@@ -2381,10 +2382,13 @@ func (i *Ingester) FinishBackfill(ctx context.Context, req *mimirpb.FinishBackfi
 		return nil, err
 	}
 
-	level.Info(i.logger).Log("msg", "processing request to finish backfill", "tenantId",
-		req.TenantId, "blockId", req.BlockId, "files", len(req.Files))
+	tenantID, err := tenant.TenantID(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to get tenant ID from context")
+	}
+	level.Info(i.logger).Log("msg", "processing request to finish backfill", "user",
+		tenantID, "block_id", req.BlockId, "files", len(req.Files))
 
-	tenantID := strconv.Itoa(int(req.TenantId))
 	bkt := bucket.NewUserBucketClient(tenantID, i.bucket, i.limits)
 	defer bkt.Close()
 

@@ -890,10 +890,9 @@ func (d *Distributor) UploadBackfillFile(ctx context.Context, tenantID int, bloc
 
 			bytesWritten += int64(n)
 			if err := stream.Send(&mimirpb.UploadBackfillFileRequest{
-				TenantId: uint32(tenantID),
-				BlockId:  blockID,
-				Path:     pth,
-				Chunk:    buf[:n],
+				BlockId: blockID,
+				Path:    pth,
+				Chunk:   buf[:n],
 			}); err != nil {
 				if err == io.EOF {
 					break
@@ -932,9 +931,8 @@ func (d *Distributor) FinishBackfill(ctx context.Context, tenantID int, blockID 
 
 	return d.backfillRPC(ctx, tenantID, blockID, func(ctx context.Context, c ingester_client.IngesterClient) error {
 		if _, err := c.FinishBackfill(ctx, &mimirpb.FinishBackfillRequest{
-			TenantId: uint32(tenantID),
-			BlockId:  blockID,
-			Files:    payload.Files,
+			BlockId: blockID,
+			Files:   payload.Files,
 		}); err != nil {
 			return errors.Wrap(err, "gRPC call to finish backfill failed")
 		}
