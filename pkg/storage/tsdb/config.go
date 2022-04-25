@@ -171,6 +171,11 @@ type TSDBConfig struct {
 
 	// How often to check for idle TSDBs for closing. DefaultCloseIdleTSDBInterval is not suitable for testing, so tests can override.
 	CloseIdleTSDBInterval time.Duration `yaml:"-"`
+
+	// Highly experimental out of order metrics support
+	OOOAllowance time.Duration `yaml:"tsdb_ooo_allowance" category:"experimental"`
+	OOOCapMin    int           `yaml:"tsdb_ooo_cap_min" category:"experimental"`
+	OOOCapMax    int           `yaml:"tsdb_ooo_cap_max" category:"experimental"`
 }
 
 // RegisterFlags registers the TSDBConfig flags.
@@ -199,6 +204,9 @@ func (cfg *TSDBConfig) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.MemorySnapshotOnShutdown, "blocks-storage.tsdb.memory-snapshot-on-shutdown", false, "True to enable snapshotting of in-memory TSDB data on disk when shutting down.")
 	f.IntVar(&cfg.HeadChunksWriteQueueSize, "blocks-storage.tsdb.head-chunks-write-queue-size", 0, "The size of the write queue used by the head chunks mapper. Lower values reduce memory utilisation at the cost of potentially higher ingest latency. Value of 0 switches chunks mapper to implementation without a queue.")
 	f.BoolVar(&cfg.IsolationEnabled, "blocks-storage.tsdb.isolation-enabled", false, "[Deprecated] Enables TSDB isolation feature. Disabling may improve performance.")
+	f.DurationVar(&cfg.OOOAllowance, "blocks-storage.tsdb.ooo-allowance", 0*time.Second, "Allow upto this much out-of-order.  Supported units: h, m, s.")
+	f.IntVar(&cfg.OOOCapMin, "blocks-storage.tsdb.ooo-cap-min", 4, "Minimum capacity for OOO chunks (in samples. between 0 and 255.)")
+	f.IntVar(&cfg.OOOCapMax, "blocks-storage.tsdb.ooo-cap-max", 32, "Maximum capacity for OOO chunks (in samples. between 1 and 255.)")
 }
 
 // Validate the config.

@@ -1482,6 +1482,9 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 		EnableMemorySnapshotOnShutdown: i.cfg.BlocksStorageConfig.TSDB.MemorySnapshotOnShutdown,
 		IsolationDisabled:              !i.cfg.BlocksStorageConfig.TSDB.IsolationEnabled,
 		HeadChunksWriteQueueSize:       i.cfg.BlocksStorageConfig.TSDB.HeadChunksWriteQueueSize,
+		OOOAllowance:                   int64(i.cfg.BlocksStorageConfig.TSDB.OOOAllowance / time.Millisecond),
+		OOOCapMin:                      int64(i.cfg.BlocksStorageConfig.TSDB.OOOCapMin),
+		OOOCapMax:                      int64(i.cfg.BlocksStorageConfig.TSDB.OOOCapMax),
 	}, nil)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to open TSDB: %s", udir)
