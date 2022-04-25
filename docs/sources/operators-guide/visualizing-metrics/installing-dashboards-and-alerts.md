@@ -37,8 +37,8 @@ If you choose this option, you can change the configuration to match your deploy
 2. Review the mixin configuration at `operations/mimir-mixin/config.libsonnet`, and apply your changes if necessary.
 3. Install dependencies:
    ```bash
-   GO111MODULE=on go get github.com/monitoring-mixins/mixtool/cmd/mixtool
-   GO111MODULE=on go get github.com/jsonnet-bundler/jsonnet-bundler/cmd/jb
+   go install github.com/monitoring-mixins/mixtool/cmd/mixtool@latest
+   go install github.com/jsonnet-bundler/jsonnet-bundler/cmd/jb@latest
    ```
 4. Compile the mixin
    ```bash
