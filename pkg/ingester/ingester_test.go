@@ -5677,3 +5677,90 @@ func TestGetIgnoreSeriesLimitForMetricNamesMap(t *testing.T) {
 	cfg.IgnoreSeriesLimitForMetricNames = "foo, bar, ,"
 	require.Equal(t, map[string]struct{}{"foo": {}, "bar": {}}, cfg.getIgnoreSeriesLimitForMetricNamesMap())
 }
+
+func Test_Ingester_QueryOutOfOrder(t *testing.T) {
+	tests := map[string]struct {
+		queryFrom      int64
+		queryTo        int64
+		oooFirstSample int64
+		oooLastSample  int64
+		expected       model.Matrix
+	}{
+		"should return in order and out of order data": {
+			queryFrom:      math.MinInt64,
+			queryTo:        math.MaxInt64,
+			oooFirstSample: 70 * time.Minute.Milliseconds(),
+			oooLastSample:  99 * time.Minute.Milliseconds(),
+			expected:       model.Matrix{},
+		},
+	}
+
+	cfg := defaultIngesterTestConfig(t)
+	cfg.BlocksStorageConfig.TSDB.OOOAllowance = 30 * time.Minute
+	cfg.BlocksStorageConfig.TSDB.OOOCapMin = 4
+	cfg.BlocksStorageConfig.TSDB.OOOCapMax = 32
+	// Create ingester
+	i, err := prepareIngesterWithBlocksStorage(t, cfg, nil)
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
+	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
+
+	// Wait until it's healthy
+	test.Poll(t, 1*time.Second, 1, func() interface{} {
+		return i.lifecycler.HealthyInstancesCount()
+	})
+
+	// Push series
+	ctx := user.InjectOrgID(context.Background(), "test")
+
+	// Push first in order sample at minute 100
+	serie := series{
+		lbls:      labels.Labels{{Name: labels.MetricName, Value: "test_1"}, {Name: "status", Value: "200"}},
+		value:     float64(100 * time.Minute.Milliseconds()),
+		timestamp: 100 * time.Minute.Milliseconds(),
+	}
+
+	req, _, _, _ := mockWriteRequest(t, serie.lbls, serie.value, serie.timestamp)
+	_, err = i.Push(ctx, req)
+	require.NoError(t, err)
+
+	// Run tests
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			var expSamples []model.SamplePair
+			// Push samples within the allowance time
+			for min := 70 * time.Minute.Milliseconds(); min < 100; min = min + time.Minute.Milliseconds() {
+				req, _, _, _ := mockWriteRequest(t, serie.lbls, float64(min), min)
+				_, err = i.Push(ctx, req)
+				require.NoError(t, err)
+				expSamples = append(expSamples, model.SamplePair{
+					Timestamp: model.Time(min),
+					Value:     model.SampleValue(min),
+				})
+			}
+
+			expMatrix := model.Matrix{
+				{
+					Metric: model.Metric{"__name__": "test_1", "status": "200"},
+					Values: expSamples,
+				},
+			}
+
+			req := &client.QueryRequest{
+				StartTimestampMs: testData.queryFrom,
+				EndTimestampMs:   testData.queryTo,
+				Matchers: []*client.LabelMatcher{
+					{Type: client.EQUAL, Name: model.MetricNameLabel, Value: "test_1"},
+				},
+			}
+
+			s := stream{ctx: ctx}
+			err = i.QueryStream(req, &s)
+			require.NoError(t, err)
+
+			res, err := chunkcompat.StreamsToMatrix(model.Earliest, model.Latest, s.responses)
+			require.NoError(t, err)
+			assert.ElementsMatch(t, expMatrix, res)
+		})
+	}
+}
