@@ -12,7 +12,6 @@ import (
 	"net/http"
 	"net/url"
 	"path"
-	"strconv"
 	"strings"
 	"time"
 
@@ -256,7 +255,7 @@ func (a *API) RegisterDistributor(d *distributor.Distributor, pushConfig distrib
 		ctx := r.Context()
 		tenantID, err := tenant.TenantID(ctx)
 		if err != nil {
-			http.Error(w, fmt.Sprintf("invalid tenant ID: %q", vars["tenant"]), http.StatusBadRequest)
+			http.Error(w, fmt.Sprintf("invalid tenant ID"), http.StatusBadRequest)
 			return
 		}
 		logger := util_log.WithContext(ctx, util_log.Logger)
@@ -281,13 +280,8 @@ func (a *API) RegisterDistributor(d *distributor.Distributor, pushConfig distrib
 		w.WriteHeader(http.StatusOK)
 	}), true, false, http.MethodPost)
 	// Endpoint to handle requests for uploading block files to a backfill.
-	a.RegisterRoute("/api/v1/backfill/{tenant:[0-9]+}/{block}/{path}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	a.RegisterRoute("/api/v1/backfill/{block}/{path}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		vars := mux.Vars(r)
-		tenantID, err := strconv.Atoi(vars["tenant"])
-		if err != nil {
-			http.Error(w, fmt.Sprintf("invalid tenant ID: %q", vars["tenant"]), http.StatusBadRequest)
-			return
-		}
 		blockID := vars["block"]
 		pth, err := url.PathUnescape(vars["path"])
 		if err != nil {
@@ -296,6 +290,11 @@ func (a *API) RegisterDistributor(d *distributor.Distributor, pushConfig distrib
 		}
 
 		ctx := r.Context()
+		tenantID, err := tenant.TenantID(ctx)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("invalid tenant ID"), http.StatusBadRequest)
+			return
+		}
 		logger := util_log.WithContext(ctx, util_log.Logger)
 		if a.sourceIPs != nil {
 			source := a.sourceIPs.Get(r)
@@ -320,14 +319,14 @@ func (a *API) RegisterDistributor(d *distributor.Distributor, pushConfig distrib
 	// Endpoint to handle requests for finishing of block backfilling.
 	a.RegisterRoute("/api/v1/backfill/{tenant:[0-9]+}/{block}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		vars := mux.Vars(r)
-		tenantID, err := strconv.Atoi(vars["tenant"])
-		if err != nil {
-			http.Error(w, fmt.Sprintf("invalid tenant ID: %q", vars["tenant"]), http.StatusBadRequest)
-			return
-		}
 		blockID := vars["block"]
 
 		ctx := r.Context()
+		tenantID, err := tenant.TenantID(ctx)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("invalid tenant ID"), http.StatusBadRequest)
+			return
+		}
 		logger := util_log.WithContext(ctx, util_log.Logger)
 		if a.sourceIPs != nil {
 			source := a.sourceIPs.Get(r)
