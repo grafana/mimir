@@ -74,13 +74,17 @@ func GEM170ToGEM200Mapper() Mapper {
 		mapRulerAlertmanagerS3Buckets("alertmanager.storage", "alertmanager_storage"), mapRulerAlertmanagerS3Buckets("ruler.storage", "ruler_storage"),
 		// Prevent server.http_listen_port from being updated with a new default and always output it.
 		setOldDefaultExplicitly("server.http_listen_port"),
-		// Prevent auth.type from being updated with a new default and always output it.
+		// Prevent auth.type from being updated with a new default (enterprise) implicitly and always set it to the old default (trust)
 		setOldDefaultExplicitly("auth.type"),
 		// Set frontend.results_cache.backend when results cache was enabled in cortex
 		MapperFunc(mapQueryFrontendBackend),
 		// Manually override the dynamic fields' default values.
 		MapperFunc(mapCortexRingInstanceIDDefaults),
 		MapperFunc(mapAdminAPIRingInstanceIDDefaults),
+		// Prevent *_storage.backend from being updated with a new default (filesystem) implicitly and always set it to the old default (s3)
+		setOldDefaultExplicitly("blocks_storage.backend"),
+		setOldDefaultExplicitly("ruler_storage.backend"),
+		setOldDefaultExplicitly("alertmanager_storage.backend"),
 	}
 }
 
@@ -98,7 +102,7 @@ func mapGEMInstanceInterfaceNames() Mapper {
 	return mapInstanceInterfaceNames(ifaceNames)
 }
 
-func mapAdminAPIRingInstanceIDDefaults(source, target Parameters) error {
+func mapAdminAPIRingInstanceIDDefaults(_, target Parameters) error {
 	return target.SetDefaultValue("admin_api.leader_election.ring.instance_id", Nil)
 }
 

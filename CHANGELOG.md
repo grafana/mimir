@@ -10,6 +10,9 @@
 * [CHANGE] Ingester: Add `user` label to metrics `cortex_ingester_ingested_samples_total` and `cortex_ingester_ingested_samples_failures_total`. #1533
 * [CHANGE] Ingester: Changed `-blocks-storage.tsdb.isolation-enabled` default from `true` to `false`. The config option has also been deprecated and will be removed in 2 minor version.
 * [CHANGE] Query-frontend: results cache keys are now versioned, this will cause cache to be re-filled when rolling out this version. #1631
+* [CHANGE] Store-gateway: enabled attributes in-memory cache by default. New default configuration is `-blocks-storage.bucket-store.chunks-cache.attributes-in-memory-max-items=50000`. #1727
+* [CHANGE] Compactor: Removed the metric `cortex_compactor_garbage_collected_blocks_total` since it duplicates `cortex_compactor_blocks_marked_for_deletion_total`. #1728
+* [CHANGE] All: Logs that used the`org_id` label now use `user` label. #1634
 * [FEATURE] Ruler: Allow setting `evaluation_delay` for each rule group via rules group configuration file. #1474
 * [FEATURE] Ruler: Added support for expression remote evaluation. #1536
   * The following CLI flags (and their respective YAML config options) have been added:
@@ -36,17 +39,20 @@
 * [ENHANCEMENT] Ruler: Add more detailed query information to ruler query stats logging. #1411
 * [ENHANCEMENT] Admin: Admin API now has some styling. #1482 #1549
 * [ENHANCEMENT] Alertmanager: added `insight=true` field to alertmanager dispatch logs. #1379
+* [ENHANCEMENT] Store-gateway: Add the experimental ability to run index header operations in a dedicated thread pool. This feature can be configured using `-blocks-storage.bucket-store.index-header-thread-pool-size` and is disabled by default. #1660
 * [ENHANCEMENT] Docker images are now published as multi-architecture (AMD64/ARM64). #1124
 * [BUGFIX] Query-frontend: do not shard queries with a subquery unless the subquery is inside a shardable aggregation function call. #1542
 * [BUGFIX] Query-frontend: added `component=query-frontend` label to results cache memcached metrics to fix a panic when Mimir is running in single binary mode and results cache is enabled. #1704
 * [BUGFIX] Mimir: services' status content-type is now correctly set to `text/html`. #1575
 * [BUGFIX] Multikv: Fix panic when using using runtime config to set primary KV store used by `multi` KV. #1587
 * [BUGFIX] Multikv: Fix watching for runtime config changes in `multi` KV store in ruler and querier. #1665
+* [BUGFIX] Memcached: allow to use CNAME DNS records for the memcached backend addresses. #1654
 
 ### Mixin
 
 * [CHANGE] Dashboards: Remove per-user series legends from Tenants dashboard. #1605
 * [CHANGE] Dashboards: Show in-memory series and the per-user series limit on Tenants dashboard. #1613
+* [CHANGE] Dashboards: Slow-queries dashboard now uses `user` label from logs instead of `org_id`. #1634
 * [FEATURE] Alerts: added the following alerts on `mimir-continuous-test` tool: #1676
   - `MimirContinuousTestNotRunningOnWrites`
   - `MimirContinuousTestNotRunningOnReads`
@@ -55,6 +61,7 @@
 * [ENHANCEMENT] Dashboards: Show QPS and latency of the Alertmanager Distributor. #1696
 * [ENHANCEMENT] Playbooks: Add Alertmanager suggestions for `MimirRequestErrors` and `MimirRequestLatency` #1702
 * [BUGFIX] Dashboards: Fix "Failed evaluation rate" panel on Tenants dashboard. #1629
+* [BUGFIX] Honor the configured `per_instance_label` in all dashboards and alerts. #1697
 
 ### Jsonnet
 
@@ -70,13 +77,18 @@
 * [ENHANCEMENT] Ingester anti-affinity can now be disabled by using `ingester_allow_multiple_replicas_on_same_node` configuration key. #1581
 * [ENHANCEMENT] Added `node_selector` configuration option to select Kubernetes nodes where Mimir should run. #1596
 * [ENHANCEMENT] Alertmanager: Added a `PodDisruptionBudget` of `withMaxUnavailable = 1`, to ensure we maintain quorum during rollouts. #1683
+* [ENHANCEMENT] Store-gateway anti-affinity can now be enabled/disabled using `store_gateway_allow_multiple_replicas_on_same_node` configuration key. #1730
 * [BUGFIX] Pass primary and secondary multikv stores via CLI flags. Introduced new `multikv_switch_primary_secondary` config option to flip primary and secondary in runtime config.
 
 ### Mimirtool
 
+* [BUGFIX] `config convert`: Retain Cortex defaults for `blocks_storage.backend`, `ruler_storage.backend`, and `alertmanager_storage.backend`. #1626
+
 ### Tools
 
 * [FEATURE] Added a `markblocks` tool that creates `no-compact` and `delete` marks for the blocks. #1551
+* [FEATURE] Added `mimir-continuous-test` tool to continuously run smoke tests on live Mimir clusters. #1535 #1540 #1653 #1603 #1630 #1691 #1675 #1676 #1692 #1706 #1709
+* [FEATURE] Added `mimir-rules-action` GitHub action, located at `operations/mimir-rules-action/`, used to lint, prepare, verify, diff, and sync rules to a Mimir cluster. #1723
 
 ## 2.0.0
 
@@ -213,7 +225,7 @@ _Changes since Cortex 1.10.0._
   * `-ruler.client.grpc-max-send-msg-size`
 * [CHANGE] Remove `-http.prefix` flag (and `http_prefix` config file option). #763
 * [CHANGE] Remove legacy endpoints. Please use their alternatives listed below. As part of the removal process we are
-  introducing two new sets of endpoints for the ruler configuraiton API: `<prometheus-http-prefix>/rules` and
+  introducing two new sets of endpoints for the ruler configuration API: `<prometheus-http-prefix>/rules` and
   `<prometheus-http-prefix>/config/v1/rules/**`. We are also deprecating `<prometheus-http-prefix>/rules` and `/api/v1/rules`;
   and will remove them in Mimir 2.2.0. #763 #1222
   * Query endpoints

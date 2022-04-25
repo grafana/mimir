@@ -241,7 +241,6 @@ type MultitenantCompactor struct {
 	compactionRunFailedTenants     prometheus.Gauge
 	compactionRunInterval          prometheus.Gauge
 	blocksMarkedForDeletion        prometheus.Counter
-	garbageCollectedBlocks         prometheus.Counter
 
 	// Metrics shared across all BucketCompactor instances.
 	bucketCompactorMetrics *BucketCompactorMetrics
@@ -337,13 +336,9 @@ func newMultitenantCompactor(
 			Help:        blocksMarkedForDeletionHelp,
 			ConstLabels: prometheus.Labels{"reason": "compaction"},
 		}),
-		garbageCollectedBlocks: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
-			Name: "cortex_compactor_garbage_collected_blocks_total",
-			Help: "Total number of blocks marked for deletion by compactor.",
-		}),
 	}
 
-	c.bucketCompactorMetrics = NewBucketCompactorMetrics(c.blocksMarkedForDeletion, c.garbageCollectedBlocks, registerer)
+	c.bucketCompactorMetrics = NewBucketCompactorMetrics(c.blocksMarkedForDeletion, registerer)
 
 	if len(compactorCfg.EnabledTenants) > 0 {
 		level.Info(c.logger).Log("msg", "compactor using enabled users", "enabled", strings.Join(compactorCfg.EnabledTenants, ", "))
@@ -669,7 +664,6 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 		deduplicateBlocksFilter,
 		excludeMarkedForDeletionFilter,
 		c.blocksMarkedForDeletion,
-		c.garbageCollectedBlocks,
 	)
 	if err != nil {
 		return errors.Wrap(err, "failed to create syncer")

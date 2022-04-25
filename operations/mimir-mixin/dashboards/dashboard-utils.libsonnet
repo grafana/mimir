@@ -297,23 +297,27 @@ local utils = import 'mixin-utils/utils.libsonnet';
     else 'label_name="%s"' % containerName,
 
   jobNetworkingRow(title, name)::
+    local vars = $._config {
+      job_matcher: $.jobMatcher($._config.job_names[name]),
+    };
+
     super.row(title)
     .addPanel($.containerNetworkReceiveBytesPanel($._config.instance_names[name]))
     .addPanel($.containerNetworkTransmitBytesPanel($._config.instance_names[name]))
     .addPanel(
       $.panel('Inflight requests (per pod)') +
       $.queryPanel([
-        'avg(cortex_inflight_requests{%s})' % $.jobMatcher($._config.job_names[name]),
-        'max(cortex_inflight_requests{%s})' % $.jobMatcher($._config.job_names[name]),
+        'avg(cortex_inflight_requests{%(job_matcher)s})' % vars,
+        'max(cortex_inflight_requests{%(job_matcher)s})' % vars,
       ], ['avg', 'highest']) +
       { fill: 0 }
     )
     .addPanel(
       $.panel('TCP connections (per pod)') +
       $.queryPanel([
-        'avg(sum by(pod) (cortex_tcp_connections{%s}))' % $.jobMatcher($._config.job_names[name]),
-        'max(sum by(pod) (cortex_tcp_connections{%s}))' % $.jobMatcher($._config.job_names[name]),
-        'min(cortex_tcp_connections_limit{%s})' % $.jobMatcher($._config.job_names[name]),
+        'avg(sum by(%(per_instance_label)s) (cortex_tcp_connections{%(job_matcher)s}))' % vars,
+        'max(sum by(%(per_instance_label)s) (cortex_tcp_connections{%(job_matcher)s}))' % vars,
+        'min(cortex_tcp_connections_limit{%(job_matcher)s})' % vars,
       ], ['avg', 'highest', 'limit']) +
       { fill: 0 }
     ),

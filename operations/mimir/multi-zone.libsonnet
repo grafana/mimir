@@ -204,7 +204,21 @@
     statefulSet.mixin.spec.template.metadata.withLabels({ name: name, 'rollout-group': 'store-gateway' }) +
     statefulSet.mixin.spec.selector.withMatchLabels({ name: name, 'rollout-group': 'store-gateway' }) +
     statefulSet.mixin.spec.updateStrategy.withType('OnDelete') +
-    statefulSet.mixin.spec.withReplicas(std.ceil($._config.multi_zone_store_gateway_replicas / 3)),
+    statefulSet.mixin.spec.withReplicas(std.ceil($._config.multi_zone_store_gateway_replicas / 3)) +
+    if $._config.store_gateway_allow_multiple_replicas_on_same_node then {} else {
+      spec+:
+        // Allow to schedule 2+ store-gateways in the same zone on the same node, but do not schedule 2+ store-gateways in
+        // different zones on the same node. In case of 1 node failure in the Kubernetes cluster, only store-gateways
+        // in 1 zone will be affected.
+        podAntiAffinity.withRequiredDuringSchedulingIgnoredDuringExecution([
+          podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecutionType.new() +
+          podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecutionType.mixin.labelSelector.withMatchExpressions([
+            { key: 'rollout-group', operator: 'In', values: ['store-gateway'] },
+            { key: 'name', operator: 'NotIn', values: [name] },
+          ]) +
+          podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecutionType.withTopologyKey('kubernetes.io/hostname'),
+        ]).spec,
+    },
 
   // Creates a headless service for the per-zone store-gateways StatefulSet. We don't use it
   // but we need to create it anyway because it's responsible for the network identity of

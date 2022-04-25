@@ -4,6 +4,7 @@ go 1.17
 
 require (
 	github.com/gomarkdown/markdown v0.0.0-20220310201231-552c6011c0b8
+	github.com/grafana/regexp v0.0.0-20220304095617-2e8d9baf4ac2
 	github.com/pkg/errors v0.9.1
 	github.com/stretchr/testify v1.7.1
 )

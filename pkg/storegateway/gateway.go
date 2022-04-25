@@ -184,7 +184,7 @@ func (g *StoreGateway) starting(ctx context.Context) (err error) {
 
 	// First of all we register the instance in the ring and wait
 	// until the lifecycler successfully started.
-	if g.subservices, err = services.NewManager(g.ringLifecycler, g.ring); err != nil {
+	if g.subservices, err = services.NewManager(g.ringLifecycler, g.ring, g.stores); err != nil {
 		return errors.Wrap(err, "unable to start store-gateway dependencies")
 	}
 

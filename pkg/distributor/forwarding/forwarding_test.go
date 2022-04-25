@@ -68,7 +68,7 @@ func TestForwardingSamplesSuccessfully(t *testing.T) {
 		require.Equal(t, req.Header.Get("Content-Type"), "application/x-protobuf")
 	}
 
-	require.Len(t, (*bodies1), 1)
+	require.Len(t, *bodies1, 1)
 	receivedReq := decodeBody(t, (*bodies1)[0])
 	require.Len(t, receivedReq.Timeseries, 2)
 	requireLabelsEqual(t, receivedReq.Timeseries[0].Labels, "__name__", "metric1", "some_label", "foo")
@@ -76,7 +76,7 @@ func TestForwardingSamplesSuccessfully(t *testing.T) {
 	requireLabelsEqual(t, receivedReq.Timeseries[1].Labels, "__name__", "metric1", "some_label", "bar")
 	requireSamplesEqual(t, receivedReq.Timeseries[1].Samples, now, 2)
 
-	require.Len(t, (*bodies2), 1)
+	require.Len(t, *bodies2, 1)
 	receivedReq = decodeBody(t, (*bodies2)[0])
 	require.Len(t, receivedReq.Timeseries, 2)
 	requireLabelsEqual(t, receivedReq.Timeseries[0].Labels, "__name__", "metric2", "some_label", "foo")

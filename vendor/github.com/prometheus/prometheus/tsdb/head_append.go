@@ -135,10 +135,18 @@ func (h *Head) appender() *headAppender {
 	}
 }
 
+// appendableMinValidTime returns the minimum valid timestamp for appends,
+// such that samples stay ahead of prior blocks and the head compaction window.
 func (h *Head) appendableMinValidTime() int64 {
-	// Setting the minimum valid time to whichever is greater, the head min valid time or the compaction window,
-	// ensures that no samples will be added within the compaction window to avoid races.
-	return max(h.minValidTime.Load(), h.MaxTime()-h.chunkRange.Load()/2)
+	// This boundary ensures that no samples will be added to the compaction window.
+	// This allows race-free, concurrent appending and compaction.
+	cwEnd := h.MaxTime() - h.chunkRange.Load()/2
+
+	// This boundary ensures that we avoid overlapping timeframes from one block to the next.
+	// While not necessary for correctness, it means we're not required to use vertical compaction.
+	minValid := h.minValidTime.Load()
+
+	return max(cwEnd, minValid)
 }
 
 // AppendableMinValidTime returns the minimum valid time for samples to be appended to the Head.
@@ -522,7 +530,12 @@ func (s *memSeries) append(t int64, v float64, appendID uint64, chunkDiskMapper 
 		s.nextAt = computeChunkEndTime(c.minTime, c.maxTime, maxNextAt)
 		s.nextAt = addJitterToChunkEndTime(s.hash, c.minTime, s.nextAt, maxNextAt, s.chunkEndTimeVariance)
 	}
-	if t >= s.nextAt {
+	// If numSamples > samplesPerChunk*2 then our previous prediction was invalid,
+	// most likely because samples rate has changed and now they are arriving more frequently.
+	// Since we assume that the rate is higher, we're being conservative and cutting at 2*samplesPerChunk
+	// as we expect more chunks to come.
+	// Note that next chunk will have its nextAt recalculated for the new rate.
+	if t >= s.nextAt || numSamples >= samplesPerChunk*2 {
 		c = s.cutNewHeadChunk(t, chunkDiskMapper)
 		chunkCreated = true
 	}

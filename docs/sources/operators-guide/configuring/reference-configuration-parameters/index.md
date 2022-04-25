@@ -3188,7 +3188,7 @@ bucket_store:
     # level in-memory LRU cache. Metadata will be stored and fetched in-memory
     # before hitting the cache backend. 0 to disable the in-memory cache.
     # CLI flag: -blocks-storage.bucket-store.chunks-cache.attributes-in-memory-max-items
-    [attributes_in_memory_max_items: <int> | default = 0]
+    [attributes_in_memory_max_items: <int> | default = 50000]
 
     # (advanced) TTL for caching individual chunks subranges.
     # CLI flag: -blocks-storage.bucket-store.chunks-cache.subrange-ttl
@@ -3338,6 +3338,12 @@ bucket_store:
   # will hold in memory.
   # CLI flag: -blocks-storage.bucket-store.posting-offsets-in-mem-sampling
   [postings_offsets_in_mem_sampling: <int> | default = 32]
+
+  # (experimental) Number of threads that are dedicated for use reading index
+  # headers. Set to 0 to disable use of dedicated threads for reading index
+  # headers.
+  # CLI flag: -blocks-storage.bucket-store.index-header-thread-pool-size
+  [index_header_thread_pool_size: <int> | default = 0]
 
 tsdb:
   # Directory to store TSDBs (including WAL) in the ingesters. This directory is

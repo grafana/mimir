@@ -13,6 +13,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
+	"golang.org/x/time/rate"
 )
 
 const (
@@ -84,8 +85,17 @@ func (t *WriteReadSeriesTest) Init(ctx context.Context, now time.Time) error {
 
 // Run implements Test.
 func (t *WriteReadSeriesTest) Run(ctx context.Context, now time.Time) {
+	// Configure the rate limiter to send a sample for each series per second. At startup, this test may catch up
+	// with previous missing writes: this rate limit reduces the chances to hit the ingestion limit on Mimir side.
+	writeLimiter := rate.NewLimiter(rate.Limit(t.cfg.NumSeries), t.cfg.NumSeries)
+
 	// Write series for each expected timestamp until now.
 	for timestamp := t.nextWriteTimestamp(now); !timestamp.After(now); timestamp = t.nextWriteTimestamp(now) {
+		if err := writeLimiter.WaitN(ctx, t.cfg.NumSeries); err != nil {
+			// Context has been canceled, so we should interrupt.
+			return
+		}
+
 		statusCode, err := t.client.WriteSeries(ctx, generateSineWaveSeries(metricName, timestamp, t.cfg.NumSeries))
 
 		t.metrics.writesTotal.Inc()

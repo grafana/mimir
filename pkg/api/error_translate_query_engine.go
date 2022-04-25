@@ -23,13 +23,13 @@ func (qe errorTranslateQueryEngine) SetQueryLogger(l promql.QueryLogger) {
 	qe.engine.SetQueryLogger(l)
 }
 
-func (qe errorTranslateQueryEngine) NewInstantQuery(q storage.Queryable, qs string, ts time.Time) (promql.Query, error) {
-	query, err := qe.engine.NewInstantQuery(q, qs, ts)
+func (qe errorTranslateQueryEngine) NewInstantQuery(q storage.Queryable, opts *promql.QueryOpts, qs string, ts time.Time) (promql.Query, error) {
+	query, err := qe.engine.NewInstantQuery(q, opts, qs, ts)
 	return query, qe.translate(err)
 }
 
-func (qe errorTranslateQueryEngine) NewRangeQuery(q storage.Queryable, qs string, start, end time.Time, interval time.Duration) (promql.Query, error) {
-	query, err := qe.engine.NewRangeQuery(q, qs, start, end, interval)
+func (qe errorTranslateQueryEngine) NewRangeQuery(q storage.Queryable, opts *promql.QueryOpts, qs string, start, end time.Time, interval time.Duration) (promql.Query, error) {
+	query, err := qe.engine.NewRangeQuery(q, opts, qs, start, end, interval)
 	return query, qe.translate(err)
 }
 

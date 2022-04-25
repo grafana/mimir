@@ -140,11 +140,6 @@ func TestConvert_Cortex(t *testing.T) {
 			outFile: "testdata/ruler_storage-new.yaml",
 		},
 		{
-			name:    "ruler_storage maps to ruler_storage",
-			inFile:  "testdata/ruler_storage-old.yaml",
-			outFile: "testdata/ruler_storage-new.yaml",
-		},
-		{
 			name:    "ruler_storage has precedence over ruler.storage",
 			inFile:  "testdata/ruler_storage-precedence-old.yaml",
 			outFile: "testdata/ruler_storage-new.yaml",
@@ -258,33 +253,34 @@ func TestConvert_Cortex(t *testing.T) {
 			outFile: "testdata/instance-interface-names-explicit-new.yaml",
 		},
 		{
-			name:              "server.http-listen-port old default is printed even when implicitly using the old default",
+			name:              "values where the old default should be retained are printed even when implicitly using the old default",
 			skipGEMTest:       true,
 			dontAddCommonOpts: true, // The common opts are in the outFile. That's the same reason why this test case doesn't work for GEM
 			inFile:            "testdata/empty.yaml",
-			outFile:           "testdata/server-listen-http-port-new.yaml",
+			outFile:           "testdata/old-defaults-retained-new.yaml",
 		},
 		{
-			name:              "server.http-listen-port old default is retained with useNewDefaults=true",
+			name:              "values where the old default should be retained are retained even with useNewDefaults=true",
 			skipGEMTest:       true,
 			dontAddCommonOpts: true, // The common opts are in the outFile. That's the same reason why this test case doesn't work for GEM
 			useNewDefaults:    true,
-			inFile:            "testdata/server-listen-http-port-old.yaml",
-			outFile:           "testdata/server-listen-http-port-new.yaml",
+			inFile:            "testdata/old-defaults-retained-old.yaml",
+			outFile:           "testdata/old-defaults-retained-new.yaml",
 		},
 		{
-			name:              "server.http-listen-port old default is retained with useNewDefaults=false",
+			name:              "values where the old default should be retained are retained with useNewDefaults=false",
 			skipGEMTest:       true,
 			dontAddCommonOpts: true, // The common opts are in the outFile. That's the same reason why this test case doesn't work for GEM
-			inFile:            "testdata/server-listen-http-port-old.yaml",
-			outFile:           "testdata/server-listen-http-port-new.yaml",
+			useNewDefaults:    true,
+			inFile:            "testdata/old-defaults-retained-old.yaml",
+			outFile:           "testdata/old-defaults-retained-new.yaml",
 		},
 		{
-			name:              "server.http-listen-port random value is retained with useNewDefaults=false",
+			name:              "values where the old default should be retained but are with random values are retained with useNewDefaults=false",
 			skipGEMTest:       true,
 			dontAddCommonOpts: true, // The common opts are in the outFile. That's the same reason why this test case doesn't work for GEM
-			inFile:            "testdata/server-listen-http-port-random-old.yaml",
-			outFile:           "testdata/server-listen-http-port-random-new.yaml",
+			inFile:            "testdata/params-with-special-old-defaults-custom-values-old.yaml",
+			outFile:           "testdata/params-with-special-old-defaults-custom-values-new.yaml",
 		},
 		{
 			name:         "flags with quotes and JSON don't get interpreted escaped",
@@ -354,29 +350,30 @@ func TestConvert_GEM(t *testing.T) {
 			outFile: "testdata/gem/proxy-targets.yaml",
 		},
 		{
-			name:              "server.http-listen-port old default is printed even when implicitly using the old default",
-			dontAddCommonOpts: true, // The common opts are in the outFile
+			name:              "values where the old default should be retained are printed even when implicitly using the old default",
+			dontAddCommonOpts: true, // The common opts are in the outFile.
 			inFile:            "testdata/empty.yaml",
-			outFile:           "testdata/gem/server-listen-http-port-new.yaml",
+			outFile:           "testdata/gem/old-defaults-retained-new.yaml",
 		},
 		{
-			name:              "server.http-listen-port old default is retained with useNewDefaults=true",
-			dontAddCommonOpts: true, // The common opts are in the outFile
+			name:              "values where the old default should be retained are retained even with useNewDefaults=true",
+			dontAddCommonOpts: true, // The common opts are in the outFile.
 			useNewDefaults:    true,
-			inFile:            "testdata/gem/server-listen-http-port-old.yaml",
-			outFile:           "testdata/gem/server-listen-http-port-new.yaml",
+			inFile:            "testdata/gem/old-defaults-retained-old.yaml",
+			outFile:           "testdata/gem/old-defaults-retained-new.yaml",
 		},
 		{
-			name:              "server.http-listen-port old default is retained with useNewDefaults=false",
-			dontAddCommonOpts: true, // The common opts are in the outFile
-			inFile:            "testdata/gem/server-listen-http-port-old.yaml",
-			outFile:           "testdata/gem/server-listen-http-port-new.yaml",
+			name:              "values where the old default should be retained are retained with useNewDefaults=false",
+			dontAddCommonOpts: true, // The common opts are in the outFile.
+			useNewDefaults:    true,
+			inFile:            "testdata/gem/old-defaults-retained-old.yaml",
+			outFile:           "testdata/gem/old-defaults-retained-new.yaml",
 		},
 		{
-			name:              "server.http-listen-port random value is retained with useNewDefaults=false",
-			dontAddCommonOpts: true, // The common opts are in the outFile
-			inFile:            "testdata/gem/server-listen-http-port-random-old.yaml",
-			outFile:           "testdata/gem/server-listen-http-port-random-new.yaml",
+			name:              "values where the old default should be retained but are with random values are retained with useNewDefaults=false",
+			dontAddCommonOpts: true, // The common opts are in the outFile.
+			inFile:            "testdata/gem/params-with-special-old-defaults-custom-values-old.yaml",
+			outFile:           "testdata/gem/params-with-special-old-defaults-custom-values-new.yaml",
 		},
 		{
 			name:         "instance_id is preserved",
@@ -509,9 +506,7 @@ var changedCortexDefaults = []ChangedDefault{
 	{Path: "alertmanager.external_url", OldDefault: "", NewDefault: "http://localhost:8080/alertmanager"},
 	{Path: "alertmanager.sharding_ring.instance_interface_names", OldDefault: "eth0,en0", NewDefault: "<nil>"},
 	{Path: "alertmanager.sharding_ring.kvstore.store", OldDefault: "consul", NewDefault: "memberlist"},
-	{Path: "alertmanager_storage.backend", OldDefault: "s3", NewDefault: "filesystem"},
 	{Path: "alertmanager_storage.filesystem.dir", OldDefault: "", NewDefault: "alertmanager"},
-	{Path: "blocks_storage.backend", OldDefault: "s3", NewDefault: "filesystem"},
 	{Path: "blocks_storage.bucket_store.bucket_index.enabled", OldDefault: "false", NewDefault: "true"},
 	{Path: "blocks_storage.bucket_store.chunks_cache.memcached.max_async_buffer_size", OldDefault: "10000", NewDefault: "25000"},
 	{Path: "blocks_storage.bucket_store.chunks_cache.memcached.max_get_multi_batch_size", OldDefault: "0", NewDefault: "100"},
@@ -577,7 +572,6 @@ var changedCortexDefaults = []ChangedDefault{
 	{Path: "ruler.ring.kvstore.store", OldDefault: "consul", NewDefault: "memberlist"},
 	{Path: "ruler.rule_path", OldDefault: "/rules", NewDefault: "./data-ruler/"},
 	{Path: "ruler.ruler_client.max_send_msg_size", OldDefault: "16777216", NewDefault: "104857600"},
-	{Path: "ruler_storage.backend", OldDefault: "s3", NewDefault: "filesystem"},
 	{Path: "ruler_storage.filesystem.dir", OldDefault: "", NewDefault: "ruler"},
 	{Path: "store_gateway.sharding_ring.instance_interface_names", OldDefault: "eth0,en0", NewDefault: "<nil>"},
 	{Path: "store_gateway.sharding_ring.kvstore.store", OldDefault: "consul", NewDefault: "memberlist"},

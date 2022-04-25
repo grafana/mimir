@@ -10,7 +10,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	math "math"
+	"math"
 	"net/http"
 	"sort"
 	"sync"
@@ -778,7 +778,7 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 	}
 
 	d.receivedSamples.WithLabelValues(userID).Add(float64(validatedSamples))
-	d.receivedExemplars.WithLabelValues(userID).Add((float64(validatedExemplars)))
+	d.receivedExemplars.WithLabelValues(userID).Add(float64(validatedExemplars))
 	d.receivedMetadata.WithLabelValues(userID).Add(float64(len(validatedMetadata)))
 
 	if len(seriesKeys) == 0 && len(metadataKeys) == 0 {

@@ -16,7 +16,7 @@
             # Only if the ingester has ingested samples over the last 4h.
             (max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (max_over_time(%(alert_aggregation_rule_prefix)s_%(per_instance_label)s:cortex_ingester_ingested_samples_total:rate1m[4h])) > 0)
             and
-            # Only if the ingester was ingesting samples 4h ago. This protects from the case the ingester instance
+            # Only if the ingester was ingesting samples 4h ago. This protects against the case where the ingester replica
             # had ingested samples in the past, then no traffic was received for a long period and then it starts
             # receiving samples again. Without this check, the alert would fire as soon as it gets back receiving
             # samples, while the a block shipping is expected within the next 4h.
@@ -61,7 +61,7 @@
             severity: 'critical',
           },
           annotations: {
-            message: "%(product)s Ingester {{ $labels.instance }} in %(alert_aggregation_variables)s has compacted a block {{ $value | humanizeDuration }} ago but it hasn't been successfully uploaded to the storage yet." % $._config,
+            message: "%(product)s Ingester %(alert_instance_variable)s in %(alert_aggregation_variables)s has compacted a block {{ $value | humanizeDuration }} ago but it hasn't been successfully uploaded to the storage yet." % $._config,
           },
         },
         {
@@ -77,7 +77,7 @@
             severity: 'critical',
           },
           annotations: {
-            message: '%(product)s Ingester {{ $labels.instance }} in %(alert_aggregation_variables)s is failing to compact TSDB head.' % $._config,
+            message: '%(product)s Ingester %(alert_instance_variable)s in %(alert_aggregation_variables)s is failing to compact TSDB head.' % $._config,
           },
         },
         {
@@ -89,7 +89,7 @@
             severity: 'critical',
           },
           annotations: {
-            message: '%(product)s Ingester {{ $labels.instance }} in %(alert_aggregation_variables)s is failing to truncate TSDB head.' % $._config,
+            message: '%(product)s Ingester %(alert_instance_variable)s in %(alert_aggregation_variables)s is failing to truncate TSDB head.' % $._config,
           },
         },
         {
@@ -101,7 +101,7 @@
             severity: 'critical',
           },
           annotations: {
-            message: '%(product)s Ingester {{ $labels.instance }} in %(alert_aggregation_variables)s is failing to create TSDB checkpoint.' % $._config,
+            message: '%(product)s Ingester %(alert_instance_variable)s in %(alert_aggregation_variables)s is failing to create TSDB checkpoint.' % $._config,
           },
         },
         {
@@ -113,7 +113,7 @@
             severity: 'critical',
           },
           annotations: {
-            message: '%(product)s Ingester {{ $labels.instance }} in %(alert_aggregation_variables)s is failing to delete TSDB checkpoint.' % $._config,
+            message: '%(product)s Ingester %(alert_instance_variable)s in %(alert_aggregation_variables)s is failing to delete TSDB checkpoint.' % $._config,
           },
         },
         {
@@ -125,7 +125,7 @@
             severity: 'warning',
           },
           annotations: {
-            message: '%(product)s Ingester {{ $labels.instance }} in %(alert_aggregation_variables)s is failing to truncate TSDB WAL.' % $._config,
+            message: '%(product)s Ingester %(alert_instance_variable)s in %(alert_aggregation_variables)s is failing to truncate TSDB WAL.' % $._config,
           },
         },
         {
@@ -137,7 +137,7 @@
             severity: 'critical',
           },
           annotations: {
-            message: '%(product)s Ingester {{ $labels.instance }} in %(alert_aggregation_variables)s got a corrupted TSDB WAL.' % $._config,
+            message: '%(product)s Ingester %(alert_instance_variable)s in %(alert_aggregation_variables)s got a corrupted TSDB WAL.' % $._config,
           },
         },
         {
@@ -150,7 +150,7 @@
             severity: 'critical',
           },
           annotations: {
-            message: '%(product)s Ingester {{ $labels.instance }} in %(alert_aggregation_variables)s is failing to write to TSDB WAL.' % $._config,
+            message: '%(product)s Ingester %(alert_instance_variable)s in %(alert_aggregation_variables)s is failing to write to TSDB WAL.' % $._config,
           },
         },
         {
@@ -166,7 +166,7 @@
             severity: 'critical',
           },
           annotations: {
-            message: '%(product)s Querier {{ $labels.instance }} in %(alert_aggregation_variables)s has not successfully scanned the bucket since {{ $value | humanizeDuration }}.' % $._config,
+            message: '%(product)s Querier %(alert_instance_variable)s in %(alert_aggregation_variables)s has not successfully scanned the bucket since {{ $value | humanizeDuration }}.' % $._config,
           },
         },
         {
@@ -206,7 +206,7 @@
             severity: 'critical',
           },
           annotations: {
-            message: '%(product)s Store Gateway {{ $labels.instance }} in %(alert_aggregation_variables)s has not successfully synched the bucket since {{ $value | humanizeDuration }}.' % $._config,
+            message: '%(product)s Store Gateway %(alert_instance_variable)s in %(alert_aggregation_variables)s has not successfully synched the bucket since {{ $value | humanizeDuration }}.' % $._config,
           },
         },
         {

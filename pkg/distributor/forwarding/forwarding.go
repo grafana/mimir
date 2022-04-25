@@ -232,7 +232,7 @@ func (r *request) sendToEndpoint(ctx context.Context, endpoint string, ts []mimi
 	protoBufBytes = protoBuf.Bytes()
 	defer r.pools.protobuf.Put(&protoBufBytes)
 
-	snappyBuf := (*r.pools.snappy.Get().(*[]byte))
+	snappyBuf := *r.pools.snappy.Get().(*[]byte)
 	snappyBuf = snappy.Encode(snappyBuf[:cap(snappyBuf)], protoBufBytes)
 	defer r.pools.snappy.Put(&snappyBuf)
 

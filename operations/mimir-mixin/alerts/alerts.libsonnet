@@ -184,27 +184,27 @@
             severity: 'warning',
           },
           annotations: {
-            message: '{{ $labels.job }}/{{ $labels.instance }} has restarted {{ printf "%.2f" $value }} times in the last 30 mins.',
+            message: '{{ $labels.job }}/%(alert_instance_variable)s has restarted {{ printf "%%.2f" $value }} times in the last 30 mins.' % $._config,
           },
         },
         {
           alert: $.alertName('KVStoreFailure'),
           expr: |||
             (
-              sum by(%s, pod, status_code, kv_name) (rate(cortex_kv_request_duration_seconds_count{status_code!~"2.+"}[1m]))
+              sum by(%(alert_aggregation_labels)s, %(per_instance_label)s, status_code, kv_name) (rate(cortex_kv_request_duration_seconds_count{status_code!~"2.+"}[1m]))
               /
-              sum by(%s, pod, status_code, kv_name) (rate(cortex_kv_request_duration_seconds_count[1m]))
+              sum by(%(alert_aggregation_labels)s, %(per_instance_label)s, status_code, kv_name) (rate(cortex_kv_request_duration_seconds_count[1m]))
             )
             # We want to get alerted only in case there's a constant failure.
             == 1
-          ||| % [$._config.alert_aggregation_labels, $._config.alert_aggregation_labels],
+          ||| % $._config,
           'for': '5m',
           labels: {
             severity: 'critical',
           },
           annotations: {
             message: |||
-              %(product)s {{ $labels.pod }} in  %(alert_aggregation_variables)s is failing to talk to the KV store {{ $labels.kv_name }}.
+              %(product)s %(alert_instance_variable)s in  %(alert_aggregation_variables)s is failing to talk to the KV store {{ $labels.kv_name }}.
             ||| % $._config,
           },
         },
@@ -218,7 +218,7 @@
             severity: 'critical',
           },
           annotations: {
-            message: '{{ $labels.job }}/{{ $labels.instance }} has a number of mmap-ed areas close to the limit.',
+            message: '{{ $labels.job }}/%(alert_instance_variable)s has a number of mmap-ed areas close to the limit.' % $._config,
           },
         },
       ],
@@ -241,8 +241,8 @@
           },
           annotations: {
             message: |||
-              Ingester {{ $labels.job }}/{{ $labels.instance }} has reached {{ $value | humanizePercentage }} of its series limit.
-            |||,
+              Ingester {{ $labels.job }}/%(alert_instance_variable)s has reached {{ $value | humanizePercentage }} of its series limit.
+            ||| % $._config,
           },
         },
         {
@@ -260,8 +260,8 @@
           },
           annotations: {
             message: |||
-              Ingester {{ $labels.job }}/{{ $labels.instance }} has reached {{ $value | humanizePercentage }} of its series limit.
-            |||,
+              Ingester {{ $labels.job }}/%(alert_instance_variable)s has reached {{ $value | humanizePercentage }} of its series limit.
+            ||| % $._config,
           },
         },
         {
@@ -279,8 +279,8 @@
           },
           annotations: {
             message: |||
-              Ingester {{ $labels.job }}/{{ $labels.instance }} has reached {{ $value | humanizePercentage }} of its tenant limit.
-            |||,
+              Ingester {{ $labels.job }}/%(alert_instance_variable)s has reached {{ $value | humanizePercentage }} of its tenant limit.
+            ||| % $._config,
           },
         },
         {
@@ -298,8 +298,8 @@
           },
           annotations: {
             message: |||
-              Ingester {{ $labels.job }}/{{ $labels.instance }} has reached {{ $value | humanizePercentage }} of its tenant limit.
-            |||,
+              Ingester {{ $labels.job }}/%(alert_instance_variable)s has reached {{ $value | humanizePercentage }} of its tenant limit.
+            ||| % $._config,
           },
         },
         {
@@ -314,7 +314,7 @@
           },
           annotations: {
             message: |||
-              %(product)s instance {{ $labels.job }}/{{ $labels.instance }} has reached {{ $value | humanizePercentage }} of its TCP connections limit for {{ $labels.protocol }} protocol.
+              %(product)s instance {{ $labels.job }}/%(alert_instance_variable)s has reached {{ $value | humanizePercentage }} of its TCP connections limit for {{ $labels.protocol }} protocol.
             ||| % $._config,
           },
         },
@@ -333,8 +333,8 @@
           },
           annotations: {
             message: |||
-              Distributor {{ $labels.job }}/{{ $labels.instance }} has reached {{ $value | humanizePercentage }} of its inflight push request limit.
-            |||,
+              Distributor {{ $labels.job }}/%(alert_instance_variable)s has reached {{ $value | humanizePercentage }} of its inflight push request limit.
+            ||| % $._config,
           },
         },
       ],
@@ -462,7 +462,7 @@
           },
           annotations: {
             message: |||
-              Ingester {{ $labels.pod }} in %(alert_aggregation_variables)s is using too much memory.
+              Ingester %(alert_instance_variable)s in %(alert_aggregation_variables)s is using too much memory.
             ||| % $._config,
           },
         },
@@ -481,7 +481,7 @@
           },
           annotations: {
             message: |||
-              Ingester {{ $labels.pod }} in %(alert_aggregation_variables)s is using too much memory.
+              Ingester %(alert_instance_variable)s in %(alert_aggregation_variables)s is using too much memory.
             ||| % $._config,
           },
         },
@@ -494,18 +494,18 @@
           alert: $.alertName('RulerTooManyFailedPushes'),
           expr: |||
             100 * (
-            sum by (%s, instance) (rate(cortex_ruler_write_requests_failed_total[1m]))
+            sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ruler_write_requests_failed_total[1m]))
               /
-            sum by (%s, instance) (rate(cortex_ruler_write_requests_total[1m]))
+            sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ruler_write_requests_total[1m]))
             ) > 1
-          ||| % [$._config.alert_aggregation_labels, $._config.alert_aggregation_labels],
+          ||| % $._config,
           'for': '5m',
           labels: {
             severity: 'critical',
           },
           annotations: {
             message: |||
-              %(product)s Ruler {{ $labels.instance }} in %(alert_aggregation_variables)s is experiencing {{ printf "%%.2f" $value }}%% write (push) errors.
+              %(product)s Ruler %(alert_instance_variable)s in %(alert_aggregation_variables)s is experiencing {{ printf "%%.2f" $value }}%% write (push) errors.
             ||| % $._config,
           },
         },
@@ -513,36 +513,36 @@
           alert: $.alertName('RulerTooManyFailedQueries'),
           expr: |||
             100 * (
-            sum by (%s, instance) (rate(cortex_ruler_queries_failed_total[1m]))
+            sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ruler_queries_failed_total[1m]))
               /
-            sum by (%s, instance) (rate(cortex_ruler_queries_total[1m]))
+            sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ruler_queries_total[1m]))
             ) > 1
-          ||| % [$._config.alert_aggregation_labels, $._config.alert_aggregation_labels],
+          ||| % $._config,
           'for': '5m',
           labels: {
             severity: 'warning',
           },
           annotations: {
             message: |||
-              %(product)s Ruler {{ $labels.instance }} in %(alert_aggregation_variables)s is experiencing {{ printf "%%.2f" $value }}%% errors while evaluating rules.
+              %(product)s Ruler %(alert_instance_variable)s in %(alert_aggregation_variables)s is experiencing {{ printf "%%.2f" $value }}%% errors while evaluating rules.
             ||| % $._config,
           },
         },
         {
           alert: $.alertName('RulerMissedEvaluations'),
           expr: |||
-            sum by (%s, instance, rule_group) (rate(cortex_prometheus_rule_group_iterations_missed_total[1m]))
+            sum by (%(alert_aggregation_labels)s, %(per_instance_label)s, rule_group) (rate(cortex_prometheus_rule_group_iterations_missed_total[1m]))
               /
-            sum by (%s, instance, rule_group) (rate(cortex_prometheus_rule_group_iterations_total[1m]))
+            sum by (%(alert_aggregation_labels)s, %(per_instance_label)s, rule_group) (rate(cortex_prometheus_rule_group_iterations_total[1m]))
               > 0.01
-          ||| % [$._config.alert_aggregation_labels, $._config.alert_aggregation_labels],
+          ||| % $._config,
           'for': '5m',
           labels: {
             severity: 'warning',
           },
           annotations: {
             message: |||
-              %(product)s Ruler {{ $labels.instance }} in %(alert_aggregation_variables)s is experiencing {{ printf "%%.2f" $value }}%% missed iterations for the rule group {{ $labels.rule_group }}.
+              %(product)s Ruler %(alert_instance_variable)s in %(alert_aggregation_variables)s is experiencing {{ printf "%%.2f" $value }}%% missed iterations for the rule group {{ $labels.rule_group }}.
             ||| % $._config,
           },
         },
@@ -580,7 +580,7 @@
             severity: 'warning',
           },
           annotations: {
-            message: '%(product)s instance {{ $labels.instance }} in %(alert_aggregation_variables)s sees incorrect number of gossip members.' % $._config,
+            message: '%(product)s instance %(alert_instance_variable)s in %(alert_aggregation_variables)s sees incorrect number of gossip members.' % $._config,
           },
         },
       ],
@@ -603,8 +603,8 @@
           },
           annotations: {
             message: |||
-              Too much memory being used by {{ $labels.namespace }}/{{ $labels.pod }} - bump memory limit.
-            |||,
+              Too much memory being used by {{ $labels.namespace }}/%(alert_instance_variable)s - bump memory limit.
+            ||| % $._config,
           },
         },
         {
@@ -622,8 +622,8 @@
           },
           annotations: {
             message: |||
-              Too much memory being used by {{ $labels.namespace }}/{{ $labels.pod }} - bump memory limit.
-            |||,
+              Too much memory being used by {{ $labels.namespace }}/%(alert_instance_variable)s - bump memory limit.
+            ||| % $._config,
           },
         },
       ],

@@ -1,4 +1,3 @@
 ruler_storage:
-  backend: s3
   s3:
     endpoint: 'http://primary'

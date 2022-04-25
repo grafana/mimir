@@ -159,7 +159,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "(\n  cortex_compactor_tenants_processing_succeeded{cluster=~\"$cluster\", job=~\"($namespace)/(compactor.*|cortex|mimir)\"} +\n  cortex_compactor_tenants_processing_failed{cluster=~\"$cluster\", job=~\"($namespace)/(compactor.*|cortex|mimir)\"} +\n  cortex_compactor_tenants_skipped{cluster=~\"$cluster\", job=~\"($namespace)/(compactor.*|cortex|mimir)\"}\n) / cortex_compactor_tenants_discovered{cluster=~\"$cluster\", job=~\"($namespace)/(compactor.*|cortex|mimir)\"}\n",
+                        "expr": "(\n  cortex_compactor_tenants_processing_succeeded{cluster=~\"$cluster\", job=~\"($namespace)/(compactor.*|cortex|mimir)\"} +\n  cortex_compactor_tenants_processing_failed{cluster=~\"$cluster\", job=~\"($namespace)/(compactor.*|cortex|mimir)\"} +\n  cortex_compactor_tenants_skipped{cluster=~\"$cluster\", job=~\"($namespace)/(compactor.*|cortex|mimir)\"}\n)\n/\ncortex_compactor_tenants_discovered{cluster=~\"$cluster\", job=~\"($namespace)/(compactor.*|cortex|mimir)\"}\n",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
@@ -1050,7 +1050,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum(rate(cortex_compactor_blocks_marked_for_deletion_total{cluster=~\"$cluster\", job=~\"($namespace)/(compactor.*|cortex|mimir)\"}[$__rate_interval]))",
+                        "expr": "sum(rate(cortex_compactor_blocks_marked_for_deletion_total{cluster=~\"$cluster\", job=~\"($namespace)/(compactor.*|cortex|mimir)\"}[$__rate_interval]))\n",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
@@ -1130,7 +1130,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum(rate(cortex_compactor_blocks_cleaned_total{cluster=~\"$cluster\", job=~\"($namespace)/(compactor.*|cortex|mimir)\"}[$__rate_interval]))",
+                        "expr": "sum(rate(cortex_compactor_blocks_cleaned_total{cluster=~\"$cluster\", job=~\"($namespace)/(compactor.*|cortex|mimir)\"}[$__rate_interval]))\n",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
@@ -1139,7 +1139,7 @@
                         "step": 10
                      },
                      {
-                        "expr": "sum(rate(cortex_compactor_block_cleanup_failures_total{cluster=~\"$cluster\", job=~\"($namespace)/(compactor.*|cortex|mimir)\"}[$__rate_interval]))",
+                        "expr": "sum(rate(cortex_compactor_block_cleanup_failures_total{cluster=~\"$cluster\", job=~\"($namespace)/(compactor.*|cortex|mimir)\"}[$__rate_interval]))\n",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
@@ -1231,7 +1231,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum(rate(cortex_compactor_meta_syncs_total{cluster=~\"$cluster\", job=~\"($namespace)/(compactor.*|cortex|mimir)\"}[$__rate_interval])) - sum(rate(cortex_compactor_meta_sync_failures_total{cluster=~\"$cluster\", job=~\"($namespace)/(compactor.*|cortex|mimir)\"}[$__rate_interval]))",
+                        "expr": "sum(rate(cortex_compactor_meta_syncs_total{cluster=~\"$cluster\", job=~\"($namespace)/(compactor.*|cortex|mimir)\"}[$__rate_interval]))\n-\nsum(rate(cortex_compactor_meta_sync_failures_total{cluster=~\"$cluster\", job=~\"($namespace)/(compactor.*|cortex|mimir)\"}[$__rate_interval]))\n",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
@@ -1240,7 +1240,7 @@
                         "step": 10
                      },
                      {
-                        "expr": "sum(rate(cortex_compactor_meta_sync_failures_total{cluster=~\"$cluster\", job=~\"($namespace)/(compactor.*|cortex|mimir)\"}[$__rate_interval]))",
+                        "expr": "sum(rate(cortex_compactor_meta_sync_failures_total{cluster=~\"$cluster\", job=~\"($namespace)/(compactor.*|cortex|mimir)\"}[$__rate_interval]))\n",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,

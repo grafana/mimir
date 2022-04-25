@@ -1,0 +1,14 @@
+name: mimirtool-sync
+author: Grafana Labs
+description: "A set of actions to interact with Prometheus Rules files and a Grafana Mimir cluster."
+runs:
+  using: "docker"
+  image: "Dockerfile"
+outputs:
+  summary:
+    description: A summary of changes that will be made.
+  detailed:
+    description: A detailed description of changes that will be made.
+branding:
+  icon: "upload"  
+  color: "blue"

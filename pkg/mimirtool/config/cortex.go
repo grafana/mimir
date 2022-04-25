@@ -36,12 +36,16 @@ func CortexToMimirMapper() Mapper {
 		mapRulerAlertmanagerS3URL("alertmanager.storage", "alertmanager_storage"), mapRulerAlertmanagerS3URL("ruler.storage", "ruler_storage"),
 		// Map `-*.s3.bucketnames` and (maybe part of `-*s3.s3.url`) to `-*.s3.bucket-name`
 		mapRulerAlertmanagerS3Buckets("alertmanager.storage", "alertmanager_storage"), mapRulerAlertmanagerS3Buckets("ruler.storage", "ruler_storage"),
-		// Prevent server.http_listen_port from being updated with a new default and always output it.
+		// Prevent server.http_listen_port from being updated with a new default (8080) implicitly and always set it to the old default (80)
 		setOldDefaultExplicitly("server.http_listen_port"),
 		// Manually override the dynamic fields' default values.
 		MapperFunc(mapCortexRingInstanceIDDefaults),
 		// Set frontend.results_cache.backend when results cache was enabled in cortex
 		MapperFunc(mapQueryFrontendBackend),
+		// Prevent *_storage.backend from being updated with a new default (filesystem) implicitly and always set it to the old default (s3)
+		setOldDefaultExplicitly("blocks_storage.backend"),
+		setOldDefaultExplicitly("ruler_storage.backend"),
+		setOldDefaultExplicitly("alertmanager_storage.backend"),
 	}
 }
 
@@ -544,7 +548,7 @@ func mapQueryFrontendBackend(source, target Parameters) error {
 	return nil
 }
 
-func mapCortexRingInstanceIDDefaults(source, target Parameters) error {
+func mapCortexRingInstanceIDDefaults(_, target Parameters) error {
 	return multierror.New(
 		target.SetDefaultValue("alertmanager.sharding_ring.instance_id", Nil),
 		target.SetDefaultValue("compactor.sharding_ring.instance_id", Nil),

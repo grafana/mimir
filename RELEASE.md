@@ -2,6 +2,17 @@
 
 This document describes the Mimir release process as well as release shepherd responsibilities. Release shepherds are chosen on a voluntary basis.
 
+## Release schedule
+
+A new Grafana Mimir release is cut approximately every 6 weeks. The following table contains past releases and tentative dates for upcoming releases:
+
+| Version | Date       | Release shepherd  |
+| ------- | ---------- | ----------------- |
+| 2.0.0   | 2022-03-20 | Marco Pracucci    |
+| 2.1.0   | 2022-05-16 | _To be announced_ |
+| 2.2.0   | 2022-06-27 | _To be announced_ |
+| 2.3.0   | 2022-08-08 | _To be announced_ |
+
 ## Release shepherd responsibilities
 
 The release shepherd is responsible for an entire minor release series, meaning all pre- and patch releases of a minor release. The process formally starts with the initial pre-release, but some preparations should be made a few days in advance.
@@ -75,6 +86,7 @@ To publish a stable release:
    1. Ensure the `VERSION` file has **no** `-rc.X` suffix
    1. Update the Mimir version in the following locations:
       - `operations/mimir/images.libsonnet` (`_images.mimir` and `_images.query_tee` fields)
+      - `operations/mimir-rules-action/Dockerfile` (`grafana/mimirtool` image tag)
 1. Update dashboard screenshots
    1. Run `make mixin-screenshots`
    1. Review all updated screenshots and ensure no sensitive data is disclosed
