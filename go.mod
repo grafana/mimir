@@ -229,6 +229,9 @@ replace github.com/bradfitz/gomemcache => github.com/themihai/gomemcache v0.0.0-
 // Using a fork of Prometheus while we work on querysharding to avoid a dependency on the upstream.
 replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20220425085804-5e19fee3606d
 
+// OOO Support forces us to fork thanos because we've changed the ChunkReader interface
+replace github.com/thanos-io/thanos => github.com/jesusvazquez/thanos v0.19.1-0.20220425161949-a7f23aaea4e4
+
 // Pin hashicorp depencencies since the Prometheus fork, go mod tries to update them.
 replace github.com/hashicorp/go-immutable-radix => github.com/hashicorp/go-immutable-radix v1.2.0
 
