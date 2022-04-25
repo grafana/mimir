@@ -1227,16 +1227,8 @@ gopkg.in/yaml.v2
 gopkg.in/yaml.v3
 # git.apache.org/thrift.git => github.com/apache/thrift v0.0.0-20180902110319-2566ecd5d999
 # github.com/bradfitz/gomemcache => github.com/themihai/gomemcache v0.0.0-20180902122335-24332e2d58ab
-<<<<<<< HEAD
-# github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20220425152715-64e6c171c245
-<<<<<<< HEAD
-=======
 # github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20220425085804-5e19fee3606d
 # github.com/thanos-io/thanos => github.com/jesusvazquez/thanos v0.19.1-0.20220425161949-a7f23aaea4e4
->>>>>>> 3fd7346de (Bump prometheus)
-=======
-# github.com/thanos-io/thanos => github.com/jesusvazquez/thanos v0.19.1-0.20220425161949-a7f23aaea4e4
->>>>>>> 45edd329c (Vendor new thanos fork)
 # github.com/hashicorp/go-immutable-radix => github.com/hashicorp/go-immutable-radix v1.2.0
 # github.com/hashicorp/go-hclog => github.com/hashicorp/go-hclog v0.12.2
 # github.com/hashicorp/memberlist => github.com/grafana/memberlist v0.2.5-0.20211201083710-c7bc8e9df94b
