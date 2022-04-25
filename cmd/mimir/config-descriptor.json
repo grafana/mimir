@@ -5357,6 +5357,39 @@
               "fieldFlag": "blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup",
               "fieldType": "int",
               "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "tsdb_ooo_allowance",
+              "required": false,
+              "desc": "Allow upto this much out-of-order.  Supported units: h, m, s.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "blocks-storage.tsdb.ooo-allowance",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "tsdb_ooo_cap_min",
+              "required": false,
+              "desc": "Minimum capacity for OOO chunks (in samples. between 0 and 255.)",
+              "fieldValue": null,
+              "fieldDefaultValue": 4,
+              "fieldFlag": "blocks-storage.tsdb.ooo-cap-min",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "tsdb_ooo_cap_max",
+              "required": false,
+              "desc": "Maximum capacity for OOO chunks (in samples. between 1 and 255.)",
+              "fieldValue": null,
+              "fieldDefaultValue": 32,
+              "fieldFlag": "blocks-storage.tsdb.ooo-cap-max",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,

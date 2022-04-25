@@ -3461,6 +3461,20 @@ tsdb:
   # (advanced) limit the number of concurrently opening TSDB's on startup
   # CLI flag: -blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup
   [max_tsdb_opening_concurrency_on_startup: <int> | default = 10]
+
+  # (experimental) Allow upto this much out-of-order.  Supported units: h, m, s.
+  # CLI flag: -blocks-storage.tsdb.ooo-allowance
+  [tsdb_ooo_allowance: <duration> | default = 0s]
+
+  # (experimental) Minimum capacity for OOO chunks (in samples. between 0 and
+  # 255.)
+  # CLI flag: -blocks-storage.tsdb.ooo-cap-min
+  [tsdb_ooo_cap_min: <int> | default = 4]
+
+  # (experimental) Maximum capacity for OOO chunks (in samples. between 1 and
+  # 255.)
+  # CLI flag: -blocks-storage.tsdb.ooo-cap-max
+  [tsdb_ooo_cap_max: <int> | default = 32]
 ```
 
 ### compactor
