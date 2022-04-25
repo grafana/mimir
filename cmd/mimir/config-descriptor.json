@@ -5318,7 +5318,7 @@
               "kind": "field",
               "name": "new_chunk_disk_mapper",
               "required": false,
-              "desc": "Temporary flag which we use to select whether to use the new (used in upstream Prometheus) or the old (legacy) chunk disk mapper.",
+              "desc": "Temporary flag to select whether to use the new (used in upstream Prometheus) or the old (legacy) chunk disk mapper.",
               "fieldValue": null,
               "fieldDefaultValue": false,
               "fieldFlag": "blocks-storage.tsdb.new-chunk-disk-mapper",
