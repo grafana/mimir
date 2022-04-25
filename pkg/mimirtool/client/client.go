@@ -18,6 +18,7 @@ import (
 	"github.com/grafana/dskit/crypto/tls"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
+	"github.com/weaveworks/common/user"
 )
 
 const (
@@ -123,7 +124,7 @@ func (r *MimirClient) doRequest(path, method string, payload io.Reader, contentL
 		req.SetBasicAuth(r.id, r.key)
 	}
 
-	req.Header.Add("X-Scope-OrgID", r.id)
+	req.Header.Add(user.OrgIDHeaderName, r.id)
 
 	log.WithFields(log.Fields{
 		"url":    req.URL.String(),

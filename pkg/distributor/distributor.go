@@ -944,7 +944,7 @@ func (d *Distributor) FinishBackfill(ctx context.Context, tenantID, blockID stri
 
 // backfillRPC makes a backfill gRPC call to ingesters.
 func (d *Distributor) backfillRPC(ctx context.Context, tenantID, blockID string, callback func(context.Context, ingester_client.IngesterClient) error) error {
-	tenantIDFromCtx, err := tenant.TenantID(ctx)
+	ctx, err := user.InjectIntoGRPCRequest(ctx)
 	if err != nil {
 		return err
 	}
@@ -953,11 +953,12 @@ func (d *Distributor) backfillRPC(ctx context.Context, tenantID, blockID string,
 	if d.cfg.ExtendWrites {
 		op = ring.Write
 	}
-	key, err := d.tokenForLabels(tenantIDFromCtx, nil)
+	key, err := d.tokenForLabels(tenantID, nil)
 	if err != nil {
 		return err
 	}
-	subRing := d.ingestersRing.ShuffleShard(tenantIDFromCtx, d.limits.IngestionTenantShardSize(tenantIDFromCtx))
+
+	subRing := d.ingestersRing.ShuffleShard(tenantID, d.limits.IngestionTenantShardSize(tenantID))
 	if err := ring.DoBatch(ctx, op, subRing, []uint32{key}, func(ingester ring.InstanceDesc, indexes []int) error {
 		h, err := d.ingesterPool.GetClientFor(ingester.Addr)
 		if err != nil {

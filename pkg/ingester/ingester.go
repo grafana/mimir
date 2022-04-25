@@ -44,6 +44,7 @@ import (
 	"github.com/thanos-io/thanos/pkg/objstore"
 	"github.com/thanos-io/thanos/pkg/shipper"
 	"github.com/weaveworks/common/httpgrpc"
+	"github.com/weaveworks/common/user"
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/codes"
@@ -2305,13 +2306,12 @@ func (i *Ingester) UploadBackfillFile(stream client.Ingester_UploadBackfillFileS
 		return err
 	}
 
-	ctx := stream.Context()
-	tenantID, err := tenant.TenantID(ctx)
+	tenantID, ctx, err := user.ExtractFromGRPCRequest(stream.Context())
 	if err != nil {
-		return errors.Wrap(err, "failed to get tenantID from stream context")
+		return errors.Wrap(err, "failed to get tenant ID from gRPC request")
 	}
 
-	level.Info(i.logger).Log("msg", "processing request to add backfill file")
+	level.Info(i.logger).Log("msg", "processing request to add backfill file", "user", tenantID)
 
 	f, err := os.CreateTemp("", "")
 	if err != nil {
@@ -2382,10 +2382,11 @@ func (i *Ingester) FinishBackfill(ctx context.Context, req *mimirpb.FinishBackfi
 		return nil, err
 	}
 
-	tenantID, err := tenant.TenantID(ctx)
+	tenantID, ctx, err := user.ExtractFromGRPCRequest(ctx)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to get tenant ID from context")
+		return nil, errors.Wrap(err, "failed to get tenant ID from gRPC request")
 	}
+
 	level.Info(i.logger).Log("msg", "processing request to finish backfill", "user",
 		tenantID, "block_id", req.BlockId, "files", len(req.Files))
 

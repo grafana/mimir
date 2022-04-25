@@ -39,11 +39,11 @@ func (c *BackfillCommand) Register(app *kingpin.Application, envVars EnvVarNames
 
 func (c *BackfillCommand) backfill(k *kingpin.ParseContext) error {
 	ctx := context.Background()
-	level.Info(c.logger).Log("msg", "Backfilling", "source", c.source)
+	level.Info(c.logger).Log("msg", "Backfilling", "source", c.source, "user", c.clientConfig.ID)
 	cli, err := client.New(c.clientConfig)
 	if err != nil {
 		return err
 	}
 
-	return cli.Backfill(ctx, c.source, c.clientConfig.ID, c.logger)
+	return cli.Backfill(ctx, c.source, c.logger)
 }
