@@ -948,13 +948,6 @@ func (d *Distributor) backfillRPC(ctx context.Context, tenantID int, blockID str
 	if err != nil {
 		return err
 	}
-	localCtx := user.InjectOrgID(ctx, tenantIDFromCtx)
-	// Get clientIP(s) from Context and add it to localCtx
-	source := util.GetSourceIPsFromOutgoingCtx(ctx)
-	localCtx = util.AddSourceIPsToOutgoingContext(localCtx, source)
-	if sp := opentracing.SpanFromContext(ctx); sp != nil {
-		localCtx = opentracing.ContextWithSpan(localCtx, sp)
-	}
 
 	op := ring.WriteNoExtend
 	if d.cfg.ExtendWrites {
@@ -972,7 +965,7 @@ func (d *Distributor) backfillRPC(ctx context.Context, tenantID int, blockID str
 		}
 		c := h.(ingester_client.IngesterClient)
 
-		return callback(localCtx, c)
+		return callback(ctx, c)
 	}, func() {}); err != nil {
 		return err
 	}
