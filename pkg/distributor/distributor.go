@@ -860,14 +860,14 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 }
 
 // StartBackfill requests the starting of a backfill session.
-func (d *Distributor) StartBackfill(ctx context.Context, tenantID int, blockID string) error {
+func (d *Distributor) StartBackfill(ctx context.Context, tenantID, blockID string) error {
 	level.Info(d.log).Log("msg", "starting backfill", "user", tenantID, "block_id", blockID)
 	// TODO: Verify that block hasn't already been ingested
 	return nil
 }
 
 // UploadBackfillFile uploads a file to an ongoing metrics backfill.
-func (d *Distributor) UploadBackfillFile(ctx context.Context, tenantID int, blockID, pth string, r *http.Request) error {
+func (d *Distributor) UploadBackfillFile(ctx context.Context, tenantID, blockID, pth string, r *http.Request) error {
 	level.Info(d.log).Log("msg", "adding file to metrics backfill", "tenantId", tenantID,
 		"blockId", blockID, "path", pth, "size", r.ContentLength)
 	return d.backfillRPC(ctx, tenantID, blockID, func(ctx context.Context, c ingester_client.IngesterClient) error {
@@ -916,7 +916,7 @@ func (d *Distributor) UploadBackfillFile(ctx context.Context, tenantID int, bloc
 }
 
 // FinishBackfill requests the finishing of a backfill session.
-func (d *Distributor) FinishBackfill(ctx context.Context, tenantID int, blockID string, r *http.Request) error {
+func (d *Distributor) FinishBackfill(ctx context.Context, tenantID, blockID string, r *http.Request) error {
 	level.Info(d.log).Log("msg", "finishing backfill", "tenantId", tenantID, "blockId", blockID)
 	dec := json.NewDecoder(r.Body)
 	var payload struct {
@@ -943,7 +943,7 @@ func (d *Distributor) FinishBackfill(ctx context.Context, tenantID int, blockID 
 }
 
 // backfillRPC makes a backfill gRPC call to ingesters.
-func (d *Distributor) backfillRPC(ctx context.Context, tenantID int, blockID string, callback func(context.Context, ingester_client.IngesterClient) error) error {
+func (d *Distributor) backfillRPC(ctx context.Context, tenantID, blockID string, callback func(context.Context, ingester_client.IngesterClient) error) error {
 	tenantIDFromCtx, err := tenant.TenantID(ctx)
 	if err != nil {
 		return err
