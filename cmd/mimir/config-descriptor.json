@@ -5362,7 +5362,7 @@
               "kind": "field",
               "name": "tsdb_ooo_allowance",
               "required": false,
-              "desc": "Allow upto this much out-of-order.  Supported units: h, m, s.",
+              "desc": "Allow samples to be this old for out-of-order.  Supported units: h, m, s.",
               "fieldValue": null,
               "fieldDefaultValue": 0,
               "fieldFlag": "blocks-storage.tsdb.ooo-allowance",

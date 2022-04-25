@@ -3462,7 +3462,8 @@ tsdb:
   # CLI flag: -blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup
   [max_tsdb_opening_concurrency_on_startup: <int> | default = 10]
 
-  # (experimental) Allow upto this much out-of-order.  Supported units: h, m, s.
+  # (experimental) Allow samples to be this old for out-of-order.  Supported
+  # units: h, m, s.
   # CLI flag: -blocks-storage.tsdb.ooo-allowance
   [tsdb_ooo_allowance: <duration> | default = 0s]
 
