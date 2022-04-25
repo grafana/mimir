@@ -876,7 +876,7 @@ func (d *Distributor) UploadBackfillFile(ctx context.Context, tenantID int, bloc
 			return errors.Wrap(err, "failed to get gRPC stream for adding file to backfill")
 		}
 
-		buf := make([]byte, 8192)
+		buf := make([]byte, 1024*1024)
 		var bytesWritten int64
 		for {
 			n, err := r.Body.Read(buf)
