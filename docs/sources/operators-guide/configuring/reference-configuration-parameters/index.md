@@ -3442,6 +3442,11 @@ tsdb:
   # CLI flag: -blocks-storage.tsdb.head-chunks-write-queue-size
   [head_chunks_write_queue_size: <int> | default = 0]
 
+  # (experimental) Temporary flag to select whether to use the new (used in
+  # upstream Prometheus) or the old (legacy) chunk disk mapper.
+  # CLI flag: -blocks-storage.tsdb.new-chunk-disk-mapper
+  [new_chunk_disk_mapper: <boolean> | default = false]
+
   # (advanced) [Deprecated] Enables TSDB isolation feature. Disabling may
   # improve performance.
   # CLI flag: -blocks-storage.tsdb.isolation-enabled
