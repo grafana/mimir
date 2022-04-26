@@ -5721,7 +5721,7 @@ func Test_Ingester_QueryOutOfOrder(t *testing.T) {
 
 	ctx := user.InjectOrgID(context.Background(), "test")
 
-	// Push first in order sample at minute 100
+	// Push first in-order sample at minute 100
 	firstInOrderSample := 100 * time.Minute.Milliseconds()
 	serie := series{
 		lbls:      labels.Labels{{Name: labels.MetricName, Value: "test_1"}, {Name: "status", Value: "200"}},
