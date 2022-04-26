@@ -82,7 +82,7 @@
 
 ### Mimirtool
 
-* [BUGFIX] `config convert`: Retain Cortex defaults for `blocks_storage.backend`, `ruler_storage.backend`, and `alertmanager_storage.backend`. #1626
+* [BUGFIX] `config convert`: Retain Cortex defaults for `blocks_storage.backend`, `ruler_storage.backend`, `alertmanager_storage.backend`, `auth.type`, `activity_tracker.filepath`, `alertmanager.data_dir`, `blocks_storage.filesystem.dir`, `compactor.data_dir`, `ruler.rule_path`, `ruler_storage.filesystem.dir`, and `graphite.querier.schemas.backend`. #1626 #1762
 
 ### Tools
 
