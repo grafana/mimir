@@ -911,8 +911,6 @@ func (d *Distributor) UploadBlockFile(ctx context.Context, tenantID, blockID, pt
 		level.Info(d.log).Log("msg", "successfully uploaded block file via gRPC", "bytesWritten", bytesWritten)
 		return nil
 	})
-
-	return nil
 }
 
 // CompleteBlockUpload completes a block upload session.

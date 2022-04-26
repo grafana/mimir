@@ -2,23 +2,19 @@ package commands
 
 import (
 	"context"
-	"fmt"
 	"os"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/grafana/mimir/pkg/mimirtool/client"
 	"gopkg.in/alecthomas/kingpin.v2"
-)
 
-const agentString = "mimir-upload"
+	"github.com/grafana/mimir/pkg/mimirtool/client"
+)
 
 type BackfillCommand struct {
 	logger       log.Logger
 	clientConfig client.Config
-	backend      string
 	source       string
-	dryRun       bool
 }
 
 func (c *BackfillCommand) Register(app *kingpin.Application, envVars EnvVarNames) {
@@ -27,7 +23,7 @@ func (c *BackfillCommand) Register(app *kingpin.Application, envVars EnvVarNames
 	cmd.Arg("source", "Path to directory to source metrics blocks from.").Required().StringVar(&c.source)
 	cmd.Flag("address", "Address of the Grafana Mimir cluster").Required().StringVar(&c.clientConfig.Address)
 	cmd.Flag("id", "Grafana Mimir tenant ID").Required().StringVar(&c.clientConfig.ID)
-	cmd.Flag("user", fmt.Sprintf("API user to use when contacting Grafana Mimir")).Default("").StringVar(&c.clientConfig.User)
+	cmd.Flag("user", "API user to use when contacting Grafana Mimir").Default("").StringVar(&c.clientConfig.User)
 	cmd.Flag("key", "API key to use when contacting Grafana Mimir").Default("").StringVar(&c.clientConfig.Key)
 	cmd.Flag("tls-ca-path", "TLS CA certificate to verify Grafana Mimir API as part of mTLS").Default("").StringVar(&c.clientConfig.TLS.CAPath)
 	cmd.Flag("tls-cert-path", "TLS client certificate to authenticate with the Grafana Mimir API as part of mTLS").Default("").StringVar(&c.clientConfig.TLS.CertPath)

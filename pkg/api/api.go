@@ -24,7 +24,8 @@ import (
 	"github.com/weaveworks/common/httpgrpc"
 	"github.com/weaveworks/common/middleware"
 	"github.com/weaveworks/common/server"
-	"github.com/weaveworks/common/user"
+
+	"github.com/grafana/dskit/tenant"
 
 	"github.com/grafana/mimir/pkg/alertmanager"
 	"github.com/grafana/mimir/pkg/alertmanager/alertmanagerpb"
@@ -259,9 +260,9 @@ func (a *API) RegisterDistributor(d *distributor.Distributor, pushConfig distrib
 		vars := mux.Vars(r)
 		blockID := vars["block"]
 
-		tenantID, ctx, err := user.ExtractOrgIDFromHTTPRequest(r)
+		tenantID, ctx, err := tenant.ExtractTenantIDFromHTTPRequest(r)
 		if err != nil {
-			http.Error(w, fmt.Sprintf("invalid tenant ID"), http.StatusBadRequest)
+			http.Error(w, "invalid tenant ID", http.StatusBadRequest)
 			return
 		}
 
@@ -283,9 +284,9 @@ func (a *API) RegisterDistributor(d *distributor.Distributor, pushConfig distrib
 	a.RegisterRoute("/api/v1/upload/block/{block}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		vars := mux.Vars(r)
 		blockID := vars["block"]
-		tenantID, ctx, err := user.ExtractOrgIDFromHTTPRequest(r)
+		tenantID, ctx, err := tenant.ExtractTenantIDFromHTTPRequest(r)
 		if err != nil {
-			http.Error(w, fmt.Sprintf("invalid tenant ID"), http.StatusBadRequest)
+			http.Error(w, "invalid tenant ID", http.StatusBadRequest)
 			return
 		}
 
@@ -311,9 +312,9 @@ func (a *API) RegisterDistributor(d *distributor.Distributor, pushConfig distrib
 			return
 		}
 
-		tenantID, ctx, err := user.ExtractOrgIDFromHTTPRequest(r)
+		tenantID, ctx, err := tenant.ExtractTenantIDFromHTTPRequest(r)
 		if err != nil {
-			http.Error(w, fmt.Sprintf("invalid tenant ID"), http.StatusBadRequest)
+			http.Error(w, "invalid tenant ID", http.StatusBadRequest)
 			return
 		}
 
