@@ -5360,7 +5360,7 @@
             },
             {
               "kind": "field",
-              "name": "tsdb_ooo_allowance",
+              "name": "ooo_allowance",
               "required": false,
               "desc": "Allow samples to be this old for out-of-order.  Supported units: h, m, s.",
               "fieldValue": null,
@@ -5371,7 +5371,7 @@
             },
             {
               "kind": "field",
-              "name": "tsdb_ooo_cap_min",
+              "name": "ooo_cap_min",
               "required": false,
               "desc": "Minimum capacity for OOO chunks (in samples. between 0 and 255.)",
               "fieldValue": null,
@@ -5382,7 +5382,7 @@
             },
             {
               "kind": "field",
-              "name": "tsdb_ooo_cap_max",
+              "name": "ooo_cap_max",
               "required": false,
               "desc": "Maximum capacity for OOO chunks (in samples. between 1 and 255.)",
               "fieldValue": null,

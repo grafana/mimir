@@ -3465,17 +3465,17 @@ tsdb:
   # (experimental) Allow samples to be this old for out-of-order.  Supported
   # units: h, m, s.
   # CLI flag: -blocks-storage.tsdb.ooo-allowance
-  [tsdb_ooo_allowance: <duration> | default = 0s]
+  [ooo_allowance: <duration> | default = 0s]
 
   # (experimental) Minimum capacity for OOO chunks (in samples. between 0 and
   # 255.)
   # CLI flag: -blocks-storage.tsdb.ooo-cap-min
-  [tsdb_ooo_cap_min: <int> | default = 4]
+  [ooo_cap_min: <int> | default = 4]
 
   # (experimental) Maximum capacity for OOO chunks (in samples. between 1 and
   # 255.)
   # CLI flag: -blocks-storage.tsdb.ooo-cap-max
-  [tsdb_ooo_cap_max: <int> | default = 32]
+  [ooo_cap_max: <int> | default = 32]
 ```
 
 ### compactor

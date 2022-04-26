@@ -174,9 +174,9 @@ type TSDBConfig struct {
 	CloseIdleTSDBInterval time.Duration `yaml:"-"`
 
 	// Highly experimental out of order metrics support
-	OOOAllowance time.Duration `yaml:"tsdb_ooo_allowance" category:"experimental"`
-	OOOCapMin    int           `yaml:"tsdb_ooo_cap_min" category:"experimental"`
-	OOOCapMax    int           `yaml:"tsdb_ooo_cap_max" category:"experimental"`
+	OOOAllowance time.Duration `yaml:"ooo_allowance" category:"experimental"`
+	OOOCapMin    int           `yaml:"ooo_cap_min" category:"experimental"`
+	OOOCapMax    int           `yaml:"ooo_cap_max" category:"experimental"`
 }
 
 // RegisterFlags registers the TSDBConfig flags.
