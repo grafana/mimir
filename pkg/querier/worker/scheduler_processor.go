@@ -43,6 +43,10 @@ func newSchedulerProcessor(cfg Config, handler RequestHandler, log log.Logger, r
 		querierID:      cfg.QuerierID,
 		grpcConfig:     cfg.GRPCClientConfig,
 
+		schedulerClientFactory: func(conn *grpc.ClientConn) schedulerpb.SchedulerForQuerierClient {
+			return schedulerpb.NewSchedulerForQuerierClient(conn)
+		},
+
 		frontendClientRequestDuration: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 			Name:    "cortex_querier_query_frontend_request_duration_seconds",
 			Help:    "Time spend doing requests to frontend.",
@@ -75,11 +79,13 @@ type schedulerProcessor struct {
 
 	frontendPool                  *client.Pool
 	frontendClientRequestDuration *prometheus.HistogramVec
+
+	schedulerClientFactory func(conn *grpc.ClientConn) schedulerpb.SchedulerForQuerierClient
 }
 
 // notifyShutdown implements processor.
 func (sp *schedulerProcessor) notifyShutdown(ctx context.Context, conn *grpc.ClientConn, address string) {
-	client := schedulerpb.NewSchedulerForQuerierClient(conn)
+	client := sp.schedulerClientFactory(conn)
 
 	req := &schedulerpb.NotifyQuerierShutdownRequest{QuerierID: sp.querierID}
 	if _, err := client.NotifyQuerierShutdown(ctx, req); err != nil {
@@ -89,7 +95,7 @@ func (sp *schedulerProcessor) notifyShutdown(ctx context.Context, conn *grpc.Cli
 }
 
 func (sp *schedulerProcessor) processQueriesOnSingleStream(workerCtx context.Context, conn *grpc.ClientConn, address string) {
-	schedulerClient := schedulerpb.NewSchedulerForQuerierClient(conn)
+	schedulerClient := sp.schedulerClientFactory(conn)
 
 	// Run the querier loop (and so all the queries) in a dedicated context that we call the "execution context".
 	// The execution context is cancelled once the workerCtx is cancelled AND there's no inflight query executing.
