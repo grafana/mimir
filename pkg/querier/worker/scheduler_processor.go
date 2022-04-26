@@ -92,7 +92,7 @@ func (sp *schedulerProcessor) processQueriesOnSingleStream(workerCtx context.Con
 	schedulerClient := schedulerpb.NewSchedulerForQuerierClient(conn)
 
 	// Run the querier loop (and so all the queries) in a dedicated context that we call the "execution context".
-	// The execution context is cancelled once the processCtx is cancelled AND there's no inflight query executing.
+	// The execution context is cancelled once the workerCtx is cancelled AND there's no inflight query executing.
 	exec := newExecutionContext(workerCtx, sp.log)
 	defer exec.cancel()
 
