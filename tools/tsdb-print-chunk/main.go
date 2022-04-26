@@ -43,7 +43,7 @@ func main() {
 			continue
 		}
 
-		ch, err := cr.Chunk(chunks.ChunkRef(val))
+		ch, err := cr.Chunk(chunks.Meta{Ref: chunks.ChunkRef(val)})
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "Failed to open chunk", val, "due to error:", err)
 			continue
