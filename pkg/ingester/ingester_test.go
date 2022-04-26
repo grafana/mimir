@@ -5696,7 +5696,7 @@ func Test_Ingester_QueryOutOfOrder(t *testing.T) {
 		"if ooo samples go back past allowance writing should return an error": {
 			queryFrom:      math.MinInt64,
 			queryTo:        math.MaxInt64,
-			oooFirstSample: 10 * time.Minute.Milliseconds(), // Allowance is 30 min, first sample is at minute 100 so first ooo sample is too old
+			oooFirstSample: 69 * time.Minute.Milliseconds(), // Allowance is 30 min, first sample is at minute 100 so first ooo sample is too old
 			oooLastSample:  99 * time.Minute.Milliseconds(),
 			expPushError:   true,
 		},
