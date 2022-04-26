@@ -2382,6 +2382,10 @@ func (i *Ingester) UploadBlockFile(stream client.Ingester_UploadBlockFileServer)
 		return errors.Wrap(err, "failed to receive from gRPC stream")
 	}
 
+	if path.Base(req.Path) == "meta.json" {
+		return fmt.Errorf("meta.json is not allowed")
+	}
+
 	level.Info(i.logger).Log("msg", "uploading block file", "user",
 		tenantID, "block_id", req.BlockId, "path", req.Path, "chunkLength",
 		len(req.Chunk))
@@ -2396,7 +2400,7 @@ func (i *Ingester) UploadBlockFile(stream client.Ingester_UploadBlockFileServer)
 		numChunks: 1,
 	}
 
-	dst := path.Join("uploads", req.BlockId, req.Path)
+	dst := path.Join(req.BlockId, req.Path)
 	level.Info(i.logger).Log("msg", "uploading block file to bucket", "user", tenantID,
 		"destination", dst)
 	bkt := bucket.NewUserBucketClient(string(tenantID), i.bucket, i.limits)
@@ -2441,31 +2445,12 @@ func (i *Ingester) CompleteBlockUpload(ctx context.Context, req *mimirpb.Complet
 	bkt := bucket.NewUserBucketClient(tenantID, i.bucket, i.limits)
 	defer bkt.Close()
 
-	for _, file := range meta.Thanos.Files {
-		fpath := file.RelPath
-		if path.Base(fpath) == "meta.json" {
-			continue
-		}
-
-		src := path.Join(tenantID, "uploads", req.BlockId, fpath)
-		dst := path.Join(tenantID, req.BlockId, fpath)
-		level.Info(i.logger).Log("msg", "moving file in bucket", "src", src, "dst", dst)
-		if err := bkt.Move(ctx, src, dst); err != nil {
-			return nil, errors.Wrapf(err, "failed moving %s to %s in bucket", src, dst)
-		}
-	}
-
-	// Write meta.json, so the block isn't considered complete before it actually is
+	// Write meta.json, so the block is considered complete
 	dst := path.Join(tenantID, req.BlockId, "meta.json")
 	level.Info(i.logger).Log("msg", "writing meta.json in bucket", "dst", dst)
 	buf := bytes.NewBuffer(req.Meta)
 	if err := bkt.Upload(ctx, dst, buf); err != nil {
 		return nil, errors.Wrap(err, "failed uploading meta.json to bucket")
-	}
-
-	blockDir := path.Join(tenantID, "uploads", req.BlockId)
-	if err := bkt.Delete(ctx, blockDir); err != nil {
-		return nil, errors.Wrapf(err, "failed to delete %s from bucket", blockDir)
 	}
 
 	return &mimirpb.CompleteBlockUploadResponse{}, nil

@@ -85,22 +85,6 @@ func (b *globalMarkersBucket) Delete(ctx context.Context, name string) error {
 	return err2
 }
 
-// Move implements objstore.Bucket.
-func (b *globalMarkersBucket) Move(ctx context.Context, src, dst string) error {
-	if err := b.parent.Move(ctx, src, dst); err != nil {
-		return err
-	}
-
-	markSrc := getGlobalMarkPathFromBlockMark(src)
-	markDst := getGlobalMarkPathFromBlockMark(dst)
-	if markSrc == "" || markDst == "" {
-		return nil
-	}
-
-	// Move it in the global markers location too
-	return b.parent.Move(ctx, markSrc, markDst)
-}
-
 // Name implements objstore.Bucket.
 func (b *globalMarkersBucket) Name() string {
 	return b.parent.Name()

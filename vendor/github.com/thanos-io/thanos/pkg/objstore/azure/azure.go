@@ -418,25 +418,6 @@ func (b *Bucket) Delete(ctx context.Context, name string) error {
 	return nil
 }
 
-// Move the object at path src to path dst.
-func (b *Bucket) Move(ctx context.Context, src, dst string) error {
-	level.Debug(b.logger).Log("msg", "Moving blob", "src", src, "dst", dst)
-	// TODO
-	/*
-		blobURL := getBlobURL(name, b.containerURL)
-
-		if _, err := blob.UploadStreamToBlockBlob(ctx, r, blobURL,
-			blob.UploadStreamToBlockBlobOptions{
-				BufferSize: 3 * 1024 * 1024,
-				MaxBuffers: 4,
-			},
-		); err != nil {
-			return errors.Wrapf(err, "cannot move Azure blob from %s to %s", src, dst)
-		}
-	*/
-	return nil
-}
-
 // Name returns Azure container name.
 func (b *Bucket) Name() string {
 	return b.config.ContainerName

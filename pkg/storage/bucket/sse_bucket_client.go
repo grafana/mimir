@@ -69,11 +69,6 @@ func (b *SSEBucketClient) Delete(ctx context.Context, name string) error {
 	return b.bucket.Delete(ctx, name)
 }
 
-// Move implements objstore.Bucket.
-func (b *SSEBucketClient) Move(ctx context.Context, src, dst string) error {
-	return b.bucket.Move(ctx, src, dst)
-}
-
 // Name implements objstore.Bucket.
 func (b *SSEBucketClient) Name() string {
 	return b.bucket.Name()

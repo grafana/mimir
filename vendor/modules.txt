@@ -807,7 +807,7 @@ github.com/stretchr/objx
 github.com/stretchr/testify/assert
 github.com/stretchr/testify/mock
 github.com/stretchr/testify/require
-# github.com/thanos-io/thanos v0.24.1-0.20220416232747-81218afa5b01 => github.com/aknuds1/thanos v0.24.1-0.20220415150935-26b63dc32713
+# github.com/thanos-io/thanos v0.24.1-0.20220416232747-81218afa5b01
 ## explicit; go 1.17
 github.com/thanos-io/thanos/pkg/block
 github.com/thanos-io/thanos/pkg/block/indexheader
@@ -1232,4 +1232,3 @@ gopkg.in/yaml.v3
 # github.com/hashicorp/go-hclog => github.com/hashicorp/go-hclog v0.12.2
 # github.com/hashicorp/memberlist => github.com/grafana/memberlist v0.2.5-0.20211201083710-c7bc8e9df94b
 # github.com/vimeo/galaxycache => github.com/thanos-community/galaxycache v0.0.0-20211122094458-3a32041a1f1e
-# github.com/thanos-io/thanos => github.com/aknuds1/thanos v0.24.1-0.20220415150935-26b63dc32713

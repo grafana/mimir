@@ -183,12 +183,6 @@ func (b *Bucket) Delete(ctx context.Context, name string) error {
 	return b.bkt.Object(name).Delete(ctx)
 }
 
-// Move the object at path src to path dst.
-func (b *Bucket) Move(ctx context.Context, src, dst string) error {
-	// TODO
-	return nil
-}
-
 // IsObjNotFoundErr returns true if error means that object is not found. Relevant to Get operations.
 func (b *Bucket) IsObjNotFoundErr(err error) bool {
 	return errors.Is(err, storage.ErrObjectNotExist)
