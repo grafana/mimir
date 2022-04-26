@@ -859,19 +859,19 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 	return &mimirpb.WriteResponse{}, firstPartialErr
 }
 
-// StartBackfill requests the starting of a backfill session.
-func (d *Distributor) StartBackfill(ctx context.Context, tenantID, blockID string) error {
-	level.Info(d.log).Log("msg", "starting backfill", "user", tenantID, "block_id", blockID)
+// CreateBlockUpload requests the creation of a block upload session.
+func (d *Distributor) CreateBlockUpload(ctx context.Context, tenantID, blockID string) error {
+	level.Info(d.log).Log("msg", "creation block upload session", "user", tenantID, "block_id", blockID)
 	// TODO: Verify that block hasn't already been ingested
 	return nil
 }
 
-// UploadBackfillFile uploads a file to an ongoing metrics backfill.
-func (d *Distributor) UploadBackfillFile(ctx context.Context, tenantID, blockID, pth string, r *http.Request) error {
-	level.Info(d.log).Log("msg", "adding file to metrics backfill", "tenantId", tenantID,
-		"blockId", blockID, "path", pth, "size", r.ContentLength)
-	return d.backfillRPC(ctx, tenantID, blockID, func(ctx context.Context, c ingester_client.IngesterClient) error {
-		stream, err := c.UploadBackfillFile(ctx)
+// UploadBlockFile uploads a block file.
+func (d *Distributor) UploadBlockFile(ctx context.Context, tenantID, blockID, pth string, r *http.Request) error {
+	level.Info(d.log).Log("msg", "uploading block file", "user", tenantID,
+		"block_id", blockID, "path", pth, "size", r.ContentLength)
+	return d.blockUploadRPC(ctx, tenantID, blockID, func(ctx context.Context, c ingester_client.IngesterClient) error {
+		stream, err := c.UploadBlockFile(ctx)
 		if err != nil {
 			return errors.Wrap(err, "failed to get gRPC stream for adding file to backfill")
 		}
@@ -889,7 +889,7 @@ func (d *Distributor) UploadBackfillFile(ctx context.Context, tenantID, blockID,
 			}
 
 			bytesWritten += int64(n)
-			if err := stream.Send(&mimirpb.UploadBackfillFileRequest{
+			if err := stream.Send(&mimirpb.UploadBlockFileRequest{
 				BlockId:       blockID,
 				Path:          pth,
 				Chunk:         buf[:n],
@@ -916,9 +916,9 @@ func (d *Distributor) UploadBackfillFile(ctx context.Context, tenantID, blockID,
 	return nil
 }
 
-// FinishBackfill requests the finishing of a backfill session.
-func (d *Distributor) FinishBackfill(ctx context.Context, tenantID, blockID string, r *http.Request) error {
-	level.Info(d.log).Log("msg", "finishing backfill", "tenantId", tenantID, "blockId", blockID)
+// CompleteBlockUpload completes a block upload session.
+func (d *Distributor) CompleteBlockUpload(ctx context.Context, tenantID, blockID string, r *http.Request) error {
+	level.Info(d.log).Log("msg", "finishing backfill", "user", tenantID, "block_id", blockID)
 	dec := json.NewDecoder(r.Body)
 	var payload struct {
 		Files []string `json:"files"`
@@ -930,8 +930,8 @@ func (d *Distributor) FinishBackfill(ctx context.Context, tenantID, blockID stri
 		return fmt.Errorf("no files listed in payload")
 	}
 
-	return d.backfillRPC(ctx, tenantID, blockID, func(ctx context.Context, c ingester_client.IngesterClient) error {
-		if _, err := c.FinishBackfill(ctx, &mimirpb.FinishBackfillRequest{
+	return d.blockUploadRPC(ctx, tenantID, blockID, func(ctx context.Context, c ingester_client.IngesterClient) error {
+		if _, err := c.CompleteBlockUpload(ctx, &mimirpb.CompleteBlockUploadRequest{
 			BlockId: blockID,
 			Files:   payload.Files,
 		}); err != nil {
@@ -943,8 +943,8 @@ func (d *Distributor) FinishBackfill(ctx context.Context, tenantID, blockID stri
 	})
 }
 
-// backfillRPC makes a backfill gRPC call to ingesters.
-func (d *Distributor) backfillRPC(ctx context.Context, tenantID, blockID string, callback func(context.Context, ingester_client.IngesterClient) error) error {
+// blockUploadRPC makes a backfill gRPC call to ingesters.
+func (d *Distributor) blockUploadRPC(ctx context.Context, tenantID, blockID string, callback func(context.Context, ingester_client.IngesterClient) error) error {
 	ctx, err := user.InjectIntoGRPCRequest(ctx)
 	if err != nil {
 		return err

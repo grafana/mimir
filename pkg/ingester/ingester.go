@@ -2303,7 +2303,7 @@ func (i *Ingester) RingHandler() http.Handler {
 
 type streamReader struct {
 	logger    log.Logger
-	stream    client.Ingester_UploadBackfillFileServer
+	stream    client.Ingester_UploadBlockFileServer
 	chunk     []byte
 	tenantID  string
 	blockID   string
@@ -2361,7 +2361,7 @@ func (r *streamReader) Read(p []byte) (int, error) {
 	return bytesRead, nil
 }
 
-func (i *Ingester) UploadBackfillFile(stream client.Ingester_UploadBackfillFileServer) error {
+func (i *Ingester) UploadBlockFile(stream client.Ingester_UploadBlockFileServer) error {
 	if err := i.checkRunning(); err != nil {
 		return err
 	}
@@ -2415,10 +2415,10 @@ func (i *Ingester) UploadBackfillFile(stream client.Ingester_UploadBackfillFileS
 		level.Warn(i.logger).Log("msg", "no backfill file content was sent")
 	}
 
-	return stream.SendAndClose(&mimirpb.UploadBackfillFileResponse{})
+	return stream.SendAndClose(&mimirpb.UploadBlockFileResponse{})
 }
 
-func (i *Ingester) FinishBackfill(ctx context.Context, req *mimirpb.FinishBackfillRequest) (*mimirpb.FinishBackfillResponse, error) {
+func (i *Ingester) CompleteBlockUpload(ctx context.Context, req *mimirpb.CompleteBlockUploadRequest) (*mimirpb.CompleteBlockUploadResponse, error) {
 	if err := i.checkRunning(); err != nil {
 		return nil, err
 	}
@@ -2460,7 +2460,7 @@ func (i *Ingester) FinishBackfill(ctx context.Context, req *mimirpb.FinishBackfi
 		return nil, errors.Wrapf(err, "failed to delete %s from bucket", blockDir)
 	}
 
-	return &mimirpb.FinishBackfillResponse{}, nil
+	return &mimirpb.CompleteBlockUploadResponse{}, nil
 }
 
 func initSelectHints(start, end int64) *storage.SelectHints {

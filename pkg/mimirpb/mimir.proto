@@ -28,21 +28,21 @@ message WriteRequest {
 
 message WriteResponse {}
 
-message UploadBackfillFileRequest {
+message UploadBlockFileRequest {
   string block_id = 1;
   string path = 2;
   bytes chunk = 3;
   int64 content_length = 4;
 }
 
-message UploadBackfillFileResponse {}
+message UploadBlockFileResponse {}
 
-message FinishBackfillRequest {
+message CompleteBlockUploadRequest {
   string block_id = 1;
   repeated string files = 2;
 }
 
-message FinishBackfillResponse {}
+message CompleteBlockUploadResponse {}
 
 message TimeSeries {
   repeated LabelPair labels = 1 [(gogoproto.nullable) = false, (gogoproto.customtype) = "LabelAdapter"];

@@ -162,6 +162,17 @@ func (a *API) RegisterRoute(path string, handler http.Handler, auth, gzipEnabled
 	a.newRoute(path, handler, false, auth, gzipEnabled, methods...)
 }
 
+func (a *API) RegisterRouteWithQueryParameters(path string, handler http.Handler, auth, gzipEnabled bool,
+	params map[string]string, method string, methods ...string) {
+	methods = append([]string{method}, methods...)
+	level.Debug(a.logger).Log("msg", "api: registering route with query parameters", "methods", strings.Join(methods, ","),
+		"path", path, "auth", auth, "gzip", gzipEnabled, "query_parameters", params)
+	route := a.newRoute(path, handler, false, auth, gzipEnabled, methods...)
+	for k, v := range params {
+		route.Queries(k, v)
+	}
+}
+
 func (a *API) RegisterRoutesWithPrefix(prefix string, handler http.Handler, auth, gzipEnabled bool, methods ...string) {
 	level.Debug(a.logger).Log("msg", "api: registering route", "methods", strings.Join(methods, ","), "prefix", prefix, "auth", auth, "gzip", gzipEnabled)
 	a.newRoute(prefix, handler, true, auth, gzipEnabled, methods...)
@@ -248,17 +259,16 @@ func (a *API) RegisterDistributor(d *distributor.Distributor, pushConfig distrib
 	// Endpoint to handle requests for starting of block backfilling.
 	// Starting the backfilling of a block means to verify that the backfill can go ahead.
 	// In practice this means to check that the block isn't already in block storage.
-	a.RegisterRoute("/api/v1/backfill/{block}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	a.RegisterRoute("/api/v1/upload/block/{block}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		vars := mux.Vars(r)
 		blockID := vars["block"]
-
 		tenantID, ctx, err := user.ExtractOrgIDFromHTTPRequest(r)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("invalid tenant ID"), http.StatusBadRequest)
 			return
 		}
 
-		if err := d.StartBackfill(ctx, tenantID, blockID); err != nil {
+		if err := d.CreateBlockUpload(ctx, tenantID, blockID); err != nil {
 			resp, ok := httpgrpc.HTTPResponseFromError(err)
 			if !ok {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -271,7 +281,7 @@ func (a *API) RegisterDistributor(d *distributor.Distributor, pushConfig distrib
 		w.WriteHeader(http.StatusOK)
 	}), true, false, http.MethodPost)
 	// Endpoint to handle requests for uploading block files to a backfill.
-	a.RegisterRoute("/api/v1/backfill/{block}/{path}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	a.RegisterRoute("/api/v1/upload/block/{block}/{path}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		vars := mux.Vars(r)
 		blockID := vars["block"]
 		pth, err := url.PathUnescape(vars["path"])
@@ -294,7 +304,7 @@ func (a *API) RegisterDistributor(d *distributor.Distributor, pushConfig distrib
 			}
 		}
 
-		if err := d.UploadBackfillFile(ctx, tenantID, blockID, pth, r); err != nil {
+		if err := d.UploadBlockFile(ctx, tenantID, blockID, pth, r); err != nil {
 			resp, ok := httpgrpc.HTTPResponseFromError(err)
 			if !ok {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -306,8 +316,8 @@ func (a *API) RegisterDistributor(d *distributor.Distributor, pushConfig distrib
 
 		w.WriteHeader(http.StatusOK)
 	}), true, false, http.MethodPost)
-	// Endpoint to handle requests for finishing of block backfilling.
-	a.RegisterRoute("/api/v1/backfill/{tenant:[0-9]+}/{block}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	// Endpoint to handle requests for completion of block backfilling.
+	a.RegisterRouteWithQueryParameters("/api/v1/upload/block/{block}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		vars := mux.Vars(r)
 		blockID := vars["block"]
 
@@ -316,16 +326,8 @@ func (a *API) RegisterDistributor(d *distributor.Distributor, pushConfig distrib
 			http.Error(w, fmt.Sprintf("invalid tenant ID"), http.StatusBadRequest)
 			return
 		}
-		logger := util_log.WithContext(ctx, util_log.Logger)
-		if a.sourceIPs != nil {
-			source := a.sourceIPs.Get(r)
-			if source != "" {
-				ctx = util.AddSourceIPsToOutgoingContext(ctx, source)
-				logger = util_log.WithSourceIPs(source, logger)
-			}
-		}
 
-		if err := d.FinishBackfill(ctx, tenantID, blockID, r); err != nil {
+		if err := d.CompleteBlockUpload(ctx, tenantID, blockID, r); err != nil {
 			resp, ok := httpgrpc.HTTPResponseFromError(err)
 			if !ok {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -336,7 +338,7 @@ func (a *API) RegisterDistributor(d *distributor.Distributor, pushConfig distrib
 		}
 
 		w.WriteHeader(http.StatusOK)
-	}), true, false, http.MethodDelete)
+	}), true, false, map[string]string{"uploadComplete": "true"}, http.MethodPost)
 
 	a.indexPage.AddLinks(defaultWeight, "Distributor", []IndexPageLink{
 		{Desc: "Ring status", Path: "/distributor/ring"},

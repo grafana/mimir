@@ -61,7 +61,7 @@ func (c *MimirClient) backfillBlock(ctx context.Context, dpath string, logger lo
 
 	level.Info(logger).Log("msg", "Making request to start block backfill", "user", c.id, "block_id", blockID)
 
-	res, err := c.doRequest(fmt.Sprintf("/api/v1/backfill/%s", blockID), http.MethodPost, nil, -1)
+	res, err := c.doRequest(fmt.Sprintf("/api/v1/upload/block/%s", blockID), http.MethodPost, nil, -1)
 	if err != nil {
 		return errors.Wrap(err, "request to start backfill failed")
 	}
@@ -93,7 +93,7 @@ func (c *MimirClient) backfillBlock(ctx context.Context, dpath string, logger lo
 		escapedPath := url.PathEscape(relPath)
 		level.Info(logger).Log("msg", "uploading block file", "path", pth, "user",
 			c.id, "block_id", blockID, "size", st.Size())
-		res, err := c.doRequest(fmt.Sprintf("/api/v1/backfill/%s/%s", blockID,
+		res, err := c.doRequest(fmt.Sprintf("/api/v1/upload/block/%s/%s", blockID,
 			escapedPath), http.MethodPost, f, st.Size())
 		if err != nil {
 			return errors.Wrapf(err, "request to upload backfill of file %q failed", pth)
@@ -118,7 +118,7 @@ func (c *MimirClient) backfillBlock(ctx context.Context, dpath string, logger lo
 	if err != nil {
 		return errors.Wrap(err, "failed to JSON encode payload")
 	}
-	res, err = c.doRequest(fmt.Sprintf("/api/v1/backfill/%s", blockID), http.MethodDelete,
+	res, err = c.doRequest(fmt.Sprintf("/api/v1/upload/block/%s?uploadComplete=true", blockID), http.MethodPost,
 		bytes.NewBuffer(payloadB), int64(len(payloadB)))
 	if err != nil {
 		return errors.Wrap(err, "request to finish backfill failed")
