@@ -101,7 +101,6 @@ SED ?= $(shell which gsed 2>/dev/null || which sed)
 # these Dockerfiles are not doing much, and are unlikely to fail.
 push-multiarch-%/$(UPTODATE):
 	$(eval DIR := $(patsubst push-multiarch-%/$(UPTODATE),%,$@))
-	$(eval EXE := $(patsubst push-multiarch-%/$(UPTODATE),%,$@))
 
 	if [ -f $(DIR)/main.go ]; then \
 		$(MAKE) GOOS=linux GOARCH=amd64 BINARY_SUFFIX=_linux_amd64 $(DIR)/$(shell basename $(DIR)); \
