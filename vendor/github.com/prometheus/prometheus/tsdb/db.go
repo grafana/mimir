@@ -1701,11 +1701,11 @@ func (db *DB) ChunkQuerier(_ context.Context, mint, maxt int64) (storage.ChunkQu
 			blocks = append(blocks, b)
 		}
 	}
-	var headQuerier storage.ChunkQuerier
+	var inOrderHeadQuerier storage.ChunkQuerier
 	if maxt >= db.head.MinTime() {
 		rh := NewRangeHead(db.head, mint, maxt)
 		var err error
-		headQuerier, err = NewBlockChunkQuerier(rh, mint, maxt)
+		inOrderHeadQuerier, err = NewBlockChunkQuerier(rh, mint, maxt)
 		if err != nil {
 			return nil, errors.Wrapf(err, "open querier for head %s", rh)
 		}
@@ -1715,17 +1715,27 @@ func (db *DB) ChunkQuerier(_ context.Context, mint, maxt int64) (storage.ChunkQu
 		// won't run into a race later since any truncation that comes after will wait on this querier if it overlaps.
 		shouldClose, getNew, newMint := db.head.IsQuerierCollidingWithTruncation(mint, maxt)
 		if shouldClose {
-			if err := headQuerier.Close(); err != nil {
+			if err := inOrderHeadQuerier.Close(); err != nil {
 				return nil, errors.Wrapf(err, "closing head querier %s", rh)
 			}
-			headQuerier = nil
+			inOrderHeadQuerier = nil
 		}
 		if getNew {
 			rh := NewRangeHead(db.head, newMint, maxt)
-			headQuerier, err = NewBlockChunkQuerier(rh, newMint, maxt)
+			inOrderHeadQuerier, err = NewBlockChunkQuerier(rh, newMint, maxt)
 			if err != nil {
 				return nil, errors.Wrapf(err, "open querier for head while getting new querier %s", rh)
 			}
+		}
+	}
+
+	var outOfOrderHeadQuerier storage.ChunkQuerier
+	if overlapsClosedInterval(mint, maxt, db.head.MinOOOTime(), db.head.MaxOOOTime()) {
+		rh := NewOOORangeHead(db.head, mint, maxt)
+		var err error
+		outOfOrderHeadQuerier, err = NewBlockChunkQuerier(rh, mint, maxt)
+		if err != nil {
+			return nil, errors.Wrapf(err, "open block querier for ooo head %s", rh)
 		}
 	}
 
@@ -1743,8 +1753,11 @@ func (db *DB) ChunkQuerier(_ context.Context, mint, maxt int64) (storage.ChunkQu
 		}
 		return nil, errors.Wrapf(err, "open querier for block %s", b)
 	}
-	if headQuerier != nil {
-		blockQueriers = append(blockQueriers, headQuerier)
+	if inOrderHeadQuerier != nil {
+		blockQueriers = append(blockQueriers, inOrderHeadQuerier)
+	}
+	if outOfOrderHeadQuerier != nil {
+		blockQueriers = append(blockQueriers, outOfOrderHeadQuerier)
 	}
 
 	return storage.NewMergeChunkQuerier(blockQueriers, nil, storage.NewCompactingChunkSeriesMerger(storage.ChainedSeriesMerge)), nil

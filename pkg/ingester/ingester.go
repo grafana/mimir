@@ -635,8 +635,9 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 		// The labels must be sorted (in our case, it's guaranteed a write request
 		// has sorted labels once hit the ingester).
 
-		// Fast path in case we only have samples and they are all out of bounds.
-		if minAppendTimeAvailable && len(ts.Samples) > 0 && len(ts.Exemplars) == 0 && allOutOfBounds(ts.Samples, minAppendTime) {
+		// Fast path in case we only have samples and they are all out of bound
+		// and out of order support is not enabled.
+		if minAppendTimeAvailable && len(ts.Samples) > 0 && len(ts.Exemplars) == 0 && allOutOfBounds(ts.Samples, minAppendTime) && i.cfg.BlocksStorageConfig.TSDB.OOOAllowance == 0 {
 			failedSamplesCount += len(ts.Samples)
 			sampleOutOfBoundsCount += len(ts.Samples)
 
@@ -685,6 +686,11 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 				continue
 
 			case storage.ErrOutOfOrderSample:
+				sampleOutOfOrderCount++
+				updateFirstPartial(func() error { return wrappedTSDBIngestErr(err, model.Time(s.TimestampMs), ts.Labels) })
+				continue
+
+			case storage.ErrTooOldSample:
 				sampleOutOfOrderCount++
 				updateFirstPartial(func() error { return wrappedTSDBIngestErr(err, model.Time(s.TimestampMs), ts.Labels) })
 				continue

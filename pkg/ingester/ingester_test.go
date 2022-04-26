@@ -5684,19 +5684,30 @@ func Test_Ingester_QueryOutOfOrder(t *testing.T) {
 		queryTo        int64
 		oooFirstSample int64
 		oooLastSample  int64
+		expPushError   bool
 	}{
 		"should return in order and out of order data": {
 			queryFrom:      math.MinInt64,
 			queryTo:        math.MaxInt64,
 			oooFirstSample: 70 * time.Minute.Milliseconds(),
 			oooLastSample:  99 * time.Minute.Milliseconds(),
+			expPushError:   false,
+		},
+		"if ooo samples go back past allowance writing should return an error": {
+			queryFrom:      math.MinInt64,
+			queryTo:        math.MaxInt64,
+			oooFirstSample: 10 * time.Minute.Milliseconds(), // Allowance is 30 min, first sample is at minute 100 so first ooo sample is too old
+			oooLastSample:  99 * time.Minute.Milliseconds(),
+			expPushError:   true,
 		},
 	}
 
+	// Configure ingester with OOO Allowance
 	cfg := defaultIngesterTestConfig(t)
 	cfg.BlocksStorageConfig.TSDB.OOOAllowance = 30 * time.Minute
 	cfg.BlocksStorageConfig.TSDB.OOOCapMin = 4
 	cfg.BlocksStorageConfig.TSDB.OOOCapMax = 32
+
 	// Create ingester
 	i, err := prepareIngesterWithBlocksStorage(t, cfg, nil)
 	require.NoError(t, err)
@@ -5708,14 +5719,14 @@ func Test_Ingester_QueryOutOfOrder(t *testing.T) {
 		return i.lifecycler.HealthyInstancesCount()
 	})
 
-	// Push series
 	ctx := user.InjectOrgID(context.Background(), "test")
 
 	// Push first in order sample at minute 100
+	firstInOrderSample := 100 * time.Minute.Milliseconds()
 	serie := series{
 		lbls:      labels.Labels{{Name: labels.MetricName, Value: "test_1"}, {Name: "status", Value: "200"}},
-		value:     float64(100 * time.Minute.Milliseconds()),
-		timestamp: 100 * time.Minute.Milliseconds(),
+		value:     float64(firstInOrderSample),
+		timestamp: firstInOrderSample,
 	}
 
 	req, _, _, _ := mockWriteRequest(t, serie.lbls, serie.value, serie.timestamp)
@@ -5725,40 +5736,64 @@ func Test_Ingester_QueryOutOfOrder(t *testing.T) {
 	// Run tests
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			var expSamples []model.SamplePair
-			// Push samples within the allowance time
-			for min := 70 * time.Minute.Milliseconds(); min < 100; min = min + time.Minute.Milliseconds() {
-				req, _, _, _ := mockWriteRequest(t, serie.lbls, float64(min), min)
-				_, err = i.Push(ctx, req)
-				require.NoError(t, err)
+			expSamples := []model.SamplePair{
+				{
+					Timestamp: model.Time(firstInOrderSample),
+					Value:     model.SampleValue(firstInOrderSample),
+				},
+			}
+
+			// Push ooo samples within the allowance time in a single request
+			var samples []mimirpb.Sample
+			var lbls []labels.Labels
+			for j := testData.oooFirstSample / time.Minute.Milliseconds(); j < testData.oooLastSample/time.Minute.Milliseconds(); j++ {
+				min := int64(j) * time.Minute.Milliseconds()
+				samples = append(samples, mimirpb.Sample{
+					TimestampMs: min,
+					Value:       float64(min),
+				})
+				lbls = append(lbls, serie.lbls)
 				expSamples = append(expSamples, model.SamplePair{
 					Timestamp: model.Time(min),
 					Value:     model.SampleValue(min),
 				})
 			}
+			wReq := mimirpb.ToWriteRequest(lbls, samples, nil, nil, mimirpb.API)
+			_, err = i.Push(ctx, wReq)
+			if testData.expPushError {
+				require.Error(t, err, "should have failed on push")
+				require.ErrorAs(t, err, &storage.ErrTooOldSample)
+			} else {
+				require.NoError(t, err)
 
-			expMatrix := model.Matrix{
-				{
-					Metric: model.Metric{"__name__": "test_1", "status": "200"},
-					Values: expSamples,
-				},
+				// Sort samples by timestamp for later comparison
+				sort.Slice(expSamples, func(i, j int) bool {
+					return expSamples[i].Timestamp < expSamples[j].Timestamp
+				})
+
+				expMatrix := model.Matrix{
+					{
+						Metric: model.Metric{"__name__": "test_1", "status": "200"},
+						Values: expSamples,
+					},
+				}
+
+				req := &client.QueryRequest{
+					StartTimestampMs: testData.queryFrom,
+					EndTimestampMs:   testData.queryTo,
+					Matchers: []*client.LabelMatcher{
+						{Type: client.EQUAL, Name: model.MetricNameLabel, Value: "test_1"},
+					},
+				}
+
+				s := stream{ctx: ctx}
+				err = i.QueryStream(req, &s)
+				require.NoError(t, err)
+
+				res, err := chunkcompat.StreamsToMatrix(model.Earliest, model.Latest, s.responses)
+				require.NoError(t, err)
+				assert.ElementsMatch(t, expMatrix, res)
 			}
-
-			req := &client.QueryRequest{
-				StartTimestampMs: testData.queryFrom,
-				EndTimestampMs:   testData.queryTo,
-				Matchers: []*client.LabelMatcher{
-					{Type: client.EQUAL, Name: model.MetricNameLabel, Value: "test_1"},
-				},
-			}
-
-			s := stream{ctx: ctx}
-			err = i.QueryStream(req, &s)
-			require.NoError(t, err)
-
-			res, err := chunkcompat.StreamsToMatrix(model.Earliest, model.Latest, s.responses)
-			require.NoError(t, err)
-			assert.ElementsMatch(t, expMatrix, res)
 		})
 	}
 }
