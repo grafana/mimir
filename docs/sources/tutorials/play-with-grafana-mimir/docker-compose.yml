@@ -2,8 +2,8 @@ version: '3.4'
 services:
   minio:
     image: minio/minio
+    entrypoint: [""]
     command: ["sh", "-c", "mkdir -p /data/mimir-blocks /data/mimir-ruler /data/mimir-alertmanager && minio server --quiet /data"]
-    entrypoint: ""
     environment:
       - MINIO_ACCESS_KEY=mimir
       - MINIO_SECRET_KEY=supersecret
