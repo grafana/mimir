@@ -2371,7 +2371,7 @@ func (i *Ingester) UploadBlockFile(stream client.Ingester_UploadBlockFileServer)
 		return errors.Wrap(err, "failed to get tenant ID from gRPC request")
 	}
 
-	level.Info(i.logger).Log("msg", "processing request to add backfill file", "user", tenantID)
+	level.Info(i.logger).Log("msg", "processing request to upload block file", "user", tenantID)
 	req, err := stream.Recv()
 	if err != nil {
 		if err == io.EOF {
@@ -2380,7 +2380,7 @@ func (i *Ingester) UploadBlockFile(stream client.Ingester_UploadBlockFileServer)
 		return errors.Wrap(err, "failed to receive from gRPC stream")
 	}
 
-	level.Info(i.logger).Log("msg", "adding file to backfill", "user",
+	level.Info(i.logger).Log("msg", "uploading block file", "user",
 		tenantID, "block_id", req.BlockId, "path", req.Path, "chunkLength",
 		len(req.Chunk))
 	r := streamReader{
@@ -2395,15 +2395,15 @@ func (i *Ingester) UploadBlockFile(stream client.Ingester_UploadBlockFileServer)
 	}
 
 	dst := path.Join("uploads", req.BlockId, req.Path)
-	level.Info(i.logger).Log("msg", "uploading backfill file to bucket", "user", tenantID,
+	level.Info(i.logger).Log("msg", "uploading block file to bucket", "user", tenantID,
 		"destination", dst)
 	bkt := bucket.NewUserBucketClient(string(tenantID), i.bucket, i.limits)
 	defer bkt.Close()
 	if err := bkt.Upload(ctx, dst, &r); err != nil {
-		return errors.Wrap(err, "failed uploading backfill file to bucket")
+		return errors.Wrap(err, "failed uploading block file to bucket")
 	}
 
-	level.Info(i.logger).Log("msg", "finished uploading backfill file to bucket", "user",
+	level.Info(i.logger).Log("msg", "finished uploading block file to bucket", "user",
 		tenantID, "block_id", req.BlockId, "path", req.Path, "chunks", r.numChunks, "bytes_written", r.bytesRead,
 		"content_length", req.ContentLength)
 	if r.bytesRead != req.ContentLength {
@@ -2428,7 +2428,7 @@ func (i *Ingester) CompleteBlockUpload(ctx context.Context, req *mimirpb.Complet
 		return nil, errors.Wrap(err, "failed to get tenant ID from gRPC request")
 	}
 
-	level.Info(i.logger).Log("msg", "processing request to finish backfill", "user",
+	level.Info(i.logger).Log("msg", "processing request to complete block upload", "user",
 		tenantID, "block_id", req.BlockId, "files", len(req.Files))
 
 	bkt := bucket.NewUserBucketClient(tenantID, i.bucket, i.limits)

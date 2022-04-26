@@ -44,7 +44,6 @@ import (
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
 	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
-	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/push"
 )
@@ -294,14 +293,6 @@ func (a *API) RegisterDistributor(d *distributor.Distributor, pushConfig distrib
 		if err != nil {
 			http.Error(w, fmt.Sprintf("invalid tenant ID"), http.StatusBadRequest)
 			return
-		}
-		logger := util_log.WithContext(ctx, util_log.Logger)
-		if a.sourceIPs != nil {
-			source := a.sourceIPs.Get(r)
-			if source != "" {
-				ctx = util.AddSourceIPsToOutgoingContext(ctx, source)
-				logger = util_log.WithSourceIPs(source, logger)
-			}
 		}
 
 		if err := d.UploadBlockFile(ctx, tenantID, blockID, pth, r); err != nil {

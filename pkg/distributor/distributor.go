@@ -873,7 +873,7 @@ func (d *Distributor) UploadBlockFile(ctx context.Context, tenantID, blockID, pt
 	return d.blockUploadRPC(ctx, tenantID, blockID, func(ctx context.Context, c ingester_client.IngesterClient) error {
 		stream, err := c.UploadBlockFile(ctx)
 		if err != nil {
-			return errors.Wrap(err, "failed to get gRPC stream for adding file to backfill")
+			return errors.Wrap(err, "failed to get gRPC stream for uploading block file")
 		}
 
 		buf := make([]byte, 1024*1024)
@@ -899,8 +899,8 @@ func (d *Distributor) UploadBlockFile(ctx context.Context, tenantID, blockID, pt
 					break
 				}
 
-				level.Error(d.log).Log("msg", "streaming backfill file chunk via gRPC failed", "path", pth, "err", err)
-				return errors.Wrap(err, "failed streaming via gRPC")
+				level.Error(d.log).Log("msg", "streaming block file chunk via gRPC failed", "path", pth, "err", err)
+				return errors.Wrap(err, "failed streaming block file chunk via gRPC")
 			}
 		}
 
@@ -909,7 +909,7 @@ func (d *Distributor) UploadBlockFile(ctx context.Context, tenantID, blockID, pt
 			return err
 		}
 
-		level.Info(d.log).Log("msg", "successfully added file to backfill via gRPC", "bytesWritten", bytesWritten)
+		level.Info(d.log).Log("msg", "successfully uploaded block file via gRPC", "bytesWritten", bytesWritten)
 		return nil
 	})
 
@@ -918,7 +918,7 @@ func (d *Distributor) UploadBlockFile(ctx context.Context, tenantID, blockID, pt
 
 // CompleteBlockUpload completes a block upload session.
 func (d *Distributor) CompleteBlockUpload(ctx context.Context, tenantID, blockID string, r *http.Request) error {
-	level.Info(d.log).Log("msg", "finishing backfill", "user", tenantID, "block_id", blockID)
+	level.Info(d.log).Log("msg", "completing block upload", "user", tenantID, "block_id", blockID)
 	dec := json.NewDecoder(r.Body)
 	var payload struct {
 		Files []string `json:"files"`
@@ -935,15 +935,15 @@ func (d *Distributor) CompleteBlockUpload(ctx context.Context, tenantID, blockID
 			BlockId: blockID,
 			Files:   payload.Files,
 		}); err != nil {
-			return errors.Wrap(err, "gRPC call to finish backfill failed")
+			return errors.Wrap(err, "gRPC call to complete block upload failed")
 		}
 
-		level.Info(d.log).Log("msg", "successfully finished backfill via gRPC")
+		level.Info(d.log).Log("msg", "successfully completed block upload via gRPC")
 		return nil
 	})
 }
 
-// blockUploadRPC makes a backfill gRPC call to ingesters.
+// blockUploadRPC makes a block upload gRPC call to ingesters.
 func (d *Distributor) blockUploadRPC(ctx context.Context, tenantID, blockID string, callback func(context.Context, ingester_client.IngesterClient) error) error {
 	ctx, err := user.InjectIntoGRPCRequest(ctx)
 	if err != nil {
