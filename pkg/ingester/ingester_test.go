@@ -5684,14 +5684,12 @@ func Test_Ingester_QueryOutOfOrder(t *testing.T) {
 		queryTo        int64
 		oooFirstSample int64
 		oooLastSample  int64
-		expected       model.Matrix
 	}{
 		"should return in order and out of order data": {
 			queryFrom:      math.MinInt64,
 			queryTo:        math.MaxInt64,
 			oooFirstSample: 70 * time.Minute.Milliseconds(),
 			oooLastSample:  99 * time.Minute.Milliseconds(),
-			expected:       model.Matrix{},
 		},
 	}
 
