@@ -890,9 +890,10 @@ func (d *Distributor) UploadBackfillFile(ctx context.Context, tenantID, blockID,
 
 			bytesWritten += int64(n)
 			if err := stream.Send(&mimirpb.UploadBackfillFileRequest{
-				BlockId: blockID,
-				Path:    pth,
-				Chunk:   buf[:n],
+				BlockId:       blockID,
+				Path:          pth,
+				Chunk:         buf[:n],
+				ContentLength: r.ContentLength,
 			}); err != nil {
 				if err == io.EOF {
 					break

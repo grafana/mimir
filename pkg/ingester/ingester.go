@@ -2301,6 +2301,66 @@ func (i *Ingester) RingHandler() http.Handler {
 	return i.lifecycler
 }
 
+type streamReader struct {
+	logger    log.Logger
+	stream    client.Ingester_UploadBackfillFileServer
+	chunk     []byte
+	tenantID  string
+	blockID   string
+	pth       string
+	size      int64
+	numChunks int
+	bytesRead int64
+}
+
+// ObjectSize returns the size of the stream in bytes.
+//
+// Implements github.com/thanos-io/thanos/pkg/objstore.ObjectSizer.
+func (r *streamReader) ObjectSize() (int64, error) {
+	return r.size, nil
+}
+
+// Read reads up to len(p) bytes into p.
+//
+// The number of bytes read and any error encountered are returned.
+func (r *streamReader) Read(p []byte) (int, error) {
+	// Iterate until p is filled, or there's no more to read
+	bytesRead := 0
+	for bytesRead < len(p) {
+		if r.chunk == nil {
+			// Need to get the next chunk
+			req, err := r.stream.Recv()
+			if err != nil {
+				if err == io.EOF {
+					return bytesRead, io.EOF
+				}
+
+				level.Warn(r.logger).Log("msg", "failed reading from gRPC stream", "err", err)
+				return bytesRead, errors.Wrap(err, "failed to receive from gRPC stream")
+			}
+
+			r.chunk = req.Chunk
+			r.numChunks++
+		}
+
+		// Read from chunk
+		readNow := copy(p[bytesRead:], r.chunk)
+		bytesRead += readNow
+		r.bytesRead += int64(readNow)
+		r.chunk = r.chunk[readNow:]
+		if len(r.chunk) == 0 {
+			r.chunk = nil
+		}
+	}
+
+	if bytesRead != len(p) {
+		panic(fmt.Sprintf("number of bytes read (%d) differs from the requested amount (%d)",
+			bytesRead, len(p)))
+	}
+
+	return bytesRead, nil
+}
+
 func (i *Ingester) UploadBackfillFile(stream client.Ingester_UploadBackfillFileServer) error {
 	if err := i.checkRunning(); err != nil {
 		return err
@@ -2312,66 +2372,47 @@ func (i *Ingester) UploadBackfillFile(stream client.Ingester_UploadBackfillFileS
 	}
 
 	level.Info(i.logger).Log("msg", "processing request to add backfill file", "user", tenantID)
-
-	f, err := os.CreateTemp("", "")
+	req, err := stream.Recv()
 	if err != nil {
-		return errors.Wrap(err, "creating temp file")
-	}
-	defer func() {
-		_ = f.Close()
-		if err := os.Remove(f.Name()); err != nil {
-			level.Warn(i.logger).Log("msg", "failed to remove temporary file", "file", f.Name(), "err", err)
+		if err == io.EOF {
+			return fmt.Errorf("failed to receive anything from gRPC stream")
 		}
-	}()
-
-	var blockID string
-	var pth string
-	var chunk int
-	var bytesWritten int64
-	for {
-		req, err := stream.Recv()
-		if err != nil {
-			if err == io.EOF {
-				break
-			}
-			return errors.Wrap(err, "failed to receive from gRPC stream")
-		}
-
-		if blockID == "" {
-			blockID = req.BlockId
-			pth = req.Path
-			level.Info(i.logger).Log("msg", "adding file to backfill", "user",
-				tenantID, "block_id", blockID, "path", pth, "chunkLength",
-				len(req.Chunk))
-			chunk = 1
-		} else {
-			chunk++
-		}
-
-		if _, err := f.Write(req.Chunk); err != nil {
-			return errors.Wrap(err, "failed to write to file")
-		}
-		bytesWritten += int64(len(req.Chunk))
-	}
-	if chunk == 0 {
-		level.Warn(i.logger).Log("msg", "no backfill file content was sent")
-		return stream.SendAndClose(&mimirpb.UploadBackfillFileResponse{})
+		return errors.Wrap(err, "failed to receive from gRPC stream")
 	}
 
-	level.Info(i.logger).Log("msg", "finished writing chunks to backfill file", "user",
-		tenantID, "block_id", blockID, "path", pth, "chunks", chunk, "bytesWritten", bytesWritten)
-
-	if _, err := f.Seek(0, 0); err != nil {
-		return errors.Wrap(err, "failed seeking in file")
+	level.Info(i.logger).Log("msg", "adding file to backfill", "user",
+		tenantID, "block_id", req.BlockId, "path", req.Path, "chunkLength",
+		len(req.Chunk))
+	r := streamReader{
+		logger:    i.logger,
+		stream:    stream,
+		chunk:     req.Chunk,
+		tenantID:  tenantID,
+		blockID:   req.BlockId,
+		pth:       req.Path,
+		size:      req.ContentLength,
+		numChunks: 1,
 	}
 
-	dst := path.Join("uploads", blockID, pth)
+	dst := path.Join("uploads", req.BlockId, req.Path)
 	level.Info(i.logger).Log("msg", "uploading backfill file to bucket", "user", tenantID,
 		"destination", dst)
 	bkt := bucket.NewUserBucketClient(string(tenantID), i.bucket, i.limits)
 	defer bkt.Close()
-	if err := bkt.Upload(ctx, dst, f); err != nil {
+	if err := bkt.Upload(ctx, dst, &r); err != nil {
 		return errors.Wrap(err, "failed uploading backfill file to bucket")
+	}
+
+	level.Info(i.logger).Log("msg", "finished uploading backfill file to bucket", "user",
+		tenantID, "block_id", req.BlockId, "path", req.Path, "chunks", r.numChunks, "bytes_written", r.bytesRead,
+		"content_length", req.ContentLength)
+	if r.bytesRead != req.ContentLength {
+		level.Error(i.logger).Log("msg", "the number of bytes written differs from the expectation",
+			"bytes_written", r.bytesRead, "content_length", req.ContentLength)
+		return fmt.Errorf("the number of bytes written (%d) differs from the expectation (%d)", r.bytesRead, req.ContentLength)
+	}
+	if r.bytesRead == 0 {
+		level.Warn(i.logger).Log("msg", "no backfill file content was sent")
 	}
 
 	return stream.SendAndClose(&mimirpb.UploadBackfillFileResponse{})

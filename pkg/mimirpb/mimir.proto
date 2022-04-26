@@ -32,6 +32,7 @@ message UploadBackfillFileRequest {
   string block_id = 1;
   string path = 2;
   bytes chunk = 3;
+  int64 content_length = 4;
 }
 
 message UploadBackfillFileResponse {}
