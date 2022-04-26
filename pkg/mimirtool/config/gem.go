@@ -85,6 +85,20 @@ func GEM170ToGEM200Mapper() Mapper {
 		setOldDefaultExplicitly("blocks_storage.backend"),
 		setOldDefaultExplicitly("ruler_storage.backend"),
 		setOldDefaultExplicitly("alertmanager_storage.backend"),
+		// Prevent activity_tracker.filepath from being updates with a new default (./metrics-activity.log) implicitly and always set it to the old default (./active-query-tracker)
+		setOldDefaultWithNewPathExplicitly("querier.active_query_tracker_dir", "activity_tracker.filepath"),
+		// Prevent alertmanager.data_dir from being updates with a new default (./data-alertmanager/) implicitly and always set it to the old default (data/)
+		setOldDefaultExplicitly("alertmanager.data_dir"),
+		// Prevent blocks_storage.filesystem.dir from being updates with a new default (blocks) implicitly and always set it to the old default ("")
+		setOldDefaultExplicitly("blocks_storage.filesystem.dir"),
+		// Prevent compactor.data_dir from being updates with a new default (./data-compactor/) implicitly and always set it to the old default (./data)
+		setOldDefaultExplicitly("compactor.data_dir"),
+		// Prevent ruler.rule_path from being updates with a new default (./data-ruler/) implicitly and always set it to the old default (/rules)
+		setOldDefaultExplicitly("ruler.rule_path"),
+		// Prevent ruler_storage.filesystem.dir from being updates with a new default (ruler) implicitly and always set it to the old default ("")
+		setOldDefaultExplicitly("ruler_storage.filesystem.dir"),
+		// Prevent graphite.querier.schemas.backend from being updated with a new default (filesystem) implicitly and always set it to the old default (s3)
+		setOldDefaultExplicitly("graphite.querier.schemas.backend"),
 	}
 }
 
