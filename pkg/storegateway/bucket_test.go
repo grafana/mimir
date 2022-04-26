@@ -1117,7 +1117,7 @@ func uploadTestBlock(t testing.TB, tmpDir string, bkt objstore.Bucket, series in
 	headOpts := tsdb.DefaultHeadOptions()
 	headOpts.ChunkDirRoot = tmpDir
 	headOpts.ChunkRange = 1000
-	h, err := tsdb.NewHead(nil, nil, nil, headOpts, nil)
+	h, err := tsdb.NewHead(nil, nil, nil, nil, headOpts, nil)
 	assert.NoError(t, err)
 	defer func() {
 		assert.NoError(t, h.Close())
@@ -1489,7 +1489,7 @@ func TestBucketSeries_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 	// This allows to pick time range that will correspond to number of series picked 1:1.
 	{
 		// Block 1.
-		h, err := tsdb.NewHead(nil, nil, nil, headOpts, nil)
+		h, err := tsdb.NewHead(nil, nil, nil, nil, headOpts, nil)
 		assert.NoError(t, err)
 		defer func() { assert.NoError(t, h.Close()) }()
 
@@ -1528,7 +1528,7 @@ func TestBucketSeries_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 	var b2 *bucketBlock
 	{
 		// Block 2, do not load this block yet.
-		h, err := tsdb.NewHead(nil, nil, nil, headOpts, nil)
+		h, err := tsdb.NewHead(nil, nil, nil, nil, headOpts, nil)
 		assert.NoError(t, err)
 		defer func() { assert.NoError(t, h.Close()) }()
 
@@ -1763,7 +1763,7 @@ func TestSeries_BlockWithMultipleChunks(t *testing.T) {
 	headOpts.ChunkDirRoot = filepath.Join(tmpDir, "block")
 	headOpts.ChunkRange = math.MaxInt64
 
-	h, err := tsdb.NewHead(nil, nil, nil, headOpts, nil)
+	h, err := tsdb.NewHead(nil, nil, nil, nil, headOpts, nil)
 	assert.NoError(t, err)
 	defer func() { assert.NoError(t, h.Close()) }()
 
@@ -1913,7 +1913,7 @@ func createBlockWithOneSeriesWithStep(t test.TB, dir string, lbls labels.Labels,
 	headOpts := tsdb.DefaultHeadOptions()
 	headOpts.ChunkDirRoot = dir
 	headOpts.ChunkRange = int64(totalSamples) * step
-	h, err := tsdb.NewHead(nil, nil, nil, headOpts, nil)
+	h, err := tsdb.NewHead(nil, nil, nil, nil, headOpts, nil)
 	assert.NoError(t, err)
 	defer func() { assert.NoError(t, h.Close()) }()
 
@@ -2564,7 +2564,7 @@ func createHeadWithSeries(t testing.TB, j int, opts headGenOptions) (*tsdb.Head,
 
 	headOpts := tsdb.DefaultHeadOptions()
 	headOpts.ChunkDirRoot = opts.TSDBDir
-	h, err := tsdb.NewHead(nil, nil, w, headOpts, nil)
+	h, err := tsdb.NewHead(nil, nil, w, nil, headOpts, nil)
 	assert.NoError(t, err)
 
 	app := h.Appender(context.Background())
@@ -2616,7 +2616,7 @@ func createHeadWithSeries(t testing.TB, j int, opts headGenOptions) (*tsdb.Head,
 		}
 
 		for _, c := range chunkMetas {
-			chEnc, err := chks.Chunk(c.Ref)
+			chEnc, err := chks.Chunk(c)
 			assert.NoError(t, err)
 
 			// Open Chunk.

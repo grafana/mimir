@@ -29,7 +29,7 @@ func TestDiffVarintCodec(t *testing.T) {
 	headOpts := tsdb.DefaultHeadOptions()
 	headOpts.ChunkDirRoot = chunksDir
 	headOpts.ChunkRange = 1000
-	h, err := tsdb.NewHead(nil, nil, nil, headOpts, nil)
+	h, err := tsdb.NewHead(nil, nil, nil, nil, headOpts, nil)
 	assert.NoError(t, err)
 	t.Cleanup(func() {
 		assert.NoError(t, h.Close())

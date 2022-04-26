@@ -323,6 +323,9 @@ type tsdbMetrics struct {
 	tsdbTimeRetentionCount *prometheus.Desc
 	tsdbBlocksBytes        *prometheus.Desc
 
+	tsdbOOOAppendedSamples *prometheus.Desc
+	tsdbTooOldSamples      *prometheus.Desc
+
 	checkpointDeleteFail    *prometheus.Desc
 	checkpointDeleteTotal   *prometheus.Desc
 	checkpointCreationFail  *prometheus.Desc
@@ -505,6 +508,15 @@ func newTSDBMetrics(r prometheus.Registerer) *tsdbMetrics {
 			"Total number of out of order exemplar ingestion failed attempts.",
 			nil, nil),
 
+		tsdbOOOAppendedSamples: prometheus.NewDesc(
+			"cortex_ingester_tsdb_out_of_order_samples_appended_total",
+			"Total number of out of order samples appended.",
+			nil, nil),
+		tsdbTooOldSamples: prometheus.NewDesc(
+			"cortex_ingester_tsdb_too_old_samples_total",
+			"Total number of too old samples.",
+			nil, nil),
+
 		memSeriesCreatedTotal: prometheus.NewDesc(
 			"cortex_ingester_memory_series_created_total",
 			"The total number of series that were created per user.",
@@ -565,6 +577,9 @@ func (sm *tsdbMetrics) Describe(out chan<- *prometheus.Desc) {
 	out <- sm.tsdbExemplarLastTs
 	out <- sm.tsdbExemplarsOutOfOrder
 
+	out <- sm.tsdbOOOAppendedSamples
+	out <- sm.tsdbTooOldSamples
+
 	out <- sm.memSeriesCreatedTotal
 	out <- sm.memSeriesRemovedTotal
 }
@@ -614,6 +629,9 @@ func (sm *tsdbMetrics) Collect(out chan<- prometheus.Metric) {
 	data.SendSumOfGaugesPerUser(out, sm.tsdbExemplarSeriesInStorage, "prometheus_tsdb_exemplar_series_with_exemplars_in_storage")
 	data.SendSumOfGaugesPerUser(out, sm.tsdbExemplarLastTs, "prometheus_tsdb_exemplar_last_exemplars_timestamp_seconds")
 	data.SendSumOfCounters(out, sm.tsdbExemplarsOutOfOrder, "prometheus_tsdb_exemplar_out_of_order_exemplars_total")
+
+	data.SendSumOfCounters(out, sm.tsdbOOOAppendedSamples, "prometheus_tsdb_head_out_of_order_samples_appended_total")
+	data.SendSumOfCounters(out, sm.tsdbTooOldSamples, "prometheus_tsdb_too_old_samples_total")
 
 	data.SendSumOfCountersPerUser(out, sm.memSeriesCreatedTotal, "prometheus_tsdb_head_series_created_total")
 	data.SendSumOfCountersPerUser(out, sm.memSeriesRemovedTotal, "prometheus_tsdb_head_series_removed_total")

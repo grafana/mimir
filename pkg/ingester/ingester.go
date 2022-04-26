@@ -86,6 +86,7 @@ const (
 	instanceIngestionRateTickInterval = time.Second
 
 	sampleOutOfOrder     = "sample-out-of-order"
+	sampleTooOld         = "sample-too-old"
 	newValueForTimestamp = "new-value-for-timestamp"
 	sampleOutOfBounds    = "sample-out-of-bounds"
 )
@@ -604,6 +605,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 		startAppend               = time.Now()
 		sampleOutOfBoundsCount    = 0
 		sampleOutOfOrderCount     = 0
+		sampleTooOldCount         = 0
 		newValueForTimestampCount = 0
 		perUserSeriesLimitCount   = 0
 		perMetricSeriesLimitCount = 0
@@ -629,8 +631,9 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 		// The labels must be sorted (in our case, it's guaranteed a write request
 		// has sorted labels once hit the ingester).
 
-		// Fast path in case we only have samples and they are all out of bounds.
-		if minAppendTimeAvailable && len(ts.Samples) > 0 && len(ts.Exemplars) == 0 && allOutOfBounds(ts.Samples, minAppendTime) {
+		// Fast path in case we only have samples and they are all out of bound
+		// and out of order support is not enabled.
+		if minAppendTimeAvailable && len(ts.Samples) > 0 && len(ts.Exemplars) == 0 && allOutOfBounds(ts.Samples, minAppendTime) && i.cfg.BlocksStorageConfig.TSDB.OOOAllowance == 0 {
 			failedSamplesCount += len(ts.Samples)
 			sampleOutOfBoundsCount += len(ts.Samples)
 
@@ -680,6 +683,11 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 
 			case storage.ErrOutOfOrderSample:
 				sampleOutOfOrderCount++
+				updateFirstPartial(func() error { return wrappedTSDBIngestErr(err, model.Time(s.TimestampMs), ts.Labels) })
+				continue
+
+			case storage.ErrTooOldSample:
+				sampleTooOldCount++
 				updateFirstPartial(func() error { return wrappedTSDBIngestErr(err, model.Time(s.TimestampMs), ts.Labels) })
 				continue
 
@@ -784,6 +792,9 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 	}
 	if sampleOutOfOrderCount > 0 {
 		validation.DiscardedSamples.WithLabelValues(sampleOutOfOrder, userID).Add(float64(sampleOutOfOrderCount))
+	}
+	if sampleTooOldCount > 0 {
+		validation.DiscardedSamples.WithLabelValues(sampleTooOld, userID).Add(float64(sampleTooOldCount))
 	}
 	if newValueForTimestampCount > 0 {
 		validation.DiscardedSamples.WithLabelValues(newValueForTimestamp, userID).Add(float64(newValueForTimestampCount))
@@ -1476,7 +1487,9 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 		EnableMemorySnapshotOnShutdown: i.cfg.BlocksStorageConfig.TSDB.MemorySnapshotOnShutdown,
 		IsolationDisabled:              !i.cfg.BlocksStorageConfig.TSDB.IsolationEnabled,
 		HeadChunksWriteQueueSize:       i.cfg.BlocksStorageConfig.TSDB.HeadChunksWriteQueueSize,
-		NewChunkDiskMapper:             i.cfg.BlocksStorageConfig.TSDB.NewChunkDiskMapper,
+		OOOAllowance:                   int64(i.cfg.BlocksStorageConfig.TSDB.OOOAllowance / time.Millisecond),
+		OOOCapMin:                      int64(i.cfg.BlocksStorageConfig.TSDB.OOOCapMin),
+		OOOCapMax:                      int64(i.cfg.BlocksStorageConfig.TSDB.OOOCapMax),
 	}, nil)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to open TSDB: %s", udir)
