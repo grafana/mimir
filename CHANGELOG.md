@@ -60,6 +60,7 @@
 * [ENHANCEMENT] Dashboards: Show QPS and latency of the Alertmanager Distributor. #1696
 * [ENHANCEMENT] Playbooks: Add Alertmanager suggestions for `MimirRequestErrors` and `MimirRequestLatency` #1702
 * [ENHANCEMENT] Dashboards: Allow custom datasources. #1749
+* [ENHANCEMENT] Dashboards: Optionally drop gateway widgets. #1761
 * [BUGFIX] Dashboards: Fix "Failed evaluation rate" panel on Tenants dashboard. #1629
 * [BUGFIX] Honor the configured `per_instance_label` in all dashboards and alerts. #1697
 

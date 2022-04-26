@@ -88,7 +88,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
         ),
       )
     )
-    .addRow(
+    .addRowIf(
+      $._config.gateway_enabled,
       $.row('Gateway')
       .addPanel(
         $.panel('Requests / sec') +

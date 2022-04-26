@@ -4,7 +4,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
   'mimir-alertmanager-resources.json':
     ($.dashboard('Alertmanager resources') + { uid: '68b66aed90ccab448009089544a8d6c6' })
     .addClusterSelectorTemplates(false)
-    .addRow(
+    .addRowIf(
+      $._config.gateway_enabled,
       $.row('Gateway')
       .addPanel(
         $.containerCPUUsagePanel('CPU', $._config.job_names.gateway),
