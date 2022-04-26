@@ -7,7 +7,6 @@ package distributor
 
 import (
 	"context"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -861,7 +860,7 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 
 // CreateBlockUpload requests the creation of a block upload session.
 func (d *Distributor) CreateBlockUpload(ctx context.Context, tenantID, blockID string) error {
-	level.Info(d.log).Log("msg", "creation block upload session", "user", tenantID, "block_id", blockID)
+	level.Info(d.log).Log("msg", "creating block upload session", "user", tenantID, "block_id", blockID)
 	// TODO: Verify that block hasn't already been ingested
 	return nil
 }
@@ -919,21 +918,15 @@ func (d *Distributor) UploadBlockFile(ctx context.Context, tenantID, blockID, pt
 // CompleteBlockUpload completes a block upload session.
 func (d *Distributor) CompleteBlockUpload(ctx context.Context, tenantID, blockID string, r *http.Request) error {
 	level.Info(d.log).Log("msg", "completing block upload", "user", tenantID, "block_id", blockID)
-	dec := json.NewDecoder(r.Body)
-	var payload struct {
-		Files []string `json:"files"`
-	}
-	if err := dec.Decode(&payload); err != nil {
-		return errors.Wrap(err, "failed to decode JSON payload")
-	}
-	if len(payload.Files) == 0 {
-		return fmt.Errorf("no files listed in payload")
+	metaB, err := io.ReadAll(r.Body)
+	if err != nil {
+		return errors.Wrap(err, "failed to read request payload")
 	}
 
 	return d.blockUploadRPC(ctx, tenantID, blockID, func(ctx context.Context, c ingester_client.IngesterClient) error {
 		if _, err := c.CompleteBlockUpload(ctx, &mimirpb.CompleteBlockUploadRequest{
 			BlockId: blockID,
-			Files:   payload.Files,
+			Meta:    metaB,
 		}); err != nil {
 			return errors.Wrap(err, "gRPC call to complete block upload failed")
 		}

@@ -15,7 +15,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/pkg/errors"
-	"github.com/prometheus/prometheus/tsdb"
+	"github.com/thanos-io/thanos/pkg/block/metadata"
 )
 
 func (c *MimirClient) Backfill(ctx context.Context, source string, logger log.Logger) error {
@@ -41,15 +41,7 @@ func (c *MimirClient) backfillBlock(ctx context.Context, dpath string, logger lo
 	}
 
 	dec := json.NewDecoder(f)
-	var blockMeta struct {
-		tsdb.BlockMeta
-
-		Thanos struct {
-			Files []struct {
-				RelPath string `json:"rel_path"`
-			} `json:"files"`
-		} `json:"thanos"`
-	}
+	var blockMeta metadata.Meta
 	if err := dec.Decode(&blockMeta); err != nil {
 		return errors.Wrapf(err, "failed to decode %q", metaPath)
 	}
@@ -75,6 +67,11 @@ func (c *MimirClient) backfillBlock(ctx context.Context, dpath string, logger lo
 			return err
 		}
 		if e.IsDir() {
+			return nil
+		}
+
+		if filepath.Base(pth) == "meta.json" {
+			// Don't upload meta.json in this step
 			return nil
 		}
 
@@ -108,18 +105,12 @@ func (c *MimirClient) backfillBlock(ctx context.Context, dpath string, logger lo
 		return errors.Wrapf(err, "failed to traverse %q", dpath)
 	}
 
-	var payload struct {
-		Files []string `json:"files"`
-	}
-	for _, f := range blockMeta.Thanos.Files {
-		payload.Files = append(payload.Files, f.RelPath)
-	}
-	payloadB, err := json.Marshal(payload)
+	payload, err := json.Marshal(blockMeta)
 	if err != nil {
 		return errors.Wrap(err, "failed to JSON encode payload")
 	}
 	res, err = c.doRequest(fmt.Sprintf("/api/v1/upload/block/%s?uploadComplete=true", blockID), http.MethodPost,
-		bytes.NewBuffer(payloadB), int64(len(payloadB)))
+		bytes.NewBuffer(payload), int64(len(payload)))
 	if err != nil {
 		return errors.Wrap(err, "request to finish backfill failed")
 	}

@@ -39,7 +39,7 @@ message UploadBlockFileResponse {}
 
 message CompleteBlockUploadRequest {
   string block_id = 1;
-  repeated string files = 2;
+  bytes meta = 2;
 }
 
 message CompleteBlockUploadResponse {}

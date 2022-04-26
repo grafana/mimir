@@ -9,7 +9,9 @@
 package ingester
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -2428,13 +2430,19 @@ func (i *Ingester) CompleteBlockUpload(ctx context.Context, req *mimirpb.Complet
 		return nil, errors.Wrap(err, "failed to get tenant ID from gRPC request")
 	}
 
+	var meta metadata.Meta
+	if err := json.Unmarshal(req.Meta, &meta); err != nil {
+		return nil, errors.Wrap(err, "failed to decode meta.json")
+	}
+
 	level.Info(i.logger).Log("msg", "processing request to complete block upload", "user",
-		tenantID, "block_id", req.BlockId, "files", len(req.Files))
+		tenantID, "block_id", req.BlockId, "files", len(meta.Thanos.Files))
 
 	bkt := bucket.NewUserBucketClient(tenantID, i.bucket, i.limits)
 	defer bkt.Close()
 
-	for _, fpath := range req.Files {
+	for _, file := range meta.Thanos.Files {
+		fpath := file.RelPath
 		if path.Base(fpath) == "meta.json" {
 			continue
 		}
@@ -2447,12 +2455,12 @@ func (i *Ingester) CompleteBlockUpload(ctx context.Context, req *mimirpb.Complet
 		}
 	}
 
-	// Move meta.json into place last, so the block isn't considered complete before it actually is
-	src := path.Join(tenantID, "uploads", req.BlockId, "meta.json")
+	// Write meta.json, so the block isn't considered complete before it actually is
 	dst := path.Join(tenantID, req.BlockId, "meta.json")
-	level.Info(i.logger).Log("msg", "moving file in bucket", "src", src, "dst", dst)
-	if err := bkt.Move(ctx, src, dst); err != nil {
-		return nil, errors.Wrapf(err, "failed moving %s to %s in bucket", src, dst)
+	level.Info(i.logger).Log("msg", "writing meta.json in bucket", "dst", dst)
+	buf := bytes.NewBuffer(req.Meta)
+	if err := bkt.Upload(ctx, dst, buf); err != nil {
+		return nil, errors.Wrap(err, "failed uploading meta.json to bucket")
 	}
 
 	blockDir := path.Join(tenantID, "uploads", req.BlockId)
