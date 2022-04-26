@@ -88,12 +88,17 @@ func (sp *schedulerProcessor) notifyShutdown(ctx context.Context, conn *grpc.Cli
 	}
 }
 
-func (sp *schedulerProcessor) processQueriesOnSingleStream(ctx context.Context, conn *grpc.ClientConn, address string) {
+func (sp *schedulerProcessor) processQueriesOnSingleStream(workerCtx context.Context, conn *grpc.ClientConn, address string) {
 	schedulerClient := schedulerpb.NewSchedulerForQuerierClient(conn)
 
-	backoff := backoff.New(ctx, processorBackoffConfig)
+	// Run the querier loop (and so all the queries) in a dedicated context that we call the "execution context".
+	// The execution context is cancelled once the processCtx is cancelled AND there's no inflight query executing.
+	exec := newExecutionContext(workerCtx, sp.log)
+	defer exec.cancel()
+
+	backoff := backoff.New(exec.context(), processorBackoffConfig)
 	for backoff.Ongoing() {
-		c, err := schedulerClient.QuerierLoop(ctx)
+		c, err := schedulerClient.QuerierLoop(exec.context())
 		if err == nil {
 			err = c.Send(&schedulerpb.QuerierToScheduler{QuerierID: sp.querierID})
 		}
@@ -104,7 +109,7 @@ func (sp *schedulerProcessor) processQueriesOnSingleStream(ctx context.Context, 
 			continue
 		}
 
-		if err := sp.querierLoop(c, address); err != nil {
+		if err := sp.querierLoop(c, address, exec); err != nil {
 			level.Error(sp.log).Log("msg", "error processing requests from scheduler", "err", err, "addr", address)
 			backoff.Wait()
 			continue
@@ -115,7 +120,7 @@ func (sp *schedulerProcessor) processQueriesOnSingleStream(ctx context.Context, 
 }
 
 // process loops processing requests on an established stream.
-func (sp *schedulerProcessor) querierLoop(c schedulerpb.SchedulerForQuerier_QuerierLoopClient, address string) error {
+func (sp *schedulerProcessor) querierLoop(c schedulerpb.SchedulerForQuerier_QuerierLoopClient, address string, exec *executionContext) error {
 	// Build a child context so we can cancel a query when the stream is closed.
 	ctx, cancel := context.WithCancel(c.Context())
 	defer cancel()
@@ -126,12 +131,16 @@ func (sp *schedulerProcessor) querierLoop(c schedulerpb.SchedulerForQuerier_Quer
 			return err
 		}
 
+		exec.queryStarted()
+
 		// Handle the request on a "background" goroutine, so we go back to
 		// blocking on c.Recv().  This allows us to detect the stream closing
 		// and cancel the query.  We don't actually handle queries in parallel
 		// here, as we're running in lock step with the server - each Recv is
 		// paired with a Send.
 		go func() {
+			defer exec.queryEnded()
+
 			// We need to inject user into context for sending response back.
 			ctx := user.InjectOrgID(ctx, request.UserID)
 
