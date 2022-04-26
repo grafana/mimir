@@ -204,6 +204,7 @@ func buildRequest(p, m string, endpoint url.URL, payload io.Reader, contentLengt
 		endpoint.RawPath = joinPath(endpoint.EscapedPath(), pURL.EscapedPath())
 	}
 	endpoint.Path = joinPath(endpoint.Path, pURL.Path)
+	endpoint.RawQuery = pURL.RawQuery
 	r, err := http.NewRequest(m, endpoint.String(), payload)
 	if err != nil {
 		return nil, err
