@@ -639,7 +639,10 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 
 		// Fast path in case we only have samples and they are all out of bound
 		// and out of order support is not enabled.
-		if minAppendTimeAvailable && len(ts.Samples) > 0 && len(ts.Exemplars) == 0 && allOutOfBounds(ts.Samples, minAppendTime) && i.cfg.BlocksStorageConfig.TSDB.OOOAllowance == 0 {
+		// TODO(jesus.vazquez) If we had too many old samples we might want to
+		// extend the fast path to fail early.
+		if i.cfg.BlocksStorageConfig.TSDB.OOOAllowance == 0 && minAppendTimeAvailable &&
+			len(ts.Samples) > 0 && len(ts.Exemplars) == 0 && allOutOfBounds(ts.Samples, minAppendTime) {
 			failedSamplesCount += len(ts.Samples)
 			sampleOutOfBoundsCount += len(ts.Samples)
 
