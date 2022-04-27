@@ -29,12 +29,16 @@ var (
 	}
 )
 
-func newFrontendProcessor(cfg Config, handler RequestHandler, log log.Logger) processor {
+func newFrontendProcessor(cfg Config, handler RequestHandler, log log.Logger) *frontendProcessor {
 	return &frontendProcessor{
 		log:            log,
 		handler:        handler,
 		maxMessageSize: cfg.GRPCClientConfig.MaxSendMsgSize,
 		querierID:      cfg.QuerierID,
+
+		frontendClientFactory: func(conn *grpc.ClientConn) frontendv1pb.FrontendClient {
+			return frontendv1pb.NewFrontendClient(conn)
+		},
 	}
 }
 
@@ -45,11 +49,13 @@ type frontendProcessor struct {
 	querierID      string
 
 	log log.Logger
+
+	frontendClientFactory func(conn *grpc.ClientConn) frontendv1pb.FrontendClient
 }
 
 // notifyShutdown implements processor.
 func (fp *frontendProcessor) notifyShutdown(ctx context.Context, conn *grpc.ClientConn, address string) {
-	client := frontendv1pb.NewFrontendClient(conn)
+	client := fp.frontendClientFactory(conn)
 
 	req := &frontendv1pb.NotifyClientShutdownRequest{ClientID: fp.querierID}
 	if _, err := client.NotifyClientShutdown(ctx, req); err != nil {
@@ -59,19 +65,24 @@ func (fp *frontendProcessor) notifyShutdown(ctx context.Context, conn *grpc.Clie
 }
 
 // runOne loops, trying to establish a stream to the frontend to begin request processing.
-func (fp *frontendProcessor) processQueriesOnSingleStream(ctx context.Context, conn *grpc.ClientConn, address string) {
-	client := frontendv1pb.NewFrontendClient(conn)
+func (fp *frontendProcessor) processQueriesOnSingleStream(workerCtx context.Context, conn *grpc.ClientConn, address string) {
+	client := fp.frontendClientFactory(conn)
 
-	backoff := backoff.New(ctx, processorBackoffConfig)
+	// Run the querier loop (and so all the queries) in a dedicated context that we call the "execution context".
+	// The execution context is cancelled once the workerCtx is cancelled AND there's no inflight query executing.
+	exec := newExecutionContext(workerCtx, fp.log)
+	defer exec.cancel()
+
+	backoff := backoff.New(exec.context(), processorBackoffConfig)
 	for backoff.Ongoing() {
-		c, err := client.Process(ctx)
+		c, err := client.Process(exec.context())
 		if err != nil {
 			level.Error(fp.log).Log("msg", "error contacting frontend", "address", address, "err", err)
 			backoff.Wait()
 			continue
 		}
 
-		if err := fp.process(c); err != nil {
+		if err := fp.process(c, exec); err != nil {
 			level.Error(fp.log).Log("msg", "error processing requests", "address", address, "err", err)
 			backoff.Wait()
 			continue
@@ -82,7 +93,7 @@ func (fp *frontendProcessor) processQueriesOnSingleStream(ctx context.Context, c
 }
 
 // process loops processing requests on an established stream.
-func (fp *frontendProcessor) process(c frontendv1pb.Frontend_ProcessClient) error {
+func (fp *frontendProcessor) process(c frontendv1pb.Frontend_ProcessClient, exec *executionContext) error {
 	// Build a child context so we can cancel a query when the stream is closed.
 	ctx, cancel := context.WithCancel(c.Context())
 	defer cancel()
@@ -95,12 +106,16 @@ func (fp *frontendProcessor) process(c frontendv1pb.Frontend_ProcessClient) erro
 
 		switch request.Type {
 		case frontendv1pb.HTTP_REQUEST:
+			exec.queryStarted()
+
 			// Handle the request on a "background" goroutine, so we go back to
 			// blocking on c.Recv().  This allows us to detect the stream closing
 			// and cancel the query.  We don't actually handle queries in parallel
 			// here, as we're running in lock step with the server - each Recv is
 			// paired with a Send.
 			go fp.runRequest(ctx, request.HttpRequest, request.StatsEnabled, func(response *httpgrpc.HTTPResponse, stats *stats.Stats) error {
+				defer exec.queryEnded()
+
 				return c.Send(&frontendv1pb.ClientToFrontend{
 					HttpResponse: response,
 					Stats:        stats,
