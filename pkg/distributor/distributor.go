@@ -881,7 +881,7 @@ func containsLabelValue(labels []mimirpb.LabelAdapter, lvs map[string]map[string
 
 	for _, l := range labels {
 		if values, ok := lvs[l.Name]; ok {
-			if _, ok := values[l.Value]; ok {
+			if _, ok = values[l.Value]; ok {
 				return true
 			}
 		}
