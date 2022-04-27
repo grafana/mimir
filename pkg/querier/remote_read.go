@@ -26,10 +26,19 @@ import (
 const (
 	// Queries are a set of matchers with time ranges - should not get into megabytes
 	maxRemoteReadQuerySize = 1024 * 1024
+
+	// Maximum number of bytes in frame when using streaming remote read.
+	// Google's recommendation is to keep protobuf message not larger than 1MB.
+	// https://developers.google.com/protocol-buffers/docs/techniques#large-data
+	maxRemoteReadFrameBytes = 1024 * 1024
 )
 
 // RemoteReadHandler handles Prometheus remote read requests.
-func RemoteReadHandler(q storage.SampleAndChunkQueryable, maxBytesInFrame int, lg log.Logger) http.Handler {
+func RemoteReadHandler(q storage.SampleAndChunkQueryable, logger log.Logger) http.Handler {
+	return remoteReadHandler(q, maxRemoteReadFrameBytes, logger)
+}
+
+func remoteReadHandler(q storage.SampleAndChunkQueryable, maxBytesInFrame int, lg log.Logger) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		var req client.ReadRequest

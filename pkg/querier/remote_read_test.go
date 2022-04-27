@@ -83,7 +83,7 @@ func TestSampledRemoteRead(t *testing.T) {
 			}, nil
 		},
 	}
-	handler := RemoteReadHandler(q, 1024*1024, log.NewNopLogger())
+	handler := RemoteReadHandler(q, log.NewNopLogger())
 
 	requestBody, err := proto.Marshal(&client.ReadRequest{
 		Queries: []*client.QueryRequest{
@@ -245,7 +245,7 @@ func TestStreamedRemoteRead(t *testing.T) {
 			// Labelset has 10 bytes. Full frame in test data has roughly 160 bytes. This allows us to have at max 2 frames in this test.
 			maxBytesInFrame := 10 + 160*2
 
-			handler := RemoteReadHandler(q, maxBytesInFrame, log.NewNopLogger())
+			handler := remoteReadHandler(q, maxBytesInFrame, log.NewNopLogger())
 
 			requestBody, err := proto.Marshal(&client.ReadRequest{
 				Queries: []*client.QueryRequest{

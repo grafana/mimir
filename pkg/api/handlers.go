@@ -158,11 +158,6 @@ func DefaultConfigHandler(actualCfg interface{}, defaultCfg interface{}) http.Ha
 	}
 }
 
-// Maximum number of bytes in frame when using streaming remote read.
-// Google's recommendation is to keep protobuf message not larger than 1MB.
-// https://developers.google.com/protocol-buffers/docs/techniques#large-data
-const maxRemoteReadFrameBytes = 1024 * 1024
-
 // NewQuerierHandler returns a HTTP handler that can be used by the querier service to
 // either register with the frontend worker query processor or with the external HTTP
 // server to fulfill the Prometheus query API.
