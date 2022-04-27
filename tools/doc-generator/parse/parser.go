@@ -463,6 +463,8 @@ func ReflectType(typ string) reflect.Type {
 		return reflect.TypeOf(tsdb.DurationList{})
 	case "map of string to validation.ForwardingRule":
 		return reflect.TypeOf(map[string]validation.ForwardingRule{})
+	case "map of string to map[string]struct {}":
+		return reflect.TypeOf(map[string]map[string]struct{}{})
 	default:
 		panic("unknown field type " + typ)
 	}
