@@ -34,9 +34,7 @@ func TestSchedulerProcessor_processQueriesOnSingleStream(t *testing.T) {
 		workerCtx, workerCancel := context.WithCancel(context.Background())
 		workerCancel()
 
-		startTime := time.Now()
 		sp.processQueriesOnSingleStream(workerCtx, nil, "127.0.0.1")
-		assert.Less(t, time.Since(startTime), time.Second)
 
 		// We expect at this point, the execution context has been canceled too.
 		require.Error(t, loopClient.Context().Err())
