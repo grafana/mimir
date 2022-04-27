@@ -128,37 +128,46 @@ func remoteReadStreamedXORChunks(
 	w.Header().Set("Content-Type", "application/x-streamed-protobuf; proto=prometheus.ChunkedReadResponse")
 
 	for i, qr := range req.Queries {
-		if err := func() error {
-			from, to, matchers, err := client.FromQueryRequest(qr)
-			if err != nil {
-				return err
-			}
-
-			querier, err := q.ChunkQuerier(ctx, int64(from), int64(to))
-			if err != nil {
-				return err
-			}
-
-			params := &storage.SelectHints{
-				Start: int64(from),
-				End:   int64(to),
-			}
-
-			return streamChunkedReadResponses(
-				prom_remote.NewChunkedWriter(w, f),
-				// The streaming API has to provide the series sorted.
-				querier.Select(true, params, matchers...),
-				i,
-				maxBytesInFrame,
-			)
-
-		}(); err != nil {
+		if err := processReadStreamedQueryRequest(ctx, i, qr, q, w, f, maxBytesInFrame); err != nil {
 			level.Error(logger).Log("msg", "error streaming remote read response", "err", err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 	}
 	w.WriteHeader(http.StatusOK)
+}
+
+func processReadStreamedQueryRequest(
+	ctx context.Context,
+	idx int,
+	queryReq *client.QueryRequest,
+	q storage.ChunkQueryable,
+	w http.ResponseWriter,
+	f http.Flusher,
+	maxBytesInFrame int,
+) error {
+	from, to, matchers, err := client.FromQueryRequest(queryReq)
+	if err != nil {
+		return err
+	}
+
+	querier, err := q.ChunkQuerier(ctx, int64(from), int64(to))
+	if err != nil {
+		return err
+	}
+
+	params := &storage.SelectHints{
+		Start: int64(from),
+		End:   int64(to),
+	}
+
+	return streamChunkedReadResponses(
+		prom_remote.NewChunkedWriter(w, f),
+		// The streaming API has to provide the series sorted.
+		querier.Select(true, params, matchers...),
+		idx,
+		maxBytesInFrame,
+	)
 }
 
 func seriesSetToQueryResponse(s storage.SeriesSet) (*client.QueryResponse, error) {
