@@ -39,6 +39,45 @@ type ForwardingRule struct {
 // ForwardingRules are keyed by metric names, excluding labels.
 type ForwardingRules map[string]ForwardingRule
 
+// DropSeries contains label and value combinations, it is optimized for fast lookups.
+type DropSeries map[string]map[string]struct{}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (d *DropSeries) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	var labelPairs model.LabelPairs
+	err := unmarshal(&labelPairs)
+	if err != nil {
+		return err
+	}
+
+	d.unmarshalLabelPairs(labelPairs)
+	return nil
+}
+
+// UnmarshalJSON implements the json.Unmarshaler interface.
+func (d *DropSeries) UnmarshalJSON(data []byte) error {
+	var labelPairs model.LabelPairs
+	err := json.Unmarshal(data, &labelPairs)
+	if err != nil {
+		return err
+	}
+	d.unmarshalLabelPairs(labelPairs)
+	return nil
+}
+
+func (d *DropSeries) unmarshalLabelPairs(labelPairs model.LabelPairs) {
+	// Assuming that most label names in labelPairs are going to be unique.
+	*d = make(map[string]map[string]struct{}, len(labelPairs))
+
+	for _, labelPair := range labelPairs {
+		if _, ok := (*d)[string(labelPair.Name)]; !ok {
+			// We will add at least one label value.
+			(*d)[string(labelPair.Name)] = make(map[string]struct{}, 1)
+		}
+		(*d)[string(labelPair.Name)][string(labelPair.Value)] = struct{}{}
+	}
+}
+
 // Limits describe all the limits for users; can be used to describe global default
 // limits via flags, or per-user limits via yaml config.
 type Limits struct {
@@ -124,6 +163,7 @@ type Limits struct {
 	AlertmanagerMaxAlertsSizeBytes             int `yaml:"alertmanager_max_alerts_size_bytes" json:"alertmanager_max_alerts_size_bytes"`
 
 	ForwardingRules ForwardingRules `yaml:"forwarding_rules" json:"forwarding_rules" doc:"nocli|description=Rules based on which the Distributor decides whether a metric should be forwarded to an alternative remote_write API endpoint."`
+	DropSeries      DropSeries      `yaml:"drop_series" json:"drop_series" doc:"nocli|description=Combinations of labels and values, if a received sample has one of the defined label and value combinations it will be dropped.`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
@@ -319,6 +359,11 @@ func (o *Overrides) HAReplicaLabel(userID string) string {
 // DropLabels returns the list of labels to be dropped when ingesting HA samples for the user.
 func (o *Overrides) DropLabels(userID string) flagext.StringSlice {
 	return o.getOverridesForUser(userID).DropLabels
+}
+
+// DropSeries returns label/value combinations, if a series has one or more of them it should be dropped.
+func (o *Overrides) DropSeries(userID string) map[string]map[string]struct{} {
+	return o.getOverridesForUser(userID).DropSeries
 }
 
 // MaxLabelNameLength returns maximum length a label name can be.

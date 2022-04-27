@@ -691,6 +691,11 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 	// For each timeseries, compute a hash to distribute across ingesters;
 	// check each sample and discard if outside limits.
 	for _, ts := range req.Timeseries {
+		// Check if ts contains one of the label/value combinations of which we want to drop all series that have it.
+		if containsLabelValue(ts.Labels, d.limits.DropSeries(userID)) {
+			continue
+		}
+
 		if mrc := d.limits.MetricRelabelConfigs(userID); len(mrc) > 0 {
 			l := relabel.Process(mimirpb.FromLabelAdaptersToLabels(ts.Labels), mrc...)
 			ts.Labels = mimirpb.FromLabelsToLabelAdapters(l)
@@ -860,6 +865,24 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 
 func copyString(s string) string {
 	return string([]byte(s))
+}
+
+// containsLabelValue takes a slice of labels and a set of label/value combinations, if at least one of the labels in
+// the slice has one of the given label/value combinations it returns true, otherwise false.
+func containsLabelValue(labels []mimirpb.LabelAdapter, lvs map[string]map[string]struct{}) bool {
+	if len(lvs) == 0 || len(labels) == 0 {
+		return false
+	}
+
+	for _, l := range labels {
+		if values, ok := lvs[l.Name]; ok {
+			if _, ok := values[l.Value]; ok {
+				return true
+			}
+		}
+	}
+
+	return false
 }
 
 func sortLabelsIfNeeded(labels []mimirpb.LabelAdapter) {
