@@ -2877,6 +2877,10 @@ The `limits` block configures default and per-tenant limits imposed by component
 # Rules based on which the Distributor decides whether a metric should be
 # forwarded to an alternative remote_write API endpoint.
 [forwarding_rules: <map of string to validation.ForwardingRule> | default = ]
+
+# Combinations of labels and values, if a received sample has one of the defined
+# label and value combinations it will be dropped.
+[drop_series: <map of string to map[string]struct {}> | default = ]
 ```
 
 ### blocks_storage
