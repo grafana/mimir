@@ -78,6 +78,11 @@ func (d *DropSeries) unmarshalLabelPairs(labelPairs model.LabelPairs) {
 	}
 }
 
+// MetricNames returns the names of metrics which should be dropped entirely.
+func (d DropSeries) MetricNames() map[string]struct{} {
+	return d[model.MetricNameLabel]
+}
+
 // Limits describe all the limits for users; can be used to describe global default
 // limits via flags, or per-user limits via yaml config.
 type Limits struct {
@@ -362,7 +367,7 @@ func (o *Overrides) DropLabels(userID string) flagext.StringSlice {
 }
 
 // DropSeries returns label/value combinations, if a series has one or more of them it should be dropped.
-func (o *Overrides) DropSeries(userID string) map[string]map[string]struct{} {
+func (o *Overrides) DropSeries(userID string) DropSeries {
 	return o.getOverridesForUser(userID).DropSeries
 }
 

@@ -768,7 +768,12 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 		forwardingErrCh = forwardingReq.Send(ctx)
 	}
 
+	dropMetrics := d.limits.DropSeries(userID).MetricNames()
 	for _, m := range req.Metadata {
+		if _, ok := dropMetrics[m.MetricFamilyName]; ok {
+			continue
+		}
+
 		err := validation.ValidateMetadata(d.limits, userID, m)
 		if err != nil {
 			if firstPartialErr == nil {
