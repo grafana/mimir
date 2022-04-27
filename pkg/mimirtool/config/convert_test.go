@@ -21,17 +21,17 @@ type conversionInput struct {
 	dontLoadCommonOpts bool
 }
 
-func (in *conversionInput) loadCommonOpts(t *testing.T, yamlFile, flagsFile string) (commonYAML []byte, commonFlags []string) {
+func (in *conversionInput) loadCommonOpts(t *testing.T, oldYAMLFile, newYAMLFile, oldFlagsFile, newFlagsFile string) (newCommonYAML []byte, newCommonFlags []string) {
 	if in.dontLoadCommonOpts {
 		return nil, nil
 	}
 	if in.yaml == nil {
-		in.yaml = loadFile(t, yamlFile)
-		commonYAML = in.yaml
+		in.yaml = loadFile(t, oldYAMLFile)
+		newCommonYAML = loadFile(t, newYAMLFile)
 	}
 	if in.flags == nil {
-		in.flags = loadFlags(t, flagsFile)
-		commonFlags = in.flags
+		in.flags = loadFlags(t, oldFlagsFile)
+		newCommonFlags = loadFlags(t, newFlagsFile)
 	}
 
 	return
@@ -46,7 +46,7 @@ func testConvertGEM(t *testing.T, tc conversionInput, test func(t *testing.T, ou
 	t.Run("gem170->gem200", func(t *testing.T) {
 		t.Parallel()
 
-		expectedCommonYAML, expectedCommonFlags := tc.loadCommonOpts(t, "testdata/gem/common-options-old.yaml", "testdata/gem/common-flags-old.txt")
+		expectedCommonYAML, expectedCommonFlags := tc.loadCommonOpts(t, "testdata/gem/common-options-old.yaml", "testdata/gem/common-options-new.yaml", "testdata/gem/common-flags-old.txt", "testdata/gem/common-flags-new.txt")
 		outYAML, outFlags, notices, err := Convert(tc.yaml, tc.flags, GEM170ToGEM200Mapper(), DefaultGEM170Config, DefaultGEM200COnfig, tc.useNewDefaults, tc.outputDefaults)
 
 		if expectedCommonYAML != nil {
@@ -66,7 +66,7 @@ func testConvertCortex(t *testing.T, tc conversionInput, test func(t *testing.T,
 	t.Run("cortex->mimir", func(t *testing.T) {
 		t.Parallel()
 
-		expectedCommonYAML, expectedCommonFlags := tc.loadCommonOpts(t, "testdata/common-options.yaml", "testdata/common-flags.txt")
+		expectedCommonYAML, expectedCommonFlags := tc.loadCommonOpts(t, "testdata/common-options-old.yaml", "testdata/common-options-new.yaml", "testdata/common-flags-old.txt", "testdata/common-flags-new.txt")
 		outYAML, outFlags, notices, err := Convert(tc.yaml, tc.flags, CortexToMimirMapper(), DefaultCortexConfig, DefaultMimirConfig, tc.useNewDefaults, tc.outputDefaults)
 
 		if expectedCommonYAML != nil {
@@ -131,7 +131,7 @@ func TestConvert_Cortex(t *testing.T) {
 			inFile:       "testdata/noop-old.yaml",
 			inFlagsFile:  "testdata/flags-precedence-old.flags.txt",
 			outFlagsFile: "testdata/flags-precedence-new.flags.txt",
-			outFile:      "testdata/common-options.yaml",
+			outFile:      "testdata/common-options-new.yaml",
 			skipGEMTest:  true, // no need to test this in GEM too; plus, output for GEM also includes GEM common opts
 		},
 		{
@@ -257,23 +257,23 @@ func TestConvert_Cortex(t *testing.T) {
 			skipGEMTest:       true,
 			dontAddCommonOpts: true, // The common opts are in the outFile. That's the same reason why this test case doesn't work for GEM
 			inFile:            "testdata/empty.yaml",
-			outFile:           "testdata/old-defaults-retained-new.yaml",
+			outFile:           "testdata/common-options-new.yaml",
 		},
 		{
 			name:              "values where the old default should be retained are retained even with useNewDefaults=true",
 			skipGEMTest:       true,
 			dontAddCommonOpts: true, // The common opts are in the outFile. That's the same reason why this test case doesn't work for GEM
 			useNewDefaults:    true,
-			inFile:            "testdata/old-defaults-retained-old.yaml",
-			outFile:           "testdata/old-defaults-retained-new.yaml",
+			inFile:            "testdata/common-options-old.yaml",
+			outFile:           "testdata/common-options-new.yaml",
 		},
 		{
 			name:              "values where the old default should be retained are retained with useNewDefaults=false",
 			skipGEMTest:       true,
 			dontAddCommonOpts: true, // The common opts are in the outFile. That's the same reason why this test case doesn't work for GEM
 			useNewDefaults:    true,
-			inFile:            "testdata/old-defaults-retained-old.yaml",
-			outFile:           "testdata/old-defaults-retained-new.yaml",
+			inFile:            "testdata/common-options-old.yaml",
+			outFile:           "testdata/common-options-new.yaml",
 		},
 		{
 			name:              "values where the old default should be retained but are with random values are retained with useNewDefaults=false",
@@ -353,21 +353,21 @@ func TestConvert_GEM(t *testing.T) {
 			name:              "values where the old default should be retained are printed even when implicitly using the old default",
 			dontAddCommonOpts: true, // The common opts are in the outFile.
 			inFile:            "testdata/empty.yaml",
-			outFile:           "testdata/gem/old-defaults-retained-new.yaml",
+			outFile:           "testdata/gem/common-options-new.yaml",
 		},
 		{
 			name:              "values where the old default should be retained are retained even with useNewDefaults=true",
 			dontAddCommonOpts: true, // The common opts are in the outFile.
 			useNewDefaults:    true,
-			inFile:            "testdata/gem/old-defaults-retained-old.yaml",
-			outFile:           "testdata/gem/old-defaults-retained-new.yaml",
+			inFile:            "testdata/gem/common-options-old.yaml",
+			outFile:           "testdata/gem/common-options-new.yaml",
 		},
 		{
 			name:              "values where the old default should be retained are retained with useNewDefaults=false",
 			dontAddCommonOpts: true, // The common opts are in the outFile.
 			useNewDefaults:    true,
-			inFile:            "testdata/gem/old-defaults-retained-old.yaml",
-			outFile:           "testdata/gem/old-defaults-retained-new.yaml",
+			inFile:            "testdata/gem/common-options-old.yaml",
+			outFile:           "testdata/gem/common-options-new.yaml",
 		},
 		{
 			name:              "values where the old default should be retained but are with random values are retained with useNewDefaults=false",
@@ -500,8 +500,6 @@ func TestReportDeletedFlags(t *testing.T) {
 }
 
 var changedCortexDefaults = []ChangedDefault{
-	{Path: "activity_tracker.filepath", OldDefault: "./active-query-tracker", NewDefault: "./metrics-activity.log"},
-	{Path: "alertmanager.data_dir", OldDefault: "data/", NewDefault: "./data-alertmanager/"},
 	{Path: "alertmanager.enable_api", OldDefault: "false", NewDefault: "true"},
 	{Path: "alertmanager.external_url", OldDefault: "", NewDefault: "http://localhost:8080/alertmanager"},
 	{Path: "alertmanager.sharding_ring.instance_interface_names", OldDefault: "eth0,en0", NewDefault: "<nil>"},
@@ -524,12 +522,10 @@ var changedCortexDefaults = []ChangedDefault{
 	{Path: "blocks_storage.bucket_store.metadata_cache.memcached.max_idle_connections", OldDefault: "16", NewDefault: "100"},
 	{Path: "blocks_storage.bucket_store.metadata_cache.memcached.timeout", OldDefault: "100ms", NewDefault: "200ms"},
 	{Path: "blocks_storage.bucket_store.sync_dir", OldDefault: "tsdb-sync", NewDefault: "./tsdb-sync/"},
-	{Path: "blocks_storage.filesystem.dir", OldDefault: "", NewDefault: "blocks"},
 	{Path: "blocks_storage.tsdb.close_idle_tsdb_timeout", OldDefault: "0s", NewDefault: "13h0m0s"},
 	{Path: "blocks_storage.tsdb.dir", OldDefault: "tsdb", NewDefault: "./tsdb/"},
 	{Path: "blocks_storage.tsdb.retention_period", OldDefault: "6h0m0s", NewDefault: "24h0m0s"},
 	{Path: "compactor.block_sync_concurrency", OldDefault: "20", NewDefault: "8"},
-	{Path: "compactor.data_dir", OldDefault: "./data", NewDefault: "./data-compactor/"},
 	{Path: "compactor.sharding_ring.instance_interface_names", OldDefault: "eth0,en0", NewDefault: "<nil>"},
 	{Path: "compactor.sharding_ring.kvstore.store", OldDefault: "consul", NewDefault: "memberlist"},
 	{Path: "compactor.sharding_ring.wait_stability_min_duration", OldDefault: "1m0s", NewDefault: "0s"},
@@ -570,9 +566,7 @@ var changedCortexDefaults = []ChangedDefault{
 	{Path: "ruler.enable_api", OldDefault: "false", NewDefault: "true"},
 	{Path: "ruler.ring.instance_interface_names", OldDefault: "eth0,en0", NewDefault: "<nil>"},
 	{Path: "ruler.ring.kvstore.store", OldDefault: "consul", NewDefault: "memberlist"},
-	{Path: "ruler.rule_path", OldDefault: "/rules", NewDefault: "./data-ruler/"},
 	{Path: "ruler.ruler_client.max_send_msg_size", OldDefault: "16777216", NewDefault: "104857600"},
-	{Path: "ruler_storage.filesystem.dir", OldDefault: "", NewDefault: "ruler"},
 	{Path: "store_gateway.sharding_ring.instance_interface_names", OldDefault: "eth0,en0", NewDefault: "<nil>"},
 	{Path: "store_gateway.sharding_ring.kvstore.store", OldDefault: "consul", NewDefault: "memberlist"},
 	{Path: "store_gateway.sharding_ring.wait_stability_min_duration", OldDefault: "1m0s", NewDefault: "0s"},
@@ -619,7 +613,6 @@ func TestChangedGEMDefaults(t *testing.T) {
 		{Path: "graphite.querier.metric_name_cache.memcached.max_idle_connections", OldDefault: "16", NewDefault: "100"},
 		{Path: "graphite.querier.metric_name_cache.memcached.max_item_size", OldDefault: "0", NewDefault: "1048576"},
 		{Path: "graphite.querier.metric_name_cache.memcached.timeout", OldDefault: "100ms", NewDefault: "200ms"},
-		{Path: "graphite.querier.schemas.backend", OldDefault: "s3", NewDefault: "filesystem"},
 		{Path: "instrumentation.enabled", OldDefault: "false", NewDefault: "true"},
 		{Path: "limits.compactor_split_groups", OldDefault: "4", NewDefault: "1"},
 		{Path: "limits.compactor_tenant_shard_size", OldDefault: "1", NewDefault: "0"},

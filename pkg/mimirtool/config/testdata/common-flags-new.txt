@@ -1,10 +1,8 @@
 -server.http-listen-port=80
--auth.type=trust
 -blocks-storage.backend=s3
 -ruler-storage.backend=s3
 -alertmanager-storage.backend=s3
--graphite.querier.schemas.backend=s3
--querier.active-query-tracker-dir=./active-query-tracker
+-activity-tracker.filepath=./active-query-tracker
 -alertmanager.storage.path=data/
 -blocks-storage.filesystem.dir=
 -compactor.data-dir=./data
