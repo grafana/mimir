@@ -3463,9 +3463,8 @@ tsdb:
   [max_tsdb_opening_concurrency_on_startup: <int> | default = 10]
 
   # (experimental) Allow samples to be this old for out-of-order.  Supported
-  # units: h, m, s. If the value is non-zero, then
-  # storage.tsdb.allow-overlapping-blocks will be set to true since out-of-order
-  # data can potentially overlap with other data.
+  # units: h, m, s. If the value is non-zero, then all TSDBs will be enabled to
+  # handle overlapping data.
   # CLI flag: -blocks-storage.tsdb.ooo-allowance
   [ooo_allowance: <duration> | default = 0s]
 
