@@ -97,13 +97,18 @@ SED ?= $(shell which gsed 2>/dev/null || which sed)
 	@touch $@
 
 # This target compiles mimir for linux/amd64 and linux/arm64 and then builds and pushes a multiarch image to the target repository.
-# We don't separate building of single-platform and multiplatform images here (as we do for push-multiarch-build-image), as
-# Mimir's Dockerfile is not doing much, and is unlikely to fail.
-push-multiarch-mimir:
-	@echo
-	$(MAKE) GOOS=linux GOARCH=amd64 BINARY_SUFFIX=_linux_amd64 cmd/mimir/mimir
-	$(MAKE) GOOS=linux GOARCH=arm64 BINARY_SUFFIX=_linux_arm64 cmd/mimir/mimir
-	$(SUDO) docker buildx build -o type=registry --platform linux/amd64,linux/arm64 --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) --build-arg=USE_BINARY_SUFFIX=true -t $(IMAGE_PREFIX)mimir:$(IMAGE_TAG) cmd/mimir
+# We don't do separate building of single-platform and multiplatform images here (as we do for push-multiarch-build-image), as
+# these Dockerfiles are not doing much, and are unlikely to fail.
+push-multiarch-%/$(UPTODATE):
+	$(eval DIR := $(patsubst push-multiarch-%/$(UPTODATE),%,$@))
+
+	if [ -f $(DIR)/main.go ]; then \
+		$(MAKE) GOOS=linux GOARCH=amd64 BINARY_SUFFIX=_linux_amd64 $(DIR)/$(shell basename $(DIR)); \
+		$(MAKE) GOOS=linux GOARCH=arm64 BINARY_SUFFIX=_linux_arm64 $(DIR)/$(shell basename $(DIR)); \
+	fi
+	$(SUDO) docker buildx build -o type=registry --platform linux/amd64,linux/arm64 --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) --build-arg=USE_BINARY_SUFFIX=true -t $(IMAGE_PREFIX)$(shell basename $(DIR)):$(IMAGE_TAG) $(DIR)/
+
+push-multiarch-mimir: push-multiarch-cmd/mimir/.uptodate
 
 # This target fetches current build image, and tags it with "latest" tag. It can be used instead of building the image locally.
 .PHONY: fetch-build-image
@@ -396,6 +401,9 @@ format-makefiles: $(MAKE_FILES)
 clean:
 	$(SUDO) docker rmi $(IMAGE_NAMES) >/dev/null 2>&1 || true
 	rm -rf -- $(UPTODATE_FILES) $(EXES) .cache dist
+	# Remove executables built for multiarch images.
+	find . -type f -name '*_linux_arm64' -perm +u+x -exec rm {} \;
+	find . -type f -name '*_linux_amd64' -perm +u+x -exec rm {} \;
 	go clean ./...
 
 clean-protos:
