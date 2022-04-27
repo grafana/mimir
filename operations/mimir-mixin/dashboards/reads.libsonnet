@@ -125,7 +125,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
         { yaxes: $.yaxes('s') }
       )
     )
-    .addRow(
+    .addRowIf(
+      $._config.query_scheduler_enabled,
       $.row('Query-scheduler')
       .addPanel(
         $.textPanel(

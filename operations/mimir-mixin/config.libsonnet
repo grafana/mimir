@@ -50,6 +50,9 @@
     // Whether mimir gateway is enabled
     gateway_enabled: true,
 
+    // Whether mimir query-scheduler is enabled
+    query_scheduler_enabled: true,
+
     // The label used to differentiate between different application instances (i.e. 'pod' in a kubernetes install).
     per_instance_label: 'pod',
 

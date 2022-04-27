@@ -30,7 +30,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
         ),
       )
     )
-    .addRow(
+    .addRowIf(
+      $._config.query_scheduler_enabled,
       $.row('Query-scheduler')
       .addPanel(
         $.panel('Queue duration') +

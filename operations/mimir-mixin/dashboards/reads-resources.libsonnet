@@ -29,7 +29,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.goHeapInUsePanel('Memory (go heap inuse)', $._config.job_names.query_frontend),
       )
     )
-    .addRow(
+    .addRowIf(
+      $._config.query_scheduler_enabled,
       $.row('Query-scheduler')
       .addPanel(
         $.containerCPUUsagePanel('CPU', 'query-scheduler'),

@@ -6,7 +6,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     .addClusterSelectorTemplates(false)
     .addRowIf($._config.gateway_enabled, $.jobNetworkingRow('Gateway', 'gateway'))
     .addRow($.jobNetworkingRow('Query-frontend', 'query_frontend'))
-    .addRow($.jobNetworkingRow('Query-scheduler', 'query_scheduler'))
+    .addRowIf($._config.query_scheduler_enabled, $.jobNetworkingRow('Query-scheduler', 'query_scheduler'))
     .addRow($.jobNetworkingRow('Querier', 'querier'))
     .addRow($.jobNetworkingRow('Store-gateway', 'store_gateway'))
     .addRow($.jobNetworkingRow('Ruler', 'ruler'))
