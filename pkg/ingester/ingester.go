@@ -1493,6 +1493,7 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 		EnableMemorySnapshotOnShutdown: i.cfg.BlocksStorageConfig.TSDB.MemorySnapshotOnShutdown,
 		IsolationDisabled:              !i.cfg.BlocksStorageConfig.TSDB.IsolationEnabled,
 		HeadChunksWriteQueueSize:       i.cfg.BlocksStorageConfig.TSDB.HeadChunksWriteQueueSize,
+		AllowOverlappingBlocks:         i.cfg.BlocksStorageConfig.TSDB.OOOAllowance > 0, // always true if out of order support is enabled
 		OOOAllowance:                   int64(i.cfg.BlocksStorageConfig.TSDB.OOOAllowance / time.Millisecond),
 		OOOCapMin:                      int64(i.cfg.BlocksStorageConfig.TSDB.OOOCapMin),
 		OOOCapMax:                      int64(i.cfg.BlocksStorageConfig.TSDB.OOOCapMax),
