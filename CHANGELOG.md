@@ -12,7 +12,7 @@
 * [CHANGE] Query-frontend: results cache keys are now versioned, this will cause cache to be re-filled when rolling out this version. #1631
 * [CHANGE] Store-gateway: enabled attributes in-memory cache by default. New default configuration is `-blocks-storage.bucket-store.chunks-cache.attributes-in-memory-max-items=50000`. #1727
 * [CHANGE] Compactor: Removed the metric `cortex_compactor_garbage_collected_blocks_total` since it duplicates `cortex_compactor_blocks_marked_for_deletion_total`. #1728
-* [CHANGE] All: Logs that used the`org_id` label now use `user` label. #1634
+* [CHANGE] All: Logs that used the`org_id` label now use `user` label. #1634 #1758
 * [FEATURE] Ruler: Allow setting `evaluation_delay` for each rule group via rules group configuration file. #1474
 * [FEATURE] Ruler: Added support for expression remote evaluation. #1536
   * The following CLI flags (and their respective YAML config options) have been added:
@@ -60,6 +60,7 @@
 * [ENHANCEMENT] Added `per_cluster_label` support to allow to change the label name used to differentiate between Kubernetes clusters. #1651
 * [ENHANCEMENT] Dashboards: Show QPS and latency of the Alertmanager Distributor. #1696
 * [ENHANCEMENT] Playbooks: Add Alertmanager suggestions for `MimirRequestErrors` and `MimirRequestLatency` #1702
+* [ENHANCEMENT] Dashboards: Allow custom datasources. #1749
 * [BUGFIX] Dashboards: Fix "Failed evaluation rate" panel on Tenants dashboard. #1629
 * [BUGFIX] Honor the configured `per_instance_label` in all dashboards and alerts. #1697
 

@@ -3438,9 +3438,15 @@ tsdb:
   # (experimental) The size of the write queue used by the head chunks mapper.
   # Lower values reduce memory utilisation at the cost of potentially higher
   # ingest latency. Value of 0 switches chunks mapper to implementation without
-  # a queue.
+  # a queue. This flag is only used if the new chunk disk mapper is enabled with
+  # -blocks-storage.tsdb.new-chunk-disk-mapper.
   # CLI flag: -blocks-storage.tsdb.head-chunks-write-queue-size
   [head_chunks_write_queue_size: <int> | default = 0]
+
+  # (experimental) Temporary flag to select whether to use the new (used in
+  # upstream Prometheus) or the old (legacy) chunk disk mapper.
+  # CLI flag: -blocks-storage.tsdb.new-chunk-disk-mapper
+  [new_chunk_disk_mapper: <boolean> | default = false]
 
   # (advanced) [Deprecated] Enables TSDB isolation feature. Disabling may
   # improve performance.
