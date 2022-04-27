@@ -489,3 +489,68 @@ testuser:
 		})
 	}
 }
+
+func TestMarshalingUnmarshalingDropSeries(t *testing.T) {
+	type testCase struct {
+		name  string
+		value DropSeries
+	}
+
+	testCases := []testCase{
+		{
+			name:  "empty value",
+			value: DropSeries{},
+		}, {
+			name: "one label and one value",
+			value: DropSeries{
+				"label1": {
+					"value1": {},
+				},
+			},
+		}, {
+			name: "one label with multiple values",
+			value: DropSeries{
+				"label1": {
+					"value1": {},
+					"value2": {},
+				},
+			},
+		}, {
+			name: "two labels with one value each",
+			value: DropSeries{
+				"label1": {
+					"value1": {},
+				},
+				"label2": {
+					"value2": {},
+				},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Run("json", func(t *testing.T) {
+				encoded, err := json.Marshal(tc.value)
+				require.NoError(t, err)
+
+				var unmarshaledValue DropSeries
+				err = json.Unmarshal(encoded, &unmarshaledValue)
+				require.NoError(t, err)
+
+				require.EqualValues(t, tc.value, unmarshaledValue)
+			})
+
+			t.Run("yaml", func(t *testing.T) {
+				encoded, err := yaml.Marshal(tc.value)
+				require.NoError(t, err)
+
+				var unmarshaledValue DropSeries
+				err = yaml.Unmarshal(encoded, &unmarshaledValue)
+				require.NoError(t, err)
+
+				require.EqualValues(t, tc.value, unmarshaledValue)
+			})
+		})
+	}
+}

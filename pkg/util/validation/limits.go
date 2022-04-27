@@ -78,6 +78,26 @@ func (d *DropSeries) unmarshalLabelPairs(labelPairs model.LabelPairs) {
 	}
 }
 
+// MarshalYAML implements the yaml.Marshaler interface.
+func (d DropSeries) MarshalYAML() (interface{}, error) {
+	return d.marshalLabelPairs(), nil
+}
+
+// MarshalJSON implements the json.Marshaler interface.
+func (d DropSeries) MarshalJSON() ([]byte, error) {
+	return json.Marshal(d.marshalLabelPairs())
+}
+
+func (d DropSeries) marshalLabelPairs() model.LabelPairs {
+	marshaled := make(model.LabelPairs, 0, len(d))
+	for label, values := range d {
+		for value := range values {
+			marshaled = append(marshaled, &model.LabelPair{Name: model.LabelName(label), Value: model.LabelValue(value)})
+		}
+	}
+	return marshaled
+}
+
 // MetricNames returns the names of metrics which should be dropped entirely.
 func (d DropSeries) MetricNames() map[string]struct{} {
 	return d[model.MetricNameLabel]
