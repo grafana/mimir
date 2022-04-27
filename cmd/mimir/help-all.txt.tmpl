@@ -502,7 +502,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.tsdb.new-chunk-disk-mapper
     	[experimental] Temporary flag to select whether to use the new (used in upstream Prometheus) or the old (legacy) chunk disk mapper.
   -blocks-storage.tsdb.ooo-allowance duration
-    	[experimental] Allow samples to be this old for out-of-order.  Supported units: h, m, s.
+    	[experimental] Allow samples to be this old for out-of-order.  Supported units: h, m, s. If the value is non-zero, then storage.tsdb.allow-overlapping-blocks will be set to true since out-of-order data can potentially overlap with other data.
   -blocks-storage.tsdb.ooo-cap-max int
     	[experimental] Maximum capacity for OOO chunks (in samples. between 1 and 255.) (default 32)
   -blocks-storage.tsdb.ooo-cap-min int
