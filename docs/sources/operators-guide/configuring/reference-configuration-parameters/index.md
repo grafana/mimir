@@ -2878,8 +2878,8 @@ The `limits` block configures default and per-tenant limits imposed by component
 # forwarded to an alternative remote_write API endpoint.
 [forwarding_rules: <map of string to validation.ForwardingRule> | default = ]
 
-# Combinations of labels and values, if a received sample has one of the defined
-# label and value combinations it will be dropped.
+# Pairs of labels and values, if a received sample has one of the defined label
+# and value pairs it will be dropped.
 [drop_series: <map of string to map[string]struct {}> | default = ]
 ```
 

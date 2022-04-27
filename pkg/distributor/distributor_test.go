@@ -2135,7 +2135,7 @@ func TestDistributor_LabelNamesAndValues_ExpectedAllPossibleLabelNamesAndValuesT
 	require.Equal(t, 10000, len(response.Items[0].Values))
 }
 
-func TestDistributor_DropSeriesByLabelValueCombinations(t *testing.T) {
+func TestDistributor_DropSeriesByLabelValuePairs(t *testing.T) {
 	type testcase struct {
 		name                  string
 		request               *mimirpb.WriteRequest

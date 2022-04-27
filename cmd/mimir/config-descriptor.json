@@ -3006,7 +3006,7 @@
           "kind": "field",
           "name": "drop_series",
           "required": false,
-          "desc": "Combinations of labels and values, if a received sample has one of the defined label and value combinations it will be dropped.",
+          "desc": "Pairs of labels and values, if a received sample has one of the defined label and value pairs it will be dropped.",
           "fieldValue": null,
           "fieldDefaultValue": {},
           "fieldType": "map of string to map[string]struct {}"

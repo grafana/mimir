@@ -39,7 +39,7 @@ type ForwardingRule struct {
 // ForwardingRules are keyed by metric names, excluding labels.
 type ForwardingRules map[string]ForwardingRule
 
-// DropSeries contains label and value combinations, it is optimized for fast lookups.
+// DropSeries contains label / value pairs, it is optimized for fast lookups.
 type DropSeries map[string]map[string]struct{}
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -188,7 +188,7 @@ type Limits struct {
 	AlertmanagerMaxAlertsSizeBytes             int `yaml:"alertmanager_max_alerts_size_bytes" json:"alertmanager_max_alerts_size_bytes"`
 
 	ForwardingRules ForwardingRules `yaml:"forwarding_rules" json:"forwarding_rules" doc:"nocli|description=Rules based on which the Distributor decides whether a metric should be forwarded to an alternative remote_write API endpoint."`
-	DropSeries      DropSeries      `yaml:"drop_series" json:"drop_series" doc:"nocli|description=Combinations of labels and values, if a received sample has one of the defined label and value combinations it will be dropped."`
+	DropSeries      DropSeries      `yaml:"drop_series" json:"drop_series" doc:"nocli|description=Pairs of labels and values, if a received sample has one of the defined label and value pairs it will be dropped."`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
@@ -386,7 +386,7 @@ func (o *Overrides) DropLabels(userID string) flagext.StringSlice {
 	return o.getOverridesForUser(userID).DropLabels
 }
 
-// DropSeries returns label/value combinations, if a series has one or more of them it should be dropped.
+// DropSeries returns label / value pairs, if a series has one or more of them it should be dropped.
 func (o *Overrides) DropSeries(userID string) DropSeries {
 	return o.getOverridesForUser(userID).DropSeries
 }

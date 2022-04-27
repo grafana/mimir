@@ -691,7 +691,7 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 	// For each timeseries, compute a hash to distribute across ingesters;
 	// check each sample and discard if outside limits.
 	for _, ts := range req.Timeseries {
-		// Check if ts contains one of the label/value combinations of which we want to drop all series that have it.
+		// Check if ts contains one or more of the label / value pairs of which we want to drop all series that have it.
 		if containsLabelValue(ts.Labels, d.limits.DropSeries(userID)) {
 			continue
 		}
@@ -872,8 +872,8 @@ func copyString(s string) string {
 	return string([]byte(s))
 }
 
-// containsLabelValue takes a slice of labels and a set of label/value combinations, if at least one of the labels in
-// the slice has one of the given label/value combinations it returns true, otherwise false.
+// containsLabelValue takes a slice of labels and a set of label / value pairs, if at least one of the labels in
+// the slice has one of the given label / value pairs it returns true, otherwise false.
 func containsLabelValue(labels []mimirpb.LabelAdapter, lvs map[string]map[string]struct{}) bool {
 	if len(lvs) == 0 || len(labels) == 0 {
 		return false
