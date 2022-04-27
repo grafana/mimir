@@ -28,6 +28,7 @@ type executionContext struct {
 	inflightQuery *atomic.Bool
 }
 
+// newExecutionContext returns a new executionContext. The caller must call cancel() on it once done.
 func newExecutionContext(workerCtx context.Context, logger log.Logger) *executionContext {
 	execCtx, execCancel := context.WithCancel(context.Background())
 
