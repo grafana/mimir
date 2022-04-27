@@ -16,11 +16,12 @@ import (
 // until inflight queries are terminated before the querier process exits.
 //
 // How it's used:
+//
 // - The querier worker's loop run in a dedicated context, called the "execution context".
+//
 // - The execution context is canceled when the worker context gets cancelled (ie. querier is shutting down)
-//   and there's no inflight query execution. In case there's an inflight query, the execution context is canceled
-//   once the inflight query terminates and the response has been sent.
-type executionContext struct {
+// and there's no inflight query execution. In case there's an inflight query, the execution context is canceled
+// once the inflight query terminates and the response has been sent.
 	execCtx       context.Context
 	execCancel    context.CancelFunc
 	inflightQuery *atomic.Bool
