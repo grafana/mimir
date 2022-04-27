@@ -211,7 +211,7 @@ func (cfg *TSDBConfig) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&cfg.HeadChunksWriteQueueSize, "blocks-storage.tsdb.head-chunks-write-queue-size", 0, "The size of the write queue used by the head chunks mapper. Lower values reduce memory utilisation at the cost of potentially higher ingest latency. Value of 0 switches chunks mapper to implementation without a queue. This flag is only used if the new chunk disk mapper is enabled with -blocks-storage.tsdb.new-chunk-disk-mapper.")
 	f.BoolVar(&cfg.NewChunkDiskMapper, "blocks-storage.tsdb.new-chunk-disk-mapper", false, "Temporary flag to select whether to use the new (used in upstream Prometheus) or the old (legacy) chunk disk mapper.")
 	f.BoolVar(&cfg.IsolationEnabled, "blocks-storage.tsdb.isolation-enabled", false, "[Deprecated] Enables TSDB isolation feature. Disabling may improve performance.")
-	f.DurationVar(&cfg.OOOAllowance, "blocks-storage.tsdb.ooo-allowance", 0*time.Second, "Allow samples to be this old for out-of-order.  Supported units: h, m, s.")
+	f.DurationVar(&cfg.OOOAllowance, "blocks-storage.tsdb.ooo-allowance", 0*time.Second, "Allow samples to be this old for out-of-order.  Supported units: h, m, s. If the value is non-zero, then all TSDBs will be enabled to handle overlapping data.")
 	f.IntVar(&cfg.OOOCapMin, "blocks-storage.tsdb.ooo-cap-min", 4, "Minimum capacity for OOO chunks (in samples. between 0 and 255.)")
 	f.IntVar(&cfg.OOOCapMax, "blocks-storage.tsdb.ooo-cap-max", 32, "Maximum capacity for OOO chunks (in samples. between 1 and 255.)")
 }
