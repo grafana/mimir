@@ -159,7 +159,7 @@ func TestQuerierStreamingRemoteRead(t *testing.T) {
 	// Wait until the querier has updated the ring.
 	require.NoError(t, querier.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
 
-	// Push a series for each user to Mimir.
+	// Push a series to Mimir.
 	now := time.Now()
 
 	c, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", "", "user-1")
