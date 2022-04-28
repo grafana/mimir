@@ -11,9 +11,12 @@ import (
 	"go.uber.org/atomic"
 )
 
-// executionContext wraps the context.Context used to run the querier's worker loop and execute
-// queries. The purpose of the execution context is to gracefully shutdown queriers, waiting
+// newExecutionContext returns a new execution context (execCtx) that wraps the input workerCtx and
+// it used to run the querier's worker loop and execute queries.
+// The purpose of the execution context is to gracefully shutdown queriers, waiting
 // until inflight queries are terminated before the querier process exits.
+//
+// The caller must call execCancel() once done.
 //
 // How it's used:
 //
@@ -22,21 +25,10 @@ import (
 // - The execution context is canceled when the worker context gets cancelled (ie. querier is shutting down)
 // and there's no inflight query execution. In case there's an inflight query, the execution context is canceled
 // once the inflight query terminates and the response has been sent.
-type executionContext struct {
-	execCtx       context.Context
-	execCancel    context.CancelFunc
-	inflightQuery *atomic.Bool
-}
 
-// newExecutionContext returns a new executionContext. The caller must call cancel() on it once done.
-func newExecutionContext(workerCtx context.Context, logger log.Logger) *executionContext {
-	execCtx, execCancel := context.WithCancel(context.Background())
-
-	c := &executionContext{
-		execCtx:       execCtx,
-		execCancel:    execCancel,
-		inflightQuery: atomic.NewBool(false),
-	}
+func newExecutionContext(workerCtx context.Context, logger log.Logger) (execCtx context.Context, execCancel context.CancelFunc, inflightQuery *atomic.Bool) {
+	execCtx, execCancel = context.WithCancel(context.Background())
+	inflightQuery = atomic.NewBool(false)
 
 	go func() {
 		// Wait until it's safe to cancel the execution context, which is when one of the following conditions happen:
@@ -46,7 +38,7 @@ func newExecutionContext(workerCtx context.Context, logger log.Logger) *executio
 		case <-workerCtx.Done():
 			level.Debug(logger).Log("msg", "querier worker context has been canceled, waiting until there's no inflight query")
 
-			for c.inflightQuery.Load() {
+			for inflightQuery.Load() {
 				select {
 				case <-execCtx.Done():
 					// In the meanwhile, the execution context has been explicitly canceled, so we should just terminate.
@@ -63,21 +55,5 @@ func newExecutionContext(workerCtx context.Context, logger log.Logger) *executio
 		}
 	}()
 
-	return c
-}
-
-func (c *executionContext) queryStarted() {
-	c.inflightQuery.Store(true)
-}
-
-func (c *executionContext) queryEnded() {
-	c.inflightQuery.Store(false)
-}
-
-func (c *executionContext) context() context.Context {
-	return c.execCtx
-}
-
-func (c *executionContext) cancel() {
-	c.execCancel()
+	return
 }
