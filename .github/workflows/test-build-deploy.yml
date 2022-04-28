@@ -18,9 +18,9 @@ concurrency:
 
 jobs:
   lint:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     container:
-      image: grafana/mimir-build-image:update-go-1.17.8-8a996bb57
+      image: grafana/mimir-build-image:update-build-image-and-github-workflow-89d9d61b4
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v2
@@ -48,9 +48,9 @@ jobs:
         run: make BUILD_IN_CONTAINER=false check-tsdb-blocks-storage-s3-docker-compose-yaml
 
   lint-jsonnet:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     container:
-      image: grafana/mimir-build-image:update-go-1.17.8-8a996bb57
+      image: grafana/mimir-build-image:update-build-image-and-github-workflow-89d9d61b4
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v2
@@ -72,7 +72,7 @@ jobs:
         run: make BUILD_IN_CONTAINER=false check-jsonnet-tests
 
   test:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     strategy:
       # Do not abort other groups when one fails.
       fail-fast: false
@@ -81,7 +81,7 @@ jobs:
         test_group_id:    [0, 1, 2, 3]
         test_group_total: [4]
     container:
-      image: grafana/mimir-build-image:update-go-1.17.8-8a996bb57
+      image: grafana/mimir-build-image:update-build-image-and-github-workflow-89d9d61b4
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v2
@@ -105,9 +105,9 @@ jobs:
           docker run -v ${PWD}/docs/sources:/hugo/content/docs/mimir/latest -e HUGO_REFLINKSERRORLEVEL=ERROR --rm grafana/docs-base:latest /bin/bash -c 'make hugo'
 
   build-mimir:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     container:
-      image: grafana/mimir-build-image:update-go-1.17.8-8a996bb57
+      image: grafana/mimir-build-image:update-build-image-and-github-workflow-89d9d61b4
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v2
@@ -134,9 +134,9 @@ jobs:
           path: ./mimir-images.tar
 
   build-tools:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     container:
-      image: grafana/mimir-build-image:update-go-1.17.8-8a996bb57
+      image: grafana/mimir-build-image:update-build-image-and-github-workflow-89d9d61b4
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v2
@@ -165,7 +165,7 @@ jobs:
 
   integration:
     needs: build-mimir
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     strategy:
       # Do not abort other groups when one fails.
       fail-fast: false
@@ -214,9 +214,9 @@ jobs:
     needs: [build-mimir, build-tools, test, lint, integration]
     # Only deploy images on pushes to the grafana/mimir repo, which either are tag pushes or weekly release branch pushes.
     if: (startsWith(github.ref, 'refs/tags/') || startsWith(github.ref, 'refs/heads/r') ) && github.event_name == 'push' && github.repository == 'grafana/mimir'
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     container:
-      image: grafana/mimir-build-image:update-go-1.17.8-8a996bb57
+      image: grafana/mimir-build-image:update-build-image-and-github-workflow-89d9d61b4
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v2
