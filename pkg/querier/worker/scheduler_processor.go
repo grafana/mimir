@@ -25,6 +25,7 @@ import (
 	"github.com/weaveworks/common/httpgrpc"
 	"github.com/weaveworks/common/middleware"
 	"github.com/weaveworks/common/user"
+	"go.uber.org/atomic"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health/grpc_health_v1"
 
@@ -99,12 +100,12 @@ func (sp *schedulerProcessor) processQueriesOnSingleStream(workerCtx context.Con
 
 	// Run the querier loop (and so all the queries) in a dedicated context that we call the "execution context".
 	// The execution context is cancelled once the workerCtx is cancelled AND there's no inflight query executing.
-	exec := newExecutionContext(workerCtx, sp.log)
-	defer exec.cancel()
+	execCtx, execCancel, inflightQuery := newExecutionContext(workerCtx, sp.log)
+	defer execCancel()
 
-	backoff := backoff.New(exec.context(), processorBackoffConfig)
+	backoff := backoff.New(execCtx, processorBackoffConfig)
 	for backoff.Ongoing() {
-		c, err := schedulerClient.QuerierLoop(exec.context())
+		c, err := schedulerClient.QuerierLoop(execCtx)
 		if err == nil {
 			err = c.Send(&schedulerpb.QuerierToScheduler{QuerierID: sp.querierID})
 		}
@@ -115,7 +116,7 @@ func (sp *schedulerProcessor) processQueriesOnSingleStream(workerCtx context.Con
 			continue
 		}
 
-		if err := sp.querierLoop(c, address, exec); err != nil {
+		if err := sp.querierLoop(c, address, inflightQuery); err != nil {
 			level.Error(sp.log).Log("msg", "error processing requests from scheduler", "err", err, "addr", address)
 			backoff.Wait()
 			continue
@@ -126,7 +127,7 @@ func (sp *schedulerProcessor) processQueriesOnSingleStream(workerCtx context.Con
 }
 
 // process loops processing requests on an established stream.
-func (sp *schedulerProcessor) querierLoop(c schedulerpb.SchedulerForQuerier_QuerierLoopClient, address string, exec *executionContext) error {
+func (sp *schedulerProcessor) querierLoop(c schedulerpb.SchedulerForQuerier_QuerierLoopClient, address string, inflightQuery *atomic.Bool) error {
 	// Build a child context so we can cancel a query when the stream is closed.
 	ctx, cancel := context.WithCancel(c.Context())
 	defer cancel()
@@ -137,7 +138,7 @@ func (sp *schedulerProcessor) querierLoop(c schedulerpb.SchedulerForQuerier_Quer
 			return err
 		}
 
-		exec.queryStarted()
+		inflightQuery.Store(true)
 
 		// Handle the request on a "background" goroutine, so we go back to
 		// blocking on c.Recv().  This allows us to detect the stream closing
@@ -145,7 +146,7 @@ func (sp *schedulerProcessor) querierLoop(c schedulerpb.SchedulerForQuerier_Quer
 		// here, as we're running in lock step with the server - each Recv is
 		// paired with a Send.
 		go func() {
-			defer exec.queryEnded()
+			defer inflightQuery.Store(false)
 
 			// We need to inject user into context for sending response back.
 			ctx := user.InjectOrgID(ctx, request.UserID)
