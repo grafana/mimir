@@ -47,6 +47,9 @@
     // Whether resources dashboards are enabled (based on cAdvisor metrics).
     resources_dashboards_enabled: true,
 
+    // Whether mimir gateway is enabled
+    gateway_enabled: true,
+
     // The label used to differentiate between different application instances (i.e. 'pod' in a kubernetes install).
     per_instance_label: 'pod',
 

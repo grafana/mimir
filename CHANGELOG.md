@@ -40,6 +40,7 @@
 * [ENHANCEMENT] Admin: Admin API now has some styling. #1482 #1549
 * [ENHANCEMENT] Alertmanager: added `insight=true` field to alertmanager dispatch logs. #1379
 * [ENHANCEMENT] Store-gateway: Add the experimental ability to run index header operations in a dedicated thread pool. This feature can be configured using `-blocks-storage.bucket-store.index-header-thread-pool-size` and is disabled by default. #1660
+* [ENHANCEMENT] Querier: wait until inflight queries are completed when shutting down queriers and running Mimir with query-scheduler. #1756
 * [BUGFIX] Query-frontend: do not shard queries with a subquery unless the subquery is inside a shardable aggregation function call. #1542
 * [BUGFIX] Query-frontend: added `component=query-frontend` label to results cache memcached metrics to fix a panic when Mimir is running in single binary mode and results cache is enabled. #1704
 * [BUGFIX] Mimir: services' status content-type is now correctly set to `text/html`. #1575
@@ -60,6 +61,7 @@
 * [ENHANCEMENT] Dashboards: Show QPS and latency of the Alertmanager Distributor. #1696
 * [ENHANCEMENT] Playbooks: Add Alertmanager suggestions for `MimirRequestErrors` and `MimirRequestLatency` #1702
 * [ENHANCEMENT] Dashboards: Allow custom datasources. #1749
+* [ENHANCEMENT] Dashboards: Add config option `gateway_enabled` (defaults to `true`) to disable gateway panels from dashboards. #1761
 * [BUGFIX] Dashboards: Fix "Failed evaluation rate" panel on Tenants dashboard. #1629
 * [BUGFIX] Honor the configured `per_instance_label` in all dashboards and alerts. #1697
 
@@ -82,7 +84,7 @@
 
 ### Mimirtool
 
-* [BUGFIX] `config convert`: Retain Cortex defaults for `blocks_storage.backend`, `ruler_storage.backend`, and `alertmanager_storage.backend`. #1626
+* [BUGFIX] `config convert`: Retain Cortex defaults for `blocks_storage.backend`, `ruler_storage.backend`, `alertmanager_storage.backend`, `auth.type`, `activity_tracker.filepath`, `alertmanager.data_dir`, `blocks_storage.filesystem.dir`, `compactor.data_dir`, `ruler.rule_path`, `ruler_storage.filesystem.dir`, and `graphite.querier.schemas.backend`. #1626 #1762
 
 ### Tools
 

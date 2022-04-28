@@ -4,7 +4,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
   'mimir-reads-networking.json':
     ($.dashboard('Reads networking') + { uid: 'c0464f0d8bd026f776c9006b05910000' })
     .addClusterSelectorTemplates(false)
-    .addRow($.jobNetworkingRow('Gateway', 'gateway'))
+    .addRowIf($._config.gateway_enabled, $.jobNetworkingRow('Gateway', 'gateway'))
     .addRow($.jobNetworkingRow('Query-frontend', 'query_frontend'))
     .addRow($.jobNetworkingRow('Query-scheduler', 'query_scheduler'))
     .addRow($.jobNetworkingRow('Querier', 'querier'))

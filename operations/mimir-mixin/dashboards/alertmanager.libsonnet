@@ -88,7 +88,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.latencyPanel('cortex_alertmanager_notification_latency_seconds', '{%s}' % $.jobMatcher($._config.job_names.alertmanager))
       )
     )
-    .addRow(
+    .addRowIf(
+      $._config.gateway_enabled,
       $.row('Configuration API (gateway) + Alertmanager UI')
       .addPanel(
         $.panel('QPS') +

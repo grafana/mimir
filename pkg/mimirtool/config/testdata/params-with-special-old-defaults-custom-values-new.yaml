@@ -3,9 +3,25 @@ server:
 
 blocks_storage:
   backend: s1
+  filesystem:
+    dir: ./here
 
 ruler_storage:
   backend: s2
+  filesystem:
+    dir: ./there
 
 alertmanager_storage:
   backend: s4
+
+activity_tracker:
+  filepath: ./my-path
+
+alertmanager:
+  data_dir: ./my-folder
+
+compactor:
+  data_dir: ./my-directory
+
+ruler:
+  rule_path: ./im-out-of-ideas
