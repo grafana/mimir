@@ -104,7 +104,7 @@ jobs:
         run: |
           docker run -v ${PWD}/docs/sources:/hugo/content/docs/mimir/latest -e HUGO_REFLINKSERRORLEVEL=ERROR --rm grafana/docs-base:latest /bin/bash -c 'make hugo'
 
-  build-mimir:
+  build:
     runs-on: ubuntu-latest
     container:
       image: grafana/mimir-build-image:update-build-image-and-github-workflow-89d9d61b4
@@ -113,58 +113,30 @@ jobs:
         uses: actions/checkout@v2
       - name: Install Docker Client
         run: ./.github/workflows/scripts/install-docker.sh
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v1
+      - name: Set up Docker Buildx
+        id: buildx
+        uses: docker/setup-buildx-action@v1
       - name: Symlink Expected Path to Workspace
         run: |
           mkdir -p /go/src/github.com/grafana/mimir
           ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
-      - name: Build Image
+      - name: Build Multiarch Docker Images Locally
+        # Ignore mimir-build-image and mimir-rules-action.
         run: |
-          make BUILD_IN_CONTAINER=false ./cmd/mimir/.uptodate
-      - name: Save Images
+          ./.github/workflows/scripts/build-images.sh /tmp/images $(make list-image-targets | grep -v -E '/mimir-build-image/|/mimir-rules-action/')
+      - name: Build Archive With Docker Images
         run: |
-          mkdir /tmp/images
-          ln -s /tmp/images ./docker-images
-          make BUILD_IN_CONTAINER=false save-images
-      - name: Create Docker Images Archive
-        run: tar -cvf mimir-images.tar /tmp/images
-      - name: Upload Docker Images Artifact
+          tar cvf images.tar /tmp/images
+      - name: Upload Archive with Docker Images
         uses: actions/upload-artifact@v2
         with:
-          name: Docker Images Mimir
-          path: ./mimir-images.tar
-
-  build-tools:
-    runs-on: ubuntu-latest
-    container:
-      image: grafana/mimir-build-image:update-build-image-and-github-workflow-89d9d61b4
-    steps:
-      - name: Checkout Repo
-        uses: actions/checkout@v2
-      - name: Install Docker Client
-        run: ./.github/workflows/scripts/install-docker.sh
-      - name: Symlink Expected Path to Workspace
-        run: |
-          mkdir -p /go/src/github.com/grafana/mimir
-          ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
-      - name: Build Images
-        # Build everything except mimir (run by build-mimir job) and build image (not managed by CI).
-        run: |
-          make list-image-targets | grep -v -E '/mimir-build-image/|/cmd/mimir/|/mimir-mixin-tools/' | xargs -I {} make BUILD_IN_CONTAINER=false {}
-      - name: Save Images
-        run: |
-          mkdir /tmp/images
-          ln -s /tmp/images ./docker-images
-          make BUILD_IN_CONTAINER=false save-images
-      - name: Create Docker Images Archive
-        run: tar -cvf tools-images.tar /tmp/images
-      - name: Upload Docker Image Artifact
-        uses: actions/upload-artifact@v2
-        with:
-          name: Docker Images Tools
-          path: ./tools-images.tar
+          name: Docker Images
+          path: ./images.tar
 
   integration:
-    needs: build-mimir
+    needs: build
     runs-on: ubuntu-latest
     strategy:
       # Do not abort other groups when one fails.
@@ -186,16 +158,17 @@ jobs:
         run: |
           sudo mkdir -p /go/src/github.com/grafana/mimir
           sudo ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
-      - name: Download Docker Images Mimir Artifacts
+      - name: Download Archive with Docker Images
         uses: actions/download-artifact@v2
         with:
-          name: Docker Images Mimir
-      - name: Extract Docker Image Archive
-        run: tar -xvf mimir-images.tar -C /
-      - name: Load Docker Images
+          name: Docker Images
+      - name: Extract Docker Images from Archive
+        run: tar xvf images.tar -C /
+      - name: Load Mimir Image into Docker
         run: |
-          ln -s /tmp/images ./docker-images
-          make BUILD_IN_CONTAINER=false load-images
+          export IMAGE_TAG=$(make image-tag)
+          # skopeo will by default load system-specific version of the image (linux/amd64).
+          skopeo copy oci-archive:/tmp/images/mimir.oci "docker-daemon:grafana/mimir:$IMAGE_TAG"
       - name: Preload Images
         # We download docker images used by integration tests so that all images are available
         # locally and the download time doesn't account in the test execution time, which is subject
@@ -211,7 +184,7 @@ jobs:
           ./.github/workflows/scripts/run-integration-tests-group.sh --index ${{ matrix.test_group_id }} --total ${{ matrix.test_group_total }}
 
   deploy:
-    needs: [build-mimir, build-tools, test, lint, integration]
+    needs: [build, test, lint, integration]
     # Only deploy images on pushes to the grafana/mimir repo, which either are tag pushes or weekly release branch pushes.
     if: (startsWith(github.ref, 'refs/tags/') || startsWith(github.ref, 'refs/heads/r') ) && github.event_name == 'push' && github.repository == 'grafana/mimir'
     runs-on: ubuntu-latest
@@ -226,29 +199,18 @@ jobs:
         run: |
           mkdir -p /go/src/github.com/grafana/mimir
           ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
-      - name: Download Docker Tool Images Artifacts
+      - name: Download Archive with Docker Images
         uses: actions/download-artifact@v2
         with:
-          name: Docker Images Tools
-      - name: Download Docker Mimir Image Artifacts
-        uses: actions/download-artifact@v2
-        with:
-          name: Docker Images Mimir
-      - name: Extract Docker Images
-        run: |
-          tar -xvf mimir-images.tar -C /
-          tar -xvf tools-images.tar -C /
-      - name: Load Images
-        run: |
-          ln -s /tmp/images ./docker-images
-          make BUILD_IN_CONTAINER=false load-images
+          name: Docker Images
+      - name: Extract Docker Images from Archive
+        run: tar xvf images.tar -C /
       - name: Deploy
         run: |
           if [ -n "$DOCKER_PASSWORD" ]; then
-            printenv DOCKER_PASSWORD | docker login -u "$DOCKER_USERNAME" --password-stdin
+            printenv DOCKER_PASSWORD | skopeo login -u "$DOCKER_USERNAME" --password-stdin docker.io
           fi
-          export IMAGE_TAG=$(make image-tag)
-          ./push-images
+          ./.github/workflows/scripts/push-images.sh /tmp/images grafana/ $(make image-tag)
         env:
           DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
           DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}

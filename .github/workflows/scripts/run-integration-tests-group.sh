@@ -1,4 +1,5 @@
 #!/bin/bash
+# SPDX-License-Identifier: AGPL-3.0-only
 
 SCRIPT_DIR=$(cd `dirname $0` && pwd)
 INTEGRATION_DIR=$(realpath "${SCRIPT_DIR}/../../../integration/")

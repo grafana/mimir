@@ -96,6 +96,11 @@ SED ?= $(shell which gsed 2>/dev/null || which sed)
 	@echo
 	@touch $@
 
+# This variable controls where result of building of multiarch image should be sent. Default is registry.
+# Other options are documented in https://docs.docker.com/engine/reference/commandline/buildx_build/#output.
+# CI workflow uses PUSH_MULTIARCH_TARGET="type=oci,dest=file.oci" to store images locally for next steps in the pipeline.
+PUSH_MULTIARCH_TARGET ?= type=registry
+
 # This target compiles mimir for linux/amd64 and linux/arm64 and then builds and pushes a multiarch image to the target repository.
 # We don't do separate building of single-platform and multiplatform images here (as we do for push-multiarch-build-image), as
 # these Dockerfiles are not doing much, and are unlikely to fail.
@@ -106,7 +111,7 @@ push-multiarch-%/$(UPTODATE):
 		$(MAKE) GOOS=linux GOARCH=amd64 BINARY_SUFFIX=_linux_amd64 $(DIR)/$(shell basename $(DIR)); \
 		$(MAKE) GOOS=linux GOARCH=arm64 BINARY_SUFFIX=_linux_arm64 $(DIR)/$(shell basename $(DIR)); \
 	fi
-	$(SUDO) docker buildx build -o type=registry --platform linux/amd64,linux/arm64 --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) --build-arg=USE_BINARY_SUFFIX=true -t $(IMAGE_PREFIX)$(shell basename $(DIR)):$(IMAGE_TAG) $(DIR)/
+	$(SUDO) docker buildx build -o $(PUSH_MULTIARCH_TARGET) --platform linux/amd64,linux/arm64 --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) --build-arg=USE_BINARY_SUFFIX=true -t $(IMAGE_PREFIX)$(shell basename $(DIR)):$(IMAGE_TAG) $(DIR)/
 
 push-multiarch-mimir: push-multiarch-cmd/mimir/.uptodate
 
@@ -337,7 +342,7 @@ doc: clean-doc $(DOC_TEMPLATES:.template=.md) $(DOC_EMBED:.md=.md.embedmd)
 
 # Add license header to files.
 license:
-	go run ./tools/add-license ./cmd ./integration ./pkg ./tools ./development ./mimir-build-image ./operations
+	go run ./tools/add-license ./cmd ./integration ./pkg ./tools ./development ./mimir-build-image ./operations ./.github
 
 check-license: license
 	@git diff --exit-code || (echo "Please add the license header running 'make BUILD_IN_CONTAINER=false license'" && false)
@@ -412,34 +417,6 @@ clean-protos:
 # List all images building make targets.
 list-image-targets:
 	@echo $(UPTODATE_FILES) | tr " " "\n"
-
-save-images:
-	@mkdir -p docker-images
-	for image_name in $(IMAGE_NAMES); do \
-		if echo $$image_name | grep -q build; then \
-			continue; \
-		fi; \
-		if [ "$$(docker images -q $$image_name:$(IMAGE_TAG) 2> /dev/null)" = "" ]; then \
-			echo "Skipping $$image_name:$(IMAGE_TAG) because image does not exist"; \
-		else \
-			echo "Saving $$image_name:$(IMAGE_TAG)"; \
-			docker save $$image_name:$(IMAGE_TAG) -o docker-images/$$(echo $$image_name | tr "/" _):$(IMAGE_TAG); \
-		fi; \
-	done
-
-load-images:
-	for image_name in $(IMAGE_NAMES); do \
-		if echo $$image_name | grep -q build; then \
-			continue; \
-		fi; \
-		image_path=docker-images/$$(echo $$image_name | tr "/" _):$(IMAGE_TAG); \
-		if [ -e "$$image_path" ]; then \
-			echo "Loading $$image_path"; \
-			docker load -i "$$image_path"; \
-		else \
-			echo "Skipping $$image_path because image does not exist"; \
-		fi; \
-	done
 
 clean-doc:
 	rm -f $(DOC_TEMPLATES:.template=.md)
