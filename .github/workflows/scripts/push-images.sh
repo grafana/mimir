@@ -10,7 +10,7 @@ TAG="$3"
 
 # If image is the latest stable git tag, also push :latest image.
 # Do not tag with latest any release candidate (tag ends with "-rc.*").
-EXTRA_TAG="test"
+EXTRA_TAG=""
 if [[ "$(git tag | grep -E '^mimir-[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1)" == "mimir-${TAG}" ]]; then
   EXTRA_TAG="latest"
 fi
