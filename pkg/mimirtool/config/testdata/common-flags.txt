@@ -1,4 +1,0 @@
--server.http-listen-port=80
--blocks-storage.backend=s3
--ruler-storage.backend=s3
--alertmanager-storage.backend=s3

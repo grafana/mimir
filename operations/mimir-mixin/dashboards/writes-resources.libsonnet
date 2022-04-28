@@ -4,7 +4,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
   'mimir-writes-resources.json':
     ($.dashboard('Writes resources') + { uid: 'c0464f0d8bd026f776c9006b0591bb0b' })
     .addClusterSelectorTemplates(false)
-    .addRow(
+    .addRowIf(
+      $._config.gateway_enabled,
       $.row('Gateway')
       .addPanel(
         $.containerCPUUsagePanel('CPU', $._config.job_names.gateway),

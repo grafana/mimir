@@ -1,14 +1,15 @@
 server:
   http_listen_port: 80
 
-auth:
-  type: trust
-
 blocks_storage:
   backend: s3
+  filesystem:
+    dir: ''
 
 ruler_storage:
   backend: s3
+  filesystem:
+    dir: ''
 
 alertmanager_storage:
   backend: s3
@@ -24,8 +25,3 @@ compactor:
 
 ruler:
   rule_path: /rules
-
-graphite:
-  querier:
-    schemas:
-      backend: s3

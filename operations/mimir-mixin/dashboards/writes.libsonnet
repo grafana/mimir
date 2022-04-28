@@ -102,12 +102,14 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.panel('Tenants') +
         $.statPanel('count(count by(user) (cortex_ingester_active_series{%s}))' % $.jobMatcher($._config.job_names.ingester), format='short')
       )
-      .addPanel(
+      .addPanelIf(
+        $._config.gateway_enabled,
         $.panel('Requests / sec') +
         $.statPanel('sum(rate(cortex_request_duration_seconds_count{%s, route=~"api_(v1|prom)_push"}[5m]))' % $.jobMatcher($._config.job_names.gateway), format='reqps')
       )
     )
-    .addRow(
+    .addRowIf(
+      $._config.gateway_enabled,
       $.row('Gateway')
       .addPanel(
         $.panel('Requests / sec') +

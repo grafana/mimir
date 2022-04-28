@@ -103,7 +103,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
         ),
       )
     )
-    .addRow(
+    .addRowIf(
+      $._config.gateway_enabled,
       $.row('Configuration API (gateway)')
       .addPanel(
         $.panel('QPS') +

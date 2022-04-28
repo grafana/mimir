@@ -4,6 +4,14 @@ local utils = import 'mixin-utils/utils.libsonnet';
 
   _config:: error 'must provide _config',
 
+  row(title)::
+    super.row(title) + {
+      addPanelIf(condition, panel)::
+        if condition
+        then self.addPanel(panel)
+        else self,
+    },
+
   // Override the dashboard constructor to add:
   // - default tags,
   // - some links that propagate the selectred cluster.
