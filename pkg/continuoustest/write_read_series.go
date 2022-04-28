@@ -22,6 +22,14 @@ const (
 	metricName    = "mimir_continuous_test_sine_wave"
 )
 
+var (
+	// We use max_over_time() with a 1s range selector in order to fetch only the samples we previously
+	// wrote and ensure the PromQL lookback period doesn't influence query results. This help to avoid
+	// false positives when finding the last written sample, or when restarting the testing tool with
+	// a different number of configured series to write and read.
+	queryMetricSum = fmt.Sprintf("sum(max_over_time(%s[1s]))", metricName)
+)
+
 type WriteReadSeriesTestConfig struct {
 	NumSeries   int
 	MaxQueryAge time.Duration
@@ -202,13 +210,12 @@ func (t *WriteReadSeriesTest) runRangeQueryAndVerifyResult(ctx context.Context, 
 	}
 
 	step := getQueryStep(start, end, writeInterval)
-	query := fmt.Sprintf("sum(%s)", metricName)
 
-	logger := log.With(t.logger, "query", query, "start", start.UnixMilli(), "end", end.UnixMilli(), "step", step, "results_cache", strconv.FormatBool(resultsCacheEnabled))
+	logger := log.With(t.logger, "query", queryMetricSum, "start", start.UnixMilli(), "end", end.UnixMilli(), "step", step, "results_cache", strconv.FormatBool(resultsCacheEnabled))
 	level.Debug(logger).Log("msg", "Running range query")
 
 	t.metrics.queriesTotal.Inc()
-	matrix, err := t.client.QueryRange(ctx, query, start, end, step, WithResultsCacheEnabled(resultsCacheEnabled))
+	matrix, err := t.client.QueryRange(ctx, queryMetricSum, start, end, step, WithResultsCacheEnabled(resultsCacheEnabled))
 	if err != nil {
 		t.metrics.queriesFailedTotal.Inc()
 		level.Warn(logger).Log("msg", "Failed to execute range query", "err", err)
@@ -232,13 +239,11 @@ func (t *WriteReadSeriesTest) runInstantQueryAndVerifyResult(ctx context.Context
 		return
 	}
 
-	query := fmt.Sprintf("sum(%s)", metricName)
-
-	logger := log.With(t.logger, "query", query, "ts", ts.UnixMilli(), "results_cache", strconv.FormatBool(resultsCacheEnabled))
+	logger := log.With(t.logger, "query", queryMetricSum, "ts", ts.UnixMilli(), "results_cache", strconv.FormatBool(resultsCacheEnabled))
 	level.Debug(logger).Log("msg", "Running instant query")
 
 	t.metrics.queriesTotal.Inc()
-	vector, err := t.client.Query(ctx, query, ts, WithResultsCacheEnabled(resultsCacheEnabled))
+	vector, err := t.client.Query(ctx, queryMetricSum, ts, WithResultsCacheEnabled(resultsCacheEnabled))
 	if err != nil {
 		t.metrics.queriesFailedTotal.Inc()
 		level.Warn(logger).Log("msg", "Failed to execute instant query", "err", err)
@@ -275,9 +280,6 @@ func (t *WriteReadSeriesTest) nextWriteTimestamp(now time.Time) time.Time {
 }
 
 func (t *WriteReadSeriesTest) findPreviouslyWrittenTimeRange(ctx context.Context, now time.Time) (from, to time.Time) {
-	// We use max_over_time() with a 1s range selector in order to fetch only the samples we previously
-	// wrote and ensure the PromQL lookback period doesn't influence query results.
-	query := fmt.Sprintf("sum(max_over_time(%s[1s]))", metricName)
 	end := alignTimestampToInterval(now, writeInterval)
 	step := writeInterval
 
@@ -290,10 +292,10 @@ func (t *WriteReadSeriesTest) findPreviouslyWrittenTimeRange(ctx context.Context
 			return
 		}
 
-		logger := log.With(t.logger, "query", query, "start", start, "end", end, "step", step)
+		logger := log.With(t.logger, "query", queryMetricSum, "start", start, "end", end, "step", step)
 		level.Debug(logger).Log("msg", "Executing query to find previously written samples")
 
-		matrix, err := t.client.QueryRange(ctx, query, start, end, step, WithResultsCacheEnabled(false))
+		matrix, err := t.client.QueryRange(ctx, queryMetricSum, start, end, step, WithResultsCacheEnabled(false))
 		if err != nil {
 			level.Warn(logger).Log("msg", "Failed to execute range query used to find previously written samples", "err", err)
 			return

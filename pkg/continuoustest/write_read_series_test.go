@@ -42,10 +42,10 @@ func TestWriteReadSeriesTest_Run(t *testing.T) {
 		assert.Equal(t, int64(1000), test.lastWrittenTimestamp.Unix())
 
 		client.AssertNumberOfCalls(t, "QueryRange", 4)
-		client.AssertCalled(t, "QueryRange", mock.Anything, "sum(mimir_continuous_test_sine_wave)", time.Unix(1000, 0), time.Unix(1000, 0), writeInterval, mock.Anything)
+		client.AssertCalled(t, "QueryRange", mock.Anything, "sum(max_over_time(mimir_continuous_test_sine_wave[1s]))", time.Unix(1000, 0), time.Unix(1000, 0), writeInterval, mock.Anything)
 
 		client.AssertNumberOfCalls(t, "Query", 4)
-		client.AssertCalled(t, "Query", mock.Anything, "sum(mimir_continuous_test_sine_wave)", time.Unix(1000, 0), mock.Anything)
+		client.AssertCalled(t, "Query", mock.Anything, "sum(max_over_time(mimir_continuous_test_sine_wave[1s]))", time.Unix(1000, 0), mock.Anything)
 
 		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP mimir_continuous_test_writes_total Total number of attempted write requests.
@@ -81,10 +81,10 @@ func TestWriteReadSeriesTest_Run(t *testing.T) {
 		assert.Equal(t, int64(980), test.lastWrittenTimestamp.Unix())
 
 		client.AssertNumberOfCalls(t, "QueryRange", 4)
-		client.AssertCalled(t, "QueryRange", mock.Anything, "sum(mimir_continuous_test_sine_wave)", time.Unix(980, 0), time.Unix(980, 0), writeInterval, mock.Anything)
+		client.AssertCalled(t, "QueryRange", mock.Anything, "sum(max_over_time(mimir_continuous_test_sine_wave[1s]))", time.Unix(980, 0), time.Unix(980, 0), writeInterval, mock.Anything)
 
 		client.AssertNumberOfCalls(t, "Query", 4)
-		client.AssertCalled(t, "Query", mock.Anything, "sum(mimir_continuous_test_sine_wave)", time.Unix(980, 0), mock.Anything)
+		client.AssertCalled(t, "Query", mock.Anything, "sum(max_over_time(mimir_continuous_test_sine_wave[1s]))", time.Unix(980, 0), mock.Anything)
 
 		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP mimir_continuous_test_writes_total Total number of attempted write requests.
@@ -123,10 +123,10 @@ func TestWriteReadSeriesTest_Run(t *testing.T) {
 		assert.Equal(t, int64(1000), test.lastWrittenTimestamp.Unix())
 
 		client.AssertNumberOfCalls(t, "QueryRange", 4)
-		client.AssertCalled(t, "QueryRange", mock.Anything, "sum(mimir_continuous_test_sine_wave)", time.Unix(960, 0), time.Unix(1000, 0), writeInterval, mock.Anything)
+		client.AssertCalled(t, "QueryRange", mock.Anything, "sum(max_over_time(mimir_continuous_test_sine_wave[1s]))", time.Unix(960, 0), time.Unix(1000, 0), writeInterval, mock.Anything)
 
 		client.AssertNumberOfCalls(t, "Query", 4)
-		client.AssertCalled(t, "Query", mock.Anything, "sum(mimir_continuous_test_sine_wave)", time.Unix(1000, 0), mock.Anything)
+		client.AssertCalled(t, "Query", mock.Anything, "sum(max_over_time(mimir_continuous_test_sine_wave[1s]))", time.Unix(1000, 0), mock.Anything)
 
 		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP mimir_continuous_test_writes_total Total number of attempted write requests.
@@ -259,10 +259,10 @@ func TestWriteReadSeriesTest_Run(t *testing.T) {
 		assert.Equal(t, int64(1000), test.lastWrittenTimestamp.Unix())
 
 		client.AssertNumberOfCalls(t, "QueryRange", 4)
-		client.AssertCalled(t, "QueryRange", mock.Anything, "sum(mimir_continuous_test_sine_wave)", time.Unix(1000, 0), time.Unix(1000, 0), writeInterval, mock.Anything)
+		client.AssertCalled(t, "QueryRange", mock.Anything, "sum(max_over_time(mimir_continuous_test_sine_wave[1s]))", time.Unix(1000, 0), time.Unix(1000, 0), writeInterval, mock.Anything)
 
 		client.AssertNumberOfCalls(t, "Query", 4)
-		client.AssertCalled(t, "Query", mock.Anything, "sum(mimir_continuous_test_sine_wave)", time.Unix(1000, 0), mock.Anything)
+		client.AssertCalled(t, "Query", mock.Anything, "sum(max_over_time(mimir_continuous_test_sine_wave[1s]))", time.Unix(1000, 0), mock.Anything)
 
 		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP mimir_continuous_test_writes_total Total number of attempted write requests.
@@ -313,10 +313,10 @@ func TestWriteReadSeriesTest_Run(t *testing.T) {
 		assert.Equal(t, int64(1000), test.lastWrittenTimestamp.Unix())
 
 		client.AssertNumberOfCalls(t, "QueryRange", 4)
-		client.AssertCalled(t, "QueryRange", mock.Anything, "sum(mimir_continuous_test_sine_wave)", time.Unix(1000, 0), time.Unix(1000, 0), writeInterval, mock.Anything)
+		client.AssertCalled(t, "QueryRange", mock.Anything, "sum(max_over_time(mimir_continuous_test_sine_wave[1s]))", time.Unix(1000, 0), time.Unix(1000, 0), writeInterval, mock.Anything)
 
 		client.AssertNumberOfCalls(t, "Query", 4)
-		client.AssertCalled(t, "Query", mock.Anything, "sum(mimir_continuous_test_sine_wave)", time.Unix(1000, 0), mock.Anything)
+		client.AssertCalled(t, "Query", mock.Anything, "sum(max_over_time(mimir_continuous_test_sine_wave[1s]))", time.Unix(1000, 0), mock.Anything)
 
 		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP mimir_continuous_test_writes_total Total number of attempted write requests.
