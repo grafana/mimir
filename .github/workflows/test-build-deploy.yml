@@ -125,7 +125,7 @@ jobs:
       - name: Build Multiarch Docker Images Locally
         # Ignore mimir-build-image and mimir-rules-action.
         run: |
-          ./.github/workflows/scripts/build-images.sh /tmp/images $(make list-image-targets | grep -v -E '/mimir-build-image/' | grep -v -E '/mimir-rules-action/')
+          ./.github/workflows/scripts/build-images.sh /tmp/images $(make list-image-targets | grep -v -E '/mimir-build-image/|/mimir-rules-action/')
       - name: Build Archive With Docker Images
         run: |
           tar cvf images.tar /tmp/images
