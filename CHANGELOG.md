@@ -89,7 +89,7 @@
 ### Tools
 
 * [FEATURE] Added a `markblocks` tool that creates `no-compact` and `delete` marks for the blocks. #1551
-* [FEATURE] Added `mimir-continuous-test` tool to continuously run smoke tests on live Mimir clusters. #1535 #1540 #1653 #1603 #1630 #1691 #1675 #1676 #1692 #1706 #1709 #1777
+* [FEATURE] Added `mimir-continuous-test` tool to continuously run smoke tests on live Mimir clusters. #1535 #1540 #1653 #1603 #1630 #1691 #1675 #1676 #1692 #1706 #1709 #1777 #1778
 * [FEATURE] Added `mimir-rules-action` GitHub action, located at `operations/mimir-rules-action/`, used to lint, prepare, verify, diff, and sync rules to a Mimir cluster. #1723
 
 ## 2.0.0
