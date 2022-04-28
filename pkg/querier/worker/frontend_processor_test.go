@@ -28,7 +28,12 @@ func TestFrontendProcessor_processQueriesOnSingleStream(t *testing.T) {
 	t.Run("should immediately return if worker context is canceled and there's no inflight query", func(t *testing.T) {
 		fp, processClient, requestHandler := prepareFrontendProcessor()
 
+		workerCtx, workerCancel := context.WithCancel(context.Background())
+
 		processClient.On("Recv").Return(func() (*frontendv1pb.FrontendToClient, error) {
+			// Simulate the querier received a SIGTERM while waiting for a query to execute.
+			workerCancel()
+
 			// No query to execute, so wait until terminated.
 			<-processClient.Context().Done()
 			return nil, processClient.Context().Err()
@@ -36,10 +41,7 @@ func TestFrontendProcessor_processQueriesOnSingleStream(t *testing.T) {
 
 		requestHandler.On("Handle", mock.Anything, mock.Anything).Return(&httpgrpc.HTTPResponse{}, nil)
 
-		workerCtx, workerCancel := context.WithCancel(context.Background())
-		workerCancel()
-
-		fp.processQueriesOnSingleStream(workerCtx, nil, "127.0.0.1")
+		fp.processQueriesOnSingleStream(workerCtx, nil, "12.0.0.1")
 
 		// We expect at this point, the execution context has been canceled too.
 		require.Error(t, processClient.Context().Err())
