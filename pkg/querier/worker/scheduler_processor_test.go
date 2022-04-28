@@ -23,16 +23,18 @@ func TestSchedulerProcessor_processQueriesOnSingleStream(t *testing.T) {
 	t.Run("should immediately return if worker context is canceled and there's no inflight query", func(t *testing.T) {
 		sp, loopClient, requestHandler := prepareSchedulerProcessor()
 
+		workerCtx, workerCancel := context.WithCancel(context.Background())
+
 		loopClient.On("Recv").Return(func() (*schedulerpb.SchedulerToQuerier, error) {
+			// Simulate the querier received a SIGTERM while waiting for a query to execute.
+			workerCancel()
+
 			// No query to execute, so wait until terminated.
 			<-loopClient.Context().Done()
 			return nil, loopClient.Context().Err()
 		})
 
 		requestHandler.On("Handle", mock.Anything, mock.Anything).Return(&httpgrpc.HTTPResponse{}, nil)
-
-		workerCtx, workerCancel := context.WithCancel(context.Background())
-		workerCancel()
 
 		sp.processQueriesOnSingleStream(workerCtx, nil, "127.0.0.1")
 
