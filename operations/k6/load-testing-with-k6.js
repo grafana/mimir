@@ -244,7 +244,7 @@ export function write() {
             }
         );
         check(res, {
-            'write worked': (r) => r.status === 200,
+            'write worked': (r) => r.status === 200 || r.status === 202,
         }, { type: "write" }) || fail(`ERR: write failed. Status: ${res.status}. Body: ${res.body}`);
     }
     catch (e) {
