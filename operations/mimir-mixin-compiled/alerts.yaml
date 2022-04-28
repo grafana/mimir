@@ -732,6 +732,6 @@ groups:
       message: Mimir continuous test {{ $labels.test }} in {{ $labels.cluster }}/{{
         $labels.namespace }} failed when asserting query results.
     expr: |
-      sum by(cluster, namespace, test) (rate(mimir_continuous_test_query_result_checks_failed_total[5m])) > 0
+      sum by(cluster, namespace, test) (rate(mimir_continuous_test_query_result_checks_failed_total[10m])) > 0
     labels:
       severity: warning
