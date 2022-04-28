@@ -212,11 +212,6 @@ jobs:
             printenv DOCKER_PASSWORD | skopeo login -u "$DOCKER_USERNAME" --password-stdin docker.io
           fi
           ./.github/workflows/scripts/push-images.sh /tmp/images grafana/ $(make image-tag)
-          # If image is the latest stable git tag, also push :latest image.
-          # Do not tag with latest any release candidate (tag ends with "-rc.*").
-          if [ "$(git tag | grep -E '^mimir-[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1)" == "mimir-${IMAGE_TAG}" ]; then
-            ./.github/workflows/scripts/push-images.sh /tmp/images grafana/ latest
-          fi
         env:
           DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
           DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
