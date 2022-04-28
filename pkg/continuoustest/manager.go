@@ -25,7 +25,7 @@ type ManagerConfig struct {
 }
 
 func (cfg *ManagerConfig) RegisterFlags(f *flag.FlagSet) {
-	f.DurationVar(&cfg.RunInterval, "tests.run-interval", time.Minute, "How frequently tests should run.")
+	f.DurationVar(&cfg.RunInterval, "tests.run-interval", 5*time.Minute, "How frequently tests should run.")
 }
 
 type Manager struct {
