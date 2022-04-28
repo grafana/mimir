@@ -27,6 +27,6 @@ do
 
   if [[ -n "${EXTRA_TAG}" ]]; then
     echo "Tagging with ${EXTRA_TAG}"
-    skopeo copy "docker://${IMAGE_PREFIX}${NAME}:${TAG}" "docker://${IMAGE_PREFIX}${NAME}:${EXTRA_TAG}"
+    skopeo copy --all --retry-times 3 "docker://${IMAGE_PREFIX}${NAME}:${TAG}" "docker://${IMAGE_PREFIX}${NAME}:${EXTRA_TAG}"
   fi
 done
