@@ -25,7 +25,6 @@ import (
 // - The execution context is canceled when the worker context gets cancelled (ie. querier is shutting down)
 // and there's no inflight query execution. In case there's an inflight query, the execution context is canceled
 // once the inflight query terminates and the response has been sent.
-
 func newExecutionContext(workerCtx context.Context, logger log.Logger) (execCtx context.Context, execCancel context.CancelFunc, inflightQuery *atomic.Bool) {
 	execCtx, execCancel = context.WithCancel(context.Background())
 	inflightQuery = atomic.NewBool(false)
