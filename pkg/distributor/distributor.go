@@ -1264,7 +1264,7 @@ func (d *Distributor) LabelNames(ctx context.Context, from, to model.Time, match
 }
 
 // MetricsForLabelMatchers gets the metrics that match said matchers
-func (d *Distributor) MetricsForLabelMatchers(ctx context.Context, from, through model.Time, matchers ...*labels.Matcher) ([]model.Metric, error) {
+func (d *Distributor) MetricsForLabelMatchers(ctx context.Context, from, through model.Time, matchers ...*labels.Matcher) ([]labels.Labels, error) {
 	replicationSet, err := d.GetIngestersForMetadata(ctx)
 	if err != nil {
 		return nil, err
@@ -1282,15 +1282,15 @@ func (d *Distributor) MetricsForLabelMatchers(ctx context.Context, from, through
 		return nil, err
 	}
 
-	metrics := map[model.Fingerprint]model.Metric{}
+	metrics := map[uint64]labels.Labels{}
 	for _, resp := range resps {
 		ms := ingester_client.FromMetricsForLabelMatchersResponse(resp.(*ingester_client.MetricsForLabelMatchersResponse))
 		for _, m := range ms {
-			metrics[m.Fingerprint()] = m
+			metrics[m.Hash()] = m
 		}
 	}
 
-	result := make([]model.Metric, 0, len(metrics))
+	result := make([]labels.Labels, 0, len(metrics))
 	for _, m := range metrics {
 		result = append(result, m)
 	}

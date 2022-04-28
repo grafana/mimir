@@ -50,7 +50,6 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/chunk"
-	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/chunkcompat"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	util_math "github.com/grafana/mimir/pkg/util/math"
@@ -1755,23 +1754,23 @@ func TestDistributor_MetricsForLabelMatchers(t *testing.T) {
 	tests := map[string]struct {
 		shuffleShardSize  int
 		matchers          []*labels.Matcher
-		expectedResult    []model.Metric
+		expectedResult    []labels.Labels
 		expectedIngesters int
 	}{
 		"should return an empty response if no metric match": {
 			matchers: []*labels.Matcher{
 				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "unknown"),
 			},
-			expectedResult:    []model.Metric{},
+			expectedResult:    []labels.Labels{},
 			expectedIngesters: numIngesters,
 		},
 		"should filter metrics by single matcher": {
 			matchers: []*labels.Matcher{
 				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_1"),
 			},
-			expectedResult: []model.Metric{
-				util.LabelsToMetric(fixtures[0].lbls),
-				util.LabelsToMetric(fixtures[1].lbls),
+			expectedResult: []labels.Labels{
+				fixtures[0].lbls,
+				fixtures[1].lbls,
 			},
 			expectedIngesters: numIngesters,
 		},
@@ -1780,8 +1779,8 @@ func TestDistributor_MetricsForLabelMatchers(t *testing.T) {
 				mustNewMatcher(labels.MatchEqual, "status", "200"),
 				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_1"),
 			},
-			expectedResult: []model.Metric{
-				util.LabelsToMetric(fixtures[0].lbls),
+			expectedResult: []labels.Labels{
+				fixtures[0].lbls,
 			},
 			expectedIngesters: numIngesters,
 		},
@@ -1789,9 +1788,9 @@ func TestDistributor_MetricsForLabelMatchers(t *testing.T) {
 			matchers: []*labels.Matcher{
 				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "fast_fingerprint_collision"),
 			},
-			expectedResult: []model.Metric{
-				util.LabelsToMetric(fixtures[3].lbls),
-				util.LabelsToMetric(fixtures[4].lbls),
+			expectedResult: []labels.Labels{
+				fixtures[3].lbls,
+				fixtures[4].lbls,
 			},
 			expectedIngesters: numIngesters,
 		},
@@ -1800,9 +1799,9 @@ func TestDistributor_MetricsForLabelMatchers(t *testing.T) {
 			matchers: []*labels.Matcher{
 				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_1"),
 			},
-			expectedResult: []model.Metric{
-				util.LabelsToMetric(fixtures[0].lbls),
-				util.LabelsToMetric(fixtures[1].lbls),
+			expectedResult: []labels.Labels{
+				fixtures[0].lbls,
+				fixtures[1].lbls,
 			},
 			expectedIngesters: 3,
 		},

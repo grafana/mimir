@@ -84,7 +84,7 @@ func TestDistributorQuerier_SelectShouldHonorQueryIngestersWithin(t *testing.T) 
 			distributor := &mockDistributor{}
 			distributor.On("Query", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Matrix{}, nil)
 			distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(&client.QueryStreamResponse{}, nil)
-			distributor.On("MetricsForLabelMatchers", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]model.Metric{}, nil)
+			distributor.On("MetricsForLabelMatchers", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]labels.Labels{}, nil)
 
 			ctx := user.InjectOrgID(context.Background(), "test")
 			queryable := newDistributorQueryable(distributor, nil, testData.queryIngestersWithin, log.NewNopLogger())
@@ -391,9 +391,9 @@ func (m *mockDistributor) LabelNames(ctx context.Context, from, to model.Time, m
 	args := m.Called(ctx, from, to, matchers)
 	return args.Get(0).([]string), args.Error(1)
 }
-func (m *mockDistributor) MetricsForLabelMatchers(ctx context.Context, from, to model.Time, matchers ...*labels.Matcher) ([]model.Metric, error) {
+func (m *mockDistributor) MetricsForLabelMatchers(ctx context.Context, from, to model.Time, matchers ...*labels.Matcher) ([]labels.Labels, error) {
 	args := m.Called(ctx, from, to, matchers)
-	return args.Get(0).([]model.Metric), args.Error(1)
+	return args.Get(0).([]labels.Labels), args.Error(1)
 }
 
 func (m *mockDistributor) MetricsMetadata(ctx context.Context) ([]scrape.MetricMetadata, error) {
