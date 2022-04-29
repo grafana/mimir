@@ -37,8 +37,8 @@
     * `-ruler.query-frontend.tls-insecure-skip-verify`
 * [FEATURE] Distributor: Added the ability to forward specifics metrics to alternative remote_write API endpoints. #1052
 * [FEATURE] Ingester: Active series custom trackers now supports runtime tenant-specific overrides. The configuration has been moved to limit config, the ingester config has been deprecated.  #1188
-* [FEATURE] Add `-verify-config` CLI flag. This will cause Mimir to exit immediately after running config validation.
-* [FEATURE] Add `-print-config-stderr` CLI flag. This will cause Mimir to pring the complete config object to stderr in YAML format.
+* [FEATURE] Add `-verify-config` CLI flag. This will cause Mimir to exit immediately after running config validation. #1800
+* [FEATURE] Add `-print-config-stderr` CLI flag. This will cause Mimir to pring the complete config object to stderr in YAML format. #1800
 * [ENHANCEMENT] Alertmanager API: Concurrency limit for GET requests is now configurable using `-alertmanager.max-concurrent-get-requests-per-tenant`. #1547
 * [ENHANCEMENT] Alertmanager: Added the ability to configure additional gRPC client settings for the Alertmanager distributor #1547
   - `-alertmanager.alertmanager-client.backoff-max-period`
