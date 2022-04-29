@@ -67,7 +67,7 @@ Usage of ./cmd/mimir/mimir:
   -alertmanager-storage.s3.tls-handshake-timeout duration
     	Maximum time to wait for a TLS handshake. 0 means no limit. (default 10s)
   -alertmanager-storage.storage-prefix string
-    	Prefix for all objects stored in the backend storage.
+    	Prefix for all objects stored in the backend storage. It should contain only English alphabet letters, digits, -, _, ., *, ', (, ), and ! and should not be a single dot (.) or two dots (..)
   -alertmanager-storage.swift.auth-url string
     	OpenStack Swift authentication URL
   -alertmanager-storage.swift.auth-version int
@@ -438,7 +438,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.s3.tls-handshake-timeout duration
     	Maximum time to wait for a TLS handshake. 0 means no limit. (default 10s)
   -blocks-storage.storage-prefix string
-    	Prefix for all objects stored in the backend storage.
+    	Prefix for all objects stored in the backend storage. It should contain only English alphabet letters, digits, -, _, ., *, ', (, ), and ! and should not be a single dot (.) or two dots (..)
   -blocks-storage.swift.auth-url string
     	OpenStack Swift authentication URL
   -blocks-storage.swift.auth-version int
@@ -1295,7 +1295,7 @@ Usage of ./cmd/mimir/mimir:
   -ruler-storage.s3.tls-handshake-timeout duration
     	Maximum time to wait for a TLS handshake. 0 means no limit. (default 10s)
   -ruler-storage.storage-prefix string
-    	Prefix for all objects stored in the backend storage.
+    	Prefix for all objects stored in the backend storage. It should contain only English alphabet letters, digits, -, _, ., *, ', (, ), and ! and should not be a single dot (.) or two dots (..)
   -ruler-storage.swift.auth-url string
     	OpenStack Swift authentication URL
   -ruler-storage.swift.auth-version int
