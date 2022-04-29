@@ -145,6 +145,16 @@ func TestClient_ConfigValidation(t *testing.T) {
 			expectingError: true,
 		},
 		{
+			name:           "storage_prefix that has some character strings that have a meaning in unix paths (..)",
+			cfg:            Config{Backend: Filesystem, StoragePrefix: ".."},
+			expectingError: true,
+		},
+		{
+			name:           "storage_prefix that has some character strings that have a meaning in unix paths (.)",
+			cfg:            Config{Backend: Filesystem, StoragePrefix: "."},
+			expectingError: true,
+		},
+		{
 			name:           "unsupported backend",
 			cfg:            Config{Backend: "flash drive"},
 			expectingError: true,

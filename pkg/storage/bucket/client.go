@@ -10,6 +10,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"path"
 	"strings"
 
 	"github.com/go-kit/log"
@@ -42,6 +43,7 @@ const (
 	// Filesystem is the value for the filesystem storage backend.
 	Filesystem = "filesystem"
 
+	// validPrefixCharactersRegex is build from S3's guide on key names https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-keys.html#object-key-guidelines
 	validPrefixCharactersRegex = `^[\da-zA-Z\-_.*'()!]+$`
 )
 
@@ -49,7 +51,7 @@ var (
 	SupportedBackends = []string{S3, GCS, Azure, Swift, Filesystem}
 
 	ErrUnsupportedStorageBackend        = errors.New("unsupported storage backend")
-	ErrInvalidCharactersInStoragePrefix = errors.New("storage_prefix contains invalid characters, it should match the Go regexp " + validPrefixCharactersRegex)
+	ErrInvalidCharactersInStoragePrefix = errors.New("storage_prefix contains invalid characters, it should contain only English alphabet letters, digits, -, _, ., *, ', (, ), and ! and should not be a single dot (.) or two dots (..)")
 )
 
 // Config holds configuration for accessing long-term storage.
@@ -90,7 +92,7 @@ func (cfg *Config) RegisterFlagsWithPrefixAndDefaultDirectory(prefix, dir string
 	cfg.Filesystem.RegisterFlagsWithPrefixAndDefaultDirectory(prefix, dir, f)
 
 	f.StringVar(&cfg.Backend, prefix+"backend", Filesystem, fmt.Sprintf("Backend storage to use. Supported backends are: %s.", strings.Join(cfg.supportedBackends(), ", ")))
-	f.StringVar(&cfg.StoragePrefix, prefix+"storage-prefix", "", "Prefix for all objects stored in the backend storage.")
+	f.StringVar(&cfg.StoragePrefix, prefix+"storage-prefix", "", "Prefix for all objects stored in the backend storage. It should contain only English alphabet letters, digits, -, _, ., *, ', (, ), and ! and should not be a single dot (.) or two dots (..)")
 }
 
 func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
@@ -109,9 +111,9 @@ func (cfg *Config) Validate() error {
 	}
 
 	if cfg.StoragePrefix != "" {
-		// Takes from S3's guide on key names https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-keys.html#object-key-guidelines
 		acceptablePrefixCharacters := regexp.MustCompile(validPrefixCharactersRegex)
-		if !acceptablePrefixCharacters.MatchString(cfg.StoragePrefix) {
+		cleanPrefix := path.Clean(cfg.StoragePrefix)
+		if !acceptablePrefixCharacters.MatchString(cfg.StoragePrefix) || cleanPrefix == ".." || cleanPrefix == "." {
 			return ErrInvalidCharactersInStoragePrefix
 		}
 	}
