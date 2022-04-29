@@ -6,6 +6,7 @@
 package bucket
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"sync"
@@ -16,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 	yaml "gopkg.in/yaml.v2"
 
+	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
@@ -171,4 +173,50 @@ func TestClient_ConfigValidation(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestNewPrefixedBucketClient(t *testing.T) {
+	t.Run("with prefix", func(t *testing.T) {
+		ctx := context.Background()
+		tempDir := t.TempDir()
+		cfg := Config{
+			Backend:       Filesystem,
+			StoragePrefix: "prefix",
+			Filesystem: filesystem.Config{
+				Directory: tempDir,
+			},
+		}
+
+		client, err := NewClient(ctx, cfg, "test", util_log.Logger, nil)
+		require.NoError(t, err)
+
+		err = client.Upload(ctx, "file", bytes.NewBufferString("content"))
+		assert.NoError(t, err)
+
+		_, err = client.Get(ctx, "file")
+		assert.NoError(t, err)
+
+		assert.FileExists(t, tempDir+"/prefix/file")
+	})
+
+	t.Run("without prefix", func(t *testing.T) {
+		ctx := context.Background()
+		tempDir := t.TempDir()
+		cfg := Config{
+			Backend: Filesystem,
+			Filesystem: filesystem.Config{
+				Directory: tempDir,
+			},
+		}
+
+		client, err := NewClient(ctx, cfg, "test", util_log.Logger, nil)
+		require.NoError(t, err)
+		err = client.Upload(ctx, "file", bytes.NewBufferString("content"))
+		require.NoError(t, err)
+
+		_, err = client.Get(ctx, "file")
+		assert.NoError(t, err)
+
+		assert.FileExists(t, tempDir+"/file")
+	})
 }
