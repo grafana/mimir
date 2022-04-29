@@ -13,6 +13,12 @@
 * [CHANGE] Store-gateway: enabled attributes in-memory cache by default. New default configuration is `-blocks-storage.bucket-store.chunks-cache.attributes-in-memory-max-items=50000`. #1727
 * [CHANGE] Compactor: Removed the metric `cortex_compactor_garbage_collected_blocks_total` since it duplicates `cortex_compactor_blocks_marked_for_deletion_total`. #1728
 * [CHANGE] All: Logs that used the`org_id` label now use `user` label. #1634 #1758
+* [CHANGE] Alertmanager: the following metrics are not exported for a given `user` and `integration` when the metric value is zero: #1783
+  * `cortex_alertmanager_notifications_total`
+  * `cortex_alertmanager_notifications_failed_total`
+  * `cortex_alertmanager_notification_requests_total`
+  * `cortex_alertmanager_notification_requests_failed_total`
+  * `cortex_alertmanager_notification_rate_limited_total`
 * [CHANGE] Removed the following metrics exposed by the Mimir hash rings: #1791
   * `cortex_member_ring_tokens_owned`
   * `cortex_member_ring_tokens_to_own`
