@@ -71,7 +71,7 @@ func NewDistributor(name string, consulAddress string, flags map[string]string, 
 		name,
 		map[string]string{
 			"-target":                           "distributor",
-			"-log.level":                        "warn",
+			"-log.level":                        "debug",
 			"-auth.multitenancy-enabled":        "true",
 			"-ingester.ring.replication-factor": "1",
 			"-distributor.remote-timeout":       "2s", // Fail fast in integration tests.
