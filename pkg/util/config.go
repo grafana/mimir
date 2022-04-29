@@ -7,7 +7,10 @@ package util
 
 import (
 	"fmt"
+	"io"
 	"reflect"
+
+	"gopkg.in/yaml.v3"
 )
 
 // DiffConfig utility function that returns the diff between two config map objects
@@ -70,4 +73,15 @@ func DiffConfig(defaultConfig, actualConfig map[interface{}]interface{}) (map[in
 	}
 
 	return output, nil
+}
+
+// PrintConfig takes version string and a pointer to a config object, marshals
+// it to YAML and prints the result to the provided writer
+func PrintConfig(w io.Writer, version string, config interface{}) error {
+	lc, err := yaml.Marshal(config)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(w, "---\n# Mimir Config\n# %s\n%s\n\n", version, string(lc))
+	return nil
 }

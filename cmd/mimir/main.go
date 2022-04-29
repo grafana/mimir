@@ -25,6 +25,7 @@ import (
 	"gopkg.in/yaml.v2"
 
 	"github.com/grafana/mimir/pkg/mimir"
+	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/version"
 )
@@ -59,6 +60,8 @@ type mainFlags struct {
 	printModules         bool
 	printHelp            bool
 	printHelpAll         bool
+	printConfig          bool
+	verifyConfig         bool
 }
 
 func (mf *mainFlags) registerFlags(fs *flag.FlagSet) {
@@ -67,6 +70,8 @@ func (mf *mainFlags) registerFlags(fs *flag.FlagSet) {
 	fs.IntVar(&mf.blockProfileRate, "debug.block-profile-rate", 0, "Fraction of goroutine blocking events that are reported in the blocking profile. 1 to include every blocking event in the profile, 0 to disable.")
 	fs.BoolVar(&mf.printVersion, "version", false, "Print application version and exit.")
 	fs.BoolVar(&mf.printModules, "modules", false, "List available values that can be used as target.")
+	fs.BoolVar(&mf.printConfig, "print-config-stderr", false, "Dump the entire Mimir config object to stderr in YAML format.")
+	fs.BoolVar(&mf.verifyConfig, "verify-config", false, "Verify config parameters and exits.")
 	fs.BoolVar(&mf.printHelp, "help", false, "Print basic help.")
 	fs.BoolVar(&mf.printHelp, "h", false, "Print basic help.")
 	fs.BoolVar(&mf.printHelpAll, "help-all", false, "Print help, also including advanced and experimental parameters.")
@@ -129,6 +134,13 @@ func main() {
 		return
 	}
 
+	if mainFlags.printConfig {
+		err := util.PrintConfig(os.Stderr, version.Info(), &cfg)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error printing config: %s\n", err)
+		}
+	}
+
 	// Validate the config once both the config file has been loaded
 	// and CLI flags parsed.
 	if err := cfg.Validate(util_log.Logger); err != nil {
@@ -136,6 +148,11 @@ func main() {
 		if !testMode {
 			os.Exit(1)
 		}
+	}
+
+	if mainFlags.verifyConfig {
+		fmt.Fprintf(os.Stdout, "config is valid\n")
+		os.Exit(0)
 	}
 
 	// Continue on if -modules flag is given. Code handling the
