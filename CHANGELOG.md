@@ -27,6 +27,9 @@
 * [CHANGE] Querier / Ruler: removed the following metrics tracking number of query requests send to each ingester. You can use `cortex_request_duration_seconds_count{route=~"/cortex.Ingester/(QueryStream|QueryExemplars)"}` instead. #1797
   * `cortex_distributor_ingester_queries_total`
   * `cortex_distributor_ingester_query_failures_total`
+* [CHANGE] Distributor: removed the following metrics tracking the number of requests from a distributor to ingesters: #1799
+  * `cortex_distributor_ingester_appends_total`
+  * `cortex_distributor_ingester_append_failures_total`
 * [FEATURE] Querier: Added support for [streaming remote read](https://prometheus.io/blog/2019/10/10/remote-read-meets-streaming/). Should be noted that benefits of chunking the response are partial here, since in a typical `query-frontend` setup responses will be buffered until they've been completed. #1735
 * [FEATURE] Ruler: Allow setting `evaluation_delay` for each rule group via rules group configuration file. #1474
 * [FEATURE] Ruler: Added support for expression remote evaluation. #1536
