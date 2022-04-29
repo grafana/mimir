@@ -19,6 +19,11 @@
   * `cortex_alertmanager_notification_requests_total`
   * `cortex_alertmanager_notification_requests_failed_total`
   * `cortex_alertmanager_notification_rate_limited_total`
+* [CHANGE] Removed the following metrics exposed by the Mimir hash rings: #1791
+  * `cortex_member_ring_tokens_owned`
+  * `cortex_member_ring_tokens_to_own`
+  * `cortex_ring_tokens_owned`
+  * `cortex_ring_member_ownership_percent`
 * [FEATURE] Querier: Added support for [streaming remote read](https://prometheus.io/blog/2019/10/10/remote-read-meets-streaming/). Should be noted that benefits of chunking the response are partial here, since in a typical `query-frontend` setup responses will be buffered until they've been completed. #1735
 * [FEATURE] Ruler: Allow setting `evaluation_delay` for each rule group via rules group configuration file. #1474
 * [FEATURE] Ruler: Added support for expression remote evaluation. #1536
