@@ -149,12 +149,12 @@ func MatrixToSeriesSet(m model.Matrix) storage.SeriesSet {
 	return NewConcreteSeriesSet(series)
 }
 
-// MetricsToSeriesSet creates a storage.SeriesSet from a []metric.Metric
-func MetricsToSeriesSet(ms []model.Metric) storage.SeriesSet {
-	series := make([]storage.Series, 0, len(ms))
-	for _, m := range ms {
+// LabelsToSeriesSet creates a storage.SeriesSet from a []labels.Labels
+func LabelsToSeriesSet(ls []labels.Labels) storage.SeriesSet {
+	series := make([]storage.Series, 0, len(ls))
+	for _, l := range ls {
 		series = append(series, &ConcreteSeries{
-			labels:  metricToLabels(m),
+			labels:  l,
 			samples: nil,
 		})
 	}

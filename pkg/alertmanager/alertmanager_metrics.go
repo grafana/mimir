@@ -296,10 +296,10 @@ func (m *alertmanagerMetrics) Collect(out chan<- prometheus.Metric) {
 	data.SendSumOfCountersPerUser(out, m.alertsReceived, "alertmanager_alerts_received_total")
 	data.SendSumOfCountersPerUser(out, m.alertsInvalid, "alertmanager_alerts_invalid_total")
 
-	data.SendSumOfCountersPerUserWithLabels(out, m.numNotifications, "alertmanager_notifications_total", "integration")
-	data.SendSumOfCountersPerUserWithLabels(out, m.numFailedNotifications, "alertmanager_notifications_failed_total", "integration")
-	data.SendSumOfCountersPerUserWithLabels(out, m.numNotificationRequestsTotal, "alertmanager_notification_requests_total", "integration")
-	data.SendSumOfCountersPerUserWithLabels(out, m.numNotificationRequestsFailedTotal, "alertmanager_notification_requests_failed_total", "integration")
+	data.SendSumOfCountersPerUserWithLabelsAndOptions(out, m.numNotifications, "alertmanager_notifications_total", []string{"integration"}, util.SkipZeroValueMetrics)
+	data.SendSumOfCountersPerUserWithLabelsAndOptions(out, m.numFailedNotifications, "alertmanager_notifications_failed_total", []string{"integration"}, util.SkipZeroValueMetrics)
+	data.SendSumOfCountersPerUserWithLabelsAndOptions(out, m.numNotificationRequestsTotal, "alertmanager_notification_requests_total", []string{"integration"}, util.SkipZeroValueMetrics)
+	data.SendSumOfCountersPerUserWithLabelsAndOptions(out, m.numNotificationRequestsFailedTotal, "alertmanager_notification_requests_failed_total", []string{"integration"}, util.SkipZeroValueMetrics)
 	data.SendSumOfHistograms(out, m.notificationLatencySeconds, "alertmanager_notification_latency_seconds")
 	data.SendSumOfGaugesPerUserWithLabels(out, m.markerAlerts, "alertmanager_alerts", "state")
 
@@ -334,7 +334,7 @@ func (m *alertmanagerMetrics) Collect(out chan<- prometheus.Metric) {
 	data.SendSumOfCounters(out, m.persistTotal, "alertmanager_state_persist_total")
 	data.SendSumOfCounters(out, m.persistFailed, "alertmanager_state_persist_failed_total")
 
-	data.SendSumOfCountersPerUserWithLabels(out, m.notificationRateLimited, "alertmanager_notification_rate_limited_total", "integration")
+	data.SendSumOfCountersPerUserWithLabelsAndOptions(out, m.notificationRateLimited, "alertmanager_notification_rate_limited_total", []string{"integration"}, util.SkipZeroValueMetrics)
 	data.SendSumOfCountersPerUser(out, m.dispatcherAggregationGroupsLimitReached, "alertmanager_dispatcher_aggregation_group_limit_reached_total")
 	data.SendSumOfCountersPerUser(out, m.insertAlertFailures, "alertmanager_alerts_insert_limited_total")
 	data.SendSumOfGaugesPerUser(out, m.alertsLimiterAlertsCount, "alertmanager_alerts_limiter_current_alerts")

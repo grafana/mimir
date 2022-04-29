@@ -129,8 +129,7 @@ func New(cfg Config, limits *validation.Overrides, distributor Distributor, stor
 	return NewSampleAndChunkQueryable(lazyQueryable), exemplarQueryable, engine
 }
 
-// NewSampleAndChunkQueryable creates a SampleAndChunkQueryable from a
-// Queryable with a ChunkQueryable stub, that errors once it get's called.
+// NewSampleAndChunkQueryable creates a SampleAndChunkQueryable from a Queryable.
 func NewSampleAndChunkQueryable(q storage.Queryable) storage.SampleAndChunkQueryable {
 	return &sampleAndChunkQueryable{q}
 }
@@ -140,7 +139,19 @@ type sampleAndChunkQueryable struct {
 }
 
 func (q *sampleAndChunkQueryable) ChunkQuerier(ctx context.Context, mint, maxt int64) (storage.ChunkQuerier, error) {
-	return nil, errors.New("ChunkQuerier not implemented")
+	qr, err := q.Queryable.Querier(ctx, mint, maxt)
+	if err != nil {
+		return nil, err
+	}
+	return &chunkQuerier{qr}, nil
+}
+
+type chunkQuerier struct {
+	storage.Querier
+}
+
+func (q *chunkQuerier) Select(sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.ChunkSeriesSet {
+	return storage.NewSeriesSetToChunkSet(q.Querier.Select(sortSeries, hints, matchers...))
 }
 
 // QueryableWithFilter extends Queryable interface with `UseQueryable` filtering function.

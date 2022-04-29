@@ -13,6 +13,18 @@
 * [CHANGE] Store-gateway: enabled attributes in-memory cache by default. New default configuration is `-blocks-storage.bucket-store.chunks-cache.attributes-in-memory-max-items=50000`. #1727
 * [CHANGE] Compactor: Removed the metric `cortex_compactor_garbage_collected_blocks_total` since it duplicates `cortex_compactor_blocks_marked_for_deletion_total`. #1728
 * [CHANGE] All: Logs that used the`org_id` label now use `user` label. #1634 #1758
+* [CHANGE] Alertmanager: the following metrics are not exported for a given `user` and `integration` when the metric value is zero: #1783
+  * `cortex_alertmanager_notifications_total`
+  * `cortex_alertmanager_notifications_failed_total`
+  * `cortex_alertmanager_notification_requests_total`
+  * `cortex_alertmanager_notification_requests_failed_total`
+  * `cortex_alertmanager_notification_rate_limited_total`
+* [CHANGE] Removed the following metrics exposed by the Mimir hash rings: #1791
+  * `cortex_member_ring_tokens_owned`
+  * `cortex_member_ring_tokens_to_own`
+  * `cortex_ring_tokens_owned`
+  * `cortex_ring_member_ownership_percent`
+* [FEATURE] Querier: Added support for [streaming remote read](https://prometheus.io/blog/2019/10/10/remote-read-meets-streaming/). Should be noted that benefits of chunking the response are partial here, since in a typical `query-frontend` setup responses will be buffered until they've been completed. #1735
 * [FEATURE] Ruler: Allow setting `evaluation_delay` for each rule group via rules group configuration file. #1474
 * [FEATURE] Ruler: Added support for expression remote evaluation. #1536
   * The following CLI flags (and their respective YAML config options) have been added:
@@ -89,7 +101,7 @@
 ### Tools
 
 * [FEATURE] Added a `markblocks` tool that creates `no-compact` and `delete` marks for the blocks. #1551
-* [FEATURE] Added `mimir-continuous-test` tool to continuously run smoke tests on live Mimir clusters. #1535 #1540 #1653 #1603 #1630 #1691 #1675 #1676 #1692 #1706 #1709 #1777 #1778
+* [FEATURE] Added `mimir-continuous-test` tool to continuously run smoke tests on live Mimir clusters. #1535 #1540 #1653 #1603 #1630 #1691 #1675 #1676 #1692 #1706 #1709 #1775 #1777 #1778
 * [FEATURE] Added `mimir-rules-action` GitHub action, located at `operations/mimir-rules-action/`, used to lint, prepare, verify, diff, and sync rules to a Mimir cluster. #1723
 
 ## 2.0.0

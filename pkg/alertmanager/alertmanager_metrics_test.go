@@ -110,9 +110,6 @@ func TestAlertmanagerMetricsStore(t *testing.T) {
 		cortex_alertmanager_notification_latency_seconds_count 27
 		# HELP cortex_alertmanager_notifications_failed_total The total number of failed notifications.
 		# TYPE cortex_alertmanager_notifications_failed_total counter
-		cortex_alertmanager_notifications_failed_total{integration="email",user="user1"} 0
-		cortex_alertmanager_notifications_failed_total{integration="email",user="user2"} 0
-		cortex_alertmanager_notifications_failed_total{integration="email",user="user3"} 0
 		cortex_alertmanager_notifications_failed_total{integration="opsgenie",user="user1"} 5
 		cortex_alertmanager_notifications_failed_total{integration="opsgenie",user="user2"} 50
 		cortex_alertmanager_notifications_failed_total{integration="opsgenie",user="user3"} 500
@@ -139,9 +136,6 @@ func TestAlertmanagerMetricsStore(t *testing.T) {
 		cortex_alertmanager_notifications_failed_total{integration="sns",user="user3"} 800
 		# HELP cortex_alertmanager_notification_requests_total The total number of attempted notification requests.
 		# TYPE cortex_alertmanager_notification_requests_total counter
-		cortex_alertmanager_notification_requests_total{integration="email",user="user1"} 0
-		cortex_alertmanager_notification_requests_total{integration="email",user="user2"} 0
-		cortex_alertmanager_notification_requests_total{integration="email",user="user3"} 0
 		cortex_alertmanager_notification_requests_total{integration="opsgenie",user="user1"} 5
 		cortex_alertmanager_notification_requests_total{integration="opsgenie",user="user2"} 50
 		cortex_alertmanager_notification_requests_total{integration="opsgenie",user="user3"} 500
@@ -168,9 +162,6 @@ func TestAlertmanagerMetricsStore(t *testing.T) {
 		cortex_alertmanager_notification_requests_total{integration="sns",user="user3"} 800
 		# HELP cortex_alertmanager_notification_requests_failed_total The total number of failed notification requests.
 		# TYPE cortex_alertmanager_notification_requests_failed_total counter
-		cortex_alertmanager_notification_requests_failed_total{integration="email",user="user1"} 0
-		cortex_alertmanager_notification_requests_failed_total{integration="email",user="user2"} 0
-		cortex_alertmanager_notification_requests_failed_total{integration="email",user="user3"} 0
 		cortex_alertmanager_notification_requests_failed_total{integration="opsgenie",user="user1"} 5
 		cortex_alertmanager_notification_requests_failed_total{integration="opsgenie",user="user2"} 50
 		cortex_alertmanager_notification_requests_failed_total{integration="opsgenie",user="user3"} 500
@@ -197,9 +188,6 @@ func TestAlertmanagerMetricsStore(t *testing.T) {
 		cortex_alertmanager_notification_requests_failed_total{integration="sns",user="user3"} 800
 		# HELP cortex_alertmanager_notifications_total The total number of attempted notifications.
 		# TYPE cortex_alertmanager_notifications_total counter
-		cortex_alertmanager_notifications_total{integration="email",user="user1"} 0
-		cortex_alertmanager_notifications_total{integration="email",user="user2"} 0
-		cortex_alertmanager_notifications_total{integration="email",user="user3"} 0
 		cortex_alertmanager_notifications_total{integration="opsgenie",user="user1"} 5
 		cortex_alertmanager_notifications_total{integration="opsgenie",user="user2"} 50
 		cortex_alertmanager_notifications_total{integration="opsgenie",user="user3"} 500
@@ -411,9 +399,6 @@ func TestAlertmanagerMetricsRemoval(t *testing.T) {
 
         	            # HELP cortex_alertmanager_notification_requests_failed_total The total number of failed notification requests.
         	            # TYPE cortex_alertmanager_notification_requests_failed_total counter
-        	            cortex_alertmanager_notification_requests_failed_total{integration="email",user="user1"} 0
-        	            cortex_alertmanager_notification_requests_failed_total{integration="email",user="user2"} 0
-        	            cortex_alertmanager_notification_requests_failed_total{integration="email",user="user3"} 0
         	            cortex_alertmanager_notification_requests_failed_total{integration="opsgenie",user="user1"} 5
         	            cortex_alertmanager_notification_requests_failed_total{integration="opsgenie",user="user2"} 50
         	            cortex_alertmanager_notification_requests_failed_total{integration="opsgenie",user="user3"} 500
@@ -441,9 +426,6 @@ func TestAlertmanagerMetricsRemoval(t *testing.T) {
 
         	            # HELP cortex_alertmanager_notification_requests_total The total number of attempted notification requests.
         	            # TYPE cortex_alertmanager_notification_requests_total counter
-        	            cortex_alertmanager_notification_requests_total{integration="email",user="user1"} 0
-        	            cortex_alertmanager_notification_requests_total{integration="email",user="user2"} 0
-        	            cortex_alertmanager_notification_requests_total{integration="email",user="user3"} 0
         	            cortex_alertmanager_notification_requests_total{integration="opsgenie",user="user1"} 5
         	            cortex_alertmanager_notification_requests_total{integration="opsgenie",user="user2"} 50
         	            cortex_alertmanager_notification_requests_total{integration="opsgenie",user="user3"} 500
@@ -471,9 +453,6 @@ func TestAlertmanagerMetricsRemoval(t *testing.T) {
 
         	            # HELP cortex_alertmanager_notifications_failed_total The total number of failed notifications.
         	            # TYPE cortex_alertmanager_notifications_failed_total counter
-        	            cortex_alertmanager_notifications_failed_total{integration="email",user="user1"} 0
-        	            cortex_alertmanager_notifications_failed_total{integration="email",user="user2"} 0
-        	            cortex_alertmanager_notifications_failed_total{integration="email",user="user3"} 0
         	            cortex_alertmanager_notifications_failed_total{integration="opsgenie",user="user1"} 5
         	            cortex_alertmanager_notifications_failed_total{integration="opsgenie",user="user2"} 50
         	            cortex_alertmanager_notifications_failed_total{integration="opsgenie",user="user3"} 500
@@ -501,9 +480,6 @@ func TestAlertmanagerMetricsRemoval(t *testing.T) {
 
         	            # HELP cortex_alertmanager_notifications_total The total number of attempted notifications.
         	            # TYPE cortex_alertmanager_notifications_total counter
-        	            cortex_alertmanager_notifications_total{integration="email",user="user1"} 0
-        	            cortex_alertmanager_notifications_total{integration="email",user="user2"} 0
-        	            cortex_alertmanager_notifications_total{integration="email",user="user3"} 0
         	            cortex_alertmanager_notifications_total{integration="opsgenie",user="user1"} 5
         	            cortex_alertmanager_notifications_total{integration="opsgenie",user="user2"} 50
         	            cortex_alertmanager_notifications_total{integration="opsgenie",user="user3"} 500
@@ -705,8 +681,6 @@ func TestAlertmanagerMetricsRemoval(t *testing.T) {
 
     		# HELP cortex_alertmanager_notification_requests_failed_total The total number of failed notification requests.
     		# TYPE cortex_alertmanager_notification_requests_failed_total counter
-    		cortex_alertmanager_notification_requests_failed_total{integration="email",user="user1"} 0
-    		cortex_alertmanager_notification_requests_failed_total{integration="email",user="user2"} 0
     		cortex_alertmanager_notification_requests_failed_total{integration="opsgenie",user="user1"} 5
     		cortex_alertmanager_notification_requests_failed_total{integration="opsgenie",user="user2"} 50
     		cortex_alertmanager_notification_requests_failed_total{integration="pagerduty",user="user1"} 1
@@ -726,8 +700,6 @@ func TestAlertmanagerMetricsRemoval(t *testing.T) {
 
     		# HELP cortex_alertmanager_notification_requests_total The total number of attempted notification requests.
     		# TYPE cortex_alertmanager_notification_requests_total counter
-    		cortex_alertmanager_notification_requests_total{integration="email",user="user1"} 0
-    		cortex_alertmanager_notification_requests_total{integration="email",user="user2"} 0
     		cortex_alertmanager_notification_requests_total{integration="opsgenie",user="user1"} 5
     		cortex_alertmanager_notification_requests_total{integration="opsgenie",user="user2"} 50
     		cortex_alertmanager_notification_requests_total{integration="pagerduty",user="user1"} 1
@@ -747,8 +719,6 @@ func TestAlertmanagerMetricsRemoval(t *testing.T) {
 
     		# HELP cortex_alertmanager_notifications_failed_total The total number of failed notifications.
     		# TYPE cortex_alertmanager_notifications_failed_total counter
-    		cortex_alertmanager_notifications_failed_total{integration="email",user="user1"} 0
-    		cortex_alertmanager_notifications_failed_total{integration="email",user="user2"} 0
     		cortex_alertmanager_notifications_failed_total{integration="opsgenie",user="user1"} 5
     		cortex_alertmanager_notifications_failed_total{integration="opsgenie",user="user2"} 50
     		cortex_alertmanager_notifications_failed_total{integration="pagerduty",user="user1"} 1
@@ -768,8 +738,6 @@ func TestAlertmanagerMetricsRemoval(t *testing.T) {
 
     		# HELP cortex_alertmanager_notifications_total The total number of attempted notifications.
     		# TYPE cortex_alertmanager_notifications_total counter
-    		cortex_alertmanager_notifications_total{integration="email",user="user1"} 0
-    		cortex_alertmanager_notifications_total{integration="email",user="user2"} 0
     		cortex_alertmanager_notifications_total{integration="opsgenie",user="user1"} 5
     		cortex_alertmanager_notifications_total{integration="opsgenie",user="user2"} 50
     		cortex_alertmanager_notifications_total{integration="pagerduty",user="user1"} 1

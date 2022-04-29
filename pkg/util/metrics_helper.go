@@ -124,12 +124,16 @@ func (mfm MetricFamilyMap) SumSummariesTo(name string, output *SummaryData) {
 	}
 }
 
-func (mfm MetricFamilyMap) sumOfSingleValuesWithLabels(metric string, labelNames []string, extractFn func(*dto.Metric) float64, aggregateFn func(labelsKey string, labelValues []string, value float64)) {
+func (mfm MetricFamilyMap) sumOfSingleValuesWithLabels(metric string, labelNames []string, extractFn func(*dto.Metric) float64, aggregateFn func(labelsKey string, labelValues []string, value float64), skipZeroValue bool) {
 	metricsPerLabelValue := getMetricsWithLabelNames(mfm[metric], labelNames)
 
 	for key, mlv := range metricsPerLabelValue {
 		for _, m := range mlv.metrics {
 			val := extractFn(m)
+			if skipZeroValue && val == 0 {
+				continue
+			}
+
 			aggregateFn(key, mlv.labelValues, val)
 		}
 	}
@@ -155,7 +159,7 @@ func (d MetricFamiliesPerUser) SendSumOfCounters(out chan<- prometheus.Metric, d
 }
 
 func (d MetricFamiliesPerUser) SendSumOfCountersWithLabels(out chan<- prometheus.Metric, desc *prometheus.Desc, counter string, labelNames ...string) {
-	d.sumOfSingleValuesWithLabels(counter, counterValue, labelNames).WriteToMetricChannel(out, desc, prometheus.CounterValue)
+	d.sumOfSingleValuesWithLabels(counter, counterValue, labelNames, false).WriteToMetricChannel(out, desc, prometheus.CounterValue)
 }
 
 func (d MetricFamiliesPerUser) SendSumOfCountersPerUser(out chan<- prometheus.Metric, desc *prometheus.Desc, counter string) {
@@ -165,13 +169,20 @@ func (d MetricFamiliesPerUser) SendSumOfCountersPerUser(out chan<- prometheus.Me
 // SendSumOfCountersPerUserWithLabels provides metrics with the provided label names on a per-user basis. This function assumes that `user` is the
 // first label on the provided metric Desc
 func (d MetricFamiliesPerUser) SendSumOfCountersPerUserWithLabels(out chan<- prometheus.Metric, desc *prometheus.Desc, metric string, labelNames ...string) {
+	d.SendSumOfCountersPerUserWithLabelsAndOptions(out, desc, metric, labelNames)
+}
+
+// SendSumOfCountersPerUserWithLabelsAndOptions provides metrics with the provided label names on a per-user basis. This function assumes that `user` is the
+// first label on the provided metric Desc
+func (d MetricFamiliesPerUser) SendSumOfCountersPerUserWithLabelsAndOptions(out chan<- prometheus.Metric, desc *prometheus.Desc, metric string, labelNames []string, options ...MetricOption) {
 	for _, userEntry := range d {
 		if userEntry.user == "" {
 			continue
 		}
 
 		result := singleValueWithLabelsMap{}
-		userEntry.metrics.sumOfSingleValuesWithLabels(metric, labelNames, counterValue, result.aggregateFn)
+		opts := applyMetricOptions(options...)
+		userEntry.metrics.sumOfSingleValuesWithLabels(metric, labelNames, counterValue, result.aggregateFn, opts.skipZeroValueMetrics)
 		result.prependUserLabelValue(userEntry.user)
 		result.WriteToMetricChannel(out, desc, prometheus.CounterValue)
 	}
@@ -190,7 +201,7 @@ func (d MetricFamiliesPerUser) SendSumOfGauges(out chan<- prometheus.Metric, des
 }
 
 func (d MetricFamiliesPerUser) SendSumOfGaugesWithLabels(out chan<- prometheus.Metric, desc *prometheus.Desc, gauge string, labelNames ...string) {
-	d.sumOfSingleValuesWithLabels(gauge, gaugeValue, labelNames).WriteToMetricChannel(out, desc, prometheus.GaugeValue)
+	d.sumOfSingleValuesWithLabels(gauge, gaugeValue, labelNames, false).WriteToMetricChannel(out, desc, prometheus.GaugeValue)
 }
 
 func (d MetricFamiliesPerUser) SendSumOfGaugesPerUser(out chan<- prometheus.Metric, desc *prometheus.Desc, gauge string) {
@@ -206,16 +217,16 @@ func (d MetricFamiliesPerUser) SendSumOfGaugesPerUserWithLabels(out chan<- prome
 		}
 
 		result := singleValueWithLabelsMap{}
-		userEntry.metrics.sumOfSingleValuesWithLabels(metric, labelNames, gaugeValue, result.aggregateFn)
+		userEntry.metrics.sumOfSingleValuesWithLabels(metric, labelNames, gaugeValue, result.aggregateFn, false)
 		result.prependUserLabelValue(userEntry.user)
 		result.WriteToMetricChannel(out, desc, prometheus.GaugeValue)
 	}
 }
 
-func (d MetricFamiliesPerUser) sumOfSingleValuesWithLabels(metric string, fn func(*dto.Metric) float64, labelNames []string) singleValueWithLabelsMap {
+func (d MetricFamiliesPerUser) sumOfSingleValuesWithLabels(metric string, fn func(*dto.Metric) float64, labelNames []string, skipZeroValue bool) singleValueWithLabelsMap {
 	result := singleValueWithLabelsMap{}
 	for _, userEntry := range d {
-		userEntry.metrics.sumOfSingleValuesWithLabels(metric, labelNames, fn, result.aggregateFn)
+		userEntry.metrics.sumOfSingleValuesWithLabels(metric, labelNames, fn, result.aggregateFn, skipZeroValue)
 	}
 	return result
 }
@@ -809,4 +820,26 @@ func DeleteMatchingLabels(c CollectorVec, filter map[string]string) error {
 type CollectorVec interface {
 	prometheus.Collector
 	Delete(labels prometheus.Labels) bool
+}
+
+// MetricOption defines a functional-style option for metrics aggregation.
+type MetricOption func(options *metricOptions)
+
+// SkipZeroValueMetrics controls whether metrics aggregation should skip zero value metrics.
+func SkipZeroValueMetrics(options *metricOptions) {
+	options.skipZeroValueMetrics = true
+}
+
+// applyMetricOptions returns a metricOptions with all the input options applied.
+func applyMetricOptions(options ...MetricOption) *metricOptions {
+	actual := &metricOptions{}
+	for _, option := range options {
+		option(actual)
+	}
+
+	return actual
+}
+
+type metricOptions struct {
+	skipZeroValueMetrics bool
 }
