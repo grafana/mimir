@@ -176,8 +176,6 @@ func NewLifecycler(cfg LifecyclerConfig, flushTransferer FlushTransferer, ringNa
 		logger:               logger,
 	}
 
-	l.lifecyclerMetrics.tokensToOwn.Set(float64(cfg.NumTokens))
-
 	l.BasicService = services.
 		NewBasicService(nil, l.loop, l.stopping).
 		WithName(fmt.Sprintf("%s ring lifecycler", ringName))
@@ -304,8 +302,6 @@ func (i *Lifecycler) getTokens() Tokens {
 }
 
 func (i *Lifecycler) setTokens(tokens Tokens) {
-	i.lifecyclerMetrics.tokensOwned.Set(float64(len(tokens)))
-
 	i.stateMtx.Lock()
 	defer i.stateMtx.Unlock()
 
