@@ -115,8 +115,6 @@ type Distributor struct {
 	sampleDelayHistogram             prometheus.Histogram
 	ingesterAppends                  *prometheus.CounterVec
 	ingesterAppendFailures           *prometheus.CounterVec
-	ingesterQueries                  *prometheus.CounterVec
-	ingesterQueryFailures            *prometheus.CounterVec
 	replicationFactor                prometheus.Gauge
 	latestSeenSampleTimestampPerUser *prometheus.GaugeVec
 }
