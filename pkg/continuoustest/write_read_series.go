@@ -106,38 +106,8 @@ func (t *WriteReadSeriesTest) Run(ctx context.Context, now time.Time) {
 			return
 		}
 
-		statusCode, err := t.client.WriteSeries(ctx, generateSineWaveSeries(metricName, timestamp, t.cfg.NumSeries))
-
-		t.metrics.writesTotal.Inc()
-		if statusCode/100 != 2 {
-			t.metrics.writesFailedTotal.WithLabelValues(strconv.Itoa(statusCode)).Inc()
-			level.Warn(t.logger).Log("msg", "Failed to remote write series", "num_series", t.cfg.NumSeries, "timestamp", timestamp.String(), "status_code", statusCode, "err", err)
-		} else {
-			level.Debug(t.logger).Log("msg", "Remote write series succeeded", "num_series", t.cfg.NumSeries, "timestamp", timestamp.String())
-		}
-
-		// If the write request failed because of a 4xx error, retrying the request isn't expected to succeed.
-		// The series may have been not written at all or partially written (eg. we hit some limit).
-		// We keep writing the next interval, but we reset the query timestamp because we can't reliably
-		// assert on query results due to possible gaps.
-		if statusCode/100 == 4 {
-			t.lastWrittenTimestamp = timestamp
-			t.queryMinTime = time.Time{}
-			t.queryMaxTime = time.Time{}
-			continue
-		}
-
-		// If the write request failed because of a network or 5xx error, we'll retry to write series
-		// in the next test run.
-		if statusCode/100 != 2 || err != nil {
+		if ok := t.writeSamples(ctx, timestamp); !ok {
 			break
-		}
-
-		// The write request succeeded.
-		t.lastWrittenTimestamp = timestamp
-		t.queryMaxTime = timestamp
-		if t.queryMinTime.IsZero() {
-			t.queryMinTime = timestamp
 		}
 	}
 
@@ -150,6 +120,48 @@ func (t *WriteReadSeriesTest) Run(ctx context.Context, now time.Time) {
 		t.runInstantQueryAndVerifyResult(ctx, ts, true)
 		t.runInstantQueryAndVerifyResult(ctx, ts, false)
 	}
+}
+
+func (t *WriteReadSeriesTest) writeSamples(ctx context.Context, timestamp time.Time) bool {
+	sp, ctx := spanlogger.NewWithLogger(ctx, t.logger, "WriteReadSeriesTest.writeSamples")
+	defer sp.Finish()
+	logger := log.With(sp, "timestamp", timestamp.String(), "num_series", t.cfg.NumSeries)
+
+	statusCode, err := t.client.WriteSeries(ctx, generateSineWaveSeries(metricName, timestamp, t.cfg.NumSeries))
+
+	t.metrics.writesTotal.Inc()
+	if statusCode/100 != 2 {
+		t.metrics.writesFailedTotal.WithLabelValues(strconv.Itoa(statusCode)).Inc()
+		level.Warn(logger).Log("msg", "Failed to remote write series", "status_code", statusCode, "err", err)
+	} else {
+		level.Debug(logger).Log("msg", "Remote write series succeeded")
+	}
+
+	// If the write request failed because of a 4xx error, retrying the request isn't expected to succeed.
+	// The series may have been not written at all or partially written (eg. we hit some limit).
+	// We keep writing the next interval, but we reset the query timestamp because we can't reliably
+	// assert on query results due to possible gaps.
+	if statusCode/100 == 4 {
+		t.lastWrittenTimestamp = timestamp
+		t.queryMinTime = time.Time{}
+		t.queryMaxTime = time.Time{}
+		return true
+	}
+
+	// If the write request failed because of a network or 5xx error, we'll retry to write series
+	// in the next test run.
+	if statusCode/100 != 2 || err != nil {
+		return false
+	}
+
+	// The write request succeeded.
+	t.lastWrittenTimestamp = timestamp
+	t.queryMaxTime = timestamp
+	if t.queryMinTime.IsZero() {
+		t.queryMinTime = timestamp
+	}
+
+	return true
 }
 
 // getQueryTimeRanges returns the start/end time ranges to use to run test range queries,
