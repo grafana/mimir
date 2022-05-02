@@ -368,7 +368,10 @@ check-license: ## Check license header of files.
 check-license: license
 	@git diff --exit-code || (echo "Please add the license header running 'make BUILD_IN_CONTAINER=false license'" && false)
 
-dist: ## Generates binaries for a Mimir release.
+# Generate binaries for a Mimir release
+dist: dist/$(UPTODATE)
+
+dist/$(UPTODATE):
 	rm -fr ./dist
 	mkdir -p ./dist
 	# Build binaries for various architectures and operating systems. Only
@@ -535,47 +538,13 @@ check-jsonnet-tests: build-jsonnet-tests
 check-tsdb-blocks-storage-s3-docker-compose-yaml:
 	cd development/tsdb-blocks-storage-s3 && make check
 
-web-serve:
-	cd website && hugo --config config.toml --minify -v server
-
-# Generate binaries for a Mimir release
-dist: dist/$(UPTODATE)
-
-dist/$(UPTODATE):
-	rm -fr ./dist
-	mkdir -p ./dist
-	# Build binaries for various architectures and operating systems. Only
-	# mimirtool supports Windows for now. Also darwin/386 is not a valid
-	# architecture.
-	for os in linux darwin windows; do \
-		for arch in 386 amd64 arm64; do \
-			suffix="" ; \
-			if [ "$$os" = "windows" ]; then \
-				suffix=".exe" ; \
-			fi; \
-			if [ "$$os" = "darwin" ] && [ "$$arch" = "386" ]; then \
-				continue; \
-			fi; \
-			echo "Building mimirtool for $$os/$$arch"; \
-			GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/mimirtool-$$os-$$arch$$suffix ./cmd/mimirtool; \
-			sha256sum ./dist/mimirtool-$$os-$$arch$$suffix | cut -d ' ' -f 1 > ./dist/mimirtool-$$os-$$arch$$suffix-sha-256; \
-			if [ "$$os" = "windows" ]; then \
-				continue; \
-			fi; \
-			echo "Building Mimir for $$os/$$arch"; \
-			GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/mimir-$$os-$$arch$$suffix ./cmd/mimir; \
-			sha256sum ./dist/mimir-$$os-$$arch$$suffix | cut -d ' ' -f 1 > ./dist/mimir-$$os-$$arch$$suffix-sha-256; \
-			echo "Building query-tee for $$os/$$arch"; \
-			GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/query-tee-$$os-$$arch$$suffix ./cmd/query-tee; \
-			sha256sum ./dist/query-tee-$$os-$$arch$$suffix | cut -d ' ' -f 1 > ./dist/query-tee-$$os-$$arch$$suffix-sha-256; \
-			done; \
-		done; \
-		touch $@
-
 # Generate packages for a Mimir release.
 FPM_OPTS := fpm -s dir -v $(VERSION) -n mimir -f \
-	--license "Apache 2.0" \
-	--url "https://github.com/grafana/mimir"
+	--license "AGPL 3.0" \
+	--url "https://grafana.com/oss/mimir/" \
+	--description "Grafana Mimir provides horizontally scalable, highly available, multi-tenant, long-term storage for Prometheus." \
+	--maintainer "contact@grafana.com" \
+	--vendor "Grafana Labs"
 
 PACKAGE_IN_CONTAINER := true
 PACKAGE_IMAGE ?= $(IMAGE_PREFIX)fpm
@@ -587,14 +556,14 @@ packages: dist packaging/fpm/$(UPTODATE)
 	@mkdir -p $(shell pwd)/.cache
 	@echo ">>>> Entering build container: $@"
 	$(SUDO) time docker run --rm $(TTY) \
-		-v  $(shell pwd):/src/github.com/grafana/mimir:delegated,z \
+		-v  $(shell pwd):/go/src/github.com/grafana/mimir:delegated,z \
 		-i $(PACKAGE_IMAGE) $@;
 
 else
 
 packages: dist/$(UPTODATE)-packages
 
-dist/$(UPTODATE)-packages: dist $(wildcard packaging/deb/**) $(wildcard packaging/rpm/**)
+dist/$(UPTODATE)-packages: $(wildcard packaging/deb/**) $(wildcard packaging/rpm/**)
 	for arch in amd64 arm64; do \
 		rpm_arch=x86_64; \
 		deb_arch=x86_64; \
@@ -607,17 +576,17 @@ dist/$(UPTODATE)-packages: dist $(wildcard packaging/deb/**) $(wildcard packagin
 			--after-install packaging/deb/control/postinst \
 			--before-remove packaging/deb/control/prerm \
 			--package dist/mimir-$(VERSION)_$$arch.deb \
+			--deb-default packaging/deb/default/mimir \
+			--deb-systemd packaging/deb/systemd/mimir.service \
 			dist/mimir-linux-$$arch=/usr/local/bin/mimir \
-			docs/sources/chunks-storage/single-process-config.yaml=/etc/mimir/single-process-config.yaml \
-			packaging/deb/default/mimir=/etc/default/mimir \
-			packaging/deb/systemd/mimir.service=/etc/systemd/system/mimir.service; \
+			docs/configurations/single-process-config-blocks.yaml=/etc/mimir/config.example.yaml; \
 		$(FPM_OPTS) -t rpm  \
 			--architecture $$rpm_arch \
 			--after-install packaging/rpm/control/post \
 			--before-remove packaging/rpm/control/preun \
 			--package dist/mimir-$(VERSION)_$$arch.rpm \
 			dist/mimir-linux-$$arch=/usr/local/bin/mimir \
-			docs/sources/chunks-storage/single-process-config.yaml=/etc/mimir/single-process-config.yaml \
+			docs/configurations/single-process-config-blocks.yaml=/etc/mimir/config.example.yaml \
 			packaging/rpm/sysconfig/mimir=/etc/sysconfig/mimir \
 			packaging/rpm/systemd/mimir.service=/etc/systemd/system/mimir.service; \
 	done
