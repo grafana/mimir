@@ -322,9 +322,9 @@ func TestSendSumOfHistogramsWithLabels(t *testing.T) {
 	}
 }
 
-// TestSendSumOfCountersPerUserWithLabels tests to ensure multiple metrics for the same user with a matching label are
+// TestSendSumOfCountersPerUser_WithLabels tests to ensure multiple metrics for the same user with a matching label are
 // summed correctly
-func TestSendSumOfCountersPerUserWithLabels(t *testing.T) {
+func TestSendSumOfCountersPerUser_WithLabels(t *testing.T) {
 	user1Metric := prometheus.NewCounterVec(prometheus.CounterOpts{Name: "test_metric"}, []string{"label_one", "label_two"})
 	user2Metric := prometheus.NewCounterVec(prometheus.CounterOpts{Name: "test_metric"}, []string{"label_one", "label_two"})
 	user3Metric := prometheus.NewCounterVec(prometheus.CounterOpts{Name: "test_metric"}, []string{"label_one", "label_two"})
@@ -351,7 +351,7 @@ func TestSendSumOfCountersPerUserWithLabels(t *testing.T) {
 	t.Run("group metrics by user and label_one", func(t *testing.T) {
 		desc := prometheus.NewDesc("test_metric", "", []string{"user", "label_one"}, nil)
 		actual := collectMetrics(t, func(out chan prometheus.Metric) {
-			mf.SendSumOfCountersPerUserWithLabels(out, desc, "test_metric", "label_one")
+			mf.SendSumOfCountersPerUser(out, desc, "test_metric", WithLabels("label_one"))
 		})
 		expected := []*dto.Metric{
 			{Label: makeLabels("label_one", "a", "user", "user-1"), Counter: &dto.Counter{Value: proto.Float64(180)}},
@@ -364,7 +364,7 @@ func TestSendSumOfCountersPerUserWithLabels(t *testing.T) {
 	t.Run("group metrics by user and label_one, and skip zero value metrics", func(t *testing.T) {
 		desc := prometheus.NewDesc("test_metric", "", []string{"user", "label_one"}, nil)
 		actual := collectMetrics(t, func(out chan prometheus.Metric) {
-			mf.SendSumOfCountersPerUserWithLabelsAndOptions(out, desc, "test_metric", []string{"label_one"}, SkipZeroValueMetrics)
+			mf.SendSumOfCountersPerUser(out, desc, "test_metric", WithLabels("label_one"), WithSkipZeroValueMetrics)
 		})
 		expected := []*dto.Metric{
 			{Label: makeLabels("label_one", "a", "user", "user-1"), Counter: &dto.Counter{Value: proto.Float64(180)}},
@@ -376,7 +376,7 @@ func TestSendSumOfCountersPerUserWithLabels(t *testing.T) {
 	t.Run("group metrics by user and label_two", func(t *testing.T) {
 		desc := prometheus.NewDesc("test_metric", "", []string{"user", "label_two"}, nil)
 		actual := collectMetrics(t, func(out chan prometheus.Metric) {
-			mf.SendSumOfCountersPerUserWithLabels(out, desc, "test_metric", "label_two")
+			mf.SendSumOfCountersPerUser(out, desc, "test_metric", WithLabels("label_two"))
 		})
 		expected := []*dto.Metric{
 			{Label: makeLabels("label_two", "b", "user", "user-1"), Counter: &dto.Counter{Value: proto.Float64(100)}},
@@ -392,7 +392,7 @@ func TestSendSumOfCountersPerUserWithLabels(t *testing.T) {
 	t.Run("group metrics by user and label_two, and skip zero value metrics", func(t *testing.T) {
 		desc := prometheus.NewDesc("test_metric", "", []string{"user", "label_two"}, nil)
 		actual := collectMetrics(t, func(out chan prometheus.Metric) {
-			mf.SendSumOfCountersPerUserWithLabelsAndOptions(out, desc, "test_metric", []string{"label_two"}, SkipZeroValueMetrics)
+			mf.SendSumOfCountersPerUser(out, desc, "test_metric", WithLabels("label_two"), WithSkipZeroValueMetrics)
 		})
 		expected := []*dto.Metric{
 			{Label: makeLabels("label_two", "b", "user", "user-1"), Counter: &dto.Counter{Value: proto.Float64(100)}},
@@ -405,7 +405,7 @@ func TestSendSumOfCountersPerUserWithLabels(t *testing.T) {
 	t.Run("group metrics by user, label_one and label_two", func(t *testing.T) {
 		desc := prometheus.NewDesc("test_metric", "", []string{"user", "label_one", "label_two"}, nil)
 		actual := collectMetrics(t, func(out chan prometheus.Metric) {
-			mf.SendSumOfCountersPerUserWithLabels(out, desc, "test_metric", "label_one", "label_two")
+			mf.SendSumOfCountersPerUser(out, desc, "test_metric", WithLabels("label_one", "label_two"))
 		})
 		expected := []*dto.Metric{
 			{Label: makeLabels("label_one", "a", "label_two", "b", "user", "user-1"), Counter: &dto.Counter{Value: proto.Float64(100)}},
@@ -421,7 +421,7 @@ func TestSendSumOfCountersPerUserWithLabels(t *testing.T) {
 	t.Run("group metrics by user, label_one and label_two, and skip zero value metrics", func(t *testing.T) {
 		desc := prometheus.NewDesc("test_metric", "", []string{"user", "label_one", "label_two"}, nil)
 		actual := collectMetrics(t, func(out chan prometheus.Metric) {
-			mf.SendSumOfCountersPerUserWithLabelsAndOptions(out, desc, "test_metric", []string{"label_one", "label_two"}, SkipZeroValueMetrics)
+			mf.SendSumOfCountersPerUser(out, desc, "test_metric", WithLabels("label_one", "label_two"), WithSkipZeroValueMetrics)
 		})
 		expected := []*dto.Metric{
 			{Label: makeLabels("label_one", "a", "label_two", "b", "user", "user-1"), Counter: &dto.Counter{Value: proto.Float64(100)}},
