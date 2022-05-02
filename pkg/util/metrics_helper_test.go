@@ -364,7 +364,7 @@ func TestSendSumOfCountersPerUser_WithLabels(t *testing.T) {
 	t.Run("group metrics by user and label_one, and skip zero value metrics", func(t *testing.T) {
 		desc := prometheus.NewDesc("test_metric", "", []string{"user", "label_one"}, nil)
 		actual := collectMetrics(t, func(out chan prometheus.Metric) {
-			mf.SendSumOfCountersPerUser(out, desc, "test_metric", WithLabels("label_one"), SkipZeroValueMetrics)
+			mf.SendSumOfCountersPerUser(out, desc, "test_metric", WithLabels("label_one"), WithSkipZeroValueMetrics)
 		})
 		expected := []*dto.Metric{
 			{Label: makeLabels("label_one", "a", "user", "user-1"), Counter: &dto.Counter{Value: proto.Float64(180)}},
@@ -392,7 +392,7 @@ func TestSendSumOfCountersPerUser_WithLabels(t *testing.T) {
 	t.Run("group metrics by user and label_two, and skip zero value metrics", func(t *testing.T) {
 		desc := prometheus.NewDesc("test_metric", "", []string{"user", "label_two"}, nil)
 		actual := collectMetrics(t, func(out chan prometheus.Metric) {
-			mf.SendSumOfCountersPerUser(out, desc, "test_metric", WithLabels("label_two"), SkipZeroValueMetrics)
+			mf.SendSumOfCountersPerUser(out, desc, "test_metric", WithLabels("label_two"), WithSkipZeroValueMetrics)
 		})
 		expected := []*dto.Metric{
 			{Label: makeLabels("label_two", "b", "user", "user-1"), Counter: &dto.Counter{Value: proto.Float64(100)}},
@@ -421,7 +421,7 @@ func TestSendSumOfCountersPerUser_WithLabels(t *testing.T) {
 	t.Run("group metrics by user, label_one and label_two, and skip zero value metrics", func(t *testing.T) {
 		desc := prometheus.NewDesc("test_metric", "", []string{"user", "label_one", "label_two"}, nil)
 		actual := collectMetrics(t, func(out chan prometheus.Metric) {
-			mf.SendSumOfCountersPerUser(out, desc, "test_metric", WithLabels("label_one", "label_two"), SkipZeroValueMetrics)
+			mf.SendSumOfCountersPerUser(out, desc, "test_metric", WithLabels("label_one", "label_two"), WithSkipZeroValueMetrics)
 		})
 		expected := []*dto.Metric{
 			{Label: makeLabels("label_one", "a", "label_two", "b", "user", "user-1"), Counter: &dto.Counter{Value: proto.Float64(100)}},

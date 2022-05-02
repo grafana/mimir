@@ -816,8 +816,8 @@ type CollectorVec interface {
 // MetricOption defines a functional-style option for metrics aggregation.
 type MetricOption func(options *metricOptions)
 
-// SkipZeroValueMetrics controls whether metrics aggregation should skip zero value metrics.
-func SkipZeroValueMetrics(options *metricOptions) {
+// WithSkipZeroValueMetrics controls whether metrics aggregation should skip zero value metrics.
+func WithSkipZeroValueMetrics(options *metricOptions) {
 	options.skipZeroValueMetrics = true
 }
 
