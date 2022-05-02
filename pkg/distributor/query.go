@@ -11,7 +11,6 @@ import (
 	"sort"
 	"time"
 
-	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/ring"
 	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/common/model"
@@ -157,9 +156,7 @@ func (d *Distributor) queryIngestersExemplars(ctx context.Context, replicationSe
 		}
 
 		resp, err := client.(ingester_client.IngesterClient).QueryExemplars(ctx, req)
-		d.ingesterQueries.WithLabelValues(ing.Addr).Inc()
 		if err != nil {
-			d.ingesterQueryFailures.WithLabelValues(ing.Addr).Inc()
 			return nil, err
 		}
 
@@ -256,11 +253,9 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 		if err != nil {
 			return nil, err
 		}
-		d.ingesterQueries.WithLabelValues(ing.Addr).Inc()
 
 		stream, err := client.(ingester_client.IngesterClient).QueryStream(ctx, req)
 		if err != nil {
-			d.ingesterQueryFailures.WithLabelValues(ing.Addr).Inc()
 			return nil, err
 		}
 		defer stream.CloseSend() //nolint:errcheck
@@ -270,11 +265,6 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 			if err == io.EOF {
 				break
 			} else if err != nil {
-				// Do not track a failure if the context was canceled.
-				if !grpcutil.IsGRPCContextCanceled(err) {
-					d.ingesterQueryFailures.WithLabelValues(ing.Addr).Inc()
-				}
-
 				return nil, err
 			}
 
