@@ -1,18 +1,18 @@
 [Unit]
 Description=Horizontally scalable, highly available, multi-tenant, long term Prometheus.
-Documentation=https://cortexmetrics.io/docs
+Documentation=https://grafana.com/oss/mimir/
 Wants=network-online.target
 After=network-online.target
 
 [Service]
 Restart=always
-User=cortex
-EnvironmentFile=/etc/sysconfig/cortex
-ExecStart=/usr/local/bin/cortex --config.file $CONFIG_FILE --log.level $LOG_LEVEL $CUSTOM_ARGS
+User=mimir
+EnvironmentFile=/etc/sysconfig/mimir
+ExecStart=/usr/local/bin/mimir --log.level $LOG_LEVEL $CUSTOM_ARGS
 ExecReload=/bin/kill -HUP $MAINPID
 TimeoutStopSec=20s
 SendSIGKILL=no
-WorkingDirectory=/var/lib/cortex
+WorkingDirectory=/var/lib/mimir
 
 [Install]
 WantedBy=multi-user.target

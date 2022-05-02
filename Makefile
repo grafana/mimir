@@ -370,7 +370,9 @@ check-license: ## Check license header of files.
 check-license: license
 	@git diff --exit-code || (echo "Please add the license header running 'make BUILD_IN_CONTAINER=false license'" && false)
 
-dist: ## Generates binaries for a Mimir release.
+dist: dist/$(UPTODATE) ## Generates binaries for a Mimir release.
+
+dist/$(UPTODATE):
 	rm -fr ./dist
 	mkdir -p ./dist
 	# Build binaries for various architectures and operating systems. Only
@@ -603,8 +605,11 @@ dist/$(UPTODATE):
 
 # Generate packages for a Mimir release.
 FPM_OPTS := fpm -s dir -v $(VERSION) -n mimir -f \
-	--license "Apache 2.0" \
-	--url "https://github.com/grafana/mimir"
+	--license "AGPL 3.0" \
+	--url "https://grafana.com/oss/mimir/" \
+	--description "Grafana Mimir provides horizontally scalable, highly available, multi-tenant, long-term storage for Prometheus." \
+	--maintainer "contact@grafana.com" \
+	--vendor "Grafana Labs"
 
 PACKAGE_IN_CONTAINER := true
 PACKAGE_IMAGE ?= $(IMAGE_PREFIX)fpm
@@ -616,14 +621,14 @@ packages: dist packaging/fpm/$(UPTODATE)
 	@mkdir -p $(shell pwd)/.cache
 	@echo ">>>> Entering build container: $@"
 	$(SUDO) time docker run --rm $(TTY) \
-		-v  $(shell pwd):/src/github.com/grafana/mimir:delegated,z \
+		-v  $(shell pwd):/go/src/github.com/grafana/mimir:delegated,z \
 		-i $(PACKAGE_IMAGE) $@;
 
 else
 
 packages: dist/$(UPTODATE)-packages
 
-dist/$(UPTODATE)-packages: dist $(wildcard packaging/deb/**) $(wildcard packaging/rpm/**)
+dist/$(UPTODATE)-packages: $(wildcard packaging/deb/**) $(wildcard packaging/rpm/**)
 	for arch in amd64 arm64; do \
 		rpm_arch=x86_64; \
 		deb_arch=x86_64; \
@@ -636,17 +641,17 @@ dist/$(UPTODATE)-packages: dist $(wildcard packaging/deb/**) $(wildcard packagin
 			--after-install packaging/deb/control/postinst \
 			--before-remove packaging/deb/control/prerm \
 			--package dist/mimir-$(VERSION)_$$arch.deb \
+			--deb-default packaging/deb/default/mimir \
+			--deb-systemd packaging/deb/systemd/mimir.service \
 			dist/mimir-linux-$$arch=/usr/local/bin/mimir \
-			docs/sources/chunks-storage/single-process-config.yaml=/etc/mimir/single-process-config.yaml \
-			packaging/deb/default/mimir=/etc/default/mimir \
-			packaging/deb/systemd/mimir.service=/etc/systemd/system/mimir.service; \
+			docs/configurations/single-process-config-blocks.yaml=/etc/mimir/config.example.yaml; \
 		$(FPM_OPTS) -t rpm  \
 			--architecture $$rpm_arch \
 			--after-install packaging/rpm/control/post \
 			--before-remove packaging/rpm/control/preun \
 			--package dist/mimir-$(VERSION)_$$arch.rpm \
 			dist/mimir-linux-$$arch=/usr/local/bin/mimir \
-			docs/sources/chunks-storage/single-process-config.yaml=/etc/mimir/single-process-config.yaml \
+			docs/configurations/single-process-config-blocks.yaml=/etc/mimir/config.example.yaml \
 			packaging/rpm/sysconfig/mimir=/etc/sysconfig/mimir \
 			packaging/rpm/systemd/mimir.service=/etc/systemd/system/mimir.service; \
 	done

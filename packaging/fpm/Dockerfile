@@ -1,11 +1,12 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-# Provenance-includes-location: https://github.com/cortexproject/cortex/packaging/fpm/Dockerfile
+# Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/packaging/fpm/Dockerfile
 # Provenance-includes-license: Apache-2.0
 # Provenance-includes-copyright: The Cortex Authors.
 
-FROM alpine:3.8
+FROM alpine:3.16.0
 
 RUN apk add --no-cache \
+        bash \
         ruby \
         ruby-dev \
         ruby-etc \
@@ -16,7 +17,7 @@ RUN apk add --no-cache \
         make \
         rpm \
         tar \
-        && gem install --no-ri --no-rdoc fpm
+        && gem install --no-document fpm
 
 COPY package.sh /
 ENTRYPOINT ["/package.sh"]
