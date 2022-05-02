@@ -288,9 +288,6 @@ type BucketStoreConfig struct {
 	// On the contrary, smaller value will increase baseline memory usage, but improve latency slightly.
 	// 1 will keep all in memory. Default value is the same as in Prometheus which gives a good balance.
 	PostingOffsetsInMemSampling int `yaml:"postings_offsets_in_mem_sampling" category:"advanced"`
-
-	// IndexHeaderThreadPoolSize controls the number of threads that are dedicated for use reading index headers.
-	IndexHeaderThreadPoolSize int `yaml:"index_header_thread_pool_size" category:"experimental"`
 }
 
 // RegisterFlags registers the BucketStore flags
@@ -318,7 +315,6 @@ func (cfg *BucketStoreConfig) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.IndexHeaderLazyLoadingEnabled, "blocks-storage.bucket-store.index-header-lazy-loading-enabled", true, "If enabled, store-gateway will lazy load an index-header only once required by a query.")
 	f.DurationVar(&cfg.IndexHeaderLazyLoadingIdleTimeout, "blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout", 60*time.Minute, "If index-header lazy loading is enabled and this setting is > 0, the store-gateway will offload unused index-headers after 'idle timeout' inactivity.")
 	f.Uint64Var(&cfg.PartitionerMaxGapBytes, "blocks-storage.bucket-store.partitioner-max-gap-bytes", DefaultPartitionerMaxGapSize, "Max size - in bytes - of a gap for which the partitioner aggregates together two bucket GET object requests.")
-	f.IntVar(&cfg.IndexHeaderThreadPoolSize, "blocks-storage.bucket-store.index-header-thread-pool-size", 0, "Number of threads that are dedicated for use reading index headers. Set to 0 to disable use of dedicated threads for reading index headers.")
 }
 
 // Validate the config.
