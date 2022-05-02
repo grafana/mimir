@@ -9,15 +9,12 @@
 package ingester
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
-	"path"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -46,7 +43,6 @@ import (
 	"github.com/thanos-io/thanos/pkg/objstore"
 	"github.com/thanos-io/thanos/pkg/shipper"
 	"github.com/weaveworks/common/httpgrpc"
-	"github.com/weaveworks/common/user"
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/codes"
@@ -2302,159 +2298,6 @@ func (i *Ingester) CheckReady(ctx context.Context) error {
 
 func (i *Ingester) RingHandler() http.Handler {
 	return i.lifecycler
-}
-
-type streamReader struct {
-	logger    log.Logger
-	stream    client.Ingester_UploadBlockFileServer
-	chunk     []byte
-	tenantID  string
-	blockID   string
-	pth       string
-	size      int64
-	numChunks int
-	bytesRead int64
-}
-
-// ObjectSize returns the size of the stream in bytes.
-//
-// Implements github.com/thanos-io/thanos/pkg/objstore.ObjectSizer.
-func (r *streamReader) ObjectSize() (int64, error) {
-	return r.size, nil
-}
-
-// Read reads up to len(p) bytes into p.
-//
-// The number of bytes read and any error encountered are returned.
-func (r *streamReader) Read(p []byte) (int, error) {
-	// Iterate until p is filled, or there's no more to read
-	bytesRead := 0
-	for bytesRead < len(p) {
-		if r.chunk == nil {
-			// Need to get the next chunk
-			req, err := r.stream.Recv()
-			if err != nil {
-				if err == io.EOF {
-					return bytesRead, io.EOF
-				}
-
-				level.Warn(r.logger).Log("msg", "failed reading from gRPC stream", "err", err)
-				return bytesRead, errors.Wrap(err, "failed to receive from gRPC stream")
-			}
-
-			r.chunk = req.Chunk
-			r.numChunks++
-		}
-
-		// Read from chunk
-		readNow := copy(p[bytesRead:], r.chunk)
-		bytesRead += readNow
-		r.bytesRead += int64(readNow)
-		r.chunk = r.chunk[readNow:]
-		if len(r.chunk) == 0 {
-			r.chunk = nil
-		}
-	}
-
-	if bytesRead != len(p) {
-		panic(fmt.Sprintf("number of bytes read (%d) differs from the requested amount (%d)",
-			bytesRead, len(p)))
-	}
-
-	return bytesRead, nil
-}
-
-func (i *Ingester) UploadBlockFile(stream client.Ingester_UploadBlockFileServer) error {
-	if err := i.checkRunning(); err != nil {
-		return err
-	}
-
-	tenantID, ctx, err := user.ExtractFromGRPCRequest(stream.Context())
-	if err != nil {
-		return errors.Wrap(err, "failed to get tenant ID from gRPC request")
-	}
-
-	level.Info(i.logger).Log("msg", "processing request to upload block file", "user", tenantID)
-	req, err := stream.Recv()
-	if err != nil {
-		if err == io.EOF {
-			return fmt.Errorf("failed to receive anything from gRPC stream")
-		}
-		return errors.Wrap(err, "failed to receive from gRPC stream")
-	}
-
-	if path.Base(req.Path) == "meta.json" {
-		return fmt.Errorf("meta.json is not allowed")
-	}
-
-	level.Info(i.logger).Log("msg", "uploading block file", "user",
-		tenantID, "block_id", req.BlockId, "path", req.Path, "chunkLength",
-		len(req.Chunk))
-	r := streamReader{
-		logger:    i.logger,
-		stream:    stream,
-		chunk:     req.Chunk,
-		tenantID:  tenantID,
-		blockID:   req.BlockId,
-		pth:       req.Path,
-		size:      req.ContentLength,
-		numChunks: 1,
-	}
-
-	dst := path.Join(req.BlockId, req.Path)
-	level.Info(i.logger).Log("msg", "uploading block file to bucket", "user", tenantID,
-		"destination", dst)
-	bkt := bucket.NewUserBucketClient(string(tenantID), i.bucket, i.limits)
-	defer bkt.Close()
-	if err := bkt.Upload(ctx, dst, &r); err != nil {
-		return errors.Wrap(err, "failed uploading block file to bucket")
-	}
-
-	level.Info(i.logger).Log("msg", "finished uploading block file to bucket", "user",
-		tenantID, "block_id", req.BlockId, "path", req.Path, "chunks", r.numChunks, "bytes_written", r.bytesRead,
-		"content_length", req.ContentLength)
-	if r.bytesRead != req.ContentLength {
-		level.Error(i.logger).Log("msg", "the number of bytes written differs from the expectation",
-			"bytes_written", r.bytesRead, "content_length", req.ContentLength)
-		return fmt.Errorf("the number of bytes written (%d) differs from the expectation (%d)", r.bytesRead, req.ContentLength)
-	}
-	if r.bytesRead == 0 {
-		level.Warn(i.logger).Log("msg", "no backfill file content was sent")
-	}
-
-	return stream.SendAndClose(&mimirpb.UploadBlockFileResponse{})
-}
-
-func (i *Ingester) CompleteBlockUpload(ctx context.Context, req *mimirpb.CompleteBlockUploadRequest) (*mimirpb.CompleteBlockUploadResponse, error) {
-	if err := i.checkRunning(); err != nil {
-		return nil, err
-	}
-
-	tenantID, ctx, err := user.ExtractFromGRPCRequest(ctx)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to get tenant ID from gRPC request")
-	}
-
-	var meta metadata.Meta
-	if err := json.Unmarshal(req.Meta, &meta); err != nil {
-		return nil, errors.Wrap(err, "failed to decode meta.json")
-	}
-
-	level.Info(i.logger).Log("msg", "processing request to complete block upload", "user",
-		tenantID, "block_id", req.BlockId, "files", len(meta.Thanos.Files))
-
-	bkt := bucket.NewUserBucketClient(tenantID, i.bucket, i.limits)
-	defer bkt.Close()
-
-	// Write meta.json, so the block is considered complete
-	dst := path.Join(tenantID, req.BlockId, "meta.json")
-	level.Info(i.logger).Log("msg", "writing meta.json in bucket", "dst", dst)
-	buf := bytes.NewBuffer(req.Meta)
-	if err := bkt.Upload(ctx, dst, buf); err != nil {
-		return nil, errors.Wrap(err, "failed uploading meta.json to bucket")
-	}
-
-	return &mimirpb.CompleteBlockUploadResponse{}, nil
 }
 
 func initSelectHints(start, end int64) *storage.SelectHints {

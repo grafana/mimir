@@ -76,12 +76,3 @@ func (m *IngesterServerMock) LabelValuesCardinality(req *LabelValuesCardinalityR
 	args := m.Called(req, srv)
 	return args.Error(0)
 }
-
-func (m *IngesterServerMock) UploadBlockFile(stream Ingester_UploadBlockFileServer) error {
-	return nil
-}
-
-func (m *IngesterServerMock) CompleteBlockUpload(ctx context.Context, req *mimirpb.CompleteBlockUploadRequest) (*mimirpb.CompleteBlockUploadResponse, error) {
-	args := m.Called(ctx, req)
-	return args.Get(0).(*mimirpb.CompleteBlockUploadResponse), args.Error(1)
-}

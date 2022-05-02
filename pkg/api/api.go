@@ -21,7 +21,6 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/gorilla/mux"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/weaveworks/common/httpgrpc"
 	"github.com/weaveworks/common/middleware"
 	"github.com/weaveworks/common/server"
 
@@ -254,82 +253,6 @@ func (a *API) RegisterDistributor(d *distributor.Distributor, pushConfig distrib
 	distributorpb.RegisterDistributorServer(a.server.GRPC, d)
 
 	a.RegisterRoute("/api/v1/push", push.Handler(pushConfig.MaxRecvMsgSize, a.sourceIPs, a.cfg.SkipLabelNameValidationHeader, a.cfg.wrapDistributorPush(d)), true, false, "POST")
-	// Endpoint to handle requests for completion of block backfilling.
-	// Placed before less specific handler for same route, that doesn't take query parameter, for precedence.
-	a.RegisterRouteWithQueryParameters("/api/v1/upload/block/{block}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		vars := mux.Vars(r)
-		blockID := vars["block"]
-
-		tenantID, ctx, err := tenant.ExtractTenantIDFromHTTPRequest(r)
-		if err != nil {
-			http.Error(w, "invalid tenant ID", http.StatusBadRequest)
-			return
-		}
-
-		if err := d.CompleteBlockUpload(ctx, tenantID, blockID, r); err != nil {
-			resp, ok := httpgrpc.HTTPResponseFromError(err)
-			if !ok {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-			} else {
-				http.Error(w, string(resp.Body), int(resp.Code))
-			}
-			return
-		}
-
-		w.WriteHeader(http.StatusOK)
-	}), true, false, []string{"uploadComplete", "true"}, http.MethodPost)
-	// Endpoint to handle requests for starting of block backfilling.
-	// Starting the backfilling of a block means to verify that the backfill can go ahead.
-	// In practice this means to check that the block isn't already in block storage.
-	a.RegisterRoute("/api/v1/upload/block/{block}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		vars := mux.Vars(r)
-		blockID := vars["block"]
-		tenantID, ctx, err := tenant.ExtractTenantIDFromHTTPRequest(r)
-		if err != nil {
-			http.Error(w, "invalid tenant ID", http.StatusBadRequest)
-			return
-		}
-
-		if err := d.CreateBlockUpload(ctx, tenantID, blockID); err != nil {
-			resp, ok := httpgrpc.HTTPResponseFromError(err)
-			if !ok {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-			} else {
-				http.Error(w, string(resp.Body), int(resp.Code))
-			}
-			return
-		}
-
-		w.WriteHeader(http.StatusOK)
-	}), true, false, http.MethodPost)
-	// Endpoint to handle requests for uploading block files to a backfill.
-	a.RegisterRoute("/api/v1/upload/block/{block}/{path}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		vars := mux.Vars(r)
-		blockID := vars["block"]
-		pth, err := url.PathUnescape(vars["path"])
-		if err != nil {
-			http.Error(w, fmt.Sprintf("invalid file path: %q", vars["path"]), http.StatusBadRequest)
-			return
-		}
-
-		tenantID, ctx, err := tenant.ExtractTenantIDFromHTTPRequest(r)
-		if err != nil {
-			http.Error(w, "invalid tenant ID", http.StatusBadRequest)
-			return
-		}
-
-		if err := d.UploadBlockFile(ctx, tenantID, blockID, pth, r); err != nil {
-			resp, ok := httpgrpc.HTTPResponseFromError(err)
-			if !ok {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-			} else {
-				http.Error(w, string(resp.Body), int(resp.Code))
-			}
-			return
-		}
-
-		w.WriteHeader(http.StatusOK)
-	}), true, false, http.MethodPost)
 
 	a.indexPage.AddLinks(defaultWeight, "Distributor", []IndexPageLink{
 		{Desc: "Ring status", Path: "/distributor/ring"},
@@ -444,12 +367,73 @@ func (a *API) RegisterStoreGateway(s *storegateway.StoreGateway) {
 	a.RegisterRoute("/store-gateway/tenant/{tenant}/blocks", http.HandlerFunc(s.BlocksHandler), false, true, "GET")
 }
 
-// RegisterCompactor registers the ring UI page associated with the compactor.
+// RegisterCompactor registers routes associated with the compactor.
 func (a *API) RegisterCompactor(c *compactor.MultitenantCompactor) {
 	a.indexPage.AddLinks(defaultWeight, "Compactor", []IndexPageLink{
 		{Desc: "Ring status", Path: "/compactor/ring"},
 	})
 	a.RegisterRoute("/compactor/ring", http.HandlerFunc(c.RingHandler), false, true, "GET", "POST")
+	// Endpoint to handle requests for completion of block backfilling.
+	// Placed before less specific handler for same route, that doesn't take query parameter, for precedence.
+	a.RegisterRouteWithQueryParameters("/api/v1/upload/block/{block}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		vars := mux.Vars(r)
+		blockID := vars["block"]
+
+		tenantID, ctx, err := tenant.ExtractTenantIDFromHTTPRequest(r)
+		if err != nil {
+			http.Error(w, "invalid tenant ID", http.StatusBadRequest)
+			return
+		}
+
+		if err := c.CompleteBlockUpload(ctx, tenantID, blockID, r); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
+	}), true, false, []string{"uploadComplete", "true"}, http.MethodPost)
+	// Endpoint to handle requests for starting of block backfilling.
+	// Starting the backfilling of a block means to verify that the backfill can go ahead.
+	// In practice this means to check that the block isn't already in block storage.
+	a.RegisterRoute("/api/v1/upload/block/{block}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		vars := mux.Vars(r)
+		blockID := vars["block"]
+		tenantID, ctx, err := tenant.ExtractTenantIDFromHTTPRequest(r)
+		if err != nil {
+			http.Error(w, "invalid tenant ID", http.StatusBadRequest)
+			return
+		}
+
+		if err := c.CreateBlockUpload(ctx, tenantID, blockID); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
+	}), true, false, http.MethodPost)
+	// Endpoint to handle requests for uploading block files to a backfill.
+	a.RegisterRoute("/api/v1/upload/block/{block}/{path}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		vars := mux.Vars(r)
+		blockID := vars["block"]
+		pth, err := url.PathUnescape(vars["path"])
+		if err != nil {
+			http.Error(w, fmt.Sprintf("invalid file path: %q", vars["path"]), http.StatusBadRequest)
+			return
+		}
+
+		tenantID, ctx, err := tenant.ExtractTenantIDFromHTTPRequest(r)
+		if err != nil {
+			http.Error(w, "invalid tenant ID", http.StatusBadRequest)
+			return
+		}
+
+		if err := c.UploadBlockFile(ctx, tenantID, blockID, pth, r); err != nil {
+			http.Error(w, "invalid tenant ID", http.StatusBadRequest)
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
+	}), true, false, http.MethodPost)
 }
 
 type Distributor interface {
