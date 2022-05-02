@@ -11,7 +11,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
   },
 
   'mimir-rollout-progress.json':
-    ($.dashboard('Rollout progress') + { uid: '7544a3a62b1be6ffd919fc990ab8ba8f' })
+    ($.dashboard('Rollout progress') + { uid: '4wbNeyoyO' })
     .addClusterSelectorTemplates(false) + {
       // This dashboard uses the new grid system in order to place panels (using gridPos).
       // Because of this we can't use the mixin's addRow() and addPanel().

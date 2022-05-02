@@ -2,7 +2,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
 
 (import 'dashboard-utils.libsonnet') {
   'mimir-reads-resources.json':
-    ($.dashboard('Reads resources') + { uid: '2fd2cda9eea8d8af9fbc0a5960425120' })
+    ($.dashboard('Reads resources') + { uid: 'mBNJaEkET' })
     .addClusterSelectorTemplates(false)
     .addRowIf(
       $._config.gateway_enabled,

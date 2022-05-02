@@ -68,6 +68,27 @@
 * [CHANGE] Dashboards: Remove per-user series legends from Tenants dashboard. #1605
 * [CHANGE] Dashboards: Show in-memory series and the per-user series limit on Tenants dashboard. #1613
 * [CHANGE] Dashboards: Slow-queries dashboard now uses `user` label from logs instead of `org_id`. #1634
+* [CHANGE] Dashboards: changed all Grafana dashboards UIDs to not conflict with Cortex ones, to let people install both while migrating from Cortex to Mimir: #1801
+  * Alertmanager from `a76bee5913c97c918d9e56a3cc88cc28` to `GupFKpgkt`
+  * Alertmanager Resources from `68b66aed90ccab448009089544a8d6c6` to `r5DZRDusm`
+  * Compactor from `9c408e1d55681ecb8a22c9fab46875cc` to `oMZ8ngTZF`
+  * Compactor Resources from `df9added6f1f4332f95848cca48ebd99` to `ma9ZA9a7C`
+  * Config from `61bb048ced9817b2d3e07677fb1c6290` to `u6dLadEbi`
+  * Object Store from `d5a3a4489d57c733b5677fb55370a723` to `VKXaoOZXb`
+  * Overrides from `b5c95fee2e5e7c4b5930826ff6e89a12` to `BWZ9xZOUo`
+  * Queries from `d9931b1054053c8b972d320774bb8f1d` to `bHf8Zf5fk`
+  * Reads from `8d6ba60eccc4b6eedfa329b24b1bd339` to `2dvAcvdvV`
+  * Reads Networking from `c0464f0d8bd026f776c9006b05910000` to `3xAjZAhJ5`
+  * Reads Resources from `2fd2cda9eea8d8af9fbc0a5960425120` to `mBNJaEkET`
+  * Rollout Progress from `7544a3a62b1be6ffd919fc990ab8ba8f` to `4wbNeyoyO`
+  * Ruler from `44d12bcb1f95661c6ab6bc946dfc3473` to `4ATLNTbTa`
+  * Scaling from `88c041017b96856c9176e07cf557bdcf` to `mNp3epNpo`
+  * Slow queries from `e6f3091e29d2636e3b8393447e925668` to `30rav7n7X`
+  * Tenants from `35fa247ce651ba189debf33d7ae41611` to `4BQmVQBvF`
+  * Top Tenants from `bc6e12d4fe540e4a1785b9d3ca0ffdd9` to `6gZlLegev`
+  * Writes from `0156f6d15aa234d452a33a4f13c838e3` to `CVmvemOmR`
+  * Writes Networking from `681cd62b680b7154811fe73af55dcfd4` to `iqgpV8q8Y`
+  * Writes Resources from `c0464f0d8bd026f776c9006b0591bb0b` to `6tIBbVtV2`
 * [FEATURE] Alerts: added the following alerts on `mimir-continuous-test` tool: #1676
   - `MimirContinuousTestNotRunningOnWrites`
   - `MimirContinuousTestNotRunningOnReads`

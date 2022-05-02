@@ -88,7 +88,7 @@ local fixTargetsForTransformations(panel, refIds) = panel {
   ],
 
   'mimir-compactor.json':
-    ($.dashboard('Compactor') + { uid: '9c408e1d55681ecb8a22c9fab46875cc' })
+    ($.dashboard('Compactor') + { uid: 'oMZ8ngTZF' })
     .addClusterSelectorTemplates()
     .addRow(
       $.row('Summary')
