@@ -169,6 +169,8 @@ jobs:
           export IMAGE_TAG=$(make image-tag)
           # skopeo will by default load system-specific version of the image (linux/amd64).
           skopeo copy oci-archive:/tmp/images/mimir.oci "docker-daemon:grafana/mimir:$IMAGE_TAG"
+          # Print Mimir version and architecture loaded to Docker.
+          docker run "grafana/mimir:$IMAGE_TAG" --version
       - name: Preload Images
         # We download docker images used by integration tests so that all images are available
         # locally and the download time doesn't account in the test execution time, which is subject
