@@ -80,12 +80,27 @@ func (s *ShuffleShardingStrategy) FilterUsers(_ context.Context, userIDs []strin
 
 // FilterBlocks implements ShardingStrategy.
 func (s *ShuffleShardingStrategy) FilterBlocks(_ context.Context, userID string, metas map[ulid.ULID]*metadata.Meta, loaded map[ulid.ULID]struct{}, synced *extprom.TxGaugeVec) error {
-	subRing := GetShuffleShardingSubring(s.r, userID, s.limits)
-	filterBlocksByRingSharding(subRing, s.instanceAddr, metas, loaded, synced, s.logger)
-	return nil
-}
+	// As a protection, ensure the store-gateway instance is healthy in the ring. If it's unhealthy because it's failing
+	// to heartbeat or get updates from the ring, or even removed from the ring because of the auto-forget feature, then
+	// keep the previously loaded blocks.
+	// TODO test
+	if set, err := s.r.GetAllHealthy(BlocksOwnerSync); err != nil || !set.Includes(s.instanceAddr) {
+		for blockID := range metas {
+			if _, ok := loaded[blockID]; ok {
+				level.Warn(s.logger).Log("msg", "store-gateway is unhealthy in the ring but block is kept because was previously loaded", "block", blockID.String(), "err", err)
+			} else {
+				level.Warn(s.logger).Log("msg", "store-gateway is unhealthy in the ring and block has been excluded because was not previously loaded", "block", blockID.String(), "err", err)
 
-func filterBlocksByRingSharding(r ring.ReadRing, instanceAddr string, metas map[ulid.ULID]*metadata.Meta, loaded map[ulid.ULID]struct{}, synced *extprom.TxGaugeVec, logger log.Logger) {
+				// Skip the block.
+				synced.WithLabelValues(shardExcludedMeta).Inc()
+				delete(metas, blockID)
+			}
+		}
+
+		return nil
+	}
+
+	r := GetShuffleShardingSubring(s.r, userID, s.limits)
 	bufDescs, bufHosts, bufZones := ring.MakeBuffersForGet()
 
 	for blockID := range metas {
@@ -97,9 +112,9 @@ func filterBlocksByRingSharding(r ring.ReadRing, instanceAddr string, metas map[
 		// If an error occurs while checking the ring, we keep the previously loaded blocks.
 		if err != nil {
 			if _, ok := loaded[blockID]; ok {
-				level.Warn(logger).Log("msg", "failed to check block owner but block is kept because was previously loaded", "block", blockID.String(), "err", err)
+				level.Warn(s.logger).Log("msg", "failed to check block owner but block is kept because was previously loaded", "block", blockID.String(), "err", err)
 			} else {
-				level.Warn(logger).Log("msg", "failed to check block owner and block has been excluded because was not previously loaded", "block", blockID.String(), "err", err)
+				level.Warn(s.logger).Log("msg", "failed to check block owner and block has been excluded because was not previously loaded", "block", blockID.String(), "err", err)
 
 				// Skip the block.
 				synced.WithLabelValues(shardExcludedMeta).Inc()
@@ -110,7 +125,7 @@ func filterBlocksByRingSharding(r ring.ReadRing, instanceAddr string, metas map[
 		}
 
 		// Keep the block if it is owned by the store-gateway.
-		if set.Includes(instanceAddr) {
+		if set.Includes(s.instanceAddr) {
 			continue
 		}
 
@@ -131,6 +146,8 @@ func filterBlocksByRingSharding(r ring.ReadRing, instanceAddr string, metas map[
 		synced.WithLabelValues(shardExcludedMeta).Inc()
 		delete(metas, blockID)
 	}
+
+	return nil
 }
 
 // GetShuffleShardingSubring returns the subring to be used for a given user. This function
