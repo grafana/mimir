@@ -1,8 +1,9 @@
 local utils = import 'mixin-utils/utils.libsonnet';
+local filename = 'mimir-reads-resources.json';
 
 (import 'dashboard-utils.libsonnet') {
-  'mimir-reads-resources.json':
-    ($.dashboard('Reads resources') + { uid: 'mBNJaEkET' })
+  [filename]:
+    ($.dashboard('Reads resources') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates(false)
     .addRowIf(
       $._config.gateway_enabled,

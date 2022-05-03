@@ -1,4 +1,5 @@
 local utils = import 'mixin-utils/utils.libsonnet';
+local filename = 'mimir-ruler.json';
 
 (import 'dashboard-utils.libsonnet') {
   local ruler_config_api_routes_re = '(prometheus|api_prom)_(rules.*|api_v1_(rules|alerts))',
@@ -58,8 +59,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
     },
   },
 
-  'mimir-ruler.json':
-    ($.dashboard('Ruler') + { uid: '4ATLNTbTa' })
+  [filename]:
+    ($.dashboard('Ruler') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates()
     .addRow(
       ($.row('Headlines') + {

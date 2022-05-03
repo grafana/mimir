@@ -1,8 +1,9 @@
 local utils = import 'mixin-utils/utils.libsonnet';
+local filename = 'mimir-overrides.json';
 
 (import 'dashboard-utils.libsonnet') {
-  'mimir-overrides.json':
-    ($.dashboard('Overrides') + { uid: 'BWZ9xZOUo' })
+  [filename]:
+    ($.dashboard('Overrides') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates(false)
     .addRow(
       $.row('')

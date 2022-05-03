@@ -1,8 +1,9 @@
 local utils = import 'mixin-utils/utils.libsonnet';
+local filename = 'mimir-writes-networking.json';
 
 (import 'dashboard-utils.libsonnet') {
-  'mimir-writes-networking.json':
-    ($.dashboard('Writes networking') + { uid: 'iqgpV8q8Y' })
+  [filename]:
+    ($.dashboard('Writes networking') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates(false)
     .addRowIf($._config.gateway_enabled, $.jobNetworkingRow('Gateway', 'gateway'))
     .addRow($.jobNetworkingRow('Distributor', 'distributor'))

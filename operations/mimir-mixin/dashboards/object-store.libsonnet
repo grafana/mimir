@@ -1,8 +1,9 @@
 local utils = import 'mixin-utils/utils.libsonnet';
+local filename = 'mimir-object-store.json';
 
 (import 'dashboard-utils.libsonnet') {
-  'mimir-object-store.json':
-    ($.dashboard('Object Store') + { uid: 'VKXaoOZXb' })
+  [filename]:
+    ($.dashboard('Object Store') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates()
     .addRow(
       $.row('Components')
