@@ -2,7 +2,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
 
 (import 'dashboard-utils.libsonnet') {
   'mimir-alertmanager.json':
-    ($.dashboard('Alertmanager') + { uid: 'a76bee5913c97c918d9e56a3cc88cc28' })
+    ($.dashboard('Alertmanager') + { uid: 'GupFKpgkt' })
     .addClusterSelectorTemplates()
     .addRow(
       ($.row('Headlines') + {
