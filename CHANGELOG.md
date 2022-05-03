@@ -2,6 +2,9 @@
 
 ## Grafana Mimir - main / unreleased
 
+### Mixin
+* [ENHANCEMENT] Dashboards: Add config option `datasource_regex` to customise the regular expression used to select valid datasources for Mimir dashboards. #1802
+
 ## 2.1.0-rc.0
 
 ### Grafana Mimir

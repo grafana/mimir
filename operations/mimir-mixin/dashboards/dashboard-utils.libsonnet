@@ -19,7 +19,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
     // Prefix the dashboard title with "<product> /" unless configured otherwise.
     super.dashboard(
       title='%(prefix)s%(title)s' % { prefix: $._config.dashboard_prefix, title: title },
-      datasource=$._config.dashboard_datasource, datasource_regex=$._config.datasource_regex
+      datasource=$._config.dashboard_datasource,
+      datasource_regex=$._config.datasource_regex
     ) + {
       addRowIf(condition, row)::
         if condition
