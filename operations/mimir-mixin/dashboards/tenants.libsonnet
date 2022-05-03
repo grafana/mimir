@@ -1,8 +1,9 @@
 local utils = import 'mixin-utils/utils.libsonnet';
+local filename = 'mimir-tenants.json';
 
 (import 'dashboard-utils.libsonnet') {
-  'mimir-tenants.json':
-    ($.dashboard('Tenants') + { uid: '4BQmVQBvF' })
+  [filename]:
+    ($.dashboard('Tenants') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates()
     .addActiveUserSelectorTemplates()
     .addCustomTemplate('limit', ['10', '50', '100', '500', '1000'])
