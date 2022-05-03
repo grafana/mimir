@@ -89,5 +89,6 @@
 
     // The default datasource used for dashboards.
     dashboard_datasource: 'default',
+    datasource_regex: '',
   },
 }

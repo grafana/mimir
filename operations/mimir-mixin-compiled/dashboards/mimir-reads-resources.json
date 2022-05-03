@@ -1407,8 +1407,8 @@
                   "timeShift": null,
                   "title": "Rules",
                   "tooltip": {
-                     "shared": false,
-                     "sort": 0,
+                     "shared": true,
+                     "sort": 2,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -2030,8 +2030,8 @@
                   "timeShift": null,
                   "title": "Disk writes",
                   "tooltip": {
-                     "shared": false,
-                     "sort": 0,
+                     "shared": true,
+                     "sort": 2,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -2107,8 +2107,8 @@
                   "timeShift": null,
                   "title": "Disk reads",
                   "tooltip": {
-                     "shared": false,
-                     "sort": 0,
+                     "shared": true,
+                     "sort": 2,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -2184,8 +2184,8 @@
                   "timeShift": null,
                   "title": "Disk space utilization",
                   "tooltip": {
-                     "shared": false,
-                     "sort": 0,
+                     "shared": true,
+                     "sort": 2,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -2237,7 +2237,7 @@
                   "value": "default"
                },
                "hide": 0,
-               "label": null,
+               "label": "Data Source",
                "name": "datasource",
                "options": [ ],
                "query": "prometheus",

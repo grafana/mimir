@@ -72,8 +72,8 @@
                   "timeShift": null,
                   "title": "RPS / component",
                   "tooltip": {
-                     "shared": false,
-                     "sort": 0,
+                     "shared": true,
+                     "sort": 2,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -149,8 +149,8 @@
                   "timeShift": null,
                   "title": "Error rate / component",
                   "tooltip": {
-                     "shared": false,
-                     "sort": 0,
+                     "shared": true,
+                     "sort": 2,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -238,8 +238,8 @@
                   "timeShift": null,
                   "title": "RPS / operation",
                   "tooltip": {
-                     "shared": false,
-                     "sort": 0,
+                     "shared": true,
+                     "sort": 2,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -315,8 +315,8 @@
                   "timeShift": null,
                   "title": "Error rate / operation",
                   "tooltip": {
-                     "shared": false,
-                     "sort": 0,
+                     "shared": true,
+                     "sort": 2,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -422,8 +422,8 @@
                   "timeShift": null,
                   "title": "Op: Get",
                   "tooltip": {
-                     "shared": false,
-                     "sort": 0,
+                     "shared": true,
+                     "sort": 2,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -517,8 +517,8 @@
                   "timeShift": null,
                   "title": "Op: GetRange",
                   "tooltip": {
-                     "shared": false,
-                     "sort": 0,
+                     "shared": true,
+                     "sort": 2,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -612,8 +612,8 @@
                   "timeShift": null,
                   "title": "Op: Exists",
                   "tooltip": {
-                     "shared": false,
-                     "sort": 0,
+                     "shared": true,
+                     "sort": 2,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -719,8 +719,8 @@
                   "timeShift": null,
                   "title": "Op: Attributes",
                   "tooltip": {
-                     "shared": false,
-                     "sort": 0,
+                     "shared": true,
+                     "sort": 2,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -814,8 +814,8 @@
                   "timeShift": null,
                   "title": "Op: Upload",
                   "tooltip": {
-                     "shared": false,
-                     "sort": 0,
+                     "shared": true,
+                     "sort": 2,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -909,8 +909,8 @@
                   "timeShift": null,
                   "title": "Op: Delete",
                   "tooltip": {
-                     "shared": false,
-                     "sort": 0,
+                     "shared": true,
+                     "sort": 2,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -962,7 +962,7 @@
                   "value": "default"
                },
                "hide": 0,
-               "label": null,
+               "label": "Data Source",
                "name": "datasource",
                "options": [ ],
                "query": "prometheus",

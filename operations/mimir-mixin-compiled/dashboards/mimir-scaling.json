@@ -207,8 +207,8 @@
                   "timeShift": null,
                   "title": "Workload-based scaling",
                   "tooltip": {
-                     "shared": false,
-                     "sort": 0,
+                     "shared": true,
+                     "sort": 2,
                      "value_type": "individual"
                   },
                   "transform": "table",
@@ -261,7 +261,7 @@
                   "value": "default"
                },
                "hide": 0,
-               "label": null,
+               "label": "Data Source",
                "name": "datasource",
                "options": [ ],
                "query": "prometheus",

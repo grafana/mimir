@@ -133,8 +133,8 @@
                   "timeShift": null,
                   "title": "Top $limit users by active series",
                   "tooltip": {
-                     "shared": false,
-                     "sort": 0,
+                     "shared": true,
+                     "sort": 2,
                      "value_type": "individual"
                   },
                   "transform": "table",
@@ -261,8 +261,8 @@
                   "timeShift": null,
                   "title": "Top $limit users by in-memory series (series created - series removed)",
                   "tooltip": {
-                     "shared": false,
-                     "sort": 0,
+                     "shared": true,
+                     "sort": 2,
                      "value_type": "individual"
                   },
                   "transform": "table",
@@ -351,8 +351,8 @@
                   "timeShift": null,
                   "title": "Top $limit users by in-memory series (series created - series removed) that grew the most between query range start and query range end",
                   "tooltip": {
-                     "shared": false,
-                     "sort": 0,
+                     "shared": true,
+                     "sort": 2,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -478,8 +478,8 @@
                   "timeShift": null,
                   "title": "Top $limit users by received samples rate in last 5m",
                   "tooltip": {
-                     "shared": false,
-                     "sort": 0,
+                     "shared": true,
+                     "sort": 2,
                      "value_type": "individual"
                   },
                   "transform": "table",
@@ -912,8 +912,8 @@
                   "timeShift": null,
                   "title": "Top $limit users by series with exemplars",
                   "tooltip": {
-                     "shared": false,
-                     "sort": 0,
+                     "shared": true,
+                     "sort": 2,
                      "value_type": "individual"
                   },
                   "transform": "table",
@@ -1040,8 +1040,8 @@
                   "timeShift": null,
                   "title": "Top $limit users by received exemplars rate in last 5m",
                   "tooltip": {
-                     "shared": false,
-                     "sort": 0,
+                     "shared": true,
+                     "sort": 2,
                      "value_type": "individual"
                   },
                   "transform": "table",
@@ -1168,8 +1168,8 @@
                   "timeShift": null,
                   "title": "Top $limit biggest groups",
                   "tooltip": {
-                     "shared": false,
-                     "sort": 0,
+                     "shared": true,
+                     "sort": 2,
                      "value_type": "individual"
                   },
                   "transform": "table",
@@ -1296,8 +1296,8 @@
                   "timeShift": null,
                   "title": "Top $limit slowest groups (last evaluation)",
                   "tooltip": {
-                     "shared": false,
-                     "sort": 0,
+                     "shared": true,
+                     "sort": 2,
                      "value_type": "individual"
                   },
                   "transform": "table",
@@ -1350,7 +1350,7 @@
                   "value": "default"
                },
                "hide": 0,
-               "label": null,
+               "label": "Data Source",
                "name": "datasource",
                "options": [ ],
                "query": "prometheus",

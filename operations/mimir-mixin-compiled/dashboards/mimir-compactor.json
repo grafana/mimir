@@ -95,8 +95,8 @@
                   "timeShift": null,
                   "title": "Per-instance runs / sec",
                   "tooltip": {
-                     "shared": false,
-                     "sort": 0,
+                     "shared": true,
+                     "sort": 2,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -173,8 +173,8 @@
                   "timeShift": null,
                   "title": "Tenants compaction progress",
                   "tooltip": {
-                     "shared": false,
-                     "sort": 0,
+                     "shared": true,
+                     "sort": 2,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -336,8 +336,8 @@
                   "timeShift": null,
                   "title": "Longest time since last successful run",
                   "tooltip": {
-                     "shared": false,
-                     "sort": 0,
+                     "shared": true,
+                     "sort": 2,
                      "value_type": "individual"
                   },
                   "transformations": [
@@ -575,8 +575,8 @@
                   "timeShift": null,
                   "title": "Last successful run per-compactor replica",
                   "tooltip": {
-                     "shared": false,
-                     "sort": 0,
+                     "shared": true,
+                     "sort": 2,
                      "value_type": "individual"
                   },
                   "transformations": [
@@ -712,8 +712,8 @@
                   "timeShift": null,
                   "title": "TSDB compactions / sec",
                   "tooltip": {
-                     "shared": false,
-                     "sort": 0,
+                     "shared": true,
+                     "sort": 2,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -808,8 +808,8 @@
                   "timeShift": null,
                   "title": "TSDB compaction duration",
                   "tooltip": {
-                     "shared": false,
-                     "sort": 0,
+                     "shared": true,
+                     "sort": 2,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -897,8 +897,8 @@
                   "timeShift": null,
                   "title": "Average blocks / tenant",
                   "tooltip": {
-                     "shared": false,
-                     "sort": 0,
+                     "shared": true,
+                     "sort": 2,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -975,8 +975,8 @@
                   "timeShift": null,
                   "title": "Tenants with largest number of blocks",
                   "tooltip": {
-                     "shared": false,
-                     "sort": 0,
+                     "shared": true,
+                     "sort": 2,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -1064,8 +1064,8 @@
                   "timeShift": null,
                   "title": "Blocks marked for deletion / sec",
                   "tooltip": {
-                     "shared": false,
-                     "sort": 0,
+                     "shared": true,
+                     "sort": 2,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -1153,8 +1153,8 @@
                   "timeShift": null,
                   "title": "Blocks deletions / sec",
                   "tooltip": {
-                     "shared": false,
-                     "sort": 0,
+                     "shared": true,
+                     "sort": 2,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -1254,8 +1254,8 @@
                   "timeShift": null,
                   "title": "Metadata syncs / sec",
                   "tooltip": {
-                     "shared": false,
-                     "sort": 0,
+                     "shared": true,
+                     "sort": 2,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -1349,8 +1349,8 @@
                   "timeShift": null,
                   "title": "Metadata sync duration",
                   "tooltip": {
-                     "shared": false,
-                     "sort": 0,
+                     "shared": true,
+                     "sort": 2,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -1438,8 +1438,8 @@
                   "timeShift": null,
                   "title": "Operations / sec",
                   "tooltip": {
-                     "shared": false,
-                     "sort": 0,
+                     "shared": true,
+                     "sort": 2,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -1515,8 +1515,8 @@
                   "timeShift": null,
                   "title": "Error rate",
                   "tooltip": {
-                     "shared": false,
-                     "sort": 0,
+                     "shared": true,
+                     "sort": 2,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -1610,8 +1610,8 @@
                   "timeShift": null,
                   "title": "Latency of op: Attributes",
                   "tooltip": {
-                     "shared": false,
-                     "sort": 0,
+                     "shared": true,
+                     "sort": 2,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -1705,8 +1705,8 @@
                   "timeShift": null,
                   "title": "Latency of op: Exists",
                   "tooltip": {
-                     "shared": false,
-                     "sort": 0,
+                     "shared": true,
+                     "sort": 2,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -1812,8 +1812,8 @@
                   "timeShift": null,
                   "title": "Latency of op: Get",
                   "tooltip": {
-                     "shared": false,
-                     "sort": 0,
+                     "shared": true,
+                     "sort": 2,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -1907,8 +1907,8 @@
                   "timeShift": null,
                   "title": "Latency of op: GetRange",
                   "tooltip": {
-                     "shared": false,
-                     "sort": 0,
+                     "shared": true,
+                     "sort": 2,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -2002,8 +2002,8 @@
                   "timeShift": null,
                   "title": "Latency of op: Upload",
                   "tooltip": {
-                     "shared": false,
-                     "sort": 0,
+                     "shared": true,
+                     "sort": 2,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -2097,8 +2097,8 @@
                   "timeShift": null,
                   "title": "Latency of op: Delete",
                   "tooltip": {
-                     "shared": false,
-                     "sort": 0,
+                     "shared": true,
+                     "sort": 2,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -2194,8 +2194,8 @@
                   "timeShift": null,
                   "title": "Requests / sec",
                   "tooltip": {
-                     "shared": false,
-                     "sort": 0,
+                     "shared": true,
+                     "sort": 2,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -2289,8 +2289,8 @@
                   "timeShift": null,
                   "title": "Latency",
                   "tooltip": {
-                     "shared": false,
-                     "sort": 0,
+                     "shared": true,
+                     "sort": 2,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -2342,7 +2342,7 @@
                   "value": "default"
                },
                "hide": 0,
-               "label": null,
+               "label": "Data Source",
                "name": "datasource",
                "options": [ ],
                "query": "prometheus",
