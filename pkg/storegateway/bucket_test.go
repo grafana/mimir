@@ -523,42 +523,6 @@ func (r *recorder) GetRange(ctx context.Context, name string, off, length int64)
 	return r.Bucket.GetRange(ctx, name, off, length)
 }
 
-func expectedTouchedBlockOps(all, expected, cached []ulid.ULID) []string {
-	var ops []string
-	for _, id := range all {
-		blockCached := false
-		for _, fid := range cached {
-			if id.Compare(fid) == 0 {
-				blockCached = true
-				break
-			}
-		}
-		if blockCached {
-			continue
-		}
-
-		found := false
-		for _, fid := range expected {
-			if id.Compare(fid) == 0 {
-				found = true
-				break
-			}
-		}
-
-		if found {
-			ops = append(ops,
-				// To create binary header we touch part of index few times.
-				path.Join(id.String(), block.IndexFilename), // Version.
-				path.Join(id.String(), block.IndexFilename), // TOC.
-				path.Join(id.String(), block.IndexFilename), // Symbols.
-				path.Join(id.String(), block.IndexFilename), // PostingOffsets.
-			)
-		}
-	}
-	sort.Strings(ops)
-	return ops
-}
-
 // Regression tests against: https://github.com/thanos-io/thanos/issues/1983.
 func TestReadIndexCache_LoadSeries(t *testing.T) {
 	bkt := objstore.NewInMemBucket()
