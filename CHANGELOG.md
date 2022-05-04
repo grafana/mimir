@@ -32,9 +32,18 @@
   * `cortex_distributor_ingester_append_failures_total`
 * [FEATURE] Querier: Added support for [streaming remote read](https://prometheus.io/blog/2019/10/10/remote-read-meets-streaming/). Should be noted that benefits of chunking the response are partial here, since in a typical `query-frontend` setup responses will be buffered until they've been completed. #1735
 * [FEATURE] Ruler: Allow setting `evaluation_delay` for each rule group via rules group configuration file. #1474
-* [FEATURE] Ruler: Added support for expression remote evaluation. #1536
+* [FEATURE] Ruler: Added support for expression remote evaluation. #1536 #1818
   * The following CLI flags (and their respective YAML config options) have been added:
     * `-ruler.query-frontend.address`
+    * `-ruler.query-frontend.grpc-max-recv-msg-size`
+    * `-ruler.query-frontend.grpc-max-send-msg-size`
+    * `-ruler.query-frontend.grpc-compression`
+    * `-ruler.query-frontend.grpc-client-rate-limit`
+    * `-ruler.query-frontend.grpc-client-rate-limit-burst`
+    * `-ruler.query-frontend.backoff-on-ratelimits`
+    * `-ruler.query-frontend.backoff-min-period`
+    * `-ruler.query-frontend.backoff-max-period`
+    * `-ruler.query-frontend.backoff-retries`
     * `-ruler.query-frontend.tls-enabled`
     * `-ruler.query-frontend.tls-ca-path`
     * `-ruler.query-frontend.tls-cert-path`

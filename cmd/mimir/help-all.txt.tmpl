@@ -1406,12 +1406,30 @@ Usage of ./cmd/mimir/mimir:
     	How frequently to poll for rule changes (default 1m0s)
   -ruler.query-frontend.address string
     	GRPC listen address of the query-frontend(s). Must be a DNS address (prefixed with dns:///) to enable client side load balancing.
+  -ruler.query-frontend.backoff-max-period duration
+    	Maximum delay when backing off. (default 10s)
+  -ruler.query-frontend.backoff-min-period duration
+    	Minimum delay when backing off. (default 100ms)
+  -ruler.query-frontend.backoff-on-ratelimits
+    	Enable backoff and retry when we hit ratelimits.
+  -ruler.query-frontend.backoff-retries int
+    	Number of times to backoff and retry before failing. (default 10)
+  -ruler.query-frontend.grpc-client-rate-limit float
+    	Rate limit for gRPC client; 0 means disabled.
+  -ruler.query-frontend.grpc-client-rate-limit-burst int
+    	Rate limit burst for gRPC client.
+  -ruler.query-frontend.grpc-compression string
+    	Use compression when sending messages. Supported values are: 'gzip', 'snappy' and '' (disable compression)
+  -ruler.query-frontend.grpc-max-recv-msg-size int
+    	gRPC client max receive message size (bytes). (default 104857600)
+  -ruler.query-frontend.grpc-max-send-msg-size int
+    	gRPC client max send message size (bytes). (default 104857600)
   -ruler.query-frontend.tls-ca-path string
     	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
   -ruler.query-frontend.tls-cert-path string
     	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
   -ruler.query-frontend.tls-enabled
-    	Set to true if query-frontend connection requires TLS.
+    	Enable TLS in the GRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.
   -ruler.query-frontend.tls-insecure-skip-verify
     	Skip validating server certificate.
   -ruler.query-frontend.tls-key-path string
