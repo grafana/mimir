@@ -2863,13 +2863,12 @@ func prepareIngesterWithBlockStorageAndOverrides(t testing.TB, ingesterCfg Confi
 	}
 
 	bucketDir := t.TempDir()
-	clientCfg := defaultClientTestConfig()
 
 	ingesterCfg.BlocksStorageConfig.TSDB.Dir = dataDir
 	ingesterCfg.BlocksStorageConfig.Bucket.Backend = "filesystem"
 	ingesterCfg.BlocksStorageConfig.Bucket.Filesystem.Directory = bucketDir
 
-	ingester, err := New(ingesterCfg, clientCfg, overrides, registerer, log.NewNopLogger())
+	ingester, err := New(ingesterCfg, overrides, registerer, log.NewNopLogger())
 	if err != nil {
 		return nil, err
 	}
@@ -2993,7 +2992,6 @@ func TestIngester_OpenExistingTSDBOnStartup(t *testing.T) {
 		testName := name
 		testData := test
 		t.Run(testName, func(t *testing.T) {
-			clientCfg := defaultClientTestConfig()
 			limits := defaultLimitsTestConfig()
 
 			overrides, err := validation.NewOverrides(limits, nil)
@@ -3011,7 +3009,7 @@ func TestIngester_OpenExistingTSDBOnStartup(t *testing.T) {
 			// setup the tsdbs dir
 			testData.setup(t, tempDir)
 
-			ingester, err := New(ingesterCfg, clientCfg, overrides, nil, log.NewNopLogger())
+			ingester, err := New(ingesterCfg, overrides, nil, log.NewNopLogger())
 			require.NoError(t, err)
 
 			startErr := services.StartAndAwaitRunning(context.Background(), ingester)
@@ -4006,7 +4004,6 @@ func TestHeadCompactionOnStartup(t *testing.T) {
 		require.NoError(t, db.Close())
 	}
 
-	clientCfg := defaultClientTestConfig()
 	limits := defaultLimitsTestConfig()
 
 	overrides, err := validation.NewOverrides(limits, nil)
@@ -4018,7 +4015,7 @@ func TestHeadCompactionOnStartup(t *testing.T) {
 	ingesterCfg.BlocksStorageConfig.Bucket.S3.Endpoint = "localhost"
 	ingesterCfg.BlocksStorageConfig.TSDB.Retention = 2 * 24 * time.Hour // Make sure that no newly created blocks are deleted.
 
-	ingester, err := New(ingesterCfg, clientCfg, overrides, nil, log.NewNopLogger())
+	ingester, err := New(ingesterCfg, overrides, nil, log.NewNopLogger())
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), ingester))
 
