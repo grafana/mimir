@@ -230,6 +230,65 @@ func TestLoader_ShouldUpdateIndexInBackgroundOnPreviousLoadSuccess(t *testing.T)
 	))
 }
 
+func TestLoader_ShouldNotUpdateIndexInBackgroundIfNotModified(t *testing.T) {
+	ctx := context.Background()
+	reg := prometheus.NewPedanticRegistry()
+	bkt, _ := mimir_testutil.PrepareFilesystemBucket(t)
+
+	// Create a bucket index.
+	idx := &Index{
+		Version: IndexVersion1,
+		Blocks: Blocks{
+			{ID: ulid.MustNew(1, nil), MinTime: 10, MaxTime: 20},
+		},
+		BlockDeletionMarks: nil,
+		UpdatedAt:          time.Now().Unix(),
+	}
+	require.NoError(t, WriteIndex(ctx, bkt, "user-1", nil, idx))
+
+	// Create the loader.
+	cfg := LoaderConfig{
+		CheckInterval:         time.Second,
+		UpdateOnStaleInterval: time.Second,
+		UpdateOnErrorInterval: time.Hour, // Intentionally high to not hit it.
+		IdleTimeout:           time.Hour, // Intentionally high to not hit it.
+	}
+
+	loader := NewLoader(cfg, bkt, nil, log.NewNopLogger(), reg)
+	require.NoError(t, services.StartAndAwaitRunning(ctx, loader))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, loader))
+	})
+
+	actualIdx, err := loader.GetIndex(ctx, "user-1")
+	require.NoError(t, err)
+	assert.Equal(t, idx, actualIdx)
+
+	// Wait until the index has been updated in background.
+	time.Sleep(2 * time.Second)
+
+	actualIdx, err = loader.GetIndex(ctx, "user-1")
+	require.NoError(t, err)
+	assert.Equal(t, idx, actualIdx)
+
+	// Ensure metrics have been updated accordingly.
+	assert.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
+		# HELP cortex_bucket_index_load_failures_total Total number of bucket index loading failures.
+		# TYPE cortex_bucket_index_load_failures_total counter
+		cortex_bucket_index_load_failures_total 0
+		# HELP cortex_bucket_index_load_not_modified_total Total number of bucket index skipping loading because of not modified.
+		# TYPE cortex_bucket_index_load_not_modified_total counter
+		cortex_bucket_index_load_not_modified_total 1
+		# HELP cortex_bucket_index_loaded Number of bucket indexes currently loaded in-memory.
+		# TYPE cortex_bucket_index_loaded gauge
+		cortex_bucket_index_loaded 1
+	`),
+		"cortex_bucket_index_load_failures_total",
+		"cortex_bucket_index_load_not_modified_total",
+		"cortex_bucket_index_loaded",
+	))
+}
+
 func TestLoader_ShouldUpdateIndexInBackgroundOnPreviousLoadFailure(t *testing.T) {
 	ctx := context.Background()
 	reg := prometheus.NewPedanticRegistry()

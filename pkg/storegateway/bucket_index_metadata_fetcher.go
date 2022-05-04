@@ -16,9 +16,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/thanos-io/thanos/pkg/block"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
-	"github.com/thanos-io/thanos/pkg/objstore"
 
-	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 )
 
@@ -27,12 +25,16 @@ const (
 	noBucketIndex        = "no-bucket-index"
 )
 
+// BucketIndexLoader interface to bucketindex.Loader
+type BucketIndexLoader interface {
+	GetIndex(context.Context, string) (*bucketindex.Index, error)
+}
+
 // BucketIndexMetadataFetcher is a Thanos MetadataFetcher implementation leveraging on the Mimir bucket index.
 type BucketIndexMetadataFetcher struct {
 	userID      string
-	bkt         objstore.Bucket
 	strategy    ShardingStrategy
-	cfgProvider bucket.TenantConfigProvider
+	indexLoader BucketIndexLoader
 	logger      log.Logger
 	filters     []block.MetadataFilter
 	metrics     *block.FetcherMetrics
@@ -40,18 +42,16 @@ type BucketIndexMetadataFetcher struct {
 
 func NewBucketIndexMetadataFetcher(
 	userID string,
-	bkt objstore.Bucket,
 	strategy ShardingStrategy,
-	cfgProvider bucket.TenantConfigProvider,
+	indexLoader BucketIndexLoader,
 	logger log.Logger,
 	reg prometheus.Registerer,
 	filters []block.MetadataFilter,
 ) *BucketIndexMetadataFetcher {
 	return &BucketIndexMetadataFetcher{
 		userID:      userID,
-		bkt:         bkt,
 		strategy:    strategy,
-		cfgProvider: cfgProvider,
+		indexLoader: indexLoader,
 		logger:      logger,
 		filters:     filters,
 		metrics:     block.NewFetcherMetrics(reg, [][]string{{corruptedBucketIndex}, {noBucketIndex}, {minTimeExcludedMeta}}, nil),
@@ -79,7 +79,7 @@ func (f *BucketIndexMetadataFetcher) Fetch(ctx context.Context) (metas map[ulid.
 	f.metrics.Syncs.Inc()
 
 	// Fetch the bucket index.
-	idx, err := bucketindex.ReadIndex(ctx, f.bkt, f.userID, f.cfgProvider, f.logger)
+	idx, err := f.indexLoader.GetIndex(ctx, f.userID)
 	if errors.Is(err, bucketindex.ErrIndexNotFound) {
 		// This is a legit case happening when the first blocks of a tenant have recently been uploaded by ingesters
 		// and their bucket index has not been created yet.
