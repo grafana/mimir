@@ -44,7 +44,6 @@ import (
 	"github.com/thanos-io/thanos/pkg/block/metadata"
 	"github.com/thanos-io/thanos/pkg/compact/downsample"
 	"github.com/thanos-io/thanos/pkg/gate"
-	"github.com/thanos-io/thanos/pkg/model"
 	"github.com/thanos-io/thanos/pkg/objstore"
 	"github.com/thanos-io/thanos/pkg/pool"
 	"github.com/thanos-io/thanos/pkg/store/hintspb"
@@ -81,11 +80,6 @@ const (
 	labelEncode = "encode"
 	labelDecode = "decode"
 )
-
-// FilterConfig is a configuration, which Store uses for filtering metrics based on time.
-type FilterConfig struct {
-	MinTime, MaxTime model.TimeOrDurationValue
-}
 
 type BucketStoreStats struct {
 	// BlocksLoaded is the number of blocks currently loaded in the bucket store.
@@ -129,8 +123,6 @@ type BucketStore struct {
 	// or LabelName and LabelValues calls when used with matchers.
 	seriesLimiterFactory SeriesLimiterFactory
 	partitioner          Partitioner
-
-	filterConfig *FilterConfig
 
 	// Threadpool for performing operations that block the OS thread (mmap page faults)
 	threadPool *mimir_indexheader.Threadpool
@@ -207,13 +199,6 @@ func WithQueryGate(queryGate gate.Gate) BucketStoreOption {
 func WithChunkPool(chunkPool pool.Bytes) BucketStoreOption {
 	return func(s *BucketStore) {
 		s.chunkPool = chunkPool
-	}
-}
-
-// WithFilterConfig sets a filter which Store uses for filtering metrics based on time.
-func WithFilterConfig(filter *FilterConfig) BucketStoreOption {
-	return func(s *BucketStore) {
-		s.filterConfig = filter
 	}
 }
 
@@ -521,38 +506,7 @@ func (s *BucketStore) TimeRange() (mint, maxt int64) {
 		}
 	}
 
-	mint = s.limitMinTime(mint)
-	maxt = s.limitMaxTime(maxt)
-
 	return mint, maxt
-}
-
-func (s *BucketStore) limitMinTime(mint int64) int64 {
-	if s.filterConfig == nil {
-		return mint
-	}
-
-	filterMinTime := s.filterConfig.MinTime.PrometheusTimestamp()
-
-	if mint < filterMinTime {
-		return filterMinTime
-	}
-
-	return mint
-}
-
-func (s *BucketStore) limitMaxTime(maxt int64) int64 {
-	if s.filterConfig == nil {
-		return maxt
-	}
-
-	filterMaxTime := s.filterConfig.MaxTime.PrometheusTimestamp()
-
-	if maxt > filterMaxTime {
-		maxt = filterMaxTime
-	}
-
-	return maxt
 }
 
 type seriesEntry struct {
@@ -950,8 +904,6 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 	if err != nil {
 		return status.Error(codes.InvalidArgument, err.Error())
 	}
-	req.MinTime = s.limitMinTime(req.MinTime)
-	req.MaxTime = s.limitMaxTime(req.MaxTime)
 
 	// Check if matchers include the query shard selector.
 	shardSelector, matchers, err := sharding.RemoveShardFromMatchers(matchers)
