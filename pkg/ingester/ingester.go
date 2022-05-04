@@ -192,8 +192,7 @@ func (cfg *Config) getIgnoreSeriesLimitForMetricNamesMap() map[string]struct{} {
 type Ingester struct {
 	*services.BasicService
 
-	cfg          Config
-	clientConfig client.Config
+	cfg Config
 
 	metrics *ingesterMetrics
 	logger  log.Logger
@@ -263,7 +262,7 @@ func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus
 }
 
 // New returns an Ingester that uses Mimir block storage.
-func New(cfg Config, clientConfig client.Config, limits *validation.Overrides, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
+func New(cfg Config, limits *validation.Overrides, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
 	defaultInstanceLimits = &cfg.DefaultLimits
 
 	if cfg.ingesterClientFactory == nil {
@@ -274,7 +273,6 @@ func New(cfg Config, clientConfig client.Config, limits *validation.Overrides, r
 	if err != nil {
 		return nil, err
 	}
-	i.clientConfig = clientConfig
 	i.ingestionRate = util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval)
 	i.metrics = newIngesterMetrics(registerer, cfg.ActiveSeriesMetricsEnabled, i.getInstanceLimits, i.ingestionRate, &i.inflightPushRequests)
 
