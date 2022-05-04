@@ -37,7 +37,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -71,8 +70,6 @@ const (
 	// labelLongSuffix is a label with ~50B in size, to emulate real-world high cardinality.
 	labelLongSuffix = "aaaaaaaaaabbbbbbbbbbccccccccccdddddddddd"
 )
-
-var emptyRelabelConfig = make([]*relabel.Config, 0)
 
 func TestBucketBlock_Property(t *testing.T) {
 	parameters := gopter.DefaultTestParameters()
