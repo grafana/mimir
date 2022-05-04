@@ -27,6 +27,9 @@
 * [CHANGE] Querier / Ruler: removed the following metrics tracking number of query requests send to each ingester. You can use `cortex_request_duration_seconds_count{route=~"/cortex.Ingester/(QueryStream|QueryExemplars)"}` instead. #1797
   * `cortex_distributor_ingester_queries_total`
   * `cortex_distributor_ingester_query_failures_total`
+* [CHANGE] Distributor: removed the following metrics tracking the number of requests from a distributor to ingesters: #1799
+  * `cortex_distributor_ingester_appends_total`
+  * `cortex_distributor_ingester_append_failures_total`
 * [FEATURE] Querier: Added support for [streaming remote read](https://prometheus.io/blog/2019/10/10/remote-read-meets-streaming/). Should be noted that benefits of chunking the response are partial here, since in a typical `query-frontend` setup responses will be buffered until they've been completed. #1735
 * [FEATURE] Ruler: Allow setting `evaluation_delay` for each rule group via rules group configuration file. #1474
 * [FEATURE] Ruler: Added support for expression remote evaluation. #1536
@@ -55,6 +58,7 @@
 * [ENHANCEMENT] Admin: Admin API now has some styling. #1482 #1549
 * [ENHANCEMENT] Alertmanager: added `insight=true` field to alertmanager dispatch logs. #1379
 * [ENHANCEMENT] Store-gateway: Add the experimental ability to run index header operations in a dedicated thread pool. This feature can be configured using `-blocks-storage.bucket-store.index-header-thread-pool-size` and is disabled by default. #1660
+* [ENHANCEMENT] Store-gateway: don't drop all blocks if instance finds itself as unhealthy in the ring. #1806
 * [ENHANCEMENT] Querier: wait until inflight queries are completed when shutting down queriers. #1756 #1767
 * [BUGFIX] Query-frontend: do not shard queries with a subquery unless the subquery is inside a shardable aggregation function call. #1542
 * [BUGFIX] Query-frontend: added `component=query-frontend` label to results cache memcached metrics to fix a panic when Mimir is running in single binary mode and results cache is enabled. #1704
