@@ -465,7 +465,7 @@ func (t *Mimir) initIngesterService() (serv services.Service, err error) {
 	t.Cfg.Ingester.InstanceLimitsFn = ingesterInstanceLimits(t.RuntimeConfig)
 	t.tsdbIngesterConfig()
 
-	t.Ingester, err = ingester.New(t.Cfg.Ingester, t.Cfg.IngesterClient, t.Overrides, prometheus.DefaultRegisterer, util_log.Logger)
+	t.Ingester, err = ingester.New(t.Cfg.Ingester, t.Overrides, prometheus.DefaultRegisterer, util_log.Logger)
 	if err != nil {
 		return
 	}
