@@ -28,22 +28,6 @@ message WriteRequest {
 
 message WriteResponse {}
 
-message UploadBlockFileRequest {
-  string block_id = 1;
-  string path = 2;
-  bytes chunk = 3;
-  int64 content_length = 4;
-}
-
-message UploadBlockFileResponse {}
-
-message CompleteBlockUploadRequest {
-  string block_id = 1;
-  bytes meta = 2;
-}
-
-message CompleteBlockUploadResponse {}
-
 message TimeSeries {
   repeated LabelPair labels = 1 [(gogoproto.nullable) = false, (gogoproto.customtype) = "LabelAdapter"];
   // Sorted by time, oldest sample first.
