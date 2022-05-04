@@ -13,7 +13,6 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
-	"io"
 	"math"
 	"math/rand"
 	"os"
@@ -497,30 +496,6 @@ func TestBucketBlockSet_labelMatchers(t *testing.T) {
 		assert.Equal(t, c.match, ok)
 		assert.Equal(t, c.res, res)
 	}
-}
-
-type recorder struct {
-	mtx sync.Mutex
-	objstore.Bucket
-
-	getRangeTouched []string
-	getTouched      []string
-}
-
-func (r *recorder) Get(ctx context.Context, name string) (io.ReadCloser, error) {
-	r.mtx.Lock()
-	defer r.mtx.Unlock()
-
-	r.getTouched = append(r.getTouched, name)
-	return r.Bucket.Get(ctx, name)
-}
-
-func (r *recorder) GetRange(ctx context.Context, name string, off, length int64) (io.ReadCloser, error) {
-	r.mtx.Lock()
-	defer r.mtx.Unlock()
-
-	r.getRangeTouched = append(r.getRangeTouched, name)
-	return r.Bucket.GetRange(ctx, name, off, length)
 }
 
 // Regression tests against: https://github.com/thanos-io/thanos/issues/1983.
