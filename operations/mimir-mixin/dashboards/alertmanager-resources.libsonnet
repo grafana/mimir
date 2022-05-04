@@ -1,8 +1,9 @@
 local utils = import 'mixin-utils/utils.libsonnet';
+local filename = 'mimir-alertmanager-resources.json';
 
 (import 'dashboard-utils.libsonnet') {
-  'mimir-alertmanager-resources.json':
-    ($.dashboard('Alertmanager resources') + { uid: '68b66aed90ccab448009089544a8d6c6' })
+  [filename]:
+    ($.dashboard('Alertmanager resources') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates(false)
     .addRowIf(
       $._config.gateway_enabled,
