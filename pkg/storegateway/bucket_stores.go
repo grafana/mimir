@@ -531,7 +531,6 @@ func (u *BucketStores) getOrCreateStore(userID string) (*BucketStore, error) {
 		u.partitioner,
 		u.threadPool,
 		u.cfg.BucketStore.BlockSyncConcurrency,
-		false, // No need to enable backward compatibility with Thanos pre 0.8.0 queriers
 		u.cfg.BucketStore.PostingOffsetsInMemSampling,
 		true, // Enable series hints.
 		u.cfg.BucketStore.IndexHeaderLazyLoadingEnabled,

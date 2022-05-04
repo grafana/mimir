@@ -178,7 +178,6 @@ func prepareStoreWithTestBlocksForSeries(t testing.TB, dir string, bkt objstore.
 		newGapBasedPartitioner(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
 		nil,
 		20,
-		true,
 		mimir_tsdb.DefaultPostingOffsetInMemorySampling,
 		true,
 		true,

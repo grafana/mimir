@@ -43,7 +43,6 @@ import (
 	"github.com/thanos-io/thanos/pkg/block/indexheader"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
 	"github.com/thanos-io/thanos/pkg/compact/downsample"
-	"github.com/thanos-io/thanos/pkg/component"
 	"github.com/thanos-io/thanos/pkg/gate"
 	"github.com/thanos-io/thanos/pkg/model"
 	"github.com/thanos-io/thanos/pkg/objstore"
@@ -77,18 +76,6 @@ const (
 	// Relatively large in order to reduce memory waste, yet small enough to avoid excessive allocations.
 	chunkBytesPoolMinSize = 64 * 1024        // 64 KiB
 	chunkBytesPoolMaxSize = 64 * 1024 * 1024 // 64 MiB
-
-	// CompatibilityTypeLabelName is an artificial label that Store Gateway can optionally advertise. This is required for compatibility
-	// with pre v0.8.0 Querier. Previous Queriers was strict about duplicated external labels of all StoreAPIs that had any labels.
-	// Now with newer Store Gateway advertising all the external labels it has access to, there was simple case where
-	// Querier was blocking Store Gateway as duplicate with sidecar.
-	//
-	// Newer Queriers are not strict, no duplicated external labels check is there anymore.
-	// Additionally newer Queriers removes/ignore this exact labels from UI and querying.
-	//
-	// This label name is intentionally against Prometheus label style.
-	// TODO(bwplotka): Remove it at some point.
-	CompatibilityTypeLabelName = "@thanos_compatibility_store_type"
 
 	// Labels for metrics.
 	labelEncode = "encode"
@@ -143,9 +130,7 @@ type BucketStore struct {
 	seriesLimiterFactory SeriesLimiterFactory
 	partitioner          Partitioner
 
-	filterConfig             *FilterConfig
-	advLabelSets             []labelpb.ZLabelSet
-	enableCompatibilityLabel bool
+	filterConfig *FilterConfig
 
 	// Threadpool for performing operations that block the OS thread (mmap page faults)
 	threadPool *mimir_indexheader.Threadpool
@@ -251,7 +236,6 @@ func NewBucketStore(
 	partitioner Partitioner,
 	threadPool *mimir_indexheader.Threadpool,
 	blockSyncConcurrency int,
-	enableCompatibilityLabel bool,
 	postingOffsetsInMemSampling int,
 	enableSeriesResponseHints bool, // TODO(pracucci) Thanos 0.12 and below doesn't gracefully handle new fields in SeriesResponse. Drop this flag and always enable hints once we can drop backward compatibility.
 	lazyIndexReaderEnabled bool,
@@ -275,7 +259,6 @@ func NewBucketStore(
 		seriesLimiterFactory:        seriesLimiterFactory,
 		partitioner:                 partitioner,
 		threadPool:                  threadPool,
-		enableCompatibilityLabel:    enableCompatibilityLabel,
 		postingOffsetsInMemSampling: postingOffsetsInMemSampling,
 		enableSeriesResponseHints:   enableSeriesResponseHints,
 		seriesHashCache:             seriesHashCache,
@@ -375,18 +358,6 @@ func (s *BucketStore) SyncBlocks(ctx context.Context) error {
 		s.metrics.blockDrops.Inc()
 	}
 
-	// Sync advertise labels.
-	var storeLabels labels.Labels
-	s.mtx.Lock()
-	s.advLabelSets = make([]labelpb.ZLabelSet, 0, len(s.advLabelSets))
-	for _, bs := range s.blockSets {
-		storeLabels = storeLabels[:0]
-		s.advLabelSets = append(s.advLabelSets, labelpb.ZLabelSet{Labels: labelpb.ZLabelsFromPromLabels(append(storeLabels, bs.labels...))})
-	}
-	sort.Slice(s.advLabelSets, func(i, j int) bool {
-		return s.advLabelSets[i].String() < s.advLabelSets[j].String()
-	})
-	s.mtx.Unlock()
 	return nil
 }
 
@@ -554,27 +525,6 @@ func (s *BucketStore) TimeRange() (mint, maxt int64) {
 	maxt = s.limitMaxTime(maxt)
 
 	return mint, maxt
-}
-
-// Info implements the storepb.StoreServer interface.
-func (s *BucketStore) Info(context.Context, *storepb.InfoRequest) (*storepb.InfoResponse, error) {
-	mint, maxt := s.TimeRange()
-	res := &storepb.InfoResponse{
-		StoreType: component.Store.ToProto(),
-		MinTime:   mint,
-		MaxTime:   maxt,
-	}
-
-	s.mtx.RLock()
-	res.LabelSets = s.advLabelSets
-	s.mtx.RUnlock()
-
-	if s.enableCompatibilityLabel && len(res.LabelSets) > 0 {
-		// This is for compatibility with Querier v0.7.0.
-		// See query.StoreCompatibilityTypeLabelName comment for details.
-		res.LabelSets = append(res.LabelSets, labelpb.ZLabelSet{Labels: []labelpb.ZLabel{{Name: CompatibilityTypeLabelName, Value: "store"}}})
-	}
-	return res, nil
 }
 
 func (s *BucketStore) limitMinTime(mint int64) int64 {
