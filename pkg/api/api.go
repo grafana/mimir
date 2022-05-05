@@ -8,9 +8,7 @@ package api
 import (
 	"context"
 	"flag"
-	"fmt"
 	"net/http"
-	"net/url"
 	"path"
 	"strings"
 	"time"
@@ -23,8 +21,6 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/weaveworks/common/middleware"
 	"github.com/weaveworks/common/server"
-
-	"github.com/grafana/dskit/tenant"
 
 	"github.com/grafana/mimir/pkg/alertmanager"
 	"github.com/grafana/mimir/pkg/alertmanager/alertmanagerpb"
@@ -375,65 +371,16 @@ func (a *API) RegisterCompactor(c *compactor.MultitenantCompactor) {
 	a.RegisterRoute("/compactor/ring", http.HandlerFunc(c.RingHandler), false, true, "GET", "POST")
 	// Endpoint to handle requests for completion of block backfilling.
 	// Placed before less specific handler for same route, that doesn't take query parameter, for precedence.
-	a.RegisterRouteWithQueryParameters("/api/v1/upload/block/{block}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		vars := mux.Vars(r)
-		blockID := vars["block"]
-
-		tenantID, ctx, err := tenant.ExtractTenantIDFromHTTPRequest(r)
-		if err != nil {
-			http.Error(w, "invalid tenant ID", http.StatusBadRequest)
-			return
-		}
-
-		if err := c.CompleteBlockUpload(ctx, tenantID, blockID, r); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		w.WriteHeader(http.StatusOK)
-	}), true, false, []string{"uploadComplete", "true"}, http.MethodPost)
+	a.RegisterRouteWithQueryParameters("/api/v1/upload/block/{block}", http.HandlerFunc(c.CompleteBlockUpload),
+		true, false, []string{"uploadComplete", "true"}, http.MethodPost)
 	// Endpoint to handle requests for starting of block backfilling.
 	// Starting the backfilling of a block means to verify that the backfill can go ahead.
 	// In practice this means to check that the block isn't already in block storage.
-	a.RegisterRoute("/api/v1/upload/block/{block}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		vars := mux.Vars(r)
-		blockID := vars["block"]
-		tenantID, ctx, err := tenant.ExtractTenantIDFromHTTPRequest(r)
-		if err != nil {
-			http.Error(w, "invalid tenant ID", http.StatusBadRequest)
-			return
-		}
-
-		if err := c.CreateBlockUpload(ctx, tenantID, blockID); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		w.WriteHeader(http.StatusOK)
-	}), true, false, http.MethodPost)
+	a.RegisterRoute("/api/v1/upload/block/{block}", http.HandlerFunc(c.CreateBlockUpload), true,
+		false, http.MethodPost)
 	// Endpoint to handle requests for uploading block files to a backfill.
-	a.RegisterRoute("/api/v1/upload/block/{block}/{path}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		vars := mux.Vars(r)
-		blockID := vars["block"]
-		pth, err := url.PathUnescape(vars["path"])
-		if err != nil {
-			http.Error(w, fmt.Sprintf("invalid file path: %q", vars["path"]), http.StatusBadRequest)
-			return
-		}
-
-		tenantID, ctx, err := tenant.ExtractTenantIDFromHTTPRequest(r)
-		if err != nil {
-			http.Error(w, "invalid tenant ID", http.StatusBadRequest)
-			return
-		}
-
-		if err := c.UploadBlockFile(ctx, tenantID, blockID, pth, r); err != nil {
-			http.Error(w, "invalid tenant ID", http.StatusBadRequest)
-			return
-		}
-
-		w.WriteHeader(http.StatusOK)
-	}), true, false, http.MethodPost)
+	a.RegisterRoute("/api/v1/upload/block/{block}/{path}", http.HandlerFunc(c.UploadBlockFile),
+		true, false, http.MethodPost)
 }
 
 type Distributor interface {
