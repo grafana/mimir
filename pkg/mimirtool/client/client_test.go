@@ -6,7 +6,6 @@
 package client
 
 import (
-	"bytes"
 	"net/http"
 	"net/url"
 	"testing"
@@ -92,7 +91,7 @@ func TestBuildURL(t *testing.T) {
 			url, err := url.Parse(tt.url)
 			require.NoError(t, err)
 
-			req, err := buildRequest(tt.path, tt.method, *url, bytes.NewBuffer(nil), 0)
+			req, err := buildRequest(tt.path, tt.method, *url, []byte{})
 			require.NoError(t, err)
 			require.Equal(t, tt.resultURL, req.URL.String())
 		})

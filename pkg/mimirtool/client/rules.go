@@ -6,7 +6,6 @@
 package client
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -29,7 +28,7 @@ func (r *MimirClient) CreateRuleGroup(ctx context.Context, namespace string, rg 
 	escapedNamespace := url.PathEscape(namespace)
 	path := r.apiPath + "/" + escapedNamespace
 
-	res, err := r.doRequest(path, "POST", bytes.NewBuffer(payload), int64(len(payload)))
+	res, err := r.doRequest(path, "POST", payload)
 	if err != nil {
 		return err
 	}
@@ -45,7 +44,7 @@ func (r *MimirClient) DeleteRuleGroup(ctx context.Context, namespace, groupName 
 	escapedGroupName := url.PathEscape(groupName)
 	path := r.apiPath + "/" + escapedNamespace + "/" + escapedGroupName
 
-	res, err := r.doRequest(path, "DELETE", nil, -1)
+	res, err := r.doRequest(path, "DELETE", nil)
 	if err != nil {
 		return err
 	}
@@ -62,7 +61,7 @@ func (r *MimirClient) GetRuleGroup(ctx context.Context, namespace, groupName str
 	path := r.apiPath + "/" + escapedNamespace + "/" + escapedGroupName
 
 	fmt.Println(path)
-	res, err := r.doRequest(path, "GET", nil, -1)
+	res, err := r.doRequest(path, "GET", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -94,7 +93,7 @@ func (r *MimirClient) ListRules(ctx context.Context, namespace string) (map[stri
 		path = path + "/" + namespace
 	}
 
-	res, err := r.doRequest(path, "GET", nil, -1)
+	res, err := r.doRequest(path, "GET", nil)
 	if err != nil {
 		return nil, err
 	}

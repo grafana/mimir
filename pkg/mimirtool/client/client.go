@@ -7,6 +7,7 @@ package client
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -18,7 +19,6 @@ import (
 	"github.com/grafana/dskit/crypto/tls"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
-	"github.com/weaveworks/common/user"
 )
 
 const (
@@ -41,7 +41,7 @@ type Config struct {
 	UseLegacyRoutes bool `yaml:"use_legacy_routes"`
 }
 
-// MimirClient is a client to the Mimir API.
+// MimirClient is used to get and load rules into a Mimir ruler.
 type MimirClient struct {
 	user     string
 	key      string
@@ -61,7 +61,7 @@ func New(cfg Config) (*MimirClient, error) {
 	log.WithFields(log.Fields{
 		"address": cfg.Address,
 		"id":      cfg.ID,
-	}).Debugln("New Mimir client created")
+	}).Debugln("New ruler client created")
 
 	client := http.Client{}
 
@@ -72,8 +72,8 @@ func New(cfg Config) (*MimirClient, error) {
 			"tls-ca":   cfg.TLS.CAPath,
 			"tls-cert": cfg.TLS.CertPath,
 			"tls-key":  cfg.TLS.KeyPath,
-		}).Errorf("error loading TLS files")
-		return nil, fmt.Errorf("Mimir client initialization unsuccessful")
+		}).Errorf("error loading tls files")
+		return nil, fmt.Errorf("client initialization unsuccessful")
 	}
 
 	if tlsConfig != nil {
@@ -101,10 +101,11 @@ func New(cfg Config) (*MimirClient, error) {
 
 // Query executes a PromQL query against the Mimir cluster.
 func (r *MimirClient) Query(ctx context.Context, query string) (*http.Response, error) {
+
 	query = fmt.Sprintf("query=%s&time=%d", query, time.Now().Unix())
 	escapedQuery := url.PathEscape(query)
 
-	res, err := r.doRequest("/prometheus/api/v1/query?"+escapedQuery, "GET", nil, -1)
+	res, err := r.doRequest("/prometheus/api/v1/query?"+escapedQuery, "GET", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -112,8 +113,8 @@ func (r *MimirClient) Query(ctx context.Context, query string) (*http.Response, 
 	return res, nil
 }
 
-func (r *MimirClient) doRequest(path, method string, payload io.Reader, contentLength int64) (*http.Response, error) {
-	req, err := buildRequest(path, method, *r.endpoint, payload, contentLength)
+func (r *MimirClient) doRequest(path, method string, payload []byte) (*http.Response, error) {
+	req, err := buildRequest(path, method, *r.endpoint, payload)
 	if err != nil {
 		return nil, err
 	}
@@ -124,7 +125,7 @@ func (r *MimirClient) doRequest(path, method string, payload io.Reader, contentL
 		req.SetBasicAuth(r.id, r.key)
 	}
 
-	req.Header.Add(user.OrgIDHeaderName, r.id)
+	req.Header.Add("X-Scope-OrgID", r.id)
 
 	log.WithFields(log.Fields{
 		"url":    req.URL.String(),
@@ -143,13 +144,13 @@ func (r *MimirClient) doRequest(path, method string, payload io.Reader, contentL
 
 	err = checkResponse(resp)
 	if err != nil {
-		return nil, errors.Wrapf(err, "%s request to %s failed", req.Method, req.URL.String())
+		return nil, err
 	}
 
 	return resp, nil
 }
 
-// checkResponse checks an API response for errors.
+// checkResponse checks the API response for errors
 func checkResponse(r *http.Response) error {
 	log.WithFields(log.Fields{
 		"status": r.Status,
@@ -192,7 +193,7 @@ func joinPath(baseURLPath, targetPath string) string {
 	return strings.TrimSuffix(baseURLPath, "/") + targetPath
 }
 
-func buildRequest(p, m string, endpoint url.URL, payload io.Reader, contentLength int64) (*http.Request, error) {
+func buildRequest(p, m string, endpoint url.URL, payload []byte) (*http.Request, error) {
 	// parse path parameter again (as it already contains escaped path information
 	pURL, err := url.Parse(p)
 	if err != nil {
@@ -204,13 +205,5 @@ func buildRequest(p, m string, endpoint url.URL, payload io.Reader, contentLengt
 		endpoint.RawPath = joinPath(endpoint.EscapedPath(), pURL.EscapedPath())
 	}
 	endpoint.Path = joinPath(endpoint.Path, pURL.Path)
-	endpoint.RawQuery = pURL.RawQuery
-	r, err := http.NewRequest(m, endpoint.String(), payload)
-	if err != nil {
-		return nil, err
-	}
-	if contentLength >= 0 {
-		r.ContentLength = contentLength
-	}
-	return r, nil
+	return http.NewRequest(m, endpoint.String(), bytes.NewBuffer(payload))
 }
