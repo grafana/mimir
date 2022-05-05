@@ -59,7 +59,7 @@ func (c *MultitenantCompactor) UploadBlockFile(w http.ResponseWriter, r *http.Re
 
 	dst := path.Clean(path.Join(blockID, pth))
 	elems := strings.SplitN(dst, "/", 2)
-	if elems[0] != blockID || elems[1] == "" {
+	if len(elems) != 2 || elems[0] != blockID || elems[1] == "" {
 		http.Error(w, fmt.Sprintf("invalid path: %q", pth), http.StatusBadRequest)
 		return
 	}
