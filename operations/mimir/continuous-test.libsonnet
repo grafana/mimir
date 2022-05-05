@@ -25,7 +25,8 @@ local k = import 'ksonnet-util/kausal.libsonnet';
       k.core.v1.containerPort.new('http-metrics', 9900),
     ]) +
     k.util.resourcesRequests('1', '512Mi') +
-    k.util.resourcesLimits(null, '1Gi'),
+    k.util.resourcesLimits(null, '1Gi') +
+    $.jaeger_mixin,
 
   continuous_test_deployment: if !$._config.continuous_test_enabled then null else
     deployment.new('continuous-test', 1, [

@@ -12,6 +12,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/weaveworks/common/logging"
 	"github.com/weaveworks/common/server"
+	"github.com/weaveworks/common/tracing"
 
 	"github.com/grafana/mimir/pkg/continuoustest"
 	"github.com/grafana/mimir/pkg/util/instrumentation"
@@ -43,6 +44,14 @@ func main() {
 	util_log.InitLogger(&server.Config{
 		LogLevel: cfg.LogLevel,
 	})
+
+	// Setting the environment variable JAEGER_AGENT_HOST enables tracing.
+	if trace, err := tracing.NewFromEnv("mimir-continuous-test"); err != nil {
+		level.Error(util_log.Logger).Log("msg", "Failed to setup tracing", "err", err.Error())
+	} else {
+		defer trace.Close()
+	}
+
 	logger := util_log.Logger
 
 	// Run the instrumentation server.
