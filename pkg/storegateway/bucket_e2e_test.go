@@ -181,7 +181,7 @@ func prepareStoreWithTestBlocksForSeries(t testing.TB, dir string, bkt objstore.
 	)
 	assert.NoError(t, err)
 	t.Cleanup(func() {
-		assert.NoError(t, s.store.Close())
+		assert.NoError(t, s.store.RemoveBlocksAndClose())
 	})
 
 	s.store = store

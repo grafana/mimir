@@ -26,6 +26,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/types"
+	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/runutil"
 	"github.com/oklog/ulid"
 	"github.com/opentracing/opentracing-go"
@@ -265,16 +266,13 @@ func NewBucketStore(
 	return s, nil
 }
 
-// Close the store.
-func (s *BucketStore) Close() (err error) {
-	s.mtx.Lock()
-	defer s.mtx.Unlock()
+// RemoveBlocksAndClose remove all blocks from local disk and releases all resources associated with the BucketStore.
+func (s *BucketStore) RemoveBlocksAndClose() error {
+	err := s.removeAllBlocks()
 
-	for _, b := range s.blocks {
-		runutil.CloseWithErrCapture(&err, b, "closing Bucket Block")
-	}
-
+	// Release other resources even if it failed to close some blocks.
 	s.indexReaderPool.Close()
+
 	return err
 }
 
@@ -337,10 +335,8 @@ func (s *BucketStore) SyncBlocks(ctx context.Context) error {
 		}
 		if err := s.removeBlock(id); err != nil {
 			level.Warn(s.logger).Log("msg", "drop of outdated block failed", "block", id, "err", err)
-			s.metrics.blockDropFailures.Inc()
 		}
 		level.Info(s.logger).Log("msg", "dropped outdated block", "block", id)
-		s.metrics.blockDrops.Inc()
 	}
 
 	return nil
@@ -469,7 +465,13 @@ func (s *BucketStore) addBlock(ctx context.Context, meta *metadata.Meta) (err er
 	return nil
 }
 
-func (s *BucketStore) removeBlock(id ulid.ULID) error {
+func (s *BucketStore) removeBlock(id ulid.ULID) (returnErr error) {
+	defer func() {
+		if returnErr != nil {
+			s.metrics.blockDropFailures.Inc()
+		}
+	}()
+
 	s.mtx.Lock()
 	b, ok := s.blocks[id]
 	if ok {
@@ -483,10 +485,38 @@ func (s *BucketStore) removeBlock(id ulid.ULID) error {
 		return nil
 	}
 
+	// The block has already been removed from BucketStore, so we track it as removed
+	// even if releasing its resources could fail below.
+	s.metrics.blockDrops.Inc()
+
 	if err := b.Close(); err != nil {
 		return errors.Wrap(err, "close block")
 	}
-	return os.RemoveAll(b.dir)
+	if err := os.RemoveAll(b.dir); err != nil {
+		return errors.Wrap(err, "delete block")
+	}
+	return nil
+}
+
+func (s *BucketStore) removeAllBlocks() error {
+	// Build a list of blocks to remove.
+	s.mtx.Lock()
+	blockIDs := make([]ulid.ULID, 0, len(s.blocks))
+	for id := range s.blocks {
+		blockIDs = append(blockIDs, id)
+	}
+	s.mtx.Unlock()
+
+	// Close all blocks.
+	errs := multierror.New()
+
+	for _, id := range blockIDs {
+		if err := s.removeBlock(id); err != nil {
+			errs.Add(errors.Wrap(err, fmt.Sprintf("block: %s", id.String())))
+		}
+	}
+
+	return errs.Err()
 }
 
 // TimeRange returns the minimum and maximum timestamp of data available in the store.

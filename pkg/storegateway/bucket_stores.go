@@ -429,7 +429,7 @@ func (u *BucketStores) closeEmptyBucketStore(userID string) error {
 	u.storesMu.Unlock()
 
 	u.metaFetcherMetrics.RemoveUserRegistry(userID)
-	return bs.Close()
+	return bs.RemoveBlocksAndClose()
 }
 
 func isEmptyBucketStore(bs *BucketStore) bool {
