@@ -7339,7 +7339,7 @@
                   "desc": "gRPC client max receive message size (bytes).",
                   "fieldValue": null,
                   "fieldDefaultValue": 104857600,
-                  "fieldFlag": "ruler.query-frontend.grpc-max-recv-msg-size",
+                  "fieldFlag": "ruler.query-frontend.grpc-client-config.grpc-max-recv-msg-size",
                   "fieldType": "int",
                   "fieldCategory": "advanced"
                 },
@@ -7350,7 +7350,7 @@
                   "desc": "gRPC client max send message size (bytes).",
                   "fieldValue": null,
                   "fieldDefaultValue": 104857600,
-                  "fieldFlag": "ruler.query-frontend.grpc-max-send-msg-size",
+                  "fieldFlag": "ruler.query-frontend.grpc-client-config.grpc-max-send-msg-size",
                   "fieldType": "int",
                   "fieldCategory": "advanced"
                 },
@@ -7361,7 +7361,7 @@
                   "desc": "Use compression when sending messages. Supported values are: 'gzip', 'snappy' and '' (disable compression)",
                   "fieldValue": null,
                   "fieldDefaultValue": "",
-                  "fieldFlag": "ruler.query-frontend.grpc-compression",
+                  "fieldFlag": "ruler.query-frontend.grpc-client-config.grpc-compression",
                   "fieldType": "string",
                   "fieldCategory": "advanced"
                 },
@@ -7372,7 +7372,7 @@
                   "desc": "Rate limit for gRPC client; 0 means disabled.",
                   "fieldValue": null,
                   "fieldDefaultValue": 0,
-                  "fieldFlag": "ruler.query-frontend.grpc-client-rate-limit",
+                  "fieldFlag": "ruler.query-frontend.grpc-client-config.grpc-client-rate-limit",
                   "fieldType": "float",
                   "fieldCategory": "advanced"
                 },
@@ -7383,7 +7383,7 @@
                   "desc": "Rate limit burst for gRPC client.",
                   "fieldValue": null,
                   "fieldDefaultValue": 0,
-                  "fieldFlag": "ruler.query-frontend.grpc-client-rate-limit-burst",
+                  "fieldFlag": "ruler.query-frontend.grpc-client-config.grpc-client-rate-limit-burst",
                   "fieldType": "int",
                   "fieldCategory": "advanced"
                 },
@@ -7394,7 +7394,7 @@
                   "desc": "Enable backoff and retry when we hit ratelimits.",
                   "fieldValue": null,
                   "fieldDefaultValue": false,
-                  "fieldFlag": "ruler.query-frontend.backoff-on-ratelimits",
+                  "fieldFlag": "ruler.query-frontend.grpc-client-config.backoff-on-ratelimits",
                   "fieldType": "boolean",
                   "fieldCategory": "advanced"
                 },
@@ -7411,7 +7411,7 @@
                       "desc": "Minimum delay when backing off.",
                       "fieldValue": null,
                       "fieldDefaultValue": 100000000,
-                      "fieldFlag": "ruler.query-frontend.backoff-min-period",
+                      "fieldFlag": "ruler.query-frontend.grpc-client-config.backoff-min-period",
                       "fieldType": "duration",
                       "fieldCategory": "advanced"
                     },
@@ -7422,7 +7422,7 @@
                       "desc": "Maximum delay when backing off.",
                       "fieldValue": null,
                       "fieldDefaultValue": 10000000000,
-                      "fieldFlag": "ruler.query-frontend.backoff-max-period",
+                      "fieldFlag": "ruler.query-frontend.grpc-client-config.backoff-max-period",
                       "fieldType": "duration",
                       "fieldCategory": "advanced"
                     },
@@ -7433,7 +7433,7 @@
                       "desc": "Number of times to backoff and retry before failing.",
                       "fieldValue": null,
                       "fieldDefaultValue": 10,
-                      "fieldFlag": "ruler.query-frontend.backoff-retries",
+                      "fieldFlag": "ruler.query-frontend.grpc-client-config.backoff-retries",
                       "fieldType": "int",
                       "fieldCategory": "advanced"
                     }
@@ -7448,7 +7448,7 @@
                   "desc": "Enable TLS in the GRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.",
                   "fieldValue": null,
                   "fieldDefaultValue": false,
-                  "fieldFlag": "ruler.query-frontend.tls-enabled",
+                  "fieldFlag": "ruler.query-frontend.grpc-client-config.tls-enabled",
                   "fieldType": "boolean",
                   "fieldCategory": "advanced"
                 },
@@ -7459,7 +7459,7 @@
                   "desc": "Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.",
                   "fieldValue": null,
                   "fieldDefaultValue": "",
-                  "fieldFlag": "ruler.query-frontend.tls-cert-path",
+                  "fieldFlag": "ruler.query-frontend.grpc-client-config.tls-cert-path",
                   "fieldType": "string",
                   "fieldCategory": "advanced"
                 },
@@ -7470,7 +7470,7 @@
                   "desc": "Path to the key file for the client certificate. Also requires the client certificate to be configured.",
                   "fieldValue": null,
                   "fieldDefaultValue": "",
-                  "fieldFlag": "ruler.query-frontend.tls-key-path",
+                  "fieldFlag": "ruler.query-frontend.grpc-client-config.tls-key-path",
                   "fieldType": "string",
                   "fieldCategory": "advanced"
                 },
@@ -7481,7 +7481,7 @@
                   "desc": "Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.",
                   "fieldValue": null,
                   "fieldDefaultValue": "",
-                  "fieldFlag": "ruler.query-frontend.tls-ca-path",
+                  "fieldFlag": "ruler.query-frontend.grpc-client-config.tls-ca-path",
                   "fieldType": "string",
                   "fieldCategory": "advanced"
                 },
@@ -7492,7 +7492,7 @@
                   "desc": "Override the expected name on the server certificate.",
                   "fieldValue": null,
                   "fieldDefaultValue": "",
-                  "fieldFlag": "ruler.query-frontend.tls-server-name",
+                  "fieldFlag": "ruler.query-frontend.grpc-client-config.tls-server-name",
                   "fieldType": "string",
                   "fieldCategory": "advanced"
                 },
@@ -7503,7 +7503,7 @@
                   "desc": "Skip validating server certificate.",
                   "fieldValue": null,
                   "fieldDefaultValue": false,
-                  "fieldFlag": "ruler.query-frontend.tls-insecure-skip-verify",
+                  "fieldFlag": "ruler.query-frontend.grpc-client-config.tls-insecure-skip-verify",
                   "fieldType": "boolean",
                   "fieldCategory": "advanced"
                 }

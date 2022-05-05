@@ -19,7 +19,6 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 	"github.com/grafana/dskit/grpcclient"
-	grpc_middleware "github.com/grpc-ecosystem/go-grpc-middleware"
 	otgrpc "github.com/opentracing-contrib/go-grpc"
 	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
@@ -66,21 +65,18 @@ func (c *QueryFrontendConfig) RegisterFlags(f *flag.FlagSet) {
 		"GRPC listen address of the query-frontend(s). Must be a DNS address (prefixed with dns:///) "+
 			"to enable client side load balancing.")
 
-	c.GRPCClientConfig.RegisterFlagsWithPrefix("ruler.query-frontend", f)
+	c.GRPCClientConfig.RegisterFlagsWithPrefix("ruler.query-frontend.grpc-client-config", f)
 }
 
 // DialQueryFrontend creates and initializes a new httpgrpc.HTTPClient taking a QueryFrontendConfig configuration.
 func DialQueryFrontend(cfg QueryFrontendConfig) (httpgrpc.HTTPClient, error) {
-	opts, err := cfg.GRPCClientConfig.DialOption(nil, nil)
+	opts, err := cfg.GRPCClientConfig.DialOption([]grpc.UnaryClientInterceptor{
+		otgrpc.OpenTracingClientInterceptor(opentracing.GlobalTracer()),
+		middleware.ClientUserHeaderInterceptor,
+	}, nil)
 	if err != nil {
 		return nil, err
 	}
-	opts = append(opts, grpc.WithUnaryInterceptor(
-		grpc_middleware.ChainUnaryClient(
-			otgrpc.OpenTracingClientInterceptor(opentracing.GlobalTracer()),
-			middleware.ClientUserHeaderInterceptor,
-		),
-	))
 	opts = append(opts, grpc.WithDefaultServiceConfig(serviceConfig))
 
 	conn, err := grpc.Dial(cfg.Address, opts...)
