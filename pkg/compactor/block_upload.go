@@ -20,53 +20,6 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket"
 )
 
-// CompleteBlockUpload handles a request to complete a block upload session.
-func (c *MultitenantCompactor) CompleteBlockUpload(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	blockID := vars["block"]
-
-	tenantID, ctx, err := tenant.ExtractTenantIDFromHTTPRequest(r)
-	if err != nil {
-		http.Error(w, "invalid tenant ID", http.StatusBadRequest)
-		return
-	}
-
-	level.Debug(c.logger).Log("msg", "received request to complete block upload", "user", tenantID,
-		"block_id", blockID, "content_length", r.ContentLength)
-	dec := json.NewDecoder(r.Body)
-	var meta metadata.Meta
-	if err := dec.Decode(&meta); err != nil {
-		http.Error(w, "malformed request body", http.StatusBadRequest)
-		return
-	}
-
-	level.Debug(c.logger).Log("msg", "completing block upload", "user",
-		tenantID, "block_id", blockID, "files", len(meta.Thanos.Files))
-	bkt := bucket.NewUserBucketClient(tenantID, c.bucketClient, c.cfgProvider)
-
-	// Write meta.json, so the block is considered complete
-	dst := path.Join(blockID, "meta.json")
-	level.Debug(c.logger).Log("msg", "writing meta.json in bucket", "dst", dst)
-	buf := bytes.NewBuffer(nil)
-	enc := json.NewEncoder(buf)
-	if err := enc.Encode(meta); err != nil {
-		level.Error(c.logger).Log("msg", "failed to encode meta.json", "user", tenantID,
-			"block_id", blockID, "err", err)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
-		return
-	}
-	if err := bkt.Upload(ctx, dst, buf); err != nil {
-		level.Error(c.logger).Log("msg", "failed uploading meta.json to bucket", "user", tenantID,
-			"dst", dst, "err", err)
-		http.Error(w, "failed uploading meta.json to bucket", http.StatusBadGateway)
-		return
-	}
-
-	level.Debug(c.logger).Log("msg", "successfully completed block upload")
-
-	w.WriteHeader(http.StatusOK)
-}
-
 // CreateBlockUpload handles requests for creating block upload sessions.
 func (c *MultitenantCompactor) CreateBlockUpload(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
@@ -126,6 +79,53 @@ func (c *MultitenantCompactor) UploadBlockFile(w http.ResponseWriter, r *http.Re
 
 	level.Debug(c.logger).Log("msg", "finished uploading block file to bucket",
 		"user", tenantID, "block_id", blockID, "path", pth)
+
+	w.WriteHeader(http.StatusOK)
+}
+
+// CompleteBlockUpload handles a request to complete a block upload session.
+func (c *MultitenantCompactor) CompleteBlockUpload(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	blockID := vars["block"]
+
+	tenantID, ctx, err := tenant.ExtractTenantIDFromHTTPRequest(r)
+	if err != nil {
+		http.Error(w, "invalid tenant ID", http.StatusBadRequest)
+		return
+	}
+
+	level.Debug(c.logger).Log("msg", "received request to complete block upload", "user", tenantID,
+		"block_id", blockID, "content_length", r.ContentLength)
+	dec := json.NewDecoder(r.Body)
+	var meta metadata.Meta
+	if err := dec.Decode(&meta); err != nil {
+		http.Error(w, "malformed request body", http.StatusBadRequest)
+		return
+	}
+
+	level.Debug(c.logger).Log("msg", "completing block upload", "user",
+		tenantID, "block_id", blockID, "files", len(meta.Thanos.Files))
+	bkt := bucket.NewUserBucketClient(tenantID, c.bucketClient, c.cfgProvider)
+
+	// Write meta.json, so the block is considered complete
+	dst := path.Join(blockID, "meta.json")
+	level.Debug(c.logger).Log("msg", "writing meta.json in bucket", "dst", dst)
+	buf := bytes.NewBuffer(nil)
+	enc := json.NewEncoder(buf)
+	if err := enc.Encode(meta); err != nil {
+		level.Error(c.logger).Log("msg", "failed to encode meta.json", "user", tenantID,
+			"block_id", blockID, "err", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	if err := bkt.Upload(ctx, dst, buf); err != nil {
+		level.Error(c.logger).Log("msg", "failed uploading meta.json to bucket", "user", tenantID,
+			"dst", dst, "err", err)
+		http.Error(w, "failed uploading meta.json to bucket", http.StatusBadGateway)
+		return
+	}
+
+	level.Debug(c.logger).Log("msg", "successfully completed block upload")
 
 	w.WriteHeader(http.StatusOK)
 }
