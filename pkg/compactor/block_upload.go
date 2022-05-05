@@ -15,6 +15,7 @@ import (
 	"github.com/thanos-io/thanos/pkg/block/metadata"
 
 	"github.com/grafana/dskit/tenant"
+
 	"github.com/grafana/mimir/pkg/storage/bucket"
 )
 
@@ -48,14 +49,14 @@ func (c *MultitenantCompactor) CompleteBlockUpload(w http.ResponseWriter, r *htt
 	buf := bytes.NewBuffer(nil)
 	enc := json.NewEncoder(buf)
 	if err := enc.Encode(meta); err != nil {
-		level.Error(c.logger).Log("msg", "failed to encode meta.json", "user",
-			tenantID, "block_id", blockID, "err", err)
+		level.Error(c.logger).Log("msg", "failed to encode meta.json", "user", tenantID,
+			"block_id", blockID, "err", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 	if err := bkt.Upload(ctx, dst, buf); err != nil {
-		level.Error(c.logger).Log("msg", "failed uploading meta.json to bucket", "user",
-			tenantID, "dst", dst, "err", err)
+		level.Error(c.logger).Log("msg", "failed uploading meta.json to bucket", "user", tenantID,
+			"dst", dst, "err", err)
 		http.Error(w, "failed uploading meta.json to bucket", http.StatusBadGateway)
 		return
 	}
@@ -109,15 +110,15 @@ func (c *MultitenantCompactor) UploadBlockFile(w http.ResponseWriter, r *http.Re
 	reader := bodyReader{
 		r: r,
 	}
-	if err := bkt.Upload(ctx, dst, &reader); err != nil {
+	if err := bkt.Upload(ctx, dst, reader); err != nil {
 		level.Error(c.logger).Log("msg", "failed uploading block file to bucket",
 			"user", tenantID, "destination", dst, "err", err)
 		http.Error(w, "failed uploading block file to bucket", http.StatusBadGateway)
 		return
 	}
 
-	level.Debug(c.logger).Log("msg", "finished uploading block file to bucket", "user",
-		tenantID, "block_id", blockID, "path", pth)
+	level.Debug(c.logger).Log("msg", "finished uploading block file to bucket",
+		"user", tenantID, "block_id", blockID, "path", pth)
 
 	w.WriteHeader(http.StatusOK)
 }
@@ -127,11 +128,11 @@ type bodyReader struct {
 }
 
 // ObjectSize implements thanos.ObjectSizer.
-func (r *bodyReader) ObjectSize() (int64, error) {
+func (r bodyReader) ObjectSize() (int64, error) {
 	return r.r.ContentLength, nil
 }
 
 // Read implements io.Reader.
-func (r *bodyReader) Read(b []byte) (int, error) {
+func (r bodyReader) Read(b []byte) (int, error) {
 	return r.r.Body.Read(b)
 }
