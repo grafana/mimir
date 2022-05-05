@@ -15,7 +15,6 @@ import (
 	"github.com/thanos-io/thanos/pkg/block"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
 	"github.com/thanos-io/thanos/pkg/extprom"
-	"github.com/thanos-io/thanos/pkg/objstore"
 
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 )
@@ -194,30 +193,4 @@ func (a *shardingMetadataFilterAdapter) Filter(ctx context.Context, metas map[ul
 	}
 
 	return nil
-}
-
-type shardingBucketReaderAdapter struct {
-	objstore.InstrumentedBucketReader
-
-	userID   string
-	strategy ShardingStrategy
-}
-
-func NewShardingBucketReaderAdapter(userID string, strategy ShardingStrategy, wrapped objstore.InstrumentedBucketReader) objstore.InstrumentedBucketReader {
-	return &shardingBucketReaderAdapter{
-		InstrumentedBucketReader: wrapped,
-		userID:                   userID,
-		strategy:                 strategy,
-	}
-}
-
-// Iter implements objstore.BucketReader.
-func (a *shardingBucketReaderAdapter) Iter(ctx context.Context, dir string, f func(string) error, options ...objstore.IterOption) error {
-	// Skip iterating the bucket if the tenant doesn't belong to the shard. From the caller
-	// perspective, this will look like the tenant has no blocks in the storage.
-	if len(a.strategy.FilterUsers(ctx, []string{a.userID})) == 0 {
-		return nil
-	}
-
-	return a.InstrumentedBucketReader.Iter(ctx, dir, f, options...)
 }
