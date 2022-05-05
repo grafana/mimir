@@ -30,3 +30,9 @@ a:hover, a:active {
     font-weight: bolder !important;
     line-height: var(--bs-body-line-height);
 }
+
+/* fit table column to the width of the content */
+.fit-width {
+    width:0.1%;
+    white-space: nowrap;
+}
