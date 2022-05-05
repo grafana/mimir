@@ -1734,7 +1734,7 @@ func TestSeries_ErrorUnmarshallingRequestHints(t *testing.T) {
 		WithIndexCache(indexCache),
 	)
 	assert.NoError(t, err)
-	defer func() { assert.NoError(t, store.Close()) }()
+	defer func() { assert.NoError(t, store.RemoveBlocksAndClose()) }()
 
 	assert.NoError(t, store.SyncBlocks(context.Background()))
 
@@ -2011,7 +2011,7 @@ func setupStoreForHintsTest(t *testing.T) (test.TB, *BucketStore, []*storepb.Ser
 	assert.NoError(tb, err)
 	assert.NoError(tb, store.SyncBlocks(context.Background()))
 
-	closers = append(closers, func() { assert.NoError(t, store.Close()) })
+	closers = append(closers, func() { assert.NoError(t, store.RemoveBlocksAndClose()) })
 
 	return tb, store, seriesSet1, seriesSet2, block1, block2, func() {
 		for _, close := range closers {
