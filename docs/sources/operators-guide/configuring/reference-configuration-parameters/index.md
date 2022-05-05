@@ -563,7 +563,7 @@ forwarding:
   # (experimental) Enables the feature to forward certain metrics in
   # remote_write requests, depending on defined rules.
   # CLI flag: -distributor.forwarding.enabled
-  [enabled: <boolean> | default = false]
+  [enabled: <boolean> | default = true]
 
   # (experimental) Timeout for requests to ingestion endpoints to which we
   # forward metrics.
