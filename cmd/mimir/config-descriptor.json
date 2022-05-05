@@ -1328,7 +1328,7 @@
               "required": false,
               "desc": "Enables the feature to forward certain metrics in remote_write requests, depending on defined rules.",
               "fieldValue": null,
-              "fieldDefaultValue": false,
+              "fieldDefaultValue": true,
               "fieldFlag": "distributor.forwarding.enabled",
               "fieldType": "boolean",
               "fieldCategory": "experimental"
