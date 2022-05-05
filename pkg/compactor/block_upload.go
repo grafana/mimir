@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"strings"
 
 	"github.com/go-kit/log/level"
 	"github.com/gorilla/mux"
@@ -103,7 +104,13 @@ func (c *MultitenantCompactor) UploadBlockFile(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	dst := path.Join(blockID, pth)
+	dst := path.Clean(path.Join(blockID, pth))
+	elems := strings.SplitN(dst, "/", 2)
+	if elems[0] != blockID || elems[1] == "" {
+		http.Error(w, fmt.Sprintf("invalid path: %q", pth), http.StatusBadRequest)
+		return
+	}
+
 	level.Debug(c.logger).Log("msg", "uploading block file to bucket", "user", tenantID,
 		"destination", dst, "size", r.ContentLength)
 	bkt := bucket.NewUserBucketClient(string(tenantID), c.bucketClient, c.cfgProvider)
