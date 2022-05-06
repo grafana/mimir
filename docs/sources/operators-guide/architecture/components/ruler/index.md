@@ -10,10 +10,6 @@ weight: 130
 The ruler is an optional component that evaluates PromQL expressions defined in recording and alerting rules.
 Each tenant has a set of recording and alerting rules and can group those rules into namespaces.
 
-[//]: # "Diagram source of ruler interactions https://docs.google.com/presentation/d/1LemaTVqa4Lf_tpql060vVoDGXrthp-Pie_SQL7qwHjc/edit#slide=id.g11658e7e4c6_0_938"
-
-![Architecture of Grafana Mimir's ruler component](ruler.svg)
-
 ## Operational modes
 
 The ruler supports two different rule evaluation modes:
@@ -28,7 +24,11 @@ Configuration of the built-in querier and distributor uses their respective conf
 - [Querier]({{< relref "../../../configuring/reference-configuration-parameters/index.md#querier" >}})
 - [Distributor]({{< relref "../../../configuring/reference-configuration-parameters/index.md#distributor" >}})
 
-> **Note**: when this mode is used, no query acceleration techniques are used and the evaluation of very high cardinality queries could take longer than the evaluation interval, eventually leading to missing data points in the evaluated recording rules.
+> **Note**: When this mode is used, no query acceleration techniques are used and the evaluation of very high cardinality queries could take longer than the evaluation interval, eventually leading to missing data points in the evaluated recording rules.
+
+[//]: # "Diagram source of ruler interactions https://docs.google.com/presentation/d/1LemaTVqa4Lf_tpql060vVoDGXrthp-Pie_SQL7qwHjc/edit#slide=id.g11658e7e4c6_0_938"
+
+![Architecture of Grafana Mimir's ruler component](ruler.svg)
 
 ### Remote
 
