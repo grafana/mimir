@@ -253,7 +253,13 @@ func (a *API) RegisterDistributor(d *distributor.Distributor, pushConfig distrib
 		{Desc: "HA tracker status", Path: "/distributor/ha_tracker"},
 	})
 
-	a.RegisterRoute("/distributor/ring", d, false, true, "GET", "POST")
+	var ringHandler http.Handler
+	if ro, ok := d.RingOperator(); ok {
+		ringHandler = ringStatusHandler(a.cfg.ServerPrefix, ro)
+	} else {
+		ringHandler = messageHandler(a.cfg.ServerPrefix, "Distributor is not running with global limits enabled.")
+	}
+	a.RegisterRoute("/distributor/ring", ringHandler, false, true, "GET", "POST")
 	a.RegisterRoute("/distributor/all_user_stats", http.HandlerFunc(d.AllUserStatsHandler), false, true, "GET")
 	a.RegisterRoute("/distributor/ha_tracker", d.HATracker, false, true, "GET")
 }

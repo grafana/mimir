@@ -277,9 +277,7 @@ type MessagePageData struct {
 	Now     time.Time
 }
 
-// serviceRunning wraps an httpHandler associated to a services.Service
-// and only executes it if it's in services.Running state.
-func serviceRunning(s services.Service, serviceName string, pathPrefix string, h http.Handler) http.Handler {
+func messageHandler(pathPrefix, message string) http.Handler {
 	templ := template.New("message")
 	templ.Funcs(map[string]interface{}{
 		"AddPathPrefix": func(link string) string { return path.Join(pathPrefix, link) },
@@ -287,14 +285,23 @@ func serviceRunning(s services.Service, serviceName string, pathPrefix string, h
 	template.Must(templ.Parse(messagePageHTML))
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusAccepted)
+		if err := templ.Execute(w, MessagePageData{
+			Message: message,
+			Now:     time.Now(),
+		}); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+	})
+}
+
+// serviceRunning wraps an httpHandler associated to a services.Service
+// and only executes it if it's in services.Running state.
+func serviceRunning(s services.Service, serviceName string, pathPrefix string, h http.Handler) http.Handler {
+	notRunningHandler := messageHandler(pathPrefix, fmt.Sprintf("Service %q is not yet in running state.", serviceName))
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if s.State() != services.Running {
-			w.WriteHeader(http.StatusAccepted)
-			if err := templ.Execute(w, MessagePageData{
-				Message: fmt.Sprintf("Service %q is not yet in running state.", serviceName),
-				Now:     time.Now(),
-			}); err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-			}
+			notRunningHandler.ServeHTTP(w, r)
 			return
 		}
 

@@ -1385,22 +1385,9 @@ func (d *Distributor) AllUserStats(ctx context.Context) ([]UserIDStats, error) {
 	return response, nil
 }
 
-func (d *Distributor) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	if d.distributorsRing != nil {
-		d.distributorsRing.ServeHTTP(w, req)
-	} else {
-		ringNotEnabledPage := `
-			<!DOCTYPE html>
-			<html>
-				<head>
-					<meta charset="UTF-8">
-					<title>Distributor Status</title>
-				</head>
-				<body>
-					<h1>Distributor Status</h1>
-					<p>Distributor is not running with global limits enabled</p>
-				</body>
-			</html>`
-		util.WriteHTMLResponse(w, ringNotEnabledPage)
+func (d *Distributor) RingOperator() (ring.Operator, bool) {
+	if d.distributorsRing == nil {
+		return nil, false
 	}
+	return d.distributorsRing, true
 }
