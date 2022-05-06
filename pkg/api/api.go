@@ -194,10 +194,14 @@ func (a *API) RegisterAlertmanager(am *alertmanager.MultitenantAlertmanager, api
 		{Desc: "Ring status", Path: "/multitenant_alertmanager/ring"},
 	})
 
+	ringHandler := serviceRunning(am, "multitenant alertmanager", a.cfg.ServerPrefix,
+		ringStatusHandler(a.cfg.ServerPrefix, am.RingOperator()),
+	)
+
 	// Ensure this route is registered before the prefixed AM route
 	a.RegisterRoute("/multitenant_alertmanager/status", am.GetStatusHandler(), false, true, "GET")
 	a.RegisterRoute("/multitenant_alertmanager/configs", http.HandlerFunc(am.ListAllConfigs), false, true, "GET")
-	a.RegisterRoute("/multitenant_alertmanager/ring", http.HandlerFunc(am.RingHandler), false, true, "GET", "POST")
+	a.RegisterRoute("/multitenant_alertmanager/ring", ringHandler, false, true, "GET", "POST")
 	a.RegisterRoute("/multitenant_alertmanager/delete_tenant_config", http.HandlerFunc(am.DeleteUserConfig), true, true, "POST")
 	a.RegisterRoute(path.Join(a.cfg.AlertmanagerHTTPPrefix, "/api/v1/status/buildinfo"), buildInfoHandler, false, true, "GET")
 

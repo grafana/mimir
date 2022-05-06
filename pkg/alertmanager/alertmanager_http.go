@@ -11,46 +11,18 @@ import (
 	"text/template"
 
 	"github.com/go-kit/log/level"
-	"github.com/grafana/dskit/services"
 
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
 var (
-	//go:embed ring_status.gohtml
-	ringStatusPageHTML     string
-	ringStatusPageTemplate = template.Must(template.New("ringStatusPage").Parse(ringStatusPageHTML))
-
 	//go:embed status.gohtml
 	statusPageHTML     string
 	statusPageTemplate = template.Must(template.New("statusPage").Parse(statusPageHTML))
 )
 
-type ringStatusPageContents struct {
-	Message string
-}
-
 type statusPageContents struct {
 	State string
-}
-
-func writeRingStatusMessage(w http.ResponseWriter, message string) {
-	w.WriteHeader(http.StatusOK)
-	err := ringStatusPageTemplate.Execute(w, ringStatusPageContents{Message: message})
-	if err != nil {
-		level.Error(util_log.Logger).Log("msg", "unable to serve alertmanager ring page", "err", err)
-	}
-}
-
-func (am *MultitenantAlertmanager) RingHandler(w http.ResponseWriter, req *http.Request) {
-	if am.State() != services.Running {
-		// we cannot read the ring before the alertmanager is in Running state,
-		// because that would lead to race condition.
-		writeRingStatusMessage(w, "Alertmanager is not running yet.")
-		return
-	}
-
-	am.ring.ServeHTTP(w, req)
 }
 
 // GetStatusHandler returns the status handler for this multi-tenant

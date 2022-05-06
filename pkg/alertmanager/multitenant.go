@@ -897,6 +897,10 @@ func (am *MultitenantAlertmanager) GetPositionForUser(userID string) int {
 	return position
 }
 
+func (am *MultitenantAlertmanager) RingOperator() ring.Operator {
+	return am.ring
+}
+
 // ServeHTTP serves the Alertmanager's web UI and API.
 func (am *MultitenantAlertmanager) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	if am.State() != services.Running {
