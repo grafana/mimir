@@ -64,7 +64,7 @@
   - `-alertmanager.alertmanager-client.grpc-max-recv-msg-size`
   - `-alertmanager.alertmanager-client.grpc-max-send-msg-size`
 * [ENHANCEMENT] Ruler: Add more detailed query information to ruler query stats logging. #1411
-* [ENHANCEMENT] Admin: Admin API now has some styling. #1482 #1549 #1821
+* [ENHANCEMENT] Admin: Admin API now has some styling. #1482 #1549 #1821 #1824
 * [ENHANCEMENT] Alertmanager: added `insight=true` field to alertmanager dispatch logs. #1379
 * [ENHANCEMENT] Store-gateway: Add the experimental ability to run index header operations in a dedicated thread pool. This feature can be configured using `-blocks-storage.bucket-store.index-header-thread-pool-size` and is disabled by default. #1660
 * [ENHANCEMENT] Store-gateway: don't drop all blocks if instance finds itself as unhealthy in the ring. #1806

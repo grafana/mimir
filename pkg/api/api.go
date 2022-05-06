@@ -18,6 +18,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/gorilla/mux"
+	"github.com/grafana/dskit/kv/memberlist"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/weaveworks/common/middleware"
 	"github.com/weaveworks/common/server"
@@ -422,9 +423,9 @@ func (a *API) RegisterServiceMapHandler(handler http.Handler) {
 	a.RegisterRoute("/services", handler, false, true, "GET")
 }
 
-func (a *API) RegisterMemberlistKV(handler http.Handler) {
+func (a *API) RegisterMemberlistKV(pathPrefix string, kvs *memberlist.KVInitService) {
 	a.indexPage.AddLinks(memberlistWeight, "Memberlist", []IndexPageLink{
 		{Desc: "Status", Path: "/memberlist"},
 	})
-	a.RegisterRoute("/memberlist", handler, false, true, "GET")
+	a.RegisterRoute("/memberlist", memberlistStatusHandler(pathPrefix, kvs), false, true, "GET")
 }
