@@ -18,7 +18,7 @@ Each tenant has a set of recording and alerting rules and can group those rules 
 
 The ruler supports two different rule evaluation modes:
 
-- **Internal:** This is the default mode. When set, the ruler connects directly through its built-in querier to ingesters and store-gateways, and internally evaluates the rule expression to generate the resulting series.
+- **Internal:** This is the default mode. The ruler internally runs a querier and distributor, and evaluates recording and alerting rules in the ruler process itself. To evaluate rules, the ruler connects directly to ingesters and store-gateways, and writes any resulting series to the ingesters.
   In most use cases this mode is solvent enough. However, in those where the evaluation complexity is high enough, the latency can be increased up to the point of limiting the correct functioning of the component.
 
 - **Remote:** In this mode the ruler delegates rule expression evaluation to the query-frontend. In this way, we can leverage all the optimizations that this component offers us, such as [query sharding]({{< relref "../../query-sharding/index.md" >}}), allowing us to horizontally scale and drastically reducing evaluation times.<br/>
