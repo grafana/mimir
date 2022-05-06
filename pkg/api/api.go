@@ -424,9 +424,9 @@ func (a *API) RegisterServiceMapHandler(handler http.Handler) {
 	a.RegisterRoute("/services", handler, false, true, "GET")
 }
 
-func (a *API) RegisterMemberlistKV(pathPrefix string, kvs *memberlist.KVInitService) {
+func (a *API) RegisterMemberlistKV(kvs *memberlist.KVInitService) {
 	a.indexPage.AddLinks(memberlistWeight, "Memberlist", []IndexPageLink{
 		{Desc: "Status", Path: "/memberlist"},
 	})
-	a.RegisterRoute("/memberlist", memberlistStatusHandler(pathPrefix, kvs), false, true, "GET")
+	a.RegisterRoute("/memberlist", memberlistStatusHandler(a.cfg.ServerPrefix, kvs), false, true, "GET")
 }
