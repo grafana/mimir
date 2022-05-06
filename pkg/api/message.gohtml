@@ -1,0 +1,46 @@
+{{- /*gotype: github.com/grafana/mimir/pkg/api.MessagePageData */ -}}
+<!DOCTYPE html>
+<html class="h-100">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <title>Message: Grafana Mimir</title>
+
+    <link rel="stylesheet" href="{{ AddPathPrefix "/static/bootstrap-5.1.3.min.css" }}">
+    <link rel="stylesheet" href="{{ AddPathPrefix "/static/bootstrap-icons-1.8.1.css" }}">
+    <link rel="stylesheet" href="{{ AddPathPrefix "/static/mimir-styles.css" }}">
+    <script src="{{ AddPathPrefix "/static/bootstrap-5.1.3.bundle.min.js" }}"></script>
+</head>
+<body class="d-flex flex-column h-100">
+<main class="flex-shrink-0">
+    <div class="container">
+        <div class="header row border-bottom py-3 flex-column-reverse flex-sm-row">
+            <div class="col-12 col-sm-9 text-center text-sm-start">
+                <h1>Message: Grafana Mimir</h1>
+            </div>
+            <div class="col-12 col-sm-3 text-center text-sm-end mb-3 mb-sm-0">
+                <img alt="Mimir logo" class="mimir-brand" src="{{ AddPathPrefix "/static/mimir-icon.png" }}">
+            </div>
+        </div>
+        <div class="row my-3">
+            <div class="col-12">
+                <div class="alert alert-warning" role="alert">{{ .Message }}</div>
+            </div>
+        </div>
+    </div>
+</main>
+<footer class="footer mt-auto py-3 bg-light">
+    <div class="container">
+        <small class="text-muted">Status @ {{ .Now.Format "2006-01-02 15:04:05.000" }}</small>
+    </div>
+</footer>
+<script type="text/javascript">
+    var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
+    var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+        return new bootstrap.Tooltip(tooltipTriggerEl)
+    })
+</script>
+</body>
+</html>

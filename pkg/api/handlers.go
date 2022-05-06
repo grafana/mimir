@@ -21,6 +21,7 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/grafana/dskit/kv/memberlist"
 	"github.com/grafana/dskit/ring"
+	"github.com/grafana/dskit/services"
 	"github.com/grafana/regexp"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -266,6 +267,39 @@ func NewQuerierHandler(
 
 	// Track execution time.
 	return stats.NewWallTimeMiddleware().Wrap(router)
+}
+
+//go:embed message.gohtml
+var messagePageHTML string
+
+type MessagePageData struct {
+	Message string
+	Now     time.Time
+}
+
+// serviceRunning wraps an httpHandler associated to a services.Service
+// and only executes it if it's in services.Running state.
+func serviceRunning(s services.Service, serviceName string, pathPrefix string, h http.Handler) http.Handler {
+	templ := template.New("message")
+	templ.Funcs(map[string]interface{}{
+		"AddPathPrefix": func(link string) string { return path.Join(pathPrefix, link) },
+	})
+	template.Must(templ.Parse(messagePageHTML))
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.State() != services.Running {
+			w.WriteHeader(http.StatusAccepted)
+			if err := templ.Execute(w, MessagePageData{
+				Message: fmt.Sprintf("Service %q is not yet in running state.", serviceName),
+				Now:     time.Now(),
+			}); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+			}
+			return
+		}
+
+		h.ServeHTTP(w, r)
+	})
 }
 
 //go:embed memberlist_status.gohtml

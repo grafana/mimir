@@ -351,7 +351,10 @@ func (a *API) RegisterStoreGateway(s *storegateway.StoreGateway) {
 		{Desc: "Ring status", Path: "/store-gateway/ring"},
 		{Desc: "Tenants & Blocks", Path: "/store-gateway/tenants"},
 	})
-	a.RegisterRoute("/store-gateway/ring", http.HandlerFunc(s.RingHandler), false, true, "GET", "POST")
+	ringHandler := serviceRunning(s, "store-gateway", a.cfg.ServerPrefix,
+		ringStatusHandler(a.cfg.ServerPrefix, s.RingOperator()),
+	)
+	a.RegisterRoute("/store-gateway/ring", ringHandler, false, true, "GET", "POST")
 	a.RegisterRoute("/store-gateway/tenants", http.HandlerFunc(s.TenantsHandler), false, true, "GET")
 	a.RegisterRoute("/store-gateway/tenant/{tenant}/blocks", http.HandlerFunc(s.BlocksHandler), false, true, "GET")
 }

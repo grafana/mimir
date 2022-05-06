@@ -295,6 +295,10 @@ func (g *StoreGateway) syncStores(ctx context.Context, reason string) {
 	}
 }
 
+func (g *StoreGateway) RingOperator() ring.Operator {
+	return g.ring
+}
+
 func (g *StoreGateway) Series(req *storepb.SeriesRequest, srv storegatewaypb.StoreGateway_SeriesServer) error {
 	ix := g.tracker.Insert(func() string {
 		return requestActivity(srv.Context(), "StoreGateway/Series", req)
