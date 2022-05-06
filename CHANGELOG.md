@@ -32,15 +32,24 @@
   * `cortex_distributor_ingester_append_failures_total`
 * [FEATURE] Querier: Added support for [streaming remote read](https://prometheus.io/blog/2019/10/10/remote-read-meets-streaming/). Should be noted that benefits of chunking the response are partial here, since in a typical `query-frontend` setup responses will be buffered until they've been completed. #1735
 * [FEATURE] Ruler: Allow setting `evaluation_delay` for each rule group via rules group configuration file. #1474
-* [FEATURE] Ruler: Added support for expression remote evaluation. #1536
+* [FEATURE] Ruler: Added support for expression remote evaluation. #1536 #1818
   * The following CLI flags (and their respective YAML config options) have been added:
     * `-ruler.query-frontend.address`
-    * `-ruler.query-frontend.tls-enabled`
-    * `-ruler.query-frontend.tls-ca-path`
-    * `-ruler.query-frontend.tls-cert-path`
-    * `-ruler.query-frontend.tls-key-path`
-    * `-ruler.query-frontend.tls-server-name`
-    * `-ruler.query-frontend.tls-insecure-skip-verify`
+    * `-ruler.query-frontend.grpc-client-config.grpc-max-recv-msg-size`
+    * `-ruler.query-frontend.grpc-client-config.grpc-max-send-msg-size`
+    * `-ruler.query-frontend.grpc-client-config.grpc-compression`
+    * `-ruler.query-frontend.grpc-client-config.grpc-client-rate-limit`
+    * `-ruler.query-frontend.grpc-client-config.grpc-client-rate-limit-burst`
+    * `-ruler.query-frontend.grpc-client-config.backoff-on-ratelimits`
+    * `-ruler.query-frontend.grpc-client-config.backoff-min-period`
+    * `-ruler.query-frontend.grpc-client-config.backoff-max-period`
+    * `-ruler.query-frontend.grpc-client-config.backoff-retries`
+    * `-ruler.query-frontend.grpc-client-config.tls-enabled`
+    * `-ruler.query-frontend.grpc-client-config.tls-ca-path`
+    * `-ruler.query-frontend.grpc-client-config.tls-cert-path`
+    * `-ruler.query-frontend.grpc-client-config.tls-key-path`
+    * `-ruler.query-frontend.grpc-client-config.tls-server-name`
+    * `-ruler.query-frontend.grpc-client-config.tls-insecure-skip-verify`
 * [FEATURE] Distributor: Added the ability to forward specifics metrics to alternative remote_write API endpoints. #1052
 * [FEATURE] Ingester: Active series custom trackers now supports runtime tenant-specific overrides. The configuration has been moved to limit config, the ingester config has been deprecated.  #1188
 * [ENHANCEMENT] Alertmanager API: Concurrency limit for GET requests is now configurable using `-alertmanager.max-concurrent-get-requests-per-tenant`. #1547
