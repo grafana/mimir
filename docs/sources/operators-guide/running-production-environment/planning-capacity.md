@@ -127,7 +127,7 @@ Estimated required CPU, memory, and disk space:
 
 The [ruler]({{< relref "../architecture/components/ruler/index.md" >}}) component resources utilization is determined by the number of rules evaluated per second.
 
-When [internal]({{< relref "../architecture/components/ruler/index.md#internal" >}}) mode is enabled, rule evaluation is computationally equal to queries execution, so the querier resources recommendations apply to ruler too.
+When [internal]({{< relref "../architecture/components/ruler/index.md#internal" >}}) mode is used (default), rules evaluation is computationally equal to queries execution, so the querier resources recommendations apply to ruler too.
 
 On the other hand if configured in [remote]({{< relref "../architecture/components/ruler/index.md#internal" >}}) operational mode, most of the computational load will be shifted to query-frontend, query-scheduler, and querier components. So those should be scaled accordingly to deal with the extra workload.
 
