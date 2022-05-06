@@ -44,9 +44,17 @@ func (c *MultitenantCompactor) CreateBlockUpload(w http.ResponseWriter, r *http.
 func (c *MultitenantCompactor) UploadBlockFile(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	blockID := vars["block"]
+	if blockID == "" {
+		http.Error(w, "missing block ID", http.StatusBadRequest)
+		return
+	}
 	pth, err := url.PathUnescape(vars["path"])
 	if err != nil {
 		http.Error(w, fmt.Sprintf("malformed file path: %q", vars["path"]), http.StatusBadRequest)
+		return
+	}
+	if pth == "" {
+		http.Error(w, "missing file path", http.StatusBadRequest)
 		return
 	}
 
@@ -62,9 +70,15 @@ func (c *MultitenantCompactor) UploadBlockFile(w http.ResponseWriter, r *http.Re
 	}
 
 	dst := path.Clean(path.Join(blockID, pth))
+	fmt.Printf("path: %q, dst: %q\n", pth, dst)
 	elems := strings.SplitN(dst, "/", 2)
 	if len(elems) != 2 || elems[0] != blockID || elems[1] == "" {
 		http.Error(w, fmt.Sprintf("invalid path: %q", pth), http.StatusBadRequest)
+		return
+	}
+
+	if r.Body == nil || r.ContentLength == 0 {
+		http.Error(w, "file cannot be empty", http.StatusBadRequest)
 		return
 	}
 
