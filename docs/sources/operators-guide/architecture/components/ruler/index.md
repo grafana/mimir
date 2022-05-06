@@ -21,7 +21,7 @@ The ruler supports two different rule evaluation modes:
 - **Internal:** This is the default mode. The ruler internally runs a querier and distributor, and evaluates recording and alerting rules in the ruler process itself. To evaluate rules, the ruler connects directly to ingesters and store-gateways, and writes any resulting series to the ingesters.
   In most use cases this mode is solvent enough. However, in those where the evaluation complexity is high enough, the latency can be increased up to the point of limiting the correct functioning of the component.
 
-- **Remote:** In this mode the ruler delegates rule expression evaluation to the query-frontend. In this way, we can leverage all the optimizations that this component offers us, such as [query sharding]({{< relref "../../query-sharding/index.md" >}}), allowing us to horizontally scale and drastically reducing evaluation times.<br/>
+- **Remote:** In this mode the ruler delegates rules evaluation to the query-frontend. When enabled, the ruler leverages all the query acceleration techniques employed by the query-frontend, such as [query sharding]({{< relref "../../query-sharding/index.md" >}}).
   To enable query-frontend rule evaluation, set the `-ruler.query-frontend.address` CLI flag or its respective YAML configuration parameter for the ruler.
   Communication between ruler and query-frontend is established over gRPC, so if needed, we can make use of client-side load balancing by prefixing the address value with `dns://`.
 
