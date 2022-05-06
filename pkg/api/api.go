@@ -297,7 +297,8 @@ func (a *API) RegisterRuler(r *ruler.Ruler) {
 	a.indexPage.AddLinks(defaultWeight, "Ruler", []IndexPageLink{
 		{Desc: "Ring status", Path: "/ruler/ring"},
 	})
-	a.RegisterRoute("/ruler/ring", r, false, true, "GET", "POST")
+
+	a.RegisterRoute("/ruler/ring", ringStatusHandler(a.cfg.ServerPrefix, r.RingOperator()), false, true, "GET", "POST")
 
 	// Administrative API, uses authentication to inform which user's configuration to delete.
 	a.RegisterRoute("/ruler/delete_tenant_config", http.HandlerFunc(r.DeleteTenantConfiguration), true, true, "POST")

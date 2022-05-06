@@ -425,8 +425,8 @@ func instanceOwnsRuleGroup(r ring.ReadRing, g *rulespb.RuleGroupDesc, instanceAd
 	return rlrs.Instances[0].Addr == instanceAddr, nil
 }
 
-func (r *Ruler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	r.ring.ServeHTTP(w, req)
+func (r *Ruler) RingOperator() ring.Operator {
+	return r.ring
 }
 
 func (r *Ruler) run(ctx context.Context) error {
