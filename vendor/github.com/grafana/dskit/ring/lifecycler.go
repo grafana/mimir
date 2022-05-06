@@ -734,9 +734,13 @@ func (i *Lifecycler) updateConsul(ctx context.Context) error {
 		}
 
 		instanceDesc, ok := ringDesc.Ingesters[i.ID]
+
 		if !ok {
-			// consul must have restarted
-			level.Info(i.logger).Log("msg", "found empty ring, inserting tokens", "ring", i.RingName)
+			// If the instance is missing in the ring, we need to add it back. However, due to how shuffle sharding work,
+			// the missing instance for some period of time could have cause a resharding of tenants among instances:
+			// to guarantee query correctness we need to update the registration timestamp to current time.
+			level.Info(i.logger).Log("msg", "instance is missing in the ring (e.g. the ring backend storage has been reset), registering the instance with an updated registration timestamp", "ring", i.RingName)
+			i.setRegisteredAt(time.Now())
 			ringDesc.AddIngester(i.ID, i.Addr, i.Zone, i.getTokens(), i.GetState(), i.getRegisteredAt())
 		} else {
 			instanceDesc.Timestamp = time.Now().Unix()
