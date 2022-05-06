@@ -433,9 +433,9 @@ func (t *Mimir) Run() error {
 	// implementation provided by module.Ring over the BasicLifecycler
 	// available in ingesters
 	if t.Ring != nil {
-		t.API.RegisterRing(t.Ring)
+		t.API.RegisterIngesterRing(t.Cfg.API.ServerPrefix, t.Ring)
 	} else if t.Ingester != nil {
-		t.API.RegisterRing(t.Ingester.RingHandler())
+		t.API.RegisterIngesterRing(t.Cfg.API.ServerPrefix, t.Ingester.RingOperator())
 	}
 
 	// get all services, create service manager and tell it to start

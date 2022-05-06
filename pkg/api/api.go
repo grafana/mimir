@@ -19,6 +19,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/gorilla/mux"
 	"github.com/grafana/dskit/kv/memberlist"
+	"github.com/grafana/dskit/ring"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/weaveworks/common/middleware"
 	"github.com/weaveworks/common/server"
@@ -334,12 +335,12 @@ func (a *API) RegisterRulerAPI(r *ruler.API, configAPIEnabled bool) {
 	}
 }
 
-// RegisterRing registers the ring UI page associated with the distributor for writes.
-func (a *API) RegisterRing(r http.Handler) {
+// RegisterIngesterRing registers the ring UI page associated with the distributor for writes.
+func (a *API) RegisterIngesterRing(pathPrefix string, ro ring.Operator) {
 	a.indexPage.AddLinks(defaultWeight, "Ingester", []IndexPageLink{
 		{Desc: "Ring status", Path: "/ingester/ring"},
 	})
-	a.RegisterRoute("/ingester/ring", r, false, true, "GET", "POST")
+	a.RegisterRoute("/ingester/ring", ringStatusHandler(pathPrefix, ro), false, true, "GET", "POST")
 }
 
 // RegisterStoreGateway registers the ring UI page associated with the store-gateway.

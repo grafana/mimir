@@ -2294,7 +2294,7 @@ func (i *Ingester) CheckReady(ctx context.Context) error {
 	return i.lifecycler.CheckReady(ctx)
 }
 
-func (i *Ingester) RingHandler() http.Handler {
+func (i *Ingester) RingOperator() ring.Operator {
 	return i.lifecycler
 }
 
