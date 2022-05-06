@@ -22,7 +22,7 @@ The ruler supports two different rule evaluation modes:
   In most use cases this mode is solvent enough. However, in those where the evaluation complexity is high enough, the latency can be increased up to the point of limiting the correct functioning of the component.
 
 - **Remote:** In this mode the ruler delegates rules evaluation to the query-frontend. When enabled, the ruler leverages all the query acceleration techniques employed by the query-frontend, such as [query sharding]({{< relref "../../query-sharding/index.md" >}}).
-  To enable query-frontend rule evaluation, set the `-ruler.query-frontend.address` CLI flag or its respective YAML configuration parameter for the ruler.
+  To enable the remote operational mode, set the `-ruler.query-frontend.address` CLI flag or its respective YAML configuration parameter for the ruler.
   Communication between ruler and query-frontend is established over gRPC, so if needed, we can make use of client-side load balancing by prefixing the address value with `dns://`.
 
 ## Recording rules
