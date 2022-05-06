@@ -100,6 +100,7 @@ The following Grafana Mimir components support TLS for inter-communication, whic
 - Query-frontend gRPC client used to connect to query-schedulers: `-query-frontend.grpc-client-config.*`
 - Querier gRPC client used to connect to query-frontends and query-schedulers: `-querier.frontend-client.*`
 - Ruler gRPC client used to connect to other ruler instances: `-ruler.client.*`
+- Ruler gRPC client used to connect to query-frontend: `-ruler.query-frontend.grpc-client-config.*`
 - Alertmanager gRPC client used to connect to other Alertmanager instances: `-alertmanager.alertmanager-client.*`
 - gRPC client used by distributors, queriers, and rulers to connect to ingesters: `-ingester.client.*`
 - etcd client used by all Mimir components to connect to etcd, which is required only if you're running the hash ring or HA tracker on the etcd backend: `-<prefix>.etcd.*`
