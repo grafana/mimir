@@ -129,7 +129,7 @@ The [ruler]({{< relref "../architecture/components/ruler/index.md" >}}) componen
 
 When [internal]({{< relref "../architecture/components/ruler/index.md#internal" >}}) mode is used (default), rules evaluation is computationally equal to queries execution, so the querier resources recommendations apply to ruler too.
 
-On the other hand if configured in [remote]({{< relref "../architecture/components/ruler/index.md#internal" >}}) operational mode, most of the computational load will be shifted to query-frontend, query-scheduler, and querier components. So those should be scaled accordingly to deal with the extra workload.
+When [remote]({{< relref "../architecture/components/ruler/index.md#internal" >}}) operational mode is used, most of the computational load is shifted to query-frontend and querier components. So those should be scaled accordingly to deal both with queries and rules evaluation workload.
 
 ### Compactor
 
