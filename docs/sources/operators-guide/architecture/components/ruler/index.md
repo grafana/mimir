@@ -28,7 +28,7 @@ Configuration of the built-in querier and distributor uses their respective conf
 - [Querier]({{< relref "../../../configuring/reference-configuration-parameters/index.md#querier" >}})
 - [Distributor]({{< relref "../../../configuring/reference-configuration-parameters/index.md#distributor" >}})
 
-It should be noted however that when this mode is enabled no acceleration query techniques are performed, meaning that if the rule evaluation complexity is high enough the latency can be increased up to the point of limiting the correct functioning of the component.
+> **Note**: when this mode is used, no query acceleration techniques are used and the evaluation of very high cardinality queries could take longer than the evaluation interval, eventually leading to missing data points in the evaluated recording rules.
 
 ### Remote
 
