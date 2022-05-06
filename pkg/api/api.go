@@ -364,7 +364,11 @@ func (a *API) RegisterCompactor(c *compactor.MultitenantCompactor) {
 	a.indexPage.AddLinks(defaultWeight, "Compactor", []IndexPageLink{
 		{Desc: "Ring status", Path: "/compactor/ring"},
 	})
-	a.RegisterRoute("/compactor/ring", http.HandlerFunc(c.RingHandler), false, true, "GET", "POST")
+
+	ringHandler := serviceRunning(c, "compactor", a.cfg.ServerPrefix,
+		ringStatusHandler(a.cfg.ServerPrefix, c.RingOperator()),
+	)
+	a.RegisterRoute("/compactor/ring", ringHandler, false, true, "GET", "POST")
 }
 
 type Distributor interface {

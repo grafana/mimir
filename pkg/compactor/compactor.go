@@ -484,6 +484,10 @@ func (c *MultitenantCompactor) running(ctx context.Context) error {
 	}
 }
 
+func (c *MultitenantCompactor) RingOperator() ring.Operator {
+	return c.ring
+}
+
 func (c *MultitenantCompactor) compactUsers(ctx context.Context) {
 	succeeded := false
 	compactionErrorCount := 0
