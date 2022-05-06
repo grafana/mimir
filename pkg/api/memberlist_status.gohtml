@@ -42,7 +42,7 @@
             <h2>KV Store</h2>
             <div class="table-responsive">
                 <table class="table table-bordered table-hover table-striped">
-                    <thead>
+                    <thead class="text-center">
                     <tr>
                         <th>Key</th>
                         <th class="fit-width">Codec</th>
@@ -89,7 +89,7 @@
             <h2>Memberlist Cluster Members</h2>
             <div class="table-responsive">
                 <table class="table table-bordered table-hover table-striped">
-                    <thead>
+                    <thead class="text-center">
                     <tr>
                         <th>Name</th>
                         <th>Address</th>
@@ -150,7 +150,7 @@
                             <div class="accordion-body p-0 table-responsive">
                                 {{ if .ReceivedMessages }}
                                     <table class="table table-hover table-striped">
-                                        <thead>
+                                        <thead class="text-center">
                                         <tr>
                                             <th class="fit-width">ID</th>
                                             <th>Time</th>
@@ -173,13 +173,13 @@
                                         <tbody class="font-monospace small">
                                         {{ range .ReceivedMessages }}
                                             <tr>
-                                                <td class="font-monospace small fit-width">{{ .ID }}</td>
-                                                <td class="font-monospace small">{{ .Time.Format "15:04:05.000" }}</td>
-                                                <td class="font-monospace small">{{ .Pair.Key }}</td>
-                                                <td class="font-monospace small fit-width">{{ .Pair.Value | len }}</td>
-                                                <td class="font-monospace small fit-width">{{ .Pair.Codec }}</td>
-                                                <td class="font-monospace small fit-width">{{ .Version }}</td>
-                                                <td class="font-monospace small">{{ StringsJoin .Changes ", " }}</td>
+                                                <td class=" fit-width">{{ .ID }}</td>
+                                                <td class="">{{ .Time.Format "15:04:05.000" }}</td>
+                                                <td class="">{{ .Pair.Key }}</td>
+                                                <td class=" fit-width">{{ .Pair.Value | len }}</td>
+                                                <td class=" fit-width">{{ .Pair.Codec }}</td>
+                                                <td class=" fit-width">{{ .Version }}</td>
+                                                <td class="">{{ StringsJoin .Changes ", " }}</td>
                                                 <td class="fit-width">
                                                     <span class="text-nowrap">
                                                         <a href="?viewMsg={{ .ID }}&format=json-pretty" class="text-decoration-none">
@@ -218,7 +218,7 @@
 
                                 {{ if .SentMessages }}
                                     <table class="table table-hover table-striped">
-                                        <thead>
+                                        <thead class="text-center">
                                         <tr>
                                             <th>ID</th>
                                             <th>Time</th>
@@ -231,16 +231,16 @@
                                         </tr>
                                         </thead>
 
-                                        <tbody>
+                                        <tbody class="font-monospace small">
                                         {{ range .SentMessages }}
                                             <tr>
-                                                <td class="font-monospace small">{{ .ID }}</td>
-                                                <td class="font-monospace small">{{ .Time.Format "15:04:05.000" }}</td>
-                                                <td class="font-monospace small">{{ .Pair.Key }}</td>
-                                                <td class="font-monospace small">{{ .Pair.Value | len }}</td>
-                                                <td class="font-monospace small">{{ .Pair.Codec }}</td>
-                                                <td class="font-monospace small">{{ .Version }}</td>
-                                                <td class="font-monospace small">{{ StringsJoin .Changes ", " }}</td>
+                                                <td>{{ .ID }}</td>
+                                                <td>{{ .Time.Format "15:04:05.000" }}</td>
+                                                <td>{{ .Pair.Key }}</td>
+                                                <td>{{ .Pair.Value | len }}</td>
+                                                <td>{{ .Pair.Codec }}</td>
+                                                <td>{{ .Version }}</td>
+                                                <td>{{ StringsJoin .Changes ", " }}</td>
                                                 <td>
                                                     <span class="text-nowrap">
                                                         <a href="?viewMsg={{ .ID }}&format=json-pretty" class="text-decoration-none">

@@ -29,8 +29,10 @@
                 <ul class="my-0 list-unstyled">
                     {{ range $.Links }}
                         <li><a href="{{ AddPathPrefix .Path }}">{{ .Desc }}</a>
-                            {{ if .Dangerous }}<span
-                                    class="badge bg-danger rounded-pill align-middle">Dangerous</span>{{ end }}</li>
+                            {{ if .Dangerous }}
+                                <span class="badge bg-danger rounded-pill align-middle">Dangerous</span>
+                            {{ end }}
+                        </li>
                     {{ end }}
                 </ul>
             </div>
