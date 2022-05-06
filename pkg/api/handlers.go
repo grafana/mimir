@@ -8,16 +8,19 @@ package api
 import (
 	"context"
 	"embed"
+	"fmt"
 	"html/template"
 	"net/http"
 	"path"
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/gorilla/mux"
 	"github.com/grafana/dskit/kv/memberlist"
+	"github.com/grafana/dskit/ring"
 	"github.com/grafana/regexp"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -276,4 +279,27 @@ func memberlistStatusHandler(httpPathPrefix string, kvs *memberlist.KVInitServic
 	})
 	template.Must(templ.Parse(memberlistStatusPageHTML))
 	return memberlist.NewHTTPStatusHandler(kvs, templ)
+}
+
+//go:embed ring_status.gohtml
+var ringStatusPageHTML string
+
+func ringStatusHandler(httpPathPrefix string, op ring.Operator) http.Handler {
+	templ := template.New("ring_status")
+	templ.Funcs(map[string]interface{}{
+		"AddPathPrefix": func(link string) string { return path.Join(httpPathPrefix, link) },
+		"StringsJoin":   strings.Join,
+		"humanFloat": func(f float64) string {
+			return fmt.Sprintf("%.2g", f)
+		},
+		"timeOrEmptyString": func(t time.Time) string {
+			if t.IsZero() {
+				return ""
+			}
+			return t.Format(time.RFC3339Nano)
+		},
+		"durationSince": func(t time.Time) string { return time.Since(t).Truncate(time.Millisecond).String() },
+	})
+	template.Must(templ.Parse(ringStatusPageHTML))
+	return ring.NewHTTPStatusHandler(op, templ)
 }

@@ -1,0 +1,124 @@
+{{- /*gotype: github.com/grafana/dskit/ring.StatusPageData */ -}}
+<!DOCTYPE html>
+<html class="h-100">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <title>Ring status: Grafana Mimir</title>
+
+    <link rel="stylesheet" href="{{ AddPathPrefix "/static/bootstrap-5.1.3.min.css" }}">
+    <link rel="stylesheet" href="{{ AddPathPrefix "/static/bootstrap-icons-1.8.1.css" }}">
+    <link rel="stylesheet" href="{{ AddPathPrefix "/static/mimir-styles.css" }}">
+    <script src="{{ AddPathPrefix "/static/bootstrap-5.1.3.bundle.min.js" }}"></script>
+</head>
+<body class="d-flex flex-column h-100">
+<main class="flex-shrink-0">
+    <div class="container">
+        <div class="header row border-bottom py-3 flex-column-reverse flex-sm-row">
+            <div class="col-12 col-sm-9 text-center text-sm-start">
+                <h1>Ring status: Grafana Mimir</h1>
+            </div>
+            <div class="col-12 col-sm-3 text-center text-sm-end mb-3 mb-sm-0">
+                <img alt="Mimir logo" class="mimir-brand" src="{{ AddPathPrefix "/static/mimir-icon.png" }}">
+            </div>
+        </div>
+        <div class="row my-3">
+            <div class="table-responsive">
+                <form action="" method="POST">
+                    <input type="hidden" name="csrf_token" value="$__CSRF_TOKEN_PLACEHOLDER__">
+                    <table class="table table-bordered table-hover table-striped">
+                        <thead class="text-center">
+                        <tr>
+                            <th>Instance ID</th>
+                            <th>Availability Zone</th>
+                            <th>State</th>
+                            <th>Address</th>
+                            <th>Registered At</th>
+                            <th>Last Heartbeat</th>
+                            <th class="fit-width">Tokens</th>
+                            <th class="fit-width">Ownership</th>
+                            <th class="fit-width">Actions</th>
+                        </tr>
+                        </thead>
+                        <tbody class="small">
+                        {{ range .Ingesters }}
+                            <tr>
+                                <td class="font-monospace align-middle">{{ .ID }}</td>
+                                <td class="align-middle">{{ .Zone }}</td>
+                                <td class="align-middle text-center">
+                                    {{ if eq .State "ACTIVE" }}
+                                        <span class="badge my-1 bg-success">{{ .State }}</span>
+                                    {{ else if eq .State "LEAVING" }}
+                                        <span class="badge my-1 bg-secondary">{{ .State }}</span>
+                                    {{ else if eq .State "PENDING" }}
+                                        <span class="badge my-1 bg-dark">{{ .State }}</span>
+                                    {{ else if eq .State "JOINING" }}
+                                        <span class="badge my-1 bg-primary">{{ .State }}</span>
+                                    {{ else if eq .State "LEFT" }}
+                                        <span class="badge my-1 bg-light text-dark">{{ .State }}</span>
+                                    {{ else }}
+                                        <span class="badge my-1 bg-danger">{{ .State }}</span>
+                                    {{ end }}
+                                </td>
+                                <td class="font-monospace align-middle">{{ .Address }}</td>
+                                <td class="align-middle">{{ .RegisteredTimestamp | timeOrEmptyString }}</td>
+                                <td class="align-middle">{{ .HeartbeatTimestamp | durationSince }} ago
+                                    ({{ .HeartbeatTimestamp.Format "15:04:05.999" }})
+                                </td>
+                                <td class="align-middle">{{ .NumTokens }}</td>
+                                <td class="align-middle">{{ .Ownership | humanFloat }}%</td>
+                                <td class="fit-width text-center align-middle py-0">
+                                    <button type="submit" name="forget" value="{{ .ID }}"
+                                            class="btn btn-outline-danger btn-sm"><i class="bi bi-trash"></i></button>
+                                </td>
+                            </tr>
+                        {{ end }}
+                        </tbody>
+                    </table>
+
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" role="switch" id="flexSwitchCheckDefault"
+                                {{ if .ShowTokens }}
+                                    onclick="window.location.href = '?tokens=false'" checked
+                                {{ else }}
+                                    onclick="window.location.href = '?tokens=true'"
+                                {{ end }}
+                        >
+                        <label class="form-check-label" for="flexSwitchCheckDefault">Show tokens</label>
+                    </div>
+
+                    {{ if .ShowTokens }}
+                        {{ range .Ingesters }}
+                            <div class="card my-3">
+                                <div class="card-body font-monospace">
+                                    <h5 class="card-title">{{ .ID }}</h5>
+                                    <h6 class="card-subtitle mb-2 text-muted">{{ .Address }}</h6>
+                                    <p class="card-text text-center">
+                                        {{ range $token := .Tokens }}
+                                            <span class="badge bg-light text-dark token-badge col-1">{{ $token }}</span>
+                                        {{ end }}
+                                    </p>
+                                </div>
+                            </div>
+                        {{ end }}
+                    {{ end }}
+                </form>
+            </div>
+        </div>
+    </div>
+</main>
+<footer class="footer mt-auto py-3 bg-light">
+    <div class="container">
+        <small class="text-muted">Status @ {{ .Now.Format "2006-01-02 15:04:05.000" }}</small>
+    </div>
+</footer>
+<script type="text/javascript">
+    var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
+    var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+        return new bootstrap.Tooltip(tooltipTriggerEl)
+    })
+</script>
+</body>
+</html>
