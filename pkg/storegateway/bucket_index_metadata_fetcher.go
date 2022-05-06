@@ -31,7 +31,6 @@ const (
 type BucketIndexMetadataFetcher struct {
 	userID      string
 	bkt         objstore.Bucket
-	strategy    ShardingStrategy
 	cfgProvider bucket.TenantConfigProvider
 	logger      log.Logger
 	filters     []block.MetadataFilter
@@ -41,7 +40,6 @@ type BucketIndexMetadataFetcher struct {
 func NewBucketIndexMetadataFetcher(
 	userID string,
 	bkt objstore.Bucket,
-	strategy ShardingStrategy,
 	cfgProvider bucket.TenantConfigProvider,
 	logger log.Logger,
 	reg prometheus.Registerer,
@@ -50,7 +48,6 @@ func NewBucketIndexMetadataFetcher(
 	return &BucketIndexMetadataFetcher{
 		userID:      userID,
 		bkt:         bkt,
-		strategy:    strategy,
 		cfgProvider: cfgProvider,
 		logger:      logger,
 		filters:     filters,
@@ -62,13 +59,6 @@ func NewBucketIndexMetadataFetcher(
 func (f *BucketIndexMetadataFetcher) Fetch(ctx context.Context) (metas map[ulid.ULID]*metadata.Meta, partial map[ulid.ULID]error, err error) {
 	f.metrics.ResetTx()
 
-	// Check whether the user belongs to the shard.
-	if len(f.strategy.FilterUsers(ctx, []string{f.userID})) != 1 {
-		f.metrics.Submit()
-		return nil, nil, nil
-	}
-
-	// Track duration and sync counters only if wasn't filtered out by the sharding strategy.
 	start := time.Now()
 	defer func() {
 		f.metrics.SyncDuration.Observe(time.Since(start).Seconds())
