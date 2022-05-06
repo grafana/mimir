@@ -18,7 +18,6 @@ import (
 	"github.com/gogo/status"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/tsdb/hashcache"
 	"github.com/stretchr/testify/assert"
@@ -38,14 +37,10 @@ import (
 )
 
 var (
-	minTime            = time.Unix(0, 0)
-	maxTime, _         = time.Parse(time.RFC3339, "9999-12-31T23:59:59Z")
-	minTimeDuration    = model.TimeOrDurationValue{Time: &minTime}
-	maxTimeDuration    = model.TimeOrDurationValue{Time: &maxTime}
-	allowAllFilterConf = &FilterConfig{
-		MinTime: minTimeDuration,
-		MaxTime: maxTimeDuration,
-	}
+	minTime         = time.Unix(0, 0)
+	maxTime, _      = time.Parse(time.RFC3339, "9999-12-31T23:59:59Z")
+	minTimeDuration = model.TimeOrDurationValue{Time: &minTime}
+	maxTimeDuration = model.TimeOrDurationValue{Time: &maxTime}
 )
 
 type swappableCache struct {
@@ -136,7 +131,7 @@ func newCustomSeriesLimiterFactory(limit uint64, code codes.Code) SeriesLimiterF
 	}
 }
 
-func prepareStoreWithTestBlocks(t testing.TB, dir string, bkt objstore.Bucket, manyParts bool, chunksLimiterFactory ChunksLimiterFactory, seriesLimiterFactory SeriesLimiterFactory, relabelConfig []*relabel.Config, filterConf *FilterConfig) *storeSuite {
+func prepareStoreWithTestBlocks(t testing.TB, dir string, bkt objstore.Bucket, manyParts bool, chunksLimiterFactory ChunksLimiterFactory, seriesLimiterFactory SeriesLimiterFactory) *storeSuite {
 	series := []labels.Labels{
 		labels.FromStrings("a", "1", "b", "1"),
 		labels.FromStrings("a", "1", "b", "2"),
@@ -147,10 +142,10 @@ func prepareStoreWithTestBlocks(t testing.TB, dir string, bkt objstore.Bucket, m
 		labels.FromStrings("a", "2", "c", "1"),
 		labels.FromStrings("a", "2", "c", "2"),
 	}
-	return prepareStoreWithTestBlocksForSeries(t, dir, bkt, manyParts, chunksLimiterFactory, seriesLimiterFactory, relabelConfig, filterConf, series)
+	return prepareStoreWithTestBlocksForSeries(t, dir, bkt, manyParts, chunksLimiterFactory, seriesLimiterFactory, series)
 }
 
-func prepareStoreWithTestBlocksForSeries(t testing.TB, dir string, bkt objstore.Bucket, manyParts bool, chunksLimiterFactory ChunksLimiterFactory, seriesLimiterFactory SeriesLimiterFactory, relabelConfig []*relabel.Config, filterConf *FilterConfig, series []labels.Labels) *storeSuite {
+func prepareStoreWithTestBlocksForSeries(t testing.TB, dir string, bkt objstore.Bucket, manyParts bool, chunksLimiterFactory ChunksLimiterFactory, seriesLimiterFactory SeriesLimiterFactory, series []labels.Labels) *storeSuite {
 	extLset := labels.FromStrings("ext1", "value1")
 
 	minTime, maxTime := prepareTestBlocks(t, time.Now(), 3, dir, bkt, series, extLset)
@@ -162,10 +157,7 @@ func prepareStoreWithTestBlocksForSeries(t testing.TB, dir string, bkt objstore.
 		maxTime: maxTime,
 	}
 
-	metaFetcher, err := block.NewMetaFetcher(s.logger, 20, objstore.WithNoopInstr(bkt), dir, nil, []block.MetadataFilter{
-		block.NewTimePartitionMetaFilter(filterConf.MinTime, filterConf.MaxTime),
-		block.NewLabelShardedMetaFilter(relabelConfig),
-	})
+	metaFetcher, err := block.NewMetaFetcher(s.logger, 20, objstore.WithNoopInstr(bkt), dir, nil, []block.MetadataFilter{})
 	assert.NoError(t, err)
 
 	store, err := NewBucketStore(
@@ -178,7 +170,6 @@ func prepareStoreWithTestBlocksForSeries(t testing.TB, dir string, bkt objstore.
 		newGapBasedPartitioner(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
 		nil,
 		20,
-		true,
 		mimir_tsdb.DefaultPostingOffsetInMemorySampling,
 		true,
 		true,
@@ -187,11 +178,10 @@ func prepareStoreWithTestBlocksForSeries(t testing.TB, dir string, bkt objstore.
 		NewBucketStoreMetrics(nil),
 		WithLogger(s.logger),
 		WithIndexCache(s.cache),
-		WithFilterConfig(filterConf),
 	)
 	assert.NoError(t, err)
 	t.Cleanup(func() {
-		assert.NoError(t, s.store.Close())
+		assert.NoError(t, s.store.RemoveBlocksAndClose())
 	})
 
 	s.store = store
@@ -426,7 +416,7 @@ func TestBucketStore_e2e(t *testing.T) {
 
 		dir := t.TempDir()
 
-		s := prepareStoreWithTestBlocks(t, dir, bkt, false, NewChunksLimiterFactory(0), NewSeriesLimiterFactory(0), emptyRelabelConfig, allowAllFilterConf)
+		s := prepareStoreWithTestBlocks(t, dir, bkt, false, NewChunksLimiterFactory(0), NewSeriesLimiterFactory(0))
 
 		if ok := t.Run("no index cache", func(t *testing.T) {
 			s.cache.SwapWith(noopCache{})
@@ -479,7 +469,7 @@ func TestBucketStore_ManyParts_e2e(t *testing.T) {
 
 		dir := t.TempDir()
 
-		s := prepareStoreWithTestBlocks(t, dir, bkt, true, NewChunksLimiterFactory(0), NewSeriesLimiterFactory(0), emptyRelabelConfig, allowAllFilterConf)
+		s := prepareStoreWithTestBlocks(t, dir, bkt, true, NewChunksLimiterFactory(0), NewSeriesLimiterFactory(0))
 
 		indexCache, err := indexcache.NewInMemoryIndexCacheWithConfig(s.logger, nil, indexcache.InMemoryIndexCacheConfig{
 			MaxItemSize: 1e5,
@@ -490,59 +480,6 @@ func TestBucketStore_ManyParts_e2e(t *testing.T) {
 
 		testBucketStore_e2e(t, ctx, s)
 	})
-}
-
-func TestBucketStore_TimePartitioning_e2e(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	bkt := objstore.NewInMemBucket()
-
-	dir := t.TempDir()
-
-	hourAfter := time.Now().Add(1 * time.Hour)
-	filterMaxTime := model.TimeOrDurationValue{Time: &hourAfter}
-
-	// The query will fetch 2 series from 2 blocks, so we do expect to hit a total of 4 chunks.
-	expectedChunks := uint64(2 * 2)
-
-	s := prepareStoreWithTestBlocks(t, dir, bkt, false, NewChunksLimiterFactory(expectedChunks), NewSeriesLimiterFactory(0), emptyRelabelConfig, &FilterConfig{
-		MinTime: minTimeDuration,
-		MaxTime: filterMaxTime,
-	})
-	assert.NoError(t, s.store.SyncBlocks(ctx))
-
-	mint, maxt := s.store.TimeRange()
-	assert.Equal(t, s.minTime, mint)
-	assert.Equal(t, filterMaxTime.PrometheusTimestamp(), maxt)
-
-	req := &storepb.SeriesRequest{
-		Matchers: []storepb.LabelMatcher{
-			{Type: storepb.LabelMatcher_EQ, Name: "a", Value: "1"},
-		},
-		MinTime: mint,
-		MaxTime: timestamp.FromTime(time.Now().AddDate(0, 0, 1)),
-	}
-
-	expectedLabels := [][]labelpb.ZLabel{
-		{{Name: "a", Value: "1"}, {Name: "b", Value: "1"}},
-		{{Name: "a", Value: "1"}, {Name: "b", Value: "2"}},
-		{{Name: "a", Value: "1"}, {Name: "c", Value: "1"}},
-		{{Name: "a", Value: "1"}, {Name: "c", Value: "2"}},
-	}
-
-	s.cache.SwapWith(noopCache{})
-	srv := newBucketStoreSeriesServer(ctx)
-
-	assert.NoError(t, s.store.Series(req, srv))
-	assert.Equal(t, len(expectedLabels), len(srv.SeriesSet))
-
-	for i, s := range srv.SeriesSet {
-		assert.Equal(t, expectedLabels[i], s.Labels)
-
-		// prepareTestBlocks makes 3 chunks containing 2 hour data,
-		// we should only get 1, as we are filtering by time.
-		assert.Equal(t, 1, len(s.Chunks))
-	}
 }
 
 func TestBucketStore_Series_ChunksLimiter_e2e(t *testing.T) {
@@ -584,7 +521,7 @@ func TestBucketStore_Series_ChunksLimiter_e2e(t *testing.T) {
 
 			dir := t.TempDir()
 
-			s := prepareStoreWithTestBlocks(t, dir, bkt, false, newCustomChunksLimiterFactory(testData.maxChunksLimit, testData.code), newCustomSeriesLimiterFactory(testData.maxSeriesLimit, testData.code), emptyRelabelConfig, allowAllFilterConf)
+			s := prepareStoreWithTestBlocks(t, dir, bkt, false, newCustomChunksLimiterFactory(testData.maxChunksLimit, testData.code), newCustomSeriesLimiterFactory(testData.maxSeriesLimit, testData.code))
 			assert.NoError(t, s.store.SyncBlocks(ctx))
 
 			req := &storepb.SeriesRequest{
@@ -619,7 +556,7 @@ func TestBucketStore_LabelNames_e2e(t *testing.T) {
 
 		dir := t.TempDir()
 
-		s := prepareStoreWithTestBlocks(t, dir, bkt, false, NewChunksLimiterFactory(0), NewSeriesLimiterFactory(0), emptyRelabelConfig, allowAllFilterConf)
+		s := prepareStoreWithTestBlocks(t, dir, bkt, false, NewChunksLimiterFactory(0), NewSeriesLimiterFactory(0))
 		s.cache.SwapWith(noopCache{})
 
 		mint, maxt := s.store.TimeRange()
@@ -719,7 +656,7 @@ func TestBucketStore_LabelValues_e2e(t *testing.T) {
 
 		dir := t.TempDir()
 
-		s := prepareStoreWithTestBlocks(t, dir, bkt, false, NewChunksLimiterFactory(0), NewSeriesLimiterFactory(0), emptyRelabelConfig, allowAllFilterConf)
+		s := prepareStoreWithTestBlocks(t, dir, bkt, false, NewChunksLimiterFactory(0), NewSeriesLimiterFactory(0))
 		s.cache.SwapWith(noopCache{})
 
 		mint, maxt := s.store.TimeRange()

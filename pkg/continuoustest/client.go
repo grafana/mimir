@@ -21,6 +21,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/prompb"
 
+	"github.com/grafana/mimir/pkg/util/instrumentation"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 )
 
@@ -71,8 +72,10 @@ type Client struct {
 }
 
 func NewClient(cfg ClientConfig, logger log.Logger) (*Client, error) {
-	rt := http.DefaultTransport
-	rt = &clientRoundTripper{tenantID: cfg.TenantID, rt: rt}
+	rt := &clientRoundTripper{
+		tenantID: cfg.TenantID,
+		rt:       instrumentation.TracerTransport{},
+	}
 
 	// Ensure the required config has been set.
 	if cfg.WriteBaseEndpoint.URL == nil {

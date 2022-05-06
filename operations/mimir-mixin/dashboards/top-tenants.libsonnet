@@ -1,4 +1,5 @@
 local utils = import 'mixin-utils/utils.libsonnet';
+local filename = 'mimir-top-tenants.json';
 
 (import 'dashboard-utils.libsonnet') {
   local in_memory_series_per_user_query(at='') = |||
@@ -18,8 +19,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
     group_by_cluster: $._config.group_by_cluster,
   },
 
-  'mimir-top-tenants.json':
-    ($.dashboard('Top tenants') + { uid: 'bc6e12d4fe540e4a1785b9d3ca0ffdd9' })
+  [filename]:
+    ($.dashboard('Top tenants') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates()
     .addCustomTemplate('limit', ['10', '50', '100'])
     .addRowIf(

@@ -290,7 +290,7 @@ func TestBucketStores_syncUsersBlocks(t *testing.T) {
 		"when sharding is enabled only stores for filtered users should be created": {
 			shardingStrategy: func() ShardingStrategy {
 				s := &mockShardingStrategy{}
-				s.On("FilterUsers", mock.Anything, allUsers).Return([]string{"user-1", "user-2"})
+				s.On("FilterUsers", mock.Anything, allUsers).Return([]string{"user-1", "user-2"}, nil)
 				return s
 			}(),
 			expectedStores: 2,
@@ -713,8 +713,8 @@ type userShardingStrategy struct {
 	users []string
 }
 
-func (u *userShardingStrategy) FilterUsers(ctx context.Context, userIDs []string) []string {
-	return u.users
+func (u *userShardingStrategy) FilterUsers(ctx context.Context, userIDs []string) ([]string, error) {
+	return u.users, nil
 }
 
 func (u *userShardingStrategy) FilterBlocks(ctx context.Context, userID string, metas map[ulid.ULID]*thanos_metadata.Meta, loaded map[ulid.ULID]struct{}, synced *extprom.TxGaugeVec) error {
@@ -757,7 +757,7 @@ func BenchmarkBucketStoreLabelValues(tb *testing.B) {
 	series := generateSeries(card)
 	tb.Logf("Total %d series generated", len(series))
 
-	s := prepareStoreWithTestBlocksForSeries(tb, dir, bkt, false, NewChunksLimiterFactory(0), NewSeriesLimiterFactory(0), emptyRelabelConfig, allowAllFilterConf, series)
+	s := prepareStoreWithTestBlocksForSeries(tb, dir, bkt, false, NewChunksLimiterFactory(0), NewSeriesLimiterFactory(0), series)
 	mint, maxt := s.store.TimeRange()
 	assert.Equal(tb, s.minTime, mint)
 	assert.Equal(tb, s.maxTime, maxt)

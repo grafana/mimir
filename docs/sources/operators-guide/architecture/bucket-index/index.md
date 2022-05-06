@@ -7,7 +7,7 @@ weight: 50
 
 # Grafana Mimir bucket index
 
-The bucket index is a per-tenant file that contains the list of blocks and block deletion marks in the storage. The bucket index is stored in the backend object storage, is periodically updated by the compactor, and used by queriers, store-gateways, and rulers to discover blocks in the storage.
+The bucket index is a per-tenant file that contains the list of blocks and block deletion marks in the storage. The bucket index is stored in the backend object storage, is periodically updated by the compactor, and used by queriers, store-gateways, and rulers (in [internal]({{< relref "../components/ruler/index.md#internal" >}}) operational mode) to discover blocks in the storage.
 
 The bucket index is enabled by default, but is optional. It can be disabled via `-blocks-storage.bucket-store.bucket-index.enabled=false` (or its respective YAML configuration option).
 Disabling the bucket index is not recommended.

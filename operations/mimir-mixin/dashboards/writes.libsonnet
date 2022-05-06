@@ -1,8 +1,9 @@
 local utils = import 'mixin-utils/utils.libsonnet';
+local filename = 'mimir-writes.json';
 
 (import 'dashboard-utils.libsonnet') {
-  'mimir-writes.json':
-    ($.dashboard('Writes') + { uid: '0156f6d15aa234d452a33a4f13c838e3' })
+  [filename]:
+    ($.dashboard('Writes') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates()
     .addRowIf(
       $._config.show_dashboard_descriptions.writes,

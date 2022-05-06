@@ -1408,32 +1408,74 @@ query_frontend:
   # CLI flag: -ruler.query-frontend.address
   [address: <string> | default = ""]
 
-  # (advanced) Set to true if query-frontend connection requires TLS.
-  # CLI flag: -ruler.query-frontend.tls-enabled
-  [tls_enabled: <boolean> | default = false]
+  grpc_client_config:
+    # (advanced) gRPC client max receive message size (bytes).
+    # CLI flag: -ruler.query-frontend.grpc-client-config.grpc-max-recv-msg-size
+    [max_recv_msg_size: <int> | default = 104857600]
 
-  # (advanced) Path to the client certificate file, which will be used for
-  # authenticating with the server. Also requires the key path to be configured.
-  # CLI flag: -ruler.query-frontend.tls-cert-path
-  [tls_cert_path: <string> | default = ""]
+    # (advanced) gRPC client max send message size (bytes).
+    # CLI flag: -ruler.query-frontend.grpc-client-config.grpc-max-send-msg-size
+    [max_send_msg_size: <int> | default = 104857600]
 
-  # (advanced) Path to the key file for the client certificate. Also requires
-  # the client certificate to be configured.
-  # CLI flag: -ruler.query-frontend.tls-key-path
-  [tls_key_path: <string> | default = ""]
+    # (advanced) Use compression when sending messages. Supported values are:
+    # 'gzip', 'snappy' and '' (disable compression)
+    # CLI flag: -ruler.query-frontend.grpc-client-config.grpc-compression
+    [grpc_compression: <string> | default = ""]
 
-  # (advanced) Path to the CA certificates file to validate server certificate
-  # against. If not set, the host's root CA certificates are used.
-  # CLI flag: -ruler.query-frontend.tls-ca-path
-  [tls_ca_path: <string> | default = ""]
+    # (advanced) Rate limit for gRPC client; 0 means disabled.
+    # CLI flag: -ruler.query-frontend.grpc-client-config.grpc-client-rate-limit
+    [rate_limit: <float> | default = 0]
 
-  # (advanced) Override the expected name on the server certificate.
-  # CLI flag: -ruler.query-frontend.tls-server-name
-  [tls_server_name: <string> | default = ""]
+    # (advanced) Rate limit burst for gRPC client.
+    # CLI flag: -ruler.query-frontend.grpc-client-config.grpc-client-rate-limit-burst
+    [rate_limit_burst: <int> | default = 0]
 
-  # (advanced) Skip validating server certificate.
-  # CLI flag: -ruler.query-frontend.tls-insecure-skip-verify
-  [tls_insecure_skip_verify: <boolean> | default = false]
+    # (advanced) Enable backoff and retry when we hit ratelimits.
+    # CLI flag: -ruler.query-frontend.grpc-client-config.backoff-on-ratelimits
+    [backoff_on_ratelimits: <boolean> | default = false]
+
+    backoff_config:
+      # (advanced) Minimum delay when backing off.
+      # CLI flag: -ruler.query-frontend.grpc-client-config.backoff-min-period
+      [min_period: <duration> | default = 100ms]
+
+      # (advanced) Maximum delay when backing off.
+      # CLI flag: -ruler.query-frontend.grpc-client-config.backoff-max-period
+      [max_period: <duration> | default = 10s]
+
+      # (advanced) Number of times to backoff and retry before failing.
+      # CLI flag: -ruler.query-frontend.grpc-client-config.backoff-retries
+      [max_retries: <int> | default = 10]
+
+    # (advanced) Enable TLS in the GRPC client. This flag needs to be enabled
+    # when any other TLS flag is set. If set to false, insecure connection to
+    # gRPC server will be used.
+    # CLI flag: -ruler.query-frontend.grpc-client-config.tls-enabled
+    [tls_enabled: <boolean> | default = false]
+
+    # (advanced) Path to the client certificate file, which will be used for
+    # authenticating with the server. Also requires the key path to be
+    # configured.
+    # CLI flag: -ruler.query-frontend.grpc-client-config.tls-cert-path
+    [tls_cert_path: <string> | default = ""]
+
+    # (advanced) Path to the key file for the client certificate. Also requires
+    # the client certificate to be configured.
+    # CLI flag: -ruler.query-frontend.grpc-client-config.tls-key-path
+    [tls_key_path: <string> | default = ""]
+
+    # (advanced) Path to the CA certificates file to validate server certificate
+    # against. If not set, the host's root CA certificates are used.
+    # CLI flag: -ruler.query-frontend.grpc-client-config.tls-ca-path
+    [tls_ca_path: <string> | default = ""]
+
+    # (advanced) Override the expected name on the server certificate.
+    # CLI flag: -ruler.query-frontend.grpc-client-config.tls-server-name
+    [tls_server_name: <string> | default = ""]
+
+    # (advanced) Skip validating server certificate.
+    # CLI flag: -ruler.query-frontend.grpc-client-config.tls-insecure-skip-verify
+    [tls_insecure_skip_verify: <boolean> | default = false]
 
 tenant_federation:
   # Enable running rule groups against multiple tenants. The tenant IDs involved

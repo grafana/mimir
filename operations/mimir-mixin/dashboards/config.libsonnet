@@ -1,8 +1,9 @@
 local utils = import 'mixin-utils/utils.libsonnet';
+local filename = 'mimir-config.json';
 
 (import 'dashboard-utils.libsonnet') {
-  'mimir-config.json':
-    ($.dashboard('Config') + { uid: '61bb048ced9817b2d3e07677fb1c6290' })
+  [filename]:
+    ($.dashboard('Config') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates()
     .addRow(
       $.row('Startup config file')

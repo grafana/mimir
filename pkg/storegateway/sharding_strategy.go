@@ -12,10 +12,10 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/ring"
 	"github.com/oklog/ulid"
+	"github.com/pkg/errors"
 	"github.com/thanos-io/thanos/pkg/block"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
 	"github.com/thanos-io/thanos/pkg/extprom"
-	"github.com/thanos-io/thanos/pkg/objstore"
 
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 )
@@ -24,10 +24,14 @@ const (
 	shardExcludedMeta = "shard-excluded"
 )
 
+var (
+	errStoreGatewayUnhealthy = errors.New("store-gateway is unhealthy in the ring")
+)
+
 type ShardingStrategy interface {
 	// FilterUsers whose blocks should be loaded by the store-gateway. Returns the list of user IDs
 	// that should be synced by the store-gateway.
-	FilterUsers(ctx context.Context, userIDs []string) []string
+	FilterUsers(ctx context.Context, userIDs []string) ([]string, error)
 
 	// FilterBlocks filters metas in-place keeping only blocks that should be loaded by the store-gateway.
 	// The provided loaded map contains blocks which have been previously returned by this function and
@@ -63,7 +67,16 @@ func NewShuffleShardingStrategy(r *ring.Ring, instanceID, instanceAddr string, l
 }
 
 // FilterUsers implements ShardingStrategy.
-func (s *ShuffleShardingStrategy) FilterUsers(_ context.Context, userIDs []string) []string {
+func (s *ShuffleShardingStrategy) FilterUsers(_ context.Context, userIDs []string) ([]string, error) {
+	// As a protection, ensure the store-gateway instance is healthy in the ring. It could also be missing
+	// in the ring if it was failing to heartbeat the ring and it got remove from another healthy store-gateway
+	// instance, because of the auto-forget feature.
+	if set, err := s.r.GetAllHealthy(BlocksOwnerSync); err != nil {
+		return nil, err
+	} else if !set.Includes(s.instanceAddr) {
+		return nil, errStoreGatewayUnhealthy
+	}
+
 	var filteredIDs []string
 
 	for _, userID := range userIDs {
@@ -75,17 +88,31 @@ func (s *ShuffleShardingStrategy) FilterUsers(_ context.Context, userIDs []strin
 		}
 	}
 
-	return filteredIDs
+	return filteredIDs, nil
 }
 
 // FilterBlocks implements ShardingStrategy.
 func (s *ShuffleShardingStrategy) FilterBlocks(_ context.Context, userID string, metas map[ulid.ULID]*metadata.Meta, loaded map[ulid.ULID]struct{}, synced *extprom.TxGaugeVec) error {
-	subRing := GetShuffleShardingSubring(s.r, userID, s.limits)
-	filterBlocksByRingSharding(subRing, s.instanceAddr, metas, loaded, synced, s.logger)
-	return nil
-}
+	// As a protection, ensure the store-gateway instance is healthy in the ring. If it's unhealthy because it's failing
+	// to heartbeat or get updates from the ring, or even removed from the ring because of the auto-forget feature, then
+	// keep the previously loaded blocks.
+	if set, err := s.r.GetAllHealthy(BlocksOwnerSync); err != nil || !set.Includes(s.instanceAddr) {
+		for blockID := range metas {
+			if _, ok := loaded[blockID]; ok {
+				level.Warn(s.logger).Log("msg", "store-gateway is unhealthy in the ring but block is kept because was previously loaded", "block", blockID.String(), "err", err)
+			} else {
+				level.Warn(s.logger).Log("msg", "store-gateway is unhealthy in the ring and block has been excluded because was not previously loaded", "block", blockID.String(), "err", err)
 
-func filterBlocksByRingSharding(r ring.ReadRing, instanceAddr string, metas map[ulid.ULID]*metadata.Meta, loaded map[ulid.ULID]struct{}, synced *extprom.TxGaugeVec, logger log.Logger) {
+				// Skip the block.
+				synced.WithLabelValues(shardExcludedMeta).Inc()
+				delete(metas, blockID)
+			}
+		}
+
+		return nil
+	}
+
+	r := GetShuffleShardingSubring(s.r, userID, s.limits)
 	bufDescs, bufHosts, bufZones := ring.MakeBuffersForGet()
 
 	for blockID := range metas {
@@ -97,9 +124,9 @@ func filterBlocksByRingSharding(r ring.ReadRing, instanceAddr string, metas map[
 		// If an error occurs while checking the ring, we keep the previously loaded blocks.
 		if err != nil {
 			if _, ok := loaded[blockID]; ok {
-				level.Warn(logger).Log("msg", "failed to check block owner but block is kept because was previously loaded", "block", blockID.String(), "err", err)
+				level.Warn(s.logger).Log("msg", "failed to check block owner but block is kept because was previously loaded", "block", blockID.String(), "err", err)
 			} else {
-				level.Warn(logger).Log("msg", "failed to check block owner and block has been excluded because was not previously loaded", "block", blockID.String(), "err", err)
+				level.Warn(s.logger).Log("msg", "failed to check block owner and block has been excluded because was not previously loaded", "block", blockID.String(), "err", err)
 
 				// Skip the block.
 				synced.WithLabelValues(shardExcludedMeta).Inc()
@@ -110,7 +137,7 @@ func filterBlocksByRingSharding(r ring.ReadRing, instanceAddr string, metas map[
 		}
 
 		// Keep the block if it is owned by the store-gateway.
-		if set.Includes(instanceAddr) {
+		if set.Includes(s.instanceAddr) {
 			continue
 		}
 
@@ -131,6 +158,8 @@ func filterBlocksByRingSharding(r ring.ReadRing, instanceAddr string, metas map[
 		synced.WithLabelValues(shardExcludedMeta).Inc()
 		delete(metas, blockID)
 	}
+
+	return nil
 }
 
 // GetShuffleShardingSubring returns the subring to be used for a given user. This function
@@ -177,30 +206,4 @@ func (a *shardingMetadataFilterAdapter) Filter(ctx context.Context, metas map[ul
 	}
 
 	return nil
-}
-
-type shardingBucketReaderAdapter struct {
-	objstore.InstrumentedBucketReader
-
-	userID   string
-	strategy ShardingStrategy
-}
-
-func NewShardingBucketReaderAdapter(userID string, strategy ShardingStrategy, wrapped objstore.InstrumentedBucketReader) objstore.InstrumentedBucketReader {
-	return &shardingBucketReaderAdapter{
-		InstrumentedBucketReader: wrapped,
-		userID:                   userID,
-		strategy:                 strategy,
-	}
-}
-
-// Iter implements objstore.BucketReader.
-func (a *shardingBucketReaderAdapter) Iter(ctx context.Context, dir string, f func(string) error, options ...objstore.IterOption) error {
-	// Skip iterating the bucket if the tenant doesn't belong to the shard. From the caller
-	// perspective, this will look like the tenant has no blocks in the storage.
-	if len(a.strategy.FilterUsers(ctx, []string{a.userID})) == 0 {
-		return nil
-	}
-
-	return a.InstrumentedBucketReader.Iter(ctx, dir, f, options...)
 }

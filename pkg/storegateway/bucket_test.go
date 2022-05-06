@@ -13,7 +13,6 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
-	"io"
 	"math"
 	"math/rand"
 	"os"
@@ -37,7 +36,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -71,8 +69,6 @@ const (
 	// labelLongSuffix is a label with ~50B in size, to emulate real-world high cardinality.
 	labelLongSuffix = "aaaaaaaaaabbbbbbbbbbccccccccccdddddddddd"
 )
-
-var emptyRelabelConfig = make([]*relabel.Config, 0)
 
 func TestBucketBlock_Property(t *testing.T) {
 	parameters := gopter.DefaultTestParameters()
@@ -500,358 +496,6 @@ func TestBucketBlockSet_labelMatchers(t *testing.T) {
 		assert.Equal(t, c.match, ok)
 		assert.Equal(t, c.res, res)
 	}
-}
-
-func TestBucketStore_Info(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	dir := t.TempDir()
-
-	chunkPool, err := NewDefaultChunkBytesPool(2e5)
-	assert.NoError(t, err)
-
-	bucketStore, err := NewBucketStore(
-		"test",
-		nil,
-		nil,
-		dir,
-		NewChunksLimiterFactory(0),
-		NewSeriesLimiterFactory(0),
-		newGapBasedPartitioner(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
-		nil,
-		20,
-		true,
-		mimir_tsdb.DefaultPostingOffsetInMemorySampling,
-		false,
-		false,
-		0,
-		hashcache.NewSeriesHashCache(1024*1024),
-		NewBucketStoreMetrics(nil),
-		WithChunkPool(chunkPool),
-		WithFilterConfig(allowAllFilterConf),
-	)
-	assert.NoError(t, err)
-	defer func() { assert.NoError(t, bucketStore.Close()) }()
-
-	resp, err := bucketStore.Info(ctx, &storepb.InfoRequest{})
-	assert.NoError(t, err)
-
-	assert.Equal(t, storepb.StoreType_STORE, resp.StoreType)
-	assert.Equal(t, int64(math.MaxInt64), resp.MinTime)
-	assert.Equal(t, int64(math.MinInt64), resp.MaxTime)
-	assert.Equal(t, []labelpb.ZLabelSet(nil), resp.LabelSets)
-	assert.Equal(t, []labelpb.ZLabel(nil), resp.Labels)
-}
-
-type recorder struct {
-	mtx sync.Mutex
-	objstore.Bucket
-
-	getRangeTouched []string
-	getTouched      []string
-}
-
-func (r *recorder) Get(ctx context.Context, name string) (io.ReadCloser, error) {
-	r.mtx.Lock()
-	defer r.mtx.Unlock()
-
-	r.getTouched = append(r.getTouched, name)
-	return r.Bucket.Get(ctx, name)
-}
-
-func (r *recorder) GetRange(ctx context.Context, name string, off, length int64) (io.ReadCloser, error) {
-	r.mtx.Lock()
-	defer r.mtx.Unlock()
-
-	r.getRangeTouched = append(r.getRangeTouched, name)
-	return r.Bucket.GetRange(ctx, name, off, length)
-}
-
-func TestBucketStore_Sharding(t *testing.T) {
-	ctx := context.Background()
-	logger := log.NewNopLogger()
-
-	dir := t.TempDir()
-
-	bkt := objstore.NewInMemBucket()
-	series := []labels.Labels{labels.FromStrings("a", "1", "b", "1")}
-
-	id1, err := CreateBlock(ctx, dir, series, 10, 0, 1000, labels.Labels{{Name: "cluster", Value: "a"}, {Name: "region", Value: "r1"}}, 0, metadata.NoneFunc)
-	assert.NoError(t, err)
-	assert.NoError(t, block.Upload(ctx, logger, bkt, filepath.Join(dir, id1.String()), metadata.NoneFunc))
-
-	id2, err := CreateBlock(ctx, dir, series, 10, 1000, 2000, labels.Labels{{Name: "cluster", Value: "a"}, {Name: "region", Value: "r1"}}, 0, metadata.NoneFunc)
-	assert.NoError(t, err)
-	assert.NoError(t, block.Upload(ctx, logger, bkt, filepath.Join(dir, id2.String()), metadata.NoneFunc))
-
-	id3, err := CreateBlock(ctx, dir, series, 10, 0, 1000, labels.Labels{{Name: "cluster", Value: "b"}, {Name: "region", Value: "r1"}}, 0, metadata.NoneFunc)
-	assert.NoError(t, err)
-	assert.NoError(t, block.Upload(ctx, logger, bkt, filepath.Join(dir, id3.String()), metadata.NoneFunc))
-
-	id4, err := CreateBlock(ctx, dir, series, 10, 0, 1000, labels.Labels{{Name: "cluster", Value: "a"}, {Name: "region", Value: "r2"}}, 0, metadata.NoneFunc)
-	assert.NoError(t, err)
-	assert.NoError(t, block.Upload(ctx, logger, bkt, filepath.Join(dir, id4.String()), metadata.NoneFunc))
-
-	if ok := t.Run("new_runs", func(t *testing.T) {
-		testSharding(t, "", bkt, id1, id2, id3, id4)
-	}); !ok {
-		return
-	}
-
-	dir2 := t.TempDir()
-
-	t.Run("reuse_disk", func(t *testing.T) {
-		testSharding(t, dir2, bkt, id1, id2, id3, id4)
-	})
-}
-
-func testSharding(t *testing.T, reuseDisk string, bkt objstore.Bucket, all ...ulid.ULID) {
-	var cached []ulid.ULID
-
-	logger := log.NewNopLogger()
-	for _, sc := range []struct {
-		name              string
-		relabel           string
-		expectedIDs       []ulid.ULID
-		expectedAdvLabels []labelpb.ZLabelSet
-	}{
-		{
-			name:        "no sharding",
-			expectedIDs: all,
-			expectedAdvLabels: []labelpb.ZLabelSet{
-				{
-					Labels: []labelpb.ZLabel{
-						{Name: "cluster", Value: "a"},
-						{Name: "region", Value: "r1"},
-					},
-				},
-				{
-					Labels: []labelpb.ZLabel{
-						{Name: "cluster", Value: "a"},
-						{Name: "region", Value: "r2"},
-					},
-				},
-				{
-					Labels: []labelpb.ZLabel{
-						{Name: "cluster", Value: "b"},
-						{Name: "region", Value: "r1"},
-					},
-				},
-				{
-					Labels: []labelpb.ZLabel{
-						{Name: CompatibilityTypeLabelName, Value: "store"},
-					},
-				},
-			},
-		},
-		{
-			name: "drop cluster=a sources",
-			relabel: `
-            - action: drop
-              regex: "a"
-              source_labels:
-              - cluster
-            `,
-			expectedIDs: []ulid.ULID{all[2]},
-			expectedAdvLabels: []labelpb.ZLabelSet{
-				{
-					Labels: []labelpb.ZLabel{
-						{Name: "cluster", Value: "b"},
-						{Name: "region", Value: "r1"},
-					},
-				},
-				{
-					Labels: []labelpb.ZLabel{
-						{Name: CompatibilityTypeLabelName, Value: "store"},
-					},
-				},
-			},
-		},
-		{
-			name: "keep only cluster=a sources",
-			relabel: `
-            - action: keep
-              regex: "a"
-              source_labels:
-              - cluster
-            `,
-			expectedIDs: []ulid.ULID{all[0], all[1], all[3]},
-			expectedAdvLabels: []labelpb.ZLabelSet{
-				{
-					Labels: []labelpb.ZLabel{
-						{Name: "cluster", Value: "a"},
-						{Name: "region", Value: "r1"},
-					},
-				},
-				{
-					Labels: []labelpb.ZLabel{
-						{Name: "cluster", Value: "a"},
-						{Name: "region", Value: "r2"},
-					},
-				},
-				{
-					Labels: []labelpb.ZLabel{
-						{Name: CompatibilityTypeLabelName, Value: "store"},
-					},
-				},
-			},
-		},
-		{
-			name: "keep only cluster=a without .*2 region sources",
-			relabel: `
-            - action: keep
-              regex: "a"
-              source_labels:
-              - cluster
-            - action: drop
-              regex: ".*2"
-              source_labels:
-              - region
-            `,
-			expectedIDs: []ulid.ULID{all[0], all[1]},
-			expectedAdvLabels: []labelpb.ZLabelSet{
-				{
-					Labels: []labelpb.ZLabel{
-						{Name: "cluster", Value: "a"},
-						{Name: "region", Value: "r1"},
-					},
-				},
-				{
-					Labels: []labelpb.ZLabel{
-						{Name: CompatibilityTypeLabelName, Value: "store"},
-					},
-				},
-			},
-		},
-		{
-			name: "drop all",
-			relabel: `
-            - action: drop
-              regex: "a"
-              source_labels:
-              - cluster
-            - action: drop
-              regex: "r1"
-              source_labels:
-              - region
-            `,
-			expectedIDs:       []ulid.ULID{},
-			expectedAdvLabels: []labelpb.ZLabelSet{},
-		},
-	} {
-		t.Run(sc.name, func(t *testing.T) {
-			dir := reuseDisk
-
-			if dir == "" {
-				dir = t.TempDir()
-			}
-			relabelConf, err := block.ParseRelabelConfig([]byte(sc.relabel), block.SelectorSupportedRelabelActions)
-			assert.NoError(t, err)
-
-			rec := &recorder{Bucket: bkt}
-			metaFetcher, err := block.NewMetaFetcher(logger, 20, objstore.WithNoopInstr(bkt), dir, nil, []block.MetadataFilter{
-				block.NewTimePartitionMetaFilter(allowAllFilterConf.MinTime, allowAllFilterConf.MaxTime),
-				block.NewLabelShardedMetaFilter(relabelConf),
-			})
-			assert.NoError(t, err)
-
-			bucketStore, err := NewBucketStore(
-				"test",
-				objstore.WithNoopInstr(rec),
-				metaFetcher,
-				dir,
-				NewChunksLimiterFactory(0),
-				NewSeriesLimiterFactory(0),
-				newGapBasedPartitioner(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
-				nil,
-				20,
-				true,
-				mimir_tsdb.DefaultPostingOffsetInMemorySampling,
-				false,
-				false,
-				0,
-				hashcache.NewSeriesHashCache(1024*1024),
-				NewBucketStoreMetrics(nil),
-				WithLogger(logger),
-				WithFilterConfig(allowAllFilterConf),
-			)
-			assert.NoError(t, err)
-			defer func() { assert.NoError(t, bucketStore.Close()) }()
-
-			assert.NoError(t, bucketStore.InitialSync(context.Background()))
-
-			// Check "stored" blocks.
-			ids := make([]ulid.ULID, 0, len(bucketStore.blocks))
-			for id := range bucketStore.blocks {
-				ids = append(ids, id)
-			}
-			sort.Slice(ids, func(i, j int) bool {
-				return ids[i].Compare(ids[j]) < 0
-			})
-			assert.Equal(t, sc.expectedIDs, ids)
-
-			// Check Info endpoint.
-			resp, err := bucketStore.Info(context.Background(), &storepb.InfoRequest{})
-			assert.NoError(t, err)
-
-			assert.Equal(t, storepb.StoreType_STORE, resp.StoreType)
-			assert.Equal(t, []labelpb.ZLabel(nil), resp.Labels)
-			assert.Equal(t, sc.expectedAdvLabels, resp.LabelSets)
-
-			// Make sure we don't download files we did not expect to.
-			// Regression test: https://github.com/thanos-io/thanos/issues/1664
-
-			// Sort records. We load blocks concurrently so operations might be not ordered.
-			sort.Strings(rec.getRangeTouched)
-
-			// With binary header nothing should be downloaded fully.
-			assert.Equal(t, []string(nil), rec.getTouched)
-			if reuseDisk != "" {
-				assert.Equal(t, expectedTouchedBlockOps(all, sc.expectedIDs, cached), rec.getRangeTouched)
-				cached = sc.expectedIDs
-				return
-			}
-
-			assert.Equal(t, expectedTouchedBlockOps(all, sc.expectedIDs, nil), rec.getRangeTouched)
-		})
-	}
-}
-
-func expectedTouchedBlockOps(all, expected, cached []ulid.ULID) []string {
-	var ops []string
-	for _, id := range all {
-		blockCached := false
-		for _, fid := range cached {
-			if id.Compare(fid) == 0 {
-				blockCached = true
-				break
-			}
-		}
-		if blockCached {
-			continue
-		}
-
-		found := false
-		for _, fid := range expected {
-			if id.Compare(fid) == 0 {
-				found = true
-				break
-			}
-		}
-
-		if found {
-			ops = append(ops,
-				// To create binary header we touch part of index few times.
-				path.Join(id.String(), block.IndexFilename), // Version.
-				path.Join(id.String(), block.IndexFilename), // TOC.
-				path.Join(id.String(), block.IndexFilename), // Symbols.
-				path.Join(id.String(), block.IndexFilename), // PostingOffsets.
-			)
-		}
-	}
-	sort.Strings(ops)
-	return ops
 }
 
 // Regression tests against: https://github.com/thanos-io/thanos/issues/1983.
@@ -1715,7 +1359,6 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 		newGapBasedPartitioner(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
 		nil,
 		1,
-		false,
 		mimir_tsdb.DefaultPostingOffsetInMemorySampling,
 		false,
 		false,
@@ -2081,7 +1724,6 @@ func TestSeries_ErrorUnmarshallingRequestHints(t *testing.T) {
 		newGapBasedPartitioner(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
 		nil,
 		10,
-		false,
 		mimir_tsdb.DefaultPostingOffsetInMemorySampling,
 		true,
 		false,
@@ -2092,7 +1734,7 @@ func TestSeries_ErrorUnmarshallingRequestHints(t *testing.T) {
 		WithIndexCache(indexCache),
 	)
 	assert.NoError(t, err)
-	defer func() { assert.NoError(t, store.Close()) }()
+	defer func() { assert.NoError(t, store.RemoveBlocksAndClose()) }()
 
 	assert.NoError(t, store.SyncBlocks(context.Background()))
 
@@ -2173,7 +1815,6 @@ func TestSeries_BlockWithMultipleChunks(t *testing.T) {
 		newGapBasedPartitioner(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
 		nil,
 		10,
-		false,
 		mimir_tsdb.DefaultPostingOffsetInMemorySampling,
 		true,
 		false,
@@ -2358,7 +1999,6 @@ func setupStoreForHintsTest(t *testing.T) (test.TB, *BucketStore, []*storepb.Ser
 		newGapBasedPartitioner(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
 		nil,
 		10,
-		false,
 		mimir_tsdb.DefaultPostingOffsetInMemorySampling,
 		true,
 		false,
@@ -2371,7 +2011,7 @@ func setupStoreForHintsTest(t *testing.T) (test.TB, *BucketStore, []*storepb.Ser
 	assert.NoError(tb, err)
 	assert.NoError(tb, store.SyncBlocks(context.Background()))
 
-	closers = append(closers, func() { assert.NoError(t, store.Close()) })
+	closers = append(closers, func() { assert.NoError(t, store.RemoveBlocksAndClose()) })
 
 	return tb, store, seriesSet1, seriesSet2, block1, block2, func() {
 		for _, close := range closers {
@@ -3034,7 +2674,7 @@ type seriesCase struct {
 }
 
 // runTestServerSeries runs tests against given cases.
-func runTestServerSeries(t test.TB, store storepb.StoreServer, cases ...*seriesCase) {
+func runTestServerSeries(t test.TB, store *BucketStore, cases ...*seriesCase) {
 	for _, c := range cases {
 		t.Run(c.Name, func(t test.TB) {
 			t.ResetTimer()

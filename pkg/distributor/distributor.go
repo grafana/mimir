@@ -63,9 +63,6 @@ const (
 )
 
 const (
-	typeSamples  = "samples"
-	typeMetadata = "metadata"
-
 	instanceIngestionRateTickInterval = time.Second
 )
 
@@ -113,10 +110,6 @@ type Distributor struct {
 	dedupedSamples                   *prometheus.CounterVec
 	labelsHistogram                  prometheus.Histogram
 	sampleDelayHistogram             prometheus.Histogram
-	ingesterAppends                  *prometheus.CounterVec
-	ingesterAppendFailures           *prometheus.CounterVec
-	ingesterQueries                  *prometheus.CounterVec
-	ingesterQueryFailures            *prometheus.CounterVec
 	replicationFactor                prometheus.Gauge
 	latestSeenSampleTimestampPerUser *prometheus.GaugeVec
 }
@@ -312,26 +305,6 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 				60 * 60 * 24, // 24h
 			},
 		}),
-		ingesterAppends: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-			Namespace: "cortex",
-			Name:      "distributor_ingester_appends_total",
-			Help:      "The total number of batch appends sent to ingesters.",
-		}, []string{"ingester", "type"}),
-		ingesterAppendFailures: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-			Namespace: "cortex",
-			Name:      "distributor_ingester_append_failures_total",
-			Help:      "The total number of failed batch appends sent to ingesters.",
-		}, []string{"ingester", "type"}),
-		ingesterQueries: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-			Namespace: "cortex",
-			Name:      "distributor_ingester_queries_total",
-			Help:      "The total number of queries sent to ingesters.",
-		}, []string{"ingester"}),
-		ingesterQueryFailures: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-			Namespace: "cortex",
-			Name:      "distributor_ingester_query_failures_total",
-			Help:      "The total number of failed queries sent to ingesters.",
-		}, []string{"ingester"}),
 		replicationFactor: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
 			Namespace: "cortex",
 			Name:      "distributor_replication_factor",
@@ -897,19 +870,6 @@ func (d *Distributor) send(ctx context.Context, ingester ring.InstanceDesc, time
 		Source:     source,
 	}
 	_, err = c.Push(ctx, &req)
-
-	if len(metadata) > 0 {
-		d.ingesterAppends.WithLabelValues(ingester.Addr, typeMetadata).Inc()
-		if err != nil {
-			d.ingesterAppendFailures.WithLabelValues(ingester.Addr, typeMetadata).Inc()
-		}
-	}
-	if len(timeseries) > 0 {
-		d.ingesterAppends.WithLabelValues(ingester.Addr, typeSamples).Inc()
-		if err != nil {
-			d.ingesterAppendFailures.WithLabelValues(ingester.Addr, typeSamples).Inc()
-		}
-	}
 
 	return err
 }

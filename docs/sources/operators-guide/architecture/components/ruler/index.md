@@ -10,22 +10,39 @@ weight: 130
 The ruler is an optional component that evaluates PromQL expressions defined in recording and alerting rules.
 Each tenant has a set of recording and alerting rules and can group those rules into namespaces.
 
-[//]: # "Diagram source of ruler interactions https://docs.google.com/presentation/d/1LemaTVqa4Lf_tpql060vVoDGXrthp-Pie_SQL7qwHjc/edit#slide=id.g11658e7e4c6_0_938"
+## Operational modes
 
-![Architecture of Grafana Mimir's ruler component](ruler.svg)
+The ruler supports two different rule evaluation modes:
 
-## Recording rules
+### Internal
 
-The ruler evaluates the expressions in the recording rules at regular intervals and writes the results back to the ingesters.
-The ruler has a built-in querier that evaluates the PromQL expressions and a built-in distributor, so that it can write directly to the ingesters.
+This is the default mode. The ruler internally runs a querier and distributor, and evaluates recording and alerting rules in the ruler process itself.
+To evaluate rules, the ruler connects directly to ingesters and store-gateways, and writes any resulting series to the ingesters.
+
 Configuration of the built-in querier and distributor uses their respective configuration parameters:
 
 - [Querier]({{< relref "../../../configuring/reference-configuration-parameters/index.md#querier" >}})
 - [Distributor]({{< relref "../../../configuring/reference-configuration-parameters/index.md#distributor" >}})
 
+> **Note**: When this mode is used, no query acceleration techniques are used and the evaluation of very high cardinality queries could take longer than the evaluation interval, eventually leading to missing data points in the evaluated recording rules.
+
+[//]: # "Diagram source of ruler interactions https://docs.google.com/presentation/d/1LemaTVqa4Lf_tpql060vVoDGXrthp-Pie_SQL7qwHjc/edit#slide=id.g11658e7e4c6_0_938"
+
+![Architecture of Grafana Mimir's ruler component](ruler.svg)
+
+### Remote
+
+In this mode the ruler delegates rules evaluation to the query-frontend. When enabled, the ruler leverages all the query acceleration techniques employed by the query-frontend, such as [query sharding]({{< relref "../../query-sharding/index.md" >}}).
+To enable the remote operational mode, set the `-ruler.query-frontend.address` CLI flag or its respective YAML configuration parameter for the ruler.
+Communication between ruler and query-frontend is established over gRPC, so you can make use of client-side load balancing by prefixing the query-frontend address URL with `dns://`.
+
+## Recording rules
+
+The ruler evaluates the expressions in the [recording rules](https://prometheus.io/docs/prometheus/latest/configuration/recording_rules/#recording-rules) at regular intervals and writes the results back to the ingesters.
+
 ## Alerting rules
 
-The ruler evaluates the expressions in alerting rules at regular intervals and if the result includes any series, the alert becomes active.
+The ruler evaluates the expressions in [alerting rules](https://prometheus.io/docs/prometheus/latest/configuration/alerting_rules/#alerting-rules) at regular intervals and if the result includes any series, the alert becomes active.
 If an alerting rule has a defined `for` duration, it enters the **PENDING** (`pending`) state.
 After the alert has been active for the entire `for` duration, it enters the **FIRING** (`firing`) state.
 The ruler then notifies Alertmanagers of any **FIRING** (`firing`) alerts.

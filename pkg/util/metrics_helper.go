@@ -162,27 +162,18 @@ func (d MetricFamiliesPerUser) SendSumOfCountersWithLabels(out chan<- prometheus
 	d.sumOfSingleValuesWithLabels(counter, counterValue, labelNames, false).WriteToMetricChannel(out, desc, prometheus.CounterValue)
 }
 
-func (d MetricFamiliesPerUser) SendSumOfCountersPerUser(out chan<- prometheus.Metric, desc *prometheus.Desc, counter string) {
-	d.SendSumOfCountersPerUserWithLabels(out, desc, counter)
-}
+// SendSumOfCountersPerUser provides metrics on a per-user basis, with additional and optional label names.
+// This function assumes that `user` is the first label on the provided metric Desc.
+func (d MetricFamiliesPerUser) SendSumOfCountersPerUser(out chan<- prometheus.Metric, desc *prometheus.Desc, metric string, options ...MetricOption) {
+	opts := applyMetricOptions(options...)
 
-// SendSumOfCountersPerUserWithLabels provides metrics with the provided label names on a per-user basis. This function assumes that `user` is the
-// first label on the provided metric Desc
-func (d MetricFamiliesPerUser) SendSumOfCountersPerUserWithLabels(out chan<- prometheus.Metric, desc *prometheus.Desc, metric string, labelNames ...string) {
-	d.SendSumOfCountersPerUserWithLabelsAndOptions(out, desc, metric, labelNames)
-}
-
-// SendSumOfCountersPerUserWithLabelsAndOptions provides metrics with the provided label names on a per-user basis. This function assumes that `user` is the
-// first label on the provided metric Desc
-func (d MetricFamiliesPerUser) SendSumOfCountersPerUserWithLabelsAndOptions(out chan<- prometheus.Metric, desc *prometheus.Desc, metric string, labelNames []string, options ...MetricOption) {
 	for _, userEntry := range d {
 		if userEntry.user == "" {
 			continue
 		}
 
 		result := singleValueWithLabelsMap{}
-		opts := applyMetricOptions(options...)
-		userEntry.metrics.sumOfSingleValuesWithLabels(metric, labelNames, counterValue, result.aggregateFn, opts.skipZeroValueMetrics)
+		userEntry.metrics.sumOfSingleValuesWithLabels(metric, opts.labelNames, counterValue, result.aggregateFn, opts.skipZeroValueMetrics)
 		result.prependUserLabelValue(userEntry.user)
 		result.WriteToMetricChannel(out, desc, prometheus.CounterValue)
 	}
@@ -825,9 +816,16 @@ type CollectorVec interface {
 // MetricOption defines a functional-style option for metrics aggregation.
 type MetricOption func(options *metricOptions)
 
-// SkipZeroValueMetrics controls whether metrics aggregation should skip zero value metrics.
-func SkipZeroValueMetrics(options *metricOptions) {
+// WithSkipZeroValueMetrics controls whether metrics aggregation should skip zero value metrics.
+func WithSkipZeroValueMetrics(options *metricOptions) {
 	options.skipZeroValueMetrics = true
+}
+
+// WithLabels set labels to use for aggregations.
+func WithLabels(labelNames ...string) MetricOption {
+	return func(options *metricOptions) {
+		options.labelNames = labelNames
+	}
 }
 
 // applyMetricOptions returns a metricOptions with all the input options applied.
@@ -842,4 +840,5 @@ func applyMetricOptions(options ...MetricOption) *metricOptions {
 
 type metricOptions struct {
 	skipZeroValueMetrics bool
+	labelNames           []string
 }
