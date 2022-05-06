@@ -1969,6 +1969,27 @@ func TestSafeTemplateFilepath(t *testing.T) {
 			template:    "../test.tmpl",
 			expectedErr: errors.New(`invalid template name "../test.tmpl": the template filepath is escaping the per-tenant local directory`),
 		},
+		"template name starting with /": {
+			dir:          "/tmp",
+			template:     "/file",
+			expectedErr:  nil,
+			expectedPath: "/tmp/file",
+		},
+		"escaping template name that has prefix of dir (tmp is prefix of tmpfile)": {
+			dir:         "/sub/tmp",
+			template:    "../tmpfile",
+			expectedErr: errors.New(`invalid template name "../tmpfile": the template filepath is escaping the per-tenant local directory`),
+		},
+		"empty template name": {
+			dir:         "/tmp",
+			template:    "",
+			expectedErr: errors.New(`invalid template name ""`),
+		},
+		"dot template name": {
+			dir:         "/tmp",
+			template:    ".",
+			expectedErr: errors.New(`invalid template name "."`),
+		},
 	}
 
 	for testName, testData := range tests {
@@ -1978,6 +1999,27 @@ func TestSafeTemplateFilepath(t *testing.T) {
 			assert.Equal(t, testData.expectedPath, actualPath)
 		})
 	}
+}
+
+func TestIsFilePathInsideDirectory(t *testing.T) {
+	assert.False(t, isFilePathInsideDirectory("/", "/"))
+	assert.False(t, isFilePathInsideDirectory("/", ""))
+	assert.True(t, isFilePathInsideDirectory("/", "/test"))
+	assert.False(t, isFilePathInsideDirectory("/", "random"))
+
+	assert.False(t, isFilePathInsideDirectory("/tmp", "/"))
+	assert.False(t, isFilePathInsideDirectory("/tmp", "//"))
+	assert.False(t, isFilePathInsideDirectory("/tmp", ""))
+	assert.False(t, isFilePathInsideDirectory("/tmp", "/tmp"))
+	assert.False(t, isFilePathInsideDirectory("/tmp", "/tmpfile"))
+	assert.True(t, isFilePathInsideDirectory("/tmp", "/tmp/test"))
+	assert.True(t, isFilePathInsideDirectory("/tmp", "/tmp/inner/dir/file"))
+	// Dir ending with / doesn't work.
+	assert.False(t, isFilePathInsideDirectory("/tmp/", "/tmp/inner/dir/file"))
+
+	assert.True(t, isFilePathInsideDirectory(".", "./test"))
+	// Dir ending with / doesn't work.
+	assert.False(t, isFilePathInsideDirectory("./", "./test"))
 }
 
 func TestStoreTemplateFile(t *testing.T) {

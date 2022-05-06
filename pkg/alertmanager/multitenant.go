@@ -1262,14 +1262,40 @@ func safeTemplateFilepath(dir, templateName string) (string, error) {
 		return "", err
 	}
 
+	// If actualPath is same as containerDir, it's likely that actualPath was empty, or just ".".
+	if containerDir == actualPath {
+		return "", fmt.Errorf("invalid template name %q", templateName)
+	}
+
 	// Ensure the actual path of the template is within the expected directory.
 	// This check is a counter-measure to make sure the tenant is not trying to
 	// escape its own directory on disk.
-	if !strings.HasPrefix(actualPath, containerDir) {
+	if !isFilePathInsideDirectory(containerDir, actualPath) {
 		return "", fmt.Errorf("invalid template name %q: the template filepath is escaping the per-tenant local directory", templateName)
 	}
 
 	return actualPath, nil
+}
+
+// Returns true if file described by filePath is inside given directory. (Doesn't check for symbolic links)
+// Directory argument should not end with separator, ie. it must be filepath.Clean-ed.
+func isFilePathInsideDirectory(absDir string, absFilePath string) bool {
+	if absFilePath == absDir {
+		// If filePath refers to dir itself, it's not a "file" path.
+		return false
+	}
+
+	d := filepath.Dir(absFilePath)
+	if d == absDir {
+		return true
+	}
+
+	// If path was empty, its Dir is ".".
+	// If path was "/", its Dir is just "/".
+	if d == "." || d == "/" {
+		return false
+	}
+	return isFilePathInsideDirectory(absDir, d)
 }
 
 // storeTemplateFile stores template file at the given templateFilepath.
