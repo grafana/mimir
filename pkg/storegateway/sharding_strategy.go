@@ -12,6 +12,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/ring"
 	"github.com/oklog/ulid"
+	"github.com/pkg/errors"
 	"github.com/thanos-io/thanos/pkg/block"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
 	"github.com/thanos-io/thanos/pkg/extprom"
@@ -23,10 +24,14 @@ const (
 	shardExcludedMeta = "shard-excluded"
 )
 
+var (
+	errStoreGatewayUnhealthy = errors.New("store-gateway is unhealthy in the ring")
+)
+
 type ShardingStrategy interface {
 	// FilterUsers whose blocks should be loaded by the store-gateway. Returns the list of user IDs
 	// that should be synced by the store-gateway.
-	FilterUsers(ctx context.Context, userIDs []string) []string
+	FilterUsers(ctx context.Context, userIDs []string) ([]string, error)
 
 	// FilterBlocks filters metas in-place keeping only blocks that should be loaded by the store-gateway.
 	// The provided loaded map contains blocks which have been previously returned by this function and
@@ -62,7 +67,16 @@ func NewShuffleShardingStrategy(r *ring.Ring, instanceID, instanceAddr string, l
 }
 
 // FilterUsers implements ShardingStrategy.
-func (s *ShuffleShardingStrategy) FilterUsers(_ context.Context, userIDs []string) []string {
+func (s *ShuffleShardingStrategy) FilterUsers(_ context.Context, userIDs []string) ([]string, error) {
+	// As a protection, ensure the store-gateway instance is healthy in the ring. It could also be missing
+	// in the ring if it was failing to heartbeat the ring and it got remove from another healthy store-gateway
+	// instance, because of the auto-forget feature.
+	if set, err := s.r.GetAllHealthy(BlocksOwnerSync); err != nil {
+		return nil, err
+	} else if !set.Includes(s.instanceAddr) {
+		return nil, errStoreGatewayUnhealthy
+	}
+
 	var filteredIDs []string
 
 	for _, userID := range userIDs {
@@ -74,7 +88,7 @@ func (s *ShuffleShardingStrategy) FilterUsers(_ context.Context, userIDs []strin
 		}
 	}
 
-	return filteredIDs
+	return filteredIDs, nil
 }
 
 // FilterBlocks implements ShardingStrategy.
@@ -82,7 +96,6 @@ func (s *ShuffleShardingStrategy) FilterBlocks(_ context.Context, userID string,
 	// As a protection, ensure the store-gateway instance is healthy in the ring. If it's unhealthy because it's failing
 	// to heartbeat or get updates from the ring, or even removed from the ring because of the auto-forget feature, then
 	// keep the previously loaded blocks.
-	// TODO test
 	if set, err := s.r.GetAllHealthy(BlocksOwnerSync); err != nil || !set.Includes(s.instanceAddr) {
 		for blockID := range metas {
 			if _, ok := loaded[blockID]; ok {

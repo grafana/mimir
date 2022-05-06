@@ -222,8 +222,8 @@ func newNoShardingStrategy() *noShardingStrategy {
 	return &noShardingStrategy{}
 }
 
-func (s *noShardingStrategy) FilterUsers(_ context.Context, userIDs []string) []string {
-	return userIDs
+func (s *noShardingStrategy) FilterUsers(_ context.Context, userIDs []string) ([]string, error) {
+	return userIDs, nil
 }
 
 func (s *noShardingStrategy) FilterBlocks(_ context.Context, _ string, _ map[ulid.ULID]*metadata.Meta, _ map[ulid.ULID]struct{}, _ *extprom.TxGaugeVec) error {

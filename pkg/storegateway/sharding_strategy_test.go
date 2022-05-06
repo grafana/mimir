@@ -46,6 +46,7 @@ func TestShuffleShardingStrategy(t *testing.T) {
 		instanceID   string
 		instanceAddr string
 		users        []string
+		err          error
 	}
 
 	type blocksExpectation struct {
@@ -70,7 +71,7 @@ func TestShuffleShardingStrategy(t *testing.T) {
 			},
 			expectedUsers: []usersExpectation{
 				{instanceID: "instance-1", instanceAddr: "127.0.0.1", users: []string{userID}},
-				{instanceID: "instance-2", instanceAddr: "127.0.0.2", users: nil},
+				{instanceID: "instance-2", instanceAddr: "127.0.0.2", err: errStoreGatewayUnhealthy},
 			},
 			expectedBlocks: []blocksExpectation{
 				{instanceID: "instance-1", instanceAddr: "127.0.0.1", blocks: []ulid.ULID{block1, block2, block3, block4}},
@@ -85,7 +86,7 @@ func TestShuffleShardingStrategy(t *testing.T) {
 			},
 			expectedUsers: []usersExpectation{
 				{instanceID: "instance-1", instanceAddr: "127.0.0.1", users: []string{userID}},
-				{instanceID: "instance-2", instanceAddr: "127.0.0.2", users: nil},
+				{instanceID: "instance-2", instanceAddr: "127.0.0.2", err: errStoreGatewayUnhealthy},
 			},
 			expectedBlocks: []blocksExpectation{
 				{instanceID: "instance-1", instanceAddr: "127.0.0.1", blocks: []ulid.ULID{block1, block2, block3, block4}},
@@ -100,7 +101,7 @@ func TestShuffleShardingStrategy(t *testing.T) {
 			},
 			expectedUsers: []usersExpectation{
 				{instanceID: "instance-1", instanceAddr: "127.0.0.1", users: []string{userID}},
-				{instanceID: "instance-2", instanceAddr: "127.0.0.2", users: nil},
+				{instanceID: "instance-2", instanceAddr: "127.0.0.2", err: errStoreGatewayUnhealthy},
 			},
 			expectedBlocks: []blocksExpectation{
 				{instanceID: "instance-1", instanceAddr: "127.0.0.1", blocks: []ulid.ULID{block1, block2, block3, block4}},
@@ -207,7 +208,7 @@ func TestShuffleShardingStrategy(t *testing.T) {
 			expectedUsers: []usersExpectation{
 				{instanceID: "instance-1", instanceAddr: "127.0.0.1", users: []string{userID}},
 				{instanceID: "instance-2", instanceAddr: "127.0.0.2", users: []string{userID}},
-				{instanceID: "instance-3", instanceAddr: "127.0.0.3", users: []string{userID}},
+				{instanceID: "instance-3", instanceAddr: "127.0.0.3", err: errStoreGatewayUnhealthy},
 			},
 			expectedBlocks: []blocksExpectation{
 				// No shard has the blocks of the unhealthy instance.
@@ -233,7 +234,7 @@ func TestShuffleShardingStrategy(t *testing.T) {
 			expectedUsers: []usersExpectation{
 				{instanceID: "instance-1", instanceAddr: "127.0.0.1", users: []string{userID}},
 				{instanceID: "instance-2", instanceAddr: "127.0.0.2", users: []string{userID}},
-				{instanceID: "instance-3", instanceAddr: "127.0.0.3", users: []string{userID}},
+				{instanceID: "instance-3", instanceAddr: "127.0.0.3", err: errStoreGatewayUnhealthy},
 			},
 			expectedBlocks: []blocksExpectation{
 				{instanceID: "instance-1", instanceAddr: "127.0.0.1", blocks: []ulid.ULID{block1, block3 /* replicated: */, block2, block4}},
@@ -258,7 +259,7 @@ func TestShuffleShardingStrategy(t *testing.T) {
 			expectedUsers: []usersExpectation{
 				{instanceID: "instance-1", instanceAddr: "127.0.0.1", users: []string{userID}},
 				{instanceID: "instance-2", instanceAddr: "127.0.0.2", users: nil},
-				{instanceID: "instance-3", instanceAddr: "127.0.0.3", users: []string{userID}},
+				{instanceID: "instance-3", instanceAddr: "127.0.0.3", err: errStoreGatewayUnhealthy},
 			},
 			expectedBlocks: []blocksExpectation{
 				{instanceID: "instance-1", instanceAddr: "127.0.0.1", blocks: []ulid.ULID{block1, block2, block3, block4}},
@@ -286,7 +287,7 @@ func TestShuffleShardingStrategy(t *testing.T) {
 			expectedUsers: []usersExpectation{
 				{instanceID: "instance-1", instanceAddr: "127.0.0.1", users: []string{userID}},
 				{instanceID: "instance-2", instanceAddr: "127.0.0.2", users: nil},
-				{instanceID: "instance-3", instanceAddr: "127.0.0.3", users: []string{userID}},
+				{instanceID: "instance-3", instanceAddr: "127.0.0.3", err: errStoreGatewayUnhealthy},
 			},
 			expectedBlocks: []blocksExpectation{
 				{instanceID: "instance-1", instanceAddr: "127.0.0.1", blocks: []ulid.ULID{block1, block2, block3, block4}},
@@ -385,7 +386,9 @@ func TestShuffleShardingStrategy(t *testing.T) {
 			// Assert on filter users.
 			for _, expected := range testData.expectedUsers {
 				filter := NewShuffleShardingStrategy(r, expected.instanceID, expected.instanceAddr, testData.limits, log.NewNopLogger())
-				assert.Equal(t, expected.users, filter.FilterUsers(ctx, []string{userID}))
+				actualUsers, err := filter.FilterUsers(ctx, []string{userID})
+				assert.Equal(t, expected.err, err)
+				assert.Equal(t, expected.users, actualUsers)
 			}
 
 			// Assert on filter blocks.
