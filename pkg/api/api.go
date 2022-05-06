@@ -336,11 +336,11 @@ func (a *API) RegisterRulerAPI(r *ruler.API, configAPIEnabled bool) {
 }
 
 // RegisterIngesterRing registers the ring UI page associated with the distributor for writes.
-func (a *API) RegisterIngesterRing(pathPrefix string, ro ring.Operator) {
+func (a *API) RegisterIngesterRing(ro ring.Operator) {
 	a.indexPage.AddLinks(defaultWeight, "Ingester", []IndexPageLink{
 		{Desc: "Ring status", Path: "/ingester/ring"},
 	})
-	a.RegisterRoute("/ingester/ring", ringStatusHandler(pathPrefix, ro), false, true, "GET", "POST")
+	a.RegisterRoute("/ingester/ring", ringStatusHandler(a.cfg.ServerPrefix, ro), false, true, "GET", "POST")
 }
 
 // RegisterStoreGateway registers the ring UI page associated with the store-gateway.
