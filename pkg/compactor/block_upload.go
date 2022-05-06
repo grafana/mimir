@@ -24,6 +24,10 @@ import (
 func (c *MultitenantCompactor) CreateBlockUpload(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	blockID := vars["block"]
+	if blockID == "" {
+		http.Error(w, "missing block ID", http.StatusBadRequest)
+		return
+	}
 	tenantID, _, err := tenant.ExtractTenantIDFromHTTPRequest(r)
 	if err != nil {
 		http.Error(w, "invalid tenant ID", http.StatusBadRequest)
