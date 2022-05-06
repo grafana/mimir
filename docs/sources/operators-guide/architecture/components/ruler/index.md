@@ -16,7 +16,7 @@ Each tenant has a set of recording and alerting rules and can group those rules 
 
 ## Operational modes
 
-The ruler supports two different rule evaluation modes, adaptable according to the specific needs of the user:
+The ruler supports two different rule evaluation modes:
 
 - **Internal:** This is the default mode. When set, the ruler connects directly through its built-in querier to ingesters and store-gateways, and internally evaluates the rule expression to generate the resulting series.
   In most use cases this mode is solvent enough. However, in those where the evaluation complexity is high enough, the latency can be increased up to the point of limiting the correct functioning of the component.
