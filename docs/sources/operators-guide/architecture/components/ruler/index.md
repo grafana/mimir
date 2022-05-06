@@ -27,7 +27,7 @@ The ruler supports two different rule evaluation modes, adaptable according to t
 
 ## Recording rules
 
-The ruler evaluates the expressions in the recording rules at regular intervals and writes the results back to the ingesters.
+The ruler evaluates the expressions in the [recording rules](https://prometheus.io/docs/prometheus/latest/configuration/recording_rules/#recording-rules) at regular intervals and writes the results back to the ingesters.
 The ruler has a built-in querier that evaluates the PromQL expressions and a built-in distributor, so that it can write directly to the ingesters.
 Configuration of the built-in querier and distributor uses their respective configuration parameters:
 
@@ -36,7 +36,7 @@ Configuration of the built-in querier and distributor uses their respective conf
 
 ## Alerting rules
 
-The ruler evaluates the expressions in alerting rules at regular intervals and if the result includes any series, the alert becomes active.
+The ruler evaluates the expressions in [alerting rules](https://prometheus.io/docs/prometheus/latest/configuration/alerting_rules/#alerting-rules) at regular intervals and if the result includes any series, the alert becomes active.
 If an alerting rule has a defined `for` duration, it enters the **PENDING** (`pending`) state.
 After the alert has been active for the entire `for` duration, it enters the **FIRING** (`firing`) state.
 The ruler then notifies Alertmanagers of any **FIRING** (`firing`) alerts.
