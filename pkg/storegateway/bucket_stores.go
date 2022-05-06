@@ -56,6 +56,7 @@ type BucketStores struct {
 	bucketStoreMetrics *BucketStoreMetrics
 	metaFetcherMetrics *MetadataFetcherMetrics
 	shardingStrategy   ShardingStrategy
+	syncBackoffConfig  backoff.Config
 
 	// Index cache shared across all tenants.
 	indexCache indexcache.IndexCache
@@ -116,6 +117,11 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 		partitioner:        newGapBasedPartitioner(cfg.BucketStore.PartitionerMaxGapBytes, reg),
 		threadPool:         mimir_indexheader.NewThreadPool(cfg.BucketStore.IndexHeaderThreadPoolSize, reg),
 		seriesHashCache:    hashcache.NewSeriesHashCache(cfg.BucketStore.SeriesHashCacheMaxBytes),
+		syncBackoffConfig: backoff.Config{
+			MinBackoff: 1 * time.Second,
+			MaxBackoff: 10 * time.Second,
+			MaxRetries: 3,
+		},
 	}
 
 	// Register metrics.
@@ -198,11 +204,7 @@ func (u *BucketStores) SyncBlocks(ctx context.Context) error {
 }
 
 func (u *BucketStores) syncUsersBlocksWithRetries(ctx context.Context, f func(context.Context, *BucketStore) error) error {
-	retries := backoff.New(ctx, backoff.Config{
-		MinBackoff: 1 * time.Second,
-		MaxBackoff: 10 * time.Second,
-		MaxRetries: 3,
-	})
+	retries := backoff.New(ctx, u.syncBackoffConfig)
 
 	var lastErr error
 	for retries.Ongoing() {
@@ -247,8 +249,13 @@ func (u *BucketStores) syncUsersBlocks(ctx context.Context, f func(context.Conte
 		return err
 	}
 
-	includeUserIDs := make(map[string]struct{})
-	for _, userID := range u.shardingStrategy.FilterUsers(ctx, userIDs) {
+	ownedUserIDs, err := u.shardingStrategy.FilterUsers(ctx, userIDs)
+	if err != nil {
+		return errors.Wrap(err, "unable to check tenants owned by this store-gateway instance")
+	}
+
+	includeUserIDs := make(map[string]struct{}, len(ownedUserIDs))
+	for _, userID := range ownedUserIDs {
 		includeUserIDs[userID] = struct{}{}
 	}
 

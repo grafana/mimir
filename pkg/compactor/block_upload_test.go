@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 package compactor
 
 import (
@@ -11,12 +13,13 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/gorilla/mux"
-	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
 	"github.com/weaveworks/common/user"
+
+	"github.com/grafana/mimir/pkg/storage/bucket"
 )
 
 // Test MultitenantCompactor.CreateBlockUpload.
@@ -305,10 +308,10 @@ func TestMultitenantCompactor_CompleteBlockUpload(t *testing.T) {
 				},
 			},
 		}
-		metaJson, err := json.Marshal(meta)
+		metaJSON, err := json.Marshal(meta)
 		require.NoError(t, err)
 		r := httptest.NewRequest(http.MethodPost, "/api/v1/upload/block/1234?uploadComplete=true",
-			bytes.NewBuffer(metaJson))
+			bytes.NewBuffer(metaJSON))
 		r = mux.SetURLVars(r, map[string]string{"block": "1234"})
 		r.Header.Set(user.OrgIDHeaderName, "test")
 		w := httptest.NewRecorder()
@@ -317,7 +320,7 @@ func TestMultitenantCompactor_CompleteBlockUpload(t *testing.T) {
 		resp := w.Result()
 
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
-		expBuf := bytes.NewBuffer(metaJson)
+		expBuf := bytes.NewBuffer(metaJSON)
 		require.NoError(t, expBuf.WriteByte('\n'))
 		bkt.AssertCalled(t, "Upload", mock.Anything, expPath, expBuf)
 	})

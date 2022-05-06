@@ -1406,17 +1406,35 @@ Usage of ./cmd/mimir/mimir:
     	How frequently to poll for rule changes (default 1m0s)
   -ruler.query-frontend.address string
     	GRPC listen address of the query-frontend(s). Must be a DNS address (prefixed with dns:///) to enable client side load balancing.
-  -ruler.query-frontend.tls-ca-path string
+  -ruler.query-frontend.grpc-client-config.backoff-max-period duration
+    	Maximum delay when backing off. (default 10s)
+  -ruler.query-frontend.grpc-client-config.backoff-min-period duration
+    	Minimum delay when backing off. (default 100ms)
+  -ruler.query-frontend.grpc-client-config.backoff-on-ratelimits
+    	Enable backoff and retry when we hit ratelimits.
+  -ruler.query-frontend.grpc-client-config.backoff-retries int
+    	Number of times to backoff and retry before failing. (default 10)
+  -ruler.query-frontend.grpc-client-config.grpc-client-rate-limit float
+    	Rate limit for gRPC client; 0 means disabled.
+  -ruler.query-frontend.grpc-client-config.grpc-client-rate-limit-burst int
+    	Rate limit burst for gRPC client.
+  -ruler.query-frontend.grpc-client-config.grpc-compression string
+    	Use compression when sending messages. Supported values are: 'gzip', 'snappy' and '' (disable compression)
+  -ruler.query-frontend.grpc-client-config.grpc-max-recv-msg-size int
+    	gRPC client max receive message size (bytes). (default 104857600)
+  -ruler.query-frontend.grpc-client-config.grpc-max-send-msg-size int
+    	gRPC client max send message size (bytes). (default 104857600)
+  -ruler.query-frontend.grpc-client-config.tls-ca-path string
     	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
-  -ruler.query-frontend.tls-cert-path string
+  -ruler.query-frontend.grpc-client-config.tls-cert-path string
     	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
-  -ruler.query-frontend.tls-enabled
-    	Set to true if query-frontend connection requires TLS.
-  -ruler.query-frontend.tls-insecure-skip-verify
+  -ruler.query-frontend.grpc-client-config.tls-enabled
+    	Enable TLS in the GRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.
+  -ruler.query-frontend.grpc-client-config.tls-insecure-skip-verify
     	Skip validating server certificate.
-  -ruler.query-frontend.tls-key-path string
+  -ruler.query-frontend.grpc-client-config.tls-key-path string
     	Path to the key file for the client certificate. Also requires the client certificate to be configured.
-  -ruler.query-frontend.tls-server-name string
+  -ruler.query-frontend.grpc-client-config.tls-server-name string
     	Override the expected name on the server certificate.
   -ruler.query-stats-enabled
     	Report the wall time for ruler queries to complete as a per-tenant metric and as an info level log message.

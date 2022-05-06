@@ -126,7 +126,10 @@ Estimated required CPU, memory, and disk space:
 ### (Optional) Ruler
 
 The [ruler]({{< relref "../architecture/components/ruler/index.md" >}}) component resources utilization is determined by the number of rules evaluated per second.
-The rules evaluation is computationally equal to queries execution, so the querier resources recommendations apply to ruler too.
+
+When [internal]({{< relref "../architecture/components/ruler/index.md#internal" >}}) mode is used (default), rules evaluation is computationally equal to queries execution, so the querier resources recommendations apply to ruler too.
+
+When [remote]({{< relref "../architecture/components/ruler/index.md#internal" >}}) operational mode is used, most of the computational load is shifted to query-frontend and querier components. So those should be scaled accordingly to deal both with queries and rules evaluation workload.
 
 ### Compactor
 

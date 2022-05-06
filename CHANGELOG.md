@@ -32,15 +32,24 @@
   * `cortex_distributor_ingester_append_failures_total`
 * [FEATURE] Querier: Added support for [streaming remote read](https://prometheus.io/blog/2019/10/10/remote-read-meets-streaming/). Should be noted that benefits of chunking the response are partial here, since in a typical `query-frontend` setup responses will be buffered until they've been completed. #1735
 * [FEATURE] Ruler: Allow setting `evaluation_delay` for each rule group via rules group configuration file. #1474
-* [FEATURE] Ruler: Added support for expression remote evaluation. #1536
+* [FEATURE] Ruler: Added support for expression remote evaluation. #1536 #1818
   * The following CLI flags (and their respective YAML config options) have been added:
     * `-ruler.query-frontend.address`
-    * `-ruler.query-frontend.tls-enabled`
-    * `-ruler.query-frontend.tls-ca-path`
-    * `-ruler.query-frontend.tls-cert-path`
-    * `-ruler.query-frontend.tls-key-path`
-    * `-ruler.query-frontend.tls-server-name`
-    * `-ruler.query-frontend.tls-insecure-skip-verify`
+    * `-ruler.query-frontend.grpc-client-config.grpc-max-recv-msg-size`
+    * `-ruler.query-frontend.grpc-client-config.grpc-max-send-msg-size`
+    * `-ruler.query-frontend.grpc-client-config.grpc-compression`
+    * `-ruler.query-frontend.grpc-client-config.grpc-client-rate-limit`
+    * `-ruler.query-frontend.grpc-client-config.grpc-client-rate-limit-burst`
+    * `-ruler.query-frontend.grpc-client-config.backoff-on-ratelimits`
+    * `-ruler.query-frontend.grpc-client-config.backoff-min-period`
+    * `-ruler.query-frontend.grpc-client-config.backoff-max-period`
+    * `-ruler.query-frontend.grpc-client-config.backoff-retries`
+    * `-ruler.query-frontend.grpc-client-config.tls-enabled`
+    * `-ruler.query-frontend.grpc-client-config.tls-ca-path`
+    * `-ruler.query-frontend.grpc-client-config.tls-cert-path`
+    * `-ruler.query-frontend.grpc-client-config.tls-key-path`
+    * `-ruler.query-frontend.grpc-client-config.tls-server-name`
+    * `-ruler.query-frontend.grpc-client-config.tls-insecure-skip-verify`
 * [FEATURE] Distributor: Added the ability to forward specifics metrics to alternative remote_write API endpoints. #1052
 * [FEATURE] Ingester: Active series custom trackers now supports runtime tenant-specific overrides. The configuration has been moved to limit config, the ingester config has been deprecated.  #1188
 * [ENHANCEMENT] Alertmanager API: Concurrency limit for GET requests is now configurable using `-alertmanager.max-concurrent-get-requests-per-tenant`. #1547
@@ -55,10 +64,10 @@
   - `-alertmanager.alertmanager-client.grpc-max-recv-msg-size`
   - `-alertmanager.alertmanager-client.grpc-max-send-msg-size`
 * [ENHANCEMENT] Ruler: Add more detailed query information to ruler query stats logging. #1411
-* [ENHANCEMENT] Admin: Admin API now has some styling. #1482 #1549 #1821
+* [ENHANCEMENT] Admin: Admin API now has some styling. #1482 #1549 #1821 #1824
 * [ENHANCEMENT] Alertmanager: added `insight=true` field to alertmanager dispatch logs. #1379
 * [ENHANCEMENT] Store-gateway: Add the experimental ability to run index header operations in a dedicated thread pool. This feature can be configured using `-blocks-storage.bucket-store.index-header-thread-pool-size` and is disabled by default. #1660
-* [ENHANCEMENT] Store-gateway: don't drop all blocks if instance finds itself as unhealthy in the ring. #1806
+* [ENHANCEMENT] Store-gateway: don't drop all blocks if instance finds itself as unhealthy or missing in the ring. #1806 #1823
 * [ENHANCEMENT] Querier: wait until inflight queries are completed when shutting down queriers. #1756 #1767
 * [BUGFIX] Query-frontend: do not shard queries with a subquery unless the subquery is inside a shardable aggregation function call. #1542
 * [BUGFIX] Query-frontend: added `component=query-frontend` label to results cache memcached metrics to fix a panic when Mimir is running in single binary mode and results cache is enabled. #1704
@@ -66,6 +75,7 @@
 * [BUGFIX] Multikv: Fix panic when using using runtime config to set primary KV store used by `multi` KV. #1587
 * [BUGFIX] Multikv: Fix watching for runtime config changes in `multi` KV store in ruler and querier. #1665
 * [BUGFIX] Memcached: allow to use CNAME DNS records for the memcached backend addresses. #1654
+* [BUGFIX] Querier: fixed temporary partial query results when shuffle sharding is enabled and hash ring backend storage is flushed / reset. #1829
 
 ### Mixin
 

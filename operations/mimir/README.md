@@ -67,7 +67,7 @@ This can become an issue when playing with Mimir in a single-node kubernetes clu
 For example:
 
 ```jsonnet
-local mimir = 'mimir/mimir.libsonnet';
+local mimir = import 'mimir/mimir.libsonnet';
 
 mimir {
   _config+:: {
@@ -92,7 +92,7 @@ For example, if you're just playing with Mimir and want to run it on a small (po
 local k = import 'github.com/grafana/jsonnet-libs/ksonnet-util/kausal.libsonnet',
       deployment = k.apps.v1.deployment,
       statefulSet = k.apps.v1.statefulSet;
-local mimir = 'mimir/mimir.libsonnet';
+local mimir = import 'mimir/mimir.libsonnet';
 
 mimir {
   _config+:: {
