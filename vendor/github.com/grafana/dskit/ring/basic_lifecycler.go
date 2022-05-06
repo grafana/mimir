@@ -498,11 +498,7 @@ func (l *BasicLifecycler) run(fn func() error) error {
 	}
 }
 
-func (l *BasicLifecycler) casRing(ctx context.Context, f func(in interface{}) (out interface{}, retry bool, err error)) error {
-	return l.store.CAS(ctx, l.ringKey, f)
-}
-
-func (l *BasicLifecycler) getRing(ctx context.Context) (*Desc, error) {
+func (l *BasicLifecycler) Describe(ctx context.Context) (*Desc, error) {
 	obj, err := l.store.Get(ctx, l.ringKey)
 	if err != nil {
 		return nil, err
@@ -511,6 +507,14 @@ func (l *BasicLifecycler) getRing(ctx context.Context) (*Desc, error) {
 	return GetOrCreateRingDesc(obj), nil
 }
 
+func (l *BasicLifecycler) Forget(ctx context.Context, id string) error {
+	return forget(ctx, l.store, l.ringKey, id)
+}
+
+func (l *BasicLifecycler) IsHealthy(instance *InstanceDesc, op Operation, now time.Time) bool {
+	return instance.IsHealthy(op, l.cfg.HeartbeatPeriod, now)
+}
+
 func (l *BasicLifecycler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	newRingPageHandler(l, l.cfg.HeartbeatPeriod).handle(w, req)
+	NewHTTPStatusHandler(l, defaultPageTemplate).ServeHTTP(w, req)
 }

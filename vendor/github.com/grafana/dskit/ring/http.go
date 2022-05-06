@@ -13,30 +13,19 @@ import (
 	"time"
 )
 
-//go:embed status.gohtml
-var defaultPageContent string
-var defaultPageTemplate = template.Must(template.New("webpage").Funcs(template.FuncMap{
-	"mod": func(i, j int) bool { return i%j == 0 },
-	"humanFloat": func(f float64) string {
-		return fmt.Sprintf("%.2g", f)
-	},
-	"timeOrEmptyString": func(t time.Time) string {
-		if t.IsZero() {
-			return ""
-		}
-		return t.Format(time.RFC3339Nano)
-	},
-	"durationSince": func(t time.Time) string { return time.Since(t).Truncate(time.Millisecond).String() },
-}).Parse(defaultPageContent))
-
-type httpResponse struct {
-	Ingesters  []ingesterDesc `json:"shards"`
-	Now        time.Time      `json:"now"`
-	ShowTokens bool           `json:"-"`
+type StatusPageData struct {
+	// Ingesters is the list of the ingesters found in the ring.
+	Ingesters []IngesterDesc `json:"shards"`
+	// ShowTokens is true if user requested to see show the tokens.
+	// Tokens are always provided in the IngesterDesc struct, regardless of this param.
+	ShowTokens bool `json:"-"`
+	// Now is the current time (time when template was rendered)
+	Now time.Time `json:"now"`
 }
 
-type ingesterDesc struct {
-	ID                  string    `json:"id"`
+type IngesterDesc struct {
+	ID string `json:"id"`
+	// State can be: "ACTIVE", "LEAVING", "PENDING", "JOINING", "LEFT" or "UNHEALTHY"
 	State               string    `json:"state"`
 	Address             string    `json:"address"`
 	HeartbeatTimestamp  time.Time `json:"timestamp"`
@@ -44,30 +33,38 @@ type ingesterDesc struct {
 	Zone                string    `json:"zone"`
 	Tokens              []uint32  `json:"tokens"`
 	NumTokens           int       `json:"-"`
-	Ownership           float64   `json:"-"`
+	// Ownership represents the percentage (0-100) of the tokens owned by this instance.
+	Ownership float64 `json:"-"`
 }
 
-type ringAccess interface {
-	casRing(ctx context.Context, f func(in interface{}) (out interface{}, retry bool, err error)) error
-	getRing(context.Context) (*Desc, error)
+// Operator allows external entities to perform generic operations on the ring,
+// like describing it or force-forgetting one of the members.
+type Operator interface {
+	Describe(ctx context.Context) (*Desc, error)
+	Forget(ctx context.Context, id string) error
+
+	IsHealthy(instance *InstanceDesc, op Operation, now time.Time) bool
 }
 
-type ringPageHandler struct {
-	r               ringAccess
-	heartbeatPeriod time.Duration
-}
-
-func newRingPageHandler(r ringAccess, heartbeatPeriod time.Duration) *ringPageHandler {
-	return &ringPageHandler{
-		r:               r,
-		heartbeatPeriod: heartbeatPeriod,
+// NewHTTPStatusHandler will use the provided Operator to build an http.Handler to inspect the ring status over http.
+// It will render the provided template (unless Accept: application/json header is provided, in which case it will return a JSON response).
+// The handler provided also can force forgetting members of the ring by sending a POST request with the ID in the `forget` field.
+func NewHTTPStatusHandler(r Operator, tpl *template.Template) HTTPStatusHandler {
+	return HTTPStatusHandler{
+		r:        r,
+		template: tpl,
 	}
 }
 
-func (h *ringPageHandler) handle(w http.ResponseWriter, req *http.Request) {
+type HTTPStatusHandler struct {
+	r        Operator
+	template *template.Template
+}
+
+func (h HTTPStatusHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	if req.Method == http.MethodPost {
 		ingesterID := req.FormValue("forget")
-		if err := h.forget(req.Context(), ingesterID); err != nil {
+		if err := h.r.Forget(req.Context(), ingesterID); err != nil {
 			http.Error(
 				w,
 				fmt.Errorf("error forgetting instance '%s': %w", ingesterID, err).Error(),
@@ -88,7 +85,7 @@ func (h *ringPageHandler) handle(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	ringDesc, err := h.r.getRing(req.Context())
+	ringDesc, err := h.r.Describe(req.Context())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -102,15 +99,15 @@ func (h *ringPageHandler) handle(w http.ResponseWriter, req *http.Request) {
 	sort.Strings(ingesterIDs)
 
 	now := time.Now()
-	var ingesters []ingesterDesc
+	var ingesters []IngesterDesc
 	for _, id := range ingesterIDs {
 		ing := ringDesc.Ingesters[id]
 		state := ing.State.String()
-		if !ing.IsHealthy(Reporting, h.heartbeatPeriod, now) {
+		if !h.r.IsHealthy(&ing, Reporting, now) {
 			state = "UNHEALTHY"
 		}
 
-		ingesters = append(ingesters, ingesterDesc{
+		ingesters = append(ingesters, IngesterDesc{
 			ID:                  id,
 			State:               state,
 			Address:             ing.Addr,
@@ -125,16 +122,16 @@ func (h *ringPageHandler) handle(w http.ResponseWriter, req *http.Request) {
 
 	tokensParam := req.URL.Query().Get("tokens")
 
-	renderHTTPResponse(w, httpResponse{
+	renderHTTPResponse(w, StatusPageData{
 		Ingesters:  ingesters,
 		Now:        now,
 		ShowTokens: tokensParam == "true",
-	}, defaultPageTemplate, req)
+	}, h.template, req)
 }
 
-// RenderHTTPResponse either responds with json or a rendered html page using the passed in template
+// renderHTTPResponse either responds with json or a rendered html page using the passed in template
 // by checking the Accepts header
-func renderHTTPResponse(w http.ResponseWriter, v httpResponse, t *template.Template, r *http.Request) {
+func renderHTTPResponse(w http.ResponseWriter, v StatusPageData, t *template.Template, r *http.Request) {
 	accept := r.Header.Get("Accept")
 	if strings.Contains(accept, "application/json") {
 		writeJSONResponse(w, v)
@@ -147,24 +144,27 @@ func renderHTTPResponse(w http.ResponseWriter, v httpResponse, t *template.Templ
 	}
 }
 
-func (h *ringPageHandler) forget(ctx context.Context, id string) error {
-	unregister := func(in interface{}) (out interface{}, retry bool, err error) {
-		if in == nil {
-			return nil, false, fmt.Errorf("found empty ring when trying to unregister")
-		}
-
-		ringDesc := in.(*Desc)
-		ringDesc.RemoveIngester(id)
-		return ringDesc, true, nil
-	}
-	return h.r.casRing(ctx, unregister)
-}
-
 // WriteJSONResponse writes some JSON as a HTTP response.
-func writeJSONResponse(w http.ResponseWriter, v httpResponse) {
+func writeJSONResponse(w http.ResponseWriter, v StatusPageData) {
 	w.Header().Set("Content-Type", "application/json")
 
 	if err := json.NewEncoder(w).Encode(v); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
+
+//go:embed status.gohtml
+var defaultPageContent string
+var defaultPageTemplate = template.Must(template.New("webpage").Funcs(template.FuncMap{
+	"mod": func(i, j int) bool { return i%j == 0 },
+	"humanFloat": func(f float64) string {
+		return fmt.Sprintf("%.2g", f)
+	},
+	"timeOrEmptyString": func(t time.Time) string {
+		if t.IsZero() {
+			return ""
+		}
+		return t.Format(time.RFC3339Nano)
+	},
+	"durationSince": func(t time.Time) string { return time.Since(t).Truncate(time.Millisecond).String() },
+}).Parse(defaultPageContent))

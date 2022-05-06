@@ -13,6 +13,7 @@ import (
 	"github.com/go-kit/log/level"
 
 	"github.com/grafana/dskit/backoff"
+	"github.com/grafana/dskit/kv"
 )
 
 // GenerateTokens make numTokens unique random tokens, none of which clash
@@ -221,4 +222,17 @@ func filterIPs(addrs []net.Addr) string {
 		}
 	}
 	return ipAddr
+}
+
+func forget(ctx context.Context, client kv.Client, ringKey, id string) error {
+	unregister := func(in interface{}) (out interface{}, retry bool, err error) {
+		if in == nil {
+			return nil, false, fmt.Errorf("found empty ring when trying to unregister")
+		}
+
+		ringDesc := in.(*Desc)
+		ringDesc.RemoveIngester(id)
+		return ringDesc, true, nil
+	}
+	return client.CAS(ctx, ringKey, unregister)
 }

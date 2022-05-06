@@ -815,11 +815,7 @@ func (r *Ring) CleanupShuffleShardCache(identifier string) {
 	}
 }
 
-func (r *Ring) casRing(ctx context.Context, f func(in interface{}) (out interface{}, retry bool, err error)) error {
-	return r.KVClient.CAS(ctx, r.key, f)
-}
-
-func (r *Ring) getRing(ctx context.Context) (*Desc, error) {
+func (r *Ring) Describe(ctx context.Context) (*Desc, error) {
 	r.mtx.RLock()
 	defer r.mtx.RUnlock()
 
@@ -828,8 +824,12 @@ func (r *Ring) getRing(ctx context.Context) (*Desc, error) {
 	return ringDesc, nil
 }
 
+func (r *Ring) Forget(ctx context.Context, id string) error {
+	return forget(ctx, r.KVClient, r.key, id)
+}
+
 func (r *Ring) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	newRingPageHandler(r, r.cfg.HeartbeatTimeout).handle(w, req)
+	NewHTTPStatusHandler(r, defaultPageTemplate).ServeHTTP(w, req)
 }
 
 // Operation describes which instances can be included in the replica set, based on their state.

@@ -851,11 +851,7 @@ func (i *Lifecycler) processShutdown(ctx context.Context) {
 	time.Sleep(i.cfg.FinalSleep)
 }
 
-func (i *Lifecycler) casRing(ctx context.Context, f func(in interface{}) (out interface{}, retry bool, err error)) error {
-	return i.KVStore.CAS(ctx, i.RingKey, f)
-}
-
-func (i *Lifecycler) getRing(ctx context.Context) (*Desc, error) {
+func (i *Lifecycler) Describe(ctx context.Context) (*Desc, error) {
 	obj, err := i.KVStore.Get(ctx, i.RingKey)
 	if err != nil {
 		return nil, err
@@ -864,8 +860,16 @@ func (i *Lifecycler) getRing(ctx context.Context) (*Desc, error) {
 	return GetOrCreateRingDesc(obj), nil
 }
 
+func (i *Lifecycler) Forget(ctx context.Context, id string) error {
+	return forget(ctx, i.KVStore, i.RingKey, id)
+}
+
+func (i *Lifecycler) IsHealthy(instance *InstanceDesc, op Operation, now time.Time) bool {
+	return instance.IsHealthy(op, i.cfg.HeartbeatPeriod, now)
+}
+
 func (i *Lifecycler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	newRingPageHandler(i, i.cfg.HeartbeatPeriod).handle(w, req)
+	NewHTTPStatusHandler(i, defaultPageTemplate).ServeHTTP(w, req)
 }
 
 // unregister removes our entry from consul.
