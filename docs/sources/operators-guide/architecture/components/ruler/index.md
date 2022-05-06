@@ -18,21 +18,27 @@ Each tenant has a set of recording and alerting rules and can group those rules 
 
 The ruler supports two different rule evaluation modes:
 
-- **Internal:** This is the default mode. The ruler internally runs a querier and distributor, and evaluates recording and alerting rules in the ruler process itself. To evaluate rules, the ruler connects directly to ingesters and store-gateways, and writes any resulting series to the ingesters.
-  In most use cases this mode is solvent enough. However, in those where the evaluation complexity is high enough, the latency can be increased up to the point of limiting the correct functioning of the component.
+### Internal
 
-- **Remote:** In this mode the ruler delegates rules evaluation to the query-frontend. When enabled, the ruler leverages all the query acceleration techniques employed by the query-frontend, such as [query sharding]({{< relref "../../query-sharding/index.md" >}}).
-  To enable the remote operational mode, set the `-ruler.query-frontend.address` CLI flag or its respective YAML configuration parameter for the ruler.
-  Communication between ruler and query-frontend is established over gRPC, so you can make use of client-side load balancing by prefixing the query-frontend address URL with `dns://`.
+This is the default mode. The ruler internally runs a querier and distributor, and evaluates recording and alerting rules in the ruler process itself.
+To evaluate rules, the ruler connects directly to ingesters and store-gateways, and writes any resulting series to the ingesters.
 
-## Recording rules
-
-The ruler evaluates the expressions in the [recording rules](https://prometheus.io/docs/prometheus/latest/configuration/recording_rules/#recording-rules) at regular intervals and writes the results back to the ingesters.
-The ruler has a built-in querier that evaluates the PromQL expressions and a built-in distributor, so that it can write directly to the ingesters.
 Configuration of the built-in querier and distributor uses their respective configuration parameters:
 
 - [Querier]({{< relref "../../../configuring/reference-configuration-parameters/index.md#querier" >}})
 - [Distributor]({{< relref "../../../configuring/reference-configuration-parameters/index.md#distributor" >}})
+
+It should be noted however that when this mode is enabled no acceleration query techniques are performed, meaning that if the rule evaluation complexity is high enough the latency can be increased up to the point of limiting the correct functioning of the component.
+
+### Remote
+
+In this mode the ruler delegates rules evaluation to the query-frontend. When enabled, the ruler leverages all the query acceleration techniques employed by the query-frontend, such as [query sharding]({{< relref "../../query-sharding/index.md" >}}).
+To enable the remote operational mode, set the `-ruler.query-frontend.address` CLI flag or its respective YAML configuration parameter for the ruler.
+Communication between ruler and query-frontend is established over gRPC, so you can make use of client-side load balancing by prefixing the query-frontend address URL with `dns://`.
+
+## Recording rules
+
+The ruler evaluates the expressions in the [recording rules](https://prometheus.io/docs/prometheus/latest/configuration/recording_rules/#recording-rules) at regular intervals and writes the results back to the ingesters.
 
 ## Alerting rules
 
