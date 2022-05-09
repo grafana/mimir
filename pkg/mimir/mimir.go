@@ -202,8 +202,10 @@ func (c *Config) Validate(log log.Logger) error {
 	if err := c.AlertmanagerStorage.Validate(); err != nil {
 		return errors.Wrap(err, "invalid alertmanager storage config")
 	}
-	if err := c.Alertmanager.Validate(c.AlertmanagerStorage); err != nil {
-		return errors.Wrap(err, "invalid alertmanager config")
+	if c.isModuleEnabled(AlertManager) {
+		if err := c.Alertmanager.Validate(c.AlertmanagerStorage); err != nil {
+			return errors.Wrap(err, "invalid alertmanager config")
+		}
 	}
 	return nil
 }
