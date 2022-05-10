@@ -76,6 +76,7 @@
 * [BUGFIX] Multikv: Fix watching for runtime config changes in `multi` KV store in ruler and querier. #1665
 * [BUGFIX] Memcached: allow to use CNAME DNS records for the memcached backend addresses. #1654
 * [BUGFIX] Querier: fixed temporary partial query results when shuffle sharding is enabled and hash ring backend storage is flushed / reset. #1829
+* [BUGFUX] Alertmanager: Allow usage with `-alertmanager-storage.backend=local`. Note that when using this storage type, the Alertmanager is not able persist state remotely, so it not recommended for production use. #1836
 * [BUGFIX] Alertmanager: Do not validate alertmanager configuration if it's not running. #1835
 
 ### Mixin

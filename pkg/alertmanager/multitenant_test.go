@@ -165,11 +165,11 @@ func TestMultitenantAlertmanagerConfig_Validate(t *testing.T) {
 			},
 			expected: nil,
 		},
-		"should fail if new storage store configuration given with local type": {
+		"should succeed if new storage store configuration given with local type": {
 			setup: func(t *testing.T, cfg *MultitenantAlertmanagerConfig, storageCfg *alertstore.Config) {
 				storageCfg.Backend = "local"
 			},
-			expected: errShardingUnsupportedStorage,
+			expected: nil,
 		},
 		"should fail if zone aware is enabled but zone is not set": {
 			setup: func(t *testing.T, cfg *MultitenantAlertmanagerConfig, storageCfg *alertstore.Config) {

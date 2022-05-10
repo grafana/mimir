@@ -55,6 +55,7 @@ type AlertStore interface {
 // NewAlertStore returns a alertmanager store backend client based on the provided cfg.
 func NewAlertStore(ctx context.Context, cfg Config, cfgProvider bucket.TenantConfigProvider, logger log.Logger, reg prometheus.Registerer) (AlertStore, error) {
 	if cfg.Backend == local.Name {
+		level.Warn(logger).Log("msg", "-alertmanager-storage.backend=local is not suitable for persisting alertmanager state between replicas (silences, notifications); you should switch to an external object store for production use")
 		return local.NewStore(cfg.Local)
 	}
 
