@@ -2413,6 +2413,26 @@
       "blockEntries": [
         {
           "kind": "field",
+          "name": "request_rate",
+          "required": false,
+          "desc": "Per-tenant request rate limit in requests per second.",
+          "fieldValue": null,
+          "fieldDefaultValue": 5000,
+          "fieldFlag": "distributor.request-rate-limit",
+          "fieldType": "float"
+        },
+        {
+          "kind": "field",
+          "name": "request_burst_size",
+          "required": false,
+          "desc": "Per-tenant allowed request burst size.",
+          "fieldValue": null,
+          "fieldDefaultValue": 20000,
+          "fieldFlag": "distributor.request-burst-size",
+          "fieldType": "int"
+        },
+        {
+          "kind": "field",
           "name": "ingestion_rate",
           "required": false,
           "desc": "Per-tenant ingestion rate limit in samples per second.",

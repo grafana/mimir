@@ -91,6 +91,10 @@
     * `-ruler.query-frontend.grpc-client-config.tls-server-name`
     * `-ruler.query-frontend.grpc-client-config.tls-insecure-skip-verify`
 * [FEATURE] Distributor: Added the ability to forward specifics metrics to alternative remote_write API endpoints. #1052
+* [FEATURE] Distributor: Added limit to prevent tenants from sending excessive number of requests: #1843
+  * The following CLI flags (and their respective YAML config options) have been added:
+    * `-distributor.request-rate-limit`
+    * `-distributor.request-burst-size`
 * [FEATURE] Ingester: Active series custom trackers now supports runtime tenant-specific overrides. The configuration has been moved to limit config, the ingester config has been deprecated.  #1188
 * [ENHANCEMENT] Alertmanager API: Concurrency limit for GET requests is now configurable using `-alertmanager.max-concurrent-get-requests-per-tenant`. #1547
 * [ENHANCEMENT] Alertmanager: Added the ability to configure additional gRPC client settings for the Alertmanager distributor #1547

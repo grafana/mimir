@@ -87,7 +87,8 @@ type Distributor struct {
 	// For handling HA replicas.
 	HATracker *haTracker
 
-	// Per-user rate limiter.
+	// Per-user rate limiters.
+	requestRateLimiter   *limiter.RateLimiter
 	ingestionRateLimiter *limiter.RateLimiter
 
 	// Manager for subservices (HA Tracker, distributor ring and client pool)
@@ -202,12 +203,13 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 	// Create the configured ingestion rate limit strategy (local or global). In case
 	// it's an internal dependency and can't join the distributors ring, we skip rate
 	// limiting.
-	var ingestionRateStrategy limiter.RateLimiterStrategy
+	var ingestionRateStrategy, requestRateStrategy limiter.RateLimiterStrategy
 	var distributorsLifeCycler *ring.Lifecycler
 	var distributorsRing *ring.Ring
 
 	if !canJoinDistributorsRing {
-		ingestionRateStrategy = newInfiniteIngestionRateStrategy()
+		requestRateStrategy = newInfiniteRateStrategy()
+		ingestionRateStrategy = newInfiniteRateStrategy()
 	} else {
 		distributorsLifeCycler, err = ring.NewLifecycler(cfg.DistributorRing.ToLifecyclerConfig(), nil, "distributor", DistributorRingKey, true, log, prometheus.WrapRegistererWithPrefix("cortex_", reg))
 		if err != nil {
@@ -220,7 +222,8 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		}
 		subservices = append(subservices, distributorsLifeCycler, distributorsRing)
 
-		ingestionRateStrategy = newGlobalIngestionRateStrategy(limits, distributorsLifeCycler)
+		requestRateStrategy = newGlobalRateStrategy(newRequestRateStrategy(limits), distributorsLifeCycler)
+		ingestionRateStrategy = newGlobalRateStrategy(newIngestionRateStrategy(limits), distributorsLifeCycler)
 	}
 
 	d := &Distributor{
@@ -231,6 +234,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		distributorsLifeCycler: distributorsLifeCycler,
 		distributorsRing:       distributorsRing,
 		limits:                 limits,
+		requestRateLimiter:     limiter.NewRateLimiter(requestRateStrategy, 10*time.Second),
 		ingestionRateLimiter:   limiter.NewRateLimiter(ingestionRateStrategy, 10*time.Second),
 		HATracker:              haTracker,
 		ingestionRate:          util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval),
@@ -582,6 +586,15 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 	}
 
 	now := mtime.Now()
+	if !d.requestRateLimiter.AllowN(now, userID, 1) {
+		validation.DiscardedRequests.WithLabelValues(userID).Add(1)
+
+		// Return a 429 here to tell the client it is going too fast.
+		// Client may discard the data or slow down and re-send.
+		// Prometheus v2.26 added a remote-write option 'retry_on_http_429'.
+		return nil, httpgrpc.Errorf(http.StatusTooManyRequests, "request rate limit (%v) exceeded", d.requestRateLimiter.Limit(now, userID))
+	}
+
 	d.activeUsers.UpdateUserTimestamp(userID, now)
 
 	source := util.GetSourceIPsFromOutgoingCtx(ctx)
