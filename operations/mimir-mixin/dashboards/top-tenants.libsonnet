@@ -113,6 +113,63 @@ local filename = 'mimir-top-tenants.json';
     )
 
     .addRow(
+      ($.row('By samples rate growth') + { collapse: true })
+      .addPanel(
+        $.panel('Top $limit users by received samples rate that grew the most between query range start and query range end') +
+        $.queryPanel(
+          |||
+            sum by (user) (rate(cortex_distributor_received_samples_total{%(job)s}[$__rate_interval]))
+            and
+            topk($limit,
+              sum by (user) (rate(cortex_distributor_received_samples_total{%(job)s}[$__rate_interval] @ end()))
+              -
+              sum by (user) (rate(cortex_distributor_received_samples_total{%(job)s}[$__rate_interval] @ start()))
+            )
+          ||| % {
+            job: $.jobMatcher($._config.job_names.distributor),
+          },
+          '{{ user }}',
+        )
+      ),
+    )
+
+    .addRow(
+      ($.row('By discarded samples rate') + { collapse: true })
+      .addPanel(
+        $.panel('Top $limit users by discarded samples rate in last 5m') +
+        { sort: { col: 2, desc: true } } +
+        $.tablePanel(
+          [
+            'topk($limit, sum by (user) (rate(cortex_discarded_samples_total{%(job)s}[5m])))'
+            % { job: $.jobMatcher('%s|%s' % [$._config.job_names.ingester, $._config.job_names.distributor]) },
+          ],
+          { 'Value #A': { alias: 'samples/s' } }
+        )
+      ),
+    )
+
+    .addRow(
+      ($.row('By discarded samples rate growth') + { collapse: true })
+      .addPanel(
+        $.panel('Top $limit users by discarded samples rate that grew the most between query range start and query range end') +
+        $.queryPanel(
+          |||
+            sum by (user) (rate(cortex_discarded_samples_total{%(job)s}[$__rate_interval]))
+            and
+            topk($limit,
+              sum by (user) (rate(cortex_discarded_samples_total{%(job)s}[$__rate_interval] @ end()))
+              -
+              sum by (user) (rate(cortex_discarded_samples_total{%(job)s}[$__rate_interval] @ start()))
+            )
+          ||| % {
+            job: $.jobMatcher('%s|%s' % [$._config.job_names.ingester, $._config.job_names.distributor]),
+          },
+          '{{ user }}',
+        )
+      ),
+    )
+
+    .addRow(
       ($.row('By series with exemplars') + { collapse: true })
       .addPanel(
         $.panel('Top $limit users by series with exemplars') +
