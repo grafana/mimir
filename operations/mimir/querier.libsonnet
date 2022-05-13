@@ -37,15 +37,18 @@
     JAEGER_REPORTER_MAX_QUEUE_SIZE: '1024',  // Default is 100.
   },
 
-  querier_container::
-    container.new('querier', $._images.querier) +
+  newQuerierContainer(name, args)::
+    container.new(name, $._images.querier) +
     container.withPorts($.querier_ports) +
-    container.withArgsMixin($.util.mapToFlags($.querier_args)) +
+    container.withArgsMixin($.util.mapToFlags(args)) +
     $.jaeger_mixin +
     $.util.readinessProbe +
     container.withEnvMap($.querier_env_map) +
     $.util.resourcesRequests('1', '12Gi') +
     $.util.resourcesLimits(null, '24Gi'),
+
+  querier_container::
+    self.newQuerierContainer('querier', $.querier_args),
 
   local deployment = $.apps.v1.deployment,
 
