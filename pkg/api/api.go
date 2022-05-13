@@ -183,8 +183,7 @@ func (a *API) newRoute(path string, handler http.Handler, isPrefix, auth, gzip b
 	return route
 }
 
-// RegisterAlertmanager registers endpoints associated with the alertmanager. It will only
-// serve endpoints using the legacy http-prefix if it is not run as a single binary.
+// RegisterAlertmanager registers endpoints that are associated with the alertmanager.
 func (a *API) RegisterAlertmanager(am *alertmanager.MultitenantAlertmanager, apiEnabled bool, buildInfoHandler http.Handler) {
 	alertmanagerpb.RegisterAlertmanagerServer(a.server.GRPC, am)
 
