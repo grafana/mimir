@@ -231,7 +231,7 @@ func NewQuerierHandler(
 	router := mux.NewRouter()
 
 	// Use a separate metric for the querier in order to differentiate requests from the query-frontend when
-	// running Mimir as a single binary.
+	// running Mimir in monolithic mode.
 	instrumentMiddleware := middleware.Instrument{
 		RouteMatcher:     router,
 		Duration:         querierRequestDuration,

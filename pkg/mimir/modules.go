@@ -402,11 +402,11 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 		// and internal using the default instrumentation when running as a standalone service.
 		internalQuerierRouter = t.Server.HTTPServer.Handler
 	} else {
-		// Single binary mode requires a query frontend endpoint for the worker. If no frontend and scheduler endpoint
+		// Monolithic mode requires a query-frontend endpoint for the worker. If no frontend and scheduler endpoint
 		// is configured, Mimir will default to using frontend on localhost on it's own GRPC listening port.
 		if t.Cfg.Worker.FrontendAddress == "" && t.Cfg.Worker.SchedulerAddress == "" {
 			address := fmt.Sprintf("127.0.0.1:%d", t.Cfg.Server.GRPCListenPort)
-			level.Warn(util_log.Logger).Log("msg", "Worker address is empty in single binary mode. Attempting automatic worker configuration. If queries are unresponsive consider configuring the worker explicitly.", "address", address)
+			level.Info(util_log.Logger).Log("msg", "The querier worker has not been configured with either the query-frontend or query-scheduler address. Because Mimir is running in monolithic mode, it's attempting an automatic worker configuration. If queries are unresponsive, consider explicitly configuring the query-frontend or query-scheduler address for querier worker.", "address", address)
 			t.Cfg.Worker.FrontendAddress = address
 		}
 
@@ -548,12 +548,9 @@ func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 }
 
 func (t *Mimir) initRulerStorage() (serv services.Service, err error) {
-	// if the ruler is not configured and we're in single binary then let's just log an error and continue.
-	// unfortunately there is no way to generate a "default" config and compare default against actual
-	// to determine if it's unconfigured.  the following check, however, correctly tests this.
-	// Single binary integration tests will break if this ever drifts
+	// If the ruler is not configured and Mimir is running in monolithic mode, then we just skip starting the ruler.
 	if t.Cfg.isModuleEnabled(All) && t.Cfg.RulerStorage.IsDefaults() {
-		level.Info(util_log.Logger).Log("msg", "Ruler storage is not configured in single binary mode and will not be started.")
+		level.Info(util_log.Logger).Log("msg", "The ruler is not being started because you need to configure the ruler storage.")
 		return
 	}
 
