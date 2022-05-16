@@ -16,6 +16,8 @@ local k = import 'ksonnet-util/kausal.libsonnet';
     'tests.write-endpoint': $._config.continuous_test_write_endpoint,
     'tests.read-endpoint': $._config.continuous_test_read_endpoint,
     'tests.tenant-id': $._config.continuous_test_tenant_id,
+    'tests.write-read-series-test.num-series': 1000,
+    'tests.write-read-series-test.max-query-age': '48h',
   },
 
   continuous_test_container::
