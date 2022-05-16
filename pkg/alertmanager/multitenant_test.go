@@ -1990,6 +1990,16 @@ func TestSafeTemplateFilepath(t *testing.T) {
 			template:    ".",
 			expectedErr: errors.New(`invalid template name "."`),
 		},
+		"root dir": {
+			dir:          "/",
+			template:     "file",
+			expectedPath: "/file",
+		},
+		"root dir 2": {
+			dir:          "/",
+			template:     "/subdir/file",
+			expectedPath: "/subdir/file",
+		},
 	}
 
 	for testName, testData := range tests {
@@ -1999,27 +2009,6 @@ func TestSafeTemplateFilepath(t *testing.T) {
 			assert.Equal(t, testData.expectedPath, actualPath)
 		})
 	}
-}
-
-func TestIsFilePathInsideDirectory(t *testing.T) {
-	assert.False(t, isFilePathInsideDirectory("/", "/"))
-	assert.False(t, isFilePathInsideDirectory("/", ""))
-	assert.True(t, isFilePathInsideDirectory("/", "/test"))
-	assert.False(t, isFilePathInsideDirectory("/", "random"))
-
-	assert.False(t, isFilePathInsideDirectory("/tmp", "/"))
-	assert.False(t, isFilePathInsideDirectory("/tmp", "//"))
-	assert.False(t, isFilePathInsideDirectory("/tmp", ""))
-	assert.False(t, isFilePathInsideDirectory("/tmp", "/tmp"))
-	assert.False(t, isFilePathInsideDirectory("/tmp", "/tmpfile"))
-	assert.True(t, isFilePathInsideDirectory("/tmp", "/tmp/test"))
-	assert.True(t, isFilePathInsideDirectory("/tmp", "/tmp/inner/dir/file"))
-	// Dir ending with / doesn't work.
-	assert.False(t, isFilePathInsideDirectory("/tmp/", "/tmp/inner/dir/file"))
-
-	assert.True(t, isFilePathInsideDirectory(".", "./test"))
-	// Dir ending with / doesn't work.
-	assert.False(t, isFilePathInsideDirectory("./", "./test"))
 }
 
 func TestStoreTemplateFile(t *testing.T) {
