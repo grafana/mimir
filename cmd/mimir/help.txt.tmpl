@@ -225,6 +225,8 @@ Usage of ./cmd/mimir/mimir:
     	Expands ${var} or $var in config according to the values of the environment variables.
   -config.file value
     	Configuration file to load.
+  -distributor.extend-writes value
+    	Deprecated: this setting was used to try writing to an additional ingester in the presence of an ingester not in the ACTIVE state. Mimir now behaves as this setting is always disabled.
   -distributor.ha-tracker.cluster string
     	Prometheus label to look for in samples to identify a Prometheus HA cluster. (default "cluster")
   -distributor.ha-tracker.consul.hostname string
