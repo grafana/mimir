@@ -1258,6 +1258,15 @@ func safeTemplateFilepath(dir, templateName string) (string, error) {
 		return "", err
 	}
 
+	// If actualPath is same as containerDir, it's likely that actualPath was empty, or just ".".
+	if containerDir == actualPath {
+		return "", fmt.Errorf("invalid template name %q", templateName)
+	}
+
+	if !strings.HasSuffix(containerDir, string(os.PathSeparator)) {
+		containerDir = containerDir + string(os.PathSeparator)
+	}
+
 	// Ensure the actual path of the template is within the expected directory.
 	// This check is a counter-measure to make sure the tenant is not trying to
 	// escape its own directory on disk.
