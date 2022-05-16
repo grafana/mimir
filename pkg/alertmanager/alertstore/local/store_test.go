@@ -108,6 +108,30 @@ func TestStore_GetAlertConfigs(t *testing.T) {
 	}
 }
 
+func TestStore_FullState(t *testing.T) {
+	ctx := context.Background()
+	store, _ := prepareLocalStore(t)
+
+	// FullState not persisted - List always returns no users.
+
+	configs, err := store.ListUsersWithFullState(ctx)
+	require.NoError(t, err)
+	assert.Empty(t, configs)
+
+	// FullState not persisted - Get always returns NotFound.
+
+	_, err = store.GetFullState(ctx, "user-1")
+	require.ErrorIs(t, err, alertspb.ErrNotFound)
+
+	// Any attempt to write the store fails.
+
+	err = store.SetFullState(ctx, "user-1", alertspb.FullStateDesc{})
+	require.ErrorIs(t, err, errState)
+
+	err = store.DeleteFullState(ctx, "user-1")
+	require.ErrorIs(t, err, errState)
+}
+
 func prepareLocalStore(t *testing.T) (store *Store, storeDir string) {
 	var err error
 

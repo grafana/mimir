@@ -470,7 +470,13 @@
                   "fill": 1,
                   "id": 7,
                   "legend": {
-                     "show": false
+                     "avg": false,
+                     "current": false,
+                     "max": false,
+                     "min": false,
+                     "show": true,
+                     "total": false,
+                     "values": false
                   },
                   "lines": true,
                   "linewidth": 1,
@@ -480,7 +486,13 @@
                   "pointradius": 5,
                   "points": false,
                   "renderer": "flot",
-                  "seriesOverrides": [ ],
+                  "seriesOverrides": [
+                     {
+                        "alias": "limit",
+                        "dashes": true,
+                        "fill": 0
+                     }
+                  ],
                   "spaceLength": 10,
                   "span": 3,
                   "stack": false,
@@ -492,6 +504,15 @@
                         "interval": "15s",
                         "intervalFactor": 2,
                         "legendFormat": "rate",
+                        "legendLink": null,
+                        "step": 10
+                     },
+                     {
+                        "expr": "max(cortex_limits_overrides{cluster=~\"$cluster\", job=~\"($namespace)/(overrides-exporter)\", limit_name=\"ingestion_rate\", user=\"$user\"})\nor\nmax(cortex_limits_defaults{cluster=~\"$cluster\", job=~\"($namespace)/(overrides-exporter)\", limit_name=\"ingestion_rate\"})\n",
+                        "format": "time_series",
+                        "interval": "15s",
+                        "intervalFactor": 2,
+                        "legendFormat": "limit",
                         "legendLink": null,
                         "step": 10
                      }
@@ -1202,7 +1223,13 @@
                   "fill": 1,
                   "id": 16,
                   "legend": {
-                     "show": false
+                     "avg": false,
+                     "current": false,
+                     "max": false,
+                     "min": false,
+                     "show": true,
+                     "total": false,
+                     "values": false
                   },
                   "lines": true,
                   "linewidth": 1,
@@ -1212,7 +1239,13 @@
                   "pointradius": 5,
                   "points": false,
                   "renderer": "flot",
-                  "seriesOverrides": [ ],
+                  "seriesOverrides": [
+                     {
+                        "alias": "limit",
+                        "dashes": true,
+                        "fill": 0
+                     }
+                  ],
                   "spaceLength": 10,
                   "span": 3,
                   "stack": false,
@@ -1224,6 +1257,15 @@
                         "interval": "15s",
                         "intervalFactor": 2,
                         "legendFormat": "groups",
+                        "legendLink": null,
+                        "step": 10
+                     },
+                     {
+                        "expr": "max(cortex_limits_overrides{cluster=~\"$cluster\", job=~\"($namespace)/(overrides-exporter)\", limit_name=\"ruler_max_rule_groups_per_tenant\", user=\"$user\"})\nor\nmax(cortex_limits_defaults{cluster=~\"$cluster\", job=~\"($namespace)/(overrides-exporter)\", limit_name=\"ruler_max_rule_groups_per_tenant\"})\n",
+                        "format": "time_series",
+                        "interval": "15s",
+                        "intervalFactor": 2,
+                        "legendFormat": "limit",
                         "legendLink": null,
                         "step": 10
                      }

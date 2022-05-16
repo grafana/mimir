@@ -2,6 +2,21 @@ local utils = import 'mixin-utils/utils.libsonnet';
 local filename = 'mimir-tenants.json';
 
 (import 'dashboard-utils.libsonnet') {
+  local user_limits_overrides_query(limit_name) = |||
+    max(cortex_limits_overrides{%(overrides_exporter)s, limit_name="%(limit_name)s", user="$user"})
+    or
+    max(cortex_limits_defaults{%(overrides_exporter)s, limit_name="%(limit_name)s"})
+  ||| % {
+    overrides_exporter: $.jobMatcher($._config.job_names.overrides_exporter),
+    limit_name: limit_name,
+  },
+
+  local limit_style = {
+    alias: 'limit',
+    fill: 0,
+    dashes: true,
+  },
+
   [filename]:
     ($.dashboard('Tenants') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates()
@@ -40,13 +55,7 @@ local filename = 'mimir-tenants.json';
               distributor: $.jobMatcher($._config.job_names.distributor),
               group_by_cluster: $._config.group_by_cluster,
             },
-            |||
-              max(cortex_limits_overrides{%(overrides_exporter)s, limit_name="max_global_series_per_user", user="$user"})
-              or
-              max(cortex_limits_defaults{%(overrides_exporter)s, limit_name="max_global_series_per_user"})
-            ||| % {
-              overrides_exporter: $.jobMatcher($._config.job_names.overrides_exporter),
-            },
+            user_limits_overrides_query('max_global_series_per_user'),
             |||
               sum(
                 cortex_ingester_active_series{%(ingester)s, user="$user"}
@@ -77,15 +86,7 @@ local filename = 'mimir-tenants.json';
             'active ({{ name }})',
           ],
         ) +
-        {
-          seriesOverrides: [
-            {
-              alias: 'limit',
-              fill: 0,
-              dashes: true,
-            },
-          ],
-        } +
+        { seriesOverrides: [limit_style] } +
         $.panelDescription(
           title,
           |||
@@ -180,11 +181,17 @@ local filename = 'mimir-tenants.json';
         local title = 'Distributor samples received (accepted) rate';
         $.panel(title) +
         $.queryPanel(
-          'sum(rate(cortex_distributor_received_samples_total{%(job)s, user="$user"}[$__rate_interval]))'
-          % { job: $.jobMatcher($._config.job_names.distributor) },
-          'rate',
+          [
+            'sum(rate(cortex_distributor_received_samples_total{%(job)s, user="$user"}[$__rate_interval]))'
+            % { job: $.jobMatcher($._config.job_names.distributor) },
+            user_limits_overrides_query('ingestion_rate'),
+          ],
+          [
+            'rate',
+            'limit',
+          ],
         ) +
-        { legend: { show: false } } +
+        { seriesOverrides: [limit_style] } +
         $.panelDescription(
           title,
           |||
@@ -359,11 +366,17 @@ local filename = 'mimir-tenants.json';
         local title = 'Number of groups';
         $.panel(title) +
         $.queryPanel(
-          'count(sum by (rule_group) (cortex_prometheus_rule_group_rules{%(job)s, user="$user"}))'
-          % { job: $.jobMatcher($._config.job_names.ruler) },
-          'groups',
+          [
+            'count(sum by (rule_group) (cortex_prometheus_rule_group_rules{%(job)s, user="$user"}))'
+            % { job: $.jobMatcher($._config.job_names.ruler) },
+            user_limits_overrides_query('ruler_max_rule_groups_per_tenant'),
+          ],
+          [
+            'groups',
+            'limit',
+          ]
         ) +
-        { legend: { show: false } } +
+        { seriesOverrides: [limit_style] } +
         $.panelDescription(
           title,
           |||

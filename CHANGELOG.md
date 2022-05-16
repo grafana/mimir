@@ -77,6 +77,8 @@
 * [BUGFIX] Memcached: allow to use CNAME DNS records for the memcached backend addresses. #1654
 * [BUGFIX] Querier: fixed temporary partial query results when shuffle sharding is enabled and hash ring backend storage is flushed / reset. #1829
 * [BUGFIX] Alertmanager: prevent more file traversal cases related to template names. #1833
+* [BUGFUX] Alertmanager: Allow usage with `-alertmanager-storage.backend=local`. Note that when using this storage type, the Alertmanager is not able persist state remotely, so it not recommended for production use. #1836
+* [BUGFIX] Alertmanager: Do not validate alertmanager configuration if it's not running. #1835
 
 ### Mixin
 
@@ -113,6 +115,8 @@
 * [ENHANCEMENT] Playbooks: Add Alertmanager suggestions for `MimirRequestErrors` and `MimirRequestLatency` #1702
 * [ENHANCEMENT] Dashboards: Allow custom datasources. #1749
 * [ENHANCEMENT] Dashboards: Add config option `gateway_enabled` (defaults to `true`) to disable gateway panels from dashboards. #1761
+* [ENHANCEMENT] Dashboards: Extend Top tenants dashboard with queries for tenants with highest sample rate, discard rate, and discard rate growth. #1842
+* [ENHANCEMENT] Dashboards: Show ingestion rate limit and rule group limit on Tenants dashboard. #1845
 * [BUGFIX] Dashboards: Fix "Failed evaluation rate" panel on Tenants dashboard. #1629
 * [BUGFIX] Honor the configured `per_instance_label` in all dashboards and alerts. #1697
 

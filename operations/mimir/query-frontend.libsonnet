@@ -30,14 +30,17 @@
       'runtime-config.file': '%s/overrides.yaml' % $._config.overrides_configmap_mountpoint,
     },
 
-  query_frontend_container::
-    container.new('query-frontend', $._images.query_frontend) +
+  newQueryFrontendContainer(name, args)::
+    container.new(name, $._images.query_frontend) +
     container.withPorts($.util.defaultPorts) +
-    container.withArgsMixin($.util.mapToFlags($.query_frontend_args)) +
+    container.withArgsMixin($.util.mapToFlags(args)) +
     $.jaeger_mixin +
     $.util.readinessProbe +
     $.util.resourcesRequests('2', '600Mi') +
     $.util.resourcesLimits(null, '1200Mi'),
+
+  query_frontend_container::
+    self.newQueryFrontendContainer('query-frontend', $.query_frontend_args),
 
   local deployment = $.apps.v1.deployment,
 
