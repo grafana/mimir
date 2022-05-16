@@ -122,7 +122,7 @@
 
 ### Jsonnet
 
-* [FEATURE] Added support for `mimir-continuous-test`. To deploy `mimir-continuous-test` you can use the following configuration: #1675
+* [FEATURE] Added support for `mimir-continuous-test`. To deploy `mimir-continuous-test` you can use the following configuration: #1675 #1850
   ```jsonnet
   _config+: {
     continuous_test_enabled: true,
