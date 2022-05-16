@@ -11,7 +11,7 @@
     - `-alertmanager.alertmanager-client.grpc-max-send-msg-size` now defaults to 100 MiB (previously was not configurable and set to 4 MiB)
     - `-alertmanager.max-recv-msg-size` now defaults to 100 MiB (previously was 16 MiB)
 * [CHANGE] Ingester: Add `user` label to metrics `cortex_ingester_ingested_samples_total` and `cortex_ingester_ingested_samples_failures_total`. #1533
-* [CHANGE] Ingester: Changed `-blocks-storage.tsdb.isolation-enabled` default from `true` to `false`. The config option has also been deprecated and will be removed in 2 minor version.
+* [CHANGE] Ingester: Changed `-blocks-storage.tsdb.isolation-enabled` default from `true` to `false`. The config option has also been deprecated and will be removed in 2 minor version. #1655
 * [CHANGE] Query-frontend: results cache keys are now versioned, this will cause cache to be re-filled when rolling out this version. #1631
 * [CHANGE] Store-gateway: enabled attributes in-memory cache by default. New default configuration is `-blocks-storage.bucket-store.chunks-cache.attributes-in-memory-max-items=50000`. #1727
 * [CHANGE] Compactor: Removed the metric `cortex_compactor_garbage_collected_blocks_total` since it duplicates `cortex_compactor_blocks_marked_for_deletion_total`. #1728
@@ -120,6 +120,7 @@
 * [ENHANCEMENT] Dashboards: Add config option `gateway_enabled` (defaults to `true`) to disable gateway panels from dashboards. #1761
 * [ENHANCEMENT] Dashboards: Extend Top tenants dashboard with queries for tenants with highest sample rate, discard rate, and discard rate growth. #1842
 * [ENHANCEMENT] Dashboards: Show ingestion rate limit and rule group limit on Tenants dashboard. #1845
+* [ENHANCEMENT] Dashboards: Add "last successful run" panel to compactor dashboard. #1628
 * [BUGFIX] Dashboards: Fix "Failed evaluation rate" panel on Tenants dashboard. #1629
 * [BUGFIX] Honor the configured `per_instance_label` in all dashboards and alerts. #1697
 
