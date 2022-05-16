@@ -1488,9 +1488,8 @@ The `ruler_storage` block configures the ruler storage backend.
 # CLI flag: -ruler-storage.backend
 [backend: <string> | default = "filesystem"]
 
-# (advanced) Prefix for all objects stored in the backend storage. It should
-# contain only English alphabet letters, digits, -, _, ., *, ', (, ), and ! and
-# should not be a single dot (.) or two dots (..)
+# (advanced) Prefix for all objects stored in the backend storage. For
+# simplicity, it may only contain digits and English alphabet letters.
 # CLI flag: -ruler-storage.storage-prefix
 [storage_prefix: <string> | default = ""]
 
@@ -1939,9 +1938,8 @@ The `alertmanager_storage` block configures the alertmanager storage backend.
 # CLI flag: -alertmanager-storage.backend
 [backend: <string> | default = "filesystem"]
 
-# (advanced) Prefix for all objects stored in the backend storage. It should
-# contain only English alphabet letters, digits, -, _, ., *, ', (, ), and ! and
-# should not be a single dot (.) or two dots (..)
+# (advanced) Prefix for all objects stored in the backend storage. For
+# simplicity, it may only contain digits and English alphabet letters.
 # CLI flag: -alertmanager-storage.storage-prefix
 [storage_prefix: <string> | default = ""]
 
@@ -2935,9 +2933,8 @@ The `blocks_storage` block configures the blocks storage.
 # CLI flag: -blocks-storage.backend
 [backend: <string> | default = "filesystem"]
 
-# (advanced) Prefix for all objects stored in the backend storage. It should
-# contain only English alphabet letters, digits, -, _, ., *, ', (, ), and ! and
-# should not be a single dot (.) or two dots (..)
+# (advanced) Prefix for all objects stored in the backend storage. For
+# simplicity, it may only contain digits and English alphabet letters.
 # CLI flag: -blocks-storage.storage-prefix
 [storage_prefix: <string> | default = ""]
 

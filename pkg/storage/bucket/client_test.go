@@ -138,12 +138,17 @@ func TestClient_ConfigValidation(t *testing.T) {
 	}{
 		{
 			name:           "valid storage_prefix",
-			cfg:            Config{Backend: Filesystem, StoragePrefix: "hello-world!"},
+			cfg:            Config{Backend: Filesystem, StoragePrefix: "helloworld"},
 			expectingError: false,
 		},
 		{
-			name:           "invalid storage_prefix",
-			cfg:            Config{Backend: Filesystem, StoragePrefix: "/hello-world!"},
+			name:           "storage_prefix non-alphanumeric characters",
+			cfg:            Config{Backend: Filesystem, StoragePrefix: "hello-world!"},
+			expectingError: true,
+		},
+		{
+			name:           "storage_prefix suffixed with a slash (non-alphanumeric)",
+			cfg:            Config{Backend: Filesystem, StoragePrefix: "helloworld/"},
 			expectingError: true,
 		},
 		{
