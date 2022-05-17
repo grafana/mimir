@@ -25,19 +25,19 @@ Each custom tracker counts the active series matching its label pattern on a per
 
 Series with metric name `cortex_ingester_active_series_custom_tracker` have two labels applied: `name` and `user`. The value of the `name` label is the name of the custom tracker specified in the configuration. The value of the `user` label is the tenant-id for which the series count applies.
 
-Assume two custom trackers are configured as in the example above, and that your Grafana Mimir cluster has three tenants: `tenant_1`, `tenant_2`, and `tenant_with_only_prod_metrics`. Assume all series within `tenant_with_only_prod_metrics` have labels that match the pattern `{namespace=~"prod-.*"}` and none that match `{namespace=~"dev-.*"}`.
+To illustrate, assume that two custom trackers are configured as in the yaml shown above, and that your Grafana Mimir cluster has two tenants: `tenant_1` and `tenant_with_only_prod_metrics`. Assume that `tenant_with_only_prod_metrics` has 3 series with labels that match the pattern `{namespace=~"prod-.*"}` and none that match `{namespace=~"dev-.*"}` and that `tenant_1` has 5 series that match the pattern `{namespace=~"dev-.*"}` and 10 series that match the pattern `{namespace=~"prod-.*"}`.
 
-In this example, the following output appears when the `/metrics` endpoint for the ingester component is scraped:
+You should see the following output when the `/metrics` endpoint for the ingester component is scraped:
 
 ```
 cortex_ingester_active_series_custom_tracker{name="dev", user="tenant_1"}                         5
-cortex_ingester_active_series_custom_tracker{name="prod", user="tenant_2"}                       10
+cortex_ingester_active_series_custom_tracker{name="prod", user="tenant_1"}                       10
 cortex_ingester_active_series_custom_tracker{name="prod", user="tenant_with_only_prod_metrics"}   3
 ```
 
 Starting with Mimir version 2.1 default configuration as described above can be overriden for specific tenants in the [runtime configuration]({{< relref "./about-runtime-configuration.md" >}}).
 
-In this example, we are overriding the active series custom trackers configuration for tenant `tenant_with_only_prod_metrics` to track two interesting services instead of the default matcher.
+The example below shows how you could override the active series custom trackers configuration for tenant `tenant_with_only_prod_metrics` to track two interesting services instead of the default matchers.
 
 ```
 overrides:
@@ -47,11 +47,11 @@ overrides:
       also-interesting-service: '{service=~"also-interesting-.*"}'
 ```
 
-After adding this override, the output at `/metrics` would change to:
+After adding this override, and assuming there are 1 and 2 matching series for `interesting-service` and `also-interesting-service`, respectively, the output at `/metrics` would change to:
 
 ```
 cortex_ingester_active_series_custom_tracker{name="dev", user="tenant_1"}                                           5
-cortex_ingester_active_series_custom_tracker{name="prod", user="tenant_2"}                                         10
+cortex_ingester_active_series_custom_tracker{name="prod", user="tenant_1"}                                         10
 cortex_ingester_active_series_custom_tracker{name="interesting-service", user="tenant_with_only_prod_metrics"}      1
 cortex_ingester_active_series_custom_tracker{name="also-interesting-service", user="tenant_with_only_prod_metrics"} 2
 ```
