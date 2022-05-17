@@ -812,7 +812,6 @@ The script outputs results that are similar to the following:
 
 ```console
 -consul.hostname=consul.cortex-to-mimir.svc.cluster.local:8500
--distributor.extend-writes=true
 -distributor.ha-tracker.enable=false
 -distributor.ha-tracker.enable-for-all-users=true
 -distributor.ha-tracker.etcd.endpoints=etcd-client.cortex-to-mimir.svc.cluster.local.:2379

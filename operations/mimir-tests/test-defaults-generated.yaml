@@ -661,7 +661,6 @@ spec:
             topologyKey: kubernetes.io/hostname
       containers:
       - args:
-        - -distributor.extend-writes=true
         - -distributor.ha-tracker.enable=true
         - -distributor.ha-tracker.enable-for-all-users=true
         - -distributor.ha-tracker.etcd.endpoints=etcd-client.default.svc.cluster.local.:2379

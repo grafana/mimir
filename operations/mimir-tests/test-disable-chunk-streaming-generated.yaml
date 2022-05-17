@@ -750,7 +750,6 @@ spec:
             topologyKey: kubernetes.io/hostname
       containers:
       - args:
-        - -distributor.extend-writes=true
         - -distributor.ha-tracker.enable=true
         - -distributor.ha-tracker.enable-for-all-users=true
         - -distributor.ha-tracker.etcd.endpoints=etcd-client.default.svc.cluster.local.:2379
@@ -1070,7 +1069,6 @@ spec:
         - -blocks-storage.bucket-store.sync-dir=/data/tsdb
         - -blocks-storage.bucket-store.sync-interval=15m
         - -blocks-storage.gcs.bucket-name=blocks-bucket
-        - -distributor.extend-writes=true
         - -distributor.health-check-ingesters=true
         - -ingester.ring.consul.hostname=consul.default.svc.cluster.local:8500
         - -ingester.ring.heartbeat-timeout=10m
