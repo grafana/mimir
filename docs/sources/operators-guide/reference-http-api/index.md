@@ -683,12 +683,27 @@ POST /api/v1/rules/{namespace}
 POST <prometheus-http-prefix>/rules/{namespace}
 ```
 
-Creates or updates a rule group. This endpoint expects a request with `Content-Type: application/yaml` header and the
-rules **YAML** definition in the request body, and returns `202` on success.
+Creates or updates a rule group.
+This endpoint expects a request with `Content-Type: application/yaml` header and the rules group **YAML** definition in the request body, and returns `202` on success.
+The request body must contain the definition of one and only one rule group.
 
 This endpoint can be disabled via the `-ruler.enable-api` CLI flag (or its respective YAML config option).
 
 Requires [authentication](#authentication).
+
+> **Note:** When using `curl` send the request body from a file, ensure that you use the `--data-binary` flag instead of `-d`, `--data`, or `--data-ascii`.
+> The latter options do not preserve carriage returns and newlines.
+
+#### Example request body
+
+```yaml
+name: MyGroupName
+rules:
+  - alert: MyAlertName
+    expr: up == 0
+    labels:
+      severity: warning
+```
 
 #### Federated rule groups
 
@@ -719,13 +734,7 @@ into `tenant-a`'s storage (e.g. as metric `sum:metric_b`). Now part of `tenant-b
 aggregated). Have this in mind when configuring the access control layer in front of mimir and when enabling federated
 rules via `-ruler.tenant-federation.enabled`.
 
-**Example request**
-
-Request headers:
-
-- `Content-Type: application/yaml`
-
-Request body:
+#### Example "federated rules group" request body
 
 ```yaml
 name: <string>
