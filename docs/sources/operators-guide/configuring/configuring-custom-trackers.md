@@ -59,7 +59,3 @@ cortex_ingester_active_series_custom_tracker{name="also-interesting-service", us
 For detailed information how to set up runtime overrides, refer to [runtime configuration]({{< relref "./about-runtime-configuration.md" >}}).
 
 > **Note:** The custom active series trackers are exposed on each ingester. To understand the count of active series matching a particular label pattern in your Grafana Mimir cluster at a global level, you must collect and sum this metric across all ingesters. If you're running Grafana Mimir with a `replication_factor` > 1, you must also adjust for the fact that the same series will be replicated `RF` times across your ingesters.
-
-1, how to migrate to new config (flag: noop, config file: move from ingester section to limits section)
-2, what additional capabilities are avaiable: now you can runtime-override that for each tenant and also
-3, Now you can define different trackers for each tenant in your cluster and modify those trackers without an ingester restart.
