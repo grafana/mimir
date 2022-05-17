@@ -28,13 +28,15 @@ Configuration of the built-in querier and distributor uses their respective conf
 
 [//]: # "Diagram source of ruler interactions https://docs.google.com/presentation/d/1LemaTVqa4Lf_tpql060vVoDGXrthp-Pie_SQL7qwHjc/edit#slide=id.g11658e7e4c6_0_938"
 
-![Architecture of Grafana Mimir's ruler component](ruler.svg)
+![Architecture of Grafana Mimir's ruler component in internal mode](ruler-internal.svg)
 
 ### Remote
 
 In this mode the ruler delegates rules evaluation to the query-frontend. When enabled, the ruler leverages all the query acceleration techniques employed by the query-frontend, such as [query sharding]({{< relref "../../query-sharding/index.md" >}}).
 To enable the remote operational mode, set the `-ruler.query-frontend.address` CLI flag or its respective YAML configuration parameter for the ruler.
 Communication between ruler and query-frontend is established over gRPC, so you can make use of client-side load balancing by prefixing the query-frontend address URL with `dns://`.
+
+![Architecture of Grafana Mimir's ruler component in remote mode](ruler-remote.svg)
 
 ## Recording rules
 
