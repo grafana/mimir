@@ -94,8 +94,8 @@
                   "timeShift": null,
                   "title": "Samples / sec",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "singlestat",
@@ -171,8 +171,8 @@
                   "timeShift": null,
                   "title": "Exemplars / sec",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "singlestat",
@@ -248,8 +248,8 @@
                   "timeShift": null,
                   "title": "In-memory series",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "singlestat",
@@ -325,8 +325,8 @@
                   "timeShift": null,
                   "title": "Exemplars in ingesters",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "singlestat",
@@ -401,8 +401,8 @@
                   "timeShift": null,
                   "title": "Tenants",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "singlestat",
@@ -477,8 +477,8 @@
                   "timeShift": null,
                   "title": "Requests / sec",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "singlestat",
@@ -574,8 +574,8 @@
                   "timeShift": null,
                   "title": "Requests / sec",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -666,8 +666,8 @@
                   "timeShift": null,
                   "title": "Latency",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -832,8 +832,8 @@
                   "timeShift": null,
                   "title": "Requests / sec",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -924,8 +924,8 @@
                   "timeShift": null,
                   "title": "Latency",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -1090,8 +1090,8 @@
                   "timeShift": null,
                   "title": "Requests / sec",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -1182,8 +1182,8 @@
                   "timeShift": null,
                   "title": "Latency",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -1348,8 +1348,8 @@
                   "timeShift": null,
                   "title": "Requests / sec",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -1443,8 +1443,8 @@
                   "timeShift": null,
                   "title": "Latency",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -1540,8 +1540,8 @@
                   "timeShift": null,
                   "title": "Requests / sec",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -1635,8 +1635,8 @@
                   "timeShift": null,
                   "title": "Latency",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -1732,8 +1732,8 @@
                   "timeShift": null,
                   "title": "Requests / sec",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -1827,8 +1827,8 @@
                   "timeShift": null,
                   "title": "Latency",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -1929,8 +1929,8 @@
                   "timeShift": null,
                   "title": "Uploaded blocks / sec",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -2025,8 +2025,8 @@
                   "timeShift": null,
                   "title": "Upload latency",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -2127,8 +2127,8 @@
                   "timeShift": null,
                   "title": "Compactions / sec",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -2223,8 +2223,8 @@
                   "timeShift": null,
                   "title": "Compactions latency",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -2325,8 +2325,8 @@
                   "timeShift": null,
                   "title": "WAL truncations / sec",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -2415,8 +2415,8 @@
                   "timeShift": null,
                   "title": "Checkpoints created / sec",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -2493,8 +2493,8 @@
                   "timeShift": null,
                   "title": "WAL truncations latency (includes checkpointing)",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -2582,8 +2582,8 @@
                   "timeShift": null,
                   "title": "Corruptions / sec",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -2672,8 +2672,8 @@
                   "timeShift": null,
                   "title": "Distributor exemplars incoming rate",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -2750,8 +2750,8 @@
                   "timeShift": null,
                   "title": "Distributor exemplars received rate",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -2828,8 +2828,8 @@
                   "timeShift": null,
                   "title": "Ingester ingested exemplars rate",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -2906,8 +2906,8 @@
                   "timeShift": null,
                   "title": "Ingester appended exemplars rate",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",

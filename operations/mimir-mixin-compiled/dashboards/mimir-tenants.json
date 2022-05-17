@@ -129,8 +129,8 @@
                   "timeShift": null,
                   "title": "Series",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -201,8 +201,8 @@
                   "timeShift": null,
                   "title": "Series with exemplars",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -273,8 +273,8 @@
                   "timeShift": null,
                   "title": "Newest seen sample age",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -345,8 +345,8 @@
                   "timeShift": null,
                   "title": "Oldest exemplar age",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -429,8 +429,8 @@
                   "timeShift": null,
                   "title": "Distributor samples incoming rate",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -522,8 +522,8 @@
                   "timeShift": null,
                   "title": "Distributor samples received (accepted) rate",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -609,8 +609,8 @@
                   "timeShift": null,
                   "title": "Distributor deduplicated/non-HA",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -696,8 +696,8 @@
                   "timeShift": null,
                   "title": "Distributor and ingester discarded samples rate",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -780,8 +780,8 @@
                   "timeShift": null,
                   "title": "Distributor exemplars incoming rate",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -852,8 +852,8 @@
                   "timeShift": null,
                   "title": "Distributor exemplars received (accepted) rate",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -930,8 +930,8 @@
                   "timeShift": null,
                   "title": "Distributor discarded exemplars rate",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -1002,8 +1002,8 @@
                   "timeShift": null,
                   "title": "Ingester appended exemplars rate",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -1092,8 +1092,8 @@
                   "timeShift": null,
                   "title": "Symbol table size for loaded blocks",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -1170,8 +1170,8 @@
                   "timeShift": null,
                   "title": "Space used by local blocks",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -1275,8 +1275,8 @@
                   "timeShift": null,
                   "title": "Number of groups",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -1347,8 +1347,8 @@
                   "timeShift": null,
                   "title": "Number of rules",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -1418,8 +1418,8 @@
                   "timeShift": null,
                   "title": "Total evaluations rate",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -1495,8 +1495,8 @@
                   "timeShift": null,
                   "title": "Failed evaluations rate",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -1622,8 +1622,8 @@
                   "timeShift": null,
                   "title": "Top $limit biggest groups",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "transform": "table",
@@ -1738,8 +1738,8 @@
                   "timeShift": null,
                   "title": "Top $limit slowest groups (last evaluation)",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "transform": "table",
@@ -1822,8 +1822,8 @@
                   "timeShift": null,
                   "title": "Sent notifications rate",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -1893,8 +1893,8 @@
                   "timeShift": null,
                   "title": "Failed notifications rate",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",

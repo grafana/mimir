@@ -95,8 +95,8 @@
                   "timeShift": null,
                   "title": "Instant queries / sec",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "singlestat",
@@ -172,8 +172,8 @@
                   "timeShift": null,
                   "title": "Range queries / sec",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "singlestat",
@@ -269,8 +269,8 @@
                   "timeShift": null,
                   "title": "Requests / sec",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -361,8 +361,8 @@
                   "timeShift": null,
                   "title": "Latency",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -527,8 +527,8 @@
                   "timeShift": null,
                   "title": "Requests / sec",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -619,8 +619,8 @@
                   "timeShift": null,
                   "title": "Latency",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -796,8 +796,8 @@
                   "timeShift": null,
                   "title": "Requests / sec",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -891,8 +891,8 @@
                   "timeShift": null,
                   "title": "Latency (Time in Queue)",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -980,8 +980,8 @@
                   "timeShift": null,
                   "title": "Requests / sec",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -1072,8 +1072,8 @@
                   "timeShift": null,
                   "title": "Latency (old)",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -1167,8 +1167,8 @@
                   "timeShift": null,
                   "title": "Latency (new)",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -1264,8 +1264,8 @@
                   "timeShift": null,
                   "title": "Requests / sec",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -1356,8 +1356,8 @@
                   "timeShift": null,
                   "title": "Latency",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -1533,8 +1533,8 @@
                   "timeShift": null,
                   "title": "Replicas",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -1625,8 +1625,8 @@
                   "timeShift": null,
                   "title": "Scaling metric",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -1703,8 +1703,8 @@
                   "timeShift": null,
                   "title": "Autoscaler failures rate",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -1800,8 +1800,8 @@
                   "timeShift": null,
                   "title": "Requests / sec",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -1892,8 +1892,8 @@
                   "timeShift": null,
                   "title": "Latency",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -2058,8 +2058,8 @@
                   "timeShift": null,
                   "title": "Requests / sec",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -2150,8 +2150,8 @@
                   "timeShift": null,
                   "title": "Latency",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -2316,8 +2316,8 @@
                   "timeShift": null,
                   "title": "Requests / sec",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -2411,8 +2411,8 @@
                   "timeShift": null,
                   "title": "Latency",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -2500,8 +2500,8 @@
                   "timeShift": null,
                   "title": "Requests / sec",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -2595,8 +2595,8 @@
                   "timeShift": null,
                   "title": "Latency (getmulti)",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -2673,8 +2673,8 @@
                   "timeShift": null,
                   "title": "Hit ratio",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -2762,8 +2762,8 @@
                   "timeShift": null,
                   "title": "Requests / sec",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -2857,8 +2857,8 @@
                   "timeShift": null,
                   "title": "Latency (getmulti)",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -2934,8 +2934,8 @@
                   "timeShift": null,
                   "title": "Hit ratio",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -3023,8 +3023,8 @@
                   "timeShift": null,
                   "title": "Requests / sec",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -3118,8 +3118,8 @@
                   "timeShift": null,
                   "title": "Latency (getmulti)",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -3195,8 +3195,8 @@
                   "timeShift": null,
                   "title": "Hit ratio",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -3284,8 +3284,8 @@
                   "timeShift": null,
                   "title": "Requests / sec",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -3379,8 +3379,8 @@
                   "timeShift": null,
                   "title": "Latency (getmulti)",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -3456,8 +3456,8 @@
                   "timeShift": null,
                   "title": "Hit ratio",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -3545,8 +3545,8 @@
                   "timeShift": null,
                   "title": "Operations / sec",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -3622,8 +3622,8 @@
                   "timeShift": null,
                   "title": "Error rate",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -3717,8 +3717,8 @@
                   "timeShift": null,
                   "title": "Latency of op: Attributes",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -3812,8 +3812,8 @@
                   "timeShift": null,
                   "title": "Latency of op: Exists",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -3919,8 +3919,8 @@
                   "timeShift": null,
                   "title": "Latency of op: Get",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -4014,8 +4014,8 @@
                   "timeShift": null,
                   "title": "Latency of op: GetRange",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -4109,8 +4109,8 @@
                   "timeShift": null,
                   "title": "Latency of op: Upload",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -4204,8 +4204,8 @@
                   "timeShift": null,
                   "title": "Latency of op: Delete",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -4293,8 +4293,8 @@
                   "timeShift": null,
                   "title": "Operations / sec",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -4370,8 +4370,8 @@
                   "timeShift": null,
                   "title": "Error rate",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -4465,8 +4465,8 @@
                   "timeShift": null,
                   "title": "Latency of op: Attributes",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -4560,8 +4560,8 @@
                   "timeShift": null,
                   "title": "Latency of op: Exists",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -4667,8 +4667,8 @@
                   "timeShift": null,
                   "title": "Latency of op: Get",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -4762,8 +4762,8 @@
                   "timeShift": null,
                   "title": "Latency of op: GetRange",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -4857,8 +4857,8 @@
                   "timeShift": null,
                   "title": "Latency of op: Upload",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -4952,8 +4952,8 @@
                   "timeShift": null,
                   "title": "Latency of op: Delete",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",

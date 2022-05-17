@@ -90,8 +90,8 @@
                   "timeShift": null,
                   "title": "Queue duration",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -185,8 +185,8 @@
                   "timeShift": null,
                   "title": "Retries",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -262,8 +262,8 @@
                   "timeShift": null,
                   "title": "Queue length (per pod)",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -339,8 +339,8 @@
                   "timeShift": null,
                   "title": "Queue length (per user)",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -446,8 +446,8 @@
                   "timeShift": null,
                   "title": "Queue duration",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -523,8 +523,8 @@
                   "timeShift": null,
                   "title": "Queue length (per pod)",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -600,8 +600,8 @@
                   "timeShift": null,
                   "title": "Queue length (per user)",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -690,8 +690,8 @@
                   "timeShift": null,
                   "title": "Intervals per Query",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -767,8 +767,8 @@
                   "timeShift": null,
                   "title": "Results cache hit %",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -844,8 +844,8 @@
                   "timeShift": null,
                   "title": "Results cache misses",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -934,8 +934,8 @@
                   "timeShift": null,
                   "title": "Sharded queries ratio",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -1030,8 +1030,8 @@
                   "timeShift": null,
                   "title": "Number of sharded queries per query",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -1119,8 +1119,8 @@
                   "timeShift": null,
                   "title": "Stages",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -1223,8 +1223,8 @@
                   "timeShift": null,
                   "title": "Series per query",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -1315,8 +1315,8 @@
                   "timeShift": null,
                   "title": "Chunks per query",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -1407,8 +1407,8 @@
                   "timeShift": null,
                   "title": "Samples per query",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -1499,8 +1499,8 @@
                   "timeShift": null,
                   "title": "Exemplars per query",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -1606,8 +1606,8 @@
                   "timeShift": null,
                   "title": "Number of store-gateways hit per query",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -1701,8 +1701,8 @@
                   "timeShift": null,
                   "title": "Refetches of missing blocks per query",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -1778,8 +1778,8 @@
                   "timeShift": null,
                   "title": "Consistency checks failed",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -1885,8 +1885,8 @@
                   "timeShift": null,
                   "title": "Bucket indexes loaded (per querier)",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -1974,8 +1974,8 @@
                   "timeShift": null,
                   "title": "Bucket indexes load / sec",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -2069,8 +2069,8 @@
                   "timeShift": null,
                   "title": "Bucket indexes load latency",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -2158,8 +2158,8 @@
                   "timeShift": null,
                   "title": "Blocks queried / sec",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -2235,8 +2235,8 @@
                   "timeShift": null,
                   "title": "Data fetched / sec",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -2312,8 +2312,8 @@
                   "timeShift": null,
                   "title": "Data touched / sec",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -2419,8 +2419,8 @@
                   "timeShift": null,
                   "title": "Series fetch duration (per request)",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -2514,8 +2514,8 @@
                   "timeShift": null,
                   "title": "Series merge duration (per request)",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -2591,8 +2591,8 @@
                   "timeShift": null,
                   "title": "Series returned (per request)",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -2680,8 +2680,8 @@
                   "timeShift": null,
                   "title": "Blocks currently loaded",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -2769,8 +2769,8 @@
                   "timeShift": null,
                   "title": "Blocks loaded / sec",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -2858,8 +2858,8 @@
                   "timeShift": null,
                   "title": "Blocks dropped / sec",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -2947,8 +2947,8 @@
                   "timeShift": null,
                   "title": "Lazy loaded index-headers",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -3042,8 +3042,8 @@
                   "timeShift": null,
                   "title": "Index-header lazy load duration",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -3131,8 +3131,8 @@
                   "timeShift": null,
                   "title": "Series hash cache hit ratio",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -3208,8 +3208,8 @@
                   "timeShift": null,
                   "title": "ExpandedPostings cache hit ratio",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -3285,8 +3285,8 @@
                   "timeShift": null,
                   "title": "Chunks attributes in-memory cache hit ratio",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",

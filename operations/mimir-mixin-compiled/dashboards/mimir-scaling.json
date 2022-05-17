@@ -207,8 +207,8 @@
                   "timeShift": null,
                   "title": "Workload-based scaling",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "transform": "table",

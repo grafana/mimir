@@ -72,8 +72,8 @@
                   "timeShift": null,
                   "title": "Receive bandwidth",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -149,8 +149,8 @@
                   "timeShift": null,
                   "title": "Transmit bandwidth",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -235,8 +235,8 @@
                   "timeShift": null,
                   "title": "Inflight requests (per pod)",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -330,8 +330,8 @@
                   "timeShift": null,
                   "title": "TCP connections (per pod)",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -419,8 +419,8 @@
                   "timeShift": null,
                   "title": "Receive bandwidth",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -496,8 +496,8 @@
                   "timeShift": null,
                   "title": "Transmit bandwidth",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -582,8 +582,8 @@
                   "timeShift": null,
                   "title": "Inflight requests (per pod)",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -677,8 +677,8 @@
                   "timeShift": null,
                   "title": "TCP connections (per pod)",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -766,8 +766,8 @@
                   "timeShift": null,
                   "title": "Receive bandwidth",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -843,8 +843,8 @@
                   "timeShift": null,
                   "title": "Transmit bandwidth",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -929,8 +929,8 @@
                   "timeShift": null,
                   "title": "Inflight requests (per pod)",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -1024,8 +1024,8 @@
                   "timeShift": null,
                   "title": "TCP connections (per pod)",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",

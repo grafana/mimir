@@ -72,8 +72,8 @@
                   "timeShift": null,
                   "title": "Startup config file hashes",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -161,8 +161,8 @@
                   "timeShift": null,
                   "title": "Runtime config file hashes",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",

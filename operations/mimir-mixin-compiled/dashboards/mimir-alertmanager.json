@@ -71,8 +71,8 @@
                   "timeShift": null,
                   "title": "Total alerts",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "singlestat",
@@ -147,8 +147,8 @@
                   "timeShift": null,
                   "title": "Total silences",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "singlestat",
@@ -223,8 +223,8 @@
                   "timeShift": null,
                   "title": "Tenants",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "singlestat",
@@ -320,8 +320,8 @@
                   "timeShift": null,
                   "title": "QPS",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -412,8 +412,8 @@
                   "timeShift": null,
                   "title": "Latency",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -510,8 +510,8 @@
                   "timeShift": null,
                   "title": "APS",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -608,8 +608,8 @@
                   "timeShift": null,
                   "title": "NPS",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -694,8 +694,8 @@
                   "timeShift": null,
                   "title": "NPS by integration",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -789,8 +789,8 @@
                   "timeShift": null,
                   "title": "Latency",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -886,8 +886,8 @@
                   "timeShift": null,
                   "title": "QPS",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -978,8 +978,8 @@
                   "timeShift": null,
                   "title": "Latency",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -1067,8 +1067,8 @@
                   "timeShift": null,
                   "title": "Operations / sec",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -1144,8 +1144,8 @@
                   "timeShift": null,
                   "title": "Error rate",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -1239,8 +1239,8 @@
                   "timeShift": null,
                   "title": "Latency of op: Attributes",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -1334,8 +1334,8 @@
                   "timeShift": null,
                   "title": "Latency of op: Exists",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -1441,8 +1441,8 @@
                   "timeShift": null,
                   "title": "Latency of op: Get",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -1536,8 +1536,8 @@
                   "timeShift": null,
                   "title": "Latency of op: GetRange",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -1631,8 +1631,8 @@
                   "timeShift": null,
                   "title": "Latency of op: Upload",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -1726,8 +1726,8 @@
                   "timeShift": null,
                   "title": "Latency of op: Delete",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -1815,8 +1815,8 @@
                   "timeShift": null,
                   "title": "Per pod tenants",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -1892,8 +1892,8 @@
                   "timeShift": null,
                   "title": "Per pod alerts",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -1969,8 +1969,8 @@
                   "timeShift": null,
                   "title": "Per pod silences",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -2067,8 +2067,8 @@
                   "timeShift": null,
                   "title": "Syncs/sec",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -2144,8 +2144,8 @@
                   "timeShift": null,
                   "title": "Syncs/sec (by reason)",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -2221,8 +2221,8 @@
                   "timeShift": null,
                   "title": "Ring check errors/sec",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -2310,8 +2310,8 @@
                   "timeShift": null,
                   "title": "Initial syncs /sec",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -2405,8 +2405,8 @@
                   "timeShift": null,
                   "title": "Initial sync duration",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -2491,8 +2491,8 @@
                   "timeShift": null,
                   "title": "Fetch state from other alertmanagers /sec",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -2589,8 +2589,8 @@
                   "timeShift": null,
                   "title": "Replicate state to other alertmanagers /sec",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -2675,8 +2675,8 @@
                   "timeShift": null,
                   "title": "Merge state from other alertmanagers /sec",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -2761,8 +2761,8 @@
                   "timeShift": null,
                   "title": "Persist state to remote storage /sec",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",

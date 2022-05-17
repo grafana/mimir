@@ -123,6 +123,14 @@ local utils = import 'mixin-utils/utils.libsonnet';
     then [utils.selector.noop('%s' % $._config.per_cluster_label), utils.selector.re('job', '$job')]
     else [utils.selector.re('%s' % $._config.per_cluster_label, '$cluster'), utils.selector.re('job', '($namespace)/(%s)' % job)],
 
+  panel(title)::
+    super.panel(title) + {
+      tooltip+: {
+        shared: false,
+        sort: 0,
+      },
+    },
+
   queryPanel(queries, legends, legendLink=null)::
     super.queryPanel(queries, legends, legendLink) + {
       targets: [

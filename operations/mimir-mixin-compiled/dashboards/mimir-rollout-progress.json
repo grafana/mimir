@@ -119,8 +119,8 @@
             "timeShift": null,
             "title": "Rollout progress",
             "tooltip": {
-               "shared": true,
-               "sort": 2,
+               "shared": false,
+               "sort": 0,
                "value_type": "individual"
             },
             "type": "bargauge",
@@ -223,8 +223,8 @@
             "timeShift": null,
             "title": "Writes - 2xx",
             "tooltip": {
-               "shared": true,
-               "sort": 2,
+               "shared": false,
+               "sort": 0,
                "value_type": "individual"
             },
             "type": "stat",
@@ -335,8 +335,8 @@
             "timeShift": null,
             "title": "Writes - 4xx",
             "tooltip": {
-               "shared": true,
-               "sort": 2,
+               "shared": false,
+               "sort": 0,
                "value_type": "individual"
             },
             "type": "stat",
@@ -443,8 +443,8 @@
             "timeShift": null,
             "title": "Writes - 5xx",
             "tooltip": {
-               "shared": true,
-               "sort": 2,
+               "shared": false,
+               "sort": 0,
                "value_type": "individual"
             },
             "type": "stat",
@@ -555,8 +555,8 @@
             "timeShift": null,
             "title": "Writes 99th latency",
             "tooltip": {
-               "shared": true,
-               "sort": 2,
+               "shared": false,
+               "sort": 0,
                "value_type": "individual"
             },
             "type": "stat",
@@ -659,8 +659,8 @@
             "timeShift": null,
             "title": "Reads - 2xx",
             "tooltip": {
-               "shared": true,
-               "sort": 2,
+               "shared": false,
+               "sort": 0,
                "value_type": "individual"
             },
             "type": "stat",
@@ -771,8 +771,8 @@
             "timeShift": null,
             "title": "Reads - 4xx",
             "tooltip": {
-               "shared": true,
-               "sort": 2,
+               "shared": false,
+               "sort": 0,
                "value_type": "individual"
             },
             "type": "stat",
@@ -879,8 +879,8 @@
             "timeShift": null,
             "title": "Reads - 5xx",
             "tooltip": {
-               "shared": true,
-               "sort": 2,
+               "shared": false,
+               "sort": 0,
                "value_type": "individual"
             },
             "type": "stat",
@@ -991,8 +991,8 @@
             "timeShift": null,
             "title": "Reads 99th latency",
             "tooltip": {
-               "shared": true,
-               "sort": 2,
+               "shared": false,
+               "sort": 0,
                "value_type": "individual"
             },
             "type": "stat",
@@ -1119,8 +1119,8 @@
             "timeShift": null,
             "title": "Unhealthy pods",
             "tooltip": {
-               "shared": true,
-               "sort": 2,
+               "shared": false,
+               "sort": 0,
                "value_type": "individual"
             },
             "type": "stat",
@@ -1274,8 +1274,8 @@
             "timeShift": null,
             "title": "Latency vs 24h ago",
             "tooltip": {
-               "shared": true,
-               "sort": 2,
+               "shared": false,
+               "sort": 0,
                "value_type": "individual"
             },
             "type": "graph",

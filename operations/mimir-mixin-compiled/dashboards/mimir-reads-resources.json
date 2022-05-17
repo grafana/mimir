@@ -1407,8 +1407,8 @@
                   "timeShift": null,
                   "title": "Rules",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -2030,8 +2030,8 @@
                   "timeShift": null,
                   "title": "Disk writes",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -2107,8 +2107,8 @@
                   "timeShift": null,
                   "title": "Disk reads",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
@@ -2184,8 +2184,8 @@
                   "timeShift": null,
                   "title": "Disk space utilization",
                   "tooltip": {
-                     "shared": true,
-                     "sort": 2,
+                     "shared": false,
+                     "sort": 0,
                      "value_type": "individual"
                   },
                   "type": "graph",
