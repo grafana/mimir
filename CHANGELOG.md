@@ -2,7 +2,7 @@
 
 ## Grafana Mimir - main / unreleased
 
-## 2.1.0-rc.0
+## 2.1.0-rc.1
 
 ### Grafana Mimir
 * [CHANGE] Compactor: No longer upload debug meta files to object storage. #1257
