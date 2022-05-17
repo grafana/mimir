@@ -36,11 +36,11 @@ type Threadpool struct {
 	tasks  prometheus.Gauge
 }
 
-// NewThreadPool creates a new instance of ThreadPool that runs tasks in a pool
+// NewThreadpool creates a new instance of Threadpool that runs tasks in a pool
 // of dedicated OS threads, meaning no other goroutines are scheduled on the threads.
 // If num is zero, no threads will be started and all calls to Execute will run in
 // the goroutine of the caller.
-func NewThreadPool(num uint, reg prometheus.Registerer) *Threadpool {
+func NewThreadpool(num uint, reg prometheus.Registerer) *Threadpool {
 	tp := &Threadpool{
 		pool:     make(chan *osThread, num),
 		threads:  make([]*osThread, num),
@@ -58,8 +58,10 @@ func NewThreadPool(num uint, reg prometheus.Registerer) *Threadpool {
 	}
 
 	for i := uint(0); i < num; i++ {
+		// Note that we are creating OS threads here but not starting their main loop
+		// until the start method of this service is called. This means that the thread
+		// pool is not usable until it has been started.
 		t := newOSThread(tp.stopping)
-		t.start()
 
 		// Use a slice so that we keep a reference to all threads that are running
 		// and we can easily stop all of them. However, use a channel as the pool
@@ -69,16 +71,33 @@ func NewThreadPool(num uint, reg prometheus.Registerer) *Threadpool {
 		tp.pool <- t
 	}
 
-	tp.Service = services.NewBasicService(nil, tp.run, nil)
+	tp.Service = services.NewBasicService(tp.start, tp.run, tp.stop)
 	return tp
 }
 
-func (t *Threadpool) run(ctx context.Context) error {
-	<-ctx.Done()
+func (t *Threadpool) start(context.Context) error {
+	// Start the main loop of each worker OS thread which causes it to start
+	// running closures and returning their results.
+	for _, thread := range t.threads {
+		thread.start()
+	}
 
+	return nil
+}
+
+func (t *Threadpool) run(ctx context.Context) error {
+	// Our run method doesn't actually do any work, that's left to each of the
+	// workers that are accessed via the Execute method. Just block until this
+	// service is stopped.
+	<-ctx.Done()
+	return nil
+}
+
+func (t *Threadpool) stop(error) error {
 	// Close that channel that we've given to our threads to indicate that they
 	// should stop accepting new work and end.
 	close(t.stopping)
+
 	// Wait for all threads, regardless if they are "in" the pool or being used to
 	// run caller code. The avoids race conditions where threads are removed and
 	// added back to the pool while we are trying to stop all of them.

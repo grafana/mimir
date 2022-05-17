@@ -125,7 +125,7 @@ func newStoreGateway(gatewayCfg Config, storageCfg mimir_tsdb.BlocksStorageConfi
 		storageCfg: storageCfg,
 		logger:     logger,
 		tracker:    tracker,
-		threadpool: threadpool.NewThreadPool(gatewayCfg.ThreadPoolSize, reg),
+		threadpool: threadpool.NewThreadpool(gatewayCfg.ThreadPoolSize, reg),
 		bucketSync: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_storegateway_bucket_sync_total",
 			Help: "Total number of times the bucket sync operation triggered.",
