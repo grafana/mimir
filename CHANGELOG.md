@@ -2,6 +2,9 @@
 
 ## Grafana Mimir - main / unreleased
 
+### Mixin
+* [BUGFIX] Fix `container_memory_usage_bytes:sum` recording rule #1865
+
 ## 2.1.0-rc.0
 
 ### Grafana Mimir
