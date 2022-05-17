@@ -94,14 +94,6 @@ type GzipResponseWriter struct {
 	acceptsIdentity bool                // If false, then request explicitly rejected non-encoded requests.
 }
 
-type GzipResponseWriterWithCloseNotify struct {
-	*GzipResponseWriter
-}
-
-func (w GzipResponseWriterWithCloseNotify) CloseNotify() <-chan bool {
-	return w.ResponseWriter.(http.CloseNotifier).CloseNotify()
-}
-
 // Write appends data to the gzip writer.
 func (w *GzipResponseWriter) Write(b []byte) (int, error) {
 	// GZIP responseWriter is initialized. Use the GZIP responseWriter.
@@ -311,7 +303,9 @@ func NewGzipLevelAndMinSize(level, minSize int) (func(http.Handler) http.Handler
 	return GzipHandlerWithOpts(CompressionLevel(level), MinSize(minSize))
 }
 
-func GzipHandlerWithOpts(opts ...option) (func(http.Handler) http.Handler, error) {
+// GzipHandlerWithOpts creates a middleware that wraps http.Handler with GzipHandler, configured with provided options.
+//nolint:golint
+func GzipHandlerWithOpts(opts ...Option) (func(http.Handler) http.Handler, error) {
 	c := &config{
 		level:   gzip.DefaultCompression,
 		minSize: DefaultMinSize,
@@ -340,12 +334,7 @@ func GzipHandlerWithOpts(opts ...option) (func(http.Handler) http.Handler, error
 				}
 				defer gw.Close()
 
-				if _, ok := w.(http.CloseNotifier); ok {
-					gwcn := GzipResponseWriterWithCloseNotify{gw}
-					h.ServeHTTP(gwcn, r)
-				} else {
-					h.ServeHTTP(gw, r)
-				}
+				h.ServeHTTP(gw, r)
 
 			} else {
 				h.ServeHTTP(w, r)
@@ -402,15 +391,15 @@ func (c *config) validate() error {
 	return nil
 }
 
-type option func(c *config)
+type Option func(c *config)
 
-func MinSize(size int) option {
+func MinSize(size int) Option {
 	return func(c *config) {
 		c.minSize = size
 	}
 }
 
-func CompressionLevel(level int) option {
+func CompressionLevel(level int) Option {
 	return func(c *config) {
 		c.level = level
 	}
@@ -434,7 +423,7 @@ func CompressionLevel(level int) option {
 //
 // By default, responses are gzipped regardless of
 // Content-Type.
-func ContentTypes(types []string) option {
+func ContentTypes(types []string) Option {
 	return func(c *config) {
 		c.contentTypes = []parsedContentType{}
 		for _, v := range types {
