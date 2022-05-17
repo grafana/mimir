@@ -475,13 +475,6 @@ ha_tracker:
 # CLI flag: -distributor.remote-timeout
 [remote_timeout: <duration> | default = 20s]
 
-# (advanced) Try writing to an additional ingester in the presence of an
-# ingester not in the ACTIVE state. It is useful to disable this along with
-# -ingester.ring.unregister-on-shutdown=false in order to not spread samples to
-# extra ingesters during rolling restarts with consistent naming.
-# CLI flag: -distributor.extend-writes
-[extend_writes: <boolean> | default = true]
-
 ring:
   kvstore:
     # Backend storage to use for the ring. Supported values are: consul, etcd,
@@ -677,8 +670,7 @@ ring:
   [instance_availability_zone: <string> | default = ""]
 
   # (advanced) Unregister from the ring upon clean shutdown. It can be useful to
-  # disable for rolling restarts with consistent naming in conjunction with
-  # -distributor.extend-writes=false.
+  # disable for rolling restarts with consistent naming.
   # CLI flag: -ingester.ring.unregister-on-shutdown
   [unregister_on_shutdown: <boolean> | default = true]
 

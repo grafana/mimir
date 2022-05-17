@@ -38,6 +38,7 @@
 * [CHANGE] Distributor: removed the following metrics tracking the number of requests from a distributor to ingesters: #1799
   * `cortex_distributor_ingester_appends_total`
   * `cortex_distributor_ingester_append_failures_total`
+* [CHANGE] Distributor / Ruler: deprecated `-distributor.extend-writes`. Now Mimir always behaves as if this setting was set to `false`, which we expect to be safe for every Mimir cluster setup. #1856
 * [FEATURE] Querier: Added support for [streaming remote read](https://prometheus.io/blog/2019/10/10/remote-read-meets-streaming/). Should be noted that benefits of chunking the response are partial here, since in a typical `query-frontend` setup responses will be buffered until they've been completed. #1735
 * [FEATURE] Ruler: Allow setting `evaluation_delay` for each rule group via rules group configuration file. #1474
 * [FEATURE] Ruler: Added support for expression remote evaluation. #1536 #1818

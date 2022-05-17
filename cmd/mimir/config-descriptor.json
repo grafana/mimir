@@ -911,17 +911,6 @@
           "fieldCategory": "advanced"
         },
         {
-          "kind": "field",
-          "name": "extend_writes",
-          "required": false,
-          "desc": "Try writing to an additional ingester in the presence of an ingester not in the ACTIVE state. It is useful to disable this along with -ingester.ring.unregister-on-shutdown=false in order to not spread samples to extra ingesters during rolling restarts with consistent naming.",
-          "fieldValue": null,
-          "fieldDefaultValue": true,
-          "fieldFlag": "distributor.extend-writes",
-          "fieldType": "boolean",
-          "fieldCategory": "advanced"
-        },
-        {
           "kind": "block",
           "name": "ring",
           "required": false,
@@ -2182,7 +2171,7 @@
               "kind": "field",
               "name": "unregister_on_shutdown",
               "required": false,
-              "desc": "Unregister from the ring upon clean shutdown. It can be useful to disable for rolling restarts with consistent naming in conjunction with -distributor.extend-writes=false.",
+              "desc": "Unregister from the ring upon clean shutdown. It can be useful to disable for rolling restarts with consistent naming.",
               "fieldValue": null,
               "fieldDefaultValue": true,
               "fieldFlag": "ingester.ring.unregister-on-shutdown",
