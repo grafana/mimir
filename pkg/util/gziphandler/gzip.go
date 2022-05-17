@@ -1,4 +1,9 @@
-package gziphandler // import "github.com/NYTimes/gziphandler"
+// SPDX-License-Identifier: AGPL-3.0-only
+// Provenance-includes-location: https://github.com/nytimes/gziphandler/blob/2f8bb1d30d9d69c8e0c3714da5a9917125a87769/gzip.go
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: Copyright 2016-2017 The New York Times Company.
+
+package gziphandler
 
 import (
 	"bufio"
@@ -81,11 +86,12 @@ type GzipResponseWriter struct {
 
 	code int // Saves the WriteHeader value.
 
-	minSize int    // Specifed the minimum response size to gzip. If the response length is bigger than this value, it is compressed.
+	minSize int    // Specifies the minimum response size to gzip. If the response length is bigger than this value, it is compressed.
 	buf     []byte // Holds the first part of the write before reaching the minSize or the end of the write.
 	ignore  bool   // If true, then we immediately passthru writes to the underlying ResponseWriter.
 
-	contentTypes []parsedContentType // Only compress if the response is one of these content-types. All are accepted if empty.
+	contentTypes    []parsedContentType // Only compress if the response is one of these content-types. All are accepted if empty.
+	acceptsIdentity bool                // If false, then request explicitly rejected non-encoded requests.
 }
 
 type GzipResponseWriterWithCloseNotify struct {
@@ -118,19 +124,21 @@ func (w *GzipResponseWriter) Write(b []byte) (int, error) {
 		ce    = w.Header().Get(contentEncoding)
 	)
 	// Only continue if they didn't already choose an encoding or a known unhandled content length or type.
-	if ce == "" && (cl == 0 || cl >= w.minSize) && (ct == "" || handleContentType(w.contentTypes, ct)) {
+	if ce == "" && (cl == 0 || cl >= w.minSize || !w.acceptsIdentity) && (ct == "" || handleContentType(w.contentTypes, ct)) {
 		// If the current buffer is less than minSize and a Content-Length isn't set, then wait until we have more data.
-		if len(w.buf) < w.minSize && cl == 0 {
+		if len(w.buf) < w.minSize && cl == 0 && w.acceptsIdentity {
 			return len(b), nil
 		}
 		// If the Content-Length is larger than minSize or the current buffer is larger than minSize, then continue.
-		if cl >= w.minSize || len(w.buf) >= w.minSize {
+		if cl >= w.minSize || len(w.buf) >= w.minSize || !w.acceptsIdentity {
 			// If a Content-Type wasn't specified, infer it from the current buffer.
 			if ct == "" {
 				ct = http.DetectContentType(w.buf)
 				w.Header().Set(contentType, ct)
 			}
 			// If the Content-Type is acceptable to GZIP, initialize the GZIP writer.
+			// Note that we're ignoring the `acceptsIdentity` here, because we'd have to return a 406 Not Acceptable
+			// in that case but we still might be wrapped by another handler that handles a different encoding.
 			if handleContentType(w.contentTypes, ct) {
 				if err := w.startGzip(); err != nil {
 					return 0, err
@@ -322,12 +330,13 @@ func GzipHandlerWithOpts(opts ...option) (func(http.Handler) http.Handler, error
 
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Add(vary, acceptEncoding)
-			if acceptsGzip(r) {
+			if acceptsGzip, acceptsIdentity := requestAcceptance(r); acceptsGzip {
 				gw := &GzipResponseWriter{
-					ResponseWriter: w,
-					index:          index,
-					minSize:        c.minSize,
-					contentTypes:   c.contentTypes,
+					ResponseWriter:  w,
+					index:           index,
+					minSize:         c.minSize,
+					contentTypes:    c.contentTypes,
+					acceptsIdentity: acceptsIdentity,
 				}
 				defer gw.Close()
 
@@ -445,11 +454,25 @@ func GzipHandler(h http.Handler) http.Handler {
 	return wrapper(h)
 }
 
-// acceptsGzip returns true if the given HTTP request indicates that it will
-// accept a gzipped response.
-func acceptsGzip(r *http.Request) bool {
+// requestAcceptance checks whether a given HTTP request indicates that it will
+// accept a gzipped response and whether it's going to reject an non-encoded response.
+//
+// acceptsGzip is true if the given HTTP request indicates that it will
+// accept a gzipped response and/or an identity request.
+// acceptsIdentity is if the given HTTP request didn't explicitly exclude identity encoding.
+// I.e., either "identity;q=0" or "*;q=0" without a more specific entry for "identity".
+// See https://datatracker.ietf.org/doc/html/rfc7231#section-5.3.4
+func requestAcceptance(r *http.Request) (acceptsGzip bool, acceptsIdentity bool) {
 	acceptedEncodings, _ := parseEncodings(r.Header.Get(acceptEncoding))
-	return acceptedEncodings["gzip"] > 0.0
+
+	identity, iset := acceptedEncodings["identity"]
+	wildcard, wset := acceptedEncodings["*"]
+	rejectsIdentity := (iset && identity == 0) || (!iset && wset && wildcard == 0)
+
+	gzip, gzset := acceptedEncodings["gzip"]
+	acceptsGzip = gzip > 0 || (!gzset && wildcard > 0)
+
+	return acceptsGzip, !rejectsIdentity
 }
 
 // returns true if we've been configured to compress the specific content type.

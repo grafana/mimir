@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Provenance-includes-location: https://github.com/nytimes/gziphandler/blob/2f8bb1d30d9d69c8e0c3714da5a9917125a87769/gzip_go18.go
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: Copyright 2016-2017 The New York Times Company.
+//go:build go1.8
 // +build go1.8
 
 package gziphandler
