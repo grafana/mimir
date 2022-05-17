@@ -3,7 +3,9 @@
 ## Grafana Mimir - main / unreleased
 
 ### Mixin
+
 * [ENHANCEMENT] Dashboards: Add config option `datasource_regex` to customise the regular expression used to select valid datasources for Mimir dashboards. #1802
+* [BUGFIX] Fix `container_memory_usage_bytes:sum` recording rule #1865
 
 ## 2.1.0-rc.0
 

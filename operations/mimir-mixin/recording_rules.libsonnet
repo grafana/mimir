@@ -335,7 +335,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
               sum by (%(alert_aggregation_labels)s, deployment) (
                 label_replace(
                   label_replace(
-                    container_memory_usage_bytes,
+                    container_memory_usage_bytes{image!=""},
                     "deployment", "$1", "%(per_instance_label)s", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
                   ),
                   # The question mark in "(.*?)" is used to make it non-greedy, otherwise it
