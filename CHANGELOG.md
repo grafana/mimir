@@ -2,6 +2,10 @@
 
 ## Grafana Mimir - main / unreleased
 
+### Mixin
+
+* [ENHANCEMENT] Adds an optional `aggregations` prefix to distributor pod/job names so that alerts and dashboards include the m3 aggregations distributors. #1862
+
 ## 2.1.0-rc.0
 
 ### Grafana Mimir

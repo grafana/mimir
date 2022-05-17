@@ -22,12 +22,12 @@
     // docs/sources/operators-guide/visualizing-metrics/requirements.md
     job_names: {
       ingester: '(ingester.*|cortex|mimir)',  // Match also custom and per-zone ingester deployments.
-      distributor: '(distributor|cortex|mimir)',
+      distributor: '(aggregations-)?(distributor|cortex|mimir)',
       querier: '(querier.*|cortex|mimir)',  // Match also custom querier deployments.
       ruler: '(ruler|cortex|mimir)',
       query_frontend: '(query-frontend.*|cortex|mimir)',  // Match also custom query-frontend deployments.
       query_scheduler: 'query-scheduler.*',  // Not part of single-binary. Match also custom query-scheduler deployments.
-      ring_members: ['compactor', 'distributor', 'ingester.*', 'querier.*', 'ruler', 'store-gateway.*', 'cortex', 'mimir'],
+      ring_members: ['compactor', '(aggregations-)?distributor', 'ingester.*', 'querier.*', 'ruler', 'store-gateway.*', 'cortex', 'mimir'],
       store_gateway: '(store-gateway.*|cortex|mimir)',  // Match also per-zone store-gateway deployments.
       gateway: '(gateway|cortex-gw|cortex-gw-internal)',
       compactor: 'compactor.*|cortex|mimir',  // Match also custom compactor deployments.
@@ -58,7 +58,7 @@
       compactor: 'compactor.*',
       alertmanager: 'alertmanager.*',
       ingester: 'ingester.*',
-      distributor: 'distributor.*',
+      distributor: '(aggregations-)?distributor.*',
       querier: 'querier.*',
       ruler: 'ruler.*',
       query_frontend: 'query-frontend.*',
