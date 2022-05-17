@@ -9,7 +9,7 @@ A new Grafana Mimir release is cut approximately every 6 weeks. The following ta
 | Version | Date       | Release shepherd  |
 | ------- | ---------- | ----------------- |
 | 2.0.0   | 2022-03-20 | Marco Pracucci    |
-| 2.1.0   | 2022-05-16 | _To be announced_ |
+| 2.1.0   | 2022-05-16 | Johanna Ratliff   |
 | 2.2.0   | 2022-06-27 | _To be announced_ |
 | 2.3.0   | 2022-08-08 | _To be announced_ |
 
