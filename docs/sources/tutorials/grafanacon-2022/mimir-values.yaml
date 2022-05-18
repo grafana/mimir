@@ -16,3 +16,4 @@ nginx:
 
 serviceMonitor:
   enabled: true
+  interval: 10s
