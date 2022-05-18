@@ -5,6 +5,7 @@
 ### Mixin
 
 * [ENHANCEMENT] Dashboards: Add config option `datasource_regex` to customise the regular expression used to select valid datasources for Mimir dashboards. #1802
+* [ENHANCEMENT] Alerts: Add `MimirStoreGatewayNoSyncedBlocks` alert that fires when there is a store-gateway without any blocks sharded to it. #1882
 * [BUGFIX] Fix `container_memory_usage_bytes:sum` recording rule #1865
 * [BUGFIX] Fix `MimirGossipMembersMismatch` alerts if Mimir alertmanager is activated #1870
 
