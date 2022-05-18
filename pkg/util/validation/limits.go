@@ -253,6 +253,9 @@ func SetDefaultLimitsForYAMLUnmarshalling(defaults Limits) {
 	defaultLimits = &defaults
 }
 
+type ChangeListener func()
+type ChangeListenerRef interface{}
+
 // TenantLimits exposes per-tenant limit overrides to various resource usage limits
 type TenantLimits interface {
 	// ByUserID gets limits specific to a particular tenant or nil if there are none
@@ -260,6 +263,14 @@ type TenantLimits interface {
 
 	// AllByUserID gets a mapping of all tenant IDs and limits for that user
 	AllByUserID() map[string]*Limits
+
+	// AddChangeListener adds a listener function which will get called each time the tenants
+	// limit configuration has changed. This function returns a listener reference that can
+	// be used to unregister the listener calling RemoveChangeListener().
+	AddChangeListener(listener ChangeListener) ChangeListenerRef
+
+	// RemoveChangeListener removes a listener previous registered via AddChangeListener().
+	RemoveChangeListener(ref ChangeListenerRef)
 }
 
 // Overrides periodically fetch a set of per-user overrides, and provides convenience
@@ -275,6 +286,26 @@ func NewOverrides(defaults Limits, tenantLimits TenantLimits) (*Overrides, error
 		tenantLimits:  tenantLimits,
 		defaultLimits: &defaults,
 	}, nil
+}
+
+// AddChangeListener adds a listener function which will get called each time the overrides
+// configuration has changed. This function returns a listener reference that can
+// be used to unregister the listener calling RemoveChangeListener().
+func (o *Overrides) AddChangeListener(listener ChangeListener) ChangeListenerRef {
+	if o.tenantLimits != nil {
+		return o.tenantLimits.AddChangeListener(func() {
+			listener()
+		})
+	}
+
+	return nil
+}
+
+// RemoveChangeListener removes a listener previous registered via AddChangeListener().
+func (o *Overrides) RemoveChangeListener(ref ChangeListenerRef) {
+	if o.tenantLimits != nil && ref != nil {
+		o.tenantLimits.RemoveChangeListener(ref)
+	}
 }
 
 // IngestionRate returns the limit on ingester rate (samples per second).

@@ -753,6 +753,78 @@ func TestStoreGateway_SyncOnRingTopologyChanged(t *testing.T) {
 	}
 }
 
+func TestStoreGateway_SyncOnOverridesConfigChanged(t *testing.T) {
+	test.VerifyNoLeak(t)
+
+	tests := map[string]struct {
+		changeLimits func(limits *validation.MockTenantLimits)
+		expectedSync bool
+	}{
+		"should NOT sync if overrides config hasn't changed": {
+			expectedSync: false,
+		},
+		"should sync when overrides config changes": {
+			changeLimits: func(limits *validation.MockTenantLimits) {
+				limits.NotifyChangeListeners()
+			},
+			expectedSync: true,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			ctx := context.Background()
+			gatewayCfg := mockGatewayConfig()
+			gatewayCfg.ShardingRing.RingCheckPeriod = time.Hour // Do not check the ring changes.
+
+			storageCfg := mockStorageConfig(t)
+			storageCfg.BucketStore.SyncInterval = time.Hour // Do not trigger the periodic sync in this test.
+
+			reg := prometheus.NewPedanticRegistry()
+			ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
+			t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
+			bucketClient := &bucket.ClientMock{}
+			bucketClient.MockIter("", []string{}, nil)
+
+			limits := validation.NewMockTenantLimits(nil)
+			overrides, err := validation.NewOverrides(defaultLimitsConfig(), limits)
+			require.NoError(t, err)
+
+			g, err := newStoreGateway(gatewayCfg, storageCfg, bucketClient, ringStore, overrides, mockLoggingLevel(), log.NewNopLogger(), reg, nil)
+			require.NoError(t, err)
+
+			require.NoError(t, services.StartAndAwaitRunning(ctx, g))
+			t.Cleanup(func() { assert.NoError(t, services.StopAndAwaitTerminated(ctx, g)) })
+
+			// Assert on the initial state.
+			regs := util.NewUserRegistries()
+			regs.AddUserRegistry("test", reg)
+			metrics := regs.BuildMetricFamiliesPerUser()
+			assert.Equal(t, float64(1), metrics.GetSumOfCounters("cortex_storegateway_bucket_sync_total"))
+
+			// Apply changes.
+			if testData.changeLimits != nil {
+				testData.changeLimits(limits)
+			}
+
+			// Assert whether the sync triggered or not.
+			if testData.expectedSync {
+				dstest.Poll(t, time.Second, float64(2), func() interface{} {
+					metrics := regs.BuildMetricFamiliesPerUser()
+					return metrics.GetSumOfCounters("cortex_storegateway_bucket_sync_total")
+				})
+			} else {
+				// Give some time to the store-gateway to trigger the sync (if any).
+				time.Sleep(250 * time.Millisecond)
+
+				metrics := regs.BuildMetricFamiliesPerUser()
+				assert.Equal(t, float64(1), metrics.GetSumOfCounters("cortex_storegateway_bucket_sync_total"))
+			}
+		})
+	}
+}
+
 func TestStoreGateway_SyncShouldKeepPreviousBlocksIfInstanceIsUnhealthyInTheRing(t *testing.T) {
 	test.VerifyNoLeak(t)
 

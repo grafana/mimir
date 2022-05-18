@@ -34,9 +34,10 @@ import (
 )
 
 const (
-	syncReasonInitial    = "initial"
-	syncReasonPeriodic   = "periodic"
-	syncReasonRingChange = "ring-change"
+	syncReasonInitial      = "initial"
+	syncReasonPeriodic     = "periodic"
+	syncReasonRingChange   = "ring-change"
+	syncReasonConfigChange = "config-change"
 
 	// ringAutoForgetUnhealthyPeriods is how many consecutive timeout periods an unhealthy instance
 	// in the ring will be automatically removed.
@@ -44,6 +45,8 @@ const (
 )
 
 var (
+	syncReasons = []string{syncReasonInitial, syncReasonPeriodic, syncReasonRingChange, syncReasonConfigChange}
+
 	// Validation errors.
 	errInvalidTenantShardSize = errors.New("invalid tenant shard size, the value must be greater or equal to 0")
 )
@@ -78,6 +81,7 @@ type StoreGateway struct {
 	logger     log.Logger
 	stores     *BucketStores
 	tracker    *activitytracker.ActivityTracker
+	limits     *validation.Overrides
 
 	// Ring used for sharding blocks.
 	ringLifecycler *ring.BasicLifecycler
@@ -119,6 +123,7 @@ func newStoreGateway(gatewayCfg Config, storageCfg mimir_tsdb.BlocksStorageConfi
 		storageCfg: storageCfg,
 		logger:     logger,
 		tracker:    tracker,
+		limits:     limits,
 		bucketSync: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_storegateway_bucket_sync_total",
 			Help: "Total number of times the bucket sync operation triggered.",
@@ -126,9 +131,9 @@ func newStoreGateway(gatewayCfg Config, storageCfg mimir_tsdb.BlocksStorageConfi
 	}
 
 	// Init metrics.
-	g.bucketSync.WithLabelValues(syncReasonInitial)
-	g.bucketSync.WithLabelValues(syncReasonPeriodic)
-	g.bucketSync.WithLabelValues(syncReasonRingChange)
+	for _, reason := range syncReasons {
+		g.bucketSync.WithLabelValues(reason)
+	}
 
 	// Init sharding strategy.
 	var shardingStrategy ShardingStrategy
@@ -256,10 +261,28 @@ func (g *StoreGateway) running(ctx context.Context) error {
 	ringTicker := time.NewTicker(util.DurationWithJitter(g.gatewayCfg.ShardingRing.RingCheckPeriod, 0.2))
 	defer ringTicker.Stop()
 
+	// Watch for limits config changes.
+	configChanged := make(chan struct{}, 1)
+	ref := g.limits.AddChangeListener(func() {
+		select {
+		case configChanged <- struct{}{}:
+		default:
+			// We already enqueued a config change message which hasn't been processed yet,
+			// so we can just skip this one.
+		}
+	})
+	defer close(configChanged)
+	defer g.limits.RemoveChangeListener(ref)
+
 	for {
 		select {
 		case <-syncTicker.C:
 			g.syncStores(ctx, syncReasonPeriodic)
+		case <-configChanged:
+			// To keep it simple and since we don't expect overrides config to change very frequently,
+			// we sync the stores each time the overrides config has changed, regardless the change
+			// impacts the store-gateway or not.
+			g.syncStores(ctx, syncReasonConfigChange)
 		case <-ringTicker.C:
 			// We ignore the error because in case of error it will return an empty
 			// replication set which we use to compare with the previous state.
