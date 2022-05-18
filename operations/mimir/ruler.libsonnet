@@ -26,10 +26,6 @@
       'ruler.ring.store': 'consul',
       'ruler.ring.consul.hostname': 'consul.%s.svc.cluster.local:8500' % $._config.namespace,
 
-      // Limits
-      'server.grpc-max-send-msg-size-bytes': 10 * 1024 * 1024,
-      'server.grpc-max-recv-msg-size-bytes': 10 * 1024 * 1024,
-
       'server.http-listen-port': $._config.server_http_port,
     },
 

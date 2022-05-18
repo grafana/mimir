@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"reflect"
+	"strconv"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -318,6 +319,12 @@ func (c *Config) registerServerFlagsWithChangedDefaultValues(fs *flag.FlagSet) {
 
 		case "server.http-listen-port":
 			_ = f.Value.Set("8080")
+
+		case "server.grpc-max-recv-msg-size-bytes":
+			_ = f.Value.Set(strconv.Itoa(100 * 1024 * 1024))
+
+		case "server.grpc-max-send-msg-size-bytes":
+			_ = f.Value.Set(strconv.Itoa(100 * 1024 * 1024))
 		}
 
 		fs.Var(f.Value, f.Name, f.Usage)

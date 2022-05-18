@@ -29,8 +29,6 @@
       // Limits config.
       'runtime-config.file': '%s/overrides.yaml' % $._config.overrides_configmap_mountpoint,
       'server.grpc-max-concurrent-streams': 10000,
-      'server.grpc-max-send-msg-size-bytes': 10 * 1024 * 1024,
-      'server.grpc-max-recv-msg-size-bytes': 10 * 1024 * 1024,
 
       // Blocks storage.
       'blocks-storage.tsdb.dir': '/data/tsdb',
