@@ -35,7 +35,7 @@ cortex_ingester_active_series_custom_tracker{name="prod", user="tenant_1"}      
 cortex_ingester_active_series_custom_tracker{name="prod", user="tenant_with_only_prod_metrics"}   3
 ```
 
-Starting with Mimir version 2.1 default configuration as described above can be overriden for specific tenants in the [runtime configuration]({{< relref "./about-runtime-configuration.md" >}}).
+Starting with Mimir version 2.1 default configuration as described above can be overridden for specific tenants in the [runtime configuration]({{< relref "./about-runtime-configuration.md" >}}).
 
 The example below shows how you could override the active series custom trackers configuration for tenant `tenant_with_only_prod_metrics` to track two interesting services instead of the default matchers.
 
