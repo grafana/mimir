@@ -4,4 +4,3 @@
 # multi_kv_config:
 #  mirror_enabled: false
 #  primary: consul
-

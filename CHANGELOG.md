@@ -2,6 +2,10 @@
 
 ## Grafana Mimir - main / unreleased
 
+### Grafana Mimir
+
+* [ENHANCEMENT] Store-gateway: resync blocks as soon as the overrides runtime configuration changes. #1879
+
 ### Mixin
 
 * [ENHANCEMENT] Dashboards: Add config option `datasource_regex` to customise the regular expression used to select valid datasources for Mimir dashboards. #1802

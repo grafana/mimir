@@ -9,6 +9,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"reflect"
 
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/runtimeconfig"
@@ -47,6 +48,30 @@ type runtimeConfigTenantLimits struct {
 func newTenantLimits(manager *runtimeconfig.Manager) validation.TenantLimits {
 	return &runtimeConfigTenantLimits{
 		manager: manager,
+	}
+}
+
+// AddChangeListener implements validation.TenantLimits.
+func (l *runtimeConfigTenantLimits) AddChangeListener(listener validation.ChangeListener) validation.ChangeListenerRef {
+	ch := l.manager.CreateListenerChannel(1)
+	lastConfig := l.manager.GetConfig()
+
+	go func() {
+		for range ch {
+			if currConfig := l.manager.GetConfig(); !reflect.DeepEqual(lastConfig, currConfig) {
+				listener()
+				lastConfig = currConfig
+			}
+		}
+	}()
+
+	return ch
+}
+
+// RemoveChangeListener implements validation.TenantLimits.
+func (l *runtimeConfigTenantLimits) RemoveChangeListener(ref validation.ChangeListenerRef) {
+	if ch, ok := ref.(<-chan interface{}); ok {
+		l.manager.CloseListenerChannel(ch)
 	}
 }
 

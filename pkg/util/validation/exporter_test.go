@@ -26,7 +26,7 @@ func TestOverridesExporter_noConfig(t *testing.T) {
 }
 
 func TestOverridesExporter_emptyConfig(t *testing.T) {
-	exporter := NewOverridesExporter(&Limits{}, newMockTenantLimits(nil))
+	exporter := NewOverridesExporter(&Limits{}, NewMockTenantLimits(nil))
 
 	// With no updated override configurations, there should be no override metrics
 	count := testutil.CollectAndCount(exporter, "cortex_limits_overrides")
@@ -64,7 +64,7 @@ func TestOverridesExporter_withConfig(t *testing.T) {
 		MaxFetchedChunkBytesPerQuery: 29,
 		RulerMaxRulesPerRuleGroup:    31,
 		RulerMaxRuleGroupsPerTenant:  32,
-	}, newMockTenantLimits(tenantLimits))
+	}, NewMockTenantLimits(tenantLimits))
 	limitsMetrics := `
 # HELP cortex_limits_overrides Resource limit overrides applied to tenants
 # TYPE cortex_limits_overrides gauge
