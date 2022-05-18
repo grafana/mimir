@@ -188,8 +188,6 @@
 
     alertmanager: {
       replicas: 3,
-      sharding_enabled: false,
-      gossip_port: 9094,
       fallback_config: {},
       ring_store: 'consul',
       ring_hostname: 'consul.%s.svc.cluster.local:8500' % $._config.namespace,
