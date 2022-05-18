@@ -353,7 +353,7 @@ groups:
     expr: |
       memberlist_client_cluster_members_count
         != on (cluster, namespace) group_left
-      sum by (cluster, namespace) (up{job=~".+/(compactor|distributor|ingester.*|querier.*|ruler|store-gateway.*|cortex|mimir)"})
+      sum by (cluster, namespace) (up{job=~".+/(alertmanager|compactor|distributor|ingester.*|querier.*|ruler|store-gateway.*|cortex|mimir)"})
     for: 5m
     labels:
       severity: warning
