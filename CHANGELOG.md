@@ -2,12 +2,13 @@
 
 ## Grafana Mimir - main / unreleased
 
+* [BUGFIX] Fix regexp parsing panic for regexp label matchers with start/end quantifiers. #1883
+
 ### Mixin
 
 * [ENHANCEMENT] Dashboards: Add config option `datasource_regex` to customise the regular expression used to select valid datasources for Mimir dashboards. #1802
 * [BUGFIX] Fix `container_memory_usage_bytes:sum` recording rule #1865
 * [BUGFIX] Fix `MimirGossipMembersMismatch` alerts if Mimir alertmanager is activated #1870
-* [BUGFIX] Fix regexp parsing panic for regexps with start/end cuantifiers. #1883
 
 ## 2.1.0-rc.0
 
