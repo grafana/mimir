@@ -210,6 +210,20 @@
           },
         },
         {
+          // Alert if the store-gateway is not owning any blocks
+          alert: $.alertName('StoreGatewayNoSyncedBlocks'),
+          'for': '1h',
+          expr: |||
+            min by(%(alert_aggregation_labels)s, %(per_instance_label)s) (cortex_bucket_stores_tenants_synced{component="store-gateway"}) == 0
+          ||| % $._config,
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: '%(product)s Store Gateway %(alert_instance_variable)s in %(alert_aggregation_variables)s is not syncing any blocks for any tenant.' % $._config,
+          },
+        },
+        {
           // Alert if the bucket index has not been updated for a given user.
           alert: $.alertName('BucketIndexNotUpdated'),
           expr: |||
