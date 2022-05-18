@@ -2,6 +2,8 @@
 
 ## Grafana Mimir - main / unreleased
 
+* [BUGFIX] Fix regexp parsing panic for regexp label matchers with start/end quantifiers. #1883
+
 ### Mixin
 
 * [ENHANCEMENT] Dashboards: Add config option `datasource_regex` to customise the regular expression used to select valid datasources for Mimir dashboards. #1802
