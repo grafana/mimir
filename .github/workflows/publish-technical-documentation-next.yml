@@ -6,7 +6,7 @@ on:
     - "main"
     paths:
     - "docs/sources/**"
-    workflow_dispatch:
+  workflow_dispatch:
 jobs:
   test:
     runs-on: "ubuntu-latest"
