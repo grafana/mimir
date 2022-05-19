@@ -27,7 +27,7 @@ Series with metric name `cortex_ingester_active_series_custom_tracker` have two 
 
 To illustrate this, assume that two custom trackers are configured as in the preceding YAML snippet, and that your Grafana Mimir cluster has two tenants: `tenant_1` and `tenant_with_only_prod_metrics`. Assume that `tenant_with_only_prod_metrics` has three series with labels that match the pattern `{namespace=~"prod-.*"}` and none that match the patten `{namespace=~"dev-.*"}`. Also assume that `tenant_1` has five series that match the pattern `{namespace=~"dev-.*"}` and 10 series that match the pattern `{namespace=~"prod-.*"}`.
 
-You should see the following output when the `/metrics` endpoint for the ingester component is scraped:
+In this example, the following output appears when the `/metrics` endpoint for the ingester component is scraped:
 
 ```
 cortex_ingester_active_series_custom_tracker{name="dev", user="tenant_1"}                         5
