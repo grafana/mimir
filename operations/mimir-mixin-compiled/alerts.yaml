@@ -598,7 +598,7 @@ groups:
       severity: warning
   - alert: MimirStoreGatewayHasNotSyncTheBucket
     annotations:
-      message: Mimir Store Gateway {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace
+      message: Mimir store-gateway {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace
         }} has not successfully synched the bucket since {{ $value | humanizeDuration
         }}.
     expr: |
@@ -608,6 +608,15 @@ groups:
     for: 5m
     labels:
       severity: critical
+  - alert: MimirStoreGatewayNoSyncedTenants
+    annotations:
+      message: Mimir store-gateway {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace
+        }} is not syncing any blocks for any tenant.
+    expr: |
+      min by(cluster, namespace, pod) (cortex_bucket_stores_tenants_synced{component="store-gateway"}) == 0
+    for: 1h
+    labels:
+      severity: warning
   - alert: MimirBucketIndexNotUpdated
     annotations:
       message: Mimir bucket index for tenant {{ $labels.user }} in {{ $labels.cluster
