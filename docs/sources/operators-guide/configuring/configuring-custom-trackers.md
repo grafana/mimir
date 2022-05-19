@@ -47,7 +47,7 @@ overrides:
       also-interesting-service: '{service=~"also-interesting-.*"}'
 ```
 
-After adding this override, and assuming there are 1 and 2 matching series for `interesting-service` and `also-interesting-service`, respectively, the output at `/metrics` would change to:
+After adding this override, and assuming that there is one matching series for `interesting-service` and two matching series for `also-interesting-service`, the output at `/metrics` changes:
 
 ```
 cortex_ingester_active_series_custom_tracker{name="dev", user="tenant_1"}                                           5
