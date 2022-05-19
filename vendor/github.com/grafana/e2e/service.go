@@ -566,7 +566,7 @@ func (s *HTTPService) Metrics() (_ string, err error) {
 	logger.Log(fmt.Sprintf("Metrics() is fetching metrics from port %d for service %s ", localPort, s.name))
 
 	// Fetch metrics.
-	res, err := DoGet(fmt.Sprintf("http://localhost:%d/metrics", localPort))
+	res, err := DoGet(fmt.Sprintf("http://127.0.0.1:%d/metrics", localPort))
 	if err != nil {
 		return "", err
 	}
