@@ -312,7 +312,7 @@ How it **works**:
 
 How to **fix**:
 
-- Increase the evaluation interval of the rule group. You can use the rate of missed evaluation to estimate how long the rule group evaluation actually takes. 
+- Increase the evaluation interval of the rule group. You can use the rate of missed evaluation to estimate how long the rule group evaluation actually takes.
 - Try splitting up the rule group into multiple rule groups. Rule groups are evaluated in parallel, so the same rules may still fit in the same resolution.
 
 ### MimirIngesterHasNotShippedBlocks
