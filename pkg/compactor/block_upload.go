@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"path"
-	"strings"
+	"regexp"
 
 	"github.com/go-kit/log/level"
 	"github.com/gorilla/mux"
@@ -69,12 +69,13 @@ func (c *MultitenantCompactor) UploadBlockFile(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	dst := path.Clean(path.Join(blockID, pth))
-	elems := strings.SplitN(dst, "/", 2)
-	if len(elems) != 2 || elems[0] != blockID || elems[1] == "" {
+	rePath := regexp.MustCompile(`^(index|chunks/\d{6})$`)
+	if !rePath.MatchString(pth) {
 		http.Error(w, fmt.Sprintf("invalid path: %q", pth), http.StatusBadRequest)
 		return
 	}
+
+	dst := path.Join(blockID, pth)
 
 	if r.Body == nil || r.ContentLength == 0 {
 		http.Error(w, "file cannot be empty", http.StatusBadRequest)
