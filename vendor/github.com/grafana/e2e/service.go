@@ -611,6 +611,13 @@ func (s *HTTPService) WaitSumMetricsWithOptions(isExpected func(sums ...float64)
 		if options.WaitMissingMetrics && errors.Is(err, errMissingMetric) {
 			continue
 		}
+
+		// TODO DEBUG
+		if errors.Is(err, errMissingMetric) {
+			logger.Log("msg", "WaitSumMetricsWithOptions() metrics are missing and WaitMissingMetrics=false but we're waiting anyway for debugging purposes", "metric_names", metricNames)
+			continue
+		}
+
 		if err != nil {
 			return err
 		}
@@ -635,7 +642,7 @@ func (s *HTTPService) SumMetrics(metricNames []string, opts ...MetricsOption) ([
 		return nil, err
 	}
 
-	logger.Log("msg", "SumMetrics() has fetched %d bytes of metrics", len(metrics), "preview", metrics[:100])
+	logger.Log("msg", fmt.Sprintf("SumMetrics() has fetched %d bytes of metrics", len(metrics)), "service", s.name, "preview", strings.ReplaceAll(metrics[:1024], "\n", " "))
 
 	var tp expfmt.TextParser
 	families, err := tp.TextToMetricFamilies(strings.NewReader(metrics))

@@ -753,7 +753,7 @@ func TestQuerierWithBlocksStorageOnMissingBlocksFromStorage(t *testing.T) {
 	require.Equal(t, 200, res.StatusCode)
 
 	// Wait until the TSDB head is compacted and shipped to the storage.
-	// The shipped block contains the 1st series, while the 2ns series in in the head.
+	// The shipped block contains the 1st series, while the 2ns series in the head.
 	require.NoError(t, ingester.WaitSumMetrics(e2e.Equals(1), "cortex_ingester_shipper_uploads_total"))
 	require.NoError(t, ingester.WaitSumMetrics(e2e.Equals(2), "cortex_ingester_memory_series_created_total"))
 	require.NoError(t, ingester.WaitSumMetrics(e2e.Equals(1), "cortex_ingester_memory_series_removed_total"))
