@@ -210,7 +210,7 @@
           },
         },
         {
-          // Alert if the store-gateway is not owning any blocks
+          // Alert if the store-gateway is not owning any tenant.
           alert: $.alertName('StoreGatewayNoSyncedBlocks'),
           'for': '1h',
           expr: |||

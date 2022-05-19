@@ -448,11 +448,11 @@ How to **investigate**:
 
 ### MimirStoreGatewayNoSyncedBlocks
 
-This alert fires a store-gateway is not syncing any blocks. Effectively it is sitting idle because no blocks are sharded to it.
+This alert fires when a store-gateway doesn't own any tenant. Effectively it is sitting idle because no blocks are sharded to it.
 
 How it **works**:
 
-- Store-gateways join a hash ring to shard block IDs across all store-gateway replicas.
+- Store-gateways join a hash ring to shard tenants and blocks across all store-gateway replicas.
 - A tenant can be sharded across multiple store-gateways. How many exactly is determined by `-store-gateway.tenant-shard-size` or the `store_gateway_tenant_shard_size` limit.
 - When the tenant shard size is less than the replicas of store-gateways, some store-gateways may not get any tenants' blocks sharded to them.
 - This is more likely to happen in Mimir clusters with fewer number of tenants.
