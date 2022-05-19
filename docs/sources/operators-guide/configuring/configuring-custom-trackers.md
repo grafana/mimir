@@ -43,17 +43,17 @@ You can override the active series custom trackers’ configuration for the tena
 overrides:
   tenant_with_only_prod_metrics:
     active_series_custom_trackers:
-      interesting-service: '{service=~"interesting-.*"}'
-      also-interesting-service: '{service=~"also-interesting-.*"}'
+      service1: '{service="service1"}'
+      service2: '{service="service2"}'
 ```
 
-After adding this override, and assuming that there is one matching series for `interesting-service` and two matching series for `also-interesting-service`, the output at `/metrics` changes:
+After adding this override, and assuming that there is one matching series for `service1` and two matching series for `service2`, the output at `/metrics` changes:
 
 ```
 cortex_ingester_active_series_custom_tracker{name="dev", user="tenant_1"}                                           5
 cortex_ingester_active_series_custom_tracker{name="prod", user="tenant_1"}                                         10
-cortex_ingester_active_series_custom_tracker{name="interesting-service", user="tenant_with_only_prod_metrics"}      1
-cortex_ingester_active_series_custom_tracker{name="also-interesting-service", user="tenant_with_only_prod_metrics"} 2
+cortex_ingester_active_series_custom_tracker{name="service1", user="tenant_with_only_prod_metrics"}                 1
+cortex_ingester_active_series_custom_tracker{name="service2", user="tenant_with_only_prod_metrics"}                 2
 ```
 
 To set up runtime overrides, refer to [runtime configuration]({{< relref "./about-runtime-configuration.md" >}}).
