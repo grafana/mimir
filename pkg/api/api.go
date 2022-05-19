@@ -379,8 +379,8 @@ func (a *API) RegisterCompactor(c *compactor.MultitenantCompactor) {
 	a.RegisterRoute("/api/v1/upload/block/{block}", http.HandlerFunc(c.CreateBlockUpload), true,
 		false, http.MethodPost)
 	// Endpoint to handle requests for uploading block files to a backfill.
-	a.RegisterRoute("/api/v1/upload/block/{block}/{path}", http.HandlerFunc(c.UploadBlockFile),
-		true, false, http.MethodPost)
+	a.RegisterRouteWithQueryParameters("/api/v1/upload/block/{block}/files", http.HandlerFunc(c.UploadBlockFile),
+		true, false, []string{"path", "{path}"}, http.MethodPost)
 }
 
 type Distributor interface {

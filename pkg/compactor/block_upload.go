@@ -48,7 +48,7 @@ func (c *MultitenantCompactor) UploadBlockFile(w http.ResponseWriter, r *http.Re
 		http.Error(w, "missing block ID", http.StatusBadRequest)
 		return
 	}
-	pth, err := url.PathUnescape(vars["path"])
+	pth, err := url.QueryUnescape(vars["path"])
 	if err != nil {
 		http.Error(w, fmt.Sprintf("malformed file path: %q", vars["path"]), http.StatusBadRequest)
 		return
