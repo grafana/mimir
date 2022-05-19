@@ -115,7 +115,7 @@ func (l *Limiter) formatMaxSeriesPerUserError(userID string) error {
 	actualLimit := l.maxSeriesPerUser(userID)
 	globalLimit := l.limits.MaxGlobalSeriesPerUser(userID)
 
-	return fmt.Errorf("per-user series limit of %d exceeded, please contact administrator to raise it (per-ingester local limit: %d)",
+	return fmt.Errorf("per-user series limit of %d exceeded, contact an administrator to raise it (per-ingester local limit: %d)",
 		globalLimit, actualLimit)
 }
 
@@ -123,7 +123,7 @@ func (l *Limiter) formatMaxSeriesPerMetricError(userID string) error {
 	actualLimit := l.maxSeriesPerMetric(userID)
 	globalLimit := l.limits.MaxGlobalSeriesPerMetric(userID)
 
-	return fmt.Errorf("per-metric series limit of %d exceeded, please contact administrator to raise it (per-ingester local limit: %d)",
+	return fmt.Errorf("per-metric series limit of %d exceeded, contact an administrator to raise it (per-ingester local limit: %d)",
 		globalLimit, actualLimit)
 }
 
@@ -131,7 +131,7 @@ func (l *Limiter) formatMaxMetadataPerUserError(userID string) error {
 	actualLimit := l.maxMetadataPerUser(userID)
 	globalLimit := l.limits.MaxGlobalMetricsWithMetadataPerUser(userID)
 
-	return fmt.Errorf("per-user metric metadata limit of %d exceeded, please contact administrator to raise it (per-ingester local limit: %d)",
+	return fmt.Errorf("per-user metric metadata limit of %d exceeded, contact an administrator to raise it (per-ingester local limit: %d)",
 		globalLimit, actualLimit)
 }
 
@@ -139,7 +139,7 @@ func (l *Limiter) formatMaxMetadataPerMetricError(userID string) error {
 	actualLimit := l.maxMetadataPerMetric(userID)
 	globalLimit := l.limits.MaxGlobalMetadataPerMetric(userID)
 
-	return fmt.Errorf("per-metric metadata limit of %d exceeded, please contact administrator to raise it (per-ingester local limit: %d)",
+	return fmt.Errorf("per-metric metadata limit of %d exceeded, contact an administrator to raise it (per-ingester local limit: %d)",
 		globalLimit, actualLimit)
 }
 

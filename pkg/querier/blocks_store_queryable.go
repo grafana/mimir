@@ -63,7 +63,7 @@ const (
 )
 
 var (
-	errMaxChunksPerQueryLimit = "the query hit the max number of chunks limit while fetching chunks from store-gateways for %s (limit: %d)"
+	errMaxChunksPerQueryLimit = "the query reached the max number of chunks limit while fetching chunks from store-gateways for %s (limit: %d)"
 )
 
 // BlocksStoreSet is the interface used to get the clients to query series on a set of blocks.

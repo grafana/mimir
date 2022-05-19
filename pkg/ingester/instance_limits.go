@@ -5,14 +5,18 @@
 
 package ingester
 
-import "github.com/pkg/errors"
+import (
+	"github.com/pkg/errors"
+
+	"github.com/grafana/mimir/pkg/util/globalerror"
+)
 
 var (
 	// We don't include values in the message to avoid leaking Mimir cluster configuration to users.
-	errMaxSamplesPushRateLimitReached = errors.New("cannot push more samples: ingester's samples push rate limit reached")
-	errMaxUsersLimitReached           = errors.New("cannot create TSDB: ingesters's max tenants limit reached")
-	errMaxSeriesLimitReached          = errors.New("cannot add series: ingesters's max series limit reached")
-	errTooManyInflightPushRequests    = errors.New("cannot push: too many inflight push requests in ingester")
+	errMaxIngestionRateReached    = errors.New(globalerror.MaxIngestionRate.MessageWithLimitConfig(maxIngestionRateFlag, "cannot push more samples: exceeded the allowed rate of push requests"))
+	errMaxTenantsReached          = errors.New(globalerror.MaxTenants.MessageWithLimitConfig(maxInMemoryTenantsFlag, "cannot create TSDB: exceeded the allowed number of in-memory tenants in an ingester"))
+	errMaxInMemorySeriesReached   = errors.New(globalerror.MaxInMemorySeries.MessageWithLimitConfig(maxInMemorySeriesFlag, "cannot add series: exceeded the allowed number of in-memory series in an ingester"))
+	errMaxInflightRequestsReached = errors.New(globalerror.MaxInflightPushRequests.MessageWithLimitConfig(maxInflightPushRequestsFlag, "cannot push: exceeded the allowed number of inflight push requests to the ingester"))
 )
 
 // InstanceLimits describes limits used by ingester. Reaching any of these will result in Push method to return

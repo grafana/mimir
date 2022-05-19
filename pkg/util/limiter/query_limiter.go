@@ -21,9 +21,9 @@ type queryLimiterCtxKey struct{}
 
 var (
 	ctxKey                    = &queryLimiterCtxKey{}
-	ErrMaxSeriesHit           = "the query hit the max number of series limit (limit: %d series)"
-	ErrMaxChunkBytesHit       = "the query hit the aggregated chunks size limit (limit: %d bytes)"
-	ErrMaxChunksPerQueryLimit = "the query hit the max number of chunks limit (limit: %d chunks)"
+	ErrMaxSeriesHit           = "the query reached the max number of series limit (limit: %d series)"
+	ErrMaxChunkBytesHit       = "the query reached the aggregated chunks size limit (limit: %d bytes)"
+	ErrMaxChunksPerQueryLimit = "the query reached the max number of chunks limit (limit: %d chunks)"
 )
 
 type QueryLimiter struct {
