@@ -1,7 +1,7 @@
 # Before you start
 
 **Warning:** Following commands will not specify explicit context for `kubectl` commands. Make sure to select correct
-context and namespace. For example for Docker for Desktop comes with `docker-desktop` context preinstalled. We will
+context and namespace. For example Docker for Desktop comes with `docker-desktop` context preinstalled. We will
 use `default` namespace in this demo.
 
 ```
@@ -9,21 +9,25 @@ kubectl config use-context docker-desktop
 kubectl config set-context docker-desktop --namespace=default
 ```
 
-# Preparation
+# Adding Grafana Helm Charts repository
 
+```
 helm repo add grafana https://grafana.github.io/helm-charts
 helm repo update
+```
 
 # Install Ingress
 
+```
 kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.1.2/deploy/static/provider/cloud/deploy.yaml
+```
 
 # Grafana Agent Operator
 
 Links:
 
-- https://grafana.com/docs/agent/latest/operator/helm-getting-started/
-- https://grafana.com/docs/agent/latest/operator/custom-resource-quickstart/
+- [Installing Grafana Agent Operator with Helm](https://grafana.com/docs/agent/latest/operator/helm-getting-started/)
+- [Grafana Agent Operator Custom Resource Quickstart](https://grafana.com/docs/agent/latest/operator/custom-resource-quickstart/)
 
 ```
 helm install agent grafana/grafana-agent-operator
