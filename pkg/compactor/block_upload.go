@@ -18,6 +18,7 @@ import (
 	"github.com/grafana/dskit/tenant"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
+	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 )
 
 // CreateBlockUpload handles requests for creating block upload sessions.
@@ -129,6 +130,13 @@ func (c *MultitenantCompactor) CompleteBlockUpload(w http.ResponseWriter, r *htt
 		tenantID, "block_id", blockID, "files", len(meta.Thanos.Files))
 	bkt := bucket.NewUserBucketClient(tenantID, c.bucketClient, c.cfgProvider)
 
+	if err := c.sanitizeMeta(&meta, blockID, tenantID); err != nil {
+		level.Error(c.logger).Log("msg", "failed to sanitize meta.json", "user", tenantID,
+			"block_id", blockID, "err", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
 	// Write meta.json, so the block is considered complete
 	dst := path.Join(blockID, "meta.json")
 	level.Debug(c.logger).Log("msg", "writing meta.json in bucket", "dst", dst)
@@ -150,6 +158,42 @@ func (c *MultitenantCompactor) CompleteBlockUpload(w http.ResponseWriter, r *htt
 	level.Debug(c.logger).Log("msg", "successfully completed block upload")
 
 	w.WriteHeader(http.StatusOK)
+}
+
+func (c *MultitenantCompactor) sanitizeMeta(meta *metadata.Meta, blockID, tenantID string) error {
+	if meta.Thanos.Labels == nil {
+		meta.Thanos.Labels = map[string]string{}
+	}
+	updated := false
+
+	metaTenantID := meta.Thanos.Labels[mimir_tsdb.TenantIDExternalLabel]
+	if metaTenantID != tenantID {
+		level.Warn(c.logger).Log("msg", "updating meta.json tenant label", "block_id", blockID,
+			"old_value", metaTenantID, "new_value", tenantID)
+		updated = true
+		meta.Thanos.Labels[mimir_tsdb.TenantIDExternalLabel] = tenantID
+	}
+
+	for l, v := range meta.Thanos.Labels {
+		switch l {
+		case mimir_tsdb.TenantIDExternalLabel, mimir_tsdb.IngesterIDExternalLabel:
+		case mimir_tsdb.CompactorShardIDExternalLabel:
+			// TODO: Verify that all series are compatible with the shard ID
+		default:
+			level.Warn(c.logger).Log("msg", "removing unknown meta.json label", "block_id", blockID, "label", l, "value", v)
+			updated = true
+			delete(meta.Thanos.Labels, l)
+		}
+	}
+
+	// TODO: List files in bucket and update file list in meta.json
+	// TODO: Figure out how meta.json gets created in the first place
+
+	if !updated {
+		level.Info(c.logger).Log("msg", "no changes to meta.json required", "block_id", blockID)
+	}
+
+	return nil
 }
 
 type bodyReader struct {
