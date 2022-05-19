@@ -613,10 +613,10 @@ func (s *HTTPService) WaitSumMetricsWithOptions(isExpected func(sums ...float64)
 		}
 
 		// TODO DEBUG
-		if errors.Is(err, errMissingMetric) {
-			logger.Log("msg", "WaitSumMetricsWithOptions() metrics are missing and WaitMissingMetrics=false but we're waiting anyway for debugging purposes", "metric_names", metricNames)
-			continue
-		}
+		//if errors.Is(err, errMissingMetric) {
+		//	logger.Log("msg", "WaitSumMetricsWithOptions() metrics are missing and WaitMissingMetrics=false but we're waiting anyway for debugging purposes", "metric_names", metricNames)
+		//	continue
+		//}
 
 		if err != nil {
 			return err
@@ -642,7 +642,7 @@ func (s *HTTPService) SumMetrics(metricNames []string, opts ...MetricsOption) ([
 		return nil, err
 	}
 
-	logger.Log("msg", fmt.Sprintf("SumMetrics() has fetched %d bytes of metrics", len(metrics)), "service", s.name, "preview", strings.ReplaceAll(metrics[:1024], "\n", " "))
+	logger.Log("msg", fmt.Sprintf("SumMetrics() has fetched %d bytes of metrics", len(metrics)), "service", s.name, "begin", strings.ReplaceAll(metrics[:100], "\n", " "), "end", strings.ReplaceAll(metrics[len(metrics)-100:], "\n", " "))
 
 	var tp expfmt.TextParser
 	families, err := tp.TextToMetricFamilies(strings.NewReader(metrics))
@@ -660,7 +660,14 @@ func (s *HTTPService) SumMetrics(metricNames []string, opts ...MetricsOption) ([
 				continue
 			}
 
-			return nil, errors.Wrapf(errMissingMetric, "metric=%s service=%s", m, s.name)
+			// DEBUG: check if the metric name exists in the /metrics output
+			if idx := strings.Index(metrics, m); idx == -1 {
+				logger.Log(fmt.Sprintf("SumMetrics() has NOT found %v in the /metrics raw output", m))
+			} else {
+				logger.Log(fmt.Sprintf("SumMetrics() has found %v in the /metrics raw output at idx", m, idx))
+			}
+
+			return nil, errors.Wrapf(errMissingMetric, "metric=%s service=%s reason=metric-family-missing", m, s.name)
 		}
 
 		// Filter metrics.
@@ -670,7 +677,7 @@ func (s *HTTPService) SumMetrics(metricNames []string, opts ...MetricsOption) ([
 				continue
 			}
 
-			return nil, errors.Wrapf(errMissingMetric, "metric=%s service=%s", m, s.name)
+			return nil, errors.Wrapf(errMissingMetric, "metric=%s service=%s reason=metric-family-exists-but-empty-after-filtering", m, s.name)
 		}
 
 		sums[i] = SumValues(getValues(metrics, options))
