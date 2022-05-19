@@ -22,9 +22,6 @@
       // So that exporters like cloudwatch can still send in data and be un-cached.
       'query-frontend.max-cache-freshness': '10m',
 
-      // So it can receive big responses from the querier.
-      'server.grpc-max-recv-msg-size-bytes': 100 << 20,
-
       // Limit queries to 500 days, allow this to be override per-user.
       'store.max-query-length': '12000h',  // 500 Days
       'runtime-config.file': '%s/overrides.yaml' % $._config.overrides_configmap_mountpoint,

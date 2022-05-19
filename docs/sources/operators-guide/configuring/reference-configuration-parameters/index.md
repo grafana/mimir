@@ -310,11 +310,11 @@ grpc_tls_config:
 # (advanced) Limit on the size of a gRPC message this server can receive
 # (bytes).
 # CLI flag: -server.grpc-max-recv-msg-size-bytes
-[grpc_server_max_recv_msg_size: <int> | default = 4194304]
+[grpc_server_max_recv_msg_size: <int> | default = 104857600]
 
 # (advanced) Limit on the size of a gRPC message this server can send (bytes).
 # CLI flag: -server.grpc-max-send-msg-size-bytes
-[grpc_server_max_send_msg_size: <int> | default = 4194304]
+[grpc_server_max_send_msg_size: <int> | default = 104857600]
 
 # (advanced) Limit on the number of concurrent streams for gRPC calls (0 =
 # unlimited)

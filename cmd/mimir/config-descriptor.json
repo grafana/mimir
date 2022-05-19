@@ -337,7 +337,7 @@
           "required": false,
           "desc": "Limit on the size of a gRPC message this server can receive (bytes).",
           "fieldValue": null,
-          "fieldDefaultValue": 4194304,
+          "fieldDefaultValue": 104857600,
           "fieldFlag": "server.grpc-max-recv-msg-size-bytes",
           "fieldType": "int",
           "fieldCategory": "advanced"
@@ -348,7 +348,7 @@
           "required": false,
           "desc": "Limit on the size of a gRPC message this server can send (bytes).",
           "fieldValue": null,
-          "fieldDefaultValue": 4194304,
+          "fieldDefaultValue": 104857600,
           "fieldFlag": "server.grpc-max-send-msg-size-bytes",
           "fieldType": "int",
           "fieldCategory": "advanced"

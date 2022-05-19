@@ -2,6 +2,9 @@
 
 ## Grafana Mimir - main / unreleased
 
+### Grafana Mimir
+
+* [CHANGE] Increased default configuration for `-server.grpc-max-recv-msg-size-bytes` and `-server.grpc-max-send-msg-size-bytes` from 4MB to 100MB. #1883
 * [BUGFIX] Fix regexp parsing panic for regexp label matchers with start/end quantifiers. #1883
 
 ### Mixin
