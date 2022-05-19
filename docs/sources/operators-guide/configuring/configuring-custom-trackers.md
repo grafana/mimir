@@ -37,7 +37,7 @@ cortex_ingester_active_series_custom_tracker{name="prod", user="tenant_with_only
 
 For specific tenants, you can override the default configuration as previously described. To do so, edit the  [runtime configuration]({{< relref "./about-runtime-configuration.md" >}}).
 
-The example below shows how you could override the active series custom trackers configuration for tenant `tenant_with_only_prod_metrics` to track two interesting services instead of the default matchers.
+You can override the active series custom trackers’ configuration for the tenant `tenant_with_only_prod_metrics` to track two services instead of the default matchers. See the following example:
 
 ```
 overrides:
