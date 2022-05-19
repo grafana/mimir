@@ -22,16 +22,6 @@ You're using an IDE you may find useful the following settings for the Grafana M
 
 - [VSCode](vscode-goimports-settings.json)
 
-## Developer Certificates of Origin (DCOs)
-
-Before submitting your work in a pull request, make sure that _all_ commits are signed off with a **Developer Certificate of Origin** (DCO). Here's an example:
-
-```shell
-git commit -s -m "Here is my signed commit"
-```
-
-You can find further instructions [here](https://github.com/probot/dco#how-it-works).
-
 ## Building Grafana Mimir
 
 To build:

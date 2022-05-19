@@ -155,7 +155,7 @@ template_files:
   "good.tpl": "good-templ"
   ".": "bad-template"
 `,
-			err: fmt.Errorf("error validating Alertmanager config: unable to store template file '.'"),
+			err: fmt.Errorf("error validating Alertmanager config: invalid template name \".\""),
 		},
 		{
 			name: "Should return error if the referenced template contains the root /",

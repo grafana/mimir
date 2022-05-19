@@ -310,11 +310,11 @@ grpc_tls_config:
 # (advanced) Limit on the size of a gRPC message this server can receive
 # (bytes).
 # CLI flag: -server.grpc-max-recv-msg-size-bytes
-[grpc_server_max_recv_msg_size: <int> | default = 4194304]
+[grpc_server_max_recv_msg_size: <int> | default = 104857600]
 
 # (advanced) Limit on the size of a gRPC message this server can send (bytes).
 # CLI flag: -server.grpc-max-send-msg-size-bytes
-[grpc_server_max_send_msg_size: <int> | default = 4194304]
+[grpc_server_max_send_msg_size: <int> | default = 104857600]
 
 # (advanced) Limit on the number of concurrent streams for gRPC calls (0 =
 # unlimited)
@@ -474,13 +474,6 @@ ha_tracker:
 # (advanced) Timeout for downstream ingesters.
 # CLI flag: -distributor.remote-timeout
 [remote_timeout: <duration> | default = 20s]
-
-# (advanced) Try writing to an additional ingester in the presence of an
-# ingester not in the ACTIVE state. It is useful to disable this along with
-# -ingester.ring.unregister-on-shutdown=false in order to not spread samples to
-# extra ingesters during rolling restarts with consistent naming.
-# CLI flag: -distributor.extend-writes
-[extend_writes: <boolean> | default = true]
 
 ring:
   kvstore:
@@ -677,8 +670,7 @@ ring:
   [instance_availability_zone: <string> | default = ""]
 
   # (advanced) Unregister from the ring upon clean shutdown. It can be useful to
-  # disable for rolling restarts with consistent naming in conjunction with
-  # -distributor.extend-writes=false.
+  # disable for rolling restarts with consistent naming.
   # CLI flag: -ingester.ring.unregister-on-shutdown
   [unregister_on_shutdown: <boolean> | default = true]
 

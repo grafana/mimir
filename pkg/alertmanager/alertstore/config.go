@@ -26,13 +26,3 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	cfg.Local.RegisterFlagsWithPrefix(prefix, f)
 	cfg.RegisterFlagsWithPrefixAndDefaultDirectory(prefix, "alertmanager", f)
 }
-
-// IsFullStateSupported returns if the given configuration supports access to FullState objects.
-func (cfg *Config) IsFullStateSupported() bool {
-	for _, backend := range bucket.SupportedBackends {
-		if cfg.Backend == backend {
-			return true
-		}
-	}
-	return false
-}

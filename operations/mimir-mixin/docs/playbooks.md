@@ -446,6 +446,25 @@ How to **investigate**:
 
 - Look for any scan error in the store-gateway logs (ie. networking or rate limiting issues)
 
+### MimirStoreGatewayNoSyncedTenants
+
+This alert fires when a store-gateway doesn't own any tenant. Effectively it is sitting idle because no blocks are sharded to it.
+
+How it **works**:
+
+- Store-gateways join a hash ring to shard tenants and blocks across all store-gateway replicas.
+- A tenant can be sharded across multiple store-gateways. How many exactly is determined by `-store-gateway.tenant-shard-size` or the `store_gateway_tenant_shard_size` limit.
+- When the tenant shard size is less than the replicas of store-gateways, some store-gateways may not get any tenants' blocks sharded to them.
+- This is more likely to happen in Mimir clusters with fewer number of tenants.
+
+How to **fix**:
+
+There are three options:
+
+- Reduce the replicas of store-gateways so that they match the highest number of shards per tenant or
+- Increase the shard size of one or more tenants to match the number of replicas or
+- Set the shard size of one or more tenant to `0`; this will shard this tenant's blocks across all store-gateways.
+
 ### MimirCompactorHasNotSuccessfullyCleanedUpBlocks
 
 This alert fires when a Mimir compactor is not successfully deleting blocks marked for deletion for a long time.
@@ -522,7 +541,7 @@ gsutil mv gs://BUCKET/TENANT/BLOCK gs://BUCKET/TENANT/corrupted-BLOCK
 
 Where:
 
-- `BUCKET` is the gcs bucket name the compactor is using. The cell's bucket name is specified as the `blocks_storage_bucket_name` in the cell configuration
+- `BUCKET` is the gcs bucket name the compactor is using. The cluster's bucket name is specified as the `blocks_storage_bucket_name` in the cluster configuration
 - `TENANT` is the tenant id reported in the example error message above as `REDACTED-TENANT`
 - `BLOCK` is the last part of the file path reported as `REDACTED-BLOCK` in the example error message above
 
@@ -546,7 +565,7 @@ How to **investigate**:
 
 1. Look for partial blocks in the logs. Example Loki query: `{cluster="<cluster>",namespace="<namespace>",container="compactor"} |= "skipped partial block"`
 1. Pick a block and note its ID (`block` field in log entry) and tenant ID (`org_id` in log entry)
-1. Find the bucket used by the Mimir cell, such as checking the configured `blocks_storage_bucket_name` if you are using Jsonnet.
+1. Find the bucket used by the Mimir cluster, such as checking the configured `blocks_storage_bucket_name` if you are using Jsonnet.
 1. Find out which Mimir component operated on the block last (e.g. uploaded by ingester/compactor, or deleted by compactor)
    1. Determine when the partial block was uploaded: `gsutil ls -l gs://${BUCKET}/${TENANT_ID}/${BLOCK_ID}`. Alternatively you can use `ulidtime` command from Mimir tools directory `ulidtime ${BLOCK_ID}` to find block creation time.
    1. Search in the logs around that time to find the log entry from when the compactor created the block ("compacted blocks" for log message)

@@ -337,7 +337,7 @@
           "required": false,
           "desc": "Limit on the size of a gRPC message this server can receive (bytes).",
           "fieldValue": null,
-          "fieldDefaultValue": 4194304,
+          "fieldDefaultValue": 104857600,
           "fieldFlag": "server.grpc-max-recv-msg-size-bytes",
           "fieldType": "int",
           "fieldCategory": "advanced"
@@ -348,7 +348,7 @@
           "required": false,
           "desc": "Limit on the size of a gRPC message this server can send (bytes).",
           "fieldValue": null,
-          "fieldDefaultValue": 4194304,
+          "fieldDefaultValue": 104857600,
           "fieldFlag": "server.grpc-max-send-msg-size-bytes",
           "fieldType": "int",
           "fieldCategory": "advanced"
@@ -908,17 +908,6 @@
           "fieldDefaultValue": 20000000000,
           "fieldFlag": "distributor.remote-timeout",
           "fieldType": "duration",
-          "fieldCategory": "advanced"
-        },
-        {
-          "kind": "field",
-          "name": "extend_writes",
-          "required": false,
-          "desc": "Try writing to an additional ingester in the presence of an ingester not in the ACTIVE state. It is useful to disable this along with -ingester.ring.unregister-on-shutdown=false in order to not spread samples to extra ingesters during rolling restarts with consistent naming.",
-          "fieldValue": null,
-          "fieldDefaultValue": true,
-          "fieldFlag": "distributor.extend-writes",
-          "fieldType": "boolean",
           "fieldCategory": "advanced"
         },
         {
@@ -2182,7 +2171,7 @@
               "kind": "field",
               "name": "unregister_on_shutdown",
               "required": false,
-              "desc": "Unregister from the ring upon clean shutdown. It can be useful to disable for rolling restarts with consistent naming in conjunction with -distributor.extend-writes=false.",
+              "desc": "Unregister from the ring upon clean shutdown. It can be useful to disable for rolling restarts with consistent naming.",
               "fieldValue": null,
               "fieldDefaultValue": true,
               "fieldFlag": "ingester.ring.unregister-on-shutdown",

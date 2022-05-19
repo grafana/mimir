@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"reflect"
+	"strconv"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -202,8 +203,10 @@ func (c *Config) Validate(log log.Logger) error {
 	if err := c.AlertmanagerStorage.Validate(); err != nil {
 		return errors.Wrap(err, "invalid alertmanager storage config")
 	}
-	if err := c.Alertmanager.Validate(c.AlertmanagerStorage); err != nil {
-		return errors.Wrap(err, "invalid alertmanager config")
+	if c.isModuleEnabled(AlertManager) {
+		if err := c.Alertmanager.Validate(c.AlertmanagerStorage); err != nil {
+			return errors.Wrap(err, "invalid alertmanager config")
+		}
 	}
 	return nil
 }
@@ -316,6 +319,12 @@ func (c *Config) registerServerFlagsWithChangedDefaultValues(fs *flag.FlagSet) {
 
 		case "server.http-listen-port":
 			_ = f.Value.Set("8080")
+
+		case "server.grpc-max-recv-msg-size-bytes":
+			_ = f.Value.Set(strconv.Itoa(100 * 1024 * 1024))
+
+		case "server.grpc-max-send-msg-size-bytes":
+			_ = f.Value.Set(strconv.Itoa(100 * 1024 * 1024))
 		}
 
 		fs.Var(f.Value, f.Name, f.Usage)

@@ -2,6 +2,22 @@
 
 ## Grafana Mimir - main / unreleased
 
+### Grafana Mimir
+
+* [CHANGE] Increased default configuration for `-server.grpc-max-recv-msg-size-bytes` and `-server.grpc-max-send-msg-size-bytes` from 4MB to 100MB. #1883
+* [BUGFIX] Fix regexp parsing panic for regexp label matchers with start/end quantifiers. #1883
+
+### Mixin
+
+* [CHANGE] Split `mimir_queries` rules group into `mimir_queries` and `mimir_ingester_queries` to keep number of rules per group within the default per-tenant limit. #1885
+* [ENHANCEMENT] Dashboards: Add config option `datasource_regex` to customise the regular expression used to select valid datasources for Mimir dashboards. #1802
+* [ENHANCEMENT] Alerts: Add `MimirStoreGatewayNoSyncedTenants` alert that fires when there is a store-gateway owning no tenants. #1882
+* [BUGFIX] Fix `container_memory_usage_bytes:sum` recording rule #1865
+* [BUGFIX] Fix `MimirGossipMembersMismatch` alerts if Mimir alertmanager is activated #1870
+
+## 2.1.0-rc.0
+
+### Grafana Mimir
 * [CHANGE] Compactor: No longer upload debug meta files to object storage. #1257
 * [CHANGE] Default values have changed for the following settings: #1547
     - `-alertmanager.alertmanager-client.grpc-max-recv-msg-size` now defaults to 100 MiB (previously was not configurable and set to 16 MiB)
@@ -30,6 +46,7 @@
 * [CHANGE] Distributor: removed the following metrics tracking the number of requests from a distributor to ingesters: #1799
   * `cortex_distributor_ingester_appends_total`
   * `cortex_distributor_ingester_append_failures_total`
+* [CHANGE] Distributor / Ruler: deprecated `-distributor.extend-writes`. Now Mimir always behaves as if this setting was set to `false`, which we expect to be safe for every Mimir cluster setup. #1856
 * [FEATURE] Querier: Added support for [streaming remote read](https://prometheus.io/blog/2019/10/10/remote-read-meets-streaming/). Should be noted that benefits of chunking the response are partial here, since in a typical `query-frontend` setup responses will be buffered until they've been completed. #1735
 * [FEATURE] Ruler: Allow setting `evaluation_delay` for each rule group via rules group configuration file. #1474
 * [FEATURE] Ruler: Added support for expression remote evaluation. #1536 #1818
@@ -76,6 +93,9 @@
 * [BUGFIX] Multikv: Fix watching for runtime config changes in `multi` KV store in ruler and querier. #1665
 * [BUGFIX] Memcached: allow to use CNAME DNS records for the memcached backend addresses. #1654
 * [BUGFIX] Querier: fixed temporary partial query results when shuffle sharding is enabled and hash ring backend storage is flushed / reset. #1829
+* [BUGFIX] Alertmanager: prevent more file traversal cases related to template names. #1833
+* [BUGFUX] Alertmanager: Allow usage with `-alertmanager-storage.backend=local`. Note that when using this storage type, the Alertmanager is not able persist state remotely, so it not recommended for production use. #1836
+* [BUGFIX] Alertmanager: Do not validate alertmanager configuration if it's not running. #1835
 
 ### Mixin
 
@@ -112,12 +132,14 @@
 * [ENHANCEMENT] Playbooks: Add Alertmanager suggestions for `MimirRequestErrors` and `MimirRequestLatency` #1702
 * [ENHANCEMENT] Dashboards: Allow custom datasources. #1749
 * [ENHANCEMENT] Dashboards: Add config option `gateway_enabled` (defaults to `true`) to disable gateway panels from dashboards. #1761
+* [ENHANCEMENT] Dashboards: Extend Top tenants dashboard with queries for tenants with highest sample rate, discard rate, and discard rate growth. #1842
+* [ENHANCEMENT] Dashboards: Show ingestion rate limit and rule group limit on Tenants dashboard. #1845
 * [BUGFIX] Dashboards: Fix "Failed evaluation rate" panel on Tenants dashboard. #1629
 * [BUGFIX] Honor the configured `per_instance_label` in all dashboards and alerts. #1697
 
 ### Jsonnet
 
-* [FEATURE] Added support for `mimir-continuous-test`. To deploy `mimir-continuous-test` you can use the following configuration: #1675
+* [FEATURE] Added support for `mimir-continuous-test`. To deploy `mimir-continuous-test` you can use the following configuration: #1675 #1850
   ```jsonnet
   _config+: {
     continuous_test_enabled: true,

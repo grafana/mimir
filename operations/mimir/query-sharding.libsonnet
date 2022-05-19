@@ -50,7 +50,12 @@
 
       'query-frontend.query-sharding-max-sharded-queries': 128,
 
-      'server.grpc-max-recv-msg-size-bytes': super['server.grpc-max-recv-msg-size-bytes'] * $._config.query_sharding_msg_size_factor,
+      'server.grpc-max-recv-msg-size-bytes': (
+        if 'server.grpc-max-recv-msg-size-bytes' in super then
+          super['server.grpc-max-recv-msg-size-bytes']
+        else
+          100 * 1024 * 1024
+      ) * $._config.query_sharding_msg_size_factor,
     },
 
   query_scheduler_args+:: if !$._config.query_sharding_enabled then {} else {
