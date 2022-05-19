@@ -13,6 +13,8 @@ import (
 
 	"github.com/go-kit/log/level"
 	"github.com/gorilla/mux"
+	"github.com/oklog/ulid"
+	"github.com/pkg/errors"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
 
 	"github.com/grafana/dskit/tenant"
@@ -166,6 +168,18 @@ func (c *MultitenantCompactor) sanitizeMeta(meta *metadata.Meta, blockID, tenant
 	}
 	updated := false
 
+	metaULID := meta.ULID
+	if metaULID.String() != blockID {
+		level.Warn(c.logger).Log("msg", "updating meta.json block ID", "old_value", metaULID.String(),
+			"new_value", blockID)
+		var err error
+		meta.ULID, err = ulid.Parse(blockID)
+		if err != nil {
+			return errors.Wrapf(err, "couldn't parse block ID %q", blockID)
+		}
+		updated = true
+	}
+
 	metaTenantID := meta.Thanos.Labels[mimir_tsdb.TenantIDExternalLabel]
 	if metaTenantID != tenantID {
 		level.Warn(c.logger).Log("msg", "updating meta.json tenant label", "block_id", blockID,
@@ -187,7 +201,6 @@ func (c *MultitenantCompactor) sanitizeMeta(meta *metadata.Meta, blockID, tenant
 	}
 
 	// TODO: List files in bucket and update file list in meta.json
-	// TODO: Figure out how meta.json gets created in the first place
 
 	if !updated {
 		level.Info(c.logger).Log("msg", "no changes to meta.json required", "block_id", blockID)
