@@ -206,7 +206,7 @@
             severity: 'critical',
           },
           annotations: {
-            message: '%(product)s Store Gateway %(alert_instance_variable)s in %(alert_aggregation_variables)s has not successfully synched the bucket since {{ $value | humanizeDuration }}.' % $._config,
+            message: '%(product)s store-gateway %(alert_instance_variable)s in %(alert_aggregation_variables)s has not successfully synched the bucket since {{ $value | humanizeDuration }}.' % $._config,
           },
         },
         {
@@ -220,7 +220,7 @@
             severity: 'warning',
           },
           annotations: {
-            message: '%(product)s Store Gateway %(alert_instance_variable)s in %(alert_aggregation_variables)s is not syncing any blocks for any tenant.' % $._config,
+            message: '%(product)s store-gateway %(alert_instance_variable)s in %(alert_aggregation_variables)s is not syncing any blocks for any tenant.' % $._config,
           },
         },
         {
