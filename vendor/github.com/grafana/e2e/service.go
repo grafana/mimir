@@ -135,6 +135,9 @@ func (s *ConcreteService) Start(networkName, sharedDir string) (err error) {
 			return errors.Wrapf(err, "unable to get mapping for port %d (output: %s); service: %s", containerPort, string(out), s.name)
 		}
 
+		// TODO DEBUG
+		logger.Log(fmt.Sprintf("'docker port %s %d' command returned: %s", s.containerName(), containerPort, strings.ReplaceAll(string(out), "\n", "NEWLINE")))
+
 		s.networkPortsContainerToLocal[containerPort] = localPort
 	}
 
@@ -559,6 +562,8 @@ func NewHTTPService(
 func (s *HTTPService) Metrics() (_ string, err error) {
 	// Map the container port to the local port
 	localPort := s.networkPortsContainerToLocal[s.httpPort]
+
+	logger.Log(fmt.Sprintf("Metrics() is fetching metrics from port %d for service %s ", localPort, s.name))
 
 	// Fetch metrics.
 	res, err := DoGet(fmt.Sprintf("http://localhost:%d/metrics", localPort))
