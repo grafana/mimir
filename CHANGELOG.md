@@ -6,6 +6,7 @@
 
 * [CHANGE] Increased default configuration for `-server.grpc-max-recv-msg-size-bytes` and `-server.grpc-max-send-msg-size-bytes` from 4MB to 100MB. #1883
 * [BUGFIX] Fix regexp parsing panic for regexp label matchers with start/end quantifiers. #1883
+* [BUGFIX] Ingester: fixed deceiving error log "failed to update cached shipped blocks after shipper initialisation", occurring for each new tenant in the ingester. #1893
 
 ### Mixin
 
