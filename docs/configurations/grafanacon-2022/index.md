@@ -21,11 +21,12 @@ kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/cont
 # Grafana Agent Operator
 
 Links:
+
 - https://grafana.com/docs/agent/latest/operator/helm-getting-started/
 - https://grafana.com/docs/agent/latest/operator/custom-resource-quickstart/
 
 ```
-helm install agent grafana/grafana-agent-operator 
+helm install agent grafana/grafana-agent-operator
 
 kubectl apply -f agent-setup.yaml
 ```
