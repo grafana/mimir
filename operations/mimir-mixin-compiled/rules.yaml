@@ -225,6 +225,8 @@ groups:
   - expr: sum(rate(cortex_query_frontend_queue_duration_seconds_count[1m])) by (cluster,
       job)
     record: cluster_job:cortex_query_frontend_queue_duration_seconds_count:sum_rate
+- name: mimir_ingester_queries
+  rules:
   - expr: histogram_quantile(0.99, sum(rate(cortex_ingester_queried_series_bucket[1m]))
       by (le, cluster, job))
     record: cluster_job:cortex_ingester_queried_series:99quantile
