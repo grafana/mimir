@@ -446,7 +446,7 @@ How to **investigate**:
 
 - Look for any scan error in the store-gateway logs (ie. networking or rate limiting issues)
 
-### MimirStoreGatewayNoSyncedBlocks
+### MimirStoreGatewayNoSyncedTenants
 
 This alert fires when a store-gateway doesn't own any tenant. Effectively it is sitting idle because no blocks are sharded to it.
 

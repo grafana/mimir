@@ -211,7 +211,7 @@
         },
         {
           // Alert if the store-gateway is not owning any tenant.
-          alert: $.alertName('StoreGatewayNoSyncedBlocks'),
+          alert: $.alertName('StoreGatewayNoSyncedTenants'),
           'for': '1h',
           expr: |||
             min by(%(alert_aggregation_labels)s, %(per_instance_label)s) (cortex_bucket_stores_tenants_synced{component="store-gateway"}) == 0

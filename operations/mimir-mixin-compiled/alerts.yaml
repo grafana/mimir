@@ -608,7 +608,7 @@ groups:
     for: 5m
     labels:
       severity: critical
-  - alert: MimirStoreGatewayNoSyncedBlocks
+  - alert: MimirStoreGatewayNoSyncedTenants
     annotations:
       message: Mimir Store Gateway {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace
         }} is not syncing any blocks for any tenant.
