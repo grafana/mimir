@@ -635,6 +635,8 @@ func (s *HTTPService) SumMetrics(metricNames []string, opts ...MetricsOption) ([
 		return nil, err
 	}
 
+	logger.Log("msg", "SumMetrics() has fetched %d bytes of metrics", len(metrics), "preview", metrics[:100])
+
 	var tp expfmt.TextParser
 	families, err := tp.TextToMetricFamilies(strings.NewReader(metrics))
 	if err != nil {

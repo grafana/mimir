@@ -17,92 +17,92 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  lint:
-    runs-on: ubuntu-latest
-    container:
-      image: grafana/mimir-build-image:update-build-image-and-github-workflow-89d9d61b4
-    steps:
-      - name: Checkout Repo
-        uses: actions/checkout@v2
-        # Commands in the Makefile are hardcoded with an assumed file structure of the CI container
-        # Symlink ensures paths specified in previous commands don’t break
-      - name: Symlink Expected Path to Workspace
-        run: |
-          mkdir -p /go/src/github.com/grafana/mimir
-          ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
-      - name: Lint
-        run: make BUILD_IN_CONTAINER=false lint
-      - name: Check Vendor Directory
-        run: make BUILD_IN_CONTAINER=false mod-check
-      - name: Check Protos
-        run: make BUILD_IN_CONTAINER=false check-protos
-      - name: Check Generated Documentation
-        run: make BUILD_IN_CONTAINER=false check-doc
-      - name: Check Documentation Links
-        run: make BUILD_IN_CONTAINER=false check-doc-links
-      - name: Check White Noise.
-        run: make BUILD_IN_CONTAINER=false check-white-noise
-      - name: Check License Header
-        run: make BUILD_IN_CONTAINER=false check-license
-      - name: Check Docker-Compose YAML
-        run: make BUILD_IN_CONTAINER=false check-tsdb-blocks-storage-s3-docker-compose-yaml
+#  lint:
+#    runs-on: ubuntu-latest
+#    container:
+#      image: grafana/mimir-build-image:update-build-image-and-github-workflow-89d9d61b4
+#    steps:
+#      - name: Checkout Repo
+#        uses: actions/checkout@v2
+#        # Commands in the Makefile are hardcoded with an assumed file structure of the CI container
+#        # Symlink ensures paths specified in previous commands don’t break
+#      - name: Symlink Expected Path to Workspace
+#        run: |
+#          mkdir -p /go/src/github.com/grafana/mimir
+#          ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
+#      - name: Lint
+#        run: make BUILD_IN_CONTAINER=false lint
+#      - name: Check Vendor Directory
+#        run: make BUILD_IN_CONTAINER=false mod-check
+#      - name: Check Protos
+#        run: make BUILD_IN_CONTAINER=false check-protos
+#      - name: Check Generated Documentation
+#        run: make BUILD_IN_CONTAINER=false check-doc
+#      - name: Check Documentation Links
+#        run: make BUILD_IN_CONTAINER=false check-doc-links
+#      - name: Check White Noise.
+#        run: make BUILD_IN_CONTAINER=false check-white-noise
+#      - name: Check License Header
+#        run: make BUILD_IN_CONTAINER=false check-license
+#      - name: Check Docker-Compose YAML
+#        run: make BUILD_IN_CONTAINER=false check-tsdb-blocks-storage-s3-docker-compose-yaml
 
-  lint-jsonnet:
-    runs-on: ubuntu-latest
-    container:
-      image: grafana/mimir-build-image:update-build-image-and-github-workflow-89d9d61b4
-    steps:
-      - name: Checkout Repo
-        uses: actions/checkout@v2
-        # Commands in the Makefile are hardcoded with an assumed file structure of the CI container
-        # Symlink ensures paths specified in previous commands don’t break
-      - name: Symlink Expected Path to Workspace
-        run: |
-          mkdir -p /go/src/github.com/grafana/mimir
-          ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
-      - name: Check Mixin
-        run: make BUILD_IN_CONTAINER=false check-mixin
-      - name: Check Mixin Tests
-        run: make BUILD_IN_CONTAINER=false check-mixin-tests
-      - name: Check Jsonnet Manifests
-        run: make BUILD_IN_CONTAINER=false check-jsonnet-manifests
-      - name: Check Jsonnet Getting Started
-        run: make BUILD_IN_CONTAINER=false check-jsonnet-getting-started
-      - name: Check Jsonnet Tests
-        run: make BUILD_IN_CONTAINER=false check-jsonnet-tests
+#  lint-jsonnet:
+#    runs-on: ubuntu-latest
+#    container:
+#      image: grafana/mimir-build-image:update-build-image-and-github-workflow-89d9d61b4
+#    steps:
+#      - name: Checkout Repo
+#        uses: actions/checkout@v2
+#        # Commands in the Makefile are hardcoded with an assumed file structure of the CI container
+#        # Symlink ensures paths specified in previous commands don’t break
+#      - name: Symlink Expected Path to Workspace
+#        run: |
+#          mkdir -p /go/src/github.com/grafana/mimir
+#          ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
+#      - name: Check Mixin
+#        run: make BUILD_IN_CONTAINER=false check-mixin
+#      - name: Check Mixin Tests
+#        run: make BUILD_IN_CONTAINER=false check-mixin-tests
+#      - name: Check Jsonnet Manifests
+#        run: make BUILD_IN_CONTAINER=false check-jsonnet-manifests
+#      - name: Check Jsonnet Getting Started
+#        run: make BUILD_IN_CONTAINER=false check-jsonnet-getting-started
+#      - name: Check Jsonnet Tests
+#        run: make BUILD_IN_CONTAINER=false check-jsonnet-tests
 
-  test:
-    runs-on: ubuntu-latest
-    strategy:
-      # Do not abort other groups when one fails.
-      fail-fast: false
-      # Split tests into 4 groups.
-      matrix:
-        test_group_id:    [0, 1, 2, 3]
-        test_group_total: [4]
-    container:
-      image: grafana/mimir-build-image:update-build-image-and-github-workflow-89d9d61b4
-    steps:
-      - name: Checkout Repo
-        uses: actions/checkout@v2
-      - name: Symlink Expected Path to Workspace
-        run: |
-          mkdir -p /go/src/github.com/grafana/mimir
-          ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
-      - name: Run Tests
-        run: |
-          echo "Running unit tests (group ${{ matrix.test_group_id }} of ${{ matrix.test_group_total }}) with Go version: $(go version)"
-          ./.github/workflows/scripts/run-unit-tests-group.sh --index ${{ matrix.test_group_id }} --total ${{ matrix.test_group_total }}
-        
-
-  test-docs:
-    runs-on: ubuntu-latest
-    steps:
-      - name: "Check out code"
-        uses: "actions/checkout@v3"
-      - name: "Build website"
-        run: |
-          docker run -v ${PWD}/docs/sources:/hugo/content/docs/mimir/latest -e HUGO_REFLINKSERRORLEVEL=ERROR --rm grafana/docs-base:latest /bin/bash -c 'make hugo'
+#  test:
+#    runs-on: ubuntu-latest
+#    strategy:
+#      # Do not abort other groups when one fails.
+#      fail-fast: false
+#      # Split tests into 4 groups.
+#      matrix:
+#        test_group_id:    [0, 1, 2, 3]
+#        test_group_total: [4]
+#    container:
+#      image: grafana/mimir-build-image:update-build-image-and-github-workflow-89d9d61b4
+#    steps:
+#      - name: Checkout Repo
+#        uses: actions/checkout@v2
+#      - name: Symlink Expected Path to Workspace
+#        run: |
+#          mkdir -p /go/src/github.com/grafana/mimir
+#          ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
+#      - name: Run Tests
+#        run: |
+#          echo "Running unit tests (group ${{ matrix.test_group_id }} of ${{ matrix.test_group_total }}) with Go version: $(go version)"
+#          ./.github/workflows/scripts/run-unit-tests-group.sh --index ${{ matrix.test_group_id }} --total ${{ matrix.test_group_total }}
+#
+#
+#  test-docs:
+#    runs-on: ubuntu-latest
+#    steps:
+#      - name: "Check out code"
+#        uses: "actions/checkout@v3"
+#      - name: "Build website"
+#        run: |
+#          docker run -v ${PWD}/docs/sources:/hugo/content/docs/mimir/latest -e HUGO_REFLINKSERRORLEVEL=ERROR --rm grafana/docs-base:latest /bin/bash -c 'make hugo'
 
   build:
     runs-on: ubuntu-latest
@@ -185,34 +185,34 @@ jobs:
           echo "Running integration tests (group ${{ matrix.test_group_id }} of ${{ matrix.test_group_total }}) with Go version: $(go version)"
           ./.github/workflows/scripts/run-integration-tests-group.sh --index ${{ matrix.test_group_id }} --total ${{ matrix.test_group_total }}
 
-  deploy:
-    needs: [build, test, lint, integration]
-    # Only deploy images on pushes to the grafana/mimir repo, which either are tag pushes or weekly release branch pushes.
-    if: (startsWith(github.ref, 'refs/tags/') || startsWith(github.ref, 'refs/heads/r') ) && github.event_name == 'push' && github.repository == 'grafana/mimir'
-    runs-on: ubuntu-latest
-    container:
-      image: grafana/mimir-build-image:update-build-image-and-github-workflow-89d9d61b4
-    steps:
-      - name: Checkout Repo
-        uses: actions/checkout@v2
-      - name: Install Docker Client
-        run: ./.github/workflows/scripts/install-docker.sh
-      - name: Symlink Expected Path to Workspace
-        run: |
-          mkdir -p /go/src/github.com/grafana/mimir
-          ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
-      - name: Download Archive with Docker Images
-        uses: actions/download-artifact@v2
-        with:
-          name: Docker Images
-      - name: Extract Docker Images from Archive
-        run: tar xvf images.tar -C /
-      - name: Deploy
-        run: |
-          if [ -n "$DOCKER_PASSWORD" ]; then
-            printenv DOCKER_PASSWORD | skopeo login -u "$DOCKER_USERNAME" --password-stdin docker.io
-          fi
-          ./.github/workflows/scripts/push-images.sh /tmp/images grafana/ $(make image-tag)
-        env:
-          DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
-          DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+#  deploy:
+#    needs: [build, test, lint, integration]
+#    # Only deploy images on pushes to the grafana/mimir repo, which either are tag pushes or weekly release branch pushes.
+#    if: (startsWith(github.ref, 'refs/tags/') || startsWith(github.ref, 'refs/heads/r') ) && github.event_name == 'push' && github.repository == 'grafana/mimir'
+#    runs-on: ubuntu-latest
+#    container:
+#      image: grafana/mimir-build-image:update-build-image-and-github-workflow-89d9d61b4
+#    steps:
+#      - name: Checkout Repo
+#        uses: actions/checkout@v2
+#      - name: Install Docker Client
+#        run: ./.github/workflows/scripts/install-docker.sh
+#      - name: Symlink Expected Path to Workspace
+#        run: |
+#          mkdir -p /go/src/github.com/grafana/mimir
+#          ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
+#      - name: Download Archive with Docker Images
+#        uses: actions/download-artifact@v2
+#        with:
+#          name: Docker Images
+#      - name: Extract Docker Images from Archive
+#        run: tar xvf images.tar -C /
+#      - name: Deploy
+#        run: |
+#          if [ -n "$DOCKER_PASSWORD" ]; then
+#            printenv DOCKER_PASSWORD | skopeo login -u "$DOCKER_USERNAME" --password-stdin docker.io
+#          fi
+#          ./.github/workflows/scripts/push-images.sh /tmp/images grafana/ $(make image-tag)
+#        env:
+#          DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+#          DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
