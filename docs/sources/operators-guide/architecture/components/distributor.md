@@ -36,10 +36,10 @@ The distributor validation includes the following checks:
 The distributor includes two different types of rate limiters that apply to each tenant.
 
 - **Request rate**<br />
-The maximum number of requests per second that can be served across Grafana Mimir cluster for each tenant.
+  The maximum number of requests per second that can be served across Grafana Mimir cluster for each tenant.
 
 - **Ingestion rate**<br />
-The maximum samples per second that can be ingested across Grafana Mimir cluster for each tenant.
+  The maximum samples per second that can be ingested across Grafana Mimir cluster for each tenant.
 
 If any of these rates is exceeded, the distributor drops the request and returns an HTTP 429 response code.
 
