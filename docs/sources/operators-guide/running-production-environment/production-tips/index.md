@@ -30,6 +30,13 @@ The required disk space depends on the number of time series stored in the inges
 
 For more information about estimating the required ingester disk space, refer to [Planning capacity]({{< relref "../planning-capacity.md#ingester" >}}).
 
+### Ingester disk IOPS
+
+The ingester disk performances (IOPS and latency) can impact both write and read requests.
+On this write path, ingester disk is touched to write the write-ahead log (WAL), while on the read path the ingester disk is touched to query series whose chunks have already been written to disk.
+
+We recommend to run ingesters with a fast disk (e.g. SSD disk).
+
 ## Querier
 
 ### Ensure caching is enabled
@@ -83,6 +90,13 @@ The store-gateway keeps a file descriptor open for each index-header loaded at a
 The total number of file descriptors used to load index-headers linearly increases with the number of blocks owned by the store-gateway instance.
 
 We recommend configuring the system's `file-max` ulimit at least to `65536` to avoid reaching the maximum number of open file descriptors.
+
+### Store-gateway disk IOPS
+
+The store-gateway disk performances (IOPS and latency) can impact queries.
+The store-gateway downloads block's [index-headers]({{< relref "../../architecture/binary-index-header.md" >}}) on local disk and reads them on each query hitting the long-term storage.
+
+We recommend to run store-gateways with a fast disk (e.g. SSD disk).
 
 ## Compactor
 
