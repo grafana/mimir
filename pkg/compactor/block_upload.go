@@ -517,7 +517,7 @@ func (c *MultitenantCompactor) verifyChunks(cr *chunks.Reader, lset labels.Label
 	for _, cm := range chnks {
 		ch, err := cr.Chunk(cm.Ref)
 		if err != nil {
-			return errors.Wrapf(err, "failed to read chunk %s", cm.Ref)
+			return errors.Wrapf(err, "failed to read chunk %d", cm.Ref)
 		}
 
 		samples := 0
@@ -545,7 +545,7 @@ func (c *MultitenantCompactor) verifyChunks(cr *chunks.Reader, lset labels.Label
 			prevTS = ts
 		}
 		if e := it.Err(); e != nil {
-			return errors.Wrapf(err, "failed to failed to iterate over samples of chunk %s", cm.Ref)
+			return errors.Wrapf(err, "failed to failed to iterate over samples of chunk %d", cm.Ref)
 		}
 		if samples == 0 {
 			// TODO: Error?
