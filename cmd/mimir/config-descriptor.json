@@ -5096,17 +5096,6 @@
               "fieldFlag": "blocks-storage.bucket-store.posting-offsets-in-mem-sampling",
               "fieldType": "int",
               "fieldCategory": "advanced"
-            },
-            {
-              "kind": "field",
-              "name": "index_header_thread_pool_size",
-              "required": false,
-              "desc": "Number of threads that are dedicated for use reading index headers. Set to 0 to disable use of dedicated threads for reading index headers.",
-              "fieldValue": null,
-              "fieldDefaultValue": 0,
-              "fieldFlag": "blocks-storage.bucket-store.index-header-thread-pool-size",
-              "fieldType": "int",
-              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,
@@ -6410,6 +6399,17 @@
           ],
           "fieldValue": null,
           "fieldDefaultValue": null
+        },
+        {
+          "kind": "field",
+          "name": "thread_pool_size",
+          "required": false,
+          "desc": "Number of OS threads that are dedicated for handling requests. Set to 0 to disable use of dedicated OS threads for handling requests.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "store-gateway.thread-pool-size",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,
