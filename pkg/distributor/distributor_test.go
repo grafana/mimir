@@ -51,6 +51,7 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/util/chunkcompat"
+	"github.com/grafana/mimir/pkg/util/globalerrors"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -1252,7 +1253,7 @@ func TestDistributor_Push_LabelNameValidation(t *testing.T) {
 		"label name validation is on by default": {
 			inputLabels: inputLabels,
 			errExpected: true,
-			errMessage:  `sample invalid label: "999.illegal" metric "foo{999.illegal=\"baz\"}"`,
+			errMessage:  `received series with an invalid label: '999.illegal' series: 'foo{999.illegal="baz"}' (err-mimir-label-invalid)`,
 		},
 		"label name validation can be skipped via config": {
 			inputLabels:                inputLabels,
@@ -1298,33 +1299,40 @@ func TestDistributor_Push_ExemplarValidation(t *testing.T) {
 	tests := map[string]struct {
 		req    *mimirpb.WriteRequest
 		errMsg string
+		errID  globalerrors.ErrID
 	}{
 		"valid exemplar": {
 			req: makeWriteRequestExemplar([]string{model.MetricNameLabel, "test"}, 1000, []string{"foo", "bar"}),
 		},
 		"rejects exemplar with no labels": {
 			req:    makeWriteRequestExemplar([]string{model.MetricNameLabel, "test"}, 1000, []string{}),
-			errMsg: `exemplar missing labels, timestamp: 1000 series: {__name__="test"} labels: {}`,
+			errMsg: `received exemplar with no valid labels, timestamp: 1000 series: {__name__="test"} labels: {}`,
+			errID:  globalerrors.ErrIDExemplarLabelsMissing,
 		},
 		"rejects exemplar with no timestamp": {
 			req:    makeWriteRequestExemplar([]string{model.MetricNameLabel, "test"}, 0, []string{"foo", "bar"}),
-			errMsg: `exemplar missing timestamp, timestamp: 0 series: {__name__="test"} labels: {foo="bar"}`,
+			errMsg: `received exemplar with no timestamp, timestamp: 0 series: {__name__="test"} labels: {foo="bar"}`,
+			errID:  globalerrors.ErrIDExemplarTimestampInvalid,
 		},
 		"rejects exemplar with too long labelset": {
 			req:    makeWriteRequestExemplar([]string{model.MetricNameLabel, "test"}, 1000, []string{"foo", strings.Repeat("0", 126)}),
-			errMsg: fmt.Sprintf(`exemplar combined labelset exceeds 128 characters, timestamp: 1000 series: {__name__="test"} labels: {foo="%s"}`, strings.Repeat("0", 126)),
+			errMsg: fmt.Sprintf(`received exemplar whose combined labels set size exceeds the limit of 128 characters, timestamp: 1000 series: {__name__="test"} labels: {foo="%s"}`, strings.Repeat("0", 126)),
+			errID:  globalerrors.ErrIDExemplarLabelsTooLong,
 		},
 		"rejects exemplar with too many series labels": {
 			req:    makeWriteRequestExemplar(manyLabels, 0, nil),
-			errMsg: "series has too many labels",
+			errMsg: "received series with a number of labels exceeding the limit",
+			errID:  globalerrors.ErrIDMaxLabelNamesPerSeries,
 		},
 		"rejects exemplar with duplicate series labels": {
 			req:    makeWriteRequestExemplar([]string{model.MetricNameLabel, "test", "foo", "bar", "foo", "bar"}, 0, nil),
-			errMsg: "duplicate label name",
+			errMsg: "received series with duplicate label name",
+			errID:  globalerrors.ErrIDSeriesWithDuplicateLabelNames,
 		},
 		"rejects exemplar with empty series label name": {
 			req:    makeWriteRequestExemplar([]string{model.MetricNameLabel, "test", "", "bar"}, 0, nil),
-			errMsg: "invalid label",
+			errMsg: "received series with an invalid label",
+			errID:  globalerrors.ErrIDSeriesInvalidLabel,
 		},
 	}
 
@@ -1340,6 +1348,7 @@ func TestDistributor_Push_ExemplarValidation(t *testing.T) {
 			if tc.errMsg != "" {
 				fromError, _ := status.FromError(err)
 				assert.Contains(t, fromError.Message(), tc.errMsg)
+				assert.Contains(t, fromError.Message(), tc.errID)
 			} else {
 				assert.Nil(t, err)
 			}
@@ -1523,7 +1532,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 
 				return metrics, samples
 			},
-			expectedErr: "series has too many labels",
+			expectedErr: "received series with a number of labels exceeding the limit",
 		},
 		"max label name length limit reached": {
 			prepareConfig: func(limits *validation.Limits) {
@@ -1551,7 +1560,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 
 				return metrics, samples
 			},
-			expectedErr: "label name too long",
+			expectedErr: "received series with label name length exceeding the limit",
 		},
 		"max label value length limit reached": {
 			prepareConfig: func(limits *validation.Limits) {
@@ -1579,7 +1588,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 
 				return metrics, samples
 			},
-			expectedErr: "label value too long",
+			expectedErr: "received series with label value length exceeding the limit",
 		},
 		"timestamp too new": {
 			prepareConfig: func(limits *validation.Limits) {
@@ -1604,7 +1613,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 
 				return metrics, samples
 			},
-			expectedErr: "timestamp too new",
+			expectedErr: "received sample with a timestamp too far in the future",
 		},
 	}
 
@@ -3385,11 +3394,12 @@ func TestDistributorValidation(t *testing.T) {
 	future, past := now.Add(5*time.Hour), now.Add(-25*time.Hour)
 
 	for i, tc := range []struct {
-		metadata  []*mimirpb.MetricMetadata
-		labels    []labels.Labels
-		samples   []mimirpb.Sample
-		exemplars []*mimirpb.Exemplar
-		err       error
+		metadata           []*mimirpb.MetricMetadata
+		labels             []labels.Labels
+		samples            []mimirpb.Sample
+		exemplars          []*mimirpb.Exemplar
+		expectedStatusCode int32
+		expectedErr        string
 	}{
 		// Test validation passes.
 		{
@@ -3413,7 +3423,8 @@ func TestDistributorValidation(t *testing.T) {
 				TimestampMs: int64(future),
 				Value:       4,
 			}},
-			err: httpgrpc.Errorf(http.StatusBadRequest, `timestamp too new: %d metric: "testmetric"`, future),
+			expectedStatusCode: http.StatusBadRequest,
+			expectedErr:        fmt.Sprintf(`received sample with a timestamp too far in the future, timestamp: %d series: 'testmetric' (err-mimir-too-far-in-future)`, future),
 		},
 
 		// Test maximum labels names per series.
@@ -3423,7 +3434,8 @@ func TestDistributorValidation(t *testing.T) {
 				TimestampMs: int64(now),
 				Value:       2,
 			}},
-			err: httpgrpc.Errorf(http.StatusBadRequest, `series has too many labels (actual: 3, limit: 2) series: 'testmetric{foo2="bar2", foo="bar"}'`),
+			expectedStatusCode: http.StatusBadRequest,
+			expectedErr:        `received series with a number of labels exceeding the limit (actual: 3, limit: 2) series: 'testmetric{foo2="bar2", foo="bar"}'`,
 		},
 		// Test multiple validation fails return the first one.
 		{
@@ -3435,7 +3447,8 @@ func TestDistributorValidation(t *testing.T) {
 				{TimestampMs: int64(now), Value: 2},
 				{TimestampMs: int64(past), Value: 2},
 			},
-			err: httpgrpc.Errorf(http.StatusBadRequest, `series has too many labels (actual: 3, limit: 2) series: 'testmetric{foo2="bar2", foo="bar"}'`),
+			expectedStatusCode: http.StatusBadRequest,
+			expectedErr:        `received series with a number of labels exceeding the limit (actual: 3, limit: 2) series: 'testmetric{foo2="bar2", foo="bar"}'`,
 		},
 		// Test metadata validation fails
 		{
@@ -3445,7 +3458,8 @@ func TestDistributorValidation(t *testing.T) {
 				TimestampMs: int64(now),
 				Value:       1,
 			}},
-			err: httpgrpc.Errorf(http.StatusBadRequest, `metadata missing metric name`),
+			expectedStatusCode: http.StatusBadRequest,
+			expectedErr:        `metadata missing metric name`,
 		},
 		// Test empty exemplar labels fails.
 		{
@@ -3460,7 +3474,8 @@ func TestDistributorValidation(t *testing.T) {
 				TimestampMs: int64(now),
 				Value:       1,
 			}},
-			err: httpgrpc.Errorf(http.StatusBadRequest, "exemplar missing labels, timestamp: %d series: %+v labels: {}", now, labels.Labels{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "bar"}}),
+			expectedStatusCode: http.StatusBadRequest,
+			expectedErr:        fmt.Sprintf("received exemplar with no valid labels, timestamp: %d series: %+v labels: {}", now, labels.Labels{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "bar"}}),
 		},
 	} {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
@@ -3478,7 +3493,14 @@ func TestDistributorValidation(t *testing.T) {
 			})
 
 			_, err := ds[0].Push(ctx, mimirpb.ToWriteRequest(tc.labels, tc.samples, tc.exemplars, tc.metadata, mimirpb.API))
-			require.Equal(t, tc.err, err)
+			if tc.expectedErr == "" {
+				require.NoError(t, err)
+			} else {
+				res, ok := httpgrpc.HTTPResponseFromError(err)
+				require.True(t, ok)
+				require.Equal(t, tc.expectedStatusCode, res.Code)
+				require.Contains(t, string(res.GetBody()), tc.expectedErr)
+			}
 		})
 	}
 }

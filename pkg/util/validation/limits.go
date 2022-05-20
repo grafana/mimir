@@ -21,6 +21,13 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
 )
 
+const (
+	maxLabelNamesPerSeriesFlag = "validation.max-label-names-per-series"
+	maxLabelNameLengthFlag     = "validation.max-length-label-name"
+	maxLabelValueLengthFlag    = "validation.max-length-label-value"
+	creationGracePeriodFlag    = "validation.create-grace-period"
+)
+
 // LimitError are errors that do not comply with the limits specified.
 type LimitError string
 
@@ -136,12 +143,12 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&l.HAReplicaLabel, "distributor.ha-tracker.replica", "__replica__", "Prometheus label to look for in samples to identify a Prometheus HA replica.")
 	f.IntVar(&l.HAMaxClusters, "distributor.ha-tracker.max-clusters", 0, "Maximum number of clusters that HA tracker will keep track of for a single tenant. 0 to disable the limit.")
 	f.Var(&l.DropLabels, "distributor.drop-label", "This flag can be used to specify label names that to drop during sample ingestion within the distributor and can be repeated in order to drop multiple labels.")
-	f.IntVar(&l.MaxLabelNameLength, "validation.max-length-label-name", 1024, "Maximum length accepted for label names")
-	f.IntVar(&l.MaxLabelValueLength, "validation.max-length-label-value", 2048, "Maximum length accepted for label value. This setting also applies to the metric name")
-	f.IntVar(&l.MaxLabelNamesPerSeries, "validation.max-label-names-per-series", 30, "Maximum number of label names per series.")
+	f.IntVar(&l.MaxLabelNameLength, maxLabelNameLengthFlag, 1024, "Maximum length accepted for label names")
+	f.IntVar(&l.MaxLabelValueLength, maxLabelValueLengthFlag, 2048, "Maximum length accepted for label value. This setting also applies to the metric name")
+	f.IntVar(&l.MaxLabelNamesPerSeries, maxLabelNamesPerSeriesFlag, 30, "Maximum number of label names per series.")
 	f.IntVar(&l.MaxMetadataLength, "validation.max-metadata-length", 1024, "Maximum length accepted for metric metadata. Metadata refers to Metric Name, HELP and UNIT.")
 	_ = l.CreationGracePeriod.Set("10m")
-	f.Var(&l.CreationGracePeriod, "validation.create-grace-period", "Controls how far into the future incoming samples are accepted compared to the wall clock. Any sample with timestamp `t` will be rejected if `t > (now + validation.create-grace-period)`.")
+	f.Var(&l.CreationGracePeriod, creationGracePeriodFlag, "Controls how far into the future incoming samples are accepted compared to the wall clock. Any sample with timestamp `t` will be rejected if `t > (now + validation.create-grace-period)`.")
 	f.BoolVar(&l.EnforceMetadataMetricName, "validation.enforce-metadata-metric-name", true, "Enforce every metadata has a metric name.")
 
 	f.IntVar(&l.MaxGlobalSeriesPerUser, "ingester.max-global-series-per-user", 150000, "The maximum number of active series per tenant, across the cluster before replication. 0 to disable.")
