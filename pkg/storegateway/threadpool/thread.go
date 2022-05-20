@@ -3,7 +3,7 @@
 // Provenance-includes-license: MIT
 // Provenance-includes-copyright: Christian Grabowski
 
-package indexheader
+package threadpool
 
 import (
 	"runtime"

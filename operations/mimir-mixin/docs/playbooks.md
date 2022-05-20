@@ -303,7 +303,17 @@ How to **fix**:
 
 ### MimirRulerMissedEvaluations
 
-_TODO: this playbook has not been written yet._
+This alert fires when there is a rule group that is taking longer to evaluate than its evaluation interval.
+
+How it **works**:
+
+- The Mimir ruler will evaluate a rule group according to the evaluation interval on the rule group.
+- If an evaluation is not finished by the time the next evaluation should happen, the next evaluation is missed.
+
+How to **fix**:
+
+- Increase the evaluation interval of the rule group. You can use the rate of missed evaluation to estimate how long the rule group evaluation actually takes.
+- Try splitting up the rule group into multiple rule groups. Rule groups are evaluated in parallel, so the same rules may still fit in the same resolution.
 
 ### MimirIngesterHasNotShippedBlocks
 

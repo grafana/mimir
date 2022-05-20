@@ -531,10 +531,11 @@
         {
           alert: $.alertName('RulerMissedEvaluations'),
           expr: |||
+            100 * (
             sum by (%(alert_aggregation_labels)s, %(per_instance_label)s, rule_group) (rate(cortex_prometheus_rule_group_iterations_missed_total[1m]))
               /
             sum by (%(alert_aggregation_labels)s, %(per_instance_label)s, rule_group) (rate(cortex_prometheus_rule_group_iterations_total[1m]))
-              > 0.01
+            ) > 1
           ||| % $._config,
           'for': '5m',
           labels: {

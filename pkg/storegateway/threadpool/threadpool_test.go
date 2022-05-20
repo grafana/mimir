@@ -1,13 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package indexheader
+package threadpool
 
 import (
+	"context"
 	"sync"
 	"testing"
 
+	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/util/test"
 )
@@ -16,9 +19,10 @@ func TestThreadpool_Call(t *testing.T) {
 	t.Run("pool is stopped", func(t *testing.T) {
 		test.VerifyNoLeak(t)
 
-		pool := NewThreadPool(1, prometheus.NewPedanticRegistry())
-		pool.Start()
-		pool.StopAndWait()
+		ctx := context.Background()
+		pool := NewThreadpool(1, prometheus.NewPedanticRegistry())
+		require.NoError(t, services.StartAndAwaitRunning(ctx, pool))
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, pool))
 
 		_, err := pool.Execute(func() (interface{}, error) {
 			return 42, nil
@@ -27,12 +31,33 @@ func TestThreadpool_Call(t *testing.T) {
 		assert.ErrorIs(t, err, ErrPoolStopped)
 	})
 
+	t.Run("no threads in pool", func(t *testing.T) {
+		test.VerifyNoLeak(t)
+
+		ctx := context.Background()
+		pool := NewThreadpool(0, prometheus.NewPedanticRegistry())
+		require.NoError(t, services.StartAndAwaitRunning(ctx, pool))
+		t.Cleanup(func() {
+			require.NoError(t, services.StopAndAwaitTerminated(ctx, pool))
+		})
+
+		val, err := pool.Execute(func() (interface{}, error) {
+			return 27, nil
+		})
+
+		assert.Equal(t, 27, val.(int))
+		assert.NoError(t, err)
+	})
+
 	t.Run("execute a single function", func(t *testing.T) {
 		test.VerifyNoLeak(t)
 
-		pool := NewThreadPool(1, prometheus.NewPedanticRegistry())
-		pool.Start()
-		t.Cleanup(pool.StopAndWait)
+		ctx := context.Background()
+		pool := NewThreadpool(1, prometheus.NewPedanticRegistry())
+		require.NoError(t, services.StartAndAwaitRunning(ctx, pool))
+		t.Cleanup(func() {
+			require.NoError(t, services.StopAndAwaitTerminated(ctx, pool))
+		})
 
 		val, err := pool.Execute(func() (interface{}, error) {
 			return 42, nil
@@ -45,9 +70,12 @@ func TestThreadpool_Call(t *testing.T) {
 	t.Run("execute more functions than there are threads", func(t *testing.T) {
 		test.VerifyNoLeak(t)
 
-		pool := NewThreadPool(1, prometheus.NewPedanticRegistry())
-		pool.Start()
-		t.Cleanup(pool.StopAndWait)
+		ctx := context.Background()
+		pool := NewThreadpool(1, prometheus.NewPedanticRegistry())
+		require.NoError(t, services.StartAndAwaitRunning(ctx, pool))
+		t.Cleanup(func() {
+			require.NoError(t, services.StopAndAwaitTerminated(ctx, pool))
+		})
 
 		numJobs := 4
 		results := make(chan int, numJobs)

@@ -59,7 +59,6 @@ import (
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
-	mimir_indexheader "github.com/grafana/mimir/pkg/storegateway/indexheader"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
@@ -124,9 +123,6 @@ type BucketStore struct {
 	// or LabelName and LabelValues calls when used with matchers.
 	seriesLimiterFactory SeriesLimiterFactory
 	partitioner          Partitioner
-
-	// Threadpool for performing operations that block the OS thread (mmap page faults)
-	threadPool *mimir_indexheader.Threadpool
 
 	// Every how many posting offset entry we pool in heap memory. Default in Prometheus is 32.
 	postingOffsetsInMemSampling int
@@ -220,7 +216,6 @@ func NewBucketStore(
 	chunksLimiterFactory ChunksLimiterFactory,
 	seriesLimiterFactory SeriesLimiterFactory,
 	partitioner Partitioner,
-	threadPool *mimir_indexheader.Threadpool,
 	blockSyncConcurrency int,
 	postingOffsetsInMemSampling int,
 	enableSeriesResponseHints bool, // TODO(pracucci) Thanos 0.12 and below doesn't gracefully handle new fields in SeriesResponse. Drop this flag and always enable hints once we can drop backward compatibility.
@@ -244,7 +239,6 @@ func NewBucketStore(
 		chunksLimiterFactory:        chunksLimiterFactory,
 		seriesLimiterFactory:        seriesLimiterFactory,
 		partitioner:                 partitioner,
-		threadPool:                  threadPool,
 		postingOffsetsInMemSampling: postingOffsetsInMemSampling,
 		enableSeriesResponseHints:   enableSeriesResponseHints,
 		seriesHashCache:             seriesHashCache,
@@ -412,10 +406,6 @@ func (s *BucketStore) addBlock(ctx context.Context, meta *metadata.Meta) (err er
 	)
 	if err != nil {
 		return errors.Wrap(err, "create index header reader")
-	}
-
-	if s.threadPool != nil {
-		indexHeaderReader = mimir_indexheader.NewThreadedReader(s.threadPool, indexHeaderReader)
 	}
 
 	defer func() {

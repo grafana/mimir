@@ -28,6 +28,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
+	"github.com/grafana/mimir/pkg/storegateway/threadpool"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -51,11 +52,15 @@ var (
 // Config holds the store gateway config.
 type Config struct {
 	ShardingRing RingConfig `yaml:"sharding_ring" doc:"description=The hash ring configuration."`
+	// ThreadPoolSize controls the number of OS threads that are dedicated for handling requests
+	ThreadPoolSize uint `yaml:"thread_pool_size" category:"experimental"`
 }
 
 // RegisterFlags registers the Config flags.
 func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.ShardingRing.RegisterFlags(f, logger)
+
+	f.UintVar(&cfg.ThreadPoolSize, "store-gateway.thread-pool-size", uint(0), "Number of OS threads that are dedicated for handling requests. Set to 0 to disable use of dedicated OS threads for handling requests.")
 }
 
 // Validate the Config.
@@ -78,6 +83,7 @@ type StoreGateway struct {
 	logger     log.Logger
 	stores     *BucketStores
 	tracker    *activitytracker.ActivityTracker
+	threadpool *threadpool.Threadpool
 
 	// Ring used for sharding blocks.
 	ringLifecycler *ring.BasicLifecycler
@@ -119,6 +125,7 @@ func newStoreGateway(gatewayCfg Config, storageCfg mimir_tsdb.BlocksStorageConfi
 		storageCfg: storageCfg,
 		logger:     logger,
 		tracker:    tracker,
+		threadpool: threadpool.NewThreadpool(gatewayCfg.ThreadPoolSize, reg),
 		bucketSync: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_storegateway_bucket_sync_total",
 			Help: "Total number of times the bucket sync operation triggered.",
@@ -184,7 +191,7 @@ func (g *StoreGateway) starting(ctx context.Context) (err error) {
 
 	// First of all we register the instance in the ring and wait
 	// until the lifecycler successfully started.
-	if g.subservices, err = services.NewManager(g.ringLifecycler, g.ring, g.stores); err != nil {
+	if g.subservices, err = services.NewManager(g.ringLifecycler, g.ring, g.threadpool); err != nil {
 		return errors.Wrap(err, "unable to start store-gateway dependencies")
 	}
 
@@ -301,7 +308,11 @@ func (g *StoreGateway) Series(req *storepb.SeriesRequest, srv storegatewaypb.Sto
 	})
 	defer g.tracker.Delete(ix)
 
-	return g.stores.Series(req, srv)
+	_, err := g.threadpool.Execute(func() (interface{}, error) {
+		return nil, g.stores.Series(req, srv)
+	})
+
+	return err
 }
 
 // LabelNames implements the Storegateway proto service.
@@ -311,7 +322,15 @@ func (g *StoreGateway) LabelNames(ctx context.Context, req *storepb.LabelNamesRe
 	})
 	defer g.tracker.Delete(ix)
 
-	return g.stores.LabelNames(ctx, req)
+	res, err := g.threadpool.Execute(func() (interface{}, error) {
+		return g.stores.LabelNames(ctx, req)
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return res.(*storepb.LabelNamesResponse), err
 }
 
 // LabelValues implements the Storegateway proto service.
@@ -321,7 +340,15 @@ func (g *StoreGateway) LabelValues(ctx context.Context, req *storepb.LabelValues
 	})
 	defer g.tracker.Delete(ix)
 
-	return g.stores.LabelValues(ctx, req)
+	res, err := g.threadpool.Execute(func() (interface{}, error) {
+		return g.stores.LabelValues(ctx, req)
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return res.(*storepb.LabelValuesResponse), err
 }
 
 func requestActivity(ctx context.Context, name string, req interface{}) string {
