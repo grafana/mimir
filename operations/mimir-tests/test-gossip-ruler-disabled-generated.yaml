@@ -767,6 +767,8 @@ spec:
         - -distributor.health-check-ingesters=true
         - -distributor.ingestion-burst-size=200000
         - -distributor.ingestion-rate-limit=10000
+        - -distributor.request-burst-limit=2000
+        - -distributor.request-rate-limit=100
         - -distributor.ring.prefix=
         - -distributor.ring.store=memberlist
         - -ingester.ring.heartbeat-timeout=10m
