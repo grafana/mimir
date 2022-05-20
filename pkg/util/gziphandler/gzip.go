@@ -448,7 +448,7 @@ func GzipHandler(h http.Handler) http.Handler {
 //
 // acceptsGzip is true if the given HTTP request indicates that it will
 // accept a gzipped response and/or an identity request.
-// acceptsIdentity is if the given HTTP request didn't explicitly exclude identity encoding.
+// acceptsIdentity is true if the given HTTP request didn't explicitly exclude identity encoding.
 // I.e., either "identity;q=0" or "*;q=0" without a more specific entry for "identity".
 // See https://datatracker.ietf.org/doc/html/rfc7231#section-5.3.4
 func requestAcceptance(r *http.Request) (acceptsGzip bool, acceptsIdentity bool) {
