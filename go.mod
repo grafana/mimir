@@ -55,6 +55,7 @@ require (
 
 require (
 	github.com/alecthomas/chroma v0.10.0
+	github.com/gofrs/uuid v4.2.0+incompatible
 	github.com/google/go-github/v32 v32.1.0
 	github.com/grafana-tools/sdk v0.0.0-20211220201350-966b3088eec9
 	github.com/grafana/regexp v0.0.0-20220304095617-2e8d9baf4ac2
@@ -127,7 +128,6 @@ require (
 	github.com/go-openapi/validate v0.21.0 // indirect
 	github.com/go-redis/redis/v8 v8.11.4 // indirect
 	github.com/go-stack/stack v1.8.1 // indirect
-	github.com/gofrs/uuid v4.2.0+incompatible // indirect
 	github.com/gogo/googleapis v1.4.0 // indirect
 	github.com/golang-jwt/jwt/v4 v4.2.0 // indirect
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect

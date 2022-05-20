@@ -126,6 +126,11 @@ func (c *MultitenantCompactor) UploadBlockFile(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	if r.Body == nil || r.ContentLength == 0 {
+		http.Error(w, "file cannot be empty", http.StatusBadRequest)
+		return
+	}
+
 	bkt := bucket.NewUserBucketClient(string(tenantID), c.bucketClient, c.cfgProvider)
 
 	exists := false
@@ -146,11 +151,6 @@ func (c *MultitenantCompactor) UploadBlockFile(w http.ResponseWriter, r *http.Re
 	}
 
 	dst := path.Join(blockID, pth)
-
-	if r.Body == nil || r.ContentLength == 0 {
-		http.Error(w, "file cannot be empty", http.StatusBadRequest)
-		return
-	}
 
 	level.Debug(c.logger).Log("msg", "uploading block file to bucket", "user", tenantID,
 		"destination", dst, "size", r.ContentLength)
@@ -188,6 +188,13 @@ func (c *MultitenantCompactor) CompleteBlockUpload(w http.ResponseWriter, r *htt
 	level.Debug(c.logger).Log("msg", "received request to complete block upload", "user", tenantID,
 		"block_id", blockID, "content_length", r.ContentLength)
 
+	dec := json.NewDecoder(r.Body)
+	var meta metadata.Meta
+	if err := dec.Decode(&meta); err != nil {
+		http.Error(w, "malformed request body", http.StatusBadRequest)
+		return
+	}
+
 	bkt := bucket.NewUserBucketClient(tenantID, c.bucketClient, c.cfgProvider)
 
 	exists := false
@@ -204,13 +211,6 @@ func (c *MultitenantCompactor) CompleteBlockUpload(w http.ResponseWriter, r *htt
 		level.Debug(c.logger).Log("msg", "no lock file exists for block in object storage, refusing to complete block",
 			"user", tenantID, "block_id", blockID)
 		http.Error(w, "block upload has not yet been initiated", http.StatusBadRequest)
-		return
-	}
-
-	dec := json.NewDecoder(r.Body)
-	var meta metadata.Meta
-	if err := dec.Decode(&meta); err != nil {
-		http.Error(w, "malformed request body", http.StatusBadRequest)
 		return
 	}
 
