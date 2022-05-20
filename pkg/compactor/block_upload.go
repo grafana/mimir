@@ -34,6 +34,7 @@ import (
 	"github.com/grafana/regexp"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
+	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 )
 
@@ -316,7 +317,7 @@ func (c *MultitenantCompactor) validateBlock(ctx context.Context, w http.Respons
 		r, err := bkt.Get(ctx, pth)
 		if err != nil {
 			// TODO: Return error indicating bad gateway
-			return errors.Wrapf(err, "failed to get object %q from object storage", pth)
+			return errBadGateway{message: fmt.Sprintf("failed to get object %q from object storage", pth), err: err}
 		}
 
 		f, err := os.Create(filepath.Join(blockDir, pth))
@@ -360,17 +361,16 @@ func (c *MultitenantCompactor) validateBlock(ctx context.Context, w http.Respons
 		}
 	*/
 
-	if err := c.checkBlockIndex(blockDir); err != nil {
+	if err := c.verifyBlock(blockDir, meta); err != nil {
 		return err
 	}
-
-	// TODO: Validate that block has no out-of-order labels (tsdb-index-health detects this, although doesn't fail)
-	// TODO: Count samples and validate chunks (tsdb-index)
 
 	return nil
 }
 
-func (c *MultitenantCompactor) checkBlockIndex(blockDir string) error {
+func (c *MultitenantCompactor) verifyBlock(blockDir string, meta metadata.Meta) error {
+	// TODO: Count samples (check with Peter)
+
 	var cr *chunks.Reader
 	cr, err := chunks.NewDirReader(filepath.Join(blockDir, block.ChunksDirname), nil)
 	if err != nil {
@@ -389,20 +389,24 @@ func (c *MultitenantCompactor) checkBlockIndex(blockDir string) error {
 		return errors.Wrap(err, "get all postings")
 	}
 
+	shard, shardCount, err := sharding.ParseShardIDLabelValue(meta.Thanos.Labels[mimir_tsdb.CompactorShardIDExternalLabel])
+	if err != nil {
+		return errors.Wrap(err, "parse shard ID label value")
+	}
+
 	var (
 		lastLset labels.Labels
 		lset     labels.Labels
-		chnks    []chunks.Meta
 
 		outOfOrderLabels int
 	)
-
 	// Per series.
 	for ps.Next() {
 		lastLset = append(lastLset[:0], lset...)
 
 		id := ps.At()
 
+		var chnks []chunks.Meta
 		if err := r.Series(id, &lset, &chnks); err != nil {
 			return errors.Wrap(err, "read series")
 		}
@@ -426,6 +430,10 @@ func (c *MultitenantCompactor) checkBlockIndex(blockDir string) error {
 		}
 		if len(chnks) == 0 {
 			return errors.Errorf("empty chunks for series %d", id)
+		}
+
+		if lset.Hash()%shardCount != shard {
+			return errBadRequest{message: fmt.Sprintf("series sharded incorrectly: %s", lset.String())}
 		}
 
 		ooo := 0
@@ -580,9 +588,7 @@ func (c *MultitenantCompactor) sanitizeMeta(tenantID, blockID string, meta *meta
 
 	for l, v := range meta.Thanos.Labels {
 		switch l {
-		case mimir_tsdb.TenantIDExternalLabel, mimir_tsdb.IngesterIDExternalLabel:
-		case mimir_tsdb.CompactorShardIDExternalLabel:
-			// TODO: Verify that all series are compatible with the shard ID
+		case mimir_tsdb.TenantIDExternalLabel, mimir_tsdb.IngesterIDExternalLabel, mimir_tsdb.CompactorShardIDExternalLabel:
 		default:
 			level.Warn(c.logger).Log("msg", "removing unknown meta.json label", "block_id", blockID, "label", l, "value", v)
 			updated = true
