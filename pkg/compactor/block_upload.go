@@ -469,13 +469,13 @@ func (c *MultitenantCompactor) verifyBlock(blockDir string, meta metadata.Meta) 
 			ooo++
 		}
 
-		if ooo > 0 {
-			// TODO: Should this be an error?
-			/*
-				stats.OutOfOrderSeries++
-				stats.OutOfOrderChunks += ooo
-			*/
-		}
+		/*
+			if ooo > 0 {
+				// TODO: Should this be an error?
+					stats.OutOfOrderSeries++
+					stats.OutOfOrderChunks += ooo
+			}
+		*/
 
 		if err := c.verifyChunks(cr, lset, chnks); err != nil {
 			return err
