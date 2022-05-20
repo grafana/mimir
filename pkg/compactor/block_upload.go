@@ -10,8 +10,10 @@ import (
 	"net/url"
 	"path"
 	"regexp"
+	"strings"
 
 	"github.com/go-kit/log/level"
+	"github.com/gofrs/uuid"
 	"github.com/gorilla/mux"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
@@ -31,14 +33,60 @@ func (c *MultitenantCompactor) CreateBlockUpload(w http.ResponseWriter, r *http.
 		http.Error(w, "missing block ID", http.StatusBadRequest)
 		return
 	}
-	tenantID, _, err := tenant.ExtractTenantIDFromHTTPRequest(r)
+	tenantID, ctx, err := tenant.ExtractTenantIDFromHTTPRequest(r)
 	if err != nil {
 		http.Error(w, "invalid tenant ID", http.StatusBadRequest)
 		return
 	}
 
 	level.Debug(c.logger).Log("msg", "creating block upload session", "user", tenantID, "block_id", blockID)
-	// TODO: Verify that block hasn't already been ingested
+
+	bkt := bucket.NewUserBucketClient(string(tenantID), c.bucketClient, c.cfgProvider)
+	exists := false
+	if err := bkt.Iter(ctx, blockID, func(pth string) error {
+		exists = true
+		return nil
+	}); err != nil {
+		level.Error(c.logger).Log("msg", "failed to iterate over block files", "user", tenantID,
+			"block_id", blockID, "err", err)
+		http.Error(w, "failed iterating over block files in object storage", http.StatusBadGateway)
+		return
+	}
+	if exists {
+		level.Debug(c.logger).Log("msg", "block already exists in object storage", "user", tenantID,
+			"block_id", blockID)
+		http.Error(w, "block already exists in object storage", http.StatusConflict)
+		return
+	}
+
+	rnd, err := uuid.NewV4()
+	if err != nil {
+		level.Error(c.logger).Log("msg", "failed to generate UUID", "err", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	lockName := fmt.Sprintf("%s.lock", rnd)
+	if err := bkt.Upload(ctx, lockName, bytes.NewBuffer(nil)); err != nil {
+		level.Error(c.logger).Log("msg", "failed to upload lock file to block dir", "user", tenantID,
+			"block_id", blockID, "err", err)
+		http.Error(w, "failed uploading lock file to block dir", http.StatusBadGateway)
+		return
+	}
+	if err := bkt.Iter(ctx, blockID, func(pth string) error {
+		exists = pth != lockName
+		return nil
+	}); err != nil {
+		level.Error(c.logger).Log("msg", "failed to iterate over block files", "user", tenantID,
+			"block_id", blockID, "err", err)
+		http.Error(w, "failed iterating over block files in object storage", http.StatusBadGateway)
+		return
+	}
+	if exists {
+		level.Debug(c.logger).Log("msg", "another file exists for block in object storage", "user", tenantID,
+			"block_id", blockID)
+		http.Error(w, "another file exists for block in object storage", http.StatusConflict)
+		return
+	}
 
 	w.WriteHeader(http.StatusOK)
 }
@@ -78,6 +126,25 @@ func (c *MultitenantCompactor) UploadBlockFile(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	bkt := bucket.NewUserBucketClient(string(tenantID), c.bucketClient, c.cfgProvider)
+
+	exists := false
+	if err := bkt.Iter(ctx, blockID, func(pth string) error {
+		exists = strings.HasSuffix(pth, ".lock")
+		return nil
+	}); err != nil {
+		level.Error(c.logger).Log("msg", "failed to iterate over block files", "user", tenantID,
+			"block_id", blockID, "err", err)
+		http.Error(w, "failed iterating over block files in object storage", http.StatusBadGateway)
+		return
+	}
+	if !exists {
+		level.Debug(c.logger).Log("msg", "no lock file exists for block in object storage, refusing file upload",
+			"user", tenantID, "block_id", blockID)
+		http.Error(w, "block upload has not yet been initiated", http.StatusBadRequest)
+		return
+	}
+
 	dst := path.Join(blockID, pth)
 
 	if r.Body == nil || r.ContentLength == 0 {
@@ -87,7 +154,6 @@ func (c *MultitenantCompactor) UploadBlockFile(w http.ResponseWriter, r *http.Re
 
 	level.Debug(c.logger).Log("msg", "uploading block file to bucket", "user", tenantID,
 		"destination", dst, "size", r.ContentLength)
-	bkt := bucket.NewUserBucketClient(string(tenantID), c.bucketClient, c.cfgProvider)
 	reader := bodyReader{
 		r: r,
 	}
@@ -121,6 +187,26 @@ func (c *MultitenantCompactor) CompleteBlockUpload(w http.ResponseWriter, r *htt
 
 	level.Debug(c.logger).Log("msg", "received request to complete block upload", "user", tenantID,
 		"block_id", blockID, "content_length", r.ContentLength)
+
+	bkt := bucket.NewUserBucketClient(tenantID, c.bucketClient, c.cfgProvider)
+
+	exists := false
+	if err := bkt.Iter(ctx, blockID, func(pth string) error {
+		exists = strings.HasSuffix(pth, ".lock")
+		return nil
+	}); err != nil {
+		level.Error(c.logger).Log("msg", "failed to iterate over block files", "user", tenantID,
+			"block_id", blockID, "err", err)
+		http.Error(w, "failed iterating over block files in object storage", http.StatusBadGateway)
+		return
+	}
+	if !exists {
+		level.Debug(c.logger).Log("msg", "no lock file exists for block in object storage, refusing to complete block",
+			"user", tenantID, "block_id", blockID)
+		http.Error(w, "block upload has not yet been initiated", http.StatusBadRequest)
+		return
+	}
+
 	dec := json.NewDecoder(r.Body)
 	var meta metadata.Meta
 	if err := dec.Decode(&meta); err != nil {
@@ -130,7 +216,6 @@ func (c *MultitenantCompactor) CompleteBlockUpload(w http.ResponseWriter, r *htt
 
 	level.Debug(c.logger).Log("msg", "completing block upload", "user",
 		tenantID, "block_id", blockID, "files", len(meta.Thanos.Files))
-	bkt := bucket.NewUserBucketClient(tenantID, c.bucketClient, c.cfgProvider)
 
 	if err := c.sanitizeMeta(&meta, blockID, tenantID); err != nil {
 		level.Error(c.logger).Log("msg", "failed to sanitize meta.json", "user", tenantID,
@@ -154,6 +239,31 @@ func (c *MultitenantCompactor) CompleteBlockUpload(w http.ResponseWriter, r *htt
 		level.Error(c.logger).Log("msg", "failed uploading meta.json to bucket", "user", tenantID,
 			"dst", dst, "err", err)
 		http.Error(w, "failed uploading meta.json to bucket", http.StatusBadGateway)
+		return
+	}
+
+	var lockFiles []string
+	if err := bkt.Iter(ctx, blockID, func(pth string) error {
+		if strings.HasSuffix(pth, ".lock") {
+			lockFiles = append(lockFiles, pth)
+		}
+		return nil
+	}); err != nil {
+		level.Error(c.logger).Log("msg", "failed to iterate over block files", "user", tenantID,
+			"block_id", blockID, "err", err)
+		http.Error(w, "failed iterating over block files in object storage", http.StatusBadGateway)
+		return
+	}
+	failed := false
+	for _, lf := range lockFiles {
+		if err := bkt.Delete(ctx, lf); err != nil {
+			level.Error(c.logger).Log("msg", "failed to delete lock file from block in object storage", "user", tenantID,
+				"block_id", blockID, "err", err)
+			failed = true
+		}
+	}
+	if failed {
+		http.Error(w, "failed deleting lock file(s) from object storage", http.StatusBadGateway)
 		return
 	}
 
