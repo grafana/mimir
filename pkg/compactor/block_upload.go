@@ -4,20 +4,32 @@ package compactor
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"path"
+	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/go-kit/log/level"
 	"github.com/gofrs/uuid"
 	"github.com/gorilla/mux"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/timestamp"
+	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/prometheus/prometheus/tsdb/index"
+	"github.com/thanos-io/thanos/pkg/block"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
+	"github.com/thanos-io/thanos/pkg/objstore"
 
+	"github.com/grafana/dskit/runutil"
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/regexp"
 
@@ -217,28 +229,40 @@ func (c *MultitenantCompactor) CompleteBlockUpload(w http.ResponseWriter, r *htt
 	level.Debug(c.logger).Log("msg", "completing block upload", "user",
 		tenantID, "block_id", blockID, "files", len(meta.Thanos.Files))
 
-	if err := c.sanitizeMeta(&meta, blockID, tenantID); err != nil {
-		level.Error(c.logger).Log("msg", "failed to sanitize meta.json", "user", tenantID,
+	if err := c.sanitizeMeta(blockID, tenantID, &meta); err != nil {
+		level.Error(c.logger).Log("msg", "failed to upload meta.json", "user", tenantID,
 			"block_id", blockID, "err", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
-	// Write meta.json, so the block is considered complete
-	dst := path.Join(blockID, "meta.json")
-	level.Debug(c.logger).Log("msg", "writing meta.json in bucket", "dst", dst)
-	buf := bytes.NewBuffer(nil)
-	enc := json.NewEncoder(buf)
-	if err := enc.Encode(meta); err != nil {
-		level.Error(c.logger).Log("msg", "failed to encode meta.json", "user", tenantID,
+	if err := c.validateBlock(ctx, w, blockID, tenantID, bkt, meta); err != nil {
+		level.Error(c.logger).Log("msg", "failed validating block", "user", tenantID,
 			"block_id", blockID, "err", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
-	if err := bkt.Upload(ctx, dst, buf); err != nil {
-		level.Error(c.logger).Log("msg", "failed uploading meta.json to bucket", "user", tenantID,
-			"dst", dst, "err", err)
-		http.Error(w, "failed uploading meta.json to bucket", http.StatusBadGateway)
+
+	// Upload meta.json so block is considered complete
+	if err := c.uploadMeta(ctx, w, meta, blockID, tenantID, bkt); err != nil {
+		var eBadGW errBadGateway
+		if errors.As(err, &eBadGW) {
+			level.Error(c.logger).Log("msg", eBadGW.message, "user", tenantID,
+				"block_id", blockID, "err", err)
+			http.Error(w, eBadGW.message, http.StatusBadGateway)
+			return
+		}
+		var eBadReq errBadRequest
+		if errors.As(err, &eBadReq) {
+			level.Warn(c.logger).Log("msg", eBadReq.message, "user", tenantID,
+				"block_id", blockID)
+			http.Error(w, eBadReq.message, http.StatusBadRequest)
+			return
+		}
+
+		level.Error(c.logger).Log("msg", "failed to upload meta.json", "user", tenantID,
+			"block_id", blockID, "err", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
@@ -272,7 +296,263 @@ func (c *MultitenantCompactor) CompleteBlockUpload(w http.ResponseWriter, r *htt
 	w.WriteHeader(http.StatusOK)
 }
 
-func (c *MultitenantCompactor) sanitizeMeta(meta *metadata.Meta, blockID, tenantID string) error {
+func (c *MultitenantCompactor) validateBlock(ctx context.Context, w http.ResponseWriter, blockID, tenantID string,
+	bkt objstore.Bucket, meta metadata.Meta) error {
+	blockDir, err := os.MkdirTemp("", "")
+	if err != nil {
+		return errors.Wrap(err, "failed to create temp dir")
+	}
+	defer func() {
+		if err := os.RemoveAll(blockDir); err != nil {
+			level.Warn(c.logger).Log("msg", "failed to remove temp dir", "path", blockDir, "err", err)
+		}
+	}()
+
+	if err := bkt.Iter(ctx, blockID, func(pth string) error {
+		if strings.HasSuffix(pth, ".lock") || pth == "meta.json" {
+			return nil
+		}
+
+		r, err := bkt.Get(ctx, pth)
+		if err != nil {
+			// TODO: Return error indicating bad gateway
+			return errors.Wrapf(err, "failed to get object %q from object storage", pth)
+		}
+
+		f, err := os.Create(filepath.Join(blockDir, pth))
+		if err != nil {
+			return errors.Wrap(err, "failed creating temp file")
+		}
+		defer func() {
+			_ = f.Close()
+		}()
+		if _, err := io.Copy(f, r); err != nil {
+			return errors.Wrap(err, "failed writing to temp file")
+		}
+		if err := f.Close(); err != nil {
+			return errors.Wrap(err, "failed writing to temp file")
+		}
+
+		return nil
+	}); err != nil {
+		return errors.Wrapf(err, "failed to iterate block %s", blockID)
+	}
+
+	// Write meta.json
+	f, err := os.Create(filepath.Join(blockDir, "meta.json"))
+	if err != nil {
+		return errors.Wrap(err, "failed to create temporary meta.json")
+	}
+	defer func() {
+		_ = f.Close()
+	}()
+
+	/*
+		metaJSON, err := json.Marshal(meta)
+		if err != nil {
+			return errors.Wrap(err, "failed JSON encoding block metadata")
+		}
+		if _, err := f.Write(metaJSON); err != nil {
+			return errors.Wrap(err, "failed writing to temporary meta.json")
+		}
+		if err := f.Close(); err != nil {
+			return errors.Wrap(err, "failed writing to temporary meta.json")
+		}
+	*/
+
+	if err := c.checkBlockIndex(blockDir); err != nil {
+		return err
+	}
+
+	// TODO: Validate that block has no out-of-order labels (tsdb-index-health detects this, although doesn't fail)
+	// TODO: Count samples and validate chunks (tsdb-index)
+
+	return nil
+}
+
+func (c *MultitenantCompactor) checkBlockIndex(blockDir string) error {
+	var cr *chunks.Reader
+	cr, err := chunks.NewDirReader(filepath.Join(blockDir, block.ChunksDirname), nil)
+	if err != nil {
+		return errors.Wrap(err, "open chunks dir")
+	}
+	defer runutil.CloseWithErrCapture(&err, cr, "closing chunks reader")
+
+	r, err := index.NewFileReader(filepath.Join(blockDir, block.IndexFilename))
+	if err != nil {
+		return errors.Wrap(err, "open index file")
+	}
+	defer runutil.CloseWithErrCapture(&err, r, "gather index issue file reader")
+
+	ps, err := r.Postings(index.AllPostingsKey())
+	if err != nil {
+		return errors.Wrap(err, "get all postings")
+	}
+
+	var (
+		lastLset labels.Labels
+		lset     labels.Labels
+		chnks    []chunks.Meta
+
+		outOfOrderLabels int
+	)
+
+	// Per series.
+	for ps.Next() {
+		lastLset = append(lastLset[:0], lset...)
+
+		id := ps.At()
+
+		if err := r.Series(id, &lset, &chnks); err != nil {
+			return errors.Wrap(err, "read series")
+		}
+		if len(lset) == 0 {
+			return errors.Errorf("empty label set detected for series %d", id)
+		}
+		if lastLset != nil && labels.Compare(lastLset, lset) >= 0 {
+			return errors.Errorf("series %v out of order; previous: %v", lset, lastLset)
+		}
+		l0 := lset[0]
+		for _, l := range lset[1:] {
+			if l.Name < l0.Name {
+				outOfOrderLabels++
+				level.Warn(c.logger).Log("msg",
+					"out-of-order label set: known bug in Prometheus 2.8.0 and below",
+					"labelset", lset.String(),
+					"series", fmt.Sprintf("%d", id),
+				)
+			}
+			l0 = l
+		}
+		if len(chnks) == 0 {
+			return errors.Errorf("empty chunks for series %d", id)
+		}
+
+		ooo := 0
+		// Per chunk in series.
+		for i, chnk := range chnks {
+			if i == 0 {
+				continue
+			}
+
+			prev := chnks[i-1]
+
+			// Chunk order within block.
+			if chnk.MinTime > prev.MaxTime {
+				continue
+			}
+
+			if chnk.MinTime == prev.MinTime && chnk.MaxTime == prev.MaxTime {
+				// TODO(bplotka): Calc and check checksum from chunks itself.
+				// The chunks can overlap 1:1 in time, but does not have same data.
+				// We assume same data for simplicity, but it can be a symptom of error.
+				continue
+			}
+
+			// Chunks partly overlaps or out of order.
+			level.Debug(c.logger).Log("msg", "found out of order chunks",
+				"prev_ref", prev.Ref, "next_ref", chnk.Ref,
+				"prev_min_time", timestamp.Time(prev.MinTime).UTC().Format(time.RFC3339Nano),
+				"prev_max_time", timestamp.Time(prev.MaxTime).UTC().Format(time.RFC3339Nano),
+				"next_min_time", timestamp.Time(chnk.MinTime).UTC().Format(time.RFC3339Nano),
+				"next_max_time", timestamp.Time(chnk.MaxTime).UTC().Format(time.RFC3339Nano),
+				"labels", lset, "prev_chunk_index", i-1, "next_chunk_index", i, "chunks_for_series", len(chnks))
+
+			ooo++
+		}
+
+		if ooo > 0 {
+			// TODO: Should this be an error?
+			/*
+				stats.OutOfOrderSeries++
+				stats.OutOfOrderChunks += ooo
+			*/
+		}
+
+		if err := c.verifyChunks(cr, lset, chnks); err != nil {
+			return err
+		}
+	}
+	if ps.Err() != nil {
+		return errors.Wrap(err, "failed iterating over postings")
+	}
+
+	if outOfOrderLabels > 0 {
+		return errBadRequest{message: fmt.Sprintf("block has %d out of order labels", outOfOrderLabels)}
+	}
+
+	return nil
+}
+
+type errBadRequest struct {
+	message string
+}
+
+func (e errBadRequest) Error() string {
+	return e.message
+}
+
+type errBadGateway struct {
+	message string
+	err     error
+}
+
+func (e errBadGateway) Error() string {
+	return e.message
+}
+
+func (e errBadGateway) Unwrap() error {
+	return e.err
+}
+
+func (c *MultitenantCompactor) verifyChunks(cr *chunks.Reader, lset labels.Labels, chnks []chunks.Meta) error {
+	for _, cm := range chnks {
+		ch, err := cr.Chunk(cm.Ref)
+		if err != nil {
+			return errors.Wrapf(err, "failed to read chunk %s", cm.Ref)
+		}
+
+		samples := 0
+		firstSample := true
+		prevTS := int64(-1)
+
+		it := ch.Iterator(nil)
+		for it.Err() == nil && it.Next() {
+			samples++
+			ts, _ := it.At()
+
+			if firstSample {
+				firstSample = false
+				if ts != cm.MinTime {
+					// TODO: Error?
+					level.Warn(c.logger).Log("ref", cm.Ref, "msg", "timestamp of the first sample doesn't match chunk MinTime",
+						"sampleTimestamp", formatTimestamp(ts), "chunkMinTime", formatTimestamp(cm.MinTime))
+				}
+			} else if ts <= prevTS {
+				// TODO: Error?
+				level.Warn(c.logger).Log("ref", cm.Ref, "msg", "found sample with timestamp not strictly higher than previous timestamp",
+					"previous", formatTimestamp(prevTS), "sampleTimestamp", formatTimestamp(ts))
+			}
+
+			prevTS = ts
+		}
+		if e := it.Err(); e != nil {
+			return errors.Wrapf(err, "failed to failed to iterate over samples of chunk %s", cm.Ref)
+		}
+		if samples == 0 {
+			// TODO: Error?
+			level.Warn(c.logger).Log("ref", cm.Ref, "msg", "no samples found in the chunk")
+		} else if prevTS != cm.MaxTime {
+			// TODO: Error?
+			level.Warn(c.logger).Log("ref", cm.Ref, "msg", "timestamp of the last sample doesn't match chunk MaxTime",
+				"sampleTimestamp", formatTimestamp(prevTS), "chunkMaxTime", formatTimestamp(cm.MaxTime))
+		}
+	}
+
+	return nil
+}
+
+func (c *MultitenantCompactor) sanitizeMeta(tenantID, blockID string, meta *metadata.Meta) error {
 	if meta.Thanos.Labels == nil {
 		meta.Thanos.Labels = map[string]string{}
 	}
@@ -310,10 +590,25 @@ func (c *MultitenantCompactor) sanitizeMeta(meta *metadata.Meta, blockID, tenant
 		}
 	}
 
-	// TODO: List files in bucket and update file list in meta.json
-
 	if !updated {
 		level.Info(c.logger).Log("msg", "no changes to meta.json required", "block_id", blockID)
+	}
+
+	// TODO: List files in bucket and update file list in meta.json
+	return nil
+}
+
+func (c *MultitenantCompactor) uploadMeta(ctx context.Context, w http.ResponseWriter, meta metadata.Meta, blockID, tenantID string,
+	bkt objstore.Bucket) error {
+	dst := path.Join(blockID, "meta.json")
+	level.Debug(c.logger).Log("msg", "uploading meta.json to bucket", "dst", dst)
+	buf := bytes.NewBuffer(nil)
+	enc := json.NewEncoder(buf)
+	if err := enc.Encode(meta); err != nil {
+		return errors.Wrap(err, "failed to encode meta.json")
+	}
+	if err := bkt.Upload(ctx, dst, buf); err != nil {
+		return errBadGateway{message: "failed uploading meta.json to bucket", err: err}
 	}
 
 	return nil
@@ -331,4 +626,8 @@ func (r bodyReader) ObjectSize() (int64, error) {
 // Read implements io.Reader.
 func (r bodyReader) Read(b []byte) (int, error) {
 	return r.r.Body.Read(b)
+}
+
+func formatTimestamp(ts int64) string {
+	return fmt.Sprintf("%d (%s)", ts, timestamp.Time(ts).UTC().Format(time.RFC3339Nano))
 }
