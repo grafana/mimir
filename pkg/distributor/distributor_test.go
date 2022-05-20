@@ -495,7 +495,7 @@ func TestDistributor_PushIngestionRateLimiter(t *testing.T) {
 		ingestionBurstSize int
 		pushes             []testPush
 	}{
-		"ingestion limit should be evenly shared across distributors": {
+		"evenly share the ingestion limit across distributors": {
 			distributors:       2,
 			ingestionRate:      10,
 			ingestionBurstSize: 5,
@@ -508,7 +508,7 @@ func TestDistributor_PushIngestionRateLimiter(t *testing.T) {
 				{metadata: 1, expectedError: httpgrpc.Errorf(http.StatusTooManyRequests, "ingestion rate limit (5) exceeded while adding 0 samples and 1 metadata")},
 			},
 		},
-		"ingestion burst should set to each distributor": {
+		"for each distributor, set an ingestion burst limit.": {
 			distributors:       2,
 			ingestionRate:      10,
 			ingestionBurstSize: 20,
