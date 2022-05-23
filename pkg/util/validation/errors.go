@@ -69,7 +69,7 @@ func newLabelValueTooLongError(series []mimirpb.LabelAdapter, labelValue string)
 
 var invalidLabelMsgFormat = globalerrors.Format(
 	globalerrors.ErrIDSeriesInvalidLabel,
-	"received series with an invalid label: '%%.200s' series: '%%.200s'")
+	"received a series with an invalid label: '%%.200s' series: '%%.200s'")
 
 func newInvalidLabelError(series []mimirpb.LabelAdapter, labelName string) ValidationError {
 	return &genericValidationError{
@@ -81,7 +81,7 @@ func newInvalidLabelError(series []mimirpb.LabelAdapter, labelName string) Valid
 
 var duplicateLabelMsgFormat = globalerrors.Format(
 	globalerrors.ErrIDSeriesWithDuplicateLabelNames,
-	"received series with duplicate label name, label: '%%.200s' series: '%%.200s'")
+	"received a series with duplicate label name, label: '%%.200s' series: '%%.200s'")
 
 func newDuplicatedLabelError(series []mimirpb.LabelAdapter, labelName string) ValidationError {
 	return &genericValidationError{
@@ -93,7 +93,7 @@ func newDuplicatedLabelError(series []mimirpb.LabelAdapter, labelName string) Va
 
 var labelsNotSortedMsgFormat = globalerrors.Format(
 	globalerrors.ErrIDSeriesLabelsNotSorted,
-	"received series with label name not alphabetically sorted, label: '%%.200s' series: '%%.200s'")
+	"received a series where the label names are not alphabetically sorted, label: '%%.200s' series: '%%.200s'")
 
 func newLabelsNotSortedError(series []mimirpb.LabelAdapter, labelName string) ValidationError {
 	return &genericValidationError{
@@ -119,7 +119,7 @@ func (e *tooManyLabelsError) Error() string {
 	return globalerrors.FormatWithLimitConfig(
 		globalerrors.ErrIDMaxLabelNamesPerSeries,
 		maxLabelNamesPerSeriesFlag,
-		"received series with a number of labels exceeding the limit (actual: %d, limit: %d) series: '%.200s'",
+		"received a series whose number of labels exceeds the limit (actual: %d, limit: %d) series: '%.200s'",
 		len(e.series), e.limit, mimirpb.FromLabelAdaptersToMetric(e.series).String())
 }
 
@@ -161,7 +161,7 @@ func (e *sampleValidationError) Error() string {
 var sampleTimestampTooNewMsgFormat = globalerrors.FormatWithLimitConfig(
 	globalerrors.ErrIDSampleTooFarInFuture,
 	creationGracePeriodFlag,
-	"received sample with a timestamp too far in the future, timestamp: %%d series: '%%.200s'")
+	"received a sample whose timestamp is too far in the future, timestamp: %%d series: '%%.200s'")
 
 func newSampleTimestampTooNewError(metricName string, timestamp int64) ValidationError {
 	return &sampleValidationError{
@@ -198,7 +198,7 @@ func newExemplarEmptyLabelsError(seriesLabels []mimirpb.LabelAdapter, exemplarLa
 
 var exemplarMissingTimestampMsgFormat = globalerrors.Format(
 	globalerrors.ErrIDExemplarTimestampInvalid,
-	"received exemplar with no timestamp, timestamp: %%d series: %%s labels: %%s")
+	"received an exemplar with no timestamp, timestamp: %%d series: %%s labels: %%s")
 
 func newExemplarMissingTimestampError(seriesLabels []mimirpb.LabelAdapter, exemplarLabels []mimirpb.LabelAdapter, timestamp int64) ValidationError {
 	return &exemplarValidationError{

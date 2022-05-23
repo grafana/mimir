@@ -38,5 +38,5 @@ func Format(id ErrID, format string, args ...interface{}) string {
 // which configuration flag to use to change the limit.
 // The provided message and arguments are formatted with fmt.Sprintf().
 func FormatWithLimitConfig(id ErrID, flag, format string, args ...interface{}) string {
-	return fmt.Sprintf("%s (%s%s). You can adjust the related per-tenant limit setting -%s, or contacting your service administrator.", fmt.Sprintf(format, args...), errPrefix, id, flag)
+	return fmt.Sprintf("%s (%s%s). You can adjust the related per-tenant limit by configuring -%s, or by contacting your service administrator.", fmt.Sprintf(format, args...), errPrefix, id, flag)
 }
