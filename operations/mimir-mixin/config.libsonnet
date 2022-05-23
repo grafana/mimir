@@ -24,9 +24,12 @@
       ingester: '(ingester.*|cortex|mimir)',  // Match also custom and per-zone ingester deployments.
       distributor: '(distributor|cortex|mimir)',
       querier: '(querier.*|cortex|mimir)',  // Match also custom querier deployments.
+      ruler_querier: '(ruler-querier.*|cortex|mimir)',  // Match also custom querier deployments.
       ruler: '(ruler|cortex|mimir)',
       query_frontend: '(query-frontend.*|cortex|mimir)',  // Match also custom query-frontend deployments.
+      ruler_query_frontend: '(ruler-query-frontend.*|cortex|mimir)',  // Match also custom ruler-query-frontend deployments.
       query_scheduler: 'query-scheduler.*',  // Not part of single-binary. Match also custom query-scheduler deployments.
+      ruler_query_scheduler: 'ruler-query-scheduler.*',  // Not part of single-binary. Match also custom query-scheduler deployments.
       ring_members: ['alertmanager', 'compactor', 'distributor', 'ingester.*', 'querier.*', 'ruler', 'store-gateway.*', 'cortex', 'mimir'],
       store_gateway: '(store-gateway.*|cortex|mimir)',  // Match also per-zone store-gateway deployments.
       gateway: '(gateway|cortex-gw|cortex-gw-internal)',
@@ -82,6 +85,7 @@
     autoscaling: {
       querier_enabled: false,
       querier_hpa_name: 'keda-hpa-querier',
+      ruler_querier_hpa_name: 'keda-hpa-ruler-querier',
     },
 
     // The routes to exclude from alerts.
