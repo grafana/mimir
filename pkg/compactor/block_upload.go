@@ -339,33 +339,50 @@ func (c *MultitenantCompactor) validateBlock(ctx context.Context, w http.Respons
 		return errors.Wrapf(err, "failed to iterate block %s", blockID)
 	}
 
-	// Write meta.json
-	f, err := os.Create(filepath.Join(blockDir, "meta.json"))
+	idxFi, err := analyzeBlockFile(blockDir, "index")
 	if err != nil {
-		return errors.Wrap(err, "failed to create temporary meta.json")
+		return err
 	}
-	defer func() {
-		_ = f.Close()
-	}()
+	meta.Thanos.Files = []metadata.File{
+		idxFi,
+		metadata.File{
+			// Size not stated for meta.json
+			RelPath: "meta.json",
+		},
+	}
 
-	/*
-		metaJSON, err := json.Marshal(meta)
+	meta.Thanos.SegmentFiles = []string{}
+	chunksDir := filepath.Join(blockDir, "chunks")
+	ces, err := os.ReadDir(chunksDir)
+	if err != nil {
+		return errors.Wrapf(err, "failed to read directory %s", chunksDir)
+	}
+	for _, e := range ces {
+		meta.Thanos.SegmentFiles = append(meta.Thanos.SegmentFiles, e.Name())
+		fi, err := analyzeBlockFile(blockDir, filepath.Join("chunks", e.Name()))
 		if err != nil {
-			return errors.Wrap(err, "failed JSON encoding block metadata")
+			return err
 		}
-		if _, err := f.Write(metaJSON); err != nil {
-			return errors.Wrap(err, "failed writing to temporary meta.json")
-		}
-		if err := f.Close(); err != nil {
-			return errors.Wrap(err, "failed writing to temporary meta.json")
-		}
-	*/
+
+		meta.Thanos.Files = append(meta.Thanos.Files, fi)
+	}
 
 	if err := c.verifyBlock(blockDir, meta); err != nil {
 		return err
 	}
 
 	return nil
+}
+
+func analyzeBlockFile(relPath, blockDir string) (metadata.File, error) {
+	fi, err := os.Stat(filepath.Join(blockDir, relPath))
+	if err != nil {
+		return metadata.File{}, errors.Wrapf(err, "failed to stat %s", filepath.Join(blockDir, relPath))
+	}
+	return metadata.File{
+		RelPath:   relPath,
+		SizeBytes: fi.Size(),
+	}, nil
 }
 
 func (c *MultitenantCompactor) verifyBlock(blockDir string, meta metadata.Meta) error {
@@ -605,7 +622,6 @@ func (c *MultitenantCompactor) sanitizeMeta(tenantID, blockID string, meta *meta
 	// Mark block source
 	meta.Thanos.Source = "upload"
 
-	// TODO: List files in bucket and update file list in meta.json
 	return nil
 }
 
