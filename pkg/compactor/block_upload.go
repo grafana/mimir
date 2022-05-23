@@ -367,7 +367,18 @@ func (c *MultitenantCompactor) validateBlock(ctx context.Context, w http.Respons
 		meta.Thanos.Files = append(meta.Thanos.Files, fi)
 	}
 
-	if err := c.verifyBlock(blockDir, meta); err != nil {
+	// Reset sources/parents since block history may be inconsistent with Mimir's
+	bULID, err := ulid.Parse(blockID)
+	if err != nil {
+		return errors.Wrap(err, "failed to parse block ID")
+	}
+	// Sources should always contain block ID itself
+	meta.Compaction.Sources = []ulid.ULID{
+		bULID,
+	}
+	meta.Compaction.Parents = nil
+
+	if err := c.scanBlock(blockDir, meta); err != nil {
 		return err
 	}
 
@@ -385,7 +396,7 @@ func analyzeBlockFile(relPath, blockDir string) (metadata.File, error) {
 	}, nil
 }
 
-func (c *MultitenantCompactor) verifyBlock(blockDir string, meta metadata.Meta) error {
+func (c *MultitenantCompactor) scanBlock(blockDir string, meta metadata.Meta) error {
 	// TODO: Count samples (check with Peter)
 
 	var cr *chunks.Reader
@@ -606,7 +617,7 @@ func (c *MultitenantCompactor) sanitizeMeta(tenantID, blockID string, meta *meta
 		case mimir_tsdb.TenantIDExternalLabel, mimir_tsdb.CompactorShardIDExternalLabel:
 		case mimir_tsdb.IngesterIDExternalLabel, mimir_tsdb.DeprecatedShardIDExternalLabel:
 			level.Debug(c.logger).Log("msg", "removing unused external label from meta.json",
-				"block_id", blockID, "label", l, "value", v, "user", tenantID)
+				"block_id", blockID, "user", tenantID, "label", l, "value", v)
 			delete(meta.Thanos.Labels, l)
 		default:
 			rejLbls = append(rejLbls, l)
