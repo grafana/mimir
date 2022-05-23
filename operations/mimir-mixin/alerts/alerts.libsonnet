@@ -453,7 +453,7 @@
             (
               container_memory_working_set_bytes{container="ingester"}
                 /
-              container_spec_memory_limit_bytes{container="ingester"}
+              ( container_spec_memory_limit_bytes{container="ingester"} > 0 )
             ) > 0.65
           |||,
           'for': '15m',
@@ -472,7 +472,7 @@
             (
               container_memory_working_set_bytes{container="ingester"}
                 /
-              container_spec_memory_limit_bytes{container="ingester"}
+              ( container_spec_memory_limit_bytes{container="ingester"} > 0 )
             ) > 0.8
           |||,
           'for': '15m',
@@ -595,7 +595,7 @@
             (
               container_memory_working_set_bytes{container="etcd"}
                 /
-              container_spec_memory_limit_bytes{container="etcd"}
+              ( container_spec_memory_limit_bytes{container="etcd"} > 0 )
             ) > 0.65
           |||,
           'for': '15m',
@@ -614,7 +614,7 @@
             (
               container_memory_working_set_bytes{container="etcd"}
                 /
-              container_spec_memory_limit_bytes{container="etcd"}
+              ( container_spec_memory_limit_bytes{container="etcd"} > 0 )
             ) > 0.8
           |||,
           'for': '15m',
