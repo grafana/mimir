@@ -13,5 +13,5 @@ func TestFormat(t *testing.T) {
 }
 
 func TestFormatWithLimitConfig(t *testing.T) {
-	assert.Equal(t, "an error with value 123 (err-mimir-missing-metric-name). You can adjust the related per-tenant limit setting -my-flag, or contacting your service administrator.", FormatWithLimitConfig(ErrIDMissingMetricName, "my-flag", "an error with value %d", 123))
+	assert.Equal(t, "an error with value 123 (err-mimir-missing-metric-name). You can adjust the related per-tenant limit by configuring -my-flag, or by contacting your service administrator.", FormatWithLimitConfig(ErrIDMissingMetricName, "my-flag", "an error with value %d", 123))
 }

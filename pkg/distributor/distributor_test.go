@@ -1253,7 +1253,7 @@ func TestDistributor_Push_LabelNameValidation(t *testing.T) {
 		"label name validation is on by default": {
 			inputLabels: inputLabels,
 			errExpected: true,
-			errMessage:  `received series with an invalid label: '999.illegal' series: 'foo{999.illegal="baz"}' (err-mimir-label-invalid)`,
+			errMessage:  `received a series with an invalid label: '999.illegal' series: 'foo{999.illegal="baz"}' (err-mimir-label-invalid)`,
 		},
 		"label name validation can be skipped via config": {
 			inputLabels:                inputLabels,
@@ -1311,7 +1311,7 @@ func TestDistributor_Push_ExemplarValidation(t *testing.T) {
 		},
 		"rejects exemplar with no timestamp": {
 			req:    makeWriteRequestExemplar([]string{model.MetricNameLabel, "test"}, 0, []string{"foo", "bar"}),
-			errMsg: `received exemplar with no timestamp, timestamp: 0 series: {__name__="test"} labels: {foo="bar"}`,
+			errMsg: `received an exemplar with no timestamp, timestamp: 0 series: {__name__="test"} labels: {foo="bar"}`,
 			errID:  globalerrors.ErrIDExemplarTimestampInvalid,
 		},
 		"rejects exemplar with too long labelset": {
@@ -1321,17 +1321,17 @@ func TestDistributor_Push_ExemplarValidation(t *testing.T) {
 		},
 		"rejects exemplar with too many series labels": {
 			req:    makeWriteRequestExemplar(manyLabels, 0, nil),
-			errMsg: "received series with a number of labels exceeding the limit",
+			errMsg: "received a series whose number of labels exceeds the limit",
 			errID:  globalerrors.ErrIDMaxLabelNamesPerSeries,
 		},
 		"rejects exemplar with duplicate series labels": {
 			req:    makeWriteRequestExemplar([]string{model.MetricNameLabel, "test", "foo", "bar", "foo", "bar"}, 0, nil),
-			errMsg: "received series with duplicate label name",
+			errMsg: "received a series with duplicate label name",
 			errID:  globalerrors.ErrIDSeriesWithDuplicateLabelNames,
 		},
 		"rejects exemplar with empty series label name": {
 			req:    makeWriteRequestExemplar([]string{model.MetricNameLabel, "test", "", "bar"}, 0, nil),
-			errMsg: "received series with an invalid label",
+			errMsg: "received a series with an invalid label",
 			errID:  globalerrors.ErrIDSeriesInvalidLabel,
 		},
 	}
@@ -1532,7 +1532,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 
 				return metrics, samples
 			},
-			expectedErr: "received series with a number of labels exceeding the limit",
+			expectedErr: "received a series whose number of labels exceeds the limit",
 		},
 		"max label name length limit reached": {
 			prepareConfig: func(limits *validation.Limits) {
@@ -1613,7 +1613,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 
 				return metrics, samples
 			},
-			expectedErr: "received sample with a timestamp too far in the future",
+			expectedErr: "received a sample whose timestamp is too far in the future",
 		},
 	}
 
@@ -3424,7 +3424,7 @@ func TestDistributorValidation(t *testing.T) {
 				Value:       4,
 			}},
 			expectedStatusCode: http.StatusBadRequest,
-			expectedErr:        fmt.Sprintf(`received sample with a timestamp too far in the future, timestamp: %d series: 'testmetric' (err-mimir-too-far-in-future)`, future),
+			expectedErr:        fmt.Sprintf(`received a sample whose timestamp is too far in the future, timestamp: %d series: 'testmetric' (err-mimir-too-far-in-future)`, future),
 		},
 
 		// Test maximum labels names per series.
@@ -3435,7 +3435,7 @@ func TestDistributorValidation(t *testing.T) {
 				Value:       2,
 			}},
 			expectedStatusCode: http.StatusBadRequest,
-			expectedErr:        `received series with a number of labels exceeding the limit (actual: 3, limit: 2) series: 'testmetric{foo2="bar2", foo="bar"}'`,
+			expectedErr:        `received a series whose number of labels exceeds the limit (actual: 3, limit: 2) series: 'testmetric{foo2="bar2", foo="bar"}'`,
 		},
 		// Test multiple validation fails return the first one.
 		{
@@ -3448,7 +3448,7 @@ func TestDistributorValidation(t *testing.T) {
 				{TimestampMs: int64(past), Value: 2},
 			},
 			expectedStatusCode: http.StatusBadRequest,
-			expectedErr:        `received series with a number of labels exceeding the limit (actual: 3, limit: 2) series: 'testmetric{foo2="bar2", foo="bar"}'`,
+			expectedErr:        `received a series whose number of labels exceeds the limit (actual: 3, limit: 2) series: 'testmetric{foo2="bar2", foo="bar"}'`,
 		},
 		// Test metadata validation fails
 		{
