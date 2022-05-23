@@ -412,15 +412,15 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 		}),
 		outOfBoundSamples: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "prometheus_tsdb_out_of_bound_samples_total",
-			Help: "Total number of out of bound samples ingestion failed attempts.",
+			Help: "Total number of out of bound samples ingestion failed attempts with out of order support disabled.",
 		}),
 		outOfOrderSamples: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "prometheus_tsdb_out_of_order_samples_total",
-			Help: "Total number of out of order samples ingestion failed attempts.",
+			Help: "Total number of out of order samples ingestion failed attempts due to out of order being disabled.",
 		}),
 		tooOldSamples: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "prometheus_tsdb_too_old_samples_total",
-			Help: "Total number of out of order samples ingestion failed attempts.",
+			Help: "Total number of out of order samples ingestion failed attempts with out of support enabled, but sample outside of allowance.",
 		}),
 		headTruncateFail: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "prometheus_tsdb_head_truncations_failed_total",
@@ -456,7 +456,7 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 		}),
 		oooHistogram: prometheus.NewHistogram(prometheus.HistogramOpts{
 			Name: "prometheus_tsdb_sample_ooo_delta",
-			Help: "Delta in seconds by which a sample is considered out of order.",
+			Help: "Delta in seconds by which a sample is considered out of order (reported regardless of OOO allowance and whether sample is accepted or not).",
 			Buckets: []float64{
 				// Note that mimir distributor only gives us a range of wallclock-12h to wallclock+15min
 				60 * 10,      // 10 min
