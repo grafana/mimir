@@ -185,7 +185,7 @@ func (e *exemplarValidationError) Error() string {
 
 var exemplarEmptyLabelsMsgFormat = globalerrors.Format(
 	globalerrors.ErrIDExemplarLabelsMissing,
-	"received exemplar with no valid labels, timestamp: %%d series: %%s labels: %%s")
+	"received an exemplar with no valid labels, timestamp: %%d series: %%s labels: %%s")
 
 func newExemplarEmptyLabelsError(seriesLabels []mimirpb.LabelAdapter, exemplarLabels []mimirpb.LabelAdapter, timestamp int64) ValidationError {
 	return &exemplarValidationError{

@@ -1306,7 +1306,7 @@ func TestDistributor_Push_ExemplarValidation(t *testing.T) {
 		},
 		"rejects exemplar with no labels": {
 			req:    makeWriteRequestExemplar([]string{model.MetricNameLabel, "test"}, 1000, []string{}),
-			errMsg: `received exemplar with no valid labels, timestamp: 1000 series: {__name__="test"} labels: {}`,
+			errMsg: `received an exemplar with no valid labels, timestamp: 1000 series: {__name__="test"} labels: {}`,
 			errID:  globalerrors.ErrIDExemplarLabelsMissing,
 		},
 		"rejects exemplar with no timestamp": {
@@ -3475,7 +3475,7 @@ func TestDistributorValidation(t *testing.T) {
 				Value:       1,
 			}},
 			expectedStatusCode: http.StatusBadRequest,
-			expectedErr:        fmt.Sprintf("received exemplar with no valid labels, timestamp: %d series: %+v labels: {}", now, labels.Labels{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "bar"}}),
+			expectedErr:        fmt.Sprintf("received an exemplar with no valid labels, timestamp: %d series: %+v labels: {}", now, labels.Labels{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "bar"}}),
 		},
 	} {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
