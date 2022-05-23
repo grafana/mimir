@@ -17,6 +17,7 @@
 * [BUGFIX] Fix `container_memory_usage_bytes:sum` recording rule #1865
 * [BUGFIX] Fix `MimirGossipMembersMismatch` alerts if Mimir alertmanager is activated #1870
 * [BUGFIX] Fix `MimirRulerMissedEvaluations` to show % of missed alerts as a value between 0 and 100 instead of 0 and 1. #1895
+* [BUGFIX] Fix `MimirCompactorHasNotUploadedBlocks` alert false positive when Mimir is deployed in monolithic mode. #1901
 * [BUGFIX] Do not trigger `MimirAllocatingTooMuchMemory` alerts if no container limits are supplied. #1905
 
 ## 2.1.0-rc.0
