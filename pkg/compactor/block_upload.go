@@ -564,41 +564,46 @@ func (c *MultitenantCompactor) sanitizeMeta(tenantID, blockID string, meta *meta
 	if meta.Thanos.Labels == nil {
 		meta.Thanos.Labels = map[string]string{}
 	}
-	updated := false
 
 	metaULID := meta.ULID
 	if metaULID.String() != blockID {
-		level.Warn(c.logger).Log("msg", "updating meta.json block ID", "old_value", metaULID.String(),
-			"new_value", blockID)
+		level.Warn(c.logger).Log("msg", "updating meta.json block ID",
+			"old_value", metaULID.String(), "new_value", blockID, "user", tenantID)
 		var err error
 		meta.ULID, err = ulid.Parse(blockID)
 		if err != nil {
 			return errors.Wrapf(err, "couldn't parse block ID %q", blockID)
 		}
-		updated = true
 	}
 
 	metaTenantID := meta.Thanos.Labels[mimir_tsdb.TenantIDExternalLabel]
 	if metaTenantID != tenantID {
 		level.Warn(c.logger).Log("msg", "updating meta.json tenant label", "block_id", blockID,
-			"old_value", metaTenantID, "new_value", tenantID)
-		updated = true
+			"old_value", metaTenantID, "new_value", tenantID, "user", tenantID)
 		meta.Thanos.Labels[mimir_tsdb.TenantIDExternalLabel] = tenantID
 	}
 
+	var rejLbls []string
 	for l, v := range meta.Thanos.Labels {
 		switch l {
-		case mimir_tsdb.TenantIDExternalLabel, mimir_tsdb.IngesterIDExternalLabel, mimir_tsdb.CompactorShardIDExternalLabel:
-		default:
-			level.Warn(c.logger).Log("msg", "removing unknown meta.json label", "block_id", blockID, "label", l, "value", v)
-			updated = true
+		case mimir_tsdb.TenantIDExternalLabel, mimir_tsdb.CompactorShardIDExternalLabel:
+		case mimir_tsdb.IngesterIDExternalLabel, mimir_tsdb.DeprecatedShardIDExternalLabel:
+			level.Debug(c.logger).Log("msg", "removing unused external label from meta.json",
+				"block_id", blockID, "label", l, "value", v, "user", tenantID)
 			delete(meta.Thanos.Labels, l)
+		default:
+			rejLbls = append(rejLbls, l)
 		}
 	}
 
-	if !updated {
-		level.Info(c.logger).Log("msg", "no changes to meta.json required", "block_id", blockID)
+	if len(rejLbls) > 0 {
+		level.Warn(c.logger).Log("msg", "rejecting unsupported external label(s) in meta.json",
+			"block_id", blockID, "user", tenantID, "labels", strings.Join(rejLbls, ","))
+		return errBadRequest{message: fmt.Sprintf("unsupported external label(s): %s", strings.Join(rejLbls, ","))}
 	}
+
+	// Mark block source
+	meta.Thanos.Source = "upload"
 
 	// TODO: List files in bucket and update file list in meta.json
 	return nil
