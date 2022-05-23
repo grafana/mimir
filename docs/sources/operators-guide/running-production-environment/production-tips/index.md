@@ -32,7 +32,7 @@ For more information about estimating the required ingester disk space, refer to
 
 ### Ingester disk IOPS
 
-The ingester disk performances (IOPS and latency) can impact both write and read requests.
+The IOPS (input/output operations per second) and latency performances of the ingester disks can affect both write and read requests.
 On this write path, ingester disk is touched to write the write-ahead log (WAL), while on the read path the ingester disk is touched to query series whose chunks have already been written to disk.
 
 We recommend to run ingesters with a fast disk (e.g. SSD disk).
@@ -93,10 +93,10 @@ We recommend configuring the system's `file-max` ulimit at least to `65536` to a
 
 ### Store-gateway disk IOPS
 
-The store-gateway disk performances (IOPS and latency) can impact queries.
+The IOPS and latency performances of the store-gateway disk can affect queries.
 The store-gateway downloads block's [index-headers]({{< relref "../../architecture/binary-index-header.md" >}}) on local disk and reads them on each query hitting the long-term storage.
 
-We recommend to run store-gateways with a fast disk (e.g. SSD disk).
+For these reasons, run the store-gateways on disks such as SSDs that have fast disk speed.
 
 ## Compactor
 
