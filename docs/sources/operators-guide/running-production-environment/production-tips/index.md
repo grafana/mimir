@@ -46,14 +46,15 @@ When running Grafana Mimir at scale, querying non-compacted blocks might be inef
 - Non compacted blocks contain duplicated samples, as a result of the ingesters replication.
 - Querying many small TSDB indexes is slower than querying a few compacted TSDB indexes.
 
-Configure Grafana Mimir to ensure only compacted blocks are queried:
+The default values for `-querier.query-store-after`, `-querier.query-ingesters-within`, and `-blocks-storage.bucket-store.ignore-blocks-within` are set such that only compacted blocks are queried. In most cases, no additional configuration is required.
+
+Configure Grafana Mimir so large tenants are parallelized by the compactor:
 
 1. Configure compactor's `-compactor.split-and-merge-shards` and `-compactor.split-groups` for every tenant with more than 20 million active series. For more information about configuring the compactor's split and merge shards, refer to [compactor]({{< relref "../../architecture/components/compactor/index.md" >}}).
-1. Configure querier's `-querier.query-store-after` equal to `-querier.query-ingesters-within` minus five minutes. The five-minute delta is recommended to ensure the time range on the boundary is queried both from ingesters and queriers.
 
 #### How to estimate `-querier.query-store-after`
 
-Set the `-querier.query-store-after` to a duration that is large enough to give compactor enough time to compact newly uploaded blocks, and queriers and store-gateways to discover and synchronize newly compacted blocks.
+If not using the defaults, set the `-querier.query-store-after` to a duration that is large enough to give compactor enough time to compact newly uploaded blocks, and queriers and store-gateways to discover and synchronize newly compacted blocks.
 
 The following diagram shows all of the timings involved in the estimation. This diagram should be used only as a template and you can modify the assumptions based on real measurements in your Mimir cluster. The example makes the following assumptions:
 

@@ -51,6 +51,7 @@ func TestIngesterSharding(t *testing.T) {
 
 			// Enable shuffle sharding on read path but not lookback, otherwise all ingesters would be
 			// queried being just registered.
+			flags["-querier.query-store-after"] = "0"
 			flags["-querier.shuffle-sharding-ingesters-lookback-period"] = "1ns"
 
 			// Start dependencies.
