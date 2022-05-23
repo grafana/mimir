@@ -94,7 +94,7 @@ We recommend configuring the system's `file-max` ulimit at least to `65536` to a
 ### Store-gateway disk IOPS
 
 The IOPS and latency performances of the store-gateway disk can affect queries.
-The store-gateway downloads block's [index-headers]({{< relref "../../architecture/binary-index-header.md" >}}) on local disk and reads them on each query hitting the long-term storage.
+The store-gateway downloads the block’s [index-headers]({{< relref "../../architecture/binary-index-header.md" >}}) onto local disk, and reads them for each query that needs to fetch data from the long-term storage.
 
 For these reasons, run the store-gateways on disks such as SSDs that have fast disk speed.
 
