@@ -199,7 +199,7 @@ func newExemplarMissingTimestampError(seriesLabels []mimirpb.LabelAdapter, exemp
 }
 
 var exemplarMaxLabelLengthMsgFormat = globalerror.ExemplarLabelsTooLong.Message(
-	fmt.Sprintf("received exemplar whose combined labels set size exceeds the limit of %d characters, timestamp: %%d series: %%s labels: %%s", ExemplarMaxLabelSetLength))
+	fmt.Sprintf("received an exemplar where the size of its combined labels exceeds the limit of %d characters, timestamp: %%d series: %%s labels: %%s", ExemplarMaxLabelSetLength))
 
 func newExemplarMaxLabelLengthError(seriesLabels []mimirpb.LabelAdapter, exemplarLabels []mimirpb.LabelAdapter, timestamp int64) ValidationError {
 	return &exemplarValidationError{

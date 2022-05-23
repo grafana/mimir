@@ -1316,7 +1316,7 @@ func TestDistributor_Push_ExemplarValidation(t *testing.T) {
 		},
 		"rejects exemplar with too long labelset": {
 			req:    makeWriteRequestExemplar([]string{model.MetricNameLabel, "test"}, 1000, []string{"foo", strings.Repeat("0", 126)}),
-			errMsg: fmt.Sprintf(`received exemplar whose combined labels set size exceeds the limit of 128 characters, timestamp: 1000 series: {__name__="test"} labels: {foo="%s"}`, strings.Repeat("0", 126)),
+			errMsg: fmt.Sprintf(`received an exemplar where the size of its combined labels exceeds the limit of 128 characters, timestamp: 1000 series: {__name__="test"} labels: {foo="%s"}`, strings.Repeat("0", 126)),
 			errID:  globalerror.ExemplarLabelsTooLong,
 		},
 		"rejects exemplar with too many series labels": {
