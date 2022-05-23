@@ -54,7 +54,7 @@ Configure Grafana Mimir so large tenants are parallelized by the compactor:
 
 #### How to estimate `-querier.query-store-after`
 
-If not using the defaults, set the `-querier.query-store-after` to a duration that is large enough to give compactor enough time to compact newly uploaded blocks, and queriers and store-gateways to discover and synchronize newly compacted blocks.
+If you are not using the defaults, set the `-querier.query-store-after` to a duration that is large enough to give compactor enough time to compact newly uploaded blocks, and queriers and store-gateways to discover and synchronize newly compacted blocks.
 
 The following diagram shows all of the timings involved in the estimation. This diagram should be used only as a template and you can modify the assumptions based on real measurements in your Mimir cluster. The example makes the following assumptions:
 
