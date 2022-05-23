@@ -3373,12 +3373,6 @@ bucket_store:
   # CLI flag: -blocks-storage.bucket-store.posting-offsets-in-mem-sampling
   [postings_offsets_in_mem_sampling: <int> | default = 32]
 
-  # (experimental) Number of threads that are dedicated for use reading index
-  # headers. Set to 0 to disable use of dedicated threads for reading index
-  # headers.
-  # CLI flag: -blocks-storage.bucket-store.index-header-thread-pool-size
-  [index_header_thread_pool_size: <int> | default = 0]
-
 tsdb:
   # Directory to store TSDBs (including WAL) in the ingesters. This directory is
   # required to be persisted between restarts.
@@ -3795,6 +3789,11 @@ sharding_ring:
   # Unregister from the ring upon clean shutdown.
   # CLI flag: -store-gateway.sharding-ring.unregister-on-shutdown
   [unregister_on_shutdown: <boolean> | default = true]
+
+# (experimental) Number of OS threads that are dedicated for handling requests.
+# Set to 0 to disable use of dedicated OS threads for handling requests.
+# CLI flag: -store-gateway.thread-pool-size
+[thread_pool_size: <int> | default = 0]
 ```
 
 ### sse
