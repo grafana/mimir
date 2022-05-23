@@ -20,7 +20,7 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/extract"
-	"github.com/grafana/mimir/pkg/util/globalerrors"
+	"github.com/grafana/mimir/pkg/util/globalerror"
 )
 
 const (
@@ -54,25 +54,25 @@ const (
 
 var (
 	// Discarded series / samples reasons.
-	reasonMissingMetricName      = metricReasonFromErrorID(globalerrors.ErrIDMissingMetricName)
-	reasonInvalidMetricName      = metricReasonFromErrorID(globalerrors.ErrIDInvalidMetricName)
-	reasonMaxLabelNamesPerSeries = metricReasonFromErrorID(globalerrors.ErrIDMaxLabelNamesPerSeries)
-	reasonInvalidLabel           = metricReasonFromErrorID(globalerrors.ErrIDSeriesInvalidLabel)
-	reasonLabelNameTooLong       = metricReasonFromErrorID(globalerrors.ErrIDSeriesLabelNameTooLong)
-	reasonLabelValueTooLong      = metricReasonFromErrorID(globalerrors.ErrIDSeriesLabelValueTooLong)
-	reasonDuplicateLabelNames    = metricReasonFromErrorID(globalerrors.ErrIDSeriesWithDuplicateLabelNames)
-	reasonLabelsNotSorted        = metricReasonFromErrorID(globalerrors.ErrIDSeriesLabelsNotSorted)
-	reasonTooFarInFuture         = metricReasonFromErrorID(globalerrors.ErrIDSampleTooFarInFuture)
+	reasonMissingMetricName      = metricReasonFromErrorID(globalerror.ErrIDMissingMetricName)
+	reasonInvalidMetricName      = metricReasonFromErrorID(globalerror.ErrIDInvalidMetricName)
+	reasonMaxLabelNamesPerSeries = metricReasonFromErrorID(globalerror.ErrIDMaxLabelNamesPerSeries)
+	reasonInvalidLabel           = metricReasonFromErrorID(globalerror.ErrIDSeriesInvalidLabel)
+	reasonLabelNameTooLong       = metricReasonFromErrorID(globalerror.ErrIDSeriesLabelNameTooLong)
+	reasonLabelValueTooLong      = metricReasonFromErrorID(globalerror.ErrIDSeriesLabelValueTooLong)
+	reasonDuplicateLabelNames    = metricReasonFromErrorID(globalerror.ErrIDSeriesWithDuplicateLabelNames)
+	reasonLabelsNotSorted        = metricReasonFromErrorID(globalerror.ErrIDSeriesLabelsNotSorted)
+	reasonTooFarInFuture         = metricReasonFromErrorID(globalerror.ErrIDSampleTooFarInFuture)
 
 	// Discarded exemplars reasons.
-	reasonExemplarLabelsMissing    = metricReasonFromErrorID(globalerrors.ErrIDExemplarLabelsMissing)
-	reasonExemplarLabelsTooLong    = metricReasonFromErrorID(globalerrors.ErrIDExemplarLabelsTooLong)
-	reasonExemplarTimestampInvalid = metricReasonFromErrorID(globalerrors.ErrIDExemplarTimestampInvalid)
+	reasonExemplarLabelsMissing    = metricReasonFromErrorID(globalerror.ErrIDExemplarLabelsMissing)
+	reasonExemplarLabelsTooLong    = metricReasonFromErrorID(globalerror.ErrIDExemplarLabelsTooLong)
+	reasonExemplarTimestampInvalid = metricReasonFromErrorID(globalerror.ErrIDExemplarTimestampInvalid)
 	reasonExemplarLabelsBlank      = "exemplar_labels_blank"
 	reasonExemplarTooOld           = "exemplar_too_old"
 )
 
-func metricReasonFromErrorID(id globalerrors.ErrID) string {
+func metricReasonFromErrorID(id globalerror.ErrID) string {
 	return strings.ReplaceAll(string(id), "-", "_")
 }
 

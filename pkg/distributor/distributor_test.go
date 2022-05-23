@@ -51,7 +51,7 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/util/chunkcompat"
-	"github.com/grafana/mimir/pkg/util/globalerrors"
+	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -1299,7 +1299,7 @@ func TestDistributor_Push_ExemplarValidation(t *testing.T) {
 	tests := map[string]struct {
 		req    *mimirpb.WriteRequest
 		errMsg string
-		errID  globalerrors.ErrID
+		errID  globalerror.ErrID
 	}{
 		"valid exemplar": {
 			req: makeWriteRequestExemplar([]string{model.MetricNameLabel, "test"}, 1000, []string{"foo", "bar"}),
@@ -1307,32 +1307,32 @@ func TestDistributor_Push_ExemplarValidation(t *testing.T) {
 		"rejects exemplar with no labels": {
 			req:    makeWriteRequestExemplar([]string{model.MetricNameLabel, "test"}, 1000, []string{}),
 			errMsg: `received an exemplar with no valid labels, timestamp: 1000 series: {__name__="test"} labels: {}`,
-			errID:  globalerrors.ErrIDExemplarLabelsMissing,
+			errID:  globalerror.ErrIDExemplarLabelsMissing,
 		},
 		"rejects exemplar with no timestamp": {
 			req:    makeWriteRequestExemplar([]string{model.MetricNameLabel, "test"}, 0, []string{"foo", "bar"}),
 			errMsg: `received an exemplar with no timestamp, timestamp: 0 series: {__name__="test"} labels: {foo="bar"}`,
-			errID:  globalerrors.ErrIDExemplarTimestampInvalid,
+			errID:  globalerror.ErrIDExemplarTimestampInvalid,
 		},
 		"rejects exemplar with too long labelset": {
 			req:    makeWriteRequestExemplar([]string{model.MetricNameLabel, "test"}, 1000, []string{"foo", strings.Repeat("0", 126)}),
 			errMsg: fmt.Sprintf(`received exemplar whose combined labels set size exceeds the limit of 128 characters, timestamp: 1000 series: {__name__="test"} labels: {foo="%s"}`, strings.Repeat("0", 126)),
-			errID:  globalerrors.ErrIDExemplarLabelsTooLong,
+			errID:  globalerror.ErrIDExemplarLabelsTooLong,
 		},
 		"rejects exemplar with too many series labels": {
 			req:    makeWriteRequestExemplar(manyLabels, 0, nil),
 			errMsg: "received a series whose number of labels exceeds the limit",
-			errID:  globalerrors.ErrIDMaxLabelNamesPerSeries,
+			errID:  globalerror.ErrIDMaxLabelNamesPerSeries,
 		},
 		"rejects exemplar with duplicate series labels": {
 			req:    makeWriteRequestExemplar([]string{model.MetricNameLabel, "test", "foo", "bar", "foo", "bar"}, 0, nil),
 			errMsg: "received a series with duplicate label name",
-			errID:  globalerrors.ErrIDSeriesWithDuplicateLabelNames,
+			errID:  globalerror.ErrIDSeriesWithDuplicateLabelNames,
 		},
 		"rejects exemplar with empty series label name": {
 			req:    makeWriteRequestExemplar([]string{model.MetricNameLabel, "test", "", "bar"}, 0, nil),
 			errMsg: "received a series with an invalid label",
-			errID:  globalerrors.ErrIDSeriesInvalidLabel,
+			errID:  globalerror.ErrIDSeriesInvalidLabel,
 		},
 	}
 
