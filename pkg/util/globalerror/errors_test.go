@@ -8,16 +8,16 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestID_Format(t *testing.T) {
+func TestID_Message(t *testing.T) {
 	assert.Equal(
 		t,
-		"an error with value 123 (err-mimir-missing-metric-name)",
-		MissingMetricName.Format("an error with value %d", 123))
+		"an error (err-mimir-missing-metric-name)",
+		MissingMetricName.Message("an error"))
 }
 
-func TestID_FormatWithLimitConfig(t *testing.T) {
+func TestID_MessageWithLimitConfig(t *testing.T) {
 	assert.Equal(
 		t,
-		"an error with value 123 (err-mimir-missing-metric-name). You can adjust the related per-tenant limit by configuring -my-flag, or by contacting your service administrator.",
-		MissingMetricName.FormatWithLimitConfig("my-flag", "an error with value %d", 123))
+		"an error (err-mimir-missing-metric-name). You can adjust the related per-tenant limit by configuring -my-flag, or by contacting your service administrator.",
+		MissingMetricName.MessageWithLimitConfig("my-flag", "an error"))
 }

@@ -28,15 +28,13 @@ const (
 	ExemplarTimestampInvalid ID = "exemplar-timestamp-invalid"
 )
 
-// Format the provided message, appending the error id.
-// The provided message and arguments are formatted with fmt.Sprintf().
-func (id ID) Format(format string, args ...interface{}) string {
-	return fmt.Sprintf("%s (%s%s)", fmt.Sprintf(format, args...), errPrefix, id)
+// Message returns the provided msg, appending the error id.
+func (id ID) Message(msg string) string {
+	return fmt.Sprintf("%s (%s%s)", msg, errPrefix, id)
 }
 
-// FormatWithLimitConfig the provided message, appending the error id and a suggestion on
+// MessageWithLimitConfig return the provided msg, appending the error id and a suggestion on
 // which configuration flag to use to change the limit.
-// The provided message and arguments are formatted with fmt.Sprintf().
-func (id ID) FormatWithLimitConfig(flag, format string, args ...interface{}) string {
-	return fmt.Sprintf("%s (%s%s). You can adjust the related per-tenant limit by configuring -%s, or by contacting your service administrator.", fmt.Sprintf(format, args...), errPrefix, id, flag)
+func (id ID) MessageWithLimitConfig(flag, msg string) string {
+	return fmt.Sprintf("%s (%s%s). You can adjust the related per-tenant limit by configuring -%s, or by contacting your service administrator.", msg, errPrefix, id, flag)
 }
