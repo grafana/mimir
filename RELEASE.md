@@ -80,7 +80,8 @@ To publish a release candidate:
 
 ### Publish a stable release
 
-To publish a stable release:
+> **Note:** Technical documentation is automatically published on release tags or release branches with a corresponding release tag. The workflow that publishes documentation is defined in [`publish-technical-documentation-release.yml`](.github/workflows/publish-technical-documentation-release.yml).
+> To publish a stable release:
 
 1. Do not change the release branch directly; make a PR to the release-X.Y branch with VERSION and any CHANGELOG changes.
    1. Ensure the `VERSION` file has **no** `-rc.X` suffix
@@ -104,10 +105,6 @@ To publish a stable release:
      - Temporarily enable "Allow merge commits" option in "Settings > Options"
      - Locally merge the `merge-release-X.Y-to-main` branch into `main`, and push the changes to `main` back to GitHub. This doesn't break `main` branch protection, since the PR has been approved already, and it also doesn't require removing the protection.
 1. Open a PR to add the new version to the backward compatibility integration test (`integration/backward_compatibility_test.go`)
-1. Publish release documentation using `./tools/release-docs`:
-   ```console
-   $ ./tools/release-docs /tmp/grafana/website mimir-2.0.0
-   ```
 1. Publish dashboards (done by a Grafana Labs member)
    1. Login to [https://grafana.com](https://grafana.com) with your Grafana Labs account
    1. Open [https://grafana.com/orgs/grafana/dashboards](https://grafana.com/orgs/grafana/dashboards)
