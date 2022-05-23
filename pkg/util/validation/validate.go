@@ -54,25 +54,25 @@ const (
 
 var (
 	// Discarded series / samples reasons.
-	reasonMissingMetricName      = metricReasonFromErrorID(globalerror.ErrIDMissingMetricName)
-	reasonInvalidMetricName      = metricReasonFromErrorID(globalerror.ErrIDInvalidMetricName)
-	reasonMaxLabelNamesPerSeries = metricReasonFromErrorID(globalerror.ErrIDMaxLabelNamesPerSeries)
-	reasonInvalidLabel           = metricReasonFromErrorID(globalerror.ErrIDSeriesInvalidLabel)
-	reasonLabelNameTooLong       = metricReasonFromErrorID(globalerror.ErrIDSeriesLabelNameTooLong)
-	reasonLabelValueTooLong      = metricReasonFromErrorID(globalerror.ErrIDSeriesLabelValueTooLong)
-	reasonDuplicateLabelNames    = metricReasonFromErrorID(globalerror.ErrIDSeriesWithDuplicateLabelNames)
-	reasonLabelsNotSorted        = metricReasonFromErrorID(globalerror.ErrIDSeriesLabelsNotSorted)
-	reasonTooFarInFuture         = metricReasonFromErrorID(globalerror.ErrIDSampleTooFarInFuture)
+	reasonMissingMetricName      = metricReasonFromErrorID(globalerror.MissingMetricName)
+	reasonInvalidMetricName      = metricReasonFromErrorID(globalerror.InvalidMetricName)
+	reasonMaxLabelNamesPerSeries = metricReasonFromErrorID(globalerror.MaxLabelNamesPerSeries)
+	reasonInvalidLabel           = metricReasonFromErrorID(globalerror.SeriesInvalidLabel)
+	reasonLabelNameTooLong       = metricReasonFromErrorID(globalerror.SeriesLabelNameTooLong)
+	reasonLabelValueTooLong      = metricReasonFromErrorID(globalerror.SeriesLabelValueTooLong)
+	reasonDuplicateLabelNames    = metricReasonFromErrorID(globalerror.SeriesWithDuplicateLabelNames)
+	reasonLabelsNotSorted        = metricReasonFromErrorID(globalerror.SeriesLabelsNotSorted)
+	reasonTooFarInFuture         = metricReasonFromErrorID(globalerror.SampleTooFarInFuture)
 
 	// Discarded exemplars reasons.
-	reasonExemplarLabelsMissing    = metricReasonFromErrorID(globalerror.ErrIDExemplarLabelsMissing)
-	reasonExemplarLabelsTooLong    = metricReasonFromErrorID(globalerror.ErrIDExemplarLabelsTooLong)
-	reasonExemplarTimestampInvalid = metricReasonFromErrorID(globalerror.ErrIDExemplarTimestampInvalid)
+	reasonExemplarLabelsMissing    = metricReasonFromErrorID(globalerror.ExemplarLabelsMissing)
+	reasonExemplarLabelsTooLong    = metricReasonFromErrorID(globalerror.ExemplarLabelsTooLong)
+	reasonExemplarTimestampInvalid = metricReasonFromErrorID(globalerror.ExemplarTimestampInvalid)
 	reasonExemplarLabelsBlank      = "exemplar_labels_blank"
 	reasonExemplarTooOld           = "exemplar_too_old"
 )
 
-func metricReasonFromErrorID(id globalerror.ErrID) string {
+func metricReasonFromErrorID(id globalerror.ID) string {
 	return strings.ReplaceAll(string(id), "-", "_")
 }
 

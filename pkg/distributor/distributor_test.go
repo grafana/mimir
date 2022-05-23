@@ -1299,7 +1299,7 @@ func TestDistributor_Push_ExemplarValidation(t *testing.T) {
 	tests := map[string]struct {
 		req    *mimirpb.WriteRequest
 		errMsg string
-		errID  globalerror.ErrID
+		errID  globalerror.ID
 	}{
 		"valid exemplar": {
 			req: makeWriteRequestExemplar([]string{model.MetricNameLabel, "test"}, 1000, []string{"foo", "bar"}),
@@ -1307,32 +1307,32 @@ func TestDistributor_Push_ExemplarValidation(t *testing.T) {
 		"rejects exemplar with no labels": {
 			req:    makeWriteRequestExemplar([]string{model.MetricNameLabel, "test"}, 1000, []string{}),
 			errMsg: `received an exemplar with no valid labels, timestamp: 1000 series: {__name__="test"} labels: {}`,
-			errID:  globalerror.ErrIDExemplarLabelsMissing,
+			errID:  globalerror.ExemplarLabelsMissing,
 		},
 		"rejects exemplar with no timestamp": {
 			req:    makeWriteRequestExemplar([]string{model.MetricNameLabel, "test"}, 0, []string{"foo", "bar"}),
 			errMsg: `received an exemplar with no timestamp, timestamp: 0 series: {__name__="test"} labels: {foo="bar"}`,
-			errID:  globalerror.ErrIDExemplarTimestampInvalid,
+			errID:  globalerror.ExemplarTimestampInvalid,
 		},
 		"rejects exemplar with too long labelset": {
 			req:    makeWriteRequestExemplar([]string{model.MetricNameLabel, "test"}, 1000, []string{"foo", strings.Repeat("0", 126)}),
 			errMsg: fmt.Sprintf(`received exemplar whose combined labels set size exceeds the limit of 128 characters, timestamp: 1000 series: {__name__="test"} labels: {foo="%s"}`, strings.Repeat("0", 126)),
-			errID:  globalerror.ErrIDExemplarLabelsTooLong,
+			errID:  globalerror.ExemplarLabelsTooLong,
 		},
 		"rejects exemplar with too many series labels": {
 			req:    makeWriteRequestExemplar(manyLabels, 0, nil),
 			errMsg: "received a series whose number of labels exceeds the limit",
-			errID:  globalerror.ErrIDMaxLabelNamesPerSeries,
+			errID:  globalerror.MaxLabelNamesPerSeries,
 		},
 		"rejects exemplar with duplicate series labels": {
 			req:    makeWriteRequestExemplar([]string{model.MetricNameLabel, "test", "foo", "bar", "foo", "bar"}, 0, nil),
 			errMsg: "received a series with duplicate label name",
-			errID:  globalerror.ErrIDSeriesWithDuplicateLabelNames,
+			errID:  globalerror.SeriesWithDuplicateLabelNames,
 		},
 		"rejects exemplar with empty series label name": {
 			req:    makeWriteRequestExemplar([]string{model.MetricNameLabel, "test", "", "bar"}, 0, nil),
 			errMsg: "received a series with an invalid label",
-			errID:  globalerror.ErrIDSeriesInvalidLabel,
+			errID:  globalerror.SeriesInvalidLabel,
 		},
 	}
 
