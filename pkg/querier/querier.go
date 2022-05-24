@@ -55,8 +55,13 @@ type Config struct {
 	EngineConfig engine.Config `yaml:",inline"`
 }
 
+const (
+	queryIngestersWithinFlag = "querier.query-ingesters-within"
+	queryStoreAfterFlag      = "querier.query-store-after"
+)
+
 var (
-	errBadLookbackConfigs                             = errors.New("bad settings, query_store_after >= query_ingesters_within which can result in queries not being sent")
+	errBadLookbackConfigs                             = fmt.Errorf("the -%s setting must be greater than -%s otherwise queries might return partial results", queryIngestersWithinFlag, queryStoreAfterFlag)
 	errShuffleShardingLookbackLessThanQueryStoreAfter = errors.New("the shuffle-sharding lookback period should be greater or equal than the configured 'query store after'")
 	errEmptyTimeRange                                 = errors.New("empty time range")
 )
@@ -66,9 +71,9 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	cfg.StoreGatewayClient.RegisterFlagsWithPrefix("querier.store-gateway-client", f)
 	f.BoolVar(&cfg.Iterators, "querier.iterators", false, "Use iterators to execute query, as opposed to fully materialising the series in memory.")
 	f.BoolVar(&cfg.BatchIterators, "querier.batch-iterators", true, "Use batch iterators to execute query, as opposed to fully materialising the series in memory.  Takes precedent over the -querier.iterators flag.")
-	f.DurationVar(&cfg.QueryIngestersWithin, "querier.query-ingesters-within", 13*time.Hour, "Maximum lookback beyond which queries are not sent to ingester. 0 means all queries are sent to ingester.")
+	f.DurationVar(&cfg.QueryIngestersWithin, queryIngestersWithinFlag, 13*time.Hour, "Maximum lookback beyond which queries are not sent to ingester. 0 means all queries are sent to ingester.")
 	f.DurationVar(&cfg.MaxQueryIntoFuture, "querier.max-query-into-future", 10*time.Minute, "Maximum duration into the future you can query. 0 to disable.")
-	f.DurationVar(&cfg.QueryStoreAfter, "querier.query-store-after", 12*time.Hour, "The time after which a metric should be queried from storage and not just ingesters. 0 means all queries are sent to store. If this option is enabled, the time range of the query sent to the store-gateway will be manipulated to ensure the query end is not more recent than 'now - query-store-after'.")
+	f.DurationVar(&cfg.QueryStoreAfter, queryStoreAfterFlag, 12*time.Hour, "The time after which a metric should be queried from storage and not just ingesters. 0 means all queries are sent to store. If this option is enabled, the time range of the query sent to the store-gateway will be manipulated to ensure the query end is not more recent than 'now - query-store-after'.")
 	f.DurationVar(&cfg.ShuffleShardingIngestersLookbackPeriod, "querier.shuffle-sharding-ingesters-lookback-period", 0, "When distributor's sharding strategy is shuffle-sharding and this setting is > 0, queriers fetch in-memory series from the minimum set of required ingesters, selecting only ingesters which may have received series since 'now - lookback period'. The lookback period should be greater or equal than the configured -querier.query-store-after and -querier.query-ingesters-within. If this setting is 0, queriers always query all ingesters (ingesters shuffle sharding on read path is disabled).")
 
 	cfg.EngineConfig.RegisterFlags(f)
