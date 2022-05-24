@@ -34,7 +34,7 @@ func (e *genericValidationError) Error() string {
 
 var labelNameTooLongMsgFormat = globalerror.SeriesLabelNameTooLong.MessageWithLimitConfig(
 	maxLabelNameLengthFlag,
-	"received series whose label name length exceeds the limit, label: '%.200s' series: '%.200s'")
+	"received a series whose label name length exceeds the limit, label: '%.200s' series: '%.200s'")
 
 func newLabelNameTooLongError(series []mimirpb.LabelAdapter, labelName string) ValidationError {
 	return &genericValidationError{
@@ -54,7 +54,7 @@ type labelValueTooLongError struct {
 func (e *labelValueTooLongError) Error() string {
 	return globalerror.SeriesLabelValueTooLong.MessageWithLimitConfig(
 		maxLabelValueLengthFlag,
-		fmt.Sprintf("received series whose label value length exceeds the limit, value: '%.200s' (truncated) series: '%.200s'", e.labelValue, formatLabelSet(e.series)))
+		fmt.Sprintf("received a series whose label value length exceeds the limit, value: '%.200s' (truncated) series: '%.200s'", e.labelValue, formatLabelSet(e.series)))
 }
 
 func newLabelValueTooLongError(series []mimirpb.LabelAdapter, labelValue string) ValidationError {
@@ -136,7 +136,7 @@ func newInvalidMetricNameError(metricName string) ValidationError {
 }
 
 func (e *invalidMetricNameError) Error() string {
-	return globalerror.InvalidMetricName.Message(fmt.Sprintf("received series with invalid metric name: '%.200s'", e.metricName))
+	return globalerror.InvalidMetricName.Message(fmt.Sprintf("received a series with invalid metric name: '%.200s'", e.metricName))
 }
 
 // sampleValidationError is a ValidationError implementation suitable for sample validation errors.
