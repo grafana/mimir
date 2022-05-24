@@ -1,9 +1,9 @@
 local utils = import 'mixin-utils/utils.libsonnet';
-local filename = 'mimir-reads.json';
+local filename = 'mimir-ruler-reads.json';
 
 (import 'dashboard-utils.libsonnet') {
   [filename]:
-    ($.dashboard('Ruler reads') + { uid: std.md5(filename) })
+    ($.dashboard('Remote ruler reads') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates()
     .addRowIf(
       $._config.show_dashboard_descriptions.reads,
@@ -11,10 +11,10 @@ local filename = 'mimir-reads.json';
       .addPanel(
         $.textPanel('', |||
           <p>
-            This dashboard shows health metrics for the ruler read path.
+            This dashboard shows health metrics for the ruler read path when remote operational mode is enabled.
             It is broken into sections for each service on the ruler read path, and organized by the order in which the read request flows.
             <br/>
-            For each service, there are 3 panels showing (1) requests per second to that service, (2) average, median, and p99 latency of requests to that service, and (3) p99 latency of requests to each instance of that service.
+            For each service, there are three panels showing (1) requests per second to that service, (2) average, median, and p99 latency of requests to that service, and (3) p99 latency of requests to each instance of that service.
           </p>
         |||),
       )
@@ -26,7 +26,7 @@ local filename = 'mimir-reads.json';
          showTitle: false,
        })
       .addPanel(
-        $.panel('Instant queries / sec') +
+        $.panel('Evaluations / sec') +
         $.statPanel(|||
           sum(
             rate(
@@ -40,15 +40,15 @@ local filename = 'mimir-reads.json';
           queryFrontend: $.jobMatcher($._config.job_names.ruler_query_frontend),
         }, format='reqps') +
         $.panelDescription(
-          'Instant queries per second',
+          'Evaluations per second',
           |||
-            Rate of instant queries per second being made by the ruler.
+            Rate of rule expressions evaluated per second.
           |||
         ),
       )
     )
     .addRow(
-      $.row('Query-frontend')
+      $.row('Query-frontend (dedicated to ruler)')
       .addPanel(
         $.panel('Requests / sec') +
         $.qpsPanel('cortex_request_duration_seconds_count{%s, route="/httpgrpc.HTTP/Handle"}' % $.jobMatcher($._config.job_names.ruler_query_frontend))
@@ -66,18 +66,18 @@ local filename = 'mimir-reads.json';
       )
     )
     .addRow(
-      $.row('Query-scheduler')
+      $.row('Query-scheduler (dedicated to ruler)')
       .addPanel(
         $.panel('Requests / sec') +
         $.qpsPanel('cortex_query_scheduler_queue_duration_seconds_count{%s}' % $.jobMatcher($._config.job_names.ruler_query_scheduler))
       )
       .addPanel(
-        $.panel('Latency (Time in Queue)') +
+        $.panel('Latency (time in queue)') +
         $.latencyPanel('cortex_query_scheduler_queue_duration_seconds', '{%s}' % $.jobMatcher($._config.job_names.ruler_query_scheduler))
       )
     )
     .addRow(
-      $.row('Querier')
+      $.row('Querier (dedicated to ruler)')
       .addPanel(
         $.panel('Requests / sec') +
         $.qpsPanel('cortex_querier_request_duration_seconds_count{%s, route=~"(prometheus|api_prom)_api_v1_.+"}' % $.jobMatcher($._config.job_names.ruler_querier))
@@ -96,7 +96,7 @@ local filename = 'mimir-reads.json';
     )
     .addRowIf(
       $._config.autoscaling.querier_enabled,
-      $.row('Querier - autoscaling')
+      $.row('Querier (dedicated to ruler) - autoscaling')
       .addPanel(
         local title = 'Replicas';
         $.panel(title) +
@@ -134,7 +134,7 @@ local filename = 'mimir-reads.json';
         $.panelDescription(
           title,
           |||
-            This panel shows the result of the query used as scaling metric and target/threshold used.
+            This panel shows the result of the query that is used as the scaling metric, and the target and threshold used.
             The desired number of replicas is computed by HPA as: <scaling metric> / <target per replica>.
           |||
         ) +
@@ -151,7 +151,7 @@ local filename = 'mimir-reads.json';
           title,
           |||
             The rate of failures in the KEDA custom metrics API server. Whenever an error occurs, the KEDA custom
-            metrics server is unable to query the scaling metric from Prometheus so the autoscaler woudln't work properly.
+            metrics server is unable to query the scaling metric from Prometheus so the autoscaler does not work properly.
           |||
         ),
       )

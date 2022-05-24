@@ -1,24 +1,24 @@
 local utils = import 'mixin-utils/utils.libsonnet';
-local filename = 'mimir-reads-resources.json';
+local filename = 'mimir-ruler-reads-resources.json';
 
 (import 'dashboard-utils.libsonnet') {
   [filename]:
-    ($.dashboard('Ruler reads resources') + { uid: std.md5(filename) })
+    ($.dashboard('Remote ruler reads resources') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates(false)
     .addRow(
-      $.row('Query-frontend')
+      $.row('Query-frontend (dedicated to ruler)')
       .addPanel(
         $.containerCPUUsagePanel('CPU', 'ruler-query-frontend'),
       )
       .addPanel(
-        $.containerMemoryWorkingSetPanel('Memory (workingset)', 'ruler_query-frontend'),
+        $.containerMemoryWorkingSetPanel('Memory (workingset)', 'ruler-query-frontend'),
       )
       .addPanel(
         $.goHeapInUsePanel('Memory (go heap inuse)', $._config.job_names.ruler_query_frontend),
       )
     )
     .addRow(
-      $.row('Query-scheduler')
+      $.row('Query-scheduler (dedicated to ruler)')
       .addPanel(
         $.containerCPUUsagePanel('CPU', 'ruler-query-scheduler'),
       )
@@ -30,7 +30,7 @@ local filename = 'mimir-reads-resources.json';
       )
     )
     .addRow(
-      $.row('Querier')
+      $.row('Querier (dedicated to ruler)')
       .addPanel(
         $.containerCPUUsagePanel('CPU', 'ruler-querier'),
       )
