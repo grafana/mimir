@@ -1560,7 +1560,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 
 				return metrics, samples
 			},
-			expectedErr: "received series with label name length exceeding the limit",
+			expectedErr: "received series whose label name length exceeds the limit",
 		},
 		"max label value length limit reached": {
 			prepareConfig: func(limits *validation.Limits) {
@@ -1588,7 +1588,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 
 				return metrics, samples
 			},
-			expectedErr: "received series with label value length exceeding the limit",
+			expectedErr: "received series whose label value length exceeds the limit",
 		},
 		"timestamp too new": {
 			prepareConfig: func(limits *validation.Limits) {
