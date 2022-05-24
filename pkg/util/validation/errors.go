@@ -210,6 +210,64 @@ func newExemplarMaxLabelLengthError(seriesLabels []mimirpb.LabelAdapter, exempla
 	}
 }
 
+type metadataMetricNameMissingError struct{}
+
+func newMetadataMetricNameMissingError() ValidationError {
+	return &metadataMetricNameMissingError{}
+}
+
+func (e *metadataMetricNameMissingError) Error() string {
+	return globalerror.MetricMetadataMissingMetricName.Message("received a metric metadata with no metric name")
+}
+
+// metadataValidationError is a ValidationError implementation suitable for metadata validation errors.
+type metadataValidationError struct {
+	message    string
+	cause      string
+	metricName string
+}
+
+func (e *metadataValidationError) Error() string {
+	return fmt.Sprintf(e.message, e.cause, e.metricName)
+}
+
+var metadataMetricNameTooLongMsgFormat = globalerror.MetricMetadataMetricNameTooLong.MessageWithLimitConfig(
+	maxMetadataLengthFlag,
+	// When formatting this error the "cause" will always be an empty string.
+	"received a metric metadata whose metric name length exceeds the limit,%s metric name: '%.200s'")
+
+func newMetadataMetricNameTooLongError(metadata *mimirpb.MetricMetadata) ValidationError {
+	return &metadataValidationError{
+		message:    metadataMetricNameTooLongMsgFormat,
+		cause:      "",
+		metricName: metadata.GetMetricFamilyName(),
+	}
+}
+
+var metadataHelpTooLongMsgFormat = globalerror.MetricMetadataHelpTooLong.MessageWithLimitConfig(
+	maxMetadataLengthFlag,
+	"received a metric metadata whose help description length exceeds the limit, help: '%.200s' metric name: '%.200s'")
+
+func newMetadataHelpTooLongError(metadata *mimirpb.MetricMetadata) ValidationError {
+	return &metadataValidationError{
+		message:    metadataHelpTooLongMsgFormat,
+		cause:      metadata.GetHelp(),
+		metricName: metadata.GetMetricFamilyName(),
+	}
+}
+
+var metadataUnitTooLongMsgFormat = globalerror.MetricMetadataUnitTooLong.MessageWithLimitConfig(
+	maxMetadataLengthFlag,
+	"received a metric metadata whose unit name length exceeds the limit, unit: '%.200s' metric name: '%.200s'")
+
+func newMetadataUnitTooLongError(metadata *mimirpb.MetricMetadata) ValidationError {
+	return &metadataValidationError{
+		message:    metadataUnitTooLongMsgFormat,
+		cause:      metadata.GetUnit(),
+		metricName: metadata.GetMetricFamilyName(),
+	}
+}
+
 // formatLabelSet formats label adapters as a metric name with labels, while preserving
 // label order, and keeping duplicates. If there are multiple "__name__" labels, only
 // first one is used as metric name, other ones will be included as regular labels.
