@@ -23,6 +23,10 @@
 * [BUGFIX] Fix `MimirCompactorHasNotUploadedBlocks` alert false positive when Mimir is deployed in monolithic mode. #1901
 * [BUGFIX] Do not trigger `MimirAllocatingTooMuchMemory` alerts if no container limits are supplied. #1905
 
+### Jsonnet
+
+* [CHANGE] Remove use of `-querier.query-store-after` and `-blocks-storage.bucket-store.ignore-blocks-within` CLI flags since the values now match defaults. #1915
+
 ## 2.1.0-rc.0
 
 ### Grafana Mimir
