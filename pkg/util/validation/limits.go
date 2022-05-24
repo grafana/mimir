@@ -23,9 +23,9 @@ import (
 
 const (
 	MaxSeriesPerMetricFlag    = "ingester.max-global-series-per-metric"
-	MaxMetadataPerMetricFlag  = "ingester.max-global-metadata-per-user"
+	MaxMetadataPerMetricFlag  = "ingester.max-global-metadata-per-metric"
 	MaxSeriesPerUserFlag      = "ingester.max-global-series-per-user"
-	MaxMetadataPerUserFlag    = "ingester.max-global-metadata-per-metric"
+	MaxMetadataPerUserFlag    = "ingester.max-global-metadata-per-user"
 	MaxChunksPerQueryFlag     = "querier.max-fetched-chunks-per-query"
 	MaxChunkBytesPerQueryFlag = "querier.max-fetched-chunk-bytes-per-query"
 	MaxSeriesPerQueryFlag     = "querier.max-fetched-series-per-query"
