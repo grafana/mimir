@@ -345,7 +345,7 @@ func (c *MultitenantCompactor) validateBlock(ctx context.Context, w http.Respons
 	}
 	meta.Thanos.Files = []metadata.File{
 		idxFi,
-		metadata.File{
+		{
 			// Size not stated for meta.json
 			RelPath: "meta.json",
 		},
