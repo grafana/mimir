@@ -5,7 +5,7 @@ description: "Configuration files used during GrafanaCon 20202 Mimir session"
 weight: 1
 keywords:
   - grafanacon 2022
-  - mimir 
+  - mimir
 author:
   - peter
 associated_technologies:
