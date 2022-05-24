@@ -61,7 +61,7 @@ const (
 )
 
 var (
-	errBadLookbackConfigs                             = fmt.Errorf("the -%s setting must be greater than -%s otherwise queries may return partial results", queryIngestersWithinFlag, queryStoreAfterFlag)
+	errBadLookbackConfigs                             = fmt.Errorf("the -%s setting must be greater than -%s otherwise queries might return partial results", queryIngestersWithinFlag, queryStoreAfterFlag)
 	errShuffleShardingLookbackLessThanQueryStoreAfter = errors.New("the shuffle-sharding lookback period should be greater or equal than the configured 'query store after'")
 	errEmptyTimeRange                                 = errors.New("empty time range")
 )
