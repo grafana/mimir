@@ -1,3 +1,17 @@
+---
+title: "GrafanaCon 2022 Mimir session"
+menuTitle: "GrafanaCon 2022 Mimir session"
+description: "Configuration files used during GrafanaCon 20202 Mimir session"
+weight: 1
+keywords:
+  - grafanacon 2022
+  - mimir 
+author:
+  - peter
+associated_technologies:
+  - mimir
+---
+
 # Before you start
 
 **Warning:** Following commands will not specify explicit context for `kubectl` commands. Make sure to select correct
@@ -47,6 +61,14 @@ helm install gcon grafana/mimir-distributed -f mimir-values.yaml
 
 ```
 kubectl apply -f metrics-instance.yaml
+```
+
+# Deploy Rules and Alerts
+
+```
+mimirtool rules load --address=http://mimir-helm/ --id=anonymous ./rules.yaml
+
+mimirtool rules load --address=http://mimir-helm/ --id=anonymous ./alerts.yaml
 ```
 
 # Scrape Kubernetes metrics
