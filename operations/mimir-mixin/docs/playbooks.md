@@ -1018,8 +1018,8 @@ These error IDs allow you to read related details in the documentation that foll
 
 ### err-mimir-missing-metric-name
 
-This non-critical error occurs when Mimir receives a write request containing a series without metric name.
-The metric name is required for each series.
+This non-critical error occurs when Mimir receives a write request that contains a series without a metric name.
+Each series must have a metric name. Rarely it does not, in which case there might be a bug in the sender client.
 
 > **Note**: Invalid series are skipped during the ingestion, and valid series within the same request are ingested.
 
