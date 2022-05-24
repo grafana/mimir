@@ -7,7 +7,7 @@ local filename = 'mimir-ruler-reads.json';
     .addClusterSelectorTemplates()
     .addRowIf(
       $._config.show_dashboard_descriptions.reads,
-      ($.row('Ruler reads dashboard description') { height: '175px', showTitle: false })
+      ($.row('Remote ruler reads dashboard description') { height: '175px', showTitle: false })
       .addPanel(
         $.textPanel('', |||
           <p>
