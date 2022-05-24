@@ -5,7 +5,7 @@
 ### Grafana Mimir
 
 * [CHANGE] Increased default configuration for `-server.grpc-max-recv-msg-size-bytes` and `-server.grpc-max-send-msg-size-bytes` from 4MB to 100MB. #1883
-* [CHANGE] Default values have changed for the following settings. This improves query performance for recent data (within 12h) by only reading from ingesters: #1909 #TBD
+* [CHANGE] Default values have changed for the following settings. This improves query performance for recent data (within 12h) by only reading from ingesters: #1909 #1921
     - `-blocks-storage.bucket-store.ignore-blocks-within` now defaults to `10h` (previously `0`)
     - `-querier.query-store-after` now defaults to `12h` (previously `0`)
     - `-querier.shuffle-sharding-ingesters-lookback-period` now defaults to `13h` (previously `0`)
@@ -28,7 +28,7 @@
 
 ### Jsonnet
 
-* [CHANGE] Remove use of `-querier.query-store-after`, `-querier.shuffle-sharding-ingesters-lookback-period`, `-blocks-storage.bucket-store.ignore-blocks-within`, and `-blocks-storage.tsdb.close-idle-tsdb-timeout` CLI flags since the values now match defaults. #1915 #TBD
+* [CHANGE] Remove use of `-querier.query-store-after`, `-querier.shuffle-sharding-ingesters-lookback-period`, `-blocks-storage.bucket-store.ignore-blocks-within`, and `-blocks-storage.tsdb.close-idle-tsdb-timeout` CLI flags since the values now match defaults. #1915 #1921
 
 ## 2.1.0-rc.0
 
