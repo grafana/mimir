@@ -7,12 +7,12 @@ package validation
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/prometheus/common/model"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/util/globalerror"
 )
 
 // ValidationError is an error returned by series validation.
@@ -32,9 +32,13 @@ func (e *genericValidationError) Error() string {
 	return fmt.Sprintf(e.message, e.cause, formatLabelSet(e.series))
 }
 
+var labelNameTooLongMsgFormat = globalerror.SeriesLabelNameTooLong.MessageWithLimitConfig(
+	maxLabelNameLengthFlag,
+	"received a series whose label name length exceeds the limit, label: '%.200s' series: '%.200s'")
+
 func newLabelNameTooLongError(series []mimirpb.LabelAdapter, labelName string) ValidationError {
 	return &genericValidationError{
-		message: "label name too long: %.200q metric %.200q",
+		message: labelNameTooLongMsgFormat,
 		cause:   labelName,
 		series:  series,
 	}
@@ -48,7 +52,9 @@ type labelValueTooLongError struct {
 }
 
 func (e *labelValueTooLongError) Error() string {
-	return fmt.Sprintf("label value too long for metric: %.200q label value: %.200q", formatLabelSet(e.series), e.labelValue)
+	return globalerror.SeriesLabelValueTooLong.MessageWithLimitConfig(
+		maxLabelValueLengthFlag,
+		fmt.Sprintf("received a series whose label value length exceeds the limit, value: '%.200s' (truncated) series: '%.200s'", e.labelValue, formatLabelSet(e.series)))
 }
 
 func newLabelValueTooLongError(series []mimirpb.LabelAdapter, labelValue string) ValidationError {
@@ -58,25 +64,34 @@ func newLabelValueTooLongError(series []mimirpb.LabelAdapter, labelValue string)
 	}
 }
 
+var invalidLabelMsgFormat = globalerror.SeriesInvalidLabel.Message(
+	"received a series with an invalid label: '%.200s' series: '%.200s'")
+
 func newInvalidLabelError(series []mimirpb.LabelAdapter, labelName string) ValidationError {
 	return &genericValidationError{
-		message: "sample invalid label: %.200q metric %.200q",
+		message: invalidLabelMsgFormat,
 		cause:   labelName,
 		series:  series,
 	}
 }
+
+var duplicateLabelMsgFormat = globalerror.SeriesWithDuplicateLabelNames.Message(
+	"received a series with duplicate label name, label: '%.200s' series: '%.200s'")
 
 func newDuplicatedLabelError(series []mimirpb.LabelAdapter, labelName string) ValidationError {
 	return &genericValidationError{
-		message: "duplicate label name: %.200q metric %.200q",
+		message: duplicateLabelMsgFormat,
 		cause:   labelName,
 		series:  series,
 	}
 }
 
+var labelsNotSortedMsgFormat = globalerror.SeriesLabelsNotSorted.Message(
+	"received a series where the label names are not alphabetically sorted, label: '%.200s' series: '%.200s'")
+
 func newLabelsNotSortedError(series []mimirpb.LabelAdapter, labelName string) ValidationError {
 	return &genericValidationError{
-		message: "labels not sorted: %.200q metric %.200q",
+		message: labelsNotSortedMsgFormat,
 		cause:   labelName,
 		series:  series,
 	}
@@ -95,9 +110,9 @@ func newTooManyLabelsError(series []mimirpb.LabelAdapter, limit int) ValidationE
 }
 
 func (e *tooManyLabelsError) Error() string {
-	return fmt.Sprintf(
-		"series has too many labels (actual: %d, limit: %d) series: '%s'",
-		len(e.series), e.limit, mimirpb.FromLabelAdaptersToMetric(e.series).String())
+	return globalerror.MaxLabelNamesPerSeries.MessageWithLimitConfig(
+		maxLabelNamesPerSeriesFlag,
+		fmt.Sprintf("received a series whose number of labels exceeds the limit (actual: %d, limit: %d) series: '%.200s'", len(e.series), e.limit, mimirpb.FromLabelAdaptersToMetric(e.series).String()))
 }
 
 type noMetricNameError struct{}
@@ -107,7 +122,7 @@ func newNoMetricNameError() ValidationError {
 }
 
 func (e *noMetricNameError) Error() string {
-	return "sample missing metric name"
+	return globalerror.MissingMetricName.Message("received series has no metric name")
 }
 
 type invalidMetricNameError struct {
@@ -121,7 +136,7 @@ func newInvalidMetricNameError(metricName string) ValidationError {
 }
 
 func (e *invalidMetricNameError) Error() string {
-	return fmt.Sprintf("sample invalid metric name: %.200q", e.metricName)
+	return globalerror.InvalidMetricName.Message(fmt.Sprintf("received a series with invalid metric name: '%.200s'", e.metricName))
 }
 
 // sampleValidationError is a ValidationError implementation suitable for sample validation errors.
@@ -135,9 +150,13 @@ func (e *sampleValidationError) Error() string {
 	return fmt.Sprintf(e.message, e.timestamp, e.metricName)
 }
 
+var sampleTimestampTooNewMsgFormat = globalerror.SampleTooFarInFuture.MessageWithLimitConfig(
+	creationGracePeriodFlag,
+	"received a sample whose timestamp is too far in the future, timestamp: %d series: '%.200s'")
+
 func newSampleTimestampTooNewError(metricName string, timestamp int64) ValidationError {
 	return &sampleValidationError{
-		message:    "timestamp too new: %d metric: %.200q",
+		message:    sampleTimestampTooNewMsgFormat,
 		metricName: metricName,
 		timestamp:  timestamp,
 	}
@@ -155,29 +174,36 @@ func (e *exemplarValidationError) Error() string {
 	return fmt.Sprintf(e.message, e.timestamp, mimirpb.FromLabelAdaptersToLabels(e.seriesLabels).String(), mimirpb.FromLabelAdaptersToLabels(e.exemplarLabels).String())
 }
 
-func newExemplarEmtpyLabelsError(seriesLabels []mimirpb.LabelAdapter, exemplarLabels []mimirpb.LabelAdapter, timestamp int64) ValidationError {
+var exemplarEmptyLabelsMsgFormat = globalerror.ExemplarLabelsMissing.Message(
+	"received an exemplar with no valid labels, timestamp: %d series: %s labels: %s")
+
+func newExemplarEmptyLabelsError(seriesLabels []mimirpb.LabelAdapter, exemplarLabels []mimirpb.LabelAdapter, timestamp int64) ValidationError {
 	return &exemplarValidationError{
-		message:        "exemplar missing labels, timestamp: %d series: %s labels: %s",
+		message:        exemplarEmptyLabelsMsgFormat,
 		seriesLabels:   seriesLabels,
 		exemplarLabels: exemplarLabels,
 		timestamp:      timestamp,
 	}
 }
+
+var exemplarMissingTimestampMsgFormat = globalerror.ExemplarTimestampInvalid.Message(
+	"received an exemplar with no timestamp, timestamp: %d series: %s labels: %s")
 
 func newExemplarMissingTimestampError(seriesLabels []mimirpb.LabelAdapter, exemplarLabels []mimirpb.LabelAdapter, timestamp int64) ValidationError {
 	return &exemplarValidationError{
-		message:        "exemplar missing timestamp, timestamp: %d series: %s labels: %s",
+		message:        exemplarMissingTimestampMsgFormat,
 		seriesLabels:   seriesLabels,
 		exemplarLabels: exemplarLabels,
 		timestamp:      timestamp,
 	}
 }
 
-var labelLenMsg = "exemplar combined labelset exceeds " + strconv.Itoa(ExemplarMaxLabelSetLength) + " characters, timestamp: %d series: %s labels: %s"
+var exemplarMaxLabelLengthMsgFormat = globalerror.ExemplarLabelsTooLong.Message(
+	fmt.Sprintf("received an exemplar where the size of its combined labels exceeds the limit of %d characters, timestamp: %%d series: %%s labels: %%s", ExemplarMaxLabelSetLength))
 
-func newExemplarLabelLengthError(seriesLabels []mimirpb.LabelAdapter, exemplarLabels []mimirpb.LabelAdapter, timestamp int64) ValidationError {
+func newExemplarMaxLabelLengthError(seriesLabels []mimirpb.LabelAdapter, exemplarLabels []mimirpb.LabelAdapter, timestamp int64) ValidationError {
 	return &exemplarValidationError{
-		message:        labelLenMsg,
+		message:        exemplarMaxLabelLengthMsgFormat,
 		seriesLabels:   seriesLabels,
 		exemplarLabels: exemplarLabels,
 		timestamp:      timestamp,

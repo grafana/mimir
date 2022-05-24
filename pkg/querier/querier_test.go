@@ -1066,6 +1066,19 @@ func TestConfig_Validate(t *testing.T) {
 			},
 			expected: errShuffleShardingLookbackLessThanQueryStoreAfter,
 		},
+		"should pass if both 'query store after' and 'query ingesters within' are set and 'query store after' < 'query ingesters within'": {
+			setup: func(cfg *Config) {
+				cfg.QueryStoreAfter = time.Hour
+				cfg.QueryIngestersWithin = 2 * time.Hour
+			},
+		},
+		"should fail if both 'query store after' and 'query ingesters within' are set and 'query store after' > 'query ingesters within'": {
+			setup: func(cfg *Config) {
+				cfg.QueryStoreAfter = 3 * time.Hour
+				cfg.QueryIngestersWithin = 2 * time.Hour
+			},
+			expected: errBadLookbackConfigs,
+		},
 	}
 
 	for testName, testData := range tests {

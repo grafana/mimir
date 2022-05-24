@@ -801,7 +801,7 @@ The `querier` block configures the querier.
 # the time range of the query sent to the store-gateway will be manipulated to
 # ensure the query end is not more recent than 'now - query-store-after'.
 # CLI flag: -querier.query-store-after
-[query_store_after: <duration> | default = 0s]
+[query_store_after: <duration> | default = 12h]
 
 # (advanced) Maximum duration into the future you can query. 0 to disable.
 # CLI flag: -querier.max-query-into-future
@@ -3331,7 +3331,7 @@ bucket_store:
   # are usually many of them (depending on number of ingesters) and they are not
   # yet compacted. Negative values or 0 disable the filter.
   # CLI flag: -blocks-storage.bucket-store.ignore-blocks-within
-  [ignore_blocks_within: <duration> | default = 0s]
+  [ignore_blocks_within: <duration> | default = 10h]
 
   # (advanced) Max size - in bytes - of a chunks pool, used to reduce memory
   # allocations. The pool is shared across all tenants. 0 to disable the limit.
