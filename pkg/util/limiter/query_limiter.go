@@ -10,20 +10,23 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/util/globalerror"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 type queryLimiterCtxKey struct{}
 
 var (
-	ctxKey                    = &queryLimiterCtxKey{}
-	ErrMaxSeriesHit           = "the query reached the max number of series limit (limit: %d series)"
-	ErrMaxChunkBytesHit       = "the query reached the aggregated chunks size limit (limit: %d bytes)"
-	ErrMaxChunksPerQueryLimit = "the query reached the max number of chunks limit (limit: %d chunks)"
+	ctxKey                          = &queryLimiterCtxKey{}
+	MaxSeriesHitMsgFormat           = "the query reached the maximum number of series (limit: %d series)"
+	MaxChunkBytesHitMsgFormat       = "the query reached the aggregated chunks size (limit: %d bytes)"
+	MaxChunksPerQueryLimitMsgFormat = "the query reached the maximum number of chunks (limit: %d chunks)"
 )
 
 type QueryLimiter struct {
@@ -80,7 +83,10 @@ func (ql *QueryLimiter) AddSeries(seriesLabels []mimirpb.LabelAdapter) error {
 	ql.uniqueSeries[fingerprint] = struct{}{}
 	if len(ql.uniqueSeries) > ql.maxSeriesPerQuery {
 		// Format error with max limit
-		return fmt.Errorf(ErrMaxSeriesHit, ql.maxSeriesPerQuery)
+		return errors.New(globalerror.MaxSeriesPerQuery.MessageWithLimitConfig(
+			validation.MaxSeriesPerQueryFlag,
+			fmt.Sprintf(MaxSeriesHitMsgFormat, ql.maxSeriesPerQuery),
+		))
 	}
 	return nil
 }
@@ -98,7 +104,10 @@ func (ql *QueryLimiter) AddChunkBytes(chunkSizeInBytes int) error {
 		return nil
 	}
 	if ql.chunkBytesCount.Add(int64(chunkSizeInBytes)) > int64(ql.maxChunkBytesPerQuery) {
-		return fmt.Errorf(ErrMaxChunkBytesHit, ql.maxChunkBytesPerQuery)
+		return errors.New(globalerror.MaxChunkBytesPerQuery.MessageWithLimitConfig(
+			validation.MaxChunkBytesPerQueryFlag,
+			fmt.Sprintf(MaxChunkBytesHitMsgFormat, ql.maxChunkBytesPerQuery),
+		))
 	}
 	return nil
 }
@@ -109,7 +118,10 @@ func (ql *QueryLimiter) AddChunks(count int) error {
 	}
 
 	if ql.chunkCount.Add(int64(count)) > int64(ql.maxChunksPerQuery) {
-		return fmt.Errorf(fmt.Sprintf(ErrMaxChunksPerQueryLimit, ql.maxChunksPerQuery))
+		return errors.New(globalerror.MaxChunksPerQuery.MessageWithLimitConfig(
+			validation.MaxChunksPerQueryFlag,
+			fmt.Sprintf(MaxChunksPerQueryLimitMsgFormat, ql.maxChunksPerQuery),
+		))
 	}
 	return nil
 }

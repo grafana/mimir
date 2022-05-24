@@ -30,6 +30,9 @@ const (
 	MaxMetadataPerMetric          ID = "max-metadata-per-metric"
 	MaxSeriesPerUser              ID = "max-series-per-user"
 	MaxMetadataPerUser            ID = "max-metadata-per-user"
+	MaxChunksPerQuery             ID = "max-chunks-per-query"
+	MaxSeriesPerQuery             ID = "max-series-per-query"
+	MaxChunkBytesPerQuery         ID = "max-chunks-bytes-per-query"
 
 	ExemplarLabelsMissing    ID = "exemplar-labels-missing"
 	ExemplarLabelsTooLong    ID = "exemplar-labels-too-long"

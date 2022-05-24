@@ -1041,7 +1041,7 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxChunkBytesPerQueryLimitIs
 	// a query running on all series to fail.
 	_, err = ds[0].QueryStream(ctx, math.MinInt32, math.MaxInt32, allSeriesMatchers...)
 	require.Error(t, err)
-	assert.Equal(t, err, validation.LimitError(fmt.Sprintf(limiter.ErrMaxChunkBytesHit, maxBytesLimit)))
+	assert.Equal(t, err, validation.LimitError(fmt.Sprintf(limiter.MaxChunkBytesHitMsgFormat, maxBytesLimit)))
 }
 
 func TestDistributor_Push_LabelRemoval(t *testing.T) {
