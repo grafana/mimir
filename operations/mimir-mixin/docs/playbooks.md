@@ -1130,6 +1130,113 @@ The limit protects the system’s stability from potential abuse or mistakes, an
 
 > **Note**: Invalid metrics metadata are skipped during the ingestion, and valid metadata within the same request are ingested.
 
+### err-mimir-max-ingester-ingestion-rate
+
+This critical error occurs when the rate of pushed samples/sec is exceeded in an ingester.
+Current ingestion rate is computed as exponentially weighted moving average, updated every second.
+When the rate is exceeded in an ingester, the distributor will return an HTTP 500 status code to the push request.
+The `-ingester.instance-limits.max-ingestion-rate` option controls the ingestion rate per ingester (across all tenants in that ingester).
+
+This alert fires if the average number of samples ingested / sec in ingesters is above our target.
+
+How to **fix**:
+
+- Scale up ingesters
+  - To compute the desired number of ingesters to satisfy the average samples rate you can run the following query, replacing `<namespace>` with the namespace to analyse and `<target>` with the target number of samples/sec per ingester (1.5M is a good starting target):
+    ```
+    sum(rate(cortex_ingester_ingested_samples_total{namespace="<namespace>"}[$__rate_interval])) / (<target> * 0.9)
+    ```
+
+### err-mimir-max-tenants-reached
+
+Each ingester keeps all tenants that have pushed metrics in the last 3 hours in memory. Pushes from additional tenants are rejected with HTTP 500 status code.
+The `-ingester.instance-limits.max-tenants` option controls the number of tenants.
+
+### err-mimir-max-in-memory-series
+
+The `-ingester.instance-limits.max-series` option controls the maximum number of series per ingester (across all tenants in that ingester).
+
+How it **works**:
+
+- Each ingester keeps recently pushed-to timeseries in memory.
+- When the number of series written reaches this limit, writes are rejected.
+- Ingesters are not perfectly balanced, so the limit can trigger on a subset of ingesters before the overall series limit is reached.
+- This error occurs when the number of series in a particular ingester is over that limit.
+
+How to **investigate**:
+
+- Look at the series limit and the in-memory series trend:
+  - Find out the current 'local' limit by running this query:
+    ```
+    max by (namespace) (cortex_limits_overrides{limit_name="max_global_series_per_user",user="<tenant_id>"})
+    * max by (namespace) (cortex_distributor_replication_factor)
+    / max by (namespace) (cortex_ring_members{name="ingester"})
+    ```
+  - See the current in-memory series for the top 5 ingesters by running this query:
+    ```
+    topk(5, cortex_ingester_memory_series_created_total{user="<tenant_id>"} - cortex_ingester_memory_series_removed_total{user="<tenant_id>"})
+    ```
+- Note: The number of in memory series will typically grow by a small amount over the course of two hours,
+  and then decrease again. This is because stale series are removed at 2 hour intervals (head compaction).
+- If the current trend compared to the last 24 hours looks to be relatively stable, then it is likely that
+  gradual growth in series has caused the limit to be approached. Increase the `max_global_series_per_user`
+  limit for the tenant by a suitable margin to avoid hitting the limit (5% is a good starting point).
+- If the number of series has spiked dramatically, and looks to be hitting the limit soon, increase the limit
+  by a bigger amount (10%+). It may not be possible to avoid hitting the limit in this situation.
+- The ingesters should typically have enough headroom to deal with modest increase in limits, but if a significant
+  bump was required, it may be necessary to preemptively scale up the cluster.
+
+### err-mimir-max-inflight-push-requests
+
+This non-critical error occurs when an ingester rejects a push request because there are too many already ongoing requests (across all tenants).
+The `-ingester.instance-limits.max-inflight-push-requests` flag controls the number of simultaneous requests. If this error persists,
+consider scaling out the ingesters.
+
+### err-mimir-max-series-per-metric
+
+This non-critical error occurs when a metric name has too many timeseries. Each ingester can hold up to `-ingester.max-global-series-per-metric / N`
+series per metric, where `N` is the number of ingesters in the cluster.
+
+How to **fix**:
+
+There are three possible courses of action:
+
+- Increase the global limit. Keeping higher-cardinality metrics leads to slower query times.
+- Increase the per-tenant limit (`max_global_series_per_metric`). Keeping higher-cardinality metrics leads to slower query times.
+- Reduce the cardinality of the metrics at the source by removing some labels or label values.
+
+### err-mimir-max-metadata-per-metric
+
+???
+
+### err-mimir-max-series-per-user
+
+This error occurs under similar conditions as [err-max-in-memory-series](#err-max-in-memory-series). The difference is that the limit can be set on a per-tenant basis.
+
+The `-ingester.max-global-series-per-user` option controls the default value and the `max_global_series_per_user` limit control the per-tenant value.
+
+### err-mimir-max-metadata-per-user
+
+???
+
+### err-mimir-max-chunks-per-query
+
+This non-critical error occurs when a query reads from too many chunks. Try changing the query to span across less data. One way to do that is to include more label selectors. Another is to reduce the range of the query.
+
+The `-querier.max-fetched-chunks-per-query` option control the default value and the `max_fetched_chunks_per_query` limit controls the per-tenant value.
+
+### err-mimir-max-series-per-query
+
+This non-critical error occurs when a query reads from too many series. Try changing the query to span across less data. One way to do that is to include more label selectors. Another is to reduce the range of the query.
+
+The `-querier.max-fetched-series-per-query` option control the default value and the `max_fetched_series_per_query` limit controls the per-tenant value.
+
+### err-mimir-max-chunks-bytes-per-query
+
+This non-critical error occurs when a query reads too much data. Try changing the query to span across less data. One way to do that is to include more label selectors. Another is to reduce the range of the query.
+
+The `-querier.max-fetched-chunk-bytes-per-query` option control the default value and the `max_fetched_chunk_bytes_per_query` limit controls the per-tenant value.
+
 ## Mimir routes by path
 
 **Write path**:
