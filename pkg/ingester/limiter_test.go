@@ -412,16 +412,16 @@ func TestLimiter_FormatError(t *testing.T) {
 	limiter := NewLimiter(limits, ring, 3, false)
 
 	actual := limiter.FormatError("user-1", errMaxSeriesPerUserLimitExceeded)
-	assert.EqualError(t, actual, "per-user series limit of 100 exceeded, contact an administrator to raise it (per-ingester local limit: 100)")
+	assert.ErrorContains(t, actual, "per-user series limit of 100 exceeded, per-ingester local limit: 100")
 
 	actual = limiter.FormatError("user-1", errMaxSeriesPerMetricLimitExceeded)
-	assert.EqualError(t, actual, "per-metric series limit of 20 exceeded, contact an administrator to raise it (per-ingester local limit: 20)")
+	assert.ErrorContains(t, actual, "per-metric series limit of 20 exceeded, per-ingester local limit: 20")
 
 	actual = limiter.FormatError("user-1", errMaxMetadataPerUserLimitExceeded)
-	assert.EqualError(t, actual, "per-user metric metadata limit of 10 exceeded, contact an administrator to raise it (per-ingester local limit: 10)")
+	assert.ErrorContains(t, actual, "per-user metric metadata limit of 10 exceeded, per-ingester local limit: 10")
 
 	actual = limiter.FormatError("user-1", errMaxMetadataPerMetricLimitExceeded)
-	assert.EqualError(t, actual, "per-metric metadata limit of 3 exceeded, contact an administrator to raise it (per-ingester local limit: 3)")
+	assert.ErrorContains(t, actual, "per-metric metadata limit of 3 exceeded, per-ingester local limit: 3")
 
 	input := errors.New("unknown error")
 	actual = limiter.FormatError("user-1", input)

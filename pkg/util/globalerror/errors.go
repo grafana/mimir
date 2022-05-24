@@ -26,6 +26,10 @@ const (
 	MaxTenants                    ID = "max-tenants-reached"
 	MaxInMemorySeries             ID = "max-in-memory-series"
 	MaxInflightPushRequests       ID = "max-inflight-push-requests"
+	MaxSeriesPerMetric            ID = "max-series-per-metric"
+	MaxMetadataPerMetric          ID = "max-metadata-per-metric"
+	MaxSeriesPerUser              ID = "max-series-per-user"
+	MaxMetadataPerUser            ID = "max-metadata-per-user"
 
 	ExemplarLabelsMissing    ID = "exemplar-labels-missing"
 	ExemplarLabelsTooLong    ID = "exemplar-labels-too-long"
