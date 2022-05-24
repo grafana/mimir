@@ -136,9 +136,6 @@
 
       // Ingesters don't have data older than 13h, no need to ask them.
       'querier.query-ingesters-within': '13h',
-
-      // No need to look at store for data younger than 12h, as ingesters have all of it.
-      'querier.query-store-after': '12h',
     },
 
     // PromQL query engine config (shared between all services running PromQL engine, like the ruler and querier).

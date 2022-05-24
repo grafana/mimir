@@ -5,7 +5,11 @@
 ### Grafana Mimir
 
 * [CHANGE] Increased default configuration for `-server.grpc-max-recv-msg-size-bytes` and `-server.grpc-max-send-msg-size-bytes` from 4MB to 100MB. #1883
+* [CHANGE] Default values have changed for the following settings. This improves query performance for recent data (within 12h) by only reading from ingesters: #1909
+    - `-blocks-storage.bucket-store.ignore-blocks-within` now defaults to `10h` (previously `0`)
+    - `-querier.query-store-after` now defaults to `12h` (previously `0`)
 * [ENHANCEMENT] Store-gateway: Add the experimental ability to run requests in a dedicated OS thread pool. This feature can be configured using `-store-gateway.thread-pool-size` and is disabled by default. Replaces the ability to run index header operations in a dedicated thread pool. #1660 #1812
+* [ENHANCEMENT] Improved error messages to make them easier to understand and referencing a unique global identifier that can be looked up in the runbooks. #1907
 * [BUGFIX] Fix regexp parsing panic for regexp label matchers with start/end quantifiers. #1883
 * [BUGFIX] Ingester: fixed deceiving error log "failed to update cached shipped blocks after shipper initialisation", occurring for each new tenant in the ingester. #1893
 
@@ -19,6 +23,10 @@
 * [BUGFIX] Fix `MimirRulerMissedEvaluations` to show % of missed alerts as a value between 0 and 100 instead of 0 and 1. #1895
 * [BUGFIX] Fix `MimirCompactorHasNotUploadedBlocks` alert false positive when Mimir is deployed in monolithic mode. #1901
 * [BUGFIX] Do not trigger `MimirAllocatingTooMuchMemory` alerts if no container limits are supplied. #1905
+
+### Jsonnet
+
+* [CHANGE] Remove use of `-querier.query-store-after` and `-blocks-storage.bucket-store.ignore-blocks-within` CLI flags since the values now match defaults. #1915
 
 ## 2.1.0-rc.0
 
