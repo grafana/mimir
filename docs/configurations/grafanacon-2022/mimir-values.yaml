@@ -1,0 +1,19 @@
+image:
+  repository: grafana/mimir
+  tag: 2.0.0-arm64
+
+nginx:
+  ingress:
+    enabled: true
+    ingressClassName: nginx
+    hosts:
+      - host: mimir-helm
+        paths:
+          - path: /
+            pathType: Prefix
+    tls:
+        # empty, disabled.
+
+serviceMonitor:
+  enabled: true
+  interval: 10s
