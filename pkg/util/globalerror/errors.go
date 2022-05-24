@@ -22,7 +22,7 @@ const (
 	SeriesWithDuplicateLabelNames ID = "duplicate-label-names"
 	SeriesLabelsNotSorted         ID = "labels-not-sorted"
 	SampleTooFarInFuture          ID = "too-far-in-future"
-	MaxIngestionRate              ID = "max-ingestion-rate"
+	MaxIngesterIngestionRate      ID = "max-ingester-ingestion-rate"
 	MaxTenants                    ID = "max-tenants-reached"
 	MaxInMemorySeries             ID = "max-in-memory-series"
 	MaxInflightPushRequests       ID = "max-inflight-push-requests"

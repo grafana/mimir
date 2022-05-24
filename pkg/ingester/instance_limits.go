@@ -13,7 +13,7 @@ import (
 
 var (
 	// We don't include values in the message to avoid leaking Mimir cluster configuration to users.
-	errMaxIngestionRateReached    = errors.New(globalerror.MaxIngestionRate.MessageWithLimitConfig(maxIngestionRateFlag, "cannot push more samples: exceeded the allowed rate of push requests"))
+	errMaxIngestionRateReached    = errors.New(globalerror.MaxIngesterIngestionRate.MessageWithLimitConfig(maxIngestionRateFlag, "cannot push more samples: exceeded the allowed rate of push requests"))
 	errMaxTenantsReached          = errors.New(globalerror.MaxTenants.MessageWithLimitConfig(maxInMemoryTenantsFlag, "cannot create TSDB: exceeded the allowed number of in-memory tenants in an ingester"))
 	errMaxInMemorySeriesReached   = errors.New(globalerror.MaxInMemorySeries.MessageWithLimitConfig(maxInMemorySeriesFlag, "cannot add series: exceeded the allowed number of in-memory series in an ingester"))
 	errMaxInflightRequestsReached = errors.New(globalerror.MaxInflightPushRequests.MessageWithLimitConfig(maxInflightPushRequestsFlag, "cannot push: exceeded the allowed number of inflight push requests to the ingester"))
