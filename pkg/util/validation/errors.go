@@ -234,7 +234,7 @@ func (e *metadataValidationError) Error() string {
 var metadataMetricNameTooLongMsgFormat = globalerror.MetricMetadataMetricNameTooLong.MessageWithLimitConfig(
 	maxMetadataLengthFlag,
 	// When formatting this error the "cause" will always be an empty string.
-	"received a metric metadata whose metric name length exceeds the limit,%s metric name: '%.200s'")
+	"received a metric metadata whose metric name length exceeds the limit, metric name: '%.200[2]s'")
 
 func newMetadataMetricNameTooLongError(metadata *mimirpb.MetricMetadata) ValidationError {
 	return &metadataValidationError{
