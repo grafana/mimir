@@ -25,7 +25,7 @@
 
 ### Jsonnet
 
-* [CHANGE] Remove use of `querier.query-store-after` and `blocks-storage.bucket-store.ignore-blocks-within` CLI flags since the values now match defaults. #1915
+* [CHANGE] Remove use of `-querier.query-store-after` and `-blocks-storage.bucket-store.ignore-blocks-within` CLI flags since the values now match defaults. #1915
 
 ## 2.1.0-rc.0
 
