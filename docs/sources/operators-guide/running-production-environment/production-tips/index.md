@@ -33,9 +33,10 @@ For more information about estimating the required ingester disk space, refer to
 ### Ingester disk IOPS
 
 The IOPS (input/output operations per second) and latency performances of the ingester disks can affect both write and read requests.
-On this write path, ingester disk is touched to write the write-ahead log (WAL), while on the read path the ingester disk is touched to query series whose chunks have already been written to disk.
+On the write path, the ingester writes to the write-ahead log (WAL) on disk.
+On the read path, the ingester reads from the series whose chunks have already been written to disk.
 
-We recommend to run ingesters with a fast disk (e.g. SSD disk).
+For these reasons, run the ingesters on disks such as SSDs that have fast disk speed.
 
 ## Querier
 
