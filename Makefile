@@ -293,7 +293,8 @@ lint: check-makefiles
 
 	# We've copied github.com/NYTimes/gziphandler to pkg/util/gziphandler
 	# at least until https://github.com/nytimes/gziphandler/pull/112 is merged
-	faillint -paths "github.com/NYTimes/gziphandler"
+	faillint -paths "github.com/NYTimes/gziphandler" \
+		./pkg/... ./cmd/... ./tools/... ./integration/...
 
 	# Ensure packages we imported from Thanos are no longer used.
 	GOFLAGS="-tags=requires_docker" faillint -paths \
