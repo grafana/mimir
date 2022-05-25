@@ -1241,21 +1241,36 @@ How to **fix**:
 
 ### err-mimir-max-chunks-per-query
 
-This non-critical error occurs when a query reads from too many chunks. Try changing the query to span across less data. One way to do that is to include more label selectors. Another is to reduce the range of the query.
+This error occurs when a query execution exceeds the limit on the number of series chunks fetched.
 
-The `-querier.max-fetched-chunks-per-query` option control the default value and the `max_fetched_chunks_per_query` limit controls the per-tenant value.
+This limit is used to protect the system’s stability from potential abuse or mistakes, when running a query fetching an huge amount of data.
+You can configure the limit on a per-tenant basis by using the `-querier.max-fetched-chunks-per-query` option (or `max_fetched_chunks_per_query` in the runtime configuration).
+
+How to **fix**:
+- Consider reducing the time range and/or cardinality of the query. To reduce the cardinality of the query, you can add more label matchers to the query, restricting the set of matching series.
+- Consider increasing the per-tenant limit by using the `-querier.max-fetched-chunks-per-query` option (or `max_fetched_chunks_per_query` in the runtime configuration).
 
 ### err-mimir-max-series-per-query
 
-This non-critical error occurs when a query reads from too many series. Try changing the query to span across less data. One way to do that is to include more label selectors. Another is to reduce the range of the query.
+This error occurs when a query execution exceeds the limit on the maximum number of series.
 
-The `-querier.max-fetched-series-per-query` option control the default value and the `max_fetched_series_per_query` limit controls the per-tenant value.
+This limit is used to protect the system’s stability from potential abuse or mistakes, when running a query fetching an huge amount of data.
+You can configure the limit on a per-tenant basis by using the `-querier.max-fetched-series-per-query` option (or `max_fetched_series_per_query` in the runtime configuration).
+
+How to **fix**:
+- Consider reducing the time range and/or cardinality of the query. To reduce the cardinality of the query, you can add more label matchers to the query, restricting the set of matching series.
+- Consider increasing the per-tenant limit by using the `-querier.max-fetched-series-per-query` option (or `max_fetched_series_per_query` in the runtime configuration).
 
 ### err-mimir-max-chunks-bytes-per-query
 
-This non-critical error occurs when a query reads too much data. Try changing the query to span across less data. One way to do that is to include more label selectors. Another is to reduce the range of the query.
+This error occurs when a query execution exceeds the limit on aggregated size (in bytes) of fetched chunks.
 
-The `-querier.max-fetched-chunk-bytes-per-query` option control the default value and the `max_fetched_chunk_bytes_per_query` limit controls the per-tenant value.
+This limit is used to protect the system’s stability from potential abuse or mistakes, when running a query fetching an huge amount of data.
+You can configure the limit on a per-tenant basis by using the `-querier.max-fetched-chunk-bytes-per-query` option (or `max_fetched_chunk_bytes_per_query` in the runtime configuration).
+
+How to **fix**:
+- Consider reducing the time range and/or cardinality of the query. To reduce the cardinality of the query, you can add more label matchers to the query, restricting the set of matching series.
+- Consider increasing the per-tenant limit by using the `-querier.max-fetched-chunk-bytes-per-query` option (or `max_fetched_chunk_bytes_per_query` in the runtime configuration).
 
 ## Mimir routes by path
 

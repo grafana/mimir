@@ -64,7 +64,10 @@ const (
 )
 
 var (
-	maxChunksPerQueryLimitMsgFormat = "the query reached the maximum number of chunks while fetching chunks from store-gateways for %s (limit: %d)"
+	maxChunksPerQueryLimitMsgFormat = globalerror.MaxChunksPerQuery.MessageWithLimitConfig(
+		validation.MaxChunksPerQueryFlag,
+		fmt.Sprintf("the query exceeded the maximum number of chunks fetched from store-gateways when querying '%%s' (limit: %%d)"),
+	)
 )
 
 // BlocksStoreSet is the interface used to get the clients to query series on a set of blocks.
@@ -751,12 +754,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(
 					if maxChunksLimit > 0 {
 						actual := numChunks.Add(int32(chunksCount))
 						if actual > int32(leftChunksLimit) {
-							return validation.LimitError(
-								globalerror.MaxChunksPerQuery.MessageWithLimitConfig(
-									validation.MaxChunksPerQueryFlag,
-									fmt.Sprintf(maxChunksPerQueryLimitMsgFormat, util.LabelMatchersToString(matchers), maxChunksLimit),
-								),
-							)
+							return validation.LimitError(fmt.Sprintf(maxChunksPerQueryLimitMsgFormat, util.LabelMatchersToString(matchers), maxChunksLimit))
 						}
 					}
 					if chunkBytesLimitErr := queryLimiter.AddChunkBytes(chunksSize); chunkBytesLimitErr != nil {
