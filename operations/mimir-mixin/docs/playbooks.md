@@ -1130,67 +1130,52 @@ The limit protects the system’s stability from potential abuse or mistakes, an
 
 > **Note**: Invalid metrics metadata are skipped during the ingestion, and valid metadata within the same request are ingested.
 
-### err-mimir-max-ingester-ingestion-rate
+### err-mimir-ingester-max-ingestion-rate
 
-This critical error occurs when the rate of pushed samples/sec is exceeded in an ingester.
-Current ingestion rate is computed as exponentially weighted moving average, updated every second.
-When the rate is exceeded in an ingester, the distributor will return an HTTP 500 status code to the push request.
-The `-ingester.instance-limits.max-ingestion-rate` option controls the ingestion rate per ingester (across all tenants in that ingester).
+This critical error occurs when the rate of received samples per second is exceeded in an ingester.
 
-This alert fires if the average number of samples ingested / sec in ingesters is above our target.
+The ingester implements a rate limit on the samples per second that can be ingested, and it's used to protect an ingester from overloading in case of an high traffic.
+The limit is a per-instance limit and it's applied on all samples received, across all tenants, in each ingester.
 
 How to **fix**:
+- Scale up ingesters.
+- Increase the limit by using the `-ingester.instance-limits.max-ingestion-rate` option (or `max_ingestion_rate` in the runtime config).
 
-- Scale up ingesters
-  - To compute the desired number of ingesters to satisfy the average samples rate you can run the following query, replacing `<namespace>` with the namespace to analyse and `<target>` with the target number of samples/sec per ingester (1.5M is a good starting target):
-    ```
-    sum(rate(cortex_ingester_ingested_samples_total{namespace="<namespace>"}[$__rate_interval])) / (<target> * 0.9)
-    ```
+### err-mimir-ingester-max-tenants
 
-### err-mimir-max-tenants-reached
+This critical error occurs when the ingester receives a write request for a new tenant (a tenant for which no series have been stored yet) but the ingester cannot accept it because the maximum number of allowed tenants per ingester has been reached.
 
-Each ingester keeps all tenants that have pushed metrics in the last 3 hours in memory. Pushes from additional tenants are rejected with HTTP 500 status code.
-The `-ingester.instance-limits.max-tenants` option controls the number of tenants.
+How to **fix**:
+- In case of emergency, increase the limit by using the `-ingester.instance-limits.max-tenants` option (or `max_tenants` in the runtime config).
+- Consider configuring ingesters shuffle sharding to reduce the number of tenants per ingester.
 
-### err-mimir-max-in-memory-series
+### err-mimir-ingester-ingester-max-series
 
-The `-ingester.instance-limits.max-series` option controls the maximum number of series per ingester (across all tenants in that ingester).
+This critical error occurs when an ingester rejects a write request because it reached the maximum number of in-memory series.
 
 How it **works**:
 
-- Each ingester keeps recently pushed-to timeseries in memory.
-- When the number of series written reaches this limit, writes are rejected.
-- Ingesters are not perfectly balanced, so the limit can trigger on a subset of ingesters before the overall series limit is reached.
-- This error occurs when the number of series in a particular ingester is over that limit.
+- The ingester keeps most recent series data in-memory.
+- The ingester has a per-instance limit on the number of in-memory series, used to protect the ingester from overloading in case of an high traffic.
+- When the number of in-memory series, new series are rejected, while samples can still be appended to existing ones.
+- You can configure the limit by setting the `-ingester.instance-limits.max-series` option (or `max_series` in the runtime config).
 
-How to **investigate**:
+How to **fix**:
+- See [`MimirIngesterReachingSeriesLimit`](#MimirIngesterReachingSeriesLimit) runbook.
 
-- Look at the series limit and the in-memory series trend:
-  - Find out the current 'local' limit by running this query:
-    ```
-    max by (namespace) (cortex_limits_overrides{limit_name="max_global_series_per_user",user="<tenant_id>"})
-    * max by (namespace) (cortex_distributor_replication_factor)
-    / max by (namespace) (cortex_ring_members{name="ingester"})
-    ```
-  - See the current in-memory series for the top 5 ingesters by running this query:
-    ```
-    topk(5, cortex_ingester_memory_series_created_total{user="<tenant_id>"} - cortex_ingester_memory_series_removed_total{user="<tenant_id>"})
-    ```
-- Note: The number of in memory series will typically grow by a small amount over the course of two hours,
-  and then decrease again. This is because stale series are removed at 2 hour intervals (head compaction).
-- If the current trend compared to the last 24 hours looks to be relatively stable, then it is likely that
-  gradual growth in series has caused the limit to be approached. Increase the `max_global_series_per_user`
-  limit for the tenant by a suitable margin to avoid hitting the limit (5% is a good starting point).
-- If the number of series has spiked dramatically, and looks to be hitting the limit soon, increase the limit
-  by a bigger amount (10%+). It may not be possible to avoid hitting the limit in this situation.
-- The ingesters should typically have enough headroom to deal with modest increase in limits, but if a significant
-  bump was required, it may be necessary to preemptively scale up the cluster.
+### err-mimir-ingester-max-inflight-push-requests
 
-### err-mimir-max-inflight-push-requests
+This error occurs when an ingester rejects a write request because the max inflight requests limit has been reached.
 
-This non-critical error occurs when an ingester rejects a push request because there are too many already ongoing requests (across all tenants).
-The `-ingester.instance-limits.max-inflight-push-requests` flag controls the number of simultaneous requests. If this error persists,
-consider scaling out the ingesters.
+How it **works**:
+- The ingester has per-instance limit on the number of inflight write (push) requests.
+- The limit applies on all inflight write requests, across all tenants, and is used to protect the ingester from overloading in case of an high traffic.
+- You can configure the limit by setting the `-ingester.instance-limits.max-inflight-push-requests` option (or `max_inflight_push_requests` in the runtime config).
+
+How to **fix**:
+- In case of emergency, increase the limit by setting the `-ingester.instance-limits.max-inflight-push-requests` option (or `max_inflight_push_requests` in the runtime config).
+- Check the write requests latency through the `Mimir / Writes` dashboard and eventually investigate the root cause of an high latency (the higher the latency, the higher the number of inflight write requests).
+- Consider scaling out the ingesters.
 
 ### err-mimir-max-series-per-metric
 

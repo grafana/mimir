@@ -6,17 +6,26 @@
 package ingester
 
 import (
+	"flag"
+
 	"github.com/pkg/errors"
 
 	"github.com/grafana/mimir/pkg/util/globalerror"
 )
 
+const (
+	maxIngestionRateFlag        = "ingester.instance-limits.max-ingestion-rate"
+	maxInMemoryTenantsFlag      = "ingester.instance-limits.max-tenants"
+	maxInMemorySeriesFlag       = "ingester.instance-limits.max-series"
+	maxInflightPushRequestsFlag = "ingester.instance-limits.max-inflight-push-requests"
+)
+
 var (
 	// We don't include values in the message to avoid leaking Mimir cluster configuration to users.
-	errMaxIngestionRateReached    = errors.New(globalerror.MaxIngesterIngestionRate.MessageWithLimitConfig(maxIngestionRateFlag, "cannot push more samples: exceeded the allowed rate of push requests"))
-	errMaxTenantsReached          = errors.New(globalerror.MaxTenants.MessageWithLimitConfig(maxInMemoryTenantsFlag, "cannot create TSDB: exceeded the allowed number of in-memory tenants in an ingester"))
-	errMaxInMemorySeriesReached   = errors.New(globalerror.MaxInMemorySeries.MessageWithLimitConfig(maxInMemorySeriesFlag, "cannot add series: exceeded the allowed number of in-memory series in an ingester"))
-	errMaxInflightRequestsReached = errors.New(globalerror.MaxInflightPushRequests.MessageWithLimitConfig(maxInflightPushRequestsFlag, "cannot push: exceeded the allowed number of inflight push requests to the ingester"))
+	errMaxIngestionRateReached    = errors.New(globalerror.IngesterMaxIngestionRate.MessageWithLimitConfig(maxIngestionRateFlag, "the write request has been rejected because the ingester exceeded the samples ingestion rate limit"))
+	errMaxTenantsReached          = errors.New(globalerror.IngesterMaxTenants.MessageWithLimitConfig(maxInMemoryTenantsFlag, "thr write request has been rejected because the ingester exceeded the allowed number of tenants"))
+	errMaxInMemorySeriesReached   = errors.New(globalerror.IngesterMaxInMemorySeries.MessageWithLimitConfig(maxInMemorySeriesFlag, "the write request has been rejected because the ingester exceeded the allowed number of in-memory series"))
+	errMaxInflightRequestsReached = errors.New(globalerror.IngesterMaxInflightPushRequests.MessageWithLimitConfig(maxInflightPushRequestsFlag, "the write request has been rejected because the ingester exceeded the allowed number of inflight push requests"))
 )
 
 // InstanceLimits describes limits used by ingester. Reaching any of these will result in Push method to return
@@ -26,6 +35,13 @@ type InstanceLimits struct {
 	MaxInMemoryTenants      int64   `yaml:"max_tenants" category:"advanced"`
 	MaxInMemorySeries       int64   `yaml:"max_series" category:"advanced"`
 	MaxInflightPushRequests int64   `yaml:"max_inflight_push_requests" category:"advanced"`
+}
+
+func (cfg *InstanceLimits) RegisterFlags(f *flag.FlagSet) {
+	f.Float64Var(&cfg.MaxIngestionRate, maxIngestionRateFlag, 0, "Max ingestion rate (samples/sec) that ingester will accept. This limit is per-ingester, not per-tenant. Additional push requests will be rejected. Current ingestion rate is computed as exponentially weighted moving average, updated every second. 0 = unlimited.")
+	f.Int64Var(&cfg.MaxInMemoryTenants, maxInMemoryTenantsFlag, 0, "Max tenants that this ingester can hold. Requests from additional tenants will be rejected. 0 = unlimited.")
+	f.Int64Var(&cfg.MaxInMemorySeries, maxInMemorySeriesFlag, 0, "Max series that this ingester can hold (across all tenants). Requests to create additional series will be rejected. 0 = unlimited.")
+	f.Int64Var(&cfg.MaxInflightPushRequests, maxInflightPushRequestsFlag, 30000, "Max inflight push requests that this ingester can handle (across all tenants). Additional requests will be rejected. 0 = unlimited.")
 }
 
 // Sets default limit values for unmarshalling.
