@@ -237,7 +237,7 @@ local filename = 'mimir-rollout-progress.json';
                 count by(container, version) (
                   label_replace(
                     kube_pod_container_info{%(namespace_matcher)s,container=~"%(all_services_regex)s"},
-                    "version", "$1", "image", ".*:(.+)-.*"
+                    "version", "$1", "image", ".*:(.*)"
                   )
                 )
               ||| % config,
