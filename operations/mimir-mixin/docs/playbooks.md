@@ -1212,6 +1212,7 @@ This non-critical error occurs when the number of in-memory metrics with metadat
 
 Metric metadata is a set of information attached to a metric name, like its unit (e.g. counter) and description.
 Metric metadata can be included by the sender in the write request, and it's returned when querying the `/api/v1/metadata` API endpoint.
+Metric metadata is stored in the ingesters memory, so the higher the number of metrics metadata stored, the higher the memory utilization.
 
 Mimir has a per-tenant limit of the number of metric names that have metadata attached.
 This limit is used to protect the whole system’s stability from potential abuse or mistakes.
