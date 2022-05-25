@@ -1177,32 +1177,67 @@ How to **fix**:
 - Check the write requests latency through the `Mimir / Writes` dashboard and eventually investigate the root cause of an high latency (the higher the latency, the higher the number of inflight write requests).
 - Consider scaling out the ingesters.
 
-### err-mimir-max-series-per-metric
+### err-mimir-max-series-per-user
 
-This non-critical error occurs when a metric name has too many timeseries. Each ingester can hold up to `-ingester.max-global-series-per-metric / N`
-series per metric, where `N` is the number of ingesters in the cluster.
+This error occurs when the number of in-memory series for a given tenant exceeds the configured limit.
+
+The limit is used to protect ingesters from overloading in case a tenant writes an high number of series, as well as to protect the whole system’s stability from potential abuse or mistakes.
+You can configure the limit on a per-tenant basis by using the `-ingester.max-global-series-per-user` option (or `max_global_series_per_user` in the runtime configuration).
 
 How to **fix**:
 
-There are three possible courses of action:
+- Ensure the actual number of series written by the affected tenant is legit.
+- Consider increasing the per-tenant limit by using the `-ingester.max-global-series-per-user` option (or `max_global_series_per_user` in the runtime configuration).
 
-- Increase the global limit. Keeping higher-cardinality metrics leads to slower query times.
-- Increase the per-tenant limit (`max_global_series_per_metric`). Keeping higher-cardinality metrics leads to slower query times.
-- Reduce the cardinality of the metrics at the source by removing some labels or label values.
+### err-mimir-max-series-per-metric
 
-### err-mimir-max-metadata-per-metric
+This error occurs when the number of in-memory series for a given tenant and metric name exceeds the configured limit.
 
-???
+The limit is primarily used to protect a tenant from potential mistakes on their metrics instrumentation.
+For example, if an instrumented application exposes a metric with a label value including very dynamic data (e.g. a timestamp) the ingestion of that metric would quickly lead to hit the per-tenant series limit, causing other metrics to be rejected too.
+This limit introduces a cap on the maximum number of series each metric name can have, rejecting exceeding series only for that metric name, before the per-tenant series limit is reached.
+You can configure the limit on a per-tenant basis by using the `-ingester.max-global-series-per-metric` option (or `max_global_series_per_metric` in the runtime configuration).
 
-### err-mimir-max-series-per-user
+How to **fix**:
 
-This error occurs under similar conditions as [err-max-in-memory-series](#err-max-in-memory-series). The difference is that the limit can be set on a per-tenant basis.
-
-The `-ingester.max-global-series-per-user` option controls the default value and the `max_global_series_per_user` limit control the per-tenant value.
+- Check the details in the error message to find out which is the affected metric name.
+- Investigate if the high number of series exposed for the affected metric name are legit.
+- Consider reducing the cardinality of the affected metric, by tuning or removing some of its labels.
+- Consider increasing the per-tenant limit by using the `-ingester.max-global-series-per-metric` option.
+- Consider excluding specific metric names from this limit's check by using the `-ingester.ignore-series-limit-for-metric-names` option (or `max_global_series_per_metric` in the runtime configuration).
 
 ### err-mimir-max-metadata-per-user
 
-???
+This non-critical error occurs when the number of in-memory metrics with metadata for a given tenant exceeds the configured limit.
+
+Metric metadata is a set of information attached to a metric name, like its unit (e.g. counter) and description.
+Metric metadata can be included by the sender in the write request, and it's returned when querying the `/api/v1/metadata` API endpoint.
+
+Mimir has a per-tenant limit of the number of metric names that have metadata attached.
+This limit is used to protect the whole system’s stability from potential abuse or mistakes.
+You can configure the limit on a per-tenant basis by using the `-ingester.max-global-series-per-user` option (or `max_global_metadata_per_user` in the runtime configuration).
+
+How to **fix**:
+
+- Check the current number of metric names for the affected tenant, running the instant query `count(count by(__name__) ({__name__=~".+"}))`
+- Consider increasing the per-tenant limit setting to a value greater than the number of unique metric names returned by the previous query.
+
+### err-mimir-max-metadata-per-metric
+
+This non-critical error occurs when the number of different metadata for a given metric name exceeds the configured limit.
+
+Metric metadata is a set of information attached to a metric name, like its unit (e.g. counter) and description.
+Typically, for a given metric name there's only one set of metadata (e.g. the same metric name exposed by different application has the same counter and description).
+However, there could be some edge cases where the same metric name has a different meaning between applications or the same meaning but a slightly different description, and these cases they would expose different metadata.
+
+This limit is used to protect the whole system’s stability from potential abuse or mistakes, in case the number of metadata variants for a given metric name grows indefinitely.
+You can configure the limit on a per-tenant basis by using the `-ingester.max-global-series-per-metric` option (or `max_global_metadata_per_metric` in the runtime configuration).
+
+How to **fix**:
+
+- Check the metadata for the affected metric name, querying the `/api/v1/metadata?metric=<name>` API endpoint (replace `<name>` with the metric name).
+- If the different metadata is unexpected, consider fixing the discrepancy in the instrumented applications.
+- If the different metadata is expected, Consider increasing the per-tenant limit by using the `-ingester.max-global-series-per-metric` option (or `max_global_metadata_per_metric` in the runtime configuration).
 
 ### err-mimir-max-chunks-per-query
 

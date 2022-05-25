@@ -114,42 +114,38 @@ func (l *Limiter) FormatError(userID string, err error) error {
 }
 
 func (l *Limiter) formatMaxSeriesPerUserError(userID string) error {
-	actualLimit := l.maxSeriesPerUser(userID)
 	globalLimit := l.limits.MaxGlobalSeriesPerUser(userID)
 
 	return errors.New(globalerror.MaxSeriesPerUser.MessageWithLimitConfig(
 		validation.MaxSeriesPerUserFlag,
-		fmt.Sprintf("per-user series limit of %d exceeded, per-ingester local limit: %d", globalLimit, actualLimit),
+		fmt.Sprintf("per-user series limit of %d exceeded", globalLimit),
 	))
 }
 
 func (l *Limiter) formatMaxSeriesPerMetricError(userID string) error {
-	actualLimit := l.maxSeriesPerMetric(userID)
 	globalLimit := l.limits.MaxGlobalSeriesPerMetric(userID)
 
 	return errors.New(globalerror.MaxSeriesPerMetric.MessageWithLimitConfig(
 		validation.MaxSeriesPerMetricFlag,
-		fmt.Sprintf("per-metric series limit of %d exceeded, per-ingester local limit: %d", globalLimit, actualLimit),
+		fmt.Sprintf("per-metric series limit of %d exceeded", globalLimit),
 	))
 }
 
 func (l *Limiter) formatMaxMetadataPerUserError(userID string) error {
-	actualLimit := l.maxMetadataPerUser(userID)
 	globalLimit := l.limits.MaxGlobalMetricsWithMetadataPerUser(userID)
 
 	return errors.New(globalerror.MaxMetadataPerUser.MessageWithLimitConfig(
 		validation.MaxMetadataPerUserFlag,
-		fmt.Sprintf("per-user metric metadata limit of %d exceeded, per-ingester local limit: %d", globalLimit, actualLimit),
+		fmt.Sprintf("per-user metric metadata limit of %d exceeded", globalLimit),
 	))
 }
 
 func (l *Limiter) formatMaxMetadataPerMetricError(userID string) error {
-	actualLimit := l.maxMetadataPerMetric(userID)
 	globalLimit := l.limits.MaxGlobalMetadataPerMetric(userID)
 
 	return errors.New(globalerror.MaxMetadataPerMetric.MessageWithLimitConfig(
 		validation.MaxMetadataPerMetricFlag,
-		fmt.Sprintf("per-metric metadata limit of %d exceeded, per-ingester local limit: %d", globalLimit, actualLimit),
+		fmt.Sprintf("per-metric metadata limit of %d exceeded", globalLimit),
 	))
 }
 
