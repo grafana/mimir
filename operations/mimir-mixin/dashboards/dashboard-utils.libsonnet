@@ -242,7 +242,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
   containerNetworkPanel(title, metric, instanceName)::
     $.panel(title) +
     $.queryPanel(
-      'sum by(%(instance)s) (rate(%(metric)s{%(namespace)s,%(instance)s=~".*%(instanceName)s"}[$__rate_interval]))' % {
+      'sum by(%(instance)s) (rate(%(metric)s{%(namespace)s,%(instance)s=~"%(instanceName)s"}[$__rate_interval]))' % {
         namespace: $.namespaceMatcher(),
         metric: metric,
         instance: $._config.per_instance_label,
