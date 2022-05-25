@@ -28,6 +28,7 @@
 * [BUGFIX] Fix `MimirGossipMembersMismatch` alerts if Mimir alertmanager is activated #1870
 * [BUGFIX] Fix `MimirRulerMissedEvaluations` to show % of missed alerts as a value between 0 and 100 instead of 0 and 1. #1895
 * [BUGFIX] Fix `MimirCompactorHasNotUploadedBlocks` alert false positive when Mimir is deployed in monolithic mode. #1901
+* [BUGFIX] Fix `MimirGossipMembersMismatch` to make it less sensitive during rollouts and fire one alert per installation, not per job. #1926
 * [BUGFIX] Do not trigger `MimirAllocatingTooMuchMemory` alerts if no container limits are supplied. #1905
 * [BUGFIX] Dashboards: Remove empty "Chunks per query" panel from `Mimir / Queries` dashboard. #1928
 
