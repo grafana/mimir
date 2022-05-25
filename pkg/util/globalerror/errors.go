@@ -26,6 +26,11 @@ const (
 	ExemplarLabelsMissing    ID = "exemplar-labels-missing"
 	ExemplarLabelsTooLong    ID = "exemplar-labels-too-long"
 	ExemplarTimestampInvalid ID = "exemplar-timestamp-invalid"
+
+	MetricMetadataMissingMetricName ID = "metadata-missing-metric-name"
+	MetricMetadataMetricNameTooLong ID = "metric-name-too-long"
+	MetricMetadataHelpTooLong       ID = "help-too-long"
+	MetricMetadataUnitTooLong       ID = "unit-too-long"
 )
 
 // Message returns the provided msg, appending the error id.

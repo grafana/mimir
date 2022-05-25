@@ -738,10 +738,11 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 	}
 
 	for _, m := range req.Metadata {
-		err := validation.ValidateMetadata(d.limits, userID, m)
-		if err != nil {
+		if validationErr := validation.ValidateMetadata(d.limits, userID, m); validationErr != nil {
 			if firstPartialErr == nil {
-				firstPartialErr = err
+				// The metadata info may be retained by validationErr but that's not a problem for this
+				// use case because we format it calling Error() and then we discard it.
+				firstPartialErr = httpgrpc.Errorf(http.StatusBadRequest, validationErr.Error())
 			}
 
 			continue

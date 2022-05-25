@@ -3459,7 +3459,7 @@ func TestDistributorValidation(t *testing.T) {
 				Value:       1,
 			}},
 			expectedStatusCode: http.StatusBadRequest,
-			expectedErr:        `metadata missing metric name`,
+			expectedErr:        `received a metric metadata with no metric name`,
 		},
 		// Test empty exemplar labels fails.
 		{

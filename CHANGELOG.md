@@ -5,11 +5,12 @@
 ### Grafana Mimir
 
 * [CHANGE] Increased default configuration for `-server.grpc-max-recv-msg-size-bytes` and `-server.grpc-max-send-msg-size-bytes` from 4MB to 100MB. #1883
-* [CHANGE] Default values have changed for the following settings. This improves query performance for recent data (within 12h) by only reading from ingesters: #1909
+* [CHANGE] Default values have changed for the following settings. This improves query performance for recent data (within 12h) by only reading from ingesters: #1909 #1921
     - `-blocks-storage.bucket-store.ignore-blocks-within` now defaults to `10h` (previously `0`)
     - `-querier.query-store-after` now defaults to `12h` (previously `0`)
+    - `-querier.shuffle-sharding-ingesters-lookback-period` now defaults to `13h` (previously `0`)
 * [ENHANCEMENT] Store-gateway: Add the experimental ability to run requests in a dedicated OS thread pool. This feature can be configured using `-store-gateway.thread-pool-size` and is disabled by default. Replaces the ability to run index header operations in a dedicated thread pool. #1660 #1812
-* [ENHANCEMENT] Improved error messages to make them easier to understand and referencing a unique global identifier that can be looked up in the runbooks. #1907
+* [ENHANCEMENT] Improved error messages to make them easier to understand and referencing a unique global identifier that can be looked up in the runbooks. #1907 #1919
 * [ENHANCEMENT] Memberlist KV: incoming messages are now processed on per-key goroutine. This may reduce loss of "maintanance" packets in busy memberlist installations, but use more CPU. New `memberlist_client_received_broadcasts_dropped_total` counter tracks number of dropped per-key messages. #1912
 * [BUGFIX] Fix regexp parsing panic for regexp label matchers with start/end quantifiers. #1883
 * [BUGFIX] Ingester: fixed deceiving error log "failed to update cached shipped blocks after shipper initialisation", occurring for each new tenant in the ingester. #1893
@@ -18,6 +19,7 @@
 
 * [CHANGE] Split `mimir_queries` rules group into `mimir_queries` and `mimir_ingester_queries` to keep number of rules per group within the default per-tenant limit. #1885
 * [ENHANCEMENT] Dashboards: Add config option `datasource_regex` to customise the regular expression used to select valid datasources for Mimir dashboards. #1802
+* [ENHANCEMENT] Dashboards: Added "Mimir / Remote ruler reads" and "Mimir / Remote ruler reads resources" dashboards. #1911
 * [ENHANCEMENT] Alerts: Add `MimirStoreGatewayNoSyncedTenants` alert that fires when there is a store-gateway owning no tenants. #1882
 * [BUGFIX] Fix `container_memory_usage_bytes:sum` recording rule #1865
 * [BUGFIX] Fix `MimirGossipMembersMismatch` alerts if Mimir alertmanager is activated #1870
@@ -27,7 +29,7 @@
 
 ### Jsonnet
 
-* [CHANGE] Remove use of `-querier.query-store-after` and `-blocks-storage.bucket-store.ignore-blocks-within` CLI flags since the values now match defaults. #1915
+* [CHANGE] Remove use of `-querier.query-store-after`, `-querier.shuffle-sharding-ingesters-lookback-period`, `-blocks-storage.bucket-store.ignore-blocks-within`, and `-blocks-storage.tsdb.close-idle-tsdb-timeout` CLI flags since the values now match defaults. #1915 #1921
 
 ## 2.1.0-rc.0
 

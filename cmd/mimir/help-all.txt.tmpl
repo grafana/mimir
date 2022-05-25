@@ -1086,7 +1086,7 @@ Usage of ./cmd/mimir/mimir:
   -querier.scheduler-address string
     	Address of the query-scheduler component, in host:port format. Only one of -querier.frontend-address or -querier.scheduler-address can be set. If neither is set, queries are only received via HTTP endpoint.
   -querier.shuffle-sharding-ingesters-lookback-period duration
-    	When distributor's sharding strategy is shuffle-sharding and this setting is > 0, queriers fetch in-memory series from the minimum set of required ingesters, selecting only ingesters which may have received series since 'now - lookback period'. The lookback period should be greater or equal than the configured -querier.query-store-after and -querier.query-ingesters-within. If this setting is 0, queriers always query all ingesters (ingesters shuffle sharding on read path is disabled).
+    	When this setting is > 0, queriers fetch in-memory series from the minimum set of required ingesters, selecting only ingesters which may have received series since 'now - lookback period'. The lookback period should be greater or equal than the configured -querier.query-store-after and -querier.query-ingesters-within. If this setting is 0, queriers always query all ingesters (ingesters shuffle sharding on read path is disabled). (default 13h0m0s)
   -querier.store-gateway-client.tls-ca-path string
     	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
   -querier.store-gateway-client.tls-cert-path string
