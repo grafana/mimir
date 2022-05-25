@@ -17,4 +17,4 @@ This dashboard requires [additional resources metrics]({{< relref "../../require
 
 The following example shows a Remote ruler reads resources dashboard from a demo cluster.
 
-![Grafana Mimir Remote ruler reads resources dashboard](mimir-ruler-reads-resources.png)
+![Grafana Mimir Remote ruler reads resources dashboard](mimir-remote-ruler-reads-resources.png)

@@ -1,5 +1,5 @@
 local utils = import 'mixin-utils/utils.libsonnet';
-local filename = 'mimir-ruler-reads.json';
+local filename = 'mimir-remote-ruler-reads.json';
 
 (import 'dashboard-utils.libsonnet') {
   [filename]:

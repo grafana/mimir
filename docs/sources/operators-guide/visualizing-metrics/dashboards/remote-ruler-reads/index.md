@@ -15,4 +15,4 @@ The dashboard isolates each service on the ruler read path into its own section 
 
 The following example shows a Remote ruler reads dashboard from a demo cluster.
 
-![Grafana Mimir Remote ruler reads dashboard](mimir-ruler-reads.png)
+![Grafana Mimir Remote ruler reads dashboard](mimir-remote-ruler-reads.png)
