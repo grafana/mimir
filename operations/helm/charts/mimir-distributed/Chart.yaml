@@ -6,7 +6,7 @@ engine: gotpl
 home: https://grafana.com/docs/mimir/v2.0.x/
 icon: https://grafana.com/static/img/logos/logo-mimir.svg
 kubeVersion: ^1.10.0-0
-name: mimir-distributed
+name: mimir-distributed-beta
 dependencies:
   - name: memcached
     alias: memcached

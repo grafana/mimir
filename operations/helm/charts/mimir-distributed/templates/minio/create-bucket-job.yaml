@@ -3,7 +3,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ template "minio.fullname" . }}-make-bucket-job
+  name: {{ printf "%s-make-bucket-job" (include "minio.fullname" .) | trunc 63 | trimSuffix "-" }}
   namespace: {{ .Release.Namespace | quote }}
   labels:
     app: {{ template "minio.name" . }}-make-bucket-job

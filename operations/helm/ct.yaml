@@ -2,7 +2,7 @@
 remote: origin
 target-branch: main
 chart-dirs:
-  - charts
+  - operations/helm/charts
 chart-repos:
   - grafana=https://grafana.github.io/helm-charts
   - prometheus-community=https://prometheus-community.github.io/helm-charts
