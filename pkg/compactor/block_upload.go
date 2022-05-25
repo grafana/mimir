@@ -30,7 +30,7 @@ import (
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 )
 
-// CreateBlockUpload handles requests for creating block upload sessions.
+// CreateBlockUpload handles requests for starting block uploads.
 func (c *MultitenantCompactor) CreateBlockUpload(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	blockID := vars["block"]
@@ -49,7 +49,7 @@ func (c *MultitenantCompactor) CreateBlockUpload(w http.ResponseWriter, r *http.
 		return
 	}
 
-	level.Debug(c.logger).Log("msg", "creating block upload session", "user", tenantID, "block", blockID)
+	level.Debug(c.logger).Log("msg", "starting block upload", "user", tenantID, "block", blockID)
 
 	bkt := bucket.NewUserBucketClient(string(tenantID), c.bucketClient, c.cfgProvider)
 
@@ -189,7 +189,7 @@ func (c *MultitenantCompactor) UploadBlockFile(w http.ResponseWriter, r *http.Re
 	w.WriteHeader(http.StatusOK)
 }
 
-// CompleteBlockUpload handles a request to complete a block upload session.
+// CompleteBlockUpload handles a request to complete a block upload.
 func (c *MultitenantCompactor) CompleteBlockUpload(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	blockID := vars["block"]
