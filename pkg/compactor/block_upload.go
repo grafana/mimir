@@ -46,6 +46,11 @@ func (c *MultitenantCompactor) CreateBlockUpload(w http.ResponseWriter, r *http.
 		http.Error(w, "missing block ID", http.StatusBadRequest)
 		return
 	}
+	_, err := ulid.Parse(blockID)
+	if err != nil {
+		http.Error(w, "invalid block ID", http.StatusBadRequest)
+		return
+	}
 	tenantID, ctx, err := tenant.ExtractTenantIDFromHTTPRequest(r)
 	if err != nil {
 		http.Error(w, "invalid tenant ID", http.StatusBadRequest)
@@ -110,6 +115,11 @@ func (c *MultitenantCompactor) UploadBlockFile(w http.ResponseWriter, r *http.Re
 	blockID := vars["block"]
 	if blockID == "" {
 		http.Error(w, "missing block ID", http.StatusBadRequest)
+		return
+	}
+	_, err := ulid.Parse(blockID)
+	if err != nil {
+		http.Error(w, "invalid block ID", http.StatusBadRequest)
 		return
 	}
 	pth, err := url.QueryUnescape(vars["path"])
@@ -189,6 +199,11 @@ func (c *MultitenantCompactor) CompleteBlockUpload(w http.ResponseWriter, r *htt
 	blockID := vars["block"]
 	if blockID == "" {
 		http.Error(w, "missing block ID", http.StatusBadRequest)
+		return
+	}
+	_, err := ulid.Parse(blockID)
+	if err != nil {
+		http.Error(w, "invalid block ID", http.StatusBadRequest)
 		return
 	}
 
