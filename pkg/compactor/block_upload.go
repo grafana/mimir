@@ -49,7 +49,7 @@ func (c *MultitenantCompactor) CreateBlockUpload(w http.ResponseWriter, r *http.
 		return
 	}
 
-	level.Debug(c.logger).Log("msg", "creating block upload session", "user", tenantID, "block_id", blockID)
+	level.Debug(c.logger).Log("msg", "creating block upload session", "user", tenantID, "block", blockID)
 
 	bkt := bucket.NewUserBucketClient(string(tenantID), c.bucketClient, c.cfgProvider)
 
@@ -60,13 +60,13 @@ func (c *MultitenantCompactor) CreateBlockUpload(w http.ResponseWriter, r *http.
 	})
 	if err != nil {
 		level.Error(c.logger).Log("msg", "failed to iterate over block files", "user", tenantID,
-			"block_id", blockID, "err", err)
+			"block", blockID, "err", err)
 		http.Error(w, "failed iterating over block files in object storage", http.StatusBadGateway)
 		return
 	}
 	if exists {
 		level.Debug(c.logger).Log("msg", "block already exists in object storage", "user", tenantID,
-			"block_id", blockID)
+			"block", blockID)
 		http.Error(w, "block already exists in object storage", http.StatusConflict)
 		return
 	}
@@ -80,7 +80,7 @@ func (c *MultitenantCompactor) CreateBlockUpload(w http.ResponseWriter, r *http.
 
 	if err := c.sanitizeMeta(tenantID, bULID, &meta); err != nil {
 		level.Error(c.logger).Log("msg", "failed to sanitize meta.json", "user", tenantID,
-			"block_id", blockID, "err", err)
+			"block", blockID, "err", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
@@ -89,13 +89,13 @@ func (c *MultitenantCompactor) CreateBlockUpload(w http.ResponseWriter, r *http.
 		var eBadReq errBadRequest
 		if errors.As(err, &eBadReq) {
 			level.Warn(c.logger).Log("msg", eBadReq.message, "user", tenantID,
-				"block_id", blockID)
+				"block", blockID)
 			http.Error(w, eBadReq.message, http.StatusBadRequest)
 			return
 		}
 
 		level.Error(c.logger).Log("msg", "failed to upload meta.json", "user", tenantID,
-			"block_id", blockID, "err", err)
+			"block", blockID, "err", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
@@ -156,13 +156,13 @@ func (c *MultitenantCompactor) UploadBlockFile(w http.ResponseWriter, r *http.Re
 		return nil
 	}); err != nil {
 		level.Error(c.logger).Log("msg", "failed to iterate over block files", "user", tenantID,
-			"block_id", blockID, "err", err)
+			"block", blockID, "err", err)
 		http.Error(w, "failed iterating over block files in object storage", http.StatusBadGateway)
 		return
 	}
 	if !exists {
 		level.Debug(c.logger).Log("msg", "no lock file exists for block in object storage, refusing file upload",
-			"user", tenantID, "block_id", blockID)
+			"user", tenantID, "block", blockID)
 		http.Error(w, "block upload has not yet been initiated", http.StatusBadRequest)
 		return
 	}
@@ -182,9 +182,9 @@ func (c *MultitenantCompactor) UploadBlockFile(w http.ResponseWriter, r *http.Re
 	}
 
 	level.Error(c.logger).Log("msg", "failed to decode meta.json",
-		"user", tenantID, "block_id", blockID, "err", err)
+		"user", tenantID, "block", blockID, "err", err)
 	level.Debug(c.logger).Log("msg", "finished uploading block file to bucket",
-		"user", tenantID, "block_id", blockID, "path", pth)
+		"user", tenantID, "block", blockID, "path", pth)
 
 	w.WriteHeader(http.StatusOK)
 }
@@ -210,7 +210,7 @@ func (c *MultitenantCompactor) CompleteBlockUpload(w http.ResponseWriter, r *htt
 	}
 
 	level.Debug(c.logger).Log("msg", "received request to complete block upload", "user", tenantID,
-		"block_id", blockID, "content_length", r.ContentLength)
+		"block", blockID, "content_length", r.ContentLength)
 
 	bkt := bucket.NewUserBucketClient(tenantID, c.bucketClient, c.cfgProvider)
 
@@ -220,13 +220,13 @@ func (c *MultitenantCompactor) CompleteBlockUpload(w http.ResponseWriter, r *htt
 		return nil
 	}); err != nil {
 		level.Error(c.logger).Log("msg", "failed to iterate over block files", "user", tenantID,
-			"block_id", blockID, "err", err)
+			"block", blockID, "err", err)
 		http.Error(w, "failed iterating over block files in object storage", http.StatusBadGateway)
 		return
 	}
 	if !exists {
 		level.Debug(c.logger).Log("msg", "no lock file exists for block in object storage, refusing to complete block",
-			"user", tenantID, "block_id", blockID)
+			"user", tenantID, "block", blockID)
 		http.Error(w, "block upload has not yet been initiated", http.StatusBadRequest)
 		return
 	}
@@ -234,7 +234,7 @@ func (c *MultitenantCompactor) CompleteBlockUpload(w http.ResponseWriter, r *htt
 	rdr, err := bkt.Get(ctx, path.Join(blockID, "meta.json.temp"))
 	if err != nil {
 		level.Error(c.logger).Log("msg", "failed to download meta.json.temp from object storage",
-			"user", tenantID, "block_id", blockID, "err", err)
+			"user", tenantID, "block", blockID, "err", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
@@ -242,33 +242,33 @@ func (c *MultitenantCompactor) CompleteBlockUpload(w http.ResponseWriter, r *htt
 	var meta metadata.Meta
 	if err := dec.Decode(&meta); err != nil {
 		level.Error(c.logger).Log("msg", "failed to decode meta.json",
-			"user", tenantID, "block_id", blockID, "err", err)
+			"user", tenantID, "block", blockID, "err", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
 
 	level.Debug(c.logger).Log("msg", "completing block upload", "user",
-		tenantID, "block_id", blockID, "files", len(meta.Thanos.Files))
+		tenantID, "block", blockID, "files", len(meta.Thanos.Files))
 
 	// Upload meta.json so block is considered complete
 	if err := c.uploadMeta(ctx, w, meta, blockID, tenantID, "meta.json", bkt); err != nil {
 		var eBadReq errBadRequest
 		if errors.As(err, &eBadReq) {
 			level.Warn(c.logger).Log("msg", eBadReq.message, "user", tenantID,
-				"block_id", blockID)
+				"block", blockID)
 			http.Error(w, eBadReq.message, http.StatusBadRequest)
 			return
 		}
 
 		level.Error(c.logger).Log("msg", "failed to upload meta.json", "user", tenantID,
-			"block_id", blockID, "err", err)
+			"block", blockID, "err", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
 	if err := bkt.Delete(ctx, path.Join(blockID, "meta.json.temp")); err != nil {
 		level.Error(c.logger).Log("msg", "failed to delete meta.json.temp from block in object storage",
-			"user", tenantID, "block_id", blockID, "err", err)
+			"user", tenantID, "block", blockID, "err", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
@@ -342,7 +342,7 @@ func (c *MultitenantCompactor) sanitizeMeta(tenantID string, blockID ulid.ULID, 
 
 	metaTenantID := meta.Thanos.Labels[mimir_tsdb.TenantIDExternalLabel]
 	if metaTenantID != tenantID {
-		level.Warn(c.logger).Log("msg", "updating meta.json tenant label", "block_id", blockID.String(),
+		level.Warn(c.logger).Log("msg", "updating meta.json tenant label", "block", blockID.String(),
 			"old_value", metaTenantID, "new_value", tenantID, "user", tenantID)
 		meta.Thanos.Labels[mimir_tsdb.TenantIDExternalLabel] = tenantID
 	}
@@ -353,7 +353,7 @@ func (c *MultitenantCompactor) sanitizeMeta(tenantID string, blockID ulid.ULID, 
 		case mimir_tsdb.TenantIDExternalLabel, mimir_tsdb.CompactorShardIDExternalLabel:
 		case mimir_tsdb.IngesterIDExternalLabel, mimir_tsdb.DeprecatedShardIDExternalLabel:
 			level.Debug(c.logger).Log("msg", "removing unused external label from meta.json",
-				"block_id", blockID.String(), "user", tenantID, "label", l, "value", v)
+				"block", blockID.String(), "user", tenantID, "label", l, "value", v)
 			delete(meta.Thanos.Labels, l)
 		default:
 			rejLbls = append(rejLbls, l)
@@ -362,7 +362,7 @@ func (c *MultitenantCompactor) sanitizeMeta(tenantID string, blockID ulid.ULID, 
 
 	if len(rejLbls) > 0 {
 		level.Warn(c.logger).Log("msg", "rejecting unsupported external label(s) in meta.json",
-			"block_id", blockID.String(), "user", tenantID, "labels", strings.Join(rejLbls, ","))
+			"block", blockID.String(), "user", tenantID, "labels", strings.Join(rejLbls, ","))
 		return errBadRequest{message: fmt.Sprintf("unsupported external label(s): %s", strings.Join(rejLbls, ","))}
 	}
 
