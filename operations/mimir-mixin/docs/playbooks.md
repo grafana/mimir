@@ -1157,7 +1157,7 @@ How it **works**:
 
 - The ingester keeps most recent series data in-memory.
 - The ingester has a per-instance limit on the number of in-memory series, used to protect the ingester from overloading in case of high traffic.
-- When the number of in-memory series, new series are rejected, while samples can still be appended to existing ones.
+- When the limit on the number of in-memory series is reached, new series are rejected, while samples can still be appended to existing ones.
 - You can configure the limit by setting the `-ingester.instance-limits.max-series` option (or `max_series` in the runtime config).
 
 How to **fix**:
@@ -1181,7 +1181,7 @@ How to **fix**:
 
 This error occurs when the number of in-memory series for a given tenant exceeds the configured limit.
 
-The limit is used to protect ingesters from overloading in case a tenant writes an high number of series, as well as to protect the whole system’s stability from potential abuse or mistakes.
+The limit is used to protect ingesters from overloading in case a tenant writes a high number of series, as well as to protect the whole system’s stability from potential abuse or mistakes.
 You can configure the limit on a per-tenant basis by using the `-ingester.max-global-series-per-user` option (or `max_global_series_per_user` in the runtime configuration).
 
 How to **fix**:
@@ -1201,7 +1201,7 @@ You can configure the limit on a per-tenant basis by using the `-ingester.max-gl
 How to **fix**:
 
 - Check the details in the error message to find out which is the affected metric name.
-- Investigate if the high number of series exposed for the affected metric name are legit.
+- Investigate if the high number of series exposed for the affected metric name is legit.
 - Consider reducing the cardinality of the affected metric, by tuning or removing some of its labels.
 - Consider increasing the per-tenant limit by using the `-ingester.max-global-series-per-metric` option.
 - Consider excluding specific metric names from this limit's check by using the `-ingester.ignore-series-limit-for-metric-names` option (or `max_global_series_per_metric` in the runtime configuration).
@@ -1228,7 +1228,8 @@ This non-critical error occurs when the number of different metadata for a given
 
 Metric metadata is a set of information attached to a metric name, like its unit (e.g. counter) and description.
 Typically, for a given metric name there's only one set of metadata (e.g. the same metric name exposed by different application has the same counter and description).
-However, there could be some edge cases where the same metric name has a different meaning between applications or the same meaning but a slightly different description, and these cases they would expose different metadata.
+However, there could be some edge cases where the same metric name has a different meaning between applications or the same meaning but a slightly different description.
+In these edge cases, different applications would expose different metadata for the same metric name.
 
 This limit is used to protect the whole system’s stability from potential abuse or mistakes, in case the number of metadata variants for a given metric name grows indefinitely.
 You can configure the limit on a per-tenant basis by using the `-ingester.max-global-series-per-metric` option (or `max_global_metadata_per_metric` in the runtime configuration).
@@ -1243,7 +1244,7 @@ How to **fix**:
 
 This error occurs when a query execution exceeds the limit on the number of series chunks fetched.
 
-This limit is used to protect the system’s stability from potential abuse or mistakes, when running a query fetching an huge amount of data.
+This limit is used to protect the system’s stability from potential abuse or mistakes, when running a query fetching a huge amount of data.
 You can configure the limit on a per-tenant basis by using the `-querier.max-fetched-chunks-per-query` option (or `max_fetched_chunks_per_query` in the runtime configuration).
 
 How to **fix**:
@@ -1254,7 +1255,7 @@ How to **fix**:
 
 This error occurs when a query execution exceeds the limit on the maximum number of series.
 
-This limit is used to protect the system’s stability from potential abuse or mistakes, when running a query fetching an huge amount of data.
+This limit is used to protect the system’s stability from potential abuse or mistakes, when running a query fetching a huge amount of data.
 You can configure the limit on a per-tenant basis by using the `-querier.max-fetched-series-per-query` option (or `max_fetched_series_per_query` in the runtime configuration).
 
 How to **fix**:
@@ -1265,7 +1266,7 @@ How to **fix**:
 
 This error occurs when a query execution exceeds the limit on aggregated size (in bytes) of fetched chunks.
 
-This limit is used to protect the system’s stability from potential abuse or mistakes, when running a query fetching an huge amount of data.
+This limit is used to protect the system’s stability from potential abuse or mistakes, when running a query fetching a huge amount of data.
 You can configure the limit on a per-tenant basis by using the `-querier.max-fetched-chunk-bytes-per-query` option (or `max_fetched_chunk_bytes_per_query` in the runtime configuration).
 
 How to **fix**:
