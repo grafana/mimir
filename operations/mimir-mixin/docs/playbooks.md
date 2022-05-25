@@ -1102,6 +1102,34 @@ An exemplar must have a valid timestamp, otherwise it cannot be correlated to an
 
 > **Note**: Invalid exemplars are skipped during the ingestion, and valid exemplars within the same request are ingested.
 
+### err-mimir-metadata-missing-metric-name
+
+This non-critical error occurs when Mimir receives a write request that contains a metric metadata without a metric name.
+Each metric metadata must have a metric name. Rarely it does not, in which case there might be a bug in the sender client.
+
+> **Note**: Invalid metrics metadata are skipped during the ingestion, and valid metadata within the same request are ingested.
+
+### err-mimir-metric-name-too-long
+
+This non-critical error occurs when Mimir receives a write request that contains a metric metadata with a metric name whose length exceeds the configured limit.
+The limit protects the system’s stability from potential abuse or mistakes, and you can configure the limit on a per-tenant basis by using the `-validation.max-metadata-length` option.
+
+> **Note**: Invalid metrics metadata are skipped during the ingestion, and valid metadata within the same request are ingested.
+
+### err-mimir-help-too-long
+
+This non-critical error occurs when Mimir receives a write request that contains a metric metadata with an help description whose length exceeds the configured limit.
+The limit protects the system’s stability from potential abuse or mistakes, and you can configure the limit on a per-tenant basis by using the `-validation.max-metadata-length` option.
+
+> **Note**: Invalid metrics metadata are skipped during the ingestion, and valid metadata within the same request are ingested.
+
+### err-mimir-unit-too-long
+
+This non-critical error occurs when Mimir receives a write request that contains a metric metadata with unit name whose length exceeds the configured limit.
+The limit protects the system’s stability from potential abuse or mistakes, and you can configure the limit on a per-tenant basis by using the `-validation.max-metadata-length` option.
+
+> **Note**: Invalid metrics metadata are skipped during the ingestion, and valid metadata within the same request are ingested.
+
 ## Mimir routes by path
 
 **Write path**:

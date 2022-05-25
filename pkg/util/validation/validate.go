@@ -6,7 +6,6 @@
 package validation
 
 import (
-	"net/http"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -15,7 +14,6 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
-	"github.com/weaveworks/common/httpgrpc"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
@@ -25,17 +23,6 @@ import (
 
 const (
 	discardReasonLabel = "reason"
-
-	errMetadataMissingMetricName = "metadata missing metric name"
-	errMetadataTooLong           = "metadata '%s' value too long: %.200q metric %.200q"
-
-	typeMetricName = "METRIC_NAME"
-	typeHelp       = "HELP"
-	typeUnit       = "UNIT"
-
-	metricNameTooLong = "metric_name_too_long"
-	helpTooLong       = "help_too_long"
-	unitTooLong       = "unit_too_long"
 
 	// ErrQueryTooLong is used in chunk store, querier and query frontend.
 	ErrQueryTooLong = "the query time range exceeds the limit (query length: %s, limit: %s)"
@@ -70,6 +57,11 @@ var (
 	reasonExemplarTimestampInvalid = metricReasonFromErrorID(globalerror.ExemplarTimestampInvalid)
 	reasonExemplarLabelsBlank      = "exemplar_labels_blank"
 	reasonExemplarTooOld           = "exemplar_too_old"
+
+	// Discarded metadata reasons.
+	reasonMetadataMetricNameTooLong = metricReasonFromErrorID(globalerror.MetricMetadataMetricNameTooLong)
+	reasonMetadataHelpTooLong       = metricReasonFromErrorID(globalerror.MetricMetadataHelpTooLong)
+	reasonMetadataUnitTooLong       = metricReasonFromErrorID(globalerror.MetricMetadataUnitTooLong)
 )
 
 func metricReasonFromErrorID(id globalerror.ID) string {
@@ -252,30 +244,26 @@ type MetadataValidationConfig interface {
 func ValidateMetadata(cfg MetadataValidationConfig, userID string, metadata *mimirpb.MetricMetadata) error {
 	if cfg.EnforceMetadataMetricName(userID) && metadata.GetMetricFamilyName() == "" {
 		DiscardedMetadata.WithLabelValues(reasonMissingMetricName, userID).Inc()
-		return httpgrpc.Errorf(http.StatusBadRequest, errMetadataMissingMetricName)
+		return newMetadataMetricNameMissingError()
 	}
 
 	maxMetadataValueLength := cfg.MaxMetadataLength(userID)
 	var reason string
-	var cause string
-	var metadataType string
+	var err error
 	if len(metadata.GetMetricFamilyName()) > maxMetadataValueLength {
-		metadataType = typeMetricName
-		reason = metricNameTooLong
-		cause = metadata.GetMetricFamilyName()
+		reason = reasonMetadataMetricNameTooLong
+		err = newMetadataMetricNameTooLongError(metadata)
 	} else if len(metadata.Help) > maxMetadataValueLength {
-		metadataType = typeHelp
-		reason = helpTooLong
-		cause = metadata.Help
+		reason = reasonMetadataHelpTooLong
+		err = newMetadataHelpTooLongError(metadata)
 	} else if len(metadata.Unit) > maxMetadataValueLength {
-		metadataType = typeUnit
-		reason = unitTooLong
-		cause = metadata.Unit
+		reason = reasonMetadataUnitTooLong
+		err = newMetadataUnitTooLongError(metadata)
 	}
 
-	if reason != "" {
+	if err != nil {
 		DiscardedMetadata.WithLabelValues(reason, userID).Inc()
-		return httpgrpc.Errorf(http.StatusBadRequest, errMetadataTooLong, metadataType, cause, metadata.GetMetricFamilyName())
+		return err
 	}
 
 	return nil
