@@ -1134,7 +1134,7 @@ The limit protects the system’s stability from potential abuse or mistakes, an
 
 This critical error occurs when the rate of received samples per second is exceeded in an ingester.
 
-The ingester implements a rate limit on the samples per second that can be ingested, and it's used to protect an ingester from overloading in case of an high traffic.
+The ingester implements a rate limit on the samples per second that can be ingested, and it's used to protect an ingester from overloading in case of high traffic.
 The limit is a per-instance limit and it's applied on all samples received, across all tenants, in each ingester.
 
 How to **fix**:
@@ -1149,14 +1149,14 @@ How to **fix**:
 - In case of emergency, increase the limit by using the `-ingester.instance-limits.max-tenants` option (or `max_tenants` in the runtime config).
 - Consider configuring ingesters shuffle sharding to reduce the number of tenants per ingester.
 
-### err-mimir-ingester-ingester-max-series
+### err-mimir-ingester-max-series
 
 This critical error occurs when an ingester rejects a write request because it reached the maximum number of in-memory series.
 
 How it **works**:
 
 - The ingester keeps most recent series data in-memory.
-- The ingester has a per-instance limit on the number of in-memory series, used to protect the ingester from overloading in case of an high traffic.
+- The ingester has a per-instance limit on the number of in-memory series, used to protect the ingester from overloading in case of high traffic.
 - When the number of in-memory series, new series are rejected, while samples can still be appended to existing ones.
 - You can configure the limit by setting the `-ingester.instance-limits.max-series` option (or `max_series` in the runtime config).
 
@@ -1169,12 +1169,12 @@ This error occurs when an ingester rejects a write request because the max infli
 
 How it **works**:
 - The ingester has per-instance limit on the number of inflight write (push) requests.
-- The limit applies on all inflight write requests, across all tenants, and is used to protect the ingester from overloading in case of an high traffic.
+- The limit applies on all inflight write requests, across all tenants, and is used to protect the ingester from overloading in case of high traffic.
 - You can configure the limit by setting the `-ingester.instance-limits.max-inflight-push-requests` option (or `max_inflight_push_requests` in the runtime config).
 
 How to **fix**:
 - In case of emergency, increase the limit by setting the `-ingester.instance-limits.max-inflight-push-requests` option (or `max_inflight_push_requests` in the runtime config).
-- Check the write requests latency through the `Mimir / Writes` dashboard and eventually investigate the root cause of an high latency (the higher the latency, the higher the number of inflight write requests).
+- Check the write requests latency through the `Mimir / Writes` dashboard and eventually investigate the root cause of high latency (the higher the latency, the higher the number of inflight write requests).
 - Consider scaling out the ingesters.
 
 ### err-mimir-max-series-per-user
