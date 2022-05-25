@@ -344,7 +344,9 @@ func (c *MultitenantCompactor) sanitizeMeta(tenantID string, blockID ulid.ULID, 
 	var rejLbls []string
 	for l, v := range meta.Thanos.Labels {
 		switch l {
+		// Preserve these labels
 		case mimir_tsdb.TenantIDExternalLabel, mimir_tsdb.CompactorShardIDExternalLabel:
+		// Remove unused labels
 		case mimir_tsdb.IngesterIDExternalLabel, mimir_tsdb.DeprecatedShardIDExternalLabel:
 			level.Debug(c.logger).Log("msg", "removing unused external label from meta.json",
 				"block", blockID.String(), "user", tenantID, "label", l, "value", v)
