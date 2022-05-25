@@ -41,7 +41,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/hashcache"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
 	"github.com/thanos-io/thanos/pkg/objstore"
-	"github.com/thanos-io/thanos/pkg/shipper"
 	"github.com/weaveworks/common/httpgrpc"
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
@@ -1525,7 +1524,7 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 
 	// Create a new shipper for this database
 	if i.cfg.BlocksStorageConfig.TSDB.IsBlocksShippingEnabled() {
-		userDB.shipper = shipper.New(
+		userDB.shipper = NewThanosShipper(
 			userLogger,
 			tsdbPromReg,
 			udir,
