@@ -14,6 +14,31 @@ a piece of work is finished it should:
 - Include a CHANGELOG message if users of Grafana Mimir need to hear about what you did.
 - If you have made any changes to flags or config, run `make doc` and commit the changed files to update the config file documentation.
 
+## Changelog
+
+When appending to the changelog, the changes must be listed with a corresponding scope. A scope denotes the type of change that has occurred.
+
+The ordering of entries in the changelog should be `[CHANGE]`, `[FEATURE]`, `[ENHANCEMENT]`, `[BUGFIX]`.
+
+### [CHANGE]
+
+The CHANGE scope denotes a change that changes the expected behavior of the project while not adding new functionality or fixing an underling issue. This commonly occurs when renaming things to make them more consistent or to accommodate updated versions of vendored dependencies.
+
+### [FEATURE]
+
+The FEATURE scope denotes a change that adds new functionality to the project/service.
+
+### [ENHANCEMENT]
+
+The ENHANCEMENT scope denotes a change that improves upon the current functionality of the project/service. Generally, an enhancement is something that improves upon something that is already present. Either by making it simpler, more powerful, or more performant. For Example:
+
+- An optimization on a particular process in a service that makes it more performant
+- Simpler syntax for setting a configuration value, like allowing `1m` instead of 60 for a duration setting.
+
+### [BUGFIX]
+
+The BUGFIX scope denotes a change that fixes an issue with the project in question. A BUGFIX should align the behaviour of the service with the current expected behaviour of the service. If a BUGFIX introduces new unexpected behaviour to ameliorate the issue, a corresponding FEATURE or ENHANCEMENT scope should also be added to the changelog.
+
 ## Formatting
 
 Grafana Mimir uses `goimports` tool (`go get golang.org/x/tools/cmd/goimports` to install) to format the Go files, and sort imports. We use goimports with `-local github.com/grafana/mimir` parameter, to put Grafana Mimir internal imports into a separate group. We try to keep imports sorted into three groups: imports from standard library, imports of 3rd party packages and internal Grafana Mimir imports. Goimports will fix the order, but will keep existing newlines between imports in the groups. We try to avoid extra newlines like that.
