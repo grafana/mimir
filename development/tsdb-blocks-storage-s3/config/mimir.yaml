@@ -36,9 +36,6 @@ memberlist:
   abort_if_cluster_join_fails: false
   rejoin_interval: 10s
 
-querier:
-  query_ingesters_within: 3h
-
 blocks_storage:
   backend: s3
 
