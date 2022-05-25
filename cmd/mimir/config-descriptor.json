@@ -1377,7 +1377,8 @@
           "fieldValue": null,
           "fieldDefaultValue": 46800000000000,
           "fieldFlag": "querier.query-ingesters-within",
-          "fieldType": "duration"
+          "fieldType": "duration",
+          "fieldCategory": "advanced"
         },
         {
           "kind": "field",
@@ -1387,7 +1388,8 @@
           "fieldValue": null,
           "fieldDefaultValue": 43200000000000,
           "fieldFlag": "querier.query-store-after",
-          "fieldType": "duration"
+          "fieldType": "duration",
+          "fieldCategory": "advanced"
         },
         {
           "kind": "field",
