@@ -1138,6 +1138,7 @@ The ingester implements a rate limit on the samples per second that can be inges
 The limit is a per-instance limit and it's applied on all samples received, across all tenants, in each ingester.
 
 How to **fix**:
+
 - Scale up ingesters.
 - Increase the limit by using the `-ingester.instance-limits.max-ingestion-rate` option (or `max_ingestion_rate` in the runtime config).
 
@@ -1146,6 +1147,7 @@ How to **fix**:
 This critical error occurs when the ingester receives a write request for a new tenant (a tenant for which no series have been stored yet) but the ingester cannot accept it because the maximum number of allowed tenants per ingester has been reached.
 
 How to **fix**:
+
 - In case of emergency, increase the limit by using the `-ingester.instance-limits.max-tenants` option (or `max_tenants` in the runtime config).
 - Consider configuring ingesters shuffle sharding to reduce the number of tenants per ingester.
 
@@ -1161,6 +1163,7 @@ How it **works**:
 - You can configure the limit by setting the `-ingester.instance-limits.max-series` option (or `max_series` in the runtime config).
 
 How to **fix**:
+
 - See [`MimirIngesterReachingSeriesLimit`](#MimirIngesterReachingSeriesLimit) runbook.
 
 ### err-mimir-ingester-max-inflight-push-requests
@@ -1168,11 +1171,13 @@ How to **fix**:
 This error occurs when an ingester rejects a write request because the max inflight requests limit has been reached.
 
 How it **works**:
+
 - The ingester has per-instance limit on the number of inflight write (push) requests.
 - The limit applies on all inflight write requests, across all tenants, and is used to protect the ingester from overloading in case of high traffic.
 - You can configure the limit by setting the `-ingester.instance-limits.max-inflight-push-requests` option (or `max_inflight_push_requests` in the runtime config).
 
 How to **fix**:
+
 - In case of emergency, increase the limit by setting the `-ingester.instance-limits.max-inflight-push-requests` option (or `max_inflight_push_requests` in the runtime config).
 - Check the write requests latency through the `Mimir / Writes` dashboard and eventually investigate the root cause of high latency (the higher the latency, the higher the number of inflight write requests).
 - Consider scaling out the ingesters.
@@ -1249,6 +1254,7 @@ This limit is used to protect the system’s stability from potential abuse or m
 You can configure the limit on a per-tenant basis by using the `-querier.max-fetched-chunks-per-query` option (or `max_fetched_chunks_per_query` in the runtime configuration).
 
 How to **fix**:
+
 - Consider reducing the time range and/or cardinality of the query. To reduce the cardinality of the query, you can add more label matchers to the query, restricting the set of matching series.
 - Consider increasing the per-tenant limit by using the `-querier.max-fetched-chunks-per-query` option (or `max_fetched_chunks_per_query` in the runtime configuration).
 
@@ -1260,6 +1266,7 @@ This limit is used to protect the system’s stability from potential abuse or m
 You can configure the limit on a per-tenant basis by using the `-querier.max-fetched-series-per-query` option (or `max_fetched_series_per_query` in the runtime configuration).
 
 How to **fix**:
+
 - Consider reducing the time range and/or cardinality of the query. To reduce the cardinality of the query, you can add more label matchers to the query, restricting the set of matching series.
 - Consider increasing the per-tenant limit by using the `-querier.max-fetched-series-per-query` option (or `max_fetched_series_per_query` in the runtime configuration).
 
@@ -1271,6 +1278,7 @@ This limit is used to protect the system’s stability from potential abuse or m
 You can configure the limit on a per-tenant basis by using the `-querier.max-fetched-chunk-bytes-per-query` option (or `max_fetched_chunk_bytes_per_query` in the runtime configuration).
 
 How to **fix**:
+
 - Consider reducing the time range and/or cardinality of the query. To reduce the cardinality of the query, you can add more label matchers to the query, restricting the set of matching series.
 - Consider increasing the per-tenant limit by using the `-querier.max-fetched-chunk-bytes-per-query` option (or `max_fetched_chunk_bytes_per_query` in the runtime configuration).
 

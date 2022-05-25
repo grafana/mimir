@@ -923,7 +923,7 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxChunksPerQueryLimitIsReac
 	// a query running on all series to fail.
 	_, err = ds[0].QueryStream(ctx, math.MinInt32, math.MaxInt32, allSeriesMatchers...)
 	require.Error(t, err)
-	assert.ErrorContains(t, err, "the query reached the maximum number of chunks")
+	assert.ErrorContains(t, err, "the query exceeded the maximum number of chunks")
 }
 
 func TestDistributor_QueryStream_ShouldReturnErrorIfMaxSeriesPerQueryLimitIsReached(t *testing.T) {
