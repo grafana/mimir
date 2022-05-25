@@ -292,7 +292,7 @@ lint: check-makefiles
 		./pkg/compactor/...
 
 	# We've copied github.com/NYTimes/gziphandler to pkg/util/gziphandler
-    # at least until https://github.com/nytimes/gziphandler/pull/112 is merged
+	# at least until https://github.com/nytimes/gziphandler/pull/112 is merged
 	faillint -paths "github.com/NYTimes/gziphandler"
 
 	# Ensure packages we imported from Thanos are no longer used.
