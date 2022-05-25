@@ -1219,7 +1219,7 @@ You can configure the limit on a per-tenant basis by using the `-ingester.max-gl
 
 How to **fix**:
 
-- Check the current number of metric names for the affected tenant, running the instant query `count(count by(__name__) ({__name__=~".+"}))`
+- Check the current number of metric names for the affected tenant, running the instant query `count(count by(__name__) ({__name__=~".+"}))`. Alternatively, you can get the cardinality of `__name__` label calling the API endpoint `/api/v1/cardinality/label_names`.
 - Consider increasing the per-tenant limit setting to a value greater than the number of unique metric names returned by the previous query.
 
 ### err-mimir-max-metadata-per-metric
