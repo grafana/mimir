@@ -791,15 +791,16 @@ The `querier` block configures the querier.
 # CLI flag: -querier.batch-iterators
 [batch_iterators: <boolean> | default = true]
 
-# Maximum lookback beyond which queries are not sent to ingester. 0 means all
-# queries are sent to ingester.
+# (advanced) Maximum lookback beyond which queries are not sent to ingester. 0
+# means all queries are sent to ingester.
 # CLI flag: -querier.query-ingesters-within
 [query_ingesters_within: <duration> | default = 13h]
 
-# The time after which a metric should be queried from storage and not just
-# ingesters. 0 means all queries are sent to store. If this option is enabled,
-# the time range of the query sent to the store-gateway will be manipulated to
-# ensure the query end is not more recent than 'now - query-store-after'.
+# (advanced) The time after which a metric should be queried from storage and
+# not just ingesters. 0 means all queries are sent to store. If this option is
+# enabled, the time range of the query sent to the store-gateway will be
+# manipulated to ensure the query end is not more recent than 'now -
+# query-store-after'.
 # CLI flag: -querier.query-store-after
 [query_store_after: <duration> | default = 12h]
 
