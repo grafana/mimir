@@ -150,22 +150,36 @@ func (c *MultitenantCompactor) UploadBlockFile(w http.ResponseWriter, r *http.Re
 
 	bkt := bucket.NewUserBucketClient(string(tenantID), c.bucketClient, c.cfgProvider)
 
-	exists := false
-	if err := bkt.Iter(ctx, blockID, func(pth string) error {
-		exists = strings.HasSuffix(pth, ".lock")
-		return nil
-	}); err != nil {
-		level.Error(c.logger).Log("msg", "failed to iterate over block files", "user", tenantID,
-			"block", blockID, "err", err)
-		http.Error(w, "failed iterating over block files in object storage", http.StatusBadGateway)
+	metaPath := path.Join(blockID, "meta.json.temp")
+	exists, err := bkt.Exists(ctx, metaPath)
+	if err != nil {
+		level.Error(c.logger).Log("msg", "failed to check existence of meta.json.temp in object storage",
+			"user", tenantID, "block", blockID, "err", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 	if !exists {
-		level.Debug(c.logger).Log("msg", "no lock file exists for block in object storage, refusing file upload",
-			"user", tenantID, "block", blockID)
-		http.Error(w, "block upload has not yet been initiated", http.StatusBadRequest)
+		http.Error(w, fmt.Sprintf("upload of block %s not started yet", blockID), http.StatusBadRequest)
 		return
 	}
+
+	rdr, err := bkt.Get(ctx, metaPath)
+	if err != nil {
+		level.Error(c.logger).Log("msg", "failed to download meta.json.temp from object storage",
+			"user", tenantID, "block", blockID, "err", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	dec := json.NewDecoder(rdr)
+	var meta metadata.Meta
+	if err := dec.Decode(&meta); err != nil {
+		level.Error(c.logger).Log("msg", "failed to decode meta.json.temp",
+			"user", tenantID, "block", blockID, "err", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	// TODO: Verify that upload path and length correspond to file index
 
 	dst := path.Join(blockID, pth)
 
@@ -181,8 +195,6 @@ func (c *MultitenantCompactor) UploadBlockFile(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	level.Error(c.logger).Log("msg", "failed to decode meta.json",
-		"user", tenantID, "block", blockID, "err", err)
 	level.Debug(c.logger).Log("msg", "finished uploading block file to bucket",
 		"user", tenantID, "block", blockID, "path", pth)
 
@@ -214,28 +226,11 @@ func (c *MultitenantCompactor) CompleteBlockUpload(w http.ResponseWriter, r *htt
 
 	bkt := bucket.NewUserBucketClient(tenantID, c.bucketClient, c.cfgProvider)
 
-	exists := false
-	if err := bkt.Iter(ctx, blockID, func(pth string) error {
-		exists = strings.HasSuffix(pth, ".lock")
-		return nil
-	}); err != nil {
-		level.Error(c.logger).Log("msg", "failed to iterate over block files", "user", tenantID,
-			"block", blockID, "err", err)
-		http.Error(w, "failed iterating over block files in object storage", http.StatusBadGateway)
-		return
-	}
-	if !exists {
-		level.Debug(c.logger).Log("msg", "no lock file exists for block in object storage, refusing to complete block",
-			"user", tenantID, "block", blockID)
-		http.Error(w, "block upload has not yet been initiated", http.StatusBadRequest)
-		return
-	}
-
 	rdr, err := bkt.Get(ctx, path.Join(blockID, "meta.json.temp"))
 	if err != nil {
 		level.Error(c.logger).Log("msg", "failed to download meta.json.temp from object storage",
 			"user", tenantID, "block", blockID, "err", err)
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 	dec := json.NewDecoder(rdr)
@@ -243,7 +238,7 @@ func (c *MultitenantCompactor) CompleteBlockUpload(w http.ResponseWriter, r *htt
 	if err := dec.Decode(&meta); err != nil {
 		level.Error(c.logger).Log("msg", "failed to decode meta.json",
 			"user", tenantID, "block", blockID, "err", err)
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
@@ -269,7 +264,7 @@ func (c *MultitenantCompactor) CompleteBlockUpload(w http.ResponseWriter, r *htt
 	if err := bkt.Delete(ctx, path.Join(blockID, "meta.json.temp")); err != nil {
 		level.Error(c.logger).Log("msg", "failed to delete meta.json.temp from block in object storage",
 			"user", tenantID, "block", blockID, "err", err)
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
