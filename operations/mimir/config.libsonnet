@@ -222,8 +222,6 @@
 
     // These are all the flags for the default limits.
     distributorLimitsConfig: {
-      'distributor.request-rate-limit': $._config.limits.request_rate,
-      'distributor.request-burst-limit': $._config.limits.request_burst_size,
       'distributor.ingestion-rate-limit': $._config.limits.ingestion_rate,
       'distributor.ingestion-burst-size': $._config.limits.ingestion_burst_size,
     },
@@ -253,10 +251,6 @@
         ingestion_rate: 10000,
         ingestion_burst_size: 200000,
 
-        // Assuming a minimum of 100 samples per request
-        request_rate: 100,
-        request_burst_size: 2000,
-
         // 700 rules
         ruler_max_rules_per_rule_group: 20,
         ruler_max_rule_groups_per_tenant: 35,
@@ -272,10 +266,6 @@
         ingestion_rate: 30000,
         ingestion_burst_size: 300000,
 
-        // Assuming a minimum of 100 samples per request
-        request_rate: 300,
-        request_burst_size: 3000,
-
         // 1000 rules
         ruler_max_rules_per_rule_group: 20,
         ruler_max_rule_groups_per_tenant: 50,
@@ -287,10 +277,6 @@
 
         ingestion_rate: 100000,
         ingestion_burst_size: 1000000,
-
-        // Assuming a minimum of 100 samples per request
-        request_rate: 1000,
-        request_burst_size: 10000,
 
         // 1400 rules
         ruler_max_rules_per_rule_group: 20,
@@ -304,10 +290,6 @@
         ingestion_rate: 350000,  // 350K
         ingestion_burst_size: 3500000,  // 3.5M
 
-        // Assuming a minimum of 100 samples per request
-        request_rate: 3500,
-        request_burst_size: 35000,
-
         // 1800 rules
         ruler_max_rules_per_rule_group: 20,
         ruler_max_rule_groups_per_tenant: 90,
@@ -320,10 +302,6 @@
         ingestion_rate: 700000,  // 700K
         ingestion_burst_size: 7000000,  // 7M
 
-        // Assuming a minimum of 100 samples per request
-        request_rate: 7000,
-        request_burst_size: 70000,
-
         // 2200 rules
         ruler_max_rules_per_rule_group: 20,
         ruler_max_rule_groups_per_tenant: 110,
@@ -335,10 +313,6 @@
 
         ingestion_rate: 1500000,  // 1.5M
         ingestion_burst_size: 15000000,  // 15M
-
-        // Assuming a minimum of 100 samples per request
-        request_rate: 15000,
-        request_burst_size: 150000,
 
         // 2600 rules
         ruler_max_rules_per_rule_group: 20,
@@ -356,10 +330,6 @@
 
         ingestion_rate: 2250000,  // 2.25M
         ingestion_burst_size: 22500000,  // 22.5M
-
-        // Assuming a minimum of 100 samples per request
-        request_rate: 22500,
-        request_burst_size: 225000,
 
         // 3000 rules
         ruler_max_rules_per_rule_group: 20,

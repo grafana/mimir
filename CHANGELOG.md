@@ -5,14 +5,19 @@
 
 * [CHANGE] Increased default configuration for `-server.grpc-max-recv-msg-size-bytes` and `-server.grpc-max-send-msg-size-bytes` from 4MB to 100MB. #1883
 * [CHANGE] Default values have changed for the following settings. This improves query performance for recent data (within 12h) by only reading from ingesters: #1909 #1921
-  - `-blocks-storage.bucket-store.ignore-blocks-within` now defaults to `10h` (previously `0`)
-  - `-querier.query-store-after` now defaults to `12h` (previously `0`)
-  - `-querier.shuffle-sharding-ingesters-lookback-period` now defaults to `13h` (previously `0`)
+    - `-blocks-storage.bucket-store.ignore-blocks-within` now defaults to `10h` (previously `0`)
+    - `-querier.query-store-after` now defaults to `12h` (previously `0`)
+    - `-querier.shuffle-sharding-ingesters-lookback-period` now defaults to `13h` (previously `0`)
 * [CHANGE] The following settings are now classified as advanced because the defaults should work for most users and tuning them requires in-depth knowledge of how the read path works: #1929
-  - `-querier.query-ingesters-within`
-  - `-querier.query-store-after`
-* [CHANGE] Distributor: Added limit to prevent tenants from sending excessive number of requests: #1843
+    - `-querier.query-ingesters-within`
+    - `-querier.query-store-after`
 * [CHANGE] Config flag category overrides can be set dynamically at runtime. #1934
+* [CHANGE] Distributor: Added limit to prevent tenants from sending excessive number of requests: #1843
+  * The following CLI flags (and their respective YAML config options) have been added:
+    * `-distributor.request-rate-limit`
+    * `-distributor.request-burst-limit`
+  * The following metric is exposed to tell how many requests have been rejected:
+    * `cortex_discarded_requests_total`
 * [ENHANCEMENT] Store-gateway: Add the experimental ability to run requests in a dedicated OS thread pool. This feature can be configured using `-store-gateway.thread-pool-size` and is disabled by default. Replaces the ability to run index header operations in a dedicated thread pool. #1660 #1812
 * [ENHANCEMENT] Improved error messages to make them easier to understand and referencing a unique global identifier that can be looked up in the runbooks. #1907 #1919 #1888
 * [ENHANCEMENT] Memberlist KV: incoming messages are now processed on per-key goroutine. This may reduce loss of "maintanance" packets in busy memberlist installations, but use more CPU. New `memberlist_client_received_broadcasts_dropped_total` counter tracks number of dropped per-key messages. #1912
@@ -44,9 +49,9 @@
 ### Grafana Mimir
 * [CHANGE] Compactor: No longer upload debug meta files to object storage. #1257
 * [CHANGE] Default values have changed for the following settings: #1547
-  - `-alertmanager.alertmanager-client.grpc-max-recv-msg-size` now defaults to 100 MiB (previously was not configurable and set to 16 MiB)
-  - `-alertmanager.alertmanager-client.grpc-max-send-msg-size` now defaults to 100 MiB (previously was not configurable and set to 4 MiB)
-  - `-alertmanager.max-recv-msg-size` now defaults to 100 MiB (previously was 16 MiB)
+    - `-alertmanager.alertmanager-client.grpc-max-recv-msg-size` now defaults to 100 MiB (previously was not configurable and set to 16 MiB)
+    - `-alertmanager.alertmanager-client.grpc-max-send-msg-size` now defaults to 100 MiB (previously was not configurable and set to 4 MiB)
+    - `-alertmanager.max-recv-msg-size` now defaults to 100 MiB (previously was 16 MiB)
 * [CHANGE] Ingester: Add `user` label to metrics `cortex_ingester_ingested_samples_total` and `cortex_ingester_ingested_samples_failures_total`. #1533
 * [CHANGE] Ingester: Changed `-blocks-storage.tsdb.isolation-enabled` default from `true` to `false`. The config option has also been deprecated and will be removed in 2 minor version. #1655
 * [CHANGE] Query-frontend: results cache keys are now versioned, this will cause cache to be re-filled when rolling out this version. #1631
@@ -331,7 +336,7 @@ _Changes since Cortex 1.10.0._
   * Query endpoints
 
     | Legacy                                                  | Alternative                                                |
-        | ------------------------------------------------------- | ---------------------------------------------------------- |
+    | ------------------------------------------------------- | ---------------------------------------------------------- |
     | `/<legacy-http-prefix>/api/v1/query`                    | `<prometheus-http-prefix>/api/v1/query`                    |
     | `/<legacy-http-prefix>/api/v1/query_range`              | `<prometheus-http-prefix>/api/v1/query_range`              |
     | `/<legacy-http-prefix>/api/v1/query_exemplars`          | `<prometheus-http-prefix>/api/v1/query_exemplars`          |
@@ -347,7 +352,7 @@ _Changes since Cortex 1.10.0._
   * Distributor endpoints
 
     | Legacy endpoint               | Alternative                   |
-        | ----------------------------- | ----------------------------- |
+    | ----------------------------- | ----------------------------- |
     | `/<legacy-http-prefix>/push`  | `/api/v1/push`                |
     | `/all_user_stats`             | `/distributor/all_user_stats` |
     | `/ha-tracker`                 | `/distributor/ha_tracker`     |
@@ -355,7 +360,7 @@ _Changes since Cortex 1.10.0._
   * Ingester endpoints
 
     | Legacy          | Alternative           |
-        | --------------- | --------------------- |
+    | --------------- | --------------------- |
     | `/ring`         | `/ingester/ring`      |
     | `/shutdown`     | `/ingester/shutdown`  |
     | `/flush`        | `/ingester/flush`     |
@@ -364,7 +369,7 @@ _Changes since Cortex 1.10.0._
   * Ruler endpoints
 
     | Legacy                                                | Alternative                                         | Alternative #2 (not available before Mimir 2.0.0)                    |
-        | ----------------------------------------------------- | --------------------------------------------------- | ------------------------------------------------------------------- |
+    | ----------------------------------------------------- | --------------------------------------------------- | ------------------------------------------------------------------- |
     | `/<legacy-http-prefix>/api/v1/rules`                  | `<prometheus-http-prefix>/api/v1/rules`             |                                                                     |
     | `/<legacy-http-prefix>/api/v1/alerts`                 | `<prometheus-http-prefix>/api/v1/alerts`            |                                                                     |
     | `/<legacy-http-prefix>/rules`                         | `/api/v1/rules` (see below)                         |  `<prometheus-http-prefix>/config/v1/rules`                         |
@@ -382,7 +387,7 @@ _Changes since Cortex 1.10.0._
   * Alertmanager endpoints
 
     | Legacy                      | Alternative                        |
-        | --------------------------- | ---------------------------------- |
+    | --------------------------- | ---------------------------------- |
     | `/<legacy-http-prefix>`     | `/alertmanager`                    |
     | `/status`                   | `/multitenant_alertmanager/status` |
 
@@ -579,7 +584,7 @@ _Changes since Cortex 1.10.0._
   * `-ingester.max-metadata-per-user` -> set `-ingester.max-global-metadata-per-user` to `N` times the existing value of `-ingester.max-metadata-per-user` instead
   * `-ingester.max-metadata-per-metric` -> set `-ingester.max-global-metadata-per-metric` to `N` times the existing value of `-ingester.max-metadata-per-metric` instead
   * In the above notes, `N` refers to the number of ingester replicas
-    Additionally, default values for the following flags have changed:
+  Additionally, default values for the following flags have changed:
   * `-ingester.max-global-series-per-user` from `0` to `150000`
   * `-ingester.max-global-series-per-metric` from `0` to `20000`
   * `-distributor.ingestion-rate-limit` from `25000` to `10000`
@@ -1661,12 +1666,12 @@ Note the blocks storage compactor runs a migration task at startup in this versi
 * [CHANGE] Removed obsolete `-promql.lookback-delta` option (deprecated since Cortex 1.2, replaced with `-querier.lookback-delta`). #3144
 * [CHANGE] Cache: added support for Redis Cluster and Redis Sentinel. #2961
   - The following changes have been made in Redis configuration:
-  - `-redis.master_name` added
-  - `-redis.db` added
-  - `-redis.max-active-conns` changed to `-redis.pool-size`
-  - `-redis.max-conn-lifetime` changed to `-redis.max-connection-age`
-  - `-redis.max-idle-conns` removed
-  - `-redis.wait-on-pool-exhaustion` removed
+   - `-redis.master_name` added
+   - `-redis.db` added
+   - `-redis.max-active-conns` changed to `-redis.pool-size`
+   - `-redis.max-conn-lifetime` changed to `-redis.max-connection-age`
+   - `-redis.max-idle-conns` removed
+   - `-redis.wait-on-pool-exhaustion` removed
 * [CHANGE] TLS configuration for gRPC, HTTP and etcd clients is now marked as experimental. These features are not yet fully baked, and we expect possible small breaking changes in Cortex 1.5. #3198
 * [CHANGE] Fixed store-gateway CLI flags inconsistencies. #3201
   - `-store-gateway.replication-factor` flag renamed to `-store-gateway.sharding-ring.replication-factor`
@@ -2646,13 +2651,13 @@ Please be aware that Cortex `0.7.0` introduces some **breaking changes**. You're
   - Renamed the YAML config option `defaul_validity` to `default_validity`
   - Removed the YAML config option `config_store` (in the [`alertmanager YAML config`](https://cortexmetrics.io/docs/configuration/configuration-file/#alertmanager-config)) in favor of `store`
   - Removed the YAML config root block `configdb` in favor of [`configs`](https://cortexmetrics.io/docs/configuration/configuration-file/#configs-config). This change is also reflected in the following CLI flags renaming:
-    * `-database.*` -> `-configs.database.*`
-    * `-database.migrations` -> `-configs.database.migrations-dir`
+      * `-database.*` -> `-configs.database.*`
+      * `-database.migrations` -> `-configs.database.migrations-dir`
   - Removed the fluentd-based billing infrastructure including the CLI flags:
-    * `-distributor.enable-billing`
-    * `-billing.max-buffered-events`
-    * `-billing.retry-delay`
-    * `-billing.ingester`
+      * `-distributor.enable-billing`
+      * `-billing.max-buffered-events`
+      * `-billing.retry-delay`
+      * `-billing.ingester`
 - Removed support for using denormalised tokens in the ring. Before upgrading, make sure your Cortex cluster is already running `v0.6.0` or an earlier version with `-ingester.normalise-tokens=true`
 
 ### Full changelog
