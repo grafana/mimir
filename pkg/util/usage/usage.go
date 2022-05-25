@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package main
+package usage
 
 import (
 	"flag"
@@ -12,18 +12,18 @@ import (
 	"github.com/grafana/dskit/flagext"
 
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
-	"github.com/grafana/mimir/pkg/mimir"
 	"github.com/grafana/mimir/pkg/util/fieldcategory"
 )
 
-// usage prints command-line usage. If mf.printHelpAll is false then only basic flags are included, otherwise all flags are included.
-func usage(mf *mainFlags, cfg *mimir.Config) error {
+// Usage prints command-line usage.
+// printAll controls whether only basic flags or all flags are included.
+// configs are expected to be pointers to structs.
+func Usage(printAll bool, configs ...interface{}) error {
 	fields := map[uintptr]reflect.StructField{}
-	if err := parseStructure(mf, fields); err != nil {
-		return err
-	}
-	if err := parseStructure(cfg, fields); err != nil {
-		return err
+	for _, c := range configs {
+		if err := parseStructure(c, fields); err != nil {
+			return err
+		}
 	}
 
 	fs := flag.CommandLine
@@ -49,7 +49,7 @@ func usage(mf *mainFlags, cfg *mimir.Config) error {
 			}
 		}
 
-		if fieldCat != fieldcategory.Basic && !mf.printHelpAll {
+		if fieldCat != fieldcategory.Basic && !printAll {
 			// Don't print help for this flag since we're supposed to print only basic flags
 			return
 		}
@@ -85,7 +85,7 @@ func usage(mf *mainFlags, cfg *mimir.Config) error {
 		fmt.Fprint(fs.Output(), b.String(), "\n")
 	})
 
-	if !mf.printHelpAll {
+	if !printAll {
 		fmt.Fprintf(fs.Output(), "\nTo see all flags, use -help-all\n")
 	}
 

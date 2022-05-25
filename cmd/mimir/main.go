@@ -26,6 +26,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimir"
 	util_log "github.com/grafana/mimir/pkg/util/log"
+	"github.com/grafana/mimir/pkg/util/usage"
 	"github.com/grafana/mimir/pkg/util/version"
 )
 
@@ -113,7 +114,7 @@ func main() {
 	if mainFlags.printHelp || mainFlags.printHelpAll {
 		// Print available parameters to stdout, so that users can grep/less them easily.
 		flag.CommandLine.SetOutput(os.Stdout)
-		if err := usage(&mainFlags, &cfg); err != nil {
+		if err := usage.Usage(mainFlags.printHelpAll, &mainFlags, &cfg); err != nil {
 			fmt.Fprintf(os.Stderr, "error printing usage: %s\n", err)
 			os.Exit(1)
 		}
