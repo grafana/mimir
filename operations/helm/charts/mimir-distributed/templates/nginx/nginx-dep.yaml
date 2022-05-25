@@ -1,0 +1,111 @@
+{{- if not .Values.enterprise.enabled -}}
+{{- if .Values.nginx.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "mimir.resourceName" (dict "ctx" . "component" "nginx") }}
+  labels:
+    {{- include "mimir.labels" (dict "ctx" . "component" "nginx") | nindent 4 }}
+  annotations:
+    {{- toYaml .Values.nginx.annotations | nindent 4 }}
+spec:
+{{- if not .Values.nginx.autoscaling.enabled }}
+  replicas: {{ .Values.nginx.replicas }}
+{{- end }}
+{{- with .Values.nginx.deploymentStrategy }}
+  strategy:
+{{ toYaml . | trim | indent 4 }}
+{{- end }}
+  selector:
+    matchLabels:
+      {{- include "mimir.selectorLabels" (dict "ctx" . "component" "nginx") | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print .Template.BasePath "/nginx/nginx-configmap.yaml") . | sha256sum }}
+        {{- with .Values.nginx.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "mimir.podLabels" (dict "ctx" . "component" "nginx") | nindent 8 }}
+        {{- with .Values.nginx.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "mimir.serviceAccountName" . }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.nginx.priorityClassName }}
+      priorityClassName: {{ .Values.nginx.priorityClassName }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.nginx.podSecurityContext | nindent 8 }}
+      terminationGracePeriodSeconds: {{ .Values.nginx.terminationGracePeriodSeconds }}
+      containers:
+        - name: nginx
+          image: {{ .Values.nginx.image.registry }}/{{ .Values.nginx.image.repository }}:{{ .Values.nginx.image.tag }}
+          imagePullPolicy: {{ .Values.nginx.image.pullPolicy }}
+          ports:
+            - name: http-metric
+              containerPort: 8080
+              protocol: TCP
+          {{- with .Values.nginx.extraEnv }}
+          env:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.nginx.extraEnvFrom }}
+          envFrom:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          readinessProbe:
+            {{- toYaml .Values.nginx.readinessProbe | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.nginx.containerSecurityContext | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/nginx
+            {{- if .Values.nginx.basicAuth.enabled }}
+            - name: auth
+              mountPath: /etc/nginx/secrets
+            {{- end }}
+            - name: tmp
+              mountPath: /tmp
+            - name: docker-entrypoint-d-override
+              mountPath: /docker-entrypoint.d
+            {{- if .Values.nginx.extraVolumeMounts }}
+            {{- toYaml .Values.nginx.extraVolumeMounts | nindent 12 }}
+            {{- end }}
+          resources:
+            {{- toYaml .Values.nginx.resources | nindent 12 }}
+      {{- with .Values.nginx.affinity }}
+      affinity:
+        {{- tpl . $ | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nginx.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nginx.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "mimir.fullname" . }}-nginx
+        {{- if .Values.nginx.basicAuth.enabled }}
+        - name: auth
+          secret:
+            secretName: {{ include "mimir.nginxAuthSecret" . }}
+        {{- end }}
+        - name: tmp
+          emptyDir: {}
+        - name: docker-entrypoint-d-override
+          emptyDir: {}
+        {{- if .Values.nginx.extraVolumes }}
+        {{- toYaml .Values.nginx.extraVolumes | nindent 8 }}
+        {{- end }}
+{{- end -}}
+{{- end -}}

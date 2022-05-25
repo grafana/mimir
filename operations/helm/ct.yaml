@@ -1,0 +1,14 @@
+# See https://github.com/helm/chart-testing#configuration
+remote: origin
+target-branch: main
+chart-dirs:
+  - charts
+chart-repos:
+  - grafana=https://grafana.github.io/helm-charts
+  - prometheus-community=https://prometheus-community.github.io/helm-charts
+  - elastic=https://helm.elastic.co
+  - bitnami=https://charts.bitnami.com/bitnami
+  - hashicorp=https://helm.releases.hashicorp.com
+  - minio=https://helm.min.io
+helm-extra-args: --timeout 600s
+validate-maintainers: false

@@ -1,0 +1,1523 @@
+# Grafana Enterprise Metrics specific values and features are found after the `enterprise:` key
+#
+# The default values specified in this file are enough to deploy all of the
+# Grafana Mimir or Grafana Enterprise Metrics microservices but are not suitable for
+# production load.
+# To configure the resources for production load, refer to the the small.yaml or
+# large.yaml values files.
+
+# -- Overrides the chart's name
+nameOverride: null
+
+# -- Overrides the chart's computed fullname
+fullnameOverride: null
+
+# Container image settings.
+# Since the image is unique for all microservices, so are image settings.
+image:
+  repository: grafana/mimir
+  tag: 2.0.0
+  pullPolicy: IfNotPresent
+  # Optionally specify an array of imagePullSecrets.
+  # Secrets must be manually created in the namespace.
+  # ref: https://kubernetes.io/docs/tasks/configure-pod-container/pull-image-private-registry/
+  # pullSecrets:
+  #   - myRegistryKeySecretName
+
+global:
+  # definitions to set up nginx resolver
+  dnsService: kube-dns
+  dnsNamespace: kube-system
+  clusterDomain: cluster.local
+
+serviceAccount:
+  create: true
+  name:
+  annotations: {}
+
+# -- Configuration is loaded from the secret called 'externalConfigSecretName'. If 'useExternalConfig' is true, then the configuration is not generated, just consumed.
+useExternalConfig: false
+
+# -- Name of the secret that contains the configuration (used for naming even if config is internal).
+externalConfigSecretName: '{{ include "mimir.resourceName" (dict "ctx" . "component" "config") }}'
+
+# -- When 'useExternalConfig' is true, then changing 'externalConfigVersion' triggers restart of services - otherwise changes to the configuration cause a restart.
+externalConfigVersion: '0'
+
+mimir:
+  # -- Config file for Grafana Mimir, enables templates. Needs to be copied in full for modifications.
+  config: |
+    {{- if not .Values.enterprise.enabled -}}
+    multitenancy_enabled: false
+    {{- end }}
+
+    limits: {}
+
+    activity_tracker:
+      filepath: /data/metrics-activity.log
+
+    alertmanager:
+      data_dir: '/data'
+      enable_api: true
+      external_url: '/alertmanager'
+
+    {{- if .Values.minio.enabled }}
+    alertmanager_storage:
+      backend: s3
+      s3:
+        endpoint: {{ .Release.Name }}-minio.{{ .Release.Namespace }}.svc:9000
+        bucket_name: {{ include "mimir.minioBucketPrefix" . }}-ruler
+        access_key_id: {{ .Values.minio.accessKey }}
+        secret_access_key: {{ .Values.minio.secretKey }}
+        insecure: true
+    {{- end }}
+
+    frontend_worker:
+      frontend_address: {{ template "mimir.fullname" . }}-query-frontend-headless.{{ .Release.Namespace }}.svc:{{ include "mimir.serverGrpcListenPort" . }}
+
+    ruler:
+      enable_api: true
+      rule_path: '/data'
+      alertmanager_url: dnssrvnoa+http://_http-metrics._tcp.{{ template "mimir.fullname" . }}-alertmanager-headless.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}/alertmanager
+
+    server:
+      grpc_server_max_recv_msg_size: 104857600
+      grpc_server_max_send_msg_size: 104857600
+      grpc_server_max_concurrent_streams: 1000
+
+    frontend:
+      log_queries_longer_than: 10s
+      align_queries_with_step: true
+
+    compactor:
+      data_dir: "/data"
+
+    ingester:
+      ring:
+        final_sleep: 0s
+        num_tokens: 512
+
+    ingester_client:
+      grpc_client_config:
+        max_recv_msg_size: 104857600
+        max_send_msg_size: 104857600
+
+    runtime_config:
+      file: /var/{{ include "mimir.name" . }}/runtime.yaml
+
+    memberlist:
+      abort_if_cluster_join_fails: false
+      compression_enabled: false
+      join_members:
+      - {{ include "mimir.fullname" . }}-gossip-ring
+
+    # This configures how the store-gateway synchronizes blocks stored in the bucket. It uses Minio by default for getting started (configured via flags) but this should be changed for production deployments.
+    blocks_storage:
+      backend: s3
+      tsdb:
+        dir: /data/tsdb
+      bucket_store:
+        sync_dir: /data/tsdb-sync
+        {{- if .Values.memcached.enabled }}
+        chunks_cache:
+          backend: memcached
+          memcached:
+            addresses: dns+{{ .Release.Name }}-memcached.{{ .Release.Namespace }}.svc:11211
+            max_item_size: {{ .Values.memcached.maxItemMemory }}
+        {{- end }}
+        {{- if index .Values "memcached-metadata" "enabled" }}
+        metadata_cache:
+          backend: memcached
+          memcached:
+            addresses: dns+{{ .Release.Name }}-memcached-metadata.{{ .Release.Namespace }}.svc:11211
+            max_item_size: {{ (index .Values "memcached-metadata").maxItemMemory }}
+        {{- end }}
+        {{- if index .Values "memcached-queries" "enabled" }}
+        index_cache:
+          backend: memcached
+          memcached:
+            addresses: dns+{{ .Release.Name }}-memcached-queries.{{ .Release.Namespace }}.svc:11211
+            max_item_size: {{ (index .Values "memcached-queries").maxItemMemory }}
+        {{- end }}
+      {{- if .Values.minio.enabled }}
+      s3:
+        endpoint: {{ .Release.Name }}-minio.{{ .Release.Namespace }}.svc:9000
+        bucket_name: {{ include "mimir.minioBucketPrefix" . }}-tsdb
+        access_key_id: {{ .Values.minio.accessKey }}
+        secret_access_key: {{ .Values.minio.secretKey }}
+        insecure: true
+      {{- end }}
+
+    {{- if .Values.minio.enabled }}
+    ruler_storage:
+      backend: s3
+      s3:
+        endpoint: {{ .Release.Name }}-minio.{{ .Release.Namespace }}.svc:9000
+        bucket_name: {{ include "mimir.minioBucketPrefix" . }}-ruler
+        access_key_id: {{ .Values.minio.accessKey }}
+        secret_access_key: {{ .Values.minio.secretKey }}
+        insecure: true
+    {{- end }}
+
+    {{- if .Values.enterprise.enabled }}
+    multitenancy_enabled: true
+
+    admin_api:
+      leader_election:
+        enabled: true
+        ring:
+          kvstore:
+            store: "memberlist"
+
+    {{- if .Values.minio.enabled }}
+    admin_client:
+      storage:
+        type: s3
+        s3:
+          endpoint: {{ .Release.Name }}-minio.{{ .Release.Namespace }}.svc:9000
+          bucket_name: enterprise-metrics-admin
+          access_key_id: {{ .Values.minio.accessKey }}
+          secret_access_key: {{ .Values.minio.secretKey }}
+          insecure: true
+    {{- end }}
+
+    auth:
+      type: enterprise
+
+    cluster_name: "{{ .Release.Name }}"
+
+    license:
+      path: "/license/license.jwt"
+
+    {{- if .Values.gateway.useDefaultProxyURLs }}
+    gateway:
+      proxy:
+        default:
+          url: http://{{ template "mimir.fullname" . }}-admin-api.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
+        admin_api:
+          url: http://{{ template "mimir.fullname" . }}-admin-api.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
+        alertmanager:
+          url: http://{{ template "mimir.fullname" . }}-alertmanager.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
+        compactor:
+          url: http://{{ template "mimir.fullname" . }}-compactor.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
+        distributor:
+          url: http://{{ template "mimir.fullname" . }}-distributor.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
+        ingester:
+          url: http://{{ template "mimir.fullname" . }}-ingester.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
+        query_frontend:
+          url: http://{{ template "mimir.fullname" . }}-query-frontend.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
+        ruler:
+          url: http://{{ template "mimir.fullname" . }}-ruler.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
+        store_gateway:
+          url: http://{{ template "mimir.fullname" . }}-store-gateway.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
+    {{- end }}
+
+    instrumentation:
+      enabled: true
+      distributor_client:
+        address: 'dns:///{{ template "mimir.fullname" . }}-distributor.{{ .Release.Namespace }}.svc:{{ include "mimir.serverGrpcListenPort" . }}'
+
+    {{- end }}
+
+
+# runtimeConfig provides a reloadable runtime configuration file for some specific configuration.
+runtimeConfig: {}
+
+# RBAC configuration
+rbac:
+  pspEnabled: true
+
+# ServiceMonitor configuration
+serviceMonitor:
+  # -- If enabled, ServiceMonitor resources for Prometheus Operator are created
+  enabled: false
+  # -- Alternative namespace for ServiceMonitor resources
+  namespace: null
+  # -- Namespace selector for ServiceMonitor resources
+  namespaceSelector: {}
+  # -- ServiceMonitor annotations
+  annotations: {}
+  # -- Additional ServiceMonitor labels
+  labels: {}
+  # -- ServiceMonitor scrape interval
+  interval: null
+  # -- ServiceMonitor scrape timeout in Go duration format (e.g. 15s)
+  scrapeTimeout: null
+  # -- ServiceMonitor relabel configs to apply to samples before scraping
+  # https://github.com/prometheus-operator/prometheus-operator/blob/master/Documentation/api.md#relabelconfig
+  relabelings: []
+  # -- ServiceMonitor will use http by default, but you can pick https as well
+  scheme: http
+  # -- ServiceMonitor will use these tlsConfig settings to make the health check requests
+  tlsConfig: null
+
+alertmanager:
+  enabled: true
+  replicas: 1
+
+  statefulSet:
+    enabled: true
+
+  service:
+    annotations: {}
+    labels: {}
+
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+
+  extraArgs: {}
+
+  # Pod Labels
+  podLabels: {}
+
+  # Pod Annotations
+  podAnnotations: {}
+
+  # Pod Disruption Budget
+  podDisruptionBudget: {}
+
+  nodeSelector: {}
+  affinity: {}
+  annotations: {}
+  persistence:
+    # SubPath in emptyDir for persistence, only enabled if alertmanager.statefulSet.enabled is false
+    subPath:
+
+  persistentVolume:
+    # If true and alertmanager.statefulSet.enabled is true,
+    # Alertmanager will create/use a Persistent Volume Claim
+    # If false, use emptyDir
+    enabled: true
+
+    # Alertmanager data Persistent Volume Claim annotations
+    #
+    annotations: {}
+
+    # Alertmanager data Persistent Volume access modes
+    # Must match those of existing PV or dynamic provisioner
+    # Ref: http://kubernetes.io/docs/user-guide/persistent-volumes/
+    #
+    accessModes:
+      - ReadWriteOnce
+
+    # Alertmanager data Persistent Volume size
+    #
+    size: 1Gi
+
+    # Subdirectory of Alertmanager data Persistent Volume to mount
+    # Useful if the volume's root directory is not empty
+    #
+    subPath: ''
+
+    # Alertmanager data Persistent Volume Storage Class
+    # If defined, storageClassName: <storageClass>
+    # If set to "-", storageClassName: "", which disables dynamic provisioning
+    # If undefined (the default) or set to null, no storageClassName spec is
+    #   set, choosing the default provisioner.  (gp2 on AWS, standard on
+    #   GKE, AWS & OpenStack)
+    #
+    # storageClass: "-"
+
+  readinessProbe:
+    httpGet:
+      path: /ready
+      port: http-metrics
+    initialDelaySeconds: 45
+
+  securityContext: {}
+
+  # Tolerations for pod assignment
+  # ref: https://kubernetes.io/docs/concepts/configuration/taint-and-toleration/
+  tolerations: []
+
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+  statefulStrategy:
+    type: RollingUpdate
+
+  terminationGracePeriodSeconds: 60
+
+  initContainers: []
+  # Init containers to be added to the alertmanager pod.
+  # - name: my-init-container
+  #   image: busybox:latest
+  #   command: ['sh', '-c', 'echo hello']
+
+  extraContainers: []
+  # Additional containers to be added to the alertmanager pod.
+  # - name: reverse-proxy
+  #   image: angelbarrera92/basic-auth-reverse-proxy:dev
+  #   args:
+  #     - "serve"
+  #     - "--upstream=http://localhost:3100"
+  #     - "--auth-config=/etc/reverse-proxy-conf/authn.yaml"
+  #   ports:
+  #     - name: http
+  #       containerPort: 11811
+  #       protocol: TCP
+  #   volumeMounts:
+  #     - name: reverse-proxy-auth-config
+  #       mountPath: /etc/reverse-proxy-conf
+
+  extraVolumes: []
+  # Additional volumes to the alertmanager pod.
+  # - name: reverse-proxy-auth-config
+  #   secret:
+  #     secretName: reverse-proxy-auth-config
+
+  # Extra volume mounts that will be added to the alertmanager container
+  extraVolumeMounts: []
+
+  # Extra env variables to pass to the alertmanager container
+  env: []
+
+distributor:
+  replicas: 1
+
+  service:
+    annotations: {}
+    labels: {}
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 512Mi
+
+  # Additional distributor container arguments, e.g. log level (debug, info, warn, error)
+  extraArgs: {}
+
+  # Pod Labels
+  podLabels: {}
+
+  # Pod Annotations
+  podAnnotations: {}
+
+  # Pod Disruption Budget
+  podDisruptionBudget: {}
+
+  nodeSelector: {}
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchExpressions:
+              - key: target
+                operator: In
+                values:
+                  - distributor
+          topologyKey: 'kubernetes.io/hostname'
+
+  annotations: {}
+  persistence:
+    subPath:
+
+  readinessProbe:
+    httpGet:
+      path: /ready
+      port: http-metrics
+    initialDelaySeconds: 45
+
+  securityContext: {}
+
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+
+  terminationGracePeriodSeconds: 60
+
+  tolerations: []
+  initContainers: []
+  extraContainers: []
+  extraVolumes: []
+  extraVolumeMounts: []
+  env: []
+
+ingester:
+  replicas: 3
+
+  statefulSet:
+    enabled: true
+
+  service:
+    annotations: {}
+    labels: {}
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 512Mi
+
+  # Additional ingester container arguments, e.g. log level (debug, info, warn, error)
+  extraArgs: {}
+  # Pod Labels
+  podLabels: {}
+
+  # Pod Annotations
+  podAnnotations: {}
+
+  # Pod Disruption Budget
+  podDisruptionBudget:
+    maxUnavailable: 1
+
+  podManagementPolicy: Parallel
+
+  nodeSelector: {}
+  affinity: {}
+  annotations: {}
+
+  persistentVolume:
+    # If true and ingester.statefulSet.enabled is true,
+    # Ingester will create/use a Persistent Volume Claim
+    # If false, use emptyDir
+    #
+    enabled: true
+
+    # Ingester data Persistent Volume Claim annotations
+    #
+    annotations: {}
+
+    # Ingester data Persistent Volume access modes
+    # Must match those of existing PV or dynamic provisioner
+    # Ref: http://kubernetes.io/docs/user-guide/persistent-volumes/
+    accessModes:
+      - ReadWriteOnce
+
+    # Ingester data Persistent Volume size
+    size: 2Gi
+
+    # Subdirectory of Ingester data Persistent Volume to mount
+    # Useful if the volume's root directory is not empty
+    subPath: ''
+
+
+    # Ingester data Persistent Volume Storage Class
+    # If defined, storageClassName: <storageClass>
+    # If set to "-", storageClassName: "", which disables dynamic provisioning
+    # If undefined (the default) or set to null, no storageClassName spec is
+    #   set, choosing the default provisioner.  (gp2 on AWS, standard on
+    #   GKE, AWS & OpenStack)
+    #
+    # storageClass: "-"
+
+  readinessProbe:
+    httpGet:
+      path: /ready
+      port: http-metrics
+    initialDelaySeconds: 60
+
+  securityContext: {}
+
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+  statefulStrategy:
+    type: RollingUpdate
+
+  terminationGracePeriodSeconds: 240
+
+  tolerations: []
+  initContainers: []
+  extraContainers: []
+  extraVolumes: []
+  extraVolumeMounts: []
+  env: []
+
+overrides_exporter:
+  enabled: true
+  replicas: 1
+
+  annotations: {}
+
+  initContainers: []
+
+  service:
+    annotations: {}
+    labels: {}
+
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+
+  podLabels: {}
+  podAnnotations: {}
+  # Pod Disruption Budget
+  podDisruptionBudget: {}
+
+  nodeSelector: {}
+  affinity: {}
+
+  securityContext: {}
+
+  extraArgs: {}
+
+  persistence:
+    subPath:
+
+  livenessProbe:
+    httpGet:
+      path: /ready
+      port: http-metrics
+    initialDelaySeconds: 45
+  readinessProbe:
+    httpGet:
+      path: /ready
+      port: http-metrics
+    initialDelaySeconds: 45
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+  terminationGracePeriodSeconds: 60
+
+  tolerations: []
+  extraContainers: []
+  extraVolumes: []
+  extraVolumeMounts: []
+  env: []
+
+ruler:
+  enabled: true
+  replicas: 1
+
+  service:
+    annotations: {}
+    labels: {}
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+  # Additional ruler container arguments, e.g. log level (debug, info, warn, error)
+  extraArgs: {}
+    # log.level: debug
+
+  # Pod Labels
+  podLabels: {}
+
+  # Pod Annotations
+  podAnnotations: {}
+
+  # Pod Disruption Budget
+  podDisruptionBudget: {}
+
+  nodeSelector: {}
+  affinity: {}
+  annotations: {}
+  persistence:
+    subPath:
+
+  readinessProbe:
+    httpGet:
+      path: /ready
+      port: http-metrics
+    initialDelaySeconds: 45
+
+  securityContext: {}
+
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+
+  terminationGracePeriodSeconds: 180
+
+  tolerations: []
+  initContainers: []
+  extraContainers: []
+  extraVolumes: []
+  extraVolumeMounts: []
+  env: []
+
+querier:
+  replicas: 2
+
+  service:
+    annotations: {}
+    labels: {}
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+  # Additional querier container arguments, e.g. log level (debug, info, warn, error)
+  extraArgs: {}
+
+  # Pod Labels
+  podLabels: {}
+
+  # Pod Annotations
+  podAnnotations: {}
+
+  # Pod Disruption Budget
+  podDisruptionBudget: {}
+
+  nodeSelector: {}
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchExpressions:
+                - key: target
+                  operator: In
+                  values:
+                    - querier
+            topologyKey: 'kubernetes.io/hostname'
+
+  annotations: {}
+  persistence:
+    subPath:
+
+  readinessProbe:
+    httpGet:
+      path: /ready
+      port: http-metrics
+    initialDelaySeconds: 45
+
+  securityContext: {}
+
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+
+  terminationGracePeriodSeconds: 180
+
+  tolerations: []
+  initContainers: []
+  extraContainers: []
+  extraVolumes: []
+  extraVolumeMounts: []
+  env: []
+
+query_frontend:
+  replicas: 1
+
+  service:
+    annotations: {}
+    labels: {}
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+  # Additional query-frontend container arguments, e.g. log level (debug, info, warn, error)
+  extraArgs: {}
+
+  # Pod Labels
+  podLabels: {}
+
+  # Pod Annotations
+  podAnnotations: {}
+
+  # Pod Disruption Budget
+  podDisruptionBudget: {}
+
+  nodeSelector: {}
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchExpressions:
+                - key: target
+                  operator: In
+                  values:
+                    - query-frontend
+            topologyKey: 'kubernetes.io/hostname'
+
+  annotations: {}
+  persistence:
+    subPath:
+
+  readinessProbe:
+    httpGet:
+      path: /ready
+      port: http-metrics
+    initialDelaySeconds: 45
+
+  securityContext: {}
+
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+
+  terminationGracePeriodSeconds: 180
+
+  tolerations: []
+  initContainers: []
+  extraContainers: []
+  extraVolumes: []
+  extraVolumeMounts: []
+  env: []
+
+store_gateway:
+  replicas: 1
+
+  service:
+    annotations: {}
+    labels: {}
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 512Mi
+
+  # Additional store-gateway container arguments, e.g. log level (debug, info, warn, error)
+  extraArgs: {}
+
+  # Pod Labels
+  podLabels: {}
+
+  # Pod Annotations
+  podAnnotations: {}
+
+  # Pod Disruption Budget
+  podDisruptionBudget:
+    maxUnavailable: 1
+
+  nodeSelector: {}
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchExpressions:
+              - key: target
+                operator: In
+                values:
+                  - store-gateway
+          topologyKey: 'kubernetes.io/hostname'
+
+  annotations: {}
+
+  persistentVolume:
+    # If true Store-gateway will create/use a Persistent Volume Claim
+    # If false, use emptyDir
+    #
+    enabled: true
+
+    # Store-gateway data Persistent Volume Claim annotations
+    #
+    annotations: {}
+
+    # Store-gateway data Persistent Volume access modes
+    # Must match those of existing PV or dynamic provisioner
+    # Ref: http://kubernetes.io/docs/user-guide/persistent-volumes/
+    #
+    accessModes:
+      - ReadWriteOnce
+
+    # Store-gateway data Persistent Volume size
+    #
+    size: 2Gi
+
+    # Subdirectory of Store-gateway data Persistent Volume to mount
+    # Useful if the volume's root directory is not empty
+    #
+    subPath: ''
+
+
+    # Store-gateway data Persistent Volume Storage Class
+    # If defined, storageClassName: <storageClass>
+    # If set to "-", storageClassName: "", which disables dynamic provisioning
+    # If undefined (the default) or set to null, no storageClassName spec is
+    #   set, choosing the default provisioner.  (gp2 on AWS, standard on
+    #   GKE, AWS & OpenStack)
+    #
+    # storageClass: "-"
+
+  readinessProbe:
+    httpGet:
+      path: /ready
+      port: http-metrics
+    initialDelaySeconds: 60
+
+  securityContext: {}
+
+  strategy:
+    type: RollingUpdate
+
+  terminationGracePeriodSeconds: 240
+
+  tolerations: []
+  initContainers: []
+  extraContainers: []
+  extraVolumes: []
+  extraVolumeMounts: []
+  env: []
+
+compactor:
+  replicas: 1
+
+  service:
+    annotations: {}
+    labels: {}
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 512Mi
+
+  # Additional compactor container arguments, e.g. log level (debug, info, warn, error)
+  extraArgs: {}
+
+  # Pod Labels
+  podLabels: {}
+
+  # Pod Annotations
+  podAnnotations: {}
+
+  # Pod Disruption Budget
+  podDisruptionBudget: {}
+
+  nodeSelector: {}
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchExpressions:
+                - key: target
+                  operator: In
+                  values:
+                    - compactor
+            topologyKey: 'kubernetes.io/hostname'
+
+  annotations: {}
+
+  persistentVolume:
+    # If true compactor will create/use a Persistent Volume Claim
+    # If false, use emptyDir
+    #
+    enabled: true
+
+    # compactor data Persistent Volume Claim annotations
+    #
+    annotations: {}
+
+    # compactor data Persistent Volume access modes
+    # Must match those of existing PV or dynamic provisioner
+    # Ref: http://kubernetes.io/docs/user-guide/persistent-volumes/
+    #
+    accessModes:
+      - ReadWriteOnce
+
+    # compactor data Persistent Volume size
+    #
+    size: 2Gi
+
+    # Subdirectory of compactor data Persistent Volume to mount
+    # Useful if the volume's root directory is not empty
+    #
+    subPath: ''
+
+
+    # compactor data Persistent Volume Storage Class
+    # If defined, storageClassName: <storageClass>
+    # If set to "-", storageClassName: "", which disables dynamic provisioning
+    # If undefined (the default) or set to null, no storageClassName spec is
+    #   set, choosing the default provisioner.  (gp2 on AWS, standard on
+    #   GKE, AWS & OpenStack)
+    #
+    # storageClass: "-"
+
+  readinessProbe:
+    httpGet:
+      path: /ready
+      port: http-metrics
+    initialDelaySeconds: 60
+
+  securityContext: {}
+
+  strategy:
+    type: RollingUpdate
+
+  terminationGracePeriodSeconds: 240
+
+  tolerations: []
+  initContainers: []
+  extraContainers: []
+  extraVolumes: []
+  extraVolumeMounts: []
+  env: []
+
+memcached:
+  enabled: false
+  architecture: high-availability
+  arguments:
+    - -m 8192
+    - -o
+    - modern
+    - -v
+    - -I 1m
+    - -c 4096
+  image:
+    repository: memcached
+    tag: 1.6.9
+  # maxItemMemory is in bytes. Should match memcached -I flag (which is in MB)
+  # It is a string to avoid https://github.com/helm/helm/issues/1707.
+  maxItemMemory: '1048576'  # (* 1 (* 1024 1024))
+  metrics:
+    enabled: true
+    image:
+      registry: quay.io
+      repository: prometheus/memcached-exporter
+      tag: v0.9.0
+  replicaCount: 1
+  resources:
+    limits:
+      # memory limits should match requests
+      memory: 9830Mi
+    requests:
+      cpu: 500m
+      # memory requests should be exceed memcached -m flag
+      memory: 9830Mi  # (floor (* 1.2 8192))
+
+memcached-queries:
+  enabled: false
+  architecture: high-availability
+  arguments:
+    - -m 2048
+    - -o
+    - modern
+    - -v
+    - -I 15m
+    - -c 1024
+  image:
+    repository: memcached
+    tag: 1.6.9
+  # maxItemMemory is in bytes. Should match memcached -I flag (which is in MB)
+  # It is a string to avoid https://github.com/helm/helm/issues/1707.
+  maxItemMemory: '15728640'  # (* 15 (* 1024 1024))
+  metrics:
+    enabled: true
+    image:
+      registry: quay.io
+      repository: prometheus/memcached-exporter
+      tag: v0.9.0
+  replicaCount: 1
+  resources:
+    limits:
+      # memory limits should match requests
+      memory: 2457Mi
+    requests:
+      cpu: 500m
+      # memory requests should be exceed memcached -m flag
+      memory: 2457Mi  # (floor (* 1.2 2048))
+
+memcached-metadata:
+  enabled: false
+  architecture: high-availability
+  arguments:
+    - -m 512
+    - -o
+    - modern
+    - -v
+    - -I 1m
+    - -c 1024
+  image:
+    repository: memcached
+    tag: 1.6.9
+  # maxItemMemory is in bytes. Should match memcached -I flag (which is in MB)
+  # It is a string to avoid https://github.com/helm/helm/issues/1707.
+  maxItemMemory: '1048576'  # (* 1 (* 1024 1024))
+  metrics:
+    enabled: true
+    image:
+      registry: quay.io
+      repository: prometheus/memcached-exporter
+      tag: v0.9.0
+  replicaCount: 1
+  resources:
+    limits:
+      # memory limits should match requests
+      memory: 614Mi
+    requests:
+      cpu: 500m
+      # memory requests should be exceed memcached -m flag
+      memory: 614Mi  # (floor (* 1.2 512))
+
+minio:
+  enabled: true
+  accessKey: grafana-mimir
+  buckets:
+    - name: mimir-tsdb
+      policy: none
+      purge: false
+    - name: mimir-ruler
+      policy: none
+      purge: false
+    - name: enterprise-metrics-tsdb
+      policy: none
+      purge: false
+    - name: enterprise-metrics-admin
+      policy: none
+      purge: false
+    - name: enterprise-metrics-ruler
+      policy: none
+      purge: false
+  persistence:
+    size: 5Gi
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+  secretKey: supersecret
+
+# Configuration for nginx gateway
+nginx:
+  # -- Specifies whether nginx should be enabled
+  enabled: true
+  # -- Number of replicas for nginx
+  replicas: 1
+  # -- Enable logging of 2xx and 3xx HTTP requests
+  verboseLogging: true
+  autoscaling:
+    # -- Enable autoscaling for nginx
+    enabled: false
+    # -- Minimum autoscaling replicas for nginx
+    minReplicas: 1
+    # -- Maximum autoscaling replicas for nginx
+    maxReplicas: 3
+    # -- Target CPU utilisation percentage for nginx
+    targetCPUUtilizationPercentage: 60
+    # -- Target memory utilisation percentage for nginx
+    targetMemoryUtilizationPercentage:
+  # -- See `kubectl explain deployment.spec.strategy` for more,
+  # ref: https://kubernetes.io/docs/concepts/workloads/controllers/deployment/#strategy
+  deploymentStrategy:
+    type: RollingUpdate
+  image:
+    # -- The Docker registry for nginx image
+    registry: docker.io
+    # -- The nginx image repository
+    repository: nginxinc/nginx-unprivileged
+    # -- The nginx image tag
+    tag: 1.19-alpine
+    # -- The nginx image pull policy
+    pullPolicy: IfNotPresent
+  # -- The name of the PriorityClass for nginx pods
+  priorityClassName: null
+  # -- Labels for nginx pods
+  podLabels: {}
+  # -- Annotations for nginx pods
+  podAnnotations: {}
+  # -- Pod Disruption Budget
+  podDisruptionBudget: {}
+  # -- Additional CLI args for nginx
+  extraArgs: []
+  # -- Environment variables to add to the nginx pods
+  extraEnv: []
+  # -- Environment variables from secrets or configmaps to add to the nginx pods
+  extraEnvFrom: []
+  # -- Volumes to add to the nginx pods
+  extraVolumes: []
+  # -- Volume mounts to add to the nginx pods
+  extraVolumeMounts: []
+  # -- The SecurityContext for nginx containers
+  podSecurityContext:
+    fsGroup: 101
+    runAsGroup: 101
+    runAsNonRoot: true
+    runAsUser: 101
+  # -- The SecurityContext for nginx containers
+  containerSecurityContext:
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop:
+        - ALL
+    allowPrivilegeEscalation: false
+  # -- Resource requests and limits for the nginx
+  resources: {}
+  # -- Grace period to allow the nginx to shutdown before it is killed
+  terminationGracePeriodSeconds: 30
+  # -- Affinity for nginx pods. Passed through `tpl` and, thus, to be configured as string
+  # @default -- Hard node and soft zone anti-affinity
+  affinity: |
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchExpressions:
+                - key: component
+                  operator: In
+                  values:
+                    - nginx
+            topologyKey: failure-domain.beta.kubernetes.io/zone
+
+  annotations: {}
+
+  # -- Node selector for nginx pods
+  nodeSelector: {}
+  # -- Tolerations for nginx pods
+  tolerations: []
+  # Nginx service configuration
+  service:
+    # -- Port of the nginx service
+    port: 80
+    # -- Type of the nginx service
+    type: ClusterIP
+    # -- ClusterIP of the nginx service
+    clusterIP: null
+    # -- Node port if service type is NodePort
+    nodePort: null
+    # -- Load balancer IPO address if service type is LoadBalancer
+    loadBalancerIP: null
+    # -- Annotations for the nginx service
+    annotations: {}
+    # -- Labels for nginx service
+    labels: {}
+  # Ingress configuration
+  ingress:
+    # -- Specifies whether an ingress for the nginx should be created
+    enabled: false
+    # -- Ingress Class Name. MAY be required for Kubernetes versions >= 1.18
+    # ingressClassName: nginx
+    # -- Annotations for the nginx ingress
+    annotations: {}
+    # -- Hosts configuration for the nginx ingress
+    hosts:
+      - host: nginx.loki.example.com
+        paths:
+          - path: /
+            # -- pathType (e.g. ImplementationSpecific, Prefix, .. etc.) might also be required by some Ingress Controllers
+            # pathType: Prefix
+    # -- TLS configuration for the nginx ingress
+    tls:
+      - secretName: loki-nginx-tls
+        hosts:
+          - nginx.loki.example.com
+  # Basic auth configuration
+  basicAuth:
+    # -- Enables basic authentication for nginx
+    enabled: false
+    # -- The basic auth username for nginx
+    username: null
+    # -- The basic auth password for nginx
+    password: null
+    # -- Uses the specified username and password to compute a htpasswd using Sprig's `htpasswd` function.
+    # The value is templated using `tpl`. Override this to use a custom htpasswd, e.g. in case the default causes
+    # high CPU load.
+    htpasswd: >-
+      {{ htpasswd (required "'nginx.basicAuth.username' is required" .Values.nginx.basicAuth.username) (required "'nginx.basicAuth.password' is required" .Values.nginx.basicAuth.password) }}
+    # -- Existing basic auth secret to use. Must contain '.htpasswd'
+    existingSecret: null
+  # Configures the readiness probe for nginx
+  readinessProbe:
+    httpGet:
+      path: /
+      port: http-metric
+    initialDelaySeconds: 15
+    timeoutSeconds: 1
+  nginxConfig:
+    # -- NGINX log format
+    logFormat: |-
+      main '$remote_addr - $remote_user [$time_local]  $status '
+              '"$request" $body_bytes_sent "$http_referer" '
+              '"$http_user_agent" "$http_x_forwarded_for"';
+    # -- Allows appending custom configuration to the server block
+    serverSnippet: ""
+    # -- Allows appending custom configuration to the http block
+    httpSnippet: ""
+    # -- Config file contents for Nginx. Passed through the `tpl` function to allow templating
+    # @default -- See values.yaml
+    file: |
+      worker_processes  5;  ## Default: 1
+      error_log  /dev/stderr;
+      pid        /tmp/nginx.pid;
+      worker_rlimit_nofile 8192;
+
+      events {
+        worker_connections  4096;  ## Default: 1024
+      }
+
+      http {
+        client_body_temp_path /tmp/client_temp;
+        proxy_temp_path       /tmp/proxy_temp_path;
+        fastcgi_temp_path     /tmp/fastcgi_temp;
+        uwsgi_temp_path       /tmp/uwsgi_temp;
+        scgi_temp_path        /tmp/scgi_temp;
+
+        default_type application/octet-stream;
+        log_format   {{ .Values.nginx.nginxConfig.logFormat }}
+
+        {{- if .Values.nginx.verboseLogging }}
+        access_log   /dev/stderr  main;
+        {{- else }}
+
+        map $status $loggable {
+          ~^[23]  0;
+          default 1;
+        }
+        access_log   /dev/stderr  main  if=$loggable;
+        {{- end }}
+
+        sendfile     on;
+        tcp_nopush   on;
+        resolver {{ .Values.global.dnsService }}.{{ .Values.global.dnsNamespace }}.svc.{{ .Values.global.clusterDomain }};
+
+        {{- with .Values.nginx.nginxConfig.httpSnippet }}
+        {{ . | nindent 2 }}
+        {{- end }}
+
+        server {
+          listen 8080;
+
+          {{- if .Values.nginx.basicAuth.enabled }}
+          auth_basic           "Mimir";
+          auth_basic_user_file /etc/nginx/secrets/.htpasswd;
+          {{- end }}
+
+          location = / {
+            return 200 'OK';
+            auth_basic off;
+          }
+
+          {{- if not (include "mimir.calculatedConfig" . | fromYaml).multitenancy_enabled }}
+          proxy_set_header X-Scope-OrgID 0;
+          {{- end }}
+
+          # Distributor endpoints
+          location /distributor {
+            proxy_pass      http://{{ template "mimir.fullname" . }}-distributor.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ include "mimir.serverHttpListenPort" . }}$request_uri;
+          }
+          location = /api/v1/push {
+            proxy_pass      http://{{ template "mimir.fullname" . }}-distributor.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ include "mimir.serverHttpListenPort" . }}$request_uri;
+          }
+
+          # Alertmanager endpoints
+          location {{ template "mimir.alertmanagerHttpPrefix" . }} {
+            proxy_pass      http://{{ template "mimir.fullname" . }}-alertmanager.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ include "mimir.serverHttpListenPort" . }}$request_uri;
+          }
+          location = /multitenant_alertmanager/status {
+            proxy_pass      http://{{ template "mimir.fullname" . }}-alertmanager.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ include "mimir.serverHttpListenPort" . }}$request_uri;
+          }
+          location = /api/v1/alerts {
+            proxy_pass      http://{{ template "mimir.fullname" . }}-alertmanager.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ include "mimir.serverHttpListenPort" . }}$request_uri;
+          }
+
+          # Ruler endpoints
+          location {{ template "mimir.prometheusHttpPrefix" . }}/config/v1/rules {
+            proxy_pass      http://{{ template "mimir.fullname" . }}-ruler.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ include "mimir.serverHttpListenPort" . }}$request_uri;
+          }
+          location {{ template "mimir.prometheusHttpPrefix" . }}/api/v1/rules {
+            proxy_pass      http://{{ template "mimir.fullname" . }}-ruler.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ include "mimir.serverHttpListenPort" . }}$request_uri;
+          }
+
+          location /api/v1/rules {
+            proxy_pass      http://{{ template "mimir.fullname" . }}-ruler.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ include "mimir.serverHttpListenPort" . }}$request_uri;
+          }
+          location {{ template "mimir.prometheusHttpPrefix" . }}/api/v1/alerts {
+            proxy_pass      http://{{ template "mimir.fullname" . }}-ruler.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ include "mimir.serverHttpListenPort" . }}$request_uri;
+          }
+          location {{ template "mimir.prometheusHttpPrefix" . }}/rules {
+            proxy_pass      http://{{ template "mimir.fullname" . }}-ruler.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ include "mimir.serverHttpListenPort" . }}$request_uri;
+          }
+          location = /ruler/ring {
+            proxy_pass      http://{{ template "mimir.fullname" . }}-ruler.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ include "mimir.serverHttpListenPort" . }}$request_uri;
+          }
+
+          # Rest of {{ template "mimir.prometheusHttpPrefix" . }} goes to the query frontend
+          location {{ template "mimir.prometheusHttpPrefix" . }} {
+            proxy_pass      http://{{ template "mimir.fullname" . }}-query-frontend.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ include "mimir.serverHttpListenPort" . }}$request_uri;
+          }
+
+          # Buildinfo endpoint can go to any component
+          location = /api/v1/status/buildinfo {
+            proxy_pass      http://{{ template "mimir.fullname" . }}-query-frontend.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ include "mimir.serverHttpListenPort" . }}$request_uri;
+          }
+
+          {{- with .Values.nginx.nginxConfig.serverSnippet }}
+          {{ . | nindent 4 }}
+          {{- end }}
+        }
+      }
+
+##############################################################################
+# The values in and after the `enterprise:` key configure the enterprise features
+enterprise:
+  # Enable enterprise features. License must be provided, nginx gateway is not installed, instead
+  # the enterprise gateway is used.
+  enabled: false
+
+  # Whether to generate pre-2.0 Grafana Enterprise Metrics resource labels and selectors, or generate new Kubernetes standard selectors.
+  # Rolling upgrade from version 1.7.x without downtime requires this setting to be true. Fresh installation or upgrade with downtime can set
+  # it to false.
+  legacyLabels: false
+
+  # Container image settings for enterprise, note that pullPolicy and pullSecrets are set in top level .image
+  image:
+    repository: grafana/enterprise-metrics
+    tag: v2.0.1
+
+# In order to use Grafana Enterprise Metrics features, you will need to provide the contents of your Grafana Enterprise Metrics
+# license, either by providing the contents of the license.jwt, or the name Kubernetes Secret that contains your license.jwt.
+# To set the license contents, use the flag `--set-file 'license.contents=./license.jwt'`
+# To use your own Kubernetes Secret, `--set license.external=true`.
+license:
+  contents: "NOTAVALIDLICENSE"
+  external: false
+  secretName: '{{ include "mimir.resourceName" (dict "ctx" . "component" "license") }}'
+
+# Settings for the initial admin(istrator) token generator job. Can only be enabled if
+# enterprise.enabled is true - requires license.
+tokengenJob:
+  enable: true
+  extraArgs: {}
+  env: []
+  annotations: {}
+  initContainers: []
+
+# Settings for the admin_api service providing authentication and authorization service.
+# Can only be enabled if enterprise.enabled is true - requires license.
+admin_api:
+  replicas: 1
+
+  annotations: {}
+  service:
+    annotations: {}
+    labels: {}
+
+  initContainers: []
+
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+
+  podLabels: {}
+  podAnnotations: {}
+
+  nodeSelector: {}
+  affinity: {}
+
+  # Pod Disruption Budget
+  podDisruptionBudget: {}
+
+  securityContext: {}
+
+  extraArgs: {}
+
+  persistence:
+    subPath:
+
+  readinessProbe:
+    httpGet:
+      path: /ready
+      port: http-metrics
+    initialDelaySeconds: 45
+
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+
+  terminationGracePeriodSeconds: 60
+
+  tolerations: []
+  extraContainers: []
+  extraVolumes: []
+  extraVolumeMounts: []
+  env: []
+
+# Settings for the gateway service providing authentication and authorization via the admin_api.
+# Can only be enabled if enterprise.enabled is true - requires license.
+gateway:
+  # If you want to use your own proxy URLs, set this to false.
+  useDefaultProxyURLs: true
+  replicas: 1
+
+  annotations: {}
+  service:
+    annotations: {}
+    labels: {}
+    # -- If the port is left undefined, the service will listen on the same port as the pod
+    port: null
+
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+
+  podLabels: {}
+  podAnnotations: {}
+
+  # Pod Disruption Budget
+  podDisruptionBudget: {}
+
+  nodeSelector: {}
+  affinity: {}
+
+  securityContext: {}
+  initContainers: []
+
+  extraArgs: {}
+
+  persistence:
+    subPath:
+
+  readinessProbe:
+    httpGet:
+      path: /ready
+      port: http-metrics
+    initialDelaySeconds: 45
+
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+
+  terminationGracePeriodSeconds: 60
+
+  tolerations: []
+  extraContainers: []
+  extraVolumes: []
+  extraVolumeMounts: []
+  env: []
+
+  # Ingress configuration
+  ingress:
+    # -- Specifies whether an ingress for the gateway should be created
+    enabled: false
+    # -- Ingress Class Name. MAY be required for Kubernetes versions >= 1.18
+    # ingressClassName: gateway
+    # -- Annotations for the gateway ingress
+    annotations: {}
+    # -- Hosts configuration for the gateway ingress
+    hosts:
+      - host: gateway.gem.example.com
+        paths:
+          - path: /
+            # -- pathType (e.g. ImplementationSpecific, Prefix, .. etc.) might also be required by some Ingress Controllers
+            # pathType: Prefix
+    # -- TLS configuration for the gateway ingress
+    tls:
+      - secretName: gem-gateway-tls
+        hosts:
+          - gateway.gem.example.com

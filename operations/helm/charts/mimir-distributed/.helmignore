@@ -1,0 +1,7 @@
+.envrc
+.gitignore
+CHANGELOG.md
+ci/
+INTERNAL*
+README.md.gotmpl
+scripts/
