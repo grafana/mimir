@@ -339,13 +339,7 @@ func (c *MultitenantCompactor) sanitizeMeta(tenantID string, blockID ulid.ULID, 
 	}
 
 	meta.ULID = blockID
-
-	metaTenantID := meta.Thanos.Labels[mimir_tsdb.TenantIDExternalLabel]
-	if metaTenantID != tenantID {
-		level.Warn(c.logger).Log("msg", "updating meta.json tenant label", "block", blockID.String(),
-			"old_value", metaTenantID, "new_value", tenantID, "user", tenantID)
-		meta.Thanos.Labels[mimir_tsdb.TenantIDExternalLabel] = tenantID
-	}
+	meta.Thanos.Labels[mimir_tsdb.TenantIDExternalLabel] = tenantID
 
 	var rejLbls []string
 	for l, v := range meta.Thanos.Labels {
