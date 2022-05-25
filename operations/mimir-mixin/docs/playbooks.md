@@ -1130,7 +1130,6 @@ The limit protects the system’s stability from potential abuse or mistakes, an
 
 > **Note**: Invalid metrics metadata are skipped during the ingestion, and valid metadata within the same request are ingested.
 
-
 ## Mimir routes by path
 
 **Write path**:
