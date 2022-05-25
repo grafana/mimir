@@ -11,15 +11,11 @@ import (
 	"net/url"
 	"path"
 	"strings"
-	"time"
 
 	"github.com/go-kit/log/level"
 	"github.com/gorilla/mux"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
-	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/timestamp"
-	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
 	"github.com/thanos-io/thanos/pkg/objstore"
 
@@ -281,53 +277,6 @@ func (e errBadRequest) Error() string {
 	return e.message
 }
 
-func (c *MultitenantCompactor) verifyChunks(cr *chunks.Reader, lset labels.Labels, chnks []chunks.Meta) error {
-	for _, cm := range chnks {
-		ch, err := cr.Chunk(cm.Ref)
-		if err != nil {
-			return errors.Wrapf(err, "failed to read chunk %d", cm.Ref)
-		}
-
-		samples := 0
-		firstSample := true
-		prevTS := int64(-1)
-
-		it := ch.Iterator(nil)
-		for it.Err() == nil && it.Next() {
-			samples++
-			ts, _ := it.At()
-
-			if firstSample {
-				firstSample = false
-				if ts != cm.MinTime {
-					// TODO: Error?
-					level.Warn(c.logger).Log("ref", cm.Ref, "msg", "timestamp of the first sample doesn't match chunk MinTime",
-						"sampleTimestamp", formatTimestamp(ts), "chunkMinTime", formatTimestamp(cm.MinTime))
-				}
-			} else if ts <= prevTS {
-				// TODO: Error?
-				level.Warn(c.logger).Log("ref", cm.Ref, "msg", "found sample with timestamp not strictly higher than previous timestamp",
-					"previous", formatTimestamp(prevTS), "sampleTimestamp", formatTimestamp(ts))
-			}
-
-			prevTS = ts
-		}
-		if e := it.Err(); e != nil {
-			return errors.Wrapf(err, "failed to failed to iterate over samples of chunk %d", cm.Ref)
-		}
-		if samples == 0 {
-			// TODO: Error?
-			level.Warn(c.logger).Log("ref", cm.Ref, "msg", "no samples found in the chunk")
-		} else if prevTS != cm.MaxTime {
-			// TODO: Error?
-			level.Warn(c.logger).Log("ref", cm.Ref, "msg", "timestamp of the last sample doesn't match chunk MaxTime",
-				"sampleTimestamp", formatTimestamp(prevTS), "chunkMaxTime", formatTimestamp(cm.MaxTime))
-		}
-	}
-
-	return nil
-}
-
 func (c *MultitenantCompactor) sanitizeMeta(tenantID string, blockID ulid.ULID, meta *metadata.Meta) error {
 	if meta.Thanos.Labels == nil {
 		meta.Thanos.Labels = map[string]string{}
@@ -391,8 +340,4 @@ func (r bodyReader) ObjectSize() (int64, error) {
 // Read implements io.Reader.
 func (r bodyReader) Read(b []byte) (int, error) {
 	return r.r.Body.Read(b)
-}
-
-func formatTimestamp(ts int64) string {
-	return fmt.Sprintf("%d (%s)", ts, timestamp.Time(ts).UTC().Format(time.RFC3339Nano))
 }
