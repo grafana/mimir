@@ -31,6 +31,7 @@ import (
 
 	"github.com/grafana/mimir/integration/ca"
 	"github.com/grafana/mimir/integration/e2emimir"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 type queryFrontendTestConfig struct {
@@ -492,7 +493,7 @@ overrides:
 				return c.QueryRangeRaw(`sum_over_time(metric[31d:1s])`, now.Add(-time.Minute), now, time.Minute)
 			},
 			expStatusCode: http.StatusUnprocessableEntity,
-			expBody:       `{"error":"expanding series: the query time range exceeds the limit (query length: 744h6m0s, limit: 720h0m0s)", "errorType":"execution", "status":"error"}`,
+			expBody:       fmt.Sprintf(`{"error":"expanding series: %s", "errorType":"execution", "status":"error"}`, validation.NewMaxQueryLengthError((744*time.Hour)+(6*time.Minute), 720*time.Hour)),
 		},
 		{
 			name: "execution error",

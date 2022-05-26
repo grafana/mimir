@@ -22,19 +22,19 @@ import (
 )
 
 const (
-	MaxSeriesPerMetricFlag    = "ingester.max-global-series-per-metric"
-	MaxMetadataPerMetricFlag  = "ingester.max-global-metadata-per-metric"
-	MaxSeriesPerUserFlag      = "ingester.max-global-series-per-user"
-	MaxMetadataPerUserFlag    = "ingester.max-global-metadata-per-user"
-	MaxChunksPerQueryFlag     = "querier.max-fetched-chunks-per-query"
-	MaxChunkBytesPerQueryFlag = "querier.max-fetched-chunk-bytes-per-query"
-	MaxSeriesPerQueryFlag     = "querier.max-fetched-series-per-query"
-
+	MaxSeriesPerMetricFlag     = "ingester.max-global-series-per-metric"
+	MaxMetadataPerMetricFlag   = "ingester.max-global-metadata-per-metric"
+	MaxSeriesPerUserFlag       = "ingester.max-global-series-per-user"
+	MaxMetadataPerUserFlag     = "ingester.max-global-metadata-per-user"
+	MaxChunksPerQueryFlag      = "querier.max-fetched-chunks-per-query"
+	MaxChunkBytesPerQueryFlag  = "querier.max-fetched-chunk-bytes-per-query"
+	MaxSeriesPerQueryFlag      = "querier.max-fetched-series-per-query"
 	maxLabelNamesPerSeriesFlag = "validation.max-label-names-per-series"
 	maxLabelNameLengthFlag     = "validation.max-length-label-name"
 	maxLabelValueLengthFlag    = "validation.max-length-label-value"
 	maxMetadataLengthFlag      = "validation.max-metadata-length"
 	creationGracePeriodFlag    = "validation.create-grace-period"
+	maxQueryLengthFlag         = "store.max-query-length"
 )
 
 // LimitError are errors that do not comply with the limits specified.
@@ -171,7 +171,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.MaxChunksPerQuery, MaxChunksPerQueryFlag, 2e6, "Maximum number of chunks that can be fetched in a single query from ingesters and long-term storage. This limit is enforced in the querier, ruler and store-gateway. 0 to disable.")
 	f.IntVar(&l.MaxFetchedSeriesPerQuery, MaxSeriesPerQueryFlag, 0, "The maximum number of unique series for which a query can fetch samples from each ingesters and storage. This limit is enforced in the querier and ruler. 0 to disable")
 	f.IntVar(&l.MaxFetchedChunkBytesPerQuery, MaxChunkBytesPerQueryFlag, 0, "The maximum size of all chunks in bytes that a query can fetch from each ingester and storage. This limit is enforced in the querier and ruler. 0 to disable.")
-	f.Var(&l.MaxQueryLength, "store.max-query-length", "Limit the query time range (end - start time). This limit is enforced in the query-frontend (on the received query), in the querier (on the query possibly split by the query-frontend) and ruler. 0 to disable.")
+	f.Var(&l.MaxQueryLength, maxQueryLengthFlag, "Limit the query time range (end - start time). This limit is enforced in the query-frontend (on the received query), in the querier (on the query possibly split by the query-frontend) and ruler. 0 to disable.")
 	f.Var(&l.MaxQueryLookback, "querier.max-query-lookback", "Limit how long back data (series and metadata) can be queried, up until <lookback> duration ago. This limit is enforced in the query-frontend, querier and ruler. If the requested time range is outside the allowed range, the request will not fail but will be manipulated to only query data within the allowed time range. 0 to disable.")
 	f.IntVar(&l.MaxQueryParallelism, "querier.max-query-parallelism", 14, "Maximum number of split (by time) or partial (by shard) queries that will be scheduled in parallel by the query-frontend for a single input query. This limit is introduced to have a fairer query scheduling and avoid a single query over a large time range saturating all available queriers.")
 	f.Var(&l.MaxLabelsQueryLength, "store.max-labels-query-length", "Limit the time range (end - start time) of series, label names and values queries. This limit is enforced in the querier. If the requested time range is outside the allowed range, the request will not fail but will be manipulated to only query data within the allowed time range. 0 to disable.")

@@ -8,6 +8,7 @@ package validation
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/prometheus/common/model"
 
@@ -266,6 +267,12 @@ func newMetadataUnitTooLongError(metadata *mimirpb.MetricMetadata) ValidationErr
 		cause:      metadata.GetUnit(),
 		metricName: metadata.GetMetricFamilyName(),
 	}
+}
+
+func NewMaxQueryLengthError(actualQueryLen, maxQueryLength time.Duration) LimitError {
+	return LimitError(globalerror.MaxQueryLength.MessageWithLimitConfig(
+		maxQueryLengthFlag,
+		fmt.Sprintf("the query time range exceeds the limit (query length: %s, limit: %s)", actualQueryLen, maxQueryLength)))
 }
 
 // formatLabelSet formats label adapters as a metric name with labels, while preserving
