@@ -54,7 +54,7 @@ How the limit is **configured**:
 - When configured in the runtime config, changes are applied live without requiring an ingester restart
 - The configured limit can be queried via `cortex_ingester_instance_limits{limit="max_series"}`
 
-How to **fix**:
+How to **fix** it:
 
 1. **Temporarily increase the limit**<br />
    If the actual number of series is very close to or already hit the limit, or if you foresee the ingester will hit the limit before dropping the stale series as an effect of the scale up, you should also temporarily increase the limit.
@@ -125,7 +125,7 @@ How the limit is **configured**:
 - When configured in the runtime config, changes are applied live without requiring an ingester restart
 - The configured limit can be queried via `cortex_ingester_instance_limits{limit="max_tenants"}`
 
-How to **fix**:
+How to **fix** it:
 
 1. Ensure shuffle-sharding is enabled in the Mimir cluster
 1. Assuming shuffle-sharding is enabled, scaling up ingesters will lower the number of tenants per ingester. However, the effect of this change will be visible only after `-blocks-storage.tsdb.close-idle-tsdb-timeout` period so you may have to temporarily increase the limit
@@ -150,7 +150,7 @@ How the limit is **configured**:
 - These changes are applied with a distributor restart.
 - The configured limit can be queried via `cortex_distributor_instance_limits{limit="max_inflight_push_requests"})`
 
-How to **fix**:
+How to **fix** it:
 
 1. **Temporarily increase the limit**<br />
    If the actual number of inflight push requests is very close to or already hit the limit.
@@ -264,7 +264,7 @@ This alert goes off when an ingester is marked as unhealthy. Check the ring web 
 
 This alert fires when a Mimir process has a number of memory map areas close to the limit. The limit is a per-process limit imposed by the kernel and this issue is typically caused by a large number of mmap-ed failes.
 
-How to **fix**:
+How to **fix** it:
 
 - Increase the limit on your system: `sysctl -w vm.max_map_count=<NEW LIMIT>`
 - If it's caused by a store-gateway, consider enabling `-blocks-storage.bucket-store.index-header-lazy-loading-enabled=true` to lazy mmap index-headers at query time
@@ -285,7 +285,7 @@ This alert fires when rulers cannot push new samples (result of rule evaluation)
 In general, pushing samples can fail due to problems with Mimir operations (eg. too many ingesters have crashed, and ruler cannot write samples to them), or due to problems with resulting data (eg. user hitting limit for number of series, out of order samples, etc.).
 This alert fires only for first kind of problems, and not for problems caused by limits or invalid rules.
 
-How to **fix**:
+How to **fix** it:
 
 - Investigate the ruler logs to find out the reason why ruler cannot write samples. Note that ruler logs all push errors, including "user errors", but those are not causing the alert to fire. Focus on problems with ingesters.
 
@@ -297,7 +297,7 @@ Each rule evaluation may fail due to many reasons, eg. due to invalid PromQL exp
 
 There is a category of errors that is more important: errors due to failure to read data from store-gateways or ingesters. These errors would result in 500 when run from querier. This alert fires if there is too many of such failures.
 
-How to **fix**:
+How to **fix** it:
 
 - Investigate the ruler logs to find out the reason why ruler cannot evaluate queries. Note that ruler logs rule evaluation errors even for "user errors", but those are not causing the alert to fire. Focus on problems with ingesters or store-gateways.
 
@@ -310,7 +310,7 @@ How it **works**:
 - The Mimir ruler will evaluate a rule group according to the evaluation interval on the rule group.
 - If an evaluation is not finished by the time the next evaluation should happen, the next evaluation is missed.
 
-How to **fix**:
+How to **fix** it:
 
 - Increase the evaluation interval of the rule group. You can use the rate of missed evaluation to estimate how long the rule group evaluation actually takes.
 - Try splitting up the rule group into multiple rule groups. Rule groups are evaluated in parallel, so the same rules may still fit in the same resolution.
@@ -467,7 +467,7 @@ How it **works**:
 - When the tenant shard size is less than the replicas of store-gateways, some store-gateways may not get any tenants' blocks sharded to them.
 - This is more likely to happen in Mimir clusters with fewer number of tenants.
 
-How to **fix**:
+How to **fix** it:
 
 There are three options:
 
@@ -690,7 +690,7 @@ How to **investigate**:
 
 This alert fires if the average number of in-memory series per ingester is above our target (1.5M).
 
-How to **fix**:
+How to **fix** it:
 
 - Scale up ingesters
   - To find out the Mimir clusters where ingesters should be scaled up and how many minimum replicas are expected:
@@ -704,7 +704,7 @@ How to **fix**:
 
 This alert fires if the average number of samples ingested / sec in ingesters is above our target.
 
-How to **fix**:
+How to **fix** it:
 
 - Scale up ingesters
   - To compute the desired number of ingesters to satisfy the average samples rate you can run the following query, replacing `<namespace>` with the namespace to analyse and `<target>` with the target number of samples/sec per ingester (check out the alert threshold to see the current target):
@@ -724,7 +724,7 @@ How it **works**:
 - Ingester memory short spikes are primarily influenced by queries and TSDB head compaction into new blocks (occurring every 2h)
 - A pod gets `OOMKilled` once its working set memory reaches the configured limit, so it's important to prevent ingesters' memory utilization (working set memory) from getting close to the limit (we need to keep at least 30% room for spikes due to queries)
 
-How to **fix**:
+How to **fix** it:
 
 - Check if the issue occurs only for few ingesters. If so:
   - Restart affected ingesters 1 by 1 (proceed with the next one once the previous pod has restarted and it's Ready)
@@ -883,7 +883,7 @@ How it **works**:
 - Alertmanager memory baseline usage is primarily influenced by memory allocated by the process (mostly Go heap) for alerts and silences.
 - A pod gets `OOMKilled` once its working set memory reaches the configured limit, so it's important to prevent alertmanager's memory utilization (working set memory) from going over to the limit. The memory usage is typically sustained and does not suffer from spikes, hence thresholds are set very close to the limit.
 
-How to **fix**:
+How to **fix** it:
 
 - Scale up alertmanager replicas; you can use e.g. the `Mimir / Scaling` dashboard for reference, in order to determine the needed amount of alertmanagers.
 
@@ -1137,7 +1137,7 @@ This critical error occurs when the rate of received samples per second is excee
 The ingester implements a rate limit on the samples per second that can be ingested, and it's used to protect an ingester from overloading in case of high traffic.
 The limit is a per-instance limit and it's applied on all samples received, across all tenants, in each ingester.
 
-How to **fix**:
+How to **fix** it:
 
 - Scale up ingesters.
 - Increase the limit by using the `-ingester.instance-limits.max-ingestion-rate` option (or `max_ingestion_rate` in the runtime config).
@@ -1146,7 +1146,7 @@ How to **fix**:
 
 This critical error occurs when the ingester receives a write request for a new tenant (a tenant for which no series have been stored yet) but the ingester cannot accept it because the maximum number of allowed tenants per ingester has been reached.
 
-How to **fix**:
+How to **fix** it:
 
 - In case of emergency, increase the limit by using the `-ingester.instance-limits.max-tenants` option (or `max_tenants` in the runtime config).
 - Consider configuring ingesters shuffle sharding to reduce the number of tenants per ingester.
@@ -1162,7 +1162,7 @@ How it **works**:
 - When the limit on the number of in-memory series is reached, new series are rejected, while samples can still be appended to existing ones.
 - You can configure the limit by setting the `-ingester.instance-limits.max-series` option (or `max_series` in the runtime config).
 
-How to **fix**:
+How to **fix** it:
 
 - See [`MimirIngesterReachingSeriesLimit`](#MimirIngesterReachingSeriesLimit) runbook.
 
@@ -1176,7 +1176,7 @@ How it **works**:
 - The limit applies on all inflight write requests, across all tenants, and is used to protect the ingester from overloading in case of high traffic.
 - You can configure the limit by setting the `-ingester.instance-limits.max-inflight-push-requests` option (or `max_inflight_push_requests` in the runtime config).
 
-How to **fix**:
+How to **fix** it:
 
 - In case of emergency, increase the limit by setting the `-ingester.instance-limits.max-inflight-push-requests` option (or `max_inflight_push_requests` in the runtime config).
 - Check the write requests latency through the `Mimir / Writes` dashboard and eventually investigate the root cause of high latency (the higher the latency, the higher the number of inflight write requests).
@@ -1189,7 +1189,7 @@ This error occurs when the number of in-memory series for a given tenant exceeds
 The limit is used to protect ingesters from overloading in case a tenant writes a high number of series, as well as to protect the whole system’s stability from potential abuse or mistakes.
 You can configure the limit on a per-tenant basis by using the `-ingester.max-global-series-per-user` option (or `max_global_series_per_user` in the runtime configuration).
 
-How to **fix**:
+How to **fix** it:
 
 - Ensure the actual number of series written by the affected tenant is legit.
 - Consider increasing the per-tenant limit by using the `-ingester.max-global-series-per-user` option (or `max_global_series_per_user` in the runtime configuration).
@@ -1203,7 +1203,7 @@ For example, if an instrumented application exposes a metric with a label value 
 This limit introduces a cap on the maximum number of series each metric name can have, rejecting exceeding series only for that metric name, before the per-tenant series limit is reached.
 You can configure the limit on a per-tenant basis by using the `-ingester.max-global-series-per-metric` option (or `max_global_series_per_metric` in the runtime configuration).
 
-How to **fix**:
+How to **fix** it:
 
 - Check the details in the error message to find out which is the affected metric name.
 - Investigate if the high number of series exposed for the affected metric name is legit.
@@ -1223,7 +1223,7 @@ Mimir has a per-tenant limit of the number of metric names that have metadata at
 This limit is used to protect the whole system’s stability from potential abuse or mistakes.
 You can configure the limit on a per-tenant basis by using the `-ingester.max-global-series-per-user` option (or `max_global_metadata_per_user` in the runtime configuration).
 
-How to **fix**:
+How to **fix** it:
 
 - Check the current number of metric names for the affected tenant, running the instant query `count(count by(__name__) ({__name__=~".+"}))`. Alternatively, you can get the cardinality of `__name__` label calling the API endpoint `/api/v1/cardinality/label_names`.
 - Consider increasing the per-tenant limit setting to a value greater than the number of unique metric names returned by the previous query.
@@ -1240,7 +1240,7 @@ In these edge cases, different applications would expose different metadata for 
 This limit is used to protect the whole system’s stability from potential abuse or mistakes, in case the number of metadata variants for a given metric name grows indefinitely.
 You can configure the limit on a per-tenant basis by using the `-ingester.max-global-series-per-metric` option (or `max_global_metadata_per_metric` in the runtime configuration).
 
-How to **fix**:
+How to **fix** it:
 
 - Check the metadata for the affected metric name, querying the `/api/v1/metadata?metric=<name>` API endpoint (replace `<name>` with the metric name).
 - If the different metadata is unexpected, consider fixing the discrepancy in the instrumented applications.
@@ -1253,7 +1253,7 @@ This error occurs when a query execution exceeds the limit on the number of seri
 This limit is used to protect the system’s stability from potential abuse or mistakes, when running a query fetching a huge amount of data.
 You can configure the limit on a per-tenant basis by using the `-querier.max-fetched-chunks-per-query` option (or `max_fetched_chunks_per_query` in the runtime configuration).
 
-How to **fix**:
+How to **fix** it:
 
 - Consider reducing the time range and/or cardinality of the query. To reduce the cardinality of the query, you can add more label matchers to the query, restricting the set of matching series.
 - Consider increasing the per-tenant limit by using the `-querier.max-fetched-chunks-per-query` option (or `max_fetched_chunks_per_query` in the runtime configuration).
@@ -1265,7 +1265,7 @@ This error occurs when a query execution exceeds the limit on the maximum number
 This limit is used to protect the system’s stability from potential abuse or mistakes, when running a query fetching a huge amount of data.
 You can configure the limit on a per-tenant basis by using the `-querier.max-fetched-series-per-query` option (or `max_fetched_series_per_query` in the runtime configuration).
 
-How to **fix**:
+How to **fix** it:
 
 - Consider reducing the time range and/or cardinality of the query. To reduce the cardinality of the query, you can add more label matchers to the query, restricting the set of matching series.
 - Consider increasing the per-tenant limit by using the `-querier.max-fetched-series-per-query` option (or `max_fetched_series_per_query` in the runtime configuration).
@@ -1277,7 +1277,7 @@ This error occurs when a query execution exceeds the limit on aggregated size (i
 This limit is used to protect the system’s stability from potential abuse or mistakes, when running a query fetching a huge amount of data.
 You can configure the limit on a per-tenant basis by using the `-querier.max-fetched-chunk-bytes-per-query` option (or `max_fetched_chunk_bytes_per_query` in the runtime configuration).
 
-How to **fix**:
+How to **fix** it:
 
 - Consider reducing the time range and/or cardinality of the query. To reduce the cardinality of the query, you can add more label matchers to the query, restricting the set of matching series.
 - Consider increasing the per-tenant limit by using the `-querier.max-fetched-chunk-bytes-per-query` option (or `max_fetched_chunk_bytes_per_query` in the runtime configuration).
