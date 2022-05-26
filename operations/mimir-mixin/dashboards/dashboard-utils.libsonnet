@@ -24,11 +24,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
     ) + {
       __requires: [
         {
-          "id": "grafana",
-          "name": "Grafana",
-          "type": "grafana",
-          "version": "8.0.0"
-        }
+          id: 'grafana',
+          name: 'Grafana',
+          type: 'grafana',
+          version: '8.0.0',
+        },
       ],
 
       addRowIf(condition, row)::
