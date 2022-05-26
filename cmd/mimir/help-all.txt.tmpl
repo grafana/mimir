@@ -305,7 +305,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.bucket-store.consistency-delay duration
     	Minimum age of a block before it's being read. Set it to safe value (e.g 30m) if your object storage is eventually consistent. GCS and S3 are (roughly) strongly consistent.
   -blocks-storage.bucket-store.ignore-blocks-within duration
-    	Blocks with minimum time within this duration are ignored, and not loaded by store-gateway. Useful when used together with -querier.query-store-after to prevent loading young blocks, because there are usually many of them (depending on number of ingesters) and they are not yet compacted. Negative values or 0 disable the filter.
+    	Blocks with minimum time within this duration are ignored, and not loaded by store-gateway. Useful when used together with -querier.query-store-after to prevent loading young blocks, because there are usually many of them (depending on number of ingesters) and they are not yet compacted. Negative values or 0 disable the filter. (default 10h0m0s)
   -blocks-storage.bucket-store.ignore-deletion-marks-delay duration
     	Duration after which the blocks marked for deletion will be filtered out while fetching blocks. The idea of ignore-deletion-marks-delay is to ignore blocks that are marked for deletion with some delay. This ensures store can still serve blocks that are meant to be deleted but do not have a replacement yet. (default 1h0m0s)
   -blocks-storage.bucket-store.index-cache.backend string
@@ -332,8 +332,6 @@ Usage of ./cmd/mimir/mimir:
     	If enabled, store-gateway will lazy load an index-header only once required by a query. (default true)
   -blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout duration
     	If index-header lazy loading is enabled and this setting is > 0, the store-gateway will offload unused index-headers after 'idle timeout' inactivity. (default 1h0m0s)
-  -blocks-storage.bucket-store.index-header-thread-pool-size int
-    	[experimental] Number of threads that are dedicated for use reading index headers. Set to 0 to disable use of dedicated threads for reading index headers.
   -blocks-storage.bucket-store.max-chunk-pool-bytes uint
     	Max size - in bytes - of a chunks pool, used to reduce memory allocations. The pool is shared across all tenants. 0 to disable the limit. (default 2147483648)
   -blocks-storage.bucket-store.max-concurrent int
@@ -1084,11 +1082,11 @@ Usage of ./cmd/mimir/mimir:
   -querier.query-ingesters-within duration
     	Maximum lookback beyond which queries are not sent to ingester. 0 means all queries are sent to ingester. (default 13h0m0s)
   -querier.query-store-after duration
-    	The time after which a metric should be queried from storage and not just ingesters. 0 means all queries are sent to store. If this option is enabled, the time range of the query sent to the store-gateway will be manipulated to ensure the query end is not more recent than 'now - query-store-after'.
+    	The time after which a metric should be queried from storage and not just ingesters. 0 means all queries are sent to store. If this option is enabled, the time range of the query sent to the store-gateway will be manipulated to ensure the query end is not more recent than 'now - query-store-after'. (default 12h0m0s)
   -querier.scheduler-address string
     	Address of the query-scheduler component, in host:port format. Only one of -querier.frontend-address or -querier.scheduler-address can be set. If neither is set, queries are only received via HTTP endpoint.
   -querier.shuffle-sharding-ingesters-lookback-period duration
-    	When distributor's sharding strategy is shuffle-sharding and this setting is > 0, queriers fetch in-memory series from the minimum set of required ingesters, selecting only ingesters which may have received series since 'now - lookback period'. The lookback period should be greater or equal than the configured -querier.query-store-after and -querier.query-ingesters-within. If this setting is 0, queriers always query all ingesters (ingesters shuffle sharding on read path is disabled).
+    	When this setting is > 0, queriers fetch in-memory series from the minimum set of required ingesters, selecting only ingesters which may have received series since 'now - lookback period'. The lookback period should be greater or equal than the configured -querier.query-store-after and -querier.query-ingesters-within. If this setting is 0, queriers always query all ingesters (ingesters shuffle sharding on read path is disabled). (default 13h0m0s)
   -querier.store-gateway-client.tls-ca-path string
     	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
   -querier.store-gateway-client.tls-cert-path string
@@ -1525,9 +1523,9 @@ Usage of ./cmd/mimir/mimir:
   -server.grpc-max-concurrent-streams uint
     	Limit on the number of concurrent streams for gRPC calls (0 = unlimited) (default 100)
   -server.grpc-max-recv-msg-size-bytes int
-    	Limit on the size of a gRPC message this server can receive (bytes). (default 4194304)
+    	Limit on the size of a gRPC message this server can receive (bytes). (default 104857600)
   -server.grpc-max-send-msg-size-bytes int
-    	Limit on the size of a gRPC message this server can send (bytes). (default 4194304)
+    	Limit on the size of a gRPC message this server can send (bytes). (default 104857600)
   -server.grpc-tls-ca-path string
     	GRPC TLS Client CA path.
   -server.grpc-tls-cert-path string
@@ -1656,6 +1654,8 @@ Usage of ./cmd/mimir/mimir:
     	True to enable zone-awareness and replicate blocks across different availability zones. This option needs be set both on the store-gateway, querier and ruler when running in microservices mode.
   -store-gateway.tenant-shard-size int
     	The tenant's shard size, used when store-gateway sharding is enabled. Value of 0 disables shuffle sharding for the tenant, that is all tenant blocks are sharded across all store-gateway replicas.
+  -store-gateway.thread-pool-size uint
+    	[experimental] Number of OS threads that are dedicated for handling requests. Set to 0 to disable use of dedicated OS threads for handling requests.
   -store.max-labels-query-length value
     	Limit the time range (end - start time) of series, label names and values queries. This limit is enforced in the querier. If the requested time range is outside the allowed range, the request will not fail but will be manipulated to only query data within the allowed time range. 0 to disable.
   -store.max-query-length value

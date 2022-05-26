@@ -19,7 +19,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/backoff"
-	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -38,7 +37,6 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
-	mimir_indexheader "github.com/grafana/mimir/pkg/storegateway/indexheader"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -46,8 +44,6 @@ import (
 
 // BucketStores is a multi-tenant wrapper of Thanos BucketStore.
 type BucketStores struct {
-	services.Service
-
 	logger             log.Logger
 	cfg                tsdb.BlocksStorageConfig
 	limits             *validation.Overrides
@@ -72,9 +68,6 @@ type BucketStores struct {
 
 	// Gate used to limit query concurrency across all tenants.
 	queryGate gate.Gate
-
-	// Thread pool used for mmap operations that may page fault
-	threadPool *mimir_indexheader.Threadpool
 
 	// Keeps a bucket store for each tenant.
 	storesMu sync.RWMutex
@@ -115,7 +108,6 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 		metaFetcherMetrics: NewMetadataFetcherMetrics(),
 		queryGate:          queryGate,
 		partitioner:        newGapBasedPartitioner(cfg.BucketStore.PartitionerMaxGapBytes, reg),
-		threadPool:         mimir_indexheader.NewThreadPool(cfg.BucketStore.IndexHeaderThreadPoolSize, reg),
 		seriesHashCache:    hashcache.NewSeriesHashCache(cfg.BucketStore.SeriesHashCacheMaxBytes),
 		syncBackoffConfig: backoff.Config{
 			MinBackoff: 1 * time.Second,
@@ -161,24 +153,7 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 		reg.MustRegister(u.metaFetcherMetrics)
 	}
 
-	u.Service = services.NewIdleService(u.starting, u.stopping)
 	return u, nil
-}
-
-func (u *BucketStores) starting(_ context.Context) error {
-	if u.threadPool != nil {
-		u.threadPool.Start()
-	}
-
-	return nil
-}
-
-func (u *BucketStores) stopping(_ error) error {
-	if u.threadPool != nil {
-		u.threadPool.StopAndWait()
-	}
-
-	return nil
 }
 
 // InitialSync does an initial synchronization of blocks for all users.
@@ -508,7 +483,6 @@ func (u *BucketStores) getOrCreateStore(userID string) (*BucketStore, error) {
 		newChunksLimiterFactory(u.limits, userID),
 		NewSeriesLimiterFactory(0), // No series limiter.
 		u.partitioner,
-		u.threadPool,
 		u.cfg.BucketStore.BlockSyncConcurrency,
 		u.cfg.BucketStore.PostingOffsetsInMemSampling,
 		true, // Enable series hints.

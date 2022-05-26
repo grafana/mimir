@@ -148,8 +148,10 @@ func TestQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T) {
 				"-blocks-storage.bucket-store.index-cache.memcached.addresses": "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
 				"-blocks-storage.bucket-store.sync-interval":                   "1s",
 				"-blocks-storage.bucket-store.index-cache.backend":             testCfg.indexCacheBackend,
+				"-blocks-storage.bucket-store.ignore-blocks-within":            "0",
 				"-blocks-storage.bucket-store.bucket-index.enabled":            strconv.FormatBool(testCfg.bucketIndexEnabled),
 				"-store-gateway.tenant-shard-size":                             fmt.Sprintf("%d", testCfg.tenantShardSize),
+				"-querier.query-store-after":                                   "0",
 				"-query-frontend.query-stats-enabled":                          "true",
 				"-query-frontend.parallelize-shardable-queries":                strconv.FormatBool(testCfg.queryShardingEnabled),
 			})
@@ -348,10 +350,12 @@ func TestQuerierWithBlocksStorageRunningInSingleBinaryMode(t *testing.T) {
 				"-blocks-storage.tsdb.block-ranges-period":                     blockRangePeriod.String(),
 				"-blocks-storage.tsdb.ship-interval":                           "1s",
 				"-blocks-storage.bucket-store.sync-interval":                   "1s",
+				"-blocks-storage.bucket-store.ignore-blocks-within":            "0",
 				"-blocks-storage.tsdb.retention-period":                        ((blockRangePeriod * 2) - 1).String(),
 				"-blocks-storage.bucket-store.index-cache.backend":             testCfg.indexCacheBackend,
 				"-blocks-storage.bucket-store.index-cache.memcached.addresses": "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
 				"-blocks-storage.bucket-store.bucket-index.enabled":            strconv.FormatBool(testCfg.bucketIndexEnabled),
+
 				// Ingester.
 				"-ingester.ring.store":           "consul",
 				"-ingester.ring.consul.hostname": consul.NetworkHTTPEndpoint(),
@@ -366,6 +370,8 @@ func TestQuerierWithBlocksStorageRunningInSingleBinaryMode(t *testing.T) {
 				"-compactor.ring.store":                           "consul",
 				"-compactor.ring.consul.hostname":                 consul.NetworkHTTPEndpoint(),
 				"-compactor.cleanup-interval":                     "2s", // Update bucket index often.
+				// Querier.
+				"-querier.query-store-after": "0",
 			})
 
 			// Start Mimir replicas.
@@ -765,10 +771,12 @@ func TestQuerierWithBlocksStorageOnMissingBlocksFromStorage(t *testing.T) {
 	// blocks (less than 3*sync-interval age) as they could be unnoticed by the store-gateway and ingesters
 	// have them anyway. We turn down the sync-interval to speed up the test.
 	storeGateway := e2emimir.NewStoreGateway("store-gateway", consul.NetworkHTTPEndpoint(), mergeFlags(flags, map[string]string{
-		"-blocks-storage.bucket-store.sync-interval": "1s",
+		"-blocks-storage.bucket-store.sync-interval":        "1s",
+		"-blocks-storage.bucket-store.ignore-blocks-within": "0",
 	}))
 	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), mergeFlags(flags, map[string]string{
 		"-blocks-storage.bucket-store.sync-interval": "1s",
+		"-querier.query-store-after":                 "0",
 	}))
 	require.NoError(t, s.StartAndWaitReady(querier, storeGateway))
 
@@ -871,7 +879,7 @@ func TestQueryLimitsWithBlocksStorageRunningInMicroServices(t *testing.T) {
 
 	_, err = c.QueryRange("{__name__=~\"series_.+\"}", series1Timestamp, series4Timestamp.Add(1*time.Hour), blockRangePeriod)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "max number of series limit")
+	assert.ErrorContains(t, err, "the query exceeded the maximum number of series")
 }
 
 func TestHashCollisionHandling(t *testing.T) {

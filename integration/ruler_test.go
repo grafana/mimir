@@ -287,7 +287,7 @@ func TestRulerEvaluationDelay(t *testing.T) {
 	// Wait until all the pushed samples have been evaluated by the rule. This
 	// ensures that rule results are successfully written even after a
 	// staleness period.
-	require.NoError(t, mimir.WaitSumMetrics(e2e.GreaterOrEqual(ruleEvaluationsAfterPush[0]+float64(samplesToSend)), "cortex_prometheus_rule_evaluations_total"))
+	require.NoError(t, mimir.WaitSumMetrics(e2e.Greater(ruleEvaluationsAfterPush[0]+float64(samplesToSend)), "cortex_prometheus_rule_evaluations_total"))
 
 	// query all results to verify rules have been evaluated correctly
 	result, err = c.QueryRange("stale_nan_eval", now.Add(-evaluationDelay), now, time.Second)

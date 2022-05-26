@@ -182,7 +182,7 @@ func (u *userTSDB) PreCreation(metric labels.Labels) error {
 	gl := u.instanceLimitsFn()
 	if gl != nil && gl.MaxInMemorySeries > 0 {
 		if series := u.instanceSeriesCount.Load(); series >= gl.MaxInMemorySeries {
-			return errMaxSeriesLimitReached
+			return errMaxInMemorySeriesReached
 		}
 	}
 
@@ -253,7 +253,7 @@ func (u *userTSDB) blocksToDelete(blocks []*tsdb.Block) map[ulid.ULID]struct{} {
 // updateCachedShipperBlocks reads the shipper meta file and updates the cached shipped blocks.
 func (u *userTSDB) updateCachedShippedBlocks() error {
 	shipperMeta, err := shipper.ReadMetaFile(u.db.Dir())
-	if os.IsNotExist(err) {
+	if errors.Is(err, os.ErrNotExist) {
 		// If the meta file doesn't exist it means the shipper hasn't run yet.
 		shipperMeta = &shipper.Meta{}
 	} else if err != nil {

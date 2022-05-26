@@ -453,7 +453,7 @@
             (
               container_memory_working_set_bytes{container="ingester"}
                 /
-              container_spec_memory_limit_bytes{container="ingester"}
+              ( container_spec_memory_limit_bytes{container="ingester"} > 0 )
             ) > 0.65
           |||,
           'for': '15m',
@@ -472,7 +472,7 @@
             (
               container_memory_working_set_bytes{container="ingester"}
                 /
-              container_spec_memory_limit_bytes{container="ingester"}
+              ( container_spec_memory_limit_bytes{container="ingester"} > 0 )
             ) > 0.8
           |||,
           'for': '15m',
@@ -531,10 +531,11 @@
         {
           alert: $.alertName('RulerMissedEvaluations'),
           expr: |||
+            100 * (
             sum by (%(alert_aggregation_labels)s, %(per_instance_label)s, rule_group) (rate(cortex_prometheus_rule_group_iterations_missed_total[1m]))
               /
             sum by (%(alert_aggregation_labels)s, %(per_instance_label)s, rule_group) (rate(cortex_prometheus_rule_group_iterations_total[1m]))
-              > 0.01
+            ) > 1
           ||| % $._config,
           'for': '5m',
           labels: {
@@ -571,11 +572,9 @@
           alert: $.alertName('GossipMembersMismatch'),
           expr:
             |||
-              memberlist_client_cluster_members_count
-                != on (%s) group_left
-              sum by (%s) (up{job=~".+/%s"})
+              avg by (%s) (memberlist_client_cluster_members_count) != sum by (%s) (up{job=~".+/%s"})
             ||| % [$._config.alert_aggregation_labels, $._config.alert_aggregation_labels, simpleRegexpOpt($._config.job_names.ring_members)],
-          'for': '5m',
+          'for': '15m',
           labels: {
             severity: 'warning',
           },
@@ -594,7 +593,7 @@
             (
               container_memory_working_set_bytes{container="etcd"}
                 /
-              container_spec_memory_limit_bytes{container="etcd"}
+              ( container_spec_memory_limit_bytes{container="etcd"} > 0 )
             ) > 0.65
           |||,
           'for': '15m',
@@ -613,7 +612,7 @@
             (
               container_memory_working_set_bytes{container="etcd"}
                 /
-              container_spec_memory_limit_bytes{container="etcd"}
+              ( container_spec_memory_limit_bytes{container="etcd"} > 0 )
             ) > 0.8
           |||,
           'for': '15m',

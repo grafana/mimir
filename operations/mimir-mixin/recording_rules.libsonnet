@@ -47,7 +47,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
         name: 'mimir_queries',
         rules:
           utils.histogramRules('cortex_query_frontend_retries', [$._config.per_cluster_label, 'job']) +
-          utils.histogramRules('cortex_query_frontend_queue_duration_seconds', [$._config.per_cluster_label, 'job']) +
+          utils.histogramRules('cortex_query_frontend_queue_duration_seconds', [$._config.per_cluster_label, 'job']),
+      },
+      {
+        name: 'mimir_ingester_queries',
+        rules:
           utils.histogramRules('cortex_ingester_queried_series', [$._config.per_cluster_label, 'job']) +
           utils.histogramRules('cortex_ingester_queried_samples', [$._config.per_cluster_label, 'job']) +
           utils.histogramRules('cortex_ingester_queried_exemplars', [$._config.per_cluster_label, 'job']),
@@ -335,7 +339,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
               sum by (%(alert_aggregation_labels)s, deployment) (
                 label_replace(
                   label_replace(
-                    container_memory_usage_bytes,
+                    container_memory_usage_bytes{image!=""},
                     "deployment", "$1", "%(per_instance_label)s", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
                   ),
                   # The question mark in "(.*?)" is used to make it non-greedy, otherwise it

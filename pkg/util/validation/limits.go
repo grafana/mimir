@@ -21,6 +21,22 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
 )
 
+const (
+	MaxSeriesPerMetricFlag    = "ingester.max-global-series-per-metric"
+	MaxMetadataPerMetricFlag  = "ingester.max-global-metadata-per-metric"
+	MaxSeriesPerUserFlag      = "ingester.max-global-series-per-user"
+	MaxMetadataPerUserFlag    = "ingester.max-global-metadata-per-user"
+	MaxChunksPerQueryFlag     = "querier.max-fetched-chunks-per-query"
+	MaxChunkBytesPerQueryFlag = "querier.max-fetched-chunk-bytes-per-query"
+	MaxSeriesPerQueryFlag     = "querier.max-fetched-series-per-query"
+
+	maxLabelNamesPerSeriesFlag = "validation.max-label-names-per-series"
+	maxLabelNameLengthFlag     = "validation.max-length-label-name"
+	maxLabelValueLengthFlag    = "validation.max-length-label-value"
+	maxMetadataLengthFlag      = "validation.max-metadata-length"
+	creationGracePeriodFlag    = "validation.create-grace-period"
+)
+
 // LimitError are errors that do not comply with the limits specified.
 type LimitError string
 
@@ -136,25 +152,25 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&l.HAReplicaLabel, "distributor.ha-tracker.replica", "__replica__", "Prometheus label to look for in samples to identify a Prometheus HA replica.")
 	f.IntVar(&l.HAMaxClusters, "distributor.ha-tracker.max-clusters", 0, "Maximum number of clusters that HA tracker will keep track of for a single tenant. 0 to disable the limit.")
 	f.Var(&l.DropLabels, "distributor.drop-label", "This flag can be used to specify label names that to drop during sample ingestion within the distributor and can be repeated in order to drop multiple labels.")
-	f.IntVar(&l.MaxLabelNameLength, "validation.max-length-label-name", 1024, "Maximum length accepted for label names")
-	f.IntVar(&l.MaxLabelValueLength, "validation.max-length-label-value", 2048, "Maximum length accepted for label value. This setting also applies to the metric name")
-	f.IntVar(&l.MaxLabelNamesPerSeries, "validation.max-label-names-per-series", 30, "Maximum number of label names per series.")
-	f.IntVar(&l.MaxMetadataLength, "validation.max-metadata-length", 1024, "Maximum length accepted for metric metadata. Metadata refers to Metric Name, HELP and UNIT.")
+	f.IntVar(&l.MaxLabelNameLength, maxLabelNameLengthFlag, 1024, "Maximum length accepted for label names")
+	f.IntVar(&l.MaxLabelValueLength, maxLabelValueLengthFlag, 2048, "Maximum length accepted for label value. This setting also applies to the metric name")
+	f.IntVar(&l.MaxLabelNamesPerSeries, maxLabelNamesPerSeriesFlag, 30, "Maximum number of label names per series.")
+	f.IntVar(&l.MaxMetadataLength, maxMetadataLengthFlag, 1024, "Maximum length accepted for metric metadata. Metadata refers to Metric Name, HELP and UNIT.")
 	_ = l.CreationGracePeriod.Set("10m")
-	f.Var(&l.CreationGracePeriod, "validation.create-grace-period", "Controls how far into the future incoming samples are accepted compared to the wall clock. Any sample with timestamp `t` will be rejected if `t > (now + validation.create-grace-period)`.")
+	f.Var(&l.CreationGracePeriod, creationGracePeriodFlag, "Controls how far into the future incoming samples are accepted compared to the wall clock. Any sample with timestamp `t` will be rejected if `t > (now + validation.create-grace-period)`.")
 	f.BoolVar(&l.EnforceMetadataMetricName, "validation.enforce-metadata-metric-name", true, "Enforce every metadata has a metric name.")
 
-	f.IntVar(&l.MaxGlobalSeriesPerUser, "ingester.max-global-series-per-user", 150000, "The maximum number of active series per tenant, across the cluster before replication. 0 to disable.")
-	f.IntVar(&l.MaxGlobalSeriesPerMetric, "ingester.max-global-series-per-metric", 20000, "The maximum number of active series per metric name, across the cluster before replication. 0 to disable.")
+	f.IntVar(&l.MaxGlobalSeriesPerUser, MaxSeriesPerUserFlag, 150000, "The maximum number of active series per tenant, across the cluster before replication. 0 to disable.")
+	f.IntVar(&l.MaxGlobalSeriesPerMetric, MaxSeriesPerMetricFlag, 20000, "The maximum number of active series per metric name, across the cluster before replication. 0 to disable.")
 
-	f.IntVar(&l.MaxGlobalMetricsWithMetadataPerUser, "ingester.max-global-metadata-per-user", 0, "The maximum number of active metrics with metadata per tenant, across the cluster. 0 to disable.")
-	f.IntVar(&l.MaxGlobalMetadataPerMetric, "ingester.max-global-metadata-per-metric", 0, "The maximum number of metadata per metric, across the cluster. 0 to disable.")
+	f.IntVar(&l.MaxGlobalMetricsWithMetadataPerUser, MaxMetadataPerUserFlag, 0, "The maximum number of active metrics with metadata per tenant, across the cluster. 0 to disable.")
+	f.IntVar(&l.MaxGlobalMetadataPerMetric, MaxMetadataPerMetricFlag, 0, "The maximum number of metadata per metric, across the cluster. 0 to disable.")
 	f.IntVar(&l.MaxGlobalExemplarsPerUser, "ingester.max-global-exemplars-per-user", 0, "The maximum number of exemplars in memory, across the cluster. 0 to disable exemplars ingestion.")
 	f.Var(&l.ActiveSeriesCustomTrackersConfig, "ingester.active-series-custom-trackers", "Additional active series metrics, matching the provided matchers. Matchers should be in form <name>:<matcher>, like 'foobar:{foo=\"bar\"}'. Multiple matchers can be provided either providing the flag multiple times or providing multiple semicolon-separated values to a single flag.")
 
-	f.IntVar(&l.MaxChunksPerQuery, "querier.max-fetched-chunks-per-query", 2e6, "Maximum number of chunks that can be fetched in a single query from ingesters and long-term storage. This limit is enforced in the querier, ruler and store-gateway. 0 to disable.")
-	f.IntVar(&l.MaxFetchedSeriesPerQuery, "querier.max-fetched-series-per-query", 0, "The maximum number of unique series for which a query can fetch samples from each ingesters and storage. This limit is enforced in the querier and ruler. 0 to disable")
-	f.IntVar(&l.MaxFetchedChunkBytesPerQuery, "querier.max-fetched-chunk-bytes-per-query", 0, "The maximum size of all chunks in bytes that a query can fetch from each ingester and storage. This limit is enforced in the querier and ruler. 0 to disable.")
+	f.IntVar(&l.MaxChunksPerQuery, MaxChunksPerQueryFlag, 2e6, "Maximum number of chunks that can be fetched in a single query from ingesters and long-term storage. This limit is enforced in the querier, ruler and store-gateway. 0 to disable.")
+	f.IntVar(&l.MaxFetchedSeriesPerQuery, MaxSeriesPerQueryFlag, 0, "The maximum number of unique series for which a query can fetch samples from each ingesters and storage. This limit is enforced in the querier and ruler. 0 to disable")
+	f.IntVar(&l.MaxFetchedChunkBytesPerQuery, MaxChunkBytesPerQueryFlag, 0, "The maximum size of all chunks in bytes that a query can fetch from each ingester and storage. This limit is enforced in the querier and ruler. 0 to disable.")
 	f.Var(&l.MaxQueryLength, "store.max-query-length", "Limit the query time range (end - start time). This limit is enforced in the query-frontend (on the received query), in the querier (on the query possibly split by the query-frontend) and ruler. 0 to disable.")
 	f.Var(&l.MaxQueryLookback, "querier.max-query-lookback", "Limit how long back data (series and metadata) can be queried, up until <lookback> duration ago. This limit is enforced in the query-frontend, querier and ruler. If the requested time range is outside the allowed range, the request will not fail but will be manipulated to only query data within the allowed time range. 0 to disable.")
 	f.IntVar(&l.MaxQueryParallelism, "querier.max-query-parallelism", 14, "Maximum number of split (by time) or partial (by shard) queries that will be scheduled in parallel by the query-frontend for a single input query. This limit is introduced to have a fairer query scheduling and avoid a single query over a large time range saturating all available queriers.")

@@ -29,16 +29,11 @@
       // Limits config.
       'runtime-config.file': '%s/overrides.yaml' % $._config.overrides_configmap_mountpoint,
       'server.grpc-max-concurrent-streams': 10000,
-      'server.grpc-max-send-msg-size-bytes': 10 * 1024 * 1024,
-      'server.grpc-max-recv-msg-size-bytes': 10 * 1024 * 1024,
 
       // Blocks storage.
       'blocks-storage.tsdb.dir': '/data/tsdb',
       'blocks-storage.tsdb.block-ranges-period': '2h',
       'blocks-storage.tsdb.ship-interval': '1m',
-
-      // Close idle TSDBs.
-      'blocks-storage.tsdb.close-idle-tsdb-timeout': $._config.queryConfig['querier.query-ingesters-within'],
 
       // Persist ring tokens so that when the ingester will be restarted
       // it will pick the same tokens

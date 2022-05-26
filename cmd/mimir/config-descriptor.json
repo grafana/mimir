@@ -337,7 +337,7 @@
           "required": false,
           "desc": "Limit on the size of a gRPC message this server can receive (bytes).",
           "fieldValue": null,
-          "fieldDefaultValue": 4194304,
+          "fieldDefaultValue": 104857600,
           "fieldFlag": "server.grpc-max-recv-msg-size-bytes",
           "fieldType": "int",
           "fieldCategory": "advanced"
@@ -348,7 +348,7 @@
           "required": false,
           "desc": "Limit on the size of a gRPC message this server can send (bytes).",
           "fieldValue": null,
-          "fieldDefaultValue": 4194304,
+          "fieldDefaultValue": 104857600,
           "fieldFlag": "server.grpc-max-send-msg-size-bytes",
           "fieldType": "int",
           "fieldCategory": "advanced"
@@ -1377,7 +1377,8 @@
           "fieldValue": null,
           "fieldDefaultValue": 46800000000000,
           "fieldFlag": "querier.query-ingesters-within",
-          "fieldType": "duration"
+          "fieldType": "duration",
+          "fieldCategory": "advanced"
         },
         {
           "kind": "field",
@@ -1385,9 +1386,10 @@
           "required": false,
           "desc": "The time after which a metric should be queried from storage and not just ingesters. 0 means all queries are sent to store. If this option is enabled, the time range of the query sent to the store-gateway will be manipulated to ensure the query end is not more recent than 'now - query-store-after'.",
           "fieldValue": null,
-          "fieldDefaultValue": 0,
+          "fieldDefaultValue": 43200000000000,
           "fieldFlag": "querier.query-store-after",
-          "fieldType": "duration"
+          "fieldType": "duration",
+          "fieldCategory": "advanced"
         },
         {
           "kind": "field",
@@ -1480,9 +1482,9 @@
           "kind": "field",
           "name": "shuffle_sharding_ingesters_lookback_period",
           "required": false,
-          "desc": "When distributor's sharding strategy is shuffle-sharding and this setting is \u003e 0, queriers fetch in-memory series from the minimum set of required ingesters, selecting only ingesters which may have received series since 'now - lookback period'. The lookback period should be greater or equal than the configured -querier.query-store-after and -querier.query-ingesters-within. If this setting is 0, queriers always query all ingesters (ingesters shuffle sharding on read path is disabled).",
+          "desc": "When this setting is \u003e 0, queriers fetch in-memory series from the minimum set of required ingesters, selecting only ingesters which may have received series since 'now - lookback period'. The lookback period should be greater or equal than the configured -querier.query-store-after and -querier.query-ingesters-within. If this setting is 0, queriers always query all ingesters (ingesters shuffle sharding on read path is disabled).",
           "fieldValue": null,
-          "fieldDefaultValue": 0,
+          "fieldDefaultValue": 46800000000000,
           "fieldFlag": "querier.shuffle-sharding-ingesters-lookback-period",
           "fieldType": "duration",
           "fieldCategory": "advanced"
@@ -5004,7 +5006,7 @@
               "required": false,
               "desc": "Blocks with minimum time within this duration are ignored, and not loaded by store-gateway. Useful when used together with -querier.query-store-after to prevent loading young blocks, because there are usually many of them (depending on number of ingesters) and they are not yet compacted. Negative values or 0 disable the filter.",
               "fieldValue": null,
-              "fieldDefaultValue": 0,
+              "fieldDefaultValue": 36000000000000,
               "fieldFlag": "blocks-storage.bucket-store.ignore-blocks-within",
               "fieldType": "duration",
               "fieldCategory": "advanced"
@@ -5096,17 +5098,6 @@
               "fieldFlag": "blocks-storage.bucket-store.posting-offsets-in-mem-sampling",
               "fieldType": "int",
               "fieldCategory": "advanced"
-            },
-            {
-              "kind": "field",
-              "name": "index_header_thread_pool_size",
-              "required": false,
-              "desc": "Number of threads that are dedicated for use reading index headers. Set to 0 to disable use of dedicated threads for reading index headers.",
-              "fieldValue": null,
-              "fieldDefaultValue": 0,
-              "fieldFlag": "blocks-storage.bucket-store.index-header-thread-pool-size",
-              "fieldType": "int",
-              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,
@@ -6410,6 +6401,17 @@
           ],
           "fieldValue": null,
           "fieldDefaultValue": null
+        },
+        {
+          "kind": "field",
+          "name": "thread_pool_size",
+          "required": false,
+          "desc": "Number of OS threads that are dedicated for handling requests. Set to 0 to disable use of dedicated OS threads for handling requests.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "store-gateway.thread-pool-size",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,

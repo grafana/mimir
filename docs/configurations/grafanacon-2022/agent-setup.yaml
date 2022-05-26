@@ -1,0 +1,74 @@
+apiVersion: monitoring.grafana.com/v1alpha1
+kind: GrafanaAgent
+metadata:
+  name: grafana-agent
+  namespace: default
+  labels:
+    app: grafana-agent
+spec:
+  image: grafana/agent:v0.24.1
+  logLevel: info
+  serviceAccountName: grafana-agent
+  metrics:
+    instanceSelector:
+      matchLabels:
+        agent: grafana-agent-metrics
+    externalLabels:
+      k8s_cluster: docker-desktop
+
+---
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: grafana-agent
+  namespace: default
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: grafana-agent
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - nodes
+      - nodes/proxy
+      - nodes/metrics
+      - services
+      - endpoints
+      - pods
+      - events
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - networking.k8s.io
+    resources:
+      - ingresses
+    verbs:
+      - get
+      - list
+      - watch
+  - nonResourceURLs:
+      - /metrics
+      - /metrics/cadvisor
+    verbs:
+      - get
+
+---
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: grafana-agent
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: grafana-agent
+subjects:
+  - kind: ServiceAccount
+    name: grafana-agent
+    namespace: default

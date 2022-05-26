@@ -102,7 +102,6 @@
     }
   ) + (
     if !$._config.shuffle_sharding.ingester_read_path_enabled then {} else {
-      'querier.shuffle-sharding-ingesters-lookback-period': $._config.queryConfig['querier.query-ingesters-within'],
       'distributor.ingestion-tenant-shard-size': $._config.shuffle_sharding.ingester_shard_size,
     }
   ),
@@ -122,7 +121,6 @@
     }
   ) + (
     if !$._config.shuffle_sharding.ingester_read_path_enabled then {} else {
-      'querier.shuffle-sharding-ingesters-lookback-period': $._config.queryConfig['querier.query-ingesters-within'],
       'distributor.ingestion-tenant-shard-size': $._config.shuffle_sharding.ingester_shard_size,
     }
   ) + (

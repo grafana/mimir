@@ -12,11 +12,13 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/globalerror"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 var (
+	// These errors are only internal, to change the API error messages, see Limiter's methods below.
 	errMaxSeriesPerMetricLimitExceeded   = errors.New("per-metric series limit exceeded")
 	errMaxMetadataPerMetricLimitExceeded = errors.New("per-metric metadata limit exceeded")
 	errMaxSeriesPerUserLimitExceeded     = errors.New("per-user series limit exceeded")
@@ -112,35 +114,39 @@ func (l *Limiter) FormatError(userID string, err error) error {
 }
 
 func (l *Limiter) formatMaxSeriesPerUserError(userID string) error {
-	actualLimit := l.maxSeriesPerUser(userID)
 	globalLimit := l.limits.MaxGlobalSeriesPerUser(userID)
 
-	return fmt.Errorf("per-user series limit of %d exceeded, please contact administrator to raise it (per-ingester local limit: %d)",
-		globalLimit, actualLimit)
+	return errors.New(globalerror.MaxSeriesPerUser.MessageWithLimitConfig(
+		validation.MaxSeriesPerUserFlag,
+		fmt.Sprintf("per-user series limit of %d exceeded", globalLimit),
+	))
 }
 
 func (l *Limiter) formatMaxSeriesPerMetricError(userID string) error {
-	actualLimit := l.maxSeriesPerMetric(userID)
 	globalLimit := l.limits.MaxGlobalSeriesPerMetric(userID)
 
-	return fmt.Errorf("per-metric series limit of %d exceeded, please contact administrator to raise it (per-ingester local limit: %d)",
-		globalLimit, actualLimit)
+	return errors.New(globalerror.MaxSeriesPerMetric.MessageWithLimitConfig(
+		validation.MaxSeriesPerMetricFlag,
+		fmt.Sprintf("per-metric series limit of %d exceeded", globalLimit),
+	))
 }
 
 func (l *Limiter) formatMaxMetadataPerUserError(userID string) error {
-	actualLimit := l.maxMetadataPerUser(userID)
 	globalLimit := l.limits.MaxGlobalMetricsWithMetadataPerUser(userID)
 
-	return fmt.Errorf("per-user metric metadata limit of %d exceeded, please contact administrator to raise it (per-ingester local limit: %d)",
-		globalLimit, actualLimit)
+	return errors.New(globalerror.MaxMetadataPerUser.MessageWithLimitConfig(
+		validation.MaxMetadataPerUserFlag,
+		fmt.Sprintf("per-user metric metadata limit of %d exceeded", globalLimit),
+	))
 }
 
 func (l *Limiter) formatMaxMetadataPerMetricError(userID string) error {
-	actualLimit := l.maxMetadataPerMetric(userID)
 	globalLimit := l.limits.MaxGlobalMetadataPerMetric(userID)
 
-	return fmt.Errorf("per-metric metadata limit of %d exceeded, please contact administrator to raise it (per-ingester local limit: %d)",
-		globalLimit, actualLimit)
+	return errors.New(globalerror.MaxMetadataPerMetric.MessageWithLimitConfig(
+		validation.MaxMetadataPerMetricFlag,
+		fmt.Sprintf("per-metric metadata limit of %d exceeded", globalLimit),
+	))
 }
 
 func (l *Limiter) maxSeriesPerMetric(userID string) int {

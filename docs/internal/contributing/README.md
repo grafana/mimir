@@ -11,7 +11,7 @@ a piece of work is finished it should:
 - Be organised into one or more commits, each of which has a commit message that describes all changes made in that commit ('why' more than 'what' - we can read the diffs to see the code that changed).
 - Each commit should build towards the whole - don't leave in back-tracks and mistakes that you later corrected.
 - Have unit and/or [integration](./how-integration-tests-work.md) tests for new functionality or tests that would have caught the bug being fixed.
-- Include a CHANGELOG message if users of Grafana Mimir need to hear about what you did.
+- Include a [CHANGELOG](#changelog) message if users of Grafana Mimir need to hear about what you did.
 - If you have made any changes to flags or config, run `make doc` and commit the changed files to update the config file documentation.
 
 ## Formatting
@@ -21,16 +21,6 @@ Grafana Mimir uses `goimports` tool (`go get golang.org/x/tools/cmd/goimports` t
 You're using an IDE you may find useful the following settings for the Grafana Mimir project:
 
 - [VSCode](vscode-goimports-settings.json)
-
-## Developer Certificates of Origin (DCOs)
-
-Before submitting your work in a pull request, make sure that _all_ commits are signed off with a **Developer Certificate of Origin** (DCO). Here's an example:
-
-```shell
-git commit -s -m "Here is my signed commit"
-```
-
-You can find further instructions [here](https://github.com/probot/dco#how-it-works).
 
 ## Building Grafana Mimir
 
@@ -87,3 +77,28 @@ Please see the dedicated "[Design patterns and Code conventions](design-patterns
 The Grafana Mimir documentation is compiled into a website published at [grafana.com](https://grafana.com/). Please see "[How to run the website locally](./how-to-run-website-locally.md)" for instructions.
 
 Note: if you attempt to view pages on Github, it's likely that you might find broken links or pages. That is expected and should not be addressed unless it is causing issues with the site that occur as part of the build.
+
+## Changelog
+
+When appending to the changelog, the changes must be listed with a corresponding scope. A scope denotes the type of change that has occurred.
+
+The ordering of entries in the changelog should be `[CHANGE]`, `[FEATURE]`, `[ENHANCEMENT]`, `[BUGFIX]`.
+
+#### [CHANGE]
+
+The CHANGE scope denotes a change that changes the expected behavior of the project while not adding new functionality or fixing an underling issue. This commonly occurs when renaming things to make them more consistent or to accommodate updated versions of vendored dependencies.
+
+#### [FEATURE]
+
+The FEATURE scope denotes a change that adds new functionality to the project/service.
+
+#### [ENHANCEMENT]
+
+The ENHANCEMENT scope denotes a change that improves upon the current functionality of the project/service. Generally, an enhancement is something that improves upon something that is already present. Either by making it simpler, more powerful, or more performant. For Example:
+
+- An optimization on a particular process in a service that makes it more performant
+- Simpler syntax for setting a configuration value, like allowing `1m` instead of 60 for a duration setting.
+
+#### [BUGFIX]
+
+The BUGFIX scope denotes a change that fixes an issue with the project in question. A BUGFIX should align the behaviour of the service with the current expected behaviour of the service. If a BUGFIX introduces new unexpected behaviour to ameliorate the issue, a corresponding FEATURE or ENHANCEMENT scope should also be added to the changelog.

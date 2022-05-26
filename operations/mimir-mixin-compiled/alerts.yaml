@@ -276,7 +276,7 @@ groups:
       (
         container_memory_working_set_bytes{container="ingester"}
           /
-        container_spec_memory_limit_bytes{container="ingester"}
+        ( container_spec_memory_limit_bytes{container="ingester"} > 0 )
       ) > 0.65
     for: 15m
     labels:
@@ -289,7 +289,7 @@ groups:
       (
         container_memory_working_set_bytes{container="ingester"}
           /
-        container_spec_memory_limit_bytes{container="ingester"}
+        ( container_spec_memory_limit_bytes{container="ingester"} > 0 )
       ) > 0.8
     for: 15m
     labels:
@@ -327,10 +327,11 @@ groups:
       message: |
         Mimir Ruler {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} is experiencing {{ printf "%.2f" $value }}% missed iterations for the rule group {{ $labels.rule_group }}.
     expr: |
+      100 * (
       sum by (cluster, namespace, pod, rule_group) (rate(cortex_prometheus_rule_group_iterations_missed_total[1m]))
         /
       sum by (cluster, namespace, pod, rule_group) (rate(cortex_prometheus_rule_group_iterations_total[1m]))
-        > 0.01
+      ) > 1
     for: 5m
     labels:
       severity: warning
@@ -351,10 +352,8 @@ groups:
       message: Mimir instance {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace
         }} sees incorrect number of gossip members.
     expr: |
-      memberlist_client_cluster_members_count
-        != on (cluster, namespace) group_left
-      sum by (cluster, namespace) (up{job=~".+/(compactor|distributor|ingester.*|querier.*|ruler|store-gateway.*|cortex|mimir)"})
-    for: 5m
+      avg by (cluster, namespace) (memberlist_client_cluster_members_count) != sum by (cluster, namespace) (up{job=~".+/(alertmanager|compactor|distributor|ingester.*|querier.*|ruler|store-gateway.*|cortex|mimir)"})
+    for: 15m
     labels:
       severity: warning
 - name: etcd_alerts
@@ -367,7 +366,7 @@ groups:
       (
         container_memory_working_set_bytes{container="etcd"}
           /
-        container_spec_memory_limit_bytes{container="etcd"}
+        ( container_spec_memory_limit_bytes{container="etcd"} > 0 )
       ) > 0.65
     for: 15m
     labels:
@@ -380,7 +379,7 @@ groups:
       (
         container_memory_working_set_bytes{container="etcd"}
           /
-        container_spec_memory_limit_bytes{container="etcd"}
+        ( container_spec_memory_limit_bytes{container="etcd"} > 0 )
       ) > 0.8
     for: 15m
     labels:
@@ -598,7 +597,7 @@ groups:
       severity: warning
   - alert: MimirStoreGatewayHasNotSyncTheBucket
     annotations:
-      message: Mimir Store Gateway {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace
+      message: Mimir store-gateway {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace
         }} has not successfully synched the bucket since {{ $value | humanizeDuration
         }}.
     expr: |
@@ -608,6 +607,15 @@ groups:
     for: 5m
     labels:
       severity: critical
+  - alert: MimirStoreGatewayNoSyncedTenants
+    annotations:
+      message: Mimir store-gateway {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace
+        }} is not syncing any blocks for any tenant.
+    expr: |
+      min by(cluster, namespace, pod) (cortex_bucket_stores_tenants_synced{component="store-gateway"}) == 0
+    for: 1h
+    labels:
+      severity: warning
   - alert: MimirBucketIndexNotUpdated
     annotations:
       message: Mimir bucket index for tenant {{ $labels.user }} in {{ $labels.cluster
@@ -670,9 +678,9 @@ groups:
       message: Mimir Compactor {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace
         }} has not uploaded any block in the last 24 hours.
     expr: |
-      (time() - thanos_objstore_bucket_last_successful_upload_time{job=~".+/(compactor.*|cortex|mimir)"} > 60 * 60 * 24)
+      (time() - thanos_objstore_bucket_last_successful_upload_time{component="compactor"} > 60 * 60 * 24)
       and
-      (thanos_objstore_bucket_last_successful_upload_time{job=~".+/(compactor.*|cortex|mimir)"} > 0)
+      (thanos_objstore_bucket_last_successful_upload_time{component="compactor"} > 0)
     for: 15m
     labels:
       severity: critical
@@ -681,7 +689,7 @@ groups:
       message: Mimir Compactor {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace
         }} has not uploaded any block in the last 24 hours.
     expr: |
-      thanos_objstore_bucket_last_successful_upload_time{job=~".+/(compactor.*|cortex|mimir)"} == 0
+      thanos_objstore_bucket_last_successful_upload_time{component="compactor"} == 0
     for: 24h
     labels:
       severity: critical
@@ -690,7 +698,7 @@ groups:
       message: Mimir Compactor {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace
         }} has found and ignored blocks with out of order chunks.
     expr: |
-      increase(cortex_compactor_blocks_marked_for_no_compaction_total{job=~".+/(compactor.*|cortex|mimir)", reason="block-index-out-of-order-chunk"}[5m]) > 0
+      increase(cortex_compactor_blocks_marked_for_no_compaction_total{component="compactor", reason="block-index-out-of-order-chunk"}[5m]) > 0
     for: 1m
     labels:
       severity: warning

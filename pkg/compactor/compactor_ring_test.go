@@ -51,6 +51,7 @@ func TestRingConfig_CustomConfigToLifecyclerConfig(t *testing.T) {
 	// The lifecycler config should be generated based upon the compactor
 	// ring config
 	expected.HeartbeatPeriod = cfg.HeartbeatPeriod
+	expected.HeartbeatTimeout = cfg.HeartbeatTimeout
 	expected.RingConfig.HeartbeatTimeout = cfg.HeartbeatTimeout
 	expected.RingConfig.SubringCacheDisabled = true
 	expected.RingConfig.KVStore.Store = "memberlist"

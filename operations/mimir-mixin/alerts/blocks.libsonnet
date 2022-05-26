@@ -206,7 +206,21 @@
             severity: 'critical',
           },
           annotations: {
-            message: '%(product)s Store Gateway %(alert_instance_variable)s in %(alert_aggregation_variables)s has not successfully synched the bucket since {{ $value | humanizeDuration }}.' % $._config,
+            message: '%(product)s store-gateway %(alert_instance_variable)s in %(alert_aggregation_variables)s has not successfully synched the bucket since {{ $value | humanizeDuration }}.' % $._config,
+          },
+        },
+        {
+          // Alert if the store-gateway is not owning any tenant.
+          alert: $.alertName('StoreGatewayNoSyncedTenants'),
+          'for': '1h',
+          expr: |||
+            min by(%(alert_aggregation_labels)s, %(per_instance_label)s) (cortex_bucket_stores_tenants_synced{component="store-gateway"}) == 0
+          ||| % $._config,
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: '%(product)s store-gateway %(alert_instance_variable)s in %(alert_aggregation_variables)s is not syncing any blocks for any tenant.' % $._config,
           },
         },
         {

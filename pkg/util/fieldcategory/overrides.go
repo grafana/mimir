@@ -65,6 +65,12 @@ var overrides = map[string]Category{
 	"server.register-instrumentation":                   Advanced,
 }
 
+func AddOverrides(o map[string]Category) {
+	for n, c := range o {
+		overrides[n] = c
+	}
+}
+
 func GetOverride(fieldName string) (category Category, ok bool) {
 	category, ok = overrides[fieldName]
 	return

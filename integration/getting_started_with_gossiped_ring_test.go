@@ -41,6 +41,7 @@ func TestGettingStartedWithGossipedRing(t *testing.T) {
 		"-ingester.ring.observe-period":                     "5s", // to avoid conflicts in tokens
 		"-blocks-storage.bucket-store.bucket-index.enabled": "false",
 		"-blocks-storage.bucket-store.sync-interval":        "1s", // sync continuously
+		"-blocks-storage.bucket-store.ignore-blocks-within": "0",
 		"-blocks-storage.backend":                           "s3",
 		"-blocks-storage.s3.bucket-name":                    blocksBucketName,
 		"-blocks-storage.s3.access-key-id":                  e2edb.MinioAccessKey,

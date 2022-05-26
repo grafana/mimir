@@ -30,6 +30,14 @@ The required disk space depends on the number of time series stored in the inges
 
 For more information about estimating the required ingester disk space, refer to [Planning capacity]({{< relref "../planning-capacity.md#ingester" >}}).
 
+### Ingester disk IOPS
+
+The IOPS (input/output operations per second) and latency performances of the ingester disks can affect both write and read requests.
+On the write path, the ingester writes to the write-ahead log (WAL) on disk.
+On the read path, the ingester reads from the series whose chunks have already been written to disk.
+
+For these reasons, run the ingesters on disks such as SSDs that have fast disk speed.
+
 ## Querier
 
 ### Ensure caching is enabled
@@ -46,14 +54,15 @@ When running Grafana Mimir at scale, querying non-compacted blocks might be inef
 - Non compacted blocks contain duplicated samples, as a result of the ingesters replication.
 - Querying many small TSDB indexes is slower than querying a few compacted TSDB indexes.
 
-Configure Grafana Mimir to ensure only compacted blocks are queried:
+The default values for `-querier.query-store-after`, `-querier.query-ingesters-within`, and `-blocks-storage.bucket-store.ignore-blocks-within` are set such that only compacted blocks are queried. In most cases, no additional configuration is required.
+
+Configure Grafana Mimir so large tenants are parallelized by the compactor:
 
 1. Configure compactor's `-compactor.split-and-merge-shards` and `-compactor.split-groups` for every tenant with more than 20 million active series. For more information about configuring the compactor's split and merge shards, refer to [compactor]({{< relref "../../architecture/components/compactor/index.md" >}}).
-1. Configure querier's `-querier.query-store-after` equal to `-querier.query-ingesters-within` minus five minutes. The five-minute delta is recommended to ensure the time range on the boundary is queried both from ingesters and queriers.
 
 #### How to estimate `-querier.query-store-after`
 
-Set the `-querier.query-store-after` to a duration that is large enough to give compactor enough time to compact newly uploaded blocks, and queriers and store-gateways to discover and synchronize newly compacted blocks.
+If you are not using the defaults, set the `-querier.query-store-after` to a duration that is large enough to give compactor enough time to compact newly uploaded blocks, and queriers and store-gateways to discover and synchronize newly compacted blocks.
 
 The following diagram shows all of the timings involved in the estimation. This diagram should be used only as a template and you can modify the assumptions based on real measurements in your Mimir cluster. The example makes the following assumptions:
 
@@ -83,6 +92,13 @@ The store-gateway keeps a file descriptor open for each index-header loaded at a
 The total number of file descriptors used to load index-headers linearly increases with the number of blocks owned by the store-gateway instance.
 
 We recommend configuring the system's `file-max` ulimit at least to `65536` to avoid reaching the maximum number of open file descriptors.
+
+### Store-gateway disk IOPS
+
+The IOPS and latency performances of the store-gateway disk can affect queries.
+The store-gateway downloads the block’s [index-headers]({{< relref "../../architecture/binary-index-header.md" >}}) onto local disk, and reads them for each query that needs to fetch data from the long-term storage.
+
+For these reasons, run the store-gateways on disks such as SSDs that have fast disk speed.
 
 ## Compactor
 
