@@ -50,17 +50,17 @@ func TestParseEncodings(t *testing.T) {
 func TestRequestAcceptance(t *testing.T) {
 	type ret struct {
 		acceptsGzip     bool
-		acceptsIdentity bool
+		rejectsIdentity bool
 	}
 
 	for header, expected := range map[string]ret{
-		"gzip":                            {true, true},
-		"gzip;q=1":                        {true, true},
-		"gzip;q=1, identity;q=0":          {true, false},
-		"gzip;q=1, identity;q=0, *;q=0.5": {true, false},
-		"foo;q=1, gzip;q=0.5, *;q=0":      {true, false},
-		"identity;q=0":                    {false, false},
-		"identity;q=0, *;q=0.5":           {true, false},
+		"gzip":                            {true, false},
+		"gzip;q=1":                        {true, false},
+		"gzip;q=1, identity;q=0":          {true, true},
+		"gzip;q=1, identity;q=0, *;q=0.5": {true, true},
+		"foo;q=1, gzip;q=0.5, *;q=0":      {true, true},
+		"identity;q=0":                    {false, true},
+		"identity;q=0, *;q=0.5":           {true, true},
 	} {
 		t.Run(header, func(t *testing.T) {
 			req, err := http.NewRequest(http.MethodGet, "http://localhost", nil)
@@ -69,7 +69,7 @@ func TestRequestAcceptance(t *testing.T) {
 
 			acceptsGzip, acceptsIdentity := requestAcceptance(req)
 			assert.Equal(t, expected.acceptsGzip, acceptsGzip, "acceptsGzip differs")
-			assert.Equal(t, expected.acceptsIdentity, acceptsIdentity, "acceptsIdentity differs")
+			assert.Equal(t, expected.rejectsIdentity, acceptsIdentity, "rejectsIdentity differs")
 		})
 	}
 }
