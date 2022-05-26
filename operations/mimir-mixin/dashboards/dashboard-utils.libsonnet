@@ -22,6 +22,15 @@ local utils = import 'mixin-utils/utils.libsonnet';
       datasource=$._config.dashboard_datasource,
       datasource_regex=$._config.datasource_regex
     ) + {
+      __requires: [
+        {
+          id: 'grafana',
+          name: 'Grafana',
+          type: 'grafana',
+          version: '8.0.0',
+        },
+      ],
+
       addRowIf(condition, row)::
         if condition
         then self.addRow(row)
