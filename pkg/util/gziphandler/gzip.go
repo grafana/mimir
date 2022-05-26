@@ -129,7 +129,7 @@ func (w *GzipResponseWriter) Write(b []byte) (int, error) {
 		return w.startPlainWrite(len(b))
 	}
 
-	// Only continue if they didn't already choose an encoding or a known unhandled content length or type.
+	// Only continue if we handle the content type (or it's still unknown).
 	if handleContentType(w.contentTypes, ct) {
 		// If the current buffer is less than minSize and a Content-Length isn't set, then wait until we have more data.
 		if len(w.buf) < w.minSize && cl == 0 && !w.rejectsIdentity {
