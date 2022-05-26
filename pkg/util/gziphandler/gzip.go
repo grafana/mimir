@@ -115,8 +115,16 @@ func (w *GzipResponseWriter) Write(b []byte) (int, error) {
 		ct    = w.Header().Get(contentType)
 		ce    = w.Header().Get(contentEncoding)
 	)
+
+	// Don't encode again encoded content.
+	// There's no need to check whether the client accepts the identity encoding
+	// because we already know that this has a different encoding.
+	if ce != "" {
+		return w.startPlainWrite(len(b))
+	}
+
 	// Only continue if they didn't already choose an encoding or a known unhandled content length or type.
-	if ce == "" && (cl == 0 || cl >= w.minSize || !w.acceptsIdentity) && (ct == "" || handleContentType(w.contentTypes, ct)) {
+	if (cl == 0 || cl >= w.minSize || !w.acceptsIdentity) && (ct == "" || handleContentType(w.contentTypes, ct)) {
 		// If the current buffer is less than minSize and a Content-Length isn't set, then wait until we have more data.
 		if len(w.buf) < w.minSize && cl == 0 && w.acceptsIdentity {
 			return len(b), nil
@@ -139,11 +147,16 @@ func (w *GzipResponseWriter) Write(b []byte) (int, error) {
 			}
 		}
 	}
+
 	// If we got here, we should not GZIP this response.
+	return w.startPlainWrite(len(b))
+}
+
+func (w *GzipResponseWriter) startPlainWrite(blen int) (int, error) {
 	if err := w.startPlain(); err != nil {
 		return 0, err
 	}
-	return len(b), nil
+	return blen, nil
 }
 
 // startGzip initializes a GZIP writer and writes the buffer.
