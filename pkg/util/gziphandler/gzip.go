@@ -129,7 +129,7 @@ func (w *GzipResponseWriter) Write(b []byte) (int, error) {
 	}
 
 	// Only continue if they didn't already choose an encoding or a known unhandled content length or type.
-	if ct == "" || handleContentType(w.contentTypes, ct) {
+	if handleContentType(w.contentTypes, ct) {
 		// If the current buffer is less than minSize and a Content-Length isn't set, then wait until we have more data.
 		if len(w.buf) < w.minSize && cl == 0 && w.acceptsIdentity {
 			return len(b), nil
@@ -484,6 +484,11 @@ func requestAcceptance(r *http.Request) (acceptsGzip bool, acceptsIdentity bool)
 
 // returns true if we've been configured to compress the specific content type.
 func handleContentType(contentTypes []parsedContentType, ct string) bool {
+	// If unknown, then handle by default.
+	if ct == "" {
+		return true
+	}
+
 	// If contentTypes is empty we handle all content types.
 	if len(contentTypes) == 0 {
 		return true
