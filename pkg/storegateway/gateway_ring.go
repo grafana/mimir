@@ -154,6 +154,7 @@ func (cfg *RingConfig) ToLifecyclerConfig(logger log.Logger) (ring.BasicLifecycl
 		Addr:                            fmt.Sprintf("%s:%d", instanceAddr, instancePort),
 		Zone:                            cfg.InstanceZone,
 		HeartbeatPeriod:                 cfg.HeartbeatPeriod,
+		HeartbeatTimeout:                cfg.HeartbeatTimeout,
 		TokensObservePeriod:             0,
 		NumTokens:                       RingNumTokens,
 		KeepInstanceInTheRingOnShutdown: !cfg.UnregisterOnShutdown,
