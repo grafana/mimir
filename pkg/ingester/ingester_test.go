@@ -4308,7 +4308,7 @@ func TestIngester_PushInstanceLimits(t *testing.T) {
 				},
 			},
 
-			expectedErr: wrapWithUser(errMaxSeriesLimitReached, "test"),
+			expectedErr: wrapWithUser(errMaxInMemorySeriesReached, "test"),
 		},
 
 		"should fail creating two users": {
@@ -4335,7 +4335,7 @@ func TestIngester_PushInstanceLimits(t *testing.T) {
 					),
 				},
 			},
-			expectedErr: wrapWithUser(errMaxUsersLimitReached, "user2"),
+			expectedErr: wrapWithUser(errMaxTenantsReached, "user2"),
 		},
 
 		"should fail pushing samples in two requests due to rate limit": {
@@ -4360,7 +4360,7 @@ func TestIngester_PushInstanceLimits(t *testing.T) {
 					),
 				},
 			},
-			expectedErr: errMaxSamplesPushRateLimitReached,
+			expectedErr: errMaxIngestionRateReached,
 		},
 	}
 
@@ -4540,7 +4540,7 @@ func TestIngester_inflightPushRequests(t *testing.T) {
 		req := generateSamplesForLabel(labels.FromStrings(labels.MetricName, "testcase"), 1, 1024)
 
 		_, err := i.Push(ctx, req)
-		require.Equal(t, errTooManyInflightPushRequests, err)
+		require.Equal(t, errMaxInflightRequestsReached, err)
 		return nil
 	})
 

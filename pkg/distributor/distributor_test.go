@@ -923,7 +923,7 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxChunksPerQueryLimitIsReac
 	// a query running on all series to fail.
 	_, err = ds[0].QueryStream(ctx, math.MinInt32, math.MaxInt32, allSeriesMatchers...)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "the query hit the max number of chunks limit")
+	assert.ErrorContains(t, err, "the query exceeded the maximum number of chunks")
 }
 
 func TestDistributor_QueryStream_ShouldReturnErrorIfMaxSeriesPerQueryLimitIsReached(t *testing.T) {
@@ -973,7 +973,7 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxSeriesPerQueryLimitIsReac
 	// a query running on all series to fail.
 	_, err = ds[0].QueryStream(ctx, math.MinInt32, math.MaxInt32, allSeriesMatchers...)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "max number of series limit")
+	assert.ErrorContains(t, err, "the query exceeded the maximum number of series")
 }
 
 func TestDistributor_QueryStream_ShouldReturnErrorIfMaxChunkBytesPerQueryLimitIsReached(t *testing.T) {
@@ -1041,7 +1041,7 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxChunkBytesPerQueryLimitIs
 	// a query running on all series to fail.
 	_, err = ds[0].QueryStream(ctx, math.MinInt32, math.MaxInt32, allSeriesMatchers...)
 	require.Error(t, err)
-	assert.Equal(t, err, validation.LimitError(fmt.Sprintf(limiter.ErrMaxChunkBytesHit, maxBytesLimit)))
+	assert.ErrorContains(t, err, fmt.Sprintf(limiter.MaxChunkBytesHitMsgFormat, maxBytesLimit))
 }
 
 func TestDistributor_Push_LabelRemoval(t *testing.T) {
