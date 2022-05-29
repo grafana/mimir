@@ -1,4 +1,12 @@
 {
+      "__requires": [
+         {
+            "id": "grafana",
+            "name": "Grafana",
+            "type": "grafana",
+            "version": "8.0.0"
+         }
+      ],
       "annotations": {
          "list": [ ]
       },

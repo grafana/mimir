@@ -572,11 +572,9 @@
           alert: $.alertName('GossipMembersMismatch'),
           expr:
             |||
-              memberlist_client_cluster_members_count
-                != on (%s) group_left
-              sum by (%s) (up{job=~".+/%s"})
+              avg by (%s) (memberlist_client_cluster_members_count) != sum by (%s) (up{job=~".+/%s"})
             ||| % [$._config.alert_aggregation_labels, $._config.alert_aggregation_labels, simpleRegexpOpt($._config.job_names.ring_members)],
-          'for': '5m',
+          'for': '15m',
           labels: {
             severity: 'warning',
           },

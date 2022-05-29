@@ -90,6 +90,7 @@ func (cfg *RingConfig) ToLifecyclerConfig(logger log.Logger) (ring.BasicLifecycl
 		ID:                  cfg.InstanceID,
 		Addr:                fmt.Sprintf("%s:%d", instanceAddr, instancePort),
 		HeartbeatPeriod:     cfg.HeartbeatPeriod,
+		HeartbeatTimeout:    cfg.HeartbeatTimeout,
 		TokensObservePeriod: 0,
 		NumTokens:           cfg.NumTokens,
 	}, nil

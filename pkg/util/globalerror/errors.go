@@ -22,6 +22,18 @@ const (
 	SeriesWithDuplicateLabelNames ID = "duplicate-label-names"
 	SeriesLabelsNotSorted         ID = "labels-not-sorted"
 	SampleTooFarInFuture          ID = "too-far-in-future"
+	MaxSeriesPerMetric            ID = "max-series-per-metric"
+	MaxMetadataPerMetric          ID = "max-metadata-per-metric"
+	MaxSeriesPerUser              ID = "max-series-per-user"
+	MaxMetadataPerUser            ID = "max-metadata-per-user"
+	MaxChunksPerQuery             ID = "max-chunks-per-query"
+	MaxSeriesPerQuery             ID = "max-series-per-query"
+	MaxChunkBytesPerQuery         ID = "max-chunks-bytes-per-query"
+
+	IngesterMaxIngestionRate        ID = "ingester-max-ingestion-rate"
+	IngesterMaxTenants              ID = "ingester-max-tenants"
+	IngesterMaxInMemorySeries       ID = "ingester-max-series"
+	IngesterMaxInflightPushRequests ID = "ingester-max-inflight-push-requests"
 
 	ExemplarLabelsMissing    ID = "exemplar-labels-missing"
 	ExemplarLabelsTooLong    ID = "exemplar-labels-too-long"

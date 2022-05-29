@@ -157,11 +157,6 @@ local filename = 'mimir-queries.json';
         { yaxes: $.yaxes('short') },
       )
       .addPanel(
-        $.panel('Chunks per query') +
-        utils.latencyRecordingRulePanel('cortex_ingester_queried_chunks', $.jobSelector($._config.job_names.ingester), multiplier=1) +
-        { yaxes: $.yaxes('short') },
-      )
-      .addPanel(
         $.panel('Samples per query') +
         utils.latencyRecordingRulePanel('cortex_ingester_queried_samples', $.jobSelector($._config.job_names.ingester), multiplier=1) +
         { yaxes: $.yaxes('short') },

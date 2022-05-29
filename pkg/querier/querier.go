@@ -41,10 +41,10 @@ import (
 type Config struct {
 	Iterators            bool          `yaml:"iterators" category:"advanced"`
 	BatchIterators       bool          `yaml:"batch_iterators" category:"advanced"`
-	QueryIngestersWithin time.Duration `yaml:"query_ingesters_within"`
+	QueryIngestersWithin time.Duration `yaml:"query_ingesters_within" category:"advanced"`
 
 	// QueryStoreAfter the time after which queries should also be sent to the store and not just ingesters.
-	QueryStoreAfter    time.Duration `yaml:"query_store_after"`
+	QueryStoreAfter    time.Duration `yaml:"query_store_after" category:"advanced"`
 	MaxQueryIntoFuture time.Duration `yaml:"max_query_into_future" category:"advanced"`
 
 	StoreGatewayClient ClientConfig `yaml:"store_gateway_client"`

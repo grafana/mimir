@@ -480,7 +480,7 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 			},
 			limits:       &blocksStoreLimitsMock{maxChunksPerQuery: 1},
 			queryLimiter: noOpQueryLimiter,
-			expectedErr:  validation.LimitError(fmt.Sprintf(errMaxChunksPerQueryLimit, fmt.Sprintf("{__name__=%q}", metricName), 1)),
+			expectedErr:  validation.LimitError(fmt.Sprintf(maxChunksPerQueryLimitMsgFormat, fmt.Sprintf("{__name__=%q}", metricName), 1)),
 		},
 		"max chunks per query limit hit while fetching chunks at first attempt - global limit": {
 			finderResult: bucketindex.Blocks{
@@ -498,7 +498,7 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 			},
 			limits:       &blocksStoreLimitsMock{},
 			queryLimiter: limiter.NewQueryLimiter(0, 0, 1),
-			expectedErr:  validation.LimitError(fmt.Sprintf(limiter.ErrMaxChunksPerQueryLimit, 1)),
+			expectedErr:  validation.LimitError(fmt.Sprintf(limiter.MaxChunksPerQueryLimitMsgFormat, 1)),
 		},
 		"max chunks per query limit hit while fetching chunks during subsequent attempts": {
 			finderResult: bucketindex.Blocks{
@@ -536,7 +536,7 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 			},
 			limits:       &blocksStoreLimitsMock{maxChunksPerQuery: 3},
 			queryLimiter: noOpQueryLimiter,
-			expectedErr:  validation.LimitError(fmt.Sprintf(errMaxChunksPerQueryLimit, fmt.Sprintf("{__name__=%q}", metricName), 3)),
+			expectedErr:  validation.LimitError(fmt.Sprintf(maxChunksPerQueryLimitMsgFormat, fmt.Sprintf("{__name__=%q}", metricName), 3)),
 		},
 		"max chunks per query limit hit while fetching chunks during subsequent attempts - global": {
 			finderResult: bucketindex.Blocks{
@@ -574,7 +574,7 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 			},
 			limits:       &blocksStoreLimitsMock{},
 			queryLimiter: limiter.NewQueryLimiter(0, 0, 3),
-			expectedErr:  validation.LimitError(fmt.Sprintf(limiter.ErrMaxChunksPerQueryLimit, 3)),
+			expectedErr:  validation.LimitError(fmt.Sprintf(limiter.MaxChunksPerQueryLimitMsgFormat, 3)),
 		},
 		"max series per query limit hit while fetching chunks": {
 			finderResult: bucketindex.Blocks{
@@ -592,7 +592,7 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 			},
 			limits:       &blocksStoreLimitsMock{},
 			queryLimiter: limiter.NewQueryLimiter(1, 0, 0),
-			expectedErr:  validation.LimitError(fmt.Sprintf(limiter.ErrMaxSeriesHit, 1)),
+			expectedErr:  validation.LimitError(fmt.Sprintf(limiter.MaxSeriesHitMsgFormat, 1)),
 		},
 		"max chunk bytes per query limit hit while fetching chunks": {
 			finderResult: bucketindex.Blocks{
@@ -610,7 +610,7 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 			},
 			limits:       &blocksStoreLimitsMock{maxChunksPerQuery: 1},
 			queryLimiter: limiter.NewQueryLimiter(0, 8, 0),
-			expectedErr:  validation.LimitError(fmt.Sprintf(limiter.ErrMaxChunkBytesHit, 8)),
+			expectedErr:  validation.LimitError(fmt.Sprintf(limiter.MaxChunkBytesHitMsgFormat, 8)),
 		},
 		"blocks with non-matching shard are filtered out": {
 			finderResult: bucketindex.Blocks{
@@ -846,7 +846,7 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 			sp := &storage.SelectHints{Start: minT, End: maxT}
 			set := q.Select(true, sp, matchers...)
 			if testData.expectedErr != nil {
-				assert.EqualError(t, set.Err(), testData.expectedErr.Error())
+				assert.ErrorContains(t, set.Err(), testData.expectedErr.Error())
 				assert.IsType(t, set.Err(), testData.expectedErr)
 				assert.False(t, set.Next())
 				assert.Nil(t, set.Warnings())

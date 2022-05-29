@@ -121,6 +121,7 @@ func (cfg *RingConfig) ToLifecyclerConfig() ring.LifecyclerConfig {
 	lc.RingConfig = cfg.ToRingConfig()
 	lc.NumTokens = cfg.NumTokens
 	lc.HeartbeatPeriod = cfg.HeartbeatPeriod
+	lc.HeartbeatTimeout = cfg.HeartbeatTimeout
 	lc.ObservePeriod = cfg.ObservePeriod
 	lc.JoinAfter = cfg.JoinAfter
 	lc.MinReadyDuration = cfg.MinReadyDuration
