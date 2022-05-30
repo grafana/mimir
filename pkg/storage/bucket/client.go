@@ -16,6 +16,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/thanos-io/thanos/pkg/objstore"
 
+	"github.com/grafana/regexp"
+
 	"github.com/grafana/mimir/pkg/storage/bucket/azure"
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
 	"github.com/grafana/mimir/pkg/storage/bucket/gcs"
@@ -39,17 +41,22 @@ const (
 
 	// Filesystem is the value for the filesystem storage backend.
 	Filesystem = "filesystem"
+
+	// validPrefixCharactersRegex allows only alphanumeric characters to prevent subtle bugs and simplify validation
+	validPrefixCharactersRegex = `^[\da-zA-Z]+$`
 )
 
 var (
 	SupportedBackends = []string{S3, GCS, Azure, Swift, Filesystem}
 
-	ErrUnsupportedStorageBackend = errors.New("unsupported storage backend")
+	ErrUnsupportedStorageBackend        = errors.New("unsupported storage backend")
+	ErrInvalidCharactersInStoragePrefix = errors.New("storage prefix contains invalid characters, it may only contain digits and English alphabet letters")
 )
 
 // Config holds configuration for accessing long-term storage.
 type Config struct {
-	Backend string `yaml:"backend"`
+	Backend       string `yaml:"backend"`
+	StoragePrefix string `yaml:"storage_prefix" category:"advanced"`
 	// Backends
 	S3         s3.Config         `yaml:"s3"`
 	GCS        gcs.Config        `yaml:"gcs"`
@@ -84,6 +91,7 @@ func (cfg *Config) RegisterFlagsWithPrefixAndDefaultDirectory(prefix, dir string
 	cfg.Filesystem.RegisterFlagsWithPrefixAndDefaultDirectory(prefix, dir, f)
 
 	f.StringVar(&cfg.Backend, prefix+"backend", Filesystem, fmt.Sprintf("Backend storage to use. Supported backends are: %s.", strings.Join(cfg.supportedBackends(), ", ")))
+	f.StringVar(&cfg.StoragePrefix, prefix+"storage-prefix", "", "Prefix for all objects stored in the backend storage. For simplicity, it may only contain digits and English alphabet letters.")
 }
 
 func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
@@ -98,6 +106,13 @@ func (cfg *Config) Validate() error {
 	if cfg.Backend == S3 {
 		if err := cfg.S3.Validate(); err != nil {
 			return err
+		}
+	}
+
+	if cfg.StoragePrefix != "" {
+		acceptablePrefixCharacters := regexp.MustCompile(validPrefixCharactersRegex)
+		if !acceptablePrefixCharacters.MatchString(cfg.StoragePrefix) {
+			return ErrInvalidCharactersInStoragePrefix
 		}
 	}
 
@@ -123,6 +138,10 @@ func NewClient(ctx context.Context, cfg Config, name string, logger log.Logger, 
 
 	if err != nil {
 		return nil, err
+	}
+
+	if cfg.StoragePrefix != "" {
+		client = NewPrefixedBucketClient(client, cfg.StoragePrefix)
 	}
 
 	client = objstore.NewTracingBucket(bucketWithMetrics(client, name, reg))

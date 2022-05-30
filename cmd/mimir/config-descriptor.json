@@ -3765,6 +3765,17 @@
           "fieldType": "string"
         },
         {
+          "kind": "field",
+          "name": "storage_prefix",
+          "required": false,
+          "desc": "Prefix for all objects stored in the backend storage. For simplicity, it may only contain digits and English alphabet letters.",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldFlag": "blocks-storage.storage-prefix",
+          "fieldType": "string",
+          "fieldCategory": "advanced"
+        },
+        {
           "kind": "block",
           "name": "s3",
           "required": false,
@@ -7547,6 +7558,17 @@
           "fieldType": "string"
         },
         {
+          "kind": "field",
+          "name": "storage_prefix",
+          "required": false,
+          "desc": "Prefix for all objects stored in the backend storage. For simplicity, it may only contain digits and English alphabet letters.",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldFlag": "ruler-storage.storage-prefix",
+          "fieldType": "string",
+          "fieldCategory": "advanced"
+        },
+        {
           "kind": "block",
           "name": "s3",
           "required": false,
@@ -8852,6 +8874,17 @@
           "fieldDefaultValue": "filesystem",
           "fieldFlag": "alertmanager-storage.backend",
           "fieldType": "string"
+        },
+        {
+          "kind": "field",
+          "name": "storage_prefix",
+          "required": false,
+          "desc": "Prefix for all objects stored in the backend storage. For simplicity, it may only contain digits and English alphabet letters.",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldFlag": "alertmanager-storage.storage-prefix",
+          "fieldType": "string",
+          "fieldCategory": "advanced"
         },
         {
           "kind": "block",
