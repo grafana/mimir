@@ -136,7 +136,7 @@ func TestClient_ConfigValidation(t *testing.T) {
 	testCases := []struct {
 		name          string
 		cfg           Config
-		expectedError string
+		expectedError error
 	}{
 		{
 			name: "valid storage_prefix",
@@ -145,38 +145,35 @@ func TestClient_ConfigValidation(t *testing.T) {
 		{
 			name:          "storage_prefix non-alphanumeric characters",
 			cfg:           Config{Backend: Filesystem, StoragePrefix: "hello-world!"},
-			expectedError: "storage_prefix contains invalid characters, it may only contain digits and English alphabet letters",
+			expectedError: ErrInvalidCharactersInStoragePrefix,
 		},
 		{
 			name:          "storage_prefix suffixed with a slash (non-alphanumeric)",
 			cfg:           Config{Backend: Filesystem, StoragePrefix: "helloworld/"},
-			expectedError: "storage_prefix contains invalid characters, it may only contain digits and English alphabet letters",
+			expectedError: ErrInvalidCharactersInStoragePrefix,
 		},
 		{
 			name:          "storage_prefix that has some character strings that have a meaning in unix paths (..)",
 			cfg:           Config{Backend: Filesystem, StoragePrefix: ".."},
-			expectedError: "storage_prefix contains invalid characters, it may only contain digits and English alphabet letters",
+			expectedError: ErrInvalidCharactersInStoragePrefix,
 		},
 		{
 			name:          "storage_prefix that has some character strings that have a meaning in unix paths (.)",
 			cfg:           Config{Backend: Filesystem, StoragePrefix: "."},
-			expectedError: "storage_prefix contains invalid characters, it may only contain digits and English alphabet letters",
+			expectedError: ErrInvalidCharactersInStoragePrefix,
 		},
 		{
 			name:          "unsupported backend",
 			cfg:           Config{Backend: "flash drive"},
-			expectedError: "unsupported storage backend",
+			expectedError: ErrUnsupportedStorageBackend,
 		},
 	}
 
 	for _, tc := range testCases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			if actualErr := tc.cfg.Validate(); tc.expectedError != "" {
-				assert.ErrorContains(t, actualErr, tc.expectedError)
-			} else {
-				assert.NoError(t, actualErr)
-			}
+			actualErr := tc.cfg.Validate()
+			assert.ErrorIs(t, actualErr, tc.expectedError)
 		})
 	}
 }
