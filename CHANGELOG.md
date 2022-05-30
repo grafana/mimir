@@ -12,7 +12,7 @@
     - `-querier.query-ingesters-within`
     - `-querier.query-store-after`
 * [CHANGE] Config flag category overrides can be set dynamically at runtime. #1934
-* [CHANGE] Distributor: Added limit to prevent tenants from sending excessive number of requests: #1843
+* [ENHANCEMENT] Distributor: Added limit to prevent tenants from sending excessive number of requests: #1843
   * The following CLI flags (and their respective YAML config options) have been added:
     * `-distributor.request-rate-limit`
     * `-distributor.request-burst-limit`

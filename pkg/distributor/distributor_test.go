@@ -434,6 +434,16 @@ func TestDistributor_PushRequestRateLimiter(t *testing.T) {
 				{expectedError: httpgrpc.Errorf(http.StatusTooManyRequests, "request rate limit (2) exceeded")},
 			},
 		},
+		"request limit is disabled when set to 0": {
+			distributors:     2,
+			requestRate:      0,
+			requestBurstSize: 0,
+			pushes: []testPush{
+				{expectedError: nil},
+				{expectedError: nil},
+				{expectedError: nil},
+			},
+		},
 		"request burst should set to each distributor": {
 			distributors:     2,
 			requestRate:      2,

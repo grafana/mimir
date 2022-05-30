@@ -6,11 +6,11 @@
 package distributor
 
 import (
-	"github.com/grafana/dskit/limiter"
-	"golang.org/x/time/rate"
 	"math"
 
+	"github.com/grafana/dskit/limiter"
 	"github.com/grafana/mimir/pkg/util/validation"
+	"golang.org/x/time/rate"
 )
 
 // ReadLifecycler represents the read interface to the lifecycler.
@@ -60,10 +60,14 @@ func (s *requestRateStrategy) Limit(tenantID string) float64 {
 	if lm := s.limits.RequestRate(tenantID); lm > 0 {
 		return lm
 	}
-	return math.MaxFloat64
+	return float64(rate.Inf)
 }
 
 func (s *requestRateStrategy) Burst(tenantID string) int {
+	if s.limits.RequestRate(tenantID) <= 0 {
+		// Burst is ignored when limit = rate.Inf
+		return 0
+	}
 	if lm := s.limits.RequestBurstSize(tenantID); lm > 0 {
 		return lm
 	}
