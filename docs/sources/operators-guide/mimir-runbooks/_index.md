@@ -318,6 +318,7 @@ There is a category of errors that is more important: errors due to failure to r
 How to **fix** it:
 
 - Investigate the ruler logs to find out the reason why ruler cannot evaluate queries. Note that ruler logs rule evaluation errors even for "user errors", but those are not causing the alert to fire. Focus on problems with ingesters or store-gateways.
+- In case remote operational mode is enabled the problem could be at any of the ruler query path components (ruler-query-frontend, ruler-query-scheduler and ruler-querier). Check the `Mimir / Remote ruler reads` and `Mimir / Remote ruler reads resources` dashboards to find out in which Mimir service the error is being originated.
 
 ### MimirRulerMissedEvaluations
 
@@ -332,6 +333,18 @@ How to **fix** it:
 
 - Increase the evaluation interval of the rule group. You can use the rate of missed evaluation to estimate how long the rule group evaluation actually takes.
 - Try splitting up the rule group into multiple rule groups. Rule groups are evaluated in parallel, so the same rules may still fit in the same resolution.
+
+### MimirRulerFrontendQueriesStuck
+
+This alert fires if Mimir is running without ruler-query-scheduler and queries are piling up in the ruler-query-frontend queue.
+
+The procedure to investigate it is the same as the one for [`MimirSchedulerQueriesStuck`](#MimirSchedulerQueriesStuck): please see the other playbook for more details.
+
+### MimirRulerSchedulerQueriesStuck
+
+This alert fires if queries are piling up in the ruler-query-scheduler.
+
+The procedure to investigate it is the same as the one for [`MimirSchedulerQueriesStuck`](#MimirSchedulerQueriesStuck): please see the other playbook for more details.
 
 ### MimirIngesterHasNotShippedBlocks
 
@@ -666,7 +679,7 @@ How to **investigate**:
   - An increased latency reduces the number of queries we can run / sec: once all workers are busy, new queries will pile up in the queue
   - Temporarily scale up queriers to try to stop the bleed
   - Check if a specific tenant is running heavy queries
-    - Run `sum by (user) (cortex_query_scheduler_queue_length{namespace="<namespace>"}) > 0` to find tenants with enqueued queries
+    - Run `sum by (user) (cortex_query_scheduler_queue_length{namespace="<namespace>",container="query-scheduler"}) > 0` to find tenants with enqueued queries
     - Check the `Mimir / Slow Queries` dashboard to find slow queries
   - On multi-tenant Mimir cluster with **shuffle-sharing for queriers disabled**, you may consider to enable it for that specific tenant to reduce its blast radius. To enable queriers shuffle-sharding for a single tenant you need to set the `max_queriers_per_tenant` limit override for the specific tenant (the value should be set to the number of queriers assigned to the tenant).
   - On multi-tenant Mimir cluster with **shuffle-sharding for queriers enabled**, you may consider to temporarily increase the shard size for affected tenants: be aware that this could affect other tenants too, reducing resources available to run other tenant queries. Alternatively, you may choose to do nothing and let Mimir return errors for that given user once the per-tenant queue is full.

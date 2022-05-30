@@ -68,7 +68,7 @@ groups:
       message: |
         There are {{ $value }} queued up queries in {{ $labels.cluster }}/{{ $labels.namespace }} query-frontend.
     expr: |
-      sum by (cluster, namespace) (cortex_query_frontend_queue_length) > 1
+      sum by (cluster, namespace) (cortex_query_frontend_queue_length{container="query-frontend"}) > 1
     for: 5m
     labels:
       severity: critical
@@ -77,7 +77,7 @@ groups:
       message: |
         There are {{ $value }} queued up queries in {{ $labels.cluster }}/{{ $labels.namespace }} query-scheduler.
     expr: |
-      sum by (cluster, namespace) (cortex_query_scheduler_queue_length) > 1
+      sum by (cluster, namespace) (cortex_query_scheduler_queue_length{container="query-scheduler"}) > 1
     for: 5m
     labels:
       severity: critical
@@ -319,6 +319,24 @@ groups:
         /
       sum by (cluster, namespace, pod) (rate(cortex_ruler_queries_total[1m]))
       ) > 1
+    for: 5m
+    labels:
+      severity: warning
+  - alert: MimirRulerFrontendQueriesStuck
+    annotations:
+      message: |
+        There are {{ $value }} queued up queries in {{ $labels.cluster }}/{{ $labels.namespace }} ruler-query-frontend.
+    expr: |
+      sum by (cluster, namespace) (cortex_query_frontend_queue_length{container="ruler-query-frontend"}) > 1
+    for: 5m
+    labels:
+      severity: warning
+  - alert: MimirRulerSchedulerQueriesStuck
+    annotations:
+      message: |
+        There are {{ $value }} queued up queries in {{ $labels.cluster }}/{{ $labels.namespace }} ruler-query-scheduler.
+    expr: |
+      sum by (cluster, namespace) (cortex_query_scheduler_queue_length{container="ruler-query-scheduler"}) > 1
     for: 5m
     labels:
       severity: warning

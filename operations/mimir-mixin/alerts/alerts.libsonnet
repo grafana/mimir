@@ -127,7 +127,7 @@
         {
           alert: $.alertName('FrontendQueriesStuck'),
           expr: |||
-            sum by (%s) (cortex_query_frontend_queue_length) > 1
+            sum by (%s) (cortex_query_frontend_queue_length{container="query-frontend"}) > 1
           ||| % $._config.alert_aggregation_labels,
           'for': '5m',  // We don't want to block for longer.
           labels: {
@@ -142,7 +142,7 @@
         {
           alert: $.alertName('SchedulerQueriesStuck'),
           expr: |||
-            sum by (%s) (cortex_query_scheduler_queue_length) > 1
+            sum by (%s) (cortex_query_scheduler_queue_length{container="query-scheduler"}) > 1
           ||| % $._config.alert_aggregation_labels,
           'for': '5m',  // We don't want to block for longer.
           labels: {
@@ -525,6 +525,36 @@
           annotations: {
             message: |||
               %(product)s Ruler %(alert_instance_variable)s in %(alert_aggregation_variables)s is experiencing {{ printf "%%.2f" $value }}%% errors while evaluating rules.
+            ||| % $._config,
+          },
+        },
+        {
+          alert: $.alertName('RulerFrontendQueriesStuck'),
+          expr: |||
+            sum by (%s) (cortex_query_frontend_queue_length{container="ruler-query-frontend"}) > 1
+          ||| % $._config.alert_aggregation_labels,
+          'for': '5m',  // We don't want to block for longer.
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: |||
+              There are {{ $value }} queued up queries in %(alert_aggregation_variables)s ruler-query-frontend.
+            ||| % $._config,
+          },
+        },
+        {
+          alert: $.alertName('RulerSchedulerQueriesStuck'),
+          expr: |||
+            sum by (%s) (cortex_query_scheduler_queue_length{container="ruler-query-scheduler"}) > 1
+          ||| % $._config.alert_aggregation_labels,
+          'for': '5m',  // We don't want to block for longer.
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: |||
+              There are {{ $value }} queued up queries in %(alert_aggregation_variables)s ruler-query-scheduler.
             ||| % $._config,
           },
         },
