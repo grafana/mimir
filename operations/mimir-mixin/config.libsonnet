@@ -58,16 +58,18 @@
 
     // Name selectors for different application instances, using the "per_instance_label".
     instance_names: {
-      compactor: 'compactor.*',
-      alertmanager: 'alertmanager.*',
-      ingester: 'ingester.*',
-      distributor: 'distributor.*',
-      querier: 'querier.*',
-      ruler: 'ruler.*',
-      query_frontend: 'query-frontend.*',
-      query_scheduler: 'query-scheduler.*',
-      store_gateway: 'store-gateway.*',
-      gateway: '(gateway|cortex-gw|cortex-gw).*',
+      local helmCompatibleName = function(name) '(.*-mimir-)?%s' % name,
+
+      compactor: helmCompatibleName('compactor.*'),
+      alertmanager: helmCompatibleName('alertmanager.*'),
+      ingester: helmCompatibleName('ingester.*'),
+      distributor: helmCompatibleName('distributor.*'),
+      querier: helmCompatibleName('querier.*'),
+      ruler: helmCompatibleName('ruler.*'),
+      query_frontend: helmCompatibleName('query-frontend.*'),
+      query_scheduler: helmCompatibleName('query-scheduler.*'),
+      store_gateway: helmCompatibleName('store-gateway.*'),
+      gateway: helmCompatibleName('(gateway|cortex-gw|cortex-gw).*'),
     },
 
     // The label used to differentiate between different nodes (i.e. servers).

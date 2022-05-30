@@ -66,7 +66,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by(pod) (rate(container_network_receive_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",pod=~\"(gateway|cortex-gw|cortex-gw).*\"}[$__rate_interval]))",
+                        "expr": "sum by(pod) (rate(container_network_receive_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",pod=~\"(.*-mimir-)?(gateway|cortex-gw|cortex-gw).*\"}[$__rate_interval]))",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
@@ -143,7 +143,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by(pod) (rate(container_network_transmit_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",pod=~\"(gateway|cortex-gw|cortex-gw).*\"}[$__rate_interval]))",
+                        "expr": "sum by(pod) (rate(container_network_transmit_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",pod=~\"(.*-mimir-)?(gateway|cortex-gw|cortex-gw).*\"}[$__rate_interval]))",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
@@ -413,7 +413,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by(pod) (rate(container_network_receive_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",pod=~\"query-frontend.*\"}[$__rate_interval]))",
+                        "expr": "sum by(pod) (rate(container_network_receive_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",pod=~\"(.*-mimir-)?query-frontend.*\"}[$__rate_interval]))",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
@@ -490,7 +490,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by(pod) (rate(container_network_transmit_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",pod=~\"query-frontend.*\"}[$__rate_interval]))",
+                        "expr": "sum by(pod) (rate(container_network_transmit_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",pod=~\"(.*-mimir-)?query-frontend.*\"}[$__rate_interval]))",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
@@ -760,7 +760,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by(pod) (rate(container_network_receive_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",pod=~\"query-scheduler.*\"}[$__rate_interval]))",
+                        "expr": "sum by(pod) (rate(container_network_receive_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",pod=~\"(.*-mimir-)?query-scheduler.*\"}[$__rate_interval]))",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
@@ -837,7 +837,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by(pod) (rate(container_network_transmit_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",pod=~\"query-scheduler.*\"}[$__rate_interval]))",
+                        "expr": "sum by(pod) (rate(container_network_transmit_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",pod=~\"(.*-mimir-)?query-scheduler.*\"}[$__rate_interval]))",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
@@ -1107,7 +1107,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by(pod) (rate(container_network_receive_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",pod=~\"querier.*\"}[$__rate_interval]))",
+                        "expr": "sum by(pod) (rate(container_network_receive_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",pod=~\"(.*-mimir-)?querier.*\"}[$__rate_interval]))",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
@@ -1184,7 +1184,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by(pod) (rate(container_network_transmit_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",pod=~\"querier.*\"}[$__rate_interval]))",
+                        "expr": "sum by(pod) (rate(container_network_transmit_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",pod=~\"(.*-mimir-)?querier.*\"}[$__rate_interval]))",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
@@ -1454,7 +1454,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by(pod) (rate(container_network_receive_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",pod=~\"store-gateway.*\"}[$__rate_interval]))",
+                        "expr": "sum by(pod) (rate(container_network_receive_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",pod=~\"(.*-mimir-)?store-gateway.*\"}[$__rate_interval]))",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
@@ -1531,7 +1531,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by(pod) (rate(container_network_transmit_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",pod=~\"store-gateway.*\"}[$__rate_interval]))",
+                        "expr": "sum by(pod) (rate(container_network_transmit_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",pod=~\"(.*-mimir-)?store-gateway.*\"}[$__rate_interval]))",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
@@ -1801,7 +1801,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by(pod) (rate(container_network_receive_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",pod=~\"ruler.*\"}[$__rate_interval]))",
+                        "expr": "sum by(pod) (rate(container_network_receive_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",pod=~\"(.*-mimir-)?ruler.*\"}[$__rate_interval]))",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
@@ -1878,7 +1878,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by(pod) (rate(container_network_transmit_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",pod=~\"ruler.*\"}[$__rate_interval]))",
+                        "expr": "sum by(pod) (rate(container_network_transmit_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",pod=~\"(.*-mimir-)?ruler.*\"}[$__rate_interval]))",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
