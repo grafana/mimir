@@ -19,7 +19,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"github.com/prometheus/prometheus/model/labels"
 	"github.com/thanos-io/thanos/pkg/block"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
 	"github.com/thanos-io/thanos/pkg/objstore"
@@ -65,7 +64,6 @@ type Shipper struct {
 	dir     string
 	metrics *metrics
 	bucket  objstore.Bucket
-	labels  func() labels.Labels
 	source  metadata.SourceType
 
 	hashFunc metadata.HashFunc
@@ -79,22 +77,17 @@ func NewShipper(
 	r prometheus.Registerer,
 	dir string,
 	bucket objstore.Bucket,
-	lbls func() labels.Labels,
 	source metadata.SourceType,
 	hashFunc metadata.HashFunc,
 ) *Shipper {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
-	if lbls == nil {
-		lbls = func() labels.Labels { return nil }
-	}
 
 	return &Shipper{
 		logger:   logger,
 		dir:      dir,
 		bucket:   bucket,
-		labels:   lbls,
 		metrics:  newMetrics(r),
 		source:   source,
 		hashFunc: hashFunc,
@@ -195,10 +188,6 @@ func (s *Shipper) upload(ctx context.Context, meta *metadata.Meta) error {
 
 	blockDir := filepath.Join(s.dir, meta.ULID.String())
 
-	// Attach current labels. Don't write the file to disk, but upload it to the bucket.
-	if lset := s.labels(); lset != nil {
-		meta.Thanos.Labels = lset.Map()
-	}
 	meta.Thanos.Source = s.source
 	meta.Thanos.SegmentFiles = block.GetSegmentFiles(blockDir)
 

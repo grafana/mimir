@@ -1506,19 +1506,6 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 		userDB.setLastUpdate(time.Now())
 	}
 
-	// Thanos shipper requires at least 1 external label to be set. For this reason,
-	// we set the tenant ID as external label and we'll filter it out when reading
-	// the series from the storage.
-	l := labels.Labels{
-		{
-			Name:  mimir_tsdb.TenantIDExternalLabel,
-			Value: userID,
-		}, {
-			Name:  mimir_tsdb.IngesterIDExternalLabel,
-			Value: i.shipperIngesterID,
-		},
-	}
-
 	// Create a new shipper for this database
 	if i.cfg.BlocksStorageConfig.TSDB.IsBlocksShippingEnabled() {
 		userDB.shipper = NewShipper(
@@ -1526,7 +1513,6 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 			tsdbPromReg,
 			udir,
 			bucket.NewUserBucketClient(userID, i.bucket, i.limits),
-			func() labels.Labels { return l },
 			metadata.ReceiveSource,
 			metadata.NoneFunc,
 		)
