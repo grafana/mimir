@@ -56,7 +56,7 @@ var (
 // Config holds configuration for accessing long-term storage.
 type Config struct {
 	Backend       string `yaml:"backend"`
-	StoragePrefix string `yaml:"storage_prefix" category:"advanced"`
+	StoragePrefix string `yaml:"storage_prefix" category:"experimental"`
 	// Backends
 	S3         s3.Config         `yaml:"s3"`
 	GCS        gcs.Config        `yaml:"gcs"`
