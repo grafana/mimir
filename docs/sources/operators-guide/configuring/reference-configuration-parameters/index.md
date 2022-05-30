@@ -2600,13 +2600,13 @@ The `memberlist` block configures the Gossip memberlist.
 The `limits` block configures default and per-tenant limits imposed by components.
 
 ```yaml
-# Per-tenant request rate limit in requests per second.
+# Per-tenant request rate limit in requests per second. 0 to disable
 # CLI flag: -distributor.request-rate-limit
-[request_rate: <float> | default = 5000]
+[request_rate: <float> | default = 0]
 
-# Per-tenant allowed request burst size.
+# Per-tenant allowed request burst size. 0 to disable
 # CLI flag: -distributor.request-burst-size
-[request_burst_size: <int> | default = 20000]
+[request_burst_size: <int> | default = 0]
 
 # Per-tenant ingestion rate limit in samples per second.
 # CLI flag: -distributor.ingestion-rate-limit

@@ -8,6 +8,7 @@ package distributor
 import (
 	"github.com/grafana/dskit/limiter"
 	"golang.org/x/time/rate"
+	"math"
 
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -56,11 +57,17 @@ func newRequestRateStrategy(limits *validation.Overrides) limiter.RateLimiterStr
 }
 
 func (s *requestRateStrategy) Limit(tenantID string) float64 {
-	return s.limits.RequestRate(tenantID)
+	if lm := s.limits.RequestRate(tenantID); lm > 0 {
+		return lm
+	}
+	return math.MaxFloat64
 }
 
 func (s *requestRateStrategy) Burst(tenantID string) int {
-	return s.limits.RequestBurstSize(tenantID)
+	if lm := s.limits.RequestBurstSize(tenantID); lm > 0 {
+		return lm
+	}
+	return math.MaxInt
 }
 
 type ingestionRateStrategy struct {

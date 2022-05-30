@@ -2415,9 +2415,9 @@
           "kind": "field",
           "name": "request_rate",
           "required": false,
-          "desc": "Per-tenant request rate limit in requests per second.",
+          "desc": "Per-tenant request rate limit in requests per second. 0 to disable",
           "fieldValue": null,
-          "fieldDefaultValue": 5000,
+          "fieldDefaultValue": 0,
           "fieldFlag": "distributor.request-rate-limit",
           "fieldType": "float"
         },
@@ -2425,9 +2425,9 @@
           "kind": "field",
           "name": "request_burst_size",
           "required": false,
-          "desc": "Per-tenant allowed request burst size.",
+          "desc": "Per-tenant allowed request burst size. 0 to disable",
           "fieldValue": null,
-          "fieldDefaultValue": 20000,
+          "fieldDefaultValue": 0,
           "fieldFlag": "distributor.request-burst-size",
           "fieldType": "int"
         },
