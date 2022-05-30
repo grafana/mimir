@@ -46,7 +46,11 @@ The following features are currently experimental:
 - Ruler
   - Tenant federation
   - Use query-frontend for rule evaluation
-- Distributor: Metrics relabeling
+- Distributor
+  - Metrics relabeling
+  - Request rate limit
+    - `-distributor.request-rate-limit`
+    - `-distributor.request-burst-limit`
 - Purger: Tenant deletion API
 - Exemplar storage
   - `-ingester.max-global-exemplars-per-user`

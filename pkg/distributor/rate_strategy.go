@@ -9,8 +9,9 @@ import (
 	"math"
 
 	"github.com/grafana/dskit/limiter"
-	"github.com/grafana/mimir/pkg/util/validation"
 	"golang.org/x/time/rate"
+
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 // ReadLifecycler represents the read interface to the lifecycler.

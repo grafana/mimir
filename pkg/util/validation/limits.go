@@ -59,8 +59,8 @@ type ForwardingRules map[string]ForwardingRule
 // limits via flags, or per-user limits via yaml config.
 type Limits struct {
 	// Distributor enforced limits.
-	RequestRate               float64             `yaml:"request_rate" json:"request_rate"`
-	RequestBurstSize          int                 `yaml:"request_burst_size" json:"request_burst_size"`
+	RequestRate               float64             `yaml:"request_rate" json:"request_rate" category:"experimental"`
+	RequestBurstSize          int                 `yaml:"request_burst_size" json:"request_burst_size" category:"experimental"`
 	IngestionRate             float64             `yaml:"ingestion_rate" json:"ingestion_rate"`
 	IngestionBurstSize        int                 `yaml:"ingestion_burst_size" json:"ingestion_burst_size"`
 	AcceptHASamples           bool                `yaml:"accept_ha_samples" json:"accept_ha_samples"`
