@@ -723,6 +723,10 @@ Usage of ./cmd/mimir/mimir:
     	remote_write API max receive message size (bytes). (default 104857600)
   -distributor.remote-timeout duration
     	Timeout for downstream ingesters. (default 20s)
+  -distributor.request-burst-size int
+    	[experimental] Per-tenant allowed request burst size. 0 to disable.
+  -distributor.request-rate-limit float
+    	[experimental] Per-tenant request rate limit in requests per second. 0 to disable.
   -distributor.ring.consul.acl-token string
     	ACL Token used to interact with Consul.
   -distributor.ring.consul.client-timeout duration

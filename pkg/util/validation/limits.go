@@ -59,6 +59,8 @@ type ForwardingRules map[string]ForwardingRule
 // limits via flags, or per-user limits via yaml config.
 type Limits struct {
 	// Distributor enforced limits.
+	RequestRate               float64             `yaml:"request_rate" json:"request_rate" category:"experimental"`
+	RequestBurstSize          int                 `yaml:"request_burst_size" json:"request_burst_size" category:"experimental"`
 	IngestionRate             float64             `yaml:"ingestion_rate" json:"ingestion_rate"`
 	IngestionBurstSize        int                 `yaml:"ingestion_burst_size" json:"ingestion_burst_size"`
 	AcceptHASamples           bool                `yaml:"accept_ha_samples" json:"accept_ha_samples"`
@@ -145,6 +147,8 @@ type Limits struct {
 // RegisterFlags adds the flags required to config this to the given FlagSet
 func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.IngestionTenantShardSize, "distributor.ingestion-tenant-shard-size", 0, "The tenant's shard size used by shuffle-sharding. Must be set both on ingesters and distributors. 0 disables shuffle sharding.")
+	f.Float64Var(&l.RequestRate, "distributor.request-rate-limit", 0, "Per-tenant request rate limit in requests per second. 0 to disable.")
+	f.IntVar(&l.RequestBurstSize, "distributor.request-burst-size", 0, "Per-tenant allowed request burst size. 0 to disable.")
 	f.Float64Var(&l.IngestionRate, "distributor.ingestion-rate-limit", 10000, "Per-tenant ingestion rate limit in samples per second.")
 	f.IntVar(&l.IngestionBurstSize, "distributor.ingestion-burst-size", 200000, "Per-tenant allowed ingestion burst size (in number of samples).")
 	f.BoolVar(&l.AcceptHASamples, "distributor.ha-tracker.enable-for-all-users", false, "Flag to enable, for all tenants, handling of samples with external labels identifying replicas in an HA Prometheus setup.")
@@ -291,6 +295,16 @@ func NewOverrides(defaults Limits, tenantLimits TenantLimits) (*Overrides, error
 		tenantLimits:  tenantLimits,
 		defaultLimits: &defaults,
 	}, nil
+}
+
+// RequestRate returns the limit on request rate (requests per second).
+func (o *Overrides) RequestRate(userID string) float64 {
+	return o.getOverridesForUser(userID).RequestRate
+}
+
+// RequestBurstSize returns the burst size for request rate.
+func (o *Overrides) RequestBurstSize(userID string) int {
+	return o.getOverridesForUser(userID).RequestBurstSize
 }
 
 // IngestionRate returns the limit on ingester rate (samples per second).

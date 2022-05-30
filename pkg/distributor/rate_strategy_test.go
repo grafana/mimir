@@ -28,13 +28,13 @@ func TestIngestionRateStrategy(t *testing.T) {
 		mockRing := newReadLifecyclerMock()
 		mockRing.On("HealthyInstancesCount").Return(2)
 
-		strategy := newGlobalIngestionRateStrategy(overrides, mockRing)
+		strategy := newGlobalRateStrategy(newIngestionRateStrategy(overrides), mockRing)
 		assert.Equal(t, strategy.Limit("test"), float64(500))
 		assert.Equal(t, strategy.Burst("test"), 10000)
 	})
 
 	t.Run("infinite rate limiter should return unlimited settings", func(t *testing.T) {
-		strategy := newInfiniteIngestionRateStrategy()
+		strategy := newInfiniteRateStrategy()
 
 		assert.Equal(t, strategy.Limit("test"), float64(rate.Inf))
 		assert.Equal(t, strategy.Burst("test"), 0)

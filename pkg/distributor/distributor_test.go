@@ -413,6 +413,84 @@ func TestDistributor_MetricsCleanup(t *testing.T) {
 		`), metrics...))
 }
 
+func TestDistributor_PushRequestRateLimiter(t *testing.T) {
+	type testPush struct {
+		expectedError error
+	}
+	ctx := user.InjectOrgID(context.Background(), "user")
+	tests := map[string]struct {
+		distributors     int
+		requestRate      float64
+		requestBurstSize int
+		pushes           []testPush
+	}{
+		"request limit should be evenly shared across distributors": {
+			distributors:     2,
+			requestRate:      4,
+			requestBurstSize: 2,
+			pushes: []testPush{
+				{expectedError: nil},
+				{expectedError: nil},
+				{expectedError: httpgrpc.Errorf(http.StatusTooManyRequests, "request rate limit (2) exceeded")},
+			},
+		},
+		"request limit is disabled when set to 0": {
+			distributors:     2,
+			requestRate:      0,
+			requestBurstSize: 0,
+			pushes: []testPush{
+				{expectedError: nil},
+				{expectedError: nil},
+				{expectedError: nil},
+			},
+		},
+		"request burst should set to each distributor": {
+			distributors:     2,
+			requestRate:      2,
+			requestBurstSize: 3,
+			pushes: []testPush{
+				{expectedError: nil},
+				{expectedError: nil},
+				{expectedError: nil},
+				{expectedError: httpgrpc.Errorf(http.StatusTooManyRequests, "request rate limit (1) exceeded")},
+			},
+		},
+	}
+
+	for testName, testData := range tests {
+		testData := testData
+
+		t.Run(testName, func(t *testing.T) {
+			limits := &validation.Limits{}
+			flagext.DefaultValues(limits)
+			limits.RequestRate = testData.requestRate
+			limits.RequestBurstSize = testData.requestBurstSize
+
+			// Start all expected distributors
+			distributors, _, _ := prepare(t, prepConfig{
+				numIngesters:    3,
+				happyIngesters:  3,
+				numDistributors: testData.distributors,
+				limits:          limits,
+			})
+
+			// Send multiple requests to the first distributor
+			for _, push := range testData.pushes {
+				request := makeWriteRequest(0, 1, 1, false)
+				response, err := distributors[0].Push(ctx, request)
+
+				if push.expectedError == nil {
+					assert.Equal(t, emptyResponse, response)
+					assert.Nil(t, err)
+				} else {
+					assert.Nil(t, response)
+					assert.Equal(t, push.expectedError, err)
+				}
+			}
+		})
+	}
+}
+
 func TestDistributor_PushIngestionRateLimiter(t *testing.T) {
 	type testPush struct {
 		samples       int
@@ -427,7 +505,7 @@ func TestDistributor_PushIngestionRateLimiter(t *testing.T) {
 		ingestionBurstSize int
 		pushes             []testPush
 	}{
-		"limit should be evenly shared across distributors": {
+		"evenly share the ingestion limit across distributors": {
 			distributors:       2,
 			ingestionRate:      10,
 			ingestionBurstSize: 5,
@@ -440,7 +518,7 @@ func TestDistributor_PushIngestionRateLimiter(t *testing.T) {
 				{metadata: 1, expectedError: httpgrpc.Errorf(http.StatusTooManyRequests, "ingestion rate limit (5) exceeded while adding 0 samples and 1 metadata")},
 			},
 		},
-		"burst should set to each distributor": {
+		"for each distributor, set an ingestion burst limit.": {
 			distributors:       2,
 			ingestionRate:      10,
 			ingestionBurstSize: 20,

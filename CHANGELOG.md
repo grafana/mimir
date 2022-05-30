@@ -12,6 +12,12 @@
     - `-querier.query-ingesters-within`
     - `-querier.query-store-after`
 * [CHANGE] Config flag category overrides can be set dynamically at runtime. #1934
+* [ENHANCEMENT] Distributor: Added limit to prevent tenants from sending excessive number of requests: #1843
+  * The following CLI flags (and their respective YAML config options) have been added:
+    * `-distributor.request-rate-limit`
+    * `-distributor.request-burst-limit`
+  * The following metric is exposed to tell how many requests have been rejected:
+    * `cortex_discarded_requests_total`
 * [ENHANCEMENT] Store-gateway: Add the experimental ability to run requests in a dedicated OS thread pool. This feature can be configured using `-store-gateway.thread-pool-size` and is disabled by default. Replaces the ability to run index header operations in a dedicated thread pool. #1660 #1812
 * [ENHANCEMENT] Improved error messages to make them easier to understand; each now have a unique, global identifier that you can use to look up in the runbooks for more information. #1907 #1919 #1888 #1939
 * [ENHANCEMENT] Memberlist KV: incoming messages are now processed on per-key goroutine. This may reduce loss of "maintanance" packets in busy memberlist installations, but use more CPU. New `memberlist_client_received_broadcasts_dropped_total` counter tracks number of dropped per-key messages. #1912
