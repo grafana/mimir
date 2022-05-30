@@ -47,9 +47,6 @@ github.com/Azure/go-autorest/logger
 github.com/Azure/go-autorest/tracing
 # github.com/HdrHistogram/hdrhistogram-go v1.1.2
 ## explicit; go 1.14
-# github.com/NYTimes/gziphandler v1.1.1
-## explicit; go 1.11
-github.com/NYTimes/gziphandler
 # github.com/OneOfOne/xxhash v1.2.6
 ## explicit; go 1.11
 # github.com/PuerkitoBio/purell v1.1.1
