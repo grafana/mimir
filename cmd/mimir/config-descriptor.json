@@ -2419,7 +2419,8 @@
           "fieldValue": null,
           "fieldDefaultValue": 0,
           "fieldFlag": "distributor.request-rate-limit",
-          "fieldType": "float"
+          "fieldType": "float",
+          "fieldCategory": "experimental"
         },
         {
           "kind": "field",
@@ -2429,7 +2430,8 @@
           "fieldValue": null,
           "fieldDefaultValue": 0,
           "fieldFlag": "distributor.request-burst-size",
-          "fieldType": "int"
+          "fieldType": "int",
+          "fieldCategory": "experimental"
         },
         {
           "kind": "field",
