@@ -1289,12 +1289,12 @@ This error occurs when the time range of a query exceeds the configured maximum 
 Both PromQL instant and range queries can fetch metrics data over a period of time.
 A [range query](https://prometheus.io/docs/prometheus/latest/querying/api/#range-queries) requires a `start` and `end` timestamp, so the difference of `end` minus `start` is the time range length of the query.
 An [instant query](https://prometheus.io/docs/prometheus/latest/querying/api/#instant-queries) requires a `time` parameter and the query is executed fetching samples at that point in time.
-However, even an instant query can fetch metrics data over a period of time using the [range vector selectors](https://prometheus.io/docs/prometheus/latest/querying/basics/#range-vector-selectors).
+However, even an instant query can fetch metrics data over a period of time by using the [range vector selectors](https://prometheus.io/docs/prometheus/latest/querying/basics/#range-vector-selectors).
 For example, the instant query `sum(rate(http_requests_total{job="prometheus"}[1h]))` fetches metrics over a 1 hour period.
-This time period is what Grafana Mimir calls the "query time range length" (or simply "query length").
+This time period is what Grafana Mimir calls the _query time range length_ (or _query length_).
 
 Mimir has a limit on the query length.
-This limit is applied on the partial queries, after they've split by time by the query-frontend, and is used to protect the system’s stability from potential abuse or mistakes.
+This limit is applied to partial queries, after they've split (according to time) by the query-frontend. This limit protects the system’s stability from potential abuse or mistakes.
 You can configure the limit on a per-tenant basis by using the `-store.max-query-length` option (or `max_query_length` in the runtime configuration).
 
 ## Mimir routes by path
