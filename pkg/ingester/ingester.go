@@ -1531,7 +1531,6 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 			bucket.NewUserBucketClient(userID, i.bucket, i.limits),
 			func() labels.Labels { return l },
 			metadata.ReceiveSource,
-			true, // Allow out of order uploads. It's fine in Mimir's context.
 			metadata.NoneFunc,
 		)
 

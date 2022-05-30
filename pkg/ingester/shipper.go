@@ -24,9 +24,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
-
 	"github.com/thanos-io/thanos/pkg/block"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
 	"github.com/thanos-io/thanos/pkg/objstore"
@@ -72,8 +70,7 @@ type ThanosShipper struct {
 	labels  func() labels.Labels
 	source  metadata.SourceType
 
-	allowOutOfOrderUploads bool
-	hashFunc               metadata.HashFunc
+	hashFunc metadata.HashFunc
 }
 
 // NewThanosShipper creates a new shipper that detects new TSDB blocks in dir and uploads them to
@@ -86,7 +83,6 @@ func NewThanosShipper(
 	bucket objstore.Bucket,
 	lbls func() labels.Labels,
 	source metadata.SourceType,
-	allowOutOfOrderUploads bool,
 	hashFunc metadata.HashFunc,
 ) *ThanosShipper {
 	if logger == nil {
@@ -97,14 +93,13 @@ func NewThanosShipper(
 	}
 
 	return &ThanosShipper{
-		logger:                 logger,
-		dir:                    dir,
-		bucket:                 bucket,
-		labels:                 lbls,
-		metrics:                newMetrics(r),
-		source:                 source,
-		allowOutOfOrderUploads: allowOutOfOrderUploads,
-		hashFunc:               hashFunc,
+		logger:   logger,
+		dir:      dir,
+		bucket:   bucket,
+		labels:   lbls,
+		metrics:  newMetrics(r),
+		source:   source,
+		hashFunc: hashFunc,
 	}
 }
 
@@ -144,74 +139,6 @@ func (s *ThanosShipper) Timestamps() (minTime, maxSyncTime int64, err error) {
 	return minTime, maxSyncTime, nil
 }
 
-type lazyOverlapChecker struct {
-	synced bool
-	logger log.Logger
-	bucket objstore.Bucket
-	labels func() labels.Labels
-
-	metas       []tsdb.BlockMeta
-	lookupMetas map[ulid.ULID]struct{}
-}
-
-func newLazyOverlapChecker(logger log.Logger, bucket objstore.Bucket, labels func() labels.Labels) *lazyOverlapChecker {
-	return &lazyOverlapChecker{
-		logger: logger,
-		bucket: bucket,
-		labels: labels,
-
-		lookupMetas: map[ulid.ULID]struct{}{},
-	}
-}
-
-func (c *lazyOverlapChecker) sync(ctx context.Context) error {
-	if err := c.bucket.Iter(ctx, "", func(path string) error {
-		id, ok := block.IsBlockDir(path)
-		if !ok {
-			return nil
-		}
-
-		m, err := block.DownloadMeta(ctx, c.logger, c.bucket, id)
-		if err != nil {
-			return err
-		}
-
-		if !labels.Equal(labels.FromMap(m.Thanos.Labels), c.labels()) {
-			return nil
-		}
-
-		c.metas = append(c.metas, m.BlockMeta)
-		c.lookupMetas[m.ULID] = struct{}{}
-		return nil
-
-	}); err != nil {
-		return errors.Wrap(err, "get all block meta.")
-	}
-
-	c.synced = true
-	return nil
-}
-
-func (c *lazyOverlapChecker) IsOverlapping(ctx context.Context, newMeta tsdb.BlockMeta) error {
-	if !c.synced {
-		level.Info(c.logger).Log("msg", "gathering all existing blocks from the remote bucket for check", "id", newMeta.ULID.String())
-		if err := c.sync(ctx); err != nil {
-			return err
-		}
-	}
-
-	// TODO(bwplotka) so confusing! we need to sort it first. Add comment to TSDB code.
-	metas := append([]tsdb.BlockMeta{newMeta}, c.metas...)
-	sort.Slice(metas, func(i, j int) bool {
-		return metas[i].MinTime < metas[j].MinTime
-	})
-	if o := tsdb.OverlappingBlocks(metas); len(o) > 0 {
-		// TODO(bwplotka): Consider checking if overlaps relates to block in concern?
-		return errors.Errorf("shipping compacted block %s is blocked; overlap spotted: %s", newMeta.ULID, o.String())
-	}
-	return nil
-}
-
 // Sync performs a single synchronization, which ensures all non-compacted local blocks have been uploaded
 // to the object bucket once.
 //
@@ -239,10 +166,7 @@ func (s *ThanosShipper) Sync(ctx context.Context) (uploaded int, err error) {
 	// Reset the uploaded slice so we can rebuild it only with blocks that still exist locally.
 	meta.Uploaded = nil
 
-	var (
-		checker    = newLazyOverlapChecker(s.logger, s.bucket, s.labels)
-		uploadErrs int
-	)
+	var uploadErrs int
 
 	metas, err := s.blockMetasFromOldest()
 	if err != nil {
@@ -277,18 +201,7 @@ func (s *ThanosShipper) Sync(ctx context.Context) (uploaded int, err error) {
 			continue
 		}
 
-		// Skip overlap check if out of order uploads is enabled.
-		if m.Compaction.Level > 1 && !s.allowOutOfOrderUploads {
-			if err := checker.IsOverlapping(ctx, m.BlockMeta); err != nil {
-				return 0, errors.Errorf("Found overlap or error during sync, cannot upload compacted block, details: %v", err)
-			}
-		}
-
 		if err := s.upload(ctx, m); err != nil {
-			if !s.allowOutOfOrderUploads {
-				return 0, errors.Wrapf(err, "upload %v", m.ULID)
-			}
-
 			// No error returned, just log line. This is because we want other blocks to be uploaded even
 			// though this one failed. It will be retried on second Sync iteration.
 			level.Error(s.logger).Log("msg", "shipping failed", "block", m.ULID, "err", err)
