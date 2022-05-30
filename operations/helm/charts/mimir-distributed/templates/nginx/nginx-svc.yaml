@@ -1,0 +1,33 @@
+{{- if not .Values.enterprise.enabled -}}
+{{- if .Values.nginx.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "mimir.resourceName" (dict "ctx" . "component" "nginx") }}
+  labels:
+    {{- include "mimir.labels" (dict "ctx" . "component" "nginx") | nindent 4 }}
+    {{- with .Values.nginx.service.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  annotations:
+    {{- toYaml .Values.nginx.service.annotations | nindent 4 }}
+spec:
+  type: {{ .Values.nginx.service.type }}
+  {{- with .Values.nginx.service.clusterIP }}
+  clusterIP: {{ . }}
+  {{- end }}
+  {{- if and (eq "LoadBalancer" .Values.nginx.service.type) .Values.nginx.service.loadBalancerIP }}
+  loadBalancerIP: {{ .Values.nginx.service.loadBalancerIP }}
+  {{- end }}
+  ports:
+    - name: http-metric
+      port: {{ .Values.nginx.service.port }}
+      targetPort: http-metric
+      {{- if and (eq "NodePort" .Values.nginx.service.type) .Values.nginx.service.nodePort }}
+      nodePort: {{ .Values.nginx.service.nodePort }}
+      {{- end }}
+      protocol: TCP
+  selector:
+    {{- include "mimir.selectorLabels" (dict "ctx" . "component" "nginx") | nindent 4 }}
+{{- end -}}
+{{- end -}}
