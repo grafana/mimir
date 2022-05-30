@@ -114,7 +114,7 @@ func printMetas(metas map[ulid.ULID]*metadata.Meta, deletedTimes map[ulid.ULID]t
 		fmt.Fprintf(tabber, "Size\t")
 	}
 	if cfg.showLabels {
-		fmt.Fprintf(tabber, "Labels (excl. "+tsdb.TenantIDExternalLabel+")\t")
+		fmt.Fprintf(tabber, "Labels\t")
 	}
 	if cfg.showSources {
 		fmt.Fprintf(tabber, "Sources\t")
@@ -165,7 +165,7 @@ func printMetas(metas map[ulid.ULID]*metadata.Meta, deletedTimes map[ulid.ULID]t
 
 		if cfg.showLabels {
 			if m := b.Thanos.Labels; m != nil {
-				fmt.Fprintf(tabber, "%s\t", labels.FromMap(b.Thanos.Labels).WithoutLabels(tsdb.TenantIDExternalLabel))
+				fmt.Fprintf(tabber, "%s\t", labels.FromMap(b.Thanos.Labels))
 			} else {
 				fmt.Fprintf(tabber, "\t")
 			}

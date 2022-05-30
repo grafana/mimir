@@ -560,7 +560,7 @@ func getUserIDFromGRPCContext(ctx context.Context) string {
 		return ""
 	}
 
-	values := meta.Get(tsdb.TenantIDExternalLabel)
+	values := meta.Get(tsdb.GrpcContextMetadataTenantID)
 	if len(values) != 1 {
 		return ""
 	}
