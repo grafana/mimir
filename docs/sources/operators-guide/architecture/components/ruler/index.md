@@ -60,6 +60,18 @@ The `source_tenants` field allows aggregating data from multiple tenants while e
 of each rule in the group will be evaluated against the data of all tenants in `source_tenants`. If `source_tenants` is
 empty or omitted, then the tenant under which the group is created will be treated as the `source_tenant`.
 
+Below is an example of how a federated rule group would look like:
+
+```yaml
+name: MyGroupName
+source_tenants: ["tenant-a", "tenant-b"]
+rules:
+  - record: sum:metric
+    expr: sum(metric)
+```
+
+_In this example `MyGroupName` rules will be evaluated against `tenant-a` and `tenant-b` tenants._
+
 Federated rule groups are skipped during evaluation by default. This feature depends on
 the cross-tenant query federation feature. To enable federated rules
 set `-ruler.tenant-federation.enabled=true` and `-tenant-federation.enabled=true` CLI flags (or their respective YAML
