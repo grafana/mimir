@@ -132,47 +132,46 @@ func TestClientMock_MockGet(t *testing.T) {
 
 func TestClient_ConfigValidation(t *testing.T) {
 	testCases := []struct {
-		name           string
-		cfg            Config
-		expectingError bool
+		name          string
+		cfg           Config
+		expectedError string
 	}{
 		{
-			name:           "valid storage_prefix",
-			cfg:            Config{Backend: Filesystem, StoragePrefix: "helloworld"},
-			expectingError: false,
+			name: "valid storage_prefix",
+			cfg:  Config{Backend: Filesystem, StoragePrefix: "helloworld"},
 		},
 		{
-			name:           "storage_prefix non-alphanumeric characters",
-			cfg:            Config{Backend: Filesystem, StoragePrefix: "hello-world!"},
-			expectingError: true,
+			name:          "storage_prefix non-alphanumeric characters",
+			cfg:           Config{Backend: Filesystem, StoragePrefix: "hello-world!"},
+			expectedError: "storage_prefix contains invalid characters, it may only contain digits and English alphabet letters",
 		},
 		{
-			name:           "storage_prefix suffixed with a slash (non-alphanumeric)",
-			cfg:            Config{Backend: Filesystem, StoragePrefix: "helloworld/"},
-			expectingError: true,
+			name:          "storage_prefix suffixed with a slash (non-alphanumeric)",
+			cfg:           Config{Backend: Filesystem, StoragePrefix: "helloworld/"},
+			expectedError: "storage_prefix contains invalid characters, it may only contain digits and English alphabet letters",
 		},
 		{
-			name:           "storage_prefix that has some character strings that have a meaning in unix paths (..)",
-			cfg:            Config{Backend: Filesystem, StoragePrefix: ".."},
-			expectingError: true,
+			name:          "storage_prefix that has some character strings that have a meaning in unix paths (..)",
+			cfg:           Config{Backend: Filesystem, StoragePrefix: ".."},
+			expectedError: "storage_prefix contains invalid characters, it may only contain digits and English alphabet letters",
 		},
 		{
-			name:           "storage_prefix that has some character strings that have a meaning in unix paths (.)",
-			cfg:            Config{Backend: Filesystem, StoragePrefix: "."},
-			expectingError: true,
+			name:          "storage_prefix that has some character strings that have a meaning in unix paths (.)",
+			cfg:           Config{Backend: Filesystem, StoragePrefix: "."},
+			expectedError: "storage_prefix contains invalid characters, it may only contain digits and English alphabet letters",
 		},
 		{
-			name:           "unsupported backend",
-			cfg:            Config{Backend: "flash drive"},
-			expectingError: true,
+			name:          "unsupported backend",
+			cfg:           Config{Backend: "flash drive"},
+			expectedError: "unsupported storage backend",
 		},
 	}
 
 	for _, tc := range testCases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			if actualErr := tc.cfg.Validate(); tc.expectingError {
-				assert.Error(t, actualErr)
+			if actualErr := tc.cfg.Validate(); tc.expectedError != "" {
+				assert.ErrorContains(t, actualErr, tc.expectedError)
 			} else {
 				assert.NoError(t, actualErr)
 			}
