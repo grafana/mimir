@@ -51,7 +51,7 @@
     resources_dashboards_enabled: true,
 
     // Whether mimir gateway is enabled
-    gateway_enabled: true,
+    gateway_enabled: false,
 
     // The label used to differentiate between different application instances (i.e. 'pod' in a kubernetes install).
     per_instance_label: 'pod',
