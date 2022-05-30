@@ -9,9 +9,7 @@ package ingester
 
 import (
 	"context"
-	"encoding/json"
 	"io/ioutil"
-	"math"
 	"os"
 	"path"
 	"path/filepath"
@@ -24,11 +22,10 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/thanos-io/thanos/pkg/block"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
 	"github.com/thanos-io/thanos/pkg/objstore"
-	"github.com/thanos-io/thanos/pkg/runutil"
+	"github.com/thanos-io/thanos/pkg/shipper"
 )
 
 type metrics struct {
@@ -103,42 +100,6 @@ func NewThanosShipper(
 	}
 }
 
-// Timestamps returns the minimum timestamp for which data is available and the highest timestamp
-// of blocks that were successfully uploaded.
-func (s *ThanosShipper) Timestamps() (minTime, maxSyncTime int64, err error) {
-	meta, err := ReadMetaFile(s.dir)
-	if err != nil {
-		return 0, 0, errors.Wrap(err, "read shipper meta file")
-	}
-	// Build a map of blocks we already uploaded.
-	hasUploaded := make(map[ulid.ULID]struct{}, len(meta.Uploaded))
-	for _, id := range meta.Uploaded {
-		hasUploaded[id] = struct{}{}
-	}
-
-	minTime = math.MaxInt64
-	maxSyncTime = math.MinInt64
-
-	metas, err := s.blockMetasFromOldest()
-	if err != nil {
-		return 0, 0, err
-	}
-	for _, m := range metas {
-		if m.MinTime < minTime {
-			minTime = m.MinTime
-		}
-		if _, ok := hasUploaded[m.ULID]; ok && m.MaxTime > maxSyncTime {
-			maxSyncTime = m.MaxTime
-		}
-	}
-
-	if minTime == math.MaxInt64 {
-		// No block yet found. We cannot assume any min block size so propagate 0 minTime.
-		minTime = 0
-	}
-	return minTime, maxSyncTime, nil
-}
-
 // Sync performs a single synchronization, which ensures all non-compacted local blocks have been uploaded
 // to the object bucket once.
 //
@@ -146,7 +107,7 @@ func (s *ThanosShipper) Timestamps() (minTime, maxSyncTime int64, err error) {
 //
 // It is not concurrency-safe, however it is compactor-safe (running concurrently with compactor is ok).
 func (s *ThanosShipper) Sync(ctx context.Context) (uploaded int, err error) {
-	meta, err := ReadMetaFile(s.dir)
+	meta, err := shipper.ReadMetaFile(s.dir)
 	if err != nil {
 		// If we encounter any error, proceed with an empty meta file and overwrite it later.
 		// The meta file is only used to avoid unnecessary bucket.Exists call,
@@ -154,7 +115,7 @@ func (s *ThanosShipper) Sync(ctx context.Context) (uploaded int, err error) {
 		if !os.IsNotExist(err) {
 			level.Warn(s.logger).Log("msg", "reading meta file failed, will override it", "err", err)
 		}
-		meta = &Meta{Version: MetaVersion1}
+		meta = &shipper.Meta{Version: shipper.MetaVersion1}
 	}
 
 	// Build a map of blocks we already uploaded.
@@ -212,7 +173,7 @@ func (s *ThanosShipper) Sync(ctx context.Context) (uploaded int, err error) {
 		uploaded++
 		s.metrics.uploads.Inc()
 	}
-	if err := WriteMetaFile(s.logger, s.dir, meta); err != nil {
+	if err := shipper.WriteMetaFile(s.logger, s.dir, meta); err != nil {
 		level.Warn(s.logger).Log("msg", "updating meta file failed", "err", err)
 	}
 
@@ -325,82 +286,4 @@ func hardlinkBlock(src, dst string) error {
 		}
 	}
 	return nil
-}
-
-// Meta defines the format thanos.shipper.json file that the shipper places in the data directory.
-type Meta struct {
-	Version  int         `json:"version"`
-	Uploaded []ulid.ULID `json:"uploaded"`
-}
-
-const (
-	// MetaFilename is the known JSON filename for meta information.
-	MetaFilename = "thanos.shipper.json"
-
-	// MetaVersion1 represents 1 version of meta.
-	MetaVersion1 = 1
-)
-
-// WriteMetaFile writes the given meta into <dir>/thanos.shipper.json.
-func WriteMetaFile(logger log.Logger, dir string, meta *Meta) error {
-	// Make any changes to the file appear atomic.
-	path := filepath.Join(dir, MetaFilename)
-	tmp := path + ".tmp"
-
-	f, err := os.Create(tmp)
-	if err != nil {
-		return err
-	}
-
-	enc := json.NewEncoder(f)
-	enc.SetIndent("", "\t")
-
-	if err := enc.Encode(meta); err != nil {
-		runutil.CloseWithLogOnErr(logger, f, "write meta file close")
-		return err
-	}
-	if err := f.Close(); err != nil {
-		return err
-	}
-	return renameFile(logger, tmp, path)
-}
-
-// ReadMetaFile reads the given meta from <dir>/thanos.shipper.json.
-func ReadMetaFile(dir string) (*Meta, error) {
-	fpath := filepath.Join(dir, filepath.Clean(MetaFilename))
-	b, err := os.ReadFile(fpath)
-	if err != nil {
-		return nil, errors.Wrapf(err, "failed to read %s", fpath)
-	}
-
-	var m Meta
-	if err := json.Unmarshal(b, &m); err != nil {
-		return nil, errors.Wrapf(err, "failed to parse %s as JSON: %q", fpath, string(b))
-	}
-	if m.Version != MetaVersion1 {
-		return nil, errors.Errorf("unexpected meta file version %d", m.Version)
-	}
-
-	return &m, nil
-}
-
-func renameFile(logger log.Logger, from, to string) error {
-	if err := os.RemoveAll(to); err != nil {
-		return err
-	}
-	if err := os.Rename(from, to); err != nil {
-		return err
-	}
-
-	// Directory was renamed; sync parent dir to persist rename.
-	pdir, err := fileutil.OpenDir(filepath.Dir(to))
-	if err != nil {
-		return err
-	}
-
-	if err = fileutil.Fdatasync(pdir); err != nil {
-		runutil.CloseWithLogOnErr(logger, pdir, "rename file dir close")
-		return err
-	}
-	return pdir.Close()
 }
