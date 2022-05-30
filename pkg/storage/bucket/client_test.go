@@ -9,6 +9,8 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"os"
+	"path"
 	"sync"
 	"testing"
 
@@ -200,7 +202,12 @@ func TestNewPrefixedBucketClient(t *testing.T) {
 		_, err = client.Get(ctx, "file")
 		assert.NoError(t, err)
 
-		assert.FileExists(t, tempDir+"/prefix/file")
+		filePath := path.Join(tempDir, "prefix", "file")
+		assert.FileExists(t, filePath)
+
+		b, err := os.ReadFile(filePath)
+		assert.NoError(t, err)
+		assert.Equal(t, "content", string(b))
 	})
 
 	t.Run("without prefix", func(t *testing.T) {
@@ -221,6 +228,11 @@ func TestNewPrefixedBucketClient(t *testing.T) {
 		_, err = client.Get(ctx, "file")
 		assert.NoError(t, err)
 
-		assert.FileExists(t, tempDir+"/file")
+		filePath := path.Join(tempDir, "file")
+		assert.FileExists(t, filePath)
+
+		b, err := os.ReadFile(filePath)
+		assert.NoError(t, err)
+		assert.Equal(t, "content", string(b))
 	})
 }
