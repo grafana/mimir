@@ -50,7 +50,7 @@ var (
 	SupportedBackends = []string{S3, GCS, Azure, Swift, Filesystem}
 
 	ErrUnsupportedStorageBackend        = errors.New("unsupported storage backend")
-	ErrInvalidCharactersInStoragePrefix = errors.New("storage_prefix contains invalid characters, it may only contain digits and English alphabet letters")
+	ErrInvalidCharactersInStoragePrefix = errors.New("storage prefix contains invalid characters, it may only contain digits and English alphabet letters")
 )
 
 // Config holds configuration for accessing long-term storage.
