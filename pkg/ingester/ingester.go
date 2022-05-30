@@ -1531,8 +1531,7 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 			bucket.NewUserBucketClient(userID, i.bucket, i.limits),
 			func() labels.Labels { return l },
 			metadata.ReceiveSource,
-			false, // No need to upload compacted blocks. Mimir compactor takes care of that.
-			true,  // Allow out of order uploads. It's fine in Mimir's context.
+			true, // Allow out of order uploads. It's fine in Mimir's context.
 			metadata.NoneFunc,
 		)
 

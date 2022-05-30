@@ -34,14 +34,13 @@ import (
 )
 
 type metrics struct {
-	dirSyncs          prometheus.Counter
-	dirSyncFailures   prometheus.Counter
-	uploads           prometheus.Counter
-	uploadFailures    prometheus.Counter
-	uploadedCompacted prometheus.Gauge
+	dirSyncs        prometheus.Counter
+	dirSyncFailures prometheus.Counter
+	uploads         prometheus.Counter
+	uploadFailures  prometheus.Counter
 }
 
-func newMetrics(reg prometheus.Registerer, uploadCompacted bool) *metrics {
+func newMetrics(reg prometheus.Registerer) *metrics {
 	var m metrics
 
 	m.dirSyncs = promauto.With(reg).NewCounter(prometheus.CounterOpts{
@@ -60,15 +59,6 @@ func newMetrics(reg prometheus.Registerer, uploadCompacted bool) *metrics {
 		Name: "thanos_shipper_upload_failures_total",
 		Help: "Total number of block upload failures",
 	})
-	uploadCompactedGaugeOpts := prometheus.GaugeOpts{
-		Name: "thanos_shipper_upload_compacted_done",
-		Help: "If 1 it means shipper uploaded all compacted blocks from the filesystem.",
-	}
-	if uploadCompacted {
-		m.uploadedCompacted = promauto.With(reg).NewGauge(uploadCompactedGaugeOpts)
-	} else {
-		m.uploadedCompacted = promauto.With(nil).NewGauge(uploadCompactedGaugeOpts)
-	}
 	return &m
 }
 
@@ -82,7 +72,6 @@ type ThanosShipper struct {
 	labels  func() labels.Labels
 	source  metadata.SourceType
 
-	uploadCompacted        bool
 	allowOutOfOrderUploads bool
 	hashFunc               metadata.HashFunc
 }
@@ -97,7 +86,6 @@ func NewThanosShipper(
 	bucket objstore.Bucket,
 	lbls func() labels.Labels,
 	source metadata.SourceType,
-	uploadCompacted bool,
 	allowOutOfOrderUploads bool,
 	hashFunc metadata.HashFunc,
 ) *ThanosShipper {
@@ -113,10 +101,9 @@ func NewThanosShipper(
 		dir:                    dir,
 		bucket:                 bucket,
 		labels:                 lbls,
-		metrics:                newMetrics(r, uploadCompacted),
+		metrics:                newMetrics(r),
 		source:                 source,
 		allowOutOfOrderUploads: allowOutOfOrderUploads,
-		uploadCompacted:        uploadCompacted,
 		hashFunc:               hashFunc,
 	}
 }
@@ -277,9 +264,7 @@ func (s *ThanosShipper) Sync(ctx context.Context) (uploaded int, err error) {
 
 		// We only ship of the first compacted block level as normal flow.
 		if m.Compaction.Level > 1 {
-			if !s.uploadCompacted {
-				continue
-			}
+			continue
 		}
 
 		// Check against bucket if the meta file for this block exists.
@@ -324,9 +309,6 @@ func (s *ThanosShipper) Sync(ctx context.Context) (uploaded int, err error) {
 		return uploaded, errors.Errorf("failed to sync %v blocks", uploadErrs)
 	}
 
-	if s.uploadCompacted {
-		s.metrics.uploadedCompacted.Set(1)
-	}
 	return uploaded, nil
 }
 
