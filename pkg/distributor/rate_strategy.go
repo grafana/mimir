@@ -34,11 +34,12 @@ func newGlobalRateStrategy(baseStrategy limiter.RateLimiterStrategy, ring ReadLi
 func (s *globalStrategy) Limit(tenantID string) float64 {
 	numDistributors := s.ring.HealthyInstancesCount()
 
-	if numDistributors == 0 {
-		return s.baseStrategy.Limit(tenantID)
-	}
+	limit := s.baseStrategy.Limit(tenantID)
 
-	return s.baseStrategy.Limit(tenantID) / float64(numDistributors)
+	if numDistributors == 0 || limit == float64(rate.Inf) {
+		return limit
+	}
+	return limit / float64(numDistributors)
 }
 
 func (s *globalStrategy) Burst(tenantID string) int {

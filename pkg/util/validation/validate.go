@@ -74,7 +74,7 @@ var DiscardedRequests = prometheus.NewCounterVec(
 		Name: "cortex_discarded_requests_total",
 		Help: "The total number of requests that were discarded due to rate limiting.",
 	},
-	[]string{"user"},
+	[]string{discardReasonLabel, "user"},
 )
 
 // DiscardedSamples is a metric of the number of discarded samples, by reason.

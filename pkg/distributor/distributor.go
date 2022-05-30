@@ -587,7 +587,7 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 
 	now := mtime.Now()
 	if !d.requestRateLimiter.AllowN(now, userID, 1) {
-		validation.DiscardedRequests.WithLabelValues(userID).Add(1)
+		validation.DiscardedRequests.WithLabelValues(validation.RateLimited, userID).Add(1)
 
 		// Return a 429 here to tell the client it is going too fast.
 		// Client may discard the data or slow down and re-send.
