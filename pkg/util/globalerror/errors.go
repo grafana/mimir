@@ -43,6 +43,8 @@ const (
 	MetricMetadataMetricNameTooLong ID = "metric-name-too-long"
 	MetricMetadataHelpTooLong       ID = "help-too-long"
 	MetricMetadataUnitTooLong       ID = "unit-too-long"
+
+	MaxQueryLength ID = "max-query-length"
 )
 
 // Message returns the provided msg, appending the error id.

@@ -24,9 +24,6 @@ import (
 const (
 	discardReasonLabel = "reason"
 
-	// ErrQueryTooLong is used in chunk store, querier and query frontend.
-	ErrQueryTooLong = "the query time range exceeds the limit (query length: %s, limit: %s)"
-
 	// RateLimited is one of the values for the reason to discard samples.
 	// Declared here to avoid duplication in ingester and distributor.
 	RateLimited = "rate_limited"
