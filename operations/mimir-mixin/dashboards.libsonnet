@@ -4,7 +4,7 @@
     (import 'dashboards/queries.libsonnet') +
     (import 'dashboards/reads.libsonnet') +
     (import 'dashboards/ruler.libsonnet') +
-    (import 'dashboards/ruler-reads.libsonnet') +
+    (import 'dashboards/remote-ruler-reads.libsonnet') +
     (import 'dashboards/alertmanager.libsonnet') +
     (import 'dashboards/scaling.libsonnet') +
     (import 'dashboards/writes.libsonnet') +
@@ -19,7 +19,7 @@
 
     (if !$._config.resources_dashboards_enabled then {} else
        (import 'dashboards/reads-resources.libsonnet') +
-       (import 'dashboards/ruler-reads-resources.libsonnet') +
+       (import 'dashboards/remote-ruler-reads-resources.libsonnet') +
        (import 'dashboards/reads-networking.libsonnet') +
        (import 'dashboards/writes-resources.libsonnet') +
        (import 'dashboards/writes-networking.libsonnet') +
