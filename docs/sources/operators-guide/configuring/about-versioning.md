@@ -82,6 +82,10 @@ The following features are currently experimental:
   - `-query-scheduler.querier-forget-delay`
 - Store-gateway
   - `-blocks-storage.bucket-store.index-header-thread-pool-size`
+- Blocks Storage, Alertmanager, and Ruler support for partitioning access to the same storage bucket
+  - `-alertmanager-storage.storage-prefix`
+  - `-blocks-storage.storage-prefix`
+  - `-ruler-storage.storage-prefix`
 
 ## Deprecated features
 
