@@ -22,12 +22,12 @@ import (
 	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/index"
+	"github.com/stretchr/testify/require"
 
 	"github.com/thanos-io/thanos/pkg/block"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
 	"github.com/thanos-io/thanos/pkg/objstore"
 	"github.com/thanos-io/thanos/pkg/objstore/filesystem"
-	"github.com/thanos-io/thanos/pkg/testutil"
 	"github.com/thanos-io/thanos/pkg/testutil/e2eutil"
 )
 
@@ -35,12 +35,12 @@ func TestReaders(t *testing.T) {
 	ctx := context.Background()
 
 	tmpDir, err := ioutil.TempDir("", "test-indexheader")
-	testutil.Ok(t, err)
-	defer func() { testutil.Ok(t, os.RemoveAll(tmpDir)) }()
+	require.NoError(t, err)
+	defer func() { require.NoError(t, os.RemoveAll(tmpDir)) }()
 
 	bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
-	testutil.Ok(t, err)
-	defer func() { testutil.Ok(t, bkt.Close()) }()
+	require.NoError(t, err)
+	defer func() { require.NoError(t, bkt.Close()) }()
 
 	// Create block index version 2.
 	id1, err := e2eutil.CreateBlock(ctx, tmpDir, []labels.Labels{
@@ -60,9 +60,9 @@ func TestReaders(t *testing.T) {
 		{{Name: "a", Value: "1"}, {Name: "longer-string", Value: "1"}},
 		{{Name: "a", Value: "1"}, {Name: "longer-string", Value: "2"}},
 	}, 100, 0, 1000, labels.Labels{{Name: "ext1", Value: "1"}}, 124, metadata.NoneFunc)
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
-	testutil.Ok(t, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, id1.String()), metadata.NoneFunc))
+	require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, id1.String()), metadata.NoneFunc))
 
 	// Copy block index version 1 for backward compatibility.
 	/* The block here was produced at the commit
@@ -82,7 +82,7 @@ func TestReaders(t *testing.T) {
 	*/
 
 	m, err := metadata.ReadFromDir("./testdata/index_format_v1")
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 	e2eutil.Copy(t, "./testdata/index_format_v1", filepath.Join(tmpDir, m.ULID.String()))
 
 	_, err = metadata.InjectThanos(log.NewNopLogger(), filepath.Join(tmpDir, m.ULID.String()), metadata.Thanos{
@@ -90,35 +90,35 @@ func TestReaders(t *testing.T) {
 		Downsample: metadata.ThanosDownsample{Resolution: 0},
 		Source:     metadata.TestSource,
 	}, &m.BlockMeta)
-	testutil.Ok(t, err)
-	testutil.Ok(t, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, m.ULID.String()), metadata.NoneFunc))
+	require.NoError(t, err)
+	require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, m.ULID.String()), metadata.NoneFunc))
 
 	for _, id := range []ulid.ULID{id1, m.ULID} {
 		t.Run(id.String(), func(t *testing.T) {
 			indexFile, err := fileutil.OpenMmapFile(filepath.Join(tmpDir, id.String(), block.IndexFilename))
-			testutil.Ok(t, err)
+			require.NoError(t, err)
 			defer func() { _ = indexFile.Close() }()
 
 			b := realByteSlice(indexFile.Bytes())
 
 			t.Run("binary reader", func(t *testing.T) {
 				fn := filepath.Join(tmpDir, id.String(), block.IndexHeaderFilename)
-				testutil.Ok(t, WriteBinary(ctx, bkt, id, fn))
+				require.NoError(t, WriteBinary(ctx, bkt, id, fn))
 
 				br, err := NewBinaryReader(ctx, log.NewNopLogger(), nil, tmpDir, id, 3)
-				testutil.Ok(t, err)
+				require.NoError(t, err)
 
-				defer func() { testutil.Ok(t, br.Close()) }()
+				defer func() { require.NoError(t, br.Close()) }()
 
 				if id == id1 {
-					testutil.Equals(t, 1, br.version)
-					testutil.Equals(t, 2, br.indexVersion)
-					testutil.Equals(t, &BinaryTOC{Symbols: headerLen, PostingsOffsetTable: 70}, br.toc)
-					testutil.Equals(t, int64(710), br.indexLastPostingEnd)
-					testutil.Equals(t, 8, br.symbols.Size())
-					testutil.Equals(t, 0, len(br.postingsV1))
-					testutil.Equals(t, 2, len(br.nameSymbols))
-					testutil.Equals(t, map[string]*postingValueOffsets{
+					require.Equal(t, 1, br.version)
+					require.Equal(t, 2, br.indexVersion)
+					require.Equal(t, &BinaryTOC{Symbols: headerLen, PostingsOffsetTable: 70}, br.toc)
+					require.Equal(t, int64(710), br.indexLastPostingEnd)
+					require.Equal(t, 8, br.symbols.Size())
+					require.Equal(t, 0, len(br.postingsV1))
+					require.Equal(t, 2, len(br.nameSymbols))
+					require.Equal(t, map[string]*postingValueOffsets{
 						"": {
 							offsets:       []postingOffset{{value: "", tableOff: 4}},
 							lastValOffset: 440,
@@ -143,32 +143,32 @@ func TestReaders(t *testing.T) {
 					}, br.postings)
 
 					vals, err := br.LabelValues("not-existing")
-					testutil.Ok(t, err)
-					testutil.Equals(t, []string(nil), vals)
+					require.NoError(t, err)
+					require.Equal(t, []string(nil), vals)
 
 					// Regression tests for https://github.com/thanos-io/thanos/issues/2213.
 					// Most of not existing value was working despite bug, except in certain unlucky cases
 					// it was causing "invalid size" errors.
 					_, err = br.PostingsOffset("not-existing", "1")
-					testutil.Equals(t, NotFoundRangeErr, err)
+					require.Equal(t, NotFoundRangeErr, err)
 					_, err = br.PostingsOffset("a", "0")
-					testutil.Equals(t, NotFoundRangeErr, err)
+					require.Equal(t, NotFoundRangeErr, err)
 					// Unlucky case, because the bug was causing unnecessary read & decode requiring more bytes than
 					// available. For rest cases read was noop wrong, but at least not failing.
 					_, err = br.PostingsOffset("a", "10")
-					testutil.Equals(t, NotFoundRangeErr, err)
+					require.Equal(t, NotFoundRangeErr, err)
 					_, err = br.PostingsOffset("a", "121")
-					testutil.Equals(t, NotFoundRangeErr, err)
+					require.Equal(t, NotFoundRangeErr, err)
 					_, err = br.PostingsOffset("a", "131")
-					testutil.Equals(t, NotFoundRangeErr, err)
+					require.Equal(t, NotFoundRangeErr, err)
 					_, err = br.PostingsOffset("a", "91")
-					testutil.Equals(t, NotFoundRangeErr, err)
+					require.Equal(t, NotFoundRangeErr, err)
 					_, err = br.PostingsOffset("longer-string", "0")
-					testutil.Equals(t, NotFoundRangeErr, err)
+					require.Equal(t, NotFoundRangeErr, err)
 					_, err = br.PostingsOffset("longer-string", "11")
-					testutil.Equals(t, NotFoundRangeErr, err)
+					require.Equal(t, NotFoundRangeErr, err)
 					_, err = br.PostingsOffset("longer-string", "21")
-					testutil.Equals(t, NotFoundRangeErr, err)
+					require.Equal(t, NotFoundRangeErr, err)
 				}
 
 				compareIndexToHeader(t, b, br)
@@ -176,12 +176,12 @@ func TestReaders(t *testing.T) {
 
 			t.Run("lazy binary reader", func(t *testing.T) {
 				fn := filepath.Join(tmpDir, id.String(), block.IndexHeaderFilename)
-				testutil.Ok(t, WriteBinary(ctx, bkt, id, fn))
+				require.NoError(t, WriteBinary(ctx, bkt, id, fn))
 
 				br, err := NewLazyBinaryReader(ctx, log.NewNopLogger(), nil, tmpDir, id, 3, NewLazyBinaryReaderMetrics(nil), nil)
-				testutil.Ok(t, err)
+				require.NoError(t, err)
 
-				defer func() { testutil.Ok(t, br.Close()) }()
+				defer func() { require.NoError(t, br.Close()) }()
 
 				compareIndexToHeader(t, b, br)
 			})
@@ -192,12 +192,12 @@ func TestReaders(t *testing.T) {
 
 func compareIndexToHeader(t *testing.T, indexByteSlice index.ByteSlice, headerReader Reader) {
 	indexReader, err := index.NewReader(indexByteSlice)
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 	defer func() { _ = indexReader.Close() }()
 
 	actVersion, err := headerReader.IndexVersion()
-	testutil.Ok(t, err)
-	testutil.Equals(t, indexReader.Version(), actVersion)
+	require.NoError(t, err)
+	require.Equal(t, indexReader.Version(), actVersion)
 
 	if indexReader.Version() == index.FormatV2 {
 		// For v2 symbols ref sequential integers 0, 1, 2 etc.
@@ -205,47 +205,47 @@ func compareIndexToHeader(t *testing.T, indexByteSlice index.ByteSlice, headerRe
 		i := 0
 		for iter.Next() {
 			r, err := headerReader.LookupSymbol(uint32(i))
-			testutil.Ok(t, err)
-			testutil.Equals(t, iter.At(), r)
+			require.NoError(t, err)
+			require.Equal(t, iter.At(), r)
 
 			i++
 		}
-		testutil.Ok(t, iter.Err())
+		require.NoError(t, iter.Err())
 		_, err := headerReader.LookupSymbol(uint32(i))
-		testutil.NotOk(t, err)
+		require.Error(t, err)
 
 	} else {
 		// For v1 symbols refs are actual offsets in the index.
 		symbols, err := getSymbolTable(indexByteSlice)
-		testutil.Ok(t, err)
+		require.NoError(t, err)
 
 		for refs, sym := range symbols {
 			r, err := headerReader.LookupSymbol(refs)
-			testutil.Ok(t, err)
-			testutil.Equals(t, sym, r)
+			require.NoError(t, err)
+			require.Equal(t, sym, r)
 		}
 		_, err = headerReader.LookupSymbol(200000)
-		testutil.NotOk(t, err)
+		require.Error(t, err)
 	}
 
 	expLabelNames, err := indexReader.LabelNames()
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 	actualLabelNames, err := headerReader.LabelNames()
-	testutil.Ok(t, err)
-	testutil.Equals(t, expLabelNames, actualLabelNames)
+	require.NoError(t, err)
+	require.Equal(t, expLabelNames, actualLabelNames)
 
 	expRanges, err := indexReader.PostingsRanges()
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
 	minStart := int64(math.MaxInt64)
 	maxEnd := int64(math.MinInt64)
 	for il, lname := range expLabelNames {
 		expectedLabelVals, err := indexReader.SortedLabelValues(lname)
-		testutil.Ok(t, err)
+		require.NoError(t, err)
 
 		vals, err := headerReader.LabelValues(lname)
-		testutil.Ok(t, err)
-		testutil.Equals(t, expectedLabelVals, vals)
+		require.NoError(t, err)
+		require.Equal(t, expectedLabelVals, vals)
 
 		for iv, v := range vals {
 			if minStart > expRanges[labels.Label{Name: lname, Value: v}].Start {
@@ -256,34 +256,34 @@ func compareIndexToHeader(t *testing.T, indexByteSlice index.ByteSlice, headerRe
 			}
 
 			ptr, err := headerReader.PostingsOffset(lname, v)
-			testutil.Ok(t, err)
+			require.NoError(t, err)
 
 			// For index-cache those values are exact.
 			//
 			// For binary they are exact except last item posting offset. It's good enough if the value is larger than exact posting ending.
 			if indexReader.Version() == index.FormatV2 {
 				if iv == len(vals)-1 && il == len(expLabelNames)-1 {
-					testutil.Equals(t, expRanges[labels.Label{Name: lname, Value: v}].Start, ptr.Start)
-					testutil.Assert(t, expRanges[labels.Label{Name: lname, Value: v}].End <= ptr.End, "got offset %v earlier than actual posting end %v ", ptr.End, expRanges[labels.Label{Name: lname, Value: v}].End)
+					require.Equal(t, expRanges[labels.Label{Name: lname, Value: v}].Start, ptr.Start)
+					require.Truef(t, expRanges[labels.Label{Name: lname, Value: v}].End <= ptr.End, "got offset %v earlier than actual posting end %v ", ptr.End, expRanges[labels.Label{Name: lname, Value: v}].End)
 					continue
 				}
 			} else {
 				// For index formatV1 the last one does not mean literally last value, as postings were not sorted.
 				// Account for that. We know it's 40 label value.
 				if v == "40" {
-					testutil.Equals(t, expRanges[labels.Label{Name: lname, Value: v}].Start, ptr.Start)
-					testutil.Assert(t, expRanges[labels.Label{Name: lname, Value: v}].End <= ptr.End, "got offset %v earlier than actual posting end %v ", ptr.End, expRanges[labels.Label{Name: lname, Value: v}].End)
+					require.Equal(t, expRanges[labels.Label{Name: lname, Value: v}].Start, ptr.Start)
+					require.Truef(t, expRanges[labels.Label{Name: lname, Value: v}].End <= ptr.End, "got offset %v earlier than actual posting end %v ", ptr.End, expRanges[labels.Label{Name: lname, Value: v}].End)
 					continue
 				}
 			}
-			testutil.Equals(t, expRanges[labels.Label{Name: lname, Value: v}], ptr)
+			require.Equal(t, expRanges[labels.Label{Name: lname, Value: v}], ptr)
 		}
 	}
 
 	ptr, err := headerReader.PostingsOffset(index.AllPostingsKey())
-	testutil.Ok(t, err)
-	testutil.Equals(t, expRanges[labels.Label{Name: "", Value: ""}].Start, ptr.Start)
-	testutil.Equals(t, expRanges[labels.Label{Name: "", Value: ""}].End, ptr.End)
+	require.NoError(t, err)
+	require.Equal(t, expRanges[labels.Label{Name: "", Value: ""}].Start, ptr.Start)
+	require.Equal(t, expRanges[labels.Label{Name: "", Value: ""}].End, ptr.End)
 }
 
 func prepareIndexV2Block(t testing.TB, tmpDir string, bkt objstore.Bucket) *metadata.Meta {
@@ -318,7 +318,7 @@ func prepareIndexV2Block(t testing.TB, tmpDir string, bkt objstore.Bucket) *meta
 	*/
 
 	m, err := metadata.ReadFromDir("./testdata/index_format_v2")
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 	e2eutil.Copy(t, "./testdata/index_format_v2", filepath.Join(tmpDir, m.ULID.String()))
 
 	_, err = metadata.InjectThanos(log.NewNopLogger(), filepath.Join(tmpDir, m.ULID.String()), metadata.Thanos{
@@ -326,8 +326,8 @@ func prepareIndexV2Block(t testing.TB, tmpDir string, bkt objstore.Bucket) *meta
 		Downsample: metadata.ThanosDownsample{Resolution: 0},
 		Source:     metadata.TestSource,
 	}, &m.BlockMeta)
-	testutil.Ok(t, err)
-	testutil.Ok(t, block.Upload(context.Background(), log.NewNopLogger(), bkt, filepath.Join(tmpDir, m.ULID.String()), metadata.NoneFunc))
+	require.NoError(t, err)
+	require.NoError(t, block.Upload(context.Background(), log.NewNopLogger(), bkt, filepath.Join(tmpDir, m.ULID.String()), metadata.NoneFunc))
 
 	return m
 }
@@ -336,40 +336,40 @@ func BenchmarkBinaryWrite(t *testing.B) {
 	ctx := context.Background()
 
 	tmpDir, err := ioutil.TempDir("", "bench-indexheader")
-	testutil.Ok(t, err)
-	defer func() { testutil.Ok(t, os.RemoveAll(tmpDir)) }()
+	require.NoError(t, err)
+	defer func() { require.NoError(t, os.RemoveAll(tmpDir)) }()
 
 	bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
-	testutil.Ok(t, err)
-	defer func() { testutil.Ok(t, bkt.Close()) }()
+	require.NoError(t, err)
+	defer func() { require.NoError(t, bkt.Close()) }()
 
 	m := prepareIndexV2Block(t, tmpDir, bkt)
 	fn := filepath.Join(tmpDir, m.ULID.String(), block.IndexHeaderFilename)
 
 	t.ResetTimer()
 	for i := 0; i < t.N; i++ {
-		testutil.Ok(t, WriteBinary(ctx, bkt, m.ULID, fn))
+		require.NoError(t, WriteBinary(ctx, bkt, m.ULID, fn))
 	}
 }
 
 func BenchmarkBinaryReader(t *testing.B) {
 	ctx := context.Background()
 	tmpDir, err := ioutil.TempDir("", "bench-indexheader")
-	testutil.Ok(t, err)
-	defer func() { testutil.Ok(t, os.RemoveAll(tmpDir)) }()
+	require.NoError(t, err)
+	defer func() { require.NoError(t, os.RemoveAll(tmpDir)) }()
 
 	bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
 	m := prepareIndexV2Block(t, tmpDir, bkt)
 	fn := filepath.Join(tmpDir, m.ULID.String(), block.IndexHeaderFilename)
-	testutil.Ok(t, WriteBinary(ctx, bkt, m.ULID, fn))
+	require.NoError(t, WriteBinary(ctx, bkt, m.ULID, fn))
 
 	t.ResetTimer()
 	for i := 0; i < t.N; i++ {
 		br, err := newFileBinaryReader(fn, 32)
-		testutil.Ok(t, err)
-		testutil.Ok(t, br.Close())
+		require.NoError(t, err)
+		require.NoError(t, br.Close())
 	}
 }
 
@@ -388,12 +388,12 @@ func benchmarkBinaryReaderLookupSymbol(b *testing.B, numSeries int) {
 	logger := log.NewNopLogger()
 
 	tmpDir, err := ioutil.TempDir("", "benchmark-lookupsymbol")
-	testutil.Ok(b, err)
-	defer func() { testutil.Ok(b, os.RemoveAll(tmpDir)) }()
+	require.NoError(b, err)
+	defer func() { require.NoError(b, os.RemoveAll(tmpDir)) }()
 
 	bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
-	testutil.Ok(b, err)
-	defer func() { testutil.Ok(b, bkt.Close()) }()
+	require.NoError(b, err)
+	defer func() { require.NoError(b, bkt.Close()) }()
 
 	// Generate series labels.
 	seriesLabels := make([]labels.Labels, 0, numSeries)
@@ -403,18 +403,18 @@ func benchmarkBinaryReaderLookupSymbol(b *testing.B, numSeries int) {
 
 	// Create a block.
 	id1, err := e2eutil.CreateBlock(ctx, tmpDir, seriesLabels, 100, 0, 1000, labels.Labels{{Name: "ext1", Value: "1"}}, 124, metadata.NoneFunc)
-	testutil.Ok(b, err)
-	testutil.Ok(b, block.Upload(ctx, logger, bkt, filepath.Join(tmpDir, id1.String()), metadata.NoneFunc))
+	require.NoError(b, err)
+	require.NoError(b, block.Upload(ctx, logger, bkt, filepath.Join(tmpDir, id1.String()), metadata.NoneFunc))
 
 	// Create an index reader.
 	reader, err := NewBinaryReader(ctx, logger, bkt, tmpDir, id1, postingOffsetsInMemSampling)
-	testutil.Ok(b, err)
+	require.NoError(b, err)
 
 	// Get the offset of each label value symbol.
 	symbolsOffsets := make([]uint32, numSeries)
 	for i := 0; i < numSeries; i++ {
 		o, err := reader.symbols.ReverseLookup(strconv.Itoa(i))
-		testutil.Ok(b, err)
+		require.NoError(b, err)
 
 		symbolsOffsets[i] = o
 	}
