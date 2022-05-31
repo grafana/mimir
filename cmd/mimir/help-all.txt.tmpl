@@ -643,6 +643,8 @@ Usage of ./cmd/mimir/mimir:
     	Deprecated: this setting was used to try writing to an additional ingester in the presence of an ingester not in the ACTIVE state. Mimir now behaves as this setting is always disabled.
   -distributor.forwarding.enabled
     	[experimental] Enables the feature to forward certain metrics in remote_write requests, depending on defined rules.
+  -distributor.forwarding.propagate-errors
+    	[experimental] If disabled then forwarding requests are a fire-and-forget operation, errors get dropped. (default true)
   -distributor.forwarding.request-timeout duration
     	[experimental] Timeout for requests to ingestion endpoints to which we forward metrics. (default 10s)
   -distributor.ha-tracker.cluster string

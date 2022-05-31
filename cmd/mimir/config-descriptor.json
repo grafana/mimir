@@ -1332,6 +1332,17 @@
               "fieldFlag": "distributor.forwarding.request-timeout",
               "fieldType": "duration",
               "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "propagate_errors",
+              "required": false,
+              "desc": "If disabled then forwarding requests are a fire-and-forget operation, errors get dropped.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "distributor.forwarding.propagate-errors",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,
