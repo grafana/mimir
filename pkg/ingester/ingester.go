@@ -41,7 +41,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/hashcache"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
 	"github.com/thanos-io/thanos/pkg/objstore"
-	"github.com/thanos-io/thanos/pkg/shipper"
 	"github.com/weaveworks/common/httpgrpc"
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
@@ -95,8 +94,8 @@ var (
 	errExemplarRef = errors.New("exemplars not ingested because series not already present")
 )
 
-// Shipper interface is used to have an easy way to mock it in tests.
-type Shipper interface {
+// BlocksUploader interface is used to have an easy way to mock it in tests.
+type BlocksUploader interface {
 	Sync(ctx context.Context) (uploaded int, err error)
 }
 
@@ -1522,15 +1521,13 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 
 	// Create a new shipper for this database
 	if i.cfg.BlocksStorageConfig.TSDB.IsBlocksShippingEnabled() {
-		userDB.shipper = shipper.New(
+		userDB.shipper = NewShipper(
 			userLogger,
 			tsdbPromReg,
 			udir,
 			bucket.NewUserBucketClient(userID, i.bucket, i.limits),
 			func() labels.Labels { return l },
 			metadata.ReceiveSource,
-			false, // No need to upload compacted blocks. Mimir compactor takes care of that.
-			true,  // Allow out of order uploads. It's fine in Mimir's context.
 			metadata.NoneFunc,
 		)
 
