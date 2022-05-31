@@ -3,8 +3,6 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Thanos Authors.
 
-// Package shipper detects directories on the local file system and uploads
-// them to a block storage.
 package ingester
 
 import (
@@ -57,9 +55,10 @@ func newMetrics(reg prometheus.Registerer) *metrics {
 	return &m
 }
 
-// ThanosShipper watches a directory for matching files and directories and uploads
+// Shipper watches a directory for matching files and directories and uploads
 // them to a remote data store.
-type ThanosShipper struct {
+// Shipper implements BlocksUploader interface.
+type Shipper struct {
 	logger  log.Logger
 	dir     string
 	metrics *metrics
@@ -70,10 +69,10 @@ type ThanosShipper struct {
 	hashFunc metadata.HashFunc
 }
 
-// NewThanosShipper creates a new shipper that detects new TSDB blocks in dir and uploads them to
+// NewShipper creates a new uploader that detects new TSDB blocks in dir and uploads them to
 // remote if necessary. It attaches the Thanos metadata section in each meta JSON file.
 // If uploadCompacted is enabled, it also uploads compacted blocks which are already in filesystem.
-func NewThanosShipper(
+func NewShipper(
 	logger log.Logger,
 	r prometheus.Registerer,
 	dir string,
@@ -81,7 +80,7 @@ func NewThanosShipper(
 	lbls func() labels.Labels,
 	source metadata.SourceType,
 	hashFunc metadata.HashFunc,
-) *ThanosShipper {
+) *Shipper {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
@@ -89,7 +88,7 @@ func NewThanosShipper(
 		lbls = func() labels.Labels { return nil }
 	}
 
-	return &ThanosShipper{
+	return &Shipper{
 		logger:   logger,
 		dir:      dir,
 		bucket:   bucket,
@@ -106,7 +105,7 @@ func NewThanosShipper(
 // If uploaded.
 //
 // It is not concurrency-safe, however it is compactor-safe (running concurrently with compactor is ok).
-func (s *ThanosShipper) Sync(ctx context.Context) (uploaded int, err error) {
+func (s *Shipper) Sync(ctx context.Context) (uploaded int, err error) {
 	meta, err := shipper.ReadMetaFile(s.dir)
 	if err != nil {
 		// If we encounter any error, proceed with an empty meta file and overwrite it later.
@@ -188,7 +187,7 @@ func (s *ThanosShipper) Sync(ctx context.Context) (uploaded int, err error) {
 
 // sync uploads the block if not exists in remote storage.
 // TODO(khyatisoneji): Double check if block does not have deletion-mark.json for some reason, otherwise log it or return error.
-func (s *ThanosShipper) upload(ctx context.Context, meta *metadata.Meta) error {
+func (s *Shipper) upload(ctx context.Context, meta *metadata.Meta) error {
 	level.Info(s.logger).Log("msg", "upload new block", "id", meta.ULID)
 
 	// We hard-link the files into a temporary upload directory so we are not affected
@@ -226,7 +225,7 @@ func (s *ThanosShipper) upload(ctx context.Context, meta *metadata.Meta) error {
 
 // blockMetasFromOldest returns the block meta of each block found in dir
 // sorted by minTime asc.
-func (s *ThanosShipper) blockMetasFromOldest() (metas []*metadata.Meta, _ error) {
+func (s *Shipper) blockMetasFromOldest() (metas []*metadata.Meta, _ error) {
 	fis, err := ioutil.ReadDir(s.dir)
 	if err != nil {
 		return nil, errors.Wrap(err, "read dir")

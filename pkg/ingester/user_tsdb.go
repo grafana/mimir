@@ -72,8 +72,8 @@ type userTSDB struct {
 	// Used to detect idle TSDBs.
 	lastUpdate atomic.Int64
 
-	// Thanos shipper used to ship blocks to the storage.
-	shipper Shipper
+	// Thanos shipper used to upload blocks to the storage.
+	shipper BlocksUploader
 
 	// When deletion marker is found for the tenant (checked before shipping),
 	// shipping stops and TSDB is closed before reaching idle timeout time (if enabled).
@@ -250,7 +250,7 @@ func (u *userTSDB) blocksToDelete(blocks []*tsdb.Block) map[ulid.ULID]struct{} {
 	return result
 }
 
-// updateCachedShipperBlocks reads the shipper meta file and updates the cached shipped blocks.
+// updateCachedShippedBlocks reads the shipper meta file and updates the cached shipped blocks.
 func (u *userTSDB) updateCachedShippedBlocks() error {
 	shipperMeta, err := shipper.ReadMetaFile(u.db.Dir())
 	if errors.Is(err, os.ErrNotExist) {

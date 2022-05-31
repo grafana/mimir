@@ -3043,13 +3043,13 @@ func TestIngester_shipBlocks(t *testing.T) {
 	})
 
 	// Create the TSDB for 3 users and then replace the shipper with the mocked one
-	mocks := []*shipperMock{}
+	mocks := []*uploaderMock{}
 	for _, userID := range []string{"user-1", "user-2", "user-3"} {
 		userDB, err := i.getOrCreateTSDB(userID, false)
 		require.NoError(t, err)
 		require.NotNil(t, userDB)
 
-		m := &shipperMock{}
+		m := &uploaderMock{}
 		m.On("Sync", mock.Anything).Return(0, nil)
 		mocks = append(mocks, m)
 
@@ -3293,12 +3293,12 @@ func TestIngester_idleCloseEmptyTSDB(t *testing.T) {
 	require.NotNil(t, db)
 }
 
-type shipperMock struct {
+type uploaderMock struct {
 	mock.Mock
 }
 
-// Sync mocks Shipper.Sync()
-func (m *shipperMock) Sync(ctx context.Context) (uploaded int, err error) {
+// Sync mocks BlocksUploader.Sync()
+func (m *uploaderMock) Sync(ctx context.Context) (uploaded int, err error) {
 	args := m.Called(ctx)
 	return args.Int(0), args.Error(1)
 }
@@ -3619,8 +3619,8 @@ func TestIngester_ForFlush(t *testing.T) {
 	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), i))
 }
 
-func mockUserShipper(t *testing.T, i *Ingester) *shipperMock {
-	m := &shipperMock{}
+func mockUserShipper(t *testing.T, i *Ingester) *uploaderMock {
+	m := &uploaderMock{}
 	userDB, err := i.getOrCreateTSDB(userID, false)
 	require.NoError(t, err)
 	require.NotNil(t, userDB)
