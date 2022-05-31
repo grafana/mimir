@@ -106,8 +106,9 @@ func (r *forwarder) NewRequest(ctx context.Context, tenant string, rules validat
 
 		tsByEndpoint: make(map[string]*[]mimirpb.PreallocTimeseries),
 
-		rules:   rules,
-		timeout: r.cfg.RequestTimeout,
+		rules:           rules,
+		timeout:         r.cfg.RequestTimeout,
+		propagateErrors: r.cfg.PropagateErrors,
 
 		requests: r.requestsTotal.WithLabelValues(tenant),
 		samples:  r.samplesTotal.WithLabelValues(tenant),
@@ -126,8 +127,9 @@ type request struct {
 	// - which metrics get forwarded
 	// - where the metrics get forwarded to
 	// - whether the forwarded metrics should also be ingested (sent to ingesters)
-	rules   validation.ForwardingRules
-	timeout time.Duration
+	rules           validation.ForwardingRules
+	timeout         time.Duration
+	propagateErrors bool
 
 	requests prometheus.Counter
 	samples  prometheus.Counter
@@ -174,6 +176,13 @@ func (r *request) Send(ctx context.Context) <-chan error {
 		return errCh
 	}
 
+	returnErr := func(err error) {
+		if !r.propagateErrors {
+			return
+		}
+		errCh <- err
+	}
+
 	var wg sync.WaitGroup
 	wg.Add(len(r.tsByEndpoint))
 
@@ -205,7 +214,7 @@ func (r *request) Send(ctx context.Context) <-chan error {
 
 			if errors.As(err, &recoverableError{}) {
 				// If there is at least one recoverable error we want to return the recoverable error.
-				errCh <- httpgrpc.Errorf(http.StatusInternalServerError, "endpoint %s: %s", endpoint, err.Error())
+				returnErr(httpgrpc.Errorf(http.StatusInternalServerError, "endpoint %s: %s", endpoint, err.Error()))
 				return
 			}
 
@@ -213,7 +222,7 @@ func (r *request) Send(ctx context.Context) <-chan error {
 		}
 
 		if nonRecoverable != nil {
-			errCh <- nonRecoverable
+			returnErr(nonRecoverable)
 		}
 	}()
 
