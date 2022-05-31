@@ -1337,7 +1337,7 @@
               "kind": "field",
               "name": "propagate_errors",
               "required": false,
-              "desc": "If disabled then forwarding requests are a fire-and-forget operation, errors get dropped.",
+              "desc": "If disabled then forwarding requests are always considered to be successful, errors are ignored.",
               "fieldValue": null,
               "fieldDefaultValue": true,
               "fieldFlag": "distributor.forwarding.propagate-errors",
