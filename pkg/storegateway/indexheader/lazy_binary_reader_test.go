@@ -23,7 +23,8 @@ import (
 	"github.com/thanos-io/thanos/pkg/block"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
 	"github.com/thanos-io/thanos/pkg/objstore/filesystem"
-	"github.com/thanos-io/thanos/pkg/testutil/e2eutil"
+
+	"github.com/grafana/mimir/pkg/storegateway/helpers"
 )
 
 func TestNewLazyBinaryReader_ShouldFailIfUnableToBuildIndexHeader(t *testing.T) {
@@ -53,7 +54,7 @@ func TestNewLazyBinaryReader_ShouldBuildIndexHeaderFromBucket(t *testing.T) {
 	defer func() { require.NoError(t, bkt.Close()) }()
 
 	// Create block.
-	blockID, err := e2eutil.CreateBlock(ctx, tmpDir, []labels.Labels{
+	blockID, err := helpers.CreateBlock(ctx, tmpDir, []labels.Labels{
 		{{Name: "a", Value: "1"}},
 		{{Name: "a", Value: "2"}},
 	}, 100, 0, 1000, labels.Labels{{Name: "ext1", Value: "1"}}, 124, metadata.NoneFunc)
@@ -94,7 +95,7 @@ func TestNewLazyBinaryReader_ShouldRebuildCorruptedIndexHeader(t *testing.T) {
 	defer func() { require.NoError(t, bkt.Close()) }()
 
 	// Create block.
-	blockID, err := e2eutil.CreateBlock(ctx, tmpDir, []labels.Labels{
+	blockID, err := helpers.CreateBlock(ctx, tmpDir, []labels.Labels{
 		{{Name: "a", Value: "1"}},
 		{{Name: "a", Value: "2"}},
 	}, 100, 0, 1000, labels.Labels{{Name: "ext1", Value: "1"}}, 124, metadata.NoneFunc)
@@ -134,7 +135,7 @@ func TestLazyBinaryReader_ShouldReopenOnUsageAfterClose(t *testing.T) {
 	defer func() { require.NoError(t, bkt.Close()) }()
 
 	// Create block.
-	blockID, err := e2eutil.CreateBlock(ctx, tmpDir, []labels.Labels{
+	blockID, err := helpers.CreateBlock(ctx, tmpDir, []labels.Labels{
 		{{Name: "a", Value: "1"}},
 		{{Name: "a", Value: "2"}},
 	}, 100, 0, 1000, labels.Labels{{Name: "ext1", Value: "1"}}, 124, metadata.NoneFunc)
@@ -186,7 +187,7 @@ func TestLazyBinaryReader_unload_ShouldReturnErrorIfNotIdle(t *testing.T) {
 	defer func() { require.NoError(t, bkt.Close()) }()
 
 	// Create block.
-	blockID, err := e2eutil.CreateBlock(ctx, tmpDir, []labels.Labels{
+	blockID, err := helpers.CreateBlock(ctx, tmpDir, []labels.Labels{
 		{{Name: "a", Value: "1"}},
 		{{Name: "a", Value: "2"}},
 	}, 100, 0, 1000, labels.Labels{{Name: "ext1", Value: "1"}}, 124, metadata.NoneFunc)
@@ -237,7 +238,7 @@ func TestLazyBinaryReader_LoadUnloadRaceCondition(t *testing.T) {
 	defer func() { require.NoError(t, bkt.Close()) }()
 
 	// Create block.
-	blockID, err := e2eutil.CreateBlock(ctx, tmpDir, []labels.Labels{
+	blockID, err := helpers.CreateBlock(ctx, tmpDir, []labels.Labels{
 		{{Name: "a", Value: "1"}},
 		{{Name: "a", Value: "2"}},
 	}, 100, 0, 1000, labels.Labels{{Name: "ext1", Value: "1"}}, 124, metadata.NoneFunc)
