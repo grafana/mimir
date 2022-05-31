@@ -7,7 +7,6 @@ package ingester
 
 import (
 	"context"
-	"os"
 	"sync"
 	"time"
 
@@ -16,7 +15,6 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
-	"github.com/thanos-io/thanos/pkg/shipper"
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
@@ -252,18 +250,9 @@ func (u *userTSDB) blocksToDelete(blocks []*tsdb.Block) map[ulid.ULID]struct{} {
 
 // updateCachedShippedBlocks reads the shipper meta file and updates the cached shipped blocks.
 func (u *userTSDB) updateCachedShippedBlocks() error {
-	shipperMeta, err := shipper.ReadMetaFile(u.db.Dir())
-	if errors.Is(err, os.ErrNotExist) {
-		// If the meta file doesn't exist it means the shipper hasn't run yet.
-		shipperMeta = &shipper.Meta{}
-	} else if err != nil {
+	shippedBlocks, err := readShippedBlocks(u.db.Dir())
+	if err != nil {
 		return err
-	}
-
-	// Build a map.
-	shippedBlocks := make(map[ulid.ULID]struct{}, len(shipperMeta.Uploaded))
-	for _, blockID := range shipperMeta.Uploaded {
-		shippedBlocks[blockID] = struct{}{}
 	}
 
 	// Cache it.

@@ -286,3 +286,21 @@ func hardlinkBlock(src, dst string) error {
 	}
 	return nil
 }
+
+func readShippedBlocks(dir string) (map[ulid.ULID]struct{}, error) {
+	shipperMeta, err := shipper.ReadMetaFile(dir)
+	if errors.Is(err, os.ErrNotExist) {
+		// If the meta file doesn't exist it means the shipper hasn't run yet.
+		shipperMeta = &shipper.Meta{}
+	} else if err != nil {
+		return nil, err
+	}
+
+	// Build a map.
+	shippedBlocks := make(map[ulid.ULID]struct{}, len(shipperMeta.Uploaded))
+	for _, blockID := range shipperMeta.Uploaded {
+		shippedBlocks[blockID] = struct{}{}
+	}
+
+	return shippedBlocks, nil
+}
