@@ -293,6 +293,8 @@ lint: check-makefiles
 
 	faillint -paths "github.com/thanos-io/thanos/pkg/shipper.{New}" ./pkg/...
 
+	faillint -paths "github.com/thanos-io/thanos/pkg/block/indexheader" ./pkg/...
+
 	# We've copied github.com/NYTimes/gziphandler to pkg/util/gziphandler
 	# at least until https://github.com/nytimes/gziphandler/pull/112 is merged
 	faillint -paths "github.com/NYTimes/gziphandler" \
