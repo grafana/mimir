@@ -14,7 +14,6 @@ ingester_client:
 ingester:
   ring:
     # We want to start immediately.
-    join_after: 0
     final_sleep: 0s
     num_tokens: 512
     kvstore:

@@ -1833,7 +1833,7 @@ func TestIngester_Push_ShouldNotCreateTSDBIfNotInActiveState(t *testing.T) {
 	// Configure the lifecycler to not immediately join the ring, to make sure
 	// the ingester will NOT be in the ACTIVE state when we'll push samples.
 	cfg := defaultIngesterTestConfig(t)
-	cfg.IngesterRing.JoinAfterMock = 10 * time.Second
+	cfg.IngesterRing.JoinAfter = 10 * time.Second
 
 	i, err := prepareIngesterWithBlocksStorage(t, cfg, nil)
 	require.NoError(t, err)
@@ -1881,7 +1881,7 @@ func TestIngester_getOrCreateTSDB_ShouldNotAllowToCreateTSDBIfIngesterStateIsNot
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			cfg := defaultIngesterTestConfig(t)
-			cfg.IngesterRing.JoinAfterMock = 60 * time.Second
+			cfg.IngesterRing.JoinAfter = 60 * time.Second
 
 			i, err := prepareIngesterWithBlocksStorage(t, cfg, nil)
 			require.NoError(t, err)

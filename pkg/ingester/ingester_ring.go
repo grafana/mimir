@@ -44,7 +44,7 @@ type RingConfig struct {
 
 	// Config for the ingester lifecycle control
 	ObservePeriod            time.Duration `yaml:"observe_period" category:"advanced"`
-	JoinAfter                time.Duration `yaml:"join_after" category:"advanced" doc:"hidden"` // TODO Deprecated: remove in Mimir 2.4.0.
+	DeprecatedJoinAfter      time.Duration `yaml:"join_after" category:"advanced" doc:"hidden"` // TODO Deprecated: remove in Mimir 2.4.0.
 	MinReadyDuration         time.Duration `yaml:"min_ready_duration" category:"advanced"`
 	FinalSleep               time.Duration `yaml:"final_sleep" category:"advanced"`
 	ReadinessCheckRingHealth bool          `yaml:"readiness_check_ring_health" category:"advanced"`
@@ -53,7 +53,7 @@ type RingConfig struct {
 	ListenPort int `yaml:"-"`
 
 	// Used only for testing.
-	JoinAfterMock time.Duration `yaml:"-"`
+	JoinAfter time.Duration `yaml:"-"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
@@ -126,7 +126,7 @@ func (cfg *RingConfig) ToLifecyclerConfig() ring.LifecyclerConfig {
 	lc.HeartbeatPeriod = cfg.HeartbeatPeriod
 	lc.HeartbeatTimeout = cfg.HeartbeatTimeout
 	lc.ObservePeriod = cfg.ObservePeriod
-	lc.JoinAfter = cfg.JoinAfterMock
+	lc.JoinAfter = cfg.JoinAfter
 	lc.MinReadyDuration = cfg.MinReadyDuration
 	lc.InfNames = cfg.InstanceInterfaceNames
 	lc.FinalSleep = cfg.FinalSleep
