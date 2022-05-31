@@ -1423,7 +1423,7 @@ This is the short version of an extensive documentation on [how to resize Kubern
 
 In some scenarios, it may be useful to preserve current volume status for inspection, but keep using the volume.
 [Google Persistent Disk supports "Clone"](https://cloud.google.com/compute/docs/disks/add-persistent-disk#source-disk) operation that can be used to do that.
-Newly cloned disk is independant from its original, and can be used for further investigation by attaching it to a new Machine / Pod.
+Newly cloned disk is independent from its original, and can be used for further investigation by attaching it to a new Machine / Pod.
 
 When using Kubernetes, here is YAML file that creates PV (`clone-ingester-7-pv`) pointing to the new disk clone (`clone-pvc-80cc0efa-4996-11ea-ba79-42010a96008c` in this example),
 PVC (`clone-ingester-7-pvc`) pointing to PV, and finally Pod (`clone-ingester-7-dataaccess`) using the PVC to access the disk.
