@@ -47,9 +47,6 @@ github.com/Azure/go-autorest/logger
 github.com/Azure/go-autorest/tracing
 # github.com/HdrHistogram/hdrhistogram-go v1.1.2
 ## explicit; go 1.14
-# github.com/NYTimes/gziphandler v1.1.1
-## explicit; go 1.11
-github.com/NYTimes/gziphandler
 # github.com/OneOfOne/xxhash v1.2.6
 ## explicit; go 1.11
 # github.com/PuerkitoBio/purell v1.1.1
@@ -434,7 +431,7 @@ github.com/gosimple/slug
 # github.com/grafana-tools/sdk v0.0.0-20211220201350-966b3088eec9
 ## explicit; go 1.13
 github.com/grafana-tools/sdk
-# github.com/grafana/dskit v0.0.0-20220523143435-f5a17a2c14c8
+# github.com/grafana/dskit v0.0.0-20220526081034-789ec0ca4a3b
 ## explicit; go 1.17
 github.com/grafana/dskit/backoff
 github.com/grafana/dskit/concurrency
@@ -807,7 +804,7 @@ github.com/stretchr/objx
 github.com/stretchr/testify/assert
 github.com/stretchr/testify/mock
 github.com/stretchr/testify/require
-# github.com/thanos-io/thanos v0.26.1-0.20220519101240-9812db5d88a0
+# github.com/thanos-io/thanos v0.26.1-0.20220524120302-5d49fbc057c4
 ## explicit; go 1.17
 github.com/thanos-io/thanos/pkg/block
 github.com/thanos-io/thanos/pkg/block/indexheader

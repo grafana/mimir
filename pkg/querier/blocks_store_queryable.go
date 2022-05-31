@@ -48,6 +48,7 @@ import (
 	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/math"
@@ -63,7 +64,10 @@ const (
 )
 
 var (
-	errMaxChunksPerQueryLimit = "the query hit the max number of chunks limit while fetching chunks from store-gateways for %s (limit: %d)"
+	maxChunksPerQueryLimitMsgFormat = globalerror.MaxChunksPerQuery.MessageWithLimitConfig(
+		validation.MaxChunksPerQueryFlag,
+		"the query exceeded the maximum number of chunks fetched from store-gateways when querying '%s' (limit: %d)",
+	)
 )
 
 // BlocksStoreSet is the interface used to get the clients to query series on a set of blocks.
@@ -750,7 +754,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(
 					if maxChunksLimit > 0 {
 						actual := numChunks.Add(int32(chunksCount))
 						if actual > int32(leftChunksLimit) {
-							return validation.LimitError(fmt.Sprintf(errMaxChunksPerQueryLimit, util.LabelMatchersToString(matchers), maxChunksLimit))
+							return validation.LimitError(fmt.Sprintf(maxChunksPerQueryLimitMsgFormat, util.LabelMatchersToString(matchers), maxChunksLimit))
 						}
 					}
 					if chunkBytesLimitErr := queryLimiter.AddChunkBytes(chunksSize); chunkBytesLimitErr != nil {

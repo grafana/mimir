@@ -1,0 +1,151 @@
+{{- if .Values.ingester.statefulSet.enabled -}}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "mimir.resourceName" (dict "ctx" . "component" "ingester") }}
+  labels:
+    {{- include "mimir.labels" (dict "ctx" . "component" "ingester" "memberlist" true) | nindent 4 }}
+  annotations:
+    {{- toYaml .Values.ingester.annotations | nindent 4 }}
+spec:
+  podManagementPolicy: {{ .Values.ingester.podManagementPolicy }}
+  replicas: {{ .Values.ingester.replicas }}
+  selector:
+    matchLabels:
+      {{- include "mimir.selectorLabels" (dict "ctx" . "component" "ingester" "memberlist" true) | nindent 6 }}
+  updateStrategy:
+    {{- toYaml .Values.ingester.statefulStrategy | nindent 4 }}
+  serviceName: {{ template "mimir.fullname" . }}-ingester{{- if not .Values.enterprise.legacyLabels -}}-headless{{- end -}}
+  {{- if .Values.ingester.persistentVolume.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: storage
+        {{- if .Values.ingester.persistentVolume.annotations }}
+        annotations:
+          {{ toYaml .Values.ingester.persistentVolume.annotations | nindent 10 }}
+        {{- end }}
+      spec:
+        {{- if .Values.ingester.persistentVolume.storageClass }}
+        {{- if (eq "-" .Values.ingester.persistentVolume.storageClass) }}
+        storageClassName: ""
+        {{- else }}
+        storageClassName: "{{ .Values.ingester.persistentVolume.storageClass }}"
+        {{- end }}
+        {{- end }}
+        accessModes:
+          {{ toYaml .Values.ingester.persistentVolume.accessModes | nindent 10 }}
+        resources:
+          requests:
+            storage: "{{ .Values.ingester.persistentVolume.size }}"
+  {{- end }}
+  template:
+    metadata:
+      labels:
+        {{- include "mimir.podLabels" (dict "ctx" . "component" "ingester" "memberlist" true) | nindent 8 }}
+        {{- with .Values.ingester.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      annotations:
+        {{- if .Values.useExternalConfig }}
+        checksum/config: {{ .Values.externalConfigVersion }}
+        {{- else }}
+        checksum/config: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- end }}
+        {{- with .Values.ingester.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ template "mimir.serviceAccountName" . }}
+      {{- if .Values.ingester.priorityClassName }}
+      priorityClassName: {{ .Values.ingester.priorityClassName }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.ingester.securityContext | nindent 8 }}
+      initContainers:
+        {{- toYaml .Values.ingester.initContainers | nindent 8 }}
+      {{- if .Values.image.pullSecrets }}
+      imagePullSecrets:
+      {{- range .Values.image.pullSecrets }}
+        - name: {{ . }}
+      {{- end }}
+      {{- end }}
+      nodeSelector:
+        {{- toYaml .Values.ingester.nodeSelector | nindent 8 }}
+      affinity:
+        {{- toYaml .Values.ingester.affinity | nindent 8 }}
+      tolerations:
+        {{- toYaml .Values.ingester.tolerations | nindent 8 }}
+      terminationGracePeriodSeconds: {{ .Values.ingester.terminationGracePeriodSeconds }}
+      volumes:
+        - name: config
+          secret:
+            secretName: {{ tpl .Values.externalConfigSecretName . }}
+        {{- if .Values.enterprise.enabled }}
+        - name: license
+          secret:
+            secretName: {{ tpl .Values.license.secretName . }}
+        {{- end }}
+        - name: runtime-config
+          configMap:
+            name: {{ template "mimir.fullname" . }}-runtime
+        {{- if not .Values.ingester.persistentVolume.enabled }}
+        - name: storage
+          emptyDir: {}
+        {{- end }}
+        {{- if .Values.ingester.extraVolumes }}
+        {{ toYaml .Values.ingester.extraVolumes | nindent 8 }}
+        {{- end }}
+      containers:
+        {{- if .Values.ingester.extraContainers }}
+        {{ toYaml .Values.ingester.extraContainers | nindent 8 }}
+        {{- end }}
+        - name: ingester
+          image: "{{ include "mimir.imageReference" . }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - "-target=ingester"
+            - "-config.file=/etc/mimir/mimir.yaml"
+            {{- range $key, $value := .Values.ingester.extraArgs }}
+            - "-{{ $key }}={{ $value }}"
+            {{- end }}
+          volumeMounts:
+            {{- if .Values.ingester.extraVolumeMounts }}
+            {{ toYaml .Values.ingester.extraVolumeMounts | nindent 12}}
+            {{- end }}
+            - name: config
+              mountPath: /etc/mimir
+            - name: runtime-config
+              mountPath: /var/{{ include "mimir.name" . }}
+            - name: storage
+              mountPath: "/data"
+              {{- if .Values.ingester.persistentVolume.subPath }}
+              subPath: {{ .Values.ingester.persistentVolume.subPath }}
+              {{- else }}
+              {{- end }}
+            {{- if .Values.enterprise.enabled }}
+            - name: license
+              mountPath: /license
+            {{- end }}
+          ports:
+            - name: http-metrics
+              containerPort: {{ include "mimir.serverHttpListenPort" . }}
+              protocol: TCP
+            - name: grpc
+              containerPort: {{ include "mimir.serverGrpcListenPort" . }}
+              protocol: TCP
+            - name: memberlist
+              containerPort: {{ include "mimir.memberlistBindPort" . }}
+              protocol: TCP
+          livenessProbe:
+            {{- toYaml .Values.ingester.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.ingester.readinessProbe | nindent 12 }}
+          resources:
+            {{- toYaml .Values.ingester.resources | nindent 12 }}
+          securityContext:
+            readOnlyRootFilesystem: true
+          env:
+            {{- if .Values.ingester.env }}
+              {{- toYaml .Values.ingester.env | nindent 12 }}
+            {{- end }}
+{{- end -}}

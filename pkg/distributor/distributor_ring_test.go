@@ -54,6 +54,7 @@ func TestRingConfig_CustomConfigToLifecyclerConfig(t *testing.T) {
 	// The lifecycler config should be generated based upon the distributor
 	// ring config
 	expected.HeartbeatPeriod = cfg.HeartbeatPeriod
+	expected.HeartbeatTimeout = cfg.HeartbeatTimeout
 	expected.RingConfig.HeartbeatTimeout = cfg.HeartbeatTimeout
 	expected.RingConfig.KVStore.Store = "memberlist"
 	expected.ID = cfg.InstanceID

@@ -1377,7 +1377,8 @@
           "fieldValue": null,
           "fieldDefaultValue": 46800000000000,
           "fieldFlag": "querier.query-ingesters-within",
-          "fieldType": "duration"
+          "fieldType": "duration",
+          "fieldCategory": "advanced"
         },
         {
           "kind": "field",
@@ -1387,7 +1388,8 @@
           "fieldValue": null,
           "fieldDefaultValue": 43200000000000,
           "fieldFlag": "querier.query-store-after",
-          "fieldType": "duration"
+          "fieldType": "duration",
+          "fieldCategory": "advanced"
         },
         {
           "kind": "field",
@@ -2409,6 +2411,28 @@
       "required": false,
       "desc": "",
       "blockEntries": [
+        {
+          "kind": "field",
+          "name": "request_rate",
+          "required": false,
+          "desc": "Per-tenant request rate limit in requests per second. 0 to disable.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "distributor.request-rate-limit",
+          "fieldType": "float",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "request_burst_size",
+          "required": false,
+          "desc": "Per-tenant allowed request burst size. 0 to disable.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "distributor.request-burst-size",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
         {
           "kind": "field",
           "name": "ingestion_rate",
@@ -3761,6 +3785,17 @@
           "fieldDefaultValue": "filesystem",
           "fieldFlag": "blocks-storage.backend",
           "fieldType": "string"
+        },
+        {
+          "kind": "field",
+          "name": "storage_prefix",
+          "required": false,
+          "desc": "Prefix for all objects stored in the backend storage. For simplicity, it may only contain digits and English alphabet letters.",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldFlag": "blocks-storage.storage-prefix",
+          "fieldType": "string",
+          "fieldCategory": "experimental"
         },
         {
           "kind": "block",
@@ -7545,6 +7580,17 @@
           "fieldType": "string"
         },
         {
+          "kind": "field",
+          "name": "storage_prefix",
+          "required": false,
+          "desc": "Prefix for all objects stored in the backend storage. For simplicity, it may only contain digits and English alphabet letters.",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldFlag": "ruler-storage.storage-prefix",
+          "fieldType": "string",
+          "fieldCategory": "experimental"
+        },
+        {
           "kind": "block",
           "name": "s3",
           "required": false,
@@ -8850,6 +8896,17 @@
           "fieldDefaultValue": "filesystem",
           "fieldFlag": "alertmanager-storage.backend",
           "fieldType": "string"
+        },
+        {
+          "kind": "field",
+          "name": "storage_prefix",
+          "required": false,
+          "desc": "Prefix for all objects stored in the backend storage. For simplicity, it may only contain digits and English alphabet letters.",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldFlag": "alertmanager-storage.storage-prefix",
+          "fieldType": "string",
+          "fieldCategory": "experimental"
         },
         {
           "kind": "block",

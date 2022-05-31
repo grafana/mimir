@@ -65,6 +65,7 @@ func TestRingConfig_CustomConfigToLifecyclerConfig(t *testing.T) {
 
 	expected.NumTokens = cfg.NumTokens
 	expected.HeartbeatPeriod = cfg.HeartbeatPeriod
+	expected.HeartbeatTimeout = cfg.HeartbeatTimeout
 	expected.ObservePeriod = cfg.ObservePeriod
 	expected.JoinAfter = cfg.JoinAfter
 	expected.MinReadyDuration = cfg.MinReadyDuration

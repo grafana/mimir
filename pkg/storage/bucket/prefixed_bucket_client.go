@@ -83,13 +83,13 @@ func (b *PrefixedBucketClient) Attributes(ctx context.Context, name string) (obj
 	return b.bucket.Attributes(ctx, b.fullName(name))
 }
 
-// WithExpectedErrs allows to specify a filter that marks certain errors as expected, so it will not increment
+// ReaderWithExpectedErrs allows to specify a filter that marks certain errors as expected, so it will not increment
 // thanos_objstore_bucket_operation_failures_total metric.
 func (b *PrefixedBucketClient) ReaderWithExpectedErrs(fn objstore.IsOpFailureExpectedFunc) objstore.BucketReader {
 	return b.WithExpectedErrs(fn)
 }
 
-// ReaderWithExpectedErrs allows to specify a filter that marks certain errors as expected, so it will not increment
+// WithExpectedErrs allows to specify a filter that marks certain errors as expected, so it will not increment
 // thanos_objstore_bucket_operation_failures_total metric.
 func (b *PrefixedBucketClient) WithExpectedErrs(fn objstore.IsOpFailureExpectedFunc) objstore.Bucket {
 	if ib, ok := b.bucket.(objstore.InstrumentedBucket); ok {

@@ -1,0 +1,13 @@
+name: helm-ci
+
+on: pull_request
+
+jobs:
+  call-lint:
+    uses: grafana/helm-charts/.github/workflows/linter.yml@main
+    with:
+      filter_regex_include: .*operations/helm/.*
+  call-lint-test:
+    uses: grafana/helm-charts/.github/workflows/lint-test.yaml@main
+    with:
+      ct_configfile: operations/helm/ct.yaml

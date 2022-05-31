@@ -180,7 +180,7 @@ func (u *userTSDB) PreCreation(metric labels.Labels) error {
 	gl := u.instanceLimitsFn()
 	if gl != nil && gl.MaxInMemorySeries > 0 {
 		if series := u.instanceSeriesCount.Load(); series >= gl.MaxInMemorySeries {
-			return errMaxSeriesLimitReached
+			return errMaxInMemorySeriesReached
 		}
 	}
 

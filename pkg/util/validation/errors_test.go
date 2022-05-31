@@ -4,6 +4,7 @@ package validation
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 
@@ -28,4 +29,9 @@ func TestNewMetadataHelpTooLongError(t *testing.T) {
 func TestNewMetadataUnitTooLongError(t *testing.T) {
 	err := newMetadataUnitTooLongError(&mimirpb.MetricMetadata{MetricFamilyName: "test_metric", Unit: "counter", Help: "This is a test metric."})
 	assert.Equal(t, "received a metric metadata whose unit name length exceeds the limit, unit: 'counter' metric name: 'test_metric' (err-mimir-unit-too-long). You can adjust the related per-tenant limit by configuring -validation.max-metadata-length, or by contacting your service administrator.", err.Error())
+}
+
+func TestNewMaxQueryLengthError(t *testing.T) {
+	err := NewMaxQueryLengthError(time.Hour, time.Minute)
+	assert.Equal(t, "the query time range exceeds the limit (query length: 1h0m0s, limit: 1m0s) (err-mimir-max-query-length). You can adjust the related per-tenant limit by configuring -store.max-query-length, or by contacting your service administrator.", err.Error())
 }

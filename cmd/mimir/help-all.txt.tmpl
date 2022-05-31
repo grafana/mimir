@@ -66,6 +66,8 @@ Usage of ./cmd/mimir/mimir:
     	Enable AWS Server Side Encryption. Supported values: SSE-KMS, SSE-S3.
   -alertmanager-storage.s3.tls-handshake-timeout duration
     	Maximum time to wait for a TLS handshake. 0 means no limit. (default 10s)
+  -alertmanager-storage.storage-prefix string
+    	[experimental] Prefix for all objects stored in the backend storage. For simplicity, it may only contain digits and English alphabet letters.
   -alertmanager-storage.swift.auth-url string
     	OpenStack Swift authentication URL
   -alertmanager-storage.swift.auth-version int
@@ -435,6 +437,8 @@ Usage of ./cmd/mimir/mimir:
     	Enable AWS Server Side Encryption. Supported values: SSE-KMS, SSE-S3.
   -blocks-storage.s3.tls-handshake-timeout duration
     	Maximum time to wait for a TLS handshake. 0 means no limit. (default 10s)
+  -blocks-storage.storage-prefix string
+    	[experimental] Prefix for all objects stored in the backend storage. For simplicity, it may only contain digits and English alphabet letters.
   -blocks-storage.swift.auth-url string
     	OpenStack Swift authentication URL
   -blocks-storage.swift.auth-version int
@@ -719,6 +723,10 @@ Usage of ./cmd/mimir/mimir:
     	remote_write API max receive message size (bytes). (default 104857600)
   -distributor.remote-timeout duration
     	Timeout for downstream ingesters. (default 20s)
+  -distributor.request-burst-size int
+    	[experimental] Per-tenant allowed request burst size. 0 to disable.
+  -distributor.request-rate-limit float
+    	[experimental] Per-tenant request rate limit in requests per second. 0 to disable.
   -distributor.ring.consul.acl-token string
     	ACL Token used to interact with Consul.
   -distributor.ring.consul.client-timeout duration
@@ -1290,6 +1298,8 @@ Usage of ./cmd/mimir/mimir:
     	Enable AWS Server Side Encryption. Supported values: SSE-KMS, SSE-S3.
   -ruler-storage.s3.tls-handshake-timeout duration
     	Maximum time to wait for a TLS handshake. 0 means no limit. (default 10s)
+  -ruler-storage.storage-prefix string
+    	[experimental] Prefix for all objects stored in the backend storage. For simplicity, it may only contain digits and English alphabet letters.
   -ruler-storage.swift.auth-url string
     	OpenStack Swift authentication URL
   -ruler-storage.swift.auth-version int

@@ -1,0 +1,21 @@
+{{- $calculatedConfig := include "mimir.calculatedConfig" . | fromYaml }}
+
+{{- if .Values.config }}
+{{- fail "Top level 'config' is not allowed. In 'mimir.config', provide the configuration as a string that can contain template expressions. Alternatively, you can provide the configuration as an external secret." }}
+{{- end }}
+
+{{- if .Values.podDisruptionBudget }}
+{{- fail "Top level 'podDisruptionBudget' is removed in favour of per component podDisruptionBudget" }}
+{{- end }}
+
+{{- if not ($calculatedConfig.activity_tracker).filepath }}
+{{- fail "The 'activity_tracker.filepath' in 'mimir.config' should be set to a path that is on a writeable volume. For example: '/data/metrics-activity.log'." }}
+{{- end }}
+
+{{- if ($calculatedConfig.server).http_listen_port }}
+{{- fail "The setting 'server.http_listen_port' is not allowed in 'mimir.config' as it leads to circular dependency and thus is not supported. Use 'nginx.service.port' or 'gateway.service.port' for enterprise to expose services on a different port." }}
+{{- end }}
+
+{{- if ($calculatedConfig.server).grpc_listen_port }}
+{{- fail "The setting 'server.grpc_listen_port' is not allowed in 'mimir.config' as it leads to circular dependency and thus is not supported." }}
+{{- end }}

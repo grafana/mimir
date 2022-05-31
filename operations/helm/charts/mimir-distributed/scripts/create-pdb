@@ -1,0 +1,100 @@
+#!/usr/bin/env bash
+
+set -euf -o pipefail
+
+function usage {
+  cat <<EOF
+Create the POD Disruption Budget manifest template
+
+Usage:
+  $0 [options] <component>
+
+Options:
+  -g  component is member of memberlist
+  -e  is enterprise feature
+  -t  toggleable with "enabled"
+  -ne opensource only feature
+
+Examples:
+  $0 overrides-exporter
+EOF
+}
+
+if [[ $# -eq 0 ]]; then
+  usage
+  exit 1
+fi
+
+component="$1"
+enterprise=false
+non_enterprise=false
+toggle=false
+memberlist=''
+
+while [[ $# -gt 0 ]] ; do
+case "$1" in
+  -g)
+    memberlist=' "memberlist" true'
+    ;;
+  -e)
+    enterprise=true
+    ;;
+  -ne)
+    non_enterprise=true
+    ;;
+  -t)
+    toggle=true
+    ;;
+  -h) usage && exit 0 ;;
+  *)
+    component="$1" ;;
+esac
+shift
+done
+
+# Convert kebab-case to snake_case.
+function snake_case {
+  sed -E -e 's/-/_/' <<<"$1"
+}
+
+snake_cased="$(snake_case "${component}")"
+
+if [ "${enterprise}" = "true" ] ; then
+echo "{{- if .Values.enterprise.enabled -}}"
+fi
+
+if [ "${non_enterprise}" = "true" ] ; then
+echo "{{- if not .Values.enterprise.enabled -}}"
+fi
+
+if [ "${toggle}" = "true" ] ; then
+echo "{{- if .Values.${snake_cased}.enabled -}}"
+fi
+
+cat <<EOF
+{{- if .Values.${snake_cased}.podDisruptionBudget -}}
+apiVersion: policy/v1beta1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "mimir.resourceName" (dict "ctx" . "component" "${component}") }}
+  labels:
+    {{- include "mimir.labels" (dict "ctx" . "component" "${component}"${memberlist}) | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "mimir.selectorLabels" (dict "ctx" . "component" "${component}"${memberlist}) | nindent 6 }}
+{{ toYaml .Values.${snake_cased}.podDisruptionBudget | indent 2 }}
+{{- end -}}
+EOF
+
+if [ "${enterprise}" = "true" ] ; then
+echo "{{- end -}}"
+fi
+
+if [ "${non_enterprise}" = "true" ] ; then
+echo "{{- end -}}"
+fi
+
+if [ "${toggle}" = "true" ] ; then
+echo "{{- end -}}"
+fi

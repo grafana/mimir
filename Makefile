@@ -293,6 +293,11 @@ lint: check-makefiles
 
 	faillint -paths "github.com/thanos-io/thanos/pkg/shipper.{New}" ./pkg/...
 
+	# We've copied github.com/NYTimes/gziphandler to pkg/util/gziphandler
+	# at least until https://github.com/nytimes/gziphandler/pull/112 is merged
+	faillint -paths "github.com/NYTimes/gziphandler" \
+		./pkg/... ./cmd/... ./tools/... ./integration/...
+
 	# Ensure packages we imported from Thanos are no longer used.
 	GOFLAGS="-tags=requires_docker" faillint -paths \
 		"github.com/thanos/thanos-io/pkg/store,\
