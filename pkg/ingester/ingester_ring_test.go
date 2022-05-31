@@ -49,7 +49,6 @@ func TestRingConfig_CustomConfigToLifecyclerConfig(t *testing.T) {
 	cfg.InstanceZone = "zone-X"
 	cfg.UnregisterOnShutdown = true
 	cfg.ObservePeriod = 10 * time.Minute
-	cfg.JoinAfter = 5 * time.Minute
 	cfg.MinReadyDuration = 3 * time.Minute
 	cfg.FinalSleep = 2 * time.Minute
 	cfg.ReadinessCheckRingHealth = false
@@ -67,7 +66,7 @@ func TestRingConfig_CustomConfigToLifecyclerConfig(t *testing.T) {
 	expected.HeartbeatPeriod = cfg.HeartbeatPeriod
 	expected.HeartbeatTimeout = cfg.HeartbeatTimeout
 	expected.ObservePeriod = cfg.ObservePeriod
-	expected.JoinAfter = cfg.JoinAfter
+	expected.JoinAfter = 0
 	expected.MinReadyDuration = cfg.MinReadyDuration
 	expected.InfNames = cfg.InstanceInterfaceNames
 	expected.FinalSleep = cfg.FinalSleep

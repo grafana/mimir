@@ -2193,17 +2193,6 @@
             },
             {
               "kind": "field",
-              "name": "join_after",
-              "required": false,
-              "desc": "Period to wait for a claim from another member; will join automatically after this.",
-              "fieldValue": null,
-              "fieldDefaultValue": 0,
-              "fieldFlag": "ingester.ring.join-after",
-              "fieldType": "duration",
-              "fieldCategory": "advanced"
-            },
-            {
-              "kind": "field",
               "name": "min_ready_duration",
               "required": false,
               "desc": "Minimum duration to wait after the internal readiness checks have passed but before succeeding the readiness endpoint. This is used to slowdown deployment controllers (eg. Kubernetes) after an instance is ready and before they proceed with a rolling update, to give the rest of the cluster instances enough time to receive ring updates.",

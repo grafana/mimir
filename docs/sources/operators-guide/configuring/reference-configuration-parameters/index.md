@@ -679,11 +679,6 @@ ring:
   # CLI flag: -ingester.ring.observe-period
   [observe_period: <duration> | default = 0s]
 
-  # (advanced) Period to wait for a claim from another member; will join
-  # automatically after this.
-  # CLI flag: -ingester.ring.join-after
-  [join_after: <duration> | default = 0s]
-
   # (advanced) Minimum duration to wait after the internal readiness checks have
   # passed but before succeeding the readiness endpoint. This is used to
   # slowdown deployment controllers (eg. Kubernetes) after an instance is ready
