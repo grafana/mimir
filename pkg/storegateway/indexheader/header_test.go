@@ -28,8 +28,8 @@ import (
 	"github.com/thanos-io/thanos/pkg/block/metadata"
 	"github.com/thanos-io/thanos/pkg/objstore"
 	"github.com/thanos-io/thanos/pkg/objstore/filesystem"
-	"github.com/thanos-io/thanos/pkg/testutil/e2eutil"
 
+	"github.com/grafana/mimir/pkg/storegateway/testhelper"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -45,7 +45,7 @@ func TestReaders(t *testing.T) {
 	defer func() { require.NoError(t, bkt.Close()) }()
 
 	// Create block index version 2.
-	id1, err := e2eutil.CreateBlock(ctx, tmpDir, []labels.Labels{
+	id1, err := testhelper.CreateBlock(ctx, tmpDir, []labels.Labels{
 		{{Name: "a", Value: "1"}},
 		{{Name: "a", Value: "2"}},
 		{{Name: "a", Value: "3"}},
@@ -404,7 +404,7 @@ func benchmarkBinaryReaderLookupSymbol(b *testing.B, numSeries int) {
 	}
 
 	// Create a block.
-	id1, err := e2eutil.CreateBlock(ctx, tmpDir, seriesLabels, 100, 0, 1000, labels.Labels{{Name: "ext1", Value: "1"}}, 124, metadata.NoneFunc)
+	id1, err := testhelper.CreateBlock(ctx, tmpDir, seriesLabels, 100, 0, 1000, labels.Labels{{Name: "ext1", Value: "1"}}, 124, metadata.NoneFunc)
 	require.NoError(b, err)
 	require.NoError(b, block.Upload(ctx, logger, bkt, filepath.Join(tmpDir, id1.String()), metadata.NoneFunc))
 

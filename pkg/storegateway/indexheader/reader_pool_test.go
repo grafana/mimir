@@ -21,7 +21,8 @@ import (
 	"github.com/thanos-io/thanos/pkg/block"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
 	"github.com/thanos-io/thanos/pkg/objstore/filesystem"
-	"github.com/thanos-io/thanos/pkg/testutil/e2eutil"
+
+	"github.com/grafana/mimir/pkg/storegateway/testhelper"
 )
 
 func TestReaderPool_NewBinaryReader(t *testing.T) {
@@ -53,7 +54,7 @@ func TestReaderPool_NewBinaryReader(t *testing.T) {
 	defer func() { require.NoError(t, bkt.Close()) }()
 
 	// Create block.
-	blockID, err := e2eutil.CreateBlock(ctx, tmpDir, []labels.Labels{
+	blockID, err := testhelper.CreateBlock(ctx, tmpDir, []labels.Labels{
 		{{Name: "a", Value: "1"}},
 		{{Name: "a", Value: "2"}},
 	}, 100, 0, 1000, labels.Labels{{Name: "ext1", Value: "1"}}, 124, metadata.NoneFunc)
@@ -91,7 +92,7 @@ func TestReaderPool_ShouldCloseIdleLazyReaders(t *testing.T) {
 	defer func() { require.NoError(t, bkt.Close()) }()
 
 	// Create block.
-	blockID, err := e2eutil.CreateBlock(ctx, tmpDir, []labels.Labels{
+	blockID, err := testhelper.CreateBlock(ctx, tmpDir, []labels.Labels{
 		{{Name: "a", Value: "1"}},
 		{{Name: "a", Value: "2"}},
 	}, 100, 0, 1000, labels.Labels{{Name: "ext1", Value: "1"}}, 124, metadata.NoneFunc)
