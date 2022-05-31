@@ -47,6 +47,10 @@
 
 * [CHANGE] Remove use of `-querier.query-store-after`, `-querier.shuffle-sharding-ingesters-lookback-period`, `-blocks-storage.bucket-store.ignore-blocks-within`, and `-blocks-storage.tsdb.close-idle-tsdb-timeout` CLI flags since the values now match defaults. #1915 #1921
 
+### Mimirtool
+
+* [BUGFIX] mimirtool analyze: Use fork of grafana-tools/sdk library maintained by @colega. #1973
+
 ## 2.1.0
 ### Grafana Mimir
 * [CHANGE] Compactor: No longer upload debug meta files to object storage. #1257

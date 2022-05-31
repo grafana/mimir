@@ -428,7 +428,7 @@ github.com/gorilla/mux
 # github.com/gosimple/slug v1.1.1
 ## explicit
 github.com/gosimple/slug
-# github.com/grafana-tools/sdk v0.0.0-20211220201350-966b3088eec9
+# github.com/grafana-tools/sdk v0.0.0-20211220201350-966b3088eec9 => github.com/colega/grafana-tools-sdk v0.0.0-20220323154849-711bca56d13f
 ## explicit; go 1.13
 github.com/grafana-tools/sdk
 # github.com/grafana/dskit v0.0.0-20220526081034-789ec0ca4a3b
@@ -1228,3 +1228,4 @@ gopkg.in/yaml.v3
 # github.com/hashicorp/go-hclog => github.com/hashicorp/go-hclog v0.12.2
 # github.com/hashicorp/memberlist => github.com/grafana/memberlist v0.3.1-0.20220425183535-6b97a09b7167
 # github.com/vimeo/galaxycache => github.com/thanos-community/galaxycache v0.0.0-20211122094458-3a32041a1f1e
+# github.com/grafana-tools/sdk => github.com/colega/grafana-tools-sdk v0.0.0-20220323154849-711bca56d13f
