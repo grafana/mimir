@@ -1,0 +1,31 @@
+#!/bin/bash
+
+declare -A COMPONENTARGS
+COMPONENTARGS["admin-api"]="-e -g"
+COMPONENTARGS["alertmanager"]="-g -t"
+COMPONENTARGS["compactor"]="-g"
+COMPONENTARGS["distributor"]="-g"
+COMPONENTARGS["gateway"]="-e"
+COMPONENTARGS["ingester"]="-g"
+COMPONENTARGS["nginx"]="-ne"
+COMPONENTARGS["overrides-exporter"]=""
+COMPONENTARGS["querier"]="-g"
+COMPONENTARGS["query-frontend"]=""
+COMPONENTARGS["ruler"]="-g"
+COMPONENTARGS["store-gateway"]="-g"
+
+for component in "admin-api" "alertmanager" "compactor" "distributor" "gateway" "ingester" "nginx" "overrides-exporter" "querier" "query-frontend" "ruler" "store-gateway" ; do
+  ./scripts/create-pdb ${COMPONENTARGS["${component}"]} "${component}" > "templates/${component}/${component}-pdb.yaml"
+done
+
+for component in "admin-api" "alertmanager" "compactor" "distributor" "gateway" "ingester" "querier" "query-frontend" "ruler" "store-gateway" ; do
+  ./scripts/create-servmon ${COMPONENTARGS["${component}"]} "${component}" > "templates/${component}/${component}-servmon.yaml"
+done
+
+for component in "admin-api" "alertmanager" "compactor" "distributor" "gateway" "ingester" "overrides-exporter" "querier" "query-frontend" "ruler" "store-gateway" ; do
+  for filename in $(find "templates/${component}" -name "*.yaml") ; do
+    cp "${filename}" "${filename}.ori"
+    ./scripts/replace ${COMPONENTARGS["${component}"]} "${component}" "${filename}.ori" > "${filename}"
+    rm "${filename}.ori"
+  done
+done

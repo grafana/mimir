@@ -1,0 +1,122 @@
+{{- if .Values.ruler.enabled -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "mimir.resourceName" (dict "ctx" . "component" "ruler") }}
+  labels:
+    {{- include "mimir.labels" (dict "ctx" . "component" "ruler" "memberlist" true) | nindent 4 }}
+  annotations:
+    {{- toYaml .Values.ruler.annotations | nindent 4 }}
+spec:
+  replicas: {{ .Values.ruler.replicas }}
+  selector:
+    matchLabels:
+      {{- include "mimir.selectorLabels" (dict "ctx" . "component" "ruler" "memberlist" true) | nindent 6 }}
+  strategy:
+    {{- toYaml .Values.ruler.strategy | nindent 4 }}
+  template:
+    metadata:
+      labels:
+        {{- include "mimir.podLabels" (dict "ctx" . "component" "ruler" "memberlist" true) | nindent 8 }}
+        {{- with .Values.ruler.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      annotations:
+{{- if .Values.useExternalConfig }}
+        checksum/config: {{ .Values.externalConfigVersion }}
+{{- else }}
+        checksum/config: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+{{- end}}
+        {{- with .Values.ruler.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ template "mimir.serviceAccountName" . }}
+    {{- if .Values.ruler.priorityClassName }}
+      priorityClassName: {{ .Values.ruler.priorityClassName }}
+    {{- end }}
+      securityContext:
+        {{- toYaml .Values.ruler.securityContext | nindent 8 }}
+      initContainers:
+        {{- toYaml .Values.ruler.initContainers | nindent 8 }}
+      {{- if .Values.image.pullSecrets }}
+      imagePullSecrets:
+      {{- range .Values.image.pullSecrets }}
+        - name: {{ . }}
+      {{- end}}
+      {{- end }}
+      containers:
+        - name: ruler
+          image: "{{ include "mimir.imageReference" . }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - "-target=ruler"
+            - "-config.file=/etc/mimir/mimir.yaml"
+          {{- range $key, $value := .Values.ruler.extraArgs }}
+            - "-{{ $key }}={{ $value }}"
+          {{- end }}
+          volumeMounts:
+            {{- if .Values.ruler.extraVolumeMounts }}
+              {{ toYaml .Values.ruler.extraVolumeMounts | nindent 12}}
+            {{- end }}
+            - name: config
+              mountPath: /etc/mimir
+            {{- if .Values.enterprise.enabled }}
+            - name: license
+              mountPath: /license
+            {{- end }}
+            - name: runtime-config
+              mountPath: /var/{{ include "mimir.name" . }}
+            - name: storage
+              mountPath: "/data"
+              subPath: {{ .Values.ruler.persistence.subPath }}
+          ports:
+            - name: http-metrics
+              containerPort: {{ include "mimir.serverHttpListenPort" . }}
+              protocol: TCP
+            - name: grpc
+              containerPort: {{ include "mimir.serverGrpcListenPort" . }}
+              protocol: TCP
+            - name: memberlist
+              containerPort: {{ include "mimir.memberlistBindPort" . }}
+              protocol: TCP
+          livenessProbe:
+            {{- toYaml .Values.ruler.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.ruler.readinessProbe | nindent 12 }}
+          resources:
+            {{- toYaml .Values.ruler.resources | nindent 12 }}
+          securityContext:
+            readOnlyRootFilesystem: true
+          env:
+            {{- if .Values.ruler.env }}
+              {{- toYaml .Values.ruler.env | nindent 12 }}
+            {{- end }}
+{{- if .Values.ruler.extraContainers }}
+{{ toYaml .Values.ruler.extraContainers | indent 8}}
+{{- end }}
+      nodeSelector:
+        {{- toYaml .Values.ruler.nodeSelector | nindent 8 }}
+      affinity:
+        {{- toYaml .Values.ruler.affinity | nindent 8 }}
+      tolerations:
+        {{- toYaml .Values.ruler.tolerations | nindent 8 }}
+      terminationGracePeriodSeconds: {{ .Values.ruler.terminationGracePeriodSeconds }}
+      volumes:
+        - name: config
+          secret:
+            secretName: {{ tpl .Values.externalConfigSecretName . }}
+        {{- if .Values.enterprise.enabled }}
+        - name: license
+          secret:
+            secretName: {{ tpl .Values.license.secretName . }}
+        {{- end }}
+        - name: runtime-config
+          configMap:
+            name: {{ template "mimir.fullname" . }}-runtime
+{{- if .Values.ruler.extraVolumes }}
+{{ toYaml .Values.ruler.extraVolumes | indent 8}}
+{{- end }}
+        - name: storage
+          emptyDir: {}
+{{- end -}}

@@ -1,0 +1,15 @@
+{{- if .Values.alertmanager.enabled -}}
+{{- if .Values.alertmanager.podDisruptionBudget -}}
+apiVersion: {{ include "mimir.podDisruptionBudget.apiVersion" . }}
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "mimir.resourceName" (dict "ctx" . "component" "alertmanager") }}
+  labels:
+    {{- include "mimir.labels" (dict "ctx" . "component" "alertmanager" "memberlist" true) | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "mimir.selectorLabels" (dict "ctx" . "component" "alertmanager" "memberlist" true) | nindent 6 }}
+{{ toYaml .Values.alertmanager.podDisruptionBudget | indent 2 }}
+{{- end -}}
+{{- end -}}

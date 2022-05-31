@@ -1,0 +1,55 @@
+{{- if .Values.enterprise.enabled -}}
+{{- if .Values.gateway.ingress.enabled -}}
+{{- $ingressApiIsStable := eq (include "mimir.ingress.isStable" .) "true" -}}
+{{- $ingressSupportsIngressClassName := eq (include "mimir.ingress.supportsIngressClassName" .) "true" -}}
+{{- $ingressSupportsPathType := eq (include "mimir.ingress.supportsPathType" .) "true" -}}
+apiVersion: {{ include "mimir.ingress.apiVersion" . }}
+kind: Ingress
+metadata:
+  name: {{ include "mimir.resourceName" (dict "ctx" . "component" "gateway") }}
+  labels:
+    {{- include "mimir.labels" (dict "ctx" . "component" "gateway") | nindent 4 }}
+  {{- with .Values.gateway.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if and $ingressSupportsIngressClassName .Values.gateway.ingress.ingressClassName }}
+  ingressClassName: {{ .Values.gateway.ingress.ingressClassName }}
+  {{- end -}}
+  {{- if .Values.gateway.ingress.tls }}
+  tls:
+    {{- range .Values.gateway.ingress.tls }}
+    - hosts:
+        {{- range .hosts }}
+        - {{ . | quote }}
+        {{- end }}
+      {{- with .secretName }}
+      secretName: {{ . }}
+      {{- end }}
+    {{- end }}
+  {{- end }}
+  rules:
+    {{- range .Values.gateway.ingress.hosts }}
+    - host: {{ .host | quote }}
+      http:
+        paths:
+          {{- range .paths }}
+          - path: {{ .path }}
+            {{- if $ingressSupportsPathType }}
+            pathType: {{ .pathType }}
+            {{- end }}
+            backend:
+              {{- if $ingressApiIsStable }}
+              service:
+                name: {{ include "mimir.resourceName" (dict "ctx" $ "component" "gateway") }}
+                port:
+                  number: {{ $.Values.gateway.service.port | default (include "mimir.serverHttpListenPort" . ) }}
+              {{- else }}
+              serviceName: {{ include "mimir.resourceName" (dict "ctx" $ "component" "gateway") }}
+              servicePort: {{ $.Values.gateway.service.port | default (include "mimir.serverHttpListenPort" . ) }}
+              {{- end }}
+          {{- end }}
+    {{- end }}
+{{- end -}}
+{{- end -}}

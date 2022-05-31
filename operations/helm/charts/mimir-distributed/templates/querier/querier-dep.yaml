@@ -1,0 +1,120 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "mimir.resourceName" (dict "ctx" . "component" "querier") }}
+  labels:
+    {{- include "mimir.labels" (dict "ctx" . "component" "querier" "memberlist" true) | nindent 4 }}
+  annotations:
+    {{- toYaml .Values.querier.annotations | nindent 4 }}
+spec:
+  replicas: {{ .Values.querier.replicas }}
+  selector:
+    matchLabels:
+      {{- include "mimir.selectorLabels" (dict "ctx" . "component" "querier" "memberlist" true) | nindent 6 }}
+  strategy:
+    {{- toYaml .Values.querier.strategy | nindent 4 }}
+  template:
+    metadata:
+      labels:
+        {{- include "mimir.podLabels" (dict "ctx" . "component" "querier" "memberlist" true) | nindent 8 }}
+        {{- with .Values.querier.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      annotations:
+{{- if .Values.useExternalConfig }}
+        checksum/config: {{ .Values.externalConfigVersion }}
+{{- else }}
+        checksum/config: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+{{- end}}
+        {{- with .Values.querier.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ template "mimir.serviceAccountName" . }}
+    {{- if .Values.querier.priorityClassName }}
+      priorityClassName: {{ .Values.querier.priorityClassName }}
+    {{- end }}
+      securityContext:
+        {{- toYaml .Values.querier.securityContext | nindent 8 }}
+      initContainers:
+        {{- toYaml .Values.querier.initContainers | nindent 8 }}
+      {{- if .Values.image.pullSecrets }}
+      imagePullSecrets:
+      {{- range .Values.image.pullSecrets }}
+        - name: {{ . }}
+      {{- end}}
+      {{- end }}
+      containers:
+        - name: querier
+          image: "{{ include "mimir.imageReference" . }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - "-target=querier"
+            - "-config.file=/etc/mimir/mimir.yaml"
+          {{- range $key, $value := .Values.querier.extraArgs }}
+            - "-{{ $key }}={{ $value }}"
+          {{- end }}
+          volumeMounts:
+            {{- if .Values.querier.extraVolumeMounts }}
+              {{ toYaml .Values.querier.extraVolumeMounts | nindent 12}}
+            {{- end }}
+            - name: config
+              mountPath: /etc/mimir
+            {{- if .Values.enterprise.enabled }}
+            - name: license
+              mountPath: /license
+            {{- end }}
+            - name: runtime-config
+              mountPath: /var/{{ include "mimir.name" . }}
+            - name: storage
+              mountPath: "/data"
+              subPath: {{ .Values.querier.persistence.subPath }}
+          ports:
+            - name: http-metrics
+              containerPort: {{ include "mimir.serverHttpListenPort" . }}
+              protocol: TCP
+            - name: grpc
+              containerPort: {{ include "mimir.serverGrpcListenPort" . }}
+              protocol: TCP
+            - name: memberlist
+              containerPort: {{ include "mimir.memberlistBindPort" . }}
+              protocol: TCP
+          livenessProbe:
+            {{- toYaml .Values.querier.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.querier.readinessProbe | nindent 12 }}
+          resources:
+            {{- toYaml .Values.querier.resources | nindent 12 }}
+          securityContext:
+            readOnlyRootFilesystem: true
+          env:
+            {{- if .Values.querier.env }}
+              {{- toYaml .Values.querier.env | nindent 12 }}
+            {{- end }}
+{{- if .Values.querier.extraContainers }}
+{{ toYaml .Values.querier.extraContainers | indent 8}}
+{{- end }}
+      nodeSelector:
+        {{- toYaml .Values.querier.nodeSelector | nindent 8 }}
+      affinity:
+        {{- toYaml .Values.querier.affinity | nindent 8 }}
+      tolerations:
+        {{- toYaml .Values.querier.tolerations | nindent 8 }}
+      terminationGracePeriodSeconds: {{ .Values.querier.terminationGracePeriodSeconds }}
+      volumes:
+        - name: config
+          secret:
+            secretName: {{ tpl .Values.externalConfigSecretName . }}
+        {{- if .Values.enterprise.enabled }}
+        - name: license
+          secret:
+            secretName: {{ tpl .Values.license.secretName . }}
+        {{- end }}
+        - name: runtime-config
+          configMap:
+            name: {{ template "mimir.fullname" . }}-runtime
+{{- if .Values.querier.extraVolumes }}
+{{ toYaml .Values.querier.extraVolumes | indent 8}}
+{{- end }}
+        - name: storage
+          emptyDir: {}

@@ -1,0 +1,1 @@
+{{- tpl .Values.mimir.config . -}}

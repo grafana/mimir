@@ -1185,7 +1185,7 @@
             "id": 11,
             "targets": [
                {
-                  "expr": "count by(container, version) (\n  label_replace(\n    kube_pod_container_info{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\".*(cortex-gw|distributor|ingester|query-frontend|query-scheduler|querier|compactor|store-gateway|ruler|alertmanager|overrides-exporter|cortex|mimir).*\"},\n    \"version\", \"$1\", \"image\", \".*:(.+)-.*\"\n  )\n)\n",
+                  "expr": "count by(container, version) (\n  label_replace(\n    kube_pod_container_info{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\".*(cortex-gw|distributor|ingester|query-frontend|query-scheduler|querier|compactor|store-gateway|ruler|alertmanager|overrides-exporter|cortex|mimir).*\"},\n    \"version\", \"$1\", \"image\", \".*:(.*)\"\n  )\n)\n",
                   "instant": true,
                   "legendFormat": "",
                   "refId": "A"

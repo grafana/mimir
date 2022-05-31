@@ -1488,6 +1488,11 @@ The `ruler_storage` block configures the ruler storage backend.
 # CLI flag: -ruler-storage.backend
 [backend: <string> | default = "filesystem"]
 
+# (experimental) Prefix for all objects stored in the backend storage. For
+# simplicity, it may only contain digits and English alphabet letters.
+# CLI flag: -ruler-storage.storage-prefix
+[storage_prefix: <string> | default = ""]
+
 s3:
   # The S3 bucket endpoint. It could be an AWS S3 endpoint listed at
   # https://docs.aws.amazon.com/general/latest/gr/s3.html or the address of an
@@ -1932,6 +1937,11 @@ The `alertmanager_storage` block configures the alertmanager storage backend.
 # filesystem, local.
 # CLI flag: -alertmanager-storage.backend
 [backend: <string> | default = "filesystem"]
+
+# (experimental) Prefix for all objects stored in the backend storage. For
+# simplicity, it may only contain digits and English alphabet letters.
+# CLI flag: -alertmanager-storage.storage-prefix
+[storage_prefix: <string> | default = ""]
 
 s3:
   # The S3 bucket endpoint. It could be an AWS S3 endpoint listed at
@@ -2590,6 +2600,15 @@ The `memberlist` block configures the Gossip memberlist.
 The `limits` block configures default and per-tenant limits imposed by components.
 
 ```yaml
+# (experimental) Per-tenant request rate limit in requests per second. 0 to
+# disable.
+# CLI flag: -distributor.request-rate-limit
+[request_rate: <float> | default = 0]
+
+# (experimental) Per-tenant allowed request burst size. 0 to disable.
+# CLI flag: -distributor.request-burst-size
+[request_burst_size: <int> | default = 0]
+
 # Per-tenant ingestion rate limit in samples per second.
 # CLI flag: -distributor.ingestion-rate-limit
 [ingestion_rate: <float> | default = 10000]
@@ -2922,6 +2941,11 @@ The `blocks_storage` block configures the blocks storage.
 # filesystem.
 # CLI flag: -blocks-storage.backend
 [backend: <string> | default = "filesystem"]
+
+# (experimental) Prefix for all objects stored in the backend storage. For
+# simplicity, it may only contain digits and English alphabet letters.
+# CLI flag: -blocks-storage.storage-prefix
+[storage_prefix: <string> | default = ""]
 
 s3:
   # The S3 bucket endpoint. It could be an AWS S3 endpoint listed at

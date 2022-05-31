@@ -1,0 +1,103 @@
+#!/usr/bin/env bash
+
+set -euf -o pipefail
+
+function usage {
+  cat <<EOF
+Replace labels in manifest templates
+
+Usage:
+  $0 [options] <component> <manifestfile>
+
+Options:
+  -g  component is member of memberlist
+  -e  is enterprise feature
+  -t  toggleable with "enabled"
+  -ne opensource only feature
+
+Examples:
+  $0 overrides-exporter
+EOF
+}
+
+if [[ $# -eq 0 ]]; then
+  usage
+  exit 1
+fi
+
+component="$1"
+memberlist=''
+SED=('sed' '-z' '-E' '-f/dev/stdin')
+
+while [[ $# -gt 0 ]] ; do
+case "$1" in
+  -g)
+    memberlist=' "memberlist" true'
+    ;;
+  -e)
+    ;;
+  -ne)
+    ;;
+  -t)
+    ;;
+  -h) usage && exit 0 ;;
+  *)
+    break
+    ;;
+esac
+shift
+done
+
+# Convert kebab-case to snake_case.
+function snake_case {
+  sed -E -e 's/-/_/' <<<"$1"
+}
+
+component="$1"
+snake_cased="$(snake_case "${component}")"
+headless=""
+if grep -iqE '^  clusterip:[[:space:]]none$' "$2" ; then
+  headless="-headless"
+fi
+
+# Example of updating labels
+# update_app updates the .metadata.name, .metadata.labels, .spec.selector.matchLabels, and .spec.template.metadata.labels for an App like resource to use component specific helper templates.
+# It is naïve and relies on indentation to for the correct field replacement.
+update_app=$(
+  cat <<EOF
+s/  name: [^\n]+\n/  name: {{ include "mimir.resourceName" (dict "ctx" . "component" "${component}") }}\n/
+s/  labels:\n(    [^\n]*\n)+/  labels:\n    {{- include "mimir.labels" (dict "ctx" . "component" "${component}"${memberlist}) | nindent 4 }}\n/
+s/    matchLabels:\n(      [^\n]*\n)+/    matchLabels:\n      {{- include "mimir.selectorLabels" (dict "ctx" . "component" "${component}"${memberlist}) | nindent 6 }}\n/
+s/      labels:\n(        [^\n]*\n)+/      labels:\n        {{- include "mimir.podLabels" (dict "ctx" . "component" "${component}"${memberlist}) | nindent 8 }}\n        {{- with .Values.${snake_cased}.podLabels }}\n        {{- toYaml . | nindent 8 }}\n        {{- end }}\n/
+s/  annotations:\n(    [^\n]*\n)+/  annotations:\n    {{- toYaml .Values.${snake_cased}.annotations | nindent 4 }}\n/
+EOF
+)
+# update_service updates the .metadata.labels and .spec.selector for a Service to use
+# component specific helper templates.
+# It is naïve and relies on indentation to for the correct field replacement.
+update_service=$(
+  cat <<EOF
+s/  name: [^\n]+\n/  name: {{ include "mimir.resourceName" (dict "ctx" . "component" "${component}") }}${headless}\n/
+s/  labels:\n(    [^\n]*\n)+/  labels:\n    {{- include "mimir.labels" (dict "ctx" . "component" "${component}"${memberlist}) | nindent 4 }}\n    {{- with .Values.${snake_cased}.service.labels }}\n    {{- toYaml . | nindent 4 }}\n    {{- end }}\n/
+s/  selector:\n(    [^\n]*\n)+/  selector:\n    {{- include "mimir.selectorLabels" (dict "ctx" . "component" "${component}"${memberlist}) | nindent 4 }}\n/
+s/  annotations:\n(    [^\n]*\n)+/  annotations:\n    {{- toYaml .Values.${snake_cased}.service.annotations | nindent 4 }}\n/
+EOF
+)
+
+update_service_monitor=$(
+  cat <<EOF
+s/  name: [^\n]+\n/  name: {{ include "mimir.resourceName" (dict "ctx" $ "component" "${component}") }}\n/
+s/  labels:\n(    [^\n]*\n)+/  labels:\n    {{- include "mimir.labels" (dict "ctx" $ "component" "${component}"${memberlist}) | nindent 4 }}\n    {{- with .labels }}\n    {{- toYaml . | nindent 4 }}\n    {{- end }}\n/
+s/    matchLabels:\n(      [^\n]*\n)+/    matchLabels:\n      {{- include "mimir.selectorLabels" (dict "ctx" $ "component" "${component}"${memberlist}) | nindent 6 }}\n/
+EOF
+)
+
+if grep -iqE '^kind:[[:space:]]+servicemonitor[[:space:]]*$' "$2" ; then
+  update_script="${update_service_monitor}"
+elif grep -iqE '^kind:[[:space:]]+service[[:space:]]*$' "$2" ; then
+  update_script="${update_service}"
+else
+  update_script="${update_app}"
+fi
+
+"${SED[@]}" -- "$2" <<<"${update_script}"

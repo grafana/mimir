@@ -1,0 +1,15 @@
+{{- if .Values.rbac.pspEnabled }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "mimir.resourceName" (dict "ctx" .) }}
+  labels:
+    {{- include "mimir.labels" (dict "ctx" .) | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "mimir.resourceName" (dict "ctx" .) }}
+subjects:
+- kind: ServiceAccount
+  name: {{ template "mimir.serviceAccountName" . }}
+{{- end }}
