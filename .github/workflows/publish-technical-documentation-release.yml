@@ -42,7 +42,7 @@ jobs:
       uses: "./actions/has-matching-release-tag"
       with:
         ref_name: "${{ github.ref_name }}"
-        release_tag_regexp: "^mimir-v(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)$"
+        release_tag_regexp: "^mimir-(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)$"
         release_branch_regexp: "^release-(0|[1-9]\\d*)\\.(0|[1-9]\\d*)$"
 
     - name: "Determine technical documentation version"
