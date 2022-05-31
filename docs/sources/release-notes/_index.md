@@ -10,3 +10,4 @@ keywords:
 # Grafana Mimir release notes
 
 {{< section >}}
+
