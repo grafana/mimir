@@ -291,6 +291,8 @@ lint: check-makefiles
 	faillint -paths "github.com/thanos-io/thanos/pkg/block.{NewIgnoreDeletionMarkFilter}" \
 		./pkg/compactor/...
 
+	faillint -paths "github.com/thanos-io/thanos/pkg/shipper.{New}" ./pkg/...
+
 	# Ensure packages we imported from Thanos are no longer used.
 	GOFLAGS="-tags=requires_docker" faillint -paths \
 		"github.com/thanos/thanos-io/pkg/store,\
