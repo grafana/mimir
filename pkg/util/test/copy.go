@@ -3,7 +3,7 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Thanos Authors.
 
-package e2eutil
+package test
 
 import (
 	"io"
@@ -11,13 +11,13 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/grafana/dskit/runutil"
 	"github.com/pkg/errors"
-	"github.com/thanos-io/thanos/pkg/runutil"
-	"github.com/thanos-io/thanos/pkg/testutil"
+	"github.com/stretchr/testify/require"
 )
 
 func Copy(t testing.TB, src, dst string) {
-	testutil.Ok(t, copyRecursive(src, dst))
+	require.NoError(t, copyRecursive(src, dst))
 }
 
 func copyRecursive(src, dst string) error {
