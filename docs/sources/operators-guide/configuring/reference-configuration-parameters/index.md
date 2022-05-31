@@ -562,6 +562,11 @@ forwarding:
   # forward metrics.
   # CLI flag: -distributor.forwarding.request-timeout
   [request_timeout: <duration> | default = 10s]
+
+  # (experimental) If disabled then forwarding requests are a fire-and-forget
+  # operation, errors get dropped.
+  # CLI flag: -distributor.forwarding.propagate-errors
+  [propagate_errors: <boolean> | default = true]
 ```
 
 ### ingester
