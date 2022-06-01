@@ -204,10 +204,6 @@ How to **investigate**:
 - Check the `Mimir / Reads` dashboard
   - Looking at the dashboard you should see in which Mimir service the high latency originates
   - The panels in the dashboard are vertically sorted by the network path (eg. gateway -> query-frontend -> query->scheduler -> querier -> store-gateway)
-- Check the `Mimir / Reads resources` dashboard
-  - Check if query frontend pods are at the memory limit - if they are, check in Kubernetes if pods are OOM-ing
-  - Check if querier pods are at the memory limit - if they are, check in Kubernetes if pods are OOM-ing
-  - If query frontend pods or querier pods are OOM-ing, consider increasing their memory requests/limits
 - Check the `Mimir / Slow Queries` dashboard to find out if it's caused by few slow queries
 - Deduce where in the stack the latency is being introduced
   - **`gateway`**
@@ -227,8 +223,8 @@ How to **investigate**:
         - If memcached eviction rate is high, then you should scale up memcached replicas. Check the recommendations by `Mimir / Scaling` dashboard and make reasonable adjustments as necessary.
         - If memcached eviction rate is zero or very low, then it may be caused by "first time" queries
       - Cache query timeouts
-        - Check store gateway logs and look for warnings about timed out Memcached queries
-        - If there are indeed a lot of timed out Memcached queries, consider whether the store gateway Memcached timeout setting (`blocks-storage.bucket-store.chunks-cache.memcached.timeout`) is sufficient
+        - Check store-gateway logs and look for warnings about timed out Memcached queries
+        - If there are indeed a lot of timed out Memcached queries, consider whether the store-gateway Memcached timeout setting (`-blocks-storage.bucket-store.chunks-cache.memcached.timeout`) is sufficient
     - Consider increasing total number of query shards (`query_sharding_total_shards`) for tenants submitting slow queries, to increase query parallelism
     - Consider scaling up number of queriers if they're not auto-scaled; if auto-scaled, check auto-scaling parameters
 
