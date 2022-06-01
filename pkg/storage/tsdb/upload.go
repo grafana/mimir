@@ -85,7 +85,7 @@ func UploadBlock(ctx context.Context, logger log.Logger, bkt objstore.Bucket, bl
 	return nil
 }
 
-// Hopefully we can replace this function with version from Thanos: https://github.com/thanos-io/thanos/pull/5400
+// gatherFileStats can hopefully be replaced with Thanos public function: https://github.com/thanos-io/thanos/pull/5400
 func gatherFileStats(blockDir string) (res []metadata.File, _ error) {
 	files, err := ioutil.ReadDir(filepath.Join(blockDir, block.ChunksDirname))
 	if err != nil {
