@@ -1,12 +1,12 @@
 apiVersion: v2
-version: 2.0.14
+version: 2.1.0-beta.1
 appVersion: 2.0.0
 description: "Grafana Mimir"
 engine: gotpl
 home: https://grafana.com/docs/mimir/v2.0.x/
 icon: https://grafana.com/static/img/logos/logo-mimir.svg
 kubeVersion: ^1.10.0-0
-name: mimir-distributed-beta
+name: mimir-distributed
 dependencies:
   - name: memcached
     alias: memcached
