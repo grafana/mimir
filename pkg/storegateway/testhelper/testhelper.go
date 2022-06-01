@@ -2,7 +2,7 @@
 // Provenance-includes-location: https://github.com/thanos-io/thanos/blob/main/pkg/testutil/e2eutil/prometheus.go
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Thanos Authors.
-package storegateway
+package testhelper
 
 import (
 	"context"
