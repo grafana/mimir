@@ -51,7 +51,10 @@ func (c *MultitenantCompactor) CreateBlockUpload(w http.ResponseWriter, r *http.
 
 	exists := false
 	err = bkt.Iter(ctx, blockID, func(pth string) error {
-		exists = true
+		if pth == "meta.json" {
+			// Complete block with same ID exists
+			exists = true
+		}
 		return nil
 	})
 	if err != nil {
@@ -61,7 +64,7 @@ func (c *MultitenantCompactor) CreateBlockUpload(w http.ResponseWriter, r *http.
 		return
 	}
 	if exists {
-		level.Debug(c.logger).Log("msg", "block already exists in object storage", "user", tenantID,
+		level.Debug(c.logger).Log("msg", "complete block already exists in object storage", "user", tenantID,
 			"block", blockID)
 		http.Error(w, "block already exists in object storage", http.StatusConflict)
 		return
