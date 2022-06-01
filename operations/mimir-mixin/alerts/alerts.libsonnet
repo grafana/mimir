@@ -529,6 +529,25 @@
           },
         },
         {
+          alert: $.alertName('RulerMissedEvaluations'),
+          expr: |||
+            100 * (
+            sum by (%(alert_aggregation_labels)s, %(per_instance_label)s, rule_group) (rate(cortex_prometheus_rule_group_iterations_missed_total[1m]))
+              /
+            sum by (%(alert_aggregation_labels)s, %(per_instance_label)s, rule_group) (rate(cortex_prometheus_rule_group_iterations_total[1m]))
+            ) > 1
+          ||| % $._config,
+          'for': '5m',
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: |||
+              %(product)s Ruler %(alert_instance_variable)s in %(alert_aggregation_variables)s is experiencing {{ printf "%%.2f" $value }}%% missed iterations for the rule group {{ $labels.rule_group }}.
+            ||| % $._config,
+          },
+        },
+        {
           alert: $.alertName('RulerFailedRingCheck'),
           expr: |||
             sum by (%s, job) (rate(cortex_ruler_ring_check_errors_total[1m]))
