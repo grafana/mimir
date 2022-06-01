@@ -11,6 +11,10 @@ Entries should be ordered as follows:
 
 Entries should include a reference to the Pull Request that introduced the change.
 
+## 2.1.0-beta.2
+
+* [ENHANCEMENT] Version bump only for release tests.
+
 ## 2.1.0-beta.1
 
 * [ENHANCEMENT] Version bump only for release tests.
