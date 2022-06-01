@@ -54,16 +54,16 @@ func checkDirectoriesReadWriteAccess(
 ) error {
 	errs := multierror.New()
 
-	if cfg.isAnyModuleEnabled(All, Ingester) {
+	if cfg.isAnyModuleEnabled(All, Write, Ingester) {
 		errs.Add(errors.Wrap(checkDirReadWriteAccess(cfg.Ingester.BlocksStorageConfig.TSDB.Dir, dirExistFn, isDirReadWritableFn), "ingester"))
 	}
-	if cfg.isAnyModuleEnabled(All, StoreGateway) {
+	if cfg.isAnyModuleEnabled(All, Store, StoreGateway) {
 		errs.Add(errors.Wrap(checkDirReadWriteAccess(cfg.BlocksStorage.BucketStore.SyncDir, dirExistFn, isDirReadWritableFn), "store-gateway"))
 	}
-	if cfg.isAnyModuleEnabled(All, Compactor) {
+	if cfg.isAnyModuleEnabled(All, Store, Compactor) {
 		errs.Add(errors.Wrap(checkDirReadWriteAccess(cfg.Compactor.DataDir, dirExistFn, isDirReadWritableFn), "compactor"))
 	}
-	if cfg.isAnyModuleEnabled(All, Ruler) {
+	if cfg.isAnyModuleEnabled(All, Read, Ruler) {
 		errs.Add(errors.Wrap(checkDirReadWriteAccess(cfg.Ruler.RulePath, dirExistFn, isDirReadWritableFn), "ruler"))
 	}
 	if cfg.isAnyModuleEnabled(AlertManager) {
@@ -128,7 +128,7 @@ func checkObjectStoresConfig(ctx context.Context, cfg Config, logger log.Logger)
 	errs := multierror.New()
 
 	// Check blocks storage config only if running at least one component using it.
-	if cfg.isAnyModuleEnabled(All, Ingester, Querier, Ruler, StoreGateway, Compactor) {
+	if cfg.isAnyModuleEnabled(All, Ingester, Querier, Ruler, StoreGateway, Compactor, Write, Read, Store) {
 		errs.Add(errors.Wrap(checkObjectStoreConfig(ctx, cfg.BlocksStorage.Bucket, logger), "blocks storage"))
 	}
 
@@ -138,7 +138,7 @@ func checkObjectStoresConfig(ctx context.Context, cfg Config, logger log.Logger)
 	}
 
 	// Check ruler storage config.
-	if cfg.isAnyModuleEnabled(All, Ruler) && cfg.RulerStorage.Backend != rulestorelocal.Name {
+	if cfg.isAnyModuleEnabled(All, Read, Ruler) && cfg.RulerStorage.Backend != rulestorelocal.Name {
 		errs.Add(errors.Wrap(checkObjectStoreConfig(ctx, cfg.RulerStorage.Config, logger), "ruler storage"))
 	}
 

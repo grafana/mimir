@@ -87,6 +87,9 @@ const (
 	QueryScheduler           string = "query-scheduler"
 	TenantFederation         string = "tenant-federation"
 	UsageStats               string = "usage-stats"
+	Write                    string = "write"
+	Read                     string = "read"
+	Store                    string = "store"
 	All                      string = "all"
 )
 
@@ -275,7 +278,7 @@ func (t *Mimir) initDistributorService() (serv services.Service, err error) {
 	// Check whether the distributor can join the distributors ring, which is
 	// whenever it's not running as an internal dependency (ie. querier or
 	// ruler's dependency)
-	canJoinDistributorsRing := t.Cfg.isModuleEnabled(Distributor) || t.Cfg.isModuleEnabled(All)
+	canJoinDistributorsRing := t.Cfg.isAnyModuleEnabled(Distributor, All, Write)
 
 	t.Distributor, err = distributor.New(t.Cfg.Distributor, t.Cfg.IngesterClient, t.Overrides, t.Ring, canJoinDistributorsRing, prometheus.DefaultRegisterer, util_log.Logger)
 	if err != nil {
@@ -390,7 +393,7 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 	// If the querier is running standalone without the query-frontend or query-scheduler, we must register it's internal
 	// HTTP handler externally and provide the external Mimir Server HTTP handler to the frontend worker
 	// to ensure requests it processes use the default middleware instrumentation.
-	if !t.Cfg.isModuleEnabled(QueryFrontend) && !t.Cfg.isModuleEnabled(QueryScheduler) && !t.Cfg.isModuleEnabled(All) {
+	if !t.Cfg.isAnyModuleEnabled(QueryFrontend, QueryScheduler, All, Read) {
 		// First, register the internal querier handler with the external HTTP server
 		t.API.RegisterQueryAPI(internalQuerierRouter, t.BuildInfoHandler)
 
@@ -547,8 +550,9 @@ func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 }
 
 func (t *Mimir) initRulerStorage() (serv services.Service, err error) {
-	// If the ruler is not configured and Mimir is running in monolithic mode, then we just skip starting the ruler.
-	if t.Cfg.isModuleEnabled(All) && t.Cfg.RulerStorage.IsDefaults() {
+	// If the ruler is not configured and Mimir is running in monolithic or simple-scalable-deployment mode,
+	// then we just skip starting the ruler.
+	if t.Cfg.isAnyModuleEnabled(All, Read) && t.Cfg.RulerStorage.IsDefaults() {
 		level.Info(util_log.Logger).Log("msg", "The ruler is not being started because you need to configure the ruler storage.")
 		return
 	}
@@ -799,6 +803,9 @@ func (t *Mimir) setupModuleManager() error {
 	mm.RegisterModule(QueryScheduler, t.initQueryScheduler)
 	mm.RegisterModule(TenantFederation, t.initTenantFederation, modules.UserInvisibleModule)
 	mm.RegisterModule(UsageStats, t.initUsageStats, modules.UserInvisibleModule)
+	mm.RegisterModule(Write, nil)
+	mm.RegisterModule(Read, nil)
+	mm.RegisterModule(Store, nil)
 	mm.RegisterModule(All, nil)
 
 	// Add dependencies
@@ -827,6 +834,9 @@ func (t *Mimir) setupModuleManager() error {
 		Compactor:                {API, MemberlistKV, Overrides},
 		StoreGateway:             {API, Overrides, MemberlistKV},
 		TenantFederation:         {Queryable},
+		Write:                    {Distributor, Ingester},
+		Read:                     {QueryFrontend, QueryScheduler, Querier, Ruler, OverridesExporter},
+		Store:                    {StoreGateway, Compactor},
 		All:                      {QueryFrontend, Querier, Ingester, Distributor, StoreGateway, Ruler, Compactor},
 	}
 	for mod, targets := range deps {

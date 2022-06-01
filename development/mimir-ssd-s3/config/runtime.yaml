@@ -1,0 +1,4 @@
+# This file can be used to set overrides or other runtime config.
+overrides:
+  anonymous:
+    max_global_series_per_metric: 100000

@@ -1,0 +1,34 @@
+server:
+  log_level: info
+  http_listen_port: 9091
+
+prometheus:
+  global:
+    scrape_interval: 5s
+    external_labels:
+      scraped_by: grafana-agent
+  configs:
+    - name: local
+      host_filter: false
+      scrape_configs:
+        - job_name: mimir-ssd-s3/mimir-write
+          static_configs:
+            - targets: ['write-1:8001', 'write-2:8002', 'write-3:8003']
+              labels:
+                cluster: 'docker-compose'
+                namespace: 'mimir-ssd-s3'
+        - job_name: mimir-ssd-s3/mimir-read
+          static_configs:
+            - targets: ['read-1:8004', 'read-2:8005']
+              labels:
+                cluster: 'docker-compose'
+                namespace: 'mimir-ssd-s3'
+        - job_name: mimir-ssd-s3/mimir-store
+          static_configs:
+            - targets: ['store-1:8006', 'store-2:8007']
+              labels:
+                cluster: 'docker-compose'
+                namespace: 'mimir-ssd-s3'
+
+      remote_write:
+        - url: http://write-1:8001/api/v1/push
