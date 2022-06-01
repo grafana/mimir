@@ -1,2 +1,5 @@
-sign: true
+git-repo: helm-charts
 key: Grafana Loki
+owner: grafana
+sign: true
+skip-existing: true
