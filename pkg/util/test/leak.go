@@ -27,6 +27,6 @@ func goLeakOptions() []goleak.Option {
 		// The store-gateway BucketStore starts a goroutine in the index-header readers pool and
 		// it gets closed when we close the BucketStore. However, we currently don't close BucketStore
 		// on store-gateway termination so it never gets terminated.
-		goleak.IgnoreTopFunction("github.com/thanos-io/thanos/pkg/block/indexheader.NewReaderPool.func1"),
+		goleak.IgnoreTopFunction("github.com/grafana/mimir/pkg/storegateway/indexheader.NewReaderPool.func1"),
 	}
 }
