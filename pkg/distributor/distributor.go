@@ -61,7 +61,7 @@ var (
 
 	// Distributor instance limits errors.
 	errMaxInflightRequestsReached = errors.New(globalerror.DistributorMaxInflightPushRequests.MessageWithLimitConfig(maxInflightPushRequestsFlag, "the write request has been rejected because the distributor exceeded the allowed number of inflight push requests"))
-	errMaxIngestionRateReached    = errors.New(globalerror.DistributorMaxIngestionRate.MessageWithLimitConfig(maxIngestionRateFlag, "the write request has been rejected because the distributor exceeded the samples ingestion rate limit"))
+	errMaxIngestionRateReached    = errors.New(globalerror.DistributorMaxIngestionRate.MessageWithLimitConfig(maxIngestionRateFlag, "the write request has been rejected because the distributor exceeded the ingestion rate limit"))
 )
 
 const (
