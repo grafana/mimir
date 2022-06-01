@@ -641,6 +641,8 @@ Usage of ./cmd/mimir/mimir:
     	This flag can be used to specify label names that to drop during sample ingestion within the distributor and can be repeated in order to drop multiple labels.
   -distributor.forwarding.enabled
     	[experimental] Enables the feature to forward certain metrics in remote_write requests, depending on defined rules.
+  -distributor.forwarding.propagate-errors
+    	[experimental] If disabled then forwarding requests are always considered to be successful, errors are ignored. (default true)
   -distributor.forwarding.request-timeout duration
     	[experimental] Timeout for requests to ingestion endpoints to which we forward metrics. (default 10s)
   -distributor.ha-tracker.cluster string
