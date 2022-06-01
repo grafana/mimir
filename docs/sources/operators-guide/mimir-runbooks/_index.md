@@ -1139,6 +1139,34 @@ The limit protects the system’s stability from potential abuse or mistakes, an
 
 > **Note**: Invalid metrics metadata are skipped during the ingestion, and valid metadata within the same request are ingested.
 
+### err-mimir-distributor-max-ingestion-rate
+
+This critical error occurs when the rate of received samples per second is exceeded in a distributor.
+
+The distributor implements a rate limit on the samples per second that can be ingested, and it's used to protect a distributor from overloading in case of high traffic.
+The limit is a per-instance limit and it's applied on all samples received, across all tenants, in each distributor.
+
+How to **fix** it:
+
+- Scale up distributors.
+- Increase the limit by using the `-distributor.instance-limits.max-ingestion-rate` option (or `max_ingestion_rate` in the runtime config).
+
+### err-mimir-distributor-max-inflight-push-requests
+
+This error occurs when a distributor rejects a write request because the max inflight requests limit has been reached.
+
+How it **works**:
+
+- The distributor has per-instance limit on the number of inflight write (push) requests.
+- The limit applies on all inflight write requests, across all tenants, and is used to protect the distributor from overloading in case of high traffic.
+- You can configure the limit by setting the `-distributor.instance-limits.max-inflight-push-requests` option (or `max_inflight_push_requests` in the runtime config).
+
+How to **fix** it:
+
+- In case of emergency, increase the limit by setting the `-distributor.instance-limits.max-inflight-push-requests` option (or `max_inflight_push_requests` in the runtime config).
+- Check the write requests latency through the `Mimir / Writes` dashboard and eventually investigate the root cause of high latency (the higher the latency, the higher the number of inflight write requests).
+- Consider scaling out the distributors.
+
 ### err-mimir-ingester-max-ingestion-rate
 
 This critical error occurs when the rate of received samples per second is exceeded in an ingester.
