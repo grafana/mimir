@@ -1,0 +1,15 @@
+name: helm-release
+
+on:
+  pull_request:
+    branches:
+      - main
+      - helm-release-test
+
+jobs:
+  call-update-helm-repo:
+    uses: grafana/helm-charts/.github/workflows/copy-and-push.yaml@krajo/20220601-copy-and-release
+    with:
+      ct_configfile: operations/helm/ct.yaml
+    secrets:
+      helm_repo_token: ${{ secrets.GH_BOT_ACCESS_TOKEN }}
