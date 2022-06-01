@@ -1,5 +1,5 @@
 apiVersion: v2
-version: 2.1.0-beta.2
+version: 2.1.0-beta.3
 appVersion: 2.0.0
 description: "Grafana Mimir"
 engine: gotpl
