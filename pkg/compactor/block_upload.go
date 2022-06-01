@@ -49,18 +49,11 @@ func (c *MultitenantCompactor) CreateBlockUpload(w http.ResponseWriter, r *http.
 
 	bkt := bucket.NewUserBucketClient(string(tenantID), c.bucketClient, c.cfgProvider)
 
-	exists := false
-	err = bkt.Iter(ctx, blockID, func(pth string) error {
-		if pth == "meta.json" {
-			// Complete block with same ID exists
-			exists = true
-		}
-		return nil
-	})
+	exists, err := bkt.Exists(ctx, path.Join(blockID, "meta.json"))
 	if err != nil {
-		level.Error(c.logger).Log("msg", "failed to iterate over block files", "user", tenantID,
-			"block", blockID, "err", err)
-		http.Error(w, "failed iterating over block files in object storage", http.StatusBadGateway)
+		level.Error(c.logger).Log("msg", "failed to check existence of meta.json in object storage",
+			"user", tenantID, "block", blockID, "err", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 	if exists {
@@ -78,13 +71,6 @@ func (c *MultitenantCompactor) CreateBlockUpload(w http.ResponseWriter, r *http.
 	}
 
 	if err := c.sanitizeMeta(tenantID, bULID, &meta); err != nil {
-		level.Error(c.logger).Log("msg", "failed to sanitize meta.json", "user", tenantID,
-			"block", blockID, "err", err)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
-		return
-	}
-
-	if err := c.uploadMeta(ctx, w, meta, blockID, tenantID, "meta.json.temp", bkt); err != nil {
 		var eBadReq errBadRequest
 		if errors.As(err, &eBadReq) {
 			level.Warn(c.logger).Log("msg", eBadReq.message, "user", tenantID,
@@ -93,6 +79,13 @@ func (c *MultitenantCompactor) CreateBlockUpload(w http.ResponseWriter, r *http.
 			return
 		}
 
+		level.Error(c.logger).Log("msg", "failed to sanitize meta.json", "user", tenantID,
+			"block", blockID, "err", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	if err := c.uploadMeta(ctx, w, meta, blockID, tenantID, "meta.json.temp", bkt); err != nil {
 		level.Error(c.logger).Log("msg", "failed to upload meta.json", "user", tenantID,
 			"block", blockID, "err", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
@@ -246,14 +239,6 @@ func (c *MultitenantCompactor) CompleteBlockUpload(w http.ResponseWriter, r *htt
 
 	// Upload meta.json so block is considered complete
 	if err := c.uploadMeta(ctx, w, meta, blockID, tenantID, "meta.json", bkt); err != nil {
-		var eBadReq errBadRequest
-		if errors.As(err, &eBadReq) {
-			level.Warn(c.logger).Log("msg", eBadReq.message, "user", tenantID,
-				"block", blockID)
-			http.Error(w, eBadReq.message, http.StatusBadRequest)
-			return
-		}
-
 		level.Error(c.logger).Log("msg", "failed to upload meta.json", "user", tenantID,
 			"block", blockID, "err", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
