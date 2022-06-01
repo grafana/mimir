@@ -225,8 +225,11 @@ How to **investigate**:
       - Cache query timeouts
         - Check store-gateway logs and look for warnings about timed out Memcached queries
         - If there are indeed a lot of timed out Memcached queries, consider whether the store-gateway Memcached timeout setting (`-blocks-storage.bucket-store.chunks-cache.memcached.timeout`) is sufficient
-    - Consider increasing total number of query shards (`query_sharding_total_shards`) for tenants submitting slow queries, to increase query parallelism
-    - Consider scaling up number of queriers if they're not auto-scaled; if auto-scaled, check auto-scaling parameters
+    - If queries are waiting in queue due to busy queriers
+      - Consider scaling up number of queriers if they're not auto-scaled; if auto-scaled, check auto-scaling parameters
+    - If queries are not waiting in queue due to busy queriers
+      - Consider enabling query sharding if not already enabled, to increase query parallelism
+      - If query sharding already enabled, consider increasing total number of query shards (`query_sharding_total_shards`) for tenants submitting slow queries, so their queries can be further parallelized
 
 #### Alertmanager
 
