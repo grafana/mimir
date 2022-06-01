@@ -21,7 +21,8 @@ import (
 
 // UploadBlock is copy of block.Upload with following modifications:
 //
-// - If meta parameter is supplied (not nil), then local meta.json file is ignored, and uploaded meta.json file reflects meta parameter.
+// - If meta parameter is supplied (not nil), then uploaded meta.json file reflects meta parameter. However local
+// meta.json file must still exist.
 //
 // - Meta struct is updated with gatherFileStats
 //
