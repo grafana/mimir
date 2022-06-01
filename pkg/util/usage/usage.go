@@ -33,6 +33,11 @@ func Usage(printAll bool, configs ...interface{}) error {
 		fieldCat := fieldcategory.Basic
 		var field reflect.StructField
 
+		// Do not print usage for deprecated flags.
+		if fl.Value.String() == "deprecated" {
+			return
+		}
+
 		if override, ok := fieldcategory.GetOverride(fl.Name); ok {
 			fieldCat = override
 		} else if v.Kind() == reflect.Ptr {

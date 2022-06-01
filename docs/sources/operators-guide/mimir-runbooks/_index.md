@@ -1,6 +1,15 @@
-# Playbooks
+---
+title: "Grafana Mimir runbooks"
+menuTitle: "Runbooks"
+description: "Grafana Mimir runbooks."
+weight: 110
+keywords:
+  - Mimir runbooks
+---
 
-This document contains playbooks, or at least a checklist of what to look for, for alerts in the mimir-mixin and logs from Mimir. This document assumes that you are running a Mimir cluster:
+# Grafana Mimir runbooks
+
+This document contains runbooks, or at least a checklist of what to look for, for alerts in the mimir-mixin and logs from Mimir. This document assumes that you are running a Mimir cluster:
 
 1. Using this mixin config
 2. Using GCS as object store (but similar procedures apply to other backends)
@@ -587,7 +596,7 @@ How to **investigate**:
 
 ### MimirQueriesIncorrect
 
-_TODO: this playbook has not been written yet._
+_TODO: this runbook has not been written yet._
 
 ### MimirInconsistentRuntimeConfig
 
@@ -623,7 +632,7 @@ How to **investigate**:
 
 This alert fires if Mimir is running without query-scheduler and queries are piling up in the query-frontend queue.
 
-The procedure to investigate it is the same as the one for [`MimirSchedulerQueriesStuck`](#MimirSchedulerQueriesStuck): please see the other playbook for more details.
+The procedure to investigate it is the same as the one for [`MimirSchedulerQueriesStuck`](#MimirSchedulerQueriesStuck): please see the other runbook for more details.
 
 ### MimirSchedulerQueriesStuck
 
@@ -1414,7 +1423,7 @@ This is the short version of an extensive documentation on [how to resize Kubern
 
 In some scenarios, it may be useful to preserve current volume status for inspection, but keep using the volume.
 [Google Persistent Disk supports "Clone"](https://cloud.google.com/compute/docs/disks/add-persistent-disk#source-disk) operation that can be used to do that.
-Newly cloned disk is independant from its original, and can be used for further investigation by attaching it to a new Machine / Pod.
+Newly cloned disk is independent from its original, and can be used for further investigation by attaching it to a new Machine / Pod.
 
 When using Kubernetes, here is YAML file that creates PV (`clone-ingester-7-pv`) pointing to the new disk clone (`clone-pvc-80cc0efa-4996-11ea-ba79-42010a96008c` in this example),
 PVC (`clone-ingester-7-pvc`) pointing to PV, and finally Pod (`clone-ingester-7-dataaccess`) using the PVC to access the disk.
@@ -1508,7 +1517,7 @@ A PVC can be manually deleted by an operator. When a PVC claim is deleted, what 
 
 ### Recover accidentally deleted blocks (Google Cloud specific)
 
-_This playbook assumes you've enabled versioning in your GCS bucket and the retention of deleted blocks didn't expire yet._
+_This runbook assumes you've enabled versioning in your GCS bucket and the retention of deleted blocks didn't expire yet._
 
 These are just example actions but should give you a fair idea on how you could go about doing this. Read the [GCS doc](https://cloud.google.com/storage/docs/using-versioned-objects#gsutil_1) before you proceed.
 
