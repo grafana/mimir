@@ -116,7 +116,6 @@ var cortexRenameMappings = map[string]Mapping{
 	"ingester.lifecycler.availability_zone":                          RenameMapping("ingester.ring.instance_availability_zone"),
 	"ingester.lifecycler.final_sleep":                                RenameMapping("ingester.ring.final_sleep"),
 	"ingester.lifecycler.heartbeat_period":                           RenameMapping("ingester.ring.heartbeat_period"),
-	"ingester.lifecycler.join_after":                                 RenameMapping("ingester.ring.join_after"),
 	"ingester.lifecycler.min_ready_duration":                         RenameMapping("ingester.ring.min_ready_duration"),
 	"ingester.lifecycler.num_tokens":                                 RenameMapping("ingester.ring.num_tokens"),
 	"ingester.lifecycler.observe_period":                             RenameMapping("ingester.ring.observe_period"),
@@ -584,6 +583,7 @@ var removedConfigPaths = append(gemRemovedConfigPath, []string{
 	"ingester.concurrent_flushes",                           // -ingester.concurrent-flushes
 	"ingester.flush_op_timeout",                             // -ingester.flush-op-timeout
 	"ingester.flush_period",                                 // -ingester.flush-period
+	"ingester.lifecycler.join_after",                        // -ingester.ring.join-after
 	"ingester.max_chunk_age",                                // -ingester.max-chunk-age
 	"ingester.max_chunk_idle_time",                          // -ingester.max-chunk-idle
 	"ingester.max_stale_chunk_idle_time",                    // -ingester.max-stale-chunk-idle

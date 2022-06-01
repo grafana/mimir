@@ -44,13 +44,16 @@ type RingConfig struct {
 
 	// Config for the ingester lifecycle control
 	ObservePeriod            time.Duration `yaml:"observe_period" category:"advanced"`
-	JoinAfter                time.Duration `yaml:"join_after" category:"advanced"`
+	DeprecatedJoinAfter      time.Duration `yaml:"join_after" category:"advanced" doc:"hidden"` // TODO Deprecated: remove in Mimir 2.4.0.
 	MinReadyDuration         time.Duration `yaml:"min_ready_duration" category:"advanced"`
 	FinalSleep               time.Duration `yaml:"final_sleep" category:"advanced"`
 	ReadinessCheckRingHealth bool          `yaml:"readiness_check_ring_health" category:"advanced"`
 
 	// Injected internally
 	ListenPort int `yaml:"-"`
+
+	// Used only for testing.
+	JoinAfter time.Duration `yaml:"-"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
@@ -88,7 +91,7 @@ func (cfg *RingConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 
 	/// Lifecycler.
 	f.DurationVar(&cfg.ObservePeriod, prefix+"observe-period", 0*time.Second, "Observe tokens after generating to resolve collisions. Useful when using gossiping ring.")
-	f.DurationVar(&cfg.JoinAfter, prefix+"join-after", 0*time.Second, "Period to wait for a claim from another member; will join automatically after this.")
+	flagext.DeprecatedFlag(f, prefix+"join-after", "Deprecated: this setting was used to set a period of time to wait before joining the hash ring. Mimir now behaves as this setting is always set to 0s.", logger)
 	f.DurationVar(&cfg.MinReadyDuration, prefix+"min-ready-duration", 15*time.Second, "Minimum duration to wait after the internal readiness checks have passed but before succeeding the readiness endpoint. This is used to slowdown deployment controllers (eg. Kubernetes) after an instance is ready and before they proceed with a rolling update, to give the rest of the cluster instances enough time to receive ring updates.")
 	f.DurationVar(&cfg.FinalSleep, prefix+"final-sleep", 0, "Duration to sleep for before exiting, to ensure metrics are scraped.")
 	f.BoolVar(&cfg.ReadinessCheckRingHealth, prefix+"readiness-check-ring-health", true, "When enabled the readiness probe succeeds only after all instances are ACTIVE and healthy in the ring, otherwise only the instance itself is checked. This option should be disabled if in your cluster multiple instances can be rolled out simultaneously, otherwise rolling updates may be slowed down.")

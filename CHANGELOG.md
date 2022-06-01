@@ -1,6 +1,7 @@
 # Changelog
 
 ## Grafana Mimir - main / unreleased
+
 ### Grafana Mimir
 
 * [CHANGE] Increased default configuration for `-server.grpc-max-recv-msg-size-bytes` and `-server.grpc-max-send-msg-size-bytes` from 4MB to 100MB. #1883
@@ -12,6 +13,7 @@
     - `-querier.query-ingesters-within`
     - `-querier.query-store-after`
 * [CHANGE] Config flag category overrides can be set dynamically at runtime. #1934
+* [CHANGE] Ingester: deprecated `-ingester.ring.join-after`. Mimir now behaves as this setting is always set to 0s. This configuration option will be removed in Mimir 2.4.0. #1965
 * [ENHANCEMENT] Distributor: Added limit to prevent tenants from sending excessive number of requests: #1843
   * The following CLI flags (and their respective YAML config options) have been added:
     * `-distributor.request-rate-limit`

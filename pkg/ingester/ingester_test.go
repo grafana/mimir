@@ -619,7 +619,6 @@ func TestIngester_Push(t *testing.T) {
 
 			// Create a mocked ingester
 			cfg := defaultIngesterTestConfig(t)
-			cfg.IngesterRing.JoinAfter = 0
 			cfg.ActiveSeriesMetricsEnabled = !testData.disableActiveSeries
 			limits := defaultLimitsTestConfig()
 			limits.MaxGlobalExemplarsPerUser = testData.maxExemplars
@@ -720,7 +719,6 @@ func TestIngester_Push_ShouldCorrectlyTrackMetricsInMultiTenantScenario(t *testi
 
 	// Create a mocked ingester
 	cfg := defaultIngesterTestConfig(t)
-	cfg.IngesterRing.JoinAfter = 0
 
 	i, err := prepareIngesterWithBlocksStorage(t, cfg, registry)
 	require.NoError(t, err)
@@ -808,7 +806,6 @@ func TestIngester_Push_DecreaseInactiveSeries(t *testing.T) {
 	// Create a mocked ingester
 	cfg := defaultIngesterTestConfig(t)
 	cfg.ActiveSeriesMetricsIdleTimeout = 100 * time.Millisecond
-	cfg.IngesterRing.JoinAfter = 0
 
 	i, err := prepareIngesterWithBlocksStorage(t, cfg, registry)
 	currentTime := time.Now()
@@ -878,7 +875,6 @@ func benchmarkIngesterPush(b *testing.B, limits validation.Limits, errorsExpecte
 
 	// Create a mocked ingester
 	cfg := defaultIngesterTestConfig(b)
-	cfg.IngesterRing.JoinAfter = 0
 
 	ingester, err := prepareIngesterWithBlocksStorage(b, cfg, registry)
 	require.NoError(b, err)
@@ -1176,7 +1172,6 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 
 					// Create a mocked ingester
 					cfg := defaultIngesterTestConfig(b)
-					cfg.IngesterRing.JoinAfter = 0
 
 					limits := defaultLimitsTestConfig()
 					if !testData.prepareConfig(&limits, instanceLimits) {
@@ -3028,7 +3023,6 @@ func TestIngester_OpenExistingTSDBOnStartup(t *testing.T) {
 
 func TestIngester_shipBlocks(t *testing.T) {
 	cfg := defaultIngesterTestConfig(t)
-	cfg.IngesterRing.JoinAfter = 0
 	cfg.BlocksStorageConfig.TSDB.ShipConcurrency = 2
 
 	// Create ingester
@@ -3066,7 +3060,6 @@ func TestIngester_shipBlocks(t *testing.T) {
 
 func TestIngester_dontShipBlocksWhenTenantDeletionMarkerIsPresent(t *testing.T) {
 	cfg := defaultIngesterTestConfig(t)
-	cfg.IngesterRing.JoinAfter = 0
 	cfg.BlocksStorageConfig.TSDB.ShipConcurrency = 2
 
 	// Create ingester
@@ -3115,7 +3108,6 @@ func TestIngester_dontShipBlocksWhenTenantDeletionMarkerIsPresent(t *testing.T) 
 
 func TestIngester_seriesCountIsCorrectAfterClosingTSDBForDeletedTenant(t *testing.T) {
 	cfg := defaultIngesterTestConfig(t)
-	cfg.IngesterRing.JoinAfter = 0
 	cfg.BlocksStorageConfig.TSDB.ShipConcurrency = 2
 
 	// Create ingester
@@ -3159,7 +3151,6 @@ func TestIngester_seriesCountIsCorrectAfterClosingTSDBForDeletedTenant(t *testin
 func TestIngester_closeAndDeleteUserTSDBIfIdle_shouldNotCloseTSDBIfShippingIsInProgress(t *testing.T) {
 	ctx := context.Background()
 	cfg := defaultIngesterTestConfig(t)
-	cfg.IngesterRing.JoinAfter = 0
 	cfg.BlocksStorageConfig.TSDB.ShipConcurrency = 2
 
 	// We want it to be idle immediately (setting to 1ns because 0 means disabled).
@@ -3305,7 +3296,6 @@ func (m *uploaderMock) Sync(ctx context.Context) (uploaded int, err error) {
 
 func TestIngester_invalidSamplesDontChangeLastUpdateTime(t *testing.T) {
 	cfg := defaultIngesterTestConfig(t)
-	cfg.IngesterRing.JoinAfter = 0
 
 	// Create ingester
 	i, err := prepareIngesterWithBlocksStorage(t, cfg, nil)
@@ -3533,7 +3523,6 @@ func TestIngester_flushing(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			cfg := defaultIngesterTestConfig(t)
-			cfg.IngesterRing.JoinAfter = 0
 			cfg.BlocksStorageConfig.TSDB.ShipConcurrency = 1
 			cfg.BlocksStorageConfig.TSDB.ShipInterval = 1 * time.Minute // Long enough to not be reached during the test.
 
@@ -3564,7 +3553,6 @@ func TestIngester_flushing(t *testing.T) {
 
 func TestIngester_ForFlush(t *testing.T) {
 	cfg := defaultIngesterTestConfig(t)
-	cfg.IngesterRing.JoinAfter = 0
 	cfg.BlocksStorageConfig.TSDB.ShipConcurrency = 1
 	cfg.BlocksStorageConfig.TSDB.ShipInterval = 10 * time.Minute // Long enough to not be reached during the test.
 
@@ -3740,7 +3728,6 @@ func Test_Ingester_AllUserStats(t *testing.T) {
 
 func TestIngesterCompactIdleBlock(t *testing.T) {
 	cfg := defaultIngesterTestConfig(t)
-	cfg.IngesterRing.JoinAfter = 0
 	cfg.BlocksStorageConfig.TSDB.ShipConcurrency = 1
 	cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = 1 * time.Hour      // Long enough to not be reached during the test.
 	cfg.BlocksStorageConfig.TSDB.HeadCompactionIdleTimeout = 1 * time.Second // Testing this.
@@ -3819,7 +3806,6 @@ func TestIngesterCompactIdleBlock(t *testing.T) {
 
 func TestIngesterCompactAndCloseIdleTSDB(t *testing.T) {
 	cfg := defaultIngesterTestConfig(t)
-	cfg.IngesterRing.JoinAfter = 0
 	cfg.BlocksStorageConfig.TSDB.ShipInterval = 1 * time.Second // Required to enable shipping.
 	cfg.BlocksStorageConfig.TSDB.ShipConcurrency = 1
 	cfg.BlocksStorageConfig.TSDB.HeadCompactionIdleTimeout = 1 * time.Second
@@ -4033,7 +4019,6 @@ func TestHeadCompactionOnStartup(t *testing.T) {
 
 func TestIngester_CloseTSDBsOnShutdown(t *testing.T) {
 	cfg := defaultIngesterTestConfig(t)
-	cfg.IngesterRing.JoinAfter = 0
 
 	// Create ingester
 	i, err := prepareIngesterWithBlocksStorage(t, cfg, nil)
@@ -4066,7 +4051,6 @@ func TestIngesterNotDeleteUnshippedBlocks(t *testing.T) {
 	cfg := defaultIngesterTestConfig(t)
 	cfg.BlocksStorageConfig.TSDB.BlockRanges = []time.Duration{chunkRange}
 	cfg.BlocksStorageConfig.TSDB.Retention = time.Millisecond // Which means delete all but first block.
-	cfg.IngesterRing.JoinAfter = 0
 
 	// Create ingester
 	reg := prometheus.NewPedanticRegistry()
@@ -4370,7 +4354,6 @@ func TestIngester_PushInstanceLimits(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			// Create a mocked ingester
 			cfg := defaultIngesterTestConfig(t)
-			cfg.IngesterRing.JoinAfter = 0
 			cfg.InstanceLimitsFn = func() *InstanceLimits {
 				return &testData.limits
 			}
@@ -4439,7 +4422,6 @@ func TestIngester_instanceLimitsMetrics(t *testing.T) {
 	cfg.InstanceLimitsFn = func() *InstanceLimits {
 		return &l
 	}
-	cfg.IngesterRing.JoinAfter = 0
 
 	_, err := prepareIngesterWithBlocksStorage(t, cfg, reg)
 	require.NoError(t, err)
@@ -4472,7 +4454,6 @@ func TestIngester_inflightPushRequests(t *testing.T) {
 	// Create a mocked ingester
 	cfg := defaultIngesterTestConfig(t)
 	cfg.InstanceLimitsFn = func() *InstanceLimits { return &limits }
-	cfg.IngesterRing.JoinAfter = 0
 
 	i, err := prepareIngesterWithBlocksStorage(t, cfg, nil)
 	require.NoError(t, err)
@@ -5292,7 +5273,6 @@ func TestIngesterActiveSeries(t *testing.T) {
 
 			// Create a mocked ingester
 			cfg := defaultIngesterTestConfig(t)
-			cfg.IngesterRing.JoinAfter = 0
 			cfg.ActiveSeriesMetricsEnabled = !testData.disableActiveSeries
 
 			limits := defaultLimitsTestConfig()
@@ -5624,7 +5604,6 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 
 			// Create a mocked ingester
 			cfg := defaultIngesterTestConfig(t)
-			cfg.IngesterRing.JoinAfter = 0
 			cfg.ActiveSeriesMetricsEnabled = true
 
 			limits := defaultLimitsTestConfig()
