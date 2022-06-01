@@ -17,7 +17,7 @@ Grafana Mimir is shipped with a comprehensive set of production-ready Grafana da
 Dashboards provide both a high-level and in-depth view of every aspect of a Grafana Mimir cluster.
 You can take a look at all the available dashboards in [this overview]({{< relref "dashboards/_index.md" >}}).
 
-Alerts allow you to monitor the health of a Mimir cluster. For each alert, we provide detailed [playbooks](https://github.com/grafana/mimir/blob/main/operations/mimir-mixin/docs/playbooks.md) to further investigate and fix the issue.
+Alerts allow you to monitor the health of a Mimir cluster. For each alert, we provide detailed [runbooks]({{< relref "../mimir-runbooks/_index.md" >}}) to further investigate and fix the issue.
 
 The [requirements documentation]({{< relref "requirements.md" >}}) lists prerequisites for using the Grafana Mimir dashboards and alerts.
 
