@@ -3,7 +3,7 @@ name: helm-release
 on:
   push:
     branches:
-      - helm-release-test
+      - main
 
 jobs:
   call-update-helm-repo:
