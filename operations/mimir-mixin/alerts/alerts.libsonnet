@@ -127,7 +127,7 @@
         {
           alert: $.alertName('FrontendQueriesStuck'),
           expr: |||
-            sum by (%s) (cortex_query_frontend_queue_length{container="query-frontend"}) > 1
+            sum by (%s, job) (cortex_query_frontend_queue_length) > 1
           ||| % $._config.alert_aggregation_labels,
           'for': '5m',  // We don't want to block for longer.
           labels: {
@@ -135,14 +135,14 @@
           },
           annotations: {
             message: |||
-              There are {{ $value }} queued up queries in %(alert_aggregation_variables)s query-frontend.
+              There are {{ $value }} queued up queries in %(alert_aggregation_variables)s {{ $labels.job }}.
             ||| % $._config,
           },
         },
         {
           alert: $.alertName('SchedulerQueriesStuck'),
           expr: |||
-            sum by (%s) (cortex_query_scheduler_queue_length{container="query-scheduler"}) > 1
+            sum by (%s, job) (cortex_query_scheduler_queue_length) > 1
           ||| % $._config.alert_aggregation_labels,
           'for': '5m',  // We don't want to block for longer.
           labels: {
@@ -150,7 +150,7 @@
           },
           annotations: {
             message: |||
-              There are {{ $value }} queued up queries in %(alert_aggregation_variables)s query-scheduler.
+              There are {{ $value }} queued up queries in %(alert_aggregation_variables)s {{ $labels.job }}.
             ||| % $._config,
           },
         },
@@ -525,55 +525,6 @@
           annotations: {
             message: |||
               %(product)s Ruler %(alert_instance_variable)s in %(alert_aggregation_variables)s is experiencing {{ printf "%%.2f" $value }}%% errors while evaluating rules.
-            ||| % $._config,
-          },
-        },
-        {
-          alert: $.alertName('RulerFrontendQueriesStuck'),
-          expr: |||
-            sum by (%s) (cortex_query_frontend_queue_length{container="ruler-query-frontend"}) > 1
-          ||| % $._config.alert_aggregation_labels,
-          'for': '5m',  // We don't want to block for longer.
-          labels: {
-            severity: 'warning',
-          },
-          annotations: {
-            message: |||
-              There are {{ $value }} queued up queries in %(alert_aggregation_variables)s ruler-query-frontend.
-            ||| % $._config,
-          },
-        },
-        {
-          alert: $.alertName('RulerSchedulerQueriesStuck'),
-          expr: |||
-            sum by (%s) (cortex_query_scheduler_queue_length{container="ruler-query-scheduler"}) > 1
-          ||| % $._config.alert_aggregation_labels,
-          'for': '5m',  // We don't want to block for longer.
-          labels: {
-            severity: 'warning',
-          },
-          annotations: {
-            message: |||
-              There are {{ $value }} queued up queries in %(alert_aggregation_variables)s ruler-query-scheduler.
-            ||| % $._config,
-          },
-        },
-        {
-          alert: $.alertName('RulerMissedEvaluations'),
-          expr: |||
-            100 * (
-            sum by (%(alert_aggregation_labels)s, %(per_instance_label)s, rule_group) (rate(cortex_prometheus_rule_group_iterations_missed_total[1m]))
-              /
-            sum by (%(alert_aggregation_labels)s, %(per_instance_label)s, rule_group) (rate(cortex_prometheus_rule_group_iterations_total[1m]))
-            ) > 1
-          ||| % $._config,
-          'for': '5m',
-          labels: {
-            severity: 'warning',
-          },
-          annotations: {
-            message: |||
-              %(product)s Ruler %(alert_instance_variable)s in %(alert_aggregation_variables)s is experiencing {{ printf "%%.2f" $value }}%% missed iterations for the rule group {{ $labels.rule_group }}.
             ||| % $._config,
           },
         },

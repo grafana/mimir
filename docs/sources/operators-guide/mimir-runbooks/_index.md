@@ -334,18 +334,6 @@ How to **fix** it:
 - Increase the evaluation interval of the rule group. You can use the rate of missed evaluation to estimate how long the rule group evaluation actually takes.
 - Try splitting up the rule group into multiple rule groups. Rule groups are evaluated in parallel, so the same rules may still fit in the same resolution.
 
-### MimirRulerFrontendQueriesStuck
-
-This alert fires if Mimir is running without ruler-query-scheduler and queries are piling up in the ruler-query-frontend queue.
-
-The procedure to investigate it is the same as the one for [`MimirSchedulerQueriesStuck`](#MimirSchedulerQueriesStuck): please see the other playbook for more details.
-
-### MimirRulerSchedulerQueriesStuck
-
-This alert fires if queries are piling up in the ruler-query-scheduler.
-
-The procedure to investigate it is the same as the one for [`MimirSchedulerQueriesStuck`](#MimirSchedulerQueriesStuck): please see the other playbook for more details.
-
 ### MimirIngesterHasNotShippedBlocks
 
 This alert fires when a Mimir ingester is not uploading any block to the long-term storage. An ingester is expected to upload a block to the storage every block range period (defaults to 2h) and if a longer time elapse since the last successful upload it means something is not working correctly.

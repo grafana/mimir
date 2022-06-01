@@ -66,18 +66,18 @@ groups:
   - alert: MimirFrontendQueriesStuck
     annotations:
       message: |
-        There are {{ $value }} queued up queries in {{ $labels.cluster }}/{{ $labels.namespace }} query-frontend.
+        There are {{ $value }} queued up queries in {{ $labels.cluster }}/{{ $labels.namespace }} {{ $labels.job }}.
     expr: |
-      sum by (cluster, namespace) (cortex_query_frontend_queue_length{container="query-frontend"}) > 1
+      sum by (cluster, namespace, job) (cortex_query_frontend_queue_length) > 1
     for: 5m
     labels:
       severity: critical
   - alert: MimirSchedulerQueriesStuck
     annotations:
       message: |
-        There are {{ $value }} queued up queries in {{ $labels.cluster }}/{{ $labels.namespace }} query-scheduler.
+        There are {{ $value }} queued up queries in {{ $labels.cluster }}/{{ $labels.namespace }} {{ $labels.job }}.
     expr: |
-      sum by (cluster, namespace) (cortex_query_scheduler_queue_length{container="query-scheduler"}) > 1
+      sum by (cluster, namespace, job) (cortex_query_scheduler_queue_length) > 1
     for: 5m
     labels:
       severity: critical
@@ -318,37 +318,6 @@ groups:
       sum by (cluster, namespace, pod) (rate(cortex_ruler_queries_failed_total[1m]))
         /
       sum by (cluster, namespace, pod) (rate(cortex_ruler_queries_total[1m]))
-      ) > 1
-    for: 5m
-    labels:
-      severity: warning
-  - alert: MimirRulerFrontendQueriesStuck
-    annotations:
-      message: |
-        There are {{ $value }} queued up queries in {{ $labels.cluster }}/{{ $labels.namespace }} ruler-query-frontend.
-    expr: |
-      sum by (cluster, namespace) (cortex_query_frontend_queue_length{container="ruler-query-frontend"}) > 1
-    for: 5m
-    labels:
-      severity: warning
-  - alert: MimirRulerSchedulerQueriesStuck
-    annotations:
-      message: |
-        There are {{ $value }} queued up queries in {{ $labels.cluster }}/{{ $labels.namespace }} ruler-query-scheduler.
-    expr: |
-      sum by (cluster, namespace) (cortex_query_scheduler_queue_length{container="ruler-query-scheduler"}) > 1
-    for: 5m
-    labels:
-      severity: warning
-  - alert: MimirRulerMissedEvaluations
-    annotations:
-      message: |
-        Mimir Ruler {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} is experiencing {{ printf "%.2f" $value }}% missed iterations for the rule group {{ $labels.rule_group }}.
-    expr: |
-      100 * (
-      sum by (cluster, namespace, pod, rule_group) (rate(cortex_prometheus_rule_group_iterations_missed_total[1m]))
-        /
-      sum by (cluster, namespace, pod, rule_group) (rate(cortex_prometheus_rule_group_iterations_total[1m]))
       ) > 1
     for: 5m
     labels:
