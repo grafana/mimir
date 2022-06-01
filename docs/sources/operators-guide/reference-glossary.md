@@ -2,7 +2,7 @@
 title: "Reference: Grafana Mimir glossary"
 menuTitle: "Reference: Glossary"
 description: "Grafana Mimir glossary terms."
-weight: 100
+weight: 130
 ---
 
 # Reference: Grafana Mimir glossary
