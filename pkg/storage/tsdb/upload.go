@@ -81,7 +81,7 @@ func UploadBlock(ctx context.Context, logger log.Logger, bkt objstore.Bucket, bl
 	return nil
 }
 
-// Hopefully can be replaced with Thanos public function: https://github.com/thanos-io/thanos/pull/5400
+// Hopefully we can replace this function with version from Thanos: https://github.com/thanos-io/thanos/pull/5400
 func gatherFileStats(blockDir string) (res []metadata.File, _ error) {
 	files, err := ioutil.ReadDir(filepath.Join(blockDir, block.ChunksDirname))
 	if err != nil {
@@ -112,16 +112,16 @@ func gatherFileStats(blockDir string) (res []metadata.File, _ error) {
 	res = append(res, metadata.File{RelPath: metaFile.Name()})
 
 	sort.Slice(res, func(i, j int) bool {
-		return strings.Compare(res[i].RelPath, res[j].RelPath) < 0
+		return res[i].RelPath < res[j].RelPath
 	})
 	return res, err
 }
 
-func cleanUp(logger log.Logger, bkt objstore.Bucket, id ulid.ULID, err error) error {
+func cleanUp(logger log.Logger, bkt objstore.Bucket, id ulid.ULID, origErr error) error {
 	// Cleanup the dir with an uncancelable context.
 	cleanErr := block.Delete(context.Background(), logger, bkt, id)
 	if cleanErr != nil {
-		return errors.Wrapf(err, "failed to clean block after upload issue. Partial block in system. Err: %s", err.Error())
+		return errors.Wrapf(origErr, "failed to clean block after upload issue. Partial block in system. Err: %s", cleanErr.Error())
 	}
-	return err
+	return origErr
 }

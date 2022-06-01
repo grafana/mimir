@@ -187,14 +187,15 @@ func (s *Shipper) Sync(ctx context.Context) (uploaded int, err error) {
 	return uploaded, nil
 }
 
-// update local meta.json file with Thanos-specific details, and upload the block
-// to blocks storage.
+// upload method uploads the block to blocks storage. Block is uploaded with updated meta.json file with extra details.
+// This updated version of meta.json is however not persisted locally on the disk, to avoid race condition when TSDB
+// library could actually unload the block if it found meta.json file missing.
 func (s *Shipper) upload(ctx context.Context, meta *metadata.Meta) error {
 	level.Info(s.logger).Log("msg", "upload new block", "id", meta.ULID)
 
 	blockDir := filepath.Join(s.dir, meta.ULID.String())
 
-	// Attach current labels and write. Don't write the file to disk, but upload it to the bucket.
+	// Attach current labels. Don't write the file to disk, but upload it to the bucket.
 	if lset := s.labels(); lset != nil {
 		meta.Thanos.Labels = lset.Map()
 	}
