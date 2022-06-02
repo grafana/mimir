@@ -158,15 +158,6 @@ func (a *API) RegisterRoute(path string, handler http.Handler, auth, gzipEnabled
 	a.newRoute(path, handler, false, auth, gzipEnabled, methods...)
 }
 
-func (a *API) RegisterRouteWithQueryParameters(path string, handler http.Handler, auth, gzipEnabled bool,
-	params []string, method string, methods ...string) {
-	methods = append([]string{method}, methods...)
-	level.Debug(a.logger).Log("msg", "api: registering route with query parameters", "methods", strings.Join(methods, ","),
-		"path", path, "auth", auth, "gzip", gzipEnabled, "query_parameters", params)
-	route := a.newRoute(path, handler, false, auth, gzipEnabled, methods...)
-	route.Queries(params...)
-}
-
 func (a *API) RegisterRoutesWithPrefix(prefix string, handler http.Handler, auth, gzipEnabled bool, methods ...string) {
 	level.Debug(a.logger).Log("msg", "api: registering route", "methods", strings.Join(methods, ","), "prefix", prefix, "auth", auth, "gzip", gzipEnabled)
 	a.newRoute(prefix, handler, true, auth, gzipEnabled, methods...)
@@ -369,19 +360,19 @@ func (a *API) RegisterCompactor(c *compactor.MultitenantCompactor) {
 		{Desc: "Ring status", Path: "/compactor/ring"},
 	})
 	a.RegisterRoute("/compactor/ring", http.HandlerFunc(c.RingHandler), false, true, "GET", "POST")
-	// Endpoint to handle requests for completion of block backfilling.
-	// Placed before less specific handler for same route, that doesn't take query parameter, for precedence.
-	a.RegisterRouteWithQueryParameters("/api/v1/upload/block/{block}", http.HandlerFunc(c.CompleteBlockUpload),
-		true, false, []string{"uploadComplete", "true"}, http.MethodPost)
-	// Endpoint to handle requests for starting of block uploading.
+	// Endpoint to handle requests for starting or completion of block backfilling.
+	// The query parameter uploadComplete (true or false, default false) controls whether the
+	// upload should be completed or not.
+	//
 	// Starting the uploading of a block means to upload meta.json and verify that the upload can go ahead.
 	// In practice this means to check that the (complete) block isn't already in block storage,
 	// and that meta.json is valid.
-	a.RegisterRoute("/api/v1/upload/block/{block}", http.HandlerFunc(c.CreateBlockUpload), true,
+	a.RegisterRoute("/api/v1/upload/block/{block}", http.HandlerFunc(c.HandleBlockUpload), true,
 		false, http.MethodPost)
-	// Endpoint to handle requests for uploading block files.
-	a.RegisterRouteWithQueryParameters("/api/v1/upload/block/{block}/files", http.HandlerFunc(c.UploadBlockFile),
-		true, false, []string{"path", "{path}"}, http.MethodPost)
+	// Endpoint to handle requests for uploading block files. It takes the mandatory query parameter
+	// "path", specifying the file's destination path.
+	a.RegisterRoute("/api/v1/upload/block/{block}/files", http.HandlerFunc(c.UploadBlockFile),
+		true, false, http.MethodPost)
 }
 
 type Distributor interface {

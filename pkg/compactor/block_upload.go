@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"net/url"
 	"path"
 	"strings"
 
@@ -26,8 +25,8 @@ import (
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 )
 
-// CreateBlockUpload handles requests for starting block uploads.
-func (c *MultitenantCompactor) CreateBlockUpload(w http.ResponseWriter, r *http.Request) {
+// HandleBlockUpload handles requests for starting or completing block uploads.
+func (c *MultitenantCompactor) HandleBlockUpload(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	blockID := vars["block"]
 	if blockID == "" {
@@ -45,11 +44,20 @@ func (c *MultitenantCompactor) CreateBlockUpload(w http.ResponseWriter, r *http.
 		return
 	}
 
+	if r.URL.Query().Get("uploadComplete") == "true" {
+		c.completeBlockUpload(ctx, w, r, tenantID, bULID)
+	} else {
+		c.createBlockUpload(ctx, w, r, tenantID, bULID)
+	}
+}
+
+func (c *MultitenantCompactor) createBlockUpload(ctx context.Context, w http.ResponseWriter, r *http.Request,
+	tenantID string, blockID ulid.ULID) {
 	level.Debug(c.logger).Log("msg", "starting block upload", "user", tenantID, "block", blockID)
 
 	bkt := bucket.NewUserBucketClient(string(tenantID), c.bucketClient, c.cfgProvider)
 
-	exists, err := bkt.Exists(ctx, path.Join(blockID, "meta.json"))
+	exists, err := bkt.Exists(ctx, path.Join(blockID.String(), "meta.json"))
 	if err != nil {
 		level.Error(c.logger).Log("msg", "failed to check existence of meta.json in object storage",
 			"user", tenantID, "block", blockID, "err", err)
@@ -70,7 +78,7 @@ func (c *MultitenantCompactor) CreateBlockUpload(w http.ResponseWriter, r *http.
 		return
 	}
 
-	if err := c.sanitizeMeta(tenantID, bULID, &meta); err != nil {
+	if err := c.sanitizeMeta(tenantID, blockID, &meta); err != nil {
 		var eBadReq errBadRequest
 		if errors.As(err, &eBadReq) {
 			level.Warn(c.logger).Log("msg", eBadReq.message, "user", tenantID,
@@ -108,13 +116,9 @@ func (c *MultitenantCompactor) UploadBlockFile(w http.ResponseWriter, r *http.Re
 		http.Error(w, "invalid block ID", http.StatusBadRequest)
 		return
 	}
-	pth, err := url.QueryUnescape(vars["path"])
-	if err != nil {
-		http.Error(w, fmt.Sprintf("malformed file path: %q", vars["path"]), http.StatusBadRequest)
-		return
-	}
+	pth := r.URL.Query().Get("path")
 	if pth == "" {
-		http.Error(w, "missing file path", http.StatusBadRequest)
+		http.Error(w, "missing or invalid file path", http.StatusBadRequest)
 		return
 	}
 
@@ -193,32 +197,14 @@ func (c *MultitenantCompactor) UploadBlockFile(w http.ResponseWriter, r *http.Re
 	w.WriteHeader(http.StatusOK)
 }
 
-// CompleteBlockUpload handles a request to complete a block upload.
-func (c *MultitenantCompactor) CompleteBlockUpload(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	blockID := vars["block"]
-	if blockID == "" {
-		http.Error(w, "missing block ID", http.StatusBadRequest)
-		return
-	}
-	_, err := ulid.Parse(blockID)
-	if err != nil {
-		http.Error(w, "invalid block ID", http.StatusBadRequest)
-		return
-	}
-
-	tenantID, ctx, err := tenant.ExtractTenantIDFromHTTPRequest(r)
-	if err != nil {
-		http.Error(w, "invalid tenant ID", http.StatusBadRequest)
-		return
-	}
-
+func (c *MultitenantCompactor) completeBlockUpload(ctx context.Context, w http.ResponseWriter, r *http.Request,
+	tenantID string, blockID ulid.ULID) {
 	level.Debug(c.logger).Log("msg", "received request to complete block upload", "user", tenantID,
 		"block", blockID, "content_length", r.ContentLength)
 
 	bkt := bucket.NewUserBucketClient(tenantID, c.bucketClient, c.cfgProvider)
 
-	rdr, err := bkt.Get(ctx, path.Join(blockID, "meta.json.temp"))
+	rdr, err := bkt.Get(ctx, path.Join(blockID.String(), "meta.json.temp"))
 	if err != nil {
 		level.Error(c.logger).Log("msg", "failed to download meta.json.temp from object storage",
 			"user", tenantID, "block", blockID, "err", err)
@@ -229,7 +215,7 @@ func (c *MultitenantCompactor) CompleteBlockUpload(w http.ResponseWriter, r *htt
 	var meta metadata.Meta
 	if err := dec.Decode(&meta); err != nil {
 		level.Error(c.logger).Log("msg", "failed to decode meta.json",
-			"user", tenantID, "block", blockID, "err", err)
+			"user", tenantID, "block", blockID.String(), "err", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
@@ -245,7 +231,7 @@ func (c *MultitenantCompactor) CompleteBlockUpload(w http.ResponseWriter, r *htt
 		return
 	}
 
-	if err := bkt.Delete(ctx, path.Join(blockID, "meta.json.temp")); err != nil {
+	if err := bkt.Delete(ctx, path.Join(blockID.String(), "meta.json.temp")); err != nil {
 		level.Error(c.logger).Log("msg", "failed to delete meta.json.temp from block in object storage",
 			"user", tenantID, "block", blockID, "err", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
@@ -301,8 +287,8 @@ func (c *MultitenantCompactor) sanitizeMeta(tenantID string, blockID ulid.ULID, 
 }
 
 func (c *MultitenantCompactor) uploadMeta(ctx context.Context, w http.ResponseWriter, meta metadata.Meta,
-	blockID, tenantID, name string, bkt objstore.Bucket) error {
-	dst := path.Join(blockID, name)
+	blockID ulid.ULID, tenantID, name string, bkt objstore.Bucket) error {
+	dst := path.Join(blockID.String(), name)
 	level.Debug(c.logger).Log("msg", fmt.Sprintf("uploading %s to bucket", name), "dst", dst)
 	buf := bytes.NewBuffer(nil)
 	enc := json.NewEncoder(buf)
