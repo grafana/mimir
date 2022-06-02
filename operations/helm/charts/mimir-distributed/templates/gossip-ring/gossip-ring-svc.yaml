@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "mimir.resourceName" (dict "ctx" . "component" "gossip-ring") }}
+  labels:
+    {{- include "mimir.labels" (dict "ctx" . "component" "gossip-ring") | nindent 4 }}
+spec:
+  type: ClusterIP
+  clusterIP: None
+  ports:
+    - name: gossip-ring
+      port: {{ include "mimir.memberlistBindPort" . }}
+      protocol: TCP
+      targetPort: {{ include "mimir.memberlistBindPort" . }}
+  publishNotReadyAddresses: true
+  selector:
+    {{- include "mimir.gossipRingSelectorLabels" (dict "ctx" .) | nindent 4 }}
