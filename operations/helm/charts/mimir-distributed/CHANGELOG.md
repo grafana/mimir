@@ -14,8 +14,8 @@ Entries should include a reference to the Pull Request that introduced the chang
 ## 2.1.0-beta.7
 
 * [ENHANCEMENT] Bump image version to 2.1
-  - For Grafana Mimir, see the release notes here: https://grafana.com/docs/mimir/latest/release-notes/v2.1/
-  - For Grafana Enterprise Metrics, see the release notes here: https://grafana.com/docs/enterprise-metrics/v2.1.x/release-notes/v2-1/
+  - For Grafana Mimir, see the release notes here: [Grafana Mimir 2.1](https://grafana.com/docs/mimir/latest/release-notes/v2.1/)
+  - For Grafana Enterprise Metrics, see the release notes here: [Grafana Enterprise Metrics 2.1](https://grafana.com/docs/enterprise-metrics/v2.1.x/release-notes/v2-1/)
 
 ## 2.1.0-beta.6
 
