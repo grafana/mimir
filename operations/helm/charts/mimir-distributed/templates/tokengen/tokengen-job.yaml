@@ -1,0 +1,77 @@
+{{- if .Values.enterprise.enabled -}}
+{{ if .Values.tokengenJob.enable }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "mimir.resourceName" (dict "ctx" . "component" "tokengen") }}
+  labels:
+    {{- include "mimir.labels" (dict "ctx" . "component" "tokengen") | nindent 4 }}
+  annotations:
+    {{- if .Values.tokengenJob.annotations }}
+    {{- toYaml .Values.tokengenJob.annotations | nindent 4 }}
+    {{- end }}
+    "helm.sh/hook": post-install
+spec:
+  backoffLimit: 6
+  completions: 1
+  parallelism: 1
+  selector:
+  template:
+    metadata:
+      labels:
+        {{- include "mimir.podLabels" (dict "ctx" . "component" "tokengen") | nindent 8 }}
+        {{- with .Values.tokengenJob.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ template "mimir.serviceAccountName" . }}
+      {{- if .Values.tokengenJob.priorityClassName }}
+      priorityClassName: {{ .Values.tokengenJob.priorityClassName }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.tokengenJob.securityContext | nindent 8 }}
+      {{- if .Values.image.pullSecrets }}
+      imagePullSecrets:
+      {{- range .Values.image.pullSecrets }}
+        - name: {{ . }}
+      {{- end }}
+      {{- end }}
+      initContainers:
+        {{- toYaml .Values.tokengenJob.initContainers | nindent 8 }}
+      containers:
+        - name: tokengen
+          image: "{{ include "mimir.imageReference" . }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - "-target=tokengen"
+            - "-config.file=/etc/mimir/mimir.yaml"
+            {{- range $key, $value := .Values.tokengenJob.extraArgs }}
+            - "-{{ $key }}={{ $value }}"
+            {{- end }}
+          volumeMounts:
+            {{- if .Values.tokengenJob.extraVolumeMounts }}
+              {{ toYaml .Values.tokengenJob.extraVolumeMounts | nindent 12 }}
+            {{- end }}
+            - name: config
+              mountPath: /etc/mimir
+            - name: license
+              mountPath: /license
+          env:
+            {{- if .Values.tokengenJob.env }}
+              {{ toYaml .Values.tokengenJob.env | nindent 12 }}
+            {{- end }}
+      restartPolicy: OnFailure
+      volumes:
+        - name: config
+          secret:
+            secretName: {{ tpl .Values.externalConfigSecretName . }}
+        {{- if .Values.tokengenJob.extraVolumes }}
+        {{ toYaml .Values.tokengenJob.extraVolumes | nindent 8 }}
+        {{- end }}
+        - name: license
+          secret:
+            secretName: {{ tpl .Values.license.secretName . }}
+        - name: storage
+          emptyDir: {}
+{{- end -}}
+{{- end -}}

@@ -1,0 +1,30 @@
+{{- if not .Values.enterprise.enabled -}}
+{{- if .Values.nginx.autoscaling.enabled }}
+apiVersion: autoscaling/v2beta1
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "mimir.resourceName" (dict "ctx" . "component" "nginx") }}
+  labels:
+    {{- include "mimir.labels" (dict "ctx" . "component" "nginx") | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "mimir.resourceName" (dict "ctx" . "component" "nginx") }}
+  minReplicas: {{ .Values.nginx.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.nginx.autoscaling.maxReplicas }}
+  metrics:
+  {{- with .Values.nginx.autoscaling.targetMemoryUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: memory
+        targetAverageUtilization: {{ . }}
+  {{- end }}
+  {{- with .Values.nginx.autoscaling.targetCPUUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: cpu
+        targetAverageUtilization: {{ . }}
+  {{- end }}
+{{- end -}}
+{{- end -}}
