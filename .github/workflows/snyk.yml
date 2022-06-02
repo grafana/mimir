@@ -1,4 +1,4 @@
-name: Snyk SBOM CI
+name: snyk-sbom-ci
 
 on:
   push:
