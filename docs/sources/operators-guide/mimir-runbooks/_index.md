@@ -228,7 +228,7 @@ How to **investigate**:
     - If queries are waiting in queue due to busy queriers
       - Consider scaling up number of queriers if they're not auto-scaled; if auto-scaled, check auto-scaling parameters
     - If queries are not waiting in queue due to busy queriers
-      - Consider enabling query sharding if not already enabled, to increase query parallelism
+      - Consider [enabling query sharding]({{< relref "../architecture/query-sharding/index.md#how-to-enable-query sharding" >}}) if not already enabled, to increase query parallelism
       - If query sharding already enabled, consider increasing total number of query shards (`query_sharding_total_shards`) for tenants submitting slow queries, so their queries can be further parallelized
 
 #### Alertmanager
