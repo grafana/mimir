@@ -52,7 +52,7 @@
 
 ### Mimirtool
 
-* [BUGFIX] mimirtool analyze: Use fork of grafana-tools/sdk library maintained by @colega. #1973
+* [BUGFIX] mimirtool analyze: Fix dashboard JSON unmarshalling errors (#1840). #1973
 
 ## 2.1.0
 ### Grafana Mimir
