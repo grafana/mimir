@@ -1,10 +1,10 @@
 # Grafana Mimir Helm Chart
 
-Helm chart for deploying [Grafana Mimir](https://grafana.com/docs/mimir/v2.0.x/) or optionally [Grafana Enterprise Metrics](https://grafana.com/docs/enterprise-metrics/v2.0.x/) to Kubernetes. Derived from [Grafana Enterprise Metrics Helm Chart](https://github.com/grafana/helm-charts/blob/main/charts/enterprise-metrics/README.md)
+Helm chart for deploying [Grafana Mimir](https://grafana.com/docs/mimir/v2.1.x/) or optionally [Grafana Enterprise Metrics](https://grafana.com/docs/enterprise-metrics/v2.1.x/) to Kubernetes. Derived from [Grafana Enterprise Metrics Helm Chart](https://github.com/grafana/helm-charts/blob/main/charts/enterprise-metrics/README.md)
 
 # mimir-distributed
 
-![Version: 2.1.0-beta.6](https://img.shields.io/badge/Version-2.1.0--beta.6-informational?style=flat-square) ![AppVersion: 2.0.0](https://img.shields.io/badge/AppVersion-2.0.0-informational?style=flat-square)
+![Version: 2.1.0-beta.7](https://img.shields.io/badge/Version-2.1.0--beta.7-informational?style=flat-square) ![AppVersion: 2.1.0](https://img.shields.io/badge/AppVersion-2.1.0-informational?style=flat-square)
 
 Grafana Mimir
 
@@ -27,12 +27,12 @@ Kubernetes: `^1.10.0-0`
 Grafana Mimir and Grafana Enterprise Metrics require an object storage backend to store metrics and indexes.
 
 The default chart values will deploy [Minio](https://min.io) for initial set up. Production deployments should use a separately deployed object store.
-See [Grafana Mimir documentation](https://grafana.com/docs/mimir/v2.0.x/) for details on storage types and documentation.
+See [Grafana Mimir documentation](https://grafana.com/docs/mimir/v2.1.x/) for details on storage types and documentation.
 
 ### Grafana Enterprise Metrics license
 
 In order to use the enterprise features of this chart, you need to provide the contents of a Grafana Enterprise Metrics license file as the value for the `license.contents` variable.
-To obtain a Grafana Enterprise Metrics license, refer to [Get a license](https://grafana.com/docs/enterprise-metrics/v2.0.x/setup/#get-a-gem-license).
+To obtain a Grafana Enterprise Metrics license, refer to [Get a license](https://grafana.com/docs/enterprise-metrics/v2.1.x/setup/#get-a-gem-license).
 
 ### Helm3
 
@@ -64,7 +64,7 @@ resources (CPU/memory) available in your cluster before installing Grafana Mimir
 
 ### Migration from Cortex to Grafana Mimir
 
-Please consult the [Migration from Cortex to Grafana](https://grafana.com/docs/mimir/v2.0.x/migration-guide/migrating-from-cortex/) guide on how to update the configuration.
+Please consult the [Migration from Cortex to Grafana](https://grafana.com/docs/mimir/v2.1.x/migration-guide/migrating-from-cortex/) guide on how to update the configuration.
 Prepare a custom values file with the contents:
 
 ```yaml
@@ -91,7 +91,7 @@ helm install <cluster name> grafana/mimir-distributed --set 'enterprise.enabled=
 
 ### Upgrade from a previous version of Grafana Enterprise Metrics
 
-Please consult the [migration guide](https://grafana.com/docs/enterprise-metrics/v2.0.x/migrating-from-gem-1.7/) for details on how to prepare the configuration. Prepare a custom values file, with the contents:
+Please consult the [migration guide](https://grafana.com/docs/enterprise-metrics/v2.1.x/migrating-from-gem-1.7/) for details on how to prepare the configuration. Prepare a custom values file, with the contents:
 
 ```yaml
 enterprise:
@@ -135,7 +135,7 @@ production clusters at this scale.
 It is important to ensure that you run no more than one ingester replica
 per node so that a single node failure does not cause data loss. Zone aware
 replication can be configured to ensure data replication spans availability
-zones. Refer to [Zone Aware Replication](https://grafana.com/docs/mimir/v2.0.x/operators-guide/configuring/configuring-zone-aware-replication/)
+zones. Refer to [Zone Aware Replication](https://grafana.com/docs/mimir/v2.1.x/operators-guide/configuring/configuring-zone-aware-replication/)
 for more information.
 Minio is no longer enabled and you are encouraged to use your cloud providers
 object storage service for production deployments.
@@ -157,7 +157,7 @@ production clusters at this scale.
 It is important to ensure that you run no more than one ingester replica
 per node so that a single node failure does not cause data loss. Zone aware
 replication can be configured to ensure data replication spans availability
-zones. Refer to [Zone Aware Replication](https://grafana.com/docs/mimir/v2.0.x/operators-guide/configuring/configuring-zone-aware-replication/)
+zones. Refer to [Zone Aware Replication](https://grafana.com/docs/mimir/v2.1.x/operators-guide/configuring/configuring-zone-aware-replication/)
 for more information.
 Minio is no longer enabled and you are encouraged to use your cloud providers
 object storage service for production deployments.

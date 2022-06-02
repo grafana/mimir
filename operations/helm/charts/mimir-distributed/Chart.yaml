@@ -1,9 +1,9 @@
 apiVersion: v2
-version: 2.1.0-beta.6
-appVersion: 2.0.0
+version: 2.1.0-beta.7
+appVersion: 2.1.0
 description: "Grafana Mimir"
 engine: gotpl
-home: https://grafana.com/docs/mimir/v2.0.x/
+home: https://grafana.com/docs/mimir/v2.1.x/
 icon: https://grafana.com/static/img/logos/logo-mimir.svg
 kubeVersion: ^1.10.0-0
 name: mimir-distributed
