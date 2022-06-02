@@ -11,8 +11,9 @@ package storegateway
 import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"github.com/thanos-io/thanos/pkg/block/indexheader"
 	"github.com/thanos-io/thanos/pkg/extprom"
+
+	"github.com/grafana/mimir/pkg/storegateway/indexheader"
 )
 
 // BucketStoreMetrics holds all the metrics tracked by BucketStore. These metrics
