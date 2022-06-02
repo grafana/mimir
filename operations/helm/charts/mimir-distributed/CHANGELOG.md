@@ -11,6 +11,12 @@ Entries should be ordered as follows:
 
 Entries should include a reference to the Pull Request that introduced the change.
 
+## 2.1.0-beta.7
+
+* [ENHANCEMENT] Bump image version to 2.1
+  - For Grafana Mimir, see the release notes here: https://grafana.com/docs/mimir/latest/release-notes/v2.1/
+  - For Grafana Enterprise Metrics, see the release notes here: https://grafana.com/docs/enterprise-metrics/v2.1.x/release-notes/v2-1/
+
 ## 2.1.0-beta.6
 
 * [ENHANCEMENT] Disable `ingester.ring.unregister-on-shutdown` and `distributor.extend-writes` #1994
