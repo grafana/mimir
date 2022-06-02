@@ -41,6 +41,10 @@ func (c *MimirClient) backfillBlock(ctx context.Context, dpath string, logger lo
 	if err != nil {
 		return errors.Wrapf(err, "failed to open %q", metaPath)
 	}
+	st, err := f.Stat()
+	if err != nil {
+		return errors.Wrap(err, "failed to get file info")
+	}
 
 	dec := json.NewDecoder(f)
 	var blockMeta metadata.Meta
@@ -55,7 +59,7 @@ func (c *MimirClient) backfillBlock(ctx context.Context, dpath string, logger lo
 
 	level.Info(logger).Log("msg", "Making request to start block backfill", "user", c.id, "block_id", blockID)
 
-	res, err := c.doRequest(fmt.Sprintf("/api/v1/upload/block/%s", blockID), http.MethodPost, nil, -1)
+	res, err := c.doRequest(fmt.Sprintf("/api/v1/upload/block/%s", blockID), http.MethodPost, f, st.Size())
 	if err != nil {
 		return errors.Wrap(err, "request to start backfill failed")
 	}
