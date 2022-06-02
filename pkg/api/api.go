@@ -373,12 +373,13 @@ func (a *API) RegisterCompactor(c *compactor.MultitenantCompactor) {
 	// Placed before less specific handler for same route, that doesn't take query parameter, for precedence.
 	a.RegisterRouteWithQueryParameters("/api/v1/upload/block/{block}", http.HandlerFunc(c.CompleteBlockUpload),
 		true, false, []string{"uploadComplete", "true"}, http.MethodPost)
-	// Endpoint to handle requests for starting of block backfilling.
-	// Starting the backfilling of a block means to verify that the backfill can go ahead.
-	// In practice this means to check that the block isn't already in block storage.
+	// Endpoint to handle requests for starting of block uploading.
+	// Starting the uploading of a block means to upload meta.json and verify that the upload can go ahead.
+	// In practice this means to check that the (complete) block isn't already in block storage,
+	// and that meta.json is valid.
 	a.RegisterRoute("/api/v1/upload/block/{block}", http.HandlerFunc(c.CreateBlockUpload), true,
 		false, http.MethodPost)
-	// Endpoint to handle requests for uploading block files to a backfill.
+	// Endpoint to handle requests for uploading block files.
 	a.RegisterRouteWithQueryParameters("/api/v1/upload/block/{block}/files", http.HandlerFunc(c.UploadBlockFile),
 		true, false, []string{"path", "{path}"}, http.MethodPost)
 }
