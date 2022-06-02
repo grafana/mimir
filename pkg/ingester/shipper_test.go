@@ -23,7 +23,7 @@ import (
 )
 
 func createBlock(t *testing.T, blocksDir string, id ulid.ULID, m metadata.Meta) {
-	// We need "chunks" dir and "index" file for hardlinking code to work.
+	// We need "chunks" dir and "index" files for upload to work correctly (it expects these to exist).
 	require.NoError(t, os.MkdirAll(path.Join(blocksDir, id.String(), "chunks"), 0777))
 	require.NoError(t, m.WriteToDir(log.NewNopLogger(), path.Join(blocksDir, id.String())))
 
@@ -88,7 +88,7 @@ func TestShipper(t *testing.T) {
 
 	id2 := ulid.MustNew(2, nil)
 
-	t.Run("sync another block", func(t *testing.T) {
+	t.Run("sync block without external labels", func(t *testing.T) {
 		createBlock(t, blocksDir, id2, metadata.Meta{
 			BlockMeta: tsdb.BlockMeta{
 				ULID:    id2,
@@ -99,7 +99,7 @@ func TestShipper(t *testing.T) {
 					NumSamples: 100,
 				},
 			},
-			Thanos: metadata.Thanos{Labels: map[string]string{"c": "d"}},
+			// No Thanos stuff, this will still work.
 		})
 
 		// Sync new block
