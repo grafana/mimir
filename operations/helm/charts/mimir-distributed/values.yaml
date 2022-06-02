@@ -88,6 +88,14 @@ mimir:
     frontend:
       log_queries_longer_than: 10s
       align_queries_with_step: true
+      {{- if index .Values "memcached-results" "enabled" }}
+      results_cache:
+        backend: memcached
+        memcached:
+          addresses: dns+{{ .Release.Name }}-memcached-results.{{ .Release.Namespace }}.svc:11211
+          max_item_size: {{ (index .Values "memcached-results").maxItemMemory }}
+      cache_results: true
+      {{- end }}
 
     compactor:
       data_dir: "/data"
@@ -1029,6 +1037,38 @@ memcached-queries:
       memory: 2457Mi  # (floor (* 1.2 2048))
 
 memcached-metadata:
+  enabled: false
+  architecture: high-availability
+  arguments:
+    - -m 512
+    - -o
+    - modern
+    - -v
+    - -I 1m
+    - -c 1024
+  image:
+    repository: memcached
+    tag: 1.6.9
+  # maxItemMemory is in bytes. Should match memcached -I flag (which is in MB)
+  # It is a string to avoid https://github.com/helm/helm/issues/1707.
+  maxItemMemory: '1048576'  # (* 1 (* 1024 1024))
+  metrics:
+    enabled: true
+    image:
+      registry: quay.io
+      repository: prometheus/memcached-exporter
+      tag: v0.9.0
+  replicaCount: 1
+  resources:
+    limits:
+      # memory limits should match requests
+      memory: 614Mi
+    requests:
+      cpu: 500m
+      # memory requests should be exceed memcached -m flag
+      memory: 614Mi  # (floor (* 1.2 512))
+
+memcached-results:
   enabled: false
   architecture: high-availability
   arguments:

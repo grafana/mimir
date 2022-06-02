@@ -11,6 +11,14 @@ Entries should be ordered as follows:
 
 Entries should include a reference to the Pull Request that introduced the change.
 
+## 2.1.0-beta.5
+
+* [ENHANCEMENT] Add support for the results cache used by the query frontend #1993
+  - This will result in additional resource usage due to the addition of one or
+    more memcached replicas. This applies when using small.yaml, large.yaml,
+    capped-large.yaml, capped-small.yaml, or when setting
+    `memcached-results.enabled=true`
+
 ## 2.1.0-beta.4
 
 * [BUGFIX] Set up using older bitnami chart repository for memcached as old charts were deleted from the current one. #1998
