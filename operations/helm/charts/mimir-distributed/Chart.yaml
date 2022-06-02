@@ -1,5 +1,5 @@
 apiVersion: v2
-version: 2.1.0-beta.3
+version: 2.1.0-beta.4
 appVersion: 2.0.0
 description: "Grafana Mimir"
 engine: gotpl
@@ -11,17 +11,17 @@ dependencies:
   - name: memcached
     alias: memcached
     version: 5.5.2
-    repository: https://charts.bitnami.com/bitnami
+    repository: https://raw.githubusercontent.com/bitnami/charts/eb5f9a9513d987b519f0ecd732e7031241c50328/bitnami
     condition: memcached.enabled
   - name: memcached
     alias: memcached-queries
     version: 5.5.2
-    repository: https://charts.bitnami.com/bitnami
+    repository: https://raw.githubusercontent.com/bitnami/charts/eb5f9a9513d987b519f0ecd732e7031241c50328/bitnami
     condition: memcached-queries.enabled
   - name: memcached
     alias: memcached-metadata
     version: 5.5.2
-    repository: https://charts.bitnami.com/bitnami
+    repository: https://raw.githubusercontent.com/bitnami/charts/eb5f9a9513d987b519f0ecd732e7031241c50328/bitnami
     condition: memcached-metadata.enabled
   - name: minio
     alias: minio

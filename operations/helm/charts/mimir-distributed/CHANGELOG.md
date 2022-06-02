@@ -11,6 +11,10 @@ Entries should be ordered as follows:
 
 Entries should include a reference to the Pull Request that introduced the change.
 
+## 2.1.0-beta.4
+
+* [BUGFIX] Set up using older bitnami chart repository for memcached as old charts were deleted from the current one. #1998
+
 ## 2.1.0-beta.3
 
 * [BUGFIX] Use grpc round-robin for distributor clients in GEM gateway and self-monitoring
