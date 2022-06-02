@@ -201,7 +201,7 @@ mimir:
         compactor:
           url: http://{{ template "mimir.fullname" . }}-compactor.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
         distributor:
-          url: http://{{ template "mimir.fullname" . }}-distributor.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
+          url: dns:///{{ template "mimir.fullname" . }}-distributor-headless.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ include "mimir.serverGrpcListenPort" . }}
         ingester:
           url: http://{{ template "mimir.fullname" . }}-ingester.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
         query_frontend:
@@ -215,7 +215,7 @@ mimir:
     instrumentation:
       enabled: true
       distributor_client:
-        address: 'dns:///{{ template "mimir.fullname" . }}-distributor.{{ .Release.Namespace }}.svc:{{ include "mimir.serverGrpcListenPort" . }}'
+        address: 'dns:///{{ template "mimir.fullname" . }}-distributor-headless.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ include "mimir.serverGrpcListenPort" . }}'
 
     {{- end }}
 
@@ -1303,10 +1303,10 @@ nginx:
 
           # Distributor endpoints
           location /distributor {
-            proxy_pass      http://{{ template "mimir.fullname" . }}-distributor.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ include "mimir.serverHttpListenPort" . }}$request_uri;
+            proxy_pass      http://{{ template "mimir.fullname" . }}-distributor-headless.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ include "mimir.serverHttpListenPort" . }}$request_uri;
           }
           location = /api/v1/push {
-            proxy_pass      http://{{ template "mimir.fullname" . }}-distributor.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ include "mimir.serverHttpListenPort" . }}$request_uri;
+            proxy_pass      http://{{ template "mimir.fullname" . }}-distributor-headless.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ include "mimir.serverHttpListenPort" . }}$request_uri;
           }
 
           # Alertmanager endpoints

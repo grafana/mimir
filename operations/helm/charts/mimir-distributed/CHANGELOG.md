@@ -11,6 +11,11 @@ Entries should be ordered as follows:
 
 Entries should include a reference to the Pull Request that introduced the change.
 
+## 2.1.0-beta.3
+
+* [BUGFIX] Use grpc round-robin for distributor clients in GEM gateway and self-monitoring
+  - This utilizes an additional headless service for the distributor pods
+
 ## 2.1.0-beta.2
 
 * [ENHANCEMENT] Version bump only for release tests.
