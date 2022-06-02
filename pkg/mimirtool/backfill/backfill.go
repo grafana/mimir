@@ -27,37 +27,48 @@ import (
 
 func printBlocks(blocks []tsdb.BlockReader, writeHeader, humanReadable bool, output io.Writer) {
 	tw := tabwriter.NewWriter(output, 13, 0, 2, ' ', 0)
-	defer tw.Flush()
+	defer func(tw *tabwriter.Writer) {
+		err := tw.Flush()
+		if err != nil {
+
+		}
+	}(tw)
 
 	if writeHeader {
-		fmt.Fprintln(tw, "BLOCK ULID\tMIN TIME\tMAX TIME\tDURATION\tNUM SAMPLES\tNUM CHUNKS\tNUM SERIES\tSIZE")
+		_, err := fmt.Fprintln(tw, "BLOCK ULID\tMIN TIME\tMAX TIME\tDURATION\tNUM SAMPLES\tNUM CHUNKS\tNUM SERIES\tSIZE")
+		if err != nil {
+			return
+		}
 	}
 
 	for _, b := range blocks {
 		meta := b.Meta()
 
-		fmt.Fprintf(tw,
+		_, err := fmt.Fprintf(tw,
 			"%v\t%v\t%v\t%v\t%v\t%v\t%v\t%v\n",
 			meta.ULID,
-			getFormatedTime(meta.MinTime, humanReadable),
-			getFormatedTime(meta.MaxTime, humanReadable),
+			getFormattedTime(meta.MinTime, humanReadable),
+			getFormattedTime(meta.MaxTime, humanReadable),
 			time.Duration(meta.MaxTime-meta.MinTime)*time.Millisecond,
 			meta.Stats.NumSamples,
 			meta.Stats.NumChunks,
 			meta.Stats.NumSeries,
-			getFormatedBytes(b.Size(), humanReadable),
+			getFormattedBytes(b.Size(), humanReadable),
 		)
+		if err != nil {
+			return
+		}
 	}
 }
 
-func getFormatedTime(timestamp int64, humanReadable bool) string {
+func getFormattedTime(timestamp int64, humanReadable bool) string {
 	if humanReadable {
 		return time.Unix(timestamp/1000, 0).UTC().String()
 	}
 	return strconv.FormatInt(timestamp, 10)
 }
 
-func getFormatedBytes(bytes int64, humanReadable bool) string {
+func getFormattedBytes(bytes int64, humanReadable bool) string {
 	if humanReadable {
 		return units.Base2Bytes(bytes).String()
 	}

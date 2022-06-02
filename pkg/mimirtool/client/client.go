@@ -57,7 +57,7 @@ func New(cfg Config) (*MimirClient, error) {
 	if err != nil {
 		return nil, err
 	}
-
+	log.SetLevel(log.DebugLevel)
 	log.WithFields(log.Fields{
 		"address": cfg.Address,
 		"id":      cfg.ID,
