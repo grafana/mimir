@@ -223,7 +223,7 @@ How to **investigate**:
         - If memcached eviction rate is high, then you should scale up memcached replicas. Check the recommendations by `Mimir / Scaling` dashboard and make reasonable adjustments as necessary.
         - If memcached eviction rate is zero or very low, then it may be caused by "first time" queries
       - Cache query timeouts
-        - Check store-gateway logs and look for warnings about timed out Memcached queries
+        - Check store-gateway logs and look for warnings about timed out Memcached queries (example query: `{namespace="example-mimir-cluster", name=~"store-gateway.*"} |= "level=warn" |= "memcached" |= "timeout"`)
         - If there are indeed a lot of timed out Memcached queries, consider whether the store-gateway Memcached timeout setting (`-blocks-storage.bucket-store.chunks-cache.memcached.timeout`) is sufficient
     - By consulting the "Queue length" panel of the "Mimir / Queries" dashboard, determine if queries are waiting in queue due to busy queriers (an indication of this would be queue length > 0 for some time)
     - If queries are waiting in queue
