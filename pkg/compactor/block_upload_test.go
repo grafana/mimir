@@ -25,8 +25,8 @@ import (
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 )
 
-// Test MultitenantCompactor.CreateBlockUpload.
-func TestMultitenantCompactor_CreateBlockUpload(t *testing.T) {
+// Test MultitenantCompactor.HandleBlockUpload with uploadComplete=false (the default).
+func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 	t.Run("without tenant ID", func(t *testing.T) {
 		c := &MultitenantCompactor{
 			logger: log.NewNopLogger(),
@@ -35,7 +35,7 @@ func TestMultitenantCompactor_CreateBlockUpload(t *testing.T) {
 		r := httptest.NewRequest(http.MethodPost, "/api/v1/upload/block/1234", nil)
 		r = mux.SetURLVars(r, map[string]string{"block": "1234"})
 		w := httptest.NewRecorder()
-		c.CreateBlockUpload(w, r)
+		c.HandleBlockUpload(w, r)
 
 		resp := w.Result()
 		body, err := io.ReadAll(resp.Body)
@@ -53,7 +53,7 @@ func TestMultitenantCompactor_CreateBlockUpload(t *testing.T) {
 		r := httptest.NewRequest(http.MethodPost, "/api/v1/upload/block/1234", nil)
 		r.Header.Set(user.OrgIDHeaderName, "test")
 		w := httptest.NewRecorder()
-		c.CreateBlockUpload(w, r)
+		c.HandleBlockUpload(w, r)
 
 		resp := w.Result()
 		body, err := io.ReadAll(resp.Body)
@@ -76,7 +76,7 @@ func TestMultitenantCompactor_CreateBlockUpload(t *testing.T) {
 		r.Header.Set(user.OrgIDHeaderName, "test")
 		r = mux.SetURLVars(r, map[string]string{"block": "1234"})
 		w := httptest.NewRecorder()
-		c.CreateBlockUpload(w, r)
+		c.HandleBlockUpload(w, r)
 
 		resp := w.Result()
 		body, err := io.ReadAll(resp.Body)
@@ -229,8 +229,8 @@ func TestMultitenantCompactor_UploadBlockFile(t *testing.T) {
 	})
 }
 
-// Test MultitenantCompactor.CompleteBlockUpload.
-func TestMultitenantCompactor_CompleteBlockUpload(t *testing.T) {
+// Test MultitenantCompactor.HandleBlockUpload with uploadComplete=true.
+func TestMultitenantCompactor_HandleBlockUpload_Complete(t *testing.T) {
 	t.Run("without tenant ID", func(t *testing.T) {
 		c := &MultitenantCompactor{
 			logger: log.NewNopLogger(),
@@ -238,7 +238,7 @@ func TestMultitenantCompactor_CompleteBlockUpload(t *testing.T) {
 		r := httptest.NewRequest(http.MethodPost, "/api/v1/upload/block/1234?uploadComplete=true", nil)
 		r = mux.SetURLVars(r, map[string]string{"block": "1234"})
 		w := httptest.NewRecorder()
-		c.CompleteBlockUpload(w, r)
+		c.HandleBlockUpload(w, r)
 
 		resp := w.Result()
 		body, err := io.ReadAll(resp.Body)
@@ -255,7 +255,7 @@ func TestMultitenantCompactor_CompleteBlockUpload(t *testing.T) {
 		r := httptest.NewRequest(http.MethodPost, "/api/v1/upload/block/1234?uploadComplete=true", nil)
 		r.Header.Set(user.OrgIDHeaderName, "test")
 		w := httptest.NewRecorder()
-		c.CompleteBlockUpload(w, r)
+		c.HandleBlockUpload(w, r)
 
 		resp := w.Result()
 		body, err := io.ReadAll(resp.Body)
@@ -273,7 +273,7 @@ func TestMultitenantCompactor_CompleteBlockUpload(t *testing.T) {
 		r = mux.SetURLVars(r, map[string]string{"block": "1234"})
 		r.Header.Set(user.OrgIDHeaderName, "test")
 		w := httptest.NewRecorder()
-		c.CompleteBlockUpload(w, r)
+		c.HandleBlockUpload(w, r)
 
 		resp := w.Result()
 		body, err := io.ReadAll(resp.Body)
@@ -292,7 +292,7 @@ func TestMultitenantCompactor_CompleteBlockUpload(t *testing.T) {
 		r = mux.SetURLVars(r, map[string]string{"block": "1234"})
 		r.Header.Set(user.OrgIDHeaderName, "test")
 		w := httptest.NewRecorder()
-		c.CompleteBlockUpload(w, r)
+		c.HandleBlockUpload(w, r)
 
 		resp := w.Result()
 		body, err := io.ReadAll(resp.Body)
@@ -339,7 +339,7 @@ func TestMultitenantCompactor_CompleteBlockUpload(t *testing.T) {
 		r = mux.SetURLVars(r, map[string]string{"block": "01G3FZ0JWJYJC0ZM6Y9778P6KD"})
 		r.Header.Set(user.OrgIDHeaderName, "test")
 		w := httptest.NewRecorder()
-		c.CompleteBlockUpload(w, r)
+		c.HandleBlockUpload(w, r)
 
 		resp := w.Result()
 
