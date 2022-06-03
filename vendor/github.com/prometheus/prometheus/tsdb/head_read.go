@@ -445,8 +445,9 @@ func (s *memSeries) oooMergedChunk(meta chunks.Meta, cdm chunkDiskMapper, mint, 
 	sort.Sort(byMinTimeAndMinRef(tmpChks))
 
 	mc := &mergedOOOChunks{}
+	absoluteMax := int64(math.MinInt64)
 	for _, c := range tmpChks {
-		if c.meta.Ref == meta.Ref || len(mc.chunks) > 0 && c.meta.MinTime <= mc.chunks[len(mc.chunks)-1].MaxTime {
+		if c.meta.Ref == meta.Ref || len(mc.chunks) > 0 && c.meta.MinTime <= absoluteMax {
 			if c.meta.Ref == oooHeadRef {
 				var xor *chunkenc.XORChunk
 				// If head chunk min and max time match the meta OOO markers
@@ -482,6 +483,9 @@ func (s *memSeries) oooMergedChunk(meta chunks.Meta, cdm chunkDiskMapper, mint, 
 				}
 			}
 			mc.chunks = append(mc.chunks, c.meta)
+			if c.meta.MaxTime > absoluteMax {
+				absoluteMax = c.meta.MaxTime
+			}
 		}
 	}
 

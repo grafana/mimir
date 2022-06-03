@@ -482,8 +482,10 @@ func (h *Head) loadOOOWal(r *wal.Reader, multiRef map[chunks.HeadSeriesRef]chunk
 
 	defer func() {
 		// For CorruptionErr ensure to terminate all workers before exiting.
+		// We also wrap it to identify OOO WBL corruption.
 		_, ok := err.(*wal.CorruptionErr)
 		if ok {
+			err = &errLoadOOOWal{err: err}
 			for i := 0; i < n; i++ {
 				processors[i].closeAndDrain()
 			}
@@ -647,7 +649,7 @@ func (e errLoadOOOWal) Unwrap() error {
 
 // isErrLoadOOOWal returns a boolean if the error is errLoadOOOWal.
 func isErrLoadOOOWal(err error) bool {
-	_, ok := errors.Cause(err).(*errLoadOOOWal)
+	_, ok := err.(*errLoadOOOWal)
 	return ok
 }
 
