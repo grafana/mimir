@@ -6,7 +6,7 @@
     autoscaling_prometheus_url: 'http://prometheus.default:9090/prometheus',
   },
 
-  ensure_query_scheduler_is_enabled: if $._config.autoscaling_querier_enabled && !$._config.query_scheduler_enabled then
+  ensure_query_scheduler_is_enabled:: if $._config.autoscaling_querier_enabled && !$._config.query_scheduler_enabled then
     error 'you must enable query-scheduler in order to use querier autoscaling'
   else
     null,
