@@ -773,6 +773,7 @@ _Changes since Cortex 1.10.0._
 * [ENHANCEMENT] Overrides exporter: Add `max_fetched_chunks_per_query` and `max_global_exemplars_per_user` limits to the default and per-tenant limits exported as metrics. #471 #515
 * [ENHANCEMENT] Upgrade Go to 1.17.8. #1347 #1381
 * [ENHANCEMENT] Upgrade Docker base images to `alpine:3.15.0`. #1348
+* [ENHANCEMENT] Upgrade Docker base images to `alpine:3.16.0`. #1990
 * [BUGFIX] Azure storage: only create HTTP client once, to reduce memory utilization. #605
 * [BUGFIX] Ingester: fixed ingester stuck on start up (LEAVING ring state) when `-ingester.ring.heartbeat-period=0` and `-ingester.unregister-on-shutdown=false`. [#4366](https://github.com/cortexproject/cortex/pull/4366)
 * [BUGFIX] Ingester: prevent any reads or writes while the ingester is stopping. This will prevent accessing TSDB blocks once they have been already closed. [#4304](https://github.com/cortexproject/cortex/pull/4304)
