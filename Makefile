@@ -194,7 +194,7 @@ mimir-build-image/$(UPTODATE): mimir-build-image/*
 # All the boiler plate for building golang follows:
 SUDO := $(shell docker info >/dev/null 2>&1 || echo "sudo -E")
 BUILD_IN_CONTAINER ?= true
-LATEST_BUILD_IMAGE_TAG ?= update-build-image-and-github-workflow-89d9d61b4
+LATEST_BUILD_IMAGE_TAG ?= publish-multiarch-images-7a4b40a6d
 
 # TTY is parameterized to allow Google Cloud Builder to run builds,
 # as it currently disallows TTY devices. This value needs to be overridden
@@ -348,6 +348,8 @@ doc: ## Generates the config file documentation.
 doc: clean-doc $(DOC_TEMPLATES:.template=.md) $(DOC_EMBED:.md=.md.embedmd)
 	# Make up markdown files prettier. When running with check-doc target, it will fail if this produces any change.
 	prettier --write "**/*.md"
+	# Make operations/helm/charts/*/README.md
+	helm-docs
 
 # Add license header to files.
 license:
