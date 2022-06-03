@@ -50,7 +50,7 @@
 ### Jsonnet
 
 * [CHANGE] Remove use of `-querier.query-store-after`, `-querier.shuffle-sharding-ingesters-lookback-period`, `-blocks-storage.bucket-store.ignore-blocks-within`, and `-blocks-storage.tsdb.close-idle-tsdb-timeout` CLI flags since the values now match defaults. #1915 #1921
-* [FEATURE] Added querier autoscaling support. It requires [KEDA](https://keda.sh) installed in the Kubernetes cluster and query-scheduler enabled in the Mimir cluster. Querier autoscaler can be enabled and configure through the following options in the jsonnet config: #2013
+* [FEATURE] Added querier autoscaling support. It requires [KEDA](https://keda.sh) installed in the Kubernetes cluster and query-scheduler enabled in the Mimir cluster. Querier autoscaler can be enabled and configure through the following options in the jsonnet config: #2013 #2023
   * `autoscaling_querier_enabled`: `true` to enable autoscaling.
   * `autoscaling_querier_min_replicas`: minimum number of querier replicas.
   * `autoscaling_querier_max_replicas`: maximum number of querier replicas.
