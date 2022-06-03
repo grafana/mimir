@@ -348,6 +348,8 @@ doc: ## Generates the config file documentation.
 doc: clean-doc $(DOC_TEMPLATES:.template=.md) $(DOC_EMBED:.md=.md.embedmd)
 	# Make up markdown files prettier. When running with check-doc target, it will fail if this produces any change.
 	prettier --write "**/*.md"
+	# Make operations/helm/charts/*/README.md
+	helm-docs
 
 # Add license header to files.
 license:
