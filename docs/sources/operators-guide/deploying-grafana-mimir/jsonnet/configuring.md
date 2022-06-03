@@ -1,11 +1,11 @@
 ---
-title: "Configuring Jsonnet"
-menuTitle: "Configuring Jsonnet"
+title: "Configuring Grafana Mimir deployment with Jsonnet"
+menuTitle: "Configuring deployment"
 description: "Learn how to configure Grafana Mimir when using Jsonnet."
 weight: 20
 ---
 
-# Configuration
+# Configuring Grafana Mimir deployment with Jsonnet
 
 ## Anti-affinity
 

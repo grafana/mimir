@@ -18,4 +18,4 @@ A [mimir-distributed](https://github.com/grafana/helm-charts/tree/main/charts/mi
 
 ## Jsonnet and Tanka
 
-A set of Jsonnet templates that you can use to deploy Grafana Mimir in [microservices mode]({{< relref "../architecture/deployment-modes/index.md#microservices-mode" >}}) using [Jsonnet and Tanka]({{< relref "./jsonnet/_index.md" >}})
+A [set of Jsonnet templates]({{< relref "./jsonnet/_index.md" >}}) that you can use to deploy Grafana Mimir in [microservices mode]({{< relref "../architecture/deployment-modes/index.md#microservices-mode" >}}) using Jsonnet and Tanka.

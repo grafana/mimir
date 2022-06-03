@@ -1,11 +1,11 @@
 ---
-title: "Getting started with Jsonnet and Tanka"
-menuTitle: "Getting started"
+title: "Deploying Grafana Mimir with Jsonnet and Tanka"
+menuTitle: "Deploying with Jsonnet"
 description: "Learn how to deploy Grafana Mimir on Kubernetes with Jsonnet and Tanka."
 weight: 10
 ---
 
-# Getting started with Jsonnet and Tanka
+# Deploying Grafana Mimir with Jsonnet and Tanka
 
 This guide explains how to use [Tanka](https://tanka.dev/) and [jsonnet-bundler](https://github.com/jsonnet-bundler/jsonnet-bundler) to generate Kubernetes YAML manifests from the jsonnet files.
 
