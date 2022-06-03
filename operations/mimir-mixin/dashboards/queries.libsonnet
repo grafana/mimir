@@ -56,7 +56,7 @@ local filename = 'mimir-queries.json';
       $.row('Query-frontend - query splitting and results cache')
       .addPanel(
         $.panel('Intervals per Query') +
-        $.queryPanel('sum(rate(cortex_frontend_split_queries_total{%s}[1m])) / sum(rate(cortex_frontend_query_range_duration_seconds_count{%s, method="split_by_interval"}[1m]))' % [$.jobMatcher($._config.job_names.query_frontend), $.jobMatcher($._config.job_names.query_frontend)], 'splitting rate') +
+        $.queryPanel('sum(rate(cortex_frontend_split_queries_total{%s}[$__rate_interval])) / sum(rate(cortex_frontend_query_range_duration_seconds_count{%s, method="split_by_interval"}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.query_frontend), $.jobMatcher($._config.job_names.query_frontend)], 'splitting rate') +
         $.panelDescription(
           'Intervals per query',
           |||
@@ -70,15 +70,15 @@ local filename = 'mimir-queries.json';
           |||
             # Query metrics before and after migration to new memcached backend.
             sum (
-              rate(cortex_cache_hits{name=~"frontend.+", %(frontend)s}[1m])
+              rate(cortex_cache_hits{name=~"frontend.+", %(frontend)s}[$__rate_interval])
               or
-              rate(thanos_cache_memcached_hits_total{name="frontend-cache", %(frontend)s}[1m])
+              rate(thanos_cache_memcached_hits_total{name="frontend-cache", %(frontend)s}[$__rate_interval])
             )
             /
             sum (
-              rate(cortex_cache_fetched_keys{name=~"frontend.+", %(frontend)s}[1m])
+              rate(cortex_cache_fetched_keys{name=~"frontend.+", %(frontend)s}[$__rate_interval])
               or
-              rate(thanos_cache_memcached_requests_total{name=~"frontend-cache", %(frontend)s}[1m])
+              rate(thanos_cache_memcached_requests_total{name=~"frontend-cache", %(frontend)s}[$__rate_interval])
             )
           ||| % {
             frontend: $.jobMatcher($._config.job_names.query_frontend),
@@ -93,15 +93,15 @@ local filename = 'mimir-queries.json';
           |||
             # Query metrics before and after migration to new memcached backend.
             sum (
-              rate(cortex_cache_fetched_keys{name=~"frontend.+", %(frontend)s}[1m])
+              rate(cortex_cache_fetched_keys{name=~"frontend.+", %(frontend)s}[$__rate_interval])
               or
-              rate(thanos_cache_memcached_requests_total{name="frontend-cache", %(frontend)s}[1m])
+              rate(thanos_cache_memcached_requests_total{name="frontend-cache", %(frontend)s}[$__rate_interval])
             )
             -
             sum (
-              rate(cortex_cache_hits{name=~"frontend.+", %(frontend)s}[1m])
+              rate(cortex_cache_hits{name=~"frontend.+", %(frontend)s}[$__rate_interval])
               or
-              rate(thanos_cache_memcached_hits_total{name=~"frontend-cache", %(frontend)s}[1m])
+              rate(thanos_cache_memcached_hits_total{name=~"frontend-cache", %(frontend)s}[$__rate_interval])
             )
           ||| % {
             frontend: $.jobMatcher($._config.job_names.query_frontend),
@@ -181,7 +181,7 @@ local filename = 'mimir-queries.json';
       )
       .addPanel(
         $.panel('Consistency checks failed') +
-        $.queryPanel('sum(rate(cortex_querier_blocks_consistency_checks_failed_total{%s}[1m])) / sum(rate(cortex_querier_blocks_consistency_checks_total{%s}[1m]))' % [$.jobMatcher($._config.job_names.querier), $.jobMatcher($._config.job_names.querier)], 'Failure Rate') +
+        $.queryPanel('sum(rate(cortex_querier_blocks_consistency_checks_failed_total{%s}[$__rate_interval])) / sum(rate(cortex_querier_blocks_consistency_checks_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.querier), $.jobMatcher($._config.job_names.querier)], 'Failure Rate') +
         { yaxes: $.yaxes({ format: 'percentunit', max: 1 }) },
       )
     )

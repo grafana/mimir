@@ -1,9 +1,9 @@
 apiVersion: v2
-version: 2.1.0-beta.3
-appVersion: 2.0.0
+version: 2.1.0-beta.7
+appVersion: 2.1.0
 description: "Grafana Mimir"
 engine: gotpl
-home: https://grafana.com/docs/mimir/v2.0.x/
+home: https://grafana.com/docs/mimir/v2.1.x/
 icon: https://grafana.com/static/img/logos/logo-mimir.svg
 kubeVersion: ^1.10.0-0
 name: mimir-distributed
@@ -11,18 +11,23 @@ dependencies:
   - name: memcached
     alias: memcached
     version: 5.5.2
-    repository: https://charts.bitnami.com/bitnami
+    repository: https://raw.githubusercontent.com/bitnami/charts/eb5f9a9513d987b519f0ecd732e7031241c50328/bitnami
     condition: memcached.enabled
   - name: memcached
     alias: memcached-queries
     version: 5.5.2
-    repository: https://charts.bitnami.com/bitnami
+    repository: https://raw.githubusercontent.com/bitnami/charts/eb5f9a9513d987b519f0ecd732e7031241c50328/bitnami
     condition: memcached-queries.enabled
   - name: memcached
     alias: memcached-metadata
     version: 5.5.2
-    repository: https://charts.bitnami.com/bitnami
+    repository: https://raw.githubusercontent.com/bitnami/charts/eb5f9a9513d987b519f0ecd732e7031241c50328/bitnami
     condition: memcached-metadata.enabled
+  - name: memcached
+    alias: memcached-results
+    version: 5.5.2
+    repository: https://raw.githubusercontent.com/bitnami/charts/eb5f9a9513d987b519f0ecd732e7031241c50328/bitnami
+    condition: memcached-results.enabled
   - name: minio
     alias: minio
     version: 8.0.10

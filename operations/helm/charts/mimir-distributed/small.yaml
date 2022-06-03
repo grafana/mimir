@@ -80,6 +80,9 @@ memcached-queries:
 memcached-metadata:
   enabled: true
 
+memcached-results:
+  enabled: true
+
 minio:
   enabled: false
 

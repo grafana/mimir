@@ -1,6 +1,6 @@
 # Grafana Mimir Helm Chart
 
-Helm chart for deploying [Grafana Mimir]({{ template "chart.homepage" . }}) or optionally [Grafana Enterprise Metrics](https://grafana.com/docs/enterprise-metrics/v2.0.x/) to Kubernetes. Derived from [Grafana Enterprise Metrics Helm Chart](https://github.com/grafana/helm-charts/blob/main/charts/enterprise-metrics/README.md)
+Helm chart for deploying [Grafana Mimir]({{ template "chart.homepage" . }}) or optionally [Grafana Enterprise Metrics](https://grafana.com/docs/enterprise-metrics/v2.1.x/) to Kubernetes. Derived from [Grafana Enterprise Metrics Helm Chart](https://github.com/grafana/helm-charts/blob/main/charts/enterprise-metrics/README.md)
 
 {{ template "chart.header" . }}
 
@@ -24,7 +24,7 @@ See [Grafana Mimir documentation]({{ template "chart.homepage" . }}) for details
 ### Grafana Enterprise Metrics license
 
 In order to use the enterprise features of this chart, you need to provide the contents of a Grafana Enterprise Metrics license file as the value for the `license.contents` variable.
-To obtain a Grafana Enterprise Metrics license, refer to [Get a license](https://grafana.com/docs/enterprise-metrics/v2.0.x/setup/#get-a-gem-license).
+To obtain a Grafana Enterprise Metrics license, refer to [Get a license](https://grafana.com/docs/enterprise-metrics/v2.1.x/setup/#get-a-gem-license).
 
 ### Helm3
 
@@ -84,7 +84,7 @@ helm install <cluster name> grafana/mimir-distributed --set 'enterprise.enabled=
 
 ### Upgrade from a previous version of Grafana Enterprise Metrics
 
-Please consult the [migration guide](https://grafana.com/docs/enterprise-metrics/v2.0.x/migrating-from-gem-1.7/) for details on how to prepare the configuration. Prepare a custom values file, with the contents:
+Please consult the [migration guide](https://grafana.com/docs/enterprise-metrics/v2.1.x/migrating-from-gem-1.7/) for details on how to prepare the configuration. Prepare a custom values file, with the contents:
 
 ```yaml
 enterprise:

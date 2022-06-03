@@ -80,6 +80,10 @@ memcached-queries:
 memcached-metadata:
   enabled: true
 
+memcached-results:
+  enabled: true
+  replicaCount: 4
+
 minio:
   enabled: false
 

@@ -11,6 +11,30 @@ Entries should be ordered as follows:
 
 Entries should include a reference to the Pull Request that introduced the change.
 
+## 2.1.0-beta.7
+
+* [ENHANCEMENT] Bump image version to 2.1 #2001
+  - For Grafana Mimir, see the release notes here: [Grafana Mimir 2.1](https://grafana.com/docs/mimir/latest/release-notes/v2.1/)
+  - For Grafana Enterprise Metrics, see the release notes here: [Grafana Enterprise Metrics 2.1](https://grafana.com/docs/enterprise-metrics/v2.1.x/release-notes/v2-1/)
+
+## 2.1.0-beta.6
+
+* [ENHANCEMENT] Disable `ingester.ring.unregister-on-shutdown` and `distributor.extend-writes` #1994
+  - This will prevent resharding every series during a rolling ingester restart
+  - Under some circumstances the previous values (both enabled) could cause write path degredation during rolling restarts
+
+## 2.1.0-beta.5
+
+* [ENHANCEMENT] Add support for the results cache used by the query frontend #1993
+  - This will result in additional resource usage due to the addition of one or
+    more memcached replicas. This applies when using small.yaml, large.yaml,
+    capped-large.yaml, capped-small.yaml, or when setting
+    `memcached-results.enabled=true`
+
+## 2.1.0-beta.4
+
+* [BUGFIX] Set up using older bitnami chart repository for memcached as old charts were deleted from the current one. #1998
+
 ## 2.1.0-beta.3
 
 * [BUGFIX] Use grpc round-robin for distributor clients in GEM gateway and self-monitoring
