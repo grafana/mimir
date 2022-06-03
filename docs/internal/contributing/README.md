@@ -14,6 +14,10 @@ a piece of work is finished it should:
 - Include a [CHANGELOG](#changelog) message if users of Grafana Mimir need to hear about what you did.
 - If you have made any changes to flags or config, run `make doc` and commit the changed files to update the config file documentation.
 
+## Grafana Mimir Helm chart
+
+Please see the dedicated "[Contributing to Grafana Mimir helm chart](contributing-to-helm-chart.md)" page.
+
 ## Formatting
 
 Grafana Mimir uses `goimports` tool (`go get golang.org/x/tools/cmd/goimports` to install) to format the Go files, and sort imports. We use goimports with `-local github.com/grafana/mimir` parameter, to put Grafana Mimir internal imports into a separate group. We try to keep imports sorted into three groups: imports from standard library, imports of 3rd party packages and internal Grafana Mimir imports. Goimports will fix the order, but will keep existing newlines between imports in the groups. We try to avoid extra newlines like that.
