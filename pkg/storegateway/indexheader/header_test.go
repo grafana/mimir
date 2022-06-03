@@ -188,7 +188,7 @@ func TestReaders(t *testing.T) {
 				fn := filepath.Join(tmpDir, id.String(), block.IndexHeaderFilename)
 				require.NoError(t, WriteBinary(ctx, bkt, id, fn))
 
-				br, err := NewLazyBinaryReader(ctx, log.NewNopLogger(), nil, tmpDir, id, 3, BinaryReaderConfig{}, NewLazyBinaryReaderMetrics(nil), nil)
+				br, err := NewLazyBinaryReader(ctx, log.NewNopLogger(), nil, tmpDir, id, 3, BinaryReaderConfig{}, NewLazyBinaryReaderMetrics(nil), nil, DefaultReaderFactory)
 				require.NoError(t, err)
 
 				defer func() { require.NoError(t, br.Close()) }()
@@ -417,13 +417,13 @@ func benchmarkBinaryReaderLookupSymbol(b *testing.B, numSeries int) {
 	require.NoError(b, block.Upload(ctx, logger, bkt, filepath.Join(tmpDir, id1.String()), metadata.NoneFunc))
 
 	// Create an index reader.
-	reader, err := NewBinaryReader(ctx, logger, bkt, tmpDir, id1, postingOffsetsInMemSampling, BinaryReaderConfig{})
+	br, err := NewBinaryReader(ctx, logger, bkt, tmpDir, id1, postingOffsetsInMemSampling, BinaryReaderConfig{})
 	require.NoError(b, err)
 
 	// Get the offset of each label value symbol.
 	symbolsOffsets := make([]uint32, numSeries)
 	for i := 0; i < numSeries; i++ {
-		o, err := reader.symbols.ReverseLookup(strconv.Itoa(i))
+		o, err := br.symbols.ReverseLookup(strconv.Itoa(i))
 		require.NoError(b, err)
 
 		symbolsOffsets[i] = o
@@ -433,7 +433,7 @@ func benchmarkBinaryReaderLookupSymbol(b *testing.B, numSeries int) {
 
 	for n := 0; n < b.N; n++ {
 		for i := 0; i < len(symbolsOffsets); i++ {
-			if _, err := reader.LookupSymbol(symbolsOffsets[i]); err != nil {
+			if _, err := br.LookupSymbol(symbolsOffsets[i]); err != nil {
 				b.Fail()
 			}
 		}

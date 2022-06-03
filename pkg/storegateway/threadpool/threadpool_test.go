@@ -20,7 +20,7 @@ func TestThreadpool_Call(t *testing.T) {
 		test.VerifyNoLeak(t)
 
 		ctx := context.Background()
-		pool := NewThreadpool(1, prometheus.NewPedanticRegistry())
+		pool := NewThreadPool(1, prometheus.NewPedanticRegistry())
 		require.NoError(t, services.StartAndAwaitRunning(ctx, pool))
 		require.NoError(t, services.StopAndAwaitTerminated(ctx, pool))
 
@@ -35,7 +35,7 @@ func TestThreadpool_Call(t *testing.T) {
 		test.VerifyNoLeak(t)
 
 		ctx := context.Background()
-		pool := NewThreadpool(0, prometheus.NewPedanticRegistry())
+		pool := NewThreadPool(0, prometheus.NewPedanticRegistry())
 		require.NoError(t, services.StartAndAwaitRunning(ctx, pool))
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, pool))
@@ -53,7 +53,7 @@ func TestThreadpool_Call(t *testing.T) {
 		test.VerifyNoLeak(t)
 
 		ctx := context.Background()
-		pool := NewThreadpool(1, prometheus.NewPedanticRegistry())
+		pool := NewThreadPool(1, prometheus.NewPedanticRegistry())
 		require.NoError(t, services.StartAndAwaitRunning(ctx, pool))
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, pool))
@@ -71,7 +71,7 @@ func TestThreadpool_Call(t *testing.T) {
 		test.VerifyNoLeak(t)
 
 		ctx := context.Background()
-		pool := NewThreadpool(1, prometheus.NewPedanticRegistry())
+		pool := NewThreadPool(1, prometheus.NewPedanticRegistry())
 		require.NoError(t, services.StartAndAwaitRunning(ctx, pool))
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, pool))

@@ -83,6 +83,7 @@ type LazyBinaryReader struct {
 	readerMx  sync.RWMutex
 	reader    *BinaryReader
 	readerErr error
+	factory   ReaderFactory
 
 	// Keep track of the last time it was used.
 	usedAt *atomic.Int64
@@ -102,6 +103,7 @@ func NewLazyBinaryReader(
 	cfg BinaryReaderConfig,
 	metrics *LazyBinaryReaderMetrics,
 	onClosed func(*LazyBinaryReader),
+	factory ReaderFactory,
 ) (*LazyBinaryReader, error) {
 	filepath := filepath.Join(dir, id.String(), block.IndexHeaderFilename)
 
@@ -133,6 +135,7 @@ func NewLazyBinaryReader(
 		metrics:                     metrics,
 		usedAt:                      atomic.NewInt64(time.Now().UnixNano()),
 		onClosed:                    onClosed,
+		factory:                     factory,
 	}, nil
 }
 
@@ -250,7 +253,7 @@ func (r *LazyBinaryReader) load() (returnErr error) {
 	r.metrics.loadCount.Inc()
 	startTime := time.Now()
 
-	reader, err := NewBinaryReader(r.ctx, r.logger, r.bkt, r.dir, r.id, r.postingOffsetsInMemSampling, r.cfg)
+	reader, err := r.factory.NewBinaryReader(r.ctx, r.logger, r.bkt, r.dir, r.id, r.postingOffsetsInMemSampling, r.cfg)
 	if err != nil {
 		r.metrics.loadFailedCount.Inc()
 		r.readerErr = err

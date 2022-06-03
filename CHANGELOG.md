@@ -12,6 +12,7 @@
 * [ENHANCEMENT] ring: optimize shuffle-shard computation when lookback is used, and all instances have registered timestamp within the lookback window. In that case we can immediately return origial ring, because we would select all instances anyway. #2309
 * [ENHANCEMENT] Memberlist: added experimental memberlist cluster label support via `-memberlist.cluster-label` and `-memberlist.cluster-label-verification-disabled` CLI flags (and their respective YAML config options). #2354
 * [ENHANCEMENT] Object storage can now be configured for all components using the `common` YAML config option key (or `-common.storage.*` CLI flags). #2330
+* [ENHANCEMENT] Store-gateway: Add the experimental ability to load TSDB index headers in a dedicated thread pool. This feature can be configured using `-blocks-storage.bucket-store.index-header-thread-pool-size` and is disabled by default. #2048 #1660 #1812
 * [BUGFIX] Compactor: log the actual error on compaction failed. #2261
 * [BUGFIX] Alertmanager: restore state from storage even when running a single replica. #2293
 * [BUGFIX] Ruler: do not block "List Prometheus rules" API endpoint while synching rules. #2289

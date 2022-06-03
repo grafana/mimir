@@ -1496,7 +1496,7 @@ func TestBucketSeries_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 		bkt:             objstore.WithNoopInstr(bkt),
 		logger:          logger,
 		indexCache:      indexCache,
-		indexReaderPool: indexheader.NewReaderPool(log.NewNopLogger(), false, 0, indexheader.NewReaderPoolMetrics(nil)),
+		indexReaderPool: indexheader.NewReaderPool(log.NewNopLogger(), false, 0, indexheader.NewReaderPoolMetrics(nil), indexheader.DefaultReaderFactory),
 		metrics:         NewBucketStoreMetrics(nil),
 		blockSet:        &bucketBlockSet{blocks: [][]*bucketBlock{{b1, b2}}},
 		blocks: map[ulid.ULID]*bucketBlock{

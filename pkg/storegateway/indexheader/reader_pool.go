@@ -47,10 +47,13 @@ type ReaderPool struct {
 	// Keep track of all readers managed by the pool.
 	lazyReadersMx sync.Mutex
 	lazyReaders   map[*LazyBinaryReader]struct{}
+
+	// Factory for creating new readers
+	factory ReaderFactory
 }
 
 // NewReaderPool makes a new ReaderPool.
-func NewReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTimeout time.Duration, metrics *ReaderPoolMetrics) *ReaderPool {
+func NewReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTimeout time.Duration, metrics *ReaderPoolMetrics, factory ReaderFactory) *ReaderPool {
 	p := &ReaderPool{
 		logger:                logger,
 		metrics:               metrics,
@@ -58,6 +61,7 @@ func NewReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTime
 		lazyReaderIdleTimeout: lazyReaderIdleTimeout,
 		lazyReaders:           make(map[*LazyBinaryReader]struct{}),
 		close:                 make(chan struct{}),
+		factory:               factory,
 	}
 
 	// Start a goroutine to close idle readers (only if required).
@@ -87,9 +91,9 @@ func (p *ReaderPool) NewBinaryReader(ctx context.Context, logger log.Logger, bkt
 	var err error
 
 	if p.lazyReaderEnabled {
-		reader, err = NewLazyBinaryReader(ctx, logger, bkt, dir, id, postingOffsetsInMemSampling, cfg, p.metrics.lazyReader, p.onLazyReaderClosed)
+		reader, err = NewLazyBinaryReader(ctx, logger, bkt, dir, id, postingOffsetsInMemSampling, cfg, p.metrics.lazyReader, p.onLazyReaderClosed, p.factory)
 	} else {
-		reader, err = NewBinaryReader(ctx, logger, bkt, dir, id, postingOffsetsInMemSampling, cfg)
+		reader, err = p.factory.NewBinaryReader(ctx, logger, bkt, dir, id, postingOffsetsInMemSampling, cfg)
 	}
 
 	if err != nil {

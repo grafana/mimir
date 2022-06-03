@@ -93,16 +93,17 @@ type BucketStoreStats struct {
 // This makes them smaller, but takes extra CPU and memory.
 // When used with in-memory cache, memory usage should decrease overall, thanks to postings being smaller.
 type BucketStore struct {
-	userID          string
-	logger          log.Logger
-	metrics         *BucketStoreMetrics
-	bkt             objstore.InstrumentedBucketReader
-	fetcher         block.MetadataFetcher
-	dir             string
-	indexCache      indexcache.IndexCache
-	indexReaderPool *indexheader.ReaderPool
-	chunkPool       pool.Bytes
-	seriesHashCache *hashcache.SeriesHashCache
+	userID             string
+	logger             log.Logger
+	metrics            *BucketStoreMetrics
+	bkt                objstore.InstrumentedBucketReader
+	fetcher            block.MetadataFetcher
+	dir                string
+	indexCache         indexcache.IndexCache
+	indexReaderPool    *indexheader.ReaderPool
+	indexReaderFactory indexheader.ReaderFactory
+	chunkPool          pool.Bytes
+	seriesHashCache    *hashcache.SeriesHashCache
 
 	// Sets of blocks that have the same labels. They are indexed by a hash over their label set.
 	mtx      sync.RWMutex
@@ -209,6 +210,13 @@ func WithDebugLogging() BucketStoreOption {
 	}
 }
 
+// WithIndexReaderFactory sets a non-default indexheader.ReaderFactory
+func WithIndexReaderFactory(factory indexheader.ReaderFactory) BucketStoreOption {
+	return func(s *BucketStore) {
+		s.indexReaderFactory = factory
+	}
+}
+
 // NewBucketStore creates a new bucket backed store that implements the store API against
 // an object store bucket. It is optimized to work against high latency backends.
 func NewBucketStore(
@@ -249,6 +257,7 @@ func NewBucketStore(
 		seriesHashCache:             seriesHashCache,
 		metrics:                     metrics,
 		userID:                      userID,
+		indexReaderFactory:          indexheader.DefaultReaderFactory,
 	}
 
 	for _, option := range options {
@@ -256,7 +265,7 @@ func NewBucketStore(
 	}
 
 	// Depend on the options
-	s.indexReaderPool = indexheader.NewReaderPool(s.logger, lazyIndexReaderEnabled, lazyIndexReaderIdleTimeout, metrics.indexHeaderReaderMetrics)
+	s.indexReaderPool = indexheader.NewReaderPool(s.logger, lazyIndexReaderEnabled, lazyIndexReaderIdleTimeout, metrics.indexHeaderReaderMetrics, s.indexReaderFactory)
 
 	if err := os.MkdirAll(dir, 0750); err != nil {
 		return nil, errors.Wrap(err, "create dir")

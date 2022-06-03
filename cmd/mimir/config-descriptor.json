@@ -5213,6 +5213,17 @@
                   "fieldFlag": "blocks-storage.bucket-store.index-header.map-populate-enabled",
                   "fieldType": "boolean",
                   "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "thread_pool_size",
+                  "required": false,
+                  "desc": "Number of dedicated OS threads to use for loading index header files from disk using mmap. Set to 0 to disable.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 0,
+                  "fieldFlag": "blocks-storage.bucket-store.index-header.thread-pool-size",
+                  "fieldType": "int",
+                  "fieldCategory": "experimental"
                 }
               ],
               "fieldValue": null,
@@ -6564,17 +6575,6 @@
           ],
           "fieldValue": null,
           "fieldDefaultValue": null
-        },
-        {
-          "kind": "field",
-          "name": "thread_pool_size",
-          "required": false,
-          "desc": "Number of OS threads that are dedicated for handling requests. Set to 0 to disable use of dedicated OS threads for handling requests.",
-          "fieldValue": null,
-          "fieldDefaultValue": 0,
-          "fieldFlag": "store-gateway.thread-pool-size",
-          "fieldType": "int",
-          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,

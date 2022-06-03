@@ -2912,6 +2912,11 @@ bucket_store:
     # CLI flag: -blocks-storage.bucket-store.index-header.map-populate-enabled
     [map_populate_enabled: <boolean> | default = false]
 
+    # (experimental) Number of dedicated OS threads to use for loading index
+    # header files from disk using mmap. Set to 0 to disable.
+    # CLI flag: -blocks-storage.bucket-store.index-header.thread-pool-size
+    [thread_pool_size: <int> | default = 0]
+
 tsdb:
   # Directory to store TSDBs (including WAL) in the ingesters. This directory is
   # required to be persisted between restarts.
@@ -3337,11 +3342,6 @@ sharding_ring:
   # Unregister from the ring upon clean shutdown.
   # CLI flag: -store-gateway.sharding-ring.unregister-on-shutdown
   [unregister_on_shutdown: <boolean> | default = true]
-
-# (experimental) Number of OS threads that are dedicated for handling requests.
-# Set to 0 to disable use of dedicated OS threads for handling requests.
-# CLI flag: -store-gateway.thread-pool-size
-[thread_pool_size: <int> | default = 0]
 ```
 
 ### memcached

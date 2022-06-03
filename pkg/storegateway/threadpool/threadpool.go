@@ -22,7 +22,7 @@ const (
 
 var ErrPoolStopped = errors.New("thread pool has been stopped")
 
-type Threadpool struct {
+type ThreadPool struct {
 	services.Service
 
 	// pool is used for callers to acquire and return threads, blocking when they are all in use.
@@ -36,12 +36,12 @@ type Threadpool struct {
 	tasks  prometheus.Gauge
 }
 
-// NewThreadpool creates a new instance of Threadpool that runs tasks in a pool
+// NewThreadPool creates a new instance of ThreadPool that runs tasks in a pool
 // of dedicated OS threads, meaning no other goroutines are scheduled on the threads.
 // If num is zero, no threads will be started and all calls to Execute will run in
 // the goroutine of the caller.
-func NewThreadpool(num uint, reg prometheus.Registerer) *Threadpool {
-	tp := &Threadpool{
+func NewThreadPool(num uint, reg prometheus.Registerer) *ThreadPool {
+	tp := &ThreadPool{
 		pool:     make(chan *osThread, num),
 		threads:  make([]*osThread, num),
 		stopping: make(chan struct{}),
@@ -71,11 +71,11 @@ func NewThreadpool(num uint, reg prometheus.Registerer) *Threadpool {
 		tp.pool <- t
 	}
 
-	tp.Service = services.NewBasicService(tp.start, tp.run, tp.stop)
+	tp.Service = services.NewIdleService(tp.start, tp.stop)
 	return tp
 }
 
-func (t *Threadpool) start(context.Context) error {
+func (t *ThreadPool) start(context.Context) error {
 	// Start the main loop of each worker OS thread which causes it to start
 	// running closures and returning their results.
 	for _, thread := range t.threads {
@@ -85,15 +85,7 @@ func (t *Threadpool) start(context.Context) error {
 	return nil
 }
 
-func (t *Threadpool) run(ctx context.Context) error {
-	// Our run method doesn't actually do any work, that's left to each of the
-	// workers that are accessed via the Execute method. Just block until this
-	// service is stopped.
-	<-ctx.Done()
-	return nil
-}
-
-func (t *Threadpool) stop(error) error {
+func (t *ThreadPool) stop(error) error {
 	// Close that channel that we've given to our threads to indicate that they
 	// should stop accepting new work and end.
 	close(t.stopping)
@@ -108,7 +100,7 @@ func (t *Threadpool) stop(error) error {
 	return nil
 }
 
-func (t *Threadpool) Execute(fn func() (interface{}, error)) (interface{}, error) {
+func (t *ThreadPool) Execute(fn func() (interface{}, error)) (interface{}, error) {
 	// No threads to run the closure in. This is how operators disable use of the threadpool
 	// so just run the closure in the caller's goroutine in that case.
 	if len(t.threads) == 0 {

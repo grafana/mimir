@@ -19,6 +19,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/backoff"
+	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -37,6 +38,8 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
+	"github.com/grafana/mimir/pkg/storegateway/indexheader"
+	"github.com/grafana/mimir/pkg/storegateway/threadpool"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -48,6 +51,8 @@ const GrpcContextMetadataTenantID = "__org_id__"
 
 // BucketStores is a multi-tenant wrapper of Thanos BucketStore.
 type BucketStores struct {
+	services.Service
+
 	logger             log.Logger
 	cfg                tsdb.BlocksStorageConfig
 	limits             *validation.Overrides
@@ -76,6 +81,9 @@ type BucketStores struct {
 	// Keeps a bucket store for each tenant.
 	storesMu sync.RWMutex
 	stores   map[string]*BucketStore
+
+	// Pool of OS threads to run potentially blocking mmap operations
+	threadPool *threadpool.ThreadPool
 
 	// Metrics.
 	syncTimes         prometheus.Histogram
@@ -113,6 +121,7 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 		queryGate:          queryGate,
 		partitioner:        newGapBasedPartitioner(cfg.BucketStore.PartitionerMaxGapBytes, reg),
 		seriesHashCache:    hashcache.NewSeriesHashCache(cfg.BucketStore.SeriesHashCacheMaxBytes),
+		threadPool:         threadpool.NewThreadPool(cfg.BucketStore.IndexHeader.ThreadPoolSize, reg),
 		syncBackoffConfig: backoff.Config{
 			MinBackoff: 1 * time.Second,
 			MaxBackoff: 10 * time.Second,
@@ -157,7 +166,16 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 		reg.MustRegister(u.metaFetcherMetrics)
 	}
 
+	u.Service = services.NewIdleService(u.starting, u.stopping)
 	return u, nil
+}
+
+func (u *BucketStores) starting(ctx context.Context) error {
+	return services.StartAndAwaitRunning(ctx, u.threadPool)
+}
+
+func (u *BucketStores) stopping(_ error) error {
+	return services.StopAndAwaitTerminated(context.Background(), u.threadPool)
 }
 
 // InitialSync does an initial synchronization of blocks for all users.
@@ -475,6 +493,13 @@ func (u *BucketStores) getOrCreateStore(userID string) (*BucketStore, error) {
 		WithQueryGate(u.queryGate),
 		WithChunkPool(u.chunksPool),
 	}
+
+	if u.cfg.BucketStore.IndexHeader.ThreadPoolSize > 0 {
+		// Only create new index readers in a dedicated threadPool if enabled. If not enabled, they'll be
+		// created the usual way: in the calling goroutine.
+		bucketStoreOpts = append(bucketStoreOpts, WithIndexReaderFactory(indexheader.NewThreadedReaderFactory(u.threadPool)))
+	}
+
 	if u.logLevel.String() == "debug" {
 		bucketStoreOpts = append(bucketStoreOpts, WithDebugLogging())
 	}
