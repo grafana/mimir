@@ -24,10 +24,6 @@ import (
 const (
 	discardReasonLabel = "reason"
 
-	// RateLimited is one of the values for the reason to discard samples.
-	// Declared here to avoid duplication in ingester and distributor.
-	RateLimited = "rate_limited"
-
 	// Too many HA clusters is one of the reasons for discarding samples.
 	TooManyHAClusters = "too_many_ha_clusters"
 
@@ -59,6 +55,10 @@ var (
 	reasonMetadataMetricNameTooLong = metricReasonFromErrorID(globalerror.MetricMetadataMetricNameTooLong)
 	reasonMetadataHelpTooLong       = metricReasonFromErrorID(globalerror.MetricMetadataHelpTooLong)
 	reasonMetadataUnitTooLong       = metricReasonFromErrorID(globalerror.MetricMetadataUnitTooLong)
+
+	// ReasonRateLimited is one of the values for the reason to discard samples.
+	// Declared here to avoid duplication in ingester and distributor.
+	ReasonRateLimited = "rate_limited" // same for request and ingestion which are separate errors, so not using metricReasonFromErrorID with global error
 )
 
 func metricReasonFromErrorID(id globalerror.ID) string {
