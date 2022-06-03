@@ -7,11 +7,9 @@ package tsdb
 
 import (
 	"context"
-	"io/ioutil"
 	"os"
 	"path"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"github.com/go-kit/log"
@@ -55,7 +53,7 @@ func UploadBlock(ctx context.Context, logger log.Logger, bkt objstore.Bucket, bl
 
 	// Note that entry for meta.json file will be incorrect and will reflect local file,
 	// not updated Meta struct.
-	meta.Thanos.Files, err = gatherFileStats(blockDir)
+	meta.Thanos.Files, err = block.GatherFileStats(blockDir, metadata.NoneFunc, logger)
 	if err != nil {
 		return errors.Wrap(err, "gather meta file stats")
 	}
@@ -83,42 +81,6 @@ func UploadBlock(ctx context.Context, logger log.Logger, bkt objstore.Bucket, bl
 	}
 
 	return nil
-}
-
-// gatherFileStats can hopefully be replaced with Thanos public function: https://github.com/thanos-io/thanos/pull/5400
-func gatherFileStats(blockDir string) (res []metadata.File, _ error) {
-	files, err := ioutil.ReadDir(filepath.Join(blockDir, block.ChunksDirname))
-	if err != nil {
-		return nil, errors.Wrapf(err, "read dir %v", filepath.Join(blockDir, block.ChunksDirname))
-	}
-	for _, f := range files {
-		mf := metadata.File{
-			RelPath:   filepath.Join(block.ChunksDirname, f.Name()),
-			SizeBytes: f.Size(),
-		}
-		res = append(res, mf)
-	}
-
-	indexFile, err := os.Stat(filepath.Join(blockDir, block.IndexFilename))
-	if err != nil {
-		return nil, errors.Wrapf(err, "stat %v", filepath.Join(blockDir, block.IndexFilename))
-	}
-	mf := metadata.File{
-		RelPath:   indexFile.Name(),
-		SizeBytes: indexFile.Size(),
-	}
-	res = append(res, mf)
-
-	metaFile, err := os.Stat(filepath.Join(blockDir, block.MetaFilename))
-	if err != nil {
-		return nil, errors.Wrapf(err, "stat %v", filepath.Join(blockDir, block.MetaFilename))
-	}
-	res = append(res, metadata.File{RelPath: metaFile.Name()})
-
-	sort.Slice(res, func(i, j int) bool {
-		return res[i].RelPath < res[j].RelPath
-	})
-	return res, err
 }
 
 func cleanUp(logger log.Logger, bkt objstore.Bucket, id ulid.ULID, origErr error) error {
