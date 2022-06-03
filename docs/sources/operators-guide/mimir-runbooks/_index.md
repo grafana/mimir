@@ -1144,27 +1144,28 @@ The limit protects the system’s stability from potential abuse or mistakes, an
 This critical error occurs when the rate of received samples, exemplars and metadata per second is exceeded in a distributor.
 
 The distributor implements a rate limit on the samples per second that can be ingested, and it's used to protect a distributor from overloading in case of high traffic.
-The limit is a per-instance limit and it's applied on all samples, exemplars and metadata received, across all tenants, in each distributor.
+This per-instance limit is applied to all samples, exemplars, and all of the metadata that it receives.
+Also, the limit spans all of the tenants within each distributor.
 
 How to **fix** it:
 
-- Scale up distributors.
+- Scale up the distributors.
 - Increase the limit by using the `-distributor.instance-limits.max-ingestion-rate` option.
 
 ### err-mimir-distributor-max-inflight-push-requests
 
-This error occurs when a distributor rejects a write request because the max inflight requests limit has been reached.
+This error occurs when a distributor rejects a write request because the maximum in-flight requests limit has been reached.
 
 How it **works**:
 
-- The distributor has per-instance limit on the number of inflight write (push) requests.
-- The limit applies on all inflight write requests, across all tenants, and is used to protect the distributor from overloading in case of high traffic.
-- You can configure the limit by setting the `-distributor.instance-limits.max-inflight-push-requests` option.
+- The distributor has a per-instance limit on the number of in-flight write (push) requests.
+- The limit applies to all in-flight write requests, across all tenants, and it protects the distributor from becoming overloaded in case of high traffic.
+- To configure the limit, set the `-distributor.instance-limits.max-inflight-push-requests` option.
 
 How to **fix** it:
 
 - In case of emergency, increase the limit by setting the `-distributor.instance-limits.max-inflight-push-requests` option.
-- Check the write requests latency through the `Mimir / Writes` dashboard and eventually investigate the root cause of high latency (the higher the latency, the higher the number of inflight write requests).
+- Check the write requests latency through the `Mimir / Writes` dashboard and eventually investigate the root cause of high latency (the higher the latency, the higher the number of in-flight write requests).
 - Consider scaling out the distributors.
 
 ### err-mimir-ingester-max-ingestion-rate
