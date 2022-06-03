@@ -38,7 +38,7 @@ func TestNewLazyBinaryReader_ShouldFailIfUnableToBuildIndexHeader(t *testing.T) 
 	require.NoError(t, err)
 	defer func() { require.NoError(t, bkt.Close()) }()
 
-	_, err = NewLazyBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, ulid.MustNew(0, nil), 3, NewLazyBinaryReaderMetrics(nil), nil)
+	_, err = NewLazyBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, ulid.MustNew(0, nil), 3, BinaryReaderConfig{}, NewLazyBinaryReaderMetrics(nil), nil)
 	require.Error(t, err)
 }
 
@@ -62,7 +62,7 @@ func TestNewLazyBinaryReader_ShouldBuildIndexHeaderFromBucket(t *testing.T) {
 	require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, blockID.String()), metadata.NoneFunc))
 
 	m := NewLazyBinaryReaderMetrics(nil)
-	r, err := NewLazyBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, blockID, 3, m, nil)
+	r, err := NewLazyBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, blockID, 3, BinaryReaderConfig{}, m, nil)
 	require.NoError(t, err)
 	require.True(t, r.reader == nil)
 	require.Equal(t, float64(0), promtestutil.ToFloat64(m.loadCount))
@@ -107,7 +107,7 @@ func TestNewLazyBinaryReader_ShouldRebuildCorruptedIndexHeader(t *testing.T) {
 	require.NoError(t, ioutil.WriteFile(headerFilename, []byte("xxx"), os.ModePerm))
 
 	m := NewLazyBinaryReaderMetrics(nil)
-	r, err := NewLazyBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, blockID, 3, m, nil)
+	r, err := NewLazyBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, blockID, 3, BinaryReaderConfig{}, m, nil)
 	require.NoError(t, err)
 	require.True(t, r.reader == nil)
 	require.Equal(t, float64(0), promtestutil.ToFloat64(m.loadCount))
@@ -143,7 +143,7 @@ func TestLazyBinaryReader_ShouldReopenOnUsageAfterClose(t *testing.T) {
 	require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, blockID.String()), metadata.NoneFunc))
 
 	m := NewLazyBinaryReaderMetrics(nil)
-	r, err := NewLazyBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, blockID, 3, m, nil)
+	r, err := NewLazyBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, blockID, 3, BinaryReaderConfig{}, m, nil)
 	require.NoError(t, err)
 	require.True(t, r.reader == nil)
 
@@ -195,7 +195,7 @@ func TestLazyBinaryReader_unload_ShouldReturnErrorIfNotIdle(t *testing.T) {
 	require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, blockID.String()), metadata.NoneFunc))
 
 	m := NewLazyBinaryReaderMetrics(nil)
-	r, err := NewLazyBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, blockID, 3, m, nil)
+	r, err := NewLazyBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, blockID, 3, BinaryReaderConfig{}, m, nil)
 	require.NoError(t, err)
 	require.True(t, r.reader == nil)
 
@@ -246,7 +246,7 @@ func TestLazyBinaryReader_LoadUnloadRaceCondition(t *testing.T) {
 	require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, blockID.String()), metadata.NoneFunc))
 
 	m := NewLazyBinaryReaderMetrics(nil)
-	r, err := NewLazyBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, blockID, 3, m, nil)
+	r, err := NewLazyBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, blockID, 3, BinaryReaderConfig{}, m, nil)
 	require.NoError(t, err)
 	require.True(t, r.reader == nil)
 	t.Cleanup(func() {

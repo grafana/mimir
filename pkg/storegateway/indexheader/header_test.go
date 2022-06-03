@@ -103,11 +103,11 @@ func TestReaders(t *testing.T) {
 
 			b := realByteSlice(indexFile.Bytes())
 
-			t.Run("binary reader", func(t *testing.T) {
+			testBinaryReader := func(t *testing.T, cfg BinaryReaderConfig) {
 				fn := filepath.Join(tmpDir, id.String(), block.IndexHeaderFilename)
 				require.NoError(t, WriteBinary(ctx, bkt, id, fn))
 
-				br, err := NewBinaryReader(ctx, log.NewNopLogger(), nil, tmpDir, id, 3)
+				br, err := NewBinaryReader(ctx, log.NewNopLogger(), nil, tmpDir, id, 3, cfg)
 				require.NoError(t, err)
 
 				defer func() { require.NoError(t, br.Close()) }()
@@ -174,13 +174,21 @@ func TestReaders(t *testing.T) {
 				}
 
 				compareIndexToHeader(t, b, br)
+			}
+
+			t.Run("binary reader", func(t *testing.T) {
+				testBinaryReader(t, BinaryReaderConfig{})
+			})
+
+			t.Run("binary reader with map populate", func(t *testing.T) {
+				testBinaryReader(t, BinaryReaderConfig{MapPopulateEnabled: true})
 			})
 
 			t.Run("lazy binary reader", func(t *testing.T) {
 				fn := filepath.Join(tmpDir, id.String(), block.IndexHeaderFilename)
 				require.NoError(t, WriteBinary(ctx, bkt, id, fn))
 
-				br, err := NewLazyBinaryReader(ctx, log.NewNopLogger(), nil, tmpDir, id, 3, NewLazyBinaryReaderMetrics(nil), nil)
+				br, err := NewLazyBinaryReader(ctx, log.NewNopLogger(), nil, tmpDir, id, 3, BinaryReaderConfig{}, NewLazyBinaryReaderMetrics(nil), nil)
 				require.NoError(t, err)
 
 				defer func() { require.NoError(t, br.Close()) }()
@@ -369,7 +377,7 @@ func BenchmarkBinaryReader(t *testing.B) {
 
 	t.ResetTimer()
 	for i := 0; i < t.N; i++ {
-		br, err := newFileBinaryReader(fn, 32)
+		br, err := newFileBinaryReader(fn, 32, BinaryReaderConfig{})
 		require.NoError(t, err)
 		require.NoError(t, br.Close())
 	}
@@ -409,7 +417,7 @@ func benchmarkBinaryReaderLookupSymbol(b *testing.B, numSeries int) {
 	require.NoError(b, block.Upload(ctx, logger, bkt, filepath.Join(tmpDir, id1.String()), metadata.NoneFunc))
 
 	// Create an index reader.
-	reader, err := NewBinaryReader(ctx, logger, bkt, tmpDir, id1, postingOffsetsInMemSampling)
+	reader, err := NewBinaryReader(ctx, logger, bkt, tmpDir, id1, postingOffsetsInMemSampling, BinaryReaderConfig{})
 	require.NoError(b, err)
 
 	// Get the offset of each label value symbol.

@@ -32,6 +32,8 @@ import (
 	"github.com/thanos-io/thanos/pkg/block"
 	"github.com/thanos-io/thanos/pkg/objstore"
 	"github.com/thanos-io/thanos/pkg/runutil"
+
+	mmap "github.com/grafana/mimir/pkg/storegateway/indexheader/fileutil"
 )
 
 const (
@@ -460,9 +462,9 @@ type BinaryReader struct {
 }
 
 // NewBinaryReader loads or builds new index-header if not present on disk.
-func NewBinaryReader(ctx context.Context, logger log.Logger, bkt objstore.BucketReader, dir string, id ulid.ULID, postingOffsetsInMemSampling int) (*BinaryReader, error) {
+func NewBinaryReader(ctx context.Context, logger log.Logger, bkt objstore.BucketReader, dir string, id ulid.ULID, postingOffsetsInMemSampling int, cfg BinaryReaderConfig) (*BinaryReader, error) {
 	binfn := filepath.Join(dir, id.String(), block.IndexHeaderFilename)
-	br, err := newFileBinaryReader(binfn, postingOffsetsInMemSampling)
+	br, err := newFileBinaryReader(binfn, postingOffsetsInMemSampling, cfg)
 	if err == nil {
 		return br, nil
 	}
@@ -475,11 +477,11 @@ func NewBinaryReader(ctx context.Context, logger log.Logger, bkt objstore.Bucket
 	}
 
 	level.Debug(logger).Log("msg", "built index-header file", "path", binfn, "elapsed", time.Since(start))
-	return newFileBinaryReader(binfn, postingOffsetsInMemSampling)
+	return newFileBinaryReader(binfn, postingOffsetsInMemSampling, cfg)
 }
 
-func newFileBinaryReader(path string, postingOffsetsInMemSampling int) (bw *BinaryReader, err error) {
-	f, err := fileutil.OpenMmapFile(path)
+func newFileBinaryReader(path string, postingOffsetsInMemSampling int, cfg BinaryReaderConfig) (bw *BinaryReader, err error) {
+	f, err := mmap.OpenMmapFile(path, cfg.MapPopulateEnabled)
 	if err != nil {
 		return nil, err
 	}
