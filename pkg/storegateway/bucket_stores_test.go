@@ -573,7 +573,7 @@ func mockLoggingLevel() logging.Level {
 func setUserIDToGRPCContext(ctx context.Context, userID string) context.Context {
 	// We have to store it in the incoming metadata because we have to emulate the
 	// case it's coming from a gRPC request, while here we're running everything in-memory.
-	return metadata.NewIncomingContext(ctx, metadata.Pairs(mimir_tsdb.TenantIDExternalLabel, userID))
+	return metadata.NewIncomingContext(ctx, metadata.Pairs(GrpcContextMetadataTenantID, userID))
 }
 
 func TestBucketStores_deleteLocalFilesForExcludedTenants(t *testing.T) {

@@ -42,6 +42,10 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
+// GrpcContextMetadataTenantID is a key for GRPC Metadata used to pass tenant ID to store-gateway process.
+// (This is now separate from DeprecatedTenantIDExternalLabel to signify different use case.)
+const GrpcContextMetadataTenantID = "__org_id__"
+
 // BucketStores is a multi-tenant wrapper of Thanos BucketStore.
 type BucketStores struct {
 	logger             log.Logger
@@ -560,7 +564,7 @@ func getUserIDFromGRPCContext(ctx context.Context) string {
 		return ""
 	}
 
-	values := meta.Get(tsdb.TenantIDExternalLabel)
+	values := meta.Get(GrpcContextMetadataTenantID)
 	if len(values) != 1 {
 		return ""
 	}

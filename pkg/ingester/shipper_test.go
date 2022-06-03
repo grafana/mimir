@@ -42,7 +42,7 @@ func TestShipper(t *testing.T) {
 	logs := &concurrency.SyncBuffer{}
 	logger := log.NewLogfmtLogger(logs)
 
-	s := NewShipper(logger, nil, blocksDir, bkt, nil, metadata.TestSource, metadata.NoneFunc)
+	s := NewShipper(logger, nil, blocksDir, bkt, metadata.TestSource, metadata.NoneFunc)
 
 	t.Run("no shipper file yet", func(t *testing.T) {
 		// No shipper file = nothing is reported as shipped.

@@ -4,7 +4,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"path"
 	"strings"
 	"testing"
@@ -67,8 +66,8 @@ func TestConvertTenantBlocks(t *testing.T) {
 
 			Thanos: metadata.Thanos{
 				Labels: map[string]string{
-					"test":                           "label",
-					mimir_tsdb.TenantIDExternalLabel: "wrong tenant",
+					"test":       "label",
+					"__org_id__": "wrong tenant",
 				},
 			},
 		},
@@ -80,9 +79,9 @@ func TestConvertTenantBlocks(t *testing.T) {
 
 			Thanos: metadata.Thanos{
 				Labels: map[string]string{
-					mimir_tsdb.TenantIDExternalLabel:         "fake",
+					"__org_id__":                             "fake",
 					mimir_tsdb.CompactorShardIDExternalLabel: "1_of_10",
-					mimir_tsdb.IngesterIDExternalLabel:       "ingester-1",
+					"__ingester_id__":                        "ingester-1",
 				},
 			},
 		},
@@ -94,7 +93,7 @@ func TestConvertTenantBlocks(t *testing.T) {
 
 			Thanos: metadata.Thanos{
 				Labels: map[string]string{
-					mimir_tsdb.TenantIDExternalLabel: tenant,
+					"__org_id__": tenant,
 				},
 			},
 		},
@@ -127,9 +126,6 @@ func TestConvertTenantBlocks(t *testing.T) {
 
 			Thanos: metadata.Thanos{
 				Version: 10,
-				Labels: map[string]string{
-					mimir_tsdb.TenantIDExternalLabel: tenant,
-				},
 				Downsample: metadata.ThanosDownsample{
 					Resolution: 15,
 				},
@@ -141,12 +137,6 @@ func TestConvertTenantBlocks(t *testing.T) {
 			BlockMeta: tsdb.BlockMeta{
 				ULID: blockWithWrongTenant,
 			},
-
-			Thanos: metadata.Thanos{
-				Labels: map[string]string{
-					mimir_tsdb.TenantIDExternalLabel: tenant,
-				},
-			},
 		},
 
 		blockWithManyMimirLabels: {
@@ -156,9 +146,7 @@ func TestConvertTenantBlocks(t *testing.T) {
 
 			Thanos: metadata.Thanos{
 				Labels: map[string]string{
-					mimir_tsdb.TenantIDExternalLabel:         tenant,
 					mimir_tsdb.CompactorShardIDExternalLabel: "1_of_10",
-					mimir_tsdb.IngesterIDExternalLabel:       "ingester-1",
 				},
 			},
 		},
@@ -167,33 +155,33 @@ func TestConvertTenantBlocks(t *testing.T) {
 			BlockMeta: tsdb.BlockMeta{
 				ULID: blockWithNoChangesRequired,
 			},
-
-			Thanos: metadata.Thanos{
-				Labels: map[string]string{
-					mimir_tsdb.TenantIDExternalLabel: tenant,
-				},
-			},
 		},
 	}
 
 	for b, m := range expected {
 		meta, err := block.DownloadMeta(ctx, logger, bkt, b)
-		require.NoError(t, err)
-		require.Equal(t, m, meta)
+		require.NoError(t, err, b.String())
+
+		// Normalize empty map to nil to simplify tests.
+		if len(meta.Thanos.Labels) == 0 {
+			meta.Thanos.Labels = nil
+		}
+		require.Equal(t, m, meta, b.String())
 	}
 
 	assert.Equal(t, []string{
-		`level=warn tenant=target_tenant msg="updating tenant label" block=00000000010000000000000000 old_value= new_value=target_tenant`,
-		`level=info tenant=target_tenant msg="changes required, uploading meta.json file" block=00000000010000000000000000`,
-		`level=info tenant=target_tenant msg="meta.json file uploaded successfully" block=00000000010000000000000000`,
-		`level=warn tenant=target_tenant msg="updating tenant label" block=00000000020000000000000000 old_value="wrong tenant" new_value=target_tenant`,
+		`level=info tenant=target_tenant msg="no changes required" block=00000000010000000000000000`,
+		`level=warn tenant=target_tenant msg="removing unknown label" block=00000000020000000000000000 label=__org_id__ value="wrong tenant"`,
 		`level=warn tenant=target_tenant msg="removing unknown label" block=00000000020000000000000000 label=test value=label`,
 		`level=info tenant=target_tenant msg="changes required, uploading meta.json file" block=00000000020000000000000000`,
 		`level=info tenant=target_tenant msg="meta.json file uploaded successfully" block=00000000020000000000000000`,
-		`level=warn tenant=target_tenant msg="updating tenant label" block=00000000030000000000000000 old_value=fake new_value=target_tenant`,
+		`level=warn tenant=target_tenant msg="removing unknown label" block=00000000030000000000000000 label=__ingester_id__ value=ingester-1`,
+		`level=warn tenant=target_tenant msg="removing unknown label" block=00000000030000000000000000 label=__org_id__ value=fake`,
 		`level=info tenant=target_tenant msg="changes required, uploading meta.json file" block=00000000030000000000000000`,
 		`level=info tenant=target_tenant msg="meta.json file uploaded successfully" block=00000000030000000000000000`,
-		`level=info tenant=target_tenant msg="no changes required" block=00000000040000000000000000`,
+		`level=warn tenant=target_tenant msg="removing unknown label" block=00000000040000000000000000 label=__org_id__ value=target_tenant`,
+		`level=info tenant=target_tenant msg="changes required, uploading meta.json file" block=00000000040000000000000000`,
+		`level=info tenant=target_tenant msg="meta.json file uploaded successfully" block=00000000040000000000000000`,
 	}, strings.Split(strings.TrimSpace(logs.String()), "\n"))
 }
 
@@ -242,8 +230,8 @@ func TestConvertTenantBlocksDryMode(t *testing.T) {
 
 			Thanos: metadata.Thanos{
 				Labels: map[string]string{
-					"test":                           "label",
-					mimir_tsdb.TenantIDExternalLabel: "wrong tenant",
+					"test":       "label",
+					"__org_id__": "wrong tenant",
 				},
 			},
 		},
@@ -255,9 +243,9 @@ func TestConvertTenantBlocksDryMode(t *testing.T) {
 
 			Thanos: metadata.Thanos{
 				Labels: map[string]string{
-					mimir_tsdb.TenantIDExternalLabel:         "fake",
+					"__org_id__":                             "fake",
 					mimir_tsdb.CompactorShardIDExternalLabel: "1_of_10",
-					mimir_tsdb.IngesterIDExternalLabel:       "ingester-1",
+					"__ingester_id__":                        "ingester-1",
 				},
 			},
 		},
@@ -269,7 +257,7 @@ func TestConvertTenantBlocksDryMode(t *testing.T) {
 
 			Thanos: metadata.Thanos{
 				Labels: map[string]string{
-					mimir_tsdb.TenantIDExternalLabel: tenant,
+					"__org_id__": tenant,
 				},
 			},
 		},
@@ -291,16 +279,15 @@ func TestConvertTenantBlocksDryMode(t *testing.T) {
 		require.Equal(t, m, meta)
 	}
 
-	fmt.Println(logs.String())
-
 	assert.Equal(t, []string{
-		`level=warn tenant=target_tenant msg="updating tenant label" block=00000000010000000000000000 old_value= new_value=target_tenant`,
-		`level=warn tenant=target_tenant msg="changes required, not uploading back due to dry run" block=00000000010000000000000000`,
-		`level=warn tenant=target_tenant msg="updating tenant label" block=00000000020000000000000000 old_value="wrong tenant" new_value=target_tenant`,
+		`level=info tenant=target_tenant msg="no changes required" block=00000000010000000000000000`,
+		`level=warn tenant=target_tenant msg="removing unknown label" block=00000000020000000000000000 label=__org_id__ value="wrong tenant"`,
 		`level=warn tenant=target_tenant msg="removing unknown label" block=00000000020000000000000000 label=test value=label`,
 		`level=warn tenant=target_tenant msg="changes required, not uploading back due to dry run" block=00000000020000000000000000`,
-		`level=warn tenant=target_tenant msg="updating tenant label" block=00000000030000000000000000 old_value=fake new_value=target_tenant`,
+		`level=warn tenant=target_tenant msg="removing unknown label" block=00000000030000000000000000 label=__ingester_id__ value=ingester-1`,
+		`level=warn tenant=target_tenant msg="removing unknown label" block=00000000030000000000000000 label=__org_id__ value=fake`,
 		`level=warn tenant=target_tenant msg="changes required, not uploading back due to dry run" block=00000000030000000000000000`,
-		`level=info tenant=target_tenant msg="no changes required" block=00000000040000000000000000`,
+		`level=warn tenant=target_tenant msg="removing unknown label" block=00000000040000000000000000 label=__org_id__ value=target_tenant`,
+		`level=warn tenant=target_tenant msg="changes required, not uploading back due to dry run" block=00000000040000000000000000`,
 	}, strings.Split(strings.TrimSpace(logs.String()), "\n"))
 }

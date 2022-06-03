@@ -225,7 +225,7 @@ func TestStoreGateway_InitialSyncWithWaitRingTokensStability(t *testing.T) {
 		userBucketClient := bucket.NewUserBucketClient(userID, bucketClient, nil)
 		require.NoError(t, bucketClientOnDisk.Iter(context.Background(), userID, func(key string) error {
 			dir := strings.TrimSuffix(path.Join(storageDir, key), "/")
-			err := block.UploadPromBlock(context.Background(), log.NewNopLogger(), userBucketClient, dir, metadata.NoneFunc)
+			err := mimir_tsdb.UploadBlock(context.Background(), log.NewNopLogger(), userBucketClient, dir, nil)
 			if err != nil {
 				return err
 			}
@@ -1018,10 +1018,10 @@ func TestStoreGateway_SeriesQueryingShouldRemoveExternalLabels(t *testing.T) {
 	for idx, blockID := range blockIDs {
 		meta := metadata.Thanos{
 			Labels: map[string]string{
-				mimir_tsdb.TenantIDExternalLabel:          userID,
-				mimir_tsdb.IngesterIDExternalLabel:        fmt.Sprintf("ingester-%d", idx),
-				mimir_tsdb.CompactorShardIDExternalLabel:  fmt.Sprintf("%d_of_2", (idx%2)+1),
-				mimir_tsdb.DeprecatedShardIDExternalLabel: fmt.Sprintf("shard-%d", idx),
+				mimir_tsdb.DeprecatedTenantIDExternalLabel:   userID,
+				mimir_tsdb.DeprecatedIngesterIDExternalLabel: fmt.Sprintf("ingester-%d", idx),
+				mimir_tsdb.CompactorShardIDExternalLabel:     fmt.Sprintf("%d_of_2", (idx%2)+1),
+				mimir_tsdb.DeprecatedShardIDExternalLabel:    fmt.Sprintf("shard-%d", idx),
 			},
 			Source: metadata.TestSource,
 		}
