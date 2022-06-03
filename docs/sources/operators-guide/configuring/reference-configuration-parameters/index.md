@@ -3399,8 +3399,7 @@ bucket_store:
 
   index_header:
     # (experimental) If enabled, the store-gateway will attempt to pre-populate
-    # the file system cache when memory-mapping index-header files. This flag
-    # has no effect on Windows platforms.
+    # the file system cache when memory-mapping index-header files.
     # CLI flag: -blocks-storage.bucket-store.index-header.map-populate-enabled
     [map_populate_enabled: <boolean> | default = false]
 

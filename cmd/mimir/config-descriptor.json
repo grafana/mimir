@@ -5142,7 +5142,7 @@
                   "kind": "field",
                   "name": "map_populate_enabled",
                   "required": false,
-                  "desc": "If enabled, the store-gateway will attempt to pre-populate the file system cache when memory-mapping index-header files. This flag has no effect on Windows platforms.",
+                  "desc": "If enabled, the store-gateway will attempt to pre-populate the file system cache when memory-mapping index-header files.",
                   "fieldValue": null,
                   "fieldDefaultValue": false,
                   "fieldFlag": "blocks-storage.bucket-store.index-header.map-populate-enabled",
