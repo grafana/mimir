@@ -51,6 +51,7 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args:
             - "-target=gateway"
+            - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
             {{- range $key, $value := .Values.gateway.extraArgs }}
             - "-{{ $key }}={{ $value }}"
@@ -83,6 +84,10 @@ spec:
           env:
             {{- if .Values.gateway.env }}
             {{ toYaml .Values.gateway.env | nindent 12 }}
+            {{- end }}
+          envFrom:
+            {{- with .Values.gateway.extraEnvFrom }}
+            {{- toYaml . | nindent 12 }}
             {{- end }}
         {{- with .Values.gateway.extraContainers }}
         {{ toYaml . | nindent 8 }}

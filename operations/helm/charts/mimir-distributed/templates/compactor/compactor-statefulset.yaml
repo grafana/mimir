@@ -102,6 +102,7 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args:
             - "-target=compactor"
+            - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
             {{- range $key, $value := .Values.compactor.extraArgs }}
             - "-{{ $key }}={{ $value }}"
@@ -144,4 +145,8 @@ spec:
           env:
             {{- if .Values.compactor.env }}
               {{- toYaml .Values.compactor.env | nindent 12 }}
+            {{- end }}
+          envFrom:
+            {{- with .Values.compactor.extraEnvFrom }}
+            {{- toYaml . | nindent 12 }}
             {{- end }}

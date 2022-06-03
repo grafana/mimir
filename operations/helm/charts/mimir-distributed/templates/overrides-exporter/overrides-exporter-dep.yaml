@@ -51,6 +51,7 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args:
             - "-target=overrides-exporter"
+            - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
             {{- range $key, $value := .Values.overrides_exporter.extraArgs }}
             - "-{{ $key }}={{ $value }}"
@@ -88,6 +89,10 @@ spec:
           env:
             {{- if .Values.overrides_exporter.env }}
             {{ toYaml .Values.overrides_exporter.env | nindent 12 }}
+            {{- end }}
+          envFrom:
+            {{- with .Values.overrides_exporter.extraEnvFrom }}
+            {{- toYaml . | nindent 12 }}
             {{- end }}
         {{- with .Values.overrides_exporter.extraContainers }}
         {{ toYaml . | nindent 8 }}

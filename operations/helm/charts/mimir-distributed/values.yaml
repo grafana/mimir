@@ -384,6 +384,7 @@ alertmanager:
 
   # Extra env variables to pass to the alertmanager container
   env: []
+  extraEnvFrom: []
 
 distributor:
   replicas: 1
@@ -447,6 +448,7 @@ distributor:
   extraVolumes: []
   extraVolumeMounts: []
   env: []
+  extraEnvFrom: []
 
 ingester:
   replicas: 3
@@ -539,6 +541,7 @@ ingester:
   extraVolumes: []
   extraVolumeMounts: []
   env: []
+  extraEnvFrom: []
 
 overrides_exporter:
   enabled: true
@@ -596,6 +599,7 @@ overrides_exporter:
   extraVolumes: []
   extraVolumeMounts: []
   env: []
+  extraEnvFrom: []
 
 ruler:
   enabled: true
@@ -651,6 +655,7 @@ ruler:
   extraVolumes: []
   extraVolumeMounts: []
   env: []
+  extraEnvFrom: []
 
 querier:
   replicas: 2
@@ -716,6 +721,7 @@ querier:
   extraVolumes: []
   extraVolumeMounts: []
   env: []
+  extraEnvFrom: []
 
 query_frontend:
   replicas: 1
@@ -781,6 +787,7 @@ query_frontend:
   extraVolumes: []
   extraVolumeMounts: []
   env: []
+  extraEnvFrom: []
 
 store_gateway:
   replicas: 1
@@ -876,6 +883,7 @@ store_gateway:
   extraVolumes: []
   extraVolumeMounts: []
   env: []
+  extraEnvFrom: []
 
 compactor:
   replicas: 1
@@ -972,6 +980,7 @@ compactor:
   extraVolumes: []
   extraVolumeMounts: []
   env: []
+  extraEnvFrom: []
 
 memcached:
   enabled: false
@@ -1430,6 +1439,7 @@ tokengenJob:
   enable: true
   extraArgs: {}
   env: []
+  extraEnvFrom: []
   annotations: {}
   initContainers: []
 
@@ -1485,6 +1495,7 @@ admin_api:
   extraVolumes: []
   extraVolumeMounts: []
   env: []
+  extraEnvFrom: []
 
 # Settings for the gateway service providing authentication and authorization via the admin_api.
 # Can only be enabled if enterprise.enabled is true - requires license.
@@ -1541,6 +1552,7 @@ gateway:
   extraVolumes: []
   extraVolumeMounts: []
   env: []
+  extraEnvFrom: []
 
   # Ingress configuration
   ingress:

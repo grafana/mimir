@@ -11,6 +11,11 @@ Entries should be ordered as follows:
 
 Entries should include a reference to the Pull Request that introduced the change.
 
+## main / unreleased
+
+* [ENHANCEMENT] Add `extraEnvFrom` capability to all Mimir services to enable injecting secrets via environment variables. #2017
+* [ENHANCEMENT] Enable `-config.expand-env=true` option in all Mimir services to be able to take secrets/settings from the environment and inject them into the Mimir configuration file. #2017
+
 ## 2.1.0-beta.7
 
 * [ENHANCEMENT] Bump image version to 2.1 #2001

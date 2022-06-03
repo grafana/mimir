@@ -50,6 +50,7 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args:
             - "-target=distributor"
+            - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
           {{- range $key, $value := .Values.distributor.extraArgs }}
             - "-{{ $key }}={{ $value }}"
@@ -90,6 +91,10 @@ spec:
           env:
             {{- if .Values.distributor.env }}
               {{- toYaml .Values.distributor.env | nindent 12 }}
+            {{- end }}
+          envFrom:
+            {{- with .Values.distributor.extraEnvFrom }}
+            {{- toYaml . | nindent 12 }}
             {{- end }}
 {{- if .Values.distributor.extraContainers }}
 {{ toYaml .Values.distributor.extraContainers | indent 8}}
