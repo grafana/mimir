@@ -232,7 +232,7 @@ func (b *BucketValidationCommand) validateTestObjects(ctx context.Context) error
 	}
 
 	if len(foundDirs) != len(b.objectNames) {
-		return fmt.Errorf("expected list to return %d directories, but it returned %d", len(b.objectNames), len(foundDirs))
+		level.Error(b.logger).Log("msg", fmt.Sprintf("expected list to return %d directories, but it returned %d", len(b.objectNames), len(foundDirs)))
 	}
 
 	iteration := 0
@@ -241,21 +241,21 @@ func (b *BucketValidationCommand) validateTestObjects(ctx context.Context) error
 		iteration++
 
 		if _, ok := foundDirs[dirName]; !ok {
-			return fmt.Errorf("expected directory did not exist (%s)", dirName)
+			level.Error(b.logger).Log("msg", fmt.Sprintf("expected directory did not exist (%s)", dirName))
 		}
 
 		objectPath := dirName + objectName
 		reader, err := b.bucketClient.Get(ctx, objectPath)
 		if err != nil {
-			return errors.Wrapf(err, "failed to get object (%s)", objectPath)
+			level.Error(b.logger).Log("msg", fmt.Sprintf("failed to get object (%s)", objectPath))
 		}
 
 		content, err := io.ReadAll(reader)
 		if err != nil {
-			return errors.Wrapf(err, "failed to read object (%s)", objectPath)
+			level.Error(b.logger).Log("msg", fmt.Sprintf("failed to read object (%s)", objectPath))
 		}
 		if string(content) != b.objectContent {
-			return errors.Wrapf(err, "got invalid object content (%s)", objectPath)
+			level.Error(b.logger).Log("msg", fmt.Sprintf("got invalid object content (%s)", objectPath))
 		}
 	}
 	b.report("validating test objects", iteration)
