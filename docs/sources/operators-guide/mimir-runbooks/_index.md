@@ -141,12 +141,12 @@ How to **fix** it:
 
 ### MimirDistributorReachingInflightPushRequestLimit
 
-This alert fires when the `cortex_distributor_inflight_push_requests` per distributor instance limit is enabled and the actual number of inflight push requests is approaching the set limit. Once the limit is reached, push requests to the distributor will fail (5xx) for new requests, while existing inflight push requests will continue to succeed.
+This alert fires when the `cortex_distributor_inflight_push_requests` per distributor instance limit is enabled and the actual number of in-flight push requests is approaching the set limit. Once the limit is reached, push requests to the distributor will fail (5xx) for new requests, while existing in-flight push requests will continue to succeed.
 
 In case of **emergency**:
 
-- If the actual number of inflight push requests is very close to or already at the set limit, then you can increase the limit via CLI flag or config to gain some time
-- Increasing the limit will increase the number of inflight push requests which will increase distributors' memory utilization. Please monitor the distributors' memory utilization via the `Mimir / Writes Resources` dashboard
+- If the actual number of in-flight push requests is very close to or already at the set limit, then you can increase the limit via CLI flag or config to gain some time
+- Increasing the limit will increase the number of in-flight push requests which will increase distributors' memory utilization. Please monitor the distributors' memory utilization via the `Mimir / Writes Resources` dashboard
 
 How the limit is **configured**:
 
@@ -162,9 +162,9 @@ How the limit is **configured**:
 How to **fix** it:
 
 1. **Temporarily increase the limit**<br />
-   If the actual number of inflight push requests is very close to or already hit the limit.
+   If the actual number of in-flight push requests is very close to or already hit the limit.
 2. **Scale up distributors**<br />
-   Scaling up distributors will lower the number of inflight push requests per distributor.
+   Scaling up distributors will lower the number of in-flight push requests per distributor.
 
 ### MimirRequestLatency
 
@@ -1042,7 +1042,7 @@ A metric name can only contain characters as defined by Prometheus’ [Metric na
 ### err-mimir-max-label-names-per-series
 
 This non-critical error occurs when Mimir receives a write request that contains a series with a number of labels that exceed the configured limit.
-The limit protects the system’s stability from potential abuse or mistakes, and you can configure the limit on a per-tenant basis by using the `-validation.max-label-names-per-series` option.
+The limit protects the system’s stability from potential abuse or mistakes. To configure the limit on a per-tenant basis, use the `-validation.max-label-names-per-series` option.
 
 > **Note**: Invalid series are skipped during the ingestion, and valid series within the same request are ingested.
 
@@ -1056,14 +1056,14 @@ A label name name can only contain characters as defined by Prometheus’ [Metri
 ### err-mimir-label-name-too-long
 
 This non-critical error occurs when Mimir receives a write request that contains a series with a label name whose length exceeds the configured limit.
-The limit protects the system’s stability from potential abuse or mistakes, and you can configure the limit on a per-tenant basis by using the `-validation.max-length-label-name` option.
+The limit protects the system’s stability from potential abuse or mistakes. To configure the limit on a per-tenant basis, use the `-validation.max-length-label-name` option.
 
 > **Note**: Invalid series are skipped during the ingestion, and valid series within the same request are ingested.
 
 ### err-mimir-label-value-too-long
 
 This non-critical error occurs when Mimir receives a write request that contains a series with a label value whose length exceeds the configured limit.
-The limit protects the system’s stability from potential abuse or mistakes, and you can configure the limit on a per-tenant basis by using the `-validation.max-length-label-value` option.
+The limit protects the system’s stability from potential abuse or mistakes. To configure the limit on a per-tenant basis, use the `-validation.max-length-label-value` option.
 
 > **Note**: Invalid series are skipped during the ingestion, and valid series within the same request are ingested.
 
@@ -1121,34 +1121,64 @@ Each metric metadata must have a metric name. Rarely it does not, in which case 
 ### err-mimir-metric-name-too-long
 
 This non-critical error occurs when Mimir receives a write request that contains a metric metadata with a metric name whose length exceeds the configured limit.
-The limit protects the system’s stability from potential abuse or mistakes, and you can configure the limit on a per-tenant basis by using the `-validation.max-metadata-length` option.
+The limit protects the system’s stability from potential abuse or mistakes. To configure the limit on a per-tenant basis, use the `-validation.max-metadata-length` option.
 
 > **Note**: Invalid metrics metadata are skipped during the ingestion, and valid metadata within the same request are ingested.
 
 ### err-mimir-help-too-long
 
 This non-critical error occurs when Mimir receives a write request that contains a metric metadata with an help description whose length exceeds the configured limit.
-The limit protects the system’s stability from potential abuse or mistakes, and you can configure the limit on a per-tenant basis by using the `-validation.max-metadata-length` option.
+The limit protects the system’s stability from potential abuse or mistakes. To configure the limit on a per-tenant basis, use the `-validation.max-metadata-length` option.
 
 > **Note**: Invalid metrics metadata are skipped during the ingestion, and valid metadata within the same request are ingested.
 
 ### err-mimir-unit-too-long
 
 This non-critical error occurs when Mimir receives a write request that contains a metric metadata with unit name whose length exceeds the configured limit.
-The limit protects the system’s stability from potential abuse or mistakes, and you can configure the limit on a per-tenant basis by using the `-validation.max-metadata-length` option.
+The limit protects the system’s stability from potential abuse or mistakes. To configure the limit on a per-tenant basis, use the `-validation.max-metadata-length` option.
 
 > **Note**: Invalid metrics metadata are skipped during the ingestion, and valid metadata within the same request are ingested.
+
+### err-mimir-distributor-max-ingestion-rate
+
+This critical error occurs when the rate of received samples, exemplars and metadata per second is exceeded in a distributor.
+
+The distributor implements a rate limit on the samples per second that can be ingested, and it's used to protect a distributor from overloading in case of high traffic.
+This per-instance limit is applied to all samples, exemplars, and all of the metadata that it receives.
+Also, the limit spans all of the tenants within each distributor.
+
+How to **fix** it:
+
+- Scale up the distributors.
+- Increase the limit by using the `-distributor.instance-limits.max-ingestion-rate` option.
+
+### err-mimir-distributor-max-inflight-push-requests
+
+This error occurs when a distributor rejects a write request because the maximum in-flight requests limit has been reached.
+
+How it **works**:
+
+- The distributor has a per-instance limit on the number of in-flight write (push) requests.
+- The limit applies to all in-flight write requests, across all tenants, and it protects the distributor from becoming overloaded in case of high traffic.
+- To configure the limit, set the `-distributor.instance-limits.max-inflight-push-requests` option.
+
+How to **fix** it:
+
+- Increase the limit by setting the `-distributor.instance-limits.max-inflight-push-requests` option.
+- Check the write requests latency through the `Mimir / Writes` dashboard and come back to investigate the root cause of high latency (the higher the latency, the higher the number of in-flight write requests).
+- Consider scaling out the distributors.
 
 ### err-mimir-ingester-max-ingestion-rate
 
 This critical error occurs when the rate of received samples per second is exceeded in an ingester.
 
 The ingester implements a rate limit on the samples per second that can be ingested, and it's used to protect an ingester from overloading in case of high traffic.
-The limit is a per-instance limit and it's applied on all samples received, across all tenants, in each ingester.
+This per-instance limit is applied to all samples that it receives.
+Also, the limit spans all of the tenants within each ingester.
 
 How to **fix** it:
 
-- Scale up ingesters.
+- Scale up the ingesters.
 - Increase the limit by using the `-ingester.instance-limits.max-ingestion-rate` option (or `max_ingestion_rate` in the runtime config).
 
 ### err-mimir-ingester-max-tenants
@@ -1157,7 +1187,7 @@ This critical error occurs when the ingester receives a write request for a new 
 
 How to **fix** it:
 
-- In case of emergency, increase the limit by using the `-ingester.instance-limits.max-tenants` option (or `max_tenants` in the runtime config).
+- Increase the limit by using the `-ingester.instance-limits.max-tenants` option (or `max_tenants` in the runtime config).
 - Consider configuring ingesters shuffle sharding to reduce the number of tenants per ingester.
 
 ### err-mimir-ingester-max-series
@@ -1169,7 +1199,7 @@ How it **works**:
 - The ingester keeps most recent series data in-memory.
 - The ingester has a per-instance limit on the number of in-memory series, used to protect the ingester from overloading in case of high traffic.
 - When the limit on the number of in-memory series is reached, new series are rejected, while samples can still be appended to existing ones.
-- You can configure the limit by setting the `-ingester.instance-limits.max-series` option (or `max_series` in the runtime config).
+- To configure the limit, set the `-ingester.instance-limits.max-series` option (or `max_series` in the runtime config).
 
 How to **fix** it:
 
@@ -1177,18 +1207,18 @@ How to **fix** it:
 
 ### err-mimir-ingester-max-inflight-push-requests
 
-This error occurs when an ingester rejects a write request because the max inflight requests limit has been reached.
+This error occurs when an ingester rejects a write request because the maximum in-flight requests limit has been reached.
 
 How it **works**:
 
-- The ingester has per-instance limit on the number of inflight write (push) requests.
-- The limit applies on all inflight write requests, across all tenants, and is used to protect the ingester from overloading in case of high traffic.
-- You can configure the limit by setting the `-ingester.instance-limits.max-inflight-push-requests` option (or `max_inflight_push_requests` in the runtime config).
+- The ingester has a per-instance limit on the number of in-flight write (push) requests.
+- The limit applies to all in-flight write requests, across all tenants, and it protects the ingester from becoming overloaded in case of high traffic.
+- To configure the limit, set the `-ingester.instance-limits.max-inflight-push-requests` option (or `max_inflight_push_requests` in the runtime config).
 
 How to **fix** it:
 
-- In case of emergency, increase the limit by setting the `-ingester.instance-limits.max-inflight-push-requests` option (or `max_inflight_push_requests` in the runtime config).
-- Check the write requests latency through the `Mimir / Writes` dashboard and eventually investigate the root cause of high latency (the higher the latency, the higher the number of inflight write requests).
+- Increase the limit by setting the `-ingester.instance-limits.max-inflight-push-requests` option (or `max_inflight_push_requests` in the runtime config).
+- Check the write requests latency through the `Mimir / Writes` dashboard and come back to investigate the root cause of high latency (the higher the latency, the higher the number of in-flight write requests).
 - Consider scaling out the ingesters.
 
 ### err-mimir-max-series-per-user
@@ -1196,7 +1226,7 @@ How to **fix** it:
 This error occurs when the number of in-memory series for a given tenant exceeds the configured limit.
 
 The limit is used to protect ingesters from overloading in case a tenant writes a high number of series, as well as to protect the whole system’s stability from potential abuse or mistakes.
-You can configure the limit on a per-tenant basis by using the `-ingester.max-global-series-per-user` option (or `max_global_series_per_user` in the runtime configuration).
+To configure the limit on a per-tenant basis, use the `-ingester.max-global-series-per-user` option (or `max_global_series_per_user` in the runtime configuration).
 
 How to **fix** it:
 
@@ -1210,7 +1240,7 @@ This error occurs when the number of in-memory series for a given tenant and met
 The limit is primarily used to protect a tenant from potential mistakes on their metrics instrumentation.
 For example, if an instrumented application exposes a metric with a label value including very dynamic data (e.g. a timestamp) the ingestion of that metric would quickly lead to hit the per-tenant series limit, causing other metrics to be rejected too.
 This limit introduces a cap on the maximum number of series each metric name can have, rejecting exceeding series only for that metric name, before the per-tenant series limit is reached.
-You can configure the limit on a per-tenant basis by using the `-ingester.max-global-series-per-metric` option (or `max_global_series_per_metric` in the runtime configuration).
+To configure the limit on a per-tenant basis, use the `-ingester.max-global-series-per-metric` option (or `max_global_series_per_metric` in the runtime configuration).
 
 How to **fix** it:
 
@@ -1230,7 +1260,7 @@ Metric metadata is stored in the ingesters memory, so the higher the number of m
 
 Mimir has a per-tenant limit of the number of metric names that have metadata attached.
 This limit is used to protect the whole system’s stability from potential abuse or mistakes.
-You can configure the limit on a per-tenant basis by using the `-ingester.max-global-series-per-user` option (or `max_global_metadata_per_user` in the runtime configuration).
+To configure the limit on a per-tenant basis, use the `-ingester.max-global-series-per-user` option (or `max_global_metadata_per_user` in the runtime configuration).
 
 How to **fix** it:
 
@@ -1247,7 +1277,7 @@ However, there could be some edge cases where the same metric name has a differe
 In these edge cases, different applications would expose different metadata for the same metric name.
 
 This limit is used to protect the whole system’s stability from potential abuse or mistakes, in case the number of metadata variants for a given metric name grows indefinitely.
-You can configure the limit on a per-tenant basis by using the `-ingester.max-global-series-per-metric` option (or `max_global_metadata_per_metric` in the runtime configuration).
+To configure the limit on a per-tenant basis, use the `-ingester.max-global-series-per-metric` option (or `max_global_metadata_per_metric` in the runtime configuration).
 
 How to **fix** it:
 
@@ -1260,7 +1290,7 @@ How to **fix** it:
 This error occurs when a query execution exceeds the limit on the number of series chunks fetched.
 
 This limit is used to protect the system’s stability from potential abuse or mistakes, when running a query fetching a huge amount of data.
-You can configure the limit on a per-tenant basis by using the `-querier.max-fetched-chunks-per-query` option (or `max_fetched_chunks_per_query` in the runtime configuration).
+To configure the limit on a per-tenant basis, use the `-querier.max-fetched-chunks-per-query` option (or `max_fetched_chunks_per_query` in the runtime configuration).
 
 How to **fix** it:
 
@@ -1272,7 +1302,7 @@ How to **fix** it:
 This error occurs when a query execution exceeds the limit on the maximum number of series.
 
 This limit is used to protect the system’s stability from potential abuse or mistakes, when running a query fetching a huge amount of data.
-You can configure the limit on a per-tenant basis by using the `-querier.max-fetched-series-per-query` option (or `max_fetched_series_per_query` in the runtime configuration).
+To configure the limit on a per-tenant basis, use the `-querier.max-fetched-series-per-query` option (or `max_fetched_series_per_query` in the runtime configuration).
 
 How to **fix** it:
 
@@ -1284,7 +1314,7 @@ How to **fix** it:
 This error occurs when a query execution exceeds the limit on aggregated size (in bytes) of fetched chunks.
 
 This limit is used to protect the system’s stability from potential abuse or mistakes, when running a query fetching a huge amount of data.
-You can configure the limit on a per-tenant basis by using the `-querier.max-fetched-chunk-bytes-per-query` option (or `max_fetched_chunk_bytes_per_query` in the runtime configuration).
+To configure the limit on a per-tenant basis, use the `-querier.max-fetched-chunk-bytes-per-query` option (or `max_fetched_chunk_bytes_per_query` in the runtime configuration).
 
 How to **fix** it:
 
@@ -1304,7 +1334,7 @@ This time period is what Grafana Mimir calls the _query time range length_ (or _
 
 Mimir has a limit on the query length.
 This limit is applied to partial queries, after they've split (according to time) by the query-frontend. This limit protects the system’s stability from potential abuse or mistakes.
-You can configure the limit on a per-tenant basis by using the `-store.max-query-length` option (or `max_query_length` in the runtime configuration).
+To configure the limit on a per-tenant basis, use the `-store.max-query-length` option (or `max_query_length` in the runtime configuration).
 
 ## Mimir routes by path
 
