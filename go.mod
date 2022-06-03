@@ -58,6 +58,7 @@ require (
 	github.com/grafana-tools/sdk v0.0.0-20211220201350-966b3088eec9
 	github.com/grafana/regexp v0.0.0-20220304095617-2e8d9baf4ac2
 	github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db
+	golang.org/x/sys v0.0.0-20220328115105-d36c6a25d886
 	gopkg.in/alecthomas/kingpin.v2 v2.2.6
 )
 
@@ -207,7 +208,6 @@ require (
 	go.uber.org/zap v1.19.1 // indirect
 	golang.org/x/mod v0.6.0-dev.0.20220106191415-9b9b3d81d5e3 // indirect
 	golang.org/x/oauth2 v0.0.0-20220309155454-6242fa91716a // indirect
-	golang.org/x/sys v0.0.0-20220328115105-d36c6a25d886 // indirect
 	golang.org/x/text v0.3.7 // indirect
 	golang.org/x/tools v0.1.10 // indirect
 	golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1 // indirect
