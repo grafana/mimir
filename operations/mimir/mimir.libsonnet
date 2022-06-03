@@ -28,4 +28,4 @@
 (import 'continuous-test.libsonnet') +
 
 // Import autoscaling at the end because it overrides deployments.
-(import 'mimir/autoscaling.libsonnet')
+(import 'autoscaling.libsonnet')
