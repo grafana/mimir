@@ -71,19 +71,20 @@ var ErrNotReady = errors.New("TSDB not ready")
 // millisecond precision timestamps.
 func DefaultOptions() *Options {
 	return &Options{
-		WALSegmentSize:            wal.DefaultSegmentSize,
-		MaxBlockChunkSegmentSize:  chunks.DefaultChunkSegmentSize,
-		RetentionDuration:         int64(15 * 24 * time.Hour / time.Millisecond),
-		MinBlockDuration:          DefaultBlockDuration,
-		MaxBlockDuration:          DefaultBlockDuration,
-		NoLockfile:                false,
-		AllowOverlappingBlocks:    false,
-		WALCompression:            false,
-		StripeSize:                DefaultStripeSize,
-		HeadChunksWriteBufferSize: chunks.DefaultWriteBufferSize,
-		IsolationDisabled:         defaultIsolationDisabled,
-		HeadChunksEndTimeVariance: 0,
-		HeadChunksWriteQueueSize:  chunks.DefaultWriteQueueSize,
+		WALSegmentSize:             wal.DefaultSegmentSize,
+		MaxBlockChunkSegmentSize:   chunks.DefaultChunkSegmentSize,
+		RetentionDuration:          int64(15 * 24 * time.Hour / time.Millisecond),
+		MinBlockDuration:           DefaultBlockDuration,
+		MaxBlockDuration:           DefaultBlockDuration,
+		NoLockfile:                 false,
+		AllowOverlappingQueries:    false,
+		AllowOverlappingCompaction: false,
+		WALCompression:             false,
+		StripeSize:                 DefaultStripeSize,
+		HeadChunksWriteBufferSize:  chunks.DefaultWriteBufferSize,
+		IsolationDisabled:          defaultIsolationDisabled,
+		HeadChunksEndTimeVariance:  0,
+		HeadChunksWriteQueueSize:   chunks.DefaultWriteQueueSize,
 	}
 }
 
@@ -115,9 +116,14 @@ type Options struct {
 	// NoLockfile disables creation and consideration of a lock file.
 	NoLockfile bool
 
-	// Overlapping blocks are allowed if AllowOverlappingBlocks is true.
-	// This in-turn enables vertical compaction and vertical query merge.
-	AllowOverlappingBlocks bool
+	// Querying on overlapping blocks are allowed if AllowOverlappingQueries is true.
+	// Since querying is a required operation for TSDB, if there are going to be
+	// overlapping blocks, then this should be set to true.
+	AllowOverlappingQueries bool
+
+	// Compaction of overlapping blocks are allowed if AllowOverlappingCompaction is true.
+	// This is an optional flag for overlapping blocks.
+	AllowOverlappingCompaction bool
 
 	// WALCompression will turn on Snappy compression for records on the WAL.
 	WALCompression bool
@@ -180,6 +186,9 @@ type Options struct {
 
 	// maximum capacity for OOO chunks (in samples)
 	OOOCapMax int64
+
+	// Temporary flag which we use to select whether we want to use the new or the old chunk disk mapper.
+	NewChunkDiskMapper bool
 }
 
 type BlocksToDeleteFunc func(blocks []*Block) map[ulid.ULID]struct{}
@@ -392,9 +401,13 @@ func (db *DBReadOnly) FlushWAL(dir string) (returnErr error) {
 	if err != nil {
 		return err
 	}
-	ooow, err := wal.Open(db.logger, filepath.Join(db.dir, wal.OOOWblDirName))
-	if err != nil {
-		return err
+	var ooow *wal.WAL
+	oooWblDir := filepath.Join(db.dir, wal.OOOWblDirName)
+	if _, err := os.Stat(oooWblDir); !os.IsNotExist(err) {
+		ooow, err = wal.Open(db.logger, oooWblDir)
+		if err != nil {
+			return err
+		}
 	}
 	opts := DefaultHeadOptions()
 	opts.ChunkDirRoot = db.dir
@@ -423,6 +436,7 @@ func (db *DBReadOnly) FlushWAL(dir string) (returnErr error) {
 		ExponentialBlockRanges(DefaultOptions().MinBlockDuration, 3, 5),
 		chunkenc.NewPool(),
 		nil,
+		false,
 	)
 	if err != nil {
 		return errors.Wrap(err, "create leveled compactor")
@@ -472,9 +486,13 @@ func (db *DBReadOnly) loadDataAsQueryable(maxt int64) (storage.SampleAndChunkQue
 		if err != nil {
 			return nil, err
 		}
-		ooow, err := wal.Open(db.logger, filepath.Join(db.dir, wal.OOOWblDirName))
-		if err != nil {
-			return nil, err
+		var ooow *wal.WAL
+		oooWblDir := filepath.Join(db.dir, wal.OOOWblDirName)
+		if _, err := os.Stat(oooWblDir); !os.IsNotExist(err) {
+			ooow, err = wal.Open(db.logger, oooWblDir)
+			if err != nil {
+				return nil, err
+			}
 		}
 		opts := DefaultHeadOptions()
 		opts.ChunkDirRoot = db.dir
@@ -630,7 +648,7 @@ func validateOpts(opts *Options, rngs []int64) (*Options, []int64) {
 		opts.MaxBlockDuration = opts.MinBlockDuration
 	}
 	if opts.OOOAllowance > 0 {
-		opts.AllowOverlappingBlocks = true
+		opts.AllowOverlappingQueries = true
 	}
 
 	if len(rngs) == 0 {
@@ -722,7 +740,7 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	db.compactor, err = NewLeveledCompactorWithChunkSize(ctx, r, l, rngs, db.chunkPool, opts.MaxBlockChunkSegmentSize, nil)
+	db.compactor, err = NewLeveledCompactorWithChunkSize(ctx, r, l, rngs, db.chunkPool, opts.MaxBlockChunkSegmentSize, nil, opts.AllowOverlappingCompaction)
 	if err != nil {
 		cancel()
 		return nil, errors.Wrap(err, "create leveled compactor")
@@ -741,9 +759,11 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 		if err != nil {
 			return nil, err
 		}
-		oooWlog, err = wal.NewSize(l, r, oooWalDir, segmentSize, opts.WALCompression)
-		if err != nil {
-			return nil, err
+		if opts.OOOAllowance > 0 {
+			oooWlog, err = wal.NewSize(l, r, oooWalDir, segmentSize, opts.WALCompression)
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
 
@@ -762,7 +782,7 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 	headOpts.OOOAllowance = opts.OOOAllowance
 	headOpts.OOOCapMin = opts.OOOCapMin
 	headOpts.OOOCapMax = opts.OOOCapMax
-
+	headOpts.NewChunkDiskMapper = opts.NewChunkDiskMapper
 	if opts.IsolationDisabled {
 		// We only override this flag if isolation is disabled at DB level. We use the default otherwise.
 		headOpts.IsolationDisabled = opts.IsolationDisabled
@@ -1035,6 +1055,9 @@ func (db *DB) CompactOOOHead() error {
 }
 
 func (db *DB) compactOOOHead() error {
+	if db.opts.OOOAllowance <= 0 {
+		return nil
+	}
 	oooHead, err := NewOOOCompactionHead(db.head)
 	if err != nil {
 		return errors.Wrap(err, "get ooo compaction head")
@@ -1221,7 +1244,7 @@ func (db *DB) reloadBlocks() (err error) {
 	sort.Slice(toLoad, func(i, j int) bool {
 		return toLoad[i].Meta().MinTime < toLoad[j].Meta().MinTime
 	})
-	if !db.opts.AllowOverlappingBlocks {
+	if !db.opts.AllowOverlappingQueries {
 		if err := validateBlockSequence(toLoad); err != nil {
 			return errors.Wrap(err, "invalid block sequence")
 		}
