@@ -40,10 +40,6 @@ const (
 	// DeprecatedShardIDExternalLabel is deprecated.
 	DeprecatedShardIDExternalLabel = "__shard_id__"
 
-	// GrpcContextMetadataTenantID is a key for GRPC Metadata used to pass tenant ID to store-gateway process.
-	// (This is now separate from DeprecatedTenantIDExternalLabel to signify different use case.)
-	GrpcContextMetadataTenantID = "__org_id__"
-
 	// DefaultCloseIdleTSDBInterval is how often are open TSDBs checked for being idle and closed.
 	DefaultCloseIdleTSDBInterval = 5 * time.Minute
 

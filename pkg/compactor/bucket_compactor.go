@@ -427,8 +427,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 		}
 
 		begin := time.Now()
-		// UploadPromBlock is like Upload, but doesn't check for external labels.
-		if err := block.UploadPromBlock(ctx, jobLogger, c.bkt, bdir, job.hashFunc); err != nil {
+		if err := mimit_tsdb.UploadBlock(ctx, jobLogger, c.bkt, bdir, nil); err != nil {
 			return errors.Wrapf(err, "upload of %s failed", blockToUpload.ulid)
 		}
 
@@ -563,8 +562,7 @@ func RepairIssue347(ctx context.Context, logger log.Logger, bkt objstore.Bucket,
 	}
 
 	level.Info(logger).Log("msg", "uploading repaired block", "newID", resid)
-	// UploadPromBlock is like Upload, but doesn't check for external labels.
-	if err = block.UploadPromBlock(ctx, logger, bkt, filepath.Join(tmpdir, resid.String()), metadata.NoneFunc); err != nil {
+	if err = mimit_tsdb.UploadBlock(ctx, logger, bkt, filepath.Join(tmpdir, resid.String()), nil); err != nil {
 		return errors.Wrapf(err, "upload of %s failed", resid)
 	}
 
