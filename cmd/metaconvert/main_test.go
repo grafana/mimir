@@ -126,7 +126,6 @@ func TestConvertTenantBlocks(t *testing.T) {
 
 			Thanos: metadata.Thanos{
 				Version: 10,
-				Labels:  map[string]string{},
 				Downsample: metadata.ThanosDownsample{
 					Resolution: 15,
 				},
@@ -137,10 +136,6 @@ func TestConvertTenantBlocks(t *testing.T) {
 		blockWithWrongTenant: {
 			BlockMeta: tsdb.BlockMeta{
 				ULID: blockWithWrongTenant,
-			},
-
-			Thanos: metadata.Thanos{
-				Labels: map[string]string{},
 			},
 		},
 
@@ -160,17 +155,18 @@ func TestConvertTenantBlocks(t *testing.T) {
 			BlockMeta: tsdb.BlockMeta{
 				ULID: blockWithNoChangesRequired,
 			},
-
-			Thanos: metadata.Thanos{
-				Labels: map[string]string{},
-			},
 		},
 	}
 
 	for b, m := range expected {
 		meta, err := block.DownloadMeta(ctx, logger, bkt, b)
-		require.NoError(t, err)
-		require.Equal(t, m, meta)
+		require.NoError(t, err, b.String())
+
+		// Normalize empty map to nil to simplify tests.
+		if len(meta.Thanos.Labels) == 0 {
+			meta.Thanos.Labels = nil
+		}
+		require.Equal(t, m, meta, b.String())
 	}
 
 	assert.Equal(t, []string{
@@ -285,8 +281,8 @@ func TestConvertTenantBlocksDryMode(t *testing.T) {
 
 	assert.Equal(t, []string{
 		`level=info tenant=target_tenant msg="no changes required" block=00000000010000000000000000`,
-		`level=warn tenant=target_tenant msg="removing unknown label" block=00000000020000000000000000 label=test value=label`,
 		`level=warn tenant=target_tenant msg="removing unknown label" block=00000000020000000000000000 label=__org_id__ value="wrong tenant"`,
+		`level=warn tenant=target_tenant msg="removing unknown label" block=00000000020000000000000000 label=test value=label`,
 		`level=warn tenant=target_tenant msg="changes required, not uploading back due to dry run" block=00000000020000000000000000`,
 		`level=warn tenant=target_tenant msg="removing unknown label" block=00000000030000000000000000 label=__ingester_id__ value=ingester-1`,
 		`level=warn tenant=target_tenant msg="removing unknown label" block=00000000030000000000000000 label=__org_id__ value=fake`,

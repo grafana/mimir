@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/signal"
 	"path"
+	"sort"
 	"syscall"
 
 	gklog "github.com/go-kit/log"
@@ -106,13 +107,20 @@ func convertTenantBlocks(ctx context.Context, userBucketClient objstore.Bucket, 
 
 		updated := false
 
-		for l, v := range meta.Thanos.Labels {
+		// Sort labels before processing to have stable output for testing.
+		var labels []string
+		for l := range meta.Thanos.Labels {
+			labels = append(labels, l)
+		}
+		sort.Strings(labels)
+
+		for _, l := range labels {
 			switch l {
 			case mimir_tsdb.CompactorShardIDExternalLabel:
 				continue
 			}
 
-			level.Warn(logger).Log("msg", "removing unknown label", "block", blockID.String(), "label", l, "value", v)
+			level.Warn(logger).Log("msg", "removing unknown label", "block", blockID.String(), "label", l, "value", meta.Thanos.Labels[l])
 			updated = true
 			delete(meta.Thanos.Labels, l)
 		}
