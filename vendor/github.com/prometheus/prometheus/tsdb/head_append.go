@@ -287,19 +287,23 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 	s.Lock()
 	// TODO: if we definitely know at this point that the sample is ooo, then optimise
 	// to skip that sample from the WAL and write only in the WBL.
-	if _, delta, err := s.appendable(t, v, a.headMaxt, a.minValidTime); err != nil {
-		s.Unlock()
+	_, delta, err := s.appendable(t, v, a.headMaxt, a.minValidTime)
+	if err == nil {
+		s.pendingCommit = true
+	}
+	s.Unlock()
+	if delta > 0 {
+		a.head.metrics.oooHistogram.Observe(float64(delta) / 1000)
+	}
+	if err != nil {
 		if err == storage.ErrOutOfOrderSample {
-			a.head.metrics.outOfOrderSamples.Inc()                     // TODO: should we keep reporting this even when we accept the OOO insert?
-			a.head.metrics.oooHistogram.Observe(float64(delta) / 1000) // TODO: should we keep reporting this even when we accept the OOO insert?
+			a.head.metrics.outOfOrderSamples.Inc()
 		}
 		if err == storage.ErrTooOldSample {
 			a.head.metrics.tooOldSamples.Inc()
 		}
 		return 0, err
 	}
-	s.pendingCommit = true
-	s.Unlock()
 
 	if t < a.mint {
 		a.mint = t
@@ -317,8 +321,9 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 	return storage.SeriesRef(s.ref), nil
 }
 
-// appendable checks whether the given sample is valid for appending to the series.
-// If the returned boolean is true, then the sample belongs to the out of order chunk.
+// appendable checks whether the given sample is valid for appending to the series. (if we return false and no error)
+// The sample belongs to the out of order chunk if we return true and no error.
+// An error signifies the sample cannot be handled.
 func (s *memSeries) appendable(t int64, v float64, headMaxt, minValidTime int64) (isOutOfOrder bool, delta int64, err error) {
 	msMaxt := s.maxTime()
 	if msMaxt == math.MinInt64 {
@@ -360,6 +365,8 @@ func (s *memSeries) appendable(t int64, v float64, headMaxt, minValidTime int64)
 	if math.Float64bits(s.sampleBuf[3].v) != math.Float64bits(v) {
 		return false, 0, storage.ErrDuplicateSampleForTimestamp
 	}
+
+	// sample is identical (ts + value) with most current (highest ts) sample in sampleBuf
 	return false, 0, nil
 }
 
@@ -494,18 +501,20 @@ func (a *headAppender) Commit() (err error) {
 	defer a.head.iso.closeAppend(a.appendID)
 
 	var (
-		total            = len(a.samples)
-		oooTotal         = 0
-		oob, ooo, tooOld int   // out of bounds, out of order, too old
-		inOrderMint      int64 = math.MaxInt64
-		inOrderMaxt      int64 = math.MinInt64
-		ooomint          int64 = math.MaxInt64
-		ooomaxt          int64 = math.MinInt64
-		oooWblSamples    []record.RefSample
-		oooMmapMarkers   map[chunks.HeadSeriesRef]chunks.ChunkDiskMapperRef
-		oooRecords       [][]byte
-		series           *memSeries
-		enc              record.Encoder
+		samplesAppended = len(a.samples)
+		oooAccepted     int   // number of samples out of order but accepted: with ooo enabled and within allowance
+		oooRejected     int   // number of samples rejected due to: out of order but OOO support disabled.
+		tooOldRejected  int   // number of samples rejected due to: that are out of order but too old (OOO support enabled, but outside allowance)
+		oobRejected     int   // number of samples rejected due to: out of bounds: with t < minValidTime (OOO support disabled)
+		inOrderMint     int64 = math.MaxInt64
+		inOrderMaxt     int64 = math.MinInt64
+		ooomint         int64 = math.MaxInt64
+		ooomaxt         int64 = math.MinInt64
+		oooWblSamples   []record.RefSample
+		oooMmapMarkers  map[chunks.HeadSeriesRef]chunks.ChunkDiskMapperRef
+		oooRecords      [][]byte
+		series          *memSeries
+		enc             record.Encoder
 	)
 	defer func() {
 		for i := range oooRecords {
@@ -551,18 +560,18 @@ func (a *headAppender) Commit() (err error) {
 		oooSample, delta, err := series.appendable(s.T, s.V, a.headMaxt, a.minValidTime)
 		switch err {
 		case storage.ErrOutOfOrderSample:
-			total--
-			ooo++
+			samplesAppended--
+			oooRejected++
 		case storage.ErrOutOfBounds:
-			total--
-			oob++
+			samplesAppended--
+			oobRejected++
 		case storage.ErrTooOldSample:
-			total--
-			tooOld++
+			samplesAppended--
+			tooOldRejected++
 		case nil:
 			// Do nothing.
 		default:
-			total--
+			samplesAppended--
 		}
 
 		var ok, chunkCreated bool
@@ -597,29 +606,36 @@ func (a *headAppender) Commit() (err error) {
 				if s.T > ooomaxt {
 					ooomaxt = s.T
 				}
-				oooTotal++
+				oooAccepted++
 			} else {
+				// exact duplicate of last sample.
 				// the sample was an attempted update.
 				// note that we can only detect updates if they clash with a sample in the OOOHeadChunk,
 				// not with samples in already flushed OOO chunks.
 				// TODO: error reporting? depends on addressing https://github.com/prometheus/prometheus/discussions/10305
-				total--
+				samplesAppended--
 			}
 		} else if err == nil {
+			// if we're here, either of these is true:
+			// - the sample.t is beyond any previously ingested timestamp
+			// - the sample is an exact duplicate of the 'head sample'
+
 			delta, ok, chunkCreated = series.append(s.T, s.V, a.appendID, a.head.chunkDiskMapper)
+
 			// TODO: handle overwrite.
 			// this would be storage.ErrDuplicateSampleForTimestamp, it has no attached counter
 			// in case of identical timestamp and value, we should drop silently
 			if ok {
-				if s.T < inOrderMint {
+				// sample timestamp is beyond any previously ingested timestamp
+				if s.T < inOrderMint { // TODO(ganesh): dieter thinks this never applies and can be removed because we know we're in order.
 					inOrderMint = s.T
 				}
 				if s.T > inOrderMaxt {
 					inOrderMaxt = s.T
 				}
 			} else {
-				total--
-				ooo++
+				// ... therefore, in this case, we know the sample is an exact duplicate, and should be silently dropped.
+				samplesAppended--
 			}
 		}
 
@@ -636,11 +652,11 @@ func (a *headAppender) Commit() (err error) {
 		series.Unlock()
 	}
 
-	a.head.metrics.outOfOrderSamples.Add(float64(ooo))
-	a.head.metrics.outOfBoundSamples.Add(float64(oob))
-	a.head.metrics.tooOldSamples.Add(float64(tooOld))
-	a.head.metrics.samplesAppended.Add(float64(total))
-	a.head.metrics.outOfOrderSamplesAppended.Add(float64(oooTotal))
+	a.head.metrics.outOfOrderSamples.Add(float64(oooRejected))
+	a.head.metrics.outOfBoundSamples.Add(float64(oobRejected))
+	a.head.metrics.tooOldSamples.Add(float64(tooOldRejected))
+	a.head.metrics.samplesAppended.Add(float64(samplesAppended))
+	a.head.metrics.outOfOrderSamplesAppended.Add(float64(oooAccepted))
 	a.head.updateMinMaxTime(inOrderMint, inOrderMaxt)
 	a.head.updateMinOOOMaxOOOTime(ooomint, ooomaxt)
 
