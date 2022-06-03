@@ -804,7 +804,7 @@ github.com/stretchr/objx
 github.com/stretchr/testify/assert
 github.com/stretchr/testify/mock
 github.com/stretchr/testify/require
-# github.com/thanos-io/thanos v0.26.1-0.20220524120302-5d49fbc057c4
+# github.com/thanos-io/thanos v0.26.1-0.20220602051129-a6f6ce060ed4
 ## explicit; go 1.17
 github.com/thanos-io/thanos/pkg/block
 github.com/thanos-io/thanos/pkg/block/metadata
