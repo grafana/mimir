@@ -141,12 +141,12 @@ How to **fix** it:
 
 ### MimirDistributorReachingInflightPushRequestLimit
 
-This alert fires when the `cortex_distributor_inflight_push_requests` per distributor instance limit is enabled and the actual number of inflight push requests is approaching the set limit. Once the limit is reached, push requests to the distributor will fail (5xx) for new requests, while existing inflight push requests will continue to succeed.
+This alert fires when the `cortex_distributor_inflight_push_requests` per distributor instance limit is enabled and the actual number of in-flight push requests is approaching the set limit. Once the limit is reached, push requests to the distributor will fail (5xx) for new requests, while existing in-flight push requests will continue to succeed.
 
 In case of **emergency**:
 
-- If the actual number of inflight push requests is very close to or already at the set limit, then you can increase the limit via CLI flag or config to gain some time
-- Increasing the limit will increase the number of inflight push requests which will increase distributors' memory utilization. Please monitor the distributors' memory utilization via the `Mimir / Writes Resources` dashboard
+- If the actual number of in-flight push requests is very close to or already at the set limit, then you can increase the limit via CLI flag or config to gain some time
+- Increasing the limit will increase the number of in-flight push requests which will increase distributors' memory utilization. Please monitor the distributors' memory utilization via the `Mimir / Writes Resources` dashboard
 
 How the limit is **configured**:
 
@@ -162,9 +162,9 @@ How the limit is **configured**:
 How to **fix** it:
 
 1. **Temporarily increase the limit**<br />
-   If the actual number of inflight push requests is very close to or already hit the limit.
+   If the actual number of in-flight push requests is very close to or already hit the limit.
 2. **Scale up distributors**<br />
-   Scaling up distributors will lower the number of inflight push requests per distributor.
+   Scaling up distributors will lower the number of in-flight push requests per distributor.
 
 ### MimirRequestLatency
 
@@ -1164,8 +1164,8 @@ How it **works**:
 
 How to **fix** it:
 
-- In case of emergency, increase the limit by setting the `-distributor.instance-limits.max-inflight-push-requests` option.
-- Check the write requests latency through the `Mimir / Writes` dashboard and eventually investigate the root cause of high latency (the higher the latency, the higher the number of in-flight write requests).
+- Increase the limit by setting the `-distributor.instance-limits.max-inflight-push-requests` option.
+- Check the write requests latency through the `Mimir / Writes` dashboard and come back to investigate the root cause of high latency (the higher the latency, the higher the number of in-flight write requests).
 - Consider scaling out the distributors.
 
 ### err-mimir-ingester-max-ingestion-rate
@@ -1173,11 +1173,12 @@ How to **fix** it:
 This critical error occurs when the rate of received samples per second is exceeded in an ingester.
 
 The ingester implements a rate limit on the samples per second that can be ingested, and it's used to protect an ingester from overloading in case of high traffic.
-The limit is a per-instance limit and it's applied on all samples received, across all tenants, in each ingester.
+This per-instance limit is applied to all samples that it receives.
+Also, the limit spans all of the tenants within each ingester.
 
 How to **fix** it:
 
-- Scale up ingesters.
+- Scale up the ingesters.
 - Increase the limit by using the `-ingester.instance-limits.max-ingestion-rate` option (or `max_ingestion_rate` in the runtime config).
 
 ### err-mimir-ingester-max-tenants
@@ -1186,7 +1187,7 @@ This critical error occurs when the ingester receives a write request for a new 
 
 How to **fix** it:
 
-- In case of emergency, increase the limit by using the `-ingester.instance-limits.max-tenants` option (or `max_tenants` in the runtime config).
+- Increase the limit by using the `-ingester.instance-limits.max-tenants` option (or `max_tenants` in the runtime config).
 - Consider configuring ingesters shuffle sharding to reduce the number of tenants per ingester.
 
 ### err-mimir-ingester-max-series
@@ -1206,18 +1207,18 @@ How to **fix** it:
 
 ### err-mimir-ingester-max-inflight-push-requests
 
-This error occurs when an ingester rejects a write request because the max inflight requests limit has been reached.
+This error occurs when an ingester rejects a write request because the maximum in-flight requests limit has been reached.
 
 How it **works**:
 
-- The ingester has per-instance limit on the number of inflight write (push) requests.
-- The limit applies on all inflight write requests, across all tenants, and is used to protect the ingester from overloading in case of high traffic.
-- You can configure the limit by setting the `-ingester.instance-limits.max-inflight-push-requests` option (or `max_inflight_push_requests` in the runtime config).
+- The ingester has a per-instance limit on the number of in-flight write (push) requests.
+- The limit applies to all in-flight write requests, across all tenants, and it protects the ingester from becoming overloaded in case of high traffic.
+- To configure the limit, set the `-ingester.instance-limits.max-inflight-push-requests` option (or `max_inflight_push_requests` in the runtime config).
 
 How to **fix** it:
 
-- In case of emergency, increase the limit by setting the `-ingester.instance-limits.max-inflight-push-requests` option (or `max_inflight_push_requests` in the runtime config).
-- Check the write requests latency through the `Mimir / Writes` dashboard and eventually investigate the root cause of high latency (the higher the latency, the higher the number of inflight write requests).
+- Increase the limit by setting the `-ingester.instance-limits.max-inflight-push-requests` option (or `max_inflight_push_requests` in the runtime config).
+- Check the write requests latency through the `Mimir / Writes` dashboard and come back to investigate the root cause of high latency (the higher the latency, the higher the number of in-flight write requests).
 - Consider scaling out the ingesters.
 
 ### err-mimir-max-series-per-user
