@@ -20,7 +20,7 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     container:
-      image: grafana/mimir-build-image:update-build-image-and-github-workflow-89d9d61b4
+      image: grafana/mimir-build-image:publish-multiarch-images-7a4b40a6d
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v2
@@ -50,7 +50,7 @@ jobs:
   lint-jsonnet:
     runs-on: ubuntu-latest
     container:
-      image: grafana/mimir-build-image:update-build-image-and-github-workflow-89d9d61b4
+      image: grafana/mimir-build-image:publish-multiarch-images-7a4b40a6d
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v2
@@ -81,7 +81,7 @@ jobs:
         test_group_id:    [0, 1, 2, 3]
         test_group_total: [4]
     container:
-      image: grafana/mimir-build-image:update-build-image-and-github-workflow-89d9d61b4
+      image: grafana/mimir-build-image:publish-multiarch-images-7a4b40a6d
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v2
@@ -107,7 +107,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     container:
-      image: grafana/mimir-build-image:update-build-image-and-github-workflow-89d9d61b4
+      image: grafana/mimir-build-image:publish-multiarch-images-7a4b40a6d
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v2
@@ -191,7 +191,7 @@ jobs:
     if: (startsWith(github.ref, 'refs/tags/') || startsWith(github.ref, 'refs/heads/r') ) && github.event_name == 'push' && github.repository == 'grafana/mimir'
     runs-on: ubuntu-latest
     container:
-      image: grafana/mimir-build-image:update-build-image-and-github-workflow-89d9d61b4
+      image: grafana/mimir-build-image:publish-multiarch-images-7a4b40a6d
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v2
