@@ -178,9 +178,4 @@ helm install test ./ --values ./ci/test-values.yaml
 
 # Contributing/Releasing
 
-All changes require a bump to the chart version, as this enforced by CI. All changes to the chart itself should also have a corresponding CHANGELOG entry.
-
-When making a change and organizing a release, first ensure your changes are encapuslated in a meaningful commit.
-In a separate commit, increase the chart version in the `Chart.yaml` file and add a CHANGELOG entry in the `CHANGELOG.md` file under the new version.
-
-Finally, push your changes and open up a Pull Request with the prefix `[mimir-distributed]`.
+Please see the dedicated "[Contributing to Grafana Mimir helm chart](https://github.com/grafana/mimir/tree/main/docs/internal/contributing/contributing-to-helm-chart.md)" page.
