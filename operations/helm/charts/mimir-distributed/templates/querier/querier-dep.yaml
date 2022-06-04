@@ -50,6 +50,7 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args:
             - "-target=querier"
+            - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
           {{- range $key, $value := .Values.querier.extraArgs }}
             - "-{{ $key }}={{ $value }}"
@@ -90,6 +91,10 @@ spec:
           env:
             {{- if .Values.querier.env }}
               {{- toYaml .Values.querier.env | nindent 12 }}
+            {{- end }}
+          envFrom:
+            {{- with .Values.querier.extraEnvFrom }}
+            {{- toYaml . | nindent 12 }}
             {{- end }}
 {{- if .Values.querier.extraContainers }}
 {{ toYaml .Values.querier.extraContainers | indent 8}}

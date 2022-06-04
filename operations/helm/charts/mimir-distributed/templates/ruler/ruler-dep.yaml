@@ -51,6 +51,7 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args:
             - "-target=ruler"
+            - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
           {{- range $key, $value := .Values.ruler.extraArgs }}
             - "-{{ $key }}={{ $value }}"
@@ -91,6 +92,10 @@ spec:
           env:
             {{- if .Values.ruler.env }}
               {{- toYaml .Values.ruler.env | nindent 12 }}
+            {{- end }}
+          envFrom:
+            {{- with .Values.ruler.extraEnvFrom }}
+            {{- toYaml . | nindent 12 }}
             {{- end }}
 {{- if .Values.ruler.extraContainers }}
 {{ toYaml .Values.ruler.extraContainers | indent 8}}

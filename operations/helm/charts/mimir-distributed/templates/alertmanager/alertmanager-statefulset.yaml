@@ -106,6 +106,7 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args:
             - "-target=alertmanager"
+            - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
             {{- range $key, $value := .Values.alertmanager.extraArgs }}
             - "-{{ $key }}={{ $value }}"
@@ -151,6 +152,10 @@ spec:
           env:
             {{- if .Values.alertmanager.env }}
               {{- toYaml .Values.alertmanager.env | nindent 12 }}
+            {{- end }}
+          envFrom:
+            {{- with .Values.alertmanager.extraEnvFrom }}
+            {{- toYaml . | nindent 12 }}
             {{- end }}
 {{- end -}}
 {{- end -}}
