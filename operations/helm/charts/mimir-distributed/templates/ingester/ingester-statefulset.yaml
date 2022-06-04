@@ -104,6 +104,7 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args:
             - "-target=ingester"
+            - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
             {{- range $key, $value := .Values.ingester.extraArgs }}
             - "-{{ $key }}={{ $value }}"
@@ -147,5 +148,9 @@ spec:
           env:
             {{- if .Values.ingester.env }}
               {{- toYaml .Values.ingester.env | nindent 12 }}
+            {{- end }}
+          envFrom:
+            {{- with .Values.ingester.extraEnvFrom }}
+            {{- toYaml . | nindent 12 }}
             {{- end }}
 {{- end -}}

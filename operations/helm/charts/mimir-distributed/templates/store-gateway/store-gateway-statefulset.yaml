@@ -102,6 +102,7 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args:
             - "-target=store-gateway"
+            - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
             {{- range $key, $value := .Values.store_gateway.extraArgs }}
             - "-{{ $key }}={{ $value }}"
@@ -144,4 +145,8 @@ spec:
           env:
             {{- if .Values.store_gateway.env }}
               {{- toYaml .Values.store_gateway.env | nindent 12 }}
+            {{- end }}
+          envFrom:
+            {{- with .Values.store_gateway.extraEnvFrom }}
+            {{- toYaml . | nindent 12 }}
             {{- end }}

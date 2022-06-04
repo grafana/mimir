@@ -53,6 +53,7 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args:
             - "-target=admin-api"
+            - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
             {{- range $key, $value := .Values.admin_api.extraArgs }}
             - "-{{ $key }}={{ $value }}"
@@ -91,6 +92,10 @@ spec:
           env:
             {{- if .Values.admin_api.env }}
             {{ toYaml .Values.admin_api.env | nindent 12 }}
+            {{- end }}
+          envFrom:
+            {{- with .Values.admin_api.extraEnvFrom }}
+            {{- toYaml . | nindent 12 }}
             {{- end }}
         {{- with .Values.admin_api.extraContainers }}
         {{ toYaml . | nindent 8 }}
