@@ -5,7 +5,7 @@ kind: Deployment
 metadata:
   name: test-values-mimir-querier
   labels:
-    helm.sh/chart: mimir-distributed-2.1.0-beta.7
+    helm.sh/chart: mimir-distributed-2.2.0-weekly.189
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-values
     app.kubernetes.io/component: querier
@@ -29,7 +29,7 @@ spec:
   template:
     metadata:
       labels:
-        helm.sh/chart: mimir-distributed-2.1.0-beta.7
+        helm.sh/chart: mimir-distributed-2.2.0-weekly.189
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-values
         app.kubernetes.io/version: "2.1.0"
@@ -37,7 +37,7 @@ spec:
         app.kubernetes.io/component: querier
         app.kubernetes.io/part-of: memberlist
       annotations:
-        checksum/config: d5e2dc634d37a4622b9a3f3a2a9c12e1cbb495fe09f5c3e4b6463bf6c1d032ab
+        checksum/config: c1cf6dac6755ebbe42de2ac5b0bfb04128c427b548db0d65a67ce5cd4d64326d
     spec:
       serviceAccountName: test-values-mimir
       securityContext:

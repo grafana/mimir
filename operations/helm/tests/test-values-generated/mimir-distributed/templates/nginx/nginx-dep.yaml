@@ -5,7 +5,7 @@ kind: Deployment
 metadata:
   name: test-values-mimir-nginx
   labels:
-    helm.sh/chart: mimir-distributed-2.1.0-beta.7
+    helm.sh/chart: mimir-distributed-2.2.0-weekly.189
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-values
     app.kubernetes.io/component: nginx
@@ -25,9 +25,9 @@ spec:
   template:
     metadata:
       annotations:
-        checksum/config: 591ecfac6702bc5569aa777d44d4e39db0ceb358e4123e8c173f4bde32154c28
+        checksum/config: 5ceafcac915eaf4ea912ec11ae4f1ec2b8d39e7a90c0495c45d94debaaa34fc8
       labels:
-        helm.sh/chart: mimir-distributed-2.1.0-beta.7
+        helm.sh/chart: mimir-distributed-2.2.0-weekly.189
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-values
         app.kubernetes.io/version: "2.1.0"
@@ -49,6 +49,8 @@ spec:
             - name: http-metric
               containerPort: 8080
               protocol: TCP
+          env:
+          envFrom:
           readinessProbe:
             httpGet:
               path: /
