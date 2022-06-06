@@ -84,6 +84,10 @@ jobs:
         run: |
           mkdir -p /go/src/github.com/grafana/mimir
           ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
+      - name: Set up Helm
+        uses: azure/setup-helm@v1
+        with:
+          version: v3.5.2
       - name: Check Helm Tests
         run: make BUILD_IN_CONTAINER=false check-helm-tests
 
