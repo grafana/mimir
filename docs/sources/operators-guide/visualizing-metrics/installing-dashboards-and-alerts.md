@@ -59,11 +59,15 @@ make BUILD_IN_CONTAINER=true build-mixin
 In case you're already using Jsonnet to define your infrastructure as a code, you can vendor the Grafana Mimir mixin directly into your infrastructure repository and configure it overriding the `_config` fields.
 Given the exact setup really depends on a case-by-case basis, the following instructions are not meant to be prescriptive but just show the main steps required to vendor the mixin.
 
-1. Install Grafana Mimir mixin
+1. Initialise Jsonnet
    ```bash
-   jb install github.com/grafana/mimir/operations/mimir
+   jb init
    ```
-2. Import and configure it
+2. Install Grafana Mimir mixin
+   ```bash
+   jb install github.com/grafana/mimir/operations/mimir-mixin@main
+   ```
+3. Import and configure it
    ```jsonnet
    (import 'github.com/grafana/mimir/operations/mimir-mixin/mixin.libsonnet') + {
      _config+:: {
