@@ -1,0 +1,22 @@
+# Test values to limit the load during CI
+enterprise:
+  enabled: true
+
+alertmanager:
+  persistentVolume:
+    enabled: false
+
+compactor:
+  persistentVolume:
+    enabled: false
+
+ingester:
+  persistentVolume:
+    enabled: false
+  resources:
+    requests:
+      cpu: 10m
+
+store_gateway:
+  persistentVolume:
+    enabled: false
