@@ -7,6 +7,9 @@ weight: 20
 
 # Configuring Grafana Mimir deployment with Jsonnet
 
+Notable features of the Mimir Jsonnet are described here in detail.
+To learn how to get started, see [Deploying Grafana Mimir with Jsonnet and Tanka](./deploying.md).
+
 ## Anti-affinity
 
 Given the distributed nature of Mimir, both performance and reliability are improved when pods are spread across different nodes.
