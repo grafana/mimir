@@ -49,8 +49,44 @@ tk show environments/default
 
 ## 3. Generate the Kubernetes YAML manifests
 
-Generate Kubernetes YAML manifests and store them in the `./manifests/` directory:
+Generate Kubernetes YAML manifests and store them in the `./manifests` directory:
 
 ```console
 tk export manifests environments/default
 ```
+
+## 4. Deploy to a Kubernetes cluster
+
+You have two options to deploy the manifests to a Kubernetes cluster:
+
+1. Use `tk apply` command
+2. Use `kubectl apply` command
+
+### Use `tk apply` command
+
+Tanka supports commands to show the `diff` and `apply` changes to a Kubernetes cluster:
+
+```console
+# Show the difference between your Jsonnet definition and Kubernetes cluster.
+tk diff environments/default
+
+# Apply changes to your Kubernetes cluster.
+tk apply environments/default
+```
+
+> **Note**: before using these commands, you need to configure the environment specification file at `environments/default/spec.json`. You can follow the [Tanka Jsonnet tutorial](https://tanka.dev/tutorial/jsonnet) to learn more on how to use Tanka and configure `spec.json`.
+
+### Use `kubectl apply` command
+
+You generated the Kubernetes manifests and stored them in the `./manifests` directory in the previous step.
+You can run the following command to directly apply these manifests to your Kubernetes cluster:
+
+```console
+# Review changes that would be applied to your Kubernetes cluster.
+kubectl apply --dry-run=client -k manifests/
+
+# Apply changes to your Kubernetes cluster.
+kubectl apply -k manifests/
+```
+
+> **Note**: the generated Kubernetes manifests create resources in the `default` namespace. To use a different namespace, you can change the `namespace` configuration option in `environments/default/main.jsonnet` and re-generate the Kubernetes manifests.
