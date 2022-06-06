@@ -643,12 +643,12 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 			if errors.Is(err, replicasNotMatchError{}) {
 				// These samples have been deduped.
 				d.dedupedSamples.WithLabelValues(userID, cluster).Add(float64(numSamples))
-				return nil, httpgrpc.Errorf(http.StatusAccepted, "%s", err)
+				return nil, httpgrpc.Errorf(http.StatusAccepted, err.Error())
 			}
 
 			if errors.Is(err, tooManyClustersError{}) {
-				validation.DiscardedSamples.WithLabelValues(validation.TooManyHAClusters, userID).Add(float64(numSamples))
-				return nil, httpgrpc.Errorf(http.StatusBadRequest, "%s", err)
+				validation.DiscardedSamples.WithLabelValues(validation.ReasonTooManyHAClusters, userID).Add(float64(numSamples))
+				return nil, httpgrpc.Errorf(http.StatusBadRequest, err.Error())
 			}
 
 			return nil, err

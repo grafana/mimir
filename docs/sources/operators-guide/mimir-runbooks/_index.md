@@ -1353,6 +1353,10 @@ TBA
 
 TBA
 
+### err-mimir-too-many-ha-clusters
+
+TBA
+
 ## Mimir routes by path
 
 **Write path**:

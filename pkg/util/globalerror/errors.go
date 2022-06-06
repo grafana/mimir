@@ -51,6 +51,7 @@ const (
 	MaxQueryLength       ID = "max-query-length"
 	RequestRateLimited   ID = "request-rate-limited"
 	IngestionRateLimited ID = "ingestion-rate-limited"
+	TooManyHAClusters    ID = "too-many-ha-clusters"
 )
 
 // Message returns the provided msg, appending the error id.
