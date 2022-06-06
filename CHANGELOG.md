@@ -61,6 +61,14 @@
 
 * [BUGFIX] mimirtool analyze: Fix dashboard JSON unmarshalling errors (#1840). #1973
 
+### Documentation
+
+* [ENHANCEMENT] Published Grafana Mimir runbooks as part of documentation. #1970
+* [ENHANCEMENT] Improved ruler's "remote operational mode" documentation. #1906
+* [ENHANCEMENT] Recommend fast disks for ingesters and store-gateways in production tips. #1903
+* [ENHANCEMENT] Explain the runtime override of active series matchers. #1868
+* [ENHANCEMENT] Clarify "Set rule group" API specification. #1869
+
 ## 2.1.0
 ### Grafana Mimir
 * [CHANGE] Compactor: No longer upload debug meta files to object storage. #1257
