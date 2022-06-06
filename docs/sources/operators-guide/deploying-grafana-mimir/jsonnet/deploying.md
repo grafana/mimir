@@ -9,8 +9,6 @@ weight: 10
 
 This guide explains how to use [Tanka](https://tanka.dev/) and [jsonnet-bundler](https://github.com/jsonnet-bundler/jsonnet-bundler) to generate Kubernetes YAML manifests from the jsonnet files.
 
-> **Note**: the instructions in this guide assume that your working directory is the root of the Mimir git repository.
-
 ## 1. Make sure you have `tanka` and `jb` installed
 
 Follow the steps at [https://tanka.dev/install](https://tanka.dev/install). If you have `go` installed locally you can also use:
@@ -51,14 +49,8 @@ tk show environments/default
 
 ## 3. Generate the Kubernetes YAML manifests
 
-```console
-$ cd jsonnet-example
-$ tk show environments/default
-```
-
-To output YAML manifests to `./manifests`, run:
+Generate Kubernetes YAML manifests and store them in the `./manifests/` directory:
 
 ```console
-$ cd jsonnet-example
-$ tk export manifests environments/default
+tk export manifests environments/default
 ```
