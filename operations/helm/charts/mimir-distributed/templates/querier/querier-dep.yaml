@@ -89,12 +89,18 @@ spec:
           securityContext:
             readOnlyRootFilesystem: true
           env:
-            {{- if .Values.querier.env }}
-              {{- toYaml .Values.querier.env | nindent 12 }}
+            {{- with .Values.global.extraEnv }}
+              {{- toYaml . | nindent 12 }}
+            {{- end }}
+            {{- with .Values.querier.env }}
+              {{- toYaml . | nindent 12 }}
             {{- end }}
           envFrom:
+            {{- with .Values.global.extraEnvFrom }}
+              {{- toYaml . | nindent 12 }}
+            {{- end }}
             {{- with .Values.querier.extraEnvFrom }}
-            {{- toYaml . | nindent 12 }}
+              {{- toYaml . | nindent 12 }}
             {{- end }}
 {{- if .Values.querier.extraContainers }}
 {{ toYaml .Values.querier.extraContainers | indent 8}}

@@ -90,12 +90,18 @@ spec:
           securityContext:
             readOnlyRootFilesystem: true
           env:
-            {{- if .Values.ruler.env }}
-              {{- toYaml .Values.ruler.env | nindent 12 }}
+            {{- with .Values.global.extraEnv }}
+              {{- toYaml . | nindent 12 }}
+            {{- end }}
+            {{- with .Values.ruler.env }}
+              {{- toYaml . | nindent 12 }}
             {{- end }}
           envFrom:
+            {{- with .Values.global.extraEnvFrom }}
+              {{- toYaml . | nindent 12 }}
+            {{- end }}
             {{- with .Values.ruler.extraEnvFrom }}
-            {{- toYaml . | nindent 12 }}
+              {{- toYaml . | nindent 12 }}
             {{- end }}
 {{- if .Values.ruler.extraContainers }}
 {{ toYaml .Values.ruler.extraContainers | indent 8}}
