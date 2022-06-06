@@ -146,11 +146,17 @@ spec:
           securityContext:
             readOnlyRootFilesystem: true
           env:
-            {{- if .Values.ingester.env }}
-              {{- toYaml .Values.ingester.env | nindent 12 }}
+            {{- with .Values.global.extraEnv }}
+              {{- toYaml . | nindent 12 }}
+            {{- end }}
+            {{- with .Values.ingester.env }}
+              {{- toYaml . | nindent 12 }}
             {{- end }}
           envFrom:
+            {{- with .Values.global.extraEnvFrom }}
+              {{- toYaml . | nindent 12 }}
+            {{- end }}
             {{- with .Values.ingester.extraEnvFrom }}
-            {{- toYaml . | nindent 12 }}
+              {{- toYaml . | nindent 12 }}
             {{- end }}
 {{- end -}}

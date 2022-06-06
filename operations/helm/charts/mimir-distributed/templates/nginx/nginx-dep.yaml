@@ -51,12 +51,18 @@ spec:
             - name: http-metric
               containerPort: 8080
               protocol: TCP
-          {{- with .Values.nginx.extraEnv }}
           env:
+          {{- with .Values.global.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.nginx.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          envFrom:
+          {{- with .Values.global.extraEnvFrom }}
             {{- toYaml . | nindent 12 }}
           {{- end }}
           {{- with .Values.nginx.extraEnvFrom }}
-          envFrom:
             {{- toYaml . | nindent 12 }}
           {{- end }}
           readinessProbe:

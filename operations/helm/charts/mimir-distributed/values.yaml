@@ -30,6 +30,12 @@ global:
   dnsNamespace: kube-system
   clusterDomain: cluster.local
 
+  # Common environment variables to add to all PODs directly managed by this chart (mimir services, nginx). Doesn't include memcached or minio.
+  extraEnv: []
+
+  # Common source of environment injections to add to all PODs directly managed by this chart (mimir services, nginx). Doesn't include memcached or minio.
+  extraEnvFrom: []
+
 serviceAccount:
   create: true
   name:

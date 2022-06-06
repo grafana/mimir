@@ -87,12 +87,18 @@ spec:
           securityContext:
             readOnlyRootFilesystem: true
           env:
-            {{- if .Values.overrides_exporter.env }}
-            {{ toYaml .Values.overrides_exporter.env | nindent 12 }}
+            {{- with .Values.global.extraEnv }}
+              {{ toYaml . | nindent 12 }}
+            {{- end }}
+            {{- with .Values.overrides_exporter.env }}
+              {{ toYaml . | nindent 12 }}
             {{- end }}
           envFrom:
+            {{- with .Values.global.extraEnvFrom }}
+              {{- toYaml . | nindent 12 }}
+            {{- end }}
             {{- with .Values.overrides_exporter.extraEnvFrom }}
-            {{- toYaml . | nindent 12 }}
+              {{- toYaml . | nindent 12 }}
             {{- end }}
         {{- with .Values.overrides_exporter.extraContainers }}
         {{ toYaml . | nindent 8 }}
