@@ -17,6 +17,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Add `global.extraEnv` and `global.extraEnvFrom` to values. This enables setting common environment variables and common injection of secrets to the POD environment of Mimir/GEM services and Nginx. Memcached and minio are out of scope for now. #2031
 * [ENHANCEMENT] Add `extraEnvFrom` capability to all Mimir services to enable injecting secrets via environment variables. #2017
 * [ENHANCEMENT] Enable `-config.expand-env=true` option in all Mimir services to be able to take secrets/settings from the environment and inject them into the Mimir configuration file. #2017
+* [ENHANCEMENT] Add a simple test for enterprise installation #2027
 
 ## 2.1.0-beta.7
 
