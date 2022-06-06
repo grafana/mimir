@@ -213,6 +213,7 @@ func main() {
 
 	runtime.KeepAlive(ballast)
 	util_log.CheckFatal("running application", err)
+	util_log.StopDedups()
 }
 
 // Parse -config.file and -config.expand-env option via separate flag set, to avoid polluting default one and calling flag.Parse on it twice.
