@@ -1,0 +1,103 @@
+---
+# Source: mimir-distributed/templates/ruler/ruler-dep.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test-values-mimir-ruler
+  labels:
+    helm.sh/chart: mimir-distributed-2.1.0-beta.7
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: test-values
+    app.kubernetes.io/component: ruler
+    app.kubernetes.io/part-of: memberlist
+    app.kubernetes.io/version: "2.1.0"
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    {}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mimir
+      app.kubernetes.io/instance: test-values
+      app.kubernetes.io/component: ruler
+  strategy:
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        helm.sh/chart: mimir-distributed-2.1.0-beta.7
+        app.kubernetes.io/name: mimir
+        app.kubernetes.io/instance: test-values
+        app.kubernetes.io/version: "2.1.0"
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/component: ruler
+        app.kubernetes.io/part-of: memberlist
+      annotations:
+        checksum/config: d5e2dc634d37a4622b9a3f3a2a9c12e1cbb495fe09f5c3e4b6463bf6c1d032ab
+    spec:
+      serviceAccountName: test-values-mimir
+      securityContext:
+        {}
+      initContainers:
+        []
+      containers:
+        - name: ruler
+          image: "grafana/mimir:2.1.0"
+          imagePullPolicy: IfNotPresent
+          args:
+            - "-target=ruler"
+            - "-config.expand-env=true"
+            - "-config.file=/etc/mimir/mimir.yaml"
+          volumeMounts:
+            - name: config
+              mountPath: /etc/mimir
+            - name: runtime-config
+              mountPath: /var/mimir
+            - name: storage
+              mountPath: "/data"
+              subPath: 
+          ports:
+            - name: http-metrics
+              containerPort: 8080
+              protocol: TCP
+            - name: grpc
+              containerPort: 9095
+              protocol: TCP
+            - name: memberlist
+              containerPort: 7946
+              protocol: TCP
+          livenessProbe:
+            null
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http-metrics
+            initialDelaySeconds: 45
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+          securityContext:
+            readOnlyRootFilesystem: true
+          env:
+          envFrom:
+      nodeSelector:
+        {}
+      affinity:
+        {}
+      tolerations:
+        []
+      terminationGracePeriodSeconds: 180
+      volumes:
+        - name: config
+          secret:
+            secretName: test-values-mimir-config
+        - name: runtime-config
+          configMap:
+            name: test-values-mimir-runtime
+        - name: storage
+          emptyDir: {}
