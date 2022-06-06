@@ -411,6 +411,7 @@
         'blocks-storage.bucket-store.chunks-cache.memcached.addresses': 'dnssrvnoa+memcached.%(namespace)s.svc.cluster.local:11211' % $._config,
         'blocks-storage.bucket-store.chunks-cache.memcached.max-item-size': $._config.memcached_chunks_max_item_size_mb * 1024 * 1024,
         'blocks-storage.bucket-store.chunks-cache.memcached.max-async-concurrency': '50',
+        'blocks-storage.bucket-store.chunks-cache.memcached.timeout': '450ms',
       } else {}
     ),
 

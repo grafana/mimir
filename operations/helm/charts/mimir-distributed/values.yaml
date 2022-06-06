@@ -139,6 +139,7 @@ mimir:
           memcached:
             addresses: dns+{{ .Release.Name }}-memcached.{{ .Release.Namespace }}.svc:11211
             max_item_size: {{ .Values.memcached.maxItemMemory }}
+            timeout: 450ms
         {{- end }}
         {{- if index .Values "memcached-metadata" "enabled" }}
         metadata_cache:
