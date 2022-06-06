@@ -8,7 +8,7 @@ weight: 20
 # Configuring Grafana Mimir deployment with Jsonnet
 
 Notable features of the Mimir Jsonnet are described here in detail.
-To learn how to get started, see [Deploying Grafana Mimir with Jsonnet and Tanka](./deploying.md).
+To learn how to get started, see [Deploying Grafana Mimir with Jsonnet and Tanka]({{< relref "./deploying.md" >}}).
 
 ## Anti-affinity
 
