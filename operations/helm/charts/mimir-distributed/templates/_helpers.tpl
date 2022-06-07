@@ -31,6 +31,16 @@ Calculate the infix for naming
 {{- if and .Values.enterprise.enabled .Values.enterprise.legacyLabels -}}enterprise-metrics{{- else -}}mimir{{- end -}}
 {{- end -}}
 
+{{/*
+Calculate the gateway url
+*/}}
+{{- define "mimir.gatewayUrl" -}}
+{{- if .Values.enterprise.enabled -}}
+http://{{ template "mimir.fullname" . }}-gateway.{{ .Release.Namespace }}.svc:{{ .Values.gateway.service.port | default (include "mimir.serverHttpListenPort" . ) }}
+{{- else -}}
+http://{{ template "mimir.fullname" . }}-nginx.{{ .Release.Namespace }}.svc:{{ .Values.nginx.service.port }}
+{{- end -}}
+{{- end -}}
 
 {{/*
 Create chart name and version as used by the chart label.

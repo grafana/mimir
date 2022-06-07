@@ -1463,6 +1463,16 @@ license:
   external: false
   secretName: '{{ include "mimir.resourceName" (dict "ctx" . "component" "license") }}'
 
+# Settings for the smoke-test job.
+smoke_test:
+  image: grafana/mimir-continuous-test:2.1.0
+  tenantId: ''
+  extraArgs: {}
+  env: []
+  extraEnvFrom: []
+  annotations: {}
+  initContainers: []
+
 # Settings for the initial admin(istrator) token generator job. Can only be enabled if
 # enterprise.enabled is true - requires license.
 tokengenJob:
