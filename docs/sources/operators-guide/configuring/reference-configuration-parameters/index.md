@@ -3397,6 +3397,12 @@ bucket_store:
   # CLI flag: -blocks-storage.bucket-store.posting-offsets-in-mem-sampling
   [postings_offsets_in_mem_sampling: <int> | default = 32]
 
+  index_header:
+    # (experimental) If enabled, the store-gateway will attempt to pre-populate
+    # the file system cache when memory-mapping index-header files.
+    # CLI flag: -blocks-storage.bucket-store.index-header.map-populate-enabled
+    [map_populate_enabled: <boolean> | default = false]
+
 tsdb:
   # Directory to store TSDBs (including WAL) in the ingesters. This directory is
   # required to be persisted between restarts.
