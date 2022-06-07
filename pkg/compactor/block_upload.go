@@ -240,7 +240,9 @@ func (c *MultitenantCompactor) completeBlockUpload(ctx context.Context, r *http.
 	}
 
 	if err := userBkt.Delete(ctx, path.Join(blockID.String(), tmpMetaFilename)); err != nil {
-		return errors.Wrap(err, fmt.Sprintf("failed to delete %s from block in object storage", tmpMetaFilename))
+		level.Warn(logger).Log("msg", fmt.Sprintf(
+			"failed to delete %s from block in object storage", tmpMetaFilename), "err", err)
+		return nil
 	}
 
 	level.Debug(logger).Log("msg", "successfully completed block upload")
