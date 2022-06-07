@@ -216,6 +216,8 @@ func (c *MultitenantCompactor) UploadBlockFile(w http.ResponseWriter, r *http.Re
 	if err := userBkt.Upload(ctx, dst, reader); err != nil {
 		level.Error(logger).Log("msg", "failed uploading block file to bucket",
 			"destination", dst, "err", err)
+		// We don't know what caused the error; it could be the client's fault (e.g. killed
+		// connection), but internal server error is the safe choice here.
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
