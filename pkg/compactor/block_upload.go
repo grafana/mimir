@@ -172,7 +172,7 @@ func (c *MultitenantCompactor) UploadBlockFile(w http.ResponseWriter, r *http.Re
 		return
 	}
 	if !exists {
-		http.Error(w, fmt.Sprintf("upload of block %s not started yet", blockID), http.StatusBadRequest)
+		http.Error(w, fmt.Sprintf("upload of block %s not started yet", blockID), http.StatusNotFound)
 		return
 	}
 
@@ -212,8 +212,15 @@ func (c *MultitenantCompactor) completeBlockUpload(ctx context.Context, r *http.
 	logger log.Logger, userBkt objstore.Bucket, tenantID string, blockID ulid.ULID) error {
 	level.Debug(logger).Log("msg", "received request to complete block upload", "content_length", r.ContentLength)
 
-	rdr, err := userBkt.Get(ctx, path.Join(blockID.String(), tmpMetaFilename))
+	tmpMetaPath := path.Join(blockID.String(), tmpMetaFilename)
+	rdr, err := userBkt.Get(ctx, tmpMetaPath)
 	if err != nil {
+		if userBkt.IsObjNotFoundErr(err) {
+			return httpError{
+				message:    fmt.Sprintf("upload of block %s not started yet", blockID),
+				statusCode: http.StatusNotFound,
+			}
+		}
 		return errors.Wrap(err, fmt.Sprintf("failed to download %s from object storage", tmpMetaFilename))
 	}
 	defer func() {
