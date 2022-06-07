@@ -1,6 +1,5 @@
 {
   local container = $.core.v1.container,
-  local podDisruptionBudget = $.policy.v1beta1.podDisruptionBudget,
   local pvc = $.core.v1.persistentVolumeClaim,
   local statefulSet = $.apps.v1.statefulSet,
   local volumeMount = $.core.v1.volumeMount,
@@ -93,12 +92,8 @@
   ingester_service:
     $.util.serviceFor($.ingester_statefulset, $._config.service_ignored_labels),
 
-  newIngesterPdb(pdbName, ingesterName)::
-    podDisruptionBudget.new() +
-    podDisruptionBudget.mixin.metadata.withName(pdbName) +
-    podDisruptionBudget.mixin.metadata.withLabels({ name: pdbName }) +
-    podDisruptionBudget.mixin.spec.selector.withMatchLabels({ name: ingesterName }) +
-    podDisruptionBudget.mixin.spec.withMaxUnavailable(1),
+  newIngesterPdb(ingesterName)::
+    $.newMimirPdb(ingesterName),
 
-  ingester_pdb: self.newIngesterPdb('ingester-pdb', name),
+  ingester_pdb: self.newIngesterPdb(name),
 }

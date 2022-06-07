@@ -19,6 +19,7 @@
       container.mixin.readinessProbe.withTimeoutSeconds(1),
   },
 
+  // Utility to create an headless service used to discover replicas of a Mimir deployment.
   newMimirDiscoveryService(name, deployment)::
     local service = $.core.v1.service;
 
@@ -26,4 +27,15 @@
     service.mixin.spec.withPublishNotReadyAddresses(true) +
     service.mixin.spec.withClusterIp('None') +
     service.mixin.metadata.withName(name),
+
+  // Utility to create a PodDisruptionBudget for a Mimir deployment.
+  newMimirPdb(deploymentName, maxUnavailable=1)::
+    local podDisruptionBudget = $.policy.v1beta1.podDisruptionBudget;
+    local pdbName = '%s-pdb' % deploymentName;
+
+    podDisruptionBudget.new() +
+    podDisruptionBudget.mixin.metadata.withName(pdbName) +
+    podDisruptionBudget.mixin.metadata.withLabels({ name: pdbName }) +
+    podDisruptionBudget.mixin.spec.selector.withMatchLabels({ name: deploymentName }) +
+    podDisruptionBudget.mixin.spec.withMaxUnavailable(maxUnavailable),
 }

@@ -1,6 +1,5 @@
 {
   local container = $.core.v1.container,
-  local podDisruptionBudget = $.policy.v1beta1.podDisruptionBudget,
   local pvc = $.core.v1.persistentVolumeClaim,
   local statefulSet = $.apps.v1.statefulSet,
   local volumeMount = $.core.v1.volumeMount,
@@ -91,11 +90,8 @@
     $.util.serviceFor($.store_gateway_statefulset, $._config.service_ignored_labels),
 
   store_gateway_pdb:
-    podDisruptionBudget.new() +
-    podDisruptionBudget.mixin.metadata.withName('store-gateway-pdb') +
-    podDisruptionBudget.mixin.metadata.withLabels({ name: 'store-gateway-pdb' }) +
-    podDisruptionBudget.mixin.spec.selector.withMatchLabels({ name: 'store-gateway' }) +
     // To avoid any disruption in the read path we need at least 1 replica of each
     // block available, so the disruption budget depends on the blocks replication factor.
-    podDisruptionBudget.mixin.spec.withMaxUnavailable(if $._config.store_gateway_replication_factor > 1 then $._config.store_gateway_replication_factor - 1 else 1),
+    local maxUnavailable = if $._config.store_gateway_replication_factor > 1 then $._config.store_gateway_replication_factor - 1 else 1;
+    $.newMimirPdb('store-gateway', maxUnavailable),
 }

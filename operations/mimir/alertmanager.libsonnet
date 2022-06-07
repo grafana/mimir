@@ -1,7 +1,6 @@
 {
   local configMap = $.core.v1.configMap,
   local container = $.core.v1.container,
-  local podDisruptionBudget = $.policy.v1beta1.podDisruptionBudget,
   local pvc = $.core.v1.persistentVolumeClaim,
   local service = $.core.v1.service,
   local statefulSet = $.apps.v1.statefulSet,
@@ -90,13 +89,6 @@
       service.mixin.spec.withClusterIp('None')
     else {},
 
-  alertmanager_pdb:
-    if $._config.alertmanager_enabled then
-      podDisruptionBudget.new('alertmanager-pdb') +
-      podDisruptionBudget.mixin.metadata.withLabels({ name: 'alertmanager-pdb' }) +
-      podDisruptionBudget.mixin.spec.selector.withMatchLabels({
-        name: $.alertmanager_statefulset.spec.template.metadata.labels.name,
-      }) +
-      podDisruptionBudget.mixin.spec.withMaxUnavailable(1)
-    else {},
+  alertmanager_pdb: if !$._config.alertmanager_enabled then null else
+    $.newMimirPdb('alertmanager'),
 }
