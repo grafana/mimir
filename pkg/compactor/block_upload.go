@@ -251,10 +251,6 @@ func (c *MultitenantCompactor) completeBlockUpload(ctx context.Context, r *http.
 
 func (c *MultitenantCompactor) sanitizeMeta(logger log.Logger, tenantID string, blockID ulid.ULID,
 	meta *metadata.Meta) error {
-	if meta.Thanos.Labels == nil {
-		meta.Thanos.Labels = map[string]string{}
-	}
-
 	meta.ULID = blockID
 
 	var rejLbls []string
