@@ -277,13 +277,13 @@ func NewMaxQueryLengthError(actualQueryLen, maxQueryLength time.Duration) LimitE
 
 func NewRequestRateLimitedError(limit float64, burst int) LimitError {
 	return LimitError(globalerror.RequestRateLimited.MessageWithLimitConfigs(
-		fmt.Sprintf("request rate limit (%v) with burst (%d) exceeded", limit, burst),
+		fmt.Sprintf("the request has been rejected because the tenant exceeded the request rate limit, set to %v req/s with a maximum allowed burst of %d", limit, burst),
 		requestRateFlag, requestBurstSizeFlag))
 }
 
 func NewIngestionRateLimitedError(limit float64, burst, numSamples, numExemplars, numMetadata int) LimitError {
 	return LimitError(globalerror.IngestionRateLimited.MessageWithLimitConfigs(
-		fmt.Sprintf("ingestion rate limit (%v) with burst (%d) exceeded while adding %d samples, %d exemplars and %d metadata", limit, burst, numSamples, numExemplars, numMetadata),
+		fmt.Sprintf("the request has been rejected because the tenant exceeded the ingestion rate limit, set to %v items/s with a maximum allowed burst of %d, while adding %d samples, %d exemplars and %d metadata", limit, burst, numSamples, numExemplars, numMetadata),
 		ingestionRateFlag, ingestionBurstSizeFlag))
 }
 

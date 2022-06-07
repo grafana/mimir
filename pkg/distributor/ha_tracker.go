@@ -532,7 +532,7 @@ type tooManyClustersError struct {
 func (e tooManyClustersError) Error() string {
 	return globalerror.TooManyHAClusters.MessageWithLimitConfig(
 		validation.HATrackerMaxClustersFlag,
-		fmt.Sprintf("too many HA clusters (limit: %d)", e.limit))
+		fmt.Sprintf("the write request has been rejected because the maximum number of high-availability (HA) clusters has been reached for this tenant (limit: %d)", e.limit))
 }
 
 // Needed for errors.Is to work properly.
