@@ -3,7 +3,6 @@ ingester:
     final_sleep: 1m0s
     heartbeat_period: 15s
     instance_availability_zone: test-zone
-    join_after: 30s
     kvstore:
       store: consul
       consul:

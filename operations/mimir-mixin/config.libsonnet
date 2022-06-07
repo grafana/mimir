@@ -24,9 +24,12 @@
       ingester: '(ingester.*|cortex|mimir)',  // Match also custom and per-zone ingester deployments.
       distributor: '(distributor|cortex|mimir)',
       querier: '(querier.*|cortex|mimir)',  // Match also custom querier deployments.
+      ruler_querier: '(ruler-querier.*)',  // Match also custom querier deployments.
       ruler: '(ruler|cortex|mimir)',
       query_frontend: '(query-frontend.*|cortex|mimir)',  // Match also custom query-frontend deployments.
+      ruler_query_frontend: '(ruler-query-frontend.*)',  // Match also custom ruler-query-frontend deployments.
       query_scheduler: 'query-scheduler.*',  // Not part of single-binary. Match also custom query-scheduler deployments.
+      ruler_query_scheduler: 'ruler-query-scheduler.*',  // Not part of single-binary. Match also custom query-scheduler deployments.
       ring_members: ['alertmanager', 'compactor', 'distributor', 'ingester.*', 'querier.*', 'ruler', 'store-gateway.*', 'cortex', 'mimir'],
       store_gateway: '(store-gateway.*|cortex|mimir)',  // Match also per-zone store-gateway deployments.
       gateway: '(gateway|cortex-gw|cortex-gw-internal)',
@@ -48,23 +51,25 @@
     resources_dashboards_enabled: true,
 
     // Whether mimir gateway is enabled
-    gateway_enabled: true,
+    gateway_enabled: false,
 
     // The label used to differentiate between different application instances (i.e. 'pod' in a kubernetes install).
     per_instance_label: 'pod',
 
     // Name selectors for different application instances, using the "per_instance_label".
     instance_names: {
-      compactor: 'compactor.*',
-      alertmanager: 'alertmanager.*',
-      ingester: 'ingester.*',
-      distributor: 'distributor.*',
-      querier: 'querier.*',
-      ruler: 'ruler.*',
-      query_frontend: 'query-frontend.*',
-      query_scheduler: 'query-scheduler.*',
-      store_gateway: 'store-gateway.*',
-      gateway: '(gateway|cortex-gw|cortex-gw).*',
+      local helmCompatibleName = function(name) '(.*-mimir-)?%s' % name,
+
+      compactor: helmCompatibleName('compactor.*'),
+      alertmanager: helmCompatibleName('alertmanager.*'),
+      ingester: helmCompatibleName('ingester.*'),
+      distributor: helmCompatibleName('distributor.*'),
+      querier: helmCompatibleName('querier.*'),
+      ruler: helmCompatibleName('ruler.*'),
+      query_frontend: helmCompatibleName('query-frontend.*'),
+      query_scheduler: helmCompatibleName('query-scheduler.*'),
+      store_gateway: helmCompatibleName('store-gateway.*'),
+      gateway: helmCompatibleName('(gateway|cortex-gw|cortex-gw).*'),
     },
 
     // The label used to differentiate between different nodes (i.e. servers).
@@ -82,6 +87,7 @@
     autoscaling: {
       querier_enabled: false,
       querier_hpa_name: 'keda-hpa-querier',
+      ruler_querier_hpa_name: 'keda-hpa-ruler-querier',
     },
 
     // The routes to exclude from alerts.

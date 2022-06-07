@@ -35,9 +35,6 @@
       'blocks-storage.tsdb.block-ranges-period': '2h',
       'blocks-storage.tsdb.ship-interval': '1m',
 
-      // Close idle TSDBs.
-      'blocks-storage.tsdb.close-idle-tsdb-timeout': $._config.queryConfig['querier.query-ingesters-within'],
-
       // Persist ring tokens so that when the ingester will be restarted
       // it will pick the same tokens
       'ingester.ring.tokens-file-path': '/data/tokens',

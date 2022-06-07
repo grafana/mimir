@@ -28,10 +28,6 @@ ingester:
     # Defaults to hostname, but we run both ingesters in this demonstration on the same machine.
     instance_id: "Ingester 2"
 
-    # We don't want to join immediately, but wait a bit to see other ingesters and their tokens first.
-    # It can take a while to have the full picture when using gossip
-    join_after: 10s
-
     # To avoid generating same tokens by multiple ingesters, they can "observe" the ring for a while,
     # after putting their own tokens into it. This is only useful when using gossip, since multiple
     # ingesters joining at the same time can have conflicting tokens if they don't see each other yet.

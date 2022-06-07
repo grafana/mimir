@@ -86,6 +86,7 @@ func (cfg *RingConfig) ToLifecyclerConfig() ring.LifecyclerConfig {
 	lc.InfNames = cfg.InstanceInterfaceNames
 	lc.UnregisterOnShutdown = true
 	lc.HeartbeatPeriod = cfg.HeartbeatPeriod
+	lc.HeartbeatTimeout = cfg.HeartbeatTimeout
 	lc.ObservePeriod = 0
 	lc.NumTokens = 1
 	lc.JoinAfter = 0

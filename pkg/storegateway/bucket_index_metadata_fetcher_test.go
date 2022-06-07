@@ -66,8 +66,8 @@ func TestBucketIndexMetadataFetcher_Fetch(t *testing.T) {
 	metas, partials, err := fetcher.Fetch(ctx)
 	require.NoError(t, err)
 	assert.Equal(t, map[ulid.ULID]*metadata.Meta{
-		block1.ID: block1.ThanosMeta(userID),
-		block3.ID: block3.ThanosMeta(userID),
+		block1.ID: block1.ThanosMeta(),
+		block3.ID: block3.ThanosMeta(),
 	}, metas)
 	assert.Empty(t, partials)
 	assert.Empty(t, logs)

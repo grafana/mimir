@@ -80,7 +80,10 @@ func main() {
 		if deleted[b.ID] {
 			continue
 		}
-		metas[b.ID] = b.ThanosMeta(cfg.userID)
+		metas[b.ID] = b.ThanosMeta()
+		if metas[b.ID].Thanos.Labels == nil {
+			metas[b.ID].Thanos.Labels = map[string]string{}
+		}
 		metas[b.ID].Thanos.Labels[mimir_tsdb.CompactorShardIDExternalLabel] = b.CompactorShardID // Needed for correct planning.
 	}
 

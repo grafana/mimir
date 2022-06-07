@@ -562,6 +562,11 @@ forwarding:
   # forward metrics.
   # CLI flag: -distributor.forwarding.request-timeout
   [request_timeout: <duration> | default = 10s]
+
+  # (experimental) If disabled then forwarding requests are always considered to
+  # be successful, errors are ignored.
+  # CLI flag: -distributor.forwarding.propagate-errors
+  [propagate_errors: <boolean> | default = true]
 ```
 
 ### ingester
@@ -679,11 +684,6 @@ ring:
   # CLI flag: -ingester.ring.observe-period
   [observe_period: <duration> | default = 0s]
 
-  # (advanced) Period to wait for a claim from another member; will join
-  # automatically after this.
-  # CLI flag: -ingester.ring.join-after
-  [join_after: <duration> | default = 0s]
-
   # (advanced) Minimum duration to wait after the internal readiness checks have
   # passed but before succeeding the readiness endpoint. This is used to
   # slowdown deployment controllers (eg. Kubernetes) after an instance is ready
@@ -791,17 +791,18 @@ The `querier` block configures the querier.
 # CLI flag: -querier.batch-iterators
 [batch_iterators: <boolean> | default = true]
 
-# Maximum lookback beyond which queries are not sent to ingester. 0 means all
-# queries are sent to ingester.
+# (advanced) Maximum lookback beyond which queries are not sent to ingester. 0
+# means all queries are sent to ingester.
 # CLI flag: -querier.query-ingesters-within
 [query_ingesters_within: <duration> | default = 13h]
 
-# The time after which a metric should be queried from storage and not just
-# ingesters. 0 means all queries are sent to store. If this option is enabled,
-# the time range of the query sent to the store-gateway will be manipulated to
-# ensure the query end is not more recent than 'now - query-store-after'.
+# (advanced) The time after which a metric should be queried from storage and
+# not just ingesters. 0 means all queries are sent to store. If this option is
+# enabled, the time range of the query sent to the store-gateway will be
+# manipulated to ensure the query end is not more recent than 'now -
+# query-store-after'.
 # CLI flag: -querier.query-store-after
-[query_store_after: <duration> | default = 0s]
+[query_store_after: <duration> | default = 12h]
 
 # (advanced) Maximum duration into the future you can query. 0 to disable.
 # CLI flag: -querier.max-query-into-future
@@ -835,15 +836,14 @@ store_gateway_client:
   # CLI flag: -querier.store-gateway-client.tls-insecure-skip-verify
   [tls_insecure_skip_verify: <boolean> | default = false]
 
-# (advanced) When distributor's sharding strategy is shuffle-sharding and this
-# setting is > 0, queriers fetch in-memory series from the minimum set of
-# required ingesters, selecting only ingesters which may have received series
-# since 'now - lookback period'. The lookback period should be greater or equal
-# than the configured -querier.query-store-after and
+# (advanced) When this setting is > 0, queriers fetch in-memory series from the
+# minimum set of required ingesters, selecting only ingesters which may have
+# received series since 'now - lookback period'. The lookback period should be
+# greater or equal than the configured -querier.query-store-after and
 # -querier.query-ingesters-within. If this setting is 0, queriers always query
 # all ingesters (ingesters shuffle sharding on read path is disabled).
 # CLI flag: -querier.shuffle-sharding-ingesters-lookback-period
-[shuffle_sharding_ingesters_lookback_period: <duration> | default = 0s]
+[shuffle_sharding_ingesters_lookback_period: <duration> | default = 13h]
 
 # The maximum number of concurrent queries. This config option should be set on
 # query-frontend too when query sharding is enabled.
@@ -1488,6 +1488,11 @@ The `ruler_storage` block configures the ruler storage backend.
 # CLI flag: -ruler-storage.backend
 [backend: <string> | default = "filesystem"]
 
+# (experimental) Prefix for all objects stored in the backend storage. For
+# simplicity, it may only contain digits and English alphabet letters.
+# CLI flag: -ruler-storage.storage-prefix
+[storage_prefix: <string> | default = ""]
+
 s3:
   # The S3 bucket endpoint. It could be an AWS S3 endpoint listed at
   # https://docs.aws.amazon.com/general/latest/gr/s3.html or the address of an
@@ -1932,6 +1937,11 @@ The `alertmanager_storage` block configures the alertmanager storage backend.
 # filesystem, local.
 # CLI flag: -alertmanager-storage.backend
 [backend: <string> | default = "filesystem"]
+
+# (experimental) Prefix for all objects stored in the backend storage. For
+# simplicity, it may only contain digits and English alphabet letters.
+# CLI flag: -alertmanager-storage.storage-prefix
+[storage_prefix: <string> | default = ""]
 
 s3:
   # The S3 bucket endpoint. It could be an AWS S3 endpoint listed at
@@ -2590,6 +2600,15 @@ The `memberlist` block configures the Gossip memberlist.
 The `limits` block configures default and per-tenant limits imposed by components.
 
 ```yaml
+# (experimental) Per-tenant request rate limit in requests per second. 0 to
+# disable.
+# CLI flag: -distributor.request-rate-limit
+[request_rate: <float> | default = 0]
+
+# (experimental) Per-tenant allowed request burst size. 0 to disable.
+# CLI flag: -distributor.request-burst-size
+[request_burst_size: <int> | default = 0]
+
 # Per-tenant ingestion rate limit in samples per second.
 # CLI flag: -distributor.ingestion-rate-limit
 [ingestion_rate: <float> | default = 10000]
@@ -2922,6 +2941,11 @@ The `blocks_storage` block configures the blocks storage.
 # filesystem.
 # CLI flag: -blocks-storage.backend
 [backend: <string> | default = "filesystem"]
+
+# (experimental) Prefix for all objects stored in the backend storage. For
+# simplicity, it may only contain digits and English alphabet letters.
+# CLI flag: -blocks-storage.storage-prefix
+[storage_prefix: <string> | default = ""]
 
 s3:
   # The S3 bucket endpoint. It could be an AWS S3 endpoint listed at
@@ -3331,7 +3355,7 @@ bucket_store:
   # are usually many of them (depending on number of ingesters) and they are not
   # yet compacted. Negative values or 0 disable the filter.
   # CLI flag: -blocks-storage.bucket-store.ignore-blocks-within
-  [ignore_blocks_within: <duration> | default = 0s]
+  [ignore_blocks_within: <duration> | default = 10h]
 
   # (advanced) Max size - in bytes - of a chunks pool, used to reduce memory
   # allocations. The pool is shared across all tenants. 0 to disable the limit.
@@ -3372,12 +3396,6 @@ bucket_store:
   # will hold in memory.
   # CLI flag: -blocks-storage.bucket-store.posting-offsets-in-mem-sampling
   [postings_offsets_in_mem_sampling: <int> | default = 32]
-
-  # (experimental) Number of threads that are dedicated for use reading index
-  # headers. Set to 0 to disable use of dedicated threads for reading index
-  # headers.
-  # CLI flag: -blocks-storage.bucket-store.index-header-thread-pool-size
-  [index_header_thread_pool_size: <int> | default = 0]
 
 tsdb:
   # Directory to store TSDBs (including WAL) in the ingesters. This directory is
@@ -3795,6 +3813,11 @@ sharding_ring:
   # Unregister from the ring upon clean shutdown.
   # CLI flag: -store-gateway.sharding-ring.unregister-on-shutdown
   [unregister_on_shutdown: <boolean> | default = true]
+
+# (experimental) Number of OS threads that are dedicated for handling requests.
+# Set to 0 to disable use of dedicated OS threads for handling requests.
+# CLI flag: -store-gateway.thread-pool-size
+[thread_pool_size: <int> | default = 0]
 ```
 
 ### sse

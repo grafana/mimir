@@ -1,0 +1,26 @@
+{{- if .Values.enterprise.enabled -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "mimir.resourceName" (dict "ctx" . "component" "admin-api") }}
+  labels:
+    {{- include "mimir.labels" (dict "ctx" . "component" "admin-api" "memberlist" true) | nindent 4 }}
+    {{- with .Values.admin_api.service.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  annotations:
+    {{- toYaml .Values.admin_api.service.annotations | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ include "mimir.serverHttpListenPort" . }}
+      protocol: TCP
+      name: http-metrics
+      targetPort: http-metrics
+    - port: {{ include "mimir.serverGrpcListenPort" . }}
+      protocol: TCP
+      name: grpc
+      targetPort: grpc
+  selector:
+    {{- include "mimir.selectorLabels" (dict "ctx" . "component" "admin-api" "memberlist" true) | nindent 4 }}
+{{- end -}}

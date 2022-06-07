@@ -98,7 +98,7 @@ func (f *BucketIndexMetadataFetcher) Fetch(ctx context.Context) (metas map[ulid.
 	// Build block metas out of the index.
 	metas = make(map[ulid.ULID]*metadata.Meta, len(idx.Blocks))
 	for _, b := range idx.Blocks {
-		metas[b.ID] = b.ThanosMeta(f.userID)
+		metas[b.ID] = b.ThanosMeta()
 	}
 
 	for _, filter := range f.filters {

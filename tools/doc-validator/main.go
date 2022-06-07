@@ -327,6 +327,9 @@ func (all markdownAnchors) add(file string, anchors ...string) {
 }
 
 func (all markdownAnchors) exists(file, anchor string) error {
+	// HTML anchors are case insensitive.
+	anchor = strings.ToLower(anchor)
+
 	absPath := absPath(file)
 
 	for _, actual := range all[absPath] {

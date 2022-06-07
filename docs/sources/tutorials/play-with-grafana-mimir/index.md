@@ -100,7 +100,7 @@ To start, we recommend looking at these dashboards:
 A couple of caveats:
 
 - It typically takes a few minutes after Grafana Mimir starts to display meaningful metrics in the dashboards.
-- Because this tutorial runs Grafana Mimir without any ingress gateway, query-scheduler, or memcached, the related panels are expected to be empty.
+- Because this tutorial runs Grafana Mimir without any query-scheduler, or memcached, the related panels are expected to be empty.
 
 The dashboards installed in the Grafana are taken from the Grafana Mimir mixin which packages up Grafana Labs' best practice dashboards, recording rules, and alerts for monitoring Grafana Mimir. To learn more about the mixin, check out the Grafana Mimir mixin documentation. To learn more about how Grafana is connecting to Grafana Mimir, review the [Mimir datasource](http://localhost:9000/datasources).
 

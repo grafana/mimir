@@ -14,7 +14,6 @@ ingester_client:
 ingester:
   ring:
     # We want to start immediately.
-    join_after: 0
     final_sleep: 0s
     num_tokens: 512
     kvstore:
@@ -22,9 +21,6 @@ ingester:
       consul:
         host: consul:8500
     replication_factor: 1
-
-querier:
-  query_ingesters_within: 3h
 
 store_gateway:
   sharding_ring:

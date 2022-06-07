@@ -471,13 +471,13 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLength(t *testing.T) {
 			query:          "rate(foo[31d])",
 			queryStartTime: time.Now().Add(-time.Hour),
 			queryEndTime:   time.Now(),
-			expected:       errors.New("expanding series: the query time range exceeds the limit (query length: 745h0m0s, limit: 720h0m0s)"),
+			expected:       errors.Errorf("expanding series: %s", validation.NewMaxQueryLengthError(745*time.Hour, 720*time.Hour)),
 		},
 		"should forbid query on large time range over the limit and short rate time window": {
 			query:          "rate(foo[1m])",
 			queryStartTime: time.Now().Add(-maxQueryLength).Add(-time.Hour),
 			queryEndTime:   time.Now(),
-			expected:       errors.New("expanding series: the query time range exceeds the limit (query length: 721h1m0s, limit: 720h0m0s)"),
+			expected:       errors.Errorf("expanding series: %s", validation.NewMaxQueryLengthError((721*time.Hour)+time.Minute, 720*time.Hour)),
 		},
 	}
 
@@ -1065,6 +1065,19 @@ func TestConfig_Validate(t *testing.T) {
 				cfg.ShuffleShardingIngestersLookbackPeriod = time.Minute
 			},
 			expected: errShuffleShardingLookbackLessThanQueryStoreAfter,
+		},
+		"should pass if both 'query store after' and 'query ingesters within' are set and 'query store after' < 'query ingesters within'": {
+			setup: func(cfg *Config) {
+				cfg.QueryStoreAfter = time.Hour
+				cfg.QueryIngestersWithin = 2 * time.Hour
+			},
+		},
+		"should fail if both 'query store after' and 'query ingesters within' are set and 'query store after' > 'query ingesters within'": {
+			setup: func(cfg *Config) {
+				cfg.QueryStoreAfter = 3 * time.Hour
+				cfg.QueryIngestersWithin = 2 * time.Hour
+			},
+			expected: errBadLookbackConfigs,
 		},
 	}
 

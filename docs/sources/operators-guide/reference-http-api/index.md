@@ -2,7 +2,7 @@
 title: "Reference: Grafana Mimir HTTP API"
 menuTitle: "Reference: HTTP API"
 description: "Use the HTTP API to write and query time-series data and operate a Grafana Mimir cluster."
-weight: 100
+weight: 120
 keywords:
   - Mimir API
   - Mimir endpoints
@@ -37,7 +37,7 @@ This document groups API endpoints by service. Note that the API endpoints are e
 | [HA tracker status](#ha-tracker-status)                                               | Distributor             | `GET /distributor/ha_tracker`                                             |
 | [Flush chunks / blocks](#flush-chunks--blocks)                                        | Ingester                | `GET,POST /ingester/flush`                                                |
 | [Shutdown](#shutdown)                                                                 | Ingester                | `GET,POST /ingester/shutdown`                                             |
-| [Ingesters ring status](#ingesters-ring-status)                                       | Ingester                | `GET /ingester/ring`                                                      |
+| [Ingesters ring status](#ingesters-ring-status)                                       | Distributor,Ingester    | `GET /ingester/ring`                                                      |
 | [Instant query](#instant-query)                                                       | Querier, Query-frontend | `GET,POST <prometheus-http-prefix>/api/v1/query`                          |
 | [Range query](#range-query)                                                           | Querier, Query-frontend | `GET,POST <prometheus-http-prefix>/api/v1/query_range`                    |
 | [Exemplar query](#exemplar-query)                                                     | Querier, Query-frontend | `GET,POST <prometheus-http-prefix>/api/v1/query_exemplars`                |
@@ -703,54 +703,6 @@ rules:
     expr: up == 0
     labels:
       severity: warning
-```
-
-#### Federated rule groups
-
-A federated rule groups is a rule group with a non-empty `source_tenants`.
-
-The `source_tenants` field allows aggregating data from multiple tenants while evaluating a rule group. The expressions
-of each rule in the group will be evaluated against the data of all tenants in `source_tenants`. If `source_tenants` is
-empty or omitted, then the tenant under which the group is created will be treated as the `source_tenant`.
-
-Federated rule groups are skipped during evaluation by default. This feature depends on
-the cross-tenant query federation feature. To enable federated rules
-set `-ruler.tenant-federation.enabled=true` and `-tenant-federation.enabled=true` CLI flags (or their respective YAML
-config options).
-
-During evaluation query limits applied to single tenants are also applied to each query in the rule group. For example,
-if `tenant-a` has a federated rule group with `source_tenants: [tenant-b, tenant-c]`, then query limits for `tenant-b`
-and `tenant-c` will be applied. If any of these limits is exceeded, the whole evaluation will fail. No partial results
-will be saved. The same "no partial results" guarantee applies to queries failing for other reasons (e.g. ingester
-unavailability).
-
-The time series used during evaluation of federated rules will have the `__tenant_id__` label, similar to how it is
-present on series returned with cross-tenant query federation.
-
-**Considerations:** Federated rule groups allow data from multiple source tenants to be written into a single
-destination tenant. This makes the existing separation of tenants' data less clear. For example, `tenant-a` has a
-federated rule group that aggregates over `tenant-b`'s data (e.g. `sum(metric_b)`) and writes the result back
-into `tenant-a`'s storage (e.g. as metric `sum:metric_b`). Now part of `tenant-b`'s data is copied to `tenant-a` (albeit
-aggregated). Have this in mind when configuring the access control layer in front of mimir and when enabling federated
-rules via `-ruler.tenant-federation.enabled`.
-
-#### Example "federated rules group" request body
-
-```yaml
-name: <string>
-interval: <duration;optional>
-source_tenants:
-  - <string>
-rules:
-  - record: <string>
-    expr: <string>
-  - alert: <string>
-    expr: <string>
-    for: <duration>
-    annotations:
-      <annotation_name>: <string>
-    labels:
-      <label_name>: <string>
 ```
 
 ### Delete rule group

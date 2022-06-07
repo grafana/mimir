@@ -25,4 +25,7 @@
 (import 'query-sharding.libsonnet') +
 (import 'multi-zone.libsonnet') +
 (import 'memberlist.libsonnet') +
-(import 'continuous-test.libsonnet')
+(import 'continuous-test.libsonnet') +
+
+// Import autoscaling at the end because it overrides deployments.
+(import 'autoscaling.libsonnet')

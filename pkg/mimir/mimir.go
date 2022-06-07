@@ -273,20 +273,24 @@ func validateBucketConfig(cfg bucket.Config, blockStorageBucketCfg bucket.Config
 		return nil
 	}
 
+	if cfg.StoragePrefix != blockStorageBucketCfg.StoragePrefix {
+		return nil
+	}
+
 	switch cfg.Backend {
 	case bucket.S3:
 		if cfg.S3.BucketName == blockStorageBucketCfg.S3.BucketName {
-			return errors.New("S3 bucket name cannot be the same as the one used in blocks storage config")
+			return errors.New("S3 bucket name and storage prefix cannot be the same as the one used in blocks storage config")
 		}
 
 	case bucket.GCS:
 		if cfg.GCS.BucketName == blockStorageBucketCfg.GCS.BucketName {
-			return errors.New("GCS bucket name cannot be the same as the one used in blocks storage config")
+			return errors.New("GCS bucket name and storage prefix cannot be the same as the one used in blocks storage config")
 		}
 
 	case bucket.Azure:
 		if cfg.Azure.ContainerName == blockStorageBucketCfg.Azure.ContainerName && cfg.Azure.StorageAccountName == blockStorageBucketCfg.Azure.StorageAccountName {
-			return errors.New("Azure container and account names cannot be the same as the ones used in blocks storage config")
+			return errors.New("Azure container and account names and storage prefix cannot be the same as the ones used in blocks storage config")
 		}
 
 	// To keep it simple here we only check that container and project names are not the same.
@@ -295,7 +299,7 @@ func validateBucketConfig(cfg bucket.Config, blockStorageBucketCfg bucket.Config
 	// may have several configured endpoints.
 	case bucket.Swift:
 		if cfg.Swift.ContainerName == blockStorageBucketCfg.Swift.ContainerName && cfg.Swift.ProjectName == blockStorageBucketCfg.Swift.ProjectName {
-			return errors.New("Swift container and project names cannot be the same as the ones used in blocks storage config")
+			return errors.New("Swift container and project names and storage prefix cannot be the same as the ones used in blocks storage config")
 		}
 	}
 	return nil

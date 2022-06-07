@@ -44,9 +44,15 @@ import (
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/validation"
+)
+
+const (
+	maxIngestionRateFlag        = "distributor.instance-limits.max-ingestion-rate"
+	maxInflightPushRequestsFlag = "distributor.instance-limits.max-inflight-push-requests"
 )
 
 var (
@@ -54,8 +60,8 @@ var (
 	errInvalidTenantShardSize = errors.New("invalid tenant shard size, the value must be greater or equal to zero")
 
 	// Distributor instance limits errors.
-	errTooManyInflightPushRequests    = errors.New("too many inflight push requests in distributor")
-	errMaxSamplesPushRateLimitReached = errors.New("distributor's samples push rate limit reached")
+	errMaxInflightRequestsReached = errors.New(globalerror.DistributorMaxInflightPushRequests.MessageWithLimitConfig(maxInflightPushRequestsFlag, "the write request has been rejected because the distributor exceeded the allowed number of inflight push requests"))
+	errMaxIngestionRateReached    = errors.New(globalerror.DistributorMaxIngestionRate.MessageWithLimitConfig(maxIngestionRateFlag, "the write request has been rejected because the distributor exceeded the ingestion rate limit"))
 )
 
 const (
@@ -87,7 +93,8 @@ type Distributor struct {
 	// For handling HA replicas.
 	HATracker *haTracker
 
-	// Per-user rate limiter.
+	// Per-user rate limiters.
+	requestRateLimiter   *limiter.RateLimiter
 	ingestionRateLimiter *limiter.RateLimiter
 
 	// Manager for subservices (HA Tracker, distributor ring and client pool)
@@ -162,8 +169,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.IntVar(&cfg.MaxRecvMsgSize, "distributor.max-recv-msg-size", 100<<20, "remote_write API max receive message size (bytes).")
 	f.DurationVar(&cfg.RemoteTimeout, "distributor.remote-timeout", 20*time.Second, "Timeout for downstream ingesters.")
 	flagext.DeprecatedFlag(f, "distributor.extend-writes", "Deprecated: this setting was used to try writing to an additional ingester in the presence of an ingester not in the ACTIVE state. Mimir now behaves as this setting is always disabled.", logger)
-	f.Float64Var(&cfg.InstanceLimits.MaxIngestionRate, "distributor.instance-limits.max-ingestion-rate", 0, "Max ingestion rate (samples/sec) that this distributor will accept. This limit is per-distributor, not per-tenant. Additional push requests will be rejected. Current ingestion rate is computed as exponentially weighted moving average, updated every second. 0 = unlimited.")
-	f.IntVar(&cfg.InstanceLimits.MaxInflightPushRequests, "distributor.instance-limits.max-inflight-push-requests", 2000, "Max inflight push requests that this distributor can handle. This limit is per-distributor, not per-tenant. Additional requests will be rejected. 0 = unlimited.")
+	f.Float64Var(&cfg.InstanceLimits.MaxIngestionRate, maxIngestionRateFlag, 0, "Max ingestion rate (samples/sec) that this distributor will accept. This limit is per-distributor, not per-tenant. Additional push requests will be rejected. Current ingestion rate is computed as exponentially weighted moving average, updated every second. 0 = unlimited.")
+	f.IntVar(&cfg.InstanceLimits.MaxInflightPushRequests, maxInflightPushRequestsFlag, 2000, "Max inflight push requests that this distributor can handle. This limit is per-distributor, not per-tenant. Additional requests will be rejected. 0 = unlimited.")
 }
 
 // Validate config and returns error on failure
@@ -202,12 +209,13 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 	// Create the configured ingestion rate limit strategy (local or global). In case
 	// it's an internal dependency and can't join the distributors ring, we skip rate
 	// limiting.
-	var ingestionRateStrategy limiter.RateLimiterStrategy
+	var ingestionRateStrategy, requestRateStrategy limiter.RateLimiterStrategy
 	var distributorsLifeCycler *ring.Lifecycler
 	var distributorsRing *ring.Ring
 
 	if !canJoinDistributorsRing {
-		ingestionRateStrategy = newInfiniteIngestionRateStrategy()
+		requestRateStrategy = newInfiniteRateStrategy()
+		ingestionRateStrategy = newInfiniteRateStrategy()
 	} else {
 		distributorsLifeCycler, err = ring.NewLifecycler(cfg.DistributorRing.ToLifecyclerConfig(), nil, "distributor", DistributorRingKey, true, log, prometheus.WrapRegistererWithPrefix("cortex_", reg))
 		if err != nil {
@@ -220,7 +228,8 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		}
 		subservices = append(subservices, distributorsLifeCycler, distributorsRing)
 
-		ingestionRateStrategy = newGlobalIngestionRateStrategy(limits, distributorsLifeCycler)
+		requestRateStrategy = newGlobalRateStrategy(newRequestRateStrategy(limits), distributorsLifeCycler)
+		ingestionRateStrategy = newGlobalRateStrategy(newIngestionRateStrategy(limits), distributorsLifeCycler)
 	}
 
 	d := &Distributor{
@@ -231,6 +240,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		distributorsLifeCycler: distributorsLifeCycler,
 		distributorsRing:       distributorsRing,
 		limits:                 limits,
+		requestRateLimiter:     limiter.NewRateLimiter(requestRateStrategy, 10*time.Second),
 		ingestionRateLimiter:   limiter.NewRateLimiter(ingestionRateStrategy, 10*time.Second),
 		HATracker:              haTracker,
 		ingestionRate:          util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval),
@@ -572,16 +582,25 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 	}
 
 	if d.cfg.InstanceLimits.MaxInflightPushRequests > 0 && inflight > int64(d.cfg.InstanceLimits.MaxInflightPushRequests) {
-		return nil, errTooManyInflightPushRequests
+		return nil, errMaxInflightRequestsReached
 	}
 
 	if d.cfg.InstanceLimits.MaxIngestionRate > 0 {
 		if rate := d.ingestionRate.Rate(); rate >= d.cfg.InstanceLimits.MaxIngestionRate {
-			return nil, errMaxSamplesPushRateLimitReached
+			return nil, errMaxIngestionRateReached
 		}
 	}
 
 	now := mtime.Now()
+	if !d.requestRateLimiter.AllowN(now, userID, 1) {
+		validation.DiscardedRequests.WithLabelValues(validation.RateLimited, userID).Add(1)
+
+		// Return a 429 here to tell the client it is going too fast.
+		// Client may discard the data or slow down and re-send.
+		// Prometheus v2.26 added a remote-write option 'retry_on_http_429'.
+		return nil, httpgrpc.Errorf(http.StatusTooManyRequests, "request rate limit (%v) exceeded", d.requestRateLimiter.Limit(now, userID))
+	}
+
 	d.activeUsers.UpdateUserTimestamp(userID, now)
 
 	source := util.GetSourceIPsFromOutgoingCtx(ctx)
@@ -738,10 +757,11 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 	}
 
 	for _, m := range req.Metadata {
-		err := validation.ValidateMetadata(d.limits, userID, m)
-		if err != nil {
+		if validationErr := validation.ValidateMetadata(d.limits, userID, m); validationErr != nil {
 			if firstPartialErr == nil {
-				firstPartialErr = err
+				// The metadata info may be retained by validationErr but that's not a problem for this
+				// use case because we format it calling Error() and then we discard it.
+				firstPartialErr = httpgrpc.Errorf(http.StatusBadRequest, validationErr.Error())
 			}
 
 			continue

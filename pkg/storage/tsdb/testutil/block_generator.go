@@ -18,8 +18,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/index"
 	thanos_metadata "github.com/thanos-io/thanos/pkg/block/metadata"
-
-	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 )
 
 type BlockSeriesSpec struct {
@@ -172,7 +170,6 @@ func GenerateBlockFromSpec(userID string, storageDir string, specs BlockSeriesSp
 		},
 		Thanos: thanos_metadata.Thanos{
 			Version: thanos_metadata.ThanosVersion1,
-			Labels:  map[string]string{mimir_tsdb.TenantIDExternalLabel: userID},
 		},
 	}
 

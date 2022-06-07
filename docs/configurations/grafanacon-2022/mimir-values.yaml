@@ -1,0 +1,15 @@
+nginx:
+  ingress:
+    enabled: true
+    ingressClassName: nginx
+    hosts:
+      - host: mimir-helm
+        paths:
+          - path: /
+            pathType: Prefix
+    tls:
+        # empty, disabled.
+
+serviceMonitor:
+  enabled: true
+  interval: 10s
