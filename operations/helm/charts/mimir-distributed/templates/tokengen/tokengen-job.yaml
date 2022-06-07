@@ -4,6 +4,7 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: {{ include "mimir.resourceName" (dict "ctx" . "component" "tokengen") }}
+  namespace: {{ .Release.Namespace | quote }}
   labels:
     {{- include "mimir.labels" (dict "ctx" . "component" "tokengen") | nindent 4 }}
   annotations:

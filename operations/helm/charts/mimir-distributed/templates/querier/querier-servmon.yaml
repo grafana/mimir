@@ -4,9 +4,7 @@ apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
   name: {{ include "mimir.resourceName" (dict "ctx" $ "component" "querier") }}
-  {{- with .namespace }}
-  namespace: {{ . }}
-  {{- end }}
+  namespace: {{ .Release.Namespace | quote }}
   labels:
     {{- include "mimir.labels" (dict "ctx" $ "component" "querier" "memberlist" true) | nindent 4 }}
     {{- with .labels }}

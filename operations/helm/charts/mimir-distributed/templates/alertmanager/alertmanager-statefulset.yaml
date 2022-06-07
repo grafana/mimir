@@ -4,6 +4,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: {{ include "mimir.resourceName" (dict "ctx" . "component" "alertmanager") }}
+  namespace: {{ .Release.Namespace | quote }}
   labels:
     {{- include "mimir.labels" (dict "ctx" . "component" "alertmanager" "memberlist" true) | nindent 4 }}
   annotations:

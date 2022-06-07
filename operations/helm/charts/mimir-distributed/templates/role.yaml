@@ -3,6 +3,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: {{ include "mimir.resourceName" (dict "ctx" .) }}
+  namespace: {{ .Release.Namespace | quote }}
   labels:
     {{- include "mimir.labels" (dict "ctx" .) | nindent 4 }}
 rules:

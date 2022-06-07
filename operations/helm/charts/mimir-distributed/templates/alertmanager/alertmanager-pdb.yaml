@@ -3,6 +3,7 @@
 apiVersion: {{ include "mimir.podDisruptionBudget.apiVersion" . }}
 kind: PodDisruptionBudget
 metadata:
+  namespace: {{ .Release.Namespace | quote }}
   name: {{ include "mimir.resourceName" (dict "ctx" . "component" "alertmanager") }}
   labels:
     {{- include "mimir.labels" (dict "ctx" . "component" "alertmanager" "memberlist" true) | nindent 4 }}

@@ -2,6 +2,7 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
+  namespace: {{ .Release.Namespace | quote }}
   annotations:
     {{- toYaml .Values.admin_api.annotations | nindent 4 }}
   labels:

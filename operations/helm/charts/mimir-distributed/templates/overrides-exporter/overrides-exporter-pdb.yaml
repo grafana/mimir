@@ -4,6 +4,7 @@ apiVersion: {{ include "mimir.podDisruptionBudget.apiVersion" . }}
 kind: PodDisruptionBudget
 metadata:
   name: {{ include "mimir.resourceName" (dict "ctx" . "component" "overrides-exporter") }}
+  namespace: {{ .Release.Namespace | quote }}
   labels:
     {{- include "mimir.labels" (dict "ctx" . "component" "overrides-exporter") | nindent 4 }}
 spec:
