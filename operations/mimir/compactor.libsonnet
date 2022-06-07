@@ -83,8 +83,6 @@
       'runtime-config.file': '%s/overrides.yaml' % $._config.overrides_configmap_mountpoint,
     },
 
-  // The compactor runs a statefulset with a single replica, because
-  // it does not support horizontal scalability yet.
   local compactor_data_pvc =
     pvc.new() +
     pvc.mixin.spec.resources.withRequests({ storage: $._config.compactor_data_disk_size }) +
