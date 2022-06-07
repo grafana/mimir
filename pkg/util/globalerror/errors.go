@@ -69,7 +69,9 @@ func (id ID) MessageWithLimitConfigs(msg, flag string, addFlags ...string) strin
 	var sb strings.Builder
 	sb.WriteString("-")
 	sb.WriteString(flag)
+	plural := ""
 	if len(addFlags) > 0 {
+		plural = "s"
 		for _, addFlag := range addFlags[:len(addFlags)-1] {
 			sb.WriteString(", -")
 			sb.WriteString(addFlag)
@@ -77,5 +79,5 @@ func (id ID) MessageWithLimitConfigs(msg, flag string, addFlags ...string) strin
 		sb.WriteString(" and -")
 		sb.WriteString(addFlags[len(addFlags)-1])
 	}
-	return fmt.Sprintf("%s (%s%s). You can adjust the related per-tenant limits by configuring %s, or by contacting your service administrator.", msg, errPrefix, id, sb.String())
+	return fmt.Sprintf("%s (%s%s). You can adjust the related per-tenant limit%s by configuring %s, or by contacting your service administrator.", msg, errPrefix, id, plural, sb.String())
 }
