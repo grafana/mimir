@@ -6,7 +6,7 @@ set -euo pipefail
 CHART_PATH=operations/helm/charts/mimir-distributed
 
 # Start from a clean slate
-rm -rf operations/helm/tests/*values-generated
+rm -rf operations/helm/tests/*-generated
 
 # Install chart dependencies for this branch
 helm dependency update "$CHART_PATH"
