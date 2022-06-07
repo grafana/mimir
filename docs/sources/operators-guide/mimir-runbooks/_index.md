@@ -1347,15 +1347,43 @@ To configure the limit on a per-tenant basis, use the `-store.max-query-length` 
 
 ### err-mimir-request-rate-limited
 
-TBA
+This error occurs when the rate of requests per second is exceeded for this tenant.
+
+How it **works**:
+
+- There is a per-tenant rate limit on the requests per second, and it's applied across all distributors for this tenant.
+- The limit is implemented using [token buckets](https://en.wikipedia.org/wiki/Token_bucket).
+
+How to **fix** it:
+
+- Increase the per-tenant limit by using the `-distributor.request-rate-limit` (requests per second) and `-distributor.request-burst-size` (number of requests) options.
 
 ### err-mimir-ingestion-rate-limited
 
-TBA
+This error occurs when the rate of received samples, exemplars and metadata per second is exceeded for this tenant.
+
+How it **works**:
+
+- There is a per-tenant rate limit on the samples, exemplars and metadata that can be ingested per second, and it's applied across all distributors for this tenant.
+- The limit is implemented using [token buckets](https://en.wikipedia.org/wiki/Token_bucket).
+
+How to **fix** it:
+
+- Increase the per-tenant limit by using the `-distributor.ingestion-rate-limit` (samples per second) and `-distributor.ingestion-burst-size` (number of samples) options.
 
 ### err-mimir-too-many-ha-clusters
 
-TBA
+This error occurs when a distributor rejects a write request because the number of high-availability (HA) clusters has hit the configured limit for this tenant.
+
+How it **works**:
+
+- The distributor implements an upper limit on the number of clusters that the HA tracker will keep track of for a single tenant.
+- It is triggered when the write request would add a new cluster while the number the tenant currently has is already equal to the limit.
+- To configure the limit, set the `-distributor.ha-tracker.max-clusters` option.
+
+How to **fix** it:
+
+- Increase the per-tenant limit by using the `-distributor.ha-tracker.max-clusters` option.
 
 ## Mimir routes by path
 
