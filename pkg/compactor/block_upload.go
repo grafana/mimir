@@ -63,6 +63,17 @@ func (c *MultitenantCompactor) HandleBlockUpload(w http.ResponseWriter, r *http.
 	logger = log.With(logger, "block", blockID)
 
 	userBkt := bucket.NewUserBucketClient(tenantID, c.bucketClient, c.cfgProvider)
+	if err := checkForComplete(ctx, logger, bULID, userBkt); err != nil {
+		var httpErr httpError
+		if errors.As(err, &httpErr) {
+			level.Warn(logger).Log("msg", httpErr.message, "err", err)
+			http.Error(w, httpErr.message, httpErr.statusCode)
+			return
+		}
+
+		level.Error(logger).Log("msg", "an unexpected error occurred", "err", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+	}
 
 	if r.URL.Query().Get("uploadComplete") == "true" {
 		err = c.completeBlockUpload(ctx, r, logger, userBkt, tenantID, bULID)
@@ -85,10 +96,8 @@ func (c *MultitenantCompactor) HandleBlockUpload(w http.ResponseWriter, r *http.
 	w.WriteHeader(http.StatusOK)
 }
 
-func (c *MultitenantCompactor) createBlockUpload(ctx context.Context, r *http.Request,
-	logger log.Logger, userBkt objstore.Bucket, tenantID string, blockID ulid.ULID) error {
-	level.Debug(logger).Log("msg", "starting block upload")
-
+// checkForComplete checks for a complete block with same ID. If one exists, an error is returned.
+func checkForComplete(ctx context.Context, logger log.Logger, blockID ulid.ULID, userBkt objstore.Bucket) error {
 	exists, err := userBkt.Exists(ctx, path.Join(blockID.String(), block.MetaFilename))
 	if err != nil {
 		return errors.Wrap(err, fmt.Sprintf("failed to check existence of %s in object storage", block.MetaFilename))
@@ -100,6 +109,13 @@ func (c *MultitenantCompactor) createBlockUpload(ctx context.Context, r *http.Re
 			statusCode: http.StatusConflict,
 		}
 	}
+
+	return nil
+}
+
+func (c *MultitenantCompactor) createBlockUpload(ctx context.Context, r *http.Request,
+	logger log.Logger, userBkt objstore.Bucket, tenantID string, blockID ulid.ULID) error {
+	level.Debug(logger).Log("msg", "starting block upload")
 
 	meta, err := decodeMeta(r.Body, "request body")
 	if err != nil {
@@ -126,7 +142,7 @@ func (c *MultitenantCompactor) UploadBlockFile(w http.ResponseWriter, r *http.Re
 		http.Error(w, "missing block ID", http.StatusBadRequest)
 		return
 	}
-	_, err := ulid.Parse(blockID)
+	bULID, err := ulid.Parse(blockID)
 	if err != nil {
 		http.Error(w, "invalid block ID", http.StatusBadRequest)
 		return
@@ -162,6 +178,18 @@ func (c *MultitenantCompactor) UploadBlockFile(w http.ResponseWriter, r *http.Re
 	}
 
 	userBkt := bucket.NewUserBucketClient(tenantID, c.bucketClient, c.cfgProvider)
+
+	if err := checkForComplete(ctx, logger, bULID, userBkt); err != nil {
+		var httpErr httpError
+		if errors.As(err, &httpErr) {
+			level.Warn(logger).Log("msg", httpErr.message, "err", err)
+			http.Error(w, httpErr.message, httpErr.statusCode)
+			return
+		}
+
+		level.Error(logger).Log("msg", "an unexpected error occurred", "err", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+	}
 
 	metaPath := path.Join(blockID, tmpMetaFilename)
 	exists, err := userBkt.Exists(ctx, metaPath)

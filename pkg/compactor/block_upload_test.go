@@ -125,7 +125,7 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 func TestMultitenantCompactor_UploadBlockFile(t *testing.T) {
 	const tenantID = "test"
 	blockID := ulid.MustParse("01G3FZ0JWJYJC0ZM6Y9778P6KD")
-	metaPath := path.Join(tenantID, blockID.String(), "uploading-meta.json")
+	uploadingMetaPath := path.Join(tenantID, blockID.String(), "uploading-meta.json")
 
 	t.Run("without block ID", func(t *testing.T) {
 		c := &MultitenantCompactor{
@@ -230,7 +230,8 @@ func TestMultitenantCompactor_UploadBlockFile(t *testing.T) {
 		var bkt bucket.ClientMock
 		expPath := path.Join(tenantID, blockID.String(), "chunks/000001")
 		bkt.MockUpload(expPath, nil)
-		bkt.MockExists(metaPath, true, nil)
+		bkt.MockExists(uploadingMetaPath, true, nil)
+		bkt.MockExists(path.Join(tenantID, blockID.String(), block.MetaFilename), false, nil)
 		c := &MultitenantCompactor{
 			logger:       log.NewNopLogger(),
 			bucketClient: &bkt,
@@ -317,6 +318,7 @@ func TestMultitenantCompactor_HandleBlockUpload_Complete(t *testing.T) {
 		metaJSON, err := json.Marshal(meta)
 		require.NoError(t, err)
 		var bkt bucket.ClientMock
+		bkt.MockExists(path.Join(tenantID, blockID.String(), block.MetaFilename), false, nil)
 		bkt.On("Get", mock.Anything, uploadingMetaPath).Return(func(_ context.Context, _ string) (io.ReadCloser, error) {
 			return io.NopCloser(bytes.NewReader(metaJSON)), nil
 		})
