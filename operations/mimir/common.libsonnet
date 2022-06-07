@@ -19,7 +19,7 @@
       container.mixin.readinessProbe.withTimeoutSeconds(1),
   },
 
-  newDiscoveryService(name, deployment)::
+  newMimirDiscoveryService(name, deployment)::
     local service = $.core.v1.service;
 
     $.util.serviceFor(deployment, $._config.service_ignored_labels) +

@@ -59,5 +59,5 @@
     // each query-frontend pod IP and NOT the service IP. To make it, we do NOT
     // use the service cluster IP so that when the service DNS is resolved it
     // returns the set of query-frontend IPs.
-    $.newDiscoveryService('query-frontend-discovery', $.query_frontend_deployment),
+    $.newMimirDiscoveryService('query-frontend-discovery', $.query_frontend_deployment),
 }
