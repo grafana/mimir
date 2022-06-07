@@ -10,6 +10,7 @@ weight: 30
 As a developer, you can use the standalone mimir-continuous-test tool to run smoke tests on live Grafana Mimir clusters.
 This tool identifies a class of bugs that could be difficult to spot during development.
 Two operating modes are supported:
+
 - As a continuously running deployment in your environment, mimir-continuous-test can be used to detect issues on a live Grafana Mimir cluster over time.
 - As an ad-hoc smoke test tool, mimir-continuous-test can be used to validate basic functionality after configuration changes are made to a Grafana Mimir cluster.
 
