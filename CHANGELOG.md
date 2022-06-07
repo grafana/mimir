@@ -64,6 +64,10 @@
 
 * [BUGFIX] mimirtool analyze: Fix dashboard JSON unmarshalling errors (#1840). #1973
 
+### Mimir Continuous Test
+
+* [ENHANCEMENT] Added the `-tests.smoke-test` flag to run the `mimir-continuous-test` suite once and immediately exit.
+
 ### Documentation
 
 * [ENHANCEMENT] Published Grafana Mimir runbooks as part of documentation. #1970

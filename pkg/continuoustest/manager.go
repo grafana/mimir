@@ -5,8 +5,9 @@ package continuoustest
 import (
 	"context"
 	"flag"
-	"sync"
 	"time"
+
+	"golang.org/x/sync/errgroup"
 )
 
 type Test interface {
@@ -17,14 +18,17 @@ type Test interface {
 	Init(ctx context.Context, now time.Time) error
 
 	// Run runs a single test cycle. This function is called multiple times, at periodic intervals.
-	Run(ctx context.Context, now time.Time)
+	// The returned error is ignored unless smoke-test is enabled. In that case, the error is returned to the caller.
+	Run(ctx context.Context, now time.Time) error
 }
 
 type ManagerConfig struct {
+	SmokeTest   bool
 	RunInterval time.Duration
 }
 
 func (cfg *ManagerConfig) RegisterFlags(f *flag.FlagSet) {
+	f.BoolVar(&cfg.SmokeTest, "tests.smoke-test", false, "Run a smoke test, i.e. run all tests once and exit.")
 	f.DurationVar(&cfg.RunInterval, "tests.run-interval", 5*time.Minute, "How frequently tests should run.")
 }
 
@@ -52,29 +56,32 @@ func (m *Manager) Run(ctx context.Context) error {
 	}
 
 	// Continuously run all tests. Each test is executed in a dedicated goroutine.
-	wg := sync.WaitGroup{}
-	wg.Add(len(m.tests))
+	group, ctx := errgroup.WithContext(ctx)
 
 	for _, test := range m.tests {
-		go func(t Test) {
-			defer wg.Done()
+		t := test
+		group.Go(func() error {
 
 			// Run it immediately, and then every configured period.
-			t.Run(ctx, time.Now())
+			err := t.Run(ctx, time.Now())
+			if m.cfg.SmokeTest {
+				return err
+			}
 
 			ticker := time.NewTicker(m.cfg.RunInterval)
 
 			for {
 				select {
 				case <-ticker.C:
-					t.Run(ctx, time.Now())
+					// This error is intentionally ignored because we want to
+					// continue running the tests forever.
+					_ = t.Run(ctx, time.Now())
 				case <-ctx.Done():
-					return
+					return nil
 				}
 			}
-		}(test)
+		})
 	}
 
-	wg.Wait()
-	return nil
+	return group.Wait()
 }
