@@ -4,6 +4,7 @@ package compactor
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -36,7 +37,6 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 		c := &MultitenantCompactor{
 			logger: log.NewNopLogger(),
 		}
-
 		r := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/upload/block/%s", blockID), nil)
 		r.Header.Set(user.OrgIDHeaderName, tenantID)
 		w := httptest.NewRecorder()
@@ -48,6 +48,28 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 
 		assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 		assert.Equal(t, "missing block ID\n", string(body))
+	})
+
+	t.Run("malformed body", func(t *testing.T) {
+		var bkt bucket.ClientMock
+		bkt.MockExists(path.Join(tenantID, blockID.String(), block.MetaFilename), false, nil)
+		c := &MultitenantCompactor{
+			logger:       log.NewNopLogger(),
+			bucketClient: &bkt,
+		}
+		r := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/upload/block/%s", blockID),
+			bytes.NewBuffer([]byte("{")))
+		r = mux.SetURLVars(r, map[string]string{"block": blockID.String()})
+		r.Header.Set(user.OrgIDHeaderName, tenantID)
+		w := httptest.NewRecorder()
+		c.HandleBlockUpload(w, r)
+
+		resp := w.Result()
+		body, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+
+		assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+		assert.Equal(t, "malformed request body\n", string(body))
 	})
 
 	t.Run("valid request", func(t *testing.T) {
@@ -84,7 +106,7 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 		require.NoError(t, json.NewEncoder(buf).Encode(meta))
 
 		r := httptest.NewRequest(http.MethodPost, fmt.Sprintf(
-			"/api/v1/upload/block/%s", blockID.String()), buf)
+			"/api/v1/upload/block/%s", blockID), buf)
 		r.Header.Set(user.OrgIDHeaderName, tenantID)
 		r = mux.SetURLVars(r, map[string]string{"block": blockID.String()})
 		w := httptest.NewRecorder()
@@ -111,7 +133,7 @@ func TestMultitenantCompactor_UploadBlockFile(t *testing.T) {
 		}
 		const pth = "chunks%2F000001"
 		r := httptest.NewRequest(http.MethodPost, fmt.Sprintf(
-			"/api/v1/upload/block/%s/files?path=%s", blockID.String(), pth), nil)
+			"/api/v1/upload/block/%s/files?path=%s", blockID, pth), nil)
 		r = mux.SetURLVars(r, map[string]string{"path": pth})
 		r.Header.Set(user.OrgIDHeaderName, tenantID)
 		w := httptest.NewRecorder()
@@ -130,7 +152,7 @@ func TestMultitenantCompactor_UploadBlockFile(t *testing.T) {
 			logger: log.NewNopLogger(),
 		}
 		r := httptest.NewRequest(http.MethodPost, fmt.Sprintf(
-			"/api/v1/upload/block/%s/files", blockID.String()), nil)
+			"/api/v1/upload/block/%s/files", blockID), nil)
 		r = mux.SetURLVars(r, map[string]string{"block": blockID.String()})
 		r.Header.Set(user.OrgIDHeaderName, tenantID)
 		w := httptest.NewRecorder()
@@ -150,7 +172,7 @@ func TestMultitenantCompactor_UploadBlockFile(t *testing.T) {
 		}
 		const pth = "..%2Fchunks%2F000001"
 		r := httptest.NewRequest(http.MethodPost, fmt.Sprintf(
-			"/api/v1/upload/block/%s/files?path=%s", blockID.String(), pth), nil)
+			"/api/v1/upload/block/%s/files?path=%s", blockID, pth), nil)
 		r = mux.SetURLVars(r, map[string]string{"block": blockID.String(), "path": pth})
 		r.Header.Set(user.OrgIDHeaderName, tenantID)
 		w := httptest.NewRecorder()
@@ -170,7 +192,7 @@ func TestMultitenantCompactor_UploadBlockFile(t *testing.T) {
 		}
 		const pth = "chunks%2F000001"
 		r := httptest.NewRequest(http.MethodPost, fmt.Sprintf(
-			"/api/v1/upload/block/%s/files?path=%s", blockID.String(), pth), nil)
+			"/api/v1/upload/block/%s/files?path=%s", blockID, pth), nil)
 		r = mux.SetURLVars(r, map[string]string{"block": blockID.String(), "path": pth})
 		r.Header.Set(user.OrgIDHeaderName, tenantID)
 		w := httptest.NewRecorder()
@@ -184,15 +206,14 @@ func TestMultitenantCompactor_UploadBlockFile(t *testing.T) {
 		assert.Equal(t, "file cannot be empty\n", string(body))
 	})
 
-	t.Run("attempt meta.json", func(t *testing.T) {
+	t.Run("attempt block metadata file", func(t *testing.T) {
 		c := &MultitenantCompactor{
 			logger: log.NewNopLogger(),
 		}
-		const pth = "meta.json"
 		buf := bytes.NewBuffer([]byte("content"))
 		r := httptest.NewRequest(http.MethodPost, fmt.Sprintf(
-			"/api/v1/upload/block/%s/files?path=%s", blockID.String(), pth), buf)
-		r = mux.SetURLVars(r, map[string]string{"block": blockID.String(), "path": pth})
+			"/api/v1/upload/block/%s/files?path=%s", blockID, block.MetaFilename), buf)
+		r = mux.SetURLVars(r, map[string]string{"block": blockID.String(), "path": block.MetaFilename})
 		r.Header.Set(user.OrgIDHeaderName, tenantID)
 		w := httptest.NewRecorder()
 		c.UploadBlockFile(w, r)
@@ -202,7 +223,7 @@ func TestMultitenantCompactor_UploadBlockFile(t *testing.T) {
 		require.NoError(t, err)
 
 		assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
-		assert.Equal(t, "meta.json is not allowed\n", string(body))
+		assert.Equal(t, fmt.Sprintf("%s is not allowed\n", block.MetaFilename), string(body))
 	})
 
 	t.Run("valid request", func(t *testing.T) {
@@ -217,7 +238,7 @@ func TestMultitenantCompactor_UploadBlockFile(t *testing.T) {
 		const pth = "chunks%2F000001"
 		buf := bytes.NewBuffer([]byte("content"))
 		r := httptest.NewRequest(http.MethodPost, fmt.Sprintf(
-			"/api/v1/upload/block/%s/files?path=%s", blockID.String(), pth), buf)
+			"/api/v1/upload/block/%s/files?path=%s", blockID, pth), buf)
 		r = mux.SetURLVars(r, map[string]string{"block": blockID.String(), "path": pth})
 		r.Header.Set(user.OrgIDHeaderName, tenantID)
 		w := httptest.NewRecorder()
@@ -226,9 +247,7 @@ func TestMultitenantCompactor_UploadBlockFile(t *testing.T) {
 		resp := w.Result()
 
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
-		bkt.AssertCalled(t, "Upload", mock.Anything, expPath, bodyReader{
-			r: r,
-		})
+		bkt.AssertExpectations(t)
 	})
 }
 
@@ -236,13 +255,14 @@ func TestMultitenantCompactor_UploadBlockFile(t *testing.T) {
 func TestMultitenantCompactor_HandleBlockUpload_Complete(t *testing.T) {
 	const tenantID = "test"
 	blockID := ulid.MustParse("01G3FZ0JWJYJC0ZM6Y9778P6KD")
+	uploadingMetaPath := path.Join(tenantID, blockID.String(), "uploading-meta.json")
 
 	t.Run("without tenant ID", func(t *testing.T) {
 		c := &MultitenantCompactor{
 			logger: log.NewNopLogger(),
 		}
 		r := httptest.NewRequest(http.MethodPost, fmt.Sprintf(
-			"/api/v1/upload/block/%s?uploadComplete=true", blockID.String()), nil)
+			"/api/v1/upload/block/%s?uploadComplete=true", blockID), nil)
 		r = mux.SetURLVars(r, map[string]string{"block": blockID.String()})
 		w := httptest.NewRecorder()
 		c.HandleBlockUpload(w, r)
@@ -260,7 +280,7 @@ func TestMultitenantCompactor_HandleBlockUpload_Complete(t *testing.T) {
 			logger: log.NewNopLogger(),
 		}
 		r := httptest.NewRequest(http.MethodPost, fmt.Sprintf(
-			"/api/v1/upload/block/%s?uploadComplete=true", blockID.String()), nil)
+			"/api/v1/upload/block/%s?uploadComplete=true", blockID), nil)
 		r.Header.Set(user.OrgIDHeaderName, tenantID)
 		w := httptest.NewRecorder()
 		c.HandleBlockUpload(w, r)
@@ -273,58 +293,10 @@ func TestMultitenantCompactor_HandleBlockUpload_Complete(t *testing.T) {
 		assert.Equal(t, "missing block ID\n", string(body))
 	})
 
-	t.Run("without body", func(t *testing.T) {
-		c := &MultitenantCompactor{
-			logger: log.NewNopLogger(),
-		}
-		r := httptest.NewRequest(http.MethodPost, fmt.Sprintf(
-			"/api/v1/upload/block/%s?uploadComplete=true", blockID.String()), nil)
-		r = mux.SetURLVars(r, map[string]string{"block": blockID.String()})
-		r.Header.Set(user.OrgIDHeaderName, tenantID)
-		w := httptest.NewRecorder()
-		c.HandleBlockUpload(w, r)
-
-		resp := w.Result()
-		body, err := io.ReadAll(resp.Body)
-		require.NoError(t, err)
-
-		assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
-		assert.Equal(t, "malformed request body\n", string(body))
-	})
-
-	t.Run("malformed body", func(t *testing.T) {
-		c := &MultitenantCompactor{
-			logger: log.NewNopLogger(),
-		}
-		r := httptest.NewRequest(http.MethodPost, fmt.Sprintf(
-			"/api/v1/upload/block/%s?uploadComplete=true", blockID.String()),
-			bytes.NewBuffer([]byte("{")))
-		r = mux.SetURLVars(r, map[string]string{"block": blockID.String()})
-		r.Header.Set(user.OrgIDHeaderName, tenantID)
-		w := httptest.NewRecorder()
-		c.HandleBlockUpload(w, r)
-
-		resp := w.Result()
-		body, err := io.ReadAll(resp.Body)
-		require.NoError(t, err)
-
-		assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
-		assert.Equal(t, "malformed request body\n", string(body))
-	})
-
 	t.Run("valid request", func(t *testing.T) {
-		var bkt bucket.ClientMock
-		const expPath = "test/01G3FZ0JWJYJC0ZM6Y9778P6KD/meta.json"
-		bkt.MockUpload(expPath, nil)
-		bkt.MockDelete(mock.Anything, nil)
-		bkt.MockIter("test/01G3FZ0JWJYJC0ZM6Y9778P6KD", []string{"random.lock"}, nil)
-		c := &MultitenantCompactor{
-			logger:       log.NewNopLogger(),
-			bucketClient: &bkt,
-		}
 		meta := metadata.Meta{
 			BlockMeta: tsdb.BlockMeta{
-				ULID: ulid.MustParse("01G3FZ0JWJYJC0ZM6Y9778P6KD"),
+				ULID: blockID,
 			},
 			Thanos: metadata.Thanos{
 				Labels: map[string]string{
@@ -344,9 +316,21 @@ func TestMultitenantCompactor_HandleBlockUpload_Complete(t *testing.T) {
 		}
 		metaJSON, err := json.Marshal(meta)
 		require.NoError(t, err)
-		r := httptest.NewRequest(http.MethodPost, "/api/v1/upload/block/01G3FZ0JWJYJC0ZM6Y9778P6KD?uploadComplete=true",
-			bytes.NewBuffer(metaJSON))
-		r = mux.SetURLVars(r, map[string]string{"block": "01G3FZ0JWJYJC0ZM6Y9778P6KD"})
+		var bkt bucket.ClientMock
+		bkt.On("Get", mock.Anything, uploadingMetaPath).Return(func(_ context.Context, _ string) (io.ReadCloser, error) {
+			return io.NopCloser(bytes.NewReader(metaJSON)), nil
+		})
+		bkt.MockDelete(uploadingMetaPath, nil)
+		expPath := path.Join("test", blockID.String(), block.MetaFilename)
+		bkt.MockUpload(expPath, nil)
+		c := &MultitenantCompactor{
+			logger:       log.NewNopLogger(),
+			bucketClient: &bkt,
+		}
+		r := httptest.NewRequest(http.MethodPost, fmt.Sprintf(
+			"/api/v1/upload/block/%s?uploadComplete=true", blockID),
+			nil)
+		r = mux.SetURLVars(r, map[string]string{"block": blockID.String()})
 		r.Header.Set(user.OrgIDHeaderName, tenantID)
 		w := httptest.NewRecorder()
 		c.HandleBlockUpload(w, r)
@@ -356,6 +340,6 @@ func TestMultitenantCompactor_HandleBlockUpload_Complete(t *testing.T) {
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
 		expBuf := bytes.NewBuffer(metaJSON)
 		require.NoError(t, expBuf.WriteByte('\n'))
-		bkt.AssertCalled(t, "Upload", mock.Anything, expPath, expBuf)
+		bkt.AssertExpectations(t)
 	})
 }
