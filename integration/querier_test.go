@@ -310,8 +310,9 @@ func TestQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T) {
 
 func TestQuerierWithBlocksStorageRunningInSingleBinaryMode(t *testing.T) {
 	tests := map[string]struct {
-		indexCacheBackend  string
-		bucketIndexEnabled bool
+		indexCacheBackend    string
+		bucketIndexEnabled   bool
+		queryShardingEnabled bool
 	}{
 		"inmemory index cache": {
 			indexCacheBackend: tsdb.IndexCacheBackendInMemory,
@@ -322,6 +323,10 @@ func TestQuerierWithBlocksStorageRunningInSingleBinaryMode(t *testing.T) {
 		"memcached index cache, bucket index enabled": {
 			indexCacheBackend:  tsdb.IndexCacheBackendMemcached,
 			bucketIndexEnabled: true,
+		},
+		"inmemory index cache, query sharding enabled": {
+			indexCacheBackend:    tsdb.IndexCacheBackendInMemory,
+			queryShardingEnabled: true,
 		},
 	}
 
@@ -372,6 +377,8 @@ func TestQuerierWithBlocksStorageRunningInSingleBinaryMode(t *testing.T) {
 				"-compactor.cleanup-interval":                     "2s", // Update bucket index often.
 				// Querier.
 				"-querier.query-store-after": "0",
+				// Query-frontend.
+				"-query-frontend.parallelize-shardable-queries": strconv.FormatBool(testCfg.queryShardingEnabled),
 			})
 
 			// Start Mimir replicas.
