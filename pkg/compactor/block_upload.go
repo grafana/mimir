@@ -216,6 +216,10 @@ func (c *MultitenantCompactor) completeBlockUpload(ctx context.Context, r *http.
 	if err != nil {
 		return errors.Wrap(err, fmt.Sprintf("failed to download %s from object storage", tmpMetaFilename))
 	}
+	defer func() {
+		_ = rdr.Close()
+	}()
+
 	meta, err := decodeMeta(rdr, tmpMetaFilename)
 	if err != nil {
 		return err
