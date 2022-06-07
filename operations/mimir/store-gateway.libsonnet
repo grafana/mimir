@@ -66,21 +66,8 @@
     $.jaeger_mixin,
 
   newStoreGatewayStatefulSet(name, container, with_anti_affinity=false)::
-    statefulSet.new(name, 3, [container], store_gateway_data_pvc) +
-    statefulSet.mixin.spec.withServiceName(name) +
-    statefulSet.mixin.metadata.withNamespace($._config.namespace) +
-    statefulSet.mixin.metadata.withLabels({ name: name }) +
-    statefulSet.mixin.spec.template.metadata.withLabels({ name: name }) +
-    statefulSet.mixin.spec.selector.withMatchLabels({ name: name }) +
-    statefulSet.mixin.spec.template.spec.securityContext.withRunAsUser(0) +
-    (if !std.isObject($._config.node_selector) then {} else statefulSet.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector)) +
-    statefulSet.mixin.spec.updateStrategy.withType('RollingUpdate') +
+    $.newMimirStatefulSet(name, 3, container, store_gateway_data_pvc) +
     statefulSet.mixin.spec.template.spec.withTerminationGracePeriodSeconds(120) +
-    // Parallelly scale up/down store-gateway instances instead of starting them
-    // one by one. This does NOT affect rolling updates: they will continue to be
-    // rolled out one by one (the next pod will be rolled out once the previous is
-    // ready).
-    statefulSet.mixin.spec.withPodManagementPolicy('Parallel') +
     $.util.configVolumeMount($._config.overrides_configmap, $._config.overrides_configmap_mountpoint) +
     (if with_anti_affinity then $.util.antiAffinity else {}),
 

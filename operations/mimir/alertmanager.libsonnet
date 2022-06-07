@@ -65,17 +65,9 @@
 
   alertmanager_statefulset:
     if $._config.alertmanager_enabled then
-      statefulSet.new('alertmanager', $._config.alertmanager.replicas, [$.alertmanager_container], $.alertmanager_pvc) +
-      statefulSet.mixin.spec.withServiceName('alertmanager') +
-      statefulSet.mixin.metadata.withNamespace($._config.namespace) +
-      statefulSet.mixin.metadata.withLabels({ name: 'alertmanager' }) +
-      statefulSet.mixin.spec.template.metadata.withLabels({ name: 'alertmanager' }) +
-      statefulSet.mixin.spec.selector.withMatchLabels({ name: 'alertmanager' }) +
-      statefulSet.mixin.spec.template.spec.securityContext.withRunAsUser(0) +
-      statefulSet.mixin.spec.updateStrategy.withType('RollingUpdate') +
+      $.newMimirStatefulSet('alertmanager', $._config.alertmanager.replicas, $.alertmanager_container, $.alertmanager_pvc, podManagementPolicy=null) +
       statefulSet.mixin.spec.template.spec.withTerminationGracePeriodSeconds(900) +
       $.util.configVolumeMount($._config.overrides_configmap, $._config.overrides_configmap_mountpoint) +
-      (if !std.isObject($._config.node_selector) then {} else statefulSet.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector)) +
       statefulSet.mixin.spec.template.spec.withVolumesMixin(
         if hasFallbackConfig then
           [volume.fromConfigMap('alertmanager-fallback-config', 'alertmanager-fallback-config')]

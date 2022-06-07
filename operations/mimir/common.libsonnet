@@ -38,4 +38,24 @@
     podDisruptionBudget.mixin.metadata.withLabels({ name: pdbName }) +
     podDisruptionBudget.mixin.spec.selector.withMatchLabels({ name: deploymentName }) +
     podDisruptionBudget.mixin.spec.withMaxUnavailable(maxUnavailable),
+
+  // Utility to create a StatefulSet for a Mimir component.
+  //
+  // By default, it uses the Parallel pod management policy which parallelly
+  // scale up/down instances instead of starting them one by one. This does NOT
+  // affect rolling updates: they will continue to be rolled out one by one
+  // (the next pod will be rolled out once the previous is ready).
+  newMimirStatefulSet(name, replicas, container, pvc, podManagementPolicy='Parallel')::
+    local statefulSet = $.apps.v1.statefulSet;
+
+    statefulSet.new(name, replicas, [container], pvc) +
+    statefulSet.mixin.spec.withServiceName(name) +
+    statefulSet.mixin.metadata.withNamespace($._config.namespace) +
+    statefulSet.mixin.metadata.withLabels({ name: name }) +
+    statefulSet.mixin.spec.template.metadata.withLabels({ name: name }) +
+    statefulSet.mixin.spec.selector.withMatchLabels({ name: name }) +
+    statefulSet.mixin.spec.template.spec.securityContext.withRunAsUser(0) +
+    statefulSet.mixin.spec.updateStrategy.withType('RollingUpdate') +
+    (if podManagementPolicy != null then statefulSet.mixin.spec.withPodManagementPolicy(podManagementPolicy) else {}) +
+    (if !std.isObject($._config.node_selector) then {} else statefulSet.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector)),
 }
