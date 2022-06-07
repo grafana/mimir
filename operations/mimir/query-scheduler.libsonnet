@@ -43,7 +43,7 @@
 
   // Headless to make sure resolution gets IP address of target pods, and not service IP.
   newQuerySchedulerDiscoveryService(name, deployment)::
-    $.newDiscoveryService(discoveryServiceName(name), deployment),
+    $.newMimirDiscoveryService(discoveryServiceName(name), deployment),
 
   query_scheduler_discovery_service: if !$._config.query_scheduler_enabled then {} else
     self.newQuerySchedulerDiscoveryService('query-scheduler', $.query_scheduler_deployment),
