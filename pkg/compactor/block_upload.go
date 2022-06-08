@@ -7,19 +7,20 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
-	"path"
-	"strings"
-
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/gorilla/mux"
+	"github.com/grafana/mimir/pkg/util"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/thanos-io/thanos/pkg/block"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
 	"github.com/thanos-io/thanos/pkg/objstore"
+	"io"
+	"net/http"
+	"path"
+	"strings"
+	"time"
 
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/regexp"
@@ -339,6 +340,35 @@ func (c *MultitenantCompactor) sanitizeMeta(logger log.Logger, tenantID string, 
 			statusCode: http.StatusBadRequest,
 		}
 	}
+	// validate minTime/maxTime
+	// basic sanity check
+	if meta.MinTime < 0 || meta.MaxTime < 0 || meta.MaxTime < meta.MinTime {
+		level.Warn(logger).Log("msg", "Invalid minTime/maxTime in meta.json", "minTime", meta.MinTime,
+			"maxTime", meta.MaxTime)
+		return httpError{
+			message:    fmt.Sprintf("Invalid minTime/maxTime in meta.json: minTime=#{minTime}, maxTime=#{maxTime}"),
+			statusCode: http.StatusBadRequest,
+		}
+	}
+	nowUTC := time.Now().UTC()
+	if time.UnixMilli(meta.MinTime).UTC().After(nowUTC) || time.UnixMilli(meta.MaxTime).UTC().After(nowUTC) {
+		level.Warn(logger).Log("msg", "Chunk times greater than the present", "minTime", meta.MinTime,
+			"maxTime", meta.MaxTime)
+		return httpError{
+			message:    fmt.Sprintf("Chunk times greater than the present: minTime=#{minTime}, maxTime=#{maxTime}"),
+			statusCode: http.StatusBadRequest,
+		}
+	}
+	durationSinceMinTime := time.Since(time.UnixMilli(meta.MinTime).UTC())
+	if durationSinceMinTime > c.storageCfg.TSDB.Retention {
+		age := util.FormatTimeMillis(durationSinceMinTime.Milliseconds())
+		level.Warn(logger).Log("msg", "Chunk age older than retention period", "age", age)
+		return httpError{
+			message:    fmt.Sprintf("Chunk age (#{age}) older than retention period"),
+			statusCode: http.StatusBadRequest,
+		}
+	}
+	// compare oldest time with retention period
 
 	// Mark block source
 	meta.Thanos.Source = "upload"
