@@ -11,10 +11,12 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"golang.org/x/time/rate"
 
+	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -99,8 +101,8 @@ func (t *WriteReadSeriesTest) Run(ctx context.Context, now time.Time) error {
 	// with previous missing writes: this rate limit reduces the chances to hit the ingestion limit on Mimir side.
 	writeLimiter := rate.NewLimiter(rate.Limit(t.cfg.NumSeries), t.cfg.NumSeries)
 
-	// collect all errors on this test run
-	errs := []error{}
+	// Collect all errors on this test run
+	errs := new(multierror.MultiError)
 
 	// Write series for each expected timestamp until now.
 	for timestamp := t.nextWriteTimestamp(now); !timestamp.After(now); timestamp = t.nextWriteTimestamp(now) {
@@ -110,32 +112,25 @@ func (t *WriteReadSeriesTest) Run(ctx context.Context, now time.Time) error {
 		}
 
 		if err := t.writeSamples(ctx, timestamp); err != nil {
-			errs = append(errs, err)
+			errs.Add(err)
 			break
 		}
 	}
 
 	queryRanges, queryInstants := t.getQueryTimeRanges(now)
 	for _, timeRange := range queryRanges {
-		if err := t.runRangeQueryAndVerifyResult(ctx, timeRange[0], timeRange[1], true); err != nil {
-			errs = append(errs, err)
-		}
-		if err := t.runRangeQueryAndVerifyResult(ctx, timeRange[0], timeRange[1], false); err != nil {
-			errs = append(errs, err)
-		}
+		err := t.runRangeQueryAndVerifyResult(ctx, timeRange[0], timeRange[1], true)
+		errs.Add(err)
+		err = t.runRangeQueryAndVerifyResult(ctx, timeRange[0], timeRange[1], false)
+		errs.Add(err)
 	}
 	for _, ts := range queryInstants {
-		if err := t.runInstantQueryAndVerifyResult(ctx, ts, true); err != nil {
-			errs = append(errs, err)
-		}
-		if err := t.runInstantQueryAndVerifyResult(ctx, ts, false); err != nil {
-			errs = append(errs, err)
-		}
+		err := t.runInstantQueryAndVerifyResult(ctx, ts, true)
+		errs.Add(err)
+		err = t.runInstantQueryAndVerifyResult(ctx, ts, false)
+		errs.Add(err)
 	}
-	if len(errs) > 0 {
-		return fmt.Errorf("%d error(s) occurred: %v", len(errs), errs)
-	}
-	return nil
+	return errs.Err()
 }
 
 func (t *WriteReadSeriesTest) writeSamples(ctx context.Context, timestamp time.Time) error {
@@ -167,10 +162,10 @@ func (t *WriteReadSeriesTest) writeSamples(ctx context.Context, timestamp time.T
 	// If the write request failed because of a network or 5xx error, we'll retry to write series
 	// in the next test run.
 	if err != nil {
-		return fmt.Errorf("failed to write series: %w", err)
+		return errors.Wrap(err, "failed to remote write series")
 	}
 	if statusCode/100 != 2 {
-		return fmt.Errorf("unexpected status code %d", statusCode)
+		return errors.Wrapf(err, "remote write series failed with status code %d", statusCode)
 	}
 
 	// The write request succeeded.
@@ -255,7 +250,7 @@ func (t *WriteReadSeriesTest) runRangeQueryAndVerifyResult(ctx context.Context, 
 	if err != nil {
 		t.metrics.queriesFailedTotal.Inc()
 		level.Warn(logger).Log("msg", "Failed to execute range query", "err", err)
-		return fmt.Errorf("failed to execute range query: %w", err)
+		return errors.Wrap(err, "failed to execute range query")
 	}
 
 	t.metrics.queryResultChecksTotal.Inc()
@@ -263,7 +258,7 @@ func (t *WriteReadSeriesTest) runRangeQueryAndVerifyResult(ctx context.Context, 
 	if err != nil {
 		t.metrics.queryResultChecksFailedTotal.Inc()
 		level.Warn(logger).Log("msg", "Range query result check failed", "err", err)
-		return fmt.Errorf("range query result check failed: %w", err)
+		return errors.Wrap(err, "range query result check failed")
 	}
 	return nil
 }
@@ -287,7 +282,7 @@ func (t *WriteReadSeriesTest) runInstantQueryAndVerifyResult(ctx context.Context
 	if err != nil {
 		t.metrics.queriesFailedTotal.Inc()
 		level.Warn(logger).Log("msg", "Failed to execute instant query", "err", err)
-		return fmt.Errorf("failed to execute instant query: %w", err)
+		return errors.Wrap(err, "failed to execute instant query")
 	}
 
 	// Convert the vector to matrix to reuse the same results comparison utility.
@@ -307,7 +302,7 @@ func (t *WriteReadSeriesTest) runInstantQueryAndVerifyResult(ctx context.Context
 	if err != nil {
 		t.metrics.queryResultChecksFailedTotal.Inc()
 		level.Warn(logger).Log("msg", "Instant query result check failed", "err", err)
-		return fmt.Errorf("instant query result check failed: %w", err)
+		return errors.Wrap(err, "instant query result check failed")
 	}
 	return nil
 }
