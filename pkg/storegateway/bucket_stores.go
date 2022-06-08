@@ -489,6 +489,7 @@ func (u *BucketStores) getOrCreateStore(userID string) (*BucketStore, error) {
 		u.partitioner,
 		u.cfg.BucketStore.BlockSyncConcurrency,
 		u.cfg.BucketStore.PostingOffsetsInMemSampling,
+		u.cfg.BucketStore.IndexHeader,
 		true, // Enable series hints.
 		u.cfg.BucketStore.IndexHeaderLazyLoadingEnabled,
 		u.cfg.BucketStore.IndexHeaderLazyLoadingIdleTimeout,

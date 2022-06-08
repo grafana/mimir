@@ -1,0 +1,60 @@
+---
+# Source: mimir-distributed/templates/tokengen/tokengen-job.yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: test-enterprise-values-mimir-tokengen
+  labels:
+    helm.sh/chart: mimir-distributed-2.2.0-weekly.189
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: test-enterprise-values
+    app.kubernetes.io/component: tokengen
+    app.kubernetes.io/version: "2.1.0"
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    "helm.sh/hook": post-install
+spec:
+  backoffLimit: 6
+  completions: 1
+  parallelism: 1
+  selector:
+  template:
+    metadata:
+      labels:
+        helm.sh/chart: mimir-distributed-2.2.0-weekly.189
+        app.kubernetes.io/name: mimir
+        app.kubernetes.io/instance: test-enterprise-values
+        app.kubernetes.io/version: "2.1.0"
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/component: tokengen
+    spec:
+      serviceAccountName: test-enterprise-values-mimir
+      securityContext:
+        null
+      initContainers:
+        []
+      containers:
+        - name: tokengen
+          image: "grafana/enterprise-metrics:v2.1.0"
+          imagePullPolicy: IfNotPresent
+          args:
+            - "-target=tokengen"
+            - "-config.expand-env=true"
+            - "-config.file=/etc/mimir/mimir.yaml"
+          volumeMounts:
+            - name: config
+              mountPath: /etc/mimir
+            - name: license
+              mountPath: /license
+          env:
+          envFrom:
+      restartPolicy: OnFailure
+      volumes:
+        - name: config
+          secret:
+            secretName: test-enterprise-values-mimir-config
+        - name: license
+          secret:
+            secretName: test-enterprise-values-mimir-license
+        - name: storage
+          emptyDir: {}

@@ -27,6 +27,7 @@ import (
 
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
+	"github.com/grafana/mimir/pkg/storegateway/indexheader"
 	"github.com/grafana/mimir/pkg/storegateway/testhelper"
 
 	"github.com/thanos-io/thanos/pkg/block"
@@ -171,6 +172,7 @@ func prepareStoreWithTestBlocksForSeries(t testing.TB, dir string, bkt objstore.
 		newGapBasedPartitioner(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
 		20,
 		mimir_tsdb.DefaultPostingOffsetInMemorySampling,
+		indexheader.BinaryReaderConfig{},
 		true,
 		true,
 		time.Minute,

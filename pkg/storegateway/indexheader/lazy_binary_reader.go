@@ -76,6 +76,7 @@ type LazyBinaryReader struct {
 	filepath                    string
 	id                          ulid.ULID
 	postingOffsetsInMemSampling int
+	cfg                         BinaryReaderConfig
 	metrics                     *LazyBinaryReaderMetrics
 	onClosed                    func(*LazyBinaryReader)
 
@@ -98,6 +99,7 @@ func NewLazyBinaryReader(
 	dir string,
 	id ulid.ULID,
 	postingOffsetsInMemSampling int,
+	cfg BinaryReaderConfig,
 	metrics *LazyBinaryReaderMetrics,
 	onClosed func(*LazyBinaryReader),
 ) (*LazyBinaryReader, error) {
@@ -127,6 +129,7 @@ func NewLazyBinaryReader(
 		filepath:                    filepath,
 		id:                          id,
 		postingOffsetsInMemSampling: postingOffsetsInMemSampling,
+		cfg:                         cfg,
 		metrics:                     metrics,
 		usedAt:                      atomic.NewInt64(time.Now().UnixNano()),
 		onClosed:                    onClosed,
@@ -247,7 +250,7 @@ func (r *LazyBinaryReader) load() (returnErr error) {
 	r.metrics.loadCount.Inc()
 	startTime := time.Now()
 
-	reader, err := NewBinaryReader(r.ctx, r.logger, r.bkt, r.dir, r.id, r.postingOffsetsInMemSampling)
+	reader, err := NewBinaryReader(r.ctx, r.logger, r.bkt, r.dir, r.id, r.postingOffsetsInMemSampling, r.cfg)
 	if err != nil {
 		r.metrics.loadFailedCount.Inc()
 		r.readerErr = err

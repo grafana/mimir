@@ -1,0 +1,101 @@
+---
+# Source: mimir-distributed/templates/ingester/ingester-statefulset.yaml
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: test-oss-values-mimir-ingester
+  labels:
+    helm.sh/chart: mimir-distributed-2.2.0-weekly.189
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: test-oss-values
+    app.kubernetes.io/component: ingester
+    app.kubernetes.io/part-of: memberlist
+    app.kubernetes.io/version: "2.1.0"
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    {}
+spec:
+  podManagementPolicy: Parallel
+  replicas: 3
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mimir
+      app.kubernetes.io/instance: test-oss-values
+      app.kubernetes.io/component: ingester
+  updateStrategy:
+    type: RollingUpdate
+  serviceName: test-oss-values-mimir-ingester-headless
+  template:
+    metadata:
+      labels:
+        helm.sh/chart: mimir-distributed-2.2.0-weekly.189
+        app.kubernetes.io/name: mimir
+        app.kubernetes.io/instance: test-oss-values
+        app.kubernetes.io/version: "2.1.0"
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/component: ingester
+        app.kubernetes.io/part-of: memberlist
+      annotations:
+        checksum/config: 7b9ed84df22bf324205968cf49b0d824eb15e1748888719ffc3bab3f17d5e2e4
+    spec:
+      serviceAccountName: test-oss-values-mimir
+      securityContext:
+        {}
+      initContainers:
+        []
+      nodeSelector:
+        {}
+      affinity:
+        {}
+      tolerations:
+        []
+      terminationGracePeriodSeconds: 240
+      volumes:
+        - name: config
+          secret:
+            secretName: test-oss-values-mimir-config
+        - name: runtime-config
+          configMap:
+            name: test-oss-values-mimir-runtime
+        - name: storage
+          emptyDir: {}
+      containers:
+        - name: ingester
+          image: "grafana/mimir:2.1.0"
+          imagePullPolicy: IfNotPresent
+          args:
+            - "-target=ingester"
+            - "-config.expand-env=true"
+            - "-config.file=/etc/mimir/mimir.yaml"
+          volumeMounts:
+            - name: config
+              mountPath: /etc/mimir
+            - name: runtime-config
+              mountPath: /var/mimir
+            - name: storage
+              mountPath: "/data"
+          ports:
+            - name: http-metrics
+              containerPort: 8080
+              protocol: TCP
+            - name: grpc
+              containerPort: 9095
+              protocol: TCP
+            - name: memberlist
+              containerPort: 7946
+              protocol: TCP
+          livenessProbe:
+            null
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http-metrics
+            initialDelaySeconds: 60
+          resources:
+            requests:
+              cpu: 10m
+              memory: 512Mi
+          securityContext:
+            readOnlyRootFilesystem: true
+          env:
+          envFrom:

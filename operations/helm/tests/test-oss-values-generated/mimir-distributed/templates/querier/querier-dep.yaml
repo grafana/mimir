@@ -1,0 +1,113 @@
+---
+# Source: mimir-distributed/templates/querier/querier-dep.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test-oss-values-mimir-querier
+  labels:
+    helm.sh/chart: mimir-distributed-2.2.0-weekly.189
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: test-oss-values
+    app.kubernetes.io/component: querier
+    app.kubernetes.io/part-of: memberlist
+    app.kubernetes.io/version: "2.1.0"
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    {}
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mimir
+      app.kubernetes.io/instance: test-oss-values
+      app.kubernetes.io/component: querier
+  strategy:
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        helm.sh/chart: mimir-distributed-2.2.0-weekly.189
+        app.kubernetes.io/name: mimir
+        app.kubernetes.io/instance: test-oss-values
+        app.kubernetes.io/version: "2.1.0"
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/component: querier
+        app.kubernetes.io/part-of: memberlist
+      annotations:
+        checksum/config: 7b9ed84df22bf324205968cf49b0d824eb15e1748888719ffc3bab3f17d5e2e4
+    spec:
+      serviceAccountName: test-oss-values-mimir
+      securityContext:
+        {}
+      initContainers:
+        []
+      containers:
+        - name: querier
+          image: "grafana/mimir:2.1.0"
+          imagePullPolicy: IfNotPresent
+          args:
+            - "-target=querier"
+            - "-config.expand-env=true"
+            - "-config.file=/etc/mimir/mimir.yaml"
+          volumeMounts:
+            - name: config
+              mountPath: /etc/mimir
+            - name: runtime-config
+              mountPath: /var/mimir
+            - name: storage
+              mountPath: "/data"
+              subPath: 
+          ports:
+            - name: http-metrics
+              containerPort: 8080
+              protocol: TCP
+            - name: grpc
+              containerPort: 9095
+              protocol: TCP
+            - name: memberlist
+              containerPort: 7946
+              protocol: TCP
+          livenessProbe:
+            null
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http-metrics
+            initialDelaySeconds: 45
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+          securityContext:
+            readOnlyRootFilesystem: true
+          env:
+          envFrom:
+      nodeSelector:
+        {}
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: target
+                  operator: In
+                  values:
+                  - querier
+              topologyKey: kubernetes.io/hostname
+            weight: 100
+      tolerations:
+        []
+      terminationGracePeriodSeconds: 180
+      volumes:
+        - name: config
+          secret:
+            secretName: test-oss-values-mimir-config
+        - name: runtime-config
+          configMap:
+            name: test-oss-values-mimir-runtime
+        - name: storage
+          emptyDir: {}

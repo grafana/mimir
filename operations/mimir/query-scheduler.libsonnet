@@ -3,7 +3,6 @@
 {
   local container = $.core.v1.container,
   local deployment = $.apps.v1.deployment,
-  local service = $.core.v1.service,
 
   query_scheduler_args+::
     $._config.grpcConfig
@@ -44,10 +43,7 @@
 
   // Headless to make sure resolution gets IP address of target pods, and not service IP.
   newQuerySchedulerDiscoveryService(name, deployment)::
-    $.util.serviceFor(deployment, $._config.service_ignored_labels) +
-    service.mixin.spec.withPublishNotReadyAddresses(true) +
-    service.mixin.spec.withClusterIp('None') +
-    service.mixin.metadata.withName(discoveryServiceName(name)),
+    $.newMimirDiscoveryService(discoveryServiceName(name), deployment),
 
   query_scheduler_discovery_service: if !$._config.query_scheduler_enabled then {} else
     self.newQuerySchedulerDiscoveryService('query-scheduler', $.query_scheduler_deployment),

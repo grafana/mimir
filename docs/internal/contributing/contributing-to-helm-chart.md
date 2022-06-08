@@ -6,6 +6,13 @@ Please see the [general workflow](README.md#workflow) for reference.
 
 - Changelog is in the chart itself [operations/helm/charts/mimir-distributed/CHANGELOG.md](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/CHANGELOG.md).
 - If you made any changes to the [operations/helm/charts/mimir-distributed/Chart.yaml](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/Chart.yaml), run `make doc` and commit the changed files to update the [operations/helm/charts/mimir-distributed/README.md](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/README.md).
+- If your changes impact the test configurations in the [operations/helm/charts/mimir-distributed/ci](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/ci) directory, see [Updating compiled manifests](#updating-compiled-manifests).
+
+## Updating compiled manifests
+
+We keep a compiled version of the helm chart for each values file in the `ci` directory.
+This makes it easy to see how a given PR impacts the final output.
+A PR check will fail if you forget to update the compiled manifests, and you can use `make build-helm-tests` to update them.
 
 ## Versioning
 

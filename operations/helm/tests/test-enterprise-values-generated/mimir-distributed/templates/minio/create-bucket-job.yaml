@@ -1,0 +1,44 @@
+---
+# Source: mimir-distributed/templates/minio/create-bucket-job.yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: test-enterprise-values-mimir-distributed-make-bucket-job
+  namespace: "default"
+  labels:
+    app: mimir-distributed-make-bucket-job
+    chart: mimir-distributed-2.2.0-weekly.189
+    release: test-enterprise-values
+    heritage: Helm
+spec:
+  template:
+    metadata:
+      labels:
+        app: mimir-distributed-job
+        release: test-enterprise-values
+    spec:
+      restartPolicy: OnFailure      
+      volumes:
+        - name: minio-configuration
+          projected:
+            sources:
+            - configMap:
+                name: test-enterprise-values-minio
+            - secret:
+                name: test-enterprise-values-minio
+      containers:
+      - name: minio-mc
+        image: "minio/mc:RELEASE.2021-02-14T04-28-06Z"
+        imagePullPolicy: IfNotPresent
+        command: ["/bin/sh", "/config/initialize"]
+        env:
+          - name: MINIO_ENDPOINT
+            value: test-enterprise-values-minio
+          - name: MINIO_PORT
+            value: "9000"
+        volumeMounts:
+          - name: minio-configuration
+            mountPath: /config
+        resources:
+          requests:
+            memory: 128Mi

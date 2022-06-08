@@ -127,6 +127,9 @@ type BucketStore struct {
 	// Every how many posting offset entry we pool in heap memory. Default in Prometheus is 32.
 	postingOffsetsInMemSampling int
 
+	// Additional configuration for experimental indexheader.BinaryReader behaviour.
+	indexHeaderCfg indexheader.BinaryReaderConfig
+
 	// Enables hints in the Series() response.
 	enableSeriesResponseHints bool
 }
@@ -218,6 +221,7 @@ func NewBucketStore(
 	partitioner Partitioner,
 	blockSyncConcurrency int,
 	postingOffsetsInMemSampling int,
+	indexHeaderCfg indexheader.BinaryReaderConfig,
 	enableSeriesResponseHints bool, // TODO(pracucci) Thanos 0.12 and below doesn't gracefully handle new fields in SeriesResponse. Drop this flag and always enable hints once we can drop backward compatibility.
 	lazyIndexReaderEnabled bool,
 	lazyIndexReaderIdleTimeout time.Duration,
@@ -240,6 +244,7 @@ func NewBucketStore(
 		seriesLimiterFactory:        seriesLimiterFactory,
 		partitioner:                 partitioner,
 		postingOffsetsInMemSampling: postingOffsetsInMemSampling,
+		indexHeaderCfg:              indexHeaderCfg,
 		enableSeriesResponseHints:   enableSeriesResponseHints,
 		seriesHashCache:             seriesHashCache,
 		metrics:                     metrics,
@@ -403,6 +408,7 @@ func (s *BucketStore) addBlock(ctx context.Context, meta *metadata.Meta) (err er
 		s.dir,
 		meta.ULID,
 		s.postingOffsetsInMemSampling,
+		s.indexHeaderCfg,
 	)
 	if err != nil {
 		return errors.Wrap(err, "create index header reader")
