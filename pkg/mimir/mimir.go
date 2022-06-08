@@ -531,7 +531,9 @@ func (t *Mimir) readyHandler(sm *services.Manager) http.HandlerFunc {
 			msg.WriteString("Some services are not Running:\n")
 
 			for name, s := range t.ServiceMap {
-				msg.WriteString(fmt.Sprintf("%s: %s\n", name, s.State()))
+				if s.State() != services.Running {
+					msg.WriteString(fmt.Sprintf("%s: %s\n", name, s.State()))
+				}
 			}
 
 			strMsg := msg.String()
