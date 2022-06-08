@@ -3,8 +3,8 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Prometheus Authors.
 
-//go:build !darwin && !windows && !plan9
-// +build !darwin,!windows,!plan9
+//go:build darwin
+// +build darwin
 
 package fileutil
 
@@ -15,11 +15,7 @@ import (
 )
 
 func mmap(f *os.File, length int, populate bool) ([]byte, error) {
-	flags := unix.MAP_SHARED
-	if populate {
-		flags |= unix.MAP_POPULATE
-	}
-	return unix.Mmap(int(f.Fd()), 0, length, unix.PROT_READ, flags)
+	return unix.Mmap(int(f.Fd()), 0, length, unix.PROT_READ, unix.MAP_SHARED)
 }
 
 func munmap(b []byte) (err error) {
