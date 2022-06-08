@@ -275,6 +275,18 @@ func NewMaxQueryLengthError(actualQueryLen, maxQueryLength time.Duration) LimitE
 		fmt.Sprintf("the query time range exceeds the limit (query length: %s, limit: %s)", actualQueryLen, maxQueryLength)))
 }
 
+func NewRequestRateLimitedError(limit float64, burst int) LimitError {
+	return LimitError(globalerror.RequestRateLimited.MessageWithLimitConfigs(
+		fmt.Sprintf("the request has been rejected because the tenant exceeded the request rate limit, set to %v req/s with a maximum allowed burst of %d", limit, burst),
+		requestRateFlag, requestBurstSizeFlag))
+}
+
+func NewIngestionRateLimitedError(limit float64, burst, numSamples, numExemplars, numMetadata int) LimitError {
+	return LimitError(globalerror.IngestionRateLimited.MessageWithLimitConfigs(
+		fmt.Sprintf("the request has been rejected because the tenant exceeded the ingestion rate limit, set to %v items/s with a maximum allowed burst of %d, while adding %d samples, %d exemplars and %d metadata", limit, burst, numSamples, numExemplars, numMetadata),
+		ingestionRateFlag, ingestionBurstSizeFlag))
+}
+
 // formatLabelSet formats label adapters as a metric name with labels, while preserving
 // label order, and keeping duplicates. If there are multiple "__name__" labels, only
 // first one is used as metric name, other ones will be included as regular labels.
