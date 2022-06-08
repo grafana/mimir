@@ -318,6 +318,7 @@ There is a category of errors that is more important: errors due to failure to r
 How to **fix** it:
 
 - Investigate the ruler logs to find out the reason why ruler cannot evaluate queries. Note that ruler logs rule evaluation errors even for "user errors", but those are not causing the alert to fire. Focus on problems with ingesters or store-gateways.
+- In case remote operational mode is enabled the problem could be at any of the ruler query path components (ruler-query-frontend, ruler-query-scheduler and ruler-querier). Check the `Mimir / Remote ruler reads` and `Mimir / Remote ruler reads resources` dashboards to find out in which Mimir service the error is being originated.
 
 ### MimirRulerMissedEvaluations
 
