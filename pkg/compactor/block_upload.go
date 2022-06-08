@@ -350,6 +350,7 @@ func (c *MultitenantCompactor) sanitizeMeta(logger log.Logger, tenantID string, 
 			statusCode: http.StatusBadRequest,
 		}
 	}
+	// validate that times are from the past
 	nowUTC := time.Now().UTC()
 	if time.UnixMilli(meta.MinTime).UTC().After(nowUTC) || time.UnixMilli(meta.MaxTime).UTC().After(nowUTC) {
 		level.Warn(logger).Log("msg", "Chunk times greater than the present", "minTime", meta.MinTime,
@@ -359,6 +360,7 @@ func (c *MultitenantCompactor) sanitizeMeta(logger log.Logger, tenantID string, 
 			statusCode: http.StatusBadRequest,
 		}
 	}
+	// validate data is within the retention period
 	durationSinceMinTime := time.Since(time.UnixMilli(meta.MinTime).UTC())
 	if durationSinceMinTime > c.storageCfg.TSDB.Retention {
 		age := util.FormatTimeMillis(durationSinceMinTime.Milliseconds())
