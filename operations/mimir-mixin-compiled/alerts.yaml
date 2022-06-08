@@ -66,18 +66,18 @@ groups:
   - alert: MimirFrontendQueriesStuck
     annotations:
       message: |
-        There are {{ $value }} queued up queries in {{ $labels.cluster }}/{{ $labels.namespace }} query-frontend.
+        There are {{ $value }} queued up queries in {{ $labels.cluster }}/{{ $labels.namespace }} {{ $labels.job }}.
     expr: |
-      sum by (cluster, namespace) (cortex_query_frontend_queue_length) > 1
+      sum by (cluster, namespace, job) (cortex_query_frontend_queue_length) > 1
     for: 5m
     labels:
       severity: critical
   - alert: MimirSchedulerQueriesStuck
     annotations:
       message: |
-        There are {{ $value }} queued up queries in {{ $labels.cluster }}/{{ $labels.namespace }} query-scheduler.
+        There are {{ $value }} queued up queries in {{ $labels.cluster }}/{{ $labels.namespace }} {{ $labels.job }}.
     expr: |
-      sum by (cluster, namespace) (cortex_query_scheduler_queue_length) > 1
+      sum by (cluster, namespace, job) (cortex_query_scheduler_queue_length) > 1
     for: 5m
     labels:
       severity: critical

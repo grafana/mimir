@@ -127,7 +127,7 @@
         {
           alert: $.alertName('FrontendQueriesStuck'),
           expr: |||
-            sum by (%s) (cortex_query_frontend_queue_length) > 1
+            sum by (%s, job) (cortex_query_frontend_queue_length) > 1
           ||| % $._config.alert_aggregation_labels,
           'for': '5m',  // We don't want to block for longer.
           labels: {
@@ -135,14 +135,14 @@
           },
           annotations: {
             message: |||
-              There are {{ $value }} queued up queries in %(alert_aggregation_variables)s query-frontend.
+              There are {{ $value }} queued up queries in %(alert_aggregation_variables)s {{ $labels.job }}.
             ||| % $._config,
           },
         },
         {
           alert: $.alertName('SchedulerQueriesStuck'),
           expr: |||
-            sum by (%s) (cortex_query_scheduler_queue_length) > 1
+            sum by (%s, job) (cortex_query_scheduler_queue_length) > 1
           ||| % $._config.alert_aggregation_labels,
           'for': '5m',  // We don't want to block for longer.
           labels: {
@@ -150,7 +150,7 @@
           },
           annotations: {
             message: |||
-              There are {{ $value }} queued up queries in %(alert_aggregation_variables)s query-scheduler.
+              There are {{ $value }} queued up queries in %(alert_aggregation_variables)s {{ $labels.job }}.
             ||| % $._config,
           },
         },
