@@ -49,8 +49,8 @@ const (
 	MetricMetadataUnitTooLong       ID = "unit-too-long"
 
 	MaxQueryLength       ID = "max-query-length"
-	RequestRateLimited   ID = "request-rate-limited"
-	IngestionRateLimited ID = "ingestion-rate-limited"
+	RequestRateLimited   ID = "tenant-max-request-rate"
+	IngestionRateLimited ID = "tenant-max-ingestion-rate"
 	TooManyHAClusters    ID = "too-many-ha-clusters"
 )
 
