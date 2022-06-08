@@ -75,6 +75,7 @@ func (c *MultitenantCompactor) HandleBlockUpload(w http.ResponseWriter, r *http.
 
 		level.Error(logger).Log("msg", "an unexpected error occurred", "err", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
 	}
 
 	if r.URL.Query().Get("uploadComplete") == "true" {
@@ -191,6 +192,7 @@ func (c *MultitenantCompactor) UploadBlockFile(w http.ResponseWriter, r *http.Re
 
 		level.Error(logger).Log("msg", "an unexpected error occurred", "err", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
 	}
 
 	metaPath := path.Join(blockID, tmpMetaFilename)
