@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"path"
 	"testing"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/gorilla/mux"
@@ -73,9 +74,12 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 	})
 
 	t.Run("valid request", func(t *testing.T) {
+		now := time.Now().UTC().UnixMilli()
 		meta := metadata.Meta{
 			BlockMeta: tsdb.BlockMeta{
-				ULID: blockID,
+				ULID:    blockID,
+				MinTime: now - 1000,
+				MaxTime: now,
 			},
 			Thanos: metadata.Thanos{
 				Labels: map[string]string{
@@ -100,6 +104,11 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 		c := &MultitenantCompactor{
 			logger:       log.NewNopLogger(),
 			bucketClient: &bkt,
+			storageCfg: mimir_tsdb.BlocksStorageConfig{
+				TSDB: mimir_tsdb.TSDBConfig{
+					Retention: 10 * time.Second,
+				},
+			},
 		}
 
 		buf := bytes.NewBuffer(nil)
