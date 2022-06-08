@@ -32,7 +32,7 @@
 * [BUGFIX] Ring: fix bug where instances may appear unhealthy in the hash ring web UI even though they are not. #1933
 * [BUGFIX] API: gzip is now enforced when identity encoding is explicitly rejected. #1864
 * [BUGFIX] Fix panic at startup when Mimir is running in monolithic mode and query sharding is enabled. #2036
-
+* [CHANGE] Re-enable the `proxy_url` option for receiver configuration. #2044
 ### Mixin
 
 * [CHANGE] Split `mimir_queries` rules group into `mimir_queries` and `mimir_ingester_queries` to keep number of rules per group within the default per-tenant limit. #1885
