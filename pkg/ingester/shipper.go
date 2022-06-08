@@ -159,6 +159,17 @@ func (s *Shipper) Sync(ctx context.Context) (uploaded int, err error) {
 			// though this one failed. It will be retried on second Sync iteration.
 			level.Error(s.logger).Log("msg", "shipping failed", "block", m.ULID, "err", err)
 			uploadErrs++
+
+			// Check against bucket if the meta file for this block somehow still got uploaded and increment uploaded counter.
+			ok, err := s.bucket.Exists(ctx, path.Join(m.ULID.String(), block.MetaFilename))
+			if err != nil {
+				return 0, errors.Wrap(err, "check exists")
+			}
+			if ok {
+				meta.Uploaded = append(meta.Uploaded, m.ULID)
+				uploaded++
+				continue
+			}
 			continue
 		}
 		meta.Uploaded = append(meta.Uploaded, m.ULID)

@@ -33,6 +33,7 @@
 * [BUGFIX] Ring: fix bug where instances may appear unhealthy in the hash ring web UI even though they are not. #1933
 * [BUGFIX] API: gzip is now enforced when identity encoding is explicitly rejected. #1864
 * [BUGFIX] Fix panic at startup when Mimir is running in monolithic mode and query sharding is enabled. #2036
+* [BUGFIX] Ingester: check bucket for meta file even on upload error to increment uploaded counter correctly #2059
 
 ### Mixin
 
