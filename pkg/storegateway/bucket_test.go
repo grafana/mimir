@@ -1096,7 +1096,7 @@ func prepareTestBlock(tb test.TB, series int) func() *bucketBlock {
 	})
 
 	id := uploadTestBlock(tb, tmpDir, bkt, series)
-	r, err := indexheader.NewBinaryReader(context.Background(), log.NewNopLogger(), bkt, tmpDir, id, mimir_tsdb.DefaultPostingOffsetInMemorySampling)
+	r, err := indexheader.NewBinaryReader(context.Background(), log.NewNopLogger(), bkt, tmpDir, id, mimir_tsdb.DefaultPostingOffsetInMemorySampling, indexheader.BinaryReaderConfig{})
 	require.NoError(tb, err)
 
 	return func() *bucketBlock {
@@ -1359,6 +1359,7 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 		newGapBasedPartitioner(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
 		1,
 		mimir_tsdb.DefaultPostingOffsetInMemorySampling,
+		indexheader.BinaryReaderConfig{},
 		false,
 		false,
 		0,
@@ -1520,7 +1521,7 @@ func TestBucketSeries_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 			chunkObjs:   []string{filepath.Join(id.String(), "chunks", "000001")},
 			chunkPool:   chunkPool,
 		}
-		b1.indexHeaderReader, err = indexheader.NewBinaryReader(context.Background(), log.NewNopLogger(), bkt, tmpDir, b1.meta.ULID, mimir_tsdb.DefaultPostingOffsetInMemorySampling)
+		b1.indexHeaderReader, err = indexheader.NewBinaryReader(context.Background(), log.NewNopLogger(), bkt, tmpDir, b1.meta.ULID, mimir_tsdb.DefaultPostingOffsetInMemorySampling, indexheader.BinaryReaderConfig{})
 		assert.NoError(t, err)
 	}
 
@@ -1559,7 +1560,7 @@ func TestBucketSeries_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 			chunkObjs:   []string{filepath.Join(id.String(), "chunks", "000001")},
 			chunkPool:   chunkPool,
 		}
-		b2.indexHeaderReader, err = indexheader.NewBinaryReader(context.Background(), log.NewNopLogger(), bkt, tmpDir, b2.meta.ULID, mimir_tsdb.DefaultPostingOffsetInMemorySampling)
+		b2.indexHeaderReader, err = indexheader.NewBinaryReader(context.Background(), log.NewNopLogger(), bkt, tmpDir, b2.meta.ULID, mimir_tsdb.DefaultPostingOffsetInMemorySampling, indexheader.BinaryReaderConfig{})
 		assert.NoError(t, err)
 	}
 
@@ -1723,6 +1724,7 @@ func TestSeries_ErrorUnmarshallingRequestHints(t *testing.T) {
 		newGapBasedPartitioner(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
 		10,
 		mimir_tsdb.DefaultPostingOffsetInMemorySampling,
+		indexheader.BinaryReaderConfig{},
 		true,
 		false,
 		0,
@@ -1813,6 +1815,7 @@ func TestSeries_BlockWithMultipleChunks(t *testing.T) {
 		newGapBasedPartitioner(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
 		10,
 		mimir_tsdb.DefaultPostingOffsetInMemorySampling,
+		indexheader.BinaryReaderConfig{},
 		true,
 		false,
 		0,
@@ -1996,6 +1999,7 @@ func setupStoreForHintsTest(t *testing.T) (test.TB, *BucketStore, []*storepb.Ser
 		newGapBasedPartitioner(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
 		10,
 		mimir_tsdb.DefaultPostingOffsetInMemorySampling,
+		indexheader.BinaryReaderConfig{},
 		true,
 		false,
 		0,
@@ -2296,7 +2300,7 @@ func prepareBucket(b *testing.B, resolutionLevel compactor.ResolutionLevel) (*bu
 	partitioner := newGapBasedPartitioner(mimir_tsdb.DefaultPartitionerMaxGapSize, nil)
 
 	// Create an index header reader.
-	indexHeaderReader, err := indexheader.NewBinaryReader(ctx, logger, bkt, tmpDir, blockMeta.ULID, mimir_tsdb.DefaultPostingOffsetInMemorySampling)
+	indexHeaderReader, err := indexheader.NewBinaryReader(ctx, logger, bkt, tmpDir, blockMeta.ULID, mimir_tsdb.DefaultPostingOffsetInMemorySampling, indexheader.BinaryReaderConfig{})
 	assert.NoError(b, err)
 	indexCache, err := indexcache.NewInMemoryIndexCacheWithConfig(logger, nil, indexcache.DefaultInMemoryIndexCacheConfig)
 	assert.NoError(b, err)

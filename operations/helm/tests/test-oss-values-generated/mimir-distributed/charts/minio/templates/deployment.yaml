@@ -1,0 +1,72 @@
+---
+# Source: mimir-distributed/charts/minio/templates/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test-oss-values-minio
+  labels:
+    app: minio
+    chart: minio-8.0.10
+    release: test-oss-values
+    heritage: Helm
+spec:
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 100%
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: minio
+      release: test-oss-values
+  template:
+    metadata:
+      name: test-oss-values-minio
+      labels:
+        app: minio
+        release: test-oss-values
+      annotations:
+        checksum/secrets: f7d601b8641bf40718836a3781f3547aa41f4d5a36774f49fbe5353840847956
+        checksum/config: 32ca71423a92c84343fe0ae8158915116831302093797101294d27b284a8c78b
+    spec:
+      serviceAccountName: "test-oss-values-minio"
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+        - name: minio
+          image: "minio/minio:RELEASE.2021-02-14T04-01-33Z"
+          imagePullPolicy: IfNotPresent
+          command:
+            - "/bin/sh"
+            - "-ce"
+            - "/usr/bin/docker-entrypoint.sh minio -S /etc/minio/certs/ server /export"
+          volumeMounts:
+            - name: export
+              mountPath: /export            
+          ports:
+            - name: http
+              containerPort: 9000
+          env:
+            - name: MINIO_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: test-oss-values-minio
+                  key: accesskey
+            - name: MINIO_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: test-oss-values-minio
+                  key: secretkey
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi      
+      volumes:
+        - name: export
+          persistentVolumeClaim:
+            claimName: test-oss-values-minio
+        - name: minio-user
+          secret:
+            secretName: test-oss-values-minio

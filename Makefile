@@ -496,6 +496,12 @@ check-jsonnet-getting-started:
 		| sed 's/\(jb install github.com\/grafana\/mimir\/operations\/mimir@main\)/\1 \&\& rm -fr .\/vendor\/mimir \&\& cp -r ..\/operations\/mimir .\/vendor\/mimir\//g' \
 		| bash
 
+build-helm-tests:
+	@./operations/helm/tests/build.sh
+
+check-helm-tests: build-helm-tests
+	@git diff --exit-code -- ./operations/helm/tests || (echo "Please rebuild helm tests output 'make build-helm-tests'" && false)
+
 build-jsonnet-tests:
 	@./operations/mimir-tests/build.sh
 

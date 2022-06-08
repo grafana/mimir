@@ -17,6 +17,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/wal"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
+	"github.com/grafana/mimir/pkg/storegateway/indexheader"
 )
 
 const (
@@ -292,6 +293,9 @@ type BucketStoreConfig struct {
 	// On the contrary, smaller value will increase baseline memory usage, but improve latency slightly.
 	// 1 will keep all in memory. Default value is the same as in Prometheus which gives a good balance.
 	PostingOffsetsInMemSampling int `yaml:"postings_offsets_in_mem_sampling" category:"advanced"`
+
+	// Controls experimental options for index-header file reading.
+	IndexHeader indexheader.BinaryReaderConfig `yaml:"index_header" category:"experimental"`
 }
 
 // RegisterFlags registers the BucketStore flags
@@ -300,6 +304,7 @@ func (cfg *BucketStoreConfig) RegisterFlags(f *flag.FlagSet) {
 	cfg.ChunksCache.RegisterFlagsWithPrefix(f, "blocks-storage.bucket-store.chunks-cache.")
 	cfg.MetadataCache.RegisterFlagsWithPrefix(f, "blocks-storage.bucket-store.metadata-cache.")
 	cfg.BucketIndex.RegisterFlagsWithPrefix(f, "blocks-storage.bucket-store.bucket-index.")
+	cfg.IndexHeader.RegisterFlagsWithPrefix(f, "blocks-storage.bucket-store.index-header.")
 
 	f.StringVar(&cfg.SyncDir, "blocks-storage.bucket-store.sync-dir", "./tsdb-sync/", "Directory to store synchronized TSDB index headers. This directory is not required to be persisted between restarts, but it's highly recommended in order to improve the store-gateway startup time.")
 	f.DurationVar(&cfg.SyncInterval, "blocks-storage.bucket-store.sync-interval", 15*time.Minute, "How frequently to scan the bucket, or to refresh the bucket index (if enabled), in order to look for changes (new blocks shipped by ingesters and blocks deleted by retention or compaction).")

@@ -71,6 +71,26 @@ jobs:
       - name: Check Jsonnet Tests
         run: make BUILD_IN_CONTAINER=false check-jsonnet-tests
 
+  lint-helm:
+    runs-on: ubuntu-latest
+    container:
+      image: grafana/mimir-build-image:publish-multiarch-images-7a4b40a6d
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v2
+        # Commands in the Makefile are hardcoded with an assumed file structure of the CI container
+        # Symlink ensures paths specified in previous commands don’t break
+      - name: Symlink Expected Path to Workspace
+        run: |
+          mkdir -p /go/src/github.com/grafana/mimir
+          ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
+      - name: Set up Helm
+        uses: azure/setup-helm@v1
+        with:
+          version: v3.5.2
+      - name: Check Helm Tests
+        run: make BUILD_IN_CONTAINER=false check-helm-tests
+
   test:
     runs-on: ubuntu-latest
     strategy:
