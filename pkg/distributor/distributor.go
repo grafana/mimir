@@ -60,8 +60,8 @@ var (
 	errInvalidTenantShardSize = errors.New("invalid tenant shard size, the value must be greater or equal to zero")
 
 	// Distributor instance limits errors.
-	errMaxInflightRequestsReached = errors.New(globalerror.DistributorMaxInflightPushRequests.MessageWithLimitConfig(maxInflightPushRequestsFlag, "the write request has been rejected because the distributor exceeded the allowed number of inflight push requests"))
-	errMaxIngestionRateReached    = errors.New(globalerror.DistributorMaxIngestionRate.MessageWithLimitConfig(maxIngestionRateFlag, "the write request has been rejected because the distributor exceeded the ingestion rate limit"))
+	errMaxInflightRequestsReached = errors.New(globalerror.DistributorMaxInflightPushRequests.MessageWithLimitConfig("the write request has been rejected because the distributor exceeded the allowed number of inflight push requests", maxInflightPushRequestsFlag))
+	errMaxIngestionRateReached    = errors.New(globalerror.DistributorMaxIngestionRate.MessageWithLimitConfig("the write request has been rejected because the distributor exceeded the ingestion rate limit", maxIngestionRateFlag))
 )
 
 const (
