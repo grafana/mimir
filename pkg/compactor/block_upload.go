@@ -346,7 +346,7 @@ func (c *MultitenantCompactor) sanitizeMeta(logger log.Logger, tenantID string, 
 		level.Warn(logger).Log("msg", "Invalid minTime/maxTime in meta.json", "minTime", meta.MinTime,
 			"maxTime", meta.MaxTime)
 		return httpError{
-			message:    fmt.Sprintf("Invalid minTime/maxTime in meta.json: minTime=#{minTime}, maxTime=#{maxTime}"),
+			message:    fmt.Sprintf("Invalid minTime/maxTime in meta.json: minTime=#{meta.MinTime}, maxTime=#{meta.MaxTime}"),
 			statusCode: http.StatusBadRequest,
 		}
 	}
@@ -356,7 +356,7 @@ func (c *MultitenantCompactor) sanitizeMeta(logger log.Logger, tenantID string, 
 		level.Warn(logger).Log("msg", "Chunk times greater than the present", "minTime", meta.MinTime,
 			"maxTime", meta.MaxTime)
 		return httpError{
-			message:    fmt.Sprintf("Chunk times greater than the present: minTime=#{minTime}, maxTime=#{maxTime}"),
+			message:    fmt.Sprintf("Chunk times greater than the present: minTime=#{meta.MinTime}, maxTime=#{meta.MaxTime}"),
 			statusCode: http.StatusBadRequest,
 		}
 	}
