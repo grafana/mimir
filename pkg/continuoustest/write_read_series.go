@@ -11,9 +11,12 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"golang.org/x/time/rate"
+
+	"github.com/grafana/dskit/multierror"
 
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
@@ -94,35 +97,44 @@ func (t *WriteReadSeriesTest) Init(ctx context.Context, now time.Time) error {
 }
 
 // Run implements Test.
-func (t *WriteReadSeriesTest) Run(ctx context.Context, now time.Time) {
+func (t *WriteReadSeriesTest) Run(ctx context.Context, now time.Time) error {
 	// Configure the rate limiter to send a sample for each series per second. At startup, this test may catch up
 	// with previous missing writes: this rate limit reduces the chances to hit the ingestion limit on Mimir side.
 	writeLimiter := rate.NewLimiter(rate.Limit(t.cfg.NumSeries), t.cfg.NumSeries)
+
+	// Collect all errors on this test run
+	errs := new(multierror.MultiError)
 
 	// Write series for each expected timestamp until now.
 	for timestamp := t.nextWriteTimestamp(now); !timestamp.After(now); timestamp = t.nextWriteTimestamp(now) {
 		if err := writeLimiter.WaitN(ctx, t.cfg.NumSeries); err != nil {
 			// Context has been canceled, so we should interrupt.
-			return
+			return err
 		}
 
-		if ok := t.writeSamples(ctx, timestamp); !ok {
+		if err := t.writeSamples(ctx, timestamp); err != nil {
+			errs.Add(err)
 			break
 		}
 	}
 
 	queryRanges, queryInstants := t.getQueryTimeRanges(now)
 	for _, timeRange := range queryRanges {
-		t.runRangeQueryAndVerifyResult(ctx, timeRange[0], timeRange[1], true)
-		t.runRangeQueryAndVerifyResult(ctx, timeRange[0], timeRange[1], false)
+		err := t.runRangeQueryAndVerifyResult(ctx, timeRange[0], timeRange[1], true)
+		errs.Add(err)
+		err = t.runRangeQueryAndVerifyResult(ctx, timeRange[0], timeRange[1], false)
+		errs.Add(err)
 	}
 	for _, ts := range queryInstants {
-		t.runInstantQueryAndVerifyResult(ctx, ts, true)
-		t.runInstantQueryAndVerifyResult(ctx, ts, false)
+		err := t.runInstantQueryAndVerifyResult(ctx, ts, true)
+		errs.Add(err)
+		err = t.runInstantQueryAndVerifyResult(ctx, ts, false)
+		errs.Add(err)
 	}
+	return errs.Err()
 }
 
-func (t *WriteReadSeriesTest) writeSamples(ctx context.Context, timestamp time.Time) bool {
+func (t *WriteReadSeriesTest) writeSamples(ctx context.Context, timestamp time.Time) error {
 	sp, ctx := spanlogger.NewWithLogger(ctx, t.logger, "WriteReadSeriesTest.writeSamples")
 	defer sp.Finish()
 	logger := log.With(sp, "timestamp", timestamp.String(), "num_series", t.cfg.NumSeries)
@@ -145,13 +157,16 @@ func (t *WriteReadSeriesTest) writeSamples(ctx context.Context, timestamp time.T
 		t.lastWrittenTimestamp = timestamp
 		t.queryMinTime = time.Time{}
 		t.queryMaxTime = time.Time{}
-		return true
+		return nil
 	}
 
 	// If the write request failed because of a network or 5xx error, we'll retry to write series
 	// in the next test run.
-	if statusCode/100 != 2 || err != nil {
-		return false
+	if err != nil {
+		return errors.Wrap(err, "failed to remote write series")
+	}
+	if statusCode/100 != 2 {
+		return errors.Wrapf(err, "remote write series failed with status code %d", statusCode)
 	}
 
 	// The write request succeeded.
@@ -161,7 +176,7 @@ func (t *WriteReadSeriesTest) writeSamples(ctx context.Context, timestamp time.T
 		t.queryMinTime = timestamp
 	}
 
-	return true
+	return nil
 }
 
 // getQueryTimeRanges returns the start/end time ranges to use to run test range queries,
@@ -214,13 +229,13 @@ func (t *WriteReadSeriesTest) getQueryTimeRanges(now time.Time) (ranges [][2]tim
 	return ranges, instants
 }
 
-func (t *WriteReadSeriesTest) runRangeQueryAndVerifyResult(ctx context.Context, start, end time.Time, resultsCacheEnabled bool) {
+func (t *WriteReadSeriesTest) runRangeQueryAndVerifyResult(ctx context.Context, start, end time.Time, resultsCacheEnabled bool) error {
 	// We align start, end and step to write interval in order to avoid any false positives
 	// when checking results correctness. The min/max query time is always aligned.
 	start = maxTime(t.queryMinTime, alignTimestampToInterval(start, writeInterval))
 	end = minTime(t.queryMaxTime, alignTimestampToInterval(end, writeInterval))
 	if end.Before(start) {
-		return
+		return nil
 	}
 
 	step := getQueryStep(start, end, writeInterval)
@@ -236,7 +251,7 @@ func (t *WriteReadSeriesTest) runRangeQueryAndVerifyResult(ctx context.Context, 
 	if err != nil {
 		t.metrics.queriesFailedTotal.Inc()
 		level.Warn(logger).Log("msg", "Failed to execute range query", "err", err)
-		return
+		return errors.Wrap(err, "failed to execute range query")
 	}
 
 	t.metrics.queryResultChecksTotal.Inc()
@@ -244,16 +259,17 @@ func (t *WriteReadSeriesTest) runRangeQueryAndVerifyResult(ctx context.Context, 
 	if err != nil {
 		t.metrics.queryResultChecksFailedTotal.Inc()
 		level.Warn(logger).Log("msg", "Range query result check failed", "err", err)
-		return
+		return errors.Wrap(err, "range query result check failed")
 	}
+	return nil
 }
 
-func (t *WriteReadSeriesTest) runInstantQueryAndVerifyResult(ctx context.Context, ts time.Time, resultsCacheEnabled bool) {
+func (t *WriteReadSeriesTest) runInstantQueryAndVerifyResult(ctx context.Context, ts time.Time, resultsCacheEnabled bool) error {
 	// We align the query timestamp to write interval in order to avoid any false positives
 	// when checking results correctness. The min/max query time is always aligned.
 	ts = maxTime(t.queryMinTime, alignTimestampToInterval(ts, writeInterval))
 	if t.queryMaxTime.Before(ts) {
-		return
+		return nil
 	}
 
 	sp, ctx := spanlogger.NewWithLogger(ctx, t.logger, "WriteReadSeriesTest.runInstantQueryAndVerifyResult")
@@ -267,7 +283,7 @@ func (t *WriteReadSeriesTest) runInstantQueryAndVerifyResult(ctx context.Context
 	if err != nil {
 		t.metrics.queriesFailedTotal.Inc()
 		level.Warn(logger).Log("msg", "Failed to execute instant query", "err", err)
-		return
+		return errors.Wrap(err, "failed to execute instant query")
 	}
 
 	// Convert the vector to matrix to reuse the same results comparison utility.
@@ -287,8 +303,9 @@ func (t *WriteReadSeriesTest) runInstantQueryAndVerifyResult(ctx context.Context
 	if err != nil {
 		t.metrics.queryResultChecksFailedTotal.Inc()
 		level.Warn(logger).Log("msg", "Instant query result check failed", "err", err)
-		return
+		return errors.Wrap(err, "instant query result check failed")
 	}
+	return nil
 }
 
 func (t *WriteReadSeriesTest) nextWriteTimestamp(now time.Time) time.Time {

@@ -35,7 +35,8 @@ func TestWriteReadSeriesTest_Run(t *testing.T) {
 		test := NewWriteReadSeriesTest(cfg, client, logger, reg)
 
 		now := time.Unix(1000, 0)
-		test.Run(context.Background(), now)
+		// Ignore this error. It will be non-nil because the query mock does not return any data.
+		_ = test.Run(context.Background(), now)
 
 		client.AssertNumberOfCalls(t, "WriteSeries", 1)
 		client.AssertCalled(t, "WriteSeries", mock.Anything, generateSineWaveSeries(metricName, now, 2))
@@ -74,7 +75,8 @@ func TestWriteReadSeriesTest_Run(t *testing.T) {
 		test := NewWriteReadSeriesTest(cfg, client, logger, reg)
 
 		now := time.Unix(999, 0)
-		test.Run(context.Background(), now)
+		// Ignore this error. It will be non-nil because the query mock does not return any data.
+		_ = test.Run(context.Background(), now)
 
 		client.AssertNumberOfCalls(t, "WriteSeries", 1)
 		client.AssertCalled(t, "WriteSeries", mock.Anything, generateSineWaveSeries(metricName, time.Unix(980, 0), 2))
@@ -114,7 +116,8 @@ func TestWriteReadSeriesTest_Run(t *testing.T) {
 
 		test.lastWrittenTimestamp = time.Unix(940, 0)
 		now := time.Unix(1000, 0)
-		test.Run(context.Background(), now)
+		// Ignore this error. It will be non-nil because the query mock does not return any data.
+		_ = test.Run(context.Background(), now)
 
 		client.AssertNumberOfCalls(t, "WriteSeries", 3)
 		client.AssertCalled(t, "WriteSeries", mock.Anything, generateSineWaveSeries(metricName, time.Unix(960, 0), 2))
@@ -154,7 +157,8 @@ func TestWriteReadSeriesTest_Run(t *testing.T) {
 
 		test.lastWrittenTimestamp = time.Unix(940, 0)
 		now := time.Unix(1000, 0)
-		test.Run(context.Background(), now)
+		err := test.Run(context.Background(), now)
+		assert.Error(t, err)
 
 		client.AssertNumberOfCalls(t, "WriteSeries", 1)
 		client.AssertCalled(t, "WriteSeries", mock.Anything, generateSineWaveSeries(metricName, time.Unix(960, 0), 2))
@@ -184,7 +188,8 @@ func TestWriteReadSeriesTest_Run(t *testing.T) {
 
 		test.lastWrittenTimestamp = time.Unix(940, 0)
 		now := time.Unix(1000, 0)
-		test.Run(context.Background(), now)
+		err := test.Run(context.Background(), now)
+		assert.Error(t, err)
 
 		client.AssertNumberOfCalls(t, "WriteSeries", 1)
 		client.AssertCalled(t, "WriteSeries", mock.Anything, generateSineWaveSeries(metricName, time.Unix(960, 0), 2))
@@ -214,7 +219,8 @@ func TestWriteReadSeriesTest_Run(t *testing.T) {
 
 		test.lastWrittenTimestamp = time.Unix(940, 0)
 		now := time.Unix(1000, 0)
-		test.Run(context.Background(), now)
+		err := test.Run(context.Background(), now)
+		assert.NoError(t, err)
 
 		client.AssertNumberOfCalls(t, "WriteSeries", 3)
 		client.AssertCalled(t, "WriteSeries", mock.Anything, generateSineWaveSeries(metricName, time.Unix(960, 0), 2))
@@ -252,7 +258,8 @@ func TestWriteReadSeriesTest_Run(t *testing.T) {
 		reg := prometheus.NewPedanticRegistry()
 		test := NewWriteReadSeriesTest(cfg, client, logger, reg)
 
-		test.Run(context.Background(), now)
+		err := test.Run(context.Background(), now)
+		assert.NoError(t, err)
 
 		client.AssertNumberOfCalls(t, "WriteSeries", 1)
 		client.AssertCalled(t, "WriteSeries", mock.Anything, generateSineWaveSeries(metricName, now, 2))
@@ -306,7 +313,8 @@ func TestWriteReadSeriesTest_Run(t *testing.T) {
 		reg := prometheus.NewPedanticRegistry()
 		test := NewWriteReadSeriesTest(cfg, client, logger, reg)
 
-		test.Run(context.Background(), now)
+		err := test.Run(context.Background(), now)
+		assert.Error(t, err)
 
 		client.AssertNumberOfCalls(t, "WriteSeries", 1)
 		client.AssertCalled(t, "WriteSeries", mock.Anything, generateSineWaveSeries(metricName, now, 2))
