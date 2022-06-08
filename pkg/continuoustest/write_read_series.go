@@ -17,6 +17,7 @@ import (
 	"golang.org/x/time/rate"
 
 	"github.com/grafana/dskit/multierror"
+
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
