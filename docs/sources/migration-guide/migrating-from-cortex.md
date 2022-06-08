@@ -260,26 +260,26 @@ You can update to the Grafana Mimir Helm chart from the Cortex Helm chart.
    mimir:
      config: |
        blocks_storage:
-         {{- if .Values.memcached.enabled }}
+         {{- if index .Values "memcached-chunks" "enabled" }}
          chunks_cache:
            backend: "memcached"
            memcached:
-             addresses: "dns+{{ .Release.Name }}-memcached.{{ .Release.Namespace }}.svc:11211"
-             max_item_size: {{ .Values.memcached.maxItemMemory }}
+             addresses: dns+{{ .Release.Name }}-memcached-chunks-headless.{{ .Release.Namespace }}.svc:{{ (index .Values "memcached-chunks").port }}
+             max_item_size: {{ mul (index .Values "memcached-chunks").maxItemMemory 1024 1024 }}
          {{- end }}
          {{- if index .Values "memcached-metadata" "enabled" }}
          metadata_cache:
            backend: "memcached"
            memcached:
-             addresses: "dns+{{ .Release.Name }}-memcached-metadata.{{ .Release.Namespace }}.svc:11211"
-             max_item_size: {{ (index .Values "memcached-metadata").maxItemMemory }}
+             addresses: dns+{{ .Release.Name }}-memcached-metadata-headless.{{ .Release.Namespace }}.svc:{{ (index .Values "memcached-metadata").port }}
+             max_item_size: {{ mul (index .Values "memcached-metadata").maxItemMemory 1024 1024 }}
          {{- end }}
          {{- if index .Values "memcached-queries" "enabled" }}
          index_cache:
            backend: "memcached"
            memcached:
-             addresses: "dns+{{ .Release.Name }}-memcached-queries.{{ .Release.Namespace }}.svc:11211"
-             max_item_size: {{ (index .Values "memcached-queries").maxItemMemory }}
+             addresses: dns+{{ .Release.Name }}-memcached-index-queries-headless.{{ .Release.Namespace }}.svc:{{ (index .Values "memcached-index-queries").port }}
+             max_item_size: {{ mul (index .Values "memcached-index-queries").maxItemMemory 1024 1024 }}
          {{- end }}
        frontend_worker:
          frontend_address: "{{ template "mimir.fullname" . }}-query-frontend-headless.{{ .Release.Namespace }}.svc:{{ include "mimir.serverGrpcListenPort" . }}"

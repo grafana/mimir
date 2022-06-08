@@ -49,3 +49,15 @@ store_gateway:
 testing:
   minio:
     use_secret: true
+
+memcached-chunks:
+  enabled: true
+
+memcached-index-queries:
+  enabled: true
+
+memcached-metadata:
+  enabled: true
+
+memcached-results:
+  enabled: true
