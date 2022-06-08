@@ -1345,7 +1345,7 @@ Mimir has a limit on the query length.
 This limit is applied to partial queries, after they've split (according to time) by the query-frontend. This limit protects the system’s stability from potential abuse or mistakes.
 To configure the limit on a per-tenant basis, use the `-store.max-query-length` option (or `max_query_length` in the runtime configuration).
 
-### err-mimir-request-rate-limited
+### err-mimir-tenant-max-request-rate
 
 This error occurs when the rate of write requests per second is exceeded for this tenant.
 
@@ -1358,7 +1358,7 @@ How to **fix** it:
 
 - Increase the per-tenant limit by using the `-distributor.request-rate-limit` (requests per second) and `-distributor.request-burst-size` (number of requests) options (or `request_rate` and `request_burst_size` in the runtime configuration). The configurable burst represents how many requests can temporarily exceed the limit, in case of short traffic peaks. The configured burst size must be greater or equal than the configured limit.
 
-### err-mimir-ingestion-rate-limited
+### err-mimir-tenant-max-ingestion-rate
 
 This error occurs when the rate of received samples, exemplars and metadata per second is exceeded for this tenant.
 
@@ -1379,7 +1379,7 @@ How it **works**:
 
 - The distributor implements an upper limit on the number of clusters that the HA tracker will keep track of for a single tenant.
 - It is triggered when the write request would add a new cluster while the number the tenant currently has is already equal to the limit.
-- To configure the limit, set the `-distributor.ha-tracker.max-clusters` option  (or `ha_max_clusters` in the runtime configuration).
+- To configure the limit, set the `-distributor.ha-tracker.max-clusters` option (or `ha_max_clusters` in the runtime configuration).
 
 How to **fix** it:
 
