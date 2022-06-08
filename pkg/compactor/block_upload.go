@@ -355,22 +355,22 @@ func (c *MultitenantCompactor) sanitizeMeta(logger log.Logger, tenantID string, 
 		}
 	}
 	// validate that times are in the past
-	nowUTC := time.Now().UTC()
-	if time.UnixMilli(meta.MinTime).UTC().After(nowUTC) || time.UnixMilli(meta.MaxTime).UTC().After(nowUTC) {
-		level.Warn(logger).Log("msg", "chunk times greater than the present", "minTime", meta.MinTime,
+	now := time.Now()
+	if time.UnixMilli(meta.MinTime).After(now) || time.UnixMilli(meta.MaxTime).After(now) {
+		level.Warn(logger).Log("msg", "block time(s) greater than the present", "minTime", meta.MinTime,
 			"maxTime", meta.MaxTime)
 		return httpError{
-			message:    fmt.Sprintf("chunk times greater than the present: minTime=%d, maxTime=%d", meta.MinTime, meta.MaxTime),
+			message:    fmt.Sprintf("block time(s) greater than the present: minTime=%d, maxTime=%d", meta.MinTime, meta.MaxTime),
 			statusCode: http.StatusBadRequest,
 		}
 	}
 	// validate data is within the retention period
-	durationSinceMinTime := time.Since(time.UnixMilli(meta.MinTime).UTC())
-	if durationSinceMinTime > c.storageCfg.TSDB.Retention {
-		age := util.FormatTimeMillis(durationSinceMinTime.Milliseconds())
-		level.Warn(logger).Log("msg", "chunk age older than retention period", "age", age)
+	threshold := now.Add(-c.cfgProvider.CompactorBlocksRetentionPeriod(tenantID))
+	if time.UnixMilli(meta.MaxTime).Before(threshold) {
+		maxTimeStr := util.FormatTimeMillis(meta.MaxTime)
+		level.Warn(logger).Log("msg", "block max time older than retention period", "maxTime", maxTimeStr)
 		return httpError{
-			message:    fmt.Sprintf("chunk age (%s) older than retention period", age),
+			message:    fmt.Sprintf("block max time (%s) older than retention period", maxTimeStr),
 			statusCode: http.StatusBadRequest,
 		}
 	}

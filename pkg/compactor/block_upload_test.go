@@ -101,14 +101,12 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 		var bkt bucket.ClientMock
 		bkt.MockExists(path.Join(tenantID, blockID.String(), block.MetaFilename), false, nil)
 		bkt.MockUpload(mock.Anything, nil)
+		cfgProvider := newMockConfigProvider()
+		cfgProvider.userRetentionPeriods[tenantID] = time.Second
 		c := &MultitenantCompactor{
 			logger:       log.NewNopLogger(),
 			bucketClient: &bkt,
-			storageCfg: mimir_tsdb.BlocksStorageConfig{
-				TSDB: mimir_tsdb.TSDBConfig{
-					Retention: 10 * time.Second,
-				},
-			},
+			cfgProvider:  cfgProvider,
 		}
 
 		buf := bytes.NewBuffer(nil)
