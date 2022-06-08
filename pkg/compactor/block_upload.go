@@ -346,7 +346,7 @@ func (c *MultitenantCompactor) sanitizeMeta(logger log.Logger, tenantID string, 
 		level.Warn(logger).Log("msg", "Invalid minTime/maxTime in meta.json", "minTime", meta.MinTime,
 			"maxTime", meta.MaxTime)
 		return httpError{
-			message:    fmt.Sprintf("Invalid minTime/maxTime in meta.json: minTime=#{meta.MinTime}, maxTime=#{meta.MaxTime}"),
+			message:    fmt.Sprintf("Invalid minTime/maxTime in meta.json: minTime=%d, maxTime=%d", meta.MinTime, meta.MaxTime),
 			statusCode: http.StatusBadRequest,
 		}
 	}
@@ -356,7 +356,7 @@ func (c *MultitenantCompactor) sanitizeMeta(logger log.Logger, tenantID string, 
 		level.Warn(logger).Log("msg", "Chunk times greater than the present", "minTime", meta.MinTime,
 			"maxTime", meta.MaxTime)
 		return httpError{
-			message:    fmt.Sprintf("Chunk times greater than the present: minTime=#{meta.MinTime}, maxTime=#{meta.MaxTime}"),
+			message:    fmt.Sprintf("Chunk times greater than the present: minTime=%d, maxTime=%d", meta.MinTime, meta.MaxTime),
 			statusCode: http.StatusBadRequest,
 		}
 	}
@@ -366,7 +366,7 @@ func (c *MultitenantCompactor) sanitizeMeta(logger log.Logger, tenantID string, 
 		age := util.FormatTimeMillis(durationSinceMinTime.Milliseconds())
 		level.Warn(logger).Log("msg", "Chunk age older than retention period", "age", age)
 		return httpError{
-			message:    fmt.Sprintf("Chunk age (#{age}) older than retention period"),
+			message:    fmt.Sprintf("Chunk age (%s) older than retention period", age),
 			statusCode: http.StatusBadRequest,
 		}
 	}
