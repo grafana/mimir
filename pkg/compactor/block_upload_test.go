@@ -71,7 +71,7 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 		blockID                string
 		body                   string
 		meta                   *metadata.Meta
-		noRetention            bool
+		retention            time.Duration
 		expBadRequest          string
 		expConflict            string
 		expInternalServerError bool
