@@ -127,8 +127,11 @@ func (c *MultitenantCompactor) createBlockUpload(ctx context.Context, r *http.Re
 		}
 	}
 
-	if err := c.sanitizeMeta(logger, tenantID, blockID, &meta); err != nil {
-		return err
+	if msg := c.sanitizeMeta(logger, tenantID, blockID, &meta); msg != "" {
+		return httpError{
+			message:    msg,
+			statusCode: http.StatusBadRequest,
+		}
 	}
 
 	return c.uploadMeta(ctx, logger, meta, blockID, tmpMetaFilename, userBkt)
@@ -282,8 +285,10 @@ func (c *MultitenantCompactor) completeBlockUpload(ctx context.Context, r *http.
 	return nil
 }
 
+// sanitizeMeta sanitizes and validates a metadata.Meta object. If a validation error occurs, an error
+// message gets returned, otherwise an empty string.
 func (c *MultitenantCompactor) sanitizeMeta(logger log.Logger, tenantID string, blockID ulid.ULID,
-	meta *metadata.Meta) error {
+	meta *metadata.Meta) string {
 	meta.ULID = blockID
 
 	for l, v := range meta.Thanos.Labels {
@@ -298,10 +303,7 @@ func (c *MultitenantCompactor) sanitizeMeta(logger log.Logger, tenantID string, 
 		default:
 			level.Warn(logger).Log("msg", fmt.Sprintf("rejecting unsupported external label in %s", block.MetaFilename),
 				"label", l)
-			return httpError{
-				message:    fmt.Sprintf("unsupported external label in %s: %s", block.MetaFilename, l),
-				statusCode: http.StatusBadRequest,
-			}
+			return fmt.Sprintf("unsupported external label in %s: %s", block.MetaFilename, l)
 		}
 	}
 
@@ -313,21 +315,15 @@ func (c *MultitenantCompactor) sanitizeMeta(logger log.Logger, tenantID string, 
 		if !rePath.MatchString(f.RelPath) {
 			level.Warn(logger).Log("msg", fmt.Sprintf("rejecting file with invalid path in %s", block.MetaFilename),
 				"file", f.RelPath)
-			return httpError{
-				message: fmt.Sprintf("file with invalid path in %s: %s", block.MetaFilename,
-					f.RelPath),
-				statusCode: http.StatusBadRequest,
-			}
+			return fmt.Sprintf("file with invalid path in %s: %s", block.MetaFilename,
+				f.RelPath)
 		}
 
 		if f.SizeBytes <= 0 {
 			level.Warn(logger).Log("msg", fmt.Sprintf("rejecting file with invalid size in %s", block.MetaFilename),
 				"file", f.RelPath)
-			return httpError{
-				message: fmt.Sprintf("file with invalid size in %s: %s", block.MetaFilename,
-					f.RelPath),
-				statusCode: http.StatusBadRequest,
-			}
+			return fmt.Sprintf("file with invalid size in %s: %s", block.MetaFilename,
+				f.RelPath)
 		}
 	}
 
@@ -336,36 +332,28 @@ func (c *MultitenantCompactor) sanitizeMeta(logger log.Logger, tenantID string, 
 	if meta.MinTime < 0 || meta.MaxTime < 0 || meta.MaxTime < meta.MinTime {
 		level.Warn(logger).Log("msg", "invalid minTime/maxTime in meta.json", "minTime", meta.MinTime,
 			"maxTime", meta.MaxTime)
-		return httpError{
-			message:    fmt.Sprintf("invalid minTime/maxTime in %s: minTime=%d, maxTime=%d", block.MetaFilename, meta.MinTime, meta.MaxTime),
-			statusCode: http.StatusBadRequest,
-		}
+		return fmt.Sprintf("invalid minTime/maxTime in %s: minTime=%d, maxTime=%d",
+			block.MetaFilename, meta.MinTime, meta.MaxTime)
 	}
 	// validate that times are in the past
 	now := time.Now()
 	if time.UnixMilli(meta.MinTime).After(now) || time.UnixMilli(meta.MaxTime).After(now) {
 		level.Warn(logger).Log("msg", "block time(s) greater than the present", "minTime", meta.MinTime,
 			"maxTime", meta.MaxTime)
-		return httpError{
-			message:    fmt.Sprintf("block time(s) greater than the present: minTime=%d, maxTime=%d", meta.MinTime, meta.MaxTime),
-			statusCode: http.StatusBadRequest,
-		}
+		return fmt.Sprintf("block time(s) greater than the present: minTime=%d, maxTime=%d", meta.MinTime, meta.MaxTime)
 	}
 	// validate data is within the retention period
 	threshold := now.Add(-c.cfgProvider.CompactorBlocksRetentionPeriod(tenantID))
 	if time.UnixMilli(meta.MaxTime).Before(threshold) {
 		maxTimeStr := util.FormatTimeMillis(meta.MaxTime)
 		level.Warn(logger).Log("msg", "block max time older than retention period", "maxTime", maxTimeStr)
-		return httpError{
-			message:    fmt.Sprintf("block max time (%s) older than retention period", maxTimeStr),
-			statusCode: http.StatusBadRequest,
-		}
+		return fmt.Sprintf("block max time (%s) older than retention period", maxTimeStr)
 	}
 
 	// Mark block source
 	meta.Thanos.Source = "upload"
 
-	return nil
+	return ""
 }
 
 func (c *MultitenantCompactor) uploadMeta(ctx context.Context, logger log.Logger, meta metadata.Meta,
