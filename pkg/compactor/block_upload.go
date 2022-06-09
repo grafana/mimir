@@ -56,8 +56,7 @@ func (c *MultitenantCompactor) HandleBlockUpload(w http.ResponseWriter, r *http.
 		return
 	}
 
-	logger := util_log.WithContext(ctx, c.logger)
-	logger = log.With(logger, "block", blockID)
+	logger := log.With(util_log.WithContext(ctx, c.logger), "block", blockID)
 
 	shouldComplete := r.URL.Query().Get("uploadComplete") == "true"
 	var op string
