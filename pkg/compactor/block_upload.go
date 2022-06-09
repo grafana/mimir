@@ -45,10 +45,6 @@ var rePath = regexp.MustCompile(`^(index|chunks/\d{6})$`)
 func (c *MultitenantCompactor) HandleBlockUpload(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	blockID := vars["block"]
-	if blockID == "" {
-		http.Error(w, "missing block ID", http.StatusBadRequest)
-		return
-	}
 	bULID, err := ulid.Parse(blockID)
 	if err != nil {
 		http.Error(w, "invalid block ID", http.StatusBadRequest)
@@ -152,10 +148,6 @@ func (c *MultitenantCompactor) UploadBlockFile(w http.ResponseWriter, r *http.Re
 
 	vars := mux.Vars(r)
 	blockID := vars["block"]
-	if blockID == "" {
-		http.Error(w, "missing block ID", http.StatusBadRequest)
-		return
-	}
 	bULID, err := ulid.Parse(blockID)
 	if err != nil {
 		http.Error(w, "invalid block ID", http.StatusBadRequest)

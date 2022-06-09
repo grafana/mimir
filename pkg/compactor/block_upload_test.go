@@ -84,7 +84,7 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 			name:          "missing block ID",
 			tenantID:      tenantID,
 			unsetBlockID:  true,
-			expBadRequest: "missing block ID",
+			expBadRequest: "invalid block ID",
 		},
 		{
 			name:           "invalid block ID",
@@ -437,7 +437,7 @@ func TestMultitenantCompactor_UploadBlockFile(t *testing.T) {
 		require.NoError(t, err)
 
 		assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
-		assert.Equal(t, "missing block ID\n", string(body))
+		assert.Equal(t, "invalid block ID\n", string(body))
 	})
 
 	t.Run("without path", func(t *testing.T) {
@@ -584,7 +584,7 @@ func TestMultitenantCompactor_HandleBlockUpload_Complete(t *testing.T) {
 		require.NoError(t, err)
 
 		assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
-		assert.Equal(t, "missing block ID\n", string(body))
+		assert.Equal(t, "invalid block ID\n", string(body))
 	})
 
 	t.Run("valid request", func(t *testing.T) {
