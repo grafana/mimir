@@ -36,18 +36,30 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 	now := time.Now().UTC().UnixMilli()
 
 	testCases := []struct {
-		name          string
-		tenantID      string
-		unsetBlockID  bool
-		body          string
-		meta          *metadata.Meta
-		expBadRequest string
+		name           string
+		tenantID       string
+		unsetBlockID   bool
+		invalidBlockID string
+		body           string
+		meta           *metadata.Meta
+		expBadRequest  string
 	}{
 		{
-			name:          "without block ID",
+			name:          "missing tenant ID",
+			tenantID:      "",
+			expBadRequest: "invalid tenant ID",
+		},
+		{
+			name:          "missing block ID",
 			tenantID:      tenantID,
 			unsetBlockID:  true,
 			expBadRequest: "missing block ID",
+		},
+		{
+			name:           "invalid block ID",
+			tenantID:       tenantID,
+			invalidBlockID: "1234",
+			expBadRequest:  "invalid block ID",
 		},
 		{
 			name:          "missing body",
@@ -90,7 +102,7 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			var bkt bucket.ClientMock
-			if !tc.unsetBlockID && tc.tenantID != "" {
+			if !tc.unsetBlockID && tc.invalidBlockID == "" && tc.tenantID != "" {
 				bkt.MockExists(path.Join(tenantID, blockID.String(), block.MetaFilename), false, nil)
 				if tc.expBadRequest == "" {
 					bkt.MockUpload(mock.Anything, nil)
@@ -111,12 +123,16 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 				require.NoError(t, json.NewEncoder(buf).Encode(tc.meta))
 				rdr = buf
 			}
-			r := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/upload/block/%s", blockID), rdr)
+			bID := blockID.String()
+			if tc.invalidBlockID != "" {
+				bID = tc.invalidBlockID
+			}
+			r := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/upload/block/%s", bID), rdr)
 			if tc.tenantID != "" {
 				r.Header.Set(user.OrgIDHeaderName, tenantID)
 			}
 			if !tc.unsetBlockID {
-				r = mux.SetURLVars(r, map[string]string{"block": blockID.String()})
+				r = mux.SetURLVars(r, map[string]string{"block": bID})
 			}
 			w := httptest.NewRecorder()
 			c.HandleBlockUpload(w, r)
