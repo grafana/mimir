@@ -103,12 +103,12 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 			setUpBucketMock: setUpPartialBlock,
 		},
 		{
-			name:     "malformed body",
-			tenantID: tenantID,
-			blockID:  blockID,
+			name:            "malformed body",
+			tenantID:        tenantID,
+			blockID:         blockID,
 			setUpBucketMock: setUpPartialBlock,
-			body:          "{",
-			expBadRequest: "malformed request body",
+			body:            "{",
+			expBadRequest:   "malformed request body",
 		},
 		{
 			name:            "invalid file path",
