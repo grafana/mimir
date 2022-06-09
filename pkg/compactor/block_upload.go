@@ -93,7 +93,7 @@ func (c *MultitenantCompactor) HandleBlockUpload(w http.ResponseWriter, r *http.
 func checkBlockUploadError(err error, op, extra string, logger log.Logger, w http.ResponseWriter) {
 	var httpErr httpError
 	if errors.As(err, &httpErr) {
-		level.Warn(logger).Log("msg", httpErr.message, "operation", op, "err", err)
+		level.Warn(logger).Log("msg", httpErr.message, "operation", op)
 		http.Error(w, httpErr.message, httpErr.statusCode)
 		return
 	}
@@ -113,7 +113,6 @@ func checkForCompleteBlock(ctx context.Context, logger log.Logger, blockID ulid.
 		return errors.Wrap(err, fmt.Sprintf("failed to check existence of %s in object storage", block.MetaFilename))
 	}
 	if exists {
-		level.Debug(logger).Log("msg", "complete block already exists in object storage")
 		return httpError{
 			message:    "block already exists in object storage",
 			statusCode: http.StatusConflict,
@@ -303,8 +302,6 @@ func (c *MultitenantCompactor) sanitizeMeta(logger log.Logger, tenantID string, 
 				"label", l, "value", v)
 			delete(meta.Thanos.Labels, l)
 		default:
-			level.Warn(logger).Log("msg", fmt.Sprintf("rejecting unsupported external label in %s", block.MetaFilename),
-				"label", l)
 			return fmt.Sprintf("unsupported external label in %s: %s", block.MetaFilename, l)
 		}
 	}
@@ -315,15 +312,11 @@ func (c *MultitenantCompactor) sanitizeMeta(logger log.Logger, tenantID string, 
 		}
 
 		if !rePath.MatchString(f.RelPath) {
-			level.Warn(logger).Log("msg", fmt.Sprintf("rejecting file with invalid path in %s", block.MetaFilename),
-				"file", f.RelPath)
 			return fmt.Sprintf("file with invalid path in %s: %s", block.MetaFilename,
 				f.RelPath)
 		}
 
 		if f.SizeBytes <= 0 {
-			level.Warn(logger).Log("msg", fmt.Sprintf("rejecting file with invalid size in %s", block.MetaFilename),
-				"file", f.RelPath)
 			return fmt.Sprintf("file with invalid size in %s: %s", block.MetaFilename,
 				f.RelPath)
 		}
