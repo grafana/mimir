@@ -56,6 +56,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/globalerror"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -76,9 +77,10 @@ const (
 	// IngesterRingKey is the key under which we store the ingesters ring in the KVStore.
 	IngesterRingKey = "ring"
 
-	errTSDBCreateIncompatibleState = "cannot create a new TSDB while the ingester is not in active state (current state: %s)"
-	errTSDBIngest                  = "err: %v. timestamp=%s, series=%s" // Using error.Wrap puts the message before the error and if the series is too long, its truncated.
-	errTSDBIngestExemplar          = "err: %v. timestamp=%s, series=%s, exemplar=%s"
+	errTSDBCreateIncompatibleState     = "cannot create a new TSDB while the ingester is not in active state (current state: %s)"
+	errTSDBIngest                      = "%v. The affected sample has timestamp %s and is from series %s"
+	errTSDBIngestExemplarMissingSeries = "%v. The affected exemplar is %s with timestamp %s for series %s"
+	errTSDBIngestExemplarOther         = "err: %v. timestamp=%s, series=%s, exemplar=%s"
 
 	// Jitter applied to the idle timeout to prevent compaction in all ingesters concurrently.
 	compactionIdleTimeoutJitter = 0.25
@@ -91,7 +93,7 @@ const (
 )
 
 var (
-	errExemplarRef = errors.New("exemplars not ingested because series not already present")
+	errExemplarMissingSeriesRef = errors.New("the exemplar has been rejected because the related series has not been ingested yet")
 )
 
 // BlocksUploader interface is used to have an easy way to mock it in tests.
@@ -635,7 +637,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 			sampleOutOfBoundsCount += len(ts.Samples)
 
 			updateFirstPartial(func() error {
-				return wrappedTSDBIngestErr(storage.ErrOutOfBounds, model.Time(ts.Samples[0].TimestampMs), ts.Labels)
+				return wrappedTSDBIngestErrSampleTimestampTooOld(model.Time(ts.Samples[0].TimestampMs), ts.Labels)
 			})
 			continue
 		}
@@ -675,17 +677,19 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 			switch cause := errors.Cause(err); cause {
 			case storage.ErrOutOfBounds:
 				sampleOutOfBoundsCount++
-				updateFirstPartial(func() error { return wrappedTSDBIngestErr(err, model.Time(s.TimestampMs), ts.Labels) })
+				updateFirstPartial(func() error { return wrappedTSDBIngestErrSampleTimestampTooOld(model.Time(s.TimestampMs), ts.Labels) })
 				continue
 
 			case storage.ErrOutOfOrderSample:
 				sampleOutOfOrderCount++
-				updateFirstPartial(func() error { return wrappedTSDBIngestErr(err, model.Time(s.TimestampMs), ts.Labels) })
+				updateFirstPartial(func() error { return wrappedTSDBIngestErrSampleOutOfOrder(model.Time(s.TimestampMs), ts.Labels) })
 				continue
 
 			case storage.ErrDuplicateSampleForTimestamp:
 				newValueForTimestampCount++
-				updateFirstPartial(func() error { return wrappedTSDBIngestErr(err, model.Time(s.TimestampMs), ts.Labels) })
+				updateFirstPartial(func() error {
+					return wrappedTSDBIngestErrSampleDuplicateTimestamp(model.Time(s.TimestampMs), ts.Labels)
+				})
 				continue
 
 			case errMaxSeriesPerUserLimitExceeded:
@@ -721,7 +725,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 			// already exist.  If it does not then drop.
 			if ref == 0 {
 				updateFirstPartial(func() error {
-					return wrappedTSDBIngestExemplarErr(errExemplarRef,
+					return wrappedTSDBIngestErrExemplarMissingSeries(errExemplarMissingSeriesRef,
 						model.Time(ts.Exemplars[0].TimestampMs), ts.Labels, ts.Exemplars[0].Labels)
 				})
 				failedExemplarsCount += len(ts.Exemplars)
@@ -741,7 +745,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 
 					// Error adding exemplar
 					updateFirstPartial(func() error {
-						return wrappedTSDBIngestExemplarErr(err, model.Time(ex.TimestampMs), ts.Labels, ex.Labels)
+						return wrappedTSDBIngestExemplarOtherErr(err, model.Time(ex.TimestampMs), ts.Labels, ex.Labels)
 					})
 					failedExemplarsCount++
 				}
@@ -2076,20 +2080,41 @@ func (i *Ingester) FlushHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func wrappedTSDBIngestErr(ingestErr error, timestamp model.Time, labels []mimirpb.LabelAdapter) error {
-	if ingestErr == nil {
-		return nil
-	}
-
-	return fmt.Errorf(errTSDBIngest, ingestErr, timestamp.Time().UTC().Format(time.RFC3339Nano), mimirpb.FromLabelAdaptersToLabels(labels).String())
+func wrappedTSDBIngestErr(errID globalerror.ID, errMsg string, timestamp model.Time, labels []mimirpb.LabelAdapter) error {
+	return fmt.Errorf(errTSDBIngest, errID.Message(errMsg), timestamp.Time().UTC().Format(time.RFC3339Nano), mimirpb.FromLabelAdaptersToLabels(labels).String())
 }
 
-func wrappedTSDBIngestExemplarErr(ingestErr error, timestamp model.Time, seriesLabels, exemplarLabels []mimirpb.LabelAdapter) error {
+func wrappedTSDBIngestErrSampleTimestampTooOld(timestamp model.Time, labels []mimirpb.LabelAdapter) error {
+	return wrappedTSDBIngestErr(globalerror.SampleTimestampTooOld, "the sample has been rejected because its timestamp is too old", timestamp, labels)
+}
+
+func wrappedTSDBIngestErrSampleOutOfOrder(timestamp model.Time, labels []mimirpb.LabelAdapter) error {
+	return wrappedTSDBIngestErr(globalerror.SampleOutOfOrder, "the sample has been rejected because another sample with a more recent timestamp has already been ingested and out of order samples are not allowed", timestamp, labels)
+}
+
+func wrappedTSDBIngestErrSampleDuplicateTimestamp(timestamp model.Time, labels []mimirpb.LabelAdapter) error {
+	return wrappedTSDBIngestErr(globalerror.SampleDuplicateTimestamp, "the sample has been rejected because another sample with the same timestamp, but a different value, has already been ingested", timestamp, labels)
+}
+
+func wrappedTSDBIngestErrExemplarMissingSeries(ingestErr error, timestamp model.Time, seriesLabels, exemplarLabels []mimirpb.LabelAdapter) error {
 	if ingestErr == nil {
 		return nil
 	}
 
-	return fmt.Errorf(errTSDBIngestExemplar, ingestErr, timestamp.Time().UTC().Format(time.RFC3339Nano),
+	return fmt.Errorf(errTSDBIngestExemplarMissingSeries,
+		globalerror.ExemplarSeriesMissing.Message(ingestErr.Error()),
+		mimirpb.FromLabelAdaptersToLabels(exemplarLabels).String(),
+		timestamp.Time().UTC().Format(time.RFC3339Nano),
+		mimirpb.FromLabelAdaptersToLabels(seriesLabels).String(),
+	)
+}
+
+func wrappedTSDBIngestExemplarOtherErr(ingestErr error, timestamp model.Time, seriesLabels, exemplarLabels []mimirpb.LabelAdapter) error {
+	if ingestErr == nil {
+		return nil
+	}
+
+	return fmt.Errorf(errTSDBIngestExemplarOther, ingestErr, timestamp.Time().UTC().Format(time.RFC3339Nano),
 		mimirpb.FromLabelAdaptersToLabels(seriesLabels).String(),
 		mimirpb.FromLabelAdaptersToLabels(exemplarLabels).String(),
 	)

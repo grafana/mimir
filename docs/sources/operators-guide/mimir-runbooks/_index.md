@@ -1386,6 +1386,55 @@ How to **fix** it:
 
 - Increase the per-tenant limit by using the `-distributor.ha-tracker.max-clusters` option (or `ha_max_clusters` in the runtime configuration).
 
+### err-mimir-sample-timestamp-too-old
+
+This error occurs when the ingester rejects a sample because its timestamp is too old as compared to the most recent timestamp received for the same tenant across all its time series.
+
+How it **works**:
+
+- If the incoming timestamp is more than 1 hour older than the most recent timestamp ingested for the tenant, the sample will be rejected.
+
+How to **fix** it:
+
+- This error may occur when the system time of your Prometheus instance has been shifted backwards. If this was a mistake, fix the system time back to normal. Otherwise, wait until the system time catches up to the time it was changed, or delete all ingested samples with a timestamp later than system time.
+
+### err-mimir-sample-out-of-order
+
+This error occurs when the ingester rejects a sample because another sample with a more recent timestamp has already been ingested.
+
+How it **works**:
+
+- Currently, samples are not allowed to be ingested out of order as they must be stored in order and sorting is expensive. We are working on removing this limitation in the future.
+
+Common **causes**:
+
+- Your code has a single target that exposes the same time series multiple times, or multiple targets with identical labels
+- System time of your Prometheus instance has been shifted backwards. If this was a mistake, fix the system time back to normal. Otherwise, wait until the system time catches up to the time it was changed, or delete all ingested samples with a timestamp later than system time.
+- You are running multiple Prometheus instances pushing the same metrics and [your high-availability tracker is not properly configured for deduplication](https://cortexmetrics.io/docs/guides/ha-pair-handling/).
+- A Prometheus instance was restarted, and it pushed all data from its Write-Ahead Log to remote write upon restart, some of which has already been pushed and ingested. This is normal and can be ignored.
+
+[More details here](https://www.robustperception.io/debugging-out-of-order-samples/) [and here](https://github.com/cortexproject/cortex/issues/3411) [and here](https://github.com/cortexproject/cortex/issues/2662).
+
+### err-mimir-sample-duplicate-timestamp
+
+This error occurs when the ingester rejects a sample because it is a duplicate of a previously received sample with the same timestamp but different value in the same time series.
+
+How to **fix** it:
+
+- Check if you have multiple endpoints exporting the same metrics (especially if timestamp is included e.g. cAdvisor), or multiple Prometheus instances scraping different metrics with identical labels, and fix that.
+
+### err-mimir-exemplar-series-missing
+
+This error occurs when the ingester rejects an exemplar because its related series has not been ingested yet.
+
+How it **works**:
+
+- The series must already exist before exemplars can be appended, as we do not create new series upon ingesting exemplars.
+
+How to **fix** it:
+
+- First send a sample from the related series to be ingested.
+
 ## Mimir routes by path
 
 **Write path**:
