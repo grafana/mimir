@@ -244,6 +244,42 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 			},
 		},
 		{
+			name:      "ignore retention period if < 0",
+			tenantID:  tenantID,
+			blockID:   blockID,
+			retention: -1,
+			setUpBucketMock: func(bkt *bucket.ClientMock) {
+				setUpPartialBlock(bkt)
+				pth := path.Join(tenantID, blockID, fmt.Sprintf("uploading-%s", block.MetaFilename))
+				bkt.MockUpload(pth, nil)
+			},
+			meta: &metadata.Meta{
+				BlockMeta: tsdb.BlockMeta{
+					ULID:    bULID,
+					MinTime: 0,
+					MaxTime: 1000,
+				},
+				Thanos: metadata.Thanos{
+					Labels: map[string]string{
+						mimir_tsdb.CompactorShardIDExternalLabel: "test",
+					},
+					Files: []metadata.File{
+						{
+							RelPath: block.MetaFilename,
+						},
+						{
+							RelPath:   "index",
+							SizeBytes: 1,
+						},
+						{
+							RelPath:   "chunks/000001",
+							SizeBytes: 1024,
+						},
+					},
+				},
+			},
+		},
+		{
 			name:     "failure checking for complete block",
 			tenantID: tenantID,
 			blockID:  blockID,
