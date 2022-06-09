@@ -63,8 +63,16 @@ func (c *MultitenantCompactor) HandleBlockUpload(w http.ResponseWriter, r *http.
 	logger := util_log.WithContext(ctx, c.logger)
 	logger = log.With(logger, "block", blockID)
 
+	shouldComplete := r.URL.Query().Get("uploadComplete") == "true"
+	var op string
+	if shouldComplete {
+		op = "complete block upload"
+	} else {
+		op = "start block upload"
+	}
+
 	userBkt := bucket.NewUserBucketClient(tenantID, c.bucketClient, c.cfgProvider)
-	if err := checkForComplete(ctx, logger, bULID, userBkt); err != nil {
+	if err := checkForCompleteBlock(ctx, logger, bULID, userBkt); err != nil {
 		var httpErr httpError
 		if errors.As(err, &httpErr) {
 			level.Warn(logger).Log("msg", httpErr.message, "err", err)
@@ -72,12 +80,13 @@ func (c *MultitenantCompactor) HandleBlockUpload(w http.ResponseWriter, r *http.
 			return
 		}
 
-		level.Error(logger).Log("msg", "an unexpected error occurred", "err", err)
+		level.Error(logger).Log("msg", "an unexpected error occurred while checking for complete block",
+			"operation", op, "err", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
-	if r.URL.Query().Get("uploadComplete") == "true" {
+	if shouldComplete {
 		err = c.completeBlockUpload(ctx, r, logger, userBkt, tenantID, bULID)
 	} else {
 		err = c.createBlockUpload(ctx, r, logger, userBkt, tenantID, bULID)
@@ -90,7 +99,8 @@ func (c *MultitenantCompactor) HandleBlockUpload(w http.ResponseWriter, r *http.
 			return
 		}
 
-		level.Error(logger).Log("msg", "an unexpected error occurred", "err", err)
+		level.Error(logger).Log("msg", "an unexpected error occurred", "operation", op,
+			"err", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
@@ -98,8 +108,8 @@ func (c *MultitenantCompactor) HandleBlockUpload(w http.ResponseWriter, r *http.
 	w.WriteHeader(http.StatusOK)
 }
 
-// checkForComplete checks for a complete block with same ID. If one exists, an error is returned.
-func checkForComplete(ctx context.Context, logger log.Logger, blockID ulid.ULID, userBkt objstore.Bucket) error {
+// checkForCompleteBlock checks for a complete block with same ID. If one exists, an error is returned.
+func checkForCompleteBlock(ctx context.Context, logger log.Logger, blockID ulid.ULID, userBkt objstore.Bucket) error {
 	exists, err := userBkt.Exists(ctx, path.Join(blockID.String(), block.MetaFilename))
 	if err != nil {
 		return errors.Wrap(err, fmt.Sprintf("failed to check existence of %s in object storage", block.MetaFilename))
@@ -141,6 +151,8 @@ func (c *MultitenantCompactor) createBlockUpload(ctx context.Context, r *http.Re
 //
 // It takes the mandatory query parameter "path", specifying the file's destination path.
 func (c *MultitenantCompactor) UploadBlockFile(w http.ResponseWriter, r *http.Request) {
+	const op = "block file upload"
+
 	vars := mux.Vars(r)
 	blockID := vars["block"]
 	if blockID == "" {
@@ -184,7 +196,7 @@ func (c *MultitenantCompactor) UploadBlockFile(w http.ResponseWriter, r *http.Re
 
 	userBkt := bucket.NewUserBucketClient(tenantID, c.bucketClient, c.cfgProvider)
 
-	if err := checkForComplete(ctx, logger, bULID, userBkt); err != nil {
+	if err := checkForCompleteBlock(ctx, logger, bULID, userBkt); err != nil {
 		var httpErr httpError
 		if errors.As(err, &httpErr) {
 			level.Warn(logger).Log("msg", httpErr.message, "err", err)
@@ -192,7 +204,8 @@ func (c *MultitenantCompactor) UploadBlockFile(w http.ResponseWriter, r *http.Re
 			return
 		}
 
-		level.Error(logger).Log("msg", "an unexpected error occurred", "err", err)
+		level.Error(logger).Log("msg", "an unexpected error occurred while checking for complete block",
+			"operation", op, "err", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
@@ -201,7 +214,7 @@ func (c *MultitenantCompactor) UploadBlockFile(w http.ResponseWriter, r *http.Re
 	exists, err := userBkt.Exists(ctx, metaPath)
 	if err != nil {
 		level.Error(logger).Log("msg", fmt.Sprintf("failed to check existence of %s in object storage", tmpMetaFilename),
-			"err", err)
+			"operation", op, "err", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
@@ -221,7 +234,7 @@ func (c *MultitenantCompactor) UploadBlockFile(w http.ResponseWriter, r *http.Re
 	}
 	if err := userBkt.Upload(ctx, dst, reader); err != nil {
 		level.Error(logger).Log("msg", "failed uploading block file to bucket",
-			"destination", dst, "err", err)
+			"operation", op, "destination", dst, "err", err)
 		// We don't know what caused the error; it could be the client's fault (e.g. killed
 		// connection), but internal server error is the safe choice here.
 		http.Error(w, "internal server error", http.StatusInternalServerError)
