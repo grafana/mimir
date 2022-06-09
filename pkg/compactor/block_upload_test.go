@@ -68,6 +68,7 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 		body                   string
 		meta                   *metadata.Meta
 		completeBlockExists    bool
+		noRetention            bool
 		expBadRequest          string
 		expConflict            string
 		expInternalServerError bool
@@ -286,6 +287,36 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 			expBadRequest: "block max time (1970-01-01 00:00:01 +0000 UTC) older than retention period",
 		},
 		{
+			name:        "ignore retention period if <= 0",
+			tenantID:    tenantID,
+			noRetention: true,
+			meta: &metadata.Meta{
+				BlockMeta: tsdb.BlockMeta{
+					ULID:    blockID,
+					MinTime: 0,
+					MaxTime: 1000,
+				},
+				Thanos: metadata.Thanos{
+					Labels: map[string]string{
+						mimir_tsdb.CompactorShardIDExternalLabel: "test",
+					},
+					Files: []metadata.File{
+						{
+							RelPath: block.MetaFilename,
+						},
+						{
+							RelPath:   "index",
+							SizeBytes: 1,
+						},
+						{
+							RelPath:   "chunks/000001",
+							SizeBytes: 1024,
+						},
+					},
+				},
+			},
+		},
+		{
 			name:                   "failure checking for complete block",
 			tenantID:               tenantID,
 			bktExistsError:         fmt.Errorf("test"),
@@ -327,7 +358,11 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 				}
 			}
 			cfgProvider := newMockConfigProvider()
-			cfgProvider.userRetentionPeriods[tenantID] = time.Second
+			if !tc.noRetention {
+				cfgProvider.userRetentionPeriods[tenantID] = time.Second
+			} else {
+				cfgProvider.userRetentionPeriods[tenantID] = 0
+			}
 			c := &MultitenantCompactor{
 				logger:       log.NewNopLogger(),
 				bucketClient: &bkt,

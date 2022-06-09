@@ -336,18 +336,21 @@ func (c *MultitenantCompactor) sanitizeMeta(logger log.Logger, tenantID string, 
 			block.MetaFilename, meta.MinTime, meta.MaxTime)
 	}
 	// validate that times are in the past
-	now := time.Now().UnixMilli()
-	if meta.MinTime > now || meta.MaxTime > now {
+	now := time.Now()
+	if meta.MinTime > now.UnixMilli() || meta.MaxTime > now.UnixMilli() {
 		level.Warn(logger).Log("msg", "block time(s) greater than the present", "minTime", meta.MinTime,
 			"maxTime", meta.MaxTime)
 		return fmt.Sprintf("block time(s) greater than the present: minTime=%d, maxTime=%d", meta.MinTime, meta.MaxTime)
 	}
 	// validate data is within the retention period
-	threshold := now.Add(-c.cfgProvider.CompactorBlocksRetentionPeriod(tenantID))
-	if time.UnixMilli(meta.MaxTime).Before(threshold) {
-		maxTimeStr := util.FormatTimeMillis(meta.MaxTime)
-		level.Warn(logger).Log("msg", "block max time older than retention period", "maxTime", maxTimeStr)
-		return fmt.Sprintf("block max time (%s) older than retention period", maxTimeStr)
+	retention := c.cfgProvider.CompactorBlocksRetentionPeriod(tenantID)
+	if retention > 0 {
+		threshold := now.Add(-retention)
+		if time.UnixMilli(meta.MaxTime).Before(threshold) {
+			maxTimeStr := util.FormatTimeMillis(meta.MaxTime)
+			level.Warn(logger).Log("msg", "block max time older than retention period", "maxTime", maxTimeStr)
+			return fmt.Sprintf("block max time (%s) older than retention period", maxTimeStr)
+		}
 	}
 
 	// Mark block source
