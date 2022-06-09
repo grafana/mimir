@@ -336,8 +336,8 @@ func (c *MultitenantCompactor) sanitizeMeta(logger log.Logger, tenantID string, 
 			block.MetaFilename, meta.MinTime, meta.MaxTime)
 	}
 	// validate that times are in the past
-	now := time.Now()
-	if time.UnixMilli(meta.MinTime).After(now) || time.UnixMilli(meta.MaxTime).After(now) {
+	now := time.Now().UnixMilli()
+	if meta.MinTime > now || meta.MaxTime > now {
 		level.Warn(logger).Log("msg", "block time(s) greater than the present", "minTime", meta.MinTime,
 			"maxTime", meta.MaxTime)
 		return fmt.Sprintf("block time(s) greater than the present: minTime=%d, maxTime=%d", meta.MinTime, meta.MaxTime)
