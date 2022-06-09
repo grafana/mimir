@@ -34,7 +34,7 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 	const tenantID = "test"
 	const blockID = "01G3FZ0JWJYJC0ZM6Y9778P6KD"
 	bULID := ulid.MustParse(blockID)
-	now := time.Now().UTC().UnixMilli()
+	now := time.Now().UnixMilli()
 	validMeta := metadata.Meta{
 		BlockMeta: tsdb.BlockMeta{
 			ULID:    bULID,
@@ -345,7 +345,7 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 			}
 			r := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/upload/block/%s", tc.blockID), rdr)
 			if tc.tenantID != "" {
-				r.Header.Set(user.OrgIDHeaderName, tenantID)
+				r = r.WithContext(user.InjectOrgID(r.Context(), tc.tenantID))
 			}
 			if tc.blockID != "" {
 				r = mux.SetURLVars(r, map[string]string{"block": tc.blockID})
@@ -391,7 +391,7 @@ func TestMultitenantCompactor_UploadBlockFile(t *testing.T) {
 		r := httptest.NewRequest(http.MethodPost, fmt.Sprintf(
 			"/api/v1/upload/block/%s/files?path=%s", blockID, pth), nil)
 		r = mux.SetURLVars(r, map[string]string{"path": pth})
-		r.Header.Set(user.OrgIDHeaderName, tenantID)
+		r = r.WithContext(user.InjectOrgID(r.Context(), tenantID))
 		w := httptest.NewRecorder()
 		c.UploadBlockFile(w, r)
 
@@ -410,7 +410,7 @@ func TestMultitenantCompactor_UploadBlockFile(t *testing.T) {
 		r := httptest.NewRequest(http.MethodPost, fmt.Sprintf(
 			"/api/v1/upload/block/%s/files", blockID), nil)
 		r = mux.SetURLVars(r, map[string]string{"block": blockID.String()})
-		r.Header.Set(user.OrgIDHeaderName, tenantID)
+		r = r.WithContext(user.InjectOrgID(r.Context(), tenantID))
 		w := httptest.NewRecorder()
 		c.UploadBlockFile(w, r)
 
@@ -430,7 +430,7 @@ func TestMultitenantCompactor_UploadBlockFile(t *testing.T) {
 		r := httptest.NewRequest(http.MethodPost, fmt.Sprintf(
 			"/api/v1/upload/block/%s/files?path=%s", blockID, pth), nil)
 		r = mux.SetURLVars(r, map[string]string{"block": blockID.String(), "path": pth})
-		r.Header.Set(user.OrgIDHeaderName, tenantID)
+		r = r.WithContext(user.InjectOrgID(r.Context(), tenantID))
 		w := httptest.NewRecorder()
 		c.UploadBlockFile(w, r)
 
@@ -450,7 +450,7 @@ func TestMultitenantCompactor_UploadBlockFile(t *testing.T) {
 		r := httptest.NewRequest(http.MethodPost, fmt.Sprintf(
 			"/api/v1/upload/block/%s/files?path=%s", blockID, pth), nil)
 		r = mux.SetURLVars(r, map[string]string{"block": blockID.String(), "path": pth})
-		r.Header.Set(user.OrgIDHeaderName, tenantID)
+		r = r.WithContext(user.InjectOrgID(r.Context(), tenantID))
 		w := httptest.NewRecorder()
 		c.UploadBlockFile(w, r)
 
@@ -470,7 +470,7 @@ func TestMultitenantCompactor_UploadBlockFile(t *testing.T) {
 		r := httptest.NewRequest(http.MethodPost, fmt.Sprintf(
 			"/api/v1/upload/block/%s/files?path=%s", blockID, block.MetaFilename), buf)
 		r = mux.SetURLVars(r, map[string]string{"block": blockID.String(), "path": block.MetaFilename})
-		r.Header.Set(user.OrgIDHeaderName, tenantID)
+		r = r.WithContext(user.InjectOrgID(r.Context(), tenantID))
 		w := httptest.NewRecorder()
 		c.UploadBlockFile(w, r)
 
@@ -497,7 +497,7 @@ func TestMultitenantCompactor_UploadBlockFile(t *testing.T) {
 		r := httptest.NewRequest(http.MethodPost, fmt.Sprintf(
 			"/api/v1/upload/block/%s/files?path=%s", blockID, pth), buf)
 		r = mux.SetURLVars(r, map[string]string{"block": blockID.String(), "path": pth})
-		r.Header.Set(user.OrgIDHeaderName, tenantID)
+		r = r.WithContext(user.InjectOrgID(r.Context(), tenantID))
 		w := httptest.NewRecorder()
 		c.UploadBlockFile(w, r)
 
@@ -538,7 +538,7 @@ func TestMultitenantCompactor_HandleBlockUpload_Complete(t *testing.T) {
 		}
 		r := httptest.NewRequest(http.MethodPost, fmt.Sprintf(
 			"/api/v1/upload/block/%s?uploadComplete=true", blockID), nil)
-		r.Header.Set(user.OrgIDHeaderName, tenantID)
+		r = r.WithContext(user.InjectOrgID(r.Context(), tenantID))
 		w := httptest.NewRecorder()
 		c.HandleBlockUpload(w, r)
 
@@ -589,7 +589,7 @@ func TestMultitenantCompactor_HandleBlockUpload_Complete(t *testing.T) {
 			"/api/v1/upload/block/%s?uploadComplete=true", blockID),
 			nil)
 		r = mux.SetURLVars(r, map[string]string{"block": blockID.String()})
-		r.Header.Set(user.OrgIDHeaderName, tenantID)
+		r = r.WithContext(user.InjectOrgID(r.Context(), tenantID))
 		w := httptest.NewRecorder()
 		c.HandleBlockUpload(w, r)
 

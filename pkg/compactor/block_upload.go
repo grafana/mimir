@@ -50,7 +50,8 @@ func (c *MultitenantCompactor) HandleBlockUpload(w http.ResponseWriter, r *http.
 		http.Error(w, "invalid block ID", http.StatusBadRequest)
 		return
 	}
-	tenantID, ctx, err := tenant.ExtractTenantIDFromHTTPRequest(r)
+	ctx := r.Context()
+	tenantID, err := tenant.TenantID(ctx)
 	if err != nil {
 		http.Error(w, "invalid tenant ID", http.StatusBadRequest)
 		return
@@ -158,7 +159,8 @@ func (c *MultitenantCompactor) UploadBlockFile(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	tenantID, ctx, err := tenant.ExtractTenantIDFromHTTPRequest(r)
+	ctx := r.Context()
+	tenantID, err := tenant.TenantID(ctx)
 	if err != nil {
 		http.Error(w, "invalid tenant ID", http.StatusBadRequest)
 		return
