@@ -317,16 +317,12 @@ func (c *MultitenantCompactor) sanitizeMeta(logger log.Logger, tenantID string, 
 	// validate minTime/maxTime
 	// basic sanity check
 	if meta.MinTime < 0 || meta.MaxTime < 0 || meta.MaxTime < meta.MinTime {
-		level.Warn(logger).Log("msg", fmt.Sprintf("invalid minTime/maxTime in %s", block.MetaFilename),
-			"minTime", meta.MinTime, "maxTime", meta.MaxTime)
 		return fmt.Sprintf("invalid minTime/maxTime in %s: minTime=%d, maxTime=%d",
 			block.MetaFilename, meta.MinTime, meta.MaxTime)
 	}
 	// validate that times are in the past
 	now := time.Now()
 	if meta.MinTime > now.UnixMilli() || meta.MaxTime > now.UnixMilli() {
-		level.Warn(logger).Log("msg", "block time(s) greater than the present", "minTime", meta.MinTime,
-			"maxTime", meta.MaxTime)
 		return fmt.Sprintf("block time(s) greater than the present: minTime=%d, maxTime=%d", meta.MinTime, meta.MaxTime)
 	}
 	// validate data is within the retention period
@@ -335,7 +331,6 @@ func (c *MultitenantCompactor) sanitizeMeta(logger log.Logger, tenantID string, 
 		threshold := now.Add(-retention)
 		if time.UnixMilli(meta.MaxTime).Before(threshold) {
 			maxTimeStr := util.FormatTimeMillis(meta.MaxTime)
-			level.Warn(logger).Log("msg", "block max time older than retention period", "maxTime", maxTimeStr)
 			return fmt.Sprintf("block max time (%s) older than retention period", maxTimeStr)
 		}
 	}
