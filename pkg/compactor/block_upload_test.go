@@ -71,7 +71,7 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 		blockID                string
 		body                   string
 		meta                   *metadata.Meta
-		retention            time.Duration
+		retention              time.Duration
 		expBadRequest          string
 		expConflict            string
 		expInternalServerError bool
@@ -116,27 +116,8 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 			blockID:         blockID,
 			setUpBucketMock: setUpPartialBlock,
 			meta: &metadata.Meta{
-				BlockMeta: tsdb.BlockMeta{
-					ULID:    bULID,
-					MinTime: now - 1000,
-					MaxTime: now,
-				},
 				Thanos: metadata.Thanos{
-					Labels: map[string]string{
-						mimir_tsdb.CompactorShardIDExternalLabel: "test",
-					},
 					Files: []metadata.File{
-						{
-							RelPath: block.MetaFilename,
-						},
-						{
-							RelPath:   "index",
-							SizeBytes: 1,
-						},
-						{
-							RelPath:   "chunks/000001",
-							SizeBytes: 1024,
-						},
 						{
 							RelPath:   "chunks/invalid-file",
 							SizeBytes: 1024,
@@ -152,15 +133,7 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 			blockID:         blockID,
 			setUpBucketMock: setUpPartialBlock,
 			meta: &metadata.Meta{
-				BlockMeta: tsdb.BlockMeta{
-					ULID:    bULID,
-					MinTime: now - 1000,
-					MaxTime: now,
-				},
 				Thanos: metadata.Thanos{
-					Labels: map[string]string{
-						mimir_tsdb.CompactorShardIDExternalLabel: "test",
-					},
 					Files: []metadata.File{
 						{
 							RelPath: block.MetaFilename,
@@ -188,24 +161,6 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 					MinTime: -1,
 					MaxTime: 0,
 				},
-				Thanos: metadata.Thanos{
-					Labels: map[string]string{
-						mimir_tsdb.CompactorShardIDExternalLabel: "test",
-					},
-					Files: []metadata.File{
-						{
-							RelPath: block.MetaFilename,
-						},
-						{
-							RelPath:   "index",
-							SizeBytes: 1,
-						},
-						{
-							RelPath:   "chunks/000001",
-							SizeBytes: 1024,
-						},
-					},
-				},
 			},
 			expBadRequest: "invalid minTime/maxTime in meta.json: minTime=-1, maxTime=0",
 		},
@@ -219,24 +174,6 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 					ULID:    bULID,
 					MinTime: 0,
 					MaxTime: -1,
-				},
-				Thanos: metadata.Thanos{
-					Labels: map[string]string{
-						mimir_tsdb.CompactorShardIDExternalLabel: "test",
-					},
-					Files: []metadata.File{
-						{
-							RelPath: block.MetaFilename,
-						},
-						{
-							RelPath:   "index",
-							SizeBytes: 1,
-						},
-						{
-							RelPath:   "chunks/000001",
-							SizeBytes: 1024,
-						},
-					},
 				},
 			},
 			expBadRequest: "invalid minTime/maxTime in meta.json: minTime=0, maxTime=-1",
@@ -252,24 +189,6 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 					MinTime: 1,
 					MaxTime: 0,
 				},
-				Thanos: metadata.Thanos{
-					Labels: map[string]string{
-						mimir_tsdb.CompactorShardIDExternalLabel: "test",
-					},
-					Files: []metadata.File{
-						{
-							RelPath: block.MetaFilename,
-						},
-						{
-							RelPath:   "index",
-							SizeBytes: 1,
-						},
-						{
-							RelPath:   "chunks/000001",
-							SizeBytes: 1024,
-						},
-					},
-				},
 			},
 			expBadRequest: "invalid minTime/maxTime in meta.json: minTime=1, maxTime=0",
 		},
@@ -277,6 +196,7 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 			name:            "block before retention period",
 			tenantID:        tenantID,
 			blockID:         blockID,
+			retention:       10 * time.Second,
 			setUpBucketMock: setUpPartialBlock,
 			meta: &metadata.Meta{
 				BlockMeta: tsdb.BlockMeta{
@@ -284,32 +204,14 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 					MinTime: 0,
 					MaxTime: 1000,
 				},
-				Thanos: metadata.Thanos{
-					Labels: map[string]string{
-						mimir_tsdb.CompactorShardIDExternalLabel: "test",
-					},
-					Files: []metadata.File{
-						{
-							RelPath: block.MetaFilename,
-						},
-						{
-							RelPath:   "index",
-							SizeBytes: 1,
-						},
-						{
-							RelPath:   "chunks/000001",
-							SizeBytes: 1024,
-						},
-					},
-				},
 			},
 			expBadRequest: "block max time (1970-01-01 00:00:01 +0000 UTC) older than retention period",
 		},
 		{
-			name:        "ignore retention period if <= 0",
-			tenantID:    tenantID,
-			blockID:     blockID,
-			noRetention: true,
+			name:      "ignore retention period if == 0",
+			tenantID:  tenantID,
+			blockID:   blockID,
+			retention: 0,
 			setUpBucketMock: func(bkt *bucket.ClientMock) {
 				setUpPartialBlock(bkt)
 				pth := path.Join(tenantID, blockID, tmpMetaFilename)
@@ -391,11 +293,7 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 			}
 
 			cfgProvider := newMockConfigProvider()
-			if !tc.noRetention {
-				cfgProvider.userRetentionPeriods[tenantID] = time.Second
-			} else {
-				cfgProvider.userRetentionPeriods[tenantID] = 0
-			}
+			cfgProvider.userRetentionPeriods[tenantID] = tc.retention
 			c := &MultitenantCompactor{
 				logger:       log.NewNopLogger(),
 				bucketClient: &bkt,
