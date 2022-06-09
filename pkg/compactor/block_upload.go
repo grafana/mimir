@@ -10,7 +10,6 @@ import (
 	"io"
 	"net/http"
 	"path"
-	"strings"
 	"time"
 
 	"github.com/go-kit/log"
@@ -287,7 +286,6 @@ func (c *MultitenantCompactor) sanitizeMeta(logger log.Logger, tenantID string, 
 	meta *metadata.Meta) error {
 	meta.ULID = blockID
 
-	var rejLbls []string
 	for l, v := range meta.Thanos.Labels {
 		switch l {
 		// Preserve these labels
@@ -298,49 +296,38 @@ func (c *MultitenantCompactor) sanitizeMeta(logger log.Logger, tenantID string, 
 				"label", l, "value", v)
 			delete(meta.Thanos.Labels, l)
 		default:
-			rejLbls = append(rejLbls, l)
+			level.Warn(logger).Log("msg", fmt.Sprintf("rejecting unsupported external label in %s", block.MetaFilename),
+				"label", l)
+			return httpError{
+				message:    fmt.Sprintf("unsupported external label in %s: %s", block.MetaFilename, l),
+				statusCode: http.StatusBadRequest,
+			}
 		}
 	}
 
-	if len(rejLbls) > 0 {
-		level.Warn(logger).Log("msg", fmt.Sprintf("rejecting unsupported external label(s) in %s", block.MetaFilename),
-			"labels", strings.Join(rejLbls, ","))
-		return httpError{
-			message:    fmt.Sprintf("unsupported external label(s): %s", strings.Join(rejLbls, ",")),
-			statusCode: http.StatusBadRequest,
-		}
-	}
-
-	var rejFilesInvalidPath []string
-	var rejFilesUnspecSize []string
 	for _, f := range meta.Thanos.Files {
-		if !rePath.MatchString(f.RelPath) {
-			rejFilesInvalidPath = append(rejFilesInvalidPath, f.RelPath)
-			continue
-		}
-
 		if f.RelPath == block.MetaFilename {
 			continue
 		}
 
+		if !rePath.MatchString(f.RelPath) {
+			level.Warn(logger).Log("msg", fmt.Sprintf("rejecting file with invalid path in %s", block.MetaFilename),
+				"file", f.RelPath)
+			return httpError{
+				message: fmt.Sprintf("file with invalid path in %s: %s", block.MetaFilename,
+					f.RelPath),
+				statusCode: http.StatusBadRequest,
+			}
+		}
+
 		if f.SizeBytes <= 0 {
-			rejFilesUnspecSize = append(rejFilesUnspecSize, f.RelPath)
-		}
-	}
-	if len(rejFilesInvalidPath) > 0 {
-		level.Warn(logger).Log("msg", fmt.Sprintf("rejecting files with invalid paths in %s", block.MetaFilename),
-			"files", strings.Join(rejFilesInvalidPath, ","))
-		return httpError{
-			message:    fmt.Sprintf("file(s) with invalid paths: %s", strings.Join(rejFilesInvalidPath, ",")),
-			statusCode: http.StatusBadRequest,
-		}
-	}
-	if len(rejFilesUnspecSize) > 0 {
-		level.Warn(logger).Log("msg", fmt.Sprintf("rejecting files with unspecified sizes in %s", block.MetaFilename),
-			"files", strings.Join(rejFilesUnspecSize, ","))
-		return httpError{
-			message:    fmt.Sprintf("file(s) with unspecified sizes: %s", strings.Join(rejFilesUnspecSize, ",")),
-			statusCode: http.StatusBadRequest,
+			level.Warn(logger).Log("msg", fmt.Sprintf("rejecting file with invalid size in %s", block.MetaFilename),
+				"file", f.RelPath)
+			return httpError{
+				message: fmt.Sprintf("file with invalid size in %s: %s", block.MetaFilename,
+					f.RelPath),
+				statusCode: http.StatusBadRequest,
+			}
 		}
 	}
 
