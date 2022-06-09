@@ -1049,7 +1049,7 @@ A metric name can only contain characters as defined by Prometheus’ [Metric na
 
 > **Note**: Invalid series are skipped during the ingestion, and valid series within the same request are ingested.
 
-### err-mimir-tenant-max-label-names-per-series
+### err-mimir-max-label-names-per-series
 
 This non-critical error occurs when Mimir receives a write request that contains a series with a number of labels that exceed the configured limit.
 The limit protects the system’s stability from potential abuse or mistakes. To configure the limit on a per-tenant basis, use the `-validation.max-label-names-per-series` option.
@@ -1063,14 +1063,14 @@ A label name name can only contain characters as defined by Prometheus’ [Metri
 
 > **Note**: Invalid series are skipped during the ingestion, and valid series within the same request are ingested.
 
-### err-mimir-tenant-label-name-too-long
+### err-mimir-label-name-too-long
 
 This non-critical error occurs when Mimir receives a write request that contains a series with a label name whose length exceeds the configured limit.
 The limit protects the system’s stability from potential abuse or mistakes. To configure the limit on a per-tenant basis, use the `-validation.max-length-label-name` option.
 
 > **Note**: Invalid series are skipped during the ingestion, and valid series within the same request are ingested.
 
-### err-mimir-tenant-label-value-too-long
+### err-mimir-label-value-too-long
 
 This non-critical error occurs when Mimir receives a write request that contains a series with a label value whose length exceeds the configured limit.
 The limit protects the system’s stability from potential abuse or mistakes. To configure the limit on a per-tenant basis, use the `-validation.max-length-label-value` option.
@@ -1092,7 +1092,7 @@ If you experience this error, [open an issue in the Mimir repository](https://gi
 
 > **Note**: Invalid series are skipped during the ingestion, and valid series within the same request are ingested.
 
-### err-mimir-tenant-too-far-in-future
+### err-mimir-too-far-in-future
 
 This non-critical error occurs when Mimir receives a write request that contains a sample whose timestamp is in the future compared to the current "real world" time.
 Mimir accepts timestamps that are slightly in the future, due to skewed clocks for example. It rejects timestamps that are too far in the future, based on the definition that you can set via the `-validation.create-grace-period` option.
@@ -1128,21 +1128,21 @@ Each metric metadata must have a metric name. Rarely it does not, in which case 
 
 > **Note**: Invalid metrics metadata are skipped during the ingestion, and valid metadata within the same request are ingested.
 
-### err-mimir-tenant-metric-name-too-long
+### err-mimir-metric-name-too-long
 
 This non-critical error occurs when Mimir receives a write request that contains a metric metadata with a metric name whose length exceeds the configured limit.
 The limit protects the system’s stability from potential abuse or mistakes. To configure the limit on a per-tenant basis, use the `-validation.max-metadata-length` option.
 
 > **Note**: Invalid metrics metadata are skipped during the ingestion, and valid metadata within the same request are ingested.
 
-### err-mimir-tenant-help-too-long
+### err-mimir-help-too-long
 
 This non-critical error occurs when Mimir receives a write request that contains a metric metadata with an help description whose length exceeds the configured limit.
 The limit protects the system’s stability from potential abuse or mistakes. To configure the limit on a per-tenant basis, use the `-validation.max-metadata-length` option.
 
 > **Note**: Invalid metrics metadata are skipped during the ingestion, and valid metadata within the same request are ingested.
 
-### err-mimir-tenant-unit-too-long
+### err-mimir-unit-too-long
 
 This non-critical error occurs when Mimir receives a write request that contains a metric metadata with unit name whose length exceeds the configured limit.
 The limit protects the system’s stability from potential abuse or mistakes. To configure the limit on a per-tenant basis, use the `-validation.max-metadata-length` option.
@@ -1231,7 +1231,7 @@ How to **fix** it:
 - Check the write requests latency through the `Mimir / Writes` dashboard and come back to investigate the root cause of high latency (the higher the latency, the higher the number of in-flight write requests).
 - Consider scaling out the ingesters.
 
-### err-mimir-tenant-max-series-per-user
+### err-mimir-max-series-per-user
 
 This error occurs when the number of in-memory series for a given tenant exceeds the configured limit.
 
@@ -1243,7 +1243,7 @@ How to **fix** it:
 - Ensure the actual number of series written by the affected tenant is legit.
 - Consider increasing the per-tenant limit by using the `-ingester.max-global-series-per-user` option (or `max_global_series_per_user` in the runtime configuration).
 
-### err-mimir-tenant-max-series-per-metric
+### err-mimir-max-series-per-metric
 
 This error occurs when the number of in-memory series for a given tenant and metric name exceeds the configured limit.
 
@@ -1260,7 +1260,7 @@ How to **fix** it:
 - Consider increasing the per-tenant limit by using the `-ingester.max-global-series-per-metric` option.
 - Consider excluding specific metric names from this limit's check by using the `-ingester.ignore-series-limit-for-metric-names` option (or `max_global_series_per_metric` in the runtime configuration).
 
-### err-mimir-tenant-max-metadata-per-user
+### err-mimir-max-metadata-per-user
 
 This non-critical error occurs when the number of in-memory metrics with metadata for a given tenant exceeds the configured limit.
 
@@ -1277,7 +1277,7 @@ How to **fix** it:
 - Check the current number of metric names for the affected tenant, running the instant query `count(count by(__name__) ({__name__=~".+"}))`. Alternatively, you can get the cardinality of `__name__` label calling the API endpoint `/api/v1/cardinality/label_names`.
 - Consider increasing the per-tenant limit setting to a value greater than the number of unique metric names returned by the previous query.
 
-### err-mimir-tenant-max-metadata-per-metric
+### err-mimir-max-metadata-per-metric
 
 This non-critical error occurs when the number of different metadata for a given metric name exceeds the configured limit.
 
@@ -1295,7 +1295,7 @@ How to **fix** it:
 - If the different metadata is unexpected, consider fixing the discrepancy in the instrumented applications.
 - If the different metadata is expected, consider increasing the per-tenant limit by using the `-ingester.max-global-series-per-metric` option (or `max_global_metadata_per_metric` in the runtime configuration).
 
-### err-mimir-tenant-max-chunks-per-query
+### err-mimir-max-chunks-per-query
 
 This error occurs when a query execution exceeds the limit on the number of series chunks fetched.
 
@@ -1307,7 +1307,7 @@ How to **fix** it:
 - Consider reducing the time range and/or cardinality of the query. To reduce the cardinality of the query, you can add more label matchers to the query, restricting the set of matching series.
 - Consider increasing the per-tenant limit by using the `-querier.max-fetched-chunks-per-query` option (or `max_fetched_chunks_per_query` in the runtime configuration).
 
-### err-mimir-tenant-max-series-per-query
+### err-mimir-max-series-per-query
 
 This error occurs when a query execution exceeds the limit on the maximum number of series.
 
@@ -1319,7 +1319,7 @@ How to **fix** it:
 - Consider reducing the time range and/or cardinality of the query. To reduce the cardinality of the query, you can add more label matchers to the query, restricting the set of matching series.
 - Consider increasing the per-tenant limit by using the `-querier.max-fetched-series-per-query` option (or `max_fetched_series_per_query` in the runtime configuration).
 
-### err-mimir-tenant-max-chunks-bytes-per-query
+### err-mimir-max-chunks-bytes-per-query
 
 This error occurs when a query execution exceeds the limit on aggregated size (in bytes) of fetched chunks.
 
@@ -1331,7 +1331,7 @@ How to **fix** it:
 - Consider reducing the time range and/or cardinality of the query. To reduce the cardinality of the query, you can add more label matchers to the query, restricting the set of matching series.
 - Consider increasing the per-tenant limit by using the `-querier.max-fetched-chunk-bytes-per-query` option (or `max_fetched_chunk_bytes_per_query` in the runtime configuration).
 
-### err-mimir-tenant-max-query-length
+### err-mimir-max-query-length
 
 This error occurs when the time range of a query exceeds the configured maximum length.
 
@@ -1372,7 +1372,7 @@ How to **fix** it:
 
 - Increase the per-tenant limit by using the `-distributor.ingestion-rate-limit` (samples per second) and `-distributor.ingestion-burst-size` (number of samples) options (or `ingestion_rate` and `ingestion_burst_size` in the runtime configuration). The configurable burst represents how many samples, exemplars and metadata can temporarily exceed the limit, in case of short traffic peaks. The configured burst size must be greater or equal than the configured limit.
 
-### err-mimir-tenant-too-many-ha-clusters
+### err-mimir-too-many-ha-clusters
 
 This error occurs when a distributor rejects a write request because the number of [high-availability (HA) clusters]({{< relref "../configuring/configuring-high-availability-deduplication.md" >}}) has hit the configured limit for this tenant.
 

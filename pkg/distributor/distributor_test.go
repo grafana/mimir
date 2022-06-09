@@ -3502,7 +3502,7 @@ func TestDistributorValidation(t *testing.T) {
 				Value:       4,
 			}},
 			expectedStatusCode: http.StatusBadRequest,
-			expectedErr:        fmt.Sprintf(`received a sample whose timestamp is too far in the future, timestamp: %d series: 'testmetric' (err-mimir-tenant-too-far-in-future)`, future),
+			expectedErr:        fmt.Sprintf(`received a sample whose timestamp is too far in the future, timestamp: %d series: 'testmetric' (err-mimir-too-far-in-future)`, future),
 		},
 
 		// Test maximum labels names per series.

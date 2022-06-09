@@ -16,21 +16,20 @@ const (
 
 	MissingMetricName             ID = "missing-metric-name"
 	InvalidMetricName             ID = "metric-name-invalid"
+	MaxLabelNamesPerSeries        ID = "max-label-names-per-series"
 	SeriesInvalidLabel            ID = "label-invalid"
+	SeriesLabelNameTooLong        ID = "label-name-too-long"
+	SeriesLabelValueTooLong       ID = "label-value-too-long"
 	SeriesWithDuplicateLabelNames ID = "duplicate-label-names"
 	SeriesLabelsNotSorted         ID = "labels-not-sorted"
-
-	MaxLabelNamesPerSeries  ID = "tenant-max-label-names-per-series"
-	SeriesLabelNameTooLong  ID = "tenant-label-name-too-long"
-	SeriesLabelValueTooLong ID = "tenant-label-value-too-long"
-	SampleTooFarInFuture    ID = "tenant-too-far-in-future"
-	MaxSeriesPerMetric      ID = "tenant-max-series-per-metric"
-	MaxMetadataPerMetric    ID = "tenant-max-metadata-per-metric"
-	MaxSeriesPerUser        ID = "tenant-max-series-per-user"
-	MaxMetadataPerUser      ID = "tenant-max-metadata-per-user"
-	MaxChunksPerQuery       ID = "tenant-max-chunks-per-query"
-	MaxSeriesPerQuery       ID = "tenant-max-series-per-query"
-	MaxChunkBytesPerQuery   ID = "tenant-max-chunks-bytes-per-query"
+	SampleTooFarInFuture          ID = "too-far-in-future"
+	MaxSeriesPerMetric            ID = "max-series-per-metric"
+	MaxMetadataPerMetric          ID = "max-metadata-per-metric"
+	MaxSeriesPerUser              ID = "max-series-per-user"
+	MaxMetadataPerUser            ID = "max-metadata-per-user"
+	MaxChunksPerQuery             ID = "max-chunks-per-query"
+	MaxSeriesPerQuery             ID = "max-series-per-query"
+	MaxChunkBytesPerQuery         ID = "max-chunks-bytes-per-query"
 
 	DistributorMaxIngestionRate        ID = "distributor-max-ingestion-rate"
 	DistributorMaxInflightPushRequests ID = "distributor-max-inflight-push-requests"
@@ -45,15 +44,14 @@ const (
 	ExemplarTimestampInvalid ID = "exemplar-timestamp-invalid"
 
 	MetricMetadataMissingMetricName ID = "metadata-missing-metric-name"
+	MetricMetadataMetricNameTooLong ID = "metric-name-too-long"
+	MetricMetadataHelpTooLong       ID = "help-too-long"
+	MetricMetadataUnitTooLong       ID = "unit-too-long"
 
-	MetricMetadataMetricNameTooLong ID = "tenant-metric-name-too-long"
-	MetricMetadataHelpTooLong       ID = "tenant-help-too-long"
-	MetricMetadataUnitTooLong       ID = "tenant-unit-too-long"
-
-	MaxQueryLength       ID = "tenant-max-query-length"
+	MaxQueryLength       ID = "max-query-length"
 	RequestRateLimited   ID = "tenant-max-request-rate"
 	IngestionRateLimited ID = "tenant-max-ingestion-rate"
-	TooManyHAClusters    ID = "tenant-too-many-ha-clusters"
+	TooManyHAClusters    ID = "too-many-ha-clusters"
 )
 
 // Message returns the provided msg, appending the error id.
