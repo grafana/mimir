@@ -38,6 +38,7 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 	validMeta := metadata.Meta{
 		BlockMeta: tsdb.BlockMeta{
 			ULID:    bULID,
+			Version: metadata.TSDBVersion1,
 			MinTime: now - 1000,
 			MaxTime: now,
 		},
@@ -158,6 +159,7 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 			meta: &metadata.Meta{
 				BlockMeta: tsdb.BlockMeta{
 					ULID:    bULID,
+					Version: metadata.TSDBVersion1,
 					MinTime: -1,
 					MaxTime: 0,
 				},
@@ -172,6 +174,7 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 			meta: &metadata.Meta{
 				BlockMeta: tsdb.BlockMeta{
 					ULID:    bULID,
+					Version: metadata.TSDBVersion1,
 					MinTime: 0,
 					MaxTime: -1,
 				},
@@ -186,6 +189,7 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 			meta: &metadata.Meta{
 				BlockMeta: tsdb.BlockMeta{
 					ULID:    bULID,
+					Version: metadata.TSDBVersion1,
 					MinTime: 1,
 					MaxTime: 0,
 				},
@@ -201,11 +205,25 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 			meta: &metadata.Meta{
 				BlockMeta: tsdb.BlockMeta{
 					ULID:    bULID,
+					Version: metadata.TSDBVersion1,
 					MinTime: 0,
 					MaxTime: 1000,
 				},
 			},
 			expBadRequest: "block max time (1970-01-01 00:00:01 +0000 UTC) older than retention period",
+		},
+		{
+			name:            "invalid version",
+			tenantID:        tenantID,
+			blockID:         blockID,
+			setUpBucketMock: setUpPartialBlock,
+			meta: &metadata.Meta{
+				BlockMeta: tsdb.BlockMeta{
+					ULID:    bULID,
+					Version: 0,
+				},
+			},
+			expBadRequest: fmt.Sprintf("version must be %d", metadata.TSDBVersion1),
 		},
 		{
 			name:      "ignore retention period if == 0",
@@ -220,6 +238,7 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 			meta: &metadata.Meta{
 				BlockMeta: tsdb.BlockMeta{
 					ULID:    bULID,
+					Version: metadata.TSDBVersion1,
 					MinTime: 0,
 					MaxTime: 1000,
 				},
@@ -256,6 +275,7 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 			meta: &metadata.Meta{
 				BlockMeta: tsdb.BlockMeta{
 					ULID:    bULID,
+					Version: metadata.TSDBVersion1,
 					MinTime: 0,
 					MaxTime: 1000,
 				},

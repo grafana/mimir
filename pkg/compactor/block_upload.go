@@ -299,6 +299,9 @@ func (c *MultitenantCompactor) sanitizeMeta(logger log.Logger, tenantID string, 
 		}
 	}
 
+	meta.Compaction.Parents = nil
+	meta.Compaction.Sources = []ulid.ULID{blockID}
+
 	for _, f := range meta.Thanos.Files {
 		if f.RelPath == block.MetaFilename {
 			continue
@@ -313,6 +316,10 @@ func (c *MultitenantCompactor) sanitizeMeta(logger log.Logger, tenantID string, 
 			return fmt.Sprintf("file with invalid size in %s: %s", block.MetaFilename,
 				f.RelPath)
 		}
+	}
+
+	if meta.Version != metadata.TSDBVersion1 {
+		return fmt.Sprintf("version must be 1")
 	}
 
 	// validate minTime/maxTime
