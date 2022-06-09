@@ -330,8 +330,8 @@ func (c *MultitenantCompactor) sanitizeMeta(logger log.Logger, tenantID string, 
 	// validate minTime/maxTime
 	// basic sanity check
 	if meta.MinTime < 0 || meta.MaxTime < 0 || meta.MaxTime < meta.MinTime {
-		level.Warn(logger).Log("msg", "invalid minTime/maxTime in meta.json", "minTime", meta.MinTime,
-			"maxTime", meta.MaxTime)
+		level.Warn(logger).Log("msg", fmt.Sprintf("invalid minTime/maxTime in %s", block.MetaFilename),
+			"minTime", meta.MinTime, "maxTime", meta.MaxTime)
 		return fmt.Sprintf("invalid minTime/maxTime in %s: minTime=%d, maxTime=%d",
 			block.MetaFilename, meta.MinTime, meta.MaxTime)
 	}

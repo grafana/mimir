@@ -34,15 +34,45 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 	const tenantID = "test"
 	blockID := ulid.MustParse("01G3FZ0JWJYJC0ZM6Y9778P6KD")
 	now := time.Now().UTC().UnixMilli()
+	validMeta := metadata.Meta{
+		BlockMeta: tsdb.BlockMeta{
+			ULID:    blockID,
+			MinTime: now - 1000,
+			MaxTime: now,
+		},
+		Thanos: metadata.Thanos{
+			Labels: map[string]string{
+				mimir_tsdb.CompactorShardIDExternalLabel: "test",
+			},
+			Files: []metadata.File{
+				{
+					RelPath: block.MetaFilename,
+				},
+				{
+					RelPath:   "index",
+					SizeBytes: 1,
+				},
+				{
+					RelPath:   "chunks/000001",
+					SizeBytes: 1024,
+				},
+			},
+		},
+	}
 
 	testCases := []struct {
-		name           string
-		tenantID       string
-		unsetBlockID   bool
-		invalidBlockID string
-		body           string
-		meta           *metadata.Meta
-		expBadRequest  string
+		name                   string
+		tenantID               string
+		unsetBlockID           bool
+		invalidBlockID         string
+		body                   string
+		meta                   *metadata.Meta
+		completeBlockExists    bool
+		expBadRequest          string
+		expConflict            string
+		expInternalServerError bool
+		bktExistsError         error
+		bktUploadError         error
 	}{
 		{
 			name:          "missing tenant ID",
@@ -73,7 +103,7 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 			expBadRequest: "malformed request body",
 		},
 		{
-			name:     "valid request",
+			name:     "invalid file path",
 			tenantID: tenantID,
 			meta: &metadata.Meta{
 				BlockMeta: tsdb.BlockMeta{
@@ -87,6 +117,72 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 					},
 					Files: []metadata.File{
 						{
+							RelPath: block.MetaFilename,
+						},
+						{
+							RelPath:   "index",
+							SizeBytes: 1,
+						},
+						{
+							RelPath:   "chunks/000001",
+							SizeBytes: 1024,
+						},
+						{
+							RelPath:   "chunks/invalid-file",
+							SizeBytes: 1024,
+						},
+					},
+				},
+			},
+			expBadRequest: fmt.Sprintf("file with invalid path in %s: chunks/invalid-file", block.MetaFilename),
+		},
+		{
+			name:     "missing file size",
+			tenantID: tenantID,
+			meta: &metadata.Meta{
+				BlockMeta: tsdb.BlockMeta{
+					ULID:    blockID,
+					MinTime: now - 1000,
+					MaxTime: now,
+				},
+				Thanos: metadata.Thanos{
+					Labels: map[string]string{
+						mimir_tsdb.CompactorShardIDExternalLabel: "test",
+					},
+					Files: []metadata.File{
+						{
+							RelPath: block.MetaFilename,
+						},
+						{
+							RelPath:   "index",
+							SizeBytes: 1,
+						},
+						{
+							RelPath: "chunks/000001",
+						},
+					},
+				},
+			},
+			expBadRequest: fmt.Sprintf("file with invalid size in %s: chunks/000001", block.MetaFilename),
+		},
+		{
+			name:     "invalid minTime",
+			tenantID: tenantID,
+			meta: &metadata.Meta{
+				BlockMeta: tsdb.BlockMeta{
+					ULID:    blockID,
+					MinTime: -1,
+					MaxTime: 0,
+				},
+				Thanos: metadata.Thanos{
+					Labels: map[string]string{
+						mimir_tsdb.CompactorShardIDExternalLabel: "test",
+					},
+					Files: []metadata.File{
+						{
+							RelPath: block.MetaFilename,
+						},
+						{
 							RelPath:   "index",
 							SizeBytes: 1,
 						},
@@ -97,15 +193,137 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 					},
 				},
 			},
+			expBadRequest: "invalid minTime/maxTime in meta.json: minTime=-1, maxTime=0",
+		},
+		{
+			name:     "invalid maxTime",
+			tenantID: tenantID,
+			meta: &metadata.Meta{
+				BlockMeta: tsdb.BlockMeta{
+					ULID:    blockID,
+					MinTime: 0,
+					MaxTime: -1,
+				},
+				Thanos: metadata.Thanos{
+					Labels: map[string]string{
+						mimir_tsdb.CompactorShardIDExternalLabel: "test",
+					},
+					Files: []metadata.File{
+						{
+							RelPath: block.MetaFilename,
+						},
+						{
+							RelPath:   "index",
+							SizeBytes: 1,
+						},
+						{
+							RelPath:   "chunks/000001",
+							SizeBytes: 1024,
+						},
+					},
+				},
+			},
+			expBadRequest: "invalid minTime/maxTime in meta.json: minTime=0, maxTime=-1",
+		},
+		{
+			name:     "maxTime before minTime",
+			tenantID: tenantID,
+			meta: &metadata.Meta{
+				BlockMeta: tsdb.BlockMeta{
+					ULID:    blockID,
+					MinTime: 1,
+					MaxTime: 0,
+				},
+				Thanos: metadata.Thanos{
+					Labels: map[string]string{
+						mimir_tsdb.CompactorShardIDExternalLabel: "test",
+					},
+					Files: []metadata.File{
+						{
+							RelPath: block.MetaFilename,
+						},
+						{
+							RelPath:   "index",
+							SizeBytes: 1,
+						},
+						{
+							RelPath:   "chunks/000001",
+							SizeBytes: 1024,
+						},
+					},
+				},
+			},
+			expBadRequest: "invalid minTime/maxTime in meta.json: minTime=1, maxTime=0",
+		},
+		{
+			name:     "block before retention period",
+			tenantID: tenantID,
+			meta: &metadata.Meta{
+				BlockMeta: tsdb.BlockMeta{
+					ULID:    blockID,
+					MinTime: 0,
+					MaxTime: 1000,
+				},
+				Thanos: metadata.Thanos{
+					Labels: map[string]string{
+						mimir_tsdb.CompactorShardIDExternalLabel: "test",
+					},
+					Files: []metadata.File{
+						{
+							RelPath: block.MetaFilename,
+						},
+						{
+							RelPath:   "index",
+							SizeBytes: 1,
+						},
+						{
+							RelPath:   "chunks/000001",
+							SizeBytes: 1024,
+						},
+					},
+				},
+			},
+			expBadRequest: "block max time (1970-01-01 00:00:01 +0000 UTC) older than retention period",
+		},
+		{
+			name:                   "failure checking for complete block",
+			tenantID:               tenantID,
+			bktExistsError:         fmt.Errorf("test"),
+			expInternalServerError: true,
+		},
+		{
+			name:                "complete block already exists",
+			tenantID:            tenantID,
+			completeBlockExists: true,
+			expConflict:         "block already exists in object storage",
+		},
+		{
+			name:                   "failure uploading meta file",
+			tenantID:               tenantID,
+			meta:                   &validMeta,
+			bktUploadError:         fmt.Errorf("test"),
+			expInternalServerError: true,
+		},
+		{
+			name:     "valid request",
+			tenantID: tenantID,
+			meta:     &validMeta,
 		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			var bkt bucket.ClientMock
-			if !tc.unsetBlockID && tc.invalidBlockID == "" && tc.tenantID != "" {
+			if tc.bktExistsError != nil {
+				bkt.On("Exists", mock.Anything, path.Join(tc.tenantID, blockID.String(),
+					block.MetaFilename)).Return(false, tc.bktExistsError)
+			} else if tc.completeBlockExists {
+				bkt.On("Exists", mock.Anything, path.Join(tc.tenantID, blockID.String(),
+					block.MetaFilename)).Return(true, nil)
+			} else if !tc.unsetBlockID && tc.invalidBlockID == "" && tc.tenantID != "" {
 				bkt.MockExists(path.Join(tenantID, blockID.String(), block.MetaFilename), false, nil)
-				if tc.expBadRequest == "" {
-					bkt.MockUpload(mock.Anything, nil)
+				if tc.expBadRequest == "" && tc.expConflict == "" {
+					pth := path.Join(tenantID, blockID.String(), fmt.Sprintf("uploading-%s", block.MetaFilename))
+					bkt.MockUpload(pth, tc.bktUploadError)
 				}
 			}
 			cfgProvider := newMockConfigProvider()
@@ -142,9 +360,15 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 			require.NoError(t, err)
 
 			switch {
+			case tc.expInternalServerError:
+				assert.Equal(t, http.StatusInternalServerError, resp.StatusCode)
+				assert.Equal(t, "internal server error\n", string(body))
 			case tc.expBadRequest != "":
 				assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 				assert.Equal(t, fmt.Sprintf("%s\n", tc.expBadRequest), string(body))
+			case tc.expConflict != "":
+				assert.Equal(t, http.StatusConflict, resp.StatusCode)
+				assert.Equal(t, fmt.Sprintf("%s\n", tc.expConflict), string(body))
 			default:
 				assert.Equal(t, http.StatusOK, resp.StatusCode)
 				assert.Empty(t, string(body))
@@ -159,7 +383,7 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 func TestMultitenantCompactor_UploadBlockFile(t *testing.T) {
 	const tenantID = "test"
 	blockID := ulid.MustParse("01G3FZ0JWJYJC0ZM6Y9778P6KD")
-	uploadingMetaPath := path.Join(tenantID, blockID.String(), "uploading-meta.json")
+	uploadingMetaPath := path.Join(tenantID, blockID.String(), fmt.Sprintf("uploading-%s", block.MetaFilename))
 
 	t.Run("without block ID", func(t *testing.T) {
 		c := &MultitenantCompactor{
@@ -290,7 +514,7 @@ func TestMultitenantCompactor_UploadBlockFile(t *testing.T) {
 func TestMultitenantCompactor_HandleBlockUpload_Complete(t *testing.T) {
 	const tenantID = "test"
 	blockID := ulid.MustParse("01G3FZ0JWJYJC0ZM6Y9778P6KD")
-	uploadingMetaPath := path.Join(tenantID, blockID.String(), "uploading-meta.json")
+	uploadingMetaPath := path.Join(tenantID, blockID.String(), fmt.Sprintf("uploading-%s", block.MetaFilename))
 
 	t.Run("without tenant ID", func(t *testing.T) {
 		c := &MultitenantCompactor{
