@@ -110,4 +110,10 @@
 
   compactor_statefulset:
     $.newCompactorStatefulSet('compactor', $.compactor_container),
+
+  compactor_service:
+    local service = $.core.v1.service;
+
+    $.util.serviceFor($.compactor_statefulset, $._config.service_ignored_labels) +
+    service.mixin.spec.withClusterIp('None'),
 }

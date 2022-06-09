@@ -58,7 +58,7 @@ var (
 	ReasonRateLimited = "rate_limited" // same for request and ingestion which are separate errors, so not using metricReasonFromErrorID with global error
 
 	// ReasonTooManyHAClusters is one of the reasons for discarding samples.
-	ReasonTooManyHAClusters = metricReasonFromErrorID(globalerror.TooManyHAClusters)
+	ReasonTooManyHAClusters = "too_many_ha_clusters"
 )
 
 func metricReasonFromErrorID(id globalerror.ID) string {

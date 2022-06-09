@@ -8,7 +8,6 @@ package ruler
 import (
 	"context"
 	"errors"
-	"net/http"
 	"time"
 
 	"github.com/go-kit/log"
@@ -151,9 +150,9 @@ func MetricsQueryFunc(qf rules.QueryFunc, queries, failedQueries prometheus.Coun
 			return result, origErr
 
 		} else if err != nil {
-			// When remote querier enabled, only consider failed queries those returning a 500 status code.
+			// When remote querier enabled, only consider failed queries those returning a 5xx status code.
 			st, ok := status.FromError(err)
-			if ok && st.Code() == http.StatusInternalServerError {
+			if ok && st.Code()/100 == 5 {
 				failedQueries.Inc()
 			}
 		}

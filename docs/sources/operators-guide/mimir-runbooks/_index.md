@@ -1372,7 +1372,7 @@ How to **fix** it:
 
 - Increase the per-tenant limit by using the `-distributor.ingestion-rate-limit` (samples per second) and `-distributor.ingestion-burst-size` (number of samples) options (or `ingestion_rate` and `ingestion_burst_size` in the runtime configuration). The configurable burst represents how many samples, exemplars and metadata can temporarily exceed the limit, in case of short traffic peaks. The configured burst size must be greater or equal than the configured limit.
 
-### err-mimir-too-many-ha-clusters
+### err-mimir-tenant-too-many-ha-clusters
 
 This error occurs when a distributor rejects a write request because the number of [high-availability (HA) clusters]({{< relref "../configuring/configuring-high-availability-deduplication.md" >}}) has hit the configured limit for this tenant.
 

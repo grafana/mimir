@@ -22,10 +22,10 @@ const (
 
 var (
 	// We don't include values in the message to avoid leaking Mimir cluster configuration to users.
-	errMaxIngestionRateReached    = errors.New(globalerror.IngesterMaxIngestionRate.MessageWithLimitConfig(maxIngestionRateFlag, "the write request has been rejected because the ingester exceeded the samples ingestion rate limit"))
-	errMaxTenantsReached          = errors.New(globalerror.IngesterMaxTenants.MessageWithLimitConfig(maxInMemoryTenantsFlag, "the write request has been rejected because the ingester exceeded the allowed number of tenants"))
-	errMaxInMemorySeriesReached   = errors.New(globalerror.IngesterMaxInMemorySeries.MessageWithLimitConfig(maxInMemorySeriesFlag, "the write request has been rejected because the ingester exceeded the allowed number of in-memory series"))
-	errMaxInflightRequestsReached = errors.New(globalerror.IngesterMaxInflightPushRequests.MessageWithLimitConfig(maxInflightPushRequestsFlag, "the write request has been rejected because the ingester exceeded the allowed number of inflight push requests"))
+	errMaxIngestionRateReached    = errors.New(globalerror.IngesterMaxIngestionRate.MessageWithLimitConfig("the write request has been rejected because the ingester exceeded the samples ingestion rate limit", maxIngestionRateFlag))
+	errMaxTenantsReached          = errors.New(globalerror.IngesterMaxTenants.MessageWithLimitConfig("the write request has been rejected because the ingester exceeded the allowed number of tenants", maxInMemoryTenantsFlag))
+	errMaxInMemorySeriesReached   = errors.New(globalerror.IngesterMaxInMemorySeries.MessageWithLimitConfig("the write request has been rejected because the ingester exceeded the allowed number of in-memory series", maxInMemorySeriesFlag))
+	errMaxInflightRequestsReached = errors.New(globalerror.IngesterMaxInflightPushRequests.MessageWithLimitConfig("the write request has been rejected because the ingester exceeded the allowed number of inflight push requests", maxInflightPushRequestsFlag))
 )
 
 // InstanceLimits describes limits used by ingester. Reaching any of these will result in Push method to return
