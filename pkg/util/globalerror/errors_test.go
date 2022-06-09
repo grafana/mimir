@@ -16,28 +16,21 @@ func TestID_Message(t *testing.T) {
 }
 
 func TestID_MessageWithLimitConfig(t *testing.T) {
-	assert.Equal(
-		t,
-		"an error (err-mimir-missing-metric-name). You can adjust the related per-tenant limit by configuring -my-flag, or by contacting your service administrator.",
-		MissingMetricName.MessageWithLimitConfig("my-flag", "an error"))
-}
-
-func TestID_MessageWithLimitConfigs(t *testing.T) {
 	for _, tc := range []struct {
 		actual   string
 		expected string
 	}{
 		{
 			actual:   "an error (err-mimir-missing-metric-name). You can adjust the related per-tenant limit by configuring -my-flag1, or by contacting your service administrator.",
-			expected: MissingMetricName.MessageWithLimitConfigs("an error", "my-flag1"),
+			expected: MissingMetricName.MessageWithLimitConfig("an error", "my-flag1"),
 		},
 		{
 			actual:   "an error (err-mimir-missing-metric-name). You can adjust the related per-tenant limits by configuring -my-flag1 and -my-flag2, or by contacting your service administrator.",
-			expected: MissingMetricName.MessageWithLimitConfigs("an error", "my-flag1", "my-flag2"),
+			expected: MissingMetricName.MessageWithLimitConfig("an error", "my-flag1", "my-flag2"),
 		},
 		{
 			actual:   "an error (err-mimir-missing-metric-name). You can adjust the related per-tenant limits by configuring -my-flag1, -my-flag2 and -my-flag3, or by contacting your service administrator.",
-			expected: MissingMetricName.MessageWithLimitConfigs("an error", "my-flag1", "my-flag2", "my-flag3"),
+			expected: MissingMetricName.MessageWithLimitConfig("an error", "my-flag1", "my-flag2", "my-flag3"),
 		},
 	} {
 		assert.Equal(t, tc.actual, tc.expected)

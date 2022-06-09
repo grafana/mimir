@@ -65,8 +65,8 @@ const (
 
 var (
 	maxChunksPerQueryLimitMsgFormat = globalerror.MaxChunksPerQuery.MessageWithLimitConfig(
-		validation.MaxChunksPerQueryFlag,
 		"the query exceeded the maximum number of chunks fetched from store-gateways when querying '%s' (limit: %d)",
+		validation.MaxChunksPerQueryFlag,
 	)
 )
 

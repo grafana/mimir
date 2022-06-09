@@ -117,8 +117,8 @@ func (l *Limiter) formatMaxSeriesPerUserError(userID string) error {
 	globalLimit := l.limits.MaxGlobalSeriesPerUser(userID)
 
 	return errors.New(globalerror.MaxSeriesPerUser.MessageWithLimitConfig(
-		validation.MaxSeriesPerUserFlag,
 		fmt.Sprintf("per-user series limit of %d exceeded", globalLimit),
+		validation.MaxSeriesPerUserFlag,
 	))
 }
 
@@ -126,8 +126,8 @@ func (l *Limiter) formatMaxSeriesPerMetricError(userID string) error {
 	globalLimit := l.limits.MaxGlobalSeriesPerMetric(userID)
 
 	return errors.New(globalerror.MaxSeriesPerMetric.MessageWithLimitConfig(
-		validation.MaxSeriesPerMetricFlag,
 		fmt.Sprintf("per-metric series limit of %d exceeded", globalLimit),
+		validation.MaxSeriesPerMetricFlag,
 	))
 }
 
@@ -135,8 +135,8 @@ func (l *Limiter) formatMaxMetadataPerUserError(userID string) error {
 	globalLimit := l.limits.MaxGlobalMetricsWithMetadataPerUser(userID)
 
 	return errors.New(globalerror.MaxMetadataPerUser.MessageWithLimitConfig(
-		validation.MaxMetadataPerUserFlag,
 		fmt.Sprintf("per-user metric metadata limit of %d exceeded", globalLimit),
+		validation.MaxMetadataPerUserFlag,
 	))
 }
 
@@ -144,8 +144,8 @@ func (l *Limiter) formatMaxMetadataPerMetricError(userID string) error {
 	globalLimit := l.limits.MaxGlobalMetadataPerMetric(userID)
 
 	return errors.New(globalerror.MaxMetadataPerMetric.MessageWithLimitConfig(
-		validation.MaxMetadataPerMetricFlag,
 		fmt.Sprintf("per-metric metadata limit of %d exceeded", globalLimit),
+		validation.MaxMetadataPerMetricFlag,
 	))
 }
 
