@@ -400,132 +400,121 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 // Test MultitenantCompactor.UploadBlockFile.
 func TestMultitenantCompactor_UploadBlockFile(t *testing.T) {
 	const tenantID = "test"
-	blockID := ulid.MustParse("01G3FZ0JWJYJC0ZM6Y9778P6KD")
-	uploadingMetaPath := path.Join(tenantID, blockID.String(), fmt.Sprintf("uploading-%s", block.MetaFilename))
+	const blockID = "01G3FZ0JWJYJC0ZM6Y9778P6KD"
+	//uploadingMetaPath := path.Join(tenantID, blockID, fmt.Sprintf("uploading-%s", block.MetaFilename))
 
-	t.Run("without block ID", func(t *testing.T) {
-		c := &MultitenantCompactor{
-			logger: log.NewNopLogger(),
-		}
-		const pth = "chunks%2F000001"
-		r := httptest.NewRequest(http.MethodPost, fmt.Sprintf(
-			"/api/v1/upload/block/%s/files?path=%s", blockID, pth), nil)
-		r = mux.SetURLVars(r, map[string]string{"path": pth})
-		r = r.WithContext(user.InjectOrgID(r.Context(), tenantID))
-		w := httptest.NewRecorder()
-		c.UploadBlockFile(w, r)
+	testCases := []struct {
+		name          string
+		tenantID      string
+		blockID       string
+		path          string
+		body          string
+		expBadRequest string
+	}{
+		{
+			name:          "without block ID",
+			tenantID:      tenantID,
+			path:          "chunks%2F000001",
+			expBadRequest: "invalid block ID",
+		},
+		{
+			name:          "without path",
+			tenantID:      tenantID,
+			blockID:       blockID,
+			expBadRequest: "missing or invalid file path",
+		},
+		{
+			name:          "invalid path",
+			tenantID:      tenantID,
+			blockID:       blockID,
+			path:          "..%2Fchunks%2F000001",
+			expBadRequest: `invalid path: "../chunks/000001"`,
+		},
+		{
+			name:          "empty file",
+			tenantID:      tenantID,
+			blockID:       blockID,
+			path:          "chunks%2F000001",
+			expBadRequest: "file cannot be empty",
+		},
+		{
+			name:          "attempt block metadata file",
+			tenantID:      tenantID,
+			blockID:       blockID,
+			path:          block.MetaFilename,
+			body:          "content",
+			expBadRequest: fmt.Sprintf("%s is not allowed", block.MetaFilename),
+		},
+		{
+			name:     "valid request",
+			tenantID: tenantID,
+			blockID:  blockID,
+			path:     "chunks%2F000001",
+			body:     "content",
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := &MultitenantCompactor{
+				logger: log.NewNopLogger(),
+			}
+			var rdr io.Reader
+			if tc.body != "" {
+				rdr = bytes.NewReader([]byte(tc.body))
+			}
+			r := httptest.NewRequest(http.MethodPost, fmt.Sprintf(
+				"/api/v1/upload/block/%s/files?path=%s", blockID, tc.path), rdr)
+			urlVars := map[string]string{}
+			if tc.blockID != "" {
+				urlVars["block"] = tc.blockID
+			}
+			t.Log("setting urlVars", urlVars)
+			r = mux.SetURLVars(r, urlVars)
+			r = r.WithContext(user.InjectOrgID(r.Context(), tenantID))
+			w := httptest.NewRecorder()
+			c.UploadBlockFile(w, r)
 
-		resp := w.Result()
-		body, err := io.ReadAll(resp.Body)
-		require.NoError(t, err)
+			resp := w.Result()
+			body, err := io.ReadAll(resp.Body)
+			require.NoError(t, err)
 
-		assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
-		assert.Equal(t, "invalid block ID\n", string(body))
-	})
+			switch {
+			case tc.expBadRequest != "":
+				assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+				assert.Equal(t, fmt.Sprintf("%s\n", tc.expBadRequest), string(body))
+			default:
+				assert.Equal(t, http.StatusOK, resp.StatusCode)
+				assert.Empty(t, body)
+			}
+		})
+	}
 
-	t.Run("without path", func(t *testing.T) {
-		c := &MultitenantCompactor{
-			logger: log.NewNopLogger(),
-		}
-		r := httptest.NewRequest(http.MethodPost, fmt.Sprintf(
-			"/api/v1/upload/block/%s/files", blockID), nil)
-		r = mux.SetURLVars(r, map[string]string{"block": blockID.String()})
-		r = r.WithContext(user.InjectOrgID(r.Context(), tenantID))
-		w := httptest.NewRecorder()
-		c.UploadBlockFile(w, r)
+	/*
+		t.Run("valid request", func(t *testing.T) {
+			var bkt bucket.ClientMock
+			expPath := path.Join(tenantID, blockID, "chunks/000001")
+			bkt.MockUpload(expPath, nil)
+			bkt.MockExists(uploadingMetaPath, true, nil)
+			bkt.MockExists(path.Join(tenantID, blockID, block.MetaFilename), false, nil)
+			c := &MultitenantCompactor{
+				logger:       log.NewNopLogger(),
+				bucketClient: &bkt,
+			}
+			const pth = "chunks%2F000001"
+			buf := bytes.NewBuffer([]byte("content"))
+			r := httptest.NewRequest(http.MethodPost, fmt.Sprintf(
+				"/api/v1/upload/block/%s/files?path=%s", blockID, pth), buf)
+			r = mux.SetURLVars(r, map[string]string{"block": blockID, "path": pth})
+			r = r.WithContext(user.InjectOrgID(r.Context(), tenantID))
+			w := httptest.NewRecorder()
+			c.UploadBlockFile(w, r)
 
-		resp := w.Result()
-		body, err := io.ReadAll(resp.Body)
-		require.NoError(t, err)
+			resp := w.Result()
 
-		assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
-		assert.Equal(t, "missing or invalid file path\n", string(body))
-	})
-
-	t.Run("bad path", func(t *testing.T) {
-		c := &MultitenantCompactor{
-			logger: log.NewNopLogger(),
-		}
-		const pth = "..%2Fchunks%2F000001"
-		r := httptest.NewRequest(http.MethodPost, fmt.Sprintf(
-			"/api/v1/upload/block/%s/files?path=%s", blockID, pth), nil)
-		r = mux.SetURLVars(r, map[string]string{"block": blockID.String(), "path": pth})
-		r = r.WithContext(user.InjectOrgID(r.Context(), tenantID))
-		w := httptest.NewRecorder()
-		c.UploadBlockFile(w, r)
-
-		resp := w.Result()
-		body, err := io.ReadAll(resp.Body)
-		require.NoError(t, err)
-
-		assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
-		assert.Equal(t, "invalid path: \"../chunks/000001\"\n", string(body))
-	})
-
-	t.Run("empty file", func(t *testing.T) {
-		c := &MultitenantCompactor{
-			logger: log.NewNopLogger(),
-		}
-		const pth = "chunks%2F000001"
-		r := httptest.NewRequest(http.MethodPost, fmt.Sprintf(
-			"/api/v1/upload/block/%s/files?path=%s", blockID, pth), nil)
-		r = mux.SetURLVars(r, map[string]string{"block": blockID.String(), "path": pth})
-		r = r.WithContext(user.InjectOrgID(r.Context(), tenantID))
-		w := httptest.NewRecorder()
-		c.UploadBlockFile(w, r)
-
-		resp := w.Result()
-		body, err := io.ReadAll(resp.Body)
-		require.NoError(t, err)
-
-		assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
-		assert.Equal(t, "file cannot be empty\n", string(body))
-	})
-
-	t.Run("attempt block metadata file", func(t *testing.T) {
-		c := &MultitenantCompactor{
-			logger: log.NewNopLogger(),
-		}
-		buf := bytes.NewBuffer([]byte("content"))
-		r := httptest.NewRequest(http.MethodPost, fmt.Sprintf(
-			"/api/v1/upload/block/%s/files?path=%s", blockID, block.MetaFilename), buf)
-		r = mux.SetURLVars(r, map[string]string{"block": blockID.String(), "path": block.MetaFilename})
-		r = r.WithContext(user.InjectOrgID(r.Context(), tenantID))
-		w := httptest.NewRecorder()
-		c.UploadBlockFile(w, r)
-
-		resp := w.Result()
-		body, err := io.ReadAll(resp.Body)
-		require.NoError(t, err)
-
-		assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
-		assert.Equal(t, fmt.Sprintf("%s is not allowed\n", block.MetaFilename), string(body))
-	})
-
-	t.Run("valid request", func(t *testing.T) {
-		var bkt bucket.ClientMock
-		expPath := path.Join(tenantID, blockID.String(), "chunks/000001")
-		bkt.MockUpload(expPath, nil)
-		bkt.MockExists(uploadingMetaPath, true, nil)
-		bkt.MockExists(path.Join(tenantID, blockID.String(), block.MetaFilename), false, nil)
-		c := &MultitenantCompactor{
-			logger:       log.NewNopLogger(),
-			bucketClient: &bkt,
-		}
-		const pth = "chunks%2F000001"
-		buf := bytes.NewBuffer([]byte("content"))
-		r := httptest.NewRequest(http.MethodPost, fmt.Sprintf(
-			"/api/v1/upload/block/%s/files?path=%s", blockID, pth), buf)
-		r = mux.SetURLVars(r, map[string]string{"block": blockID.String(), "path": pth})
-		r = r.WithContext(user.InjectOrgID(r.Context(), tenantID))
-		w := httptest.NewRecorder()
-		c.UploadBlockFile(w, r)
-
-		resp := w.Result()
-
-		assert.Equal(t, http.StatusOK, resp.StatusCode)
-		bkt.AssertExpectations(t)
-	})
+			assert.Equal(t, http.StatusOK, resp.StatusCode)
+			bkt.AssertExpectations(t)
+		})
+	*/
 }
 
 // Test MultitenantCompactor.HandleBlockUpload with uploadComplete=true.
