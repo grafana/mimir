@@ -318,6 +318,7 @@ There is a category of errors that is more important: errors due to failure to r
 How to **fix** it:
 
 - Investigate the ruler logs to find out the reason why ruler cannot evaluate queries. Note that ruler logs rule evaluation errors even for "user errors", but those are not causing the alert to fire. Focus on problems with ingesters or store-gateways.
+- In case remote operational mode is enabled the problem could be at any of the ruler query path components (ruler-query-frontend, ruler-query-scheduler and ruler-querier). Check the `Mimir / Remote ruler reads` and `Mimir / Remote ruler reads resources` dashboards to find out in which Mimir service the error is being originated.
 
 ### MimirRulerMissedEvaluations
 
@@ -1344,6 +1345,46 @@ This time period is what Grafana Mimir calls the _query time range length_ (or _
 Mimir has a limit on the query length.
 This limit is applied to partial queries, after they've split (according to time) by the query-frontend. This limit protects the system’s stability from potential abuse or mistakes.
 To configure the limit on a per-tenant basis, use the `-store.max-query-length` option (or `max_query_length` in the runtime configuration).
+
+### err-mimir-tenant-max-request-rate
+
+This error occurs when the rate of write requests per second is exceeded for this tenant.
+
+How it **works**:
+
+- There is a per-tenant rate limit on the write requests per second, and it's applied across all distributors for this tenant.
+- The limit is implemented using [token buckets](https://en.wikipedia.org/wiki/Token_bucket).
+
+How to **fix** it:
+
+- Increase the per-tenant limit by using the `-distributor.request-rate-limit` (requests per second) and `-distributor.request-burst-size` (number of requests) options (or `request_rate` and `request_burst_size` in the runtime configuration). The configurable burst represents how many requests can temporarily exceed the limit, in case of short traffic peaks. The configured burst size must be greater or equal than the configured limit.
+
+### err-mimir-tenant-max-ingestion-rate
+
+This error occurs when the rate of received samples, exemplars and metadata per second is exceeded for this tenant.
+
+How it **works**:
+
+- There is a per-tenant rate limit on the samples, exemplars and metadata that can be ingested per second, and it's applied across all distributors for this tenant.
+- The limit is implemented using [token buckets](https://en.wikipedia.org/wiki/Token_bucket).
+
+How to **fix** it:
+
+- Increase the per-tenant limit by using the `-distributor.ingestion-rate-limit` (samples per second) and `-distributor.ingestion-burst-size` (number of samples) options (or `ingestion_rate` and `ingestion_burst_size` in the runtime configuration). The configurable burst represents how many samples, exemplars and metadata can temporarily exceed the limit, in case of short traffic peaks. The configured burst size must be greater or equal than the configured limit.
+
+### err-mimir-tenant-too-many-ha-clusters
+
+This error occurs when a distributor rejects a write request because the number of [high-availability (HA) clusters]({{< relref "../configuring/configuring-high-availability-deduplication.md" >}}) has hit the configured limit for this tenant.
+
+How it **works**:
+
+- The distributor implements an upper limit on the number of clusters that the HA tracker will keep track of for a single tenant.
+- It is triggered when the write request would add a new cluster while the number the tenant currently has is already equal to the limit.
+- To configure the limit, set the `-distributor.ha-tracker.max-clusters` option (or `ha_max_clusters` in the runtime configuration).
+
+How to **fix** it:
+
+- Increase the per-tenant limit by using the `-distributor.ha-tracker.max-clusters` option (or `ha_max_clusters` in the runtime configuration).
 
 ## Mimir routes by path
 

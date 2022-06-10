@@ -34,8 +34,8 @@ func (e genericValidationError) Error() string {
 }
 
 var labelNameTooLongMsgFormat = globalerror.SeriesLabelNameTooLong.MessageWithLimitConfig(
-	maxLabelNameLengthFlag,
-	"received a series whose label name length exceeds the limit, label: '%.200s' series: '%.200s'")
+	"received a series whose label name length exceeds the limit, label: '%.200s' series: '%.200s'",
+	maxLabelNameLengthFlag)
 
 func newLabelNameTooLongError(series []mimirpb.LabelAdapter, labelName string) ValidationError {
 	return genericValidationError{
@@ -54,8 +54,8 @@ type labelValueTooLongError struct {
 
 func (e labelValueTooLongError) Error() string {
 	return globalerror.SeriesLabelValueTooLong.MessageWithLimitConfig(
-		maxLabelValueLengthFlag,
-		fmt.Sprintf("received a series whose label value length exceeds the limit, value: '%.200s' (truncated) series: '%.200s'", e.labelValue, formatLabelSet(e.series)))
+		fmt.Sprintf("received a series whose label value length exceeds the limit, value: '%.200s' (truncated) series: '%.200s'", e.labelValue, formatLabelSet(e.series)),
+		maxLabelValueLengthFlag)
 }
 
 func newLabelValueTooLongError(series []mimirpb.LabelAdapter, labelValue string) ValidationError {
@@ -112,8 +112,8 @@ func newTooManyLabelsError(series []mimirpb.LabelAdapter, limit int) ValidationE
 
 func (e tooManyLabelsError) Error() string {
 	return globalerror.MaxLabelNamesPerSeries.MessageWithLimitConfig(
-		maxLabelNamesPerSeriesFlag,
-		fmt.Sprintf("received a series whose number of labels exceeds the limit (actual: %d, limit: %d) series: '%.200s'", len(e.series), e.limit, mimirpb.FromLabelAdaptersToMetric(e.series).String()))
+		fmt.Sprintf("received a series whose number of labels exceeds the limit (actual: %d, limit: %d) series: '%.200s'", len(e.series), e.limit, mimirpb.FromLabelAdaptersToMetric(e.series).String()),
+		maxLabelNamesPerSeriesFlag)
 }
 
 type noMetricNameError struct{}
@@ -152,8 +152,8 @@ func (e sampleValidationError) Error() string {
 }
 
 var sampleTimestampTooNewMsgFormat = globalerror.SampleTooFarInFuture.MessageWithLimitConfig(
-	creationGracePeriodFlag,
-	"received a sample whose timestamp is too far in the future, timestamp: %d series: '%.200s'")
+	"received a sample whose timestamp is too far in the future, timestamp: %d series: '%.200s'",
+	creationGracePeriodFlag)
 
 func newSampleTimestampTooNewError(metricName string, timestamp int64) ValidationError {
 	return sampleValidationError{
@@ -233,9 +233,9 @@ func (e metadataValidationError) Error() string {
 }
 
 var metadataMetricNameTooLongMsgFormat = globalerror.MetricMetadataMetricNameTooLong.MessageWithLimitConfig(
-	maxMetadataLengthFlag,
 	// When formatting this error the "cause" will always be an empty string.
-	"received a metric metadata whose metric name length exceeds the limit, metric name: '%.200[2]s'")
+	"received a metric metadata whose metric name length exceeds the limit, metric name: '%.200[2]s'",
+	maxMetadataLengthFlag)
 
 func newMetadataMetricNameTooLongError(metadata *mimirpb.MetricMetadata) ValidationError {
 	return metadataValidationError{
@@ -246,8 +246,8 @@ func newMetadataMetricNameTooLongError(metadata *mimirpb.MetricMetadata) Validat
 }
 
 var metadataHelpTooLongMsgFormat = globalerror.MetricMetadataHelpTooLong.MessageWithLimitConfig(
-	maxMetadataLengthFlag,
-	"received a metric metadata whose help description length exceeds the limit, help: '%.200s' metric name: '%.200s'")
+	"received a metric metadata whose help description length exceeds the limit, help: '%.200s' metric name: '%.200s'",
+	maxMetadataLengthFlag)
 
 func newMetadataHelpTooLongError(metadata *mimirpb.MetricMetadata) ValidationError {
 	return metadataValidationError{
@@ -258,8 +258,8 @@ func newMetadataHelpTooLongError(metadata *mimirpb.MetricMetadata) ValidationErr
 }
 
 var metadataUnitTooLongMsgFormat = globalerror.MetricMetadataUnitTooLong.MessageWithLimitConfig(
-	maxMetadataLengthFlag,
-	"received a metric metadata whose unit name length exceeds the limit, unit: '%.200s' metric name: '%.200s'")
+	"received a metric metadata whose unit name length exceeds the limit, unit: '%.200s' metric name: '%.200s'",
+	maxMetadataLengthFlag)
 
 func newMetadataUnitTooLongError(metadata *mimirpb.MetricMetadata) ValidationError {
 	return metadataValidationError{
@@ -271,8 +271,20 @@ func newMetadataUnitTooLongError(metadata *mimirpb.MetricMetadata) ValidationErr
 
 func NewMaxQueryLengthError(actualQueryLen, maxQueryLength time.Duration) LimitError {
 	return LimitError(globalerror.MaxQueryLength.MessageWithLimitConfig(
-		maxQueryLengthFlag,
-		fmt.Sprintf("the query time range exceeds the limit (query length: %s, limit: %s)", actualQueryLen, maxQueryLength)))
+		fmt.Sprintf("the query time range exceeds the limit (query length: %s, limit: %s)", actualQueryLen, maxQueryLength),
+		maxQueryLengthFlag))
+}
+
+func NewRequestRateLimitedError(limit float64, burst int) LimitError {
+	return LimitError(globalerror.RequestRateLimited.MessageWithLimitConfig(
+		fmt.Sprintf("the request has been rejected because the tenant exceeded the request rate limit, set to %v req/s with a maximum allowed burst of %d", limit, burst),
+		requestRateFlag, requestBurstSizeFlag))
+}
+
+func NewIngestionRateLimitedError(limit float64, burst, numSamples, numExemplars, numMetadata int) LimitError {
+	return LimitError(globalerror.IngestionRateLimited.MessageWithLimitConfig(
+		fmt.Sprintf("the request has been rejected because the tenant exceeded the ingestion rate limit, set to %v items/s with a maximum allowed burst of %d, while adding %d samples, %d exemplars and %d metadata", limit, burst, numSamples, numExemplars, numMetadata),
+		ingestionRateFlag, ingestionBurstSizeFlag))
 }
 
 // formatLabelSet formats label adapters as a metric name with labels, while preserving

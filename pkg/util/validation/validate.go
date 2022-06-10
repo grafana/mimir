@@ -24,13 +24,6 @@ import (
 const (
 	discardReasonLabel = "reason"
 
-	// RateLimited is one of the values for the reason to discard samples.
-	// Declared here to avoid duplication in ingester and distributor.
-	RateLimited = "rate_limited"
-
-	// Too many HA clusters is one of the reasons for discarding samples.
-	TooManyHAClusters = "too_many_ha_clusters"
-
 	// The combined length of the label names and values of an Exemplar's LabelSet MUST NOT exceed 128 UTF-8 characters
 	// https://github.com/OpenObservability/OpenMetrics/blob/main/specification/OpenMetrics.md#exemplars
 	ExemplarMaxLabelSetLength = 128
@@ -59,6 +52,13 @@ var (
 	reasonMetadataMetricNameTooLong = metricReasonFromErrorID(globalerror.MetricMetadataMetricNameTooLong)
 	reasonMetadataHelpTooLong       = metricReasonFromErrorID(globalerror.MetricMetadataHelpTooLong)
 	reasonMetadataUnitTooLong       = metricReasonFromErrorID(globalerror.MetricMetadataUnitTooLong)
+
+	// ReasonRateLimited is one of the values for the reason to discard samples.
+	// Declared here to avoid duplication in ingester and distributor.
+	ReasonRateLimited = "rate_limited" // same for request and ingestion which are separate errors, so not using metricReasonFromErrorID with global error
+
+	// ReasonTooManyHAClusters is one of the reasons for discarding samples.
+	ReasonTooManyHAClusters = "too_many_ha_clusters"
 )
 
 func metricReasonFromErrorID(id globalerror.ID) string {

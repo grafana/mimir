@@ -25,16 +25,16 @@ type queryLimiterCtxKey struct{}
 var (
 	ctxKey                = &queryLimiterCtxKey{}
 	MaxSeriesHitMsgFormat = globalerror.MaxSeriesPerQuery.MessageWithLimitConfig(
-		validation.MaxSeriesPerQueryFlag,
 		"the query exceeded the maximum number of series (limit: %d series)",
+		validation.MaxSeriesPerQueryFlag,
 	)
 	MaxChunkBytesHitMsgFormat = globalerror.MaxChunkBytesPerQuery.MessageWithLimitConfig(
-		validation.MaxChunkBytesPerQueryFlag,
 		"the query exceeded the aggregated chunks size limit (limit: %d bytes)",
+		validation.MaxChunkBytesPerQueryFlag,
 	)
 	MaxChunksPerQueryLimitMsgFormat = globalerror.MaxChunksPerQuery.MessageWithLimitConfig(
-		validation.MaxChunksPerQueryFlag,
 		"the query exceeded the maximum number of chunks (limit: %d chunks)",
+		validation.MaxChunksPerQueryFlag,
 	)
 )
 

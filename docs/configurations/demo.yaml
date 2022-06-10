@@ -31,9 +31,9 @@ ingester:
     replication_factor: 1
 
 ruler_storage:
-  backend: local
-  local:
-    directory: /tmp/mimir/rules
+  backend: filesystem
+  filesystem:
+    dir: /tmp/mimir/rules
 
 server:
   http_listen_port: 9009

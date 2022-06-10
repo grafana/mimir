@@ -530,12 +530,15 @@ func (t *Mimir) readyHandler(sm *services.Manager) http.HandlerFunc {
 			msg := bytes.Buffer{}
 			msg.WriteString("Some services are not Running:\n")
 
-			byState := sm.ServicesByState()
-			for st, ls := range byState {
-				msg.WriteString(fmt.Sprintf("%v: %d\n", st, len(ls)))
+			for name, s := range t.ServiceMap {
+				if s.State() != services.Running {
+					msg.WriteString(fmt.Sprintf("%s: %s\n", name, s.State()))
+				}
 			}
 
-			http.Error(w, msg.String(), http.StatusServiceUnavailable)
+			strMsg := msg.String()
+			level.Debug(util_log.Logger).Log(strMsg)
+			http.Error(w, strMsg, http.StatusServiceUnavailable)
 			return
 		}
 

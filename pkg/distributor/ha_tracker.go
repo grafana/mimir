@@ -27,6 +27,8 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/globalerror"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 var (
@@ -528,7 +530,9 @@ type tooManyClustersError struct {
 }
 
 func (e tooManyClustersError) Error() string {
-	return fmt.Sprintf("too many HA clusters (limit: %d)", e.limit)
+	return globalerror.TooManyHAClusters.MessageWithLimitConfig(
+		fmt.Sprintf("the write request has been rejected because the maximum number of high-availability (HA) clusters has been reached for this tenant (limit: %d)", e.limit),
+		validation.HATrackerMaxClustersFlag)
 }
 
 // Needed for errors.Is to work properly.
