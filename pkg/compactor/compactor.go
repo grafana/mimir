@@ -636,7 +636,12 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 	fetcherFilters := []block.MetadataFilter{
 		// Remove the ingester ID because we don't shard blocks anymore, while still
 		// honoring the shard ID if sharding was done in the past.
-		NewLabelRemoverFilter([]string{mimir_tsdb.IngesterIDExternalLabel}),
+		// Remove TenantID external label to make sure that we compact blocks with and without the label
+		// together.
+		NewLabelRemoverFilter([]string{
+			mimir_tsdb.DeprecatedTenantIDExternalLabel,
+			mimir_tsdb.DeprecatedIngesterIDExternalLabel,
+		}),
 		block.NewConsistencyDelayMetaFilter(ulogger, c.compactorCfg.ConsistencyDelay, reg),
 		excludeMarkedForDeletionFilter,
 		deduplicateBlocksFilter,

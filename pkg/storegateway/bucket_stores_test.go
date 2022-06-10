@@ -22,7 +22,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
-	"github.com/grafana/dskit/services"
 	"github.com/oklog/ulid"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -77,8 +76,6 @@ func TestBucketStores_InitialSync(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
 	stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bucket, defaultLimitsOverrides(t), mockLoggingLevel(), log.NewNopLogger(), reg)
 	require.NoError(t, err)
-	require.NoError(t, services.StartAndAwaitRunning(ctx, stores))
-	t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(ctx, stores)) })
 
 	// Query series before the initial sync.
 	for userID, metricName := range userToMetric {
@@ -156,8 +153,6 @@ func TestBucketStores_InitialSyncShouldRetryOnFailure(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
 	stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bucket, defaultLimitsOverrides(t), mockLoggingLevel(), log.NewNopLogger(), reg)
 	require.NoError(t, err)
-	require.NoError(t, services.StartAndAwaitRunning(ctx, stores))
-	t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(ctx, stores)) })
 
 	// Initial sync should succeed even if a transient error occurs.
 	require.NoError(t, stores.InitialSync(ctx))
@@ -219,8 +214,6 @@ func TestBucketStores_SyncBlocks(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
 	stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bucket, defaultLimitsOverrides(t), mockLoggingLevel(), log.NewNopLogger(), reg)
 	require.NoError(t, err)
-	require.NoError(t, services.StartAndAwaitRunning(ctx, stores))
-	t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(ctx, stores)) })
 
 	// Run an initial sync to discover 1 block.
 	generateStorageBlock(t, storageDir, userID, metricName, 10, 100, 15)
@@ -277,7 +270,6 @@ func TestBucketStores_syncUsersBlocks(t *testing.T) {
 	test.VerifyNoLeak(t)
 
 	allUsers := []string{"user-1", "user-2", "user-3"}
-	ctx := context.Background()
 
 	tests := map[string]struct {
 		shardingStrategy ShardingStrategy
@@ -290,7 +282,7 @@ func TestBucketStores_syncUsersBlocks(t *testing.T) {
 		"when sharding is enabled only stores for filtered users should be created": {
 			shardingStrategy: func() ShardingStrategy {
 				s := &mockShardingStrategy{}
-				s.On("FilterUsers", mock.Anything, allUsers).Return([]string{"user-1", "user-2"})
+				s.On("FilterUsers", mock.Anything, allUsers).Return([]string{"user-1", "user-2"}, nil)
 				return s
 			}(),
 			expectedStores: 2,
@@ -307,8 +299,6 @@ func TestBucketStores_syncUsersBlocks(t *testing.T) {
 
 			stores, err := NewBucketStores(cfg, testData.shardingStrategy, bucketClient, defaultLimitsOverrides(t), mockLoggingLevel(), log.NewNopLogger(), nil)
 			require.NoError(t, err)
-			require.NoError(t, services.StartAndAwaitRunning(ctx, stores))
-			t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(ctx, stores)) })
 
 			// Sync user stores and count the number of times the callback is called.
 			var storesCount atomic.Int32
@@ -354,8 +344,6 @@ func testBucketStoresSeriesShouldCorrectlyQuerySeriesSpanningMultipleChunks(t *t
 	reg := prometheus.NewPedanticRegistry()
 	stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bucket, defaultLimitsOverrides(t), mockLoggingLevel(), log.NewNopLogger(), reg)
 	require.NoError(t, err)
-	require.NoError(t, services.StartAndAwaitRunning(ctx, stores))
-	t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(ctx, stores)) })
 
 	require.NoError(t, stores.InitialSync(ctx))
 
@@ -443,9 +431,6 @@ func TestBucketStore_Series_ShouldQueryBlockWithOutOfOrderChunks(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
 	stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bucket, defaultLimitsOverrides(t), mockLoggingLevel(), log.NewNopLogger(), reg)
 	require.NoError(t, err)
-	require.NoError(t, services.StartAndAwaitRunning(ctx, stores))
-	t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(ctx, stores)) })
-
 	require.NoError(t, stores.InitialSync(ctx))
 
 	tests := map[string]struct {
@@ -588,7 +573,7 @@ func mockLoggingLevel() logging.Level {
 func setUserIDToGRPCContext(ctx context.Context, userID string) context.Context {
 	// We have to store it in the incoming metadata because we have to emulate the
 	// case it's coming from a gRPC request, while here we're running everything in-memory.
-	return metadata.NewIncomingContext(ctx, metadata.Pairs(mimir_tsdb.TenantIDExternalLabel, userID))
+	return metadata.NewIncomingContext(ctx, metadata.Pairs(GrpcContextMetadataTenantID, userID))
 }
 
 func TestBucketStores_deleteLocalFilesForExcludedTenants(t *testing.T) {
@@ -621,8 +606,6 @@ func TestBucketStores_deleteLocalFilesForExcludedTenants(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
 	stores, err := NewBucketStores(cfg, &sharding, bucket, defaultLimitsOverrides(t), mockLoggingLevel(), log.NewNopLogger(), reg)
 	require.NoError(t, err)
-	require.NoError(t, services.StartAndAwaitRunning(ctx, stores))
-	t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(ctx, stores)) })
 
 	// Perform sync.
 	sharding.users = []string{user1, user2}
@@ -713,8 +696,8 @@ type userShardingStrategy struct {
 	users []string
 }
 
-func (u *userShardingStrategy) FilterUsers(ctx context.Context, userIDs []string) []string {
-	return u.users
+func (u *userShardingStrategy) FilterUsers(ctx context.Context, userIDs []string) ([]string, error) {
+	return u.users, nil
 }
 
 func (u *userShardingStrategy) FilterBlocks(ctx context.Context, userID string, metas map[ulid.ULID]*thanos_metadata.Meta, loaded map[ulid.ULID]struct{}, synced *extprom.TxGaugeVec) error {
@@ -757,7 +740,7 @@ func BenchmarkBucketStoreLabelValues(tb *testing.B) {
 	series := generateSeries(card)
 	tb.Logf("Total %d series generated", len(series))
 
-	s := prepareStoreWithTestBlocksForSeries(tb, dir, bkt, false, NewChunksLimiterFactory(0), NewSeriesLimiterFactory(0), emptyRelabelConfig, allowAllFilterConf, series)
+	s := prepareStoreWithTestBlocksForSeries(tb, dir, bkt, false, NewChunksLimiterFactory(0), NewSeriesLimiterFactory(0), series)
 	mint, maxt := s.store.TimeRange()
 	assert.Equal(tb, s.minTime, mint)
 	assert.Equal(tb, s.maxTime, maxt)

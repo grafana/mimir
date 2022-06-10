@@ -43,8 +43,14 @@ Experimental configuration and flags are subject to change.
 
 The following features are currently experimental:
 
-- Ruler: Tenant federation
-- Distributor: Metrics relabeling
+- Ruler
+  - Tenant federation
+  - Use query-frontend for rule evaluation
+- Distributor
+  - Metrics relabeling
+  - Request rate limit
+    - `-distributor.request-rate-limit`
+    - `-distributor.request-burst-limit`
 - Purger: Tenant deletion API
 - Exemplar storage
   - `-ingester.max-global-exemplars-per-user`
@@ -76,6 +82,10 @@ The following features are currently experimental:
   - `-query-scheduler.querier-forget-delay`
 - Store-gateway
   - `-blocks-storage.bucket-store.index-header-thread-pool-size`
+- Blocks Storage, Alertmanager, and Ruler support for partitioning access to the same storage bucket
+  - `-alertmanager-storage.storage-prefix`
+  - `-blocks-storage.storage-prefix`
+  - `-ruler-storage.storage-prefix`
 
 ## Deprecated features
 

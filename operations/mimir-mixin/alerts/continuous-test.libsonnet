@@ -38,7 +38,7 @@
           // should have no "grace period" and alert as soon as the test fails.
           alert: $.alertName('ContinuousTestFailed'),
           expr: |||
-            sum by(%(alert_aggregation_labels)s, test) (rate(mimir_continuous_test_query_result_checks_failed_total[5m])) > 0
+            sum by(%(alert_aggregation_labels)s, test) (rate(mimir_continuous_test_query_result_checks_failed_total[10m])) > 0
           ||| % $._config,
           labels: {
             severity: 'warning',

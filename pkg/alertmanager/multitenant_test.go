@@ -165,11 +165,11 @@ func TestMultitenantAlertmanagerConfig_Validate(t *testing.T) {
 			},
 			expected: nil,
 		},
-		"should fail if new storage store configuration given with local type": {
+		"should succeed if new storage store configuration given with local type": {
 			setup: func(t *testing.T, cfg *MultitenantAlertmanagerConfig, storageCfg *alertstore.Config) {
 				storageCfg.Backend = "local"
 			},
-			expected: errShardingUnsupportedStorage,
+			expected: nil,
 		},
 		"should fail if zone aware is enabled but zone is not set": {
 			setup: func(t *testing.T, cfg *MultitenantAlertmanagerConfig, storageCfg *alertstore.Config) {
@@ -1968,6 +1968,37 @@ func TestSafeTemplateFilepath(t *testing.T) {
 			dir:         "/data/tenant",
 			template:    "../test.tmpl",
 			expectedErr: errors.New(`invalid template name "../test.tmpl": the template filepath is escaping the per-tenant local directory`),
+		},
+		"template name starting with /": {
+			dir:          "/tmp",
+			template:     "/file",
+			expectedErr:  nil,
+			expectedPath: "/tmp/file",
+		},
+		"escaping template name that has prefix of dir (tmp is prefix of tmpfile)": {
+			dir:         "/sub/tmp",
+			template:    "../tmpfile",
+			expectedErr: errors.New(`invalid template name "../tmpfile": the template filepath is escaping the per-tenant local directory`),
+		},
+		"empty template name": {
+			dir:         "/tmp",
+			template:    "",
+			expectedErr: errors.New(`invalid template name ""`),
+		},
+		"dot template name": {
+			dir:         "/tmp",
+			template:    ".",
+			expectedErr: errors.New(`invalid template name "."`),
+		},
+		"root dir": {
+			dir:          "/",
+			template:     "file",
+			expectedPath: "/file",
+		},
+		"root dir 2": {
+			dir:          "/",
+			template:     "/subdir/file",
+			expectedPath: "/subdir/file",
 		},
 	}
 

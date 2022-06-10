@@ -83,8 +83,6 @@
       'runtime-config.file': '%s/overrides.yaml' % $._config.overrides_configmap_mountpoint,
     },
 
-  // The compactor runs a statefulset with a single replica, because
-  // it does not support horizontal scalability yet.
   local compactor_data_pvc =
     pvc.new() +
     pvc.mixin.spec.resources.withRequests({ storage: $._config.compactor_data_disk_size }) +
@@ -106,23 +104,16 @@
     $.jaeger_mixin,
 
   newCompactorStatefulSet(name, container)::
-    statefulSet.new(name, 1, [container], compactor_data_pvc) +
-    statefulSet.mixin.spec.withServiceName(name) +
-    statefulSet.mixin.metadata.withNamespace($._config.namespace) +
-    statefulSet.mixin.metadata.withLabels({ name: name }) +
-    statefulSet.mixin.spec.template.metadata.withLabels({ name: name }) +
-    statefulSet.mixin.spec.selector.withMatchLabels({ name: name }) +
-    statefulSet.mixin.spec.template.spec.securityContext.withRunAsUser(0) +
-    statefulSet.mixin.spec.updateStrategy.withType('RollingUpdate') +
+    $.newMimirStatefulSet(name, 1, container, compactor_data_pvc) +
     statefulSet.mixin.spec.template.spec.withTerminationGracePeriodSeconds(900) +
-    (if !std.isObject($._config.node_selector) then {} else statefulSet.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector)) +
-    // Parallelly scale up/down compactor instances instead of starting them
-    // one by one. This does NOT affect rolling updates: they will continue to be
-    // rolled out one by one (the next pod will be rolled out once the previous is
-    // ready).
-    statefulSet.mixin.spec.withPodManagementPolicy('Parallel') +
     $.util.configVolumeMount($._config.overrides_configmap, $._config.overrides_configmap_mountpoint),
 
   compactor_statefulset:
     $.newCompactorStatefulSet('compactor', $.compactor_container),
+
+  compactor_service:
+    local service = $.core.v1.service;
+
+    $.util.serviceFor($.compactor_statefulset, $._config.service_ignored_labels) +
+    service.mixin.spec.withClusterIp('None'),
 }

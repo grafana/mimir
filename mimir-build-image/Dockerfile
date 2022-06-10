@@ -3,10 +3,10 @@
 # Provenance-includes-license: Apache-2.0
 # Provenance-includes-copyright: The Cortex Authors.
 
-FROM golang:1.17.8-buster
+FROM golang:1.17.8-bullseye
 ARG goproxyValue
 ENV GOPROXY=${goproxyValue}
-RUN apt-get update && apt-get install -y curl python-requests python-yaml file jq zip unzip protobuf-compiler libprotobuf-dev shellcheck libpcap-dev && \
+RUN apt-get update && apt-get install -y curl python3-requests python3-yaml file jq zip unzip protobuf-compiler libprotobuf-dev shellcheck libpcap-dev skopeo && \
 	rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 RUN go install golang.org/x/tools/cmd/goimports@3fce476f0a782aeb5034d592c189e63be4ba6c9e
 RUN curl -sL https://deb.nodesource.com/setup_14.x | bash -
@@ -45,6 +45,7 @@ RUN GO111MODULE=on \
 	go install github.com/monitoring-mixins/mixtool/cmd/mixtool@bca3066 && \
 	go install github.com/mikefarah/yq/v4@v4.13.4 && \
 	go install github.com/google/go-jsonnet/cmd/jsonnetfmt@v0.17.0 && \
+	go install github.com/norwoodj/helm-docs/cmd/helm-docs@v1.8.1 && \
 	rm -rf /go/pkg /go/src /root/.cache
 
 ENV NODE_PATH=/usr/lib/node_modules

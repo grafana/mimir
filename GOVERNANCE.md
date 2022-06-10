@@ -59,6 +59,7 @@ The current team members are:
 - Peter Štibraný — [@pstibrany](https://github.com/pstibrany) ([Grafana Labs](https://grafana.com/))
 - Steve Simpson - [@stevesg](https://github.com/stevesg) ([Grafana Labs](https://grafana.com/))
 - Tyler Reid — [@treid314](https://github.com/treid314) ([Grafana Labs](https://grafana.com/))
+- Patrick Oyarzun - [@Logiraptor](https://github.com/Logiraptor) ([Grafana Labs](https://grafana.com/))
 
 Previous team members:
 

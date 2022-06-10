@@ -3,7 +3,6 @@
 {
   local container = $.core.v1.container,
   local deployment = $.apps.v1.deployment,
-  local service = $.core.v1.service,
 
   query_scheduler_args+::
     $._config.grpcConfig
@@ -13,14 +12,17 @@
       'query-scheduler.max-outstanding-requests-per-tenant': 100,
     },
 
-  query_scheduler_container::
-    container.new('query-scheduler', $._images.query_scheduler) +
+  newQuerySchedulerContainer(name, args)::
+    container.new(name, $._images.query_scheduler) +
     container.withPorts($.util.defaultPorts) +
-    container.withArgsMixin($.util.mapToFlags($.query_scheduler_args)) +
+    container.withArgsMixin($.util.mapToFlags(args)) +
     $.jaeger_mixin +
     $.util.readinessProbe +
     $.util.resourcesRequests('2', '1Gi') +
     $.util.resourcesLimits(null, '2Gi'),
+
+  query_scheduler_container::
+    self.newQuerySchedulerContainer('query-scheduler', $.query_scheduler_args),
 
   newQuerySchedulerDeployment(name, container)::
     deployment.new(name, 2, [container]) +
@@ -37,20 +39,32 @@
   query_scheduler_service: if !$._config.query_scheduler_enabled then {} else
     $.util.serviceFor($.query_scheduler_deployment, $._config.service_ignored_labels),
 
+  local discoveryServiceName(prefix) = '%s-discovery' % prefix,
+
   // Headless to make sure resolution gets IP address of target pods, and not service IP.
+  newQuerySchedulerDiscoveryService(name, deployment)::
+    $.newMimirDiscoveryService(discoveryServiceName(name), deployment),
+
   query_scheduler_discovery_service: if !$._config.query_scheduler_enabled then {} else
-    $.util.serviceFor($.query_scheduler_deployment, $._config.service_ignored_labels) +
-    service.mixin.spec.withPublishNotReadyAddresses(true) +
-    service.mixin.spec.withClusterIp('None') +
-    service.mixin.metadata.withName('query-scheduler-discovery'),
+    self.newQuerySchedulerDiscoveryService('query-scheduler', $.query_scheduler_deployment),
 
   // Reconfigure querier and query-frontend to use scheduler.
-  querier_args+:: if !$._config.query_scheduler_enabled then {} else {
+
+  local querySchedulerAddress(name) =
+    '%s.%s.svc.cluster.local:9095' % [discoveryServiceName(name), $._config.namespace],
+
+  querierUseQuerySchedulerArgs(name):: {
     'querier.frontend-address': null,
-    'querier.scheduler-address': 'query-scheduler-discovery.%(namespace)s.svc.cluster.local:9095' % $._config,
+    'querier.scheduler-address': querySchedulerAddress(name),
   },
 
-  query_frontend_args+:: if !$._config.query_scheduler_enabled then {} else {
-    'query-frontend.scheduler-address': 'query-scheduler-discovery.%(namespace)s.svc.cluster.local:9095' % $._config,
+  queryFrontendUseQuerySchedulerArgs(name):: {
+    'query-frontend.scheduler-address': querySchedulerAddress(name),
   },
+
+  querier_args+:: if !$._config.query_scheduler_enabled then {} else
+    self.querierUseQuerySchedulerArgs('query-scheduler'),
+
+  query_frontend_args+:: if !$._config.query_scheduler_enabled then {} else
+    self.queryFrontendUseQuerySchedulerArgs('query-scheduler'),
 }

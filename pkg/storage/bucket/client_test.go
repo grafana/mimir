@@ -6,8 +6,11 @@
 package bucket
 
 import (
+	"bytes"
 	"context"
 	"io"
+	"os"
+	"path"
 	"sync"
 	"testing"
 
@@ -16,6 +19,7 @@ import (
 	"github.com/stretchr/testify/require"
 	yaml "gopkg.in/yaml.v2"
 
+	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
@@ -126,4 +130,106 @@ func TestClientMock_MockGet(t *testing.T) {
 	}
 
 	wg.Wait()
+}
+
+func TestClient_ConfigValidation(t *testing.T) {
+	testCases := []struct {
+		name          string
+		cfg           Config
+		expectedError error
+	}{
+		{
+			name: "valid storage_prefix",
+			cfg:  Config{Backend: Filesystem, StoragePrefix: "helloworld"},
+		},
+		{
+			name:          "storage_prefix non-alphanumeric characters",
+			cfg:           Config{Backend: Filesystem, StoragePrefix: "hello-world!"},
+			expectedError: ErrInvalidCharactersInStoragePrefix,
+		},
+		{
+			name:          "storage_prefix suffixed with a slash (non-alphanumeric)",
+			cfg:           Config{Backend: Filesystem, StoragePrefix: "helloworld/"},
+			expectedError: ErrInvalidCharactersInStoragePrefix,
+		},
+		{
+			name:          "storage_prefix that has some character strings that have a meaning in unix paths (..)",
+			cfg:           Config{Backend: Filesystem, StoragePrefix: ".."},
+			expectedError: ErrInvalidCharactersInStoragePrefix,
+		},
+		{
+			name:          "storage_prefix that has some character strings that have a meaning in unix paths (.)",
+			cfg:           Config{Backend: Filesystem, StoragePrefix: "."},
+			expectedError: ErrInvalidCharactersInStoragePrefix,
+		},
+		{
+			name:          "unsupported backend",
+			cfg:           Config{Backend: "flash drive"},
+			expectedError: ErrUnsupportedStorageBackend,
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			actualErr := tc.cfg.Validate()
+			assert.ErrorIs(t, actualErr, tc.expectedError)
+		})
+	}
+}
+
+func TestNewPrefixedBucketClient(t *testing.T) {
+	t.Run("with prefix", func(t *testing.T) {
+		ctx := context.Background()
+		tempDir := t.TempDir()
+		cfg := Config{
+			Backend:       Filesystem,
+			StoragePrefix: "prefix",
+			Filesystem: filesystem.Config{
+				Directory: tempDir,
+			},
+		}
+
+		client, err := NewClient(ctx, cfg, "test", util_log.Logger, nil)
+		require.NoError(t, err)
+
+		err = client.Upload(ctx, "file", bytes.NewBufferString("content"))
+		assert.NoError(t, err)
+
+		_, err = client.Get(ctx, "file")
+		assert.NoError(t, err)
+
+		filePath := path.Join(tempDir, "prefix", "file")
+		assert.FileExists(t, filePath)
+
+		b, err := os.ReadFile(filePath)
+		assert.NoError(t, err)
+		assert.Equal(t, "content", string(b))
+	})
+
+	t.Run("without prefix", func(t *testing.T) {
+		ctx := context.Background()
+		tempDir := t.TempDir()
+		cfg := Config{
+			Backend: Filesystem,
+			Filesystem: filesystem.Config{
+				Directory: tempDir,
+			},
+		}
+
+		client, err := NewClient(ctx, cfg, "test", util_log.Logger, nil)
+		require.NoError(t, err)
+		err = client.Upload(ctx, "file", bytes.NewBufferString("content"))
+		require.NoError(t, err)
+
+		_, err = client.Get(ctx, "file")
+		assert.NoError(t, err)
+
+		filePath := path.Join(tempDir, "file")
+		assert.FileExists(t, filePath)
+
+		b, err := os.ReadFile(filePath)
+		assert.NoError(t, err)
+		assert.Equal(t, "content", string(b))
+	})
 }

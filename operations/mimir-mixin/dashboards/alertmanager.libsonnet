@@ -1,8 +1,9 @@
 local utils = import 'mixin-utils/utils.libsonnet';
+local filename = 'mimir-alertmanager.json';
 
 (import 'dashboard-utils.libsonnet') {
-  'mimir-alertmanager.json':
-    ($.dashboard('Alertmanager') + { uid: 'a76bee5913c97c918d9e56a3cc88cc28' })
+  [filename]:
+    ($.dashboard('Alertmanager') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates()
     .addRow(
       ($.row('Headlines') + {
@@ -88,7 +89,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.latencyPanel('cortex_alertmanager_notification_latency_seconds', '{%s}' % $.jobMatcher($._config.job_names.alertmanager))
       )
     )
-    .addRow(
+    .addRowIf(
+      $._config.gateway_enabled,
       $.row('Configuration API (gateway) + Alertmanager UI')
       .addPanel(
         $.panel('QPS') +

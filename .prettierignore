@@ -1,3 +1,5 @@
 CHANGELOG.md
 vendor
 .*/
+# The README.md of helm chart is generated, but tables are formatted differently (helm-docs 1.8.1)
+operations/helm/charts/mimir-distributed/README.md

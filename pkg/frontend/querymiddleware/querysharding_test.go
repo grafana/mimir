@@ -40,6 +40,7 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 var (
@@ -1142,7 +1143,7 @@ func TestQuerySharding_ShouldReturnErrorInCorrectFormat(t *testing.T) {
 			return nil, httpgrpc.ErrorFromHTTPResponse(&httpgrpc.HTTPResponse{Code: http.StatusInternalServerError, Body: []byte("fatal queryable error")})
 		})
 		queryablePrometheusExecErr = storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
-			return nil, apierror.New(apierror.TypeExec, "expanding series: the query time range exceeds the limit (query length: 744h6m0s, limit: 720h0m0s")
+			return nil, apierror.Newf(apierror.TypeExec, "expanding series: %s", validation.NewMaxQueryLengthError(744*time.Hour, 720*time.Hour))
 		})
 		queryable = storageSeriesQueryable([]*promql.StorageSeries{
 			newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}}, start.Add(-lookbackDelta), end, step, factor(5)),
@@ -1194,7 +1195,7 @@ func TestQuerySharding_ShouldReturnErrorInCorrectFormat(t *testing.T) {
 			engineDownstream: engine,
 			engineSharding:   engineSampleLimit,
 			queryable:        queryablePrometheusExecErr,
-			expError:         apierror.New(apierror.TypeExec, "expanding series: the query time range exceeds the limit (query length: 744h6m0s, limit: 720h0m0s"),
+			expError:         apierror.Newf(apierror.TypeExec, "expanding series: %s", validation.NewMaxQueryLengthError(744*time.Hour, 720*time.Hour)),
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

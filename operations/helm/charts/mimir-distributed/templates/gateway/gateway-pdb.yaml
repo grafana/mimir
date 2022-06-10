@@ -1,0 +1,15 @@
+{{- if .Values.enterprise.enabled -}}
+{{- if .Values.gateway.podDisruptionBudget -}}
+apiVersion: policy/v1beta1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "mimir.resourceName" (dict "ctx" . "component" "gateway") }}
+  labels:
+    {{- include "mimir.labels" (dict "ctx" . "component" "gateway") | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "mimir.selectorLabels" (dict "ctx" . "component" "gateway") | nindent 6 }}
+{{ toYaml .Values.gateway.podDisruptionBudget | indent 2 }}
+{{- end -}}
+{{- end -}}

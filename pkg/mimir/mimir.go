@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"reflect"
+	"strconv"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -202,8 +203,10 @@ func (c *Config) Validate(log log.Logger) error {
 	if err := c.AlertmanagerStorage.Validate(); err != nil {
 		return errors.Wrap(err, "invalid alertmanager storage config")
 	}
-	if err := c.Alertmanager.Validate(c.AlertmanagerStorage); err != nil {
-		return errors.Wrap(err, "invalid alertmanager config")
+	if c.isModuleEnabled(AlertManager) {
+		if err := c.Alertmanager.Validate(c.AlertmanagerStorage); err != nil {
+			return errors.Wrap(err, "invalid alertmanager config")
+		}
 	}
 	return nil
 }
@@ -270,20 +273,24 @@ func validateBucketConfig(cfg bucket.Config, blockStorageBucketCfg bucket.Config
 		return nil
 	}
 
+	if cfg.StoragePrefix != blockStorageBucketCfg.StoragePrefix {
+		return nil
+	}
+
 	switch cfg.Backend {
 	case bucket.S3:
 		if cfg.S3.BucketName == blockStorageBucketCfg.S3.BucketName {
-			return errors.New("S3 bucket name cannot be the same as the one used in blocks storage config")
+			return errors.New("S3 bucket name and storage prefix cannot be the same as the one used in blocks storage config")
 		}
 
 	case bucket.GCS:
 		if cfg.GCS.BucketName == blockStorageBucketCfg.GCS.BucketName {
-			return errors.New("GCS bucket name cannot be the same as the one used in blocks storage config")
+			return errors.New("GCS bucket name and storage prefix cannot be the same as the one used in blocks storage config")
 		}
 
 	case bucket.Azure:
 		if cfg.Azure.ContainerName == blockStorageBucketCfg.Azure.ContainerName && cfg.Azure.StorageAccountName == blockStorageBucketCfg.Azure.StorageAccountName {
-			return errors.New("Azure container and account names cannot be the same as the ones used in blocks storage config")
+			return errors.New("Azure container and account names and storage prefix cannot be the same as the ones used in blocks storage config")
 		}
 
 	// To keep it simple here we only check that container and project names are not the same.
@@ -292,7 +299,7 @@ func validateBucketConfig(cfg bucket.Config, blockStorageBucketCfg bucket.Config
 	// may have several configured endpoints.
 	case bucket.Swift:
 		if cfg.Swift.ContainerName == blockStorageBucketCfg.Swift.ContainerName && cfg.Swift.ProjectName == blockStorageBucketCfg.Swift.ProjectName {
-			return errors.New("Swift container and project names cannot be the same as the ones used in blocks storage config")
+			return errors.New("Swift container and project names and storage prefix cannot be the same as the ones used in blocks storage config")
 		}
 	}
 	return nil
@@ -316,6 +323,12 @@ func (c *Config) registerServerFlagsWithChangedDefaultValues(fs *flag.FlagSet) {
 
 		case "server.http-listen-port":
 			_ = f.Value.Set("8080")
+
+		case "server.grpc-max-recv-msg-size-bytes":
+			_ = f.Value.Set(strconv.Itoa(100 * 1024 * 1024))
+
+		case "server.grpc-max-send-msg-size-bytes":
+			_ = f.Value.Set(strconv.Itoa(100 * 1024 * 1024))
 		}
 
 		fs.Var(f.Value, f.Name, f.Usage)
@@ -517,12 +530,15 @@ func (t *Mimir) readyHandler(sm *services.Manager) http.HandlerFunc {
 			msg := bytes.Buffer{}
 			msg.WriteString("Some services are not Running:\n")
 
-			byState := sm.ServicesByState()
-			for st, ls := range byState {
-				msg.WriteString(fmt.Sprintf("%v: %d\n", st, len(ls)))
+			for name, s := range t.ServiceMap {
+				if s.State() != services.Running {
+					msg.WriteString(fmt.Sprintf("%s: %s\n", name, s.State()))
+				}
 			}
 
-			http.Error(w, msg.String(), http.StatusServiceUnavailable)
+			strMsg := msg.String()
+			level.Debug(util_log.Logger).Log(strMsg)
+			http.Error(w, strMsg, http.StatusServiceUnavailable)
 			return
 		}
 

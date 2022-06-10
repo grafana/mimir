@@ -310,11 +310,11 @@ grpc_tls_config:
 # (advanced) Limit on the size of a gRPC message this server can receive
 # (bytes).
 # CLI flag: -server.grpc-max-recv-msg-size-bytes
-[grpc_server_max_recv_msg_size: <int> | default = 4194304]
+[grpc_server_max_recv_msg_size: <int> | default = 104857600]
 
 # (advanced) Limit on the size of a gRPC message this server can send (bytes).
 # CLI flag: -server.grpc-max-send-msg-size-bytes
-[grpc_server_max_send_msg_size: <int> | default = 4194304]
+[grpc_server_max_send_msg_size: <int> | default = 104857600]
 
 # (advanced) Limit on the number of concurrent streams for gRPC calls (0 =
 # unlimited)
@@ -475,13 +475,6 @@ ha_tracker:
 # CLI flag: -distributor.remote-timeout
 [remote_timeout: <duration> | default = 20s]
 
-# (advanced) Try writing to an additional ingester in the presence of an
-# ingester not in the ACTIVE state. It is useful to disable this along with
-# -ingester.ring.unregister-on-shutdown=false in order to not spread samples to
-# extra ingesters during rolling restarts with consistent naming.
-# CLI flag: -distributor.extend-writes
-[extend_writes: <boolean> | default = true]
-
 ring:
   kvstore:
     # Backend storage to use for the ring. Supported values are: consul, etcd,
@@ -569,6 +562,11 @@ forwarding:
   # forward metrics.
   # CLI flag: -distributor.forwarding.request-timeout
   [request_timeout: <duration> | default = 10s]
+
+  # (experimental) If disabled then forwarding requests are always considered to
+  # be successful, errors are ignored.
+  # CLI flag: -distributor.forwarding.propagate-errors
+  [propagate_errors: <boolean> | default = true]
 ```
 
 ### ingester
@@ -677,8 +675,7 @@ ring:
   [instance_availability_zone: <string> | default = ""]
 
   # (advanced) Unregister from the ring upon clean shutdown. It can be useful to
-  # disable for rolling restarts with consistent naming in conjunction with
-  # -distributor.extend-writes=false.
+  # disable for rolling restarts with consistent naming.
   # CLI flag: -ingester.ring.unregister-on-shutdown
   [unregister_on_shutdown: <boolean> | default = true]
 
@@ -686,11 +683,6 @@ ring:
   # when using gossiping ring.
   # CLI flag: -ingester.ring.observe-period
   [observe_period: <duration> | default = 0s]
-
-  # (advanced) Period to wait for a claim from another member; will join
-  # automatically after this.
-  # CLI flag: -ingester.ring.join-after
-  [join_after: <duration> | default = 0s]
 
   # (advanced) Minimum duration to wait after the internal readiness checks have
   # passed but before succeeding the readiness endpoint. This is used to
@@ -799,17 +791,18 @@ The `querier` block configures the querier.
 # CLI flag: -querier.batch-iterators
 [batch_iterators: <boolean> | default = true]
 
-# Maximum lookback beyond which queries are not sent to ingester. 0 means all
-# queries are sent to ingester.
+# (advanced) Maximum lookback beyond which queries are not sent to ingester. 0
+# means all queries are sent to ingester.
 # CLI flag: -querier.query-ingesters-within
 [query_ingesters_within: <duration> | default = 13h]
 
-# The time after which a metric should be queried from storage and not just
-# ingesters. 0 means all queries are sent to store. If this option is enabled,
-# the time range of the query sent to the store-gateway will be manipulated to
-# ensure the query end is not more recent than 'now - query-store-after'.
+# (advanced) The time after which a metric should be queried from storage and
+# not just ingesters. 0 means all queries are sent to store. If this option is
+# enabled, the time range of the query sent to the store-gateway will be
+# manipulated to ensure the query end is not more recent than 'now -
+# query-store-after'.
 # CLI flag: -querier.query-store-after
-[query_store_after: <duration> | default = 0s]
+[query_store_after: <duration> | default = 12h]
 
 # (advanced) Maximum duration into the future you can query. 0 to disable.
 # CLI flag: -querier.max-query-into-future
@@ -843,15 +836,14 @@ store_gateway_client:
   # CLI flag: -querier.store-gateway-client.tls-insecure-skip-verify
   [tls_insecure_skip_verify: <boolean> | default = false]
 
-# (advanced) When distributor's sharding strategy is shuffle-sharding and this
-# setting is > 0, queriers fetch in-memory series from the minimum set of
-# required ingesters, selecting only ingesters which may have received series
-# since 'now - lookback period'. The lookback period should be greater or equal
-# than the configured -querier.query-store-after and
+# (advanced) When this setting is > 0, queriers fetch in-memory series from the
+# minimum set of required ingesters, selecting only ingesters which may have
+# received series since 'now - lookback period'. The lookback period should be
+# greater or equal than the configured -querier.query-store-after and
 # -querier.query-ingesters-within. If this setting is 0, queriers always query
 # all ingesters (ingesters shuffle sharding on read path is disabled).
 # CLI flag: -querier.shuffle-sharding-ingesters-lookback-period
-[shuffle_sharding_ingesters_lookback_period: <duration> | default = 0s]
+[shuffle_sharding_ingesters_lookback_period: <duration> | default = 13h]
 
 # The maximum number of concurrent queries. This config option should be set on
 # query-frontend too when query sharding is enabled.
@@ -1408,32 +1400,74 @@ query_frontend:
   # CLI flag: -ruler.query-frontend.address
   [address: <string> | default = ""]
 
-  # (advanced) Set to true if query-frontend connection requires TLS.
-  # CLI flag: -ruler.query-frontend.tls-enabled
-  [tls_enabled: <boolean> | default = false]
+  grpc_client_config:
+    # (advanced) gRPC client max receive message size (bytes).
+    # CLI flag: -ruler.query-frontend.grpc-client-config.grpc-max-recv-msg-size
+    [max_recv_msg_size: <int> | default = 104857600]
 
-  # (advanced) Path to the client certificate file, which will be used for
-  # authenticating with the server. Also requires the key path to be configured.
-  # CLI flag: -ruler.query-frontend.tls-cert-path
-  [tls_cert_path: <string> | default = ""]
+    # (advanced) gRPC client max send message size (bytes).
+    # CLI flag: -ruler.query-frontend.grpc-client-config.grpc-max-send-msg-size
+    [max_send_msg_size: <int> | default = 104857600]
 
-  # (advanced) Path to the key file for the client certificate. Also requires
-  # the client certificate to be configured.
-  # CLI flag: -ruler.query-frontend.tls-key-path
-  [tls_key_path: <string> | default = ""]
+    # (advanced) Use compression when sending messages. Supported values are:
+    # 'gzip', 'snappy' and '' (disable compression)
+    # CLI flag: -ruler.query-frontend.grpc-client-config.grpc-compression
+    [grpc_compression: <string> | default = ""]
 
-  # (advanced) Path to the CA certificates file to validate server certificate
-  # against. If not set, the host's root CA certificates are used.
-  # CLI flag: -ruler.query-frontend.tls-ca-path
-  [tls_ca_path: <string> | default = ""]
+    # (advanced) Rate limit for gRPC client; 0 means disabled.
+    # CLI flag: -ruler.query-frontend.grpc-client-config.grpc-client-rate-limit
+    [rate_limit: <float> | default = 0]
 
-  # (advanced) Override the expected name on the server certificate.
-  # CLI flag: -ruler.query-frontend.tls-server-name
-  [tls_server_name: <string> | default = ""]
+    # (advanced) Rate limit burst for gRPC client.
+    # CLI flag: -ruler.query-frontend.grpc-client-config.grpc-client-rate-limit-burst
+    [rate_limit_burst: <int> | default = 0]
 
-  # (advanced) Skip validating server certificate.
-  # CLI flag: -ruler.query-frontend.tls-insecure-skip-verify
-  [tls_insecure_skip_verify: <boolean> | default = false]
+    # (advanced) Enable backoff and retry when we hit ratelimits.
+    # CLI flag: -ruler.query-frontend.grpc-client-config.backoff-on-ratelimits
+    [backoff_on_ratelimits: <boolean> | default = false]
+
+    backoff_config:
+      # (advanced) Minimum delay when backing off.
+      # CLI flag: -ruler.query-frontend.grpc-client-config.backoff-min-period
+      [min_period: <duration> | default = 100ms]
+
+      # (advanced) Maximum delay when backing off.
+      # CLI flag: -ruler.query-frontend.grpc-client-config.backoff-max-period
+      [max_period: <duration> | default = 10s]
+
+      # (advanced) Number of times to backoff and retry before failing.
+      # CLI flag: -ruler.query-frontend.grpc-client-config.backoff-retries
+      [max_retries: <int> | default = 10]
+
+    # (advanced) Enable TLS in the GRPC client. This flag needs to be enabled
+    # when any other TLS flag is set. If set to false, insecure connection to
+    # gRPC server will be used.
+    # CLI flag: -ruler.query-frontend.grpc-client-config.tls-enabled
+    [tls_enabled: <boolean> | default = false]
+
+    # (advanced) Path to the client certificate file, which will be used for
+    # authenticating with the server. Also requires the key path to be
+    # configured.
+    # CLI flag: -ruler.query-frontend.grpc-client-config.tls-cert-path
+    [tls_cert_path: <string> | default = ""]
+
+    # (advanced) Path to the key file for the client certificate. Also requires
+    # the client certificate to be configured.
+    # CLI flag: -ruler.query-frontend.grpc-client-config.tls-key-path
+    [tls_key_path: <string> | default = ""]
+
+    # (advanced) Path to the CA certificates file to validate server certificate
+    # against. If not set, the host's root CA certificates are used.
+    # CLI flag: -ruler.query-frontend.grpc-client-config.tls-ca-path
+    [tls_ca_path: <string> | default = ""]
+
+    # (advanced) Override the expected name on the server certificate.
+    # CLI flag: -ruler.query-frontend.grpc-client-config.tls-server-name
+    [tls_server_name: <string> | default = ""]
+
+    # (advanced) Skip validating server certificate.
+    # CLI flag: -ruler.query-frontend.grpc-client-config.tls-insecure-skip-verify
+    [tls_insecure_skip_verify: <boolean> | default = false]
 
 tenant_federation:
   # Enable running rule groups against multiple tenants. The tenant IDs involved
@@ -1453,6 +1487,11 @@ The `ruler_storage` block configures the ruler storage backend.
 # filesystem, local.
 # CLI flag: -ruler-storage.backend
 [backend: <string> | default = "filesystem"]
+
+# (experimental) Prefix for all objects stored in the backend storage. For
+# simplicity, it may only contain digits and English alphabet letters.
+# CLI flag: -ruler-storage.storage-prefix
+[storage_prefix: <string> | default = ""]
 
 s3:
   # The S3 bucket endpoint. It could be an AWS S3 endpoint listed at
@@ -1898,6 +1937,11 @@ The `alertmanager_storage` block configures the alertmanager storage backend.
 # filesystem, local.
 # CLI flag: -alertmanager-storage.backend
 [backend: <string> | default = "filesystem"]
+
+# (experimental) Prefix for all objects stored in the backend storage. For
+# simplicity, it may only contain digits and English alphabet letters.
+# CLI flag: -alertmanager-storage.storage-prefix
+[storage_prefix: <string> | default = ""]
 
 s3:
   # The S3 bucket endpoint. It could be an AWS S3 endpoint listed at
@@ -2556,6 +2600,15 @@ The `memberlist` block configures the Gossip memberlist.
 The `limits` block configures default and per-tenant limits imposed by components.
 
 ```yaml
+# (experimental) Per-tenant request rate limit in requests per second. 0 to
+# disable.
+# CLI flag: -distributor.request-rate-limit
+[request_rate: <float> | default = 0]
+
+# (experimental) Per-tenant allowed request burst size. 0 to disable.
+# CLI flag: -distributor.request-burst-size
+[request_burst_size: <int> | default = 0]
+
 # Per-tenant ingestion rate limit in samples per second.
 # CLI flag: -distributor.ingestion-rate-limit
 [ingestion_rate: <float> | default = 10000]
@@ -2888,6 +2941,11 @@ The `blocks_storage` block configures the blocks storage.
 # filesystem.
 # CLI flag: -blocks-storage.backend
 [backend: <string> | default = "filesystem"]
+
+# (experimental) Prefix for all objects stored in the backend storage. For
+# simplicity, it may only contain digits and English alphabet letters.
+# CLI flag: -blocks-storage.storage-prefix
+[storage_prefix: <string> | default = ""]
 
 s3:
   # The S3 bucket endpoint. It could be an AWS S3 endpoint listed at
@@ -3297,7 +3355,7 @@ bucket_store:
   # are usually many of them (depending on number of ingesters) and they are not
   # yet compacted. Negative values or 0 disable the filter.
   # CLI flag: -blocks-storage.bucket-store.ignore-blocks-within
-  [ignore_blocks_within: <duration> | default = 0s]
+  [ignore_blocks_within: <duration> | default = 10h]
 
   # (advanced) Max size - in bytes - of a chunks pool, used to reduce memory
   # allocations. The pool is shared across all tenants. 0 to disable the limit.
@@ -3339,11 +3397,11 @@ bucket_store:
   # CLI flag: -blocks-storage.bucket-store.posting-offsets-in-mem-sampling
   [postings_offsets_in_mem_sampling: <int> | default = 32]
 
-  # (experimental) Number of threads that are dedicated for use reading index
-  # headers. Set to 0 to disable use of dedicated threads for reading index
-  # headers.
-  # CLI flag: -blocks-storage.bucket-store.index-header-thread-pool-size
-  [index_header_thread_pool_size: <int> | default = 0]
+  index_header:
+    # (experimental) If enabled, the store-gateway will attempt to pre-populate
+    # the file system cache when memory-mapping index-header files.
+    # CLI flag: -blocks-storage.bucket-store.index-header.map-populate-enabled
+    [map_populate_enabled: <boolean> | default = false]
 
 tsdb:
   # Directory to store TSDBs (including WAL) in the ingesters. This directory is
@@ -3438,7 +3496,8 @@ tsdb:
   # (experimental) The size of the write queue used by the head chunks mapper.
   # Lower values reduce memory utilisation at the cost of potentially higher
   # ingest latency. Value of 0 switches chunks mapper to implementation without
-  # a queue.
+  # a queue. This flag is only used if the new chunk disk mapper is enabled with
+  # -blocks-storage.tsdb.new-chunk-disk-mapper.
   # CLI flag: -blocks-storage.tsdb.head-chunks-write-queue-size
   [head_chunks_write_queue_size: <int> | default = 0]
 
@@ -3776,6 +3835,11 @@ sharding_ring:
   # Unregister from the ring upon clean shutdown.
   # CLI flag: -store-gateway.sharding-ring.unregister-on-shutdown
   [unregister_on_shutdown: <boolean> | default = true]
+
+# (experimental) Number of OS threads that are dedicated for handling requests.
+# Set to 0 to disable use of dedicated OS threads for handling requests.
+# CLI flag: -store-gateway.thread-pool-size
+[thread_pool_size: <int> | default = 0]
 ```
 
 ### sse

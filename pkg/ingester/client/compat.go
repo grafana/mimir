@@ -101,10 +101,10 @@ func FromMetricsForLabelMatchersRequest(req *MetricsForLabelMatchersRequest) (mo
 }
 
 // FromMetricsForLabelMatchersResponse unpacks a MetricsForLabelMatchersResponse proto
-func FromMetricsForLabelMatchersResponse(resp *MetricsForLabelMatchersResponse) []model.Metric {
-	metrics := []model.Metric{}
+func FromMetricsForLabelMatchersResponse(resp *MetricsForLabelMatchersResponse) []labels.Labels {
+	metrics := []labels.Labels{}
 	for _, m := range resp.Metric {
-		metrics = append(metrics, mimirpb.FromLabelAdaptersToMetric(m.Labels))
+		metrics = append(metrics, mimirpb.FromLabelAdaptersToLabels(m.Labels))
 	}
 	return metrics
 }

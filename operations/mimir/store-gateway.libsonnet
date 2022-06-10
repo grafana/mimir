@@ -1,6 +1,5 @@
 {
   local container = $.core.v1.container,
-  local podDisruptionBudget = $.policy.v1beta1.podDisruptionBudget,
   local pvc = $.core.v1.persistentVolumeClaim,
   local statefulSet = $.apps.v1.statefulSet,
   local volumeMount = $.core.v1.volumeMount,
@@ -49,11 +48,6 @@
       'blocks-storage.bucket-store.index-cache.memcached.max-idle-connections': $.store_gateway_args['blocks-storage.bucket-store.index-cache.memcached.max-get-multi-concurrency'],
       'blocks-storage.bucket-store.chunks-cache.memcached.max-idle-connections': $.store_gateway_args['blocks-storage.bucket-store.chunks-cache.memcached.max-get-multi-concurrency'],
       'blocks-storage.bucket-store.metadata-cache.memcached.max-idle-connections': $.store_gateway_args['blocks-storage.bucket-store.metadata-cache.memcached.max-get-multi-concurrency'],
-
-      // Queriers will not query store for data younger than 12h (see -querier.query-store-after).
-      // Store-gateways don't need to load blocks with very most recent data. We use 2h buffer to
-      // make sure that blocks are ready for querying when needed.
-      'blocks-storage.bucket-store.ignore-blocks-within': '10h',
     } +
     $.blocks_chunks_caching_config +
     $.blocks_metadata_caching_config +
@@ -72,21 +66,8 @@
     $.jaeger_mixin,
 
   newStoreGatewayStatefulSet(name, container, with_anti_affinity=false)::
-    statefulSet.new(name, 3, [container], store_gateway_data_pvc) +
-    statefulSet.mixin.spec.withServiceName(name) +
-    statefulSet.mixin.metadata.withNamespace($._config.namespace) +
-    statefulSet.mixin.metadata.withLabels({ name: name }) +
-    statefulSet.mixin.spec.template.metadata.withLabels({ name: name }) +
-    statefulSet.mixin.spec.selector.withMatchLabels({ name: name }) +
-    statefulSet.mixin.spec.template.spec.securityContext.withRunAsUser(0) +
-    (if !std.isObject($._config.node_selector) then {} else statefulSet.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector)) +
-    statefulSet.mixin.spec.updateStrategy.withType('RollingUpdate') +
+    $.newMimirStatefulSet(name, 3, container, store_gateway_data_pvc) +
     statefulSet.mixin.spec.template.spec.withTerminationGracePeriodSeconds(120) +
-    // Parallelly scale up/down store-gateway instances instead of starting them
-    // one by one. This does NOT affect rolling updates: they will continue to be
-    // rolled out one by one (the next pod will be rolled out once the previous is
-    // ready).
-    statefulSet.mixin.spec.withPodManagementPolicy('Parallel') +
     $.util.configVolumeMount($._config.overrides_configmap, $._config.overrides_configmap_mountpoint) +
     (if with_anti_affinity then $.util.antiAffinity else {}),
 
@@ -96,11 +77,8 @@
     $.util.serviceFor($.store_gateway_statefulset, $._config.service_ignored_labels),
 
   store_gateway_pdb:
-    podDisruptionBudget.new() +
-    podDisruptionBudget.mixin.metadata.withName('store-gateway-pdb') +
-    podDisruptionBudget.mixin.metadata.withLabels({ name: 'store-gateway-pdb' }) +
-    podDisruptionBudget.mixin.spec.selector.withMatchLabels({ name: 'store-gateway' }) +
     // To avoid any disruption in the read path we need at least 1 replica of each
     // block available, so the disruption budget depends on the blocks replication factor.
-    podDisruptionBudget.mixin.spec.withMaxUnavailable(if $._config.store_gateway_replication_factor > 1 then $._config.store_gateway_replication_factor - 1 else 1),
+    local maxUnavailable = if $._config.store_gateway_replication_factor > 1 then $._config.store_gateway_replication_factor - 1 else 1;
+    $.newMimirPdb('store-gateway', maxUnavailable),
 }

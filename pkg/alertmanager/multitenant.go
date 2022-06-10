@@ -58,7 +58,6 @@ const (
 var (
 	errEmptyExternalURL                    = errors.New("-alertmanager.web.external-url cannot be empty")
 	errInvalidExternalURL                  = errors.New("the configured external URL is invalid: should not end with /")
-	errShardingUnsupportedStorage          = errors.New("the configured alertmanager storage backend is not supported when sharding is enabled")
 	errZoneAwarenessEnabledWithoutZoneInfo = errors.New("the configured alertmanager has zone awareness enabled but zone is not set")
 	errNotUploadingFallback                = errors.New("not uploading fallback configuration")
 )
@@ -129,9 +128,6 @@ func (cfg *MultitenantAlertmanagerConfig) Validate(storageCfg alertstore.Config)
 		return err
 	}
 
-	if !storageCfg.IsFullStateSupported() {
-		return errShardingUnsupportedStorage
-	}
 	if cfg.ShardingRing.ZoneAwarenessEnabled && cfg.ShardingRing.InstanceZone == "" {
 		return errZoneAwarenessEnabledWithoutZoneInfo
 	}
@@ -1260,6 +1256,15 @@ func safeTemplateFilepath(dir, templateName string) (string, error) {
 	actualPath, err := filepath.Abs(filepath.Join(containerDir, templateName))
 	if err != nil {
 		return "", err
+	}
+
+	// If actualPath is same as containerDir, it's likely that actualPath was empty, or just ".".
+	if containerDir == actualPath {
+		return "", fmt.Errorf("invalid template name %q", templateName)
+	}
+
+	if !strings.HasSuffix(containerDir, string(os.PathSeparator)) {
+		containerDir = containerDir + string(os.PathSeparator)
 	}
 
 	// Ensure the actual path of the template is within the expected directory.

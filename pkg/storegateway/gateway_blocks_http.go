@@ -37,8 +37,6 @@ type blocksPageContents struct {
 	ShowDeletedQuery string `json:"-"`
 	ShowSourcesQuery string `json:"-"`
 	ShowParentsQuery string `json:"-"`
-
-	TSDBTenantIDExternalLabel string `json:"-"`
 }
 
 type formattedBlockData struct {
@@ -126,7 +124,7 @@ func (s *StoreGateway) BlocksHandler(w http.ResponseWriter, req *http.Request) {
 			DeletedTime:     formatTimeIfNotZero(deletedTimes[m.ULID].UTC(), time.RFC3339),
 			CompactionLevel: m.Compaction.Level,
 			BlockSize:       listblocks.GetFormattedBlockSize(m),
-			Labels:          lbls.WithoutLabels(tsdb.TenantIDExternalLabel).String(),
+			Labels:          lbls.String(),
 			Sources:         sources,
 			Parents:         parents,
 		})
@@ -156,8 +154,6 @@ func (s *StoreGateway) BlocksHandler(w http.ResponseWriter, req *http.Request) {
 		ShowDeletedQuery: queryWithTrueBoolParam(*req.URL, req.Form, "show_deleted"),
 		ShowSourcesQuery: queryWithTrueBoolParam(*req.URL, req.Form, "show_sources"),
 		ShowParentsQuery: queryWithTrueBoolParam(*req.URL, req.Form, "show_parents"),
-
-		TSDBTenantIDExternalLabel: tsdb.TenantIDExternalLabel,
 	}, blocksPageTemplate, req)
 }
 

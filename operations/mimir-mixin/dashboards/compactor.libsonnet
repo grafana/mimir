@@ -1,4 +1,5 @@
 local utils = import 'mixin-utils/utils.libsonnet';
+local filename = 'mimir-compactor.json';
 
 // This applies to the "longest time since successful run queries"
 local fixTargetsForTransformations(panel, refIds) = panel {
@@ -87,8 +88,8 @@ local fixTargetsForTransformations(panel, refIds) = panel {
     }),
   ],
 
-  'mimir-compactor.json':
-    ($.dashboard('Compactor') + { uid: '9c408e1d55681ecb8a22c9fab46875cc' })
+  [filename]:
+    ($.dashboard('Compactor') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates()
     .addRow(
       $.row('Summary')

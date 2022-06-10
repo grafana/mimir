@@ -22,22 +22,22 @@
       // So that exporters like cloudwatch can still send in data and be un-cached.
       'query-frontend.max-cache-freshness': '10m',
 
-      // So it can receive big responses from the querier.
-      'server.grpc-max-recv-msg-size-bytes': 100 << 20,
-
       // Limit queries to 500 days, allow this to be override per-user.
       'store.max-query-length': '12000h',  // 500 Days
       'runtime-config.file': '%s/overrides.yaml' % $._config.overrides_configmap_mountpoint,
     },
 
-  query_frontend_container::
-    container.new('query-frontend', $._images.query_frontend) +
+  newQueryFrontendContainer(name, args)::
+    container.new(name, $._images.query_frontend) +
     container.withPorts($.util.defaultPorts) +
-    container.withArgsMixin($.util.mapToFlags($.query_frontend_args)) +
+    container.withArgsMixin($.util.mapToFlags(args)) +
     $.jaeger_mixin +
     $.util.readinessProbe +
     $.util.resourcesRequests('2', '600Mi') +
     $.util.resourcesLimits(null, '1200Mi'),
+
+  query_frontend_container::
+    self.newQueryFrontendContainer('query-frontend', $.query_frontend_args),
 
   local deployment = $.apps.v1.deployment,
 
@@ -51,18 +51,13 @@
 
   query_frontend_deployment: self.newQueryFrontendDeployment('query-frontend', $.query_frontend_container),
 
-  local service = $.core.v1.service,
-
   query_frontend_service:
     $.util.serviceFor($.query_frontend_deployment, $._config.service_ignored_labels),
 
   query_frontend_discovery_service:
-    $.util.serviceFor($.query_frontend_deployment, $._config.service_ignored_labels) +
     // Make sure that query frontend worker, running in the querier, do resolve
     // each query-frontend pod IP and NOT the service IP. To make it, we do NOT
     // use the service cluster IP so that when the service DNS is resolved it
     // returns the set of query-frontend IPs.
-    service.mixin.spec.withPublishNotReadyAddresses(true) +
-    service.mixin.spec.withClusterIp('None') +
-    service.mixin.metadata.withName('query-frontend-discovery'),
+    $.newMimirDiscoveryService('query-frontend-discovery', $.query_frontend_deployment),
 }

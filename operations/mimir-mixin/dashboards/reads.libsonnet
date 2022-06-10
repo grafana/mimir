@@ -1,8 +1,9 @@
 local utils = import 'mixin-utils/utils.libsonnet';
+local filename = 'mimir-reads.json';
 
 (import 'dashboard-utils.libsonnet') {
-  'mimir-reads.json':
-    ($.dashboard('Reads') + { uid: '8d6ba60eccc4b6eedfa329b24b1bd339' })
+  [filename]:
+    ($.dashboard('Reads') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates()
     .addRowIf(
       $._config.show_dashboard_descriptions.reads,
@@ -88,7 +89,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
         ),
       )
     )
-    .addRow(
+    .addRowIf(
+      $._config.gateway_enabled,
       $.row('Gateway')
       .addPanel(
         $.panel('Requests / sec') +

@@ -1,4 +1,12 @@
 {
+      "__requires": [
+         {
+            "id": "grafana",
+            "name": "Grafana",
+            "type": "grafana",
+            "version": "8.0.0"
+         }
+      ],
       "annotations": {
          "list": [ ]
       },
@@ -548,6 +556,312 @@
                   "points": false,
                   "renderer": "flot",
                   "seriesOverrides": [ ],
+                  "spaceLength": 10,
+                  "span": 12,
+                  "stack": false,
+                  "steppedLine": false,
+                  "targets": [
+                     {
+                        "expr": "sum by (user) (rate(cortex_distributor_received_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir))\"}[$__rate_interval]))\nand\ntopk($limit,\n  sum by (user) (rate(cortex_distributor_received_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir))\"}[$__rate_interval] @ end()))\n  -\n  sum by (user) (rate(cortex_distributor_received_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir))\"}[$__rate_interval] @ start()))\n)\n",
+                        "format": "time_series",
+                        "interval": "15s",
+                        "intervalFactor": 2,
+                        "legendFormat": "{{ user }}",
+                        "legendLink": null,
+                        "step": 10
+                     }
+                  ],
+                  "thresholds": [ ],
+                  "timeFrom": null,
+                  "timeShift": null,
+                  "title": "Top $limit users by received samples rate that grew the most between query range start and query range end",
+                  "tooltip": {
+                     "shared": false,
+                     "sort": 0,
+                     "value_type": "individual"
+                  },
+                  "type": "graph",
+                  "xaxis": {
+                     "buckets": null,
+                     "mode": "time",
+                     "name": null,
+                     "show": true,
+                     "values": [ ]
+                  },
+                  "yaxes": [
+                     {
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": 0,
+                        "show": true
+                     },
+                     {
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": null,
+                        "show": false
+                     }
+                  ]
+               }
+            ],
+            "repeat": null,
+            "repeatIteration": null,
+            "repeatRowId": null,
+            "showTitle": true,
+            "title": "By samples rate growth",
+            "titleSize": "h6"
+         },
+         {
+            "collapse": true,
+            "height": "250px",
+            "panels": [
+               {
+                  "aliasColors": { },
+                  "bars": false,
+                  "dashLength": 10,
+                  "dashes": false,
+                  "datasource": "$datasource",
+                  "fill": 1,
+                  "id": 7,
+                  "legend": {
+                     "avg": false,
+                     "current": false,
+                     "max": false,
+                     "min": false,
+                     "show": true,
+                     "total": false,
+                     "values": false
+                  },
+                  "lines": true,
+                  "linewidth": 1,
+                  "links": [ ],
+                  "nullPointMode": "null as zero",
+                  "percentage": false,
+                  "pointradius": 5,
+                  "points": false,
+                  "renderer": "flot",
+                  "seriesOverrides": [ ],
+                  "sort": {
+                     "col": 2,
+                     "desc": true
+                  },
+                  "spaceLength": 10,
+                  "span": 12,
+                  "stack": false,
+                  "steppedLine": false,
+                  "styles": [
+                     {
+                        "alias": "Time",
+                        "dateFormat": "YYYY-MM-DD HH:mm:ss",
+                        "pattern": "Time",
+                        "type": "hidden"
+                     },
+                     {
+                        "alias": "samples/s",
+                        "colorMode": null,
+                        "colors": [ ],
+                        "dateFormat": "YYYY-MM-DD HH:mm:ss",
+                        "decimals": 2,
+                        "link": false,
+                        "linkTargetBlank": false,
+                        "linkTooltip": "Drill down",
+                        "linkUrl": "",
+                        "pattern": "Value #A",
+                        "thresholds": [ ],
+                        "type": "number",
+                        "unit": "short"
+                     },
+                     {
+                        "alias": "",
+                        "colorMode": null,
+                        "colors": [ ],
+                        "dateFormat": "YYYY-MM-DD HH:mm:ss",
+                        "decimals": 2,
+                        "pattern": "/.*/",
+                        "thresholds": [ ],
+                        "type": "string",
+                        "unit": "short"
+                     }
+                  ],
+                  "targets": [
+                     {
+                        "expr": "topk($limit, sum by (user) (rate(cortex_discarded_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir)|(distributor|cortex|mimir))\"}[5m])))",
+                        "format": "table",
+                        "instant": true,
+                        "intervalFactor": 2,
+                        "legendFormat": "",
+                        "refId": "A",
+                        "step": 10
+                     }
+                  ],
+                  "thresholds": [ ],
+                  "timeFrom": null,
+                  "timeShift": null,
+                  "title": "Top $limit users by discarded samples rate in last 5m",
+                  "tooltip": {
+                     "shared": false,
+                     "sort": 0,
+                     "value_type": "individual"
+                  },
+                  "transform": "table",
+                  "type": "table",
+                  "xaxis": {
+                     "buckets": null,
+                     "mode": "time",
+                     "name": null,
+                     "show": true,
+                     "values": [ ]
+                  },
+                  "yaxes": [
+                     {
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": 0,
+                        "show": true
+                     },
+                     {
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": null,
+                        "show": false
+                     }
+                  ]
+               }
+            ],
+            "repeat": null,
+            "repeatIteration": null,
+            "repeatRowId": null,
+            "showTitle": true,
+            "title": "By discarded samples rate",
+            "titleSize": "h6"
+         },
+         {
+            "collapse": true,
+            "height": "250px",
+            "panels": [
+               {
+                  "aliasColors": { },
+                  "bars": false,
+                  "dashLength": 10,
+                  "dashes": false,
+                  "datasource": "$datasource",
+                  "fill": 1,
+                  "id": 8,
+                  "legend": {
+                     "avg": false,
+                     "current": false,
+                     "max": false,
+                     "min": false,
+                     "show": true,
+                     "total": false,
+                     "values": false
+                  },
+                  "lines": true,
+                  "linewidth": 1,
+                  "links": [ ],
+                  "nullPointMode": "null as zero",
+                  "percentage": false,
+                  "pointradius": 5,
+                  "points": false,
+                  "renderer": "flot",
+                  "seriesOverrides": [ ],
+                  "spaceLength": 10,
+                  "span": 12,
+                  "stack": false,
+                  "steppedLine": false,
+                  "targets": [
+                     {
+                        "expr": "sum by (user) (rate(cortex_discarded_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir)|(distributor|cortex|mimir))\"}[$__rate_interval]))\nand\ntopk($limit,\n  sum by (user) (rate(cortex_discarded_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir)|(distributor|cortex|mimir))\"}[$__rate_interval] @ end()))\n  -\n  sum by (user) (rate(cortex_discarded_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir)|(distributor|cortex|mimir))\"}[$__rate_interval] @ start()))\n)\n",
+                        "format": "time_series",
+                        "interval": "15s",
+                        "intervalFactor": 2,
+                        "legendFormat": "{{ user }}",
+                        "legendLink": null,
+                        "step": 10
+                     }
+                  ],
+                  "thresholds": [ ],
+                  "timeFrom": null,
+                  "timeShift": null,
+                  "title": "Top $limit users by discarded samples rate that grew the most between query range start and query range end",
+                  "tooltip": {
+                     "shared": false,
+                     "sort": 0,
+                     "value_type": "individual"
+                  },
+                  "type": "graph",
+                  "xaxis": {
+                     "buckets": null,
+                     "mode": "time",
+                     "name": null,
+                     "show": true,
+                     "values": [ ]
+                  },
+                  "yaxes": [
+                     {
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": 0,
+                        "show": true
+                     },
+                     {
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": null,
+                        "show": false
+                     }
+                  ]
+               }
+            ],
+            "repeat": null,
+            "repeatIteration": null,
+            "repeatRowId": null,
+            "showTitle": true,
+            "title": "By discarded samples rate growth",
+            "titleSize": "h6"
+         },
+         {
+            "collapse": true,
+            "height": "250px",
+            "panels": [
+               {
+                  "aliasColors": { },
+                  "bars": false,
+                  "dashLength": 10,
+                  "dashes": false,
+                  "datasource": "$datasource",
+                  "fill": 1,
+                  "id": 9,
+                  "legend": {
+                     "avg": false,
+                     "current": false,
+                     "max": false,
+                     "min": false,
+                     "show": true,
+                     "total": false,
+                     "values": false
+                  },
+                  "lines": true,
+                  "linewidth": 1,
+                  "links": [ ],
+                  "nullPointMode": "null as zero",
+                  "percentage": false,
+                  "pointradius": 5,
+                  "points": false,
+                  "renderer": "flot",
+                  "seriesOverrides": [ ],
                   "sort": {
                      "col": 2,
                      "desc": true
@@ -657,7 +971,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 7,
+                  "id": 10,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -785,7 +1099,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 8,
+                  "id": 11,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -913,7 +1227,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 9,
+                  "id": 12,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -1044,7 +1358,7 @@
                   "value": "default"
                },
                "hide": 0,
-               "label": null,
+               "label": "Data Source",
                "name": "datasource",
                "options": [ ],
                "query": "prometheus",

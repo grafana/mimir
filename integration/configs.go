@@ -10,10 +10,12 @@ package integration
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"text/template"
 
+	e2e "github.com/grafana/e2e"
 	e2edb "github.com/grafana/e2e/db"
 )
 
@@ -92,6 +94,13 @@ var (
 	AlertmanagerPersisterFlags = func(interval string) map[string]string {
 		return map[string]string{
 			"-alertmanager.persist-interval": interval,
+		}
+	}
+
+	AlertmanagerLocalFlags = func() map[string]string {
+		return map[string]string{
+			"-alertmanager-storage.backend":    "local",
+			"-alertmanager-storage.local.path": filepath.Join(e2e.ContainerSharedDir, "alertmanager_configs"),
 		}
 	}
 

@@ -1,8 +1,9 @@
 local utils = import 'mixin-utils/utils.libsonnet';
+local filename = 'mimir-slow-queries.json';
 
 (import 'dashboard-utils.libsonnet') {
-  'mimir-slow-queries.json':
-    ($.dashboard('Slow queries') + { uid: 'e6f3091e29d2636e3b8393447e925668' })
+  [filename]:
+    ($.dashboard('Slow queries') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates(false)
     .addRow(
       $.row('')

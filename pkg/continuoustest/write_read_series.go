@@ -11,15 +11,28 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"golang.org/x/time/rate"
+
+	"github.com/grafana/dskit/multierror"
+
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 const (
 	writeInterval = 20 * time.Second
 	writeMaxAge   = 50 * time.Minute
 	metricName    = "mimir_continuous_test_sine_wave"
+)
+
+var (
+	// We use max_over_time() with a 1s range selector in order to fetch only the samples we previously
+	// wrote and ensure the PromQL lookback period doesn't influence query results. This help to avoid
+	// false positives when finding the last written sample, or when restarting the testing tool with
+	// a different number of configured series to write and read.
+	queryMetricSum = fmt.Sprintf("sum(max_over_time(%s[1s]))", metricName)
 )
 
 type WriteReadSeriesTestConfig struct {
@@ -84,62 +97,86 @@ func (t *WriteReadSeriesTest) Init(ctx context.Context, now time.Time) error {
 }
 
 // Run implements Test.
-func (t *WriteReadSeriesTest) Run(ctx context.Context, now time.Time) {
+func (t *WriteReadSeriesTest) Run(ctx context.Context, now time.Time) error {
 	// Configure the rate limiter to send a sample for each series per second. At startup, this test may catch up
 	// with previous missing writes: this rate limit reduces the chances to hit the ingestion limit on Mimir side.
 	writeLimiter := rate.NewLimiter(rate.Limit(t.cfg.NumSeries), t.cfg.NumSeries)
+
+	// Collect all errors on this test run
+	errs := new(multierror.MultiError)
 
 	// Write series for each expected timestamp until now.
 	for timestamp := t.nextWriteTimestamp(now); !timestamp.After(now); timestamp = t.nextWriteTimestamp(now) {
 		if err := writeLimiter.WaitN(ctx, t.cfg.NumSeries); err != nil {
 			// Context has been canceled, so we should interrupt.
-			return
+			return err
 		}
 
-		statusCode, err := t.client.WriteSeries(ctx, generateSineWaveSeries(metricName, timestamp, t.cfg.NumSeries))
-
-		t.metrics.writesTotal.Inc()
-		if statusCode/100 != 2 {
-			t.metrics.writesFailedTotal.WithLabelValues(strconv.Itoa(statusCode)).Inc()
-			level.Warn(t.logger).Log("msg", "Failed to remote write series", "num_series", t.cfg.NumSeries, "timestamp", timestamp.String(), "status_code", statusCode, "err", err)
-		} else {
-			level.Debug(t.logger).Log("msg", "Remote write series succeeded", "num_series", t.cfg.NumSeries, "timestamp", timestamp.String())
-		}
-
-		// If the write request failed because of a 4xx error, retrying the request isn't expected to succeed.
-		// The series may have been not written at all or partially written (eg. we hit some limit).
-		// We keep writing the next interval, but we reset the query timestamp because we can't reliably
-		// assert on query results due to possible gaps.
-		if statusCode/100 == 4 {
-			t.lastWrittenTimestamp = timestamp
-			t.queryMinTime = time.Time{}
-			t.queryMaxTime = time.Time{}
-			continue
-		}
-
-		// If the write request failed because of a network or 5xx error, we'll retry to write series
-		// in the next test run.
-		if statusCode/100 != 2 || err != nil {
+		if err := t.writeSamples(ctx, timestamp); err != nil {
+			errs.Add(err)
 			break
-		}
-
-		// The write request succeeded.
-		t.lastWrittenTimestamp = timestamp
-		t.queryMaxTime = timestamp
-		if t.queryMinTime.IsZero() {
-			t.queryMinTime = timestamp
 		}
 	}
 
 	queryRanges, queryInstants := t.getQueryTimeRanges(now)
 	for _, timeRange := range queryRanges {
-		t.runRangeQueryAndVerifyResult(ctx, timeRange[0], timeRange[1], true)
-		t.runRangeQueryAndVerifyResult(ctx, timeRange[0], timeRange[1], false)
+		err := t.runRangeQueryAndVerifyResult(ctx, timeRange[0], timeRange[1], true)
+		errs.Add(err)
+		err = t.runRangeQueryAndVerifyResult(ctx, timeRange[0], timeRange[1], false)
+		errs.Add(err)
 	}
 	for _, ts := range queryInstants {
-		t.runInstantQueryAndVerifyResult(ctx, ts, true)
-		t.runInstantQueryAndVerifyResult(ctx, ts, false)
+		err := t.runInstantQueryAndVerifyResult(ctx, ts, true)
+		errs.Add(err)
+		err = t.runInstantQueryAndVerifyResult(ctx, ts, false)
+		errs.Add(err)
 	}
+	return errs.Err()
+}
+
+func (t *WriteReadSeriesTest) writeSamples(ctx context.Context, timestamp time.Time) error {
+	sp, ctx := spanlogger.NewWithLogger(ctx, t.logger, "WriteReadSeriesTest.writeSamples")
+	defer sp.Finish()
+	logger := log.With(sp, "timestamp", timestamp.String(), "num_series", t.cfg.NumSeries)
+
+	statusCode, err := t.client.WriteSeries(ctx, generateSineWaveSeries(metricName, timestamp, t.cfg.NumSeries))
+
+	t.metrics.writesTotal.Inc()
+	if statusCode/100 != 2 {
+		t.metrics.writesFailedTotal.WithLabelValues(strconv.Itoa(statusCode)).Inc()
+		level.Warn(logger).Log("msg", "Failed to remote write series", "status_code", statusCode, "err", err)
+	} else {
+		level.Debug(logger).Log("msg", "Remote write series succeeded")
+	}
+
+	// If the write request failed because of a 4xx error, retrying the request isn't expected to succeed.
+	// The series may have been not written at all or partially written (eg. we hit some limit).
+	// We keep writing the next interval, but we reset the query timestamp because we can't reliably
+	// assert on query results due to possible gaps.
+	if statusCode/100 == 4 {
+		t.lastWrittenTimestamp = timestamp
+		t.queryMinTime = time.Time{}
+		t.queryMaxTime = time.Time{}
+		return nil
+	}
+
+	// If the write request failed because of a network or 5xx error, we'll retry to write series
+	// in the next test run.
+	if err != nil {
+		return errors.Wrap(err, "failed to remote write series")
+	}
+	if statusCode/100 != 2 {
+		return errors.Wrapf(err, "remote write series failed with status code %d", statusCode)
+	}
+
+	// The write request succeeded.
+	t.lastWrittenTimestamp = timestamp
+	t.queryMaxTime = timestamp
+	if t.queryMinTime.IsZero() {
+		t.queryMinTime = timestamp
+	}
+
+	return nil
 }
 
 // getQueryTimeRanges returns the start/end time ranges to use to run test range queries,
@@ -192,27 +229,29 @@ func (t *WriteReadSeriesTest) getQueryTimeRanges(now time.Time) (ranges [][2]tim
 	return ranges, instants
 }
 
-func (t *WriteReadSeriesTest) runRangeQueryAndVerifyResult(ctx context.Context, start, end time.Time, resultsCacheEnabled bool) {
+func (t *WriteReadSeriesTest) runRangeQueryAndVerifyResult(ctx context.Context, start, end time.Time, resultsCacheEnabled bool) error {
 	// We align start, end and step to write interval in order to avoid any false positives
 	// when checking results correctness. The min/max query time is always aligned.
 	start = maxTime(t.queryMinTime, alignTimestampToInterval(start, writeInterval))
 	end = minTime(t.queryMaxTime, alignTimestampToInterval(end, writeInterval))
 	if end.Before(start) {
-		return
+		return nil
 	}
 
 	step := getQueryStep(start, end, writeInterval)
-	query := fmt.Sprintf("sum(%s)", metricName)
 
-	logger := log.With(t.logger, "query", query, "start", start.UnixMilli(), "end", end.UnixMilli(), "step", step, "results_cache", strconv.FormatBool(resultsCacheEnabled))
+	sp, ctx := spanlogger.NewWithLogger(ctx, t.logger, "WriteReadSeriesTest.runRangeQueryAndVerifyResult")
+	defer sp.Finish()
+
+	logger := log.With(sp, "query", queryMetricSum, "start", start.UnixMilli(), "end", end.UnixMilli(), "step", step, "results_cache", strconv.FormatBool(resultsCacheEnabled))
 	level.Debug(logger).Log("msg", "Running range query")
 
 	t.metrics.queriesTotal.Inc()
-	matrix, err := t.client.QueryRange(ctx, query, start, end, step, WithResultsCacheEnabled(resultsCacheEnabled))
+	matrix, err := t.client.QueryRange(ctx, queryMetricSum, start, end, step, WithResultsCacheEnabled(resultsCacheEnabled))
 	if err != nil {
 		t.metrics.queriesFailedTotal.Inc()
 		level.Warn(logger).Log("msg", "Failed to execute range query", "err", err)
-		return
+		return errors.Wrap(err, "failed to execute range query")
 	}
 
 	t.metrics.queryResultChecksTotal.Inc()
@@ -220,29 +259,31 @@ func (t *WriteReadSeriesTest) runRangeQueryAndVerifyResult(ctx context.Context, 
 	if err != nil {
 		t.metrics.queryResultChecksFailedTotal.Inc()
 		level.Warn(logger).Log("msg", "Range query result check failed", "err", err)
-		return
+		return errors.Wrap(err, "range query result check failed")
 	}
+	return nil
 }
 
-func (t *WriteReadSeriesTest) runInstantQueryAndVerifyResult(ctx context.Context, ts time.Time, resultsCacheEnabled bool) {
+func (t *WriteReadSeriesTest) runInstantQueryAndVerifyResult(ctx context.Context, ts time.Time, resultsCacheEnabled bool) error {
 	// We align the query timestamp to write interval in order to avoid any false positives
 	// when checking results correctness. The min/max query time is always aligned.
 	ts = maxTime(t.queryMinTime, alignTimestampToInterval(ts, writeInterval))
 	if t.queryMaxTime.Before(ts) {
-		return
+		return nil
 	}
 
-	query := fmt.Sprintf("sum(%s)", metricName)
+	sp, ctx := spanlogger.NewWithLogger(ctx, t.logger, "WriteReadSeriesTest.runInstantQueryAndVerifyResult")
+	defer sp.Finish()
 
-	logger := log.With(t.logger, "query", query, "ts", ts.UnixMilli(), "results_cache", strconv.FormatBool(resultsCacheEnabled))
+	logger := log.With(sp, "query", queryMetricSum, "ts", ts.UnixMilli(), "results_cache", strconv.FormatBool(resultsCacheEnabled))
 	level.Debug(logger).Log("msg", "Running instant query")
 
 	t.metrics.queriesTotal.Inc()
-	vector, err := t.client.Query(ctx, query, ts, WithResultsCacheEnabled(resultsCacheEnabled))
+	vector, err := t.client.Query(ctx, queryMetricSum, ts, WithResultsCacheEnabled(resultsCacheEnabled))
 	if err != nil {
 		t.metrics.queriesFailedTotal.Inc()
 		level.Warn(logger).Log("msg", "Failed to execute instant query", "err", err)
-		return
+		return errors.Wrap(err, "failed to execute instant query")
 	}
 
 	// Convert the vector to matrix to reuse the same results comparison utility.
@@ -262,8 +303,9 @@ func (t *WriteReadSeriesTest) runInstantQueryAndVerifyResult(ctx context.Context
 	if err != nil {
 		t.metrics.queryResultChecksFailedTotal.Inc()
 		level.Warn(logger).Log("msg", "Instant query result check failed", "err", err)
-		return
+		return errors.Wrap(err, "instant query result check failed")
 	}
+	return nil
 }
 
 func (t *WriteReadSeriesTest) nextWriteTimestamp(now time.Time) time.Time {
@@ -275,9 +317,6 @@ func (t *WriteReadSeriesTest) nextWriteTimestamp(now time.Time) time.Time {
 }
 
 func (t *WriteReadSeriesTest) findPreviouslyWrittenTimeRange(ctx context.Context, now time.Time) (from, to time.Time) {
-	// We use max_over_time() with a 1s range selector in order to fetch only the samples we previously
-	// wrote and ensure the PromQL lookback period doesn't influence query results.
-	query := fmt.Sprintf("sum(max_over_time(%s[1s]))", metricName)
 	end := alignTimestampToInterval(now, writeInterval)
 	step := writeInterval
 
@@ -290,10 +329,10 @@ func (t *WriteReadSeriesTest) findPreviouslyWrittenTimeRange(ctx context.Context
 			return
 		}
 
-		logger := log.With(t.logger, "query", query, "start", start, "end", end, "step", step)
+		logger := log.With(t.logger, "query", queryMetricSum, "start", start, "end", end, "step", step)
 		level.Debug(logger).Log("msg", "Executing query to find previously written samples")
 
-		matrix, err := t.client.QueryRange(ctx, query, start, end, step, WithResultsCacheEnabled(false))
+		matrix, err := t.client.QueryRange(ctx, queryMetricSum, start, end, step, WithResultsCacheEnabled(false))
 		if err != nil {
 			level.Warn(logger).Log("msg", "Failed to execute range query used to find previously written samples", "err", err)
 			return

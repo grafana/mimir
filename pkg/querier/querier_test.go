@@ -471,13 +471,13 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLength(t *testing.T) {
 			query:          "rate(foo[31d])",
 			queryStartTime: time.Now().Add(-time.Hour),
 			queryEndTime:   time.Now(),
-			expected:       errors.New("expanding series: the query time range exceeds the limit (query length: 745h0m0s, limit: 720h0m0s)"),
+			expected:       errors.Errorf("expanding series: %s", validation.NewMaxQueryLengthError(745*time.Hour, 720*time.Hour)),
 		},
 		"should forbid query on large time range over the limit and short rate time window": {
 			query:          "rate(foo[1m])",
 			queryStartTime: time.Now().Add(-maxQueryLength).Add(-time.Hour),
 			queryEndTime:   time.Now(),
-			expected:       errors.New("expanding series: the query time range exceeds the limit (query length: 721h1m0s, limit: 720h0m0s)"),
+			expected:       errors.Errorf("expanding series: %s", validation.NewMaxQueryLengthError((721*time.Hour)+time.Minute, 720*time.Hour)),
 		},
 	}
 
@@ -640,7 +640,7 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 
 			t.Run("series", func(t *testing.T) {
 				distributor := &mockDistributor{}
-				distributor.On("MetricsForLabelMatchers", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]model.Metric{}, nil)
+				distributor.On("MetricsForLabelMatchers", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]labels.Labels{}, nil)
 
 				queryable, _, _ := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil)
 				q, err := queryable.Querier(ctx, util.TimeToMillis(testData.queryStartTime), util.TimeToMillis(testData.queryEndTime))
@@ -771,7 +771,7 @@ func TestQuerier_MaxLabelsQueryRange(t *testing.T) {
 
 			t.Run("series", func(t *testing.T) {
 				distributor := &mockDistributor{}
-				distributor.On("MetricsForLabelMatchers", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]model.Metric{}, nil)
+				distributor.On("MetricsForLabelMatchers", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]labels.Labels{}, nil)
 
 				queryable, _, _ := New(cfg, overrides, distributor, storeQueryable, nil, log.NewNopLogger(), nil)
 				q, err := queryable.Querier(ctx, util.TimeToMillis(testData.queryStartTime), util.TimeToMillis(testData.queryEndTime))
@@ -856,7 +856,7 @@ func (m *errDistributor) LabelValuesForLabelName(context.Context, model.Time, mo
 func (m *errDistributor) LabelNames(context.Context, model.Time, model.Time, ...*labels.Matcher) ([]string, error) {
 	return nil, errDistributorError
 }
-func (m *errDistributor) MetricsForLabelMatchers(ctx context.Context, from, through model.Time, matchers ...*labels.Matcher) ([]model.Metric, error) {
+func (m *errDistributor) MetricsForLabelMatchers(ctx context.Context, from, through model.Time, matchers ...*labels.Matcher) ([]labels.Labels, error) {
 	return nil, errDistributorError
 }
 
@@ -894,7 +894,7 @@ func (d *emptyDistributor) LabelNames(context.Context, model.Time, model.Time, .
 	return nil, nil
 }
 
-func (d *emptyDistributor) MetricsForLabelMatchers(ctx context.Context, from, through model.Time, matchers ...*labels.Matcher) ([]model.Metric, error) {
+func (d *emptyDistributor) MetricsForLabelMatchers(ctx context.Context, from, through model.Time, matchers ...*labels.Matcher) ([]labels.Labels, error) {
 	return nil, nil
 }
 
@@ -1065,6 +1065,19 @@ func TestConfig_Validate(t *testing.T) {
 				cfg.ShuffleShardingIngestersLookbackPeriod = time.Minute
 			},
 			expected: errShuffleShardingLookbackLessThanQueryStoreAfter,
+		},
+		"should pass if both 'query store after' and 'query ingesters within' are set and 'query store after' < 'query ingesters within'": {
+			setup: func(cfg *Config) {
+				cfg.QueryStoreAfter = time.Hour
+				cfg.QueryIngestersWithin = 2 * time.Hour
+			},
+		},
+		"should fail if both 'query store after' and 'query ingesters within' are set and 'query store after' > 'query ingesters within'": {
+			setup: func(cfg *Config) {
+				cfg.QueryStoreAfter = 3 * time.Hour
+				cfg.QueryIngestersWithin = 2 * time.Hour
+			},
+			expected: errBadLookbackConfigs,
 		},
 	}
 

@@ -1,8 +1,9 @@
 local utils = import 'mixin-utils/utils.libsonnet';
+local filename = 'mimir-writes.json';
 
 (import 'dashboard-utils.libsonnet') {
-  'mimir-writes.json':
-    ($.dashboard('Writes') + { uid: '0156f6d15aa234d452a33a4f13c838e3' })
+  [filename]:
+    ($.dashboard('Writes') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates()
     .addRowIf(
       $._config.show_dashboard_descriptions.writes,
@@ -102,12 +103,14 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.panel('Tenants') +
         $.statPanel('count(count by(user) (cortex_ingester_active_series{%s}))' % $.jobMatcher($._config.job_names.ingester), format='short')
       )
-      .addPanel(
+      .addPanelIf(
+        $._config.gateway_enabled,
         $.panel('Requests / sec') +
-        $.statPanel('sum(rate(cortex_request_duration_seconds_count{%s, route=~"api_(v1|prom)_push"}[5m]))' % $.jobMatcher($._config.job_names.gateway), format='reqps')
+        $.statPanel('sum(rate(cortex_request_duration_seconds_count{%s, route=~"api_(v1|prom)_push"}[$__rate_interval]))' % $.jobMatcher($._config.job_names.gateway), format='reqps')
       )
     )
-    .addRow(
+    .addRowIf(
+      $._config.gateway_enabled,
       $.row('Gateway')
       .addPanel(
         $.panel('Requests / sec') +
