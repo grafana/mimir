@@ -475,6 +475,24 @@ receivers:
 `, backendURL)
 			},
 		},
+		// We expect requests against the HTTP proxy to be blocked too.
+		"HTTP proxy": {
+			getAlertmanagerConfig: func(backendURL string) string {
+				return fmt.Sprintf(`
+route:
+  receiver: webhook
+  group_wait: 0s
+  group_interval: 1s
+
+receivers:
+  - name: webhook
+    webhook_configs:
+      - url: https://www.google.com
+        http_config:
+          proxy_url: %s
+`, backendURL)
+			},
+		},
 	}
 
 	for receiverName, testData := range tests {
