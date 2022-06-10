@@ -9,6 +9,7 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 
@@ -61,8 +62,9 @@ type forwarder struct {
 	client http.Client
 
 	requestsTotal           *prometheus.CounterVec
-	requestLatencyHistogram *prometheus.HistogramVec
+	errorsTotal             *prometheus.CounterVec
 	samplesTotal            *prometheus.CounterVec
+	requestLatencyHistogram *prometheus.HistogramVec
 }
 
 // NewForwarder returns a new forwarder, if forwarding is disabled it returns nil.
@@ -84,6 +86,11 @@ func NewForwarder(reg prometheus.Registerer, cfg Config) Forwarder {
 			Name:      "distributor_forward_requests_total",
 			Help:      "The total number of requests the Distributor made to forward samples.",
 		}, []string{"user"}),
+		errorsTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Namespace: "cortex",
+			Name:      "distributor_forward_errors_total",
+			Help:      "The total number of errors which the Distributor received from forwarding targets.",
+		}, []string{"user", "status_code"}),
 		samplesTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Namespace: "cortex",
 			Name:      "distributor_forward_samples_total",
@@ -103,6 +110,7 @@ func (r *forwarder) NewRequest(ctx context.Context, tenant string, rules validat
 		ctx:    ctx,
 		client: &r.client, // http client should be re-used so open connections get re-used.
 		pools:  &r.pools,
+		tenant: tenant,
 
 		tsByEndpoint: make(map[string]*[]mimirpb.PreallocTimeseries),
 
@@ -111,6 +119,7 @@ func (r *forwarder) NewRequest(ctx context.Context, tenant string, rules validat
 		propagateErrors: r.cfg.PropagateErrors,
 
 		requests: r.requestsTotal.WithLabelValues(tenant),
+		errors:   r.errorsTotal,
 		samples:  r.samplesTotal.WithLabelValues(tenant),
 		latency:  r.requestLatencyHistogram.WithLabelValues(tenant),
 	}
@@ -120,6 +129,7 @@ type request struct {
 	ctx    context.Context
 	client *http.Client
 	pools  *pools
+	tenant string
 
 	tsByEndpoint map[string]*[]mimirpb.PreallocTimeseries
 
@@ -132,6 +142,7 @@ type request struct {
 	propagateErrors bool
 
 	requests prometheus.Counter
+	errors   *prometheus.CounterVec
 	samples  prometheus.Counter
 	latency  prometheus.Observer
 }
@@ -278,6 +289,7 @@ func (r *request) sendToEndpoint(ctx context.Context, endpoint string, ts []mimi
 		if scanner.Scan() {
 			line = scanner.Text()
 		}
+		r.errors.WithLabelValues(r.tenant, strconv.Itoa(httpResp.StatusCode)).Inc()
 		err := errors.Errorf("server returned HTTP status %s: %s", httpResp.Status, line)
 		if httpResp.StatusCode/100 == 5 || httpResp.StatusCode == http.StatusTooManyRequests {
 			return recoverableError{err}
