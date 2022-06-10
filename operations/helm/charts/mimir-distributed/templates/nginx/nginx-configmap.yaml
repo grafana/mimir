@@ -1,0 +1,13 @@
+{{- if not .Values.enterprise.enabled -}}
+{{- if .Values.nginx.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "mimir.resourceName" (dict "ctx" . "component" "nginx") }}
+  labels:
+    {{- include "mimir.labels" (dict "ctx" . "component" "nginx") | nindent 4 }}
+data:
+  nginx.conf: |
+    {{- tpl .Values.nginx.nginxConfig.file . | nindent 4 }}
+{{- end -}}
+{{- end -}}

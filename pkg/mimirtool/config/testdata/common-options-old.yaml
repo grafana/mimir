@@ -1,0 +1,27 @@
+server:
+  http_listen_port: 80
+
+blocks_storage:
+  backend: s3
+  filesystem:
+    dir: ''
+
+ruler_storage:
+  backend: s3
+  filesystem:
+    dir: ''
+
+alertmanager_storage:
+  backend: s3
+
+querier:
+  active_query_tracker_dir: ./active-query-tracker
+
+alertmanager:
+  data_dir: data/
+
+compactor:
+  data_dir: ./data
+
+ruler:
+  rule_path: /rules

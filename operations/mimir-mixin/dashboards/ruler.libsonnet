@@ -1,4 +1,5 @@
 local utils = import 'mixin-utils/utils.libsonnet';
+local filename = 'mimir-ruler.json';
 
 (import 'dashboard-utils.libsonnet') {
   local ruler_config_api_routes_re = '(prometheus|api_prom)_(rules.*|api_v1_(rules|alerts))',
@@ -58,8 +59,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
     },
   },
 
-  'mimir-ruler.json':
-    ($.dashboard('Ruler') + { uid: '44d12bcb1f95661c6ab6bc946dfc3473' })
+  [filename]:
+    ($.dashboard('Ruler') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates()
     .addRow(
       ($.row('Headlines') + {
@@ -76,11 +77,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
       .addPanel(
         $.panel('Read from ingesters - QPS') +
-        $.statPanel('sum(rate(cortex_ingester_client_request_duration_seconds_count{%s, operation="/cortex.Ingester/QueryStream"}[5m]))' % $.jobMatcher($._config.job_names.ruler), format='reqps')
+        $.statPanel('sum(rate(cortex_ingester_client_request_duration_seconds_count{%s, operation="/cortex.Ingester/QueryStream"}[$__rate_interval]))' % $.jobMatcher($._config.job_names.ruler), format='reqps')
       )
       .addPanel(
         $.panel('Write to ingesters - QPS') +
-        $.statPanel('sum(rate(cortex_ingester_client_request_duration_seconds_count{%s, operation="/cortex.Ingester/Push"}[5m]))' % $.jobMatcher($._config.job_names.ruler), format='reqps')
+        $.statPanel('sum(rate(cortex_ingester_client_request_duration_seconds_count{%s, operation="/cortex.Ingester/Push"}[$__rate_interval]))' % $.jobMatcher($._config.job_names.ruler), format='reqps')
       )
     )
     .addRow(
@@ -103,7 +104,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
         ),
       )
     )
-    .addRow(
+    .addRowIf(
+      $._config.gateway_enabled,
       $.row('Configuration API (gateway)')
       .addPanel(
         $.panel('QPS') +
@@ -161,7 +163,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
       .addPanel(
         $.panel('Consistency checks failed') +
-        $.queryPanel('sum(rate(cortex_querier_blocks_consistency_checks_failed_total{%s}[1m])) / sum(rate(cortex_querier_blocks_consistency_checks_total{%s}[1m]))' % [$.jobMatcher($._config.job_names.ruler), $.jobMatcher($._config.job_names.ruler)], 'Failure Rate') +
+        $.queryPanel('sum(rate(cortex_querier_blocks_consistency_checks_failed_total{%s}[$__rate_interval])) / sum(rate(cortex_querier_blocks_consistency_checks_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ruler), $.jobMatcher($._config.job_names.ruler)], 'Failure Rate') +
         { yaxes: $.yaxes({ format: 'percentunit', max: 1 }) },
       )
     )

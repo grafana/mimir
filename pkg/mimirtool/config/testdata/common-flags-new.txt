@@ -1,0 +1,10 @@
+-server.http-listen-port=80
+-blocks-storage.backend=s3
+-ruler-storage.backend=s3
+-alertmanager-storage.backend=s3
+-activity-tracker.filepath=./active-query-tracker
+-alertmanager.storage.path=data/
+-blocks-storage.filesystem.dir=
+-compactor.data-dir=./data
+-ruler.rule-path=/rules
+-ruler-storage.filesystem.dir=

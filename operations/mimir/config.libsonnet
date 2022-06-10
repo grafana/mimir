@@ -133,12 +133,6 @@
       // type queries. 32 days to allow for comparision over the last month (31d) and
       // then some.
       'store.max-query-length': '768h',
-
-      // Ingesters don't have data older than 13h, no need to ask them.
-      'querier.query-ingesters-within': '13h',
-
-      // No need to look at store for data younger than 12h, as ingesters have all of it.
-      'querier.query-store-after': '12h',
     },
 
     // PromQL query engine config (shared between all services running PromQL engine, like the ruler and querier).
@@ -188,8 +182,6 @@
 
     alertmanager: {
       replicas: 3,
-      sharding_enabled: false,
-      gossip_port: 9094,
       fallback_config: {},
       ring_store: 'consul',
       ring_hostname: 'consul.%s.svc.cluster.local:8500' % $._config.namespace,
@@ -419,6 +411,7 @@
         'blocks-storage.bucket-store.chunks-cache.memcached.addresses': 'dnssrvnoa+memcached.%(namespace)s.svc.cluster.local:11211' % $._config,
         'blocks-storage.bucket-store.chunks-cache.memcached.max-item-size': $._config.memcached_chunks_max_item_size_mb * 1024 * 1024,
         'blocks-storage.bucket-store.chunks-cache.memcached.max-async-concurrency': '50',
+        'blocks-storage.bucket-store.chunks-cache.memcached.timeout': '450ms',
       } else {}
     ),
 

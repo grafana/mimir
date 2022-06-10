@@ -15,6 +15,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/backoff"
 	"github.com/weaveworks/common/httpgrpc"
+	"go.uber.org/atomic"
 	"google.golang.org/grpc"
 
 	"github.com/grafana/mimir/pkg/frontend/v1/frontendv1pb"
@@ -29,12 +30,16 @@ var (
 	}
 )
 
-func newFrontendProcessor(cfg Config, handler RequestHandler, log log.Logger) processor {
+func newFrontendProcessor(cfg Config, handler RequestHandler, log log.Logger) *frontendProcessor {
 	return &frontendProcessor{
 		log:            log,
 		handler:        handler,
 		maxMessageSize: cfg.GRPCClientConfig.MaxSendMsgSize,
 		querierID:      cfg.QuerierID,
+
+		frontendClientFactory: func(conn *grpc.ClientConn) frontendv1pb.FrontendClient {
+			return frontendv1pb.NewFrontendClient(conn)
+		},
 	}
 }
 
@@ -45,11 +50,13 @@ type frontendProcessor struct {
 	querierID      string
 
 	log log.Logger
+
+	frontendClientFactory func(conn *grpc.ClientConn) frontendv1pb.FrontendClient
 }
 
 // notifyShutdown implements processor.
 func (fp *frontendProcessor) notifyShutdown(ctx context.Context, conn *grpc.ClientConn, address string) {
-	client := frontendv1pb.NewFrontendClient(conn)
+	client := fp.frontendClientFactory(conn)
 
 	req := &frontendv1pb.NotifyClientShutdownRequest{ClientID: fp.querierID}
 	if _, err := client.NotifyClientShutdown(ctx, req); err != nil {
@@ -58,20 +65,26 @@ func (fp *frontendProcessor) notifyShutdown(ctx context.Context, conn *grpc.Clie
 	}
 }
 
-// runOne loops, trying to establish a stream to the frontend to begin request processing.
-func (fp *frontendProcessor) processQueriesOnSingleStream(ctx context.Context, conn *grpc.ClientConn, address string) {
-	client := frontendv1pb.NewFrontendClient(conn)
+// processQueriesOnSingleStream tries to establish a stream to the query-frontend and then process queries received
+// on the stream. This function loops until workerCtx is canceled.
+func (fp *frontendProcessor) processQueriesOnSingleStream(workerCtx context.Context, conn *grpc.ClientConn, address string) {
+	client := fp.frontendClientFactory(conn)
 
-	backoff := backoff.New(ctx, processorBackoffConfig)
+	// Run the gRPC client and process all the queries in a dedicated context that we call the "execution context".
+	// The execution context is cancelled once the workerCtx is cancelled AND there's no inflight query executing.
+	execCtx, execCancel, inflightQuery := newExecutionContext(workerCtx, fp.log)
+	defer execCancel()
+
+	backoff := backoff.New(execCtx, processorBackoffConfig)
 	for backoff.Ongoing() {
-		c, err := client.Process(ctx)
+		c, err := client.Process(execCtx)
 		if err != nil {
 			level.Error(fp.log).Log("msg", "error contacting frontend", "address", address, "err", err)
 			backoff.Wait()
 			continue
 		}
 
-		if err := fp.process(c); err != nil {
+		if err := fp.process(c, inflightQuery); err != nil {
 			level.Error(fp.log).Log("msg", "error processing requests", "address", address, "err", err)
 			backoff.Wait()
 			continue
@@ -82,7 +95,7 @@ func (fp *frontendProcessor) processQueriesOnSingleStream(ctx context.Context, c
 }
 
 // process loops processing requests on an established stream.
-func (fp *frontendProcessor) process(c frontendv1pb.Frontend_ProcessClient) error {
+func (fp *frontendProcessor) process(c frontendv1pb.Frontend_ProcessClient, inflightQuery *atomic.Bool) error {
 	// Build a child context so we can cancel a query when the stream is closed.
 	ctx, cancel := context.WithCancel(c.Context())
 	defer cancel()
@@ -95,12 +108,16 @@ func (fp *frontendProcessor) process(c frontendv1pb.Frontend_ProcessClient) erro
 
 		switch request.Type {
 		case frontendv1pb.HTTP_REQUEST:
+			inflightQuery.Store(true)
+
 			// Handle the request on a "background" goroutine, so we go back to
 			// blocking on c.Recv().  This allows us to detect the stream closing
 			// and cancel the query.  We don't actually handle queries in parallel
 			// here, as we're running in lock step with the server - each Recv is
 			// paired with a Send.
 			go fp.runRequest(ctx, request.HttpRequest, request.StatsEnabled, func(response *httpgrpc.HTTPResponse, stats *stats.Stats) error {
+				defer inflightQuery.Store(false)
+
 				return c.Send(&frontendv1pb.ClientToFrontend{
 					HttpResponse: response,
 					Stats:        stats,

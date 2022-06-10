@@ -46,6 +46,18 @@ func CortexToMimirMapper() Mapper {
 		setOldDefaultExplicitly("blocks_storage.backend"),
 		setOldDefaultExplicitly("ruler_storage.backend"),
 		setOldDefaultExplicitly("alertmanager_storage.backend"),
+		// Prevent activity_tracker.filepath from being updates with a new default (./metrics-activity.log) implicitly and always set it to the old default (./active-query-tracker)
+		setOldDefaultWithNewPathExplicitly("querier.active_query_tracker_dir", "activity_tracker.filepath"),
+		// Prevent alertmanager.data_dir from being updates with a new default (./data-alertmanager/) implicitly and always set it to the old default (data/)
+		setOldDefaultExplicitly("alertmanager.data_dir"),
+		// Prevent blocks_storage.filesystem.dir from being updates with a new default (blocks) implicitly and always set it to the old default ("")
+		setOldDefaultExplicitly("blocks_storage.filesystem.dir"),
+		// Prevent compactor.data_dir from being updates with a new default (./data-compactor/) implicitly and always set it to the old default (./data)
+		setOldDefaultExplicitly("compactor.data_dir"),
+		// Prevent ruler.rule_path from being updates with a new default (./data-ruler/) implicitly and always set it to the old default (/rules)
+		setOldDefaultExplicitly("ruler.rule_path"),
+		// Prevent ruler_storage.filesystem.dir from being updates with a new default (ruler) implicitly and always set it to the old default ("")
+		setOldDefaultExplicitly("ruler_storage.filesystem.dir"),
 	}
 }
 
@@ -104,7 +116,6 @@ var cortexRenameMappings = map[string]Mapping{
 	"ingester.lifecycler.availability_zone":                          RenameMapping("ingester.ring.instance_availability_zone"),
 	"ingester.lifecycler.final_sleep":                                RenameMapping("ingester.ring.final_sleep"),
 	"ingester.lifecycler.heartbeat_period":                           RenameMapping("ingester.ring.heartbeat_period"),
-	"ingester.lifecycler.join_after":                                 RenameMapping("ingester.ring.join_after"),
 	"ingester.lifecycler.min_ready_duration":                         RenameMapping("ingester.ring.min_ready_duration"),
 	"ingester.lifecycler.num_tokens":                                 RenameMapping("ingester.ring.num_tokens"),
 	"ingester.lifecycler.observe_period":                             RenameMapping("ingester.ring.observe_period"),
@@ -521,18 +532,22 @@ func mapInstanceInterfaceNames(ifaceNames map[string]string) Mapper {
 }
 
 func setOldDefaultExplicitly(path string) Mapper {
+	return setOldDefaultWithNewPathExplicitly(path, path)
+}
+
+func setOldDefaultWithNewPathExplicitly(oldPath, newPath string) Mapper {
 	return MapperFunc(func(source, target Parameters) error {
-		v, err := source.GetValue(path)
+		v, err := source.GetValue(oldPath)
 		if err != nil {
 			return err
 		}
 
-		if v.IsUnset() || !differentFromDefault(source, path) {
-			err = target.SetValue(path, source.MustGetDefaultValue(path))
+		if v.IsUnset() || !differentFromDefault(source, oldPath) {
+			err = target.SetValue(newPath, source.MustGetDefaultValue(oldPath))
 			// We set the default again after the value itself because when prepareSourceDefaults is mapping defaults
 			// `SetValue` actually sets the default value.
 			// Also set the source default to Nil, so that when updating defaults this parameter isn't affected
-			err2 := target.SetDefaultValue(path, Nil)
+			err2 := target.SetDefaultValue(newPath, Nil)
 			return multierror.New(err, err2).Err()
 		}
 
@@ -568,6 +583,7 @@ var removedConfigPaths = append(gemRemovedConfigPath, []string{
 	"ingester.concurrent_flushes",                           // -ingester.concurrent-flushes
 	"ingester.flush_op_timeout",                             // -ingester.flush-op-timeout
 	"ingester.flush_period",                                 // -ingester.flush-period
+	"ingester.lifecycler.join_after",                        // -ingester.ring.join-after
 	"ingester.max_chunk_age",                                // -ingester.max-chunk-age
 	"ingester.max_chunk_idle_time",                          // -ingester.max-chunk-idle
 	"ingester.max_stale_chunk_idle_time",                    // -ingester.max-stale-chunk-idle

@@ -222,9 +222,10 @@ func TestMimirServerShutdownWithActivityTrackerEnabled(t *testing.T) {
 
 func TestConfigValidation(t *testing.T) {
 	for _, tc := range []struct {
-		name          string
-		getTestConfig func() *Config
-		expectedError error
+		name           string
+		getTestConfig  func() *Config
+		expectedError  error
+		expectAnyError bool
 	}{
 		{
 			name: "should pass validation if the http prefix is empty",
@@ -322,10 +323,49 @@ func TestConfigValidation(t *testing.T) {
 			},
 			expectedError: nil,
 		},
+		{
+			name: "Alertmanager: should ignore invalid alertmanager configuration when alertmanager is not running",
+			getTestConfig: func() *Config {
+				cfg := newDefaultConfig()
+				_ = cfg.Target.Set("all")
+
+				cfg.Alertmanager.ShardingRing.ZoneAwarenessEnabled = true
+				return cfg
+			},
+			expectedError: nil,
+		},
+		{
+			name: "Alertmanager: should fail with invalid alertmanager configuration when alertmanager is not running",
+			getTestConfig: func() *Config {
+				cfg := newDefaultConfig()
+				_ = cfg.Target.Set("all,alertmanager")
+
+				cfg.Alertmanager.ShardingRing.ZoneAwarenessEnabled = true
+				return cfg
+			},
+			expectAnyError: true,
+		},
+		{
+			name: "S3: should pass if bucket name is shared between alertmanager and ruler storage because they already use separate prefixes (rules/ and alerts/)",
+			getTestConfig: func() *Config {
+				cfg := newDefaultConfig()
+				_ = cfg.Target.Set("all,alertmanager")
+
+				for _, bucketCfg := range []*bucket.Config{&cfg.RulerStorage.Config, &cfg.AlertmanagerStorage.Config} {
+					bucketCfg.Backend = bucket.S3
+					bucketCfg.S3.BucketName = "b1"
+					bucketCfg.S3.Region = "r1"
+				}
+				return cfg
+			},
+			expectedError: nil,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			err := tc.getTestConfig().Validate(nil)
-			if tc.expectedError != nil {
+			if tc.expectAnyError {
+				require.Error(t, err)
+			} else if tc.expectedError != nil {
 				require.ErrorIs(t, err, tc.expectedError)
 			} else {
 				require.NoError(t, err)

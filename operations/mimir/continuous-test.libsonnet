@@ -16,6 +16,8 @@ local k = import 'ksonnet-util/kausal.libsonnet';
     'tests.write-endpoint': $._config.continuous_test_write_endpoint,
     'tests.read-endpoint': $._config.continuous_test_read_endpoint,
     'tests.tenant-id': $._config.continuous_test_tenant_id,
+    'tests.write-read-series-test.num-series': 1000,
+    'tests.write-read-series-test.max-query-age': '48h',
   },
 
   continuous_test_container::
@@ -25,7 +27,8 @@ local k = import 'ksonnet-util/kausal.libsonnet';
       k.core.v1.containerPort.new('http-metrics', 9900),
     ]) +
     k.util.resourcesRequests('1', '512Mi') +
-    k.util.resourcesLimits(null, '1Gi'),
+    k.util.resourcesLimits(null, '1Gi') +
+    $.jaeger_mixin,
 
   continuous_test_deployment: if !$._config.continuous_test_enabled then null else
     deployment.new('continuous-test', 1, [

@@ -5,7 +5,7 @@ set -e
 
 # Initialise the Tanka.
 mkdir jsonnet-example && cd jsonnet-example
-tk init --k8s=1.18
+tk init --k8s=1.21
 
 # Install Mimir jsonnet.
 jb install github.com/grafana/mimir/operations/mimir@main

@@ -1,0 +1,159 @@
+# These values configure the Grafana Mimir or Grafana Enterprise Metrics cluster to
+# handle production ingestion of ~10M active series using the blocks
+# storage engine scraped with a 15s interval.
+# Query requirements can vary dramatically depending on query rate and query
+# ranges. The values here satisfy a "usual" query load as seen from our
+# production clusters at this scale.
+# It is important to ensure that you run no more than one ingester replica
+# per node so that a single node failure does not cause data loss. Zone aware
+# replication can be configured to ensure data replication spans availability
+# zones. Refer to [Zone Aware Replication](https://grafana.com/docs/mimir/v2.0.x/operators-guide/configuring/configuring-zone-aware-replication/)
+# for more information.
+# Minio is no longer enabled and you are encouraged to use your cloud providers
+# object storage service for production deployments.
+# Ingesters are configured with a replication factor of 3 to ensure that a single ingester failur does not
+# result in data loss.
+
+alertmanager:
+  persistentVolume:
+    enabled: true
+  replicas: 3
+  resources:
+    requests:
+      cpu: 1
+      memory: 8Gi
+    limits:
+      cpu: 1
+      memory: 8Gi
+  statefulSet:
+    enabled: true
+
+compactor:
+  persistentVolume:
+    size: 50Gi
+  resources:
+    requests:
+      cpu: 2
+      memory: 2Gi
+    limits:
+      cpu: 2
+      memory: 2Gi
+
+distributor:
+  replicas: 15
+  resources:
+    requests:
+      cpu: 2
+      memory: 4Gi
+    limits:
+      cpu: 2
+      memory: 4Gi
+
+ingester:
+  persistentVolume:
+    size: 50Gi
+  replicas: 25
+  resources:
+    requests:
+      cpu: 4
+      memory: 15Gi
+    limits:
+      cpu: 4
+      memory: 15Gi
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchExpressions:
+              - key: target
+                operator: In
+                values:
+                  - ingester
+          topologyKey: 'kubernetes.io/hostname'
+
+memcached:
+  enabled: true
+  replicaCount: 32
+
+memcached-queries:
+  enabled: true
+  replicaCount: 10
+
+memcached-metadata:
+  enabled: true
+
+minio:
+  enabled: false
+
+overrides_exporter:
+  replicas: 1
+  resources:
+    limits:
+      cpu: 1
+      memory: 256Mi
+    requests:
+      cpu: 1
+      memory: 256Mi
+
+querier:
+  replicas: 6
+  resources:
+    requests:
+      cpu: 1
+      memory: 12Gi
+    limits:
+      cpu: 1
+      memory: 12Gi
+
+query_frontend:
+  replicas: 2
+  resources:
+    requests:
+      cpu: 2
+      memory: 6Gi
+    limits:
+      cpu: 2
+      memory: 6Gi
+
+ruler:
+  replicas: 2
+  resources:
+    requests:
+      cpu: 1
+      memory: 6Gi
+    limits:
+      cpu: 1
+      memory: 6Gi
+
+store_gateway:
+  persistentVolume:
+    size: 50Gi
+  replicas: 1
+  resources:
+    requests:
+      cpu: 1
+      memory: 6Gi
+    limits:
+      cpu: 1
+      memory: 6Gi
+
+# Grafana Enterprise Metrics feature related
+admin_api:
+  replicas: 3
+  resources:
+    requests:
+      cpu: 1
+      memory: 256Mi
+    limits:
+      cpu: 1
+      memory: 256Mi
+
+gateway:
+  replicas: 8
+  resources:
+    requests:
+      cpu: 1
+      memory: 384Mi
+    limits:
+      cpu: 1
+      memory: 384Mi

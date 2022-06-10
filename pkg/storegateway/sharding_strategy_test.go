@@ -46,6 +46,7 @@ func TestShuffleShardingStrategy(t *testing.T) {
 		instanceID   string
 		instanceAddr string
 		users        []string
+		err          error
 	}
 
 	type blocksExpectation struct {
@@ -58,6 +59,7 @@ func TestShuffleShardingStrategy(t *testing.T) {
 		replicationFactor int
 		limits            ShardingLimits
 		setupRing         func(*ring.Desc)
+		prevLoadedBlocks  map[string]map[ulid.ULID]struct{}
 		expectedUsers     []usersExpectation
 		expectedBlocks    []blocksExpectation
 	}{
@@ -69,7 +71,7 @@ func TestShuffleShardingStrategy(t *testing.T) {
 			},
 			expectedUsers: []usersExpectation{
 				{instanceID: "instance-1", instanceAddr: "127.0.0.1", users: []string{userID}},
-				{instanceID: "instance-2", instanceAddr: "127.0.0.2", users: nil},
+				{instanceID: "instance-2", instanceAddr: "127.0.0.2", err: errStoreGatewayUnhealthy},
 			},
 			expectedBlocks: []blocksExpectation{
 				{instanceID: "instance-1", instanceAddr: "127.0.0.1", blocks: []ulid.ULID{block1, block2, block3, block4}},
@@ -84,7 +86,7 @@ func TestShuffleShardingStrategy(t *testing.T) {
 			},
 			expectedUsers: []usersExpectation{
 				{instanceID: "instance-1", instanceAddr: "127.0.0.1", users: []string{userID}},
-				{instanceID: "instance-2", instanceAddr: "127.0.0.2", users: nil},
+				{instanceID: "instance-2", instanceAddr: "127.0.0.2", err: errStoreGatewayUnhealthy},
 			},
 			expectedBlocks: []blocksExpectation{
 				{instanceID: "instance-1", instanceAddr: "127.0.0.1", blocks: []ulid.ULID{block1, block2, block3, block4}},
@@ -99,7 +101,7 @@ func TestShuffleShardingStrategy(t *testing.T) {
 			},
 			expectedUsers: []usersExpectation{
 				{instanceID: "instance-1", instanceAddr: "127.0.0.1", users: []string{userID}},
-				{instanceID: "instance-2", instanceAddr: "127.0.0.2", users: nil},
+				{instanceID: "instance-2", instanceAddr: "127.0.0.2", err: errStoreGatewayUnhealthy},
 			},
 			expectedBlocks: []blocksExpectation{
 				{instanceID: "instance-1", instanceAddr: "127.0.0.1", blocks: []ulid.ULID{block1, block2, block3, block4}},
@@ -189,7 +191,7 @@ func TestShuffleShardingStrategy(t *testing.T) {
 				{instanceID: "instance-3", instanceAddr: "127.0.0.3", blocks: []ulid.ULID{block4 /* replicated: */, block3}},
 			},
 		},
-		"one unhealthy instance in the ring with RF = 1 and SS = 3": {
+		"one unhealthy instance in the ring with RF = 1, SS = 3 and NO previously loaded blocks": {
 			replicationFactor: 1,
 			limits:            &shardingLimitsMock{storeGatewayTenantShardSize: 3},
 			setupRing: func(r *ring.Desc) {
@@ -206,7 +208,7 @@ func TestShuffleShardingStrategy(t *testing.T) {
 			expectedUsers: []usersExpectation{
 				{instanceID: "instance-1", instanceAddr: "127.0.0.1", users: []string{userID}},
 				{instanceID: "instance-2", instanceAddr: "127.0.0.2", users: []string{userID}},
-				{instanceID: "instance-3", instanceAddr: "127.0.0.3", users: []string{userID}},
+				{instanceID: "instance-3", instanceAddr: "127.0.0.3", err: errStoreGatewayUnhealthy},
 			},
 			expectedBlocks: []blocksExpectation{
 				// No shard has the blocks of the unhealthy instance.
@@ -215,7 +217,7 @@ func TestShuffleShardingStrategy(t *testing.T) {
 				{instanceID: "instance-3", instanceAddr: "127.0.0.3", blocks: []ulid.ULID{}},
 			},
 		},
-		"one unhealthy instance in the ring with RF = 2 and SS = 3": {
+		"one unhealthy instance in the ring with RF = 2, SS = 3 and NO previously loaded blocks": {
 			replicationFactor: 2,
 			limits:            &shardingLimitsMock{storeGatewayTenantShardSize: 3},
 			setupRing: func(r *ring.Desc) {
@@ -232,7 +234,7 @@ func TestShuffleShardingStrategy(t *testing.T) {
 			expectedUsers: []usersExpectation{
 				{instanceID: "instance-1", instanceAddr: "127.0.0.1", users: []string{userID}},
 				{instanceID: "instance-2", instanceAddr: "127.0.0.2", users: []string{userID}},
-				{instanceID: "instance-3", instanceAddr: "127.0.0.3", users: []string{userID}},
+				{instanceID: "instance-3", instanceAddr: "127.0.0.3", err: errStoreGatewayUnhealthy},
 			},
 			expectedBlocks: []blocksExpectation{
 				{instanceID: "instance-1", instanceAddr: "127.0.0.1", blocks: []ulid.ULID{block1, block3 /* replicated: */, block2, block4}},
@@ -240,7 +242,7 @@ func TestShuffleShardingStrategy(t *testing.T) {
 				{instanceID: "instance-3", instanceAddr: "127.0.0.3", blocks: []ulid.ULID{}},
 			},
 		},
-		"one unhealthy instance in the ring with RF = 2 and SS = 2": {
+		"one unhealthy instance in the ring with RF = 2, SS = 2 and NO previously loaded blocks": {
 			replicationFactor: 2,
 			limits:            &shardingLimitsMock{storeGatewayTenantShardSize: 2},
 			setupRing: func(r *ring.Desc) {
@@ -257,12 +259,40 @@ func TestShuffleShardingStrategy(t *testing.T) {
 			expectedUsers: []usersExpectation{
 				{instanceID: "instance-1", instanceAddr: "127.0.0.1", users: []string{userID}},
 				{instanceID: "instance-2", instanceAddr: "127.0.0.2", users: nil},
-				{instanceID: "instance-3", instanceAddr: "127.0.0.3", users: []string{userID}},
+				{instanceID: "instance-3", instanceAddr: "127.0.0.3", err: errStoreGatewayUnhealthy},
 			},
 			expectedBlocks: []blocksExpectation{
 				{instanceID: "instance-1", instanceAddr: "127.0.0.1", blocks: []ulid.ULID{block1, block2, block3, block4}},
 				{instanceID: "instance-2", instanceAddr: "127.0.0.2", blocks: []ulid.ULID{ /* no blocks because not belonging to the shard */ }},
 				{instanceID: "instance-3", instanceAddr: "127.0.0.3", blocks: []ulid.ULID{ /* no blocks because unhealthy */ }},
+			},
+		},
+		"one unhealthy instance in the ring with RF = 2, SS = 2 and some previously loaded blocks": {
+			replicationFactor: 2,
+			limits:            &shardingLimitsMock{storeGatewayTenantShardSize: 2},
+			setupRing: func(r *ring.Desc) {
+				r.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1, block4Hash + 1}, ring.ACTIVE, registeredAt)
+				r.AddIngester("instance-2", "127.0.0.2", "", []uint32{block2Hash + 1}, ring.ACTIVE, registeredAt)
+
+				r.Ingesters["instance-3"] = ring.InstanceDesc{
+					Addr:      "127.0.0.3",
+					Timestamp: time.Now().Add(-time.Hour).Unix(),
+					State:     ring.ACTIVE,
+					Tokens:    []uint32{block3Hash + 1},
+				}
+			},
+			prevLoadedBlocks: map[string]map[ulid.ULID]struct{}{
+				"instance-3": {block2: struct{}{}, block4: struct{}{}},
+			},
+			expectedUsers: []usersExpectation{
+				{instanceID: "instance-1", instanceAddr: "127.0.0.1", users: []string{userID}},
+				{instanceID: "instance-2", instanceAddr: "127.0.0.2", users: nil},
+				{instanceID: "instance-3", instanceAddr: "127.0.0.3", err: errStoreGatewayUnhealthy},
+			},
+			expectedBlocks: []blocksExpectation{
+				{instanceID: "instance-1", instanceAddr: "127.0.0.1", blocks: []ulid.ULID{block1, block2, block3, block4}},
+				{instanceID: "instance-2", instanceAddr: "127.0.0.2", blocks: []ulid.ULID{ /* no blocks because not belonging to the shard */ }},
+				{instanceID: "instance-3", instanceAddr: "127.0.0.3", blocks: []ulid.ULID{block2, block4 /* keeping the previously loaded blocks */}},
 			},
 		},
 		"LEAVING instance in the ring should continue to keep its shard blocks and they should NOT be replicated to another instance": {
@@ -356,7 +386,9 @@ func TestShuffleShardingStrategy(t *testing.T) {
 			// Assert on filter users.
 			for _, expected := range testData.expectedUsers {
 				filter := NewShuffleShardingStrategy(r, expected.instanceID, expected.instanceAddr, testData.limits, log.NewNopLogger())
-				assert.Equal(t, expected.users, filter.FilterUsers(ctx, []string{userID}))
+				actualUsers, err := filter.FilterUsers(ctx, []string{userID})
+				assert.Equal(t, expected.err, err)
+				assert.Equal(t, expected.users, actualUsers)
 			}
 
 			// Assert on filter blocks.
@@ -372,7 +404,7 @@ func TestShuffleShardingStrategy(t *testing.T) {
 					block4: {},
 				}
 
-				err = filter.FilterBlocks(ctx, userID, metas, map[ulid.ULID]struct{}{}, synced)
+				err = filter.FilterBlocks(ctx, userID, metas, testData.prevLoadedBlocks[expected.instanceID], synced)
 				require.NoError(t, err)
 
 				var actualBlocks []ulid.ULID

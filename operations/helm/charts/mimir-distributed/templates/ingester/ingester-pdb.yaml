@@ -1,0 +1,13 @@
+{{- if .Values.ingester.podDisruptionBudget -}}
+apiVersion: {{ include "mimir.podDisruptionBudget.apiVersion" . }}
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "mimir.resourceName" (dict "ctx" . "component" "ingester") }}
+  labels:
+    {{- include "mimir.labels" (dict "ctx" . "component" "ingester" "memberlist" true) | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "mimir.selectorLabels" (dict "ctx" . "component" "ingester" "memberlist" true) | nindent 6 }}
+{{ toYaml .Values.ingester.podDisruptionBudget | indent 2 }}
+{{- end -}}

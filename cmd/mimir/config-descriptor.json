@@ -337,7 +337,7 @@
           "required": false,
           "desc": "Limit on the size of a gRPC message this server can receive (bytes).",
           "fieldValue": null,
-          "fieldDefaultValue": 4194304,
+          "fieldDefaultValue": 104857600,
           "fieldFlag": "server.grpc-max-recv-msg-size-bytes",
           "fieldType": "int",
           "fieldCategory": "advanced"
@@ -348,7 +348,7 @@
           "required": false,
           "desc": "Limit on the size of a gRPC message this server can send (bytes).",
           "fieldValue": null,
-          "fieldDefaultValue": 4194304,
+          "fieldDefaultValue": 104857600,
           "fieldFlag": "server.grpc-max-send-msg-size-bytes",
           "fieldType": "int",
           "fieldCategory": "advanced"
@@ -911,17 +911,6 @@
           "fieldCategory": "advanced"
         },
         {
-          "kind": "field",
-          "name": "extend_writes",
-          "required": false,
-          "desc": "Try writing to an additional ingester in the presence of an ingester not in the ACTIVE state. It is useful to disable this along with -ingester.ring.unregister-on-shutdown=false in order to not spread samples to extra ingesters during rolling restarts with consistent naming.",
-          "fieldValue": null,
-          "fieldDefaultValue": true,
-          "fieldFlag": "distributor.extend-writes",
-          "fieldType": "boolean",
-          "fieldCategory": "advanced"
-        },
-        {
           "kind": "block",
           "name": "ring",
           "required": false,
@@ -1343,6 +1332,17 @@
               "fieldFlag": "distributor.forwarding.request-timeout",
               "fieldType": "duration",
               "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "propagate_errors",
+              "required": false,
+              "desc": "If disabled then forwarding requests are always considered to be successful, errors are ignored.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "distributor.forwarding.propagate-errors",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,
@@ -1388,7 +1388,8 @@
           "fieldValue": null,
           "fieldDefaultValue": 46800000000000,
           "fieldFlag": "querier.query-ingesters-within",
-          "fieldType": "duration"
+          "fieldType": "duration",
+          "fieldCategory": "advanced"
         },
         {
           "kind": "field",
@@ -1396,9 +1397,10 @@
           "required": false,
           "desc": "The time after which a metric should be queried from storage and not just ingesters. 0 means all queries are sent to store. If this option is enabled, the time range of the query sent to the store-gateway will be manipulated to ensure the query end is not more recent than 'now - query-store-after'.",
           "fieldValue": null,
-          "fieldDefaultValue": 0,
+          "fieldDefaultValue": 43200000000000,
           "fieldFlag": "querier.query-store-after",
-          "fieldType": "duration"
+          "fieldType": "duration",
+          "fieldCategory": "advanced"
         },
         {
           "kind": "field",
@@ -1491,9 +1493,9 @@
           "kind": "field",
           "name": "shuffle_sharding_ingesters_lookback_period",
           "required": false,
-          "desc": "When distributor's sharding strategy is shuffle-sharding and this setting is \u003e 0, queriers fetch in-memory series from the minimum set of required ingesters, selecting only ingesters which may have received series since 'now - lookback period'. The lookback period should be greater or equal than the configured -querier.query-store-after and -querier.query-ingesters-within. If this setting is 0, queriers always query all ingesters (ingesters shuffle sharding on read path is disabled).",
+          "desc": "When this setting is \u003e 0, queriers fetch in-memory series from the minimum set of required ingesters, selecting only ingesters which may have received series since 'now - lookback period'. The lookback period should be greater or equal than the configured -querier.query-store-after and -querier.query-ingesters-within. If this setting is 0, queriers always query all ingesters (ingesters shuffle sharding on read path is disabled).",
           "fieldValue": null,
-          "fieldDefaultValue": 0,
+          "fieldDefaultValue": 46800000000000,
           "fieldFlag": "querier.shuffle-sharding-ingesters-lookback-period",
           "fieldType": "duration",
           "fieldCategory": "advanced"
@@ -2182,7 +2184,7 @@
               "kind": "field",
               "name": "unregister_on_shutdown",
               "required": false,
-              "desc": "Unregister from the ring upon clean shutdown. It can be useful to disable for rolling restarts with consistent naming in conjunction with -distributor.extend-writes=false.",
+              "desc": "Unregister from the ring upon clean shutdown. It can be useful to disable for rolling restarts with consistent naming.",
               "fieldValue": null,
               "fieldDefaultValue": true,
               "fieldFlag": "ingester.ring.unregister-on-shutdown",
@@ -2197,17 +2199,6 @@
               "fieldValue": null,
               "fieldDefaultValue": 0,
               "fieldFlag": "ingester.ring.observe-period",
-              "fieldType": "duration",
-              "fieldCategory": "advanced"
-            },
-            {
-              "kind": "field",
-              "name": "join_after",
-              "required": false,
-              "desc": "Period to wait for a claim from another member; will join automatically after this.",
-              "fieldValue": null,
-              "fieldDefaultValue": 0,
-              "fieldFlag": "ingester.ring.join-after",
               "fieldType": "duration",
               "fieldCategory": "advanced"
             },
@@ -2420,6 +2411,28 @@
       "required": false,
       "desc": "",
       "blockEntries": [
+        {
+          "kind": "field",
+          "name": "request_rate",
+          "required": false,
+          "desc": "Per-tenant request rate limit in requests per second. 0 to disable.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "distributor.request-rate-limit",
+          "fieldType": "float",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "request_burst_size",
+          "required": false,
+          "desc": "Per-tenant allowed request burst size. 0 to disable.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "distributor.request-burst-size",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
         {
           "kind": "field",
           "name": "ingestion_rate",
@@ -3774,6 +3787,17 @@
           "fieldType": "string"
         },
         {
+          "kind": "field",
+          "name": "storage_prefix",
+          "required": false,
+          "desc": "Prefix for all objects stored in the backend storage. For simplicity, it may only contain digits and English alphabet letters.",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldFlag": "blocks-storage.storage-prefix",
+          "fieldType": "string",
+          "fieldCategory": "experimental"
+        },
+        {
           "kind": "block",
           "name": "s3",
           "required": false,
@@ -5015,7 +5039,7 @@
               "required": false,
               "desc": "Blocks with minimum time within this duration are ignored, and not loaded by store-gateway. Useful when used together with -querier.query-store-after to prevent loading young blocks, because there are usually many of them (depending on number of ingesters) and they are not yet compacted. Negative values or 0 disable the filter.",
               "fieldValue": null,
-              "fieldDefaultValue": 0,
+              "fieldDefaultValue": 36000000000000,
               "fieldFlag": "blocks-storage.bucket-store.ignore-blocks-within",
               "fieldType": "duration",
               "fieldCategory": "advanced"
@@ -5109,15 +5133,25 @@
               "fieldCategory": "advanced"
             },
             {
-              "kind": "field",
-              "name": "index_header_thread_pool_size",
+              "kind": "block",
+              "name": "index_header",
               "required": false,
-              "desc": "Number of threads that are dedicated for use reading index headers. Set to 0 to disable use of dedicated threads for reading index headers.",
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "map_populate_enabled",
+                  "required": false,
+                  "desc": "If enabled, the store-gateway will attempt to pre-populate the file system cache when memory-mapping index-header files.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "blocks-storage.bucket-store.index-header.map-populate-enabled",
+                  "fieldType": "boolean",
+                  "fieldCategory": "experimental"
+                }
+              ],
               "fieldValue": null,
-              "fieldDefaultValue": 0,
-              "fieldFlag": "blocks-storage.bucket-store.index-header-thread-pool-size",
-              "fieldType": "int",
-              "fieldCategory": "experimental"
+              "fieldDefaultValue": null
             }
           ],
           "fieldValue": null,
@@ -5307,7 +5341,7 @@
               "kind": "field",
               "name": "head_chunks_write_queue_size",
               "required": false,
-              "desc": "The size of the write queue used by the head chunks mapper. Lower values reduce memory utilisation at the cost of potentially higher ingest latency. Value of 0 switches chunks mapper to implementation without a queue.",
+              "desc": "The size of the write queue used by the head chunks mapper. Lower values reduce memory utilisation at the cost of potentially higher ingest latency. Value of 0 switches chunks mapper to implementation without a queue. This flag is only used if the new chunk disk mapper is enabled with -blocks-storage.tsdb.new-chunk-disk-mapper.",
               "fieldValue": null,
               "fieldDefaultValue": 0,
               "fieldFlag": "blocks-storage.tsdb.head-chunks-write-queue-size",
@@ -6454,6 +6488,17 @@
           ],
           "fieldValue": null,
           "fieldDefaultValue": null
+        },
+        {
+          "kind": "field",
+          "name": "thread_pool_size",
+          "required": false,
+          "desc": "Number of OS threads that are dedicated for handling requests. Set to 0 to disable use of dedicated OS threads for handling requests.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "store-gateway.thread-pool-size",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,
@@ -7360,70 +7405,189 @@
               "fieldType": "string"
             },
             {
-              "kind": "field",
-              "name": "tls_enabled",
+              "kind": "block",
+              "name": "grpc_client_config",
               "required": false,
-              "desc": "Set to true if query-frontend connection requires TLS.",
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "max_recv_msg_size",
+                  "required": false,
+                  "desc": "gRPC client max receive message size (bytes).",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 104857600,
+                  "fieldFlag": "ruler.query-frontend.grpc-client-config.grpc-max-recv-msg-size",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "max_send_msg_size",
+                  "required": false,
+                  "desc": "gRPC client max send message size (bytes).",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 104857600,
+                  "fieldFlag": "ruler.query-frontend.grpc-client-config.grpc-max-send-msg-size",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "grpc_compression",
+                  "required": false,
+                  "desc": "Use compression when sending messages. Supported values are: 'gzip', 'snappy' and '' (disable compression)",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler.query-frontend.grpc-client-config.grpc-compression",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "rate_limit",
+                  "required": false,
+                  "desc": "Rate limit for gRPC client; 0 means disabled.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 0,
+                  "fieldFlag": "ruler.query-frontend.grpc-client-config.grpc-client-rate-limit",
+                  "fieldType": "float",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "rate_limit_burst",
+                  "required": false,
+                  "desc": "Rate limit burst for gRPC client.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 0,
+                  "fieldFlag": "ruler.query-frontend.grpc-client-config.grpc-client-rate-limit-burst",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "backoff_on_ratelimits",
+                  "required": false,
+                  "desc": "Enable backoff and retry when we hit ratelimits.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "ruler.query-frontend.grpc-client-config.backoff-on-ratelimits",
+                  "fieldType": "boolean",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "block",
+                  "name": "backoff_config",
+                  "required": false,
+                  "desc": "",
+                  "blockEntries": [
+                    {
+                      "kind": "field",
+                      "name": "min_period",
+                      "required": false,
+                      "desc": "Minimum delay when backing off.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 100000000,
+                      "fieldFlag": "ruler.query-frontend.grpc-client-config.backoff-min-period",
+                      "fieldType": "duration",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "max_period",
+                      "required": false,
+                      "desc": "Maximum delay when backing off.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 10000000000,
+                      "fieldFlag": "ruler.query-frontend.grpc-client-config.backoff-max-period",
+                      "fieldType": "duration",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "max_retries",
+                      "required": false,
+                      "desc": "Number of times to backoff and retry before failing.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 10,
+                      "fieldFlag": "ruler.query-frontend.grpc-client-config.backoff-retries",
+                      "fieldType": "int",
+                      "fieldCategory": "advanced"
+                    }
+                  ],
+                  "fieldValue": null,
+                  "fieldDefaultValue": null
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_enabled",
+                  "required": false,
+                  "desc": "Enable TLS in the GRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "ruler.query-frontend.grpc-client-config.tls-enabled",
+                  "fieldType": "boolean",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_cert_path",
+                  "required": false,
+                  "desc": "Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler.query-frontend.grpc-client-config.tls-cert-path",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_key_path",
+                  "required": false,
+                  "desc": "Path to the key file for the client certificate. Also requires the client certificate to be configured.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler.query-frontend.grpc-client-config.tls-key-path",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_ca_path",
+                  "required": false,
+                  "desc": "Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler.query-frontend.grpc-client-config.tls-ca-path",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_server_name",
+                  "required": false,
+                  "desc": "Override the expected name on the server certificate.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler.query-frontend.grpc-client-config.tls-server-name",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_insecure_skip_verify",
+                  "required": false,
+                  "desc": "Skip validating server certificate.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "ruler.query-frontend.grpc-client-config.tls-insecure-skip-verify",
+                  "fieldType": "boolean",
+                  "fieldCategory": "advanced"
+                }
+              ],
               "fieldValue": null,
-              "fieldDefaultValue": false,
-              "fieldFlag": "ruler.query-frontend.tls-enabled",
-              "fieldType": "boolean",
-              "fieldCategory": "advanced"
-            },
-            {
-              "kind": "field",
-              "name": "tls_cert_path",
-              "required": false,
-              "desc": "Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.",
-              "fieldValue": null,
-              "fieldDefaultValue": "",
-              "fieldFlag": "ruler.query-frontend.tls-cert-path",
-              "fieldType": "string",
-              "fieldCategory": "advanced"
-            },
-            {
-              "kind": "field",
-              "name": "tls_key_path",
-              "required": false,
-              "desc": "Path to the key file for the client certificate. Also requires the client certificate to be configured.",
-              "fieldValue": null,
-              "fieldDefaultValue": "",
-              "fieldFlag": "ruler.query-frontend.tls-key-path",
-              "fieldType": "string",
-              "fieldCategory": "advanced"
-            },
-            {
-              "kind": "field",
-              "name": "tls_ca_path",
-              "required": false,
-              "desc": "Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.",
-              "fieldValue": null,
-              "fieldDefaultValue": "",
-              "fieldFlag": "ruler.query-frontend.tls-ca-path",
-              "fieldType": "string",
-              "fieldCategory": "advanced"
-            },
-            {
-              "kind": "field",
-              "name": "tls_server_name",
-              "required": false,
-              "desc": "Override the expected name on the server certificate.",
-              "fieldValue": null,
-              "fieldDefaultValue": "",
-              "fieldFlag": "ruler.query-frontend.tls-server-name",
-              "fieldType": "string",
-              "fieldCategory": "advanced"
-            },
-            {
-              "kind": "field",
-              "name": "tls_insecure_skip_verify",
-              "required": false,
-              "desc": "Skip validating server certificate.",
-              "fieldValue": null,
-              "fieldDefaultValue": false,
-              "fieldFlag": "ruler.query-frontend.tls-insecure-skip-verify",
-              "fieldType": "boolean",
-              "fieldCategory": "advanced"
+              "fieldDefaultValue": null
             }
           ],
           "fieldValue": null,
@@ -7468,6 +7632,17 @@
           "fieldDefaultValue": "filesystem",
           "fieldFlag": "ruler-storage.backend",
           "fieldType": "string"
+        },
+        {
+          "kind": "field",
+          "name": "storage_prefix",
+          "required": false,
+          "desc": "Prefix for all objects stored in the backend storage. For simplicity, it may only contain digits and English alphabet letters.",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldFlag": "ruler-storage.storage-prefix",
+          "fieldType": "string",
+          "fieldCategory": "experimental"
         },
         {
           "kind": "block",
@@ -8775,6 +8950,17 @@
           "fieldDefaultValue": "filesystem",
           "fieldFlag": "alertmanager-storage.backend",
           "fieldType": "string"
+        },
+        {
+          "kind": "field",
+          "name": "storage_prefix",
+          "required": false,
+          "desc": "Prefix for all objects stored in the backend storage. For simplicity, it may only contain digits and English alphabet letters.",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldFlag": "alertmanager-storage.storage-prefix",
+          "fieldType": "string",
+          "fieldCategory": "experimental"
         },
         {
           "kind": "block",

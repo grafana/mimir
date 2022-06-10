@@ -25,14 +25,37 @@ Each custom tracker counts the active series matching its label pattern on a per
 
 Series with metric name `cortex_ingester_active_series_custom_tracker` have two labels applied: `name` and `user`. The value of the `name` label is the name of the custom tracker specified in the configuration. The value of the `user` label is the tenant-id for which the series count applies.
 
-Assume two custom trackers are configured as in the example above, and that your Grafana Mimir cluster has three tenants: `tenant_1`, `tenant_2`, and `tenant_with_only_prod_metrics`. Assume all series within `tenant_with_only_prod_metrics` have labels that match the pattern `{namespace=~"prod-.*"}` and none that match `{namespace=~"dev-.*"}`.
+To illustrate this, assume that two custom trackers are configured as in the preceding YAML snippet, and that your Grafana Mimir cluster has two tenants: `tenant_1` and `tenant_with_only_prod_metrics`. Assume that `tenant_with_only_prod_metrics` has three series with labels that match the pattern `{namespace=~"prod-.*"}` and none that match the patten `{namespace=~"dev-.*"}`. Also assume that `tenant_1` has five series that match the pattern `{namespace=~"dev-.*"}` and 10 series that match the pattern `{namespace=~"prod-.*"}`.
 
 In this example, the following output appears when the `/metrics` endpoint for the ingester component is scraped:
 
 ```
-cortex_ingester_active_series_custom_tracker{name="dev", user="tenant_1"}
-cortex_ingester_active_series_custom_tracker{name="prod", user="tenant_2"}
-cortex_ingester_active_series_custom_tracker{name="prod", user="tenant_with_only_prod_metrics"}
+cortex_ingester_active_series_custom_tracker{name="dev", user="tenant_1"}                         5
+cortex_ingester_active_series_custom_tracker{name="prod", user="tenant_1"}                       10
+cortex_ingester_active_series_custom_tracker{name="prod", user="tenant_with_only_prod_metrics"}   3
 ```
+
+For specific tenants, you can override the default configuration as previously described. To do so, edit the [runtime configuration]({{< relref "./about-runtime-configuration.md" >}}).
+
+You can override the active series custom trackers’ configuration for the tenant `tenant_with_only_prod_metrics` to track two services instead of the default matchers. See the following example:
+
+```
+overrides:
+  tenant_with_only_prod_metrics:
+    active_series_custom_trackers:
+      service1: '{service="service1"}'
+      service2: '{service="service2"}'
+```
+
+After adding this override, and assuming that there is one matching series for `service1` and two matching series for `service2`, the output at `/metrics` changes:
+
+```
+cortex_ingester_active_series_custom_tracker{name="dev", user="tenant_1"}                                           5
+cortex_ingester_active_series_custom_tracker{name="prod", user="tenant_1"}                                         10
+cortex_ingester_active_series_custom_tracker{name="service1", user="tenant_with_only_prod_metrics"}                 1
+cortex_ingester_active_series_custom_tracker{name="service2", user="tenant_with_only_prod_metrics"}                 2
+```
+
+To set up runtime overrides, refer to [runtime configuration]({{< relref "./about-runtime-configuration.md" >}}).
 
 > **Note:** The custom active series trackers are exposed on each ingester. To understand the count of active series matching a particular label pattern in your Grafana Mimir cluster at a global level, you must collect and sum this metric across all ingesters. If you're running Grafana Mimir with a `replication_factor` > 1, you must also adjust for the fact that the same series will be replicated `RF` times across your ingesters.

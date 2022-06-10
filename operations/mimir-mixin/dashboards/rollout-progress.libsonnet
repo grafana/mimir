@@ -1,4 +1,5 @@
 local utils = import 'mixin-utils/utils.libsonnet';
+local filename = 'mimir-rollout-progress.json';
 
 (import 'dashboard-utils.libsonnet') {
   local config = {
@@ -7,11 +8,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
     gateway_job_matcher: $.jobMatcher($._config.job_names.gateway),
     gateway_write_routes_regex: 'api_(v1|prom)_push',
     gateway_read_routes_regex: '(prometheus|api_prom)_api_v1_.+',
-    all_services_regex: std.join('|', ['cortex-gw', 'distributor', 'ingester.*', 'query-frontend.*', 'query-scheduler.*', 'querier.*', 'compactor', 'store-gateway.*', 'ruler', 'alertmanager.*', 'overrides-exporter', 'cortex', 'mimir']),
+    all_services_regex: '.*(%s).*' % std.join('|', ['cortex-gw', 'distributor', 'ingester', 'query-frontend', 'query-scheduler', 'querier', 'compactor', 'store-gateway', 'ruler', 'alertmanager', 'overrides-exporter', 'cortex', 'mimir']),
   },
 
-  'mimir-rollout-progress.json':
-    ($.dashboard('Rollout progress') + { uid: '7544a3a62b1be6ffd919fc990ab8ba8f' })
+  [filename]:
+    ($.dashboard('Rollout progress') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates(false) + {
       // This dashboard uses the new grid system in order to place panels (using gridPos).
       // Because of this we can't use the mixin's addRow() and addPanel().
@@ -236,7 +237,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
                 count by(container, version) (
                   label_replace(
                     kube_pod_container_info{%(namespace_matcher)s,container=~"%(all_services_regex)s"},
-                    "version", "$1", "image", ".*:(.+)-.*"
+                    "version", "$1", "image", ".*:(.*)"
                   )
                 )
               ||| % config,

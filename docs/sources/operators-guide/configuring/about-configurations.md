@@ -19,7 +19,7 @@ To see the current configuration state of any component, use the [`/config`]({{<
 
 Use a single configuration file, and either pass it to all replicas of Grafana Mimir (when running multiple single-process Mimir replicas) or to all components of Grafana Mimir (when running Grafana Mimir as microservices). When running Grafana Mimir on Kubernetes, you can achieve this by storing the configuration file in a [ConfigMap](https://kubernetes.io/docs/concepts/configuration/configmap/) and mounting it in each Grafana Mimir container.
 
-This recommendation helps to avoid a common misconfiguration pitfall: while certain configuration parameters might look like they’re only needed by one type of component, they might in fact be used by multiple components. For example, the `-ingester.ring.replication-factor` CLI flag is not only required by ingesters, but also by distributors, queriers, and rulers.
+This recommendation helps to avoid a common misconfiguration pitfall: while certain configuration parameters might look like they’re only needed by one type of component, they might in fact be used by multiple components. For example, the `-ingester.ring.replication-factor` CLI flag is not only required by ingesters, but also by distributors, queriers, and rulers (in [internal]({{< relref "../architecture/components/ruler/index.md#internal" >}}) operational mode).
 
 By using a single configuration file, you ensure that each component gets all of the configuration that it needs without needing to track which parameter belongs to which component.
 There is no harm in passing a configuration that is specific to one component (such as an ingester) to another component (such as a querier). In such case, the configuration is simply ignored.

@@ -1,0 +1,13 @@
+{{- if .Values.compactor.podDisruptionBudget -}}
+apiVersion: {{ include "mimir.podDisruptionBudget.apiVersion" . }}
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "mimir.resourceName" (dict "ctx" . "component" "compactor") }}
+  labels:
+    {{- include "mimir.labels" (dict "ctx" . "component" "compactor" "memberlist" true) | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "mimir.selectorLabels" (dict "ctx" . "component" "compactor" "memberlist" true) | nindent 6 }}
+{{ toYaml .Values.compactor.podDisruptionBudget | indent 2 }}
+{{- end -}}

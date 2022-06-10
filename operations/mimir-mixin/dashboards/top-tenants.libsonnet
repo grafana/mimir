@@ -1,4 +1,5 @@
 local utils = import 'mixin-utils/utils.libsonnet';
+local filename = 'mimir-top-tenants.json';
 
 (import 'dashboard-utils.libsonnet') {
   local in_memory_series_per_user_query(at='') = |||
@@ -18,8 +19,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
     group_by_cluster: $._config.group_by_cluster,
   },
 
-  'mimir-top-tenants.json':
-    ($.dashboard('Top tenants') + { uid: 'bc6e12d4fe540e4a1785b9d3ca0ffdd9' })
+  [filename]:
+    ($.dashboard('Top tenants') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates()
     .addCustomTemplate('limit', ['10', '50', '100'])
     .addRowIf(
@@ -107,6 +108,63 @@ local utils = import 'mixin-utils/utils.libsonnet';
             % { job: $.jobMatcher($._config.job_names.distributor) },
           ],
           { 'Value #A': { alias: 'samples/s' } }
+        )
+      ),
+    )
+
+    .addRow(
+      ($.row('By samples rate growth') + { collapse: true })
+      .addPanel(
+        $.panel('Top $limit users by received samples rate that grew the most between query range start and query range end') +
+        $.queryPanel(
+          |||
+            sum by (user) (rate(cortex_distributor_received_samples_total{%(job)s}[$__rate_interval]))
+            and
+            topk($limit,
+              sum by (user) (rate(cortex_distributor_received_samples_total{%(job)s}[$__rate_interval] @ end()))
+              -
+              sum by (user) (rate(cortex_distributor_received_samples_total{%(job)s}[$__rate_interval] @ start()))
+            )
+          ||| % {
+            job: $.jobMatcher($._config.job_names.distributor),
+          },
+          '{{ user }}',
+        )
+      ),
+    )
+
+    .addRow(
+      ($.row('By discarded samples rate') + { collapse: true })
+      .addPanel(
+        $.panel('Top $limit users by discarded samples rate in last 5m') +
+        { sort: { col: 2, desc: true } } +
+        $.tablePanel(
+          [
+            'topk($limit, sum by (user) (rate(cortex_discarded_samples_total{%(job)s}[5m])))'
+            % { job: $.jobMatcher('%s|%s' % [$._config.job_names.ingester, $._config.job_names.distributor]) },
+          ],
+          { 'Value #A': { alias: 'samples/s' } }
+        )
+      ),
+    )
+
+    .addRow(
+      ($.row('By discarded samples rate growth') + { collapse: true })
+      .addPanel(
+        $.panel('Top $limit users by discarded samples rate that grew the most between query range start and query range end') +
+        $.queryPanel(
+          |||
+            sum by (user) (rate(cortex_discarded_samples_total{%(job)s}[$__rate_interval]))
+            and
+            topk($limit,
+              sum by (user) (rate(cortex_discarded_samples_total{%(job)s}[$__rate_interval] @ end()))
+              -
+              sum by (user) (rate(cortex_discarded_samples_total{%(job)s}[$__rate_interval] @ start()))
+            )
+          ||| % {
+            job: $.jobMatcher('%s|%s' % [$._config.job_names.ingester, $._config.job_names.distributor]),
+          },
+          '{{ user }}',
         )
       ),
     )

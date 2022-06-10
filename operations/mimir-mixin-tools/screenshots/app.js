@@ -23,6 +23,8 @@ const customViewportHeight = {
     'mimir-top-tenants': 2000,
     'mimir-writes-networking': 1000,
     'mimir-writes-resources': 1600,
+    'mimir-remote-ruler-reads': 1800,
+    'mimir-remote-ruler-reads-resources': 1100,
 };
 
 // Dashboards for which we're not generating the screenshots because their content

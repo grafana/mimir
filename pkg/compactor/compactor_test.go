@@ -1461,6 +1461,11 @@ func prepareConfig(t *testing.T) Config {
 	compactorCfg.retryMinBackoff = 0
 	compactorCfg.retryMaxBackoff = 0
 
+	// Use settings that ensure things will be done concurrently, verifying ordering assumptions.
+	// Helps to expose bugs such as https://github.com/prometheus/prometheus/pull/10108
+	compactorCfg.MaxOpeningBlocksConcurrency = 3
+	compactorCfg.MaxClosingBlocksConcurrency = 3
+
 	// Do not wait for ring stability by default, in order to speed up tests.
 	compactorCfg.ShardingRing.WaitStabilityMinDuration = 0
 	compactorCfg.ShardingRing.WaitStabilityMaxDuration = 0

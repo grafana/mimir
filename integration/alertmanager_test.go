@@ -125,6 +125,43 @@ func TestAlertmanager(t *testing.T) {
 	require.Equal(t, "Accept-Encoding", res.Header.Get("Vary"))
 }
 
+func TestAlertmanagerLocalStore(t *testing.T) {
+	s, err := e2e.NewScenario(networkName)
+	require.NoError(t, err)
+	defer s.Close()
+
+	consul := e2edb.NewConsul()
+	require.NoError(t, s.StartAndWaitReady(consul))
+
+	require.NoError(t, writeFileToSharedDir(s, "alertmanager_configs/user-1.yaml", []byte(mimirAlertmanagerUserConfigYaml)))
+
+	alertmanager := e2emimir.NewAlertmanager(
+		"alertmanager",
+		mergeFlags(
+			AlertmanagerFlags(),
+			AlertmanagerLocalFlags(),
+			AlertmanagerShardingFlags(consul.NetworkHTTPEndpoint(), 1),
+		),
+	)
+	require.NoError(t, s.StartAndWaitReady(alertmanager))
+	require.NoError(t, alertmanager.WaitSumMetrics(e2e.Equals(1), "cortex_alertmanager_config_last_reload_successful"))
+	require.NoError(t, alertmanager.WaitSumMetrics(e2e.Greater(0), "cortex_alertmanager_config_hash"))
+
+	c, err := e2emimir.NewClient("", "", alertmanager.HTTPEndpoint(), "", "user-1")
+	require.NoError(t, err)
+
+	cfg, err := c.GetAlertmanagerConfig(context.Background())
+	require.NoError(t, err)
+
+	// Ensure the returned status config matches alertmanager_test_fixtures/user-1.yaml
+	require.NotNil(t, cfg)
+	require.Equal(t, "example_receiver", cfg.Route.Receiver)
+	require.Len(t, cfg.Route.GroupByStr, 1)
+	require.Equal(t, "example_groupby", cfg.Route.GroupByStr[0])
+	require.Len(t, cfg.Receivers, 1)
+	require.Equal(t, "example_receiver", cfg.Receivers[0].Name)
+}
+
 func TestAlertmanagerStoreAPI(t *testing.T) {
 	s, err := e2e.NewScenario(networkName)
 	require.NoError(t, err)

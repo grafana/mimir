@@ -4,6 +4,14 @@ local utils = import 'mixin-utils/utils.libsonnet';
 
   _config:: error 'must provide _config',
 
+  row(title)::
+    super.row(title) + {
+      addPanelIf(condition, panel)::
+        if condition
+        then self.addPanel(panel)
+        else self,
+    },
+
   // Override the dashboard constructor to add:
   // - default tags,
   // - some links that propagate the selectred cluster.
@@ -11,8 +19,18 @@ local utils = import 'mixin-utils/utils.libsonnet';
     // Prefix the dashboard title with "<product> /" unless configured otherwise.
     super.dashboard(
       title='%(prefix)s%(title)s' % { prefix: $._config.dashboard_prefix, title: title },
-      datasource=$._config.dashboard_datasource
+      datasource=$._config.dashboard_datasource,
+      datasource_regex=$._config.datasource_regex
     ) + {
+      __requires: [
+        {
+          id: 'grafana',
+          name: 'Grafana',
+          type: 'grafana',
+          version: '8.0.0',
+        },
+      ],
+
       addRowIf(condition, row)::
         if condition
         then self.addRow(row)
@@ -113,6 +131,14 @@ local utils = import 'mixin-utils/utils.libsonnet';
     if $._config.singleBinary
     then [utils.selector.noop('%s' % $._config.per_cluster_label), utils.selector.re('job', '$job')]
     else [utils.selector.re('%s' % $._config.per_cluster_label, '$cluster'), utils.selector.re('job', '($namespace)/(%s)' % job)],
+
+  panel(title)::
+    super.panel(title) + {
+      tooltip+: {
+        shared: false,
+        sort: 0,
+      },
+    },
 
   queryPanel(queries, legends, legendLink=null)::
     super.queryPanel(queries, legends, legendLink) + {

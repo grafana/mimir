@@ -3,7 +3,6 @@ module github.com/grafana/mimir
 go 1.17
 
 require (
-	github.com/NYTimes/gziphandler v1.1.1
 	github.com/alecthomas/units v0.0.0-20211218093645-b94a6e3cc137
 	github.com/cespare/xxhash/v2 v2.1.2 // indirect
 	github.com/dustin/go-humanize v1.0.0
@@ -18,8 +17,8 @@ require (
 	github.com/golang/snappy v0.0.4
 	github.com/google/gopacket v1.1.19
 	github.com/gorilla/mux v1.8.0
-	github.com/grafana/dskit v0.0.0-20220331160727-49faf69f72ca
-	github.com/grafana/e2e v0.1.0
+	github.com/grafana/dskit v0.0.0-20220526081034-789ec0ca4a3b
+	github.com/grafana/e2e v0.1.1-0.20220519104354-1db01e4751fe
 	github.com/hashicorp/golang-lru v0.5.4
 	github.com/json-iterator/go v1.1.12
 	github.com/leanovate/gopter v0.2.4
@@ -39,7 +38,7 @@ require (
 	github.com/sirupsen/logrus v1.8.1
 	github.com/spf13/afero v1.6.0
 	github.com/stretchr/testify v1.7.1
-	github.com/thanos-io/thanos v0.24.1-0.20220416232747-81218afa5b01
+	github.com/thanos-io/thanos v0.26.1-0.20220602051129-a6f6ce060ed4
 	github.com/uber/jaeger-client-go v2.30.0+incompatible
 	github.com/weaveworks/common v0.0.0-20211109170639-0684aab3d884
 	go.uber.org/atomic v1.9.0
@@ -50,7 +49,7 @@ require (
 	golang.org/x/time v0.0.0-20220224211638-0e9765cccd65
 	google.golang.org/grpc v1.45.0
 	gopkg.in/yaml.v2 v2.4.0
-	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
@@ -58,8 +57,8 @@ require (
 	github.com/google/go-github/v32 v32.1.0
 	github.com/grafana-tools/sdk v0.0.0-20211220201350-966b3088eec9
 	github.com/grafana/regexp v0.0.0-20220304095617-2e8d9baf4ac2
-	github.com/grpc-ecosystem/go-grpc-middleware v1.3.0
 	github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db
+	golang.org/x/sys v0.0.0-20220328115105-d36c6a25d886
 	gopkg.in/alecthomas/kingpin.v2 v2.2.6
 )
 
@@ -139,6 +138,7 @@ require (
 	github.com/googleapis/gax-go/v2 v2.2.0 // indirect
 	github.com/gopherjs/gopherjs v0.0.0-20191106031601-ce3c9ade29de // indirect
 	github.com/gosimple/slug v1.1.1 // indirect
+	github.com/grpc-ecosystem/go-grpc-middleware v1.3.0 // indirect
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.0.0-rc.2.0.20201207153454-9f6bf00c00a7 // indirect
 	github.com/hashicorp/consul/api v1.12.0 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
@@ -208,7 +208,6 @@ require (
 	go.uber.org/zap v1.19.1 // indirect
 	golang.org/x/mod v0.6.0-dev.0.20220106191415-9b9b3d81d5e3 // indirect
 	golang.org/x/oauth2 v0.0.0-20220309155454-6242fa91716a // indirect
-	golang.org/x/sys v0.0.0-20220328115105-d36c6a25d886 // indirect
 	golang.org/x/text v0.3.7 // indirect
 	golang.org/x/tools v0.1.10 // indirect
 	golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1 // indirect
@@ -230,7 +229,7 @@ replace github.com/bradfitz/gomemcache => github.com/themihai/gomemcache v0.0.0-
 replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20220603131538-5f73bf911b89
 
 // OOO Support forces us to fork thanos because we've changed the ChunkReader interface
-replace github.com/thanos-io/thanos => github.com/jesusvazquez/thanos v0.19.1-0.20220427121402-46735047853b
+replace github.com/thanos-io/thanos => github.com/jesusvazquez/thanos v0.19.1-0.20220610094531-ab07eb568317
 
 // Pin hashicorp depencencies since the Prometheus fork, go mod tries to update them.
 replace github.com/hashicorp/go-immutable-radix => github.com/hashicorp/go-immutable-radix v1.2.0
@@ -239,6 +238,9 @@ replace github.com/hashicorp/go-hclog => github.com/hashicorp/go-hclog v0.12.2
 
 // Replace memberlist with our fork which includes some fixes that haven't been
 // merged upstream yet: https://github.com/hashicorp/memberlist/pull/260
-replace github.com/hashicorp/memberlist => github.com/grafana/memberlist v0.2.5-0.20211201083710-c7bc8e9df94b
+replace github.com/hashicorp/memberlist => github.com/grafana/memberlist v0.3.1-0.20220425183535-6b97a09b7167
 
 replace github.com/vimeo/galaxycache => github.com/thanos-community/galaxycache v0.0.0-20211122094458-3a32041a1f1e
+
+// Use fork of grafana go sdk, which includes fixes that haven't been merged into upstream
+replace github.com/grafana-tools/sdk => github.com/colega/grafana-tools-sdk v0.0.0-20220323154849-711bca56d13f

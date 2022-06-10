@@ -7,8 +7,12 @@ weight: 30
 
 # Grafana mimir-continuous-test
 
-As a developer, you can use the standalone mimir-continuous-test tool to continuously run smoke tests on live Grafana Mimir clusters.
+As a developer, you can use the standalone mimir-continuous-test tool to run smoke tests on live Grafana Mimir clusters.
 This tool identifies a class of bugs that could be difficult to spot during development.
+Two operating modes are supported:
+
+- As a continuously running deployment in your environment, mimir-continuous-test can be used to detect issues on a live Grafana Mimir cluster over time.
+- As an ad-hoc smoke test tool, mimir-continuous-test can be used to validate basic functionality after configuration changes are made to a Grafana Mimir cluster.
 
 ## Download mimir-continuous-test
 
@@ -36,6 +40,7 @@ Mimir-continuous-test requires the endpoints of the backend Grafana Mimir cluste
 - Set `-tests.write-endpoint` to the base endpoint on the write path. Remove any trailing slash from the URL. The tool appends the specific API path to the URL, for example `/api/v1/push` for the remote-write API.
 - Set `-tests.read-endpoint` to the base endpoint on the read path. Remove any trailing slash from the URL. The tool appends the specific API path to the URL, for example `/api/v1/query_range` for the range-query API.
 - Set `-tests.tenant-id` to the tenant ID to use to write and read metrics in tests.
+- Set `-tests.smoke-test` to run the test once and immediately exit. In this mode, the process exit code is non-zero when the test fails.
 
 > **Note:** You can run `mimir-continuous-test -help` to list all available configuration options.
 

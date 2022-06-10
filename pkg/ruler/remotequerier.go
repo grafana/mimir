@@ -18,8 +18,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
-	"github.com/grafana/dskit/crypto/tls"
-	grpc_middleware "github.com/grpc-ecosystem/go-grpc-middleware"
+	"github.com/grafana/dskit/grpcclient"
 	otgrpc "github.com/opentracing-contrib/go-grpc"
 	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
@@ -32,16 +31,12 @@ import (
 	"github.com/weaveworks/common/middleware"
 	"github.com/weaveworks/common/user"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/keepalive"
 
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/version"
 )
 
 const (
-	keepAlive        = time.Second * 10
-	keepAliveTimeout = time.Second * 5
-
 	serviceConfig = `{"loadBalancingPolicy": "round_robin"}`
 
 	readEndpointPath  = "/api/v1/read"
@@ -56,14 +51,11 @@ var userAgent = fmt.Sprintf("mimir/%s", version.Version)
 
 // QueryFrontendConfig defines query-frontend transport configuration.
 type QueryFrontendConfig struct {
-	// The address of the remote querier to connect to.
+	// Address is the address of the query-frontend to connect to.
 	Address string `yaml:"address"`
 
-	// TLSEnabled tells whether TLS should be used to establish remote connection.
-	TLSEnabled bool `yaml:"tls_enabled" category:"advanced"`
-
-	// TLS is the config for client TLS.
-	TLS tls.ClientConfig `yaml:",inline"`
+	// GRPCClientConfig contains gRPC specific config options.
+	GRPCClientConfig grpcclient.Config `yaml:"grpc_client_config"`
 }
 
 func (c *QueryFrontendConfig) RegisterFlags(f *flag.FlagSet) {
@@ -73,38 +65,21 @@ func (c *QueryFrontendConfig) RegisterFlags(f *flag.FlagSet) {
 		"GRPC listen address of the query-frontend(s). Must be a DNS address (prefixed with dns:///) "+
 			"to enable client side load balancing.")
 
-	f.BoolVar(&c.TLSEnabled, "ruler.query-frontend.tls-enabled", false, "Set to true if query-frontend connection requires TLS.")
-
-	c.TLS.RegisterFlagsWithPrefix("ruler.query-frontend", f)
+	c.GRPCClientConfig.RegisterFlagsWithPrefix("ruler.query-frontend.grpc-client-config", f)
 }
 
 // DialQueryFrontend creates and initializes a new httpgrpc.HTTPClient taking a QueryFrontendConfig configuration.
 func DialQueryFrontend(cfg QueryFrontendConfig) (httpgrpc.HTTPClient, error) {
-	tlsDialOptions, err := cfg.TLS.GetGRPCDialOptions(cfg.TLSEnabled)
+	opts, err := cfg.GRPCClientConfig.DialOption([]grpc.UnaryClientInterceptor{
+		otgrpc.OpenTracingClientInterceptor(opentracing.GlobalTracer()),
+		middleware.ClientUserHeaderInterceptor,
+	}, nil)
 	if err != nil {
 		return nil, err
 	}
-	dialOptions := append(
-		[]grpc.DialOption{
-			grpc.WithKeepaliveParams(
-				keepalive.ClientParameters{
-					Time:                keepAlive,
-					Timeout:             keepAliveTimeout,
-					PermitWithoutStream: true,
-				},
-			),
-			grpc.WithUnaryInterceptor(
-				grpc_middleware.ChainUnaryClient(
-					otgrpc.OpenTracingClientInterceptor(opentracing.GlobalTracer()),
-					middleware.ClientUserHeaderInterceptor,
-				),
-			),
-			grpc.WithDefaultServiceConfig(serviceConfig),
-		},
-		tlsDialOptions...,
-	)
+	opts = append(opts, grpc.WithDefaultServiceConfig(serviceConfig))
 
-	conn, err := grpc.Dial(cfg.Address, dialOptions...)
+	conn, err := grpc.Dial(cfg.Address, opts...)
 	if err != nil {
 		return nil, err
 	}

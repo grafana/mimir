@@ -9,7 +9,6 @@ import (
 	"context"
 	"fmt"
 	"io/ioutil"
-	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -20,7 +19,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/backoff"
-	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -39,16 +37,17 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
-	mimir_indexheader "github.com/grafana/mimir/pkg/storegateway/indexheader"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
+// GrpcContextMetadataTenantID is a key for GRPC Metadata used to pass tenant ID to store-gateway process.
+// (This is now separate from DeprecatedTenantIDExternalLabel to signify different use case.)
+const GrpcContextMetadataTenantID = "__org_id__"
+
 // BucketStores is a multi-tenant wrapper of Thanos BucketStore.
 type BucketStores struct {
-	services.Service
-
 	logger             log.Logger
 	cfg                tsdb.BlocksStorageConfig
 	limits             *validation.Overrides
@@ -57,6 +56,7 @@ type BucketStores struct {
 	bucketStoreMetrics *BucketStoreMetrics
 	metaFetcherMetrics *MetadataFetcherMetrics
 	shardingStrategy   ShardingStrategy
+	syncBackoffConfig  backoff.Config
 
 	// Index cache shared across all tenants.
 	indexCache indexcache.IndexCache
@@ -72,9 +72,6 @@ type BucketStores struct {
 
 	// Gate used to limit query concurrency across all tenants.
 	queryGate gate.Gate
-
-	// Thread pool used for mmap operations that may page fault
-	threadPool *mimir_indexheader.Threadpool
 
 	// Keeps a bucket store for each tenant.
 	storesMu sync.RWMutex
@@ -115,8 +112,12 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 		metaFetcherMetrics: NewMetadataFetcherMetrics(),
 		queryGate:          queryGate,
 		partitioner:        newGapBasedPartitioner(cfg.BucketStore.PartitionerMaxGapBytes, reg),
-		threadPool:         mimir_indexheader.NewThreadPool(cfg.BucketStore.IndexHeaderThreadPoolSize, reg),
 		seriesHashCache:    hashcache.NewSeriesHashCache(cfg.BucketStore.SeriesHashCacheMaxBytes),
+		syncBackoffConfig: backoff.Config{
+			MinBackoff: 1 * time.Second,
+			MaxBackoff: 10 * time.Second,
+			MaxRetries: 3,
+		},
 	}
 
 	// Register metrics.
@@ -156,24 +157,7 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 		reg.MustRegister(u.metaFetcherMetrics)
 	}
 
-	u.Service = services.NewIdleService(u.starting, u.stopping)
 	return u, nil
-}
-
-func (u *BucketStores) starting(_ context.Context) error {
-	if u.threadPool != nil {
-		u.threadPool.Start()
-	}
-
-	return nil
-}
-
-func (u *BucketStores) stopping(_ error) error {
-	if u.threadPool != nil {
-		u.threadPool.StopAndWait()
-	}
-
-	return nil
 }
 
 // InitialSync does an initial synchronization of blocks for all users.
@@ -199,11 +183,7 @@ func (u *BucketStores) SyncBlocks(ctx context.Context) error {
 }
 
 func (u *BucketStores) syncUsersBlocksWithRetries(ctx context.Context, f func(context.Context, *BucketStore) error) error {
-	retries := backoff.New(ctx, backoff.Config{
-		MinBackoff: 1 * time.Second,
-		MaxBackoff: 10 * time.Second,
-		MaxRetries: 3,
-	})
+	retries := backoff.New(ctx, u.syncBackoffConfig)
 
 	var lastErr error
 	for retries.Ongoing() {
@@ -248,8 +228,13 @@ func (u *BucketStores) syncUsersBlocks(ctx context.Context, f func(context.Conte
 		return err
 	}
 
-	includeUserIDs := make(map[string]struct{})
-	for _, userID := range u.shardingStrategy.FilterUsers(ctx, userIDs) {
+	ownedUserIDs, err := u.shardingStrategy.FilterUsers(ctx, userIDs)
+	if err != nil {
+		return errors.Wrap(err, "unable to check tenants owned by this store-gateway instance")
+	}
+
+	includeUserIDs := make(map[string]struct{}, len(ownedUserIDs))
+	for _, userID := range ownedUserIDs {
 		includeUserIDs[userID] = struct{}{}
 	}
 
@@ -276,15 +261,7 @@ func (u *BucketStores) syncUsersBlocks(ctx context.Context, f func(context.Conte
 
 	// Lazily create a bucket store for each new user found
 	// and submit a sync job for each user.
-	for _, userID := range userIDs {
-		// If we don't have a store for the tenant yet, then we should skip it if it's not
-		// included in the store-gateway shard. If we already have it, we need to sync it
-		// anyway to make sure all its blocks are unloaded and metrics updated correctly
-		// (but bucket API calls are skipped thanks to the objstore client adapter).
-		if _, included := includeUserIDs[userID]; !included && u.getStore(userID) == nil {
-			continue
-		}
-
+	for userID := range includeUserIDs {
 		bs, err := u.getOrCreateStore(userID)
 		if err != nil {
 			errsMx.Lock()
@@ -312,7 +289,7 @@ func (u *BucketStores) syncUsersBlocks(ctx context.Context, f func(context.Conte
 	close(jobs)
 	wg.Wait()
 
-	u.deleteLocalFilesForExcludedTenants(includeUserIDs)
+	u.closeBucketStoreAndDeleteLocalFilesForExcludedTenants(includeUserIDs)
 
 	return errs.Err()
 }
@@ -397,16 +374,14 @@ func (u *BucketStores) getStore(userID string) *BucketStore {
 }
 
 var (
-	errBucketStoreNotEmpty = errors.New("bucket store not empty")
 	errBucketStoreNotFound = errors.New("bucket store not found")
 )
 
-// closeEmptyBucketStore closes bucket store for given user, if it is empty,
+// closeBucketStore closes bucket store for given user
 // and removes it from bucket stores map and metrics.
 // If bucket store doesn't exist, returns errBucketStoreNotFound.
-// If bucket store is not empty, returns errBucketStoreNotEmpty.
 // Otherwise returns error from closing the bucket store.
-func (u *BucketStores) closeEmptyBucketStore(userID string) error {
+func (u *BucketStores) closeBucketStore(userID string) error {
 	u.storesMu.Lock()
 	unlockInDefer := true
 	defer func() {
@@ -420,21 +395,12 @@ func (u *BucketStores) closeEmptyBucketStore(userID string) error {
 		return errBucketStoreNotFound
 	}
 
-	if !isEmptyBucketStore(bs) {
-		return errBucketStoreNotEmpty
-	}
-
 	delete(u.stores, userID)
 	unlockInDefer = false
 	u.storesMu.Unlock()
 
 	u.metaFetcherMetrics.RemoveUserRegistry(userID)
-	return bs.Close()
-}
-
-func isEmptyBucketStore(bs *BucketStore) bool {
-	min, max := bs.TimeRange()
-	return min == math.MaxInt64 && max == math.MinInt64
+	return bs.RemoveBlocksAndClose()
 }
 
 func (u *BucketStores) syncDirForUser(userID string) string {
@@ -483,25 +449,17 @@ func (u *BucketStores) getOrCreateStore(userID string) (*BucketStore, error) {
 		fetcher = NewBucketIndexMetadataFetcher(
 			userID,
 			u.bucket,
-			u.shardingStrategy,
 			u.limits,
 			u.logger,
 			fetcherReg,
 			filters,
 		)
 	} else {
-		// Wrap the bucket reader to skip iterating the bucket at all if the user doesn't
-		// belong to the store-gateway shard. We need to run the BucketStore synching anyway
-		// in order to unload previous tenants in case of a resharding leading to tenants
-		// moving out from the store-gateway shard and also make sure both MetaFetcher and
-		// BucketStore metrics are correctly updated.
-		fetcherBkt := NewShardingBucketReaderAdapter(userID, u.shardingStrategy, userBkt)
-
 		var err error
 		fetcher, err = block.NewMetaFetcher(
 			userLogger,
 			u.cfg.BucketStore.MetaSyncConcurrency,
-			fetcherBkt,
+			userBkt,
 			u.syncDirForUser(userID), // The fetcher stores cached metas in the "meta-syncer/" sub directory
 			fetcherReg,
 			filters,
@@ -529,10 +487,9 @@ func (u *BucketStores) getOrCreateStore(userID string) (*BucketStore, error) {
 		newChunksLimiterFactory(u.limits, userID),
 		NewSeriesLimiterFactory(0), // No series limiter.
 		u.partitioner,
-		u.threadPool,
 		u.cfg.BucketStore.BlockSyncConcurrency,
-		false, // No need to enable backward compatibility with Thanos pre 0.8.0 queriers
 		u.cfg.BucketStore.PostingOffsetsInMemSampling,
+		u.cfg.BucketStore.IndexHeader,
 		true, // Enable series hints.
 		u.cfg.BucketStore.IndexHeaderLazyLoadingEnabled,
 		u.cfg.BucketStore.IndexHeaderLazyLoadingIdleTimeout,
@@ -550,9 +507,9 @@ func (u *BucketStores) getOrCreateStore(userID string) (*BucketStore, error) {
 	return bs, nil
 }
 
-// deleteLocalFilesForExcludedTenants removes local "sync" directories for tenants that are not included in the current
-// shard.
-func (u *BucketStores) deleteLocalFilesForExcludedTenants(includeUserIDs map[string]struct{}) {
+// closeBucketStoreAndDeleteLocalFilesForExcludedTenants closes bucket store and removes local "sync" directories
+// for tenants that are not included in the current shard.
+func (u *BucketStores) closeBucketStoreAndDeleteLocalFilesForExcludedTenants(includeUserIDs map[string]struct{}) {
 	files, err := ioutil.ReadDir(u.cfg.BucketStore.SyncDir)
 	if err != nil {
 		return
@@ -569,10 +526,8 @@ func (u *BucketStores) deleteLocalFilesForExcludedTenants(includeUserIDs map[str
 			continue
 		}
 
-		err := u.closeEmptyBucketStore(userID)
+		err := u.closeBucketStore(userID)
 		switch {
-		case errors.Is(err, errBucketStoreNotEmpty):
-			continue
 		case errors.Is(err, errBucketStoreNotFound):
 			// This is OK, nothing was closed.
 		case err == nil:
@@ -610,7 +565,7 @@ func getUserIDFromGRPCContext(ctx context.Context) string {
 		return ""
 	}
 
-	values := meta.Get(tsdb.TenantIDExternalLabel)
+	values := meta.Get(GrpcContextMetadataTenantID)
 	if len(values) != 1 {
 		return ""
 	}

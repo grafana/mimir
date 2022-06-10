@@ -1,0 +1,19 @@
+apiVersion: monitoring.grafana.com/v1alpha1
+kind: MetricsInstance
+
+metadata:
+  name: metrics
+  namespace: default
+  # Label used by GrafanaAgent resource to find
+  # MetricsInstance resources.
+  labels:
+    agent: grafana-agent-metrics
+
+spec:
+  remoteWrite:
+    - url: http://gcon-mimir-distributor:8080/api/v1/push
+
+  # Use all ServiceMonitor resources in this namespace
+  # (namespace is configured by serviceMonitorNamespaceSelector, defaults to
+  # same namespace as MetricsInstance)
+  serviceMonitorSelector: {}

@@ -82,9 +82,9 @@ ingester:
     replication_factor: 1
 
 ruler_storage:
-  backend: local
-  local:
-    directory: /tmp/mimir/rules
+  backend: filesystem
+  filesystem:
+    dir: /tmp/mimir/rules
 
 server:
   http_listen_port: 9009
@@ -103,7 +103,7 @@ In a terminal, run one of the following commands:
 - Using Docker:
 
   ```bash
-  docker run --rm --name mimir --publish 9009:9009 --volume "$(pwd)"/demo.yaml:/etc/mimir/demo.yaml grafana/mimir:${MIMIR_LATEST} --config.file=/etc/mimir/demo.yaml
+  docker run --rm --name mimir --publish 9009:9009 --volume "$(pwd)"/demo.yaml:/etc/mimir/demo.yaml grafana/mimir:latest --config.file=/etc/mimir/demo.yaml
   ```
 
 - Using a local binary:

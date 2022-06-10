@@ -325,6 +325,25 @@ apiVersion: v1
 kind: Service
 metadata:
   labels:
+    name: compactor
+  name: compactor
+  namespace: default
+spec:
+  clusterIP: None
+  ports:
+  - name: compactor-http-metrics
+    port: 8080
+    targetPort: 8080
+  - name: compactor-grpc
+    port: 9095
+    targetPort: 9095
+  selector:
+    name: compactor
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
     name: consul
   name: consul
   namespace: default
@@ -749,7 +768,6 @@ spec:
             topologyKey: kubernetes.io/hostname
       containers:
       - args:
-        - -distributor.extend-writes=true
         - -distributor.ha-tracker.enable=true
         - -distributor.ha-tracker.enable-for-all-users=true
         - -distributor.ha-tracker.etcd.endpoints=etcd-client.default.svc.cluster.local.:2379
@@ -775,7 +793,7 @@ spec:
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
         - -target=distributor
-        image: grafana/mimir:2.0.0
+        image: grafana/mimir:2.1.0
         imagePullPolicy: IfNotPresent
         name: distributor
         ports:
@@ -851,8 +869,6 @@ spec:
         - -mem-ballast-size-bytes=268435456
         - -querier.frontend-client.grpc-max-send-msg-size=104857600
         - -querier.max-concurrent=8
-        - -querier.query-ingesters-within=13h
-        - -querier.query-store-after=12h
         - -querier.scheduler-address=query-scheduler-discovery.default.svc.cluster.local:9095
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc.keepalive.min-time-between-pings=10s
@@ -868,7 +884,7 @@ spec:
         env:
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1024"
-        image: grafana/mimir:2.0.0
+        image: grafana/mimir:2.1.0
         imagePullPolicy: IfNotPresent
         name: querier
         ports:
@@ -934,14 +950,13 @@ spec:
         - -query-frontend.results-cache.memcached.timeout=500ms
         - -query-frontend.scheduler-address=query-scheduler-discovery.default.svc.cluster.local:9095
         - -runtime-config.file=/etc/mimir/overrides.yaml
-        - -server.grpc-max-recv-msg-size-bytes=104857600
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
         - -server.http-write-timeout=1m
         - -store.max-query-length=12000h
         - -target=query-frontend
-        image: grafana/mimir:2.0.0
+        image: grafana/mimir:2.1.0
         imagePullPolicy: IfNotPresent
         name: query-frontend
         ports:
@@ -1004,7 +1019,7 @@ spec:
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
         - -target=query-scheduler
-        image: grafana/mimir:2.0.0
+        image: grafana/mimir:2.1.0
         imagePullPolicy: IfNotPresent
         name: query-scheduler
         ports:
@@ -1071,15 +1086,12 @@ spec:
         - -blocks-storage.bucket-store.sync-interval=15m
         - -blocks-storage.s3.bucket-name=blocks-bucket
         - -blocks-storage.s3.endpoint=s3.dualstack.us-east-1.amazonaws.com
-        - -distributor.extend-writes=true
         - -distributor.health-check-ingesters=true
         - -ingester.ring.consul.hostname=consul.default.svc.cluster.local:8500
         - -ingester.ring.heartbeat-timeout=10m
         - -ingester.ring.prefix=
         - -ingester.ring.replication-factor=3
         - -ingester.ring.store=consul
-        - -querier.query-ingesters-within=13h
-        - -querier.query-store-after=12h
         - -ruler-storage.backend=s3
         - -ruler-storage.s3.bucket-name=rules-bucket
         - -ruler-storage.s3.endpoint=s3.dualstack.eu-west-1.amazonaws.com
@@ -1091,8 +1103,6 @@ spec:
         - -ruler.ring.store=consul
         - -ruler.rule-path=/rules
         - -runtime-config.file=/etc/mimir/overrides.yaml
-        - -server.grpc-max-recv-msg-size-bytes=10485760
-        - -server.grpc-max-send-msg-size-bytes=10485760
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
@@ -1102,7 +1112,7 @@ spec:
         - -store-gateway.sharding-ring.store=consul
         - -store.max-query-length=768h
         - -target=ruler
-        image: grafana/mimir:2.0.0
+        image: grafana/mimir:2.1.0
         imagePullPolicy: IfNotPresent
         name: ruler
         ports:
@@ -1170,7 +1180,7 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: status.podIP
-        image: grafana/mimir:2.0.0
+        image: grafana/mimir:2.1.0
         imagePullPolicy: IfNotPresent
         name: alertmanager
         ports:
@@ -1262,7 +1272,7 @@ spec:
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
         - -target=compactor
-        image: grafana/mimir:2.0.0
+        image: grafana/mimir:2.1.0
         imagePullPolicy: IfNotPresent
         name: compactor
         ports:
@@ -1341,7 +1351,6 @@ spec:
         - -blocks-storage.s3.bucket-name=blocks-bucket
         - -blocks-storage.s3.endpoint=s3.dualstack.us-east-1.amazonaws.com
         - -blocks-storage.tsdb.block-ranges-period=2h
-        - -blocks-storage.tsdb.close-idle-tsdb-timeout=13h
         - -blocks-storage.tsdb.dir=/data/tsdb
         - -blocks-storage.tsdb.ship-interval=1m
         - -distributor.health-check-ingesters=true
@@ -1359,13 +1368,11 @@ spec:
         - -ingester.ring.unregister-on-shutdown=true
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc-max-concurrent-streams=10000
-        - -server.grpc-max-recv-msg-size-bytes=10485760
-        - -server.grpc-max-send-msg-size-bytes=10485760
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
         - -target=ingester
-        image: grafana/mimir:2.0.0
+        image: grafana/mimir:2.1.0
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -1659,7 +1666,7 @@ spec:
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-get-multi-concurrency=100
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-idle-connections=100
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-item-size=1048576
-        - -blocks-storage.bucket-store.ignore-blocks-within=10h
+        - -blocks-storage.bucket-store.chunks-cache.memcached.timeout=450ms
         - -blocks-storage.bucket-store.index-cache.backend=memcached
         - -blocks-storage.bucket-store.index-cache.memcached.addresses=dnssrvnoa+memcached-index-queries.default.svc.cluster.local:11211
         - -blocks-storage.bucket-store.index-cache.memcached.max-async-concurrency=50
@@ -1690,7 +1697,7 @@ spec:
         - -store-gateway.sharding-ring.tokens-file-path=/data/tokens
         - -store-gateway.sharding-ring.wait-stability-min-duration=1m
         - -target=store-gateway
-        image: grafana/mimir:2.0.0
+        image: grafana/mimir:2.1.0
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:

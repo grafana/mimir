@@ -1,0 +1,57 @@
+{{- if not .Values.enterprise.enabled -}}
+{{- if .Values.nginx.enabled -}}
+{{- if .Values.nginx.ingress.enabled -}}
+{{- $ingressApiIsStable := eq (include "mimir.ingress.isStable" .) "true" -}}
+{{- $ingressSupportsIngressClassName := eq (include "mimir.ingress.supportsIngressClassName" .) "true" -}}
+{{- $ingressSupportsPathType := eq (include "mimir.ingress.supportsPathType" .) "true" -}}
+apiVersion: {{ include "mimir.ingress.apiVersion" . }}
+kind: Ingress
+metadata:
+  name: {{ include "mimir.resourceName" (dict "ctx" . "component" "nginx") }}
+  labels:
+    {{- include "mimir.labels" (dict "ctx" . "component" "nginx") | nindent 4 }}
+  {{- with .Values.nginx.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if and $ingressSupportsIngressClassName .Values.nginx.ingress.ingressClassName }}
+  ingressClassName: {{ .Values.nginx.ingress.ingressClassName }}
+  {{- end -}}
+  {{- if .Values.nginx.ingress.tls }}
+  tls:
+    {{- range .Values.nginx.ingress.tls }}
+    - hosts:
+        {{- range .hosts }}
+        - {{ . | quote }}
+        {{- end }}
+      {{- with .secretName }}
+      secretName: {{ . }}
+      {{- end }}
+    {{- end }}
+  {{- end }}
+  rules:
+    {{- range .Values.nginx.ingress.hosts }}
+    - host: {{ .host | quote }}
+      http:
+        paths:
+          {{- range .paths }}
+          - path: {{ .path }}
+            {{- if $ingressSupportsPathType }}
+            pathType: {{ .pathType }}
+            {{- end }}
+            backend:
+              {{- if $ingressApiIsStable }}
+              service:
+                name: {{ include "mimir.resourceName" (dict "ctx" $ "component" "nginx") }}
+                port:
+                  number: {{ $.Values.nginx.service.port }}
+              {{- else }}
+              serviceName: {{ include "mimir.resourceName" (dict "ctx" $ "component" "nginx") }}
+              servicePort: {{ $.Values.nginx.service.port }}
+              {{- end }}
+          {{- end }}
+    {{- end }}
+{{- end -}}
+{{- end -}}
+{{- end -}}

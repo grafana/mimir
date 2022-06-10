@@ -12,10 +12,12 @@ import (
 	"net/http"
 	"path"
 	"sort"
+	"strings"
 	"sync"
 
 	"github.com/go-kit/log"
 	"github.com/gorilla/mux"
+	"github.com/grafana/dskit/kv/memberlist"
 	"github.com/grafana/regexp"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -229,7 +231,7 @@ func NewQuerierHandler(
 	router := mux.NewRouter()
 
 	// Use a separate metric for the querier in order to differentiate requests from the query-frontend when
-	// running Mimir as a single binary.
+	// running Mimir in monolithic mode.
 	instrumentMiddleware := middleware.Instrument{
 		RouteMatcher:     router,
 		Duration:         querierRequestDuration,
@@ -248,8 +250,7 @@ func NewQuerierHandler(
 	// TODO(gotjosh): This custom handler is temporary until we're able to vendor the changes in:
 	// https://github.com/prometheus/prometheus/pull/7125/files
 	router.Path(path.Join(prefix, "/api/v1/metadata")).Handler(querier.MetadataHandler(distributor))
-	router.Path(path.Join(prefix, "/api/v1/read")).Handler(querier.RemoteReadHandler(queryable, logger))
-	router.Path(path.Join(prefix, "/api/v1/read")).Methods("POST").Handler(promRouter)
+	router.Path(path.Join(prefix, "/api/v1/read")).Methods("POST").Handler(querier.RemoteReadHandler(queryable, logger))
 	router.Path(path.Join(prefix, "/api/v1/query")).Methods("GET", "POST").Handler(promRouter)
 	router.Path(path.Join(prefix, "/api/v1/query_range")).Methods("GET", "POST").Handler(promRouter)
 	router.Path(path.Join(prefix, "/api/v1/query_exemplars")).Methods("GET", "POST").Handler(promRouter)
@@ -262,4 +263,17 @@ func NewQuerierHandler(
 
 	// Track execution time.
 	return stats.NewWallTimeMiddleware().Wrap(router)
+}
+
+//go:embed memberlist_status.gohtml
+var memberlistStatusPageHTML string
+
+func memberlistStatusHandler(httpPathPrefix string, kvs *memberlist.KVInitService) http.Handler {
+	templ := template.New("memberlist_status")
+	templ.Funcs(map[string]interface{}{
+		"AddPathPrefix": func(link string) string { return path.Join(httpPathPrefix, link) },
+		"StringsJoin":   strings.Join,
+	})
+	template.Must(templ.Parse(memberlistStatusPageHTML))
+	return memberlist.NewHTTPStatusHandler(kvs, templ)
 }

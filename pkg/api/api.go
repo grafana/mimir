@@ -13,11 +13,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/NYTimes/gziphandler"
 	"github.com/felixge/fgprof"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/gorilla/mux"
+	"github.com/grafana/dskit/kv/memberlist"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/weaveworks/common/middleware"
 	"github.com/weaveworks/common/server"
@@ -40,6 +40,7 @@ import (
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
 	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
+	"github.com/grafana/mimir/pkg/util/gziphandler"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/push"
 )
@@ -182,8 +183,7 @@ func (a *API) newRoute(path string, handler http.Handler, isPrefix, auth, gzip b
 	return route
 }
 
-// RegisterAlertmanager registers endpoints associated with the alertmanager. It will only
-// serve endpoints using the legacy http-prefix if it is not run as a single binary.
+// RegisterAlertmanager registers endpoints that are associated with the alertmanager.
 func (a *API) RegisterAlertmanager(am *alertmanager.MultitenantAlertmanager, apiEnabled bool, buildInfoHandler http.Handler) {
 	alertmanagerpb.RegisterAlertmanagerServer(a.server.GRPC, am)
 
@@ -422,9 +422,9 @@ func (a *API) RegisterServiceMapHandler(handler http.Handler) {
 	a.RegisterRoute("/services", handler, false, true, "GET")
 }
 
-func (a *API) RegisterMemberlistKV(handler http.Handler) {
+func (a *API) RegisterMemberlistKV(pathPrefix string, kvs *memberlist.KVInitService) {
 	a.indexPage.AddLinks(memberlistWeight, "Memberlist", []IndexPageLink{
 		{Desc: "Status", Path: "/memberlist"},
 	})
-	a.RegisterRoute("/memberlist", handler, false, true, "GET")
+	a.RegisterRoute("/memberlist", memberlistStatusHandler(pathPrefix, kvs), false, true, "GET")
 }
