@@ -37,7 +37,12 @@ func TranslateToPromqlAPIError(err error) error {
 		return err
 	}
 
-	switch errors.Cause(err).(type) {
+	cause := errors.Unwrap(err)
+	if cause == nil {
+		cause = err
+	}
+
+	switch cause.(type) {
 	case promql.ErrStorage, promql.ErrTooManySamples, promql.ErrQueryCanceled, promql.ErrQueryTimeout:
 		// Don't translate those, just in case we use them internally.
 		return err
