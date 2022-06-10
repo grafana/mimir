@@ -54,6 +54,13 @@ For compatiblity and to support upgrade from enterprise-metrics chart calculate 
 {{- end -}}
 
 {{/*
+For compatiblity and to support upgrade from enterprise-metrics chart calculate GCS bucket name
+*/}}
+{{- define "mimir.gcsBucketPrefix" -}}
+{{- if .Values.enterprise.legacyLabels -}}{{- .Values.gcs.bucketPrefix | default "enterprise-metrics" -}}{{- else -}}{{- .Values.gcs.bucketPrefix | default "mimir" -}}{{- end -}}
+{{- end -}}
+
+{{/*
 Create the name of the service account
 */}}
 {{- define "mimir.serviceAccountName" -}}

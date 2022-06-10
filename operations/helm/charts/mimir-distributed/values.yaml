@@ -76,6 +76,14 @@ mimir:
         access_key_id: {{ .Values.minio.accessKey }}
         secret_access_key: {{ .Values.minio.secretKey }}
         insecure: true
+    {{- else if .Values.gcs.enabled }}
+    alertmanager_storage:
+      backend: gcs
+      gcs:
+        bucket_name: {{ include "mimir.gcsBucketPrefix" . }}-ruler
+        {{- if .Values.gcs.serviceAccount }}
+        service_account: {{ .Values.gcs.serviceAccount }}
+        {{- end }}
     {{- end }}
 
     frontend_worker:
@@ -128,7 +136,11 @@ mimir:
 
     # This configures how the store-gateway synchronizes blocks stored in the bucket. It uses Minio by default for getting started (configured via flags) but this should be changed for production deployments.
     blocks_storage:
+      {{- if .Values.minio.enabled }}
       backend: s3
+      {{- else if .Values.gcs.enabled }}
+      backend: gcs
+      {{- end }}
       tsdb:
         dir: /data/tsdb
       bucket_store:
@@ -162,6 +174,12 @@ mimir:
         access_key_id: {{ .Values.minio.accessKey }}
         secret_access_key: {{ .Values.minio.secretKey }}
         insecure: true
+      {{- else if .Values.gcs.enabled }}
+      gcs:
+        bucket_name: {{ include "mimir.gcsBucketPrefix" . }}-tsdb
+        {{- if .Values.gcs.serviceAccount }}
+        service_account: {{ .Values.gcs.serviceAccount }}
+        {{- end }}
       {{- end }}
 
     {{- if .Values.minio.enabled }}
@@ -173,6 +191,14 @@ mimir:
         access_key_id: {{ .Values.minio.accessKey }}
         secret_access_key: {{ .Values.minio.secretKey }}
         insecure: true
+    {{- else if .Values.gcs.enabled }}
+    ruler_storage:
+      backend: gcs
+      gcs:
+        bucket_name: {{ include "mimir.gcsBucketPrefix" . }}-ruler
+        {{- if .Values.gcs.serviceAccount }}
+        service_account: {{ .Values.gcs.serviceAccount }}
+        {{- end }}
     {{- end }}
 
     {{- if .Values.enterprise.enabled }}
@@ -195,6 +221,15 @@ mimir:
           access_key_id: {{ .Values.minio.accessKey }}
           secret_access_key: {{ .Values.minio.secretKey }}
           insecure: true
+    {{- else if .Values.gcs.enabled }}
+    admin_client:
+      storage:
+        type: gcs
+        gcs:
+          bucket_name: {{ include "mimir.gcsBucketPrefix" . }}-enterprise-metrics-admin
+          {{- if .Values.gcs.serviceAccount }}
+          service_account: {{ .Values.gcs.serviceAccount }}
+          {{- end }}
     {{- end }}
 
     auth:
@@ -1143,6 +1178,11 @@ minio:
       cpu: 100m
       memory: 128Mi
   secretKey: supersecret
+
+gcs:
+  enabled: false
+  bucketPrefix: ""
+  serviceAccount: ""
 
 # Configuration for nginx gateway
 nginx:
