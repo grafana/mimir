@@ -226,7 +226,7 @@ replace git.apache.org/thrift.git => github.com/apache/thrift v0.0.0-20180902110
 replace github.com/bradfitz/gomemcache => github.com/themihai/gomemcache v0.0.0-20180902122335-24332e2d58ab
 
 // Using a fork of Prometheus while we work on querysharding to avoid a dependency on the upstream.
-replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20220603131538-5f73bf911b89
+replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20220609171618-4d94d0d8f106
 
 // OOO Support forces us to fork thanos because we've changed the ChunkReader interface
 replace github.com/thanos-io/thanos => github.com/jesusvazquez/thanos v0.19.1-0.20220610094531-ab07eb568317
