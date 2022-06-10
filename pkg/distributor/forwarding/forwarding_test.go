@@ -16,6 +16,7 @@ import (
 	"github.com/golang/snappy"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/httpgrpc"
 
@@ -168,7 +169,8 @@ func TestForwardingSamplesWithDifferentErrorsWithPropagation(t *testing.T) {
 	const tenant = "tenant"
 	for _, tc := range tcs {
 		t.Run(tc.name, func(t *testing.T) {
-			forwarder := NewForwarder(nil, tc.config)
+			reg := prometheus.NewRegistry()
+			forwarder := NewForwarder(reg, tc.config)
 			urls := make([]string, len(tc.remoteStatusCodes))
 			closers := make([]func(), len(tc.remoteStatusCodes))
 			for i, code := range tc.remoteStatusCodes {
@@ -202,6 +204,30 @@ func TestForwardingSamplesWithDifferentErrorsWithPropagation(t *testing.T) {
 				require.True(t, ok)
 				require.Equal(t, tc.expectedError, errorType(resp.Code))
 			}
+
+			expectedErrors := make(map[int]int)
+			for _, statusCode := range tc.remoteStatusCodes {
+				if statusCode/100 == 2 {
+					continue
+				}
+				expectedErrors[statusCode]++
+			}
+
+			var expectedMetrics strings.Builder
+			if len(expectedErrors) > 0 {
+				expectedMetrics.WriteString(fmt.Sprintf(`
+				# TYPE cortex_distributor_forward_errors_total counter
+				# HELP cortex_distributor_forward_errors_total The total number of errors which the Distributor received from forwarding targets.`))
+			}
+			for statusCode, expectedCount := range expectedErrors {
+				expectedMetrics.WriteString(fmt.Sprintf(`
+				cortex_distributor_forward_errors_total{status_code="%d", user="%s"} %d
+`, statusCode, tenant, expectedCount))
+			}
+
+			assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics.String()),
+				"cortex_distributor_forward_errors_total",
+			))
 		})
 	}
 }
