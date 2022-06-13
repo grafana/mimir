@@ -23,6 +23,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/thanos/pkg/block"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
+	"github.com/thanos-io/thanos/pkg/objstore"
 	"github.com/weaveworks/common/user"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
@@ -61,17 +62,14 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 			},
 		},
 	}
+	uploadingMetaPath := path.Join(tenantID, blockID, fmt.Sprintf("uploading-%s", block.MetaFilename))
 
 	setUpPartialBlock := func(bkt *bucket.ClientMock) {
 		bkt.MockExists(path.Join(tenantID, blockID, block.MetaFilename), false, nil)
 	}
-	setUpBlockUpload := func(bkt *bucket.ClientMock) {
-		setUpPartialBlock(bkt)
-		pth := path.Join(tenantID, blockID, fmt.Sprintf("uploading-%s", block.MetaFilename))
-		bkt.MockUpload(pth, nil)
-	}
 
-	testCases := []struct {
+	// Cases that will lead to validation error
+	invalidCases := []struct {
 		name                   string
 		tenantID               string
 		blockID                string
@@ -169,7 +167,7 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 					MaxTime: 0,
 				},
 			},
-			expBadRequest: "invalid minTime/maxTime in meta.json: minTime=-1, maxTime=0",
+			expBadRequest: fmt.Sprintf("invalid minTime/maxTime in %s: minTime=-1, maxTime=0", block.MetaFilename),
 		},
 		{
 			name:            "invalid maxTime",
@@ -184,7 +182,7 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 					MaxTime: -1,
 				},
 			},
-			expBadRequest: "invalid minTime/maxTime in meta.json: minTime=0, maxTime=-1",
+			expBadRequest: fmt.Sprintf("invalid minTime/maxTime in %s: minTime=0, maxTime=-1", block.MetaFilename),
 		},
 		{
 			name:            "maxTime before minTime",
@@ -199,7 +197,7 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 					MaxTime: 0,
 				},
 			},
-			expBadRequest: "invalid minTime/maxTime in meta.json: minTime=1, maxTime=0",
+			expBadRequest: fmt.Sprintf("invalid minTime/maxTime in %s: minTime=1, maxTime=0", block.MetaFilename),
 		},
 		{
 			name:            "block before retention period",
@@ -274,7 +272,7 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 			retention: -1,
 			setUpBucketMock: func(bkt *bucket.ClientMock) {
 				setUpPartialBlock(bkt)
-				pth := path.Join(tenantID, blockID, fmt.Sprintf("uploading-%s", block.MetaFilename))
+				pth := uploadingMetaPath
 				bkt.MockUpload(pth, nil)
 			},
 			meta: &metadata.Meta{
@@ -347,82 +345,13 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 			blockID:  blockID,
 			setUpBucketMock: func(bkt *bucket.ClientMock) {
 				setUpPartialBlock(bkt)
-				pth := path.Join(tenantID, blockID, fmt.Sprintf("uploading-%s", block.MetaFilename))
-				bkt.MockUpload(pth, fmt.Errorf("test"))
+				bkt.MockUpload(uploadingMetaPath, fmt.Errorf("test"))
 			},
 			meta:                   &validMeta,
 			expInternalServerError: true,
 		},
-		{
-			name:            "valid request",
-			tenantID:        tenantID,
-			blockID:         blockID,
-			setUpBucketMock: setUpBlockUpload,
-			meta:            &validMeta,
-		},
-		{
-			name:            "valid request with empty compactor shard ID label",
-			tenantID:        tenantID,
-			blockID:         blockID,
-			setUpBucketMock: setUpBlockUpload,
-			meta: &metadata.Meta{
-				BlockMeta: tsdb.BlockMeta{
-					ULID:    bULID,
-					Version: metadata.TSDBVersion1,
-					MinTime: now - 1000,
-					MaxTime: now,
-				},
-				Thanos: metadata.Thanos{
-					Labels: map[string]string{
-						mimir_tsdb.CompactorShardIDExternalLabel: "",
-					},
-					Files: []metadata.File{
-						{
-							RelPath: block.MetaFilename,
-						},
-						{
-							RelPath:   "index",
-							SizeBytes: 1,
-						},
-						{
-							RelPath:   "chunks/000001",
-							SizeBytes: 1024,
-						},
-					},
-				},
-			},
-		},
-		{
-			name:            "valid request without compactor shard ID label",
-			tenantID:        tenantID,
-			blockID:         blockID,
-			setUpBucketMock: setUpBlockUpload,
-			meta: &metadata.Meta{
-				BlockMeta: tsdb.BlockMeta{
-					ULID:    bULID,
-					Version: metadata.TSDBVersion1,
-					MinTime: now - 1000,
-					MaxTime: now,
-				},
-				Thanos: metadata.Thanos{
-					Files: []metadata.File{
-						{
-							RelPath: block.MetaFilename,
-						},
-						{
-							RelPath:   "index",
-							SizeBytes: 1,
-						},
-						{
-							RelPath:   "chunks/000001",
-							SizeBytes: 1024,
-						},
-					},
-				},
-			},
-		},
 	}
-	for _, tc := range testCases {
+	for _, tc := range invalidCases {
 		t.Run(tc.name, func(t *testing.T) {
 			var bkt bucket.ClientMock
 			if tc.setUpBucketMock != nil {
@@ -474,6 +403,133 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 			}
 
 			bkt.AssertExpectations(t)
+		})
+	}
+
+	verifyBucket := func(t *testing.T, bkt *objstore.InMemBucket, labels map[string]string) {
+		objs := bkt.Objects()
+		require.Len(t, objs, 1)
+		content := objs[uploadingMetaPath]
+		expMeta := validMeta
+		expMeta.Compaction.Sources = []ulid.ULID{expMeta.ULID}
+		expMeta.Thanos.Source = "upload"
+		expMeta.Thanos.Labels = labels
+		var meta metadata.Meta
+		require.NoError(t, json.Unmarshal(content, &meta))
+		assert.Equal(t, expMeta, meta)
+	}
+
+	// Cases that will not lead to validation error, and where the meta file will be uploaded
+	validCases := []struct {
+		name         string
+		tenantID     string
+		blockID      string
+		meta         *metadata.Meta
+		verifyBucket func(*testing.T, *objstore.InMemBucket)
+	}{
+
+		{
+			name:     "valid request",
+			tenantID: tenantID,
+			blockID:  blockID,
+			meta:     &validMeta,
+			verifyBucket: func(t *testing.T, bkt *objstore.InMemBucket) {
+				verifyBucket(t, bkt, map[string]string{
+					mimir_tsdb.CompactorShardIDExternalLabel: "1_of_3",
+				})
+			},
+		},
+		{
+			name:     "valid request with empty compactor shard ID label",
+			tenantID: tenantID,
+			blockID:  blockID,
+			meta: &metadata.Meta{
+				BlockMeta: tsdb.BlockMeta{
+					ULID:    bULID,
+					Version: metadata.TSDBVersion1,
+					MinTime: now - 1000,
+					MaxTime: now,
+				},
+				Thanos: metadata.Thanos{
+					Labels: map[string]string{
+						mimir_tsdb.CompactorShardIDExternalLabel: "",
+					},
+					Files: []metadata.File{
+						{
+							RelPath: block.MetaFilename,
+						},
+						{
+							RelPath:   "index",
+							SizeBytes: 1,
+						},
+						{
+							RelPath:   "chunks/000001",
+							SizeBytes: 1024,
+						},
+					},
+				},
+			},
+			verifyBucket: func(t *testing.T, bkt *objstore.InMemBucket) {
+				verifyBucket(t, bkt, map[string]string{})
+			},
+		},
+		{
+			name:     "valid request without compactor shard ID label",
+			tenantID: tenantID,
+			blockID:  blockID,
+			meta: &metadata.Meta{
+				BlockMeta: tsdb.BlockMeta{
+					ULID:    bULID,
+					Version: metadata.TSDBVersion1,
+					MinTime: now - 1000,
+					MaxTime: now,
+				},
+				Thanos: metadata.Thanos{
+					Files: []metadata.File{
+						{
+							RelPath: block.MetaFilename,
+						},
+						{
+							RelPath:   "index",
+							SizeBytes: 1,
+						},
+						{
+							RelPath:   "chunks/000001",
+							SizeBytes: 1024,
+						},
+					},
+				},
+			},
+			verifyBucket: func(t *testing.T, bkt *objstore.InMemBucket) {
+				verifyBucket(t, bkt, nil)
+			},
+		},
+	}
+	for _, tc := range validCases {
+		t.Run(tc.name, func(t *testing.T) {
+			bkt := objstore.NewInMemBucket()
+
+			cfgProvider := newMockConfigProvider()
+			c := &MultitenantCompactor{
+				logger:       log.NewNopLogger(),
+				bucketClient: bkt,
+				cfgProvider:  cfgProvider,
+			}
+			buf := bytes.NewBuffer(nil)
+			require.NoError(t, json.NewEncoder(buf).Encode(tc.meta))
+			r := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/upload/block/%s", tc.blockID), buf)
+			r = r.WithContext(user.InjectOrgID(r.Context(), tc.tenantID))
+			r = mux.SetURLVars(r, map[string]string{"block": tc.blockID})
+			w := httptest.NewRecorder()
+			c.HandleBlockUpload(w, r)
+
+			resp := w.Result()
+			body, err := io.ReadAll(resp.Body)
+			require.NoError(t, err)
+			require.Equal(t, http.StatusOK, resp.StatusCode)
+			require.Empty(t, string(body))
+
+			tc.verifyBucket(t, bkt)
 		})
 	}
 }
