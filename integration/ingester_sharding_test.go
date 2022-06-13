@@ -49,11 +49,6 @@ func TestIngesterSharding(t *testing.T) {
 			flags := BlocksStorageFlags()
 			flags["-distributor.ingestion-tenant-shard-size"] = strconv.Itoa(testData.tenantShardSize)
 
-			// Enable shuffle sharding on read path but not lookback, otherwise all ingesters would be
-			// queried being just registered.
-			flags["-querier.query-store-after"] = "0"
-			flags["-querier.shuffle-sharding-ingesters-lookback-period"] = "1ns"
-
 			// Start dependencies.
 			consul := e2edb.NewConsul()
 			minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
@@ -64,7 +59,6 @@ func TestIngesterSharding(t *testing.T) {
 			ingester1 := e2emimir.NewIngester("ingester-1", consul.NetworkHTTPEndpoint(), flags)
 			ingester2 := e2emimir.NewIngester("ingester-2", consul.NetworkHTTPEndpoint(), flags)
 			ingester3 := e2emimir.NewIngester("ingester-3", consul.NetworkHTTPEndpoint(), flags)
-			ingesters := e2emimir.NewCompositeMimirService(ingester1, ingester2, ingester3)
 			querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags)
 			require.NoError(t, s.StartAndWaitReady(distributor, ingester1, ingester2, ingester3, querier))
 
@@ -109,6 +103,12 @@ func TestIngesterSharding(t *testing.T) {
 				}
 			}
 
+			// Verify that the expected number of ingesters had series (write path). However,
+			// we _don't_ verify that a subset of ingesters were queried for the series (read
+			// path). This is because the way which ingesters to query is calculated depends on
+			// when they were registered compared to the "query ingesters within" time. They'll
+			// never be registered long enough as part of this test to be queried for the series.
+			// Instead, all ingesters are queried.
 			require.Equal(t, testData.expectedIngestersWithSeries, numIngestersWithSeries)
 			require.Equal(t, numSeriesToPush, totalIngestedSeries)
 
@@ -119,21 +119,6 @@ func TestIngesterSharding(t *testing.T) {
 				require.Equal(t, model.ValVector, result.Type())
 				assert.Equal(t, expectedVector, result.(model.Vector))
 			}
-
-			// We expect that only ingesters belonging to tenant's shard have been queried if
-			// shuffle sharding is enabled.
-			expectedIngesters := ingesters.NumInstances()
-			if testData.tenantShardSize > 0 {
-				expectedIngesters = testData.tenantShardSize
-			}
-
-			expectedCalls := expectedIngesters * len(expectedVectors)
-			require.NoError(t, ingesters.WaitSumMetricsWithOptions(
-				e2e.Equals(float64(expectedCalls)),
-				[]string{"cortex_request_duration_seconds"},
-				e2e.WithMetricCount,
-				e2e.SkipMissingMetrics, // Some ingesters may have received no request at all.
-				e2e.WithLabelMatchers(labels.MustNewMatcher(labels.MatchEqual, "route", "/cortex.Ingester/QueryStream"))))
 
 			// Ensure no service-specific metrics prefix is used by the wrong service.
 			assertServiceMetricsPrefixes(t, Distributor, distributor)

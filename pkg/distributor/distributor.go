@@ -144,7 +144,7 @@ type Config struct {
 	// this (and should never use it) but this feature is used by other projects built on top of it
 	SkipLabelNameValidation bool `yaml:"-"`
 
-	// This config is dynamically injected because defined in the querier config.
+	// This config is dynamically injected because it is defined in the querier config.
 	ShuffleShardingLookbackPeriod time.Duration `yaml:"-"`
 
 	// Limits for distributor
