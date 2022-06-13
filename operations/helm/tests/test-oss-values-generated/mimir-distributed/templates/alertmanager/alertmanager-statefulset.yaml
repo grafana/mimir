@@ -62,7 +62,7 @@ spec:
           emptyDir: {}
       containers:
         - name: alertmanager
-          image: "grafana/mimir:2.1.0"
+          image: "grafana/mimir:r190-fe20bbd"
           imagePullPolicy: IfNotPresent
           args:
             - "-target=alertmanager"

@@ -46,7 +46,7 @@ spec:
         []
       containers:
         - name: distributor
-          image: "grafana/mimir:2.1.0"
+          image: "grafana/mimir:r190-fe20bbd"
           imagePullPolicy: IfNotPresent
           args:
             - "-target=distributor"

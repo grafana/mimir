@@ -68,7 +68,7 @@ spec:
           emptyDir: {}
       containers:
         - name: store-gateway
-          image: "grafana/mimir:2.1.0"
+          image: "grafana/mimir:r190-fe20bbd"
           imagePullPolicy: IfNotPresent
           args:
             - "-target=store-gateway"

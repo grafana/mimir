@@ -46,7 +46,7 @@ spec:
         []
       containers:
         - name: querier
-          image: "grafana/enterprise-metrics:v2.1.0"
+          image: "grafana/enterprise-metrics:r190-9abd21a8"
           imagePullPolicy: IfNotPresent
           args:
             - "-target=querier"
