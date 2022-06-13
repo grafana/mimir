@@ -35,11 +35,12 @@ const (
 )
 
 type BlocksCleanerConfig struct {
-	DeletionDelay           time.Duration
-	CleanupInterval         time.Duration
-	CleanupConcurrency      int
-	TenantCleanupDelay      time.Duration // Delay before removing tenant deletion mark and "debug".
-	DeleteBlocksConcurrency int
+	DeletionDelay             time.Duration
+	PartialBlockDeletionDelay time.Duration
+	CleanupInterval           time.Duration
+	CleanupConcurrency        int
+	TenantCleanupDelay        time.Duration // Delay before removing tenant deletion mark and "debug".
+	DeleteBlocksConcurrency   int
 }
 
 type BlocksCleaner struct {
@@ -56,17 +57,18 @@ type BlocksCleaner struct {
 	lastOwnedUsers []string
 
 	// Metrics.
-	runsStarted                 prometheus.Counter
-	runsCompleted               prometheus.Counter
-	runsFailed                  prometheus.Counter
-	runsLastSuccess             prometheus.Gauge
-	blocksCleanedTotal          prometheus.Counter
-	blocksFailedTotal           prometheus.Counter
-	blocksMarkedForDeletion     prometheus.Counter
-	tenantBlocks                *prometheus.GaugeVec
-	tenantMarkedBlocks          *prometheus.GaugeVec
-	tenantPartialBlocks         *prometheus.GaugeVec
-	tenantBucketIndexLastUpdate *prometheus.GaugeVec
+	runsStarted                    prometheus.Counter
+	runsCompleted                  prometheus.Counter
+	runsFailed                     prometheus.Counter
+	runsLastSuccess                prometheus.Gauge
+	blocksCleanedTotal             prometheus.Counter
+	blocksFailedTotal              prometheus.Counter
+	blocksMarkedForDeletion        prometheus.Counter
+	partialBlocksMarkedForDeletion prometheus.Counter
+	tenantBlocks                   *prometheus.GaugeVec
+	tenantMarkedBlocks             *prometheus.GaugeVec
+	tenantPartialBlocks            *prometheus.GaugeVec
+	tenantBucketIndexLastUpdate    *prometheus.GaugeVec
 }
 
 func NewBlocksCleaner(cfg BlocksCleanerConfig, bucketClient objstore.Bucket, ownUser func(userID string) (bool, error), cfgProvider ConfigProvider, logger log.Logger, reg prometheus.Registerer) *BlocksCleaner {
@@ -104,6 +106,11 @@ func NewBlocksCleaner(cfg BlocksCleanerConfig, bucketClient objstore.Bucket, own
 		blocksMarkedForDeletion: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name:        blocksMarkedForDeletionName,
 			Help:        blocksMarkedForDeletionHelp,
+			ConstLabels: prometheus.Labels{"reason": "retention"},
+		}),
+		partialBlocksMarkedForDeletion: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name:        partialBlocksMarkedForDeletionName,
+			Help:        partialBlocksMarkedForDeletionHelp,
 			ConstLabels: prometheus.Labels{"reason": "retention"},
 		}),
 
@@ -349,7 +356,9 @@ func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string) (returnErr
 	// Partial blocks with a deletion mark can be cleaned up. This is a best effort, so we don't return
 	// error if the cleanup of partial blocks fail.
 	if len(partials) > 0 {
-		c.cleanUserPartialBlocks(ctx, partials, idx, userBucket, userLogger)
+		delay := c.cfgProvider.CompactorPartialBlockDeletionDelay(userID)
+		//c.applyUserPartialBlockDelay(ctx, idx, delay, userBucket, userLogger)
+		c.cleanUserPartialBlocks(ctx, partials, idx, delay, userBucket, userLogger)
 	}
 
 	// Upload the updated index to the storage.
@@ -402,17 +411,28 @@ func (c *BlocksCleaner) deleteBlocksMarkedForDeletion(ctx context.Context, idx *
 
 // cleanUserPartialBlocks delete partial blocks which are safe to be deleted. The provided partials map
 // and index are updated accordingly.
-func (c *BlocksCleaner) cleanUserPartialBlocks(ctx context.Context, partials map[ulid.ULID]error, idx *bucketindex.Index, userBucket objstore.InstrumentedBucket, userLogger log.Logger) {
+func (c *BlocksCleaner) cleanUserPartialBlocks(ctx context.Context, partials []bucketindex.PartialBlock, idx *bucketindex.Index, delay time.Duration, userBucket objstore.InstrumentedBucket, userLogger log.Logger) {
 	// Collect all blocks with missing meta.json into buffered channel.
 	blocks := make([]ulid.ULID, 0, len(partials))
 
-	for blockID, blockErr := range partials {
+	for _, p := range partials {
 		// We can safely delete only blocks which are partial because the meta.json is missing.
-		if !errors.Is(blockErr, bucketindex.ErrBlockMetaNotFound) {
+		if !errors.Is(p.Reason, bucketindex.ErrBlockMetaNotFound) {
 			continue
 		}
-
-		blocks = append(blocks, blockID)
+		// Check if partial block is older than delay period, and mark for deletion if necessary
+		if delay > 0 {
+			maxTime := time.Unix(p.MaxTime/1000, 0)
+			if maxTime.Before(time.Now().Add(-delay)) {
+				level.Info(userLogger).Log("msg", "applied partial block delay: marking block for deletion", "block", p.ID, "maxTime", p.MaxTime)
+				if err := block.MarkForDeletion(ctx, userLogger, userBucket, p.ID, fmt.Sprintf("block exceeding delay of %v", delay), c.blocksMarkedForDeletion); err != nil {
+					level.Warn(userLogger).Log("msg", "failed to mark block for deletion", "block", p.ID, "err", err)
+				} else {
+					c.partialBlocksMarkedForDeletion.Inc()
+				}
+			}
+		}
+		blocks = append(blocks, p.ID)
 	}
 
 	var mu sync.Mutex
@@ -442,7 +462,6 @@ func (c *BlocksCleaner) cleanUserPartialBlocks(ctx context.Context, partials map
 		// Remove the block from the bucket index too.
 		mu.Lock()
 		idx.RemoveBlock(blockID)
-		delete(partials, blockID)
 		mu.Unlock()
 
 		c.blocksCleanedTotal.Inc()

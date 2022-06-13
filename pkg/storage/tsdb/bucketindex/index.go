@@ -157,6 +157,19 @@ func BlockFromThanosMeta(meta metadata.Meta) *Block {
 	}
 }
 
+// PartialBlock holds the information about a partial block.
+type PartialBlock struct {
+	// Block ID.
+	ID ulid.ULID
+
+	// MinTime and MaxTime specify the time range all samples in the block are in (millis precision).
+	MinTime int64
+	MaxTime int64
+
+	// Reason is the error associated with the block being partial rather than a normal block
+	Reason error
+}
+
 func detectBlockSegmentsFormat(meta metadata.Meta) (string, int) {
 	if num, ok := detectBlockSegmentsFormat1Based6Digits(meta); ok {
 		return SegmentsFormat1Based6Digits, num
