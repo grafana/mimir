@@ -34,6 +34,7 @@
 * [BUGFIX] API: gzip is now enforced when identity encoding is explicitly rejected. #1864
 * [BUGFIX] Fix panic at startup when Mimir is running in monolithic mode and query sharding is enabled. #2036
 * [BUGFIX] Ruler: report failed evaluation metric for any 5xx status code returned by the query-frontend when remote operational mode is enabled. #2053
+* [BUGFIX] Ingester: fix slow rollout when using `-ingester.ring.unregister-on-shutdown=false` with long `-ingester.ring.heartbeat-period`. #2085
 
 ### Mixin
 
