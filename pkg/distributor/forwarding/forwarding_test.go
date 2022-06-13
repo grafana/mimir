@@ -173,9 +173,18 @@ func TestForwardingSamplesWithDifferentErrorsWithPropagation(t *testing.T) {
 			forwarder := NewForwarder(reg, tc.config)
 			urls := make([]string, len(tc.remoteStatusCodes))
 			closers := make([]func(), len(tc.remoteStatusCodes))
+			expectedErrorsByTarget := make(map[string]map[int]int)
 			for i, code := range tc.remoteStatusCodes {
 				urls[i], _, _, closers[i] = newTestServer(t, code, false)
 				defer closers[i]()
+
+				if code/100 == 2 {
+					continue
+				}
+				if len(expectedErrorsByTarget[urls[i]]) == 0 {
+					expectedErrorsByTarget[urls[i]] = make(map[int]int)
+				}
+				expectedErrorsByTarget[urls[i]][code]++
 			}
 
 			rules := make(validation.ForwardingRules)
@@ -205,24 +214,18 @@ func TestForwardingSamplesWithDifferentErrorsWithPropagation(t *testing.T) {
 				require.Equal(t, tc.expectedError, errorType(resp.Code))
 			}
 
-			expectedErrors := make(map[int]int)
-			for _, statusCode := range tc.remoteStatusCodes {
-				if statusCode/100 == 2 {
-					continue
-				}
-				expectedErrors[statusCode]++
-			}
-
 			var expectedMetrics strings.Builder
-			if len(expectedErrors) > 0 {
+			if len(expectedErrorsByTarget) > 0 {
 				expectedMetrics.WriteString(`
 				# TYPE cortex_distributor_forward_errors_total counter
-				# HELP cortex_distributor_forward_errors_total The total number of errors which the Distributor received from forwarding targets.`)
+				# HELP cortex_distributor_forward_errors_total The total number of errors that the distributor received from forwarding targets.`)
 			}
-			for statusCode, expectedCount := range expectedErrors {
-				expectedMetrics.WriteString(fmt.Sprintf(`
-				cortex_distributor_forward_errors_total{status_code="%d", user="%s"} %d
-`, statusCode, tenant, expectedCount))
+			for target, statusCodes := range expectedErrorsByTarget {
+				for statusCode, count := range statusCodes {
+					expectedMetrics.WriteString(fmt.Sprintf(`
+					cortex_distributor_forward_errors_total{status_code="%d", target="%s"} %d
+	`, statusCode, target, count))
+				}
 			}
 
 			assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics.String()),

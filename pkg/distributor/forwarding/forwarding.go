@@ -90,7 +90,7 @@ func NewForwarder(reg prometheus.Registerer, cfg Config) Forwarder {
 			Namespace: "cortex",
 			Name:      "distributor_forward_errors_total",
 			Help:      "The total number of errors that the distributor received from forwarding targets.",
-		}, []string{"user", "status_code"}),
+		}, []string{"status_code", "target"}),
 		samplesTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Namespace: "cortex",
 			Name:      "distributor_forward_samples_total",
@@ -110,7 +110,6 @@ func (r *forwarder) NewRequest(ctx context.Context, tenant string, rules validat
 		ctx:    ctx,
 		client: &r.client, // http client should be re-used so open connections get re-used.
 		pools:  &r.pools,
-		tenant: tenant,
 
 		tsByEndpoint: make(map[string]*[]mimirpb.PreallocTimeseries),
 
@@ -129,7 +128,6 @@ type request struct {
 	ctx    context.Context
 	client *http.Client
 	pools  *pools
-	tenant string
 
 	tsByEndpoint map[string]*[]mimirpb.PreallocTimeseries
 
@@ -289,7 +287,7 @@ func (r *request) sendToEndpoint(ctx context.Context, endpoint string, ts []mimi
 		if scanner.Scan() {
 			line = scanner.Text()
 		}
-		r.errors.WithLabelValues(r.tenant, strconv.Itoa(httpResp.StatusCode)).Inc()
+		r.errors.WithLabelValues(strconv.Itoa(httpResp.StatusCode), endpoint).Inc()
 		err := errors.Errorf("server returned HTTP status %s: %s", httpResp.Status, line)
 		if httpResp.StatusCode/100 == 5 || httpResp.StatusCode == http.StatusTooManyRequests {
 			return recoverableError{err}
