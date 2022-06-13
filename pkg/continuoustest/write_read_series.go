@@ -118,7 +118,10 @@ func (t *WriteReadSeriesTest) Run(ctx context.Context, now time.Time) error {
 		}
 	}
 
-	queryRanges, queryInstants := t.getQueryTimeRanges(now)
+	queryRanges, queryInstants, err := t.getQueryTimeRanges(now)
+	if err != nil {
+		errs.Add(err)
+	}
 	for _, timeRange := range queryRanges {
 		err := t.runRangeQueryAndVerifyResult(ctx, timeRange[0], timeRange[1], true)
 		errs.Add(err)
@@ -181,18 +184,18 @@ func (t *WriteReadSeriesTest) writeSamples(ctx context.Context, timestamp time.T
 
 // getQueryTimeRanges returns the start/end time ranges to use to run test range queries,
 // and the timestamps to use to run test instant queries.
-func (t *WriteReadSeriesTest) getQueryTimeRanges(now time.Time) (ranges [][2]time.Time, instants []time.Time) {
+func (t *WriteReadSeriesTest) getQueryTimeRanges(now time.Time) (ranges [][2]time.Time, instants []time.Time, err error) {
 	// The min and max allowed query timestamps are zero if there's no successfully written data yet.
 	if t.queryMinTime.IsZero() || t.queryMaxTime.IsZero() {
 		level.Info(t.logger).Log("msg", "Skipped queries because there's no valid time range to query")
-		return nil, nil
+		return nil, nil, errors.New("no valid time range to query")
 	}
 
 	// Honor the configured max age.
 	adjustedQueryMinTime := maxTime(t.queryMinTime, now.Add(-t.cfg.MaxQueryAge))
 	if t.queryMaxTime.Before(adjustedQueryMinTime) {
 		level.Info(t.logger).Log("msg", "Skipped queries because there's no valid time range to query after honoring configured max query age", "min_valid_time", t.queryMinTime, "max_valid_time", t.queryMaxTime, "max_query_age", t.cfg.MaxQueryAge)
-		return
+		return nil, nil, errors.New("no valid time range to query after honoring configured max query age")
 	}
 
 	// Last 1h.
@@ -226,7 +229,7 @@ func (t *WriteReadSeriesTest) getQueryTimeRanges(now time.Time) (ranges [][2]tim
 	ranges = append(ranges, [2]time.Time{randMinTime, randTime(randMinTime, t.queryMaxTime)})
 	instants = append(instants, randMinTime)
 
-	return ranges, instants
+	return ranges, instants, nil
 }
 
 func (t *WriteReadSeriesTest) runRangeQueryAndVerifyResult(ctx context.Context, start, end time.Time, resultsCacheEnabled bool) error {

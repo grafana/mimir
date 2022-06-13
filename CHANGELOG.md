@@ -73,7 +73,7 @@
 
 ### Mimir Continuous Test
 
-* [ENHANCEMENT] Added the `-tests.smoke-test` flag to run the `mimir-continuous-test` suite once and immediately exit. #2047
+* [ENHANCEMENT] Added the `-tests.smoke-test` flag to run the `mimir-continuous-test` suite once and immediately exit. #2047 #2094
 
 ### Documentation
 
