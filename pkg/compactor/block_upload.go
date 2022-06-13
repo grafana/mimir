@@ -33,6 +33,7 @@ import (
 const tmpMetaFilename = "uploading-" + block.MetaFilename
 
 var rePath = regexp.MustCompile(`^(index|chunks/\d{6})$`)
+var reShardIDLabel = regexp.MustCompile(`^\d_of_\d$`)
 
 // HandleBlockUpload handles requests for starting or completing block uploads.
 //
@@ -289,6 +290,18 @@ func (c *MultitenantCompactor) sanitizeMeta(logger log.Logger, tenantID string, 
 		switch l {
 		// Preserve these labels
 		case mimir_tsdb.CompactorShardIDExternalLabel:
+			if v == "" {
+				level.Debug(logger).Log("msg", fmt.Sprintf(
+					"removing empty external label from %s", block.MetaFilename),
+					"label", l)
+				delete(meta.Thanos.Labels, l)
+				continue
+			}
+
+			if !reShardIDLabel.MatchString(v) {
+				return fmt.Sprintf("invalid %s label in %s: %q",
+					mimir_tsdb.CompactorShardIDExternalLabel, block.MetaFilename, v)
+			}
 		// Remove unused labels
 		case mimir_tsdb.DeprecatedTenantIDExternalLabel, mimir_tsdb.DeprecatedIngesterIDExternalLabel, mimir_tsdb.DeprecatedShardIDExternalLabel:
 			level.Debug(logger).Log("msg", fmt.Sprintf("removing unused external label from %s", block.MetaFilename),

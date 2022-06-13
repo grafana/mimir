@@ -44,7 +44,7 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 		},
 		Thanos: metadata.Thanos{
 			Labels: map[string]string{
-				mimir_tsdb.CompactorShardIDExternalLabel: "test",
+				mimir_tsdb.CompactorShardIDExternalLabel: "1_of_3",
 			},
 			Files: []metadata.File{
 				{
@@ -64,6 +64,11 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 
 	setUpPartialBlock := func(bkt *bucket.ClientMock) {
 		bkt.MockExists(path.Join(tenantID, blockID, block.MetaFilename), false, nil)
+	}
+	setUpBlockUpload := func(bkt *bucket.ClientMock) {
+		setUpPartialBlock(bkt)
+		pth := path.Join(tenantID, blockID, fmt.Sprintf("uploading-%s", block.MetaFilename))
+		bkt.MockUpload(pth, nil)
 	}
 
 	testCases := []struct {
@@ -244,7 +249,7 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 				},
 				Thanos: metadata.Thanos{
 					Labels: map[string]string{
-						mimir_tsdb.CompactorShardIDExternalLabel: "test",
+						mimir_tsdb.CompactorShardIDExternalLabel: "1_of_3",
 					},
 					Files: []metadata.File{
 						{
@@ -281,7 +286,7 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 				},
 				Thanos: metadata.Thanos{
 					Labels: map[string]string{
-						mimir_tsdb.CompactorShardIDExternalLabel: "test",
+						mimir_tsdb.CompactorShardIDExternalLabel: "1_of_3",
 					},
 					Files: []metadata.File{
 						{
@@ -298,6 +303,25 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 					},
 				},
 			},
+		},
+		{
+			name:            "invalid compactor shard ID label",
+			tenantID:        tenantID,
+			blockID:         blockID,
+			setUpBucketMock: setUpPartialBlock,
+			meta: &metadata.Meta{
+				BlockMeta: tsdb.BlockMeta{
+					ULID:    bULID,
+					Version: metadata.TSDBVersion1,
+				},
+				Thanos: metadata.Thanos{
+					Labels: map[string]string{
+						mimir_tsdb.CompactorShardIDExternalLabel: "test",
+					},
+				},
+			},
+			expBadRequest: fmt.Sprintf(`invalid %s label in %s: "test"`, mimir_tsdb.CompactorShardIDExternalLabel,
+				block.MetaFilename),
 		},
 		{
 			name:     "failure checking for complete block",
@@ -330,15 +354,72 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 			expInternalServerError: true,
 		},
 		{
-			name:     "valid request",
-			tenantID: tenantID,
-			blockID:  blockID,
-			setUpBucketMock: func(bkt *bucket.ClientMock) {
-				setUpPartialBlock(bkt)
-				pth := path.Join(tenantID, blockID, fmt.Sprintf("uploading-%s", block.MetaFilename))
-				bkt.MockUpload(pth, nil)
+			name:            "valid request",
+			tenantID:        tenantID,
+			blockID:         blockID,
+			setUpBucketMock: setUpBlockUpload,
+			meta:            &validMeta,
+		},
+		{
+			name:            "valid request with empty compactor shard ID label",
+			tenantID:        tenantID,
+			blockID:         blockID,
+			setUpBucketMock: setUpBlockUpload,
+			meta: &metadata.Meta{
+				BlockMeta: tsdb.BlockMeta{
+					ULID:    bULID,
+					Version: metadata.TSDBVersion1,
+					MinTime: now - 1000,
+					MaxTime: now,
+				},
+				Thanos: metadata.Thanos{
+					Labels: map[string]string{
+						mimir_tsdb.CompactorShardIDExternalLabel: "",
+					},
+					Files: []metadata.File{
+						{
+							RelPath: block.MetaFilename,
+						},
+						{
+							RelPath:   "index",
+							SizeBytes: 1,
+						},
+						{
+							RelPath:   "chunks/000001",
+							SizeBytes: 1024,
+						},
+					},
+				},
 			},
-			meta: &validMeta,
+		},
+		{
+			name:            "valid request without compactor shard ID label",
+			tenantID:        tenantID,
+			blockID:         blockID,
+			setUpBucketMock: setUpBlockUpload,
+			meta: &metadata.Meta{
+				BlockMeta: tsdb.BlockMeta{
+					ULID:    bULID,
+					Version: metadata.TSDBVersion1,
+					MinTime: now - 1000,
+					MaxTime: now,
+				},
+				Thanos: metadata.Thanos{
+					Files: []metadata.File{
+						{
+							RelPath: block.MetaFilename,
+						},
+						{
+							RelPath:   "index",
+							SizeBytes: 1,
+						},
+						{
+							RelPath:   "chunks/000001",
+							SizeBytes: 1024,
+						},
+					},
+				},
+			},
 		},
 	}
 	for _, tc := range testCases {
@@ -566,7 +647,7 @@ func TestMultitenantCompactor_HandleBlockUpload_Complete(t *testing.T) {
 			},
 			Thanos: metadata.Thanos{
 				Labels: map[string]string{
-					mimir_tsdb.CompactorShardIDExternalLabel: "test",
+					mimir_tsdb.CompactorShardIDExternalLabel: "1_of_3",
 				},
 				Files: []metadata.File{
 					{
