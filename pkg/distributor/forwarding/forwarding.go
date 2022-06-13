@@ -89,7 +89,7 @@ func NewForwarder(reg prometheus.Registerer, cfg Config) Forwarder {
 		errorsTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Namespace: "cortex",
 			Name:      "distributor_forward_errors_total",
-			Help:      "The total number of errors which the Distributor received from forwarding targets.",
+			Help:      "The total number of errors that the distributor received from forwarding targets.",
 		}, []string{"user", "status_code"}),
 		samplesTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Namespace: "cortex",
