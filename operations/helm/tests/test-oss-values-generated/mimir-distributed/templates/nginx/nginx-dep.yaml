@@ -5,7 +5,7 @@ kind: Deployment
 metadata:
   name: test-oss-values-mimir-nginx
   labels:
-    helm.sh/chart: mimir-distributed-2.2.0-weekly.189
+    helm.sh/chart: mimir-distributed-2.2.0-weekly.190
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-oss-values
     app.kubernetes.io/component: nginx
@@ -25,9 +25,9 @@ spec:
   template:
     metadata:
       annotations:
-        checksum/config: 16f73ab6e0caae115dcd952c0d94142fbfb32f9a3f1086143d24e447f87bc645
+        checksum/config: 81a467707ff1e0acde06809af678fa262d9ab39cc2e7f33b9ae3292e0299dced
       labels:
-        helm.sh/chart: mimir-distributed-2.2.0-weekly.189
+        helm.sh/chart: mimir-distributed-2.2.0-weekly.190
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-oss-values
         app.kubernetes.io/version: "2.1.0"
