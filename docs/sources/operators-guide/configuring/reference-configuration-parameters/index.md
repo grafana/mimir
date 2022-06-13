@@ -3518,7 +3518,7 @@ tsdb:
   # (experimental) Enable querying overlapping blocks. If there are going to be
   # overlapping blocks in the filesystem this should be enabled.
   # CLI flag: -blocks-storage.tsdb.allow-overlapping-queries
-  [allow_overlapping_queries: <boolean> | default = true]
+  [allow_overlapping_queries: <boolean> | default = false]
 
   # (advanced) Max size - in bytes - of the in-memory series hash cache. The
   # cache is shared across all tenants and it's used only when query sharding is
