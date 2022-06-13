@@ -5,7 +5,7 @@ kind: StatefulSet
 metadata:
   name: test-enterprise-values-mimir-alertmanager
   labels:
-    helm.sh/chart: mimir-distributed-2.2.0-weekly.189
+    helm.sh/chart: mimir-distributed-2.2.0-weekly.190
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-enterprise-values
     app.kubernetes.io/component: alertmanager
@@ -27,7 +27,7 @@ spec:
   template:
     metadata:
       labels:
-        helm.sh/chart: mimir-distributed-2.2.0-weekly.189
+        helm.sh/chart: mimir-distributed-2.2.0-weekly.190
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-enterprise-values
         app.kubernetes.io/version: "2.1.0"
@@ -35,7 +35,7 @@ spec:
         app.kubernetes.io/component: alertmanager
         app.kubernetes.io/part-of: memberlist
       annotations:
-        checksum/config: c4160d78e0d3f7486baa824255ecb7e645df290fcb89929bfc25229399a3d67e
+        checksum/config: deee5d2bcf924492c2988a219d9cf89cde36027ee6b101cee76fde256a0b9cef
     spec:
       serviceAccountName: test-enterprise-values-mimir
       securityContext:
@@ -65,7 +65,7 @@ spec:
           emptyDir: {}
       containers:
         - name: alertmanager
-          image: "grafana/enterprise-metrics:v2.1.0"
+          image: "grafana/enterprise-metrics:r190-9abd21a8"
           imagePullPolicy: IfNotPresent
           args:
             - "-target=alertmanager"

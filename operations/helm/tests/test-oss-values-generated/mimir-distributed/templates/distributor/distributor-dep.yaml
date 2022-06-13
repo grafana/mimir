@@ -5,7 +5,7 @@ kind: Deployment
 metadata:
   name: test-oss-values-mimir-distributor
   labels:
-    helm.sh/chart: mimir-distributed-2.2.0-weekly.189
+    helm.sh/chart: mimir-distributed-2.2.0-weekly.190
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-oss-values
     app.kubernetes.io/component: distributor
@@ -29,7 +29,7 @@ spec:
   template:
     metadata:
       labels:
-        helm.sh/chart: mimir-distributed-2.2.0-weekly.189
+        helm.sh/chart: mimir-distributed-2.2.0-weekly.190
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-oss-values
         app.kubernetes.io/version: "2.1.0"
@@ -37,7 +37,7 @@ spec:
         app.kubernetes.io/component: distributor
         app.kubernetes.io/part-of: memberlist
       annotations:
-        checksum/config: 18cf306cfebbee6a64b5f8933d103b5b7943435334e66e54cea23253c7d11367
+        checksum/config: 51ee39d62dc7c50c36923ddac93650477ac8de7f5191f7cc3b234dbbf8beeddd
     spec:
       serviceAccountName: test-oss-values-mimir
       securityContext:
@@ -46,7 +46,7 @@ spec:
         []
       containers:
         - name: distributor
-          image: "grafana/mimir:2.1.0"
+          image: "grafana/mimir:r190-fe20bbd"
           imagePullPolicy: IfNotPresent
           args:
             - "-target=distributor"
