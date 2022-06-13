@@ -47,7 +47,7 @@ func NewUpdater(bkt objstore.Bucket, userID string, cfgProvider bucket.TenantCon
 
 // UpdateIndex generates the bucket index and returns it, without storing it to the storage.
 // If the old index is not passed in input, then the bucket index will be generated from scratch.
-func (w *Updater) UpdateIndex(ctx context.Context, old *Index) (*Index, map[ulid.ULID]error, error) {
+func (w *Updater) UpdateIndex(ctx context.Context, old *Index) (*Index, []PartialBlock, error) {
 	var oldBlocks []*Block
 	var oldBlockDeletionMarks []*BlockDeletionMark
 
@@ -75,9 +75,9 @@ func (w *Updater) UpdateIndex(ctx context.Context, old *Index) (*Index, map[ulid
 	}, partials, nil
 }
 
-func (w *Updater) updateBlocks(ctx context.Context, old []*Block) (blocks []*Block, partials map[ulid.ULID]error, _ error) {
+func (w *Updater) updateBlocks(ctx context.Context, old []*Block) (blocks []*Block, partials []PartialBlock, _ error) {
 	discovered := map[ulid.ULID]struct{}{}
-	partials = map[ulid.ULID]error{}
+	partials = []PartialBlock{}
 
 	// Find all blocks in the storage.
 	err := w.bkt.Iter(ctx, "", func(name string) error {
@@ -109,12 +109,22 @@ func (w *Updater) updateBlocks(ctx context.Context, old []*Block) (blocks []*Blo
 		}
 
 		if errors.Is(err, ErrBlockMetaNotFound) {
-			partials[id] = err
+			partials = append(partials, PartialBlock{
+				ID:      id,
+				MinTime: b.MinTime,
+				MaxTime: b.MaxTime,
+				Reason:  err,
+			})
 			level.Warn(w.logger).Log("msg", "skipped partial block when updating bucket index", "block", id.String())
 			continue
 		}
 		if errors.Is(err, ErrBlockMetaCorrupted) {
-			partials[id] = err
+			partials = append(partials, PartialBlock{
+				ID:      id,
+				MinTime: b.MinTime,
+				MaxTime: b.MaxTime,
+				Reason:  err,
+			})
 			level.Error(w.logger).Log("msg", "skipped block with corrupted meta.json when updating bucket index", "block", id.String(), "err", err)
 			continue
 		}
