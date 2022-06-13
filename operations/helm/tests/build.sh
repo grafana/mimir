@@ -23,5 +23,5 @@ for FILEPATH in $TESTS; do
   helm template "${TEST_NAME}" ${CHART_PATH} -f "${FILEPATH}" --output-dir "${OUTPUT_DIR}" --namespace citestns
 
   echo "Removing mutable config checksum and helm chart version for clarity in ${OUTPUT_DIR}"
-  find "${OUTPUT_DIR}" -type f | xargs sed -E -i -- "/^(([ ]+checksum\/config: [0-9a-f]{64})|([ ]+(helm.sh\/)?chart: mimir-distributed-([0-9]|[1-9][0-9]+)[.]([0-9]|[1-9][0-9]+)[.]([0-9]|[1-9][0-9]+)(-weekly.([0-9]|[1-9][0-9]+))?))$/d"
+  find "${OUTPUT_DIR}" -type f -print0 | xargs -0 sed -E -i -- "/^(([ ]+checksum\/config: [0-9a-f]{64})|([ ]+(helm.sh\/)?chart: mimir-distributed-([0-9]|[1-9][0-9]+)[.]([0-9]|[1-9][0-9]+)[.]([0-9]|[1-9][0-9]+)(-weekly.([0-9]|[1-9][0-9]+))?))$/d"
 done
