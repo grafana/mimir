@@ -37,7 +37,7 @@ spec:
         app.kubernetes.io/component: ruler
         app.kubernetes.io/part-of: memberlist
       annotations:
-        checksum/config: 7b9ed84df22bf324205968cf49b0d824eb15e1748888719ffc3bab3f17d5e2e4
+        checksum/config: 18cf306cfebbee6a64b5f8933d103b5b7943435334e66e54cea23253c7d11367
     spec:
       serviceAccountName: test-oss-values-mimir
       securityContext:

@@ -25,7 +25,7 @@ spec:
   template:
     metadata:
       annotations:
-        checksum/config: d7fa3f4c1e841a4634ee7561fa92990e6525d1bfdb176f416744e0b8f72ae99d
+        checksum/config: 16f73ab6e0caae115dcd952c0d94142fbfb32f9a3f1086143d24e447f87bc645
       labels:
         helm.sh/chart: mimir-distributed-2.2.0-weekly.189
         app.kubernetes.io/name: mimir

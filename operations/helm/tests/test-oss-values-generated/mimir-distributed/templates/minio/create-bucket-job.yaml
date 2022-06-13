@@ -4,7 +4,7 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: test-oss-values-mimir-distributed-make-bucket-job
-  namespace: "default"
+  namespace: "citestns"
   labels:
     app: mimir-distributed-make-bucket-job
     chart: mimir-distributed-2.2.0-weekly.189

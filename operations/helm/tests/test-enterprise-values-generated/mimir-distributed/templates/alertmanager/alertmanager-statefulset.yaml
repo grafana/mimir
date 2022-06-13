@@ -35,7 +35,7 @@ spec:
         app.kubernetes.io/component: alertmanager
         app.kubernetes.io/part-of: memberlist
       annotations:
-        checksum/config: 20297fef45efa773cd872a3e65ada08c59029003e83d3b1eace4d87bbf72ce99
+        checksum/config: c4160d78e0d3f7486baa824255ecb7e645df290fcb89929bfc25229399a3d67e
     spec:
       serviceAccountName: test-enterprise-values-mimir
       securityContext:
