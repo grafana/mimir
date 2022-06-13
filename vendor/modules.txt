@@ -17,7 +17,7 @@ cloud.google.com/go/storage
 # github.com/Azure/azure-pipeline-go v0.2.3
 ## explicit; go 1.14
 github.com/Azure/azure-pipeline-go/pipeline
-# github.com/Azure/azure-storage-blob-go v0.13.0
+# github.com/Azure/azure-storage-blob-go v0.14.0
 ## explicit; go 1.15
 github.com/Azure/azure-storage-blob-go/azblob
 # github.com/Azure/go-autorest v14.2.0+incompatible
@@ -412,7 +412,7 @@ github.com/google/gopacket/tcpassembly/tcpreader
 # github.com/google/pprof v0.0.0-20220318212150-b2ab0324ddda
 ## explicit; go 1.14
 github.com/google/pprof/profile
-# github.com/google/uuid v1.2.0
+# github.com/google/uuid v1.3.0
 ## explicit
 github.com/google/uuid
 # github.com/googleapis/gax-go/v2 v2.2.0
@@ -518,6 +518,11 @@ github.com/hashicorp/memberlist
 # github.com/hashicorp/serf v0.9.6
 ## explicit; go 1.12
 github.com/hashicorp/serf/coordinate
+# github.com/influxdata/influxdb/v2 v2.2.0
+## explicit; go 1.17
+github.com/influxdata/influxdb/v2/kit/io
+github.com/influxdata/influxdb/v2/models
+github.com/influxdata/influxdb/v2/pkg/escape
 # github.com/jessevdk/go-flags v1.5.0
 ## explicit; go 1.15
 github.com/jessevdk/go-flags

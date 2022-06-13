@@ -11,12 +11,10 @@ import (
 	"sync"
 
 	"github.com/go-kit/log/level"
-	"github.com/weaveworks/common/httpgrpc"
 	"github.com/weaveworks/common/middleware"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
-	"github.com/grafana/mimir/pkg/util/log"
 )
 
 // Func defines the type of the push. It is similar to http.HandlerFunc.
@@ -41,15 +39,7 @@ func Handler(
 	push Func,
 ) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ctx := r.Context()
-		logger := log.WithContext(ctx, log.Logger)
-		if sourceIPs != nil {
-			source := sourceIPs.Get(r)
-			if source != "" {
-				ctx = util.AddSourceIPsToOutgoingContext(ctx, source)
-				logger = log.WithSourceIPs(source, logger)
-			}
-		}
+		ctx, logger := requestContextAndLogger(r, sourceIPs)
 		bufHolder := bufferPool.Get().(*bufHolder)
 		var req mimirpb.PreallocWriteRequest
 		buf, err := util.ParseProtoReader(ctx, r.Body, int(r.ContentLength), maxRecvMsgSize, bufHolder.buf, &req, util.RawSnappy)
@@ -80,15 +70,7 @@ func Handler(
 		}
 
 		if _, err := push(ctx, &req.WriteRequest, cleanup); err != nil {
-			resp, ok := httpgrpc.HTTPResponseFromError(err)
-			if !ok {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-			if resp.GetCode() != 202 {
-				level.Error(logger).Log("msg", "push error", "err", err)
-			}
-			http.Error(w, string(resp.Body), int(resp.Code))
+			handlePushError(w, err, logger)
 		}
 	})
 }
