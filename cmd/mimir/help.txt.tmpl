@@ -450,6 +450,8 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of rules per rule group per-tenant. 0 to disable. (default 20)
   -ruler.query-frontend.address string
     	GRPC listen address of the query-frontend(s). Must be a DNS address (prefixed with dns:///) to enable client side load balancing.
+  -ruler.query-frontend.timeout duration
+    	The timeout for a rule query being evaluated by the query-frontend. (default 2m0s)
   -ruler.ring.consul.hostname string
     	Hostname and port of Consul. (default "localhost:8500")
   -ruler.ring.etcd.endpoints value

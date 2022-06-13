@@ -7372,6 +7372,16 @@
               "fieldType": "string"
             },
             {
+              "kind": "field",
+              "name": "timeout",
+              "required": false,
+              "desc": "The timeout for a rule query being evaluated by the query-frontend.",
+              "fieldValue": null,
+              "fieldDefaultValue": 120000000000,
+              "fieldFlag": "ruler.query-frontend.timeout",
+              "fieldType": "duration"
+            },
+            {
               "kind": "block",
               "name": "grpc_client_config",
               "required": false,

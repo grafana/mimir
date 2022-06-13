@@ -1400,6 +1400,10 @@ query_frontend:
   # CLI flag: -ruler.query-frontend.address
   [address: <string> | default = ""]
 
+  # The timeout for a rule query being evaluated by the query-frontend.
+  # CLI flag: -ruler.query-frontend.timeout
+  [timeout: <duration> | default = 2m]
+
   grpc_client_config:
     # (advanced) gRPC client max receive message size (bytes).
     # CLI flag: -ruler.query-frontend.grpc-client-config.grpc-max-recv-msg-size
