@@ -5,7 +5,7 @@ kind: Job
 metadata:
   name: test-enterprise-values-mimir-tokengen
   labels:
-    helm.sh/chart: mimir-distributed-2.2.0-weekly.189
+    helm.sh/chart: mimir-distributed-2.2.0-weekly.190
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-enterprise-values
     app.kubernetes.io/component: tokengen
@@ -21,7 +21,7 @@ spec:
   template:
     metadata:
       labels:
-        helm.sh/chart: mimir-distributed-2.2.0-weekly.189
+        helm.sh/chart: mimir-distributed-2.2.0-weekly.190
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-enterprise-values
         app.kubernetes.io/version: "2.1.0"
@@ -35,7 +35,7 @@ spec:
         []
       containers:
         - name: tokengen
-          image: "grafana/enterprise-metrics:v2.1.0"
+          image: "grafana/enterprise-metrics:r190-9abd21a8"
           imagePullPolicy: IfNotPresent
           args:
             - "-target=tokengen"
