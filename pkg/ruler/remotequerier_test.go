@@ -12,7 +12,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
-	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/httpgrpc"
@@ -90,7 +89,7 @@ func TestRemoteQuerier_QueryReq(t *testing.T) {
 func TestRemoteQuerier_QueryReqTimeout(t *testing.T) {
 	mockClientFn := func(ctx context.Context, req *httpgrpc.HTTPRequest, _ ...grpc.CallOption) (*httpgrpc.HTTPResponse, error) {
 		<-ctx.Done()
-		return nil, errors.New("Err")
+		return nil, ctx.Err()
 	}
 	q := NewRemoteQuerier(mockHTTPGRPCClient(mockClientFn), time.Second, "/prometheus", log.NewNopLogger())
 
