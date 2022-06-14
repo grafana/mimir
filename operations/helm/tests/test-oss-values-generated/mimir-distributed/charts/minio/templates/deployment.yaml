@@ -6,6 +6,7 @@ metadata:
   name: test-oss-values-minio
   labels:
     app: minio
+    chart: minio-8.0.10
     release: test-oss-values
     heritage: Helm
 spec:
@@ -26,6 +27,7 @@ spec:
         release: test-oss-values
       annotations:
         checksum/secrets: f7d601b8641bf40718836a3781f3547aa41f4d5a36774f49fbe5353840847956
+        checksum/config: 32ca71423a92c84343fe0ae8158915116831302093797101294d27b284a8c78b
     spec:
       serviceAccountName: "test-oss-values-minio"
       securityContext:

@@ -6,6 +6,7 @@ metadata:
   name: test-enterprise-values-minio
   labels:
     app: minio
+    chart: minio-8.0.10
     release: test-enterprise-values
     heritage: Helm
 spec:
