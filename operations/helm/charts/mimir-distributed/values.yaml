@@ -44,7 +44,10 @@ serviceAccount:
 # -- Configuration is loaded from the secret called 'externalConfigSecretName'. If 'useExternalConfig' is true, then the configuration is not generated, just consumed.
 useExternalConfig: false
 
-# -- Name of the secret that contains the configuration (used for naming even if config is internal).
+# -- What kind of object stores the configuration, choice of ConfigMap or Secret. Note that ConfigMap alone is not secure and you should inject passwords, keys via the global.extraEnvFrom mechanism.
+configStorageType: Secret
+
+# -- Name of the Secret or ConfigMap that contains the configuration (used for naming even if config is internal).
 externalConfigSecretName: '{{ include "mimir.resourceName" (dict "ctx" . "component" "config") }}'
 
 # -- When 'useExternalConfig' is true, then changing 'externalConfigVersion' triggers restart of services - otherwise changes to the configuration cause a restart.

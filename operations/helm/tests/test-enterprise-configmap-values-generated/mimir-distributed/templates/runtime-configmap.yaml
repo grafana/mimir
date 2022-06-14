@@ -1,0 +1,15 @@
+---
+# Source: mimir-distributed/templates/runtime-configmap.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: test-enterprise-configmap-values-mimir-runtime
+  labels:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: test-enterprise-configmap-values
+    app.kubernetes.io/version: "2.1.0"
+    app.kubernetes.io/managed-by: Helm
+data:
+  runtime.yaml: |
+    
+    {}

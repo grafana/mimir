@@ -25,7 +25,7 @@ spec:
         {{- if .Values.useExternalConfig }}
         checksum/config: {{ .Values.externalConfigVersion }}
         {{- else }}
-        checksum/config: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        checksum/config: {{ include (print $.Template.BasePath "/mimir-config.yaml") . | sha256sum }}
         {{- end}}
         {{- with .Values.admin_api.podAnnotations }}
         {{- toYaml . | nindent 8 }}
@@ -115,8 +115,7 @@ spec:
       terminationGracePeriodSeconds: {{ .Values.admin_api.terminationGracePeriodSeconds }}
       volumes:
         - name: config
-          secret:
-            secretName: {{ tpl .Values.externalConfigSecretName . }}
+          {{- include "mimir.configVolume" . | nindent 10 }}
         - name: runtime-config
           configMap:
             name: {{ template "mimir.fullname" . }}-runtime

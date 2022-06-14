@@ -90,6 +90,22 @@ Calculate the config from structured and unstructred text input
 {{- end -}}
 
 {{/*
+The volume to mount for mimir configuration
+*/}}
+{{- define "mimir.configVolume" -}}
+{{- if eq .Values.configStorageType "Secret" -}}
+secret:
+  secretName: {{ tpl .Values.externalConfigSecretName . }}
+{{- else if eq .Values.configStorageType "ConfigMap" -}}
+configMap:
+  name: {{ tpl .Values.externalConfigSecretName . }}
+  items:
+    - key: "mimir.yaml"
+      path: "mimir.yaml"
+{{- end -}}
+{{- end -}}
+
+{{/*
 Internal servers http listen port - derived from Mimir default
 */}}
 {{- define "mimir.serverHttpListenPort" -}}

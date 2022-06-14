@@ -19,3 +19,7 @@
 {{- if ($calculatedConfig.server).grpc_listen_port }}
 {{- fail "The setting 'server.grpc_listen_port' is not allowed in 'mimir.config' as it leads to circular dependency and thus is not supported." }}
 {{- end }}
+
+{{- if not (has .Values.configStorageType (list "Secret" "ConfigMap")) }}
+{{- fail "The setting 'configStorageType' should be one of 'Secret' or 'ConfigMap'." }}
+{{- end }}
