@@ -457,6 +457,38 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 				verifyUpload(t, bkt, nil)
 			},
 		},
+		{
+			name:            "valid request with different block ID in meta file",
+			tenantID:        tenantID,
+			blockID:         blockID,
+			setUpBucketMock: setUpUpload,
+			meta: &metadata.Meta{
+				BlockMeta: tsdb.BlockMeta{
+					ULID:    ulid.MustParse("11A2FZ0JWJYJC0ZM6Y9778P6KD"),
+					Version: metadata.TSDBVersion1,
+					MinTime: now - 1000,
+					MaxTime: now,
+				},
+				Thanos: metadata.Thanos{
+					Files: []metadata.File{
+						{
+							RelPath: block.MetaFilename,
+						},
+						{
+							RelPath:   "index",
+							SizeBytes: 1,
+						},
+						{
+							RelPath:   "chunks/000001",
+							SizeBytes: 1024,
+						},
+					},
+				},
+			},
+			verifyUpload: func(t *testing.T, bkt *bucket.ClientMock) {
+				verifyUpload(t, bkt, nil)
+			},
+		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
