@@ -97,7 +97,7 @@ func writeBlockUploadError(err error, op, extra string, logger log.Logger, w htt
 	}
 
 	if extra != "" {
-		extra += " "
+		extra = " " + extra
 	}
 	level.Error(logger).Log("msg", fmt.Sprintf("an unexpected error occurred%s", extra), "operation", op,
 		"err", err)
