@@ -104,6 +104,7 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 		retention              time.Duration
 		expBadRequest          string
 		expConflict            string
+		expUnprocessableEntity string
 		expInternalServerError bool
 		setUpBucketMock        func(bkt *bucket.ClientMock)
 		verifyUpload           func(*testing.T, *bucket.ClientMock)
@@ -240,7 +241,7 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 					MaxTime: 1000,
 				},
 			},
-			expBadRequest: "block max time (1970-01-01 00:00:01 +0000 UTC) older than retention period",
+			expUnprocessableEntity: "block max time (1970-01-01 00:00:01 +0000 UTC) older than retention period",
 		},
 		{
 			name:            "invalid version",
@@ -503,6 +504,9 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 			case tc.expConflict != "":
 				assert.Equal(t, http.StatusConflict, resp.StatusCode)
 				assert.Equal(t, fmt.Sprintf("%s\n", tc.expConflict), string(body))
+			case tc.expUnprocessableEntity != "":
+				assert.Equal(t, http.StatusUnprocessableEntity, resp.StatusCode)
+				assert.Equal(t, fmt.Sprintf("%s\n", tc.expUnprocessableEntity), string(body))
 			default:
 				assert.Equal(t, http.StatusOK, resp.StatusCode)
 				assert.Empty(t, string(body))
