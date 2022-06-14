@@ -3516,7 +3516,7 @@ tsdb:
   [isolation_enabled: <boolean> | default = false]
 
   # (experimental) Enable querying overlapping blocks. If there are going to be
-  # overlapping blocks in the filesystem this should be enabled.
+  # overlapping blocks in the ingesters this should be enabled.
   # CLI flag: -blocks-storage.tsdb.allow-overlapping-queries
   [allow_overlapping_queries: <boolean> | default = false]
 

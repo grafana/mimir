@@ -5374,7 +5374,7 @@
               "kind": "field",
               "name": "allow_overlapping_queries",
               "required": false,
-              "desc": "Enable querying overlapping blocks. If there are going to be overlapping blocks in the filesystem this should be enabled.",
+              "desc": "Enable querying overlapping blocks. If there are going to be overlapping blocks in the ingesters this should be enabled.",
               "fieldValue": null,
               "fieldDefaultValue": false,
               "fieldFlag": "blocks-storage.tsdb.allow-overlapping-queries",
