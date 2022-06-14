@@ -3,7 +3,7 @@ local consul = import 'consul/consul.libsonnet';
 {
   _config+:: {
     consul_enabled: true,
-    consul_replicas: if !$._config.consul_enabled then 0 else 1,
+    consul_replicas: 1,
     other_namespaces+: [],
   },
 
