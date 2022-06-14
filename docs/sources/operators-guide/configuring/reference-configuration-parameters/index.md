@@ -2715,11 +2715,11 @@ The `limits` block configures default and per-tenant limits imposed by component
 #   The following configuration will count the active series coming from dev and
 #   prod namespaces for each tenant and label them as {name="dev"} and
 #   {name="prod"} in the cortex_ingester_active_series_custom_tracker metric.
-#   active_series_custom_trackers_config:
+#   active_series_custom_trackers:
 #       dev: '{namespace=~"dev-.*"}'
 #       prod: '{namespace=~"prod-.*"}'
 # CLI flag: -ingester.active-series-custom-trackers
-[active_series_custom_trackers_config: <map of tracker name (string) to matcher (string)> | default = ]
+[active_series_custom_trackers: <map of tracker name (string) to matcher (string)> | default = ]
 
 # Maximum number of chunks that can be fetched in a single query from ingesters
 # and long-term storage. This limit is enforced in the querier, ruler and
