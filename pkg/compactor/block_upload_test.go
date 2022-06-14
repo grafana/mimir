@@ -29,6 +29,21 @@ import (
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 )
 
+func verifyUploadedMeta(t *testing.T, bkt *bucket.ClientMock, expMeta metadata.Meta) {
+	var call mock.Call
+	for _, c := range bkt.Calls {
+		if c.Method == "Upload" {
+			call = c
+			break
+		}
+	}
+
+	rdr := call.Arguments[2].(io.Reader)
+	var gotMeta metadata.Meta
+	require.NoError(t, json.NewDecoder(rdr).Decode(&gotMeta))
+	assert.Equal(t, expMeta, gotMeta)
+}
+
 // Test MultitenantCompactor.HandleBlockUpload with uploadComplete=false (the default).
 func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 	const tenantID = "test"
@@ -77,19 +92,7 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 		expMeta.Compaction.Sources = []ulid.ULID{expMeta.ULID}
 		expMeta.Thanos.Source = "upload"
 		expMeta.Thanos.Labels = labels
-
-		var call mock.Call
-		for _, c := range bkt.Calls {
-			if c.Method == "Upload" {
-				call = c
-				break
-			}
-		}
-
-		rdr := call.Arguments[2].(io.Reader)
-		var gotMeta metadata.Meta
-		require.NoError(t, json.NewDecoder(rdr).Decode(&gotMeta))
-		assert.Equal(t, expMeta, gotMeta)
+		verifyUploadedMeta(t, bkt, expMeta)
 	}
 
 	testCases := []struct {
@@ -643,93 +646,107 @@ func TestMultitenantCompactor_UploadBlockFile(t *testing.T) {
 // Test MultitenantCompactor.HandleBlockUpload with uploadComplete=true.
 func TestMultitenantCompactor_HandleBlockUpload_Complete(t *testing.T) {
 	const tenantID = "test"
-	blockID := ulid.MustParse("01G3FZ0JWJYJC0ZM6Y9778P6KD")
-	uploadingMetaPath := path.Join(tenantID, blockID.String(), fmt.Sprintf("uploading-%s", block.MetaFilename))
-
-	t.Run("without tenant ID", func(t *testing.T) {
-		c := &MultitenantCompactor{
-			logger: log.NewNopLogger(),
-		}
-		r := httptest.NewRequest(http.MethodPost, fmt.Sprintf(
-			"/api/v1/upload/block/%s?uploadComplete=true", blockID), nil)
-		r = mux.SetURLVars(r, map[string]string{"block": blockID.String()})
-		w := httptest.NewRecorder()
-		c.HandleBlockUpload(w, r)
-
-		resp := w.Result()
-		body, err := io.ReadAll(resp.Body)
-		require.NoError(t, err)
-
-		assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
-		assert.Equal(t, "invalid tenant ID\n", string(body))
-	})
-
-	t.Run("without block ID", func(t *testing.T) {
-		c := &MultitenantCompactor{
-			logger: log.NewNopLogger(),
-		}
-		r := httptest.NewRequest(http.MethodPost, fmt.Sprintf(
-			"/api/v1/upload/block/%s?uploadComplete=true", blockID), nil)
-		r = r.WithContext(user.InjectOrgID(r.Context(), tenantID))
-		w := httptest.NewRecorder()
-		c.HandleBlockUpload(w, r)
-
-		resp := w.Result()
-		body, err := io.ReadAll(resp.Body)
-		require.NoError(t, err)
-
-		assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
-		assert.Equal(t, "invalid block ID\n", string(body))
-	})
-
-	t.Run("valid request", func(t *testing.T) {
-		meta := metadata.Meta{
-			BlockMeta: tsdb.BlockMeta{
-				ULID: blockID,
+	const blockID = "01G3FZ0JWJYJC0ZM6Y9778P6KD"
+	uploadingMetaPath := path.Join(tenantID, blockID, fmt.Sprintf("uploading-%s", block.MetaFilename))
+	metaPath := path.Join(tenantID, blockID, block.MetaFilename)
+	validMeta := metadata.Meta{
+		BlockMeta: tsdb.BlockMeta{
+			ULID: ulid.MustParse(blockID),
+		},
+		Thanos: metadata.Thanos{
+			Labels: map[string]string{
+				mimir_tsdb.CompactorShardIDExternalLabel: "1_of_3",
 			},
-			Thanos: metadata.Thanos{
-				Labels: map[string]string{
-					mimir_tsdb.CompactorShardIDExternalLabel: "1_of_3",
+			Files: []metadata.File{
+				{
+					RelPath:   "index",
+					SizeBytes: 1,
 				},
-				Files: []metadata.File{
-					{
-						RelPath:   "index",
-						SizeBytes: 1,
-					},
-					{
-						RelPath:   "chunks/000001",
-						SizeBytes: 1024,
-					},
+				{
+					RelPath:   "chunks/000001",
+					SizeBytes: 1024,
 				},
 			},
-		}
-		metaJSON, err := json.Marshal(meta)
+		},
+	}
+
+	setUpSuccessfulComplete := func(bkt *bucket.ClientMock) {
+		metaJSON, err := json.Marshal(validMeta)
 		require.NoError(t, err)
-		var bkt bucket.ClientMock
-		bkt.MockExists(path.Join(tenantID, blockID.String(), block.MetaFilename), false, nil)
+		bkt.MockExists(metaPath, false, nil)
 		bkt.On("Get", mock.Anything, uploadingMetaPath).Return(func(_ context.Context, _ string) (io.ReadCloser, error) {
 			return io.NopCloser(bytes.NewReader(metaJSON)), nil
 		})
 		bkt.MockDelete(uploadingMetaPath, nil)
-		expPath := path.Join("test", blockID.String(), block.MetaFilename)
-		bkt.MockUpload(expPath, nil)
-		c := &MultitenantCompactor{
-			logger:       log.NewNopLogger(),
-			bucketClient: &bkt,
-		}
-		r := httptest.NewRequest(http.MethodPost, fmt.Sprintf(
-			"/api/v1/upload/block/%s?uploadComplete=true", blockID),
-			nil)
-		r = mux.SetURLVars(r, map[string]string{"block": blockID.String()})
-		r = r.WithContext(user.InjectOrgID(r.Context(), tenantID))
-		w := httptest.NewRecorder()
-		c.HandleBlockUpload(w, r)
+		bkt.MockUpload(metaPath, nil)
+	}
+	testCases := []struct {
+		name            string
+		tenantID        string
+		blockID         string
+		expMeta         metadata.Meta
+		expBadRequest   string
+		setUpBucketMock func(bkt *bucket.ClientMock)
+		verifyUpload    func(*testing.T, *bucket.ClientMock, metadata.Meta)
+	}{
+		{
+			name:          "without tenant ID",
+			blockID:       blockID,
+			expBadRequest: "invalid tenant ID",
+		},
+		{
+			name:          "without block ID",
+			tenantID:      tenantID,
+			expBadRequest: "invalid block ID",
+		},
+		{
+			name:            "valid request",
+			tenantID:        tenantID,
+			blockID:         blockID,
+			setUpBucketMock: setUpSuccessfulComplete,
+			expMeta:         validMeta,
+			verifyUpload:    verifyUploadedMeta,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			var bkt bucket.ClientMock
+			if tc.setUpBucketMock != nil {
+				tc.setUpBucketMock(&bkt)
+			}
+			c := &MultitenantCompactor{
+				logger:       log.NewNopLogger(),
+				bucketClient: &bkt,
+			}
+			r := httptest.NewRequest(http.MethodPost, fmt.Sprintf(
+				"/api/v1/upload/block/%s?uploadComplete=true", tc.blockID), nil)
+			if tc.tenantID != "" {
+				r = r.WithContext(user.InjectOrgID(r.Context(), tenantID))
+			}
+			if tc.blockID != "" {
+				r = mux.SetURLVars(r, map[string]string{"block": tc.blockID})
+			}
+			w := httptest.NewRecorder()
+			c.HandleBlockUpload(w, r)
 
-		resp := w.Result()
+			resp := w.Result()
+			body, err := io.ReadAll(resp.Body)
+			require.NoError(t, err)
 
-		assert.Equal(t, http.StatusOK, resp.StatusCode)
-		expBuf := bytes.NewBuffer(metaJSON)
-		require.NoError(t, expBuf.WriteByte('\n'))
-		bkt.AssertExpectations(t)
-	})
+			switch {
+			case tc.expBadRequest != "":
+				assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+				assert.Equal(t, fmt.Sprintf("%s\n", tc.expBadRequest), string(body))
+			default:
+				assert.Equal(t, http.StatusOK, resp.StatusCode)
+				assert.Empty(t, body)
+			}
+
+			bkt.AssertExpectations(t)
+
+			if tc.verifyUpload != nil {
+				tc.verifyUpload(t, &bkt, tc.expMeta)
+			}
+		})
+	}
 }
