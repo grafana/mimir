@@ -28,6 +28,7 @@ image:
 smoke_test:
   image:
     repository: grafana/mimir-continuous-test
+    # TODO: replace with weekly tag starting with r191
     tag: helm-smoke-test-13dfdf404
     pullPolicy: IfNotPresent
   tenantId: ''
