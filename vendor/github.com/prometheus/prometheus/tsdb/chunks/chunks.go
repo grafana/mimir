@@ -15,13 +15,11 @@ package chunks
 
 import (
 	"bufio"
-	"bytes"
 	"encoding/binary"
 	"fmt"
 	"hash"
 	"hash/crc32"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -174,6 +172,17 @@ func init() {
 // polynomial may be easily changed in one location at a later time, if necessary.
 func newCRC32() hash.Hash32 {
 	return crc32.New(castagnoliTable)
+}
+
+// Check if the CRC of data matches that stored in sum, computed when the chunk was stored.
+func checkCRC32(data, sum []byte) error {
+	got := crc32.Checksum(data, castagnoliTable)
+	// This combination of shifts is the inverse of digest.Sum() in go/src/hash/crc32.
+	want := uint32(sum[0])<<24 + uint32(sum[1])<<16 + uint32(sum[2])<<8 + uint32(sum[3])
+	if got != want {
+		return errors.Errorf("checksum mismatch expected:%x, actual:%x", want, got)
+	}
+	return nil
 }
 
 // Writer implements the ChunkWriter interface for the standard
@@ -557,7 +566,6 @@ func (s *Reader) Size() int64 {
 // Chunk returns a chunk from a given reference.
 func (s *Reader) Chunk(meta Meta) (chunkenc.Chunk, error) {
 	sgmIndex, chkStart := BlockChunkRef(meta.Ref).Unpack()
-	chkCRC32 := newCRC32()
 
 	if sgmIndex >= len(s.bs) {
 		return nil, errors.Errorf("segment index %d out of range", sgmIndex)
@@ -586,12 +594,8 @@ func (s *Reader) Chunk(meta Meta) (chunkenc.Chunk, error) {
 	}
 
 	sum := sgmBytes.Range(chkDataEnd, chkEnd)
-	if _, err := chkCRC32.Write(sgmBytes.Range(chkEncStart, chkDataEnd)); err != nil {
+	if err := checkCRC32(sgmBytes.Range(chkEncStart, chkDataEnd), sum); err != nil {
 		return nil, err
-	}
-
-	if act := chkCRC32.Sum(nil); !bytes.Equal(act, sum) {
-		return nil, errors.Errorf("checksum mismatch expected:%x, actual:%x", sum, act)
 	}
 
 	chkData := sgmBytes.Range(chkDataStart, chkDataEnd)
@@ -600,7 +604,7 @@ func (s *Reader) Chunk(meta Meta) (chunkenc.Chunk, error) {
 }
 
 func nextSequenceFile(dir string) (string, int, error) {
-	files, err := ioutil.ReadDir(dir)
+	files, err := os.ReadDir(dir)
 	if err != nil {
 		return "", 0, err
 	}
@@ -626,7 +630,7 @@ func segmentFile(baseDir string, index int) string {
 }
 
 func sequenceFiles(dir string) ([]string, error) {
-	files, err := ioutil.ReadDir(dir)
+	files, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, err
 	}

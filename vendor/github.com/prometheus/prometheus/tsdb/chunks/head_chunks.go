@@ -19,7 +19,6 @@ import (
 	"encoding/binary"
 	"hash"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"sort"
@@ -342,7 +341,7 @@ func (cdm *ChunkDiskMapper) openMMapFiles() (returnErr error) {
 }
 
 func listChunkFiles(dir string) (map[int]string, error) {
-	files, err := ioutil.ReadDir(dir)
+	files, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, err
 	}
@@ -670,7 +669,7 @@ func (cdm *ChunkDiskMapper) Chunk(ref ChunkDiskMapperRef) (chunkenc.Chunk, error
 		return nil, &CorruptionErr{
 			Dir:       cdm.dir.Name(),
 			FileIndex: sgmIndex,
-			Err:       errors.New("head chunk file index %d does not exist on disk"),
+			Err:       errors.Errorf("head chunk file index %d does not exist on disk", sgmIndex),
 		}
 	}
 
