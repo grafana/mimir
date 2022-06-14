@@ -15,7 +15,6 @@ package tsdb
 
 import (
 	"context"
-	"io/ioutil"
 	"math"
 	"os"
 
@@ -64,7 +63,7 @@ func NewBlockWriter(logger log.Logger, dir string, blockSize int64) (*BlockWrite
 
 // initHead creates and initialises a new TSDB head.
 func (w *BlockWriter) initHead() error {
-	chunkDir, err := ioutil.TempDir(os.TempDir(), "head")
+	chunkDir, err := os.MkdirTemp(os.TempDir(), "head")
 	if err != nil {
 		return errors.Wrap(err, "create temp dir")
 	}
@@ -100,7 +99,7 @@ func (w *BlockWriter) Flush(ctx context.Context) (ulid.ULID, error) {
 		nil,
 		w.logger,
 		[]int64{w.blockSize},
-		chunkenc.NewPool(), nil)
+		chunkenc.NewPool(), nil, true)
 	if err != nil {
 		return ulid.ULID{}, errors.Wrap(err, "create leveled compactor")
 	}
