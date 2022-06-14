@@ -62,6 +62,7 @@
 
 * [CHANGE] Remove use of `-querier.query-store-after`, `-querier.shuffle-sharding-ingesters-lookback-period`, `-blocks-storage.bucket-store.ignore-blocks-within`, and `-blocks-storage.tsdb.close-idle-tsdb-timeout` CLI flags since the values now match defaults. #1915 #1921
 * [CHANGE] Change default value for `-blocks-storage.bucket-store.chunks-cache.memcached.timeout` to `450ms` to increase use of cached data. #2035
+* [CHANGE] The `memberlist_ring_enabled` configuration now applies to Alertmanager. #2102
 * [FEATURE] Added querier autoscaling support. It requires [KEDA](https://keda.sh) installed in the Kubernetes cluster and query-scheduler enabled in the Mimir cluster. Querier autoscaler can be enabled and configure through the following options in the jsonnet config: #2013 #2023
   * `autoscaling_querier_enabled`: `true` to enable autoscaling.
   * `autoscaling_querier_min_replicas`: minimum number of querier replicas.
@@ -69,7 +70,6 @@
   * `autoscaling_prometheus_url`: Prometheus base URL from which to scrape Mimir metrics (e.g. `http://prometheus.default:9090/prometheus`).
 * [ENHANCEMENT] Added `compactor` service, that can be used to route requests directly to compactor (e.g. admin UI). #2063
 * [ENHANCEMENT] Added a `consul_enabled` configuration option that defaults to true (matching previous behavior) to provide the ability to disable consul. #2093
-* [CHANGE] The `memberlist_ring_enabled` configuration now applies to Alertmanager. #2102
 
 ### Mimirtool
 

@@ -321,6 +321,9 @@ spec:
   - name: alertmanager-grpc
     port: 9095
     targetPort: 9095
+  - name: alertmanager-gossip-ring
+    port: 7946
+    targetPort: 7946
   selector:
     name: alertmanager
 ---
@@ -1217,6 +1220,7 @@ spec:
   template:
     metadata:
       labels:
+        gossip_ring_member: "true"
         name: alertmanager
     spec:
       containers:
@@ -1251,6 +1255,8 @@ spec:
           name: http-metrics
         - containerPort: 9095
           name: grpc
+        - containerPort: 7946
+          name: gossip-ring
         readinessProbe:
           httpGet:
             path: /ready

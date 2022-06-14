@@ -43,10 +43,12 @@
       pvc.mixin.spec.resources.withRequests({ storage: '100Gi' })
     else {},
 
+  alertmanager_ports:: $.util.defaultPorts,
+
   alertmanager_container::
     if $._config.alertmanager_enabled then
       container.new('alertmanager', $._images.alertmanager) +
-      container.withPorts($.util.defaultPorts) +
+      container.withPorts($.alertmanager_ports) +
       container.withEnvMixin([container.envType.fromFieldPath('POD_IP', 'status.podIP')]) +
       container.withArgsMixin(
         $.util.mapToFlags($.alertmanager_args)
