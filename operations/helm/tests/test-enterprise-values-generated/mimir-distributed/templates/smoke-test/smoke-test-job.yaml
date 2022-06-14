@@ -5,7 +5,6 @@ kind: Job
 metadata:
   name: test-enterprise-values-mimir-smoke-test
   labels:
-    helm.sh/chart: mimir-distributed-2.2.0-weekly.189
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-enterprise-values
     app.kubernetes.io/component: smoke-test
@@ -21,7 +20,6 @@ spec:
   template:
     metadata:
       labels:
-        helm.sh/chart: mimir-distributed-2.2.0-weekly.189
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-enterprise-values
         app.kubernetes.io/version: "2.1.0"
@@ -35,12 +33,12 @@ spec:
         []
       containers:
         - name: smoke-test
-          image: grafana/mimir-continuous-test:2.1.0
+          image: "grafana/mimir-continuous-test:helm-smoke-test-13dfdf404"
           imagePullPolicy: 
           args:
             - "-tests.smoke-test"
-            - "-tests.write-endpoint=http://test-enterprise-values-mimir-gateway.default.svc:8080"
-            - "-tests.read-endpoint=http://test-enterprise-values-mimir-gateway.default.svc:8080/prometheus"
+            - "-tests.write-endpoint=http://test-enterprise-values-mimir-gateway.citestns.svc:8080"
+            - "-tests.read-endpoint=http://test-enterprise-values-mimir-gateway.citestns.svc:8080/prometheus"
             - "-tests.tenant-id="
             - "-tests.write-read-series-test.num-series=1000"
             - "-tests.write-read-series-test.max-query-age=48h"
