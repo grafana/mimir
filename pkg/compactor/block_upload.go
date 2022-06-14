@@ -34,7 +34,6 @@ import (
 const tmpMetaFilename = "uploading-" + block.MetaFilename
 
 var rePath = regexp.MustCompile(`^(index|chunks/\d{6})$`)
-var reShardIDLabel = regexp.MustCompile(`^\d_of_\d$`)
 
 // HandleBlockUpload handles requests for starting or completing block uploads.
 //
@@ -70,8 +69,8 @@ func (c *MultitenantCompactor) HandleBlockUpload(w http.ResponseWriter, r *http.
 	}
 
 	userBkt := bucket.NewUserBucketClient(tenantID, c.bucketClient, c.cfgProvider)
-	if err := checkForCompleteBlock(ctx, logger, bULID, userBkt); err != nil {
-		checkBlockUploadError(err, op, "while checking for complete block", logger, w)
+	if err := checkForCompleteBlock(ctx, bULID, userBkt); err != nil {
+		writeBlockUploadError(err, op, "while checking for complete block", logger, w)
 		return
 	}
 
@@ -81,14 +80,14 @@ func (c *MultitenantCompactor) HandleBlockUpload(w http.ResponseWriter, r *http.
 		err = c.createBlockUpload(ctx, r, logger, userBkt, tenantID, bULID)
 	}
 	if err != nil {
-		checkBlockUploadError(err, op, "", logger, w)
+		writeBlockUploadError(err, op, "", logger, w)
 		return
 	}
 
 	w.WriteHeader(http.StatusOK)
 }
 
-func checkBlockUploadError(err error, op, extra string, logger log.Logger, w http.ResponseWriter) {
+func writeBlockUploadError(err error, op, extra string, logger log.Logger, w http.ResponseWriter) {
 	var httpErr httpError
 	if errors.As(err, &httpErr) {
 		level.Warn(logger).Log("msg", httpErr.message, "operation", op)
@@ -105,7 +104,7 @@ func checkBlockUploadError(err error, op, extra string, logger log.Logger, w htt
 }
 
 // checkForCompleteBlock checks for a complete block with same ID. If one exists, an error is returned.
-func checkForCompleteBlock(ctx context.Context, logger log.Logger, blockID ulid.ULID, userBkt objstore.Bucket) error {
+func checkForCompleteBlock(ctx context.Context, blockID ulid.ULID, userBkt objstore.Bucket) error {
 	exists, err := userBkt.Exists(ctx, path.Join(blockID.String(), block.MetaFilename))
 	if err != nil {
 		return errors.Wrap(err, fmt.Sprintf("failed to check existence of %s in object storage", block.MetaFilename))
@@ -185,8 +184,8 @@ func (c *MultitenantCompactor) UploadBlockFile(w http.ResponseWriter, r *http.Re
 
 	userBkt := bucket.NewUserBucketClient(tenantID, c.bucketClient, c.cfgProvider)
 
-	if err := checkForCompleteBlock(ctx, logger, bULID, userBkt); err != nil {
-		checkBlockUploadError(err, op, "while checking for complete block", logger, w)
+	if err := checkForCompleteBlock(ctx, bULID, userBkt); err != nil {
+		writeBlockUploadError(err, op, "while checking for complete block", logger, w)
 		return
 	}
 
