@@ -194,7 +194,7 @@ func mapEngineError(err error) error {
 		return err
 	}
 
-	// Extract the root cause of the error wrapped by fmt.Errorf with "%w".
+	// Extract the root cause of the error wrapped by fmt.Errorf with "%w" (used by PromQL engine).
 	cause := errors.Unwrap(err)
 	if cause == nil {
 		cause = err
