@@ -407,8 +407,7 @@ func (c *BlocksCleaner) deleteBlocksMarkedForDeletion(ctx context.Context, idx *
 	})
 }
 
-// cleanUserPartialBlocks delete partial blocks which are safe to be deleted. The provided partials map
-// and index are updated accordingly.
+// cleanUserPartialBlocks deletes partial blocks which are safe to be deleted. The provided index is updated accordingly.
 func (c *BlocksCleaner) cleanUserPartialBlocks(ctx context.Context, partials map[ulid.ULID]error, idx *bucketindex.Index, delay time.Duration, userBucket objstore.InstrumentedBucket, userLogger log.Logger) {
 	// Collect all blocks with missing meta.json into buffered channel.
 	blocks := make([]ulid.ULID, 0, len(partials))
