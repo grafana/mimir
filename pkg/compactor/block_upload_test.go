@@ -78,17 +78,18 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 		expMeta.Thanos.Source = "upload"
 		expMeta.Thanos.Labels = labels
 
+		var call mock.Call
 		for _, c := range bkt.Calls {
-			if c.Method != "Upload" {
-				continue
+			if c.Method == "Upload" {
+				call = c
+				break
 			}
-
-			rdr := c.Arguments[2].(io.Reader)
-			var gotMeta metadata.Meta
-			require.NoError(t, json.NewDecoder(rdr).Decode(&gotMeta))
-			assert.Equal(t, expMeta, gotMeta)
-			break
 		}
+
+		rdr := call.Arguments[2].(io.Reader)
+		var gotMeta metadata.Meta
+		require.NoError(t, json.NewDecoder(rdr).Decode(&gotMeta))
+		assert.Equal(t, expMeta, gotMeta)
 	}
 
 	testCases := []struct {
@@ -517,15 +518,17 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 func TestMultitenantCompactor_UploadBlockFile(t *testing.T) {
 	const tenantID = "test"
 	const blockID = "01G3FZ0JWJYJC0ZM6Y9778P6KD"
-	//uploadingMetaPath := path.Join(tenantID, blockID, fmt.Sprintf("uploading-%s", block.MetaFilename))
+	uploadingMetaPath := path.Join(tenantID, blockID, fmt.Sprintf("uploading-%s", block.MetaFilename))
 
 	testCases := []struct {
-		name          string
-		tenantID      string
-		blockID       string
-		path          string
-		body          string
-		expBadRequest string
+		name            string
+		tenantID        string
+		blockID         string
+		path            string
+		body            string
+		expBadRequest   string
+		setUpBucketMock func(bkt *bucket.ClientMock)
+		verifyUpload    func(*testing.T, *bucket.ClientMock, string)
 	}{
 		{
 			name:          "without block ID",
@@ -567,12 +570,37 @@ func TestMultitenantCompactor_UploadBlockFile(t *testing.T) {
 			blockID:  blockID,
 			path:     "chunks%2F000001",
 			body:     "content",
+			setUpBucketMock: func(bkt *bucket.ClientMock) {
+				bkt.MockExists(uploadingMetaPath, true, nil)
+				bkt.MockExists(path.Join(tenantID, blockID, block.MetaFilename), false, nil)
+				bkt.MockUpload(path.Join(tenantID, blockID, "chunks/000001"), nil)
+			},
+			verifyUpload: func(t *testing.T, bkt *bucket.ClientMock, expContent string) {
+				var call mock.Call
+				for _, c := range bkt.Calls {
+					if c.Method == "Upload" {
+						call = c
+						break
+					}
+				}
+
+				rdr := call.Arguments[2].(io.Reader)
+				got, err := io.ReadAll(rdr)
+				require.NoError(t, err)
+				assert.Equal(t, []byte(expContent), got)
+			},
 		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			var bkt bucket.ClientMock
+			if tc.setUpBucketMock != nil {
+				tc.setUpBucketMock(&bkt)
+			}
+
 			c := &MultitenantCompactor{
-				logger: log.NewNopLogger(),
+				logger:       log.NewNopLogger(),
+				bucketClient: &bkt,
 			}
 			var rdr io.Reader
 			if tc.body != "" {
@@ -602,35 +630,14 @@ func TestMultitenantCompactor_UploadBlockFile(t *testing.T) {
 				assert.Equal(t, http.StatusOK, resp.StatusCode)
 				assert.Empty(t, body)
 			}
+
+			bkt.AssertExpectations(t)
+
+			if tc.verifyUpload != nil {
+				tc.verifyUpload(t, &bkt, tc.body)
+			}
 		})
 	}
-
-	/*
-		t.Run("valid request", func(t *testing.T) {
-			var bkt bucket.ClientMock
-			expPath := path.Join(tenantID, blockID, "chunks/000001")
-			bkt.MockUpload(expPath, nil)
-			bkt.MockExists(uploadingMetaPath, true, nil)
-			bkt.MockExists(path.Join(tenantID, blockID, block.MetaFilename), false, nil)
-			c := &MultitenantCompactor{
-				logger:       log.NewNopLogger(),
-				bucketClient: &bkt,
-			}
-			const pth = "chunks%2F000001"
-			buf := bytes.NewBuffer([]byte("content"))
-			r := httptest.NewRequest(http.MethodPost, fmt.Sprintf(
-				"/api/v1/upload/block/%s/files?path=%s", blockID, pth), buf)
-			r = mux.SetURLVars(r, map[string]string{"block": blockID, "path": pth})
-			r = r.WithContext(user.InjectOrgID(r.Context(), tenantID))
-			w := httptest.NewRecorder()
-			c.UploadBlockFile(w, r)
-
-			resp := w.Result()
-
-			assert.Equal(t, http.StatusOK, resp.StatusCode)
-			bkt.AssertExpectations(t)
-		})
-	*/
 }
 
 // Test MultitenantCompactor.HandleBlockUpload with uploadComplete=true.
