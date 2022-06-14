@@ -192,8 +192,7 @@ func (c *MultitenantCompactor) UploadBlockFile(w http.ResponseWriter, r *http.Re
 	metaPath := path.Join(blockID, tmpMetaFilename)
 	exists, err := userBkt.Exists(ctx, metaPath)
 	if err != nil {
-		level.Error(logger).Log("msg", fmt.Sprintf("failed to check existence of %s in object storage", tmpMetaFilename),
-			"operation", op, "err", err)
+		level.Error(logger).Log("msg", "failed to check existence in object storage", "path", metaPath, "operation", op, "err", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
