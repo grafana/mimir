@@ -218,6 +218,9 @@ checksum/config: {{ .ctx.Values.externalConfigVersion }}
 {{- else -}}
 checksum/config: {{ include (print .ctx.Template.BasePath "/mimir-config.yaml") .ctx | sha256sum }}
 {{- end }}
+{{- with .Values.global.podAnnotations }}
+{{- toYaml . }}
+{{- end }}
 {{- if .component }}
 {{- $componentSection := .component | replace "-" "_" }}
 {{- if not (hasKey .ctx.Values $componentSection) }}
