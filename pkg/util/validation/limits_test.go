@@ -489,3 +489,49 @@ testuser:
 		})
 	}
 }
+
+// TODO remove this with Mimir version 2.3
+func TestCustomTrackersConfigRename(t *testing.T) {
+	oldYaml := `
+    user:
+        active_series_custom_trackers_config:
+            baz: '{foo="bar"}'
+    `
+	newYaml := `
+    user:
+        active_series_custom_trackers:
+            baz: '{foo="bar"}'
+    `
+
+	t.Run("testOldVersion", func(t *testing.T) {
+		limits := Limits{}
+		overrides := map[string]*Limits{}
+		err := yaml.Unmarshal([]byte(oldYaml), &overrides)
+		require.NoError(t, err, "parsing overrides")
+
+		tl := newMockTenantLimits(overrides)
+
+		ov, err := NewOverrides(limits, tl)
+		require.NoError(t, err)
+
+		SetDefaultLimitsForYAMLUnmarshalling(Limits{})
+
+		assert.False(t, ov.ActiveSeriesCustomTrackersConfig("user").Empty())
+	})
+
+	t.Run("testNewVersion", func(t *testing.T) {
+		limits := Limits{}
+		overrides := map[string]*Limits{}
+		err := yaml.Unmarshal([]byte(newYaml), &overrides)
+		require.NoError(t, err, "parsing overrides")
+
+		tl := newMockTenantLimits(overrides)
+
+		ov, err := NewOverrides(limits, tl)
+		require.NoError(t, err)
+
+		SetDefaultLimitsForYAMLUnmarshalling(Limits{})
+
+		assert.False(t, ov.ActiveSeriesCustomTrackersConfig("user").Empty())
+	})
+}
