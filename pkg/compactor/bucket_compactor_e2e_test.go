@@ -243,7 +243,7 @@ func TestGroupCompactE2E(t *testing.T) {
 		sy, err := NewMetaSyncer(nil, nil, bkt, metaFetcher, duplicateBlocksFilter, ignoreDeletionMarkFilter, blocksMarkedForDeletion)
 		require.NoError(t, err)
 
-		comp, err := tsdb.NewLeveledCompactor(ctx, reg, logger, []int64{1000, 3000}, nil, nil, false)
+		comp, err := tsdb.NewLeveledCompactor(ctx, reg, logger, []int64{1000, 3000}, nil, nil, true)
 		require.NoError(t, err)
 
 		planner := NewSplitAndMergePlanner([]int64{1000, 3000})
