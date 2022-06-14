@@ -181,9 +181,6 @@ app.kubernetes.io/managed-by: {{ .ctx.Release.Service }}
 {{/*
 POD labels
 */}}
-{{/*
-POD labels
-*/}}
 {{- define "mimir.podLabels" -}}
 {{- if .ctx.Values.enterprise.legacyLabels }}
 {{- if .component -}}
@@ -208,6 +205,26 @@ app.kubernetes.io/component: {{ .component }}
 {{- end }}
 {{- if .memberlist }}
 app.kubernetes.io/part-of: memberlist
+{{- end }}
+{{- end }}
+{{- end -}}
+
+{{/*
+POD annotations
+*/}}
+{{- define "mimir.podAnnotations" -}}
+{{- if .ctx.Values.useExternalConfig -}}
+checksum/config: {{ .ctx.Values.externalConfigVersion }}
+{{- else -}}
+checksum/config: {{ include (print .ctx.Template.BasePath "/mimir-config.yaml") .ctx | sha256sum }}
+{{- end }}
+{{- if .component }}
+{{- $componentSection := .component | replace "-" "_" }}
+{{- if not (hasKey .ctx.Values $componentSection) }}
+{{- print "Component section " $componentSection " does not exist" | fail }}
+{{- end }}
+{{- with (index .ctx.Values $componentSection).podAnnotations }}
+{{ toYaml . }}
 {{- end }}
 {{- end }}
 {{- end -}}

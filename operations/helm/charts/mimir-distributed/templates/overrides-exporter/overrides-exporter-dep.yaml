@@ -22,14 +22,7 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
       annotations:
-        {{- if .Values.useExternalConfig }}
-        checksum/config: {{ .Values.externalConfigVersion }}
-        {{- else }}
-        checksum/config: {{ include (print $.Template.BasePath "/mimir-config.yaml") . | sha256sum }}
-        {{- end}}
-        {{- with .Values.overrides_exporter.podAnnotations }}
-        {{- toYaml . | nindent 8 }}
-        {{- end }}
+        {{- include "mimir.podAnnotations" (dict "ctx" . "component" "overrides-exporter") | nindent 8 }}
     spec:
       serviceAccountName: {{ template "mimir.serviceAccountName" . }}
       {{- if .Values.overrides_exporter.priorityClassName }}
