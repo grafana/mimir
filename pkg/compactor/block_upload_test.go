@@ -525,7 +525,8 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 func TestMultitenantCompactor_UploadBlockFile(t *testing.T) {
 	const tenantID = "test"
 	const blockID = "01G3FZ0JWJYJC0ZM6Y9778P6KD"
-	uploadingMetaPath := path.Join(tenantID, blockID, fmt.Sprintf("uploading-%s", block.MetaFilename))
+	uploadingMetaFilename := fmt.Sprintf("uploading-%s", block.MetaFilename)
+	uploadingMetaPath := path.Join(tenantID, blockID, uploadingMetaFilename)
 
 	testCases := []struct {
 		name            string
@@ -570,6 +571,14 @@ func TestMultitenantCompactor_UploadBlockFile(t *testing.T) {
 			path:          block.MetaFilename,
 			body:          "content",
 			expBadRequest: fmt.Sprintf("%s is not allowed", block.MetaFilename),
+		},
+		{
+			name:          "attempt in-flight block metadata file",
+			tenantID:      tenantID,
+			blockID:       blockID,
+			path:          uploadingMetaFilename,
+			body:          "content",
+			expBadRequest: fmt.Sprintf("invalid path: %q", uploadingMetaFilename),
 		},
 		{
 			name:     "valid request",
