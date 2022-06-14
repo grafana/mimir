@@ -209,7 +209,8 @@ func (c *MultitenantCompactor) UploadBlockFile(w http.ResponseWriter, r *http.Re
 	metaPath := path.Join(blockID, uploadingMetaFilename)
 	exists, err := userBkt.Exists(ctx, metaPath)
 	if err != nil {
-		level.Error(logger).Log("msg", "failed to check existence in object storage", "path", metaPath, "operation", op, "err", err)
+		level.Error(logger).Log("msg", "failed to check existence in object storage",
+			"path", metaPath, "operation", op, "err", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
@@ -301,7 +302,7 @@ func (c *MultitenantCompactor) sanitizeMeta(logger log.Logger, tenantID string, 
 
 	for l, v := range meta.Thanos.Labels {
 		switch l {
-		// Preserve these labels
+		// Preserve this label
 		case mimir_tsdb.CompactorShardIDExternalLabel:
 			if v == "" {
 				level.Debug(logger).Log("msg", "removing empty external label",
