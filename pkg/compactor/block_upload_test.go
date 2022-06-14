@@ -258,15 +258,11 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 			expBadRequest: fmt.Sprintf("version must be %d", metadata.TSDBVersion1),
 		},
 		{
-			name:      "ignore retention period if == 0",
-			tenantID:  tenantID,
-			blockID:   blockID,
-			retention: 0,
-			setUpBucketMock: func(bkt *bucket.ClientMock) {
-				setUpPartialBlock(bkt)
-				pth := uploadingMetaPath
-				bkt.MockUpload(pth, nil)
-			},
+			name:            "ignore retention period if == 0",
+			tenantID:        tenantID,
+			blockID:         blockID,
+			retention:       0,
+			setUpBucketMock: setUpUpload,
 			meta: &metadata.Meta{
 				BlockMeta: tsdb.BlockMeta{
 					ULID:    bULID,
@@ -295,15 +291,11 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 			},
 		},
 		{
-			name:      "ignore retention period if < 0",
-			tenantID:  tenantID,
-			blockID:   blockID,
-			retention: -1,
-			setUpBucketMock: func(bkt *bucket.ClientMock) {
-				setUpPartialBlock(bkt)
-				pth := uploadingMetaPath
-				bkt.MockUpload(pth, nil)
-			},
+			name:            "ignore retention period if < 0",
+			tenantID:        tenantID,
+			blockID:         blockID,
+			retention:       -1,
+			setUpBucketMock: setUpUpload,
 			meta: &metadata.Meta{
 				BlockMeta: tsdb.BlockMeta{
 					ULID:    bULID,
