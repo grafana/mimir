@@ -288,8 +288,7 @@ func (c *MultitenantCompactor) sanitizeMeta(logger log.Logger, tenantID string, 
 		// Preserve these labels
 		case mimir_tsdb.CompactorShardIDExternalLabel:
 			if v == "" {
-				level.Debug(logger).Log("msg", fmt.Sprintf(
-					"removing empty external label from %s", block.MetaFilename),
+				level.Debug(logger).Log("msg", "removing empty external label",
 					"label", l)
 				delete(meta.Thanos.Labels, l)
 				continue
@@ -297,19 +296,19 @@ func (c *MultitenantCompactor) sanitizeMeta(logger log.Logger, tenantID string, 
 
 			if !reShardIDLabel.MatchString(v) {
 				return httpError{
-					message: fmt.Sprintf("invalid %s label in %s: %q",
-						mimir_tsdb.CompactorShardIDExternalLabel, block.MetaFilename, v),
+					message: fmt.Sprintf("invalid %s external label: %q",
+						mimir_tsdb.CompactorShardIDExternalLabel, v),
 					statusCode: http.StatusBadRequest,
 				}
 			}
 		// Remove unused labels
 		case mimir_tsdb.DeprecatedTenantIDExternalLabel, mimir_tsdb.DeprecatedIngesterIDExternalLabel, mimir_tsdb.DeprecatedShardIDExternalLabel:
-			level.Debug(logger).Log("msg", fmt.Sprintf("removing unused external label from %s", block.MetaFilename),
+			level.Debug(logger).Log("msg", "removing unused external label",
 				"label", l, "value", v)
 			delete(meta.Thanos.Labels, l)
 		default:
 			return httpError{
-				message:    fmt.Sprintf("unsupported external label in %s: %s", block.MetaFilename, l),
+				message:    fmt.Sprintf("unsupported external label: %s", l),
 				statusCode: http.StatusBadRequest,
 			}
 		}
@@ -325,16 +324,14 @@ func (c *MultitenantCompactor) sanitizeMeta(logger log.Logger, tenantID string, 
 
 		if !rePath.MatchString(f.RelPath) {
 			return httpError{
-				message: fmt.Sprintf("file with invalid path in %s: %s", block.MetaFilename,
-					f.RelPath),
+				message:    fmt.Sprintf("file with invalid path: %s", f.RelPath),
 				statusCode: http.StatusBadRequest,
 			}
 		}
 
 		if f.SizeBytes <= 0 {
 			return httpError{
-				message: fmt.Sprintf("file with invalid size in %s: %s", block.MetaFilename,
-					f.RelPath),
+				message:    fmt.Sprintf("file with invalid size: %s", f.RelPath),
 				statusCode: http.StatusBadRequest,
 			}
 		}
@@ -351,8 +348,8 @@ func (c *MultitenantCompactor) sanitizeMeta(logger log.Logger, tenantID string, 
 	// basic sanity check
 	if meta.MinTime < 0 || meta.MaxTime < 0 || meta.MaxTime < meta.MinTime {
 		return httpError{
-			message: fmt.Sprintf("invalid minTime/maxTime in %s: minTime=%d, maxTime=%d",
-				block.MetaFilename, meta.MinTime, meta.MaxTime),
+			message: fmt.Sprintf("invalid minTime/maxTime: minTime=%d, maxTime=%d",
+				meta.MinTime, meta.MaxTime),
 			statusCode: http.StatusBadRequest,
 		}
 	}

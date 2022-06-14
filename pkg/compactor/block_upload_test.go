@@ -157,7 +157,7 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 					},
 				},
 			},
-			expBadRequest: fmt.Sprintf("file with invalid path in %s: chunks/invalid-file", block.MetaFilename),
+			expBadRequest: "file with invalid path: chunks/invalid-file",
 		},
 		{
 			name:            "missing file size",
@@ -180,7 +180,7 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 					},
 				},
 			},
-			expBadRequest: fmt.Sprintf("file with invalid size in %s: chunks/000001", block.MetaFilename),
+			expBadRequest: "file with invalid size: chunks/000001",
 		},
 		{
 			name:            "invalid minTime",
@@ -195,7 +195,7 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 					MaxTime: 0,
 				},
 			},
-			expBadRequest: fmt.Sprintf("invalid minTime/maxTime in %s: minTime=-1, maxTime=0", block.MetaFilename),
+			expBadRequest: "invalid minTime/maxTime: minTime=-1, maxTime=0",
 		},
 		{
 			name:            "invalid maxTime",
@@ -210,7 +210,7 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 					MaxTime: -1,
 				},
 			},
-			expBadRequest: fmt.Sprintf("invalid minTime/maxTime in %s: minTime=0, maxTime=-1", block.MetaFilename),
+			expBadRequest: "invalid minTime/maxTime: minTime=0, maxTime=-1",
 		},
 		{
 			name:            "maxTime before minTime",
@@ -225,7 +225,7 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 					MaxTime: 0,
 				},
 			},
-			expBadRequest: fmt.Sprintf("invalid minTime/maxTime in %s: minTime=1, maxTime=0", block.MetaFilename),
+			expBadRequest: "invalid minTime/maxTime: minTime=1, maxTime=0",
 		},
 		{
 			name:            "block before retention period",
@@ -346,8 +346,7 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 					},
 				},
 			},
-			expBadRequest: fmt.Sprintf(`invalid %s label in %s: "test"`, mimir_tsdb.CompactorShardIDExternalLabel,
-				block.MetaFilename),
+			expBadRequest: fmt.Sprintf(`invalid %s external label: "test"`, mimir_tsdb.CompactorShardIDExternalLabel),
 		},
 		{
 			name:     "failure checking for complete block",
