@@ -1477,6 +1477,8 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 		IsolationDisabled:              !i.cfg.BlocksStorageConfig.TSDB.IsolationEnabled,
 		HeadChunksWriteQueueSize:       i.cfg.BlocksStorageConfig.TSDB.HeadChunksWriteQueueSize,
 		NewChunkDiskMapper:             i.cfg.BlocksStorageConfig.TSDB.NewChunkDiskMapper,
+		AllowOverlappingQueries:        i.cfg.BlocksStorageConfig.TSDB.AllowOverlappingQueries,
+		AllowOverlappingCompaction:     false, // always false since Mimir only uploads lvl 1 compacted blocks
 	}, nil)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to open TSDB: %s", udir)
