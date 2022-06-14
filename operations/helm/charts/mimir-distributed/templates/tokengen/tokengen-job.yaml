@@ -74,8 +74,7 @@ spec:
       restartPolicy: OnFailure
       volumes:
         - name: config
-          secret:
-            secretName: {{ tpl .Values.externalConfigSecretName . }}
+          {{- include "mimir.configVolume" . | nindent 10 }}
         {{- if .Values.tokengenJob.extraVolumes }}
         {{ toYaml .Values.tokengenJob.extraVolumes | nindent 8 }}
         {{- end }}

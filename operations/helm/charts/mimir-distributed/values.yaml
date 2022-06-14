@@ -34,6 +34,10 @@ global:
   extraEnv: []
 
   # Common source of environment injections to add to all PODs directly managed by this chart (mimir services, nginx). Doesn't include memcached or minio.
+  # For example to inject values from a Secret, use:
+  # extraEnvFrom:
+  #   - secretRef:
+  #      name: mysecret
   extraEnvFrom: []
 
 serviceAccount:
@@ -44,7 +48,12 @@ serviceAccount:
 # -- Configuration is loaded from the secret called 'externalConfigSecretName'. If 'useExternalConfig' is true, then the configuration is not generated, just consumed.
 useExternalConfig: false
 
-# -- Name of the secret that contains the configuration (used for naming even if config is internal).
+# -- Defines what kind of object stores the configuration, a ConfigMap or a Secret.
+# In order to move sensitive information (such as credentials) from the ConfigMap/Secret to a more secure location (e.g. vault), it is possible to use [environment variables in the configuration](https://grafana.com/docs/mimir/latest/operators-guide/configuring/reference-configuration-parameters/#use-environment-variables-in-the-configuration).
+# Such environment variables can be then stored in a separate Secret and injected via the global.extraEnvFrom value. For details about environment injection from a Secret please see [Secrets](https://kubernetes.io/docs/concepts/configuration/secret/#use-case-as-container-environment-variables).
+configStorageType: Secret
+
+# -- Name of the Secret or ConfigMap that contains the configuration (used for naming even if config is internal).
 externalConfigSecretName: '{{ include "mimir.resourceName" (dict "ctx" . "component" "config") }}'
 
 # -- When 'useExternalConfig' is true, then changing 'externalConfigVersion' triggers restart of services - otherwise changes to the configuration cause a restart.
