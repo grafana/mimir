@@ -332,7 +332,7 @@ func (c *MultitenantCompactor) sanitizeMeta(logger log.Logger, tenantID string, 
 	}
 
 	if meta.Version != metadata.TSDBVersion1 {
-		return fmt.Sprintf("version must be 1")
+		return fmt.Sprintf("version must be %d", metadata.TSDBVersion1)
 	}
 
 	// validate minTime/maxTime
