@@ -26,7 +26,10 @@ image:
 
 # Settings for the smoke-test job.
 smoke_test:
-  image: grafana/mimir-continuous-test:r190-fe20bbd
+  image:
+    repository: grafana/mimir-continuous-test
+    tag: helm-smoke-test-13dfdf404
+    pullPolicy: IfNotPresent
   tenantId: ''
   extraArgs: {}
   env: []

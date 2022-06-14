@@ -38,7 +38,7 @@ spec:
         {{- toYaml .Values.smoke_test.initContainers | nindent 8 }}
       containers:
         - name: smoke-test
-          image: {{ .Values.smoke_test.image }}
+          image: "{{ .Values.smoke_test.image.repository }}:{{ .Values.smoke_test.image.tag }}"
           imagePullPolicy: {{ .Values.smoke_test.pullPolicy }}
           args:
             - "-tests.smoke-test"
