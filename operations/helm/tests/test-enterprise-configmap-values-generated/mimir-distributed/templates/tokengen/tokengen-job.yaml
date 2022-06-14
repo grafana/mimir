@@ -46,6 +46,8 @@ spec:
               mountPath: /license
           env:
           envFrom:
+            - secretRef:
+                name: mimir-minio-secret
       restartPolicy: OnFailure
       volumes:
         - name: config

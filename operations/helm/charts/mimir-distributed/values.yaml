@@ -39,7 +39,7 @@ global:
   # For example to inject values from a Secret, use:
   # extraEnvFrom:
   #   - secretRef:
-  #      name: mysecret
+  #       name: mysecret
   extraEnvFrom: []
 
   # -- Pod annotations for all pods directly managed by this chart. Usable for example to associate a version to 'global.extraEnv' and 'global.extraEnvFrom' and trigger a restart of the affected services.
