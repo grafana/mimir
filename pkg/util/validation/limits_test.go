@@ -535,3 +535,21 @@ func TestCustomTrackersConfigRename(t *testing.T) {
 		assert.False(t, ov.ActiveSeriesCustomTrackersConfig("user").Empty())
 	})
 }
+
+// TODO remove this with Mimir version 2.3
+func TestCustomTrackerOldVersionShouldSerializeToNewOne(t *testing.T) {
+	oldYaml := `
+    user:
+        active_series_custom_trackers_config:
+            baz: '{foo="bar"}'
+    `
+	t.Run("testOldVersion", func(t *testing.T) {
+		overrides := map[string]*Limits{}
+		err := yaml.Unmarshal([]byte(oldYaml), &overrides)
+		require.NoError(t, err, "parsing overrides")
+
+		assert.True(t, overrides["user"].ActiveSeriesCustomTrackersConfigOld.Empty())
+		assert.False(t, overrides["user"].ActiveSeriesCustomTrackersConfig.Empty())
+	})
+
+}

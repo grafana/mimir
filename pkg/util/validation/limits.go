@@ -248,6 +248,7 @@ func (l *Limits) UnmarshalYAML(unmarshal func(interface{}) error) error {
 
 	if !l.ActiveSeriesCustomTrackersConfigOld.Empty() {
 		l.ActiveSeriesCustomTrackersConfig = l.ActiveSeriesCustomTrackersConfigOld
+		l.ActiveSeriesCustomTrackersConfigOld = activeseries.CustomTrackersConfig{}
 	}
 	return nil
 }
@@ -276,6 +277,7 @@ func (l *Limits) UnmarshalJSON(data []byte) error {
 
 	if !l.ActiveSeriesCustomTrackersConfigOld.Empty() {
 		l.ActiveSeriesCustomTrackersConfig = l.ActiveSeriesCustomTrackersConfigOld
+		l.ActiveSeriesCustomTrackersConfigOld = activeseries.CustomTrackersConfig{}
 	}
 	return nil
 }
