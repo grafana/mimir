@@ -68,7 +68,8 @@
   * `autoscaling_querier_max_replicas`: maximum number of querier replicas.
   * `autoscaling_prometheus_url`: Prometheus base URL from which to scrape Mimir metrics (e.g. `http://prometheus.default:9090/prometheus`).
 * [ENHANCEMENT] Added `compactor` service, that can be used to route requests directly to compactor (e.g. admin UI). #2063
-* [ENHANCEMENT] Added a `consul_enabled` configuration option that defaults to true (matching previous behavior) to provide the ability to disable consul.
+* [ENHANCEMENT] Added a `consul_enabled` configuration option that defaults to true (matching previous behavior) to provide the ability to disable consul. #2093
+* [CHANGE] The `memberlist_ring_enabled` configuration now applies to Alertmanager. #2102
 
 ### Mimirtool
 
