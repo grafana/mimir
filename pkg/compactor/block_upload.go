@@ -25,6 +25,7 @@ import (
 	"github.com/grafana/regexp"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
+	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
@@ -293,7 +294,7 @@ func (c *MultitenantCompactor) sanitizeMeta(logger log.Logger, tenantID string, 
 				continue
 			}
 
-			if !reShardIDLabel.MatchString(v) {
+			if _, _, err := sharding.ParseShardIDLabelValue(v); err != nil {
 				return httpError{
 					message: fmt.Sprintf("invalid %s external label: %q",
 						mimir_tsdb.CompactorShardIDExternalLabel, v),
