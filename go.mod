@@ -242,4 +242,5 @@ replace github.com/vimeo/galaxycache => github.com/thanos-community/galaxycache 
 // Use fork of grafana go sdk, which includes fixes that haven't been merged into upstream
 replace github.com/grafana-tools/sdk => github.com/colega/grafana-tools-sdk v0.0.0-20220323154849-711bca56d13f
 
+// grpc v1.46.0 removed "WithBalancerName()" API, still in use by weaveworks/commons.
 replace google.golang.org/grpc => google.golang.org/grpc v1.45.0
