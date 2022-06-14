@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"path"
 	"testing"
 	"time"
@@ -539,7 +540,7 @@ func TestMultitenantCompactor_UploadBlockFile(t *testing.T) {
 		{
 			name:          "without block ID",
 			tenantID:      tenantID,
-			path:          "chunks%2F000001",
+			path:          "chunks/000001",
 			expBadRequest: "invalid block ID",
 		},
 		{
@@ -552,14 +553,14 @@ func TestMultitenantCompactor_UploadBlockFile(t *testing.T) {
 			name:          "invalid path",
 			tenantID:      tenantID,
 			blockID:       blockID,
-			path:          "..%2Fchunks%2F000001",
+			path:          "../chunks/000001",
 			expBadRequest: `invalid path: "../chunks/000001"`,
 		},
 		{
 			name:          "empty file",
 			tenantID:      tenantID,
 			blockID:       blockID,
-			path:          "chunks%2F000001",
+			path:          "chunks/000001",
 			expBadRequest: "file cannot be empty",
 		},
 		{
@@ -574,7 +575,7 @@ func TestMultitenantCompactor_UploadBlockFile(t *testing.T) {
 			name:     "valid request",
 			tenantID: tenantID,
 			blockID:  blockID,
-			path:     "chunks%2F000001",
+			path:     "chunks/000001",
 			body:     "content",
 			setUpBucketMock: func(bkt *bucket.ClientMock) {
 				bkt.MockExists(uploadingMetaPath, true, nil)
@@ -613,7 +614,7 @@ func TestMultitenantCompactor_UploadBlockFile(t *testing.T) {
 				rdr = bytes.NewReader([]byte(tc.body))
 			}
 			r := httptest.NewRequest(http.MethodPost, fmt.Sprintf(
-				"/api/v1/upload/block/%s/files?path=%s", blockID, tc.path), rdr)
+				"/api/v1/upload/block/%s/files?path=%s", blockID, url.QueryEscape(tc.path)), rdr)
 			urlVars := map[string]string{}
 			if tc.blockID != "" {
 				urlVars["block"] = tc.blockID
