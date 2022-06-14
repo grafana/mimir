@@ -39,6 +39,7 @@
 * [BUGFIX] Ruler: add timeout for remote rule evaluation queries to prevent rule group evaluations getting stuck indefinitely. The duration is configurable with  (`-ruler.query-frontend.timeout` (default `2m`). #2090
 * [BUGFIX] Ingester: reduce sleep time when reading WAL. #2098
 * [BUGFIX] Limits: Active series custom tracker configuration has been named back from `active_series_custom_trackers_config` to `active_series_custom_trackers`. For backwards compatibility both version is going to be supported for until Mimir v2.4. When both fields are specified, `active_series_custom_trackers_config` takes precedence over `active_series_custom_trackers`. #2101
+* [BUGFIX] Ingester: correct the order of labels applied when incrementing the `cortex_discarded_metadata_total` metric. #2096
 
 ### Mixin
 
