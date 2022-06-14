@@ -36,6 +36,7 @@
 * [BUGFIX] Ruler: report failed evaluation metric for any 5xx status code returned by the query-frontend when remote operational mode is enabled. #2053
 * [BUGFIX] Ingester: fix slow rollout when using `-ingester.ring.unregister-on-shutdown=false` with long `-ingester.ring.heartbeat-period`. #2085
 * [BUGFIX] Ruler: add timeout for remote rule evaluation queries to prevent rule group evaluations getting stuck indefinitely. The duration is configurable with  (`-ruler.query-frontend.timeout` (default `2m`). #2090
+* [BUGFIX] Ingester: reduce sleep time when reading WAL. #2098
 
 ### Mixin
 
