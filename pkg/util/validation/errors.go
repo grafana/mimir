@@ -275,15 +275,15 @@ func NewMaxQueryLengthError(actualQueryLen, maxQueryLength time.Duration) LimitE
 		maxQueryLengthFlag))
 }
 
-func NewRequestRateLimitedError(limit float64, burst int) LimitError {
+func NewRequestRateLimitedError(globalLimit, limit float64, burst int) LimitError {
 	return LimitError(globalerror.RequestRateLimited.MessageWithLimitConfig(
-		fmt.Sprintf("the request has been rejected because the tenant exceeded the request rate limit, set to %v req/s with a maximum allowed burst of %d", limit, burst),
+		fmt.Sprintf("the request has been rejected because the tenant exceeded the request rate limit, set to %v requests/s across all distributors and %v requests/s per distributor with a maximum allowed burst of %d", globalLimit, limit, burst),
 		requestRateFlag, requestBurstSizeFlag))
 }
 
-func NewIngestionRateLimitedError(limit float64, burst, numSamples, numExemplars, numMetadata int) LimitError {
+func NewIngestionRateLimitedError(globalLimit, limit float64, burst, numSamples, numExemplars, numMetadata int) LimitError {
 	return LimitError(globalerror.IngestionRateLimited.MessageWithLimitConfig(
-		fmt.Sprintf("the request has been rejected because the tenant exceeded the ingestion rate limit, set to %v items/s with a maximum allowed burst of %d, while adding %d samples, %d exemplars and %d metadata", limit, burst, numSamples, numExemplars, numMetadata),
+		fmt.Sprintf("the request has been rejected because the tenant exceeded the ingestion rate limit, set to %v items/s across all distributors and %v items/s per distributor with a maximum allowed burst of %d, while adding %d samples, %d exemplars and %d metadata", globalLimit, limit, burst, numSamples, numExemplars, numMetadata),
 		ingestionRateFlag, ingestionBurstSizeFlag))
 }
 
