@@ -132,8 +132,24 @@ func (c *MultitenantCompactor) createBlockUpload(ctx context.Context, r *http.Re
 		}
 	}
 
-	if err := c.sanitizeMeta(logger, tenantID, blockID, &meta); err != nil {
-		return err
+	if msg := c.sanitizeMeta(logger, tenantID, blockID, &meta); msg != "" {
+		return httpError{
+			message:    msg,
+			statusCode: http.StatusBadRequest,
+		}
+	}
+
+	// validate data is within the retention period
+	retention := c.cfgProvider.CompactorBlocksRetentionPeriod(tenantID)
+	if retention > 0 {
+		threshold := time.Now().Add(-retention)
+		if time.UnixMilli(meta.MaxTime).Before(threshold) {
+			maxTimeStr := util.FormatTimeMillis(meta.MaxTime)
+			return httpError{
+				message:    fmt.Sprintf("block max time (%s) older than retention period", maxTimeStr),
+				statusCode: http.StatusUnprocessableEntity,
+			}
+		}
 	}
 
 	return c.uploadMeta(ctx, logger, meta, blockID, uploadingMetaFilename, userBkt)
@@ -280,7 +296,7 @@ func (c *MultitenantCompactor) completeBlockUpload(ctx context.Context, r *http.
 // sanitizeMeta sanitizes and validates a metadata.Meta object. If a validation error occurs, an error
 // message gets returned, otherwise an empty string.
 func (c *MultitenantCompactor) sanitizeMeta(logger log.Logger, tenantID string, blockID ulid.ULID,
-	meta *metadata.Meta) error {
+	meta *metadata.Meta) string {
 	meta.ULID = blockID
 
 	for l, v := range meta.Thanos.Labels {
@@ -295,11 +311,8 @@ func (c *MultitenantCompactor) sanitizeMeta(logger log.Logger, tenantID string, 
 			}
 
 			if _, _, err := sharding.ParseShardIDLabelValue(v); err != nil {
-				return httpError{
-					message: fmt.Sprintf("invalid %s external label: %q",
-						mimir_tsdb.CompactorShardIDExternalLabel, v),
-					statusCode: http.StatusBadRequest,
-				}
+				return fmt.Sprintf("invalid %s external label: %q",
+					mimir_tsdb.CompactorShardIDExternalLabel, v)
 			}
 		// Remove unused labels
 		case mimir_tsdb.DeprecatedTenantIDExternalLabel, mimir_tsdb.DeprecatedIngesterIDExternalLabel, mimir_tsdb.DeprecatedShardIDExternalLabel:
@@ -307,10 +320,7 @@ func (c *MultitenantCompactor) sanitizeMeta(logger log.Logger, tenantID string, 
 				"label", l, "value", v)
 			delete(meta.Thanos.Labels, l)
 		default:
-			return httpError{
-				message:    fmt.Sprintf("unsupported external label: %s", l),
-				statusCode: http.StatusBadRequest,
-			}
+			return fmt.Sprintf("unsupported external label: %s", l)
 		}
 	}
 
@@ -323,62 +333,35 @@ func (c *MultitenantCompactor) sanitizeMeta(logger log.Logger, tenantID string, 
 		}
 
 		if !rePath.MatchString(f.RelPath) {
-			return httpError{
-				message:    fmt.Sprintf("file with invalid path: %s", f.RelPath),
-				statusCode: http.StatusBadRequest,
-			}
+			return fmt.Sprintf("file with invalid path: %s", f.RelPath)
 		}
 
 		if f.SizeBytes <= 0 {
-			return httpError{
-				message:    fmt.Sprintf("file with invalid size: %s", f.RelPath),
-				statusCode: http.StatusBadRequest,
-			}
+			return fmt.Sprintf("file with invalid size: %s", f.RelPath)
 		}
 	}
 
 	if meta.Version != metadata.TSDBVersion1 {
-		return httpError{
-			message:    fmt.Sprintf("version must be %d", metadata.TSDBVersion1),
-			statusCode: http.StatusBadRequest,
-		}
+		return fmt.Sprintf("version must be %d", metadata.TSDBVersion1)
 	}
 
 	// validate minTime/maxTime
 	// basic sanity check
 	if meta.MinTime < 0 || meta.MaxTime < 0 || meta.MaxTime < meta.MinTime {
-		return httpError{
-			message: fmt.Sprintf("invalid minTime/maxTime: minTime=%d, maxTime=%d",
-				meta.MinTime, meta.MaxTime),
-			statusCode: http.StatusBadRequest,
-		}
+		return fmt.Sprintf("invalid minTime/maxTime: minTime=%d, maxTime=%d",
+			meta.MinTime, meta.MaxTime)
 	}
 	// validate that times are in the past
 	now := time.Now()
 	if meta.MinTime > now.UnixMilli() || meta.MaxTime > now.UnixMilli() {
-		return httpError{
-			message: fmt.Sprintf("block time(s) greater than the present: minTime=%d, maxTime=%d",
-				meta.MinTime, meta.MaxTime),
-			statusCode: http.StatusBadRequest,
-		}
-	}
-	// validate data is within the retention period
-	retention := c.cfgProvider.CompactorBlocksRetentionPeriod(tenantID)
-	if retention > 0 {
-		threshold := now.Add(-retention)
-		if time.UnixMilli(meta.MaxTime).Before(threshold) {
-			maxTimeStr := util.FormatTimeMillis(meta.MaxTime)
-			return httpError{
-				message:    fmt.Sprintf("block max time (%s) older than retention period", maxTimeStr),
-				statusCode: http.StatusUnprocessableEntity,
-			}
-		}
+		return fmt.Sprintf("block time(s) greater than the present: minTime=%d, maxTime=%d",
+			meta.MinTime, meta.MaxTime)
 	}
 
 	// Mark block source
 	meta.Thanos.Source = "upload"
 
-	return nil
+	return ""
 }
 
 func (c *MultitenantCompactor) uploadMeta(ctx context.Context, logger log.Logger, meta metadata.Meta,
