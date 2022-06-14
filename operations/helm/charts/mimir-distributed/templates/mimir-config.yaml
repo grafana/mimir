@@ -12,7 +12,7 @@ metadata:
 {{- if eq .Values.configStorageType "Secret" }}
 data:
   mimir.yaml: {{ include "mimir.calculatedConfig" . | b64enc }}
-{{- else if eq .Values.configStorageType "ConfigMap" }}
+{{- else }}
 data:
   mimir.yaml: |
     {{ include "mimir.calculatedConfig" . | nindent 4 }}
