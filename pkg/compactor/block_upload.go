@@ -31,7 +31,8 @@ import (
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
-const tmpMetaFilename = "uploading-" + block.MetaFilename
+// Name of file where we store a block's meta file while it's being uploaded.
+const uploadingMetaFilename = "uploading-" + block.MetaFilename
 
 var rePath = regexp.MustCompile(`^(index|chunks/\d{6})$`)
 
@@ -135,7 +136,7 @@ func (c *MultitenantCompactor) createBlockUpload(ctx context.Context, r *http.Re
 		return err
 	}
 
-	return c.uploadMeta(ctx, logger, meta, blockID, tmpMetaFilename, userBkt)
+	return c.uploadMeta(ctx, logger, meta, blockID, uploadingMetaFilename, userBkt)
 }
 
 // UploadBlockFile handles requests for uploading block files.
@@ -189,7 +190,7 @@ func (c *MultitenantCompactor) UploadBlockFile(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	metaPath := path.Join(blockID, tmpMetaFilename)
+	metaPath := path.Join(blockID, uploadingMetaFilename)
 	exists, err := userBkt.Exists(ctx, metaPath)
 	if err != nil {
 		level.Error(logger).Log("msg", "failed to check existence in object storage", "path", metaPath, "operation", op, "err", err)
@@ -239,7 +240,7 @@ func (c *MultitenantCompactor) completeBlockUpload(ctx context.Context, r *http.
 	logger log.Logger, userBkt objstore.Bucket, tenantID string, blockID ulid.ULID) error {
 	level.Debug(logger).Log("msg", "received request to complete block upload", "content_length", r.ContentLength)
 
-	tmpMetaPath := path.Join(blockID.String(), tmpMetaFilename)
+	tmpMetaPath := path.Join(blockID.String(), uploadingMetaFilename)
 	rdr, err := userBkt.Get(ctx, tmpMetaPath)
 	if err != nil {
 		if userBkt.IsObjNotFoundErr(err) {
@@ -248,13 +249,13 @@ func (c *MultitenantCompactor) completeBlockUpload(ctx context.Context, r *http.
 				statusCode: http.StatusNotFound,
 			}
 		}
-		return errors.Wrap(err, fmt.Sprintf("failed to download %s from object storage", tmpMetaFilename))
+		return errors.Wrap(err, fmt.Sprintf("failed to download %s from object storage", uploadingMetaFilename))
 	}
 	defer func() {
 		_ = rdr.Close()
 	}()
 
-	meta, err := decodeMeta(rdr, tmpMetaFilename)
+	meta, err := decodeMeta(rdr, uploadingMetaFilename)
 	if err != nil {
 		return err
 	}
@@ -266,9 +267,9 @@ func (c *MultitenantCompactor) completeBlockUpload(ctx context.Context, r *http.
 		return err
 	}
 
-	if err := userBkt.Delete(ctx, path.Join(blockID.String(), tmpMetaFilename)); err != nil {
+	if err := userBkt.Delete(ctx, path.Join(blockID.String(), uploadingMetaFilename)); err != nil {
 		level.Warn(logger).Log("msg", fmt.Sprintf(
-			"failed to delete %s from block in object storage", tmpMetaFilename), "err", err)
+			"failed to delete %s from block in object storage", uploadingMetaFilename), "err", err)
 		return nil
 	}
 

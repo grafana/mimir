@@ -263,7 +263,7 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 			retention: 0,
 			setUpBucketMock: func(bkt *bucket.ClientMock) {
 				setUpPartialBlock(bkt)
-				pth := path.Join(tenantID, blockID, tmpMetaFilename)
+				pth := uploadingMetaPath
 				bkt.MockUpload(pth, nil)
 			},
 			meta: &metadata.Meta{
