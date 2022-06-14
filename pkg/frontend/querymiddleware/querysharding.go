@@ -194,8 +194,11 @@ func mapEngineError(err error) error {
 		return err
 	}
 
-	// Extract the root cause of the error wrapped by errors.Wrap().
-	cause := errors.Cause(err)
+	// Extract the root cause of the error wrapped by fmt.Errorf with "%w" (used by PromQL engine).
+	cause := errors.Unwrap(err)
+	if cause == nil {
+		cause = err
+	}
 
 	// If upstream request failed as 5xx, it would be wrapped as httpgrpc error, which is a status error.
 	// If that is the case, it's an internal error.

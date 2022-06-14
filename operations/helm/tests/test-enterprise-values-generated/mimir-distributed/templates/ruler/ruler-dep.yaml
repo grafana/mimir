@@ -5,7 +5,6 @@ kind: Deployment
 metadata:
   name: test-enterprise-values-mimir-ruler
   labels:
-    helm.sh/chart: mimir-distributed-2.2.0-weekly.190
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-enterprise-values
     app.kubernetes.io/component: ruler
@@ -29,7 +28,6 @@ spec:
   template:
     metadata:
       labels:
-        helm.sh/chart: mimir-distributed-2.2.0-weekly.190
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-enterprise-values
         app.kubernetes.io/version: "2.1.0"
@@ -37,7 +35,6 @@ spec:
         app.kubernetes.io/component: ruler
         app.kubernetes.io/part-of: memberlist
       annotations:
-        checksum/config: deee5d2bcf924492c2988a219d9cf89cde36027ee6b101cee76fde256a0b9cef
     spec:
       serviceAccountName: test-enterprise-values-mimir
       securityContext:

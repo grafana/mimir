@@ -5,7 +5,6 @@ kind: Service
 metadata:
   name: test-enterprise-values-mimir-compactor
   labels:
-    helm.sh/chart: mimir-distributed-2.2.0-weekly.190
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-enterprise-values
     app.kubernetes.io/component: compactor

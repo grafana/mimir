@@ -5,7 +5,6 @@ kind: Service
 metadata:
   name: test-oss-values-mimir-overrides-exporter
   labels:
-    helm.sh/chart: mimir-distributed-2.2.0-weekly.190
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-oss-values
     app.kubernetes.io/component: overrides-exporter
