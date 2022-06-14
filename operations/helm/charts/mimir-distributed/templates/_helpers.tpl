@@ -86,7 +86,7 @@ Create the app name for clients. Defaults to the same logic as "mimir.fullname",
 Calculate the config from structured and unstructred text input
 */}}
 {{- define "mimir.calculatedConfig" -}}
-{{ include (print $.Template.BasePath "/_config-render.tpl") . }}
+{{ tpl (mergeOverwrite (include (print $.Template.BasePath "/_config-render.tpl") . | fromYaml) .Values.mimir.structuredConfig | toYaml) . }}
 {{- end -}}
 
 {{/*
