@@ -18,6 +18,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/time/rate"
 	"gopkg.in/yaml.v2"
+
+	"github.com/grafana/mimir/pkg/ingester/activeseries"
 )
 
 // mockTenantLimits exposes per-tenant limits based on a provided map
@@ -486,6 +488,51 @@ testuser:
 
 			require.Equal(t, tc.expectedRateLimit, ov.NotificationRateLimit("testuser", tc.testedIntegration))
 			require.Equal(t, tc.expectedBurstSize, ov.NotificationBurstSize("testuser", tc.testedIntegration))
+		})
+	}
+}
+
+func TestCustomTrackerConfigDeserialize(t *testing.T) {
+	oldYaml := `
+    user:
+        active_series_custom_trackers_config:
+            baz: '{foo="bar"}'
+    `
+	expectedConfig, err := activeseries.NewCustomTrackersConfig(map[string]string{"baz": `{foo="bar"}`})
+	require.NoError(t, err, "creating expected config")
+	newYaml := `
+    user:
+        active_series_custom_trackers:
+            baz: '{foo="bar"}'
+    `
+	bothYaml := `
+    user:
+        active_series_custom_trackers:
+            baznew: '{foonew="barnew"}'
+        active_series_custom_trackers_config:
+            baz: '{foo="bar"}'
+    `
+	for name, tc := range map[string]struct {
+		yaml string
+	}{
+		"testOldVersionCopiedToNewField": {
+			yaml: oldYaml,
+		},
+		"testNewVersion": {
+			yaml: newYaml,
+		},
+		"testBothVersionsOldTakesPrecedenceInNewField": {
+			yaml: bothYaml,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			overrides := map[string]*Limits{}
+			err := yaml.Unmarshal([]byte(tc.yaml), &overrides)
+			require.NoError(t, err, "parsing overrides")
+
+			assert.True(t, overrides["user"].ActiveSeriesCustomTrackersConfigOld.Empty())
+			assert.False(t, overrides["user"].ActiveSeriesCustomTrackersConfig.Empty())
+			assert.Equal(t, expectedConfig.String(), overrides["user"].ActiveSeriesCustomTrackersConfig.String())
 		})
 	}
 }
