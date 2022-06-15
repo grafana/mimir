@@ -89,10 +89,10 @@ func TestForwardingSamplesSuccessfully(t *testing.T) {
 	expectedMetrics := `
 	# HELP cortex_distributor_forward_requests_total The total number of requests the Distributor made to forward samples.
 	# TYPE cortex_distributor_forward_requests_total counter
-	cortex_distributor_forward_requests_total{user="tenant"} 2
+	cortex_distributor_forward_requests_total{} 2
 	# HELP cortex_distributor_forward_samples_total The total number of samples the Distributor forwarded.
 	# TYPE cortex_distributor_forward_samples_total counter
-	cortex_distributor_forward_samples_total{user="tenant"} 4
+	cortex_distributor_forward_samples_total{} 4
 `
 
 	require.NoError(t, testutil.GatherAndCompare(
@@ -173,7 +173,7 @@ func TestForwardingSamplesWithDifferentErrorsWithPropagation(t *testing.T) {
 			forwarder := NewForwarder(reg, tc.config)
 			urls := make([]string, len(tc.remoteStatusCodes))
 			closers := make([]func(), len(tc.remoteStatusCodes))
-			expectedErrorsByTarget := make(map[string]map[int]int)
+			expectedErrorsByStatusCode := make(map[int]int)
 			for i, code := range tc.remoteStatusCodes {
 				urls[i], _, _, closers[i] = newTestServer(t, code, false)
 				defer closers[i]()
@@ -181,10 +181,7 @@ func TestForwardingSamplesWithDifferentErrorsWithPropagation(t *testing.T) {
 				if code/100 == 2 {
 					continue
 				}
-				if len(expectedErrorsByTarget[urls[i]]) == 0 {
-					expectedErrorsByTarget[urls[i]] = make(map[int]int)
-				}
-				expectedErrorsByTarget[urls[i]][code]++
+				expectedErrorsByStatusCode[code]++
 			}
 
 			rules := make(validation.ForwardingRules)
@@ -215,17 +212,15 @@ func TestForwardingSamplesWithDifferentErrorsWithPropagation(t *testing.T) {
 			}
 
 			var expectedMetrics strings.Builder
-			if len(expectedErrorsByTarget) > 0 {
+			if len(expectedErrorsByStatusCode) > 0 {
 				expectedMetrics.WriteString(`
 				# TYPE cortex_distributor_forward_errors_total counter
 				# HELP cortex_distributor_forward_errors_total The total number of errors that the distributor received from forwarding targets when trying to send samples to them.`)
 			}
-			for target, statusCodes := range expectedErrorsByTarget {
-				for statusCode, count := range statusCodes {
-					expectedMetrics.WriteString(fmt.Sprintf(`
-					cortex_distributor_forward_errors_total{status_code="%d", target="%s"} %d
-	`, statusCode, target, count))
-				}
+			for statusCode, count := range expectedErrorsByStatusCode {
+				expectedMetrics.WriteString(fmt.Sprintf(`
+					cortex_distributor_forward_errors_total{status_code="%d"} %d
+	`, statusCode, count))
 			}
 
 			assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics.String()),
