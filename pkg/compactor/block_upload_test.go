@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"path"
+	"strings"
 	"testing"
 	"time"
 
@@ -503,7 +504,7 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 			}
 			var rdr io.Reader
 			if tc.body != "" {
-				rdr = bytes.NewReader([]byte(tc.body))
+				rdr = strings.NewReader(tc.body)
 			} else if tc.meta != nil {
 				buf := bytes.NewBuffer(nil)
 				require.NoError(t, json.NewEncoder(buf).Encode(tc.meta))
@@ -561,15 +562,6 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 		var gotMeta metadata.Meta
 		require.NoError(t, json.NewDecoder(rdr).Decode(&gotMeta))
 		return gotMeta
-	}
-
-	uploadMeta := func(t *testing.T, bkt *objstore.InMemBucket, pth string, meta metadata.Meta) {
-		t.Helper()
-
-		buf := bytes.NewBuffer(nil)
-		require.NoError(t, json.NewEncoder(buf).Encode(meta))
-		ctx := context.Background()
-		require.NoError(t, bkt.Upload(ctx, pth, buf))
 	}
 
 	// Additional test cases using an in-memory bucket for state testing
@@ -682,6 +674,26 @@ func TestMultitenantCompactor_UploadBlockFile(t *testing.T) {
 	const blockID = "01G3FZ0JWJYJC0ZM6Y9778P6KD"
 	uploadingMetaFilename := fmt.Sprintf("uploading-%s", block.MetaFilename)
 	uploadingMetaPath := path.Join(tenantID, blockID, uploadingMetaFilename)
+	validMeta := metadata.Meta{
+		BlockMeta: tsdb.BlockMeta{
+			ULID: ulid.MustParse(blockID),
+		},
+		Thanos: metadata.Thanos{
+			Labels: map[string]string{
+				mimir_tsdb.CompactorShardIDExternalLabel: "1_of_3",
+			},
+			Files: []metadata.File{
+				{
+					RelPath:   "index",
+					SizeBytes: 1,
+				},
+				{
+					RelPath:   "chunks/000001",
+					SizeBytes: 1024,
+				},
+			},
+		},
+	}
 
 	testCases := []struct {
 		name            string
@@ -775,7 +787,7 @@ func TestMultitenantCompactor_UploadBlockFile(t *testing.T) {
 			}
 			var rdr io.Reader
 			if tc.body != "" {
-				rdr = bytes.NewReader([]byte(tc.body))
+				rdr = strings.NewReader(tc.body)
 			}
 			r := httptest.NewRequest(http.MethodPost, fmt.Sprintf(
 				"/api/v1/upload/block/%s/files?path=%s", blockID, url.QueryEscape(tc.path)), rdr)
@@ -807,6 +819,81 @@ func TestMultitenantCompactor_UploadBlockFile(t *testing.T) {
 			if tc.verifyUpload != nil {
 				tc.verifyUpload(t, &bkt, tc.body)
 			}
+		})
+	}
+
+	type file struct {
+		path    string
+		content string
+	}
+
+	// Additional test cases using an in-memory bucket for state testing
+	extraCases := []struct {
+		name         string
+		files        []file
+		setUpBucket  func(*testing.T, *objstore.InMemBucket)
+		verifyBucket func(*testing.T, *objstore.InMemBucket, []file)
+	}{
+		{
+			name: "multiple sequential uploads of same file",
+			files: []file{
+				{
+					path:    "chunks/000001",
+					content: "first",
+				},
+				{
+					path:    "chunks/000001",
+					content: "second",
+				},
+			},
+			setUpBucket: func(t *testing.T, bkt *objstore.InMemBucket) {
+				uploadMeta(t, bkt, uploadingMetaPath, validMeta)
+			},
+			verifyBucket: func(t *testing.T, bkt *objstore.InMemBucket, files []file) {
+				t.Helper()
+
+				ctx := context.Background()
+				rdr, err := bkt.Get(ctx, path.Join(tenantID, blockID, files[1].path))
+				require.NoError(t, err)
+				t.Cleanup(func() {
+					_ = rdr.Close()
+				})
+
+				content, err := io.ReadAll(rdr)
+				require.NoError(t, err)
+				assert.Equal(t, files[1].content, string(content))
+			},
+		},
+	}
+	for _, tc := range extraCases {
+		t.Run(tc.name, func(t *testing.T) {
+			bkt := objstore.NewInMemBucket()
+			tc.setUpBucket(t, bkt)
+			c := &MultitenantCompactor{
+				logger:       log.NewNopLogger(),
+				bucketClient: bkt,
+			}
+
+			for _, f := range tc.files {
+				rdr := strings.NewReader(f.content)
+				r := httptest.NewRequest(http.MethodPost, fmt.Sprintf(
+					"/api/v1/upload/block/%s/files?path=%s", blockID, url.QueryEscape(f.path)), rdr)
+				urlVars := map[string]string{
+					"block": blockID,
+				}
+				r = mux.SetURLVars(r, urlVars)
+				r = r.WithContext(user.InjectOrgID(r.Context(), tenantID))
+				w := httptest.NewRecorder()
+				c.UploadBlockFile(w, r)
+
+				resp := w.Result()
+				body, err := io.ReadAll(resp.Body)
+				require.NoError(t, err)
+				require.Equal(t, http.StatusOK, resp.StatusCode)
+				require.Empty(t, body)
+			}
+
+			tc.verifyBucket(t, bkt, tc.files)
 		})
 	}
 }
@@ -917,4 +1004,14 @@ func TestMultitenantCompactor_HandleBlockUpload_Complete(t *testing.T) {
 			}
 		})
 	}
+}
+
+// uploadMeta is a test helper for uploading a meta file to a certain path in a bucket.
+func uploadMeta(t *testing.T, bkt *objstore.InMemBucket, pth string, meta metadata.Meta) {
+	t.Helper()
+
+	buf := bytes.NewBuffer(nil)
+	require.NoError(t, json.NewEncoder(buf).Encode(meta))
+	ctx := context.Background()
+	require.NoError(t, bkt.Upload(ctx, pth, buf))
 }
