@@ -60,6 +60,7 @@
   local containerPort = $.core.v1.containerPort,
   local gossipPort = containerPort.newNamed(name='gossip-ring', containerPort=gossipRingPort),
 
+  alertmanager_ports+:: if !$._config.memberlist_ring_enabled then [] else [gossipPort],
   compactor_ports+:: if !$._config.memberlist_ring_enabled then [] else [gossipPort],
   distributor_ports+:: if !$._config.memberlist_ring_enabled then [] else [gossipPort],
   ingester_ports+:: if !$._config.memberlist_ring_enabled then [] else [gossipPort],
@@ -69,6 +70,9 @@
 
   // Don't add label to matcher, only to pod labels.
   local gossipLabel = $.apps.v1.statefulSet.spec.template.metadata.withLabelsMixin({ [$._config.gossip_member_label]: 'true' }),
+
+  alertmanager_statefulset+: if !$._config.memberlist_ring_enabled then {} else
+    gossipLabel,
 
   compactor_statefulset+: if !$._config.memberlist_ring_enabled then {} else
     gossipLabel,

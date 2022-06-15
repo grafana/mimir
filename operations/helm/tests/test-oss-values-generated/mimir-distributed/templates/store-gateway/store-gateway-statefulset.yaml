@@ -56,8 +56,11 @@ spec:
       terminationGracePeriodSeconds: 240
       volumes:
         - name: config
-          secret:
-            secretName: test-oss-values-mimir-config
+          configMap:
+            name: test-oss-values-mimir-config
+            items:
+              - key: "mimir.yaml"
+                path: "mimir.yaml"
         - name: runtime-config
           configMap:
             name: test-oss-values-mimir-runtime

@@ -1,5 +1,5 @@
 ---
-# Source: mimir-distributed/templates/secret.yaml
+# Source: mimir-distributed/templates/mimir-config.yaml
 apiVersion: v1
 kind: Secret
 metadata:
