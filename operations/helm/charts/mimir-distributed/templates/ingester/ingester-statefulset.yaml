@@ -137,7 +137,9 @@ spec:
             {{- toYaml .Values.ingester.resources | nindent 12 }}
           securityContext:
             readOnlyRootFilesystem: true
-            privileged:  {{ .Values.ingester.containerSecurityContext.privileged }}
+            {{- if  .Values.ingester.containerSecurityContext }}{{ if .Values.ingester.containerSecurityContext.privileged }}
+            privileged: {{ .Values.ingester.containerSecurityContext.privileged }}
+            {{- end }}{{ end }}
           env:
             {{- with .Values.global.extraEnv }}
               {{- toYaml . | nindent 12 }}

@@ -81,7 +81,9 @@ spec:
             {{- toYaml .Values.querier.resources | nindent 12 }}
           securityContext:
             readOnlyRootFilesystem: true
-            privileged:  {{ .Values.querier.containerSecurityContext.privileged }}
+            {{- if  .Values.querier.containerSecurityContext }}{{ if .Values.querier.containerSecurityContext.privileged }}
+            privileged: {{ .Values.querier.containerSecurityContext.privileged }}
+            {{- end }}{{ end }}
           env:
             {{- with .Values.global.extraEnv }}
               {{- toYaml . | nindent 12 }}

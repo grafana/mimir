@@ -79,7 +79,9 @@ spec:
             {{- toYaml .Values.overrides_exporter.resources | nindent 12 }}
           securityContext:
             readOnlyRootFilesystem: true
-            privileged:  {{ .Values.overrides-exporter.containerSecurityContext.privileged }}
+            {{- if  .Values.overrides_exporter.containerSecurityContext }}{{ if .Values.overrides_exporter.containerSecurityContext.privileged }}
+            privileged: {{ .Values.overrides_exporter.containerSecurityContext.privileged }}
+            {{- end }}{{ end }}
           env:
             {{- with .Values.global.extraEnv }}
               {{ toYaml . | nindent 12 }}
