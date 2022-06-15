@@ -85,7 +85,7 @@ func NewForwarder(reg prometheus.Registerer, cfg Config) Forwarder {
 			Namespace: "cortex",
 			Name:      "distributor_forward_requests_total",
 			Help:      "The total number of requests the Distributor made to forward samples.",
-		}, []string{"user"}),
+		}, []string{"target"}),
 		errorsTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Namespace: "cortex",
 			Name:      "distributor_forward_errors_total",
@@ -95,13 +95,13 @@ func NewForwarder(reg prometheus.Registerer, cfg Config) Forwarder {
 			Namespace: "cortex",
 			Name:      "distributor_forward_samples_total",
 			Help:      "The total number of samples the Distributor forwarded.",
-		}, []string{"user"}),
+		}, []string{"target"}),
 		requestLatencyHistogram: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 			Namespace: "cortex",
 			Name:      "distributor_forward_requests_latency_seconds",
 			Help:      "The client-side latency of requests to forward metrics made by the Distributor.",
 			Buckets:   []float64{.005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10, 20, 30},
-		}, []string{"user"}),
+		}, []string{"target"}),
 	}
 }
 
@@ -117,10 +117,10 @@ func (r *forwarder) NewRequest(ctx context.Context, tenant string, rules validat
 		timeout:         r.cfg.RequestTimeout,
 		propagateErrors: r.cfg.PropagateErrors,
 
-		requests: r.requestsTotal.WithLabelValues(tenant),
+		requests: r.requestsTotal,
 		errors:   r.errorsTotal,
-		samples:  r.samplesTotal.WithLabelValues(tenant),
-		latency:  r.requestLatencyHistogram.WithLabelValues(tenant),
+		samples:  r.samplesTotal,
+		latency:  r.requestLatencyHistogram,
 	}
 }
 
@@ -139,10 +139,10 @@ type request struct {
 	timeout         time.Duration
 	propagateErrors bool
 
-	requests prometheus.Counter
+	requests *prometheus.CounterVec
 	errors   *prometheus.CounterVec
-	samples  prometheus.Counter
-	latency  prometheus.Observer
+	samples  *prometheus.CounterVec
+	latency  *prometheus.HistogramVec
 }
 
 func (r *request) Add(sample mimirpb.PreallocTimeseries) bool {
@@ -158,12 +158,12 @@ func (r *request) Add(sample mimirpb.PreallocTimeseries) bool {
 		// There is no forwarding rule for this metric, send it to the Ingesters.
 		return true
 	}
-	r.samples.Add(float64(len(sample.Samples)))
+	r.samples.WithLabelValues(rule.Endpoint).Add(float64(len(sample.Samples)))
 
 	ts, ok := r.tsByEndpoint[rule.Endpoint]
 	if !ok {
 		ts = r.pools.timeseries.Get().(*[]mimirpb.PreallocTimeseries)
-		r.requests.Inc()
+		r.requests.WithLabelValues(rule.Endpoint).Inc()
 	}
 
 	*ts = append(*ts, sample)
@@ -271,7 +271,7 @@ func (r *request) sendToEndpoint(ctx context.Context, endpoint string, ts []mimi
 
 	beforeTs := time.Now()
 	httpResp, err := r.client.Do(httpReq)
-	r.latency.Observe(time.Since(beforeTs).Seconds())
+	r.latency.WithLabelValues(endpoint).Observe(time.Since(beforeTs).Seconds())
 	if err != nil {
 		// Errors from Client.Do are from (for example) network errors, so are recoverable.
 		return recoverableError{err}
