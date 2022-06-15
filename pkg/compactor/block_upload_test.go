@@ -24,6 +24,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/thanos/pkg/block"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
+	"github.com/thanos-io/thanos/pkg/objstore"
 	"github.com/weaveworks/common/user"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
@@ -77,6 +78,8 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 			},
 		},
 	}
+
+	metaPath := path.Join(tenantID, blockID, block.MetaFilename)
 	uploadingMetaPath := path.Join(tenantID, blockID, fmt.Sprintf("uploading-%s", block.MetaFilename))
 
 	setUpPartialBlock := func(bkt *bucket.ClientMock) {
@@ -540,6 +543,164 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 
 			if tc.verifyUpload != nil {
 				tc.verifyUpload(t, &bkt)
+			}
+		})
+	}
+
+	// Additional test cases using an in-memory bucket for state testing
+	extraCases := []struct {
+		name          string
+		setUp         func(*testing.T, *objstore.InMemBucket) metadata.Meta
+		verifyBucket  func(*testing.T, *objstore.InMemBucket)
+		expBadRequest string
+		expConflict   string
+	}{
+		{
+			name: "valid request when both in-flight meta file and complete meta file exist in object storage",
+			setUp: func(t *testing.T, bkt *objstore.InMemBucket) metadata.Meta {
+				metaJSON, err := json.Marshal(validMeta)
+				require.NoError(t, err)
+				ctx := context.Background()
+				require.NoError(t, bkt.Upload(ctx, uploadingMetaPath, bytes.NewReader(metaJSON)))
+				require.NoError(t, bkt.Upload(ctx, metaPath, bytes.NewReader(metaJSON)))
+
+				return validMeta
+			},
+			verifyBucket: func(t *testing.T, bkt *objstore.InMemBucket) {
+				ctx := context.Background()
+				rdr, err := bkt.Get(ctx, uploadingMetaPath)
+				require.NoError(t, err)
+				t.Cleanup(func() {
+					_ = rdr.Close()
+				})
+				var gotMeta metadata.Meta
+				require.NoError(t, json.NewDecoder(rdr).Decode(&gotMeta))
+				assert.Equal(t, validMeta, gotMeta)
+
+				rdr, err = bkt.Get(ctx, metaPath)
+				require.NoError(t, err)
+				t.Cleanup(func() {
+					_ = rdr.Close()
+				})
+				require.NoError(t, json.NewDecoder(rdr).Decode(&gotMeta))
+				assert.Equal(t, validMeta, gotMeta)
+			},
+			expConflict: "block already exists in object storage",
+		},
+		{
+			name: "invalid request when in-flight meta file exists in object storage",
+			setUp: func(t *testing.T, bkt *objstore.InMemBucket) metadata.Meta {
+				validMetaJSON, err := json.Marshal(validMeta)
+				require.NoError(t, err)
+				ctx := context.Background()
+				require.NoError(t, bkt.Upload(ctx, uploadingMetaPath, bytes.NewReader(validMetaJSON)))
+
+				meta := validMeta
+				// Invalid version
+				meta.Version = 0
+				return meta
+			},
+			verifyBucket: func(t *testing.T, bkt *objstore.InMemBucket) {
+				ctx := context.Background()
+				rdr, err := bkt.Get(ctx, uploadingMetaPath)
+				require.NoError(t, err)
+				t.Cleanup(func() {
+					_ = rdr.Close()
+				})
+				var gotMeta metadata.Meta
+				require.NoError(t, json.NewDecoder(rdr).Decode(&gotMeta))
+				assert.Equal(t, validMeta, gotMeta)
+			},
+			expBadRequest: fmt.Sprintf("version must be %d", metadata.TSDBVersion1),
+		},
+		{
+			name: "valid request when same in-flight meta file exists in object storage",
+			setUp: func(t *testing.T, bkt *objstore.InMemBucket) metadata.Meta {
+				metaJSON, err := json.Marshal(validMeta)
+				require.NoError(t, err)
+				ctx := context.Background()
+				require.NoError(t, bkt.Upload(ctx, uploadingMetaPath, bytes.NewReader(metaJSON)))
+
+				return validMeta
+			},
+			verifyBucket: func(t *testing.T, bkt *objstore.InMemBucket) {
+				ctx := context.Background()
+				rdr, err := bkt.Get(ctx, uploadingMetaPath)
+				require.NoError(t, err)
+				t.Cleanup(func() {
+					_ = rdr.Close()
+				})
+				var gotMeta metadata.Meta
+				require.NoError(t, json.NewDecoder(rdr).Decode(&gotMeta))
+
+				expMeta := validMeta
+				expMeta.Compaction.Sources = []ulid.ULID{expMeta.ULID}
+				expMeta.Thanos.Source = "upload"
+				assert.Equal(t, expMeta, gotMeta)
+			},
+		},
+		{
+			name: "valid request when different in-flight meta file exists in object storage",
+			setUp: func(t *testing.T, bkt *objstore.InMemBucket) metadata.Meta {
+				meta := validMeta
+				meta.MinTime -= 1000
+				meta.MaxTime -= 1000
+				metaJSON, err := json.Marshal(meta)
+				require.NoError(t, err)
+				ctx := context.Background()
+				require.NoError(t, bkt.Upload(ctx, uploadingMetaPath, bytes.NewReader(metaJSON)))
+
+				// Return meta file that differs from the one in bucket
+				return validMeta
+			},
+			verifyBucket: func(t *testing.T, bkt *objstore.InMemBucket) {
+				ctx := context.Background()
+				rdr, err := bkt.Get(ctx, uploadingMetaPath)
+				require.NoError(t, err)
+				t.Cleanup(func() {
+					_ = rdr.Close()
+				})
+				var gotMeta metadata.Meta
+				require.NoError(t, json.NewDecoder(rdr).Decode(&gotMeta))
+
+				expMeta := validMeta
+				expMeta.Compaction.Sources = []ulid.ULID{expMeta.ULID}
+				expMeta.Thanos.Source = "upload"
+				assert.Equal(t, expMeta, gotMeta)
+			},
+		},
+	}
+	for _, tc := range extraCases {
+		t.Run(tc.name, func(t *testing.T) {
+			bkt := objstore.NewInMemBucket()
+			meta := tc.setUp(t, bkt)
+			metaJSON, err := json.Marshal(meta)
+			require.NoError(t, err)
+
+			c := &MultitenantCompactor{
+				logger:       log.NewNopLogger(),
+				bucketClient: bkt,
+				cfgProvider:  newMockConfigProvider(),
+			}
+			r := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/upload/block/%s", blockID), bytes.NewReader(metaJSON))
+			r = r.WithContext(user.InjectOrgID(r.Context(), tenantID))
+			r = mux.SetURLVars(r, map[string]string{"block": blockID})
+			w := httptest.NewRecorder()
+			c.HandleBlockUpload(w, r)
+
+			resp := w.Result()
+			body, err := io.ReadAll(resp.Body)
+			require.NoError(t, err)
+			switch {
+			case tc.expBadRequest != "":
+				assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+				assert.Equal(t, fmt.Sprintf("%s\n", tc.expBadRequest), string(body))
+			case tc.expConflict != "":
+				assert.Equal(t, http.StatusConflict, resp.StatusCode)
+				assert.Equal(t, fmt.Sprintf("%s\n", tc.expConflict), string(body))
+			default:
+				assert.Equal(t, http.StatusOK, resp.StatusCode)
+				assert.Empty(t, string(body))
 			}
 		})
 	}
