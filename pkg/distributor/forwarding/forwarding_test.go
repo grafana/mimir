@@ -218,7 +218,7 @@ func TestForwardingSamplesWithDifferentErrorsWithPropagation(t *testing.T) {
 			if len(expectedErrorsByTarget) > 0 {
 				expectedMetrics.WriteString(`
 				# TYPE cortex_distributor_forward_errors_total counter
-				# HELP cortex_distributor_forward_errors_total The total number of errors that the distributor received from forwarding targets.`)
+				# HELP cortex_distributor_forward_errors_total The total number of errors that the distributor received from forwarding targets when trying to send samples to them.`)
 			}
 			for target, statusCodes := range expectedErrorsByTarget {
 				for statusCode, count := range statusCodes {
