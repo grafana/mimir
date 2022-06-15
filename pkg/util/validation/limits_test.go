@@ -515,13 +515,13 @@ func TestCustomTrackerConfigDeserialize(t *testing.T) {
 	for name, tc := range map[string]struct {
 		yaml string
 	}{
-		"testOldVersion": {
+		"testOldVersionCopiedToNewField": {
 			yaml: oldYaml,
 		},
 		"testNewVersion": {
 			yaml: newYaml,
 		},
-		"testBothVersionsOldTakesPrecedence": {
+		"testBothVersionsOldTakesPrecedenceInNewField": {
 			yaml: bothYaml,
 		},
 	} {
@@ -538,11 +538,8 @@ func TestCustomTrackerConfigDeserialize(t *testing.T) {
 }
 
 func TestCustomTrackerConfigSerialize(t *testing.T) {
-	config, err := activeseries.NewCustomTrackersConfig(map[string]string{"baz": `{foo="bar"}`})
-	require.NoError(t, err, "creating expected config")
 	limits := Limits{}
-	limits.ActiveSeriesCustomTrackersConfigOld = config
 	out, err := yaml.Marshal(limits)
 	require.NoError(t, err, "failed to serialize limits")
-	assert.False(t, strings.Contains(string(out), "active_series_custom_trackers_config"))
+	assert.False(t, strings.Contains(string(out), "active_series_custom_trackers_config"), "serialized string should not contain old name of the config")
 }
