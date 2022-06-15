@@ -536,10 +536,3 @@ func TestCustomTrackerConfigDeserialize(t *testing.T) {
 		})
 	}
 }
-
-func TestCustomTrackerConfigSerialize(t *testing.T) {
-	limits := Limits{}
-	out, err := yaml.Marshal(limits)
-	require.NoError(t, err, "failed to serialize limits")
-	assert.False(t, strings.Contains(string(out), "active_series_custom_trackers_config"), "serialized string should not contain old name of the config")
-}
