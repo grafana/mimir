@@ -30,17 +30,20 @@ global:
   dnsNamespace: kube-system
   clusterDomain: cluster.local
 
-  # -- Common environment variables to add to all PODs directly managed by this chart (mimir services, nginx).
+  # -- Common environment variables to add to all pods directly managed by this chart.
+  # scope: admin-api, alertmanager, compactor, distributor, gateway, ingester, nginx, overrides-exporter, querier, query-frontend, ruler, store-gateway, tokengen
   extraEnv: []
 
-  # -- Common source of environment injections to add to all PODs directly managed by this chart (mimir services, nginx).
+  # -- Common source of environment injections to add to all pods directly managed by this chart.
+  # scope: admin-api, alertmanager, compactor, distributor, gateway, ingester, nginx, overrides-exporter, querier, query-frontend, ruler, store-gateway, tokengen
   # For example to inject values from a Secret, use:
   # extraEnvFrom:
   #   - secretRef:
   #      name: mysecret
   extraEnvFrom: []
 
-  # -- POD annotations for all PODs directly managed by this chart (mimir services, nginx). Useable for example to associate a version to 'global.extraEnv' and 'global.extraEnvFrom' and trigger a restart of the affected services.
+  # -- Pod annotations for all pods directly managed by this chart. Usable for example to associate a version to 'global.extraEnv' and 'global.extraEnvFrom' and trigger a restart of the affected services.
+  # scope: admin-api, alertmanager, compactor, distributor, gateway, ingester, nginx, overrides-exporter, querier, query-frontend, ruler, store-gateway, tokengen
   podAnnotations: {}
 
 serviceAccount:
