@@ -91,6 +91,8 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 	}
 
 	verifyUpload := func(t *testing.T, bkt *bucket.ClientMock, labels map[string]string) {
+		t.Helper()
+
 		expMeta := validMeta
 		expMeta.Compaction.Parents = nil
 		expMeta.Compaction.Sources = []ulid.ULID{expMeta.ULID}
@@ -547,6 +549,29 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 		})
 	}
 
+	downloadMeta := func(t *testing.T, bkt *objstore.InMemBucket, pth string) metadata.Meta {
+		t.Helper()
+
+		ctx := context.Background()
+		rdr, err := bkt.Get(ctx, pth)
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			_ = rdr.Close()
+		})
+		var gotMeta metadata.Meta
+		require.NoError(t, json.NewDecoder(rdr).Decode(&gotMeta))
+		return gotMeta
+	}
+
+	uploadMeta := func(t *testing.T, bkt *objstore.InMemBucket, pth string, meta metadata.Meta) {
+		t.Helper()
+
+		buf := bytes.NewBuffer(nil)
+		require.NoError(t, json.NewEncoder(buf).Encode(meta))
+		ctx := context.Background()
+		require.NoError(t, bkt.Upload(ctx, pth, buf))
+	}
+
 	// Additional test cases using an in-memory bucket for state testing
 	extraCases := []struct {
 		name          string
@@ -558,42 +583,20 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 		{
 			name: "valid request when both in-flight meta file and complete meta file exist in object storage",
 			setUp: func(t *testing.T, bkt *objstore.InMemBucket) metadata.Meta {
-				metaJSON, err := json.Marshal(validMeta)
-				require.NoError(t, err)
-				ctx := context.Background()
-				require.NoError(t, bkt.Upload(ctx, uploadingMetaPath, bytes.NewReader(metaJSON)))
-				require.NoError(t, bkt.Upload(ctx, metaPath, bytes.NewReader(metaJSON)))
-
+				uploadMeta(t, bkt, uploadingMetaPath, validMeta)
+				uploadMeta(t, bkt, metaPath, validMeta)
 				return validMeta
 			},
 			verifyBucket: func(t *testing.T, bkt *objstore.InMemBucket) {
-				ctx := context.Background()
-				rdr, err := bkt.Get(ctx, uploadingMetaPath)
-				require.NoError(t, err)
-				t.Cleanup(func() {
-					_ = rdr.Close()
-				})
-				var gotMeta metadata.Meta
-				require.NoError(t, json.NewDecoder(rdr).Decode(&gotMeta))
-				assert.Equal(t, validMeta, gotMeta)
-
-				rdr, err = bkt.Get(ctx, metaPath)
-				require.NoError(t, err)
-				t.Cleanup(func() {
-					_ = rdr.Close()
-				})
-				require.NoError(t, json.NewDecoder(rdr).Decode(&gotMeta))
-				assert.Equal(t, validMeta, gotMeta)
+				assert.Equal(t, validMeta, downloadMeta(t, bkt, uploadingMetaPath))
+				assert.Equal(t, validMeta, downloadMeta(t, bkt, metaPath))
 			},
 			expConflict: "block already exists in object storage",
 		},
 		{
 			name: "invalid request when in-flight meta file exists in object storage",
 			setUp: func(t *testing.T, bkt *objstore.InMemBucket) metadata.Meta {
-				validMetaJSON, err := json.Marshal(validMeta)
-				require.NoError(t, err)
-				ctx := context.Background()
-				require.NoError(t, bkt.Upload(ctx, uploadingMetaPath, bytes.NewReader(validMetaJSON)))
+				uploadMeta(t, bkt, uploadingMetaPath, validMeta)
 
 				meta := validMeta
 				// Invalid version
@@ -601,42 +604,21 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 				return meta
 			},
 			verifyBucket: func(t *testing.T, bkt *objstore.InMemBucket) {
-				ctx := context.Background()
-				rdr, err := bkt.Get(ctx, uploadingMetaPath)
-				require.NoError(t, err)
-				t.Cleanup(func() {
-					_ = rdr.Close()
-				})
-				var gotMeta metadata.Meta
-				require.NoError(t, json.NewDecoder(rdr).Decode(&gotMeta))
-				assert.Equal(t, validMeta, gotMeta)
+				assert.Equal(t, validMeta, downloadMeta(t, bkt, uploadingMetaPath))
 			},
 			expBadRequest: fmt.Sprintf("version must be %d", metadata.TSDBVersion1),
 		},
 		{
 			name: "valid request when same in-flight meta file exists in object storage",
 			setUp: func(t *testing.T, bkt *objstore.InMemBucket) metadata.Meta {
-				metaJSON, err := json.Marshal(validMeta)
-				require.NoError(t, err)
-				ctx := context.Background()
-				require.NoError(t, bkt.Upload(ctx, uploadingMetaPath, bytes.NewReader(metaJSON)))
-
+				uploadMeta(t, bkt, uploadingMetaPath, validMeta)
 				return validMeta
 			},
 			verifyBucket: func(t *testing.T, bkt *objstore.InMemBucket) {
-				ctx := context.Background()
-				rdr, err := bkt.Get(ctx, uploadingMetaPath)
-				require.NoError(t, err)
-				t.Cleanup(func() {
-					_ = rdr.Close()
-				})
-				var gotMeta metadata.Meta
-				require.NoError(t, json.NewDecoder(rdr).Decode(&gotMeta))
-
 				expMeta := validMeta
 				expMeta.Compaction.Sources = []ulid.ULID{expMeta.ULID}
 				expMeta.Thanos.Source = "upload"
-				assert.Equal(t, expMeta, gotMeta)
+				assert.Equal(t, expMeta, downloadMeta(t, bkt, uploadingMetaPath))
 			},
 		},
 		{
@@ -645,28 +627,16 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 				meta := validMeta
 				meta.MinTime -= 1000
 				meta.MaxTime -= 1000
-				metaJSON, err := json.Marshal(meta)
-				require.NoError(t, err)
-				ctx := context.Background()
-				require.NoError(t, bkt.Upload(ctx, uploadingMetaPath, bytes.NewReader(metaJSON)))
+				uploadMeta(t, bkt, uploadingMetaPath, meta)
 
 				// Return meta file that differs from the one in bucket
 				return validMeta
 			},
 			verifyBucket: func(t *testing.T, bkt *objstore.InMemBucket) {
-				ctx := context.Background()
-				rdr, err := bkt.Get(ctx, uploadingMetaPath)
-				require.NoError(t, err)
-				t.Cleanup(func() {
-					_ = rdr.Close()
-				})
-				var gotMeta metadata.Meta
-				require.NoError(t, json.NewDecoder(rdr).Decode(&gotMeta))
-
 				expMeta := validMeta
 				expMeta.Compaction.Sources = []ulid.ULID{expMeta.ULID}
 				expMeta.Thanos.Source = "upload"
-				assert.Equal(t, expMeta, gotMeta)
+				assert.Equal(t, expMeta, downloadMeta(t, bkt, uploadingMetaPath))
 			},
 		},
 	}
