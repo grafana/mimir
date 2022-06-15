@@ -85,7 +85,7 @@ spec:
             {{- if  .Values.admin_api.containerSecurityContext }}{{ if .Values.admin_api.containerSecurityContext.privileged }}
             privileged: {{ .Values.admin_api.containerSecurityContext.privileged }}
             {{- end }}{{ end }}     
-            env:
+          env:
             {{- with .Values.global.extraEnv }}
               {{ toYaml . | nindent 12 }}
             {{- end }}
