@@ -362,5 +362,5 @@ func getMaxTime(blocks []*metadata.Meta) int64 {
 // defaultGroupKeyWithoutShardID returns the default group key excluding ShardIDLabelName
 // when computing it.
 func defaultGroupKeyWithoutShardID(meta metadata.Thanos) string {
-	return defaultGroupKey(meta.Downsample.Resolution, labels.FromMap(meta.Labels).WithoutLabels(mimir_tsdb.CompactorShardIDExternalLabel))
+	return defaultGroupKey(meta.Downsample.Resolution, labels.NewBuilder(labels.FromMap(meta.Labels)).Del(mimir_tsdb.CompactorShardIDExternalLabel).Labels())
 }
