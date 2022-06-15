@@ -18,6 +18,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/time/rate"
 	"gopkg.in/yaml.v2"
+
+	"github.com/grafana/mimir/pkg/ingester/activeseries"
 )
 
 // mockTenantLimits exposes per-tenant limits based on a provided map
@@ -490,66 +492,57 @@ testuser:
 	}
 }
 
-// TODO remove this with Mimir version 2.3
-func TestCustomTrackersConfigRename(t *testing.T) {
+func TestCustomTrackerConfigDeserialize(t *testing.T) {
 	oldYaml := `
     user:
         active_series_custom_trackers_config:
             baz: '{foo="bar"}'
     `
+	expectedConfig, err := activeseries.NewCustomTrackersConfig(map[string]string{"baz": `{foo="bar"}`})
+	require.NoError(t, err, "creating expected config")
 	newYaml := `
     user:
         active_series_custom_trackers:
             baz: '{foo="bar"}'
     `
-
-	t.Run("testOldVersion", func(t *testing.T) {
-		limits := Limits{}
-		overrides := map[string]*Limits{}
-		err := yaml.Unmarshal([]byte(oldYaml), &overrides)
-		require.NoError(t, err, "parsing overrides")
-
-		tl := newMockTenantLimits(overrides)
-
-		ov, err := NewOverrides(limits, tl)
-		require.NoError(t, err)
-
-		SetDefaultLimitsForYAMLUnmarshalling(Limits{})
-
-		assert.False(t, ov.ActiveSeriesCustomTrackersConfig("user").Empty())
-	})
-
-	t.Run("testNewVersion", func(t *testing.T) {
-		limits := Limits{}
-		overrides := map[string]*Limits{}
-		err := yaml.Unmarshal([]byte(newYaml), &overrides)
-		require.NoError(t, err, "parsing overrides")
-
-		tl := newMockTenantLimits(overrides)
-
-		ov, err := NewOverrides(limits, tl)
-		require.NoError(t, err)
-
-		SetDefaultLimitsForYAMLUnmarshalling(Limits{})
-
-		assert.False(t, ov.ActiveSeriesCustomTrackersConfig("user").Empty())
-	})
-}
-
-// TODO remove this with Mimir version 2.3
-func TestCustomTrackerOldVersionShouldSerializeToNewOne(t *testing.T) {
-	oldYaml := `
+	bothYaml := `
     user:
+        active_series_custom_trackers:
+            baznew: '{foonew="barnew"}'
         active_series_custom_trackers_config:
             baz: '{foo="bar"}'
     `
-	t.Run("testOldVersion", func(t *testing.T) {
-		overrides := map[string]*Limits{}
-		err := yaml.Unmarshal([]byte(oldYaml), &overrides)
-		require.NoError(t, err, "parsing overrides")
+	for name, tc := range map[string]struct {
+		yaml string
+	}{
+		"testOldVersion": {
+			yaml: oldYaml,
+		},
+		"testNewVersion": {
+			yaml: newYaml,
+		},
+		"testBothVersionsOldTakesPrecedence": {
+			yaml: bothYaml,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			overrides := map[string]*Limits{}
+			err := yaml.Unmarshal([]byte(tc.yaml), &overrides)
+			require.NoError(t, err, "parsing overrides")
 
-		assert.True(t, overrides["user"].ActiveSeriesCustomTrackersConfigOld.Empty())
-		assert.False(t, overrides["user"].ActiveSeriesCustomTrackersConfig.Empty())
-	})
+			assert.True(t, overrides["user"].ActiveSeriesCustomTrackersConfigOld.Empty())
+			assert.False(t, overrides["user"].ActiveSeriesCustomTrackersConfig.Empty())
+			assert.Equal(t, expectedConfig.String(), overrides["user"].ActiveSeriesCustomTrackersConfig.String())
+		})
+	}
+}
 
+func TestCustomTrackerConfigSerialize(t *testing.T) {
+	config, err := activeseries.NewCustomTrackersConfig(map[string]string{"baz": `{foo="bar"}`})
+	require.NoError(t, err, "creating expected config")
+	limits := Limits{}
+	limits.ActiveSeriesCustomTrackersConfigOld = config
+	out, err := yaml.Marshal(limits)
+	require.NoError(t, err, "failed to serialize limits")
+	assert.False(t, strings.Contains(string(out), "active_series_custom_trackers_config"))
 }

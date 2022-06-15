@@ -92,8 +92,8 @@ type Limits struct {
 	// Exemplars
 	MaxGlobalExemplarsPerUser int `yaml:"max_global_exemplars_per_user" json:"max_global_exemplars_per_user" category:"experimental"`
 	// Active series custom trackers
-	// TODO remove this with Mimir version 2.3
-	ActiveSeriesCustomTrackersConfigOld activeseries.CustomTrackersConfig `yaml:"active_series_custom_trackers_config" json:"active_series_custom_trackers_config" doc:"hidden"`
+	// TODO remove this with Mimir version 2.4
+	ActiveSeriesCustomTrackersConfigOld activeseries.CustomTrackersConfig `yaml:"active_series_custom_trackers_config,omitempty" json:"active_series_custom_trackers_config,omitempty" doc:"hidden"`
 	ActiveSeriesCustomTrackersConfig    activeseries.CustomTrackersConfig `yaml:"active_series_custom_trackers" json:"active_series_custom_trackers" doc:"description=Additional custom trackers for active metrics. If there are active series matching a provided matcher (map value), the count will be exposed in the custom trackers metric labeled using the tracker name (map key). Zero valued counts are not exposed (and removed when they go back to zero)." category:"advanced"`
 
 	// Querier enforced limits.
@@ -239,8 +239,7 @@ func (l *Limits) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		l.copyNotificationIntegrationLimits(defaultLimits.NotificationRateLimitPerIntegration)
 	}
 	type plain Limits
-	// TODO Revert back from Mimir version 2.3
-	// return unmarshal((*plain)(l))
+
 	err := unmarshal((*plain)(l))
 	if err != nil {
 		return err
@@ -268,8 +267,6 @@ func (l *Limits) UnmarshalJSON(data []byte) error {
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
 
-	// TODO Revert back from Mimir version 2.3
-	// return dec.Decode((*plain)(l))
 	err := dec.Decode((*plain)(l))
 	if err != nil {
 		return err
