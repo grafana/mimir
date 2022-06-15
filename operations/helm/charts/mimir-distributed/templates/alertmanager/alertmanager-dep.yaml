@@ -85,6 +85,7 @@ spec:
             {{- toYaml .Values.alertmanager.resources | nindent 12 }}
           securityContext:
             readOnlyRootFilesystem: true
+            privileged:  {{ .Values.alertmanager.containerSecurityContext.privileged }}
           env:
             {{- with .Values.global.extraEnv }}
               {{- toYaml . | nindent 12 }}

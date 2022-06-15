@@ -74,6 +74,7 @@ spec:
             {{- toYaml .Values.gateway.resources | nindent 12 }}
           securityContext:
             readOnlyRootFilesystem: true
+            privileged:  {{ .Values.gateway.containerSecurityContext.privileged }}
           env:
             {{- with .Values.global.extraEnv }}
               {{ toYaml . | nindent 12 }}

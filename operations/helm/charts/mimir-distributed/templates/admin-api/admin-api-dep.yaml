@@ -82,6 +82,7 @@ spec:
             {{- toYaml .Values.admin_api.resources | nindent 12 }}
           securityContext:
             readOnlyRootFilesystem: true
+            privileged:  {{ .Values.admin-api.containerSecurityContext.privileged }}
           env:
             {{- with .Values.global.extraEnv }}
               {{ toYaml . | nindent 12 }}
