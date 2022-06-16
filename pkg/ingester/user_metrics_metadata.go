@@ -93,6 +93,7 @@ func (mm *userMetricsMetadata) toClientMetadata() []*mimirpb.MetricMetadata {
 	r := make([]*mimirpb.MetricMetadata, 0, len(mm.metricToMetadata))
 	for _, set := range mm.metricToMetadata {
 		for m := range set {
+			m := m
 			r = append(r, &m)
 		}
 	}
