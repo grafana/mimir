@@ -14,6 +14,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 ## main / unreleased
 
 * [CHANGE] Change default value for `blocks_storage.bucket_store.chunks_cache.memcached.timeout` to `450ms` to increase use of cached data. #2035
+* [ENHANCEMENT] Set the flag `ingester.ring.instance-availability-zone` to `zone-default` for ingesters. This is the first step of introducing multi-zone ingesters. #2114
 * [ENHANCEMENT] Add `mimir.structuredConfig` for adding and modifing `mimir.config` values after template evaulation. It can be used to alter individual values in the configuration and it's structured YAML instead of text. #2100
 * [ENHANCEMENT] Add `global.podAnnotations` which can add POD annotations to PODs directly controlled by this chart (mimir services, nginx). #2099
 * [ENHANCEMENT] Introduce the value `configStorageType` which can be either `ConfigMap` or `Secret`. This value sets where to store the Mimir/GEM application configuration. When using the value `ConfigMap`, make sure that any secrets, passwords, keys are injected from the environment from a separate `Secret`. See also: #2031, #2017. #2089
