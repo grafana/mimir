@@ -43,10 +43,8 @@ const (
 )
 
 const (
-	blocksMarkedForDeletionName        = "cortex_compactor_blocks_marked_for_deletion_total"
-	blocksMarkedForDeletionHelp        = "Total number of blocks marked for deletion in compactor."
-	partialBlocksMarkedForDeletionName = "cortex_compactor_partial_blocks_marked_for_deletion_total"
-	partialBlocksMarkedForDeletionHelp = "Total number of partial blocks marked for deletion in compactor."
+	blocksMarkedForDeletionName = "cortex_compactor_blocks_marked_for_deletion_total"
+	blocksMarkedForDeletionHelp = "Total number of blocks marked for deletion in compactor."
 
 	// PartialUploadThresholdAge is a time after partial block is assumed aborted and ready to be cleaned.
 	// Keep it long as it is based on block creation time not upload start time.

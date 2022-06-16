@@ -108,8 +108,8 @@ func NewBlocksCleaner(cfg BlocksCleanerConfig, bucketClient objstore.Bucket, own
 			ConstLabels: prometheus.Labels{"reason": "retention"},
 		}),
 		partialBlocksMarkedForDeletion: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Name: partialBlocksMarkedForDeletionName,
-			Help: partialBlocksMarkedForDeletionHelp,
+			Name: "cortex_compactor_partial_blocks_marked_for_deletion_total",
+			Help: "Total number of partial blocks marked for deletion in compactor.",
 		}),
 
 		// The following metrics don't have the "cortex_compactor" prefix because not strictly related to
@@ -355,8 +355,11 @@ func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string) (returnErr
 	// error if the cleanup of partial blocks fail.
 	if len(partials) > 0 {
 		delay := c.cfgProvider.CompactorPartialBlockDeletionDelay(userID)
-		//c.applyUserPartialBlockDelay(ctx, idx, delay, userBucket, userLogger)
-		c.cleanUserPartialBlocks(ctx, partials, idx, delay, userBucket, userLogger)
+		var partialDeletionCutoffTime time.Time
+		if delay > 0 {
+			partialDeletionCutoffTime = time.Now().Add(-delay)
+		}
+		c.cleanUserPartialBlocks(ctx, partials, idx, partialDeletionCutoffTime, userBucket, userLogger)
 	}
 
 	// Upload the updated index to the storage.
@@ -408,7 +411,7 @@ func (c *BlocksCleaner) deleteBlocksMarkedForDeletion(ctx context.Context, idx *
 }
 
 // cleanUserPartialBlocks deletes partial blocks which are safe to be deleted. The provided index is updated accordingly.
-func (c *BlocksCleaner) cleanUserPartialBlocks(ctx context.Context, partials map[ulid.ULID]error, idx *bucketindex.Index, delay time.Duration, userBucket objstore.InstrumentedBucket, userLogger log.Logger) {
+func (c *BlocksCleaner) cleanUserPartialBlocks(ctx context.Context, partials map[ulid.ULID]error, idx *bucketindex.Index, partialDeletionCutoffTime time.Time, userBucket objstore.InstrumentedBucket, userLogger log.Logger) {
 	// Collect all blocks with missing meta.json into buffered channel.
 	blocks := make([]ulid.ULID, 0, len(partials))
 
@@ -417,25 +420,12 @@ func (c *BlocksCleaner) cleanUserPartialBlocks(ctx context.Context, partials map
 		if !errors.Is(blockErr, bucketindex.ErrBlockMetaNotFound) {
 			continue
 		}
-		// Check if partial block is older than delay period, and mark for deletion if necessary
-		if delay > 0 {
-			lastModified, err := findLastModifiedTimeForBlock(ctx, blockID, userBucket, userLogger)
-			if err != nil {
-				level.Warn(userLogger).Log("msg", "failed to find last modified time for partial block", "block", blockID)
-			}
-			if !lastModified.IsZero() && lastModified.Before(time.Now().Add(-delay)) {
-				level.Info(userLogger).Log("msg", "applied partial block delay: marking block for deletion", "block", blockID, "last modified", lastModified)
-				if err := block.MarkForDeletion(ctx, userLogger, userBucket, blockID, fmt.Sprintf("block exceeding delay of %v", delay), c.blocksMarkedForDeletion); err != nil {
-					level.Warn(userLogger).Log("msg", "failed to mark block for deletion", "block", blockID, "err", err)
-				} else {
-					c.partialBlocksMarkedForDeletion.Inc()
-				}
-			}
-		}
 		blocks = append(blocks, blockID)
 	}
 
 	var mu sync.Mutex
+	var partialMarkMutex sync.Mutex
+	var partialsToMark []ulid.ULID
 
 	// We don't want to return errors from our function, as that would stop ForEach loop early.
 	_ = concurrency.ForEachJob(ctx, len(blocks), c.cfg.DeleteBlocksConcurrency, func(ctx context.Context, jobIdx int) error {
@@ -444,6 +434,9 @@ func (c *BlocksCleaner) cleanUserPartialBlocks(ctx context.Context, partials map
 		// We can safely delete only partial blocks with a deletion mark.
 		err := metadata.ReadMarker(ctx, userLogger, userBucket, blockID.String(), &metadata.DeletionMark{})
 		if errors.Is(err, metadata.ErrorMarkerNotFound) {
+			partialMarkMutex.Lock()
+			partialsToMark = append(partialsToMark, blockID)
+			partialMarkMutex.Unlock()
 			return nil
 		}
 		if err != nil {
@@ -462,12 +455,31 @@ func (c *BlocksCleaner) cleanUserPartialBlocks(ctx context.Context, partials map
 		// Remove the block from the bucket index too.
 		mu.Lock()
 		idx.RemoveBlock(blockID)
+		delete(partials, blockID)
 		mu.Unlock()
 
 		c.blocksCleanedTotal.Inc()
 		level.Info(userLogger).Log("msg", "deleted partial block marked for deletion", "block", blockID)
 		return nil
 	})
+
+	// Check if partial block is older than delay period, and mark for deletion
+	for _, blockID := range partialsToMark {
+		if !partialDeletionCutoffTime.IsZero() {
+			lastModified, err := findLastModifiedTimeForBlock(ctx, blockID, userBucket, userLogger)
+			if err != nil {
+				level.Warn(userLogger).Log("msg", "failed to find last modified time for partial block", "block", blockID)
+			}
+			if !lastModified.IsZero() && lastModified.Before(partialDeletionCutoffTime) {
+				level.Info(userLogger).Log("msg", "stale partial block found: marking block for deletion", "block", blockID, "last modified", lastModified)
+				if err := block.MarkForDeletion(ctx, userLogger, userBucket, blockID, "stale partial block", c.blocksMarkedForDeletion); err != nil {
+					level.Warn(userLogger).Log("msg", "failed to mark partial block for deletion", "block", blockID, "err", err)
+				} else {
+					c.partialBlocksMarkedForDeletion.Inc()
+				}
+			}
+		}
+	}
 }
 
 // applyUserRetentionPeriod marks blocks for deletion which have aged past the retention period.
@@ -516,27 +528,12 @@ func listBlocksOutsideRetentionPeriod(idx *bucketindex.Index, threshold time.Tim
 // findLastModifiedTimeForBlock finds the most recent modification time for all files in a block
 func findLastModifiedTimeForBlock(ctx context.Context, blockID ulid.ULID, userBucket objstore.InstrumentedBucket, userLogger log.Logger) (time.Time, error) {
 	var modifiedTime time.Time
-	err := userBucket.Iter(ctx, "", func(name string) error {
-		id, ok := block.IsBlockDir(name)
-		if id != blockID || !ok {
-			return nil
-		}
+	blockName := blockID.String()
+	err := userBucket.Iter(ctx, blockName, func(name string) error {
 		attrib, err := userBucket.Attributes(ctx, name)
 		if err != nil {
-			level.Warn(userLogger).Log("msg", "couldn't get attribute for block directory", "block", id)
+			level.Warn(userLogger).Log("msg", "couldn't get attribute for file in block", "block", blockName, "file", name)
 		} else {
-			if attrib.LastModified.After(modifiedTime) {
-				modifiedTime = attrib.LastModified
-			}
-		}
-		// check the modification time of each segment file in the block
-		files := block.GetSegmentFiles(name)
-		for _, fname := range files {
-			attrib, err := userBucket.Attributes(ctx, fname)
-			if err != nil {
-				level.Warn(userLogger).Log("msg", "couldn't get attribute for file in block", "block", id, "file", fname)
-				continue
-			}
 			if attrib.LastModified.After(modifiedTime) {
 				modifiedTime = attrib.LastModified
 			}
