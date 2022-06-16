@@ -41,9 +41,9 @@ var rePath = regexp.MustCompile(`^(index|chunks/\d{6})$`)
 // The query parameter uploadComplete (true or false, default false) controls whether the
 // upload should be completed or not.
 //
-// Starting the uploading of a block means to upload meta file and verify that the upload can go ahead.
-// In practice this means to check that the (complete) block isn't already in block storage,
-// and that meta file is valid.
+// Starting the uploading of a block means to upload a meta file and verify that the upload can
+// go ahead. In practice this means to check that the (complete) block isn't already in block
+// storage, and that the meta file is valid.
 func (c *MultitenantCompactor) HandleBlockUpload(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	blockID := vars["block"]
@@ -284,7 +284,7 @@ func (c *MultitenantCompactor) completeBlockUpload(ctx context.Context, r *http.
 		return err
 	}
 
-	if err := userBkt.Delete(ctx, path.Join(blockID.String(), uploadingMetaFilename)); err != nil {
+	if err := userBkt.Delete(ctx, uploadingMetaPath); err != nil {
 		level.Warn(logger).Log("msg", fmt.Sprintf(
 			"failed to delete %s from block in object storage", uploadingMetaFilename), "err", err)
 		return nil
