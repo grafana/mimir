@@ -87,7 +87,7 @@ The following features are currently experimental:
   - `-blocks-storage.storage-prefix`
   - `-ruler-storage.storage-prefix`
 - Compactor
-  - HTTP API for uploading TSDB blocks 
+  - HTTP API for uploading TSDB blocks
 
 ## Deprecated features
 
