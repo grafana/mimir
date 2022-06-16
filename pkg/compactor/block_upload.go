@@ -76,7 +76,7 @@ func (c *MultitenantCompactor) HandleBlockUpload(w http.ResponseWriter, r *http.
 	}
 
 	if shouldComplete {
-		err = c.completeBlockUpload(ctx, r, logger, userBkt, tenantID, bULID)
+		err = c.completeBlockUpload(ctx, r, logger, userBkt, bULID)
 	} else {
 		err = c.createBlockUpload(ctx, r, logger, userBkt, tenantID, bULID)
 	}
@@ -132,7 +132,7 @@ func (c *MultitenantCompactor) createBlockUpload(ctx context.Context, r *http.Re
 		}
 	}
 
-	if msg := c.sanitizeMeta(logger, tenantID, blockID, &meta); msg != "" {
+	if msg := c.sanitizeMeta(logger, blockID, &meta); msg != "" {
 		return httpError{
 			message:    msg,
 			statusCode: http.StatusBadRequest,
@@ -254,7 +254,7 @@ func decodeMeta(r io.Reader, name string) (metadata.Meta, error) {
 }
 
 func (c *MultitenantCompactor) completeBlockUpload(ctx context.Context, r *http.Request,
-	logger log.Logger, userBkt objstore.Bucket, tenantID string, blockID ulid.ULID) error {
+	logger log.Logger, userBkt objstore.Bucket, blockID ulid.ULID) error {
 	level.Debug(logger).Log("msg", "received request to complete block upload", "content_length", r.ContentLength)
 
 	uploadingMetaPath := path.Join(blockID.String(), uploadingMetaFilename)
@@ -296,8 +296,7 @@ func (c *MultitenantCompactor) completeBlockUpload(ctx context.Context, r *http.
 
 // sanitizeMeta sanitizes and validates a metadata.Meta object. If a validation error occurs, an error
 // message gets returned, otherwise an empty string.
-func (c *MultitenantCompactor) sanitizeMeta(logger log.Logger, tenantID string, blockID ulid.ULID,
-	meta *metadata.Meta) string {
+func (c *MultitenantCompactor) sanitizeMeta(logger log.Logger, blockID ulid.ULID, meta *metadata.Meta) string {
 	meta.ULID = blockID
 
 	for l, v := range meta.Thanos.Labels {
