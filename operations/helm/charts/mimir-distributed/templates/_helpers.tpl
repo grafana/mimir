@@ -213,10 +213,13 @@ app.kubernetes.io/part-of: memberlist
 POD annotations
 */}}
 {{- define "mimir.podAnnotations" -}}
-{{- if .ctx.Values.useExternalConfig -}}
+{{- if .ctx.Values.useExternalConfig }}
 checksum/config: {{ .ctx.Values.externalConfigVersion }}
 {{- else -}}
 checksum/config: {{ include (print .ctx.Template.BasePath "/mimir-config.yaml") .ctx | sha256sum }}
+{{- end }}
+{{- with .ctx.Values.global.podAnnotations }}
+{{ toYaml . }}
 {{- end }}
 {{- if .component }}
 {{- $componentSection := .component | replace "-" "_" }}

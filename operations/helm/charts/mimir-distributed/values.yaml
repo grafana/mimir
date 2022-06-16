@@ -25,20 +25,26 @@ image:
   #   - myRegistryKeySecretName
 
 global:
-  # definitions to set up nginx resolver
+  # -- Definitions to set up nginx resolver
   dnsService: kube-dns
   dnsNamespace: kube-system
   clusterDomain: cluster.local
 
-  # Common environment variables to add to all PODs directly managed by this chart (mimir services, nginx). Doesn't include memcached or minio.
+  # -- Common environment variables to add to all pods directly managed by this chart.
+  # scope: admin-api, alertmanager, compactor, distributor, gateway, ingester, nginx, overrides-exporter, querier, query-frontend, ruler, store-gateway, tokengen
   extraEnv: []
 
-  # Common source of environment injections to add to all PODs directly managed by this chart (mimir services, nginx). Doesn't include memcached or minio.
+  # -- Common source of environment injections to add to all pods directly managed by this chart.
+  # scope: admin-api, alertmanager, compactor, distributor, gateway, ingester, nginx, overrides-exporter, querier, query-frontend, ruler, store-gateway, tokengen
   # For example to inject values from a Secret, use:
   # extraEnvFrom:
   #   - secretRef:
   #      name: mysecret
   extraEnvFrom: []
+
+  # -- Pod annotations for all pods directly managed by this chart. Usable for example to associate a version to 'global.extraEnv' and 'global.extraEnvFrom' and trigger a restart of the affected services.
+  # scope: admin-api, alertmanager, compactor, distributor, gateway, ingester, nginx, overrides-exporter, querier, query-frontend, ruler, store-gateway, tokengen
+  podAnnotations: {}
 
 serviceAccount:
   create: true

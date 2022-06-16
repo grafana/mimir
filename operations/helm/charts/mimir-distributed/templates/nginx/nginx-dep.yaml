@@ -23,6 +23,9 @@ spec:
     metadata:
       annotations:
         checksum/config: {{ include (print .Template.BasePath "/nginx/nginx-configmap.yaml") . | sha256sum }}
+        {{- with .Values.global.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
         {{- with .Values.nginx.podAnnotations }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
