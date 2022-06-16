@@ -33,6 +33,7 @@ spec:
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: query-frontend
       annotations:
+        minio-secret-version: "42"
     spec:
       serviceAccountName: test-oss-values-mimir
       securityContext:
@@ -76,6 +77,8 @@ spec:
             readOnlyRootFilesystem: true
           env:
           envFrom:
+            - secretRef:
+                name: mimir-minio-secret
       nodeSelector:
         {}
       affinity:

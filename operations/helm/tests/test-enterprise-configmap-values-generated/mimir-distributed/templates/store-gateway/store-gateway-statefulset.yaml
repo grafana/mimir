@@ -33,6 +33,7 @@ spec:
         app.kubernetes.io/component: store-gateway
         app.kubernetes.io/part-of: memberlist
       annotations:
+        minio-secret-version: "42"
     spec:
       serviceAccountName: test-enterprise-configmap-values-mimir
       securityContext:
@@ -111,3 +112,5 @@ spec:
             readOnlyRootFilesystem: true
           env:
           envFrom:
+            - secretRef:
+                name: mimir-minio-secret
