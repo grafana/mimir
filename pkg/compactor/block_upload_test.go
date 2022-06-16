@@ -982,6 +982,12 @@ func TestMultitenantCompactor_UploadBlockFile(t *testing.T) {
 	}
 }
 
+func setUpGet(bkt *bucket.ClientMock, pth string, content []byte, err error) {
+	bkt.On("Get", mock.Anything, pth).Return(func(_ context.Context, _ string) (io.ReadCloser, error) {
+		return io.NopCloser(bytes.NewReader(content)), err
+	})
+}
+
 // Test MultitenantCompactor.HandleBlockUpload with uploadComplete=true.
 func TestMultitenantCompactor_HandleBlockUpload_Complete(t *testing.T) {
 	const tenantID = "test"
@@ -1013,9 +1019,7 @@ func TestMultitenantCompactor_HandleBlockUpload_Complete(t *testing.T) {
 		metaJSON, err := json.Marshal(validMeta)
 		require.NoError(t, err)
 		bkt.MockExists(metaPath, false, nil)
-		bkt.On("Get", mock.Anything, uploadingMetaPath).Return(func(_ context.Context, _ string) (io.ReadCloser, error) {
-			return io.NopCloser(bytes.NewReader(metaJSON)), nil
-		})
+		setUpGet(bkt, uploadingMetaPath, metaJSON, nil)
 		bkt.MockUpload(metaPath, nil)
 		bkt.MockDelete(uploadingMetaPath, nil)
 	}
@@ -1071,7 +1075,7 @@ func TestMultitenantCompactor_HandleBlockUpload_Complete(t *testing.T) {
 			blockID:  blockID,
 			setUpBucketMock: func(bkt *bucket.ClientMock) {
 				bkt.MockExists(metaPath, false, nil)
-				bkt.On("Get", mock.Anything, uploadingMetaPath).Return(nil, bucket.ErrObjectDoesNotExist)
+				setUpGet(bkt, uploadingMetaPath, nil, bucket.ErrObjectDoesNotExist)
 			},
 			expNotFound: fmt.Sprintf("upload of block %s not started yet", blockID),
 		},
@@ -1081,7 +1085,7 @@ func TestMultitenantCompactor_HandleBlockUpload_Complete(t *testing.T) {
 			blockID:  blockID,
 			setUpBucketMock: func(bkt *bucket.ClientMock) {
 				bkt.MockExists(metaPath, false, nil)
-				bkt.On("Get", mock.Anything, uploadingMetaPath).Return(nil, fmt.Errorf("test"))
+				setUpGet(bkt, uploadingMetaPath, nil, fmt.Errorf("test"))
 			},
 			expInternalServerError: true,
 		},
@@ -1091,8 +1095,7 @@ func TestMultitenantCompactor_HandleBlockUpload_Complete(t *testing.T) {
 			blockID:  blockID,
 			setUpBucketMock: func(bkt *bucket.ClientMock) {
 				bkt.MockExists(metaPath, false, nil)
-				bkt.On("Get", mock.Anything, uploadingMetaPath).Return(
-					io.NopCloser(strings.NewReader("")), nil)
+				setUpGet(bkt, uploadingMetaPath, []byte("{"), nil)
 			},
 			expInternalServerError: true,
 		},
@@ -1104,9 +1107,7 @@ func TestMultitenantCompactor_HandleBlockUpload_Complete(t *testing.T) {
 				bkt.MockExists(metaPath, false, nil)
 				metaJSON, err := json.Marshal(validMeta)
 				require.NoError(t, err)
-				bkt.On("Get", mock.Anything, uploadingMetaPath).Return(func(_ context.Context, _ string) (io.ReadCloser, error) {
-					return io.NopCloser(bytes.NewReader(metaJSON)), nil
-				})
+				setUpGet(bkt, uploadingMetaPath, metaJSON, nil)
 				bkt.MockUpload(metaPath, fmt.Errorf("test"))
 			},
 			expInternalServerError: true,
@@ -1119,9 +1120,7 @@ func TestMultitenantCompactor_HandleBlockUpload_Complete(t *testing.T) {
 				bkt.MockExists(metaPath, false, nil)
 				metaJSON, err := json.Marshal(validMeta)
 				require.NoError(t, err)
-				bkt.On("Get", mock.Anything, uploadingMetaPath).Return(func(_ context.Context, _ string) (io.ReadCloser, error) {
-					return io.NopCloser(bytes.NewReader(metaJSON)), nil
-				})
+				setUpGet(bkt, uploadingMetaPath, metaJSON, nil)
 				bkt.MockUpload(metaPath, nil)
 				bkt.MockDelete(uploadingMetaPath, fmt.Errorf("test"))
 			},
