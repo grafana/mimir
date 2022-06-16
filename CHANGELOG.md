@@ -88,6 +88,7 @@
 * [ENHANCEMENT] Explain the runtime override of active series matchers. #1868
 * [ENHANCEMENT] Clarify "Set rule group" API specification. #1869
 * [BUGFIX] Fixed ruler configuration used in the getting started guide. #2052
+* [BUGFIX] Fixed Mimir Alertmanager datasource in Grafana used by "Play with Grafana Mimir" tutorial. #2115
 
 ## 2.1.0
 ### Grafana Mimir
