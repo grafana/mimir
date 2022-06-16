@@ -12,122 +12,67 @@ metadata:
 data:
   mimir.yaml: |
     
-    
-    
-    limits: {}
-    
     activity_tracker:
       filepath: /data/metrics-activity.log
-    
-    alertmanager:
-      data_dir: '/data'
-      enable_api: true
-      external_url: '/alertmanager'
-    alertmanager_storage:
-      backend: s3
-      s3:
-        endpoint: test-enterprise-configmap-values-minio.citestns.svc:9000
-        bucket_name: mimir-ruler
-        access_key_id: grafana-mimir
-        secret_access_key: supersecret
-        insecure: true
-    
-    frontend_worker:
-      frontend_address: test-enterprise-configmap-values-mimir-query-frontend-headless.citestns.svc:9095
-    
-    ruler:
-      enable_api: true
-      rule_path: '/data'
-      alertmanager_url: dnssrvnoa+http://_http-metrics._tcp.test-enterprise-configmap-values-mimir-alertmanager-headless.citestns.svc.cluster.local/alertmanager
-    
-    server:
-      grpc_server_max_recv_msg_size: 104857600
-      grpc_server_max_send_msg_size: 104857600
-      grpc_server_max_concurrent_streams: 1000
-    
-    frontend:
-      log_queries_longer_than: 10s
-      align_queries_with_step: true
-    
-    compactor:
-      data_dir: "/data"
-    
-    ingester:
-      ring:
-        final_sleep: 0s
-        num_tokens: 512
-        unregister_on_shutdown: false
-    
-    ingester_client:
-      grpc_client_config:
-        max_recv_msg_size: 104857600
-        max_send_msg_size: 104857600
-    
-    runtime_config:
-      file: /var/mimir/runtime.yaml
-    
-    memberlist:
-      abort_if_cluster_join_fails: false
-      compression_enabled: false
-      join_members:
-      - test-enterprise-configmap-values-mimir-gossip-ring
-    
-    # This configures how the store-gateway synchronizes blocks stored in the bucket. It uses Minio by default for getting started (configured via flags) but this should be changed for production deployments.
-    blocks_storage:
-      backend: s3
-      tsdb:
-        dir: /data/tsdb
-      bucket_store:
-        sync_dir: /data/tsdb-sync
-      s3:
-        endpoint: test-enterprise-configmap-values-minio.citestns.svc:9000
-        bucket_name: mimir-tsdb
-        access_key_id: grafana-mimir
-        secret_access_key: supersecret
-        insecure: true
-    ruler_storage:
-      backend: s3
-      s3:
-        endpoint: test-enterprise-configmap-values-minio.citestns.svc:9000
-        bucket_name: mimir-ruler
-        access_key_id: grafana-mimir
-        secret_access_key: supersecret
-        insecure: true
-    multitenancy_enabled: true
-    
     admin_api:
       leader_election:
         enabled: true
         ring:
           kvstore:
-            store: "memberlist"
+            store: memberlist
     admin_client:
       storage:
-        type: s3
         s3:
-          endpoint: test-enterprise-configmap-values-minio.citestns.svc:9000
-          bucket_name: enterprise-metrics-admin
           access_key_id: grafana-mimir
-          secret_access_key: supersecret
+          bucket_name: enterprise-metrics-admin
+          endpoint: test-enterprise-configmap-values-minio.citestns.svc:9000
           insecure: true
-    
+          secret_access_key: supersecret
+        type: s3
+    alertmanager:
+      data_dir: /data
+      enable_api: true
+      external_url: /alertmanager
+    alertmanager_storage:
+      backend: s3
+      s3:
+        access_key_id: grafana-mimir
+        bucket_name: mimir-ruler
+        endpoint: test-enterprise-configmap-values-minio.citestns.svc:9000
+        insecure: true
+        secret_access_key: supersecret
     auth:
       type: enterprise
-    
-    cluster_name: "test-enterprise-configmap-values"
-    
-    license:
-      path: "/license/license.jwt"
+    blocks_storage:
+      backend: s3
+      bucket_store:
+        sync_dir: /data/tsdb-sync
+      s3:
+        access_key_id: grafana-mimir
+        bucket_name: mimir-tsdb
+        endpoint: test-enterprise-configmap-values-minio.citestns.svc:9000
+        insecure: true
+        secret_access_key: supersecret
+      tsdb:
+        dir: /data/tsdb
+    cluster_name: test-enterprise-configmap-values
+    compactor:
+      data_dir: /data
+    frontend:
+      align_queries_with_step: true
+      log_queries_longer_than: 10s
+    frontend_worker:
+      frontend_address: test-enterprise-configmap-values-mimir-query-frontend-headless.citestns.svc:9095
     gateway:
       proxy:
-        default:
-          url: http://test-enterprise-configmap-values-mimir-admin-api.citestns.svc:8080
         admin_api:
           url: http://test-enterprise-configmap-values-mimir-admin-api.citestns.svc:8080
         alertmanager:
           url: http://test-enterprise-configmap-values-mimir-alertmanager.citestns.svc:8080
         compactor:
           url: http://test-enterprise-configmap-values-mimir-compactor.citestns.svc:8080
+        default:
+          url: http://test-enterprise-configmap-values-mimir-admin-api.citestns.svc:8080
         distributor:
           url: dns:///test-enterprise-configmap-values-mimir-distributor-headless.citestns.svc.cluster.local:9095
         ingester:
@@ -138,8 +83,43 @@ data:
           url: http://test-enterprise-configmap-values-mimir-ruler.citestns.svc:8080
         store_gateway:
           url: http://test-enterprise-configmap-values-mimir-store-gateway.citestns.svc:8080
-    
+    ingester:
+      ring:
+        final_sleep: 0s
+        num_tokens: 512
+        unregister_on_shutdown: false
+    ingester_client:
+      grpc_client_config:
+        max_recv_msg_size: 104857600
+        max_send_msg_size: 104857600
     instrumentation:
-      enabled: true
       distributor_client:
-        address: 'dns:///test-enterprise-configmap-values-mimir-distributor-headless.citestns.svc.cluster.local:9095'
+        address: dns:///test-enterprise-configmap-values-mimir-distributor-headless.citestns.svc.cluster.local:9095
+      enabled: true
+    license:
+      path: /license/license.jwt
+    limits: {}
+    memberlist:
+      abort_if_cluster_join_fails: false
+      compression_enabled: false
+      join_members:
+      - test-enterprise-configmap-values-mimir-gossip-ring
+    multitenancy_enabled: true
+    ruler:
+      alertmanager_url: dnssrvnoa+http://_http-metrics._tcp.test-enterprise-configmap-values-mimir-alertmanager-headless.citestns.svc.cluster.local/alertmanager
+      enable_api: true
+      rule_path: /data
+    ruler_storage:
+      backend: s3
+      s3:
+        access_key_id: grafana-mimir
+        bucket_name: mimir-ruler
+        endpoint: test-enterprise-configmap-values-minio.citestns.svc:9000
+        insecure: true
+        secret_access_key: supersecret
+    runtime_config:
+      file: /var/mimir/runtime.yaml
+    server:
+      grpc_server_max_concurrent_streams: 1000
+      grpc_server_max_recv_msg_size: 104857600
+      grpc_server_max_send_msg_size: 104857600
