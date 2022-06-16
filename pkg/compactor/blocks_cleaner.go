@@ -424,7 +424,6 @@ func (c *BlocksCleaner) cleanUserPartialBlocks(ctx context.Context, partials map
 	}
 
 	var mu sync.Mutex
-	var partialMarkMutex sync.Mutex
 	var partialsToMark []ulid.ULID
 
 	// We don't want to return errors from our function, as that would stop ForEach loop early.
@@ -434,9 +433,9 @@ func (c *BlocksCleaner) cleanUserPartialBlocks(ctx context.Context, partials map
 		// We can safely delete only partial blocks with a deletion mark.
 		err := metadata.ReadMarker(ctx, userLogger, userBucket, blockID.String(), &metadata.DeletionMark{})
 		if errors.Is(err, metadata.ErrorMarkerNotFound) {
-			partialMarkMutex.Lock()
+			mu.Lock()
 			partialsToMark = append(partialsToMark, blockID)
-			partialMarkMutex.Unlock()
+			mu.Unlock()
 			return nil
 		}
 		if err != nil {
