@@ -932,17 +932,20 @@ func TestMultitenantCompactor_HandleBlockUpload_Complete(t *testing.T) {
 		bkt.On("Get", mock.Anything, uploadingMetaPath).Return(func(_ context.Context, _ string) (io.ReadCloser, error) {
 			return io.NopCloser(bytes.NewReader(metaJSON)), nil
 		})
-		bkt.MockDelete(uploadingMetaPath, nil)
 		bkt.MockUpload(metaPath, nil)
+		bkt.MockDelete(uploadingMetaPath, nil)
 	}
 	testCases := []struct {
-		name            string
-		tenantID        string
-		blockID         string
-		expMeta         metadata.Meta
-		expBadRequest   string
-		setUpBucketMock func(bkt *bucket.ClientMock)
-		verifyUpload    func(*testing.T, *bucket.ClientMock, metadata.Meta)
+		name                   string
+		tenantID               string
+		blockID                string
+		expMeta                metadata.Meta
+		expBadRequest          string
+		expConflict            string
+		expNotFound            string
+		expInternalServerError bool
+		setUpBucketMock        func(bkt *bucket.ClientMock)
+		verifyUpload           func(*testing.T, *bucket.ClientMock, metadata.Meta)
 	}{
 		{
 			name:          "without tenant ID",
@@ -953,6 +956,93 @@ func TestMultitenantCompactor_HandleBlockUpload_Complete(t *testing.T) {
 			name:          "without block ID",
 			tenantID:      tenantID,
 			expBadRequest: "invalid block ID",
+		},
+		{
+			name:          "invalid block ID",
+			tenantID:      tenantID,
+			blockID:       "1234",
+			expBadRequest: "invalid block ID",
+		},
+		{
+			name:     "complete block already exists",
+			tenantID: tenantID,
+			blockID:  blockID,
+			setUpBucketMock: func(bkt *bucket.ClientMock) {
+				bkt.MockExists(metaPath, true, nil)
+			},
+			expConflict: "block already exists in object storage",
+		},
+		{
+			name:     "checking for complete block fails",
+			tenantID: tenantID,
+			blockID:  blockID,
+			setUpBucketMock: func(bkt *bucket.ClientMock) {
+				bkt.MockExists(metaPath, false, fmt.Errorf("test"))
+			},
+			expInternalServerError: true,
+		},
+		{
+			name:     "missing in-flight meta file",
+			tenantID: tenantID,
+			blockID:  blockID,
+			setUpBucketMock: func(bkt *bucket.ClientMock) {
+				bkt.MockExists(metaPath, false, nil)
+				bkt.On("Get", mock.Anything, uploadingMetaPath).Return(nil, bucket.ErrObjectDoesNotExist)
+			},
+			expNotFound: fmt.Sprintf("upload of block %s not started yet", blockID),
+		},
+		{
+			name:     "downloading in-flight meta file fails",
+			tenantID: tenantID,
+			blockID:  blockID,
+			setUpBucketMock: func(bkt *bucket.ClientMock) {
+				bkt.MockExists(metaPath, false, nil)
+				bkt.On("Get", mock.Anything, uploadingMetaPath).Return(nil, fmt.Errorf("test"))
+			},
+			expInternalServerError: true,
+		},
+		{
+			name:     "corrupt in-flight meta file",
+			tenantID: tenantID,
+			blockID:  blockID,
+			setUpBucketMock: func(bkt *bucket.ClientMock) {
+				bkt.MockExists(metaPath, false, nil)
+				bkt.On("Get", mock.Anything, uploadingMetaPath).Return(
+					io.NopCloser(strings.NewReader("")), nil)
+			},
+			expInternalServerError: true,
+		},
+		{
+			name:     "uploading meta file fails",
+			tenantID: tenantID,
+			blockID:  blockID,
+			setUpBucketMock: func(bkt *bucket.ClientMock) {
+				bkt.MockExists(metaPath, false, nil)
+				metaJSON, err := json.Marshal(validMeta)
+				require.NoError(t, err)
+				bkt.On("Get", mock.Anything, uploadingMetaPath).Return(func(_ context.Context, _ string) (io.ReadCloser, error) {
+					return io.NopCloser(bytes.NewReader(metaJSON)), nil
+				})
+				bkt.MockUpload(metaPath, fmt.Errorf("test"))
+			},
+			expInternalServerError: true,
+		},
+		{
+			name:     "removing in-flight meta file fails",
+			tenantID: tenantID,
+			blockID:  blockID,
+			setUpBucketMock: func(bkt *bucket.ClientMock) {
+				bkt.MockExists(metaPath, false, nil)
+				metaJSON, err := json.Marshal(validMeta)
+				require.NoError(t, err)
+				bkt.On("Get", mock.Anything, uploadingMetaPath).Return(func(_ context.Context, _ string) (io.ReadCloser, error) {
+					return io.NopCloser(bytes.NewReader(metaJSON)), nil
+				})
+				bkt.MockUpload(metaPath, nil)
+				bkt.MockDelete(uploadingMetaPath, fmt.Errorf("test"))
+			},
+			expMeta:      validMeta,
+			verifyUpload: verifyUploadedMeta,
 		},
 		{
 			name:            "valid request",
@@ -992,9 +1082,18 @@ func TestMultitenantCompactor_HandleBlockUpload_Complete(t *testing.T) {
 			case tc.expBadRequest != "":
 				assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 				assert.Equal(t, fmt.Sprintf("%s\n", tc.expBadRequest), string(body))
+			case tc.expConflict != "":
+				assert.Equal(t, http.StatusConflict, resp.StatusCode)
+				assert.Equal(t, fmt.Sprintf("%s\n", tc.expConflict), string(body))
+			case tc.expNotFound != "":
+				assert.Equal(t, http.StatusNotFound, resp.StatusCode)
+				assert.Equal(t, fmt.Sprintf("%s\n", tc.expNotFound), string(body))
+			case tc.expInternalServerError:
+				assert.Equal(t, http.StatusInternalServerError, resp.StatusCode)
+				assert.Equal(t, "internal server error\n", string(body))
 			default:
 				assert.Equal(t, http.StatusOK, resp.StatusCode)
-				assert.Empty(t, body)
+				assert.Empty(t, string(body))
 			}
 
 			bkt.AssertExpectations(t)

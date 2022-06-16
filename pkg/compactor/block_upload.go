@@ -257,8 +257,8 @@ func (c *MultitenantCompactor) completeBlockUpload(ctx context.Context, r *http.
 	logger log.Logger, userBkt objstore.Bucket, tenantID string, blockID ulid.ULID) error {
 	level.Debug(logger).Log("msg", "received request to complete block upload", "content_length", r.ContentLength)
 
-	tmpMetaPath := path.Join(blockID.String(), uploadingMetaFilename)
-	rdr, err := userBkt.Get(ctx, tmpMetaPath)
+	uploadingMetaPath := path.Join(blockID.String(), uploadingMetaFilename)
+	rdr, err := userBkt.Get(ctx, uploadingMetaPath)
 	if err != nil {
 		if userBkt.IsObjNotFoundErr(err) {
 			return httpError{
