@@ -46,5 +46,7 @@ spec:
           volumeMounts:
           env:
           envFrom:
+            - secretRef:
+                name: mimir-minio-secret
       restartPolicy: OnFailure
       volumes:
