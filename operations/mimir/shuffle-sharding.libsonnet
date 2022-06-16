@@ -125,7 +125,7 @@
     }
   ) + (
     if !($._config.shuffle_sharding.ingester_write_path_enabled && !$._config.shuffle_sharding.ingester_read_path_enabled) then {} else {
-      // If shuffle sharding is enabled for the write path but isn't enabled for the read path, query all ingesters
+      // If shuffle sharding is enabled for the write path but isn't enabled for the read path, Mimir will query all ingesters
       'querier.shuffle-sharding-ingesters-enabled': 'false',
     }
   ) + (

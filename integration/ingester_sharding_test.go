@@ -25,6 +25,7 @@ import (
 
 func TestIngesterSharding(t *testing.T) {
 	const numSeriesToPush = 1000
+	const queryIngestersWithinSecs = 5
 
 	tests := map[string]struct {
 		tenantShardSize             int
@@ -48,6 +49,13 @@ func TestIngesterSharding(t *testing.T) {
 
 			flags := BlocksStorageFlags()
 			flags["-distributor.ingestion-tenant-shard-size"] = strconv.Itoa(testData.tenantShardSize)
+			// We're verifying that shuffle sharding on the read path works so we need to set `query-ingesters-within`
+			// to a small enough value that they'll have been part of the ring for long enough by the time we attempt
+			// to query back the values we wrote to them. If they _haven't_ been part of the ring for long enough, the
+			// query would be sent to all ingesters and our test wouldn't really be testing anything.
+			flags["-querier.query-store-after"] = "0"
+			flags["-querier.query-ingesters-within"] = fmt.Sprintf("%ds", queryIngestersWithinSecs)
+			flags["-ingester.ring.heartbeat-period"] = "1s"
 
 			// Start dependencies.
 			consul := e2edb.NewConsul()
@@ -59,6 +67,7 @@ func TestIngesterSharding(t *testing.T) {
 			ingester1 := e2emimir.NewIngester("ingester-1", consul.NetworkHTTPEndpoint(), flags)
 			ingester2 := e2emimir.NewIngester("ingester-2", consul.NetworkHTTPEndpoint(), flags)
 			ingester3 := e2emimir.NewIngester("ingester-3", consul.NetworkHTTPEndpoint(), flags)
+			ingesters := e2emimir.NewCompositeMimirService(ingester1, ingester2, ingester3)
 			querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags)
 			require.NoError(t, s.StartAndWaitReady(distributor, ingester1, ingester2, ingester3, querier))
 
@@ -70,6 +79,11 @@ func TestIngesterSharding(t *testing.T) {
 			require.NoError(t, querier.WaitSumMetricsWithOptions(e2e.Equals(3), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
 				labels.MustNewMatcher(labels.MatchEqual, "name", "ingester"),
 				labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
+
+			// Yes, we're sleeping in this test. We need to make sure that the ingesters have been part
+			// of the ring long enough before writing metrics to them to ensure that only the shuffle
+			// sharded ingesters will be queried for them when we go to verify the series written.
+			time.Sleep(queryIngestersWithinSecs * time.Second)
 
 			// Push series.
 			now := time.Now()
@@ -103,12 +117,7 @@ func TestIngesterSharding(t *testing.T) {
 				}
 			}
 
-			// Verify that the expected number of ingesters had series (write path). However,
-			// we _don't_ verify that a subset of ingesters were queried for the series (read
-			// path). This is because the way which ingesters to query is calculated depends on
-			// when they were registered compared to the "query ingesters within" time. They'll
-			// never be registered long enough as part of this test to be queried for the series.
-			// Instead, all ingesters are queried.
+			// Verify that the expected number of ingesters had series (write path).
 			require.Equal(t, testData.expectedIngestersWithSeries, numIngestersWithSeries)
 			require.Equal(t, numSeriesToPush, totalIngestedSeries)
 
@@ -119,6 +128,21 @@ func TestIngesterSharding(t *testing.T) {
 				require.Equal(t, model.ValVector, result.Type())
 				assert.Equal(t, expectedVector, result.(model.Vector))
 			}
+
+			// We expect that only ingesters belonging to tenant's shard have been queried if
+			// shuffle sharding is enabled.
+			expectedIngesters := ingesters.NumInstances()
+			if testData.tenantShardSize > 0 {
+				expectedIngesters = testData.tenantShardSize
+			}
+
+			expectedCalls := expectedIngesters * len(expectedVectors)
+			require.NoError(t, ingesters.WaitSumMetricsWithOptions(
+				e2e.Equals(float64(expectedCalls)),
+				[]string{"cortex_request_duration_seconds"},
+				e2e.WithMetricCount,
+				e2e.SkipMissingMetrics, // Some ingesters may have received no request at all.
+				e2e.WithLabelMatchers(labels.MustNewMatcher(labels.MatchEqual, "route", "/cortex.Ingester/QueryStream"))))
 
 			// Ensure no service-specific metrics prefix is used by the wrong service.
 			assertServiceMetricsPrefixes(t, Distributor, distributor)

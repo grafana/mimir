@@ -838,8 +838,8 @@ store_gateway_client:
 
 # (advanced) Fetch in-memory series from the minimum set of required ingesters,
 # selecting only ingesters which may have received series since
-# querier.query-ingesters-within. If this setting is false or
-# querier.query-ingesters-within is '0', queriers always query all ingesters
+# -querier.query-ingesters-within. If this setting is false or
+# -querier.query-ingesters-within is '0', queriers always query all ingesters
 # (ingesters shuffle sharding on read path is disabled).
 # CLI flag: -querier.shuffle-sharding-ingesters-enabled
 [shuffle_sharding_ingesters_enabled: <boolean> | default = true]
