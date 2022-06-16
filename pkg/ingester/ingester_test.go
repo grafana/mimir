@@ -618,19 +618,13 @@ func TestIngester_Push(t *testing.T) {
 					Metadata: []*mimirpb.MetricMetadata{
 						{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric_1", Help: "This is a test metric."},
 						{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric_2", Help: "This is a test metric."},
-						{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric_3", Help: "This is a test metric."},
-						{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric_4", Help: "This is a test metric."},
 					},
 				},
 			},
 			expectedErr:      nil,
 			expectedIngested: nil,
 			expectedMetadataIngested: []*mimirpb.MetricMetadata{
-				// we expect 3 (rather than the limit of 1) because we scale the global limit by replicationFactor/numIngesters
-				// see: convertGlobalToLocalLimit()
 				{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric_1", Help: "This is a test metric."},
-				{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric_2", Help: "This is a test metric."},
-				{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric_3", Help: "This is a test metric."},
 			},
 			additionalMetrics: []string{
 				// Metadata.
@@ -649,13 +643,13 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_ingested_metadata_failures_total 1
 				# HELP cortex_ingester_ingested_metadata_total The total number of metadata ingested.
 				# TYPE cortex_ingester_ingested_metadata_total counter
-				cortex_ingester_ingested_metadata_total 3
+				cortex_ingester_ingested_metadata_total 1
 				# HELP cortex_ingester_memory_metadata The current number of metadata in memory.
 				# TYPE cortex_ingester_memory_metadata gauge
-				cortex_ingester_memory_metadata 3
+				cortex_ingester_memory_metadata 1
 				# HELP cortex_ingester_memory_metadata_created_total The total number of metadata that were created per user
 				# TYPE cortex_ingester_memory_metadata_created_total counter
-				cortex_ingester_memory_metadata_created_total{user="test"} 3
+				cortex_ingester_memory_metadata_created_total{user="test"} 1
 				# HELP cortex_ingester_memory_series The current number of series in memory.
 				# TYPE cortex_ingester_memory_series gauge
 				cortex_ingester_memory_series 0
@@ -671,8 +665,6 @@ func TestIngester_Push(t *testing.T) {
 				{
 					Metadata: []*mimirpb.MetricMetadata{
 						{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric_1", Help: "This is a test metric."},
-						{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric_1", Help: "This metric is a test."},
-						{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric_1", Help: "This test is a metric."},
 						{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric_1", Help: "A test metric this is."},
 					},
 				},
@@ -680,11 +672,7 @@ func TestIngester_Push(t *testing.T) {
 			expectedErr:      nil,
 			expectedIngested: nil,
 			expectedMetadataIngested: []*mimirpb.MetricMetadata{
-				// we expect 3 (rather than the limit of 1) because we scale the global limit by replicationFactor/numIngesters
-				// see: convertGlobalToLocalLimit()
 				{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric_1", Help: "This is a test metric."},
-				{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric_1", Help: "This metric is a test."},
-				{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric_1", Help: "This test is a metric."},
 			},
 			additionalMetrics: []string{
 				// Metadata.
@@ -703,13 +691,13 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_ingested_metadata_failures_total 1
 				# HELP cortex_ingester_ingested_metadata_total The total number of metadata ingested.
 				# TYPE cortex_ingester_ingested_metadata_total counter
-				cortex_ingester_ingested_metadata_total 3
+				cortex_ingester_ingested_metadata_total 1
 				# HELP cortex_ingester_memory_metadata The current number of metadata in memory.
 				# TYPE cortex_ingester_memory_metadata gauge
-				cortex_ingester_memory_metadata 3
+				cortex_ingester_memory_metadata 1
 				# HELP cortex_ingester_memory_metadata_created_total The total number of metadata that were created per user
 				# TYPE cortex_ingester_memory_metadata_created_total counter
-				cortex_ingester_memory_metadata_created_total{user="test"} 3
+				cortex_ingester_memory_metadata_created_total{user="test"} 1
 				# HELP cortex_ingester_memory_series The current number of series in memory.
 				# TYPE cortex_ingester_memory_series gauge
 				cortex_ingester_memory_series 0
@@ -731,6 +719,7 @@ func TestIngester_Push(t *testing.T) {
 
 			// Create a mocked ingester
 			cfg := defaultIngesterTestConfig(t)
+			cfg.IngesterRing.ReplicationFactor = 1
 			cfg.ActiveSeriesMetricsEnabled = !testData.disableActiveSeries
 			limits := defaultLimitsTestConfig()
 			limits.MaxGlobalExemplarsPerUser = testData.maxExemplars
