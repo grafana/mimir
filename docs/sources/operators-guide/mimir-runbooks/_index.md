@@ -1405,12 +1405,12 @@ How it **works**:
 Common **causes**:
 
 - Your code has a single target that exposes the same time series multiple times, or multiple targets with identical labels.
-- System time of your Prometheus instance has been shifted backwards. If this was a mistake, fix the system time back to normal. Otherwise, wait until the system time catches up to the time it was changed, or delete all ingested samples with a timestamp later than system time.
+- System time of your Prometheus instance has been shifted backwards. If this was a mistake, fix the system time back to normal. Otherwise, wait until the system time catches up to the time it was changed.
 - You are running multiple Prometheus instances pushing the same metrics and [your high-availability tracker is not properly configured for deduplication]({{< relref "../configuring/configuring-high-availability-deduplication.md" >}}).
 - Prometheus relabelling has been configured and it causes series to clash after the relabelling. Check the error message for information about which series has received a sample out of order.
 - A Prometheus instance was restarted, and it pushed all data from its Write-Ahead Log to remote write upon restart, some of which has already been pushed and ingested. This is normal and can be ignored.
 
-[More details here](https://www.robustperception.io/debugging-out-of-order-samples/).
+> **Note**: You can learn more about out of order samples in Prometheus, in the blog post [Debugging out of order samples](https://www.robustperception.io/debugging-out-of-order-samples/).
 
 ### err-mimir-sample-duplicate-timestamp
 
