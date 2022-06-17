@@ -2856,6 +2856,10 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -compactor.compactor-tenant-shard-size
 [compactor_tenant_shard_size: <int> | default = 0]
 
+# Enables block upload.
+# CLI flag: -compactor.block-upload-enabled
+[compactor_block_upload_enabled: <boolean> | default = false]
+
 # S3 server-side encryption type. Required to enable server-side encryption
 # overrides for a specific tenant. If not set, the default S3 client settings
 # are used.

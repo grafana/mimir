@@ -58,6 +58,11 @@ func (c *MultitenantCompactor) HandleBlockUpload(w http.ResponseWriter, r *http.
 		http.Error(w, "invalid tenant ID", http.StatusBadRequest)
 		return
 	}
+	if !c.cfgProvider.CompactorBlockUploadEnabled(tenantID) {
+		http.Error(w, fmt.Sprintf("block upload is disabled for tenant: %s", tenantID),
+			http.StatusBadRequest)
+		return
+	}
 
 	logger := log.With(util_log.WithContext(ctx, c.logger), "block", blockID)
 
@@ -178,6 +183,11 @@ func (c *MultitenantCompactor) UploadBlockFile(w http.ResponseWriter, r *http.Re
 	tenantID, err := tenant.TenantID(ctx)
 	if err != nil {
 		http.Error(w, "invalid tenant ID", http.StatusBadRequest)
+		return
+	}
+	if !c.cfgProvider.CompactorBlockUploadEnabled(tenantID) {
+		http.Error(w, fmt.Sprintf("block upload is disabled for tenant: %s", tenantID),
+			http.StatusBadRequest)
 		return
 	}
 
