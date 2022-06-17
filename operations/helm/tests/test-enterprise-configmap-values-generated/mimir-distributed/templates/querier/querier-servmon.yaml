@@ -1,0 +1,32 @@
+---
+# Source: mimir-distributed/templates/querier/querier-servmon.yaml
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: test-enterprise-configmap-values-mimir-querier
+  namespace: citestns
+  labels:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: test-enterprise-configmap-values
+    app.kubernetes.io/component: querier
+    app.kubernetes.io/part-of: memberlist
+    app.kubernetes.io/version: "2.1.0"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  namespaceSelector:
+    matchNames:
+    - citestns
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mimir
+      app.kubernetes.io/instance: test-enterprise-configmap-values
+      app.kubernetes.io/component: querier
+  endpoints:
+    - port: http-metrics
+      relabelings:
+        - sourceLabels: [job]
+          replacement: "citestns/querier"
+          targetLabel: job
+        - replacement: "test-enterprise-configmap-values"
+          targetLabel: cluster
+      scheme: http

@@ -45,6 +45,13 @@ store_gateway:
   persistentVolume:
     enabled: false
 
+serviceMonitor:
+  enabled: true
+  namespace: citestns
+  namespaceSelector:
+    matchNames:
+      - citestns
+
 # For testing only
 testing:
   minio:
