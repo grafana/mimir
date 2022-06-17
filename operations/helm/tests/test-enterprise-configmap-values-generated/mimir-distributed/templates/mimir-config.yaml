@@ -104,7 +104,6 @@ data:
       compression_enabled: false
       join_members:
       - test-enterprise-configmap-values-mimir-gossip-ring
-    multitenancy_enabled: true
     ruler:
       alertmanager_url: dnssrvnoa+http://_http-metrics._tcp.test-enterprise-configmap-values-mimir-alertmanager-headless.citestns.svc.cluster.local/alertmanager
       enable_api: true
