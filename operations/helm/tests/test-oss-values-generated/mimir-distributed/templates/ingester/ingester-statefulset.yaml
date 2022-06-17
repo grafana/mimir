@@ -68,6 +68,7 @@ spec:
             - "-target=ingester"
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
+            - "-ingester.ring.instance-availability-zone=zone-default"
           volumeMounts:
             - name: config
               mountPath: /etc/mimir
