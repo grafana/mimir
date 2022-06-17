@@ -96,6 +96,8 @@ func TestIngester_Push(t *testing.T) {
 		additionalMetrics         []string
 		disableActiveSeries       bool
 		maxExemplars              int
+		maxMetadataPerUser        int
+		maxMetadataPerMetric      int
 	}{
 		"should succeed on valid series and metadata": {
 			reqs: []*mimirpb.WriteRequest{
@@ -608,6 +610,102 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_tsdb_head_active_appenders 0
 			`,
 		},
+		"should discard metadata when max metadata per user exceeded": {
+			maxMetadataPerUser:   1,
+			maxMetadataPerMetric: 0,
+			reqs: []*mimirpb.WriteRequest{
+				{
+					Metadata: []*mimirpb.MetricMetadata{
+						{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric_1", Help: "This is a test metric."},
+						{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric_2", Help: "This is a test metric."},
+					},
+				},
+			},
+			expectedErr:      nil,
+			expectedIngested: nil,
+			expectedMetadataIngested: []*mimirpb.MetricMetadata{
+				{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric_1", Help: "This is a test metric."},
+			},
+			additionalMetrics: []string{
+				// Metadata.
+				"cortex_ingester_memory_metadata",
+				"cortex_ingester_memory_metadata_created_total",
+				"cortex_ingester_ingested_metadata_total",
+				"cortex_ingester_ingested_metadata_failures_total",
+				"cortex_discarded_metadata_total",
+			},
+			expectedMetrics: `
+				# HELP cortex_discarded_metadata_total The total number of metadata that were discarded.
+				# TYPE cortex_discarded_metadata_total counter
+				cortex_discarded_metadata_total{reason="per_user_metadata_limit",user="test"} 1
+				# HELP cortex_ingester_ingested_metadata_failures_total The total number of metadata that errored on ingestion.
+				# TYPE cortex_ingester_ingested_metadata_failures_total counter
+				cortex_ingester_ingested_metadata_failures_total 1
+				# HELP cortex_ingester_ingested_metadata_total The total number of metadata ingested.
+				# TYPE cortex_ingester_ingested_metadata_total counter
+				cortex_ingester_ingested_metadata_total 1
+				# HELP cortex_ingester_memory_metadata The current number of metadata in memory.
+				# TYPE cortex_ingester_memory_metadata gauge
+				cortex_ingester_memory_metadata 1
+				# HELP cortex_ingester_memory_metadata_created_total The total number of metadata that were created per user
+				# TYPE cortex_ingester_memory_metadata_created_total counter
+				cortex_ingester_memory_metadata_created_total{user="test"} 1
+				# HELP cortex_ingester_memory_series The current number of series in memory.
+				# TYPE cortex_ingester_memory_series gauge
+				cortex_ingester_memory_series 0
+				# HELP cortex_ingester_memory_users The current number of users in memory.
+				# TYPE cortex_ingester_memory_users gauge
+				cortex_ingester_memory_users 0
+			`,
+		},
+		"should discard metadata when max metadata per metric exceeded": {
+			maxMetadataPerUser:   0,
+			maxMetadataPerMetric: 1,
+			reqs: []*mimirpb.WriteRequest{
+				{
+					Metadata: []*mimirpb.MetricMetadata{
+						{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric_1", Help: "This is a test metric."},
+						{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric_1", Help: "A test metric this is."},
+					},
+				},
+			},
+			expectedErr:      nil,
+			expectedIngested: nil,
+			expectedMetadataIngested: []*mimirpb.MetricMetadata{
+				{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric_1", Help: "This is a test metric."},
+			},
+			additionalMetrics: []string{
+				// Metadata.
+				"cortex_ingester_memory_metadata",
+				"cortex_ingester_memory_metadata_created_total",
+				"cortex_ingester_ingested_metadata_total",
+				"cortex_ingester_ingested_metadata_failures_total",
+				"cortex_discarded_metadata_total",
+			},
+			expectedMetrics: `
+				# HELP cortex_discarded_metadata_total The total number of metadata that were discarded.
+				# TYPE cortex_discarded_metadata_total counter
+				cortex_discarded_metadata_total{reason="per_metric_metadata_limit",user="test"} 1
+				# HELP cortex_ingester_ingested_metadata_failures_total The total number of metadata that errored on ingestion.
+				# TYPE cortex_ingester_ingested_metadata_failures_total counter
+				cortex_ingester_ingested_metadata_failures_total 1
+				# HELP cortex_ingester_ingested_metadata_total The total number of metadata ingested.
+				# TYPE cortex_ingester_ingested_metadata_total counter
+				cortex_ingester_ingested_metadata_total 1
+				# HELP cortex_ingester_memory_metadata The current number of metadata in memory.
+				# TYPE cortex_ingester_memory_metadata gauge
+				cortex_ingester_memory_metadata 1
+				# HELP cortex_ingester_memory_metadata_created_total The total number of metadata that were created per user
+				# TYPE cortex_ingester_memory_metadata_created_total counter
+				cortex_ingester_memory_metadata_created_total{user="test"} 1
+				# HELP cortex_ingester_memory_series The current number of series in memory.
+				# TYPE cortex_ingester_memory_series gauge
+				cortex_ingester_memory_series 0
+				# HELP cortex_ingester_memory_users The current number of users in memory.
+				# TYPE cortex_ingester_memory_users gauge
+				cortex_ingester_memory_users 0
+			`,
+		},
 	}
 
 	for testName, testData := range tests {
@@ -616,12 +714,17 @@ func TestIngester_Push(t *testing.T) {
 
 			registry.MustRegister(validation.DiscardedSamples)
 			validation.DiscardedSamples.Reset()
+			registry.MustRegister(validation.DiscardedMetadata)
+			validation.DiscardedMetadata.Reset()
 
 			// Create a mocked ingester
 			cfg := defaultIngesterTestConfig(t)
+			cfg.IngesterRing.ReplicationFactor = 1
 			cfg.ActiveSeriesMetricsEnabled = !testData.disableActiveSeries
 			limits := defaultLimitsTestConfig()
 			limits.MaxGlobalExemplarsPerUser = testData.maxExemplars
+			limits.MaxGlobalMetricsWithMetadataPerUser = testData.maxMetadataPerUser
+			limits.MaxGlobalMetadataPerMetric = testData.maxMetadataPerMetric
 
 			i, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, limits, "", registry)
 			require.NoError(t, err)
