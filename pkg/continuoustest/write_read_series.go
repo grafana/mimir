@@ -80,7 +80,7 @@ func (t *WriteReadSeriesTest) Init(ctx context.Context, now time.Time) error {
 
 	from, to := t.findPreviouslyWrittenTimeRange(ctx, now)
 	if from.IsZero() || to.IsZero() {
-		level.Info(t.logger).Log("msg", "No valid previously written samples time range found")
+		level.Info(t.logger).Log("msg", "No valid previously written samples time range found, will continue writing from the nearest interval-aligned timestamp")
 		return nil
 	}
 	if to.Before(now.Add(-writeMaxAge)) {

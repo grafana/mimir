@@ -1602,3 +1602,17 @@ gateway:
       - secretName: gem-gateway-tls
         hosts:
           - gateway.gem.example.com
+
+# Settings for the smoke-test job.
+smoke_test:
+  image:
+    repository: grafana/mimir-continuous-test
+    # TODO: replace with weekly tag starting with r191
+    tag: helm-smoke-test-d12276bfc
+    pullPolicy: IfNotPresent
+  tenantId: ''
+  extraArgs: {}
+  env: []
+  extraEnvFrom: []
+  annotations: {}
+  initContainers: []
