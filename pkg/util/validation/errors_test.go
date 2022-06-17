@@ -35,3 +35,13 @@ func TestNewMaxQueryLengthError(t *testing.T) {
 	err := NewMaxQueryLengthError(time.Hour, time.Minute)
 	assert.Equal(t, "the query time range exceeds the limit (query length: 1h0m0s, limit: 1m0s) (err-mimir-max-query-length). You can adjust the related per-tenant limit by configuring -store.max-query-length, or by contacting your service administrator.", err.Error())
 }
+
+func TestNewRequestRateLimitedError(t *testing.T) {
+	err := NewRequestRateLimitedError(10, 5)
+	assert.Equal(t, "the request has been rejected because the tenant exceeded the request rate limit, set to 10 requests/s across all distributors with a maximum allowed burst of 5 (err-mimir-tenant-max-request-rate). You can adjust the related per-tenant limits by configuring -distributor.request-rate-limit and -distributor.request-burst-size, or by contacting your service administrator.", err.Error())
+}
+
+func TestNewIngestionRateLimitedError(t *testing.T) {
+	err := NewIngestionRateLimitedError(10, 5)
+	assert.Equal(t, "the request has been rejected because the tenant exceeded the ingestion rate limit, set to 10 items/s with a maximum allowed burst of 5. This limit is applied on the total number of samples, exemplars and metadata received across all distributors (err-mimir-tenant-max-ingestion-rate). You can adjust the related per-tenant limits by configuring -distributor.ingestion-rate-limit and -distributor.ingestion-burst-size, or by contacting your service administrator.", err.Error())
+}
