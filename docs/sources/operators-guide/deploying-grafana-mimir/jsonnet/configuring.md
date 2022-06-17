@@ -13,10 +13,11 @@ To learn how to get started, see [Deploying Grafana Mimir with Jsonnet and Tanka
 ## Anti-affinity
 
 Given the distributed nature of Mimir, both performance and reliability are improved when pods are spread across different nodes.
-For example, multiple queriers can simultaneously process the same query, so it's better to distribute them across different nodes. Moreover, because losing multiple ingesters can cause data loss, it's also important to spread the ingesters out.
+For example, losing multiple ingesters can cause data loss, so so it's better to distribute them across different nodes.
 
 For this reason, by default, anti-affinity rules are applied to some Kubernetes Deployments and StatefulSets.
-These anti-affinity rules can become an issue when playing with Mimir in a single-node Kubernetes cluster. You can disable anti-affinity by setting the configuration values `_config.<component>_allow_multiple_replicas_on_same_node`.
+These anti-affinity rules can become an issue when playing with Mimir in a single-node Kubernetes cluster.
+You can disable anti-affinity by setting the configuration values `_config.<component>_allow_multiple_replicas_on_same_node`.
 
 ### Example: disable anti-affinity
 
@@ -25,7 +26,6 @@ local mimir = import 'mimir/mimir.libsonnet';
 
 mimir {
   _config+:: {
-    // ... configuration values
     distributor_allow_multiple_replicas_on_same_node: true,
     ingester_allow_multiple_replicas_on_same_node: true,
     ruler_allow_multiple_replicas_on_same_node: true,
@@ -39,7 +39,8 @@ mimir {
 ## Resources
 
 Default scaling of Mimir components in the provided Jsonnet is opinionated and based on engineers’ years of experience running it at Grafana Labs.
-The default resource requests and limits are also fine-tuned for the provided alerting rules. For more information, see [Monitoring Grafana Mimir]({{< relref "../../visualizing-metrics/_index.md" >}}).
+The default resource requests and limits are also fine-tuned for the provided alerting rules.
+For more information, see [Monitoring Grafana Mimir]({{< relref "../../visualizing-metrics/_index.md" >}}).
 
 However, there are use cases where you might want to change the default resource requests, their limits, or both.
 For example, if you are just testing Mimir and you want to run it on a small (possibly one-node) Kubernetes cluster, and you do not have tens of gigabytes of memory or multiple cores to schedule the components, consider overriding the scaling requirements as follows:
