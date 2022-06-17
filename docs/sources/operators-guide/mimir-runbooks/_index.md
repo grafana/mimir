@@ -73,29 +73,19 @@ How to **fix** it:
 - Run the following **instant query** to find tenants that might cause higher pressure on some ingesters:
 
   ```
-  (
-    sum by(user) (cortex_ingester_memory_series_created_total{namespace="<namespace>"}
-    -
-    cortex_ingester_memory_series_removed_total{namespace="<namespace>"})
+  topk by (pod) (
+    5,
+    (
+        sum by (user, pod) (
+            cortex_ingester_memory_series_created_total{namespace="<namespace>"} - cortex_ingester_memory_series_removed_total{namespace="<namespace>"}
+        )
+    ) and on (pod) (
+        topk(
+            3,
+            sum by (pod) (cortex_ingester_memory_series_created_total{namespace="<namespace>"} - cortex_ingester_memory_series_removed_total{namespace="<namespace>"})
+        )
+    )
   )
-  >
-  (
-    max by(user) (cortex_limits_overrides{namespace="<namespace>",limit_name="max_global_series_per_user"})
-    *
-    scalar(max(cortex_distributor_replication_factor{namespace="<namespace>"}))
-    *
-    0.5
-  )
-  > 200000
-
-  # Decomment the following to show only tenants beloging to a specific ingester's shard.
-  # and count by(user) (cortex_ingester_active_series{namespace="<namespace>",pod="ingester-<id>"})
-  ```
-
-- Run the following **instant query** to find tenants that contribute the most to active series on a specific ingester:
-
-  ```
-  topk(10, sum by(user) (cortex_ingester_memory_series_created_total{namespace="<namespace>",pod="ingester-<id>"} - cortex_ingester_memory_series_removed_total{namespace="<namespace>",pod="ingester-<id>"}))
   ```
 
 - Check the current shard size of each tenant in the output and, if they're not already sharded across all ingesters, you may consider to double their shard size
