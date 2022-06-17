@@ -18,7 +18,7 @@ mimir {
     alertmanager_client_type: 'gcs',
     alertmanager_gcs_bucket_name: 'alerts-bucket',
 
-    ruler_query_path_enabled: true,
     ruler_remote_evaluation_enabled: true,
+    ruler_remote_evaluation_migration_enabled: true,
   },
 }

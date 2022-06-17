@@ -621,6 +621,7 @@ metadata:
   name: ruler-query-frontend
   namespace: default
 spec:
+  clusterIP: None
   ports:
   - name: ruler-query-frontend-http-metrics
     port: 8080
