@@ -13,7 +13,7 @@ To learn how to get started, see [Deploying Grafana Mimir with Jsonnet and Tanka
 ## Anti-affinity
 
 Given the distributed nature of Mimir, both performance and reliability are improved when pods are spread across different nodes.
-For example, losing multiple ingesters can cause data loss, so so it's better to distribute them across different nodes.
+For example, losing multiple ingesters can cause data loss, so it's better to distribute them across different nodes.
 
 For this reason, by default, anti-affinity rules are applied to some Kubernetes Deployments and StatefulSets.
 These anti-affinity rules can become an issue when playing with Mimir in a single-node Kubernetes cluster.
