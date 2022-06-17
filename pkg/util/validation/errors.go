@@ -283,7 +283,7 @@ func NewRequestRateLimitedError(limit float64, burst int) LimitError {
 
 func NewIngestionRateLimitedError(limit float64, burst int) LimitError {
 	return LimitError(globalerror.IngestionRateLimited.MessageWithLimitConfig(
-		fmt.Sprintf("the request has been rejected because the tenant exceeded the ingestion rate limit, set to %v items/s with a maximum allowed burst of %d. This limit is applied on the total number of samples, exemplars and metadata received across all distributors.", limit, burst),
+		fmt.Sprintf("the request has been rejected because the tenant exceeded the ingestion rate limit, set to %v items/s with a maximum allowed burst of %d. This limit is applied on the total number of samples, exemplars and metadata received across all distributors", limit, burst),
 		ingestionRateFlag, ingestionBurstSizeFlag))
 }
 
