@@ -1404,13 +1404,13 @@ This error occurs when the ingester rejects a sample because another sample with
 
 How it **works**:
 
-- Currently, samples are not allowed to be ingested out of order as they must be stored in order and sorting is expensive. We are working on removing this limitation in the future.
+- Currently, samples are not allowed to be ingested out of order for a given series.
 
 Common **causes**:
 
-- Your code has a single target that exposes the same time series multiple times, or multiple targets with identical labels
+- Your code has a single target that exposes the same time series multiple times, or multiple targets with identical labels.
 - System time of your Prometheus instance has been shifted backwards. If this was a mistake, fix the system time back to normal. Otherwise, wait until the system time catches up to the time it was changed, or delete all ingested samples with a timestamp later than system time.
-- You are running multiple Prometheus instances pushing the same metrics and [your high-availability tracker is not properly configured for deduplication](https://cortexmetrics.io/docs/guides/ha-pair-handling/).
+- You are running multiple Prometheus instances pushing the same metrics and [your high-availability tracker is not properly configured for deduplication]({{< relref "../configuring/configuring-high-availability-deduplication.md" >}}).
 - A Prometheus instance was restarted, and it pushed all data from its Write-Ahead Log to remote write upon restart, some of which has already been pushed and ingested. This is normal and can be ignored.
 
 [More details here](https://www.robustperception.io/debugging-out-of-order-samples/) [and here](https://github.com/cortexproject/cortex/issues/3411) [and here](https://github.com/cortexproject/cortex/issues/2662).
