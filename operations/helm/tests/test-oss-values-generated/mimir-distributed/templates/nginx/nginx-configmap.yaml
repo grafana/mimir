@@ -38,6 +38,12 @@ data:
       tcp_nopush   on;
       resolver kube-dns.kube-system.svc.cluster.local;
     
+      # Ensure that X-Scope-OrgID is always present, default to "anonymous" for backwards compatibility when multi-tenancy was turned off.
+      map $http_x_scope_orgid $ensured_x_scope_orgid {
+        default $http_x_scope_orgid;
+        "" "anonymous";
+      }
+    
       server {
         listen 8080;
     
@@ -45,7 +51,8 @@ data:
           return 200 'OK';
           auth_basic off;
         }
-        proxy_set_header X-Scope-OrgID 0;
+    
+        proxy_set_header X-Scope-OrgID $ensured_x_scope_orgid;
     
         # Distributor endpoints
         location /distributor {

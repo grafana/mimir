@@ -60,7 +60,6 @@ data:
       compression_enabled: false
       join_members:
       - test-oss-values-mimir-gossip-ring
-    multitenancy_enabled: false
     ruler:
       alertmanager_url: dnssrvnoa+http://_http-metrics._tcp.test-oss-values-mimir-alertmanager-headless.citestns.svc.cluster.local/alertmanager
       enable_api: true
