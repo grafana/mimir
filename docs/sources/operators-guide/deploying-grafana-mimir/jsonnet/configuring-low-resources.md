@@ -90,7 +90,7 @@ mimir {
 ## Ruler
 
 The ruler is an optional component and is therefore not deployed by default when using the jsonnet deployment.
-For more information about the ruler, see [Grafana Mimir ruler]({{< relref "../../architecture/components/ruler/_index.md" >}}).
+For more information about the ruler, see [Grafana Mimir ruler]({{< relref "../../architecture/components/ruler/index.md" >}}).
 
 It is enabled by adding the following to the `_config` section of the jsonnet:
 
@@ -102,7 +102,7 @@ It is enabled by adding the following to the `_config` section of the jsonnet:
 ```
 
 The `ruler_client_type` option must be one of: 'local', 'azure', 'aws', 's3'.
-For more information about the options available for storing ruler state, see [Grafana Mimir ruler: State]({{< relref "../../architecture/components/ruler/_index.md#state" >}}).
+For more information about the options available for storing ruler state, see [Grafana Mimir ruler: State]({{< relref "../../architecture/components/ruler/index.md#state" >}}).
 
 To get started, the 'local' can be used for initial testing:
 
@@ -140,7 +140,7 @@ Note: Currently the storage credentials for `s3` and `gcs` must be manually prov
 ## Operational modes
 
 The ruler has two operational modes, internal and remote. By default, the jsonnet deploys the ruler using the internal operational mode.
-For more information about these modes, see [Operational modes]({{< relref "../../architecture/components/ruler/_index.md#operational-modes" >}}).
+For more information about these modes, see [Operational modes]({{< relref "../../architecture/components/ruler/index.md#operational-modes" >}}).
 
 To enable the remote operational mode, add the following to the jsonnet:
 
