@@ -2881,6 +2881,16 @@
         },
         {
           "kind": "field",
+          "name": "compactor_block_upload_enabled",
+          "required": false,
+          "desc": "Enable block upload API for the tenant.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "compactor.block-upload-enabled",
+          "fieldType": "boolean"
+        },
+        {
+          "kind": "field",
           "name": "s3_sse_type",
           "required": false,
           "desc": "S3 server-side encryption type. Required to enable server-side encryption overrides for a specific tenant. If not set, the default S3 client settings are used.",
