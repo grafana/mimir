@@ -53,6 +53,9 @@ store_gateway:
   persistentVolume:
     enabled: false
 
+serviceMonitor:
+  enabled: true
+
 # For testing only
 testing:
   minio:
