@@ -83,7 +83,7 @@ func TestIngesterSharding(t *testing.T) {
 			// Yes, we're sleeping in this test. We need to make sure that the ingesters have been part
 			// of the ring long enough before writing metrics to them to ensure that only the shuffle
 			// sharded ingesters will be queried for them when we go to verify the series written.
-			time.Sleep(queryIngestersWithinSecs * time.Second)
+			time.Sleep((queryIngestersWithinSecs + 1) * time.Second)
 
 			// Push series.
 			now := time.Now()
