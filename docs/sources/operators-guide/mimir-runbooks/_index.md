@@ -1429,6 +1429,24 @@ How it **works**:
 
 - The series must already exist before exemplars can be appended, as we do not create new series upon ingesting exemplars. The series will be created when a sample from it is ingested.
 
+### err-mimir-store-consistency-check-failed
+
+This error occurs when the querier is unable to fetch some of the expected blocks after multiple retries and connections to different store-gateways, so the query fails as some blocks are missing.
+
+### err-mimir-bucket-index-too-old
+
+This error occurs when a query fails because the bucket index is too old.
+
+How it **works**:
+
+- At query time the querier and ruler determine how old a bucket index is based on the time it was last updated by the compactor.
+- If the age is older than the maximum stale period configured via `-blocks-storage.bucket-store.bucket-index.max-stale-period`, the query fails.
+- This circuit breaker ensures queriers and rulers do not return any partial query results due to a stale view over the long-term storage.
+
+How to **fix** it:
+
+- Increase the limit by using the `-blocks-storage.bucket-store.bucket-index.max-stale-period` option.
+
 ## Mimir routes by path
 
 **Write path**:
