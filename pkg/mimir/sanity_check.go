@@ -147,7 +147,7 @@ func checkObjectStoresConfig(ctx context.Context, cfg Config, logger log.Logger)
 
 func checkObjectStoreConfig(ctx context.Context, cfg bucket.Config, logger log.Logger) error {
 	// Hardcoded but relatively high timeout.
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 
 	client, err := bucket.NewClient(ctx, cfg, "sanity-check", logger, nil)
