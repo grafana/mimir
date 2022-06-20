@@ -73,6 +73,7 @@
   * `autoscaling_querier_min_replicas`: minimum number of querier replicas.
   * `autoscaling_querier_max_replicas`: maximum number of querier replicas.
   * `autoscaling_prometheus_url`: Prometheus base URL from which to scrape Mimir metrics (e.g. `http://prometheus.default:9090/prometheus`).
+* [FEATURE] Jsonnet: Add support for ruler remote evaluation mode (`ruler_remote_evaluation_enabled`), which deploys and uses a dedicated query path for rule evaluation. This enables the benefits of the query-frontend for rule evaluation, such as query sharding. #2073
 * [ENHANCEMENT] Added `compactor` service, that can be used to route requests directly to compactor (e.g. admin UI). #2063
 * [ENHANCEMENT] Added a `consul_enabled` configuration option that defaults to true (matching previous behavior) to provide the ability to disable consul. #2093
 
