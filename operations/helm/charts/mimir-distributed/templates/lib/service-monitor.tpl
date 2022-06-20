@@ -49,8 +49,8 @@ spec:
         - sourceLabels: [job]
           replacement: "{{ $.ctx.Release.Namespace }}/{{ $.component }}"
           targetLabel: job
-        {{- if .clusterLabel.enabled }}
-        - replacement: "{{ .clusterLabel.value | default (include "mimir.clusterName" $.ctx) }}"
+        {{- if kindIs "string" .clusterLabel }}
+        - replacement: "{{ .clusterLabel | default (include "mimir.clusterName" $.ctx) }}"
           targetLabel: cluster
         {{- end }}
         {{- with .relabelings }}
