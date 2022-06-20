@@ -19,5 +19,5 @@ for FILEPATH in $TESTS; do
   TEST_NAME=$(basename -s '.yaml' "$FILEPATH")
 
   echo "Templating $TEST_NAME"
-  helm template "${TEST_NAME}" ${CHART_PATH} -f "${FILEPATH}" --output-dir "operations/helm/tests/${TEST_NAME}-generated"
+  helm template "${TEST_NAME}" ${CHART_PATH} -f "${FILEPATH}" --output-dir "operations/helm/tests/${TEST_NAME}-generated" --namespace citestns
 done
