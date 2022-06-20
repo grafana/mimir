@@ -1491,13 +1491,13 @@
         },
         {
           "kind": "field",
-          "name": "shuffle_sharding_ingesters_lookback_period",
+          "name": "shuffle_sharding_ingesters_enabled",
           "required": false,
-          "desc": "When this setting is \u003e 0, queriers fetch in-memory series from the minimum set of required ingesters, selecting only ingesters which may have received series since 'now - lookback period'. The lookback period should be greater or equal than the configured -querier.query-store-after and -querier.query-ingesters-within. If this setting is 0, queriers always query all ingesters (ingesters shuffle sharding on read path is disabled).",
+          "desc": "Fetch in-memory series from the minimum set of required ingesters, selecting only ingesters which may have received series since -querier.query-ingesters-within. If this setting is false or -querier.query-ingesters-within is '0', queriers always query all ingesters (ingesters shuffle sharding on read path is disabled).",
           "fieldValue": null,
-          "fieldDefaultValue": 46800000000000,
-          "fieldFlag": "querier.shuffle-sharding-ingesters-lookback-period",
-          "fieldType": "duration",
+          "fieldDefaultValue": true,
+          "fieldFlag": "querier.shuffle-sharding-ingesters-enabled",
+          "fieldType": "boolean",
           "fieldCategory": "advanced"
         },
         {
