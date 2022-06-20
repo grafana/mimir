@@ -71,7 +71,6 @@ spec:
           emptyDir: {}
       containers:
         - name: compactor
-          image: "grafana/mimir:r190-fe20bbd"
           imagePullPolicy: IfNotPresent
           args:
             - "-target=compactor"

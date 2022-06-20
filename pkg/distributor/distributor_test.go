@@ -2007,7 +2007,7 @@ func TestDistributor_MetricsMetadata(t *testing.T) {
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			// Create distributor
-			ds, ingesters, _ := prepare(t, prepConfig{
+			ds, _, _ := prepare(t, prepConfig{
 				numIngesters:     numIngesters,
 				happyIngesters:   numIngesters,
 				numDistributors:  1,
@@ -2022,16 +2022,15 @@ func TestDistributor_MetricsMetadata(t *testing.T) {
 			_, err := ds[0].Push(ctx, req)
 			require.NoError(t, err)
 
+			// Check how many ingesters are queried as part of the shuffle sharding subring.
+			replicationSet, err := ds[0].GetIngestersForMetadata(ctx)
+			require.NoError(t, err)
+			assert.Equal(t, testData.expectedIngesters, len(replicationSet.Instances))
+
 			// Assert on metric metadata
 			metadata, err := ds[0].MetricsMetadata(ctx)
 			require.NoError(t, err)
 			assert.Equal(t, 10, len(metadata))
-
-			// Check how many ingesters have been queried.
-			// Due to the quorum the distributor could cancel the last request towards ingesters
-			// if all other ones are successful, so we're good either has been queried X or X-1
-			// ingesters.
-			assert.Contains(t, []int{testData.expectedIngesters, testData.expectedIngesters - 1}, countMockIngestersCalls(ingesters, "MetricsMetadata"))
 		})
 	}
 }

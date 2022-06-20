@@ -36,7 +36,7 @@ The [load-testing-with-k6.js] script can be configured using the following envir
 | `K6_RAMP_DOWN_MIN`            |          | 0             | Duration of the ramp down period in minutes.                                          |
 | `K6_SCRAPE_INTERVAL_SECONDS`  |          | 20            | Simulated Prometheus scrape interval in seconds.                                      |
 | `K6_HA_REPLICAS`              |          | 1             | Number of HA replicas to simulate (use 1 for no HA).                                  |
-| `K6_HA_CLUSTERS`              |          | 100           | Number of HA clusters to simulate.                                                    |
+| `K6_HA_CLUSTERS`              |          | 1             | Number of HA clusters to simulate.                                                    |
 
 For example, if Mimir is running on `localhost:80` you can run a small scale test with this command:
 

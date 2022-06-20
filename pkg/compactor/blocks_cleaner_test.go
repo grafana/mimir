@@ -699,6 +699,7 @@ type mockConfigProvider struct {
 	splitAndMergeShards  map[string]int
 	instancesShardSize   map[string]int
 	splitGroups          map[string]int
+	blockUploadEnabled   map[string]bool
 }
 
 func newMockConfigProvider() *mockConfigProvider {
@@ -706,6 +707,7 @@ func newMockConfigProvider() *mockConfigProvider {
 		userRetentionPeriods: make(map[string]time.Duration),
 		splitAndMergeShards:  make(map[string]int),
 		splitGroups:          make(map[string]int),
+		blockUploadEnabled:   make(map[string]bool),
 	}
 }
 
@@ -735,6 +737,10 @@ func (m *mockConfigProvider) CompactorTenantShardSize(user string) int {
 		return result
 	}
 	return 0
+}
+
+func (m *mockConfigProvider) CompactorBlockUploadEnabled(tenantID string) bool {
+	return m.blockUploadEnabled[tenantID]
 }
 
 func (m *mockConfigProvider) S3SSEType(user string) string {

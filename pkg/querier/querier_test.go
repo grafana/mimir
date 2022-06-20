@@ -1053,19 +1053,6 @@ func TestConfig_Validate(t *testing.T) {
 				cfg.QueryStoreAfter = time.Hour
 			},
 		},
-		"should pass if 'query store after' is enabled and shuffle-sharding is enabled with greater value": {
-			setup: func(cfg *Config) {
-				cfg.QueryStoreAfter = time.Hour
-				cfg.ShuffleShardingIngestersLookbackPeriod = 2 * time.Hour
-			},
-		},
-		"should fail if 'query store after' is enabled and shuffle-sharding is enabled with lesser value": {
-			setup: func(cfg *Config) {
-				cfg.QueryStoreAfter = time.Hour
-				cfg.ShuffleShardingIngestersLookbackPeriod = time.Minute
-			},
-			expected: errShuffleShardingLookbackLessThanQueryStoreAfter,
-		},
 		"should pass if both 'query store after' and 'query ingesters within' are set and 'query store after' < 'query ingesters within'": {
 			setup: func(cfg *Config) {
 				cfg.QueryStoreAfter = time.Hour

@@ -836,14 +836,13 @@ store_gateway_client:
   # CLI flag: -querier.store-gateway-client.tls-insecure-skip-verify
   [tls_insecure_skip_verify: <boolean> | default = false]
 
-# (advanced) When this setting is > 0, queriers fetch in-memory series from the
-# minimum set of required ingesters, selecting only ingesters which may have
-# received series since 'now - lookback period'. The lookback period should be
-# greater or equal than the configured -querier.query-store-after and
-# -querier.query-ingesters-within. If this setting is 0, queriers always query
-# all ingesters (ingesters shuffle sharding on read path is disabled).
-# CLI flag: -querier.shuffle-sharding-ingesters-lookback-period
-[shuffle_sharding_ingesters_lookback_period: <duration> | default = 13h]
+# (advanced) Fetch in-memory series from the minimum set of required ingesters,
+# selecting only ingesters which may have received series since
+# -querier.query-ingesters-within. If this setting is false or
+# -querier.query-ingesters-within is '0', queriers always query all ingesters
+# (ingesters shuffle sharding on read path is disabled).
+# CLI flag: -querier.shuffle-sharding-ingesters-enabled
+[shuffle_sharding_ingesters_enabled: <boolean> | default = true]
 
 # The maximum number of concurrent queries. This config option should be set on
 # query-frontend too when query sharding is enabled.
@@ -2855,6 +2854,10 @@ The `limits` block configures default and per-tenant limits imposed by component
 # disable the limit and use all compactors.
 # CLI flag: -compactor.compactor-tenant-shard-size
 [compactor_tenant_shard_size: <int> | default = 0]
+
+# Enable block upload API for the tenant.
+# CLI flag: -compactor.block-upload-enabled
+[compactor_block_upload_enabled: <boolean> | default = false]
 
 # S3 server-side encryption type. Required to enable server-side encryption
 # overrides for a specific tenant. If not set, the default S3 client settings

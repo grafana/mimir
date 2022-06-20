@@ -26,6 +26,7 @@
 (import 'multi-zone.libsonnet') +
 (import 'memberlist.libsonnet') +
 (import 'continuous-test.libsonnet') +
+(import 'ruler-remote-evaluation.libsonnet') +
 
 // Import autoscaling at the end because it overrides deployments.
 (import 'autoscaling.libsonnet')

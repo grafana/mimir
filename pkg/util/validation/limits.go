@@ -127,6 +127,7 @@ type Limits struct {
 	CompactorSplitAndMergeShards   int            `yaml:"compactor_split_and_merge_shards" json:"compactor_split_and_merge_shards"`
 	CompactorSplitGroups           int            `yaml:"compactor_split_groups" json:"compactor_split_groups"`
 	CompactorTenantShardSize       int            `yaml:"compactor_tenant_shard_size" json:"compactor_tenant_shard_size"`
+	CompactorBlockUploadEnabled    bool           `yaml:"compactor_block_upload_enabled" json:"compactor_block_upload_enabled"`
 
 	// This config doesn't have a CLI flag registered here because they're registered in
 	// their own original config struct.
@@ -204,6 +205,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.CompactorSplitAndMergeShards, "compactor.split-and-merge-shards", 0, "The number of shards to use when splitting blocks. 0 to disable splitting.")
 	f.IntVar(&l.CompactorSplitGroups, "compactor.split-groups", 1, "Number of groups that blocks for splitting should be grouped into. Each group of blocks is then split separately. Number of output split shards is controlled by -compactor.split-and-merge-shards.")
 	f.IntVar(&l.CompactorTenantShardSize, "compactor.compactor-tenant-shard-size", 0, "Max number of compactors that can compact blocks for single tenant. 0 to disable the limit and use all compactors.")
+	f.BoolVar(&l.CompactorBlockUploadEnabled, "compactor.block-upload-enabled", false, "Enable block upload API for the tenant.")
 
 	// Store-gateway.
 	f.IntVar(&l.StoreGatewayTenantShardSize, "store-gateway.tenant-shard-size", 0, "The tenant's shard size, used when store-gateway sharding is enabled. Value of 0 disables shuffle sharding for the tenant, that is all tenant blocks are sharded across all store-gateway replicas.")
@@ -527,6 +529,11 @@ func (o *Overrides) CompactorSplitAndMergeShards(userID string) int {
 // CompactorSplitGroupsCount returns the number of groups that blocks for splitting should be grouped into.
 func (o *Overrides) CompactorSplitGroups(userID string) int {
 	return o.getOverridesForUser(userID).CompactorSplitGroups
+}
+
+// CompactorBlockUploadEnabled returns whether block upload is enabled for a certain tenant.
+func (o *Overrides) CompactorBlockUploadEnabled(tenantID string) bool {
+	return o.getOverridesForUser(tenantID).CompactorBlockUploadEnabled
 }
 
 // MetricRelabelConfigs returns the metric relabel configs for a given user.
