@@ -79,10 +79,7 @@ spec:
           resources:
             {{- toYaml .Values.query_frontend.resources | nindent 12 }}
           securityContext:
-            readOnlyRootFilesystem: true
-            {{- if  .Values.query_frontend.containerSecurityContext }}{{ if .Values.query_frontend.containerSecurityContext.privileged }}
-            privileged: {{ .Values.query_frontend.containerSecurityContext.privileged }}
-            {{- end }}{{ end }}
+            {{- toYaml .Values.query_frontend.containerSecurityContext | nindent 12 }} 
           env:
             {{- with .Values.global.extraEnv }}
               {{- toYaml . | nindent 12 }}

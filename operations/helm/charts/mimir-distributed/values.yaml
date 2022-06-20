@@ -450,6 +450,10 @@ distributor:
 
   securityContext: {}
 
+  # -- The SecurityContext for distributor containers
+  containerSecurityContext:
+    readOnlyRootFilesystem: true
+
   strategy:
     type: RollingUpdate
     rollingUpdate:
@@ -465,7 +469,7 @@ distributor:
   extraVolumeMounts: []
   env: []
   extraEnvFrom: []
-
+  
 ingester:
   replicas: 3
 
@@ -541,6 +545,10 @@ ingester:
 
   securityContext: {}
 
+  # -- The SecurityContext for ingester containers
+  containerSecurityContext:
+    readOnlyRootFilesystem: true
+
   strategy:
     type: RollingUpdate
     rollingUpdate:
@@ -586,6 +594,10 @@ overrides_exporter:
   affinity: {}
 
   securityContext: {}
+
+   # -- The SecurityContext for overrides_exporter containers
+  containerSecurityContext:
+    readOnlyRootFilesystem: true 
 
   extraArgs: {}
 
@@ -657,6 +669,10 @@ ruler:
 
   securityContext: {}
 
+  # -- The SecurityContext for ruler containers
+  containerSecurityContext:
+    readOnlyRootFilesystem: true
+
   strategy:
     type: RollingUpdate
     rollingUpdate:
@@ -723,6 +739,10 @@ querier:
 
   securityContext: {}
 
+  # -- The SecurityContext for querier containers
+  containerSecurityContext:
+    readOnlyRootFilesystem: true
+
   strategy:
     type: RollingUpdate
     rollingUpdate:
@@ -788,6 +808,10 @@ query_frontend:
     initialDelaySeconds: 45
 
   securityContext: {}
+
+  # -- The SecurityContext for query_frontend containers
+  containerSecurityContext:
+    readOnlyRootFilesystem: true
 
   strategy:
     type: RollingUpdate
@@ -888,6 +912,10 @@ store_gateway:
 
   securityContext: {}
 
+   # -- The SecurityContext for store_gateway containers
+  containerSecurityContext:
+    readOnlyRootFilesystem: true 
+
   strategy:
     type: RollingUpdate
 
@@ -985,6 +1013,10 @@ compactor:
 
   securityContext: {}
 
+  # -- The SecurityContext for compactor containers
+  containerSecurityContext:
+    readOnlyRootFilesystem: true
+
   strategy:
     type: RollingUpdate
 
@@ -997,6 +1029,8 @@ compactor:
   extraVolumeMounts: []
   env: []
   extraEnvFrom: []
+
+
 
 memcached:
   enabled: false
@@ -1488,6 +1522,10 @@ admin_api:
 
   securityContext: {}
 
+  # -- The SecurityContext for admin_api containers
+  containerSecurityContext:
+    readOnlyRootFilesystem: true
+
   extraArgs: {}
 
   persistence:
@@ -1512,7 +1550,7 @@ admin_api:
   extraVolumeMounts: []
   env: []
   extraEnvFrom: []
-
+  
 # Settings for the gateway service providing authentication and authorization via the admin_api.
 # Can only be enabled if enterprise.enabled is true - requires license.
 gateway:
@@ -1543,6 +1581,11 @@ gateway:
   affinity: {}
 
   securityContext: {}
+
+   # -- The SecurityContext for gateway containers
+  containerSecurityContext:
+    readOnlyRootFilesystem: true
+
   initContainers: []
 
   extraArgs: {}

@@ -81,10 +81,7 @@ spec:
           resources:
             {{- toYaml .Values.ruler.resources | nindent 12 }}
           securityContext:
-            readOnlyRootFilesystem: true
-            {{- if  .Values.ruler.containerSecurityContext }}{{ if .Values.ruler.containerSecurityContext.privileged }}
-            privileged: {{ .Values.ruler.containerSecurityContext.privileged }}
-            {{- end }}{{ end }}
+            {{- toYaml .Values.ruler.containerSecurityContext | nindent 12 }} 
           env:
             {{- with .Values.global.extraEnv }}
               {{- toYaml . | nindent 12 }}

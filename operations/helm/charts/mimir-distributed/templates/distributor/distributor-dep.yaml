@@ -80,10 +80,7 @@ spec:
           resources:
             {{- toYaml .Values.distributor.resources | nindent 12 }}
           securityContext:
-            readOnlyRootFilesystem: true
-            {{- if  .Values.distributor.containerSecurityContext }}{{ if .Values.distributor.containerSecurityContext.privileged }}
-            privileged: {{ .Values.distributor.containerSecurityContext.privileged }}
-            {{- end }}{{ end }}
+            {{- toYaml .Values.distributor.containerSecurityContext | nindent 12 }} 
           env:
             {{- with .Values.global.extraEnv }}
               {{- toYaml . | nindent 12 }}

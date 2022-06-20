@@ -133,10 +133,7 @@ spec:
           resources:
             {{- toYaml .Values.compactor.resources | nindent 12 }}
           securityContext:
-            readOnlyRootFilesystem: true
-            {{- if  .Values.compactor.containerSecurityContext }}{{ if .Values.compactor.containerSecurityContext.privileged }}
-            privileged: {{ .Values.compactor.containerSecurityContext.privileged }}
-            {{- end }}{{ end }}
+            {{- toYaml .Values.compactor.containerSecurityContext | nindent 12 }} 
           env:
             {{- with .Values.global.extraEnv }}
               {{- toYaml . | nindent 12 }}

@@ -133,10 +133,7 @@ spec:
           resources:
             {{- toYaml .Values.store_gateway.resources | nindent 12 }}
           securityContext:
-            readOnlyRootFilesystem: true  
-            {{- if  .Values.store_gateway.containerSecurityContext }}{{ if .Values.store_gateway.containerSecurityContext.privileged }}
-            privileged: {{ .Values.store_gateway.containerSecurityContext.privileged }}
-            {{- end }}{{ end }}
+            {{- toYaml .Values.store_gateway.containerSecurityContext | nindent 12 }} 
           env:
             {{- with .Values.global.extraEnv }}
               {{- toYaml . | nindent 12 }}
