@@ -128,7 +128,7 @@ func (r *MimirClient) doRequest(path, method string, payload []byte) (*http.Resp
 			"url":    req.URL.String(),
 			"method": req.Method,
 			"error":  err,
-		}).Errorln("error during request to mimir api")
+		}).Errorln("error during setting up request to mimir api")
 		return nil, err
 	}
 
