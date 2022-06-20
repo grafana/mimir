@@ -66,11 +66,6 @@ spec:
             {{- end }}
             - name: config
               mountPath: /etc/mimir
-            - name: storage
-              mountPath: /data
-              {{- if .Values.query_scheduler.persistence.subPath }}
-              subPath: {{ .Values.query_scheduler.persistence.subPath }}
-              {{- end }}
           ports:
             - name: http-metrics
               containerPort: {{ include "mimir.serverHttpListenPort" . }}
@@ -124,6 +119,4 @@ spec:
 {{- if .Values.query_scheduler.extraVolumes }}
 {{ toYaml .Values.query_scheduler.extraVolumes | indent 8}}
 {{- end }}
-        - name: storage
-          emptyDir: {}
 {{- end }}
