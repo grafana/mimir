@@ -122,7 +122,8 @@ func (r *MimirClient) doRequest(path, method string, payload []byte) (*http.Resp
 		return nil, err
 	}
 
-	if (r.user != "" || r.key != "") && r.authToken != "" {
+	switch {
+	case (r.user != "" || r.key != "") && r.authToken != "":
 		err := errors.New("at most one of basic auth or auth token should be configured")
 		log.WithFields(log.Fields{
 			"url":    req.URL.String(),
@@ -130,13 +131,14 @@ func (r *MimirClient) doRequest(path, method string, payload []byte) (*http.Resp
 			"error":  err,
 		}).Errorln("error during setting up request to mimir api")
 		return nil, err
-	}
 
-	if r.user != "" {
+	case r.user != "":
 		req.SetBasicAuth(r.user, r.key)
-	} else if r.key != "" {
+
+	case r.key != "":
 		req.SetBasicAuth(r.id, r.key)
-	} else if r.authToken != "" {
+
+	case r.authToken != "":
 		req.Header.Add("Authorization", "Bearer "+r.authToken)
 	}
 
