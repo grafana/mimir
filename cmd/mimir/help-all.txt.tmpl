@@ -505,8 +505,6 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] True to enable snapshotting of in-memory TSDB data on disk when shutting down.
   -blocks-storage.tsdb.new-chunk-disk-mapper
     	[experimental] Temporary flag to select whether to use the new (used in upstream Prometheus) or the old (legacy) chunk disk mapper.
-  -blocks-storage.tsdb.ooo-allowance duration
-    	[experimental] Allow samples to be this old for out-of-order.  Supported units: h, m, s. If the value is non-zero, then all TSDBs will be enabled to handle overlapping data.
   -blocks-storage.tsdb.ooo-cap-max int
     	[experimental] Maximum capacity for OOO chunks (in samples. between 1 and 255.) (default 32)
   -blocks-storage.tsdb.ooo-cap-min int
@@ -867,6 +865,8 @@ Usage of ./cmd/mimir/mimir:
     	The maximum number of active series per tenant, across the cluster before replication. 0 to disable. (default 150000)
   -ingester.metadata-retain-period duration
     	Period at which metadata we have not seen will remain in memory before being deleted. (default 10m0s)
+  -ingester.ooo-allowance duration
+    	[experimental] Allow samples to be this old for out-of-order. Supported units: h, m, s. If the value is non-zero, then the ingester will be enabled to query overlapping blocks.
   -ingester.rate-update-period duration
     	Period with which to update the per-tenant ingestion rates. (default 15s)
   -ingester.ring.consul.acl-token string
