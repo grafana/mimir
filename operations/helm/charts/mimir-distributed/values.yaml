@@ -264,6 +264,11 @@ rbac:
 serviceMonitor:
   # -- If enabled, ServiceMonitor resources for Prometheus Operator are created
   enabled: false
+  clusterLabel:
+    # -- Whether to include 'cluster' label in metrics
+    enabled: true
+    # -- Value of the 'cluster' label in metrics. Null means default, which is the helm release name for Mimir and the actual cluster name for Enterprise Metrics
+    value: null
   # -- Alternative namespace for ServiceMonitor resources
   namespace: null
   # -- Namespace selector for ServiceMonitor resources

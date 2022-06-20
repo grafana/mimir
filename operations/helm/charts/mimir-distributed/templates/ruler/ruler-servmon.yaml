@@ -37,8 +37,10 @@ spec:
         - sourceLabels: [job]
           replacement: "{{ $.Release.Namespace }}/ruler"
           targetLabel: job
-        - replacement: "{{ include "mimir.clusterName" $ }}"
+        {{- if .clusterLabel.enabled }}
+        - replacement: "{{ .clusterLabel.value | default (include "mimir.clusterName" $) }}"
           targetLabel: cluster
+        {{- end }}
         {{- with .relabelings }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
