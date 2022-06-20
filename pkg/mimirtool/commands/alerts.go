@@ -72,7 +72,7 @@ func (a *AlertmanagerCommand) Register(app *kingpin.Application, envVars EnvVarN
 	alertCmd.Flag("tls-ca-path", "TLS CA certificate to verify Grafana Mimir API as part of mTLS; alternatively, set "+envVars.TLSCAPath+".").Default("").Envar(envVars.TLSCAPath).StringVar(&a.ClientConfig.TLS.CAPath)
 	alertCmd.Flag("tls-cert-path", "TLS client certificate to authenticate with the Grafana Mimir API as part of mTLS; alternatively, set "+envVars.TLSCertPath+".").Default("").Envar(envVars.TLSCertPath).StringVar(&a.ClientConfig.TLS.CertPath)
 	alertCmd.Flag("tls-key-path", "TLS client certificate private key to authenticate with the Grafana Mimir API as part of mTLS; alternatively, set "+envVars.TLSKeyPath+".").Default("").Envar(envVars.TLSKeyPath).StringVar(&a.ClientConfig.TLS.KeyPath)
-	alertCmd.Flag("authToken", "Authentication token for bearer token or JWT auth, alternatively set MIMIR_AUTH_TOKEN.").Default("").Envar("MIMIR_AUTH_TOKEN").StringVar(&a.ClientConfig.AuthToken)
+	alertCmd.Flag("auth-token", "Authentication token bearer authentication; alternatively, set MIMIR_AUTH_TOKEN.").Default("").Envar("MIMIR_AUTH_TOKEN").StringVar(&a.ClientConfig.AuthToken)
 	// Get Alertmanager Configs Command
 	getAlertsCmd := alertCmd.Command("get", "Get the Alertmanager configuration that is currently in the Grafana Mimir Alertmanager.").Action(a.getConfig)
 	getAlertsCmd.Flag("disable-color", "disable colored output").BoolVar(&a.DisableColor)
