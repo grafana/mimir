@@ -21,7 +21,7 @@ The following table shows the required label names and whether they can be custo
 | `pod`       | Yes          | The unique identifier of a Mimir replica (eg. Pod ID when running on Kubernetes). The label name can be configured with the `per_instance_label` field in the mixin config.                                                                                                                                                                                                                                                                                                                      |
 | `instance`  | Yes          | The unique identifier of the node or machine where the Mimir replica is running (eg. the node when running on Kubernetes). The label name can be configured with the `per_node_label` field in the mixin config.                                                                                                                                                                                                                                                                                 |
 
-For rules and alerts to function properly, your Prometheus or Grafana Agent must be configured to scrape metrics from Grafana Mimir at a `15s` interval or shorter.
+For rules and alerts to function properly, you must configure your Prometheus or Grafana Agent to scrape metrics from Grafana Mimir at an interval of `15s` or shorter.
 
 ## Job selection
 
