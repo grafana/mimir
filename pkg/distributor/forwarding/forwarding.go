@@ -9,6 +9,7 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 
@@ -60,9 +61,10 @@ type forwarder struct {
 	pools  pools
 	client http.Client
 
-	requestsTotal           *prometheus.CounterVec
-	requestLatencyHistogram *prometheus.HistogramVec
-	samplesTotal            *prometheus.CounterVec
+	requestsTotal           prometheus.Counter
+	errorsTotal             *prometheus.CounterVec
+	samplesTotal            prometheus.Counter
+	requestLatencyHistogram prometheus.Histogram
 }
 
 // NewForwarder returns a new forwarder, if forwarding is disabled it returns nil.
@@ -79,22 +81,27 @@ func NewForwarder(reg prometheus.Registerer, cfg Config) Forwarder {
 			snappy:     sync.Pool{New: func() interface{} { return &[]byte{} }},
 		},
 
-		requestsTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+		requestsTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Namespace: "cortex",
 			Name:      "distributor_forward_requests_total",
 			Help:      "The total number of requests the Distributor made to forward samples.",
-		}, []string{"user"}),
-		samplesTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+		}),
+		errorsTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Namespace: "cortex",
+			Name:      "distributor_forward_errors_total",
+			Help:      "The total number of errors that the distributor received from forwarding targets when trying to send samples to them.",
+		}, []string{"status_code"}),
+		samplesTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Namespace: "cortex",
 			Name:      "distributor_forward_samples_total",
 			Help:      "The total number of samples the Distributor forwarded.",
-		}, []string{"user"}),
-		requestLatencyHistogram: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+		}),
+		requestLatencyHistogram: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 			Namespace: "cortex",
 			Name:      "distributor_forward_requests_latency_seconds",
 			Help:      "The client-side latency of requests to forward metrics made by the Distributor.",
 			Buckets:   []float64{.005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10, 20, 30},
-		}, []string{"user"}),
+		}),
 	}
 }
 
@@ -110,9 +117,10 @@ func (r *forwarder) NewRequest(ctx context.Context, tenant string, rules validat
 		timeout:         r.cfg.RequestTimeout,
 		propagateErrors: r.cfg.PropagateErrors,
 
-		requests: r.requestsTotal.WithLabelValues(tenant),
-		samples:  r.samplesTotal.WithLabelValues(tenant),
-		latency:  r.requestLatencyHistogram.WithLabelValues(tenant),
+		requests: r.requestsTotal,
+		errors:   r.errorsTotal,
+		samples:  r.samplesTotal,
+		latency:  r.requestLatencyHistogram,
 	}
 }
 
@@ -132,8 +140,9 @@ type request struct {
 	propagateErrors bool
 
 	requests prometheus.Counter
+	errors   *prometheus.CounterVec
 	samples  prometheus.Counter
-	latency  prometheus.Observer
+	latency  prometheus.Histogram
 }
 
 func (r *request) Add(sample mimirpb.PreallocTimeseries) bool {
@@ -278,6 +287,7 @@ func (r *request) sendToEndpoint(ctx context.Context, endpoint string, ts []mimi
 		if scanner.Scan() {
 			line = scanner.Text()
 		}
+		r.errors.WithLabelValues(strconv.Itoa(httpResp.StatusCode)).Inc()
 		err := errors.Errorf("server returned HTTP status %s: %s", httpResp.Status, line)
 		if httpResp.StatusCode/100 == 5 || httpResp.StatusCode == http.StatusTooManyRequests {
 			return recoverableError{err}

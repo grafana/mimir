@@ -86,6 +86,8 @@ The following features are currently experimental:
   - `-alertmanager-storage.storage-prefix`
   - `-blocks-storage.storage-prefix`
   - `-ruler-storage.storage-prefix`
+- Compactor
+  - HTTP API for uploading TSDB blocks
 
 ## Deprecated features
 

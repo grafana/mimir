@@ -1,0 +1,78 @@
+{{ if not .Values.enterprise.enabled -}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "mimir.resourceName" (dict "ctx" . "component" "smoke-test") }}
+  labels:
+    {{- include "mimir.labels" (dict "ctx" . "component" "smoke-test") | nindent 4 }}
+  annotations:
+    {{- if .Values.smoke_test.annotations }}
+    {{- toYaml .Values.smoke_test.annotations | nindent 4 }}
+    {{- end }}
+    "helm.sh/hook": test
+spec:
+  backoffLimit: 5
+  completions: 1
+  parallelism: 1
+  selector:
+  template:
+    metadata:
+      labels:
+        {{- include "mimir.podLabels" (dict "ctx" . "component" "smoke-test") | nindent 8 }}
+        {{- with .Values.smoke_test.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ template "mimir.serviceAccountName" . }}
+      {{- if .Values.smoke_test.priorityClassName }}
+      priorityClassName: {{ .Values.smoke_test.priorityClassName }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.smoke_test.securityContext | nindent 8 }}
+      {{- if .Values.image.pullSecrets }}
+      imagePullSecrets:
+      {{- range .Values.image.pullSecrets }}
+        - name: {{ . }}
+      {{- end }}
+      {{- end }}
+      initContainers:
+        {{- toYaml .Values.smoke_test.initContainers | nindent 8 }}
+      containers:
+        - name: smoke-test
+          image: "{{ .Values.smoke_test.image.repository }}:{{ .Values.smoke_test.image.tag }}"
+          imagePullPolicy: {{ .Values.smoke_test.pullPolicy }}
+          args:
+            - "-tests.smoke-test"
+            - "-tests.write-endpoint={{ template "mimir.gatewayUrl" . }}"
+            - "-tests.read-endpoint={{ template "mimir.gatewayUrl" . }}/prometheus"
+            - "-tests.tenant-id={{ .Values.smoke_test.tenantId }}"
+            - "-tests.write-read-series-test.num-series=1000"
+            - "-tests.write-read-series-test.max-query-age=48h"
+            - "-server.metrics-port={{ include "mimir.serverHttpListenPort" . }}"
+            {{- range $key, $value := .Values.smoke_test.extraArgs }}
+            - "-{{ $key }}={{ $value }}"
+            {{- end }}
+          volumeMounts:
+            {{- if .Values.smoke_test.extraVolumeMounts }}
+              {{ toYaml .Values.smoke_test.extraVolumeMounts | nindent 12 }}
+            {{- end }}
+          env:
+            {{- with .Values.global.extraEnv }}
+              {{ toYaml . | nindent 12 }}
+            {{- end }}
+            {{- with .Values.smoke_test.env }}
+              {{ toYaml . | nindent 12 }}
+            {{- end }}
+          envFrom:
+            {{- with .Values.global.extraEnvFrom }}
+              {{- toYaml . | nindent 12 }}
+            {{- end }}
+            {{- with .Values.smoke_test.extraEnvFrom }}
+              {{- toYaml . | nindent 12 }}
+            {{- end }}
+      restartPolicy: OnFailure
+      volumes:
+        {{- if .Values.smoke_test.extraVolumes }}
+        {{ toYaml .Values.smoke_test.extraVolumes | nindent 8 }}
+        {{- end }}
+{{- end }}

@@ -33,6 +33,7 @@ spec:
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: query-frontend
       annotations:
+        minio-secret-version: "42"
     spec:
       serviceAccountName: test-enterprise-configmap-values-mimir
       securityContext:
@@ -41,7 +42,6 @@ spec:
         []
       containers:
         - name: query-frontend
-          image: "grafana/enterprise-metrics:r190-9abd21a8"
           imagePullPolicy: IfNotPresent
           args:
             - "-target=query-frontend"
@@ -78,6 +78,8 @@ spec:
             readOnlyRootFilesystem: true
           env:
           envFrom:
+            - secretRef:
+                name: mimir-minio-secret
       nodeSelector:
         {}
       affinity:

@@ -354,12 +354,16 @@ func (a *API) RegisterStoreGateway(s *storegateway.StoreGateway) {
 	a.RegisterRoute("/store-gateway/tenant/{tenant}/blocks", http.HandlerFunc(s.BlocksHandler), false, true, "GET")
 }
 
-// RegisterCompactor registers the ring UI page associated with the compactor.
+// RegisterCompactor registers routes associated with the compactor.
 func (a *API) RegisterCompactor(c *compactor.MultitenantCompactor) {
 	a.indexPage.AddLinks(defaultWeight, "Compactor", []IndexPageLink{
 		{Desc: "Ring status", Path: "/compactor/ring"},
 	})
 	a.RegisterRoute("/compactor/ring", http.HandlerFunc(c.RingHandler), false, true, "GET", "POST")
+	a.RegisterRoute("/api/v1/upload/block/{block}", http.HandlerFunc(c.HandleBlockUpload), true,
+		false, http.MethodPost)
+	a.RegisterRoute("/api/v1/upload/block/{block}/files", http.HandlerFunc(c.UploadBlockFile),
+		true, false, http.MethodPost)
 }
 
 type Distributor interface {

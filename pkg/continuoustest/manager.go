@@ -7,6 +7,8 @@ import (
 	"flag"
 	"time"
 
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -33,13 +35,15 @@ func (cfg *ManagerConfig) RegisterFlags(f *flag.FlagSet) {
 }
 
 type Manager struct {
-	cfg   ManagerConfig
-	tests []Test
+	cfg    ManagerConfig
+	logger log.Logger
+	tests  []Test
 }
 
-func NewManager(cfg ManagerConfig) *Manager {
+func NewManager(cfg ManagerConfig, logger log.Logger) *Manager {
 	return &Manager{
-		cfg: cfg,
+		cfg:    cfg,
+		logger: logger,
 	}
 }
 
@@ -65,6 +69,11 @@ func (m *Manager) Run(ctx context.Context) error {
 			// Run it immediately, and then every configured period.
 			err := t.Run(ctx, time.Now())
 			if m.cfg.SmokeTest {
+				if err != nil {
+					level.Info(m.logger).Log("msg", "Test failed", "test", t.Name(), "err", err)
+				} else {
+					level.Info(m.logger).Log("msg", "Test passed", "test", t.Name())
+				}
 				return err
 			}
 

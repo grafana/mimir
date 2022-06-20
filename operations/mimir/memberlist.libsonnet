@@ -71,7 +71,7 @@
   // Don't add label to matcher, only to pod labels.
   local gossipLabel = $.apps.v1.statefulSet.spec.template.metadata.withLabelsMixin({ [$._config.gossip_member_label]: 'true' }),
 
-  alertmanager_statefulset+: if !$._config.memberlist_ring_enabled then {} else
+  alertmanager_statefulset+: if !$._config.memberlist_ring_enabled || !$._config.alertmanager_enabled then {} else
     gossipLabel,
 
   compactor_statefulset+: if !$._config.memberlist_ring_enabled then {} else

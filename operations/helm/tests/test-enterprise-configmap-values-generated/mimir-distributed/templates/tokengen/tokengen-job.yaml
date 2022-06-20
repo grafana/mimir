@@ -33,7 +33,6 @@ spec:
         []
       containers:
         - name: tokengen
-          image: "grafana/enterprise-metrics:r190-9abd21a8"
           imagePullPolicy: IfNotPresent
           args:
             - "-target=tokengen"
@@ -46,6 +45,8 @@ spec:
               mountPath: /license
           env:
           envFrom:
+            - secretRef:
+                name: mimir-minio-secret
       restartPolicy: OnFailure
       volumes:
         - name: config

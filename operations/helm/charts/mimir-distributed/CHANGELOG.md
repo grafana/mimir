@@ -12,7 +12,12 @@ Entries should be ordered as follows:
 Entries should include a reference to the Pull Request that introduced the change.
 
 ## main / unreleased
+* [CHANGE] Enable multi-tenancy by default. This means `multitenancy_enabled` is now `true` for both Mimir and Enterprise Metrics. Nginx will inject `X-Scope-OrgID=anonymous` header if the header is not present, ensuring backwards compatibility. #2117
 * [CHANGE] Change default value for `blocks_storage.bucket_store.chunks_cache.memcached.timeout` to `450ms` to increase use of cached data. #2035
+* [FEATURE] Add `mimir-continuous-test` in smoke-test mode. Use `helm test` to run a smoke test of the read + write path.
+* [ENHANCEMENT] Set the flag `ingester.ring.instance-availability-zone` to `zone-default` for ingesters. This is the first step of introducing multi-zone ingesters. #2114
+* [ENHANCEMENT] Add `mimir.structuredConfig` for adding and modifing `mimir.config` values after template evaulation. It can be used to alter individual values in the configuration and it's structured YAML instead of text. #2100
+* [ENHANCEMENT] Add `global.podAnnotations` which can add POD annotations to PODs directly controlled by this chart (mimir services, nginx). #2099
 * [ENHANCEMENT] Introduce the value `configStorageType` which can be either `ConfigMap` or `Secret`. This value sets where to store the Mimir/GEM application configuration. When using the value `ConfigMap`, make sure that any secrets, passwords, keys are injected from the environment from a separate `Secret`. See also: #2031, #2017. #2089
 * [ENHANCEMENT] Add `global.extraEnv` and `global.extraEnvFrom` to values. This enables setting common environment variables and common injection of secrets to the POD environment of Mimir/GEM services and Nginx. Memcached and minio are out of scope for now. #2031
 * [ENHANCEMENT] Add `extraEnvFrom` capability to all Mimir services to enable injecting secrets via environment variables. #2017

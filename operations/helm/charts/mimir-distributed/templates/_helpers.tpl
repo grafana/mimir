@@ -31,6 +31,16 @@ Calculate the infix for naming
 {{- if and .Values.enterprise.enabled .Values.enterprise.legacyLabels -}}enterprise-metrics{{- else -}}mimir{{- end -}}
 {{- end -}}
 
+{{/*
+Calculate the gateway url
+*/}}
+{{- define "mimir.gatewayUrl" -}}
+{{- if .Values.enterprise.enabled -}}
+http://{{ template "mimir.fullname" . }}-gateway.{{ .Release.Namespace }}.svc:{{ .Values.gateway.service.port | default (include "mimir.serverHttpListenPort" . ) }}
+{{- else -}}
+http://{{ template "mimir.fullname" . }}-nginx.{{ .Release.Namespace }}.svc:{{ .Values.nginx.service.port }}
+{{- end -}}
+{{- end -}}
 
 {{/*
 Create chart name and version as used by the chart label.
@@ -86,7 +96,7 @@ Create the app name for clients. Defaults to the same logic as "mimir.fullname",
 Calculate the config from structured and unstructred text input
 */}}
 {{- define "mimir.calculatedConfig" -}}
-{{ include (print $.Template.BasePath "/_config-render.tpl") . }}
+{{ tpl (mergeOverwrite (include (print $.Template.BasePath "/_config-render.tpl") . | fromYaml) .Values.mimir.structuredConfig | toYaml) . }}
 {{- end -}}
 
 {{/*
@@ -213,10 +223,13 @@ app.kubernetes.io/part-of: memberlist
 POD annotations
 */}}
 {{- define "mimir.podAnnotations" -}}
-{{- if .ctx.Values.useExternalConfig -}}
+{{- if .ctx.Values.useExternalConfig }}
 checksum/config: {{ .ctx.Values.externalConfigVersion }}
 {{- else -}}
 checksum/config: {{ include (print .ctx.Template.BasePath "/mimir-config.yaml") .ctx | sha256sum }}
+{{- end }}
+{{- with .ctx.Values.global.podAnnotations }}
+{{ toYaml . }}
 {{- end }}
 {{- if .component }}
 {{- $componentSection := .component | replace "-" "_" }}
