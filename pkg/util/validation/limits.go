@@ -93,6 +93,8 @@ type Limits struct {
 	MaxGlobalExemplarsPerUser int `yaml:"max_global_exemplars_per_user" json:"max_global_exemplars_per_user" category:"experimental"`
 	// Active series custom trackers
 	ActiveSeriesCustomTrackersConfig activeseries.CustomTrackersConfig `yaml:"active_series_custom_trackers_config" json:"active_series_custom_trackers_config" doc:"description=Additional custom trackers for active metrics. If there are active series matching a provided matcher (map value), the count will be exposed in the custom trackers metric labeled using the tracker name (map key). Zero valued counts are not exposed (and removed when they go back to zero)." category:"advanced"`
+	// Max allowed out of order samples.
+	OOOAllowance time.Duration `yaml:"ooo_allowance" category:"experimental"`
 
 	// Querier enforced limits.
 	MaxChunksPerQuery              int            `yaml:"max_fetched_chunks_per_query" json:"max_fetched_chunks_per_query"`
@@ -176,6 +178,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.MaxGlobalMetadataPerMetric, MaxMetadataPerMetricFlag, 0, "The maximum number of metadata per metric, across the cluster. 0 to disable.")
 	f.IntVar(&l.MaxGlobalExemplarsPerUser, "ingester.max-global-exemplars-per-user", 0, "The maximum number of exemplars in memory, across the cluster. 0 to disable exemplars ingestion.")
 	f.Var(&l.ActiveSeriesCustomTrackersConfig, "ingester.active-series-custom-trackers", "Additional active series metrics, matching the provided matchers. Matchers should be in form <name>:<matcher>, like 'foobar:{foo=\"bar\"}'. Multiple matchers can be provided either providing the flag multiple times or providing multiple semicolon-separated values to a single flag.")
+	f.DurationVar(&l.OOOAllowance, "ingester.ooo-allowance", 0*time.Second, "Allow samples to be this old for out-of-order. Supported units: h, m, s. If the value is non-zero, then the ingester will be enabled to query overlapping blocks.")
 
 	f.IntVar(&l.MaxChunksPerQuery, MaxChunksPerQueryFlag, 2e6, "Maximum number of chunks that can be fetched in a single query from ingesters and long-term storage. This limit is enforced in the querier, ruler and store-gateway. 0 to disable.")
 	f.IntVar(&l.MaxFetchedSeriesPerQuery, MaxSeriesPerQueryFlag, 0, "The maximum number of unique series for which a query can fetch samples from each ingesters and storage. This limit is enforced in the querier and ruler. 0 to disable")
@@ -476,6 +479,18 @@ func (o *Overrides) MaxGlobalExemplarsPerUser(userID string) int {
 
 func (o *Overrides) ActiveSeriesCustomTrackersConfig(userID string) activeseries.CustomTrackersConfig {
 	return o.getOverridesForUser(userID).ActiveSeriesCustomTrackersConfig
+}
+
+// OOOAllowance returns the user specified OOO Allowance if it is non-zero.
+// If it is not set or set to 0, then the default OOO Allowance is returned.
+func (o *Overrides) OOOAllowance(userID string) time.Duration {
+	if o.tenantLimits != nil {
+		l := o.tenantLimits.ByUserID(userID)
+		if l != nil && l.OOOAllowance != time.Duration(0) {
+			return l.OOOAllowance
+		}
+	}
+	return o.defaultLimits.OOOAllowance
 }
 
 // IngestionTenantShardSize returns the ingesters shard size for a given user.

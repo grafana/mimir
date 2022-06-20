@@ -2717,6 +2717,12 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -ingester.active-series-custom-trackers
 [active_series_custom_trackers_config: <map of tracker name (string) to matcher (string)> | default = ]
 
+# (experimental) Allow samples to be this old for out-of-order. Supported units:
+# h, m, s. If the value is non-zero, then the ingester will be enabled to query
+# overlapping blocks.
+# CLI flag: -ingester.ooo-allowance
+[ooo_allowance: <duration> | default = 0s]
+
 # Maximum number of chunks that can be fetched in a single query from ingesters
 # and long-term storage. This limit is enforced in the querier, ruler and
 # store-gateway. 0 to disable.
@@ -3520,12 +3526,6 @@ tsdb:
   # (advanced) limit the number of concurrently opening TSDB's on startup
   # CLI flag: -blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup
   [max_tsdb_opening_concurrency_on_startup: <int> | default = 10]
-
-  # (experimental) Allow samples to be this old for out-of-order.  Supported
-  # units: h, m, s. If the value is non-zero, then all TSDBs will be enabled to
-  # handle overlapping data.
-  # CLI flag: -blocks-storage.tsdb.ooo-allowance
-  [ooo_allowance: <duration> | default = 0s]
 
   # (experimental) Minimum capacity for OOO chunks (in samples. between 0 and
   # 255.)
