@@ -88,7 +88,7 @@ const HA_REPLICAS = parseInt(__ENV.K6_HA_REPLICAS || 1);
  * Number of HA clusters to simulate.
  * @constant {number}
  */
-const HA_CLUSTERS = parseInt(__ENV.K6_HA_CLUSTERS || 100);
+const HA_CLUSTERS = parseInt(__ENV.K6_HA_CLUSTERS || 1);
 
 const remote_write_url = get_remote_write_url();
 console.debug("Remote write URL:", remote_write_url)
