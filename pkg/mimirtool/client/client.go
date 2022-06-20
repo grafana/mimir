@@ -136,9 +136,7 @@ func (r *MimirClient) doRequest(path, method string, payload []byte) (*http.Resp
 		req.SetBasicAuth(r.user, r.key)
 	} else if r.key != "" {
 		req.SetBasicAuth(r.id, r.key)
-	}
-
-	if r.authToken != "" {
+	} else if r.authToken != "" {
 		req.Header.Add("Authorization", "Bearer "+r.authToken)
 	}
 
