@@ -42,7 +42,6 @@ spec:
         []
       containers:
         - name: gateway
-          image: "grafana/enterprise-metrics:r191-708e13a1"
           imagePullPolicy: IfNotPresent
           args:
             - "-target=gateway"
