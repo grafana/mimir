@@ -382,7 +382,7 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 			tenantID:           tenantID,
 			blockID:            blockID,
 			disableBlockUpload: true,
-			expBadRequest:      fmt.Sprintf("block upload is disabled for tenant: %s", tenantID),
+			expBadRequest:      "block upload is disabled",
 		},
 		{
 			name:            "valid request",
@@ -782,7 +782,7 @@ func TestMultitenantCompactor_UploadBlockFile(t *testing.T) {
 			blockID:            blockID,
 			disableBlockUpload: true,
 			path:               "chunks/000001",
-			expBadRequest:      fmt.Sprintf("block upload is disabled for tenant: %s", tenantID),
+			expBadRequest:      "block upload is disabled",
 		},
 		{
 			name:     "complete block already exists",
@@ -1083,7 +1083,7 @@ func TestMultitenantCompactor_HandleBlockUpload_Complete(t *testing.T) {
 			tenantID:           tenantID,
 			blockID:            blockID,
 			disableBlockUpload: true,
-			expBadRequest:      fmt.Sprintf("block upload is disabled for tenant: %s", tenantID),
+			expBadRequest:      "block upload is disabled",
 		},
 		{
 			name:     "complete block already exists",

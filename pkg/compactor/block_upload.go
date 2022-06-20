@@ -59,8 +59,7 @@ func (c *MultitenantCompactor) HandleBlockUpload(w http.ResponseWriter, r *http.
 		return
 	}
 	if !c.cfgProvider.CompactorBlockUploadEnabled(tenantID) {
-		http.Error(w, fmt.Sprintf("block upload is disabled for tenant: %s", tenantID),
-			http.StatusBadRequest)
+		http.Error(w, "block upload is disabled", http.StatusBadRequest)
 		return
 	}
 
@@ -186,8 +185,7 @@ func (c *MultitenantCompactor) UploadBlockFile(w http.ResponseWriter, r *http.Re
 		return
 	}
 	if !c.cfgProvider.CompactorBlockUploadEnabled(tenantID) {
-		http.Error(w, fmt.Sprintf("block upload is disabled for tenant: %s", tenantID),
-			http.StatusBadRequest)
+		http.Error(w, "block upload is disabled", http.StatusBadRequest)
 		return
 	}
 
