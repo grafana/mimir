@@ -17,6 +17,11 @@ spec:
       app.kubernetes.io/name: mimir
       app.kubernetes.io/instance: test-enterprise-configmap-values
       app.kubernetes.io/component: distributor
+    matchExpressions:
+      - key: prometheus.io/service-monitor
+        operator: NotIn
+        values:
+          - "false"
   endpoints:
     - port: http-metrics
       relabelings:
