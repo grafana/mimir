@@ -42,7 +42,6 @@ spec:
         []
       containers:
         - name: overrides-exporter
-          image: "grafana/mimir:r191-e11ac85"
           imagePullPolicy: IfNotPresent
           args:
             - "-target=overrides-exporter"

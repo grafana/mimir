@@ -33,7 +33,6 @@ spec:
         []
       containers:
         - name: tokengen
-          image: "grafana/enterprise-metrics:r191-708e13a1"
           imagePullPolicy: IfNotPresent
           args:
             - "-target=tokengen"

@@ -62,7 +62,6 @@ spec:
           emptyDir: {}
       containers:
         - name: ingester
-          image: "grafana/mimir:r191-e11ac85"
           imagePullPolicy: IfNotPresent
           args:
             - "-target=ingester"

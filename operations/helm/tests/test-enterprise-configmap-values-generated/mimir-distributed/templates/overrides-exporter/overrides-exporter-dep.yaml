@@ -42,7 +42,6 @@ spec:
         []
       containers:
         - name: overrides-exporter
-          image: "grafana/enterprise-metrics:r191-708e13a1"
           imagePullPolicy: IfNotPresent
           args:
             - "-target=overrides-exporter"
