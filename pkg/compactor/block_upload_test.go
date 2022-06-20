@@ -109,6 +109,7 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 		body                   string
 		meta                   *metadata.Meta
 		retention              time.Duration
+		disableBlockUpload     bool
 		expBadRequest          string
 		expConflict            string
 		expUnprocessableEntity string
@@ -377,6 +378,13 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 			expInternalServerError: true,
 		},
 		{
+			name:               "block upload disabled",
+			tenantID:           tenantID,
+			blockID:            blockID,
+			disableBlockUpload: true,
+			expBadRequest:      "block upload is disabled",
+		},
+		{
 			name:            "valid request",
 			tenantID:        tenantID,
 			blockID:         blockID,
@@ -497,6 +505,7 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 
 			cfgProvider := newMockConfigProvider()
 			cfgProvider.userRetentionPeriods[tenantID] = tc.retention
+			cfgProvider.blockUploadEnabled[tenantID] = !tc.disableBlockUpload
 			c := &MultitenantCompactor{
 				logger:       log.NewNopLogger(),
 				bucketClient: &bkt,
@@ -639,10 +648,12 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 			metaJSON, err := json.Marshal(meta)
 			require.NoError(t, err)
 
+			cfgProvider := newMockConfigProvider()
+			cfgProvider.blockUploadEnabled[tenantID] = true
 			c := &MultitenantCompactor{
 				logger:       log.NewNopLogger(),
 				bucketClient: bkt,
-				cfgProvider:  newMockConfigProvider(),
+				cfgProvider:  cfgProvider,
 			}
 			r := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/upload/block/%s", blockID), bytes.NewReader(metaJSON))
 			r = r.WithContext(user.InjectOrgID(r.Context(), tenantID))
@@ -702,6 +713,7 @@ func TestMultitenantCompactor_UploadBlockFile(t *testing.T) {
 		blockID                string
 		path                   string
 		body                   string
+		disableBlockUpload     bool
 		expBadRequest          string
 		expConflict            string
 		expNotFound            string
@@ -763,6 +775,14 @@ func TestMultitenantCompactor_UploadBlockFile(t *testing.T) {
 			path:          uploadingMetaFilename,
 			body:          "content",
 			expBadRequest: fmt.Sprintf("invalid path: %q", uploadingMetaFilename),
+		},
+		{
+			name:               "block upload disabled",
+			tenantID:           tenantID,
+			blockID:            blockID,
+			disableBlockUpload: true,
+			path:               "chunks/000001",
+			expBadRequest:      "block upload is disabled",
 		},
 		{
 			name:     "complete block already exists",
@@ -857,9 +877,12 @@ func TestMultitenantCompactor_UploadBlockFile(t *testing.T) {
 				tc.setUpBucketMock(&bkt)
 			}
 
+			cfgProvider := newMockConfigProvider()
+			cfgProvider.blockUploadEnabled[tc.tenantID] = !tc.disableBlockUpload
 			c := &MultitenantCompactor{
 				logger:       log.NewNopLogger(),
 				bucketClient: &bkt,
+				cfgProvider:  cfgProvider,
 			}
 			var rdr io.Reader
 			if tc.body != "" {
@@ -953,9 +976,12 @@ func TestMultitenantCompactor_UploadBlockFile(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			bkt := objstore.NewInMemBucket()
 			tc.setUpBucket(t, bkt)
+			cfgProvider := newMockConfigProvider()
+			cfgProvider.blockUploadEnabled[tenantID] = true
 			c := &MultitenantCompactor{
 				logger:       log.NewNopLogger(),
 				bucketClient: bkt,
+				cfgProvider:  cfgProvider,
 			}
 
 			for _, f := range tc.files {
@@ -1027,6 +1053,7 @@ func TestMultitenantCompactor_HandleBlockUpload_Complete(t *testing.T) {
 		name                   string
 		tenantID               string
 		blockID                string
+		disableBlockUpload     bool
 		expMeta                metadata.Meta
 		expBadRequest          string
 		expConflict            string
@@ -1050,6 +1077,13 @@ func TestMultitenantCompactor_HandleBlockUpload_Complete(t *testing.T) {
 			tenantID:      tenantID,
 			blockID:       "1234",
 			expBadRequest: "invalid block ID",
+		},
+		{
+			name:               "block upload disabled",
+			tenantID:           tenantID,
+			blockID:            blockID,
+			disableBlockUpload: true,
+			expBadRequest:      "block upload is disabled",
 		},
 		{
 			name:     "complete block already exists",
@@ -1142,9 +1176,12 @@ func TestMultitenantCompactor_HandleBlockUpload_Complete(t *testing.T) {
 			if tc.setUpBucketMock != nil {
 				tc.setUpBucketMock(&bkt)
 			}
+			cfgProvider := newMockConfigProvider()
+			cfgProvider.blockUploadEnabled[tc.tenantID] = !tc.disableBlockUpload
 			c := &MultitenantCompactor{
 				logger:       log.NewNopLogger(),
 				bucketClient: &bkt,
+				cfgProvider:  cfgProvider,
 			}
 			r := httptest.NewRequest(http.MethodPost, fmt.Sprintf(
 				"/api/v1/upload/block/%s?uploadComplete=true", tc.blockID), nil)

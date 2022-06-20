@@ -525,6 +525,8 @@ Usage of ./cmd/mimir/mimir:
     	List of compaction time ranges. (default 2h0m0s,12h0m0s,24h0m0s)
   -compactor.block-sync-concurrency int
     	Number of Go routines to use when downloading blocks for compaction and uploading resulting blocks. (default 8)
+  -compactor.block-upload-enabled
+    	Enable block upload API for the tenant.
   -compactor.blocks-retention-period value
     	Delete blocks containing samples older than the specified retention period. 0 to disable.
   -compactor.cleanup-concurrency int
