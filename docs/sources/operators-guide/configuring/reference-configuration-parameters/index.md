@@ -2856,7 +2856,7 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -compactor.compactor-tenant-shard-size
 [compactor_tenant_shard_size: <int> | default = 0]
 
-# Enables block upload.
+# Enable block upload API for the tenant.
 # CLI flag: -compactor.block-upload-enabled
 [compactor_block_upload_enabled: <boolean> | default = false]
 
