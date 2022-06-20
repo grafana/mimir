@@ -2866,7 +2866,7 @@ func prepare(t *testing.T, cfg prepConfig) ([]*Distributor, []mockIngester, []*p
 	// updates to the expected size
 	if distributors[0].distributorsRing != nil {
 		test.Poll(t, time.Second, cfg.numDistributors, func() interface{} {
-			return distributors[0].distributorsLifeCycler.HealthyInstancesCount()
+			return distributors[0].HealthyInstancesCount()
 		})
 	}
 

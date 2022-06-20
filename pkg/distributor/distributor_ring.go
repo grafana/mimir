@@ -16,8 +16,13 @@ import (
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/netutil"
 	"github.com/grafana/dskit/ring"
+)
 
-	util_log "github.com/grafana/mimir/pkg/util/log"
+const (
+	// ringNumTokens is how many tokens each distributor should have in the ring.
+	// Distributors use a ring because they need to know how many distributors there
+	// are in total for rate limiting.
+	ringNumTokens = 1
 )
 
 // RingConfig masks the ring lifecycler config which contains
@@ -43,7 +48,7 @@ type RingConfig struct {
 func (cfg *RingConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	hostname, err := os.Hostname()
 	if err != nil {
-		level.Error(util_log.Logger).Log("msg", "failed to get hostname", "err", err)
+		level.Error(logger).Log("msg", "failed to get hostname", "err", err)
 		os.Exit(1)
 	}
 
@@ -61,39 +66,16 @@ func (cfg *RingConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.StringVar(&cfg.InstanceID, "distributor.ring.instance-id", hostname, "Instance ID to register in the ring.")
 }
 
-// ToLifecyclerConfig returns a LifecyclerConfig based on the distributor
-// ring config.
-func (cfg *RingConfig) ToLifecyclerConfig() ring.LifecyclerConfig {
-	// We have to make sure that the ring.LifecyclerConfig and ring.Config
-	// defaults are preserved
-	lc := ring.LifecyclerConfig{}
-	rc := ring.Config{}
-
-	flagext.DefaultValues(&lc)
-	flagext.DefaultValues(&rc)
-
-	// Configure ring
-	rc.KVStore = cfg.KVStore
-	rc.HeartbeatTimeout = cfg.HeartbeatTimeout
-	rc.ReplicationFactor = 1
-
-	// Configure lifecycler
-	lc.RingConfig = rc
-	lc.ListenPort = cfg.ListenPort
-	lc.Addr = cfg.InstanceAddr
-	lc.Port = cfg.InstancePort
-	lc.ID = cfg.InstanceID
-	lc.InfNames = cfg.InstanceInterfaceNames
-	lc.UnregisterOnShutdown = true
-	lc.HeartbeatPeriod = cfg.HeartbeatPeriod
-	lc.HeartbeatTimeout = cfg.HeartbeatTimeout
-	lc.ObservePeriod = 0
-	lc.NumTokens = 1
-	lc.JoinAfter = 0
-	lc.MinReadyDuration = 0
-	lc.FinalSleep = 0
-
-	return lc
+func (cfg *RingConfig) ToBasicLifecyclerConfig() ring.BasicLifecyclerConfig {
+	return ring.BasicLifecyclerConfig{
+		ID:                              cfg.InstanceID,
+		Addr:                            cfg.InstanceAddr,
+		HeartbeatPeriod:                 cfg.HeartbeatPeriod,
+		HeartbeatTimeout:                cfg.HeartbeatTimeout,
+		TokensObservePeriod:             0,
+		NumTokens:                       ringNumTokens,
+		KeepInstanceInTheRingOnShutdown: false,
+	}
 }
 
 func (cfg *RingConfig) ToRingConfig() ring.Config {

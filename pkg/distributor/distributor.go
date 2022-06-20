@@ -19,6 +19,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/limiter"
 	"github.com/grafana/dskit/ring"
 	ring_client "github.com/grafana/dskit/ring/client"
@@ -65,8 +66,12 @@ var (
 )
 
 const (
-	// DistributorRingKey is the key under which we store the distributors ring in the KVStore.
-	DistributorRingKey = "distributor"
+	// distributorRingKey is the key under which we store the distributors ring in the KVStore.
+	distributorRingKey = "distributor"
+
+	// ringAutoForgetUnhealthyPeriods is how many consecutive timeout periods an unhealthy instance
+	// in the ring will be automatically removed.
+	ringAutoForgetUnhealthyPeriods = 10
 )
 
 const (
@@ -87,8 +92,9 @@ type Distributor struct {
 
 	// The global rate limiter requires a distributors ring to count
 	// the number of healthy instances
-	distributorsLifeCycler *ring.Lifecycler
+	distributorsLifeCycler *ring.BasicLifecycler
 	distributorsRing       *ring.Ring
+	healthyInstancesCount  *atomic.Uint32
 
 	// For handling HA replicas.
 	HATracker *haTracker
@@ -206,44 +212,16 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 	subservices := []services.Service(nil)
 	subservices = append(subservices, haTracker)
 
-	// Create the configured ingestion rate limit strategy (local or global). In case
-	// it's an internal dependency and can't join the distributors ring, we skip rate
-	// limiting.
-	var ingestionRateStrategy, requestRateStrategy limiter.RateLimiterStrategy
-	var distributorsLifeCycler *ring.Lifecycler
-	var distributorsRing *ring.Ring
-
-	if !canJoinDistributorsRing {
-		requestRateStrategy = newInfiniteRateStrategy()
-		ingestionRateStrategy = newInfiniteRateStrategy()
-	} else {
-		distributorsLifeCycler, err = ring.NewLifecycler(cfg.DistributorRing.ToLifecyclerConfig(), nil, "distributor", DistributorRingKey, true, log, prometheus.WrapRegistererWithPrefix("cortex_", reg))
-		if err != nil {
-			return nil, err
-		}
-
-		distributorsRing, err = ring.New(cfg.DistributorRing.ToRingConfig(), "distributor", DistributorRingKey, log, prometheus.WrapRegistererWithPrefix("cortex_", reg))
-		if err != nil {
-			return nil, errors.Wrap(err, "failed to initialize distributors' ring client")
-		}
-		subservices = append(subservices, distributorsLifeCycler, distributorsRing)
-
-		requestRateStrategy = newGlobalRateStrategy(newRequestRateStrategy(limits), distributorsLifeCycler)
-		ingestionRateStrategy = newGlobalRateStrategy(newIngestionRateStrategy(limits), distributorsLifeCycler)
-	}
-
 	d := &Distributor{
-		cfg:                    cfg,
-		log:                    log,
-		ingestersRing:          ingestersRing,
-		ingesterPool:           NewPool(cfg.PoolConfig, ingestersRing, cfg.IngesterClientFactory, log),
-		distributorsLifeCycler: distributorsLifeCycler,
-		distributorsRing:       distributorsRing,
-		limits:                 limits,
-		requestRateLimiter:     limiter.NewRateLimiter(requestRateStrategy, 10*time.Second),
-		ingestionRateLimiter:   limiter.NewRateLimiter(ingestionRateStrategy, 10*time.Second),
-		HATracker:              haTracker,
-		ingestionRate:          util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval),
+		cfg:                   cfg,
+		log:                   log,
+		ingestersRing:         ingestersRing,
+		ingesterPool:          NewPool(cfg.PoolConfig, ingestersRing, cfg.IngesterClientFactory, log),
+		healthyInstancesCount: atomic.NewUint32(0),
+		limits:                limits,
+		forwarder:             forwarding.NewForwarder(reg, cfg.Forwarding),
+		HATracker:             haTracker,
+		ingestionRate:         util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval),
 
 		queryDuration: instrument.NewHistogramCollector(promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 			Namespace: "cortex",
@@ -351,7 +329,46 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		return d.ingestionRate.Rate()
 	})
 
-	d.forwarder = forwarding.NewForwarder(reg, d.cfg.Forwarding)
+	// Create the configured ingestion rate limit strategy (local or global). In case
+	// it's an internal dependency and can't join the distributors ring, we skip rate
+	// limiting.
+	var ingestionRateStrategy, requestRateStrategy limiter.RateLimiterStrategy
+	var distributorsLifeCycler *ring.BasicLifecycler
+	var distributorsRing *ring.Ring
+
+	if !canJoinDistributorsRing {
+		requestRateStrategy = newInfiniteRateStrategy()
+		ingestionRateStrategy = newInfiniteRateStrategy()
+	} else {
+		kvStore, err := kv.NewClient(cfg.DistributorRing.KVStore, ring.GetCodec(), kv.RegistererWithKVName(reg, "distributor-lifecycler"), log)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to initialize distributors' KV store")
+		}
+
+		delegate := ring.BasicLifecyclerDelegate(ring.NewInstanceRegisterDelegate(ring.ACTIVE, ringNumTokens))
+		delegate = newHealthyInstanceDelegate(d.healthyInstancesCount, delegate)
+		delegate = ring.NewLeaveOnStoppingDelegate(delegate, log)
+		delegate = ring.NewAutoForgetDelegate(ringAutoForgetUnhealthyPeriods*cfg.DistributorRing.HeartbeatTimeout, delegate, log)
+
+		distributorsLifeCycler, err = ring.NewBasicLifecycler(cfg.DistributorRing.ToBasicLifecyclerConfig(), "distributor", distributorRingKey, kvStore, delegate, log, prometheus.WrapRegistererWithPrefix("cortex_", reg))
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to initialize distributors' lifecycler")
+		}
+
+		distributorsRing, err = ring.New(cfg.DistributorRing.ToRingConfig(), "distributor", distributorRingKey, log, prometheus.WrapRegistererWithPrefix("cortex_", reg))
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to initialize distributors' ring client")
+		}
+		subservices = append(subservices, distributorsLifeCycler, distributorsRing)
+
+		requestRateStrategy = newGlobalRateStrategy(newRequestRateStrategy(limits), d)
+		ingestionRateStrategy = newGlobalRateStrategy(newIngestionRateStrategy(limits), d)
+	}
+
+	d.requestRateLimiter = limiter.NewRateLimiter(requestRateStrategy, 10*time.Second)
+	d.ingestionRateLimiter = limiter.NewRateLimiter(ingestionRateStrategy, 10*time.Second)
+	d.distributorsLifeCycler = distributorsLifeCycler
+	d.distributorsRing = distributorsRing
 
 	d.replicationFactor.Set(float64(ingestersRing.ReplicationFactor()))
 	d.activeUsers = util.NewActiveUsersCleanupWithDefaultValues(d.cleanupInactiveUser)
@@ -361,6 +378,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 	if err != nil {
 		return nil, err
 	}
+
 	d.subservicesWatcher = services.NewFailureWatcher()
 	d.subservicesWatcher.WatchManager(d.subservices)
 
@@ -369,8 +387,20 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 }
 
 func (d *Distributor) starting(ctx context.Context) error {
-	// Only report success if all sub-services start properly
-	return services.StartManagerAndAwaitHealthy(ctx, d.subservices)
+	if err := services.StartManagerAndAwaitHealthy(ctx, d.subservices); err != nil {
+		return errors.Wrap(err, "unable to start distributor subservices")
+	}
+
+	// Distributors get embedded in rulers and queriers to talk to ingesters on the query path. In that
+	// case they won't have a distributor lifecycler or ring so don't try to join the distributor ring.
+	if d.distributorsLifeCycler != nil && d.distributorsRing != nil {
+		level.Info(d.log).Log("msg", "waiting until distributor is ACTIVE in the ring")
+		if err := ring.WaitInstanceState(ctx, d.distributorsRing, d.distributorsLifeCycler.GetInstanceID(), ring.ACTIVE); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (d *Distributor) running(ctx context.Context) error {
@@ -1419,4 +1449,13 @@ func (d *Distributor) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			</html>`
 		util.WriteHTMLResponse(w, ringNotEnabledPage)
 	}
+}
+
+// HealthyInstancesCount implements the ReadLifecycler interface
+//
+// We use a ring lifecycler delegate to count the number of members of the
+// ring. The count is then used to enforce rate limiting correctly for each
+// distributor. $EFFECTIVE_RATE_LIMIT = $GLOBAL_RATE_LIMIT / $NUM_INSTANCES
+func (d *Distributor) HealthyInstancesCount() int {
+	return int(d.healthyInstancesCount.Load())
 }
