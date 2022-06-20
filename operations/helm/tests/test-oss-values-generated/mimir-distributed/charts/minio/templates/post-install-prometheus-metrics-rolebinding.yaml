@@ -16,4 +16,4 @@ roleRef:
 subjects:
   - kind: ServiceAccount
     name: test-oss-values-minio-update-prometheus-secret
-    namespace: "default"
+    namespace: "citestns"
