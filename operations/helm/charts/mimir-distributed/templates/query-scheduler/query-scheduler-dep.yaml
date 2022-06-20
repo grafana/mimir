@@ -27,9 +27,7 @@ spec:
 {{- else }}
         checksum/config: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
 {{- end}}
-        {{- with .Values.query_scheduler.podAnnotations }}
-        {{- toYaml . | nindent 8 }}
-        {{- end }}
+        {{- include "mimir.podAnnotations" (dict "ctx" . "component" "query-scheduler") | nindent 8 }}
     spec:
       serviceAccountName: {{ template "mimir.serviceAccountName" . }}
     {{- if .Values.query_scheduler.priorityClassName }}
