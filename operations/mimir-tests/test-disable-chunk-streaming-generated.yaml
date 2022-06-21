@@ -412,7 +412,6 @@ spec:
         - -ingester.ring.replication-factor=3
         - -ingester.ring.store=memberlist
         - -mem-ballast-size-bytes=1073741824
-        - -memberlist.abort-if-join-fails=false
         - -memberlist.bind-port=7946
         - -memberlist.join=gossip-ring.default.svc.cluster.local:7946
         - -runtime-config.file=/etc/mimir/overrides.yaml
@@ -498,7 +497,6 @@ spec:
         - -ingester.ring.replication-factor=3
         - -ingester.ring.store=memberlist
         - -mem-ballast-size-bytes=268435456
-        - -memberlist.abort-if-join-fails=false
         - -memberlist.bind-port=7946
         - -memberlist.join=gossip-ring.default.svc.cluster.local:7946
         - -querier.frontend-client.grpc-max-send-msg-size=104857600
@@ -726,7 +724,6 @@ spec:
         - -ingester.ring.prefix=
         - -ingester.ring.replication-factor=3
         - -ingester.ring.store=memberlist
-        - -memberlist.abort-if-join-fails=false
         - -memberlist.bind-port=7946
         - -memberlist.join=gossip-ring.default.svc.cluster.local:7946
         - -ruler-storage.backend=gcs
@@ -802,7 +799,6 @@ spec:
         - -alertmanager.sharding-ring.store=memberlist
         - -alertmanager.storage.path=/data
         - -alertmanager.web.external-url=http://test/alertmanager
-        - -memberlist.abort-if-join-fails=false
         - -memberlist.bind-port=7946
         - -memberlist.join=gossip-ring.default.svc.cluster.local:7946
         - -runtime-config.file=/etc/mimir/overrides.yaml
@@ -903,7 +899,6 @@ spec:
         - -compactor.split-and-merge-shards=0
         - -compactor.split-groups=1
         - -compactor.symbols-flushers-concurrency=4
-        - -memberlist.abort-if-join-fails=false
         - -memberlist.bind-port=7946
         - -memberlist.join=gossip-ring.default.svc.cluster.local:7946
         - -runtime-config.file=/etc/mimir/overrides.yaml
@@ -1006,7 +1001,6 @@ spec:
         - -ingester.ring.store=memberlist
         - -ingester.ring.tokens-file-path=/data/tokens
         - -ingester.ring.unregister-on-shutdown=true
-        - -memberlist.abort-if-join-fails=false
         - -memberlist.bind-port=7946
         - -memberlist.join=gossip-ring.default.svc.cluster.local:7946
         - -runtime-config.file=/etc/mimir/overrides.yaml
@@ -1331,7 +1325,6 @@ spec:
         - -blocks-storage.bucket-store.sync-dir=/data/tsdb
         - -blocks-storage.bucket-store.sync-interval=15m
         - -blocks-storage.gcs.bucket-name=blocks-bucket
-        - -memberlist.abort-if-join-fails=false
         - -memberlist.bind-port=7946
         - -memberlist.join=gossip-ring.default.svc.cluster.local:7946
         - -runtime-config.file=/etc/mimir/overrides.yaml
