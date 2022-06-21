@@ -50,7 +50,7 @@ If you choose this option, you can change the configuration to match your deploy
 6. Install the recording rules saved at `operations/mimir-mixin-compiled/rules.yaml` in your Prometheus
 7. Install the alerts saved at `operations/mimir-mixin-compiled/alerts.yaml` in your Prometheus
 
-Alternatively, you can compile the mixin in a container. To do so, replace the previous two steps with the following command:
+Alternatively, you can compile the mixin in a container. To do so, replace steps 3 & 4 with the following command:
 
 ```bash
 make BUILD_IN_CONTAINER=true build-mixin
