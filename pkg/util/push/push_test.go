@@ -8,6 +8,7 @@ package push
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -37,6 +38,18 @@ func TestHandler_cortexWriteRequest(t *testing.T) {
 	handler := Handler(100000, sourceIPs, false, verifyWriteRequestHandler(t, mimirpb.RULE))
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, 200, resp.Code)
+}
+
+func TestHandler_contextCanceledRequest(t *testing.T) {
+	req := createRequest(t, createMimirWriteRequestProtobuf(t, false))
+	resp := httptest.NewRecorder()
+	sourceIPs, _ := middleware.NewSourceIPs("SomeField", "(.*)")
+	handler := Handler(100000, sourceIPs, false, func(_ context.Context, _ *mimirpb.WriteRequest, cleanup func()) (*mimirpb.WriteResponse, error) {
+		defer cleanup()
+		return nil, fmt.Errorf("the request failed: %w", context.Canceled)
+	})
+	handler.ServeHTTP(resp, req)
+	assert.Equal(t, 499, resp.Code)
 }
 
 func TestHandler_EnsureSkipLabelNameValidationBehaviour(t *testing.T) {
