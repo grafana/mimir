@@ -352,7 +352,7 @@ groups:
       message: Mimir instance {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace
         }} sees incorrect number of gossip members.
     expr: |
-      avg by (cluster, namespace) (memberlist_client_cluster_members_count) != sum by (cluster, namespace) (up{job=~".+/(alertmanager|compactor|distributor|ingester.*|querier.*|ruler|store-gateway.*|cortex|mimir)"})
+      avg by (cluster, namespace) (memberlist_client_cluster_members_count) != sum by (cluster, namespace) (up{job=~".+/(alertmanager|compactor|distributor|ingester.*|querier.*|ruler|ruler-querier.*|store-gateway.*|cortex|mimir)"})
     for: 15m
     labels:
       severity: warning
