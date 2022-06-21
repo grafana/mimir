@@ -464,6 +464,10 @@ distributor:
 
   securityContext: {}
 
+  # -- The SecurityContext for distributor containers
+  containerSecurityContext:
+    readOnlyRootFilesystem: true
+
   strategy:
     type: RollingUpdate
     rollingUpdate:
@@ -555,6 +559,10 @@ ingester:
 
   securityContext: {}
 
+  # -- The SecurityContext for ingester containers
+  containerSecurityContext:
+    readOnlyRootFilesystem: true
+
   strategy:
     type: RollingUpdate
     rollingUpdate:
@@ -600,6 +608,10 @@ overrides_exporter:
   affinity: {}
 
   securityContext: {}
+
+   # -- The SecurityContext for overrides_exporter containers
+  containerSecurityContext:
+    readOnlyRootFilesystem: true
 
   extraArgs: {}
 
@@ -671,6 +683,10 @@ ruler:
 
   securityContext: {}
 
+  # -- The SecurityContext for ruler containers
+  containerSecurityContext:
+    readOnlyRootFilesystem: true
+
   strategy:
     type: RollingUpdate
     rollingUpdate:
@@ -737,6 +753,10 @@ querier:
 
   securityContext: {}
 
+  # -- The SecurityContext for querier containers
+  containerSecurityContext:
+    readOnlyRootFilesystem: true
+
   strategy:
     type: RollingUpdate
     rollingUpdate:
@@ -802,6 +822,10 @@ query_frontend:
     initialDelaySeconds: 45
 
   securityContext: {}
+
+  # -- The SecurityContext for query_frontend containers
+  containerSecurityContext:
+    readOnlyRootFilesystem: true
 
   strategy:
     type: RollingUpdate
@@ -902,6 +926,10 @@ store_gateway:
 
   securityContext: {}
 
+   # -- The SecurityContext for store_gateway containers
+  containerSecurityContext:
+    readOnlyRootFilesystem: true
+
   strategy:
     type: RollingUpdate
 
@@ -981,7 +1009,6 @@ compactor:
     #
     subPath: ''
 
-
     # compactor data Persistent Volume Storage Class
     # If defined, storageClassName: <storageClass>
     # If set to "-", storageClassName: "", which disables dynamic provisioning
@@ -998,6 +1025,10 @@ compactor:
     initialDelaySeconds: 60
 
   securityContext: {}
+
+  # -- The SecurityContext for compactor containers
+  containerSecurityContext:
+    readOnlyRootFilesystem: true
 
   strategy:
     type: RollingUpdate
@@ -1506,6 +1537,10 @@ admin_api:
 
   securityContext: {}
 
+  # -- The SecurityContext for admin_api containers
+  containerSecurityContext:
+    readOnlyRootFilesystem: true
+
   extraArgs: {}
 
   persistence:
@@ -1561,6 +1596,11 @@ gateway:
   affinity: {}
 
   securityContext: {}
+
+   # -- The SecurityContext for gateway containers
+  containerSecurityContext:
+    readOnlyRootFilesystem: true
+
   initContainers: []
 
   extraArgs: {}

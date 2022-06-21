@@ -80,7 +80,7 @@ spec:
           resources:
             {{- toYaml .Values.overrides_exporter.resources | nindent 12 }}
           securityContext:
-            readOnlyRootFilesystem: true
+            {{- toYaml .Values.overrides_exporter.containerSecurityContext | nindent 12 }}
           env:
             {{- with .Values.global.extraEnv }}
               {{ toYaml . | nindent 12 }}
