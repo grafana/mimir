@@ -136,7 +136,7 @@ spec:
           resources:
             {{- toYaml .Values.ingester.resources | nindent 12 }}
           securityContext:
-            {{- toYaml .Values.ingester.containerSecurityContext | nindent 12 }} 
+            {{- toYaml .Values.ingester.containerSecurityContext | nindent 12 }}
           env:
             {{- with .Values.global.extraEnv }}
               {{- toYaml . | nindent 12 }}

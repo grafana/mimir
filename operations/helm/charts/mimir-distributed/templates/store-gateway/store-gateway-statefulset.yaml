@@ -133,7 +133,7 @@ spec:
           resources:
             {{- toYaml .Values.store_gateway.resources | nindent 12 }}
           securityContext:
-            {{- toYaml .Values.store_gateway.containerSecurityContext | nindent 12 }} 
+            {{- toYaml .Values.store_gateway.containerSecurityContext | nindent 12 }}
           env:
             {{- with .Values.global.extraEnv }}
               {{- toYaml . | nindent 12 }}

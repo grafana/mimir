@@ -80,7 +80,7 @@ spec:
           resources:
             {{- toYaml .Values.distributor.resources | nindent 12 }}
           securityContext:
-            {{- toYaml .Values.distributor.containerSecurityContext | nindent 12 }} 
+            {{- toYaml .Values.distributor.containerSecurityContext | nindent 12 }}
           env:
             {{- with .Values.global.extraEnv }}
               {{- toYaml . | nindent 12 }}
