@@ -33,7 +33,7 @@ and would like to migrate to `memberlist` without any downtime, you can follow i
 
 Step 1 configures components to use `multi` KV store, with `consul` as primary and `memberlist` as secondary stores.
 This step requires rollout of all components.
-After applying this step all Mimir components will expose `/memberlist` page on HTTP admin interface, which can be used to check health of Memberlist cluster. 
+After applying this step all Mimir components will expose `/memberlist` page on HTTP admin interface, which can be used to check health of Memberlist cluster.
 
 ## Step 2: Enable mirroring
 
@@ -51,6 +51,7 @@ In this step we enable writes to primary KV store (Consul) to be mirrored into s
 Applying this change will not cause restart of components.
 
 You can monitor following metrics to check if mirroring was enabled on all components and if it works correctly:
+
 - `cortex_multikv_mirror_enabled`
 - `rate(cortex_multikv_mirror_writes_total[1m])`
 - `rate(cortex_multikv_mirror_write_errors_total[1m])`
