@@ -101,6 +101,11 @@
       'store-gateway.tenant-shard-size': $._config.shuffle_sharding.store_gateway_shard_size,
     }
   ) + (
+    if !($._config.shuffle_sharding.ingester_write_path_enabled && !$._config.shuffle_sharding.ingester_read_path_enabled) then {} else {
+      // If shuffle sharding is enabled for the write path but isn't enabled for the read path, Mimir will query all ingesters
+      'querier.shuffle-sharding-ingesters-enabled': 'false',
+    }
+  ) + (
     if !$._config.shuffle_sharding.ingester_read_path_enabled then {} else {
       'distributor.ingestion-tenant-shard-size': $._config.shuffle_sharding.ingester_shard_size,
     }
