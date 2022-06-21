@@ -66,6 +66,8 @@ mimir {
 }
 ```
 
+> **Note**: KEDA will not be installed by Mimir jsonnet. You can follow the [Deploying KEDA](https://keda.sh/docs/latest/deploy/) instructions to install it in your Kubernetes cluster.
+
 ## How to disable autoscaling
 
 There are two options to disable autoscaling in a Mimir cluster:
