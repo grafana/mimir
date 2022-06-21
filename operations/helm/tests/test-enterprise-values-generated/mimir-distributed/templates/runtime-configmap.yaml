@@ -9,6 +9,7 @@ metadata:
     app.kubernetes.io/instance: test-enterprise-values
     app.kubernetes.io/version: "2.1.0"
     app.kubernetes.io/managed-by: Helm
+  namespace: "citestns"
 data:
   runtime.yaml: |
     

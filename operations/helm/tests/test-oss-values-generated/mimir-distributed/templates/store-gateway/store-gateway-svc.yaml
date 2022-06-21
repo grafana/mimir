@@ -13,6 +13,7 @@ metadata:
     app.kubernetes.io/managed-by: Helm
   annotations:
     {}
+  namespace: "citestns"
 spec:
   type: ClusterIP
   ports:

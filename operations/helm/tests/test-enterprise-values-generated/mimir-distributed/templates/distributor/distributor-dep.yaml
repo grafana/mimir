@@ -13,6 +13,7 @@ metadata:
     app.kubernetes.io/managed-by: Helm
   annotations:
     {}
+  namespace: "citestns"
 spec:
   replicas: 1
   selector:
@@ -35,6 +36,7 @@ spec:
         app.kubernetes.io/component: distributor
         app.kubernetes.io/part-of: memberlist
       annotations:
+      namespace: "citestns"
     spec:
       serviceAccountName: test-enterprise-values-mimir
       securityContext:

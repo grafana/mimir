@@ -11,6 +11,7 @@ metadata:
     {{- toYaml .Values.tokengenJob.annotations | nindent 4 }}
     {{- end }}
     "helm.sh/hook": post-install
+  namespace: {{ .Release.Namespace | quote }}
 spec:
   backoffLimit: 6
   completions: 1
@@ -23,6 +24,7 @@ spec:
         {{- with .Values.tokengenJob.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
+      namespace: {{ .Release.Namespace | quote }}
     spec:
       serviceAccountName: {{ template "mimir.serviceAccountName" . }}
       {{- if .Values.tokengenJob.priorityClassName }}

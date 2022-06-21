@@ -7,6 +7,7 @@ metadata:
     {{- include "mimir.labels" (dict "ctx" . "component" "ruler" "memberlist" true) | nindent 4 }}
   annotations:
     {{- toYaml .Values.ruler.annotations | nindent 4 }}
+  namespace: {{ .Release.Namespace | quote }}
 spec:
   replicas: {{ .Values.ruler.replicas }}
   selector:
@@ -23,6 +24,7 @@ spec:
         {{- end }}
       annotations:
         {{- include "mimir.podAnnotations" (dict "ctx" . "component" "ruler") | nindent 8 }}
+      namespace: {{ .Release.Namespace | quote }}
     spec:
       serviceAccountName: {{ template "mimir.serviceAccountName" . }}
     {{- if .Values.ruler.priorityClassName }}

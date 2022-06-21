@@ -7,6 +7,7 @@ metadata:
   labels:
     {{- include "mimir.labels" (dict "ctx" . "component" "overrides-exporter") | nindent 4 }}
   name: {{ include "mimir.resourceName" (dict "ctx" . "component" "overrides-exporter") }}
+  namespace: {{ .Release.Namespace | quote }}
 spec:
   replicas: {{ .Values.overrides_exporter.replicas }}
   selector:
@@ -23,6 +24,7 @@ spec:
         {{- end }}
       annotations:
         {{- include "mimir.podAnnotations" (dict "ctx" . "component" "overrides-exporter") | nindent 8 }}
+      namespace: {{ .Release.Namespace | quote }}
     spec:
       serviceAccountName: {{ template "mimir.serviceAccountName" . }}
       {{- if .Values.overrides_exporter.priorityClassName }}

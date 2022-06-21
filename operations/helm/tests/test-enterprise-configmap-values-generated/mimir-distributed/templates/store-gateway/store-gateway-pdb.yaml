@@ -11,6 +11,7 @@ metadata:
     app.kubernetes.io/part-of: memberlist
     app.kubernetes.io/version: "2.1.0"
     app.kubernetes.io/managed-by: Helm
+  namespace: "citestns"
 spec:
   selector:
     matchLabels:
