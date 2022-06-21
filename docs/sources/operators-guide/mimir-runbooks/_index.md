@@ -70,20 +70,33 @@ How to **fix** it:
 2. **Check if shuffle-sharding shard size is correct**<br />
 
 - When shuffle-sharding is enabled, we target up to 100K series / tenant / ingester assuming tenants on average use 50% of their max series limit.
-- Run the following **instant query** to find tenants that might cause higher pressure on some ingesters:
+- Run the following **instant query** to find tenants that might cause higher pressure on ingesters. The query excludes tenants which are already sharded across all tenants:
 
   ```
   topk by (pod) (
-    5,
+    5, # top 5 users per ingester
     (
-        sum by (user, pod) (
-            cortex_ingester_memory_series_created_total{namespace="<namespace>"} - cortex_ingester_memory_series_removed_total{namespace="<namespace>"}
-        )
+      sum by (user, pod) (
+        cortex_ingester_memory_series_created_total{namespace="<namespace>"} - cortex_ingester_memory_series_removed_total{namespace="<namespace>"}
+      )
+      > on (user) group_left() # show tenants that are exeeding 50% of their series limits added acorss ingesters
+      (
+        max by(user) (cortex_limits_overrides{namespace="<namespace>",limit_name="max_global_series_per_user"})
+        *
+        scalar(max(cortex_distributor_replication_factor{namespace="<namespace>"}))
+        *
+        0.5
+      )
+      > 200000
     ) and on (pod) (
         topk(
-            3,
+            3, # top 3 ingesters
             sum by (pod) (cortex_ingester_memory_series_created_total{namespace="<namespace>"} - cortex_ingester_memory_series_removed_total{namespace="<namespace>"})
         )
+    ) and on(user) ( # intersection with the tenants which don't have series on all ingesters
+        count by (user) (cortex_ingester_memory_series_created_total{namespace="<namespace>"})
+        !=
+        scalar(count(count by (pod) (cortex_ingester_memory_series_created_total{namespace="<namesapce>"})))
     )
   )
   ```
