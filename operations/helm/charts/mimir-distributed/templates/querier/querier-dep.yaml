@@ -80,7 +80,7 @@ spec:
           resources:
             {{- toYaml .Values.querier.resources | nindent 12 }}
           securityContext:
-            {{- toYaml .Values.querier.containerSecurityContext | nindent 12 }} 
+            {{- toYaml .Values.querier.containerSecurityContext | nindent 12 }}
           env:
             {{- with .Values.global.extraEnv }}
               {{- toYaml . | nindent 12 }}
