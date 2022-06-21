@@ -6,6 +6,7 @@ metadata:
     {{- include "mimir.labels" (dict "ctx" . "component" "querier" "memberlist" true) | nindent 4 }}
   annotations:
     {{- toYaml .Values.querier.annotations | nindent 4 }}
+  namespace: {{ .Release.Namespace | quote }}
 spec:
   replicas: {{ .Values.querier.replicas }}
   selector:

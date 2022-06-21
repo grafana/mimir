@@ -12,6 +12,7 @@ metadata:
     app.kubernetes.io/managed-by: Helm
   annotations:
     "helm.sh/hook": post-install
+  namespace: "citestns"
 spec:
   backoffLimit: 6
   completions: 1
@@ -25,6 +26,7 @@ spec:
         app.kubernetes.io/version: "2.1.0"
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: tokengen
+      namespace: "citestns"
     spec:
       serviceAccountName: test-enterprise-configmap-values-mimir
       securityContext:

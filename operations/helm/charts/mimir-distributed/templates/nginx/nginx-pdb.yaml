@@ -6,6 +6,7 @@ metadata:
   name: {{ include "mimir.resourceName" (dict "ctx" . "component" "nginx") }}
   labels:
     {{- include "mimir.labels" (dict "ctx" . "component" "nginx") | nindent 4 }}
+  namespace: {{ .Release.Namespace | quote }}
 spec:
   selector:
     matchLabels:

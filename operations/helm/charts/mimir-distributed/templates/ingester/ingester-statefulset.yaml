@@ -7,6 +7,7 @@ metadata:
     {{- include "mimir.labels" (dict "ctx" . "component" "ingester" "memberlist" true) | nindent 4 }}
   annotations:
     {{- toYaml .Values.ingester.annotations | nindent 4 }}
+  namespace: {{ .Release.Namespace | quote }}
 spec:
   podManagementPolicy: {{ .Values.ingester.podManagementPolicy }}
   replicas: {{ .Values.ingester.replicas }}
@@ -47,6 +48,7 @@ spec:
         {{- end }}
       annotations:
         {{- include "mimir.podAnnotations" (dict "ctx" . "component" "ingester") | nindent 8 }}
+      namespace: {{ .Release.Namespace | quote }}
     spec:
       serviceAccountName: {{ template "mimir.serviceAccountName" . }}
       {{- if .Values.ingester.priorityClassName }}

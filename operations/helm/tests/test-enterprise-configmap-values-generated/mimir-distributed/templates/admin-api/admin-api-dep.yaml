@@ -13,6 +13,7 @@ metadata:
     app.kubernetes.io/version: "2.1.0"
     app.kubernetes.io/managed-by: Helm
   name: test-enterprise-configmap-values-mimir-admin-api
+  namespace: "citestns"
 spec:
   replicas: 1
   selector:
@@ -36,6 +37,7 @@ spec:
         app.kubernetes.io/part-of: memberlist
       annotations:
         minio-secret-version: "42"
+      namespace: "citestns"
     spec:
       serviceAccountName: test-enterprise-configmap-values-mimir
       securityContext:

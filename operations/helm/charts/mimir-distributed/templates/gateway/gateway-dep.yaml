@@ -7,6 +7,7 @@ metadata:
   labels:
     {{- include "mimir.labels" (dict "ctx" . "component" "gateway") | nindent 4 }}
   name: {{ include "mimir.resourceName" (dict "ctx" . "component" "gateway") }}
+  namespace: {{ .Release.Namespace | quote }}
 spec:
   replicas: {{ .Values.gateway.replicas }}
   selector:
@@ -23,6 +24,7 @@ spec:
         {{- end }}
       annotations:
         {{- include "mimir.podAnnotations" (dict "ctx" . "component" "gateway") | nindent 8 }}
+      namespace: {{ .Release.Namespace | quote }}
     spec:
       serviceAccountName: {{ template "mimir.serviceAccountName" . }}
       {{- if .Values.gateway.priorityClassName }}

@@ -10,6 +10,7 @@ metadata:
     app.kubernetes.io/component: nginx
     app.kubernetes.io/version: "2.1.0"
     app.kubernetes.io/managed-by: Helm
+  namespace: "citestns"
 data:
   nginx.conf: |
     worker_processes  5;  ## Default: 1
