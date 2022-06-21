@@ -70,8 +70,8 @@ mimir {
 
 There are two options to disable autoscaling in a Mimir cluster:
 
-1. Set minimum replicas = maximum replicas
-2. Decommission HPA
+1. Set minimum replicas = maximum replicas.
+2. Decommission HPA.
 
 ### Set minimum replicas = maximum replicas
 
