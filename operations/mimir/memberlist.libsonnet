@@ -18,7 +18,7 @@
   _config+:: {
     // Enables use of memberlist for all rings, instead of consul. If multikv_migration_enabled is true, consul hostname is still configured,
     // but "primary" KV depends on value of multikv_primary.
-    memberlist_ring_enabled: false,
+    memberlist_ring_enabled: true,
 
     // Migrating from consul to memberlist is a multi-step process:
     // 1) Enable multikv_migration_enabled, with primary=consul, secondary=memberlist, and multikv_mirror_enabled=false, restart components.

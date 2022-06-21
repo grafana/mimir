@@ -5,7 +5,8 @@ mimir {
     namespace: 'default',
     external_url: 'http://test',
 
-    memberlist_ring_enabled: true,
+    // Use consul for hash rings.
+    memberlist_ring_enabled: false,
 
     blocks_storage_backend: 'gcs',
     blocks_storage_bucket_name: 'blocks-bucket',
