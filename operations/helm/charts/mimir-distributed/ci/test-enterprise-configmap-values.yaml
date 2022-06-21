@@ -55,10 +55,6 @@ store_gateway:
 
 serviceMonitor:
   enabled: true
-  namespace: citestns
-  namespaceSelector:
-    matchNames:
-      - citestns
 
 # For testing only
 testing:

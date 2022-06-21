@@ -269,9 +269,11 @@ serviceMonitor:
   # Keep empty string "" to have the default value in the 'cluster' label, which is the helm release name for Mimir and the actual cluster name for Enterprise Metrics.
   clusterLabel: ""
   # -- Alternative namespace for ServiceMonitor resources
+  # If left unset, the default is to install the ServiceMonitor resources in the namespace where the chart is installed, i.e. the namespace specified for the helm command.
   namespace: null
   # -- Namespace selector for ServiceMonitor resources
-  namespaceSelector: {}
+  # If left unset, the default is to select the namespace where the chart is installed, i.e. the namespace specified for the helm command.
+  namespaceSelector: null
   # -- ServiceMonitor annotations
   annotations: {}
   # -- Additional ServiceMonitor labels
