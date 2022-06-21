@@ -78,6 +78,7 @@
 * [FEATURE] Jsonnet: Add support for ruler remote evaluation mode (`ruler_remote_evaluation_enabled`), which deploys and uses a dedicated query path for rule evaluation. This enables the benefits of the query-frontend for rule evaluation, such as query sharding. #2073
 * [ENHANCEMENT] Added `compactor` service, that can be used to route requests directly to compactor (e.g. admin UI). #2063
 * [ENHANCEMENT] Added a `consul_enabled` configuration option to provide the ability to disable consul. It is automatically set to false when `memberlist_ring_enabled` is true and `multikv_migration_enabled` (used for migration from Consul to memberlist) is not set. #2093 #2152
+* [BUGFIX] Querier: Fix disabling shuffle sharding on the read path whilst keeping it enabled on write path. #2164
 
 ### Mimirtool
 
