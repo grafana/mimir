@@ -605,7 +605,7 @@ overrides_exporter:
 
    # -- The SecurityContext for overrides_exporter containers
   containerSecurityContext:
-    readOnlyRootFilesystem: true 
+    readOnlyRootFilesystem: true
 
   extraArgs: {}
 
@@ -922,7 +922,7 @@ store_gateway:
 
    # -- The SecurityContext for store_gateway containers
   containerSecurityContext:
-    readOnlyRootFilesystem: true 
+    readOnlyRootFilesystem: true
 
   strategy:
     type: RollingUpdate
