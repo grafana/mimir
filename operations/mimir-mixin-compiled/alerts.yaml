@@ -321,7 +321,7 @@ groups:
       ) > 1
     for: 5m
     labels:
-      severity: warning
+      severity: critical
   - alert: MimirRulerMissedEvaluations
     annotations:
       message: |

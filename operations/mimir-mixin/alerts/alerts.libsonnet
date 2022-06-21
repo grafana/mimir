@@ -520,7 +520,7 @@
           ||| % $._config,
           'for': '5m',
           labels: {
-            severity: 'warning',
+            severity: 'critical',
           },
           annotations: {
             message: |||
