@@ -404,7 +404,6 @@ spec:
         - -distributor.health-check-ingesters=true
         - -distributor.ingestion-burst-size=200000
         - -distributor.ingestion-rate-limit=10000
-        - -distributor.ingestion-tenant-shard-size=3
         - -distributor.ring.prefix=
         - -distributor.ring.store=memberlist
         - -ingester.ring.heartbeat-timeout=10m
@@ -504,7 +503,6 @@ spec:
         - -querier.frontend-client.grpc-max-send-msg-size=104857600
         - -querier.max-concurrent=8
         - -querier.scheduler-address=query-scheduler-discovery.default.svc.cluster.local:9095
-        - -querier.shuffle-sharding-ingesters-enabled=false
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
@@ -513,7 +511,6 @@ spec:
         - -store-gateway.sharding-ring.prefix=
         - -store-gateway.sharding-ring.replication-factor=3
         - -store-gateway.sharding-ring.store=memberlist
-        - -store-gateway.tenant-shard-size=3
         - -store.max-query-length=768h
         - -target=querier
         env:
@@ -582,7 +579,6 @@ spec:
         - -query-frontend.align-querier-with-step=false
         - -query-frontend.cache-results=true
         - -query-frontend.max-cache-freshness=10m
-        - -query-frontend.max-queriers-per-tenant=10
         - -query-frontend.results-cache.backend=memcached
         - -query-frontend.results-cache.memcached.addresses=dnssrvnoa+memcached-frontend.default.svc.cluster.local:11211
         - -query-frontend.results-cache.memcached.timeout=500ms
@@ -652,7 +648,6 @@ spec:
             topologyKey: kubernetes.io/hostname
       containers:
       - args:
-        - -query-frontend.max-queriers-per-tenant=10
         - -query-scheduler.max-outstanding-requests-per-tenant=100
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
@@ -726,7 +721,6 @@ spec:
         - -blocks-storage.bucket-store.sync-interval=15m
         - -blocks-storage.gcs.bucket-name=blocks-bucket
         - -distributor.health-check-ingesters=true
-        - -distributor.ingestion-tenant-shard-size=3
         - -ingester.ring.heartbeat-timeout=10m
         - -ingester.ring.prefix=
         - -ingester.ring.replication-factor=3
@@ -734,7 +728,6 @@ spec:
         - -memberlist.abort-if-join-fails=false
         - -memberlist.bind-port=7946
         - -memberlist.join=gossip-ring.default.svc.cluster.local:7946
-        - -querier.shuffle-sharding-ingesters-enabled=false
         - -ruler-storage.backend=gcs
         - -ruler-storage.gcs.bucket-name=rules-bucket
         - -ruler.alertmanager-url=http://alertmanager.default.svc.cluster.local/alertmanager
@@ -742,7 +735,6 @@ spec:
         - -ruler.max-rules-per-rule-group=20
         - -ruler.ring.store=memberlist
         - -ruler.rule-path=/rules
-        - -ruler.tenant-shard-size=2
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
@@ -750,7 +742,6 @@ spec:
         - -store-gateway.sharding-ring.prefix=
         - -store-gateway.sharding-ring.replication-factor=3
         - -store-gateway.sharding-ring.store=memberlist
-        - -store-gateway.tenant-shard-size=3
         - -store.max-query-length=768h
         - -target=ruler
         image: grafana/mimir:2.1.0
@@ -1003,7 +994,6 @@ spec:
         - -blocks-storage.tsdb.dir=/data/tsdb
         - -blocks-storage.tsdb.ship-interval=1m
         - -distributor.health-check-ingesters=true
-        - -distributor.ingestion-tenant-shard-size=3
         - -ingester.max-global-series-per-metric=20000
         - -ingester.max-global-series-per-user=150000
         - -ingester.ring.heartbeat-period=15s
@@ -1352,7 +1342,6 @@ spec:
         - -store-gateway.sharding-ring.store=memberlist
         - -store-gateway.sharding-ring.tokens-file-path=/data/tokens
         - -store-gateway.sharding-ring.wait-stability-min-duration=1m
-        - -store-gateway.tenant-shard-size=3
         - -target=store-gateway
         image: grafana/mimir:2.1.0
         imagePullPolicy: IfNotPresent

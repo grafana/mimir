@@ -5,8 +5,6 @@ mimir {
     namespace: 'default',
     external_url: 'http://test',
 
-    memberlist_ring_enabled: true,
-
     blocks_storage_backend: 'gcs',
     blocks_storage_bucket_name: 'blocks-bucket',
     bucket_index_enabled: true,
@@ -20,6 +18,8 @@ mimir {
     alertmanager_client_type: 'gcs',
     alertmanager_gcs_bucket_name: 'alerts-bucket',
 
+    // Step 1: start migration from consul to memberlist.
+    memberlist_ring_enabled: true,
     multikv_migration_enabled: true,
   },
 }
