@@ -12,7 +12,7 @@ apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
   name: {{ include "mimir.resourceName" $ }}
-  namespace: {{ .namespace | default $.Release.Namespace | quote }}
+  namespace: {{ .namespace | default $.ctx.Release.Namespace | quote }}
   labels:
     {{- include "mimir.labels" $ | nindent 4 }}
     {{- with .labels }}
@@ -23,11 +23,12 @@ metadata:
     {{- toYaml . | nindent 4 }}
   {{- end }}
 spec:
+  namespaceSelector:
   {{- if .namespaceSelector }}
     {{- toYaml .namespaceSelector | nindent 4 }}
   {{- else }}
     matchNames:
-    - {{ $.Release.Namespace }}
+    - {{ $.ctx.Release.Namespace }}
   {{- end }}
   selector:
     matchLabels:
