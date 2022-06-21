@@ -34,6 +34,7 @@ spec:
         app.kubernetes.io/component: ingester
         app.kubernetes.io/part-of: memberlist
       annotations:
+        minio-secret-version: "42"
     spec:
       serviceAccountName: test-oss-values-mimir
       securityContext:
@@ -61,12 +62,12 @@ spec:
           emptyDir: {}
       containers:
         - name: ingester
-          image: "grafana/mimir:r190-fe20bbd"
           imagePullPolicy: IfNotPresent
           args:
             - "-target=ingester"
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
+            - "-ingester.ring.instance-availability-zone=zone-default"
           volumeMounts:
             - name: config
               mountPath: /etc/mimir
@@ -99,3 +100,5 @@ spec:
             readOnlyRootFilesystem: true
           env:
           envFrom:
+            - secretRef:
+                name: mimir-minio-secret

@@ -43,7 +43,7 @@ func (e *validationError) Error() string {
 	if e.labels == nil {
 		return e.err.Error()
 	}
-	return fmt.Sprintf("%s for series %s", e.err.Error(), e.labels.String())
+	return fmt.Sprintf("%s This is for series %s", e.err.Error(), e.labels.String())
 }
 
 // wrapWithUser prepends the user to the error. It does not retain a reference to err.

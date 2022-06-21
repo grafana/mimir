@@ -33,6 +33,7 @@ spec:
         app.kubernetes.io/component: store-gateway
         app.kubernetes.io/part-of: memberlist
       annotations:
+        minio-secret-version: "42"
     spec:
       serviceAccountName: test-enterprise-configmap-values-mimir
       securityContext:
@@ -71,7 +72,6 @@ spec:
           emptyDir: {}
       containers:
         - name: store-gateway
-          image: "grafana/enterprise-metrics:r190-9abd21a8"
           imagePullPolicy: IfNotPresent
           args:
             - "-target=store-gateway"
@@ -111,3 +111,5 @@ spec:
             readOnlyRootFilesystem: true
           env:
           envFrom:
+            - secretRef:
+                name: mimir-minio-secret
