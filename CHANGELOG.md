@@ -81,6 +81,7 @@
 
 ### Mimirtool
 
+* [FEATURE] Added bearer token support for when Mimir is behind a gateway authenticating by bearer token. #2146
 * [BUGFIX] mimirtool analyze: Fix dashboard JSON unmarshalling errors (#1840). #1973
 
 ### Mimir Continuous Test
