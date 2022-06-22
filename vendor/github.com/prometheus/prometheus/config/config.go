@@ -508,15 +508,27 @@ type StorageConfig struct {
 // TSDBConfig configures runtime reloadable configuration options.
 type TSDBConfig struct {
 	// OutOfOrderAllowance sets how long back in time an out-of-order sample can be inserted
-	// into the TSDB.
-	// OutOfOrderAllowance is a Duration only for convenience. TSDB will use OutOfOrderAllowance.Milliseconds()
-	// as the final value for the allowance. If you use milliseconds as the unit of time, then you can use
-	// the duration as an actual duration. But if you use some other unit for time, then you have to choose
-	// the duration whose .Milliseconds() will give you the desired value.
-	// For example, if your unit was in milliseconds, then setting this to '1s' does mean 1 second allowance.
-	// But if your time unit was in seconds, then setting this to '1s' means 1000 seconds allowance. So to get 1s
-	// allowance you will have to set it to '1ms' in this case.
-	OutOfOrderAllowance model.Duration `yaml:"out_of_order_allowance,omitempty"`
+	// into the TSDB. This is the one finally used by the TSDB and should be in the same unit
+	// as other timestamps in the TSDB.
+	OutOfOrderAllowance int64
+
+	// OutOfOrderAllowanceFlag holds the parsed duration from the config file.
+	// During unmarshall, this is converted into milliseconds and stored in OutOfOrderAllowance.
+	// This should not be used directly and must be converted into OutOfOrderAllowance.
+	OutOfOrderAllowanceFlag model.Duration `yaml:"out_of_order_allowance,omitempty"`
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (t *TSDBConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*t = TSDBConfig{}
+	type plain TSDBConfig
+	if err := unmarshal((*plain)(t)); err != nil {
+		return err
+	}
+
+	t.OutOfOrderAllowance = time.Duration(t.OutOfOrderAllowanceFlag).Milliseconds()
+
+	return nil
 }
 
 type TracingClientType string

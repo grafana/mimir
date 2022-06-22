@@ -511,9 +511,6 @@ func (i *Ingester) applyTSDBSettings() {
 		globalValue := i.limits.MaxGlobalExemplarsPerUser(userID)
 		localValue := i.limiter.convertGlobalToLocalLimit(userID, globalValue)
 
-		// OutOfOrderAllowance is a Duration only for convenience. TSDB will use OutOfOrderAllowance.Milliseconds()
-		// as the final value for the allowance which should match our desired value for the unit of the timestamp.
-		// Since we use milliseconds for our timestamps, we can directly use the duration without any modifications.
 		oooAllowance := i.limits.OutOfOrderAllowance(userID)
 		if oooAllowance < 0 {
 			oooAllowance = 0
@@ -529,7 +526,7 @@ func (i *Ingester) applyTSDBSettings() {
 					MaxExemplars: int64(localValue),
 				},
 				TSDBConfig: &promcfg.TSDBConfig{
-					OutOfOrderAllowance: oooAllowance,
+					OutOfOrderAllowance: time.Duration(oooAllowance).Milliseconds(),
 				},
 			},
 		}

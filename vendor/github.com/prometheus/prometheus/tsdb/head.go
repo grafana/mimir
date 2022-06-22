@@ -884,14 +884,7 @@ func (h *Head) removeCorruptedMmappedChunks(err error) (map[chunks.HeadSeriesRef
 func (h *Head) ApplyConfig(cfg *config.Config, wbl *wal.WAL) {
 	oooAllowance := int64(0)
 	if cfg.StorageConfig.TSDBConfig != nil {
-		// OutOfOrderAllowance is a Duration only for convenience. TSDB will use OutOfOrderAllowance.Milliseconds()
-		// as the final value for the allowance. If you use milliseconds as the unit of time, then you can use
-		// the duration as an actual duration. But if you use some other unit for time, then you have to choose
-		// the duration whose .Milliseconds() will give you the desired value.
-		// For example, if your unit was in milliseconds, then setting this to '1s' does mean 1 second allowance.
-		// But if your time unit was in seconds, then setting this to '1s' means 1000 seconds allowance. So to get 1s
-		// allowance you will have to set it to '1ms' in this case.
-		oooAllowance = time.Duration(cfg.StorageConfig.TSDBConfig.OutOfOrderAllowance).Milliseconds()
+		oooAllowance = cfg.StorageConfig.TSDBConfig.OutOfOrderAllowance
 	}
 	if oooAllowance < 0 {
 		oooAllowance = 0
