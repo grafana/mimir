@@ -11,7 +11,7 @@ Mimir Jsonnet supports autoscaling for the following components:
 
 - [Querier]({{< relref "../../architecture/components/querier.md" >}})
 
-Autoscaling is implemented using Kubernetes Horizontal Pod Autoscaler (HPA) and is based on Prometheus metrics and [KEDA](https://keda.sh).
+Autoscaling, which is based on Prometheus metrics and [KEDA (Kubernetes-based Event Driven Autoscaler)](https://keda.sh), uses Kubernetes’ Horizontal Pod Autoscaler (HPA).
 
 HPA is not configured directly in Jsonnet but it's created and updated by KEDA.
 KEDA is an operator, running in the Kubernetes cluster, which is responsible to simplify the setup of HPA with custom metrics (Prometheus in our case).
