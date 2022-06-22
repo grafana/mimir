@@ -344,7 +344,7 @@ func createMultitenantAlertmanager(cfg *MultitenantAlertmanagerConfig, fallbackC
 
 	// Define lifecycler delegates in reverse order (last to be called defined first because they're
 	// chained via "next delegate").
-	delegate := ring.BasicLifecyclerDelegate(am)
+	delegate := ring.BasicLifecyclerDelegate(ring.NewInstanceRegisterDelegate(ring.JOINING, RingNumTokens))
 	delegate = ring.NewLeaveOnStoppingDelegate(delegate, am.logger)
 	delegate = ring.NewAutoForgetDelegate(am.cfg.ShardingRing.HeartbeatTimeout*ringAutoForgetUnhealthyPeriods, delegate, am.logger)
 

@@ -147,7 +147,7 @@ func newStoreGateway(gatewayCfg Config, storageCfg mimir_tsdb.BlocksStorageConfi
 
 	// Define lifecycler delegates in reverse order (last to be called defined first because they're
 	// chained via "next delegate").
-	delegate := ring.BasicLifecyclerDelegate(g)
+	delegate := ring.BasicLifecyclerDelegate(ring.NewInstanceRegisterDelegate(ring.JOINING, RingNumTokens))
 	delegate = ring.NewLeaveOnStoppingDelegate(delegate, logger)
 	delegate = ring.NewTokensPersistencyDelegate(gatewayCfg.ShardingRing.TokensFilePath, ring.JOINING, delegate, logger)
 	delegate = ring.NewAutoForgetDelegate(ringAutoForgetUnhealthyPeriods*gatewayCfg.ShardingRing.HeartbeatTimeout, delegate, logger)
@@ -355,29 +355,6 @@ func requestActivity(ctx context.Context, name string, req interface{}) string {
 	user := getUserIDFromGRPCContext(ctx)
 	traceID, _ := tracing.ExtractSampledTraceID(ctx)
 	return fmt.Sprintf("%s: user=%q trace=%q request=%v", name, user, traceID, req)
-}
-
-func (g *StoreGateway) OnRingInstanceRegister(_ *ring.BasicLifecycler, ringDesc ring.Desc, instanceExists bool, instanceID string, instanceDesc ring.InstanceDesc) (ring.InstanceState, ring.Tokens) {
-	// When we initialize the store-gateway instance in the ring we want to start from
-	// a clean situation, so whatever is the state we set it JOINING, while we keep existing
-	// tokens (if any) or the ones loaded from file.
-	var tokens []uint32
-	if instanceExists {
-		tokens = instanceDesc.GetTokens()
-	}
-
-	takenTokens := ringDesc.GetTokens()
-	newTokens := ring.GenerateTokens(RingNumTokens-len(tokens), takenTokens)
-
-	// Tokens sorting will be enforced by the parent caller.
-	tokens = append(tokens, newTokens...)
-
-	return ring.JOINING, tokens
-}
-
-func (g *StoreGateway) OnRingInstanceTokens(_ *ring.BasicLifecycler, _ ring.Tokens) {}
-func (g *StoreGateway) OnRingInstanceStopping(_ *ring.BasicLifecycler)              {}
-func (g *StoreGateway) OnRingInstanceHeartbeat(_ *ring.BasicLifecycler, _ *ring.Desc, _ *ring.InstanceDesc) {
 }
 
 func createBucketClient(cfg mimir_tsdb.BlocksStorageConfig, logger log.Logger, reg prometheus.Registerer) (objstore.Bucket, error) {
