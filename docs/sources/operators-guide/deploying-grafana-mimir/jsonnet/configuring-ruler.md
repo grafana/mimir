@@ -10,7 +10,7 @@ weight: 20
 The ruler is an optional component and is therefore not deployed by default when using Jsonnet.
 For more information about the ruler, see [Grafana Mimir ruler]({{< relref "../../architecture/components/ruler/index.md" >}}).
 
-It is enabled by adding the following to the `_config` section of the jsonnet:
+To enable it, add the following Jsonnet code to the `_config` section:
 
 ```jsonnet
   _config+:: {
@@ -19,10 +19,10 @@ It is enabled by adding the following to the `_config` section of the jsonnet:
   }
 ```
 
-The `ruler_client_type` option must be one of: 'local', 'azure', 'aws', 's3'.
+The `ruler_client_type` option must be one of either 'local', 'azure', 'aws', or 's3'.
 For more information about the options available for storing ruler state, see [Grafana Mimir ruler: State]({{< relref "../../architecture/components/ruler/index.md#state" >}}).
 
-To get started, the 'local' can be used for initial testing:
+To get started, use the 'local' client type for initial testing:
 
 ```jsonnet
   _config+:: {
@@ -32,7 +32,7 @@ To get started, the 'local' can be used for initial testing:
   }
 ```
 
-If using object storage, additional configuration options are required:
+If you are using object storage, additional configuration options are required:
 
 - Amazon S3 (`s3`)
 
@@ -48,14 +48,14 @@ If using object storage, additional configuration options are required:
   - `ruler_storage_azure_account_name`
   - `ruler_storage_azure_account_key`
 
-Note: Currently the storage credentials for `s3` and `gcs` must be manually provided using additional command line arguments as necessary. See [Grafana Mimir configuration parameters: ruler_storage]({{< relref "../../configuring/reference-configuration-parameters/#ruler_storage" >}}) for information.
+> **Note:** You need to manually provide the storage credentials for `s3` and `gcs` by using additional command line arguments as necessary. For more information, see [Grafana Mimir configuration parameters: ruler_storage]({{< relref "../../configuring/reference-configuration-parameters/#ruler_storage" >}}).
 
 ## Operational modes
 
-The ruler has two operational modes, internal and remote. By default, the jsonnet deploys the ruler using the internal operational mode.
-For more information about these modes, see [Operational modes]({{< relref "../../architecture/components/ruler/index.md#operational-modes" >}}).
+The ruler has two operational modes: _internal_ and _remote_. By default, the Jsonnet deploys the ruler by using the internal operational mode.
+For more information about these modes, see [Operational modes]({{< relref "../../architecture/components/ruler/_index.md#operational-modes" >}}).
 
-To enable the remote operational mode, add the following to the jsonnet:
+To enable the remote operational mode, add the following code to the Jsonnet:
 
 ```jsonnet
   _config+:: {
@@ -63,17 +63,18 @@ To enable the remote operational mode, add the following to the jsonnet:
   }
 ```
 
-Note that to support this operational mode, a separate query path is deployed to evaluate rules, consisting of three additional Kubernetes Deployments:
+> **Note:** To support the _remote_ operational mode, a separate query path is deployed to evaluate rules that consist of three additional Kubernetes deployments:
 
 - `ruler-query-frontend`
 - `ruler-query-scheduler`
 - `ruler-querier`
 
-### Migration to remote evaluation
+### Migrate to remote evaluation
 
 To perform a zero downtime migration from internal to remote rule evaluation, follow these steps:
 
-1. Deploy the following changes to enable remote evaluation in migration mode. This will cause the three new Deployments listed to be started, but will not reconfigure the ruler to use them just yet.
+1. Deploy the following changes to enable remote evaluation in migration mode.
+   Doing so causes the three new and previously listed Kubernetes deployments to start. However, they will not reconfigure the ruler to use them just yet.
 
    ```jsonnet
      _config+:: {
@@ -82,13 +83,13 @@ To perform a zero downtime migration from internal to remote rule evaluation, fo
      }
    ```
 
-   Check that all pods for the following deployments have successfully started before moving to the next step:
+1. Check that all of pods for the following deployments have successfully started before moving to the next step:
 
    - `ruler-query-frontend`
    - `ruler-query-scheduler`
    - `ruler-querier`
 
-1. Deploy the following changes to reconfigure ruler pods to perform remote evaluation.
+1. Reconfigure the ruler pods to perform remote evaluation, by deploying the following changes:
 
    ```jsonnet
      _config+:: {
