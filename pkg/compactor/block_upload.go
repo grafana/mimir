@@ -9,7 +9,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"path"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/go-kit/log"
@@ -17,10 +20,15 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/timestamp"
+	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/thanos-io/thanos/pkg/block"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
 	"github.com/thanos-io/thanos/pkg/objstore"
 
+	"github.com/grafana/dskit/runutil"
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/regexp"
 
@@ -80,7 +88,7 @@ func (c *MultitenantCompactor) HandleBlockUpload(w http.ResponseWriter, r *http.
 	}
 
 	if shouldComplete {
-		err = c.completeBlockUpload(ctx, r, logger, userBkt, bULID)
+		err = c.completeBlockUpload(ctx, r, logger, userBkt, tenantID, bULID)
 	} else {
 		err = c.createBlockUpload(ctx, r, logger, userBkt, tenantID, bULID)
 	}
@@ -262,7 +270,7 @@ func decodeMeta(r io.Reader, name string) (metadata.Meta, error) {
 }
 
 func (c *MultitenantCompactor) completeBlockUpload(ctx context.Context, r *http.Request,
-	logger log.Logger, userBkt objstore.Bucket, blockID ulid.ULID) error {
+	logger log.Logger, userBkt objstore.Bucket, tenantID string, blockID ulid.ULID) error {
 	level.Debug(logger).Log("msg", "received request to complete block upload", "content_length", r.ContentLength)
 
 	uploadingMetaPath := path.Join(blockID.String(), uploadingMetaFilename)
@@ -286,6 +294,10 @@ func (c *MultitenantCompactor) completeBlockUpload(ctx context.Context, r *http.
 	}
 
 	level.Debug(logger).Log("msg", "completing block upload", "files", len(meta.Thanos.Files))
+
+	if err := c.validateBlock(ctx, blockID, tenantID, userBkt, meta); err != nil {
+		return err
+	}
 
 	// Upload meta file so block is considered complete
 	if err := c.uploadMeta(ctx, logger, meta, blockID, block.MetaFilename, userBkt); err != nil {
@@ -387,6 +399,286 @@ func (c *MultitenantCompactor) uploadMeta(ctx context.Context, logger log.Logger
 	return nil
 }
 
+func (c *MultitenantCompactor) validateBlock(ctx context.Context, blockID ulid.ULID, tenantID string,
+	userBkt objstore.Bucket, meta metadata.Meta) error {
+	blockDir, err := os.MkdirTemp("", "")
+	if err != nil {
+		return errors.Wrap(err, "failed to create temp dir")
+	}
+	defer func() {
+		if err := os.RemoveAll(blockDir); err != nil {
+			level.Warn(c.logger).Log("msg", "failed to remove temp dir", "path", blockDir, "err", err)
+		}
+	}()
+
+	if err := userBkt.Iter(ctx, blockID.String(), func(pth string) error {
+		if strings.HasSuffix(pth, ".lock") || pth == "meta.json" {
+			return nil
+		}
+
+		r, err := userBkt.Get(ctx, pth)
+		if err != nil {
+			// TODO: Return error indicating bad gateway
+			return errBadGateway{message: fmt.Sprintf("failed to get object %q from object storage", pth), err: err}
+		}
+
+		f, err := os.Create(filepath.Join(blockDir, pth))
+		if err != nil {
+			return errors.Wrap(err, "failed creating temp file")
+		}
+		defer func() {
+			_ = f.Close()
+		}()
+		if _, err := io.Copy(f, r); err != nil {
+			return errors.Wrap(err, "failed writing to temp file")
+		}
+		if err := f.Close(); err != nil {
+			return errors.Wrap(err, "failed writing to temp file")
+		}
+
+		return nil
+	}); err != nil {
+		return errors.Wrapf(err, "failed to iterate block %s", blockID.String())
+	}
+
+	idxFi, err := analyzeBlockFile(blockDir, "index")
+	if err != nil {
+		return err
+	}
+	meta.Thanos.Files = []metadata.File{
+		idxFi,
+		{
+			// Size not stated for meta.json
+			RelPath: "meta.json",
+		},
+	}
+
+	meta.Thanos.SegmentFiles = []string{}
+	chunksDir := filepath.Join(blockDir, "chunks")
+	ces, err := os.ReadDir(chunksDir)
+	if err != nil {
+		return errors.Wrapf(err, "failed to read directory %s", chunksDir)
+	}
+	for _, e := range ces {
+		meta.Thanos.SegmentFiles = append(meta.Thanos.SegmentFiles, e.Name())
+		fi, err := analyzeBlockFile(blockDir, filepath.Join("chunks", e.Name()))
+		if err != nil {
+			return err
+		}
+
+		meta.Thanos.Files = append(meta.Thanos.Files, fi)
+	}
+
+	if err := c.scanBlock(blockDir, meta); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func analyzeBlockFile(relPath, blockDir string) (metadata.File, error) {
+	fi, err := os.Stat(filepath.Join(blockDir, relPath))
+	if err != nil {
+		return metadata.File{}, errors.Wrapf(err, "failed to stat %s", filepath.Join(blockDir, relPath))
+	}
+	return metadata.File{
+		RelPath:   relPath,
+		SizeBytes: fi.Size(),
+	}, nil
+}
+
+func (c *MultitenantCompactor) scanBlock(blockDir string, meta metadata.Meta) error {
+	// TODO: Count samples (check with Peter)
+
+	var cr *chunks.Reader
+	cr, err := chunks.NewDirReader(filepath.Join(blockDir, block.ChunksDirname), nil)
+	if err != nil {
+		return errors.Wrap(err, "open chunks dir")
+	}
+	defer runutil.CloseWithErrCapture(&err, cr, "closing chunks reader")
+
+	r, err := index.NewFileReader(filepath.Join(blockDir, block.IndexFilename))
+	if err != nil {
+		return errors.Wrap(err, "open index file")
+	}
+	defer runutil.CloseWithErrCapture(&err, r, "gather index issue file reader")
+
+	ps, err := r.Postings(index.AllPostingsKey())
+	if err != nil {
+		return errors.Wrap(err, "get all postings")
+	}
+
+	shard, shardCount, err := sharding.ParseShardIDLabelValue(meta.Thanos.Labels[mimir_tsdb.CompactorShardIDExternalLabel])
+	if err != nil {
+		return errors.Wrap(err, "parse shard ID label value")
+	}
+
+	var (
+		lastLset labels.Labels
+		lset     labels.Labels
+
+		outOfOrderLabels int
+	)
+	// Per series.
+	for ps.Next() {
+		lastLset = append(lastLset[:0], lset...)
+
+		id := ps.At()
+
+		var chnks []chunks.Meta
+		if err := r.Series(id, &lset, &chnks); err != nil {
+			return errors.Wrap(err, "read series")
+		}
+		if len(lset) == 0 {
+			return errors.Errorf("empty label set detected for series %d", id)
+		}
+		if lastLset != nil && labels.Compare(lastLset, lset) >= 0 {
+			return errors.Errorf("series %v out of order; previous: %v", lset, lastLset)
+		}
+		l0 := lset[0]
+		for _, l := range lset[1:] {
+			if l.Name < l0.Name {
+				outOfOrderLabels++
+				level.Warn(c.logger).Log("msg",
+					"out-of-order label set: known bug in Prometheus 2.8.0 and below",
+					"labelset", lset.String(),
+					"series", fmt.Sprintf("%d", id),
+				)
+			}
+			l0 = l
+		}
+		if len(chnks) == 0 {
+			return errors.Errorf("empty chunks for series %d", id)
+		}
+
+		if lset.Hash()%shardCount != shard {
+			return errBadRequest{message: fmt.Sprintf("series sharded incorrectly: %s", lset.String())}
+		}
+
+		ooo := 0
+		// Per chunk in series.
+		for i, chnk := range chnks {
+			if i == 0 {
+				continue
+			}
+
+			prev := chnks[i-1]
+
+			// Chunk order within block.
+			if chnk.MinTime > prev.MaxTime {
+				continue
+			}
+
+			if chnk.MinTime == prev.MinTime && chnk.MaxTime == prev.MaxTime {
+				// TODO(bplotka): Calc and check checksum from chunks itself.
+				// The chunks can overlap 1:1 in time, but does not have same data.
+				// We assume same data for simplicity, but it can be a symptom of error.
+				continue
+			}
+
+			// Chunks partly overlaps or out of order.
+			level.Debug(c.logger).Log("msg", "found out of order chunks",
+				"prev_ref", prev.Ref, "next_ref", chnk.Ref,
+				"prev_min_time", timestamp.Time(prev.MinTime).UTC().Format(time.RFC3339Nano),
+				"prev_max_time", timestamp.Time(prev.MaxTime).UTC().Format(time.RFC3339Nano),
+				"next_min_time", timestamp.Time(chnk.MinTime).UTC().Format(time.RFC3339Nano),
+				"next_max_time", timestamp.Time(chnk.MaxTime).UTC().Format(time.RFC3339Nano),
+				"labels", lset, "prev_chunk_index", i-1, "next_chunk_index", i, "chunks_for_series", len(chnks))
+
+			ooo++
+		}
+
+		/*
+			if ooo > 0 {
+				// TODO: Should this be an error?
+					stats.OutOfOrderSeries++
+					stats.OutOfOrderChunks += ooo
+			}
+		*/
+
+		if err := c.verifyChunks(cr, lset, chnks); err != nil {
+			return err
+		}
+	}
+	if ps.Err() != nil {
+		return errors.Wrap(err, "failed iterating over postings")
+	}
+
+	if outOfOrderLabels > 0 {
+		return errBadRequest{message: fmt.Sprintf("block has %d out of order labels", outOfOrderLabels)}
+	}
+
+	return nil
+}
+
+type errBadRequest struct {
+	message string
+}
+
+func (e errBadRequest) Error() string {
+	return e.message
+}
+
+type errBadGateway struct {
+	message string
+	err     error
+}
+
+func (e errBadGateway) Error() string {
+	return e.message
+}
+
+func (e errBadGateway) Unwrap() error {
+	return e.err
+}
+
+func (c *MultitenantCompactor) verifyChunks(cr *chunks.Reader, lset labels.Labels, chnks []chunks.Meta) error {
+	for _, cm := range chnks {
+		ch, err := cr.Chunk(cm.Ref)
+		if err != nil {
+			return errors.Wrapf(err, "failed to read chunk %d", cm.Ref)
+		}
+
+		samples := 0
+		firstSample := true
+		prevTS := int64(-1)
+
+		it := ch.Iterator(nil)
+		for it.Err() == nil && it.Next() {
+			samples++
+			ts, _ := it.At()
+
+			if firstSample {
+				firstSample = false
+				if ts != cm.MinTime {
+					// TODO: Error?
+					level.Warn(c.logger).Log("ref", cm.Ref, "msg", "timestamp of the first sample doesn't match chunk MinTime",
+						"sampleTimestamp", formatTimestamp(ts), "chunkMinTime", formatTimestamp(cm.MinTime))
+				}
+			} else if ts <= prevTS {
+				// TODO: Error?
+				level.Warn(c.logger).Log("ref", cm.Ref, "msg", "found sample with timestamp not strictly higher than previous timestamp",
+					"previous", formatTimestamp(prevTS), "sampleTimestamp", formatTimestamp(ts))
+			}
+
+			prevTS = ts
+		}
+		if e := it.Err(); e != nil {
+			return errors.Wrapf(err, "failed to failed to iterate over samples of chunk %d", cm.Ref)
+		}
+		if samples == 0 {
+			// TODO: Error?
+			level.Warn(c.logger).Log("ref", cm.Ref, "msg", "no samples found in the chunk")
+		} else if prevTS != cm.MaxTime {
+			// TODO: Error?
+			level.Warn(c.logger).Log("ref", cm.Ref, "msg", "timestamp of the last sample doesn't match chunk MaxTime",
+				"sampleTimestamp", formatTimestamp(prevTS), "chunkMaxTime", formatTimestamp(cm.MaxTime))
+		}
+	}
+
+	return nil
+}
+
 type httpError struct {
 	message    string
 	statusCode int
@@ -412,4 +704,8 @@ func (r bodyReader) ObjectSize() (int64, error) {
 // Read implements io.Reader.
 func (r bodyReader) Read(b []byte) (int, error) {
 	return r.r.Body.Read(b)
+}
+
+func formatTimestamp(ts int64) string {
+	return fmt.Sprintf("%d (%s)", ts, timestamp.Time(ts).UTC().Format(time.RFC3339Nano))
 }
