@@ -2652,7 +2652,7 @@
           "kind": "field",
           "name": "out_of_order_allowance",
           "required": false,
-          "desc": "Non-zero value enables out-of-order support for most recent samples in this time window. Ingester will need more memory that is a factor of rate of out of order sample being ingested and number of series getting out of order samples. When enabled ingester will be enabled to query overlapping blocks.",
+          "desc": "Non-zero value enables out-of-order support for most recent samples in this time window. Ingester will need more memory that is a factor of rate of out of order sample being ingested and number of series getting out of order samples.",
           "fieldValue": null,
           "fieldDefaultValue": 0,
           "fieldFlag": "ingester.out-of-order-allowance",
