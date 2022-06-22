@@ -92,9 +92,21 @@ To publish a release candidate:
    1. Ensure the `VERSION` file has the `-rc.X` suffix (`X` starting from `0`)
 1. After merging your PR to the release branch, `git tag` the new release (see [How to tag a release](#how-to-tag-a-release)) from the release branch.
 1. Wait until the CI pipeline succeeds (once a tag is created, the release process through GitHub Actions will be triggered for this tag)
-1. Create a pre-release on GitHub
-   - Write the release notes (including a copy-paste of the changelog)
-   - Build binaries with `make BUILD_IN_CONTAINER=true dist` and attach them to the release (building in container ensures standardized toolchain)
+1. Create a pre-release on GitHub. See [Creating release on GitHub](#creating-release-on-github)
+
+### Creating release on GitHub
+
+1. When creating release on GitHub, select your new tag, use `Mimir <VERSION>` as Release Title, and click "Generate release notes" button.
+   This will pre-fill the changelog for the release. You can delete all of it, except "New Contributors" section.
+1. Release notes should contain:
+    - "This release contains XX contributions from YY authors. Thank you!" at the beginning.
+        - You can find the numbers by doing compare like `https://github.com/grafana/mimir/compare/mimir-2.0.0...mimir-2.1.0` from previous Mimir release. (Note the syntax: `.../compare/<old ref>...<new ref>`, yes there are three periods).
+        - Number of commits = "contributions", number of contributors = "authors".
+        - As an example, for [current HEAD on commit 017a738](https://github.com/grafana/mimir/compare/mimir-2.1.0...017a738e94) shows 185 contributions and 36 authors since Mimir 2.1.0.)
+    - Most interesting new features for users. Use your judgement. 
+    - Full copy-paste of the CHANGELOG since previous release.
+    - "New Contributors" section at the end (created by "Generate release notes" button in GitHub UI).
+1. Build binaries with `make BUILD_IN_CONTAINER=true dist` and attach them to the release (building in container ensures standardized toolchain)
 
 ### Publish a stable release
 
@@ -114,9 +126,7 @@ To publish a stable release:
    1. Open a PR
 1. After merging your PR to the release branch, `git tag` the new release (see [How to tag a release](#how-to-tag-a-release)) from the release branch.
 1. Wait until the CI pipeline succeeds (once a tag is created, the release process through GitHub Actions will be triggered for this tag)
-1. Create a release on GitHub
-   - Write the release notes (including a copy-paste of the changelog)
-   - Build binaries with `make BUILD_IN_CONTAINER=true dist` and attach them to the release (building in container ensures standardized toolchain)
+1. Create a release on GitHub. This is basically a copy of release notes from pre-release version, with up-to-date CHANGELOG (if there were any changes in release candidates).
 1. Merge the release branch `release-x.y` into `main`
    - Create `merge-release-X.Y-to-main` branch **from the `release-X.Y` branch** locally
    - Merge the upstream `main` branch into your `merge-release-X.Y-to-main` branch and resolve conflicts
