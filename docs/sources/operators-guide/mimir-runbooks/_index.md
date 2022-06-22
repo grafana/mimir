@@ -265,7 +265,7 @@ How to **investigate**:
 - If the failing service is going OOM (`OOMKilled`): scale up or increase the memory
 - If the failing service is crashing / panicking: look for the stack trace in the logs and investigate from there
   - If crashing service is query-frontend, querier or store-gateway, and you have "activity tracker" feature enabled, look for `found unfinished activities from previous run` message and subsequent `activity` messages in the log file to see which queries caused the crash.
-- When using Memberlist as KV store for hash rings, ensure that Memberlist is working correctly. See [instructions for `MimirGossipMembersMismatch` alert.](#MimirGossipMembersMismatch)
+- When using Memberlist as KV store for hash rings, ensure that Memberlist is working correctly. See instructions for [`MimirGossipMembersMismatch`](#MimirGossipMembersMismatch) alert.
 
 #### Alertmanager
 
@@ -297,7 +297,7 @@ More information:
 
 This alert occurs when a ruler is unable to validate whether or not it should claim ownership over the evaluation of a rule group. The most likely cause is that one of the rule ring entries is unhealthy. If this is the case proceed to the ring admin http page and forget the unhealth ruler. The other possible cause would be an error returned the ring client. If this is the case look into debugging the ring based on the in-use backend implementation.
 
-When using Memberlist as KV store for hash rings, ensure that Memberlist is working correctly. See [instructions for `MimirGossipMembersMismatch` alert.](#MimirGossipMembersMismatch)
+When using Memberlist as KV store for hash rings, ensure that Memberlist is working correctly. See instructions for [`MimirGossipMembersMismatch`](#MimirGossipMembersMismatch) alert.
 
 ### MimirRulerTooManyFailedPushes
 
@@ -309,7 +309,7 @@ This alert fires only for first kind of problems, and not for problems caused by
 How to **fix** it:
 
 - Investigate the ruler logs to find out the reason why ruler cannot write samples. Note that ruler logs all push errors, including "user errors", but those are not causing the alert to fire. Focus on problems with ingesters.
-- When using Memberlist as KV store for hash rings, ensure that Memberlist is working correctly. See [instructions for `MimirGossipMembersMismatch` alert.](#MimirGossipMembersMismatch)
+- When using Memberlist as KV store for hash rings, ensure that Memberlist is working correctly. See instructions for [`MimirGossipMembersMismatch`](#MimirGossipMembersMismatch) alert.
 
 ### MimirRulerTooManyFailedQueries
 
@@ -323,7 +323,7 @@ How to **fix** it:
 
 - Investigate the ruler logs to find out the reason why ruler cannot evaluate queries. Note that ruler logs rule evaluation errors even for "user errors", but those are not causing the alert to fire. Focus on problems with ingesters or store-gateways.
 - In case remote operational mode is enabled the problem could be at any of the ruler query path components (ruler-query-frontend, ruler-query-scheduler and ruler-querier). Check the `Mimir / Remote ruler reads` and `Mimir / Remote ruler reads resources` dashboards to find out in which Mimir service the error is being originated.
-- When using Memberlist as KV store for hash rings, ensure that Memberlist is working correctly. See [instructions for `MimirGossipMembersMismatch` alert.](#MimirGossipMembersMismatch)
+- When using Memberlist as KV store for hash rings, ensure that Memberlist is working correctly. See instructions for [`MimirGossipMembersMismatch`](#MimirGossipMembersMismatch) alert.
 
 ### MimirRulerMissedEvaluations
 
@@ -840,9 +840,8 @@ The metric for this alert is `cortex_alertmanager_ring_check_errors_total`.
 
 How to **investigate**:
 
-Look at the error message that is logged and attempt to understand what is causing the failure. In most cases the error will be encountered when attempting to read from the ring, which can fail if there is an issue with in-use backend implementation.
-
-When using Memberlist as KV store for hash rings, ensure that Memberlist is working correctly. See [instructions for `MimirGossipMembersMismatch` alert.](#MimirGossipMembersMismatch)
+* Look at the error message that is logged and attempt to understand what is causing the failure. In most cases the error will be encountered when attempting to read from the ring, which can fail if there is an issue with in-use backend implementation.
+* When using Memberlist as KV store for hash rings, ensure that Memberlist is working correctly. See instructions for [`MimirGossipMembersMismatch`](#MimirGossipMembersMismatch) alert.
 
 ### MimirAlertmanagerPartialStateMergeFailing
 
@@ -927,6 +926,7 @@ How to **investigate**:
 ### MimirKVStoreFailure
 
 This alert fires if a Mimir instance is failing to run any operation on a KV store (eg. consul or etcd).
+When using Memberlist as KV store for hash rings, all read and update operations work on a local copy of the hash ring, and will never fail and raise this alert.
 
 How it **works**:
 
@@ -939,8 +939,6 @@ How to **investigate**:
 
 - Ensure Consul/Etcd is up and running.
 - Investigate the logs of the affected instance to find the specific error occurring when talking to Consul/Etcd.
-
-When using Memberlist as KV store for hash rings, all read and update operations work on a local copy of the hash ring, and will never fail and raise this alert.
 
 ### MimirReachingTCPConnectionsLimit
 
