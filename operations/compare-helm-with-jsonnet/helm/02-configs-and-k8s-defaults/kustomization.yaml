@@ -1,0 +1,5 @@
+resources:
+  - ../01-ignore
+transformers:
+  - ./annotator.yaml
+  - ./config-resolver.yaml

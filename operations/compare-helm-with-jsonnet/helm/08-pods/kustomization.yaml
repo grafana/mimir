@@ -1,0 +1,69 @@
+resources:
+  - ../07-services
+
+components:
+  - ../../components/pods
+
+# Jsonnet doesn't use a config file, do we can delete the whole object
+patches:
+  - target:
+      name: mimir-config
+    patch: |-
+      $patch: delete
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: mimir-config
+
+  # TODO(logiraptor): Helm adds a grpc port to the overrides exporter, Jsonnet does not.
+  - target:
+      name: mimir-overrides-exporter 
+      kind: Deployment
+    patch: |-
+      - op: remove
+        path: /spec/template/spec/containers/0/ports/1
+
+  # TODO(logiraptor): Helm adds a gossip port to the ruler, Jsonnet does not. This seems like a bug on the Jsonnet side, since all other ring-connected components do have a gossip port.
+  - target:
+      name: mimir-ruler
+      kind: Deployment
+    patch: |-
+      - op: remove
+        path: /spec/template/spec/containers/0/ports/2
+
+  # TODO(logiraptor): Helm adds an emptyDir volume to several components. This is likely due to the fact that readOnlyRootFilesystem=true and some ephemeral data is written
+  - target:
+      name: mimir-(distributor|query-frontend|querier|ruler|querier|overrides-exporter|alertmanager)
+      kind: Deployment|StatefulSet
+    patch: |-
+      - op: remove
+        path: /spec/template/spec/volumes/1
+
+  # Minor Difference: Helm names the overrides volume slightly differently
+  - target:
+      name: mimir-(distributor|query-frontend|overrides-exporter|ruler|querier|alertmanager|ingester|store-gateway|compactor)
+      kind: Deployment|StatefulSet
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/volumes/0/name
+        value: overrides
+      - op: replace
+        path: /spec/template/spec/volumes/0/configMap/name
+        value: overrides
+
+  # Minor Difference: Helm names the memberlist port slightly differently
+  - target:
+      name: mimir-(distributor|querier|alertmanager|ingester|store-gateway|compactor)
+      kind: Deployment|StatefulSet
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/ports/2/name
+        value: gossip-ring
+
+  # Minor Difference: Jsonnet does not set the template namespace in PodSpecs. this has no effect, so we ignore it.
+  - target:
+      name: mimir-(distributor|alertmanager|ingester|store-gateway|query-frontend|overrides-exporter|ruler|compactor)
+      kind: Deployment|StatefulSet
+    patch: |-
+      - op: remove
+        path: /spec/template/metadata/namespace

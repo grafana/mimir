@@ -1,0 +1,15 @@
+kind: MimirConfig
+apiVersion: grafana.com/v1alpha1
+metadata:
+  name: not-important
+config:
+  compactor:
+    sharding_ring:
+      wait_stability_min_duration:
+    compaction_interval:
+    deletion_delay:
+    max_closing_blocks_concurrency:
+    max_opening_blocks_concurrency:
+    symbols_flushers_concurrency:
+  limits:
+    compactor_tenant_shard_size:

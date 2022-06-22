@@ -1,0 +1,28 @@
+kind: Component
+apiVersion: kustomize.config.k8s.io/v1alpha1
+
+patches:
+  # Replace the main container name with `mimir`. This makes it possible to use
+  # a strategic merge patch to modify the container parameters, since that
+  # requires a matching name to identify the correct container. Without this,
+  # the container names are things like 'distributor', 'ingester', etc.
+  - target:
+      kind: 'Deployment|StatefulSet'
+      name: 'mimir-.+'
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/name
+        value: mimir
+
+  - target:
+      kind: 'Deployment|StatefulSet'
+      name: 'mimir-.+'
+    path: ./standard-pod-changes.yaml
+  
+  # TODO: We have different maxUnavailable values for store-gateway PDBs in Helm v Jsonnet
+  - target:
+      kind: 'PodDisruptionBudget'
+      name: 'mimir-store-gateway'
+    patch: |-
+      - op: remove
+        path: /spec/maxUnavailable

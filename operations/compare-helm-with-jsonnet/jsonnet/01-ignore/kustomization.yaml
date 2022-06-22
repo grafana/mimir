@@ -1,0 +1,29 @@
+resources:
+  - ../00-base
+
+patches:
+  - target:
+      kind: EtcdCluster
+    patch: &deletePatch |-
+      kind: NotImportant
+      metadata:
+        name: not-important
+      $patch: delete
+
+  - target:
+      kind: Namespace
+    patch: *deletePatch
+
+  - target:
+      name: 'mimir-overrides'
+      kind: ConfigMap
+    patch: *deletePatch
+
+  - target:
+      name: 'mimir-alertmanager'
+      kind: PodDisruptionBudget
+    patch: *deletePatch
+
+  - target:
+      name: 'mimir-consul(-sidekick)?'
+    patch: *deletePatch

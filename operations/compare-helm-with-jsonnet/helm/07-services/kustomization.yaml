@@ -1,0 +1,32 @@
+resources:
+  - ../06-memcached
+patches:
+  # TODO(logiraptor): Jsonnet doesn't add a grpc port to the overrides-exporter
+  - target:
+      kind: Service
+      name: 'mimir-(overrides-exporter)'
+    patch: |-
+      - op: remove
+        path: /spec/ports/1
+
+  # TODO(logiraptor): Jsonnet doesn't add a cluster port to alertmanager-headless
+  # TODO(logiraptor): Jsonnet doesn't publish not ready address to alertmanager-headless
+  - target:
+      kind: Service
+      name: 'mimir-(alertmanager-headless)'
+    patch: |-
+      - op: remove
+        path: /spec/ports/2
+      - op: remove
+        path: /spec/publishNotReadyAddresses
+
+  # TODO(logiraptor): Helm's compactor service is not headless
+  - target:
+      kind: Service
+      name: 'mimir-(compactor)'
+    patch: |-
+      - op: remove
+        path: /spec/clusterIP
+      - op: replace
+        path: /spec/clusterIPs
+        value: [None]

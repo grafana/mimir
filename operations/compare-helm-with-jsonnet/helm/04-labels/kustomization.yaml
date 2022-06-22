@@ -1,0 +1,29 @@
+resources:
+  - ../03-set-namespace
+patches:
+  - target:
+      name: 'mimir-.+'
+    patch: |-
+      - op: remove
+        path: /metadata/labels
+
+  - target:
+      kind: 'Deployment|StatefulSet'
+      name: 'mimir-(distributor|alertmanager|ingester|store-gateway|query-frontend|overrides-exporter|ruler|compactor|querier)'
+    patch: |-
+      - op: remove
+        path: /spec/template/metadata/annotations
+
+  - target:
+      kind: 'Service|PodDisruptionBudget'
+    patch: |-
+      - op: remove
+        path: /spec/selector
+
+  - target:
+      kind: 'Deployment|StatefulSet'
+    patch: |-
+      - op: remove
+        path: /spec/template/metadata/labels
+      - op: remove
+        path: /spec/selector/matchLabels

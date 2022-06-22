@@ -1,0 +1,58 @@
+resources:
+  - ../02-configs-and-k8s-defaults
+patches:
+  - target:
+      kind: 'PodDisruptionBudget'
+      name: 'mimir-ingester-pdb'
+    patch: |-
+      - op: replace
+        path: /metadata/name
+        value: mimir-ingester
+
+  - target:
+      kind: 'PodDisruptionBudget'
+      name: 'mimir-store-gateway-pdb'
+    patch: |-
+      - op: replace
+        path: /metadata/name
+        value: mimir-store-gateway
+
+  - target:
+      kind: 'Service'
+      name: 'mimir-distributor'
+    patch: |-
+      - op: replace
+        path: /metadata/name
+        value: 'mimir-distributor-headless'
+
+  - target:
+      kind: 'Service'
+      name: 'mimir-alertmanager'
+    patch: |-
+      - op: replace
+        path: /metadata/name
+        value: 'mimir-alertmanager-headless'
+
+  - target:
+      kind: 'Service'
+      name: 'mimir-query-frontend-discovery'
+    patch: |-
+      - op: replace
+        path: /metadata/name
+        value: 'mimir-query-frontend-headless'
+
+  - target:
+      kind: 'Service|StatefulSet'
+      name: 'mimir-memcached-frontend'
+    patch: |-
+      - op: replace
+        path: /metadata/name
+        value: 'mimir-memcached-results'
+
+  - target:
+      kind: 'Service|StatefulSet'
+      name: 'mimir-memcached-index-queries'
+    patch: |-
+      - op: replace
+        path: /metadata/name
+        value: 'mimir-memcached-queries'

@@ -1,0 +1,13 @@
+resources:
+  - ../04-labels
+patches:
+  # TODO(logiraptor): We don't need to create memberlist ports in these
+  # services, since the gossip-ring service is used for joining the gossip
+  # cluster. The Helm chart doesn't do this. For now we remove them from the
+  # diff.
+  - target:
+      kind: Service
+      name: "mimir-(store-gateway|querier|ingester|distributor-headless|compactor|alertmanager-headless)"
+    patch: |-
+      - op: remove
+        path: /spec/ports/2

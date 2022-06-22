@@ -1,0 +1,73 @@
+resources:
+  - ../05-memberlist
+
+patches:
+  # TODO(logiraptor): Jsonnet sets different default resource limits for memcached
+  - target:
+      kind: StatefulSet
+      name: 'mimir-memcached(-(results|queries|metadata))?'
+    patch: |-
+      - op: remove
+        path: /spec/template/spec/containers/0/resources
+      - op: remove
+        path: /spec/template/spec/containers/0/args
+
+  # TODO(logiraptor): Helm and jsonnet use different memcached images
+  - target:
+      kind: StatefulSet
+      name: 'mimir-memcached(-(results|queries|metadata))?'
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/image
+        value: docker.io/memcached:1.6.9
+      - op: replace
+        path: /spec/template/spec/containers/1/image
+        value: quay.io/prometheus/memcached-exporter:v0.9.0
+      # The different image needs different args
+      - op: remove
+        path: /spec/template/spec/containers/1/args
+
+  # TODO(logiraptor): Jsonnet adds a port for memcached metrics to the Service
+  # Helm creates a second service for memcached metrics
+  - target:
+      kind: Service
+      name: 'mimir-memcached(-(results|queries|metadata))?'
+    patch: |-
+      - op: remove
+        path: /spec/ports/1
+
+  # Minor difference: Jsonnet uses a targetPort number
+  # Helm uses the port name
+  - target:
+      kind: Service
+      name: 'mimir-memcached(-(results|queries|metadata))?'
+    patch: |-
+      - op: replace
+        path: /spec/ports/0/targetPort
+        value: memcache
+      - op: replace
+        path: /spec/ports/0/name
+        value: memcache
+
+  # Minor difference: Helm and Jsonnet name the containers and ports differently
+  - target:
+      kind: StatefulSet
+      name: 'mimir-memcached(-(results|queries|metadata))?'
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/ports/0/name
+        value: memcache
+      - op: replace
+        path: /spec/template/spec/containers/1/name
+        value: metrics
+      - op: replace
+        path: /spec/template/spec/containers/1/ports/0/name
+        value: metrics
+
+  # Minor difference: Jsonnet uses different labels for antiAffinity
+  - target:
+      kind: StatefulSet
+      name: 'mimir-memcached(-(results|queries|metadata))?'
+    patch: |-
+      - op: remove
+        path: /spec/template/spec/affinity/podAntiAffinity/requiredDuringSchedulingIgnoredDuringExecution/0/labelSelector

@@ -1,0 +1,9 @@
+apiVersion: grafana.com/v1alpha1
+kind: ConfigResolver
+metadata:
+  name: config-resolver
+  annotations:
+    # path is relative to kustomization.yaml
+    config.kubernetes.io/function: |
+      exec:
+        path: ../../plugins/resolve-config/run.sh

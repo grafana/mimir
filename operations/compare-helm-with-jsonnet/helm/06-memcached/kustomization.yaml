@@ -1,0 +1,112 @@
+resources:
+  - ../05-memberlist
+# TODO(logiraptor): Helm sets different replica counts
+replicas:
+  - name: 'mimir-memcached-results'
+    count: 3
+  - name: 'mimir-memcached-queries'
+    count: 3
+  - name: 'mimir-memcached'
+    count: 3
+
+patches:
+
+  - target:
+      name: 'mimir-memcached(.*)-metrics'
+      kind: Service
+    patch: |-
+      kind: NotImportant
+      metadata:
+        name: not-important
+      $patch: delete
+
+  # TODO(logiraptor): Helm creates liveness and readiness probes for memcached. Decide if
+  # jsonnet should too.
+  - target:
+      kind: StatefulSet
+      version: v1
+      name: 'mimir-memcached(-(results|queries|metadata))?'
+    patch: |-
+      - op: remove
+        path: /spec/template/spec/containers/0/livenessProbe
+      - op: remove
+        path: /spec/template/spec/containers/0/readinessProbe
+      - op: remove
+        path: /spec/template/spec/containers/1/livenessProbe
+      - op: remove
+        path: /spec/template/spec/containers/1/readinessProbe
+
+  # TODO(logiraptor): Helm uses preferedDuringSchedulingIgnoredDuringExecution,
+  # jsonnet uses requiredDuringSchedulingIgnoredDuringExecution. Both try to
+  # prevent multiple memcached replicas of the same StatefulSet per node
+  - target:
+      kind: StatefulSet
+      version: v1
+      name: 'mimir-memcached(-(results|queries|metadata))?'
+    patch: |-
+      - op: add
+        path: /spec/template/spec/affinity/podAntiAffinity/requiredDuringSchedulingIgnoredDuringExecution
+        value: []
+      - op: move
+        from: /spec/template/spec/affinity/podAntiAffinity/preferredDuringSchedulingIgnoredDuringExecution/0/podAffinityTerm
+        path: /spec/template/spec/affinity/podAntiAffinity/requiredDuringSchedulingIgnoredDuringExecution/0
+      - op: remove
+        path: /spec/template/spec/affinity/podAntiAffinity/preferredDuringSchedulingIgnoredDuringExecution
+
+  # TODO(logiraptor): Helm sets a securityContext on memcached
+  - target:
+      kind: StatefulSet
+      version: v1
+      name: 'mimir-memcached(-(results|queries|metadata))?'
+    patch: |-
+      - op: remove
+        path: /spec/template/spec/containers/0/securityContext
+      - op: remove
+        path: /spec/template/spec/securityContext
+
+  # TODO(logiraptor): Helm mounts a tmpDir for memcached, this might be related
+  # to readOnlyRootFilesystem=true
+  - target:
+      kind: StatefulSet
+      version: v1
+      name: 'mimir-memcached(-(results|queries|metadata))?'
+    patch: |-
+      - op: remove
+        path: /spec/template/spec/volumes
+      - op: remove
+        path: /spec/template/spec/containers/0/volumeMounts
+
+  # TODO(logiraptor): Helm sets different default resource limits for memcached
+  - target:
+      kind: StatefulSet
+      version: v1
+      name: 'mimir-memcached(-(results|queries|metadata))?'
+    patch: |-
+      - op: remove
+        path: /spec/template/spec/containers/0/resources
+      - op: remove
+        path: /spec/template/spec/containers/0/args
+  
+  # Minor difference: Helm sets prometheus scrape annotations on memcached StatefulSets
+  - target:
+      kind: StatefulSet
+      version: v1
+      name: 'mimir-memcached(-(results|queries|metadata))?'
+    patch: |-
+      - op: remove
+        path: /spec/template/metadata/annotations/prometheus.io~1scrape
+      - op: remove
+        path: /spec/template/metadata/annotations/prometheus.io~1port
+      - op: remove
+        path: /spec/template/metadata/annotations
+
+  # Minor difference: Helm uses different labels for antiAffinity
+  - target:
+      kind: StatefulSet
+      version: v1
+      name: 'mimir-memcached(-(results|queries|metadata))?'
+    patch: |-
+      - op: remove
+        path: /spec/template/spec/affinity/podAntiAffinity/requiredDuringSchedulingIgnoredDuringExecution/0/labelSelector
+      - op: remove
+        path: /spec/template/spec/affinity/podAntiAffinity/requiredDuringSchedulingIgnoredDuringExecution/0/namespaces

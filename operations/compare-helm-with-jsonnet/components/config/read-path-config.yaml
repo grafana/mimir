@@ -1,0 +1,27 @@
+kind: MimirConfig
+apiVersion: grafana.com/v1alpha1
+metadata:
+  name: not-important
+config:
+  frontend:
+    align_queries_with_step:
+    log_queries_longer_than:
+    results_cache:
+      memcached:
+        timeout:
+  limits:
+    max_query_length:
+    max_cache_freshness:
+  server:
+    http_server_write_timeout:
+  querier:
+    max_concurrent:
+  store_gateway:
+    sharding_ring:
+      wait_stability_min_duration:
+  blocks_storage:
+    bucket_store:
+      max_chunk_pool_bytes:
+      index_cache:
+        memcached:
+          max_item_size:

@@ -1,0 +1,30 @@
+resources:
+  - ../03-rename
+patches:
+
+  - target:
+      name: 'mimir-(compactor|ingester|store-gateway|alertmanager|overrides-exporter)'
+    patch: |-
+      - op: remove
+        path: /metadata/labels
+
+  - target:
+      kind: 'Service'
+      name: 'mimir-(alertmanager-headless|ruler|query-frontend(-headless)?|distributor(-headless)?|querier|memcached(-results|-queries|-metadata)?)'
+    patch: |-
+      - op: remove
+        path: /metadata/labels
+
+  - target:
+      kind: 'Service|PodDisruptionBudget'
+    patch: |-
+      - op: remove
+        path: /spec/selector
+
+  - target:
+      kind: 'Deployment|StatefulSet'
+    patch: |-
+      - op: remove
+        path: /spec/template/metadata/labels
+      - op: remove
+        path: /spec/selector/matchLabels

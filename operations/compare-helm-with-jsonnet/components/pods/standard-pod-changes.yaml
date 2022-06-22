@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: NotImportant # This patch is applied to both Deployments and StatefulSets
+metadata:
+  name: not-important # This patch is applied to many components
+spec:
+  serviceName: # Services are named differently in Helm v Jsonnet
+  podManagementPolicy: # TODO(logiraptor): We use different podManagementPolicies in Helm v Jsonnet
+  replicas: # TODO(logiraptor): We request different replica counts in Helm v Jsonnet
+  strategy: # Note this is a field in Deployments, not StatefulSets
+    rollingUpdate:
+      maxUnavailable: # TODO(logiraptor): We use different maxUnavailable values in Helm v Jsonnet
+      maxSurge: # TODO(logiraptor): We use different maxSurge values in Helm v Jsonnet
+  updateStrategy: # Note this is a field in StatefulSets, not Deployments
+    rollingUpdate:
+      partition: # TODO(logiraptor): We use different partition values in Helm v Jsonnet
+  minReadySeconds: # TODO(logiraptor): We use different minReadySeconds values in Helm v Jsonnet
+  volumeClaimTemplates: # TODO(logiraptor): We set different volume sizes for StatefulSets
+  template:
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution: # TODO(logiraptor): We set different pod affinities in Helm v Jsonnet
+          preferredDuringSchedulingIgnoredDuringExecution:
+      serviceAccount:
+      serviceAccountName:
+      terminationGracePeriodSeconds: # TODO(logiraptor): We set a different terminationGracePeriodSeconds in Helm v Jsonnet
+      securityContext: # TODO(logiraptor): We set a pod security context only in Jsonnet
+      containers:
+      - name: mimir # This section applies to the first container in all mimir components
+        image: # The exact image changes over time since Helm is released with weekly images
+        args: # Args are ignored here since we separately compare the Mimir Config objects
+        resources: # TODO(logiraptor): We request different resources in Helm v Jsonnet
+        securityContext: # TODO(logiraptor): We set a container security context only in Helm
+        livenessProbe: # TODO(logiraptor): We only set livenessProbe on some resources in Helm
+        readinessProbe:
+          initialDelaySeconds: # TODO(logiraptor): We set a different initialDelaySeconds in Helm v Jsonnet
+          httpGet:
+            port: http-metrics
+        volumeMounts: # We mount runtime config differently and also allocate emptyDir volumes when readOnlyRootFilesystem is true in Helm
+      volumes:
+      - name: config
+        $patch: delete

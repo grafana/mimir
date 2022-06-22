@@ -1,0 +1,13 @@
+resources:
+  - ../04-labels
+
+patches:
+  # TODO(logiraptor): We probably shouldn't publish not ready addresses in the
+  # gossip-ring. The jsonnet code doesn't do this. For now we remove it from the
+  # diff.
+  - target:
+      kind: Service
+      name: "mimir-gossip-ring"
+    patch: |-
+      - op: remove
+        path: /spec/publishNotReadyAddresses
