@@ -78,7 +78,7 @@ Note that to support this operational mode, a separate query path is deployed to
 
 To perform a zero downtime migration from internal to remote rule evaluation, follow these steps:
 
-1. Deploy the following changes to enable remote evaluation in migration mode. This will cause the three new Deployments listed to be started, but will not reconfigure the ruler to use them just yet. Check that pods are successfully starting before moving to the next step.
+1. Deploy the following changes to enable remote evaluation in migration mode. This will cause the three new Deployments listed to be started, but will not reconfigure the ruler to use them just yet.
 
    ```jsonnet
      _config+:: {
@@ -86,6 +86,12 @@ To perform a zero downtime migration from internal to remote rule evaluation, fo
        ruler_remote_evaluation_migration_enabled: true
      }
    ```
+
+   Check that all pods for the following deployments have successfully started before moving to the next step:
+
+   - `ruler-query-frontend`
+   - `ruler-query-scheduler`
+   - `ruler-querier`
 
 1. Deploy the following changes to reconfigure ruler pods to perform remote evaluation.
 
