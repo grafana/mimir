@@ -448,7 +448,9 @@ func (i *Ingester) updateLoop(ctx context.Context) error {
 			i.tsdbsMtx.RUnlock()
 
 		case <-exemplarUpdateTicker.C:
-			i.applyExemplarsSettings()
+			// Since we have to apply all TSDB config together, we apply them all
+			// in the exemplar update cycle instead of a separate cycle for other config.
+			i.applyTSDBSettings()
 
 		case <-activeSeriesTickerChan:
 			i.updateActiveSeries(time.Now())
@@ -501,14 +503,21 @@ func (i *Ingester) updateActiveSeries(now time.Time) {
 	}
 }
 
-// Go through all tenants and apply the current max-exemplars setting.
-// If it changed, tsdb will resize the buffer; if it didn't change tsdb will return quickly.
-func (i *Ingester) applyExemplarsSettings() {
+// applyTSDBSettings goes through all tenants and applies
+// * The current max-exemplars setting. If it changed, tsdb will resize the buffer; if it didn't change tsdb will return quickly.
+// * The current out of order allowance. If it changes from 0 to >0, then a new Write-Behind-Log gets created for that tenant.
+func (i *Ingester) applyTSDBSettings() {
 	for _, userID := range i.getTSDBUsers() {
 		globalValue := i.limits.MaxGlobalExemplarsPerUser(userID)
 		localValue := i.limiter.convertGlobalToLocalLimit(userID, globalValue)
-		// We populate a Config struct with just one value, which is OK
-		// because Head.ApplyConfig only looks at one value.
+
+		// OutOfOrderAllowance is a Duration only for convenience. TSDB will use OutOfOrderAllowance.Milliseconds()
+		// as the final value for the allowance which should match our desired value for the unit of the timestamp.
+		// Since we use milliseconds for our timestamps, we can directly use the duration without any modifications.
+		oooAllowance := i.limits.OutOfOrderAllowance(userID)
+
+		// We populate a Config struct with just TSDB related config, which is OK
+		// because DB.ApplyConfig only looks at the specified config.
 		// The other fields in Config are things like Rules, Scrape
 		// settings, which don't apply to Head.
 		cfg := promcfg.Config{
@@ -516,13 +525,16 @@ func (i *Ingester) applyExemplarsSettings() {
 				ExemplarsConfig: &promcfg.ExemplarsConfig{
 					MaxExemplars: int64(localValue),
 				},
+				TSDBConfig: &promcfg.TSDBConfig{
+					OutOfOrderAllowance: oooAllowance,
+				},
 			},
 		}
-		tsdb := i.getTSDB(userID)
-		if tsdb == nil {
+		db := i.getTSDB(userID)
+		if db == nil {
 			continue
 		}
-		if err := tsdb.Head().ApplyConfig(&cfg); err != nil {
+		if err := db.db.ApplyConfig(&cfg); err != nil {
 			level.Error(i.logger).Log("msg", "failed to apply config to TSDB", "user", userID, "err", err)
 		}
 	}
@@ -1472,7 +1484,7 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 	}
 
 	maxExemplars := i.limiter.convertGlobalToLocalLimit(userID, i.limits.MaxGlobalExemplarsPerUser(userID))
-	oooAllowance := i.limits.OutOfOrderAllowance(userID)
+	oooAllowance := time.Duration(i.limits.OutOfOrderAllowance(userID))
 	// Create a new user database
 	db, err := tsdb.Open(udir, userLogger, tsdbPromReg, &tsdb.Options{
 		RetentionDuration:              i.cfg.BlocksStorageConfig.TSDB.Retention.Milliseconds(),
@@ -1493,11 +1505,11 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 		IsolationDisabled:              !i.cfg.BlocksStorageConfig.TSDB.IsolationEnabled,
 		HeadChunksWriteQueueSize:       i.cfg.BlocksStorageConfig.TSDB.HeadChunksWriteQueueSize,
 		NewChunkDiskMapper:             i.cfg.BlocksStorageConfig.TSDB.NewChunkDiskMapper,
-		AllowOverlappingQueries:        oooAllowance > 0,                   // true if out of order support is enabled
-		AllowOverlappingCompaction:     false,                              // always false since Mimir only uploads lvl 1 compacted blocks
-		OOOAllowance:                   int64(oooAllowance.Milliseconds()), // The unit is same as our timestamps.
-		OOOCapMin:                      int64(i.cfg.BlocksStorageConfig.TSDB.OOOCapMin),
-		OOOCapMax:                      int64(i.cfg.BlocksStorageConfig.TSDB.OOOCapMax),
+		AllowOverlappingQueries:        oooAllowance > 0,            // true if out of order support is enabled
+		AllowOverlappingCompaction:     false,                       // always false since Mimir only uploads lvl 1 compacted blocks
+		OutOfOrderAllowance:            oooAllowance.Milliseconds(), // The unit must be same as our timestamps.
+		OutOfOrderCapMin:               int64(i.cfg.BlocksStorageConfig.TSDB.OOOCapMin),
+		OutOfOrderCapMax:               int64(i.cfg.BlocksStorageConfig.TSDB.OOOCapMax),
 	}, nil)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to open TSDB: %s", udir)

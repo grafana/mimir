@@ -501,7 +501,22 @@ func (c *ScrapeConfig) MarshalYAML() (interface{}, error) {
 
 // StorageConfig configures runtime reloadable configuration options.
 type StorageConfig struct {
+	TSDBConfig      *TSDBConfig      `yaml:"tsdb,omitempty"`
 	ExemplarsConfig *ExemplarsConfig `yaml:"exemplars,omitempty"`
+}
+
+// TSDBConfig configures runtime reloadable configuration options.
+type TSDBConfig struct {
+	// OutOfOrderAllowance sets how long back in time an out-of-order sample can be inserted
+	// into the TSDB.
+	// OutOfOrderAllowance is a Duration only for convenience. TSDB will use OutOfOrderAllowance.Milliseconds()
+	// as the final value for the allowance. If you use milliseconds as the unit of time, then you can use
+	// the duration as an actual duration. But if you use some other unit for time, then you have to choose
+	// the duration whose .Milliseconds() will give you the desired value.
+	// For example, if your unit was in milliseconds, then setting this to '1s' does mean 1 second allowance.
+	// But if your time unit was in seconds, then setting this to '1s' means 1000 seconds allowance. So to get 1s
+	// allowance you will have to set it to '1ms' in this case.
+	OutOfOrderAllowance model.Duration `yaml:"out_of_order_allowance,omitempty"`
 }
 
 type TracingClientType string

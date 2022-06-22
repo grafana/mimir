@@ -482,8 +482,8 @@ func (o *Overrides) ActiveSeriesCustomTrackersConfig(userID string) activeseries
 }
 
 // OutOfOrderAllowance returns the out of order allowance for the user.
-func (o *Overrides) OutOfOrderAllowance(userID string) time.Duration {
-	return time.Duration(o.getOverridesForUser(userID).OutOfOrderAllowance)
+func (o *Overrides) OutOfOrderAllowance(userID string) model.Duration {
+	return o.getOverridesForUser(userID).OutOfOrderAllowance
 }
 
 // IngestionTenantShardSize returns the ingesters shard size for a given user.
