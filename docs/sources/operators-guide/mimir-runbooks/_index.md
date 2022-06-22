@@ -841,7 +841,7 @@ The metric for this alert is `cortex_alertmanager_ring_check_errors_total`.
 How to **investigate**:
 
 - Look at the error message that is logged and attempt to understand what is causing the failure. In most cases the error will be encountered when attempting to read from the ring, which can fail if there is an issue with in-use backend implementation.
--When using Memberlist as KV store for hash rings, ensure that Memberlist is working correctly. See instructions for [`MimirGossipMembersMismatch`](#MimirGossipMembersMismatch) alert.
+- When using Memberlist as KV store for hash rings, ensure that Memberlist is working correctly. See instructions for [`MimirGossipMembersMismatch`](#MimirGossipMembersMismatch) alert.
 
 ### MimirAlertmanagerPartialStateMergeFailing
 
