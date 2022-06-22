@@ -14,7 +14,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 ## main / unreleased
 
 * [CHANGE] Enable multi-tenancy by default. This means `multitenancy_enabled` is now `true` for both Mimir and Enterprise Metrics. Nginx will inject `X-Scope-OrgID=anonymous` header if the header is not present, ensuring backwards compatibility. #2117
-* [CHANGE] Use custom memcached templates to remove bitnami dependency. There are changes to the Helm values, listed bellow. #2064
+* [CHANGE] **breaking change** Chart now uses custom memcached templates to remove bitnami dependency. There are changes to the Helm values, listed bellow. #2064
   - The `memcached` section now contains common values shared across all memcached instances.
   - New `memcachedExporter` section was added to configure memcached metrics exporter.
   - New `memcached-chunks` section was added that refers to previous `memcached` configuration.
