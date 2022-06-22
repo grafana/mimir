@@ -19,8 +19,9 @@ patches:
       kind: ConfigMap
     patch: *deletePatch
 
+  # TODO: Helm does not create an alertmanager pdb
   - target:
-      name: 'mimir-alertmanager'
+      name: 'mimir-alertmanager-pdb'
       kind: PodDisruptionBudget
     patch: *deletePatch
 
