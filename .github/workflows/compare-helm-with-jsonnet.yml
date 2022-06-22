@@ -11,6 +11,6 @@ jobs:
     steps:
     - uses: actions/checkout@v2
     - uses: helm/kind-action@v1.2.0
-    - uses: frenck/action-setup-yq@v1.1.1
+    - uses: frenck/action-setup-yq@a2ad11c46c5d7ba576861216963c9365b53f35bc
     - run: make check-helm-jsonnet-diff
       shell: bash
