@@ -1386,6 +1386,49 @@ How to **fix** it:
 
 - Increase the per-tenant limit by using the `-distributor.ha-tracker.max-clusters` option (or `ha_max_clusters` in the runtime configuration).
 
+### err-mimir-sample-timestamp-too-old
+
+This error occurs when the ingester rejects a sample because its timestamp is too old as compared to the most recent timestamp received for the same tenant across all its time series.
+
+How it **works**:
+
+- If the incoming timestamp is more than 1 hour older than the most recent timestamp ingested for the tenant, the sample will be rejected.
+
+### err-mimir-sample-out-of-order
+
+This error occurs when the ingester rejects a sample because another sample with a more recent timestamp has already been ingested.
+
+How it **works**:
+
+- Currently, samples are not allowed to be ingested out of order for a given series.
+
+Common **causes**:
+
+- Your code has a single target that exposes the same time series multiple times, or multiple targets with identical labels.
+- System time of your Prometheus instance has been shifted backwards. If this was a mistake, fix the system time back to normal. Otherwise, wait until the system time catches up to the time it was changed.
+- You are running multiple Prometheus instances pushing the same metrics and [your high-availability tracker is not properly configured for deduplication]({{< relref "../configuring/configuring-high-availability-deduplication.md" >}}).
+- Prometheus relabelling has been configured and it causes series to clash after the relabelling. Check the error message for information about which series has received a sample out of order.
+- A Prometheus instance was restarted, and it pushed all data from its Write-Ahead Log to remote write upon restart, some of which has already been pushed and ingested. This is normal and can be ignored.
+
+> **Note**: You can learn more about out of order samples in Prometheus, in the blog post [Debugging out of order samples](https://www.robustperception.io/debugging-out-of-order-samples/).
+
+### err-mimir-sample-duplicate-timestamp
+
+This error occurs when the ingester rejects a sample because it is a duplicate of a previously received sample with the same timestamp but different value in the same time series.
+
+Common **causes**:
+
+- Multiple endpoints are exporting the same metrics, or multiple Prometheus instances are scraping different metrics with identical labels.
+- Prometheus relabelling has been configured and it causes series to clash after the relabelling. Check the error message for information about which series has received a duplicate sample.
+
+### err-mimir-exemplar-series-missing
+
+This error occurs when the ingester rejects an exemplar because its related series has not been ingested yet.
+
+How it **works**:
+
+- The series must already exist before exemplars can be appended, as we do not create new series upon ingesting exemplars. The series will be created when a sample from it is ingested.
+
 ## Mimir routes by path
 
 **Write path**:

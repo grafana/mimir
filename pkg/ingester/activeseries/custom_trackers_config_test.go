@@ -205,3 +205,21 @@ func TestTrackersConfigs_Deserialization(t *testing.T) {
 		assert.Error(t, err, "should not deserialize malformed input")
 	})
 }
+
+func TestTrackersConfigs_SerializeDeserialize(t *testing.T) {
+	sourceYAML := `
+    baz: "{baz='bar'}"
+    foo: "{foo='bar'}"
+    `
+
+	obj := mustNewCustomTrackersConfigDeserializedFromYaml(t, sourceYAML)
+
+	t.Run("ShouldSerializeDeserializeResultsTheSame", func(t *testing.T) {
+		out, err := yaml.Marshal(obj)
+		require.NoError(t, err, "failed do serialize Custom trackers config")
+		reSerialized := CustomTrackersConfig{}
+		err = yaml.Unmarshal(out, &reSerialized)
+		require.NoError(t, err, "Failed to deserialize serialized object")
+		assert.Equal(t, obj, reSerialized)
+	})
+}

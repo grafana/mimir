@@ -18,7 +18,7 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"io/ioutil"
+	"io/fs"
 	"math"
 	"os"
 	"path/filepath"
@@ -71,19 +71,20 @@ var ErrNotReady = errors.New("TSDB not ready")
 // millisecond precision timestamps.
 func DefaultOptions() *Options {
 	return &Options{
-		WALSegmentSize:            wal.DefaultSegmentSize,
-		MaxBlockChunkSegmentSize:  chunks.DefaultChunkSegmentSize,
-		RetentionDuration:         int64(15 * 24 * time.Hour / time.Millisecond),
-		MinBlockDuration:          DefaultBlockDuration,
-		MaxBlockDuration:          DefaultBlockDuration,
-		NoLockfile:                false,
-		AllowOverlappingBlocks:    false,
-		WALCompression:            false,
-		StripeSize:                DefaultStripeSize,
-		HeadChunksWriteBufferSize: chunks.DefaultWriteBufferSize,
-		IsolationDisabled:         defaultIsolationDisabled,
-		HeadChunksEndTimeVariance: 0,
-		HeadChunksWriteQueueSize:  chunks.DefaultWriteQueueSize,
+		WALSegmentSize:             wal.DefaultSegmentSize,
+		MaxBlockChunkSegmentSize:   chunks.DefaultChunkSegmentSize,
+		RetentionDuration:          int64(15 * 24 * time.Hour / time.Millisecond),
+		MinBlockDuration:           DefaultBlockDuration,
+		MaxBlockDuration:           DefaultBlockDuration,
+		NoLockfile:                 false,
+		AllowOverlappingCompaction: false,
+		AllowOverlappingQueries:    false,
+		WALCompression:             false,
+		StripeSize:                 DefaultStripeSize,
+		HeadChunksWriteBufferSize:  chunks.DefaultWriteBufferSize,
+		IsolationDisabled:          defaultIsolationDisabled,
+		HeadChunksEndTimeVariance:  0,
+		HeadChunksWriteQueueSize:   chunks.DefaultWriteQueueSize,
 	}
 }
 
@@ -115,9 +116,14 @@ type Options struct {
 	// NoLockfile disables creation and consideration of a lock file.
 	NoLockfile bool
 
-	// Overlapping blocks are allowed if AllowOverlappingBlocks is true.
-	// This in-turn enables vertical compaction and vertical query merge.
-	AllowOverlappingBlocks bool
+	// Querying on overlapping blocks are allowed if AllowOverlappingQueries is true.
+	// Since querying is a required operation for TSDB, if there are going to be
+	// overlapping blocks, then this should be set to true.
+	AllowOverlappingQueries bool
+
+	// Compaction of overlapping blocks are allowed if AllowOverlappingCompaction is true.
+	// This is an optional flag for overlapping blocks.
+	AllowOverlappingCompaction bool
 
 	// WALCompression will turn on Snappy compression for records on the WAL.
 	WALCompression bool
@@ -413,6 +419,7 @@ func (db *DBReadOnly) FlushWAL(dir string) (returnErr error) {
 		ExponentialBlockRanges(DefaultOptions().MinBlockDuration, 3, 5),
 		chunkenc.NewPool(),
 		nil,
+		false,
 	)
 	if err != nil {
 		return errors.Wrap(err, "create leveled compactor")
@@ -704,7 +711,7 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	db.compactor, err = NewLeveledCompactorWithChunkSize(ctx, r, l, rngs, db.chunkPool, opts.MaxBlockChunkSegmentSize, nil)
+	db.compactor, err = NewLeveledCompactorWithChunkSize(ctx, r, l, rngs, db.chunkPool, opts.MaxBlockChunkSegmentSize, nil, opts.AllowOverlappingCompaction)
 	if err != nil {
 		cancel()
 		return nil, errors.Wrap(err, "create leveled compactor")
@@ -780,20 +787,20 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 }
 
 func removeBestEffortTmpDirs(l log.Logger, dir string) error {
-	files, err := ioutil.ReadDir(dir)
+	files, err := os.ReadDir(dir)
 	if os.IsNotExist(err) {
 		return nil
 	}
 	if err != nil {
 		return err
 	}
-	for _, fi := range files {
-		if isTmpDir(fi) {
-			if err := os.RemoveAll(filepath.Join(dir, fi.Name())); err != nil {
-				level.Error(l).Log("msg", "failed to delete tmp block dir", "dir", filepath.Join(dir, fi.Name()), "err", err)
+	for _, f := range files {
+		if isTmpDir(f) {
+			if err := os.RemoveAll(filepath.Join(dir, f.Name())); err != nil {
+				level.Error(l).Log("msg", "failed to delete tmp block dir", "dir", filepath.Join(dir, f.Name()), "err", err)
 				continue
 			}
-			level.Info(l).Log("msg", "Found and deleted tmp block dir", "dir", filepath.Join(dir, fi.Name()))
+			level.Info(l).Log("msg", "Found and deleted tmp block dir", "dir", filepath.Join(dir, f.Name()))
 		}
 	}
 	return nil
@@ -1138,7 +1145,7 @@ func (db *DB) reloadBlocks() (err error) {
 	sort.Slice(toLoad, func(i, j int) bool {
 		return toLoad[i].Meta().MinTime < toLoad[j].Meta().MinTime
 	})
-	if !db.opts.AllowOverlappingBlocks {
+	if !db.opts.AllowOverlappingQueries {
 		if err := validateBlockSequence(toLoad); err != nil {
 			return errors.Wrap(err, "invalid block sequence")
 		}
@@ -1741,7 +1748,7 @@ func (db *DB) CleanTombstones() (err error) {
 	return nil
 }
 
-func isBlockDir(fi os.FileInfo) bool {
+func isBlockDir(fi fs.DirEntry) bool {
 	if !fi.IsDir() {
 		return false
 	}
@@ -1750,7 +1757,7 @@ func isBlockDir(fi os.FileInfo) bool {
 }
 
 // isTmpDir returns true if the given file-info contains a block ULID or checkpoint prefix and a tmp extension.
-func isTmpDir(fi os.FileInfo) bool {
+func isTmpDir(fi fs.DirEntry) bool {
 	if !fi.IsDir() {
 		return false
 	}
@@ -1769,22 +1776,22 @@ func isTmpDir(fi os.FileInfo) bool {
 }
 
 func blockDirs(dir string) ([]string, error) {
-	files, err := ioutil.ReadDir(dir)
+	files, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, err
 	}
 	var dirs []string
 
-	for _, fi := range files {
-		if isBlockDir(fi) {
-			dirs = append(dirs, filepath.Join(dir, fi.Name()))
+	for _, f := range files {
+		if isBlockDir(f) {
+			dirs = append(dirs, filepath.Join(dir, f.Name()))
 		}
 	}
 	return dirs, nil
 }
 
 func sequenceFiles(dir string) ([]string, error) {
-	files, err := ioutil.ReadDir(dir)
+	files, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, err
 	}
@@ -1800,7 +1807,7 @@ func sequenceFiles(dir string) ([]string, error) {
 }
 
 func nextSequenceFile(dir string) (string, int, error) {
-	files, err := ioutil.ReadDir(dir)
+	files, err := os.ReadDir(dir)
 	if err != nil {
 		return "", 0, err
 	}

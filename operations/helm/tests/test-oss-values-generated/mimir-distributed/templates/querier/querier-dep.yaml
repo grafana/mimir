@@ -5,7 +5,6 @@ kind: Deployment
 metadata:
   name: test-oss-values-mimir-querier
   labels:
-    helm.sh/chart: mimir-distributed-2.2.0-weekly.189
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-oss-values
     app.kubernetes.io/component: querier
@@ -14,6 +13,7 @@ metadata:
     app.kubernetes.io/managed-by: Helm
   annotations:
     {}
+  namespace: "citestns"
 spec:
   replicas: 2
   selector:
@@ -29,7 +29,6 @@ spec:
   template:
     metadata:
       labels:
-        helm.sh/chart: mimir-distributed-2.2.0-weekly.189
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-oss-values
         app.kubernetes.io/version: "2.1.0"
@@ -37,7 +36,7 @@ spec:
         app.kubernetes.io/component: querier
         app.kubernetes.io/part-of: memberlist
       annotations:
-        checksum/config: 7b9ed84df22bf324205968cf49b0d824eb15e1748888719ffc3bab3f17d5e2e4
+        minio-secret-version: "42"
     spec:
       serviceAccountName: test-oss-values-mimir
       securityContext:
@@ -46,7 +45,6 @@ spec:
         []
       containers:
         - name: querier
-          image: "grafana/mimir:2.1.0"
           imagePullPolicy: IfNotPresent
           args:
             - "-target=querier"
@@ -85,6 +83,8 @@ spec:
             readOnlyRootFilesystem: true
           env:
           envFrom:
+            - secretRef:
+                name: mimir-minio-secret
       nodeSelector:
         {}
       affinity:
@@ -104,8 +104,11 @@ spec:
       terminationGracePeriodSeconds: 180
       volumes:
         - name: config
-          secret:
-            secretName: test-oss-values-mimir-config
+          configMap:
+            name: test-oss-values-mimir-config
+            items:
+              - key: "mimir.yaml"
+                path: "mimir.yaml"
         - name: runtime-config
           configMap:
             name: test-oss-values-mimir-runtime

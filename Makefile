@@ -65,7 +65,7 @@ DOC_EMBED := docs/sources/operators-guide/configuring/configuring-the-query-fron
 	docs/sources/operators-guide/configuring/mirroring-requests-to-a-second-cluster/index.md \
 	docs/sources/operators-guide/architecture/components/overrides-exporter.md \
 	docs/sources/operators-guide/getting-started/_index.md \
-	operations/mimir/README.md
+	docs/sources/operators-guide/deploying-grafana-mimir/jsonnet/deploying.md
 
 .PHONY: image-tag
 image-tag:
@@ -476,7 +476,7 @@ mixin-serve: ## Runs Grafana (listening on port 3000) loading the mixin dashboar
 	@./operations/mimir-mixin-tools/serve/run.sh
 
 mixin-screenshots: ## Generates mixin dashboards screenshots.
-	@find docs/sources/operators-guide/visualizing-metrics/dashboards -name '*.png' -delete
+	@find docs/sources/operators-guide/monitoring-grafana-mimir/dashboards -name '*.png' -delete
 	@./operations/mimir-mixin-tools/screenshots/run.sh
 
 check-jsonnet-manifests: format-jsonnet-manifests

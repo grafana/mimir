@@ -5,7 +5,6 @@ kind: Deployment
 metadata:
   name: test-oss-values-mimir-nginx
   labels:
-    helm.sh/chart: mimir-distributed-2.2.0-weekly.189
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-oss-values
     app.kubernetes.io/component: nginx
@@ -13,6 +12,7 @@ metadata:
     app.kubernetes.io/managed-by: Helm
   annotations:
     {}
+  namespace: "citestns"
 spec:
   replicas: 1
   strategy:
@@ -25,14 +25,14 @@ spec:
   template:
     metadata:
       annotations:
-        checksum/config: d7fa3f4c1e841a4634ee7561fa92990e6525d1bfdb176f416744e0b8f72ae99d
+        minio-secret-version: "42"
       labels:
-        helm.sh/chart: mimir-distributed-2.2.0-weekly.189
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-oss-values
         app.kubernetes.io/version: "2.1.0"
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: nginx
+      namespace: "citestns"
     spec:
       serviceAccountName: test-oss-values-mimir
       securityContext:
@@ -51,6 +51,8 @@ spec:
               protocol: TCP
           env:
           envFrom:
+            - secretRef:
+                name: mimir-minio-secret
           readinessProbe:
             httpGet:
               path: /

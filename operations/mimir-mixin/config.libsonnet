@@ -19,7 +19,7 @@
     // These are used by the dashboards and allow for the simultaneous display of
     // microservice and single binary Mimir clusters.
     // Whenever you do any change here, please reflect it in the doc at:
-    // docs/sources/operators-guide/visualizing-metrics/requirements.md
+    // docs/sources/operators-guide/monitoring-grafana-mimir/requirements.md
     job_names: {
       ingester: '(ingester.*|cortex|mimir)',  // Match also custom and per-zone ingester deployments.
       distributor: '(distributor|cortex|mimir)',
@@ -30,7 +30,7 @@
       ruler_query_frontend: '(ruler-query-frontend.*)',  // Match also custom ruler-query-frontend deployments.
       query_scheduler: 'query-scheduler.*',  // Not part of single-binary. Match also custom query-scheduler deployments.
       ruler_query_scheduler: 'ruler-query-scheduler.*',  // Not part of single-binary. Match also custom query-scheduler deployments.
-      ring_members: ['alertmanager', 'compactor', 'distributor', 'ingester.*', 'querier.*', 'ruler', 'store-gateway.*', 'cortex', 'mimir'],
+      ring_members: ['alertmanager', 'compactor', 'distributor', 'ingester.*', 'querier.*', 'ruler', 'ruler-querier.*', 'store-gateway.*', 'cortex', 'mimir'],
       store_gateway: '(store-gateway.*|cortex|mimir)',  // Match also per-zone store-gateway deployments.
       gateway: '(gateway|cortex-gw|cortex-gw-internal)',
       compactor: 'compactor.*|cortex|mimir',  // Match also custom compactor deployments.
@@ -96,5 +96,10 @@
     // The default datasource used for dashboards.
     dashboard_datasource: 'default',
     datasource_regex: '',
+
+    // Tunes histogram recording rules to aggregate over this interval.
+    // Set to at least twice the scrape interval; otherwise, recording rules will output no data.
+    // Set to four times the scrape interval to account for edge cases: https://www.robustperception.io/what-range-should-i-use-with-rate/
+    recording_rules_range_interval: '1m',
   },
 }

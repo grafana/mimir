@@ -14,6 +14,7 @@ metadata:
   annotations:
     {{- toYaml . | nindent 4 }}
   {{- end }}
+  namespace: {{ .Release.Namespace | quote }}
 spec:
   {{- if and $ingressSupportsIngressClassName .Values.nginx.ingress.ingressClassName }}
   ingressClassName: {{ .Values.nginx.ingress.ingressClassName }}

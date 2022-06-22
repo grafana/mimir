@@ -5,6 +5,7 @@ metadata:
   name: {{ include "mimir.resourceName" (dict "ctx" . "component" "distributor") }}
   labels:
     {{- include "mimir.labels" (dict "ctx" . "component" "distributor" "memberlist" true) | nindent 4 }}
+  namespace: {{ .Release.Namespace | quote }}
 spec:
   selector:
     matchLabels:

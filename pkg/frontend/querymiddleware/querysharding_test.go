@@ -738,6 +738,7 @@ func TestQuerySharding_FunctionCorrectness(t *testing.T) {
 		{fn: "days_in_month"},
 		{fn: "day_of_month"},
 		{fn: "day_of_week"},
+		{fn: "day_of_year"},
 		{fn: "delta", rangeQuery: true},
 		{fn: "deriv", rangeQuery: true},
 		{fn: "exp"},

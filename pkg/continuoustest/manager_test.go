@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 )
@@ -34,11 +35,12 @@ func (d *dummyTest) Run(ctx context.Context, now time.Time) error {
 }
 
 func TestManager_PeriodicRun(t *testing.T) {
+	logger := log.NewNopLogger()
 	cfg := ManagerConfig{}
 	cfg.RegisterFlags(flag.NewFlagSet("", flag.ContinueOnError))
 	cfg.RunInterval = time.Millisecond * 10
 
-	manager := NewManager(cfg)
+	manager := NewManager(cfg, logger)
 
 	dummyTest := &dummyTest{}
 	manager.AddTest(dummyTest)
@@ -55,12 +57,13 @@ func TestManager_PeriodicRun(t *testing.T) {
 
 func TestManager_SmokeTest(t *testing.T) {
 	t.Run("successful smoke test", func(t *testing.T) {
+		logger := log.NewNopLogger()
 		cfg := ManagerConfig{}
 		cfg.RegisterFlags(flag.NewFlagSet("", flag.ContinueOnError))
 		cfg.RunInterval = time.Millisecond * 10
 		cfg.SmokeTest = true
 
-		manager := NewManager(cfg)
+		manager := NewManager(cfg, logger)
 
 		dummyTest := &dummyTest{}
 		manager.AddTest(dummyTest)
@@ -74,12 +77,13 @@ func TestManager_SmokeTest(t *testing.T) {
 	})
 
 	t.Run("failed smoke test", func(t *testing.T) {
+		logger := log.NewNopLogger()
 		cfg := ManagerConfig{}
 		cfg.RegisterFlags(flag.NewFlagSet("", flag.ContinueOnError))
 		cfg.RunInterval = time.Millisecond * 10
 		cfg.SmokeTest = true
 
-		manager := NewManager(cfg)
+		manager := NewManager(cfg, logger)
 
 		dummyTest := &dummyTest{}
 		dummyTest.err = errors.New("test error")

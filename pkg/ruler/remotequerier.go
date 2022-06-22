@@ -54,6 +54,9 @@ type QueryFrontendConfig struct {
 	// Address is the address of the query-frontend to connect to.
 	Address string `yaml:"address"`
 
+	// Timeout is the length of time we wait on the query-frontend before giving up.
+	Timeout time.Duration `yaml:"timeout"`
+
 	// GRPCClientConfig contains gRPC specific config options.
 	GRPCClientConfig grpcclient.Config `yaml:"grpc_client_config"`
 }
@@ -64,6 +67,8 @@ func (c *QueryFrontendConfig) RegisterFlags(f *flag.FlagSet) {
 		"",
 		"GRPC listen address of the query-frontend(s). Must be a DNS address (prefixed with dns:///) "+
 			"to enable client side load balancing.")
+
+	f.DurationVar(&c.Timeout, "ruler.query-frontend.timeout", 2*time.Minute, "The timeout for a rule query being evaluated by the query-frontend.")
 
 	c.GRPCClientConfig.RegisterFlagsWithPrefix("ruler.query-frontend.grpc-client-config", f)
 }
@@ -92,6 +97,7 @@ type Middleware func(ctx context.Context, req *httpgrpc.HTTPRequest) error
 // RemoteQuerier executes read operations against a httpgrpc.HTTPClient.
 type RemoteQuerier struct {
 	client         httpgrpc.HTTPClient
+	timeout        time.Duration
 	middlewares    []Middleware
 	promHTTPPrefix string
 	logger         log.Logger
@@ -100,12 +106,14 @@ type RemoteQuerier struct {
 // NewRemoteQuerier creates and initializes a new RemoteQuerier instance.
 func NewRemoteQuerier(
 	client httpgrpc.HTTPClient,
+	timeout time.Duration,
 	prometheusHTTPPrefix string,
 	logger log.Logger,
 	middlewares ...Middleware,
 ) *RemoteQuerier {
 	return &RemoteQuerier{
 		client:         client,
+		timeout:        timeout,
 		middlewares:    middlewares,
 		promHTTPPrefix: prometheusHTTPPrefix,
 		logger:         logger,
@@ -146,6 +154,9 @@ func (q *RemoteQuerier) Read(ctx context.Context, query *prompb.Query) (*prompb.
 			return nil, err
 		}
 	}
+
+	ctx, cancel := context.WithTimeout(ctx, q.timeout)
+	defer cancel()
 
 	resp, err := q.client.Handle(ctx, &req)
 	if err != nil {
@@ -210,6 +221,9 @@ func (q *RemoteQuerier) query(ctx context.Context, query string, ts time.Time, l
 			return model.ValNone, nil, err
 		}
 	}
+
+	ctx, cancel := context.WithTimeout(ctx, q.timeout)
+	defer cancel()
 
 	resp, err := q.client.Handle(ctx, &req)
 	if err != nil {

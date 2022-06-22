@@ -133,6 +133,11 @@ func (c *CustomTrackersConfig) UnmarshalYAML(unmarshal func(interface{}) error) 
 	return err
 }
 
+// MarshalYAML implements yaml.Marshaler.
+func (c CustomTrackersConfig) MarshalYAML() (interface{}, error) {
+	return c.source, nil
+}
+
 func NewCustomTrackersConfig(m map[string]string) (c CustomTrackersConfig, err error) {
 	c.source = m
 	c.config = map[string]labelsMatchers{}

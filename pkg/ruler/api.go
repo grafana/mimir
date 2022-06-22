@@ -295,7 +295,7 @@ var (
 	// ErrNoRuleGroups signals the rule group requested does not exist
 	ErrNoRuleGroups = errors.New("no rule groups found")
 	// ErrBadRuleGroup is returned when the provided rule group can not be unmarshalled
-	ErrBadRuleGroup = errors.New("unable to decoded rule group")
+	ErrBadRuleGroup = errors.New("unable to decode rule group")
 )
 
 func marshalAndSend(output interface{}, w http.ResponseWriter, logger log.Logger) {

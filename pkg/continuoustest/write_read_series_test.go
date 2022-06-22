@@ -220,7 +220,8 @@ func TestWriteReadSeriesTest_Run(t *testing.T) {
 		test.lastWrittenTimestamp = time.Unix(940, 0)
 		now := time.Unix(1000, 0)
 		err := test.Run(context.Background(), now)
-		assert.NoError(t, err)
+		// An error is expected for smoke-test mode, but we don't want to stop the test.
+		assert.Error(t, err)
 
 		client.AssertNumberOfCalls(t, "WriteSeries", 3)
 		client.AssertCalled(t, "WriteSeries", mock.Anything, generateSineWaveSeries(metricName, time.Unix(960, 0), 2))
@@ -619,7 +620,8 @@ func TestWriteReadSeriesTest_getRangeQueryTimeRanges(t *testing.T) {
 	t.Run("min/max query time has not been set yet", func(t *testing.T) {
 		test := NewWriteReadSeriesTest(cfg, &ClientMock{}, log.NewNopLogger(), nil)
 
-		actualRanges, actualInstants := test.getQueryTimeRanges(now)
+		actualRanges, actualInstants, err := test.getQueryTimeRanges(now)
+		assert.Error(t, err)
 		assert.Empty(t, actualRanges)
 		assert.Empty(t, actualInstants)
 	})
@@ -629,7 +631,8 @@ func TestWriteReadSeriesTest_getRangeQueryTimeRanges(t *testing.T) {
 		test.queryMinTime = now.Add(-cfg.MaxQueryAge).Add(-time.Minute)
 		test.queryMaxTime = now.Add(-cfg.MaxQueryAge).Add(-time.Minute)
 
-		actualRanges, actualInstants := test.getQueryTimeRanges(now)
+		actualRanges, actualInstants, err := test.getQueryTimeRanges(now)
+		assert.Error(t, err)
 		assert.Empty(t, actualRanges)
 		assert.Empty(t, actualInstants)
 	})
@@ -639,7 +642,9 @@ func TestWriteReadSeriesTest_getRangeQueryTimeRanges(t *testing.T) {
 		test.queryMinTime = now.Add(-time.Minute)
 		test.queryMaxTime = now.Add(-time.Minute)
 
-		actualRanges, actualInstants := test.getQueryTimeRanges(now)
+		actualRanges, actualInstants, err := test.getQueryTimeRanges(now)
+		require.NoError(t, err)
+
 		require.Len(t, actualRanges, 2)
 		require.Equal(t, [2]time.Time{now.Add(-time.Minute), now.Add(-time.Minute)}, actualRanges[0]) // Last 1h.
 		require.Equal(t, [2]time.Time{now.Add(-time.Minute), now.Add(-time.Minute)}, actualRanges[1]) // Random time range.
@@ -654,7 +659,8 @@ func TestWriteReadSeriesTest_getRangeQueryTimeRanges(t *testing.T) {
 		test.queryMinTime = now.Add(-30 * time.Minute)
 		test.queryMaxTime = now.Add(-time.Minute)
 
-		actualRanges, actualInstants := test.getQueryTimeRanges(now)
+		actualRanges, actualInstants, err := test.getQueryTimeRanges(now)
+		require.NoError(t, err)
 		require.Len(t, actualRanges, 2)
 		require.Equal(t, [2]time.Time{now.Add(-30 * time.Minute), now.Add(-time.Minute)}, actualRanges[0]) // Last 1h.
 
@@ -674,7 +680,8 @@ func TestWriteReadSeriesTest_getRangeQueryTimeRanges(t *testing.T) {
 		test.queryMinTime = now.Add(-90 * time.Minute)
 		test.queryMaxTime = now.Add(-80 * time.Minute)
 
-		actualRanges, actualInstants := test.getQueryTimeRanges(now)
+		actualRanges, actualInstants, err := test.getQueryTimeRanges(now)
+		require.NoError(t, err)
 		require.Len(t, actualRanges, 2)
 		require.Equal(t, [2]time.Time{now.Add(-90 * time.Minute), now.Add(-80 * time.Minute)}, actualRanges[0]) // Last 24h.
 
@@ -694,7 +701,8 @@ func TestWriteReadSeriesTest_getRangeQueryTimeRanges(t *testing.T) {
 		test.queryMinTime = now.Add(-30 * time.Hour)
 		test.queryMaxTime = now.Add(-time.Minute)
 
-		actualRanges, actualInstants := test.getQueryTimeRanges(now)
+		actualRanges, actualInstants, err := test.getQueryTimeRanges(now)
+		require.NoError(t, err)
 		require.Len(t, actualRanges, 4)
 		require.Equal(t, [2]time.Time{now.Add(-time.Hour), now.Add(-time.Minute)}, actualRanges[0])         // Last 1h.
 		require.Equal(t, [2]time.Time{now.Add(-24 * time.Hour), now.Add(-time.Minute)}, actualRanges[1])    // Last 24h.
@@ -717,7 +725,8 @@ func TestWriteReadSeriesTest_getRangeQueryTimeRanges(t *testing.T) {
 		test.queryMinTime = now.Add(-30 * time.Hour)
 		test.queryMaxTime = now.Add(-25 * time.Hour)
 
-		actualRanges, actualInstants := test.getQueryTimeRanges(now)
+		actualRanges, actualInstants, err := test.getQueryTimeRanges(now)
+		require.NoError(t, err)
 		require.Len(t, actualRanges, 1)
 		require.Len(t, actualInstants, 1)
 
@@ -737,7 +746,8 @@ func TestWriteReadSeriesTest_getRangeQueryTimeRanges(t *testing.T) {
 		test.queryMinTime = now.Add(-30 * time.Hour)
 		test.queryMaxTime = now.Add(-time.Minute)
 
-		actualRanges, actualInstants := test.getQueryTimeRanges(now)
+		actualRanges, actualInstants, err := test.getQueryTimeRanges(now)
+		require.NoError(t, err)
 		require.Len(t, actualRanges, 2)
 		require.Equal(t, [2]time.Time{now.Add(-10 * time.Minute), now.Add(-time.Minute)}, actualRanges[0]) // Last 1h.
 

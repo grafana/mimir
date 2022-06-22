@@ -1,0 +1,21 @@
+{{- if not .Values.useExternalConfig }}
+apiVersion: v1
+{{- if eq .Values.configStorageType "Secret" }}
+kind: Secret
+{{- else }}
+kind: ConfigMap
+{{- end }}
+metadata:
+  name: {{ tpl .Values.externalConfigSecretName . }}
+  labels:
+    {{- include "mimir.labels" (dict "ctx" .) | nindent 4 }}
+  namespace: {{ .Release.Namespace | quote }}
+{{- if eq .Values.configStorageType "Secret" }}
+data:
+  mimir.yaml: {{ include "mimir.calculatedConfig" . | b64enc }}
+{{- else }}
+data:
+  mimir.yaml: |
+    {{ include "mimir.calculatedConfig" . | nindent 4 }}
+{{- end -}}
+{{- end }}

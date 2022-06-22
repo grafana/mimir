@@ -153,6 +153,7 @@ func TestPusherErrors(t *testing.T) {
 func TestMetricsQueryFuncErrors(t *testing.T) {
 	for name, tc := range map[string]struct {
 		returnedError         error
+		expectedError         error
 		expectedQueries       int
 		expectedFailedQueries int
 	}{
@@ -161,44 +162,58 @@ func TestMetricsQueryFuncErrors(t *testing.T) {
 			expectedFailedQueries: 0,
 		},
 
-		"400 error": {
+		"httpgrpc 400 error": {
 			returnedError:         httpgrpc.Errorf(http.StatusBadRequest, "test error"),
+			expectedError:         httpgrpc.Errorf(http.StatusBadRequest, "test error"),
 			expectedQueries:       1,
 			expectedFailedQueries: 0, // 400 errors not reported as failures.
 		},
 
-		"500 error": {
+		"httpgrpc 500 error": {
 			returnedError:         httpgrpc.Errorf(http.StatusInternalServerError, "test error"),
+			expectedError:         httpgrpc.Errorf(http.StatusInternalServerError, "test error"),
 			expectedQueries:       1,
 			expectedFailedQueries: 1, // 500 errors are failures
 		},
 
+		"unknown but non-queryable error": {
+			returnedError:         errors.New("test error"),
+			expectedError:         errors.New("test error"),
+			expectedQueries:       1,
+			expectedFailedQueries: 1, // Any other error should always be reported.
+		},
+
 		"promql.ErrStorage": {
-			returnedError:         promql.ErrStorage{Err: errors.New("test error")},
+			returnedError:         WrapQueryableErrors(promql.ErrStorage{Err: errors.New("test error")}),
+			expectedError:         promql.ErrStorage{Err: errors.New("test error")},
 			expectedQueries:       1,
 			expectedFailedQueries: 1,
 		},
 
 		"promql.ErrQueryCanceled": {
-			returnedError:         promql.ErrQueryCanceled("test error"),
+			returnedError:         WrapQueryableErrors(promql.ErrQueryCanceled("test error")),
+			expectedError:         promql.ErrQueryCanceled("test error"),
 			expectedQueries:       1,
 			expectedFailedQueries: 0, // Not interesting.
 		},
 
 		"promql.ErrQueryTimeout": {
-			returnedError:         promql.ErrQueryTimeout("test error"),
+			returnedError:         WrapQueryableErrors(promql.ErrQueryTimeout("test error")),
+			expectedError:         promql.ErrQueryTimeout("test error"),
 			expectedQueries:       1,
 			expectedFailedQueries: 0, // Not interesting.
 		},
 
 		"promql.ErrTooManySamples": {
-			returnedError:         promql.ErrTooManySamples("test error"),
+			returnedError:         WrapQueryableErrors(promql.ErrTooManySamples("test error")),
+			expectedError:         promql.ErrTooManySamples("test error"),
 			expectedQueries:       1,
 			expectedFailedQueries: 0, // Not interesting.
 		},
 
 		"unknown error": {
-			returnedError:         errors.New("test error"),
+			returnedError:         WrapQueryableErrors(errors.New("test error")),
+			expectedError:         errors.New("test error"),
 			expectedQueries:       1,
 			expectedFailedQueries: 1, // unknown errors are not 400, so they are reported.
 		},
@@ -208,12 +223,12 @@ func TestMetricsQueryFuncErrors(t *testing.T) {
 			failures := prometheus.NewCounter(prometheus.CounterOpts{})
 
 			mockFunc := func(ctx context.Context, q string, t time.Time) (promql.Vector, error) {
-				return promql.Vector{}, WrapQueryableErrors(tc.returnedError)
+				return promql.Vector{}, tc.returnedError
 			}
 			qf := MetricsQueryFunc(mockFunc, queries, failures)
 
 			_, err := qf(context.Background(), "test", time.Now())
-			require.Equal(t, tc.returnedError, err)
+			require.Equal(t, tc.expectedError, err)
 
 			require.Equal(t, tc.expectedQueries, int(testutil.ToFloat64(queries)))
 			require.Equal(t, tc.expectedFailedQueries, int(testutil.ToFloat64(failures)))

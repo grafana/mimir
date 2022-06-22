@@ -6,6 +6,7 @@ metadata:
   name: {{ include "mimir.resourceName" (dict "ctx" . "component" "overrides-exporter") }}
   labels:
     {{- include "mimir.labels" (dict "ctx" . "component" "overrides-exporter") | nindent 4 }}
+  namespace: {{ .Release.Namespace | quote }}
 spec:
   selector:
     matchLabels:

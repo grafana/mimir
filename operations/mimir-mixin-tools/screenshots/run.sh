@@ -67,7 +67,7 @@ docker run \
   --env "MIMIR_NAMESPACE=${MIMIR_NAMESPACE}" \
   --env "ALERTMANAGER_NAMESPACE=${ALERTMANAGER_NAMESPACE}" \
   -v "${SCRIPT_DIR}/../../mimir-mixin-compiled/dashboards:/input" \
-  -v "${SCRIPT_DIR}/../../../docs/sources/operators-guide/visualizing-metrics/dashboards:/output" \
+  -v "${SCRIPT_DIR}/../../../docs/sources/operators-guide/monitoring-grafana-mimir/dashboards:/output" \
   -v "${SCRIPT_DIR}:/sources" \
   --entrypoint "" \
   "${DOCKER_APP_IMAGE}" \
