@@ -14,7 +14,7 @@ You can use Helm or Tanka to deploy Grafana Mimir on Kubernetes.
 
 ## Helm
 
-A [mimir-distributed](https://github.com/grafana/helm-charts/tree/main/charts/mimir-distributed) Helm chart that deploys Grafana Mimir in [microservices mode]({{< relref "../architecture/deployment-modes/index.md#microservices-mode" >}}) is available in the grafana/helm-charts repo.
+A [mimir-distributed](https://github.com/grafana/mimir/tree/main/operations/helm/charts/mimir-distributed) Helm chart that deploys Grafana Mimir in [microservices mode]({{< relref "../architecture/deployment-modes/index.md#microservices-mode" >}}) is available in the [grafana/helm-charts](https://grafana.github.io/helm-charts/) Helm repository.
 
 ## Jsonnet and Tanka
 

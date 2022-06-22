@@ -8,10 +8,10 @@ weight: 30
 # Scaling out Grafana Mimir
 
 Grafana Mimir can horizontally scale every component.
-Scaling out Grafana Mimir means that to respond to increased load you, can increase the number of replicas of each Grafana Mimir component.
+Scaling out Grafana Mimir means that to respond to increased load, you can increase the number of replicas of each Grafana Mimir component.
 
 We have designed Grafana Mimir to scale up quickly, safely, and with no manual intervention.
-However, be careful when scaling down some of the stateful components as these action can result in writes and reads failures, or receiving partial query results.
+However, be careful when scaling down some of the stateful components as these actions can result in writes and reads failures, or partial query results.
 
 ## Monolithic mode
 

@@ -41,7 +41,6 @@ memberlist:
   bind_port: 7946
   join_members:
     - localhost:7947
-  abort_if_cluster_join_fails: false
 
 blocks_storage:
   tsdb:

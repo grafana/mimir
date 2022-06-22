@@ -32,7 +32,6 @@ ingester:
 memberlist:
   join_members:
     - distributor:10001
-  abort_if_cluster_join_fails: false
   rejoin_interval: 10s
 
 blocks_storage:

@@ -9746,7 +9746,7 @@
           "required": false,
           "desc": "If this node fails to join memberlist cluster, abort.",
           "fieldValue": null,
-          "fieldDefaultValue": true,
+          "fieldDefaultValue": false,
           "fieldFlag": "memberlist.abort-if-join-fails",
           "fieldType": "boolean"
         },
