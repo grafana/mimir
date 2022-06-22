@@ -25,8 +25,11 @@ patches:
       kind: Service
       name: 'mimir-(compactor)'
     patch: |-
-      - op: remove
-        path: /spec/clusterIP
-      - op: replace
-        path: /spec/clusterIPs
-        value: [None]
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: mimir-compactor
+      spec:
+        clusterIP:
+        clusterIPs:
+          - None
