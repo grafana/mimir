@@ -53,9 +53,9 @@ Applying this change will not cause restart of Mimir components.
 
 You can monitor following metrics to check if mirroring was enabled on all components and if it works correctly:
 
-- `cortex_multikv_mirror_enabled`
-- `rate(cortex_multikv_mirror_writes_total[1m])`
-- `rate(cortex_multikv_mirror_write_errors_total[1m])`
+- `cortex_multikv_mirror_enabled` – shows which components have KV store mirroring enabled. All Mimir components should start mirroring to secondary KV store reloading runtime configuration.
+- `rate(cortex_multikv_mirror_writes_total[1m])` – shows rate of writes to secondary KV store in writes per second.
+- `rate(cortex_multikv_mirror_write_errors_total[1m])` – shows rate of write errors to secondary KV store, in errors per second.
 
 After mirroring is enabled, you should see a key for each Mimir hash ring in the [Memberlist cluster information]({{< relref "../../operators-guide/reference-http-api/index.md#memberlist-cluster" >}}) admin page.
 See [list of components that use hash ring]({{< relref "../../operators-guide/architecture/hash-ring/index.md" >}}).
