@@ -10,4 +10,5 @@ yq '.items[] | split_doc' |
     yq 'del(.metadata) | .kind = "ResourceList" | .apiVersion = "config.kubernetes.io/v1"' |
     yq '.items = ([.items[] | del(.metadata.annotations["kubectl.kubernetes.io/last-applied-configuration"])])' |
     yq '.items = ([.items[] | del(.metadata.creationTimestamp)])' |
+    yq '.items = ([.items[] | del(.metadata.managedFields)])' |
     yq '.items = ([.items[] | del(.metadata.uid)])'
