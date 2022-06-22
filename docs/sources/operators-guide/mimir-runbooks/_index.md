@@ -1439,9 +1439,9 @@ This error occurs when a query fails because the bucket index is too old.
 
 How it **works**:
 
-- At query time the querier and ruler determine how old a bucket index is based on the time it was last updated by the compactor.
-- If the age is older than the maximum stale period configured via `-blocks-storage.bucket-store.bucket-index.max-stale-period`, the query fails.
-- This circuit breaker ensures queriers and rulers do not return any partial query results due to a stale view over the long-term storage.
+- At query time, the querier and the ruler determine how old a bucket index is based on the time that it was last updated by the compactor.
+- If the age is older than the maximum stale period that is configured via `-blocks-storage.bucket-store.bucket-index.max-stale-period`, the query fails.
+- This circuit breaker ensures that the queriers and rulers do not return any partial query results due to a stale view of the long-term storage.
 
 How to **fix** it:
 
