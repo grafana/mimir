@@ -12,6 +12,8 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/pkg/errors"
+
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/mimir/pkg/mimir"
@@ -25,16 +27,6 @@ const MimirImage = "grafana/mimir"
 
 type ValueAnnotator struct {
 	Value string `yaml:"value" json:"value"`
-}
-
-func dumpValueToDebug(value interface{}) {
-	buf := bytes.NewBuffer(nil)
-	err := yaml.NewEncoder(buf).Encode(value)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to encode value: %v", err)
-	}
-
-	fmt.Fprint(os.Stderr, buf.String())
 }
 
 func main() {
@@ -147,7 +139,7 @@ func (c *ConfigExtractor) ResolveConfigs() ([]*yaml.RNode, error) {
 
 				content, err := c.resolveConfigFileText(vm.Name, filepath.Base(mountPath), pod)
 				if err != nil {
-					return fmt.Errorf("failed to resolve volume mount %s in pod: %v", vm.Name, err)
+					return errors.Wrapf(err, "failed to resolve volume mount %s in pod", vm.Name)
 				}
 
 				configFileText = content
@@ -155,12 +147,12 @@ func (c *ConfigExtractor) ResolveConfigs() ([]*yaml.RNode, error) {
 
 			configObj, target, err := c.resolveArgsAndConfigFile(args, configFileText)
 			if err != nil {
-				return fmt.Errorf("failed to resolve config: %v", err)
+				return errors.Wrap(err, "failed to resolve config")
 			}
 
 			err = annotateDefaults(configObj, defaultObj)
 			if err != nil {
-				return fmt.Errorf("failed to annotate defaults: %v", err)
+				return errors.Wrap(err, "failed to annotate defaults")
 			}
 
 			resultNode := yaml.MustParse(`
@@ -170,8 +162,14 @@ metadata:
   name: mimir-config
   namespace: default
 `)
-			resultNode.SetName(target)
-			resultNode.SetMapField(configObj, "config")
+			err = resultNode.SetName(target)
+			if err != nil {
+				return errors.Wrap(err, "failed to set name")
+			}
+			err = resultNode.SetMapField(configObj, "config")
+			if err != nil {
+				return errors.Wrap(err, "failed to set config")
+			}
 
 			results <- resultNode
 		}
@@ -241,14 +239,14 @@ func (c *ConfigExtractor) resolveConfigFileText(volumeName, fileName string, spe
 			if volume.ConfigMap != nil {
 				text, err := c.resolveConfigMap(volume.ConfigMap.Name, fileName)
 				if err != nil {
-					return "", fmt.Errorf("failed to resolve config map %s: %v", volume.ConfigMap.Name, err)
+					return "", errors.Wrapf(err, "failed to resolve config map %s", volume.ConfigMap.Name)
 				}
 				return text, nil
 			}
 			if volume.Secret != nil {
 				text, err := c.resolveSecret(volume.Secret.SecretName, fileName)
 				if err != nil {
-					return "", fmt.Errorf("failed to resolve secret %s: %v", volume.Secret.SecretName, err)
+					return "", errors.Wrapf(err, "failed to resolve secret %s", volume.Secret.SecretName)
 				}
 				return text, nil
 			}
@@ -256,7 +254,7 @@ func (c *ConfigExtractor) resolveConfigFileText(volumeName, fileName string, spe
 				return "", nil
 			}
 
-			return "", fmt.Errorf("unsupported volume type: %v", volume)
+			return "", errors.Errorf("unsupported volume type: %v", volume)
 		}
 	}
 
@@ -274,7 +272,7 @@ func (c *ConfigExtractor) resolveConfigMap(name string, fileName string) (string
 		return obj.GetDataMap()[fileName], nil
 	}
 
-	return "", fmt.Errorf("config map %s not found", name)
+	return "", errors.Errorf("config map %s not found", name)
 }
 
 func (c *ConfigExtractor) resolveSecret(name string, fileName string) (string, error) {
@@ -291,7 +289,7 @@ func (c *ConfigExtractor) resolveSecret(name string, fileName string) (string, e
 		return string(data), err
 	}
 
-	return "", fmt.Errorf("secret %s not found", name)
+	return "", errors.Errorf("secret %s not found", name)
 }
 
 func decodeTypedObject(obj *yaml.RNode, output interface{}) error {
@@ -312,7 +310,7 @@ func annotateDefaults(configObj *yaml.RNode, defaultObj *yaml.RNode) error {
 
 	switch configObj.YNode().Kind {
 	case yaml.DocumentNode:
-		return fmt.Errorf("unsupported config object type: %v", configObj.YNode().Kind)
+		return errors.Errorf("unsupported config object type: %v", configObj.YNode().Kind)
 	case yaml.MappingNode:
 		return configObj.VisitFields(func(node *yaml.MapNode) error {
 			defaultField := defaultObj.Field(node.Key.YNode().Value)
@@ -344,7 +342,7 @@ func annotateDefaults(configObj *yaml.RNode, defaultObj *yaml.RNode) error {
 			configObj.YNode().SetString(fmt.Sprintf("%s (default)", configObj.YNode().Value))
 		}
 	default:
-		return fmt.Errorf("unsupported config type: %v", configObj.YNode().Kind)
+		return errors.Errorf("unsupported config type: %v", configObj.YNode().Kind)
 	}
 	return nil
 }
