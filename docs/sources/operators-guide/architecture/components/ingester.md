@@ -42,10 +42,11 @@ Write de-amplification is the main source of Mimir's low total cost of ownership
 ## Ingesters failure and data loss
 
 If an ingester process crashes or exits abruptly, all the in-memory series that have not yet been uploaded to the long-term storage could be lost.
-There are two primary ways to mitigate this failure mode:
+There are three primary ways to mitigate this failure mode:
 
 1. Replication
 2. Write-ahead log (WAL)
+3. Write-behind log (WBL), only used if out-of-order ingestion is enabled.
 
 ### Replication
 
@@ -63,6 +64,14 @@ If an ingester fails, a subsequent process restart replays the WAL and recovers 
 Contrary to the sole replication, and given that the persistent disk data is not lost, in the event of the failure of multiple ingesters, each ingester recovers the in-memory series samples from WAL after a subsequent restart.
 Replication is still recommended in order to gracefully handle a single ingester failure.
 
+### Write-behind log
+
+The write-behind log (WBL) is very much like the WAL but it only writes incoming out-of-order samples to a persistent disk while the series are uploaded to long-term storage.
+
+The reason why there is a different log for this is that it is not possible to know if a sample is out-of-order until we try to append it. So we first need to attempt it, detect that it is out-of-order, append it anyway if out-of-order is enabled and then write it to the log.
+
+In the event of failure of the ingesters, the same characteristics as in the WAL would apply.
+
 ## Zone aware replication
 
 Zone aware replication ensures that the ingester replicas for a given time series are divided across different zones.
@@ -76,3 +85,9 @@ To set up multi-zone replication, refer to [Configuring zone-aware replication](
 Shuffle sharding can be used to reduce the effect that multiple tenants can have on each other.
 
 For more information on shuffle sharding, refer to [Configuring shuffle sharding]({{< relref "../../configuring/configuring-shuffle-sharding/index.md" >}}).
+
+## Out-of-order samples ingestion
+
+Out-of-order samples are discarded by default, in the event that the observed system produces them this feature can be enabled.
+
+For more information on out-of-order samples ingestion, refer to [Configuring out of order samples ingestion]({{< relref "../../configuring/configuring-out-of-order-samples-ingestion.md" >}}).
