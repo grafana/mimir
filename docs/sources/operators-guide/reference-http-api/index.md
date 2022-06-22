@@ -552,12 +552,6 @@ Requires [authentication](#authentication).
 
 ```
 GET <prometheus-http-prefix>/config/v1/rules
-
-# Deprecated; will be removed in Mimir v2.2.0
-GET /api/v1/rules
-
-# Deprecated; will be removed in Mimir v2.2.0
-GET <prometheus-http-prefix>/rules
 ```
 
 List all rules configured for the authenticated tenant. This endpoint returns a YAML dictionary with all the rule groups for each namespace and `200` status code on success.
@@ -620,12 +614,6 @@ Requires [authentication](#authentication).
 
 ```
 GET <prometheus-http-prefix>/config/v1/rules/{namespace}
-
-# Deprecated; will be removed in Mimir v2.2.0
-GET /api/v1/rules/{namespace}
-
-# Deprecated; will be removed in Mimir v2.2.0
-GET <prometheus-http-prefix>/rules/{namespace}
 ```
 
 Returns the rule groups defined for a given namespace.
@@ -657,12 +645,6 @@ rules:
 
 ```
 GET <prometheus-http-prefix>/config/v1/rules/{namespace}/{groupName}
-
-# Deprecated; will be removed in Mimir v2.2.0
-GET /api/v1/rules/{namespace}/{groupName}
-
-# Deprecated; will be removed in Mimir v2.2.0
-GET <prometheus-http-prefix>/rules/{namespace}/{groupName}
 ```
 
 Returns the rule group matching the request namespace and group name.
@@ -675,12 +657,6 @@ Requires [authentication](#authentication).
 
 ```
 POST /<prometheus-http-prefix>/config/v1/rules/{namespace}
-
-# Deprecated; will be removed in Mimir v2.2.0
-POST /api/v1/rules/{namespace}
-
-# Deprecated; will be removed in Mimir v2.2.0
-POST <prometheus-http-prefix>/rules/{namespace}
 ```
 
 Creates or updates a rule group.
@@ -709,12 +685,6 @@ rules:
 
 ```
 DELETE /<prometheus-http-prefix>/config/v1/rules/{namespace}/{groupName}
-
-# Deprecated; will be removed in Mimir v2.2.0
-DELETE /api/v1/rules/{namespace}/{groupName}
-
-# Deprecated; will be removed in Mimir v2.2.0
-DELETE <prometheus-http-prefix>/rules/{namespace}/{groupName}
 ```
 
 Deletes a rule group by namespace and group name. This endpoints returns `202` on success.
@@ -727,12 +697,6 @@ Requires [authentication](#authentication).
 
 ```
 DELETE /<prometheus-http-prefix>/config/v1/rules/{namespace}
-
-# Deprecated; will be removed in Mimir v2.2.0
-DELETE /api/v1/rules/{namespace}
-
-# Deprecated; will be removed in Mimir v2.2.0
-DELETE <prometheus-http-prefix>/rules/{namespace}
 ```
 
 Deletes all the rule groups in a namespace (including the namespace itself). This endpoint returns `202` on success.

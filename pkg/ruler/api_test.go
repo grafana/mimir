@@ -301,10 +301,10 @@ rules:
 	for _, tt := range tc {
 		t.Run(tt.name, func(t *testing.T) {
 			router := mux.NewRouter()
-			router.Path("/api/v1/rules/{namespace}").Methods("POST").HandlerFunc(a.CreateRuleGroup)
-			router.Path("/api/v1/rules/{namespace}/{groupName}").Methods("GET").HandlerFunc(a.GetRuleGroup)
+			router.Path("/prometheus/config/v1/rules/{namespace}").Methods("POST").HandlerFunc(a.CreateRuleGroup)
+			router.Path("/prometheus/config/v1/rules/{namespace}/{groupName}").Methods("GET").HandlerFunc(a.GetRuleGroup)
 			// POST
-			req := requestFor(t, http.MethodPost, "https://localhost:8080/api/v1/rules/namespace", strings.NewReader(tt.input), "user1")
+			req := requestFor(t, http.MethodPost, "https://localhost:8080/prometheus/config/v1/rules/namespace", strings.NewReader(tt.input), "user1")
 			w := httptest.NewRecorder()
 
 			router.ServeHTTP(w, req)
@@ -312,7 +312,7 @@ rules:
 
 			if tt.err == nil {
 				// GET
-				req = requestFor(t, http.MethodGet, "https://localhost:8080/api/v1/rules/namespace/test", nil, "user1")
+				req = requestFor(t, http.MethodGet, "https://localhost:8080/prometheus/config/v1/rules/namespace/test", nil, "user1")
 				w = httptest.NewRecorder()
 
 				router.ServeHTTP(w, req)
@@ -373,11 +373,11 @@ func TestRuler_DeleteNamespace(t *testing.T) {
 	a := NewAPI(r, r.store, log.NewNopLogger())
 
 	router := mux.NewRouter()
-	router.Path("/api/v1/rules/{namespace}").Methods(http.MethodDelete).HandlerFunc(a.DeleteNamespace)
-	router.Path("/api/v1/rules/{namespace}/{groupName}").Methods(http.MethodGet).HandlerFunc(a.GetRuleGroup)
+	router.Path("/prometheus/config/v1/rules/{namespace}").Methods(http.MethodDelete).HandlerFunc(a.DeleteNamespace)
+	router.Path("/prometheus/config/v1/rules/{namespace}/{groupName}").Methods(http.MethodGet).HandlerFunc(a.GetRuleGroup)
 
 	// Verify namespace1 rules are there.
-	req := requestFor(t, http.MethodGet, "https://localhost:8080/api/v1/rules/namespace1/group1", nil, "user1")
+	req := requestFor(t, http.MethodGet, "https://localhost:8080/prometheus/config/v1/rules/namespace1/group1", nil, "user1")
 	w := httptest.NewRecorder()
 
 	router.ServeHTTP(w, req)
@@ -385,7 +385,7 @@ func TestRuler_DeleteNamespace(t *testing.T) {
 	require.Equal(t, "name: group1\ninterval: 1m\nrules:\n    - record: UP_RULE\n      expr: up\n    - alert: UP_ALERT\n      expr: up < 1\n", w.Body.String())
 
 	// Delete namespace1
-	req = requestFor(t, http.MethodDelete, "https://localhost:8080/api/v1/rules/namespace1", nil, "user1")
+	req = requestFor(t, http.MethodDelete, "https://localhost:8080/prometheus/config/v1/rules/namespace1", nil, "user1")
 	w = httptest.NewRecorder()
 
 	router.ServeHTTP(w, req)
@@ -393,7 +393,7 @@ func TestRuler_DeleteNamespace(t *testing.T) {
 	require.Equal(t, "{\"status\":\"success\",\"data\":null,\"errorType\":\"\",\"error\":\"\"}", w.Body.String())
 
 	// On Partial failures
-	req = requestFor(t, http.MethodDelete, "https://localhost:8080/api/v1/rules/namespace2", nil, "user1")
+	req = requestFor(t, http.MethodDelete, "https://localhost:8080/prometheus/config/v1/rules/namespace2", nil, "user1")
 	w = httptest.NewRecorder()
 
 	router.ServeHTTP(w, req)
@@ -442,9 +442,9 @@ rules:
 	for _, tt := range tc {
 		t.Run(tt.name, func(t *testing.T) {
 			router := mux.NewRouter()
-			router.Path("/api/v1/rules/{namespace}").Methods("POST").HandlerFunc(a.CreateRuleGroup)
+			router.Path("/prometheus/config/v1/rules/{namespace}").Methods("POST").HandlerFunc(a.CreateRuleGroup)
 			// POST
-			req := requestFor(t, http.MethodPost, "https://localhost:8080/api/v1/rules/namespace", strings.NewReader(tt.input), "user1")
+			req := requestFor(t, http.MethodPost, "https://localhost:8080/prometheus/config/v1/rules/namespace", strings.NewReader(tt.input), "user1")
 			w := httptest.NewRecorder()
 
 			router.ServeHTTP(w, req)
@@ -499,12 +499,12 @@ rules:
 
 	// define once so the requests build on each other so the number of rules can be tested
 	router := mux.NewRouter()
-	router.Path("/api/v1/rules/{namespace}").Methods("POST").HandlerFunc(a.CreateRuleGroup)
+	router.Path("/prometheus/config/v1/rules/{namespace}").Methods("POST").HandlerFunc(a.CreateRuleGroup)
 
 	for _, tt := range tc {
 		t.Run(tt.name, func(t *testing.T) {
 			// POST
-			req := requestFor(t, http.MethodPost, "https://localhost:8080/api/v1/rules/namespace", strings.NewReader(tt.input), "user1")
+			req := requestFor(t, http.MethodPost, "https://localhost:8080/prometheus/config/v1/rules/namespace", strings.NewReader(tt.input), "user1")
 			w := httptest.NewRecorder()
 
 			router.ServeHTTP(w, req)
