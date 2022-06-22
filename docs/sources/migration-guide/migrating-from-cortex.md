@@ -264,25 +264,25 @@ You can update to the Grafana Mimir Helm chart from the Cortex Helm chart.
          chunks_cache:
            backend: "memcached"
            memcached:
-             addresses: dns+{{ .Release.Name }}-memcached-chunks-headless.{{ .Release.Namespace }}.svc:{{ (index .Values "memcached-chunks").port }}
+             addresses: dns+{{ template "mimir.fullname" . }}-memcached-chunks.{{ .Release.Namespace }}.svc:{{ (index .Values "memcached-chunks").port }}
              max_item_size: {{ mul (index .Values "memcached-chunks").maxItemMemory 1024 1024 }}
          {{- end }}
          {{- if index .Values "memcached-metadata" "enabled" }}
          metadata_cache:
            backend: "memcached"
            memcached:
-             addresses: dns+{{ .Release.Name }}-memcached-metadata-headless.{{ .Release.Namespace }}.svc:{{ (index .Values "memcached-metadata").port }}
+             addresses: dns+{{ template "mimir.fullname" . }}-memcached-metadata.{{ .Release.Namespace }}.svc:{{ (index .Values "memcached-metadata").port }}
              max_item_size: {{ mul (index .Values "memcached-metadata").maxItemMemory 1024 1024 }}
          {{- end }}
          {{- if index .Values "memcached-queries" "enabled" }}
          index_cache:
            backend: "memcached"
            memcached:
-             addresses: dns+{{ .Release.Name }}-memcached-index-queries-headless.{{ .Release.Namespace }}.svc:{{ (index .Values "memcached-index-queries").port }}
+             addresses: dns+{{ template "mimir.fullname" . }}-memcached-index-queries.{{ .Release.Namespace }}.svc:{{ (index .Values "memcached-index-queries").port }}
              max_item_size: {{ mul (index .Values "memcached-index-queries").maxItemMemory 1024 1024 }}
          {{- end }}
        frontend_worker:
-         frontend_address: "{{ template "mimir.fullname" . }}-query-frontend-headless.{{ .Release.Namespace }}.svc:{{ include "mimir.serverGrpcListenPort" . }}"
+         frontend_address: "{{ template "mimir.fullname" . }}-query-frontend.{{ .Release.Namespace }}.svc:{{ include "mimir.serverGrpcListenPort" . }}"
        ingester:
          ring:
            num_tokens: 512
