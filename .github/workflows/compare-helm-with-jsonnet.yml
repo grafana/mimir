@@ -1,0 +1,16 @@
+name: compare-helm-with-jsonnet
+
+on:
+  push:
+    branches:
+      - logiraptor/use-k8s-diff
+
+jobs:
+  compare-manifests:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+    - uses: helm/kind-action@v1.2.0
+    - uses: frenck/action-setup-yq@v1.1.1
+    - run: make check-helm-jsonnet-diff
+      shell: bash

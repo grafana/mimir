@@ -19,5 +19,5 @@ KUSTOMIZE_BUILD=(kustomize build --enable-alpha-plugins --enable-exec --load-res
 ${KUSTOMIZE_BUILD[@]} $lhs | yq -s "\"scratch/$lhs/\" + .metadata.name + \"-\" + .kind" "select(.kind != null) | $filter"
 ${KUSTOMIZE_BUILD[@]} $rhs | yq -s "\"scratch/$rhs/\" + .metadata.name + \"-\" + .kind" "select(.kind != null) | $filter"
 
-difft --missing-as-empty --skip-unchanged scratch/$lhs scratch/$rhs
-# diff -r -u scratch/helm scratch/jsonnet
+# difft --missing-as-empty --skip-unchanged scratch/$lhs scratch/$rhs
+diff -r -u scratch/helm scratch/jsonnet
