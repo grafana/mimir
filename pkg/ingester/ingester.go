@@ -419,8 +419,8 @@ func (i *Ingester) updateLoop(ctx context.Context) error {
 	ingestionRateTicker := time.NewTicker(instanceIngestionRateTickInterval)
 	defer ingestionRateTicker.Stop()
 
-	exemplarUpdateTicker := time.NewTicker(i.cfg.ExemplarsUpdatePeriod)
-	defer exemplarUpdateTicker.Stop()
+	tsdbUpdateTicker := time.NewTicker(i.cfg.ExemplarsUpdatePeriod)
+	defer tsdbUpdateTicker.Stop()
 
 	var activeSeriesTickerChan <-chan time.Time
 	if i.cfg.ActiveSeriesMetricsEnabled {
@@ -447,7 +447,7 @@ func (i *Ingester) updateLoop(ctx context.Context) error {
 			}
 			i.tsdbsMtx.RUnlock()
 
-		case <-exemplarUpdateTicker.C:
+		case <-tsdbUpdateTicker.C:
 			// Since we have to apply all TSDB config together, we apply them all
 			// in the exemplar update cycle instead of a separate cycle for other config.
 			i.applyTSDBSettings()
@@ -515,6 +515,9 @@ func (i *Ingester) applyTSDBSettings() {
 		// as the final value for the allowance which should match our desired value for the unit of the timestamp.
 		// Since we use milliseconds for our timestamps, we can directly use the duration without any modifications.
 		oooAllowance := i.limits.OutOfOrderAllowance(userID)
+		if oooAllowance < 0 {
+			oooAllowance = 0
+		}
 
 		// We populate a Config struct with just TSDB related config, which is OK
 		// because DB.ApplyConfig only looks at the specified config.
@@ -648,7 +651,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 		// and out of order support is not enabled.
 		// TODO(jesus.vazquez) If we had too many old samples we might want to
 		// extend the fast path to fail early.
-		if oooAllowance == 0 && minAppendTimeAvailable &&
+		if oooAllowance <= 0 && minAppendTimeAvailable &&
 			len(ts.Samples) > 0 && len(ts.Exemplars) == 0 && allOutOfBounds(ts.Samples, minAppendTime) {
 			failedSamplesCount += len(ts.Samples)
 			sampleOutOfBoundsCount += len(ts.Samples)
@@ -1505,7 +1508,7 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 		IsolationDisabled:              !i.cfg.BlocksStorageConfig.TSDB.IsolationEnabled,
 		HeadChunksWriteQueueSize:       i.cfg.BlocksStorageConfig.TSDB.HeadChunksWriteQueueSize,
 		NewChunkDiskMapper:             i.cfg.BlocksStorageConfig.TSDB.NewChunkDiskMapper,
-		AllowOverlappingQueries:        oooAllowance > 0,            // true if out of order support is enabled
+		AllowOverlappingQueries:        true,                        // We can have overlapping blocks from past or out of order enabled during runtime.
 		AllowOverlappingCompaction:     false,                       // always false since Mimir only uploads lvl 1 compacted blocks
 		OutOfOrderAllowance:            oooAllowance.Milliseconds(), // The unit must be same as our timestamps.
 		OutOfOrderCapMin:               int64(i.cfg.BlocksStorageConfig.TSDB.OOOCapMin),
