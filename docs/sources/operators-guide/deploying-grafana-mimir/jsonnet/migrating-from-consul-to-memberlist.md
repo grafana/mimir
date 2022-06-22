@@ -1,13 +1,15 @@
 ---
-title: "Migrating from Consul to Memberlist KV store for hash rings"
+title: "Migrating from Consul to Memberlist KV store for hash rings without downtime"
 menuTitle: "Migrating from Consul to Memberlist"
 description: "Learn how to migrate from using Consul as KV store for hash rings to using memberlist without any downtime."
-weight: 30
+weight: 40
 ---
 
-# Migrating from Consul to Memberlist as KV store for hash rings without downtime
+# Migrating from Consul to Memberlist KV store for hash rings without downtime
 
-Mimir Jsonnet uses `memberlist` as KV store for hash rings, unless disabled by using
+Mimir Jsonnet uses `memberlist` as KV store for hash rings since Mimir 2.2.0.
+
+Memberlist can be disabled by using the following configuration:
 
 ```jsonnet
 {
@@ -17,8 +19,7 @@ Mimir Jsonnet uses `memberlist` as KV store for hash rings, unless disabled by u
 }
 ```
 
-If you are still using Consul (ie. you have `memberlist_ring_enabled: false` in your Jsonnet, this was default before Grafana Mimir 2.2),
-and would like to migrate to `memberlist` without any downtime, you can follow instructions in this document.
+If you are running Mimir hash rings with Consul and would like to migrate to `memberlist` without any downtime, you can follow instructions in this document.
 
 ## Step 1: Enable memberlist and multi KV store.
 
@@ -32,10 +33,10 @@ and would like to migrate to `memberlist` without any downtime, you can follow i
 ```
 
 Step 1 configures components to use `multi` KV store, with `consul` as primary and `memberlist` as secondary stores.
-This step requires rollout of all components.
-After applying this step all Mimir components will expose `/memberlist` page on HTTP admin interface, which can be used to check health of Memberlist cluster.
+This step requires rollout of all Mimir components.
+After applying this step all Mimir components will expose [`/memberlist`]({{< relref "../../operators-guide/reference-http-api/index.md#memberlist-cluster" >}}) page on HTTP admin interface, which can be used to check health of Memberlist cluster.
 
-## Step 2: Enable mirroring
+## Step 2: Enable KV store mirroring
 
 ```jsonnet
 {
@@ -48,7 +49,7 @@ After applying this step all Mimir components will expose `/memberlist` page on 
 ```
 
 In this step we enable writes to primary KV store (Consul) to be mirrored into secondary store (Memberlist).
-Applying this change will not cause restart of components.
+Applying this change will not cause restart of Mimir components.
 
 You can monitor following metrics to check if mirroring was enabled on all components and if it works correctly:
 
@@ -56,14 +57,8 @@ You can monitor following metrics to check if mirroring was enabled on all compo
 - `rate(cortex_multikv_mirror_writes_total[1m])`
 - `rate(cortex_multikv_mirror_write_errors_total[1m])`
 
-After mirroring is enabled Memberlist admin page should display following keys in the KV store for all components using hash ring:
-
-- `compactor` (compactors ring)
-- `distributor` (distributors ring)
-- `multi-zone/store-gateway` (or just `store-gateway` if multi-zone store gateways are not enabled).
-- `ring` (ingesters ring)
-- `rulers/ring` (if ruler is running)
-- `alertmanager` (if alertmanager is running)
+After mirroring is enabled, you should see a key for each Mimir hash ring in the [Memberlist cluster information]({{< relref "../../operators-guide/reference-http-api/index.md#memberlist-cluster" >}}) admin page.
+See [list of components that use hash ring]({{< relref "../../operators-guide/architecture/hash-ring/index.md" >}}).
 
 ## Step 3: Switch Primary and Secondary store
 
@@ -80,7 +75,7 @@ After mirroring is enabled Memberlist admin page should display following keys i
 
 This change will switch primary and secondary stores as used by `multi` KV.
 From this point on components will use memberlist as primary KV store, and they will mirror updates to Consul.
-This step does NOT require restart of components.
+This step does not require restart of Mimir components.
 
 To see if all components started to use `memberlist` as primary store, please watch `cortex_multikv_primary_store` metric.
 
@@ -97,7 +92,7 @@ To see if all components started to use `memberlist` as primary store, please wa
 }
 ```
 
-This step doesn't require restart. After applying the change components will stop writing ring updates to Consul, and will only use `memberlist`.
+This step does not require restart of any Mimir component. After applying the change components will stop writing ring updates to Consul, and will only use `memberlist`.
 You can watch `cortex_multikv_mirror_enabled` metric to see if all components have picked up updated configuration.
 
 ## Step 5: Disable `multi` KV Store
@@ -115,12 +110,12 @@ You can watch `cortex_multikv_mirror_enabled` metric to see if all components ha
 ```
 
 This configuration change will cause a new rollout of all components.
-After restart components will no longer use `multi` KV store and will be configured to use `memberlist` only.
+After the restart components will no longer use `multi` KV store and will be configured to use `memberlist` only.
 We use `multikv_migration_teardown` to preserve runtime configuration for `multi` KV store for components that haven't restarted yet.
 
 All `cortex_multikv_*` metrics are only exposed by components that use `multi` KV store. As components restart, these metrics will disappear.
 
-**Note: setting `multikv_migration_enabled: false` while keeping `memberlist_ring_enabled: true` will also remove Consul! That's expected, since Consul is not used anymore – mirroring to it was disabled in step 4.**
+> **Note**: setting `multikv_migration_enabled: false` while keeping `memberlist_ring_enabled: true` will also remove Consul! That's expected, since Consul is not used anymore – mirroring to it was disabled in step 4.
 
 If you need to keep consul running, you can explicitly set `consul_enabled: true` in `_config`.
 
