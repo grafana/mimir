@@ -2529,7 +2529,7 @@ The `memberlist` block configures the Gossip memberlist.
 
 # If this node fails to join memberlist cluster, abort.
 # CLI flag: -memberlist.abort-if-join-fails
-[abort_if_cluster_join_fails: <boolean> | default = true]
+[abort_if_cluster_join_fails: <boolean> | default = false]
 
 # (advanced) If not 0, how often to rejoin the cluster. Occasional rejoin can
 # help to fix the cluster split issue, and is harmless otherwise. For example

@@ -1,6 +1,5 @@
 {
   local memberlistConfig = {
-    'memberlist.abort-if-join-fails': false,
     'memberlist.bind-port': gossipRingPort,
     'memberlist.join': 'gossip-ring.%s.svc.cluster.local:%d' % [$._config.namespace, gossipRingPort],
   },
