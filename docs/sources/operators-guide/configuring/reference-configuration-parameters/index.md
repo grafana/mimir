@@ -2717,11 +2717,13 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -ingester.active-series-custom-trackers
 [active_series_custom_trackers_config: <map of tracker name (string) to matcher (string)> | default = ]
 
-# (experimental) Allow samples to be this old for out-of-order. Supported units:
-# h, m, s. If the value is non-zero, then the ingester will be enabled to query
-# overlapping blocks.
-# CLI flag: -ingester.ooo-allowance
-[ooo_allowance: <duration> | default = 0s]
+# (experimental) Non-zero value enables out-of-order support for most recent
+# samples in this time window. Ingester will need more memory that is a factor
+# of rate of out of order sample being ingested and number of series getting out
+# of order samples. When enabled ingester will be enabled to query overlapping
+# blocks.
+# CLI flag: -ingester.out-of-order-allowance
+[out_of_order_allowance: <duration> | default = 0s]
 
 # Maximum number of chunks that can be fetched in a single query from ingesters
 # and long-term storage. This limit is enforced in the querier, ruler and

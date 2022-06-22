@@ -627,7 +627,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 			otlog.Int("numseries", len(req.Timeseries)))
 	}
 
-	oooAllowance := i.limits.OOOAllowance(userID)
+	oooAllowance := i.limits.OutOfOrderAllowance(userID)
 	for _, ts := range req.Timeseries {
 		// The labels must be sorted (in our case, it's guaranteed a write request
 		// has sorted labels once hit the ingester).
@@ -1472,7 +1472,7 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 	}
 
 	maxExemplars := i.limiter.convertGlobalToLocalLimit(userID, i.limits.MaxGlobalExemplarsPerUser(userID))
-	oooAllowance := i.limits.OOOAllowance(userID)
+	oooAllowance := i.limits.OutOfOrderAllowance(userID)
 	// Create a new user database
 	db, err := tsdb.Open(udir, userLogger, tsdbPromReg, &tsdb.Options{
 		RetentionDuration:              i.cfg.BlocksStorageConfig.TSDB.Retention.Milliseconds(),
@@ -1493,9 +1493,9 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 		IsolationDisabled:              !i.cfg.BlocksStorageConfig.TSDB.IsolationEnabled,
 		HeadChunksWriteQueueSize:       i.cfg.BlocksStorageConfig.TSDB.HeadChunksWriteQueueSize,
 		NewChunkDiskMapper:             i.cfg.BlocksStorageConfig.TSDB.NewChunkDiskMapper,
-		AllowOverlappingQueries:        oooAllowance > 0, // true if out of order support is enabled
-		AllowOverlappingCompaction:     false,            // always false since Mimir only uploads lvl 1 compacted blocks
-		OOOAllowance:                   int64(oooAllowance / time.Millisecond),
+		AllowOverlappingQueries:        oooAllowance > 0,                   // true if out of order support is enabled
+		AllowOverlappingCompaction:     false,                              // always false since Mimir only uploads lvl 1 compacted blocks
+		OOOAllowance:                   int64(oooAllowance.Milliseconds()), // The unit is same as our timestamps.
 		OOOCapMin:                      int64(i.cfg.BlocksStorageConfig.TSDB.OOOCapMin),
 		OOOCapMax:                      int64(i.cfg.BlocksStorageConfig.TSDB.OOOCapMax),
 	}, nil)

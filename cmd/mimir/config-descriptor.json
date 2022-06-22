@@ -2650,12 +2650,12 @@
         },
         {
           "kind": "field",
-          "name": "ooo_allowance",
+          "name": "out_of_order_allowance",
           "required": false,
-          "desc": "Allow samples to be this old for out-of-order. Supported units: h, m, s. If the value is non-zero, then the ingester will be enabled to query overlapping blocks.",
+          "desc": "Non-zero value enables out-of-order support for most recent samples in this time window. Ingester will need more memory that is a factor of rate of out of order sample being ingested and number of series getting out of order samples. When enabled ingester will be enabled to query overlapping blocks.",
           "fieldValue": null,
           "fieldDefaultValue": 0,
-          "fieldFlag": "ingester.ooo-allowance",
+          "fieldFlag": "ingester.out-of-order-allowance",
           "fieldType": "duration",
           "fieldCategory": "experimental"
         },
