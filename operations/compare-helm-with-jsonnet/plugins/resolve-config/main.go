@@ -16,11 +16,12 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/concurrency"
-	"github.com/grafana/mimir/pkg/mimir"
 	"sigs.k8s.io/kustomize/kyaml/fn/framework"
 	"sigs.k8s.io/kustomize/kyaml/fn/framework/command"
 	"sigs.k8s.io/kustomize/kyaml/kio"
 	"sigs.k8s.io/kustomize/kyaml/yaml"
+
+	"github.com/grafana/mimir/pkg/mimir"
 )
 
 const MimirImage = "grafana/mimir"
