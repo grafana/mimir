@@ -792,7 +792,8 @@ The `querier` block configures the querier.
 [batch_iterators: <boolean> | default = true]
 
 # (advanced) Maximum lookback beyond which queries are not sent to ingester. 0
-# means all queries are sent to ingester.
+# means all queries are sent to ingester. Should be at least an hour greater
+# than -querier.query-store-after.
 # CLI flag: -querier.query-ingesters-within
 [query_ingesters_within: <duration> | default = 13h]
 
@@ -800,7 +801,9 @@ The `querier` block configures the querier.
 # not just ingesters. 0 means all queries are sent to store. If this option is
 # enabled, the time range of the query sent to the store-gateway will be
 # manipulated to ensure the query end is not more recent than 'now -
-# query-store-after'.
+# query-store-after'. Should be greater than
+# -blocks-storage.bucket-store.ignore-blocks-within and at least an hour smaller
+# than -querier.query-ingesters-within.
 # CLI flag: -querier.query-store-after
 [query_store_after: <duration> | default = 12h]
 
