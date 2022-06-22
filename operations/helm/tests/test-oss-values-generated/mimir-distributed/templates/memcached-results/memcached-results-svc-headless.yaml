@@ -10,7 +10,6 @@ metadata:
     app.kubernetes.io/component: memcached-results
     app.kubernetes.io/version: "2.1.0"
     app.kubernetes.io/managed-by: Helm
-    prometheus.io/service-monitor: "false"
   annotations:
     {}
   namespace: "citestns"
@@ -22,7 +21,7 @@ spec:
       port: 11211
       targetPort: 11211
     
-    - name: exporter-http-metrics
+    - name: http-metrics
       port: 9150
       targetPort: 9150
     

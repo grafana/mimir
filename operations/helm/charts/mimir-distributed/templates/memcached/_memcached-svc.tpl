@@ -10,7 +10,6 @@ metadata:
   name: {{ include "mimir.resourceName" (dict "ctx" $.ctx "component" $.component) }}
   labels:
     {{- include "mimir.labels" (dict "ctx" $.ctx "component" $.component) | nindent 4 }}
-    prometheus.io/service-monitor: "false"
     {{- with .service.labels }}
     {{- toYaml . | nindent 4 }}
     {{- end }}
@@ -25,7 +24,7 @@ spec:
       port: {{ .port }}
       targetPort: {{ .port }}
     {{ if $.ctx.Values.memcachedExporter.enabled }}
-    - name: exporter-http-metrics
+    - name: http-metrics
       port: 9150
       targetPort: 9150
     {{ end }}
