@@ -1431,7 +1431,7 @@ How it **works**:
 
 ### err-mimir-store-consistency-check-failed
 
-This error occurs when the querier is unable to fetch some of the expected blocks after multiple retries and connections to different store-gateways, so the query fails as some blocks are missing.
+This error occurs when the querier is unable to fetch some of the expected blocks after multiple retries and connections to different store-gateways. The query fails because some blocks are missing.
 
 ### err-mimir-bucket-index-too-old
 
