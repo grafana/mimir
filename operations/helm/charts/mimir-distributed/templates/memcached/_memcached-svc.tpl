@@ -7,7 +7,7 @@ memcached Service
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "mimir.resourceName" (dict "ctx" $.ctx "component" $.component) }}-headless
+  name: {{ include "mimir.resourceName" (dict "ctx" $.ctx "component" $.component) }}
   labels:
     {{- include "mimir.labels" (dict "ctx" $.ctx "component" $.component) | nindent 4 }}
     prometheus.io/service-monitor: "false"
