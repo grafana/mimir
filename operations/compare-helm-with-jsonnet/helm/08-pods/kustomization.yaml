@@ -39,6 +39,18 @@ patches:
       - op: remove
         path: /spec/template/spec/volumes/1
 
+  # Helm attempts to automatically discover which PDB apiVersion is supported,
+  # which creates noise when running the diff in different environments
+  - target:
+      name: mimir-(ingester|store-gateway)
+      kind: PodDisruptionBudget
+      version: v1beta1
+      group: policy
+    patch: |-
+      - op: replace
+        path: /apiVersion
+        value: policy/v1
+
   # Minor Difference: Helm names the overrides volume slightly differently
   - target:
       name: mimir-(distributor|query-frontend|overrides-exporter|ruler|querier|alertmanager|ingester|store-gateway|compactor)

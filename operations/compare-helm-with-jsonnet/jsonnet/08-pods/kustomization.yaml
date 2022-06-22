@@ -20,3 +20,14 @@ patches:
     patch: |-
       - op: remove
         path: /spec/template/spec/containers/0/env
+
+  # TODO(logiraptor): Jsonnet uses a deprecated PodDisruptionBudget api version
+  - target:
+      name: mimir-(ingester|store-gateway)
+      kind: PodDisruptionBudget
+      version: v1beta1
+      group: policy
+    patch: |-
+      - op: replace
+        path: /apiVersion
+        value: policy/v1
