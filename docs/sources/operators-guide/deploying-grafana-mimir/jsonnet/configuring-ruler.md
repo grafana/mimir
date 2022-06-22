@@ -32,11 +32,6 @@ To get started, the 'local' can be used for initial testing:
   }
 ```
 
-This type is generally not recommended for production use because:
-
-- If sharding rules over multiple ruler replicas, the same file must be available on all ruler pods and kept in sync.
-- It is read-only and therefore does not support rule configuration via the API.
-
 If using object storage, additional configuration options are required:
 
 - Amazon S3 (`s3`)
@@ -53,7 +48,7 @@ If using object storage, additional configuration options are required:
   - `ruler_storage_azure_account_name`
   - `ruler_storage_azure_account_key`
 
-Note: Currently the storage credentials for `s3` and `gcs` must be manually provided using additional command line arguments as necessary.
+Note: Currently the storage credentials for `s3` and `gcs` must be manually provided using additional command line arguments as necessary. See [Grafana Mimir configuration parameters: ruler_storage]({{< relref "../../configuring/reference-configuration-parameters/#ruler_storage" >}}) for information.
 
 ## Operational modes
 
