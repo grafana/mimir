@@ -665,7 +665,7 @@ groups:
       cortex_compactor_last_successful_run_timestamp_seconds == 0
     for: 24h
     labels:
-      reason: in-since-startup
+      reason: since-startup
       severity: critical
   - alert: MimirCompactorHasNotSuccessfullyRunCompaction
     annotations:
