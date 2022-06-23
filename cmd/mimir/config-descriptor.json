@@ -2306,12 +2306,12 @@
         },
         {
           "kind": "field",
-          "name": "exemplars_update_period",
+          "name": "tsdb_config_update_period",
           "required": false,
-          "desc": "Period with which to update per-tenant max exemplar limit.",
+          "desc": "Period with which to update per-tenant TSDB config.",
           "fieldValue": null,
           "fieldDefaultValue": 15000000000,
-          "fieldFlag": "ingester.exemplars-update-period",
+          "fieldFlag": "ingester.tsdb-config-update-period",
           "fieldType": "duration",
           "fieldCategory": "experimental"
         },
@@ -2650,12 +2650,12 @@
         },
         {
           "kind": "field",
-          "name": "out_of_order_allowance",
+          "name": "out_of_order_time_window",
           "required": false,
           "desc": "Non-zero value enables out-of-order support for most recent samples in this time window. Ingester will need more memory that is a factor of rate of out of order sample being ingested and number of series getting out of order samples. It can be configured per-tenant.",
           "fieldValue": null,
           "fieldDefaultValue": 0,
-          "fieldFlag": "ingester.out-of-order-allowance",
+          "fieldFlag": "ingester.out-of-order-time-window",
           "fieldType": "duration",
           "fieldCategory": "experimental"
         },

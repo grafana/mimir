@@ -843,8 +843,6 @@ Usage of ./cmd/mimir/mimir:
     	Path to the key file for the client certificate. Also requires the client certificate to be configured.
   -ingester.client.tls-server-name string
     	Override the expected name on the server certificate.
-  -ingester.exemplars-update-period duration
-    	[experimental] Period with which to update per-tenant max exemplar limit. (default 15s)
   -ingester.ignore-series-limit-for-metric-names string
     	Comma-separated list of metric names, for which the -ingester.max-global-series-per-metric limit will be ignored. Does not affect the -ingester.max-global-series-per-user limit.
   -ingester.instance-limits.max-inflight-push-requests int
@@ -867,7 +865,7 @@ Usage of ./cmd/mimir/mimir:
     	The maximum number of active series per tenant, across the cluster before replication. 0 to disable. (default 150000)
   -ingester.metadata-retain-period duration
     	Period at which metadata we have not seen will remain in memory before being deleted. (default 10m0s)
-  -ingester.out-of-order-allowance value
+  -ingester.out-of-order-time-window value
     	[experimental] Non-zero value enables out-of-order support for most recent samples in this time window. Ingester will need more memory that is a factor of rate of out of order sample being ingested and number of series getting out of order samples. It can be configured per-tenant.
   -ingester.rate-update-period duration
     	Period with which to update the per-tenant ingestion rates. (default 15s)
@@ -953,6 +951,8 @@ Usage of ./cmd/mimir/mimir:
     	True to enable the zone-awareness and replicate ingested samples across different availability zones. This option needs be set on ingesters, distributors, queriers and rulers when running in microservices mode.
   -ingester.stream-chunks-when-using-blocks
     	Stream chunks from ingesters to queriers. (default true)
+  -ingester.tsdb-config-update-period duration
+    	[experimental] Period with which to update per-tenant TSDB config. (default 15s)
   -log.format value
     	Output log messages in the given format. Valid formats: [logfmt, json] (default logfmt)
   -log.level value

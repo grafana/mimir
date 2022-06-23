@@ -123,7 +123,7 @@ type Config struct {
 	ActiveSeriesMetricsIdleTimeout  time.Duration                     `yaml:"active_series_metrics_idle_timeout" category:"advanced"`
 	ActiveSeriesCustomTrackers      activeseries.CustomTrackersConfig `yaml:"active_series_custom_trackers" doc:"description=[Deprecated] This config has been moved to the limits config, please set it there. Additional custom trackers for active metrics. If there are active series matching a provided matcher (map value), the count will be exposed in the custom trackers metric labeled using the tracker name (map key). Zero valued counts are not exposed (and removed when they go back to zero)." category:"advanced"`
 
-	ExemplarsUpdatePeriod time.Duration `yaml:"exemplars_update_period" category:"experimental"`
+	TSDBConfigUpdatePeriod time.Duration `yaml:"tsdb_config_update_period" category:"experimental"`
 
 	BlocksStorageConfig         mimir_tsdb.BlocksStorageConfig `yaml:"-"`
 	StreamChunksWhenUsingBlocks bool                           `yaml:"-" category:"advanced"`
@@ -151,7 +151,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.DurationVar(&cfg.ActiveSeriesMetricsIdleTimeout, "ingester.active-series-metrics-idle-timeout", 10*time.Minute, "After what time a series is considered to be inactive.")
 
 	f.BoolVar(&cfg.StreamChunksWhenUsingBlocks, "ingester.stream-chunks-when-using-blocks", true, "Stream chunks from ingesters to queriers.")
-	f.DurationVar(&cfg.ExemplarsUpdatePeriod, "ingester.exemplars-update-period", 15*time.Second, "Period with which to update per-tenant max exemplar limit.")
+	f.DurationVar(&cfg.TSDBConfigUpdatePeriod, "ingester.tsdb-config-update-period", 15*time.Second, "Period with which to update per-tenant TSDB config.")
 
 	cfg.DefaultLimits.RegisterFlags(f)
 
@@ -414,7 +414,7 @@ func (i *Ingester) updateLoop(ctx context.Context) error {
 	ingestionRateTicker := time.NewTicker(instanceIngestionRateTickInterval)
 	defer ingestionRateTicker.Stop()
 
-	tsdbUpdateTicker := time.NewTicker(i.cfg.ExemplarsUpdatePeriod)
+	tsdbUpdateTicker := time.NewTicker(i.cfg.TSDBConfigUpdatePeriod)
 	defer tsdbUpdateTicker.Stop()
 
 	var activeSeriesTickerChan <-chan time.Time
@@ -443,8 +443,6 @@ func (i *Ingester) updateLoop(ctx context.Context) error {
 			i.tsdbsMtx.RUnlock()
 
 		case <-tsdbUpdateTicker.C:
-			// Since we have to apply all TSDB config together, we apply them all
-			// in the exemplar update cycle instead of a separate cycle for other config.
 			i.applyTSDBSettings()
 
 		case <-activeSeriesTickerChan:
@@ -500,15 +498,15 @@ func (i *Ingester) updateActiveSeries(now time.Time) {
 
 // applyTSDBSettings goes through all tenants and applies
 // * The current max-exemplars setting. If it changed, tsdb will resize the buffer; if it didn't change tsdb will return quickly.
-// * The current out of order allowance. If it changes from 0 to >0, then a new Write-Behind-Log gets created for that tenant.
+// * The current out of order time window. If it changes from 0 to >0, then a new Write-Behind-Log gets created for that tenant.
 func (i *Ingester) applyTSDBSettings() {
 	for _, userID := range i.getTSDBUsers() {
 		globalValue := i.limits.MaxGlobalExemplarsPerUser(userID)
 		localValue := i.limiter.convertGlobalToLocalLimit(userID, globalValue)
 
-		oooAllowance := i.limits.OutOfOrderAllowance(userID)
-		if oooAllowance < 0 {
-			oooAllowance = 0
+		oooTW := i.limits.OutOfOrderTimeWindow(userID)
+		if oooTW < 0 {
+			oooTW = 0
 		}
 
 		// We populate a Config struct with just TSDB related config, which is OK
@@ -521,7 +519,7 @@ func (i *Ingester) applyTSDBSettings() {
 					MaxExemplars: int64(localValue),
 				},
 				TSDBConfig: &promcfg.TSDBConfig{
-					OutOfOrderAllowance: time.Duration(oooAllowance).Milliseconds(),
+					OutOfOrderAllowance: time.Duration(oooTW).Milliseconds(),
 				},
 			},
 		}
@@ -634,7 +632,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 			otlog.Int("numseries", len(req.Timeseries)))
 	}
 
-	oooAllowance := i.limits.OutOfOrderAllowance(userID)
+	oooTW := i.limits.OutOfOrderTimeWindow(userID)
 	for _, ts := range req.Timeseries {
 		// The labels must be sorted (in our case, it's guaranteed a write request
 		// has sorted labels once hit the ingester).
@@ -643,7 +641,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 		// and out of order support is not enabled.
 		// TODO(jesus.vazquez) If we had too many old samples we might want to
 		// extend the fast path to fail early.
-		if oooAllowance <= 0 && minAppendTimeAvailable &&
+		if oooTW <= 0 && minAppendTimeAvailable &&
 			len(ts.Samples) > 0 && len(ts.Exemplars) == 0 && allOutOfBounds(ts.Samples, minAppendTime) {
 			failedSamplesCount += len(ts.Samples)
 			sampleOutOfBoundsCount += len(ts.Samples)
@@ -1480,7 +1478,7 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 	}
 
 	maxExemplars := i.limiter.convertGlobalToLocalLimit(userID, i.limits.MaxGlobalExemplarsPerUser(userID))
-	oooAllowance := time.Duration(i.limits.OutOfOrderAllowance(userID))
+	oooTW := time.Duration(i.limits.OutOfOrderTimeWindow(userID))
 	// Create a new user database
 	db, err := tsdb.Open(udir, userLogger, tsdbPromReg, &tsdb.Options{
 		RetentionDuration:              i.cfg.BlocksStorageConfig.TSDB.Retention.Milliseconds(),
@@ -1501,9 +1499,9 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 		IsolationDisabled:              !i.cfg.BlocksStorageConfig.TSDB.IsolationEnabled,
 		HeadChunksWriteQueueSize:       i.cfg.BlocksStorageConfig.TSDB.HeadChunksWriteQueueSize,
 		NewChunkDiskMapper:             i.cfg.BlocksStorageConfig.TSDB.NewChunkDiskMapper,
-		AllowOverlappingQueries:        true,                        // We can have overlapping blocks from past or out of order enabled during runtime.
-		AllowOverlappingCompaction:     false,                       // always false since Mimir only uploads lvl 1 compacted blocks
-		OutOfOrderAllowance:            oooAllowance.Milliseconds(), // The unit must be same as our timestamps.
+		AllowOverlappingQueries:        true,                 // We can have overlapping blocks from past or out of order enabled during runtime.
+		AllowOverlappingCompaction:     false,                // always false since Mimir only uploads lvl 1 compacted blocks
+		OutOfOrderAllowance:            oooTW.Milliseconds(), // The unit must be same as our timestamps.
 		OutOfOrderCapMin:               int64(i.cfg.BlocksStorageConfig.TSDB.OutOfOrderCapMin),
 		OutOfOrderCapMax:               int64(i.cfg.BlocksStorageConfig.TSDB.OutOfOrderCapMax),
 	}, nil)
@@ -2116,7 +2114,7 @@ func newIngestErrSampleOutOfOrder(timestamp model.Time, labels []mimirpb.LabelAd
 }
 
 func newIngestErrSampleTooOld(timestamp model.Time, labels []mimirpb.LabelAdapter) error {
-	return newIngestErr(globalerror.SampleTooOld, "the sample has been rejected because another sample with a more recent timestamp has already been ingested and this out of order sample is beyond the time allowance", timestamp, labels)
+	return newIngestErr(globalerror.SampleTooOld, "the sample has been rejected because another sample with a more recent timestamp has already been ingested and this sample is beyond the out of order time window", timestamp, labels)
 }
 
 func newIngestErrSampleDuplicateTimestamp(timestamp model.Time, labels []mimirpb.LabelAdapter) error {

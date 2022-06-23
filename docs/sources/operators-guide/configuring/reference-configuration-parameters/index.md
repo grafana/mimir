@@ -741,9 +741,9 @@ ring:
 #       prod: '{namespace=~"prod-.*"}'
 [active_series_custom_trackers: <map of tracker name (string) to matcher (string)> | default = ]
 
-# (experimental) Period with which to update per-tenant max exemplar limit.
-# CLI flag: -ingester.exemplars-update-period
-[exemplars_update_period: <duration> | default = 15s]
+# (experimental) Period with which to update per-tenant TSDB config.
+# CLI flag: -ingester.tsdb-config-update-period
+[tsdb_config_update_period: <duration> | default = 15s]
 
 instance_limits:
   # (advanced) Max ingestion rate (samples/sec) that ingester will accept. This
@@ -2724,8 +2724,8 @@ The `limits` block configures default and per-tenant limits imposed by component
 # samples in this time window. Ingester will need more memory that is a factor
 # of rate of out of order sample being ingested and number of series getting out
 # of order samples. It can be configured per-tenant.
-# CLI flag: -ingester.out-of-order-allowance
-[out_of_order_allowance: <duration> | default = 0s]
+# CLI flag: -ingester.out-of-order-time-window
+[out_of_order_time_window: <duration> | default = 0s]
 
 # Maximum number of chunks that can be fetched in a single query from ingesters
 # and long-term storage. This limit is enforced in the querier, ruler and

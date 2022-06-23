@@ -5791,7 +5791,7 @@ func Test_Ingester_QueryOutOfOrder(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			// Create ingester
 			l := defaultLimitsTestConfig()
-			l.OutOfOrderAllowance = model.Duration(30 * time.Minute)
+			l.OutOfOrderTimeWindow = model.Duration(30 * time.Minute)
 			i, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, l, "", nil)
 			require.NoError(t, err)
 			require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
