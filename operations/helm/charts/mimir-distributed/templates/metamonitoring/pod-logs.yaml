@@ -1,4 +1,4 @@
-{{- with .Values.metaMonitoring.grafanaAgent }}
+{{- with (.Values.metaMonitoring).grafanaAgent }}
 {{- if .enabled }}
 apiVersion: monitoring.grafana.com/v1alpha1
 kind: PodLogs
@@ -34,7 +34,7 @@ spec:
 
   namespaceSelector:
     matchNames:
-      - {{ $.Release.Namespace }}
+      - {{ $.Release.Namespace | quote }}
 
   selector:
     matchLabels:

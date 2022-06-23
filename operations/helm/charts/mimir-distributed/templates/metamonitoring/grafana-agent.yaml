@@ -1,4 +1,4 @@
-{{- with .Values.metaMonitoring.grafanaAgent }}
+{{- with (.Values.metaMonitoring).grafanaAgent }}
 {{- if .enabled }}
 apiVersion: monitoring.grafana.com/v1alpha1
 kind: GrafanaAgent
