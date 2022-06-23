@@ -17,6 +17,10 @@
 * [CHANGE] Blocks uploaded by ingester no longer contain `__org_id__` label. Compactor now ignores this label and will compact blocks with and without this label together. `mimirconvert` tool will remove the label from blocks as "unknown" label. #1972
 * [CHANGE] Querier: deprecated `-querier.shuffle-sharding-ingesters-lookback-period`, instead adding `-querier.shuffle-sharding-ingesters-enabled` to enable or disable shuffle sharding on the read path. The value of `-querier.query-ingesters-within` is now used internally for shuffle sharding lookback. #2110
 * [CHANGE] Memberlist: `-memberlist.abort-if-join-fails` now defaults to false. Previously it defaulted to true. #2168
+* [FEATURE] Ingester: Add experimental ability to ingest out of order samples up to an allowed limit. Enabling this takes additional memory and disk space. It also enables a write behind log that could lead to longer ingester start replays. There is no overhead on memory, disk space, startup times, with it being disabled. #2187
+  * `-ingester.out-of-order-allowance` allows setting how back in time a sample can be. Defaults to `0`.
+  * `-blocks-storage.tsdb.out-of-order-cap-min` sets the minimum capacity of the out-of-order chunk allocated in the memory. Defaults to `4`
+  * `-blocks-storage.tsdb.out-of-order-cap-max` sets the maximum size of an out-of-order chunk. Defaults to `32`.
 * [ENHANCEMENT] Distributor: Added limit to prevent tenants from sending excessive number of requests: #1843
   * The following CLI flags (and their respective YAML config options) have been added:
     * `-distributor.request-rate-limit`
@@ -30,10 +34,10 @@
 * [ENHANCEMENT] Upgrade Docker base images to `alpine:3.16.0`. #2028
 * [ENHANCEMENT] Store-gateway: Add experimental configuration option for the store-gateway to attempt to pre-populate the file system cache when memory-mapping index-header files. Enabled with `-blocks-storage.bucket-store.index-header.map-populate-enabled=true`. Note this flag only has an effect when running on Linux. #2019 #2054
 * [ENHANCEMENT] Chunk Mapper: reduce memory usage of async chunk mapper. #2043
-* [ENHANCEMENT] Ingesters: Added new configuration option that makes it possible for mimir ingesters to perform queries on overlapping blocks in the filesystem. Enabled with `-blocks-storage.tsdb.allow-overlapping-queries`. #2091
 * [ENHANCEMENT] Ingester: reduce sleep time when reading WAL. #2098
 * [ENHANCEMENT] Compactor: Run sanity check on blocks storage configuration at startup. #2143
 * [ENHANCEMENT] Compactor: Add HTTP API for uploading TSDB blocks. Enabled with `-compactor.block-upload-enabled`. #1694 #2126
+* [ENHANCEMENT] Ingester: Enable querying overlapping blocks by default. #2187
 * [BUGFIX] Fix regexp parsing panic for regexp label matchers with start/end quantifiers. #1883
 * [BUGFIX] Ingester: fixed deceiving error log "failed to update cached shipped blocks after shipper initialisation", occurring for each new tenant in the ingester. #1893
 * [BUGFIX] Ring: fix bug where instances may appear unhealthy in the hash ring web UI even though they are not. #1933

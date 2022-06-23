@@ -241,6 +241,14 @@ func TestTSDBMetrics(t *testing.T) {
 			cortex_ingester_tsdb_exemplar_exemplars_appended_total{user="user2"} 100
 			cortex_ingester_tsdb_exemplar_exemplars_appended_total{user="user3"} 100
 
+			# HELP cortex_ingester_tsdb_out_of_order_samples_appended_total Total number of out of order samples appended.
+			# TYPE cortex_ingester_tsdb_out_of_order_samples_appended_total counter
+			cortex_ingester_tsdb_out_of_order_samples_appended_total 9
+
+			# HELP cortex_ingester_tsdb_too_old_samples_total Total number of too old samples.
+			# TYPE cortex_ingester_tsdb_too_old_samples_total counter
+			cortex_ingester_tsdb_too_old_samples_total 9
+
 			# HELP cortex_ingester_tsdb_exemplar_exemplars_in_storage Number of TSDB exemplars currently in storage.
 			# TYPE cortex_ingester_tsdb_exemplar_exemplars_in_storage gauge
 			cortex_ingester_tsdb_exemplar_exemplars_in_storage 30
@@ -469,6 +477,14 @@ func TestTSDBMetricsWithRemoval(t *testing.T) {
 			# HELP cortex_ingester_tsdb_exemplar_exemplars_in_storage Number of TSDB exemplars currently in storage.
 			# TYPE cortex_ingester_tsdb_exemplar_exemplars_in_storage gauge
 			cortex_ingester_tsdb_exemplar_exemplars_in_storage 20
+
+			# HELP cortex_ingester_tsdb_out_of_order_samples_appended_total Total number of out of order samples appended.
+			# TYPE cortex_ingester_tsdb_out_of_order_samples_appended_total counter
+			cortex_ingester_tsdb_out_of_order_samples_appended_total 9
+
+			# HELP cortex_ingester_tsdb_too_old_samples_total Total number of too old samples.
+			# TYPE cortex_ingester_tsdb_too_old_samples_total counter
+			cortex_ingester_tsdb_too_old_samples_total 9
 	`))
 	require.NoError(t, err)
 }
@@ -734,6 +750,18 @@ func populateTSDBMetrics(base float64) *prometheus.Registry {
 		Help: "Total number of out of order exemplar ingestion failed attempts.",
 	})
 	exemplarsOutOfOrderTotal.Add(3)
+
+	outOfOrderSamplesAppendedTotal := promauto.With(r).NewCounter(prometheus.CounterOpts{
+		Name: "prometheus_tsdb_head_out_of_order_samples_appended_total",
+		Help: "Total number of appended out of order samples.",
+	})
+	outOfOrderSamplesAppendedTotal.Add(3)
+
+	tooOldSamplesTotal := promauto.With(r).NewCounter(prometheus.CounterOpts{
+		Name: "prometheus_tsdb_too_old_samples_total",
+		Help: "Total number of out of order samples ingestion failed attempts.",
+	})
+	tooOldSamplesTotal.Add(3)
 
 	return r
 }
