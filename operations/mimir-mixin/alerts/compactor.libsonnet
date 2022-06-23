@@ -28,6 +28,7 @@
           |||,
           labels: {
             severity: 'critical',
+            reason: 'no compactions for 24h',
           },
           annotations: {
             message: '%(product)s Compactor %(alert_instance_variable)s in %(alert_aggregation_variables)s has not run compaction in the last 24 hours.' % $._config,
@@ -42,6 +43,7 @@
           |||,
           labels: {
             severity: 'critical',
+            reason: 'no compactions since startup 24h ago',
           },
           annotations: {
             message: '%(product)s Compactor %(alert_instance_variable)s in %(alert_aggregation_variables)s has not run compaction in the last 24 hours.' % $._config,
@@ -55,6 +57,7 @@
           |||,
           labels: {
             severity: 'critical',
+            reason: '2 consecutive failed compactions',
           },
           annotations: {
             message: '%(product)s Compactor %(alert_instance_variable)s in %(alert_aggregation_variables)s failed to run 2 consecutive compactions.' % $._config,
