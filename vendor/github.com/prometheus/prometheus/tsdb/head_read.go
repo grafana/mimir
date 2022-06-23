@@ -541,7 +541,6 @@ func (o mergedOOOChunks) NumSamples() int {
 	return samples
 }
 
-// Compact TODO(jesus.vazquez) Clarify why this method wont be called
 func (o mergedOOOChunks) Compact() {}
 
 var _ chunkenc.Chunk = &boundedChunk{}

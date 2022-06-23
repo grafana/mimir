@@ -53,11 +53,9 @@ func (oh *OOORangeHead) Meta() BlockMeta {
 	}
 }
 
-// Size returns 0 because the space taken by the out of order samples is taken
-// into account by the RangeHead size.
+// Size returns the size taken by the Head block.
 func (oh *OOORangeHead) Size() int64 {
-	// TODO(jesus.vazquez) Find what's the appropriate value here
-	return 0
+	return oh.head.Size()
 }
 
 // String returns an human readable representation of the out of order range
