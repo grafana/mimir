@@ -2652,7 +2652,7 @@
           "kind": "field",
           "name": "out_of_order_allowance",
           "required": false,
-          "desc": "Non-zero value enables out-of-order support for most recent samples in this time window. Ingester will need more memory that is a factor of rate of out of order sample being ingested and number of series getting out of order samples.",
+          "desc": "Non-zero value enables out-of-order support for most recent samples in this time window. Ingester will need more memory that is a factor of rate of out of order sample being ingested and number of series getting out of order samples. It can be configured per-tenant.",
           "fieldValue": null,
           "fieldDefaultValue": 0,
           "fieldFlag": "ingester.out-of-order-allowance",

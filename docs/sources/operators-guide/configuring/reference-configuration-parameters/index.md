@@ -2720,7 +2720,7 @@ The `limits` block configures default and per-tenant limits imposed by component
 # (experimental) Non-zero value enables out-of-order support for most recent
 # samples in this time window. Ingester will need more memory that is a factor
 # of rate of out of order sample being ingested and number of series getting out
-# of order samples.
+# of order samples. It can be configured per-tenant.
 # CLI flag: -ingester.out-of-order-allowance
 [out_of_order_allowance: <duration> | default = 0s]
 
