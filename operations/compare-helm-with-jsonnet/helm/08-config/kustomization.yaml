@@ -1,5 +1,5 @@
 resources:
-  - ../08-pods
+  - ../07-pods
 
 components:
   - ../../components/config

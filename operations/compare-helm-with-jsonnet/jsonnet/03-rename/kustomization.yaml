@@ -51,8 +51,16 @@ patches:
 
   - target:
       kind: 'Service|StatefulSet'
-      name: 'mimir-memcached-index-queries'
+      name: 'mimir-memcached'
     patch: |-
       - op: replace
         path: /metadata/name
-        value: 'mimir-memcached-queries'
+        value: 'mimir-memcached-chunks'
+
+  - target:
+      kind: 'Service'
+      name: 'mimir-(memcached-(chunks|results|index-queries|metadata))'
+    patch: |-
+      - op: replace
+        path: /spec/ports/1/name
+        value: 'http-metrics'

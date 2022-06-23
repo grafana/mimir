@@ -1,5 +1,5 @@
 resources:
-  - ../06-memcached
+  - ../05-memberlist
 patches:
   # TODO(logiraptor): Jsonnet doesn't add a grpc port to the overrides-exporter
   - target:

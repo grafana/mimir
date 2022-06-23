@@ -1,6 +1,6 @@
-memcached:
+memcached-chunks:
     enabled: true
-memcached-queries:
+memcached-index-queries:
     enabled: true
 memcached-metadata:
     enabled: true

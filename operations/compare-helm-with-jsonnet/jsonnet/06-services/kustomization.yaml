@@ -1,5 +1,5 @@
 resources:
-  - ../06-memcached
+  - ../05-memberlist
 patches:
   # Minor difference: Jsonnet names service ports differently and uses numbers instead of names for targetPort
   - target:
