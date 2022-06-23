@@ -48,9 +48,9 @@ Deciding which differences are useful is a complicated topic, but at a high leve
 - Differences in configuration parameters related to urls and file paths are typically not interesting, since they don't change _what_ the cluster does, only _where_ it happens.
 - Differences in performance or scale related properties are typically useful, since these often have difficult-to-test implications on the cluster.
 
-In order to keep the kustomize configuration manageable, it is divided into layers, each named based on the order they are applied.
+In order to keep the kustomize configuration manageable, it is divided into overlays, each named based on the order they are applied.
 
-For example, at the time of writing, the Helm chart is passed through the following layers:
+For example, at the time of writing, the Helm chart is passed through the following overlays:
 
 ```
 $ ls -1 operations/compare-helm-with-jsonnet/helm
@@ -66,12 +66,14 @@ $ ls -1 operations/compare-helm-with-jsonnet/helm
 09-config
 ```
 
-Each directory contains a `kustomize.yaml` file that describes the transformations made in that layer.
-A full explanation of kustomize is outside the scope of this document, but generally the layers do one or all of the following:
+Each directory contains a `kustomize.yaml` file that describes the transformations made in that overlay.
+A full explanation of kustomize is outside the scope of this document, but generally the overlays do one or all of the following:
 
 1. Remove properties that are not useful for diffing
 2. Modify property values so that they match between Helm and Jsonnet
 3. Remove entire objects that only exist in either Helm or Jsonnet
+
+### make check-helm-jsonnet-diff
 
 You can use the `make check-helm-jsonnet-diff` target to perform an automatic diff of the Helm and Jsonnet templates.
 This target requires the following:
@@ -83,9 +85,31 @@ The API server is only used to perform dry-runs of server-side apply.
 No resources are actually created in kubernetes, but API calls will be made against the server.
 It is recommended to use kind, k3d, or some other local development cluster.
 This allows the final diff to ignore any fields that match kubernetes defaults.
+Ideally, there will be no differences between helm and jsonnet, so it's expected that the kustomize configuration will shrink over time rather than grow.
+Achieving perfect parity is difficult, so this process allows us to incrementally fix differences while also preventing new differences from being added.
 
 If CI reports a difference, you have several options:
 
 1. Modify the Helm chart or Jsonnet library such that the differences are no longer present
 2. Modify the Helm values file or Jsonnet configuration such that the differences are no longer present
 3. If the difference is not useful, modify the kustomize configuration to remove that field or otherwise patch the manifests such that the differences are no longer present
+
+### operations/compare-helm-with-jsonnet/compare-kustomize-outputs.sh
+
+There is another script, `operations/compare-helm-with-jsonnet/compare-kustomize-outputs.sh`, which can be used to compare any two overlays in the diffing process.
+This can be a useful tool when debugging kustomize configuration.
+
+For example, the following invocation will show only changes that have been applied by the 9th helm overlay.
+
+```
+cd operations/compare-helm-with-jsonnet
+./compare-kustomize-outputs.sh ./helm/08-* ./helm/09-*
+```
+
+The output can be filtered further by supplying a [yq](https://mikefarah.gitbook.io/yq/operators/select) `select` expression.
+This is useful to limit otherwise noisy output to only show objects of a certain kind, name, or other property.
+
+```
+cd operations/compare-helm-with-jsonnet
+./compare-kustomize-outputs.sh ./helm/09-* ./jsonnet/09-* 'select(.kind == "StatefulSet")'
+```

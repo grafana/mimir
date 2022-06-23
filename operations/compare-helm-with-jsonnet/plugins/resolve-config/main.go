@@ -129,21 +129,19 @@ func (c *ConfigExtractor) ResolveConfigs() ([]*yaml.RNode, error) {
 
 			var configFileText string
 			mountPath, args := findConfigFileArg(container.Args)
-			if mountPath == "" {
-				continue
-			}
+			if mountPath != "" {
+				for _, vm := range container.VolumeMounts {
+					if !strings.HasPrefix(mountPath, vm.MountPath) {
+						continue
+					}
 
-			for _, vm := range container.VolumeMounts {
-				if !strings.HasPrefix(mountPath, vm.MountPath) {
-					continue
+					content, err := c.resolveConfigFileText(vm.Name, filepath.Base(mountPath), pod)
+					if err != nil {
+						return errors.Wrapf(err, "failed to resolve volume mount %s in pod", vm.Name)
+					}
+
+					configFileText = content
 				}
-
-				content, err := c.resolveConfigFileText(vm.Name, filepath.Base(mountPath), pod)
-				if err != nil {
-					return errors.Wrapf(err, "failed to resolve volume mount %s in pod", vm.Name)
-				}
-
-				configFileText = content
 			}
 
 			configObj, target, err := c.resolveArgsAndConfigFile(args, configFileText)
