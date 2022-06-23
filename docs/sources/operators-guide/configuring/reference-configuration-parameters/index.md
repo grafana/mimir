@@ -3351,8 +3351,8 @@ bucket_store:
 
     # (advanced) The maximum allowed age of a bucket index (last updated) before
     # queries start failing because the bucket index is too old. The bucket
-    # index is periodically updated by the compactor, while this check is
-    # enforced in the querier (at query time).
+    # index is periodically updated by the compactor, and this check is enforced
+    # in the querier (at query time).
     # CLI flag: -blocks-storage.bucket-store.bucket-index.max-stale-period
     [max_stale_period: <duration> | default = 1h]
 

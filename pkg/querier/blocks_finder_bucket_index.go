@@ -18,7 +18,6 @@ import (
 	"github.com/thanos-io/thanos/pkg/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
-	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 )
@@ -116,5 +115,5 @@ func (f *BucketIndexBlocksFinder) GetBlocks(ctx context.Context, userID string, 
 }
 
 func newBucketIndexTooOldError(updatedAt time.Time, maxStalePeriod time.Duration) error {
-	return errors.New(globalerror.BucketIndexTooOld.MessageWithLimitConfig(fmt.Sprintf("the bucket index is too old. It was last updated at %s, which exceeds the maximum allowed staleness period of %v", updatedAt.UTC().Format(time.RFC3339Nano), maxStalePeriod), tsdb.BucketIndexConfigPrefix+tsdb.MaxStalePeriodFlag))
+	return errors.New(globalerror.BucketIndexTooOld.Message(fmt.Sprintf("the bucket index is too old. It was last updated at %s, which exceeds the maximum allowed staleness period of %v", updatedAt.UTC().Format(time.RFC3339Nano), maxStalePeriod)))
 }

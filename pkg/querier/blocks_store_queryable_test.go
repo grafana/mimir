@@ -2017,7 +2017,7 @@ func TestBlocksStoreQueryableErrMsgs(t *testing.T) {
 	}{
 		"newStoreConsistencyCheckFailedError": {
 			err: newStoreConsistencyCheckFailedError([]ulid.ULID{ulid.MustNew(1, nil)}),
-			msg: `the consistency check failed because some blocks were not queried (err-mimir-store-consistency-check-failed). The blocks are: 00000000010000000000000000`,
+			msg: `the consistency check failed because some blocks were not queried (err-mimir-store-consistency-check-failed). The non-queried blocks are: 00000000010000000000000000`,
 		},
 	}
 

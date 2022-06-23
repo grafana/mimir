@@ -233,7 +233,7 @@ func TestBlocksFinderBucketIndexErrMsgs(t *testing.T) {
 	}{
 		"newBucketIndexTooOldError": {
 			err: newBucketIndexTooOldError(time.Unix(1000000000, 0), time.Hour),
-			msg: `the bucket index is too old. It was last updated at 2001-09-09T01:46:40Z, which exceeds the maximum allowed staleness period of 1h0m0s (err-mimir-bucket-index-too-old). You can adjust the related per-tenant limit by configuring -blocks-storage.bucket-store.bucket-index.max-stale-period, or by contacting your service administrator.`,
+			msg: `the bucket index is too old. It was last updated at 2001-09-09T01:46:40Z, which exceeds the maximum allowed staleness period of 1h0m0s (err-mimir-bucket-index-too-old)`,
 		},
 	}
 
