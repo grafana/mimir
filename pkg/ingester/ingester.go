@@ -516,7 +516,7 @@ func (i *Ingester) applyExemplarsSettings() {
 		if tsdb == nil {
 			continue
 		}
-		if err := tsdb.Head().ApplyConfig(&cfg); err != nil {
+		if err := tsdb.db.ApplyConfig(&cfg); err != nil {
 			level.Error(i.logger).Log("msg", "failed to apply config to TSDB", "user", userID, "err", err)
 		}
 	}
