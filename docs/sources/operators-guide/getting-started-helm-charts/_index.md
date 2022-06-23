@@ -160,8 +160,9 @@ START HERE:
 
 ## Query data in Grafana
 
-TODO: say that Grafana of course can be installed in kubernetes as well, this is just a quick example
-In a new terminal, run a local Grafana server using Docker:
+You can either [deploy Grafana Mimir on Kubernetes](https://grafana.com/docs/grafana/latest/setup-grafana/installation/kubernetes/)
+or get a test instance of a local Grafana server up and running
+quickly by using Docker:
 
 ```bash
 docker run --rm --name=grafana --network=host grafana/grafana
