@@ -15,10 +15,6 @@ Kubernetes: `^1.10.0-0`
 | Repository | Name | Version |
 |------------|------|---------|
 | https://helm.min.io/ | minio(minio) | 8.0.10 |
-| https://raw.githubusercontent.com/bitnami/charts/eb5f9a9513d987b519f0ecd732e7031241c50328/bitnami | memcached(memcached) | 5.5.2 |
-| https://raw.githubusercontent.com/bitnami/charts/eb5f9a9513d987b519f0ecd732e7031241c50328/bitnami | memcached-queries(memcached) | 5.5.2 |
-| https://raw.githubusercontent.com/bitnami/charts/eb5f9a9513d987b519f0ecd732e7031241c50328/bitnami | memcached-metadata(memcached) | 5.5.2 |
-| https://raw.githubusercontent.com/bitnami/charts/eb5f9a9513d987b519f0ecd732e7031241c50328/bitnami | memcached-results(memcached) | 5.5.2 |
 
 ## Dependencies
 
