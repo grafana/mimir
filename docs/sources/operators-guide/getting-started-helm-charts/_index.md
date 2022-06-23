@@ -70,7 +70,7 @@ Using a custom namespace solves problems later on because you do not have to ove
 
    An ingress enables you to externally access a Kubernetes cluster via the hostname defined by the _`<ingress-host>`_ variable.
    Replace _`<ingress-host>`_ with a suitable hostname that DNS can resolve to the external IP address of the Kubernetes cluster. For more information, see [Ingress](https://kubernetes.io/docs/concepts/services-networking/ingress/).
-   
+
    Without using an ingress, it is still possible to access Grafana Mimir from inside the cluster. In such case, replace _`<ingress-host>`_ with _`<release-name>`_`-mimir-nginx.`_`<namespace>`_`.svc:80` throughout the rest of the procedure.
 
 1. Install Grafana Mimir using the Helm chart:
@@ -181,9 +181,9 @@ docker run --rm --name=grafana --network=host grafana/grafana
 1. Sign in using the default username `admin` and password `admin`.
 1. Configure a new Prometheus data source to query the local Grafana Mimir server using the following settings:
 
-   | Field | Value                                                                |
-   | ----- | -------------------------------------------------------------------- |
-   | Name  | Mimir                                                                |
+   | Field | Value                                                                  |
+   | ----- | ---------------------------------------------------------------------- |
+   | Name  | Mimir                                                                  |
    | URL   | [http://\<ingress-host\>/prometheus](http://<ingress-host>/prometheus) |
 
 To add a data source, refer to [Add a data source](https://grafana.com/docs/grafana/latest/datasources/add-a-data-source/).
