@@ -41,6 +41,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Enable `-config.expand-env=true` option in all Mimir services to be able to take secrets/settings from the environment and inject them into the Mimir configuration file. #2017
 * [ENHANCEMENT] Add a simple test for enterprise installation #2027
 * [ENHANCEMENT] Check for the containerSecurityContext in values file. #2112
+* [ENHANCEMENT] Add `NOTES.txt` to show endpoints URLs for the user at install/upgrade. #2189
 
 
 ## 2.1.0-beta.7
