@@ -217,9 +217,9 @@ GET /memberlist
 
 This admin page shows information about Memberlist cluster (list of nodes and their health) and KV store (keys and values in the KV store).
 
-If memberlist message history is enabled, this page also shows all received and sent messages stored in the buffers. This can be useful for troubleshooting memberlist cluster. To enable message history buffers use `-memberlist.message-history-buffer-bytes` option or the corresponding config key.
-
-This page exists even if Mimir doesn't use memberlist for any of the hash rings, but will only show message about not using memberlist in that case.
+If memberlist message history is enabled, this page also shows all received and sent messages stored in the buffers.
+This can be useful for troubleshooting memberlist cluster.
+To enable message history buffers use `-memberlist.message-history-buffer-bytes` CLI flag or the corresponding YAML configuration parameter.
 
 ## Distributor
 

@@ -19,7 +19,7 @@
     // but "primary" KV depends on value of multikv_primary.
     memberlist_ring_enabled: true,
 
-    // To migrate from Consul to Memberlist check ""Migrating from Consul to Memberlist KV store for hash rings" article.
+    // To migrate from Consul to Memberlist check "Migrating from Consul to Memberlist KV store for hash rings" article in Mimir documentation.
     multikv_migration_enabled: false,  // Enable multi KV.
     multikv_migration_teardown: false,  // If multikv_migration_enabled=false and multikv_migration_teardown=true, runtime configuration for multi KV is preserved.
     multikv_switch_primary_secondary: false,  // Switch primary and secondary KV stores in runtime configuration for multi KV.
