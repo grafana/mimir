@@ -717,7 +717,7 @@ github.com/prometheus/node_exporter/https
 github.com/prometheus/procfs
 github.com/prometheus/procfs/internal/fs
 github.com/prometheus/procfs/internal/util
-# github.com/prometheus/prometheus v1.8.2-0.20220308163432-03831554a519 => github.com/grafana/mimir-prometheus v0.0.0-20220614075514-f2aba4af80e4
+# github.com/prometheus/prometheus v1.8.2-0.20220308163432-03831554a519 => github.com/grafana/mimir-prometheus v0.0.0-20220622114521-df59320886e0
 ## explicit; go 1.17
 github.com/prometheus/prometheus/config
 github.com/prometheus/prometheus/discovery
@@ -807,7 +807,7 @@ github.com/stretchr/objx
 github.com/stretchr/testify/assert
 github.com/stretchr/testify/mock
 github.com/stretchr/testify/require
-# github.com/thanos-io/thanos v0.26.1-0.20220602051129-a6f6ce060ed4
+# github.com/thanos-io/thanos v0.26.1-0.20220602051129-a6f6ce060ed4 => github.com/grafana/thanos v0.19.1-0.20220610094531-ab07eb568317
 ## explicit; go 1.17
 github.com/thanos-io/thanos/pkg/block
 github.com/thanos-io/thanos/pkg/block/metadata
@@ -1227,7 +1227,8 @@ gopkg.in/yaml.v2
 gopkg.in/yaml.v3
 # git.apache.org/thrift.git => github.com/apache/thrift v0.0.0-20180902110319-2566ecd5d999
 # github.com/bradfitz/gomemcache => github.com/themihai/gomemcache v0.0.0-20180902122335-24332e2d58ab
-# github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20220614075514-f2aba4af80e4
+# github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20220622114521-df59320886e0
+# github.com/thanos-io/thanos => github.com/grafana/thanos v0.19.1-0.20220610094531-ab07eb568317
 # github.com/hashicorp/go-immutable-radix => github.com/hashicorp/go-immutable-radix v1.2.0
 # github.com/hashicorp/go-hclog => github.com/hashicorp/go-hclog v0.12.2
 # github.com/hashicorp/memberlist => github.com/grafana/memberlist v0.3.1-0.20220425183535-6b97a09b7167
