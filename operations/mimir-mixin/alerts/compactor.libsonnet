@@ -43,7 +43,7 @@
           |||,
           labels: {
             severity: 'critical',
-            reason: 'in-since-startup',
+            reason: 'since-startup',
           },
           annotations: {
             message: '%(product)s Compactor %(alert_instance_variable)s in %(alert_aggregation_variables)s has not run compaction in the last 24 hours.' % $._config,
