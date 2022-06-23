@@ -184,7 +184,7 @@ func TestDistributor_Push(t *testing.T) {
 			happyIngesters: 3,
 			samples:        samplesIn{num: 25, startTimestampMs: 123456789000},
 			metadata:       5,
-			expectedError:  httpgrpc.Errorf(http.StatusTooManyRequests, validation.NewIngestionRateLimitedError(20, 20, 25, 0, 5).Error()),
+			expectedError:  httpgrpc.Errorf(http.StatusTooManyRequests, validation.NewIngestionRateLimitedError(20, 20).Error()),
 			metricNames:    []string{lastSeenTimestamp},
 			expectedMetrics: `
 				# HELP cortex_distributor_latest_seen_sample_timestamp_seconds Unix timestamp of latest received sample per user.
@@ -303,6 +303,34 @@ func TestDistributor_Push(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestDistributor_ContextCanceledRequest(t *testing.T) {
+	now := time.Now()
+	mtime.NowForce(now)
+	t.Cleanup(mtime.NowReset)
+
+	ds, ings, _ := prepare(t, prepConfig{
+		numIngesters:    3,
+		happyIngesters:  3,
+		numDistributors: 1,
+	})
+
+	// Lock all mockIngester instances, so they will be waiting
+	for i := range ings {
+		ings[i].Lock()
+		defer func(ing *mockIngester) {
+			ing.Unlock()
+		}(&ings[i])
+	}
+
+	ctx := user.InjectOrgID(context.Background(), "user")
+	ctx, cancel := context.WithCancel(ctx)
+	cancel()
+	request := makeWriteRequest(123456789000, 1, 1, false)
+	_, err := ds[0].Push(ctx, request)
+	require.Error(t, err)
+	require.ErrorIs(t, err, context.Canceled)
 }
 
 func TestDistributor_MetricsCleanup(t *testing.T) {
@@ -431,7 +459,7 @@ func TestDistributor_PushRequestRateLimiter(t *testing.T) {
 			pushes: []testPush{
 				{expectedError: nil},
 				{expectedError: nil},
-				{expectedError: httpgrpc.Errorf(http.StatusTooManyRequests, validation.NewRequestRateLimitedError(2, 2).Error())},
+				{expectedError: httpgrpc.Errorf(http.StatusTooManyRequests, validation.NewRequestRateLimitedError(4, 2).Error())},
 			},
 		},
 		"request limit is disabled when set to 0": {
@@ -452,7 +480,7 @@ func TestDistributor_PushRequestRateLimiter(t *testing.T) {
 				{expectedError: nil},
 				{expectedError: nil},
 				{expectedError: nil},
-				{expectedError: httpgrpc.Errorf(http.StatusTooManyRequests, validation.NewRequestRateLimitedError(1, 3).Error())},
+				{expectedError: httpgrpc.Errorf(http.StatusTooManyRequests, validation.NewRequestRateLimitedError(2, 3).Error())},
 			},
 		},
 	}
@@ -512,10 +540,10 @@ func TestDistributor_PushIngestionRateLimiter(t *testing.T) {
 			pushes: []testPush{
 				{samples: 2, expectedError: nil},
 				{samples: 1, expectedError: nil},
-				{samples: 2, metadata: 1, expectedError: httpgrpc.Errorf(http.StatusTooManyRequests, validation.NewIngestionRateLimitedError(5, 5, 2, 0, 1).Error())},
+				{samples: 2, metadata: 1, expectedError: httpgrpc.Errorf(http.StatusTooManyRequests, validation.NewIngestionRateLimitedError(10, 5).Error())},
 				{samples: 2, expectedError: nil},
-				{samples: 1, expectedError: httpgrpc.Errorf(http.StatusTooManyRequests, validation.NewIngestionRateLimitedError(5, 5, 1, 0, 0).Error())},
-				{metadata: 1, expectedError: httpgrpc.Errorf(http.StatusTooManyRequests, validation.NewIngestionRateLimitedError(5, 5, 0, 0, 1).Error())},
+				{samples: 1, expectedError: httpgrpc.Errorf(http.StatusTooManyRequests, validation.NewIngestionRateLimitedError(10, 5).Error())},
+				{metadata: 1, expectedError: httpgrpc.Errorf(http.StatusTooManyRequests, validation.NewIngestionRateLimitedError(10, 5).Error())},
 			},
 		},
 		"for each distributor, set an ingestion burst limit.": {
@@ -525,10 +553,10 @@ func TestDistributor_PushIngestionRateLimiter(t *testing.T) {
 			pushes: []testPush{
 				{samples: 10, expectedError: nil},
 				{samples: 5, expectedError: nil},
-				{samples: 5, metadata: 1, expectedError: httpgrpc.Errorf(http.StatusTooManyRequests, validation.NewIngestionRateLimitedError(5, 20, 5, 0, 1).Error())},
+				{samples: 5, metadata: 1, expectedError: httpgrpc.Errorf(http.StatusTooManyRequests, validation.NewIngestionRateLimitedError(10, 20).Error())},
 				{samples: 5, expectedError: nil},
-				{samples: 1, expectedError: httpgrpc.Errorf(http.StatusTooManyRequests, validation.NewIngestionRateLimitedError(5, 20, 1, 0, 0).Error())},
-				{metadata: 1, expectedError: httpgrpc.Errorf(http.StatusTooManyRequests, validation.NewIngestionRateLimitedError(5, 20, 0, 0, 1).Error())},
+				{samples: 1, expectedError: httpgrpc.Errorf(http.StatusTooManyRequests, validation.NewIngestionRateLimitedError(10, 20).Error())},
+				{metadata: 1, expectedError: httpgrpc.Errorf(http.StatusTooManyRequests, validation.NewIngestionRateLimitedError(10, 20).Error())},
 			},
 		},
 	}
@@ -2007,7 +2035,7 @@ func TestDistributor_MetricsMetadata(t *testing.T) {
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			// Create distributor
-			ds, ingesters, _ := prepare(t, prepConfig{
+			ds, _, _ := prepare(t, prepConfig{
 				numIngesters:     numIngesters,
 				happyIngesters:   numIngesters,
 				numDistributors:  1,
@@ -2022,16 +2050,15 @@ func TestDistributor_MetricsMetadata(t *testing.T) {
 			_, err := ds[0].Push(ctx, req)
 			require.NoError(t, err)
 
+			// Check how many ingesters are queried as part of the shuffle sharding subring.
+			replicationSet, err := ds[0].GetIngestersForMetadata(ctx)
+			require.NoError(t, err)
+			assert.Equal(t, testData.expectedIngesters, len(replicationSet.Instances))
+
 			// Assert on metric metadata
 			metadata, err := ds[0].MetricsMetadata(ctx)
 			require.NoError(t, err)
 			assert.Equal(t, 10, len(metadata))
-
-			// Check how many ingesters have been queried.
-			// Due to the quorum the distributor could cancel the last request towards ingesters
-			// if all other ones are successful, so we're good either has been queried X or X-1
-			// ingesters.
-			assert.Contains(t, []int{testData.expectedIngesters, testData.expectedIngesters - 1}, countMockIngestersCalls(ingesters, "MetricsMetadata"))
 		})
 	}
 }

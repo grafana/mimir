@@ -7,6 +7,7 @@ metadata:
     {{- include "mimir.labels" (dict "ctx" . "component" "ingester" "memberlist" true) | nindent 4 }}
   annotations:
     {{- toYaml .Values.ingester.annotations | nindent 4 }}
+  namespace: {{ .Release.Namespace | quote }}
 spec:
   podManagementPolicy: {{ .Values.ingester.podManagementPolicy }}
   replicas: {{ .Values.ingester.replicas }}
@@ -46,14 +47,8 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
       annotations:
-        {{- if .Values.useExternalConfig }}
-        checksum/config: {{ .Values.externalConfigVersion }}
-        {{- else }}
-        checksum/config: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
-        {{- end }}
-        {{- with .Values.ingester.podAnnotations }}
-        {{- toYaml . | nindent 8 }}
-        {{- end }}
+        {{- include "mimir.podAnnotations" (dict "ctx" . "component" "ingester") | nindent 8 }}
+      namespace: {{ .Release.Namespace | quote }}
     spec:
       serviceAccountName: {{ template "mimir.serviceAccountName" . }}
       {{- if .Values.ingester.priorityClassName }}
@@ -78,8 +73,7 @@ spec:
       terminationGracePeriodSeconds: {{ .Values.ingester.terminationGracePeriodSeconds }}
       volumes:
         - name: config
-          secret:
-            secretName: {{ tpl .Values.externalConfigSecretName . }}
+          {{- include "mimir.configVolume" . | nindent 10 }}
         {{- if .Values.enterprise.enabled }}
         - name: license
           secret:
@@ -106,6 +100,7 @@ spec:
             - "-target=ingester"
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
+            - "-ingester.ring.instance-availability-zone=zone-default"
             {{- range $key, $value := .Values.ingester.extraArgs }}
             - "-{{ $key }}={{ $value }}"
             {{- end }}
@@ -144,7 +139,7 @@ spec:
           resources:
             {{- toYaml .Values.ingester.resources | nindent 12 }}
           securityContext:
-            readOnlyRootFilesystem: true
+            {{- toYaml .Values.ingester.containerSecurityContext | nindent 12 }}
           env:
             {{- with .Values.global.extraEnv }}
               {{- toYaml . | nindent 12 }}

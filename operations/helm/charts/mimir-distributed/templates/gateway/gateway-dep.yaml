@@ -7,6 +7,7 @@ metadata:
   labels:
     {{- include "mimir.labels" (dict "ctx" . "component" "gateway") | nindent 4 }}
   name: {{ include "mimir.resourceName" (dict "ctx" . "component" "gateway") }}
+  namespace: {{ .Release.Namespace | quote }}
 spec:
   replicas: {{ .Values.gateway.replicas }}
   selector:
@@ -22,14 +23,8 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
       annotations:
-        {{- if .Values.useExternalConfig }}
-        checksum/config: {{ .Values.externalConfigVersion }}
-        {{- else }}
-        checksum/config: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
-        {{- end}}
-        {{- with .Values.gateway.podAnnotations }}
-        {{- toYaml . | nindent 8 }}
-        {{- end }}
+        {{- include "mimir.podAnnotations" (dict "ctx" . "component" "gateway") | nindent 8 }}
+      namespace: {{ .Release.Namespace | quote }}
     spec:
       serviceAccountName: {{ template "mimir.serviceAccountName" . }}
       {{- if .Values.gateway.priorityClassName }}
@@ -80,7 +75,7 @@ spec:
           resources:
             {{- toYaml .Values.gateway.resources | nindent 12 }}
           securityContext:
-            readOnlyRootFilesystem: true
+            {{- toYaml .Values.gateway.containerSecurityContext | nindent 12 }}
           env:
             {{- with .Values.global.extraEnv }}
               {{ toYaml . | nindent 12 }}
@@ -107,8 +102,7 @@ spec:
       terminationGracePeriodSeconds: {{ .Values.gateway.terminationGracePeriodSeconds }}
       volumes:
         - name: config
-          secret:
-            secretName: {{ tpl .Values.externalConfigSecretName . }}
+          {{- include "mimir.configVolume" . | nindent 10 }}
         - name: runtime-config
           configMap:
             name: {{ template "mimir.fullname" . }}-runtime

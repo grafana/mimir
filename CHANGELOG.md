@@ -6,15 +6,17 @@
 
 * [CHANGE] Increased default configuration for `-server.grpc-max-recv-msg-size-bytes` and `-server.grpc-max-send-msg-size-bytes` from 4MB to 100MB. #1883
 * [CHANGE] Default values have changed for the following settings. This improves query performance for recent data (within 12h) by only reading from ingesters: #1909 #1921
-    - `-blocks-storage.bucket-store.ignore-blocks-within` now defaults to `10h` (previously `0`)
-    - `-querier.query-store-after` now defaults to `12h` (previously `0`)
-    - `-querier.shuffle-sharding-ingesters-lookback-period` now defaults to `13h` (previously `0`)
+  - `-blocks-storage.bucket-store.ignore-blocks-within` now defaults to `10h` (previously `0`)
+  - `-querier.query-store-after` now defaults to `12h` (previously `0`)
+
 * [CHANGE] The following settings are now classified as advanced because the defaults should work for most users and tuning them requires in-depth knowledge of how the read path works: #1929
-    - `-querier.query-ingesters-within`
-    - `-querier.query-store-after`
+  - `-querier.query-ingesters-within`
+  - `-querier.query-store-after`
 * [CHANGE] Config flag category overrides can be set dynamically at runtime. #1934
 * [CHANGE] Ingester: deprecated `-ingester.ring.join-after`. Mimir now behaves as this setting is always set to 0s. This configuration option will be removed in Mimir 2.4.0. #1965
 * [CHANGE] Blocks uploaded by ingester no longer contain `__org_id__` label. Compactor now ignores this label and will compact blocks with and without this label together. `mimirconvert` tool will remove the label from blocks as "unknown" label. #1972
+* [CHANGE] Querier: deprecated `-querier.shuffle-sharding-ingesters-lookback-period`, instead adding `-querier.shuffle-sharding-ingesters-enabled` to enable or disable shuffle sharding on the read path. The value of `-querier.query-ingesters-within` is now used internally for shuffle sharding lookback. #2110
+* [CHANGE] Memberlist: `-memberlist.abort-if-join-fails` now defaults to false. Previously it defaulted to true. #2168
 * [ENHANCEMENT] Distributor: Added limit to prevent tenants from sending excessive number of requests: #1843
   * The following CLI flags (and their respective YAML config options) have been added:
     * `-distributor.request-rate-limit`
@@ -22,20 +24,28 @@
   * The following metric is exposed to tell how many requests have been rejected:
     * `cortex_discarded_requests_total`
 * [ENHANCEMENT] Store-gateway: Add the experimental ability to run requests in a dedicated OS thread pool. This feature can be configured using `-store-gateway.thread-pool-size` and is disabled by default. Replaces the ability to run index header operations in a dedicated thread pool. #1660 #1812
-* [ENHANCEMENT] Improved error messages to make them easier to understand; each now have a unique, global identifier that you can use to look up in the runbooks for more information. #1907 #1919 #1888 #1939 #1984 #2009
+* [ENHANCEMENT] Improved error messages to make them easier to understand; each now have a unique, global identifier that you can use to look up in the runbooks for more information. #1907 #1919 #1888 #1939 #1984 #2009 #2066 #2104
 * [ENHANCEMENT] Memberlist KV: incoming messages are now processed on per-key goroutine. This may reduce loss of "maintanance" packets in busy memberlist installations, but use more CPU. New `memberlist_client_received_broadcasts_dropped_total` counter tracks number of dropped per-key messages. #1912
 * [ENHANCEMENT] Blocks Storage, Alertmanager, Ruler: add support a prefix to the bucket store (`*_storage.storage_prefix`). This enables using the same bucket for the three components. #1686 #1951
 * [ENHANCEMENT] Upgrade Docker base images to `alpine:3.16.0`. #2028
 * [ENHANCEMENT] Store-gateway: Add experimental configuration option for the store-gateway to attempt to pre-populate the file system cache when memory-mapping index-header files. Enabled with `-blocks-storage.bucket-store.index-header.map-populate-enabled=true`. Note this flag only has an effect when running on Linux. #2019 #2054
 * [ENHANCEMENT] Chunk Mapper: reduce memory usage of async chunk mapper. #2043
+* [ENHANCEMENT] Ingesters: Added new configuration option that makes it possible for mimir ingesters to perform queries on overlapping blocks in the filesystem. Enabled with `-blocks-storage.tsdb.allow-overlapping-queries`. #2091
+* [ENHANCEMENT] Ingester: reduce sleep time when reading WAL. #2098
+* [ENHANCEMENT] Compactor: Run sanity check on blocks storage configuration at startup. #2143
+* [ENHANCEMENT] Compactor: Add HTTP API for uploading TSDB blocks. Enabled with `-compactor.block-upload-enabled`. #1694 #2126
 * [BUGFIX] Fix regexp parsing panic for regexp label matchers with start/end quantifiers. #1883
 * [BUGFIX] Ingester: fixed deceiving error log "failed to update cached shipped blocks after shipper initialisation", occurring for each new tenant in the ingester. #1893
 * [BUGFIX] Ring: fix bug where instances may appear unhealthy in the hash ring web UI even though they are not. #1933
 * [BUGFIX] API: gzip is now enforced when identity encoding is explicitly rejected. #1864
 * [BUGFIX] Fix panic at startup when Mimir is running in monolithic mode and query sharding is enabled. #2036
-* [BUGFIX] Ruler: report failed evaluation metric for any 5xx status code returned by the query-frontend when remote operational mode is enabled. #2053
+* [BUGFIX] Ruler: report `cortex_ruler_queries_failed_total` metric for any remote query error except 4xx when remote operational mode is enabled. #2053 #2143
 * [BUGFIX] Ingester: fix slow rollout when using `-ingester.ring.unregister-on-shutdown=false` with long `-ingester.ring.heartbeat-period`. #2085
 * [BUGFIX] Ruler: add timeout for remote rule evaluation queries to prevent rule group evaluations getting stuck indefinitely. The duration is configurable with  (`-ruler.query-frontend.timeout` (default `2m`). #2090
+* [BUGFIX] Limits: Active series custom tracker configuration has been named back from `active_series_custom_trackers_config` to `active_series_custom_trackers`. For backwards compatibility both version is going to be supported for until Mimir v2.4. When both fields are specified, `active_series_custom_trackers_config` takes precedence over `active_series_custom_trackers`. #2101
+* [BUGFIX] Ingester: fixed the order of labels applied when incrementing the `cortex_discarded_metadata_total` metric. #2096
+* [BUGFIX] Ingester: fixed bug where retrieving metadata for a metric with multiple metadata entries would return multiple copies of a single metadata entry rather than all available entries. #2096
+* [BUGFIX] Distributor: canceled requests are no longer accounted as internal errors. #2157
 
 ### Mixin
 
@@ -43,10 +53,12 @@
 * [CHANGE] Dashboards: Expose full image tag in "Mimir / Rollout progress" dashboard's "Pod per version panel." #1932
 * [CHANGE] Dashboards: Disabled gateway panels by default, because most users don't have a gateway exposing the metrics expected by Mimir dashboards. You can re-enable it setting `gateway_enabled: true` in the mixin config and recompiling the mixin running `make build-mixin`. #1954
 * [CHANGE] Alerts: adapt `MimirFrontendQueriesStuck` and `MimirSchedulerQueriesStuck` to consider ruler query path components. #1949
+* [CHANGE] Alerts: Change `MimirRulerTooManyFailedQueries` severity to `critical`. #2165
 * [ENHANCEMENT] Dashboards: Add config option `datasource_regex` to customise the regular expression used to select valid datasources for Mimir dashboards. #1802
 * [ENHANCEMENT] Dashboards: Added "Mimir / Remote ruler reads" and "Mimir / Remote ruler reads resources" dashboards. #1911 #1937
 * [ENHANCEMENT] Dashboards: Make networking panels work for pods created by the mimir-distributed helm chart. #1927
 * [ENHANCEMENT] Alerts: Add `MimirStoreGatewayNoSyncedTenants` alert that fires when there is a store-gateway owning no tenants. #1882
+* [ENHANCEMENT] Rules: Make `recording_rules_range_interval` configurable for cases where Mimir metrics are scraped less often that every 30 seconds. #2118
 * [BUGFIX] Fix `container_memory_usage_bytes:sum` recording rule #1865
 * [BUGFIX] Fix `MimirGossipMembersMismatch` alerts if Mimir alertmanager is activated #1870
 * [BUGFIX] Fix `MimirRulerMissedEvaluations` to show % of missed alerts as a value between 0 and 100 instead of 0 and 1. #1895
@@ -60,20 +72,26 @@
 
 * [CHANGE] Remove use of `-querier.query-store-after`, `-querier.shuffle-sharding-ingesters-lookback-period`, `-blocks-storage.bucket-store.ignore-blocks-within`, and `-blocks-storage.tsdb.close-idle-tsdb-timeout` CLI flags since the values now match defaults. #1915 #1921
 * [CHANGE] Change default value for `-blocks-storage.bucket-store.chunks-cache.memcached.timeout` to `450ms` to increase use of cached data. #2035
+* [CHANGE] The `memberlist_ring_enabled` configuration now applies to Alertmanager. #2102
+* [CHANGE] Default value for `memberlist_ring_enabled` is now true. It means that all hash rings use Memberlist as default KV store instead of Consul (previous default). #2161
 * [FEATURE] Added querier autoscaling support. It requires [KEDA](https://keda.sh) installed in the Kubernetes cluster and query-scheduler enabled in the Mimir cluster. Querier autoscaler can be enabled and configure through the following options in the jsonnet config: #2013 #2023
   * `autoscaling_querier_enabled`: `true` to enable autoscaling.
   * `autoscaling_querier_min_replicas`: minimum number of querier replicas.
   * `autoscaling_querier_max_replicas`: maximum number of querier replicas.
   * `autoscaling_prometheus_url`: Prometheus base URL from which to scrape Mimir metrics (e.g. `http://prometheus.default:9090/prometheus`).
+* [FEATURE] Jsonnet: Add support for ruler remote evaluation mode (`ruler_remote_evaluation_enabled`), which deploys and uses a dedicated query path for rule evaluation. This enables the benefits of the query-frontend for rule evaluation, such as query sharding. #2073
 * [ENHANCEMENT] Added `compactor` service, that can be used to route requests directly to compactor (e.g. admin UI). #2063
+* [ENHANCEMENT] Added a `consul_enabled` configuration option to provide the ability to disable consul. It is automatically set to false when `memberlist_ring_enabled` is true and `multikv_migration_enabled` (used for migration from Consul to memberlist) is not set. #2093 #2152
+* [BUGFIX] Querier: Fix disabling shuffle sharding on the read path whilst keeping it enabled on write path. #2164
 
 ### Mimirtool
 
+* [FEATURE] Added bearer token support for when Mimir is behind a gateway authenticating by bearer token. #2146
 * [BUGFIX] mimirtool analyze: Fix dashboard JSON unmarshalling errors (#1840). #1973
 
 ### Mimir Continuous Test
 
-* [ENHANCEMENT] Added the `-tests.smoke-test` flag to run the `mimir-continuous-test` suite once and immediately exit. #2047
+* [ENHANCEMENT] Added the `-tests.smoke-test` flag to run the `mimir-continuous-test` suite once and immediately exit. #2047 #2094
 
 ### Documentation
 
@@ -82,15 +100,19 @@
 * [ENHANCEMENT] Recommend fast disks for ingesters and store-gateways in production tips. #1903
 * [ENHANCEMENT] Explain the runtime override of active series matchers. #1868
 * [ENHANCEMENT] Clarify "Set rule group" API specification. #1869
+* [ENHANCEMENT] Published Mimir jsonnet documentation. #2024
+* [ENHANCEMENT] Documented required scrape interval for using alerting and recording rules from Mimir jsonnet. #2147
+* [ENHANCEMENT] Documented how to configure queriers’ autoscaling with Jsonnet. #2128
 * [BUGFIX] Fixed ruler configuration used in the getting started guide. #2052
+* [BUGFIX] Fixed Mimir Alertmanager datasource in Grafana used by "Play with Grafana Mimir" tutorial. #2115
 
 ## 2.1.0
 ### Grafana Mimir
 * [CHANGE] Compactor: No longer upload debug meta files to object storage. #1257
 * [CHANGE] Default values have changed for the following settings: #1547
-    - `-alertmanager.alertmanager-client.grpc-max-recv-msg-size` now defaults to 100 MiB (previously was not configurable and set to 16 MiB)
-    - `-alertmanager.alertmanager-client.grpc-max-send-msg-size` now defaults to 100 MiB (previously was not configurable and set to 4 MiB)
-    - `-alertmanager.max-recv-msg-size` now defaults to 100 MiB (previously was 16 MiB)
+  - `-alertmanager.alertmanager-client.grpc-max-recv-msg-size` now defaults to 100 MiB (previously was not configurable and set to 16 MiB)
+  - `-alertmanager.alertmanager-client.grpc-max-send-msg-size` now defaults to 100 MiB (previously was not configurable and set to 4 MiB)
+  - `-alertmanager.max-recv-msg-size` now defaults to 100 MiB (previously was 16 MiB)
 * [CHANGE] Ingester: Add `user` label to metrics `cortex_ingester_ingested_samples_total` and `cortex_ingester_ingested_samples_failures_total`. #1533
 * [CHANGE] Ingester: Changed `-blocks-storage.tsdb.isolation-enabled` default from `true` to `false`. The config option has also been deprecated and will be removed in 2 minor version. #1655
 * [CHANGE] Query-frontend: results cache keys are now versioned, this will cause cache to be re-filled when rolling out this version. #1631
@@ -375,7 +397,7 @@ _Changes since Cortex 1.10.0._
   * Query endpoints
 
     | Legacy                                                  | Alternative                                                |
-    | ------------------------------------------------------- | ---------------------------------------------------------- |
+        | ------------------------------------------------------- | ---------------------------------------------------------- |
     | `/<legacy-http-prefix>/api/v1/query`                    | `<prometheus-http-prefix>/api/v1/query`                    |
     | `/<legacy-http-prefix>/api/v1/query_range`              | `<prometheus-http-prefix>/api/v1/query_range`              |
     | `/<legacy-http-prefix>/api/v1/query_exemplars`          | `<prometheus-http-prefix>/api/v1/query_exemplars`          |
@@ -391,7 +413,7 @@ _Changes since Cortex 1.10.0._
   * Distributor endpoints
 
     | Legacy endpoint               | Alternative                   |
-    | ----------------------------- | ----------------------------- |
+        | ----------------------------- | ----------------------------- |
     | `/<legacy-http-prefix>/push`  | `/api/v1/push`                |
     | `/all_user_stats`             | `/distributor/all_user_stats` |
     | `/ha-tracker`                 | `/distributor/ha_tracker`     |
@@ -399,7 +421,7 @@ _Changes since Cortex 1.10.0._
   * Ingester endpoints
 
     | Legacy          | Alternative           |
-    | --------------- | --------------------- |
+        | --------------- | --------------------- |
     | `/ring`         | `/ingester/ring`      |
     | `/shutdown`     | `/ingester/shutdown`  |
     | `/flush`        | `/ingester/flush`     |
@@ -408,7 +430,7 @@ _Changes since Cortex 1.10.0._
   * Ruler endpoints
 
     | Legacy                                                | Alternative                                         | Alternative #2 (not available before Mimir 2.0.0)                    |
-    | ----------------------------------------------------- | --------------------------------------------------- | ------------------------------------------------------------------- |
+        | ----------------------------------------------------- | --------------------------------------------------- | ------------------------------------------------------------------- |
     | `/<legacy-http-prefix>/api/v1/rules`                  | `<prometheus-http-prefix>/api/v1/rules`             |                                                                     |
     | `/<legacy-http-prefix>/api/v1/alerts`                 | `<prometheus-http-prefix>/api/v1/alerts`            |                                                                     |
     | `/<legacy-http-prefix>/rules`                         | `/api/v1/rules` (see below)                         |  `<prometheus-http-prefix>/config/v1/rules`                         |
@@ -426,7 +448,7 @@ _Changes since Cortex 1.10.0._
   * Alertmanager endpoints
 
     | Legacy                      | Alternative                        |
-    | --------------------------- | ---------------------------------- |
+        | --------------------------- | ---------------------------------- |
     | `/<legacy-http-prefix>`     | `/alertmanager`                    |
     | `/status`                   | `/multitenant_alertmanager/status` |
 
@@ -623,7 +645,7 @@ _Changes since Cortex 1.10.0._
   * `-ingester.max-metadata-per-user` -> set `-ingester.max-global-metadata-per-user` to `N` times the existing value of `-ingester.max-metadata-per-user` instead
   * `-ingester.max-metadata-per-metric` -> set `-ingester.max-global-metadata-per-metric` to `N` times the existing value of `-ingester.max-metadata-per-metric` instead
   * In the above notes, `N` refers to the number of ingester replicas
-  Additionally, default values for the following flags have changed:
+    Additionally, default values for the following flags have changed:
   * `-ingester.max-global-series-per-user` from `0` to `150000`
   * `-ingester.max-global-series-per-metric` from `0` to `20000`
   * `-distributor.ingestion-rate-limit` from `25000` to `10000`
@@ -1705,12 +1727,12 @@ Note the blocks storage compactor runs a migration task at startup in this versi
 * [CHANGE] Removed obsolete `-promql.lookback-delta` option (deprecated since Cortex 1.2, replaced with `-querier.lookback-delta`). #3144
 * [CHANGE] Cache: added support for Redis Cluster and Redis Sentinel. #2961
   - The following changes have been made in Redis configuration:
-   - `-redis.master_name` added
-   - `-redis.db` added
-   - `-redis.max-active-conns` changed to `-redis.pool-size`
-   - `-redis.max-conn-lifetime` changed to `-redis.max-connection-age`
-   - `-redis.max-idle-conns` removed
-   - `-redis.wait-on-pool-exhaustion` removed
+  - `-redis.master_name` added
+  - `-redis.db` added
+  - `-redis.max-active-conns` changed to `-redis.pool-size`
+  - `-redis.max-conn-lifetime` changed to `-redis.max-connection-age`
+  - `-redis.max-idle-conns` removed
+  - `-redis.wait-on-pool-exhaustion` removed
 * [CHANGE] TLS configuration for gRPC, HTTP and etcd clients is now marked as experimental. These features are not yet fully baked, and we expect possible small breaking changes in Cortex 1.5. #3198
 * [CHANGE] Fixed store-gateway CLI flags inconsistencies. #3201
   - `-store-gateway.replication-factor` flag renamed to `-store-gateway.sharding-ring.replication-factor`
@@ -2690,13 +2712,13 @@ Please be aware that Cortex `0.7.0` introduces some **breaking changes**. You're
   - Renamed the YAML config option `defaul_validity` to `default_validity`
   - Removed the YAML config option `config_store` (in the [`alertmanager YAML config`](https://cortexmetrics.io/docs/configuration/configuration-file/#alertmanager-config)) in favor of `store`
   - Removed the YAML config root block `configdb` in favor of [`configs`](https://cortexmetrics.io/docs/configuration/configuration-file/#configs-config). This change is also reflected in the following CLI flags renaming:
-      * `-database.*` -> `-configs.database.*`
-      * `-database.migrations` -> `-configs.database.migrations-dir`
+    * `-database.*` -> `-configs.database.*`
+    * `-database.migrations` -> `-configs.database.migrations-dir`
   - Removed the fluentd-based billing infrastructure including the CLI flags:
-      * `-distributor.enable-billing`
-      * `-billing.max-buffered-events`
-      * `-billing.retry-delay`
-      * `-billing.ingester`
+    * `-distributor.enable-billing`
+    * `-billing.max-buffered-events`
+    * `-billing.retry-delay`
+    * `-billing.ingester`
 - Removed support for using denormalised tokens in the ring. Before upgrading, make sure your Cortex cluster is already running `v0.6.0` or an earlier version with `-ingester.normalise-tokens=true`
 
 ### Full changelog

@@ -1,0 +1,59 @@
+# Test values to limit the load during CI
+kubeVersionOverride: "1.20"
+
+# TODO remove when it is the default
+configStorageType: ConfigMap
+
+global:
+  extraEnvFrom:
+    - secretRef:
+        name: mimir-minio-secret
+  podAnnotations:
+    minio-secret-version: '42'
+
+mimir:
+  structuredConfig:
+    admin_client:
+      storage:
+        s3:
+          access_key_id: "${MINIO_ACCESS_KEY_ID}"
+          secret_access_key: "${MINIO_SECRET_ACCESS_KEY}"
+    alertmanager_storage:
+      s3:
+        access_key_id: "${MINIO_ACCESS_KEY_ID}"
+        secret_access_key: "${MINIO_SECRET_ACCESS_KEY}"
+    blocks_storage:
+      s3:
+        access_key_id: "${MINIO_ACCESS_KEY_ID}"
+        secret_access_key: "${MINIO_SECRET_ACCESS_KEY}"
+    ruler_storage:
+      s3:
+        access_key_id: "${MINIO_ACCESS_KEY_ID}"
+        secret_access_key: "${MINIO_SECRET_ACCESS_KEY}"
+
+enterprise:
+  enabled: true
+
+alertmanager:
+  persistentVolume:
+    enabled: false
+
+compactor:
+  persistentVolume:
+    enabled: false
+
+ingester:
+  persistentVolume:
+    enabled: false
+  resources:
+    requests:
+      cpu: 10m
+
+store_gateway:
+  persistentVolume:
+    enabled: false
+
+# For testing only
+testing:
+  minio:
+    use_secret: true

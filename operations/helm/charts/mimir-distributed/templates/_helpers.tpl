@@ -31,6 +31,16 @@ Calculate the infix for naming
 {{- if and .Values.enterprise.enabled .Values.enterprise.legacyLabels -}}enterprise-metrics{{- else -}}mimir{{- end -}}
 {{- end -}}
 
+{{/*
+Calculate the gateway url
+*/}}
+{{- define "mimir.gatewayUrl" -}}
+{{- if .Values.enterprise.enabled -}}
+http://{{ template "mimir.fullname" . }}-gateway.{{ .Release.Namespace }}.svc:{{ .Values.gateway.service.port | default (include "mimir.serverHttpListenPort" . ) }}
+{{- else -}}
+http://{{ template "mimir.fullname" . }}-nginx.{{ .Release.Namespace }}.svc:{{ .Values.nginx.service.port }}
+{{- end -}}
+{{- end -}}
 
 {{/*
 Create chart name and version as used by the chart label.
@@ -86,7 +96,23 @@ Create the app name for clients. Defaults to the same logic as "mimir.fullname",
 Calculate the config from structured and unstructred text input
 */}}
 {{- define "mimir.calculatedConfig" -}}
-{{ include (print $.Template.BasePath "/_config-render.tpl") . }}
+{{ tpl (mergeOverwrite (include (print $.Template.BasePath "/_config-render.tpl") . | fromYaml) .Values.mimir.structuredConfig | toYaml) . }}
+{{- end -}}
+
+{{/*
+The volume to mount for mimir configuration
+*/}}
+{{- define "mimir.configVolume" -}}
+{{- if eq .Values.configStorageType "Secret" -}}
+secret:
+  secretName: {{ tpl .Values.externalConfigSecretName . }}
+{{- else if eq .Values.configStorageType "ConfigMap" -}}
+configMap:
+  name: {{ tpl .Values.externalConfigSecretName . }}
+  items:
+    - key: "mimir.yaml"
+      path: "mimir.yaml"
+{{- end -}}
 {{- end -}}
 
 {{/*
@@ -165,9 +191,6 @@ app.kubernetes.io/managed-by: {{ .ctx.Release.Service }}
 {{/*
 POD labels
 */}}
-{{/*
-POD labels
-*/}}
 {{- define "mimir.podLabels" -}}
 {{- if .ctx.Values.enterprise.legacyLabels }}
 {{- if .component -}}
@@ -192,6 +215,29 @@ app.kubernetes.io/component: {{ .component }}
 {{- end }}
 {{- if .memberlist }}
 app.kubernetes.io/part-of: memberlist
+{{- end }}
+{{- end }}
+{{- end -}}
+
+{{/*
+POD annotations
+*/}}
+{{- define "mimir.podAnnotations" -}}
+{{- if .ctx.Values.useExternalConfig }}
+checksum/config: {{ .ctx.Values.externalConfigVersion }}
+{{- else -}}
+checksum/config: {{ include (print .ctx.Template.BasePath "/mimir-config.yaml") .ctx | sha256sum }}
+{{- end }}
+{{- with .ctx.Values.global.podAnnotations }}
+{{ toYaml . }}
+{{- end }}
+{{- if .component }}
+{{- $componentSection := .component | replace "-" "_" }}
+{{- if not (hasKey .ctx.Values $componentSection) }}
+{{- print "Component section " $componentSection " does not exist" | fail }}
+{{- end }}
+{{- with (index .ctx.Values $componentSection).podAnnotations }}
+{{ toYaml . }}
 {{- end }}
 {{- end }}
 {{- end -}}

@@ -6,6 +6,7 @@ metadata:
     {{- include "mimir.labels" (dict "ctx" . "component" "querier" "memberlist" true) | nindent 4 }}
   annotations:
     {{- toYaml .Values.querier.annotations | nindent 4 }}
+  namespace: {{ .Release.Namespace | quote }}
 spec:
   replicas: {{ .Values.querier.replicas }}
   selector:
@@ -21,14 +22,7 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
       annotations:
-{{- if .Values.useExternalConfig }}
-        checksum/config: {{ .Values.externalConfigVersion }}
-{{- else }}
-        checksum/config: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
-{{- end}}
-        {{- with .Values.querier.podAnnotations }}
-        {{- toYaml . | nindent 8 }}
-        {{- end }}
+        {{- include "mimir.podAnnotations" (dict "ctx" . "component" "querier") | nindent 8 }}
     spec:
       serviceAccountName: {{ template "mimir.serviceAccountName" . }}
     {{- if .Values.querier.priorityClassName }}
@@ -87,7 +81,7 @@ spec:
           resources:
             {{- toYaml .Values.querier.resources | nindent 12 }}
           securityContext:
-            readOnlyRootFilesystem: true
+            {{- toYaml .Values.querier.containerSecurityContext | nindent 12 }}
           env:
             {{- with .Values.global.extraEnv }}
               {{- toYaml . | nindent 12 }}
@@ -114,8 +108,7 @@ spec:
       terminationGracePeriodSeconds: {{ .Values.querier.terminationGracePeriodSeconds }}
       volumes:
         - name: config
-          secret:
-            secretName: {{ tpl .Values.externalConfigSecretName . }}
+          {{- include "mimir.configVolume" . | nindent 10 }}
         {{- if .Values.enterprise.enabled }}
         - name: license
           secret:

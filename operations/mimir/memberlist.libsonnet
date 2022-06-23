@@ -1,6 +1,5 @@
 {
   local memberlistConfig = {
-    'memberlist.abort-if-join-fails': false,
     'memberlist.bind-port': gossipRingPort,
     'memberlist.join': 'gossip-ring.%s.svc.cluster.local:%d' % [$._config.namespace, gossipRingPort],
   },
@@ -18,20 +17,33 @@
   _config+:: {
     // Enables use of memberlist for all rings, instead of consul. If multikv_migration_enabled is true, consul hostname is still configured,
     // but "primary" KV depends on value of multikv_primary.
-    memberlist_ring_enabled: false,
+    memberlist_ring_enabled: true,
 
     // Migrating from consul to memberlist is a multi-step process:
-    // 1) Enable multikv_migration_enabled, with primary=consul, secondary=memberlist, and multikv_mirror_enabled=false, restart components.
+    //
+    // 1) Enable memberlist_ring_enabled=true and multikv_migration_enabled=true, restart components.
+    //
     // 2) Set multikv_mirror_enabled=true. This doesn't require restart.
-    // 3) Swap multikv_primary and multikv_secondary, ie. multikv_primary=memberlist, multikv_secondary=consul. This doesn't require restart.
-    // 4) Set multikv_migration_enabled=false and multikv_migration_teardown=true. This requires a restart, but components will now use only memberlist.
-    // 5) Set multikv_migration_teardown=false. This doesn't require a restart.
-    multikv_migration_enabled: false,
-    multikv_migration_teardown: false,
+    //
+    // 3) Set multikv_switch_primary_secondary=true. This doesn't require restart. From this point on components use memberlist as primary KV store!
+    //
+    // 4) Set multikv_mirror_enabled=false. Stop mirroring writes to Consul. Doesn't require restart.
+    //
+    // 5) Set multikv_migration_enabled=false and multikv_migration_teardown=true. This requires a restart.
+    //    After restart components will only use memberlist. Using multikv_migration_teardown=true guarantees that runtime config
+    //    with multi KV configuration is preserved for components that haven't restarted yet.
+    //
+    //    Note: this also removes Consul. That's fine, because it's not used anymore (mirroring to it was disabled in step 4).
+    //
+    // 6) Set multikv_migration_teardown=false. This step removes runtime configuration for multi KV. It doesn't require a restart of components.
+    multikv_migration_enabled: false,  // Enable multi KV.
+    multikv_migration_teardown: false,  // If multikv_migration_enabled=false and multikv_migration_teardown=true, runtime configuration for multi KV is preserved.
+    multikv_switch_primary_secondary: false,  // Switch primary and secondary KV stores in runtime configuration for multi KV.
+    multikv_mirror_enabled: false,  // Enable mirroring of writes from primary to secondary KV store.
+
+    // Don't change these values during migration. Use multikv_switch_primary_secondary instead.
     multikv_primary: 'consul',
     multikv_secondary: 'memberlist',
-    multikv_switch_primary_secondary: false,
-    multikv_mirror_enabled: false,
 
     // Use memberlist only. This works fine on already-migrated clusters.
     // To do a migration from Consul to memberlist, multi kv storage needs to be used (See below).
@@ -47,6 +59,8 @@
     },
   },
 
+  alertmanager_args+: if !$._config.memberlist_ring_enabled then {} else (setupGossipRing('alertmanager.sharding-ring.store', 'alertmanager.sharding-ring.consul.hostname', 'alertmanager.sharding-ring.multi') + memberlistConfig),
+
   distributor_args+: if !$._config.memberlist_ring_enabled then {} else (setupGossipRing('distributor.ring.store', 'distributor.ring.consul.hostname', 'distributor.ring.multi') + memberlistConfig),
 
   ruler_args+: if !$._config.memberlist_ring_enabled then {} else (setupGossipRing('ruler.ring.store', 'ruler.ring.consul.hostname', 'ruler.ring.multi') + memberlistConfig),
@@ -58,6 +72,7 @@
   local containerPort = $.core.v1.containerPort,
   local gossipPort = containerPort.newNamed(name='gossip-ring', containerPort=gossipRingPort),
 
+  alertmanager_ports+:: if !$._config.memberlist_ring_enabled then [] else [gossipPort],
   compactor_ports+:: if !$._config.memberlist_ring_enabled then [] else [gossipPort],
   distributor_ports+:: if !$._config.memberlist_ring_enabled then [] else [gossipPort],
   ingester_ports+:: if !$._config.memberlist_ring_enabled then [] else [gossipPort],
@@ -67,6 +82,9 @@
 
   // Don't add label to matcher, only to pod labels.
   local gossipLabel = $.apps.v1.statefulSet.spec.template.metadata.withLabelsMixin({ [$._config.gossip_member_label]: 'true' }),
+
+  alertmanager_statefulset+: if !$._config.memberlist_ring_enabled || !$._config.alertmanager_enabled then {} else
+    gossipLabel,
 
   compactor_statefulset+: if !$._config.memberlist_ring_enabled then {} else
     gossipLabel,

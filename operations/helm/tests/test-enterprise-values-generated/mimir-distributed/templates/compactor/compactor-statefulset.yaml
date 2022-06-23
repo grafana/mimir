@@ -5,7 +5,6 @@ kind: StatefulSet
 metadata:
   name: test-enterprise-values-mimir-compactor
   labels:
-    helm.sh/chart: mimir-distributed-2.2.0-weekly.190
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-enterprise-values
     app.kubernetes.io/component: compactor
@@ -14,6 +13,7 @@ metadata:
     app.kubernetes.io/managed-by: Helm
   annotations:
     {}
+  namespace: "citestns"
 spec:
   replicas: 1
   selector:
@@ -27,7 +27,6 @@ spec:
   template:
     metadata:
       labels:
-        helm.sh/chart: mimir-distributed-2.2.0-weekly.190
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-enterprise-values
         app.kubernetes.io/version: "2.1.0"
@@ -35,7 +34,7 @@ spec:
         app.kubernetes.io/component: compactor
         app.kubernetes.io/part-of: memberlist
       annotations:
-        checksum/config: deee5d2bcf924492c2988a219d9cf89cde36027ee6b101cee76fde256a0b9cef
+      namespace: "citestns"
     spec:
       serviceAccountName: test-enterprise-values-mimir
       securityContext:
@@ -73,7 +72,6 @@ spec:
           emptyDir: {}
       containers:
         - name: compactor
-          image: "grafana/enterprise-metrics:r190-9abd21a8"
           imagePullPolicy: IfNotPresent
           args:
             - "-target=compactor"

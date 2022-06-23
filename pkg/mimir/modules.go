@@ -278,7 +278,14 @@ func (t *Mimir) initOverridesExporter() (services.Service, error) {
 
 func (t *Mimir) initDistributorService() (serv services.Service, err error) {
 	t.Cfg.Distributor.DistributorRing.ListenPort = t.Cfg.Server.GRPCListenPort
-	t.Cfg.Distributor.ShuffleShardingLookbackPeriod = t.Cfg.Querier.ShuffleShardingIngestersLookbackPeriod
+
+	// Only enable shuffle sharding on the read path when `query-ingesters-within`
+	// is non-zero since otherwise we can't determine if an ingester should be part
+	// of a tenant's shuffle sharding subring (we compare its registration time with
+	// the lookback period).
+	if t.Cfg.Querier.ShuffleShardingIngestersEnabled && t.Cfg.Querier.QueryIngestersWithin > 0 {
+		t.Cfg.Distributor.ShuffleShardingLookbackPeriod = t.Cfg.Querier.QueryIngestersWithin
+	}
 
 	// Check whether the distributor can join the distributors ring, which is
 	// whenever it's not running as an internal dependency (ie. querier or

@@ -4,6 +4,7 @@ metadata:
   name: {{ include "mimir.resourceName" (dict "ctx" . "component" "runtime") }}
   labels:
     {{- include "mimir.labels" (dict "ctx" .) | nindent 4 }}
+  namespace: {{ .Release.Namespace | quote }}
 data:
   runtime.yaml: |
     {{ tpl (toYaml .Values.runtimeConfig) . | nindent 4 }}

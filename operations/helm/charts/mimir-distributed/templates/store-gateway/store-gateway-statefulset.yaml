@@ -6,6 +6,7 @@ metadata:
     {{- include "mimir.labels" (dict "ctx" . "component" "store-gateway" "memberlist" true) | nindent 4 }}
   annotations:
     {{- toYaml .Values.store_gateway.annotations | nindent 4 }}
+  namespace: {{ .Release.Namespace | quote }}
 spec:
   replicas: {{ .Values.store_gateway.replicas }}
   selector:
@@ -44,14 +45,8 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
       annotations:
-        {{- if .Values.useExternalConfig }}
-        checksum/config: {{ .Values.externalConfigVersion }}
-        {{- else }}
-        checksum/config: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
-        {{- end }}
-        {{- with .Values.store_gateway.podAnnotations }}
-        {{- toYaml . | nindent 8 }}
-        {{- end }}
+        {{- include "mimir.podAnnotations" (dict "ctx" . "component" "store-gateway") | nindent 8 }}
+      namespace: {{ .Release.Namespace | quote }}
     spec:
       serviceAccountName: {{ template "mimir.serviceAccountName" . }}
       {{- if .Values.store_gateway.priorityClassName }}
@@ -76,8 +71,7 @@ spec:
       terminationGracePeriodSeconds: {{ .Values.store_gateway.terminationGracePeriodSeconds }}
       volumes:
         - name: config
-          secret:
-            secretName: {{ tpl .Values.externalConfigSecretName . }}
+          {{- include "mimir.configVolume" . | nindent 10 }}
         {{- if .Values.enterprise.enabled }}
         - name: license
           secret:
@@ -141,7 +135,7 @@ spec:
           resources:
             {{- toYaml .Values.store_gateway.resources | nindent 12 }}
           securityContext:
-            readOnlyRootFilesystem: true
+            {{- toYaml .Values.store_gateway.containerSecurityContext | nindent 12 }}
           env:
             {{- with .Values.global.extraEnv }}
               {{- toYaml . | nindent 12 }}

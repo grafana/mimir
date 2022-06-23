@@ -192,6 +192,9 @@ type ConfigProvider interface {
 
 	// CompactorTenantShardSize returns number of compactors that this user can use. 0 = all compactors.
 	CompactorTenantShardSize(userID string) int
+
+	// CompactorBlockUploadEnabled returns whether block upload is enabled for a given tenant.
+	CompactorBlockUploadEnabled(tenantID string) bool
 }
 
 // MultitenantCompactor is a multi-tenant TSDB blocks compactor based on Thanos.

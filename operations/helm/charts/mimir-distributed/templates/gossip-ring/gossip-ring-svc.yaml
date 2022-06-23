@@ -4,6 +4,7 @@ metadata:
   name: {{ include "mimir.resourceName" (dict "ctx" . "component" "gossip-ring") }}
   labels:
     {{- include "mimir.labels" (dict "ctx" . "component" "gossip-ring") | nindent 4 }}
+  namespace: {{ .Release.Namespace | quote }}
 spec:
   type: ClusterIP
   clusterIP: None

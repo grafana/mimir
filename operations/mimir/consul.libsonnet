@@ -2,11 +2,12 @@ local consul = import 'consul/consul.libsonnet';
 
 {
   _config+:: {
+    consul_enabled: if $._config.memberlist_ring_enabled && !$._config.multikv_migration_enabled then false else true,
     consul_replicas: 1,
     other_namespaces+: [],
   },
 
-  consul: consul {
+  consul: if !$._config.consul_enabled then null else consul {
     _config+:: {
       consul_replicas: $._config.consul_replicas,
       namespace: $._config.namespace,
