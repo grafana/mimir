@@ -3,6 +3,8 @@
 package distributor
 
 import (
+	"time"
+
 	"github.com/grafana/dskit/ring"
 	"go.uber.org/atomic"
 )
@@ -11,12 +13,13 @@ import (
 // and stores the count to the provided atomic integer. Used here to count the number of
 // distributors in the ring to determine how to enforce rate limiting.
 type healthyInstanceDelegate struct {
-	count *atomic.Uint32
-	next  ring.BasicLifecyclerDelegate
+	count            *atomic.Uint32
+	heartbeatTimeout time.Duration
+	next             ring.BasicLifecyclerDelegate
 }
 
-func newHealthyInstanceDelegate(count *atomic.Uint32, next ring.BasicLifecyclerDelegate) *healthyInstanceDelegate {
-	return &healthyInstanceDelegate{count: count, next: next}
+func newHealthyInstanceDelegate(count *atomic.Uint32, heartbeatTimeout time.Duration, next ring.BasicLifecyclerDelegate) *healthyInstanceDelegate {
+	return &healthyInstanceDelegate{count: count, heartbeatTimeout: heartbeatTimeout, next: next}
 }
 
 // OnRingInstanceRegister implements the ring.BasicLifecyclerDelegate interface
@@ -37,9 +40,10 @@ func (d *healthyInstanceDelegate) OnRingInstanceStopping(lifecycler *ring.BasicL
 // OnRingInstanceHeartbeat implements the ring.BasicLifecyclerDelegate interface
 func (d *healthyInstanceDelegate) OnRingInstanceHeartbeat(lifecycler *ring.BasicLifecycler, ringDesc *ring.Desc, instanceDesc *ring.InstanceDesc) {
 	activeMembers := uint32(0)
+	now := time.Now()
 
 	for _, instance := range ringDesc.Ingesters {
-		if ring.ACTIVE == instance.State {
+		if ring.ACTIVE == instance.State && instance.IsHeartbeatHealthy(d.heartbeatTimeout, now) {
 			activeMembers++
 		}
 	}

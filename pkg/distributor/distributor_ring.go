@@ -7,6 +7,7 @@ package distributor
 
 import (
 	"flag"
+	"fmt"
 	"os"
 	"time"
 
@@ -66,16 +67,23 @@ func (cfg *RingConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.StringVar(&cfg.InstanceID, "distributor.ring.instance-id", hostname, "Instance ID to register in the ring.")
 }
 
-func (cfg *RingConfig) ToBasicLifecyclerConfig() ring.BasicLifecyclerConfig {
+func (cfg *RingConfig) ToBasicLifecyclerConfig(logger log.Logger) (ring.BasicLifecyclerConfig, error) {
+	instanceAddr, err := ring.GetInstanceAddr(cfg.InstanceAddr, cfg.InstanceInterfaceNames, logger)
+	if err != nil {
+		return ring.BasicLifecyclerConfig{}, err
+	}
+
+	instancePort := ring.GetInstancePort(cfg.InstancePort, cfg.ListenPort)
+
 	return ring.BasicLifecyclerConfig{
 		ID:                              cfg.InstanceID,
-		Addr:                            cfg.InstanceAddr,
+		Addr:                            fmt.Sprintf("%s:%d", instanceAddr, instancePort),
 		HeartbeatPeriod:                 cfg.HeartbeatPeriod,
 		HeartbeatTimeout:                cfg.HeartbeatTimeout,
 		TokensObservePeriod:             0,
 		NumTokens:                       ringNumTokens,
 		KeepInstanceInTheRingOnShutdown: false,
-	}
+	}, nil
 }
 
 func (cfg *RingConfig) ToRingConfig() ring.Config {

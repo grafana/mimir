@@ -70,7 +70,7 @@ const (
 	distributorRingKey = "distributor"
 
 	// ringAutoForgetUnhealthyPeriods is how many consecutive timeout periods an unhealthy instance
-	// in the ring will be automatically removed.
+	// in the ring will be automatically removed after.
 	ringAutoForgetUnhealthyPeriods = 10
 )
 
@@ -92,7 +92,7 @@ type Distributor struct {
 
 	// The global rate limiter requires a distributors ring to count
 	// the number of healthy instances
-	distributorsLifeCycler *ring.BasicLifecycler
+	distributorsLifecycler *ring.BasicLifecycler
 	distributorsRing       *ring.Ring
 	healthyInstancesCount  *atomic.Uint32
 
@@ -330,44 +330,29 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 	})
 
 	// Create the configured ingestion rate limit strategy (local or global). In case
-	// it's an internal dependency and can't join the distributors ring, we skip rate
+	// it's an internal dependency and we can't join the distributors ring, we skip rate
 	// limiting.
 	var ingestionRateStrategy, requestRateStrategy limiter.RateLimiterStrategy
-	var distributorsLifeCycler *ring.BasicLifecycler
+	var distributorsLifecycler *ring.BasicLifecycler
 	var distributorsRing *ring.Ring
 
 	if !canJoinDistributorsRing {
 		requestRateStrategy = newInfiniteRateStrategy()
 		ingestionRateStrategy = newInfiniteRateStrategy()
 	} else {
-		kvStore, err := kv.NewClient(cfg.DistributorRing.KVStore, ring.GetCodec(), kv.RegistererWithKVName(reg, "distributor-lifecycler"), log)
+		distributorsRing, distributorsLifecycler, err = newRingAndLifecycler(cfg.DistributorRing, d.healthyInstancesCount, log, reg)
 		if err != nil {
-			return nil, errors.Wrap(err, "failed to initialize distributors' KV store")
+			return nil, err
 		}
 
-		delegate := ring.BasicLifecyclerDelegate(ring.NewInstanceRegisterDelegate(ring.ACTIVE, ringNumTokens))
-		delegate = newHealthyInstanceDelegate(d.healthyInstancesCount, delegate)
-		delegate = ring.NewLeaveOnStoppingDelegate(delegate, log)
-		delegate = ring.NewAutoForgetDelegate(ringAutoForgetUnhealthyPeriods*cfg.DistributorRing.HeartbeatTimeout, delegate, log)
-
-		distributorsLifeCycler, err = ring.NewBasicLifecycler(cfg.DistributorRing.ToBasicLifecyclerConfig(), "distributor", distributorRingKey, kvStore, delegate, log, prometheus.WrapRegistererWithPrefix("cortex_", reg))
-		if err != nil {
-			return nil, errors.Wrap(err, "failed to initialize distributors' lifecycler")
-		}
-
-		distributorsRing, err = ring.New(cfg.DistributorRing.ToRingConfig(), "distributor", distributorRingKey, log, prometheus.WrapRegistererWithPrefix("cortex_", reg))
-		if err != nil {
-			return nil, errors.Wrap(err, "failed to initialize distributors' ring client")
-		}
-		subservices = append(subservices, distributorsLifeCycler, distributorsRing)
-
+		subservices = append(subservices, distributorsLifecycler, distributorsRing)
 		requestRateStrategy = newGlobalRateStrategy(newRequestRateStrategy(limits), d)
 		ingestionRateStrategy = newGlobalRateStrategy(newIngestionRateStrategy(limits), d)
 	}
 
 	d.requestRateLimiter = limiter.NewRateLimiter(requestRateStrategy, 10*time.Second)
 	d.ingestionRateLimiter = limiter.NewRateLimiter(ingestionRateStrategy, 10*time.Second)
-	d.distributorsLifeCycler = distributorsLifeCycler
+	d.distributorsLifecycler = distributorsLifecycler
 	d.distributorsRing = distributorsRing
 
 	d.replicationFactor.Set(float64(ingestersRing.ReplicationFactor()))
@@ -386,6 +371,37 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 	return d, nil
 }
 
+// newRingAndLifecycler creates a new distributor ring and lifecycler with all required lifecycler delegates
+func newRingAndLifecycler(cfg RingConfig, instanceCount *atomic.Uint32, logger log.Logger, reg prometheus.Registerer) (*ring.Ring, *ring.BasicLifecycler, error) {
+	kvStore, err := kv.NewClient(cfg.KVStore, ring.GetCodec(), kv.RegistererWithKVName(reg, "distributor-lifecycler"), logger)
+	if err != nil {
+		return nil, nil, errors.Wrap(err, "failed to initialize distributors' KV store")
+	}
+
+	lifecyclerCfg, err := cfg.ToBasicLifecyclerConfig(logger)
+	if err != nil {
+		return nil, nil, errors.Wrap(err, "failed to build distributors' lifecycler config")
+	}
+
+	var delegate ring.BasicLifecyclerDelegate
+	delegate = ring.NewInstanceRegisterDelegate(ring.ACTIVE, ringNumTokens)
+	delegate = newHealthyInstanceDelegate(instanceCount, cfg.HeartbeatTimeout, delegate)
+	delegate = ring.NewLeaveOnStoppingDelegate(delegate, logger)
+	delegate = ring.NewAutoForgetDelegate(ringAutoForgetUnhealthyPeriods*cfg.HeartbeatTimeout, delegate, logger)
+
+	distributorsLifecycler, err := ring.NewBasicLifecycler(lifecyclerCfg, "distributor", distributorRingKey, kvStore, delegate, logger, prometheus.WrapRegistererWithPrefix("cortex_", reg))
+	if err != nil {
+		return nil, nil, errors.Wrap(err, "failed to initialize distributors' lifecycler")
+	}
+
+	distributorsRing, err := ring.New(cfg.ToRingConfig(), "distributor", distributorRingKey, logger, prometheus.WrapRegistererWithPrefix("cortex_", reg))
+	if err != nil {
+		return nil, nil, errors.Wrap(err, "failed to initialize distributors' ring client")
+	}
+
+	return distributorsRing, distributorsLifecycler, nil
+}
+
 func (d *Distributor) starting(ctx context.Context) error {
 	if err := services.StartManagerAndAwaitHealthy(ctx, d.subservices); err != nil {
 		return errors.Wrap(err, "unable to start distributor subservices")
@@ -393,9 +409,9 @@ func (d *Distributor) starting(ctx context.Context) error {
 
 	// Distributors get embedded in rulers and queriers to talk to ingesters on the query path. In that
 	// case they won't have a distributor lifecycler or ring so don't try to join the distributor ring.
-	if d.distributorsLifeCycler != nil && d.distributorsRing != nil {
+	if d.distributorsLifecycler != nil && d.distributorsRing != nil {
 		level.Info(d.log).Log("msg", "waiting until distributor is ACTIVE in the ring")
-		if err := ring.WaitInstanceState(ctx, d.distributorsRing, d.distributorsLifeCycler.GetInstanceID(), ring.ACTIVE); err != nil {
+		if err := ring.WaitInstanceState(ctx, d.distributorsRing, d.distributorsLifecycler.GetInstanceID(), ring.ACTIVE); err != nil {
 			return err
 		}
 	}
