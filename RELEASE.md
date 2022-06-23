@@ -48,13 +48,13 @@ We maintain a separate branch for each minor release, named `release-<major>.<mi
 The usual flow is to merge new features and changes into the `main` branch and to merge bug fixes into the latest release branch.
 Bug fixes are then merged into `main` from the latest release branch.
 The `main` branch should always contain all commits from the latest release branch.
-As long as `main` hasn't deviated significantly from the release branch, new commits can also go to `main`, followed by cherry picking them back into the release branch.
+As long as `main` hasn't deviated significantly from the release branch, new commits can also go to `main`, followed by cherry-picking them back into the release branch. See [Cherry-picking changes into release branch](#cherry-picking-changes-into-release-branch).
 
 Maintaining the release branches for older minor releases happens on a best effort basis.
 
 ### Show that a release is in progress
 
-This helps ongoing PRs to get their changes in the right place, and to consider whether they need cherry-picking.
+This helps ongoing PRs to get their changes in the right place, and to consider whether they need cherry-picking into release branch.
 
 1. Make a PR to update `CHANGELOG.md` on main
    - Add a new section for the new release so that `## main / unreleased` is blank and at the top.
@@ -158,3 +158,18 @@ $ version=$(< VERSION)
 $ git tag -s "mimir-${version}" -m "v${version}"
 $ git push origin "mimir-${version}"
 ```
+
+### Cherry-picking changes into release branch
+
+To cherry-pick a change (commit) from `main` into release branch, please do the following:
+
+```bash
+$ git checkout release-X.Y                   # Start with the release branch
+$ git checkout -b cherry-pick-pr-ZZZ         # Create new branch for cherry-picking
+$ git cherry-pick -x <commit ID>             # Cherry pick the change using -x option to add original commit ID to the message
+$ git push origin cherry-pick-pr-ZZZ         # Push branch to Github, create PR (set release-X.Y as base branch!) and ask for review
+```
+
+After PR with cherry-picked commit is reviewed, do a standard "Squash & Merge" commit that we use in Mimir.
+Keep the commit message suggested by Github, which is a combination of original commit message, new PR number and cherry-picked commit hash.
+Github will properly attribute you and also original commit author as contributors to this change, and will also link to original commit in the UI.
