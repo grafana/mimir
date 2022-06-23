@@ -598,7 +598,7 @@ func (q *blocksStoreQuerier) queryWithConsistencyCheck(ctx context.Context, logg
 }
 
 func newStoreConsistencyCheckFailedError(remainingBlocks []ulid.ULID) error {
-	return fmt.Errorf("%v. The blocks are: %s", globalerror.StoreConsistencyCheckFailed.Message("the consistency check failed because some blocks were not queried"), strings.Join(convertULIDsToString(remainingBlocks), " "))
+	return fmt.Errorf("%v. The non-queried blocks are: %s", globalerror.StoreConsistencyCheckFailed.Message("the consistency check failed because some blocks were not queried"), strings.Join(convertULIDsToString(remainingBlocks), " "))
 }
 
 // filterBlocksByShard removes blocks that can be safely ignored when using query sharding. We know that block can be safely
