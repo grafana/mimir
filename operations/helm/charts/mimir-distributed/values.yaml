@@ -6,10 +6,13 @@
 # To configure the resources for production load, refer to the the small.yaml or
 # large.yaml values files.
 
-# -- Overrides the chart's name
+# -- Overrides the chart's name. Used to change mimir/enterprise-metrics infix in the resource names. E.g. myRelease-mimir-ingester-1 to myRelease-nameOverride-ingester-1.
+# This option is used to align resource names with Cortex, when doing a migration from Cortex to Grafana Mimir.
+# Note: Grafana provided dashboards rely on the default naming and will need changes.
 nameOverride: null
 
-# -- Overrides the chart's computed fullname
+# -- Overrides the chart's computed fullname. Used to change the full prefix of resource names. E.g. myRelease-mimir-ingester-1 to fullnameOverride-ingester-1.
+# Note: Grafana provided dashboards rely on the default naming and will need changes.
 fullnameOverride: null
 
 # Container image settings.
