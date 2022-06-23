@@ -39,65 +39,69 @@ Using a custom namespace solves problems later on because you do not have to ove
 
 1. [Create a unique Kubernetes namespace](https://kubernetes.io/docs/tasks/administer-cluster/namespaces/#creating-a-new-namespace):
 
-    ```console
-    kubectl create namespace <namespace>
-    ```
+   ```console
+   kubectl create namespace <namespace>
+   ```
+
 1. Set up a Helm repository using the following commands:
-    ```console
-    helm repo add grafana https://grafana.github.io/helm-charts
-    helm repo update
-    ```
-    > **Note:** The Helm chart at [https://grafana.github.io/helm-charts](https://grafana.github.io/helm-charts) is a publication of the source code at [**grafana/mimir**](https://github.com/grafana/mimir/tree/main/operations/helm/charts/mimir-distributed).
+
+   ```console
+   helm repo add grafana https://grafana.github.io/helm-charts
+   helm repo update
+   ```
+
+   > **Note:** The Helm chart at [https://grafana.github.io/helm-charts](https://grafana.github.io/helm-charts) is a publication of the source code at [**grafana/mimir**](https://github.com/grafana/mimir/tree/main/operations/helm/charts/mimir-distributed).
 
 1. Configure an ingress by creating a YAML file, such as `custom.yaml` and adding the following configuration:
 
-    ```yaml        
-    nginx:
-      ingress:
-        enabled: true
-        ingressClassName: nginx
-        hosts:
-          - host: <ingress-host>
-            paths:
-              - path: /
-                pathType: Prefix
-        tls:
-            # empty, disabled.
-    ```
+   ```yaml
+   nginx:
+     ingress:
+       enabled: true
+       ingressClassName: nginx
+       hosts:
+         - host: <ingress-host>
+           paths:
+             - path: /
+               pathType: Prefix
+       tls:
+         # empty, disabled.
+   ```
 
-    TODO: explain what <ingress-host> is and how to chose it. Also say what the replacement needs to be if ingress is not available.
+   TODO: explain what <ingress-host> is and how to chose it. Also say what the replacement needs to be if ingress is not available.
 
 1. Install Grafana Mimir using the Helm chart:
 
-    ```console
-    helm -n <namespace> install <release-name> grafana/mimir-distributed -f custom.yaml
-    ```
+   ```console
+   helm -n <namespace> install <release-name> grafana/mimir-distributed -f custom.yaml
+   ```
+
 1. Check the statuses of the Mimir services:
 
-    ```console
-    kubectl -n <namespace> get pod
-    ```
+   ```console
+   kubectl -n <namespace> get pod
+   ```
 
-    The results look similar to this:
+   The results look similar to this:
 
-    ```console
-    kubectl -n dev get pod
-    NAME                                                       READY   STATUS      RESTARTS   AGE
-    <release-name>-mimir-nginx-69fd969c-g6bkn                  1/1     Running     0          159m
-    <release-name>-minio-5757f44456-dz7xx                      1/1     Running     0          159m
-    <release-name>-mimir-distributed-make-bucket-job-f5gbj     0/1     Completed   0          159m
-    <release-name>-mimir-distributor-7db5f7c8bc-444sd          1/1     Running     0          148m
-    <release-name>-mimir-overrides-exporter-79b475c98d-sqzxx   1/1     Running     0          148m
-    <release-name>-mimir-querier-5cb58b7b9c-zwnr6              1/1     Running     0          148m
-    <release-name>-mimir-query-frontend-74d666bcd5-4dcwh       1/1     Running     0          148m
-    <release-name>-mimir-ruler-745fff6c6d-8swsv                1/1     Running     0          148m
-    <release-name>-mimir-alertmanager-0                        1/1     Running     0          148m
-    <release-name>-mimir-compactor-0                           1/1     Running     0          148m
-    <release-name>-mimir-ingester-1                            1/1     Running     0          147m
-    <release-name>-mimir-ingester-2                            1/1     Running     0          147m
-    <release-name>-mimir-store-gateway-0                       1/1     Running     0          146m
-    <release-name>-mimir-ingester-0                            1/1     Running     0          144m
-    ```
+   ```console
+   kubectl -n dev get pod
+   NAME                                                       READY   STATUS      RESTARTS   AGE
+   <release-name>-mimir-nginx-69fd969c-g6bkn                  1/1     Running     0          159m
+   <release-name>-minio-5757f44456-dz7xx                      1/1     Running     0          159m
+   <release-name>-mimir-distributed-make-bucket-job-f5gbj     0/1     Completed   0          159m
+   <release-name>-mimir-distributor-7db5f7c8bc-444sd          1/1     Running     0          148m
+   <release-name>-mimir-overrides-exporter-79b475c98d-sqzxx   1/1     Running     0          148m
+   <release-name>-mimir-querier-5cb58b7b9c-zwnr6              1/1     Running     0          148m
+   <release-name>-mimir-query-frontend-74d666bcd5-4dcwh       1/1     Running     0          148m
+   <release-name>-mimir-ruler-745fff6c6d-8swsv                1/1     Running     0          148m
+   <release-name>-mimir-alertmanager-0                        1/1     Running     0          148m
+   <release-name>-mimir-compactor-0                           1/1     Running     0          148m
+   <release-name>-mimir-ingester-1                            1/1     Running     0          147m
+   <release-name>-mimir-ingester-2                            1/1     Running     0          147m
+   <release-name>-mimir-store-gateway-0                       1/1     Running     0          146m
+   <release-name>-mimir-ingester-0                            1/1     Running     0          144m
+   ```
 
 1. What until all of the pods have a status of `Running` or `Completed`, which might take a few minutes.
 
@@ -153,7 +157,9 @@ metrics:
 ```
 
 START HERE:
+
 ## Query data in Grafana
+
 TODO: say that Grafana of course can be installed in kubernetes as well, this is just a quick example
 In a new terminal, run a local Grafana server using Docker:
 
