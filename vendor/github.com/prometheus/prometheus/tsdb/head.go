@@ -1972,12 +1972,15 @@ func (noopSeriesLifecycleCallback) PostCreation(labels.Labels)      {}
 func (noopSeriesLifecycleCallback) PostDeletion(...labels.Labels)   {}
 
 func (h *Head) Size() int64 {
-	var walSize int64
+	var walSize, wblSize int64
 	if h.wal != nil {
 		walSize, _ = h.wal.Size()
 	}
+	if h.wbl != nil {
+		wblSize, _ = h.wbl.Size()
+	}
 	cdmSize, _ := h.chunkDiskMapper.Size()
-	return walSize + cdmSize
+	return walSize + wblSize + cdmSize
 }
 
 func (h *RangeHead) Size() int64 {
