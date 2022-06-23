@@ -25,11 +25,11 @@ spec:
         - name: mimir
           image: grafana/mimir:latest
           args:
-          - -target=querier
-          - -config.file=/etc/mimir/mimir.yaml
+            - -target=querier
+            - -config.file=/etc/mimir/mimir.yaml
           volumeMounts:
-          - name: mimir-config
-            mountPath: /etc/mimir
+            - name: mimir-config
+              mountPath: /etc/mimir
       volumes:
         - name: mimir-config
           configMap:
@@ -62,11 +62,11 @@ spec:
         - name: mimir
           image: grafana/mimir:latest
           args:
-          - -target=querier
-          - -config.file=/etc/mimir/mimir.yaml
+            - -target=querier
+            - -config.file=/etc/mimir/mimir.yaml
           volumeMounts:
-          - name: mimir-config
-            mountPath: /etc/mimir
+            - name: mimir-config
+              mountPath: /etc/mimir
       volumes:
         - name: mimir-config
           configMap:
@@ -91,9 +91,8 @@ config:
   target: querier
   memberlist:
     abort_if_cluster_join_fails: false (default)
-    advertise_addr: ' (default)'
+    advertise_addr: " (default)"
     advertise_port: 7946 (default)
     bind_port: 1234
   # remaining configuration fields omitted for brevity
 ```
-
