@@ -13,7 +13,7 @@ From outside the cluster via ingress:
 {{ range .hosts }}  http{{ if .tls }}s{{ end }}://{{ .host }}/api/v1/push
 {{ end }}
 {{- else -}}
-Ingress is not enabled, see {{ if $.Values.enterprise.enabled }}gateway{{ else }}nginx{{ end }}.ingress values.
+Ingress is not enabled, see the {{ if $.Values.enterprise.enabled }}gateway{{ else }}nginx{{ end }}.ingress values.
 {{- end -}}
 {{- end }}
 From inside the cluster:
@@ -26,7 +26,7 @@ From outside the cluster via ingress:
 {{ range .hosts }}  http{{ if .tls }}s{{ end }}://{{ .host }}{{ template "mimir.prometheusHttpPrefix" $ }}
 {{ end }}
 {{- else -}}
-Ingress is not enabled, see {{ if $.Values.enterprise.enabled }}gateway{{ else }}nginx{{ end }}.ingress values.
+Ingress is not enabled, see the {{ if $.Values.enterprise.enabled }}gateway{{ else }}nginx{{ end }}.ingress values.
 {{- end -}}
 {{- end }}
 From inside the cluster:
