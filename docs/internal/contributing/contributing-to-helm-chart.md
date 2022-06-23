@@ -44,9 +44,9 @@ A custom kustomize function is used to extract the Mimir configuration from kube
 The end goal is to ensure that only "useful" differences appear in the diff output.
 Deciding which differences are useful is a complicated topic, but at a high level we use the following heuristics:
 
-* Differences in Kubernetes annotations and labels are typically not useful, since changes in those will appear in other tests (ie golden record, functionality, etc).
-* Differences in configuration parameters related to urls and file paths are typically not interesting, since they don't change _what_ the cluster does, only _where_ it happens.
-* Differences in performance or scale related properties are typically useful, since these often have difficult-to-test implications on the cluster.
+- Differences in Kubernetes annotations and labels are typically not useful, since changes in those will appear in other tests (ie golden record, functionality, etc).
+- Differences in configuration parameters related to urls and file paths are typically not interesting, since they don't change _what_ the cluster does, only _where_ it happens.
+- Differences in performance or scale related properties are typically useful, since these often have difficult-to-test implications on the cluster.
 
 In order to keep the kustomize configuration manageable, it is divided into layers, each named based on the order they are applied.
 
@@ -76,8 +76,8 @@ A full explanation of kustomize is outside the scope of this document, but gener
 You can use the `make check-helm-jsonnet-diff` target to perform an automatic diff of the Helm and Jsonnet templates.
 This target requires the following:
 
-* `yq`, `kubectl`, and `kustomize` installed and on the PATH
-* A running kubernetes API server selected as the currently active `kubectl` context.
+- `yq`, `kubectl`, and `kustomize` installed and on the PATH
+- A running kubernetes API server selected as the currently active `kubectl` context.
 
 The API server is only used to perform dry-runs of server-side apply.
 No resources are actually created in kubernetes, but API calls will be made against the server.
