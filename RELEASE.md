@@ -7,7 +7,7 @@ This document describes the Mimir release process as well as release shepherd re
 A new Grafana Mimir release is cut approximately every 6 weeks. The following table contains past releases and tentative dates for upcoming releases:
 
 | Version | Date       | Release shepherd  |
-|---------|------------|-------------------|
+| ------- | ---------- | ----------------- |
 | 2.0.0   | 2022-03-20 | Marco Pracucci    |
 | 2.1.0   | 2022-05-16 | Johanna Ratliff   |
 | 2.2.0   | 2022-06-27 | Oleg Zaytsev      |
@@ -27,7 +27,7 @@ The process formally starts with the initial pre-release, but some preparations 
   merging last-minute invasive and risky changes that are better suited for the next minor release.
 - There may be some actions left to address when cutting this release. The release shepherd is responsible for going through
   TODOs in the repository and verifying that nothing is that is due this release is forgotten.
-- On the planned release date, the release shepherd cuts the first pre-release (using the suffix `-rc.0`) and creates 
+- On the planned release date, the release shepherd cuts the first pre-release (using the suffix `-rc.0`) and creates
   a new branch called `release-<major>.<minor>` starting at the commit tagged for the pre-release. In general, a pre-release
   is considered a release candidate (that's what `rc` stands for) and should therefore not contain any known bugs that
   are planned to be fixed in the final release.
@@ -99,13 +99,13 @@ To publish a release candidate:
 1. When creating release on GitHub, select your new tag, use `Mimir <VERSION>` as Release Title, and click "Generate release notes" button.
    This will pre-fill the changelog for the release. You can delete all of it, except "New Contributors" section.
 1. Release notes should contain:
-    - "This release contains XX contributions from YY authors. Thank you!" at the beginning.
-        - You can find the numbers by doing compare like `https://github.com/grafana/mimir/compare/mimir-2.0.0...mimir-2.1.0` from previous Mimir release. (Note the syntax: `.../compare/<old ref>...<new ref>`, yes there are three periods).
-        - Number of commits = "contributions", number of contributors = "authors".
-        - As an example, for [current HEAD on commit 017a738](https://github.com/grafana/mimir/compare/mimir-2.1.0...017a738e94) shows 185 contributions and 36 authors since Mimir 2.1.0.)
-    - Most interesting new features for users. Use your judgement. 
-    - Full copy-paste of the CHANGELOG since previous release.
-    - "New Contributors" section at the end (created by "Generate release notes" button in GitHub UI).
+   - "This release contains XX contributions from YY authors. Thank you!" at the beginning.
+     - You can find the numbers by doing compare like `https://github.com/grafana/mimir/compare/mimir-2.0.0...mimir-2.1.0` from previous Mimir release. (Note the syntax: `.../compare/<old ref>...<new ref>`, yes there are three periods).
+     - Number of commits = "contributions", number of contributors = "authors".
+     - As an example, for [current HEAD on commit 017a738](https://github.com/grafana/mimir/compare/mimir-2.1.0...017a738e94) shows 185 contributions and 36 authors since Mimir 2.1.0.)
+   - Most interesting new features for users. Use your judgement.
+   - Full copy-paste of the CHANGELOG since previous release.
+   - "New Contributors" section at the end (created by "Generate release notes" button in GitHub UI).
 1. Build binaries with `make BUILD_IN_CONTAINER=true dist` and attach them to the release (building in container ensures standardized toolchain)
 
 ### Publish a stable release
