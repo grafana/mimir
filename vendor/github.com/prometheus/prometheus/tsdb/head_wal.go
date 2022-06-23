@@ -450,7 +450,7 @@ func (wp *walSubsetProcessor) waitUntilIdle() {
 	}
 }
 
-func (h *Head) loadOOOWal(r *wal.Reader, multiRef map[chunks.HeadSeriesRef]chunks.HeadSeriesRef, lastMmapRef chunks.ChunkDiskMapperRef) (err error) {
+func (h *Head) loadWbl(r *wal.Reader, multiRef map[chunks.HeadSeriesRef]chunks.HeadSeriesRef, lastMmapRef chunks.ChunkDiskMapperRef) (err error) {
 	// Track number of samples that referenced a series we don't know about
 	// for error reporting.
 	var unknownRefs atomic.Uint64
@@ -460,7 +460,7 @@ func (h *Head) loadOOOWal(r *wal.Reader, multiRef map[chunks.HeadSeriesRef]chunk
 	var (
 		wg         sync.WaitGroup
 		n          = runtime.GOMAXPROCS(0)
-		processors = make([]oooWalSubsetProcessor, n)
+		processors = make([]wblSubsetProcessor, n)
 
 		dec    record.Decoder
 		shards = make([][]record.RefSample, n)
@@ -484,7 +484,7 @@ func (h *Head) loadOOOWal(r *wal.Reader, multiRef map[chunks.HeadSeriesRef]chunk
 		// We also wrap it to identify OOO WBL corruption.
 		_, ok := err.(*wal.CorruptionErr)
 		if ok {
-			err = &errLoadOOOWal{err: err}
+			err = &errLoadWbl{err: err}
 			for i := 0; i < n; i++ {
 				processors[i].closeAndDrain()
 			}
@@ -496,7 +496,7 @@ func (h *Head) loadOOOWal(r *wal.Reader, multiRef map[chunks.HeadSeriesRef]chunk
 	for i := 0; i < n; i++ {
 		processors[i].setup()
 
-		go func(wp *oooWalSubsetProcessor) {
+		go func(wp *wblSubsetProcessor) {
 			unknown := wp.processWALSamples(h)
 			unknownRefs.Add(unknown)
 			wg.Done()
@@ -628,49 +628,49 @@ func (h *Head) loadOOOWal(r *wal.Reader, multiRef map[chunks.HeadSeriesRef]chunk
 	return nil
 }
 
-type errLoadOOOWal struct {
+type errLoadWbl struct {
 	err error
 }
 
-func (e errLoadOOOWal) Error() string {
+func (e errLoadWbl) Error() string {
 	return e.err.Error()
 }
 
 // To support errors.Cause().
-func (e errLoadOOOWal) Cause() error {
+func (e errLoadWbl) Cause() error {
 	return e.err
 }
 
 // To support errors.Unwrap().
-func (e errLoadOOOWal) Unwrap() error {
+func (e errLoadWbl) Unwrap() error {
 	return e.err
 }
 
-// isErrLoadOOOWal returns a boolean if the error is errLoadOOOWal.
+// isErrLoadOOOWal returns a boolean if the error is errLoadWbl.
 func isErrLoadOOOWal(err error) bool {
-	_, ok := err.(*errLoadOOOWal)
+	_, ok := err.(*errLoadWbl)
 	return ok
 }
 
-type oooWalSubsetProcessor struct {
+type wblSubsetProcessor struct {
 	mx     sync.Mutex // Take this lock while modifying series in the subset.
 	input  chan []record.RefSample
 	output chan []record.RefSample
 }
 
-func (wp *oooWalSubsetProcessor) setup() {
+func (wp *wblSubsetProcessor) setup() {
 	wp.output = make(chan []record.RefSample, 300)
 	wp.input = make(chan []record.RefSample, 300)
 }
 
-func (wp *oooWalSubsetProcessor) closeAndDrain() {
+func (wp *wblSubsetProcessor) closeAndDrain() {
 	close(wp.input)
 	for range wp.output {
 	}
 }
 
 // If there is a buffer in the output chan, return it for reuse, otherwise return nil.
-func (wp *oooWalSubsetProcessor) reuseBuf() []record.RefSample {
+func (wp *wblSubsetProcessor) reuseBuf() []record.RefSample {
 	select {
 	case buf := <-wp.output:
 		return buf[:0]
@@ -682,7 +682,7 @@ func (wp *oooWalSubsetProcessor) reuseBuf() []record.RefSample {
 // processWALSamples adds the samples it receives to the head and passes
 // the buffer received to an output channel for reuse.
 // Samples before the minValidTime timestamp are discarded.
-func (wp *oooWalSubsetProcessor) processWALSamples(h *Head) (unknownRefs uint64) {
+func (wp *wblSubsetProcessor) processWALSamples(h *Head) (unknownRefs uint64) {
 	defer close(wp.output)
 
 	// We don't check for minValidTime for ooo samples.
@@ -707,7 +707,7 @@ func (wp *oooWalSubsetProcessor) processWALSamples(h *Head) (unknownRefs uint64)
 	return unknownRefs
 }
 
-func (wp *oooWalSubsetProcessor) waitUntilIdle() {
+func (wp *wblSubsetProcessor) waitUntilIdle() {
 	select {
 	case <-wp.output: // Allow output side to drain to avoid deadlock.
 	default:

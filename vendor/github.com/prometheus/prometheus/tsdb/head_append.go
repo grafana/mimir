@@ -253,7 +253,8 @@ type headAppender struct {
 func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
 	// For OOO inserts, this restriction is irrelevant and will be checked later once we confirm the sample is an in-order append.
 	// If OOO inserts are disabled, we may as well as check this as early as we can and avoid more work.
-	if a.head.opts.OOOAllowance == 0 && t < a.minValidTime {
+	oooAllowance := a.head.opts.OutOfOrderAllowance.Load()
+	if oooAllowance == 0 && t < a.minValidTime {
 		a.head.metrics.outOfBoundSamples.Inc()
 		return 0, storage.ErrOutOfBounds
 	}
@@ -287,7 +288,7 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 	s.Lock()
 	// TODO: if we definitely know at this point that the sample is ooo, then optimise
 	// to skip that sample from the WAL and write only in the WBL.
-	_, delta, err := s.appendable(t, v, a.headMaxt, a.minValidTime)
+	_, delta, err := s.appendable(t, v, a.headMaxt, a.minValidTime, oooAllowance)
 	if err == nil {
 		s.pendingCommit = true
 	}
@@ -324,7 +325,7 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 // appendable checks whether the given sample is valid for appending to the series. (if we return false and no error)
 // The sample belongs to the out of order chunk if we return true and no error.
 // An error signifies the sample cannot be handled.
-func (s *memSeries) appendable(t int64, v float64, headMaxt, minValidTime int64) (isOutOfOrder bool, delta int64, err error) {
+func (s *memSeries) appendable(t int64, v float64, headMaxt, minValidTime, oooAllowance int64) (isOutOfOrder bool, delta int64, err error) {
 	msMaxt := s.maxTime()
 	if msMaxt == math.MinInt64 {
 		// The series has no sample and was freshly created.
@@ -343,8 +344,8 @@ func (s *memSeries) appendable(t int64, v float64, headMaxt, minValidTime int64)
 		return false, 0, nil
 	}
 
-	if t < msMaxt-s.oooAllowance {
-		if s.oooAllowance > 0 {
+	if t < msMaxt-oooAllowance {
+		if oooAllowance > 0 {
 			return true, msMaxt - t, storage.ErrTooOldSample
 		}
 		if t < minValidTime {
@@ -510,7 +511,7 @@ func (a *headAppender) Commit() (err error) {
 		inOrderMaxt     int64 = math.MinInt64
 		ooomint         int64 = math.MaxInt64
 		ooomaxt         int64 = math.MinInt64
-		oooWblSamples   []record.RefSample
+		wblSamples      []record.RefSample
 		oooMmapMarkers  map[chunks.HeadSeriesRef]chunks.ChunkDiskMapperRef
 		oooRecords      [][]byte
 		series          *memSeries
@@ -522,9 +523,9 @@ func (a *headAppender) Commit() (err error) {
 		}
 	}()
 	collectOOORecords := func() {
-		if a.head.oooWbl == nil {
+		if a.head.wbl == nil {
 			// WBL is not enabled. So no need to collect.
-			oooWblSamples = nil
+			wblSamples = nil
 			oooMmapMarkers = nil
 			return
 		}
@@ -545,19 +546,20 @@ func (a *headAppender) Commit() (err error) {
 			oooRecords = append(oooRecords, r)
 		}
 
-		if len(oooWblSamples) > 0 {
-			r := enc.Samples(oooWblSamples, a.head.getBytesBuffer())
+		if len(wblSamples) > 0 {
+			r := enc.Samples(wblSamples, a.head.getBytesBuffer())
 			oooRecords = append(oooRecords, r)
 		}
 
-		oooWblSamples = nil
+		wblSamples = nil
 		oooMmapMarkers = nil
 	}
+	oooAllowance := a.head.opts.OutOfOrderAllowance.Load()
 	for i, s := range a.samples {
 		series = a.sampleSeries[i]
 		series.Lock()
 
-		oooSample, delta, err := series.appendable(s.T, s.V, a.headMaxt, a.minValidTime)
+		oooSample, delta, err := series.appendable(s.T, s.V, a.headMaxt, a.minValidTime, oooAllowance)
 		switch err {
 		case storage.ErrOutOfOrderSample:
 			samplesAppended--
@@ -599,7 +601,7 @@ func (a *headAppender) Commit() (err error) {
 				oooMmapMarkers[series.ref] = mmapRef
 			}
 			if ok {
-				oooWblSamples = append(oooWblSamples, s)
+				wblSamples = append(wblSamples, s)
 				if s.T < ooomint {
 					ooomint = s.T
 				}
@@ -665,8 +667,8 @@ func (a *headAppender) Commit() (err error) {
 	// Returning the error here is not correct because we have already put the samples into the memory,
 	// hence the append/insert was a success.
 	collectOOORecords()
-	if a.head.oooWbl != nil {
-		if err := a.head.oooWbl.Log(oooRecords...); err != nil {
+	if a.head.wbl != nil {
+		if err := a.head.wbl.Log(oooRecords...); err != nil {
 			level.Error(a.head.logger).Log("msg", "Failed to log out of order samples into the WAL", "err", err)
 		}
 	}

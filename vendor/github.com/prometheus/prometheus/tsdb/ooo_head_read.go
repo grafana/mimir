@@ -239,7 +239,7 @@ type OOOCompactionHead struct {
 // All the above together have a bit of CPU and memory overhead, and can have a bit of impact
 // on the sample append latency. So call NewOOOCompactionHead only right before compaction.
 func NewOOOCompactionHead(head *Head) (*OOOCompactionHead, error) {
-	newWBLFile, err := head.oooWbl.NextSegment()
+	newWBLFile, err := head.wbl.NextSegment()
 	if err != nil {
 		return nil, err
 	}

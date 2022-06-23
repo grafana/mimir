@@ -5680,7 +5680,6 @@ func Test_Ingester_QueryOutOfOrder(t *testing.T) {
 
 	// Configure ingester with OOO Allowance
 	cfg := defaultIngesterTestConfig(t)
-	cfg.BlocksStorageConfig.TSDB.OOOAllowance = 30 * time.Minute
 	cfg.BlocksStorageConfig.TSDB.OOOCapMin = 4
 	cfg.BlocksStorageConfig.TSDB.OOOCapMax = 32
 
@@ -5688,7 +5687,9 @@ func Test_Ingester_QueryOutOfOrder(t *testing.T) {
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			// Create ingester
-			i, err := prepareIngesterWithBlocksStorage(t, cfg, nil)
+			l := defaultLimitsTestConfig()
+			l.OutOfOrderAllowance = model.Duration(30 * time.Minute)
+			i, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, l, "", nil)
 			require.NoError(t, err)
 			require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 			defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck

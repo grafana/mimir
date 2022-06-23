@@ -2650,6 +2650,17 @@
         },
         {
           "kind": "field",
+          "name": "out_of_order_allowance",
+          "required": false,
+          "desc": "Non-zero value enables out-of-order support for most recent samples in this time window. Ingester will need more memory that is a factor of rate of out of order sample being ingested and number of series getting out of order samples. It can be configured per-tenant.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "ingester.out-of-order-allowance",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "max_fetched_chunks_per_query",
           "required": false,
           "desc": "Maximum number of chunks that can be fetched in a single query from ingesters and long-term storage. This limit is enforced in the querier, ruler and store-gateway. 0 to disable.",
@@ -5391,17 +5402,6 @@
               "fieldFlag": "blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup",
               "fieldType": "int",
               "fieldCategory": "advanced"
-            },
-            {
-              "kind": "field",
-              "name": "ooo_allowance",
-              "required": false,
-              "desc": "Allow samples to be this old for out-of-order.  Supported units: h, m, s. If the value is non-zero, then all TSDBs will be enabled to handle overlapping data.",
-              "fieldValue": null,
-              "fieldDefaultValue": 0,
-              "fieldFlag": "blocks-storage.tsdb.ooo-allowance",
-              "fieldType": "duration",
-              "fieldCategory": "experimental"
             },
             {
               "kind": "field",
