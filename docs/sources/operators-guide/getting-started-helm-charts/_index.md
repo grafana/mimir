@@ -68,7 +68,10 @@ Using a custom namespace solves problems later on because you do not have to ove
          # empty, disabled.
    ```
 
-   TODO: explain what <ingress-host> is and how to chose it. Also say what the replacement needs to be if ingress is not available.
+   An ingress enables you to externally access a Kubernetes cluster via the hostname defined by the _`<ingress-host>`_ variable.
+   Replace _`<ingress-host>`_ with a suitable hostname that DNS can resolve to the external IP address of the Kubernetes cluster. For more information, see [Ingress](https://kubernetes.io/docs/concepts/services-networking/ingress/).
+   
+   Without using an ingress, it is still possible to access Grafana Mimir from inside the cluster. In such case, replace _`<ingress-host>`_ with _`<release-name>`_`-mimir-nginx.`_`<namespace>`_`.svc:80` throughout the rest of the procedure.
 
 1. Install Grafana Mimir using the Helm chart:
 
@@ -156,9 +159,11 @@ metrics:
         - url: http://<ingress-host>/api/v1/push
 ```
 
-START HERE:
-
 ## Query data in Grafana
+
+First install Grafana, and then add Mimir as a Prometheus data source.
+
+## Install Grafana
 
 You can either [deploy Grafana Mimir on Kubernetes](https://grafana.com/docs/grafana/latest/setup-grafana/installation/kubernetes/)
 or get a test instance of a local Grafana server up and running
@@ -167,6 +172,8 @@ quickly by using Docker:
 ```bash
 docker run --rm --name=grafana --network=host grafana/grafana
 ```
+
+> **Note:** If you are not using an ingress, just install Grafana inside the cluster. Otherwise, accessing the same cluster that Mimir is on is a complex process that involves setting up port forwarding.
 
 ### Add Grafana Mimir as a Prometheus data source
 
@@ -177,7 +184,7 @@ docker run --rm --name=grafana --network=host grafana/grafana
    | Field | Value                                                                |
    | ----- | -------------------------------------------------------------------- |
    | Name  | Mimir                                                                |
-   | URL   | [http://localhost:9009/prometheus](http://localhost:9009/prometheus) |
+   | URL   | [http://\<ingress-host\>/prometheus](http://<ingress-host>/prometheus) |
 
 To add a data source, refer to [Add a data source](https://grafana.com/docs/grafana/latest/datasources/add-a-data-source/).
 
