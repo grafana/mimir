@@ -7,14 +7,16 @@ weight: 120
 
 # Configuring out-of-order samples ingestion
 
-Before we step into out-of-order samples ingestion details, let's clarify what Grafana Mimir and the Prometheus TSDB understand as out-of-order.
+Grafana Mimir and the Prometheus TSDB understand out-of-order as follows.
 
-The moment a new series sample arrives we need to determine if the series already existed or not and whether or not the sample is too old.
+The moment that a new series sample arrives, you need to determine if the series already exists, and whether or not the sample is too old:
 
-- If the series existed it has to be newer than the latest sample stored otherwise it is considered out-of-order and will be dropped by the ingesters.
-- If the series did not exist then it has to be newer than TSDB's head block max time. If its not then it is also considered out-of-order and will be dropped by the ingesters.
+- If the series exists, it must be newer than the latest sample that is stored.
+  Otherwise, it is considered out-of-order and will be dropped by the ingesters.
+- If the series does not exist, then it has to be newer than TSDB's head-block maximum time. If it isn’t newer, then it is also considered out-of-order and will be dropped by the ingesters.
 
-If you happen to have out-of-order samples due to the nature of your architecture or the system that is being observed, then you can configure Grafana Mimir to set time window threshold for how old samples can be ingested and none of the samples above will be dropped if they are within the time window you configured.
+If you have out-of-order samples due to the nature of your architecture or the system that is being observed, then you can configure Grafana Mimir to set the time-window threshold for how old samples can be ingested. As a result, none of the preceding samples will be dropped if they are within the time window that
+you configured.
 
 ## Configuring out-of-order samples ingestion instance wide
 
@@ -23,17 +25,18 @@ To configure Grafana Mimir to accept out-of-order samples, see the following con
 <!-- prettier-ignore-start -->
 ```yml
 limits:
-  # The time window is expressed as a duration so this is how you could set it to 5 minutes
+  # The time window is expressed as a duration; set it to 5 minutes
   out_of_order_time_window: 5m
 ```
 <!-- prettier-ignore-end -->
 
-## Configuring out-of-order samples per tenant
+## Configure out-of-order samples per tenant
 
-If your Grafana Mimir has multitenancy enabled you could still use the method above to set a default out-of-order time window threshold for all tenants. Then if a particular tenant had the needs to increase it, Grafana Mimir can also do that.
+If your Grafana Mimir has multitenancy enabled, you can still use the preceding method to set a default out-of-order time window threshold for all tenants. If a particular tenant needs a higher threshold, Grafana Mimir can also do that.
 
-1. Enable runtime configuration, for more information check [About runtime configuration]({{< relref "about-runtime-configuration.md" >}})
-1. Write down an override for the tenant that needs a bigger out-of-order time window.
+1. Enable runtime configuration.
+   For more information, see [About runtime configuration]({{< relref "about-runtime-configuration.md" >}}).
+1. Write down an override for the tenant that needs a bigger out-of-order time window:
 <!-- prettier-ignore-start -->
 
 ```yml

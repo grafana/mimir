@@ -42,11 +42,11 @@ Write de-amplification is the main source of Mimir's low total cost of ownership
 ## Ingesters failure and data loss
 
 If an ingester process crashes or exits abruptly, all the in-memory series that have not yet been uploaded to the long-term storage could be lost.
-There are three primary ways to mitigate this failure mode:
+There are three ways to mitigate this failure mode:
 
-1. Replication
-2. Write-ahead log (WAL)
-3. Write-behind log (WBL), only used if out-of-order ingestion is enabled.
+- Replication
+- Write-ahead log (WAL)
+- Write-behind log (WBL), only used if out-of-order ingestion is enabled.
 
 ### Replication
 
@@ -66,11 +66,11 @@ Replication is still recommended in order to gracefully handle a single ingester
 
 ### Write-behind log
 
-The write-behind log (WBL) is very much like the WAL but it only writes incoming out-of-order samples to a persistent disk until the series are uploaded to long-term storage.
+The write-behind log (WBL) is similar to the WAL, but it only writes incoming out-of-order samples to a persistent disk until the series are uploaded to long-term storage.
 
 The reason why there is a different log for this is that it is not possible to know if a sample is out-of-order until we try to append it. So we first need to attempt it, detect that it is out-of-order, append it anyway if out-of-order is enabled and then write it to the log.
 
-In the event of failure of the ingesters, the same characteristics as in the WAL would apply.
+If the ingesters fail, the same characteristics as in the WAL apply.
 
 ## Zone aware replication
 
@@ -88,6 +88,6 @@ For more information on shuffle sharding, refer to [Configuring shuffle sharding
 
 ## Out-of-order samples ingestion
 
-Out-of-order samples are discarded by default, in the event that the observed system produces them this feature can be enabled.
+Out-of-order samples are discarded by default. You can enable this feature, if the observed system produces them.
 
-For more information on out-of-order samples ingestion, refer to [Configuring out of order samples ingestion]({{< relref "../../configuring/configuring-out-of-order-samples-ingestion.md" >}}).
+For more information about out-of-order samples ingestion, refer to [Configuring out of order samples ingestion]({{< relref "../../configuring/configuring-out-of-order-samples-ingestion.md" >}}).
