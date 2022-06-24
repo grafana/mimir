@@ -89,10 +89,10 @@ Once your release preparation PR is approved, merge it to the `release-X.Y` bran
 To publish a release candidate:
 
 1. Do not change the release branch directly; make a PR to the release-X.Y branch with VERSION and any CHANGELOG changes.
-   1. Ensure the `VERSION` file has the `-rc.X` suffix (`X` starting from `0`)
+   1. Ensure the `VERSION` file has the `-rc.X` suffix (`X` starting from `0`).
 1. After merging your PR to the release branch, `git tag` the new release (see [How to tag a release](#how-to-tag-a-release)) from the release branch.
-1. Wait until the CI pipeline succeeds (once a tag is created, the release process through GitHub Actions will be triggered for this tag)
-1. Create a pre-release on GitHub. See [Creating release on GitHub](#creating-release-on-github)
+1. Wait until the CI pipeline succeeds (once a tag is created, the release process through GitHub Actions will be triggered for this tag).
+1. Create a pre-release on GitHub. See [Creating release on GitHub](#creating-release-on-github).
 
 ### Creating release on GitHub
 
@@ -100,13 +100,13 @@ To publish a release candidate:
    This will pre-fill the changelog for the release. You can delete all of it, except "New Contributors" section.
 1. Release notes should contain:
    - "This release contains XX contributions from YY authors. Thank you!" at the beginning.
-     - You can find the numbers by doing compare like `https://github.com/grafana/mimir/compare/mimir-2.0.0...mimir-2.1.0` from previous Mimir release. (Note the syntax: `.../compare/<old ref>...<new ref>`, yes there are three periods).
+     - You can find the numbers by doing compare like `https://github.com/grafana/mimir/compare/mimir-2.0.0...mimir-2.1.0` from previous Mimir release. (Note the syntax: `.../compare/<old ref>...<new ref>`, yes there are three dots).
      - Number of commits = "contributions", number of contributors = "authors".
-     - As an example, for [current HEAD on commit 017a738](https://github.com/grafana/mimir/compare/mimir-2.1.0...017a738e94) shows 185 contributions and 36 authors since Mimir 2.1.0.)
+     - As an example, for [current HEAD on commit 017a738](https://github.com/grafana/mimir/compare/mimir-2.1.0...017a738e94) shows 185 contributions and 36 authors since Mimir 2.1.0.
    - Most interesting new features for users. Use your judgement.
    - Full copy-paste of the CHANGELOG since previous release.
    - "New Contributors" section at the end (created by "Generate release notes" button in GitHub UI).
-1. Build binaries with `make BUILD_IN_CONTAINER=true dist` and attach them to the release (building in container ensures standardized toolchain)
+1. Build binaries with `make BUILD_IN_CONTAINER=true dist` and attach them to the release (building in container ensures standardized toolchain).
 
 ### Publish a stable release
 
@@ -170,8 +170,8 @@ $ git cherry-pick -x <commit ID>             # Cherry pick the change using -x o
 $ git push origin cherry-pick-pr-ZZZ         # Push branch to Github.
 ```
 
-After pushing branch to PR, you can create the branch by opening `https://github.com/grafana/mimir/pull/new/cherry-pick-pr-ZZZ`.
+After pushing branch to PR, you can create the PR by opening `https://github.com/grafana/mimir/pull/new/cherry-pick-pr-ZZZ` link.
 Make sure to set `release-X.Y` as the base branch, into which PR should be merged.
 After PR with cherry-picked commit is reviewed, do a standard "Squash & Merge" commit that we use in Mimir.
-Keep the commit message suggested by Github, which is a combination of original commit message, new PR number and cherry-picked commit hash.
+Keep the commit message suggested by Github, which is a combination of original commit message, original PR number, new PR number and cherry-picked commit hash.
 Github will properly attribute you and also original commit author as contributors to this change, and will also link to original commit in the UI.
