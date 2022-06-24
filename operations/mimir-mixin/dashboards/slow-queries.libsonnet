@@ -29,8 +29,10 @@ local filename = 'mimir-slow-queries.json';
           transformations: [
             {
               // Convert labels to fields.
-              id: 'labelsToFields',
-              options: {},
+              id: 'extractFields',
+              options: {
+                source: 'labels',
+              },
             },
             {
               // Compute the query time range.
@@ -52,7 +54,7 @@ local filename = 'mimir-slow-queries.json';
               id: 'organize',
               options: {
                 // Hide fields we don't care.
-                local hiddenFields = ['caller', 'cluster', 'container', 'host', 'id', 'job', 'level', 'line', 'method', 'msg', 'name', 'namespace', 'param_end', 'param_start', 'param_time', 'path', 'pod', 'pod_template_hash', 'query_wall_time_seconds', 'stream', 'traceID', 'tsNs'],
+                local hiddenFields = ['caller', 'cluster', 'container', 'host', 'id', 'job', 'level', 'line', 'method', 'msg', 'name', 'namespace', 'param_end', 'param_start', 'param_time', 'path', 'pod', 'pod_template_hash', 'query_wall_time_seconds', 'stream', 'traceID', 'tsNs', 'labels', 'Line', 'Time'],
 
                 excludeByName: {
                   [field]: true
