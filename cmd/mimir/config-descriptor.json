@@ -26,6 +26,17 @@
     },
     {
       "kind": "field",
+      "name": "log_dedup_enabled",
+      "required": false,
+      "desc": "When set to true, selective log deduplicators will be activated.",
+      "fieldValue": null,
+      "fieldDefaultValue": false,
+      "fieldFlag": "log.dedup-enabled",
+      "fieldType": "boolean",
+      "fieldCategory": "experimental"
+    },
+    {
+      "kind": "field",
       "name": "no_auth_tenant",
       "required": false,
       "desc": "Tenant ID to use when multitenancy is disabled.",

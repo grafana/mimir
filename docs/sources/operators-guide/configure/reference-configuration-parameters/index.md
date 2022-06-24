@@ -108,6 +108,11 @@ where `default_value` is the value to use if the environment variable is undefin
 # CLI flag: -auth.multitenancy-enabled
 [multitenancy_enabled: <boolean> | default = true]
 
+# (experimental) When set to true, selective log deduplicators will be
+# activated.
+# CLI flag: -log.dedup-enabled
+[log_dedup_enabled: <boolean> | default = false]
+
 # (advanced) Tenant ID to use when multitenancy is disabled.
 # CLI flag: -auth.no-auth-tenant
 [no_auth_tenant: <string> | default = "anonymous"]
