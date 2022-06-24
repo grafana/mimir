@@ -167,11 +167,11 @@ To cherry-pick a change (commit) from `main` into release branch, please do the 
 $ git checkout release-X.Y                   # Start with the release branch
 $ git checkout -b cherry-pick-pr-ZZZ         # Create new branch for cherry-picking
 $ git cherry-pick -x <commit ID>             # Cherry pick the change using -x option to add original commit ID to the message
-$ git push origin cherry-pick-pr-ZZZ         # Push branch to Github.
+$ git push origin cherry-pick-pr-ZZZ         # Push branch to GitHub.
 ```
 
-After pushing branch to PR, you can create the PR by opening `https://github.com/grafana/mimir/pull/new/cherry-pick-pr-ZZZ` link.
+After pushing branch to GitHub, you can create the PR by opening `https://github.com/grafana/mimir/pull/new/cherry-pick-pr-ZZZ` link.
 Make sure to set `release-X.Y` as the base branch, into which PR should be merged.
 After PR with cherry-picked commit is reviewed, do a standard "Squash & Merge" commit that we use in Mimir.
-Keep the commit message suggested by Github, which is a combination of original commit message, original PR number, new PR number and cherry-picked commit hash.
-Github will properly attribute you and also original commit author as contributors to this change, and will also link to original commit in the UI.
+Keep the commit message suggested by GitHub, which is a combination of original commit message, original PR number, new PR number and cherry-picked commit hash.
+GitHub will properly attribute you and also original commit author as contributors to this change, and will also link to original commit in the UI.
