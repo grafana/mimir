@@ -5764,8 +5764,23 @@ func TestGetIgnoreSeriesLimitForMetricNamesMap(t *testing.T) {
 func Test_Ingester_OutOfOrder(t *testing.T) {
 	cfg := defaultIngesterTestConfig(t)
 	cfg.TSDBConfigUpdatePeriod = 1 * time.Second
+
 	l := defaultLimitsTestConfig()
-	i, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, l, "", nil)
+	tenantOverride := new(TenantLimitsMock)
+	tenantOverride.On("ByUserID", "test").Return(nil)
+	override, err := validation.NewOverrides(l, tenantOverride)
+	require.NoError(t, err)
+
+	setOOOTimeWindow := func(oooTW model.Duration) {
+		tenantOverride.ExpectedCalls = nil
+		tenantOverride.On("ByUserID", "test").Return(&validation.Limits{
+			OutOfOrderTimeWindow: oooTW,
+		})
+		// TSDB config is updated every second.
+		<-time.After(1500 * time.Millisecond)
+	}
+
+	i, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, override, "", nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
@@ -5835,18 +5850,6 @@ func Test_Ingester_OutOfOrder(t *testing.T) {
 		assert.ElementsMatch(t, expMatrix, res)
 	}
 
-	updateConfig := func(oooTW model.Duration) {
-		limits := defaultLimitsTestConfig()
-		tenantOverride := new(TenantLimitsMock)
-		tenantOverride.On("ByUserID", "test").Return(&validation.Limits{OutOfOrderTimeWindow: oooTW})
-		override, err := validation.NewOverrides(limits, tenantOverride)
-		require.NoError(t, err)
-		i.limits = override
-
-		// TSDB config is updated every second.
-		<-time.After(1500 * time.Millisecond)
-	}
-
 	// Push first in-order sample at minute 100.
 	pushSamples(100, 100, false)
 	verifySamples(100, 100)
@@ -5856,7 +5859,7 @@ func Test_Ingester_OutOfOrder(t *testing.T) {
 	verifySamples(100, 100)
 
 	// Increasing the OOO time window.
-	updateConfig(model.Duration(30 * time.Minute))
+	setOOOTimeWindow(model.Duration(30 * time.Minute))
 	// Now it works.
 	pushSamples(90, 99, false)
 	verifySamples(90, 100)
@@ -5870,12 +5873,12 @@ func Test_Ingester_OutOfOrder(t *testing.T) {
 	verifySamples(70, 100)
 
 	// Increase the time window again. It works.
-	updateConfig(model.Duration(60 * time.Minute))
+	setOOOTimeWindow(model.Duration(60 * time.Minute))
 	pushSamples(50, 69, false)
 	verifySamples(50, 100)
 
 	// Decrease the time window again. Same push should fail.
-	updateConfig(model.Duration(30 * time.Minute))
+	setOOOTimeWindow(model.Duration(30 * time.Minute))
 	pushSamples(50, 69, true)
 	verifySamples(50, 100)
 }
