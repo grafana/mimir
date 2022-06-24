@@ -57,6 +57,9 @@ const (
 	SampleOutOfOrder         ID = "sample-out-of-order"
 	SampleDuplicateTimestamp ID = "sample-duplicate-timestamp"
 	ExemplarSeriesMissing    ID = "exemplar-series-missing"
+
+	StoreConsistencyCheckFailed ID = "store-consistency-check-failed"
+	BucketIndexTooOld           ID = "bucket-index-too-old"
 )
 
 // Message returns the provided msg, appending the error id.

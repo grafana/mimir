@@ -594,7 +594,11 @@ func (q *blocksStoreQuerier) queryWithConsistencyCheck(ctx context.Context, logg
 
 	// We've not been able to query all expected blocks after all retries.
 	level.Warn(util_log.WithContext(ctx, logger)).Log("msg", "failed consistency check", "err", err)
-	return fmt.Errorf("consistency check failed because some blocks were not queried: %s", strings.Join(convertULIDsToString(remainingBlocks), " "))
+	return newStoreConsistencyCheckFailedError(remainingBlocks)
+}
+
+func newStoreConsistencyCheckFailedError(remainingBlocks []ulid.ULID) error {
+	return fmt.Errorf("%v. The non-queried blocks are: %s", globalerror.StoreConsistencyCheckFailed.Message("the consistency check failed because some blocks were not queried"), strings.Join(convertULIDsToString(remainingBlocks), " "))
 }
 
 // filterBlocksByShard removes blocks that can be safely ignored when using query sharding. We know that block can be safely

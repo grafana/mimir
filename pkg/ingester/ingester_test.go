@@ -5785,7 +5785,7 @@ func TestNewIngestErrMsgs(t *testing.T) {
 
 	for testName, tc := range tests {
 		t.Run(testName, func(t *testing.T) {
-			assert.Equal(t, tc.err.Error(), tc.msg)
+			assert.Equal(t, tc.msg, tc.err.Error())
 		})
 	}
 }

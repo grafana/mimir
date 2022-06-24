@@ -1429,6 +1429,40 @@ How it **works**:
 
 - The series must already exist before exemplars can be appended, as we do not create new series upon ingesting exemplars. The series will be created when a sample from it is ingested.
 
+### err-mimir-store-consistency-check-failed
+
+This error occurs when the querier is unable to fetch some of the expected blocks after multiple retries and connections to different store-gateways. The query fails because some blocks are missing in the queried store-gateways.
+
+How it **works**:
+
+- Mimir has been designed to guarantee query results correctness and never return partial query results. Either a query succeeds returning fully consistent results or it fails.
+- Queriers, and rulers running with the "internal" evaluation mode, run a consistency check to ensure all expected blocks have been queried from the long-term storage via the store-gateways.
+- If any expected block has not been queried via the store-gateways, then the query fails with this error.
+- See [Anatomy of a query request]({{< relref "../architecture/components/querier.md#anatomy-of-a-query-request" >}}) to learn more.
+
+How to **fix** it:
+
+- Ensure all store-gateways are healthy.
+- Ensure all store-gateways are successfully synching owned blocks (see [`MimirStoreGatewayHasNotSyncTheBucket`](#MimirStoreGatewayHasNotSyncTheBucket)).
+
+### err-mimir-bucket-index-too-old
+
+This error occurs when a query fails because the bucket index is too old.
+
+How it **works**:
+
+- Compactors periodically write a per-tenant file, called the "bucket index", to the object storage. The bucket index contains all known blocks for the given tenant and is updated every `-compactor.cleanup-interval`.
+- When a query is executed, queriers and rulers running with the "internal" evaluation mode look up the bucket index to find which blocks should be queried through the store-gateways.
+- To ensure all required blocks are queried, queriers and rulers determine how old a bucket index is based on the time that it was last updated by the compactor.
+- If the age is older than the maximum stale period that is configured via `-blocks-storage.bucket-store.bucket-index.max-stale-period`, the query fails.
+- This circuit breaker ensures that the queriers and rulers do not return any partial query results due to a stale view of the long-term storage.
+
+How to **fix** it:
+
+- Ensure the compactor is running successfully (e.g. not crashing, not going out of memory).
+- Ensure each compactor replica has successfully updated bucket index of each owned tenant within the double of `-compactor.cleanup-interval` (query below assumes the cleanup interval is set to 15 minutes):
+  `time() - cortex_compactor_block_cleanup_last_successful_run_timestamp_seconds > 2 * (15 * 60)`
+
 ## Mimir routes by path
 
 **Write path**:
