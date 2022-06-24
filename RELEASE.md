@@ -20,19 +20,18 @@ A new Grafana Mimir release is cut approximately every 6 weeks. The following ta
 The release shepherd is responsible for an entire minor release series, meaning all pre- and patch releases of a minor release.
 The process formally starts with the initial pre-release, but some preparations should be made a few days in advance.
 
-- We aim to keep the `main` branch in a working state at all times. In principle, it should be possible to cut a release
-  from `main` at any time. In practice, things might not work out as nicely. A few days before the pre-release is scheduled,
-  the shepherd should check the state of `main` branch. Following their best judgement, the shepherd should try to expedite
-  bug fixes that are still in progress but should make it into the release. On the other hand, the shepherd may hold back
-  merging last-minute invasive and risky changes that are better suited for the next minor release.
-- There may be some actions left to address when cutting this release. The release shepherd is responsible for going through
-  TODOs in the repository and verifying that nothing is that is due this release is forgotten.
-- On the planned release date, the release shepherd cuts the first pre-release (using the suffix `-rc.0`) and creates
-  a new branch called `release-<major>.<minor>` starting at the commit tagged for the pre-release. In general, a pre-release
-  is considered a release candidate (that's what `rc` stands for) and should therefore not contain any known bugs that
-  are planned to be fixed in the final release.
-- With the pre-release, the release shepherd is responsible for coordinating or running the release candidate in any end
-  user production environment for at least 1 week. This is typically done at Grafana Labs.
+- We aim to keep the `main` branch in a working state at all times.
+  In principle, it should be possible to cut a release from `main` at any time.
+  In practice, things might not work out as nicely.
+  A few days before the pre-release is scheduled, the shepherd should check the state of `main` branch.
+  Following their best judgement, the shepherd should try to expedite bug fixes that are still in progress but should make it into the release.
+  On the other hand, the shepherd may hold back merging last-minute invasive and risky changes that are better suited for the next minor release.
+- There may be some actions left to address when cutting this release.
+  The release shepherd is responsible for going through TODOs in the repository and verifying that nothing is that is due this release is forgotten.
+- On the planned release date, the release shepherd cuts the first pre-release (using the suffix `-rc.0`) and creates a new branch called `release-<major>.<minor>` starting at the commit tagged for the pre-release.
+  In general, a pre-release is considered a release candidate (that's what `rc` stands for) and should therefore not contain any known bugs that are planned to be fixed in the final release.
+- With the pre-release, the release shepherd is responsible for coordinating or running the release candidate in any end user production environment for at least 1 week.
+  This is typically done at Grafana Labs.
 - If regressions or critical bugs are detected, they need to get fixed before cutting a new pre-release (called `-rc.1`, `-rc.2`, etc.).
 
 See the next section for details on cutting an individual release.
@@ -80,9 +79,22 @@ the new release branch (prepare-release-X.Y -> release-X.Y):
      - `[FEATURE]`
      - `[ENHANCEMENT]`
      - `[BUGFIX]`
-   - Run `./tools/release/check-changelog.sh LAST-RELEASE-TAG...main` and add any missing PR which includes user-facing changes
+   - Run `./tools/release/check-changelog.sh LAST-RELEASE-TAG...main` and add any missing PR which includes user-facing changes.
+   - `check-changelog.sh` script also reports number of PRs and authors on the top. Note the numbers and include them in the release notes in GitHub.
 
 Once your release preparation PR is approved, merge it to the `release-X.Y` branch, and continue with publishing.
+
+### Write release notes document
+
+Each Grafana Mimir release comes with a release notes that is published on the website. This document is stored in `docs/sources/release-notes/`,
+and contains following sections:
+- Features and enhancements
+- Upgrade considerations
+- Bug fixes
+
+Please write a draft release notes PR, and get it approved by Grafana Mimir's Product Manager (or ask PM to send PR with the document).
+Make sure that release notes document for new version is available from the release branch, and not just `main`.
+See [PR 1848](https://github.com/grafana/mimir/pull/1848) for an example PR.
 
 ### Publish a release candidate
 
@@ -96,16 +108,18 @@ To publish a release candidate:
 
 ### Creating release on GitHub
 
-1. When creating release on GitHub, select your new tag, use `Mimir <VERSION>` as Release Title, and click "Generate release notes" button.
-   This will pre-fill the changelog for the release. You can delete all of it, except "New Contributors" section.
-1. Release notes should contain:
+1. Go to https://github.com/grafana/mimir/releases/new to start a new release on GitHub (or click "Draft a new release" at https://github.com/grafana/mimir/releases page.)
+1. Select your new tag, use `Mimir <VERSION>` as Release Title. Check that "Previous tag" next to "Generate release notes" button shows previous Mimir release.
+   Click "Generate release notes" button. This will pre-fill the changelog for the release.
+   You can delete all of it, but keep "New Contributors" section and "Full Changelog" link for later.
+1. Release description consists of:
    - "This release contains XX contributions from YY authors. Thank you!" at the beginning.
-     - You can find the numbers by doing compare like `https://github.com/grafana/mimir/compare/mimir-2.0.0...mimir-2.1.0` from previous Mimir release. (Note the syntax: `.../compare/<old ref>...<new ref>`, yes there are three dots).
-     - Number of commits = "contributions", number of contributors = "authors".
-     - As an example, for [current HEAD on commit 017a738](https://github.com/grafana/mimir/compare/mimir-2.1.0...017a738e94) shows 185 contributions and 36 authors since Mimir 2.1.0.
-   - Most interesting new features for users. Use your judgement.
-   - Full copy-paste of the CHANGELOG since previous release.
-   - "New Contributors" section at the end (created by "Generate release notes" button in GitHub UI).
+     You can find the numbers by running `./tools/release/check-changelog.sh LAST-RELEASE-TAG...NEW-RELEASE-TAG`.
+     As an example, running the script with `mimir-2.0.0...mimir-2.1.0` argument reports `Found 417 PRs from 47 authors.`.
+   - After contributor stats, please include content of the release notes document [created previously](#write-release-notes-document).
+   - After release notes, please copy-paste content of CHANGELOG.md file since the previous release.
+   - After CHANGELOG, please include "New Contributors" section and "Full Changelog" link at the end.
+     Both were created previously by "Generate release notes" button in GitHub UI.
 1. Build binaries with `make BUILD_IN_CONTAINER=true dist` and attach them to the release (building in container ensures standardized toolchain).
 
 ### Publish a stable release
