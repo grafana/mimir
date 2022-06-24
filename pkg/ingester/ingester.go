@@ -519,7 +519,7 @@ func (i *Ingester) applyTSDBSettings() {
 					MaxExemplars: int64(localValue),
 				},
 				TSDBConfig: &promcfg.TSDBConfig{
-					OutOfOrderAllowance: time.Duration(oooTW).Milliseconds(),
+					OutOfOrderTimeWindow: time.Duration(oooTW).Milliseconds(),
 				},
 			},
 		}
