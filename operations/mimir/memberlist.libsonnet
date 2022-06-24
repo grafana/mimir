@@ -19,23 +19,7 @@
     // but "primary" KV depends on value of multikv_primary.
     memberlist_ring_enabled: true,
 
-    // Migrating from consul to memberlist is a multi-step process:
-    //
-    // 1) Enable memberlist_ring_enabled=true and multikv_migration_enabled=true, restart components.
-    //
-    // 2) Set multikv_mirror_enabled=true. This doesn't require restart.
-    //
-    // 3) Set multikv_switch_primary_secondary=true. This doesn't require restart. From this point on components use memberlist as primary KV store!
-    //
-    // 4) Set multikv_mirror_enabled=false. Stop mirroring writes to Consul. Doesn't require restart.
-    //
-    // 5) Set multikv_migration_enabled=false and multikv_migration_teardown=true. This requires a restart.
-    //    After restart components will only use memberlist. Using multikv_migration_teardown=true guarantees that runtime config
-    //    with multi KV configuration is preserved for components that haven't restarted yet.
-    //
-    //    Note: this also removes Consul. That's fine, because it's not used anymore (mirroring to it was disabled in step 4).
-    //
-    // 6) Set multikv_migration_teardown=false. This step removes runtime configuration for multi KV. It doesn't require a restart of components.
+    // To migrate from Consul to Memberlist check "Migrating from Consul to Memberlist KV store for hash rings" article in Mimir documentation.
     multikv_migration_enabled: false,  // Enable multi KV.
     multikv_migration_teardown: false,  // If multikv_migration_enabled=false and multikv_migration_teardown=true, runtime configuration for multi KV is preserved.
     multikv_switch_primary_secondary: false,  // Switch primary and secondary KV stores in runtime configuration for multi KV.

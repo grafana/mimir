@@ -32,6 +32,7 @@ This document groups API endpoints by service. Note that the API endpoints are e
 | [Pprof](#pprof)                                                                       | _All services_          | `GET /debug/pprof`                                                        |
 | [Fgprof](#fgprof)                                                                     | _All services_          | `GET /debug/fgprof`                                                       |
 | [Build information](#build-information)                                               | _All services_          | `GET /api/v1/status/buildinfo`                                            |
+| [Memberlist cluster](#memberlist-cluster)                                             | _All services_          | `GET /memberlist`                                                         |
 | [Remote write](#remote-write)                                                         | Distributor             | `POST /api/v1/push`                                                       |
 | [Tenants stats](#tenants-stats)                                                       | Distributor             | `GET /distributor/all_user_stats`                                         |
 | [HA tracker status](#ha-tracker-status)                                               | Distributor             | `GET /distributor/ha_tracker`                                             |
@@ -207,6 +208,18 @@ GET <alertmanager-http-prefix>/api/v1/status/buildinfo
 ```
 
 This endpoint returns in JSON format information about the build and enabled features. The format returned is not identical, but is similar to the [Prometheus Build Information endpoint](https://prometheus.io/docs/prometheus/latest/querying/api/#build-information).
+
+### Memberlist cluster
+
+```
+GET /memberlist
+```
+
+This admin page shows information about Memberlist cluster (list of nodes and their health) and KV store (keys and values in the KV store).
+
+If memberlist message history is enabled, this page also shows all received and sent messages stored in the buffers.
+This can be useful for troubleshooting memberlist cluster.
+To enable message history buffers use `-memberlist.message-history-buffer-bytes` CLI flag or the corresponding YAML configuration parameter.
 
 ## Distributor
 
