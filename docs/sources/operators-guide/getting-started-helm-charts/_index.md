@@ -8,6 +8,7 @@ weight: 20
 # Getting started with Grafana Mimir using the Helm chart
 
 <!-- What is this about? TODO -->
+<!-- TODO introduce the notation of <...> to mean that the user needs to set their own value here. -->
 
 ## Before you begin
 
@@ -15,19 +16,21 @@ The instructions that follow are common across any flavor of Kubernetes.
 
 The information that follows assumes that you are able to install Kubernetes, and configure and operate it.
 
+Hardware requirements:
+
+- For this tutorial a single Kubernetes node with a minimum of 4 cores and 16GiB RAM should be sufficient. Note that production setups start from 3 nodes for redundancy!
+
 Install the following software:
 
 - Either a [Prometheus server](https://prometheus.io/docs/prometheus/latest/installation/) or [Grafana Agent](https://grafana.com/docs/grafana-cloud/agent/#installing-the-grafana-agent).
-<!-- TBD, Krajo to figure out: - Verify that you have enough memery overall and number of cores. Krajo needs a couple of days for this answer to come in. -->
 - Helm 3 or higher
-- A DNS service
 - Kubernetes 1.10 or higher
 - The kubectl command for your version of Kubernetes, and an understanding of what the command does.
 
 Verify that you have:
 
 - Access to the Kubernetes cluster
-- Persistent storage is enabled in the Kubernetes cluster
+- Persistent storage is enabled in the Kubernetes cluster and there is a default storage class set up
 - DNS service works in the Kubernetes cluster
 - An ingress controller is set up in the Kubernetes cluster
 
@@ -71,23 +74,23 @@ Using a custom namespace solves problems later on because you do not have to ove
    An ingress enables you to externally access a Kubernetes cluster via the hostname defined by the _`<ingress-host>`_ variable.
    Replace _`<ingress-host>`_ with a suitable hostname that DNS can resolve to the external IP address of the Kubernetes cluster. For more information, see [Ingress](https://kubernetes.io/docs/concepts/services-networking/ingress/).
 
-   Without using an ingress, it is still possible to access Grafana Mimir from inside the cluster. In such case, replace _`<ingress-host>`_ with _`<release-name>`_`-mimir-nginx.`_`<namespace>`_`.svc:80` throughout the rest of the procedure.
+   > **Note:** Without using an ingress, it is still possible to access Grafana Mimir from inside the cluster, see chapter <!-- TODO -->
 
 1. Install Grafana Mimir using the Helm chart:
 
-   ```console
+   ```bash
    helm -n <namespace> install <release-name> grafana/mimir-distributed -f custom.yaml
    ```
 
 1. Check the statuses of the Mimir services:
 
-   ```console
+   ```bash
    kubectl -n <namespace> get pod
    ```
 
    The results look similar to this:
 
-   ```console
+   ```bash
    kubectl -n dev get pod
    NAME                                                       READY   STATUS      RESTARTS   AGE
    <release-name>-mimir-nginx-69fd969c-g6bkn                  1/1     Running     0          159m
@@ -108,9 +111,13 @@ Using a custom namespace solves problems later on because you do not have to ove
 
 1. What until all of the pods have a status of `Running` or `Completed`, which might take a few minutes.
 
-## Configure Prometheus to write to Grafana Mimir
+## Accessing Grafana Mimir from outside the Kubernetes cluster
 
-Add the following YAML snippet to your Prometheus configuration file and restart the Prometheus server:
+This chapter assumes that an ingress is set up. If this is not the case, skip to the next chapter <!-- TODO link -->
+
+### Configure Prometheus to write to Grafana Mimir
+
+Add the following YAML snippet to your existing Prometheus configuration file and restart the Prometheus server:
 
 ```yaml
 remote_write:
@@ -130,9 +137,15 @@ scrape_configs:
       - targets: ["localhost:9090"]
 ```
 
-## Configure Grafana Agent to write to Grafana Mimir
+Assuming this configuration is written to a `prometheus.yml`, the following command can quickly start a Prometheus instance:
 
-Add the following YAML snippet to one of your Agent metrics configurations (`metrics.configs`) in your Agent configuration file and restart Grafana Agent:
+```bash
+docker run --network=host -p 9090:9090  -v <path-to>/prometheus.yml:/etc/prometheus/prometheus.yml prom/prometheus
+```
+
+### Configure Grafana Agent to write to Grafana Mimir
+
+Add the following YAML snippet to one of your existing Agent metrics configurations (`metrics.configs`) in your Agent configuration file and restart Grafana Agent:
 
 ```yaml
 remote_write:
@@ -159,11 +172,17 @@ metrics:
         - url: http://<ingress-host>/api/v1/push
 ```
 
-## Query data in Grafana
+Assuming this configuration is written to a `config.yaml` and there is a directory for writing the write ahead log (WAL), the following command can quickly start a Grafana Agent instance:
+
+```bash
+docker run --network=host  -v <path-to-wal-directory>:/etc/agent/data -v <path-to>/config.yaml:/etc/agent/agent.yaml grafana/agent:latest
+```
+
+### Query data in Grafana
 
 First install Grafana, and then add Mimir as a Prometheus data source.
 
-## Install Grafana
+#### Install Grafana
 
 You can either [deploy Grafana Mimir on Kubernetes](https://grafana.com/docs/grafana/latest/setup-grafana/installation/kubernetes/)
 or get a test instance of a local Grafana server up and running
@@ -173,9 +192,7 @@ quickly by using Docker:
 docker run --rm --name=grafana --network=host grafana/grafana
 ```
 
-> **Note:** If you are not using an ingress, just install Grafana inside the cluster. Otherwise, accessing the same cluster that Mimir is on is a complex process that involves setting up port forwarding.
-
-### Add Grafana Mimir as a Prometheus data source
+#### Add Grafana Mimir as a Prometheus data source
 
 1. In a browser, go to the Grafana server at [http://localhost:3000/datasources](http://localhost:3000/datasources).
 1. Sign in using the default username `admin` and password `admin`.
@@ -184,11 +201,69 @@ docker run --rm --name=grafana --network=host grafana/grafana
    | Field | Value                                                                  |
    | ----- | ---------------------------------------------------------------------- |
    | Name  | Mimir                                                                  |
-   | URL   | [http://\<ingress-host\>/prometheus](http://<ingress-host>/prometheus) |
+   | URL   | http://\<ingress-host\>/prometheus                                       |
 
 To add a data source, refer to [Add a data source](https://grafana.com/docs/grafana/latest/datasources/add-a-data-source/).
 
-## Verify success
+### Verify success
+
+When you have completed the tasks in this getting started guide, you can query metrics in [Grafana Explore](https://grafana.com/docs/grafana/latest/explore/)
+as well as create dashboard panels using the newly configured Grafana Mimir data source.
+
+## Accessing Grafana Mimir from inside the Kubernetes cluster
+
+This chapter does not assume that an ingress is set up, but of course it does not prohibit it either. You can mix the two approaches as needed.
+
+### Enable Meta Monitoring in Grafana Mimir
+
+Grafana Mimir meta monitoring collects metrics and or logs about Grafana Mimir itself. It's primary purpose is to send meta monitoring information to some external receiver, for example a [free tier Grafana Metrics account](https://grafana.com/metrics/). In this example we'll use it to collect and send metrics into itself for testing.
+
+Add the following YAML snippet to your Grafana Mimir `custom.yaml` file:
+
+```yaml
+serviceMonitor:
+  enabled: true
+metaMonitoring:
+  grafanaAgent:
+    enabled: true
+    installOperator: true
+    metrics:
+      additionalRemoteWriteConfigs:
+        - url: 'http://<release-name>-mimir-nginx.<namespace>.svc:80/api/v1/push'
+```
+
+Upgrade Grafana Mimir via the helm chart to start a Grafana Agent and start collecting metrics about Grafana Mimir itself:
+
+```bash
+helm -n <namespace> upgrade <release-name> grafana/mimir-distributed -f custom.yaml
+```
+
+### Query data in Grafana
+
+First install Grafana in the Kubernetes cluster, and then add Mimir as a Prometheus data source.
+
+#### Install Grafana
+
+Follow the instructions in [Deploy Grafana on Kubernetes](https://grafana.com/docs/grafana/latest/setup-grafana/installation/kubernetes/).
+
+#### Add Grafana Mimir as a Prometheus data source
+
+1. Port forward Grafana to localhost with the command:
+   ```bash
+   kubectl port-forward service/grafana 3000:3000
+   ```
+1. In a browser, go to the Grafana server at [http://localhost:3000/datasources](http://localhost:3000/datasources).
+1. Sign in using the default username `admin` and password `admin`.
+1. Configure a new Prometheus data source to query the local Grafana Mimir server using the following settings:
+
+   | Field | Value                                                                  |
+   | ----- | ---------------------------------------------------------------------- |
+   | Name  | Mimir                                                                  |
+   | URL   | http://\<release-name\>-mimir-nginx.\<namespace\>.svc:80/prometheus        |
+
+To add a data source, refer to [Add a data source](https://grafana.com/docs/grafana/latest/datasources/add-a-data-source/).
+
+### Verify success
 
 When you have completed the tasks in this getting started guide, you can query metrics in [Grafana Explore](https://grafana.com/docs/grafana/latest/explore/)
 as well as create dashboard panels using the newly configured Grafana Mimir data source.
