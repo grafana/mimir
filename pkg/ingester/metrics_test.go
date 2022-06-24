@@ -187,7 +187,7 @@ func TestTSDBMetrics(t *testing.T) {
 			# TYPE cortex_ingester_tsdb_reloads_total counter
 			cortex_ingester_tsdb_reloads_total 30
 
-			# HELP cortex_ingester_tsdb_sample_out_of_order_delta_seconds Delta in seconds by which a sample is considered out of order.
+			# HELP cortex_ingester_tsdb_sample_out_of_order_delta_seconds Delta in seconds by which a sample is considered out-of-order.
 			# TYPE cortex_ingester_tsdb_sample_out_of_order_delta_seconds histogram
 			# observations        buckets
 			#                     600
@@ -225,7 +225,7 @@ func TestTSDBMetrics(t *testing.T) {
 			cortex_ingester_tsdb_exemplar_last_exemplars_timestamp_seconds{user="user2"} 1234
 			cortex_ingester_tsdb_exemplar_last_exemplars_timestamp_seconds{user="user3"} 1234
 
-			# HELP cortex_ingester_tsdb_exemplar_out_of_order_exemplars_total Total number of out of order exemplar ingestion failed attempts.
+			# HELP cortex_ingester_tsdb_exemplar_out_of_order_exemplars_total Total number of out-of-order exemplar ingestion failed attempts.
 			# TYPE cortex_ingester_tsdb_exemplar_out_of_order_exemplars_total counter
 			cortex_ingester_tsdb_exemplar_out_of_order_exemplars_total 9
 			
@@ -240,6 +240,10 @@ func TestTSDBMetrics(t *testing.T) {
 			cortex_ingester_tsdb_exemplar_exemplars_appended_total{user="user1"} 100
 			cortex_ingester_tsdb_exemplar_exemplars_appended_total{user="user2"} 100
 			cortex_ingester_tsdb_exemplar_exemplars_appended_total{user="user3"} 100
+
+			# HELP cortex_ingester_tsdb_out_of_order_samples_appended_total Total number of out-of-order samples appended.
+			# TYPE cortex_ingester_tsdb_out_of_order_samples_appended_total counter
+			cortex_ingester_tsdb_out_of_order_samples_appended_total 9
 
 			# HELP cortex_ingester_tsdb_exemplar_exemplars_in_storage Number of TSDB exemplars currently in storage.
 			# TYPE cortex_ingester_tsdb_exemplar_exemplars_in_storage gauge
@@ -417,7 +421,7 @@ func TestTSDBMetricsWithRemoval(t *testing.T) {
 			# TYPE cortex_ingester_tsdb_reloads_total counter
 			cortex_ingester_tsdb_reloads_total 30
 
-			# HELP cortex_ingester_tsdb_sample_out_of_order_delta_seconds Delta in seconds by which a sample is considered out of order.
+			# HELP cortex_ingester_tsdb_sample_out_of_order_delta_seconds Delta in seconds by which a sample is considered out-of-order.
 			# TYPE cortex_ingester_tsdb_sample_out_of_order_delta_seconds histogram
 			# observations        buckets
 			#                     600
@@ -452,7 +456,7 @@ func TestTSDBMetricsWithRemoval(t *testing.T) {
 			cortex_ingester_tsdb_exemplar_last_exemplars_timestamp_seconds{user="user1"} 1234
 			cortex_ingester_tsdb_exemplar_last_exemplars_timestamp_seconds{user="user2"} 1234
 
-			# HELP cortex_ingester_tsdb_exemplar_out_of_order_exemplars_total Total number of out of order exemplar ingestion failed attempts.
+			# HELP cortex_ingester_tsdb_exemplar_out_of_order_exemplars_total Total number of out-of-order exemplar ingestion failed attempts.
 			# TYPE cortex_ingester_tsdb_exemplar_out_of_order_exemplars_total counter
 			cortex_ingester_tsdb_exemplar_out_of_order_exemplars_total 9
 			
@@ -469,6 +473,10 @@ func TestTSDBMetricsWithRemoval(t *testing.T) {
 			# HELP cortex_ingester_tsdb_exemplar_exemplars_in_storage Number of TSDB exemplars currently in storage.
 			# TYPE cortex_ingester_tsdb_exemplar_exemplars_in_storage gauge
 			cortex_ingester_tsdb_exemplar_exemplars_in_storage 20
+
+			# HELP cortex_ingester_tsdb_out_of_order_samples_appended_total Total number of out-of-order samples appended.
+			# TYPE cortex_ingester_tsdb_out_of_order_samples_appended_total counter
+			cortex_ingester_tsdb_out_of_order_samples_appended_total 9
 	`))
 	require.NoError(t, err)
 }
@@ -638,7 +646,7 @@ func populateTSDBMetrics(base float64) *prometheus.Registry {
 
 	tsdbOOOHistogram := promauto.With(r).NewHistogram(prometheus.HistogramOpts{
 		Name:    "prometheus_tsdb_sample_ooo_delta",
-		Help:    "Delta in seconds by which a sample is considered out of order.",
+		Help:    "Delta in seconds by which a sample is considered out-of-order.",
 		Buckets: []float64{60 * 10, 60 * 60 * 24}, // for testing: 3 buckets: 10 min, 24 hour, and inf
 	})
 	tsdbOOOHistogram.Observe(7 * base)
@@ -731,9 +739,21 @@ func populateTSDBMetrics(base float64) *prometheus.Registry {
 
 	exemplarsOutOfOrderTotal := promauto.With(r).NewCounter(prometheus.CounterOpts{
 		Name: "prometheus_tsdb_exemplar_out_of_order_exemplars_total",
-		Help: "Total number of out of order exemplar ingestion failed attempts.",
+		Help: "Total number of out-of-order exemplar ingestion failed attempts.",
 	})
 	exemplarsOutOfOrderTotal.Add(3)
+
+	outOfOrderSamplesAppendedTotal := promauto.With(r).NewCounter(prometheus.CounterOpts{
+		Name: "prometheus_tsdb_head_out_of_order_samples_appended_total",
+		Help: "Total number of appended out-of-order samples.",
+	})
+	outOfOrderSamplesAppendedTotal.Add(3)
+
+	tooOldSamplesTotal := promauto.With(r).NewCounter(prometheus.CounterOpts{
+		Name: "prometheus_tsdb_too_old_samples_total",
+		Help: "Total number of out-of-order samples ingestion failed attempts.",
+	})
+	tooOldSamplesTotal.Add(3)
 
 	return r
 }

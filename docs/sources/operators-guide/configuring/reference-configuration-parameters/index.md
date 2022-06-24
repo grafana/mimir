@@ -741,9 +741,9 @@ ring:
 #       prod: '{namespace=~"prod-.*"}'
 [active_series_custom_trackers: <map of tracker name (string) to matcher (string)> | default = ]
 
-# (experimental) Period with which to update per-tenant max exemplar limit.
-# CLI flag: -ingester.exemplars-update-period
-[exemplars_update_period: <duration> | default = 15s]
+# (experimental) Period with which to update the per-tenant TSDB configuration.
+# CLI flag: -ingester.tsdb-config-update-period
+[tsdb_config_update_period: <duration> | default = 15s]
 
 instance_limits:
   # (advanced) Max ingestion rate (samples/sec) that ingester will accept. This
@@ -2717,6 +2717,18 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -ingester.active-series-custom-trackers
 [active_series_custom_trackers: <map of tracker name (string) to matcher (string)> | default = ]
 
+# (experimental) Non-zero value enables out-of-order support for most recent
+# samples that are within the time window in relation to the following two
+# conditions: (1) The newest sample for that time series, if it exists. For
+# example, within [series.maxTime-timeWindow, series.maxTime]). (2) The TSDB's
+# maximum time, if the series does not exist. For example, within
+# [db.maxTime-timeWindow, db.maxTime]). The ingester will need more memory as a
+# factor of _rate of out-of-order samples being ingested_ and _the number of
+# series that are getting out-of-order samples_. You can configure it per
+# tenant.
+# CLI flag: -ingester.out-of-order-time-window
+[out_of_order_time_window: <duration> | default = 0s]
+
 # Maximum number of chunks that can be fetched in a single query from ingesters
 # and long-term storage. This limit is enforced in the querier, ruler and
 # store-gateway. 0 to disable.
@@ -3515,11 +3527,6 @@ tsdb:
   # CLI flag: -blocks-storage.tsdb.isolation-enabled
   [isolation_enabled: <boolean> | default = false]
 
-  # (experimental) Enable querying overlapping blocks. If there are going to be
-  # overlapping blocks in the ingesters this should be enabled.
-  # CLI flag: -blocks-storage.tsdb.allow-overlapping-queries
-  [allow_overlapping_queries: <boolean> | default = false]
-
   # (advanced) Max size - in bytes - of the in-memory series hash cache. The
   # cache is shared across all tenants and it's used only when query sharding is
   # enabled.
@@ -3529,6 +3536,16 @@ tsdb:
   # (advanced) limit the number of concurrently opening TSDB's on startup
   # CLI flag: -blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup
   [max_tsdb_opening_concurrency_on_startup: <int> | default = 10]
+
+  # (experimental) Minimum capacity for out-of-order chunks, in samples between
+  # 0 and 255.
+  # CLI flag: -blocks-storage.tsdb.out-of-order-cap-min
+  [out_of_order_cap_min: <int> | default = 4]
+
+  # (experimental) Maximum capacity for out of order chunks, in samples between
+  # 1 and 255.
+  # CLI flag: -blocks-storage.tsdb.out-of-order-cap-max
+  [out_of_order_cap_max: <int> | default = 32]
 ```
 
 ### compactor

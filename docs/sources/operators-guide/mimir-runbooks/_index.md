@@ -1412,6 +1412,11 @@ Common **causes**:
 
 > **Note**: You can learn more about out of order samples in Prometheus, in the blog post [Debugging out of order samples](https://www.robustperception.io/debugging-out-of-order-samples/).
 
+### err-mimir-sample-too-old
+
+This error is similar to `err-mimir-sample-out-of-order`. The main difference is that the out-of-order support is enabled, but the sample is
+older than the out-of-order time window as it relates to the latest sample for that particular time series or the TSDB.
+
 ### err-mimir-sample-duplicate-timestamp
 
 This error occurs when the ingester rejects a sample because it is a duplicate of a previously received sample with the same timestamp but different value in the same time series.

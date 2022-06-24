@@ -257,7 +257,7 @@ func TestIngester_Push(t *testing.T) {
 				# TYPE cortex_ingester_tsdb_exemplar_last_exemplars_timestamp_seconds gauge
 				cortex_ingester_tsdb_exemplar_last_exemplars_timestamp_seconds{user="test"} 1
 
-				# HELP cortex_ingester_tsdb_exemplar_out_of_order_exemplars_total Total number of out of order exemplar ingestion failed attempts.
+				# HELP cortex_ingester_tsdb_exemplar_out_of_order_exemplars_total Total number of out-of-order exemplar ingestion failed attempts.
 				# TYPE cortex_ingester_tsdb_exemplar_out_of_order_exemplars_total counter
 				cortex_ingester_tsdb_exemplar_out_of_order_exemplars_total 0
 			`,
@@ -303,7 +303,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_memory_series_removed_total{user="test"} 0
 			`,
 		},
-		"should soft fail on sample out of order": {
+		"should soft fail on sample out-of-order": {
 			reqs: []*mimirpb.WriteRequest{
 				mimirpb.ToWriteRequest(
 					[]labels.Labels{metricLabels},
@@ -574,7 +574,7 @@ func TestIngester_Push(t *testing.T) {
 				# TYPE cortex_ingester_tsdb_exemplar_last_exemplars_timestamp_seconds gauge
 				cortex_ingester_tsdb_exemplar_last_exemplars_timestamp_seconds{user="test"} 0
 
-				# HELP cortex_ingester_tsdb_exemplar_out_of_order_exemplars_total Total number of out of order exemplar ingestion failed attempts.
+				# HELP cortex_ingester_tsdb_exemplar_out_of_order_exemplars_total Total number of out-of-order exemplar ingestion failed attempts.
 				# TYPE cortex_ingester_tsdb_exemplar_out_of_order_exemplars_total counter
 				cortex_ingester_tsdb_exemplar_out_of_order_exemplars_total 0
 			`,
@@ -1098,7 +1098,7 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 				}
 			},
 		},
-		"out of order samples": {
+		"out-of-order samples": {
 			prepareConfig: func(limits *validation.Limits, instanceLimits *InstanceLimits) bool { return true },
 			beforeBenchmark: func(b *testing.B, ingester *Ingester, numSeriesPerRequest int) {
 				// For each series, push a single sample with a timestamp greater than next pushes.
@@ -1117,7 +1117,7 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 			runBenchmark: func(b *testing.B, ingester *Ingester, metrics []labels.Labels, samples []mimirpb.Sample) {
 				expectedErr := storage.ErrOutOfOrderSample.Error()
 
-				// Push out of order samples.
+				// Push out-of-order samples.
 				for n := 0; n < b.N; n++ {
 					_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, nil, mimirpb.API)) // nolint:errcheck
 
@@ -5757,6 +5757,132 @@ func TestGetIgnoreSeriesLimitForMetricNamesMap(t *testing.T) {
 	require.Equal(t, map[string]struct{}{"foo": {}, "bar": {}}, cfg.getIgnoreSeriesLimitForMetricNamesMap())
 }
 
+// Test_Ingester_OutOfOrder tests basic ingestion and query of out-of-order samples.
+// It also tests if the OutOfOrderTimeWindow gets changed during runtime.
+// The correctness of changed runtime is already tested in Prometheus, so we only check if the
+// change is being applied here.
+func Test_Ingester_OutOfOrder(t *testing.T) {
+	cfg := defaultIngesterTestConfig(t)
+	cfg.TSDBConfigUpdatePeriod = 1 * time.Second
+
+	l := defaultLimitsTestConfig()
+	tenantOverride := new(TenantLimitsMock)
+	tenantOverride.On("ByUserID", "test").Return(nil)
+	override, err := validation.NewOverrides(l, tenantOverride)
+	require.NoError(t, err)
+
+	setOOOTimeWindow := func(oooTW model.Duration) {
+		tenantOverride.ExpectedCalls = nil
+		tenantOverride.On("ByUserID", "test").Return(&validation.Limits{
+			OutOfOrderTimeWindow: oooTW,
+		})
+		// TSDB config is updated every second.
+		<-time.After(1500 * time.Millisecond)
+	}
+
+	i, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, override, "", nil)
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
+	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
+
+	// Wait until it's healthy
+	test.Poll(t, 1*time.Second, 1, func() interface{} {
+		return i.lifecycler.HealthyInstancesCount()
+	})
+
+	ctx := user.InjectOrgID(context.Background(), "test")
+
+	pushSamples := func(start, end int64, expErr bool) {
+		start = start * time.Minute.Milliseconds()
+		end = end * time.Minute.Milliseconds()
+
+		s := labels.FromStrings(labels.MetricName, "test_1", "status", "200")
+		var samples []mimirpb.Sample
+		var lbls []labels.Labels
+		for ts := start; ts <= end; ts += time.Minute.Milliseconds() {
+			samples = append(samples, mimirpb.Sample{
+				TimestampMs: ts,
+				Value:       float64(ts),
+			})
+			lbls = append(lbls, s)
+		}
+
+		wReq := mimirpb.ToWriteRequest(lbls, samples, nil, nil, mimirpb.API)
+		_, err = i.Push(ctx, wReq)
+		if expErr {
+			require.Error(t, err, "should have failed on push")
+			require.ErrorAs(t, err, &storage.ErrTooOldSample)
+		} else {
+			require.NoError(t, err)
+		}
+	}
+
+	verifySamples := func(start, end int64) {
+		start = start * time.Minute.Milliseconds()
+		end = end * time.Minute.Milliseconds()
+
+		var expSamples []model.SamplePair
+		for ts := start; ts <= end; ts += time.Minute.Milliseconds() {
+			expSamples = append(expSamples, model.SamplePair{
+				Timestamp: model.Time(ts),
+				Value:     model.SampleValue(ts),
+			})
+		}
+		expMatrix := model.Matrix{{
+			Metric: model.Metric{"__name__": "test_1", "status": "200"},
+			Values: expSamples,
+		}}
+
+		req := &client.QueryRequest{
+			StartTimestampMs: math.MinInt64,
+			EndTimestampMs:   math.MaxInt64,
+			Matchers: []*client.LabelMatcher{
+				{Type: client.EQUAL, Name: model.MetricNameLabel, Value: "test_1"},
+			},
+		}
+
+		s := stream{ctx: ctx}
+		err = i.QueryStream(req, &s)
+		require.NoError(t, err)
+
+		res, err := chunkcompat.StreamsToMatrix(model.Earliest, model.Latest, s.responses)
+		require.NoError(t, err)
+		assert.ElementsMatch(t, expMatrix, res)
+	}
+
+	// Push first in-order sample at minute 100.
+	pushSamples(100, 100, false)
+	verifySamples(100, 100)
+
+	// OOO is not enabled. So it errors out. No sample ingested.
+	pushSamples(90, 99, true)
+	verifySamples(100, 100)
+
+	// Increasing the OOO time window.
+	setOOOTimeWindow(model.Duration(30 * time.Minute))
+	// Now it works.
+	pushSamples(90, 99, false)
+	verifySamples(90, 100)
+
+	// Gives an error for sample 69 since it's outside time window, but rest is ingested.
+	pushSamples(69, 99, true)
+	verifySamples(70, 100)
+
+	// All beyond the ooo time window. None ingested.
+	pushSamples(50, 69, true)
+	verifySamples(70, 100)
+
+	// Increase the time window again. It works.
+	setOOOTimeWindow(model.Duration(60 * time.Minute))
+	pushSamples(50, 69, false)
+	verifySamples(50, 100)
+
+	// Decrease the time window again. Same push should fail.
+	setOOOTimeWindow(model.Duration(30 * time.Minute))
+	pushSamples(50, 69, true)
+	verifySamples(50, 100)
+}
+
 func TestNewIngestErrMsgs(t *testing.T) {
 	timestamp := model.Time(1575043969)
 	metricLabelAdapters := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
@@ -5771,7 +5897,7 @@ func TestNewIngestErrMsgs(t *testing.T) {
 		},
 		"newIngestErrSampleOutOfOrder": {
 			err: newIngestErrSampleOutOfOrder(timestamp, metricLabelAdapters),
-			msg: `the sample has been rejected because another sample with a more recent timestamp has already been ingested and out of order samples are not allowed (err-mimir-sample-out-of-order). The affected sample has timestamp 1970-01-19T05:30:43.969Z and is from series {__name__="test"}`,
+			msg: `the sample has been rejected because another sample with a more recent timestamp has already been ingested and out-of-order samples are not allowed (err-mimir-sample-out-of-order). The affected sample has timestamp 1970-01-19T05:30:43.969Z and is from series {__name__="test"}`,
 		},
 		"newIngestErrSampleDuplicateTimestamp": {
 			err: newIngestErrSampleDuplicateTimestamp(timestamp, metricLabelAdapters),

@@ -2306,12 +2306,12 @@
         },
         {
           "kind": "field",
-          "name": "exemplars_update_period",
+          "name": "tsdb_config_update_period",
           "required": false,
-          "desc": "Period with which to update per-tenant max exemplar limit.",
+          "desc": "Period with which to update the per-tenant TSDB configuration.",
           "fieldValue": null,
           "fieldDefaultValue": 15000000000,
-          "fieldFlag": "ingester.exemplars-update-period",
+          "fieldFlag": "ingester.tsdb-config-update-period",
           "fieldType": "duration",
           "fieldCategory": "experimental"
         },
@@ -2647,6 +2647,17 @@
           "fieldFlag": "ingester.active-series-custom-trackers",
           "fieldType": "map of tracker name (string) to matcher (string)",
           "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "out_of_order_time_window",
+          "required": false,
+          "desc": "Non-zero value enables out-of-order support for most recent samples that are within the time window in relation to the following two conditions: (1) The newest sample for that time series, if it exists. For example, within [series.maxTime-timeWindow, series.maxTime]). (2) The TSDB's maximum time, if the series does not exist. For example, within [db.maxTime-timeWindow, db.maxTime]). The ingester will need more memory as a factor of _rate of out-of-order samples being ingested_ and _the number of series that are getting out-of-order samples_. You can configure it per tenant.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "ingester.out-of-order-time-window",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
         },
         {
           "kind": "field",
@@ -5382,17 +5393,6 @@
             },
             {
               "kind": "field",
-              "name": "allow_overlapping_queries",
-              "required": false,
-              "desc": "Enable querying overlapping blocks. If there are going to be overlapping blocks in the ingesters this should be enabled.",
-              "fieldValue": null,
-              "fieldDefaultValue": false,
-              "fieldFlag": "blocks-storage.tsdb.allow-overlapping-queries",
-              "fieldType": "boolean",
-              "fieldCategory": "experimental"
-            },
-            {
-              "kind": "field",
               "name": "series_hash_cache_max_size_bytes",
               "required": false,
               "desc": "Max size - in bytes - of the in-memory series hash cache. The cache is shared across all tenants and it's used only when query sharding is enabled.",
@@ -5412,6 +5412,28 @@
               "fieldFlag": "blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup",
               "fieldType": "int",
               "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "out_of_order_cap_min",
+              "required": false,
+              "desc": "Minimum capacity for out-of-order chunks, in samples between 0 and 255.",
+              "fieldValue": null,
+              "fieldDefaultValue": 4,
+              "fieldFlag": "blocks-storage.tsdb.out-of-order-cap-min",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "out_of_order_cap_max",
+              "required": false,
+              "desc": "Maximum capacity for out of order chunks, in samples between 1 and 255.",
+              "fieldValue": null,
+              "fieldDefaultValue": 32,
+              "fieldFlag": "blocks-storage.tsdb.out-of-order-cap-max",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,
