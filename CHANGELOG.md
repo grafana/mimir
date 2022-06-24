@@ -21,7 +21,7 @@
 * [FEATURE] Ingester: Add experimental ability to ingest out of order samples up to an allowed limit. Enabling this takes additional memory and disk space. It also enables a write behind log that could lead to longer ingester start replays. There is no overhead on memory, disk space, startup times, with it being disabled. #2187
   * `-ingester.out-of-order-time-window` allows setting how back in time a sample can be as duration string. Defaults to `0s`.
   * `cortex_ingester_tsdb_out_of_order_samples_appended_total` metric tracks the total number of out of samples ingested by the ingester.
-  * `cortex_discarded_samples_total` gets a new label `reason="sample-too-old"` when the `-ingester.out-of-order-time-window` flag is >0 to track number of samples that were discarded for being too old (out of order but beyond the time window allowed). 
+  * `cortex_discarded_samples_total` gets a new label `reason="sample-too-old"` when the `-ingester.out-of-order-time-window` flag is >0 to track number of samples that were discarded for being too old (out of order but beyond the time window allowed).
 * [ENHANCEMENT] Distributor: Added limit to prevent tenants from sending excessive number of requests: #1843
   * The following CLI flags (and their respective YAML config options) have been added:
     * `-distributor.request-rate-limit`
