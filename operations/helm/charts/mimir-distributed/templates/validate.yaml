@@ -23,3 +23,24 @@
 {{- if not (has .Values.configStorageType (list "Secret" "ConfigMap")) }}
 {{- fail "The setting 'configStorageType' should be one of 'Secret' or 'ConfigMap'." }}
 {{- end }}
+
+{{- with .Values.metaMonitoring.grafanaAgent }}
+{{/*
+  !servmon.Enabled
+  && agent.Enabled
+  && (remote.url != "" || (len(additionalConfigs) > 0 && additionalConfigs.url != ""))
+*/}}
+{{- if and
+    (not (($.Values).serviceMonitor).enabled)
+    .enabled
+    (or
+      (not (empty ((.metrics).remote).url))
+      (and
+        (not (empty (.metrics).additionalRemoteWriteConfigs))
+        (not (empty (first (.metrics).additionalRemoteWriteConfigs).url))
+      )
+    )
+    }}
+{{- fail "metaMonitoring.grafanaAgent.remote.url is set, but serivceMonitor is disabled; you will not see any metrics, so enable the serviceMOnitor or remove the remote configuration" }}
+{{- end }}
+{{- end }}
