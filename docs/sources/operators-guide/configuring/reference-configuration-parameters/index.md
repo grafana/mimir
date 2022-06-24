@@ -2723,9 +2723,8 @@ The `limits` block configures default and per-tenant limits imposed by component
 # example, within [series.maxTime-timeWindow, series.maxTime]). (2) The TSDB's
 # maximum time, if the series does not exist. For example, within
 # [db.maxTime-timeWindow, db.maxTime]). The ingester will need more memory as a
-# factor of _rate of out-of-order samples being ingested_ and _the number of
-# series that are getting out-of-order samples_. You can configure it per
-# tenant.
+# factor of rate of out-of-order samples being ingested and the number of series
+# that are getting out-of-order samples.
 # CLI flag: -ingester.out-of-order-time-window
 [out_of_order_time_window: <duration> | default = 0s]
 
@@ -3539,13 +3538,13 @@ tsdb:
 
   # (experimental) Minimum capacity for out-of-order chunks, in samples between
   # 0 and 255.
-  # CLI flag: -blocks-storage.tsdb.out-of-order-cap-min
-  [out_of_order_cap_min: <int> | default = 4]
+  # CLI flag: -blocks-storage.tsdb.out-of-order-capacity-min
+  [out_of_order_capacity_min: <int> | default = 4]
 
   # (experimental) Maximum capacity for out of order chunks, in samples between
   # 1 and 255.
-  # CLI flag: -blocks-storage.tsdb.out-of-order-cap-max
-  [out_of_order_cap_max: <int> | default = 32]
+  # CLI flag: -blocks-storage.tsdb.out-of-order-capacity-max
+  [out_of_order_capacity_max: <int> | default = 32]
 ```
 
 ### compactor
