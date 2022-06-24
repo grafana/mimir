@@ -1514,7 +1514,7 @@
           "kind": "field",
           "name": "timeout",
           "required": false,
-          "desc": "The timeout for a query. This config option should be set on query-frontend too when query sharding is enabled.",
+          "desc": "The timeout for a query. This config option should be set on query-frontend too when query sharding is enabled. This also applies to queries evaluated by the ruler (internally or remotely).",
           "fieldValue": null,
           "fieldDefaultValue": 120000000000,
           "fieldFlag": "querier.timeout",
@@ -7391,16 +7391,6 @@
               "fieldDefaultValue": "",
               "fieldFlag": "ruler.query-frontend.address",
               "fieldType": "string"
-            },
-            {
-              "kind": "field",
-              "name": "timeout",
-              "required": false,
-              "desc": "The timeout for a rule query being evaluated by the query-frontend.",
-              "fieldValue": null,
-              "fieldDefaultValue": 120000000000,
-              "fieldFlag": "ruler.query-frontend.timeout",
-              "fieldType": "duration"
             },
             {
               "kind": "block",

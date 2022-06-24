@@ -340,7 +340,7 @@ Usage of ./cmd/mimir/mimir:
   -querier.scheduler-address string
     	Address of the query-scheduler component, in host:port format. Only one of -querier.frontend-address or -querier.scheduler-address can be set. If neither is set, queries are only received via HTTP endpoint.
   -querier.timeout duration
-    	The timeout for a query. This config option should be set on query-frontend too when query sharding is enabled. (default 2m0s)
+    	The timeout for a query. This config option should be set on query-frontend too when query sharding is enabled. This also applies to queries evaluated by the ruler (internally or remotely). (default 2m0s)
   -query-frontend.align-querier-with-step
     	Mutate incoming queries to align their start and end with their step.
   -query-frontend.cache-results
@@ -452,8 +452,6 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of rules per rule group per-tenant. 0 to disable. (default 20)
   -ruler.query-frontend.address string
     	GRPC listen address of the query-frontend(s). Must be a DNS address (prefixed with dns:///) to enable client side load balancing.
-  -ruler.query-frontend.timeout duration
-    	The timeout for a rule query being evaluated by the query-frontend. (default 2m0s)
   -ruler.ring.consul.hostname string
     	Hostname and port of Consul. (default "localhost:8500")
   -ruler.ring.etcd.endpoints value
