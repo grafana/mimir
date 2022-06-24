@@ -1112,7 +1112,7 @@ Usage of ./cmd/mimir/mimir:
   -querier.store-gateway-client.tls-server-name string
     	Override the expected name on the server certificate.
   -querier.timeout duration
-    	The timeout for a query. This config option should be set on query-frontend too when query sharding is enabled. (default 2m0s)
+    	The timeout for a query. This config option should be set on query-frontend too when query sharding is enabled. This also applies to queries evaluated by the ruler (internally or remotely). (default 2m0s)
   -query-frontend.align-querier-with-step
     	Mutate incoming queries to align their start and end with their step.
   -query-frontend.cache-results
@@ -1448,8 +1448,6 @@ Usage of ./cmd/mimir/mimir:
     	Path to the key file for the client certificate. Also requires the client certificate to be configured.
   -ruler.query-frontend.grpc-client-config.tls-server-name string
     	Override the expected name on the server certificate.
-  -ruler.query-frontend.timeout duration
-    	The timeout for a rule query being evaluated by the query-frontend. (default 2m0s)
   -ruler.query-stats-enabled
     	Report the wall time for ruler queries to complete as a per-tenant metric and as an info level log message.
   -ruler.resend-delay duration

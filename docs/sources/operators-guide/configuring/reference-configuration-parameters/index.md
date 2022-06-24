@@ -850,7 +850,8 @@ store_gateway_client:
 [max_concurrent: <int> | default = 20]
 
 # The timeout for a query. This config option should be set on query-frontend
-# too when query sharding is enabled.
+# too when query sharding is enabled. This also applies to queries evaluated by
+# the ruler (internally or remotely).
 # CLI flag: -querier.timeout
 [timeout: <duration> | default = 2m]
 
@@ -1398,10 +1399,6 @@ query_frontend:
   # (prefixed with dns:///) to enable client side load balancing.
   # CLI flag: -ruler.query-frontend.address
   [address: <string> | default = ""]
-
-  # The timeout for a rule query being evaluated by the query-frontend.
-  # CLI flag: -ruler.query-frontend.timeout
-  [timeout: <duration> | default = 2m]
 
   grpc_client_config:
     # (advanced) gRPC client max receive message size (bytes).
