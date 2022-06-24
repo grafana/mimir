@@ -62,8 +62,8 @@ In the Grafana Mimir 2.2 (or later) release, blocks no longer have a label that 
 ## Considerations on Thanos specific features
 
 > **Note**: Thanos requires that Prometheus is configured with external labels.
-When the Thanos sidecar uploads blocks, it includes the external labels from Prometheus in the `meta.json` file inside the block.
-When you query the block, Thanos injects Prometheus’ external labels in the series returned in the query result. Thanos also uses labels for the deduplication of replicated data.
+> When the Thanos sidecar uploads blocks, it includes the external labels from Prometheus in the `meta.json` file inside the block.
+> When you query the block, Thanos injects Prometheus’ external labels in the series returned in the query result. Thanos also uses labels for the deduplication of replicated data.
 
 If you want to use existing blocks from Thanos by Grafana Mimir, there are some considerations:
 
