@@ -655,6 +655,7 @@ groups:
       (cortex_compactor_last_successful_run_timestamp_seconds > 0)
     for: 1h
     labels:
+      reason: in-last-24h
       severity: critical
   - alert: MimirCompactorHasNotSuccessfullyRunCompaction
     annotations:
@@ -664,6 +665,7 @@ groups:
       cortex_compactor_last_successful_run_timestamp_seconds == 0
     for: 24h
     labels:
+      reason: since-startup
       severity: critical
   - alert: MimirCompactorHasNotSuccessfullyRunCompaction
     annotations:
@@ -672,6 +674,7 @@ groups:
     expr: |
       increase(cortex_compactor_runs_failed_total[2h]) >= 2
     labels:
+      reason: consecutive-failures
       severity: critical
   - alert: MimirCompactorHasNotUploadedBlocks
     annotations:

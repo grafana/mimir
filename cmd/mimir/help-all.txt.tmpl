@@ -269,7 +269,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.bucket-store.bucket-index.idle-timeout duration
     	How long a unused bucket index should be cached. Once this timeout expires, the unused bucket index is removed from the in-memory cache. This option is used only by querier. (default 1h0m0s)
   -blocks-storage.bucket-store.bucket-index.max-stale-period duration
-    	The maximum allowed age of a bucket index (last updated) before queries start failing because the bucket index is too old. The bucket index is periodically updated by the compactor, while this check is enforced in the querier (at query time). (default 1h0m0s)
+    	The maximum allowed age of a bucket index (last updated) before queries start failing because the bucket index is too old. The bucket index is periodically updated by the compactor, and this check is enforced in the querier (at query time). (default 1h0m0s)
   -blocks-storage.bucket-store.bucket-index.update-on-error-interval duration
     	How frequently a bucket index, which previously failed to load, should be tried to load again. This option is used only by querier. (default 1m0s)
   -blocks-storage.bucket-store.chunk-pool-max-bucket-size-bytes int
@@ -1116,7 +1116,7 @@ Usage of ./cmd/mimir/mimir:
   -querier.store-gateway-client.tls-server-name string
     	Override the expected name on the server certificate.
   -querier.timeout duration
-    	The timeout for a query. This config option should be set on query-frontend too when query sharding is enabled. (default 2m0s)
+    	The timeout for a query. This config option should be set on query-frontend too when query sharding is enabled. This also applies to queries evaluated by the ruler (internally or remotely). (default 2m0s)
   -query-frontend.align-querier-with-step
     	Mutate incoming queries to align their start and end with their step.
   -query-frontend.cache-results
@@ -1452,8 +1452,6 @@ Usage of ./cmd/mimir/mimir:
     	Path to the key file for the client certificate. Also requires the client certificate to be configured.
   -ruler.query-frontend.grpc-client-config.tls-server-name string
     	Override the expected name on the server certificate.
-  -ruler.query-frontend.timeout duration
-    	The timeout for a rule query being evaluated by the query-frontend. (default 2m0s)
   -ruler.query-stats-enabled
     	Report the wall time for ruler queries to complete as a per-tenant metric and as an info level log message.
   -ruler.resend-delay duration

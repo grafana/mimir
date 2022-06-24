@@ -1514,7 +1514,7 @@
           "kind": "field",
           "name": "timeout",
           "required": false,
-          "desc": "The timeout for a query. This config option should be set on query-frontend too when query sharding is enabled.",
+          "desc": "The timeout for a query. This config option should be set on query-frontend too when query sharding is enabled. This also applies to queries evaluated by the ruler (internally or remotely).",
           "fieldValue": null,
           "fieldDefaultValue": 120000000000,
           "fieldFlag": "querier.timeout",
@@ -5043,7 +5043,7 @@
                   "kind": "field",
                   "name": "max_stale_period",
                   "required": false,
-                  "desc": "The maximum allowed age of a bucket index (last updated) before queries start failing because the bucket index is too old. The bucket index is periodically updated by the compactor, while this check is enforced in the querier (at query time).",
+                  "desc": "The maximum allowed age of a bucket index (last updated) before queries start failing because the bucket index is too old. The bucket index is periodically updated by the compactor, and this check is enforced in the querier (at query time).",
                   "fieldValue": null,
                   "fieldDefaultValue": 3600000000000,
                   "fieldFlag": "blocks-storage.bucket-store.bucket-index.max-stale-period",
@@ -7413,16 +7413,6 @@
               "fieldDefaultValue": "",
               "fieldFlag": "ruler.query-frontend.address",
               "fieldType": "string"
-            },
-            {
-              "kind": "field",
-              "name": "timeout",
-              "required": false,
-              "desc": "The timeout for a rule query being evaluated by the query-frontend.",
-              "fieldValue": null,
-              "fieldDefaultValue": 120000000000,
-              "fieldFlag": "ruler.query-frontend.timeout",
-              "fieldType": "duration"
             },
             {
               "kind": "block",

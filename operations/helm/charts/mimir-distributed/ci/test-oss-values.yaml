@@ -49,3 +49,31 @@ store_gateway:
 testing:
   minio:
     use_secret: true
+
+memcached-chunks:
+  enabled: true
+  allocatedMemory: 10
+  resources:
+    requests:
+      cpu: 10m
+
+memcached-index-queries:
+  enabled: true
+  allocatedMemory: 30
+  resources:
+    requests:
+      cpu: 10m
+
+memcached-metadata:
+  enabled: true
+  allocatedMemory: 10
+  resources:
+    requests:
+      cpu: 10m
+
+memcached-results:
+  enabled: true
+  allocatedMemory: 10
+  resources:
+    requests:
+      cpu: 10m

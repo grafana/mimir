@@ -1,18 +1,6 @@
 dependencies:
-- name: memcached
-  repository: https://raw.githubusercontent.com/bitnami/charts/eb5f9a9513d987b519f0ecd732e7031241c50328/bitnami
-  version: 5.5.2
-- name: memcached
-  repository: https://raw.githubusercontent.com/bitnami/charts/eb5f9a9513d987b519f0ecd732e7031241c50328/bitnami
-  version: 5.5.2
-- name: memcached
-  repository: https://raw.githubusercontent.com/bitnami/charts/eb5f9a9513d987b519f0ecd732e7031241c50328/bitnami
-  version: 5.5.2
-- name: memcached
-  repository: https://raw.githubusercontent.com/bitnami/charts/eb5f9a9513d987b519f0ecd732e7031241c50328/bitnami
-  version: 5.5.2
 - name: minio
   repository: https://helm.min.io/
   version: 8.0.10
-digest: sha256:0b58716cf86880510e4ce9dacb312db80918d14704e68127b833b81b5fd7d7f3
-generated: "2022-06-02T09:31:09.709064-05:00"
+digest: sha256:826b6cc453742c71c2159500596d78666fbdf0ff3ed105caa7ca162ecbd36a45
+generated: "2022-06-09T08:29:05.191797+02:00"

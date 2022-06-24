@@ -7,6 +7,7 @@ package querier
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/go-kit/log"
@@ -18,11 +19,11 @@ import (
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
+	"github.com/grafana/mimir/pkg/util/globalerror"
 )
 
 var (
 	errBucketIndexBlocksFinderNotRunning = errors.New("bucket index blocks finder is not running")
-	errBucketIndexTooOld                 = errors.New("bucket index is too old and the last time it was updated exceeds the allowed max staleness")
 )
 
 type BucketIndexBlocksFinderConfig struct {
@@ -72,7 +73,7 @@ func (f *BucketIndexBlocksFinder) GetBlocks(ctx context.Context, userID string, 
 
 	// Ensure the bucket index is not too old.
 	if time.Since(idx.GetUpdatedAt()) > f.cfg.MaxStalePeriod {
-		return nil, nil, errBucketIndexTooOld
+		return nil, nil, newBucketIndexTooOldError(idx.GetUpdatedAt(), f.cfg.MaxStalePeriod)
 	}
 
 	var (
@@ -111,4 +112,8 @@ func (f *BucketIndexBlocksFinder) GetBlocks(ctx context.Context, userID string, 
 	}
 
 	return blocks, matchingDeletionMarks, nil
+}
+
+func newBucketIndexTooOldError(updatedAt time.Time, maxStalePeriod time.Duration) error {
+	return errors.New(globalerror.BucketIndexTooOld.Message(fmt.Sprintf("the bucket index is too old. It was last updated at %s, which exceeds the maximum allowed staleness period of %v", updatedAt.UTC().Format(time.RFC3339Nano), maxStalePeriod)))
 }

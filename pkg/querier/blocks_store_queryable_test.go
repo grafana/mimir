@@ -321,7 +321,7 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 			},
 			limits:       &blocksStoreLimitsMock{},
 			queryLimiter: noOpQueryLimiter,
-			expectedErr:  fmt.Errorf("consistency check failed because some blocks were not queried: %s", block2.String()),
+			expectedErr:  newStoreConsistencyCheckFailedError([]ulid.ULID{block2}),
 		},
 		"multiple store-gateway instances have some missing blocks (consistency check failed)": {
 			finderResult: bucketindex.Blocks{
@@ -347,7 +347,7 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 			},
 			limits:       &blocksStoreLimitsMock{},
 			queryLimiter: noOpQueryLimiter,
-			expectedErr:  fmt.Errorf("consistency check failed because some blocks were not queried: %s %s", block3.String(), block4.String()),
+			expectedErr:  newStoreConsistencyCheckFailedError([]ulid.ULID{block3, block4}),
 		},
 		"multiple store-gateway instances have some missing blocks but queried from a replica during subsequent attempts": {
 			finderResult: bucketindex.Blocks{
@@ -1148,7 +1148,7 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 				// Second attempt returns an error because there are no other store-gateways left.
 				errors.New("no store-gateway remaining after exclude"),
 			},
-			expectedErr: fmt.Sprintf("consistency check failed because some blocks were not queried: %s", block2.String()),
+			expectedErr: newStoreConsistencyCheckFailedError([]ulid.ULID{block2}).Error(),
 		},
 		"multiple store-gateway instances have some missing blocks (consistency check failed)": {
 			finderResult: bucketindex.Blocks{
@@ -1190,7 +1190,7 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 				// Second attempt returns an error because there are no other store-gateways left.
 				errors.New("no store-gateway remaining after exclude"),
 			},
-			expectedErr: fmt.Sprintf("consistency check failed because some blocks were not queried: %s %s", block3.String(), block4.String()),
+			expectedErr: newStoreConsistencyCheckFailedError([]ulid.ULID{block3, block4}).Error(),
 		},
 		"multiple store-gateway instances have some missing blocks but queried from a replica during subsequent attempts": {
 			// Block1 has series1
@@ -2008,4 +2008,22 @@ func valuesFromSeries(name string, series ...labels.Labels) []string {
 
 	sort.Strings(values)
 	return values
+}
+
+func TestBlocksStoreQueryableErrMsgs(t *testing.T) {
+	tests := map[string]struct {
+		err error
+		msg string
+	}{
+		"newStoreConsistencyCheckFailedError": {
+			err: newStoreConsistencyCheckFailedError([]ulid.ULID{ulid.MustNew(1, nil)}),
+			msg: `the consistency check failed because some blocks were not queried (err-mimir-store-consistency-check-failed). The non-queried blocks are: 00000000010000000000000000`,
+		},
+	}
+
+	for testName, tc := range tests {
+		t.Run(testName, func(t *testing.T) {
+			assert.Equal(t, tc.msg, tc.err.Error())
+		})
+	}
 }

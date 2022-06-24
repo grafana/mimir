@@ -143,7 +143,7 @@ func (r *RuleCommand) Register(app *kingpin.Application, envVars EnvVarNames) {
 			Required().
 			StringVar(&r.ClientConfig.ID)
 
-		c.Flag("use-legacy-routes", "If set, the API requests to Grafana Mimir use the legacy /api/prom/ routes; alternatively, set "+envVars.UseLegacyRoutes+".").
+		c.Flag("use-legacy-routes", "If set, the API requests to Grafana Mimir use the legacy /api/v1/rules routes instead of /prometheus/config/v1/rules; alternatively, set "+envVars.UseLegacyRoutes+".").
 			Default("false").
 			Envar(envVars.UseLegacyRoutes).
 			BoolVar(&r.ClientConfig.UseLegacyRoutes)
