@@ -519,7 +519,7 @@ func (i *Ingester) applyTSDBSettings() {
 					MaxExemplars: int64(localValue),
 				},
 				TSDBConfig: &promcfg.TSDBConfig{
-					OutOfOrderAllowance: time.Duration(oooTW).Milliseconds(),
+					OutOfOrderTimeWindow: time.Duration(oooTW).Milliseconds(),
 				},
 			},
 		}
@@ -1501,7 +1501,7 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 		NewChunkDiskMapper:             i.cfg.BlocksStorageConfig.TSDB.NewChunkDiskMapper,
 		AllowOverlappingQueries:        true,                 // We can have overlapping blocks from past or out-of-order enabled during runtime.
 		AllowOverlappingCompaction:     false,                // always false since Mimir only uploads lvl 1 compacted blocks
-		OutOfOrderAllowance:            oooTW.Milliseconds(), // The unit must be same as our timestamps.
+		OutOfOrderTimeWindow:           oooTW.Milliseconds(), // The unit must be same as our timestamps.
 		OutOfOrderCapMin:               int64(i.cfg.BlocksStorageConfig.TSDB.OutOfOrderCapMin),
 		OutOfOrderCapMax:               int64(i.cfg.BlocksStorageConfig.TSDB.OutOfOrderCapMax),
 	}, nil)
