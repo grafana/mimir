@@ -164,7 +164,6 @@ type TSDBConfig struct {
 	HeadChunksWriteQueueSize  int           `yaml:"head_chunks_write_queue_size" category:"experimental"`
 	NewChunkDiskMapper        bool          `yaml:"new_chunk_disk_mapper" category:"experimental"`
 	IsolationEnabled          bool          `yaml:"isolation_enabled" category:"advanced"` // TODO Remove in Mimir 2.3.0
-	AllowOverlappingQueries   bool          `yaml:"allow_overlapping_queries" category:"experimental"`
 
 	// Series hash cache.
 	SeriesHashCacheMaxBytes uint64 `yaml:"series_hash_cache_max_size_bytes" category:"advanced"`
@@ -178,6 +177,10 @@ type TSDBConfig struct {
 
 	// How often to check for idle TSDBs for closing. DefaultCloseIdleTSDBInterval is not suitable for testing, so tests can override.
 	CloseIdleTSDBInterval time.Duration `yaml:"-"`
+
+	// For experimental out of order metrics support.
+	OutOfOrderCapMin int `yaml:"out_of_order_cap_min" category:"experimental"`
+	OutOfOrderCapMax int `yaml:"out_of_order_cap_max" category:"experimental"`
 }
 
 // RegisterFlags registers the TSDBConfig flags.
@@ -207,7 +210,8 @@ func (cfg *TSDBConfig) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&cfg.HeadChunksWriteQueueSize, "blocks-storage.tsdb.head-chunks-write-queue-size", 0, "The size of the write queue used by the head chunks mapper. Lower values reduce memory utilisation at the cost of potentially higher ingest latency. Value of 0 switches chunks mapper to implementation without a queue. This flag is only used if the new chunk disk mapper is enabled with -blocks-storage.tsdb.new-chunk-disk-mapper.")
 	f.BoolVar(&cfg.NewChunkDiskMapper, "blocks-storage.tsdb.new-chunk-disk-mapper", false, "Temporary flag to select whether to use the new (used in upstream Prometheus) or the old (legacy) chunk disk mapper.")
 	f.BoolVar(&cfg.IsolationEnabled, "blocks-storage.tsdb.isolation-enabled", false, "[Deprecated] Enables TSDB isolation feature. Disabling may improve performance.")
-	f.BoolVar(&cfg.AllowOverlappingQueries, "blocks-storage.tsdb.allow-overlapping-queries", false, "Enable querying overlapping blocks. If there are going to be overlapping blocks in the ingesters this should be enabled.")
+	f.IntVar(&cfg.OutOfOrderCapMin, "blocks-storage.tsdb.out-of-order-cap-min", 4, "Minimum capacity for out-of-order chunks, in samples between 0 and 255.")
+	f.IntVar(&cfg.OutOfOrderCapMax, "blocks-storage.tsdb.out-of-order-cap-max", 32, "Maximum capacity for out of order chunks, in samples between 1 and 255.")
 }
 
 // Validate the config.
