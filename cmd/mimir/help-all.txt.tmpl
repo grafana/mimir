@@ -866,7 +866,7 @@ Usage of ./cmd/mimir/mimir:
   -ingester.metadata-retain-period duration
     	Period at which metadata we have not seen will remain in memory before being deleted. (default 10m0s)
   -ingester.out-of-order-time-window value
-    	[experimental] Non-zero value enables out-of-order support for most recent samples in this time window. Ingester will need more memory that is a factor of rate of out of order sample being ingested and number of series getting out of order samples. It can be configured per-tenant.
+    	[experimental] Non-zero value enables out-of-order support for most recent samples that are within the time window w.r.t. the newest sample for that time series if it exists (i.e. within [series.maxTime-timeWindow, series.maxTime]) or w.r.t. the TSDB's max time if the series does not exist (i.e. within [db.maxTime-timeWindow, db.maxTime]). Ingester will need more memory that is a factor of rate of out of order sample being ingested and number of series getting out of order samples. It can be configured per-tenant.
   -ingester.rate-update-period duration
     	Period with which to update the per-tenant ingestion rates. (default 15s)
   -ingester.ring.consul.acl-token string
