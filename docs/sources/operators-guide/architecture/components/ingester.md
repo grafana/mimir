@@ -68,7 +68,8 @@ Replication is still recommended in order to gracefully handle a single ingester
 
 The write-behind log (WBL) is similar to the WAL, but it only writes incoming out-of-order samples to a persistent disk until the series are uploaded to long-term storage.
 
-There is a different log for this because it is not possible to know if a sample is out-of-order until you try to append it. First you need to attempt to append it, the TSDB will detect that it is out-of-order, append it anyway if out-of-order is enabled and then write it to the log.
+There is a different log for this because it is not possible to know if a sample is out-of-order until Mimir tries to append it.
+First Mimir needs to attempt to append it, the TSDB will detect that it is out-of-order, append it anyway if out-of-order is enabled and then write it to the log.
 
 If the ingesters fail, the same characteristics as in the WAL apply.
 
@@ -88,6 +89,6 @@ For more information on shuffle sharding, refer to [Configuring shuffle sharding
 
 ## Out-of-order samples ingestion
 
-Out-of-order samples are discarded by default. You can enable this feature, if the observed system produces them.
+Out-of-order samples are discarded by default. If the system writing samples to Mimir produces out-of-order samples, you can enable ingestion of such samples.
 
 For more information about out-of-order samples ingestion, refer to [Configuring out of order samples ingestion]({{< relref "../../configuring/configuring-out-of-order-samples-ingestion.md" >}}).
