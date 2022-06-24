@@ -59,7 +59,7 @@ Using a custom namespace solves problems later on because you do not have to ove
 
    > **Note:** The Helm chart at [https://grafana.github.io/helm-charts](https://grafana.github.io/helm-charts) is a publication of the source code at [**grafana/mimir**](https://github.com/grafana/mimir/tree/main/operations/helm/charts/mimir-distributed).
 
-1. Configure an ingress by creating a YAML file, such as `custom.yaml` and adding the following configuration:
+1. Configure an ingress by creating a YAML file of Helm values, such as `custom.yaml` and adding the following configuration:
 
    ```yaml
    nginx:
@@ -75,10 +75,10 @@ Using a custom namespace solves problems later on because you do not have to ove
          # empty, disabled.
    ```
 
-   An ingress enables you to externally access a Kubernetes cluster via the hostname defined by the _`<ingress-host>`_ variable.
+   An ingress enables you to externally access a Kubernetes cluster.
    Replace _`<ingress-host>`_ with a suitable hostname that DNS can resolve to the external IP address of the Kubernetes cluster. For more information, see [Ingress](https://kubernetes.io/docs/concepts/services-networking/ingress/).
 
-   > **Note:** Without using an ingress, it is still possible to access Grafana Mimir from inside the cluster, see chapter <!-- TODO -->
+   > **Note:** Without using an ingress, it is still possible to access Grafana Mimir from inside the cluster.
 
 1. Install Grafana Mimir using the Helm chart:
 
