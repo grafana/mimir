@@ -34,7 +34,7 @@ Verify that you have:
 - DNS service works in the Kubernetes cluster
 - An ingress controller is set up in the Kubernetes cluster
 
-  **Note:** Although this is not strictly necessary, if you want to access Mimir from outside of the Kubernetes cluster, you will need an ingress.
+  **Note:** Although this is not strictly necessary, if you want to access Mimir from outside of the Kubernetes cluster, you will need an ingress. This procedure assumes you have an ingress controller set up.
 
 ## Install the Helm chart in a custom namespace
 
@@ -59,26 +59,28 @@ Using a custom namespace solves problems later on because you do not have to ove
 
    > **Note:** The Helm chart at [https://grafana.github.io/helm-charts](https://grafana.github.io/helm-charts) is a publication of the source code at [**grafana/mimir**](https://github.com/grafana/mimir/tree/main/operations/helm/charts/mimir-distributed).
 
-1. Configure an ingress by creating a YAML file of Helm values, such as `custom.yaml` and adding the following configuration:
+1. Configure an ingress:
 
-   ```yaml
-   nginx:
-     ingress:
-       enabled: true
-       ingressClassName: nginx
-       hosts:
-         - host: <ingress-host>
-           paths:
-             - path: /
-               pathType: Prefix
-       tls:
-         # empty, disabled.
-   ```
+   a. Create a YAML file of Helm values called `custom.yaml`.
+
+   b. Add the following configuration to the file:
+
+    ```yaml
+    nginx:
+      ingress:
+        enabled: true
+        ingressClassName: nginx
+        hosts:
+          - host: <ingress-host>
+            paths:
+              - path: /
+                pathType: Prefix
+        tls:
+          # empty, disabled.
+    ```
 
    An ingress enables you to externally access a Kubernetes cluster.
    Replace _`<ingress-host>`_ with a suitable hostname that DNS can resolve to the external IP address of the Kubernetes cluster. For more information, see [Ingress](https://kubernetes.io/docs/concepts/services-networking/ingress/).
-
-   > **Note:** Without using an ingress, it is still possible to access Grafana Mimir from inside the cluster.
 
 1. Install Grafana Mimir using the Helm chart:
 
@@ -115,37 +117,45 @@ Using a custom namespace solves problems later on because you do not have to ove
 
 1. What until all of the pods have a status of `Running` or `Completed`, which might take a few minutes.
 
-## Accessing Grafana Mimir from outside the Kubernetes cluster
+## Configure Prometheus to write to Grafana Mimir
 
-This chapter assumes that an ingress is set up. If this is not the case, skip to the next chapter <!-- TODO link -->
+Make a choice based on whether or not you already have a Prometheus server set up:
 
-### Configure Prometheus to write to Grafana Mimir
+* For an existing Prometheus server:
 
-Add the following YAML snippet to your existing Prometheus configuration file and restart the Prometheus server:
+  1. Add the following YAML snippet to your Prometheus configuration file:
 
-```yaml
-remote_write:
-  - url: http://<ingress-host>/api/v1/push
-```
+      ```yaml
+      remote_write:
+        - url: http://<ingress-host>/api/v1/push
+      ```
 
-The configuration for a Prometheus server that scrapes itself and writes those metrics to Grafana Mimir looks similar to this:
+      In this case, your Prometheus server writes metrics to Grafana Mimir, based on what is defined in the existing `scrape_configs` configuration.
 
-```yaml
-remote_write:
-  - url: http://<ingress-host>/api/v1/push
+  1. Restart the Prometheus server.
 
-scrape_configs:
-  - job_name: prometheus
-    honor_labels: true
-    static_configs:
-      - targets: ["localhost:9090"]
-```
+* For a Prometheus server that does not exist yet:
 
-Assuming this configuration is written to a `prometheus.yml`, the following command can quickly start a Prometheus instance:
+  1. Write the following configuration to a `prometheus.yml` file:
 
-```bash
-docker run --network=host -p 9090:9090  -v <path-to>/prometheus.yml:/etc/prometheus/prometheus.yml prom/prometheus
-```
+      ```yaml
+      remote_write:
+        - url: http://<ingress-host>/api/v1/push
+
+      scrape_configs:
+        - job_name: prometheus
+          honor_labels: true
+          static_configs:
+            - targets: ["localhost:9090"]
+      ```
+
+      In this case, your Prometheus server writes metrics to Grafana Mimir that it scrapes from itself.
+
+  1. Start a Prometheus server by using Docker:
+
+      ```bash
+      docker run --network=host -p 9090:9090  -v <path-to>/prometheus.yml:/etc/prometheus/prometheus.yml prom/prometheus
+      ```
 
 ### Configure Grafana Agent to write to Grafana Mimir
 
