@@ -210,8 +210,8 @@ func (cfg *TSDBConfig) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&cfg.HeadChunksWriteQueueSize, "blocks-storage.tsdb.head-chunks-write-queue-size", 0, "The size of the write queue used by the head chunks mapper. Lower values reduce memory utilisation at the cost of potentially higher ingest latency. Value of 0 switches chunks mapper to implementation without a queue. This flag is only used if the new chunk disk mapper is enabled with -blocks-storage.tsdb.new-chunk-disk-mapper.")
 	f.BoolVar(&cfg.NewChunkDiskMapper, "blocks-storage.tsdb.new-chunk-disk-mapper", false, "Temporary flag to select whether to use the new (used in upstream Prometheus) or the old (legacy) chunk disk mapper.")
 	f.BoolVar(&cfg.IsolationEnabled, "blocks-storage.tsdb.isolation-enabled", false, "[Deprecated] Enables TSDB isolation feature. Disabling may improve performance.")
-	f.IntVar(&cfg.OutOfOrderCapMin, "blocks-storage.tsdb.out-of-order-cap-min", 4, "Minimum capacity for out of order chunks (in samples. between 0 and 255.)")
-	f.IntVar(&cfg.OutOfOrderCapMax, "blocks-storage.tsdb.out-of-order-cap-max", 32, "Maximum capacity for out of order chunks (in samples. between 1 and 255.)")
+	f.IntVar(&cfg.OutOfOrderCapMin, "blocks-storage.tsdb.out-of-order-cap-min", 4, "Minimum capacity for out-of-order chunks, in samples between 0 and 255.")
+	f.IntVar(&cfg.OutOfOrderCapMax, "blocks-storage.tsdb.out-of-order-cap-max", 32, "Maximum capacity for out of order chunks, in samples between 1 and 255.")
 }
 
 // Validate the config.

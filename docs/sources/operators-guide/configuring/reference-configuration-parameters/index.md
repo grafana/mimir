@@ -741,7 +741,7 @@ ring:
 #       prod: '{namespace=~"prod-.*"}'
 [active_series_custom_trackers: <map of tracker name (string) to matcher (string)> | default = ]
 
-# (experimental) Period with which to update per-tenant TSDB config.
+# (experimental) Period with which to update the per-tenant TSDB configuration.
 # CLI flag: -ingester.tsdb-config-update-period
 [tsdb_config_update_period: <duration> | default = 15s]
 
@@ -2718,12 +2718,14 @@ The `limits` block configures default and per-tenant limits imposed by component
 [active_series_custom_trackers: <map of tracker name (string) to matcher (string)> | default = ]
 
 # (experimental) Non-zero value enables out-of-order support for most recent
-# samples that are within the time window w.r.t. the newest sample for that time
-# series if it exists (i.e. within [series.maxTime-timeWindow, series.maxTime])
-# or w.r.t. the TSDB's max time if the series does not exist (i.e. within
-# [db.maxTime-timeWindow, db.maxTime]). Ingester will need more memory that is a
-# factor of rate of out of order sample being ingested and number of series
-# getting out of order samples. It can be configured per-tenant.
+# samples that are within the time window in relation to the following two
+# conditions: (1) The newest sample for that time series, if it exists. For
+# example, within [series.maxTime-timeWindow, series.maxTime]). (2) The TSDB's
+# maximum time, if the series does not exist. For example, within
+# [db.maxTime-timeWindow, db.maxTime]). The ingester will need more memory as a
+# factor of _rate of out-of-order samples being ingested_ and _the number of
+# series that are getting out-of-order samples_. You can configure it per
+# tenant.
 # CLI flag: -ingester.out-of-order-time-window
 [out_of_order_time_window: <duration> | default = 0s]
 
@@ -3535,13 +3537,13 @@ tsdb:
   # CLI flag: -blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup
   [max_tsdb_opening_concurrency_on_startup: <int> | default = 10]
 
-  # (experimental) Minimum capacity for out of order chunks (in samples. between
-  # 0 and 255.)
+  # (experimental) Minimum capacity for out-of-order chunks, in samples between
+  # 0 and 255.
   # CLI flag: -blocks-storage.tsdb.out-of-order-cap-min
   [out_of_order_cap_min: <int> | default = 4]
 
-  # (experimental) Maximum capacity for out of order chunks (in samples. between
-  # 1 and 255.)
+  # (experimental) Maximum capacity for out of order chunks, in samples between
+  # 1 and 255.
   # CLI flag: -blocks-storage.tsdb.out-of-order-cap-max
   [out_of_order_cap_max: <int> | default = 32]
 ```

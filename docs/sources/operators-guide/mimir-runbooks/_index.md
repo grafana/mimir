@@ -1414,8 +1414,8 @@ Common **causes**:
 
 ### err-mimir-sample-too-old
 
-This error is very similar to `err-mimir-sample-out-of-order` above. The main difference is that, the out-of-order support was enabled, but the sample was
-older than the out-of-order time window w.r.t. the latest sample for that particular time series or the TSDB.
+This error is similar to `err-mimir-sample-out-of-order`. The main difference is that the out-of-order support is enabled, but the sample is
+older than the out-of-order time window as it relates to the latest sample for that particular time series or the TSDB.
 
 ### err-mimir-sample-duplicate-timestamp
 

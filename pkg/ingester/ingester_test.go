@@ -257,7 +257,7 @@ func TestIngester_Push(t *testing.T) {
 				# TYPE cortex_ingester_tsdb_exemplar_last_exemplars_timestamp_seconds gauge
 				cortex_ingester_tsdb_exemplar_last_exemplars_timestamp_seconds{user="test"} 1
 
-				# HELP cortex_ingester_tsdb_exemplar_out_of_order_exemplars_total Total number of out of order exemplar ingestion failed attempts.
+				# HELP cortex_ingester_tsdb_exemplar_out_of_order_exemplars_total Total number of out-of-order exemplar ingestion failed attempts.
 				# TYPE cortex_ingester_tsdb_exemplar_out_of_order_exemplars_total counter
 				cortex_ingester_tsdb_exemplar_out_of_order_exemplars_total 0
 			`,
@@ -303,7 +303,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_memory_series_removed_total{user="test"} 0
 			`,
 		},
-		"should soft fail on sample out of order": {
+		"should soft fail on sample out-of-order": {
 			reqs: []*mimirpb.WriteRequest{
 				mimirpb.ToWriteRequest(
 					[]labels.Labels{metricLabels},
@@ -574,7 +574,7 @@ func TestIngester_Push(t *testing.T) {
 				# TYPE cortex_ingester_tsdb_exemplar_last_exemplars_timestamp_seconds gauge
 				cortex_ingester_tsdb_exemplar_last_exemplars_timestamp_seconds{user="test"} 0
 
-				# HELP cortex_ingester_tsdb_exemplar_out_of_order_exemplars_total Total number of out of order exemplar ingestion failed attempts.
+				# HELP cortex_ingester_tsdb_exemplar_out_of_order_exemplars_total Total number of out-of-order exemplar ingestion failed attempts.
 				# TYPE cortex_ingester_tsdb_exemplar_out_of_order_exemplars_total counter
 				cortex_ingester_tsdb_exemplar_out_of_order_exemplars_total 0
 			`,
@@ -1098,7 +1098,7 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 				}
 			},
 		},
-		"out of order samples": {
+		"out-of-order samples": {
 			prepareConfig: func(limits *validation.Limits, instanceLimits *InstanceLimits) bool { return true },
 			beforeBenchmark: func(b *testing.B, ingester *Ingester, numSeriesPerRequest int) {
 				// For each series, push a single sample with a timestamp greater than next pushes.
@@ -1117,7 +1117,7 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 			runBenchmark: func(b *testing.B, ingester *Ingester, metrics []labels.Labels, samples []mimirpb.Sample) {
 				expectedErr := storage.ErrOutOfOrderSample.Error()
 
-				// Push out of order samples.
+				// Push out-of-order samples.
 				for n := 0; n < b.N; n++ {
 					_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, nil, mimirpb.API)) // nolint:errcheck
 
@@ -5757,7 +5757,7 @@ func TestGetIgnoreSeriesLimitForMetricNamesMap(t *testing.T) {
 	require.Equal(t, map[string]struct{}{"foo": {}, "bar": {}}, cfg.getIgnoreSeriesLimitForMetricNamesMap())
 }
 
-// Test_Ingester_OutOfOrder tests basic ingestion and query of out of order samples.
+// Test_Ingester_OutOfOrder tests basic ingestion and query of out-of-order samples.
 // It also tests if the OutOfOrderTimeWindow gets changed during runtime.
 // The correctness of changed runtime is already tested in Prometheus, so we only check if the
 // change is being applied here.
@@ -5897,7 +5897,7 @@ func TestNewIngestErrMsgs(t *testing.T) {
 		},
 		"newIngestErrSampleOutOfOrder": {
 			err: newIngestErrSampleOutOfOrder(timestamp, metricLabelAdapters),
-			msg: `the sample has been rejected because another sample with a more recent timestamp has already been ingested and out of order samples are not allowed (err-mimir-sample-out-of-order). The affected sample has timestamp 1970-01-19T05:30:43.969Z and is from series {__name__="test"}`,
+			msg: `the sample has been rejected because another sample with a more recent timestamp has already been ingested and out-of-order samples are not allowed (err-mimir-sample-out-of-order). The affected sample has timestamp 1970-01-19T05:30:43.969Z and is from series {__name__="test"}`,
 		},
 		"newIngestErrSampleDuplicateTimestamp": {
 			err: newIngestErrSampleDuplicateTimestamp(timestamp, metricLabelAdapters),

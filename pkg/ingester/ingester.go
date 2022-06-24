@@ -151,7 +151,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.DurationVar(&cfg.ActiveSeriesMetricsIdleTimeout, "ingester.active-series-metrics-idle-timeout", 10*time.Minute, "After what time a series is considered to be inactive.")
 
 	f.BoolVar(&cfg.StreamChunksWhenUsingBlocks, "ingester.stream-chunks-when-using-blocks", true, "Stream chunks from ingesters to queriers.")
-	f.DurationVar(&cfg.TSDBConfigUpdatePeriod, "ingester.tsdb-config-update-period", 15*time.Second, "Period with which to update per-tenant TSDB config.")
+	f.DurationVar(&cfg.TSDBConfigUpdatePeriod, "ingester.tsdb-config-update-period", 15*time.Second, "Period with which to update the per-tenant TSDB configuration.")
 
 	cfg.DefaultLimits.RegisterFlags(f)
 
@@ -498,7 +498,7 @@ func (i *Ingester) updateActiveSeries(now time.Time) {
 
 // applyTSDBSettings goes through all tenants and applies
 // * The current max-exemplars setting. If it changed, tsdb will resize the buffer; if it didn't change tsdb will return quickly.
-// * The current out of order time window. If it changes from 0 to >0, then a new Write-Behind-Log gets created for that tenant.
+// * The current out-of-order time window. If it changes from 0 to >0, then a new Write-Behind-Log gets created for that tenant.
 func (i *Ingester) applyTSDBSettings() {
 	for _, userID := range i.getTSDBUsers() {
 		globalValue := i.limits.MaxGlobalExemplarsPerUser(userID)
@@ -638,7 +638,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 		// has sorted labels once hit the ingester).
 
 		// Fast path in case we only have samples and they are all out of bound
-		// and out of order support is not enabled.
+		// and out-of-order support is not enabled.
 		// TODO(jesus.vazquez) If we had too many old samples we might want to
 		// extend the fast path to fail early.
 		if oooTW <= 0 && minAppendTimeAvailable &&
@@ -1499,7 +1499,7 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 		IsolationDisabled:              !i.cfg.BlocksStorageConfig.TSDB.IsolationEnabled,
 		HeadChunksWriteQueueSize:       i.cfg.BlocksStorageConfig.TSDB.HeadChunksWriteQueueSize,
 		NewChunkDiskMapper:             i.cfg.BlocksStorageConfig.TSDB.NewChunkDiskMapper,
-		AllowOverlappingQueries:        true,                 // We can have overlapping blocks from past or out of order enabled during runtime.
+		AllowOverlappingQueries:        true,                 // We can have overlapping blocks from past or out-of-order enabled during runtime.
 		AllowOverlappingCompaction:     false,                // always false since Mimir only uploads lvl 1 compacted blocks
 		OutOfOrderAllowance:            oooTW.Milliseconds(), // The unit must be same as our timestamps.
 		OutOfOrderCapMin:               int64(i.cfg.BlocksStorageConfig.TSDB.OutOfOrderCapMin),
@@ -2110,11 +2110,11 @@ func newIngestErrSampleTimestampTooOld(timestamp model.Time, labels []mimirpb.La
 }
 
 func newIngestErrSampleOutOfOrder(timestamp model.Time, labels []mimirpb.LabelAdapter) error {
-	return newIngestErr(globalerror.SampleOutOfOrder, "the sample has been rejected because another sample with a more recent timestamp has already been ingested and out of order samples are not allowed", timestamp, labels)
+	return newIngestErr(globalerror.SampleOutOfOrder, "the sample has been rejected because another sample with a more recent timestamp has already been ingested and out-of-order samples are not allowed", timestamp, labels)
 }
 
 func newIngestErrSampleTooOld(timestamp model.Time, labels []mimirpb.LabelAdapter) error {
-	return newIngestErr(globalerror.SampleTooOld, "the sample has been rejected because another sample with a more recent timestamp has already been ingested and this sample is beyond the out of order time window", timestamp, labels)
+	return newIngestErr(globalerror.SampleTooOld, "the sample has been rejected because another sample with a more recent timestamp has already been ingested and this sample is beyond the out-of-order time window", timestamp, labels)
 }
 
 func newIngestErrSampleDuplicateTimestamp(timestamp model.Time, labels []mimirpb.LabelAdapter) error {
