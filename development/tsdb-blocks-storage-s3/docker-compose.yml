@@ -100,7 +100,30 @@
     "image": "consul"
     "ports":
       - "8500:8500"
-  "distributor":
+  "distributor-1":
+    "build":
+      "context": "."
+      "dockerfile": "dev.dockerfile"
+    "command":
+      - "sh"
+      - "-c"
+      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=distributor -server.http-listen-port=8000 -server.grpc-listen-port=9000 -activity-tracker.filepath=/activity/distributor-8000 "
+    "depends_on":
+      - "minio"
+      - "consul"
+    "environment":
+      - "JAEGER_AGENT_HOST=jaeger"
+      - "JAEGER_AGENT_PORT=6831"
+      - "JAEGER_SAMPLER_PARAM=1"
+      - "JAEGER_SAMPLER_TYPE=const"
+      - "JAEGER_TAGS=app=distributor"
+    "image": "mimir"
+    "ports":
+      - "8000:8000"
+    "volumes":
+      - "./config:/mimir/config"
+      - "./activity:/activity"
+  "distributor-2":
     "build":
       "context": "."
       "dockerfile": "dev.dockerfile"

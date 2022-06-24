@@ -36,7 +36,12 @@ std.manifestYamlDoc({
     {},
 
   distributor:: {
-    distributor: mimirService({
+    'distributor-1': mimirService({
+      target: 'distributor',
+      httpPort: 8000,
+    }),
+
+    'distributor-2': mimirService({
       target: 'distributor',
       httpPort: 8001,
     }),
