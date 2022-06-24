@@ -66,7 +66,7 @@ Replication is still recommended in order to gracefully handle a single ingester
 
 ### Write-behind log
 
-The write-behind log (WBL) is very much like the WAL but it only writes incoming out-of-order samples to a persistent disk while the series are uploaded to long-term storage.
+The write-behind log (WBL) is very much like the WAL but it only writes incoming out-of-order samples to a persistent disk until the series are uploaded to long-term storage.
 
 The reason why there is a different log for this is that it is not possible to know if a sample is out-of-order until we try to append it. So we first need to attempt it, detect that it is out-of-order, append it anyway if out-of-order is enabled and then write it to the log.
 
