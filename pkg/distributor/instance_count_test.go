@@ -27,94 +27,57 @@ func (n nopDelegate) OnRingInstanceHeartbeat(lifecycler *ring.BasicLifecycler, r
 }
 
 func TestHealthyInstanceDelegate_OnRingInstanceHeartbeat(t *testing.T) {
+	// addInstance registers a new instance with the given ring and sets its last heartbeat timestamp
+	addInstance := func(desc *ring.Desc, id string, state ring.InstanceState, timestamp int64) {
+		instance := desc.AddIngester(id, "127.0.0.1", "", []uint32{1}, state, time.Now())
+		instance.Timestamp = timestamp
+		desc.Ingesters[id] = instance
+	}
+
 	tests := map[string]struct {
-		ringSetup        func(desc *ring.Desc) ring.InstanceDesc
+		ringSetup        func(desc *ring.Desc)
 		heartbeatTimeout time.Duration
 		expectedCount    uint32
 	}{
 		"all instances healthy and active": {
-			ringSetup: func(desc *ring.Desc) ring.InstanceDesc {
+			ringSetup: func(desc *ring.Desc) {
 				now := time.Now()
-
-				instance1 := desc.AddIngester("distributor-1", "127.0.0.1", "", []uint32{1}, ring.ACTIVE, now)
-				instance1.Timestamp = now.Unix()
-				desc.Ingesters["distributor-1"] = instance1
-
-				instance2 := desc.AddIngester("distributor-2", "127.0.0.2", "", []uint32{2}, ring.ACTIVE, now)
-				instance2.Timestamp = now.Unix()
-				desc.Ingesters["distributor-2"] = instance2
-
-				instance3 := desc.AddIngester("distributor-3", "127.0.0.3", "", []uint32{3}, ring.ACTIVE, now)
-				instance3.Timestamp = now.Unix()
-				desc.Ingesters["distributor-3"] = instance3
-
-				return instance1
+				addInstance(desc, "distributor-1", ring.ACTIVE, now.Unix())
+				addInstance(desc, "distributor-2", ring.ACTIVE, now.Unix())
+				addInstance(desc, "distributor-3", ring.ACTIVE, now.Unix())
 			},
 			heartbeatTimeout: time.Minute,
 			expectedCount:    3,
 		},
 
 		"all instances healthy not all instances active": {
-			ringSetup: func(desc *ring.Desc) ring.InstanceDesc {
+			ringSetup: func(desc *ring.Desc) {
 				now := time.Now()
-
-				instance1 := desc.AddIngester("distributor-1", "127.0.0.1", "", []uint32{1}, ring.ACTIVE, now)
-				instance1.Timestamp = now.Unix()
-				desc.Ingesters["distributor-1"] = instance1
-
-				instance2 := desc.AddIngester("distributor-2", "127.0.0.2", "", []uint32{2}, ring.LEAVING, now)
-				instance2.Timestamp = now.Unix()
-				desc.Ingesters["distributor-2"] = instance2
-
-				instance3 := desc.AddIngester("distributor-3", "127.0.0.3", "", []uint32{3}, ring.ACTIVE, now)
-				instance3.Timestamp = now.Unix()
-				desc.Ingesters["distributor-3"] = instance3
-
-				return instance1
+				addInstance(desc, "distributor-1", ring.ACTIVE, now.Unix())
+				addInstance(desc, "distributor-2", ring.LEAVING, now.Unix())
+				addInstance(desc, "distributor-3", ring.ACTIVE, now.Unix())
 			},
 			heartbeatTimeout: time.Minute,
 			expectedCount:    2,
 		},
 
 		"some instances healthy all instances active": {
-			ringSetup: func(desc *ring.Desc) ring.InstanceDesc {
+			ringSetup: func(desc *ring.Desc) {
 				now := time.Now()
-
-				instance1 := desc.AddIngester("distributor-1", "127.0.0.1", "", []uint32{1}, ring.ACTIVE, now)
-				instance1.Timestamp = now.Unix()
-				desc.Ingesters["distributor-1"] = instance1
-
-				instance2 := desc.AddIngester("distributor-2", "127.0.0.2", "", []uint32{2}, ring.ACTIVE, now)
-				instance2.Timestamp = now.Unix()
-				desc.Ingesters["distributor-2"] = instance2
-
-				instance3 := desc.AddIngester("distributor-3", "127.0.0.3", "", []uint32{3}, ring.ACTIVE, now)
-				instance3.Timestamp = now.Add(-5 * time.Minute).Unix()
-				desc.Ingesters["distributor-3"] = instance3
-
-				return instance1
+				addInstance(desc, "distributor-1", ring.ACTIVE, now.Unix())
+				addInstance(desc, "distributor-2", ring.ACTIVE, now.Unix())
+				addInstance(desc, "distributor-3", ring.ACTIVE, now.Add(-5*time.Minute).Unix())
 			},
 			heartbeatTimeout: time.Minute,
 			expectedCount:    2,
 		},
 
 		"some instances healthy but timeout disabled all instances active": {
-			ringSetup: func(desc *ring.Desc) ring.InstanceDesc {
+			ringSetup: func(desc *ring.Desc) {
 				now := time.Now()
-
-				instance1 := desc.AddIngester("distributor-1", "127.0.0.1", "", []uint32{1}, ring.ACTIVE, now)
-				instance1.Timestamp = now.Unix()
-				desc.Ingesters["distributor-1"] = instance1
-
-				instance2 := desc.AddIngester("distributor-2", "127.0.0.2", "", []uint32{2}, ring.ACTIVE, now)
-				instance2.Timestamp = now.Unix()
-				desc.Ingesters["distributor-2"] = instance2
-
-				instance3 := desc.AddIngester("distributor-3", "127.0.0.3", "", []uint32{3}, ring.ACTIVE, now)
-				instance3.Timestamp = now.Add(-5 * time.Minute).Unix()
-				desc.Ingesters["distributor-3"] = instance3
-
-				return instance1
+				addInstance(desc, "distributor-1", ring.ACTIVE, now.Unix())
+				addInstance(desc, "distributor-2", ring.ACTIVE, now.Unix())
+				addInstance(desc, "distributor-3", ring.ACTIVE, now.Add(-5*time.Minute).Unix())
 			},
 			heartbeatTimeout: 0,
 			expectedCount:    3,
@@ -126,9 +89,11 @@ func TestHealthyInstanceDelegate_OnRingInstanceHeartbeat(t *testing.T) {
 			count := atomic.NewUint32(0)
 			ringDesc := ring.NewDesc()
 
-			firstInstance := testData.ringSetup(ringDesc)
+			testData.ringSetup(ringDesc)
+			instance := ringDesc.Ingesters["distributor-1"]
+
 			delegate := newHealthyInstanceDelegate(count, testData.heartbeatTimeout, &nopDelegate{})
-			delegate.OnRingInstanceHeartbeat(&ring.BasicLifecycler{}, ringDesc, &firstInstance)
+			delegate.OnRingInstanceHeartbeat(&ring.BasicLifecycler{}, ringDesc, &instance)
 
 			assert.Equal(t, testData.expectedCount, count.Load())
 		})
