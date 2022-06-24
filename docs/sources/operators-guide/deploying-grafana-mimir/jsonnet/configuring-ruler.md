@@ -19,7 +19,7 @@ _config+:: {
 }
 ```
 
-The `ruler_client_type` option must be one of either 'local', 'azure', 'aws', or 's3'.
+The `ruler_client_type` option must be one of either `local`, `azure`, `aws`, or `s3`.
 For more information about the options available for storing ruler state, see [Grafana Mimir ruler: State]({{< relref "../../architecture/components/ruler/index.md#state" >}}).
 
 To get started, use the `local` client type for initial testing:
@@ -58,9 +58,9 @@ For more information about these modes, see [Operational modes]({{< relref "../.
 To enable the remote operational mode, add the following code to the Jsonnet:
 
 ```jsonnet
-  _config+:: {
-    ruler_remote_evaluation_enabled: true
-  }
+_config+:: {
+  ruler_remote_evaluation_enabled: true
+}
 ```
 
 > **Note:** To support the _remote_ operational mode, a separate query path is deployed to evaluate rules that consist of three additional Kubernetes deployments:
@@ -77,10 +77,10 @@ To perform a zero downtime migration from internal to remote rule evaluation, fo
    Doing so causes the three new and previously listed Kubernetes deployments to start. However, they will not reconfigure the ruler to use them just yet.
 
    ```jsonnet
-     _config+:: {
-       ruler_remote_evaluation_enabled: true
-       ruler_remote_evaluation_migration_enabled: true
-     }
+   _config+:: {
+     ruler_remote_evaluation_enabled: true
+     ruler_remote_evaluation_migration_enabled: true
+   }
    ```
 
 1. Check that all of pods for the following deployments have successfully started before moving to the next step:
@@ -92,7 +92,7 @@ To perform a zero downtime migration from internal to remote rule evaluation, fo
 1. Reconfigure the ruler pods to perform remote evaluation, by deploying the following changes:
 
    ```jsonnet
-     _config+:: {
-       ruler_remote_evaluation_enabled: true
-     }
+   _config+:: {
+     ruler_remote_evaluation_enabled: true
+   }
    ```
