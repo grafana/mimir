@@ -65,19 +65,19 @@ Using a custom namespace solves problems later on because you do not have to ove
 
    b. Add the following configuration to the file:
 
-    ```yaml
-    nginx:
-      ingress:
-        enabled: true
-        ingressClassName: nginx
-        hosts:
-          - host: <ingress-host>
-            paths:
-              - path: /
-                pathType: Prefix
-        tls:
-          # empty, disabled.
-    ```
+   ```yaml
+   nginx:
+     ingress:
+       enabled: true
+       ingressClassName: nginx
+       hosts:
+         - host: <ingress-host>
+           paths:
+             - path: /
+               pathType: Prefix
+       tls:
+         # empty, disabled.
+   ```
 
    An ingress enables you to externally access a Kubernetes cluster.
    Replace _`<ingress-host>`_ with a suitable hostname that DNS can resolve to the external IP address of the Kubernetes cluster. For more information, see [Ingress](https://kubernetes.io/docs/concepts/services-networking/ingress/).
@@ -121,41 +121,41 @@ Using a custom namespace solves problems later on because you do not have to ove
 
 Make a choice based on whether or not you already have a Prometheus server set up:
 
-* For an existing Prometheus server:
+- For an existing Prometheus server:
 
   1. Add the following YAML snippet to your Prometheus configuration file:
 
-      ```yaml
-      remote_write:
-        - url: http://<ingress-host>/api/v1/push
-      ```
+     ```yaml
+     remote_write:
+       - url: http://<ingress-host>/api/v1/push
+     ```
 
-      In this case, your Prometheus server writes metrics to Grafana Mimir, based on what is defined in the existing `scrape_configs` configuration.
+     In this case, your Prometheus server writes metrics to Grafana Mimir, based on what is defined in the existing `scrape_configs` configuration.
 
   1. Restart the Prometheus server.
 
-* For a Prometheus server that does not exist yet:
+- For a Prometheus server that does not exist yet:
 
   1. Write the following configuration to a `prometheus.yml` file:
 
-      ```yaml
-      remote_write:
-        - url: http://<ingress-host>/api/v1/push
+     ```yaml
+     remote_write:
+       - url: http://<ingress-host>/api/v1/push
 
-      scrape_configs:
-        - job_name: prometheus
-          honor_labels: true
-          static_configs:
-            - targets: ["localhost:9090"]
-      ```
+     scrape_configs:
+       - job_name: prometheus
+         honor_labels: true
+         static_configs:
+           - targets: ["localhost:9090"]
+     ```
 
-      In this case, your Prometheus server writes metrics to Grafana Mimir that it scrapes from itself.
+     In this case, your Prometheus server writes metrics to Grafana Mimir that it scrapes from itself.
 
   1. Start a Prometheus server by using Docker:
 
-      ```bash
-      docker run --network=host -p 9090:9090  -v <path-to>/prometheus.yml:/etc/prometheus/prometheus.yml prom/prometheus
-      ```
+     ```bash
+     docker run --network=host -p 9090:9090  -v <path-to>/prometheus.yml:/etc/prometheus/prometheus.yml prom/prometheus
+     ```
 
 ### Configure Grafana Agent to write to Grafana Mimir
 
@@ -262,7 +262,7 @@ Follow the instructions in [Deploy Grafana on Kubernetes](https://grafana.com/do
 
 #### Add Grafana Mimir as a Prometheus data source
 
-<!-- 
+<!--
 - Either a [Prometheus server](https://prometheus.io/docs/prometheus/latest/installation/) or [Grafana Agent](https://grafana.com/docs/grafana-cloud/agent/#installing-the-grafana-agent). -->
 
 1. Port forward Grafana to localhost with the command:
