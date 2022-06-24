@@ -305,24 +305,6 @@ func (a *API) RegisterRulerAPI(r *ruler.API, configAPIEnabled bool) {
 	a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/alerts"), http.HandlerFunc(r.PrometheusAlerts), true, true, "GET")
 
 	if configAPIEnabled {
-		// Ruler API Routes
-		// TODO remove the /api/v1/rules/** endpoints in Mimir 2.2.0 as agreed in https://github.com/grafana/mimir/pull/763#discussion_r808270581
-		a.RegisterDeprecatedRoute("/api/v1/rules", http.HandlerFunc(r.ListRules), true, true, "GET")
-		a.RegisterDeprecatedRoute("/api/v1/rules/{namespace}", http.HandlerFunc(r.ListRules), true, true, "GET")
-		a.RegisterDeprecatedRoute("/api/v1/rules/{namespace}/{groupName}", http.HandlerFunc(r.GetRuleGroup), true, true, "GET")
-		a.RegisterDeprecatedRoute("/api/v1/rules/{namespace}", http.HandlerFunc(r.CreateRuleGroup), true, true, "POST")
-		a.RegisterDeprecatedRoute("/api/v1/rules/{namespace}/{groupName}", http.HandlerFunc(r.DeleteRuleGroup), true, true, "DELETE")
-		a.RegisterDeprecatedRoute("/api/v1/rules/{namespace}", http.HandlerFunc(r.DeleteNamespace), true, true, "DELETE")
-
-		// Configuration endpoints with Prometheus prefix, so we keep Prometheus-compatible EPs and config EPs under the same prefix.
-		// TODO remove the <prometheus-http-prefix>/v1/rules/** endpoints in Mimir 2.2.0 as agreed in https://github.com/grafana/mimir/pull/1222#issuecomment-1046759965
-		a.RegisterDeprecatedRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/rules"), http.HandlerFunc(r.ListRules), true, true, "GET")
-		a.RegisterDeprecatedRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/rules/{namespace}"), http.HandlerFunc(r.ListRules), true, true, "GET")
-		a.RegisterDeprecatedRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/rules/{namespace}/{groupName}"), http.HandlerFunc(r.GetRuleGroup), true, true, "GET")
-		a.RegisterDeprecatedRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/rules/{namespace}"), http.HandlerFunc(r.CreateRuleGroup), true, true, "POST")
-		a.RegisterDeprecatedRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/rules/{namespace}/{groupName}"), http.HandlerFunc(r.DeleteRuleGroup), true, true, "DELETE")
-		a.RegisterDeprecatedRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/rules/{namespace}"), http.HandlerFunc(r.DeleteNamespace), true, true, "DELETE")
-
 		// Long-term maintained configuration API routes
 		a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/config/v1/rules"), http.HandlerFunc(r.ListRules), true, true, "GET")
 		a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/config/v1/rules/{namespace}"), http.HandlerFunc(r.ListRules), true, true, "GET")

@@ -1587,13 +1587,7 @@ nginx:
             proxy_pass      http://{{ template "mimir.fullname" . }}-ruler.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ include "mimir.serverHttpListenPort" . }}$request_uri;
           }
 
-          location /api/v1/rules {
-            proxy_pass      http://{{ template "mimir.fullname" . }}-ruler.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ include "mimir.serverHttpListenPort" . }}$request_uri;
-          }
           location {{ template "mimir.prometheusHttpPrefix" . }}/api/v1/alerts {
-            proxy_pass      http://{{ template "mimir.fullname" . }}-ruler.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ include "mimir.serverHttpListenPort" . }}$request_uri;
-          }
-          location {{ template "mimir.prometheusHttpPrefix" . }}/rules {
             proxy_pass      http://{{ template "mimir.fullname" . }}-ruler.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ include "mimir.serverHttpListenPort" . }}$request_uri;
           }
           location = /ruler/ring {
