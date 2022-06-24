@@ -1401,8 +1401,7 @@ How it **works**:
 
 - If the incoming timestamp is more than 1 hour older than the most recent timestamp ingested for the tenant, the sample will be rejected.
 
-**Note**: If the out-of-order sample ingestion is enabled, then this error is similar to `err-mimir-sample-out-of-order` below with a difference that
-the sample is older than the out-of-order time window as it relates to the latest sample for that particular time series or the TSDB.
+> **Note**: If the out-of-order sample ingestion is enabled, then this error is similar to `err-mimir-sample-out-of-order` below with a difference that the sample is older than the out-of-order time window as it relates to the latest sample for that particular time series or the TSDB.
 
 ### err-mimir-sample-out-of-order
 
