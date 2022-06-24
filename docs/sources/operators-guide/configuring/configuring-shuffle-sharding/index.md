@@ -197,9 +197,9 @@ You can override the compactor shard size on a per-tenant basis setting by `comp
 
 ### Alertmanager shuffle sharding
 
-Alertmanager only distributes across replicas by tenant, the state and workload it is not divided any further. The replication factor setting `-alertmanager.sharding-ring.replication-factor` dictates how many replicas are used for a tenant.
+Alertmanager only performs distribution across replicas per tenant. The state and workload is not divided any further. The replication factor setting `-alertmanager.sharding-ring.replication-factor` determines how many replicas are used for a tenant.
 
-As a consequence, shuffle sharding is effectively always enabled for Alertmanager.
+As a result, shuffle sharding is effectively always enabled for Alertmanager.
 
 ### Shuffle sharding impact to the KV store
 
