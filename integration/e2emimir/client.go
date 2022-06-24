@@ -310,7 +310,7 @@ func (c *Client) GetPrometheusRules() ([]*ruler.RuleGroup, error) {
 // GetRuleGroups gets the configured rule groups from the ruler.
 func (c *Client) GetRuleGroups() (map[string][]rulefmt.RuleGroup, error) {
 	// Create HTTP request
-	req, err := http.NewRequest("GET", fmt.Sprintf("http://%s/api/v1/rules", c.rulerAddress), nil)
+	req, err := http.NewRequest("GET", fmt.Sprintf("http://%s/prometheus/config/v1/rules", c.rulerAddress), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -350,7 +350,7 @@ func (c *Client) SetRuleGroup(rulegroup rulefmt.RuleGroup, namespace string) err
 	}
 
 	// Create HTTP request
-	req, err := http.NewRequest("POST", fmt.Sprintf("http://%s/api/v1/rules/%s", c.rulerAddress, url.PathEscape(namespace)), bytes.NewReader(data))
+	req, err := http.NewRequest("POST", fmt.Sprintf("http://%s/prometheus/config/v1/rules/%s", c.rulerAddress, url.PathEscape(namespace)), bytes.NewReader(data))
 	if err != nil {
 		return err
 	}
@@ -379,7 +379,7 @@ func (c *Client) SetRuleGroup(rulegroup rulefmt.RuleGroup, namespace string) err
 // GetRuleGroup gets a rule group.
 func (c *Client) GetRuleGroup(namespace string, groupName string) (*http.Response, error) {
 	// Create HTTP request
-	req, err := http.NewRequest("GET", fmt.Sprintf("http://%s/api/v1/rules/%s/%s", c.rulerAddress, url.PathEscape(namespace), url.PathEscape(groupName)), nil)
+	req, err := http.NewRequest("GET", fmt.Sprintf("http://%s/prometheus/config/v1/rules/%s/%s", c.rulerAddress, url.PathEscape(namespace), url.PathEscape(groupName)), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -397,7 +397,7 @@ func (c *Client) GetRuleGroup(namespace string, groupName string) (*http.Respons
 // DeleteRuleGroup deletes a rule group.
 func (c *Client) DeleteRuleGroup(namespace string, groupName string) error {
 	// Create HTTP request
-	req, err := http.NewRequest("DELETE", fmt.Sprintf("http://%s/api/v1/rules/%s/%s", c.rulerAddress, url.PathEscape(namespace), url.PathEscape(groupName)), nil)
+	req, err := http.NewRequest("DELETE", fmt.Sprintf("http://%s/prometheus/config/v1/rules/%s/%s", c.rulerAddress, url.PathEscape(namespace), url.PathEscape(groupName)), nil)
 	if err != nil {
 		return err
 	}
@@ -421,7 +421,7 @@ func (c *Client) DeleteRuleGroup(namespace string, groupName string) error {
 // DeleteRuleNamespace deletes all the rule groups (and the namespace itself).
 func (c *Client) DeleteRuleNamespace(namespace string) error {
 	// Create HTTP request
-	req, err := http.NewRequest("DELETE", fmt.Sprintf("http://%s/api/v1/rules/%s", c.rulerAddress, url.PathEscape(namespace)), nil)
+	req, err := http.NewRequest("DELETE", fmt.Sprintf("http://%s/prometheus/config/v1/rules/%s", c.rulerAddress, url.PathEscape(namespace)), nil)
 	if err != nil {
 		return err
 	}

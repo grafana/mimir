@@ -63,6 +63,7 @@ Grafana Mimir supports shuffle sharding in the following components:
 - [Store-gateway](#store-gateway-shuffle-sharding)
 - [Ruler](#ruler-shuffle-sharding)
 - [Compactor](#compactor-shuffle-sharding)
+- [Alertmanager](#alertmanager-shuffle-sharding)
 
 When you run Grafana Mimir with the default configuration, shuffle sharding is disabled and you need to explicitly enable it by increasing the shard size either globally or for a given tenant.
 
@@ -193,6 +194,12 @@ By default, tenant blocks can be compacted by any Grafana Mimir compactor.
 When you enable compactor shuffle sharding by setting `-compactor.compactor-tenant-shard-size` (or its respective YAML configuration option) to a value higher than `0` and lower than the number of available compactors, only the specified number of compactors are eligible to compact blocks for a given tenant.
 
 You can override the compactor shard size on a per-tenant basis setting by `compactor_tenant_shard_size` in the overrides section of the runtime configuration.
+
+### Alertmanager shuffle sharding
+
+Alertmanager only performs distribution across replicas per tenant. The state and workload is not divided any further. The replication factor setting `-alertmanager.sharding-ring.replication-factor` determines how many replicas are used for a tenant.
+
+As a result, shuffle sharding is effectively always enabled for Alertmanager.
 
 ### Shuffle sharding impact to the KV store
 

@@ -1,0 +1,1 @@
+{{- include "mimir.memcached.podDisruptionBudget" (dict "ctx" $ "component" "memcached-chunks" ) }}

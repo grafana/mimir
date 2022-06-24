@@ -326,7 +326,7 @@ func GatherIndexHealthStats(logger log.Logger, blockDir string, minTime, maxTime
 
 func verifyChunks(l log.Logger, cr *chunks.Reader, lset labels.Labels, chks []chunks.Meta) {
 	for _, cm := range chks {
-		ch, err := cr.Chunk(cm.Ref)
+		ch, err := cr.Chunk(cm)
 		if err != nil {
 			level.Error(l).Log("msg", "failed to read chunk", "ref", cm.Ref, "err", err)
 			continue
