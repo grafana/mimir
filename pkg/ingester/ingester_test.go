@@ -5895,6 +5895,10 @@ func TestNewIngestErrMsgs(t *testing.T) {
 			err: newIngestErrSampleTimestampTooOld(timestamp, metricLabelAdapters),
 			msg: `the sample has been rejected because its timestamp is too old (err-mimir-sample-timestamp-too-old). The affected sample has timestamp 1970-01-19T05:30:43.969Z and is from series {__name__="test"}`,
 		},
+		"newIngestErrSampleTimestampTooOld_out_of_order_enabled": {
+			err: newIngestErrSampleTimestampTooOldOOOEnabled(timestamp, metricLabelAdapters, model.Duration(2*time.Hour)),
+			msg: `the sample has been rejected because another sample with a more recent timestamp has already been ingested and this sample is beyond the out-of-order time window of 2h (err-mimir-sample-timestamp-too-old). The affected sample has timestamp 1970-01-19T05:30:43.969Z and is from series {__name__="test"}`,
+		},
 		"newIngestErrSampleOutOfOrder": {
 			err: newIngestErrSampleOutOfOrder(timestamp, metricLabelAdapters),
 			msg: `the sample has been rejected because another sample with a more recent timestamp has already been ingested and out-of-order samples are not allowed (err-mimir-sample-out-of-order). The affected sample has timestamp 1970-01-19T05:30:43.969Z and is from series {__name__="test"}`,
