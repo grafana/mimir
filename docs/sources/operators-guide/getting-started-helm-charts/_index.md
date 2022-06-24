@@ -198,10 +198,10 @@ docker run --rm --name=grafana --network=host grafana/grafana
 1. Sign in using the default username `admin` and password `admin`.
 1. Configure a new Prometheus data source to query the local Grafana Mimir server using the following settings:
 
-   | Field | Value                                                                  |
-   | ----- | ---------------------------------------------------------------------- |
-   | Name  | Mimir                                                                  |
-   | URL   | http://\<ingress-host\>/prometheus                                       |
+   | Field | Value                              |
+   | ----- | ---------------------------------- |
+   | Name  | Mimir                              |
+   | URL   | http://\<ingress-host\>/prometheus |
 
 To add a data source, refer to [Add a data source](https://grafana.com/docs/grafana/latest/datasources/add-a-data-source/).
 
@@ -229,7 +229,7 @@ metaMonitoring:
     installOperator: true
     metrics:
       additionalRemoteWriteConfigs:
-        - url: 'http://<release-name>-mimir-nginx.<namespace>.svc:80/api/v1/push'
+        - url: "http://<release-name>-mimir-nginx.<namespace>.svc:80/api/v1/push"
 ```
 
 Upgrade Grafana Mimir via the helm chart to start a Grafana Agent and start collecting metrics about Grafana Mimir itself:
@@ -256,10 +256,10 @@ Follow the instructions in [Deploy Grafana on Kubernetes](https://grafana.com/do
 1. Sign in using the default username `admin` and password `admin`.
 1. Configure a new Prometheus data source to query the local Grafana Mimir server using the following settings:
 
-   | Field | Value                                                                  |
-   | ----- | ---------------------------------------------------------------------- |
-   | Name  | Mimir                                                                  |
-   | URL   | http://\<release-name\>-mimir-nginx.\<namespace\>.svc:80/prometheus        |
+   | Field | Value                                                               |
+   | ----- | ------------------------------------------------------------------- |
+   | Name  | Mimir                                                               |
+   | URL   | http://\<release-name\>-mimir-nginx.\<namespace\>.svc:80/prometheus |
 
 To add a data source, refer to [Add a data source](https://grafana.com/docs/grafana/latest/datasources/add-a-data-source/).
 
