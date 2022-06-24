@@ -8,29 +8,29 @@ weight: 20
 # Getting started with Grafana Mimir using the Helm chart
 
 <!-- What is this about? TODO -->
-<!-- TODO introduce the notation of <...> to mean that the user needs to set their own value here. -->
 
 ## Before you begin
 
-The instructions that follow are common across any flavor of Kubernetes.
+The instructions that follow are common across any flavor of Kubernetes. They also assume that you know how to install a Kubernetes cluster, and configure and operate it.
 
-The information that follows assumes that you are able to install Kubernetes, and configure and operate it.
+It also assumes that you have an understanding of what the `kubectl` command does.
+
+> **Caution:** Do not use this getting-started procedure in a production environment.
 
 Hardware requirements:
 
-- For this tutorial a single Kubernetes node with a minimum of 4 cores and 16GiB RAM should be sufficient. Note that production setups start from 3 nodes for redundancy!
+- A single Kubernetes node with a minimum of 4 cores and 16GiB RAM
 
-Install the following software:
+Software requirements:
 
-- Either a [Prometheus server](https://prometheus.io/docs/prometheus/latest/installation/) or [Grafana Agent](https://grafana.com/docs/grafana-cloud/agent/#installing-the-grafana-agent).
-- Helm 3 or higher
 - Kubernetes 1.10 or higher
-- The kubectl command for your version of Kubernetes, and an understanding of what the command does.
+- The `kubectl` command for your version of Kubernetes
+- Helm 3 or higher
 
 Verify that you have:
 
 - Access to the Kubernetes cluster
-- Persistent storage is enabled in the Kubernetes cluster and there is a default storage class set up
+- Persistent storage is enabled in the Kubernetes cluster, which has a default storage class set up
 - DNS service works in the Kubernetes cluster
 - An ingress controller is set up in the Kubernetes cluster
 
@@ -40,11 +40,15 @@ Verify that you have:
 
 Using a custom namespace solves problems later on because you do not have to overwrite the default namespace.
 
-1. [Create a unique Kubernetes namespace](https://kubernetes.io/docs/tasks/administer-cluster/namespaces/#creating-a-new-namespace):
+1. Create a unique Kubernetes namespace:
 
    ```console
    kubectl create namespace <namespace>
    ```
+
+   Replace `<namespace>` with a namespace of your choice. For example, `mimir` or `test-mimir`.
+
+   For more details, see the Kubernetes documentation about [Creating a new namespace](https://kubernetes.io/docs/tasks/administer-cluster/namespaces/#creating-a-new-namespace).
 
 1. Set up a Helm repository using the following commands:
 
@@ -247,6 +251,9 @@ First install Grafana in the Kubernetes cluster, and then add Mimir as a Prometh
 Follow the instructions in [Deploy Grafana on Kubernetes](https://grafana.com/docs/grafana/latest/setup-grafana/installation/kubernetes/).
 
 #### Add Grafana Mimir as a Prometheus data source
+
+<!-- 
+- Either a [Prometheus server](https://prometheus.io/docs/prometheus/latest/installation/) or [Grafana Agent](https://grafana.com/docs/grafana-cloud/agent/#installing-the-grafana-agent). -->
 
 1. Port forward Grafana to localhost with the command:
    ```bash
