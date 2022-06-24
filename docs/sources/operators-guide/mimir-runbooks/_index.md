@@ -1431,12 +1431,12 @@ How it **works**:
 
 ### err-mimir-store-consistency-check-failed
 
-This error occurs when the querier is unable to fetch some of the expected blocks after multiple retries and connections to different store-gateways. The query fails because some blocks are missing.
+This error occurs when the querier is unable to fetch some of the expected blocks after multiple retries and connections to different store-gateways. The query fails because some blocks are missing in the queried store-gateways.
 
 How it **works**:
 
 - Mimir has been designed to guarantee query results correctness and never return partial query results. Either a query succeeds returning fully consistent results or it fails.
-- Queriers and rulers when running with the "internal" evaluation mode run a consistency check to ensure all expected blocks have been queried from the long-term storage via the store-gateways.
+- Queriers, and rulers running with the "internal" evaluation mode, run a consistency check to ensure all expected blocks have been queried from the long-term storage via the store-gateways.
 - If any expected block has not been queried via the store-gateways, then the query fails with this error.
 - See [Anatomy of a query request]({{< relref "../architecture/components/querier.md#anatomy-of-a-query-request" >}}) to learn more.
 
