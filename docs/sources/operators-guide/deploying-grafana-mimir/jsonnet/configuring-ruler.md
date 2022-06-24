@@ -13,23 +13,23 @@ For more information about the ruler, see [Grafana Mimir ruler]({{< relref "../.
 To enable it, add the following Jsonnet code to the `_config` section:
 
 ```jsonnet
-  _config+:: {
-    ruler_enabled: true
-    ruler_client_type: '<type>',
-  }
+_config+:: {
+  ruler_enabled: true
+  ruler_client_type: '<type>',
+}
 ```
 
 The `ruler_client_type` option must be one of either 'local', 'azure', 'aws', or 's3'.
 For more information about the options available for storing ruler state, see [Grafana Mimir ruler: State]({{< relref "../../architecture/components/ruler/index.md#state" >}}).
 
-To get started, use the 'local' client type for initial testing:
+To get started, use the `local` client type for initial testing:
 
 ```jsonnet
-  _config+:: {
-    ruler_enabled: true
-    ruler_client_type: 'local',
-    ruler_local_directory: '/path/to/local/directory',
-  }
+_config+:: {
+  ruler_enabled: true
+  ruler_client_type: 'local',
+  ruler_local_directory: '/path/to/local/directory',
+}
 ```
 
 If you are using object storage, additional configuration options are required:
@@ -48,12 +48,12 @@ If you are using object storage, additional configuration options are required:
   - `ruler_storage_azure_account_name`
   - `ruler_storage_azure_account_key`
 
-> **Note:** You need to manually provide the storage credentials for `s3` and `gcs` by using additional command line arguments as necessary. For more information, see [Grafana Mimir configuration parameters: ruler_storage]({{< relref "../../configuring/reference-configuration-parameters/#ruler_storage" >}}).
+> **Note:** You need to manually provide the storage credentials for `s3` and `gcs` by using additional command line arguments as necessary. For more information, see [Grafana Mimir configuration parameters: ruler_storage]({{< relref "../../configuring/reference-configuration-parameters/_index.md#ruler_storage" >}}).
 
 ## Operational modes
 
 The ruler has two operational modes: _internal_ and _remote_. By default, the Jsonnet deploys the ruler by using the internal operational mode.
-For more information about these modes, see [Operational modes]({{< relref "../../architecture/components/ruler/_index.md#operational-modes" >}}).
+For more information about these modes, see [Operational modes]({{< relref "../../architecture/components/ruler/index.md#operational-modes" >}}).
 
 To enable the remote operational mode, add the following code to the Jsonnet:
 
@@ -64,10 +64,10 @@ To enable the remote operational mode, add the following code to the Jsonnet:
 ```
 
 > **Note:** To support the _remote_ operational mode, a separate query path is deployed to evaluate rules that consist of three additional Kubernetes deployments:
-
-- `ruler-query-frontend`
-- `ruler-query-scheduler`
-- `ruler-querier`
+>
+> - `ruler-query-frontend`
+> - `ruler-query-scheduler`
+> - `ruler-querier`
 
 ### Migrate to remote evaluation
 
