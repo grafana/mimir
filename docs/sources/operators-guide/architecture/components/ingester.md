@@ -68,7 +68,7 @@ Replication is still recommended in order to gracefully handle a single ingester
 
 The write-behind log (WBL) is similar to the WAL, but it only writes incoming out-of-order samples to a persistent disk until the series are uploaded to long-term storage.
 
-The reason why there is a different log for this is that it is not possible to know if a sample is out-of-order until we try to append it. So we first need to attempt it, detect that it is out-of-order, append it anyway if out-of-order is enabled and then write it to the log.
+There is a different log for this because it is not possible to know if a sample is out-of-order until you try to append it. First you need to attempt to append it, the TSDB will detect that it is out-of-order, append it anyway if out-of-order is enabled and then write it to the log.
 
 If the ingesters fail, the same characteristics as in the WAL apply.
 
