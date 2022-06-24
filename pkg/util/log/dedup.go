@@ -12,8 +12,8 @@ import (
 )
 
 const (
-	maxEntries          = 1024
-	maxDedupCount       = 1000
+	maxEntries          = 4096
+	maxDedupCount       = 2500
 	expireEntriesAfter  = 3 * time.Second
 	garbageCollectEvery = 5 * time.Second
 

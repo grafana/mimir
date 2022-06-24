@@ -130,7 +130,7 @@ func TestDedupLogger(t *testing.T) {
 func BenchmarkDedupLogger(b *testing.B) {
 	bcs := map[string]struct {
 		loggerFn func(io.Writer) log.Logger
-		closeFn  func(logger log.Logger)
+		stopFn   func(logger log.Logger)
 	}{
 		"no dedupper": {
 			loggerFn: func(w io.Writer) log.Logger {
@@ -142,21 +142,21 @@ func BenchmarkDedupLogger(b *testing.B) {
 				next := log.NewLogfmtLogger(w)
 				return newDedupLogger("push.go", []string{"level", "code", "user"}, next, maxEntries, maxDedupCount, time.Hour, time.Hour)
 			},
-			closeFn: func(lg log.Logger) { lg.(*Deduper).Stop() },
+			stopFn: func(lg log.Logger) { lg.(*Deduper).Stop() },
 		},
 		"non-matching deduper caller": {
 			loggerFn: func(w io.Writer) log.Logger {
 				next := log.NewLogfmtLogger(w)
 				return newDedupLogger("server.go", []string{"level", "code", "user"}, next, maxEntries, maxDedupCount, time.Hour, time.Hour)
 			},
-			closeFn: func(lg log.Logger) { lg.(*Deduper).Stop() },
+			stopFn: func(lg log.Logger) { lg.(*Deduper).Stop() },
 		},
 		"non-matching deduper labels": {
 			loggerFn: func(w io.Writer) log.Logger {
 				next := log.NewLogfmtLogger(w)
 				return newDedupLogger("push.go", []string{"level", "code", "user", "extra"}, next, maxEntries, maxDedupCount, time.Hour, time.Hour)
 			},
-			closeFn: func(lg log.Logger) { lg.(*Deduper).Stop() },
+			stopFn: func(lg log.Logger) { lg.(*Deduper).Stop() },
 		},
 	}
 	logEntry := []interface{}{"level", "info", "caller", "push.go:89", "code", 400, "user", 21378, "msg", "log message"}
@@ -175,8 +175,8 @@ func BenchmarkDedupLogger(b *testing.B) {
 			for n := 0; n < b.N; n++ {
 				lg.Log(logEntry...)
 			}
-			if closeFn := bc.closeFn; closeFn != nil {
-				closeFn(lg)
+			if stopFn := bc.stopFn; stopFn != nil {
+				stopFn(lg)
 			}
 		})
 	}
