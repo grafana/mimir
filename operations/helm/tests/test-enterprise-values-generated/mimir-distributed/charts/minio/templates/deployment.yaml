@@ -27,9 +27,9 @@ spec:
         release: test-enterprise-values
       annotations:
         checksum/secrets: aac2dea246043210c2649ffaf6c6ea57cd94d0aaf2b21759b8b38a093096478e
-        checksum/config: 8109517e3e9f729fb84cca8217b59099354497df0ca310f4e4b07d4951b02dc4
+        checksum/config: 978b056441dd95663373e8d0be4730af701b8c5835f00215b93a0fe8be3f19fa
     spec:
-      serviceAccountName: "test-enterprise-values-minio"
+      serviceAccountName: "mimir-service-account"
       securityContext:
         runAsUser: 1000
         runAsGroup: 1000

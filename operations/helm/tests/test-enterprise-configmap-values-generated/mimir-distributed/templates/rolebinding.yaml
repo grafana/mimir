@@ -16,4 +16,4 @@ roleRef:
   name: test-enterprise-configmap-values-mimir
 subjects:
 - kind: ServiceAccount
-  name: test-enterprise-configmap-values-mimir
+  name: mimir-service-account

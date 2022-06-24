@@ -38,7 +38,7 @@ spec:
       annotations:
         minio-secret-version: "42"
     spec:
-      serviceAccountName: test-enterprise-configmap-values-mimir
+      serviceAccountName: mimir-service-account
       securityContext:
         {}
       initContainers:

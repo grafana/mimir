@@ -28,7 +28,7 @@ spec:
         app.kubernetes.io/component: tokengen
       namespace: "citestns"
     spec:
-      serviceAccountName: test-enterprise-configmap-values-mimir
+      serviceAccountName: mimir-service-account
       securityContext:
         null
       initContainers:

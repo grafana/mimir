@@ -51,7 +51,7 @@ global:
 
 serviceAccount:
   create: true
-  name:
+  name: &serviceAccountName "mimir-service-account"
   annotations: {}
 
 # -- Configuration is loaded from the secret called 'externalConfigSecretName'. If 'useExternalConfig' is true, then the configuration is not generated, just consumed.
@@ -260,8 +260,9 @@ mimir:
 runtimeConfig: {}
 
 # RBAC configuration
+# For GKE/EKS/AKS use 'type: psp'. For OpenShift use 'type: scc'
 rbac:
-  pspEnabled: true
+  type: psp
 
 alertmanager:
   enabled: true
@@ -1311,6 +1312,11 @@ minio:
       cpu: 100m
       memory: 128Mi
   secretKey: supersecret
+  serviceAccount:
+    create: false
+    name: *serviceAccountName
+  # Changed the mc config path to '/tmp' from '/etc' as '/etc' is only writable by root and OpenShift will not permit this.
+  configPathmc: "/tmp/minio/mc/"
 
 # Configuration for nginx gateway
 nginx:

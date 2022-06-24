@@ -27,9 +27,9 @@ spec:
         release: test-oss-values
       annotations:
         checksum/secrets: f7d601b8641bf40718836a3781f3547aa41f4d5a36774f49fbe5353840847956
-        checksum/config: 32ca71423a92c84343fe0ae8158915116831302093797101294d27b284a8c78b
+        checksum/config: 0caf46963792266c1f713344c89cc4557f3053454d026fd2cd72e98b853a9d67
     spec:
-      serviceAccountName: "test-oss-values-minio"
+      serviceAccountName: "mimir-service-account"
       securityContext:
         runAsUser: 1000
         runAsGroup: 1000

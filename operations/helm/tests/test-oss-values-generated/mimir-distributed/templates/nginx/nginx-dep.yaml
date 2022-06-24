@@ -34,7 +34,7 @@ spec:
         app.kubernetes.io/component: nginx
       namespace: "citestns"
     spec:
-      serviceAccountName: test-oss-values-mimir
+      serviceAccountName: mimir-service-account
       securityContext:
         fsGroup: 101
         runAsGroup: 101

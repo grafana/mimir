@@ -16,4 +16,4 @@ roleRef:
   name: test-oss-values-mimir
 subjects:
 - kind: ServiceAccount
-  name: test-oss-values-mimir
+  name: mimir-service-account

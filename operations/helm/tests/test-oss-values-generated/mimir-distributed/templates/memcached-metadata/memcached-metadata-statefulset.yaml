@@ -37,7 +37,7 @@ spec:
         minio-secret-version: "42"
 
     spec:
-      serviceAccountName: test-oss-values-mimir
+      serviceAccountName: mimir-service-account
       securityContext:
         fsGroup: 11211
         runAsGroup: 11211

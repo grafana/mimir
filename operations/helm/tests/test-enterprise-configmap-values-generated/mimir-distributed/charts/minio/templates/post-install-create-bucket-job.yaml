@@ -28,7 +28,7 @@ spec:
                 name: test-enterprise-configmap-values-minio
             - secret:
                 name: test-enterprise-configmap-values-minio
-      serviceAccountName: "test-enterprise-configmap-values-minio"
+      serviceAccountName: "mimir-service-account"
       containers:
       - name: minio-mc
         image: "minio/mc:RELEASE.2021-02-14T04-28-06Z"

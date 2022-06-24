@@ -26,7 +26,7 @@ spec:
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: smoke-test
     spec:
-      serviceAccountName: test-oss-values-mimir
+      serviceAccountName: mimir-service-account
       securityContext:
         null
       initContainers:

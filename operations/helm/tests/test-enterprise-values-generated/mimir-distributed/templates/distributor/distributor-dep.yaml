@@ -38,7 +38,7 @@ spec:
       annotations:
       namespace: "citestns"
     spec:
-      serviceAccountName: test-enterprise-values-mimir
+      serviceAccountName: mimir-service-account
       securityContext:
         {}
       initContainers:
