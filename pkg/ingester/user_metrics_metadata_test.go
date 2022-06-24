@@ -16,8 +16,8 @@ import (
 
 func TestUserMetricsMetadata(t *testing.T) {
 	type input struct {
-		meta          mimirpb.MetricMetadata
-		errorExpected bool
+		meta        mimirpb.MetricMetadata
+		errContains string
 	}
 
 	tests := map[string]struct {
@@ -28,10 +28,10 @@ func TestUserMetricsMetadata(t *testing.T) {
 	}{
 		"should succeed for multiple metadata per metric": {
 			inputMetadata: []input{
-				{meta: mimirpb.MetricMetadata{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric_1", Help: "foo"}, errorExpected: false},
-				{meta: mimirpb.MetricMetadata{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric_1", Help: "bar"}, errorExpected: false},
-				{meta: mimirpb.MetricMetadata{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric_2", Help: "baz"}, errorExpected: false},
-				{meta: mimirpb.MetricMetadata{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric_2", Help: "qux"}, errorExpected: false},
+				{meta: mimirpb.MetricMetadata{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric_1", Help: "foo"}},
+				{meta: mimirpb.MetricMetadata{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric_1", Help: "bar"}},
+				{meta: mimirpb.MetricMetadata{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric_2", Help: "baz"}},
+				{meta: mimirpb.MetricMetadata{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric_2", Help: "qux"}},
 			},
 			expectedMetadata: []*mimirpb.MetricMetadata{
 				{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric_1", Help: "foo"},
@@ -43,10 +43,10 @@ func TestUserMetricsMetadata(t *testing.T) {
 		"should fail when metadata per user limit reached": {
 			maxMetadataPerUser: 1,
 			inputMetadata: []input{
-				{meta: mimirpb.MetricMetadata{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric_1", Help: "foo"}, errorExpected: false},
-				{meta: mimirpb.MetricMetadata{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric_1", Help: "bar"}, errorExpected: false},
-				{meta: mimirpb.MetricMetadata{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric_2", Help: "baz"}, errorExpected: true},
-				{meta: mimirpb.MetricMetadata{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric_2", Help: "qux"}, errorExpected: true},
+				{meta: mimirpb.MetricMetadata{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric_1", Help: "foo"}},
+				{meta: mimirpb.MetricMetadata{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric_1", Help: "bar"}},
+				{meta: mimirpb.MetricMetadata{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric_2", Help: "baz"}, errContains: "err-mimir-max-metadata-per-user"},
+				{meta: mimirpb.MetricMetadata{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric_2", Help: "qux"}, errContains: "err-mimir-max-metadata-per-user"},
 			},
 			expectedMetadata: []*mimirpb.MetricMetadata{
 				{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric_1", Help: "foo"},
@@ -56,10 +56,10 @@ func TestUserMetricsMetadata(t *testing.T) {
 		"should fail when metadata per metric limit reached": {
 			maxMetadataPerMetric: 1,
 			inputMetadata: []input{
-				{meta: mimirpb.MetricMetadata{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric_1", Help: "foo"}, errorExpected: false},
-				{meta: mimirpb.MetricMetadata{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric_1", Help: "bar"}, errorExpected: true},
-				{meta: mimirpb.MetricMetadata{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric_2", Help: "baz"}, errorExpected: false},
-				{meta: mimirpb.MetricMetadata{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric_2", Help: "qux"}, errorExpected: true},
+				{meta: mimirpb.MetricMetadata{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric_1", Help: "foo"}},
+				{meta: mimirpb.MetricMetadata{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric_1", Help: "bar"}, errContains: "err-mimir-max-metadata-per-metric"},
+				{meta: mimirpb.MetricMetadata{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric_2", Help: "baz"}},
+				{meta: mimirpb.MetricMetadata{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric_2", Help: "qux"}, errContains: "err-mimir-max-metadata-per-metric"},
 			},
 			expectedMetadata: []*mimirpb.MetricMetadata{
 				{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric_1", Help: "foo"},
@@ -98,8 +98,9 @@ func TestUserMetricsMetadata(t *testing.T) {
 			for _, i := range testData.inputMetadata {
 				err := mm.add(i.meta.MetricFamilyName, &i.meta)
 
-				if i.errorExpected {
+				if i.errContains != "" {
 					require.Error(t, err)
+					require.Contains(t, err.Error(), i.errContains)
 				} else {
 					require.NoError(t, err)
 				}
