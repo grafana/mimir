@@ -78,20 +78,20 @@ memcached-results:
     requests:
       cpu: 10m
 
-serviceMonitor:
-  enabled: true
-
 metaMonitoring:
-  grafanaAgent:
+  serviceMonitor:
     enabled: true
-    installAgent: true
-    logs:
-      remote:
-        url: "logsurl"
-      additionalClientConfigs:
-        - url: "extralogurl"
-    metrics:
-      remote:
-        url: "metricsurl"
-      additionalRemoteWriteConfigs:
-        - url: "extrametricconfig"
+
+metaMonitoringAgent:
+  enabled: true
+  installAgent: true
+  logs:
+    remote:
+      url: "logsurl"
+    additionalClientConfigs:
+      - url: "extralogurl"
+  metrics:
+    remote:
+      url: "metricsurl"
+    additionalRemoteWriteConfigs:
+      - url: "extrametricconfig"

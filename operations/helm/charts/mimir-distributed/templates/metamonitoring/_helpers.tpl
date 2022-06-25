@@ -1,4 +1,4 @@
-{{- define "mimir.metaMonitoring.metrics.remoteWrite" -}}
+{{- define "mimir.metaMonitoringAgent.metrics.remoteWrite" -}}
 url: {{ .url }}
 {{- if .auth }}
 basicAuth:
@@ -22,7 +22,7 @@ headers:
 {{- end }}
 {{- end -}}
 
-{{- define "mimir.metaMonitoring.logs.client" -}}
+{{- define "mimir.metaMonitoringAgent.logs.client" -}}
 url: {{ .url }}
 {{- if .auth }}
 {{- if .auth.tenantId }}

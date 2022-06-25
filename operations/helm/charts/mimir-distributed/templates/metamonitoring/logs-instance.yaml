@@ -1,10 +1,10 @@
-{{- with (.Values.metaMonitoring).grafanaAgent }}
+{{- with .Values.metaMonitoringAgent }}
 {{- if .enabled }}
 apiVersion: monitoring.grafana.com/v1alpha1
 kind: LogsInstance
 metadata:
   name: {{ include "mimir.resourceName" (dict "ctx" $ "component" "meta-monitoring") }}
-  namespace: {{ (($.Values.metaMonitoring).grafanaAgent).namespace | default $.Release.Namespace | quote }}
+  namespace: {{ ($.Values.metaMonitoringAgent).namespace | default $.Release.Namespace | quote }}
   labels:
     {{- include "mimir.labels" (dict "ctx" $ "component" "meta-monitoring" ) | nindent 4 }}
     {{- with .labels }}
@@ -20,7 +20,7 @@ spec:
     {{- range $i, $cfg := prepend ((.logs).additionalClientConfigs | default list) (.logs).remote }}
     {{- with $cfg }}
     {{- if $cfg.url }}
-    - {{- include "mimir.metaMonitoring.logs.client" (dict "ctx" $ "url" .url "auth" .auth "usernameKey" (printf "username-%d" $i)) | nindent 6 -}}
+    - {{- include "mimir.metaMonitoringAgent.logs.client" (dict "ctx" $ "url" .url "auth" .auth "usernameKey" (printf "username-%d" $i)) | nindent 6 -}}
     {{- end }}
     {{- end }}
     {{- end }}

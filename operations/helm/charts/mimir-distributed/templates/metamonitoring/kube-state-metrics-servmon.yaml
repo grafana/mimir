@@ -1,5 +1,5 @@
-{{- if and ((.Values.metaMonitoring).grafanaAgent).enabled ((((.Values.metaMonitoring).grafanaAgent).metrics).scrapeK8s).enabled }}
-{{- with .Values.serviceMonitor }}
+{{- if and (.Values.metaMonitoringAgent).enabled (((.Values.metaMonitoringAgent).metrics).scrapeK8s).enabled }}
+{{- with .Values.metaMonitoring.serviceMonitor }}
 {{- if .enabled }}
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
@@ -31,7 +31,7 @@ spec:
       {{- with .scrapeTimeout }}
       scrapeTimeout: {{ . }}
       {{- end }}
-  {{- with ((((($.Values).metaMonitoring).grafanaAgent).metrics).scrapeK8s).kubeStateMetrics }}
+  {{- with (((($.Values).metaMonitoringAgent).metrics).scrapeK8s).kubeStateMetrics }}
   namespaceSelector:
     matchNames:
       - {{ .namespace }}

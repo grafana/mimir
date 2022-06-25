@@ -1,4 +1,4 @@
-{{- with (.Values.metaMonitoring).grafanaAgent }}
+{{- with .Values.metaMonitoringAgent }}
 {{- if .enabled }}
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
