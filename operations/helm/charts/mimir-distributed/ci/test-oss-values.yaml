@@ -78,10 +78,10 @@ memcached-results:
     requests:
       cpu: 10m
 
-serviceMonitor:
-  enabled: true
-
 metaMonitoring:
+  serviceMonitor:
+    enabled: true
+
   grafanaAgent:
     enabled: true
     installAgent: true

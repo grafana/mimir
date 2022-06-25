@@ -6,7 +6,7 @@ Params:
   memberlist = true/false, whether component is part of memberlist
 */}}
 {{- define "mimir.lib.serviceMonitor" -}}
-{{- with .ctx.Values.serviceMonitor }}
+{{- with .ctx.Values.metaMonitoring.serviceMonitor }}
 {{- if .enabled }}
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor

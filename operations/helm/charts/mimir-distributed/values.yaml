@@ -263,36 +263,6 @@ runtimeConfig: {}
 rbac:
   pspEnabled: true
 
-# ServiceMonitor configuration
-serviceMonitor:
-  # -- If enabled, ServiceMonitor resources for Prometheus Operator are created
-  enabled: false
-  # -- To disable setting a 'cluster' label in metrics, set to 'null'.
-  # To overwrite the 'cluster' label with your own value, set to a non-empty string.
-  # Keep empty string "" to have the default value in the 'cluster' label, which is the helm release name for Mimir and the actual cluster name for Enterprise Metrics.
-  clusterLabel: ""
-  # -- Alternative namespace for ServiceMonitor resources
-  # If left unset, the default is to install the ServiceMonitor resources in the namespace where the chart is installed, i.e. the namespace specified for the helm command.
-  namespace: null
-  # -- Namespace selector for ServiceMonitor resources
-  # If left unset, the default is to select the namespace where the chart is installed, i.e. the namespace specified for the helm command.
-  namespaceSelector: null
-  # -- ServiceMonitor annotations
-  annotations: {}
-  # -- Additional ServiceMonitor labels
-  labels: {}
-  # -- ServiceMonitor scrape interval
-  interval: null
-  # -- ServiceMonitor scrape timeout in Go duration format (e.g. 15s)
-  scrapeTimeout: null
-  # -- ServiceMonitor relabel configs to apply to samples before scraping
-  # https://github.com/prometheus-operator/prometheus-operator/blob/master/Documentation/api.md#relabelconfig
-  relabelings: []
-  # -- ServiceMonitor will use http by default, but you can pick https as well
-  scheme: http
-  # -- ServiceMonitor will use these tlsConfig settings to make the health check requests
-  tlsConfig: null
-
 alertmanager:
   enabled: true
   replicas: 1
@@ -1802,6 +1772,37 @@ smoke_test:
   initContainers: []
 
 metaMonitoring:
+  # ServiceMonitor configuration for monitoring Kubernetes Services with Prometheus Operator and/or Grafana Agent
+  serviceMonitor:
+    # -- If enabled, ServiceMonitor resources for Prometheus Operator are created
+    enabled: false
+    # -- To disable setting a 'cluster' label in metrics, set to 'null'.
+    # To overwrite the 'cluster' label with your own value, set to a non-empty string.
+    # Keep empty string "" to have the default value in the 'cluster' label, which is the helm release name for Mimir and the actual cluster name for Enterprise Metrics.
+    clusterLabel: ""
+    # -- Alternative namespace for ServiceMonitor resources
+    # If left unset, the default is to install the ServiceMonitor resources in the namespace where the chart is installed, i.e. the namespace specified for the helm command.
+    namespace: null
+    # -- Namespace selector for ServiceMonitor resources
+    # If left unset, the default is to select the namespace where the chart is installed, i.e. the namespace specified for the helm command.
+    namespaceSelector: null
+    # -- ServiceMonitor annotations
+    annotations: {}
+    # -- Additional ServiceMonitor labels
+    labels: {}
+    # -- ServiceMonitor scrape interval
+    interval: null
+    # -- ServiceMonitor scrape timeout in Go duration format (e.g. 15s)
+    scrapeTimeout: null
+    # -- ServiceMonitor relabel configs to apply to samples before scraping
+    # https://github.com/prometheus-operator/prometheus-operator/blob/master/Documentation/api.md#relabelconfig
+    relabelings: []
+    # -- ServiceMonitor will use http by default, but you can pick https as well
+    scheme: http
+    # -- ServiceMonitor will use these tlsConfig settings to make the health check requests
+    tlsConfig: null
+
+  # metaMonitoringAgent configures the built in Grafana Agent that can scrape metrics and logs and send them to a local or remote destination
   grafanaAgent:
     # -- Controls whether to create PodLogs, MetricsInstance, LogsInstance, and GrafanaAgent CRs to scrape the
     # ServiceMonitors of the chart and ship metrics and logs to the remote endpoints below.
