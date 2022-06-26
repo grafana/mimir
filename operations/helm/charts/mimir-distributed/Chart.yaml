@@ -16,4 +16,4 @@ dependencies:
     alias: grafana-agent-operator
     version: 0.1.12
     repository: https://grafana.github.io/helm-charts
-    condition: metaMonitoringAgent.installOperator
+    condition: grafanaAgent.installOperator

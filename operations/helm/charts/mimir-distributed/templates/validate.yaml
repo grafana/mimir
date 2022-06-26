@@ -24,7 +24,7 @@
 {{- fail "The setting 'configStorageType' should be one of 'Secret' or 'ConfigMap'." }}
 {{- end }}
 
-{{- with .Values.metaMonitoringAgent }}
+{{- with .Values.grafanaAgent }}
 {{/*
   !servmon.Enabled
   && agent.Enabled
@@ -41,6 +41,6 @@
       )
     )
     }}
-{{- fail "metaMonitoringAgent.remote.url is set, but serivceMonitor is disabled; you will not see any metrics, so enable the metaMonitoring.serviceMonitor or remove the remote configuration" }}
+{{- fail "grafanaAgent.remote.url is set, but serivceMonitor is disabled; you will not see any metrics, so enable the monitoring.serviceMonitor or remove the remote configuration" }}
 {{- end }}
 {{- end }}

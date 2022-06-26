@@ -82,7 +82,7 @@ metaMonitoring:
   serviceMonitor:
     enabled: true
 
-metaMonitoringAgent:
+grafanaAgent:
   enabled: true
   installAgent: true
   logs:

@@ -1,10 +1,10 @@
-{{- with .Values.metaMonitoringAgent }}
+{{- with .Values.grafanaAgent }}
 {{- if .enabled }}
 apiVersion: monitoring.grafana.com/v1alpha1
 kind: MetricsInstance
 metadata:
   name: {{ include "mimir.resourceName" (dict "ctx" $ "component" "meta-monitoring") }}
-  namespace: {{ $.Values.metaMonitoringAgent.namespace | default $.Release.Namespace | quote }}
+  namespace: {{ $.Values.grafanaAgent.namespace | default $.Release.Namespace | quote }}
   labels:
     {{- include "mimir.labels" (dict "ctx" $ "component" "meta-monitoring" ) | nindent 4 }}
     {{- with .labels }}
@@ -20,7 +20,7 @@ spec:
     {{- range $i, $cfg := prepend ((.metrics).additionalRemoteWriteConfigs | default list) (.metrics).remote }}
     {{- with $cfg }}
     {{- if $cfg.url }}
-    - {{- include "mimir.metaMonitoringAgent.metrics.remoteWrite" (dict "ctx" $ "url" .url "auth" .auth "usernameKey" (printf "username-%d" $i) "headers" .headers ) | nindent 6 -}}
+    - {{- include "mimir.grafanaAgent.metrics.remoteWrite" (dict "ctx" $ "url" .url "auth" .auth "usernameKey" (printf "username-%d" $i) "headers" .headers ) | nindent 6 -}}
     {{- end }}
     {{- end }}
     {{- end }}

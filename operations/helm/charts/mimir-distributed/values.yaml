@@ -1803,8 +1803,8 @@ metaMonitoring:
     # -- ServiceMonitor will use these tlsConfig settings to make the health check requests
     tlsConfig: null
 
-# metaMonitoringAgent configures the built in Grafana Agent that can scrape metrics and logs and send them to a local or remote destination
-metaMonitoringAgent:
+# grafanaAgent configures the built in Grafana Agent that can scrape metrics and logs and send them to a local or remote destination
+grafanaAgent:
   # -- Controls whether to create PodLogs, MetricsInstance, LogsInstance, and GrafanaAgent CRs to scrape the
   # ServiceMonitors of the chart and ship metrics and logs to the remote endpoints below.
   # Note that you need to configure serviceMonitor in order to have some metrics available.
