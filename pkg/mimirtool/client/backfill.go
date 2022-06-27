@@ -46,12 +46,13 @@ func (c *MimirClient) backfillBlock(ctx context.Context, dpath string, logger lo
 
 	level.Info(logger).Log("msg", "Making request to start block backfill", "user", c.id, "block_id", blockID)
 
+	blockPrefix := path.Join("/api/v1/upload/block", url.PathEscape(blockMeta.ULID.String()))
+
 	buf := bytes.NewBuffer(nil)
 	if err := json.NewEncoder(buf).Encode(blockMeta); err != nil {
 		return errors.Wrap(err, "failed to JSON encode payload")
 	}
-	res, err := c.doRequest(fmt.Sprintf("/api/v1/upload/block/%s", blockID), http.MethodPost, buf,
-		int64(buf.Len()))
+	res, err := c.doRequest(blockPrefix, http.MethodPost, buf, int64(buf.Len()))
 	if err != nil {
 		return errors.Wrap(err, "request to start backfill failed")
 	}
@@ -89,8 +90,7 @@ func (c *MimirClient) backfillBlock(ctx context.Context, dpath string, logger lo
 		escapedPath := url.PathEscape(relPath)
 		level.Info(logger).Log("msg", "uploading block file", "path", pth, "user",
 			c.id, "block_id", blockID, "size", st.Size())
-		res, err := c.doRequest(fmt.Sprintf("/api/v1/upload/block/%s/files?path=%s", blockID,
-			escapedPath), http.MethodPost, f, st.Size())
+		res, err := c.doRequest(path.Join(blockPrefix, fmt.Sprintf("files?path=%s", escapedPath)), http.MethodPost, f, st.Size())
 		if err != nil {
 			return errors.Wrapf(err, "request to upload backfill of file %q failed", pth)
 		}
@@ -104,7 +104,7 @@ func (c *MimirClient) backfillBlock(ctx context.Context, dpath string, logger lo
 		return errors.Wrapf(err, "failed to traverse %q", dpath)
 	}
 
-	res, err = c.doRequest(fmt.Sprintf("/api/v1/upload/block/%s?uploadComplete=true", blockID), http.MethodPost,
+	res, err = c.doRequest(fmt.Sprintf("%s?uploadComplete=true", blockPrefix), http.MethodPost,
 		nil, -1)
 	if err != nil {
 		return errors.Wrap(err, "request to finish backfill failed")
