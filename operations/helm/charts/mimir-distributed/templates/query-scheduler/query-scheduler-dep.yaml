@@ -22,11 +22,6 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
       annotations:
-{{- if .Values.useExternalConfig }}
-        checksum/config: {{ .Values.externalConfigVersion }}
-{{- else }}
-        checksum/config: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
-{{- end}}
         {{- include "mimir.podAnnotations" (dict "ctx" . "component" "query-scheduler") | nindent 8 }}
     spec:
       serviceAccountName: {{ template "mimir.serviceAccountName" . }}
