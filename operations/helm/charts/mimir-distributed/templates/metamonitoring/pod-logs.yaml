@@ -1,0 +1,45 @@
+{{- with (.Values.metaMonitoring).grafanaAgent }}
+{{- if .enabled }}
+apiVersion: monitoring.grafana.com/v1alpha1
+kind: PodLogs
+metadata:
+  name: {{ include "mimir.resourceName" (dict "ctx" $ "component" "meta-monitoring") }}
+  namespace: {{ .namespace | default $.Release.Namespace | quote }}
+  labels:
+    {{- include "mimir.labels" (dict "ctx" $ "component" "meta-monitoring") | nindent 4 }}
+    {{- with .labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with .annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  pipelineStages:
+    - cri: { }
+  relabelings:
+    - action: replace # For consistency with metrics
+      replacement: $1
+      separator: /
+      sourceLabels:
+        - __meta_kubernetes_namespace
+        - __meta_kubernetes_pod_container_name
+      targetLabel: job
+    - action: replace # Necessary for slow queries dashboard
+      sourceLabels:
+        - __meta_kubernetes_pod_container_name
+      targetLabel: name
+    - targetLabel: cluster
+      replacement: {{ include "mimir.clusterName" $ }}
+
+  namespaceSelector:
+    matchNames:
+      - {{ $.Release.Namespace | quote }}
+
+  selector:
+    matchLabels:
+      # Scrape logs from all components
+      {{- include "mimir.selectorLabels" (dict "ctx" $) | nindent 6 }}
+
+{{- end -}}
+{{- end -}}

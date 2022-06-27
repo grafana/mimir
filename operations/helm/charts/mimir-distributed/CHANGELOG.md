@@ -29,6 +29,7 @@ Entries should include a reference to the Pull Request that introduced the chang
   - The remaining arguments are aligned with the rest of the chart's services, please consult the values file to check whether a parameter exists or was renamed.
 * [CHANGE] Change default value for `blocks_storage.bucket_store.chunks_cache.memcached.timeout` to `450ms` to increase use of cached data. #2035
 * [FEATURE] Add `mimir-continuous-test` in smoke-test mode. Use `helm test` to run a smoke test of the read + write path.
+* [FEATURE] Add meta-monitoring via the Grafana Agent Kubernetes operator: scrape metrics and collect logs from Mimir pods and ship them to a remote. #2068
 * [ENHANCEMENT] ServiceMonitor object will now have default values based on release namesapce in the `namespace` and `namespaceSelector` fields. #2123
 * [ENHANCEMENT] Set the `namespace` metadata field for all kubernetes objects to enable using `--namespace` correctly with Helm even if the specified namespace does not exist. #2123
 * [ENHANCEMENT] The new value `serviceMonitor.clusterLabel` controls whether to add a `cluster` label and with what content to ServiceMonitor metrics. #2125
@@ -42,7 +43,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Add a simple test for enterprise installation #2027
 * [ENHANCEMENT] Check for the containerSecurityContext in values file. #2112
 * [ENHANCEMENT] Add `NOTES.txt` to show endpoints URLs for the user at install/upgrade. #2189
-
+* [ENHANCEMENT] Add ServiceMonitor for overrides-exporter. #2068
 
 ## 2.1.0-beta.7
 

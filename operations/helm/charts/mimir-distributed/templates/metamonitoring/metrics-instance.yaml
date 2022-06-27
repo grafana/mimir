@@ -1,0 +1,38 @@
+{{- with .Values.metaMonitoring.grafanaAgent }}
+{{- if .enabled }}
+apiVersion: monitoring.grafana.com/v1alpha1
+kind: MetricsInstance
+metadata:
+  name: {{ include "mimir.resourceName" (dict "ctx" $ "component" "meta-monitoring") }}
+  namespace: {{ $.Values.metaMonitoring.grafanaAgent.namespace | default $.Release.Namespace | quote }}
+  labels:
+    {{- include "mimir.labels" (dict "ctx" $ "component" "meta-monitoring" ) | nindent 4 }}
+    {{- with .labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with .annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  remoteWrite:
+    {{- if or (.metrics).additionalRemoteWriteConfigs (.metrics).remote }}
+    {{- range $i, $cfg := prepend ((.metrics).additionalRemoteWriteConfigs | default list) (.metrics).remote }}
+    {{- with $cfg }}
+    {{- if $cfg.url }}
+    - {{- include "mimir.metaMonitoring.metrics.remoteWrite" (dict "ctx" $ "url" .url "auth" .auth "usernameKey" (printf "username-%d" $i) "headers" .headers ) | nindent 6 -}}
+    {{- end }}
+    {{- end }}
+    {{- end }}
+    {{- end }}
+
+  # Supply an empty namespace selector to look in all namespaces. Remove
+  # this to only look in the same namespace as the MetricsInstance CR
+  serviceMonitorNamespaceSelector: {}
+
+  serviceMonitorSelector:
+    # Scrape ServiceMonitors from all components
+    matchLabels:
+      {{- include "mimir.selectorLabels" (dict "ctx" $) | nindent 6 }}
+{{- end }}
+{{- end }}

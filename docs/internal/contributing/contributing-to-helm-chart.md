@@ -25,3 +25,11 @@ If version increase is need, the version is set in the chart itself [operations/
 Once a PR that updates the chart version is merged to `main`, it takes a couple of minutes for it to be published in [https://grafana.github.io/helm-charts](https://grafana.github.io/helm-charts) Helm repository.
 
 In order to search, template, install, upgrade, etc beta versions of charts, Helm commands require the user to specify the `--devel` flag. This means that checking for whether the beta version is published should be done with `helm search repo --devel`.
+
+## Linting
+
+Install [ct](https://github.com/helm/chart-testing) and run
+
+```bash
+ct lint --config operations/helm/ct.yaml --charts operations/helm/charts/mimir-distributed
+```

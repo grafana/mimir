@@ -55,7 +55,6 @@ const (
 
 	SampleTimestampTooOld    ID = "sample-timestamp-too-old"
 	SampleOutOfOrder         ID = "sample-out-of-order"
-	SampleTooOld             ID = "sample-too-old"
 	SampleDuplicateTimestamp ID = "sample-duplicate-timestamp"
 	ExemplarSeriesMissing    ID = "exemplar-series-missing"
 
@@ -84,5 +83,5 @@ func (id ID) MessageWithLimitConfig(msg, flag string, addFlags ...string) string
 		sb.WriteString(" and -")
 		sb.WriteString(addFlags[len(addFlags)-1])
 	}
-	return fmt.Sprintf("%s (%s%s). You can adjust the related per-tenant limit%s by configuring %s, or by contacting your service administrator.", msg, errPrefix, id, plural, sb.String())
+	return fmt.Sprintf("%s (%s%s). To adjust the related per-tenant limit%s, configure %s, or contact your service administrator.", msg, errPrefix, id, plural, sb.String())
 }

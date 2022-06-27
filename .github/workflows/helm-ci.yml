@@ -12,3 +12,4 @@ jobs:
     with:
       ct_configfile: operations/helm/ct.yaml
       ct_check_version_increment: false
+      helm_version: v3.8.2

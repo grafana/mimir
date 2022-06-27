@@ -1,0 +1,3 @@
+{{- if .Values.overrides_exporter.enabled -}}
+{{- include "mimir.lib.serviceMonitor" (dict "ctx" $ "component" "overrides-exporter") }}
+{{- end -}}

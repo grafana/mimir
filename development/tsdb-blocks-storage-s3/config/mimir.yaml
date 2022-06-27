@@ -4,7 +4,6 @@ distributor:
   pool:
     health_check_ingesters: true
   ring:
-    instance_addr: 127.0.0.1
     kvstore:
       store: consul
       consul:

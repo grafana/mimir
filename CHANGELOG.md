@@ -40,6 +40,7 @@
 * [ENHANCEMENT] Compactor: Run sanity check on blocks storage configuration at startup. #2143
 * [ENHANCEMENT] Compactor: Add HTTP API for uploading TSDB blocks. Enabled with `-compactor.block-upload-enabled`. #1694 #2126
 * [ENHANCEMENT] Ingester: Enable querying overlapping blocks by default. #2187
+* [ENHANCEMENT] Distributor: Auto-forget unhealthy distributors after ten failed ring heartbeats. #2154
 * [BUGFIX] Fix regexp parsing panic for regexp label matchers with start/end quantifiers. #1883
 * [BUGFIX] Ingester: fixed deceiving error log "failed to update cached shipped blocks after shipper initialisation", occurring for each new tenant in the ingester. #1893
 * [BUGFIX] Ring: fix bug where instances may appear unhealthy in the hash ring web UI even though they are not. #1933
@@ -110,6 +111,9 @@
 * [ENHANCEMENT] Clarify "Set rule group" API specification. #1869
 * [ENHANCEMENT] Published Mimir jsonnet documentation. #2024
 * [ENHANCEMENT] Documented required scrape interval for using alerting and recording rules from Mimir jsonnet. #2147
+* [ENHANCEMENT] Runbooks: Mention memberlist as possible source of problems for various alerts. #2158
+* [ENHANCEMENT] Added step-by-step article about migrating from Consul to Memberlist KV store using jsonnet without downtime. #2166
+* [ENHANCEMENT] Documented `/memberlist` admin page. #2166
 * [ENHANCEMENT] Documented how to configure queriers’ autoscaling with Jsonnet. #2128
 * [BUGFIX] Fixed ruler configuration used in the getting started guide. #2052
 * [BUGFIX] Fixed Mimir Alertmanager datasource in Grafana used by "Play with Grafana Mimir" tutorial. #2115

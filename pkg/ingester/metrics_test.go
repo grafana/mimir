@@ -749,11 +749,5 @@ func populateTSDBMetrics(base float64) *prometheus.Registry {
 	})
 	outOfOrderSamplesAppendedTotal.Add(3)
 
-	tooOldSamplesTotal := promauto.With(r).NewCounter(prometheus.CounterOpts{
-		Name: "prometheus_tsdb_too_old_samples_total",
-		Help: "Total number of out-of-order samples ingestion failed attempts.",
-	})
-	tooOldSamplesTotal.Add(3)
-
 	return r
 }
