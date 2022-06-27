@@ -231,7 +231,9 @@ replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus 
 
 // Out of order Support forces us to fork thanos because we've changed the ChunkReader interface.
 // Once the out of order support is upstreamed and Thanos has vendored it, we can remove this override.
-replace github.com/thanos-io/thanos => github.com/grafana/thanos v0.19.1-0.20220610094531-ab07eb568317
+//replace github.com/thanos-io/thanos => github.com/grafana/thanos v0.19.1-0.20220610094531-ab07eb568317
+// Testing Azure blob reader changes
+replace github.com/thanos-io/thanos => github.com/56quarters/thanos v0.24.1-0.20220627201918-c9b0424e047f
 
 // Pin hashicorp depencencies since the Prometheus fork, go mod tries to update them.
 replace github.com/hashicorp/go-immutable-radix => github.com/hashicorp/go-immutable-radix v1.2.0

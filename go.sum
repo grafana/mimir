@@ -59,6 +59,8 @@ cloud.google.com/go/storage v1.10.0 h1:STgFzyU5/8miMl0//zKh2aQeTyeaUH3WN9bSUiJ09
 cloud.google.com/go/storage v1.10.0/go.mod h1:FLPqc6j+Ki4BU591ie1oL6qBQGu2Bl/tZ9ullr3+Kg0=
 cloud.google.com/go/trace v0.1.0/go.mod h1:wxEwsoeRVPbeSkt7ZC9nWCgmoKQRAoySN7XHW2AmI7g=
 dmitri.shuralyov.com/gpu/mtl v0.0.0-20190408044501-666a987793e9/go.mod h1:H6x//7gZCb22OMCxBHrMx7a5I7Hp++hsVxbQ4BYO7hU=
+github.com/56quarters/thanos v0.24.1-0.20220627201918-c9b0424e047f h1:okyie/PJa6mUR19sWv+bq7yuXYzKm9BuBP0i9QvLiCY=
+github.com/56quarters/thanos v0.24.1-0.20220627201918-c9b0424e047f/go.mod h1:9e/ytDfVepSKxihUWXyy1irj+ipM/DAlOBqsyXs+Y10=
 github.com/Azure/azure-pipeline-go v0.2.3 h1:7U9HBg1JFK3jHl5qmo4CTZKFTVgMwdFHMVtCdfBE21U=
 github.com/Azure/azure-pipeline-go v0.2.3/go.mod h1:x841ezTBIMG6O3lAcl8ATHnsOPVl2bqk7S3ta6S6u4k=
 github.com/Azure/azure-sdk-for-go v65.0.0+incompatible h1:HzKLt3kIwMm4KeJYTdx9EbjRYTySD/t8i1Ee/W5EGXw=
@@ -748,8 +750,6 @@ github.com/grafana/mimir-prometheus v0.0.0-20220627145625-5e8406a1d4a5 h1:xlK4WG
 github.com/grafana/mimir-prometheus v0.0.0-20220627145625-5e8406a1d4a5/go.mod h1:evpqrqffGRI38M1zH3IHpmXTeho8IfX5Qpx6Ixpqhyk=
 github.com/grafana/regexp v0.0.0-20220304095617-2e8d9baf4ac2 h1:uirlL/j72L93RhV4+mkWhjv0cov2I0MIgPOG9rMDr1k=
 github.com/grafana/regexp v0.0.0-20220304095617-2e8d9baf4ac2/go.mod h1:M5qHK+eWfAv8VR/265dIuEpL3fNfeC21tXXp9itM24A=
-github.com/grafana/thanos v0.19.1-0.20220610094531-ab07eb568317 h1:DG++oZD7E6YUm8YNZOu7RwZ8J/Slhcx3iOlKQBY6Oh0=
-github.com/grafana/thanos v0.19.1-0.20220610094531-ab07eb568317/go.mod h1:9e/ytDfVepSKxihUWXyy1irj+ipM/DAlOBqsyXs+Y10=
 github.com/gregjones/httpcache v0.0.0-20180305231024-9cad4c3443a7/go.mod h1:FecbI9+v66THATjSRHfNgh1IVFe/9kFxbXtjV0ctIMA=
 github.com/grpc-ecosystem/go-grpc-middleware v1.0.1-0.20190118093823-f849b5445de4/go.mod h1:FiyG127CGDf3tlThmgyCl78X/SZQqEOJBCDaAfeWzPs=
 github.com/grpc-ecosystem/go-grpc-middleware v1.1.0/go.mod h1:f5nM7jw/oeRSadq3xCzHAvxcr8HZnzsqU6ILg/0NiiE=
