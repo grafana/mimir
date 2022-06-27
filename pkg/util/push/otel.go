@@ -14,8 +14,8 @@ import (
 	"github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator/prometheusremotewrite"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/weaveworks/common/middleware"
-	"go.opentelemetry.io/collector/model/otlpgrpc"
-	"go.opentelemetry.io/collector/model/pdata"
+	"go.opentelemetry.io/collector/pdata/pmetric"
+	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/log"
@@ -39,17 +39,26 @@ func HandlerForOTLP(
 	push Func,
 ) http.Handler {
 	return handler(maxRecvMsgSize, sourceIPs, allowSkipLabelNameValidation, push, func(ctx context.Context, r *http.Request, maxSize int, dst []byte, req *mimirpb.PreallocWriteRequest) ([]byte, error) {
-		var decoderFunc func(buf []byte) (otlpgrpc.MetricsRequest, error)
+		var decoderFunc func(buf []byte) (pmetricotlp.Request, error)
 
 		logger := log.WithContext(ctx, log.Logger)
 
 		contentType := r.Header.Get("Content-Type")
 		switch contentType {
 		case pbContentType:
-			decoderFunc = otlpgrpc.UnmarshalMetricsRequest
+			decoderFunc = func(buf []byte) (pmetricotlp.Request, error) {
+				req := pmetricotlp.NewRequest()
+				return req, req.UnmarshalProto(buf)
+			}
 
 		case jsonContentType:
-			decoderFunc = otlpgrpc.UnmarshalJSONMetricsRequest
+			decoderFunc = func(buf []byte) (pmetricotlp.Request, error) {
+				req := pmetricotlp.NewRequest()
+				return req, req.UnmarshalJSON(buf)
+			}
+
+		default:
+			return nil, fmt.Errorf("unsupported content type: %s, supported: [%s, %s]", contentType, jsonContentType, pbContentType)
 		}
 
 		if r.ContentLength > int64(maxSize) {
@@ -82,8 +91,11 @@ func HandlerForOTLP(
 	})
 }
 
-func otelMetricsToTimeseries(ctx context.Context, logger kitlog.Logger, md pdata.Metrics) ([]mimirpb.PreallocTimeseries, error) {
-	tsMap, dropped, errs := prometheusremotewrite.MetricsToPRW("", nil, md)
+func otelMetricsToTimeseries(ctx context.Context, logger kitlog.Logger, md pmetric.Metrics) ([]mimirpb.PreallocTimeseries, error) {
+	tsMap, errs := prometheusremotewrite.FromMetrics(md, prometheusremotewrite.Settings{})
+
+	dropped := md.MetricCount() - len(tsMap)
+
 	if errs != nil {
 		userID, err := tenant.TenantID(ctx)
 		if err != nil {

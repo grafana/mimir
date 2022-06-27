@@ -28,11 +28,9 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/prompb"
-	colmetricpb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
-	v11 "go.opentelemetry.io/proto/otlp/common/v1"
-	metricpb "go.opentelemetry.io/proto/otlp/metrics/v1"
-	metricsv1 "go.opentelemetry.io/proto/otlp/metrics/v1"
-	golangproto "google.golang.org/protobuf/proto" // OTLP protos are not compatible with gogo
+	"go.opentelemetry.io/collector/pdata/pcommon"
+	"go.opentelemetry.io/collector/pdata/pmetric" // OTLP protos are not compatible with gogo
+	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
 	yaml "gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/ruler"
@@ -136,13 +134,9 @@ func (c *Client) Push(timeseries []prompb.TimeSeries) (*http.Response, error) {
 // OTLPPush the input timeseries to the remote endpoint in OTLP format
 func (c *Client) OTLPPush(timeseries []prompb.TimeSeries) (*http.Response, error) {
 	// Create write request
-	otlpMetrics := TimeseriesToOTLPResourceMetrics(timeseries)
+	otlpRequest := TimeseriesToOTLPRequest(timeseries)
 
-	pbRequest := &colmetricpb.ExportMetricsServiceRequest{
-		ResourceMetrics: []*metricpb.ResourceMetrics{otlpMetrics},
-	}
-
-	data, err := golangproto.Marshal(pbRequest)
+	data, err := otlpRequest.MarshalProto()
 	if err != nil {
 		return nil, err
 	}
@@ -1051,43 +1045,33 @@ func FormatTime(t time.Time) string {
 	return strconv.FormatFloat(float64(t.Unix())+float64(t.Nanosecond())/1e9, 'f', -1, 64)
 }
 
-func TimeseriesToOTLPResourceMetrics(timeseries []prompb.TimeSeries) *metricpb.ResourceMetrics {
-	otlpMetrics := &metricpb.ResourceMetrics{}
-	metrics := []*metricsv1.Metric{}
+func TimeseriesToOTLPRequest(timeseries []prompb.TimeSeries) pmetricotlp.Request {
+	d := pmetric.NewMetrics()
+
 	for _, ts := range timeseries {
 		name := ""
-		otlpLabels := make([]*v11.StringKeyValue, 0, len(ts.Labels))
+		attributes := pcommon.NewMap()
+
 		for _, l := range ts.Labels {
 			if l.Name == "__name__" {
 				name = l.Value
 				continue
 			}
 
-			otlpLabels = append(otlpLabels, &v11.StringKeyValue{
-				Key:   l.Name,
-				Value: l.Value,
-			})
+			attributes.InsertString(l.Name, l.Value)
 		}
 
+		metric := d.ResourceMetrics().AppendEmpty().ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
+		metric.SetName(name)
+		metric.SetDataType(pmetric.MetricDataTypeGauge)
+
 		for _, sample := range ts.Samples {
-			metrics = append(metrics, &metricsv1.Metric{
-				Name: name,
-				Data: &metricsv1.Metric_DoubleGauge{
-					DoubleGauge: &metricsv1.DoubleGauge{
-						DataPoints: []*metricsv1.DoubleDataPoint{
-							{
-								Labels:       otlpLabels,
-								TimeUnixNano: uint64(sample.Timestamp) * 1000000,
-								Value:        sample.Value,
-							},
-						},
-					},
-				},
-			})
+			datapoint := metric.Gauge().DataPoints().AppendEmpty()
+			datapoint.SetTimestamp(pcommon.NewTimestampFromTime(time.Unix(0, int64(sample.Timestamp)*1000000)))
+			datapoint.SetDoubleVal(sample.Value)
+			attributes.CopyTo(datapoint.Attributes())
 		}
 	}
 
-	otlpMetrics.InstrumentationLibraryMetrics = []*metricsv1.InstrumentationLibraryMetrics{{Metrics: metrics}}
-
-	return otlpMetrics
+	return pmetricotlp.NewRequestFromMetrics(d)
 }
