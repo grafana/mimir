@@ -1,19 +1,29 @@
+{{- $_ := set . "component" "store-gateway" -}}
+{{- $_ := set . "component_config" "store_gateway" -}}
+{{- $zonesMap := include "mimir.zoneAwareReplicationMap" $ | fromYaml -}}
+{{- range $zoneName, $rolloutZone := $zonesMap }}
+{{- with $ -}}
+{{- $_ := set . "rolloutZoneName" $zoneName -}}
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: {{ include "mimir.resourceName" (dict "ctx" . "component" "store-gateway") }}
+  name: {{ include "mimir.zonedResourceName" . }}
   labels:
-    {{- include "mimir.labels" (dict "ctx" . "component" "store-gateway" "memberlist" true) | nindent 4 }}
+    {{- include "mimir.zonedLabels" (dict "ctx" . "memberlist" true) | nindent 4 }}
   annotations:
-    {{- toYaml .Values.store_gateway.annotations | nindent 4 }}
+    {{- include "mimir.componentAnnotations" . | nindent 4 }}
   namespace: {{ .Release.Namespace | quote }}
 spec:
   replicas: {{ .Values.store_gateway.replicas }}
   selector:
     matchLabels:
-      {{- include "mimir.selectorLabels" (dict "ctx" . "component" "store-gateway" "memberlist" true) | nindent 6 }}
+      {{- include "mimir.zonedSelectorLabels" (dict "ctx" . "memberlist" true) | nindent 6 }}
   updateStrategy:
+    {{- if .Values.store_gateway.zone_aware_replication.enabled }}
+    type: OnDelete
+    {{- else }}
     {{- toYaml .Values.store_gateway.strategy | nindent 4 }}
+    {{- end }}
   serviceName: {{ template "mimir.fullname" . }}-store-gateway{{- if not .Values.enterprise.legacyLabels -}}-headless{{- end -}}
   {{- if .Values.store_gateway.persistentVolume.enabled }}
   volumeClaimTemplates:
@@ -21,7 +31,7 @@ spec:
         name: storage
         {{- if .Values.store_gateway.persistentVolume.annotations }}
         annotations:
-          {{ toYaml .Values.store_gateway.persistentVolume.annotations | nindent 10 }}
+          {{- toYaml .Values.store_gateway.persistentVolume.annotations | nindent 10 }}
         {{- end }}
       spec:
         {{- if .Values.store_gateway.persistentVolume.storageClass }}
@@ -32,7 +42,7 @@ spec:
         {{- end }}
         {{- end }}
         accessModes:
-          {{ toYaml .Values.store_gateway.persistentVolume.accessModes | nindent 10 }}
+          {{- toYaml .Values.store_gateway.persistentVolume.accessModes | nindent 10 }}
         resources:
           requests:
             storage: "{{ .Values.store_gateway.persistentVolume.size }}"
@@ -40,7 +50,7 @@ spec:
   template:
     metadata:
       labels:
-        {{- include "mimir.podLabels" (dict "ctx" . "component" "store-gateway" "memberlist" true) | nindent 8 }}
+        {{- include "mimir.zonedPodLabels" (dict "ctx" . "memberlist" true) | nindent 8 }}
         {{- with .Values.store_gateway.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
@@ -63,9 +73,9 @@ spec:
       {{- end }}
       {{- end }}
       nodeSelector:
-        {{- toYaml .Values.store_gateway.nodeSelector | nindent 8 }}
+        {{- $rolloutZone.nodeSelector | toYaml | nindent 8 }}
       affinity:
-        {{- toYaml .Values.store_gateway.affinity | nindent 8 }}
+        {{- $rolloutZone.affinity | toYaml | nindent 8 }}
       tolerations:
         {{- toYaml .Values.store_gateway.tolerations | nindent 8 }}
       terminationGracePeriodSeconds: {{ .Values.store_gateway.terminationGracePeriodSeconds }}
@@ -98,6 +108,9 @@ spec:
             - "-target=store-gateway"
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
+            {{- if .Values.store_gateway.zone_aware_replication.enabled }}
+            - "-store-gateway.sharding-ring.instance-availability-zone={{ $zoneName }}"
+            {{- end }}
             {{- range $key, $value := .Values.store_gateway.extraArgs }}
             - "-{{ $key }}={{ $value }}"
             {{- end }}
@@ -150,3 +163,7 @@ spec:
             {{- with .Values.store_gateway.extraEnvFrom }}
               {{- toYaml . | nindent 12 }}
             {{- end }}
+
+---
+{{- end -}}
+{{- end -}}

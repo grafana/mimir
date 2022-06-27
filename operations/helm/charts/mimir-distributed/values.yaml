@@ -253,6 +253,12 @@ mimir:
     server:
       grpc_server_max_concurrent_streams: 1000
 
+    {{- if .Values.store_gateway.zone_aware_replication.enabled }}
+    store_gateway:
+      sharding_ring:
+        zone_awareness_enabled: true
+    {{- end }}
+
   # -- Additional structured values on top of the text based 'mimir.config'. Applied after the text based config is evaulated for templates. Enables adding and modifying YAML elements in the evaulated 'mimir.config'.
   structuredConfig: {}
 
@@ -917,6 +923,56 @@ store_gateway:
   extraVolumeMounts: []
   env: []
   extraEnvFrom: []
+
+  zone_aware_replication:
+    enabled: false
+    max_unavailable: 2
+    zones:
+    - name: zone-a
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchExpressions:
+                  - key: rollout-group
+                    operator: In
+                    values:
+                      - store-gateway
+                  - key: app.kubernetes.io/component
+                    operator: NotIn
+                    values:
+                      - store-gateway-zone-a
+              topologyKey: 'kubernetes.io/hostname'
+    - name: zone-b
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchExpressions:
+                  - key: rollout-group
+                    operator: In
+                    values:
+                      - store-gateway
+                  - key: app.kubernetes.io/component
+                    operator: NotIn
+                    values:
+                      - store-gateway-zone-b
+              topologyKey: 'kubernetes.io/hostname'
+    - name: zone-c
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchExpressions:
+                  - key: rollout-group
+                    operator: In
+                    values:
+                      - store-gateway
+                  - key: app.kubernetes.io/component
+                    operator: NotIn
+                    values:
+                      - store-gateway-zone-c
+              topologyKey: 'kubernetes.io/hostname'
 
 compactor:
   replicas: 1
@@ -1908,3 +1964,6 @@ metaMonitoring:
     # -- Annotations to add to all monitoring.grafana.com custom resources.
     # Does not affect the ServiceMonitors for kubernetes metrics; use serviceMonitor.annotations for that.
     annotations: {}
+
+rollout_operator:
+  enabled: false

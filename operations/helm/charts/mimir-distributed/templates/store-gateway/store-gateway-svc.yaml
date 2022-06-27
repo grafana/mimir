@@ -1,9 +1,15 @@
+{{- $_ := set . "component" "store-gateway" -}}
+{{- $_ := set . "component_config" "store_gateway" -}}
+{{- $zonesMap := include "mimir.zoneAwareReplicationMap" $  | fromYaml -}}
+{{- range $zoneName, $rolloutZone := $zonesMap }}
+{{- with $ -}}
+{{- $_ := set . "rolloutZoneName" $zoneName -}}
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "mimir.resourceName" (dict "ctx" . "component" "store-gateway") }}
+  name: {{ include "mimir.zonedResourceName" . }}
   labels:
-    {{- include "mimir.labels" (dict "ctx" . "component" "store-gateway" "memberlist" true) | nindent 4 }}
+    {{- include "mimir.zonedLabels" (dict "ctx" . "memberlist" true) | nindent 4 }}
     {{- with .Values.store_gateway.service.labels }}
     {{- toYaml . | nindent 4 }}
     {{- end }}
@@ -22,4 +28,8 @@ spec:
       name: grpc
       targetPort: grpc
   selector:
-    {{- include "mimir.selectorLabels" (dict "ctx" . "component" "store-gateway" "memberlist" true) | nindent 4 }}
+    {{- include "mimir.zonedSelectorLabels" (dict "ctx" . "memberlist" true) | nindent 4 }}
+
+---
+{{- end -}}
+{{- end -}}
