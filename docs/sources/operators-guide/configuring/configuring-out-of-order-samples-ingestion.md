@@ -23,13 +23,11 @@ you configured.
 
 To configure Grafana Mimir to accept out-of-order samples, see the following configuration snippet:
 
-<!-- prettier-ignore-start -->
 ```yaml
 limits:
   # Allow ingestion of out-of-order samples up to 5 minutes since the latest received sample for the series.
   out_of_order_time_window: 5m
 ```
-<!-- prettier-ignore-end -->
 
 ## Configure out-of-order samples per tenant
 
@@ -39,7 +37,6 @@ If your Grafana Mimir has multitenancy enabled, you can still use the preceding 
    For more information, see [About runtime configuration]({{< relref "about-runtime-configuration.md" >}}).
 1. Write down an override for the tenant that needs a bigger out-of-order time window:
 
-<!-- prettier-ignore-start -->
 ```yaml
 overrides:
   tenant1:
@@ -47,4 +44,3 @@ overrides:
   tenant2:
     out_of_order_time_window: 30m
 ```
-<!-- prettier-ignore-end -->
