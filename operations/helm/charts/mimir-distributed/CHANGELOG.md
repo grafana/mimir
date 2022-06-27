@@ -16,6 +16,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [CHANGE] **breaking change** The value `serviceMonitor` and everything under it is moved to `metaMonitoring.serviceMonitor` to group all meta-monitoring settings under one section. #2236
 * [ENHANCEMENT] Support install on OpenShift. #2219
   - **breaking** Added new `rbac.type` option. Allowed values are `psp` and `scc`, for Pod Security Policy and Security Context Constraints (OpenShift) respectively.
+  - Added `rbac.create` option to enable/disable RBAC configuration.
   - Changed the service account name value `serviceAccount.name` from generated to fixed `mimir-service-account` to be able to share between services via YAML reference `&serviceAccountName`.
   - mc path in Minio changed to be compatible with OpenShift security.
 * [CHANGE] **breaking change** Chart now uses custom memcached templates to remove bitnami dependency. There are changes to the Helm values, listed bellow. #2064

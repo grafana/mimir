@@ -260,8 +260,9 @@ mimir:
 runtimeConfig: {}
 
 # RBAC configuration
-# For GKE/EKS/AKS use 'type: psp'. For OpenShift use 'type: scc'
 rbac:
+  create: false
+  # For GKE/EKS/AKS use 'type: psp'. For OpenShift use 'type: scc'
   type: psp
 
 alertmanager:
