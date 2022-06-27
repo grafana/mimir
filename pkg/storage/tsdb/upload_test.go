@@ -105,7 +105,7 @@ func TestUploadBlock(t *testing.T) {
 		require.Equal(t, 3, len(bkt.Objects()))
 		require.Equal(t, 3751, len(bkt.Objects()[path.Join(b1.String(), block.ChunksDirname, "000001")]))
 		require.Equal(t, 401, len(bkt.Objects()[path.Join(b1.String(), block.IndexFilename)]))
-		require.Equal(t, 546, len(bkt.Objects()[path.Join(b1.String(), block.MetaFilename)]))
+		require.Equal(t, 570, len(bkt.Objects()[path.Join(b1.String(), block.MetaFilename)]))
 
 		origMeta, err := metadata.ReadFromDir(path.Join(tmpDir, "test", b1.String()))
 		require.NoError(t, err)
@@ -131,7 +131,7 @@ func TestUploadBlock(t *testing.T) {
 		require.Equal(t, 3, len(bkt.Objects()))
 		require.Equal(t, 3751, len(bkt.Objects()[path.Join(b1.String(), block.ChunksDirname, "000001")]))
 		require.Equal(t, 401, len(bkt.Objects()[path.Join(b1.String(), block.IndexFilename)]))
-		require.Equal(t, 546, len(bkt.Objects()[path.Join(b1.String(), block.MetaFilename)]))
+		require.Equal(t, 570, len(bkt.Objects()[path.Join(b1.String(), block.MetaFilename)]))
 	})
 
 	t.Run("upload with no external labels works just fine", func(t *testing.T) {
@@ -151,7 +151,7 @@ func TestUploadBlock(t *testing.T) {
 		require.Equal(t, 6, len(bkt.Objects())) // 3 from b1, 3 from b2
 		require.Equal(t, 3736, len(bkt.Objects()[path.Join(b2.String(), block.ChunksDirname, "000001")]))
 		require.Equal(t, 401, len(bkt.Objects()[path.Join(b2.String(), block.IndexFilename)]))
-		require.Equal(t, 525, len(bkt.Objects()[path.Join(b2.String(), block.MetaFilename)]))
+		require.Equal(t, 549, len(bkt.Objects()[path.Join(b2.String(), block.MetaFilename)]))
 
 		origMeta, err := metadata.ReadFromDir(path.Join(tmpDir, b2.String()))
 		require.NoError(t, err)
