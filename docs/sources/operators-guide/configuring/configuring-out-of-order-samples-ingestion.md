@@ -11,7 +11,7 @@ Grafana Mimir and the Prometheus TSDB understand out-of-order as follows.
 
 The moment that a new series sample arrives, Mimir need to determine if the series already exists, and whether or not the sample is too old:
 
-- If the series exists, the incoming sample must have newer timestamp than the latest sample that is stored for the series.
+- If the series exists, the incoming sample must have a newer timestamp than the latest sample that is stored for the series.
   Otherwise, it is considered out-of-order and will be dropped by the ingesters.
 - If the series does not exist, then the sample has to be within bounds, which go back 1 hour from TSDB's head-block max time (when using 2 hour block range). If it fails to be within bounds, then it is also considered out-of-bounds and will be dropped by the ingesters.
 
