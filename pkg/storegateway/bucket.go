@@ -105,9 +105,9 @@ type BucketStore struct {
 	seriesHashCache *hashcache.SeriesHashCache
 
 	// Sets of blocks that have the same labels. They are indexed by a hash over their label set.
-	mtx       sync.RWMutex
-	blocks    map[ulid.ULID]*bucketBlock
-	blockSets map[uint64]*bucketBlockSet
+	mtx      sync.RWMutex
+	blocks   map[ulid.ULID]*bucketBlock
+	blockSet *bucketBlockSet
 
 	// Verbose enabled additional logging.
 	debugLogging bool
@@ -237,7 +237,7 @@ func NewBucketStore(
 		indexCache:                  noopCache{},
 		chunkPool:                   pool.NoopBytes{},
 		blocks:                      map[ulid.ULID]*bucketBlock{},
-		blockSets:                   map[uint64]*bucketBlockSet{},
+		blockSet:                    newBucketBlockSet(),
 		blockSyncConcurrency:        blockSyncConcurrency,
 		queryGate:                   gate.NewNoop(),
 		chunksLimiterFactory:        chunksLimiterFactory,
@@ -398,9 +398,6 @@ func (s *BucketStore) addBlock(ctx context.Context, meta *metadata.Meta) (err er
 	}()
 	s.metrics.blockLoads.Inc()
 
-	lset := labels.FromMap(meta.Thanos.Labels)
-	h := lset.Hash()
-
 	indexHeaderReader, err := s.indexReaderPool.NewBinaryReader(
 		ctx,
 		s.logger,
@@ -445,15 +442,7 @@ func (s *BucketStore) addBlock(ctx context.Context, meta *metadata.Meta) (err er
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 
-	sort.Sort(lset)
-
-	set, ok := s.blockSets[h]
-	if !ok {
-		set = newBucketBlockSet(lset)
-		s.blockSets[h] = set
-	}
-
-	if err = set.add(b); err != nil {
+	if err = s.blockSet.add(b); err != nil {
 		return errors.Wrap(err, "add block to set")
 	}
 	s.blocks[b.meta.ULID] = b
@@ -471,8 +460,7 @@ func (s *BucketStore) removeBlock(id ulid.ULID) (returnErr error) {
 	s.mtx.Lock()
 	b, ok := s.blocks[id]
 	if ok {
-		lset := labels.FromMap(b.meta.Thanos.Labels)
-		s.blockSets[lset.Hash()].remove(id)
+		s.blockSet.remove(id)
 		delete(s.blocks, id)
 	}
 	s.mtx.Unlock()
@@ -882,9 +870,9 @@ func populateChunk(out *storepb.AggrChunk, in chunkenc.Chunk, aggrs []storepb.Ag
 // labels and resolution. This is important because we allow mixed resolution results, so it is quite crucial
 // to be aware what exactly resolution we see on query.
 // TODO(bplotka): Consider adding resolution label to all results to propagate that info to UI and Query API.
-func debugFoundBlockSetOverview(logger log.Logger, mint, maxt, maxResolutionMillis int64, lset labels.Labels, bs []*bucketBlock) {
+func debugFoundBlockSetOverview(logger log.Logger, mint, maxt, maxResolutionMillis int64, bs []*bucketBlock) {
 	if len(bs) == 0 {
-		level.Debug(logger).Log("msg", "No block found", "mint", mint, "maxt", maxt, "lset", lset.String())
+		level.Debug(logger).Log("msg", "No block found", "mint", mint, "maxt", maxt)
 		return
 	}
 
@@ -910,7 +898,7 @@ func debugFoundBlockSetOverview(logger log.Logger, mint, maxt, maxResolutionMill
 
 	parts = append(parts, fmt.Sprintf("Range: %d-%d Resolution: %d", currMin, currMax, currRes))
 
-	level.Debug(logger).Log("msg", "Blocks source resolutions", "blocks", len(bs), "Maximum Resolution", maxResolutionMillis, "mint", mint, "maxt", maxt, "lset", lset.String(), "spans", strings.Join(parts, "\n"))
+	level.Debug(logger).Log("msg", "Blocks source resolutions", "blocks", len(bs), "Maximum Resolution", maxResolutionMillis, "mint", mint, "maxt", maxt, "spans", strings.Join(parts, "\n"))
 }
 
 // Series implements the storepb.StoreServer interface.
@@ -965,71 +953,64 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 
 	s.mtx.RLock()
 
-	for _, bs := range s.blockSets {
-		blockMatchers, ok := bs.labelMatchers(matchers...)
-		if !ok {
-			continue
+	blocks := s.blockSet.getFor(req.MinTime, req.MaxTime, req.MaxResolutionWindow, reqBlockMatchers)
+
+	if s.debugLogging {
+		debugFoundBlockSetOverview(s.logger, req.MinTime, req.MaxTime, req.MaxResolutionWindow, blocks)
+	}
+
+	for _, b := range blocks {
+		b := b
+
+		if s.enableSeriesResponseHints {
+			// Keep track of queried blocks.
+			resHints.AddQueriedBlock(b.meta.ULID)
 		}
 
-		blocks := bs.getFor(req.MinTime, req.MaxTime, req.MaxResolutionWindow, reqBlockMatchers)
-
-		if s.debugLogging {
-			debugFoundBlockSetOverview(s.logger, req.MinTime, req.MaxTime, req.MaxResolutionWindow, bs.labels, blocks)
+		var chunkr *bucketChunkReader
+		// We must keep the readers open until all their data has been sent.
+		indexr := b.indexReader()
+		if !req.SkipChunks {
+			chunkr = b.chunkReader(gctx)
+			defer runutil.CloseWithLogOnErr(s.logger, chunkr, "series block")
 		}
 
-		for _, b := range blocks {
-			b := b
+		// Defer all closes to the end of Series method.
+		defer runutil.CloseWithLogOnErr(s.logger, indexr, "series block")
 
-			if s.enableSeriesResponseHints {
-				// Keep track of queried blocks.
-				resHints.AddQueriedBlock(b.meta.ULID)
-			}
-
-			var chunkr *bucketChunkReader
-			// We must keep the readers open until all their data has been sent.
-			indexr := b.indexReader()
-			if !req.SkipChunks {
-				chunkr = b.chunkReader(gctx)
-				defer runutil.CloseWithLogOnErr(s.logger, chunkr, "series block")
-			}
-
-			// Defer all closes to the end of Series method.
-			defer runutil.CloseWithLogOnErr(s.logger, indexr, "series block")
-
-			// If query sharding is enabled we have to get the block-specific series hash cache
-			// which is used by blockSeries().
-			var blockSeriesHashCache *hashcache.BlockSeriesHashCache
-			if shardSelector != nil {
-				blockSeriesHashCache = s.seriesHashCache.GetBlockCache(b.meta.ULID.String())
-			}
-
-			g.Go(func() error {
-				part, pstats, err := blockSeries(
-					gctx,
-					indexr,
-					chunkr,
-					blockMatchers,
-					shardSelector,
-					blockSeriesHashCache,
-					chunksLimiter,
-					seriesLimiter,
-					req.SkipChunks,
-					req.MinTime, req.MaxTime,
-					req.Aggregates,
-					s.logger,
-				)
-				if err != nil {
-					return errors.Wrapf(err, "fetch series for block %s", b.meta.ULID)
-				}
-
-				mtx.Lock()
-				res = append(res, part)
-				stats = stats.merge(pstats)
-				mtx.Unlock()
-
-				return nil
-			})
+		// If query sharding is enabled we have to get the block-specific series hash cache
+		// which is used by blockSeries().
+		var blockSeriesHashCache *hashcache.BlockSeriesHashCache
+		if shardSelector != nil {
+			blockSeriesHashCache = s.seriesHashCache.GetBlockCache(b.meta.ULID.String())
 		}
+
+		g.Go(func() error {
+			part, pstats, err := blockSeries(
+				gctx,
+				indexr,
+				chunkr,
+				matchers,
+				shardSelector,
+				blockSeriesHashCache,
+				chunksLimiter,
+				seriesLimiter,
+				req.SkipChunks,
+				req.MinTime, req.MaxTime,
+				req.Aggregates,
+				s.logger,
+			)
+			if err != nil {
+				return errors.Wrapf(err, "fetch series for block %s", b.meta.ULID)
+			}
+
+			mtx.Lock()
+			res = append(res, part)
+			stats = stats.merge(pstats)
+			mtx.Unlock()
+
+			return nil
+		})
 	}
 
 	s.mtx.RUnlock()
@@ -1481,10 +1462,9 @@ func storeCachedLabelValues(ctx context.Context, indexCache indexcache.IndexCach
 	indexCache.StoreLabelValues(ctx, userID, blockID, labelName, entry.MatchersKey, data)
 }
 
-// them up by downsampling resolution and allows querying.
 // bucketBlockSet holds all blocks of an equal label set. It internally splits
+// them up by downsampling resolution and allows querying.
 type bucketBlockSet struct {
-	labels      labels.Labels
 	mtx         sync.RWMutex
 	resolutions []int64          // Available resolution, high to low (in milliseconds).
 	blocks      [][]*bucketBlock // Ordered buckets for the existing resolutions.
@@ -1492,18 +1472,14 @@ type bucketBlockSet struct {
 
 // newBucketBlockSet initializes a new set with the known downsampling windows hard-configured.
 // The set currently does not support arbitrary ranges.
-func newBucketBlockSet(lset labels.Labels) *bucketBlockSet {
+func newBucketBlockSet() *bucketBlockSet {
 	return &bucketBlockSet{
-		labels:      lset,
 		resolutions: []int64{downsample.ResLevel2, downsample.ResLevel1, downsample.ResLevel0},
 		blocks:      make([][]*bucketBlock, 3),
 	}
 }
 
 func (s *bucketBlockSet) add(b *bucketBlock) error {
-	if !labels.Equal(s.labels, labels.FromMap(b.meta.Thanos.Labels)) {
-		return errors.New("block's label set does not match set")
-	}
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 
@@ -1596,24 +1572,6 @@ func (s *bucketBlockSet) getFor(mint, maxt, maxResolutionMillis int64, blockMatc
 		bs = append(bs, s.getFor(start, maxt, s.resolutions[i+1], blockMatchers)...)
 	}
 	return bs
-}
-
-// labelMatchers verifies whether the block set matches the given matchers and returns a new
-// set of matchers that is equivalent when querying data within the block.
-func (s *bucketBlockSet) labelMatchers(matchers ...*labels.Matcher) ([]*labels.Matcher, bool) {
-	res := make([]*labels.Matcher, 0, len(matchers))
-
-	for _, m := range matchers {
-		v := s.labels.Get(m.Name)
-		if v == "" {
-			res = append(res, m)
-			continue
-		}
-		if !m.Matches(v) {
-			return nil, false
-		}
-	}
-	return res, true
 }
 
 // bucketBlock represents a block that is located in a bucket. It holds intermediate

@@ -76,7 +76,7 @@ func TestBucketBlock_Property(t *testing.T) {
 	parameters.MinSuccessfulTests = 20000
 	properties := gopter.NewProperties(parameters)
 
-	set := newBucketBlockSet(labels.Labels{})
+	set := newBucketBlockSet()
 
 	type resBlock struct {
 		mint, maxt int64
@@ -295,7 +295,7 @@ func TestBucketBlock_matchLabels(t *testing.T) {
 }
 
 func TestBucketBlockSet_addGet(t *testing.T) {
-	set := newBucketBlockSet(labels.Labels{})
+	set := newBucketBlockSet()
 
 	type resBlock struct {
 		mint, maxt int64
@@ -404,7 +404,7 @@ func TestBucketBlockSet_addGet(t *testing.T) {
 }
 
 func TestBucketBlockSet_remove(t *testing.T) {
-	set := newBucketBlockSet(labels.Labels{})
+	set := newBucketBlockSet()
 
 	type resBlock struct {
 		id         ulid.ULID
@@ -429,73 +429,6 @@ func TestBucketBlockSet_remove(t *testing.T) {
 	assert.Equal(t, 2, len(res))
 	assert.Equal(t, input[0].id, res[0].meta.ULID)
 	assert.Equal(t, input[2].id, res[1].meta.ULID)
-}
-
-func TestBucketBlockSet_labelMatchers(t *testing.T) {
-	set := newBucketBlockSet(labels.FromStrings("a", "b", "c", "d"))
-
-	cases := []struct {
-		in    []*labels.Matcher
-		res   []*labels.Matcher
-		match bool
-	}{
-		{
-			in:    []*labels.Matcher{},
-			res:   []*labels.Matcher{},
-			match: true,
-		},
-		{
-			in: []*labels.Matcher{
-				{Type: labels.MatchEqual, Name: "a", Value: "b"},
-				{Type: labels.MatchEqual, Name: "c", Value: "d"},
-			},
-			res:   []*labels.Matcher{},
-			match: true,
-		},
-		{
-			in: []*labels.Matcher{
-				{Type: labels.MatchEqual, Name: "a", Value: "b"},
-				{Type: labels.MatchEqual, Name: "c", Value: "b"},
-			},
-			match: false,
-		},
-		{
-			in: []*labels.Matcher{
-				{Type: labels.MatchEqual, Name: "a", Value: "b"},
-				{Type: labels.MatchEqual, Name: "e", Value: "f"},
-			},
-			res: []*labels.Matcher{
-				{Type: labels.MatchEqual, Name: "e", Value: "f"},
-			},
-			match: true,
-		},
-		// Those are matchers mentioned here: https://github.com/prometheus/prometheus/pull/3578#issuecomment-351653555
-		// We want to provide explicit tests that says when Thanos supports its and when not. We don't support it here in
-		// external labelset level.
-		{
-			in: []*labels.Matcher{
-				{Type: labels.MatchNotEqual, Name: "", Value: "x"},
-			},
-			res: []*labels.Matcher{
-				{Type: labels.MatchNotEqual, Name: "", Value: "x"},
-			},
-			match: true,
-		},
-		{
-			in: []*labels.Matcher{
-				{Type: labels.MatchNotEqual, Name: "", Value: "d"},
-			},
-			res: []*labels.Matcher{
-				{Type: labels.MatchNotEqual, Name: "", Value: "d"},
-			},
-			match: true,
-		},
-	}
-	for _, c := range cases {
-		res, ok := set.labelMatchers(c.in...)
-		assert.Equal(t, c.match, ok)
-		assert.Equal(t, c.res, res)
-	}
 }
 
 // Regression tests against: https://github.com/thanos-io/thanos/issues/1983.
@@ -1571,9 +1504,7 @@ func TestBucketSeries_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 		indexCache:      indexCache,
 		indexReaderPool: indexheader.NewReaderPool(log.NewNopLogger(), false, 0, indexheader.NewReaderPoolMetrics(nil)),
 		metrics:         NewBucketStoreMetrics(nil),
-		blockSets: map[uint64]*bucketBlockSet{
-			labels.Labels{{Name: "ext1", Value: "1"}}.Hash(): {blocks: [][]*bucketBlock{{b1, b2}}},
-		},
+		blockSet:        &bucketBlockSet{blocks: [][]*bucketBlock{{b1, b2}}},
 		blocks: map[ulid.ULID]*bucketBlock{
 			b1.meta.ULID: b1,
 			b2.meta.ULID: b2,
