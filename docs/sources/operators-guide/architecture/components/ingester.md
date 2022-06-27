@@ -42,7 +42,7 @@ Write de-amplification is the main source of Mimir's low total cost of ownership
 ## Ingesters failure and data loss
 
 If an ingester process crashes or exits abruptly, all the in-memory series that have not yet been uploaded to the long-term storage could be lost.
-There are three ways to mitigate this failure mode:
+There are the following ways to mitigate this failure mode:
 
 - Replication
 - Write-ahead log (WAL)
