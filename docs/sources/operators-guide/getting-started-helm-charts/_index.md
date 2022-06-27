@@ -235,7 +235,7 @@ First install Grafana, and then add Mimir as a Prometheus data source.
 
 ## Set up meta monitoring
 
-Grafana Mimir meta monitoring collects metrics and or logs about Grafana Mimir itself. It's primary purpose is to send meta monitoring information to some external receiver, for example a [free tier Grafana Metrics account](https://grafana.com/metrics/). In this example we'll use it to scrape metrics about Grafana Mimir itself and then write those metrics into the same Grafana Mimir.
+Grafana Mimir meta monitoring collects metrics and or logs about Grafana Mimir itself. Its primary purpose is to send meta-monitoring information to some external receiver, for example a [free tier Grafana Metrics account](https://grafana.com/metrics/). In the example that follows, it scrapes metrics about Grafana Mimir itself and then writes those metrics to the same Grafana Mimir instance.
 
 1. To enable Meta Monitoring in Grafana Mimir, add the following YAML snippet to your Grafana Mimir `custom.yaml` file:
 
