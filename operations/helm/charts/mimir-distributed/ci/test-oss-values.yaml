@@ -38,6 +38,9 @@ ingester:
     requests:
       cpu: 10m
 
+query_scheduler:
+  enabled: true
+
 store_gateway:
   persistentVolume:
     enabled: false
