@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -36,18 +37,9 @@ func (c *MimirClient) Backfill(ctx context.Context, source string, logger log.Lo
 }
 
 func (c *MimirClient) backfillBlock(ctx context.Context, dpath string, logger log.Logger) error {
-	metaPath := filepath.Join(dpath, "meta.json")
-	f, err := os.Open(metaPath)
+	blockMeta, err := getBlockMeta(dpath)
 	if err != nil {
-		return errors.Wrapf(err, "failed to open %q", metaPath)
-	}
-
-	var blockMeta metadata.Meta
-	if err := json.NewDecoder(f).Decode(&blockMeta); err != nil {
-		return errors.Wrapf(err, "failed to decode %q", metaPath)
-	}
-	if len(blockMeta.Thanos.Files) == 0 {
-		return fmt.Errorf("no files listed in meta.json")
+		return err
 	}
 
 	blockID := filepath.Base(dpath)
@@ -125,4 +117,53 @@ func (c *MimirClient) backfillBlock(ctx context.Context, dpath string, logger lo
 	level.Info(logger).Log("msg", "Block backfill successful", "user", c.id, "block_id", blockID)
 
 	return nil
+}
+
+func getBlockMeta(dpath string) (metadata.Meta, error) {
+	var blockMeta metadata.Meta
+
+	metaPath := filepath.Join(dpath, "meta.json")
+	f, err := os.Open(metaPath)
+	if err != nil {
+		return blockMeta, errors.Wrapf(err, "failed to open %q", metaPath)
+	}
+
+	if err := json.NewDecoder(f).Decode(&blockMeta); err != nil {
+		return blockMeta, errors.Wrapf(err, "failed to decode %q", metaPath)
+	}
+
+	idxPath := filepath.Join(dpath, "index")
+	idxSt, err := os.Stat(idxPath)
+	if err != nil {
+		return blockMeta, errors.Wrapf(err, "failed to stat %q", idxPath)
+	}
+	blockMeta.Thanos.Files = []metadata.File{
+		{
+			RelPath:   "index",
+			SizeBytes: idxSt.Size(),
+		},
+		{
+			RelPath: "meta.json",
+		},
+	}
+
+	chunksDir := filepath.Join(dpath, "chunks")
+	entries, err := os.ReadDir(chunksDir)
+	if err != nil {
+		return blockMeta, errors.Wrapf(err, "failed to read dir %q", chunksDir)
+	}
+	for _, e := range entries {
+		pth := filepath.Join(chunksDir, e.Name())
+		st, err := os.Stat(pth)
+		if err != nil {
+			return blockMeta, errors.Wrapf(err, "failed to stat %q", pth)
+		}
+
+		blockMeta.Thanos.Files = append(blockMeta.Thanos.Files, metadata.File{
+			RelPath:   path.Join("chunks", e.Name()),
+			SizeBytes: st.Size(),
+		})
+	}
+
+	return blockMeta, nil
 }
