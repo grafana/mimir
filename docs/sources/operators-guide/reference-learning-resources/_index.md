@@ -1,6 +1,6 @@
 ---
 title: "Reference: Learning resources"
-menuTitle: "Learning resources"
+menuTitle: "Reference: Learning resources"
 description: "Blog posts, podcasts, and videos about Grafana Mimir"
 weight: 130
 keywords:
