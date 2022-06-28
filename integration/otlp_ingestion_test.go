@@ -52,7 +52,7 @@ func TestOTLPIngestion(t *testing.T) {
 	now := time.Now()
 	series, expectedVector := generateSeries("series_1", now, prompb.Label{Name: "foo", Value: "bar"})
 
-	res, err := c.OTLPPush(series)
+	res, err := c.PushOTLP(series)
 	require.NoError(t, err)
 	require.Equal(t, 200, res.StatusCode)
 

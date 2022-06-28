@@ -27,13 +27,11 @@ import (
 	promv1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/rulefmt"
-	"github.com/prometheus/prometheus/prompb"
-	"go.opentelemetry.io/collector/pdata/pcommon"
-	"go.opentelemetry.io/collector/pdata/pmetric" // OTLP protos are not compatible with gogo
-	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
+	"github.com/prometheus/prometheus/prompb" // OTLP protos are not compatible with gogo
 	yaml "gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/ruler"
+	"github.com/grafana/mimir/pkg/util/push"
 )
 
 var ErrNotFound = errors.New("not found")
@@ -131,10 +129,10 @@ func (c *Client) Push(timeseries []prompb.TimeSeries) (*http.Response, error) {
 	return res, nil
 }
 
-// OTLPPush the input timeseries to the remote endpoint in OTLP format
-func (c *Client) OTLPPush(timeseries []prompb.TimeSeries) (*http.Response, error) {
+// PushOTLP the input timeseries to the remote endpoint in OTLP format
+func (c *Client) PushOTLP(timeseries []prompb.TimeSeries) (*http.Response, error) {
 	// Create write request
-	otlpRequest := TimeseriesToOTLPRequest(timeseries)
+	otlpRequest := push.TimeseriesToOTLPRequest(timeseries)
 
 	data, err := otlpRequest.MarshalProto()
 	if err != nil {
@@ -1043,35 +1041,4 @@ func (c *Client) doRequest(method, url string, body io.Reader) (*http.Response, 
 // FormatTime converts a time to a string acceptable by the Prometheus API.
 func FormatTime(t time.Time) string {
 	return strconv.FormatFloat(float64(t.Unix())+float64(t.Nanosecond())/1e9, 'f', -1, 64)
-}
-
-func TimeseriesToOTLPRequest(timeseries []prompb.TimeSeries) pmetricotlp.Request {
-	d := pmetric.NewMetrics()
-
-	for _, ts := range timeseries {
-		name := ""
-		attributes := pcommon.NewMap()
-
-		for _, l := range ts.Labels {
-			if l.Name == "__name__" {
-				name = l.Value
-				continue
-			}
-
-			attributes.InsertString(l.Name, l.Value)
-		}
-
-		metric := d.ResourceMetrics().AppendEmpty().ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
-		metric.SetName(name)
-		metric.SetDataType(pmetric.MetricDataTypeGauge)
-
-		for _, sample := range ts.Samples {
-			datapoint := metric.Gauge().DataPoints().AppendEmpty()
-			datapoint.SetTimestamp(pcommon.NewTimestampFromTime(time.Unix(0, int64(sample.Timestamp)*1000000)))
-			datapoint.SetDoubleVal(sample.Value)
-			attributes.CopyTo(datapoint.Attributes())
-		}
-	}
-
-	return pmetricotlp.NewRequestFromMetrics(d)
 }

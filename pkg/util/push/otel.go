@@ -4,9 +4,11 @@ package push
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 
 	kitlog "github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -14,6 +16,7 @@ import (
 	"github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator/prometheusremotewrite"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/weaveworks/common/middleware"
+	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
 
@@ -29,16 +32,16 @@ const (
 	otelParseError = "otlp_parse_error"
 	maxErrMsgLen   = 1024
 
-	messageSizeLargerErrFmt = "received message larger than max (%d vs %d)"
+	messageSizeLargerErrFmt = "received message larger than max (%d > %d)"
 )
 
-func HandlerForOTLP(
+func OLTPHandler(
 	maxRecvMsgSize int,
 	sourceIPs *middleware.SourceIPExtractor,
 	allowSkipLabelNameValidation bool,
 	push Func,
 ) http.Handler {
-	return handler(maxRecvMsgSize, sourceIPs, allowSkipLabelNameValidation, push, func(ctx context.Context, r *http.Request, maxSize int, dst []byte, req *mimirpb.PreallocWriteRequest) ([]byte, error) {
+	return handler(maxRecvMsgSize, sourceIPs, allowSkipLabelNameValidation, push, func(ctx context.Context, r *http.Request, maxRecvMsgSize int, dst []byte, req *mimirpb.PreallocWriteRequest) ([]byte, error) {
 		var decoderFunc func(buf []byte) (pmetricotlp.Request, error)
 
 		logger := log.WithContext(ctx, log.Logger)
@@ -61,8 +64,8 @@ func HandlerForOTLP(
 			return nil, fmt.Errorf("unsupported content type: %s, supported: [%s, %s]", contentType, jsonContentType, pbContentType)
 		}
 
-		if r.ContentLength > int64(maxSize) {
-			return nil, fmt.Errorf(messageSizeLargerErrFmt, r.ContentLength, maxSize)
+		if r.ContentLength > int64(maxRecvMsgSize) {
+			return nil, fmt.Errorf(messageSizeLargerErrFmt, r.ContentLength, maxRecvMsgSize)
 		}
 
 		reader := http.MaxBytesReader(nil, r.Body, int64(maxRecvMsgSize))
@@ -94,18 +97,22 @@ func HandlerForOTLP(
 func otelMetricsToTimeseries(ctx context.Context, logger kitlog.Logger, md pmetric.Metrics) ([]mimirpb.PreallocTimeseries, error) {
 	tsMap, errs := prometheusremotewrite.FromMetrics(md, prometheusremotewrite.Settings{})
 
-	dropped := md.MetricCount() - len(tsMap)
-
 	if errs != nil {
 		userID, err := tenant.TenantID(ctx)
 		if err != nil {
 			return nil, err
 		}
+
+		dropped := md.MetricCount() - len(tsMap)
 		validation.DiscardedSamples.WithLabelValues(otelParseError, userID).Add(float64(dropped))
 
 		parseErrs := errs.Error()
 		if len(parseErrs) > maxErrMsgLen {
 			parseErrs = parseErrs[:maxErrMsgLen]
+		}
+
+		if len(tsMap) == 0 {
+			return nil, errors.New(parseErrs)
 		}
 
 		level.Warn(logger).Log("msg", "OTLP parse error", "err", parseErrs)
@@ -139,7 +146,7 @@ func promToMimirTimeseries(promTs *prompb.TimeSeries) mimirpb.PreallocTimeseries
 	exemplars := make([]mimirpb.Exemplar, 0, len(promTs.Exemplars))
 	for _, exemplar := range promTs.Exemplars {
 		labels := make([]mimirpb.LabelAdapter, 0, len(exemplar.Labels))
-		for _, label := range promTs.Labels {
+		for _, label := range exemplar.Labels {
 			labels = append(labels, mimirpb.LabelAdapter{
 				Name:  label.Name,
 				Value: label.Value,
@@ -159,4 +166,36 @@ func promToMimirTimeseries(promTs *prompb.TimeSeries) mimirpb.PreallocTimeseries
 	ts.Exemplars = exemplars
 
 	return mimirpb.PreallocTimeseries{TimeSeries: ts}
+}
+
+// TimeseriesToOTLPRequest is used in tests.
+func TimeseriesToOTLPRequest(timeseries []prompb.TimeSeries) pmetricotlp.Request {
+	d := pmetric.NewMetrics()
+
+	for _, ts := range timeseries {
+		name := ""
+		attributes := pcommon.NewMap()
+
+		for _, l := range ts.Labels {
+			if l.Name == "__name__" {
+				name = l.Value
+				continue
+			}
+
+			attributes.InsertString(l.Name, l.Value)
+		}
+
+		metric := d.ResourceMetrics().AppendEmpty().ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
+		metric.SetName(name)
+		metric.SetDataType(pmetric.MetricDataTypeGauge)
+
+		for _, sample := range ts.Samples {
+			datapoint := metric.Gauge().DataPoints().AppendEmpty()
+			datapoint.SetTimestamp(pcommon.NewTimestampFromTime(time.Unix(0, int64(sample.Timestamp)*1000000)))
+			datapoint.SetDoubleVal(sample.Value)
+			attributes.CopyTo(datapoint.Attributes())
+		}
+	}
+
+	return pmetricotlp.NewRequestFromMetrics(d)
 }

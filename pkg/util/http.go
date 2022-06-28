@@ -26,7 +26,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-const messageSizeLargerErrFmt = "received message larger than max (%d vs %d)"
+const messageSizeLargerErrFmt = "received message larger than max (%d > %d)"
 
 // IsRequestBodyTooLarge returns true if the error is "http: request body too large".
 func IsRequestBodyTooLarge(err error) bool {

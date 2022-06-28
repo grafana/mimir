@@ -45,8 +45,8 @@ func Handler(
 	allowSkipLabelNameValidation bool,
 	push Func,
 ) http.Handler {
-	return handler(maxRecvMsgSize, sourceIPs, allowSkipLabelNameValidation, push, func(ctx context.Context, r *http.Request, maxSize int, dst []byte, req *mimirpb.PreallocWriteRequest) ([]byte, error) {
-		return util.ParseProtoReader(ctx, r.Body, int(r.ContentLength), maxSize, dst, req, util.RawSnappy)
+	return handler(maxRecvMsgSize, sourceIPs, allowSkipLabelNameValidation, push, func(ctx context.Context, r *http.Request, maxRecvMsgSize int, dst []byte, req *mimirpb.PreallocWriteRequest) ([]byte, error) {
+		return util.ParseProtoReader(ctx, r.Body, int(r.ContentLength), maxRecvMsgSize, dst, req, util.RawSnappy)
 	})
 }
 

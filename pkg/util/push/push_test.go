@@ -22,7 +22,6 @@ import (
 	"github.com/weaveworks/common/middleware"
 	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
 
-	"github.com/grafana/mimir/integration/e2emimir"
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
@@ -37,7 +36,7 @@ func TestHandler_remoteWrite(t *testing.T) {
 func TestHandler_otlpWrite(t *testing.T) {
 	req := createOTLPRequest(t, createOTLPMetricRequest(t))
 	resp := httptest.NewRecorder()
-	handler := HandlerForOTLP(100000, nil, false, verifyWriteRequestHandler(t, mimirpb.API))
+	handler := OLTPHandler(100000, nil, false, verifyWriteRequestHandler(t, mimirpb.API))
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, 200, resp.Code)
 }
@@ -205,7 +204,7 @@ func createOTLPMetricRequest(t testing.TB) pmetricotlp.Request {
 	prwReq := &prompb.WriteRequest{}
 	require.NoError(t, proto.Unmarshal(input, prwReq))
 
-	return e2emimir.TimeseriesToOTLPRequest(prwReq.Timeseries)
+	return TimeseriesToOTLPRequest(prwReq.Timeseries)
 }
 
 func createPrometheusRemoteWriteProtobuf(t testing.TB) []byte {
