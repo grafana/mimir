@@ -76,6 +76,7 @@ The following features are currently experimental:
   - Add variance to chunks end time to spread writing across time (`-blocks-storage.tsdb.head-chunks-end-time-variance`)
   - Using queue and asynchronous chunks disk mapper (`-blocks-storage.tsdb.head-chunks-write-queue-size`)
   - Snapshotting of in-memory TSDB data on disk when shutting down (`-blocks-storage.tsdb.memory-snapshot-on-shutdown`)
+  - Out-of-order samples ingestion (`-ingester.out-of-order-allowance`)
 - Query-frontend
   - `-query-frontend.querier-forget-delay`
 - Query-scheduler
