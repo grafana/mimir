@@ -10,6 +10,7 @@ metadata:
     app.kubernetes.io/component: gossip-ring
     app.kubernetes.io/version: "2.1.0"
     app.kubernetes.io/managed-by: Helm
+  namespace: "citestns"
 spec:
   type: ClusterIP
   clusterIP: None

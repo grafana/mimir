@@ -741,9 +741,9 @@ ring:
 #       prod: '{namespace=~"prod-.*"}'
 [active_series_custom_trackers: <map of tracker name (string) to matcher (string)> | default = ]
 
-# (experimental) Period with which to update per-tenant max exemplar limit.
-# CLI flag: -ingester.exemplars-update-period
-[exemplars_update_period: <duration> | default = 15s]
+# (experimental) Period with which to update the per-tenant TSDB configuration.
+# CLI flag: -ingester.tsdb-config-update-period
+[tsdb_config_update_period: <duration> | default = 15s]
 
 instance_limits:
   # (advanced) Max ingestion rate (samples/sec) that ingester will accept. This
@@ -836,14 +836,13 @@ store_gateway_client:
   # CLI flag: -querier.store-gateway-client.tls-insecure-skip-verify
   [tls_insecure_skip_verify: <boolean> | default = false]
 
-# (advanced) When this setting is > 0, queriers fetch in-memory series from the
-# minimum set of required ingesters, selecting only ingesters which may have
-# received series since 'now - lookback period'. The lookback period should be
-# greater or equal than the configured -querier.query-store-after and
-# -querier.query-ingesters-within. If this setting is 0, queriers always query
-# all ingesters (ingesters shuffle sharding on read path is disabled).
-# CLI flag: -querier.shuffle-sharding-ingesters-lookback-period
-[shuffle_sharding_ingesters_lookback_period: <duration> | default = 13h]
+# (advanced) Fetch in-memory series from the minimum set of required ingesters,
+# selecting only ingesters which may have received series since
+# -querier.query-ingesters-within. If this setting is false or
+# -querier.query-ingesters-within is '0', queriers always query all ingesters
+# (ingesters shuffle sharding on read path is disabled).
+# CLI flag: -querier.shuffle-sharding-ingesters-enabled
+[shuffle_sharding_ingesters_enabled: <boolean> | default = true]
 
 # The maximum number of concurrent queries. This config option should be set on
 # query-frontend too when query sharding is enabled.
@@ -851,7 +850,8 @@ store_gateway_client:
 [max_concurrent: <int> | default = 20]
 
 # The timeout for a query. This config option should be set on query-frontend
-# too when query sharding is enabled.
+# too when query sharding is enabled. This also applies to queries evaluated by
+# the ruler (internally or remotely).
 # CLI flag: -querier.timeout
 [timeout: <duration> | default = 2m]
 
@@ -1399,10 +1399,6 @@ query_frontend:
   # (prefixed with dns:///) to enable client side load balancing.
   # CLI flag: -ruler.query-frontend.address
   [address: <string> | default = ""]
-
-  # The timeout for a rule query being evaluated by the query-frontend.
-  # CLI flag: -ruler.query-frontend.timeout
-  [timeout: <duration> | default = 2m]
 
   grpc_client_config:
     # (advanced) gRPC client max receive message size (bytes).
@@ -2530,7 +2526,7 @@ The `memberlist` block configures the Gossip memberlist.
 
 # If this node fails to join memberlist cluster, abort.
 # CLI flag: -memberlist.abort-if-join-fails
-[abort_if_cluster_join_fails: <boolean> | default = true]
+[abort_if_cluster_join_fails: <boolean> | default = false]
 
 # (advanced) If not 0, how often to rejoin the cluster. Occasional rejoin can
 # help to fix the cluster split issue, and is harmless otherwise. For example
@@ -2721,6 +2717,17 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -ingester.active-series-custom-trackers
 [active_series_custom_trackers: <map of tracker name (string) to matcher (string)> | default = ]
 
+# (experimental) Non-zero value enables out-of-order support for most recent
+# samples that are within the time window in relation to the following two
+# conditions: (1) The newest sample for that time series, if it exists. For
+# example, within [series.maxTime-timeWindow, series.maxTime]). (2) The TSDB's
+# maximum time, if the series does not exist. For example, within
+# [db.maxTime-timeWindow, db.maxTime]). The ingester will need more memory as a
+# factor of rate of out-of-order samples being ingested and the number of series
+# that are getting out-of-order samples.
+# CLI flag: -ingester.out-of-order-time-window
+[out_of_order_time_window: <duration> | default = 0s]
+
 # Maximum number of chunks that can be fetched in a single query from ingesters
 # and long-term storage. This limit is enforced in the querier, ruler and
 # store-gateway. 0 to disable.
@@ -2855,6 +2862,10 @@ The `limits` block configures default and per-tenant limits imposed by component
 # disable the limit and use all compactors.
 # CLI flag: -compactor.compactor-tenant-shard-size
 [compactor_tenant_shard_size: <int> | default = 0]
+
+# Enable block upload API for the tenant.
+# CLI flag: -compactor.block-upload-enabled
+[compactor_block_upload_enabled: <boolean> | default = false]
 
 # S3 server-side encryption type. Required to enable server-side encryption
 # overrides for a specific tenant. If not set, the default S3 client settings
@@ -3348,8 +3359,8 @@ bucket_store:
 
     # (advanced) The maximum allowed age of a bucket index (last updated) before
     # queries start failing because the bucket index is too old. The bucket
-    # index is periodically updated by the compactor, while this check is
-    # enforced in the querier (at query time).
+    # index is periodically updated by the compactor, and this check is enforced
+    # in the querier (at query time).
     # CLI flag: -blocks-storage.bucket-store.bucket-index.max-stale-period
     [max_stale_period: <duration> | default = 1h]
 
@@ -3515,11 +3526,6 @@ tsdb:
   # CLI flag: -blocks-storage.tsdb.isolation-enabled
   [isolation_enabled: <boolean> | default = false]
 
-  # (experimental) Enable querying overlapping blocks. If there are going to be
-  # overlapping blocks in the ingesters this should be enabled.
-  # CLI flag: -blocks-storage.tsdb.allow-overlapping-queries
-  [allow_overlapping_queries: <boolean> | default = false]
-
   # (advanced) Max size - in bytes - of the in-memory series hash cache. The
   # cache is shared across all tenants and it's used only when query sharding is
   # enabled.
@@ -3529,6 +3535,16 @@ tsdb:
   # (advanced) limit the number of concurrently opening TSDB's on startup
   # CLI flag: -blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup
   [max_tsdb_opening_concurrency_on_startup: <int> | default = 10]
+
+  # (experimental) Minimum capacity for out-of-order chunks, in samples between
+  # 0 and 255.
+  # CLI flag: -blocks-storage.tsdb.out-of-order-capacity-min
+  [out_of_order_capacity_min: <int> | default = 4]
+
+  # (experimental) Maximum capacity for out of order chunks, in samples between
+  # 1 and 255.
+  # CLI flag: -blocks-storage.tsdb.out-of-order-capacity-max
+  [out_of_order_capacity_max: <int> | default = 32]
 ```
 
 ### compactor

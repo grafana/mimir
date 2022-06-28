@@ -32,6 +32,7 @@ This document groups API endpoints by service. Note that the API endpoints are e
 | [Pprof](#pprof)                                                                       | _All services_          | `GET /debug/pprof`                                                        |
 | [Fgprof](#fgprof)                                                                     | _All services_          | `GET /debug/fgprof`                                                       |
 | [Build information](#build-information)                                               | _All services_          | `GET /api/v1/status/buildinfo`                                            |
+| [Memberlist cluster](#memberlist-cluster)                                             | _All services_          | `GET /memberlist`                                                         |
 | [Remote write](#remote-write)                                                         | Distributor             | `POST /api/v1/push`                                                       |
 | [Tenants stats](#tenants-stats)                                                       | Distributor             | `GET /distributor/all_user_stats`                                         |
 | [HA tracker status](#ha-tracker-status)                                               | Distributor             | `GET /distributor/ha_tracker`                                             |
@@ -207,6 +208,18 @@ GET <alertmanager-http-prefix>/api/v1/status/buildinfo
 ```
 
 This endpoint returns in JSON format information about the build and enabled features. The format returned is not identical, but is similar to the [Prometheus Build Information endpoint](https://prometheus.io/docs/prometheus/latest/querying/api/#build-information).
+
+### Memberlist cluster
+
+```
+GET /memberlist
+```
+
+This admin page shows information about Memberlist cluster (list of nodes and their health) and KV store (keys and values in the KV store).
+
+If memberlist message history is enabled, this page also shows all received and sent messages stored in the buffers.
+This can be useful for troubleshooting memberlist cluster.
+To enable message history buffers use `-memberlist.message-history-buffer-bytes` CLI flag or the corresponding YAML configuration parameter.
 
 ## Distributor
 
@@ -552,12 +565,6 @@ Requires [authentication](#authentication).
 
 ```
 GET <prometheus-http-prefix>/config/v1/rules
-
-# Deprecated; will be removed in Mimir v2.2.0
-GET /api/v1/rules
-
-# Deprecated; will be removed in Mimir v2.2.0
-GET <prometheus-http-prefix>/rules
 ```
 
 List all rules configured for the authenticated tenant. This endpoint returns a YAML dictionary with all the rule groups for each namespace and `200` status code on success.
@@ -620,12 +627,6 @@ Requires [authentication](#authentication).
 
 ```
 GET <prometheus-http-prefix>/config/v1/rules/{namespace}
-
-# Deprecated; will be removed in Mimir v2.2.0
-GET /api/v1/rules/{namespace}
-
-# Deprecated; will be removed in Mimir v2.2.0
-GET <prometheus-http-prefix>/rules/{namespace}
 ```
 
 Returns the rule groups defined for a given namespace.
@@ -657,12 +658,6 @@ rules:
 
 ```
 GET <prometheus-http-prefix>/config/v1/rules/{namespace}/{groupName}
-
-# Deprecated; will be removed in Mimir v2.2.0
-GET /api/v1/rules/{namespace}/{groupName}
-
-# Deprecated; will be removed in Mimir v2.2.0
-GET <prometheus-http-prefix>/rules/{namespace}/{groupName}
 ```
 
 Returns the rule group matching the request namespace and group name.
@@ -675,12 +670,6 @@ Requires [authentication](#authentication).
 
 ```
 POST /<prometheus-http-prefix>/config/v1/rules/{namespace}
-
-# Deprecated; will be removed in Mimir v2.2.0
-POST /api/v1/rules/{namespace}
-
-# Deprecated; will be removed in Mimir v2.2.0
-POST <prometheus-http-prefix>/rules/{namespace}
 ```
 
 Creates or updates a rule group.
@@ -709,12 +698,6 @@ rules:
 
 ```
 DELETE /<prometheus-http-prefix>/config/v1/rules/{namespace}/{groupName}
-
-# Deprecated; will be removed in Mimir v2.2.0
-DELETE /api/v1/rules/{namespace}/{groupName}
-
-# Deprecated; will be removed in Mimir v2.2.0
-DELETE <prometheus-http-prefix>/rules/{namespace}/{groupName}
 ```
 
 Deletes a rule group by namespace and group name. This endpoints returns `202` on success.
@@ -727,12 +710,6 @@ Requires [authentication](#authentication).
 
 ```
 DELETE /<prometheus-http-prefix>/config/v1/rules/{namespace}
-
-# Deprecated; will be removed in Mimir v2.2.0
-DELETE /api/v1/rules/{namespace}
-
-# Deprecated; will be removed in Mimir v2.2.0
-DELETE <prometheus-http-prefix>/rules/{namespace}
 ```
 
 Deletes all the rule groups in a namespace (including the namespace itself). This endpoint returns `202` on success.

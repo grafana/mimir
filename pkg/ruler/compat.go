@@ -150,9 +150,9 @@ func MetricsQueryFunc(qf rules.QueryFunc, queries, failedQueries prometheus.Coun
 			return result, origErr
 
 		} else if err != nil {
-			// When remote querier enabled, only consider failed queries those returning a 5xx status code.
+			// When remote querier enabled, consider anything an error except those with 4xx status code.
 			st, ok := status.FromError(err)
-			if ok && st.Code()/100 == 5 {
+			if !(ok && st.Code()/100 == 4) {
 				failedQueries.Inc()
 			}
 		}

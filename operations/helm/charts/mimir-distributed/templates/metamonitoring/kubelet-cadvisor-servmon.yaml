@@ -1,0 +1,83 @@
+{{- if and ((.Values.metaMonitoring).grafanaAgent).enabled ((((.Values.metaMonitoring).grafanaAgent).metrics).scrapeK8s).enabled }}
+{{- with .Values.metaMonitoring.serviceMonitor }}
+{{- if .enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "mimir.resourceName" (dict "ctx" $ "component" "k8s-kubelet-cadvisor") }}
+  namespace: {{ .namespace | default $.Release.Namespace | quote }}
+  labels:
+    {{- include "mimir.labels" (dict "ctx" $ "component" "meta-monitoring") | nindent 4 }}
+    {{- with .labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with .annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  endpoints:
+    - bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+      {{- with .interval }}
+      interval: {{ . }}
+      {{- end }}
+      {{- with .scrapeTimeout }}
+      scrapeTimeout: {{ . }}
+      {{- end }}
+      port: https-metrics
+      honorLabels: true # retain namespace label from kubelet
+      relabelings:
+        - replacement: kubelet # add so that e.g. up{} metric doesn't get clashes with the other endpoint
+          targetLabel: source
+        {{- with .relabelings }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      metricRelabelings:
+        - action: keep
+          regex: storage-{{ include "mimir.resourceName" (dict "ctx"  $) }}.*
+          sourceLabels:
+            - persistentvolumeclaim # present on kubelet_volume_stats* metrics
+        - targetLabel: instance # replace so that the metrics work with the default metrics mixin
+          sourceLabels:
+            - node
+      scheme: https
+      tlsConfig:
+        caFile: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+    - bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+      {{- with .interval }}
+      interval: {{ . }}
+      {{- end }}
+      {{- with .scrapeTimeout }}
+      scrapeTimeout: {{ . }}
+      {{- end }}
+      path: /metrics/cadvisor
+      port: https-metrics
+      honorLabels: true # retain namespace label from cadvisor
+      relabelings:
+        - replacement: cadvisor # add so that e.g. up{} metric doesn't get clashes with the other endpoint
+          targetLabel: source
+        - targetLabel: instance # replace so that the metrics work with the default metrics mixin
+          sourceLabels:
+            - node
+        {{- with .relabelings }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      metricRelabelings:
+        - action: keep
+          regex: {{ include "mimir.resourceName" (dict "ctx"  $) }}.*
+          sourceLabels:
+            - pod
+      scheme: https
+      tlsConfig:
+        caFile: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+  namespaceSelector:
+    matchNames:
+        # "default" is the default namespace in which the operator creates the kubelet service.
+      - default
+  selector:
+    matchLabels:
+      # This is a service added by the agent operator, so this labels is hardcoded to what the operator creates.
+      app.kubernetes.io/name: kubelet
+{{- end -}}
+{{- end -}}
+{{- end -}}

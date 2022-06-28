@@ -6,6 +6,7 @@ metadata:
     {{- include "mimir.labels" (dict "ctx" . "component" "query-frontend") | nindent 4 }}
   annotations:
     {{- toYaml .Values.query_frontend.annotations | nindent 4 }}
+  namespace: {{ .Release.Namespace | quote }}
 spec:
   replicas: {{ .Values.query_frontend.replicas }}
   selector:
@@ -22,6 +23,7 @@ spec:
         {{- end }}
       annotations:
         {{- include "mimir.podAnnotations" (dict "ctx" . "component" "query-frontend") | nindent 8 }}
+      namespace: {{ .Release.Namespace | quote }}
     spec:
       serviceAccountName: {{ template "mimir.serviceAccountName" . }}
     {{- if .Values.query_frontend.priorityClassName }}
@@ -79,7 +81,7 @@ spec:
           resources:
             {{- toYaml .Values.query_frontend.resources | nindent 12 }}
           securityContext:
-            readOnlyRootFilesystem: true
+            {{- toYaml .Values.query_frontend.containerSecurityContext | nindent 12 }}
           env:
             {{- with .Values.global.extraEnv }}
               {{- toYaml . | nindent 12 }}

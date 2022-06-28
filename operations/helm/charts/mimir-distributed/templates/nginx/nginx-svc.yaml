@@ -11,6 +11,7 @@ metadata:
     {{- end }}
   annotations:
     {{- toYaml .Values.nginx.service.annotations | nindent 4 }}
+  namespace: {{ .Release.Namespace | quote }}
 spec:
   type: {{ .Values.nginx.service.type }}
   {{- with .Values.nginx.service.clusterIP }}

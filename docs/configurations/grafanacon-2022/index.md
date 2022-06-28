@@ -12,6 +12,10 @@ associated_technologies:
   - mimir
 ---
 
+# GrafanaCon 2022 Mimir session
+
+Configuration files in this directory were used during the demo part of [GrafanaCon 2022 talk about Mimir](https://grafana.com/go/grafanaconline/2022/grafana-mimir-migrate-your-metrics-in-minutes/).
+
 # Before you start
 
 **Warning:** Following commands will not specify explicit context for `kubectl` commands. Make sure to select correct

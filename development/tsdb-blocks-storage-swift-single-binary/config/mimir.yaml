@@ -3,6 +3,11 @@ multitenancy_enabled: false
 distributor:
   pool:
     health_check_ingesters: true
+  ring:
+    kvstore:
+      store: consul
+      consul:
+        host: consul:8500
 
 ingester_client:
   grpc_client_config:

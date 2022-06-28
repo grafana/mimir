@@ -10,6 +10,7 @@ metadata:
     {{- end }}
   annotations:
     {{- toYaml .Values.ruler.service.annotations | nindent 4 }}
+  namespace: {{ .Release.Namespace | quote }}
 spec:
   type: ClusterIP
   ports:

@@ -9,6 +9,7 @@ metadata:
     {{- end }}
   annotations:
     {{- toYaml .Values.store_gateway.service.annotations | nindent 4 }}
+  namespace: {{ .Release.Namespace | quote }}
 spec:
   type: ClusterIP
   ports:

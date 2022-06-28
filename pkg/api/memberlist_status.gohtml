@@ -33,7 +33,7 @@
                     </div>
                 {{ else }}
                     <div class="alert alert-warning" role="alert">
-                        Memberlist cluster has <strong>{{ .Memberlist.NumMembers }}</strong> but health score
+                        Memberlist cluster has <strong>{{ .Memberlist.NumMembers }}</strong> members but health score
                         is {{ $HealthScore }} (lower is better, 0 = healthy).
                     </div>
                 {{ end }}

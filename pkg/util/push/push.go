@@ -7,6 +7,7 @@ package push
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"sync"
 
@@ -32,6 +33,7 @@ var bufferPool = sync.Pool{
 }
 
 const SkipLabelNameValidationHeader = "X-Mimir-SkipLabelNameValidation"
+const statusClientClosedRequest = 499
 
 // Handler is a http.Handler which accepts WriteRequests.
 func Handler(
@@ -80,6 +82,11 @@ func Handler(
 		}
 
 		if _, err := push(ctx, &req.WriteRequest, cleanup); err != nil {
+			if errors.Is(err, context.Canceled) {
+				http.Error(w, err.Error(), statusClientClosedRequest)
+				level.Warn(logger).Log("msg", "push request canceled", "err", err)
+				return
+			}
 			resp, ok := httpgrpc.HTTPResponseFromError(err)
 			if !ok {
 				http.Error(w, err.Error(), http.StatusInternalServerError)

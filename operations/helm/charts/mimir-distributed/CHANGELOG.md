@@ -12,9 +12,28 @@ Entries should be ordered as follows:
 Entries should include a reference to the Pull Request that introduced the change.
 
 ## main / unreleased
-
 * [CHANGE] Enable multi-tenancy by default. This means `multitenancy_enabled` is now `true` for both Mimir and Enterprise Metrics. Nginx will inject `X-Scope-OrgID=anonymous` header if the header is not present, ensuring backwards compatibility. #2117
+* [CHANGE] **breaking change** The value `serviceMonitor` and everything under it is moved to `metaMonitoring.serviceMonitor` to group all meta-monitoring settings under one section. #2236
+* [CHANGE] **breaking change** Chart now uses custom memcached templates to remove bitnami dependency. There are changes to the Helm values, listed bellow. #2064
+  - The `memcached` section now contains common values shared across all memcached instances.
+  - New `memcachedExporter` section was added to configure memcached metrics exporter.
+  - New `memcached-chunks` section was added that refers to previous `memcached` configuration.
+  - The section `memcached-queries` is renamed to `memcached-index-queries`.
+  - The value `memcached-*.replicaCount` is replaced with `memcached-*.replicas` to align with the rest of the services.
+    - Renamed `memcached.replicaCount` to `memcached-chunks.replicas`.
+    - Renamed `memcached-queries.replicaCount` to `memcached-index-queries.replicas`.
+    - Renamed `memcached-metadata.replicaCount` to `memcached-metadata.replicas`.
+    - Renamed `memcached-results.replicaCount` to `memcached-results.replicas`.
+  - All memcached instances now share the same `ServiceAccount` that the chart uses for its services.
+  - The value `memcached-*.architecture` was removed.
+  - The value `memcached-*.arguments` was removed, the default arguments are now encoded in the template. Use `memcached-*.extraArgs` to provide additional arguments as well as the values `memcached-*.allocatedMemory`, `memcached-*.maxItemMemory` and `memcached-*.port` to set the memcached command line flags `-m`, `-I` and `-u`.
+  - The remaining arguments are aligned with the rest of the chart's services, please consult the values file to check whether a parameter exists or was renamed.
 * [CHANGE] Change default value for `blocks_storage.bucket_store.chunks_cache.memcached.timeout` to `450ms` to increase use of cached data. #2035
+* [FEATURE] Add `mimir-continuous-test` in smoke-test mode. Use `helm test` to run a smoke test of the read + write path.
+* [FEATURE] Add meta-monitoring via the Grafana Agent Kubernetes operator: scrape metrics and collect logs from Mimir pods and ship them to a remote. #2068
+* [ENHANCEMENT] ServiceMonitor object will now have default values based on release namesapce in the `namespace` and `namespaceSelector` fields. #2123
+* [ENHANCEMENT] Set the `namespace` metadata field for all kubernetes objects to enable using `--namespace` correctly with Helm even if the specified namespace does not exist. #2123
+* [ENHANCEMENT] The new value `serviceMonitor.clusterLabel` controls whether to add a `cluster` label and with what content to ServiceMonitor metrics. #2125
 * [ENHANCEMENT] Set the flag `ingester.ring.instance-availability-zone` to `zone-default` for ingesters. This is the first step of introducing multi-zone ingesters. #2114
 * [ENHANCEMENT] Add `mimir.structuredConfig` for adding and modifing `mimir.config` values after template evaulation. It can be used to alter individual values in the configuration and it's structured YAML instead of text. #2100
 * [ENHANCEMENT] Add `global.podAnnotations` which can add POD annotations to PODs directly controlled by this chart (mimir services, nginx). #2099
@@ -24,6 +43,9 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Enable `-config.expand-env=true` option in all Mimir services to be able to take secrets/settings from the environment and inject them into the Mimir configuration file. #2017
 * [ENHANCEMENT] Add a simple test for enterprise installation #2027
 * [ENHANCEMENT] Add ability to manage PrometheusRule from helm chart
+* [ENHANCEMENT] Check for the containerSecurityContext in values file. #2112
+* [ENHANCEMENT] Add `NOTES.txt` to show endpoints URLs for the user at install/upgrade. #2189
+* [ENHANCEMENT] Add ServiceMonitor for overrides-exporter. #2068
 
 ## 2.1.0-beta.7
 

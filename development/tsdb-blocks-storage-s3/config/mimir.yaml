@@ -4,7 +4,6 @@ distributor:
   pool:
     health_check_ingesters: true
   ring:
-    instance_addr: 127.0.0.1
     kvstore:
       store: consul
       consul:
@@ -32,7 +31,6 @@ ingester:
 memberlist:
   join_members:
     - distributor:10001
-  abort_if_cluster_join_fails: false
   rejoin_interval: 10s
 
 blocks_storage:

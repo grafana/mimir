@@ -321,7 +321,7 @@ groups:
       ) > 1
     for: 5m
     labels:
-      severity: warning
+      severity: critical
   - alert: MimirRulerMissedEvaluations
     annotations:
       message: |
@@ -352,7 +352,7 @@ groups:
       message: Mimir instance {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace
         }} sees incorrect number of gossip members.
     expr: |
-      avg by (cluster, namespace) (memberlist_client_cluster_members_count) != sum by (cluster, namespace) (up{job=~".+/(alertmanager|compactor|distributor|ingester.*|querier.*|ruler|store-gateway.*|cortex|mimir)"})
+      avg by (cluster, namespace) (memberlist_client_cluster_members_count) != sum by (cluster, namespace) (up{job=~".+/(alertmanager|compactor|distributor|ingester.*|querier.*|ruler|ruler-querier.*|store-gateway.*|cortex|mimir)"})
     for: 15m
     labels:
       severity: warning
@@ -655,6 +655,7 @@ groups:
       (cortex_compactor_last_successful_run_timestamp_seconds > 0)
     for: 1h
     labels:
+      reason: in-last-24h
       severity: critical
   - alert: MimirCompactorHasNotSuccessfullyRunCompaction
     annotations:
@@ -664,6 +665,7 @@ groups:
       cortex_compactor_last_successful_run_timestamp_seconds == 0
     for: 24h
     labels:
+      reason: since-startup
       severity: critical
   - alert: MimirCompactorHasNotSuccessfullyRunCompaction
     annotations:
@@ -672,6 +674,7 @@ groups:
     expr: |
       increase(cortex_compactor_runs_failed_total[2h]) >= 2
     labels:
+      reason: consecutive-failures
       severity: critical
   - alert: MimirCompactorHasNotUploadedBlocks
     annotations:

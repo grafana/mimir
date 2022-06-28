@@ -8,6 +8,7 @@ metadata:
     {{- include "mimir.labels" (dict "ctx" . "component" "nginx") | nindent 4 }}
   annotations:
     {{- toYaml .Values.nginx.annotations | nindent 4 }}
+  namespace: {{ .Release.Namespace | quote }}
 spec:
 {{- if not .Values.nginx.autoscaling.enabled }}
   replicas: {{ .Values.nginx.replicas }}
@@ -34,6 +35,7 @@ spec:
         {{- with .Values.nginx.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
+      namespace: {{ .Release.Namespace | quote }}
     spec:
       serviceAccountName: {{ include "mimir.serviceAccountName" . }}
       {{- with .Values.imagePullSecrets }}

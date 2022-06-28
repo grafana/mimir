@@ -8,10 +8,10 @@ weight: 30
 # Scaling out Grafana Mimir
 
 Grafana Mimir can horizontally scale every component.
-Scaling out Grafana Mimir means that to respond to increased load you, can increase the number of replicas of each Grafana Mimir component.
+Scaling out Grafana Mimir means that to respond to increased load, you can increase the number of replicas of each Grafana Mimir component.
 
 We have designed Grafana Mimir to scale up quickly, safely, and with no manual intervention.
-However, be careful when scaling down some of the stateful components as these action can result in writes and reads failures, or receiving partial query results.
+However, be careful when scaling down some of the stateful components as these actions can result in writes and reads failures, or partial query results.
 
 ## Monolithic mode
 
@@ -73,7 +73,7 @@ Complete the following steps to scale down ingesters deployed in a single zone.
 
    ```
    -querier.query-store-after=0s
-   -querier.shuffle-sharding-ingesters-lookback-period=87600h
+   -querier.shuffle-sharding-ingesters-enabled=false
    ```
 
    b. Configure the compactors to frequently update the bucket index:
@@ -106,10 +106,10 @@ Complete the following steps to scale down ingesters deployed in a single zone.
 
    c. Send a `SIGINT` or `SIGTERM` signal to the process of the ingester to terminate.
 
-   d. Wait 10 minutes before proceeding with the next ingester. The temporarily configuration applied guarantees newly uploaded blocks are available for querying within 10 minutes.
+   d. Wait 10 minutes before proceeding with the next ingester. The temporarily applied configuration guarantees newly uploaded blocks are available for querying within 10 minutes.
 
 1. Wait until the originally configured `-querier.query-store-after` period of time has elapsed since when all ingesters have been shutdown.
-1. Revert the temporarily configuration changes done at the beginning of the scale down procedure.
+1. Revert the temporary configuration changes done at the beginning of the scale down procedure.
 
 #### Scaling down ingesters deployed in multiple zones
 

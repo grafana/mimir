@@ -1,6 +1,5 @@
 {
   local memberlistConfig = {
-    'memberlist.abort-if-join-fails': false,
     'memberlist.bind-port': gossipRingPort,
     'memberlist.join': 'gossip-ring.%s.svc.cluster.local:%d' % [$._config.namespace, gossipRingPort],
   },
@@ -18,20 +17,17 @@
   _config+:: {
     // Enables use of memberlist for all rings, instead of consul. If multikv_migration_enabled is true, consul hostname is still configured,
     // but "primary" KV depends on value of multikv_primary.
-    memberlist_ring_enabled: false,
+    memberlist_ring_enabled: true,
 
-    // Migrating from consul to memberlist is a multi-step process:
-    // 1) Enable multikv_migration_enabled, with primary=consul, secondary=memberlist, and multikv_mirror_enabled=false, restart components.
-    // 2) Set multikv_mirror_enabled=true. This doesn't require restart.
-    // 3) Swap multikv_primary and multikv_secondary, ie. multikv_primary=memberlist, multikv_secondary=consul. This doesn't require restart.
-    // 4) Set multikv_migration_enabled=false and multikv_migration_teardown=true. This requires a restart, but components will now use only memberlist.
-    // 5) Set multikv_migration_teardown=false. This doesn't require a restart.
-    multikv_migration_enabled: false,
-    multikv_migration_teardown: false,
+    // To migrate from Consul to Memberlist check "Migrating from Consul to Memberlist KV store for hash rings" article in Mimir documentation.
+    multikv_migration_enabled: false,  // Enable multi KV.
+    multikv_migration_teardown: false,  // If multikv_migration_enabled=false and multikv_migration_teardown=true, runtime configuration for multi KV is preserved.
+    multikv_switch_primary_secondary: false,  // Switch primary and secondary KV stores in runtime configuration for multi KV.
+    multikv_mirror_enabled: false,  // Enable mirroring of writes from primary to secondary KV store.
+
+    // Don't change these values during migration. Use multikv_switch_primary_secondary instead.
     multikv_primary: 'consul',
     multikv_secondary: 'memberlist',
-    multikv_switch_primary_secondary: false,
-    multikv_mirror_enabled: false,
 
     // Use memberlist only. This works fine on already-migrated clusters.
     // To do a migration from Consul to memberlist, multi kv storage needs to be used (See below).

@@ -6,6 +6,7 @@ metadata:
   name: {{ include "mimir.resourceName" (dict "ctx" . "component" "ruler") }}
   labels:
     {{- include "mimir.labels" (dict "ctx" . "component" "ruler" "memberlist" true) | nindent 4 }}
+  namespace: {{ .Release.Namespace | quote }}
 spec:
   selector:
     matchLabels:

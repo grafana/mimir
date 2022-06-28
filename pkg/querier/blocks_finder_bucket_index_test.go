@@ -192,15 +192,16 @@ func TestBucketIndexBlocksFinder_GetBlocks_BucketIndexIsTooOld(t *testing.T) {
 	bkt, _ := mimir_testutil.PrepareFilesystemBucket(t)
 	finder := prepareBucketIndexBlocksFinder(t, bkt)
 
-	require.NoError(t, bucketindex.WriteIndex(ctx, bkt, userID, nil, &bucketindex.Index{
+	idx := &bucketindex.Index{
 		Version:            bucketindex.IndexVersion1,
 		Blocks:             bucketindex.Blocks{},
 		BlockDeletionMarks: bucketindex.BlockDeletionMarks{},
 		UpdatedAt:          time.Now().Add(-2 * time.Hour).Unix(),
-	}))
+	}
+	require.NoError(t, bucketindex.WriteIndex(ctx, bkt, userID, nil, idx))
 
 	_, _, err := finder.GetBlocks(ctx, userID, 10, 20)
-	require.Equal(t, errBucketIndexTooOld, err)
+	require.EqualError(t, err, newBucketIndexTooOldError(idx.GetUpdatedAt(), finder.cfg.MaxStalePeriod).Error())
 }
 
 func prepareBucketIndexBlocksFinder(t testing.TB, bkt objstore.Bucket) *BucketIndexBlocksFinder {
@@ -223,4 +224,22 @@ func prepareBucketIndexBlocksFinder(t testing.TB, bkt objstore.Bucket) *BucketIn
 	})
 
 	return finder
+}
+
+func TestBlocksFinderBucketIndexErrMsgs(t *testing.T) {
+	tests := map[string]struct {
+		err error
+		msg string
+	}{
+		"newBucketIndexTooOldError": {
+			err: newBucketIndexTooOldError(time.Unix(1000000000, 0), time.Hour),
+			msg: `the bucket index is too old. It was last updated at 2001-09-09T01:46:40Z, which exceeds the maximum allowed staleness period of 1h0m0s (err-mimir-bucket-index-too-old)`,
+		},
+	}
+
+	for testName, tc := range tests {
+		t.Run(testName, func(t *testing.T) {
+			assert.Equal(t, tc.msg, tc.err.Error())
+		})
+	}
 }

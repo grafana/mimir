@@ -63,6 +63,7 @@ Grafana Mimir supports shuffle sharding in the following components:
 - [Store-gateway](#store-gateway-shuffle-sharding)
 - [Ruler](#ruler-shuffle-sharding)
 - [Compactor](#compactor-shuffle-sharding)
+- [Alertmanager](#alertmanager-shuffle-sharding)
 
 When you run Grafana Mimir with the default configuration, shuffle sharding is disabled and you need to explicitly enable it by increasing the shard size either globally or for a given tenant.
 
@@ -101,10 +102,15 @@ To enable shuffle sharding for ingesters on the write path, configure the follow
 Assuming that you have enabled shuffle sharding for the write path, to enable shuffle sharding for ingesters on the read path, configure the following flags (or their respective YAML configuration options) on the querier and ruler:
 
 - `-distributor.ingestion-tenant-shard-size=<size>`
-- `-querier.shuffle-sharding-ingesters-lookback-period=<period>`<br />
-  Queriers and rulers fetch in-memory series from the minimum set of required ingesters, selecting only ingesters which might have received series since 'now - lookback period'.
-  The configured lookback `<period>` should be:
-  - greater than or equal to `-querier.query-store-after` and `-querier.query-ingesters-within` and,
+
+The following flags are set appropriately by default to enable shuffle sharding for ingesters on the read path. If you need to modify their defaults:
+
+- `-querier.shuffle-sharding-ingesters-enabled=true`<br />
+  Shuffle sharding for ingesters on the read path can be explicitly enabled or disabled.
+- `-querier.query-ingesters-within=<period>`<br />
+  Queriers and rulers fetch in-memory series from the minimum set of required ingesters, selecting only ingesters which might have received series since 'now - query ingesters within'. If this period is `0`, shuffle sharding for ingesters on the read path is disabled, which means all ingesters in the Mimir cluster are queried for any tenant.
+  The configured `<period>` should be:
+  - greater than `-querier.query-store-after` and,
   - greater than the estimated minimum amount of time for the oldest samples stored in a block uploaded by ingester to be discovered and available for querying.
     When running Grafana Mimir with the default configuration, the estimated minimum amount of time for the oldest sample in a uploaded block to be available for querying is `3h`.
 
@@ -115,23 +121,24 @@ Keeping ingesters shuffle sharding enabled only on the write path does not lead 
 
 If you’re running a Grafana Mimir cluster with shuffle sharding disabled, and you want to enable it for the ingesters, use the following rollout strategy to avoid missing querying for any series currently in the ingesters:
 
+1. Explicitly disable ingesters shuffle-sharding on the read path via `-querier.shuffle-sharding-ingesters-enabled=false` since this is enabled by default.
 1. Enable ingesters shuffle sharding on the write path.
-1. Wait for at least the amount of time specified via `-querier.shuffle-sharding-ingesters-lookback-period`.
-1. Enable ingesters shuffle-sharding on the read path.
+1. Wait for at least the amount of time specified via `-querier.query-ingesters-within`.
+1. Enable ingesters shuffle-sharding on the read path via `-querier.shuffle-sharding-ingesters-enabled=true`.
 
 #### Limitation: Decreasing the tenant shard size
 
 The current shuffle sharding implementation in Grafana Mimir has a limitation that prevents you from safely decreasing the tenant shard size when you enable ingesters’ shuffle sharding on the read path.
 
 If a tenant’s shard decreases in size, there is currently no way for the queriers and rulers to know how large the tenant shard was previously, and as a result, they potentially miss an ingester with data for that tenant.
-The lookback mechanism, which is used to select the ingesters that might have received series since 'now - lookback period', doesn't work correctly if the tenant shard size is decreased.
+The query-ingesters-within period, which is used to select the ingesters that might have received series since 'now - query ingesters within', doesn't work correctly for finding tenant shards if the tenant shard size is decreased.
 
 Although decreasing the tenant shard size is not supported, consider the following workaround:
 
-1. Disable shuffle sharding on the read path.
+1. Disable shuffle sharding on the read path via `-querier.shuffle-sharding-ingesters-enabled=false`.
 1. Decrease the configured tenant shard size.
-1. Wait for at least the amount of time specified via `-querier.shuffle-sharding-ingesters-lookback-period`.
-1. Re-enable shuffle sharding on the read path.
+1. Wait for at least the amount of time specified via `-querier.query-ingesters-within`.
+1. Re-enable shuffle sharding on the read path via `-querier.shuffle-sharding-ingesters-enabled=true`.
 
 ### Query-frontend and query-scheduler shuffle sharding
 
@@ -187,6 +194,12 @@ By default, tenant blocks can be compacted by any Grafana Mimir compactor.
 When you enable compactor shuffle sharding by setting `-compactor.compactor-tenant-shard-size` (or its respective YAML configuration option) to a value higher than `0` and lower than the number of available compactors, only the specified number of compactors are eligible to compact blocks for a given tenant.
 
 You can override the compactor shard size on a per-tenant basis setting by `compactor_tenant_shard_size` in the overrides section of the runtime configuration.
+
+### Alertmanager shuffle sharding
+
+Alertmanager only performs distribution across replicas per tenant. The state and workload is not divided any further. The replication factor setting `-alertmanager.sharding-ring.replication-factor` determines how many replicas are used for a tenant.
+
+As a result, shuffle sharding is effectively always enabled for Alertmanager.
 
 ### Shuffle sharding impact to the KV store
 

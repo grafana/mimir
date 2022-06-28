@@ -54,9 +54,6 @@ type QueryFrontendConfig struct {
 	// Address is the address of the query-frontend to connect to.
 	Address string `yaml:"address"`
 
-	// Timeout is the length of time we wait on the query-frontend before giving up.
-	Timeout time.Duration `yaml:"timeout"`
-
 	// GRPCClientConfig contains gRPC specific config options.
 	GRPCClientConfig grpcclient.Config `yaml:"grpc_client_config"`
 }
@@ -67,8 +64,6 @@ func (c *QueryFrontendConfig) RegisterFlags(f *flag.FlagSet) {
 		"",
 		"GRPC listen address of the query-frontend(s). Must be a DNS address (prefixed with dns:///) "+
 			"to enable client side load balancing.")
-
-	f.DurationVar(&c.Timeout, "ruler.query-frontend.timeout", 2*time.Minute, "The timeout for a rule query being evaluated by the query-frontend.")
 
 	c.GRPCClientConfig.RegisterFlagsWithPrefix("ruler.query-frontend.grpc-client-config", f)
 }

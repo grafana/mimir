@@ -101,6 +101,11 @@
       'store-gateway.tenant-shard-size': $._config.shuffle_sharding.store_gateway_shard_size,
     }
   ) + (
+    if !($._config.shuffle_sharding.ingester_write_path_enabled && !$._config.shuffle_sharding.ingester_read_path_enabled) then {} else {
+      // If shuffle sharding is enabled for the write path but isn't enabled for the read path, Mimir will query all ingesters
+      'querier.shuffle-sharding-ingesters-enabled': 'false',
+    }
+  ) + (
     if !$._config.shuffle_sharding.ingester_read_path_enabled then {} else {
       'distributor.ingestion-tenant-shard-size': $._config.shuffle_sharding.ingester_shard_size,
     }
@@ -125,10 +130,8 @@
     }
   ) + (
     if !($._config.shuffle_sharding.ingester_write_path_enabled && !$._config.shuffle_sharding.ingester_read_path_enabled) then {} else {
-      // The shuffle-sharding flags in the ruler applies both to read and write path, so we don’t have a way
-      // to keep it enabled on the write path and disable it only on the read path. However, we can obtain the
-      // same effect setting the lookback period to a very high value.
-      'querier.shuffle-sharding-ingesters-lookback-period': '87600h',  // 3650 days.
+      // If shuffle sharding is enabled for the write path but isn't enabled for the read path, Mimir will query all ingesters
+      'querier.shuffle-sharding-ingesters-enabled': 'false',
     }
   ) + (
     if !$._config.shuffle_sharding.store_gateway_enabled then {} else {

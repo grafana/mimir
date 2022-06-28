@@ -6,17 +6,20 @@
 # To configure the resources for production load, refer to the the small.yaml or
 # large.yaml values files.
 
-# -- Overrides the chart's name
+# -- Overrides the chart's name. Used to change mimir/enterprise-metrics infix in the resource names. E.g. myRelease-mimir-ingester-1 to myRelease-nameOverride-ingester-1.
+# This option is used to align resource names with Cortex, when doing a migration from Cortex to Grafana Mimir.
+# Note: Grafana provided dashboards rely on the default naming and will need changes.
 nameOverride: null
 
-# -- Overrides the chart's computed fullname
+# -- Overrides the chart's computed fullname. Used to change the full prefix of resource names. E.g. myRelease-mimir-ingester-1 to fullnameOverride-ingester-1.
+# Note: Grafana provided dashboards rely on the default naming and will need changes.
 fullnameOverride: null
 
 # Container image settings.
 # Since the image is unique for all microservices, so are image settings.
 image:
   repository: grafana/mimir
-  tag: r190-fe20bbd
+  tag: r191-e11ac85
   pullPolicy: IfNotPresent
   # Optionally specify an array of imagePullSecrets.
   # Secrets must be manually created in the namespace.
@@ -118,27 +121,27 @@ mimir:
     blocks_storage:
       backend: s3
       bucket_store:
-        {{- if .Values.memcached.enabled }}
+        {{- if index .Values "memcached-chunks" "enabled" }}
         chunks_cache:
           backend: memcached
           memcached:
-            addresses: dns+{{ .Release.Name }}-memcached.{{ .Release.Namespace }}.svc:11211
-            max_item_size: {{ .Values.memcached.maxItemMemory }}
+            addresses: dns+{{ template "mimir.fullname" . }}-memcached-chunks.{{ .Release.Namespace }}.svc:{{ (index .Values "memcached-chunks").port }}
+            max_item_size: {{ mul (index .Values "memcached-chunks").maxItemMemory 1024 1024 }}
             timeout: 450ms
         {{- end }}
-        {{- if index .Values "memcached-queries" "enabled" }}
+        {{- if index .Values "memcached-index-queries" "enabled" }}
         index_cache:
           backend: memcached
           memcached:
-            addresses: dns+{{ .Release.Name }}-memcached-queries.{{ .Release.Namespace }}.svc:11211
-            max_item_size: {{ (index .Values "memcached-queries").maxItemMemory }}
+            addresses: dns+{{ template "mimir.fullname" . }}-memcached-index-queries.{{ .Release.Namespace }}.svc:{{ (index .Values "memcached-index-queries").port }}
+            max_item_size: {{ mul (index .Values "memcached-index-queries").maxItemMemory 1024 1024 }}
         {{- end }}
         {{- if index .Values "memcached-metadata" "enabled" }}
         metadata_cache:
           backend: memcached
           memcached:
-            addresses: dns+{{ .Release.Name }}-memcached-metadata.{{ .Release.Namespace }}.svc:11211
-            max_item_size: {{ (index .Values "memcached-metadata").maxItemMemory }}
+            addresses: dns+{{ template "mimir.fullname" . }}-memcached-metadata.{{ .Release.Namespace }}.svc:{{ (index .Values "memcached-metadata").port }}
+            max_item_size: {{ mul (index .Values "memcached-metadata").maxItemMemory 1024 1024 }}
         {{- end }}
         sync_dir: /data/tsdb-sync
       {{- if .Values.minio.enabled }}
@@ -166,8 +169,8 @@ mimir:
       results_cache:
         backend: memcached
         memcached:
-          addresses: dns+{{ .Release.Name }}-memcached-results.{{ .Release.Namespace }}.svc:11211
-          max_item_size: {{ (index .Values "memcached-results").maxItemMemory }}
+          addresses: dns+{{ template "mimir.fullname" . }}-memcached-results.{{ .Release.Namespace }}.svc:{{ (index .Values "memcached-results").port }}
+          max_item_size: {{ mul (index .Values "memcached-results").maxItemMemory 1024 1024 }}
       cache_results: true
       {{- end }}
 
@@ -259,30 +262,6 @@ runtimeConfig: {}
 # RBAC configuration
 rbac:
   pspEnabled: true
-
-# ServiceMonitor configuration
-serviceMonitor:
-  # -- If enabled, ServiceMonitor resources for Prometheus Operator are created
-  enabled: false
-  # -- Alternative namespace for ServiceMonitor resources
-  namespace: null
-  # -- Namespace selector for ServiceMonitor resources
-  namespaceSelector: {}
-  # -- ServiceMonitor annotations
-  annotations: {}
-  # -- Additional ServiceMonitor labels
-  labels: {}
-  # -- ServiceMonitor scrape interval
-  interval: null
-  # -- ServiceMonitor scrape timeout in Go duration format (e.g. 15s)
-  scrapeTimeout: null
-  # -- ServiceMonitor relabel configs to apply to samples before scraping
-  # https://github.com/prometheus-operator/prometheus-operator/blob/master/Documentation/api.md#relabelconfig
-  relabelings: []
-  # -- ServiceMonitor will use http by default, but you can pick https as well
-  scheme: http
-  # -- ServiceMonitor will use these tlsConfig settings to make the health check requests
-  tlsConfig: null
 
 alertmanager:
   enabled: true
@@ -458,6 +437,10 @@ distributor:
 
   securityContext: {}
 
+  # -- The SecurityContext for distributor containers
+  containerSecurityContext:
+    readOnlyRootFilesystem: true
+
   strategy:
     type: RollingUpdate
     rollingUpdate:
@@ -549,6 +532,10 @@ ingester:
 
   securityContext: {}
 
+  # -- The SecurityContext for ingester containers
+  containerSecurityContext:
+    readOnlyRootFilesystem: true
+
   strategy:
     type: RollingUpdate
     rollingUpdate:
@@ -594,6 +581,10 @@ overrides_exporter:
   affinity: {}
 
   securityContext: {}
+
+   # -- The SecurityContext for overrides_exporter containers
+  containerSecurityContext:
+    readOnlyRootFilesystem: true
 
   extraArgs: {}
 
@@ -665,6 +656,10 @@ ruler:
 
   securityContext: {}
 
+  # -- The SecurityContext for ruler containers
+  containerSecurityContext:
+    readOnlyRootFilesystem: true
+
   strategy:
     type: RollingUpdate
     rollingUpdate:
@@ -731,6 +726,10 @@ querier:
 
   securityContext: {}
 
+  # -- The SecurityContext for querier containers
+  containerSecurityContext:
+    readOnlyRootFilesystem: true
+
   strategy:
     type: RollingUpdate
     rollingUpdate:
@@ -796,6 +795,10 @@ query_frontend:
     initialDelaySeconds: 45
 
   securityContext: {}
+
+  # -- The SecurityContext for query_frontend containers
+  containerSecurityContext:
+    readOnlyRootFilesystem: true
 
   strategy:
     type: RollingUpdate
@@ -896,6 +899,10 @@ store_gateway:
 
   securityContext: {}
 
+   # -- The SecurityContext for store_gateway containers
+  containerSecurityContext:
+    readOnlyRootFilesystem: true
+
   strategy:
     type: RollingUpdate
 
@@ -975,7 +982,6 @@ compactor:
     #
     subPath: ''
 
-
     # compactor data Persistent Volume Storage Class
     # If defined, storageClassName: <storageClass>
     # If set to "-", storageClassName: "", which disables dynamic provisioning
@@ -993,6 +999,10 @@ compactor:
 
   securityContext: {}
 
+  # -- The SecurityContext for compactor containers
+  containerSecurityContext:
+    readOnlyRootFilesystem: true
+
   strategy:
     type: RollingUpdate
 
@@ -1007,132 +1017,273 @@ compactor:
   extraEnvFrom: []
 
 memcached:
-  enabled: false
-  architecture: high-availability
-  arguments:
-    - -m 8192
-    - -o
-    - modern
-    - -v
-    - -I 1m
-    - -c 4096
   image:
+    # -- Memcached Docker image repository
     repository: memcached
-    tag: 1.6.9
-  # maxItemMemory is in bytes. Should match memcached -I flag (which is in MB)
-  # It is a string to avoid https://github.com/helm/helm/issues/1707.
-  maxItemMemory: '1048576'  # (* 1 (* 1024 1024))
-  metrics:
-    enabled: true
-    image:
-      registry: quay.io
-      repository: prometheus/memcached-exporter
-      tag: v0.9.0
-  replicaCount: 1
-  resources:
-    limits:
-      # memory limits should match requests
-      memory: 9830Mi
-    requests:
-      cpu: 500m
-      # memory requests should be exceed memcached -m flag
-      memory: 9830Mi  # (floor (* 1.2 8192))
+    # -- Memcached Docker image tag
+    tag: 1.6.9-alpine
+    # -- Memcached Docker image pull policy
+    pullPolicy: IfNotPresent
 
-memcached-queries:
-  enabled: false
-  architecture: high-availability
-  arguments:
-    - -m 2048
-    - -o
-    - modern
-    - -v
-    - -I 15m
-    - -c 1024
+  # -- The SecurityContext for memcached pods
+  podSecurityContext:
+    fsGroup: 11211
+    runAsGroup: 11211
+    runAsNonRoot: true
+    runAsUser: 11211
+
+  # -- The SecurityContext for memcached containers
+  containerSecurityContext:
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop:
+        - ALL
+    allowPrivilegeEscalation: false
+
+memcachedExporter:
+  # -- Whether memcached metrics should be exported
+  enabled: true
+
   image:
-    repository: memcached
-    tag: 1.6.9
-  # maxItemMemory is in bytes. Should match memcached -I flag (which is in MB)
-  # It is a string to avoid https://github.com/helm/helm/issues/1707.
-  maxItemMemory: '15728640'  # (* 15 (* 1024 1024))
-  metrics:
-    enabled: true
-    image:
-      registry: quay.io
-      repository: prometheus/memcached-exporter
-      tag: v0.9.0
-  replicaCount: 1
-  resources:
-    limits:
-      # memory limits should match requests
-      memory: 2457Mi
-    requests:
-      cpu: 500m
-      # memory requests should be exceed memcached -m flag
-      memory: 2457Mi  # (floor (* 1.2 2048))
+    repository: prom/memcached-exporter
+    tag: v0.6.0
+    pullPolicy: IfNotPresent
+
+memcached-chunks:
+  # -- Specifies whether memcached-chunks should be enabled
+  enabled: false
+
+  # -- Total number of memcached-chunks replicas
+  replicas: 1
+
+  # -- Port of the memcached-chunks service
+  port: 11211
+
+  # -- Amount of memory allocated to memcached-chunks for object storage (in MB).
+  allocatedMemory: 8192
+
+  # -- Maximum item memory for memcached-chunks (in MB).
+  maxItemMemory: 1
+
+  # -- Extra init containers for memcached-chunks pods
+  initContainers: []
+
+  # -- Annotations for the memcached-chunks pods
+  annotations: {}
+  # -- Node selector for memcached-chunks pods
+  nodeSelector: {}
+  # -- Affinity for memcached-chunks pods
+  affinity: {}
+  # -- Tolerations for memcached-chunks pods
+  tolerations: []
+  # -- Pod Disruption Budget
+  podDisruptionBudget: {}
+  # -- The name of the PriorityClass for memcached-chunks pods
+  priorityClassName: null
+  # -- Labels for memcached-chunks pods
+  podLabels: {}
+  # -- Annotations for memcached-chunks pods
+  podAnnotations: {}
+  # -- Management policy for memcached-chunks pods
+  podManagementPolicy: Parallel
+  # -- Grace period to allow the memcached-chunks to shutdown before it is killed
+  terminationGracePeriodSeconds: 60
+
+  # -- Stateful memcached-chunks strategy
+  statefulStrategy:
+    type: RollingUpdate
+
+  # -- Additional CLI args for memcached-chunks
+  extraArgs: []
+
+  # -- Additional containers to be added to the memcached-chunks pod.
+  extraContainers: []
+
+  # -- Resource requests and limits for the memcached-results
+  # By default a safe memory limit will be requested based on allocatedMemory value (floor (* 1.2 allocatedMemory)).
+  resources: null
+
+  # -- Service annotations and labels
+  service:
+    annotations: {}
+    labels: {}
+
+memcached-index-queries:
+  # -- Specifies whether memcached-index-queries should be enabled
+  enabled: false
+
+  # -- Total number of memcached-index-queries replicas
+  replicas: 1
+
+  # -- Port of the memcached-index-queries service
+  port: 11211
+
+  # -- Amount of memory allocated to memcached-index-queries for object storage (in MB).
+  allocatedMemory: 2048
+
+  # -- Maximum item memcached-index-queries for memcached (in MB).
+  maxItemMemory: 15
+
+  # -- Extra init containers for memcached-index-queries pods
+  initContainers: []
+
+  # -- Annotations for the memcached-index-queries pods
+  annotations: {}
+  # -- Node selector for memcached-index-queries pods
+  nodeSelector: {}
+  # -- Affinity for memcached-index-queries pods
+  affinity: {}
+  # -- Tolerations for memcached-index-queries pods
+  tolerations: []
+  # -- Pod Disruption Budget
+  podDisruptionBudget: {}
+  # -- The name of the PriorityClass for memcached-index-queries pods
+  priorityClassName: null
+  # -- Labels for memcached-index-queries pods
+  podLabels: {}
+  # -- Annotations for memcached-index-queries pods
+  podAnnotations: {}
+  # -- Management policy for memcached-index-queries pods
+  podManagementPolicy: Parallel
+  # -- Grace period to allow the memcached-index-queries to shutdown before it is killed
+  terminationGracePeriodSeconds: 60
+
+  # -- Stateful memcached-index-queries strategy
+  statefulStrategy:
+    type: RollingUpdate
+
+  # -- Additional CLI args for memcached-index-queries
+  extraArgs: []
+
+  # -- Additional containers to be added to the memcached-index-queries pod.
+  extraContainers: []
+
+  # -- Resource requests and limits for the memcached-results
+  # By default a safe memory limit will be requested based on allocatedMemory value (floor (* 1.2 allocatedMemory)).
+  resources: null
+
+  # -- Service annotations and labels
+  service:
+    annotations: {}
+    labels: {}
 
 memcached-metadata:
+  # -- Specifies whether memcached-metadata should be enabled
   enabled: false
-  architecture: high-availability
-  arguments:
-    - -m 512
-    - -o
-    - modern
-    - -v
-    - -I 1m
-    - -c 1024
-  image:
-    repository: memcached
-    tag: 1.6.9
-  # maxItemMemory is in bytes. Should match memcached -I flag (which is in MB)
-  # It is a string to avoid https://github.com/helm/helm/issues/1707.
-  maxItemMemory: '1048576'  # (* 1 (* 1024 1024))
-  metrics:
-    enabled: true
-    image:
-      registry: quay.io
-      repository: prometheus/memcached-exporter
-      tag: v0.9.0
-  replicaCount: 1
-  resources:
-    limits:
-      # memory limits should match requests
-      memory: 614Mi
-    requests:
-      cpu: 500m
-      # memory requests should be exceed memcached -m flag
-      memory: 614Mi  # (floor (* 1.2 512))
+
+  # -- Total number of memcached-metadata replicas
+  replicas: 1
+
+  # -- Port of the memcached-metadata service
+  port: 11211
+
+  # -- Amount of memory allocated to memcached-metadata for object storage (in MB).
+  allocatedMemory: 512
+
+  # -- Maximum item memcached-metadata for memcached (in MB).
+  maxItemMemory: 1
+
+  # -- Extra init containers for memcached-metadata pods
+  initContainers: []
+
+  # -- Annotations for the memcached-metadata pods
+  annotations: {}
+  # -- Node selector for memcached-metadata pods
+  nodeSelector: {}
+  # -- Affinity for memcached-metadata pods
+  affinity: {}
+  # -- Tolerations for memcached-metadata pods
+  tolerations: []
+  # -- Pod Disruption Budget
+  podDisruptionBudget: {}
+  # -- The name of the PriorityClass for memcached-metadata pods
+  priorityClassName: null
+  # -- Labels for memcached-metadata pods
+  podLabels: {}
+  # -- Annotations for memcached-metadata pods
+  podAnnotations: {}
+  # -- Management policy for memcached-metadata pods
+  podManagementPolicy: Parallel
+  # -- Grace period to allow the memcached-metadata to shutdown before it is killed
+  terminationGracePeriodSeconds: 60
+
+  # -- Stateful memcached-metadata strategy
+  statefulStrategy:
+    type: RollingUpdate
+
+  # -- Additional CLI args for memcached-metadata
+  extraArgs: []
+
+  # -- Additional containers to be added to the memcached-metadata pod.
+  extraContainers: []
+
+  # -- Resource requests and limits for the memcached-results
+  # By default a safe memory limit will be requested based on allocatedMemory value (floor (* 1.2 allocatedMemory)).
+  resources: null
+
+  # -- Service annotations and labels
+  service:
+    annotations: {}
+    labels: {}
 
 memcached-results:
+  # -- Specifies whether memcached-results should be enabled
   enabled: false
-  architecture: high-availability
-  arguments:
-    - -m 512
-    - -o
-    - modern
-    - -v
-    - -I 1m
-    - -c 1024
-  image:
-    repository: memcached
-    tag: 1.6.9
-  # maxItemMemory is in bytes. Should match memcached -I flag (which is in MB)
-  # It is a string to avoid https://github.com/helm/helm/issues/1707.
-  maxItemMemory: '1048576'  # (* 1 (* 1024 1024))
-  metrics:
-    enabled: true
-    image:
-      registry: quay.io
-      repository: prometheus/memcached-exporter
-      tag: v0.9.0
-  replicaCount: 1
-  resources:
-    limits:
-      # memory limits should match requests
-      memory: 614Mi
-    requests:
-      cpu: 500m
-      # memory requests should be exceed memcached -m flag
-      memory: 614Mi  # (floor (* 1.2 512))
+
+  # -- Total number of memcached-results replicas
+  replicas: 1
+
+  # -- Port of the memcached-results service
+  port: 11211
+
+  # -- Amount of memory allocated to memcached-results for object storage (in MB).
+  allocatedMemory: 512
+
+  # -- Maximum item memcached-results for memcached (in MB).
+  maxItemMemory: 1
+
+  # -- Extra init containers for memcached-results pods
+  initContainers: []
+
+  # -- Annotations for the memcached-results pods
+  annotations: {}
+  # -- Node selector for memcached-results pods
+  nodeSelector: {}
+  # -- Affinity for memcached-results pods
+  affinity: {}
+  # -- Tolerations for memcached-results pods
+  tolerations: []
+  # -- Pod Disruption Budget
+  podDisruptionBudget: {}
+  # -- The name of the PriorityClass for memcached-results pods
+  priorityClassName: null
+  # -- Labels for memcached-results pods
+  podLabels: {}
+  # -- Annotations for memcached-results pods
+  podAnnotations: {}
+  # -- Management policy for memcached-results pods
+  podManagementPolicy: Parallel
+  # -- Grace period to allow the memcached-results to shutdown before it is killed
+  terminationGracePeriodSeconds: 60
+
+  # -- Stateful memcached-results strategy
+  statefulStrategy:
+    type: RollingUpdate
+
+  # -- Additional CLI args for memcached-results
+  extraArgs: []
+
+  # -- Additional containers to be added to the memcached-results pod.
+  extraContainers: []
+
+  # -- Resource requests and limits for the memcached-results
+  # By default a safe memory limit will be requested based on allocatedMemory value (floor (* 1.2 allocatedMemory)).
+  resources: null
+
+  # -- Service annotations and labels
+  service:
+    annotations: {}
+    labels: {}
 
 minio:
   enabled: true
@@ -1406,13 +1557,7 @@ nginx:
             proxy_pass      http://{{ template "mimir.fullname" . }}-ruler.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ include "mimir.serverHttpListenPort" . }}$request_uri;
           }
 
-          location /api/v1/rules {
-            proxy_pass      http://{{ template "mimir.fullname" . }}-ruler.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ include "mimir.serverHttpListenPort" . }}$request_uri;
-          }
           location {{ template "mimir.prometheusHttpPrefix" . }}/api/v1/alerts {
-            proxy_pass      http://{{ template "mimir.fullname" . }}-ruler.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ include "mimir.serverHttpListenPort" . }}$request_uri;
-          }
-          location {{ template "mimir.prometheusHttpPrefix" . }}/rules {
             proxy_pass      http://{{ template "mimir.fullname" . }}-ruler.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ include "mimir.serverHttpListenPort" . }}$request_uri;
           }
           location = /ruler/ring {
@@ -1450,7 +1595,7 @@ enterprise:
   # Container image settings for enterprise, note that pullPolicy and pullSecrets are set in top level .image
   image:
     repository: grafana/enterprise-metrics
-    tag: r190-9abd21a8
+    tag: r191-708e13a1
 
 # In order to use Grafana Enterprise Metrics features, you will need to provide the contents of your Grafana Enterprise Metrics
 # license, either by providing the contents of the license.jwt, or the name Kubernetes Secret that contains your license.jwt.
@@ -1499,6 +1644,10 @@ admin_api:
   podDisruptionBudget: {}
 
   securityContext: {}
+
+  # -- The SecurityContext for admin_api containers
+  containerSecurityContext:
+    readOnlyRootFilesystem: true
 
   extraArgs: {}
 
@@ -1555,6 +1704,11 @@ gateway:
   affinity: {}
 
   securityContext: {}
+
+   # -- The SecurityContext for gateway containers
+  containerSecurityContext:
+    readOnlyRootFilesystem: true
+
   initContainers: []
 
   extraArgs: {}
@@ -1611,6 +1765,8 @@ prometheusRule:
   annotations: {}
   # -- Additional PrometheusRule labels
   labels: {}
+  # -- prometheusRule namespace
+  namespace: ""
   # -- Contents of Prometheus rules file
   groups: []
 #  - name: mimir_api_1
@@ -1630,3 +1786,127 @@ prometheusRule:
 #      record: cluster_job:cortex_request_duration_seconds_sum:sum_rate
 #    - expr: sum(rate(cortex_request_duration_seconds_count[1m])) by (cluster, job)
 #      record: cluster_job:cortex_request_duration_seconds_count:sum_rate
+
+# Settings for the smoke-test job.
+smoke_test:
+  image:
+    repository: grafana/mimir-continuous-test
+    # TODO: replace with weekly tag starting with r191
+    tag: helm-smoke-test-d12276bfc
+    pullPolicy: IfNotPresent
+  tenantId: ''
+  extraArgs: {}
+  env: []
+  extraEnvFrom: []
+  annotations: {}
+  initContainers: []
+
+metaMonitoring:
+  # ServiceMonitor configuration for monitoring Kubernetes Services with Prometheus Operator and/or Grafana Agent
+  serviceMonitor:
+    # -- If enabled, ServiceMonitor resources for Prometheus Operator are created
+    enabled: false
+    # -- To disable setting a 'cluster' label in metrics, set to 'null'.
+    # To overwrite the 'cluster' label with your own value, set to a non-empty string.
+    # Keep empty string "" to have the default value in the 'cluster' label, which is the helm release name for Mimir and the actual cluster name for Enterprise Metrics.
+    clusterLabel: ""
+    # -- Alternative namespace for ServiceMonitor resources
+    # If left unset, the default is to install the ServiceMonitor resources in the namespace where the chart is installed, i.e. the namespace specified for the helm command.
+    namespace: null
+    # -- Namespace selector for ServiceMonitor resources
+    # If left unset, the default is to select the namespace where the chart is installed, i.e. the namespace specified for the helm command.
+    namespaceSelector: null
+    # -- ServiceMonitor annotations
+    annotations: {}
+    # -- Additional ServiceMonitor labels
+    labels: {}
+    # -- ServiceMonitor scrape interval
+    interval: null
+    # -- ServiceMonitor scrape timeout in Go duration format (e.g. 15s)
+    scrapeTimeout: null
+    # -- ServiceMonitor relabel configs to apply to samples before scraping
+    # https://github.com/prometheus-operator/prometheus-operator/blob/master/Documentation/api.md#relabelconfig
+    relabelings: []
+    # -- ServiceMonitor will use http by default, but you can pick https as well
+    scheme: http
+    # -- ServiceMonitor will use these tlsConfig settings to make the health check requests
+    tlsConfig: null
+
+  # metaMonitoringAgent configures the built in Grafana Agent that can scrape metrics and logs and send them to a local or remote destination
+  grafanaAgent:
+    # -- Controls whether to create PodLogs, MetricsInstance, LogsInstance, and GrafanaAgent CRs to scrape the
+    # ServiceMonitors of the chart and ship metrics and logs to the remote endpoints below.
+    # Note that you need to configure serviceMonitor in order to have some metrics available.
+    enabled: false
+
+    # -- Controls whether to install the Grafana Agent Operator and its CRDs.
+    # Note that helm will not install CRDs if this flag is enabled during an upgrade.
+    # In that case install the CRDs manually from https://github.com/grafana/agent/tree/main/production/operator/crds
+    installOperator: false
+
+    logs:
+      # -- Default destination for logs. The config here is translated to Promtail client
+      # configuration to write logs to this Loki-compatible remote. Optional.
+      remote:
+        # -- Full URL for Loki push endpoint. Usually ends in /loki/api/v1/push
+        url: ''
+
+        auth:
+          # -- Used to set X-Scope-OrgID header on requests. Usually not used in combination with username and password.
+          tenantId: ''
+
+          # -- Basic authentication username. Optional.
+          username: ''
+
+          # -- The value under key passwordSecretKey in this secret will be used as the basic authentication password. Required only if passwordSecretKey is set.
+          passwordSecretName: ''
+          # -- The value under this key in passwordSecretName will be used as the basic authentication password. Required only if passwordSecretName is set.
+          passwordSecretKey: ''
+
+      # -- Client configurations for the LogsInstance that will scrape Mimir pods. Follows the format of .remote.
+      additionalClientConfigs: []
+
+    metrics:
+      # -- Default destination for metrics. The config here is translated to remote_write
+      # configuration to push metrics to this Prometheus-compatible remote. Optional.
+      # Note that you need to configure serviceMonitor in order to have some metrics available.
+      remote:
+        # -- Full URL for Prometheus remote-write. Usually ends in /push
+        url: ''
+
+        # -- Used to add HTTP headers to remote-write requests.
+        headers: {}
+        auth:
+          # -- Basic authentication username. Optional.
+          username: ''
+
+          # -- The value under key passwordSecretKey in this secret will be used as the basic authentication password. Required only if passwordSecretKey is set.
+          passwordSecretName: ''
+          # -- The value under this key in passwordSecretName will be used as the basic authentication password. Required only if passwordSecretName is set.
+          passwordSecretKey: ''
+
+      # -- Additional remote-write for the MetricsInstance that will scrape Mimir pods. Follows the format of .remote.
+      additionalRemoteWriteConfigs: []
+
+      scrapeK8s:
+        # -- When grafanaAgent.enabled and serviceMonitor.enabled, controls whether to create ServiceMonitors CRs
+        # for cadvisor, kubelet, and kube-state-metrics. The scraped metrics are reduced to those pertaining to
+        # Mimir pods only.
+        enabled: true
+
+        # -- Controls service discovery of kube-state-metrics.
+        kubeStateMetrics:
+          namespace: kube-system
+          labelSelectors:
+            app.kubernetes.io/name: kube-state-metrics
+
+    # -- Sets the namespace of the resources. Leave empty or unset to use the same namespace as the Helm release.
+    namespace: ''
+
+    # -- Labels to add to all monitoring.grafana.com custom resources.
+    # Does not affect the ServiceMonitors for kubernetes metrics; use serviceMonitor.labels for that.
+    labels: {}
+
+    # -- Annotations to add to all monitoring.grafana.com custom resources.
+    # Does not affect the ServiceMonitors for kubernetes metrics; use serviceMonitor.annotations for that.
+    annotations: {}

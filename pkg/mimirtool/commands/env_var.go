@@ -11,6 +11,7 @@ type EnvVarNames struct {
 	TLSKeyPath      string
 	TenantID        string
 	UseLegacyRoutes string
+	AuthToken       string
 }
 
 func NewEnvVarsWithPrefix(prefix string) EnvVarNames {
@@ -23,6 +24,7 @@ func NewEnvVarsWithPrefix(prefix string) EnvVarNames {
 		tlsCertPath     = "TLS_CERT_PATH"
 		tlsKeyPath      = "TLS_KEY_PATH"
 		useLegacyRoutes = "USE_LEGACY_ROUTES"
+		authToken       = "AUTH_TOKEN"
 	)
 
 	if len(prefix) > 0 && prefix[len(prefix)-1] != '_' {
@@ -38,5 +40,6 @@ func NewEnvVarsWithPrefix(prefix string) EnvVarNames {
 		TLSKeyPath:      prefix + tlsKeyPath,
 		TenantID:        prefix + tenantID,
 		UseLegacyRoutes: prefix + useLegacyRoutes,
+		AuthToken:       prefix + authToken,
 	}
 }

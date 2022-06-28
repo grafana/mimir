@@ -234,7 +234,7 @@ func mockTSDB(t *testing.T, mint model.Time, samples int, step, chunkOffset time
 	opts := tsdb.DefaultHeadOptions()
 	opts.ChunkDirRoot = dir
 	// We use TSDB head only. By using full TSDB DB, and appending samples to it, closing it would cause unnecessary HEAD compaction, which slows down the test.
-	head, err := tsdb.NewHead(nil, nil, nil, opts, nil)
+	head, err := tsdb.NewHead(nil, nil, nil, nil, opts, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		_ = head.Close()
@@ -1052,19 +1052,6 @@ func TestConfig_Validate(t *testing.T) {
 			setup: func(cfg *Config) {
 				cfg.QueryStoreAfter = time.Hour
 			},
-		},
-		"should pass if 'query store after' is enabled and shuffle-sharding is enabled with greater value": {
-			setup: func(cfg *Config) {
-				cfg.QueryStoreAfter = time.Hour
-				cfg.ShuffleShardingIngestersLookbackPeriod = 2 * time.Hour
-			},
-		},
-		"should fail if 'query store after' is enabled and shuffle-sharding is enabled with lesser value": {
-			setup: func(cfg *Config) {
-				cfg.QueryStoreAfter = time.Hour
-				cfg.ShuffleShardingIngestersLookbackPeriod = time.Minute
-			},
-			expected: errShuffleShardingLookbackLessThanQueryStoreAfter,
 		},
 		"should pass if both 'query store after' and 'query ingesters within' are set and 'query store after' < 'query ingesters within'": {
 			setup: func(cfg *Config) {

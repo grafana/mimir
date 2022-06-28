@@ -4,7 +4,7 @@ Helm chart for deploying [Grafana Mimir](https://grafana.com/docs/mimir/v2.1.x/)
 
 # mimir-distributed
 
-![Version: 2.2.0-weekly.190](https://img.shields.io/badge/Version-2.2.0--weekly.190-informational?style=flat-square) ![AppVersion: 2.1.0](https://img.shields.io/badge/AppVersion-2.1.0-informational?style=flat-square)
+![Version: 2.2.0-weekly.192](https://img.shields.io/badge/Version-2.2.0--weekly.192-informational?style=flat-square) ![AppVersion: 2.1.0](https://img.shields.io/badge/AppVersion-2.1.0-informational?style=flat-square)
 
 Grafana Mimir
 
@@ -14,11 +14,8 @@ Kubernetes: `^1.10.0-0`
 
 | Repository | Name | Version |
 |------------|------|---------|
+| https://grafana.github.io/helm-charts | grafana-agent-operator(grafana-agent-operator) | 0.1.12 |
 | https://helm.min.io/ | minio(minio) | 8.0.10 |
-| https://raw.githubusercontent.com/bitnami/charts/eb5f9a9513d987b519f0ecd732e7031241c50328/bitnami | memcached(memcached) | 5.5.2 |
-| https://raw.githubusercontent.com/bitnami/charts/eb5f9a9513d987b519f0ecd732e7031241c50328/bitnami | memcached-queries(memcached) | 5.5.2 |
-| https://raw.githubusercontent.com/bitnami/charts/eb5f9a9513d987b519f0ecd732e7031241c50328/bitnami | memcached-metadata(memcached) | 5.5.2 |
-| https://raw.githubusercontent.com/bitnami/charts/eb5f9a9513d987b519f0ecd732e7031241c50328/bitnami | memcached-results(memcached) | 5.5.2 |
 
 ## Dependencies
 

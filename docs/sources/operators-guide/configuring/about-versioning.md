@@ -76,6 +76,7 @@ The following features are currently experimental:
   - Add variance to chunks end time to spread writing across time (`-blocks-storage.tsdb.head-chunks-end-time-variance`)
   - Using queue and asynchronous chunks disk mapper (`-blocks-storage.tsdb.head-chunks-write-queue-size`)
   - Snapshotting of in-memory TSDB data on disk when shutting down (`-blocks-storage.tsdb.memory-snapshot-on-shutdown`)
+  - Out-of-order samples ingestion (`-ingester.out-of-order-allowance`)
 - Query-frontend
   - `-query-frontend.querier-forget-delay`
 - Query-scheduler
@@ -96,6 +97,3 @@ The following features are currently deprecated:
 - Ingester:
   - `-blocks-storage.tsdb.isolation-enabled` CLI flag and `isolation_enabled` YAML config parameter. This will be removed in version 2.3.0.
   - `active_series_custom_trackers` YAML config parameter in the ingester block. The configuration has been moved to limit config, the ingester config will be removed in version 2.3.0.
-- Ruler:
-  - `/api/v1/rules/**` configuration endpoints. These will be removed in version 2.2.0. Use their `<prometheus-http-prefix>/config/v1/rules/**` equivalents instead.
-  - `<prometheus-http-prefix>/rules/**` configuration endpoints. These will be removed in version 2.2.0. Use their `<prometheus-http-prefix>/config/v1/rules/**` equivalents instead.
