@@ -55,15 +55,17 @@ Each project has its own metadata conventions.
 In the Grafana Mimir 2.1 (or earlier) release, the ingesters added an external label to the `meta.json` file to identify the tenant that owns the block.
 If you enable the sharding feature of Mimir's split-and-merge compactor, compactor adds a special label to identify the compactor-shard.
 
-In the Grafana Mimir 2.2 (or later) release, blocks no longer have a label that identifies the tenant. The compactor-shard label is still used, if sharding of blocks during compaction is enabled.
+In the Grafana Mimir 2.2 (or later) release, blocks no longer have a label that identifies the tenant.
+The compactor-shard label is still used, if sharding of blocks during compaction is enabled.
 
 > **Note**: Blocks from Prometheus do not have any external labels stored in them; only blocks from Thanos use labels.
 
 ## Considerations on Thanos specific features
 
-> **Note**: Thanos requires that Prometheus is configured with external labels.
-> When the Thanos sidecar uploads blocks, it includes the external labels from Prometheus in the `meta.json` file inside the block.
-> When you query the block, Thanos injects Prometheus’ external labels in the series returned in the query result. Thanos also uses labels for the deduplication of replicated data.
+Thanos requires that Prometheus is configured with external labels.
+When the Thanos sidecar uploads blocks, it includes the external labels from Prometheus in the `meta.json` file inside the block.
+When you query the block, Thanos injects Prometheus’ external labels in the series returned in the query result.
+Thanos also uses labels for the deduplication of replicated data.
 
 If you want to use existing blocks from Thanos by Grafana Mimir, there are some considerations:
 
@@ -72,10 +74,10 @@ This means that blocks that were originally created by Thanos will not include t
 If you need to have external labels in your query results, this is currently not possible to achieve in Grafana Mimir.
 
 **Grafana Mimir will not respect deduplication labels configured in Thanos when querying the blocks.**
-For the best results please only upload Thanos blocks from single Prometheus replica from each HA pair.
+For the best query performance please only upload Thanos blocks from single Prometheus replica from each HA pair.
 If you upload blocks from both replicas, the query results returned by Mimir will include samples from both replicas.
 
 **Grafana Mimir does not support Thanos’ _downsampling_ feature.**
-For best results please only upload original (raw) Thanos blocks into Mimir's storage.
+To guarantee query results correctness please only upload original (raw) Thanos blocks into Mimir's storage.
 If you also upload blocks with downsampled data (ie. blocks with non-zero `Resolution` field in `meta.json` file), Grafana Mimir will merge raw samples and downsampled samples together at the query time.
 This may cause that incorrect results are returned for the query.
