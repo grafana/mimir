@@ -34,13 +34,17 @@ func (c *MimirClient) Backfill(ctx context.Context, source string, logger log.Lo
 		pth := filepath.Join(source, e.Name())
 		if err := c.backfillBlock(ctx, pth, logger); err != nil {
 			if errors.Is(err, errConflict) {
+				level.Warn(logger).Log("msg", "failed uploading block since it already exists on server",
+					"path", pth)
 				alreadyExists = append(alreadyExists, pth)
 			} else {
+				level.Warn(logger).Log("msg", "failed uploading block", "path", pth, "err", err)
 				failed = append(failed, pth)
 			}
 			continue
 		}
 
+		level.Info(logger).Log("msg", "successfully uploaded block", "path", pth)
 		succeeded = append(succeeded, pth)
 	}
 
