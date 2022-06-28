@@ -161,50 +161,50 @@ Make a choice based on whether or not you already have a Prometheus server set u
 
 Make a choice based on whether or not you already have a Grafana Agent set up:
 
-* For an existing Grafana Agent:
+- For an existing Grafana Agent:
 
   1. Add the following YAML snippet to your Grafana Agent metrics configurations (`metrics.configs`):
 
-      ```yaml
-      remote_write:
-        - url: http://<ingress-host>/api/v1/push
-      ```
+     ```yaml
+     remote_write:
+       - url: http://<ingress-host>/api/v1/push
+     ```
 
-      In this case, your Grafana Agent will write metrics to Grafana Mimir, based on what is defined in the existing `metrics.configs.scrape_configs` configuration.
+     In this case, your Grafana Agent will write metrics to Grafana Mimir, based on what is defined in the existing `metrics.configs.scrape_configs` configuration.
 
   1. Restart the Grafana Agent.
 
-* For a Grafana Agent that does not exist yet:
+- For a Grafana Agent that does not exist yet:
 
   1. Write the following configuration to an `agent.yaml` file:
 
-      ```yaml
-      server:
-        http_listen_port: 12345
-        grpc_listen_port: 54321
+     ```yaml
+     server:
+       http_listen_port: 12345
+       grpc_listen_port: 54321
 
-      metrics:
-        wal_directory: /tmp/grafana-agent/wal
+     metrics:
+       wal_directory: /tmp/grafana-agent/wal
 
-        configs:
-          - name: agent
-            scrape_configs:
-              - job_name: agent
-                static_configs:
-                  - targets: ["127.0.0.1:12345"]
-            remote_write:
-              - url: http://<ingress-host>/api/v1/push
-      ```
+       configs:
+         - name: agent
+           scrape_configs:
+             - job_name: agent
+               static_configs:
+                 - targets: ["127.0.0.1:12345"]
+           remote_write:
+             - url: http://<ingress-host>/api/v1/push
+     ```
 
-      In this case, your Grafana Agent writes metrics to Grafana Mimir that it scrapes from itself.
+     In this case, your Grafana Agent writes metrics to Grafana Mimir that it scrapes from itself.
 
   1. Create an empty directory for the write ahead log (WAL) of the Grafana Agent
 
   1. Start a Grafana Agent by using Docker:
 
-      ```bash
-      docker run --network=host  -v <path-to-wal-directory>:/etc/agent/data -v <path-to>/agent.yaml:/etc/agent/agent.yaml grafana/agent
-      ```
+     ```bash
+     docker run --network=host  -v <path-to-wal-directory>:/etc/agent/data -v <path-to>/agent.yaml:/etc/agent/agent.yaml grafana/agent
+     ```
 
 ## Query data in Grafana
 
@@ -212,57 +212,57 @@ First install Grafana, and then add Mimir as a Prometheus data source.
 
 1. Start Grafana by using Docker:
 
-    ```bash
-    docker run --rm --name=grafana --network=host grafana/grafana
-    ```
+   ```bash
+   docker run --rm --name=grafana --network=host grafana/grafana
+   ```
 
 1. In a browser, go to the Grafana server at [http://localhost:3000](http://localhost:3000).
 1. Sign in using the default username `admin` and password `admin`.
 1. On the left-hand side, go to **Configuration** > **Data sources**.
 1. Configure a new Prometheus data source to query the local Grafana Mimir server, by using the following settings:
 
-      | Field | Value                              |
-      | ----- | ---------------------------------- |
-      | Name  | Mimir                              |
-      | URL   | http://\<ingress-host\>/prometheus |
+   | Field | Value                              |
+   | ----- | ---------------------------------- |
+   | Name  | Mimir                              |
+   | URL   | http://\<ingress-host\>/prometheus |
 
-    To add a data source, see [Add a data source](https://grafana.com/docs/grafana/latest/datasources/add-a-data-source/).
+   To add a data source, see [Add a data source](https://grafana.com/docs/grafana/latest/datasources/add-a-data-source/).
 
- 1. Verify success:
+1. Verify success:
 
-    You should be able to query metrics in [Grafana Explore](https://grafana.com/docs/grafana/latest/explore/),
-    as well as create dashboard panels by using your newly configured `Mimir` data source.
+   You should be able to query metrics in [Grafana Explore](https://grafana.com/docs/grafana/latest/explore/),
+   as well as create dashboard panels by using your newly configured `Mimir` data source.
 
 ## Set up metamonitoring
 
 Grafana Mimir metamonitoring collects metrics or logs, or both,
 about Grafana Mimir itself.
-In the example that follows, metamonitoring scrapes metrics about 
+In the example that follows, metamonitoring scrapes metrics about
 Grafana Mimir itself, and then writes those metrics to the same Grafana Mimir instance.
 
 1. To enable metamonitoring in Grafana Mimir, add the following YAML snippet to your Grafana Mimir `custom.yaml` file:
 
-    ```yaml
-    metaMonitoring:
-      serviceMonitor:
-        enabled: true
-      grafanaAgent:
-        enabled: true
-        installOperator: true
-        metrics:
-          additionalRemoteWriteConfigs:
-            - url: "http://<release-name>-mimir-nginx.<namespace>.svc:80/api/v1/push"
-    ```
+   ```yaml
+   metaMonitoring:
+     serviceMonitor:
+       enabled: true
+     grafanaAgent:
+       enabled: true
+       installOperator: true
+       metrics:
+         additionalRemoteWriteConfigs:
+           - url: "http://<release-name>-mimir-nginx.<namespace>.svc:80/api/v1/push"
+   ```
 
-    Replace _`<release-name>`_ with the release name that you used when you installed the Grafana Mimir Helm chart.
+   Replace _`<release-name>`_ with the release name that you used when you installed the Grafana Mimir Helm chart.
 
-    Replace  _`<namespace>`_ with the namespace in which Grafana Mimir is installed.
+   Replace _`<namespace>`_ with the namespace in which Grafana Mimir is installed.
 
 1. Upgrade Grafana Mimir by using the `helm` command:
 
-    ```bash
-    helm -n <namespace> upgrade <release-name> grafana/mimir-distributed -f custom.yaml
-    ```
+   ```bash
+   helm -n <namespace> upgrade <release-name> grafana/mimir-distributed -f custom.yaml
+   ```
 
 1. In Grafana, verify that your metrics are being scraped, by quering the metric `cortex_ingester_ingested_samples_total{}`.
 
@@ -276,23 +276,23 @@ Grafana Mimir itself, and then writes those metrics to the same Grafana Mimir in
 
 1. Port-forward Grafana to `localhost`, by using the `kubectl` command:
 
-    ```bash
-    kubectl port-forward service/grafana 3000:3000
-    ```
+   ```bash
+   kubectl port-forward service/grafana 3000:3000
+   ```
 
 1. In a browser, go to the Grafana server at [http://localhost:3000](http://localhost:3000).
 1. Sign in using the default username `admin` and password `admin`.
 1. On the left-hand side, go to **Configuration** > **Data sources**.
 1. Configure a new Prometheus data source to query the local Grafana Mimir server, by using the following settings:
 
-      | Field | Value                              |
-      | ----- | ---------------------------------- |
-      | Name  | Mimir                              |
-      | URL   | http://\<release-name\>-mimir-nginx.\<namespace\>.svc:80/prometheus |
+   | Field | Value                                                               |
+   | ----- | ------------------------------------------------------------------- |
+   | Name  | Mimir                                                               |
+   | URL   | http://\<release-name\>-mimir-nginx.\<namespace\>.svc:80/prometheus |
 
-    To add a data source, see [Add a data source](https://grafana.com/docs/grafana/latest/datasources/add-a-data-source/).
+   To add a data source, see [Add a data source](https://grafana.com/docs/grafana/latest/datasources/add-a-data-source/).
 
- 1. Verify success:
+1. Verify success:
 
-    You should be able to query metrics in [Grafana Explore](https://grafana.com/docs/grafana/latest/explore/),
-    as well as create dashboard panels by using your newly configured `Mimir` data source.
+   You should be able to query metrics in [Grafana Explore](https://grafana.com/docs/grafana/latest/explore/),
+   as well as create dashboard panels by using your newly configured `Mimir` data source.
