@@ -14,7 +14,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"strings"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -49,11 +48,11 @@ func (c *MimirClient) backfillBlock(ctx context.Context, dpath string, logger lo
 		return err
 	}
 
-	blockID := filepath.Base(dpath)
+	blockID := blockMeta.ULID.String()
 
 	level.Info(logger).Log("msg", "Making request to start block backfill", "user", c.id, "block_id", blockID)
 
-	blockPrefix := path.Join("/api/v1/upload/block", url.PathEscape(blockMeta.ULID.String()))
+	blockPrefix := path.Join("/api/v1/upload/block", url.PathEscape(blockID))
 
 	buf := bytes.NewBuffer(nil)
 	if err := json.NewEncoder(buf).Encode(blockMeta); err != nil {
@@ -93,8 +92,12 @@ func (c *MimirClient) backfillBlock(ctx context.Context, dpath string, logger lo
 			return errors.Wrap(err, "failed to get file info")
 		}
 
-		relPath := strings.TrimPrefix(pth, dpath+string(filepath.Separator))
-		escapedPath := url.PathEscape(relPath)
+		relPath, err := filepath.Rel(dpath, pth)
+		if err != nil {
+			return errors.Wrap(err, "failed to get relative path")
+		}
+		relPath = filepath.ToSlash(relPath)
+		escapedPath := url.QueryEscape(relPath)
 		level.Info(logger).Log("msg", "uploading block file", "path", pth, "user",
 			c.id, "block_id", blockID, "size", st.Size())
 		resp, err := c.doRequest(path.Join(blockPrefix, fmt.Sprintf("files?path=%s", escapedPath)), http.MethodPost, f, st.Size())
