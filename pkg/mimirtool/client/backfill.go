@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/fs"
 	"net/http"
 	"net/url"
@@ -36,6 +37,12 @@ func (c *MimirClient) Backfill(ctx context.Context, source string, logger log.Lo
 	return nil
 }
 
+func closeResp(resp *http.Response) {
+	// Drain and close the body to let the transport reuse the connection
+	io.Copy(io.Discard, resp.Body)
+	resp.Body.Close()
+}
+
 func (c *MimirClient) backfillBlock(ctx context.Context, dpath string, logger log.Logger) error {
 	blockMeta, err := getBlockMeta(dpath)
 	if err != nil {
@@ -52,13 +59,13 @@ func (c *MimirClient) backfillBlock(ctx context.Context, dpath string, logger lo
 	if err := json.NewEncoder(buf).Encode(blockMeta); err != nil {
 		return errors.Wrap(err, "failed to JSON encode payload")
 	}
-	res, err := c.doRequest(blockPrefix, http.MethodPost, buf, int64(buf.Len()))
+	resp, err := c.doRequest(blockPrefix, http.MethodPost, buf, int64(buf.Len()))
 	if err != nil {
 		return errors.Wrap(err, "request to start backfill failed")
 	}
-	defer res.Body.Close()
-	if res.StatusCode/100 != 2 {
-		return fmt.Errorf("request to start backfill failed, status code %d", res.StatusCode)
+	defer closeResp(resp)
+	if resp.StatusCode/100 != 2 {
+		return fmt.Errorf("request to start backfill failed, status code %d", resp.StatusCode)
 	}
 
 	// Upload each block file
@@ -90,13 +97,13 @@ func (c *MimirClient) backfillBlock(ctx context.Context, dpath string, logger lo
 		escapedPath := url.PathEscape(relPath)
 		level.Info(logger).Log("msg", "uploading block file", "path", pth, "user",
 			c.id, "block_id", blockID, "size", st.Size())
-		res, err := c.doRequest(path.Join(blockPrefix, fmt.Sprintf("files?path=%s", escapedPath)), http.MethodPost, f, st.Size())
+		resp, err := c.doRequest(path.Join(blockPrefix, fmt.Sprintf("files?path=%s", escapedPath)), http.MethodPost, f, st.Size())
 		if err != nil {
 			return errors.Wrapf(err, "request to upload backfill of file %q failed", pth)
 		}
-		defer res.Body.Close()
-		if res.StatusCode/100 != 2 {
-			return fmt.Errorf("request to upload backfill file failed, status code %d", res.StatusCode)
+		defer closeResp(resp)
+		if resp.StatusCode/100 != 2 {
+			return fmt.Errorf("request to upload backfill file failed, status code %d", resp.StatusCode)
 		}
 
 		return nil
@@ -104,14 +111,14 @@ func (c *MimirClient) backfillBlock(ctx context.Context, dpath string, logger lo
 		return errors.Wrapf(err, "failed to traverse %q", dpath)
 	}
 
-	res, err = c.doRequest(fmt.Sprintf("%s?uploadComplete=true", blockPrefix), http.MethodPost,
+	resp, err = c.doRequest(fmt.Sprintf("%s?uploadComplete=true", blockPrefix), http.MethodPost,
 		nil, -1)
 	if err != nil {
 		return errors.Wrap(err, "request to finish backfill failed")
 	}
-	defer res.Body.Close()
-	if res.StatusCode/100 != 2 {
-		return fmt.Errorf("request to finish backfill failed, status code %d", res.StatusCode)
+	defer closeResp(resp)
+	if resp.StatusCode/100 != 2 {
+		return fmt.Errorf("request to finish backfill failed, status code %d", resp.StatusCode)
 	}
 
 	level.Info(logger).Log("msg", "Block backfill successful", "user", c.id, "block_id", blockID)
