@@ -29,6 +29,7 @@ const (
 var (
 	ErrNoConfig         = errors.New("No config exists for this user")
 	ErrResourceNotFound = errors.New("requested resource not found")
+	errConflict         = errors.New("conflict with current state of target resource")
 )
 
 // Config is used to configure a MimirClient.
@@ -191,6 +192,13 @@ func checkResponse(r *http.Response) error {
 			"msg":    msg,
 		}).Debugln(errMsg)
 		return ErrResourceNotFound
+	}
+	if r.StatusCode == http.StatusConflict {
+		log.WithFields(log.Fields{
+			"status": r.Status,
+			"msg":    msg,
+		}).Debugln(errMsg)
+		return errConflict
 	}
 
 	log.WithFields(log.Fields{
