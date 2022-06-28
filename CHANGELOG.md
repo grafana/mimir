@@ -8,7 +8,7 @@
 * [CHANGE] Default values have changed for the following settings. This improves query performance for recent data (within 12h) by only reading from ingesters: #1909 #1921
     - `-blocks-storage.bucket-store.ignore-blocks-within` now defaults to `10h` (previously `0`)
     - `-querier.query-store-after` now defaults to `12h` (previously `0`)
-
+* [CHANGE] Alertmanager: removed support for migrating local files from Cortex 1.8 or earlier. Related to original Cortex PR https://github.com/cortexproject/cortex/pull/3910. #2253
 * [CHANGE] The following settings are now classified as advanced because the defaults should work for most users and tuning them requires in-depth knowledge of how the read path works: #1929
     - `-querier.query-ingesters-within`
     - `-querier.query-store-after`
