@@ -50,8 +50,10 @@ global:
   podAnnotations: {}
 
 serviceAccount:
+  # -- Whether to create a service account or not. In case 'create' is false, do set 'name' to an existing service account name.
   create: true
-  name: &serviceAccountName "mimir-service-account"
+  # -- Override for the generated service account name.
+  name:
   annotations: {}
 
 # -- Configuration is loaded from the secret called 'externalConfigSecretName'. If 'useExternalConfig' is true, then the configuration is not generated, just consumed.
@@ -1313,9 +1315,6 @@ minio:
       cpu: 100m
       memory: 128Mi
   secretKey: supersecret
-  serviceAccount:
-    create: false
-    name: *serviceAccountName
   # Changed the mc config path to '/tmp' from '/etc' as '/etc' is only writable by root and OpenShift will not permit this.
   configPathmc: "/tmp/minio/mc/"
 

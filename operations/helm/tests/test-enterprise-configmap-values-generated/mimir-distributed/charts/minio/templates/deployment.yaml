@@ -29,7 +29,7 @@ spec:
         checksum/secrets: dc5f87186fbd122d4616e916d60a0c95a6939d0e3e70914edfc0362ee64a5c2c
         checksum/config: a93cb8a58b08a5d5b8889b99ed92fa3ac7dde37d1ca5413212ba7fbd5ec02b13
     spec:
-      serviceAccountName: "mimir-service-account"
+      serviceAccountName: "test-enterprise-configmap-values-minio"
       securityContext:
         runAsUser: 1000
         runAsGroup: 1000

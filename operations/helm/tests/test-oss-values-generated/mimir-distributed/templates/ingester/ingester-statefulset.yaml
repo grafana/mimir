@@ -38,7 +38,7 @@ spec:
         minio-secret-version: "42"
       namespace: "citestns"
     spec:
-      serviceAccountName: mimir-service-account
+      serviceAccountName: test-oss-values-mimir
       securityContext:
         {}
       initContainers:
