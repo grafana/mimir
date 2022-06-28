@@ -1,10 +1,10 @@
 # Changelog
 
-## Grafana Mimir - main / unreleased
+## 2.2.0-rc.0
 
 ### Grafana Mimir
 
-* [CHANGE] Increased default configuration for `-server.grpc-max-recv-msg-size-bytes` and `-server.grpc-max-send-msg-size-bytes` from 4MB to 100MB. #1883
+* [CHANGE] Increased default configuration for `-server.grpc-max-recv-msg-size-bytes` and `-server.grpc-max-send-msg-size-bytes` from 4MB to 100MB. #1884
 * [CHANGE] Default values have changed for the following settings. This improves query performance for recent data (within 12h) by only reading from ingesters: #1909 #1921
     - `-blocks-storage.bucket-store.ignore-blocks-within` now defaults to `10h` (previously `0`)
     - `-querier.query-store-after` now defaults to `12h` (previously `0`)
@@ -30,17 +30,21 @@
   * The following metric is exposed to tell how many requests have been rejected:
     * `cortex_discarded_requests_total`
 * [ENHANCEMENT] Store-gateway: Add the experimental ability to run requests in a dedicated OS thread pool. This feature can be configured using `-store-gateway.thread-pool-size` and is disabled by default. Replaces the ability to run index header operations in a dedicated thread pool. #1660 #1812
-* [ENHANCEMENT] Improved error messages to make them easier to understand; each now have a unique, global identifier that you can use to look up in the runbooks for more information. #1907 #1919 #1888 #1939 #1984 #2009 #2066 #2104 #2150
+* [ENHANCEMENT] Improved error messages to make them easier to understand; each now have a unique, global identifier that you can use to look up in the runbooks for more information. #1907 #1919 #1888 #1939 #1984 #2009 #2056 #2066 #2104 #2150 #2234
 * [ENHANCEMENT] Memberlist KV: incoming messages are now processed on per-key goroutine. This may reduce loss of "maintanance" packets in busy memberlist installations, but use more CPU. New `memberlist_client_received_broadcasts_dropped_total` counter tracks number of dropped per-key messages. #1912
 * [ENHANCEMENT] Blocks Storage, Alertmanager, Ruler: add support a prefix to the bucket store (`*_storage.storage_prefix`). This enables using the same bucket for the three components. #1686 #1951
 * [ENHANCEMENT] Upgrade Docker base images to `alpine:3.16.0`. #2028
 * [ENHANCEMENT] Store-gateway: Add experimental configuration option for the store-gateway to attempt to pre-populate the file system cache when memory-mapping index-header files. Enabled with `-blocks-storage.bucket-store.index-header.map-populate-enabled=true`. Note this flag only has an effect when running on Linux. #2019 #2054
 * [ENHANCEMENT] Chunk Mapper: reduce memory usage of async chunk mapper. #2043
 * [ENHANCEMENT] Ingester: reduce sleep time when reading WAL. #2098
-* [ENHANCEMENT] Compactor: Run sanity check on blocks storage configuration at startup. #2143
+* [ENHANCEMENT] Compactor: Run sanity check on blocks storage configuration at startup. #2144
 * [ENHANCEMENT] Compactor: Add HTTP API for uploading TSDB blocks. Enabled with `-compactor.block-upload-enabled`. #1694 #2126
 * [ENHANCEMENT] Ingester: Enable querying overlapping blocks by default. #2187
 * [ENHANCEMENT] Distributor: Auto-forget unhealthy distributors after ten failed ring heartbeats. #2154
+* [ENHANCEMENT] Distributor: Add new metric `cortex_distributor_forward_errors_total` for error codes resulting from forwarding requests. #2077
+* [ENHANCEMENT] `/ready` endpoint now returns and logs detailed services information. #2055
+* [ENHANCEMENT] Memcached client: Reduce number of connections required to fetch cached keys from memcached. #1920
+* [ENHANCEMENT] Improved error message returned when `-querier.query-store-after` validation fails. #1914
 * [BUGFIX] Fix regexp parsing panic for regexp label matchers with start/end quantifiers. #1883
 * [BUGFIX] Ingester: fixed deceiving error log "failed to update cached shipped blocks after shipper initialisation", occurring for each new tenant in the ingester. #1893
 * [BUGFIX] Ring: fix bug where instances may appear unhealthy in the hash ring web UI even though they are not. #1933
@@ -53,12 +57,15 @@
 * [BUGFIX] Ingester: fixed the order of labels applied when incrementing the `cortex_discarded_metadata_total` metric. #2096
 * [BUGFIX] Ingester: fixed bug where retrieving metadata for a metric with multiple metadata entries would return multiple copies of a single metadata entry rather than all available entries. #2096
 * [BUGFIX] Distributor: canceled requests are no longer accounted as internal errors. #2157
+* [BUGFIX] Memberlist: Fix typo in memberlist admin UI. #2202
+* [BUGFIX] Ruler: fixed typo in error message when ruler failed to decode a rule group. #2151
+* [BUGFIX] Active series custom tracker configuration is now displayed properly on `/runtime_config` page. #2065
 
 ### Mixin
 
 * [CHANGE] Split `mimir_queries` rules group into `mimir_queries` and `mimir_ingester_queries` to keep number of rules per group within the default per-tenant limit. #1885
 * [CHANGE] Dashboards: Expose full image tag in "Mimir / Rollout progress" dashboard's "Pod per version panel." #1932
-* [CHANGE] Dashboards: Disabled gateway panels by default, because most users don't have a gateway exposing the metrics expected by Mimir dashboards. You can re-enable it setting `gateway_enabled: true` in the mixin config and recompiling the mixin running `make build-mixin`. #1954
+* [CHANGE] Dashboards: Disabled gateway panels by default, because most users don't have a gateway exposing the metrics expected by Mimir dashboards. You can re-enable it setting `gateway_enabled: true` in the mixin config and recompiling the mixin running `make build-mixin`. #1955
 * [CHANGE] Alerts: adapt `MimirFrontendQueriesStuck` and `MimirSchedulerQueriesStuck` to consider ruler query path components. #1949
 * [CHANGE] Alerts: Change `MimirRulerTooManyFailedQueries` severity to `critical`. #2165
 * [ENHANCEMENT] Dashboards: Add config option `datasource_regex` to customise the regular expression used to select valid datasources for Mimir dashboards. #1802
@@ -66,21 +73,23 @@
 * [ENHANCEMENT] Dashboards: Make networking panels work for pods created by the mimir-distributed helm chart. #1927
 * [ENHANCEMENT] Alerts: Add `MimirStoreGatewayNoSyncedTenants` alert that fires when there is a store-gateway owning no tenants. #1882
 * [ENHANCEMENT] Rules: Make `recording_rules_range_interval` configurable for cases where Mimir metrics are scraped less often that every 30 seconds. #2118
-* [BUGFIX] Fix `container_memory_usage_bytes:sum` recording rule #1865
-* [BUGFIX] Fix `MimirGossipMembersMismatch` alerts if Mimir alertmanager is activated #1870
+* [ENHANCEMENT] Added minimum Grafana version to mixin dashboards. #1943
+* [BUGFIX] Fix `container_memory_usage_bytes:sum` recording rule. #1865
+* [BUGFIX] Fix `MimirGossipMembersMismatch` alerts if Mimir alertmanager is activated. #1870
 * [BUGFIX] Fix `MimirRulerMissedEvaluations` to show % of missed alerts as a value between 0 and 100 instead of 0 and 1. #1895
-* [BUGFIX] Fix `MimirCompactorHasNotUploadedBlocks` alert false positive when Mimir is deployed in monolithic mode. #1901
+* [BUGFIX] Fix `MimirCompactorHasNotUploadedBlocks` alert false positive when Mimir is deployed in monolithic mode. #1902
 * [BUGFIX] Fix `MimirGossipMembersMismatch` to make it less sensitive during rollouts and fire one alert per installation, not per job. #1926
 * [BUGFIX] Do not trigger `MimirAllocatingTooMuchMemory` alerts if no container limits are supplied. #1905
 * [BUGFIX] Dashboards: Remove empty "Chunks per query" panel from `Mimir / Queries` dashboard. #1928
 * [BUGFIX] Dashboards: Use Grafana's `$__rate_interval` for rate queries in dashboards to support scrape intervals of >15s. #2011
 * [BUGFIX] Alerts: Make each version of `MimirCompactorHasNotUploadedBlocks` distinct to avoid rule evaluation failures due to duplicate series being generated. #2197
+* [BUGFIX] Fix `MimirGossipMembersMismatch` alert when using remote ruler evaluation. #2159
 
 ### Jsonnet
 
 * [CHANGE] Remove use of `-querier.query-store-after`, `-querier.shuffle-sharding-ingesters-lookback-period`, `-blocks-storage.bucket-store.ignore-blocks-within`, and `-blocks-storage.tsdb.close-idle-tsdb-timeout` CLI flags since the values now match defaults. #1915 #1921
 * [CHANGE] Change default value for `-blocks-storage.bucket-store.chunks-cache.memcached.timeout` to `450ms` to increase use of cached data. #2035
-* [CHANGE] The `memberlist_ring_enabled` configuration now applies to Alertmanager. #2102
+* [CHANGE] The `memberlist_ring_enabled` configuration now applies to Alertmanager. #2102 #2103 #2107
 * [CHANGE] Default value for `memberlist_ring_enabled` is now true. It means that all hash rings use Memberlist as default KV store instead of Consul (previous default). #2161
 * [CHANGE] Configure `-ingester.max-global-metadata-per-user` to correspond to 20% of the configured max number of series per tenant. #2250
 * [CHANGE] Configure `-ingester.max-global-metadata-per-metric` to be 10. #2250
@@ -117,9 +126,15 @@
 * [ENHANCEMENT] Runbooks: Mention memberlist as possible source of problems for various alerts. #2158
 * [ENHANCEMENT] Added step-by-step article about migrating from Consul to Memberlist KV store using jsonnet without downtime. #2166
 * [ENHANCEMENT] Documented `/memberlist` admin page. #2166
+* [ENHANCEMENT] Documented how to configure Grafana Mimir's ruler with Jsonnet. #2127
 * [ENHANCEMENT] Documented how to configure queriers’ autoscaling with Jsonnet. #2128
+* [ENHANCEMENT] Updated mixin building instructions in "Installing Grafana Mimir dashboards and alerts" article. #2015 #2163
+* [ENHANCEMENT] Fix location of "Monitoring Grafana Mimir" article in the documentation hierarchy. #2130
+* [ENHANCEMENT] Runbook for `MimirRequestLatency` was expanded with more practical advice. #1967
 * [BUGFIX] Fixed ruler configuration used in the getting started guide. #2052
 * [BUGFIX] Fixed Mimir Alertmanager datasource in Grafana used by "Play with Grafana Mimir" tutorial. #2115
+* [BUGFIX] Fixed typos in "Scaling out Grafana Mimir" article. #2170
+* [BUGFIX] Added missing ring endpoint exposed by Ingesters. #1918
 
 ## 2.1.0
 ### Grafana Mimir
