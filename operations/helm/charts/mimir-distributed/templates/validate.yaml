@@ -31,7 +31,7 @@
   && (remote.url != "" || (len(additionalConfigs) > 0 && additionalConfigs.url != ""))
 */}}
 {{- if and
-    (not (($.Values).serviceMonitor).enabled)
+    (not ((($.Values).metaMonitoring).serviceMonitor).enabled)
     .enabled
     (or
       (not (empty ((.metrics).remote).url))
@@ -41,6 +41,6 @@
       )
     )
     }}
-{{- fail "metaMonitoring.grafanaAgent.remote.url is set, but serivceMonitor is disabled; you will not see any metrics, so enable the serviceMOnitor or remove the remote configuration" }}
+{{- fail "metaMonitoring.grafanaAgent.remote.url is set, but metaMonitoring.serviceMonitor is disabled; you will not see any metrics, so enable the metaMonitoring.serviceMonitor or remove the remote configuration" }}
 {{- end }}
 {{- end }}
