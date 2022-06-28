@@ -1170,7 +1170,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   annotations:
-    rollout-max-unavailable: "10"
+    rollout-max-unavailable: "25"
   labels:
     rollout-group: ingester
   name: ingester-zone-a
@@ -1288,7 +1288,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   annotations:
-    rollout-max-unavailable: "10"
+    rollout-max-unavailable: "25"
   labels:
     rollout-group: ingester
   name: ingester-zone-b
@@ -1406,7 +1406,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   annotations:
-    rollout-max-unavailable: "10"
+    rollout-max-unavailable: "25"
   labels:
     rollout-group: ingester
   name: ingester-zone-c
