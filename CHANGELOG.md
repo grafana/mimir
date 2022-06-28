@@ -82,6 +82,7 @@
 * [CHANGE] Change default value for `-blocks-storage.bucket-store.chunks-cache.memcached.timeout` to `450ms` to increase use of cached data. #2035
 * [CHANGE] The `memberlist_ring_enabled` configuration now applies to Alertmanager. #2102
 * [CHANGE] Default value for `memberlist_ring_enabled` is now true. It means that all hash rings use Memberlist as default KV store instead of Consul (previous default). #2161
+* [CHANGE] Change `_config.multi_zone_ingester_max_unavailable` to 25. #2251
 * [FEATURE] Added querier autoscaling support. It requires [KEDA](https://keda.sh) installed in the Kubernetes cluster and query-scheduler enabled in the Mimir cluster. Querier autoscaler can be enabled and configure through the following options in the jsonnet config: #2013 #2023
   * `autoscaling_querier_enabled`: `true` to enable autoscaling.
   * `autoscaling_querier_min_replicas`: minimum number of querier replicas.
