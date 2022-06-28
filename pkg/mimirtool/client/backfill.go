@@ -40,7 +40,6 @@ func (c *MimirClient) Backfill(ctx context.Context, source string, logger log.Lo
 		succeeded = append(succeeded, pth)
 	}
 
-	// TODO: Print report to user
 	level.Info(logger).Log("msg", "finished uploading block(s)", "succeeded", len(succeeded), "failed", len(failed))
 
 	if len(failed) > 0 {
