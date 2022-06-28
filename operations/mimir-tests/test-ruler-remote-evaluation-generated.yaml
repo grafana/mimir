@@ -1292,6 +1292,8 @@ spec:
         - -blocks-storage.tsdb.dir=/data/tsdb
         - -blocks-storage.tsdb.ship-interval=1m
         - -distributor.health-check-ingesters=true
+        - -ingester.max-global-metadata-per-metric=10
+        - -ingester.max-global-metadata-per-user=30000
         - -ingester.max-global-series-per-metric=20000
         - -ingester.max-global-series-per-user=150000
         - -ingester.ring.heartbeat-period=15s
