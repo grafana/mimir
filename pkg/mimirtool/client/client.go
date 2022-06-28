@@ -104,9 +104,7 @@ func New(cfg Config) (*MimirClient, error) {
 
 // Query executes a PromQL query against the Mimir cluster.
 func (r *MimirClient) Query(ctx context.Context, query string) (*http.Response, error) {
-	query = fmt.Sprintf("query=%s&time=%d", query, time.Now().Unix())
-	escapedQuery := url.PathEscape(query)
-
+	escapedQuery := fmt.Sprintf("query=%s&time=%d", url.QueryEscape(query), time.Now().Unix())
 	res, err := r.doRequest("/prometheus/api/v1/query?"+escapedQuery, "GET", nil, -1)
 	if err != nil {
 		return nil, err

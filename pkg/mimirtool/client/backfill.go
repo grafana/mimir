@@ -106,7 +106,7 @@ func (c *MimirClient) backfillBlock(ctx context.Context, dpath string, logger lo
 		}
 		defer closeResp(resp)
 		if resp.StatusCode/100 != 2 {
-			return fmt.Errorf("request to upload backfill file failed, status code %d", resp.StatusCode)
+			return fmt.Errorf("request to upload backfill file failed, with HTTP status %d %s", resp.StatusCode, resp.Status)
 		}
 
 		return nil
@@ -121,7 +121,7 @@ func (c *MimirClient) backfillBlock(ctx context.Context, dpath string, logger lo
 	}
 	defer closeResp(resp)
 	if resp.StatusCode/100 != 2 {
-		return fmt.Errorf("request to finish backfill failed, status code %d", resp.StatusCode)
+		return fmt.Errorf("request to finish backfill failed, with HTTP status %d %s", resp.StatusCode, resp.Status)
 	}
 
 	level.Info(logger).Log("msg", "Block backfill successful", "user", c.id, "block", blockID)
