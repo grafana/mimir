@@ -27,10 +27,24 @@ func (c *MimirClient) Backfill(ctx context.Context, source string, logger log.Lo
 	if err != nil {
 		return errors.Wrapf(err, "failed to read directory %q", source)
 	}
+	// TODO: Record also blocks that already exist on the server
+	var failed []string
+	var succeeded []string
 	for _, e := range es {
-		if err := c.backfillBlock(ctx, filepath.Join(source, e.Name()), logger); err != nil {
-			return err
+		pth := filepath.Join(source, e.Name())
+		if err := c.backfillBlock(ctx, pth, logger); err != nil {
+			failed = append(failed, pth)
+			continue
 		}
+
+		succeeded = append(succeeded, pth)
+	}
+
+	// TODO: Print report to user
+	level.Info(logger).Log("msg", "finished uploading block(s)", "succeeded", len(succeeded), "failed", len(failed))
+
+	if len(failed) > 0 {
+		return fmt.Errorf("failed to upload %d block(s)", len(failed))
 	}
 
 	return nil
