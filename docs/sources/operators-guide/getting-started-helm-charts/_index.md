@@ -7,7 +7,7 @@ weight: 20
 
 # Getting started with Grafana Mimir using the Helm chart
 
-<!-- What is this about? TODO -->
+The Helm chart allows you to configure, install, and upgrade Grafana Mimir within a Kubernetes cluster.
 
 ## Before you begin
 
