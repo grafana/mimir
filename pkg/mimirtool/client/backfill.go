@@ -64,7 +64,7 @@ func (c *MimirClient) backfillBlock(ctx context.Context, dpath string, logger lo
 	}
 	defer closeResp(resp)
 	if resp.StatusCode/100 != 2 {
-		return fmt.Errorf("request to start backfill failed, status code %d", resp.StatusCode)
+		return fmt.Errorf("request to start backfill failed, with HTTP status %d %s", resp.StatusCode, resp.Status)
 	}
 
 	// Upload each block file
