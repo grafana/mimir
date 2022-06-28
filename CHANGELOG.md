@@ -75,7 +75,7 @@
 * [ENHANCEMENT] Rules: Make `recording_rules_range_interval` configurable for cases where Mimir metrics are scraped less often that every 30 seconds. #2118
 * [ENHANCEMENT] Added minimum Grafana version to mixin dashboards. #1943
 * [BUGFIX] Fix `container_memory_usage_bytes:sum` recording rule. #1865
-* [BUGFIX] Fix `MimirGossipMembersMismatch` alerts if Mimir alertmanager is activated #1870
+* [BUGFIX] Fix `MimirGossipMembersMismatch` alerts if Mimir alertmanager is activated. #1870
 * [BUGFIX] Fix `MimirRulerMissedEvaluations` to show % of missed alerts as a value between 0 and 100 instead of 0 and 1. #1895
 * [BUGFIX] Fix `MimirCompactorHasNotUploadedBlocks` alert false positive when Mimir is deployed in monolithic mode. #1902
 * [BUGFIX] Fix `MimirGossipMembersMismatch` to make it less sensitive during rollouts and fire one alert per installation, not per job. #1926
