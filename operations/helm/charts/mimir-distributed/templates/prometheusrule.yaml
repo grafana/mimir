@@ -13,6 +13,7 @@ metadata:
   {{- with .labels }}
   {{- toYaml . | nindent 4 }}
   {{- end }}
+  namespace: {{ .namespace | default $.Release.Namespace | quote }}
 spec:
   groups:
     {{- toYaml .groups | nindent 4 }}
