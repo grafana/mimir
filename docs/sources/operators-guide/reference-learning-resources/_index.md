@@ -7,7 +7,7 @@ keywords:
   - Grafana Mimir blog posts, podcasts, and videos
 ---
 
-# Further reading
+# Reference: Learning resources
 
 To learn more about Grafana Mimir, see the following resources:
 
