@@ -50,7 +50,9 @@ func (c *MimirClient) backfillBlock(ctx context.Context, dpath string, logger lo
 
 	blockID := blockMeta.ULID.String()
 
-	level.Info(logger).Log("msg", "Making request to start block backfill", "user", c.id, "block", blockID)
+	logger = log.With(logger, "user", c.id, "block", blockID)
+
+	level.Info(logger).Log("msg", "Making request to start block backfill")
 
 	blockPrefix := path.Join("/api/v1/upload/block", url.PathEscape(blockID))
 
@@ -98,8 +100,7 @@ func (c *MimirClient) backfillBlock(ctx context.Context, dpath string, logger lo
 		}
 		relPath = filepath.ToSlash(relPath)
 		escapedPath := url.QueryEscape(relPath)
-		level.Info(logger).Log("msg", "uploading block file", "path", pth, "user",
-			c.id, "block", blockID, "size", st.Size())
+		level.Info(logger).Log("msg", "uploading block file", "path", pth, "size", st.Size())
 		resp, err := c.doRequest(path.Join(blockPrefix, fmt.Sprintf("files?path=%s", escapedPath)), http.MethodPost, f, st.Size())
 		if err != nil {
 			return errors.Wrapf(err, "request to upload backfill of file %q failed", pth)
@@ -124,7 +125,7 @@ func (c *MimirClient) backfillBlock(ctx context.Context, dpath string, logger lo
 		return fmt.Errorf("request to finish backfill failed, with HTTP status %d %s", resp.StatusCode, resp.Status)
 	}
 
-	level.Info(logger).Log("msg", "Block backfill successful", "user", c.id, "block", blockID)
+	level.Info(logger).Log("msg", "Block backfill successful")
 
 	return nil
 }
