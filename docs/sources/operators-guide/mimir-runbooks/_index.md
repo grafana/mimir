@@ -1037,7 +1037,7 @@ How to **investigate**:
   1. The alert fired because of a bug in Mimir: fix it.
   1. The alert fired because of a bug or edge case in the continuous test tool, causing a false positive: fix it.
 
-## Codified errors
+## Errors catalog
 
 Mimir has some codified error IDs that you might see in HTTP responses or logs.
 These error IDs allow you to read related details in the documentation that follows.
