@@ -53,10 +53,8 @@ Each block has a `meta.json` metadata file that is used by Grafana Mimir, Promet
 Each project has its own metadata conventions.
 
 In the Grafana Mimir 2.1 (or earlier) release, the ingesters added an external label to the `meta.json` file to identify the tenant that owns the block.
-If you enable the sharding feature of Mimir's split-and-merge compactor, compactor adds a special label to identify the compactor-shard.
 
 In the Grafana Mimir 2.2 (or later) release, blocks no longer have a label that identifies the tenant.
-The compactor-shard label is still used, if sharding of blocks during compaction is enabled.
 
 > **Note**: Blocks from Prometheus do not have any external labels stored in them; only blocks from Thanos use labels.
 
