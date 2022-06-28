@@ -286,6 +286,10 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 		} else {
 			level.Error(jobLogger).Log("msg", "compaction job failed", "duration", elapsed, "duration_ms", elapsed.Milliseconds(), "err", rerr)
 		}
+
+		if err := os.RemoveAll(subDir); err != nil {
+			level.Error(jobLogger).Log("msg", "failed to remove compaction group work directory", "path", subDir, "err", err)
+		}
 	}()
 
 	if err := os.MkdirAll(subDir, 0750); err != nil {
