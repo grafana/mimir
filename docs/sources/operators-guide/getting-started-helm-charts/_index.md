@@ -218,31 +218,34 @@ First install Grafana, and then add Mimir as a Prometheus data source.
 
 1. In a browser, go to the Grafana server at [http://localhost:3000](http://localhost:3000).
 1. Sign in using the default username `admin` and password `admin`.
-1. Navigate to Configuration -> Data sources on the left.
-1. Configure a new Prometheus data source to query the local Grafana Mimir server using the following settings:
+1. On the left-hand side, go to **Configuration** > **Data sources**.
+1. Configure a new Prometheus data source to query the local Grafana Mimir server, by using the following settings:
 
       | Field | Value                              |
       | ----- | ---------------------------------- |
       | Name  | Mimir                              |
       | URL   | http://\<ingress-host\>/prometheus |
 
-    To add a data source, refer to [Add a data source](https://grafana.com/docs/grafana/latest/datasources/add-a-data-source/) in the Grafana documentation.
+    To add a data source, see [Add a data source](https://grafana.com/docs/grafana/latest/datasources/add-a-data-source/).
 
- 1. Verify success
+ 1. Verify success:
 
-    When you have completed the tasks so far in this getting started guide, you can query metrics in [Grafana Explore](https://grafana.com/docs/grafana/latest/explore/)
-    as well as create dashboard panels using the newly configured Grafana Mimir data source.
+    You should be able to query metrics in [Grafana Explore](https://grafana.com/docs/grafana/latest/explore/),
+    as well as create dashboard panels by using your newly configured `Mimir` data source.
 
-## Set up meta monitoring
+## Set up metamonitoring
 
-Grafana Mimir meta monitoring collects metrics and or logs about Grafana Mimir itself. Its primary purpose is to send meta-monitoring information to some external receiver, for example a [free tier Grafana Metrics account](https://grafana.com/metrics/). In the example that follows, it scrapes metrics about Grafana Mimir itself and then writes those metrics to the same Grafana Mimir instance.
+Grafana Mimir metamonitoring collects metrics or logs, or both,
+about Grafana Mimir itself.
+In the example that follows, metamonitoring scrapes metrics about 
+Grafana Mimir itself, and then writes those metrics to the same Grafana Mimir instance.
 
-1. To enable Meta Monitoring in Grafana Mimir, add the following YAML snippet to your Grafana Mimir `custom.yaml` file:
+1. To enable metamonitoring in Grafana Mimir, add the following YAML snippet to your Grafana Mimir `custom.yaml` file:
 
     ```yaml
-    serviceMonitor:
-      enabled: true
     metaMonitoring:
+      serviceMonitor:
+        enabled: true
       grafanaAgent:
         enabled: true
         installOperator: true
@@ -251,20 +254,27 @@ Grafana Mimir meta monitoring collects metrics and or logs about Grafana Mimir i
             - url: "http://<release-name>-mimir-nginx.<namespace>.svc:80/api/v1/push"
     ```
 
-    Replace _`<release-name>`_ with the release name used when installing the Grafana Mimir Helm chart and _`<namespace>`_ with the namespace where Grafana mimir is installed in.
+    Replace _`<release-name>`_ with the release name that you used when you installed the Grafana Mimir Helm chart.
 
-1. Upgrade Grafana Mimir by using Helm:
+    Replace  _`<namespace>`_ with the namespace in which Grafana Mimir is installed.
+
+1. Upgrade Grafana Mimir by using the `helm` command:
 
     ```bash
     helm -n <namespace> upgrade <release-name> grafana/mimir-distributed -f custom.yaml
     ```
 
-1. Verify in Grafana that metrics are being scraped by quering for example the metric `cortex_ingester_ingested_samples_total{}`.
+1. In Grafana, verify that your metrics are being scraped, by quering the metric `cortex_ingester_ingested_samples_total{}`.
 
-## Query data in Grafana running in the same Kubernetes cluster
+## Query data in Grafana that is running within the same Kubernetes cluster
 
-1. Install Grafana in the Kubernetes cluster by following the instructions in [Deploy Grafana on Kubernetes](https://grafana.com/docs/grafana/latest/setup-grafana/installation/kubernetes/).
-1. Port forward Grafana to localhost with the command:
+1. Install Grafana in the same Kubernetes cluster.
+
+   For details, see [Deploy Grafana on Kubernetes](https://grafana.com/docs/grafana/latest/setup-grafana/installation/kubernetes/).
+
+1. Stop the Grafana instance that is running in the Docker container, to allow for port-forwarding.
+
+1. Port-forward Grafana to `localhost`, by using the `kubectl` command:
 
     ```bash
     kubectl port-forward service/grafana 3000:3000
@@ -272,17 +282,17 @@ Grafana Mimir meta monitoring collects metrics and or logs about Grafana Mimir i
 
 1. In a browser, go to the Grafana server at [http://localhost:3000](http://localhost:3000).
 1. Sign in using the default username `admin` and password `admin`.
-1. Navigate to Configuration -> Data sources on the left.
-1. Configure a new Prometheus data source to query the local Grafana Mimir server using the following settings:
+1. On the left-hand side, go to **Configuration** > **Data sources**.
+1. Configure a new Prometheus data source to query the local Grafana Mimir server, by using the following settings:
 
       | Field | Value                              |
       | ----- | ---------------------------------- |
       | Name  | Mimir                              |
       | URL   | http://\<release-name\>-mimir-nginx.\<namespace\>.svc:80/prometheus |
 
-    To add a data source, refer to [Add a data source](https://grafana.com/docs/grafana/latest/datasources/add-a-data-source/) in the Grafana documentation.
+    To add a data source, see [Add a data source](https://grafana.com/docs/grafana/latest/datasources/add-a-data-source/).
 
- 1. Verify success
+ 1. Verify success:
 
-    When you have completed the tasks so far in this getting started guide, you can query metrics in [Grafana Explore](https://grafana.com/docs/grafana/latest/explore/)
-    as well as create dashboard panels using the newly configured Grafana Mimir data source.
+    You should be able to query metrics in [Grafana Explore](https://grafana.com/docs/grafana/latest/explore/),
+    as well as create dashboard panels by using your newly configured `Mimir` data source.
