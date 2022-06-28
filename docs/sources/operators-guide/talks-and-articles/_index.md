@@ -1,15 +1,15 @@
 ---
-title: "Further reading"
-menuTitle: "Further reading"
-description: "Talks and articles about Grafana Mimir"
-weight: 40
+title: "Reference: Learning resources"
+menuTitle: "Learning resources"
+description: "Blog posts, podcasts, and videos about Grafana Mimir"
+weight: 130
 keywords:
-  - Grafana Mimir talks and articles
+  - Grafana Mimir blog posts, podcasts, and videos
 ---
 
 # Further reading
 
-To learn more about Grafana Mimir, consult the following talks and articles.
+To learn more about Grafana Mimir, see the following resources:
 
 - June 2022 GrafanaCon 2022 talk: "[For billion-series scale or home IoT projects, get started in minutes with Grafana Mimir (using Helm)](https://grafana.com/go/grafanaconline/2022/grafana-mimir-migrate-your-metrics-in-minutes/)"
 - May 2022 podcast episode: [Grafana's Big Tent podcast: Grafana Mimir: Maintainers tell all](https://bigtent.fm/4), [transcript](https://grafana.com/blog/2022/05/03/grafana-mimir-maintainers-tell-all/)
