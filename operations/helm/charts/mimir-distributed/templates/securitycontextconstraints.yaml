@@ -1,4 +1,4 @@
-{{- if eq .Values.rbac.type "scc" }}
+{{- if and .Values.rbac.create (eq .Values.rbac.type "scc") }}
 apiVersion: security.openshift.io/v1
 kind: SecurityContextConstraints
 metadata:
