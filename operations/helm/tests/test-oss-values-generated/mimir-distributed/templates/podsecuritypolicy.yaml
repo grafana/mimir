@@ -1,11 +1,15 @@
-{{- if and .Values.rbac.create (eq .Values.rbac.type "psp") }}
+---
+# Source: mimir-distributed/templates/podsecuritypolicy.yaml
 apiVersion: policy/v1beta1
 kind: PodSecurityPolicy
 metadata:
-  name: {{ include "mimir.resourceName" (dict "ctx" .) }}
+  name: test-oss-values-mimir
   labels:
-    {{- include "mimir.labels" (dict "ctx" .) | nindent 4 }}
-  namespace: {{ .Release.Namespace | quote }}
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: test-oss-values
+    app.kubernetes.io/version: "2.1.0"
+    app.kubernetes.io/managed-by: Helm
+  namespace: "citestns"
 spec:
   privileged: false
   allowPrivilegeEscalation: false
@@ -34,4 +38,3 @@ spec:
   readOnlyRootFilesystem: true
   requiredDropCapabilities:
     - ALL
-{{- end }}
