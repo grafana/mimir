@@ -695,11 +695,12 @@ func (m *mockBucketFailure) Delete(ctx context.Context, name string) error {
 }
 
 type mockConfigProvider struct {
-	userRetentionPeriods map[string]time.Duration
-	splitAndMergeShards  map[string]int
-	instancesShardSize   map[string]int
-	splitGroups          map[string]int
-	blockUploadEnabled   map[string]bool
+	userRetentionPeriods  map[string]time.Duration
+	splitAndMergeShards   map[string]int
+	instancesShardSize    map[string]int
+	splitGroups           map[string]int
+	blockUploadEnabled    map[string]bool
+	userPartialBlockDelay map[string]time.Duration
 }
 
 func newMockConfigProvider() *mockConfigProvider {
@@ -741,6 +742,13 @@ func (m *mockConfigProvider) CompactorTenantShardSize(user string) int {
 
 func (m *mockConfigProvider) CompactorBlockUploadEnabled(tenantID string) bool {
 	return m.blockUploadEnabled[tenantID]
+}
+
+func (m *mockConfigProvider) CompactorPartialBlockDeletionDelay(user string) time.Duration {
+	if result, ok := m.userPartialBlockDelay[user]; ok {
+		return result
+	}
+	return 0
 }
 
 func (m *mockConfigProvider) S3SSEType(user string) string {
