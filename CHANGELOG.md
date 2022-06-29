@@ -4,6 +4,9 @@
 
 ### Grafana Mimir
 
+* [CHANGE] Compactor: delete source and output blocks from local disk on compaction failed, to reduce likelihood that subsequent compactions fail because of no space left on disk. #2261
+* [BUGFIX] Compactor: log the actual error on compaction failed. #2261
+
 ### Mixin
 
 ### Jsonnet
