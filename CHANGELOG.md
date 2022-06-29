@@ -60,6 +60,7 @@
 * [BUGFIX] Memberlist: Fix typo in memberlist admin UI. #2202
 * [BUGFIX] Ruler: fixed typo in error message when ruler failed to decode a rule group. #2151
 * [BUGFIX] Active series custom tracker configuration is now displayed properly on `/runtime_config` page. #2065
+* [BUGFIX] Make mimirtool build for Windows work again. #2273
 
 ### Mixin
 
