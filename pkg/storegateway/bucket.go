@@ -1627,12 +1627,11 @@ func newBucketBlock(
 		indexHeaderReader: indexHeadReader,
 		// Translate the block's labels and inject the block ID as a label
 		// to allow to match blocks also by ID.
-		relabelLabels: append(labels.FromMap(meta.Thanos.Labels), labels.Label{
+		relabelLabels: labels.Labels{labels.Label{
 			Name:  block.BlockIDLabel,
 			Value: meta.ULID.String(),
-		}),
+		}},
 	}
-	sort.Sort(b.relabelLabels)
 
 	// Get object handles for all chunk files (segment files) from meta.json, if available.
 	if len(meta.Thanos.SegmentFiles) > 0 {
