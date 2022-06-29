@@ -263,7 +263,7 @@ runtimeConfig: {}
 
 # RBAC configuration
 rbac:
-  create: false
+  create: true
   # For GKE/EKS/AKS use 'type: psp'. For OpenShift use 'type: scc'
   type: psp
 
