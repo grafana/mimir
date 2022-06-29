@@ -432,7 +432,7 @@ github.com/gosimple/slug
 # github.com/grafana-tools/sdk v0.0.0-20211220201350-966b3088eec9 => github.com/colega/grafana-tools-sdk v0.0.0-20220323154849-711bca56d13f
 ## explicit; go 1.13
 github.com/grafana-tools/sdk
-# github.com/grafana/dskit v0.0.0-20220622130855-7bb188ccf75a
+# github.com/grafana/dskit v0.0.0-20220704121012-e441b77be778
 ## explicit; go 1.17
 github.com/grafana/dskit/backoff
 github.com/grafana/dskit/concurrency
@@ -448,7 +448,6 @@ github.com/grafana/dskit/kv/consul
 github.com/grafana/dskit/kv/etcd
 github.com/grafana/dskit/kv/memberlist
 github.com/grafana/dskit/limiter
-github.com/grafana/dskit/middleware
 github.com/grafana/dskit/modules
 github.com/grafana/dskit/multierror
 github.com/grafana/dskit/netutil
@@ -709,9 +708,6 @@ github.com/prometheus/common/sigv4
 # github.com/prometheus/exporter-toolkit v0.7.1
 ## explicit; go 1.14
 github.com/prometheus/exporter-toolkit/web
-# github.com/prometheus/node_exporter v1.0.0-rc.0.0.20200428091818-01054558c289
-## explicit; go 1.13
-github.com/prometheus/node_exporter/https
 # github.com/prometheus/procfs v0.7.3
 ## explicit; go 1.13
 github.com/prometheus/procfs
@@ -872,8 +868,8 @@ github.com/vimeo/galaxycache/http
 github.com/vimeo/galaxycache/lru
 github.com/vimeo/galaxycache/promoter
 github.com/vimeo/galaxycache/singleflight
-# github.com/weaveworks/common v0.0.0-20211109170639-0684aab3d884
-## explicit; go 1.13
+# github.com/weaveworks/common v0.0.0-20220706100410-67d27ed40fae
+## explicit; go 1.14
 github.com/weaveworks/common/errors
 github.com/weaveworks/common/grpc
 github.com/weaveworks/common/httpgrpc
