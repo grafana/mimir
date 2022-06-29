@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.2.0-rc.1
+
+### Mimirtool
+
+* [BUGFIX] Make mimirtool build for Windows work again. #2273
+
 ## 2.2.0-rc.0
 
 ### Grafana Mimir
@@ -60,7 +66,6 @@
 * [BUGFIX] Memberlist: Fix typo in memberlist admin UI. #2202
 * [BUGFIX] Ruler: fixed typo in error message when ruler failed to decode a rule group. #2151
 * [BUGFIX] Active series custom tracker configuration is now displayed properly on `/runtime_config` page. #2065
-* [BUGFIX] Make mimirtool build for Windows work again. #2273
 
 ### Mixin
 
