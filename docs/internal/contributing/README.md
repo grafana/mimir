@@ -82,6 +82,15 @@ The Grafana Mimir documentation is compiled into a website published at [grafana
 
 Note: if you attempt to view pages on Github, it's likely that you might find broken links or pages. That is expected and should not be addressed unless it is causing issues with the site that occur as part of the build.
 
+## Errors catalog
+
+We document the common user-visible errors so it is easy for the user to search for how to address those errors when they see them.
+
+To add a new error:
+- Under `pkg/util/globalerror/errors.go`, create a new unique ID string as a constant. This string should not be changed once your changes make it into a public release.
+- When returning the error, use one of the functions in `globalerror` to generate the message. If you return the same error from multiple places, create a new function to return the error so the message string is defined in only one place, then add a simple test for that function comparing its actual output to the expected message as a hardcoded string.
+- Update the runbook in `docs/sources/operators-guide/mimir-runbooks/_index.md` with details on why the error happens and how to address it if possible.
+
 ## Changelog
 
 When appending to the changelog, the changes must be listed with a corresponding scope. A scope denotes the type of change that has occurred.
