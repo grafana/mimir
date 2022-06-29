@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.2.0-rc.1
+
+### Mimirtool
+
+* [BUGFIX] Make mimirtool build for Windows work again. #2273
+
 ## 2.2.0-rc.0
 
 ### Grafana Mimir
