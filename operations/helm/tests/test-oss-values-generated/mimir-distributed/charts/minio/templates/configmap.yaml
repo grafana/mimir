@@ -13,7 +13,7 @@ data:
   initialize: |-
     #!/bin/sh
     set -e ; # Have script exit in the event of a failed command.
-    MC_CONFIG_DIR="/etc/minio/mc/"
+    MC_CONFIG_DIR="/tmp/minio/mc/"
     MC="/usr/bin/mc --insecure --config-dir ${MC_CONFIG_DIR}"
     
     # connectToMinio

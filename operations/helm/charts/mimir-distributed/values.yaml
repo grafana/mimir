@@ -50,7 +50,9 @@ global:
   podAnnotations: {}
 
 serviceAccount:
+  # -- Whether to create a service account or not. In case 'create' is false, do set 'name' to an existing service account name.
   create: true
+  # -- Override for the generated service account name.
   name:
   annotations: {}
 
@@ -261,7 +263,9 @@ runtimeConfig: {}
 
 # RBAC configuration
 rbac:
-  pspEnabled: true
+  create: true
+  # For GKE/EKS/AKS use 'type: psp'. For OpenShift use 'type: scc'
+  type: psp
 
 alertmanager:
   enabled: true
@@ -1311,6 +1315,8 @@ minio:
       cpu: 100m
       memory: 128Mi
   secretKey: supersecret
+  # Changed the mc config path to '/tmp' from '/etc' as '/etc' is only writable by root and OpenShift will not permit this.
+  configPathmc: "/tmp/minio/mc/"
 
 # Configuration for nginx gateway
 nginx:
