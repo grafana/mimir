@@ -147,7 +147,7 @@ func (c *MimirClient) backfillBlock(ctx context.Context, dpath string, logger lo
 		return fmt.Errorf("request to finish backfill failed, with HTTP status %d %s", resp.StatusCode, resp.Status)
 	}
 
-	level.Info(logger).Log("msg", "Block backfill successful")
+	level.Info(logger).Log("msg", "block uploaded successfuly")
 
 	return nil
 }
