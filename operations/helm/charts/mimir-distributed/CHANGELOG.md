@@ -14,6 +14,11 @@ Entries should include a reference to the Pull Request that introduced the chang
 ## main / unreleased
 * [CHANGE] Enable multi-tenancy by default. This means `multitenancy_enabled` is now `true` for both Mimir and Enterprise Metrics. Nginx will inject `X-Scope-OrgID=anonymous` header if the header is not present, ensuring backwards compatibility. #2117
 * [CHANGE] **breaking change** The value `serviceMonitor` and everything under it is moved to `metaMonitoring.serviceMonitor` to group all meta-monitoring settings under one section. #2236
+* [CHANGE] Added support to install on OpenShift. #2219
+  - **breaking** The value `rbac.pspEnabled` was removed.
+  - Added new `rbac.type` option. Allowed values are `psp` and `scc`, for Pod Security Policy and Security Context Constraints (OpenShift) respectively.
+  - Added `rbac.create` option to enable/disable RBAC configuration.
+  - mc path in Minio changed to be compatible with OpenShift security.
 * [CHANGE] **breaking change** Chart now uses custom memcached templates to remove bitnami dependency. There are changes to the Helm values, listed bellow. #2064
   - The `memcached` section now contains common values shared across all memcached instances.
   - New `memcachedExporter` section was added to configure memcached metrics exporter.
