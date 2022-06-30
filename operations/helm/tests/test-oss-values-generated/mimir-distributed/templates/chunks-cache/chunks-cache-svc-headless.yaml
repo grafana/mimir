@@ -1,13 +1,13 @@
 ---
-# Source: mimir-distributed/templates/memcached-results/memcached-results-svc-headless.yaml
+# Source: mimir-distributed/templates/chunks-cache/chunks-cache-svc-headless.yaml
 apiVersion: v1
 kind: Service
 metadata:
-  name: test-oss-values-mimir-memcached-results
+  name: test-oss-values-mimir-chunks-cache
   labels:
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-oss-values
-    app.kubernetes.io/component: memcached-results
+    app.kubernetes.io/component: chunks-cache
     app.kubernetes.io/version: "2.1.0"
     app.kubernetes.io/managed-by: Helm
   annotations:
@@ -28,4 +28,4 @@ spec:
   selector:
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-oss-values
-    app.kubernetes.io/component: memcached-results
+    app.kubernetes.io/component: chunks-cache

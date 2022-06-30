@@ -1,9 +1,9 @@
 ---
-# Source: mimir-distributed/templates/memcached-index-queries/memcached-index-queries-statefulset.yaml
+# Source: mimir-distributed/templates/results-cache/results-cache-statefulset.yaml
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: test-oss-values-mimir-memcached-index-queries
+  name: test-oss-values-mimir-results-cache
   labels:
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-oss-values
@@ -20,10 +20,10 @@ spec:
     matchLabels:
       app.kubernetes.io/name: mimir
       app.kubernetes.io/instance: test-oss-values
-      app.kubernetes.io/component: memcached-index-queries
+      app.kubernetes.io/component: results-cache
   updateStrategy:
     type: RollingUpdate
-  serviceName: test-oss-values-mimir-memcached-index-queries
+  serviceName: test-oss-values-mimir-results-cache
 
   template:
     metadata:
@@ -32,7 +32,7 @@ spec:
         app.kubernetes.io/instance: test-oss-values
         app.kubernetes.io/version: "2.1.0"
         app.kubernetes.io/managed-by: Helm
-        app.kubernetes.io/component: memcached-index-queries
+        app.kubernetes.io/component: results-cache
       annotations:
         minio-secret-version: "42"
 
@@ -63,10 +63,10 @@ spec:
             - containerPort: 11211
               name: client
           args:
-            - -m 30
+            - -m 10
             - -o
             - modern
-            - -I 15m
+            - -I 1m
             - -c 16384
             - -v
             - -u 11211

@@ -1,9 +1,9 @@
 ---
-# Source: mimir-distributed/templates/memcached-results/memcached-results-statefulset.yaml
+# Source: mimir-distributed/templates/chunks-cache/chunks-cache-statefulset.yaml
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: test-oss-values-mimir-memcached-results
+  name: test-oss-values-mimir-chunks-cache
   labels:
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-oss-values
@@ -20,10 +20,10 @@ spec:
     matchLabels:
       app.kubernetes.io/name: mimir
       app.kubernetes.io/instance: test-oss-values
-      app.kubernetes.io/component: memcached-results
+      app.kubernetes.io/component: chunks-cache
   updateStrategy:
     type: RollingUpdate
-  serviceName: test-oss-values-mimir-memcached-results
+  serviceName: test-oss-values-mimir-chunks-cache
 
   template:
     metadata:
@@ -32,7 +32,7 @@ spec:
         app.kubernetes.io/instance: test-oss-values
         app.kubernetes.io/version: "2.1.0"
         app.kubernetes.io/managed-by: Helm
-        app.kubernetes.io/component: memcached-results
+        app.kubernetes.io/component: chunks-cache
       annotations:
         minio-secret-version: "42"
 
