@@ -37,7 +37,7 @@ type DefaultMultiTenantManager struct {
 
 	// Structs for holding per-user Prometheus rules Managers
 	// and a corresponding metrics struct
-	userManagerMtx     sync.Mutex
+	userManagerMtx     sync.RWMutex
 	userManagers       map[string]RulesManager
 	userManagerMetrics *ManagerMetrics
 
@@ -98,11 +98,6 @@ func NewDefaultMultiTenantManager(cfg Config, managerFactory ManagerFactory, reg
 }
 
 func (r *DefaultMultiTenantManager) SyncRuleGroups(ctx context.Context, ruleGroups map[string]rulespb.RuleGroupList) {
-	// A lock is taken to ensure if this function is called concurrently, then each call
-	// returns after the call map files and check for updates
-	r.userManagerMtx.Lock()
-	defer r.userManagerMtx.Unlock()
-
 	if !r.cfg.TenantFederation.Enabled {
 		RemoveFederatedRuleGroups(ruleGroups)
 	}
@@ -110,6 +105,11 @@ func (r *DefaultMultiTenantManager) SyncRuleGroups(ctx context.Context, ruleGrou
 	for userID, ruleGroup := range ruleGroups {
 		r.syncRulesToManager(ctx, userID, ruleGroup)
 	}
+
+	// A lock is taken to ensure if this function is called concurrently, then each call
+	// returns after the call map files and check for updates
+	r.userManagerMtx.Lock()
+	defer r.userManagerMtx.Unlock()
 
 	// Check for deleted users and remove them
 	for userID, mngr := range r.userManagers {
@@ -140,6 +140,9 @@ func (r *DefaultMultiTenantManager) syncRulesToManager(ctx context.Context, user
 		level.Error(r.logger).Log("msg", "unable to map rule files", "user", user, "err", err)
 		return
 	}
+
+	r.userManagerMtx.Lock()
+	defer r.userManagerMtx.Unlock()
 
 	manager, exists := r.userManagers[user]
 	if !exists || update {
@@ -230,11 +233,11 @@ func (r *DefaultMultiTenantManager) getOrCreateNotifier(userID string) (*notifie
 
 func (r *DefaultMultiTenantManager) GetRules(userID string) []*promRules.Group {
 	var groups []*promRules.Group
-	r.userManagerMtx.Lock()
+	r.userManagerMtx.RLock()
 	if mngr, exists := r.userManagers[userID]; exists {
 		groups = mngr.RuleGroups()
 	}
-	r.userManagerMtx.Unlock()
+	r.userManagerMtx.RUnlock()
 	return groups
 }
 
@@ -249,7 +252,7 @@ func (r *DefaultMultiTenantManager) Stop() {
 	wg := sync.WaitGroup{}
 	r.userManagerMtx.Lock()
 	for user, manager := range r.userManagers {
-		level.Debug(r.logger).Log("msg", "shutting down user  manager", "user", user)
+		level.Debug(r.logger).Log("msg", "shutting down user manager", "user", user)
 		wg.Add(1)
 		go func(manager RulesManager, user string) {
 			manager.Stop()
