@@ -106,3 +106,27 @@
     {{- end }}
   {{- end }}
 {{- end }}
+
+{{- with .Values.memcached }}
+  {{- if .enabled }}
+    {{- fail "memcached.enabled has been renamed to chunks-cache.enabled" }}
+  {{- end }}
+{{- end }}
+
+{{- with (index .Values "memcached-metadata") }}
+  {{- if .enabled }}
+    {{- fail "memcached-metadata.enabled has been renamed to metadata-cache.enabled" }}
+  {{- end }}
+{{- end }}
+
+{{- with (index .Values "memcached-queries") }}
+  {{- if .enabled }}
+    {{- fail "memcached-queries.enabled has been renamed to index-cache.enabled" }}
+  {{- end }}
+{{- end }}
+
+{{- with (index .Values "memcached-results") }}
+  {{- if .enabled }}
+    {{- fail "memcached-results.enabled has been renamed to results-cache.enabled" }}
+  {{- end }}
+{{- end }}
