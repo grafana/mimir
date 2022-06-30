@@ -1298,10 +1298,6 @@ alertmanager_client:
 # CLI flag: -ruler.resend-delay
 [resend_delay: <duration> | default = 1m]
 
-# (advanced) Time to spend searching for a pending ruler when shutting down.
-# CLI flag: -ruler.search-pending-for
-[search_pending_for: <duration> | default = 5m]
-
 ring:
   kvstore:
     # Backend storage to use for the ring. Supported values are: consul, etcd,
@@ -1368,10 +1364,6 @@ ring:
   # (advanced) Number of tokens for each ruler.
   # CLI flag: -ruler.ring.num-tokens
   [num_tokens: <int> | default = 128]
-
-# (advanced) Period with which to attempt to flush rule groups.
-# CLI flag: -ruler.flush-period
-[flush_period: <duration> | default = 1m]
 
 # Enable the ruler config API.
 # CLI flag: -ruler.enable-api
