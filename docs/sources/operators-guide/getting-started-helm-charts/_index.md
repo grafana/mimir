@@ -204,7 +204,7 @@ Make a choice based on whether or not you already have a Grafana Agent set up:
   1. Start a Grafana Agent by using Docker:
 
      ```bash
-     docker run --network=host  -v <path-to-wal-directory>:/etc/agent/data -v <path-to>/agent.yaml:/etc/agent/agent.yaml grafana/agent
+     docker run --network=host  -v <absolute-path-to-wal-directory>:/etc/agent/data -v <absolute-path-to>/agent.yaml:/etc/agent/agent.yaml grafana/agent
      ```
 
 ## Query metrics in Grafana
