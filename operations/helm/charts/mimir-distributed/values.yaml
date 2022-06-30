@@ -1054,7 +1054,7 @@ memcachedExporter:
     pullPolicy: IfNotPresent
 
 chunks-cache:
-  # -- Specifies whether chunks-cache should be enabled
+  # -- Specifies whether memcached based chunks-cache should be enabled
   enabled: false
 
   # -- Total number of chunks-cache replicas
@@ -1113,7 +1113,7 @@ chunks-cache:
     labels: {}
 
 index-cache:
-  # -- Specifies whether index-cache should be enabled
+  # -- Specifies whether memcached based index-cache should be enabled
   enabled: false
 
   # -- Total number of index-cache replicas
@@ -1172,7 +1172,7 @@ index-cache:
     labels: {}
 
 metadata-cache:
-  # -- Specifies whether metadata-cache should be enabled
+  # -- Specifies whether memcached based metadata-cache should be enabled
   enabled: false
 
   # -- Total number of metadata-cache replicas
@@ -1231,7 +1231,7 @@ metadata-cache:
     labels: {}
 
 results-cache:
-  # -- Specifies whether results-cache should be enabled
+  # -- Specifies whether memcached based results-cache should be enabled
   enabled: false
 
   # -- Total number of results-cache replicas
