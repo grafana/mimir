@@ -1466,6 +1466,19 @@ nginx:
       port: http-metric
     initialDelaySeconds: 15
     timeoutSeconds: 1
+
+  # -- Additional containers to be added to the nginx pod.
+  extraContainers: []
+  # - name: dnsmasq
+  #   image: "janeczku/go-dnsmasq:release-1.0.7"
+  #   imagePullPolicy: IfNotPresent
+  #   args:
+  #     - --listen
+  #     - "127.0.0.1:8053"
+  #     - --hostsfile=/etc/hosts
+  #     - --enable-search
+  #     - --verbose
+
   nginxConfig:
     # -- NGINX log format
     logFormat: |-
@@ -1476,6 +1489,8 @@ nginx:
     serverSnippet: ""
     # -- Allows appending custom configuration to the http block
     httpSnippet: ""
+    # -- Allows to set a custom resolver
+    resolver: null
     # -- Config file contents for Nginx. Passed through the `tpl` function to allow templating
     # @default -- See values.yaml
     file: |
@@ -1511,7 +1526,12 @@ nginx:
 
         sendfile     on;
         tcp_nopush   on;
+
+        {{- if .Values.nginx.nginxConfig.resolver }}
+        resolver {{ .Values.nginx.nginxConfig.resolver }};
+        {{- else }}
         resolver {{ .Values.global.dnsService }}.{{ .Values.global.dnsNamespace }}.svc.{{ .Values.global.clusterDomain }};
+        {{- end }}
 
         {{- with .Values.nginx.nginxConfig.httpSnippet }}
         {{ . | nindent 2 }}
