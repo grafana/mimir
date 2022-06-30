@@ -68,14 +68,22 @@ Thanos also uses labels for the deduplication of replicated data.
 If you want to use existing blocks from Thanos by Grafana Mimir, there are some considerations:
 
 **Grafana Mimir doesn't inject external labels into query results.**
-This means that blocks that were originally created by Thanos will not include their external labels in the results when queried.
+This means that blocks that were originally created by Thanos will not include their external labels in the results when queried by Grafana Mimir.
 If you need to have external labels in your query results, this is currently not possible to achieve in Grafana Mimir.
 
 **Grafana Mimir will not respect deduplication labels configured in Thanos when querying the blocks.**
 For the best query performance please only upload Thanos blocks from single Prometheus replica from each HA pair.
 If you upload blocks from both replicas, the query results returned by Mimir will include samples from both replicas.
 
+> **Note**: Thanos provides `thanos tools bucket rewrite` tool for manipulating blocks in the bucket.
+> It may be possible to use this tool to embed external labels into blocks.
+> Please refer to [`thanos tools bucket rewrite` documentation](https://thanos.io/tip/components/tools.md/#bucket-rewrite) for more details.
+
 **Grafana Mimir does not support Thanos’ _downsampling_ feature.**
 To guarantee query results correctness please only upload original (raw) Thanos blocks into Mimir's storage.
 If you also upload blocks with downsampled data (ie. blocks with non-zero `Resolution` field in `meta.json` file), Grafana Mimir will merge raw samples and downsampled samples together at the query time.
 This may cause that incorrect results are returned for the query.
+
+> **Note**: It is possible to run compaction and deduplicate blocks by Thanos first by using `thanos compact` command
+> with `--compact.enable-vertical-compaction --deduplication.func=penalty --deduplication.replica-label=<LABEL>` flags.
+> Please refer to [Vertical Compaction Use Cases](https://thanos.io/tip/components/compact.md/#vertical-compaction-use-cases) for more details on offline deduplication.
