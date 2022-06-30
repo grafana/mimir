@@ -261,7 +261,7 @@ Grafana Mimir itself, and then writes those metrics to the same Grafana Mimir in
    helm -n mimir-test upgrade mimir grafana/mimir-distributed -f custom.yaml
    ```
 
-1. In Grafana, verify that your metrics are being scraped, by quering `sum(rate(cortex_ingester_ingested_samples_total[$__rate_interval]))`.
+1. From [Grafana Explore](http://localhost:3000/explore), verify that your metrics are being scraped, by querying `sum(rate(cortex_ingester_ingested_samples_total[$__rate_interval]))`.
 
 ## Query metrics in Grafana that is running within the same Kubernetes cluster
 
