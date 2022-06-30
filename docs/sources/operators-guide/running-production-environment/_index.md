@@ -1,6 +1,6 @@
 ---
 title: "Running Grafana Mimir in production"
-menuTitle: "Running Grafana Mimir in production"
+menuTitle: "Running in production"
 description: "Learn how to run Grafana Mimir in production."
 weight: 80
 ---
