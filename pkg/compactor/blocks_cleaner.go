@@ -109,7 +109,7 @@ func NewBlocksCleaner(cfg BlocksCleanerConfig, bucketClient objstore.Bucket, own
 		}),
 		partialBlocksMarkedForDeletion: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name:        blocksMarkedForDeletionName,
-			Help:        "Total number of partial blocks marked for deletion in compactor.",
+			Help:        blocksMarkedForDeletionHelp,
 			ConstLabels: prometheus.Labels{"reason": "partial"},
 		}),
 
@@ -425,7 +425,7 @@ func (c *BlocksCleaner) cleanUserPartialBlocks(ctx context.Context, partials map
 	}
 
 	var mu sync.Mutex
-	var partialsToMark []ulid.ULID
+	var blocksWithoutMeta []ulid.ULID
 
 	// We don't want to return errors from our function, as that would stop ForEach loop early.
 	_ = concurrency.ForEachJob(ctx, len(blocks), c.cfg.DeleteBlocksConcurrency, func(ctx context.Context, jobIdx int) error {
@@ -435,7 +435,7 @@ func (c *BlocksCleaner) cleanUserPartialBlocks(ctx context.Context, partials map
 		err := metadata.ReadMarker(ctx, userLogger, userBucket, blockID.String(), &metadata.DeletionMark{})
 		if errors.Is(err, metadata.ErrorMarkerNotFound) {
 			mu.Lock()
-			partialsToMark = append(partialsToMark, blockID)
+			blocksWithoutMeta = append(blocksWithoutMeta, blockID)
 			mu.Unlock()
 			return nil
 		}
@@ -465,10 +465,11 @@ func (c *BlocksCleaner) cleanUserPartialBlocks(ctx context.Context, partials map
 
 	// Check if partial block is older than delay period, and mark for deletion
 	if !partialDeletionCutoffTime.IsZero() {
-		for _, blockID := range partialsToMark {
-			lastModified, err := findLastModifiedTimeForBlock(ctx, blockID, userBucket, userLogger)
+		for _, blockID := range blocksWithoutMeta {
+			lastModified, err := findMostRecentModifiedTimeForBlock(ctx, blockID, userBucket, userLogger)
 			if err != nil {
-				level.Warn(userLogger).Log("msg", "failed to find last modified time for partial block", "block", blockID)
+				level.Warn(userLogger).Log("msg", "failed to find last modified time for partial block", "block", blockID, "err", err)
+				continue
 			}
 			if !lastModified.IsZero() && lastModified.Before(partialDeletionCutoffTime) {
 				level.Info(userLogger).Log("msg", "stale partial block found: marking block for deletion", "block", blockID, "last modified", lastModified)
@@ -523,15 +524,14 @@ func listBlocksOutsideRetentionPeriod(idx *bucketindex.Index, threshold time.Tim
 	return
 }
 
-// findLastModifiedTimeForBlock finds the most recent modification time for all files in a block
-func findLastModifiedTimeForBlock(ctx context.Context, blockID ulid.ULID, userBucket objstore.InstrumentedBucket, userLogger log.Logger) (time.Time, error) {
+// findMostRecentModifiedTimeForBlock finds the most recent modification time for all files in a block
+func findMostRecentModifiedTimeForBlock(ctx context.Context, blockID ulid.ULID, userBucket objstore.InstrumentedBucket, userLogger log.Logger) (time.Time, error) {
 	var modifiedTime time.Time
-	blockName := blockID.String()
-	err := userBucket.Iter(ctx, blockName, func(name string) error {
+	err := userBucket.Iter(ctx, blockID.String(), func(name string) error {
 		attrib, err := userBucket.Attributes(ctx, name)
 		if err != nil {
-			level.Error(userLogger).Log("msg", "couldn't get attribute for file in block", "block", blockName, "file", name)
-			return err
+			level.Error(userLogger).Log("msg", "couldn't get attribute for file in block", "block", blockID.String(), "file", name)
+			return errors.Wrapf(err, "failed to get attributes for %s", name)
 		}
 		if attrib.LastModified.After(modifiedTime) {
 			modifiedTime = attrib.LastModified
