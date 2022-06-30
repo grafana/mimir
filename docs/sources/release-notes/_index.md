@@ -9,4 +9,4 @@ keywords:
 
 # Grafana Mimir release notes
 
-{{< section >}}
+{{< section menuTitle="true" >}}

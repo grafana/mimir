@@ -9,4 +9,4 @@ weight: 80
 
 The following topics provide guidance for you to consider when you run Grafana Mimir in a production environment.
 
-{{< section >}}
+{{< section menuTitle="true" >}}

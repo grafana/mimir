@@ -9,4 +9,4 @@ weight: 20
 
 The following topics include overviews of the Grafana Mimir architecture.
 
-{{< section >}}
+{{< section menuTitle="true" >}}

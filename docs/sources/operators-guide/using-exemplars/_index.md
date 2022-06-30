@@ -11,4 +11,4 @@ keywords:
 
 This following topics describe how to use exemplars to identify higher cardinality metadata from specific events within time series data.
 
-{{< section >}}
+{{< section menuTitle="true" >}}

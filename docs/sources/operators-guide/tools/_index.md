@@ -9,4 +9,4 @@ weight: 100
 
 Tools for Grafana Mimir aid in administration and troubleshooting tasks.
 
-{{< section >}}
+{{< section menuTitle="true" >}}

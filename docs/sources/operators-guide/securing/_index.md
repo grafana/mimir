@@ -15,4 +15,4 @@ keywords:
 
 These sections explain how to secure Grafana Mimir data and communication paths.
 
-{{< section >}}
+{{< section menuTitle="true" >}}
