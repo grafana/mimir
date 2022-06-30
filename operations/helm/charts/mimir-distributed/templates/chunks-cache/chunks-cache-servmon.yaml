@@ -1,0 +1,3 @@
+{{- if index .Values "chunks-cache" "enabled" }}
+{{- include "mimir.lib.serviceMonitor" (dict "ctx" $ "component" "chunks-cache") }}
+{{- end -}}
