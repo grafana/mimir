@@ -7,7 +7,7 @@ weight: 20
 
 # Getting started with Grafana Mimir using the Helm chart
 
-The Helm chart allows you to configure, install, and upgrade Grafana Mimir within a Kubernetes cluster.
+The [Helm](https://helm.sh/) chart allows you to configure, install, and upgrade Grafana Mimir within a Kubernetes cluster.
 
 ## Before you begin
 
@@ -30,11 +30,11 @@ Software requirements:
 Verify that you have:
 
 - Access to the Kubernetes cluster
-- Persistent storage is enabled in the Kubernetes cluster, which has a default storage class set up
+- Persistent storage is enabled in the Kubernetes cluster, which has a default storage class set up. You can [change the default StorageClass](https://kubernetes.io/docs/tasks/administer-cluster/change-default-storage-class/).
 - DNS service works in the Kubernetes cluster
-- An ingress controller is set up in the Kubernetes cluster
+- An ingress controller is set up in the Kubernetes cluster, for example [ingress-nginx](https://kubernetes.github.io/ingress-nginx/)
 
-  **Note:** Although this is not strictly necessary, if you want to access Mimir from outside of the Kubernetes cluster, you will need an ingress. This procedure assumes you have an ingress controller set up.
+> **Note:** Although this is not strictly necessary, if you want to access Mimir from outside of the Kubernetes cluster, you will need an ingress. This procedure assumes you have an ingress controller set up.
 
 ## Install the Helm chart in a custom namespace
 
@@ -88,7 +88,7 @@ Using a custom namespace solves problems later on because you do not have to ove
 
    > **Note:**: the output of the command contains the write and read URLs necessary for the following steps.
 
-1. Check the statuses of the Mimir services:
+1. Check the statuses of the Mimir pods:
 
    ```bash
    kubectl -n mimir-test get pod
@@ -155,7 +155,7 @@ Make a choice based on whether or not you already have a Prometheus server set u
   1. Start a Prometheus server by using Docker:
 
      ```bash
-     docker run --network=host -p 9090:9090  -v <path-to>/prometheus.yml:/etc/prometheus/prometheus.yml prom/prometheus
+     docker run --network=host -p 9090:9090  -v <absolute-path-to>/prometheus.yml:/etc/prometheus/prometheus.yml prom/prometheus
      ```
 
 ## Configure Grafana Agent to write to Grafana Mimir
@@ -207,7 +207,7 @@ Make a choice based on whether or not you already have a Grafana Agent set up:
      docker run --network=host  -v <path-to-wal-directory>:/etc/agent/data -v <path-to>/agent.yaml:/etc/agent/agent.yaml grafana/agent
      ```
 
-## Query data in Grafana
+## Query metrics in Grafana
 
 First install Grafana, and then add Mimir as a Prometheus data source.
 
@@ -220,7 +220,7 @@ First install Grafana, and then add Mimir as a Prometheus data source.
 1. In a browser, go to the Grafana server at [http://localhost:3000](http://localhost:3000).
 1. Sign in using the default username `admin` and password `admin`.
 1. On the left-hand side, go to **Configuration** > **Data sources**.
-1. Configure a new Prometheus data source to query the local Grafana Mimir server, by using the following settings:
+1. Configure a new Prometheus data source to query the local Grafana Mimir cluster, by using the following settings:
 
    | Field | Value                              |
    | ----- | ---------------------------------- |
@@ -231,7 +231,7 @@ First install Grafana, and then add Mimir as a Prometheus data source.
 
 1. Verify success:
 
-   You should be able to query metrics in [Grafana Explore](https://grafana.com/docs/grafana/latest/explore/),
+   You should be able to query metrics in [Grafana Explore](http://localhost:3000/explore),
    as well as create dashboard panels by using your newly configured `Mimir` data source.
 
 ## Set up metamonitoring
@@ -263,7 +263,7 @@ Grafana Mimir itself, and then writes those metrics to the same Grafana Mimir in
 
 1. In Grafana, verify that your metrics are being scraped, by quering the metric `cortex_ingester_ingested_samples_total{}`.
 
-## Query data in Grafana that is running within the same Kubernetes cluster
+## Query metrics in Grafana that is running within the same Kubernetes cluster
 
 1. Install Grafana in the same Kubernetes cluster.
 
