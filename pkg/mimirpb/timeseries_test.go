@@ -6,7 +6,9 @@
 package mimirpb
 
 import (
+	reflect "reflect"
 	"testing"
+	"unsafe"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -68,4 +70,54 @@ func TestTimeseriesFromPool(t *testing.T) {
 		assert.Len(t, reused.Labels, 0)
 		assert.Len(t, reused.Samples, 0)
 	})
+}
+
+func TestDeepCopyTimeseries(t *testing.T) {
+	src := &TimeSeries{
+		Labels: []LabelAdapter{
+			{Name: "sampleLabel1", Value: "sampleValue1"},
+			{Name: "sampleLabel2", Value: "sampleValue2"},
+		},
+		Samples: []Sample{
+			{Value: 1, TimestampMs: 2},
+			{Value: 3, TimestampMs: 4},
+		},
+		Exemplars: []Exemplar{{
+			Value:       1,
+			TimestampMs: 2,
+			Labels: []LabelAdapter{
+				{Name: "exemplarLabel1", Value: "exemplarValue1"},
+				{Name: "exemplarLabel2", Value: "exemplarValue2"},
+			},
+		}},
+	}
+	dst := &TimeSeries{}
+	DeepCopyTimeseries(dst, src)
+
+	// Check that the values in ts1 and ts2 are the same.
+	assert.Equal(t, src, dst)
+
+	// Check that ts1 refers to a different address than t2.
+	assert.NotSame(t, src, dst)
+
+	// Check all the slices in the struct to ensure that
+	// none of them refer to the same underlying array.
+	assert.NotEqual(t,
+		(*reflect.SliceHeader)(unsafe.Pointer(&src.Labels)).Data,
+		(*reflect.SliceHeader)(unsafe.Pointer(&dst.Labels)).Data,
+	)
+	assert.NotEqual(t,
+		(*reflect.SliceHeader)(unsafe.Pointer(&src.Samples)).Data,
+		(*reflect.SliceHeader)(unsafe.Pointer(&dst.Samples)).Data,
+	)
+	assert.NotEqual(t,
+		(*reflect.SliceHeader)(unsafe.Pointer(&src.Exemplars)).Data,
+		(*reflect.SliceHeader)(unsafe.Pointer(&dst.Exemplars)).Data,
+	)
+	for exemplarIdx := range src.Exemplars {
+		assert.NotEqual(t,
+			(*reflect.SliceHeader)(unsafe.Pointer(&src.Exemplars[exemplarIdx].Labels)).Data,
+			(*reflect.SliceHeader)(unsafe.Pointer(&dst.Exemplars[exemplarIdx].Labels)).Data,
+		)
+	}
 }

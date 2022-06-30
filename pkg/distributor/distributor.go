@@ -190,7 +190,12 @@ func (cfg *Config) Validate(limits validation.Limits) error {
 		return errInvalidTenantShardSize
 	}
 
-	return cfg.HATrackerConfig.Validate()
+	err := cfg.HATrackerConfig.Validate()
+	if err != nil {
+		return err
+	}
+
+	return cfg.Forwarding.Validate()
 }
 
 const (
@@ -224,7 +229,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		ingesterPool:          NewPool(cfg.PoolConfig, ingestersRing, cfg.IngesterClientFactory, log),
 		healthyInstancesCount: atomic.NewUint32(0),
 		limits:                limits,
-		forwarder:             forwarding.NewForwarder(reg, cfg.Forwarding),
+		forwarder:             forwarding.NewForwarder(cfg.Forwarding, reg, log),
 		HATracker:             haTracker,
 		ingestionRate:         util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval),
 
@@ -242,7 +247,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		receivedExemplars: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Namespace: "cortex",
 			Name:      "distributor_received_exemplars_total",
-			Help:      "The total number of received exemplars, excluding rejected and deduped exemplars.",
+			Help:      "The total number of received exemplars, excluding rejected, forwarded and deduped exemplars.",
 		}, []string{"user"}),
 		receivedMetadata: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Namespace: "cortex",
@@ -257,7 +262,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		incomingExemplars: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Namespace: "cortex",
 			Name:      "distributor_exemplars_in_total",
-			Help:      "The total number of exemplars that have come in to the distributor, including rejected or deduped exemplars.",
+			Help:      "The total number of exemplars that have come in to the distributor, including rejected, forwarded or deduped exemplars.",
 		}, []string{"user"}),
 		incomingMetadata: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Namespace: "cortex",
@@ -436,6 +441,10 @@ func (d *Distributor) starting(ctx context.Context) error {
 }
 
 func (d *Distributor) running(ctx context.Context) error {
+	if d.cfg.Forwarding.Enabled && d.forwarder != nil {
+		defer d.forwarder.Stop()
+	}
+
 	ingestionRateTicker := time.NewTicker(instanceIngestionRateTickInterval)
 	defer ingestionRateTicker.Stop()
 
@@ -598,26 +607,25 @@ func (d *Distributor) validateSeries(nowt time.Time, ts mimirpb.PreallocTimeseri
 	return nil
 }
 
-// forwardingReq returns a forwarding request if one is necessary, given the user ID.
-// if no forwarding request is necessary it returns nil.
-func (d *Distributor) forwardingReq(ctx context.Context, userID string) forwarding.Request {
-	if d.forwarder == nil {
-		return nil
-	}
-
-	forwardingRules := d.limits.ForwardingRules(userID)
-
-	// If this tenant has no forwarding rule(s) we can directly return "nil", which effectively disables forwarding.
-	if len(forwardingRules) == 0 {
-		return nil
-	}
-
-	return d.forwarder.NewRequest(ctx, userID, forwardingRules)
-}
-
 // Push implements client.IngesterServer
 func (d *Distributor) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error) {
-	return d.PushWithCleanup(ctx, req, func() { mimirpb.ReuseSlice(req.Timeseries) })
+	cleanup := func() {
+		if len(req.Timeseries) > 0 {
+			mimirpb.ReuseSlice(req.Timeseries)
+		}
+	}
+
+	userID, err := tenant.TenantID(ctx)
+	if err != nil {
+		cleanup()
+		return nil, err
+	}
+
+	if !d.cfg.Forwarding.Enabled {
+		return d.PushWithCleanup(ctx, req, cleanup)
+	}
+
+	return d.forwardSamples(ctx, req, userID, cleanup)
 }
 
 // PushWithCleanup takes a WriteRequest and distributes it to ingesters using the ring.
@@ -645,6 +653,7 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 	if err != nil {
 		return nil, err
 	}
+
 	span := opentracing.SpanFromContext(ctx)
 	if span != nil {
 		span.SetTag("organization", userID)
@@ -752,8 +761,6 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 		minExemplarTS = earliestSampleTimestampMs - 300000
 	}
 
-	forwardingReq := d.forwardingReq(ctx, userID)
-
 	// For each timeseries, compute a hash to distribute across ingesters;
 	// check each sample and discard if outside limits.
 	for _, ts := range req.Timeseries {
@@ -794,15 +801,6 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 
 		d.labelsHistogram.Observe(float64(len(ts.Labels)))
 
-		if forwardingReq != nil {
-			// If this tenant has any forwarding rules then we should add all samples to the forwarding request,
-			// those that don't match a forwarding rule will be discarded by the forwarding request.
-			sendToIngester := forwardingReq.Add(ts)
-			if !sendToIngester {
-				continue
-			}
-		}
-
 		skipLabelNameValidation := d.cfg.SkipLabelNameValidation || req.GetSkipLabelNameValidation()
 		// Note that validateSeries may drop some data in ts.
 		validationErr := d.validateSeries(now, ts, userID, skipLabelNameValidation, minExemplarTS)
@@ -822,11 +820,6 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 		validatedTimeseries = append(validatedTimeseries, ts)
 		validatedSamples += len(ts.Samples)
 		validatedExemplars += len(ts.Exemplars)
-	}
-
-	var forwardingErrCh <-chan error
-	if forwardingReq != nil {
-		forwardingErrCh = forwardingReq.Send(ctx)
 	}
 
 	for _, m := range req.Metadata {
@@ -849,14 +842,6 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 	d.receivedMetadata.WithLabelValues(userID).Add(float64(len(validatedMetadata)))
 
 	if len(seriesKeys) == 0 && len(metadataKeys) == 0 {
-		if forwardingErrCh != nil {
-			// Blocks until the forwarding requests have completed and the final status has been pushed through this chan.
-			err = httpgrpcutil.PrioritizeRecoverableErr(err, <-forwardingErrCh, firstPartialErr)
-			if err != nil {
-				return nil, err
-			}
-		}
-
 		return &mimirpb.WriteResponse{}, firstPartialErr
 	}
 
@@ -908,16 +893,39 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 		return d.send(localCtx, ingester, timeseries, metadata, req.Source)
 	}, func() { cleanup(); cancel() })
 
-	if forwardingErrCh != nil {
-		// Blocks until the forwarding requests have completed and the final status has been pushed through this chan.
-		forwardingErr := <-forwardingErrCh
-		err = httpgrpcutil.PrioritizeRecoverableErr(err, forwardingErr, firstPartialErr)
-	}
-
 	if err != nil {
 		return nil, err
 	}
 	return &mimirpb.WriteResponse{}, firstPartialErr
+}
+
+// forwardingReq returns a forwarding request if one is necessary, given the user ID.
+// if no forwarding request is necessary it returns nil.
+func (d *Distributor) forwardSamples(ctx context.Context, req *mimirpb.WriteRequest, userID string, cleanup func()) (*mimirpb.WriteResponse, error) {
+	forwardingRules := d.limits.ForwardingRules(userID)
+	if len(forwardingRules) == 0 {
+		return d.PushWithCleanup(ctx, req, cleanup)
+	}
+
+	var forwardingErrCh <-chan error
+	var notIngestedCounts forwarding.TimeseriesCounts
+
+	// Reassign req.Timeseries because the forwarder creates a new slice which has been filtered down.
+	// The cleanup func will cleanup the new slice, it's the forwarders responsibility to return the old one to the pool.
+	notIngestedCounts, req.Timeseries, forwardingErrCh = d.forwarder.Forward(ctx, forwardingRules, req.Timeseries)
+
+	// Some samples have been forwarded and won't be ingested but we still need to account for them in some of the metrics.
+	d.incomingSamples.WithLabelValues(userID).Add(float64(notIngestedCounts.SampleCount))
+	d.incomingExemplars.WithLabelValues(userID).Add(float64(notIngestedCounts.ExemplarCount))
+
+	resp, err := d.PushWithCleanup(ctx, req, cleanup)
+
+	errs := []error{err}
+	for err := range forwardingErrCh {
+		errs = append(errs, err)
+	}
+
+	return resp, httpgrpcutil.PrioritizeRecoverableErr(errs...)
 }
 
 func copyString(s string) string {

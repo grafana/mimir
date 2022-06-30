@@ -303,3 +303,43 @@ func ReuseTimeseries(ts *TimeSeries) {
 	ts.Exemplars = ts.Exemplars[:0]
 	timeSeriesPool.Put(ts)
 }
+
+func DeepCopyTimeseries(tsOut, tsIn *TimeSeries) *TimeSeries {
+	if cap(tsOut.Labels) < len(tsIn.Labels) {
+		tsOut.Labels = make([]LabelAdapter, len(tsIn.Labels))
+	} else {
+		tsOut.Labels = tsOut.Labels[:len(tsIn.Labels)]
+	}
+	copy(tsOut.Labels, tsIn.Labels)
+
+	if cap(tsOut.Samples) < len(tsIn.Samples) {
+		tsOut.Samples = make([]Sample, len(tsIn.Samples))
+	} else {
+		tsOut.Samples = tsOut.Samples[:len(tsIn.Samples)]
+	}
+	copy(tsOut.Samples, tsIn.Samples)
+
+	if cap(tsOut.Exemplars) < len(tsIn.Exemplars) {
+		tsOut.Exemplars = make([]Exemplar, len(tsIn.Exemplars))
+	} else {
+		tsOut.Exemplars = tsOut.Exemplars[:len(tsIn.Exemplars)]
+	}
+
+	for exemplarIdx := range tsIn.Exemplars {
+		if cap(tsOut.Exemplars[exemplarIdx].Labels) < len(tsIn.Exemplars[exemplarIdx].Labels) {
+			tsOut.Exemplars[exemplarIdx].Labels = make([]LabelAdapter, len(tsIn.Exemplars[exemplarIdx].Labels))
+		} else {
+			tsOut.Exemplars[exemplarIdx].Labels = tsOut.Exemplars[exemplarIdx].Labels[:len(tsIn.Exemplars[exemplarIdx].Labels)]
+		}
+
+		for labelIdx := range tsIn.Exemplars[exemplarIdx].Labels {
+			tsOut.Exemplars[exemplarIdx].Labels[labelIdx].Name = tsIn.Exemplars[exemplarIdx].Labels[labelIdx].Name
+			tsOut.Exemplars[exemplarIdx].Labels[labelIdx].Value = tsIn.Exemplars[exemplarIdx].Labels[labelIdx].Value
+		}
+
+		tsOut.Exemplars[exemplarIdx].Value = tsIn.Exemplars[exemplarIdx].Value
+		tsOut.Exemplars[exemplarIdx].TimestampMs = tsIn.Exemplars[exemplarIdx].TimestampMs
+	}
+
+	return tsOut
+}

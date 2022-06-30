@@ -8,11 +8,16 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+	"unsafe"
 
+	"github.com/go-kit/log"
 	"github.com/golang/snappy"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -25,14 +30,16 @@ import (
 )
 
 var testConfig = Config{
-	Enabled:         true,
-	RequestTimeout:  time.Second,
-	PropagateErrors: true,
+	Enabled:            true,
+	RequestTimeout:     time.Second,
+	RequestConcurrency: 5,
+	PropagateErrors:    true,
 }
 
-func TestForwardingSamplesSuccessfully(t *testing.T) {
-	const tenant = "tenant"
+func TestForwardingSamplesSuccessfullyToCorrectTarget(t *testing.T) {
+	ctx := context.Background()
 	now := time.Now().UnixMilli()
+	forwarder, reg := newForwarder(t)
 
 	url1, reqs1, bodies1, close1 := newTestServer(t, 200, true)
 	defer close1()
@@ -40,51 +47,53 @@ func TestForwardingSamplesSuccessfully(t *testing.T) {
 	url2, reqs2, bodies2, close2 := newTestServer(t, 200, true)
 	defer close2()
 
-	reg := prometheus.NewPedanticRegistry()
-	forwarder := NewForwarder(reg, testConfig)
-
 	rules := validation.ForwardingRules{
 		"metric1": validation.ForwardingRule{Endpoint: url1, Ingest: false},
 		"metric2": validation.ForwardingRule{Endpoint: url2, Ingest: true},
 	}
 
-	forwardingReq := forwarder.NewRequest(context.Background(), tenant, rules)
+	ts := []mimirpb.PreallocTimeseries{
+		newSample(t, now, 1, "__name__", "metric1", "some_label", "foo"),
+		newSample(t, now, 2, "__name__", "metric1", "some_label", "bar"),
+		newSample(t, now, 3, "__name__", "metric2", "some_label", "foo"),
+		newSample(t, now, 4, "__name__", "metric2", "some_label", "bar"),
+	}
+	_, tsToIngest, errCh := forwarder.Forward(ctx, rules, ts)
 
-	ingesterPush := forwardingReq.Add(newSample(t, now, 1, "__name__", "metric1", "some_label", "foo"))
-	require.False(t, ingesterPush)
+	// The metric2 should be returned by the forwarding, because the matching rule has ingest set to "true".
+	require.Len(t, tsToIngest, 2)
+	requireLabelsEqual(t, tsToIngest[0].Labels, "__name__", "metric2", "some_label", "foo")
+	requireSamplesEqual(t, tsToIngest[0].Samples, now, 3)
+	requireLabelsEqual(t, tsToIngest[1].Labels, "__name__", "metric2", "some_label", "bar")
+	requireSamplesEqual(t, tsToIngest[1].Samples, now, 4)
 
-	ingesterPush = forwardingReq.Add(newSample(t, now, 2, "__name__", "metric1", "some_label", "bar"))
-	require.False(t, ingesterPush)
-
-	ingesterPush = forwardingReq.Add(newSample(t, now, 3, "__name__", "metric2", "some_label", "foo"))
-	require.True(t, ingesterPush)
-
-	ingesterPush = forwardingReq.Add(newSample(t, now, 4, "__name__", "metric2", "some_label", "bar"))
-	require.True(t, ingesterPush)
-
-	errCh := forwardingReq.Send(context.Background())
-	require.NoError(t, <-errCh)
-
-	for _, req := range append(*reqs1, *reqs2...) {
-		require.Equal(t, req.Header.Get("Content-Encoding"), "snappy")
-		require.Equal(t, req.Header.Get("Content-Type"), "application/x-protobuf")
+	// Loop until errCh gets closed, errCh getting indicates that all forwarding requests have completed.
+	for err := range errCh {
+		require.NoError(t, err)
 	}
 
-	require.Len(t, *bodies1, 1)
-	receivedReq := decodeBody(t, (*bodies1)[0])
-	require.Len(t, receivedReq.Timeseries, 2)
-	requireLabelsEqual(t, receivedReq.Timeseries[0].Labels, "__name__", "metric1", "some_label", "foo")
-	requireSamplesEqual(t, receivedReq.Timeseries[0].Samples, now, 1)
-	requireLabelsEqual(t, receivedReq.Timeseries[1].Labels, "__name__", "metric1", "some_label", "bar")
-	requireSamplesEqual(t, receivedReq.Timeseries[1].Samples, now, 2)
+	for _, req := range append(reqs1(), reqs2()...) {
+		require.Equal(t, "snappy", req.Header.Get("Content-Encoding"))
+		require.Equal(t, "application/x-protobuf", req.Header.Get("Content-Type"))
+	}
 
-	require.Len(t, *bodies2, 1)
-	receivedReq = decodeBody(t, (*bodies2)[0])
-	require.Len(t, receivedReq.Timeseries, 2)
-	requireLabelsEqual(t, receivedReq.Timeseries[0].Labels, "__name__", "metric2", "some_label", "foo")
-	requireSamplesEqual(t, receivedReq.Timeseries[0].Samples, now, 3)
-	requireLabelsEqual(t, receivedReq.Timeseries[1].Labels, "__name__", "metric2", "some_label", "bar")
-	requireSamplesEqual(t, receivedReq.Timeseries[1].Samples, now, 4)
+	bodies := bodies1()
+	require.Len(t, bodies, 1)
+	receivedReq1 := decodeBody(t, bodies[0])
+	require.Len(t, receivedReq1.Timeseries, 2)
+	requireLabelsEqual(t, receivedReq1.Timeseries[0].Labels, "__name__", "metric1", "some_label", "foo")
+	requireSamplesEqual(t, receivedReq1.Timeseries[0].Samples, now, 1)
+	requireLabelsEqual(t, receivedReq1.Timeseries[1].Labels, "__name__", "metric1", "some_label", "bar")
+	requireSamplesEqual(t, receivedReq1.Timeseries[1].Samples, now, 2)
+
+	bodies = bodies2()
+	require.Len(t, bodies, 1)
+	receivedReq2 := decodeBody(t, bodies[0])
+	require.Len(t, receivedReq2.Timeseries, 2)
+	requireLabelsEqual(t, receivedReq2.Timeseries[0].Labels, "__name__", "metric2", "some_label", "foo")
+	requireSamplesEqual(t, receivedReq2.Timeseries[0].Samples, now, 3)
+	requireLabelsEqual(t, receivedReq2.Timeseries[1].Labels, "__name__", "metric2", "some_label", "bar")
+	requireSamplesEqual(t, receivedReq2.Timeseries[1].Samples, now, 4)
 
 	expectedMetrics := `
 	# HELP cortex_distributor_forward_requests_total The total number of requests the Distributor made to forward samples.
@@ -104,73 +113,73 @@ func TestForwardingSamplesSuccessfully(t *testing.T) {
 }
 
 func TestForwardingSamplesWithDifferentErrorsWithPropagation(t *testing.T) {
-	type errorType uint16
+	type status uint16
 	const (
-		errNone           errorType = 0
-		errNonRecoverable errorType = 400
-		errRecoverable    errorType = 500
+		statusOk                status = 200
+		statusErrNonRecoverable status = 400
+		statusErrRecoverable    status = 500
 	)
 
 	type testcase struct {
 		name              string
 		config            Config
 		remoteStatusCodes []int
-		expectedError     errorType
+		expectStatusCodes []status
 	}
 
 	tcs := []testcase{
 		{
-			name:              "non-recoverable and successful codes should result in non-recoverable",
+			name:              "one non-recoverable between two successful",
 			config:            testConfig,
 			remoteStatusCodes: []int{200, 400, 200},
-			expectedError:     errNonRecoverable,
+			expectStatusCodes: []status{statusErrNonRecoverable},
 		}, {
-			name:              "recoverable, non-recoverable and successful codes should result in recoverable (1)",
+			name:              "one of each (1)",
 			config:            testConfig,
 			remoteStatusCodes: []int{200, 400, 500},
-			expectedError:     errRecoverable,
+			expectStatusCodes: []status{statusErrNonRecoverable, statusErrRecoverable},
 		}, {
-			name:              "recoverable, non-recoverable and successful codes should result in recoverable (2)",
+			name:              "one of each (2)",
 			config:            testConfig,
 			remoteStatusCodes: []int{500, 400, 200},
-			expectedError:     errRecoverable,
+			expectStatusCodes: []status{statusErrNonRecoverable, statusErrRecoverable},
 		}, {
 			name:              "successful codes should result in no error",
 			config:            testConfig,
 			remoteStatusCodes: []int{200, 200},
-			expectedError:     errNone,
+			expectStatusCodes: []status{},
 		}, {
 			name:              "codes which are not divisible by 100 (1)",
 			config:            testConfig,
 			remoteStatusCodes: []int{204, 401, 200},
-			expectedError:     errNonRecoverable,
+			expectStatusCodes: []status{statusErrNonRecoverable},
 		}, {
 			name:              "codes which are not divisible by 100 (2)",
 			config:            testConfig,
 			remoteStatusCodes: []int{202, 403, 502},
-			expectedError:     errRecoverable,
+			expectStatusCodes: []status{statusErrNonRecoverable, statusErrRecoverable},
 		}, {
 			name:              "codes which are not divisible by 100 (3)",
 			config:            testConfig,
 			remoteStatusCodes: []int{504, 404, 201},
-			expectedError:     errRecoverable,
+			expectStatusCodes: []status{statusErrNonRecoverable, statusErrRecoverable},
 		}, {
 			name: "errors dont get propagated",
 			config: Config{
-				Enabled:         testConfig.Enabled,
-				RequestTimeout:  testConfig.RequestTimeout,
-				PropagateErrors: false,
+				Enabled:            testConfig.Enabled,
+				RequestTimeout:     testConfig.RequestTimeout,
+				RequestConcurrency: testConfig.RequestConcurrency,
+				PropagateErrors:    false,
 			},
 			remoteStatusCodes: []int{504, 404, 201},
-			expectedError:     errNone,
+			expectStatusCodes: []status{},
 		},
 	}
 
-	const tenant = "tenant"
 	for _, tc := range tcs {
 		t.Run(tc.name, func(t *testing.T) {
 			reg := prometheus.NewRegistry()
-			forwarder := NewForwarder(reg, tc.config)
+			forwarder := NewForwarder(tc.config, reg, log.NewNopLogger())
 			urls := make([]string, len(tc.remoteStatusCodes))
 			closers := make([]func(), len(tc.remoteStatusCodes))
 			expectedErrorsByStatusCode := make(map[int]int)
@@ -193,23 +202,25 @@ func TestForwardingSamplesWithDifferentErrorsWithPropagation(t *testing.T) {
 			}
 
 			now := time.Now().UnixMilli()
-			forwardingReq := forwarder.NewRequest(context.Background(), tenant, rules)
-
+			var ts []mimirpb.PreallocTimeseries
 			for _, metric := range metrics {
-				forwardingReq.Add(newSample(t, now, 1, "__name__", metric))
+				ts = append(ts, newSample(t, now, 1, "__name__", metric))
 			}
+			_, _, errCh := forwarder.Forward(context.Background(), rules, ts)
 
-			errCh := forwardingReq.Send(context.Background())
-			switch tc.expectedError {
-			case errNone:
-				require.Nil(t, <-errCh)
-			case errRecoverable, errNonRecoverable:
-				err := <-errCh
-				require.NotNil(t, err)
+			gotStatusCodes := []status{}
+			for err := range errCh {
 				resp, ok := httpgrpc.HTTPResponseFromError(err)
 				require.True(t, ok)
-				require.Equal(t, tc.expectedError, errorType(resp.Code))
+				gotStatusCodes = append(gotStatusCodes, status(resp.Code))
 			}
+
+			sortStatusCodes := func(statusCodes []status) {
+				sort.Slice(statusCodes, func(i, j int) bool { return statusCodes[i] < statusCodes[j] })
+			}
+			sortStatusCodes(gotStatusCodes)
+			sortStatusCodes(tc.expectStatusCodes)
+			require.Equal(t, tc.expectStatusCodes, gotStatusCodes)
 
 			var expectedMetrics strings.Builder
 			if len(expectedErrorsByStatusCode) > 0 {
@@ -230,14 +241,438 @@ func TestForwardingSamplesWithDifferentErrorsWithPropagation(t *testing.T) {
 	}
 }
 
-func newSample(tb testing.TB, time int64, value float64, labelValuePairs ...string) mimirpb.PreallocTimeseries {
-	require.Zero(tb, len(labelValuePairs)%2)
+func TestForwardingEnsureThatSlicesGetReused(t *testing.T) {
+	sampleCount := 20
 
-	ts := mimirpb.TimeSeries{
+	const forwardingTarget1 = "target1"
+	const forwardingTarget2 = "target2"
+	const ingested = "ingested"
+
+	type testCase struct {
+		name          string
+		sendSamples   map[string]int
+		rules         validation.ForwardingRules
+		expectSamples map[string]int
+	}
+
+	testCases := []testCase{
+		{
+			name: "forward samples of one metric to one target and don't ingest them",
+			sendSamples: map[string]int{
+				"metric1": sampleCount,
+			},
+			rules: validation.ForwardingRules{
+				"metric1": {Endpoint: forwardingTarget1, Ingest: false},
+			},
+			expectSamples: map[string]int{
+				forwardingTarget1: sampleCount,
+			},
+		}, {
+			name: "forward samples of one metric to one target and ingest them",
+			sendSamples: map[string]int{
+				"metric1": sampleCount,
+			},
+			rules: validation.ForwardingRules{
+				"metric1": {Endpoint: forwardingTarget1, Ingest: true},
+			},
+			expectSamples: map[string]int{
+				forwardingTarget1: sampleCount,
+				ingested:          sampleCount,
+			},
+		}, {
+			name: "forward samples of four metrics to two targets and don't ingest them",
+			sendSamples: map[string]int{
+				"metric1": sampleCount / 4,
+				"metric2": sampleCount / 4,
+				"metric3": sampleCount / 4,
+				"metric4": sampleCount / 4,
+			},
+			rules: validation.ForwardingRules{
+				"metric1": {Endpoint: forwardingTarget1, Ingest: false},
+				"metric2": {Endpoint: forwardingTarget2, Ingest: false},
+				"metric3": {Endpoint: forwardingTarget1, Ingest: false},
+				"metric4": {Endpoint: forwardingTarget2, Ingest: false},
+			},
+			expectSamples: map[string]int{
+				forwardingTarget1: sampleCount / 2,
+				forwardingTarget2: sampleCount / 2,
+			},
+		}, {
+			name: "forward samples of four metrics to two targets and ingest them",
+			sendSamples: map[string]int{
+				"metric1": sampleCount / 4,
+				"metric2": sampleCount / 4,
+				"metric3": sampleCount / 4,
+				"metric4": sampleCount / 4,
+			},
+			rules: validation.ForwardingRules{
+				"metric1": {Endpoint: forwardingTarget1, Ingest: true},
+				"metric2": {Endpoint: forwardingTarget2, Ingest: true},
+				"metric3": {Endpoint: forwardingTarget1, Ingest: true},
+				"metric4": {Endpoint: forwardingTarget2, Ingest: true},
+			},
+			expectSamples: map[string]int{
+				forwardingTarget1: sampleCount / 2,
+				forwardingTarget2: sampleCount / 2,
+				ingested:          sampleCount,
+			},
+		}, {
+			name: "forward samples of four metrics to two targets and ingest half of them (1)",
+			sendSamples: map[string]int{
+				"metric1": sampleCount / 4,
+				"metric2": sampleCount / 4,
+				"metric3": sampleCount / 4,
+				"metric4": sampleCount / 4,
+			},
+			rules: validation.ForwardingRules{
+				"metric1": {Endpoint: forwardingTarget1, Ingest: true},
+				"metric2": {Endpoint: forwardingTarget2, Ingest: true},
+				"metric3": {Endpoint: forwardingTarget1, Ingest: false},
+				"metric4": {Endpoint: forwardingTarget2, Ingest: false},
+			},
+			expectSamples: map[string]int{
+				forwardingTarget1: sampleCount / 2,
+				forwardingTarget2: sampleCount / 2,
+				ingested:          sampleCount / 2,
+			},
+		}, {
+			name: "forward samples of four metrics to two targets and ingest half of them (2)",
+			sendSamples: map[string]int{
+				"metric1": sampleCount / 4,
+				"metric2": sampleCount / 4,
+				"metric3": sampleCount / 4,
+				"metric4": sampleCount / 4,
+			},
+			rules: validation.ForwardingRules{
+				"metric1": {Endpoint: forwardingTarget1, Ingest: true},
+				"metric2": {Endpoint: forwardingTarget2, Ingest: false},
+				"metric3": {Endpoint: forwardingTarget1, Ingest: true},
+				"metric4": {Endpoint: forwardingTarget2, Ingest: false},
+			},
+			expectSamples: map[string]int{
+				forwardingTarget1: sampleCount / 2,
+				forwardingTarget2: sampleCount / 2,
+				ingested:          sampleCount / 2,
+			},
+		}, {
+			name: "don't forward samples, just ingest them",
+			sendSamples: map[string]int{
+				"metric1": sampleCount,
+			},
+			rules: validation.ForwardingRules{},
+			expectSamples: map[string]int{
+				ingested: sampleCount,
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			forwarder, tsPool, tsSlicePool, validatePoolUsage := getForwarderWithValidatingPools(t, sampleCount)
+			url1, _, bodies1, closer1 := newTestServer(t, 200, true)
+			defer closer1()
+			url2, _, bodies2, closer2 := newTestServer(t, 200, true)
+			defer closer2()
+
+			// Replace forwarding target strings with URLs of test servers.
+			for metric, rule := range tc.rules {
+				if rule.Endpoint == forwardingTarget1 {
+					rule.Endpoint = url1
+				} else if rule.Endpoint == forwardingTarget2 {
+					rule.Endpoint = url2
+				}
+				tc.rules[metric] = rule
+			}
+
+			// bodiesByForwardingTarget maps the forwarding targets to the methods to obtain the bodies that they received.
+			bodiesByForwardingTarget := map[string]func() [][]byte{
+				forwardingTarget1: bodies1,
+				forwardingTarget2: bodies2,
+			}
+
+			// Generate the TimeSeries slice to submit to the forwarder.
+			tsIn := tsSlicePool.get()
+			for metric, sampleCount := range tc.sendSamples {
+				// Ensure that "append" doesn't create a new slice.
+				require.True(t, cap(tsIn) > len(tsIn), "timeseries slice should have enough capacity to append the test data to it")
+
+				tsIn = append(tsIn, mimirpb.PreallocTimeseries{TimeSeries: tsPool.get()})
+				tsWriteIdx := len(tsIn) - 1
+				tsIn[tsWriteIdx].TimeSeries.Labels = []mimirpb.LabelAdapter{
+					{Name: "__name__", Value: metric},
+					{Name: "foo", Value: "bar"},
+				}
+				for sampleIdx := 0; sampleIdx < sampleCount; sampleIdx++ {
+					sample := mimirpb.Sample{
+						TimestampMs: int64(sampleIdx),
+						Value:       42,
+					}
+					tsIn[tsWriteIdx].TimeSeries.Samples = append(tsIn[tsWriteIdx].TimeSeries.Samples, sample)
+				}
+			}
+
+			// Perform the forwarding operation.
+			_, toIngest, errCh := forwarder.Forward(context.Background(), tc.rules, tsIn)
+			require.NoError(t, <-errCh)
+
+			// receivedSamples counts the number of samples that each forwarding target has received.
+			receivedSamples := make(map[string]int)
+			for forwardingTarget, bodies := range bodiesByForwardingTarget {
+				for _, body := range bodies() {
+					writeReq := decodeBody(t, body)
+					for _, ts := range writeReq.Timeseries {
+						receivedForTarget := receivedSamples[forwardingTarget]
+						receivedForTarget += len(ts.Samples)
+						receivedSamples[forwardingTarget] = receivedForTarget
+					}
+				}
+			}
+
+			// "ingested" is a special target which indicates that a sample should be ingested into the ingesters.
+			for _, sample := range toIngest {
+				receivedSamples[ingested] += len(sample.Samples)
+			}
+
+			// Reuse the slice with the samples to ingest, the distributor would do this in its request cleanup.
+			tsSlicePool.reuse(toIngest)
+
+			// Validate pool usage.
+			validatePoolUsage()
+
+			// Check that each forwarding target has received the correct number of samples.
+			require.Len(t, receivedSamples, len(tc.expectSamples))
+			for forwardingTarget, expectedSampleCount := range tc.expectSamples {
+				require.Equal(t, expectedSampleCount, receivedSamples[forwardingTarget])
+			}
+		})
+	}
+}
+
+// getForwarderWithValidatingPools returns a forwarder with validating pools, so the pool usage can be validated to be correct.
+func getForwarderWithValidatingPools(t *testing.T, initialCap int) (*forwarder, *validatingTsPool, *validatingTsSlicePool, func()) {
+	t.Helper()
+
+	validatingMockTsPool := newValidatingTsPool(t)
+	validatingMockTsSlicePool := newValidatingTsSlicePool(t, initialCap, validatingMockTsPool.reuse)
+
+	forwarder := NewForwarder(testConfig, prometheus.NewRegistry(), log.NewNopLogger()).(*forwarder)
+	forwarder.pools.getTs = validatingMockTsPool.get
+	forwarder.pools.reuseTs = validatingMockTsPool.reuse
+	forwarder.pools.getTsSlice = validatingMockTsSlicePool.get
+	forwarder.pools.reuseTsSlice = validatingMockTsSlicePool.reuse
+
+	validateUsage := func() {
+		validatingMockTsPool.validateUsage()
+		validatingMockTsSlicePool.validateUsage()
+	}
+
+	return forwarder, validatingMockTsPool, validatingMockTsSlicePool, validateUsage
+}
+
+// validatingPool is a pool of obejcts that validates that it is used correctly by keeping track of a unique ID
+// of each object it instantiates and whether the object has been returned to the pool.
+type validatingPool struct {
+	t                   *testing.T
+	objsInstantiated    map[interface{}]bool
+	objsInstantiatedMtx sync.Mutex
+	objsReused          []interface{}
+	new                 func() interface{}
+	id                  func(interface{}) interface{}
+	prepareForReuse     func(interface{}) interface{}
+}
+
+func newValidatingPool(t *testing.T, new func() interface{}, id func(interface{}) interface{}, prepareForReuse func(interface{}) interface{}) *validatingPool {
+	return &validatingPool{
+		t:                t,
+		objsInstantiated: make(map[interface{}]bool),
+		new:              new,
+		id:               id,
+		prepareForReuse:  prepareForReuse,
+	}
+}
+
+// get returns an object from the pool, the object must be returned to the pool before validateUsage() is called.
+func (v *validatingPool) get() interface{} {
+	v.t.Helper()
+
+	obj := v.new()
+	id := v.id(obj)
+
+	v.objsInstantiatedMtx.Lock()
+	defer v.objsInstantiatedMtx.Unlock()
+
+	_, ok := v.objsInstantiated[id]
+	require.False(v.t, ok, "object has already been instantiated")
+	v.objsInstantiated[id] = false
+
+	return obj
+}
+
+// reuse returns an object to the pool, the object must have been created by the pool and it must only be reused once.
+func (v *validatingPool) reuse(obj interface{}) {
+	v.t.Helper()
+
+	id := v.id(obj)
+
+	if v.prepareForReuse != nil {
+		obj = v.prepareForReuse(obj)
+	}
+
+	v.objsInstantiatedMtx.Lock()
+	defer v.objsInstantiatedMtx.Unlock()
+
+	reused, ok := v.objsInstantiated[id]
+	require.True(v.t, ok, "object is not from this pool")
+	require.False(v.t, reused, "this object has already been returned to the pool")
+	v.objsInstantiated[id] = true
+
+	// We need to keep a reference to the reused obj to ensure that the next call to get() cannot return a new
+	// object which happens to have the same id because this would lead to a collision in objsInstantiated.
+	v.objsReused = append(v.objsReused, obj)
+}
+
+// validateUsage validates that all the objects created by the pool have been returned to it.
+func (v *validatingPool) validateUsage() {
+	v.t.Helper()
+
+	v.objsInstantiatedMtx.Lock()
+	defer v.objsInstantiatedMtx.Unlock()
+
+	for id, reused := range v.objsInstantiated {
+		require.True(v.t, reused, "object with id %d has not been returned to pool", id)
+	}
+}
+
+type validatingTsPool struct {
+	validatingPool
+}
+
+func newValidatingTsPool(t *testing.T) *validatingTsPool {
+	interfaceToType := func(obj interface{}) *mimirpb.TimeSeries {
+		switch obj := obj.(type) {
+		case *mimirpb.TimeSeries:
+			return obj
+		default:
+			t.Fatalf("Object of invalid type returned to pool: %s", reflect.TypeOf(obj))
+			return nil // Just for linter.
+		}
+	}
+
+	new := func() interface{} {
+		return &mimirpb.TimeSeries{}
+	}
+
+	id := func(obj interface{}) interface{} {
+		objT := interfaceToType(obj)
+
+		// We uniquely identify objects of type *TimeSeries by the address which the pointer is referring to.
+		return reflect.ValueOf(objT).Pointer()
+	}
+
+	return &validatingTsPool{*newValidatingPool(t, new, id, nil)}
+}
+
+// get returns a time series object from the pool, it must be returned to the pool before validateUsage() is called.
+func (v *validatingTsPool) get() *mimirpb.TimeSeries {
+	return v.validatingPool.get().(*mimirpb.TimeSeries)
+}
+
+// reuse returns a time series object to the pool, it  must have been created by the pool and it must only be reused once.
+func (v *validatingTsPool) reuse(obj *mimirpb.TimeSeries) {
+	v.validatingPool.reuse(obj)
+}
+
+type validatingTsSlicePool struct {
+	validatingPool
+}
+
+func newValidatingTsSlicePool(t *testing.T, initialCap int, reuseTs func(*mimirpb.TimeSeries)) *validatingTsSlicePool {
+	interfaceToType := func(obj interface{}) []mimirpb.PreallocTimeseries {
+		switch obj := obj.(type) {
+		case []mimirpb.PreallocTimeseries:
+			return obj
+		default:
+			t.Fatalf("Object of invalid type returned to pool: %s", reflect.TypeOf(obj))
+			return nil // Just for linter.
+		}
+	}
+
+	new := func() interface{} {
+		return make([]mimirpb.PreallocTimeseries, 0, initialCap)
+	}
+
+	id := func(obj interface{}) interface{} {
+		objT := interfaceToType(obj)
+
+		// We uniquely identify objects of type *TimeSeries by the address of the underlying data array.
+		return (*reflect.SliceHeader)(unsafe.Pointer(&objT)).Data
+	}
+
+	prepareForReuse := func(obj interface{}) interface{} {
+		objT := interfaceToType(obj)
+
+		for _, ts := range objT {
+			// When returning a slice of PreallocTimeseries to the pool we first need to return the contained
+			// TimeSeries objects to their pool, the original methods in the mimirpb package do the same.
+			reuseTs(ts.TimeSeries)
+		}
+
+		return obj
+	}
+
+	return &validatingTsSlicePool{*newValidatingPool(t, new, id, prepareForReuse)}
+}
+
+// get returns a slice of time series from the pool, it must be returned to the pool before validateUsage() is called.
+func (v *validatingTsSlicePool) get() []mimirpb.PreallocTimeseries {
+	return v.validatingPool.get().([]mimirpb.PreallocTimeseries)
+}
+
+// reuse returns a slice of time series to the pool, it  must have been created by the pool and it must only be reused once.
+func (v *validatingTsSlicePool) reuse(obj []mimirpb.PreallocTimeseries) {
+	v.validatingPool.reuse(obj)
+}
+
+func newForwarder(t *testing.T) (Forwarder, *prometheus.Registry) {
+	reg := prometheus.NewPedanticRegistry()
+	log := log.NewNopLogger()
+
+	forwarder := NewForwarder(testConfig, reg, log)
+	t.Cleanup(forwarder.Stop)
+
+	return forwarder, reg
+}
+
+func newSample(tb testing.TB, time int64, value float64, labelValuePairs ...string) mimirpb.PreallocTimeseries {
+	tb.Helper()
+
+	ts := &mimirpb.TimeSeries{
 		Samples: []mimirpb.Sample{
 			{TimestampMs: time, Value: value},
 		},
 	}
+
+	setLabels(tb, ts, labelValuePairs...)
+
+	return mimirpb.PreallocTimeseries{
+		TimeSeries: ts,
+	}
+}
+
+func newSampleFromPool(tb testing.TB, time int64, value float64, labelValuePairs ...string) mimirpb.PreallocTimeseries {
+	tb.Helper()
+
+	ts := mimirpb.TimeseriesFromPool()
+
+	setLabels(tb, ts, labelValuePairs...)
+
+	return mimirpb.PreallocTimeseries{
+		TimeSeries: ts,
+	}
+}
+
+func setLabels(tb testing.TB, ts *mimirpb.TimeSeries, labelValuePairs ...string) {
+	require.Zero(tb, len(labelValuePairs)%2)
 
 	for i := 0; i < len(labelValuePairs)/2; i++ {
 		ts.Labels = append(ts.Labels, mimirpb.LabelAdapter{
@@ -245,13 +680,11 @@ func newSample(tb testing.TB, time int64, value float64, labelValuePairs ...stri
 			Value: labelValuePairs[i*2+1],
 		})
 	}
-
-	return mimirpb.PreallocTimeseries{
-		TimeSeries: &ts,
-	}
 }
 
 func requireLabelsEqual(t *testing.T, gotLabels []mimirpb.LabelAdapter, wantLabelValuePairs ...string) {
+	t.Helper()
+
 	require.Zero(t, len(wantLabelValuePairs)%2)
 	require.Equal(t, len(wantLabelValuePairs)/2, len(gotLabels))
 
@@ -262,6 +695,8 @@ func requireLabelsEqual(t *testing.T, gotLabels []mimirpb.LabelAdapter, wantLabe
 }
 
 func requireSamplesEqual(t *testing.T, gotSamples []mimirpb.Sample, wantTimeValuePairs ...int64) {
+	t.Helper()
+
 	require.Zero(t, len(wantTimeValuePairs)%2)
 	require.Equal(t, len(wantTimeValuePairs)/2, len(gotSamples))
 
@@ -271,7 +706,9 @@ func requireSamplesEqual(t *testing.T, gotSamples []mimirpb.Sample, wantTimeValu
 	}
 }
 
-func newTestServer(tb testing.TB, status int, record bool) (string, *[]*http.Request, *[][]byte, func()) {
+func newTestServer(tb testing.TB, status int, record bool) (string, func() []*http.Request, func() [][]byte, func()) {
+	tb.Helper()
+
 	var requests []*http.Request
 	var bodies [][]byte
 	var mtx sync.Mutex
@@ -292,10 +729,26 @@ func newTestServer(tb testing.TB, status int, record bool) (string, *[]*http.Req
 		}),
 	)
 
-	return srv.URL, &requests, &bodies, srv.Close
+	getRequests := func() []*http.Request {
+		mtx.Lock()
+		defer mtx.Unlock()
+
+		return requests
+	}
+
+	getBodies := func() [][]byte {
+		mtx.Lock()
+		defer mtx.Unlock()
+
+		return bodies
+	}
+
+	return srv.URL, getRequests, getBodies, srv.Close
 }
 
 func decodeBody(t *testing.T, body []byte) mimirpb.WriteRequest {
+	t.Helper()
+
 	decompressed, err := snappy.Decode(nil, body)
 	require.NoError(t, err)
 
@@ -307,36 +760,67 @@ func decodeBody(t *testing.T, body []byte) mimirpb.WriteRequest {
 }
 
 func BenchmarkRemoteWriteForwarding(b *testing.B) {
-	const tenant = "tenant"
 	const samplesPerReq = 1000
 	now := time.Now().UnixMilli()
 	ctx := context.Background()
 
-	samples := make([]mimirpb.PreallocTimeseries, samplesPerReq)
-	rules := make(validation.ForwardingRules)
-	for i := 0; i < samplesPerReq; i++ {
-		metric := fmt.Sprintf("metric%03d", i)
-		samples[i] = newSample(b, now, 1, "__name__", metric)
-		rules[metric] = validation.ForwardingRule{Endpoint: "http://localhost/"}
+	metrics := make([]string, samplesPerReq)
+	for metricIdx := 0; metricIdx < samplesPerReq; metricIdx++ {
+		metrics[metricIdx] = "metric" + strconv.Itoa(metricIdx)
 	}
 
-	forwarder := NewForwarder(nil, testConfig).(*forwarder)
+	rulesWithIngest := make(validation.ForwardingRules)
+	rulesWithoutIngest := make(validation.ForwardingRules)
+	rulesWithoutForwarding := make(validation.ForwardingRules)
 
-	// No-op client, we don't want the benchmark to be skewed by TCP performance
+	for metricIdx := 0; metricIdx < samplesPerReq; metricIdx++ {
+		rulesWithIngest[metrics[metricIdx]] = validation.ForwardingRule{Endpoint: "http://localhost/", Ingest: true}
+		rulesWithoutIngest[metrics[metricIdx]] = validation.ForwardingRule{Endpoint: "http://localhost/", Ingest: false}
+		rulesWithoutForwarding["non-existent-metric"] = validation.ForwardingRule{Endpoint: "http://localhost/", Ingest: false}
+	}
+
+	forwarder := NewForwarder(testConfig, prometheus.NewRegistry(), log.NewNopLogger()).(*forwarder)
+
+	// No-op client because we don't want the benchmark to be skewed by TCP performance.
 	forwarder.client = http.Client{Transport: &noopRoundTripper{}}
 
-	b.ResetTimer()
-	b.ReportAllocs()
+	errChs := make([]chan error, testConfig.RequestConcurrency)
+	var errChIdx int
 
-	for i := 0; i < b.N; i++ {
-		req := forwarder.NewRequest(ctx, tenant, rules)
+	type testCase struct {
+		name  string
+		rules validation.ForwardingRules
+	}
 
-		for _, sample := range samples {
-			req.Add(sample)
-		}
+	testCases := []testCase{
+		{name: "forwarding and ingesting", rules: rulesWithIngest},
+		{name: "forwarding and no ingesting", rules: rulesWithoutIngest},
+		{name: "no forwarding and only ingesting", rules: rulesWithoutForwarding},
+	}
 
-		errCh := req.Send(ctx)
-		require.Nil(b, <-errCh)
+	for _, tc := range testCases {
+		b.Run(tc.name, func(b *testing.B) {
+
+			b.ResetTimer()
+			b.ReportAllocs()
+
+			for runIdx := 0; runIdx < b.N; runIdx++ {
+				samples := mimirpb.PreallocTimeseriesSliceFromPool()
+				for sampleIdx := 0; sampleIdx < samplesPerReq; sampleIdx++ {
+					samples = append(samples, newSampleFromPool(b, now, 1, "__name__", metrics[sampleIdx]))
+				}
+
+				if errChs[errChIdx] != nil {
+					require.NoError(b, <-errChs[errChIdx])
+				}
+
+				var toIngest []mimirpb.PreallocTimeseries
+				_, toIngest, errChs[errChIdx] = forwarder.Forward(ctx, tc.rules, samples)
+				errChIdx = (errChIdx + 1) % len(errChs)
+
+				mimirpb.ReuseSlice(toIngest)
+			}
+		})
 	}
 }
 

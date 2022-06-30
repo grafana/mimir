@@ -1368,6 +1368,17 @@
             },
             {
               "kind": "field",
+              "name": "request_concurrency",
+              "required": false,
+              "desc": "Maximum concurrency at which forwarding requests get performed.",
+              "fieldValue": null,
+              "fieldDefaultValue": 10,
+              "fieldFlag": "distributor.forwarding.request-concurrency",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
               "name": "request_timeout",
               "required": false,
               "desc": "Timeout for requests to ingestion endpoints to which we forward metrics.",

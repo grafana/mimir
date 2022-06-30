@@ -611,6 +611,11 @@ forwarding:
   # CLI flag: -distributor.forwarding.enabled
   [enabled: <boolean> | default = false]
 
+  # (experimental) Maximum concurrency at which forwarding requests get
+  # performed.
+  # CLI flag: -distributor.forwarding.request-concurrency
+  [request_concurrency: <int> | default = 10]
+
   # (experimental) Timeout for requests to ingestion endpoints to which we
   # forward metrics.
   # CLI flag: -distributor.forwarding.request-timeout
