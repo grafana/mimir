@@ -199,37 +199,35 @@ func (s *state) starting(ctx context.Context) error {
 	timer := prometheus.NewTimer(s.initialSyncDuration)
 	defer timer.ObserveDuration()
 
-	level.Info(s.logger).Log("msg", "Waiting for notification and silences to settle...")
+	// If replication factor is > 1 attempt to read state from other replicas, falling back to reading from
+	// storage if they are unavailable.
+	if s.replicationFactor > 1 {
+		level.Info(s.logger).Log("msg", "Waiting for notification and silences to settle...")
 
-	// If the replication factor is <= 1, there is nowhere to obtain the state from.
-	if s.replicationFactor <= 1 {
-		level.Info(s.logger).Log("msg", "skipping settling (no replicas)")
-		return nil
-	}
+		// We can check other alertmanager(s) and explicitly ask them to propagate their state to us if available.
+		readCtx, cancel := context.WithTimeout(ctx, s.settleReadTimeout)
+		defer cancel()
 
-	// We can check other alertmanager(s) and explicitly ask them to propagate their state to us if available.
-	readCtx, cancel := context.WithTimeout(ctx, s.settleReadTimeout)
-	defer cancel()
-
-	s.fetchReplicaStateTotal.Inc()
-	fullStates, err := s.replicator.ReadFullStateForUser(readCtx, s.userID)
-	if err == nil {
-		if err = s.mergeFullStates(fullStates); err == nil {
-			level.Info(s.logger).Log("msg", "state settled; proceeding")
-			s.initialSyncCompleted.WithLabelValues(syncFromReplica).Inc()
-			return nil
+		s.fetchReplicaStateTotal.Inc()
+		fullStates, err := s.replicator.ReadFullStateForUser(readCtx, s.userID)
+		if err == nil {
+			if err = s.mergeFullStates(fullStates); err == nil {
+				level.Info(s.logger).Log("msg", "state settled; proceeding")
+				s.initialSyncCompleted.WithLabelValues(syncFromReplica).Inc()
+				return nil
+			}
 		}
-	}
 
-	// The user not being found in all of the replicas is not recorded as a failure, as this is
-	// expected when this is the first replica to come up for a user. Note that it is important
-	// to continue and try to read from the state from remote storage, as the replicas may have
-	// lost state due to an all-replica restart.
-	if err != errAllReplicasUserNotFound {
-		s.fetchReplicaStateFailed.Inc()
-	}
+		// The user not being found in all of the replicas is not recorded as a failure, as this is
+		// expected when this is the first replica to come up for a user. Note that it is important
+		// to continue and try to read from the state from remote storage, as the replicas may have
+		// lost state due to an all-replica restart.
+		if err != errAllReplicasUserNotFound {
+			s.fetchReplicaStateFailed.Inc()
+		}
 
-	level.Info(s.logger).Log("msg", "state not settled; trying to read from storage", "err", err)
+		level.Info(s.logger).Log("msg", "state not settled; trying to read from storage", "err", err)
+	}
 
 	// Attempt to read the state from persistent storage instead.
 	storeReadCtx, cancel := context.WithTimeout(ctx, s.storeReadTimeout)
