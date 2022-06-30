@@ -40,13 +40,11 @@ Verify that you have:
 
 Using a custom namespace solves problems later on because you do not have to overwrite the default namespace.
 
-1. Create a unique Kubernetes namespace:
+1. Create a unique Kubernetes namespace, for example `mimir-test`:
 
    ```console
-   kubectl create namespace <namespace>
+   kubectl create namespace mimir-test
    ```
-
-   Replace `<namespace>` with a namespace of your choice. For example, `mimir` or `test-mimir`.
 
    For more details, see the Kubernetes documentation about [Creating a new namespace](https://kubernetes.io/docs/tasks/administer-cluster/namespaces/#creating-a-new-namespace).
 
@@ -85,37 +83,40 @@ Using a custom namespace solves problems later on because you do not have to ove
 1. Install Grafana Mimir using the Helm chart:
 
    ```bash
-   helm -n <namespace> install <release-name> grafana/mimir-distributed -f custom.yaml
+   helm -n mimir-test install mimir grafana/mimir-distributed -f custom.yaml
    ```
+
+   > **Note:**: the output of the command contains the write and read URLs necessary for the following steps.
 
 1. Check the statuses of the Mimir services:
 
    ```bash
-   kubectl -n <namespace> get pod
+   kubectl -n mimir-test get pod
    ```
 
    The results look similar to this:
 
    ```bash
-   kubectl -n dev get pod
-   NAME                                                       READY   STATUS      RESTARTS   AGE
-   <release-name>-mimir-nginx-69fd969c-g6bkn                  1/1     Running     0          159m
-   <release-name>-minio-5757f44456-dz7xx                      1/1     Running     0          159m
-   <release-name>-mimir-distributed-make-bucket-job-f5gbj     0/1     Completed   0          159m
-   <release-name>-mimir-distributor-7db5f7c8bc-444sd          1/1     Running     0          148m
-   <release-name>-mimir-overrides-exporter-79b475c98d-sqzxx   1/1     Running     0          148m
-   <release-name>-mimir-querier-5cb58b7b9c-zwnr6              1/1     Running     0          148m
-   <release-name>-mimir-query-frontend-74d666bcd5-4dcwh       1/1     Running     0          148m
-   <release-name>-mimir-ruler-745fff6c6d-8swsv                1/1     Running     0          148m
-   <release-name>-mimir-alertmanager-0                        1/1     Running     0          148m
-   <release-name>-mimir-compactor-0                           1/1     Running     0          148m
-   <release-name>-mimir-ingester-1                            1/1     Running     0          147m
-   <release-name>-mimir-ingester-2                            1/1     Running     0          147m
-   <release-name>-mimir-store-gateway-0                       1/1     Running     0          146m
-   <release-name>-mimir-ingester-0                            1/1     Running     0          144m
+   kubectl  -n mimir-test get pod
+   NAME                                            READY   STATUS      RESTARTS   AGE
+   mimir-minio-78b59f5569-fhlhs                    1/1     Running     0          2m4s
+   mimir-nginx-74f8bff8dc-7kr7z                    1/1     Running     0          2m5s
+   mimir-mimir-distributed-make-bucket-job-z2hc8   0/1     Completed   0          2m4s
+   mimir-overrides-exporter-5fd94b745b-htrdr       1/1     Running     0          2m5s
+   mimir-query-frontend-68cbbfbfb5-pt2ng           1/1     Running     0          2m5s
+   mimir-ruler-56586c9774-28k7h                    1/1     Running     0          2m5s
+   mimir-querier-7894f6c5f9-pj9sp                  1/1     Running     0          2m5s
+   mimir-querier-7894f6c5f9-cwjf6                  1/1     Running     0          2m4s
+   mimir-alertmanager-0                            1/1     Running     0          2m4s
+   mimir-distributor-55745599b5-r26kr              1/1     Running     0          2m4s
+   mimir-compactor-0                               1/1     Running     0          2m4s
+   mimir-store-gateway-0                           1/1     Running     0          2m4s
+   mimir-ingester-1                                1/1     Running     0          2m4s
+   mimir-ingester-2                                1/1     Running     0          2m4s
+   mimir-ingester-0                                1/1     Running     0          2m4s
    ```
 
-1. What until all of the pods have a status of `Running` or `Completed`, which might take a few minutes.
+1. Wait until all of the pods have a status of `Running` or `Completed`, which might take a few minutes.
 
 ## Configure Prometheus to write to Grafana Mimir
 
@@ -251,17 +252,13 @@ Grafana Mimir itself, and then writes those metrics to the same Grafana Mimir in
        installOperator: true
        metrics:
          additionalRemoteWriteConfigs:
-           - url: "http://<release-name>-mimir-nginx.<namespace>.svc:80/api/v1/push"
+           - url: "http://mimir-nginx.mimir-test.svc:80/api/v1/push"
    ```
-
-   Replace _`<release-name>`_ with the release name that you used when you installed the Grafana Mimir Helm chart.
-
-   Replace _`<namespace>`_ with the namespace in which Grafana Mimir is installed.
 
 1. Upgrade Grafana Mimir by using the `helm` command:
 
    ```bash
-   helm -n <namespace> upgrade <release-name> grafana/mimir-distributed -f custom.yaml
+   helm -n mimir-test upgrade mimir grafana/mimir-distributed -f custom.yaml
    ```
 
 1. In Grafana, verify that your metrics are being scraped, by quering the metric `cortex_ingester_ingested_samples_total{}`.
@@ -285,10 +282,10 @@ Grafana Mimir itself, and then writes those metrics to the same Grafana Mimir in
 1. On the left-hand side, go to **Configuration** > **Data sources**.
 1. Configure a new Prometheus data source to query the local Grafana Mimir server, by using the following settings:
 
-   | Field | Value                                                               |
-   | ----- | ------------------------------------------------------------------- |
-   | Name  | Mimir                                                               |
-   | URL   | http://\<release-name\>-mimir-nginx.\<namespace\>.svc:80/prometheus |
+   | Field | Value                                           |
+   | ----- | ----------------------------------------------- |
+   | Name  | Mimir                                           |
+   | URL   | http://mimir-nginx.mimir-test.svc:80/prometheus |
 
    To add a data source, see [Add a data source](https://grafana.com/docs/grafana/latest/datasources/add-a-data-source/).
 
