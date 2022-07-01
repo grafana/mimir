@@ -38,6 +38,7 @@ Entries should include a reference to the Pull Request that introduced the chang
   - The value `memcached-*.arguments` was removed, the default arguments are now encoded in the template. Use `memcached-*.extraArgs` to provide additional arguments as well as the values `memcached-*.allocatedMemory`, `memcached-*.maxItemMemory` and `memcached-*.port` to set the memcached command line flags `-m`, `-I` and `-u`.
   - The remaining arguments are aligned with the rest of the chart's services, please consult the values file to check whether a parameter exists or was renamed.
 * [CHANGE] Change default value for `blocks_storage.bucket_store.chunks_cache.memcached.timeout` to `450ms` to increase use of cached data. #2035
+* [CHANGE] Remove setting `server.grpc_server_max_recv_msg_size` and `server.grpc_server_max_send_msg_size` to 100MB, since it is the default now, see #1884. #2300
 * [FEATURE] Add `mimir-continuous-test` in smoke-test mode. Use `helm test` to run a smoke test of the read + write path.
 * [FEATURE] Add meta-monitoring via the Grafana Agent Kubernetes operator: scrape metrics and collect logs from Mimir pods and ship them to a remote. #2068
 * [ENHANCEMENT] ServiceMonitor object will now have default values based on release namesapce in the `namespace` and `namespaceSelector` fields. #2123
