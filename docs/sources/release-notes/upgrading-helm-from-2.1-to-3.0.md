@@ -14,11 +14,12 @@ Follow these steps to migrate your Helm values file to 3.0.
 
 - **Configuration Storage has changed**
     - Mimir configuration is now stored in a ConfigMap by default instead of a Secret
+    - In case of providing the configuration in a user managed Secret (**`useExternalConfig=true`**), you must set `configStorageType=Secret`. Conversely, it is now possible to use a ConfigMap to manage your configuration.
     - See [(Optional) Use the new, simplified configuration method](#optional-use-the-new-simplified-configuration-method) for tips on securing credentials in this new format
     - The previous behavior can be enabled by setting `configStorageType` to `Secret`
 - **Update memcached configuration**
     - The mimir-distributed chart supports four different caches. The configuration parameters have changed as follows:
-    - If you are not overriding the value of anything under the `memcached`, `memcached-queries`, `memcached-metadata`, or `memcached-results` sections, then you can safely skip this section.
+    - If you have not enabled any memcached caches,  and you are not overriding the value of anything under the `memcached`, `memcached-queries`, `memcached-metadata`, or `memcached-results` sections, then you can safely skip this section.
     - The `memcached` section now contains common values shared across all memcached instances.
     - New `memcachedExporter` section was added to configure memcached metrics exporter.
     - New `chunks-cache` section was added that refers to previous `memcached` configuration.
@@ -37,7 +38,7 @@ Follow these steps to migrate your Helm values file to 3.0.
     - **Note**: The internal service names for memcached pods have changed. If you have previously copied the value of `mimir.config` into your values file, please see the point below about updating `mimir.config` to ensure the memcached addresses are updated properly in your configuration.
 - **Update serviceMonitor configuration**
     - All meta-monitoring related settings have been consolidated under the `metaMonitoring` section
-    - If you are not overriding the value of anything under the `serviceMonitor` section, then you can safely skip this section.
+    - If you have not enabled `serviceMonitor` and you are not overriding the value of anything under the `serviceMonitor` section, then you can safely skip this section.
     - `serviceMonitor.enabled` was renamed to `metaMonitoring.serviceMonitor.enabled`
 - **Update rbac configuration**
     - PodSecurity has been made more flexible to support OpenShift deployment
@@ -47,12 +48,13 @@ Follow these steps to migrate your Helm values file to 3.0.
     - The default behavior is unchanged
 - **Update `mimir.config`**
     - If you are not overriding the value of `mimir.config`, then you can safely skip this section.
+    - Before migrating your `mimir.config` value, take a look at how to [use the new simplified configuration method](#optional-use-the-new-simplified-configuration-method).
     - Compare your overridden value of `mimir.config` with the one in <TODO: link>
     - In particular, pay special attention to any of the memcached addresses since these have changed.
 - **Multitenancy is enabled by default**
     - All requests will now require a tenant ID is passed via the `X-Scope-OrgID` header
-    - When `enterprise.enabled` is false, the nginx gateway will transparently add a tenant id of `anonymous` when no tenant id is present in a request. This ensures compatibility with installations previously running with multitenancy disabled.
-    - If you have overriden the nginx gateway configuration, make sure to compare it to the version in <TODO: link> to incorporate any updates.
+    - When `enterprise.enabled` is false, the nginx gateway will transparently add `X-Scope-OrgId: anonymous` when no tenant id is present in a request. This ensures compatibility with installations previously running with multitenancy disabled.
+    - If you have overridden the nginx gateway configuration, make sure to compare it to the version in <TODO: link> to incorporate any updates.
 
 * (optional) start using the simplified configuration method
     * Move secrets to an external secret
@@ -305,9 +307,9 @@ mimir:
     blocks_storage:
       backend: s3
       s3:
-        endpoint: s3.amazonaws.com
-        bucket_name: my-blocks-bucket
         access_key_id: ${AWS_ACCESS_KEY_ID}
+        bucket_name: my-blocks-bucket
+        endpoint: s3.amazonaws.com
         secret_access_key: ${AWS_SECRET_ACCESS_KEY}
 
 global:
