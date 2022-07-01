@@ -12,6 +12,7 @@ Entries should be ordered as follows:
 Entries should include a reference to the Pull Request that introduced the change.
 
 ## main / unreleased
+* [CHANGE] **breaking change** The minimal Kubernetes version is now 1.20. This reflects the fact that Grafana does not test with older versions. #2297
 * [CHANGE] **breaking change** Make `ConfigMap` the default for `configStorageType`. This means that the Mimir (or Enterprise Metrics) configuration is now created in and loaded from a ConfigMap instead of a Secret. #2277
   - Set to `Secret` to keep existing way of working. See related #2031, #2017, #2089.
   - In case the configuration is loaded from an external Secret, `useExternalConfig=true`, then `configStorageType` must be set to `Secret`.
