@@ -251,8 +251,6 @@ mimir:
       file: /var/{{ include "mimir.name" . }}/runtime.yaml
 
     server:
-      grpc_server_max_recv_msg_size: 104857600
-      grpc_server_max_send_msg_size: 104857600
       grpc_server_max_concurrent_streams: 1000
 
   # -- Additional structured values on top of the text based 'mimir.config'. Applied after the text based config is evaulated for templates. Enables adding and modifying YAML elements in the evaulated 'mimir.config'.
