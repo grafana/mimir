@@ -9,6 +9,8 @@
 
 ### Mixin
 
+* [BUGFIX] Dashboards: fixed unit of latency panels in the "Mimir / Ruler" dashboard. #2312
+
 ### Jsonnet
 
 ### Mimirtool
