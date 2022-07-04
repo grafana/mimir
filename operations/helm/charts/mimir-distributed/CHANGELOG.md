@@ -12,6 +12,7 @@ Entries should be ordered as follows:
 Entries should include a reference to the Pull Request that introduced the change.
 
 ## main / unreleased
+* [CHANGE] **breaking change** The minimal Kubernetes version is now 1.20. This reflects the fact that Grafana does not test with older versions. #2297
 * [CHANGE] **breaking change** Make `ConfigMap` the default for `configStorageType`. This means that the Mimir (or Enterprise Metrics) configuration is now created in and loaded from a ConfigMap instead of a Secret. #2277
   - Set to `Secret` to keep existing way of working. See related #2031, #2017, #2089.
   - In case the configuration is loaded from an external Secret, `useExternalConfig=true`, then `configStorageType` must be set to `Secret`.
@@ -38,6 +39,7 @@ Entries should include a reference to the Pull Request that introduced the chang
   - The value `memcached-*.arguments` was removed, the default arguments are now encoded in the template. Use `memcached-*.extraArgs` to provide additional arguments as well as the values `memcached-*.allocatedMemory`, `memcached-*.maxItemMemory` and `memcached-*.port` to set the memcached command line flags `-m`, `-I` and `-u`.
   - The remaining arguments are aligned with the rest of the chart's services, please consult the values file to check whether a parameter exists or was renamed.
 * [CHANGE] Change default value for `blocks_storage.bucket_store.chunks_cache.memcached.timeout` to `450ms` to increase use of cached data. #2035
+* [CHANGE] Remove setting `server.grpc_server_max_recv_msg_size` and `server.grpc_server_max_send_msg_size` to 100MB, since it is the default now, see #1884. #2300
 * [FEATURE] Add `mimir-continuous-test` in smoke-test mode. Use `helm test` to run a smoke test of the read + write path.
 * [FEATURE] Add meta-monitoring via the Grafana Agent Kubernetes operator: scrape metrics and collect logs from Mimir pods and ship them to a remote. #2068
 * [ENHANCEMENT] ServiceMonitor object will now have default values based on release namesapce in the `namespace` and `namespaceSelector` fields. #2123
@@ -54,6 +56,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Check for the containerSecurityContext in values file. #2112
 * [ENHANCEMENT] Add `NOTES.txt` to show endpoints URLs for the user at install/upgrade. #2189
 * [ENHANCEMENT] Add ServiceMonitor for overrides-exporter. #2068
+* [ENHANCEMENT] Add `nginx.resolver` for allow custom resolver in nginx configuration and `nginx.extraContainers` which allow add side containers to the nginx deployment #2196
 
 ## 2.1.0
 
