@@ -22,7 +22,7 @@ jobs:
     container:
       image: grafana/mimir-build-image:publish-multiarch-images-7a4b40a6d
     steps:
-      - name: Checkout Repo
+      - name: Checkout repository
         uses: actions/checkout@v2
         # Commands in the Makefile are hardcoded with an assumed file structure of the CI container
         # Symlink ensures paths specified in previous commands don’t break
@@ -50,7 +50,7 @@ jobs:
     container:
       image: grafana/doc-validator:latest
     steps:
-      - name: Checkout Repo
+      - name: Checkout repository
         uses: actions/checkout@v3
       - name: Run doc-validator tool
         run: doc-validator ./docs/sources
@@ -60,7 +60,7 @@ jobs:
     container:
       image: grafana/mimir-build-image:publish-multiarch-images-7a4b40a6d
     steps:
-      - name: Checkout Repo
+      - name: Checkout repository
         uses: actions/checkout@v2
         # Commands in the Makefile are hardcoded with an assumed file structure of the CI container
         # Symlink ensures paths specified in previous commands don’t break
@@ -84,7 +84,7 @@ jobs:
     container:
       image: grafana/mimir-build-image:publish-multiarch-images-7a4b40a6d
     steps:
-      - name: Checkout Repo
+      - name: Checkout repository
         uses: actions/checkout@v2
         # Commands in the Makefile are hardcoded with an assumed file structure of the CI container
         # Symlink ensures paths specified in previous commands don’t break
@@ -111,7 +111,7 @@ jobs:
     container:
       image: grafana/mimir-build-image:publish-multiarch-images-7a4b40a6d
     steps:
-      - name: Checkout Repo
+      - name: Checkout repository
         uses: actions/checkout@v2
       - name: Symlink Expected Path to Workspace
         run: |
@@ -137,7 +137,7 @@ jobs:
     container:
       image: grafana/mimir-build-image:publish-multiarch-images-7a4b40a6d
     steps:
-      - name: Checkout Repo
+      - name: Checkout repository
         uses: actions/checkout@v2
       - name: Install Docker Client
         run: ./.github/workflows/scripts/install-docker.sh
@@ -178,7 +178,7 @@ jobs:
         uses: actions/setup-go@v2
         with:
           go-version: 1.17.8
-      - name: Checkout Repo
+      - name: Checkout repository
         uses: actions/checkout@v2
       - name: Install Docker Client
         run: sudo ./.github/workflows/scripts/install-docker.sh
@@ -221,7 +221,7 @@ jobs:
     container:
       image: grafana/mimir-build-image:publish-multiarch-images-7a4b40a6d
     steps:
-      - name: Checkout Repo
+      - name: Checkout repository
         uses: actions/checkout@v2
       - name: Install Docker Client
         run: ./.github/workflows/scripts/install-docker.sh
