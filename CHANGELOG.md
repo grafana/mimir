@@ -9,6 +9,8 @@
 
 ### Mixin
 
+* [BUGFIX] Dashboards: fixed "Intervals per Query" panel in the "Mimir / Queries" dashboard. #2308
+
 ### Jsonnet
 
 ### Mimirtool
