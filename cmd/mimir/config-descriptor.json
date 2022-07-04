@@ -6960,17 +6960,6 @@
           "fieldCategory": "advanced"
         },
         {
-          "kind": "field",
-          "name": "search_pending_for",
-          "required": false,
-          "desc": "Time to spend searching for a pending ruler when shutting down.",
-          "fieldValue": null,
-          "fieldDefaultValue": 300000000000,
-          "fieldFlag": "ruler.search-pending-for",
-          "fieldType": "duration",
-          "fieldCategory": "advanced"
-        },
-        {
           "kind": "block",
           "name": "ring",
           "required": false,
@@ -7343,17 +7332,6 @@
           ],
           "fieldValue": null,
           "fieldDefaultValue": null
-        },
-        {
-          "kind": "field",
-          "name": "flush_period",
-          "required": false,
-          "desc": "Period with which to attempt to flush rule groups.",
-          "fieldValue": null,
-          "fieldDefaultValue": 60000000000,
-          "fieldFlag": "ruler.flush-period",
-          "fieldType": "duration",
-          "fieldCategory": "advanced"
         },
         {
           "kind": "field",
