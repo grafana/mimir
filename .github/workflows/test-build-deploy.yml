@@ -38,14 +38,22 @@ jobs:
         run: make BUILD_IN_CONTAINER=false check-protos
       - name: Check Generated Documentation
         run: make BUILD_IN_CONTAINER=false check-doc
-      - name: Check Documentation Links
-        run: make BUILD_IN_CONTAINER=false check-doc-links
       - name: Check White Noise.
         run: make BUILD_IN_CONTAINER=false check-white-noise
       - name: Check License Header
         run: make BUILD_IN_CONTAINER=false check-license
       - name: Check Docker-Compose YAML
         run: make BUILD_IN_CONTAINER=false check-tsdb-blocks-storage-s3-docker-compose-yaml
+
+  doc-validator:
+    runs-on: ubuntu-latest
+    container:
+      image: grafana/doc-validator:latest
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v3
+      - name: Run doc-validator tool
+        run: doc-validator ./docs/sources
 
   lint-jsonnet:
     runs-on: ubuntu-latest
