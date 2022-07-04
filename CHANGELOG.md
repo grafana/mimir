@@ -9,7 +9,7 @@
 
 ### Mixin
 
-* [BUGFIX] Dashboards: fixed "Intervals per Query" panel in the "Mimir / Queries" dashboard. #2308
+* [BUGFIX] Dashboards: fixed "Intervals per query" panel in the "Mimir / Queries" dashboard. #2308
 
 ### Jsonnet
 

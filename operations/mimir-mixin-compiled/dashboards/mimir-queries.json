@@ -684,7 +684,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum(rate(cortex_frontend_split_queries_total{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\"}[$__rate_interval])) / sum(rate(cortex_frontend_query_range_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\", method=\"split_by_interval\"}[$__rate_interval]))",
+                        "expr": "sum(rate(cortex_frontend_split_queries_total{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\"}[$__rate_interval])) / sum(rate(cortex_frontend_query_range_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\", method=\"split_by_interval_and_results_cache\"}[$__rate_interval]))",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
@@ -696,7 +696,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Intervals per Query",
+                  "title": "Intervals per query",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
