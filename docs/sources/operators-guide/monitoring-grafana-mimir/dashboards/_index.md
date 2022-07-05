@@ -11,4 +11,4 @@ aliases:
 
 Grafana Mimir provides the following production-ready dashboards.
 
-{{< section >}}
+{{< section menuTitle="true" >}}
