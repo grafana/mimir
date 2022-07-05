@@ -11,4 +11,4 @@ keywords:
 
 Grafana Mimir's flexibility is achieved through configuration.
 
-{{< section >}}
+{{< section menuTitle="true" >}}

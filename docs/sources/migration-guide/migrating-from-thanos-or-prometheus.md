@@ -1,6 +1,6 @@
 ---
 title: "Migrating from Thanos or Prometheus to Grafana Mimir"
-menuTitle: "Migrating from Thanos or Prometheus to Grafana Mimir"
+menuTitle: "Migrating from Thanos or Prometheus"
 description: "Learn how to migrate from Thanos or Prometheus to Grafana Mimir."
 weight: 10
 ---

@@ -1,7 +1,7 @@
 ---
 title: "Using exemplars with Grafana Mimir"
-menuTitle: "Using exemplars with Grafana Mimir"
-description: "Learn how to use examplars with Grafana Mimir."
+menuTitle: "Using exemplars"
+description: "Learn how to use exemplars with Grafana Mimir."
 weight: 40
 keywords:
   - Mimir exemplars
@@ -11,4 +11,4 @@ keywords:
 
 This following topics describe how to use exemplars to identify higher cardinality metadata from specific events within time series data.
 
-{{< section >}}
+{{< section menuTitle="true" >}}
