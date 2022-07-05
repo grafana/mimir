@@ -60,8 +60,8 @@ func closeResp(resp *http.Response) {
 	resp.Body.Close()
 }
 
-func (c *MimirClient) backfillBlock(ctx context.Context, dpath string, logger log.Logger) error {
-	blockMeta, err := getBlockMeta(dpath)
+func (c *MimirClient) backfillBlock(ctx context.Context, blockDir string, logger log.Logger) error {
+	blockMeta, err := getBlockMeta(blockDir)
 	if err != nil {
 		return err
 	}
@@ -88,7 +88,7 @@ func (c *MimirClient) backfillBlock(ctx context.Context, dpath string, logger lo
 	}
 
 	// Upload each block file
-	if err := filepath.WalkDir(dpath, func(pth string, e fs.DirEntry, err error) error {
+	if err := filepath.WalkDir(blockDir, func(pth string, e fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -114,7 +114,7 @@ func (c *MimirClient) backfillBlock(ctx context.Context, dpath string, logger lo
 			return errors.Wrap(err, "failed to get file info")
 		}
 
-		relPath, err := filepath.Rel(dpath, pth)
+		relPath, err := filepath.Rel(blockDir, pth)
 		if err != nil {
 			return errors.Wrap(err, "failed to get relative path")
 		}
@@ -132,7 +132,7 @@ func (c *MimirClient) backfillBlock(ctx context.Context, dpath string, logger lo
 
 		return nil
 	}); err != nil {
-		return errors.Wrapf(err, "failed to traverse %q", dpath)
+		return errors.Wrapf(err, "failed to traverse %q", blockDir)
 	}
 
 	resp, err = c.doRequest(fmt.Sprintf("%s?uploadComplete=true", blockPrefix), http.MethodPost,
@@ -150,10 +150,10 @@ func (c *MimirClient) backfillBlock(ctx context.Context, dpath string, logger lo
 	return nil
 }
 
-func getBlockMeta(dpath string) (metadata.Meta, error) {
+func getBlockMeta(blockDir string) (metadata.Meta, error) {
 	var blockMeta metadata.Meta
 
-	metaPath := filepath.Join(dpath, block.MetaFilename)
+	metaPath := filepath.Join(blockDir, block.MetaFilename)
 	f, err := os.Open(metaPath)
 	if err != nil {
 		return blockMeta, errors.Wrapf(err, "failed to open %q", metaPath)
@@ -166,7 +166,7 @@ func getBlockMeta(dpath string) (metadata.Meta, error) {
 		return blockMeta, errors.Wrapf(err, "failed to decode %q", metaPath)
 	}
 
-	idxPath := filepath.Join(dpath, block.IndexFilename)
+	idxPath := filepath.Join(blockDir, block.IndexFilename)
 	idxSt, err := os.Stat(idxPath)
 	if err != nil {
 		return blockMeta, errors.Wrapf(err, "failed to stat %q", idxPath)
@@ -181,7 +181,7 @@ func getBlockMeta(dpath string) (metadata.Meta, error) {
 		},
 	}
 
-	chunksDir := filepath.Join(dpath, block.ChunksDirname)
+	chunksDir := filepath.Join(blockDir, block.ChunksDirname)
 	entries, err := os.ReadDir(chunksDir)
 	if err != nil {
 		return blockMeta, errors.Wrapf(err, "failed to read dir %q", chunksDir)
