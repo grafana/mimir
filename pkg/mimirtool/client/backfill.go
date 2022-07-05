@@ -18,6 +18,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/pkg/errors"
+	"github.com/thanos-io/thanos/pkg/block"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
 )
 
@@ -95,7 +96,7 @@ func (c *MimirClient) backfillBlock(ctx context.Context, dpath string, logger lo
 			return nil
 		}
 
-		if filepath.Base(pth) == "meta.json" {
+		if filepath.Base(pth) == block.MetaFilename {
 			// Don't upload meta.json in this step
 			return nil
 		}
@@ -104,7 +105,9 @@ func (c *MimirClient) backfillBlock(ctx context.Context, dpath string, logger lo
 		if err != nil {
 			return errors.Wrapf(err, "failed to open %q", pth)
 		}
-		defer f.Close()
+		defer func() {
+			_ = f.Close()
+		}()
 
 		st, err := f.Stat()
 		if err != nil {
@@ -150,32 +153,35 @@ func (c *MimirClient) backfillBlock(ctx context.Context, dpath string, logger lo
 func getBlockMeta(dpath string) (metadata.Meta, error) {
 	var blockMeta metadata.Meta
 
-	metaPath := filepath.Join(dpath, "meta.json")
+	metaPath := filepath.Join(dpath, block.MetaFilename)
 	f, err := os.Open(metaPath)
 	if err != nil {
 		return blockMeta, errors.Wrapf(err, "failed to open %q", metaPath)
 	}
+	defer func() {
+		_ = f.Close()
+	}()
 
 	if err := json.NewDecoder(f).Decode(&blockMeta); err != nil {
 		return blockMeta, errors.Wrapf(err, "failed to decode %q", metaPath)
 	}
 
-	idxPath := filepath.Join(dpath, "index")
+	idxPath := filepath.Join(dpath, block.IndexFilename)
 	idxSt, err := os.Stat(idxPath)
 	if err != nil {
 		return blockMeta, errors.Wrapf(err, "failed to stat %q", idxPath)
 	}
 	blockMeta.Thanos.Files = []metadata.File{
 		{
-			RelPath:   "index",
+			RelPath:   block.IndexFilename,
 			SizeBytes: idxSt.Size(),
 		},
 		{
-			RelPath: "meta.json",
+			RelPath: block.MetaFilename,
 		},
 	}
 
-	chunksDir := filepath.Join(dpath, "chunks")
+	chunksDir := filepath.Join(dpath, block.ChunksDirname)
 	entries, err := os.ReadDir(chunksDir)
 	if err != nil {
 		return blockMeta, errors.Wrapf(err, "failed to read dir %q", chunksDir)
@@ -188,7 +194,7 @@ func getBlockMeta(dpath string) (metadata.Meta, error) {
 		}
 
 		blockMeta.Thanos.Files = append(blockMeta.Thanos.Files, metadata.File{
-			RelPath:   path.Join("chunks", e.Name()),
+			RelPath:   path.Join(block.ChunksDirname, e.Name()),
 			SizeBytes: st.Size(),
 		})
 	}
