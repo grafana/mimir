@@ -54,9 +54,9 @@ spec:
       tolerations:
         {{- toYaml .tolerations | nindent 8 }}
       terminationGracePeriodSeconds: {{ .terminationGracePeriodSeconds }}
-      {{- if $.ctx.Values.memcached.image.pullSecrets }}
+      {{- if $.ctx.Values.image.pullSecrets }}
       imagePullSecrets:
-      {{- range $.ctx.Values.memcached.image.pullSecrets }}
+      {{- range $.ctx.Values.image.pullSecrets }}
         - name: {{ . }}
       {{- end }}
       {{- end }}
