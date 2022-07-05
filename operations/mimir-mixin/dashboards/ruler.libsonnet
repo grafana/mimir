@@ -103,7 +103,8 @@ local filename = 'mimir-ruler.json';
         $.queryPanel(
           $.rulerQueries.ruleEvaluations.latency % [$.jobMatcher($._config.job_names.ruler), $.jobMatcher($._config.job_names.ruler)],
           'average'
-        ),
+        ) +
+        { yaxes: $.yaxes('s') },
       )
     )
     .addRowIf(
@@ -195,7 +196,8 @@ local filename = 'mimir-ruler.json';
         $.queryPanel(
           $.rulerQueries.groupEvaluations.latency % [$.jobMatcher($._config.job_names.ruler), $.jobMatcher($._config.job_names.ruler)],
           '{{ user }}'
-        ),
+        ) +
+        { yaxes: $.yaxes('s') },
       )
       .addPanel(
         $.panel('Failures') +
@@ -211,7 +213,8 @@ local filename = 'mimir-ruler.json';
         $.queryPanel(
           $.rulerQueries.perUserPerGroupEvaluations.latency % [$.jobMatcher($._config.job_names.ruler), $.jobMatcher($._config.job_names.ruler)],
           '{{ user }}'
-        )
+        ) +
+        { yaxes: $.yaxes('s') }
       )
     )
     .addRows(
