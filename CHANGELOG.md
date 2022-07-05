@@ -10,6 +10,8 @@
 
 ### Mixin
 
+* [ENHANCEMENT] Dashboards: added missed rule evaluations to the "Evaluations per second" panel in the "Mimir / Ruler" dashboard. #2314
+
 ### Jsonnet
 
 ### Mimirtool
