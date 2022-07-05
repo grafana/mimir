@@ -280,7 +280,7 @@ func TestBucketBlock_matchLabels(t *testing.T) {
 		},
 	}
 	for _, c := range cases {
-		ok := b.matchRelabelLabels(c.in)
+		ok := b.matchLabels(c.in)
 		assert.Equal(t, c.match, ok)
 	}
 
