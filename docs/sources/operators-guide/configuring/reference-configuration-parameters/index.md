@@ -3559,8 +3559,7 @@ The `compactor` block configures the compactor component.
 [meta_sync_concurrency: <int> | default = 20]
 
 # (advanced) Minimum age of fresh (non-compacted) blocks before they are being
-# processed. Malformed blocks older than the maximum of consistency-delay and
-# 48h0m0s will be removed.
+# processed.
 # CLI flag: -compactor.consistency-delay
 [consistency_delay: <duration> | default = 0s]
 
