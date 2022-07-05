@@ -4,7 +4,9 @@ package commands
 
 import (
 	"context"
+	"fmt"
 	"os"
+	"strings"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -16,13 +18,35 @@ import (
 type BackfillCommand struct {
 	logger       log.Logger
 	clientConfig client.Config
-	source       string
+	blocks       blockList
+}
+
+type blockList []string
+
+func (l *blockList) Set(value string) error {
+	st, err := os.Stat(value)
+	if err != nil {
+		return fmt.Errorf("directory %q doesn't exist", value)
+	}
+	if !st.IsDir() {
+		return fmt.Errorf("%q must be a directory", value)
+	}
+	*l = append(*l, value)
+	return nil
+}
+
+func (l blockList) String() string {
+	return strings.Join(l, ",")
+}
+
+func (l blockList) IsCumulative() bool {
+	return true
 }
 
 func (c *BackfillCommand) Register(app *kingpin.Application, envVars EnvVarNames) {
-	cmd := app.Command("backfill", "Backfill metrics into Grafana Mimir.")
+	cmd := app.Command("backfill", "Upload metrics blocks to Grafana Mimir.")
 	cmd.Action(c.backfill)
-	cmd.Arg("source", "Path to directory to source metrics blocks from.").Required().StringVar(&c.source)
+	cmd.Arg("block", "block to upload").Required().SetValue(&c.blocks)
 	cmd.Flag("address", "Address of the Grafana Mimir cluster").Required().StringVar(&c.clientConfig.Address)
 	cmd.Flag("id", "Grafana Mimir tenant ID").Required().StringVar(&c.clientConfig.ID)
 	cmd.Flag("user", "API user to use when contacting Grafana Mimir").Default("").StringVar(&c.clientConfig.User)
@@ -37,11 +61,11 @@ func (c *BackfillCommand) Register(app *kingpin.Application, envVars EnvVarNames
 
 func (c *BackfillCommand) backfill(k *kingpin.ParseContext) error {
 	ctx := context.Background()
-	level.Info(c.logger).Log("msg", "Backfilling", "source", c.source, "user", c.clientConfig.ID)
+	level.Info(c.logger).Log("msg", "Backfilling", "blocks", c.blocks.String(), "user", c.clientConfig.ID)
 	cli, err := client.New(c.clientConfig)
 	if err != nil {
 		return err
 	}
 
-	return cli.Backfill(ctx, c.source, c.logger)
+	return cli.Backfill(ctx, c.blocks, c.logger)
 }

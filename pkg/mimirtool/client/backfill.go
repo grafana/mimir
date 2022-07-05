@@ -21,31 +21,26 @@ import (
 	"github.com/thanos-io/thanos/pkg/block/metadata"
 )
 
-func (c *MimirClient) Backfill(ctx context.Context, source string, logger log.Logger) error {
+func (c *MimirClient) Backfill(ctx context.Context, blocks []string, logger log.Logger) error {
 	// Scan blocks in source directory
-	es, err := os.ReadDir(source)
-	if err != nil {
-		return errors.Wrapf(err, "failed to read directory %q", source)
-	}
 	var failed []string
 	var succeeded []string
 	var alreadyExists []string
-	for _, e := range es {
-		pth := filepath.Join(source, e.Name())
-		if err := c.backfillBlock(ctx, pth, logger); err != nil {
+	for _, b := range blocks {
+		if err := c.backfillBlock(ctx, b, logger); err != nil {
 			if errors.Is(err, errConflict) {
 				level.Warn(logger).Log("msg", "failed uploading block since it already exists on server",
-					"path", pth)
-				alreadyExists = append(alreadyExists, pth)
+					"path", b)
+				alreadyExists = append(alreadyExists, b)
 			} else {
-				level.Warn(logger).Log("msg", "failed uploading block", "path", pth, "err", err)
-				failed = append(failed, pth)
+				level.Warn(logger).Log("msg", "failed uploading block", "path", b, "err", err)
+				failed = append(failed, b)
 			}
 			continue
 		}
 
-		level.Info(logger).Log("msg", "successfully uploaded block", "path", pth)
-		succeeded = append(succeeded, pth)
+		level.Info(logger).Log("msg", "successfully uploaded block", "path", b)
+		succeeded = append(succeeded, b)
 	}
 
 	level.Info(logger).Log("msg", "finished uploading block(s)", "succeeded", len(succeeded),
