@@ -1026,7 +1026,6 @@ memcached:
     tag: 1.6.9-alpine
     # -- Memcached Docker image pull policy
     pullPolicy: IfNotPresent
-    pullSecrets: []
 
   # -- The SecurityContext for memcached pods
   podSecurityContext:
@@ -1051,6 +1050,10 @@ memcachedExporter:
     repository: prom/memcached-exporter
     tag: v0.6.0
     pullPolicy: IfNotPresent
+
+  resources:
+    requests: {}
+    limits: {}
 
 memcached-chunks:
   # -- Specifies whether memcached-chunks should be enabled
